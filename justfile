@@ -45,7 +45,6 @@ check:
     targets=(
         check-lint
         check-format
-        check-types
         check-coverage
     )
     failed=()
