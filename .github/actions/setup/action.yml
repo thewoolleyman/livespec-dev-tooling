@@ -1,0 +1,35 @@
+# setup composite Action — installs the pinned toolchain.
+#
+# Authority: SPECIFICATION/contracts.md §"Composite Actions wire contract".
+#
+# Performs: mise install (pulls uv + just + lefthook at pinned versions
+# from the consumer's .mise.toml) + uv sync --all-groups (resolves dev
+# dependencies into a project-local .venv from the consumer's
+# pyproject.toml). The caller MUST have already run actions/checkout
+# before invoking this action — checkout is the caller's responsibility,
+# not this action's, so that consumers can configure fetch-depth, ref,
+# repository, etc. per their needs.
+#
+# Inputs:
+#   python-version-file (optional, default `.python-version`) —
+#     declarative pin file path consulted by uv. Honored downstream by
+#     `uv sync` so the project-local .venv uses the declared interpreter.
+
+name: setup
+description: Install pinned livespec-governed toolchain (uv, just, lefthook) and sync Python dev dependencies.
+
+inputs:
+  python-version-file:
+    description: Path (relative to working directory) to the Python version pin file.
+    required: false
+    default: .python-version
+
+runs:
+  using: composite
+  steps:
+    - name: Install pinned binaries via mise
+      uses: jdx/mise-action@v2
+
+    - name: Install Python dev deps via uv
+      shell: bash
+      run: uv sync --all-groups

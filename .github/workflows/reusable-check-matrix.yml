@@ -1,0 +1,64 @@
+# reusable-check-matrix.yml — reusable workflow for the shared check suite.
+#
+# Authority: SPECIFICATION/contracts.md §"Reusable workflows wire contract".
+#
+# Consumers invoke this workflow from their own ci.yml via
+# `uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-check-matrix.yml@vX.Y.Z`
+# (with `with: { checks: '["slug1", "slug2", ...]' }`).
+#
+# Strategy: matrix over the `checks` input array; each matrix entry
+# runs the `setup` + `run-check` composite Actions in sequence, so each
+# check reports its own status check name to GitHub for branch-
+# protection alignment.
+#
+# Inputs:
+#   checks (required) — JSON-array string of check slugs (e.g.,
+#     '["no_inheritance", "heading_coverage", "claude_md_coverage"]').
+#     The consumer is responsible for choosing the subset of shared
+#     checks relevant to their repo's source layout.
+#   ref (optional, default refs/heads/master) — git ref of
+#     livespec-dev-tooling to consume Actions from. Pinned via the
+#     consumer's `uses:` reference (typically vX.Y.Z); included here
+#     for non-tag-pinned local-fork experimentation only.
+
+name: livespec-dev-tooling check matrix
+
+on:
+  workflow_call:
+    inputs:
+      checks:
+        description: JSON-array string of check slugs to run.
+        required: true
+        type: string
+      ref:
+        description: livespec-dev-tooling git ref to consume Actions from.
+        required: false
+        type: string
+        default: master
+
+jobs:
+  check:
+    name: ${{ matrix.check }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        check: ${{ fromJSON(inputs.checks) }}
+    steps:
+      - name: Checkout consumer repo
+        uses: actions/checkout@v4
+
+      - name: Checkout livespec-dev-tooling Actions
+        uses: actions/checkout@v4
+        with:
+          repository: thewoolleyman/livespec-dev-tooling
+          ref: ${{ inputs.ref }}
+          path: .livespec-dev-tooling-actions
+
+      - name: Setup toolchain
+        uses: ./.livespec-dev-tooling-actions/.github/actions/setup
+
+      - name: Run check
+        uses: ./.livespec-dev-tooling-actions/.github/actions/run-check
+        with:
+          check-name: ${{ matrix.check }}

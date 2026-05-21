@@ -1,0 +1,47 @@
+# run-check composite Action — runs a single shared check module.
+#
+# Authority: SPECIFICATION/contracts.md §"Composite Actions wire contract".
+#
+# Performs: `uv run python -m livespec_dev_tooling.checks.<check-name>`
+# from the supplied working directory, threading any extra-args after
+# the module name. Exit status propagates: 0 on pass, non-zero on fail
+# per SPECIFICATION/contracts.md §"Exit-code table".
+#
+# Inputs:
+#   check-name (required) — the check slug (e.g., "no_inheritance",
+#     "heading_coverage"). The action maps the slug to
+#     `livespec_dev_tooling.checks.<check-name>` directly; no
+#     normalization is applied. The consumer's `uv` environment MUST
+#     already have `livespec-dev-tooling` synced via the sibling
+#     `setup` Action before invoking this one.
+#   working-directory (optional, default `.`) — the directory the check
+#     runs from. Most checks walk paths relative to cwd, so the
+#     consumer typically passes the repo root.
+#   extra-args (optional, default `""`) — additional argv passed after
+#     the module name (for checks that accept positional arguments,
+#     e.g., the commit-msg path argv for red_green_replay).
+
+name: run-check
+description: Run a shared livespec-dev-tooling check module via `uv run python -m`.
+
+inputs:
+  check-name:
+    description: Check slug (e.g., "no_inheritance") to run as `python -m livespec_dev_tooling.checks.<check-name>`.
+    required: true
+  working-directory:
+    description: Directory to run the check from (most checks walk paths relative to cwd).
+    required: false
+    default: .
+  extra-args:
+    description: Extra positional argv appended after the module name.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: uv run python -m livespec_dev_tooling.checks.${{ inputs.check-name }}
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        uv run python -m "livespec_dev_tooling.checks.${{ inputs.check-name }}" ${{ inputs.extra-args }}
