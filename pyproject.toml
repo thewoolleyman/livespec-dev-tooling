@@ -1,0 +1,211 @@
+# pyproject.toml — livespec-dev-tooling.
+#
+# Authority for every rule expressed here is the live specification at
+# livespec/SPECIFICATION/ (notably non-functional-requirements.md
+# §"Toolchain pins", §"Shared content provenance", §"Linter rule set",
+# §"Typechecker rule set", §"Code coverage thresholds") plus this
+# library's own SPECIFICATION/ tree once seeded at Phase G.3 of epic
+# li-fgqgnk.
+#
+# This file is HAND-AUTHORED (not generated from copier). The epic
+# YAGNI'd templates/library/ until a second library variant appears;
+# when it does, a future propose-change cycle MAY extract this file's
+# common shape into a templates/library/pyproject.toml.jinja.
+#
+# Has a [build-system] section: livespec-dev-tooling IS installable
+# (consumed by every livespec-governed repo via uv git source per
+# livespec/SPECIFICATION/contracts.md §"Shared code sync —
+# livespec-dev-tooling").
+
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "livespec-dev-tooling"
+version = "0.0.0"
+description = "Shared enforcement-suite library for livespec-governed projects: ruff/pyright/coverage gates, AST checks, CI-alignment checks, red-green-replay discipline. Python package plus composite Actions and reusable workflows."
+requires-python = ">=3.10.16"
+authors = [
+    { name = "Chad Woolley", email = "thewoolleyman@gmail.com" },
+]
+license = { text = "MIT" }
+readme = "README.md"
+
+# NO [project.dependencies]: livespec-dev-tooling's checks shell out
+# to project-local tools (ruff, pyright, pytest) via subprocess; they
+# do not import third-party packages. The library is intentionally
+# dependency-free at runtime so consumers pay zero transitive-pin
+# cost when adding it to their [dependency-groups].dev table.
+
+[tool.hatch.build.targets.wheel]
+packages = ["livespec_dev_tooling"]
+
+[dependency-groups]
+# Every Python dev tool is uv-managed via this table (resolved into
+# uv.lock; installed into a project-local .venv via
+# `uv sync --all-groups`). Mise pins only the non-Python binaries
+# in .mise.toml. Versions mirror livespec-core's pins exactly per
+# livespec/SPECIFICATION/non-functional-requirements.md
+# §"Shared content provenance".
+dev = [
+    "ruff==0.8.6",
+    "pyright==1.1.391",
+    "pytest==8.3.4",
+    "pytest-cov==6.0.0",
+    "pytest-icdiff==0.9",
+    "pytest-xdist==3.8.0",
+    "hypothesis==6.122.3",
+    "hypothesis-jsonschema==0.23.1",
+    "mutmut==3.2.3",
+    "import-linter==2.1",
+]
+
+# ---------------------------------------------------------------------------
+# Ruff — sole linter, formatter, import-sorter, complexity checker.
+# Rule set mirrors livespec/pyproject.toml [tool.ruff] per
+# livespec/SPECIFICATION/non-functional-requirements.md §"Linter rule set".
+# ---------------------------------------------------------------------------
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+extend-exclude = ["**/__pycache__/**", "mutants/**"]
+
+[tool.ruff.lint]
+# 27 categories: v011 baseline (11) + v012 additions (16). Per
+# livespec/SPECIFICATION/non-functional-requirements.md §"Linter rule set".
+select = [
+    # ----- v011 baseline (11 categories) -----
+    "E",     # pycodestyle errors
+    "F",     # pyflakes
+    "I",     # isort
+    "B",     # flake8-bugbear
+    "UP",    # pyupgrade
+    "SIM",   # flake8-simplify
+    "C90",   # mccabe complexity
+    "N",     # pep8-naming
+    "RUF",   # ruff-specific
+    "PL",    # pylint
+    "PTH",   # flake8-use-pathlib
+    # ----- v012 additions (16 categories) -----
+    "TRY",   # tryceratops — pairs with K10 domain-vs-bugs split
+    "FBT",   # flake8-boolean-trap — reinforces K4 keyword-only discipline
+    "PIE",   # flake8-pie — miscellaneous anti-patterns
+    "SLF",   # flake8-self — bans cross-class _-prefixed access
+    "LOG",   # flake8-logging — logging discipline
+    "G",     # flake8-logging-format — kwargs-only in log calls
+    "TID",   # flake8-tidy-imports — no relative imports + banned-imports
+    "ERA",   # eradicate — bans commented-out code (LLM artifact)
+    "ARG",   # flake8-unused-arguments
+    "RSE",   # flake8-raise — `raise X` over `raise X()`; raise...from discipline
+    "PT",    # flake8-pytest-style
+    "FURB",  # refurb — modern-Python refactor hints
+    "SLOT",  # flake8-slots
+    "ISC",   # flake8-implicit-str-concat — complements pyright
+    "T20",   # flake8-print — bans print/pprint
+    "S",     # flake8-bandit — security anti-patterns
+]
+ignore = [
+    "ISC001",  # implicit-str-concat on one line; conflicts with the formatter
+]
+
+[tool.ruff.lint.pylint]
+max-args = 6
+max-positional-args = 6
+max-branches = 10
+max-statements = 30
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"abc.ABC" = { msg = "use typing.Protocol" }
+"abc.ABCMeta" = { msg = "use typing.Protocol" }
+"abc.abstractmethod" = { msg = "use typing.Protocol" }
+"pickle" = { msg = "arbitrary-code-execution surface on load(); use JSON / JSONC" }
+"marshal" = { msg = "arbitrary-code-execution surface on load(); use JSON / JSONC" }
+"shelve" = { msg = "arbitrary-code-execution surface on load(); use JSON / JSONC" }
+
+[tool.ruff.lint.per-file-ignores]
+# pytest conventions: bare assert, magic literals in assertions,
+# subprocess.run with fixed argv lists, composite assertions,
+# /tmp paths, token-suffixed variable names, long descriptive
+# docstrings, many-arg pytest fixtures. Mirrors livespec-core's
+# tests/ per-file-ignore set.
+"tests/**.py" = [
+    "S101", "PLR2004", "S603", "S607", "PT018", "S108", "S105", "TRY003", "E501", "PLR0913",
+]
+# Once G.4 migrates the enforcement-suite scripts, each check module
+# will shell out to git, ruff, python via subprocess.run with fixed
+# argv lists per the canonical-target invocation contract.
+# S603/S607/S404 are over-strict for this documented pattern;
+# S105 covers TRAILER-token constants.
+"livespec_dev_tooling/checks/*.py" = ["S603", "S607", "S404", "S105"]
+
+# ---------------------------------------------------------------------------
+# Pyright — strict + seven strict-plus diagnostics. Per
+# livespec/SPECIFICATION/non-functional-requirements.md §"Typechecker rule set".
+# ---------------------------------------------------------------------------
+
+[tool.pyright]
+include = ["livespec_dev_tooling", "tests"]
+exclude = ["**/__pycache__/**"]
+pythonVersion = "3.10"
+typeCheckingMode = "strict"
+
+reportUnusedCallResult = "error"
+reportImplicitOverride = "error"
+reportUninitializedInstanceVariable = "error"
+reportUnnecessaryTypeIgnoreComment = "error"
+reportUnnecessaryCast = "error"
+reportUnnecessaryIsInstance = "error"
+reportImplicitStringConcatenation = "error"
+
+# ---------------------------------------------------------------------------
+# Pytest — pytest-cov + pytest-icdiff wiring.
+# ---------------------------------------------------------------------------
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    # `--import-mode=importlib` lets paired tests share a basename
+    # across mirror trees without pytest's legacy `prepend` mode
+    # triggering same-basename module collisions.
+    "--import-mode=importlib",
+]
+
+# ---------------------------------------------------------------------------
+# Coverage — 100% line + branch (per livespec/SPECIFICATION/
+# non-functional-requirements.md §"Code coverage thresholds").
+# ---------------------------------------------------------------------------
+
+[tool.coverage.run]
+branch = true
+source = ["livespec_dev_tooling"]
+omit = [
+    "*/__pycache__/*",
+    "/tmp/*",
+    "/private/var/folders/*",
+    "mutants/*",
+]
+
+[tool.coverage.report]
+fail_under = 100
+show_missing = true
+skip_covered = false
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "raise ImportError",
+    "@overload",
+    "if __name__ == .__main__.:",
+    # `case _:` arms are structurally unreachable by spec mandate:
+    # every `match` statement terminates with `case _: assert_never(...)`.
+    # The arm is therefore unreachable when the subject's declared
+    # type is exhaustively handled by the prior arms.
+    "case _:",
+]

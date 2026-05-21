@@ -1,0 +1,45 @@
+// Project-local livespec configuration for livespec-dev-tooling.
+//
+// This sibling library dogfoods livespec at the LIBRARY scale (distinct
+// from the plugin scale via livespec-core itself, and the impl-plugin
+// scale via livespec-impl-plaintext). The SPECIFICATION/ tree at the
+// repo root is the live spec for this library; the work-items / memos
+// JSONL files at the repo root carry this library's own impl tracking.
+//
+// Authority: livespec/SPECIFICATION/contracts.md
+//   §"Cross-repo coordination — pin-and-bump" (generalized in v070 to
+//   cover sibling libraries as well as impl-plugins)
+//   §"Shared code sync — livespec-dev-tooling" (added in v070; this
+//   file is the canonical example of a sibling-library `compat` block
+//   declared under a library-name top-level key)
+//
+// Status: SPECIFICATION/ is empty until Phase G.3 of epic li-fgqgnk
+// runs `/livespec:seed`. Until then, livespec sub-commands targeting
+// this tree will fail-fast with a precondition error directing the
+// user to seed first.
+{
+  "template": "livespec",
+  "spec_root": "SPECIFICATION",
+  "implementation": { "plugin": "livespec-impl-plaintext" },
+  "livespec-dev-tooling": {
+    "compat": {
+      // semver range and pinned tag against livespec-core. The pinned
+      // value is "master" until livespec-core cuts its first post-v070
+      // release tag (Phase G.6 is the natural moment to bump these to
+      // a real tag); doctor's contract-version-compatibility invariant
+      // currently fires `warn` against "master" pins, which is expected
+      // during bootstrap.
+      "livespec": ">=0.1.0,<1.0.0",
+      "pinned": "master"
+    }
+  },
+  "livespec-impl-plaintext": {
+    "format": "jsonl",
+    "compat": {
+      "livespec": ">=0.1.0,<1.0.0",
+      "pinned": "master"
+    },
+    "work_items_path": "work-items.jsonl",
+    "memos_path": "memos.jsonl"
+  }
+}

@@ -1,0 +1,50 @@
+### Project ignores
+tmp/
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+.claude/worktrees/
+.codex
+.idea/
+
+### Python toolchain artifacts
+# Note: .mypy_cache/ is intentionally NOT listed. Mypy is not used
+# (livespec-dev-tooling pins pyright); its cache path is therefore
+# not a tolerated artifact.
+__pycache__/
+.pytest_cache/
+.hypothesis/
+.coverage
+.coverage.*
+.ruff_cache/
+.pyright/
+.mutmut-cache/
+mutants/
+htmlcov/
+
+### Build artifacts
+build/
+dist/
+*.egg-info/
+*.egg
+
+### UV / lefthook local state
+.venv/
+
+### macOS template
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk

@@ -1,0 +1,52 @@
+# lefthook.yml — livespec-dev-tooling git hook configuration.
+#
+# Authority: livespec/SPECIFICATION/contracts.md
+#   §"Pre-commit step ordering" — pre-commit runs three commands in
+#   order (00-lint-autofix-staged, 01-commit-pairs-source-and-test,
+#   02-check-pre-commit); commit-msg runs no-commit-on-master then
+#   red-green-replay (v034 D3); pre-push runs the full aggregate.
+#
+# Authority: livespec/SPECIFICATION/non-functional-requirements.md
+#   §"Toolchain pins" — `run:` fields MUST delegate to `just <target>`
+#   and MUST NOT shell out to underlying tools directly (the spec's
+#   lefthook-must-delegate-to-just rule; once the corresponding check
+#   migrates from livespec-core in Phase G.4 of epic li-fgqgnk, it
+#   enforces this mechanically here too).
+#
+# Activation: `just bootstrap` installs the canonical git-hook-wrapper
+# into .git/hooks/{pre-commit,pre-push,commit-msg}. The wrapper invokes
+# `mise exec lefthook -- lefthook run <hook-name> "$@"` so the gate
+# fires regardless of shell config and commit-msg argv[1] (the
+# commit-message file path) reaches the red-green-replay hook.
+#
+# Bootstrap order: at Phase G.2 the just targets check-commit-pairs-
+# source-and-test, check-red-green-replay, and lint-autofix-staged are
+# stubs (no migrated checks yet); they become real once Phase G.4
+# migrates the corresponding scripts from livespec-core/dev-tooling/.
+
+pre-commit:
+  commands:
+    00-lint-autofix-staged:
+      run: just lint-autofix-staged
+    01-commit-pairs-source-and-test:
+      run: just check-commit-pairs-source-and-test
+    02-check-pre-commit:
+      run: just check-pre-commit
+
+commit-msg:
+  commands:
+    00-no-commit-on-master:
+      run: |
+        branch=$(git rev-parse --abbrev-ref HEAD)
+        if [ "$branch" = "master" ]; then
+          printf 'ERROR: direct commits to master are forbidden; create a feature branch first\n' >&2
+          printf 'Hint: git checkout -b <branch-name>\n' >&2
+          exit 1
+        fi
+    01-red-green-replay:
+      run: just check-red-green-replay {1}
+
+pre-push:
+  commands:
+    check:
+      run: just check-pre-push

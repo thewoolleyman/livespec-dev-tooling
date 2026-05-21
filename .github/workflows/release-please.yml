@@ -1,0 +1,42 @@
+# release-please.yml — semver-managed releases via Conventional Commits.
+#
+# Authority: livespec/SPECIFICATION/contracts.md §"Plugin versioning"
+#   — the documented mechanism is release-please from per-commit
+#   Conventional Commits via the release-please-action GitHub Action.
+#   The same mechanism applies to this sibling library; livespec-core
+#   has not yet wired its own release-please.yml as of v070, and
+#   livespec-dev-tooling is the first livespec-governed repo to do so.
+#
+# Behavior: on every push to master, release-please opens (or updates)
+# a release PR carrying the next-version bump per Conventional
+# Commits → semver mapping:
+#
+#   feat:                                   → MINOR
+#   fix:                                    → PATCH
+#   feat!:, fix!:, BREAKING CHANGE: footer  → MAJOR
+#   chore, docs, style, refactor, perf,     → no bump
+#   test, build, ci, revert
+#
+# When the release PR merges, release-please tags vX.Y.Z and creates
+# a GitHub Release. Phase G.5 of epic li-fgqgnk cuts the first v0.1.0
+# tag this way.
+
+name: Release Please
+
+on:
+  push:
+    branches: [master]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run release-please
+        uses: googleapis/release-please-action@v4
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
