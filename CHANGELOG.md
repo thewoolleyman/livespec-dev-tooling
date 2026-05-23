@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.1.0...v0.1.1) (2026-05-23)
+
+
+### Bug Fixes
+
+* **checks:** recognize sibling-library impl prefixes (mm-mjgigw) ([0e4c81a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0e4c81a97fb8fb42cf12a89ab2e2deac44786743))
+
 ## 0.1.0 (2026-05-21)
 
 
