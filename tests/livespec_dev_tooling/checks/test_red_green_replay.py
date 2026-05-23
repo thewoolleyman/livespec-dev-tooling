@@ -1024,6 +1024,61 @@ def test_classify_staged_recognizes_production_claude_plugin_scripts_paths() -> 
     )
 
 
+def test_classify_staged_recognizes_sibling_library_impl_paths() -> None:
+    """`_classify_staged` buckets sibling-library impl paths correctly.
+
+    Per the cross-repo coordination contract in
+    `livespec/SPECIFICATION/contracts.md` §"Cross-repo coordination —
+    pin-and-bump", the dev-tooling repo's RGR check is consumed by
+    every livespec-governed sibling repo: livespec-runtime,
+    livespec-impl-plaintext, livespec-dev-tooling itself, and future
+    livespec-impl-<X> plugins. Each repo's impl tree lives at a
+    repo-specific prefix:
+
+      - `livespec_runtime/`                          (livespec-runtime)
+      - `livespec_dev_tooling/`                     (livespec-dev-tooling, self)
+      - `.claude-plugin/scripts/livespec_impl_plaintext/`
+                                                    (livespec-impl-plaintext)
+
+    Without these prefixes in `_IMPL_PREFIXES`, `feat:` / `fix:`
+    commits in those repos that touch the package source classify as
+    test-only (no impl bucket), which incorrectly trips the
+    Red-without-Green diagnostic and forces consumers onto a `chore:`
+    workaround. This test pins recognition of all three.
+    """
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "red_green_replay_for_sibling_classify_test",
+        str(_RED_GREEN_REPLAY),
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    paths = [
+        "livespec_runtime/cross_repo/resolve.py",
+        "livespec_dev_tooling/checks/red_green_replay.py",
+        ".claude-plugin/scripts/livespec_impl_plaintext/commands/list_memos.py",
+        "tests/livespec_runtime/test_smoke.py",
+        "README.md",
+    ]
+    _tests_paths, impl_paths = module._classify_staged(paths=paths)  # noqa: SLF001
+    assert "livespec_runtime/cross_repo/resolve.py" in impl_paths, (
+        f"`livespec_runtime/...` path should be in impl bucket; " f"got impl_paths={impl_paths}"
+    )
+    assert "livespec_dev_tooling/checks/red_green_replay.py" in impl_paths, (
+        f"`livespec_dev_tooling/...` path should be in impl bucket; " f"got impl_paths={impl_paths}"
+    )
+    assert ".claude-plugin/scripts/livespec_impl_plaintext/commands/list_memos.py" in impl_paths, (
+        f"`.claude-plugin/scripts/livespec_impl_plaintext/...` path should be in impl bucket; "
+        f"got impl_paths={impl_paths}"
+    )
+    assert (
+        "README.md" not in impl_paths
+    ), f"top-level docs path should NOT be in impl bucket; got impl_paths={impl_paths}"
+
+
 def test_red_green_replay_module_importable_without_running_main() -> None:
     """The check module imports cleanly without invoking main().
 

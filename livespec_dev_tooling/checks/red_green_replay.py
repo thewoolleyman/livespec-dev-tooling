@@ -61,19 +61,34 @@ _EXEMPT_TYPE_RE = re.compile(
     r"^(chore|docs|build|ci|style|test|refactor|perf|revert)" r"(\([^)]+\))?!?:",
 )
 _TESTS_PREFIX = "tests/"
-# Impl-tree prefixes (cycle 2.8 fix). The repo's actual layout
-# is `.claude-plugin/scripts/livespec/...` and
-# `.claude-plugin/scripts/bin/...`, NOT bare `livespec/` /
-# `bin/`. Cycle 2.8 added the production prefixes alongside
-# the legacy bare prefixes (kept for paired-test fixture
-# compatibility — tmp_path tests synthesize paths like
-# `livespec/foo.py`). Production has no top-level `livespec/`
-# or `bin/` dirs, so the legacy prefixes contribute zero
-# false positives in real repos.
+# Impl-tree prefixes spanning every livespec-governed sibling repo
+# that consumes this check via the pin-and-bump cross-repo mechanism
+# (livespec/SPECIFICATION/contracts.md §"Cross-repo coordination —
+# pin-and-bump"). Each repo's impl tree lives at a repo-specific
+# prefix; without recognition here, `feat:`/`fix:` commits in those
+# repos that touch the package source classify as test-only and
+# incorrectly trip the Red-without-Green diagnostic.
+#
+# livespec (core):             .claude-plugin/scripts/livespec/,
+#                              .claude-plugin/scripts/bin/, dev-tooling/
+# livespec-runtime:            livespec_runtime/
+# livespec-dev-tooling (self): livespec_dev_tooling/
+# livespec-impl-plaintext:     .claude-plugin/scripts/livespec_impl_plaintext/
+#                              (bin/ for impl-plaintext is covered by
+#                              .claude-plugin/scripts/bin/)
+#
+# Bare `livespec/` / `bin/` legacy prefixes remain for paired-test
+# fixture compatibility — tmp_path tests synthesize paths like
+# `livespec/foo.py`. Production has no top-level `livespec/` or
+# `bin/` dirs, so the legacy prefixes contribute zero false
+# positives in real repos.
 _IMPL_PREFIXES = (
     ".claude-plugin/scripts/livespec/",
+    ".claude-plugin/scripts/livespec_impl_plaintext/",
     ".claude-plugin/scripts/bin/",
     "livespec/",
+    "livespec_runtime/",
+    "livespec_dev_tooling/",
     "bin/",
     "dev-tooling/",
 )
