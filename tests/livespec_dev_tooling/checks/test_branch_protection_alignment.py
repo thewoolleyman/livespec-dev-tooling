@@ -13,8 +13,6 @@ import sys
 import textwrap
 from pathlib import Path
 
-import pytest
-
 __all__: list[str] = []
 
 
@@ -88,21 +86,15 @@ def test_gh_unavailable_skips_gracefully(*, tmp_path: Path) -> None:
     assert "gh CLI not on PATH" in result.stderr
 
 
-@pytest.mark.skip(
-    reason=(
-        "Path-portability follow-up: the check hardcodes "
-        "_REPO_OWNER_REPO = 'thewoolleyman/livespec' so this test only "
-        "passes against livespec-core's branch protection. Migrating "
-        "the check to read repo from `git remote get-url origin` is a "
-        "follow-up to epic li-fgqgnk Phase G.4."
-    )
-)
-def test_real_repo_passes(*, tmp_path: Path) -> None:  # noqa: ARG001  # pragma: no cover
+def test_real_repo_passes(*, tmp_path: Path) -> None:  # noqa: ARG001
     """Run the check against the real repo cwd; expect exit 0.
 
-    Authenticated `gh` produces either pass (no missing-from-ci.yml)
-    or warning-only output. With `gh` unauthenticated, the check
-    still exits 0 (graceful skip). Either way: exit 0.
+    With the path-portability refactor, the check resolves the
+    target repository from `git remote get-url origin` rather than
+    a hardcoded constant. Authenticated `gh` produces either pass
+    (no missing-from-ci.yml) or warning-only output. With `gh`
+    unauthenticated OR with no branch protection set on master,
+    the check still exits 0 (graceful skip). Either way: exit 0.
     """
     result = _run_check(cwd=_REPO_ROOT)
     assert result.returncode == 0, (
@@ -130,14 +122,40 @@ def _setup_repo_with_ci_yml(*, tmp_path: Path, matrix_targets: list[str]) -> Non
     _ = (workflows / "ci.yml").write_text(ci_yml, encoding="utf-8")
 
 
-def _install_fake_gh(*, tmp_path: Path, stdout: str = "[]", returncode: int = 0) -> str:
-    """Install a fake `gh` shell stub at tmp_path/bin/gh, return PATH including it."""
+def _install_fake_gh(
+    *,
+    tmp_path: Path,
+    stdout: str = "[]",
+    returncode: int = 0,
+    git_origin_url: str = "https://github.com/test-owner/test-repo.git",
+    git_returncode: int = 0,
+) -> str:
+    """Install fake `gh` + `git` shell stubs at tmp_path/bin, return PATH including it.
+
+    Both stubs are needed because the check resolves its target
+    repository identifier from `git remote get-url origin` before
+    invoking `gh api`. The git stub responds to `git remote get-url
+    origin` with `git_origin_url` and the given `git_returncode`;
+    every other git invocation exits 0 as a no-op so other code
+    paths (e.g., subprocess-cov instrumentation hooks) are unaffected.
+    """
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
     gh_path = bin_dir / "gh"
-    script = "#!/bin/sh\n" f"cat <<'STUB_EOF'\n{stdout}\nSTUB_EOF\n" f"exit {returncode}\n"
-    _ = gh_path.write_text(script, encoding="utf-8")
+    gh_script = "#!/bin/sh\n" f"cat <<'STUB_EOF'\n{stdout}\nSTUB_EOF\n" f"exit {returncode}\n"
+    _ = gh_path.write_text(gh_script, encoding="utf-8")
     gh_path.chmod(0o755)
+    git_path = bin_dir / "git"
+    git_script = (
+        "#!/bin/sh\n"
+        'if [ "$1" = "remote" ] && [ "$2" = "get-url" ] && [ "$3" = "origin" ]; then\n'
+        f"  printf '%s\\n' '{git_origin_url}'\n"
+        f"  exit {git_returncode}\n"
+        "fi\n"
+        "exit 0\n"
+    )
+    _ = git_path.write_text(git_script, encoding="utf-8")
+    git_path.chmod(0o755)
     return f"{bin_dir}:/usr/bin:/bin"
 
 
@@ -225,6 +243,45 @@ def test_gh_api_failure_skips_gracefully(*, tmp_path: Path) -> None:
     result = _run_check(cwd=tmp_path, env_path=fake_path)
     assert result.returncode == 0
     assert "gh api call failed" in result.stderr
+
+
+def test_git_remote_failure_skips_gracefully(*, tmp_path: Path) -> None:
+    """git available but `git remote get-url origin` fails → exit 0 with warning.
+
+    Closes the `completed.returncode != 0` branch of
+    `_resolve_owner_repo`: a tmp_path that is not a git work tree
+    (or any other condition that produces a non-zero git exit)
+    MUST skip cleanly rather than fail the check.
+    """
+    _setup_repo_with_ci_yml(tmp_path=tmp_path, matrix_targets=["check-foo"])
+    fake_path = _install_fake_gh(tmp_path=tmp_path, git_returncode=128)
+    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    assert result.returncode == 0, (
+        f"expected exit 0 when git remote fails; got {result.returncode}, "
+        f"stderr={result.stderr!r}"
+    )
+    assert "git remote get-url origin failed" in result.stderr
+
+
+def test_non_github_remote_skips_gracefully(*, tmp_path: Path) -> None:
+    """git returns a non-github.com remote URL → exit 0 with warning.
+
+    Closes the `match is None` branch of `_resolve_owner_repo`:
+    forks hosted on GitLab, self-hosted Gitea, mirrors, etc. fall
+    outside this check's scope and MUST skip cleanly. Uses a
+    gitlab.com URL as the canonical non-github example.
+    """
+    _setup_repo_with_ci_yml(tmp_path=tmp_path, matrix_targets=["check-foo"])
+    fake_path = _install_fake_gh(
+        tmp_path=tmp_path,
+        git_origin_url="https://gitlab.com/some-org/some-repo.git",
+    )
+    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    assert result.returncode == 0, (
+        f"expected exit 0 on non-github remote; got {result.returncode}, "
+        f"stderr={result.stderr!r}"
+    )
+    assert "origin URL did not match github.com pattern" in result.stderr
 
 
 def test_unexpected_payload_shape(*, tmp_path: Path) -> None:

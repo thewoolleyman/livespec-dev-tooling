@@ -209,14 +209,7 @@ omit = [
 ]
 
 [tool.coverage.report]
-# Temporarily 99 (not 100) during the Phase G.4 migration. The
-# gap is in check_coverage_incremental.py (7 lines exercised only
-# by the test_main_passes_against_fully_covered_real_repo_pair
-# test, which is currently skipped pending the path-portability
-# follow-up to epic li-fgqgnk Phase G.4) and one residual branch
-# in branch_protection_alignment.py. Restore to 100 in the path-
-# portability follow-up that parameterizes the affected checks.
-fail_under = 99
+fail_under = 100
 show_missing = true
 skip_covered = false
 exclude_also = [

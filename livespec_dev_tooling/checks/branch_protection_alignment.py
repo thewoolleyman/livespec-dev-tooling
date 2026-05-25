@@ -41,11 +41,19 @@ import structlog  # noqa: E402
 __all__: list[str] = []
 
 
-_REPO_OWNER_REPO = "thewoolleyman/livespec"
 _CI_YML_PATH = Path(".github/workflows/ci.yml")
 _MATRIX_TARGET_LINE = re.compile(r"^\s*-\s*([\w-]+)\s*$")
 _MATRIX_HEADER = re.compile(r"^\s*matrix:\s*$")
 _MATRIX_TARGET_KEY = re.compile(r"^\s*target:\s*$")
+# Match the two canonical github.com remote URL forms emitted by `git remote
+# get-url origin`: `https://github.com/<owner>/<repo>(.git)` and
+# `git@github.com:<owner>/<repo>(.git)`. The library is consumed across
+# every livespec-governed sibling repo, so the consumer's owner/repo
+# identifier MUST come from the local git remote rather than a hardcoded
+# constant (which would have pinned the check to a single repo).
+_REMOTE_URL_PATTERN = re.compile(
+    r"^(?:https?://github\.com/|git@github\.com:)([^/]+)/([^/]+?)(?:\.git)?/?$"
+)
 
 
 def _parse_ci_matrix(*, source: str) -> set[str]:
@@ -82,6 +90,40 @@ def _parse_ci_matrix(*, source: str) -> set[str]:
     return targets
 
 
+def _resolve_owner_repo(*, log: structlog.stdlib.BoundLogger) -> str | None:
+    """Resolve the GitHub owner/repo identifier from `git remote get-url origin`.
+
+    Returns None and logs a warning when git is unavailable, the
+    remote is not set, or the URL does not match the canonical
+    github.com pattern — so the calling check exits 0 cleanly
+    rather than failing in unusual local configurations (no remote,
+    fork remote, gitlab, etc.).
+    """
+    completed = subprocess.run(
+        ["git", "remote", "get-url", "origin"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        log.warning(
+            "git remote get-url origin failed; skipping branch-protection alignment check",
+            stderr=completed.stderr.strip()[:200],
+            hint="run inside a checked-out clone with an `origin` remote configured",
+        )
+        return None
+    url = completed.stdout.strip()
+    match = _REMOTE_URL_PATTERN.match(url)
+    if match is None:
+        log.warning(
+            "origin URL did not match github.com pattern; skipping branch-protection alignment",
+            url=url[:200],
+            hint="branch-protection alignment is github.com-specific",
+        )
+        return None
+    return f"{match.group(1)}/{match.group(2)}"
+
+
 def _fetch_required_contexts(*, log: structlog.stdlib.BoundLogger) -> set[str] | None:
     """Fetch master branch protection's required_status_checks.contexts.
 
@@ -95,9 +137,10 @@ def _fetch_required_contexts(*, log: structlog.stdlib.BoundLogger) -> set[str] |
             hint="install gh CLI or run in CI with GH_TOKEN set",
         )
         return None
-    api_path = (
-        f"repos/{_REPO_OWNER_REPO}/branches/master/protection/required_status_checks/contexts"
-    )
+    owner_repo = _resolve_owner_repo(log=log)
+    if owner_repo is None:
+        return None
+    api_path = f"repos/{owner_repo}/branches/master/protection/required_status_checks/contexts"
     completed = subprocess.run(
         ["gh", "api", api_path],
         capture_output=True,

@@ -79,25 +79,19 @@ def test_check_module_exports_main_callable() -> None:
     ), "check_coverage_incremental.main must be callable per the dev-tooling/checks/ contract"
 
 
-@pytest.mark.skip(
-    reason=(
-        "Path-portability follow-up: my migration script rewrote the "
-        "expected_test path's 'dev-tooling/checks' → 'livespec_dev_tooling/"
-        "checks' but the check module's internal `_resolve_mirror_test_path` "
-        "function still maps the livespec-core source-tree mapping. The "
-        "test will be restored against the new mapping once the function "
-        "is parameterized (follow-up to epic li-fgqgnk Phase G.4)."
-    )
-)
-def test_resolve_mirror_test_for_dev_tooling_checks_pair() -> None:  # pragma: no cover
-    """`dev-tooling/checks/foo.py` resolves to `tests/dev-tooling/checks/test_foo.py`.
+def test_resolve_mirror_test_for_livespec_dev_tooling_checks_pair() -> None:
+    """`livespec_dev_tooling/checks/foo.py` resolves to `tests/livespec_dev_tooling/checks/test_foo.py`.
 
-    Mirror-pairing per v033 D1: the dev-tooling/checks/ tree
-    mirrors to tests/dev-tooling/checks/ with the standard
-    `test_<name>.py` filename convention.
+    Mirror-pairing per v033 D1, applied to this library's own
+    source-tree layout: `livespec_dev_tooling/checks/` mirrors to
+    `tests/livespec_dev_tooling/checks/` with the standard
+    `test_<name>.py` filename convention. The mapping is
+    additive — livespec-core's pre-existing mappings remain
+    so the migrated check still applies to consumers using the
+    original layout.
     """
     module = _load_check_module()
-    impl_path = Path("dev-tooling") / "checks" / "foo.py"
+    impl_path = Path("livespec_dev_tooling") / "checks" / "foo.py"
     expected_test = Path("tests") / "livespec_dev_tooling" / "checks" / "test_foo.py"
     actual_test = module._resolve_mirror_test_path(impl_path=impl_path)  # noqa: SLF001
     assert actual_test == expected_test, (
@@ -261,29 +255,16 @@ def test_main_fails_when_mirror_test_does_not_exist(*, tmp_path: Path) -> None:
     )
 
 
-@pytest.mark.skip(
-    reason=(
-        "Path-portability follow-up: invokes the check against "
-        "`dev-tooling/checks/all_declared.py` (livespec-core's layout). "
-        "In livespec-dev-tooling the equivalent file is at "
-        "`livespec_dev_tooling/checks/all_declared.py`. The check's "
-        "internal `_resolve_mirror_test_path` is hardcoded for "
-        "livespec-core's mapping; both will be parameterized in a "
-        "follow-up to epic li-fgqgnk Phase G.4."
-    )
-)
-def test_main_passes_against_fully_covered_real_repo_pair(  # pragma: no cover
-    *, tmp_path: Path
-) -> None:
-    """End-to-end: invoke the check against `dev-tooling/checks/all_declared.py`.
+def test_main_passes_against_fully_covered_real_repo_pair(*, tmp_path: Path) -> None:
+    """End-to-end: invoke the check against `livespec_dev_tooling/checks/all_declared.py`.
 
-    `all_declared.py` + `tests/dev-tooling/checks/test_all_declared.py`
-    is a known-fully-covered real-repo mirror pair (verified at
-    `2edda62` `just check-coverage` passing 100% per-file). The
-    check is invoked with cwd=_REPO_ROOT (the script reads
+    `livespec_dev_tooling/checks/all_declared.py` +
+    `tests/livespec_dev_tooling/checks/test_all_declared.py` is a
+    known-fully-covered real-repo mirror pair. The check is
+    invoked with cwd=_REPO_ROOT (the script reads
     `<cwd>/<impl_path>` so cwd MUST be the repo root) and
-    `--paths dev-tooling/checks/all_declared.py`. Expected: exit
-    0 and no error diagnostics in stderr.
+    `--paths livespec_dev_tooling/checks/all_declared.py`.
+    Expected: exit 0 and no error diagnostics in stderr.
 
     The `tmp_path` fixture is unused for the assertion but
     accepted to keep the signature consistent with the rest
@@ -297,7 +278,7 @@ def test_main_passes_against_fully_covered_real_repo_pair(  # pragma: no cover
             sys.executable,
             str(_CHECK_PATH),
             "--paths",
-            "dev-tooling/checks/all_declared.py",
+            "livespec_dev_tooling/checks/all_declared.py",
         ],
         cwd=str(_REPO_ROOT),
         capture_output=True,
