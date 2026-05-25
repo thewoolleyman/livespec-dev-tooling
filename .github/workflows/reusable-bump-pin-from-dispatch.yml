@@ -1,0 +1,337 @@
+# reusable-bump-pin-from-dispatch.yml — per-consumer bump-pin handler.
+#
+# Authority: SPECIFICATION/contracts.md §"Cross-repo coordination
+#   automation surface" — specifically the
+#   §"reusable-bump-pin-from-dispatch.yml" subsection (inputs/behavior
+#   including the .vendor.jsonc re-vendoring clause and the zero-pin
+#   no-op clause), §"Pin autodiscovery rules" (the four pin formats
+#   and the hyphen-to-underscore normalization for `.vendor.jsonc`
+#   matching), §"PR commit-message convention" (`chore(deps): bump
+#   <source_repo> pin to <tag>`), §"GitHub App auth model"
+#   (App-token via `actions/create-github-app-token@v1`), and
+#   §"Fallback to known-good pin" (no force-push past failing checks).
+#
+# Dispatch model: invoked by each sibling's own
+# `bump-pin-from-dispatch.yml` shim on
+# `on: repository_dispatch: types: [sibling-released]`. The shim
+# unwraps `client_payload.source_repo`, `client_payload.tag`, and
+# `client_payload.release_url` and threads them as inputs, plus
+# `secrets: inherit`; this workflow then walks the consumer repo via
+# `python -m livespec_dev_tooling.cross_repo.pin_autodiscovery`,
+# edits every matching pin to the new tag (additionally invoking the
+# consumer's `just vendor-update <lib>` recipe when `.vendor.jsonc`
+# carries an entry for the normalized form of `source_repo`), runs
+# `just check`, commits with the `chore(deps):` prefix, and opens an
+# auto-merge PR via the GitHub App token.
+#
+# Consumers invoke this workflow from their own
+# `bump-pin-from-dispatch.yml` shim via
+# `uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-bump-pin-from-dispatch.yml@vX.Y.Z`
+# (with `with: { source_repo: ${{ github.event.client_payload.source_repo }}, ... }`
+# and `secrets: inherit`).
+#
+# Inputs:
+#   source_repo (required) — the publishing repository's short name,
+#     extracted from `client_payload.source_repo`.
+#   tag (required) — the published release tag, extracted from
+#     `client_payload.tag`. Every matching pin is rewritten to this
+#     value before `just check` runs.
+#   release_url (optional, default "") — included in the PR body for
+#     traceability per §"PR commit-message convention".
+#
+# Outputs: none. The opened PR is the surface; CI status against the
+#   new pin is the consumer's own existing branch-protection gates.
+#
+# Secrets (inherited via `secrets: inherit` from the consumer shim):
+#   APP_ID — GitHub App's numeric ID.
+#   APP_PRIVATE_KEY — GitHub App's private key PEM. The minted token
+#     authors the commit + opens the PR; per §"GitHub App auth model"
+#     this is REQUIRED (not GITHUB_TOKEN) so the bump commit re-runs
+#     CI on the PR head SHA without hitting the workflow-recursion
+#     ceiling.
+#
+# Zero-pin no-op clause per §"reusable-bump-pin-from-dispatch.yml":
+#   when autodiscovery surfaces zero matching pins (the consumer does
+#   not depend on `source_repo`), the workflow exits 0 with a
+#   `::notice` annotation explaining the no-op. This is the standard
+#   condition for a sibling that's discoverable via the topic but
+#   doesn't actually consume the publishing repo.
+#
+# Fallback per §"Fallback to known-good pin": this workflow MUST NOT
+#   force-push past a failing `just check`; the failure surfaces on
+#   the PR's status checks and the human contributor handles
+#   resolution per the spec's manual-pin path.
+
+name: reusable-bump-pin-from-dispatch
+
+on:
+  workflow_call:
+    inputs:
+      source_repo:
+        description: Publishing repository short name (from client_payload.source_repo).
+        required: true
+        type: string
+      tag:
+        description: Published release tag (from client_payload.tag) — rewritten into every matching pin.
+        required: true
+        type: string
+      release_url:
+        description: GitHub release page URL (from client_payload.release_url) — included in PR body.
+        required: false
+        type: string
+        default: ""
+    secrets:
+      APP_ID:
+        description: GitHub App numeric ID for the bump-PR App.
+        required: true
+      APP_PRIVATE_KEY:
+        description: GitHub App private key PEM for the bump-PR App.
+        required: true
+
+jobs:
+  bump-pin:
+    name: bump-pin
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mint App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Checkout consumer repo with App token
+        uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
+
+      - name: Checkout livespec-dev-tooling support modules
+        uses: actions/checkout@v4
+        with:
+          repository: thewoolleyman/livespec-dev-tooling
+          path: .livespec-dev-tooling
+          fetch-depth: 1
+
+      - name: Install pinned binaries via mise
+        uses: jdx/mise-action@v2
+
+      - name: Install Python deps via uv
+        run: uv sync --all-groups
+
+      - name: Run pin-autodiscovery for ${{ inputs.source_repo }}
+        id: autodiscover
+        env:
+          SOURCE_REPO: ${{ inputs.source_repo }}
+        run: |
+          set -euo pipefail
+          records=$(uv run --project .livespec-dev-tooling python -m \
+            livespec_dev_tooling.cross_repo.pin_autodiscovery \
+            --root . --source-repo "$SOURCE_REPO")
+          echo "::group::pin-autodiscovery records"
+          echo "$records"
+          echo "::endgroup::"
+          count=$(echo "$records" | jq 'length')
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          {
+            echo 'records<<JSONEOF'
+            echo "$records"
+            echo 'JSONEOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: No-op when zero matching pins
+        if: steps.autodiscover.outputs.count == '0'
+        env:
+          SOURCE_REPO: ${{ inputs.source_repo }}
+        run: |
+          echo "::notice::no pins for $SOURCE_REPO found in this consumer; nothing to bump (spec §reusable-bump-pin-from-dispatch.yml no-op clause)"
+
+      - name: Configure git identity
+        if: steps.autodiscover.outputs.count != '0'
+        env:
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+        run: |
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email "${APP_SLUG}[bot]@users.noreply.github.com"
+
+      - name: Create bump branch
+        if: steps.autodiscover.outputs.count != '0'
+        id: branch
+        env:
+          SOURCE_REPO: ${{ inputs.source_repo }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          branch="chore/bump-${SOURCE_REPO}-${TAG}"
+          git checkout -b "$branch"
+          echo "name=$branch" >> "$GITHUB_OUTPUT"
+
+      - name: Rewrite matching pins to new tag
+        if: steps.autodiscover.outputs.count != '0'
+        env:
+          TAG: ${{ inputs.tag }}
+          RECORDS: ${{ steps.autodiscover.outputs.records }}
+        run: |
+          set -euo pipefail
+          # The autodiscovery walk returns one record per pin with
+          # file_path + pin_key + current_value + pin_format. For each
+          # record, replace the current_value with the new tag. Per
+          # spec §"Pin autodiscovery rules", the rewrite is per-format:
+          #   - livespec_jsonc_compat_pinned: `compat.pinned` jq update
+          #   - pyproject_toml_uv_sources: regex on the `tag = "X"` field
+          #   - vendor_jsonc: `upstream_ref` jq update
+          #   - copier_answers_commit: regex on `_commit:` line
+          echo "$RECORDS" | jq -c '.[]' | while read -r rec; do
+            fmt=$(echo "$rec" | jq -r '.pin_format')
+            file=$(echo "$rec" | jq -r '.file_path')
+            key=$(echo "$rec" | jq -r '.pin_key')
+            current=$(echo "$rec" | jq -r '.current_value')
+            case "$fmt" in
+              livespec_jsonc_compat_pinned)
+                # JSONC tolerates // comments; jq doesn't, so we use a
+                # sed-style targeted rewrite that preserves comments.
+                python - <<PYEOF
+          import re
+          import pathlib
+          p = pathlib.Path("$file")
+          text = p.read_text(encoding="utf-8")
+          # Match the pinned field inside the named top-level block.
+          # The block is identified by "$key": { ... "pinned": "OLD"  ...
+          pattern = re.compile(
+              r'("' + re.escape("$key") + r'"\s*:\s*\{[^}]*?"pinned"\s*:\s*")' +
+              re.escape("$current") +
+              r'(")',
+              re.DOTALL,
+          )
+          new_text, n = pattern.subn(r'\1' + "$TAG" + r'\2', text, count=1)
+          if n != 1:
+              raise SystemExit(f"failed to rewrite pinned for $key in $file")
+          p.write_text(new_text, encoding="utf-8")
+          PYEOF
+                ;;
+              pyproject_toml_uv_sources)
+                # Rewrite tag = "OLD" within the matching entry line.
+                python - <<PYEOF
+          import re
+          import pathlib
+          p = pathlib.Path("$file")
+          text = p.read_text(encoding="utf-8")
+          pattern = re.compile(
+              r'(^' + re.escape("$key") + r'\s*=\s*\{[^}]*?tag\s*=\s*")' +
+              re.escape("$current") +
+              r'(")',
+              re.MULTILINE,
+          )
+          new_text, n = pattern.subn(r'\1' + "$TAG" + r'\2', text, count=1)
+          if n != 1:
+              raise SystemExit(f"failed to rewrite tag for $key in $file")
+          p.write_text(new_text, encoding="utf-8")
+          PYEOF
+                ;;
+              vendor_jsonc)
+                python - <<PYEOF
+          import re
+          import pathlib
+          p = pathlib.Path("$file")
+          text = p.read_text(encoding="utf-8")
+          pattern = re.compile(
+              r'("name"\s*:\s*"' + re.escape("$key") + r'"[^}]*?"upstream_ref"\s*:\s*")' +
+              re.escape("$current") +
+              r'(")',
+              re.DOTALL,
+          )
+          new_text, n = pattern.subn(r'\1' + "$TAG" + r'\2', text, count=1)
+          if n != 1:
+              raise SystemExit(f"failed to rewrite upstream_ref for $key in $file")
+          p.write_text(new_text, encoding="utf-8")
+          PYEOF
+                ;;
+              copier_answers_commit)
+                python - <<PYEOF
+          import re
+          import pathlib
+          p = pathlib.Path("$file")
+          text = p.read_text(encoding="utf-8")
+          pattern = re.compile(r'^_commit\s*:\s*.*$', re.MULTILINE)
+          new_text, n = pattern.subn('_commit: ' + "$TAG", text, count=1)
+          if n != 1:
+              raise SystemExit(f"failed to rewrite _commit in $file")
+          p.write_text(new_text, encoding="utf-8")
+          PYEOF
+                ;;
+              unrecognized)
+                echo "::warning::skipping unrecognized pin in $file"
+                ;;
+              *)
+                echo "::error::unhandled pin_format '$fmt' for $file (pin_key=$key)"
+                exit 1
+                ;;
+            esac
+          done
+
+      - name: Re-vendor when .vendor.jsonc carries the source
+        if: steps.autodiscover.outputs.count != '0'
+        env:
+          SOURCE_REPO: ${{ inputs.source_repo }}
+          RECORDS: ${{ steps.autodiscover.outputs.records }}
+        run: |
+          set -euo pipefail
+          # Per §"reusable-bump-pin-from-dispatch.yml": when
+          # `.vendor.jsonc` carries an entry for the normalized form of
+          # `source_repo`, invoke `just vendor-update <lib>` so the
+          # re-vendoring lands atomically in the same commit. The
+          # normalized name is the `pin_key` of the `vendor_jsonc`
+          # record (already hyphen-to-underscore normalized).
+          vendor_keys=$(echo "$RECORDS" | jq -r '.[] | select(.pin_format == "vendor_jsonc") | .pin_key')
+          if [[ -z "$vendor_keys" ]]; then
+            echo "::notice::no .vendor.jsonc entry for $SOURCE_REPO; skipping vendor-update"
+            exit 0
+          fi
+          for lib in $vendor_keys; do
+            echo "::notice::running just vendor-update $lib"
+            just vendor-update "$lib"
+          done
+
+      - name: just check
+        if: steps.autodiscover.outputs.count != '0'
+        run: just check
+
+      - name: Commit + push bump branch
+        if: steps.autodiscover.outputs.count != '0'
+        env:
+          SOURCE_REPO: ${{ inputs.source_repo }}
+          TAG: ${{ inputs.tag }}
+          BRANCH: ${{ steps.branch.outputs.name }}
+        run: |
+          set -euo pipefail
+          # Per §"PR commit-message convention": `chore(deps):` prefix
+          # is REQUIRED so release-please does NOT cut a version bump
+          # from this commit (which would trigger another round of
+          # bump PRs in every sibling — the cycle the convention
+          # prevents).
+          git add -A
+          git commit -m "chore(deps): bump ${SOURCE_REPO} pin to ${TAG}"
+          git push -u origin "$BRANCH"
+
+      - name: Open auto-merge PR
+        if: steps.autodiscover.outputs.count != '0'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          SOURCE_REPO: ${{ inputs.source_repo }}
+          TAG: ${{ inputs.tag }}
+          RELEASE_URL: ${{ inputs.release_url }}
+          BRANCH: ${{ steps.branch.outputs.name }}
+        run: |
+          set -euo pipefail
+          # Per §"PR commit-message convention": title carries the
+          # same `chore(deps): bump ...` form. Body carries the
+          # release_url for traceability.
+          body=$(printf 'Automated bump of %s pin to %s.\n\nRelease: %s\n\nOpened by the cross-repo coordination automation surface per `livespec-dev-tooling/SPECIFICATION/contracts.md` §"Cross-repo coordination automation surface".\n' \
+            "$SOURCE_REPO" "$TAG" "$RELEASE_URL")
+          gh pr create \
+            --title "chore(deps): bump ${SOURCE_REPO} pin to ${TAG}" \
+            --body "$body" \
+            --head "$BRANCH" \
+            --base master
+          gh pr merge "$BRANCH" --auto --squash || \
+            echo "::warning::could not enable auto-merge (branch protection may require additional setup); PR remains open"

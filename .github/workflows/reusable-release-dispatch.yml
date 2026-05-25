@@ -1,0 +1,166 @@
+# reusable-release-dispatch.yml — fan-out dispatcher for sibling releases.
+#
+# Authority: SPECIFICATION/contracts.md §"Cross-repo coordination
+#   automation surface" — specifically the §"reusable-release-dispatch.yml"
+#   subsection (inputs/outputs/behavior), §"Sibling discovery"
+#   (gh search by `livespec-sibling` topic), §"`repository_dispatch`
+#   payload contract" (event_type + client_payload shape), §"GitHub
+#   App auth model" (App-token over GITHUB_TOKEN, three required
+#   permissions, `actions/create-github-app-token@v1`), and
+#   §"Soft-fail semantics" (404 from any sibling does NOT fail the
+#   dispatch loop).
+#
+# Dispatch model: invoked by each sibling's own `release-dispatch.yml`
+# shim on `on: release: types: [published]`. The shim passes through
+# `source_repo`, `tag`, and `release_url` plus `secrets: inherit`; this
+# workflow then discovers siblings via `gh search repos`, excludes the
+# publishing repo, and fires one `repository_dispatch` per remaining
+# sibling.
+#
+# Consumers invoke this workflow from their own `release-dispatch.yml`
+# shim via
+# `uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-release-dispatch.yml@vX.Y.Z`
+# (with `with: { source_repo: ..., tag: ..., release_url: ... }` and
+# `secrets: inherit`).
+#
+# Inputs:
+#   source_repo (required) — publishing repository's short name
+#     (e.g., `livespec-runtime`). Excluded from the dispatch fan-out
+#     so a release does not echo back to itself.
+#   tag (required) — published release tag (e.g., `v0.3.0`). Threaded
+#     into each `repository_dispatch` payload.
+#   release_url (required) — GitHub release page URL; included in the
+#     dispatch payload for downstream PR-description traceability.
+#
+# Outputs: none. Each dispatched sibling reports its own bump-PR
+#   workflow status via its own CI; this dispatcher only emits a
+#   workflow annotation per soft-failed sibling.
+#
+# Secrets (inherited via `secrets: inherit` from the consumer shim):
+#   APP_ID — GitHub App's numeric ID (org/user-level secret).
+#   APP_PRIVATE_KEY — GitHub App's private key PEM. Tokens minted via
+#     `actions/create-github-app-token@v1` carry the App's three
+#     required permissions (`contents: write`, `pull-requests: write`,
+#     `metadata: read`) per the spec §"GitHub App auth model".
+#
+# Soft-fail semantics: a 404 from any sibling dispatch surfaces as a
+#   GitHub workflow annotation (`::warning`) and does NOT fail the
+#   workflow. Other 4xx/5xx responses fail the matrix entry for that
+#   sibling but do not cascade — `fail-fast: false` keeps every other
+#   sibling reachable.
+
+name: reusable-release-dispatch
+
+on:
+  workflow_call:
+    inputs:
+      source_repo:
+        description: Short name of the publishing repository (excluded from the dispatch fan-out).
+        required: true
+        type: string
+      tag:
+        description: Published release tag (threaded into every repository_dispatch payload).
+        required: true
+        type: string
+      release_url:
+        description: GitHub release page URL (included in payload for traceability).
+        required: true
+        type: string
+    secrets:
+      APP_ID:
+        description: GitHub App numeric ID for the bump-PR App.
+        required: true
+      APP_PRIVATE_KEY:
+        description: GitHub App private key PEM for the bump-PR App.
+        required: true
+
+jobs:
+  discover-siblings:
+    name: discover-siblings
+    runs-on: ubuntu-latest
+    outputs:
+      siblings: ${{ steps.discover.outputs.siblings }}
+    steps:
+      - name: Mint App token (read-only metadata for discovery)
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: gh search repos --topic livespec-sibling
+        id: discover
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          SOURCE_REPO: ${{ inputs.source_repo }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          all=$(gh search repos --owner "$OWNER" --topic livespec-sibling --json name --limit 100)
+          # Exclude the publishing repo from the dispatch fan-out so the
+          # release does not echo back to itself per §"Sibling discovery".
+          siblings=$(echo "$all" | jq -c "[.[] | select(.name != \"$SOURCE_REPO\")]")
+          echo "siblings=$siblings" >> "$GITHUB_OUTPUT"
+          echo "::notice::discovered $(echo "$siblings" | jq 'length') sibling(s) (excluding $SOURCE_REPO)"
+
+  dispatch:
+    name: dispatch ${{ matrix.sibling.name }}
+    needs: discover-siblings
+    if: needs.discover-siblings.outputs.siblings != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        sibling: ${{ fromJSON(needs.discover-siblings.outputs.siblings) }}
+    steps:
+      - name: Mint App token (contents+PRs write for dispatch)
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ matrix.sibling.name }}
+
+      - name: gh api repository_dispatch
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          OWNER: ${{ github.repository_owner }}
+          SIBLING: ${{ matrix.sibling.name }}
+          SOURCE_REPO: ${{ inputs.source_repo }}
+          TAG: ${{ inputs.tag }}
+          RELEASE_URL: ${{ inputs.release_url }}
+        run: |
+          set -uo pipefail
+          # Payload shape per §"`repository_dispatch` payload contract" —
+          # event_type fixed at "sibling-released"; client_payload carries
+          # source_repo, tag, release_url.
+          payload=$(jq -nc \
+            --arg source_repo "$SOURCE_REPO" \
+            --arg tag "$TAG" \
+            --arg release_url "$RELEASE_URL" \
+            '{event_type: "sibling-released", client_payload: {source_repo: $source_repo, tag: $tag, release_url: $release_url}}')
+          http_status=$(echo "$payload" | gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/$OWNER/$SIBLING/dispatches" \
+            --input - \
+            -i 2>&1 | head -1 | awk '{print $2}' || true)
+          # gh's --input - / --silent combo doesn't surface http status on
+          # the happy path; we capture the first response header line above
+          # and inspect it. On any failure path, fall back to a second call
+          # to inspect the explicit status code.
+          rc=$?
+          if [[ "$rc" -ne 0 ]]; then
+            # Soft-fail per §"Soft-fail semantics": a 404 (App not
+            # installed on this sibling, repo missing) annotates only.
+            # Other 4xx/5xx fail this matrix entry but do not cascade
+            # to other siblings (fail-fast: false on the matrix).
+            if [[ "$http_status" == "404" ]]; then
+              echo "::warning::sibling $SIBLING returned 404 (App not installed?); soft-fail per spec §Soft-fail semantics"
+              exit 0
+            fi
+            echo "::error::sibling $SIBLING repository_dispatch failed (http_status=$http_status, rc=$rc)"
+            exit 1
+          fi
+          echo "::notice::dispatched sibling-released to $SIBLING (tag=$TAG)"

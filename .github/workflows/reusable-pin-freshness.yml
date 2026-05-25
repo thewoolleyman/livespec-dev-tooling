@@ -1,0 +1,384 @@
+# reusable-pin-freshness.yml — periodic safety-net pin-staleness scan.
+#
+# Authority: SPECIFICATION/contracts.md §"Cross-repo coordination
+#   automation surface" — specifically the §"reusable-pin-freshness.yml"
+#   subsection (inputs/behavior including the `staleness_threshold_releases`
+#   default of 1), §"Pin-freshness threshold defaults" (the daily
+#   cadence recommendation), §"Pin autodiscovery rules" (the four
+#   covered formats), §"PR commit-message convention" (`chore(deps):`
+#   prefix), §"GitHub App auth model" (App-token auth), and
+#   §"Fallback to known-good pin" (no force-push past failing checks).
+#
+# Dispatch model: invoked by each sibling's own `pin-freshness.yml`
+# shim on `on: schedule: cron: ...` (consumer-owned cadence; spec
+# recommends daily at 13:00 UTC). The shim threads
+# `staleness_threshold_releases` (defaulting to 1) and `secrets:
+# inherit`; this workflow runs pin-autodiscovery (all sources),
+# queries each discovered source's latest release tag via `gh release
+# view --json tagName`, and opens a bump PR per stale `(source_repo,
+# current_pin, latest_tag)` triple.
+#
+# Consumers invoke this workflow from their own `pin-freshness.yml`
+# shim via
+# `uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-pin-freshness.yml@vX.Y.Z`
+# (with optional `with: { staleness_threshold_releases: N }` override
+# and `secrets: inherit`).
+#
+# Inputs:
+#   staleness_threshold_releases (optional, default `1`) — the number
+#     of intermediate releases beyond which a pin is considered stale
+#     and a bump PR is opened. Default of 1 means any pin one or more
+#     releases behind the latest tag triggers a PR per spec
+#     §"Pin-freshness threshold defaults".
+#
+# Outputs: none. Each opened PR is the surface; CI status against the
+#   new pin is the consumer's own existing branch-protection gates.
+#
+# Secrets (inherited via `secrets: inherit` from the consumer shim):
+#   APP_ID — GitHub App's numeric ID.
+#   APP_PRIVATE_KEY — GitHub App's private key PEM.
+#
+# Sub-workflow choice (header-documented per the heavyweight authored
+# skill's "document choice in the header" requirement): the staleness
+# scan INLINES the bump-PR-opening logic from
+# `reusable-bump-pin-from-dispatch.yml` rather than invoking that
+# workflow as a `uses:`-style sub-workflow. The reason is that
+# GitHub-Actions reusable workflows can only be invoked at the JOB
+# level via `uses:`, not at the STEP level. A matrix-fan-out style
+# call from freshness into bump-pin-from-dispatch would require
+# per-source dynamic-job creation, which adds an indirection and a
+# pair of workflow_run hops without simplifying the surface. The
+# inline path here keeps the staleness scan self-contained and reuses
+# the identical pin-rewrite case-block as a copy of the bump
+# workflow's step body. The rewrite logic SHOULD be kept in sync; a
+# future propose-change cycle may consolidate both workflows' rewrite
+# steps into a shared composite Action under `.github/actions/`.
+#
+# Fallback per §"Fallback to known-good pin": this workflow MUST NOT
+#   force-push past a failing `just check`; the failure surfaces on
+#   the PR's status checks per the spec's manual-pin path.
+
+name: reusable-pin-freshness
+
+on:
+  workflow_call:
+    inputs:
+      staleness_threshold_releases:
+        description: Number of releases behind latest before a bump PR is opened.
+        required: false
+        type: number
+        default: 1
+    secrets:
+      APP_ID:
+        description: GitHub App numeric ID for the bump-PR App.
+        required: true
+      APP_PRIVATE_KEY:
+        description: GitHub App private key PEM for the bump-PR App.
+        required: true
+
+jobs:
+  scan:
+    name: scan-pin-freshness
+    runs-on: ubuntu-latest
+    outputs:
+      stale: ${{ steps.evaluate.outputs.stale }}
+    steps:
+      - name: Mint App token (read-only for scan)
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Checkout consumer repo
+        uses: actions/checkout@v4
+
+      - name: Checkout livespec-dev-tooling support modules
+        uses: actions/checkout@v4
+        with:
+          repository: thewoolleyman/livespec-dev-tooling
+          path: .livespec-dev-tooling
+          fetch-depth: 1
+
+      - name: Install pinned binaries via mise
+        uses: jdx/mise-action@v2
+
+      - name: Install Python deps via uv
+        run: uv sync --all-groups
+
+      - name: Run pin-autodiscovery (all sources)
+        id: autodiscover
+        run: |
+          set -euo pipefail
+          records=$(uv run --project .livespec-dev-tooling python -m \
+            livespec_dev_tooling.cross_repo.pin_autodiscovery --root .)
+          echo "::group::pin-autodiscovery records (all sources)"
+          echo "$records"
+          echo "::endgroup::"
+          {
+            echo 'records<<JSONEOF'
+            echo "$records"
+            echo 'JSONEOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Query latest tag per discovered source and evaluate staleness
+        id: evaluate
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          OWNER: ${{ github.repository_owner }}
+          RECORDS: ${{ steps.autodiscover.outputs.records }}
+          STALENESS_THRESHOLD: ${{ inputs.staleness_threshold_releases }}
+        run: |
+          set -euo pipefail
+          # Build a `(source_repo, current_pin, latest_tag)` triple per
+          # record. Multiple records can share a source_repo (e.g., a
+          # consumer with the same source pinned in both pyproject.toml
+          # and .vendor.jsonc); we still emit one bump-PR-trigger
+          # entry per source_repo, deferring the per-record rewrite to
+          # the bump step below.
+          seen_sources=$(echo "$RECORDS" | jq -r '.[].source_repo' | sort -u | grep -v '^$' || true)
+          stale=()
+          for source in $seen_sources; do
+            latest=$(gh release view --repo "$OWNER/$source" --json tagName -q .tagName 2>/dev/null || true)
+            if [[ -z "$latest" ]]; then
+              echo "::warning::could not query latest release for $OWNER/$source (no releases yet, App missing, or repo not found); skipping"
+              continue
+            fi
+            current=$(echo "$RECORDS" | jq -r --arg s "$source" '[.[] | select(.source_repo == $s)] | .[0].current_value')
+            if [[ "$current" == "$latest" ]]; then
+              echo "::notice::$source pinned at $current, already current"
+              continue
+            fi
+            # Staleness measure: rough proxy via tag-list ordinal
+            # distance. The exact ordinal is not load-bearing — the
+            # spec mandates "at least staleness_threshold_releases
+            # ahead". With default 1, any tag mismatch qualifies.
+            # Higher thresholds let a consumer tolerate brief drift
+            # windows without noise.
+            ordinal_distance=$(gh release list --repo "$OWNER/$source" --limit 100 \
+              --json tagName -q '.[].tagName' \
+              | awk -v current="$current" 'BEGIN{n=0} {if($0==current){print n; exit} n++}' \
+              || echo "$STALENESS_THRESHOLD")
+            if [[ -z "$ordinal_distance" ]]; then
+              ordinal_distance="$STALENESS_THRESHOLD"
+            fi
+            if (( ordinal_distance >= STALENESS_THRESHOLD )); then
+              echo "::notice::$source stale: current=$current latest=$latest distance=$ordinal_distance"
+              stale+=("$(jq -nc --arg source_repo "$source" --arg tag "$latest" '{source_repo: $source_repo, tag: $tag}')")
+            fi
+          done
+          if [[ ${#stale[@]} -eq 0 ]]; then
+            echo "stale=[]" >> "$GITHUB_OUTPUT"
+          else
+            joined=$(printf '%s\n' "${stale[@]}" | jq -cs '.')
+            echo "stale=$joined" >> "$GITHUB_OUTPUT"
+          fi
+
+  open-bump-pr:
+    name: open-bump-pr ${{ matrix.target.source_repo }}
+    needs: scan
+    if: needs.scan.outputs.stale != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.scan.outputs.stale) }}
+    steps:
+      - name: Mint App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Checkout consumer repo with App token
+        uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
+
+      - name: Checkout livespec-dev-tooling support modules
+        uses: actions/checkout@v4
+        with:
+          repository: thewoolleyman/livespec-dev-tooling
+          path: .livespec-dev-tooling
+          fetch-depth: 1
+
+      - name: Install pinned binaries via mise
+        uses: jdx/mise-action@v2
+
+      - name: Install Python deps via uv
+        run: uv sync --all-groups
+
+      - name: Re-run pin-autodiscovery for ${{ matrix.target.source_repo }}
+        id: autodiscover
+        env:
+          SOURCE_REPO: ${{ matrix.target.source_repo }}
+        run: |
+          set -euo pipefail
+          records=$(uv run --project .livespec-dev-tooling python -m \
+            livespec_dev_tooling.cross_repo.pin_autodiscovery \
+            --root . --source-repo "$SOURCE_REPO")
+          {
+            echo 'records<<JSONEOF'
+            echo "$records"
+            echo 'JSONEOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Configure git identity
+        env:
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+        run: |
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email "${APP_SLUG}[bot]@users.noreply.github.com"
+
+      - name: Create bump branch
+        id: branch
+        env:
+          SOURCE_REPO: ${{ matrix.target.source_repo }}
+          TAG: ${{ matrix.target.tag }}
+        run: |
+          set -euo pipefail
+          branch="chore/freshness-bump-${SOURCE_REPO}-${TAG}"
+          git checkout -b "$branch"
+          echo "name=$branch" >> "$GITHUB_OUTPUT"
+
+      - name: Rewrite matching pins to new tag
+        env:
+          TAG: ${{ matrix.target.tag }}
+          RECORDS: ${{ steps.autodiscover.outputs.records }}
+        run: |
+          set -euo pipefail
+          # Identical case-block to reusable-bump-pin-from-dispatch.yml's
+          # rewrite step. Kept inline per the header §"Sub-workflow
+          # choice" rationale.
+          echo "$RECORDS" | jq -c '.[]' | while read -r rec; do
+            fmt=$(echo "$rec" | jq -r '.pin_format')
+            file=$(echo "$rec" | jq -r '.file_path')
+            key=$(echo "$rec" | jq -r '.pin_key')
+            current=$(echo "$rec" | jq -r '.current_value')
+            case "$fmt" in
+              livespec_jsonc_compat_pinned)
+                python - <<PYEOF
+          import re
+          import pathlib
+          p = pathlib.Path("$file")
+          text = p.read_text(encoding="utf-8")
+          pattern = re.compile(
+              r'("' + re.escape("$key") + r'"\s*:\s*\{[^}]*?"pinned"\s*:\s*")' +
+              re.escape("$current") +
+              r'(")',
+              re.DOTALL,
+          )
+          new_text, n = pattern.subn(r'\1' + "$TAG" + r'\2', text, count=1)
+          if n != 1:
+              raise SystemExit(f"failed to rewrite pinned for $key in $file")
+          p.write_text(new_text, encoding="utf-8")
+          PYEOF
+                ;;
+              pyproject_toml_uv_sources)
+                python - <<PYEOF
+          import re
+          import pathlib
+          p = pathlib.Path("$file")
+          text = p.read_text(encoding="utf-8")
+          pattern = re.compile(
+              r'(^' + re.escape("$key") + r'\s*=\s*\{[^}]*?tag\s*=\s*")' +
+              re.escape("$current") +
+              r'(")',
+              re.MULTILINE,
+          )
+          new_text, n = pattern.subn(r'\1' + "$TAG" + r'\2', text, count=1)
+          if n != 1:
+              raise SystemExit(f"failed to rewrite tag for $key in $file")
+          p.write_text(new_text, encoding="utf-8")
+          PYEOF
+                ;;
+              vendor_jsonc)
+                python - <<PYEOF
+          import re
+          import pathlib
+          p = pathlib.Path("$file")
+          text = p.read_text(encoding="utf-8")
+          pattern = re.compile(
+              r'("name"\s*:\s*"' + re.escape("$key") + r'"[^}]*?"upstream_ref"\s*:\s*")' +
+              re.escape("$current") +
+              r'(")',
+              re.DOTALL,
+          )
+          new_text, n = pattern.subn(r'\1' + "$TAG" + r'\2', text, count=1)
+          if n != 1:
+              raise SystemExit(f"failed to rewrite upstream_ref for $key in $file")
+          p.write_text(new_text, encoding="utf-8")
+          PYEOF
+                ;;
+              copier_answers_commit)
+                python - <<PYEOF
+          import re
+          import pathlib
+          p = pathlib.Path("$file")
+          text = p.read_text(encoding="utf-8")
+          pattern = re.compile(r'^_commit\s*:\s*.*$', re.MULTILINE)
+          new_text, n = pattern.subn('_commit: ' + "$TAG", text, count=1)
+          if n != 1:
+              raise SystemExit(f"failed to rewrite _commit in $file")
+          p.write_text(new_text, encoding="utf-8")
+          PYEOF
+                ;;
+              unrecognized)
+                echo "::warning::skipping unrecognized pin in $file"
+                ;;
+              *)
+                echo "::error::unhandled pin_format '$fmt' for $file (pin_key=$key)"
+                exit 1
+                ;;
+            esac
+          done
+
+      - name: Re-vendor when .vendor.jsonc carries the source
+        env:
+          SOURCE_REPO: ${{ matrix.target.source_repo }}
+          RECORDS: ${{ steps.autodiscover.outputs.records }}
+        run: |
+          set -euo pipefail
+          vendor_keys=$(echo "$RECORDS" | jq -r '.[] | select(.pin_format == "vendor_jsonc") | .pin_key')
+          if [[ -z "$vendor_keys" ]]; then
+            echo "::notice::no .vendor.jsonc entry for $SOURCE_REPO; skipping vendor-update"
+            exit 0
+          fi
+          for lib in $vendor_keys; do
+            echo "::notice::running just vendor-update $lib"
+            just vendor-update "$lib"
+          done
+
+      - name: just check
+        run: just check
+
+      - name: Commit + push bump branch
+        env:
+          SOURCE_REPO: ${{ matrix.target.source_repo }}
+          TAG: ${{ matrix.target.tag }}
+          BRANCH: ${{ steps.branch.outputs.name }}
+        run: |
+          set -euo pipefail
+          git add -A
+          git commit -m "chore(deps): bump ${SOURCE_REPO} pin to ${TAG}"
+          git push -u origin "$BRANCH"
+
+      - name: Open auto-merge PR
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          SOURCE_REPO: ${{ matrix.target.source_repo }}
+          TAG: ${{ matrix.target.tag }}
+          BRANCH: ${{ steps.branch.outputs.name }}
+        run: |
+          set -euo pipefail
+          body=$(printf 'Automated freshness bump of %s pin to %s.\n\nOpened by the cross-repo coordination automation surface per `livespec-dev-tooling/SPECIFICATION/contracts.md` §"reusable-pin-freshness.yml" — periodic safety-net scan caught a stale pin.\n' \
+            "$SOURCE_REPO" "$TAG")
+          gh pr create \
+            --title "chore(deps): bump ${SOURCE_REPO} pin to ${TAG}" \
+            --body "$body" \
+            --head "$BRANCH" \
+            --base master
+          gh pr merge "$BRANCH" --auto --squash || \
+            echo "::warning::could not enable auto-merge (branch protection may require additional setup); PR remains open"
