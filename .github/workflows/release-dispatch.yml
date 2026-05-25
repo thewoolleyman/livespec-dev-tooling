@@ -1,0 +1,29 @@
+# release-dispatch.yml — fan-out shim for cross-repo coordination.
+#
+# Authority: livespec-dev-tooling SPECIFICATION/contracts.md
+#   §"Cross-repo coordination automation surface" §"reusable-release-dispatch.yml".
+#
+# On every published release in this repo, this shim delegates to the
+# upstream reusable workflow in livespec-dev-tooling. That workflow
+# discovers all sibling repos (via the `livespec-sibling` GitHub topic),
+# excludes this repo from the dispatch matrix, and fires
+# `repository_dispatch` of event_type `sibling-released` to each
+# remaining sibling, carrying the release tag + URL in the payload.
+#
+# The pinned reference is the bootstrap-discipline `master` until the
+# next sibling release triggers a bump-pin PR that rewrites it to a tag.
+
+name: Release dispatch (fan-out to siblings)
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  dispatch:
+    uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-release-dispatch.yml@master
+    secrets: inherit
+    with:
+      source_repo: livespec-dev-tooling
+      tag: ${{ github.event.release.tag_name }}
+      release_url: ${{ github.event.release.html_url }}
