@@ -65,6 +65,7 @@ _SOURCE_TREES_TO_TESTS: dict[Path, Path] = {
     Path(".claude-plugin") / "scripts" / "livespec": Path("tests") / "livespec",
     Path(".claude-plugin") / "scripts" / "bin": Path("tests") / "bin",
     Path("dev-tooling") / "checks": Path("tests") / "dev-tooling" / "checks",
+    Path("livespec_dev_tooling") / "checks": Path("tests") / "livespec_dev_tooling" / "checks",
 }
 # Isolated coverage data file. The script spawns its own pytest as
 # a subprocess; if we let pytest-cov default to `.coverage` the
@@ -111,7 +112,8 @@ def _resolve_mirror_test_path(*, impl_path: Path) -> Path:
         return tests_tree / parent / test_name
     msg = (
         f"impl path {impl_path} is not under any v033 D1 mirror-paired source tree "
-        f"(.claude-plugin/scripts/livespec/, .claude-plugin/scripts/bin/, dev-tooling/checks/)"
+        f"(.claude-plugin/scripts/livespec/, .claude-plugin/scripts/bin/, "
+        f"dev-tooling/checks/, livespec_dev_tooling/checks/)"
     )
     raise ValueError(msg)
 
