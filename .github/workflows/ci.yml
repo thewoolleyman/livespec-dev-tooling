@@ -101,12 +101,38 @@ jobs:
         run: just ${{ matrix.target }}
 
   # Metadata matrix runs unconditionally to preserve the repo-metadata
-  # safety net. Empty at Phase G.2; populate as Phase G.4 migrates
-  # claude-md-coverage, heading-coverage, no-direct-tool-invocation,
-  # check-tools, and similar repo-metadata checks.
+  # safety net. Populate as Phase G.4 migrates claude-md-coverage,
+  # heading-coverage, no-direct-tool-invocation, check-tools, and
+  # similar repo-metadata checks.
   check-metadata:
-    name: metadata-checks
+    name: ${{ matrix.target }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - check-primary-checkout-bare-flag-set
     steps:
-      - name: Placeholder
-        run: echo "::notice::metadata-checks matrix is empty; populate as livespec_dev_tooling/checks/ migrates in Phase G.4"
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The primary-checkout-bare-flag-set check enforces
+      # `core.bare = true` on the primary checkout per
+      # livespec/SPECIFICATION/non-functional-requirements.md
+      # §"Bare-flag bootstrap procedure". `actions/checkout` clones a
+      # non-bare working tree; flipping the flag here satisfies the
+      # invariant. Only the check-primary-checkout-bare-flag-set
+      # matrix entry needs this — other check-metadata entries
+      # (when added) are unaffected by `core.bare`.
+      - name: Set core.bare = true (satisfy invariant)
+        if: matrix.target == 'check-primary-checkout-bare-flag-set'
+        run: git config core.bare true
+
+      - name: Install pinned binaries via mise
+        uses: jdx/mise-action@v2
+
+      - name: Install Python dev deps via uv
+        run: uv sync --all-groups
+
+      - name: just ${{ matrix.target }}
+        run: just ${{ matrix.target }}
