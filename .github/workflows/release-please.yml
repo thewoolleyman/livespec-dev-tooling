@@ -20,6 +20,24 @@
 # When the release PR merges, release-please tags vX.Y.Z and creates
 # a GitHub Release. Phase G.5 of epic li-fgqgnk cuts the first v0.1.0
 # tag this way.
+#
+# Auth model (li-4ereg7):
+#   release-please MUST authenticate via the livespec GitHub App
+#   installation token, NOT via the default `GITHUB_TOKEN`. The
+#   reason is GitHub's workflow-recursion ceiling: releases created
+#   by `github-actions[bot]` (i.e., via `GITHUB_TOKEN`) do NOT fire
+#   the `release: published` event, which means the
+#   `release-dispatch.yml` shim — the entry point of the cross-repo
+#   coordination automation surface (per SPECIFICATION/contracts.md
+#   §"Cross-repo coordination automation surface") — never triggers.
+#   Releases authored via an App installation token DO fire the
+#   event, restoring the fan-out path.
+#
+#   The same rationale and App identity (`livespec-pr-bot`, secrets
+#   APP_ID + APP_PRIVATE_KEY) backs `auto-enable-merge.yml`,
+#   `reusable-bump-pin-from-dispatch.yml`, `reusable-pin-freshness.yml`,
+#   and `reusable-release-dispatch.yml`. See SPECIFICATION/contracts.md
+#   §"GitHub App auth model" for the canonical statement.
 
 name: Release Please
 
@@ -36,8 +54,16 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
+      - name: Mint App installation token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
       - name: Run release-please
         uses: googleapis/release-please-action@v4
         with:
+          token: ${{ steps.app-token.outputs.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
