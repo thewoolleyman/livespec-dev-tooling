@@ -1,0 +1,289 @@
+# bump-pin-rewrite composite Action — shared pin-rewrite + auto-merge-PR body.
+#
+# Authority: SPECIFICATION/contracts.md §"Composite Actions wire contract"
+#   and §"Cross-repo coordination automation surface".
+#
+# Performs the duplicated tail of both reusable bump-PR workflows
+# (reusable-bump-pin-from-dispatch.yml, reusable-pin-freshness.yml):
+#   1. Configure git identity from the supplied App slug.
+#   2. Create a bump branch named `<branch_prefix>-<source_repo>-<tag>`.
+#   3. Rewrite every matching pin in `records` to `tag` per
+#      SPECIFICATION/contracts.md §"Pin autodiscovery rules" — one case
+#      per `pin_format` value, identical to the pre-extraction inline
+#      step block in both reusable workflows.
+#   4. When any record carries `pin_format == "vendor_jsonc"`, invoke
+#      the consumer's `just vendor-update <lib>` recipe so re-vendoring
+#      lands atomically in the same commit per
+#      §"reusable-bump-pin-from-dispatch.yml" .vendor.jsonc clause.
+#   5. Run `just check` — the consumer's full enforcement suite gates
+#      the bump per §"Fallback to known-good pin" (no force-push past
+#      failing checks).
+#   6. Commit with the `chore(deps): bump <source_repo> pin to <tag>`
+#      message per §"PR commit-message convention" and push the branch.
+#   7. Open the bump PR with the supplied title and body, then enable
+#      `--auto --rebase` per
+#      SPECIFICATION/non-functional-requirements.md §"Commit and merge
+#      discipline". The auto-merge-enable failure surfaces as a
+#      `::error::` per li-u7any4 (no swallowed warnings).
+#
+# Secrets cannot be passed to composite Actions directly; the App token
+# and App slug arrive as inputs from the calling reusable workflow,
+# which has already minted both via `actions/create-github-app-token@v1`
+# at a job-scope step.
+#
+# Inputs:
+#   source_repo (required) — publishing repository's short name, used
+#     in branch naming, commit message, and PR title.
+#   tag (required) — published release tag — every matching pin gets
+#     rewritten to this value before `just check` runs.
+#   records (required) — JSON-encoded autodiscovery records array (the
+#     `records` GITHUB_OUTPUT from the caller's autodiscovery step).
+#     Each record is `{pin_format, file_path, pin_key, current_value,
+#     source_repo}` per
+#     `livespec_dev_tooling.cross_repo.pin_autodiscovery`'s contract.
+#   branch_prefix (required) — branch-name prefix; the actual branch is
+#     `<branch_prefix>-<source_repo>-<tag>`. Callers use
+#     `chore/bump` (dispatch path) or `chore/freshness-bump`
+#     (cron-freshness path) to disambiguate the two surfaces.
+#   pr_body (required) — Markdown body for the bump PR. The caller
+#     templates this with its own provenance line (release_url for the
+#     dispatch path; "periodic safety-net scan caught a stale pin" for
+#     the freshness path).
+#   app_token (required) — minted GitHub App installation token from
+#     the caller's `actions/create-github-app-token@v1` step. Used for
+#     both git commit/push auth and `gh pr create`/`gh pr merge`.
+#   app_slug (required) — the App's slug from the same mint step. Used
+#     for the git committer identity (`<slug>[bot]`).
+
+name: bump-pin-rewrite
+description: Shared pin-rewrite + commit + auto-merge-PR body for the two reusable bump-PR workflows.
+
+inputs:
+  source_repo:
+    description: Publishing repository short name (used in branch naming, commit message, and PR title).
+    required: true
+  tag:
+    description: Published release tag — every matching pin gets rewritten to this value before `just check` runs.
+    required: true
+  records:
+    description: JSON-encoded autodiscovery records array from the caller's pin-autodiscovery step.
+    required: true
+  branch_prefix:
+    description: Branch-name prefix (e.g., `chore/bump` or `chore/freshness-bump`); branch becomes `<prefix>-<source_repo>-<tag>`.
+    required: true
+  pr_body:
+    description: Markdown body for the bump PR.
+    required: true
+  app_token:
+    description: Minted GitHub App installation token (from the caller's `actions/create-github-app-token@v1` step).
+    required: true
+  app_slug:
+    description: GitHub App slug (from the same mint step) — used for the git committer identity.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Configure git identity
+      shell: bash
+      env:
+        APP_SLUG: ${{ inputs.app_slug }}
+      run: |
+        git config user.name "${APP_SLUG}[bot]"
+        git config user.email "${APP_SLUG}[bot]@users.noreply.github.com"
+
+    - name: Create bump branch
+      id: branch
+      shell: bash
+      env:
+        SOURCE_REPO: ${{ inputs.source_repo }}
+        TAG: ${{ inputs.tag }}
+        BRANCH_PREFIX: ${{ inputs.branch_prefix }}
+      run: |
+        set -euo pipefail
+        branch="${BRANCH_PREFIX}-${SOURCE_REPO}-${TAG}"
+        git checkout -b "$branch"
+        echo "name=$branch" >> "$GITHUB_OUTPUT"
+
+    - name: Rewrite matching pins to new tag
+      shell: bash
+      env:
+        TAG: ${{ inputs.tag }}
+        RECORDS: ${{ inputs.records }}
+      run: |
+        set -euo pipefail
+        # Per spec §"Pin autodiscovery rules", the rewrite is per-format:
+        #   - livespec_jsonc_compat_pinned: `compat.pinned` targeted rewrite
+        #   - pyproject_toml_uv_sources: regex on the `tag = "X"` field
+        #   - vendor_jsonc: `upstream_ref` targeted rewrite
+        #   - copier_answers_commit: regex on `_commit:` line
+        echo "$RECORDS" | jq -c '.[]' | while read -r rec; do
+          fmt=$(echo "$rec" | jq -r '.pin_format')
+          file=$(echo "$rec" | jq -r '.file_path')
+          key=$(echo "$rec" | jq -r '.pin_key')
+          current=$(echo "$rec" | jq -r '.current_value')
+          case "$fmt" in
+            livespec_jsonc_compat_pinned)
+              python - <<PYEOF
+        import re
+        import pathlib
+        p = pathlib.Path("$file")
+        text = p.read_text(encoding="utf-8")
+        pattern = re.compile(
+            r'("' + re.escape("$key") + r'"\s*:\s*\{[^}]*?"pinned"\s*:\s*")' +
+            re.escape("$current") +
+            r'(")',
+            re.DOTALL,
+        )
+        new_text, n = pattern.subn(r'\1' + "$TAG" + r'\2', text, count=1)
+        if n != 1:
+            raise SystemExit(f"failed to rewrite pinned for $key in $file")
+        p.write_text(new_text, encoding="utf-8")
+        PYEOF
+              ;;
+            pyproject_toml_uv_sources)
+              python - <<PYEOF
+        import re
+        import pathlib
+        p = pathlib.Path("$file")
+        text = p.read_text(encoding="utf-8")
+        pattern = re.compile(
+            r'(^' + re.escape("$key") + r'\s*=\s*\{[^}]*?tag\s*=\s*")' +
+            re.escape("$current") +
+            r'(")',
+            re.MULTILINE,
+        )
+        new_text, n = pattern.subn(r'\1' + "$TAG" + r'\2', text, count=1)
+        if n != 1:
+            raise SystemExit(f"failed to rewrite tag for $key in $file")
+        p.write_text(new_text, encoding="utf-8")
+        PYEOF
+              ;;
+            vendor_jsonc)
+              python - <<PYEOF
+        import re
+        import pathlib
+        p = pathlib.Path("$file")
+        text = p.read_text(encoding="utf-8")
+        pattern = re.compile(
+            r'("name"\s*:\s*"' + re.escape("$key") + r'"[^}]*?"upstream_ref"\s*:\s*")' +
+            re.escape("$current") +
+            r'(")',
+            re.DOTALL,
+        )
+        new_text, n = pattern.subn(r'\1' + "$TAG" + r'\2', text, count=1)
+        if n != 1:
+            raise SystemExit(f"failed to rewrite upstream_ref for $key in $file")
+        p.write_text(new_text, encoding="utf-8")
+        PYEOF
+              ;;
+            copier_answers_commit)
+              python - <<PYEOF
+        import re
+        import pathlib
+        p = pathlib.Path("$file")
+        text = p.read_text(encoding="utf-8")
+        pattern = re.compile(r'^_commit\s*:\s*.*$', re.MULTILINE)
+        new_text, n = pattern.subn('_commit: ' + "$TAG", text, count=1)
+        if n != 1:
+            raise SystemExit(f"failed to rewrite _commit in $file")
+        p.write_text(new_text, encoding="utf-8")
+        PYEOF
+              ;;
+            unrecognized)
+              echo "::warning::skipping unrecognized pin in $file"
+              ;;
+            *)
+              echo "::error::unhandled pin_format '$fmt' for $file (pin_key=$key)"
+              exit 1
+              ;;
+          esac
+        done
+
+    - name: Re-vendor when .vendor.jsonc carries the source
+      shell: bash
+      env:
+        SOURCE_REPO: ${{ inputs.source_repo }}
+        RECORDS: ${{ inputs.records }}
+      run: |
+        set -euo pipefail
+        # Per §"reusable-bump-pin-from-dispatch.yml": when
+        # `.vendor.jsonc` carries an entry for the normalized form of
+        # `source_repo`, invoke `just vendor-update <lib>` so the
+        # re-vendoring lands atomically in the same commit. The
+        # normalized name is the `pin_key` of the `vendor_jsonc`
+        # record (already hyphen-to-underscore normalized).
+        vendor_keys=$(echo "$RECORDS" | jq -r '.[] | select(.pin_format == "vendor_jsonc") | .pin_key')
+        if [[ -z "$vendor_keys" ]]; then
+          echo "::notice::no .vendor.jsonc entry for $SOURCE_REPO; skipping vendor-update"
+          exit 0
+        fi
+        for lib in $vendor_keys; do
+          echo "::notice::running just vendor-update $lib"
+          just vendor-update "$lib"
+        done
+
+    - name: just check
+      shell: bash
+      run: just check
+
+    - name: Commit + push bump branch
+      shell: bash
+      env:
+        SOURCE_REPO: ${{ inputs.source_repo }}
+        TAG: ${{ inputs.tag }}
+        BRANCH: ${{ steps.branch.outputs.name }}
+      run: |
+        set -euo pipefail
+        # Per §"PR commit-message convention": `chore(deps):` prefix is
+        # REQUIRED so release-please does NOT cut a version bump from
+        # this commit (which would trigger another round of bump PRs in
+        # every sibling — the cycle the convention prevents).
+        git add -A
+        git commit -m "chore(deps): bump ${SOURCE_REPO} pin to ${TAG}"
+        git push -u origin "$BRANCH"
+
+    - name: Open auto-merge PR
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.app_token }}
+        SOURCE_REPO: ${{ inputs.source_repo }}
+        TAG: ${{ inputs.tag }}
+        PR_BODY: ${{ inputs.pr_body }}
+        BRANCH: ${{ steps.branch.outputs.name }}
+      run: |
+        set -uo pipefail
+        # Per livespec-dev-tooling SPECIFICATION/non-functional-requirements.md
+        # §"Commit and merge discipline": merge strategy MUST be
+        # rebase-merge so Conventional Commits subjects land intact on
+        # master (release-please reads them). Hence `--rebase`, not
+        # `--squash`.
+        #
+        # Per li-u7any4: the prior `gh pr merge ... --auto --squash ||
+        # echo "::warning::..."` pattern swallowed the merge-enablement
+        # failure, leaving bump PRs open with `autoMergeRequest: null`.
+        # The fix mirrors the canonical
+        # livespec/.github/workflows/auto-enable-merge.yml pattern:
+        # capture stderr, surface the failure as `::error::`, and exit
+        # non-zero so the workflow run summary makes the diagnostic
+        # actionable instead of vanishing into a warning buried among
+        # Node-20-deprecation noise.
+        #
+        # Common causes of merge-enablement failure for the consumer to
+        # investigate when this step fails:
+        #   - Repo `allow_auto_merge` setting is `false`
+        #     (Settings > General > Pull Requests > Allow auto-merge).
+        #   - Branch-protection rules / rulesets on the base branch do
+        #     not require status checks, which `--auto` needs to defer
+        #     the merge until checks pass.
+        gh pr create \
+          --title "chore(deps): bump ${SOURCE_REPO} pin to ${TAG}" \
+          --body "$PR_BODY" \
+          --head "$BRANCH" \
+          --base master
+        if merge_err=$(gh pr merge "$BRANCH" --repo "$GITHUB_REPOSITORY" --auto --rebase 2>&1); then
+          echo "Auto-merge enabled on PR for ${BRANCH} (rebase strategy)"
+        else
+          echo "::error::failed to enable auto-merge on PR for ${BRANCH}: ${merge_err}"
+          exit 1
+        fi
