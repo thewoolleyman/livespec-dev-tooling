@@ -322,7 +322,7 @@ jobs:
           RELEASE_URL: ${{ inputs.release_url }}
           BRANCH: ${{ steps.branch.outputs.name }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
           # Per §"PR commit-message convention": title carries the
           # same `chore(deps): bump ...` form. Body carries the
           # release_url for traceability.
@@ -333,5 +333,32 @@ jobs:
             --body "$body" \
             --head "$BRANCH" \
             --base master
-          gh pr merge "$BRANCH" --auto --squash || \
-            echo "::warning::could not enable auto-merge (branch protection may require additional setup); PR remains open"
+          # Per livespec-dev-tooling SPECIFICATION/non-functional-requirements.md
+          # §"Commit and merge discipline": merge strategy MUST be
+          # rebase-merge so Conventional Commits subjects land intact
+          # on master (release-please reads them). Hence `--rebase`,
+          # not `--squash`.
+          #
+          # Per li-u7any4: the prior `gh pr merge ... --auto --squash
+          # || echo "::warning::..."` pattern swallowed the merge-
+          # enablement failure, leaving bump PRs open with
+          # `autoMergeRequest: null`. The fix mirrors the canonical
+          # livespec/.github/workflows/auto-enable-merge.yml pattern:
+          # capture stderr, surface the failure as `::error::`, and
+          # exit non-zero so the workflow run summary makes the
+          # diagnostic actionable instead of vanishing into a warning
+          # buried among Node-20-deprecation noise.
+          #
+          # Common causes of merge-enablement failure for the
+          # consumer to investigate when this step fails:
+          #   - Repo `allow_auto_merge` setting is `false`
+          #     (Settings > General > Pull Requests > Allow auto-merge).
+          #   - Branch-protection rules / rulesets on the base branch
+          #     do not require status checks, which `--auto` needs to
+          #     defer the merge until checks pass.
+          if merge_err=$(gh pr merge "$BRANCH" --repo "$GITHUB_REPOSITORY" --auto --rebase 2>&1); then
+            echo "Auto-merge enabled on PR for ${BRANCH} (rebase strategy)"
+          else
+            echo "::error::failed to enable auto-merge on PR for ${BRANCH}: ${merge_err}"
+            exit 1
+          fi
