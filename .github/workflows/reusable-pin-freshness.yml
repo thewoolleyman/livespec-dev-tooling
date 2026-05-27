@@ -38,21 +38,14 @@
 #   APP_ID — GitHub App's numeric ID.
 #   APP_PRIVATE_KEY — GitHub App's private key PEM.
 #
-# Sub-workflow choice (header-documented per the heavyweight authored
-# skill's "document choice in the header" requirement): the staleness
-# scan INLINES the bump-PR-opening logic from
-# `reusable-bump-pin-from-dispatch.yml` rather than invoking that
-# workflow as a `uses:`-style sub-workflow. The reason is that
-# GitHub-Actions reusable workflows can only be invoked at the JOB
-# level via `uses:`, not at the STEP level. A matrix-fan-out style
-# call from freshness into bump-pin-from-dispatch would require
-# per-source dynamic-job creation, which adds an indirection and a
-# pair of workflow_run hops without simplifying the surface. The
-# inline path here keeps the staleness scan self-contained and reuses
-# the identical pin-rewrite case-block as a copy of the bump
-# workflow's step body. The rewrite logic SHOULD be kept in sync; a
-# future propose-change cycle may consolidate both workflows' rewrite
-# steps into a shared composite Action under `.github/actions/`.
+# Bump-PR body extraction (per li-b4yiuv): the bump-PR-opening tail —
+# create branch, rewrite matching pins per format, optional
+# vendor-update, `just check`, commit + push, open auto-merge PR — is
+# extracted into the shared composite Action at
+# `.github/actions/bump-pin-rewrite`, which the sibling
+# `reusable-bump-pin-from-dispatch.yml` workflow also consumes. The
+# two workflows previously duplicated the rewrite step body inline,
+# pre-flagged in this header before the extraction landed.
 #
 # Fallback per §"Fallback to known-good pin": this workflow MUST NOT
 #   force-push past a failing `just check`; the failure surfaces on
@@ -225,187 +218,34 @@ jobs:
             echo 'JSONEOF'
           } >> "$GITHUB_OUTPUT"
 
-      - name: Configure git identity
-        env:
-          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
-        run: |
-          git config user.name "${APP_SLUG}[bot]"
-          git config user.email "${APP_SLUG}[bot]@users.noreply.github.com"
-
-      - name: Create bump branch
-        id: branch
+      - name: Compose PR body
+        id: pr_body
         env:
           SOURCE_REPO: ${{ matrix.target.source_repo }}
           TAG: ${{ matrix.target.tag }}
         run: |
           set -euo pipefail
-          branch="chore/freshness-bump-${SOURCE_REPO}-${TAG}"
-          git checkout -b "$branch"
-          echo "name=$branch" >> "$GITHUB_OUTPUT"
-
-      - name: Rewrite matching pins to new tag
-        env:
-          TAG: ${{ matrix.target.tag }}
-          RECORDS: ${{ steps.autodiscover.outputs.records }}
-        run: |
-          set -euo pipefail
-          # Identical case-block to reusable-bump-pin-from-dispatch.yml's
-          # rewrite step. Kept inline per the header §"Sub-workflow
-          # choice" rationale.
-          echo "$RECORDS" | jq -c '.[]' | while read -r rec; do
-            fmt=$(echo "$rec" | jq -r '.pin_format')
-            file=$(echo "$rec" | jq -r '.file_path')
-            key=$(echo "$rec" | jq -r '.pin_key')
-            current=$(echo "$rec" | jq -r '.current_value')
-            case "$fmt" in
-              livespec_jsonc_compat_pinned)
-                python - <<PYEOF
-          import re
-          import pathlib
-          p = pathlib.Path("$file")
-          text = p.read_text(encoding="utf-8")
-          pattern = re.compile(
-              r'("' + re.escape("$key") + r'"\s*:\s*\{[^}]*?"pinned"\s*:\s*")' +
-              re.escape("$current") +
-              r'(")',
-              re.DOTALL,
-          )
-          new_text, n = pattern.subn(r'\1' + "$TAG" + r'\2', text, count=1)
-          if n != 1:
-              raise SystemExit(f"failed to rewrite pinned for $key in $file")
-          p.write_text(new_text, encoding="utf-8")
-          PYEOF
-                ;;
-              pyproject_toml_uv_sources)
-                python - <<PYEOF
-          import re
-          import pathlib
-          p = pathlib.Path("$file")
-          text = p.read_text(encoding="utf-8")
-          pattern = re.compile(
-              r'(^' + re.escape("$key") + r'\s*=\s*\{[^}]*?tag\s*=\s*")' +
-              re.escape("$current") +
-              r'(")',
-              re.MULTILINE,
-          )
-          new_text, n = pattern.subn(r'\1' + "$TAG" + r'\2', text, count=1)
-          if n != 1:
-              raise SystemExit(f"failed to rewrite tag for $key in $file")
-          p.write_text(new_text, encoding="utf-8")
-          PYEOF
-                ;;
-              vendor_jsonc)
-                python - <<PYEOF
-          import re
-          import pathlib
-          p = pathlib.Path("$file")
-          text = p.read_text(encoding="utf-8")
-          pattern = re.compile(
-              r'("name"\s*:\s*"' + re.escape("$key") + r'"[^}]*?"upstream_ref"\s*:\s*")' +
-              re.escape("$current") +
-              r'(")',
-              re.DOTALL,
-          )
-          new_text, n = pattern.subn(r'\1' + "$TAG" + r'\2', text, count=1)
-          if n != 1:
-              raise SystemExit(f"failed to rewrite upstream_ref for $key in $file")
-          p.write_text(new_text, encoding="utf-8")
-          PYEOF
-                ;;
-              copier_answers_commit)
-                python - <<PYEOF
-          import re
-          import pathlib
-          p = pathlib.Path("$file")
-          text = p.read_text(encoding="utf-8")
-          pattern = re.compile(r'^_commit\s*:\s*.*$', re.MULTILINE)
-          new_text, n = pattern.subn('_commit: ' + "$TAG", text, count=1)
-          if n != 1:
-              raise SystemExit(f"failed to rewrite _commit in $file")
-          p.write_text(new_text, encoding="utf-8")
-          PYEOF
-                ;;
-              unrecognized)
-                echo "::warning::skipping unrecognized pin in $file"
-                ;;
-              *)
-                echo "::error::unhandled pin_format '$fmt' for $file (pin_key=$key)"
-                exit 1
-                ;;
-            esac
-          done
-
-      - name: Re-vendor when .vendor.jsonc carries the source
-        env:
-          SOURCE_REPO: ${{ matrix.target.source_repo }}
-          RECORDS: ${{ steps.autodiscover.outputs.records }}
-        run: |
-          set -euo pipefail
-          vendor_keys=$(echo "$RECORDS" | jq -r '.[] | select(.pin_format == "vendor_jsonc") | .pin_key')
-          if [[ -z "$vendor_keys" ]]; then
-            echo "::notice::no .vendor.jsonc entry for $SOURCE_REPO; skipping vendor-update"
-            exit 0
-          fi
-          for lib in $vendor_keys; do
-            echo "::notice::running just vendor-update $lib"
-            just vendor-update "$lib"
-          done
-
-      - name: just check
-        run: just check
-
-      - name: Commit + push bump branch
-        env:
-          SOURCE_REPO: ${{ matrix.target.source_repo }}
-          TAG: ${{ matrix.target.tag }}
-          BRANCH: ${{ steps.branch.outputs.name }}
-        run: |
-          set -euo pipefail
-          git add -A
-          git commit -m "chore(deps): bump ${SOURCE_REPO} pin to ${TAG}"
-          git push -u origin "$BRANCH"
-
-      - name: Open auto-merge PR
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          SOURCE_REPO: ${{ matrix.target.source_repo }}
-          TAG: ${{ matrix.target.tag }}
-          BRANCH: ${{ steps.branch.outputs.name }}
-        run: |
-          set -uo pipefail
           body=$(printf 'Automated freshness bump of %s pin to %s.\n\nOpened by the cross-repo coordination automation surface per `livespec-dev-tooling/SPECIFICATION/contracts.md` §"reusable-pin-freshness.yml" — periodic safety-net scan caught a stale pin.\n' \
             "$SOURCE_REPO" "$TAG")
-          gh pr create \
-            --title "chore(deps): bump ${SOURCE_REPO} pin to ${TAG}" \
-            --body "$body" \
-            --head "$BRANCH" \
-            --base master
-          # Per livespec-dev-tooling SPECIFICATION/non-functional-requirements.md
-          # §"Commit and merge discipline": merge strategy MUST be
-          # rebase-merge so Conventional Commits subjects land intact
-          # on master (release-please reads them). Hence `--rebase`,
-          # not `--squash`.
-          #
-          # Per li-u7any4: the prior `gh pr merge ... --auto --squash
-          # || echo "::warning::..."` pattern swallowed the merge-
-          # enablement failure, leaving bump PRs open with
-          # `autoMergeRequest: null`. The fix mirrors the canonical
-          # livespec/.github/workflows/auto-enable-merge.yml pattern:
-          # capture stderr, surface the failure as `::error::`, and
-          # exit non-zero so the workflow run summary makes the
-          # diagnostic actionable instead of vanishing into a warning
-          # buried among Node-20-deprecation noise.
-          #
-          # Common causes of merge-enablement failure for the
-          # consumer to investigate when this step fails:
-          #   - Repo `allow_auto_merge` setting is `false`
-          #     (Settings > General > Pull Requests > Allow auto-merge).
-          #   - Branch-protection rules / rulesets on the base branch
-          #     do not require status checks, which `--auto` needs to
-          #     defer the merge until checks pass.
-          if merge_err=$(gh pr merge "$BRANCH" --repo "$GITHUB_REPOSITORY" --auto --rebase 2>&1); then
-            echo "Auto-merge enabled on PR for ${BRANCH} (rebase strategy)"
-          else
-            echo "::error::failed to enable auto-merge on PR for ${BRANCH}: ${merge_err}"
-            exit 1
-          fi
+          {
+            echo 'body<<BODYEOF'
+            echo "$body"
+            echo 'BODYEOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Rewrite pins + commit + open auto-merge PR
+        # Per the `Checkout livespec-dev-tooling support modules` step
+        # above: this repo is checked out at `.livespec-dev-tooling/`,
+        # which is where the composite Action source lives. The `./`
+        # path is relative to the caller's GITHUB_WORKSPACE per
+        # GitHub-Actions semantics for reusable workflows, NOT the
+        # reusable workflow's own repo — hence the explicit subpath.
+        uses: ./.livespec-dev-tooling/.github/actions/bump-pin-rewrite
+        with:
+          source_repo: ${{ matrix.target.source_repo }}
+          tag: ${{ matrix.target.tag }}
+          records: ${{ steps.autodiscover.outputs.records }}
+          branch_prefix: chore/freshness-bump
+          pr_body: ${{ steps.pr_body.outputs.body }}
+          app_token: ${{ steps.app-token.outputs.token }}
+          app_slug: ${{ steps.app-token.outputs.app-slug }}
