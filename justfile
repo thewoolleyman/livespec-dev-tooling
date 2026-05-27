@@ -83,6 +83,17 @@ check-coverage:
     fi
     uv run pytest -n auto --cov --cov-branch --cov-config=pyproject.toml --cov-report=term-missing
 
+# Universal cross-boundary invariant: every livespec-governed primary
+# checkout MUST have `core.bare = true` set in `.git/config`.
+# Ported from livespec/.claude-plugin/scripts/livespec/doctor/static/
+# primary_checkout_bare_flag_set.py — generalized for project-agnostic
+# invocation. NOT wired into the `check` aggregate above: dev-tooling's
+# own primary is currently non-bare, so wiring would self-fail; self-
+# host migration is a downstream phase. CI matrix runs this target
+# with a `git config core.bare true` step so the matrix entry passes.
+check-primary-checkout-bare-flag-set:
+    uv run python -m livespec_dev_tooling.checks.primary_checkout_bare_flag_set
+
 # ---------------------------------------------------------------
 # Pre-commit aggregate — Red-mode-aware. Classifies the staged
 # tree shape; sets LIVESPEC_PRECOMMIT_RED_MODE=1 in Red mode so
