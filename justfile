@@ -14,9 +14,10 @@
 #   canonical home for the shared enforcement-suite checks; once G.4
 #   completes, every `check-*` target listed in `check`'s aggregate
 #   below resolves to `uv run python -m livespec_dev_tooling.checks.
-#   <slug>`. At G.2 the aggregate carries only the tool-backed
-#   subset (ruff lint/format, pyright types, pytest+cov) since no
-#   structural checks have been migrated yet.
+#   <slug>`. The aggregate currently carries the tool-backed subset
+#   (ruff lint/format, pytest+cov) plus the first migrated structural
+#   check (`primary_checkout_bare_flag_set`); add further `check-*`
+#   targets as Phase G.4 migrates each shared check module.
 
 # Default to listing targets when no recipe is invoked.
 default:
@@ -30,13 +31,25 @@ default:
 # gates fire automatically. Re-running is idempotent: `lefthook install`
 # rewrites the hook files atomically.
 bootstrap:
+    # Idempotent `core.bare = true` on the primary checkout's
+    # git-common-dir config (per livespec/SPECIFICATION/
+    # non-functional-requirements.md §"Bare-flag bootstrap procedure",
+    # mirrored family-wide). The flag is the load-bearing setting that
+    # forces every edit through `git worktree add`. Runs FIRST so
+    # partial failure of any later step cannot leave the bare-flag
+    # unset. Targets `git rev-parse --git-common-dir` so the recipe
+    # writes the right file when invoked from the primary checkout
+    # AND from secondary worktrees. Self-hosts the
+    # `primary_checkout_bare_flag_set` shared check shipped at v0.3.0.
+    git config --file "$(git rev-parse --git-common-dir)/config" core.bare true
     uv sync --all-groups
     uv run lefthook install
 
 # ---------------------------------------------------------------
-# Aggregate check — tool-backed targets only at Phase G.2.
-# Add structural-check targets to the aggregate as Phase G.4
-# migrates each `livespec_dev_tooling.checks.<slug>` module.
+# Aggregate check — tool-backed targets plus migrated structural
+# checks. Add further structural-check targets to the aggregate
+# as Phase G.4 migrates each `livespec_dev_tooling.checks.<slug>`
+# module.
 # ---------------------------------------------------------------
 
 check:
@@ -46,6 +59,7 @@ check:
         check-lint
         check-format
         check-coverage
+        check-primary-checkout-bare-flag-set
     )
     failed=()
     for t in "${targets[@]}"; do
@@ -87,10 +101,12 @@ check-coverage:
 # checkout MUST have `core.bare = true` set in `.git/config`.
 # Ported from livespec/.claude-plugin/scripts/livespec/doctor/static/
 # primary_checkout_bare_flag_set.py — generalized for project-agnostic
-# invocation. NOT wired into the `check` aggregate above: dev-tooling's
-# own primary is currently non-bare, so wiring would self-fail; self-
-# host migration is a downstream phase. CI matrix runs this target
-# with a `git config core.bare true` step so the matrix entry passes.
+# invocation. Self-hosted into the `check` aggregate as of Phase 3b of
+# the family-wide bare-flag migration: this repo's `just bootstrap`
+# now idempotently flips `core.bare = true` on the primary, so the
+# aggregate target passes locally. CI's metadata matrix runs this
+# target with its own `git config core.bare true` gating step since
+# `actions/checkout` produces a non-bare working tree.
 check-primary-checkout-bare-flag-set:
     uv run python -m livespec_dev_tooling.checks.primary_checkout_bare_flag_set
 
