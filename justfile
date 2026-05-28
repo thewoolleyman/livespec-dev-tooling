@@ -31,19 +31,6 @@ default:
 # gates fire automatically. Re-running is idempotent: `lefthook install`
 # rewrites the hook files atomically.
 bootstrap:
-    # Idempotent `core.bare = true` on the primary checkout's
-    # git-common-dir config (per livespec/SPECIFICATION/
-    # non-functional-requirements.md §"Bare-flag bootstrap procedure",
-    # mirrored family-wide). The flag is the load-bearing setting that
-    # forces every edit through `git worktree add`. Runs FIRST so
-    # partial failure of any later step cannot leave the bare-flag
-    # unset. Targets `git rev-parse --git-common-dir` so the recipe
-    # writes the right file when invoked from the primary checkout
-    # AND from secondary worktrees. Self-hosts the v091-v094 bare-flag
-    # check at v0.3.0; the bare-flag mechanism is superseded by the
-    # commit-refuse hook below per livespec v095 (Phase 3 of epic
-    # li-unbare will remove this line and the bare-flag set).
-    git config --file "$(git rev-parse --git-common-dir)/config" core.bare true
     uv sync --all-groups
     uv run lefthook install
     # Idempotent install of the canonical livespec commit-refuse hook
