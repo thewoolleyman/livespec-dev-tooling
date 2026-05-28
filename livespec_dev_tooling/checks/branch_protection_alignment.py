@@ -178,8 +178,11 @@ def main() -> int:
     cwd = Path.cwd()
     ci_yml = cwd / _CI_YML_PATH
     if not ci_yml.is_file():
-        log.error("ci.yml missing", path=str(_CI_YML_PATH))
-        return 1
+        # Graceful absence-handling (epic li-univck Phase 1.1, li-chkabs):
+        # consumers that have not configured GitHub Actions CI have no
+        # ci.yml; the branch-protection alignment invariant is vacuously
+        # satisfied. Exit 0 so the check is safe to wire universally.
+        return 0
     matrix_targets = _parse_ci_matrix(source=ci_yml.read_text(encoding="utf-8"))
     if not matrix_targets:
         log.error("ci.yml matrix.target is empty or unparseable", path=str(_CI_YML_PATH))
