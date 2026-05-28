@@ -23,6 +23,7 @@ test co-staged).
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -34,6 +35,29 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 _COMMIT_PAIRS_SOURCE_AND_TEST = (
     _REPO_ROOT / "livespec_dev_tooling" / "checks" / "commit_pairs_source_and_test.py"
 )
+
+
+# Vars git sets when invoking hooks (lefthook pre-commit / pre-push /
+# commit-msg). Inherited by subprocess children unless scrubbed, which
+# would otherwise redirect the check script's internal `git diff
+# --cached` to the SURROUNDING repo instead of the tmp_path mini-repo
+# the test constructs. Mirrors the discipline already established in
+# `test_primary_checkout_commit_refuse_hook_installed.py`.
+_GIT_ENV_PASSTHROUGH_VARS: tuple[str, ...] = (
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_COMMON_DIR",
+    "GIT_NAMESPACE",
+    "GIT_LITERAL_PATHSPECS",
+    "GIT_PREFIX",
+)
+
+
+def _scrubbed_env() -> dict[str, str]:
+    """Return a copy of `os.environ` with GIT_* hook vars removed."""
+    return {k: v for k, v in os.environ.items() if k not in _GIT_ENV_PASSTHROUGH_VARS}
 
 
 def _git(*, cwd: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -87,6 +111,7 @@ def test_commit_pairs_rejects_staged_source_without_staged_test(*, tmp_path: Pat
         capture_output=True,
         text=True,
         check=False,
+        env=_scrubbed_env(),
     )
 
     assert result.returncode != 0, (
@@ -163,6 +188,7 @@ def test_commit_pairs_skips_when_head_has_unpaired_red_trailers(
         capture_output=True,
         text=True,
         check=False,
+        env=_scrubbed_env(),
     )
 
     assert result.returncode == 0, (
@@ -222,6 +248,7 @@ def test_commit_pairs_applies_when_head_has_paired_red_and_green_trailers(
         capture_output=True,
         text=True,
         check=False,
+        env=_scrubbed_env(),
     )
 
     assert result.returncode != 0, (
@@ -265,6 +292,7 @@ def test_commit_pairs_skips_on_empty_repo_with_no_head() -> None:
             capture_output=True,
             text=True,
             check=False,
+            env=_scrubbed_env(),
         )
 
     assert result.returncode == 0, (
@@ -364,6 +392,7 @@ def test_commit_pairs_accepts_staged_source_with_staged_test(*, tmp_path: Path) 
         capture_output=True,
         text=True,
         check=False,
+        env=_scrubbed_env(),
     )
 
     assert result.returncode == 0, (

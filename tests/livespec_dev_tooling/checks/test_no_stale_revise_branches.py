@@ -40,6 +40,30 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 _CHECK = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "no_stale_revise_branches.py"
 
 
+# Vars git sets when invoking hooks (lefthook pre-commit / pre-push /
+# commit-msg). Inherited by subprocess children unless scrubbed, which
+# would otherwise redirect the check script's internal `git` calls to
+# the SURROUNDING repo (e.g., `git for-each-ref refs/heads/spec/*`
+# enumerating the maintainer's actual `spec/*` branches) instead of
+# the tmp_path mini-repo the test constructs. Mirrors the discipline
+# already established in `test_primary_checkout_commit_refuse_hook_installed.py`.
+_GIT_ENV_PASSTHROUGH_VARS: tuple[str, ...] = (
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_COMMON_DIR",
+    "GIT_NAMESPACE",
+    "GIT_LITERAL_PATHSPECS",
+    "GIT_PREFIX",
+)
+
+
+def _scrubbed_environ() -> dict[str, str]:
+    """Return a copy of `os.environ` with GIT_* hook vars removed."""
+    return {k: v for k, v in os.environ.items() if k not in _GIT_ENV_PASSTHROUGH_VARS}
+
+
 def _git(*, cwd: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
     """Invoke git with a hermetic env so tmp_path tests stay isolated."""
     # S603/S607: argv is a fixed list (literal git binary + repo-controlled
@@ -73,7 +97,9 @@ def _run_check(
     argv = [sys.executable, str(_CHECK)]
     if extra_argv is not None:
         argv.extend(extra_argv)
-    env = {**os.environ, "PATH": env_path} if env_path is not None else None
+    env = _scrubbed_environ()
+    if env_path is not None:
+        env["PATH"] = env_path
     return subprocess.run(
         argv,
         cwd=str(cwd),

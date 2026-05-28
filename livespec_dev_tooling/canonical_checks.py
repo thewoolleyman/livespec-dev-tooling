@@ -26,7 +26,8 @@ Slug mapping: snake_case module name → kebab-case slug with
 `check-` prefix. Examples:
 
 - `keyword_only_args` → `check-keyword-only-args`
-- `primary_checkout_bare_flag_set` → `check-primary-checkout-bare-flag-set`
+- `primary_checkout_commit_refuse_hook_installed`
+  → `check-primary-checkout-commit-refuse-hook-installed`
 
 Public API:
 
