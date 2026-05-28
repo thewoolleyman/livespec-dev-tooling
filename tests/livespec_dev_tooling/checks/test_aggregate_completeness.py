@@ -1,0 +1,357 @@
+"""Outside-in test for `livespec_dev_tooling/checks/aggregate_completeness.py`.
+
+Per epic `li-univck` Phase 1.3 (work-item `li-aggchk`), the check
+parses a consumer's `justfile` `check:` recipe, extracts the
+`targets=(...)` array, and compares to the canonical-check slug
+tuple emitted by `livespec_dev_tooling.canonical_checks`. The
+canonical subset MUST appear in full and in alphabetical order;
+extras (repo-private checks) are allowed but only AFTER the
+canonical block.
+
+Failure modes covered:
+
+- Missing canonical slug → exit 4 with structured finding per
+  missing slug.
+- Out-of-order canonical slugs (set match, ordering differs) →
+  exit 4 with diff between canonical and observed order.
+- Extras BEFORE / interleaved with the canonical block → exit 4
+  (because the canonical-subset ordering is broken).
+- Justfile missing entirely → exit 4 with graceful-absence finding.
+- `check:` recipe missing entirely → exit 4 with graceful-absence
+  finding.
+
+Acceptance behaviors:
+
+- Full match (canonical = wired, alphabetical) → exit 0.
+- Repo-private extras AFTER the canonical block → exit 0.
+
+The check is self-bootstrapping: because the check module itself
+lives under `livespec_dev_tooling/checks/`, its own slug
+(`check-aggregate-completeness`) appears in the canonical set
+discovered by `canonical_checks`. Tests therefore inject a
+synthetic canonical-set list via the check's `--canonical-from`
+flag — this keeps tests hermetic from changes to the live
+checks/ package and decouples them from sibling-PR landings.
+"""
+
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+__all__: list[str] = []
+
+
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_CHECK = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "aggregate_completeness.py"
+
+
+def _run_check(
+    *,
+    cwd: Path,
+    extra_argv: list[str] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    argv = [sys.executable, str(_CHECK)]
+    if extra_argv is not None:
+        argv.extend(extra_argv)
+    return subprocess.run(
+        argv,
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def _write_justfile(*, cwd: Path, body: str) -> Path:
+    path = cwd / "justfile"
+    _ = path.write_text(body, encoding="utf-8")
+    return path
+
+
+def _write_canonical_json(*, cwd: Path, slugs: list[str]) -> Path:
+    path = cwd / "canonical.json"
+    _ = path.write_text(json.dumps({"slugs": slugs}), encoding="utf-8")
+    return path
+
+
+def _justfile_with_targets(*, targets: list[str]) -> str:
+    """Render a minimal `justfile` whose `check:` recipe wires `targets`."""
+    indented = "\n".join(f"        {t}" for t in targets)
+    return (
+        "default:\n"
+        "    @just --list\n"
+        "\n"
+        "check:\n"
+        "    #!/usr/bin/env bash\n"
+        "    set -uo pipefail\n"
+        "    targets=(\n"
+        f"{indented}\n"
+        "    )\n"
+        '    for t in "${targets[@]}"; do\n'
+        '        just "$t" || exit 1\n'
+        "    done\n"
+    )
+
+
+def _parse_findings(*, stderr: str) -> list[dict[str, object]]:
+    """Parse structlog JSON-per-line findings from the check's stderr."""
+    out: list[dict[str, object]] = []
+    for line in stderr.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("{"):
+            continue
+        parsed = json.loads(stripped)
+        if isinstance(parsed, dict):
+            out.append(parsed)
+    return out
+
+
+def test_full_match_passes(*, tmp_path: Path) -> None:
+    """Canonical = wired, in alphabetical order → exit 0."""
+    slugs = ["check-alpha", "check-beta", "check-gamma"]
+    _ = _write_canonical_json(cwd=tmp_path, slugs=slugs)
+    _ = _write_justfile(cwd=tmp_path, body=_justfile_with_targets(targets=slugs))
+    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    assert result.returncode == 0, (
+        f"expected exit 0 on full match; got {result.returncode}, stderr={result.stderr!r}"
+    )
+
+
+def test_missing_canonical_slug_fails(*, tmp_path: Path) -> None:
+    """A canonical slug absent from the consumer's targets → exit 4 + finding."""
+    canonical = ["check-alpha", "check-beta", "check-gamma"]
+    wired = ["check-alpha", "check-gamma"]  # `check-beta` missing.
+    _ = _write_canonical_json(cwd=tmp_path, slugs=canonical)
+    _ = _write_justfile(cwd=tmp_path, body=_justfile_with_targets(targets=wired))
+    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    assert result.returncode == 4, (
+        f"expected exit 4 on missing slug; got {result.returncode}, stderr={result.stderr!r}"
+    )
+    findings = _parse_findings(stderr=result.stderr)
+    missing_findings = [
+        f
+        for f in findings
+        if f.get("status") == "fail" and f.get("failure_mode") == "missing_canonical_slug"
+    ]
+    assert len(missing_findings) == 1, (
+        f"expected exactly one missing-slug finding; got {missing_findings!r}"
+    )
+    assert missing_findings[0].get("slug") == "check-beta"
+
+
+def test_out_of_order_canonical_slugs_fails(*, tmp_path: Path) -> None:
+    """Canonical set matches but ordering differs → exit 4 + diff finding."""
+    canonical = ["check-alpha", "check-beta", "check-gamma"]
+    wired = ["check-beta", "check-alpha", "check-gamma"]  # set match, wrong order.
+    _ = _write_canonical_json(cwd=tmp_path, slugs=canonical)
+    _ = _write_justfile(cwd=tmp_path, body=_justfile_with_targets(targets=wired))
+    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    assert result.returncode == 4, (
+        f"expected exit 4 on out-of-order slugs; got {result.returncode}, stderr={result.stderr!r}"
+    )
+    findings = _parse_findings(stderr=result.stderr)
+    order_findings = [
+        f
+        for f in findings
+        if f.get("status") == "fail" and f.get("failure_mode") == "out_of_order_canonical_slugs"
+    ]
+    assert len(order_findings) == 1, (
+        f"expected exactly one out-of-order finding; got {order_findings!r}"
+    )
+    assert order_findings[0].get("canonical_order") == canonical
+    assert order_findings[0].get("observed_order") == wired
+
+
+def test_repo_private_extras_after_canonical_block_passes(*, tmp_path: Path) -> None:
+    """Repo-private extras AFTER the canonical block → exit 0 (extras allowed at end)."""
+    canonical = ["check-alpha", "check-beta", "check-gamma"]
+    wired = [*canonical, "check-foo-private", "check-zoo-private"]
+    _ = _write_canonical_json(cwd=tmp_path, slugs=canonical)
+    _ = _write_justfile(cwd=tmp_path, body=_justfile_with_targets(targets=wired))
+    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    assert result.returncode == 0, (
+        f"expected exit 0 with extras after canonical block; "
+        f"got {result.returncode}, stderr={result.stderr!r}"
+    )
+
+
+def test_extras_before_canonical_block_fails(*, tmp_path: Path) -> None:
+    """Extras placed BEFORE the canonical set → exit 4 (canonical subset order broken)."""
+    canonical = ["check-alpha", "check-beta", "check-gamma"]
+    wired = ["check-foo-private", *canonical]  # extra slug at front.
+    _ = _write_canonical_json(cwd=tmp_path, slugs=canonical)
+    _ = _write_justfile(cwd=tmp_path, body=_justfile_with_targets(targets=wired))
+    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    assert result.returncode == 4, (
+        f"expected exit 4 with extras before canonical block; "
+        f"got {result.returncode}, stderr={result.stderr!r}"
+    )
+    findings = _parse_findings(stderr=result.stderr)
+    order_findings = [
+        f
+        for f in findings
+        if f.get("status") == "fail" and f.get("failure_mode") == "out_of_order_canonical_slugs"
+    ]
+    assert len(order_findings) == 1, (
+        f"expected one out-of-order finding when extras precede canonical block; "
+        f"got {order_findings!r}"
+    )
+
+
+def test_extras_interleaved_with_canonical_block_fails(*, tmp_path: Path) -> None:
+    """Extras interleaved with canonical set → exit 4 (canonical-subset order broken)."""
+    canonical = ["check-alpha", "check-beta", "check-gamma"]
+    wired = ["check-alpha", "check-foo-private", "check-beta", "check-gamma"]
+    _ = _write_canonical_json(cwd=tmp_path, slugs=canonical)
+    _ = _write_justfile(cwd=tmp_path, body=_justfile_with_targets(targets=wired))
+    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    assert result.returncode == 4, (
+        f"expected exit 4 with extras interleaved; "
+        f"got {result.returncode}, stderr={result.stderr!r}"
+    )
+
+
+def test_missing_justfile_fails_gracefully(*, tmp_path: Path) -> None:
+    """No justfile at cwd → exit 4 with structured graceful-absence finding."""
+    slugs = ["check-alpha"]
+    _ = _write_canonical_json(cwd=tmp_path, slugs=slugs)
+    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    assert result.returncode == 4, (
+        f"expected exit 4 when justfile missing; "
+        f"got {result.returncode}, stderr={result.stderr!r}"
+    )
+    findings = _parse_findings(stderr=result.stderr)
+    absence = [f for f in findings if f.get("failure_mode") == "justfile_not_found"]
+    assert len(absence) == 1, (
+        f"expected one justfile_not_found finding; got {absence!r}"
+    )
+
+
+def test_justfile_without_check_recipe_fails(*, tmp_path: Path) -> None:
+    """Justfile present but no `check:` recipe → exit 4 with structured finding."""
+    slugs = ["check-alpha"]
+    _ = _write_canonical_json(cwd=tmp_path, slugs=slugs)
+    _ = _write_justfile(
+        cwd=tmp_path,
+        body="default:\n    @just --list\n\nfmt:\n    ruff format .\n",
+    )
+    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    assert result.returncode == 4, (
+        f"expected exit 4 when check recipe missing; "
+        f"got {result.returncode}, stderr={result.stderr!r}"
+    )
+    findings = _parse_findings(stderr=result.stderr)
+    absence = [f for f in findings if f.get("failure_mode") == "check_recipe_not_found"]
+    assert len(absence) == 1, (
+        f"expected one check_recipe_not_found finding; got {absence!r}"
+    )
+
+
+def test_targets_array_missing_fails(*, tmp_path: Path) -> None:
+    """`check:` recipe exists but has no `targets=(...)` array → exit 4 + finding."""
+    slugs = ["check-alpha"]
+    _ = _write_canonical_json(cwd=tmp_path, slugs=slugs)
+    _ = _write_justfile(
+        cwd=tmp_path,
+        body=(
+            "default:\n"
+            "    @just --list\n"
+            "\n"
+            "check:\n"
+            "    #!/usr/bin/env bash\n"
+            '    echo "no targets array here"\n'
+        ),
+    )
+    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    assert result.returncode == 4, (
+        f"expected exit 4 when targets array missing; "
+        f"got {result.returncode}, stderr={result.stderr!r}"
+    )
+    findings = _parse_findings(stderr=result.stderr)
+    absence = [f for f in findings if f.get("failure_mode") == "targets_array_not_found"]
+    assert len(absence) == 1, (
+        f"expected one targets_array_not_found finding; got {absence!r}"
+    )
+
+
+def test_comments_and_blank_lines_filtered_out(*, tmp_path: Path) -> None:
+    """Blank lines + `#` comments inside `targets=(...)` are skipped during slug extraction."""
+    canonical = ["check-alpha", "check-beta"]
+    body = (
+        "default:\n"
+        "    @just --list\n"
+        "\n"
+        "check:\n"
+        "    #!/usr/bin/env bash\n"
+        "    set -uo pipefail\n"
+        "    targets=(\n"
+        "        # leading comment\n"
+        "        check-alpha\n"
+        "\n"
+        "        # interstitial comment\n"
+        "        check-beta\n"
+        "    )\n"
+        '    for t in "${targets[@]}"; do\n'
+        '        just "$t" || exit 1\n'
+        "    done\n"
+    )
+    _ = _write_canonical_json(cwd=tmp_path, slugs=canonical)
+    _ = _write_justfile(cwd=tmp_path, body=body)
+    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    assert result.returncode == 0, (
+        f"expected exit 0 with comments and blanks filtered; "
+        f"got {result.returncode}, stderr={result.stderr!r}"
+    )
+
+
+def test_non_check_prefixed_targets_filtered(*, tmp_path: Path) -> None:
+    """Targets not starting with `check-` are ignored (e.g. `bootstrap`, `fmt`)."""
+    canonical = ["check-alpha", "check-beta"]
+    wired = ["bootstrap", "check-alpha", "check-beta", "fmt"]
+    _ = _write_canonical_json(cwd=tmp_path, slugs=canonical)
+    _ = _write_justfile(cwd=tmp_path, body=_justfile_with_targets(targets=wired))
+    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    # `bootstrap` and `fmt` are filtered before the canonical-subset
+    # check; the remaining `check-*` targets are `[check-alpha,
+    # check-beta]` in canonical order, so the check passes.
+    assert result.returncode == 0, (
+        f"expected exit 0 when non-`check-` targets present; "
+        f"got {result.returncode}, stderr={result.stderr!r}"
+    )
+
+
+def test_default_canonical_source_is_live_package(*, tmp_path: Path) -> None:
+    """Without `--canonical-from`, the check loads the live canonical set."""
+    # We don't pin the live canonical set's exact membership (it
+    # changes as new checks land), but we can verify default-mode
+    # operation by deliberately writing a justfile that omits a
+    # known-canonical slug and asserting the check fails. The
+    # `check-aggregate-completeness` slug itself is guaranteed to
+    # appear in the live set because this module exists.
+    _ = _write_justfile(cwd=tmp_path, body=_justfile_with_targets(targets=[]))
+    result = _run_check(cwd=tmp_path)
+    assert result.returncode == 4, (
+        f"expected exit 4 when live canonical set is non-empty but justfile wires nothing; "
+        f"got {result.returncode}, stderr={result.stderr!r}"
+    )
+    findings = _parse_findings(stderr=result.stderr)
+    missing_slugs = {
+        f.get("slug")
+        for f in findings
+        if f.get("failure_mode") == "missing_canonical_slug"
+    }
+    assert "check-aggregate-completeness" in missing_slugs, (
+        f"expected check-aggregate-completeness in missing-slug findings under default canonical; "
+        f"got {missing_slugs!r}"
+    )
+
+
+def test_help_flag_exits_zero(*, tmp_path: Path) -> None:
+    """`--help` exits 0 with usage text on stdout (per contracts.md §"CLI surface")."""
+    result = _run_check(cwd=tmp_path, extra_argv=["--help"])
+    assert result.returncode == 0
+    combined = result.stdout.lower()
+    assert "aggregate-completeness" in combined or "usage" in combined
