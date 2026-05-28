@@ -53,6 +53,19 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.5.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.4.0...v0.5.0) (2026-05-28)
+
+
+### Features
+
+* **checks:** add primary_checkout_commit_refuse_hook_installed outside-in tests (Red, li-unbardct) ([716f736](https://github.com/thewoolleyman/livespec-dev-tooling/commit/716f7365010fbc9c26530ebefd77955920b6dfd3))
+* **checks:** flip primary-checkout invariant from bare-flag to commit-refuse-hook (Green, li-unbardct, epic li-unbare Phase 2) ([99fb8d1](https://github.com/thewoolleyman/livespec-dev-tooling/commit/99fb8d1035a62a6353e55a240347e8f4381b03b4))
+
+
+### Bug Fixes
+
+* **lint:** resolve E501/RUF002/G004 in primary_checkout_commit_refuse_hook_installed (post-PR-42) ([b813628](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b8136283f2ac534f128d002a9445131fec72bb27))
+
 ## [0.4.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.3.0...v0.4.0) (2026-05-28)
 
 
