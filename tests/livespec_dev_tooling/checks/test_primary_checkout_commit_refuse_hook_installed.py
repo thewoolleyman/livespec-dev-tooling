@@ -243,7 +243,7 @@ def test_fails_when_pre_commit_not_executable(*, tmp_path: Path) -> None:
     result = _run_check(cwd=project_root)
     assert result.returncode == 4
     assert "pre-commit" in result.stderr
-    assert "not executable" in result.stderr
+    assert "not_executable" in result.stderr
 
 
 def test_fails_when_pre_push_not_executable(*, tmp_path: Path) -> None:
@@ -267,7 +267,7 @@ def test_fails_when_pre_push_not_executable(*, tmp_path: Path) -> None:
     result = _run_check(cwd=project_root)
     assert result.returncode == 4
     assert "pre-push" in result.stderr
-    assert "not executable" in result.stderr
+    assert "not_executable" in result.stderr
 
 
 def test_fails_when_pre_commit_body_non_canonical(*, tmp_path: Path) -> None:
@@ -292,7 +292,7 @@ def test_fails_when_pre_commit_body_non_canonical(*, tmp_path: Path) -> None:
     result = _run_check(cwd=project_root)
     assert result.returncode == 4
     assert "pre-commit" in result.stderr
-    assert "non canonical body" in result.stderr
+    assert "non_canonical_body" in result.stderr
 
 
 def test_fails_when_pre_push_body_non_canonical(*, tmp_path: Path) -> None:
@@ -316,7 +316,7 @@ def test_fails_when_pre_push_body_non_canonical(*, tmp_path: Path) -> None:
     result = _run_check(cwd=project_root)
     assert result.returncode == 4
     assert "pre-push" in result.stderr
-    assert "non canonical body" in result.stderr
+    assert "non_canonical_body" in result.stderr
 
 
 def test_fails_when_pre_commit_body_empty(*, tmp_path: Path) -> None:
@@ -340,7 +340,7 @@ def test_fails_when_pre_commit_body_empty(*, tmp_path: Path) -> None:
     result = _run_check(cwd=project_root)
     assert result.returncode == 4
     assert "pre-commit" in result.stderr
-    assert "non canonical body" in result.stderr
+    assert "non_canonical_body" in result.stderr
 
 
 def test_passes_with_tolerant_body_variant(*, tmp_path: Path) -> None:
