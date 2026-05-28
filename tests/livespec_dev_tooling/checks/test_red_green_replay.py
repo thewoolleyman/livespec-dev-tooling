@@ -14,6 +14,7 @@ contract) and exits 0 without running any test.
 from __future__ import annotations
 
 import hashlib
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -25,6 +26,33 @@ __all__: list[str] = []
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _RED_GREEN_REPLAY = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "red_green_replay.py"
+
+
+# When this test suite runs inside a git hook (lefthook pre-commit /
+# pre-push / commit-msg), git sets GIT_DIR / GIT_WORK_TREE /
+# GIT_INDEX_FILE / friends pointing at the SURROUNDING repo. These
+# vars are inherited by subprocess children and would redirect every
+# `git ...` call (and every check-script-internal `git` call) to the
+# outer repo instead of the tmp_path mini-repo the test constructs.
+# Scrubbing them at every subprocess boundary confines git to the
+# tmp_path fixture's `.git` directory regardless of how the test
+# suite is invoked. Mirrors the discipline already established in
+# `test_primary_checkout_commit_refuse_hook_installed.py`.
+_GIT_ENV_PASSTHROUGH_VARS: tuple[str, ...] = (
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_COMMON_DIR",
+    "GIT_NAMESPACE",
+    "GIT_LITERAL_PATHSPECS",
+    "GIT_PREFIX",
+)
+
+
+def _scrubbed_env() -> dict[str, str]:
+    """Return a copy of `os.environ` with GIT_* hook vars removed."""
+    return {k: v for k, v in os.environ.items() if k not in _GIT_ENV_PASSTHROUGH_VARS}
 
 
 def test_chore_commit_subject_exits_zero(*, tmp_path: Path) -> None:
@@ -46,6 +74,7 @@ def test_chore_commit_subject_exits_zero(*, tmp_path: Path) -> None:
         capture_output=True,
         text=True,
         check=False,
+        env=_scrubbed_env(),
     )
 
     assert result.returncode == 0, (
@@ -73,6 +102,7 @@ def test_docs_commit_subject_exits_zero(*, tmp_path: Path) -> None:
         capture_output=True,
         text=True,
         check=False,
+        env=_scrubbed_env(),
     )
 
     assert result.returncode == 0, (
@@ -113,6 +143,7 @@ def test_remaining_exempt_commit_subjects_exit_zero(
         capture_output=True,
         text=True,
         check=False,
+        env=_scrubbed_env(),
     )
 
     assert result.returncode == 0, (
@@ -145,6 +176,7 @@ def test_feat_commit_subject_exits_nonzero(*, tmp_path: Path) -> None:
         capture_output=True,
         text=True,
         check=False,
+        env=_scrubbed_env(),
     )
 
     assert result.returncode != 0, (
@@ -170,6 +202,7 @@ def test_feat_in_git_repo_with_no_staged_files_diagnoses_no_mode(*, tmp_path: Pa
         ["git", "init", "-q"],
         cwd=str(tmp_path),
         check=True,
+        env=_scrubbed_env(),
     )
     msg_path = tmp_path / "COMMIT_EDITMSG"
     msg_path.write_text("feat: add new feature\n", encoding="utf-8")
@@ -180,6 +213,7 @@ def test_feat_in_git_repo_with_no_staged_files_diagnoses_no_mode(*, tmp_path: Pa
         capture_output=True,
         text=True,
         check=False,
+        env=_scrubbed_env(),
     )
 
     assert result.returncode != 0, (
@@ -210,6 +244,7 @@ def test_feat_in_git_repo_with_staged_files_skips_no_staged_diagnostic(
         ["git", "init", "-q"],
         cwd=str(tmp_path),
         check=True,
+        env=_scrubbed_env(),
     )
     (tmp_path / "tests").mkdir()
     test_file = tmp_path / "tests" / "test_dummy.py"
@@ -221,6 +256,7 @@ def test_feat_in_git_repo_with_staged_files_skips_no_staged_diagnostic(
         ["git", "add", "tests/test_dummy.py"],
         cwd=str(tmp_path),
         check=True,
+        env=_scrubbed_env(),
     )
 
     msg_path = tmp_path / "COMMIT_EDITMSG"
@@ -232,6 +268,7 @@ def test_feat_in_git_repo_with_staged_files_skips_no_staged_diagnostic(
         capture_output=True,
         text=True,
         check=False,
+        env=_scrubbed_env(),
     )
 
     assert result.returncode != 0, (
@@ -264,6 +301,7 @@ def test_feat_with_tests_only_staged_emits_red_mode_candidate(
         ["git", "init", "-q"],
         cwd=str(tmp_path),
         check=True,
+        env=_scrubbed_env(),
     )
     (tmp_path / "tests").mkdir()
     test_file = tmp_path / "tests" / "test_dummy.py"
@@ -275,6 +313,7 @@ def test_feat_with_tests_only_staged_emits_red_mode_candidate(
         ["git", "add", "tests/test_dummy.py"],
         cwd=str(tmp_path),
         check=True,
+        env=_scrubbed_env(),
     )
 
     msg_path = tmp_path / "COMMIT_EDITMSG"
@@ -286,6 +325,7 @@ def test_feat_with_tests_only_staged_emits_red_mode_candidate(
         capture_output=True,
         text=True,
         check=False,
+        env=_scrubbed_env(),
     )
 
     assert result.returncode != 0, (
@@ -317,6 +357,7 @@ def test_feat_with_impl_only_staged_skips_red_mode_candidate(
         ["git", "init", "-q"],
         cwd=str(tmp_path),
         check=True,
+        env=_scrubbed_env(),
     )
     impl_dir = tmp_path / "livespec"
     impl_dir.mkdir()
@@ -326,6 +367,7 @@ def test_feat_with_impl_only_staged_skips_red_mode_candidate(
         ["git", "add", "livespec/foo.py"],
         cwd=str(tmp_path),
         check=True,
+        env=_scrubbed_env(),
     )
 
     msg_path = tmp_path / "COMMIT_EDITMSG"
@@ -337,6 +379,7 @@ def test_feat_with_impl_only_staged_skips_red_mode_candidate(
         capture_output=True,
         text=True,
         check=False,
+        env=_scrubbed_env(),
     )
 
     assert result.returncode != 0, (
@@ -370,6 +413,7 @@ def test_feat_with_single_test_file_staged_emits_sha256_checksum(
         ["git", "init", "-q"],
         cwd=str(tmp_path),
         check=True,
+        env=_scrubbed_env(),
     )
     (tmp_path / "tests").mkdir()
     test_file = tmp_path / "tests" / "test_dummy.py"
@@ -379,6 +423,7 @@ def test_feat_with_single_test_file_staged_emits_sha256_checksum(
         ["git", "add", "tests/test_dummy.py"],
         cwd=str(tmp_path),
         check=True,
+        env=_scrubbed_env(),
     )
 
     msg_path = tmp_path / "COMMIT_EDITMSG"
@@ -390,6 +435,7 @@ def test_feat_with_single_test_file_staged_emits_sha256_checksum(
         capture_output=True,
         text=True,
         check=False,
+        env=_scrubbed_env(),
     )
 
     expected_digest = hashlib.sha256(test_bytes).hexdigest()
@@ -430,6 +476,7 @@ def test_feat_with_multiple_test_files_staged_rejects_with_multi_test_file_diagn
         ["git", "init", "-q"],
         cwd=str(tmp_path),
         check=True,
+        env=_scrubbed_env(),
     )
     (tmp_path / "tests").mkdir()
     (tmp_path / "tests" / "test_a.py").write_text(
@@ -444,6 +491,7 @@ def test_feat_with_multiple_test_files_staged_rejects_with_multi_test_file_diagn
         ["git", "add", "tests/test_a.py", "tests/test_b.py"],
         cwd=str(tmp_path),
         check=True,
+        env=_scrubbed_env(),
     )
 
     msg_path = tmp_path / "COMMIT_EDITMSG"
@@ -455,6 +503,7 @@ def test_feat_with_multiple_test_files_staged_rejects_with_multi_test_file_diagn
         capture_output=True,
         text=True,
         check=False,
+        env=_scrubbed_env(),
     )
 
     assert result.returncode != 0, (
@@ -489,6 +538,7 @@ def test_feat_with_failing_test_staged_emits_red_pytest_result(
         ["git", "init", "-q"],
         cwd=str(tmp_path),
         check=True,
+        env=_scrubbed_env(),
     )
     (tmp_path / "tests").mkdir()
     test_file = tmp_path / "tests" / "test_failing.py"
@@ -500,6 +550,7 @@ def test_feat_with_failing_test_staged_emits_red_pytest_result(
         ["git", "add", "tests/test_failing.py"],
         cwd=str(tmp_path),
         check=True,
+        env=_scrubbed_env(),
     )
 
     msg_path = tmp_path / "COMMIT_EDITMSG"
@@ -511,6 +562,7 @@ def test_feat_with_failing_test_staged_emits_red_pytest_result(
         capture_output=True,
         text=True,
         check=False,
+        env=_scrubbed_env(),
     )
 
     assert result.returncode == 0, (
@@ -551,6 +603,7 @@ def test_feat_with_passing_test_staged_rejects_with_test_passed_at_red(
         ["git", "init", "-q"],
         cwd=str(tmp_path),
         check=True,
+        env=_scrubbed_env(),
     )
     (tmp_path / "tests").mkdir()
     test_file = tmp_path / "tests" / "test_passing.py"
@@ -562,6 +615,7 @@ def test_feat_with_passing_test_staged_rejects_with_test_passed_at_red(
         ["git", "add", "tests/test_passing.py"],
         cwd=str(tmp_path),
         check=True,
+        env=_scrubbed_env(),
     )
 
     msg_path = tmp_path / "COMMIT_EDITMSG"
@@ -573,6 +627,7 @@ def test_feat_with_passing_test_staged_rejects_with_test_passed_at_red(
         capture_output=True,
         text=True,
         check=False,
+        env=_scrubbed_env(),
     )
 
     assert result.returncode != 0, (
@@ -613,6 +668,7 @@ def test_feat_with_failing_test_writes_full_red_trailer_schema(
         ["git", "init", "-q"],
         cwd=str(tmp_path),
         check=True,
+        env=_scrubbed_env(),
     )
     (tmp_path / "tests").mkdir()
     test_file = tmp_path / "tests" / "test_red.py"
@@ -624,6 +680,7 @@ def test_feat_with_failing_test_writes_full_red_trailer_schema(
         ["git", "add", "tests/test_red.py"],
         cwd=str(tmp_path),
         check=True,
+        env=_scrubbed_env(),
     )
 
     msg_path = tmp_path / "COMMIT_EDITMSG"
@@ -635,6 +692,7 @@ def test_feat_with_failing_test_writes_full_red_trailer_schema(
         capture_output=True,
         text=True,
         check=False,
+        env=_scrubbed_env(),
     )
 
     assert result.returncode == 0, (
@@ -682,16 +740,19 @@ def test_feat_with_impl_staged_and_head_has_red_trailers_emits_green_mode_candid
         ["git", "init", "-q"],
         cwd=str(tmp_path),
         check=True,
+        env=_scrubbed_env(),
     )
     subprocess.run(
         ["git", "config", "user.email", "test@test.test"],
         cwd=str(tmp_path),
         check=True,
+        env=_scrubbed_env(),
     )
     subprocess.run(
         ["git", "config", "user.name", "Test User"],
         cwd=str(tmp_path),
         check=True,
+        env=_scrubbed_env(),
     )
     (tmp_path / "tests").mkdir()
     (tmp_path / "tests" / "test_red.py").write_text(
@@ -702,6 +763,7 @@ def test_feat_with_impl_staged_and_head_has_red_trailers_emits_green_mode_candid
         ["git", "add", "tests/test_red.py"],
         cwd=str(tmp_path),
         check=True,
+        env=_scrubbed_env(),
     )
     red_commit_msg = (
         "feat: add new feature\n"
@@ -716,6 +778,7 @@ def test_feat_with_impl_staged_and_head_has_red_trailers_emits_green_mode_candid
         ["git", "commit", "-m", red_commit_msg],
         cwd=str(tmp_path),
         check=True,
+        env=_scrubbed_env(),
     )
 
     (tmp_path / "livespec").mkdir()
@@ -727,6 +790,7 @@ def test_feat_with_impl_staged_and_head_has_red_trailers_emits_green_mode_candid
         ["git", "add", "livespec/foo.py"],
         cwd=str(tmp_path),
         check=True,
+        env=_scrubbed_env(),
     )
 
     msg_path = tmp_path / "COMMIT_EDITMSG"
@@ -738,6 +802,7 @@ def test_feat_with_impl_staged_and_head_has_red_trailers_emits_green_mode_candid
         capture_output=True,
         text=True,
         check=False,
+        env=_scrubbed_env(),
     )
 
     assert result.returncode != 0, (
@@ -769,16 +834,19 @@ def test_feat_green_amend_with_unchanged_test_and_passing_pytest_writes_green_tr
         ["git", "init", "-q"],
         cwd=str(tmp_path),
         check=True,
+        env=_scrubbed_env(),
     )
     subprocess.run(
         ["git", "config", "user.email", "test@test.test"],
         cwd=str(tmp_path),
         check=True,
+        env=_scrubbed_env(),
     )
     subprocess.run(
         ["git", "config", "user.name", "Test User"],
         cwd=str(tmp_path),
         check=True,
+        env=_scrubbed_env(),
     )
 
     (tmp_path / "tests").mkdir()
@@ -790,6 +858,7 @@ def test_feat_green_amend_with_unchanged_test_and_passing_pytest_writes_green_tr
         ["git", "add", "tests/test_x.py"],
         cwd=str(tmp_path),
         check=True,
+        env=_scrubbed_env(),
     )
     red_commit_msg = (
         "feat: red commit\n"
@@ -804,6 +873,7 @@ def test_feat_green_amend_with_unchanged_test_and_passing_pytest_writes_green_tr
         ["git", "commit", "-m", red_commit_msg],
         cwd=str(tmp_path),
         check=True,
+        env=_scrubbed_env(),
     )
 
     (tmp_path / "livespec").mkdir()
@@ -815,6 +885,7 @@ def test_feat_green_amend_with_unchanged_test_and_passing_pytest_writes_green_tr
         ["git", "add", "livespec/foo.py"],
         cwd=str(tmp_path),
         check=True,
+        env=_scrubbed_env(),
     )
 
     msg_path = tmp_path / "COMMIT_EDITMSG"
@@ -826,6 +897,7 @@ def test_feat_green_amend_with_unchanged_test_and_passing_pytest_writes_green_tr
         capture_output=True,
         text=True,
         check=False,
+        env=_scrubbed_env(),
     )
 
     assert result.returncode == 0, (
@@ -856,16 +928,19 @@ def test_feat_green_amend_with_test_still_failing_rejects(
         ["git", "init", "-q"],
         cwd=str(tmp_path),
         check=True,
+        env=_scrubbed_env(),
     )
     subprocess.run(
         ["git", "config", "user.email", "test@test.test"],
         cwd=str(tmp_path),
         check=True,
+        env=_scrubbed_env(),
     )
     subprocess.run(
         ["git", "config", "user.name", "Test User"],
         cwd=str(tmp_path),
         check=True,
+        env=_scrubbed_env(),
     )
 
     (tmp_path / "tests").mkdir()
@@ -879,6 +954,7 @@ def test_feat_green_amend_with_test_still_failing_rejects(
         ["git", "add", "tests/test_still_failing.py"],
         cwd=str(tmp_path),
         check=True,
+        env=_scrubbed_env(),
     )
     red_commit_msg = (
         "feat: red commit\n"
@@ -893,6 +969,7 @@ def test_feat_green_amend_with_test_still_failing_rejects(
         ["git", "commit", "-m", red_commit_msg],
         cwd=str(tmp_path),
         check=True,
+        env=_scrubbed_env(),
     )
 
     (tmp_path / "livespec").mkdir()
@@ -904,6 +981,7 @@ def test_feat_green_amend_with_test_still_failing_rejects(
         ["git", "add", "livespec/foo.py"],
         cwd=str(tmp_path),
         check=True,
+        env=_scrubbed_env(),
     )
 
     msg_path = tmp_path / "COMMIT_EDITMSG"
@@ -915,6 +993,7 @@ def test_feat_green_amend_with_test_still_failing_rejects(
         capture_output=True,
         text=True,
         check=False,
+        env=_scrubbed_env(),
     )
 
     assert result.returncode != 0, (
@@ -963,6 +1042,7 @@ def test_conventional_commit_breaking_and_scope_variants_exit_zero(
         capture_output=True,
         text=True,
         check=False,
+        env=_scrubbed_env(),
     )
 
     assert result.returncode == 0, (
@@ -1237,6 +1317,7 @@ def test_feat_with_neither_tests_nor_impl_staged_emits_diagnostic(
         ["git", "init", "-q"],
         cwd=str(tmp_path),
         check=True,
+        env=_scrubbed_env(),
     )
     (tmp_path / "templates").mkdir()
     config_file = tmp_path / "templates" / "foo.yml"
@@ -1245,6 +1326,7 @@ def test_feat_with_neither_tests_nor_impl_staged_emits_diagnostic(
         ["git", "add", "templates/foo.yml"],
         cwd=str(tmp_path),
         check=True,
+        env=_scrubbed_env(),
     )
 
     msg_path = tmp_path / "COMMIT_EDITMSG"
@@ -1256,6 +1338,7 @@ def test_feat_with_neither_tests_nor_impl_staged_emits_diagnostic(
         capture_output=True,
         text=True,
         check=False,
+        env=_scrubbed_env(),
     )
 
     assert result.returncode != 0, (
@@ -1286,6 +1369,7 @@ def test_feat_with_tests_and_impl_staged_together_emits_mixed_buckets_diagnostic
         ["git", "init", "-q"],
         cwd=str(tmp_path),
         check=True,
+        env=_scrubbed_env(),
     )
     (tmp_path / "tests").mkdir()
     test_file = tmp_path / "tests" / "test_dummy.py"
@@ -1297,6 +1381,7 @@ def test_feat_with_tests_and_impl_staged_together_emits_mixed_buckets_diagnostic
         ["git", "add", "tests/test_dummy.py", "livespec/foo.py"],
         cwd=str(tmp_path),
         check=True,
+        env=_scrubbed_env(),
     )
 
     msg_path = tmp_path / "COMMIT_EDITMSG"
@@ -1308,6 +1393,7 @@ def test_feat_with_tests_and_impl_staged_together_emits_mixed_buckets_diagnostic
         capture_output=True,
         text=True,
         check=False,
+        env=_scrubbed_env(),
     )
 
     assert result.returncode != 0, (
@@ -1338,6 +1424,7 @@ def test_feat_with_impl_only_staged_no_prior_red_emits_green_without_red_diagnos
         ["git", "init", "-q"],
         cwd=str(tmp_path),
         check=True,
+        env=_scrubbed_env(),
     )
     (tmp_path / "livespec").mkdir()
     impl_file = tmp_path / "livespec" / "foo.py"
@@ -1346,6 +1433,7 @@ def test_feat_with_impl_only_staged_no_prior_red_emits_green_without_red_diagnos
         ["git", "add", "livespec/foo.py"],
         cwd=str(tmp_path),
         check=True,
+        env=_scrubbed_env(),
     )
 
     msg_path = tmp_path / "COMMIT_EDITMSG"
@@ -1357,6 +1445,7 @@ def test_feat_with_impl_only_staged_no_prior_red_emits_green_without_red_diagnos
         capture_output=True,
         text=True,
         check=False,
+        env=_scrubbed_env(),
     )
 
     assert result.returncode != 0, (
