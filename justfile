@@ -39,11 +39,31 @@ bootstrap:
     # partial failure of any later step cannot leave the bare-flag
     # unset. Targets `git rev-parse --git-common-dir` so the recipe
     # writes the right file when invoked from the primary checkout
-    # AND from secondary worktrees. Self-hosts the
-    # `primary_checkout_bare_flag_set` shared check shipped at v0.3.0.
+    # AND from secondary worktrees. Self-hosts the v091-v094 bare-flag
+    # check at v0.3.0; the bare-flag mechanism is superseded by the
+    # commit-refuse hook below per livespec v095 (Phase 3 of epic
+    # li-unbare will remove this line and the bare-flag set).
     git config --file "$(git rev-parse --git-common-dir)/config" core.bare true
     uv sync --all-groups
     uv run lefthook install
+    # Idempotent install of the canonical livespec commit-refuse hook
+    # at the primary checkout's `.git/hooks/pre-commit` AND
+    # `.git/hooks/pre-push`, plus the `livespec.primaryPath` config
+    # entry the hook body reads. Per livespec/SPECIFICATION/
+    # non-functional-requirements.md §"Commit-refuse hook bootstrap
+    # procedure"; self-hosts the `check-primary-checkout-commit-refuse-
+    # hook-installed` shared check shipped at v0.5.0. Targets
+    # `git rev-parse --git-common-dir` so the install lands in the
+    # primary's shared hooks directory regardless of whether bootstrap
+    # is invoked from the primary or a secondary worktree. Runs AFTER
+    # `lefthook install` because the canonical hook DELEGATES to
+    # `lefthook run <hook-name>` after the refuse-at-primary check —
+    # overwriting the lefthook stubs is intentional, the canonical
+    # hook subsumes them.
+    cp dev-tooling/livespec-commit-refuse-hook.sh "$(git rev-parse --git-common-dir)/hooks/pre-commit"
+    cp dev-tooling/livespec-commit-refuse-hook.sh "$(git rev-parse --git-common-dir)/hooks/pre-push"
+    chmod +x "$(git rev-parse --git-common-dir)/hooks/pre-commit" "$(git rev-parse --git-common-dir)/hooks/pre-push"
+    git config --file "$(git rev-parse --git-common-dir)/config" livespec.primaryPath "$(git rev-parse --git-common-dir | xargs dirname | xargs realpath)"
 
 # ---------------------------------------------------------------
 # Aggregate check — wires EVERY canonical check slug emitted by
@@ -88,7 +108,7 @@ check:
         check-no-write-direct
         check-pbt-coverage-pure-modules
         check-per-file-coverage
-        check-primary-checkout-bare-flag-set
+        check-primary-checkout-commit-refuse-hook-installed
         check-private-calls
         check-public-api-result-typed
         check-red-green-replay
@@ -288,13 +308,16 @@ check-per-file-coverage:
     uv run python -m livespec_dev_tooling.checks.per_file_coverage
 
 # Universal cross-boundary invariant: every livespec-governed primary
-# checkout MUST have `core.bare = true` set in `.git/config`. Self-
-# hosted into the `check` aggregate as of Phase 3b of the family-wide
-# bare-flag migration; CI's metadata matrix runs this target with its
-# own `git config core.bare true` gating step since `actions/checkout`
-# produces a non-bare working tree.
-check-primary-checkout-bare-flag-set:
-    uv run python -m livespec_dev_tooling.checks.primary_checkout_bare_flag_set
+# checkout MUST install `.git/hooks/pre-commit` AND `.git/hooks/pre-push`
+# hooks whose body matches the canonical livespec commit-refuse
+# fingerprint. Supersedes the v091-v094 `core.bare = true` mechanism
+# per livespec v095 §"Primary-checkout commit-refuse hook"; the
+# bare-flag mechanism caused stale-on-disk-read failures at primaries
+# that the hook mechanism does not. CI's metadata matrix runs this
+# target against a populated working tree (no `core.bare` gating
+# step needed); fresh-clone failures are corrected by `just bootstrap`.
+check-primary-checkout-commit-refuse-hook-installed:
+    uv run python -m livespec_dev_tooling.checks.primary_checkout_commit_refuse_hook_installed
 
 check-private-calls:
     uv run python -m livespec_dev_tooling.checks.private_calls
