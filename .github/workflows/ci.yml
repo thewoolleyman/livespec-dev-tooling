@@ -101,9 +101,11 @@ jobs:
         run: just ${{ matrix.target }}
 
   # Metadata matrix runs unconditionally to preserve the repo-metadata
-  # safety net. Populate as Phase G.4 migrates claude-md-coverage,
-  # heading-coverage, no-direct-tool-invocation, check-tools, and
-  # similar repo-metadata checks.
+  # safety net. check-aggregate-completeness is the wiring-completeness
+  # gate added in epic li-univck Phase 1.4 (work-item li-ldtv03) —
+  # verifies the justfile `check:` aggregate wires every canonical
+  # slug emitted by `python -m livespec_dev_tooling.canonical_checks`
+  # in alphabetical order.
   check-metadata:
     name: ${{ matrix.target }}
     runs-on: ubuntu-latest
@@ -111,6 +113,7 @@ jobs:
       fail-fast: false
       matrix:
         target:
+          - check-aggregate-completeness
           - check-primary-checkout-bare-flag-set
     steps:
       - name: Checkout
