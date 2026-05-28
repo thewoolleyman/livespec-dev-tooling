@@ -1,4 +1,4 @@
-"""primary_checkout_commit_refuse_hook_installed — commit-refuse hook installed at the primary checkout.
+"""primary_checkout_commit_refuse_hook_installed — verify commit-refuse hook at primary.
 
 Universal mechanical check ported from livespec's doctor-static
 phase. Per `livespec/SPECIFICATION/contracts.md` §"Doctor
@@ -11,7 +11,7 @@ at the primary checkout. The hook is a no-op at secondary
 worktrees (whose `git rev-parse --show-toplevel` returns the
 worktree's own path, not the primary's).
 
-The contract supersedes the v091–v094 `core.bare = true` mechanism
+The contract supersedes the v091-v094 `core.bare = true` mechanism
 (see `primary_checkout_bare_flag_set.py` in earlier releases). The
 bare-flag mechanism caused stale-on-disk-read failures at primaries
 that the hook mechanism does not.
@@ -214,10 +214,7 @@ def main() -> int:
         return 0
     for hook_name, failure_mode in failures:
         log.error(
-            (
-                "primary-checkout-commit-refuse-hook-installed: "
-                f"`.git/hooks/{hook_name}` {failure_mode.replace('_', ' ')}"
-            ),
+            "primary-checkout-commit-refuse-hook-installed: hook failure",
             check_id=_CHECK_ID,
             status="fail",
             hook=hook_name,
