@@ -1,5 +1,58 @@
 # Changelog
 
+## Unreleased
+
+### Bug Fixes
+
+* **checks:** make `branch_protection_alignment` exit 0 cleanly when `.github/workflows/ci.yml` is absent (graceful absence-handling, epic li-univck Phase 1.1, li-chkabs).
+
+### Notes
+
+#### Graceful absence-handling audit (epic li-univck Phase 1.1, li-chkabs)
+
+Every check shipped by livespec-dev-tooling MUST exit 0 with no
+findings when invoked in a consumer repo that lacks the check's
+precondition. This makes the canonical aggregate (Phase 1.3+,
+li-aggchk) safe to wire universally across the fleet.
+
+Reference pattern: `no_stale_revise_branches.py` enumerates
+`refs/heads/spec/*` first, then iterates — empty list ⇒ exit 0.
+
+Audit results (all checks under `livespec_dev_tooling/checks/`):
+
+| Check                          | Precondition                              | Status            |
+| ------------------------------ | ----------------------------------------- | ----------------- |
+| `vendor_manifest`              | `.vendor.jsonc` present                   | ALREADY-GRACEFUL  |
+| `wrapper_shape`                | `.claude-plugin/scripts/bin/` directory   | ALREADY-GRACEFUL  |
+| `heading_coverage`             | `tests/heading-coverage.json` + spec tree | ALREADY-GRACEFUL  |
+| `claude_md_coverage`           | scope roots present                       | ALREADY-GRACEFUL  |
+| `branch_protection_alignment`  | `.github/workflows/ci.yml`                | FIXED (this PR)   |
+| `master_ci_green`              | GitHub CI configured                      | ALREADY-GRACEFUL  |
+| `no_stale_revise_branches`     | `refs/heads/spec/*` branches              | ALREADY-GRACEFUL (reference) |
+| `rop_pipeline_shape`           | `.claude-plugin/scripts/livespec/` tree   | ALREADY-GRACEFUL  |
+| `no_raise_outside_io`          | `.claude-plugin/scripts/livespec/` tree   | ALREADY-GRACEFUL  |
+| `supervisor_discipline`        | `.claude-plugin/scripts/livespec/` tree   | ALREADY-GRACEFUL  |
+| `public_api_result_typed`      | `.claude-plugin/scripts/livespec/` tree   | ALREADY-GRACEFUL  |
+| `newtype_domain_primitives`    | dataclasses tree                          | ALREADY-GRACEFUL  |
+| `no_inheritance`               | `.claude-plugin/scripts/livespec/` tree   | ALREADY-GRACEFUL  |
+| `no_write_direct`              | source trees                              | ALREADY-GRACEFUL  |
+| `private_calls`                | `.claude-plugin/scripts/livespec/` tree   | ALREADY-GRACEFUL  |
+| `global_writes`                | `.claude-plugin/scripts/livespec/` tree   | ALREADY-GRACEFUL  |
+| `keyword_only_args`            | `.claude-plugin/scripts/livespec/` tree   | ALREADY-GRACEFUL  |
+| `match_keyword_only`           | `.claude-plugin/scripts/livespec/` tree   | ALREADY-GRACEFUL  |
+| `all_declared`                 | `.claude-plugin/scripts/livespec/` tree   | ALREADY-GRACEFUL  |
+| `main_guard`                   | `.claude-plugin/scripts/livespec/` tree   | ALREADY-GRACEFUL  |
+| `assert_never_exhaustiveness`  | `.claude-plugin/scripts/livespec/` tree   | ALREADY-GRACEFUL  |
+| `pbt_coverage_pure_modules`    | pure-modules source trees                 | ALREADY-GRACEFUL  |
+| `comment_line_anchors`         | configured target roots                   | ALREADY-GRACEFUL  |
+
+22 of 23 audited checks already enumerated their precondition
+first and exited 0 cleanly on absence. The single FIXED check
+(`branch_protection_alignment`) previously logged an error and
+returned exit 1 when `.github/workflows/ci.yml` was missing; it
+now returns exit 0 silently, with the test renamed from
+`test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
+
 ## [0.3.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.2.1...v0.3.0) (2026-05-27)
 
 

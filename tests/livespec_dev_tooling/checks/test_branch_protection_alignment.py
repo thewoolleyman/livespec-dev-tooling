@@ -37,14 +37,21 @@ def _run_check(*, cwd: Path, env_path: str | None = None) -> subprocess.Complete
     )
 
 
-def test_missing_ci_yml_fails(*, tmp_path: Path) -> None:
-    """Empty cwd → ci.yml missing → exit 1."""
+def test_missing_ci_yml_is_graceful(*, tmp_path: Path) -> None:
+    """Empty cwd → ci.yml missing → exit 0 (graceful absence-handling).
+
+    Per epic li-univck Phase 1.1 (li-chkabs), every canonical check
+    MUST exit 0 cleanly when its precondition is absent so the check
+    is safe to wire universally across the fleet. Consumers that have
+    not configured GitHub Actions CI have no `.github/workflows/ci.yml`;
+    the branch-protection alignment invariant is vacuously satisfied.
+    """
     result = _run_check(cwd=tmp_path)
-    assert result.returncode == 1, (
-        f"expected exit 1 on missing ci.yml; got {result.returncode}, "
+    assert result.returncode == 0, (
+        f"expected exit 0 on missing ci.yml (graceful absence-handling); "
+        f"got {result.returncode}, "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
-    assert "ci.yml missing" in result.stderr
 
 
 def test_empty_matrix_fails(*, tmp_path: Path) -> None:
