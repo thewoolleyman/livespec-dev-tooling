@@ -114,22 +114,30 @@ jobs:
       matrix:
         target:
           - check-aggregate-completeness
-          - check-primary-checkout-bare-flag-set
+          - check-primary-checkout-commit-refuse-hook-installed
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # The primary-checkout-bare-flag-set check enforces
-      # `core.bare = true` on the primary checkout per
-      # livespec/SPECIFICATION/non-functional-requirements.md
-      # §"Bare-flag bootstrap procedure". `actions/checkout` clones a
-      # non-bare working tree; flipping the flag here satisfies the
-      # invariant. Only the check-primary-checkout-bare-flag-set
-      # matrix entry needs this — other check-metadata entries
-      # (when added) are unaffected by `core.bare`.
-      - name: Set core.bare = true (satisfy invariant)
-        if: matrix.target == 'check-primary-checkout-bare-flag-set'
-        run: git config core.bare true
+      # The primary-checkout-commit-refuse-hook-installed check
+      # verifies the canonical livespec commit-refuse hook is
+      # installed at `.git/hooks/pre-commit` AND `.git/hooks/pre-push`
+      # per livespec/SPECIFICATION/non-functional-requirements.md
+      # §"Primary-checkout commit-refuse hook" and §"Commit-refuse
+      # hook bootstrap procedure". `actions/checkout` clones a fresh
+      # working tree with no bootstrap step run; installing the
+      # canonical hook from the repo-tracked
+      # `dev-tooling/livespec-commit-refuse-hook.sh` here satisfies
+      # the invariant. Only the check-primary-checkout-commit-refuse-
+      # hook-installed matrix entry needs this — other check-metadata
+      # entries are unaffected by hook installation.
+      - name: Install canonical commit-refuse hook (satisfy invariant)
+        if: matrix.target == 'check-primary-checkout-commit-refuse-hook-installed'
+        run: |
+          cp dev-tooling/livespec-commit-refuse-hook.sh .git/hooks/pre-commit
+          cp dev-tooling/livespec-commit-refuse-hook.sh .git/hooks/pre-push
+          chmod +x .git/hooks/pre-commit .git/hooks/pre-push
+          git config livespec.primaryPath "$(pwd)"
 
       - name: Install pinned binaries via mise
         uses: jdx/mise-action@v2

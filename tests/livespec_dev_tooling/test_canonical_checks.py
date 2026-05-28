@@ -221,8 +221,8 @@ def test_canonical_check_slugs_returns_tuple_of_strings() -> None:
         "check-keyword-only-args" in slugs
     ), f"real check `keyword_only_args` must appear in the canonical set; got {slugs}"
     assert (
-        "check-primary-checkout-bare-flag-set" in slugs
-    ), f"real check `primary_checkout_bare_flag_set` must appear; got {slugs}"
+        "check-primary-checkout-commit-refuse-hook-installed" in slugs
+    ), f"real check `primary_checkout_commit_refuse_hook_installed` must appear; got {slugs}"
 
 
 def test_canonical_check_slugs_excludes_helper_module() -> None:
