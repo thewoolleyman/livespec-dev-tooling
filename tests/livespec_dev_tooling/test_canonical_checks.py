@@ -55,9 +55,7 @@ def _write_check_module(*, package_dir: Path, name: str) -> None:
     matters. Body is a no-op so the file parses cleanly.
     """
     (package_dir / f"{name}.py").write_text(
-        "from __future__ import annotations\n"
-        "\n"
-        "__all__: list[str] = []\n",
+        "from __future__ import annotations\n" "\n" "__all__: list[str] = []\n",
         encoding="utf-8",
     )
 
@@ -106,11 +104,13 @@ def test_discover_slugs_returns_alphabetical_order(*, tmp_path: Path) -> None:
     )
     module = _import_canonical_checks()
 
-    slugs = module._discover_slugs(package_path=pkg)  # pyright: ignore[reportPrivateUsage]
+    slugs = module._discover_slugs(package_path=pkg)  # noqa: SLF001  — internal helper under test  # pyright: ignore[reportPrivateUsage]
 
-    assert slugs == ("check-apple", "check-mango", "check-zebra"), (
-        f"discovery must return alphabetically-sorted slugs; got {slugs}"
-    )
+    assert slugs == (
+        "check-apple",
+        "check-mango",
+        "check-zebra",
+    ), f"discovery must return alphabetically-sorted slugs; got {slugs}"
 
 
 def test_discover_slugs_excludes_underscore_prefixed_modules(*, tmp_path: Path) -> None:
@@ -126,11 +126,11 @@ def test_discover_slugs_excludes_underscore_prefixed_modules(*, tmp_path: Path) 
     )
     module = _import_canonical_checks()
 
-    slugs = module._discover_slugs(package_path=pkg)  # pyright: ignore[reportPrivateUsage]
+    slugs = module._discover_slugs(package_path=pkg)  # noqa: SLF001  — internal helper under test  # pyright: ignore[reportPrivateUsage]
 
-    assert slugs == ("check-keyword-only-args",), (
-        f"discovery must exclude underscore-prefixed helpers; got {slugs}"
-    )
+    assert slugs == (
+        "check-keyword-only-args",
+    ), f"discovery must exclude underscore-prefixed helpers; got {slugs}"
 
 
 def test_discover_slugs_excludes_init_py(*, tmp_path: Path) -> None:
@@ -146,17 +146,15 @@ def test_discover_slugs_excludes_init_py(*, tmp_path: Path) -> None:
     )
     module = _import_canonical_checks()
 
-    slugs = module._discover_slugs(package_path=pkg)  # pyright: ignore[reportPrivateUsage]
+    slugs = module._discover_slugs(package_path=pkg)  # noqa: SLF001  — internal helper under test  # pyright: ignore[reportPrivateUsage]
 
-    assert "check-init" not in slugs, (
-        f"discovery must not emit a check- slug for __init__; got {slugs}"
-    )
-    assert "check---init--" not in slugs, (
-        f"discovery must not emit any __init__-derived slug; got {slugs}"
-    )
-    assert slugs == ("check-foo",), (
-        f"discovery must return only the real check module; got {slugs}"
-    )
+    assert (
+        "check-init" not in slugs
+    ), f"discovery must not emit a check- slug for __init__; got {slugs}"
+    assert (
+        "check---init--" not in slugs
+    ), f"discovery must not emit any __init__-derived slug; got {slugs}"
+    assert slugs == ("check-foo",), f"discovery must return only the real check module; got {slugs}"
 
 
 def test_discover_slugs_maps_snake_case_to_kebab_case(*, tmp_path: Path) -> None:
@@ -171,11 +169,11 @@ def test_discover_slugs_maps_snake_case_to_kebab_case(*, tmp_path: Path) -> None
     )
     module = _import_canonical_checks()
 
-    slugs = module._discover_slugs(package_path=pkg)  # pyright: ignore[reportPrivateUsage]
+    slugs = module._discover_slugs(package_path=pkg)  # noqa: SLF001  — internal helper under test  # pyright: ignore[reportPrivateUsage]
 
-    assert slugs == ("check-keyword-only-args",), (
-        f"discovery must map snake_case → kebab-case; got {slugs}"
-    )
+    assert slugs == (
+        "check-keyword-only-args",
+    ), f"discovery must map snake_case → kebab-case; got {slugs}"
 
 
 def test_discover_slugs_handles_empty_package(*, tmp_path: Path) -> None:
@@ -190,11 +188,9 @@ def test_discover_slugs_handles_empty_package(*, tmp_path: Path) -> None:
     )
     module = _import_canonical_checks()
 
-    slugs = module._discover_slugs(package_path=pkg)  # pyright: ignore[reportPrivateUsage]
+    slugs = module._discover_slugs(package_path=pkg)  # noqa: SLF001  — internal helper under test  # pyright: ignore[reportPrivateUsage]
 
-    assert slugs == (), (
-        f"discovery must return empty tuple for empty package; got {slugs}"
-    )
+    assert slugs == (), f"discovery must return empty tuple for empty package; got {slugs}"
 
 
 def test_canonical_check_slugs_returns_tuple_of_strings() -> None:
@@ -211,24 +207,22 @@ def test_canonical_check_slugs_returns_tuple_of_strings() -> None:
 
     slugs = module.canonical_check_slugs()
 
-    assert isinstance(slugs, tuple), (
-        f"canonical_check_slugs() must return a tuple; got {type(slugs)}"
-    )
-    assert all(isinstance(s, str) for s in slugs), (
-        f"every slug must be a string; got {[type(s) for s in slugs]}"
-    )
-    assert all(s.startswith("check-") for s in slugs), (
-        f"every slug must start with `check-`; got {slugs}"
-    )
-    assert list(slugs) == sorted(slugs), (
-        f"slugs must be alphabetically sorted; got {slugs}"
-    )
-    assert "check-keyword-only-args" in slugs, (
-        f"real check `keyword_only_args` must appear in the canonical set; got {slugs}"
-    )
-    assert "check-primary-checkout-bare-flag-set" in slugs, (
-        f"real check `primary_checkout_bare_flag_set` must appear; got {slugs}"
-    )
+    assert isinstance(
+        slugs, tuple
+    ), f"canonical_check_slugs() must return a tuple; got {type(slugs)}"
+    assert all(
+        isinstance(s, str) for s in slugs
+    ), f"every slug must be a string; got {[type(s) for s in slugs]}"
+    assert all(
+        s.startswith("check-") for s in slugs
+    ), f"every slug must start with `check-`; got {slugs}"
+    assert list(slugs) == sorted(slugs), f"slugs must be alphabetically sorted; got {slugs}"
+    assert (
+        "check-keyword-only-args" in slugs
+    ), f"real check `keyword_only_args` must appear in the canonical set; got {slugs}"
+    assert (
+        "check-primary-checkout-bare-flag-set" in slugs
+    ), f"real check `primary_checkout_bare_flag_set` must appear; got {slugs}"
 
 
 def test_canonical_check_slugs_excludes_helper_module() -> None:
@@ -242,12 +236,12 @@ def test_canonical_check_slugs_excludes_helper_module() -> None:
 
     slugs = module.canonical_check_slugs()
 
-    assert "check--red-green-replay-modes" not in slugs, (
-        f"underscore-prefixed helper must not appear in canonical set; got {slugs}"
-    )
-    assert "check-red-green-replay-modes" not in slugs, (
-        f"underscore-prefixed helper (stripped form) must not appear; got {slugs}"
-    )
+    assert (
+        "check--red-green-replay-modes" not in slugs
+    ), f"underscore-prefixed helper must not appear in canonical set; got {slugs}"
+    assert (
+        "check-red-green-replay-modes" not in slugs
+    ), f"underscore-prefixed helper (stripped form) must not appear; got {slugs}"
 
 
 def test_json_thin_transport_emits_slugs_array() -> None:
@@ -273,25 +267,21 @@ def test_json_thin_transport_emits_slugs_array() -> None:
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
     payload = json.loads(result.stdout)
-    assert isinstance(payload, dict), (
-        f"--json output must be a JSON object; got {type(payload).__name__}"
-    )
-    assert "slugs" in payload, (
-        f"--json output must have a `slugs` key; got keys {list(payload.keys())}"
-    )
+    assert isinstance(
+        payload, dict
+    ), f"--json output must be a JSON object; got {type(payload).__name__}"
+    assert (
+        "slugs" in payload
+    ), f"--json output must have a `slugs` key; got keys {list(payload.keys())}"
     slugs = payload["slugs"]
-    assert isinstance(slugs, list), (
-        f"`slugs` must be a list; got {type(slugs).__name__}"
-    )
-    assert all(isinstance(s, str) for s in slugs), (
-        f"every slug must be a string; got {[type(s).__name__ for s in slugs]}"
-    )
-    assert all(s.startswith("check-") for s in slugs), (
-        f"every slug must start with `check-`; got {slugs}"
-    )
-    assert slugs == sorted(slugs), (
-        f"slugs must be alphabetically sorted; got {slugs}"
-    )
+    assert isinstance(slugs, list), f"`slugs` must be a list; got {type(slugs).__name__}"
+    assert all(
+        isinstance(s, str) for s in slugs
+    ), f"every slug must be a string; got {[type(s).__name__ for s in slugs]}"
+    assert all(
+        s.startswith("check-") for s in slugs
+    ), f"every slug must start with `check-`; got {slugs}"
+    assert slugs == sorted(slugs), f"slugs must be alphabetically sorted; got {slugs}"
 
 
 def test_canonical_checks_module_importable_without_running_main() -> None:
@@ -310,7 +300,7 @@ def test_canonical_checks_module_importable_without_running_main() -> None:
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    assert callable(module.canonical_check_slugs), (
-        "canonical_check_slugs must be importable without invocation"
-    )
+    assert callable(
+        module.canonical_check_slugs
+    ), "canonical_check_slugs must be importable without invocation"
     assert callable(module.main), "main must be importable without invocation"
