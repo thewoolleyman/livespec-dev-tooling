@@ -46,7 +46,7 @@ Exit codes:
   names the specific failure mode for diagnostic clarity.
 - `4` — fail. The repo IS a git repository but has `core.bare = true`
   set (`failure_mode` `core_bare_set`). This is the eliminated legacy
-  bare-flag state (the v091–v094 mechanism the commit-refuse hook
+  bare-flag state (the v091-v094 mechanism the commit-refuse hook
   superseded): a bare repo is a git repo that is NOT a work tree, so
   the work-tree skip below would silently pass it. This check
   realizes the MAY in `livespec/SPECIFICATION/contracts.md`
