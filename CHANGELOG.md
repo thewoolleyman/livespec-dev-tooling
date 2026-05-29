@@ -53,6 +53,18 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.6.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.5.1...v0.6.0) (2026-05-29)
+
+
+### Features
+
+* shared skill_invocation_paths check (fenced SKILL.md wrapper invocations) ([0cbd890](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0cbd890d51096a051aa3a160f1330c26f87bec75))
+
+
+### Bug Fixes
+
+* red-green-replay rejections print the full 2-step protocol ([15704f7](https://github.com/thewoolleyman/livespec-dev-tooling/commit/15704f73516342622360c36591b09a725934f469))
+
 ## [0.5.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.5.0...v0.5.1) (2026-05-29)
 
 
