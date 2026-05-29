@@ -24,6 +24,27 @@ if TYPE_CHECKING:  # pragma: no cover
 __all__: list[str] = []
 
 
+# The full 2-step Red-Green-Replay protocol, emitted verbatim by EVERY
+# rejection branch (here AND in the parent `red_green_replay.py`) so a
+# developer or fresh agent recovers the correct authoring sequence from
+# the hook output alone, without spelunking the check source
+# (work-item li-rgr-docs-wi2). Each reject's mode-specific `hint` says
+# what is locally wrong; this `protocol` field says what the correct
+# full sequence is.
+RED_GREEN_REPLAY_PROTOCOL: str = (
+    "Red-Green-Replay protocol (single-commit TDD ritual). "
+    "Step 1 — Red commit: stage the test file ALONE (no impl) and commit with a fix:/feat: "
+    "subject. The hook runs pytest on the staged tree; the new test MUST fail meaningfully "
+    "(an assertion failure, NOT an ImportError / collection error). The hook records TDD-Red-* "
+    "trailers (test path, failure reason, test-file checksum, output checksum, captured-at). "
+    "Step 2 — Green amend: stage the impl and run `git commit --amend`. The hook sees the "
+    "TDD-Red-* trailers + staged impl, re-runs the SAME test (now passing), and records "
+    "TDD-Green-* trailers. The final SINGLE commit carries both files + both trailer sets. The "
+    "test file bytes MUST be byte-identical across the Red->Green pair; to change the test, "
+    "author a new Red commit."
+)
+
+
 def _head_has_red_trailers() -> bool:
     """Return True iff HEAD's commit message carries `TDD-Red-*` trailers."""
     result = subprocess.run(
@@ -120,6 +141,7 @@ def _handle_red_mode(
                 "`TDD-Red-Test-File-Checksum:` is a singular field; "
                 "stage exactly one test file per Red commit."
             ),
+            protocol=RED_GREEN_REPLAY_PROTOCOL,
         )
         return 1
     test_file_path = Path.cwd() / tests_paths[0]
@@ -150,6 +172,7 @@ def _handle_red_mode(
                 "moment (the subsequent Green amend has "
                 "nothing to verify)."
             ),
+            protocol=RED_GREEN_REPLAY_PROTOCOL,
         )
         return 1
     log.info(
@@ -205,6 +228,7 @@ def _handle_green_mode(
                 "Green amend; if you needed to change the test, "
                 "author a new Red commit."
             ),
+            protocol=RED_GREEN_REPLAY_PROTOCOL,
         )
         return 1
     green_pytest_result = subprocess.run(
@@ -223,6 +247,7 @@ def _handle_green_mode(
                 "Green mode requires the staged test to pass; "
                 "the new impl has not yet made the Red test green."
             ),
+            protocol=RED_GREEN_REPLAY_PROTOCOL,
         )
         return 1
     green_verified_at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

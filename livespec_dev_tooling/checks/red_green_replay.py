@@ -49,6 +49,7 @@ import structlog  # noqa: E402  — vendor-path-aware import after sys.path inse
 # name marks it as a private helper rather than a check entry
 # point.
 from _red_green_replay_modes import (  # noqa: E402  — sibling private import
+    RED_GREEN_REPLAY_PROTOCOL,
     _handle_green_mode,
     _handle_red_mode,
     _head_has_red_trailers,
@@ -145,6 +146,7 @@ def main() -> int:
                 "Red mode requires staged tests + no impl; "
                 "Green mode requires staged impl + HEAD~0 Red trailers."
             ),
+            protocol=RED_GREEN_REPLAY_PROTOCOL,
         )
         return 1
     tests_paths, impl_paths = _classify_staged(paths=staged_paths)
@@ -186,6 +188,7 @@ def _diagnose_fallthrough(
                 "any other non-product-code path, use one of the exempt commit "
                 "types: chore, docs, build, ci, style, test, refactor, perf, revert."
             ),
+            protocol=RED_GREEN_REPLAY_PROTOCOL,
         )
         return 1
     if tests_paths and impl_paths:
@@ -200,6 +203,7 @@ def _diagnose_fallthrough(
                 "impl and amend (Green) — the Green amend produces one final "
                 "commit carrying both files plus the R-G trailers."
             ),
+            protocol=RED_GREEN_REPLAY_PROTOCOL,
         )
         return 1
     log.error(
@@ -211,6 +215,7 @@ def _diagnose_fallthrough(
             "then stage the impl and amend (Green). The Green amend reads the "
             "Red trailers from HEAD~0 to verify the test now passes."
         ),
+        protocol=RED_GREEN_REPLAY_PROTOCOL,
     )
     return 1
 
