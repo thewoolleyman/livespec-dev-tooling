@@ -436,13 +436,66 @@ def test_passes_with_secondary_worktrees(*, tmp_path: Path) -> None:
 
 
 def test_skipped_when_not_a_git_repo(*, tmp_path: Path) -> None:
-    """(l) exit 0 (skipped) when cwd is not inside a git working tree."""
+    """(l) exit 0 (skipped) when cwd is not a git repository at all."""
     project_root = tmp_path / "project"
     project_root.mkdir()
-    # No `git init` — cwd is a bare directory.
+    # No `git init` — cwd is a bare directory (no surrounding repo).
 
     result = _run_check(cwd=project_root)
     assert result.returncode == 0
+    assert "not a git repository" in result.stderr
+
+
+def test_fails_when_core_bare_set(*, tmp_path: Path) -> None:
+    """(l2) exit 4 (fail) when the repo has `core.bare = true` (legacy bare-flag regression).
+
+    Realizes the MAY in `livespec/SPECIFICATION/contracts.md`
+    §"`primary-checkout-commit-refuse-hook-installed`": the doctor
+    invariant MAY surface a `fail` when `core.bare = true` is set on
+    the primary, to catch the eliminated legacy bare-flag state. A
+    bare repo is a git repo that is NOT a work tree, so the prior
+    work-tree-only skip silently passed it; the dedicated branch
+    fires `fail` with the `core_bare_set` failure_mode instead.
+    """
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    _git_init(cwd=project_root)
+    env = _scrubbed_env()
+    _ = subprocess.run(
+        ["git", "config", "core.bare", "true"],
+        cwd=str(project_root),
+        check=True,
+        env=env,
+    )
+
+    result = _run_check(cwd=project_root)
+    assert result.returncode == 4, (
+        f"expected exit 4; got {result.returncode}, "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    assert "core_bare_set" in result.stderr
+    assert "core.bare" in result.stderr
+
+
+def test_skipped_when_git_repo_but_not_a_work_tree(*, tmp_path: Path) -> None:
+    """(l3) exit 0 (skipped) when cwd is a git repo but NOT inside a work tree.
+
+    A non-bare git repo whose cwd is inside the `.git` directory is a
+    git context (`git rev-parse --git-dir` exits 0) that is NOT a
+    working tree (`git rev-parse --is-inside-work-tree` is `false`).
+    With `core.bare` unset (git's default `false`), the check falls
+    through the bare-flag fail branch to the work-tree skip.
+    """
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    _git_init(cwd=project_root)
+    git_dir = project_root / ".git"
+
+    result = _run_check(cwd=git_dir)
+    assert result.returncode == 0, (
+        f"expected exit 0; got {result.returncode}, "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
     assert "not inside a git working tree" in result.stderr
 
 

@@ -32,9 +32,9 @@ quoting or whitespace).
 Exit codes:
 - `0` — pass. Both `.git/hooks/pre-commit` and `.git/hooks/pre-push`
   exist, are executable, and contain the canonical fingerprint.
-- `0` — skipped (cwd is not a git repo, or `git` is unavailable).
-  Skipped is `0` so the check is a no-op in non-git environments
-  rather than a false positive.
+- `0` — skipped (cwd is not a git repository at all, or `git` is
+  unavailable). Skipped is `0` so the check is a no-op in non-git
+  environments rather than a false positive.
 - `4` — fail. One or both hooks are missing, non-executable, or
   contain a non-canonical body (including the empty-file case).
   Corrective action: run the repo's documented bootstrap step
@@ -44,6 +44,19 @@ Exit codes:
   between "missing" and "non-canonical body" — both fire equally;
   both are corrected by the same bootstrap invocation. The narration
   names the specific failure mode for diagnostic clarity.
+- `4` — fail. The repo IS a git repository but has `core.bare = true`
+  set (`failure_mode` `core_bare_set`). This is the eliminated legacy
+  bare-flag state (the v091–v094 mechanism the commit-refuse hook
+  superseded): a bare repo is a git repo that is NOT a work tree, so
+  the work-tree skip below would silently pass it. This check
+  realizes the MAY in `livespec/SPECIFICATION/contracts.md`
+  §"`primary-checkout-commit-refuse-hook-installed`" — "The doctor
+  invariant MAY additionally surface a `fail` when `core.bare = true`
+  is set on the primary, to catch the legacy-state case during the
+  transition." The corrective action is to unset the flag and
+  repopulate the working tree. This does NOT change the canonical
+  upstream invariant (which stays a MAY); dev-tooling's impl chooses
+  to realize it.
 
 Output discipline: structlog JSON to stderr; no `print`, no
 `sys.stderr.write`.
@@ -83,6 +96,11 @@ _CANONICAL_REFUSE_EXIT = "exit 1"
 
 _HOOK_NAMES: tuple[str, ...] = ("pre-commit", "pre-push")
 
+# Failure-mode value for the legacy bare-flag regression — emitted on
+# the dedicated `core.bare = true` fail branch (distinct from the
+# per-hook `missing` / `not_executable` / `non_canonical_body` modes).
+_CORE_BARE_FAILURE_MODE = "core_bare_set"
+
 
 def _configure_logger() -> structlog.stdlib.BoundLogger:
     structlog.configure(
@@ -96,12 +114,15 @@ def _configure_logger() -> structlog.stdlib.BoundLogger:
     return structlog.get_logger(_CHECK_ID)
 
 
-def _is_git_repo(*, cwd: Path) -> bool:
+def _is_inside_work_tree(*, cwd: Path) -> bool:
     """Return True when `cwd` is inside a git working tree.
 
-    Uses `git rev-parse --is-inside-work-tree`; returns False when
-    the command exits non-zero (e.g., the directory has no
-    surrounding repo).
+    Uses `git rev-parse --is-inside-work-tree`. The caller invokes
+    this only after `_is_git_repo_at_all` has confirmed a surrounding
+    repo, so the command always exits `0` and prints `true`/`false`;
+    a `false` (e.g., cwd is inside the `.git` directory itself, which
+    is a git context that is NOT a working tree) — or any non-`true`
+    stdout — yields False without a dedicated returncode branch.
     """
     completed = subprocess.run(
         ["git", "rev-parse", "--is-inside-work-tree"],
@@ -110,8 +131,46 @@ def _is_git_repo(*, cwd: Path) -> bool:
         text=True,
         check=False,
     )
-    if completed.returncode != 0:
-        return False
+    return completed.stdout.strip() == "true"
+
+
+def _is_git_repo_at_all(*, cwd: Path) -> bool:
+    """Return True when `cwd` is inside ANY git repository (work tree OR bare).
+
+    Uses `git rev-parse --git-dir`, which exits `0` for both a normal
+    working-tree clone and a `core.bare = true` repository (a bare repo
+    is a git repo that is NOT a work tree). Returns False when the
+    command exits non-zero (e.g., the directory has no surrounding
+    repo). This is the discriminator that lets the check distinguish a
+    genuinely-not-a-repo directory (skip) from a bare-flag regression
+    (fail).
+    """
+    completed = subprocess.run(
+        ["git", "rev-parse", "--git-dir"],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return completed.returncode == 0
+
+
+def _core_bare_is_true(*, cwd: Path) -> bool:
+    """Return True when `git config --get core.bare` resolves to `true`.
+
+    The caller MUST have verified `cwd` is inside a git repository via
+    `_is_git_repo_at_all` first. When the key is unset, `git config
+    --get core.bare` exits non-zero AND prints nothing, so the empty
+    stdout compares unequal to `"true"` — git's default `false` yields
+    False here without a dedicated returncode branch.
+    """
+    completed = subprocess.run(
+        ["git", "config", "--get", "core.bare"],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
     return completed.stdout.strip() == "true"
 
 
@@ -195,7 +254,35 @@ def main() -> int:
             hint="install git or invoke from a shell that exposes git on PATH",
         )
         return 0
-    if not _is_git_repo(cwd=cwd):
+    if not _is_git_repo_at_all(cwd=cwd):
+        log.info(
+            "cwd is not a git repository; skipping check",
+            check_id=_CHECK_ID,
+            cwd=str(cwd),
+        )
+        return 0
+    if _core_bare_is_true(cwd=cwd):
+        log.error(
+            "primary-checkout-commit-refuse-hook-installed: hook failure",
+            check_id=_CHECK_ID,
+            status="fail",
+            hook="",
+            failure_mode=_CORE_BARE_FAILURE_MODE,
+            hooks_dir="",
+            hint=(
+                "core.bare=true on the primary checkout — legacy bare-flag "
+                "state; the commit-refuse-hook mechanism requires a "
+                "non-bare working-tree clone. Run `git config --unset "
+                "core.bare && git reset --hard origin/master` to repopulate "
+                "the working tree, then run the documented bootstrap step "
+                "(see livespec/SPECIFICATION/non-functional-requirements.md "
+                '§"Commit-refuse hook bootstrap procedure")'
+            ),
+            path="",
+            line=0,
+        )
+        return _FAIL_EXIT
+    if not _is_inside_work_tree(cwd=cwd):
         log.info(
             "cwd is not inside a git working tree; skipping check",
             check_id=_CHECK_ID,
