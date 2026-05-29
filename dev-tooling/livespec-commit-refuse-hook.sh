@@ -35,4 +35,10 @@ fi
 
 # Delegate to lefthook at worktrees so the repo's existing gates fire.
 hook_name="$(basename "$0")"
+# git injects GIT_DIR=<worktree-gitdir> (plus GIT_INDEX_FILE/GIT_WORK_TREE/
+# GIT_PREFIX) into the hook environment when a hook fires inside a worktree.
+# lefthook run with that env set misreads the repo as bare and writes
+# core.bare=true into the shared .git/config, corrupting every checkout that
+# shares it (root cause li-iroguc). Clear them so lefthook detects from cwd.
+unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE GIT_PREFIX
 exec mise exec -- lefthook run "$hook_name" "$@"
