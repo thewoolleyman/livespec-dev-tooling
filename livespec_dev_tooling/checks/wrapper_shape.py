@@ -14,17 +14,25 @@ statement, and is not part of the AST body):
 
     bootstrap()
 
-    from livespec.<...> import main
+    from <livespec-family-package>.<...> import main
 
     raise SystemExit(main())
+
+The main-import module's top-level package is the OWNING
+plugin's distribution package: `livespec` for livespec-core, or
+`livespec_<suffix>` for an impl-plugin (e.g.
+`livespec_impl_plaintext`, `livespec_impl_beads`). The shared
+check runs across every livespec-family repo via the pin-and-bump
+cross-repo mechanism, so it accepts any livespec-family top-level
+package, not just the core `livespec.` prefix.
 
 The AST module body has exactly 5 top-level statements (the
 docstring counts as an `Expr(Constant(str))`):
 
-1. `Expr(Constant(str))` — the module docstring.
+1. `Expr(Constant(str))` -- the module docstring.
 2. `ImportFrom(module="_bootstrap", names=["bootstrap"])`.
-3. `Expr(Call(Name("bootstrap")))` — the bootstrap call.
-4. `ImportFrom(module="livespec.<...>", names=["main"])`.
+3. `Expr(Call(Name("bootstrap")))` -- the bootstrap call.
+4. `ImportFrom(module="livespec(_<suffix>)?.<...>", names=["main"])`.
 5. `Raise(exc=Call(Name("SystemExit"), args=[Call(Name("main"))]))`.
 
 Any deviation (extra statements, missing pieces, wrong
@@ -41,6 +49,7 @@ _vendor/structlog` is added to `sys.path` at module import time.
 from __future__ import annotations
 
 import ast
+import re
 import sys
 from pathlib import Path
 
@@ -62,6 +71,19 @@ _EXEMPT_NAMES = frozenset({"_bootstrap.py"})
 # main import → SystemExit(main())). This constant names the
 # load-bearing count.
 _CANONICAL_WRAPPER_STMT_COUNT: int = 5
+
+# The main-import statement of a canonical wrapper imports `main`
+# from the OWNING plugin's package. For livespec-core that package
+# is `livespec`; for each impl-plugin it is the plugin's own
+# distribution package (`livespec_impl_plaintext`, `livespec_impl_beads`,
+# etc.). The shared check runs across every livespec-family repo via
+# the pin-and-bump cross-repo mechanism, so it must accept any
+# livespec-FAMILY top-level package, not just the core `livespec.`
+# prefix. The family rule: the top-level package is either the bare
+# `livespec` package or a `livespec_<suffix>` package (an underscore
+# separator). A lookalike like `livespecfoo.` (no separator) is NOT
+# a family member and an unrelated module like `os.` is rejected.
+_FAMILY_MAIN_IMPORT_RE = re.compile(r"^livespec(_[a-z0-9_]+)?\.")
 
 
 def _is_docstring(*, stmt: ast.stmt) -> bool:
@@ -96,7 +118,7 @@ def _is_livespec_main_import(*, stmt: ast.stmt) -> bool:
     return (
         isinstance(stmt, ast.ImportFrom)
         and stmt.module is not None
-        and stmt.module.startswith("livespec.")
+        and _FAMILY_MAIN_IMPORT_RE.match(stmt.module) is not None
         and len(stmt.names) == 1
         and stmt.names[0].name == "main"
     )

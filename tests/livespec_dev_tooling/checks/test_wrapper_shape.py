@@ -203,6 +203,137 @@ def test_wrapper_shape_accepts_canonical_wrapper(*, tmp_path: Path) -> None:
     )
 
 
+def test_wrapper_shape_accepts_impl_plugin_family_wrapper(*, tmp_path: Path) -> None:
+    """A canonical wrapper importing main from a `livespec_<suffix>` family package passes.
+
+    Fixture: a bin/*.py wrapper that is canonical in every
+    respect except the main-import module path is
+    `livespec_impl_plaintext.commands.next` (the impl-plugin's
+    own package name) rather than the core `livespec.` prefix.
+    The check MUST accept any livespec-family top-level package
+    (`livespec` or `livespec_<suffix>`), not just `livespec.`,
+    so impl-plugin wrappers conforming to the canonical
+    5-statement shape pass (li-ini4rz).
+    """
+    package_dir = tmp_path / ".claude-plugin" / "scripts" / "bin"
+    package_dir.mkdir(parents=True)
+    source = package_dir / "next.py"
+    source.write_text(
+        "#!/usr/bin/env python3\n"
+        '"""Shebang wrapper for next. No logic."""\n'
+        "\n"
+        "from _bootstrap import bootstrap\n"
+        "\n"
+        "bootstrap()\n"
+        "\n"
+        "from livespec_impl_plaintext.commands.next import main\n"
+        "\n"
+        "raise SystemExit(main())\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(_WRAPPER_SHAPE)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, (
+        f"wrapper_shape should accept a livespec-family impl-plugin wrapper with exit 0; "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_wrapper_shape_rejects_non_family_main_import(*, tmp_path: Path) -> None:
+    """A wrapper whose main import is from a non-family package fails.
+
+    Fixture: a wrapper canonical in every respect except the
+    main-import module path is `os.path` (a clearly
+    non-livespec-family top-level package). The relaxed
+    family-prefix predicate must still reject module paths
+    whose top-level package is neither `livespec` nor
+    `livespec_<suffix>` (li-ini4rz).
+    """
+    package_dir = tmp_path / ".claude-plugin" / "scripts" / "bin"
+    package_dir.mkdir(parents=True)
+    source = package_dir / "seed.py"
+    source.write_text(
+        "#!/usr/bin/env python3\n"
+        '"""Shebang wrapper for seed. No logic."""\n'
+        "\n"
+        "from _bootstrap import bootstrap\n"
+        "\n"
+        "bootstrap()\n"
+        "\n"
+        "from os.path import main\n"
+        "\n"
+        "raise SystemExit(main())\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(_WRAPPER_SHAPE)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0, (
+        f"wrapper_shape should reject a wrapper whose main import is from a "
+        f"non-livespec-family package; "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_wrapper_shape_rejects_lookalike_non_family_prefix(*, tmp_path: Path) -> None:
+    """A wrapper importing from `livespecfoo.` (no separator) fails.
+
+    Fixture: the main import is `livespecfoo.commands.seed` -
+    a package whose name STARTS WITH the literal text
+    `livespec` but is NOT a family member (the family rule
+    requires either the bare `livespec` package or a
+    `livespec_<suffix>` package, i.e. an underscore
+    separator). This guards the relaxation against an
+    over-broad `startswith("livespec")` regression (li-ini4rz).
+    """
+    package_dir = tmp_path / ".claude-plugin" / "scripts" / "bin"
+    package_dir.mkdir(parents=True)
+    source = package_dir / "seed.py"
+    source.write_text(
+        "#!/usr/bin/env python3\n"
+        '"""Shebang wrapper for seed. No logic."""\n'
+        "\n"
+        "from _bootstrap import bootstrap\n"
+        "\n"
+        "bootstrap()\n"
+        "\n"
+        "from livespecfoo.commands.seed import main\n"
+        "\n"
+        "raise SystemExit(main())\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(_WRAPPER_SHAPE)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0, (
+        f"wrapper_shape should reject a wrapper importing from a livespec-lookalike "
+        f"non-family package (`livespecfoo.`); "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
 def test_wrapper_shape_exempts_bootstrap_file(*, tmp_path: Path) -> None:
     """`bin/_bootstrap.py` is exempt from the wrapper-shape check.
 
