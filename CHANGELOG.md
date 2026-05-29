@@ -53,6 +53,16 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.5.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.5.0...v0.5.1) (2026-05-29)
+
+
+### Bug Fixes
+
+* **branch-protection:** fail when master is definitively unprotected ([5512ae4](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5512ae492dab2e6e113a2a2eef33599168b72c71))
+* **check:** fail on core.bare=true in commit-refuse-hook-installed check ([dfa3edc](https://github.com/thewoolleyman/livespec-dev-tooling/commit/dfa3edc3326e0581b91729a29fc81ff262372a36))
+* **lint:** replace en-dash with hyphen in v091-v094 docstring (RUF002) ([447878d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/447878d51ebd6e1588402c6f0200ad72697681a9))
+* relax wrapper_shape livespec-prefix coupling for impl-plugin wrappers (li-ini4rz) ([fa8f436](https://github.com/thewoolleyman/livespec-dev-tooling/commit/fa8f4362bf8c6f46d6324a702efc54c9b649ec4c))
+
 ## [0.5.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.4.0...v0.5.0) (2026-05-28)
 
 
