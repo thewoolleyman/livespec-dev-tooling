@@ -1456,3 +1456,304 @@ def test_feat_with_impl_only_staged_no_prior_red_emits_green_without_red_diagnos
         f"expected 'green-without-red' check_id in stderr for "
         f"impl-only-no-red feat:; got stderr={result.stderr!r}"
     )
+
+
+# ---------------------------------------------------------------
+# Self-explaining rejections (work-item li-rgr-docs-wi2): EVERY
+# rejection mode MUST emit the FULL 2-step Red-Green-Replay protocol
+# alongside its mode-specific hint, so a fresh agent recovers the
+# correct authoring sequence without spelunking the source. These
+# distinctive protocol-text markers must appear in the stderr JSON of
+# every reject branch across BOTH `red_green_replay.py` (mode-detection
+# / ambiguous-staging rejects) and `_red_green_replay_modes.py`
+# (Red-mode / Green-mode rejects).
+# ---------------------------------------------------------------
+_PROTOCOL_MARKERS: tuple[str, ...] = (
+    "Red-Green-Replay protocol",
+    "stage the test file ALONE",
+    "Green amend",
+    "byte-identical",
+)
+
+
+def _assert_protocol_in_stderr(*, stderr: str, mode: str) -> None:
+    """Assert every protocol marker is present in a reject branch's stderr."""
+    for marker in _PROTOCOL_MARKERS:
+        assert marker in stderr, (
+            f"reject mode {mode!r} must emit the full Red-Green-Replay "
+            f"protocol; missing marker {marker!r} in stderr={stderr!r}"
+        )
+
+
+def test_empty_staged_reject_prints_full_protocol(*, tmp_path: Path) -> None:
+    """`red-green-replay-empty-staged` reject emits the full protocol."""
+    subprocess.run(["git", "init", "-q"], cwd=str(tmp_path), check=True, env=_scrubbed_env())
+    msg_path = tmp_path / "COMMIT_EDITMSG"
+    msg_path.write_text("feat: add new feature\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_scrubbed_env(),
+    )
+
+    assert result.returncode != 0
+    assert "empty-staged" in result.stderr
+    _assert_protocol_in_stderr(stderr=result.stderr, mode="empty-staged")
+
+
+def test_staged_not_classifiable_reject_prints_full_protocol(*, tmp_path: Path) -> None:
+    """`red-green-replay-staged-not-classifiable` reject emits the full protocol."""
+    subprocess.run(["git", "init", "-q"], cwd=str(tmp_path), check=True, env=_scrubbed_env())
+    (tmp_path / "templates").mkdir()
+    (tmp_path / "templates" / "foo.yml").write_text("key: value\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "add", "templates/foo.yml"],
+        cwd=str(tmp_path),
+        check=True,
+        env=_scrubbed_env(),
+    )
+    msg_path = tmp_path / "COMMIT_EDITMSG"
+    msg_path.write_text("feat: add new template\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_scrubbed_env(),
+    )
+
+    assert result.returncode != 0
+    assert "staged-not-classifiable" in result.stderr
+    _assert_protocol_in_stderr(stderr=result.stderr, mode="staged-not-classifiable")
+
+
+def test_mixed_buckets_reject_prints_full_protocol(*, tmp_path: Path) -> None:
+    """`red-green-replay-mixed-buckets` reject emits the full protocol."""
+    subprocess.run(["git", "init", "-q"], cwd=str(tmp_path), check=True, env=_scrubbed_env())
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_dummy.py").write_text(
+        "def test_x() -> None:\n    assert True\n", encoding="utf-8"
+    )
+    (tmp_path / "livespec").mkdir()
+    (tmp_path / "livespec" / "foo.py").write_text("VALUE: int = 1\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "add", "tests/test_dummy.py", "livespec/foo.py"],
+        cwd=str(tmp_path),
+        check=True,
+        env=_scrubbed_env(),
+    )
+    msg_path = tmp_path / "COMMIT_EDITMSG"
+    msg_path.write_text("feat: add mixed change\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_scrubbed_env(),
+    )
+
+    assert result.returncode != 0
+    assert "mixed-buckets" in result.stderr
+    _assert_protocol_in_stderr(stderr=result.stderr, mode="mixed-buckets")
+
+
+def test_green_without_red_reject_prints_full_protocol(*, tmp_path: Path) -> None:
+    """`red-green-replay-green-without-red` reject emits the full protocol."""
+    subprocess.run(["git", "init", "-q"], cwd=str(tmp_path), check=True, env=_scrubbed_env())
+    (tmp_path / "livespec").mkdir()
+    (tmp_path / "livespec" / "foo.py").write_text("VALUE: int = 1\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "add", "livespec/foo.py"],
+        cwd=str(tmp_path),
+        check=True,
+        env=_scrubbed_env(),
+    )
+    msg_path = tmp_path / "COMMIT_EDITMSG"
+    msg_path.write_text("feat: add impl-only change\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_scrubbed_env(),
+    )
+
+    assert result.returncode != 0
+    assert "green-without-red" in result.stderr
+    _assert_protocol_in_stderr(stderr=result.stderr, mode="green-without-red")
+
+
+def test_multi_test_file_reject_prints_full_protocol(*, tmp_path: Path) -> None:
+    """`red-green-replay-multi-test-file` reject emits the full protocol."""
+    subprocess.run(["git", "init", "-q"], cwd=str(tmp_path), check=True, env=_scrubbed_env())
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_a.py").write_text(
+        "def test_a() -> None:\n    assert True\n", encoding="utf-8"
+    )
+    (tmp_path / "tests" / "test_b.py").write_text(
+        "def test_b() -> None:\n    assert True\n", encoding="utf-8"
+    )
+    subprocess.run(
+        ["git", "add", "tests/test_a.py", "tests/test_b.py"],
+        cwd=str(tmp_path),
+        check=True,
+        env=_scrubbed_env(),
+    )
+    msg_path = tmp_path / "COMMIT_EDITMSG"
+    msg_path.write_text("feat: add new feature\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_scrubbed_env(),
+    )
+
+    assert result.returncode != 0
+    assert "multi-test-file" in result.stderr
+    _assert_protocol_in_stderr(stderr=result.stderr, mode="multi-test-file")
+
+
+def test_test_passed_at_red_reject_prints_full_protocol(*, tmp_path: Path) -> None:
+    """`red-green-replay-test-passed-at-red` reject emits the full protocol."""
+    subprocess.run(["git", "init", "-q"], cwd=str(tmp_path), check=True, env=_scrubbed_env())
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_passing.py").write_text(
+        "def test_passing() -> None:\n    assert True\n", encoding="utf-8"
+    )
+    subprocess.run(
+        ["git", "add", "tests/test_passing.py"],
+        cwd=str(tmp_path),
+        check=True,
+        env=_scrubbed_env(),
+    )
+    msg_path = tmp_path / "COMMIT_EDITMSG"
+    msg_path.write_text("feat: add new feature\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_scrubbed_env(),
+    )
+
+    assert result.returncode != 0
+    assert "test-passed-at-red" in result.stderr
+    _assert_protocol_in_stderr(stderr=result.stderr, mode="test-passed-at-red")
+
+
+def _author_green_fixture(*, tmp_path: Path, test_bytes: bytes, recorded_checksum: str) -> Path:
+    """Init a tmp repo with a Red commit carrying `recorded_checksum`, stage impl.
+
+    Returns the COMMIT_EDITMSG path ready for the Green-amend hook
+    invocation. Used by the two Green-mode reject protocol tests.
+    """
+    subprocess.run(["git", "init", "-q"], cwd=str(tmp_path), check=True, env=_scrubbed_env())
+    subprocess.run(
+        ["git", "config", "user.email", "test@test.test"],
+        cwd=str(tmp_path),
+        check=True,
+        env=_scrubbed_env(),
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test User"],
+        cwd=str(tmp_path),
+        check=True,
+        env=_scrubbed_env(),
+    )
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_x.py").write_bytes(test_bytes)
+    subprocess.run(
+        ["git", "add", "tests/test_x.py"],
+        cwd=str(tmp_path),
+        check=True,
+        env=_scrubbed_env(),
+    )
+    red_commit_msg = (
+        "feat: red commit\n"
+        "\n"
+        "TDD-Red-Test: tests/test_x.py\n"
+        "TDD-Red-Failure-Reason: stub\n"
+        f"TDD-Red-Test-File-Checksum: {recorded_checksum}\n"
+        "TDD-Red-Output-Checksum: sha256:abc\n"
+        "TDD-Red-Captured-At: 2026-05-02T05:00:00Z\n"
+    )
+    subprocess.run(
+        ["git", "commit", "-m", red_commit_msg],
+        cwd=str(tmp_path),
+        check=True,
+        env=_scrubbed_env(),
+    )
+    (tmp_path / "livespec").mkdir()
+    (tmp_path / "livespec" / "foo.py").write_text("VALUE: int = 1\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "add", "livespec/foo.py"],
+        cwd=str(tmp_path),
+        check=True,
+        env=_scrubbed_env(),
+    )
+    msg_path = tmp_path / "COMMIT_EDITMSG"
+    msg_path.write_text("feat: green impl\n", encoding="utf-8")
+    return msg_path
+
+
+def test_checksum_mismatch_reject_prints_full_protocol(*, tmp_path: Path) -> None:
+    """`red-green-replay-checksum-mismatch` reject emits the full protocol."""
+    test_bytes = b"def test_x() -> None:\n    assert True\n"
+    # Recorded checksum deliberately does NOT match the working-tree test.
+    msg_path = _author_green_fixture(
+        tmp_path=tmp_path,
+        test_bytes=test_bytes,
+        recorded_checksum="sha256:" + "0" * 64,
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_scrubbed_env(),
+    )
+
+    assert result.returncode != 0
+    assert "checksum-mismatch" in result.stderr
+    _assert_protocol_in_stderr(stderr=result.stderr, mode="checksum-mismatch")
+
+
+def test_test_still_failing_reject_prints_full_protocol(*, tmp_path: Path) -> None:
+    """`red-green-replay-test-still-failing` reject emits the full protocol."""
+    test_bytes = b"def test_x() -> None:\n    assert False, 'still-failing'\n"
+    real_checksum = f"sha256:{hashlib.sha256(test_bytes).hexdigest()}"
+    msg_path = _author_green_fixture(
+        tmp_path=tmp_path,
+        test_bytes=test_bytes,
+        recorded_checksum=real_checksum,
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_scrubbed_env(),
+    )
+
+    assert result.returncode != 0
+    assert "test-still-failing" in result.stderr
+    _assert_protocol_in_stderr(stderr=result.stderr, mode="test-still-failing")
