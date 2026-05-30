@@ -49,38 +49,23 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling.config import Config, iter_py_files, load_config  # noqa: E402
+
 __all__: list[str] = []
 
 
-_COVERED_TREES = (
-    Path(".claude-plugin") / "scripts" / "livespec",
-    Path(".claude-plugin") / "scripts" / "bin",
-    Path("dev-tooling"),
-)
 _BANNED_CALL_TARGETS = frozenset({"sys.stdout.write", "sys.stderr.write"})
 
-# File-scope exemption: the three supervisor surfaces that own
-# documented stdout/stderr contracts. Per the canonical target
-# list row's prose: `bin/_bootstrap.py` (pre-import version-check
-# stderr); `livespec/doctor/run_static.py` (findings JSON stdout
-# + private helpers it dispatches to); `livespec/commands/<cmd>.py`
-# (each supervisor's main() + private helpers it dispatches to).
-# File-scope is the practical reading: each supervisor file owns
-# its private helpers (`_emit_findings_json`, `_render_help`,
-# etc.) which are called from main() and inherit the exemption.
-_FILE_SCOPE_EXEMPT_PATHS = frozenset(
-    {
-        Path(".claude-plugin") / "scripts" / "bin" / "_bootstrap.py",
-        Path(".claude-plugin") / "scripts" / "livespec" / "doctor" / "run_static.py",
-    }
-)
-_COMMANDS_TREE = Path(".claude-plugin") / "scripts" / "livespec" / "commands"
 
-
-def _is_file_scope_exempt(*, rel_path: Path) -> bool:
-    if rel_path in _FILE_SCOPE_EXEMPT_PATHS:
+def _is_file_scope_exempt(*, rel_path: Path, config: Config) -> bool:
+    # File-scope exemption: each supervisor surface owns documented
+    # stdout/stderr contracts. Per the canonical target list row's prose:
+    # `bin/_bootstrap.py` + `livespec/doctor/run_static.py`
+    # (config.supervisor_entry_files); every `.py` under
+    # `livespec/commands/**` (config.commands_trees).
+    if rel_path in config.supervisor_entry_files:
         return True
-    return _COMMANDS_TREE in rel_path.parents
+    return any(tree in rel_path.parents for tree in config.commands_trees)
 
 
 def _find_banned_calls(*, source: str) -> list[int]:
@@ -103,14 +88,19 @@ def main() -> int:
     )
     log = structlog.get_logger("no_write_direct")
     cwd = Path.cwd()
+    config = load_config(repo_root=cwd)
+    if not config.covered_trees:
+        log.info(
+            "role key absent — check no-ops",
+            check_id="no_write_direct",
+            role="covered_trees",
+        )
+        return 0
     offenders: list[tuple[Path, int]] = []
-    for tree_rel in _COVERED_TREES:
-        root = cwd / tree_rel
-        if not root.is_dir():
-            continue
-        for py_file in sorted(root.rglob("*.py")):
+    for tree_rel in config.covered_trees:
+        for py_file in iter_py_files(root=cwd / tree_rel):
             rel = py_file.relative_to(cwd)
-            if _is_file_scope_exempt(rel_path=rel):
+            if _is_file_scope_exempt(rel_path=rel, config=config):
                 continue
             source = py_file.read_text(encoding="utf-8")
             for lineno in _find_banned_calls(source=source):

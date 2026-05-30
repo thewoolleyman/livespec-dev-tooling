@@ -58,15 +58,9 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling.config import MirrorPairing, load_config  # noqa: E402
+
 __all__: list[str] = []
-
-
-_SOURCE_TREES_TO_TESTS: dict[Path, Path] = {
-    Path(".claude-plugin") / "scripts" / "livespec": Path("tests") / "livespec",
-    Path(".claude-plugin") / "scripts" / "bin": Path("tests") / "bin",
-    Path("dev-tooling") / "checks": Path("tests") / "dev-tooling" / "checks",
-    Path("livespec_dev_tooling") / "checks": Path("tests") / "livespec_dev_tooling" / "checks",
-}
 # Isolated coverage data file. The script spawns its own pytest as
 # a subprocess; if we let pytest-cov default to `.coverage` the
 # inner data file would clash with any outer pytest-cov session
@@ -88,39 +82,38 @@ _DATA_FILE: str = ".coverage.check-coverage-incremental"
 _COV_CORE_ENV_PREFIX: str = "COV_CORE_"
 
 
-def _resolve_mirror_test_path(*, impl_path: Path) -> Path:
+def _resolve_mirror_test_path(
+    *, impl_path: Path, mirror_pairings: tuple[MirrorPairing, ...]
+) -> Path:
     """Map an impl path to its v033 D1 mirror-paired test path.
 
-    Walks the three known impl trees in `_SOURCE_TREES_TO_TESTS`;
-    on the first match, transforms `<rel_parent>/<name>.py` to
-    `<tests_tree>/<rel_parent>/test_<name>.py`. Leading
-    underscores in `<name>.py` are stripped before the `test_`
+    Walks the consumer's `mirror_pairings` (from the
+    `[tool.livespec_dev_tooling]` config, defaulting to the livespec-core
+    historical mirrors); on the first match, transforms
+    `<rel_parent>/<name>.py` to `<tests_tree>/<rel_parent>/test_<name>.py`.
+    Leading underscores in `<name>.py` are stripped before the `test_`
     prefix is added (matches `tests_mirror_pairing.py`'s
-    `_expected_paired_test_path`). Raises `ValueError` if
-    `impl_path` is not under any recognized impl tree —
-    `check-coverage-incremental` only operates on the v033 D1
-    mirror-paired trees.
+    `_expected_paired_test_path`). Raises `ValueError` if `impl_path` is
+    not under any configured mirror-paired source tree.
     """
-    for source_tree, tests_tree in _SOURCE_TREES_TO_TESTS.items():
+    for pairing in mirror_pairings:
         try:
-            rel = impl_path.relative_to(source_tree)
+            rel = impl_path.relative_to(pairing.source_tree)
         except ValueError:
             continue
         parent = rel.parent
         name = rel.name
         test_name = f"test_{name[1:]}" if name.startswith("_") else f"test_{name}"
-        return tests_tree / parent / test_name
-    msg = (
-        f"impl path {impl_path} is not under any v033 D1 mirror-paired source tree "
-        f"(.claude-plugin/scripts/livespec/, .claude-plugin/scripts/bin/, "
-        f"dev-tooling/checks/, livespec_dev_tooling/checks/)"
-    )
+        return pairing.test_tree / parent / test_name
+    known = ", ".join(str(p.source_tree) for p in mirror_pairings)
+    msg = f"impl path {impl_path} is not under any mirror-paired source tree ({known})"
     raise ValueError(msg)
 
 
 def _resolve_test_paths(
     *,
     impl_paths: list[Path],
+    mirror_pairings: tuple[MirrorPairing, ...],
     log: structlog.stdlib.BoundLogger,
 ) -> list[Path] | None:
     """Resolve impl paths to mirror-paired test paths, or None on resolution failure.
@@ -139,7 +132,7 @@ def _resolve_test_paths(
     test_paths: list[Path] = []
     for impl in impl_paths:
         try:
-            test_path = _resolve_mirror_test_path(impl_path=impl)
+            test_path = _resolve_mirror_test_path(impl_path=impl, mirror_pairings=mirror_pairings)
         except ValueError as exc:
             log.exception(
                 "could not resolve mirror-paired test for impl path",
@@ -194,8 +187,11 @@ def _configure_logger() -> structlog.stdlib.BoundLogger:
 def main() -> int:
     log = _configure_logger()
     args = _build_parser().parse_args()
+    config = load_config(repo_root=Path.cwd())
     impl_paths: list[Path] = list(args.paths)
-    test_paths = _resolve_test_paths(impl_paths=impl_paths, log=log)
+    test_paths = _resolve_test_paths(
+        impl_paths=impl_paths, mirror_pairings=config.mirror_pairings, log=log
+    )
     if test_paths is None:
         return 1
 

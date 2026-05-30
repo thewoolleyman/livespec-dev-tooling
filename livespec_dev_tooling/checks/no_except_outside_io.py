@@ -37,19 +37,19 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling.config import Config, iter_py_files, load_config  # noqa: E402
+
 __all__: list[str] = []
 
 
-_LIVESPEC_TREE = Path(".claude-plugin") / "scripts" / "livespec"
-_IO_TREE = Path(".claude-plugin") / "scripts" / "livespec" / "io"
-_COMMANDS_TREE = Path(".claude-plugin") / "scripts" / "livespec" / "commands"
-_DOCTOR_RUN_STATIC = Path(".claude-plugin") / "scripts" / "livespec" / "doctor" / "run_static.py"
+def _is_under_any(*, rel_path: Path, trees: tuple[Path, ...]) -> bool:
+    return any(tree in rel_path.parents for tree in trees)
 
 
-def _is_supervisor_main_file(*, rel_path: Path) -> bool:
-    if rel_path == _DOCTOR_RUN_STATIC:
+def _is_supervisor_main_file(*, rel_path: Path, config: Config) -> bool:
+    if rel_path in config.supervisor_entry_files:
         return True
-    return _COMMANDS_TREE in rel_path.parents
+    return _is_under_any(rel_path=rel_path, trees=config.commands_trees)
 
 
 def _supervisor_main_try_lines(*, tree: ast.Module) -> set[int]:
@@ -83,18 +83,25 @@ def main() -> int:
     )
     log = structlog.get_logger("no_except_outside_io")
     cwd = Path.cwd()
-    livespec_root = cwd / _LIVESPEC_TREE
+    config = load_config(repo_root=cwd)
+    if not config.io_trees:
+        log.info(
+            "role key absent — check no-ops",
+            check_id="no_except_outside_io",
+            role="io_trees",
+        )
+        return 0
     offenders: list[tuple[Path, int]] = []
-    if livespec_root.is_dir():
-        for py_file in sorted(livespec_root.rglob("*.py")):
+    for tree_rel in config.source_trees:
+        for py_file in iter_py_files(root=cwd / tree_rel):
             rel = py_file.relative_to(cwd)
-            if _IO_TREE in rel.parents:
+            if _is_under_any(rel_path=rel, trees=config.io_trees):
                 continue
             source = py_file.read_text(encoding="utf-8")
             tree = ast.parse(source)
             exempt = (
                 _supervisor_main_try_lines(tree=tree)
-                if _is_supervisor_main_file(rel_path=rel)
+                if _is_supervisor_main_file(rel_path=rel, config=config)
                 else set[int]()
             )
             for lineno in _find_offending_try_lines(source=source, exempt_main_try=exempt):

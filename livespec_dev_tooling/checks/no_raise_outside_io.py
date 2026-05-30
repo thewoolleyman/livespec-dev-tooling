@@ -42,21 +42,25 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling.config import Config, iter_py_files, load_config  # noqa: E402
+
 __all__: list[str] = []
 
 
-_LIVESPEC_TREE = Path(".claude-plugin") / "scripts" / "livespec"
 _DOMAIN_ERROR_NAMES = frozenset(
     {"LivespecError", "UsageError", "PreconditionError", "ValidationError"}
 )
-_IO_TREE = Path(".claude-plugin") / "scripts" / "livespec" / "io"
-_ERRORS_FILE = Path(".claude-plugin") / "scripts" / "livespec" / "errors.py"
 
 
-def _is_exempt(*, rel_path: Path) -> bool:
-    if rel_path == _ERRORS_FILE:
-        return True
-    return _IO_TREE in rel_path.parents
+def _is_exempt(*, rel_path: Path, config: Config) -> bool:
+    # `errors.py` is the canonical domain-error home in livespec-core's
+    # layout: the file sitting directly under the (single) io-parent tree.
+    for io_tree in config.io_trees:
+        if rel_path == io_tree.parent / "errors.py":
+            return True
+        if io_tree in rel_path.parents:
+            return True
+    return False
 
 
 def _find_domain_raises(*, source: str) -> list[tuple[int, str]]:
@@ -83,12 +87,19 @@ def main() -> int:
     )
     log = structlog.get_logger("no_raise_outside_io")
     cwd = Path.cwd()
-    livespec_root = cwd / _LIVESPEC_TREE
+    config = load_config(repo_root=cwd)
+    if not config.io_trees:
+        log.info(
+            "role key absent — check no-ops",
+            check_id="no_raise_outside_io",
+            role="io_trees",
+        )
+        return 0
     offenders: list[tuple[Path, int, str]] = []
-    if livespec_root.is_dir():
-        for py_file in sorted(livespec_root.rglob("*.py")):
+    for tree_rel in config.source_trees:
+        for py_file in iter_py_files(root=cwd / tree_rel):
             rel = py_file.relative_to(cwd)
-            if _is_exempt(rel_path=rel):
+            if _is_exempt(rel_path=rel, config=config):
                 continue
             source = py_file.read_text(encoding="utf-8")
             for lineno, error_name in _find_domain_raises(source=source):
