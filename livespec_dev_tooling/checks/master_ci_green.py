@@ -30,6 +30,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import TypedDict, cast
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -38,6 +39,18 @@ if str(_VENDOR_DIR) not in sys.path:
 import structlog  # noqa: E402
 
 __all__: list[str] = []
+
+
+class _CiRun(TypedDict, total=False):
+    """Shape of one `gh run list --json status,conclusion` record.
+
+    `total=False` mirrors the defensive `.get(...)` access — both keys are
+    optional, so the typed boundary matches runtime semantics exactly (no
+    behavior change vs. the prior `object`/`Any` annotations).
+    """
+
+    status: str
+    conclusion: str
 
 
 _GREEN_CONCLUSIONS: frozenset[str] = frozenset({"success"})
@@ -91,19 +104,26 @@ def _fetch_latest_master_ci(
             hint="check gh auth status",
         )
         return None
-    payload: object = json.loads(completed.stdout)
-    if not isinstance(payload, list) or not payload:
+    parsed = json.loads(completed.stdout)
+    if not isinstance(parsed, list) or not parsed:
         log.warning(
             "no CI runs on master yet; skipping master-CI-green check",
             hint="run CI on master to populate signal",
         )
         return None
-    first: object = payload[0]
+    # The `cast` is the single typed parse boundary: `json.loads` yields
+    # `Any`, and the `isinstance` guard narrows to a non-empty `list`. The
+    # elements are cast to `object` so the per-element `isinstance(first,
+    # dict)` shape check below stays a load-bearing runtime guard against a
+    # malformed `gh` payload; the inner cast then types `.get(...)` access.
+    payload = cast("list[object]", parsed)
+    first = payload[0]
     if not isinstance(first, dict):
         log.error("unexpected gh response shape", payload_type=type(first).__name__)
         return None
-    status_raw: object = first.get("status")
-    conclusion_raw: object = first.get("conclusion")
+    run = cast("_CiRun", first)
+    status_raw = run.get("status")
+    conclusion_raw = run.get("conclusion")
     status = status_raw if isinstance(status_raw, str) else None
     conclusion = conclusion_raw if isinstance(conclusion_raw, str) else None
     return (status, conclusion)

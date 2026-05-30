@@ -55,7 +55,7 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import Any
+from typing import cast
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -130,15 +130,22 @@ def _walk_livespec_jsonc(
     if source_repo_filter is not None and source_repo_filter != source_repo:
         return []
     out: list[dict[str, str]] = []
-    typed_parsed: dict[str, Any] = parsed  # pyright: ignore[reportUnknownVariableType]
+    # The `cast` is the single typed parse boundary: the parsed `.livespec.jsonc`
+    # document is `Any`; casting to `dict[str, object]` (after the `isinstance`
+    # guard above) types `.items()` so each `value`/`compat` narrows from
+    # `object` via the per-key `isinstance(..., dict)` guards below — replacing
+    # the prior `# pyright: ignore` markers with a real typed boundary.
+    typed_parsed = cast("dict[str, object]", parsed)
     for top_key, value in typed_parsed.items():
         if not isinstance(value, dict):
             continue
-        compat = value.get("compat")  # pyright: ignore[reportUnknownMemberType]
+        value_dict = cast("dict[str, object]", value)
+        compat = value_dict.get("compat")
         if not isinstance(compat, dict):
             continue
-        pinned = compat.get("pinned")  # pyright: ignore[reportUnknownMemberType]
-        livespec_field = compat.get("livespec")  # pyright: ignore[reportUnknownMemberType]
+        compat_dict = cast("dict[str, object]", compat)
+        pinned = compat_dict.get("pinned")
+        livespec_field = compat_dict.get("livespec")
         if not isinstance(pinned, str) or not isinstance(livespec_field, str):
             continue
         out.append(
@@ -251,7 +258,13 @@ def _walk_vendor_jsonc(
                 source_repo="",
             )
         ]
-    libraries = parsed.get("libraries") if isinstance(parsed, dict) else None
+    # The `cast` is the single typed parse boundary: the parsed `.vendor.jsonc`
+    # document is `Any`; casting to `dict[str, object]` (under the `isinstance`
+    # guard) types `.get("libraries")` so the iteration below narrows from
+    # `object` via the per-entry `isinstance` guards — replacing the prior
+    # `# pyright: ignore` markers with a real typed boundary.
+    config = cast("dict[str, object]", parsed) if isinstance(parsed, dict) else None
+    libraries = config.get("libraries") if config is not None else None
     if not isinstance(libraries, list):
         return []
     filter_normalized = (
@@ -260,12 +273,18 @@ def _walk_vendor_jsonc(
         else None
     )
     out: list[dict[str, str]] = []
-    typed_libraries: list[Any] = libraries  # pyright: ignore[reportUnknownVariableType]
+    # The `cast` is the single typed parse boundary: the `isinstance` guard
+    # above narrows `libraries` to `list[Unknown]`; the cast gives the entries
+    # a typed `object` shape so the per-entry `isinstance(entry, dict)` guard
+    # stays load-bearing, and the inner cast types each entry's `.get(...)` —
+    # replacing the prior `# pyright: ignore` markers with a real boundary.
+    typed_libraries: list[object] = cast("list[object]", libraries)
     for entry in typed_libraries:
         if not isinstance(entry, dict):
             continue
-        name = entry.get("name")  # pyright: ignore[reportUnknownMemberType]
-        upstream_ref = entry.get("upstream_ref")  # pyright: ignore[reportUnknownMemberType]
+        entry_dict: dict[str, object] = cast("dict[str, object]", entry)
+        name = entry_dict.get("name")
+        upstream_ref = entry_dict.get("upstream_ref")
         if not isinstance(name, str) or not isinstance(upstream_ref, str):
             continue
         if filter_normalized is not None and filter_normalized != name:
@@ -414,8 +433,8 @@ def main() -> int:
     root: Path = args.root if args.root is not None else Path.cwd()
     source_repo: str | None = args.source_repo
     records = discover(root=root, source_repo=source_repo)
-    sys.stdout.write(json.dumps(records, indent=2, sort_keys=True))
-    sys.stdout.write("\n")
+    _ = sys.stdout.write(json.dumps(records, indent=2, sort_keys=True))
+    _ = sys.stdout.write("\n")
     return 0
 
 

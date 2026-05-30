@@ -21,7 +21,18 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:  # pragma: no cover
     import structlog.stdlib
 
-__all__: list[str] = []
+# These three symbols form this private sibling module's public surface to
+# its sole importer, `red_green_replay.py` (the parent supervisor imports
+# them after a runtime `sys.path.insert`). Declaring them in `__all__` marks
+# them as exported so pyright's standalone analysis does not flag them as
+# `reportUnusedFunction` — the import IS the use, just across the
+# extraPaths-resolved sibling boundary.
+__all__: list[str] = [
+    "RED_GREEN_REPLAY_PROTOCOL",
+    "_handle_green_mode",
+    "_handle_red_mode",
+    "_head_has_red_trailers",
+]
 
 
 # The full 2-step Red-Green-Replay protocol, emitted verbatim by EVERY
@@ -112,12 +123,12 @@ def _write_trailers(*, msg_path: Path, trailers: tuple[tuple[str, str], ...]) ->
         if head in keys_to_replace:
             continue
         stripped_lines.append(line)
-    msg_path.write_text("".join(stripped_lines), encoding="utf-8")
+    _ = msg_path.write_text("".join(stripped_lines), encoding="utf-8")
 
     args: list[str] = []
     for key, value in trailers:
         args.extend(["--trailer", f"{key}: {value}"])
-    subprocess.run(
+    _ = subprocess.run(
         ["git", "interpret-trailers", "--in-place", *args, str(msg_path)],
         capture_output=True,
         text=True,

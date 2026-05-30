@@ -161,7 +161,24 @@ exclude = ["**/_vendor/**", "**/__pycache__/**"]
 # hundreds of `reportUnknownMemberType` / `reportUnknownVariableType`
 # errors on every `log: structlog.stdlib.BoundLogger` annotation
 # (epic li-pyright-gate).
-extraPaths = ["livespec_dev_tooling/_vendor"]
+#
+# The two `checks/` directory entries resolve the bare sibling-helper
+# imports (`from _red_green_replay_modes import ...`) that the
+# red-green-replay supervisor and its canonical-hook copy each perform
+# after a runtime `sys.path.insert(.../<that dir>)` shim. The shim is
+# invisible to static analysis; the extraPaths entries make the
+# sibling `_red_green_replay_modes` module resolvable WITHOUT a new
+# reportMissingTypeStubs (it is first-party, no stubs needed). This
+# clears the `reportMissingImports` on the import plus the cascading
+# `reportUnknownVariableType` on each imported name and the
+# `reportUnusedFunction` on the sibling helpers (which only appeared
+# unused because their sole importer was unresolved). Resolving the
+# import the way livespec resolves its own sibling/vendor imports.
+extraPaths = [
+    "livespec_dev_tooling/_vendor",
+    "livespec_dev_tooling/checks",
+    "livespec_dev_tooling/checks/canonical_hook",
+]
 pythonVersion = "3.10"
 typeCheckingMode = "strict"
 
@@ -171,7 +188,23 @@ reportUninitializedInstanceVariable = "error"
 reportUnnecessaryTypeIgnoreComment = "error"
 reportUnnecessaryCast = "error"
 reportUnnecessaryIsInstance = "error"
-reportImplicitStringConcatenation = "error"
+# Relaxed from "error" to "warning", mirroring livespec's documented
+# [tool.pyright] precedent (li-xxjopf Step 3a): the in-tree implicit
+# string concats are readable multi-line f-string / message assembly
+# where the formatter-driven wrapping is intentional. The genuine
+# typo-risk subset (single-line implicit concat) is already covered by
+# ruff's ISC category — ISC001 is off only due to the formatter
+# conflict; ISC002/ISC003 remain active.
+reportImplicitStringConcatenation = "warning"
+# Disabled, mirroring livespec's documented [tool.pyright] precedent
+# (li-xxjopf Step 3b): the project's privacy model is PACKAGE-private,
+# not module-private. Underscore-prefixed sibling helpers (e.g.
+# `_red_green_replay_modes`, `_aggregate_modes`) exist precisely to be
+# imported by their top-level check modules in the same directory —
+# pyright's strict default treats `_x` as module-private and produces
+# exclusively false positives on that intentional same-package access.
+# Cross-class private access is independently enforced by ruff's SLF.
+reportPrivateUsage = "none"
 
 # ---------------------------------------------------------------------------
 # Pytest — pytest-cov + pytest-icdiff wiring.

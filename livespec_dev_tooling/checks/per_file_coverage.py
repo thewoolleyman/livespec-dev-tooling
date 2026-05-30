@@ -77,7 +77,7 @@ def main() -> int:
 
     buf = io.StringIO()
     with redirect_stdout(buf):
-        cov.json_report(outfile="-")
+        _ = cov.json_report(outfile="-")
     report = json.loads(buf.getvalue())
 
     offenders: list[tuple[str, dict[str, object]]] = []

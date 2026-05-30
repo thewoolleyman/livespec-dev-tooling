@@ -55,7 +55,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import cast
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -131,18 +131,25 @@ def _canonical_branch_from_jsonc(*, cwd: Path) -> str | None:
     if not config_path.is_file():
         return None
     text = config_path.read_text(encoding="utf-8")
-    parsed: Any = jsoncomment.loads(text)
-    if not isinstance(parsed, dict):
+    raw = jsoncomment.loads(text)
+    if not isinstance(raw, dict):
         return None
+    # The `cast` is the single typed parse boundary: `jsoncomment.loads`
+    # yields `Any`, the `isinstance` guard narrows to `dict`, and the cast
+    # gives the document a typed `dict[str, object]` shape so each block's
+    # `.get("canonical_branch")` access below narrows from `object`.
+    parsed = cast("dict[str, object]", raw)
     preferred = parsed.get("livespec-impl-plaintext")
     if isinstance(preferred, dict):
-        value = preferred.get("canonical_branch")
+        preferred_block = cast("dict[str, object]", preferred)
+        value = preferred_block.get("canonical_branch")
         if isinstance(value, str) and value:
             return value
-    for key, value in parsed.items():
-        if key == "livespec-impl-plaintext" or not isinstance(value, dict):
+    for key, block in parsed.items():
+        if key == "livespec-impl-plaintext" or not isinstance(block, dict):
             continue
-        candidate = value.get("canonical_branch")
+        block_dict = cast("dict[str, object]", block)
+        candidate = block_dict.get("canonical_branch")
         if isinstance(candidate, str) and candidate:
             return candidate
     return None

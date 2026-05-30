@@ -29,7 +29,7 @@ from __future__ import annotations
 import datetime as _dt
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict, cast
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -45,11 +45,25 @@ _MANIFEST_FILENAME = ".vendor.jsonc"
 _CANONICAL_SHIM_NAMES = frozenset({"jsoncomment"})
 
 
+class _Manifest(TypedDict, total=False):
+    """Top-level shape of `.vendor.jsonc`: a `libraries` array of entries.
+
+    `total=False` mirrors the defensive `.get("libraries")` access — the key
+    is optional, so the typed boundary matches runtime semantics exactly (no
+    behavior change vs. the prior untyped parse). `libraries` is typed as a
+    list of `object` (not `dict[str, Any]`) so the per-entry
+    `isinstance(entry, dict)` check in `main` stays a load-bearing runtime
+    guard against a malformed manifest rather than a statically-redundant one.
+    """
+
+    libraries: list[object]
+
+
 def _is_iso_parseable(*, value: object) -> bool:
     if not isinstance(value, str) or not value:
         return False
     try:
-        _dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+        _ = _dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return False
     return True
@@ -91,7 +105,15 @@ def main() -> int:
         return 0
     text = manifest_path.read_text(encoding="utf-8")
     parsed = jsoncomment.loads(text)
-    libraries = parsed.get("libraries") if isinstance(parsed, dict) else None
+    # The `cast` is the single typed parse boundary: `jsoncomment.loads`
+    # yields `Any`, the `isinstance` guard narrows to `dict`, and the cast
+    # asserts the validated shape so `.get("libraries")` is typed. The
+    # `libraries` value is typed as a list of `object` so the per-entry
+    # `isinstance(entry, dict)` shape check stays a load-bearing runtime
+    # guard against a malformed manifest; the inner cast then types each
+    # kept entry for `_validate_entry`.
+    manifest = cast("_Manifest", parsed) if isinstance(parsed, dict) else None
+    libraries = manifest.get("libraries") if manifest is not None else None
     if not isinstance(libraries, list):
         log.error("`.vendor.jsonc` missing top-level `libraries` array")
         return 1
@@ -100,7 +122,7 @@ def main() -> int:
         if not isinstance(entry, dict):
             issues.append(f"non-dict library entry: {entry!r}")
             continue
-        issues.extend(_validate_entry(entry=entry))
+        issues.extend(_validate_entry(entry=cast("dict[str, Any]", entry)))
     if issues:
         for issue in issues:
             log.error(".vendor.jsonc validation failure", issue=issue)

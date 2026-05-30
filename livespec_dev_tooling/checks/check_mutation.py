@@ -26,6 +26,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from typing import TypedDict, cast
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -46,7 +47,22 @@ _BASELINE_PATH = Path(".mutmut-baseline.json")
 _KILL_RATE_FLOOR: float = 80.0
 
 
-def _baseline_is_placeholder(*, baseline: dict[str, object]) -> bool:
+class _Baseline(TypedDict, total=False):
+    """Shape of `.mutmut-baseline.json`: the recorded kill-rate ratchet state.
+
+    `total=False` mirrors the defensive `.get(..., default)` access — every
+    key is optional, so the typed boundary matches runtime semantics exactly
+    (no behavior change vs. the prior `dict[str, object]` annotation). Typing
+    the value fields lets `int(baseline.get("mutants_total", 0))` and
+    `float(baseline.get("kill_rate_percent", 0.0))` resolve from typed `int`/
+    `float` rather than `object`.
+    """
+
+    mutants_total: int
+    kill_rate_percent: float
+
+
+def _baseline_is_placeholder(*, baseline: _Baseline) -> bool:
     """Return True when the baseline is the pre-implementation placeholder (total=0)."""
     return int(baseline.get("mutants_total", 0)) == 0
 
@@ -74,7 +90,7 @@ def _parse_mutmut_results(*, output: str) -> tuple[int, int]:
     return killed, total
 
 
-def _derive_exit_code(*, killed: int, total: int, baseline: dict[str, object]) -> int:
+def _derive_exit_code(*, killed: int, total: int, baseline: _Baseline) -> int:
     """Return exit code 0 (pass) or 1 (fail) based on kill rate vs baseline + floor.
 
     Zero-mutant case (total=0) passes unconditionally — nothing to kill.
@@ -98,7 +114,7 @@ def _update_baseline(*, baseline_path: Path, killed: int, total: int) -> None:
         "mutants_surviving": total - killed,
         "mutants_total": total,
     }
-    baseline_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    _ = baseline_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
 def main() -> int:
@@ -114,9 +130,12 @@ def main() -> int:
     cwd = Path.cwd()
     baseline_path = cwd / _BASELINE_PATH
 
-    baseline: dict[str, object] = {}
+    baseline: _Baseline = {}
     if baseline_path.is_file():
-        baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
+        # The `cast` is the single typed parse boundary: `json.loads` yields
+        # `Any`, and the cast asserts the recorded baseline shape so the
+        # downstream `int(...)`/`float(...)` reads resolve from typed fields.
+        baseline = cast("_Baseline", json.loads(baseline_path.read_text(encoding="utf-8")))
 
     first_run = _baseline_is_placeholder(baseline=baseline)
 

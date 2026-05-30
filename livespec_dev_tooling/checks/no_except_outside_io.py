@@ -95,7 +95,7 @@ def main() -> int:
             exempt = (
                 _supervisor_main_try_lines(tree=tree)
                 if _is_supervisor_main_file(rel_path=rel)
-                else set()
+                else set[int]()
             )
             for lineno in _find_offending_try_lines(source=source, exempt_main_try=exempt):
                 offenders.append((rel, lineno))

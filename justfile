@@ -105,6 +105,17 @@ check:
         check-tests-mirror-pairing
         check-vendor-manifest
         check-wrapper-shape
+        # ---- Repo-private block (extends after the canonical block) ----
+        # Per the wiring-completeness invariant, repo-private extras MAY
+        # follow the canonical block in any order. `check-types` (pyright,
+        # strict) is a tool-backed helper, not a canonical slug; it is a
+        # required gate as of li-pyright-gate-wi1, now that the codebase is
+        # pyright-clean (0 errors under `uv run pyright`). Wiring it here
+        # makes the local `just check` aggregate match the CI check-python
+        # matrix, completing P1 epic li-pyright-gate. (PRs #61/#62 gated this
+        # while the codebase was red and were reverted in a459afb; this
+        # re-gates only after pyright reaches 0.)
+        check-types
     )
     failed=()
     for t in "${targets[@]}"; do
