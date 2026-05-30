@@ -103,19 +103,29 @@ check:
         check-skill-invocation-paths
         check-supervisor-discipline
         check-tests-mirror-pairing
+        check-tool-backed-check-completeness
         check-vendor-manifest
         check-wrapper-shape
         # ---- Repo-private block (extends after the canonical block) ----
         # Per the wiring-completeness invariant, repo-private extras MAY
-        # follow the canonical block in any order. `check-types` (pyright,
-        # strict) is a tool-backed helper, not a canonical slug; it is a
-        # required gate as of li-pyright-gate-wi1, now that the codebase is
-        # pyright-clean (0 errors under `uv run pyright`). Wiring it here
-        # makes the local `just check` aggregate match the CI check-python
-        # matrix, completing P1 epic li-pyright-gate. (PRs #61/#62 gated this
-        # while the codebase was red and were reverted in a459afb; this
-        # re-gates only after pyright reaches 0.)
+        # follow the canonical block in any order. These are the four
+        # tool-backed checks (ruff lint, ruff format, pyright types,
+        # aggregate coverage) — helper recipes, NOT canonical slugs (not
+        # under livespec_dev_tooling/checks/), so check-aggregate-
+        # completeness does not enforce them. They are wired here as
+        # LITERAL members so the local `just check` aggregate gives full
+        # lint / format / types / coverage feedback and matches the CI
+        # check-python matrix; the check-tool-backed-check-completeness
+        # meta-check (canonical block above) enforces that both-surfaces
+        # wiring (epic li-pyright-gate, work-item li-pyright-gate-wi3,
+        # LITERAL-membership design). check-coverage gates the aggregate
+        # `fail_under = 100` off the SINGLE pytest run that the canonical
+        # check-per-file-coverage already performed (it reads the existing
+        # `.coverage`), so wiring it here adds NO duplicate suite run.
+        check-lint
+        check-format
         check-types
+        check-coverage
     )
     failed=()
     for t in "${targets[@]}"; do
@@ -132,12 +142,17 @@ check:
     printf '\nAll %d targets passed.\n' "${#targets[@]}"
 
 # ---------------------------------------------------------------
-# Tool-backed checks. Not canonical-aggregate targets; invoked from
-# canonical recipes (check-lint runs ruff check, etc.) but the slugs
-# `check-lint` / `check-format` / `check-coverage` / `check-types`
-# are NOT canonical (not in canonical_checks.py's discovery set).
-# They remain as helper recipes; they are not wired into the
-# `check:` aggregate's `targets=(...)`.
+# Tool-backed checks. NOT canonical-aggregate slugs (not in
+# canonical_checks.py's discovery set — they live as helper recipes,
+# not under livespec_dev_tooling/checks/), so check-aggregate-
+# completeness does not enforce them. They ARE literal members of the
+# `check:` aggregate's `targets=(...)` array (repo-private block) AND
+# of the CI check-python matrix; the check-tool-backed-check-
+# completeness meta-check enforces that both-surfaces wiring (epic
+# li-pyright-gate, work-item li-pyright-gate-wi3, LITERAL-membership
+# design). check-lint / check-format are cheap ruff passes; the
+# coverage gate is consolidated onto the SINGLE pytest run that
+# check-per-file-coverage already performs (see check-coverage below).
 # ---------------------------------------------------------------
 
 check-lint:
@@ -149,6 +164,18 @@ check-format:
 check-types:
     uv run pyright
 
+# Aggregate (total) coverage gate at `fail_under = 100` (pyproject.toml
+# [tool.coverage.report]). To avoid a DUPLICATE full pytest run when
+# invoked inside the `just check` aggregate, this recipe gates off the
+# EXISTING `.coverage` data file when present (the canonical
+# check-per-file-coverage slug runs `pytest --cov` upfront and runs
+# alphabetically before this repo-private extra, so `.coverage` is
+# already produced by the time this runs locally). When `.coverage` is
+# ABSENT — the CI check-python matrix runs check-coverage as a
+# standalone job in its own runner with no prior pytest — the recipe
+# runs the suite itself so the aggregate gate still fires there. Either
+# way the result is the `fail_under = 100` aggregate assertion with NO
+# duplicate suite run in `just check`.
 check-coverage:
     #!/usr/bin/env bash
     set -uo pipefail
@@ -156,7 +183,13 @@ check-coverage:
         echo ":: check-coverage skipped (Red-mode pre-commit; verified at Green amend)"
         exit 0
     fi
-    uv run pytest -n auto --cov --cov-branch --cov-config=pyproject.toml --cov-report=term-missing
+    if [[ -f .coverage ]]; then
+        echo ":: check-coverage: reading existing .coverage (produced by check-per-file-coverage); no duplicate suite run"
+        uv run coverage report --fail-under=100
+    else
+        echo ":: check-coverage: no .coverage data file (CI standalone job); running the suite"
+        uv run pytest -n auto --cov --cov-branch --cov-config=pyproject.toml --cov-report=term-missing
+    fi
 
 # ---------------------------------------------------------------
 # Canonical aggregate recipes — one per canonical slug emitted by
@@ -352,6 +385,15 @@ check-supervisor-discipline:
 check-tests-mirror-pairing:
     uv run python -m livespec_dev_tooling.checks.tests_mirror_pairing
 
+# Tool-backed-check completeness meta-check (epic li-pyright-gate,
+# work-item li-pyright-gate-wi3). Asserts each tool-backed check
+# (check-lint / check-format / check-types / check-coverage) is a
+# LITERAL member of BOTH this justfile's `check:` targets=(...) array
+# AND the CI check-python matrix. Self-passes because the targets
+# array + CI matrix wire all four literally.
+check-tool-backed-check-completeness:
+    uv run python -m livespec_dev_tooling.checks.tool_backed_check_completeness
+
 check-vendor-manifest:
     uv run python -m livespec_dev_tooling.checks.vendor_manifest
 
@@ -419,8 +461,10 @@ check-pre-push:
 
 # Ruff fix + format on staged .py files BEFORE the rest of the
 # pre-commit gate runs. Non-blocking — unfixable issues fall through
-# to check-lint / check-format inside `just check` later. Re-stages
-# post-autofix bytes.
+# to the check-lint / check-format targets that the `just check`
+# aggregate's `targets=(...)` array wires as literal members
+# (repo-private block; epic li-pyright-gate, work-item
+# li-pyright-gate-wi3). Re-stages post-autofix bytes.
 lint-autofix-staged:
     #!/usr/bin/env bash
     set -uo pipefail

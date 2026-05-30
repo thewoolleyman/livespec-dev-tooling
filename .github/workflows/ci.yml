@@ -11,9 +11,11 @@
 #   pytest, python3) in `run:` lines are forbidden; every step
 #   delegates to `just <target>`.
 #
-# Starter scaffold: the Python-code matrix carries only the tool-
-# backed checks (lint, format, types, coverage). The metadata matrix
-# is empty. As Phase G.4 of epic li-fgqgnk migrates livespec-core's
+# The Python-code matrix carries the tool-backed checks (lint,
+# format, types, coverage). The metadata matrix carries the
+# repo-metadata checks (aggregate-completeness, the primary-checkout
+# commit-refuse-hook gate, and the tool-backed-check completeness
+# meta-check). As Phase G.4 of epic li-fgqgnk migrates livespec-core's
 # dev-tooling/checks/ scripts into livespec_dev_tooling/checks/,
 # add the corresponding `check-<slug>` target to the appropriate
 # matrix and to branch protection's required-status-checks list.
@@ -116,6 +118,7 @@ jobs:
         target:
           - check-aggregate-completeness
           - check-primary-checkout-commit-refuse-hook-installed
+          - check-tool-backed-check-completeness
     steps:
       - name: Checkout
         uses: actions/checkout@v4
