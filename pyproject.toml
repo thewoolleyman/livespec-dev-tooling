@@ -151,6 +151,17 @@ ban-relative-imports = "all"
 [tool.pyright]
 include = ["livespec_dev_tooling"]
 exclude = ["**/_vendor/**", "**/__pycache__/**"]
+# The product modules `import structlog` (and `structlog.stdlib`) at
+# top level after a runtime `sys.path.insert(0, _vendor)` shim that
+# pyright does not execute. extraPaths makes pyright resolve those
+# top-level vendor imports against `livespec_dev_tooling/_vendor`
+# (the vendored structlog ships `py.typed`), exactly as livespec
+# resolves its `_vendor` via the same mechanism. Without this, the
+# unresolved `structlog`/`structlog.stdlib` imports cascade into
+# hundreds of `reportUnknownMemberType` / `reportUnknownVariableType`
+# errors on every `log: structlog.stdlib.BoundLogger` annotation
+# (epic li-pyright-gate).
+extraPaths = ["livespec_dev_tooling/_vendor"]
 pythonVersion = "3.10"
 typeCheckingMode = "strict"
 
