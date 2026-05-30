@@ -1,0 +1,36 @@
+// .vendor.jsonc — vendored library manifest for livespec-dev-tooling.
+//
+// Validated by `just check-vendor-manifest`: every entry must carry a
+// non-empty upstream_url, a non-empty upstream_ref, and a parseable-ISO
+// vendored_at. `shim: true` is required on the hand-authored jsoncomment
+// shim (per livespec-core's v026 D1 reclassification) and forbidden on
+// every other entry.
+//
+// `tomli` is vendored for the `livespec_dev_tooling.config` loader: the
+// repo's 3.10 floor (SPECIFICATION/constraints.md §"Runtime") has no
+// stdlib `tomllib`, so the loader falls back to this vendored copy (per
+// SPECIFICATION/contracts.md §"Configuration loader"). On Python 3.11+
+// the loader prefers stdlib `tomllib` and this copy is unused.
+{
+  "libraries": [
+    {
+      "name": "structlog",
+      "upstream_url": "https://github.com/hynek/structlog",
+      "upstream_ref": "25.5.0",
+      "vendored_at": "2026-04-26T06:05:33Z"
+    },
+    {
+      "name": "jsoncomment",
+      "upstream_url": "https://pypi.org/project/jsoncomment/",
+      "upstream_ref": "0.4.2",
+      "vendored_at": "2026-04-26T06:05:33Z",
+      "shim": true
+    },
+    {
+      "name": "tomli",
+      "upstream_url": "https://github.com/hukkin/tomli",
+      "upstream_ref": "2.4.1",
+      "vendored_at": "2026-05-30T21:48:23Z"
+    }
+  ]
+}
