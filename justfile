@@ -105,14 +105,6 @@ check:
         check-tests-mirror-pairing
         check-vendor-manifest
         check-wrapper-shape
-        # ---- Repo-private block (extends after the canonical block) ----
-        # Per the wiring-completeness invariant, repo-private extras
-        # MAY follow the canonical block in any order. `check-types`
-        # (pyright, strict) is a tool-backed helper, not a canonical
-        # slug; wiring it here makes the local `just check` aggregate
-        # match the CI matrix (reusable-check-matrix.yml already lists
-        # check-types), closing the pyright gating gap (li-pyright-gate).
-        check-types
     )
     failed=()
     for t in "${targets[@]}"; do
