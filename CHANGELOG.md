@@ -53,6 +53,16 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.7.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.6.0...v0.7.0) (2026-05-30)
+
+
+### Features
+
+* add tdd-commit helper mechanizing the Red-Green-Replay ritual ([4fc6c2a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4fc6c2ad588a547ebe0784d81ea8b161d850edcc))
+* config loader for consumer source-tree layout (li-asybpo) ([391662a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/391662a9363ceaff5d130d2d14b53397e3c71970))
+* shared checks read source trees from config (li-asybpo) ([977adb8](https://github.com/thewoolleyman/livespec-dev-tooling/commit/977adb81b597f88624b75c3bf416c47ed22c5f56))
+* tool-backed-check completeness meta-check (li-pyright-gate-wi3) ([0945771](https://github.com/thewoolleyman/livespec-dev-tooling/commit/094577179c2a494fd0c292ba66f81e5b10ae2031))
+
 ## [0.6.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.5.1...v0.6.0) (2026-05-29)
 
 
