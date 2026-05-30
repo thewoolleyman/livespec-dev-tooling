@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from typing import cast
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -55,9 +56,17 @@ def main() -> int:
     parsed = json.loads(text)
     offenders: list[dict[str, object]] = []
     if isinstance(parsed, list):
-        for entry in parsed:
-            if isinstance(entry, dict) and entry.get("test") == "TODO":
-                offenders.append(entry)
+        # The `cast` is the single typed parse boundary: `json.loads` yields
+        # `Any`, the `isinstance` guard narrows to `list`, and the cast gives
+        # the elements a typed `object` shape so the per-element
+        # `isinstance(entry, dict)` filter stays a load-bearing runtime guard.
+        # The compound condition (single `if`, inline cast evaluated only
+        # after the isinstance short-circuit) preserves the original branch
+        # shape — no new branch, so coverage stays 100%.
+        entries = cast("list[object]", parsed)
+        for entry in entries:
+            if isinstance(entry, dict) and cast("dict[str, object]", entry).get("test") == "TODO":
+                offenders.append(cast("dict[str, object]", entry))
     if offenders:
         for entry in offenders:
             log.error(

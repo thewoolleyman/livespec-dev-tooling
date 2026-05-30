@@ -77,6 +77,7 @@ jobs:
           - check-lint
           - check-format
           - check-coverage
+          - check-types
     steps:
       # Per-step `if:` (not job-level) so each matrix entry still
       # reports a status check named `${{ matrix.target }}`.

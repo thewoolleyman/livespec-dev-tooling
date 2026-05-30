@@ -38,6 +38,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from typing import cast
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -148,7 +149,15 @@ def main() -> int:
         text = coverage_path.read_text(encoding="utf-8")
         parsed = json.loads(text)
         if isinstance(parsed, list):
-            coverage_entries = [e for e in parsed if isinstance(e, dict)]
+            # The `cast` is the single typed parse boundary: `json.loads`
+            # yields `Any`, the `isinstance` guard narrows to `list`, and the
+            # cast gives the elements a typed `object` shape so the per-element
+            # `isinstance(e, dict)` filter stays a load-bearing runtime guard;
+            # the inner cast then types each kept entry.
+            raw_entries = cast("list[object]", parsed)
+            coverage_entries = [
+                cast("dict[str, object]", e) for e in raw_entries if isinstance(e, dict)
+            ]
     spec_set = _spec_triples(repo_root=cwd)
     registry_set, todo_missing_reason = _registry_triples_and_todo_violations(
         entries=coverage_entries

@@ -68,7 +68,7 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TypedDict, cast
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -94,6 +94,20 @@ _EXIT_VIOLATIONS = 4
 _CHECK_RECIPE_HEADER = re.compile(r"^check:\s*$", re.MULTILINE)
 _TARGETS_ARRAY_START = re.compile(r"^\s*targets=\(\s*$", re.MULTILINE)
 _TARGETS_ARRAY_END = re.compile(r"^\s*\)\s*$")
+
+
+class _CanonicalOverride(TypedDict, total=False):
+    """Shape of the `--canonical-from` JSON override file: `{"slugs": [...]}`.
+
+    `total=False` mirrors the defensive `.get("slugs")` access — the key is
+    optional, so the typed boundary matches runtime semantics exactly (no
+    behavior change vs. the prior `Any` annotation). `slugs` is typed as a
+    list of `object` (not `str`) so the per-element `isinstance(s, str)`
+    filter in `_load_canonical` stays a load-bearing runtime guard against a
+    malformed override file rather than a statically-redundant check.
+    """
+
+    slugs: list[object]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -145,8 +159,13 @@ def _load_canonical(*, canonical_from: str | None, cwd: Path) -> _LoadedCanonica
         return _LoadedCanonical(slugs=canonical_check_slugs(), source="live")
     path = (cwd / canonical_from).resolve()
     text = path.read_text(encoding="utf-8")
-    parsed: Any = json.loads(text)
-    slug_field: Any = parsed.get("slugs") if isinstance(parsed, dict) else None
+    parsed = json.loads(text)
+    # The `cast` is the single typed parse boundary: `json.loads` yields
+    # `Any`, the `isinstance` guard narrows to `dict`, and the cast then
+    # asserts the validated shape so `.get("slugs")` and the comprehension
+    # over its elements are typed.
+    override = cast("_CanonicalOverride", parsed) if isinstance(parsed, dict) else None
+    slug_field: list[object] | None = override.get("slugs") if override is not None else None
     if not isinstance(slug_field, list):
         return _LoadedCanonical(slugs=(), source=str(path))
     slugs: list[str] = [s for s in slug_field if isinstance(s, str)]

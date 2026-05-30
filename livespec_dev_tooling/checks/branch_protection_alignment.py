@@ -76,6 +76,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -247,10 +248,16 @@ def _fetch_required_contexts(
             ),
         )
         return None
-    payload: object = json.loads(completed.stdout)
-    if not isinstance(payload, list):
-        log.error("unexpected gh api response shape", payload_type=type(payload).__name__)
+    parsed = json.loads(completed.stdout)
+    if not isinstance(parsed, list):
+        log.error("unexpected gh api response shape", payload_type=type(parsed).__name__)
         return None
+    # The `cast` is the single typed parse boundary: `json.loads` yields
+    # `Any`, the `isinstance` guard narrows to `list`, and the cast gives the
+    # elements a typed `object` shape so the per-element `isinstance(entry,
+    # str)` filter stays a load-bearing runtime guard against a malformed
+    # `gh api` payload.
+    payload = cast("list[object]", parsed)
     contexts: set[str] = set()
     for entry in payload:
         if isinstance(entry, str):
