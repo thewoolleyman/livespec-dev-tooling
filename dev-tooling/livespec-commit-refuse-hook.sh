@@ -25,6 +25,17 @@
 # and-test, 02-check-pre-commit, etc.) continue to fire. The
 # hook-name is derived from the basename of $0 so the same script
 # can serve both pre-commit and pre-push without per-hook copies.
+#
+# `--no-auto-install` is critical for repos that use lefthook with
+# this hook at the primary: without it, every `lefthook run`
+# invocation auto-syncs `.git/hooks/<name>` against lefthook's own
+# standard wrapper template, which (a) backs up our canonical body
+# to `<name>.old` and (b) replaces the active hook with the
+# PATH-searching standard wrapper that loses the refuse-at-primary
+# branch. The auto-sync is fundamentally incompatible with this
+# custom-wrapper design — its "fix" defeats the very purpose of
+# the wrapper. Disabling the sync attempt eliminates both the
+# `sync hooks: ❌` warning noise and the clobber risk.
 
 primary_path="$(git config --get livespec.primaryPath || true)"
 toplevel="$(git rev-parse --show-toplevel)"
@@ -41,4 +52,4 @@ hook_name="$(basename "$0")"
 # core.bare=true into the shared .git/config, corrupting every checkout that
 # shares it (root cause li-iroguc). Clear them so lefthook detects from cwd.
 unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE GIT_PREFIX
-exec mise exec -- lefthook run "$hook_name" "$@"
+exec mise exec -- lefthook run --no-auto-install "$hook_name" "$@"
