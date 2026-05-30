@@ -76,6 +76,7 @@ jobs:
         target:
           - check-lint
           - check-format
+          - check-types
           - check-coverage
     steps:
       # Per-step `if:` (not job-level) so each matrix entry still
