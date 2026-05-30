@@ -45,10 +45,9 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling.config import load_config  # noqa: E402
+
 __all__: list[str] = []
-
-
-_DATACLASSES_TREE = Path(".claude-plugin") / "scripts" / "livespec" / "schemas" / "dataclasses"
 _FIELD_TO_NEWTYPE: dict[str, str] = {
     "check_id": "CheckId",
     "run_id": "RunId",
@@ -114,7 +113,15 @@ def main() -> int:
     )
     log = structlog.get_logger("newtype_domain_primitives")
     cwd = Path.cwd()
-    dataclasses_root = cwd / _DATACLASSES_TREE
+    config = load_config(repo_root=cwd)
+    if config.dataclasses_tree is None:
+        log.info(
+            "role key absent — check no-ops",
+            check_id="newtype_domain_primitives",
+            role="dataclasses_tree",
+        )
+        return 0
+    dataclasses_root = cwd / config.dataclasses_tree
     if not dataclasses_root.is_dir():
         return 0
     offenders: list[tuple[Path, int, str, str, str]] = []

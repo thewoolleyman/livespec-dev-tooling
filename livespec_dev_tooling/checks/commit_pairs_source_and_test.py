@@ -62,15 +62,11 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling.config import load_config  # noqa: E402
+
 __all__: list[str] = []
 
 
-_SOURCE_TREE_PREFIXES: tuple[str, ...] = (
-    ".claude-plugin/scripts/livespec/",
-    ".claude-plugin/scripts/bin/",
-    "dev-tooling/checks/",
-)
-_TESTS_TREE_PREFIX: str = "tests/"
 _RED_TRAILER_TOKEN: str = "TDD-Red-Test-File-Checksum:"
 _GREEN_TRAILER_TOKEN: str = "TDD-Green-Verified-At:"
 
@@ -130,6 +126,7 @@ def main() -> int:
     )
     log = structlog.get_logger("commit_pairs_source_and_test")
     cwd = Path.cwd()
+    config = load_config(repo_root=cwd)
 
     if _head_has_unpaired_red_trailers(cwd=cwd):
         log.info(
@@ -139,8 +136,8 @@ def main() -> int:
         return 0
 
     staged = _staged_files(cwd=cwd)
-    source_changes = [path for path in staged if path.startswith(_SOURCE_TREE_PREFIXES)]
-    test_changes = [path for path in staged if path.startswith(_TESTS_TREE_PREFIX)]
+    source_changes = [path for path in staged if path.startswith(config.source_tree_prefixes)]
+    test_changes = [path for path in staged if path.startswith(config.tests_tree_prefix)]
 
     if source_changes and not test_changes:
         for source_path in source_changes:

@@ -62,6 +62,28 @@ dev = [
 ]
 
 # ---------------------------------------------------------------------------
+# livespec-dev-tooling self-application layout (li-asybpo).
+#
+# Per SPECIFICATION/constraints.md §"Self-application" + contracts.md
+# §"Consumer configuration schema", `just check` runs every shared check
+# against this library's OWN source tree. This block declares the flat
+# package layout: only the role keys this library has. The omitted role
+# keys (io_trees, commands_trees, supervisor_entry_files, dataclasses_tree,
+# pure_trees, covered_trees) are empty/null, so the corresponding checks
+# (no_except_outside_io, no_raise_outside_io, public_api_result_typed,
+# no_write_direct, no_lloc_soft_warnings, newtype_domain_primitives) no-op
+# against this flat-layout library, per contracts.md §"Role keys".
+# ---------------------------------------------------------------------------
+
+[tool.livespec_dev_tooling]
+source_trees = ["livespec_dev_tooling"]
+target_dirs = ["livespec_dev_tooling"]
+source_tree_prefixes = ["livespec_dev_tooling/"]
+mirror_pairings = [
+    { source_tree = "livespec_dev_tooling", test_tree = "tests/livespec_dev_tooling" },
+]
+
+# ---------------------------------------------------------------------------
 # Ruff — sole linter, formatter, import-sorter, complexity checker.
 # Rule set mirrors livespec/pyproject.toml [tool.ruff] per
 # livespec/SPECIFICATION/non-functional-requirements.md §"Linter rule set".

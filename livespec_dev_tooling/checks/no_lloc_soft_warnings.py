@@ -34,14 +34,11 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling.config import iter_py_files, load_config  # noqa: E402
+
 __all__: list[str] = []
 
 
-_COVERED_TREES = (
-    Path(".claude-plugin") / "scripts" / "livespec",
-    Path(".claude-plugin") / "scripts" / "bin",
-    Path("dev-tooling"),
-)
 _LLOC_SOFT_CEILING = 200
 _LLOC_HARD_CEILING = 250
 _NON_LLOC_TOKEN_TYPES = frozenset(
@@ -103,12 +100,17 @@ def main() -> int:
     )
     log = structlog.get_logger("no_lloc_soft_warnings")
     cwd = Path.cwd()
+    config = load_config(repo_root=cwd)
+    if not config.covered_trees:
+        log.info(
+            "role key absent — check no-ops",
+            check_id="no_lloc_soft_warnings",
+            role="covered_trees",
+        )
+        return 0
     soft_band_offenders: list[tuple[Path, int]] = []
-    for tree_rel in _COVERED_TREES:
-        root = cwd / tree_rel
-        if not root.is_dir():
-            continue
-        for py_file in sorted(root.rglob("*.py")):
+    for tree_rel in config.covered_trees:
+        for py_file in iter_py_files(root=cwd / tree_rel):
             source = py_file.read_text(encoding="utf-8")
             lloc = _count_lloc(source=source)
             if _LLOC_SOFT_CEILING < lloc <= _LLOC_HARD_CEILING:

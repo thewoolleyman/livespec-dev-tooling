@@ -45,11 +45,18 @@ from pathlib import Path
 
 import pytest
 
+from livespec_dev_tooling.config import MirrorPairing, load_config
+
 __all__: list[str] = []
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _CHECK_PATH = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "check_coverage_incremental.py"
+
+
+def _core_pairings() -> tuple[MirrorPairing, ...]:
+    """The livespec-core historical mirror pairings (no-block fallback)."""
+    return load_config(repo_root=Path("/livespec-dev-tooling-nonexistent-root")).mirror_pairings
 
 
 def _load_check_module() -> types.ModuleType:
@@ -93,7 +100,9 @@ def test_resolve_mirror_test_for_livespec_dev_tooling_checks_pair() -> None:
     module = _load_check_module()
     impl_path = Path("livespec_dev_tooling") / "checks" / "foo.py"
     expected_test = Path("tests") / "livespec_dev_tooling" / "checks" / "test_foo.py"
-    actual_test = module._resolve_mirror_test_path(impl_path=impl_path)  # noqa: SLF001
+    actual_test = module._resolve_mirror_test_path(  # noqa: SLF001
+        impl_path=impl_path, mirror_pairings=_core_pairings()
+    )
     assert actual_test == expected_test, (
         f"mirror-pair resolution mismatch for {impl_path}: "
         f"expected {expected_test}, got {actual_test}"
@@ -110,7 +119,9 @@ def test_resolve_mirror_test_for_livespec_subdir_pair() -> None:
     module = _load_check_module()
     impl_path = Path(".claude-plugin") / "scripts" / "livespec" / "validate" / "finding.py"
     expected_test = Path("tests") / "livespec" / "validate" / "test_finding.py"
-    actual_test = module._resolve_mirror_test_path(impl_path=impl_path)  # noqa: SLF001
+    actual_test = module._resolve_mirror_test_path(  # noqa: SLF001
+        impl_path=impl_path, mirror_pairings=_core_pairings()
+    )
     assert actual_test == expected_test, (
         f"mirror-pair resolution mismatch for {impl_path}: "
         f"expected {expected_test}, got {actual_test}"
@@ -126,7 +137,9 @@ def test_resolve_mirror_test_for_bin_wrapper_pair() -> None:
     module = _load_check_module()
     impl_path = Path(".claude-plugin") / "scripts" / "bin" / "seed.py"
     expected_test = Path("tests") / "bin" / "test_seed.py"
-    actual_test = module._resolve_mirror_test_path(impl_path=impl_path)  # noqa: SLF001
+    actual_test = module._resolve_mirror_test_path(  # noqa: SLF001
+        impl_path=impl_path, mirror_pairings=_core_pairings()
+    )
     assert actual_test == expected_test, (
         f"mirror-pair resolution mismatch for {impl_path}: "
         f"expected {expected_test}, got {actual_test}"
@@ -147,7 +160,9 @@ def test_resolve_mirror_test_for_private_helper_strips_leading_underscore() -> N
     module = _load_check_module()
     impl_path = Path(".claude-plugin") / "scripts" / "livespec" / "commands" / "_seed_helpers.py"
     expected_test = Path("tests") / "livespec" / "commands" / "test_seed_helpers.py"
-    actual_test = module._resolve_mirror_test_path(impl_path=impl_path)  # noqa: SLF001
+    actual_test = module._resolve_mirror_test_path(  # noqa: SLF001
+        impl_path=impl_path, mirror_pairings=_core_pairings()
+    )
     assert actual_test == expected_test, (
         f"private-helper mirror-pair resolution mismatch for {impl_path}: "
         f"expected {expected_test}, got {actual_test}"
@@ -167,7 +182,7 @@ def test_resolve_mirror_test_raises_on_unknown_impl_tree() -> None:
     module = _load_check_module()
     impl_path = Path("sandbox") / "scratch" / "foo.py"
     with pytest.raises(ValueError, match=r"sandbox/scratch/foo\.py|sandbox.scratch.foo\.py"):
-        _ = module._resolve_mirror_test_path(impl_path=impl_path)  # noqa: SLF001
+        _ = module._resolve_mirror_test_path(impl_path=impl_path, mirror_pairings=_core_pairings())  # noqa: SLF001
 
 
 def test_resolve_test_paths_returns_empty_list_for_empty_impl_paths() -> None:
@@ -184,7 +199,9 @@ def test_resolve_test_paths_returns_empty_list_for_empty_impl_paths() -> None:
     """
     module = _load_check_module()
     log = module._configure_logger()  # noqa: SLF001
-    test_paths = module._resolve_test_paths(impl_paths=[], log=log)  # noqa: SLF001
+    test_paths = module._resolve_test_paths(  # noqa: SLF001
+        impl_paths=[], mirror_pairings=_core_pairings(), log=log
+    )
     assert (
         test_paths == []
     ), f"empty impl_paths should resolve to empty test_paths; got {test_paths!r}"
@@ -223,13 +240,15 @@ def test_main_fails_on_unknown_impl_tree(*, tmp_path: Path) -> None:
 def test_main_fails_when_mirror_test_does_not_exist(*, tmp_path: Path) -> None:
     """`--paths` whose mirror-pair points at a non-existent test file → exit non-zero.
 
-    Uses a synthetic impl path under `dev-tooling/checks/`
-    that does NOT have a corresponding test file at
-    `tests/dev-tooling/checks/test_<name>.py`. Mirror-pair
-    resolution succeeds (the path is under a recognized tree),
-    but `test_path.is_file()` returns False because no such
-    test exists in the real repo. Pins the
-    `if not test_path.is_file()` branch.
+    Uses a synthetic impl path under `livespec_dev_tooling/checks/`
+    (the source tree this library declares in its own
+    `[tool.livespec_dev_tooling].mirror_pairings`) that does NOT
+    have a corresponding test file at
+    `tests/livespec_dev_tooling/checks/test_<name>.py`. Mirror-pair
+    resolution succeeds (the path is under the configured tree),
+    but `test_path.is_file()` returns False because no such test
+    exists in the real repo. Pins the `if not test_path.is_file()`
+    branch.
     """
     _ = tmp_path
     result = subprocess.run(
@@ -237,7 +256,7 @@ def test_main_fails_when_mirror_test_does_not_exist(*, tmp_path: Path) -> None:
             sys.executable,
             str(_CHECK_PATH),
             "--paths",
-            "dev-tooling/checks/synthesized_nonexistent_xyz.py",
+            "livespec_dev_tooling/checks/synthesized_nonexistent_xyz.py",
         ],
         cwd=str(_REPO_ROOT),
         capture_output=True,

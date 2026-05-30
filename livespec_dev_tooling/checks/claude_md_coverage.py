@@ -34,14 +34,11 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling.config import load_config  # noqa: E402
+
 __all__: list[str] = []
 
 
-_COVERED_ROOTS = (
-    Path(".claude-plugin") / "scripts",
-    Path("tests"),
-    Path("dev-tooling"),
-)
 _EXEMPT_PATH_COMPONENTS = frozenset({"_vendor", "fixtures", "__pycache__"})
 
 
@@ -75,8 +72,9 @@ def main() -> int:
     )
     log = structlog.get_logger("claude_md_coverage")
     cwd = Path.cwd()
+    config = load_config(repo_root=cwd)
     offenders: list[Path] = []
-    for root_rel in _COVERED_ROOTS:
+    for root_rel in config.target_dirs:
         scope_root = cwd / root_rel
         for directory in _iter_in_scope_dirs(repo_root=cwd, scope_root=scope_root):
             claude_md = directory / "CLAUDE.md"

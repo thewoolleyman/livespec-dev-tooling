@@ -41,10 +41,11 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling.config import iter_py_files, load_config  # noqa: E402
+
 __all__: list[str] = []
 
 
-_LIVESPEC_TREE = Path(".claude-plugin") / "scripts" / "livespec"
 _INTRA_CLASS_RECEIVERS = frozenset({"self", "cls"})
 
 
@@ -84,10 +85,10 @@ def main() -> int:
     )
     log = structlog.get_logger("private_calls")
     cwd = Path.cwd()
-    livespec_root = cwd / _LIVESPEC_TREE
+    config = load_config(repo_root=cwd)
     offenders: list[tuple[Path, int, str]] = []
-    if livespec_root.is_dir():
-        for py_file in sorted(livespec_root.rglob("*.py")):
+    for tree_rel in config.source_trees:
+        for py_file in iter_py_files(root=cwd / tree_rel):
             source = py_file.read_text(encoding="utf-8")
             for lineno, attr_path in _find_offenders(source=source):
                 offenders.append((py_file.relative_to(cwd), lineno, attr_path))
