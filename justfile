@@ -441,3 +441,21 @@ fmt:
 
 lint-fix:
     uv run ruff check --fix .
+
+# Mechanize the Red-commit-then-Green-amend TDD ritual for a product
+# `.py` change: stage the TEST alone and commit (Red), then stage the
+# IMPL file(s) and amend (Green), yielding ONE commit carrying the test,
+# the impl, and both TDD-Red-*/TDD-Green-* trailer sets (per the
+# red-green-replay commit-refuse hook). Replaces the error-prone hand-
+# orchestration (`git add <test>` → commit → `git add <impl>` → amend).
+#
+# Usage (--impl is repeatable; --subject must be feat:/fix:):
+#   just tdd-commit --test tests/livespec_dev_tooling/test_foo.py \
+#       --impl livespec_dev_tooling/foo.py --subject "feat: add foo"
+#
+# Git runs through `mise exec -- git` by default so lefthook's commit-msg
+# shim fires and the trailers get written; pass `--no-mise` for a
+# hook-less repo. Opt-in mutating target — NOT part of the `check:`
+# aggregate.
+tdd-commit *args:
+    uv run python -m livespec_dev_tooling.tdd_commit {{args}}
