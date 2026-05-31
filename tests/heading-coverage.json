@@ -229,5 +229,54 @@
     "heading": "## Self-application",
     "test": "TODO",
     "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: livespec consumes the package via uv git source",
+    "test": "TODO",
+    "reason": "Scenario-tier coverage pending — a consumer-style check-runner test at integration tier will exercise this scenario (epic li-scetdt / Wave 6). Registered as TODO per the scenarios.md integration-tier-or-above transition allowance."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: every livespec-impl-* plugin consumes the package via `python -m`",
+    "test": "TODO",
+    "reason": "Scenario-tier coverage pending — a consumer-style check-runner test at integration tier will exercise this scenario (epic li-scetdt / Wave 6). Registered as TODO per the scenarios.md integration-tier-or-above transition allowance."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a CI workflow consumes the reusable check-matrix",
+    "test": "TODO",
+    "reason": "Scenario-tier coverage pending — a consumer-style check-runner test at integration tier will exercise this scenario (epic li-scetdt / Wave 6). Registered as TODO per the scenarios.md integration-tier-or-above transition allowance."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a livespec contract change ships an additive surface bump",
+    "test": "TODO",
+    "reason": "Scenario-tier coverage pending — a consumer-style check-runner test at integration tier will exercise this scenario (epic li-scetdt / Wave 6). Registered as TODO per the scenarios.md integration-tier-or-above transition allowance."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a breaking change to an existing check's CLI ships as a MAJOR bump",
+    "test": "TODO",
+    "reason": "Scenario-tier coverage pending — a consumer-style check-runner test at integration tier will exercise this scenario (epic li-scetdt / Wave 6). Registered as TODO per the scenarios.md integration-tier-or-above transition allowance."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: self-application catches a regression before release",
+    "test": "TODO",
+    "reason": "Scenario-tier coverage pending — a consumer-style check-runner test at integration tier will exercise this scenario (epic li-scetdt / Wave 6). Registered as TODO per the scenarios.md integration-tier-or-above transition allowance."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a check attempts forbidden network I/O",
+    "test": "TODO",
+    "reason": "Scenario-tier coverage pending — a consumer-style check-runner test at integration tier will exercise this scenario (epic li-scetdt / Wave 6). Registered as TODO per the scenarios.md integration-tier-or-above transition allowance."
   }
 ]
