@@ -53,6 +53,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.8.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.7.0...v0.8.0) (2026-05-31)
+
+
+### Features
+
+* CLI end-to-end harness (epic li-e2ecli Phase 2; li-e2ecdt) ([df60126](https://github.com/thewoolleyman/livespec-dev-tooling/commit/df60126c2341eeffb65991c00703b99f853a6d08))
+
 ## [0.7.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.6.0...v0.7.0) (2026-05-30)
 
 
