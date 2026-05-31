@@ -974,3 +974,99 @@ def test_scenario_tier_non_string_test_is_skipped(*, tmp_path: Path) -> None:
     assert result.returncode == 0
     combined = result.stdout + result.stderr
     assert "scenario heading mapped to unit-tier test" not in combined
+
+
+# ---------------------------------------------------------------------------
+# Granular scenario registration — a `## Scenario:` heading in `scenarios.md`
+# now REQUIRES its own registry entry (the skip applies ONLY in other files).
+# ---------------------------------------------------------------------------
+
+
+def test_scenario_heading_in_scenarios_md_requires_entry(*, tmp_path: Path) -> None:
+    """A `## Scenario:` heading in `scenarios.md` with NO entry fires the uncovered diagnostic."""
+    _write_spec_file(
+        tmp_path=tmp_path,
+        rel_path="SPECIFICATION/scenarios.md",
+        body="# Scenarios\n\n## Scenario: happy path\n\nbody\n",
+    )
+    _write_registry(tmp_path=tmp_path, entries=[])
+    result = _run_check(cwd=tmp_path)
+    assert result.returncode != 0
+    combined = result.stdout + result.stderr
+    assert "spec heading missing coverage entry" in combined
+    assert "Scenario: happy path" in combined
+
+
+def test_scenario_heading_in_scenarios_md_accepts_todo_with_tier_reason(*, tmp_path: Path) -> None:
+    """A `## Scenario:` heading in `scenarios.md` covered by a TODO+tier-reason entry passes."""
+    _write_spec_file(
+        tmp_path=tmp_path,
+        rel_path="SPECIFICATION/scenarios.md",
+        body="# Scenarios\n\n## Scenario: happy path\n\nbody\n",
+    )
+    _write_registry(
+        tmp_path=tmp_path,
+        entries=[
+            {
+                "heading": "## Scenario: happy path",
+                "spec_root": "SPECIFICATION",
+                "spec_file": "scenarios.md",
+                "test": "TODO",
+                "reason": "integration-tier consumer harness pending (epic li-scetdt / Wave 6)",
+            }
+        ],
+    )
+    result = _run_check(cwd=tmp_path)
+    assert result.returncode == 0
+
+
+def test_scenario_heading_in_scenarios_md_unit_tier_fires(*, tmp_path: Path) -> None:
+    """A `## Scenario:` heading mapped to a unit-tier real test fires the tier diagnostic."""
+    _write_spec_file(
+        tmp_path=tmp_path,
+        rel_path="SPECIFICATION/scenarios.md",
+        body="# Scenarios\n\n## Scenario: happy path\n\nbody\n",
+    )
+    _write_file(
+        tmp_path=tmp_path,
+        rel_path="tests/unit/test_pure.py",
+        body="def test_pure_thing() -> None:\n    assert True\n",
+    )
+    _write_registry(
+        tmp_path=tmp_path,
+        entries=[
+            {
+                "heading": "## Scenario: happy path",
+                "spec_root": "SPECIFICATION",
+                "spec_file": "scenarios.md",
+                "test": "tests.unit.test_pure.test_pure_thing",
+            }
+        ],
+    )
+    result = _run_check(cwd=tmp_path)
+    assert result.returncode != 0
+    combined = result.stdout + result.stderr
+    assert "scenario heading mapped to unit-tier test" in combined
+    assert "Scenario: happy path" in combined
+
+
+def test_scenario_heading_in_non_scenarios_file_still_skipped(*, tmp_path: Path) -> None:
+    """A `## Scenario:` heading in spec.md (not scenarios.md) needs NO entry — still skipped."""
+    _write_spec_file(
+        tmp_path=tmp_path,
+        rel_path="SPECIFICATION/spec.md",
+        body="# Title\n\n## Foo\n\n## Scenario: belongs to prose, not registry\n",
+    )
+    _write_registry(
+        tmp_path=tmp_path,
+        entries=[
+            {
+                "heading": "## Foo",
+                "spec_root": "SPECIFICATION",
+                "spec_file": "spec.md",
+                "test": "tests/foo.py::test_foo",
+            }
+        ],
+    )
+    result = _run_check(cwd=tmp_path)
+    assert result.returncode == 0

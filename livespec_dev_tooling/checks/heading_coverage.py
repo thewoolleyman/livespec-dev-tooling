@@ -54,7 +54,13 @@ table/key is absent, the module-level documented default
 integration-test directory convention without amending this check.
 
 The check SKIPS `##` headings whose text begins with the literal
-`Scenario:` prefix.
+`Scenario:` prefix in every spec file EXCEPT `scenarios.md`. In
+`scenarios.md` each `## Scenario:` heading is tracked granularly and
+REQUIRES its own registry entry — the uncovered, orphan, and
+integration-tier directions above all govern it (many entries MAY map
+to one consumer-tier test). `Scenario:`-prefixed headings in other
+spec files (`spec.md`, `contracts.md`, etc.) remain out of registry
+scope and are still skipped.
 
 Pre-Phase-6 the check tolerates an empty `[]` array; from the
 Phase 6 seed forward, emptiness is a failure if any spec tree
@@ -172,7 +178,11 @@ def _spec_triples(*, repo_root: Path) -> set[tuple[str, str, str]]:
         for spec_file_name, spec_file_path in _enumerate_tree_root_spec_files(tree_root=tree_root):
             source = spec_file_path.read_text(encoding="utf-8")
             for heading in _extract_h2_headings(source=source):
-                if _is_scenario_heading(heading=heading):
+                # `## Scenario:`-prefixed headings are skipped in every spec
+                # file EXCEPT `scenarios.md`. In `scenarios.md` each scenario
+                # heading is tracked granularly and REQUIRES its own registry
+                # entry, so the uncovered/orphan/tier directions govern it.
+                if _is_scenario_heading(heading=heading) and spec_file_name != _SCENARIOS_FILE:
                     continue
                 out.add((spec_root_str, spec_file_name, heading))
     return out
