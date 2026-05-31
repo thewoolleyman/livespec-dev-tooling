@@ -10,8 +10,19 @@ recursing into `proposed_changes/`,
 never including the skill-owned `README.md` at the tree root.
 
 Failure modes covered: uncovered heading, orphan registry entry,
-missing `reason` on a TODO entry. Skip rule covered: `Scenario:`
-prefix.
+missing `reason` on a TODO entry, and a `scenarios.md` heading mapped
+to a unit-tier test (the integration-tier sub-rule). Skip rule
+covered: `Scenario:` prefix.
+
+The scenario integration-tier sub-rule (per
+`SPECIFICATION/constraints.md` §"Heading taxonomy"): a registry entry
+whose `spec_file` is `scenarios.md` MUST map to a test at the
+integration tier or above — satisfied by an allowlisted node-id
+prefix (read from `[tool.livespec_dev_tooling].scenario_tiers`, or a
+documented default), by a static `pytest.mark.integration`/stronger
+marker, or (for a TODO) by a `reason` that acknowledges the tier
+requirement. Otherwise the distinct diagnostic `scenario heading
+mapped to unit-tier test` fires.
 """
 
 from __future__ import annotations
@@ -51,6 +62,17 @@ def _write_spec_file(*, tmp_path: Path, rel_path: str, body: str) -> None:
     full = tmp_path / rel_path
     full.parent.mkdir(parents=True, exist_ok=True)
     full.write_text(body, encoding="utf-8")
+
+
+def _write_file(*, tmp_path: Path, rel_path: str, body: str) -> None:
+    full = tmp_path / rel_path
+    full.parent.mkdir(parents=True, exist_ok=True)
+    full.write_text(body, encoding="utf-8")
+
+
+def _scenarios_body() -> str:
+    """A `scenarios.md` whose single non-`Scenario:` heading needs coverage."""
+    return "# Scenarios\n\n## Observable outcomes\n\nbody\n"
 
 
 def test_heading_coverage_rejects_uncovered_heading(*, tmp_path: Path) -> None:
@@ -394,3 +416,561 @@ def test_heading_coverage_module_importable_without_running_main() -> None:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     assert callable(module.main)
+
+
+# ---------------------------------------------------------------------------
+# Direction 4 — scenarios.md headings require integration-tier-or-above tests.
+# ---------------------------------------------------------------------------
+
+
+def test_scenario_tier_compliant_via_default_prefix(*, tmp_path: Path) -> None:
+    """A scenarios.md entry with a default-allowlist prefix node id passes (no pyproject)."""
+    _write_spec_file(
+        tmp_path=tmp_path, rel_path="SPECIFICATION/scenarios.md", body=_scenarios_body()
+    )
+    _write_registry(
+        tmp_path=tmp_path,
+        entries=[
+            {
+                "heading": "## Observable outcomes",
+                "spec_root": "SPECIFICATION",
+                "spec_file": "scenarios.md",
+                "test": "tests.e2e.test_happy_path.test_happy_path_minimal",
+            }
+        ],
+    )
+    result = _run_check(cwd=tmp_path)
+    assert result.returncode == 0
+
+
+def test_scenario_tier_compliant_via_marker_ast(*, tmp_path: Path) -> None:
+    """A non-allowlisted node id passes when the test fn carries an integration marker."""
+    _write_spec_file(
+        tmp_path=tmp_path, rel_path="SPECIFICATION/scenarios.md", body=_scenarios_body()
+    )
+    # Node id under a NON-allowlisted directory (`tests.behavior.*`), so path
+    # (a) cannot save it — only the static `pytest.mark.integration` marker can.
+    _write_file(
+        tmp_path=tmp_path,
+        rel_path="tests/behavior/test_observable.py",
+        body=(
+            "import pytest\n\n\n"
+            "@pytest.mark.integration\n"
+            "def test_observable_flow() -> None:\n"
+            "    assert True\n"
+        ),
+    )
+    _write_registry(
+        tmp_path=tmp_path,
+        entries=[
+            {
+                "heading": "## Observable outcomes",
+                "spec_root": "SPECIFICATION",
+                "spec_file": "scenarios.md",
+                "test": "tests.behavior.test_observable.test_observable_flow",
+            }
+        ],
+    )
+    result = _run_check(cwd=tmp_path)
+    assert result.returncode == 0
+
+
+def test_scenario_tier_unit_tier_node_id_fires(*, tmp_path: Path) -> None:
+    """A scenarios.md entry mapped to a unit-tier node id fires the new diagnostic."""
+    _write_spec_file(
+        tmp_path=tmp_path, rel_path="SPECIFICATION/scenarios.md", body=_scenarios_body()
+    )
+    # `tests.unit.*` is neither allowlisted nor markered → unit-tier violation.
+    _write_file(
+        tmp_path=tmp_path,
+        rel_path="tests/unit/test_pure.py",
+        body="def test_pure_thing() -> None:\n    assert True\n",
+    )
+    _write_registry(
+        tmp_path=tmp_path,
+        entries=[
+            {
+                "heading": "## Observable outcomes",
+                "spec_root": "SPECIFICATION",
+                "spec_file": "scenarios.md",
+                "test": "tests.unit.test_pure.test_pure_thing",
+            }
+        ],
+    )
+    result = _run_check(cwd=tmp_path)
+    assert result.returncode != 0
+    combined = result.stdout + result.stderr
+    assert "scenario heading mapped to unit-tier test" in combined
+    assert "Observable outcomes" in combined
+
+
+def test_scenario_tier_unit_tier_does_not_fire_for_non_scenarios_file(*, tmp_path: Path) -> None:
+    """A unit-tier node id under spec.md (not scenarios.md) does NOT fire direction 4."""
+    _write_spec_file(
+        tmp_path=tmp_path, rel_path="SPECIFICATION/spec.md", body="# Title\n\n## Foo\n\nbody\n"
+    )
+    _write_registry(
+        tmp_path=tmp_path,
+        entries=[
+            {
+                "heading": "## Foo",
+                "spec_root": "SPECIFICATION",
+                "spec_file": "spec.md",
+                "test": "tests.unit.test_pure.test_pure_thing",
+            }
+        ],
+    )
+    result = _run_check(cwd=tmp_path)
+    assert result.returncode == 0
+
+
+def test_scenario_tier_todo_with_tier_acknowledging_reason_passes(*, tmp_path: Path) -> None:
+    """A scenarios.md TODO whose reason acknowledges the tier requirement passes."""
+    _write_spec_file(
+        tmp_path=tmp_path, rel_path="SPECIFICATION/scenarios.md", body=_scenarios_body()
+    )
+    _write_registry(
+        tmp_path=tmp_path,
+        entries=[
+            {
+                "heading": "## Observable outcomes",
+                "spec_root": "SPECIFICATION",
+                "spec_file": "scenarios.md",
+                "test": "TODO",
+                "reason": "integration-tier harness pending; will map to tests.e2e once ready",
+            }
+        ],
+    )
+    result = _run_check(cwd=tmp_path)
+    assert result.returncode == 0
+
+
+def test_scenario_tier_todo_without_tier_acknowledgment_fires(*, tmp_path: Path) -> None:
+    """A scenarios.md TODO with a non-empty but tier-silent reason fires direction 4."""
+    _write_spec_file(
+        tmp_path=tmp_path, rel_path="SPECIFICATION/scenarios.md", body=_scenarios_body()
+    )
+    _write_registry(
+        tmp_path=tmp_path,
+        entries=[
+            {
+                "heading": "## Observable outcomes",
+                "spec_root": "SPECIFICATION",
+                "spec_file": "scenarios.md",
+                "test": "TODO",
+                "reason": "test pending",
+            }
+        ],
+    )
+    result = _run_check(cwd=tmp_path)
+    assert result.returncode != 0
+    combined = result.stdout + result.stderr
+    assert "scenario heading mapped to unit-tier test" in combined
+
+
+def test_scenario_tier_allowlist_read_from_pyproject(*, tmp_path: Path) -> None:
+    """A consumer-declared `scenario_tiers` prefix is honored from pyproject.toml."""
+    _write_spec_file(
+        tmp_path=tmp_path, rel_path="SPECIFICATION/scenarios.md", body=_scenarios_body()
+    )
+    # `tests.acceptance.*` is NOT in the documented default; declaring it in
+    # pyproject makes the otherwise-unit-tier node id compliant.
+    _write_file(
+        tmp_path=tmp_path,
+        rel_path="pyproject.toml",
+        body=("[tool.livespec_dev_tooling]\n" 'scenario_tiers = ["tests.acceptance"]\n'),
+    )
+    _write_registry(
+        tmp_path=tmp_path,
+        entries=[
+            {
+                "heading": "## Observable outcomes",
+                "spec_root": "SPECIFICATION",
+                "spec_file": "scenarios.md",
+                "test": "tests.acceptance.test_flow.test_acceptance",
+            }
+        ],
+    )
+    result = _run_check(cwd=tmp_path)
+    assert result.returncode == 0
+
+
+def test_scenario_tier_pyproject_allowlist_excludes_default_prefix(*, tmp_path: Path) -> None:
+    """A declared allowlist REPLACES the default — a default-only prefix then fires."""
+    _write_spec_file(
+        tmp_path=tmp_path, rel_path="SPECIFICATION/scenarios.md", body=_scenarios_body()
+    )
+    # Allowlist declares only `tests.acceptance`; the node id under the
+    # default-but-not-declared `tests.e2e` is no longer covered by path (a).
+    _write_file(
+        tmp_path=tmp_path,
+        rel_path="pyproject.toml",
+        body=("[tool.livespec_dev_tooling]\n" 'scenario_tiers = ["tests.acceptance"]\n'),
+    )
+    _write_registry(
+        tmp_path=tmp_path,
+        entries=[
+            {
+                "heading": "## Observable outcomes",
+                "spec_root": "SPECIFICATION",
+                "spec_file": "scenarios.md",
+                "test": "tests.e2e.test_happy_path.test_happy_path_minimal",
+            }
+        ],
+    )
+    result = _run_check(cwd=tmp_path)
+    assert result.returncode != 0
+    combined = result.stdout + result.stderr
+    assert "scenario heading mapped to unit-tier test" in combined
+
+
+def test_scenario_tier_default_used_when_table_absent(*, tmp_path: Path) -> None:
+    """With a pyproject that has no livespec_dev_tooling table, the default allowlist applies."""
+    _write_spec_file(
+        tmp_path=tmp_path, rel_path="SPECIFICATION/scenarios.md", body=_scenarios_body()
+    )
+    _write_file(
+        tmp_path=tmp_path,
+        rel_path="pyproject.toml",
+        body='[project]\nname = "x"\nversion = "0"\n',
+    )
+    _write_registry(
+        tmp_path=tmp_path,
+        entries=[
+            {
+                "heading": "## Observable outcomes",
+                "spec_root": "SPECIFICATION",
+                "spec_file": "scenarios.md",
+                "test": "tests.integration.test_x.test_y",
+            }
+        ],
+    )
+    result = _run_check(cwd=tmp_path)
+    assert result.returncode == 0
+
+
+def test_scenario_tier_unresolvable_node_id_governed_by_prefix(*, tmp_path: Path) -> None:
+    """An allowlisted prefix passes even when the node-id file does not exist (no crash)."""
+    _write_spec_file(
+        tmp_path=tmp_path, rel_path="SPECIFICATION/scenarios.md", body=_scenarios_body()
+    )
+    # No file at tests/e2e/test_missing.py — marker path (b) finds nothing, but
+    # the allowlisted `tests.e2e` prefix (path a) governs and the check passes.
+    _write_registry(
+        tmp_path=tmp_path,
+        entries=[
+            {
+                "heading": "## Observable outcomes",
+                "spec_root": "SPECIFICATION",
+                "spec_file": "scenarios.md",
+                "test": "tests.e2e.test_missing.test_absent",
+            }
+        ],
+    )
+    result = _run_check(cwd=tmp_path)
+    assert result.returncode == 0
+
+
+def test_scenario_tier_compliant_via_module_pytestmark(*, tmp_path: Path) -> None:
+    """A module-level `pytestmark` integration marker satisfies path (b)."""
+    _write_spec_file(
+        tmp_path=tmp_path, rel_path="SPECIFICATION/scenarios.md", body=_scenarios_body()
+    )
+    _write_file(
+        tmp_path=tmp_path,
+        rel_path="tests/behavior/test_mod.py",
+        body=(
+            "import pytest\n\n"
+            "pytestmark = pytest.mark.integration\n\n\n"
+            "def test_mod_flow() -> None:\n"
+            "    assert True\n"
+        ),
+    )
+    _write_registry(
+        tmp_path=tmp_path,
+        entries=[
+            {
+                "heading": "## Observable outcomes",
+                "spec_root": "SPECIFICATION",
+                "spec_file": "scenarios.md",
+                "test": "tests.behavior.test_mod.test_mod_flow",
+            }
+        ],
+    )
+    result = _run_check(cwd=tmp_path)
+    assert result.returncode == 0
+
+
+def test_scenario_tier_compliant_via_class_marker(*, tmp_path: Path) -> None:
+    """A class-level integration marker on the enclosing class satisfies path (b)."""
+    _write_spec_file(
+        tmp_path=tmp_path, rel_path="SPECIFICATION/scenarios.md", body=_scenarios_body()
+    )
+    _write_file(
+        tmp_path=tmp_path,
+        rel_path="tests/behavior/test_cls.py",
+        body=(
+            "import pytest\n\n\n"
+            "@pytest.mark.integration\n"
+            "class TestObservable:\n"
+            "    def test_method(self) -> None:\n"
+            "        assert True\n"
+        ),
+    )
+    _write_registry(
+        tmp_path=tmp_path,
+        entries=[
+            {
+                "heading": "## Observable outcomes",
+                "spec_root": "SPECIFICATION",
+                "spec_file": "scenarios.md",
+                "test": "tests.behavior.test_cls.test_method",
+            }
+        ],
+    )
+    result = _run_check(cwd=tmp_path)
+    assert result.returncode == 0
+
+
+def test_scenario_tier_node_id_without_dot_fires(*, tmp_path: Path) -> None:
+    """A single-token (no-dot) node id cannot resolve to a file → unit-tier fires."""
+    _write_spec_file(
+        tmp_path=tmp_path, rel_path="SPECIFICATION/scenarios.md", body=_scenarios_body()
+    )
+    _write_registry(
+        tmp_path=tmp_path,
+        entries=[
+            {
+                "heading": "## Observable outcomes",
+                "spec_root": "SPECIFICATION",
+                "spec_file": "scenarios.md",
+                "test": "weirdsingletoken",
+            }
+        ],
+    )
+    result = _run_check(cwd=tmp_path)
+    assert result.returncode != 0
+    combined = result.stdout + result.stderr
+    assert "scenario heading mapped to unit-tier test" in combined
+
+
+def test_scenario_tier_node_id_missing_file_fires(*, tmp_path: Path) -> None:
+    """A non-allowlisted node id whose file does NOT exist → unit-tier fires (no crash)."""
+    _write_spec_file(
+        tmp_path=tmp_path, rel_path="SPECIFICATION/scenarios.md", body=_scenarios_body()
+    )
+    _write_registry(
+        tmp_path=tmp_path,
+        entries=[
+            {
+                "heading": "## Observable outcomes",
+                "spec_root": "SPECIFICATION",
+                "spec_file": "scenarios.md",
+                "test": "tests.behavior.test_absent.test_gone",
+            }
+        ],
+    )
+    result = _run_check(cwd=tmp_path)
+    assert result.returncode != 0
+    combined = result.stdout + result.stderr
+    assert "scenario heading mapped to unit-tier test" in combined
+
+
+def test_scenario_tier_unparseable_test_file_fires(*, tmp_path: Path) -> None:
+    """A node-id file with invalid Python → parse error swallowed → unit-tier fires."""
+    _write_spec_file(
+        tmp_path=tmp_path, rel_path="SPECIFICATION/scenarios.md", body=_scenarios_body()
+    )
+    # Syntactically invalid module: the AST scan must NOT crash; it treats the
+    # unparseable file as "no marker found" so the check fires direction 4.
+    _write_file(
+        tmp_path=tmp_path,
+        rel_path="tests/behavior/test_broken.py",
+        body="def test_broken(:\n    this is not valid python\n",
+    )
+    _write_registry(
+        tmp_path=tmp_path,
+        entries=[
+            {
+                "heading": "## Observable outcomes",
+                "spec_root": "SPECIFICATION",
+                "spec_file": "scenarios.md",
+                "test": "tests.behavior.test_broken.test_broken",
+            }
+        ],
+    )
+    result = _run_check(cwd=tmp_path)
+    assert result.returncode != 0
+    combined = result.stdout + result.stderr
+    assert "scenario heading mapped to unit-tier test" in combined
+
+
+def test_scenario_tier_compliant_via_annotated_module_pytestmark(*, tmp_path: Path) -> None:
+    """An ANNOTATED module-level `pytestmark: ... = pytest.mark.integration` satisfies (b)."""
+    _write_spec_file(
+        tmp_path=tmp_path, rel_path="SPECIFICATION/scenarios.md", body=_scenarios_body()
+    )
+    _write_file(
+        tmp_path=tmp_path,
+        rel_path="tests/behavior/test_ann.py",
+        body=(
+            "import pytest\n\n"
+            "pytestmark: pytest.MarkDecorator = pytest.mark.integration\n\n\n"
+            "def test_ann_flow() -> None:\n"
+            "    assert True\n"
+        ),
+    )
+    _write_registry(
+        tmp_path=tmp_path,
+        entries=[
+            {
+                "heading": "## Observable outcomes",
+                "spec_root": "SPECIFICATION",
+                "spec_file": "scenarios.md",
+                "test": "tests.behavior.test_ann.test_ann_flow",
+            }
+        ],
+    )
+    result = _run_check(cwd=tmp_path)
+    assert result.returncode == 0
+
+
+def test_scenario_tier_pytestmark_list_with_unrelated_assigns(*, tmp_path: Path) -> None:
+    """A `pytestmark = [...]` list amid unrelated top-level assigns is honored."""
+    _write_spec_file(
+        tmp_path=tmp_path, rel_path="SPECIFICATION/scenarios.md", body=_scenarios_body()
+    )
+    # An annotated assignment with NO value (`X: int`), an unrelated assignment,
+    # and the real `pytestmark` as a LIST — exercises the None-value skip, the
+    # non-pytestmark-target skip, and the list-unpacking marker path.
+    _write_file(
+        tmp_path=tmp_path,
+        rel_path="tests/behavior/test_list.py",
+        body=(
+            "import pytest\n\n"
+            "UNRELATED: int\n"
+            "OTHER = 1\n"
+            "pytestmark = [pytest.mark.integration]\n\n\n"
+            "def test_list_flow() -> None:\n"
+            "    assert True\n"
+        ),
+    )
+    _write_registry(
+        tmp_path=tmp_path,
+        entries=[
+            {
+                "heading": "## Observable outcomes",
+                "spec_root": "SPECIFICATION",
+                "spec_file": "scenarios.md",
+                "test": "tests.behavior.test_list.test_list_flow",
+            }
+        ],
+    )
+    result = _run_check(cwd=tmp_path)
+    assert result.returncode == 0
+
+
+def test_scenario_tier_class_without_target_function_fires(*, tmp_path: Path) -> None:
+    """An unmarked class lacking the target fn, plus a bare decorator, → unit-tier fires."""
+    _write_spec_file(
+        tmp_path=tmp_path, rel_path="SPECIFICATION/scenarios.md", body=_scenarios_body()
+    )
+    # A class WITHOUT an integration marker and WITHOUT the target function, and
+    # a module-level target function carrying only a non-`mark` bare decorator
+    # (`@staticmethod`-style name) — neither path (b) source yields the marker.
+    _write_file(
+        tmp_path=tmp_path,
+        rel_path="tests/behavior/test_nomatch.py",
+        body=(
+            "def deco(fn):\n"
+            "    return fn\n\n\n"
+            "class TestOther:\n"
+            "    def test_unrelated(self) -> None:\n"
+            "        assert True\n\n\n"
+            "@deco\n"
+            "def test_target_flow() -> None:\n"
+            "    assert True\n"
+        ),
+    )
+    _write_registry(
+        tmp_path=tmp_path,
+        entries=[
+            {
+                "heading": "## Observable outcomes",
+                "spec_root": "SPECIFICATION",
+                "spec_file": "scenarios.md",
+                "test": "tests.behavior.test_nomatch.test_target_flow",
+            }
+        ],
+    )
+    result = _run_check(cwd=tmp_path)
+    assert result.returncode != 0
+    combined = result.stdout + result.stderr
+    assert "scenario heading mapped to unit-tier test" in combined
+
+
+def test_scenario_tier_unmarked_method_in_unmarked_class_fires(*, tmp_path: Path) -> None:
+    """The target method exists in an UNMARKED class with NO marker → unit-tier fires.
+
+    Exercises the class-walk continuing past a found-but-unmarked method (the
+    `if class_carries or func_markers` guard evaluating False), then falling
+    through to the unit-tier diagnostic.
+    """
+    _write_spec_file(
+        tmp_path=tmp_path, rel_path="SPECIFICATION/scenarios.md", body=_scenarios_body()
+    )
+    _write_file(
+        tmp_path=tmp_path,
+        rel_path="tests/behavior/test_plainmethod.py",
+        body=(
+            "class TestPlain:\n"
+            "    def test_plain_method(self) -> None:\n"
+            "        assert True\n"
+        ),
+    )
+    _write_registry(
+        tmp_path=tmp_path,
+        entries=[
+            {
+                "heading": "## Observable outcomes",
+                "spec_root": "SPECIFICATION",
+                "spec_file": "scenarios.md",
+                "test": "tests.behavior.test_plainmethod.test_plain_method",
+            }
+        ],
+    )
+    result = _run_check(cwd=tmp_path)
+    assert result.returncode != 0
+    combined = result.stdout + result.stderr
+    assert "scenario heading mapped to unit-tier test" in combined
+
+
+def test_scenario_tier_non_string_test_is_skipped(*, tmp_path: Path) -> None:
+    """A scenarios.md entry whose `test` is non-string short-circuits direction 4.
+
+    The (spec_root, spec_file, heading) triple is still valid (all strings), so
+    the heading is covered (no direction-1 fire) and the non-string `test` guard
+    means direction 4 does not fire either — the check passes (exit 0).
+    """
+    _write_spec_file(
+        tmp_path=tmp_path, rel_path="SPECIFICATION/scenarios.md", body=_scenarios_body()
+    )
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir(parents=True, exist_ok=True)
+    (tests_dir / "heading-coverage.json").write_text(
+        json.dumps(
+            [
+                {
+                    "heading": "## Observable outcomes",
+                    "spec_root": "SPECIFICATION",
+                    "spec_file": "scenarios.md",
+                    "test": 42,
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    result = _run_check(cwd=tmp_path)
+    assert result.returncode == 0
+    combined = result.stdout + result.stderr
+    assert "scenario heading mapped to unit-tier test" not in combined
