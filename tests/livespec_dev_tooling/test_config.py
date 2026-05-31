@@ -28,6 +28,7 @@ from livespec_dev_tooling.config import (
     MirrorPairing,
     iter_py_files,
     load_config,
+    load_scenario_tiers,
 )
 
 __all__: list[str] = []
@@ -257,3 +258,48 @@ def test_bare_config_is_flat_baseline() -> None:
     assert config.source_trees == ()
     assert config.dataclasses_tree is None
     assert config.tests_tree_prefix == "tests/"
+
+
+def test_scenario_tiers_none_when_no_pyproject(*, tmp_path: Path) -> None:
+    """No `pyproject.toml` → `load_scenario_tiers` returns `None` (caller defaults)."""
+    assert load_scenario_tiers(repo_root=tmp_path) is None
+
+
+def test_scenario_tiers_none_when_key_absent(*, tmp_path: Path) -> None:
+    """A block present but omitting `scenario_tiers` → `None`."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body='[tool.livespec_dev_tooling]\nsource_trees = ["pkg"]\n',
+    )
+    assert load_scenario_tiers(repo_root=tmp_path) is None
+
+
+def test_scenario_tiers_read_from_block(*, tmp_path: Path) -> None:
+    """A declared `scenario_tiers` array is returned verbatim as a tuple."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body=(
+            "[tool.livespec_dev_tooling]\n" 'scenario_tiers = ["tests.e2e", "tests.acceptance"]\n'
+        ),
+    )
+    assert load_scenario_tiers(repo_root=tmp_path) == ("tests.e2e", "tests.acceptance")
+
+
+def test_scenario_tiers_non_array_raises(*, tmp_path: Path) -> None:
+    """A scalar `scenario_tiers` raises `ConfigParseError`."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body='[tool.livespec_dev_tooling]\nscenario_tiers = "tests.e2e"\n',
+    )
+    with pytest.raises(ConfigParseError, match="`scenario_tiers` must be an array of strings"):
+        _ = load_scenario_tiers(repo_root=tmp_path)
+
+
+def test_scenario_tiers_non_string_element_raises(*, tmp_path: Path) -> None:
+    """A `scenario_tiers` array with a non-string element raises `ConfigParseError`."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body="[tool.livespec_dev_tooling]\nscenario_tiers = [1]\n",
+    )
+    with pytest.raises(ConfigParseError, match="`scenario_tiers` must be an array of strings"):
+        _ = load_scenario_tiers(repo_root=tmp_path)

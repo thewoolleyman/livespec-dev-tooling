@@ -47,7 +47,14 @@ if sys.version_info >= (3, 11):  # pragma: no cover — 3.11 path unused on the 
 else:
     import tomli as _toml
 
-__all__: list[str] = ["Config", "ConfigParseError", "MirrorPairing", "iter_py_files", "load_config"]
+__all__: list[str] = [
+    "Config",
+    "ConfigParseError",
+    "MirrorPairing",
+    "iter_py_files",
+    "load_config",
+    "load_scenario_tiers",
+]
 
 
 _TABLE_KEY = "livespec_dev_tooling"
@@ -246,6 +253,28 @@ def _read_table(*, repo_root: Path) -> dict[str, Any] | None:
     if not isinstance(table, dict):
         return None
     return cast("dict[str, Any]", table)
+
+
+def load_scenario_tiers(*, repo_root: Path) -> tuple[str, ...] | None:
+    """Return the `scenario_tiers` allowlist, or `None` if the key is absent.
+
+    Reads `<repo_root>/pyproject.toml`'s `[tool.livespec_dev_tooling]` block,
+    key `scenario_tiers` — a TOML array of node-id path prefixes that the
+    `heading_coverage` check accepts as integration-tier-or-above for
+    `scenarios.md` headings (per `SPECIFICATION/constraints.md` §"Heading
+    taxonomy"). Returns `None` when the whole block is absent OR the
+    `scenario_tiers` key is omitted, so the calling check applies its own
+    documented default. Raises `ConfigParseError` on a non-array value or a
+    non-string element, consistent with the rest of the loader.
+
+    This is intentionally NOT a `Config` role key: `scenario_tiers` is a
+    single-check concern (`heading_coverage`), so it is read directly off the
+    table rather than threaded through the typed layout dataclass.
+    """
+    table = _read_table(repo_root=repo_root)
+    if table is None or "scenario_tiers" not in table:
+        return None
+    return _as_str_tuple(value=table["scenario_tiers"], key="scenario_tiers")
 
 
 def load_config(*, repo_root: Path) -> Config:
