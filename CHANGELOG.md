@@ -53,6 +53,15 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.9.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.8.0...v0.9.0) (2026-05-31)
+
+
+### Features
+
+* enforce scenarios.md integration-tier coverage in heading_coverage (epic li-scetier W1) ([b4e43dd](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b4e43dd76c6a06efce645794f4558f714337cb9f))
+* read scenario_tiers allowlist from pyproject (epic li-scetier W1) ([09c60c7](https://github.com/thewoolleyman/livespec-dev-tooling/commit/09c60c7eb08d8ebd7ea1dc7c6826ec7b68d86219))
+* require granular registry entries for scenarios.md scenario headings ([7ac151f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7ac151fe91c4a6c0f0cf4f40eef10cd341cafaf5))
+
 ## [0.8.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.7.0...v0.8.0) (2026-05-31)
 
 
