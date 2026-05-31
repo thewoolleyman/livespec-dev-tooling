@@ -1,0 +1,5 @@
+{
+  "name": "fixture-plugin",
+  "version": "0.0.0",
+  "description": "Tiny single-skill fixture-plugin used to self-test the CLI e2e harness (discovery + coverage gate + fixture round-trip) in isolation, without a real claude binary or LLM/API access."
+}
