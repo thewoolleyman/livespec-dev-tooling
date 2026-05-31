@@ -63,6 +63,84 @@ Or, for a single composite action:
 
 (The composite Actions and reusable workflows are authored in Phase G.5.)
 
+## CLI end-to-end test harness
+
+`livespec_dev_tooling.testing.cli_e2e` is the single canonical
+implementation of the family's *top-of-pyramid*, user-surface
+end-to-end test (per `livespec`'s
+`SPECIFICATION/contracts.md` §"CLI end-to-end harness contract"). Its
+sole interaction surface is the `claude` CLI binary itself — it installs
+a plugin via the CLI's plugin surface and exercises each skill as a
+slash command, exactly as a real end user does. It is a sibling to (not
+a superset of) the wrapper-chain E2E tier; both coexist in CI.
+
+The harness ships five components behind one importable entry point:
+a **driver** (`claude -p` subprocess invocations, multi-turn via
+`--continue` / `--resume`), **structural skill discovery** (walks
+`<installed-plugin>/skills/*/SKILL.md`, reads the slash prefix from
+`plugin.json` `name`), a **per-skill fixtures loader**
+(`tests/e2e-cli/fixtures/<skill>/{prompt.md,expected_files.txt}`), a
+**fail-closed time-bomb coverage gate** (`discovered − fixtured −
+exempt == ∅`), and a **step orchestrator**.
+
+### Consumer import path
+
+A consumer repo bump-pins this library (as above) and wires the entry
+point into its own pytest collection:
+
+```python
+# tests/e2e-cli/test_cli_e2e.py  (in the consumer repo)
+from pathlib import Path
+
+import pytest
+from livespec_dev_tooling.testing.cli_e2e import (
+    HarnessConfig,
+    test_workflow_full_round_trip as _run_harness,
+)
+
+# Alias the import: the canonical entry point is named
+# `test_workflow_full_round_trip`, and importing that bare `test_*` name
+# directly would make pytest try to collect it with a missing fixture.
+
+def test_cli_e2e(*, tmp_path: Path) -> None:
+    config = HarnessConfig(
+        impl_plugin_id="livespec-impl-plaintext",
+        marketplace="thewoolleyman/livespec",
+        enabled_plugins=("livespec@livespec", "livespec-impl-plaintext@..."),
+        plugin_install_dirs=(...,),                       # installed plugin roots
+        fixtures_root=Path("tests/e2e-cli/fixtures"),
+        install_command="/plugin install livespec@livespec",
+    )
+    _run_harness(
+        config=config,
+        home=tmp_path / "home",
+        project_root=tmp_path / "project",
+        # mock tier (default): pass a deterministic injected runner.
+        # real tier (LIVESPEC_E2E_HARNESS=real): omit; the real `claude`
+        # binary is used (requires ANTHROPIC_API_KEY; NOT in `just check`).
+        injected_runner=my_runner,
+    )
+```
+
+### Mock vs. real tier — `LIVESPEC_E2E_HARNESS`
+
+The one mocked boundary is the `claude -p` subprocess itself (the
+`CliRunner` seam) — everything else (discovery, fixtures, the coverage
+gate, orchestration) always runs for real. Tier selection rides the
+SAME family-wide `LIVESPEC_E2E_HARNESS=mock|real` selector the
+wrapper-chain tier uses:
+
+- `mock` (default) — the caller supplies a deterministic injected
+  `CliRunner`; `claude` is never invoked, so the tier runs in
+  `just check` with no API cost.
+- `real` — `RealCliRunner` shells out to the real `claude` binary;
+  requires `ANTHROPIC_API_KEY` and is NOT part of `just check`.
+
+This library self-tests the harness in isolation against a tiny
+single-skill fixture-plugin (`tests/livespec_dev_tooling/testing/
+fixtures/single_skill_plugin/`) with a fake runner — proving discovery,
+the coverage gate, and a fixture round-trip without any LLM/API access.
+
 ## Standards
 
 The same standards `livespec` enforces on itself, dialed up:

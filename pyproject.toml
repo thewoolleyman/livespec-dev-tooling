@@ -164,6 +164,12 @@ ban-relative-imports = "all"
 # S603/S607/S404 are over-strict for this documented pattern;
 # S105 covers TRAILER-token constants.
 "livespec_dev_tooling/checks/*.py" = ["S603", "S607", "S404", "S105"]
+# The CLI e2e harness's RealCliRunner shells out to the `claude` binary via
+# subprocess.run with a fixed argv list (binary name + literal flags + the
+# caller-supplied prompt as a single argv element, no shell). S603/S607/S404
+# are over-strict for this documented user-surface-driver pattern, exactly as
+# for the check modules above.
+"livespec_dev_tooling/testing/cli_e2e.py" = ["S603", "S607", "S404"]
 
 # ---------------------------------------------------------------------------
 # Pyright — strict + seven strict-plus diagnostics. Per

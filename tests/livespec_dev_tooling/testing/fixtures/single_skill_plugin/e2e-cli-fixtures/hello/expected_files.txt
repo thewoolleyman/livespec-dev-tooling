@@ -1,0 +1,4 @@
+# Paths that MUST exist under the foreign project root after the `hello`
+# skill's `claude -p` turn. The harness self-test's fake runner materializes
+# this one file; a real run would have the skill's slash command create it.
+hello-output.txt
