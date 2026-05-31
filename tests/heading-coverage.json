@@ -234,49 +234,49 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: livespec consumes the package via uv git source",
-    "test": "TODO",
-    "reason": "Scenario-tier coverage pending — a consumer-style check-runner test at integration tier will exercise this scenario (epic li-scetdt / Wave 6). Registered as TODO per the scenarios.md integration-tier-or-above transition allowance."
+    "test": "tests.consumer.test_package_consumption.test_livespec_consumes_check_via_python_m_on_clean_tree",
+    "reason": "Consumer-tier check-runner test: invokes a shared check as `python -m livespec_dev_tooling.checks.<slug>` against a clean consumer fixture and asserts exit 0 (epic li-scetdt / Wave 6)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: every livespec-impl-* plugin consumes the package via `python -m`",
-    "test": "TODO",
-    "reason": "Scenario-tier coverage pending — a consumer-style check-runner test at integration tier will exercise this scenario (epic li-scetdt / Wave 6). Registered as TODO per the scenarios.md integration-tier-or-above transition allowance."
+    "test": "tests.consumer.test_package_consumption.test_impl_plugin_consumes_check_without_local_copy",
+    "reason": "Consumer-tier check-runner test: shared check runs against a plugin fixture with no plugin-local copy of the package; resolves to the installed module alone (epic li-scetdt / Wave 6)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a CI workflow consumes the reusable check-matrix",
-    "test": "TODO",
-    "reason": "Scenario-tier coverage pending — a consumer-style check-runner test at integration tier will exercise this scenario (epic li-scetdt / Wave 6). Registered as TODO per the scenarios.md integration-tier-or-above transition allowance."
+    "test": "tests.consumer.test_reusable_check_matrix.test_canonical_checks_emits_a_nonempty_matrix_array",
+    "reason": "Consumer-tier test: the `canonical_checks --json` thin-transport surface emits the non-empty slug array the reusable-check-matrix `checks` input is populated from (epic li-scetdt / Wave 6)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a livespec contract change ships an additive surface bump",
-    "test": "TODO",
-    "reason": "Scenario-tier coverage pending — a consumer-style check-runner test at integration tier will exercise this scenario (epic li-scetdt / Wave 6). Registered as TODO per the scenarios.md integration-tier-or-above transition allowance."
+    "test": "tests.consumer.test_semver_and_bump_shape.test_declared_version_is_a_wellformed_three_part_semver",
+    "reason": "Consumer-tier test: pins the well-formed 3-part semver shape an additive (MINOR) bump operates on, read from the consumer-facing pyproject `version` (epic li-scetdt / Wave 6)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a breaking change to an existing check's CLI ships as a MAJOR bump",
-    "test": "TODO",
-    "reason": "Scenario-tier coverage pending — a consumer-style check-runner test at integration tier will exercise this scenario (epic li-scetdt / Wave 6). Registered as TODO per the scenarios.md integration-tier-or-above transition allowance."
+    "test": "tests.consumer.test_semver_and_bump_shape.test_existing_check_argv_and_exit_code_contract_is_stable",
+    "reason": "Consumer-tier test: pins the existing check's argv + exit-code contract (the consumer-observable CLI surface a MAJOR bump would change) (epic li-scetdt / Wave 6)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: self-application catches a regression before release",
-    "test": "TODO",
-    "reason": "Scenario-tier coverage pending — a consumer-style check-runner test at integration tier will exercise this scenario (epic li-scetdt / Wave 6). Registered as TODO per the scenarios.md integration-tier-or-above transition allowance."
+    "test": "tests.consumer.test_self_application_regression.test_self_application_surfaces_injected_regression",
+    "reason": "Consumer-tier test: injects a regression into a consumer fixture and asserts the shared check catches it (exit non-zero) and surfaces the offending file (epic li-scetdt / Wave 6)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a check attempts forbidden network I/O",
-    "test": "TODO",
-    "reason": "Scenario-tier coverage pending — a consumer-style check-runner test at integration tier will exercise this scenario (epic li-scetdt / Wave 6). Registered as TODO per the scenarios.md integration-tier-or-above transition allowance."
+    "test": "tests.consumer.test_no_network_io.test_no_shipped_check_imports_a_network_library",
+    "reason": "Consumer-tier test: AST-asserts every shipped check module is free of network-library imports (the no-network-io determinism gate per constraints.md) (epic li-scetdt / Wave 6)."
   }
 ]

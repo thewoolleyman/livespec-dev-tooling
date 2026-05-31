@@ -82,6 +82,14 @@ source_tree_prefixes = ["livespec_dev_tooling/"]
 mirror_pairings = [
     { source_tree = "livespec_dev_tooling", test_tree = "tests/livespec_dev_tooling" },
 ]
+# Integration-tier-or-above node-id prefix allowlist for the
+# `heading_coverage` check's `scenarios.md` tier gate (per
+# `SPECIFICATION/constraints.md` §"Heading taxonomy"): a `scenarios.md`
+# registry entry whose mapped test node id begins with one of these
+# prefixes is accepted as consumer/integration-tier coverage. This repo's
+# consumer-tier check-runner suite lives under `tests/consumer/` (node-id
+# prefix `tests.consumer`), so only that prefix is declared.
+scenario_tiers = ["tests.consumer"]
 
 # ---------------------------------------------------------------------------
 # Ruff — sole linter, formatter, import-sorter, complexity checker.
@@ -248,6 +256,14 @@ addopts = [
     # across mirror trees without pytest's legacy `prepend` mode
     # triggering same-basename module collisions.
     "--import-mode=importlib",
+]
+# `--strict-markers` requires every marker be registered. The `consumer`
+# marker tags the consumer-tier check-runner suite under `tests/consumer/`
+# (node-id prefix `tests.consumer`, also declared in
+# `[tool.livespec_dev_tooling].scenario_tiers`) — the integration-tier
+# coverage for `SPECIFICATION/scenarios.md` acceptance scenarios.
+markers = [
+    "consumer: consumer-tier check-runner test exercising a shipped check against a fixture project (scenarios.md coverage)",
 ]
 
 # ---------------------------------------------------------------------------
