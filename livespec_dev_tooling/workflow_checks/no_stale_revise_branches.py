@@ -1,12 +1,18 @@
 """no_stale_revise_branches — refuse new revise passes while a stale spec branch exists.
 
-Per `SPECIFICATION/proposed_changes/no-stale-revise-branches-check.md`
-(child PC of livespec's coordinating-epic-stale-revise-enforcement),
-this check enumerates local `refs/heads/spec/*` branches and fails
-when any such branch is ahead of the canonical branch by one or more
-commits.
+Per `SPECIFICATION/contracts.md` §"`no_stale_revise_branches` check"
+(a revise-workflow check, per §"Shared check inventory"), this check
+enumerates local `refs/heads/spec/*` branches and fails when any such
+branch is ahead of the canonical branch by one or more commits.
 
-Algorithm (per the PC §"`no_stale_revise_branches` check" subsection):
+It is invoked by livespec's `/livespec:revise` SKILL.md pre-step
+refusal — the sole caller and load-bearing enforcement point. It lives
+under `livespec_dev_tooling/workflow_checks/` (NOT `checks/`) so the
+canonical-set derivation auto-excludes it; it is NOT a member of the
+per-commit `just check` aggregate and NOT subject to the
+wiring-completeness invariant.
+
+Algorithm (per the contracts §"`no_stale_revise_branches` check"):
 
 1. Resolve the canonical branch name. Priority:
    a. `.livespec.jsonc`'s `livespec-impl-plaintext.canonical_branch`
@@ -23,18 +29,17 @@ Algorithm (per the PC §"`no_stale_revise_branches` check" subsection):
      the short SHA + subject of the branch HEAD for the user diagnostic.
 4. Exit `0` when the stale list is empty, `4` when populated.
 
+There is no downgrade flag: the check always fails hard (exit `4`) on
+any stale branch. The `--allow-stale-branches` downgrade flag was
+removed (epic li-cvaudit, li-cvstale): with the revise pre-step as the
+sole caller and no per-commit-aggregate invocation, there is nothing
+that needs a downgrade lever.
+
 Exit codes:
 
 - `0` — no stale `spec/*` branches.
 - `2` — usage error (bad CLI invocation).
 - `4` — one or more stale branches; structured findings on stderr.
-
-CLI flags:
-
-- `--allow-stale-branches` (optional). When set, the check still
-  enumerates and logs the stale branches, but exits `0` with the
-  diagnostics surfaced as `info`-level rather than `error`-level.
-  Intended for callers that want the visibility without the gate.
 
 Output discipline: structlog JSON to stderr; no `print`, no
 `sys.stderr.write`. The vendored `structlog` under
@@ -90,15 +95,9 @@ def _build_parser() -> argparse.ArgumentParser:
         description=(
             "Refuse new /livespec:revise passes while a local `spec/*` branch "
             "is ahead of the canonical branch. Enumerates local refs under "
-            "`refs/heads/spec/` and shells out to `git rev-list` for ahead-count."
-        ),
-    )
-    _ = parser.add_argument(
-        "--allow-stale-branches",
-        action="store_true",
-        help=(
-            "Exit 0 even when stale branches are present; the findings are "
-            "surfaced as info-level rather than error-level."
+            "`refs/heads/spec/` and shells out to `git rev-list` for ahead-count. "
+            "Always fails hard (exit 4) on any stale branch; there is no "
+            "downgrade flag."
         ),
     )
     return parser
@@ -280,7 +279,6 @@ def _emit_finding(
     *,
     log: structlog.stdlib.BoundLogger,
     finding: _StaleBranch,
-    allow_stale: bool,
 ) -> None:
     message = (
         f"branch '{finding.branch}' is {finding.ahead} commit(s) ahead of "
@@ -297,16 +295,12 @@ def _emit_finding(
         "path": "",
         "line": 0,
     }
-    if allow_stale:
-        log.info(message, status="info", **fields)
-    else:
-        log.error(message, status="fail", **fields)
+    log.error(message, status="fail", **fields)
 
 
 def main() -> int:
     parser = _build_parser()
-    args = parser.parse_args()
-    allow_stale: bool = bool(args.allow_stale_branches)
+    _ = parser.parse_args()
     log = _configure_logger()
     cwd = Path.cwd()
     canonical = _resolve_canonical_branch(cwd=cwd)
@@ -336,10 +330,8 @@ def main() -> int:
             short_sha=short_sha,
             subject=subject,
         )
-        _emit_finding(log=log, finding=finding, allow_stale=allow_stale)
+        _emit_finding(log=log, finding=finding)
     if stale_count == 0:
-        return 0
-    if allow_stale:
         return 0
     return 4
 

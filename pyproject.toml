@@ -172,6 +172,12 @@ ban-relative-imports = "all"
 # S603/S607/S404 are over-strict for this documented pattern;
 # S105 covers TRAILER-token constants.
 "livespec_dev_tooling/checks/*.py" = ["S603", "S607", "S404", "S105"]
+# Revise-workflow checks (per SPECIFICATION/contracts.md §"Shared check
+# inventory" → "Revise-workflow checks") shell out to git via
+# subprocess.run with fixed argv lists, exactly like the per-commit
+# checks above; S603/S607/S404 are over-strict for that documented
+# pattern, S105 covers any trailer/token-shaped constants.
+"livespec_dev_tooling/workflow_checks/*.py" = ["S603", "S607", "S404", "S105"]
 # The CLI e2e harness's RealCliRunner shells out to the `claude` binary via
 # subprocess.run with a fixed argv list (binary name + literal flags + the
 # caller-supplied prompt as a single argv element, no shell). S603/S607/S404
