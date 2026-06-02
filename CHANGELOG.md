@@ -53,6 +53,17 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.9.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.9.0...v0.9.1) (2026-06-02)
+
+
+### Bug Fixes
+
+* **cvnoarg:** check_coverage_incremental derives --paths from git diff ([ec023de](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ec023de47c6aec99b019596b99155fe3041038c9))
+* **cvnoarg:** red_green_replay derives commit msg from HEAD with no argv ([8ba35bc](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8ba35bc059d0baf1235d7367e1ced206183c5da0))
+* **cvtodo:** check_mutation RUN/SKIP lever replaces release-gate skip ([aad7727](https://github.com/thewoolleyman/livespec-dev-tooling/commit/aad7727b71a37d45736893095bd5be7e456ba049))
+* **cvtodo:** no_lloc_soft_warnings severity lever replaces release-gate skip ([a6ed10c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a6ed10c446387b3da5542115ae1f48e44a885586))
+* **cvtodo:** no_todo_registry severity lever replaces release-gate skip ([66b3688](https://github.com/thewoolleyman/livespec-dev-tooling/commit/66b3688dd4df99dc4e45adb4553a23d70d40eba8))
+
 ## [0.9.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.8.0...v0.9.0) (2026-05-31)
 
 
