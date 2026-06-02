@@ -1,11 +1,20 @@
-"""no_lloc_soft_warnings — release-gate rejecting any 201-250 LLOC soft-band file.
+"""no_lloc_soft_warnings — 201-250 LLOC soft-band scan with a severity lever.
 
 Per `SPECIFICATION/constraints.md` §"File LLOC ceiling" (post-v008),
-this is the release-gate analog of `check-no-todo-registry`: not in
-`just check`, runs only on the release-tag CI workflow
-(`.github/workflows/release-tag.yml`, fires on `v*` tag push). It
-rejects any first-party `.py` file in the 201-250 LLOC soft band,
-forcing refactor work to land before any release tag.
+this is the soft-band analog of `check-no-todo-registry`: it flags any
+first-party `.py` file in the 201-250 LLOC soft band, forcing refactor
+work before a release.
+
+The scan ALWAYS runs (no skip carve-out). A self-documenting severity
+lever controls only the release-context behavior: when
+`LIVESPEC_FAIL_IF_LLOC_SOFT_WARNINGS_EXIST` is set to a non-empty value
+(CI sets it to `true` for the release context), soft-band offenders
+fail the check (exit 1, error-level diagnostics). When the lever is
+unset (or empty), the SAME findings are logged at WARNING level and the
+check exits 0, so soft-band files surface during authoring without
+blocking per-commit `just check`. This replaces the prior
+`LIVESPEC_RELEASE_GATE` skip carve-out (epic li-cvaudit, cvtodo) — the
+old carve-out SILENTLY skipped the scan entirely when the gate was unset.
 
 The check tokenizes each `.py` via the same algorithm as
 `file_lloc.py` (the per-commit two-tier check). Helpers are
@@ -23,6 +32,7 @@ _vendor/structlog` is added to `sys.path` at module import time.
 from __future__ import annotations
 
 import ast
+import os
 import sys
 import tokenize
 from io import BytesIO
@@ -41,6 +51,7 @@ __all__: list[str] = []
 
 _LLOC_SOFT_CEILING = 200
 _LLOC_HARD_CEILING = 250
+_FAIL_ENV_VAR = "LIVESPEC_FAIL_IF_LLOC_SOFT_WARNINGS_EXIST"
 _NON_LLOC_TOKEN_TYPES = frozenset(
     {
         tokenize.COMMENT,
@@ -116,15 +127,19 @@ def main() -> int:
             if _LLOC_SOFT_CEILING < lloc <= _LLOC_HARD_CEILING:
                 soft_band_offenders.append((py_file.relative_to(cwd), lloc))
     if soft_band_offenders:
+        fail = bool(os.environ.get(_FAIL_ENV_VAR))
         for path, lloc in soft_band_offenders:
-            log.error(
-                "file in 201-250 LLOC soft band (release-gate violation)",
+            emit = log.error if fail else log.warning
+            emit(
+                "file in 201-250 LLOC soft band",
                 file=str(path),
                 lloc=lloc,
                 soft_ceiling=_LLOC_SOFT_CEILING,
                 hard_ceiling=_LLOC_HARD_CEILING,
+                fail_env_var=_FAIL_ENV_VAR,
+                failing=fail,
             )
-        return 1
+        return 1 if fail else 0
     return 0
 
 
