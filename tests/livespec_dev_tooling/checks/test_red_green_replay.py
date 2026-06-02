@@ -1757,3 +1757,83 @@ def test_test_still_failing_reject_prints_full_protocol(*, tmp_path: Path) -> No
     assert result.returncode != 0
     assert "test-still-failing" in result.stderr
     _assert_protocol_in_stderr(stderr=result.stderr, mode="test-still-failing")
+
+
+# ---------------------------------------------------------------------------
+# Epic li-cvaudit (cvnoarg): with NO msg-path argv, the hook derives the
+# commit message from `git log -1 --format=%B` (HEAD) and validates it,
+# instead of the justfile no-arg short-circuit. An explicit msg path still
+# behaves as today (the commit-msg-hook contract).
+# ---------------------------------------------------------------------------
+
+
+def _init_repo_with_head_commit(*, tmp_path: Path, message: str) -> None:
+    """Init a tmp git repo and author one commit carrying `message`."""
+
+    def _git(*args: str) -> None:
+        subprocess.run(
+            ["git", *args],
+            cwd=str(tmp_path),
+            check=True,
+            capture_output=True,
+            text=True,
+            env=_scrubbed_env(),
+        )
+
+    _git("init", "-q")
+    _git("config", "user.email", "test@example.com")
+    _git("config", "user.name", "Test")
+    _git("config", "commit.gpgsign", "false")
+    (tmp_path / "f.txt").write_text("x\n", encoding="utf-8")
+    _git("add", "-A")
+    _git("commit", "-qm", message)
+
+
+def _run_no_arg(*, tmp_path: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, str(_RED_GREEN_REPLAY)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_scrubbed_env(),
+    )
+
+
+def test_no_arg_head_exempt_subject_exits_zero(*, tmp_path: Path) -> None:
+    """No argv + HEAD is a `chore:` commit → exit 0 (exempt type, nothing to verify)."""
+    _init_repo_with_head_commit(tmp_path=tmp_path, message="chore: tidy things\n")
+    result = _run_no_arg(tmp_path=tmp_path)
+    assert result.returncode == 0, (
+        f"no-arg with exempt HEAD subject should exit 0; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+
+
+def test_no_arg_head_feat_with_red_green_trailers_exits_zero(*, tmp_path: Path) -> None:
+    """No argv + HEAD is a `feat:` commit carrying Red AND Green trailers → exit 0."""
+    message = (
+        "feat: add a feature\n"
+        "\n"
+        "TDD-Red-Test-File-Checksum: sha256:deadbeef\n"
+        "TDD-Green-Verified-At: 2026-06-02T00:00:00Z\n"
+    )
+    _init_repo_with_head_commit(tmp_path=tmp_path, message=message)
+    result = _run_no_arg(tmp_path=tmp_path)
+    assert result.returncode == 0, (
+        f"no-arg with a properly-trailered feat HEAD should exit 0; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+
+
+def test_no_arg_head_feat_without_trailers_rejects(*, tmp_path: Path) -> None:
+    """No argv + HEAD is a `feat:` commit lacking R-G trailers → exit non-zero with diagnostic."""
+    _init_repo_with_head_commit(tmp_path=tmp_path, message="feat: untrailered feature\n")
+    result = _run_no_arg(tmp_path=tmp_path)
+    assert result.returncode != 0, (
+        f"no-arg with an untrailered feat HEAD should reject; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+    assert (
+        "trailer" in result.stderr.lower()
+    ), f"rejection should name the missing trailers; stderr={result.stderr!r}"
