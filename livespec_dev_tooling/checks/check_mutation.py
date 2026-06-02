@@ -1,4 +1,4 @@
-"""check_mutation — release-gate mutation testing against livespec/parse/ + validate/.
+"""check_mutation — mutation testing against livespec/parse/ + validate/, gated by a RUN/SKIP lever.
 
 Per SPECIFICATION/constraints.md §"Enforcement suite — Release-gate targets"
 and: runs mutmut against `.claude-plugin/scripts/
@@ -14,6 +14,16 @@ with-ceiling mechanism:
     the result as the new baseline, and exits 0. This allows the very
     first release-tag CI run to capture the baseline without a hard fail.
 
+RUN/SKIP lever: mutation testing is slow, so the suite is gated behind
+the `LIVESPEC_RUN_MUTATION` env var (the blocker is runtime cost, not
+severity). When the var is unset (or empty), the check logs a "skipped"
+diagnostic and exits 0 without invoking mutmut. When it is set to a
+non-empty value (CI sets it to `true` for the release context), the
+suite runs as described above. This replaces the prior
+`LIVESPEC_RELEASE_GATE` skip carve-out (epic li-cvaudit, cvtodo); the
+lever is per-check and self-documenting rather than an external gate
+that silently no-op'd the entire target.
+
 Output discipline: per spec, `print` (T20) and `sys.stderr.write`
 (`check-no-write-direct`) are banned in dev-tooling/**. Diagnostics flow
 through structlog (JSON to stderr).
@@ -23,6 +33,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -42,6 +53,7 @@ __all__: list[str] = [
 ]
 
 _BASELINE_PATH = Path(".mutmut-baseline.json")
+_RUN_ENV_VAR = "LIVESPEC_RUN_MUTATION"
 # Paths to mutate are configured in [tool.mutmut] in pyproject.toml;
 # mutmut reads them automatically when invoked without explicit path flags.
 _KILL_RATE_FLOOR: float = 80.0
@@ -127,6 +139,12 @@ def main() -> int:
         logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
     )
     log = structlog.get_logger("check_mutation")
+    if not os.environ.get(_RUN_ENV_VAR):
+        log.info(
+            "skipped (slow; runs in CI when LIVESPEC_RUN_MUTATION=true)",
+            run_env_var=_RUN_ENV_VAR,
+        )
+        return 0
     cwd = Path.cwd()
     baseline_path = cwd / _BASELINE_PATH
 
