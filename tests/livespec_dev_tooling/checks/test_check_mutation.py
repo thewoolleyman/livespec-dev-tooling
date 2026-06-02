@@ -6,6 +6,12 @@ the kill rate against the .mutmut-baseline.json ratchet (capped at 80%).
 First-run mode: when baseline shows total=0 (placeholder), the check runs
 mutmut, saves the result as the real baseline, and exits 0.
 
+Epic li-cvaudit (cvtodo) replaced the `LIVESPEC_RELEASE_GATE` skip
+carve-out with a RUN/SKIP lever (the blocker is runtime cost, not
+severity): `LIVESPEC_RUN_MUTATION` unset → the check logs a "skipped"
+diagnostic and exits 0; set to a non-empty value → the suite runs as
+before. CI sets `LIVESPEC_RUN_MUTATION=true` for the release context.
+
 Tests invoke check_mutation.py via subprocess with a fake mutmut package
 injected through PYTHONPATH, following the established dev-tooling test
 pattern. This approach lets mutmut properly substitute the mutated module
@@ -15,6 +21,7 @@ when running its own tests.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -26,6 +33,8 @@ __all__: list[str] = []
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _CHECK_MUTATION_SCRIPT = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "check_mutation.py"
+
+_RUN_VAR = "LIVESPEC_RUN_MUTATION"
 
 
 def _make_fake_mutmut(*, tmp_path: Path, killed: int, total: int, run_rc: int = 0) -> Path:
@@ -54,20 +63,63 @@ def _run_check(
     tmp_path: Path,
     fake_mutmut_dir: Path,
     baseline: dict[str, object] | None = None,
+    run_var: str | None = "true",
 ) -> subprocess.CompletedProcess[str]:
-    """Run check_mutation.py in tmp_path with a fake mutmut."""
-    import os
+    """Run check_mutation.py in tmp_path with a fake mutmut.
 
+    `run_var` controls the `LIVESPEC_RUN_MUTATION` lever: the default
+    `"true"` exercises the run-the-suite path (the behavior every
+    existing assertion below depends on); `None` removes the lever to
+    exercise the self-skip path.
+    """
     if baseline is not None:
         (tmp_path / ".mutmut-baseline.json").write_text(json.dumps(baseline), encoding="utf-8")
+    env = {k: v for k, v in os.environ.items() if k != _RUN_VAR}
+    env["PYTHONPATH"] = str(fake_mutmut_dir)
+    if run_var is not None:
+        env[_RUN_VAR] = run_var
     return subprocess.run(
         [sys.executable, str(_CHECK_MUTATION_SCRIPT)],
         cwd=str(tmp_path),
         capture_output=True,
         text=True,
         check=False,
-        env={**os.environ, "PYTHONPATH": str(fake_mutmut_dir)},
+        env=env,
     )
+
+
+def test_skips_when_run_var_unset(*, tmp_path: Path) -> None:
+    """`LIVESPEC_RUN_MUTATION` unset → self-skip: exit 0, no mutmut invocation."""
+    fake = _make_fake_mutmut(tmp_path=tmp_path, killed=3, total=20)
+    # A baseline that would FAIL if the suite actually ran (3/20 = 15% < 80%
+    # floor). The skip path must short-circuit before any kill-rate gate, so
+    # exit 0 here proves the suite did not run.
+    baseline = {"kill_rate_percent": 0.0, "mutants_surviving": 0, "mutants_total": 20}
+    result = _run_check(tmp_path=tmp_path, fake_mutmut_dir=fake, baseline=baseline, run_var=None)
+    assert result.returncode == 0, (
+        f"run-var unset should self-skip + exit 0; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+    combined = result.stdout + result.stderr
+    assert (
+        "skipped" in combined
+    ), f"skip path should log a 'skipped' diagnostic; stderr={result.stderr!r}"
+    assert (
+        _RUN_VAR in combined
+    ), f"skip diagnostic should name the run-var lever; stderr={result.stderr!r}"
+
+
+def test_empty_run_var_treated_as_unset(*, tmp_path: Path) -> None:
+    """An empty-string `LIVESPEC_RUN_MUTATION` counts as unset → self-skip + exit 0."""
+    fake = _make_fake_mutmut(tmp_path=tmp_path, killed=3, total=20)
+    baseline = {"kill_rate_percent": 0.0, "mutants_surviving": 0, "mutants_total": 20}
+    result = _run_check(tmp_path=tmp_path, fake_mutmut_dir=fake, baseline=baseline, run_var="")
+    assert result.returncode == 0, (
+        f"empty run-var should self-skip + exit 0; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+    combined = result.stdout + result.stderr
+    assert "skipped" in combined
 
 
 def test_baseline_is_placeholder_first_run(*, tmp_path: Path) -> None:
