@@ -53,6 +53,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.10.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.9.1...v0.10.0) (2026-06-02)
+
+
+### Features
+
+* relocate no_stale_revise_branches to workflow_checks; drop --allow-stale-branches ([d4e1ecc](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d4e1eccffd772854b0c472c096fcfec82fd50759))
+
 ## [0.9.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.9.0...v0.9.1) (2026-06-02)
 
 
