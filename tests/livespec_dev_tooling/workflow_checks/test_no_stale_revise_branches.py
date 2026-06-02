@@ -1,9 +1,11 @@
-"""Outside-in test for `livespec_dev_tooling/checks/no_stale_revise_branches.py`.
+"""Outside-in test for `livespec_dev_tooling/workflow_checks/no_stale_revise_branches.py`.
 
-Per `SPECIFICATION/proposed_changes/no-stale-revise-branches-check.md`
-(child PC of livespec's `coordinating-epic-stale-revise-enforcement`),
-the check enumerates local `refs/heads/spec/*` branches and fails when
-any such branch is ahead of the canonical branch.
+Per `SPECIFICATION/contracts.md` §"`no_stale_revise_branches` check"
+(a revise-workflow check, per §"Shared check inventory"), the check
+enumerates local `refs/heads/spec/*` branches and fails when any such
+branch is ahead of the canonical branch. It is invoked by the
+`/livespec:revise` pre-step and always fails hard (exit 4) on any stale
+branch — there is no downgrade flag.
 
 Test scenarios:
 
@@ -12,7 +14,6 @@ Test scenarios:
 - One `spec/*` branch ahead of origin/master by 1 → exit 4 with finding.
 - Multiple stale branches → exit 4 with one finding per stale branch.
 - `refs/heads/abandoned/spec/*` does NOT match the canonical pattern → exit 0.
-- `--allow-stale-branches` override → exit 0 even with stale branches.
 - `--help` / `-h` exits 0 with usage on stdout.
 - `.livespec.jsonc`'s `livespec-impl-plaintext.canonical_branch` resolves
   a non-master canonical branch.
@@ -37,7 +38,7 @@ __all__: list[str] = []
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-_CHECK = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "no_stale_revise_branches.py"
+_CHECK = _REPO_ROOT / "livespec_dev_tooling" / "workflow_checks" / "no_stale_revise_branches.py"
 
 
 # Vars git sets when invoking hooks (lefthook pre-commit / pre-push /
@@ -258,23 +259,6 @@ def test_abandoned_prefix_is_not_enumerated(*, tmp_path: Path) -> None:
         f"got {result.returncode}, stderr={result.stderr!r}"
     )
     assert "abandoned/spec/old" not in result.stderr
-
-
-def test_allow_stale_branches_override_exits_zero(*, tmp_path: Path) -> None:
-    """`--allow-stale-branches` → exit 0 even when stale branches exist, info-level only."""
-    _, clone = _make_remote_and_clone(tmp_path=tmp_path)
-    _make_branch_ahead(repo=clone, branch="spec/v003", commits=1)
-    result = _run_check(cwd=clone, extra_argv=["--allow-stale-branches"])
-    assert (
-        result.returncode == 0
-    ), f"expected exit 0 with override; got {result.returncode}, stderr={result.stderr!r}"
-    # The finding still surfaces, but as info-level (not error-level).
-    findings = [
-        json.loads(line) for line in result.stderr.splitlines() if line.strip().startswith("{")
-    ]
-    info_findings = [f for f in findings if f.get("status") == "info"]
-    assert any(f.get("branch") == "spec/v003" for f in info_findings)
-    assert not any(f.get("status") == "fail" for f in findings)
 
 
 def test_help_flag_exits_zero(*, tmp_path: Path) -> None:

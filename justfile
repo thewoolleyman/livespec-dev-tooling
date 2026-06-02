@@ -111,7 +111,6 @@ check:
         check-no-inheritance
         check-no-lloc-soft-warnings
         check-no-raise-outside-io
-        check-no-stale-revise-branches
         check-no-todo-registry
         check-no-write-direct
         check-pbt-coverage-pure-modules
@@ -317,13 +316,6 @@ check-no-lloc-soft-warnings:
 check-no-raise-outside-io:
     uv run python -m livespec_dev_tooling.checks.no_raise_outside_io
 
-# Refuse new revise passes while a stale spec/* branch is ahead of
-# master. Invoked by livespec's /livespec:revise SKILL.md pre-step
-# refusal; included in the canonical aggregate for cross-cutting
-# self-host coverage.
-check-no-stale-revise-branches:
-    uv run python -m livespec_dev_tooling.checks.no_stale_revise_branches
-
 # Always invoked plainly; the module self-manages its severity lever
 # (epic li-cvaudit, cvtodo). The heading-coverage.json TODO scan ALWAYS
 # runs; `LIVESPEC_FAIL_IF_HEADING_COVERAGE_TODOS_EXIST` unset → TODO
@@ -437,6 +429,25 @@ check-pre-commit:
         echo ":: Red-mode shape detected: $test_staged"
         echo ":: skipping coverage gates (commit-msg replay hook is the verifier; coverage runs at Green amend)"
         just skip="check-coverage check-per-file-coverage" check
+        exit $?
+    fi
+    # Green-amend shape: impl staged while HEAD still carries Red-only
+    # trailers (the Green amend has not yet written its TDD-Green-*
+    # trailers — the commit-msg `check-red-green-replay {1}` hook writes
+    # AND verifies them immediately after this pre-commit pass). The
+    # no-arg `check-red-green-replay` aggregate variant validates HEAD,
+    # which during a Green amend is the in-progress Red commit; it would
+    # otherwise reject a perfectly valid Green amend. Skip the aggregate
+    # variant here (the commit-msg hook is the load-bearing per-commit
+    # verifier); pre-push + CI re-run the full no-arg aggregate against
+    # the completed Red->Green HEAD as the safety net.
+    head_msg=$(git log -1 --format=%B 2>/dev/null || true)
+    if [[ "$impl_count" -ge 1 ]] \
+        && grep -q 'TDD-Red-Test-File-Checksum:' <<< "$head_msg" \
+        && ! grep -q 'TDD-Green-Verified-At:' <<< "$head_msg"; then
+        echo ":: Green-amend shape detected (impl staged; HEAD carries Red-only trailers)"
+        echo ":: skipping no-arg check-red-green-replay (commit-msg replay hook verifies the Green amend)"
+        just skip="check-red-green-replay" check
         exit $?
     fi
     just check
