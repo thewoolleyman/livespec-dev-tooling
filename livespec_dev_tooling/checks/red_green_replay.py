@@ -131,7 +131,57 @@ def _staged_files_list() -> list[str]:
     return [line for line in result.stdout.splitlines() if line]
 
 
+def _head_commit_message() -> str:
+    """Return HEAD's full commit message (`git log -1 --format=%B`)."""
+    result = subprocess.run(
+        ["git", "log", "-1", "--format=%B"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.stdout
+
+
+def _validate_head() -> int:
+    """Validate the HEAD commit's subject + trailers (no-argv aggregate path).
+
+    Derives the commit message from `git log -1 --format=%B`. An exempt
+    Conventional Commit type passes (exit 0). A `feat:`/`fix:` HEAD MUST
+    carry both `TDD-Red-*` and `TDD-Green-*` trailers — the signature of a
+    completed Red→Green commit; a feat/fix at HEAD without them is a
+    violation (the load-bearing verifier is the commit-msg hook, but this
+    aggregate pass catches a HEAD that slipped through, e.g. a rebase that
+    dropped trailers).
+    """
+    message = _head_commit_message()
+    subject = message.split("\n", 1)[0]
+    if _EXEMPT_TYPE_RE.match(subject):
+        return 0
+    log = _configure_logger()
+    has_red = "TDD-Red-Test-File-Checksum:" in message
+    has_green = "TDD-Green-Verified-At:" in message
+    if has_red and has_green:
+        return 0
+    log.error(
+        "HEAD is a feat:/fix: commit but its message is missing the "
+        "TDD-Red-*/TDD-Green-* trailers a completed Red->Green commit carries",
+        check_id="red-green-replay-head-missing-trailers",
+        subject=subject,
+        has_red_trailers=has_red,
+        has_green_trailers=has_green,
+        protocol=RED_GREEN_REPLAY_PROTOCOL,
+    )
+    return 1
+
+
 def main() -> int:
+    if len(sys.argv) <= 1:
+        # No msg-path argv (the canonical-aggregate / `just check`
+        # invocation, epic li-cvaudit cvnoarg): derive the commit message
+        # from HEAD and validate it, instead of the prior justfile no-arg
+        # short-circuit. The load-bearing per-commit verifier remains the
+        # commit-msg hook (which DOES pass a msg path).
+        return _validate_head()
     msg_path = Path(sys.argv[1])
     subject = msg_path.read_text(encoding="utf-8").split("\n", 1)[0]
     if _EXEMPT_TYPE_RE.match(subject):
