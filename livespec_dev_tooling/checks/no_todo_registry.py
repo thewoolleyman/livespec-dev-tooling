@@ -3,9 +3,18 @@
 Per `python-skill-script-style-requirements.md` §"Canonical
 target list" (the `check-no-todo-registry` row), no entry in
 `tests/heading-coverage.json` may have `test: "TODO"`.
-Release-gate only — paired with `check-mutation` on the
-release-tag CI workflow. Ensures every release ships with
-full rule-test coverage.
+
+The TODO scan ALWAYS runs (no skip carve-out). A self-documenting
+severity lever controls only the release-context behavior: when
+`LIVESPEC_FAIL_IF_HEADING_COVERAGE_TODOS_EXIST` is set to a
+non-empty value (CI sets it to `true` for the release context),
+discovered offenders fail the check (exit 1, error-level
+diagnostics). When the lever is unset (or empty), the SAME
+findings are logged at WARNING level and the check exits 0, so
+authoring placeholders surface without blocking per-commit
+`just check`. This replaces the prior `LIVESPEC_RELEASE_GATE`
+skip carve-out (epic li-cvaudit, cvtodo) — the old carve-out
+SILENTLY skipped the scan entirely when the gate was unset.
 
 The check loads the JSON file (strict JSON, not JSONC) and
 walks the array. Any entry whose `test` field equals the
@@ -22,6 +31,7 @@ _vendor/structlog` is added to `sys.path` at module import time.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 from typing import cast
@@ -36,6 +46,7 @@ __all__: list[str] = []
 
 
 _COVERAGE_PATH = Path("tests") / "heading-coverage.json"
+_FAIL_ENV_VAR = "LIVESPEC_FAIL_IF_HEADING_COVERAGE_TODOS_EXIST"
 
 
 def main() -> int:
@@ -68,13 +79,17 @@ def main() -> int:
             if isinstance(entry, dict) and cast("dict[str, object]", entry).get("test") == "TODO":
                 offenders.append(cast("dict[str, object]", entry))
     if offenders:
+        fail = bool(os.environ.get(_FAIL_ENV_VAR))
         for entry in offenders:
-            log.error(
-                'heading-coverage.json entry has `test: "TODO"` (release-gate violation)',
+            emit = log.error if fail else log.warning
+            emit(
+                'heading-coverage.json entry has `test: "TODO"`',
                 heading=entry.get("heading"),
                 spec_root=entry.get("spec_root"),
+                fail_env_var=_FAIL_ENV_VAR,
+                failing=fail,
             )
-        return 1
+        return 1 if fail else 0
     return 0
 
 
