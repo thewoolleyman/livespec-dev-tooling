@@ -29,10 +29,19 @@ on a missed defensive branch.
 
 CLI-flag exemption note: the dev-tooling/checks/ CLAUDE.md
 guidance reads "no CLI flags; the script reads the repo at
-cwd." This script REQUIRES a `--paths` flag to scope the
+cwd." This script accepts an OPTIONAL `--paths` flag to scope the
 per-file gate; the precedent is `red_green_replay.py` which
 takes `argv[1]` as the COMMIT_EDITMSG path. The exemption is
 documented at the v039 D3 canonical-target-list row.
+
+No-`--paths` derive (epic li-cvaudit, cvnoarg): when invoked with
+NO `--paths`, the check derives the changed-file list from
+`git diff --name-only origin/master...HEAD`, filtered to `.py` files
+under the consumer's configured `source_tree_prefixes`, and runs the
+per-file gate against those. This replaces the prior no-arg
+short-circuit (a justfile `if [[ -z "{{args}}" ]]` block that made the
+aggregate invocation a silent no-op). An empty derived set (no changed
+impl `.py`) still exits 0 — there is simply nothing to gate.
 
 Output discipline: per spec, `print` (T20) and
 `sys.stderr.write` (`check-no-write-direct`) are banned in
@@ -163,13 +172,64 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     _ = parser.add_argument(
         "--paths",
-        nargs="+",
-        required=True,
+        nargs="*",
+        default=[],
         type=Path,
         metavar="IMPL_PATH",
-        help="impl path(s), repo-root-relative, to scope the per-file coverage gate to",
+        help=(
+            "impl path(s), repo-root-relative, to scope the per-file coverage "
+            "gate to; when omitted, the changed impl `.py` set is derived from "
+            "`git diff --name-only origin/master...HEAD`"
+        ),
     )
     return parser
+
+
+def _changed_py_impl_paths(
+    *, diff_output: str, source_tree_prefixes: tuple[str, ...]
+) -> list[Path]:
+    """Filter a `git diff --name-only` blob to `.py` files under a source prefix.
+
+    Keeps each non-blank line that ends in `.py` AND starts with one of
+    `source_tree_prefixes` (the consumer's configured impl-tree prefixes),
+    preserving order. Test files, docs, and config are dropped — only impl
+    `.py` paths the per-file gate can resolve to a mirror-paired test
+    survive.
+    """
+    out: list[Path] = []
+    for line in diff_output.splitlines():
+        path = line.strip()
+        if not path or not path.endswith(".py"):
+            continue
+        if path.startswith(source_tree_prefixes):
+            out.append(Path(path))
+    return out
+
+
+def _derive_paths_from_git(*, source_tree_prefixes: tuple[str, ...], cwd: Path) -> list[Path]:
+    """Derive the changed impl-`.py` set from `git diff origin/master...HEAD`.
+
+    Runs the diff in `cwd` (the repo root) and filters the result via
+    `_changed_py_impl_paths`. Returns the empty list when there are no
+    changed impl `.py` files (the no-op-after-derive case).
+
+    The git subprocess is handed an env with every `GIT_*` var stripped:
+    a parent process (notably a git commit hook) can inject `GIT_DIR` /
+    `GIT_INDEX_FILE` / `GIT_WORK_TREE`, which would override `cwd` and make
+    the diff target the WRONG repository. Clearing those keeps the diff
+    scoped to the repository at `cwd`.
+    """
+    git_env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    # S603/S607: argv is a fixed list of literal git args; no shell input.
+    diff = subprocess.run(
+        ["git", "diff", "--name-only", "origin/master...HEAD"],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=str(cwd),
+        env=git_env,
+    ).stdout
+    return _changed_py_impl_paths(diff_output=diff, source_tree_prefixes=source_tree_prefixes)
 
 
 def _configure_logger() -> structlog.stdlib.BoundLogger:
@@ -187,8 +247,21 @@ def _configure_logger() -> structlog.stdlib.BoundLogger:
 def main() -> int:
     log = _configure_logger()
     args = _build_parser().parse_args()
-    config = load_config(repo_root=Path.cwd())
+    cwd = Path.cwd()
+    config = load_config(repo_root=cwd)
     impl_paths: list[Path] = list(args.paths)
+    derived = not impl_paths
+    if derived:
+        impl_paths = _derive_paths_from_git(
+            source_tree_prefixes=config.source_tree_prefixes, cwd=cwd
+        )
+        if not impl_paths:
+            log.info(
+                "no changed impl .py paths derived from git diff; nothing to gate",
+                base="origin/master...HEAD",
+                source_tree_prefixes=list(config.source_tree_prefixes),
+            )
+            return 0
     test_paths = _resolve_test_paths(
         impl_paths=impl_paths, mirror_pairings=config.mirror_pairings, log=log
     )
@@ -197,6 +270,21 @@ def main() -> int:
 
     inner_env = {k: v for k, v in os.environ.items() if not k.startswith(_COV_CORE_ENV_PREFIX)}
     inner_env["COVERAGE_FILE"] = _DATA_FILE
+
+    # Coverage-threshold policy by invocation mode (epic li-cvaudit, cvnoarg):
+    #   - Explicit `--paths` (interactive fast-feedback): enforce the per-file
+    #     100% line+branch gate (`--fail-under=100`) — the developer asked for
+    #     this exact scope.
+    #   - Derived (no-`--paths`, the canonical-aggregate path): the inner
+    #     pytest STRIPS `COV_CORE_*` for data-file isolation, so any mirror
+    #     test that itself spawns a check binary as a grandchild subprocess
+    #     loses coverage on those grandchild lines. The derived per-file
+    #     percentage is therefore advisory — reported but not fatal
+    #     (`--fail-under=0`). The load-bearing 100% gate in `just check`
+    #     remains the FULL-tree `check-per-file-coverage`. Resolution errors
+    #     (missing mirror, unknown tree) and pytest FAILURES still hard-fail
+    #     in both modes — only the coverage-percentage threshold relaxes.
+    fail_under = "0" if derived else "100"
 
     # S603/S607: argv is a fixed list (literal binary names + repo-controlled
     # paths from --paths); no untrusted shell input.
@@ -224,7 +312,7 @@ def main() -> int:
             "report",
             f"--data-file={_DATA_FILE}",
             f"--include={include}",
-            "--fail-under=100",
+            f"--fail-under={fail_under}",
         ],
         check=False,
     ).returncode
