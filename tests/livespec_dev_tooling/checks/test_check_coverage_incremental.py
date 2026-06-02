@@ -38,6 +38,7 @@ The exemption mirrors `red_green_replay.py` which takes
 from __future__ import annotations
 
 import importlib.util
+import os
 import subprocess
 import sys
 import types
@@ -310,3 +311,181 @@ def test_main_passes_against_fully_covered_real_repo_pair(*, tmp_path: Path) -> 
         f"got returncode={result.returncode} "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Epic li-cvaudit (cvnoarg): with NO --paths, the check derives the changed
+# impl-file list from `git diff --name-only origin/master...HEAD` (filtered
+# to `.py` files under the configured source-tree prefixes) and runs against
+# them, instead of no-op'ing. An explicit --paths still behaves as before.
+# ---------------------------------------------------------------------------
+
+
+def test_changed_py_impl_paths_filters_to_source_prefixes() -> None:
+    """`_changed_py_impl_paths` keeps only `.py` files under a source-tree prefix."""
+    module = _load_check_module()
+    diff_output = "\n".join(
+        [
+            "livespec_dev_tooling/checks/foo.py",  # kept
+            "livespec_dev_tooling/checks/bar.py",  # kept
+            "tests/livespec_dev_tooling/checks/test_foo.py",  # dropped (not a source prefix)
+            "README.md",  # dropped (not .py)
+            "livespec_dev_tooling/checks/baz.txt",  # dropped (not .py)
+            "",  # dropped (blank line)
+        ]
+    )
+    result = module._changed_py_impl_paths(  # noqa: SLF001
+        diff_output=diff_output,
+        source_tree_prefixes=("livespec_dev_tooling/",),
+    )
+    assert result == [
+        Path("livespec_dev_tooling/checks/foo.py"),
+        Path("livespec_dev_tooling/checks/bar.py"),
+    ], f"unexpected filtered set: {result!r}"
+
+
+def test_changed_py_impl_paths_empty_when_no_match() -> None:
+    """No `.py` impl file in the diff → empty list (the no-op-after-derive case)."""
+    module = _load_check_module()
+    diff_output = "README.md\ndocs/guide.md\n"
+    result = module._changed_py_impl_paths(  # noqa: SLF001
+        diff_output=diff_output,
+        source_tree_prefixes=("livespec_dev_tooling/",),
+    )
+    assert result == [], f"expected empty list; got {result!r}"
+
+
+def _isolated_git_env() -> dict[str, str]:
+    """Inherited env with every `GIT_*` var stripped.
+
+    pytest may be launched with `GIT_DIR`/`GIT_INDEX_FILE`/`GIT_WORK_TREE`
+    set (notably when the suite runs inside a git commit hook). If those
+    leak into a `subprocess.run(["git", ...], cwd=tmp_path)` call, git
+    targets the OUTER worktree's index instead of the tmp repo's,
+    corrupting the real checkout's staging area. Stripping `GIT_*` keeps
+    each tmp-repo operation scoped to its own `cwd`.
+    """
+    return {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+
+
+def _git_in(*, tmp_path: Path, args: tuple[str, ...]) -> None:
+    subprocess.run(
+        ["git", *args],
+        cwd=str(tmp_path),
+        check=True,
+        capture_output=True,
+        text=True,
+        env=_isolated_git_env(),
+    )
+
+
+def _init_tmp_repo(*, tmp_path: Path, with_mirror_pairing: bool) -> None:
+    """Init a tmp git repo + baseline commit + `origin/master` tracking ref."""
+    _git_in(tmp_path=tmp_path, args=("init", "-q"))
+    _git_in(tmp_path=tmp_path, args=("config", "user.email", "test@example.com"))
+    _git_in(tmp_path=tmp_path, args=("config", "user.name", "Test"))
+    _git_in(tmp_path=tmp_path, args=("config", "commit.gpgsign", "false"))
+    pairing = (
+        'mirror_pairings = [{ source_tree = "livespec_dev_tooling", '
+        'test_tree = "tests/livespec_dev_tooling" }]\n'
+        if with_mirror_pairing
+        else ""
+    )
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.livespec_dev_tooling]\nsource_tree_prefixes = ["livespec_dev_tooling/"]\n' + pairing,
+        encoding="utf-8",
+    )
+    _git_in(tmp_path=tmp_path, args=("add", "-A"))
+    _git_in(tmp_path=tmp_path, args=("commit", "-qm", "baseline"))
+    # Simulate the remote tracking ref without a real remote.
+    _git_in(tmp_path=tmp_path, args=("update-ref", "refs/remotes/origin/master", "HEAD"))
+
+
+def _commit_changed_impl(*, tmp_path: Path, with_mirror_test: bool) -> None:
+    """Add a changed impl `.py` (and optionally its mirror test) on a feature commit."""
+    impl = tmp_path / "livespec_dev_tooling" / "checks" / "derived_mod.py"
+    impl.parent.mkdir(parents=True, exist_ok=True)
+    impl.write_text(
+        "from __future__ import annotations\n\n__all__ = ['v']\n\nv = 1\n",
+        encoding="utf-8",
+    )
+    if with_mirror_test:
+        test = tmp_path / "tests" / "livespec_dev_tooling" / "checks" / "test_derived_mod.py"
+        test.parent.mkdir(parents=True, exist_ok=True)
+        test.write_text(
+            "from __future__ import annotations\n\n__all__: list[str] = []\n",
+            encoding="utf-8",
+        )
+    _git_in(tmp_path=tmp_path, args=("add", "-A"))
+    _git_in(tmp_path=tmp_path, args=("commit", "-qm", "add derived_mod"))
+
+
+def test_derive_paths_from_git_surfaces_changed_impl(*, tmp_path: Path) -> None:
+    """`_derive_paths_from_git` reads the git diff and returns the changed impl path."""
+    _init_tmp_repo(tmp_path=tmp_path, with_mirror_pairing=True)
+    _commit_changed_impl(tmp_path=tmp_path, with_mirror_test=True)
+    module = _load_check_module()
+    derived = module._derive_paths_from_git(  # noqa: SLF001
+        source_tree_prefixes=("livespec_dev_tooling/",),
+        cwd=tmp_path,
+    )
+    assert derived == [
+        Path("livespec_dev_tooling/checks/derived_mod.py")
+    ], f"expected the changed impl path; got {derived!r}"
+
+
+def test_main_no_args_no_changed_impl_exits_zero(*, tmp_path: Path) -> None:
+    """No `--paths` and an empty derived set → exit 0 (nothing to gate).
+
+    A fresh git repo whose HEAD == origin/master has no diff, so the
+    derived impl-path list is empty and the check no-ops with a
+    diagnostic, exiting 0.
+    """
+    _init_tmp_repo(tmp_path=tmp_path, with_mirror_pairing=False)
+
+    result = subprocess.run(
+        [sys.executable, str(_CHECK_PATH)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_isolated_git_env(),
+    )
+    assert result.returncode == 0, (
+        f"no-arg derive with empty diff should exit 0; "
+        f"got returncode={result.returncode} stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    combined = result.stdout + result.stderr
+    assert (
+        "no changed" in combined.lower()
+    ), f"empty-derive path should log a 'no changed' diagnostic; stderr={result.stderr!r}"
+
+
+def test_main_no_args_nonempty_derive_runs_gate(*, tmp_path: Path) -> None:
+    """No `--paths` + a non-empty derived set → falls through to the per-file gate.
+
+    The derived impl `livespec_dev_tooling/checks/derived_mod.py` has NO
+    mirror test in this tmp repo, so `_resolve_test_paths` returns None and
+    the check exits 1 — proving the no-arg path fell through past the
+    empty-derive short-circuit into the downstream gate (the `253->260`
+    fall-through branch in `main`).
+    """
+    _init_tmp_repo(tmp_path=tmp_path, with_mirror_pairing=True)
+    _commit_changed_impl(tmp_path=tmp_path, with_mirror_test=False)
+
+    result = subprocess.run(
+        [sys.executable, str(_CHECK_PATH)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_isolated_git_env(),
+    )
+    assert result.returncode != 0, (
+        f"no-arg derive with a changed impl lacking a mirror test should exit non-zero; "
+        f"got returncode={result.returncode} stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    combined = result.stdout + result.stderr
+    assert (
+        "does not exist" in combined.lower()
+    ), f"fall-through should reach the missing-mirror diagnostic; stderr={result.stderr!r}"
