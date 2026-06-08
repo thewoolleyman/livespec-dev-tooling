@@ -1159,6 +1159,53 @@ def test_classify_staged_recognizes_sibling_library_impl_paths() -> None:
     ), f"top-level docs path should NOT be in impl bucket; got impl_paths={impl_paths}"
 
 
+def test_classify_staged_recognizes_impl_beads_path() -> None:
+    """`_classify_staged` buckets `livespec-impl-beads` impl paths as impl.
+
+    Per the cross-repo coordination contract in
+    `livespec/SPECIFICATION/contracts.md` §"Cross-repo coordination —
+    pin-and-bump", the `livespec-impl-beads` plugin's impl tree lives
+    at `.claude-plugin/scripts/livespec_impl_beads/`, mirroring the
+    `livespec-impl-plaintext` sibling. Without that prefix in
+    `_IMPL_PREFIXES`, every `feat:` / `fix:` commit touching the
+    plugin's package source classifies as test-only (no impl bucket),
+    which incorrectly trips the Red-without-Green diagnostic and blocks
+    the plugin from committing ANY product `.py` via the RGR ritual.
+    This test pins recognition of the beads impl prefix and that it
+    pairs with a `tests/livespec_impl_beads/...` test path.
+    """
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "red_green_replay_for_impl_beads_classify_test",
+        str(_RED_GREEN_REPLAY),
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    paths = [
+        ".claude-plugin/scripts/livespec_impl_beads/_beads_client.py",
+        "tests/livespec_impl_beads/test_beads_client.py",
+        "README.md",
+    ]
+    tests_paths, impl_paths = module._classify_staged(paths=paths)  # noqa: SLF001
+    assert ".claude-plugin/scripts/livespec_impl_beads/_beads_client.py" in impl_paths, (
+        f"`.claude-plugin/scripts/livespec_impl_beads/...` path should be in impl bucket; "
+        f"got impl_paths={impl_paths}"
+    )
+    assert "tests/livespec_impl_beads/test_beads_client.py" in tests_paths, (
+        f"`tests/livespec_impl_beads/...` path should be in tests bucket; "
+        f"got tests_paths={tests_paths}"
+    )
+    assert (
+        ".claude-plugin/scripts/livespec_impl_beads/_beads_client.py" not in tests_paths
+    ), f"beads impl path should NOT be in tests bucket; got tests_paths={tests_paths}"
+    assert (
+        "README.md" not in impl_paths
+    ), f"top-level docs path should NOT be in impl bucket; got impl_paths={impl_paths}"
+
+
 def test_red_green_replay_module_importable_without_running_main() -> None:
     """The check module imports cleanly without invoking main().
 
