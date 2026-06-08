@@ -3,8 +3,11 @@
 // This sibling library dogfoods livespec at the LIBRARY scale (distinct
 // from the plugin scale via livespec-core itself, and the impl-plugin
 // scale via livespec-impl-plaintext). The SPECIFICATION/ tree at the
-// repo root is the live spec for this library; the work-items / memos
-// JSONL files at the repo root carry this library's own impl tracking.
+// repo root is the live spec for this library; this library's own impl
+// tracking lives in a per-repo beads/Dolt TENANT database on the shared
+// dolt-server (tenant name "livespec-dev-tooling"), via livespec-impl-beads.
+// (The pre-cutover plaintext work-items.jsonl / memos.jsonl snapshot is
+// frozen read-only under archive/ — see archive/README.md.)
 //
 // Authority: livespec/SPECIFICATION/contracts.md
 //   §"Cross-repo coordination — pin-and-bump" (generalized in v070 to
@@ -20,7 +23,7 @@
 {
   "template": "livespec",
   "spec_root": "SPECIFICATION",
-  "implementation": { "plugin": "livespec-impl-plaintext" },
+  "implementation": { "plugin": "livespec-impl-beads" },
   "livespec-dev-tooling": {
     "compat": {
       // semver range and pinned tag against livespec-core. The pinned
@@ -33,13 +36,21 @@
       "pinned": "master"
     }
   },
-  "livespec-impl-plaintext": {
-    "format": "jsonl",
-    "compat": {
-      "livespec": ">=0.1.0,<1.0.0",
-      "pinned": "master"
-    },
-    "work_items_path": "work-items.jsonl",
-    "memos_path": "memos.jsonl"
+  "livespec-impl-beads": {
+    "format": "beads",
+    "compat": { "livespec": ">=0.1.0,<1.0.0", "pinned": "master" },
+    // Per-repo beads tenant CONNECTION block. prefix==tenant==database==server_user is the
+    // load-bearing identity rule. The tenant PASSWORD is deliberately ABSENT — supplied only via
+    // the BEADS_DOLT_PASSWORD env var at bd-call time, never committed. TCP-only (the dolt.sock is
+    // not reachable by sandboxed callers), so no `socket` key.
+    "connection": {
+      "tenant": "livespec-dev-tooling",
+      "prefix": "livespec-dev-tooling",
+      "database": "livespec-dev-tooling",
+      "server_user": "livespec-dev-tooling",
+      "server_host": "127.0.0.1",
+      "server_port": 3307,
+      "fake": false
+    }
   }
 }
