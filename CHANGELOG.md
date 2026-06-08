@@ -53,6 +53,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.10.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.10.0...v0.10.1) (2026-06-08)
+
+
+### Bug Fixes
+
+* recognize livespec-impl-beads impl path in Red-Green-Replay check ([48e3a38](https://github.com/thewoolleyman/livespec-dev-tooling/commit/48e3a3814cf21effeb90e65a1995ccc98e834a8b))
+
 ## [0.10.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.9.1...v0.10.0) (2026-06-02)
 
 
