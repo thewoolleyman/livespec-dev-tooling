@@ -210,6 +210,10 @@ migration path.
 
 - [`livespec`](https://github.com/thewoolleyman/livespec) — the
   parent plugin governing this library's specification.
-- [`livespec-impl-plaintext`](https://github.com/thewoolleyman/livespec-impl-plaintext)
-  — the JSONL-backed implementation plugin currently tracking this
-  library's work-items.
+- [`livespec-impl-beads`](https://github.com/thewoolleyman/livespec-impl-beads)
+  — the implementation plugin currently tracking this library's
+  work-items in a per-repo beads/Dolt **tenant database** on the shared
+  dolt-server (tenant `livespec-dev-tooling`); its client config is
+  committed at `.beads/config.yaml`. The pre-cutover plaintext
+  `work-items.jsonl` / `memos.jsonl` snapshot is frozen read-only under
+  [`archive/`](archive/README.md).
