@@ -77,6 +77,9 @@ _TESTS_PREFIX = "tests/"
 # livespec-impl-plaintext:     .claude-plugin/scripts/livespec_impl_plaintext/
 #                              (bin/ for impl-plaintext is covered by
 #                              .claude-plugin/scripts/bin/)
+# livespec-impl-beads:         .claude-plugin/scripts/livespec_impl_beads/
+#                              (bin/ for impl-beads is covered by
+#                              .claude-plugin/scripts/bin/)
 #
 # Bare `livespec/` / `bin/` legacy prefixes remain for paired-test
 # fixture compatibility — tmp_path tests synthesize paths like
@@ -86,6 +89,7 @@ _TESTS_PREFIX = "tests/"
 _IMPL_PREFIXES = (
     ".claude-plugin/scripts/livespec/",
     ".claude-plugin/scripts/livespec_impl_plaintext/",
+    ".claude-plugin/scripts/livespec_impl_beads/",
     ".claude-plugin/scripts/bin/",
     "livespec/",
     "livespec_runtime/",
