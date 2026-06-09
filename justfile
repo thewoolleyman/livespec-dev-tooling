@@ -61,6 +61,22 @@ bootstrap:
     cp dev-tooling/livespec-commit-refuse-hook.sh "$(git rev-parse --git-common-dir)/hooks/pre-push"
     chmod +x "$(git rev-parse --git-common-dir)/hooks/pre-commit" "$(git rev-parse --git-common-dir)/hooks/pre-push"
     git config --file "$(git rev-parse --git-common-dir)/config" livespec.primaryPath "$(git rev-parse --git-common-dir | xargs dirname | xargs realpath)"
+    just ensure-plugins
+
+# Idempotent: `claude plugin marketplace add` / `install` / `update` all exit 0
+# when the target is already present / already at latest. The `update` calls
+# after each `install` are required because `install` is a no-op when any
+# version is already present locally — without `update`, a bumped upstream
+# release never reaches a previously-bootstrapped working copy. Installs the
+# livespec plugin plus the ACTIVE impl plugin (livespec-impl-beads), mirroring
+# the canonical recipe in livespec-impl-beads/justfile.
+ensure-plugins:
+    claude plugin marketplace add thewoolleyman/livespec
+    claude plugin marketplace add thewoolleyman/livespec-impl-beads
+    claude plugin install livespec@livespec
+    claude plugin install livespec-impl-beads@livespec-impl-beads
+    claude plugin update livespec@livespec
+    claude plugin update livespec-impl-beads@livespec-impl-beads
 
 # ---------------------------------------------------------------
 # Aggregate check — wires EVERY canonical check slug emitted by
