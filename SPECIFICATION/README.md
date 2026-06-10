@@ -16,4 +16,4 @@ The `history/v001/` directory holds the snapshot ratified at seed time. Subseque
 
 ## Governance
 
-The active implementation plugin (`livespec-impl-plaintext` per this repo's `.livespec.jsonc`) tracks work items and memos in `work-items.jsonl` and `memos.jsonl` at the repo root. The `compat` block under the `livespec-dev-tooling` top-level key in `.livespec.jsonc` declares the supported livespec semver range and the currently-pinned livespec release tag per `livespec/SPECIFICATION/contracts.md` §"Cross-repo coordination — pin-and-bump".
+The active implementation plugin (`livespec-impl-beads` per this repo's `.livespec.jsonc`) tracks work items and memos in this repo's per-repo beads Dolt tenant (tenant name `livespec-dev-tooling`). The `compat` block under the `livespec-dev-tooling` top-level key in `.livespec.jsonc` declares the supported livespec semver range and the currently-pinned livespec release tag per `livespec/SPECIFICATION/contracts.md` §"Cross-repo coordination — pin-and-bump".
