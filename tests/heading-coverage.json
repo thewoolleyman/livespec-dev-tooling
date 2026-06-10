@@ -72,9 +72,23 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
+    "heading": "## Consumer compat block — pin-and-bump policy",
+    "test": "TODO",
+    "reason": "Added by the absorb-compat-schema-and-semver-discipline revise (compat-block schema + bump-pin policy relocated from livespec core at v103/v104). Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
     "heading": "## Cross-repo coordination automation surface",
     "test": "TODO",
     "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Semver discipline",
+    "test": "TODO",
+    "reason": "Added by the absorb-compat-schema-and-semver-discipline revise (canonical surface enumeration relocated from constraints.md per livespec/SPECIFICATION/contracts.md §\"Shared code sync — livespec-dev-tooling\"). Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism."
   },
   {
     "spec_root": "SPECIFICATION",
