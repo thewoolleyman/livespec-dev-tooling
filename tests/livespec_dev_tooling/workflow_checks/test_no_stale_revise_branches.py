@@ -15,7 +15,7 @@ Test scenarios:
 - Multiple stale branches → exit 4 with one finding per stale branch.
 - `refs/heads/abandoned/spec/*` does NOT match the canonical pattern → exit 0.
 - `--help` / `-h` exits 0 with usage on stdout.
-- `.livespec.jsonc`'s `livespec-impl-plaintext.canonical_branch` resolves
+- `.livespec.jsonc`'s `livespec-impl-git-jsonl.canonical_branch` resolves
   a non-master canonical branch.
 - Fallback to `origin/HEAD` when `.livespec.jsonc` is absent / silent.
 - Hard-coded fallback to `master` when neither config nor `origin/HEAD`
@@ -269,7 +269,14 @@ def test_help_flag_exits_zero(*, tmp_path: Path) -> None:
 
 
 def test_canonical_branch_from_livespec_jsonc(*, tmp_path: Path) -> None:
-    """`.livespec.jsonc`'s `livespec-impl-plaintext.canonical_branch` overrides default."""
+    """`.livespec.jsonc`'s `livespec-impl-git-jsonl.canonical_branch` overrides default.
+
+    The fixture also carries a DECOY impl-plugin block (listed first,
+    pointing at a nonexistent branch) so the assertion discriminates the
+    preferred-key lookup from the any-other-block fallback scan: only an
+    implementation that PREFERS the `livespec-impl-git-jsonl` block
+    resolves canonical=main here.
+    """
     remote = tmp_path / "remote.git"
     remote.mkdir()
     _ = _git(cwd=remote, args=["init", "--bare", "-q", "--initial-branch=main"])
@@ -293,11 +300,16 @@ def test_canonical_branch_from_livespec_jsonc(*, tmp_path: Path) -> None:
     _ = _git(cwd=clone, args=["add", "change.txt"])
     _ = _git(cwd=clone, args=["commit", "-m", "work"])
     _ = _git(cwd=clone, args=["checkout", "-q", "main"])
-    # Write a .livespec.jsonc that pins canonical_branch to "main".
+    # Write a .livespec.jsonc that pins canonical_branch to "main" in the
+    # preferred `livespec-impl-git-jsonl` block; the decoy block sits
+    # FIRST so a fallback-order scan would elect its bogus branch.
     (clone / ".livespec.jsonc").write_text(
         "// hermetic test config\n"
         "{\n"
-        '  "livespec-impl-plaintext": {\n'
+        '  "livespec-impl-decoy": {\n'
+        '    "canonical_branch": "no-such-branch"\n'
+        "  },\n"
+        '  "livespec-impl-git-jsonl": {\n'
         '    "canonical_branch": "main"\n'
         "  }\n"
         "}\n",
@@ -388,9 +400,9 @@ def test_jsonc_non_dict_top_level_falls_through(*, tmp_path: Path) -> None:
 
 
 def test_jsonc_other_impl_plugin_block_used_as_fallback(*, tmp_path: Path) -> None:
-    """When `livespec-impl-plaintext` is absent, any other impl plugin block's key works."""
+    """When `livespec-impl-git-jsonl` is absent, any other impl plugin block's key works."""
     _, clone = _make_remote_and_clone(tmp_path=tmp_path)
-    # No livespec-impl-plaintext block; instead a hypothetical sibling
+    # No livespec-impl-git-jsonl block; instead a hypothetical sibling
     # impl plugin block carries the canonical_branch.
     (clone / ".livespec.jsonc").write_text(
         "{\n" '  "livespec-impl-other": {\n' '    "canonical_branch": "master"\n' "  }\n" "}\n",
@@ -406,7 +418,7 @@ def test_jsonc_empty_string_canonical_branch_ignored(*, tmp_path: Path) -> None:
     """An empty `canonical_branch` value → treated as absent, fallback continues."""
     _, clone = _make_remote_and_clone(tmp_path=tmp_path)
     (clone / ".livespec.jsonc").write_text(
-        "{\n" '  "livespec-impl-plaintext": {\n' '    "canonical_branch": ""\n' "  }\n" "}\n",
+        "{\n" '  "livespec-impl-git-jsonl": {\n' '    "canonical_branch": ""\n' "  }\n" "}\n",
         encoding="utf-8",
     )
     _make_branch_ahead(repo=clone, branch="spec/v003", commits=1)
@@ -421,7 +433,7 @@ def test_jsonc_non_dict_impl_plugin_block_skipped(*, tmp_path: Path) -> None:
     _, clone = _make_remote_and_clone(tmp_path=tmp_path)
     (clone / ".livespec.jsonc").write_text(
         "{\n"
-        '  "livespec-impl-plaintext": "not a dict",\n'
+        '  "livespec-impl-git-jsonl": "not a dict",\n'
         '  "livespec-impl-other": "also not a dict"\n'
         "}\n",
         encoding="utf-8",
@@ -543,7 +555,7 @@ def test_jsonc_canonical_branch_non_string_value_falls_through(*, tmp_path: Path
     """
     _, clone = _make_remote_and_clone(tmp_path=tmp_path)
     (clone / ".livespec.jsonc").write_text(
-        "{\n" '  "livespec-impl-plaintext": {\n' '    "canonical_branch": 42\n' "  }\n" "}\n",
+        "{\n" '  "livespec-impl-git-jsonl": {\n' '    "canonical_branch": 42\n' "  }\n" "}\n",
         encoding="utf-8",
     )
     _make_branch_ahead(repo=clone, branch="spec/v003", commits=1)
