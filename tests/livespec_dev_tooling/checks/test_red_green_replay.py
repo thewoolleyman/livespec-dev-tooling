@@ -1111,14 +1111,14 @@ def test_classify_staged_recognizes_sibling_library_impl_paths() -> None:
     `livespec/SPECIFICATION/contracts.md` §"Cross-repo coordination —
     pin-and-bump", the dev-tooling repo's RGR check is consumed by
     every livespec-governed sibling repo: livespec-runtime,
-    livespec-impl-plaintext, livespec-dev-tooling itself, and future
+    livespec-impl-git-jsonl, livespec-dev-tooling itself, and future
     livespec-impl-<X> plugins. Each repo's impl tree lives at a
     repo-specific prefix:
 
       - `livespec_runtime/`                          (livespec-runtime)
       - `livespec_dev_tooling/`                     (livespec-dev-tooling, self)
-      - `.claude-plugin/scripts/livespec_impl_plaintext/`
-                                                    (livespec-impl-plaintext)
+      - `.claude-plugin/scripts/livespec_impl_git_jsonl/`
+                                                    (livespec-impl-git-jsonl)
 
     Without these prefixes in `_IMPL_PREFIXES`, `feat:` / `fix:`
     commits in those repos that touch the package source classify as
@@ -1139,7 +1139,7 @@ def test_classify_staged_recognizes_sibling_library_impl_paths() -> None:
     paths = [
         "livespec_runtime/cross_repo/resolve.py",
         "livespec_dev_tooling/checks/red_green_replay.py",
-        ".claude-plugin/scripts/livespec_impl_plaintext/commands/list_memos.py",
+        ".claude-plugin/scripts/livespec_impl_git_jsonl/commands/list_memos.py",
         "tests/livespec_runtime/test_smoke.py",
         "README.md",
     ]
@@ -1150,8 +1150,8 @@ def test_classify_staged_recognizes_sibling_library_impl_paths() -> None:
     assert "livespec_dev_tooling/checks/red_green_replay.py" in impl_paths, (
         f"`livespec_dev_tooling/...` path should be in impl bucket; " f"got impl_paths={impl_paths}"
     )
-    assert ".claude-plugin/scripts/livespec_impl_plaintext/commands/list_memos.py" in impl_paths, (
-        f"`.claude-plugin/scripts/livespec_impl_plaintext/...` path should be in impl bucket; "
+    assert ".claude-plugin/scripts/livespec_impl_git_jsonl/commands/list_memos.py" in impl_paths, (
+        f"`.claude-plugin/scripts/livespec_impl_git_jsonl/...` path should be in impl bucket; "
         f"got impl_paths={impl_paths}"
     )
     assert (
@@ -1166,7 +1166,7 @@ def test_classify_staged_recognizes_impl_beads_path() -> None:
     `livespec/SPECIFICATION/contracts.md` §"Cross-repo coordination —
     pin-and-bump", the `livespec-impl-beads` plugin's impl tree lives
     at `.claude-plugin/scripts/livespec_impl_beads/`, mirroring the
-    `livespec-impl-plaintext` sibling. Without that prefix in
+    `livespec-impl-git-jsonl` sibling. Without that prefix in
     `_IMPL_PREFIXES`, every `feat:` / `fix:` commit touching the
     plugin's package source classifies as test-only (no impl bucket),
     which incorrectly trips the Red-without-Green diagnostic and blocks
