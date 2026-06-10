@@ -74,8 +74,8 @@ _TESTS_PREFIX = "tests/"
 #                              .claude-plugin/scripts/bin/, dev-tooling/
 # livespec-runtime:            livespec_runtime/
 # livespec-dev-tooling (self): livespec_dev_tooling/
-# livespec-impl-plaintext:     .claude-plugin/scripts/livespec_impl_plaintext/
-#                              (bin/ for impl-plaintext is covered by
+# livespec-impl-git-jsonl:     .claude-plugin/scripts/livespec_impl_git_jsonl/
+#                              (bin/ for impl-git-jsonl is covered by
 #                              .claude-plugin/scripts/bin/)
 # livespec-impl-beads:         .claude-plugin/scripts/livespec_impl_beads/
 #                              (bin/ for impl-beads is covered by
@@ -88,7 +88,7 @@ _TESTS_PREFIX = "tests/"
 # positives in real repos.
 _IMPL_PREFIXES = (
     ".claude-plugin/scripts/livespec/",
-    ".claude-plugin/scripts/livespec_impl_plaintext/",
+    ".claude-plugin/scripts/livespec_impl_git_jsonl/",
     ".claude-plugin/scripts/livespec_impl_beads/",
     ".claude-plugin/scripts/bin/",
     "livespec/",
