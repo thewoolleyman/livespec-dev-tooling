@@ -70,7 +70,7 @@ Invocation: `python -m livespec_dev_tooling.workflow_checks.no_stale_revise_bran
 
 Algorithm:
 
-1. Read the canonical branch name from `.livespec.jsonc`'s `livespec-impl-plaintext.canonical_branch` config key (or any other configured impl plugin's equivalent key). Default: `git symbolic-ref --short refs/remotes/origin/HEAD`, with hard-coded fallback `master`.
+1. Read the canonical branch name from `.livespec.jsonc`'s `livespec-impl-git-jsonl.canonical_branch` config key (or any other configured impl plugin's equivalent key). Default: `git symbolic-ref --short refs/remotes/origin/HEAD`, with hard-coded fallback `master`.
 2. Enumerate local refs: `git for-each-ref --format='%(refname:short)' refs/heads/spec/`.
 3. For each branch in the enumeration:
     - Run `git rev-list --left-right --count origin/<canonical>...<branch>`.
@@ -177,7 +177,7 @@ Role keys absent from the schema mean "the check no-ops on this consumer" for th
 
 Some checks have layout-dependent inputs that are project-wide invariants rather than check-specific role keys (e.g., the canonical branch name `master` / `main`). Such checks read directly from `.livespec.jsonc` rather than the `[tool.livespec_dev_tooling]` role-key inventory, to avoid duplicate config. The list of carve-out keys is currently small:
 
-- `canonical_branch` — read from `.livespec.jsonc`'s `livespec-impl-plaintext.canonical_branch` (or equivalent impl-plugin block's key, per the impl plugin's spec).
+- `canonical_branch` — read from `.livespec.jsonc`'s `livespec-impl-git-jsonl.canonical_branch` (or equivalent impl-plugin block's key, per the impl plugin's spec).
 
 Future carve-outs require explicit propose-change documentation; the default for new layout-dependent inputs is the role-key inventory.
 
@@ -234,7 +234,7 @@ Three first-party consumers as of v0.2.x:
 
 - **`livespec-core`** — MAY omit the block entirely (the fallback matches its historical layout). If the block is added, every key MUST be bit-identical to the fallback values above.
 - **`livespec-dev-tooling`** (self-application) — MUST publish `source_trees = ["livespec_dev_tooling"]`, `target_dirs = ["livespec_dev_tooling"]`, `source_tree_prefixes = ["livespec_dev_tooling/"]`, `mirror_pairings = [{ source_tree = "livespec_dev_tooling", test_tree = "tests/livespec_dev_tooling" }]`. The other role keys (`io_trees`, `commands_trees`, `supervisor_entry_files`, `dataclasses_tree`, `pure_trees`, `covered_trees`) default to empty/null since the library has a flat package layout without the ROP-layered architecture livespec-core has. The corresponding checks (`no_except_outside_io`, `no_raise_outside_io`, `public_api_result_typed`, `no_write_direct`, `newtype_domain_primitives`) no-op against this library; their structured `info` log entries document the no-op.
-- **`livespec-impl-plaintext`** — MUST publish its own block once Phase G.7 wiring lands. The exact values are the picking-up agent's call at that phase; the schema accommodates whatever layout that consumer adopts.
+- **`livespec-impl-git-jsonl`** — MUST publish its own block once Phase G.7 wiring lands. The exact values are the picking-up agent's call at that phase; the schema accommodates whatever layout that consumer adopts.
 
 Future siblings (any repo carrying the `livespec-sibling` GitHub topic that depends on this library) MUST publish their own block; omitting the block falls back to livespec-core's defaults, which will silent-no-op against any non-livespec-core layout (the trade-off the v0.x backward-compat guarantee accepts).
 

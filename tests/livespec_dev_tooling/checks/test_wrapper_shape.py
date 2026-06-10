@@ -208,7 +208,7 @@ def test_wrapper_shape_accepts_impl_plugin_family_wrapper(*, tmp_path: Path) -> 
 
     Fixture: a bin/*.py wrapper that is canonical in every
     respect except the main-import module path is
-    `livespec_impl_plaintext.commands.next` (the impl-plugin's
+    `livespec_impl_git_jsonl.commands.next` (the impl-plugin's
     own package name) rather than the core `livespec.` prefix.
     The check MUST accept any livespec-family top-level package
     (`livespec` or `livespec_<suffix>`), not just `livespec.`,
@@ -226,7 +226,7 @@ def test_wrapper_shape_accepts_impl_plugin_family_wrapper(*, tmp_path: Path) -> 
         "\n"
         "bootstrap()\n"
         "\n"
-        "from livespec_impl_plaintext.commands.next import main\n"
+        "from livespec_impl_git_jsonl.commands.next import main\n"
         "\n"
         "raise SystemExit(main())\n",
         encoding="utf-8",

@@ -25,7 +25,7 @@ Not every check in `livespec/dev-tooling/checks/` ships in this library. Checks 
 
 ### Governance
 
-This library dogfoods livespec at the LIBRARY scale (distinct from the plugin scale via livespec-core itself, and the impl-plugin scale via livespec-impl-plaintext). Its own `SPECIFICATION/` tree is the live spec; its work-items + memos are tracked by the active `livespec-impl-*` plugin per `.livespec.jsonc`. Pin-and-bump against livespec applies identically to this library as it does to any `livespec-impl-*` consumer per `livespec/SPECIFICATION/contracts.md` §"Cross-repo coordination — pin-and-bump" (generalized in livespec v070 to cover sibling libraries).
+This library dogfoods livespec at the LIBRARY scale (distinct from the plugin scale via livespec-core itself, and the impl-plugin scale via livespec-impl-git-jsonl). Its own `SPECIFICATION/` tree is the live spec; its work-items + memos are tracked by the active `livespec-impl-*` plugin per `.livespec.jsonc`. Pin-and-bump against livespec applies identically to this library as it does to any `livespec-impl-*` consumer per `livespec/SPECIFICATION/contracts.md` §"Cross-repo coordination — pin-and-bump" (generalized in livespec v070 to cover sibling libraries).
 
 ## Definition of Done
 

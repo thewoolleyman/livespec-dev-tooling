@@ -239,7 +239,7 @@ class HarnessConfig:
     """Inputs to one harness run — the parameter object the contract requires.
 
     - `impl_plugin_id` — the impl plugin driven in lockstep with `livespec`
-      (today `livespec-impl-plaintext`); the contract's pluggable-impl
+      (today `livespec-impl-git-jsonl`); the contract's pluggable-impl
       parameter (requirement 2).
     - `marketplace` — the marketplace coordinates declared in the tmp
       `~/.claude/settings.json` (requirement 1).

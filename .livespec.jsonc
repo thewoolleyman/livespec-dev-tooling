@@ -2,7 +2,7 @@
 //
 // This sibling library dogfoods livespec at the LIBRARY scale (distinct
 // from the plugin scale via livespec-core itself, and the impl-plugin
-// scale via livespec-impl-plaintext). The SPECIFICATION/ tree at the
+// scale via livespec-impl-git-jsonl). The SPECIFICATION/ tree at the
 // repo root is the live spec for this library; this library's own impl
 // tracking lives in a per-repo beads/Dolt TENANT database on the shared
 // dolt-server (tenant name "livespec-dev-tooling"), via livespec-impl-beads.

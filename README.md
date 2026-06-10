@@ -104,9 +104,9 @@ from livespec_dev_tooling.testing.cli_e2e import (
 
 def test_cli_e2e(*, tmp_path: Path) -> None:
     config = HarnessConfig(
-        impl_plugin_id="livespec-impl-plaintext",
+        impl_plugin_id="livespec-impl-git-jsonl",
         marketplace="thewoolleyman/livespec",
-        enabled_plugins=("livespec@livespec", "livespec-impl-plaintext@..."),
+        enabled_plugins=("livespec@livespec", "livespec-impl-git-jsonl@..."),
         plugin_install_dirs=(...,),                       # installed plugin roots
         fixtures_root=Path("tests/e2e-cli/fixtures"),
         install_command="/plugin install livespec@livespec",
