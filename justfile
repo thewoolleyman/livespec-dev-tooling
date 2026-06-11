@@ -392,8 +392,9 @@ check-public-api-result-typed:
 # Trailer-based Red→Green replay verification (hard gate). Invoked by
 # lefthook commit-msg stage with the commit-message file path as argv[1]
 # (the per-commit verifier: content-triggered — a failing staged test
-# authors a Red under ANY prefix; product impl .py with Red trailers at
-# HEAD takes the Green amend leg; product impl .py without a Red leg is
+# authors a Red under ANY prefix; product impl .py with Red trailers
+# AND NO Green trailers at HEAD — a genuine amend-in-progress — takes
+# the Green amend leg; any other product impl .py staging is
 # green-verified by a full passing suite, recording TDD-Suite-Green-*
 # trailers; the prefix never rejects product code, its only semantic is
 # the feat:/fix: test-passed-at-red guard). The canonical aggregate /

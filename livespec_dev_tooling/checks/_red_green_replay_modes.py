@@ -32,7 +32,7 @@ __all__: list[str] = [
     "_handle_green_mode",
     "_handle_red_mode",
     "_handle_suite_green_mode",
-    "_head_has_red_trailers",
+    "_head_red_awaiting_green",
 ]
 
 
@@ -62,15 +62,27 @@ RED_GREEN_REPLAY_PROTOCOL: str = (
 )
 
 
-def _head_has_red_trailers() -> bool:
-    """Return True iff HEAD's commit message carries `TDD-Red-*` trailers."""
+def _head_red_awaiting_green() -> bool:
+    """Return True iff HEAD carries `TDD-Red-*` trailers WITHOUT `TDD-Green-*`.
+
+    The genuine amend-in-progress signature (work-item
+    livespec-dev-tooling-xn0): a COMPLETED Red+Green commit at HEAD
+    also carries Red trailers — the normal state of real history —
+    so keying Branch-4 routing on Red-trailer presence alone
+    misrouted every fresh product commit atop a completed pair into
+    the Green-amend leg, stamping bare `TDD-Green-*` trailers that
+    the commit-range validator then rejected. Only a Red awaiting
+    its Green may take the amend leg; everything else falls through
+    to the suite-green leg.
+    """
     result = subprocess.run(
         ["git", "log", "-1", "--format=%B"],
         capture_output=True,
         text=True,
         check=False,
     )
-    return "TDD-Red-Test-File-Checksum:" in result.stdout
+    message = result.stdout
+    return "TDD-Red-Test-File-Checksum:" in message and "TDD-Green-Verified-At:" not in message
 
 
 def _head_trailer_value(*, key: str) -> str:

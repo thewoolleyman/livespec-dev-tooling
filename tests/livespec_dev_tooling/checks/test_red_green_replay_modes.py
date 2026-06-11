@@ -48,7 +48,7 @@ def test_red_green_replay_modes_helpers_importable() -> None:
     assert callable(module._handle_red_mode)  # noqa: SLF001
     assert callable(module._handle_green_mode)  # noqa: SLF001
     assert callable(module._handle_suite_green_mode)  # noqa: SLF001
-    assert callable(module._head_has_red_trailers)  # noqa: SLF001
+    assert callable(module._head_red_awaiting_green)  # noqa: SLF001
     assert callable(module._head_trailer_value)  # noqa: SLF001
     assert callable(module._current_head_sha)  # noqa: SLF001
     assert callable(module._write_trailers)  # noqa: SLF001

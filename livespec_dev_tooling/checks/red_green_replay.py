@@ -19,14 +19,20 @@ commit-msg mode (argv[1] = path to `.git/COMMIT_EDITMSG`, the lefthook
    loud `test-passed-at-red` reject (the author DECLARED a behavior
    change, so their test must fail first); any other prefix is a
    test-only cleanup and takes the green-verified leg;
-4. product impl `.py` staged WITH `TDD-Red-*` trailers at HEAD (the
-   amend shape) ⇒ the Green leg: byte-identical test re-run must
-   pass, `TDD-Green-*` recorded — prefix-agnostic;
-5. product impl `.py` staged WITHOUT Red trailers (pure refactor /
-   behavior-preserving chore / any prefix incl. feat:/fix:) ⇒ the
-   green-verified leg: the FULL pytest suite must pass against the
-   staged tree; `TDD-Suite-Green-*` trailers are recorded; a failing
-   (or uncollectable) suite rejects actionably (`suite-red`).
+4. product impl `.py` staged with `TDD-Red-*` trailers WITHOUT
+   `TDD-Green-*` trailers at HEAD — a genuine amend-in-progress
+   (work-item livespec-dev-tooling-xn0: a completed Red+Green
+   commit at HEAD also carries Red trailers, so presence alone
+   misroutes fresh commits into this leg) ⇒ the Green leg:
+   byte-identical test re-run must pass, `TDD-Green-*` recorded —
+   prefix-agnostic;
+5. product impl `.py` staged WITHOUT a Red-awaiting-Green HEAD
+   (pure refactor / behavior-preserving chore / any prefix incl.
+   feat:/fix:, including fresh commits atop completed Red+Green or
+   suite-green history) ⇒ the green-verified leg: the FULL pytest
+   suite must pass against the staged tree; `TDD-Suite-Green-*`
+   trailers are recorded; a failing (or uncollectable) suite
+   rejects actionably (`suite-red`).
 
 no-arg mode (the canonical-aggregate / `just check` / pre-push / CI
 invocation): validates the commit range `origin/master..HEAD` — every
@@ -70,7 +76,7 @@ from _red_green_replay_modes import (  # noqa: E402  — sibling private import
     _handle_green_mode,
     _handle_red_mode,
     _handle_suite_green_mode,
-    _head_has_red_trailers,
+    _head_red_awaiting_green,
 )
 
 __all__: list[str] = []
@@ -303,11 +309,15 @@ def main() -> int:
         # Branch 3, other prefixes — a passing test-only cleanup is
         # green-verified.
         return _handle_suite_green_mode(msg_path=msg_path, log=log, staged_paths=staged_paths)
-    if _head_has_red_trailers():
-        # Branch 4 — the amend shape, prefix-agnostic.
+    if _head_red_awaiting_green():
+        # Branch 4 — a genuine amend-in-progress (Red WITHOUT Green at
+        # HEAD), prefix-agnostic. Red-trailer PRESENCE alone is not
+        # enough: a completed Red+Green commit at HEAD also carries
+        # Red trailers (work-item livespec-dev-tooling-xn0).
         return _handle_green_mode(msg_path=msg_path, log=log, impl_paths=impl_paths)
-    # Branch 5 — product impl `.py` without a Red leg (refactor /
-    # behavior-preserving chore / any prefix): green-verified.
+    # Branch 5 — product impl `.py` without a Red awaiting its Green
+    # (refactor / behavior-preserving chore / any prefix / fresh
+    # commits atop completed history): green-verified.
     return _handle_suite_green_mode(msg_path=msg_path, log=log, staged_paths=staged_paths)
 
 
