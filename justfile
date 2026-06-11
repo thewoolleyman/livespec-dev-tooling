@@ -438,6 +438,16 @@ check-wrapper-shape:
 check-pre-commit:
     #!/usr/bin/env bash
     set -uo pipefail
+    # Empty-commit guard (work-item livespec-dev-tooling-74q): an empty
+    # commit cannot change repo state, so repo-state gates yield zero
+    # information about it. `git commit --allow-empty` (e.g. machine
+    # checkpoint commits) passes immediately. Deliberately unfiltered
+    # (no --diff-filter): a deletion-only commit is NOT empty and still
+    # flows through the classification below.
+    if [[ -z "$(git diff --cached --name-only)" ]]; then
+        echo ":: empty commit detected (nothing staged at all): repo-state gates have nothing to gate; exit 0"
+        exit 0
+    fi
     staged=$(git diff --cached --name-only --diff-filter=AM)
     py_staged=$(echo "$staged" | grep -E '\.py$' || true)
     test_staged=$(echo "$staged" | grep -E '^tests/.*\.py$' || true)
