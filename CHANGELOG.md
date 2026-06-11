@@ -53,6 +53,19 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.11.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.10.2...v0.11.0) (2026-06-11)
+
+
+### Features
+
+* **red-green-replay:** content-based trigger + commit-range validation; retire prefix-fallthrough ([bb9a641](https://github.com/thewoolleyman/livespec-dev-tooling/commit/bb9a64159878b3929ae3e36801a90cb5d5f6bb8b))
+* shared no_direct_destructive_cli check (destructive-default CLI wrapping) ([6896651](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6896651358e57b49b2c32f2f1150bd9a8fa891d1))
+
+
+### Bug Fixes
+
+* **red-green-replay:** green-verified leg replaces the product-mislabel reject ([a11feb8](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a11feb86101c4af4af25d1b1bcf6ea6172ca631c))
+
 ## [0.10.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.10.1...v0.10.2) (2026-06-10)
 
 
