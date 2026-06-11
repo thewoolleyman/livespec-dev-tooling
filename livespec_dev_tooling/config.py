@@ -53,6 +53,7 @@ __all__: list[str] = [
     "MirrorPairing",
     "iter_py_files",
     "load_config",
+    "load_destructive_cli_allowlist",
     "load_scenario_tiers",
 ]
 
@@ -275,6 +276,32 @@ def load_scenario_tiers(*, repo_root: Path) -> tuple[str, ...] | None:
     if table is None or "scenario_tiers" not in table:
         return None
     return _as_str_tuple(value=table["scenario_tiers"], key="scenario_tiers")
+
+
+def load_destructive_cli_allowlist(*, repo_root: Path) -> tuple[str, ...] | None:
+    """Return the `destructive_cli_allowlist` entries, or `None` if the key is absent.
+
+    Reads `<repo_root>/pyproject.toml`'s `[tool.livespec_dev_tooling]` block,
+    key `destructive_cli_allowlist` — a TOML array of repo-root-relative
+    path prefixes (POSIX separators; directory entries should end with `/`)
+    that the `no_direct_destructive_cli` check exempts from its
+    destructive-default CLI scan (per
+    `livespec/SPECIFICATION/non-functional-requirements.md`
+    §"Destructive-default CLI wrapping"). Returns `None` when the whole
+    block is absent OR the `destructive_cli_allowlist` key is omitted, so
+    the calling check applies its documented default (empty — nothing
+    exempt). Raises `ConfigParseError` on a non-array value or a non-string
+    element, consistent with the rest of the loader.
+
+    Like `scenario_tiers`, this is intentionally NOT a `Config` role key:
+    it is a single-check concern (`no_direct_destructive_cli`), so it is
+    read directly off the table rather than threaded through the typed
+    layout dataclass.
+    """
+    table = _read_table(repo_root=repo_root)
+    if table is None or "destructive_cli_allowlist" not in table:
+        return None
+    return _as_str_tuple(value=table["destructive_cli_allowlist"], key="destructive_cli_allowlist")
 
 
 def load_config(*, repo_root: Path) -> Config:
