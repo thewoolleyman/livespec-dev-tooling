@@ -1,27 +1,34 @@
-"""red_green_replay — v034 D2-D3 replay-based TDD enforcement.
+"""red_green_replay — content-triggered TDD enforcement + commit-range validation.
 
-Per and Plan §"Per-commit Red→Green
-replay discipline (v034 D2-D3)", this hook is invoked as a
-`commit-msg` git hook with the path to `.git/COMMIT_EDITMSG`
-as argv[1]. It reads the commit subject; for `feat:`/`fix:`
-types it dispatches to the Red-mode or Green-mode handler in
+Two invocation modes, one content rule (work-item
+livespec-dev-tooling-eld; design decided 2026-06-11): product impl
+`.py` is the TRIGGER, the Conventional Commit prefix is a CONSISTENCY
+check.
+
+commit-msg mode (argv[1] = path to `.git/COMMIT_EDITMSG`, the lefthook
+`commit-msg` hook): staged product impl `.py` requires a `feat:`/`fix:`
+subject and dispatches the Red-mode or Green-mode handler in
 `_red_green_replay_modes` (test-file SHA-256 checksum, pytest
-invocation, trailer authoring); for the nine exempt
-Conventional Commit types (chore, docs, build, ci, style,
-test, refactor, perf, revert) it exits 0 immediately.
+invocation, trailer authoring); any OTHER prefix staging product impl
+`.py` is rejected as a mislabel. With NO product impl `.py` staged the
+hook exits 0 immediately regardless of prefix — machine checkpoint
+subjects (e.g. `fabro(<run_id>): <node> (<status>)`) and empty commits
+pass — except that a `feat:`/`fix:` subject staging tests-only `.py`
+enters Red mode (the declared start of the ritual). The prior
+exempt-type fallthrough (chore, docs, build, ci, style, test, refactor,
+perf, revert exited 0 with no staged-path inspection) is retired.
 
-Cycle-by-cycle authoring history (cycles 173-183) is preserved
-in git log; not load-bearing for current behavior. Cycle 4c
-(2026-05-02) extracted the Red-mode and Green-mode handlers
-into the sibling `_red_green_replay_modes.py` so this file
-stays under the 200 LLOC ceiling.
+no-arg mode (the canonical-aggregate / `just check` / pre-push / CI
+invocation): validates the commit range `origin/master..HEAD` — every
+non-merge commit touching product impl `.py` must carry the full
+`TDD-Red-*`/`TDD-Green-*` trailer shape regardless of prefix. An
+unresolvable base ref fails actionably (a shallow CI checkout needs
+`fetch-depth: 0`), never silently passes.
 
-Output discipline: per spec, `print` (T20)
-and `sys.stderr.write` (`check-no-write-direct`) are banned
-in dev-tooling/**. Diagnostics flow through structlog (JSON
-to stderr); the vendored copy under `.claude-plugin/scripts/
-_vendor/structlog` is added to `sys.path` at module import
-time.
+Output discipline: per spec, `print` (T20) and `sys.stderr.write`
+(`check-no-write-direct`) are banned in dev-tooling/**. Diagnostics
+flow through structlog (JSON to stderr); the vendored copy under
+`_vendor/` is added to `sys.path` at module import time.
 """
 
 from __future__ import annotations
@@ -58,9 +65,9 @@ from _red_green_replay_modes import (  # noqa: E402  — sibling private import
 __all__: list[str] = []
 
 
-_EXEMPT_TYPE_RE = re.compile(
-    r"^(chore|docs|build|ci|style|test|refactor|perf|revert)" r"(\([^)]+\))?!?:",
-)
+# The ONLY subjects that may stage product impl `.py` — and the
+# declared start of the ritual when staging tests-only `.py`.
+_RITUAL_TYPE_RE = re.compile(r"^(feat|fix)(\([^)]+\))?!?:")
 _TESTS_PREFIX = "tests/"
 # Impl-tree prefixes spanning every livespec-governed sibling repo
 # that consumes this check via the pin-and-bump cross-repo mechanism
@@ -97,19 +104,23 @@ _IMPL_PREFIXES = (
     "bin/",
     "dev-tooling/",
 )
+_RED_TRAILER_KEY = "TDD-Red-Test-File-Checksum:"
+_GREEN_TRAILER_KEY = "TDD-Green-Verified-At:"
+_RANGE_BASE = "origin/master"
 
 
 def _classify_staged(*, paths: list[str]) -> tuple[list[str], list[str]]:
-    """Bucket staged paths into (tests, impl) — other paths are dropped.
+    """Bucket staged `.py` paths into (tests, impl) — other paths are dropped.
 
-    A path is a tests-bucket member iff it starts with `tests/`;
-    an impl-bucket member iff it starts with one of `_IMPL_PREFIXES`.
-    Any other path (config, docs, top-level scripts, etc.)
-    participates in neither bucket and so cannot trigger
-    Red-mode or Green-mode dispatch.
+    Content is the trigger, so only `.py` files participate: a path
+    is a tests-bucket member iff it ends in `.py` AND starts with
+    `tests/`; an impl-bucket member iff it ends in `.py` AND starts
+    with one of `_IMPL_PREFIXES`. Anything else (config, docs, data
+    files — even under an impl prefix) participates in neither
+    bucket and cannot trigger Red-mode or Green-mode dispatch.
     """
-    tests_paths = [p for p in paths if p.startswith(_TESTS_PREFIX)]
-    impl_paths = [p for p in paths if p.startswith(_IMPL_PREFIXES)]
+    tests_paths = [p for p in paths if p.endswith(".py") and p.startswith(_TESTS_PREFIX)]
+    impl_paths = [p for p in paths if p.endswith(".py") and p.startswith(_IMPL_PREFIXES)]
     return tests_paths, impl_paths
 
 
@@ -125,9 +136,10 @@ def _configure_logger() -> structlog.stdlib.BoundLogger:
     return structlog.get_logger("red_green_replay")
 
 
-def _staged_files_list() -> list[str]:
+def _git_stdout_lines(*, args: list[str]) -> list[str]:
+    """Run a git command and return its non-empty stdout lines."""
     result = subprocess.run(
-        ["git", "diff", "--cached", "--name-only"],
+        ["git", *args],
         capture_output=True,
         text=True,
         check=False,
@@ -135,44 +147,84 @@ def _staged_files_list() -> list[str]:
     return [line for line in result.stdout.splitlines() if line]
 
 
-def _head_commit_message() -> str:
-    """Return HEAD's full commit message (`git log -1 --format=%B`)."""
-    result = subprocess.run(
-        ["git", "log", "-1", "--format=%B"],
+def _staged_files_list() -> list[str]:
+    return _git_stdout_lines(args=["diff", "--cached", "--name-only"])
+
+
+def _commit_violates(*, sha: str) -> bool:
+    """Return True iff `sha` touches product impl `.py` without the trailer shape.
+
+    `--root` makes a root commit diff against the empty tree, so a
+    range that begins at a repo's first commit is still enumerable.
+    """
+    touched = _git_stdout_lines(
+        args=["diff-tree", "--no-commit-id", "--name-only", "-r", "--root", sha],
+    )
+    product_paths = [p for p in touched if p.endswith(".py") and p.startswith(_IMPL_PREFIXES)]
+    if not product_paths:
+        return False
+    message_result = subprocess.run(
+        ["git", "log", "-1", "--format=%B", sha],
         capture_output=True,
         text=True,
         check=False,
     )
-    return result.stdout
+    message = message_result.stdout
+    return _RED_TRAILER_KEY not in message or _GREEN_TRAILER_KEY not in message
 
 
-def _validate_head() -> int:
-    """Validate the HEAD commit's subject + trailers (no-argv aggregate path).
+def _validate_range() -> int:
+    """Validate every non-merge commit in `origin/master..HEAD` (no-argv path).
 
-    Derives the commit message from `git log -1 --format=%B`. An exempt
-    Conventional Commit type passes (exit 0). A `feat:`/`fix:` HEAD MUST
-    carry both `TDD-Red-*` and `TDD-Green-*` trailers — the signature of a
-    completed Red→Green commit; a feat/fix at HEAD without them is a
-    violation (the load-bearing verifier is the commit-msg hook, but this
-    aggregate pass catches a HEAD that slipped through, e.g. a rebase that
-    dropped trailers).
+    Content-based: a commit touching product impl `.py` must carry
+    the full TDD-Red-*/TDD-Green-* trailer shape regardless of its
+    subject prefix — the load-bearing branch-level gate behind the
+    per-commit commit-msg hook (which a rebase, a squash, or a
+    history rewrite can bypass). Merge commits are skipped
+    (`--no-merges`): the family's protected branches enforce linear
+    history, so a merge in the range carries no diff of its own. On
+    `master` itself the range is empty and the gate trivially passes.
     """
-    message = _head_commit_message()
-    subject = message.split("\n", 1)[0]
-    if _EXEMPT_TYPE_RE.match(subject):
+    base_probe = subprocess.run(
+        ["git", "rev-parse", "--verify", "--quiet", _RANGE_BASE],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if base_probe.returncode != 0:
+        log = _configure_logger()
+        log.error(
+            "range base origin/master is not resolvable; the commit-range "
+            "validation cannot enumerate origin/master..HEAD and MUST NOT "
+            "silently pass",
+            check_id="red-green-replay-range-base-unresolvable",
+            range_base=_RANGE_BASE,
+            hint=(
+                "Fetch the base ref first (git fetch origin master). In CI, "
+                "check out with full history (actions/checkout fetch-depth: 0) "
+                "so origin/master and the merge base are present in the clone."
+            ),
+        )
+        return 1
+    shas = _git_stdout_lines(args=["rev-list", "--no-merges", f"{_RANGE_BASE}..HEAD"])
+    violating = [sha for sha in shas if _commit_violates(sha=sha)]
+    if not violating:
         return 0
     log = _configure_logger()
-    has_red = "TDD-Red-Test-File-Checksum:" in message
-    has_green = "TDD-Green-Verified-At:" in message
-    if has_red and has_green:
-        return 0
     log.error(
-        "HEAD is a feat:/fix: commit but its message is missing the "
-        "TDD-Red-*/TDD-Green-* trailers a completed Red->Green commit carries",
-        check_id="red-green-replay-head-missing-trailers",
-        subject=subject,
-        has_red_trailers=has_red,
-        has_green_trailers=has_green,
+        "commits in origin/master..HEAD touch product impl .py without the "
+        "TDD-Red-*/TDD-Green-* trailer shape a completed Red->Green commit "
+        "carries",
+        check_id="red-green-replay-range-missing-trailers",
+        violating_commits=violating,
+        hint=(
+            "Every commit touching product impl .py must be authored via the "
+            "Red->Green ritual regardless of subject prefix. Remedy: rewrite "
+            "the unmerged feature branch (redo each offending change as a Red "
+            "commit + Green amend) and force-push the branch — the 'never "
+            "force-push' rule scopes to shared/protected refs, not to an "
+            "unmerged feature branch being brought into shape."
+        ),
         protocol=RED_GREEN_REPLAY_PROTOCOL,
     )
     return 1
@@ -180,72 +232,61 @@ def _validate_head() -> int:
 
 def main() -> int:
     if len(sys.argv) <= 1:
-        # No msg-path argv (the canonical-aggregate / `just check`
-        # invocation, epic li-cvaudit cvnoarg): derive the commit message
-        # from HEAD and validate it, instead of the prior justfile no-arg
-        # short-circuit. The load-bearing per-commit verifier remains the
-        # commit-msg hook (which DOES pass a msg path).
-        return _validate_head()
+        # No msg-path argv: the canonical-aggregate / `just check` /
+        # pre-push / CI invocation validates the whole branch range
+        # rather than a single in-flight commit.
+        return _validate_range()
     msg_path = Path(sys.argv[1])
     subject = msg_path.read_text(encoding="utf-8").split("\n", 1)[0]
-    if _EXEMPT_TYPE_RE.match(subject):
+    tests_paths, impl_paths = _classify_staged(paths=_staged_files_list())
+    is_ritual_subject = _RITUAL_TYPE_RE.match(subject) is not None
+    if not impl_paths:
+        if is_ritual_subject and tests_paths:
+            return _handle_red_mode(
+                msg_path=msg_path,
+                log=_configure_logger(),
+                tests_paths=tests_paths,
+            )
+        # Content trigger absent: no product impl `.py` staged, so the
+        # ritual has nothing to verify. Pass for ANY subject prefix —
+        # machine checkpoint subjects and empty commits included.
         return 0
     log = _configure_logger()
-    staged_paths = _staged_files_list()
-    if not staged_paths:
+    if not is_ritual_subject:
         log.error(
-            "no staged files; cannot enter Red or Green mode",
-            check_id="red-green-replay-empty-staged",
+            "staged product impl .py under a non-feat:/fix: subject; product "
+            "code changes MUST be authored via the Red->Green ritual",
+            check_id="red-green-replay-product-mislabel",
+            subject=subject,
+            impl_paths=impl_paths,
             hint=(
-                "Red mode requires staged tests + no impl; "
-                "Green mode requires staged impl + HEAD~0 Red trailers."
+                "Relabel the commit as feat:/fix: and author it as a Red "
+                "commit (stage the failing test alone) followed by a Green "
+                "amend (stage the impl). If the staged .py is not product "
+                "code, move it out of the impl trees instead."
             ),
             protocol=RED_GREEN_REPLAY_PROTOCOL,
         )
         return 1
-    tests_paths, impl_paths = _classify_staged(paths=staged_paths)
-    if tests_paths and not impl_paths:
-        return _handle_red_mode(msg_path=msg_path, log=log, tests_paths=tests_paths)
-    if impl_paths and _head_has_red_trailers():
+    if _head_has_red_trailers():
         return _handle_green_mode(msg_path=msg_path, log=log, impl_paths=impl_paths)
-    return _diagnose_fallthrough(
-        log=log,
-        staged_paths=staged_paths,
-        tests_paths=tests_paths,
-        impl_paths=impl_paths,
-    )
+    return _diagnose_fallthrough(log=log, tests_paths=tests_paths, impl_paths=impl_paths)
 
 
 def _diagnose_fallthrough(
     *,
     log: structlog.stdlib.BoundLogger,
-    staged_paths: list[str],
     tests_paths: list[str],
     impl_paths: list[str],
 ) -> int:
-    """Emit a structured diagnostic for each classifiable line-140 fallthrough case.
+    """Reject a feat:/fix: product-`.py` staging that fits neither Red nor Green.
 
-    The previous implementation returned 1 with no diagnostic on any
-    non-empty staged tree that fell past the Red and Green dispatch
-    conditions. This helper distinguishes three cases and names each
-    via a stable check_id so the developer recovers without spelunking
-    the source.
+    Two classifiable cases remain once product impl `.py` is staged
+    under a ritual subject but HEAD carries no Red trailers; each is
+    named via a stable check_id so the developer recovers without
+    spelunking the source.
     """
-    if not tests_paths and not impl_paths:
-        log.error(
-            "staged paths classify as neither tests nor impl; "
-            "feat:/fix: types expect changes under tests/ or an impl prefix",
-            check_id="red-green-replay-staged-not-classifiable",
-            staged_paths=staged_paths,
-            hint=(
-                "If the staged change is config, docs, build, CI, tooling, or "
-                "any other non-product-code path, use one of the exempt commit "
-                "types: chore, docs, build, ci, style, test, refactor, perf, revert."
-            ),
-            protocol=RED_GREEN_REPLAY_PROTOCOL,
-        )
-        return 1
-    if tests_paths and impl_paths:
+    if tests_paths:
         log.error(
             "tests and impl paths both staged without prior Red trailers; "
             "Red mode requires tests-only; Green mode requires impl-only after Red",

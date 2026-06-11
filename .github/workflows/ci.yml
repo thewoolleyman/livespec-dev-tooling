@@ -112,6 +112,12 @@ jobs:
   # agent-facing trees for direct destructive-default CLI invocations
   # (livespec/SPECIFICATION/non-functional-requirements.md
   # §"Destructive-default CLI wrapping") so a violation fails CI.
+  # check-red-green-replay (no-arg) validates the COMMIT RANGE
+  # origin/master..HEAD — every non-merge commit touching product impl
+  # .py must carry the TDD-Red-*/TDD-Green-* trailer shape regardless
+  # of subject prefix (work-item livespec-dev-tooling-eld). It runs
+  # unconditionally: on zero-.py PRs the range carries no product .py
+  # and trivially passes; on master pushes the range is empty.
   check-metadata:
     name: ${{ matrix.target }}
     runs-on: ubuntu-latest
@@ -122,10 +128,20 @@ jobs:
           - check-aggregate-completeness
           - check-no-direct-destructive-cli
           - check-primary-checkout-commit-refuse-hook-installed
+          - check-red-green-replay
           - check-tool-backed-check-completeness
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Full history for ALL matrix entries: the
+          # check-red-green-replay range validation enumerates
+          # origin/master..HEAD and needs origin/master plus the merge
+          # base in the clone — a fetch-depth: 1 checkout would make
+          # the base unresolvable and fail the check actionably (it
+          # never silently passes). Cheap for this repo; harmless for
+          # the other metadata entries.
+          fetch-depth: 0
 
       # The primary-checkout-commit-refuse-hook-installed check
       # verifies the canonical livespec commit-refuse hook is

@@ -1,14 +1,26 @@
 """Outside-in test for `dev-tooling/checks/red_green_replay.py` — replay-based TDD enforcement.
 
-This hook gates `feat:`/`fix:` commits via the amend pattern
-(Red-mode initial commit; Green-mode amend) and exempts other
-Conventional Commit types (chore, docs, build, ci, style, test,
-refactor, perf, revert).
+Content is the trigger; the subject prefix is a consistency check
+(work-item livespec-dev-tooling-eld). At commit-msg time (argv[1] =
+commit-message file path):
 
-Cycle 173 pins the first behavior: a `chore:` commit subject
-is exempt from TDD enforcement; the hook reads the commit
-message file (passed as argv[1] per the git commit-msg hook
-contract) and exits 0 without running any test.
+- staged product impl `.py` ⇒ the subject MUST be `feat:`/`fix:` and
+  the Red/Green ritual applies; any other prefix staging product
+  impl `.py` is REJECTED as a mislabel (closes the prior `chore:`
+  bypass, where an exempt-prefix match exited 0 with no staged-path
+  inspection);
+- no product impl `.py` staged ⇒ the hook exits 0 immediately
+  regardless of prefix (machine checkpoint subjects such as
+  `fabro(<run_id>): <node> (<status>)` and empty commits pass),
+  EXCEPT that a `feat:`/`fix:` subject staging tests-only `.py`
+  still enters Red mode (the declared start of the ritual).
+
+With NO argv (the canonical-aggregate / `just check` invocation) the
+hook validates the COMMIT RANGE `origin/master..HEAD`: every
+non-merge commit touching product impl `.py` must carry the full
+TDD-Red-*/TDD-Green-* trailer shape regardless of prefix (closes the
+multi-commit and prefix holes the old HEAD-only validation waved
+through).
 """
 
 from __future__ import annotations
@@ -56,14 +68,15 @@ def _scrubbed_env() -> dict[str, str]:
 
 
 def test_chore_commit_subject_exits_zero(*, tmp_path: Path) -> None:
-    """A `chore:` commit subject is exempt from TDD enforcement; hook exits 0.
+    """A `chore:` commit subject with no product impl `.py` staged exits 0.
 
     Fixture: a tmp_path COMMIT_EDITMSG file containing
     `chore: codify v034`. The hook is invoked as a `commit-msg`
     git hook (the v034 D2-D3 design): argv[1] is the path to
-    the commit message file. For non-`feat:`/`fix:` types the
-    hook MUST exit 0 without running any test or computing any
-    checksum.
+    the commit message file. Content is the trigger: with no
+    product impl `.py` staged (here: no repo at all, so the
+    staged list is empty), the hook MUST exit 0 without running
+    any test or computing any checksum.
     """
     msg_path = tmp_path / "COMMIT_EDITMSG"
     msg_path.write_text("chore: codify v034\n", encoding="utf-8")
@@ -85,13 +98,13 @@ def test_chore_commit_subject_exits_zero(*, tmp_path: Path) -> None:
 
 
 def test_docs_commit_subject_exits_zero(*, tmp_path: Path) -> None:
-    """A `docs:` commit subject is exempt from TDD enforcement; hook exits 0.
+    """A `docs:` commit subject with no product impl `.py` staged exits 0.
 
     Fixture: a tmp_path COMMIT_EDITMSG file containing
-    `docs: clarify proposal`. Per v034 D3, `docs:` is one of
-    the nine exempt Conventional Commit types (chore, docs,
-    build, ci, style, test, refactor, perf, revert). Subsequent
-    cycles add the remaining six exempt types one per cycle.
+    `docs: clarify proposal`. Under the content-trigger design
+    the historical exempt-type list (chore, docs, build, ci,
+    style, test, refactor, perf, revert) is retired: ANY prefix
+    passes when no product impl `.py` is staged.
     """
     msg_path = tmp_path / "COMMIT_EDITMSG"
     msg_path.write_text("docs: clarify proposal\n", encoding="utf-8")
@@ -121,18 +134,14 @@ def test_remaining_exempt_commit_subjects_exit_zero(
     type_token: str,
     tmp_path: Path,
 ) -> None:
-    """Each remaining v034 D3 exempt Conventional Commit type exits 0.
+    """Each remaining historical exempt Conventional Commit type exits 0.
 
-    Cycle 176 batches the seven types not yet pinned by
-    cycles 173-175 (chore: by 173, docs: by 175). Per v034
-    D3, the full exempt set is {chore, docs, build, ci,
-    style, test, refactor, perf, revert} — config/meta
-    types that produce no test/impl pairing and therefore
-    do not require Red→Green replay verification. The
-    parameterized test pins all seven remaining types in
-    one test function (one Red→Green pair: list-extension
-    is parameter expansion of the cycle-174
-    type-discrimination switch, not new behavior).
+    Under the content-trigger design these prefixes are no
+    longer special-cased: they pass here because no product
+    impl `.py` is staged (config/meta changesets produce no
+    test/impl pairing), not because of a prefix allowlist.
+    The parameterized test pins that none of them regressed
+    when the exempt-list fallthrough was retired.
     """
     msg_path = tmp_path / "COMMIT_EDITMSG"
     msg_path.write_text(f"{type_token}: minor change\n", encoding="utf-8")
@@ -153,19 +162,16 @@ def test_remaining_exempt_commit_subjects_exit_zero(
     )
 
 
-def test_feat_commit_subject_exits_nonzero(*, tmp_path: Path) -> None:
-    """A `feat:` commit subject is NOT exempt; hook MUST exit non-zero.
+def test_feat_commit_subject_with_nothing_staged_exits_zero(*, tmp_path: Path) -> None:
+    """A `feat:` commit subject with nothing staged at all exits 0.
 
     Fixture: a tmp_path COMMIT_EDITMSG file containing
-    `feat: add new feature`. Per v034 D3, `feat:` and `fix:`
-    types require Red→Green replay verification — Red mode
-    (test staged + no impl + pytest fails) or Green mode
-    (amend with impl + pytest passes). With nothing to verify
-    (no git repo, no staged tree, no Red-trailer parent), the
-    hook cannot complete verification and MUST reject the
-    commit. This pins the type-discrimination contract:
-    non-exempt subjects do not exit 0. Future cycles refine
-    the rejection diagnostic + add the actual replay logic.
+    `feat: add new feature` and no git repo (the staged list is
+    empty). An empty commit cannot change product code, so there
+    is nothing for the ritual to verify; under the content-trigger
+    design the hook MUST exit 0 (the old design rejected with an
+    `empty-staged` diagnostic, which broke `--allow-empty` machine
+    checkpoint commits).
     """
     msg_path = tmp_path / "COMMIT_EDITMSG"
     msg_path.write_text("feat: add new feature\n", encoding="utf-8")
@@ -179,24 +185,21 @@ def test_feat_commit_subject_exits_nonzero(*, tmp_path: Path) -> None:
         env=_scrubbed_env(),
     )
 
-    assert result.returncode != 0, (
-        f"red_green_replay should exit non-zero for feat: subject; "
+    assert result.returncode == 0, (
+        f"red_green_replay should exit 0 for feat: with nothing staged; "
         f"got returncode={result.returncode} "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
 
 
-def test_feat_in_git_repo_with_no_staged_files_diagnoses_no_mode(*, tmp_path: Path) -> None:
-    """A feat: subject in a git repo with NO staged files cannot enter Red or Green mode.
+def test_feat_in_git_repo_with_no_staged_files_exits_zero(*, tmp_path: Path) -> None:
+    """A feat: subject in a git repo with NO staged files exits 0 (empty commit).
 
-    Cycle 177 drives the first staged-tree inspection in the hook.
-    Per Plan §"Per-commit Red→Green replay discipline (v034 D2-D3)",
-    Red mode requires staged test files + no staged impl; Green mode
-    requires HEAD~0 Red trailers + staged impl files. With ZERO staged
-    files, neither mode applies; the hook MUST reject with a diagnostic
-    on stderr that mentions "staged" so the developer understands the
-    rejection reason. Pins the True branch of the staged-emptiness
-    check.
+    An empty staging area means the commit changes no repo state,
+    so the Red/Green ritual has nothing to verify and the hook
+    passes immediately — `git commit --allow-empty` (e.g. machine
+    checkpoint commits) must not be blocked. The old `empty-staged`
+    rejection branch is retired; its diagnostic MUST NOT fire.
     """
     subprocess.run(
         ["git", "init", "-q"],
@@ -216,13 +219,12 @@ def test_feat_in_git_repo_with_no_staged_files_diagnoses_no_mode(*, tmp_path: Pa
         env=_scrubbed_env(),
     )
 
-    assert result.returncode != 0, (
-        f"feat: with empty staged tree must reject; "
+    assert result.returncode == 0, (
+        f"feat: with empty staged tree must pass (empty commits are inert); "
         f"got returncode={result.returncode} stderr={result.stderr!r}"
     )
-    assert "staged" in result.stderr.lower(), (
-        f"expected 'staged' diagnostic in stderr for empty-staged feat:; "
-        f"got stderr={result.stderr!r}"
+    assert "empty-staged" not in result.stderr, (
+        f"the retired empty-staged rejection must not fire; " f"got stderr={result.stderr!r}"
     )
 
 
@@ -230,15 +232,13 @@ def test_feat_in_git_repo_with_staged_files_skips_no_staged_diagnostic(
     *,
     tmp_path: Path,
 ) -> None:
-    """A feat: subject in a git repo WITH staged files skips the no-staged diagnostic.
+    """A feat: subject in a git repo WITH staged tests dispatches into the ritual.
 
-    Cycle 177 paired test: pins the False branch of the staged-emptiness
-    check. With at least one staged file, the no-staged-files diagnostic
-    MUST NOT fire on stderr; the hook still exits non-zero (the actual
-    Red/Green replay verification logic — pytest invocation + checksum
-    + trailer authoring — is not yet implemented), but the empty-staged
-    rejection path is inactive. This guarantees per-file 100% branch
-    coverage on the new staged-emptiness conditional.
+    Paired test for the empty-staging pass: with a staged tests-tree
+    `.py`, the hook enters Red mode instead of the empty-staging
+    early exit (here the staged test PASSES, so Red mode rejects
+    with `test-passed-at-red` — a ritual-path rejection, proving
+    dispatch happened). No empty-staging diagnostic may appear.
     """
     subprocess.run(
         ["git", "init", "-q"],
@@ -1078,8 +1078,18 @@ def test_classify_staged_recognizes_production_claude_plugin_scripts_paths() -> 
         "dev-tooling/checks/foo.py",
         "tests/livespec/test_foo.py",
         "docs/STATUS.md",
+        "dev-tooling/checks/data.json",
+        "tests/livespec/fixture.json",
     ]
     tests_paths, impl_paths = module._classify_staged(paths=paths)  # noqa: SLF001
+    assert "dev-tooling/checks/data.json" not in impl_paths, (
+        f"non-.py file under an impl prefix should NOT be in impl bucket "
+        f"(content trigger is product .py); got impl_paths={impl_paths}"
+    )
+    assert "tests/livespec/fixture.json" not in tests_paths, (
+        f"non-.py file under tests/ should NOT be in tests bucket "
+        f"(content trigger is .py); got tests_paths={tests_paths}"
+    )
     assert ".claude-plugin/scripts/livespec/validate/finding.py" in impl_paths, (
         f"production `.claude-plugin/scripts/livespec/...` path should be in impl bucket; "
         f"got impl_paths={impl_paths}"
@@ -1342,23 +1352,21 @@ def test_write_trailers_replaces_existing_keys_does_not_append(*, tmp_path: Path
     )
 
 
-def test_feat_with_neither_tests_nor_impl_staged_emits_diagnostic(
+def test_feat_with_neither_tests_nor_impl_staged_exits_zero(
     *,
     tmp_path: Path,
 ) -> None:
-    """A feat: subject with staged paths that are neither tests nor impl MUST emit a diagnostic.
+    """A feat: subject with staged paths that are neither tests nor impl exits 0.
 
-    Pins the fallthrough case where `_classify_staged` returns
+    Pins the content-trigger pass where `_classify_staged` returns
     `(tests_paths=[], impl_paths=[])` — staged files are config,
     docs, templates, top-level scripts, or any path that doesn't
-    start with `tests/` or one of the `_IMPL_PREFIXES`. Without
-    this diagnostic the hook silently rejects the commit, leaving
-    the developer with no signal about why lefthook failed
-    (observed 2026-05-19 while landing Phase C.1's
-    templates/impl-plugin/copier.yml under a feat: subject; the
-    workaround was to switch to chore(template):). The diagnostic
-    MUST name a stable check_id and MUST hint at the exempt commit
-    types so the developer can recover.
+    start with `tests/` or one of the `_IMPL_PREFIXES`. No product
+    impl `.py` is staged, so there is nothing for the ritual to
+    verify and the hook passes regardless of prefix (the old
+    `staged-not-classifiable` rejection — which forced a
+    chore(template): workaround for feat:-worthy non-Python
+    changes — is retired).
     """
     subprocess.run(
         ["git", "init", "-q"],
@@ -1388,13 +1396,209 @@ def test_feat_with_neither_tests_nor_impl_staged_emits_diagnostic(
         env=_scrubbed_env(),
     )
 
-    assert result.returncode != 0, (
-        f"feat: with neither-tests-nor-impl staged must reject; "
-        f"got returncode={result.returncode}"
+    assert result.returncode == 0, (
+        f"feat: with neither-tests-nor-impl staged must pass (content trigger absent); "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
     )
-    assert "staged-not-classifiable" in result.stderr, (
-        f"expected 'staged-not-classifiable' check_id in stderr for "
-        f"neither-tests-nor-impl feat:; got stderr={result.stderr!r}"
+    assert "staged-not-classifiable" not in result.stderr, (
+        f"the retired 'staged-not-classifiable' rejection must not fire; "
+        f"got stderr={result.stderr!r}"
+    )
+
+
+@pytest.mark.parametrize(
+    "subject_token",
+    [
+        "chore: tidy the impl tree",
+        "fabro(run-7f3k): worker-node (failed)",
+        "refactor: reorganize helpers",
+    ],
+)
+def test_non_feat_fix_subject_staging_product_impl_py_rejects_as_mislabel(
+    *,
+    subject_token: str,
+    tmp_path: Path,
+) -> None:
+    """Any non-feat:/fix: subject staging product impl `.py` is REJECTED as a mislabel.
+
+    Closes the prefix bypass: the old design's exempt-type regex
+    matched (e.g.) `chore:` and exited 0 with NO staged-path
+    inspection, so product `.py` could land without the ritual.
+    Under the content-trigger design, staged product impl `.py`
+    REQUIRES a `feat:`/`fix:` subject + the Red/Green ritual; the
+    rejection MUST name a stable `product-mislabel` check_id so
+    the author relabels the commit and authors a Red->Green pair.
+    Machine checkpoint subjects (`fabro(<run_id>): ...`) staging a
+    crashed agent's uncommitted product `.py` hit the same reject —
+    the accepted residual per the 2026-06-11 design decision.
+    """
+    subprocess.run(
+        ["git", "init", "-q"],
+        cwd=str(tmp_path),
+        check=True,
+        env=_scrubbed_env(),
+    )
+    impl_dir = tmp_path / "livespec"
+    impl_dir.mkdir()
+    (impl_dir / "foo.py").write_text("VALUE: int = 1\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "add", "livespec/foo.py"],
+        cwd=str(tmp_path),
+        check=True,
+        env=_scrubbed_env(),
+    )
+
+    msg_path = tmp_path / "COMMIT_EDITMSG"
+    msg_path.write_text(f"{subject_token}\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_scrubbed_env(),
+    )
+
+    assert result.returncode != 0, (
+        f"{subject_token!r} staging product impl .py must reject as a mislabel; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+    assert "product-mislabel" in result.stderr, (
+        f"expected 'product-mislabel' check_id in stderr; " f"got stderr={result.stderr!r}"
+    )
+
+
+def test_fabro_checkpoint_subject_with_non_product_staged_exits_zero(
+    *,
+    tmp_path: Path,
+) -> None:
+    """A machine checkpoint subject staging non-product paths exits 0.
+
+    `fabro(<run_id>): <node> (<status>)` is not a Conventional
+    Commit type at all; under the old prefix-fallthrough design it
+    fell into the feat:/fix: ritual path and was rejected. Content
+    is now the trigger: with only non-product paths staged the
+    checkpoint commit passes the hook naturally (no
+    `skip_git_hooks` carve-out needed).
+    """
+    subprocess.run(
+        ["git", "init", "-q"],
+        cwd=str(tmp_path),
+        check=True,
+        env=_scrubbed_env(),
+    )
+    (tmp_path / "notes.md").write_text("checkpoint payload\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "add", "notes.md"],
+        cwd=str(tmp_path),
+        check=True,
+        env=_scrubbed_env(),
+    )
+
+    msg_path = tmp_path / "COMMIT_EDITMSG"
+    msg_path.write_text("fabro(run-7f3k): worker-node (ok)\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_scrubbed_env(),
+    )
+
+    assert result.returncode == 0, (
+        f"machine checkpoint subject with non-product staging must pass; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+
+
+def test_chore_with_tests_only_staged_exits_zero(*, tmp_path: Path) -> None:
+    """A `chore:` subject staging tests-only `.py` exits 0 (test refactors stay possible).
+
+    Tests-tree `.py` is not PRODUCT impl `.py`: only a
+    `feat:`/`fix:` subject staging tests-only enters Red mode
+    (where the test must FAIL). A non-ritual prefix staging a
+    test-only change (e.g. renaming a passing test) must pass —
+    otherwise test refactors would be uncommittable, since their
+    tests pass by construction.
+    """
+    subprocess.run(
+        ["git", "init", "-q"],
+        cwd=str(tmp_path),
+        check=True,
+        env=_scrubbed_env(),
+    )
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_renamed.py").write_text(
+        "def test_renamed() -> None:\n    assert True\n",
+        encoding="utf-8",
+    )
+    subprocess.run(
+        ["git", "add", "tests/test_renamed.py"],
+        cwd=str(tmp_path),
+        check=True,
+        env=_scrubbed_env(),
+    )
+
+    msg_path = tmp_path / "COMMIT_EDITMSG"
+    msg_path.write_text("chore: rename a test\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_scrubbed_env(),
+    )
+
+    assert result.returncode == 0, (
+        f"chore: staging tests-only .py must pass (Red mode is feat:/fix:-declared); "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+
+
+def test_feat_staging_only_non_py_under_impl_prefix_exits_zero(*, tmp_path: Path) -> None:
+    """A feat: subject staging only a non-`.py` file under an impl prefix exits 0.
+
+    The content trigger is product impl `.py` — `_classify_staged`
+    filters on the `.py` extension, so a data/config file under an
+    impl prefix (e.g. `livespec/data.json`) does not enter the impl
+    bucket and the ritual does not apply.
+    """
+    subprocess.run(
+        ["git", "init", "-q"],
+        cwd=str(tmp_path),
+        check=True,
+        env=_scrubbed_env(),
+    )
+    impl_dir = tmp_path / "livespec"
+    impl_dir.mkdir()
+    (impl_dir / "data.json").write_text('{"k": 1}\n', encoding="utf-8")
+    subprocess.run(
+        ["git", "add", "livespec/data.json"],
+        cwd=str(tmp_path),
+        check=True,
+        env=_scrubbed_env(),
+    )
+
+    msg_path = tmp_path / "COMMIT_EDITMSG"
+    msg_path.write_text("feat: ship a data file\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_scrubbed_env(),
+    )
+
+    assert result.returncode == 0, (
+        f"feat: staging only non-.py under an impl prefix must pass; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
     )
 
 
@@ -1532,39 +1736,19 @@ def _assert_protocol_in_stderr(*, stderr: str, mode: str) -> None:
         )
 
 
-def test_empty_staged_reject_prints_full_protocol(*, tmp_path: Path) -> None:
-    """`red-green-replay-empty-staged` reject emits the full protocol."""
+def test_product_mislabel_reject_prints_full_protocol(*, tmp_path: Path) -> None:
+    """`red-green-replay-product-mislabel` reject emits the full protocol."""
     subprocess.run(["git", "init", "-q"], cwd=str(tmp_path), check=True, env=_scrubbed_env())
-    msg_path = tmp_path / "COMMIT_EDITMSG"
-    msg_path.write_text("feat: add new feature\n", encoding="utf-8")
-
-    result = subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
-    )
-
-    assert result.returncode != 0
-    assert "empty-staged" in result.stderr
-    _assert_protocol_in_stderr(stderr=result.stderr, mode="empty-staged")
-
-
-def test_staged_not_classifiable_reject_prints_full_protocol(*, tmp_path: Path) -> None:
-    """`red-green-replay-staged-not-classifiable` reject emits the full protocol."""
-    subprocess.run(["git", "init", "-q"], cwd=str(tmp_path), check=True, env=_scrubbed_env())
-    (tmp_path / "templates").mkdir()
-    (tmp_path / "templates" / "foo.yml").write_text("key: value\n", encoding="utf-8")
+    (tmp_path / "livespec").mkdir()
+    (tmp_path / "livespec" / "foo.py").write_text("VALUE: int = 1\n", encoding="utf-8")
     subprocess.run(
-        ["git", "add", "templates/foo.yml"],
+        ["git", "add", "livespec/foo.py"],
         cwd=str(tmp_path),
         check=True,
         env=_scrubbed_env(),
     )
     msg_path = tmp_path / "COMMIT_EDITMSG"
-    msg_path.write_text("feat: add new template\n", encoding="utf-8")
+    msg_path.write_text("chore: sneak in product code\n", encoding="utf-8")
 
     result = subprocess.run(
         [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
@@ -1576,8 +1760,8 @@ def test_staged_not_classifiable_reject_prints_full_protocol(*, tmp_path: Path) 
     )
 
     assert result.returncode != 0
-    assert "staged-not-classifiable" in result.stderr
-    _assert_protocol_in_stderr(stderr=result.stderr, mode="staged-not-classifiable")
+    assert "product-mislabel" in result.stderr
+    _assert_protocol_in_stderr(stderr=result.stderr, mode="product-mislabel")
 
 
 def test_mixed_buckets_reject_prints_full_protocol(*, tmp_path: Path) -> None:
@@ -1807,33 +1991,51 @@ def test_test_still_failing_reject_prints_full_protocol(*, tmp_path: Path) -> No
 
 
 # ---------------------------------------------------------------------------
-# Epic li-cvaudit (cvnoarg): with NO msg-path argv, the hook derives the
-# commit message from `git log -1 --format=%B` (HEAD) and validates it,
-# instead of the justfile no-arg short-circuit. An explicit msg path still
-# behaves as today (the commit-msg-hook contract).
+# Commit-range validation (work-item livespec-dev-tooling-eld): with NO
+# msg-path argv (the canonical-aggregate / `just check` / pre-push / CI
+# invocation), the hook validates EVERY non-merge commit in
+# `origin/master..HEAD` — any commit touching product impl `.py` must carry
+# the full TDD-Red-*/TDD-Green-* trailer shape REGARDLESS of subject prefix.
+# This supersedes the old HEAD-only `_validate_head`, which waved exempt
+# prefixes through with no content inspection (the multi-commit + chore:
+# holes). An explicit msg path still behaves as the commit-msg hook.
 # ---------------------------------------------------------------------------
 
 
-def _init_repo_with_head_commit(*, tmp_path: Path, message: str) -> None:
-    """Init a tmp git repo and author one commit carrying `message`."""
+def _range_git(*, tmp_path: Path, args: list[str]) -> None:
+    """Run one git command inside the tmp_path fixture repo."""
+    subprocess.run(
+        ["git", *args],
+        cwd=str(tmp_path),
+        check=True,
+        capture_output=True,
+        text=True,
+        env=_scrubbed_env(),
+    )
 
-    def _git(*args: str) -> None:
-        subprocess.run(
-            ["git", *args],
-            cwd=str(tmp_path),
-            check=True,
-            capture_output=True,
-            text=True,
-            env=_scrubbed_env(),
-        )
 
-    _git("init", "-q")
-    _git("config", "user.email", "test@example.com")
-    _git("config", "user.name", "Test")
-    _git("config", "commit.gpgsign", "false")
-    (tmp_path / "f.txt").write_text("x\n", encoding="utf-8")
-    _git("add", "-A")
-    _git("commit", "-qm", message)
+def _init_range_repo(*, tmp_path: Path) -> None:
+    """Init a tmp repo with one base commit and `origin/master` pinned to it.
+
+    The `origin/master` remote-tracking ref is created via
+    `git update-ref` (no actual remote needed): the range check
+    only requires the ref to RESOLVE so `origin/master..HEAD`
+    enumerates the branch's own commits.
+    """
+    _range_git(tmp_path=tmp_path, args=["init", "-q"])
+    _range_git(tmp_path=tmp_path, args=["config", "user.email", "test@example.com"])
+    _range_git(tmp_path=tmp_path, args=["config", "user.name", "Test"])
+    _range_git(tmp_path=tmp_path, args=["config", "commit.gpgsign", "false"])
+    (tmp_path / "base.txt").write_text("base\n", encoding="utf-8")
+    _range_git(tmp_path=tmp_path, args=["add", "-A"])
+    _range_git(tmp_path=tmp_path, args=["commit", "-qm", "chore: base"])
+    _range_git(tmp_path=tmp_path, args=["update-ref", "refs/remotes/origin/master", "HEAD"])
+
+
+def _commit_all(*, tmp_path: Path, message: str) -> None:
+    """Stage everything and commit with `message` in the fixture repo."""
+    _range_git(tmp_path=tmp_path, args=["add", "-A"])
+    _range_git(tmp_path=tmp_path, args=["commit", "-qm", message])
 
 
 def _run_no_arg(*, tmp_path: Path) -> subprocess.CompletedProcess[str]:
@@ -1847,40 +2049,120 @@ def _run_no_arg(*, tmp_path: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
-def test_no_arg_head_exempt_subject_exits_zero(*, tmp_path: Path) -> None:
-    """No argv + HEAD is a `chore:` commit → exit 0 (exempt type, nothing to verify)."""
-    _init_repo_with_head_commit(tmp_path=tmp_path, message="chore: tidy things\n")
+def test_no_arg_unresolvable_base_rejects_with_actionable_fetch_hint(*, tmp_path: Path) -> None:
+    """No argv + `origin/master` unresolvable → exit non-zero with a fetch hint.
+
+    A shallow / single-ref CI checkout (actions/checkout default
+    fetch-depth: 1 on a non-master ref) cannot enumerate the range;
+    the check MUST fail ACTIONABLY (naming origin/master and the
+    fetch remedy), never silently pass.
+    """
+    _range_git(tmp_path=tmp_path, args=["init", "-q"])
+    _range_git(tmp_path=tmp_path, args=["config", "user.email", "test@example.com"])
+    _range_git(tmp_path=tmp_path, args=["config", "user.name", "Test"])
+    _range_git(tmp_path=tmp_path, args=["config", "commit.gpgsign", "false"])
+    (tmp_path / "base.txt").write_text("base\n", encoding="utf-8")
+    _commit_all(tmp_path=tmp_path, message="chore: base")
+
+    result = _run_no_arg(tmp_path=tmp_path)
+
+    assert result.returncode != 0, (
+        f"unresolvable origin/master must fail actionably, not pass silently; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+    assert (
+        "origin/master" in result.stderr
+    ), f"rejection should name the unresolvable base ref; stderr={result.stderr!r}"
+    assert "fetch" in result.stderr.lower(), (
+        f"rejection should hint at the fetch remedy (e.g. fetch-depth: 0); "
+        f"stderr={result.stderr!r}"
+    )
+
+
+def test_no_arg_empty_range_exits_zero(*, tmp_path: Path) -> None:
+    """No argv + HEAD == origin/master (empty range) → exit 0.
+
+    On master itself (or any branch with no commits past the base)
+    `origin/master..HEAD` is empty and the check trivially passes.
+    """
+    _init_range_repo(tmp_path=tmp_path)
     result = _run_no_arg(tmp_path=tmp_path)
     assert result.returncode == 0, (
-        f"no-arg with exempt HEAD subject should exit 0; "
+        f"empty origin/master..HEAD range should exit 0; "
         f"got returncode={result.returncode} stderr={result.stderr!r}"
     )
 
 
-def test_no_arg_head_feat_with_red_green_trailers_exits_zero(*, tmp_path: Path) -> None:
-    """No argv + HEAD is a `feat:` commit carrying Red AND Green trailers → exit 0."""
+def test_no_arg_range_chore_commit_touching_product_py_rejects(*, tmp_path: Path) -> None:
+    """No argv + a `chore:` range commit touching product impl `.py` → reject.
+
+    The trailer-shape requirement is content-based: the prefix does
+    not matter (this closes the old `_validate_head` exempt-prefix
+    wave-through). The rejection MUST name the
+    `range-missing-trailers` check_id, prescribe the rewrite +
+    force-push remedy (scoped to unmerged feature branches — the
+    'never force-push' rule covers shared/protected refs), and emit
+    the full protocol so the author can redo the change correctly.
+    """
+    _init_range_repo(tmp_path=tmp_path)
+    (tmp_path / "livespec").mkdir()
+    (tmp_path / "livespec" / "foo.py").write_text("VALUE: int = 1\n", encoding="utf-8")
+    _commit_all(tmp_path=tmp_path, message="chore: sneak in product code")
+
+    result = _run_no_arg(tmp_path=tmp_path)
+
+    assert result.returncode != 0, (
+        f"range commit touching product .py without trailers must reject; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+    assert (
+        "range-missing-trailers" in result.stderr
+    ), f"expected 'range-missing-trailers' check_id in stderr; stderr={result.stderr!r}"
+    assert "force-push" in result.stderr, (
+        f"rejection should prescribe the rewrite + force-push remedy; " f"stderr={result.stderr!r}"
+    )
+    _assert_protocol_in_stderr(stderr=result.stderr, mode="range-missing-trailers")
+
+
+def test_no_arg_range_commit_with_full_trailer_shape_exits_zero(*, tmp_path: Path) -> None:
+    """No argv + a range commit touching product `.py` WITH both trailer sets → exit 0."""
+    _init_range_repo(tmp_path=tmp_path)
+    (tmp_path / "livespec").mkdir()
+    (tmp_path / "livespec" / "foo.py").write_text("VALUE: int = 1\n", encoding="utf-8")
     message = (
         "feat: add a feature\n"
         "\n"
         "TDD-Red-Test-File-Checksum: sha256:deadbeef\n"
         "TDD-Green-Verified-At: 2026-06-02T00:00:00Z\n"
     )
-    _init_repo_with_head_commit(tmp_path=tmp_path, message=message)
+    _commit_all(tmp_path=tmp_path, message=message)
+
     result = _run_no_arg(tmp_path=tmp_path)
+
     assert result.returncode == 0, (
-        f"no-arg with a properly-trailered feat HEAD should exit 0; "
+        f"properly-trailered product commit in range should exit 0; "
         f"got returncode={result.returncode} stderr={result.stderr!r}"
     )
 
 
-def test_no_arg_head_feat_without_trailers_rejects(*, tmp_path: Path) -> None:
-    """No argv + HEAD is a `feat:` commit lacking R-G trailers → exit non-zero with diagnostic."""
-    _init_repo_with_head_commit(tmp_path=tmp_path, message="feat: untrailered feature\n")
+def test_no_arg_range_commit_touching_only_non_product_paths_exits_zero(
+    *,
+    tmp_path: Path,
+) -> None:
+    """No argv + range commits touching only non-product paths → exit 0 (any prefix)."""
+    _init_range_repo(tmp_path=tmp_path)
+    (tmp_path / "notes.md").write_text("notes\n", encoding="utf-8")
+    _commit_all(tmp_path=tmp_path, message="fabro(run-7f3k): worker-node (ok)")
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_thing.py").write_text(
+        "def test_thing() -> None:\n    assert True\n",
+        encoding="utf-8",
+    )
+    _commit_all(tmp_path=tmp_path, message="chore: add a test fixture")
+
     result = _run_no_arg(tmp_path=tmp_path)
-    assert result.returncode != 0, (
-        f"no-arg with an untrailered feat HEAD should reject; "
+
+    assert result.returncode == 0, (
+        f"range commits without product impl .py should exit 0 regardless of prefix; "
         f"got returncode={result.returncode} stderr={result.stderr!r}"
     )
-    assert (
-        "trailer" in result.stderr.lower()
-    ), f"rejection should name the missing trailers; stderr={result.stderr!r}"
