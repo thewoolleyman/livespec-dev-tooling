@@ -17,15 +17,20 @@ file path):
    loud `test-passed-at-red` reject (the author DECLARED a behavior
    change, so their test must fail first); any other prefix is a
    test-only cleanup and takes the green-verified leg;
-4. product impl `.py` staged WITH `TDD-Red-*` trailers at HEAD (the
-   amend shape) ⇒ the Green leg, unchanged: byte-identical test
-   re-run must pass, `TDD-Green-*` recorded;
-5. product impl `.py` staged WITHOUT Red trailers (pure refactor /
-   behavior-preserving chore / any prefix incl. feat:/fix:) ⇒ the
-   green-verified leg: the FULL pytest suite must pass against the
-   staged tree; `TDD-Suite-Green-*` trailers (scope, output
-   checksum, captured-at) are recorded; a failing suite rejects
-   actionably (`suite-red`).
+4. product impl `.py` staged with `TDD-Red-*` trailers WITHOUT
+   `TDD-Green-*` trailers at HEAD (a genuine amend-in-progress;
+   work-item livespec-dev-tooling-xn0 — Red-trailer PRESENCE alone
+   misrouted fresh commits atop completed Red+Green history into
+   this leg) ⇒ the Green leg: byte-identical test re-run must
+   pass, `TDD-Green-*` recorded;
+5. product impl `.py` staged WITHOUT a Red-awaiting-Green HEAD
+   (pure refactor / behavior-preserving chore / any prefix incl.
+   feat:/fix:, INCLUDING a fresh commit on top of a completed
+   Red+Green or suite-green commit) ⇒ the green-verified leg: the
+   FULL pytest suite must pass against the staged tree;
+   `TDD-Suite-Green-*` trailers (scope, output checksum,
+   captured-at) are recorded; a failing suite rejects actionably
+   (`suite-red`).
 
 With NO argv (the canonical-aggregate / `just check` invocation) the
 hook validates the COMMIT RANGE `origin/master..HEAD`: every
@@ -2314,3 +2319,214 @@ def test_no_arg_range_commit_touching_only_non_product_paths_exits_zero(
         f"range commits without product impl .py should exit 0 regardless of prefix; "
         f"got returncode={result.returncode} stderr={result.stderr!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Branch-4/5 head-state routing (work-item livespec-dev-tooling-xn0, found
+# live during the v0.11.0 family bump): the Green-amend leg (Branch 4) is
+# only for a GENUINE amend-in-progress — HEAD carrying TDD-Red-* trailers
+# WITHOUT TDD-Green-* trailers. A completed Red+Green commit at HEAD also
+# carries Red trailers, so keying on Red-trailer PRESENCE alone misrouted
+# every fresh product commit atop normal history into Branch 4, stamped
+# bare TDD-Green-* trailers, and the commit-range validator then rejected
+# the branch.
+# ---------------------------------------------------------------------------
+
+
+def _init_repo_with_completed_pair_head(*, tmp_path: Path) -> None:
+    """Init a tmp repo whose HEAD is a COMPLETED Red+Green pair commit.
+
+    A passing test exists on disk with its REAL checksum recorded in
+    the pair commit's `TDD-Red-Test-File-Checksum`, so a Branch-4
+    misroute would verify cleanly rather than crash — keeping the
+    routing assertions on the trailer SHAPE, not on an incidental
+    checksum failure.
+    """
+    _range_git(tmp_path=tmp_path, args=["init", "-q"])
+    _range_git(tmp_path=tmp_path, args=["config", "user.email", "test@example.com"])
+    _range_git(tmp_path=tmp_path, args=["config", "user.name", "Test"])
+    _range_git(tmp_path=tmp_path, args=["config", "commit.gpgsign", "false"])
+    (tmp_path / "tests").mkdir()
+    test_bytes = b"def test_x() -> None:\n    assert True\n"
+    (tmp_path / "tests" / "test_x.py").write_bytes(test_bytes)
+    checksum = f"sha256:{hashlib.sha256(test_bytes).hexdigest()}"
+    (tmp_path / "livespec").mkdir()
+    (tmp_path / "livespec" / "foo.py").write_text("VALUE: int = 1\n", encoding="utf-8")
+    pair_message = (
+        "feat: completed feature\n"
+        "\n"
+        "TDD-Red-Test: tests/test_x.py\n"
+        "TDD-Red-Failure-Reason: stub\n"
+        f"TDD-Red-Test-File-Checksum: {checksum}\n"
+        "TDD-Red-Output-Checksum: sha256:abc\n"
+        "TDD-Red-Captured-At: 2026-06-11T00:00:00Z\n"
+        "TDD-Green-Verified-At: 2026-06-11T00:01:00Z\n"
+        "TDD-Green-Parent-Reflog: 0000000000000000000000000000000000000000\n"
+    )
+    _commit_all(tmp_path=tmp_path, message=pair_message)
+
+
+def _run_msg_hook(
+    *,
+    tmp_path: Path,
+    subject: str,
+) -> tuple[subprocess.CompletedProcess[str], Path]:
+    """Write a fresh COMMIT_EDITMSG carrying `subject` and run the commit-msg hook.
+
+    The message file lives at `.git/COMMIT_EDITMSG` (the realistic
+    location) so the fixture's `git add -A` commits never sweep it
+    into the repo's tracked tree.
+    """
+    msg_path = tmp_path / ".git" / "COMMIT_EDITMSG"
+    msg_path.write_text(f"{subject}\n", encoding="utf-8")
+    result = subprocess.run(
+        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_scrubbed_env(),
+    )
+    return result, msg_path
+
+
+def test_new_product_commit_on_completed_pair_head_takes_suite_green_leg(
+    *,
+    tmp_path: Path,
+) -> None:
+    """A fresh product commit atop a COMPLETED Red+Green HEAD is green-verified.
+
+    The xn0 bug: Branch-4 routing keyed on Red-trailer PRESENCE at
+    HEAD, but a completed Red+Green commit ALSO carries Red trailers
+    — the normal state of real history. The fresh commit misrouted
+    into the Green-amend leg and stamped bare `TDD-Green-*` trailers,
+    which the commit-range validator then rejected. The fix routes a
+    completed pair at HEAD through the suite-green leg, whose
+    resulting trailer shape the range check accepts.
+    """
+    _init_repo_with_completed_pair_head(tmp_path=tmp_path)
+    _range_git(tmp_path=tmp_path, args=["update-ref", "refs/remotes/origin/master", "HEAD"])
+    (tmp_path / "livespec" / "foo.py").write_text("VALUE: int = 2\n", encoding="utf-8")
+    _range_git(tmp_path=tmp_path, args=["add", "livespec/foo.py"])
+
+    result, msg_path = _run_msg_hook(tmp_path=tmp_path, subject="chore: follow-up product change")
+
+    assert result.returncode == 0, (
+        f"fresh product commit atop a completed pair must pass via the suite leg; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+    final_msg = msg_path.read_text(encoding="utf-8")
+    assert "TDD-Suite-Green-Captured-At:" in final_msg, (
+        f"a completed pair at HEAD must route to the suite-green leg; "
+        f"got final_msg={final_msg!r}"
+    )
+    assert "TDD-Green-Verified-At:" not in final_msg, (
+        f"the Branch-4 misroute stamps bare TDD-Green-* trailers on a fresh "
+        f"commit; the fix must not; got final_msg={final_msg!r}"
+    )
+
+    _commit_all(tmp_path=tmp_path, message=final_msg)
+    range_result = _run_no_arg(tmp_path=tmp_path)
+    assert range_result.returncode == 0, (
+        f"the suite-green-shaped follow-up commit must pass the range check; "
+        f"got returncode={range_result.returncode} stderr={range_result.stderr!r}"
+    )
+
+
+def test_genuine_green_amend_on_red_only_head_still_takes_green_leg(
+    *,
+    tmp_path: Path,
+) -> None:
+    """A genuine amend (HEAD carries Red WITHOUT Green) still takes the Green leg."""
+    test_bytes = b"def test_x() -> None:\n    assert True\n"
+    real_checksum = f"sha256:{hashlib.sha256(test_bytes).hexdigest()}"
+    msg_path = _author_green_fixture(
+        tmp_path=tmp_path,
+        test_bytes=test_bytes,
+        recorded_checksum=real_checksum,
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_scrubbed_env(),
+    )
+
+    assert result.returncode == 0, (
+        f"a genuine Green amend must still take Branch 4; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+    final_msg = msg_path.read_text(encoding="utf-8")
+    assert (
+        "TDD-Green-Verified-At:" in final_msg
+    ), f"Branch 4 must record TDD-Green-* trailers; got final_msg={final_msg!r}"
+    assert (
+        "TDD-Suite-Green-Captured-At:" not in final_msg
+    ), f"a genuine amend must not take the suite-green leg; got final_msg={final_msg!r}"
+
+
+def test_red_green_cycles_route_correctly_in_sequence(*, tmp_path: Path) -> None:
+    """Routing stays correct across pair → follow-up → follow-up → Red → Green.
+
+    Pins the head-state machine end-to-end: a completed pair at HEAD
+    routes a follow-up to the suite-green leg; the resulting
+    suite-green commit at HEAD routes the NEXT follow-up to the
+    suite-green leg again; a fresh Red (Red WITHOUT Green at HEAD)
+    routes its amend to the Green leg.
+    """
+    _init_repo_with_completed_pair_head(tmp_path=tmp_path)
+    (tmp_path / "livespec" / "foo.py").write_text("VALUE: int = 2\n", encoding="utf-8")
+    _range_git(tmp_path=tmp_path, args=["add", "livespec/foo.py"])
+    first, first_msg_path = _run_msg_hook(tmp_path=tmp_path, subject="chore: follow-up one")
+    assert first.returncode == 0, (
+        f"follow-up atop the pair must pass; rc={first.returncode} " f"stderr={first.stderr!r}"
+    )
+    first_msg = first_msg_path.read_text(encoding="utf-8")
+    assert (
+        "TDD-Suite-Green-Captured-At:" in first_msg
+    ), f"follow-up atop the pair must be suite-green-shaped; got {first_msg!r}"
+    _commit_all(tmp_path=tmp_path, message=first_msg)
+
+    (tmp_path / "livespec" / "foo.py").write_text("VALUE: int = 3\n", encoding="utf-8")
+    _range_git(tmp_path=tmp_path, args=["add", "livespec/foo.py"])
+    second, second_msg_path = _run_msg_hook(tmp_path=tmp_path, subject="refactor: follow-up two")
+    assert second.returncode == 0, (
+        f"follow-up atop a suite-green commit must pass; rc={second.returncode} "
+        f"stderr={second.stderr!r}"
+    )
+    second_msg = second_msg_path.read_text(encoding="utf-8")
+    assert "TDD-Suite-Green-Captured-At:" in second_msg, (
+        f"follow-up atop a suite-green commit must be suite-green-shaped; " f"got {second_msg!r}"
+    )
+    _commit_all(tmp_path=tmp_path, message=second_msg)
+
+    new_test_bytes = b"def test_y() -> None:\n    assert True\n"
+    (tmp_path / "tests" / "test_y.py").write_bytes(new_test_bytes)
+    new_checksum = f"sha256:{hashlib.sha256(new_test_bytes).hexdigest()}"
+    red_message = (
+        "fix: next behavior change\n"
+        "\n"
+        "TDD-Red-Test: tests/test_y.py\n"
+        "TDD-Red-Failure-Reason: stub\n"
+        f"TDD-Red-Test-File-Checksum: {new_checksum}\n"
+        "TDD-Red-Output-Checksum: sha256:abc\n"
+        "TDD-Red-Captured-At: 2026-06-11T01:00:00Z\n"
+    )
+    _commit_all(tmp_path=tmp_path, message=red_message)
+    (tmp_path / "livespec" / "foo.py").write_text("VALUE: int = 4\n", encoding="utf-8")
+    _range_git(tmp_path=tmp_path, args=["add", "livespec/foo.py"])
+    third, third_msg_path = _run_msg_hook(tmp_path=tmp_path, subject="fix: next behavior change")
+    assert third.returncode == 0, (
+        f"the amend on a Red-only HEAD must pass via Branch 4; rc={third.returncode} "
+        f"stderr={third.stderr!r}"
+    )
+    third_msg = third_msg_path.read_text(encoding="utf-8")
+    assert (
+        "TDD-Green-Verified-At:" in third_msg
+    ), f"the amend on a Red-only HEAD must record TDD-Green-* trailers; got {third_msg!r}"
+    assert (
+        "TDD-Suite-Green-Captured-At:" not in third_msg
+    ), f"the amend on a Red-only HEAD must not take the suite leg; got {third_msg!r}"
