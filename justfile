@@ -391,10 +391,14 @@ check-public-api-result-typed:
 
 # Trailer-based Red→Green replay verification (hard gate). Invoked by
 # lefthook commit-msg stage with the commit-message file path as argv[1]
-# (the load-bearing per-commit verifier). The canonical aggregate /
-# `just check` invokes this with NO msg_path; the module then DERIVES
-# the message from `git log -1 --format=%B` (HEAD) and validates it —
-# no longer a no-op (epic li-cvaudit, cvnoarg).
+# (the per-commit verifier: content-triggered — staged product impl .py
+# requires a feat:/fix: subject + the ritual; any other prefix staging
+# product .py is rejected as a mislabel). The canonical aggregate /
+# `just check` / pre-push / CI invokes this with NO msg_path; the module
+# then validates the COMMIT RANGE origin/master..HEAD — every non-merge
+# commit touching product impl .py must carry the TDD-Red-*/TDD-Green-*
+# trailer shape regardless of prefix (work-item livespec-dev-tooling-eld;
+# the load-bearing branch-level gate).
 check-red-green-replay *args:
     uv run python -m livespec_dev_tooling.checks.red_green_replay {{args}}
 
@@ -468,25 +472,12 @@ check-pre-commit:
         just skip="check-coverage check-per-file-coverage" check
         exit $?
     fi
-    # Green-amend shape: impl staged while HEAD still carries Red-only
-    # trailers (the Green amend has not yet written its TDD-Green-*
-    # trailers — the commit-msg `check-red-green-replay {1}` hook writes
-    # AND verifies them immediately after this pre-commit pass). The
-    # no-arg `check-red-green-replay` aggregate variant validates HEAD,
-    # which during a Green amend is the in-progress Red commit; it would
-    # otherwise reject a perfectly valid Green amend. Skip the aggregate
-    # variant here (the commit-msg hook is the load-bearing per-commit
-    # verifier); pre-push + CI re-run the full no-arg aggregate against
-    # the completed Red->Green HEAD as the safety net.
-    head_msg=$(git log -1 --format=%B 2>/dev/null || true)
-    if [[ "$impl_count" -ge 1 ]] \
-        && grep -q 'TDD-Red-Test-File-Checksum:' <<< "$head_msg" \
-        && ! grep -q 'TDD-Green-Verified-At:' <<< "$head_msg"; then
-        echo ":: Green-amend shape detected (impl staged; HEAD carries Red-only trailers)"
-        echo ":: skipping no-arg check-red-green-replay (commit-msg replay hook verifies the Green amend)"
-        just skip="check-red-green-replay" check
-        exit $?
-    fi
+    # Green-amend shape needs no special-casing: the no-arg
+    # `check-red-green-replay` aggregate variant validates the commit
+    # RANGE origin/master..HEAD (work-item livespec-dev-tooling-eld),
+    # and during a Green amend HEAD is the in-progress Red commit —
+    # which touches tests-only .py and therefore carries no trailer
+    # obligation. The full aggregate runs as-is.
     just check
 
 # When zero `.py` files are staged, `check-pre-commit` delegates here.
