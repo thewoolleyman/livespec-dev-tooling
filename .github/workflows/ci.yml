@@ -114,10 +114,12 @@ jobs:
   # §"Destructive-default CLI wrapping") so a violation fails CI.
   # check-red-green-replay (no-arg) validates the COMMIT RANGE
   # origin/master..HEAD — every non-merge commit touching product impl
-  # .py must carry the TDD-Red-*/TDD-Green-* trailer shape regardless
-  # of subject prefix (work-item livespec-dev-tooling-eld). It runs
-  # unconditionally: on zero-.py PRs the range carries no product .py
-  # and trivially passes; on master pushes the range is empty.
+  # .py must carry EITHER the TDD-Red-*/TDD-Green-* pair shape OR the
+  # TDD-Suite-Green-* green-verified shape, regardless of subject
+  # prefix (work-item livespec-dev-tooling-eld + the 2026-06-11
+  # green-verified correction). It runs unconditionally: on zero-.py
+  # PRs the range carries no product .py and trivially passes; on
+  # master pushes the range is empty.
   check-metadata:
     name: ${{ matrix.target }}
     runs-on: ubuntu-latest

@@ -1,12 +1,12 @@
-"""Red-mode and Green-mode dispatch helpers for `red_green_replay`.
+"""Red-leg, Green-leg, and suite-green-leg handlers for `red_green_replay`.
 
 Extracted from `red_green_replay.py` at cycle 4c so the parent
 file's LLOC stays under the 200-line ceiling enforced by
-`check-complexity`. The split is purely organizational; the
-behavior is identical to the inline original. The leading
-underscore in the filename marks this as a private sibling
-module — entry-point check scripts under `dev-tooling/checks/`
-have no underscore prefix.
+`check-complexity`; the suite-green handler (the green-verified
+leg, user design correction 2026-06-11) lives here for the same
+reason. The leading underscore in the filename marks this as a
+private sibling module — entry-point check scripts under
+`dev-tooling/checks/` have no underscore prefix.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:  # pragma: no cover
     import structlog.stdlib
 
-# These three symbols form this private sibling module's public surface to
+# These symbols form this private sibling module's public surface to
 # its sole importer, `red_green_replay.py` (the parent supervisor imports
 # them after a runtime `sys.path.insert`). Declaring them in `__all__` marks
 # them as exported so pyright's standalone analysis does not flag them as
@@ -31,6 +31,7 @@ __all__: list[str] = [
     "RED_GREEN_REPLAY_PROTOCOL",
     "_handle_green_mode",
     "_handle_red_mode",
+    "_handle_suite_green_mode",
     "_head_has_red_trailers",
 ]
 
@@ -44,15 +45,20 @@ __all__: list[str] = [
 # full sequence is.
 RED_GREEN_REPLAY_PROTOCOL: str = (
     "Red-Green-Replay protocol (single-commit TDD ritual). "
-    "Step 1 — Red commit: stage the test file ALONE (no impl) and commit with a fix:/feat: "
-    "subject. The hook runs pytest on the staged tree; the new test MUST fail meaningfully "
-    "(an assertion failure, NOT an ImportError / collection error). The hook records TDD-Red-* "
-    "trailers (test path, failure reason, test-file checksum, output checksum, captured-at). "
+    "Step 1 — Red commit: stage the test file ALONE (no impl) and commit. The hook runs pytest "
+    "on the staged tree; the new test MUST fail meaningfully (an assertion failure, NOT an "
+    "ImportError / collection error). ANY subject prefix may author a Red — fix:/feat: declares "
+    "the behavior change, and a behavior-changing chore Reds the same way. The hook records "
+    "TDD-Red-* trailers (test path, failure reason, test-file checksum, output checksum, "
+    "captured-at). "
     "Step 2 — Green amend: stage the impl and run `git commit --amend`. The hook sees the "
     "TDD-Red-* trailers + staged impl, re-runs the SAME test (now passing), and records "
     "TDD-Green-* trailers. The final SINGLE commit carries both files + both trailer sets. The "
     "test file bytes MUST be byte-identical across the Red->Green pair; to change the test, "
-    "author a new Red commit."
+    "author a new Red commit. "
+    "Behavior-PRESERVING product changes (no new failing test) instead take the green-verified "
+    "leg: the FULL pytest suite must pass against the staged tree, and TDD-Suite-Green-* "
+    "trailers are recorded as the evidence shape."
 )
 
 
@@ -205,6 +211,66 @@ def _handle_red_mode(
             ("TDD-Red-Test-File-Checksum", test_file_checksum),
             ("TDD-Red-Output-Checksum", output_checksum),
             ("TDD-Red-Captured-At", captured_at),
+        ),
+    )
+    return 0
+
+
+def _handle_suite_green_mode(
+    *,
+    msg_path: Path,
+    log: structlog.stdlib.BoundLogger,
+    staged_paths: list[str],
+) -> int:
+    """Green-verify a product/test change that carries no new failing test.
+
+    The green-verified leg (user design correction 2026-06-11): a
+    behavior-preserving change — a refactor, a chore touching
+    product `.py`, or a passing test-only cleanup — is admitted by
+    running the FULL pytest suite against the staged tree. Exit 0
+    is the ONLY green outcome (pytest exit 5, zero tests collected,
+    proves nothing and rejects). On green, the `TDD-Suite-Green-*`
+    trailer shape (scope, output checksum, captured-at — mirroring
+    the Red-leg evidence fields) lands in the commit message so the
+    commit-range validation recognizes the commit as verified.
+    """
+    log.info(
+        "suite-green-candidate: product/test change without a Red leg; " "running the full suite",
+        check_id="red-green-replay-suite-green-candidate",
+        staged_paths=staged_paths,
+    )
+    suite_result = subprocess.run(
+        [sys.executable, "-m", "pytest", "--tb=no", "-q"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    suite_output = suite_result.stdout + suite_result.stderr
+    if suite_result.returncode != 0:
+        log.error(
+            "suite-red: the full pytest suite does not pass against the staged tree",
+            check_id="red-green-replay-suite-red",
+            pytest_returncode=suite_result.returncode,
+            failure_summary=" ".join(suite_output.split())[:400],
+            hint=(
+                "The green-verified leg requires the FULL suite to pass (exit 0; "
+                "an empty suite, pytest exit 5, also rejects): a behavior-"
+                "preserving change must keep every existing test green. If this "
+                "change is SUPPOSED to alter behavior, author it via the ritual "
+                "instead: Red commit (stage the failing test alone), then Green "
+                "amend (stage the impl)."
+            ),
+            protocol=RED_GREEN_REPLAY_PROTOCOL,
+        )
+        return 1
+    output_checksum = f"sha256:{hashlib.sha256(suite_output.encode('utf-8')).hexdigest()}"
+    captured_at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    _write_trailers(
+        msg_path=msg_path,
+        trailers=(
+            ("TDD-Suite-Green-Scope", "full-suite"),
+            ("TDD-Suite-Green-Output-Checksum", output_checksum),
+            ("TDD-Suite-Green-Captured-At", captured_at),
         ),
     )
     return 0
