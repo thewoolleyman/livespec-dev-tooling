@@ -122,6 +122,7 @@ check:
         check-master-ci-green
         check-match-keyword-only
         check-newtype-domain-primitives
+        check-no-direct-destructive-cli
         check-no-direct-tool-invocation
         check-no-except-outside-io
         check-no-inheritance
@@ -312,6 +313,16 @@ check-match-keyword-only:
 
 check-newtype-domain-primitives:
     uv run python -m livespec_dev_tooling.checks.newtype_domain_primitives
+
+# Destructive-default CLI wrapping gate (livespec/SPECIFICATION/
+# non-functional-requirements.md §"Destructive-default CLI wrapping"):
+# greps the agent-facing trees (dev-tooling/, .claude-plugin/,
+# .claude/plugins/) for direct invocations of known-destructive-default
+# CLIs (bd init, git push --force/-f, git reset --hard, gh repo delete)
+# outside the explicit `[tool.livespec_dev_tooling].
+# destructive_cli_allowlist` path-prefix allowlist.
+check-no-direct-destructive-cli:
+    uv run python -m livespec_dev_tooling.checks.no_direct_destructive_cli
 
 check-no-direct-tool-invocation:
     uv run python -m livespec_dev_tooling.checks.no_direct_tool_invocation

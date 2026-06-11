@@ -28,6 +28,7 @@ from livespec_dev_tooling.config import (
     MirrorPairing,
     iter_py_files,
     load_config,
+    load_destructive_cli_allowlist,
     load_scenario_tiers,
 )
 
@@ -303,3 +304,56 @@ def test_scenario_tiers_non_string_element_raises(*, tmp_path: Path) -> None:
     )
     with pytest.raises(ConfigParseError, match="`scenario_tiers` must be an array of strings"):
         _ = load_scenario_tiers(repo_root=tmp_path)
+
+
+def test_destructive_cli_allowlist_none_when_no_pyproject(*, tmp_path: Path) -> None:
+    """No `pyproject.toml` → `load_destructive_cli_allowlist` returns `None`."""
+    assert load_destructive_cli_allowlist(repo_root=tmp_path) is None
+
+
+def test_destructive_cli_allowlist_none_when_key_absent(*, tmp_path: Path) -> None:
+    """A block present but omitting `destructive_cli_allowlist` → `None`."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body='[tool.livespec_dev_tooling]\nsource_trees = ["pkg"]\n',
+    )
+    assert load_destructive_cli_allowlist(repo_root=tmp_path) is None
+
+
+def test_destructive_cli_allowlist_read_from_block(*, tmp_path: Path) -> None:
+    """A declared `destructive_cli_allowlist` array is returned verbatim as a tuple."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body=(
+            "[tool.livespec_dev_tooling]\n"
+            'destructive_cli_allowlist = ["dev-tooling/research/", ".claude-plugin/prose/x.md"]\n'
+        ),
+    )
+    assert load_destructive_cli_allowlist(repo_root=tmp_path) == (
+        "dev-tooling/research/",
+        ".claude-plugin/prose/x.md",
+    )
+
+
+def test_destructive_cli_allowlist_non_array_raises(*, tmp_path: Path) -> None:
+    """A scalar `destructive_cli_allowlist` raises `ConfigParseError`."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body='[tool.livespec_dev_tooling]\ndestructive_cli_allowlist = "dev-tooling/"\n',
+    )
+    with pytest.raises(
+        ConfigParseError, match="`destructive_cli_allowlist` must be an array of strings"
+    ):
+        _ = load_destructive_cli_allowlist(repo_root=tmp_path)
+
+
+def test_destructive_cli_allowlist_non_string_element_raises(*, tmp_path: Path) -> None:
+    """A `destructive_cli_allowlist` array with a non-string element raises."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body="[tool.livespec_dev_tooling]\ndestructive_cli_allowlist = [1]\n",
+    )
+    with pytest.raises(
+        ConfigParseError, match="`destructive_cli_allowlist` must be an array of strings"
+    ):
+        _ = load_destructive_cli_allowlist(repo_root=tmp_path)
