@@ -53,6 +53,18 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.12.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.11.0...v0.12.0) (2026-06-11)
+
+
+### Features
+
+* **pin-autodiscovery:** add github_workflow_uses_ref format (red) ([a274648](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a2746486c7fdfc7fe822825b434321e25bbd3875))
+
+
+### Bug Fixes
+
+* **red-green-replay:** Branch-4 routing requires Red WITHOUT Green at HEAD ([2220eea](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2220eeaa4c858c0269445de3bce760f3327a42e4))
+
 ## [0.11.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.10.2...v0.11.0) (2026-06-11)
 
 
