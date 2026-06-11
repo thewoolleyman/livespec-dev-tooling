@@ -391,14 +391,19 @@ check-public-api-result-typed:
 
 # Trailer-based Red→Green replay verification (hard gate). Invoked by
 # lefthook commit-msg stage with the commit-message file path as argv[1]
-# (the per-commit verifier: content-triggered — staged product impl .py
-# requires a feat:/fix: subject + the ritual; any other prefix staging
-# product .py is rejected as a mislabel). The canonical aggregate /
+# (the per-commit verifier: content-triggered — a failing staged test
+# authors a Red under ANY prefix; product impl .py with Red trailers at
+# HEAD takes the Green amend leg; product impl .py without a Red leg is
+# green-verified by a full passing suite, recording TDD-Suite-Green-*
+# trailers; the prefix never rejects product code, its only semantic is
+# the feat:/fix: test-passed-at-red guard). The canonical aggregate /
 # `just check` / pre-push / CI invokes this with NO msg_path; the module
 # then validates the COMMIT RANGE origin/master..HEAD — every non-merge
-# commit touching product impl .py must carry the TDD-Red-*/TDD-Green-*
-# trailer shape regardless of prefix (work-item livespec-dev-tooling-eld;
-# the load-bearing branch-level gate).
+# commit touching product impl .py must carry EITHER the
+# TDD-Red-*/TDD-Green-* pair shape OR the TDD-Suite-Green-* shape,
+# regardless of prefix (work-item livespec-dev-tooling-eld + the
+# 2026-06-11 green-verified correction; the load-bearing branch-level
+# gate).
 check-red-green-replay *args:
     uv run python -m livespec_dev_tooling.checks.red_green_replay {{args}}
 

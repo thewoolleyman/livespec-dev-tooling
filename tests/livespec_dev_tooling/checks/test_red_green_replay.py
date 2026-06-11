@@ -1,26 +1,37 @@
 """Outside-in test for `dev-tooling/checks/red_green_replay.py` — replay-based TDD enforcement.
 
-Content is the trigger; the subject prefix is a consistency check
-(work-item livespec-dev-tooling-eld). At commit-msg time (argv[1] =
-commit-message file path):
+Content is the trigger; the subject prefix NEVER rejects a commit for
+containing product code (user design correction 2026-06-11, follow-up
+to work-item livespec-dev-tooling-eld — changing product code as part
+of a chore is legitimate; it is simply subject to the same TDD
+discipline). The commit-msg decision tree (argv[1] = commit-message
+file path):
 
-- staged product impl `.py` ⇒ the subject MUST be `feat:`/`fix:` and
-  the Red/Green ritual applies; any other prefix staging product
-  impl `.py` is REJECTED as a mislabel (closes the prior `chore:`
-  bypass, where an exempt-prefix match exited 0 with no staged-path
-  inspection);
-- no product impl `.py` staged ⇒ the hook exits 0 immediately
-  regardless of prefix (machine checkpoint subjects such as
-  `fabro(<run_id>): <node> (<status>)` and empty commits pass),
-  EXCEPT that a `feat:`/`fix:` subject staging tests-only `.py`
-  still enters Red mode (the declared start of the ritual).
+1. nothing staged / no `.py` in the tests or impl buckets ⇒ pass
+   immediately, any prefix (machine checkpoint subjects such as
+   `fabro(<run_id>): <node> (<status>)`, docs, and empty commits);
+2. tests-only `.py` staged + pytest on the staged tests FAILS ⇒ the
+   Red leg records `TDD-Red-*` trailers — ANY prefix may author a
+   Red (a behavior-changing chore does Red->Green like a feature);
+3. tests-only `.py` staged + pytest PASSES ⇒ `feat:`/`fix:` keeps the
+   loud `test-passed-at-red` reject (the author DECLARED a behavior
+   change, so their test must fail first); any other prefix is a
+   test-only cleanup and takes the green-verified leg;
+4. product impl `.py` staged WITH `TDD-Red-*` trailers at HEAD (the
+   amend shape) ⇒ the Green leg, unchanged: byte-identical test
+   re-run must pass, `TDD-Green-*` recorded;
+5. product impl `.py` staged WITHOUT Red trailers (pure refactor /
+   behavior-preserving chore / any prefix incl. feat:/fix:) ⇒ the
+   green-verified leg: the FULL pytest suite must pass against the
+   staged tree; `TDD-Suite-Green-*` trailers (scope, output
+   checksum, captured-at) are recorded; a failing suite rejects
+   actionably (`suite-red`).
 
 With NO argv (the canonical-aggregate / `just check` invocation) the
 hook validates the COMMIT RANGE `origin/master..HEAD`: every
-non-merge commit touching product impl `.py` must carry the full
-TDD-Red-*/TDD-Green-* trailer shape regardless of prefix (closes the
-multi-commit and prefix holes the old HEAD-only validation waved
-through).
+non-merge commit touching product impl `.py` must carry EITHER the
+TDD-Red-*/TDD-Green-* pair shape OR the TDD-Suite-Green-* shape,
+regardless of prefix.
 """
 
 from __future__ import annotations
@@ -344,14 +355,13 @@ def test_feat_with_impl_only_staged_skips_red_mode_candidate(
 ) -> None:
     """A feat: subject with impl-only staged is NOT a Red-mode candidate.
 
-    Cycle 178 paired test: pins the False branch of the
-    "tests_paths AND NOT impl_paths" check. With one file staged under
-    `livespec/` (impl bucket) and zero files under `tests/`, the
-    Red-mode-candidate diagnostic MUST NOT fire. The commit might still
-    qualify for Green mode in a future cycle (HEAD~0 carrying Red
-    trailers), but Red mode is by-construction unreachable without
-    staged tests. Together with the True-branch test above, this
-    guarantees per-file 100% branch coverage on the new conditional.
+    With one file staged under `livespec/` (impl bucket) and zero
+    files under `tests/`, the Red-mode-candidate diagnostic MUST NOT
+    fire — impl staging dispatches to the Green leg (with HEAD Red
+    trailers) or the green-verified suite leg (without). Here the
+    fixture repo has no collectable tests, so the suite leg rejects
+    (non-zero) — but never via the Red path. Together with the
+    True-branch test above, this pins the dispatch discriminator.
     """
     subprocess.run(
         ["git", "init", "-q"],
@@ -383,7 +393,7 @@ def test_feat_with_impl_only_staged_skips_red_mode_candidate(
     )
 
     assert result.returncode != 0, (
-        f"feat: with impl-only staged still rejects (Green-mode replay not yet implemented); "
+        f"feat: with impl-only staged in a test-less repo rejects via the suite leg; "
         f"got returncode={result.returncode}"
     )
     assert "red-mode-candidate" not in result.stderr.lower(), (
@@ -1262,6 +1272,7 @@ def test_red_green_replay_modes_helpers_importable() -> None:
     spec.loader.exec_module(module)
     assert callable(module._handle_red_mode)  # noqa: SLF001
     assert callable(module._handle_green_mode)  # noqa: SLF001
+    assert callable(module._handle_suite_green_mode)  # noqa: SLF001
     assert callable(module._head_has_red_trailers)  # noqa: SLF001
     assert callable(module._head_trailer_value)  # noqa: SLF001
     assert callable(module._current_head_sha)  # noqa: SLF001
@@ -1412,25 +1423,25 @@ def test_feat_with_neither_tests_nor_impl_staged_exits_zero(
         "chore: tidy the impl tree",
         "fabro(run-7f3k): worker-node (failed)",
         "refactor: reorganize helpers",
+        "feat: refactor with no new test",
     ],
 )
-def test_non_feat_fix_subject_staging_product_impl_py_rejects_as_mislabel(
+def test_any_subject_staging_impl_without_red_takes_suite_green_leg(
     *,
     subject_token: str,
     tmp_path: Path,
 ) -> None:
-    """Any non-feat:/fix: subject staging product impl `.py` is REJECTED as a mislabel.
+    """Product impl `.py` staged without Red trailers takes the green-verified leg, any prefix.
 
-    Closes the prefix bypass: the old design's exempt-type regex
-    matched (e.g.) `chore:` and exited 0 with NO staged-path
-    inspection, so product `.py` could land without the ritual.
-    Under the content-trigger design, staged product impl `.py`
-    REQUIRES a `feat:`/`fix:` subject + the Red/Green ritual; the
-    rejection MUST name a stable `product-mislabel` check_id so
-    the author relabels the commit and authors a Red->Green pair.
-    Machine checkpoint subjects (`fabro(<run_id>): ...`) staging a
-    crashed agent's uncommitted product `.py` hit the same reject —
-    the accepted residual per the 2026-06-11 design decision.
+    User design correction 2026-06-11: changing product code as part
+    of a chore (or under a machine checkpoint subject, or as a
+    behavior-preserving feat:/fix: refactor) is LEGITIMATE — the
+    prefix never rejects a commit for containing product code. The
+    commit is instead green-verified: the FULL pytest suite must pass
+    against the staged tree, and the hook records the
+    `TDD-Suite-Green-*` trailer shape as evidence. (The prior
+    `product-mislabel` reject from the first eld iteration is
+    retired.)
     """
     subprocess.run(
         ["git", "init", "-q"],
@@ -1441,6 +1452,13 @@ def test_non_feat_fix_subject_staging_product_impl_py_rejects_as_mislabel(
     impl_dir = tmp_path / "livespec"
     impl_dir.mkdir()
     (impl_dir / "foo.py").write_text("VALUE: int = 1\n", encoding="utf-8")
+    # A passing test on disk: the green-verified leg runs the FULL
+    # suite in the repo, which must collect and pass.
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_ok.py").write_text(
+        "def test_ok() -> None:\n    assert True\n",
+        encoding="utf-8",
+    )
     subprocess.run(
         ["git", "add", "livespec/foo.py"],
         cwd=str(tmp_path),
@@ -1460,13 +1478,183 @@ def test_non_feat_fix_subject_staging_product_impl_py_rejects_as_mislabel(
         env=_scrubbed_env(),
     )
 
-    assert result.returncode != 0, (
-        f"{subject_token!r} staging product impl .py must reject as a mislabel; "
+    assert result.returncode == 0, (
+        f"{subject_token!r} staging product impl .py with a passing suite must "
+        f"take the green-verified leg and exit 0; "
         f"got returncode={result.returncode} stderr={result.stderr!r}"
     )
-    assert "product-mislabel" in result.stderr, (
-        f"expected 'product-mislabel' check_id in stderr; " f"got stderr={result.stderr!r}"
+    assert (
+        "product-mislabel" not in result.stderr
+    ), f"the retired product-mislabel reject must not fire; got stderr={result.stderr!r}"
+    final_msg = msg_path.read_text(encoding="utf-8")
+    assert "TDD-Suite-Green-Captured-At:" in final_msg, (
+        f"green-verified leg must record TDD-Suite-Green-* trailers; "
+        f"got final_msg={final_msg!r}"
     )
+
+
+def test_impl_staged_without_red_and_failing_suite_rejects_suite_red(
+    *,
+    tmp_path: Path,
+) -> None:
+    """The green-verified leg REJECTS when the full suite fails against the staged tree.
+
+    A failing suite means the change is NOT behavior-preserving as
+    far as the tests can observe; the actionable `suite-red` reject
+    tells the author to either fix the breakage or author the change
+    via the Red->Green ritual if the behavior change is intended.
+    """
+    subprocess.run(
+        ["git", "init", "-q"],
+        cwd=str(tmp_path),
+        check=True,
+        env=_scrubbed_env(),
+    )
+    impl_dir = tmp_path / "livespec"
+    impl_dir.mkdir()
+    (impl_dir / "foo.py").write_text("VALUE: int = 2\n", encoding="utf-8")
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_broken.py").write_text(
+        "def test_broken() -> None:\n    assert False, 'suite fails'\n",
+        encoding="utf-8",
+    )
+    subprocess.run(
+        ["git", "add", "livespec/foo.py"],
+        cwd=str(tmp_path),
+        check=True,
+        env=_scrubbed_env(),
+    )
+
+    msg_path = tmp_path / "COMMIT_EDITMSG"
+    msg_path.write_text("chore: behavior-preserving cleanup (allegedly)\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_scrubbed_env(),
+    )
+
+    assert result.returncode != 0, (
+        f"a failing suite must reject the green-verified leg; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+    assert (
+        "suite-red" in result.stderr
+    ), f"expected 'suite-red' check_id in stderr; got stderr={result.stderr!r}"
+    final_msg = msg_path.read_text(encoding="utf-8")
+    assert "TDD-Suite-Green-Captured-At:" not in final_msg, (
+        f"no suite trailers may be written on a suite-red reject; " f"got final_msg={final_msg!r}"
+    )
+
+
+def test_impl_staged_without_red_and_no_collectable_tests_rejects_suite_red(
+    *,
+    tmp_path: Path,
+) -> None:
+    """The green-verified leg REJECTS when the repo has no collectable tests at all.
+
+    pytest exits 5 when zero tests are collected; only exit 0 counts
+    as a green suite. A vacuously-empty suite proves nothing about
+    behavior preservation, so the leg fails actionably rather than
+    waving the product change through.
+    """
+    subprocess.run(
+        ["git", "init", "-q"],
+        cwd=str(tmp_path),
+        check=True,
+        env=_scrubbed_env(),
+    )
+    impl_dir = tmp_path / "livespec"
+    impl_dir.mkdir()
+    (impl_dir / "foo.py").write_text("VALUE: int = 3\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "add", "livespec/foo.py"],
+        cwd=str(tmp_path),
+        check=True,
+        env=_scrubbed_env(),
+    )
+
+    msg_path = tmp_path / "COMMIT_EDITMSG"
+    msg_path.write_text("chore: cleanup in an untested repo\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_scrubbed_env(),
+    )
+
+    assert result.returncode != 0, (
+        f"an empty (uncollectable) suite must reject the green-verified leg; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+    assert (
+        "suite-red" in result.stderr
+    ), f"expected 'suite-red' check_id in stderr; got stderr={result.stderr!r}"
+
+
+def test_suite_green_trailer_schema_is_complete(*, tmp_path: Path) -> None:
+    """The green-verified leg writes the full TDD-Suite-Green-* trailer schema.
+
+    Mirrors the Red-trailer schema test: scope, output checksum
+    (sha256-prefixed), and captured-at must all land in
+    COMMIT_EDITMSG so the commit-range validation (and any later
+    audit) can recognize the suite-green evidence shape.
+    """
+    subprocess.run(
+        ["git", "init", "-q"],
+        cwd=str(tmp_path),
+        check=True,
+        env=_scrubbed_env(),
+    )
+    impl_dir = tmp_path / "livespec"
+    impl_dir.mkdir()
+    (impl_dir / "foo.py").write_text("VALUE: int = 4\n", encoding="utf-8")
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_ok.py").write_text(
+        "def test_ok() -> None:\n    assert True\n",
+        encoding="utf-8",
+    )
+    subprocess.run(
+        ["git", "add", "livespec/foo.py"],
+        cwd=str(tmp_path),
+        check=True,
+        env=_scrubbed_env(),
+    )
+
+    msg_path = tmp_path / "COMMIT_EDITMSG"
+    msg_path.write_text("refactor: behavior-preserving cleanup\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_scrubbed_env(),
+    )
+
+    assert result.returncode == 0, (
+        f"green-verified leg with a passing suite must exit 0; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+    final_msg = msg_path.read_text(encoding="utf-8")
+    for trailer_key in (
+        "TDD-Suite-Green-Scope:",
+        "TDD-Suite-Green-Output-Checksum:",
+        "TDD-Suite-Green-Captured-At:",
+    ):
+        assert (
+            trailer_key in final_msg
+        ), f"expected trailer {trailer_key!r} in COMMIT_EDITMSG; got final_msg={final_msg!r}"
+    assert (
+        "sha256:" in final_msg
+    ), f"expected sha256: prefix on the suite output checksum; got final_msg={final_msg!r}"
 
 
 def test_fabro_checkpoint_subject_with_non_product_staged_exits_zero(
@@ -1514,15 +1702,16 @@ def test_fabro_checkpoint_subject_with_non_product_staged_exits_zero(
     )
 
 
-def test_chore_with_tests_only_staged_exits_zero(*, tmp_path: Path) -> None:
-    """A `chore:` subject staging tests-only `.py` exits 0 (test refactors stay possible).
+def test_chore_with_passing_tests_only_staged_takes_suite_green_leg(*, tmp_path: Path) -> None:
+    """A `chore:` subject staging tests-only `.py` that PASS takes the green-verified leg.
 
-    Tests-tree `.py` is not PRODUCT impl `.py`: only a
-    `feat:`/`fix:` subject staging tests-only enters Red mode
-    (where the test must FAIL). A non-ritual prefix staging a
-    test-only change (e.g. renaming a passing test) must pass —
-    otherwise test refactors would be uncommittable, since their
-    tests pass by construction.
+    A non-ritual prefix staging a passing test-only change (e.g.
+    renaming a test) is a test-only cleanup: it must remain
+    committable (the test passes by construction, so the Red leg
+    cannot apply), and it is green-verified — the full suite runs
+    and the `TDD-Suite-Green-*` evidence lands in the message.
+    Only a `feat:`/`fix:` subject staging a PASSING test rejects
+    (`test-passed-at-red`): that prefix declares a behavior change.
     """
     subprocess.run(
         ["git", "init", "-q"],
@@ -1555,8 +1744,61 @@ def test_chore_with_tests_only_staged_exits_zero(*, tmp_path: Path) -> None:
     )
 
     assert result.returncode == 0, (
-        f"chore: staging tests-only .py must pass (Red mode is feat:/fix:-declared); "
+        f"chore: staging passing tests-only .py must take the green-verified leg; "
         f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+    final_msg = msg_path.read_text(encoding="utf-8")
+    assert "TDD-Suite-Green-Captured-At:" in final_msg, (
+        f"test-only cleanup must be green-verified with TDD-Suite-Green-* trailers; "
+        f"got final_msg={final_msg!r}"
+    )
+
+
+def test_chore_with_failing_test_staged_alone_authors_a_red(*, tmp_path: Path) -> None:
+    """A `chore:` subject staging a single FAILING test takes the Red leg (any prefix).
+
+    ANY prefix may author a Red: a behavior-changing chore is
+    allowed to do Red->Green exactly like a feature. The hook must
+    record the full `TDD-Red-*` trailer schema and exit 0 so the
+    subsequent amend can take the Green leg.
+    """
+    subprocess.run(
+        ["git", "init", "-q"],
+        cwd=str(tmp_path),
+        check=True,
+        env=_scrubbed_env(),
+    )
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_red.py").write_text(
+        "def test_red() -> None:\n    assert False, 'chore-authored red'\n",
+        encoding="utf-8",
+    )
+    subprocess.run(
+        ["git", "add", "tests/test_red.py"],
+        cwd=str(tmp_path),
+        check=True,
+        env=_scrubbed_env(),
+    )
+
+    msg_path = tmp_path / "COMMIT_EDITMSG"
+    msg_path.write_text("chore: tighten behavior via red-green\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_scrubbed_env(),
+    )
+
+    assert result.returncode == 0, (
+        f"chore: staging a failing test alone must author a Red and exit 0; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+    final_msg = msg_path.read_text(encoding="utf-8")
+    assert "TDD-Red-Test-File-Checksum:" in final_msg, (
+        f"a chore-authored Red must record the TDD-Red-* trailers; " f"got final_msg={final_msg!r}"
     )
 
 
@@ -1602,19 +1844,17 @@ def test_feat_staging_only_non_py_under_impl_prefix_exits_zero(*, tmp_path: Path
     )
 
 
-def test_feat_with_tests_and_impl_staged_together_emits_mixed_buckets_diagnostic(
+def test_feat_with_tests_and_impl_staged_together_takes_suite_green_leg(
     *,
     tmp_path: Path,
 ) -> None:
-    """A feat: subject with tests AND impl staged together (no prior Red) MUST emit a diagnostic.
+    """A feat: subject with tests AND impl staged together (no prior Red) is green-verified.
 
-    Pins the fallthrough case where both buckets are non-empty
-    and HEAD has no Red trailers. Red mode requires tests-only;
-    Green mode requires impl-only + prior Red trailers. Mixed
-    staged tree without a preceding Red commit fits neither
-    mode. The diagnostic MUST name a stable `mixed-buckets`
-    check_id so the developer learns to split the change into
-    separate Red and Green commits.
+    The old `mixed-buckets` reject is retired: product impl `.py`
+    staged without Red trailers takes the green-verified leg
+    regardless of co-staged tests. The full suite (including the
+    co-staged test) must pass; the `TDD-Suite-Green-*` evidence
+    lands in the message.
     """
     subprocess.run(
         ["git", "init", "-q"],
@@ -1647,29 +1887,34 @@ def test_feat_with_tests_and_impl_staged_together_emits_mixed_buckets_diagnostic
         env=_scrubbed_env(),
     )
 
-    assert result.returncode != 0, (
-        f"feat: with mixed buckets staged must reject; " f"got returncode={result.returncode}"
+    assert result.returncode == 0, (
+        f"feat: with mixed buckets and a passing suite must be green-verified; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
     )
-    assert "mixed-buckets" in result.stderr, (
-        f"expected 'mixed-buckets' check_id in stderr for mixed-staged feat:; "
-        f"got stderr={result.stderr!r}"
+    assert (
+        "mixed-buckets" not in result.stderr
+    ), f"the retired mixed-buckets reject must not fire; got stderr={result.stderr!r}"
+    final_msg = msg_path.read_text(encoding="utf-8")
+    assert "TDD-Suite-Green-Captured-At:" in final_msg, (
+        f"green-verified leg must record TDD-Suite-Green-* trailers; "
+        f"got final_msg={final_msg!r}"
     )
 
 
-def test_feat_with_impl_only_staged_no_prior_red_emits_green_without_red_diagnostic(
+def test_feat_with_impl_only_staged_no_prior_red_takes_suite_green_leg(
     *,
     tmp_path: Path,
 ) -> None:
-    """A feat: subject with impl-only staged but HEAD has no Red trailers MUST emit a diagnostic.
+    """A feat: subject with impl-only staged and no Red trailers takes the suite leg.
 
-    Pins the fallthrough case where `impl_paths` is non-empty,
-    `tests_paths` is empty, and `_head_has_red_trailers()`
-    returns False (no prior Red commit). Green mode dispatch in
-    `red_green_replay.main()` is gated on the Red-trailers
-    predicate; without it the impl-only commit falls through
-    silently. The diagnostic MUST name a stable
-    `green-without-red` check_id so the developer learns to
-    author a Red commit first.
+    The old `green-without-red` reject is retired: even a
+    `feat:`/`fix:` subject may stage product impl `.py` without a
+    prior Red (a behavior-preserving refactor shipped under a
+    feature subject) — it is green-verified instead of rejected
+    for its SHAPE. Here the fixture repo has no collectable tests,
+    so the suite leg itself rejects with `suite-red` (exit 5 from
+    pytest is not a green suite) — proving the dispatch went to
+    the suite leg, not to a shape reject.
     """
     subprocess.run(
         ["git", "init", "-q"],
@@ -1700,12 +1945,15 @@ def test_feat_with_impl_only_staged_no_prior_red_emits_green_without_red_diagnos
     )
 
     assert result.returncode != 0, (
-        f"feat: with impl-only staged + no Red trailers must reject; "
-        f"got returncode={result.returncode}"
+        f"impl-only staged in a repo with no collectable tests must reject via "
+        f"suite-red; got returncode={result.returncode}"
     )
-    assert "green-without-red" in result.stderr, (
-        f"expected 'green-without-red' check_id in stderr for "
-        f"impl-only-no-red feat:; got stderr={result.stderr!r}"
+    assert (
+        "green-without-red" not in result.stderr
+    ), f"the retired green-without-red reject must not fire; got stderr={result.stderr!r}"
+    assert "suite-red" in result.stderr, (
+        f"expected the suite-red check_id (dispatch went to the suite leg); "
+        f"got stderr={result.stderr!r}"
     )
 
 
@@ -1715,9 +1963,9 @@ def test_feat_with_impl_only_staged_no_prior_red_emits_green_without_red_diagnos
 # alongside its mode-specific hint, so a fresh agent recovers the
 # correct authoring sequence without spelunking the source. These
 # distinctive protocol-text markers must appear in the stderr JSON of
-# every reject branch across BOTH `red_green_replay.py` (mode-detection
-# / ambiguous-staging rejects) and `_red_green_replay_modes.py`
-# (Red-mode / Green-mode rejects).
+# every reject branch across BOTH `red_green_replay.py` (the
+# commit-range reject) and `_red_green_replay_modes.py` (Red-leg /
+# Green-leg / suite-green-leg rejects).
 # ---------------------------------------------------------------
 _PROTOCOL_MARKERS: tuple[str, ...] = (
     "Red-Green-Replay protocol",
@@ -1736,71 +1984,16 @@ def _assert_protocol_in_stderr(*, stderr: str, mode: str) -> None:
         )
 
 
-def test_product_mislabel_reject_prints_full_protocol(*, tmp_path: Path) -> None:
-    """`red-green-replay-product-mislabel` reject emits the full protocol."""
+def test_suite_red_reject_prints_full_protocol(*, tmp_path: Path) -> None:
+    """`red-green-replay-suite-red` reject emits the full protocol."""
     subprocess.run(["git", "init", "-q"], cwd=str(tmp_path), check=True, env=_scrubbed_env())
     (tmp_path / "livespec").mkdir()
     (tmp_path / "livespec" / "foo.py").write_text("VALUE: int = 1\n", encoding="utf-8")
-    subprocess.run(
-        ["git", "add", "livespec/foo.py"],
-        cwd=str(tmp_path),
-        check=True,
-        env=_scrubbed_env(),
-    )
-    msg_path = tmp_path / "COMMIT_EDITMSG"
-    msg_path.write_text("chore: sneak in product code\n", encoding="utf-8")
-
-    result = subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
-    )
-
-    assert result.returncode != 0
-    assert "product-mislabel" in result.stderr
-    _assert_protocol_in_stderr(stderr=result.stderr, mode="product-mislabel")
-
-
-def test_mixed_buckets_reject_prints_full_protocol(*, tmp_path: Path) -> None:
-    """`red-green-replay-mixed-buckets` reject emits the full protocol."""
-    subprocess.run(["git", "init", "-q"], cwd=str(tmp_path), check=True, env=_scrubbed_env())
     (tmp_path / "tests").mkdir()
-    (tmp_path / "tests" / "test_dummy.py").write_text(
-        "def test_x() -> None:\n    assert True\n", encoding="utf-8"
+    (tmp_path / "tests" / "test_broken.py").write_text(
+        "def test_broken() -> None:\n    assert False, 'suite fails'\n",
+        encoding="utf-8",
     )
-    (tmp_path / "livespec").mkdir()
-    (tmp_path / "livespec" / "foo.py").write_text("VALUE: int = 1\n", encoding="utf-8")
-    subprocess.run(
-        ["git", "add", "tests/test_dummy.py", "livespec/foo.py"],
-        cwd=str(tmp_path),
-        check=True,
-        env=_scrubbed_env(),
-    )
-    msg_path = tmp_path / "COMMIT_EDITMSG"
-    msg_path.write_text("feat: add mixed change\n", encoding="utf-8")
-
-    result = subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
-    )
-
-    assert result.returncode != 0
-    assert "mixed-buckets" in result.stderr
-    _assert_protocol_in_stderr(stderr=result.stderr, mode="mixed-buckets")
-
-
-def test_green_without_red_reject_prints_full_protocol(*, tmp_path: Path) -> None:
-    """`red-green-replay-green-without-red` reject emits the full protocol."""
-    subprocess.run(["git", "init", "-q"], cwd=str(tmp_path), check=True, env=_scrubbed_env())
-    (tmp_path / "livespec").mkdir()
-    (tmp_path / "livespec" / "foo.py").write_text("VALUE: int = 1\n", encoding="utf-8")
     subprocess.run(
         ["git", "add", "livespec/foo.py"],
         cwd=str(tmp_path),
@@ -1808,7 +2001,7 @@ def test_green_without_red_reject_prints_full_protocol(*, tmp_path: Path) -> Non
         env=_scrubbed_env(),
     )
     msg_path = tmp_path / "COMMIT_EDITMSG"
-    msg_path.write_text("feat: add impl-only change\n", encoding="utf-8")
+    msg_path.write_text("chore: cleanup that breaks the suite\n", encoding="utf-8")
 
     result = subprocess.run(
         [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
@@ -1820,8 +2013,8 @@ def test_green_without_red_reject_prints_full_protocol(*, tmp_path: Path) -> Non
     )
 
     assert result.returncode != 0
-    assert "green-without-red" in result.stderr
-    _assert_protocol_in_stderr(stderr=result.stderr, mode="green-without-red")
+    assert "suite-red" in result.stderr
+    _assert_protocol_in_stderr(stderr=result.stderr, mode="suite-red")
 
 
 def test_multi_test_file_reject_prints_full_protocol(*, tmp_path: Path) -> None:
@@ -1990,12 +2183,50 @@ def test_test_still_failing_reject_prints_full_protocol(*, tmp_path: Path) -> No
     _assert_protocol_in_stderr(stderr=result.stderr, mode="test-still-failing")
 
 
+def test_chore_green_amend_after_red_takes_green_leg(*, tmp_path: Path) -> None:
+    """A non-feat:/fix: subject amending onto Red trailers takes the Green leg.
+
+    Branch 4 of the decision tree is prefix-agnostic: ANY prefix may
+    complete a Red->Green pair (a behavior-changing chore authors
+    Red then amends Green exactly like a feature). The recorded test
+    re-runs green and the `TDD-Green-*` trailers land.
+    """
+    test_bytes = b"def test_x() -> None:\n    assert True\n"
+    real_checksum = f"sha256:{hashlib.sha256(test_bytes).hexdigest()}"
+    msg_path = _author_green_fixture(
+        tmp_path=tmp_path,
+        test_bytes=test_bytes,
+        recorded_checksum=real_checksum,
+    )
+    msg_path.write_text("chore: green impl for a chore-authored red\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_scrubbed_env(),
+    )
+
+    assert result.returncode == 0, (
+        f"chore: amending impl onto Red trailers must take the Green leg; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+    final_msg = msg_path.read_text(encoding="utf-8")
+    assert "TDD-Green-Verified-At:" in final_msg, (
+        f"the Green leg must record TDD-Green-* trailers regardless of prefix; "
+        f"got final_msg={final_msg!r}"
+    )
+
+
 # ---------------------------------------------------------------------------
-# Commit-range validation (work-item livespec-dev-tooling-eld): with NO
-# msg-path argv (the canonical-aggregate / `just check` / pre-push / CI
-# invocation), the hook validates EVERY non-merge commit in
-# `origin/master..HEAD` — any commit touching product impl `.py` must carry
-# the full TDD-Red-*/TDD-Green-* trailer shape REGARDLESS of subject prefix.
+# Commit-range validation (work-item livespec-dev-tooling-eld + the
+# 2026-06-11 green-verified correction): with NO msg-path argv (the
+# canonical-aggregate / `just check` / pre-push / CI invocation), the hook
+# validates EVERY non-merge commit in `origin/master..HEAD` — any commit
+# touching product impl `.py` must carry EITHER the TDD-Red-*/TDD-Green-*
+# pair shape OR the TDD-Suite-Green-* shape, REGARDLESS of subject prefix.
 # This supersedes the old HEAD-only `_validate_head`, which waved exempt
 # prefixes through with no content inspection (the multi-commit + chore:
 # holes). An explicit msg path still behaves as the commit-msg hook.
@@ -2094,15 +2325,17 @@ def test_no_arg_empty_range_exits_zero(*, tmp_path: Path) -> None:
 
 
 def test_no_arg_range_chore_commit_touching_product_py_rejects(*, tmp_path: Path) -> None:
-    """No argv + a `chore:` range commit touching product impl `.py` → reject.
+    """No argv + a `chore:` range commit touching product impl `.py` with NO trailers → reject.
 
     The trailer-shape requirement is content-based: the prefix does
     not matter (this closes the old `_validate_head` exempt-prefix
     wave-through). The rejection MUST name the
-    `range-missing-trailers` check_id, prescribe the rewrite +
-    force-push remedy (scoped to unmerged feature branches — the
-    'never force-push' rule covers shared/protected refs), and emit
-    the full protocol so the author can redo the change correctly.
+    `range-missing-trailers` check_id, name BOTH acceptable shapes
+    (the Red+Green pair AND the suite-green shape), prescribe the
+    rewrite + force-push remedy (scoped to unmerged feature branches
+    — the 'never force-push' rule covers shared/protected refs), and
+    emit the full protocol so the author can redo the change
+    correctly.
     """
     _init_range_repo(tmp_path=tmp_path)
     (tmp_path / "livespec").mkdir()
@@ -2121,7 +2354,39 @@ def test_no_arg_range_chore_commit_touching_product_py_rejects(*, tmp_path: Path
     assert "force-push" in result.stderr, (
         f"rejection should prescribe the rewrite + force-push remedy; " f"stderr={result.stderr!r}"
     )
+    assert "TDD-Suite-Green" in result.stderr, (
+        f"rejection should name the suite-green shape as an acceptable alternative; "
+        f"stderr={result.stderr!r}"
+    )
     _assert_protocol_in_stderr(stderr=result.stderr, mode="range-missing-trailers")
+
+
+def test_no_arg_range_commit_with_suite_green_shape_exits_zero(*, tmp_path: Path) -> None:
+    """No argv + a range commit touching product `.py` with the suite-green shape → exit 0.
+
+    The green-verified leg's `TDD-Suite-Green-*` trailer shape is a
+    first-class alternative to the Red+Green pair: a
+    behavior-preserving product commit verified by a full green
+    suite passes the range check.
+    """
+    _init_range_repo(tmp_path=tmp_path)
+    (tmp_path / "livespec").mkdir()
+    (tmp_path / "livespec" / "foo.py").write_text("VALUE: int = 1\n", encoding="utf-8")
+    message = (
+        "chore: behavior-preserving cleanup\n"
+        "\n"
+        "TDD-Suite-Green-Scope: full-suite\n"
+        "TDD-Suite-Green-Output-Checksum: sha256:deadbeef\n"
+        "TDD-Suite-Green-Captured-At: 2026-06-11T00:00:00Z\n"
+    )
+    _commit_all(tmp_path=tmp_path, message=message)
+
+    result = _run_no_arg(tmp_path=tmp_path)
+
+    assert result.returncode == 0, (
+        f"suite-green-shaped product commit in range should exit 0; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
 
 
 def test_no_arg_range_commit_with_full_trailer_shape_exits_zero(*, tmp_path: Path) -> None:
