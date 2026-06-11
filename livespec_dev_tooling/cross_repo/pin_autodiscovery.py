@@ -2,7 +2,7 @@
 
 Per `SPECIFICATION/contracts.md` §"Pin autodiscovery rules", the walk
 inspects the consumer repository for every supported pin format and
-yields a normalized record per discovered pin. The walk covers four
+yields a normalized record per discovered pin. The walk covers five
 formats:
 
 - `.livespec.jsonc` `compat.pinned` — every top-level key whose value
@@ -20,6 +20,11 @@ formats:
 - `.copier-answers.yml` `_commit` — the singular `_commit` field; the
   implicit source repository is the one referenced by `_src_path`,
   and the value is a git ref (tag or commit SHA).
+- `.github/workflows/*.yml` / `*.yaml` `uses:` ref — every line of the
+  form `uses: <owner>/<repo>/<path>@<ref>` in any GitHub Actions
+  workflow file. The pin's source repo is derived from the `<repo>`
+  segment; `current_value` is `<ref>`; `pin_key` is
+  `<owner>/<repo>/<path>` (the full `uses:` reference without `@ref`).
 
 Source-repo-name normalization for `.vendor.jsonc` matching is
 hyphen-to-underscore (e.g., `livespec-runtime` matches
@@ -76,6 +81,7 @@ _PIN_FORMAT_LIVESPEC = "livespec_jsonc_compat_pinned"
 _PIN_FORMAT_UV_SOURCES = "pyproject_toml_uv_sources"
 _PIN_FORMAT_VENDOR = "vendor_jsonc"
 _PIN_FORMAT_COPIER = "copier_answers_commit"
+_PIN_FORMAT_WORKFLOW_USES = "github_workflow_uses_ref"
 _PIN_FORMAT_UNRECOGNIZED = "unrecognized"
 
 
@@ -367,6 +373,52 @@ def _walk_copier_answers(
     ]
 
 
+_WORKFLOW_USES_RE = re.compile(
+    r"""
+    ^\s+uses:\s+
+    (?P<owner>[A-Za-z0-9_.-]+)/
+    (?P<repo>[A-Za-z0-9_.-]+)/
+    (?P<path>[^@\s]+)@
+    (?P<ref>[^\s#]+)
+    """,
+    re.VERBOSE,
+)
+
+
+def _walk_github_workflow_uses(
+    *, root: Path, source_repo_filter: str | None, log: structlog.stdlib.BoundLogger
+) -> list[dict[str, str]]:
+    workflows_dir = root / ".github" / "workflows"
+    if not workflows_dir.is_dir():
+        return []
+    out: list[dict[str, str]] = []
+    yml_paths = sorted(list(workflows_dir.glob("*.yml")) + list(workflows_dir.glob("*.yaml")))
+    for yml_path in yml_paths:
+        rel_path = str(yml_path.relative_to(root))
+        text = yml_path.read_text(encoding="utf-8")
+        for line in text.splitlines():
+            match = _WORKFLOW_USES_RE.match(line)
+            if match is None:
+                continue
+            owner = match.group("owner")
+            repo = match.group("repo")
+            path = match.group("path")
+            ref = match.group("ref")
+            if source_repo_filter is not None and source_repo_filter != repo:
+                continue
+            out.append(
+                _record(
+                    pin_format=_PIN_FORMAT_WORKFLOW_USES,
+                    file_path=rel_path,
+                    pin_key=f"{owner}/{repo}/{path}",
+                    current_value=ref,
+                    source_repo=repo,
+                )
+            )
+    _ = log
+    return out
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="pin-autodiscovery",
@@ -374,7 +426,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "Walk a consumer repo and emit a JSON array of pin records per "
             'SPECIFICATION/contracts.md §"Pin autodiscovery rules". Covers '
             ".livespec.jsonc, pyproject.toml [tool.uv.sources], .vendor.jsonc, "
-            "and .copier-answers.yml."
+            ".copier-answers.yml, and .github/workflows/*.yml uses: refs."
         ),
     )
     _ = parser.add_argument(
@@ -425,6 +477,7 @@ def discover(*, root: Path, source_repo: str | None) -> list[dict[str, str]]:
     records.extend(_walk_pyproject_toml(root=root, source_repo_filter=source_repo, log=log))
     records.extend(_walk_vendor_jsonc(root=root, source_repo_filter=source_repo, log=log))
     records.extend(_walk_copier_answers(root=root, source_repo_filter=source_repo, log=log))
+    records.extend(_walk_github_workflow_uses(root=root, source_repo_filter=source_repo, log=log))
     return records
 
 

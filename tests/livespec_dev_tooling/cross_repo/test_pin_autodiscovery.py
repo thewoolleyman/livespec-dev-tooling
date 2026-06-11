@@ -408,6 +408,158 @@ def test_discover_source_repo_filter_copier_excludes_when_different(*, tmp_path:
     assert result == []
 
 
+# ---------------------------------------------------------------------------
+# .github/workflows/ uses: ref tests (fifth pin format)
+# ---------------------------------------------------------------------------
+
+
+def test_discover_github_workflow_uses_emits_record(*, tmp_path: Path) -> None:
+    """A `.github/workflows/*.yml` file with a reusable `uses:` line emits one record."""
+    workflows_dir = tmp_path / ".github" / "workflows"
+    workflows_dir.mkdir(parents=True)
+    (workflows_dir / "bump-pin.yml").write_text(
+        "jobs:\n"
+        "  bump:\n"
+        "    uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-bump.yml@master\n",
+        encoding="utf-8",
+    )
+    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    assert len(result) == 1
+    record = result[0]
+    assert record["pin_format"] == "github_workflow_uses_ref"
+    assert record["file_path"] == ".github/workflows/bump-pin.yml"
+    assert (
+        record["pin_key"]
+        == "thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-bump.yml"
+    )
+    assert record["current_value"] == "master"
+    assert record["source_repo"] == "livespec-dev-tooling"
+
+
+def test_discover_github_workflow_uses_missing_dir_yields_nothing(*, tmp_path: Path) -> None:
+    """A consumer repo without `.github/workflows/` yields no records from this format."""
+    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    assert result == []
+
+
+def test_discover_github_workflow_uses_skips_simple_action_uses(*, tmp_path: Path) -> None:
+    """An action-style `uses: actions/checkout@v4` (no path segment) is not emitted."""
+    workflows_dir = tmp_path / ".github" / "workflows"
+    workflows_dir.mkdir(parents=True)
+    (workflows_dir / "ci.yml").write_text(
+        "steps:\n" "  - uses: actions/checkout@v4\n" "  - uses: jdx/mise-action@v2\n",
+        encoding="utf-8",
+    )
+    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    assert result == []
+
+
+def test_discover_github_workflow_uses_multiple_files(*, tmp_path: Path) -> None:
+    """Multiple workflow files each with a matching `uses:` line emit one record each."""
+    workflows_dir = tmp_path / ".github" / "workflows"
+    workflows_dir.mkdir(parents=True)
+    (workflows_dir / "bump-pin.yml").write_text(
+        "    uses: owner/repo-a/.github/workflows/reusable.yml@v0.1.0\n",
+        encoding="utf-8",
+    )
+    (workflows_dir / "freshness.yml").write_text(
+        "    uses: owner/repo-b/.github/workflows/reusable.yml@v0.2.0\n",
+        encoding="utf-8",
+    )
+    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    assert len(result) == 2
+    source_repos = sorted(r["source_repo"] for r in result)
+    assert source_repos == ["repo-a", "repo-b"]
+
+
+def test_discover_github_workflow_uses_multiple_per_file(*, tmp_path: Path) -> None:
+    """A single workflow file with multiple matching `uses:` lines emits one record per line."""
+    workflows_dir = tmp_path / ".github" / "workflows"
+    workflows_dir.mkdir(parents=True)
+    (workflows_dir / "release.yml").write_text(
+        "    uses: owner/repo-a/.github/workflows/step1.yml@v1\n"
+        "    uses: owner/repo-b/.github/workflows/step2.yml@v2\n",
+        encoding="utf-8",
+    )
+    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    assert len(result) == 2
+    refs = sorted(r["current_value"] for r in result)
+    assert refs == ["v1", "v2"]
+
+
+def test_discover_github_workflow_uses_source_repo_filter(*, tmp_path: Path) -> None:
+    """`--source-repo` filters to only `uses:` lines where the repo segment matches."""
+    workflows_dir = tmp_path / ".github" / "workflows"
+    workflows_dir.mkdir(parents=True)
+    (workflows_dir / "dispatch.yml").write_text(
+        "    uses: owner/livespec-dev-tooling/.github/workflows/reusable-a.yml@master\n"
+        "    uses: owner/other-repo/.github/workflows/reusable-b.yml@v1\n",
+        encoding="utf-8",
+    )
+    result = pin_autodiscovery.discover(root=tmp_path, source_repo="livespec-dev-tooling")
+    assert len(result) == 1
+    assert result[0]["source_repo"] == "livespec-dev-tooling"
+
+
+def test_discover_github_workflow_uses_yaml_extension(*, tmp_path: Path) -> None:
+    """Workflow files with a `.yaml` extension are also discovered."""
+    workflows_dir = tmp_path / ".github" / "workflows"
+    workflows_dir.mkdir(parents=True)
+    (workflows_dir / "dispatch.yaml").write_text(
+        "    uses: owner/some-repo/.github/workflows/reusable.yml@v0.3.0\n",
+        encoding="utf-8",
+    )
+    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    assert len(result) == 1
+    assert result[0]["current_value"] == "v0.3.0"
+
+
+def test_discover_all_five_pin_formats_coexisting(*, tmp_path: Path) -> None:
+    """All five formats coexisting in one repo yield one record per format."""
+    (tmp_path / ".livespec.jsonc").write_text(
+        json.dumps({"myapp": {"compat": {"livespec": ">=0.1.0,<1.0.0", "pinned": "v0.5.0"}}}),
+        encoding="utf-8",
+    )
+    (tmp_path / "pyproject.toml").write_text(
+        "[tool.uv.sources]\n" 'foo = { git = "https://github.com/o/foo", tag = "v1" }\n',
+        encoding="utf-8",
+    )
+    (tmp_path / ".vendor.jsonc").write_text(
+        json.dumps(
+            {
+                "libraries": [
+                    {
+                        "name": "bar_lib",
+                        "upstream_url": "https://x/y",
+                        "upstream_ref": "v2",
+                        "vendored_at": "2026-04-26T06:05:33Z",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / ".copier-answers.yml").write_text(
+        "_commit: v0.4.0\n_src_path: https://github.com/o/baz-template\n",
+        encoding="utf-8",
+    )
+    workflows_dir = tmp_path / ".github" / "workflows"
+    workflows_dir.mkdir(parents=True)
+    (workflows_dir / "bump.yml").write_text(
+        "    uses: owner/sibling-repo/.github/workflows/reusable.yml@v0.1.0\n",
+        encoding="utf-8",
+    )
+    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    formats = sorted(r["pin_format"] for r in result)
+    assert formats == [
+        "copier_answers_commit",
+        "github_workflow_uses_ref",
+        "livespec_jsonc_compat_pinned",
+        "pyproject_toml_uv_sources",
+        "vendor_jsonc",
+    ]
+
+
 def test_discover_multiple_pin_formats_coexisting(*, tmp_path: Path) -> None:
     """All four formats coexisting in one repo yield one record per format."""
     (tmp_path / ".livespec.jsonc").write_text(
