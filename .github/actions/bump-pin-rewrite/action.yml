@@ -190,6 +190,24 @@ runs:
         p.write_text(new_text, encoding="utf-8")
         PYEOF
               ;;
+            github_workflow_uses_ref)
+              python - <<PYEOF
+        import re
+        import pathlib
+        p = pathlib.Path("$file")
+        text = p.read_text(encoding="utf-8")
+        pattern = re.compile(
+            r'(^\s+uses:\s+' + re.escape("$key") + r')@' +
+            re.escape("$current") +
+            r'(\s*)$',
+            re.MULTILINE,
+        )
+        new_text, n = pattern.subn(r'\1@' + "$TAG" + r'\2', text, count=1)
+        if n != 1:
+            raise SystemExit(f"failed to rewrite uses ref for $key in $file")
+        p.write_text(new_text, encoding="utf-8")
+        PYEOF
+              ;;
             unrecognized)
               echo "::warning::skipping unrecognized pin in $file"
               ;;
