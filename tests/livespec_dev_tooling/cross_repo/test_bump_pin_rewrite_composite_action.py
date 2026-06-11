@@ -67,6 +67,23 @@ _PIN_FORMAT_CASE_ARMS = (
     "copier_answers_commit)",
 )
 
+# Per livespec-dev-tooling-8ml: the calling reusable workflows check out
+# this repo's support modules to `./.livespec-dev-tooling` — a nested git
+# repo inside the consumer work tree. The "Commit + push bump branch" step
+# runs `git add -A`, which would stage that nested checkout as a stray
+# gitlink (mode 160000) with no `.gitmodules` entry and commit it onto the
+# consumer's master (observed on the v0.12.0 fan-out). The fix adds (1) a
+# local `info/exclude` entry for the checkout BEFORE `git add -A` and (2) a
+# defense-in-depth guard AFTER `git add -A` that refuses to commit any
+# staged gitlink. Both live in the composite Action's commit step.
+_GITLINK_EXCLUDE_ENTRY = "/.livespec-dev-tooling/"
+_GITLINK_EXCLUDE_TARGET = "info/exclude"
+# The guard keys on the gitlink mode 160000 anchored as a grep pattern;
+# matching the anchored form (not the bare digits) avoids a false match
+# against the "(mode 160000)" prose in the surrounding `#` comments.
+_GITLINK_GUARD_MODE = "160000"
+_GITLINK_GUARD_GREP = "^160000$"
+
 
 def _read(*, path: Path) -> str:
     """Read a UTF-8 text file."""
@@ -219,3 +236,84 @@ def test_pin_rewrite_case_block_lives_in_composite_action() -> None:
             f"composite Action missing case-arm for {fmt!r}; "
             f"the rewrite step body was not preserved during extraction"
         )
+
+
+# ---------------------------------------------------------------------------
+# Stray-gitlink footgun guard (livespec-dev-tooling-8ml)
+# ---------------------------------------------------------------------------
+
+
+def _commit_step_body(*, text: str) -> str:
+    """Return the body of the `Commit + push bump branch` step.
+
+    The slice runs from that step's `name:` line to the next top-level
+    step (` - name:`) or end-of-file, so the assertions below cannot be
+    satisfied by matching lines elsewhere in the Action.
+    """
+    match = re.search(
+        r"^    - name: Commit \+ push bump branch\b.*?(?=^    - name: |\Z)",
+        text,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert match, "composite Action missing the `Commit + push bump branch` step"
+    return match.group(0)
+
+
+def _command_pos(*, body: str, command: str) -> int:
+    """Return the offset of an actual command line in the step body.
+
+    Matches the command only when it begins a line at the script's 8-space
+    indentation, so a backtick mention of the same command inside a `#`
+    comment cannot be mistaken for the command itself.
+    """
+    match = re.search(rf"^        {re.escape(command)}\b", body, re.MULTILINE)
+    return match.start() if match else -1
+
+
+def test_commit_step_excludes_support_module_checkout() -> None:
+    """The commit step excludes the nested support-module checkout before `git add -A`.
+
+    Per livespec-dev-tooling-8ml: a local `info/exclude` entry for
+    `./.livespec-dev-tooling` MUST precede the `git add -A` so the nested
+    checkout can never be staged as a stray gitlink.
+    """
+    body = _commit_step_body(text=_read(path=_ACTION_PATH))
+    exclude_pos = body.find(_GITLINK_EXCLUDE_ENTRY)
+    assert exclude_pos != -1, (
+        "commit step does not exclude the support-module checkout "
+        f"({_GITLINK_EXCLUDE_ENTRY!r}); a blind `git add -A` would stage it "
+        "as a stray gitlink"
+    )
+    assert _GITLINK_EXCLUDE_TARGET in body, (
+        "commit step exclude must write to the git dir's "
+        f"{_GITLINK_EXCLUDE_TARGET!r} (ephemeral, never committed)"
+    )
+    add_pos = _command_pos(body=body, command="git add -A")
+    assert add_pos != -1, "commit step no longer runs `git add -A`"
+    assert exclude_pos < add_pos, (
+        "the support-module exclude MUST precede `git add -A` so the nested "
+        "checkout is never staged"
+    )
+
+
+def test_commit_step_guards_against_staged_gitlink() -> None:
+    """The commit step refuses to commit any staged gitlink (mode 160000).
+
+    Per livespec-dev-tooling-8ml: defense-in-depth — the family uses no
+    submodules, so a staged gitlink can only be a stray nested-checkout
+    footgun. The guard MUST sit after `git add -A` and before `git commit`,
+    matching on mode 160000 and exiting non-zero.
+    """
+    body = _commit_step_body(text=_read(path=_ACTION_PATH))
+    guard_pos = body.find(_GITLINK_GUARD_GREP)
+    assert guard_pos != -1, (
+        "commit step has no guard refusing a staged gitlink "
+        f"(expected an anchored {_GITLINK_GUARD_GREP!r} mode-{_GITLINK_GUARD_MODE} match)"
+    )
+    add_pos = _command_pos(body=body, command="git add -A")
+    commit_pos = _command_pos(body=body, command="git commit")
+    assert add_pos != -1 and commit_pos != -1, "commit step shape changed unexpectedly"
+    assert add_pos < guard_pos < commit_pos, (
+        f"the mode-{_GITLINK_GUARD_MODE} guard MUST sit after `git add -A` "
+        "and before `git commit`"
+    )

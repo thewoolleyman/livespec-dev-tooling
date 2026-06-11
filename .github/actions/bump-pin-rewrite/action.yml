@@ -290,7 +290,24 @@ runs:
         # REQUIRED so release-please does NOT cut a version bump from
         # this commit (which would trigger another round of bump PRs in
         # every sibling — the cycle the convention prevents).
+        # The calling reusable workflow checks out livespec-dev-tooling
+        # support modules to ./.livespec-dev-tooling — a nested git repo
+        # inside the consumer work tree. A blind `git add -A` would stage it
+        # as a stray gitlink (mode 160000) with no .gitmodules entry,
+        # polluting the consumer's master (livespec-dev-tooling-8ml; observed
+        # on the v0.12.0 fan-out). Exclude it locally (ephemeral, never
+        # committed) so it is never staged.
+        printf '%s\n' '/.livespec-dev-tooling/' >> "$(git rev-parse --git-dir)/info/exclude"
         git add -A
+        # Defense-in-depth: refuse to commit any staged gitlink (mode
+        # 160000). The family uses no submodules, so a staged gitlink can
+        # only be a stray nested-checkout footgun. Fail loud rather than
+        # silently pollute a consumer's master (livespec-dev-tooling-8ml).
+        if git diff --cached --raw | awk '{ print $2 }' | grep -q '^160000$'; then
+          echo "::error::refusing to commit a stray gitlink (mode 160000) — a nested checkout leaked into the bump commit" >&2
+          git diff --cached --raw | awk '$2 == "160000" { print "  stray gitlink: " $NF }' >&2
+          exit 1
+        fi
         git commit -m "chore(deps): bump ${SOURCE_REPO} pin to ${TAG}"
         git push -u origin "$BRANCH"
 
