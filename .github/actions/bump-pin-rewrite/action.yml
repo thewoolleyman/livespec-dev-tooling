@@ -241,6 +241,39 @@ runs:
           just vendor-update "$lib"
         done
 
+    - name: Install commit-refuse hook (satisfy primary-checkout-commit-refuse-hook-installed invariant)
+      # The full `just check` aggregate below includes
+      # check-primary-checkout-commit-refuse-hook-installed, a shared
+      # livespec-dev-tooling check verifying that .git/hooks/pre-commit AND
+      # .git/hooks/pre-push carry the canonical commit-refuse body. The
+      # actions/checkout clone of the consumer repo does NOT install the
+      # hook, so we install the canonical stub here. Per
+      # livespec/SPECIFICATION/non-functional-requirements.md
+      # §"Primary-checkout commit-refuse hook" the body carries the marker
+      # `# livespec commit-refuse hook`, a `git rev-parse --show-toplevel`
+      # invocation, and an `exit 1` branch (the fingerprint the check
+      # verifies). We deliberately do NOT set `livespec.primaryPath`, so the
+      # hook's refuse-branch stays inactive and the bump's own commit/push
+      # below proceed. Mirrors the per-matrix-target satisfier in each
+      # consumer's ci.yml.
+      shell: bash
+      run: |
+        mkdir -p .git/hooks
+        for hook in pre-commit pre-push; do
+          {
+            printf '%s\n' '#!/bin/sh'
+            printf '%s\n' '# livespec commit-refuse hook'
+            printf '%s\n' 'toplevel="$(git rev-parse --show-toplevel)"'
+            printf '%s\n' 'primary="$(git config --get livespec.primaryPath || true)"'
+            printf '%s\n' 'if [ -n "$primary" ] && [ "$toplevel" = "$primary" ]; then'
+            printf '%s\n' '  echo "livespec: refusing commit/push at primary checkout" >&2'
+            printf '%s\n' '  exit 1'
+            printf '%s\n' 'fi'
+            printf '%s\n' 'exit 0'
+          } > ".git/hooks/$hook"
+          chmod 755 ".git/hooks/$hook"
+        done
+
     - name: just check
       shell: bash
       run: just check
