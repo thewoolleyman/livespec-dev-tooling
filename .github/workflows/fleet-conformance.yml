@@ -1,0 +1,51 @@
+# fleet-conformance.yml — scheduled central fleet-membership sweep.
+#
+# Authority: livespec SPECIFICATION/non-functional-requirements.md
+#   §"Fleet membership contract" — the conformance check "runs on a
+#   schedule AND as a BLOCKING preflight of the dev-tooling release
+#   fan-out". This workflow is the schedule leg; the preflight leg is
+#   the fleet-preflight job in reusable-release-dispatch.yml; the
+#   per-PR leg is ci.yml's check-fleet-conformance job.
+#
+# Token model: the livespec GitHub App installation token (same
+# identity as the other cross-repo workflows, per livespec
+# contracts.md §"GitHub App auth model") makes member contents,
+# topics, and the installation-coverage row readable fleet-wide.
+# Admin-scoped rows (secret names, branch protection) skip gracefully
+# under this token — operator-local `just check` runs with admin gh
+# auth cover those — so a scheduled red here is always a definitive
+# finding, never a permissions artifact.
+
+name: Fleet conformance
+
+on:
+  schedule:
+    - cron: '30 13 * * *'  # daily, after the 13:00 UTC pin-freshness sweep
+  workflow_dispatch: {}
+
+jobs:
+  fleet-conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Mint App installation token (fleet-wide reads)
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Install pinned binaries via mise
+        uses: jdx/mise-action@v2
+
+      - name: Install Python dev deps via uv
+        run: uv sync --all-groups
+
+      - name: just check-fleet-conformance
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          LIVESPEC_RUN_FLEET_CONFORMANCE: "true"
+        run: just check-fleet-conformance

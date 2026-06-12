@@ -103,6 +103,41 @@ jobs:
         if: needs.setup.outputs.py_changed == 'true'
         run: just ${{ matrix.target }}
 
+  # Central fleet-membership conformance check (livespec v108 §"Fleet
+  # membership contract") — its own job (not a matrix entry) so the
+  # run lever and the App token are scoped to it alone. The App
+  # installation token makes contents / topics / installation-coverage
+  # readable across every fleet member; the admin-scoped rows (secret
+  # names, branch protection) skip gracefully under this token and are
+  # covered by operator-local `just check` runs (admin gh auth) and by
+  # the scheduled fleet-conformance.yml + release fan-out preflight.
+  check-fleet-conformance:
+    name: check-fleet-conformance
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Mint App installation token (fleet-wide reads)
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Install pinned binaries via mise
+        uses: jdx/mise-action@v2
+
+      - name: Install Python dev deps via uv
+        run: uv sync --all-groups
+
+      - name: just check-fleet-conformance
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          LIVESPEC_RUN_FLEET_CONFORMANCE: "true"
+        run: just check-fleet-conformance
+
   # Metadata matrix runs unconditionally to preserve the repo-metadata
   # safety net. check-aggregate-completeness is the wiring-completeness
   # gate added in epic li-univck Phase 1.4 (work-item li-ldtv03) —
