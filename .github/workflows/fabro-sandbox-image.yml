@@ -1,0 +1,103 @@
+# fabro-sandbox-image.yml — build + publish the family Fabro sandbox image.
+#
+# This repo OWNS the family Fabro C-mode sandbox image (the family
+# toolchain as a container) at docker/fabro-sandbox/Dockerfile. Three
+# triggers:
+#
+#   - pull_request touching image-affecting paths: build WITHOUT
+#     publishing — PR-time validation that the image still builds.
+#   - push to master touching the same paths: build and publish the
+#     immutable per-commit tag `sha-<short>`.
+#   - release published: build and publish the immutable semver tag
+#     `v<X.Y.Z>` (release-please authenticates via the livespec App
+#     installation token, so its releases DO fire this event — see
+#     release-please.yml's auth-model note). `paths` filters do not
+#     apply to release events, so EVERY release gets a semver-tagged
+#     image; `just check-fabro-image-pin-lockstep` (justfile aggregate
+#     + CI check-metadata matrix) guarantees the image pins match the
+#     released tree's .mise.toml / .python-version.
+#
+# NO mutable `latest` tag is published (flavor: latest=false):
+# consumers pin an immutable sha-* or v* tag.
+#
+# Auth: the default Actions GITHUB_TOKEN with packages:write suffices —
+# the image publishes to this repo's own GHCR namespace
+# (ghcr.io/<owner>/livespec-fabro-sandbox) and nothing downstream
+# triggers off the publish, so the App-token recursion workaround used
+# by release-please.yml is not needed here.
+
+name: Fabro sandbox image
+
+on:
+  pull_request:
+    paths:
+      - "docker/fabro-sandbox/**"
+      - ".github/workflows/fabro-sandbox-image.yml"
+      - ".mise.toml"
+      - ".python-version"
+      - "pyproject.toml"
+      - "uv.lock"
+  push:
+    branches: [master]
+    paths:
+      - "docker/fabro-sandbox/**"
+      - ".github/workflows/fabro-sandbox-image.yml"
+      - ".mise.toml"
+      - ".python-version"
+      - "pyproject.toml"
+      - "uv.lock"
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: fabro-sandbox-image-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: build-fabro-sandbox-image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # type=sha emits the immutable per-commit `sha-<short>` tag on
+      # every trigger; type=semver emits `v<X.Y.Z>` only when the ref
+      # is a release-please semver tag (release events). latest=false
+      # keeps the tag set fully immutable.
+      - name: Compute image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/livespec-fabro-sandbox
+          flavor: |
+            latest=false
+          tags: |
+            type=sha
+            type=semver,pattern=v{{version}}
+
+      - name: Build (publish on master push / release)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/fabro-sandbox/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
