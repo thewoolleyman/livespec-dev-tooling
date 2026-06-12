@@ -143,7 +143,11 @@ jobs:
   # gate added in epic li-univck Phase 1.4 (work-item li-ldtv03) —
   # verifies the justfile `check:` aggregate wires every canonical
   # slug emitted by `python -m livespec_dev_tooling.canonical_checks`
-  # in alphabetical order. check-no-direct-destructive-cli greps the
+  # in alphabetical order. check-fabro-image-pin-lockstep fails when
+  # any tool version baked into docker/fabro-sandbox/Dockerfile (ARG
+  # pins) drifts from .mise.toml / .python-version — it runs
+  # unconditionally because pin drift is repo-metadata, reachable
+  # from zero-.py changesets. check-no-direct-destructive-cli greps the
   # agent-facing trees for direct destructive-default CLI invocations
   # (livespec/SPECIFICATION/non-functional-requirements.md
   # §"Destructive-default CLI wrapping") so a violation fails CI.
@@ -163,6 +167,7 @@ jobs:
       matrix:
         target:
           - check-aggregate-completeness
+          - check-fabro-image-pin-lockstep
           - check-no-direct-destructive-cli
           - check-primary-checkout-commit-refuse-hook-installed
           - check-red-green-replay

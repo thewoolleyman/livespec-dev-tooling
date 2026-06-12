@@ -1,0 +1,9 @@
+# Dockerfile.dockerignore — context allowlist for the adjacent
+# Dockerfile (BuildKit reads the `<Dockerfile-name>.dockerignore`
+# sitting next to the Dockerfile in preference to a repo-root
+# .dockerignore). The build context is the REPO ROOT, but the image
+# only COPYs the two uv cache-pre-warm inputs — allowlisting them
+# keeps the context transfer tiny and the build hermetic.
+*
+!pyproject.toml
+!uv.lock
