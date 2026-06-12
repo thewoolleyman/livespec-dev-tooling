@@ -103,6 +103,25 @@ check:
     # CI invoke `just check` with no `skip`, so the full aggregate stays
     # the safety net.
     read -ra skip_targets <<< "{{skip}}"
+    # Sync the environment ONCE per aggregate pass, then run every
+    # target with UV_NO_SYNC=1 so the ~44 per-target `uv run`
+    # invocations skip their redundant per-invocation re-sync
+    # (work-item livespec-dev-tooling-ool). The single up-front sync
+    # keeps the freshness guarantee — a stale lockfile/venv still
+    # fails here, loudly, before any target runs. This also caps the
+    # cost of a corrupted-venv re-sync loop (e.g. an orphaned
+    # dist-info missing its RECORD file, which a sync can never
+    # uninstall and therefore retries on EVERY invocation) at one
+    # sync attempt per pass instead of one per target, and shrinks
+    # the concurrent-sync race window that produces that corruption
+    # in the first place. Standalone `just check-<x>` invocations
+    # keep uv's default sync-on-run behavior; CI's per-target matrix
+    # jobs each sync their own fresh runner and are unaffected.
+    if ! uv sync --all-groups; then
+        echo "ERROR: up-front 'uv sync --all-groups' failed; aborting the check aggregate" >&2
+        exit 1
+    fi
+    export UV_NO_SYNC=1
     targets=(
         check-aggregate-completeness
         check-all-declared
