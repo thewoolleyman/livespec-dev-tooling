@@ -182,6 +182,13 @@ check:
         check-format
         check-types
         check-coverage
+        # Central fleet-membership conformance check (livespec v108
+        # §"Fleet membership contract") — repo-private extra, NOT a
+        # canonical slug (it lives under livespec_dev_tooling/fleet/,
+        # not checks/: it asserts the WHOLE fleet from one vantage
+        # point, so siblings do not each wire it). Always wired here;
+        # the module self-manages its RUN/SKIP lever (see the recipe).
+        check-fleet-conformance
     )
     failed=()
     ran=0
@@ -245,6 +252,24 @@ check-types:
 # runs the suite itself so the aggregate gate still fires there. Either
 # way the result is the `fail_under = 100` aggregate assertion with NO
 # duplicate suite run in `just check`.
+# Central fleet-membership conformance check (livespec v108 §"Fleet
+# membership contract"): fetches fleet-manifest.jsonc from livespec
+# master, asserts every member's per-class obligations from the
+# central vantage point, and runs the discovery sweep. Always invoked
+# plainly; the module self-manages its RUN/SKIP lever (the
+# check_mutation precedent for network-dependent checks):
+# `LIVESPEC_RUN_FLEET_CONFORMANCE` unset → the check logs "skipped"
+# and exits 0 (a local per-commit aggregate run does not fan ~35
+# GitHub API reads); set to a non-empty value (the CI job, the
+# scheduled fleet-conformance.yml workflow, and the release fan-out
+# preflight in reusable-release-dispatch.yml set it) → the full
+# central sweep runs. No external gate, no silent skip. The reconcile
+# twin is operator-invoked, NOT CI:
+#   with-livespec-env.sh -- uv run python -m \
+#       livespec_dev_tooling.fleet.wire_fleet_member --repo <member>
+check-fleet-conformance:
+    uv run python -m livespec_dev_tooling.fleet.fleet_conformance
+
 check-coverage:
     #!/usr/bin/env bash
     set -uo pipefail

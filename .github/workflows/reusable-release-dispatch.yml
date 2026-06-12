@@ -13,9 +13,21 @@
 # Dispatch model: invoked by each sibling's own `release-dispatch.yml`
 # shim on `on: release: types: [published]`. The shim passes through
 # `source_repo`, `tag`, and `release_url` plus `secrets: inherit`; this
-# workflow then discovers siblings via `gh search repos`, excludes the
-# publishing repo, and fires one `repository_dispatch` per remaining
-# sibling.
+# workflow then reads the member list from livespec core's
+# fleet-manifest.jsonc (fetched from livespec master at run time, per
+# livespec SPECIFICATION/non-functional-requirements.md §"Fleet
+# membership contract" — the `livespec-sibling` topic is demoted to a
+# discovery safety net enforced by the fleet-conformance check),
+# excludes the publishing repo, and fires one `repository_dispatch`
+# per remaining member.
+#
+# BLOCKING preflight (same spec section): the fleet-preflight job runs
+# the central fleet-conformance check BEFORE any dispatch goes out, so
+# an unwired member fails the release fast and loudly instead of being
+# silently skipped. No-circular-gating holds: every conformance
+# finding is fixable by wire-fleet-member / a member-repo PR / a
+# manifest PR on livespec — none of which depend on a dev-tooling
+# release or on this fan-out running.
 #
 # Consumers invoke this workflow from their own `release-dispatch.yml`
 # shim via
@@ -88,7 +100,7 @@ jobs:
           app-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
 
-      - name: gh search repos --topic livespec-sibling
+      - name: Read fleet manifest from livespec master
         id: discover
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
@@ -96,16 +108,65 @@ jobs:
           OWNER: ${{ github.repository_owner }}
         run: |
           set -euo pipefail
-          all=$(gh search repos --owner "$OWNER" --topic livespec-sibling --json name --limit 100)
+          # Per livespec §"Fleet membership contract", the fan-out MUST
+          # read the manifest fetched from livespec master at run time
+          # (topic search demoted to the conformance check's discovery
+          # safety net). The manifest carries full-line // comments
+          # only, so a line-wise strip yields plain JSON for jq.
+          manifest=$(gh api "repos/$OWNER/livespec/contents/fleet-manifest.jsonc" \
+            -H "Accept: application/vnd.github.raw" | grep -v '^[[:space:]]*//')
           # Exclude the publishing repo from the dispatch fan-out so the
-          # release does not echo back to itself per §"Sibling discovery".
-          siblings=$(echo "$all" | jq -c "[.[] | select(.name != \"$SOURCE_REPO\")]")
+          # release does not echo back to itself. Keep the {name: ...}
+          # element shape the dispatch matrix consumes.
+          siblings=$(echo "$manifest" | jq -c \
+            "[.members[].repo | select(. != \"$SOURCE_REPO\") | {name: .}]")
           echo "siblings=$siblings" >> "$GITHUB_OUTPUT"
-          echo "::notice::discovered $(echo "$siblings" | jq 'length') sibling(s) (excluding $SOURCE_REPO)"
+          echo "::notice::manifest lists $(echo "$siblings" | jq 'length') member(s) (excluding $SOURCE_REPO)"
+
+  # BLOCKING preflight per livespec §"Fleet membership contract": the
+  # central fleet-conformance check runs against livespec-dev-tooling
+  # master BEFORE any sibling-released dispatch goes out (fail fast —
+  # an unwired member fails the release loudly instead of being
+  # silently skipped). The dispatch job needs this job, so a red fleet
+  # blocks the entire fan-out. Wiring fixes never depend on this
+  # fan-out (no-circular-gating): wire-fleet-member is operator-run,
+  # shim PRs land via member CI, manifest changes land via livespec.
+  fleet-preflight:
+    name: fleet-conformance preflight (blocking)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout livespec-dev-tooling master
+        uses: actions/checkout@v4
+        with:
+          # workflow_call runs in the CALLER repo's context; the check
+          # ships from livespec-dev-tooling, so check out that repo
+          # explicitly at master.
+          repository: ${{ github.repository_owner }}/livespec-dev-tooling
+          ref: master
+
+      - name: Mint App installation token (fleet-wide reads)
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Install pinned binaries via mise
+        uses: jdx/mise-action@v2
+
+      - name: Install Python dev deps via uv
+        run: uv sync --all-groups
+
+      - name: just check-fleet-conformance (BLOCKING)
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          LIVESPEC_RUN_FLEET_CONFORMANCE: "true"
+        run: just check-fleet-conformance
 
   dispatch:
     name: dispatch ${{ matrix.sibling.name }}
-    needs: discover-siblings
+    needs: [discover-siblings, fleet-preflight]
     if: needs.discover-siblings.outputs.siblings != '[]'
     runs-on: ubuntu-latest
     strategy:
