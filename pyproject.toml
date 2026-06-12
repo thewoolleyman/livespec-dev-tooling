@@ -183,6 +183,11 @@ ban-relative-imports = "all"
 # the check modules above); S105 covers the required-secret NAME
 # constants (APP_ID / APP_PRIVATE_KEY — names only, never values).
 "livespec_dev_tooling/fleet/*.py" = ["S603", "S607", "S404", "S105"]
+# Agent-runtime hook scripts (per work-item livespec-dev-tooling-7us.2)
+# shell out to `git`/`gh` via subprocess.run with fixed argv lists,
+# exactly like the check modules above; S603/S607/S404 are over-strict
+# for that documented pattern.
+"livespec_dev_tooling/agent_hooks/*.py" = ["S603", "S607", "S404"]
 # The CLI e2e harness's RealCliRunner shells out to the `claude` binary via
 # subprocess.run with a fixed argv list (binary name + literal flags + the
 # caller-supplied prompt as a single argv element, no shell). S603/S607/S404
