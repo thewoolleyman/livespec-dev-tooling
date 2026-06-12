@@ -95,6 +95,25 @@ def test_tests_mirror_pairing_exempts_private_helper_module(*, tmp_path: Path) -
     assert result.returncode == 0
 
 
+def test_tests_mirror_pairing_exempts_private_helper_with_function_def(*, tmp_path: Path) -> None:
+    """A `_helper.py` WITH a FunctionDef (not `__init__.py`) is exempt via `_is_private_helper_module`.
+
+    The existing `test_tests_mirror_pairing_exempts_private_helper_module` uses a
+    body with no functions (`x = 0`), which is ALSO caught by `_is_pure_declaration_module`.
+    This test uses a body with a `def` so the exemption is only reachable via
+    `_is_private_helper_module` — pinning the rule for the realistic case of
+    `_red_green_replay_modes.py`-style helpers that do contain functions.
+    """
+    _write_py(
+        tmp_path=tmp_path,
+        rel_path=".claude-plugin/scripts/livespec/commands/_helper.py",
+        body="from __future__ import annotations\n__all__: list[str] = []\n\n"
+        "def do_thing() -> int:\n    return 0\n",
+    )
+    result = _run_check(cwd=tmp_path)
+    assert result.returncode == 0
+
+
 def test_tests_mirror_pairing_exempts_pure_declaration_init(*, tmp_path: Path) -> None:
     """An `__init__.py` whose body has no FunctionDef is exempt under the pure-declaration rule."""
     _write_py(
