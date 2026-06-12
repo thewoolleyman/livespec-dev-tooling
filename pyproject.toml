@@ -178,6 +178,11 @@ ban-relative-imports = "all"
 # checks above; S603/S607/S404 are over-strict for that documented
 # pattern, S105 covers any trailer/token-shaped constants.
 "livespec_dev_tooling/workflow_checks/*.py" = ["S603", "S607", "S404", "S105"]
+# The fleet-membership surface shells out to `gh`/`git` via
+# subprocess.run with fixed argv lists (the same documented pattern as
+# the check modules above); S105 covers the required-secret NAME
+# constants (APP_ID / APP_PRIVATE_KEY — names only, never values).
+"livespec_dev_tooling/fleet/*.py" = ["S603", "S607", "S404", "S105"]
 # The CLI e2e harness's RealCliRunner shells out to the `claude` binary via
 # subprocess.run with a fixed argv list (binary name + literal flags + the
 # caller-supplied prompt as a single argv element, no shell). S603/S607/S404
