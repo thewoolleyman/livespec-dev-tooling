@@ -55,14 +55,43 @@ __all__: list[str] = []
 
 
 _IMPLICIT_FIRST_PARAMS = frozenset({"self", "cls"})
+_SORT_FUNC_NAMES = frozenset({"sort", "sorted"})
 
 
 def _is_dunder(*, name: str) -> bool:
     return name.startswith("__") and name.endswith("__")
 
 
-def _is_compliant(*, func: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+def _collect_sort_key_names(*, tree: ast.AST) -> frozenset[str]:
+    """Collect names of callables passed as key= to sort/sorted call sites."""
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        is_sort_call = (isinstance(func, ast.Name) and func.id in _SORT_FUNC_NAMES) or (
+            isinstance(func, ast.Attribute) and func.attr in _SORT_FUNC_NAMES
+        )
+        if not is_sort_call:
+            continue
+        for kw in node.keywords:
+            if kw.arg == "key":
+                val = kw.value
+                if isinstance(val, ast.Name):
+                    names.add(val.id)
+                elif isinstance(val, ast.Attribute):
+                    names.add(val.attr)
+    return frozenset(names)
+
+
+def _is_compliant(
+    *,
+    func: ast.FunctionDef | ast.AsyncFunctionDef,
+    sort_key_names: frozenset[str],
+) -> bool:
     if _is_dunder(name=func.name):
+        return True
+    if func.name in sort_key_names:
         return True
     positional = func.args.args
     if len(positional) == 0:
@@ -74,10 +103,11 @@ def _is_compliant(*, func: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
 
 def _find_offenders(*, source: str) -> list[tuple[int, str]]:
     tree = ast.parse(source)
+    sort_key_names = _collect_sort_key_names(tree=tree)
     out: list[tuple[int, str]] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and not _is_compliant(
-            func=node
+            func=node, sort_key_names=sort_key_names
         ):
             out.append((node.lineno, node.name))
     return out
