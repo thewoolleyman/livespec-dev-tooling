@@ -251,3 +251,175 @@ def test_keyword_only_args_module_importable_without_running_main() -> None:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     assert callable(module.main), "main should be importable without invocation"
+
+
+def test_keyword_only_args_accepts_sort_key_callable_in_sorted(*, tmp_path: Path) -> None:
+    """A function used as `key=` in `sorted()` is exempt from the kw-only check.
+
+    Python calls `key=` callables positionally (one arg), so they MUST
+    keep a positional parameter. `def _key(x: int)` referenced as
+    `sorted(items, key=_key)` must pass the check (exit 0).
+    """
+    package_dir = tmp_path / ".claude-plugin" / "scripts" / "livespec"
+    package_dir.mkdir(parents=True)
+    source = package_dir / "foo.py"
+    source.write_text(
+        "from __future__ import annotations\n"
+        "\n"
+        "__all__: list[str] = []\n"
+        "\n"
+        "items = [3, 1, 2]\n"
+        "\n"
+        "\n"
+        "def _key(x: int) -> int:\n"
+        "    return -x\n"
+        "\n"
+        "\n"
+        "result = sorted(items, key=_key)\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(_KEYWORD_ONLY_ARGS)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, (
+        f"keyword_only_args should exempt sort key callable used in sorted(); "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_keyword_only_args_accepts_sort_key_callable_in_list_sort(*, tmp_path: Path) -> None:
+    """A function used as `key=` in `.sort()` is exempt from the kw-only check.
+
+    Python calls `key=` callables positionally (one arg), so they MUST
+    keep a positional parameter. `def _key(x: int)` referenced as
+    `items.sort(key=_key)` must pass the check (exit 0).
+    """
+    package_dir = tmp_path / ".claude-plugin" / "scripts" / "livespec"
+    package_dir.mkdir(parents=True)
+    source = package_dir / "foo.py"
+    source.write_text(
+        "from __future__ import annotations\n"
+        "\n"
+        "__all__: list[str] = []\n"
+        "\n"
+        "items = [3, 1, 2]\n"
+        "\n"
+        "\n"
+        "def _key(x: int) -> int:\n"
+        "    return -x\n"
+        "\n"
+        "\n"
+        "items.sort(key=_key)\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(_KEYWORD_ONLY_ARGS)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, (
+        f"keyword_only_args should exempt sort key callable used in list.sort(); "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_keyword_only_args_accepts_attribute_sort_key_callable(*, tmp_path: Path) -> None:
+    """A function used as `key=obj.method` (Attribute) in `sorted()` is exempt.
+
+    Python calls `key=` callables positionally regardless of how they are
+    referenced. `def method(x: int)` referenced as `sorted(items,
+    key=obj.method, reverse=True)` must pass the check (exit 0).
+    Also exercises: a sort call with a non-key keyword (reverse=True) and a
+    non-sort call (str(result)), covering all branches of the key-name
+    collector.
+    """
+    package_dir = tmp_path / ".claude-plugin" / "scripts" / "livespec"
+    package_dir.mkdir(parents=True)
+    source = package_dir / "foo.py"
+    source.write_text(
+        "from __future__ import annotations\n"
+        "\n"
+        "__all__: list[str] = []\n"
+        "\n"
+        "items = [3, 1, 2]\n"
+        "\n"
+        "\n"
+        "def method(x: int) -> int:\n"
+        "    return -x\n"
+        "\n"
+        "\n"
+        "result = sorted(items, key=obj.method, reverse=True)\n"
+        "other = str(result)\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(_KEYWORD_ONLY_ARGS)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, (
+        f"keyword_only_args should exempt attribute sort key callable; "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_keyword_only_args_lambda_key_does_not_block_named_sort_key_carve_out(
+    *, tmp_path: Path
+) -> None:
+    """A lambda used as key= in sorted() does not interfere with the named-key carve-out.
+
+    When key= is a lambda expression (not a Name/Attribute), the sort-key
+    collector ignores it. A named function with a positional arg that is also
+    used as key= via a Name reference in the same file is still properly
+    exempted; the overall check exits 0.
+    """
+    package_dir = tmp_path / ".claude-plugin" / "scripts" / "livespec"
+    package_dir.mkdir(parents=True)
+    source = package_dir / "foo.py"
+    source.write_text(
+        "from __future__ import annotations\n"
+        "\n"
+        "__all__: list[str] = []\n"
+        "\n"
+        "items = [3, 1, 2]\n"
+        "\n"
+        "\n"
+        "def _key(x: int) -> int:\n"
+        "    return -x\n"
+        "\n"
+        "\n"
+        "result = sorted(items, key=lambda x: -x)\n"
+        "items.sort(key=_key)\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(_KEYWORD_ONLY_ARGS)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, (
+        f"keyword_only_args should accept named sort-key callable used alongside a lambda key; "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
