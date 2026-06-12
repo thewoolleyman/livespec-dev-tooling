@@ -53,6 +53,15 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.14.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.13.0...v0.14.0) (2026-06-12)
+
+
+### Features
+
+* **agent-hooks:** block premature sub-agent turn-ends while a dispatch is in flight (7us.2) ([e27c560](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e27c560d708778cb26f65710cf6fca2da200e90e))
+* **agent-hooks:** deny run_in_background for gate commands (7us.2) ([f1011dd](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f1011dd8449f432ae8fb5ec6dfef0b416416df8f))
+* **green-token:** advisory pre-push green-token tree-hash short-circuit ([ad8445a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ad8445a6d7d9f1f71bd07fa66621763248a591aa))
+
 ## [0.13.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.12.1...v0.13.0) (2026-06-12)
 
 
