@@ -106,6 +106,44 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
           fetch-depth: 0
 
+      - name: Stale-SHA rerun guard
+        # Per SPECIFICATION/contracts.md §"Retry semantics (rerun vs fresh
+        # dispatch)": `gh run rerun` re-executes the original event payload;
+        # `actions/checkout` maps the event-pinned `github.sha` onto the
+        # branch ref, so a rerun can never observe commits merged after the
+        # event. When the consumer's default branch has moved since the
+        # original dispatch, a rerun builds a stale SHA that also produces
+        # BEHIND bump PRs — both are wrong. Refuse fast and embed the exact
+        # fresh-dispatch command so the operator can issue the correct retry.
+        # Flake reruns where the branch is unmoved proceed normally.
+        # Same fail-loud-with-remedy pattern as the 8ml stray-gitlink guard.
+        if: ${{ github.run_attempt > 1 }}
+        env:
+          EVENT_SHA: ${{ github.sha }}
+          SOURCE_REPO: ${{ inputs.source_repo }}
+          TAG: ${{ inputs.tag }}
+          RELEASE_URL: ${{ inputs.release_url }}
+        run: |
+          set -euo pipefail
+          # Query the live remote HEAD so we see commits merged after the
+          # original event (git ls-remote is a live query, never cached).
+          live_head=$(git ls-remote origin HEAD | awk '{print $1}')
+          if [[ "$live_head" == "$EVENT_SHA" ]]; then
+            echo "Stale-SHA rerun guard: branch unmoved (live HEAD == event SHA ${EVENT_SHA}); flake retry — proceeding normally."
+            exit 0
+          fi
+          echo "::error::Stale-SHA rerun detected: the consumer's default branch has moved since the original dispatch."
+          echo "::error::  Event-pinned SHA (what the rerun checks out): ${EVENT_SHA}"
+          echo "::error::  Live default-branch HEAD:                      ${live_head}"
+          echo "::error::A rerun always builds the original event SHA and cannot observe post-event commits."
+          echo "::error::Building a stale HEAD also produces BEHIND bump PRs. Issue a fresh dispatch instead:"
+          echo "::error::  gh api repos/${GITHUB_REPOSITORY}/dispatches \\"
+          echo "::error::    -f event_type=sibling-released \\"
+          echo "::error::    -f 'client_payload[source_repo]=${SOURCE_REPO}' \\"
+          echo "::error::    -f 'client_payload[tag]=${TAG}' \\"
+          echo "::error::    -f 'client_payload[release_url]=${RELEASE_URL}'"
+          exit 1
+
       - name: Checkout livespec-dev-tooling support modules
         uses: actions/checkout@v4
         with:

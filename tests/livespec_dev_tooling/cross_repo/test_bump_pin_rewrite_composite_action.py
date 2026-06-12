@@ -317,3 +317,134 @@ def test_commit_step_guards_against_staged_gitlink() -> None:
         f"the mode-{_GITLINK_GUARD_MODE} guard MUST sit after `git add -A` "
         "and before `git commit`"
     )
+
+
+# ---------------------------------------------------------------------------
+# Stale-SHA rerun guard (livespec-dev-tooling-e37)
+# ---------------------------------------------------------------------------
+
+# The exact step name the guard declares in reusable-bump-pin-from-dispatch.yml.
+_STALE_SHA_GUARD_STEP_NAME = "Stale-SHA rerun guard"
+# The guard MUST condition on github.run_attempt to distinguish reruns.
+_STALE_SHA_RUN_ATTEMPT = "run_attempt"
+# The guard MUST query the live remote HEAD to see commits merged post-event.
+_STALE_SHA_LS_REMOTE_CMD = "git ls-remote origin HEAD"
+# The guard MUST compare against the event-pinned SHA (env-var source).
+_STALE_SHA_EVENT_SHA_CTX = "github.sha"
+# The guard's error MUST embed all four fresh-dispatch payload fields.
+_STALE_SHA_EVENT_TYPE = "sibling-released"
+_STALE_SHA_PAYLOAD_SOURCE_REPO = "client_payload[source_repo]"
+_STALE_SHA_PAYLOAD_TAG = "client_payload[tag]"
+_STALE_SHA_PAYLOAD_RELEASE_URL = "client_payload[release_url]"
+
+
+def _stale_sha_guard_step_body(*, text: str) -> str:
+    """Return the full body of the Stale-SHA rerun guard step.
+
+    Slices from the step's `name:` line to the next 6-space-indented step
+    or end-of-file, matching the indentation level of workflow job steps.
+    """
+    match = re.search(
+        r"^      - name: Stale-SHA rerun guard\b.*?(?=^      - name: |\Z)",
+        text,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert match, "reusable-bump-pin-from-dispatch.yml missing the Stale-SHA rerun guard step"
+    return match.group(0)
+
+
+def test_stale_sha_guard_step_exists_in_bump_dispatch_workflow() -> None:
+    """The Stale-SHA rerun guard step exists in reusable-bump-pin-from-dispatch.yml.
+
+    Per SPECIFICATION/contracts.md §"Retry semantics (rerun vs fresh
+    dispatch)": the workflow SHALL detect invalid reruns and fail fast.
+    """
+    text = _read(path=_BUMP_WORKFLOW_PATH)
+    assert (
+        _STALE_SHA_GUARD_STEP_NAME in text
+    ), f"reusable-bump-pin-from-dispatch.yml missing the {_STALE_SHA_GUARD_STEP_NAME!r} step"
+
+
+def test_stale_sha_guard_conditions_on_run_attempt() -> None:
+    """The guard step's if: condition keys on github.run_attempt.
+
+    A guard that fires on every run would refuse first-attempt runs;
+    one that never checks run_attempt cannot distinguish reruns from
+    first runs. The condition MUST reference run_attempt.
+    """
+    text = _read(path=_BUMP_WORKFLOW_PATH)
+    body = _stale_sha_guard_step_body(text=text)
+    assert _STALE_SHA_RUN_ATTEMPT in body, (
+        "stale-SHA guard MUST reference github.run_attempt in its condition "
+        "to detect reruns without blocking first-attempt runs"
+    )
+
+
+def test_stale_sha_guard_queries_live_remote_head() -> None:
+    """The guard step queries the live remote HEAD via git ls-remote origin HEAD.
+
+    A cached local ref (e.g. refs/remotes/origin/master) may reflect
+    the stale checkout state rather than the true live HEAD. Only a
+    direct ls-remote query surfaces commits merged after the event.
+    """
+    text = _read(path=_BUMP_WORKFLOW_PATH)
+    body = _stale_sha_guard_step_body(text=text)
+    assert _STALE_SHA_LS_REMOTE_CMD in body, (
+        "stale-SHA guard MUST use 'git ls-remote origin HEAD' to query the "
+        "live remote HEAD (not a cached local tracking ref)"
+    )
+
+
+def test_stale_sha_guard_compares_event_pinned_sha() -> None:
+    """The guard step uses the event-pinned github.sha as the comparison baseline.
+
+    The event-pinned SHA is the commit that triggered the original
+    repository_dispatch; a rerun re-uses this SHA via actions/checkout.
+    The guard compares the live HEAD against this pinned value.
+    """
+    text = _read(path=_BUMP_WORKFLOW_PATH)
+    body = _stale_sha_guard_step_body(text=text)
+    assert _STALE_SHA_EVENT_SHA_CTX in body, (
+        "stale-SHA guard MUST reference github.sha (the event-pinned SHA) "
+        "as the comparison baseline"
+    )
+
+
+def test_stale_sha_guard_embeds_fresh_dispatch_command() -> None:
+    """The guard's error message embeds the exact fresh-dispatch command.
+
+    Per SPECIFICATION/contracts.md §"Retry semantics": the actionable
+    error MUST include event_type=sibling-released and all three
+    client_payload fields so the operator can copy-paste the correct
+    fresh-dispatch command.
+    """
+    text = _read(path=_BUMP_WORKFLOW_PATH)
+    body = _stale_sha_guard_step_body(text=text)
+    for fragment in (
+        _STALE_SHA_EVENT_TYPE,
+        _STALE_SHA_PAYLOAD_SOURCE_REPO,
+        _STALE_SHA_PAYLOAD_TAG,
+        _STALE_SHA_PAYLOAD_RELEASE_URL,
+    ):
+        assert fragment in body, (
+            f"stale-SHA guard error MUST include {fragment!r} so the operator "
+            "has the complete fresh-dispatch command"
+        )
+
+
+def test_stale_sha_guard_precedes_pin_autodiscovery() -> None:
+    """The stale-SHA guard step appears before the Run pin-autodiscovery step.
+
+    Per SPECIFICATION/contracts.md §"Retry semantics": fail fast — the
+    guard MUST refuse before any substantive work so the rerun exits
+    immediately without running autodiscovery, uv-sync, or pin-rewrites.
+    """
+    text = _read(path=_BUMP_WORKFLOW_PATH)
+    guard_pos = text.find(f"- name: {_STALE_SHA_GUARD_STEP_NAME}")
+    autodiscover_pos = text.find("- name: Run pin-autodiscovery")
+    assert guard_pos != -1, "stale-SHA guard step not found in workflow"
+    assert autodiscover_pos != -1, "pin-autodiscovery step not found in workflow"
+    assert guard_pos < autodiscover_pos, (
+        "stale-SHA guard MUST appear before pin-autodiscovery to fail fast "
+        "before any substantive work"
+    )
