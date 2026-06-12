@@ -1,0 +1,216 @@
+"""fleet_conformance — central assert mode of the fleet-membership contract.
+
+Per livespec v108 §"Fleet membership contract": fetches the fleet
+manifest from livespec master at run time, asserts every member's
+per-class obligations from a central vantage point (the piece
+repo-local CI cannot provide — a repo missing wiring never fails
+checks it does not run), and runs the discovery sweep (any owner repo
+matching `livespec-*` naming or carrying the `livespec-sibling` topic
+but absent from the manifest is a finding).
+
+Execution contexts: the dev-tooling `just check` aggregate (always
+wired), the scheduled fleet workflow, and the BLOCKING preflight of
+the release fan-out (`reusable-release-dispatch.yml`).
+
+Env lever (the single self-documenting per-check lever, mirroring
+`check_mutation`'s RUN/SKIP precedent for network-dependent checks):
+`LIVESPEC_RUN_FLEET_CONFORMANCE` unset → the check logs "skipped" and
+exits 0 (a per-commit local aggregate run does not fan ~35 GitHub API
+reads); set to a non-empty value (the scheduled workflow, the release
+fan-out preflight, and the CI job set it) → the full sweep runs. No
+external gate, no silent skip.
+
+Exit codes:
+
+- `0` — lever unset (logged skip), or every applicable row passed /
+  skipped with no error-severity finding.
+- `1` — precondition failure with the lever set: owner unresolvable,
+  or the manifest unfetchable / unparseable (the manifest is the root
+  fact; per the fail-fast decision the run is loud, not silent).
+- `4` — one or more error-severity findings (member rows or the
+  discovery sweep). Warning-severity findings (pin staleness) log but
+  do not fail.
+
+Output discipline matches sibling checks: structlog JSON to stderr;
+no `print`, no `sys.stderr.write`.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+from pathlib import Path
+from typing import cast
+
+from livespec_dev_tooling.fleet._context import (
+    FleetContext,
+    RowFinding,
+    RowSkip,
+    default_gh_runner,
+    resolve_owner,
+)
+from livespec_dev_tooling.fleet._rows_github import SIBLING_TOPIC
+from livespec_dev_tooling.fleet.contract import Manifest, parse_manifest, rows_for
+
+_VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
+
+import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
+
+__all__: list[str] = []
+
+
+_RUN_ENV_VAR = "LIVESPEC_RUN_FLEET_CONFORMANCE"
+_MANIFEST_REPO = "livespec"
+_MANIFEST_PATH = "fleet-manifest.jsonc"
+
+
+def fetch_manifest(*, ctx: FleetContext) -> Manifest | None:
+    """The fleet manifest from livespec master, or None when unavailable."""
+    text = ctx.file_text(repo=_MANIFEST_REPO, path=_MANIFEST_PATH)
+    if text is None:
+        return None
+    return parse_manifest(source=text)
+
+
+def run_member_rows(
+    *, ctx: FleetContext, manifest: Manifest, log: structlog.stdlib.BoundLogger
+) -> int:
+    """Assert every member's applicable rows; return the error-finding count."""
+    errors = 0
+    for member in manifest.members:
+        for row in rows_for(repo_class=member.repo_class):
+            outcome = row.assert_member(ctx=ctx, member=member)
+            if isinstance(outcome, RowFinding):
+                if outcome.severity == "warning":
+                    log.warning(
+                        "fleet obligation warning",
+                        row=row.row_id,
+                        member=member.repo,
+                        detail=outcome.message,
+                    )
+                else:
+                    errors += 1
+                    log.error(
+                        "fleet obligation violated",
+                        row=row.row_id,
+                        member=member.repo,
+                        detail=outcome.message,
+                        hint=row.manual_hint or "run wire-fleet-member to reconcile",
+                    )
+            elif isinstance(outcome, RowSkip):
+                log.info(
+                    "fleet obligation not evaluable (can't-read is not absent)",
+                    row=row.row_id,
+                    member=member.repo,
+                    reason=outcome.reason,
+                )
+    return errors
+
+
+def run_discovery_sweep(
+    *, ctx: FleetContext, manifest: Manifest, log: structlog.stdlib.BoundLogger
+) -> int:
+    """Flag owner repos matching the family shape but absent from the manifest."""
+    payload = ctx.api_object(path=f"users/{ctx.owner}/repos?per_page=100")
+    if not isinstance(payload, list):
+        log.warning(
+            "discovery sweep skipped: owner repo list unreadable",
+            owner=ctx.owner,
+        )
+        return 0
+    known = manifest.member_names()
+    errors = 0
+    for entry in cast("list[object]", payload):
+        if not isinstance(entry, dict):
+            continue
+        record = cast("dict[str, object]", entry)
+        name = record.get("name")
+        if not isinstance(name, str):
+            continue
+        topics_raw = record.get("topics")
+        topics = cast("list[object]", topics_raw) if isinstance(topics_raw, list) else []
+        family_shaped = name.startswith("livespec") or SIBLING_TOPIC in topics
+        if family_shaped and name not in known:
+            errors += 1
+            log.error(
+                "family-shaped repo is not registered in the fleet manifest",
+                repo=name,
+                hint=(
+                    "register it in livespec fleet-manifest.jsonc FIRST, then run "
+                    "wire-fleet-member (register-first repo birth procedure)"
+                ),
+            )
+    return errors
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="fleet-conformance",
+        description=(
+            "Central fleet-membership conformance check (livespec v108 "
+            '§"Fleet membership contract").'
+        ),
+    )
+    _ = parser.add_argument(
+        "--owner",
+        default=None,
+        help="GitHub owner override; defaults to the origin remote's owner.",
+    )
+    return parser
+
+
+def main() -> int:
+    structlog.configure(
+        processors=[
+            structlog.processors.add_log_level,
+            structlog.processors.TimeStamper(fmt="iso", utc=True),
+            structlog.processors.JSONRenderer(),
+        ],
+        logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
+    )
+    log = structlog.get_logger("fleet_conformance")
+    args = _build_parser().parse_args()
+    if not os.environ.get(_RUN_ENV_VAR):
+        log.info(
+            "fleet-conformance skipped (run lever unset)",
+            lever=_RUN_ENV_VAR,
+            hint=(
+                "set it to run the ~35-API-read central sweep; the scheduled fleet "
+                "workflow, the release fan-out preflight, and the CI job set it"
+            ),
+        )
+        return 0
+    owner = cast("str | None", args.owner) or resolve_owner()
+    if owner is None:
+        log.error(
+            "owner unresolvable: no --owner and origin remote is not github.com",
+            hint="pass --owner or run inside a github.com clone",
+        )
+        return 1
+    ctx = FleetContext(owner=owner, run_gh=default_gh_runner)
+    manifest = fetch_manifest(ctx=ctx)
+    if manifest is None:
+        log.error(
+            "fleet manifest unavailable",
+            source=f"{owner}/{_MANIFEST_REPO}:{_MANIFEST_PATH}",
+            hint="the manifest on livespec master is the root fact; failing loud",
+        )
+        return 1
+    errors = run_member_rows(ctx=ctx, manifest=manifest, log=log)
+    errors += run_discovery_sweep(ctx=ctx, manifest=manifest, log=log)
+    if errors:
+        log.error("fleet conformance FAILED", error_findings=errors)
+        return 4
+    log.info(
+        "fleet conformance passed",
+        members=len(manifest.members),
+        owner=owner,
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
