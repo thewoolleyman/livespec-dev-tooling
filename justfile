@@ -529,6 +529,34 @@ check-pre-push:
     fi
     just check
 
+# Change-aware aggregate for agent dispatch (work-item livespec-dev-tooling-ool).
+# Compares the branch against origin/master, detects the change class, and routes
+# to the appropriate check subset locally:
+#   - Zero .py changes (doc/config/yml/json/deletion-only) → check-pre-commit-doc-only
+#     (fast gate; avoids the full 44-check Python suite for trivial changesets)
+#   - Any .py changes → full `just check` aggregate (same safety level as today)
+# CI ignores this target and continues to run the full matrix as the authoritative
+# safety net. Agents SHOULD call `just check-scoped` instead of `just check` so
+# that trivial changesets (e.g. a stray-gitlink deletion) pay only the doc-only cost.
+check-scoped:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    upstream="origin/master"
+    changeset=$(git diff --name-only "${upstream}...HEAD")
+    if [[ -z "$changeset" ]]; then
+        echo ":: check-scoped: no changes vs ${upstream}; nothing to gate"
+        exit 0
+    fi
+    py_changed=$(echo "$changeset" | grep -E '\.py$' || true)
+    if [[ -z "$py_changed" ]]; then
+        echo ":: check-scoped: no .py changes vs ${upstream} (change class: doc/config/deletion)"
+        echo ":: running fast doc-only subset; CI runs the full matrix as the load-bearing gate"
+        just check-pre-commit-doc-only
+        exit $?
+    fi
+    echo ":: check-scoped: .py changes detected vs ${upstream}: running full check aggregate"
+    just check
+
 # ---------------------------------------------------------------
 # Pre-commit auxiliary gates.
 # ---------------------------------------------------------------
