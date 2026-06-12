@@ -53,6 +53,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.12.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.12.0...v0.12.1) (2026-06-12)
+
+
+### Bug Fixes
+
+* **bump-pin:** install commit-refuse hook before just check in composite action ([1c14ca8](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1c14ca87da296142631abc50641cc75dfc3c0632))
+* **bump-pin:** never commit the support-module checkout as a stray gitlink ([40244f1](https://github.com/thewoolleyman/livespec-dev-tooling/commit/40244f18c68b85c3faafd99f663b549492a5bf34))
+
 ## [0.12.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.11.0...v0.12.0) (2026-06-11)
 
 
