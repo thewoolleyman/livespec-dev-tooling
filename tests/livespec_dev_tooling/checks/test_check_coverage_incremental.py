@@ -489,3 +489,34 @@ def test_main_no_args_nonempty_derive_runs_gate(*, tmp_path: Path) -> None:
     assert (
         "does not exist" in combined.lower()
     ), f"fall-through should reach the missing-mirror diagnostic; stderr={result.stderr!r}"
+
+
+def test_changed_py_impl_paths_skips_underscore_private_modules() -> None:
+    """Underscore-private modules are dropped from the derive-mode impl list.
+
+    Aligns derive mode with `tests_mirror_pairing`'s rule: private-helper
+    modules (filename starts with `_`, not `__init__.py`) are exempt from
+    the mirror-pairing requirement and must not be passed to
+    `_resolve_test_paths`. Without the exemption the derive path surfaces a
+    spurious resolution failure whenever a private helper changes and lacks a
+    dedicated mirror test (the helper's behavior is exercised through the
+    public caller, per the `_is_private_helper_module` exemption in
+    `tests_mirror_pairing.py`). `__init__.py` is NOT a private-helper
+    module and must still be included.
+    """
+    module = _load_check_module()
+    diff_output = "\n".join(
+        [
+            "livespec_dev_tooling/checks/_helpers.py",  # dropped — private helper
+            "livespec_dev_tooling/checks/foo.py",  # kept — public module
+            "livespec_dev_tooling/checks/__init__.py",  # kept — __init__.py is not a private helper
+        ]
+    )
+    result = module._changed_py_impl_paths(  # noqa: SLF001
+        diff_output=diff_output,
+        source_tree_prefixes=("livespec_dev_tooling/",),
+    )
+    assert result == [
+        Path("livespec_dev_tooling/checks/foo.py"),
+        Path("livespec_dev_tooling/checks/__init__.py"),
+    ], f"underscore-private modules should be excluded from derive mode; got {result!r}"

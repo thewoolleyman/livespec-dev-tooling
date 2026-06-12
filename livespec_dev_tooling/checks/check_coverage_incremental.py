@@ -201,8 +201,12 @@ def _changed_py_impl_paths(
         path = line.strip()
         if not path or not path.endswith(".py"):
             continue
-        if path.startswith(source_tree_prefixes):
-            out.append(Path(path))
+        if not path.startswith(source_tree_prefixes):
+            continue
+        name = Path(path).name
+        if name.startswith("_") and name != "__init__.py":
+            continue
+        out.append(Path(path))
     return out
 
 
