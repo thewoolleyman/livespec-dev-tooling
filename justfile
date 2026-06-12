@@ -189,6 +189,13 @@ check:
         # point, so siblings do not each wire it). Always wired here;
         # the module self-manages its RUN/SKIP lever (see the recipe).
         check-fleet-conformance
+        # Fabro sandbox image pin-lockstep gate — repo-private extra,
+        # NOT a canonical slug (the module lives at
+        # livespec_dev_tooling/fabro_image_pin_lockstep.py, not under
+        # checks/: this repo OWNS the family Fabro sandbox image at
+        # docker/fabro-sandbox/Dockerfile, so siblings have nothing
+        # to wire). See the recipe comment below.
+        check-fabro-image-pin-lockstep
     )
     failed=()
     ran=0
@@ -269,6 +276,20 @@ check-types:
 #       livespec_dev_tooling.fleet.wire_fleet_member --repo <member>
 check-fleet-conformance:
     uv run python -m livespec_dev_tooling.fleet.fleet_conformance
+
+# Fabro sandbox image pin-lockstep gate — repo-private extra (this
+# repo owns the family Fabro sandbox image; the module deliberately
+# lives OUTSIDE livespec_dev_tooling/checks/ so it stays out of the
+# canonical fleet-universal slug set). Fails when any tool version
+# baked into docker/fabro-sandbox/Dockerfile (its greppable ARG-form
+# pins) drifts from this repo's own pin sources: `.mise.toml`
+# `[tools]` for uv / just / lefthook, `.python-version` for the
+# interpreter. The uv.lock cache pre-warm needs no check: the image
+# build COPYs this repo's own pyproject.toml + uv.lock from the build
+# context, so it cannot reference a stale lockfile. Wired in the
+# `check:` aggregate above AND the CI check-metadata matrix.
+check-fabro-image-pin-lockstep:
+    uv run python -m livespec_dev_tooling.fabro_image_pin_lockstep
 
 check-coverage:
     #!/usr/bin/env bash
