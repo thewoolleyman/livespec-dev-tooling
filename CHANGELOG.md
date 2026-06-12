@@ -53,6 +53,26 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.13.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.12.1...v0.13.0) (2026-06-12)
+
+
+### Features
+
+* **fleet:** central fleet-conformance check (assert mode) ([181d704](https://github.com/thewoolleyman/livespec-dev-tooling/commit/181d7049c877ca2cbe521e755d0fc879d15dc97b))
+* **fleet:** committed-file obligation rows (workflows, pin, gitlinks) ([7c1efe1](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7c1efe1de8f419fa703ec3cfcd12d8e9670dcbec))
+* **fleet:** GitHub-side state obligation rows (secrets, App, protection, topic) ([bdf1e54](https://github.com/thewoolleyman/livespec-dev-tooling/commit/bdf1e54fc91aff3dba09923273d77d9fa3c6f4c9))
+* **fleet:** shared types + GitHub-access seam for the fleet contract ([dfbda0a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/dfbda0a6275c9e4f4f6170ce824fb1c7c4b05c07))
+* **fleet:** the shared contract definition (manifest + obligation table) ([3662c26](https://github.com/thewoolleyman/livespec-dev-tooling/commit/3662c26433ee641d93f617f98962ee7313a02a36))
+* **fleet:** wire-fleet-member CLI (idempotent reconcile engine) ([55e9341](https://github.com/thewoolleyman/livespec-dev-tooling/commit/55e93412443f44065739cc112865c7ec16b36685))
+* **fleet:** wire-fleet-member reconcile operations ([91076e1](https://github.com/thewoolleyman/livespec-dev-tooling/commit/91076e1f70291ac324dd23c3148c0d9b1c0f5332))
+* gate Fabro sandbox image pins in lockstep with repo pins ([ea684ad](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ea684ad0d3019fc81ee45ce77ff5e52a93b12d9e))
+
+
+### Bug Fixes
+
+* **check_coverage_incremental:** align derive mode with tests_mirror_pairing on underscore-private helpers ([c7c2bac](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c7c2bacfd42d56d7ef13bc7bcbf11b18ef06cbef))
+* **keyword_only_args:** exempt sort/sorted key= callables from kw-only check ([c5a8a4d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c5a8a4d8b66d921e3588810082f89202f3a8f694))
+
 ## [0.12.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.12.0...v0.12.1) (2026-06-12)
 
 
