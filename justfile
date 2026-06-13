@@ -21,13 +21,25 @@
 
 # `skip` — space-separated list of `check:` aggregate targets to omit
 # from a single run (epic li-cvaudit, cvredmd). Default empty: the full
-# aggregate runs. The Red-mode pre-commit overrides it on the command
-# line — `just skip="check-coverage check-per-file-coverage" check` — so
-# the coverage gates are not run at the Red commit (coverage is verified
-# at the Green amend). This is a self-contained just variable; it replaces
+# aggregate runs. This is a self-contained just variable; it replaces
 # the prior ambient `LIVESPEC_PRECOMMIT_RED_MODE` env var with no env var
-# and no spec change.
+# and no spec change. Pre-push and CI invoke `just check` with no `skip`,
+# so the full aggregate stays the safety net.
 skip := ""
+
+# `red_staged` — the single staged test path at a Red commit (empty
+# otherwise). When non-empty, `check:` derives the Red-mode skip set
+# from the staged-path CLASS via `red_leg_scope` and UNIONs it into
+# `skip`: always the coverage gates (verified at the Green amend) plus
+# any orthogonal legs a staged unit test cannot affect (livespec's
+# e2e-mock / prompts / doctor-static — dev-tooling has none, so it is
+# the coverage floor here; the win lands cross-repo via the pin bump).
+# Work-item livespec-dev-tooling-7us.6; research item #4. The `check:`
+# `targets=(...)` array is the SINGLE source of truth — the scope
+# module receives it and the staged path, computes the skip set, and
+# FAILS FAST (the caller then runs the full aggregate) rather than ever
+# emitting an empty Red selection.
+red_staged := ""
 
 # Default to listing targets when no recipe is invoked.
 default:
@@ -95,9 +107,11 @@ check:
     # `skip` is a just VARIABLE (declared at the top of this justfile,
     # default empty): a space-separated list of target names to omit from
     # this run (epic li-cvaudit, cvredmd). The Red-mode pre-commit invokes
-    # `just skip="check-coverage check-per-file-coverage" check` so coverage
-    # is not gated at the Red commit (it is verified at the Green amend) —
-    # a self-contained just variable that replaces the prior ambient
+    # `just red_staged="<test>" check`, which derives the Red-mode skip
+    # set from the staged-path class (red_leg_scope) and unions it into
+    # `skip` so coverage (and any orthogonal legs) are not gated at the
+    # Red commit (they are verified at the Green amend) — a self-contained
+    # just variable that replaces the prior ambient
     # `LIVESPEC_PRECOMMIT_RED_MODE` env var. The recipe header stays the
     # bare `check:` the wiring-completeness checks parse for. Pre-push and
     # CI invoke `just check` with no `skip`, so the full aggregate stays
@@ -196,8 +210,30 @@ check:
         # to wire). See the recipe comment below.
         check-fabro-image-pin-lockstep
     )
-    uv run python -m livespec_dev_tooling.parallel_check_dispatcher --skip "{{skip}}" -- "${targets[@]}" || exit 1
-    if [[ -z "{{skip}}" ]]; then uv run python -m livespec_dev_tooling.green_token write || true; fi
+    # Red-mode scope reduction (work-item livespec-dev-tooling-7us.6):
+    # when `red_staged` names the single staged test path at a Red
+    # commit, derive the additional skip set from the staged-path CLASS
+    # against the SAME `targets` array (its single source of truth) and
+    # union it into `skip`. The module FAILS FAST (exit 1) rather than
+    # ever emitting an empty Red selection; on failure we abort here so
+    # the Red gate is never silently empty (it surfaces loudly and the
+    # author re-runs the full aggregate). Pre-push / CI pass no
+    # `red_staged`, so the full aggregate is unaffected.
+    effective_skip="{{skip}}"
+    if [[ -n "{{red_staged}}" ]]; then
+        red_skip=$(uv run python -m livespec_dev_tooling.red_leg_scope \
+            --staged {{red_staged}} --targets "${targets[@]}") || {
+            echo "ERROR: red_leg_scope fail-fast; the Red selection would be empty — run the full aggregate instead" >&2
+            exit 1
+        }
+        effective_skip="{{skip}} ${red_skip}"
+    fi
+    uv run python -m livespec_dev_tooling.parallel_check_dispatcher --skip "${effective_skip}" -- "${targets[@]}" || exit 1
+    # The advisory green token records a FULL green pass only. A partial
+    # run (explicit `skip` OR a Red-mode `red_staged` scope reduction)
+    # must NOT write it, or pre-push would skip the full aggregate on a
+    # tree that never had one.
+    if [[ -z "{{skip}}" && -z "{{red_staged}}" ]]; then uv run python -m livespec_dev_tooling.green_token write || true; fi
 
 # ---------------------------------------------------------------
 # Tool-backed checks. NOT canonical-aggregate slugs (not in
@@ -514,8 +550,9 @@ check-pre-commit:
     fi
     if [[ "$test_count" -eq 1 ]] && [[ "$impl_count" -eq 0 ]]; then
         echo ":: Red-mode shape detected: $test_staged"
-        echo ":: skipping coverage gates (commit-msg replay hook is the verifier; coverage runs at Green amend)"
-        just skip="check-coverage check-per-file-coverage" check
+        echo ":: scoping the Red gate by staged-path class (red_leg_scope): coverage gates skip"
+        echo ":: (verified at the Green amend) + any orthogonal legs a staged unit test cannot affect"
+        just red_staged="$test_staged" check
         exit $?
     fi
     # Green-amend shape needs no special-casing: the no-arg
