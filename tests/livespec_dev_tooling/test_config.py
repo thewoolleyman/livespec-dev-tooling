@@ -29,6 +29,7 @@ from livespec_dev_tooling.config import (
     iter_py_files,
     load_config,
     load_destructive_cli_allowlist,
+    load_mutation_staging_dir,
     load_scenario_tiers,
 )
 
@@ -357,3 +358,36 @@ def test_destructive_cli_allowlist_non_string_element_raises(*, tmp_path: Path) 
         ConfigParseError, match="`destructive_cli_allowlist` must be an array of strings"
     ):
         _ = load_destructive_cli_allowlist(repo_root=tmp_path)
+
+
+def test_mutation_staging_dir_none_when_no_pyproject(*, tmp_path: Path) -> None:
+    """No `pyproject.toml` → `load_mutation_staging_dir` returns `None` (caller defaults)."""
+    assert load_mutation_staging_dir(repo_root=tmp_path) is None
+
+
+def test_mutation_staging_dir_none_when_key_absent(*, tmp_path: Path) -> None:
+    """A block present but omitting `mutation_staging_dir` → `None` (flat-layout repo)."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body='[tool.livespec_dev_tooling]\nsource_trees = ["pkg"]\n',
+    )
+    assert load_mutation_staging_dir(repo_root=tmp_path) is None
+
+
+def test_mutation_staging_dir_read_from_block(*, tmp_path: Path) -> None:
+    """A declared `mutation_staging_dir` string is returned as a `Path`."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body='[tool.livespec_dev_tooling]\nmutation_staging_dir = ".mutmut-staging"\n',
+    )
+    assert load_mutation_staging_dir(repo_root=tmp_path) == Path(".mutmut-staging")
+
+
+def test_mutation_staging_dir_non_string_raises(*, tmp_path: Path) -> None:
+    """A non-string `mutation_staging_dir` raises `ConfigParseError`."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body="[tool.livespec_dev_tooling]\nmutation_staging_dir = [1]\n",
+    )
+    with pytest.raises(ConfigParseError, match="`mutation_staging_dir` must be a string"):
+        _ = load_mutation_staging_dir(repo_root=tmp_path)
