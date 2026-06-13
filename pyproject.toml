@@ -91,6 +91,76 @@ mirror_pairings = [
 # prefix `tests.consumer`), so only that prefix is declared.
 scenario_tiers = ["tests.consumer"]
 
+# Repo-root-relative path prefixes the `tests_no_subprocess_spawn` check
+# (`check-tests-no-subprocess-spawn`, epic 7us / work-item
+# livespec-dev-tooling-4i5) exempts from its test-spawned-Python-subprocess
+# scan. The check forbids `subprocess.run([sys.executable, ...])` (and
+# python/python3-literal spawns) in `tests/` by default: such a child under
+# `pytest --cov` self-instruments and races concurrent coverage runs under the
+# parallel dispatcher (the 7us.6 flaky "No data to report" bug), and the spawn
+# is materially slower than the in-process `main()` pattern
+# (`monkeypatch.chdir(tmp_path)` + `capsys` + `rc = main()`).
+#
+# This list is the HONEST CURRENT STATE of the suite, NOT an endorsement of the
+# pattern. Every entry is a test that today spawns a Python subprocess; it
+# SHRINKS as gratuitous spawns are converted to in-process `main()` (the
+# deferred 7us conversion follow-up, tracked separately). Entries that
+# genuinely need a real subprocess (git / commit-refuse-hook / CLI-binary
+# behavior) stay AND must scrub COVERAGE_PROCESS_START + COV_CORE_* from the
+# child env so the child does not self-instrument.
+subprocess_spawn_allowlist = [
+    "tests/consumer/test_package_consumption.py",
+    "tests/consumer/test_reusable_check_matrix.py",
+    "tests/consumer/test_self_application_regression.py",
+    "tests/consumer/test_semver_and_bump_shape.py",
+    "tests/livespec_dev_tooling/agent_hooks/test_pretooluse_background_guard.py",
+    "tests/livespec_dev_tooling/agent_hooks/test_subagent_stop_guard.py",
+    "tests/livespec_dev_tooling/checks/test_all_declared.py",
+    "tests/livespec_dev_tooling/checks/test_assert_never_exhaustiveness.py",
+    "tests/livespec_dev_tooling/checks/test_branch_protection_alignment.py",
+    "tests/livespec_dev_tooling/checks/test_check_coverage_incremental.py",
+    "tests/livespec_dev_tooling/checks/test_check_mutation.py",
+    "tests/livespec_dev_tooling/checks/test_check_tools.py",
+    "tests/livespec_dev_tooling/checks/test_claude_md_coverage.py",
+    "tests/livespec_dev_tooling/checks/test_comment_line_anchors.py",
+    "tests/livespec_dev_tooling/checks/test_commit_pairs_source_and_test.py",
+    "tests/livespec_dev_tooling/checks/test_config_driven_checks.py",
+    "tests/livespec_dev_tooling/checks/test_file_lloc.py",
+    "tests/livespec_dev_tooling/checks/test_global_writes.py",
+    "tests/livespec_dev_tooling/checks/test_heading_coverage.py",
+    "tests/livespec_dev_tooling/checks/test_keyword_only_args.py",
+    "tests/livespec_dev_tooling/checks/test_main_guard.py",
+    "tests/livespec_dev_tooling/checks/test_master_ci_green.py",
+    "tests/livespec_dev_tooling/checks/test_match_keyword_only.py",
+    "tests/livespec_dev_tooling/checks/test_newtype_domain_primitives.py",
+    "tests/livespec_dev_tooling/checks/test_no_direct_tool_invocation.py",
+    "tests/livespec_dev_tooling/checks/test_no_except_outside_io.py",
+    "tests/livespec_dev_tooling/checks/test_no_inheritance.py",
+    "tests/livespec_dev_tooling/checks/test_no_lloc_soft_warnings.py",
+    "tests/livespec_dev_tooling/checks/test_no_raise_outside_io.py",
+    "tests/livespec_dev_tooling/checks/test_no_todo_registry.py",
+    "tests/livespec_dev_tooling/checks/test_no_write_direct.py",
+    "tests/livespec_dev_tooling/checks/test_pbt_coverage_pure_modules.py",
+    "tests/livespec_dev_tooling/checks/test_per_file_coverage.py",
+    "tests/livespec_dev_tooling/checks/test_primary_checkout_commit_refuse_hook_installed.py",
+    "tests/livespec_dev_tooling/checks/test_private_calls.py",
+    "tests/livespec_dev_tooling/checks/test_public_api_result_typed.py",
+    "tests/livespec_dev_tooling/checks/test_red_green_replay.py",
+    "tests/livespec_dev_tooling/checks/test_rop_pipeline_shape.py",
+    "tests/livespec_dev_tooling/checks/test_supervisor_discipline.py",
+    "tests/livespec_dev_tooling/checks/test_tests_mirror_pairing.py",
+    "tests/livespec_dev_tooling/checks/test_vendor_manifest.py",
+    "tests/livespec_dev_tooling/checks/test_wrapper_shape.py",
+    "tests/livespec_dev_tooling/cross_repo/test_pin_autodiscovery.py",
+    "tests/livespec_dev_tooling/fleet/test_fleet_conformance.py",
+    "tests/livespec_dev_tooling/fleet/test_wire_fleet_member.py",
+    "tests/livespec_dev_tooling/test_canonical_checks.py",
+    "tests/livespec_dev_tooling/test_fabro_image_pin_lockstep.py",
+    "tests/livespec_dev_tooling/test_green_token.py",
+    "tests/livespec_dev_tooling/test_parallel_check_dispatcher.py",
+    "tests/livespec_dev_tooling/test_tdd_commit.py",
+]
+
 # ---------------------------------------------------------------------------
 # Ruff — sole linter, formatter, import-sorter, complexity checker.
 # Rule set mirrors livespec/pyproject.toml [tool.ruff] per

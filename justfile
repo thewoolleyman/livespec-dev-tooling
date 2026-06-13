@@ -172,6 +172,7 @@ check:
         check-skill-invocation-paths
         check-supervisor-discipline
         check-tests-mirror-pairing
+        check-tests-no-subprocess-spawn
         check-tool-backed-check-completeness
         check-vendor-manifest
         check-wrapper-shape
@@ -524,6 +525,17 @@ check-supervisor-discipline:
 
 check-tests-mirror-pairing:
     uv run python -m livespec_dev_tooling.checks.tests_mirror_pairing
+
+# Test-spawned-Python-subprocess guard (epic 7us, work-item
+# livespec-dev-tooling-4i5). Flags `subprocess.run([sys.executable, ...])`
+# (and python/python3-literal) spawns under tests/ — they self-instrument
+# under pytest --cov and race the parallel dispatcher (the 7us.6 flaky
+# "No data to report" bug) and are slower than the in-process main()
+# pattern. The subprocess_spawn_allowlist in pyproject.toml exempts tests
+# that genuinely need a real subprocess (they must scrub COVERAGE_PROCESS_START
+# + COV_CORE_*). Defense-in-depth pairing with cmn.
+check-tests-no-subprocess-spawn:
+    uv run python -m livespec_dev_tooling.checks.tests_no_subprocess_spawn
 
 # Tool-backed-check completeness meta-check (epic li-pyright-gate,
 # work-item li-pyright-gate-wi3). Asserts each tool-backed check

@@ -56,6 +56,7 @@ __all__: list[str] = [
     "load_destructive_cli_allowlist",
     "load_mutation_staging_dir",
     "load_scenario_tiers",
+    "load_subprocess_spawn_allowlist",
 ]
 
 
@@ -303,6 +304,36 @@ def load_destructive_cli_allowlist(*, repo_root: Path) -> tuple[str, ...] | None
     if table is None or "destructive_cli_allowlist" not in table:
         return None
     return _as_str_tuple(value=table["destructive_cli_allowlist"], key="destructive_cli_allowlist")
+
+
+def load_subprocess_spawn_allowlist(*, repo_root: Path) -> tuple[str, ...] | None:
+    """Return the `subprocess_spawn_allowlist` entries, or `None` if the key is absent.
+
+    Reads `<repo_root>/pyproject.toml`'s `[tool.livespec_dev_tooling]` block,
+    key `subprocess_spawn_allowlist` — a TOML array of repo-root-relative
+    path prefixes (POSIX separators) that the `tests_no_subprocess_spawn`
+    check exempts from its test-spawned-Python-subprocess scan (epic 7us,
+    work-item livespec-dev-tooling-4i5). Allowlisted tests genuinely need a
+    real subprocess (git / commit-refuse-hook / CLI-binary behavior) and MUST
+    scrub `COVERAGE_PROCESS_START` + `COV_CORE_*` from the child env. The
+    allowlist is the honest current state and shrinks as gratuitous spawns are
+    converted to the in-process `main()` pattern (the deferred conversion
+    follow-up, tracked separately). Returns `None` when the whole block is
+    absent OR the key is omitted, so the calling check applies its documented
+    default (empty — nothing exempt). Raises `ConfigParseError` on a non-array
+    value or a non-string element, consistent with the rest of the loader.
+
+    Like `scenario_tiers` and `destructive_cli_allowlist`, this is
+    intentionally NOT a `Config` role key: it is a single-check concern
+    (`tests_no_subprocess_spawn`), so it is read directly off the table rather
+    than threaded through the typed layout dataclass.
+    """
+    table = _read_table(repo_root=repo_root)
+    if table is None or "subprocess_spawn_allowlist" not in table:
+        return None
+    return _as_str_tuple(
+        value=table["subprocess_spawn_allowlist"], key="subprocess_spawn_allowlist"
+    )
 
 
 def load_mutation_staging_dir(*, repo_root: Path) -> Path | None:
