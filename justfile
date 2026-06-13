@@ -261,15 +261,23 @@ check-types:
 # Aggregate (total) coverage gate at `fail_under = 100` (pyproject.toml
 # [tool.coverage.report]). To avoid a DUPLICATE full pytest run when
 # invoked inside the `just check` aggregate, this recipe gates off the
-# EXISTING `.coverage` data file when present (the canonical
-# check-per-file-coverage slug runs `pytest --cov` upfront and runs
-# alphabetically before this repo-private extra, so `.coverage` is
-# already produced by the time this runs locally). When `.coverage` is
-# ABSENT — the CI check-python matrix runs check-coverage as a
-# standalone job in its own runner with no prior pytest — the recipe
-# runs the suite itself so the aggregate gate still fires there. Either
-# way the result is the `fail_under = 100` aggregate assertion with NO
-# duplicate suite run in `just check`.
+# EXISTING coverage data file when present (the canonical
+# check-per-file-coverage slug runs `pytest --cov` upfront in the SAME
+# coverage namespace, so the data file is already produced by the time
+# this runs). When it is ABSENT — the CI check-python matrix runs
+# check-coverage as a standalone job in its own runner with no prior
+# pytest — the recipe runs the suite itself so the aggregate gate still
+# fires there. Either way the result is the `fail_under = 100` aggregate
+# assertion with NO duplicate suite run in `just check`.
+#
+# Coverage-data isolation (work-item livespec-dev-tooling-cmn): the
+# parallel check dispatcher exports COVERAGE_FILE pointed at this
+# target's isolated namespace dir (shared with its producer
+# check-per-file-coverage). `${COVERAGE_FILE:-.coverage}` reads THAT
+# file as the explicit producer->consumer data dependency; pytest-cov
+# and `coverage report` both honor COVERAGE_FILE natively. A standalone
+# run leaves COVERAGE_FILE unset and falls back to the repo-root
+# `.coverage` the recipe's own suite produces.
 # Central fleet-membership conformance check (livespec v108 §"Fleet
 # membership contract"): fetches fleet-manifest.jsonc from livespec
 # master, asserts every member's per-class obligations from the
@@ -305,11 +313,12 @@ check-fabro-image-pin-lockstep:
 check-coverage:
     #!/usr/bin/env bash
     set -uo pipefail
-    if [[ -f .coverage ]]; then
-        echo ":: check-coverage: reading existing .coverage (produced by check-per-file-coverage); no duplicate suite run"
+    data_file="${COVERAGE_FILE:-.coverage}"
+    if [[ -f "${data_file}" ]]; then
+        echo ":: check-coverage: reading existing ${data_file} (produced by check-per-file-coverage); no duplicate suite run"
         uv run coverage report --fail-under=100
     else
-        echo ":: check-coverage: no .coverage data file (CI standalone job); running the suite"
+        echo ":: check-coverage: no ${data_file} data file (CI standalone job); running the suite"
         uv run pytest -n auto --cov --cov-branch --cov-config=pyproject.toml --cov-report=term-missing
     fi
 
@@ -344,6 +353,16 @@ check-branch-protection-alignment:
 # gates those — no longer a no-op (epic li-cvaudit, cvnoarg). The
 # interactive developer use case still passes `--paths` explicitly:
 # `just check-check-coverage-incremental --paths livespec_dev_tooling/checks/foo.py`.
+#
+# Coverage-data isolation (work-item livespec-dev-tooling-cmn): the
+# module sets its own isolated COVERAGE_FILE for the inner pytest, and
+# the parallel check dispatcher additionally assigns this target its OWN
+# coverage namespace dir + TMPDIR. With check-per-file-coverage's
+# `coverage combine` now confined to ITS OWN namespace dir, this gate's
+# data file can never be globbed-and-erased by a concurrent
+# per-file-coverage run. The former hand-pinned serialization edge
+# (check-check-coverage-incremental -> check-per-file-coverage, 7us.6)
+# is RETIRED; this gate runs fully concurrently.
 check-check-coverage-incremental *args:
     uv run python -m livespec_dev_tooling.checks.check_coverage_incremental {{args}}
 
@@ -435,9 +454,19 @@ check-no-write-direct:
 check-pbt-coverage-pure-modules:
     uv run python -m livespec_dev_tooling.checks.pbt_coverage_pure_modules
 
-# Per-file 100% line+branch coverage gate. Reads `.coverage`; we run
-# pytest --cov upfront in the recipe so the data file exists when the
-# canonical aggregate invokes the slug as a self-contained check.
+# Per-file 100% line+branch coverage gate. Runs pytest --cov upfront so
+# the data file exists when per_file_coverage reads it.
+#
+# Coverage-data isolation (work-item livespec-dev-tooling-cmn): the
+# parallel check dispatcher exports COVERAGE_FILE pointed at this
+# target's isolated namespace dir. pytest-cov honors COVERAGE_FILE
+# natively (parallel `.coverage.*` data files land beside it and
+# `coverage combine` globs only THAT dir), and a COVERAGE_PROCESS_START
+# child a test spawns inherits the same COVERAGE_FILE, so the subprocess
+# case is isolated for free. per_file_coverage reads the same file via
+# COVERAGE_FILE. A standalone run leaves COVERAGE_FILE unset and uses the
+# repo-root `.coverage` default. This is the PRODUCER of the full-tree
+# coverage namespace shared with check-coverage.
 # In Red-mode pre-commit this target is omitted by `check-pre-commit`
 # via the `check skip=...` argument (coverage is verified at the Green
 # amend), so no ambient env-var read is needed here.

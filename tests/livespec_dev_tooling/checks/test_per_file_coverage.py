@@ -27,10 +27,12 @@ dev-tooling/checks invocation contract.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 from coverage import CoverageData
 
 __all__: list[str] = []
@@ -38,6 +40,22 @@ __all__: list[str] = []
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _PER_FILE_COVERAGE = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "per_file_coverage.py"
+
+
+def _env_without_coverage_file() -> dict[str, str]:
+    """Return a copy of the environment with COVERAGE_FILE removed.
+
+    The parallel check dispatcher (work-item livespec-dev-tooling-cmn)
+    sets COVERAGE_FILE for the `check-per-file-coverage` pytest run, and
+    subprocess children inherit it. Tests that exercise
+    per_file_coverage's DEFAULT `cwd/.coverage` resolution must run the
+    subprocess WITHOUT that inherited override, or the check would read
+    the outer run's isolated data file instead of the fixture's
+    cwd-local `.coverage`.
+    """
+    env = dict(os.environ)
+    env.pop("COVERAGE_FILE", None)
+    return env
 
 
 def test_per_file_coverage_rejects_file_below_100_line_coverage(*, tmp_path: Path) -> None:
@@ -85,6 +103,7 @@ def test_per_file_coverage_rejects_file_below_100_line_coverage(*, tmp_path: Pat
         capture_output=True,
         text=True,
         check=False,
+        env=_env_without_coverage_file(),
     )
 
     assert result.returncode != 0, (
@@ -116,6 +135,7 @@ def test_per_file_coverage_rejects_when_no_coverage_data_file_exists(*, tmp_path
         capture_output=True,
         text=True,
         check=False,
+        env=_env_without_coverage_file(),
     )
 
     assert result.returncode != 0, (
@@ -164,12 +184,139 @@ def test_per_file_coverage_accepts_when_all_files_at_100_percent(*, tmp_path: Pa
         capture_output=True,
         text=True,
         check=False,
+        env=_env_without_coverage_file(),
     )
 
     assert result.returncode == 0, (
         f"per_file_coverage should accept all-100% data with exit 0; "
         f"got returncode={result.returncode} "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def _load_per_file_coverage_module() -> object:
+    """Import per_file_coverage.py fresh as a standalone module object.
+
+    Mirrors the importability/constant tests below: load the check via
+    `importlib.util.spec_from_file_location` so `main()` can be exercised
+    IN-PROCESS (deterministic coverage of its branches, no
+    subprocess-coverage fragility — the gate itself runs the check as a
+    subprocess, but its branch coverage is pinned here directly).
+    """
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "per_file_coverage_for_behavior_test", str(_PER_FILE_COVERAGE)
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_per_file_coverage_reads_coverage_file_env(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """per_file_coverage reads the data file named by COVERAGE_FILE, not cwd/.coverage.
+
+    Work-item livespec-dev-tooling-cmn: the parallel check dispatcher
+    exports COVERAGE_FILE pointed at the target's isolated namespace dir.
+    The fixture writes the synthetic `.coverage` into a SUBDIR (not cwd)
+    and points COVERAGE_FILE at it; no `.coverage` exists in cwd. The
+    check (run in-process with cwd monkeypatched to tmp_path) must read
+    the isolated file and reject the <100% subject rather than failing
+    with "no coverage data found" for a missing cwd file.
+    """
+    src_file = tmp_path / "subject.py"
+    src_file.write_text(
+        "from __future__ import annotations\n"
+        "\n"
+        "__all__: list[str] = []\n"
+        "\n"
+        "x = 1\n"
+        "y = 2\n"
+        "z = 3\n",
+        encoding="utf-8",
+    )
+    iso_dir = tmp_path / "covns-full-tree"
+    iso_dir.mkdir()
+    iso_data = iso_dir / ".coverage"
+    data = CoverageData(basename=str(iso_data), suffix=False)
+    data.add_lines({str(src_file): [1, 3]})
+    data.write()
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("COVERAGE_FILE", str(iso_data))
+    module = _load_per_file_coverage_module()
+    rc = module.main()
+
+    captured = capsys.readouterr()
+    combined = captured.out + captured.err
+    assert rc != 0, (
+        f"per_file_coverage should read the COVERAGE_FILE-named data file and reject "
+        f"subject.py at <100%; got rc={rc} output={combined!r}"
+    )
+    assert "subject.py" in combined, (
+        f"per_file_coverage should have read the isolated COVERAGE_FILE and surfaced "
+        f"subject.py; output={combined!r}"
+    )
+
+
+def test_per_file_coverage_empty_data_emits_actionable_hint(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An empty coverage data file fails with the actionable Tier-2 diagnostic.
+
+    Work-item livespec-dev-tooling-cmn Tier 2: when the data file is
+    PRESENT but measures zero files (the symptom of a concurrent/
+    subprocess COVERAGE_FILE collision whose `coverage combine` swept the
+    data — on which `json_report` would raise the cryptic "No data to
+    report"), the gate must emit an ACTIONABLE message naming the
+    isolated-COVERAGE_FILE fix. The fixture produces a present-but-empty
+    `.coverage` via start/stop/save (zero measured files, file on disk);
+    the check is run in-process with cwd monkeypatched to tmp_path and
+    asserts the hint mentions isolating COVERAGE_FILE.
+    """
+    # Build the present-but-empty `.coverage` in a SUBPROCESS so the
+    # outer pytest-cov session's tracer is not suspended by a nested
+    # `Coverage.start()` (which would blind the outer tracer to this
+    # fixture's own lines). The child does start/stop/save with nothing
+    # measured, leaving a file on disk whose measured_files() is empty.
+    empty_db = tmp_path / ".coverage"
+    builder = (
+        "from coverage import Coverage;"
+        f"c = Coverage(data_file={str(empty_db)!r});"
+        "c.start(); c.stop(); c.save()"
+    )
+    build = subprocess.run(
+        [sys.executable, "-c", builder],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert empty_db.is_file(), (
+        f"fixture subprocess must leave a present .coverage file; "
+        f"stdout={build.stdout!r} stderr={build.stderr!r}"
+    )
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("COVERAGE_FILE", raising=False)
+    module = _load_per_file_coverage_module()
+    rc = module.main()
+
+    captured = capsys.readouterr()
+    combined = captured.out + captured.err
+    assert rc != 0, (
+        f"per_file_coverage should reject empty coverage data with non-zero exit; "
+        f"got rc={rc} output={combined!r}"
+    )
+    assert "isolated COVERAGE_FILE" in combined, (
+        f"empty-data diagnostic must be the actionable isolated-COVERAGE_FILE hint, "
+        f"not the cryptic 'No data to report'; output={combined!r}"
+    )
+    assert "no measured files" in combined, (
+        "the empty-data branch (present file, zero measured files) must be the one "
+        f"that fired — not the missing-file branch; output={combined!r}"
     )
 
 
@@ -272,6 +419,7 @@ def test_per_file_coverage_parses_xdist_combined_data(*, tmp_path: Path) -> None
         capture_output=True,
         text=True,
         check=False,
+        env=_env_without_coverage_file(),
     )
 
     assert result.returncode != 0, (

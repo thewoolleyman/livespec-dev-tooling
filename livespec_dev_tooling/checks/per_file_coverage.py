@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import sys
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -55,6 +56,39 @@ __all__: list[str] = []
 # names the policy threshold for use in the offender-detection loop.
 _FULL_COVERAGE_PCT: float = 100.0
 
+# Default coverage data-file name when COVERAGE_FILE is unset. The
+# parallel check dispatcher (work-item livespec-dev-tooling-cmn) exports
+# COVERAGE_FILE to point at this target's isolated namespace dir; a
+# standalone CI run leaves it unset and falls back to the repo-root
+# `.coverage` the recipe's own `pytest --cov` produced.
+_DEFAULT_DATA_FILE: str = ".coverage"
+
+# Tier-2 actionable diagnostic (work-item livespec-dev-tooling-cmn).
+# When the data file is missing OR loads with zero measured files, the
+# coverage report would otherwise emit the cryptic "No data to report".
+# This message names the most likely cause (a concurrent/subprocess
+# COVERAGE_FILE collision) and the structural fix, instead.
+_EMPTY_COVERAGE_HINT: str = (
+    "coverage data empty — likely a concurrent/subprocess COVERAGE_FILE "
+    "collision; each dispatched target must use an isolated COVERAGE_FILE "
+    "(the parallel check dispatcher assigns one per coverage namespace). "
+    "See the parallel_check_dispatcher coverage-isolation docstring."
+)
+
+
+def _resolve_data_file(*, cwd: Path) -> Path:
+    """Return the coverage data file: COVERAGE_FILE env, else cwd/.coverage.
+
+    The dispatcher points COVERAGE_FILE at the target's isolated
+    namespace dir so per-file-coverage reads exactly the data its own
+    `pytest --cov` wrote there; an unset env (the CI standalone job)
+    falls back to the repo-root default.
+    """
+    env_file = os.environ.get("COVERAGE_FILE")
+    if env_file:
+        return Path(env_file)
+    return cwd / _DEFAULT_DATA_FILE
+
 
 def main() -> int:
     structlog.configure(
@@ -67,13 +101,32 @@ def main() -> int:
     )
     log = structlog.get_logger("per_file_coverage")
     cwd = Path.cwd()
-    coverage_file = cwd / ".coverage"
+    coverage_file = _resolve_data_file(cwd=cwd)
     if not coverage_file.is_file():
-        log.error("no coverage data found", expected_path=str(coverage_file))
+        log.error(
+            "no coverage data found",
+            expected_path=str(coverage_file),
+            hint=_EMPTY_COVERAGE_HINT,
+        )
         return 1
 
     cov = Coverage(data_file=str(coverage_file))
     cov.load()
+
+    # Tier-2 empty-data guard (work-item livespec-dev-tooling-cmn): a
+    # present-but-empty data file (zero measured files) is the symptom of
+    # a concurrent/subprocess COVERAGE_FILE collision whose `coverage
+    # combine` swept the data. `Coverage.json_report` raises NoDataError
+    # on it (the cryptic "No data to report"); checking measured_files()
+    # up front lets us emit the actionable diagnostic WITHOUT a
+    # try/except and without crashing on the exception.
+    if not cov.get_data().measured_files():
+        log.error(
+            "coverage data empty (no measured files)",
+            data_file=str(coverage_file),
+            hint=_EMPTY_COVERAGE_HINT,
+        )
+        return 1
 
     buf = io.StringIO()
     with redirect_stdout(buf):
