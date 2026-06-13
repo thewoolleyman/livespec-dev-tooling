@@ -101,6 +101,13 @@ _HARNESS_SELECTOR_ENV = "LIVESPEC_E2E_HARNESS"
 _HARNESS_MOCK = "mock"
 _HARNESS_REAL = "real"
 
+# Coverage child-process env vars scrubbed from the real `claude` subprocess
+# so it does not self-instrument under `pytest --cov` (the cmn-pairing
+# belt-and-suspenders against the coverage-collision race; see
+# `tests_no_subprocess_spawn`, work-item livespec-dev-tooling-4i5).
+_COVERAGE_PROCESS_START_VAR = "COVERAGE_PROCESS_START"
+_COVERAGE_CHILD_VAR_PREFIX = "COV_CORE_"
+
 _PLUGIN_MANIFEST = "plugin.json"
 _SKILLS_DIRNAME = "skills"
 _SKILL_FILENAME = "SKILL.md"
@@ -213,7 +220,18 @@ class RealCliRunner:
         argv = [self.claude_binary, "-p", prompt]
         if resume_session_id is not None:
             argv = [self.claude_binary, "--resume", resume_session_id, "-p", prompt]
-        env = dict(os.environ)
+        # Scrub COVERAGE_PROCESS_START + COV_CORE_* so the spawned `claude`
+        # child (a Python process) does NOT self-instrument under
+        # `pytest --cov`: an instrumented child writes `.coverage.*` that
+        # races concurrent coverage runs under the parallel dispatcher (the
+        # 7us.6 flaky "No data to report" failure). `claude` is never a
+        # coverage target, so dropping these is purely the belt-and-suspenders
+        # pairing with cmn — see the `tests_no_subprocess_spawn` check (4i5).
+        env = {
+            k: v
+            for k, v in os.environ.items()
+            if k != _COVERAGE_PROCESS_START_VAR and not k.startswith(_COVERAGE_CHILD_VAR_PREFIX)
+        }
         env["HOME"] = str(home)
         # S603: argv is a fixed list (binary name + literal flags + caller-
         # supplied prompt text); no shell, no untrusted argv[0]. The prompt is

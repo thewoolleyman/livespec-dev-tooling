@@ -31,6 +31,7 @@ from livespec_dev_tooling.config import (
     load_destructive_cli_allowlist,
     load_mutation_staging_dir,
     load_scenario_tiers,
+    load_subprocess_spawn_allowlist,
 )
 
 __all__: list[str] = []
@@ -391,3 +392,56 @@ def test_mutation_staging_dir_non_string_raises(*, tmp_path: Path) -> None:
     )
     with pytest.raises(ConfigParseError, match="`mutation_staging_dir` must be a string"):
         _ = load_mutation_staging_dir(repo_root=tmp_path)
+
+
+def test_subprocess_spawn_allowlist_none_when_no_pyproject(*, tmp_path: Path) -> None:
+    """No `pyproject.toml` → `load_subprocess_spawn_allowlist` returns `None`."""
+    assert load_subprocess_spawn_allowlist(repo_root=tmp_path) is None
+
+
+def test_subprocess_spawn_allowlist_none_when_key_absent(*, tmp_path: Path) -> None:
+    """A block present but omitting `subprocess_spawn_allowlist` → `None` (caller defaults empty)."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body='[tool.livespec_dev_tooling]\nsource_trees = ["pkg"]\n',
+    )
+    assert load_subprocess_spawn_allowlist(repo_root=tmp_path) is None
+
+
+def test_subprocess_spawn_allowlist_read_from_block(*, tmp_path: Path) -> None:
+    """A declared `subprocess_spawn_allowlist` array is returned verbatim as a tuple."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body=(
+            "[tool.livespec_dev_tooling]\n"
+            'subprocess_spawn_allowlist = ["tests/consumer/", "tests/x/test_y.py"]\n'
+        ),
+    )
+    assert load_subprocess_spawn_allowlist(repo_root=tmp_path) == (
+        "tests/consumer/",
+        "tests/x/test_y.py",
+    )
+
+
+def test_subprocess_spawn_allowlist_non_array_raises(*, tmp_path: Path) -> None:
+    """A scalar `subprocess_spawn_allowlist` raises `ConfigParseError`."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body='[tool.livespec_dev_tooling]\nsubprocess_spawn_allowlist = "tests/"\n',
+    )
+    with pytest.raises(
+        ConfigParseError, match="`subprocess_spawn_allowlist` must be an array of strings"
+    ):
+        _ = load_subprocess_spawn_allowlist(repo_root=tmp_path)
+
+
+def test_subprocess_spawn_allowlist_non_string_element_raises(*, tmp_path: Path) -> None:
+    """A `subprocess_spawn_allowlist` array with a non-string element raises."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body="[tool.livespec_dev_tooling]\nsubprocess_spawn_allowlist = [1]\n",
+    )
+    with pytest.raises(
+        ConfigParseError, match="`subprocess_spawn_allowlist` must be an array of strings"
+    ):
+        _ = load_subprocess_spawn_allowlist(repo_root=tmp_path)
