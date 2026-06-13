@@ -26,6 +26,7 @@ from pathlib import Path
 import pytest
 
 from livespec_dev_tooling.parallel_check_dispatcher import (
+    _ARTIFACT_PREREQS,
     TargetResult,
     _cap_workers,
     _configure_logger,
@@ -63,6 +64,31 @@ def test_cap_workers_caps_at_cpu_count_when_request_exceeds_it() -> None:
     cpu = os.cpu_count() or 1
     result = _cap_workers(requested=999)
     assert result <= cpu
+
+
+# ---------------------------------------------------------------------------
+# _ARTIFACT_PREREQS — shared coverage-data-namespace serialization edges
+# ---------------------------------------------------------------------------
+
+
+def test_coverage_incremental_is_serialized_after_per_file_coverage() -> None:
+    """check-check-coverage-incremental must run AFTER check-per-file-coverage.
+
+    Both run a coverage-instrumented pytest in the repo root. A
+    concurrent `check-per-file-coverage` (`pytest -n auto --cov`) runs
+    `coverage combine`, which globs and erases `.coverage*` data files —
+    including the incremental gate's `.coverage.check-coverage-
+    incremental`. Run concurrently, the incremental gate intermittently
+    finds its data file swept ("No data to report") and hard-fails.
+    Serializing it after per-file-coverage (the existing artifact-prereq
+    pattern used for check-coverage) removes the only concurrent
+    coverage writer and makes the gate deterministic. The aggregate
+    target name carries the double-`check` prefix
+    (`check-check-coverage-incremental`), which is the dispatcher key.
+    """
+    assert _ARTIFACT_PREREQS.get("check-check-coverage-incremental") == "check-per-file-coverage"
+    # The pre-existing edge for the aggregate coverage gate stays intact.
+    assert _ARTIFACT_PREREQS.get("check-coverage") == "check-per-file-coverage"
 
 
 # ---------------------------------------------------------------------------

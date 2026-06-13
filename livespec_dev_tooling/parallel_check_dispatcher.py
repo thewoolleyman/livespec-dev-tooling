@@ -56,8 +56,21 @@ _DEFAULT_MAX_WORKERS: int = 8
 # check-coverage reads the .coverage file that check-per-file-coverage writes;
 # never schedule them concurrently; check-coverage runs only after the prereq
 # completes (the deferred runner blocks on prereq_fut.result()).
+#
+# check-check-coverage-incremental runs its OWN coverage-instrumented pytest
+# (writing .coverage.check-coverage-incremental) and then `coverage report`
+# against that data file. A concurrent check-per-file-coverage
+# (`pytest -n auto --cov`) runs `coverage combine`, which globs and erases
+# `.coverage*` data files in the repo root — including the incremental gate's
+# file. Run concurrently they race and the incremental gate intermittently
+# reports "No data to report" and hard-fails. Serialize it after
+# per-file-coverage (same edge as check-coverage) so there is no concurrent
+# coverage writer when the incremental gate reads its data file. The double
+# `check-` prefix is the real aggregate target name (the recipe is
+# `check-check-coverage-incremental`), which is what the dispatcher schedules.
 _ARTIFACT_PREREQS: dict[str, str] = {
     "check-coverage": "check-per-file-coverage",
+    "check-check-coverage-incremental": "check-per-file-coverage",
 }
 
 
