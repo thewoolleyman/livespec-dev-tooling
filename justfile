@@ -102,7 +102,6 @@ check:
     # bare `check:` the wiring-completeness checks parse for. Pre-push and
     # CI invoke `just check` with no `skip`, so the full aggregate stays
     # the safety net.
-    read -ra skip_targets <<< "{{skip}}"
     # Sync the environment ONCE per aggregate pass, then run every
     # target with UV_NO_SYNC=1 so the ~44 per-target `uv run`
     # invocations skip their redundant per-invocation re-sync
@@ -197,32 +196,7 @@ check:
         # to wire). See the recipe comment below.
         check-fabro-image-pin-lockstep
     )
-    failed=()
-    ran=0
-    for t in "${targets[@]}"; do
-        skip_this=0
-        for s in "${skip_targets[@]:-}"; do
-            if [[ "$t" == "$s" ]]; then
-                skip_this=1
-                break
-            fi
-        done
-        if [[ "$skip_this" -eq 1 ]]; then
-            printf '\n::: just %s (skipped)\n' "$t"
-            continue
-        fi
-        ran=$((ran + 1))
-        printf '\n::: just %s\n' "$t"
-        if ! just "$t"; then
-            failed+=("$t")
-        fi
-    done
-    if [[ ${#failed[@]} -gt 0 ]]; then
-        printf '\nFailed targets (%d):\n' "${#failed[@]}"
-        printf '  - %s\n' "${failed[@]}"
-        exit 1
-    fi
-    printf '\nAll %d targets passed.\n' "$ran"
+    uv run python -m livespec_dev_tooling.parallel_check_dispatcher --skip "{{skip}}" -- "${targets[@]}" || exit 1
     if [[ -z "{{skip}}" ]]; then uv run python -m livespec_dev_tooling.green_token write || true; fi
 
 # ---------------------------------------------------------------
