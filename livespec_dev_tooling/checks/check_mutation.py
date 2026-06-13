@@ -24,6 +24,28 @@ suite runs as described above. This replaces the prior
 lever is per-check and self-documenting rather than an external gate
 that silently no-op'd the entire target.
 
+mutmut-3.x output (work-item livespec-dev-tooling-q3r): the kill/total
+tally is read from `mutmut results --all True`, which lists every mutant
+as one `<key>: <status>` line. The pre-3.x `Killed:` / `Total:` summary
+this check formerly scanned does not exist in mutmut 3.2.3 (`mutmut
+results` with no flag prints only the surviving mutants), so the old
+parser returned (0, 0) and the gate stayed a silent no-op even with real
+verdicts. See `_parse_mutmut_results`.
+
+Nested-layout staging cwd (work-item livespec-dev-tooling-q3r): mutmut
+runs from a configurable import-root staging directory. Nested-layout
+repos (livespec + livespec-impl-git-jsonl, source under
+`.claude-plugin/scripts/`) declare `mutation_staging_dir` in their
+`[tool.livespec_dev_tooling]` block; the check runs `mutmut run` /
+`results` with `cwd=<repo_root>/<mutation_staging_dir>` so the
+trampoline's module-name-keyed mutants match the file-path-dotted
+`paths_to_mutate` (the livespec-mutreal.1 Layer-B finding — otherwise
+every mutant is unkillable). Flat-layout repos (livespec-dev-tooling,
+livespec-runtime) omit the key, so mutmut runs from the repo root
+unchanged. The `.mutmut-baseline.json` ratchet ALWAYS lives at the repo
+root regardless of the staging cwd, so the baseline is version-controlled
+in the repo, not in the (typically `.gitignore`d) staging tree.
+
 Output discipline: per spec, `print` (T20) and `sys.stderr.write`
 (`check-no-write-direct`) are banned in dev-tooling/**. Diagnostics flow
 through structlog (JSON to stderr).
@@ -31,7 +53,6 @@ through structlog (JSON to stderr).
 
 from __future__ import annotations
 
-import contextlib
 import json
 import os
 import subprocess
@@ -45,10 +66,13 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402 — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling.config import load_mutation_staging_dir  # noqa: E402
+
 __all__: list[str] = [
     "_baseline_is_placeholder",
     "_derive_exit_code",
     "_parse_mutmut_results",
+    "_resolve_staging_cwd",
     "_update_baseline",
 ]
 
@@ -79,26 +103,78 @@ def _baseline_is_placeholder(*, baseline: _Baseline) -> bool:
     return int(baseline.get("mutants_total", 0)) == 0
 
 
-def _parse_mutmut_results(*, output: str) -> tuple[int, int]:
-    """Parse `mutmut results` output and return (killed, total).
+def _resolve_staging_cwd(*, repo_root: Path) -> Path:
+    """Return the cwd mutmut runs from: the configured staging dir, else repo root.
 
-    Expects lines like:
-      Killed: 17
-      Survived: 3
-      Timeout: 0
-      Total: 20
-    Returns (killed=0, total=0) when totals are absent or unparseable.
+    Reads `mutation_staging_dir` from the consumer's
+    `[tool.livespec_dev_tooling]` block (a single repo-root-relative path).
+    When configured, the returned cwd is `repo_root / mutation_staging_dir`
+    (the nested-layout import-root staging dir); when absent, the cwd is
+    `repo_root` itself, so flat-layout repos are unaffected. The baseline path
+    is computed against `repo_root` separately — the staging cwd never moves
+    the ratchet file.
+    """
+    staging = load_mutation_staging_dir(repo_root=repo_root)
+    if staging is None:
+        return repo_root
+    return repo_root / staging
+
+
+# mutmut 3.x verdict vocabulary, mirrored from mutmut's own
+# `status_by_exit_code` map: every per-mutant `<key>: <status>` line emitted
+# by `mutmut results --all True` ends in one of these statuses. `killed`
+# counts toward the numerator; every recognized status counts toward the
+# denominator. (`mutmut 3.2.3` collapses several exit codes onto these
+# labels — `killed`, `survived`, `no tests`, `timeout`, `suspicious`,
+# `skipped`, `not checked`, `check was interrupted by user`.)
+_KILLED_STATUS = "killed"
+_MUTMUT_STATUSES: frozenset[str] = frozenset(
+    {
+        "killed",
+        "survived",
+        "no tests",
+        "timeout",
+        "suspicious",
+        "skipped",
+        "not checked",
+        "check was interrupted by user",
+    }
+)
+
+
+def _parse_mutmut_results(*, output: str) -> tuple[int, int]:
+    """Parse `mutmut results --all True` output and return (killed, total).
+
+    mutmut 3.x emits one `    <key>: <status>` line per mutant — e.g.
+    `    livespec.parse.front_matter.x__split__mutmut_3: killed`. The pre-3.x
+    `Killed:` / `Total:` summary lines this check formerly scanned no longer
+    exist: `mutmut results` (no flag) prints ONLY the surviving mutants, and
+    the killed/total tally lives only in the transient `\\r`-rewritten `run`
+    emoji line. Passing `--all True` lists EVERY mutant with its verdict, so
+    counting these lines is the robust, complete kill/total source.
+
+    Each line is split on its LAST `": "` so a colon inside a dotted mutant
+    key never confuses the status read. A trailing-token match against the
+    known mutmut status vocabulary keeps stray output (spinner frames, the
+    `N mutations/second` footer, blank lines) from inflating the total.
+
+    `killed` = count of lines whose status is exactly `killed`; `total` =
+    count of every recognized verdict line. Returns (killed=0, total=0) when
+    no verdict lines are present.
     """
     killed = 0
     total = 0
     for line in output.splitlines():
         stripped = line.strip()
-        if stripped.startswith("Killed:"):
-            with contextlib.suppress(ValueError, IndexError):
-                killed = int(stripped.split(":")[1].strip())
-        elif stripped.startswith("Total:"):
-            with contextlib.suppress(ValueError, IndexError):
-                total = int(stripped.split(":")[1].strip())
+        if ": " not in stripped:
+            continue
+        _key, _sep, status = stripped.rpartition(": ")
+        status = status.strip()
+        if status not in _MUTMUT_STATUSES:
+            continue
+        total += 1
+        if status == _KILLED_STATUS:
+            killed += 1
     return killed, total
 
 
@@ -145,8 +221,12 @@ def main() -> int:
             run_env_var=_RUN_ENV_VAR,
         )
         return 0
-    cwd = Path.cwd()
-    baseline_path = cwd / _BASELINE_PATH
+    repo_root = Path.cwd()
+    # The ratchet file is version-controlled at the repo root; the staging
+    # cwd (nested-layout import-root) only relocates WHERE mutmut runs, never
+    # where the baseline lives.
+    baseline_path = repo_root / _BASELINE_PATH
+    staging_cwd = _resolve_staging_cwd(repo_root=repo_root)
 
     baseline: _Baseline = {}
     if baseline_path.is_file():
@@ -167,7 +247,7 @@ def main() -> int:
         capture_output=True,
         text=True,
         check=False,
-        cwd=str(cwd),
+        cwd=str(staging_cwd),
     )
     if run_result.returncode not in (0, 1):
         log.error(
@@ -177,12 +257,15 @@ def main() -> int:
         )
         return 1
 
+    # `--all True` lists EVERY mutant with its verdict; without it `mutmut
+    # results` prints only survivors, which the parser cannot tally into a
+    # kill/total. The summary lives only in the transient `run` emoji line.
     results_result = subprocess.run(
-        [sys.executable, "-m", "mutmut", "results"],
+        [sys.executable, "-m", "mutmut", "results", "--all", "True"],
         capture_output=True,
         text=True,
         check=False,
-        cwd=str(cwd),
+        cwd=str(staging_cwd),
     )
     killed, total = _parse_mutmut_results(output=results_result.stdout)
     kill_rate = (killed / total) * 100.0 if total > 0 else 0.0
@@ -193,6 +276,7 @@ def main() -> int:
         total=total,
         kill_rate_percent=round(kill_rate, 2),
         first_run=first_run,
+        staging_cwd=str(staging_cwd),
     )
 
     if first_run:

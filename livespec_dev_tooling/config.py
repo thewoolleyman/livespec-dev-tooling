@@ -54,6 +54,7 @@ __all__: list[str] = [
     "iter_py_files",
     "load_config",
     "load_destructive_cli_allowlist",
+    "load_mutation_staging_dir",
     "load_scenario_tiers",
 ]
 
@@ -302,6 +303,36 @@ def load_destructive_cli_allowlist(*, repo_root: Path) -> tuple[str, ...] | None
     if table is None or "destructive_cli_allowlist" not in table:
         return None
     return _as_str_tuple(value=table["destructive_cli_allowlist"], key="destructive_cli_allowlist")
+
+
+def load_mutation_staging_dir(*, repo_root: Path) -> Path | None:
+    """Return the `mutation_staging_dir`, or `None` if the key is absent.
+
+    Reads `<repo_root>/pyproject.toml`'s `[tool.livespec_dev_tooling]` block,
+    key `mutation_staging_dir` — a single repo-root-relative path (POSIX
+    separators) naming the import-root staging directory `check_mutation`
+    runs mutmut from. Nested-layout repos (livespec + livespec-impl-git-jsonl,
+    source under `.claude-plugin/scripts/`) need mutmut run from an
+    import-root staging dir so mutant keys (module-name keyed via the
+    trampoline) match the file-path-dotted `paths_to_mutate`; otherwise every
+    mutant is unkillable (the livespec-mutreal.1 Layer-B finding). Flat-layout
+    repos (livespec-dev-tooling, livespec-runtime) omit the key, so the check
+    runs mutmut from the repo root unchanged.
+
+    Returns `None` when the whole block is absent OR the key is omitted, so
+    `check_mutation` defaults the staging cwd to the repo root (flat-layout
+    behavior is byte-identical). Raises `ConfigParseError` on a non-string
+    value, consistent with the rest of the loader.
+
+    Like `scenario_tiers` and `destructive_cli_allowlist`, this is
+    intentionally NOT a `Config` role key: it is a single-check concern
+    (`check_mutation`), so it is read directly off the table rather than
+    threaded through the typed layout dataclass.
+    """
+    table = _read_table(repo_root=repo_root)
+    if table is None or "mutation_staging_dir" not in table:
+        return None
+    return _as_path(value=table["mutation_staging_dir"], key="mutation_staging_dir")
 
 
 def load_config(*, repo_root: Path) -> Config:
