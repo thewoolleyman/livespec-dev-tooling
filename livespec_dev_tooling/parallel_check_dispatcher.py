@@ -2,16 +2,46 @@
 
 Replaces the serial for-loop in the check: justfile recipe with
 concurrent subprocess dispatch. Independent targets run at up to
---workers concurrency; dependency edges for shared on-disk artifacts
-are enforced so dependent targets never start before their prerequisite.
+--workers concurrency.
 
-Dependency edges (shared on-disk artifacts):
-  check-coverage → check-per-file-coverage
-    check-per-file-coverage writes the .coverage data file; check-coverage
-    reads it. Never run them concurrently; check-coverage is scheduled
-    via a deferred runner that blocks until check-per-file-coverage
-    completes. Any other shared-artifact pairs found in the future should
-    be added to _ARTIFACT_PREREQS with a comment naming the shared file.
+Coverage-data isolation by construction (work-item
+livespec-dev-tooling-cmn)
+--------------------------------------------------------------------
+Several check targets run a coverage-instrumented pytest. Under
+`pytest --cov`, coverage's `.pth` startup hook sets
+`COVERAGE_PROCESS_START` in the environment, so any python subprocess a
+test spawns SELF-instruments and writes a `.coverage.*` parallel data
+file. `pytest -n auto --cov` then runs `coverage combine`, which GLOBS
+and ERASES every `.coverage*` file beside the data file. Run two
+coverage-touching targets concurrently against the SAME directory and
+one target's combine sweeps the other target's (or its subprocess
+child's) data file mid-run — intermittently emptying it and producing a
+flaky "No data to report" red.
+
+The previous fix was a hand-enumerated `_ARTIFACT_PREREQS` edge list:
+every newly-discovered collision pair was serialized by hand. That
+list rots — the collisions you forget to enumerate become production
+flakes. This dispatcher instead makes collisions STRUCTURALLY
+IMPOSSIBLE: each coverage namespace gets its OWN isolated filesystem
+context (a unique temp dir exported as `COVERAGE_FILE` + `TMPDIR` to the
+target's `just` subprocess). A `COVERAGE_PROCESS_START` child inherits
+that `COVERAGE_FILE` location, so the subprocess case is fixed for free
+WITHOUT banning subprocesses; a target's `coverage combine` can only
+glob its OWN namespace dir, so it can never erase another namespace's
+data. `TMPDIR` isolation extends the same guarantee to any other
+shared-temp collision not yet discovered.
+
+`_COVERAGE_NAMESPACES` maps each coverage-touching target to a
+namespace key. Targets that share a key share one isolated dir (a
+producer and the consumer that reads its data file); targets with
+distinct keys are fully isolated and run concurrently with no edge.
+
+`_COVERAGE_CONSUMERS` carries the only ordering that survives: a
+GENUINE read-after-write DATA dependency, where a consumer reads the
+data file a producer wrote into their shared namespace dir. This is NOT
+a collision-avoidance edge (those are retired) — the consumer needs the
+producer's bytes, so it runs only after the producer completes (the
+deferred runner blocks on the producer future).
 
 CLI:
     python -m livespec_dev_tooling.parallel_check_dispatcher
@@ -34,8 +64,10 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -51,26 +83,43 @@ __all__: list[str] = []
 
 _DEFAULT_MAX_WORKERS: int = 8
 
-# Shared on-disk artifact dependency edges.
-# Format: dependent_target -> prerequisite_target.
-# check-coverage reads the .coverage file that check-per-file-coverage writes;
-# never schedule them concurrently; check-coverage runs only after the prereq
-# completes (the deferred runner blocks on prereq_fut.result()).
+# Coverage-namespace assignment (work-item livespec-dev-tooling-cmn).
+# Each coverage-touching target is mapped to a namespace key. The
+# dispatcher mints ONE unique temp dir per distinct key and exports it
+# to the target's `just` subprocess as both COVERAGE_FILE (so pytest-cov
+# and its COVERAGE_PROCESS_START children write there) and TMPDIR (so
+# any other shared-temp artifact is isolated too). Targets NOT listed
+# here run with the inherited environment unchanged.
 #
-# check-check-coverage-incremental runs its OWN coverage-instrumented pytest
-# (writing .coverage.check-coverage-incremental) and then `coverage report`
-# against that data file. A concurrent check-per-file-coverage
-# (`pytest -n auto --cov`) runs `coverage combine`, which globs and erases
-# `.coverage*` data files in the repo root — including the incremental gate's
-# file. Run concurrently they race and the incremental gate intermittently
-# reports "No data to report" and hard-fails. Serialize it after
-# per-file-coverage (same edge as check-coverage) so there is no concurrent
-# coverage writer when the incremental gate reads its data file. The double
-# `check-` prefix is the real aggregate target name (the recipe is
-# `check-check-coverage-incremental`), which is what the dispatcher schedules.
-_ARTIFACT_PREREQS: dict[str, str] = {
+# Targets that share a key share one dir: that is the producer/consumer
+# coverage pair below. Distinct keys are fully isolated — their
+# `coverage combine` can only glob their own dir, so cross-namespace
+# data-file erasure is structurally impossible (no hand-enumerated edge
+# needed). This RETIRES the former collision edge that serialized
+# check-check-coverage-incremental after check-per-file-coverage: the
+# incremental gate now owns its own namespace and runs fully concurrent.
+_COVERAGE_NAMESPACES: dict[str, str] = {
+    # The full-tree coverage pair shares one data file: per-file-coverage
+    # PRODUCES it (runs `pytest -n auto --cov`), check-coverage CONSUMES
+    # it (runs `coverage report` against the same file). Same namespace ->
+    # same isolated COVERAGE_FILE.
+    "check-per-file-coverage": "full-tree",
+    "check-coverage": "full-tree",
+    # The path-scoped incremental gate runs its OWN coverage-instrumented
+    # pytest. Its own namespace isolates its data file from the full-tree
+    # pair's `coverage combine`, so it no longer needs to be serialized
+    # after per-file-coverage (the retired 7us.6 collision edge).
+    "check-check-coverage-incremental": "incremental",
+}
+
+# Genuine read-after-write DATA dependencies (consumer -> producer).
+# The consumer reads the producer's isolated COVERAGE_FILE, so it must
+# start only after the producer has finished writing it. This is the
+# ONLY ordering edge that survives the isolation redesign; it is data
+# flow, not collision avoidance. Both endpoints MUST share a namespace
+# in _COVERAGE_NAMESPACES (they read/write the same file).
+_COVERAGE_CONSUMERS: dict[str, str] = {
     "check-coverage": "check-per-file-coverage",
-    "check-check-coverage-incremental": "check-per-file-coverage",
 }
 
 
@@ -111,8 +160,65 @@ def _cap_workers(*, requested: int | None) -> int:
     return max(1, min(os.cpu_count() or 1, cap))
 
 
-def _run_one(*, name: str, cwd: Path) -> TargetResult:
-    """Invoke `just <name>` and return a TargetResult with timing and output."""
+def _build_namespace_dirs(
+    *, targets: list[str], skip_set: frozenset[str], root: Path
+) -> dict[str, Path]:
+    """Mint one isolated coverage dir per distinct namespace key in play.
+
+    Walks the non-skipped targets, collects the distinct namespace keys
+    they map to via `_COVERAGE_NAMESPACES`, and creates one fresh temp
+    directory per key under `root` (each with a `tmp/` subdir for the
+    target's TMPDIR). Returns a key -> dir mapping. Targets that share a
+    key (the producer/consumer coverage pair) resolve to the same dir, so
+    the consumer reads the producer's COVERAGE_FILE; targets with
+    distinct keys get separate dirs and can never erase each other's
+    data via `coverage combine`.
+
+    `root` MUST be OUTSIDE the governed repo (the system temp dir): the
+    per-target TMPDIR points into these dirs, and pytest's `tmp_path`
+    fixture derives from TMPDIR — a TMPDIR inside the repo's git worktree
+    breaks tests that assume `tmp_path` is not within any git repo.
+    """
+    keys = {
+        _COVERAGE_NAMESPACES[name]
+        for name in targets
+        if name not in skip_set and name in _COVERAGE_NAMESPACES
+    }
+    dirs: dict[str, Path] = {}
+    for key in sorted(keys):
+        ns_dir = Path(tempfile.mkdtemp(prefix=f"covns-{key}-", dir=str(root)))
+        (ns_dir / "tmp").mkdir(exist_ok=True)
+        dirs[key] = ns_dir
+    return dirs
+
+
+def _target_env(*, name: str, namespace_dirs: dict[str, Path]) -> dict[str, str] | None:
+    """Return the isolated env for a coverage-touching target, else None.
+
+    For a target mapped to a coverage namespace, returns a COPY of the
+    process environment with COVERAGE_FILE pointed at `<ns_dir>/.coverage`
+    and TMPDIR pointed at `<ns_dir>/tmp`. A COVERAGE_PROCESS_START child
+    spawned by the target inherits this COVERAGE_FILE, so its data lands
+    in the same isolated dir. Returns None for non-coverage targets (the
+    subprocess then inherits the parent env unchanged).
+    """
+    key = _COVERAGE_NAMESPACES.get(name)
+    if key is None:
+        return None
+    ns_dir = namespace_dirs[key]
+    env = dict(os.environ)
+    env["COVERAGE_FILE"] = str(ns_dir / ".coverage")
+    env["TMPDIR"] = str(ns_dir / "tmp")
+    return env
+
+
+def _run_one(*, name: str, cwd: Path, env: dict[str, str] | None) -> TargetResult:
+    """Invoke `just <name>` and return a TargetResult with timing and output.
+
+    When `env` is provided it fully replaces the subprocess environment
+    (the caller passes a COPY of os.environ with the isolated coverage
+    vars overlaid); when None the subprocess inherits the parent env.
+    """
     start = time.monotonic()
     completed = subprocess.run(  # noqa: S603
         ["just", name],  # noqa: S607
@@ -121,6 +227,7 @@ def _run_one(*, name: str, cwd: Path) -> TargetResult:
         stderr=subprocess.STDOUT,
         text=True,
         check=False,
+        env=env,
     )
     elapsed = time.monotonic() - start
     return TargetResult(
@@ -132,8 +239,16 @@ def _run_one(*, name: str, cwd: Path) -> TargetResult:
     )
 
 
-def _deferred_run(*, name: str, prereq_fut: Future[TargetResult], cwd: Path) -> TargetResult:
-    """Wait for prereq_fut, then run name — or mark it blocked if prereq failed."""
+def _deferred_run(
+    *, name: str, prereq_fut: Future[TargetResult], cwd: Path, env: dict[str, str] | None
+) -> TargetResult:
+    """Wait for prereq_fut, then run name — or mark it blocked if prereq failed.
+
+    Used only for a genuine read-after-write DATA dependency (the
+    coverage consumer reading the producer's isolated COVERAGE_FILE): the
+    consumer cannot start until the producer has written the file it
+    reads.
+    """
     prereq = prereq_fut.result()
     if prereq.exit_code != 0:
         return TargetResult(
@@ -143,7 +258,7 @@ def _deferred_run(*, name: str, prereq_fut: Future[TargetResult], cwd: Path) -> 
             wall_time_s=0.0,
             output=f"BLOCKED: prereq '{prereq.name}' failed (exit {prereq.exit_code})",
         )
-    return _run_one(name=name, cwd=cwd)
+    return _run_one(name=name, cwd=cwd, env=env)
 
 
 def _write(*, text: str) -> None:
@@ -214,6 +329,29 @@ def _collect_ordered_results(
     return results
 
 
+def _submit_target(
+    *,
+    name: str,
+    pool: ThreadPoolExecutor,
+    futures: dict[str, Future[TargetResult]],
+    namespace_dirs: dict[str, Path],
+    cwd: Path,
+) -> Future[TargetResult]:
+    """Submit one target, deferring it after its data-producer when one applies.
+
+    A target named in `_COVERAGE_CONSUMERS` whose producer is already
+    submitted is deferred until the producer future resolves (the
+    read-after-write data dependency). Every other target — including
+    every coverage producer and the now-independent incremental gate —
+    runs immediately with its isolated coverage env.
+    """
+    env = _target_env(name=name, namespace_dirs=namespace_dirs)
+    producer = _COVERAGE_CONSUMERS.get(name)
+    if producer is not None and producer in futures:
+        return pool.submit(_deferred_run, name=name, prereq_fut=futures[producer], cwd=cwd, env=env)
+    return pool.submit(_run_one, name=name, cwd=cwd, env=env)
+
+
 def _run_all(
     *,
     targets: list[str],
@@ -223,21 +361,32 @@ def _run_all(
     log: structlog.stdlib.BoundLogger,
 ) -> list[TargetResult]:
     """Submit all targets to the thread pool and collect results as they complete."""
+    # Mint the isolated coverage/TMPDIR dirs in the system temp dir
+    # (OUTSIDE the governed repo), never under cwd: pytest's `tmp_path`
+    # derives from the per-target TMPDIR, and a TMPDIR inside the repo's
+    # git worktree breaks tests that assume `tmp_path` is not in a repo.
+    namespace_dirs = _build_namespace_dirs(
+        targets=targets, skip_set=skip_set, root=Path(tempfile.gettempdir())
+    )
     futures: dict[str, Future[TargetResult]] = {}
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         for name in targets:
             if name in skip_set:
                 continue
-            prereq = _ARTIFACT_PREREQS.get(name)
-            if prereq is not None and prereq in futures:
-                futures[name] = pool.submit(
-                    _deferred_run, name=name, prereq_fut=futures[prereq], cwd=cwd
-                )
-            else:
-                futures[name] = pool.submit(_run_one, name=name, cwd=cwd)
+            futures[name] = _submit_target(
+                name=name, pool=pool, futures=futures, namespace_dirs=namespace_dirs, cwd=cwd
+            )
         for fut in as_completed(futures.values()):
             _emit_result(result=fut.result(), log=log)
-    return _collect_ordered_results(targets=targets, skip_set=skip_set, futures=futures)
+    results = _collect_ordered_results(targets=targets, skip_set=skip_set, futures=futures)
+    # All futures are done: the isolated coverage/TMPDIR dirs are no
+    # longer needed (the consumer has already read the producer's data).
+    # Best-effort removal so the system temp dir does not accumulate one
+    # covns-* tree per `just check` run; ignore_errors keeps a transient
+    # removal failure from masking the real check result.
+    for ns_dir in namespace_dirs.values():
+        shutil.rmtree(ns_dir, ignore_errors=True)
+    return results
 
 
 def _parse_args() -> argparse.Namespace:
