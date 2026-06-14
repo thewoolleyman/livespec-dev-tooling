@@ -259,6 +259,26 @@ check-format:
 check-types:
     uv run pyright
 
+# `check-static` — fastest-first fail-fast helper for fast agent/dev
+# feedback (work-item livespec-dev-tooling-7us.8). Runs ONLY the cheap
+# static checks — `ruff format --check .`, `ruff check .`, `pyright`
+# (i.e. check-format, check-lint, check-types) — as a fail-fast
+# sequence: it STOPS at the first failing check and exits non-zero, so
+# a sub-2s ruff/pyright failure surfaces immediately instead of after
+# `just check`'s slow pytest+coverage tail. This is a developer/agent
+# convenience like the helper recipes above; it is deliberately NOT a
+# member of the `check:` aggregate `targets=(...)` array, NOT a
+# canonical slug (no livespec_dev_tooling/checks/ module), and NOT in
+# the CI matrix. The authoritative full gate remains `just check`
+# (still run at pre-push and in CI) — `check-static` is a fast
+# pre-flight, never a replacement for it.
+check-static:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    uv run ruff format --check .
+    uv run ruff check .
+    uv run pyright
+
 # Aggregate (total) coverage gate at `fail_under = 100` (pyproject.toml
 # [tool.coverage.report]). To avoid a DUPLICATE full pytest run when
 # invoked inside the `just check` aggregate, this recipe gates off the
