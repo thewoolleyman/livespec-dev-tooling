@@ -279,6 +279,60 @@ check-static:
     uv run ruff check .
     uv run pyright
 
+# `changed-files` — print the changed `.py` set this branch touches,
+# repo-root-relative, one path per line, sorted + de-duplicated
+# (work-item livespec-dev-tooling-7us.9). The set is the UNION of two
+# git views, so an agent gets the live working set whether or not it has
+# committed yet:
+#   - `git diff --name-only origin/master...HEAD` — every `.py` this
+#     branch's commits changed vs the merge-base with origin/master;
+#   - `git diff --cached --name-only --diff-filter=AM` — added/modified
+#     `.py` currently staged but not yet committed.
+# This is the exact set `check-changed` consumes for its scoped gate.
+# Helper recipe (like `check-static`): NOT a member of the `check:`
+# aggregate `targets=(...)` array, NOT a canonical slug, NOT in the CI
+# matrix.
+changed-files:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    # `grep` exits 1 on zero matches; an empty changed set is normal (a
+    # clean branch), so swallow that into exit 0 via `|| true` — the
+    # consuming `check-changed` treats empty as "nothing to gate".
+    { git diff --name-only origin/master...HEAD;
+      git diff --cached --name-only --diff-filter=AM; } \
+        | { grep -E '\.py$' || true; } | sort -u
+
+# `check-changed` — modified-files INNER-LOOP gate for fast scoped
+# feedback during iteration (work-item livespec-dev-tooling-7us.9). Feeds
+# the `changed-files` set into `check-check-coverage-incremental --paths
+# <set>`, which already (a) resolves each changed impl `.py` to its
+# mirror-paired test and runs that pytest SUBSET, and (b) applies the
+# path-scoped per-file coverage gate — i.e. it composes the existing
+# scoping plumbing rather than re-deriving it. An empty changed set is a
+# no-op (exit 0): nothing changed, nothing to gate.
+#
+# SCOPE — INNER-LOOP SPEEDUP ONLY, NOT a replacement for the final gate.
+# It runs only the test subset + path-scopable checks for the files this
+# branch touched, so an agent gets sub-suite feedback while iterating. The
+# AUTHORITATIVE gate remains `just check`, which runs the FULL suite + the
+# full AST scans + the aggregate 100% coverage gate at pre-push and in CI.
+# Like `check-static`, this is a developer/agent convenience: NOT a member
+# of the `check:` aggregate `targets=(...)` array, NOT a canonical slug,
+# and NOT in the CI matrix.
+check-changed:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    mapfile -t changed < <(just changed-files)
+    if [[ "${#changed[@]}" -eq 0 ]]; then
+        echo ":: check-changed: no changed .py vs origin/master (and none staged); nothing to gate"
+        echo ":: the authoritative full gate remains 'just check' (run at pre-push + CI)"
+        exit 0
+    fi
+    echo ":: check-changed: scoping the test subset + per-file coverage gate to ${#changed[@]} changed .py:"
+    printf '   %s\n' "${changed[@]}"
+    echo ":: INNER-LOOP ONLY — 'just check' runs the FULL suite/AST scans at pre-push + CI"
+    just check-check-coverage-incremental --paths "${changed[@]}"
+
 # Aggregate (total) coverage gate at `fail_under = 100` (pyproject.toml
 # [tool.coverage.report]). To avoid a DUPLICATE full pytest run when
 # invoked inside the `just check` aggregate, this recipe gates off the
