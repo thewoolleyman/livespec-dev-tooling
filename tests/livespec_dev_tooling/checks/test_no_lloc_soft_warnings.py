@@ -10,14 +10,25 @@ carve-out with a per-check severity lever: the soft-band scan ALWAYS
 runs; `LIVESPEC_FAIL_IF_LLOC_SOFT_WARNINGS_EXIST` (non-empty) makes
 soft-band offenders fail (exit 1, error level), unset downgrades the
 SAME findings to warning + exit 0.
+
+The check is driven IN-PROCESS (`monkeypatch.chdir(tmp_path)` +
+`capsys` + `rc = main()`) rather than via a `sys.executable`
+subprocess (work-item livespec-dev-tooling-py9): no
+`COVERAGE_PROCESS_START`-instrumented child, no `.coverage.*`
+race under the parallel dispatcher, and materially faster.
+`main()` reads `Path.cwd()` and `os.environ`, so the
+monkeypatched cwd is the fixture root and the fail-lever is
+toggled via `monkeypatch.setenv`/`delenv`.
 """
 
 from __future__ import annotations
 
-import os
-import subprocess
-import sys
+import importlib.util
 from pathlib import Path
+from types import ModuleType
+from typing import NamedTuple
+
+import pytest
 
 __all__: list[str] = []
 
@@ -28,23 +39,54 @@ _NO_LLOC_SOFT_WARNINGS = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "no_ll
 _FAIL_VAR = "LIVESPEC_FAIL_IF_LLOC_SOFT_WARNINGS_EXIST"
 
 
-def _run_check(*, cwd: Path, fail_var: str | None) -> subprocess.CompletedProcess[str]:
-    """Invoke the check in `cwd`, optionally setting the fail-lever env var.
+def _load_check_module() -> ModuleType:
+    """Import the check module fresh from its file path.
 
-    `fail_var=None` removes the lever from the inherited environment
-    (the warn-only state); any string sets it to that value.
+    Loaded by path (not `import livespec_dev_tooling.checks...`) so the
+    test exercises the on-disk module the Red→Green hook inspects, and
+    so `main()` can be invoked in-process under a monkeypatched cwd.
     """
-    env = {k: v for k, v in os.environ.items() if k != _FAIL_VAR}
-    if fail_var is not None:
-        env[_FAIL_VAR] = fail_var
-    return subprocess.run(
-        [sys.executable, str(_NO_LLOC_SOFT_WARNINGS)],
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=env,
+    spec = importlib.util.spec_from_file_location(
+        "no_lloc_soft_warnings_under_test", str(_NO_LLOC_SOFT_WARNINGS)
     )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_MODULE = _load_check_module()
+
+
+class _CheckRun(NamedTuple):
+    """In-process stand-in for the subprocess `CompletedProcess` shape."""
+
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+def _run_check(
+    *,
+    cwd: Path,
+    fail_var: str | None,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> _CheckRun:
+    """Invoke the check's `main()` in-process under `cwd`, toggling the fail-lever.
+
+    `fail_var=None` removes the lever from the environment (the
+    warn-only state); any string sets it to that value via
+    `monkeypatch.setenv`.
+    """
+    monkeypatch.chdir(cwd)
+    if fail_var is None:
+        monkeypatch.delenv(_FAIL_VAR, raising=False)
+    else:
+        monkeypatch.setenv(_FAIL_VAR, fail_var)
+    rc = _MODULE.main()
+    captured = capsys.readouterr()
+    return _CheckRun(returncode=rc, stdout=captured.out, stderr=captured.err)
 
 
 def _write_py_with_lloc(*, tmp_path: Path, rel_path: str, n_statements: int) -> None:
@@ -57,14 +99,16 @@ def _write_py_with_lloc(*, tmp_path: Path, rel_path: str, n_statements: int) -> 
     )
 
 
-def test_fails_on_soft_band_file_when_fail_var_set(*, tmp_path: Path) -> None:
+def test_fails_on_soft_band_file_when_fail_var_set(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A 201-250 LLOC file + fail-lever set → exit 1, error-level diagnostic."""
     _write_py_with_lloc(
         tmp_path=tmp_path,
         rel_path=".claude-plugin/scripts/livespec/medium.py",
         n_statements=220,
     )
-    result = _run_check(cwd=tmp_path, fail_var="true")
+    result = _run_check(cwd=tmp_path, fail_var="true", monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode != 0, (
         f"fail-lever set + soft-band file should exit non-zero; "
         f"got returncode={result.returncode} stderr={result.stderr!r}"
@@ -77,14 +121,16 @@ def test_fails_on_soft_band_file_when_fail_var_set(*, tmp_path: Path) -> None:
     ), f"fail-lever set should emit error-level finding; stderr={result.stderr!r}"
 
 
-def test_warns_on_soft_band_file_when_fail_var_unset(*, tmp_path: Path) -> None:
+def test_warns_on_soft_band_file_when_fail_var_unset(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A 201-250 LLOC file + fail-lever unset → exit 0, SAME finding at warning level."""
     _write_py_with_lloc(
         tmp_path=tmp_path,
         rel_path=".claude-plugin/scripts/livespec/medium.py",
         n_statements=220,
     )
-    result = _run_check(cwd=tmp_path, fail_var=None)
+    result = _run_check(cwd=tmp_path, fail_var=None, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0, (
         f"fail-lever unset + soft-band file should warn + exit 0; "
         f"got returncode={result.returncode} stderr={result.stderr!r}"
@@ -97,14 +143,16 @@ def test_warns_on_soft_band_file_when_fail_var_unset(*, tmp_path: Path) -> None:
     ), f"fail-lever unset should downgrade finding to warning; stderr={result.stderr!r}"
 
 
-def test_empty_fail_var_treated_as_unset(*, tmp_path: Path) -> None:
+def test_empty_fail_var_treated_as_unset(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """An empty-string fail-lever value counts as unset → warn + exit 0."""
     _write_py_with_lloc(
         tmp_path=tmp_path,
         rel_path=".claude-plugin/scripts/livespec/medium.py",
         n_statements=220,
     )
-    result = _run_check(cwd=tmp_path, fail_var="")
+    result = _run_check(cwd=tmp_path, fail_var="", monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0, (
         f"empty fail-lever should be treated as unset (warn + exit 0); "
         f"got returncode={result.returncode} stderr={result.stderr!r}"
@@ -115,29 +163,35 @@ def test_empty_fail_var_treated_as_unset(*, tmp_path: Path) -> None:
     ), f"empty fail-lever should downgrade finding to warning; stderr={result.stderr!r}"
 
 
-def test_accepts_file_at_or_below_soft_ceiling(*, tmp_path: Path) -> None:
+def test_accepts_file_at_or_below_soft_ceiling(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `.py` file with ≤ 200 LLOC passes (exit 0) regardless of lever."""
     _write_py_with_lloc(
         tmp_path=tmp_path,
         rel_path=".claude-plugin/scripts/livespec/small.py",
         n_statements=50,
     )
-    result = _run_check(cwd=tmp_path, fail_var="true")
+    result = _run_check(cwd=tmp_path, fail_var="true", monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
 
 
-def test_ignores_file_above_hard_ceiling(*, tmp_path: Path) -> None:
+def test_ignores_file_above_hard_ceiling(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `.py` file with > 250 LLOC is NOT this check's concern (per-commit file_lloc.py handles it)."""
     _write_py_with_lloc(
         tmp_path=tmp_path,
         rel_path=".claude-plugin/scripts/livespec/big.py",
         n_statements=300,
     )
-    result = _run_check(cwd=tmp_path, fail_var="true")
+    result = _run_check(cwd=tmp_path, fail_var="true", monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
 
 
-def test_emits_each_offender_when_fail_var_set(*, tmp_path: Path) -> None:
+def test_emits_each_offender_when_fail_var_set(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Multiple soft-band files produce one diagnostic each; check still exits non-zero."""
     _write_py_with_lloc(
         tmp_path=tmp_path,
@@ -149,14 +203,16 @@ def test_emits_each_offender_when_fail_var_set(*, tmp_path: Path) -> None:
         rel_path=".claude-plugin/scripts/livespec/medium_b.py",
         n_statements=240,
     )
-    result = _run_check(cwd=tmp_path, fail_var="true")
+    result = _run_check(cwd=tmp_path, fail_var="true", monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode != 0
     combined = result.stdout + result.stderr
     assert "medium_a.py" in combined
     assert "medium_b.py" in combined
 
 
-def test_excludes_blank_lines_and_comments_and_docstrings(*, tmp_path: Path) -> None:
+def test_excludes_blank_lines_and_comments_and_docstrings(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """LLOC counting matches file_lloc.py: blank/comment/docstring lines don't count."""
     package_dir = tmp_path / ".claude-plugin" / "scripts" / "livespec"
     package_dir.mkdir(parents=True)
@@ -175,17 +231,21 @@ def test_excludes_blank_lines_and_comments_and_docstrings(*, tmp_path: Path) -> 
         "x = 0\ny = 1\nz = 2\n",
         encoding="utf-8",
     )
-    result = _run_check(cwd=tmp_path, fail_var="true")
+    result = _run_check(cwd=tmp_path, fail_var="true", monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
 
 
-def test_accepts_empty_tree(*, tmp_path: Path) -> None:
+def test_accepts_empty_tree(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """An empty repo cwd passes (exit 0)."""
-    result = _run_check(cwd=tmp_path, fail_var="true")
+    result = _run_check(cwd=tmp_path, fail_var="true", monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
 
 
-def test_no_op_when_covered_trees_absent(*, tmp_path: Path) -> None:
+def test_no_op_when_covered_trees_absent(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A config with an empty `covered_trees` role key → no-op exit 0.
 
     Writing a `pyproject.toml` with a `[tool.livespec_dev_tooling]`
@@ -203,7 +263,7 @@ def test_no_op_when_covered_trees_absent(*, tmp_path: Path) -> None:
         "[tool.livespec_dev_tooling]\ncovered_trees = []\n",
         encoding="utf-8",
     )
-    result = _run_check(cwd=tmp_path, fail_var="true")
+    result = _run_check(cwd=tmp_path, fail_var="true", monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0, (
         f"empty covered_trees should no-op exit 0; "
         f"got returncode={result.returncode} stderr={result.stderr!r}"
@@ -214,13 +274,5 @@ def test_no_op_when_covered_trees_absent(*, tmp_path: Path) -> None:
 
 def test_module_importable_without_running_main() -> None:
     """The check module imports cleanly without invoking main()."""
-    import importlib.util
-
-    spec = importlib.util.spec_from_file_location(
-        "no_lloc_soft_warnings_for_import_test",
-        str(_NO_LLOC_SOFT_WARNINGS),
-    )
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    module = _load_check_module()
     assert callable(module.main)

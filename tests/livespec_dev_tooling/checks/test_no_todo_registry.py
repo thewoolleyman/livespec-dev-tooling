@@ -9,14 +9,25 @@ skip carve-out with a per-check severity lever: the scan ALWAYS
 runs; the `LIVESPEC_FAIL_IF_HEADING_COVERAGE_TODOS_EXIST` env var
 decides whether discovered offenders fail the check (release
 context, var set to a non-empty value) or merely warn (var unset).
+
+The check is driven IN-PROCESS (`monkeypatch.chdir(tmp_path)` +
+`capsys` + `rc = main()`) rather than via a `sys.executable`
+subprocess (work-item livespec-dev-tooling-py9): no
+`COVERAGE_PROCESS_START`-instrumented child, no `.coverage.*`
+race under the parallel dispatcher, and materially faster.
+`main()` reads `Path.cwd()` and `os.environ`, so the
+monkeypatched cwd is the fixture root and the fail-lever is
+toggled via `monkeypatch.setenv`/`delenv`.
 """
 
 from __future__ import annotations
 
-import os
-import subprocess
-import sys
+import importlib.util
 from pathlib import Path
+from types import ModuleType
+from typing import NamedTuple
+
+import pytest
 
 __all__: list[str] = []
 
@@ -27,23 +38,54 @@ _NO_TODO_REGISTRY = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "no_todo_re
 _FAIL_VAR = "LIVESPEC_FAIL_IF_HEADING_COVERAGE_TODOS_EXIST"
 
 
-def _run_check(*, cwd: Path, fail_var: str | None) -> subprocess.CompletedProcess[str]:
-    """Invoke the check in `cwd`, optionally setting the fail-lever env var.
+def _load_check_module() -> ModuleType:
+    """Import the check module fresh from its file path.
 
-    `fail_var=None` removes the lever from the inherited environment
-    (the warn-only state); any string sets it to that value.
+    Loaded by path (not `import livespec_dev_tooling.checks...`) so the
+    test exercises the on-disk module the Red→Green hook inspects, and
+    so `main()` can be invoked in-process under a monkeypatched cwd.
     """
-    env = {k: v for k, v in os.environ.items() if k != _FAIL_VAR}
-    if fail_var is not None:
-        env[_FAIL_VAR] = fail_var
-    return subprocess.run(
-        [sys.executable, str(_NO_TODO_REGISTRY)],
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=env,
+    spec = importlib.util.spec_from_file_location(
+        "no_todo_registry_under_test", str(_NO_TODO_REGISTRY)
     )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_MODULE = _load_check_module()
+
+
+class _CheckRun(NamedTuple):
+    """In-process stand-in for the subprocess `CompletedProcess` shape."""
+
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+def _run_check(
+    *,
+    cwd: Path,
+    fail_var: str | None,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> _CheckRun:
+    """Invoke the check's `main()` in-process under `cwd`, toggling the fail-lever.
+
+    `fail_var=None` removes the lever from the environment (the
+    warn-only state); any string sets it to that value via
+    `monkeypatch.setenv`.
+    """
+    monkeypatch.chdir(cwd)
+    if fail_var is None:
+        monkeypatch.delenv(_FAIL_VAR, raising=False)
+    else:
+        monkeypatch.setenv(_FAIL_VAR, fail_var)
+    rc = _MODULE.main()
+    captured = capsys.readouterr()
+    return _CheckRun(returncode=rc, stdout=captured.out, stderr=captured.err)
 
 
 def _write_coverage(*, tmp_path: Path, body: str) -> None:
@@ -52,13 +94,15 @@ def _write_coverage(*, tmp_path: Path, body: str) -> None:
     (tests_dir / "heading-coverage.json").write_text(body, encoding="utf-8")
 
 
-def test_fails_on_todo_entry_when_fail_var_set(*, tmp_path: Path) -> None:
+def test_fails_on_todo_entry_when_fail_var_set(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """`test: "TODO"` + fail-lever set → exit 1, error-level diagnostic."""
     _write_coverage(
         tmp_path=tmp_path,
         body='[{"heading": "## Foo", "spec_root": "/", "test": "TODO"}]',
     )
-    result = _run_check(cwd=tmp_path, fail_var="true")
+    result = _run_check(cwd=tmp_path, fail_var="true", monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode != 0, (
         f"fail-lever set + TODO entry should exit non-zero; "
         f"got returncode={result.returncode} stderr={result.stderr!r}"
@@ -72,13 +116,15 @@ def test_fails_on_todo_entry_when_fail_var_set(*, tmp_path: Path) -> None:
     ), f"fail-lever set should emit error-level finding; stderr={result.stderr!r}"
 
 
-def test_warns_on_todo_entry_when_fail_var_unset(*, tmp_path: Path) -> None:
+def test_warns_on_todo_entry_when_fail_var_unset(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """`test: "TODO"` + fail-lever unset → exit 0, SAME finding at warning level."""
     _write_coverage(
         tmp_path=tmp_path,
         body='[{"heading": "## Foo", "spec_root": "/", "test": "TODO"}]',
     )
-    result = _run_check(cwd=tmp_path, fail_var=None)
+    result = _run_check(cwd=tmp_path, fail_var=None, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0, (
         f"fail-lever unset + TODO entry should warn + exit 0; "
         f"got returncode={result.returncode} stderr={result.stderr!r}"
@@ -92,13 +138,15 @@ def test_warns_on_todo_entry_when_fail_var_unset(*, tmp_path: Path) -> None:
     ), f"fail-lever unset should downgrade finding to warning; stderr={result.stderr!r}"
 
 
-def test_empty_fail_var_treated_as_unset(*, tmp_path: Path) -> None:
+def test_empty_fail_var_treated_as_unset(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """An empty-string fail-lever value counts as unset → warn + exit 0."""
     _write_coverage(
         tmp_path=tmp_path,
         body='[{"heading": "## Foo", "spec_root": "/", "test": "TODO"}]',
     )
-    result = _run_check(cwd=tmp_path, fail_var="")
+    result = _run_check(cwd=tmp_path, fail_var="", monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0, (
         f"empty fail-lever should be treated as unset (warn + exit 0); "
         f"got returncode={result.returncode} stderr={result.stderr!r}"
@@ -109,46 +157,54 @@ def test_empty_fail_var_treated_as_unset(*, tmp_path: Path) -> None:
     ), f"empty fail-lever should downgrade finding to warning; stderr={result.stderr!r}"
 
 
-def test_accepts_no_todo_entries_with_fail_var_set(*, tmp_path: Path) -> None:
+def test_accepts_no_todo_entries_with_fail_var_set(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """No offenders + fail-lever set → exit 0 (nothing to gate on)."""
     _write_coverage(
         tmp_path=tmp_path,
         body='[{"heading": "## Foo", "spec_root": "/", "test": "tests/foo.py"}]',
     )
-    result = _run_check(cwd=tmp_path, fail_var="true")
+    result = _run_check(cwd=tmp_path, fail_var="true", monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0, (
         f"TODO-free coverage should exit 0 even with fail-lever set; "
         f"got returncode={result.returncode}"
     )
 
 
-def test_accepts_no_todo_entries_with_fail_var_unset(*, tmp_path: Path) -> None:
+def test_accepts_no_todo_entries_with_fail_var_unset(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """No offenders + fail-lever unset → exit 0, no warning emitted."""
     _write_coverage(
         tmp_path=tmp_path,
         body='[{"heading": "## Foo", "spec_root": "/", "test": "tests/foo.py"}]',
     )
-    result = _run_check(cwd=tmp_path, fail_var=None)
+    result = _run_check(cwd=tmp_path, fail_var=None, monkeypatch=monkeypatch, capsys=capsys)
     assert (
         result.returncode == 0
     ), f"TODO-free coverage should exit 0; got returncode={result.returncode}"
 
 
-def test_accepts_object_top_level(*, tmp_path: Path) -> None:
+def test_accepts_object_top_level(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Coverage JSON whose top-level is not a list passes (exit 0).
 
     Closes the `if isinstance(parsed, list):` False branch.
     """
     _write_coverage(tmp_path=tmp_path, body="{}")
-    result = _run_check(cwd=tmp_path, fail_var="true")
+    result = _run_check(cwd=tmp_path, fail_var="true", monkeypatch=monkeypatch, capsys=capsys)
     assert (
         result.returncode == 0
     ), f"object top-level should exit 0; got returncode={result.returncode}"
 
 
-def test_accepts_missing_coverage_file(*, tmp_path: Path) -> None:
+def test_accepts_missing_coverage_file(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Repo without `tests/heading-coverage.json` passes (exit 0)."""
-    result = _run_check(cwd=tmp_path, fail_var="true")
+    result = _run_check(cwd=tmp_path, fail_var="true", monkeypatch=monkeypatch, capsys=capsys)
     assert (
         result.returncode == 0
     ), f"missing coverage file should exit 0; got returncode={result.returncode}"
@@ -156,13 +212,5 @@ def test_accepts_missing_coverage_file(*, tmp_path: Path) -> None:
 
 def test_module_importable_without_running_main() -> None:
     """The check module imports cleanly without invoking main()."""
-    import importlib.util
-
-    spec = importlib.util.spec_from_file_location(
-        "no_todo_registry_for_import_test",
-        str(_NO_TODO_REGISTRY),
-    )
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    module = _load_check_module()
     assert callable(module.main), "main should be importable without invocation"

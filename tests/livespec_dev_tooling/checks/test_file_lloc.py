@@ -4,13 +4,23 @@ Per `SPECIFICATION/constraints.md` §"File LLOC ceiling" (post-v005):
 files at 201-250 LLOC pass with a structured warning (SOFT ceiling);
 files above 250 LLOC fail (HARD ceiling). LLOC excludes blank lines,
 comment-only lines, and module/class/function docstrings.
+
+The check is driven IN-PROCESS (`monkeypatch.chdir(tmp_path)` +
+`capsys` + `rc = main()`) rather than via a `sys.executable`
+subprocess (work-item livespec-dev-tooling-py9). The in-process call
+spawns no `COVERAGE_PROCESS_START`-instrumented child (no `.coverage.*`
+race under the parallel dispatcher) and is materially faster. `main()`
+reads `Path.cwd()`, so the monkeypatched cwd is the fixture root.
 """
 
 from __future__ import annotations
 
-import subprocess
-import sys
+import importlib.util
 from pathlib import Path
+from types import ModuleType
+from typing import NamedTuple
+
+import pytest
 
 __all__: list[str] = []
 
@@ -19,14 +29,39 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 _FILE_LLOC = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "file_lloc.py"
 
 
-def _run_check(*, cwd: Path) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [sys.executable, str(_FILE_LLOC)],
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+def _load_check_module() -> ModuleType:
+    """Import the check module fresh from its file path.
+
+    Loaded by path (not `import livespec_dev_tooling.checks...`) so the
+    test exercises the on-disk module the Red→Green hook inspects, and
+    so `main()` can be invoked in-process under a monkeypatched cwd.
+    """
+    spec = importlib.util.spec_from_file_location("file_lloc_under_test", str(_FILE_LLOC))
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_MODULE = _load_check_module()
+
+
+class _CheckRun(NamedTuple):
+    """In-process stand-in for the subprocess `CompletedProcess` shape."""
+
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+def _run_check(
+    *, cwd: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> _CheckRun:
+    """Invoke the check's `main()` in-process under `cwd` and capture output."""
+    monkeypatch.chdir(cwd)
+    rc = _MODULE.main()
+    captured = capsys.readouterr()
+    return _CheckRun(returncode=rc, stdout=captured.out, stderr=captured.err)
 
 
 def _write_py_with_lloc(*, tmp_path: Path, rel_path: str, n_statements: int) -> None:
@@ -39,49 +74,57 @@ def _write_py_with_lloc(*, tmp_path: Path, rel_path: str, n_statements: int) -> 
     )
 
 
-def test_file_lloc_rejects_file_exceeding_hard_ceiling(*, tmp_path: Path) -> None:
+def test_file_lloc_rejects_file_exceeding_hard_ceiling(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `.py` file with > 250 LLOC fails (exit 1)."""
     _write_py_with_lloc(
         tmp_path=tmp_path,
         rel_path=".claude-plugin/scripts/livespec/big.py",
         n_statements=300,
     )
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode != 0
     combined = result.stdout + result.stderr
     assert ".claude-plugin/scripts/livespec/big.py" in combined
     assert "hard ceiling" in combined
 
 
-def test_file_lloc_warns_but_passes_in_soft_band(*, tmp_path: Path) -> None:
+def test_file_lloc_warns_but_passes_in_soft_band(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `.py` file with 201-250 LLOC passes with exit 0 but emits a warning."""
     _write_py_with_lloc(
         tmp_path=tmp_path,
         rel_path=".claude-plugin/scripts/livespec/medium.py",
         n_statements=220,
     )
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
     combined = result.stdout + result.stderr
     assert "soft ceiling" in combined
     assert ".claude-plugin/scripts/livespec/medium.py" in combined
 
 
-def test_file_lloc_accepts_file_at_or_below_soft_ceiling(*, tmp_path: Path) -> None:
+def test_file_lloc_accepts_file_at_or_below_soft_ceiling(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `.py` file with ≤ 200 LLOC passes silently (no warning, exit 0)."""
     _write_py_with_lloc(
         tmp_path=tmp_path,
         rel_path=".claude-plugin/scripts/livespec/small.py",
         n_statements=50,
     )
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
     combined = result.stdout + result.stderr
     assert "soft ceiling" not in combined
     assert "hard ceiling" not in combined
 
 
-def test_file_lloc_accepts_file_at_exactly_hard_ceiling(*, tmp_path: Path) -> None:
+def test_file_lloc_accepts_file_at_exactly_hard_ceiling(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `.py` file with exactly 250 LLOC passes (warning emitted, exit 0).
 
     250 is in the soft band (201-250); only > 250 is the hard fail.
@@ -95,12 +138,14 @@ def test_file_lloc_accepts_file_at_exactly_hard_ceiling(*, tmp_path: Path) -> No
         rel_path=".claude-plugin/scripts/livespec/edge.py",
         n_statements=248,
     )
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     # Exit 0 either way (in soft band or below); just verify no hard fail.
     assert result.returncode == 0
 
 
-def test_file_lloc_excludes_blank_lines_and_comments_and_docstrings(*, tmp_path: Path) -> None:
+def test_file_lloc_excludes_blank_lines_and_comments_and_docstrings(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Blank lines, comments, and docstrings do not count toward LLOC."""
     package_dir = tmp_path / ".claude-plugin" / "scripts" / "livespec"
     package_dir.mkdir(parents=True)
@@ -121,11 +166,13 @@ def test_file_lloc_excludes_blank_lines_and_comments_and_docstrings(*, tmp_path:
         "z = 2\n",
         encoding="utf-8",
     )
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
 
 
-def test_file_lloc_emits_both_tiers_in_one_run(*, tmp_path: Path) -> None:
+def test_file_lloc_emits_both_tiers_in_one_run(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """When both soft and hard offenders exist, hard wins (exit 1) + both diagnostics emit."""
     _write_py_with_lloc(
         tmp_path=tmp_path,
@@ -137,28 +184,22 @@ def test_file_lloc_emits_both_tiers_in_one_run(*, tmp_path: Path) -> None:
         rel_path=".claude-plugin/scripts/livespec/big.py",
         n_statements=300,
     )
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode != 0
     combined = result.stdout + result.stderr
     assert "soft ceiling" in combined
     assert "hard ceiling" in combined
 
 
-def test_file_lloc_accepts_empty_tree(*, tmp_path: Path) -> None:
+def test_file_lloc_accepts_empty_tree(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """An empty repo cwd passes (exit 0)."""
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
 
 
 def test_file_lloc_module_importable_without_running_main() -> None:
     """The check module imports cleanly without invoking main()."""
-    import importlib.util
-
-    spec = importlib.util.spec_from_file_location(
-        "file_lloc_for_import_test",
-        str(_FILE_LLOC),
-    )
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    module = _load_check_module()
     assert callable(module.main)
