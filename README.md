@@ -206,6 +206,12 @@ supported `livespec` semver range and the currently-pinned release
 tag. Bump-pin PRs against each upstream release are the explicit
 migration path.
 
+## Observability
+
+The livespec family dogfoods its own telemetry. CI runs, Red→Green commit-gate cycles, the beads+fabro dispatcher, sandbox runs, and harness sub-agents are published to a shared Honeycomb environment:
+
+- **[livespec family — all activity](https://ui.honeycomb.io/thewoolleyweb/environments/livespec/board/krThv8DvcwS)** — the cross-repo activity board (Honeycomb, `livespec` environment).
+
 ## More
 
 - [`livespec`](https://github.com/thewoolleyman/livespec) — the
