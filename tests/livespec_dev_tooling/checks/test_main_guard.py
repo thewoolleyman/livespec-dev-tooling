@@ -16,13 +16,24 @@ rule. Cycle 147 pins the rejection case: a synthetic
 module top level fails the check with non-zero exit and the
 diagnostic surfaces both the offending file and line number
 so the developer can locate the violation.
+
+The check is driven IN-PROCESS (`monkeypatch.chdir(tmp_path)` +
+`capsys` + `rc = main()`) rather than via a `sys.executable`
+subprocess (work-item livespec-dev-tooling-py9): no
+`COVERAGE_PROCESS_START`-instrumented child, no `.coverage.*`
+race under the parallel dispatcher, and materially faster.
+`main()` reads `Path.cwd()`, so the monkeypatched cwd is the
+fixture root.
 """
 
 from __future__ import annotations
 
-import subprocess
-import sys
+import importlib.util
 from pathlib import Path
+from types import ModuleType
+from typing import NamedTuple
+
+import pytest
 
 __all__: list[str] = []
 
@@ -31,16 +42,53 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 _MAIN_GUARD = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "main_guard.py"
 
 
-def test_main_guard_rejects_main_guard_inside_livespec(*, tmp_path: Path) -> None:
+def _load_check_module() -> ModuleType:
+    """Import the check module fresh from its file path.
+
+    Loaded by path (not `import livespec_dev_tooling.checks...`) so the
+    test exercises the on-disk module the Red→Green hook inspects, and
+    so `main()` can be invoked in-process under a monkeypatched cwd.
+    """
+    spec = importlib.util.spec_from_file_location("main_guard_under_test", str(_MAIN_GUARD))
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_MODULE = _load_check_module()
+
+
+class _CheckRun(NamedTuple):
+    """In-process stand-in for the subprocess `CompletedProcess` shape."""
+
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+def _run_check(
+    *, cwd: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> _CheckRun:
+    """Invoke the check's `main()` in-process under `cwd` and capture output."""
+    monkeypatch.chdir(cwd)
+    rc = _MODULE.main()
+    captured = capsys.readouterr()
+    return _CheckRun(returncode=rc, stdout=captured.out, stderr=captured.err)
+
+
+def test_main_guard_rejects_main_guard_inside_livespec(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `__main__` guard inside `.claude-plugin/scripts/livespec/foo.py` fails the check.
 
     The fixture writes a synthetic project root mirroring the
     real layout. `.claude-plugin/scripts/livespec/foo.py`
     contains `if __name__ == "__main__":` at module level — a
-    direct violation. The check, invoked with `cwd=tmp_path`,
-    must walk the livespec subtree, parse the file via `ast`,
-    detect the guard, exit non-zero, and surface the offending
-    path and line number in its diagnostic.
+    direct violation. The check, invoked with cwd monkeypatched
+    to tmp_path, must walk the livespec subtree, parse the file
+    via `ast`, detect the guard, exit non-zero, and surface the
+    offending path and line number in its diagnostic.
     """
     package_dir = tmp_path / ".claude-plugin" / "scripts" / "livespec"
     package_dir.mkdir(parents=True)
@@ -60,15 +108,7 @@ def test_main_guard_rejects_main_guard_inside_livespec(*, tmp_path: Path) -> Non
         encoding="utf-8",
     )
 
-    # S603: argv is a fixed list (sys.executable + repo-controlled
-    # script path); no untrusted shell input.
-    result = subprocess.run(
-        [sys.executable, str(_MAIN_GUARD)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"main_guard should reject livespec/foo.py with `__main__` guard with non-zero exit; "
@@ -88,7 +128,9 @@ def test_main_guard_rejects_main_guard_inside_livespec(*, tmp_path: Path) -> Non
     )
 
 
-def test_main_guard_accepts_livespec_file_without_main_guard(*, tmp_path: Path) -> None:
+def test_main_guard_accepts_livespec_file_without_main_guard(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A livespec file without `__main__` guard passes the check (exit 0).
 
     Pass-case companion: a `.claude-plugin/scripts/livespec/
@@ -111,13 +153,7 @@ def test_main_guard_accepts_livespec_file_without_main_guard(*, tmp_path: Path) 
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_MAIN_GUARD)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"main_guard should accept livespec file without `__main__` guard with exit 0; "
@@ -126,7 +162,9 @@ def test_main_guard_accepts_livespec_file_without_main_guard(*, tmp_path: Path) 
     )
 
 
-def test_main_guard_accepts_tree_without_livespec_directory(*, tmp_path: Path) -> None:
+def test_main_guard_accepts_tree_without_livespec_directory(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A repo cwd without `.claude-plugin/scripts/livespec/` passes the check (exit 0).
 
     Closes the `if livespec_root.is_dir():` False arm so main()
@@ -134,13 +172,7 @@ def test_main_guard_accepts_tree_without_livespec_directory(*, tmp_path: Path) -
     `.claude-plugin` directory at all — so the check has
     nothing to inspect. Exit 0 with empty offenders list.
     """
-    result = subprocess.run(
-        [sys.executable, str(_MAIN_GUARD)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"main_guard should accept empty tree with exit 0; "
@@ -158,13 +190,5 @@ def test_main_guard_module_importable_without_running_main() -> None:
     "__main__":` else-arm (module imported, not run as a
     script), required for per-file 100% line+branch coverage.
     """
-    import importlib.util
-
-    spec = importlib.util.spec_from_file_location(
-        "main_guard_for_import_test",
-        str(_MAIN_GUARD),
-    )
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    module = _load_check_module()
     assert callable(module.main), "main should be importable without invocation"

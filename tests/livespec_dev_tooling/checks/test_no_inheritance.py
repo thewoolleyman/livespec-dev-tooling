@@ -10,13 +10,24 @@ open extension point. `LivespecError` subclasses are NOT
 acceptable bases (v013 M5 tightening — `class
 RateLimitError(UsageError):` is rejected even though
 `UsageError` is itself a `LivespecError` subclass).
+
+The check is driven IN-PROCESS (`monkeypatch.chdir(tmp_path)` +
+`capsys` + `rc = main()`) rather than via a `sys.executable`
+subprocess (work-item livespec-dev-tooling-py9): no
+`COVERAGE_PROCESS_START`-instrumented child, no `.coverage.*`
+race under the parallel dispatcher, and materially faster.
+`main()` reads `Path.cwd()`, so the monkeypatched cwd is the
+fixture root.
 """
 
 from __future__ import annotations
 
-import subprocess
-import sys
+import importlib.util
 from pathlib import Path
+from types import ModuleType
+from typing import NamedTuple
+
+import pytest
 
 __all__: list[str] = []
 
@@ -25,15 +36,52 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 _NO_INHERITANCE = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "no_inheritance.py"
 
 
-def test_no_inheritance_rejects_disallowed_base_class(*, tmp_path: Path) -> None:
+def _load_check_module() -> ModuleType:
+    """Import the check module fresh from its file path.
+
+    Loaded by path (not `import livespec_dev_tooling.checks...`) so the
+    test exercises the on-disk module the Red→Green hook inspects, and
+    so `main()` can be invoked in-process under a monkeypatched cwd.
+    """
+    spec = importlib.util.spec_from_file_location("no_inheritance_under_test", str(_NO_INHERITANCE))
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_MODULE = _load_check_module()
+
+
+class _CheckRun(NamedTuple):
+    """In-process stand-in for the subprocess `CompletedProcess` shape."""
+
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+def _run_check(
+    *, cwd: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> _CheckRun:
+    """Invoke the check's `main()` in-process under `cwd` and capture output."""
+    monkeypatch.chdir(cwd)
+    rc = _MODULE.main()
+    captured = capsys.readouterr()
+    return _CheckRun(returncode=rc, stdout=captured.out, stderr=captured.err)
+
+
+def test_no_inheritance_rejects_disallowed_base_class(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `class Foo(Bar):` with `Bar` outside the allowlist fails the check.
 
     Fixture: `.claude-plugin/scripts/livespec/foo.py` defines
     `class Foo(Bar):` where `Bar` is a hand-rolled application
     class (not in the closed allowlist). The check, invoked
-    with `cwd=tmp_path`, must walk the livespec subtree, parse
-    the file, detect the disallowed base, exit non-zero, and
-    surface the offending file plus line number.
+    with cwd monkeypatched to tmp_path, must walk the livespec
+    subtree, parse the file, detect the disallowed base, exit
+    non-zero, and surface the offending file plus line number.
     """
     package_dir = tmp_path / ".claude-plugin" / "scripts" / "livespec"
     package_dir.mkdir(parents=True)
@@ -53,14 +101,7 @@ def test_no_inheritance_rejects_disallowed_base_class(*, tmp_path: Path) -> None
         encoding="utf-8",
     )
 
-    # S603: argv is fixed; no untrusted shell input.
-    result = subprocess.run(
-        [sys.executable, str(_NO_INHERITANCE)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"no_inheritance should reject `class Foo(Bar):` with non-zero exit; "
@@ -80,7 +121,9 @@ def test_no_inheritance_rejects_disallowed_base_class(*, tmp_path: Path) -> None
     )
 
 
-def test_no_inheritance_accepts_allowlisted_base_classes(*, tmp_path: Path) -> None:
+def test_no_inheritance_accepts_allowlisted_base_classes(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Classes deriving from `Exception`, `Protocol`, etc., pass the check (exit 0).
 
     Pass-case: each of the allowlist entries (Exception,
@@ -109,13 +152,7 @@ def test_no_inheritance_accepts_allowlisted_base_classes(*, tmp_path: Path) -> N
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_NO_INHERITANCE)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"no_inheritance should accept allowlist parents with exit 0; "
@@ -124,19 +161,15 @@ def test_no_inheritance_accepts_allowlisted_base_classes(*, tmp_path: Path) -> N
     )
 
 
-def test_no_inheritance_accepts_tree_without_livespec_directory(*, tmp_path: Path) -> None:
+def test_no_inheritance_accepts_tree_without_livespec_directory(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A repo cwd without `.claude-plugin/scripts/livespec/` passes the check (exit 0).
 
     Closes the `if livespec_root.is_dir():` False arm: tmp_path
     is empty, so main() short-circuits without walking.
     """
-    result = subprocess.run(
-        [sys.executable, str(_NO_INHERITANCE)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"no_inheritance should accept empty tree with exit 0; "
@@ -151,13 +184,5 @@ def test_no_inheritance_module_importable_without_running_main() -> None:
     Closes the `_VENDOR_DIR` already-present branch and the
     `if __name__ == "__main__":` else-arm for per-file 100%.
     """
-    import importlib.util
-
-    spec = importlib.util.spec_from_file_location(
-        "no_inheritance_for_import_test",
-        str(_NO_INHERITANCE),
-    )
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    module = _load_check_module()
     assert callable(module.main), "main should be importable without invocation"
