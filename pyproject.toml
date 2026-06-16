@@ -164,7 +164,7 @@ subprocess_spawn_allowlist = [
 [tool.ruff]
 target-version = "py310"
 line-length = 100
-extend-exclude = ["**/_vendor/**", "**/__pycache__/**", "mutants/**"]
+extend-exclude = [".claude/hooks/**", "**/_vendor/**", "**/__pycache__/**", "mutants/**"]
 
 [tool.ruff.lint]
 # 27 categories: v011 baseline (11) + v012 additions (16). Per
