@@ -264,3 +264,33 @@ jobs:
 
       - name: just ${{ matrix.target }}
         run: just ${{ matrix.target }}
+
+  # Closed-loop CI-telemetry export — mirrors the reference landed in
+  # livespec CORE (PR #477, commit b1e875d). Runs only on master pushes
+  # and merge_group events (never PRs, so it adds no PR-feedback latency).
+  # `needs:` lists EVERY top-level job above so the export runs after the
+  # whole matrix; `gh run view` then reads ALL jobs that ran in the run
+  # (including each reusable-workflow job) and emits one `ci.run` root span
+  # plus one `ci.job.<name>` child per completed job to Honeycomb. The job
+  # FAILS if Honeycomb does not accept the spans — a broken telemetry
+  # pipeline cannot die silently. `!cancelled()` lets the export run even
+  # when an upstream check failed (so red runs are captured too).
+  export-telemetry:
+    name: export-telemetry
+    needs: [setup, check-python, check-fleet-conformance, check-metadata]
+    if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'merge_group') }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Export CI run telemetry to Honeycomb (closed-loop verified)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          HONEYCOMB_GITHUB_CI_INGEST_KEY_LIVESPEC: ${{ secrets.HONEYCOMB_GITHUB_CI_INGEST_KEY_LIVESPEC }}
+        run: bash .github/scripts/export-ci-telemetry.sh
