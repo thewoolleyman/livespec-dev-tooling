@@ -11,6 +11,6 @@
 # extracted (see livespec work-item li-fgqgnk Phase G's follow-up).
 
 [tools]
-uv       = "0.5.20"
+uv       = "0.9.26"
 just     = "1.36.0"
 lefthook = "1.13.6"
