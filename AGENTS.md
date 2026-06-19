@@ -1,5 +1,40 @@
 # Agent instructions
 
+## Repository mutation protocol
+
+Every repo change uses a worktree → PR → merge → cleanup path. Treat
+leaving dirty state, committing on the primary checkout, or asking the
+user whether to commit as failures of the workflow, not as acceptable
+stopping points.
+
+1. Confirm the primary checkout before editing:
+
+   ```bash
+   git -C /data/projects/livespec-dev-tooling config --get livespec.primaryPath
+   git -C /data/projects/livespec-dev-tooling status --short --branch
+   ```
+
+2. If the change will modify tracked files, create a dedicated worktree
+   from the primary checkout's `master` and do all edits there:
+
+   ```bash
+   mise exec -- git -C /data/projects/livespec-dev-tooling worktree add -b <branch> /data/projects/<worktree> master
+   ```
+
+3. Use `mise exec -- git commit ...` and `mise exec -- git push ...` so
+   the mise-managed lefthook hooks actually run. Never pass
+   `--no-verify`; if a hook fails, fix the cause or halt with the
+   failure.
+4. Open a PR, wait for required checks, and merge through the PR using
+   the repo's rebase-merge discipline.
+5. After merge, refresh `/data/projects/livespec-dev-tooling` to
+   `origin/master`, remove the feature worktree, delete the local
+   branch, and verify the primary checkout is clean on `master`.
+
+Do not leave orphaned worktrees. If a session must stop before cleanup,
+record the active worktree path, branch, PR, validation state, and next
+action in the relevant handoff document.
+
 ## Red-Green-Replay commit protocol
 
 Product `.py` changes are committed via a 2-step single-commit TDD ritual,
