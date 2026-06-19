@@ -38,7 +38,7 @@ FROM buildpack-deps:noble
 # the host toolchain and are tracked only here.
 # ---------------------------------------------------------------
 ARG MISE_VERSION=v2026.2.7
-ARG UV_VERSION=0.5.20
+ARG UV_VERSION=0.9.26
 ARG JUST_VERSION=1.36.0
 ARG LEFTHOOK_VERSION=1.13.6
 ARG NODE_VERSION=26.3.0
