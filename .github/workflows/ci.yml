@@ -77,25 +77,19 @@ jobs:
             echo "py_changed=true" >> "$GITHUB_OUTPUT"
           fi
 
-      # Warm the uv download cache ONCE per run. The check-python matrix
-      # jobs `needs: setup`, so they start only after this populates
-      # ~/.cache/uv — turning the cold PyPI fetches into a single cold
-      # fetch per lock change (every other check-python job restores from
-      # the same cache key). check-metadata / check-fleet-conformance do
-      # NOT `needs: setup` (they must run even on zero-.py changesets), so
-      # each carries its own cache-restore step below.
-      - name: Install pinned binaries via mise
-        uses: jdx/mise-action@v2
-
-      - name: Cache uv downloads
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/uv
-          key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
-          restore-keys: uv-${{ runner.os }}-
-
-      - name: Populate uv cache
-        run: uv sync --all-groups
+      # `setup` is the change-detection GATE only — it deliberately does
+      # NO uv pre-warm. The check-python matrix jobs `needs: setup`, so
+      # any work here sits on the critical path before the matrix can
+      # start. Each check-python job already restores ~/.cache/uv itself
+      # (keyed on uv.lock, with the `uv-${{ runner.os }}-` prefix
+      # restore-key) and runs its own `uv sync`; check-metadata /
+      # check-fleet-conformance don't `needs: setup` and likewise carry
+      # their own restore. So on the common unchanged-lock run the cache
+      # already exists and every job restores it in parallel with no PyPI
+      # fetch. A serial pre-warm here would only help the first run after
+      # a lock change — already bounded to the delta wheels by the prefix
+      # restore-key — so it is not worth taxing every run's wall-clock.
+      # See livespec-dev-tooling-7us.10 (research/justcheck-performance).
 
   check-python:
     name: ${{ matrix.target }}
