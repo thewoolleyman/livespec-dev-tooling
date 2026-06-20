@@ -520,3 +520,44 @@ def test_changed_py_impl_paths_skips_underscore_private_modules() -> None:
         Path("livespec_dev_tooling/checks/foo.py"),
         Path("livespec_dev_tooling/checks/__init__.py"),
     ], f"underscore-private modules should be excluded from derive mode; got {result!r}"
+
+
+def test_derive_paths_from_git_excludes_deleted_impl(*, tmp_path: Path) -> None:
+    """A DELETED impl `.py` is excluded from the derived set (deletion-only commit).
+
+    Regression for the deletion-only-commit defect: `git diff --name-only
+    origin/master...HEAD` lists deleted paths, so without a `--diff-filter=d`
+    exclusion the derive step surfaces a deleted impl whose mirror test is
+    (correctly) also deleted, then hard-fails in `_resolve_test_paths` with a
+    spurious "mirror-paired test does not exist". A deletion needs no mirror
+    test, so the derived set MUST be empty. Builds a baseline commit that
+    INCLUDES the impl (so it exists at `origin/master`), then a feature commit
+    that deletes it.
+    """
+    _git_in(tmp_path=tmp_path, args=("init", "-q"))
+    _git_in(tmp_path=tmp_path, args=("config", "user.email", "test@example.com"))
+    _git_in(tmp_path=tmp_path, args=("config", "user.name", "Test"))
+    _git_in(tmp_path=tmp_path, args=("config", "commit.gpgsign", "false"))
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.livespec_dev_tooling]\nsource_tree_prefixes = ["livespec_dev_tooling/"]\n',
+        encoding="utf-8",
+    )
+    impl = tmp_path / "livespec_dev_tooling" / "checks" / "doomed_mod.py"
+    impl.parent.mkdir(parents=True, exist_ok=True)
+    impl.write_text(
+        "from __future__ import annotations\n\n__all__ = ['v']\n\nv = 1\n",
+        encoding="utf-8",
+    )
+    _git_in(tmp_path=tmp_path, args=("add", "-A"))
+    _git_in(tmp_path=tmp_path, args=("commit", "-qm", "baseline with impl"))
+    _git_in(tmp_path=tmp_path, args=("update-ref", "refs/remotes/origin/master", "HEAD"))
+    impl.unlink()
+    _git_in(tmp_path=tmp_path, args=("add", "-A"))
+    _git_in(tmp_path=tmp_path, args=("commit", "-qm", "delete doomed_mod"))
+
+    module = _load_check_module()
+    derived = module._derive_paths_from_git(  # noqa: SLF001
+        source_tree_prefixes=("livespec_dev_tooling/",),
+        cwd=tmp_path,
+    )
+    assert derived == [], f"a deleted impl must be excluded from the derived set; got {derived!r}"

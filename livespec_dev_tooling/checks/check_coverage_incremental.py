@@ -226,7 +226,7 @@ def _derive_paths_from_git(*, source_tree_prefixes: tuple[str, ...], cwd: Path) 
     git_env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     # S603/S607: argv is a fixed list of literal git args; no shell input.
     diff = subprocess.run(
-        ["git", "diff", "--name-only", "origin/master...HEAD"],
+        ["git", "diff", "--name-only", "--diff-filter=d", "origin/master...HEAD"],
         capture_output=True,
         text=True,
         check=False,
