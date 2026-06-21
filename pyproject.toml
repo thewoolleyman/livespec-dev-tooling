@@ -153,6 +153,7 @@ subprocess_spawn_allowlist = [
     "tests/livespec_dev_tooling/test_green_token.py",
     "tests/livespec_dev_tooling/test_parallel_check_dispatcher.py",
     "tests/livespec_dev_tooling/test_tdd_commit.py",
+    "tests/livespec_dev_tooling/test_vendor_update.py",
 ]
 
 # ---------------------------------------------------------------------------
@@ -242,6 +243,13 @@ ban-relative-imports = "all"
 # checks above; S603/S607/S404 are over-strict for that documented
 # pattern, S105 covers any trailer/token-shaped constants.
 "livespec_dev_tooling/workflow_checks/*.py" = ["S603", "S607", "S404", "S105"]
+# The maintainer-only `vendor-update` tool shells out to `git clone`
+# via subprocess.run with a fixed argv list (the same documented
+# pattern as the check modules above); S603/S607/S404 are over-strict
+# for that vendoring path. Relocated from livespec-core's
+# dev-tooling/vendor_update.py (work-item livespec-9ixg) so the
+# release→bump-pin automation can re-vendor in every consumer repo.
+"livespec_dev_tooling/vendor_update.py" = ["S603", "S607", "S404"]
 # The fleet-membership surface shells out to `gh`/`git` via
 # subprocess.run with fixed argv lists (the same documented pattern as
 # the check modules above); S105 covers the required-secret NAME
