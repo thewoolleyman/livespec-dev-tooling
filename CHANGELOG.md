@@ -53,6 +53,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.16.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.15.0...v0.16.0) (2026-06-21)
+
+
+### Features
+
+* recognize livespec_orchestrator_* package dirs in RGR product-path detection ([e3a86bb](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e3a86bb22acc9e3e1a66f0c72c3dff0aca686c19))
+
 ## [0.15.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.14.0...v0.15.0) (2026-06-21)
 
 
