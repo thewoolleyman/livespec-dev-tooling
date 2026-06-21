@@ -107,6 +107,15 @@ _TESTS_PREFIX = "tests/"
 #                              (bin/ for impl-beads is covered by
 #                              .claude-plugin/scripts/bin/)
 #
+# The orchestrator-rename wave renames the impl-side plugin package
+# dirs from `livespec_impl_<X>` to `livespec_orchestrator_<X>`:
+#   livespec_impl_git_jsonl  -> livespec_orchestrator_git_jsonl
+#   livespec_impl_beads      -> livespec_orchestrator_beads_fabro
+# `_IMPL_PREFIXES` is a SUPERSET recognizing BOTH the old and the new
+# package dirs, so RGR product-path detection works through the rename
+# with no flag-day. Once every consumer has migrated, the old
+# `livespec_impl_*` prefixes may be dropped.
+#
 # Bare `livespec/` / `bin/` legacy prefixes remain for paired-test
 # fixture compatibility — tmp_path tests synthesize paths like
 # `livespec/foo.py`. Production has no top-level `livespec/` or
@@ -115,7 +124,9 @@ _TESTS_PREFIX = "tests/"
 _IMPL_PREFIXES = (
     ".claude-plugin/scripts/livespec/",
     ".claude-plugin/scripts/livespec_impl_git_jsonl/",
+    ".claude-plugin/scripts/livespec_orchestrator_git_jsonl/",
     ".claude-plugin/scripts/livespec_impl_beads/",
+    ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/",
     ".claude-plugin/scripts/bin/",
     "livespec/",
     "livespec_runtime/",

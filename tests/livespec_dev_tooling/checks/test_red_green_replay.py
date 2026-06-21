@@ -1231,6 +1231,55 @@ def test_classify_staged_recognizes_impl_beads_path() -> None:
     ), f"top-level docs path should NOT be in impl bucket; got impl_paths={impl_paths}"
 
 
+def test_classify_staged_recognizes_orchestrator_package_dirs() -> None:
+    """`_classify_staged` buckets the renamed orchestrator package dirs as impl.
+
+    The livespec orchestrator-rename wave renames the impl-side plugin
+    package dirs from `livespec_impl_<X>` to `livespec_orchestrator_<X>`:
+
+      - `.claude-plugin/scripts/livespec_impl_beads/`
+            → `.claude-plugin/scripts/livespec_orchestrator_beads_fabro/`
+      - `.claude-plugin/scripts/livespec_impl_git_jsonl/`
+            → `.claude-plugin/scripts/livespec_orchestrator_git_jsonl/`
+
+    `_IMPL_PREFIXES` is extended to a SUPERSET recognizing BOTH the old
+    and the new package dirs, so RGR product-path detection works
+    through the rename with no flag-day. Without the orchestrator
+    prefixes, every `feat:` / `fix:` commit touching a renamed
+    package's source classifies as test-only (no impl bucket), which
+    incorrectly trips the Red-without-Green diagnostic and blocks the
+    plugin from committing ANY product `.py` via the RGR ritual. This
+    test pins recognition of both new orchestrator prefixes.
+    """
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "red_green_replay_for_orchestrator_classify_test",
+        str(_RED_GREEN_REPLAY),
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    paths = [
+        ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/bar.py",
+        ".claude-plugin/scripts/livespec_orchestrator_git_jsonl/foo.py",
+        "README.md",
+    ]
+    _tests_paths, impl_paths = module._classify_staged(paths=paths)  # noqa: SLF001
+    assert ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/bar.py" in impl_paths, (
+        f"`.claude-plugin/scripts/livespec_orchestrator_beads_fabro/...` path should be in "
+        f"impl bucket; got impl_paths={impl_paths}"
+    )
+    assert ".claude-plugin/scripts/livespec_orchestrator_git_jsonl/foo.py" in impl_paths, (
+        f"`.claude-plugin/scripts/livespec_orchestrator_git_jsonl/...` path should be in "
+        f"impl bucket; got impl_paths={impl_paths}"
+    )
+    assert (
+        "README.md" not in impl_paths
+    ), f"top-level docs path should NOT be in impl bucket; got impl_paths={impl_paths}"
+
+
 def test_red_green_replay_module_importable_without_running_main() -> None:
     """The check module imports cleanly without invoking main().
 
