@@ -216,7 +216,7 @@ The livespec family dogfoods its own telemetry. CI runs, Red→Green commit-gate
 
 - [`livespec`](https://github.com/thewoolleyman/livespec) — the
   parent plugin governing this library's specification.
-- [`livespec-impl-beads`](https://github.com/thewoolleyman/livespec-impl-beads)
+- [`livespec-orchestrator-beads-fabro`](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro)
   — the implementation plugin currently tracking this library's
   work-items in a per-repo beads/Dolt **tenant database** on the shared
   dolt-server (tenant `livespec-dev-tooling`); its client config is
