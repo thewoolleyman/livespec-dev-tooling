@@ -53,6 +53,24 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.15.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.14.0...v0.15.0) (2026-06-21)
+
+
+### Features
+
+* flag test-spawned python subprocesses; steer to in-process main() (4i5) ([4df086f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4df086f1a3fdfb5f2812400e0d4a6fba3c909306))
+* **parallel-check:** parallel dispatcher with core-budget cap and per-target timing ([cb353fc](https://github.com/thewoolleyman/livespec-dev-tooling/commit/cb353fcc42d7fb23c8f46db5b464d747fccde11b))
+* relocate vendor_update into livespec_dev_tooling package ([b843ca3](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b843ca360b138f68232e61afa2f46abc2d69941c))
+* scope RGR Red-leg pytest by staged-path class (7us.6) ([689738b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/689738b0f683c5a3a900ffd0787dbb00119a0b42))
+
+
+### Bug Fixes
+
+* exclude deleted impl files from check-coverage-incremental derive ([17b5c66](https://github.com/thewoolleyman/livespec-dev-tooling/commit/17b5c66414acb9884fd379fa3f5901e88667ad99))
+* isolate per-target coverage data by construction in the parallel check dispatcher (cmn) ([9f9d910](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9f9d910996133fb9d9cc62cd2e092b59d6d2858a))
+* parse mutmut-3.x results + nested-layout staging cwd in check_mutation ([5a7be94](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5a7be941c4dac37e75a3efcccfe3650533772076))
+* serialize check-coverage-incremental after per-file-coverage (7us.6) ([62ab1f9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/62ab1f96cf55ba14ccbe48acbf366beeec753f74))
+
 ## [0.14.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.13.0...v0.14.0) (2026-06-12)
 
 
