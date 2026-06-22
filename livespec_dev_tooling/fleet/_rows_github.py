@@ -144,8 +144,11 @@ def _protection_problems(
         problems.append("required_status_checks is absent")
         return problems
     checks_map = cast("dict[str, object]", checks)
-    if not checks_map.get("strict"):
-        problems.append("required_status_checks.strict is not enabled")
+    if checks_map.get("strict"):
+        problems.append(
+            "required_status_checks.strict is enabled but must be OFF "
+            "(per the strict-off merge-gate rule)"
+        )
     contexts_raw = checks_map.get("contexts")
     contexts: set[str] = (
         {entry for entry in cast("list[object]", contexts_raw) if isinstance(entry, str)}
@@ -165,7 +168,7 @@ def _protection_problems(
 def assert_branch_protection(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:
     """Master branch protection present AND aligned.
 
-    Aligned means: `enforce_admins`, `strict`, a non-empty
+    Aligned means: `enforce_admins`, `strict` OFF, a non-empty
     required-check set, and every required check matched by a ci.yml
     matrix job (the direction that blocks merges when violated), per
     livespec §"CI as a merge gate (branch protection)".

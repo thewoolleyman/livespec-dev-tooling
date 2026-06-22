@@ -22,10 +22,10 @@ __all__: list[str] = ["ALIGNED_PROTECTION_STRICT", "aligned_protection_payload"]
 
 # The `strict` flag the aligned (green-path) branch-protection payload
 # carries. Per livespec NFR §"CI as a merge gate (branch protection)",
-# strict (require-branches-up-to-date) MUST be OFF; until the strict-off
-# enforcement flip lands this stays the legacy value so the suite is
-# green against the current `assert_branch_protection` rule.
-ALIGNED_PROTECTION_STRICT: bool = True
+# strict (require-branches-up-to-date) MUST be OFF, so the aligned
+# payload carries strict-off — the state `assert_branch_protection`
+# now accepts.
+ALIGNED_PROTECTION_STRICT: bool = False
 
 
 def aligned_protection_payload(*, contexts: list[str] | None = None) -> dict[str, object]:

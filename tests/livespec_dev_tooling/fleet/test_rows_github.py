@@ -142,7 +142,7 @@ def test_app_installation_unreadable_skips() -> None:
 def _protection_payload(
     *,
     enforce: bool = True,
-    strict: bool = True,
+    strict: bool = False,
     contexts: list[str] | None = None,
 ) -> dict[str, object]:
     return {
@@ -205,11 +205,15 @@ def test_branch_protection_missing_required_status_checks_is_finding() -> None:
     assert "required_status_checks is absent" in outcome.message
 
 
-def test_branch_protection_not_strict_is_finding() -> None:
-    ctx = _protection_ctx(payload=_protection_payload(strict=False))
+def test_branch_protection_strict_enabled_is_finding() -> None:
+    # Strict (require-branches-up-to-date) MUST be OFF per livespec NFR
+    # §"CI as a merge gate (branch protection)"; strict=True is the
+    # misalignment the row now flags.
+    ctx = _protection_ctx(payload=_protection_payload(strict=True))
     outcome = assert_branch_protection(ctx=ctx, member=_MEMBER)
     assert isinstance(outcome, RowFinding)
     assert "strict" in outcome.message
+    assert "OFF" in outcome.message
 
 
 def test_branch_protection_empty_contexts_is_finding() -> None:
@@ -222,7 +226,7 @@ def test_branch_protection_empty_contexts_is_finding() -> None:
 def test_branch_protection_non_string_context_entries_count_as_empty() -> None:
     payload = {
         "enforce_admins": {"enabled": True},
-        "required_status_checks": {"strict": True, "contexts": [7]},
+        "required_status_checks": {"strict": False, "contexts": [7]},
     }
     ctx = _protection_ctx(payload=payload)
     outcome = assert_branch_protection(ctx=ctx, member=_MEMBER)
