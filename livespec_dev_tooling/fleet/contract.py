@@ -23,6 +23,7 @@ from typing import Protocol, cast
 from livespec_dev_tooling.fleet._context import FleetContext, FleetMember, RowOutcome
 from livespec_dev_tooling.fleet._reconcile import (
     reconcile_branch_protection,
+    reconcile_merge_settings,
     reconcile_secret_names,
     reconcile_shim_workflows,
     reconcile_topic,
@@ -40,6 +41,7 @@ from livespec_dev_tooling.fleet._rows_files import (
 from livespec_dev_tooling.fleet._rows_github import (
     assert_app_installation,
     assert_branch_protection,
+    assert_merge_settings,
     assert_secret_names,
     assert_topic,
 )
@@ -170,6 +172,13 @@ OBLIGATION_ROWS: tuple[ObligationRow, ...] = (
         applies_to=_ALL_CLASSES,
         assert_member=assert_branch_protection,
         reconcile=reconcile_branch_protection,
+    ),
+    ObligationRow(
+        row_id="merge-settings",
+        obligation_type="github-state",
+        applies_to=_ALL_CLASSES,
+        assert_member=assert_merge_settings,
+        reconcile=reconcile_merge_settings,
     ),
     ObligationRow(
         row_id="topic-livespec-sibling",

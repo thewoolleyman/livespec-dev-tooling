@@ -17,7 +17,13 @@ files, never the reverse, so a helper module that lives only under
 
 from __future__ import annotations
 
-__all__: list[str] = ["ALIGNED_PROTECTION_STRICT", "aligned_protection_payload"]
+from livespec_dev_tooling.fleet._rows_github import REQUIRED_MERGE_SETTINGS
+
+__all__: list[str] = [
+    "ALIGNED_PROTECTION_STRICT",
+    "aligned_merge_settings_payload",
+    "aligned_protection_payload",
+]
 
 
 # The `strict` flag the aligned (green-path) branch-protection payload
@@ -43,3 +49,14 @@ def aligned_protection_payload(*, contexts: list[str] | None = None) -> dict[str
             "contexts": contexts if contexts is not None else ["check-a"],
         },
     }
+
+
+def aligned_merge_settings_payload() -> dict[str, object]:
+    """Return the aligned (green-path) repo-object merge-settings payload.
+
+    The rebase-only-plus-auto-merge state `assert_merge_settings`
+    accepts, shared by the `test_fleet_conformance.py` and
+    `test_wire_fleet_member.py` green tables so a change to what the
+    family mandates is a one-line edit at `REQUIRED_MERGE_SETTINGS`.
+    """
+    return dict(REQUIRED_MERGE_SETTINGS)
