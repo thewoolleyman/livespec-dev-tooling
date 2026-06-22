@@ -20,8 +20,10 @@ from livespec_dev_tooling.fleet._context import (
     RowSkip,
 )
 from livespec_dev_tooling.fleet._rows_github import (
+    REQUIRED_MERGE_SETTINGS,
     assert_app_installation,
     assert_branch_protection,
+    assert_merge_settings,
     assert_secret_names,
     assert_topic,
     member_matrix_targets,
@@ -35,6 +37,7 @@ _MEMBER = FleetMember(repo="widget", repo_class="library")
 _SECRETS_ARGS: tuple[str, ...] = ("api", "repos/acme/widget/actions/secrets")
 _INSTALL_ARGS: tuple[str, ...] = ("api", "installation/repositories?per_page=100")
 _PROTECTION_ARGS: tuple[str, ...] = ("api", "repos/acme/widget/branches/master/protection")
+_REPO_ARGS: tuple[str, ...] = ("api", "repos/acme/widget")
 _TOPICS_ARGS: tuple[str, ...] = ("api", "repos/acme/widget/topics")
 _CI_ARGS: tuple[str, ...] = (
     "api",
@@ -244,6 +247,49 @@ def test_branch_protection_required_check_missing_from_matrix_is_finding() -> No
 def test_branch_protection_alignment_skipped_when_ci_unreadable() -> None:
     ctx = _protection_ctx(payload=_protection_payload(contexts=["check-anything"]), ci_text=None)
     assert assert_branch_protection(ctx=ctx, member=_MEMBER) == RowPass()
+
+
+def _merge_payload(**overrides: object) -> dict[str, object]:
+    """A repo-object payload carrying the rebase-only (green-path) merge settings."""
+    payload: dict[str, object] = dict(REQUIRED_MERGE_SETTINGS)
+    payload.update(overrides)
+    return payload
+
+
+def test_merge_settings_rebase_only_passes() -> None:
+    ctx = make_context(table={_REPO_ARGS: ok(payload=_merge_payload())})
+    assert assert_merge_settings(ctx=ctx, member=_MEMBER) == RowPass()
+
+
+def test_merge_settings_merge_commit_enabled_is_finding() -> None:
+    # The freshly-scaffolded-repo default: GitHub leaves allow_merge_commit
+    # true, which violates the rebase-only rule (livespec NFR §"Commit and
+    # merge discipline").
+    ctx = make_context(table={_REPO_ARGS: ok(payload=_merge_payload(allow_merge_commit=True))})
+    outcome = assert_merge_settings(ctx=ctx, member=_MEMBER)
+    assert isinstance(outcome, RowFinding)
+    assert "allow_merge_commit" in outcome.message
+    assert "rebase-only" in outcome.message
+
+
+def test_merge_settings_rebase_disabled_is_finding() -> None:
+    ctx = make_context(table={_REPO_ARGS: ok(payload=_merge_payload(allow_rebase_merge=False))})
+    outcome = assert_merge_settings(ctx=ctx, member=_MEMBER)
+    assert isinstance(outcome, RowFinding)
+    assert "allow_rebase_merge" in outcome.message
+
+
+def test_merge_settings_auto_merge_disabled_is_finding() -> None:
+    ctx = make_context(table={_REPO_ARGS: ok(payload=_merge_payload(allow_auto_merge=False))})
+    outcome = assert_merge_settings(ctx=ctx, member=_MEMBER)
+    assert isinstance(outcome, RowFinding)
+    assert "allow_auto_merge" in outcome.message
+
+
+def test_merge_settings_unreadable_skips() -> None:
+    outcome = assert_merge_settings(ctx=make_context(table={}), member=_MEMBER)
+    assert isinstance(outcome, RowSkip)
+    assert "admin scope" in outcome.reason
 
 
 def test_topic_present_passes() -> None:

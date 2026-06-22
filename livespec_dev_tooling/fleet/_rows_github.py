@@ -28,10 +28,12 @@ from livespec_dev_tooling.fleet._context import (
 from livespec_dev_tooling.fleet._rows_files import CI_WORKFLOW
 
 __all__: list[str] = [
+    "REQUIRED_MERGE_SETTINGS",
     "REQUIRED_SECRET_NAMES",
     "SIBLING_TOPIC",
     "assert_app_installation",
     "assert_branch_protection",
+    "assert_merge_settings",
     "assert_secret_names",
     "assert_topic",
     "member_matrix_targets",
@@ -41,6 +43,21 @@ __all__: list[str] = [
 
 REQUIRED_SECRET_NAMES = ("APP_ID", "APP_PRIVATE_KEY")
 SIBLING_TOPIC = "livespec-sibling"
+
+# Repo-level merge-strategy settings the family mandates per livespec
+# NFR §"Commit and merge discipline": `master` accepts only
+# rebase-merge, so merge-commit and squash-merge are forbidden at the
+# GitHub repo-settings level. `allow_auto_merge` is enabled so
+# `gh pr merge --auto` (the family merge driver, per §"CI as a merge
+# gate (branch protection)") is available. A freshly-scaffolded repo
+# defaults to GitHub's `allow_merge_commit: true`, so this is a real
+# obligation, not a no-op.
+REQUIRED_MERGE_SETTINGS: dict[str, bool] = {
+    "allow_merge_commit": False,
+    "allow_squash_merge": False,
+    "allow_rebase_merge": True,
+    "allow_auto_merge": True,
+}
 
 # GitHub's branch-protection endpoints return this exact message only
 # when an admin-scoped token reads a genuinely unprotected branch; a
@@ -189,6 +206,32 @@ def assert_branch_protection(*, ctx: FleetContext, member: FleetMember) -> RowOu
     )
     if problems:
         return RowFinding(message=f"{member.repo}: {'; '.join(problems)}")
+    return RowPass()
+
+
+def assert_merge_settings(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:
+    """Repo-level merge settings are rebase-only (+ auto-merge enabled).
+
+    Per livespec NFR §"Commit and merge discipline": `master` accepts
+    only rebase-merge (`allow_merge_commit` / `allow_squash_merge` OFF,
+    `allow_rebase_merge` ON), with `allow_auto_merge` ON so the family's
+    `gh pr merge --auto` driver works. A freshly-scaffolded repo
+    defaults to GitHub's `allow_merge_commit: true`, so a manifest
+    member that has never been reconciled fails this row.
+    """
+    payload = ctx.api_object(path=f"repos/{ctx.owner}/{member.repo}")
+    if not isinstance(payload, dict):
+        return RowSkip(reason=f"{member.repo}: repo settings unreadable (needs admin scope)")
+    settings = cast("dict[str, object]", payload)
+    problems = [
+        f"{key} is {settings.get(key)!r}, must be {want!r}"
+        for key, want in REQUIRED_MERGE_SETTINGS.items()
+        if settings.get(key) != want
+    ]
+    if problems:
+        return RowFinding(
+            message=f"{member.repo}: merge settings not rebase-only: {'; '.join(problems)}"
+        )
     return RowPass()
 
 
