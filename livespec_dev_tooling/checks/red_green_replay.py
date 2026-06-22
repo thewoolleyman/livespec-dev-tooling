@@ -100,21 +100,20 @@ _TESTS_PREFIX = "tests/"
 #                              .claude-plugin/scripts/bin/, dev-tooling/
 # livespec-runtime:            livespec_runtime/
 # livespec-dev-tooling (self): livespec_dev_tooling/
-# livespec-impl-git-jsonl:     .claude-plugin/scripts/livespec_impl_git_jsonl/
-#                              (bin/ for impl-git-jsonl is covered by
+# livespec-orchestrator-git-jsonl: .claude-plugin/scripts/livespec_orchestrator_git_jsonl/
+#                              (bin/ for orchestrator-git-jsonl is covered by
 #                              .claude-plugin/scripts/bin/)
-# livespec-impl-beads:         .claude-plugin/scripts/livespec_impl_beads/
-#                              (bin/ for impl-beads is covered by
+# livespec-orchestrator-beads-fabro: .claude-plugin/scripts/livespec_orchestrator_beads_fabro/
+#                              (bin/ for orchestrator-beads-fabro is covered by
 #                              .claude-plugin/scripts/bin/)
 #
-# The orchestrator-rename wave renames the impl-side plugin package
+# The orchestrator-rename wave renamed the impl-side plugin package
 # dirs from `livespec_impl_<X>` to `livespec_orchestrator_<X>`:
 #   livespec_impl_git_jsonl  -> livespec_orchestrator_git_jsonl
 #   livespec_impl_beads      -> livespec_orchestrator_beads_fabro
-# `_IMPL_PREFIXES` is a SUPERSET recognizing BOTH the old and the new
-# package dirs, so RGR product-path detection works through the rename
-# with no flag-day. Once every consumer has migrated, the old
-# `livespec_impl_*` prefixes may be dropped.
+# `_IMPL_PREFIXES` recognizes the renamed orchestrator package dirs.
+# The old `livespec_impl_*` package dirs no longer exist in any repo,
+# so their prefixes are not carried.
 #
 # Bare `livespec/` / `bin/` legacy prefixes remain for paired-test
 # fixture compatibility — tmp_path tests synthesize paths like
@@ -123,9 +122,7 @@ _TESTS_PREFIX = "tests/"
 # positives in real repos.
 _IMPL_PREFIXES = (
     ".claude-plugin/scripts/livespec/",
-    ".claude-plugin/scripts/livespec_impl_git_jsonl/",
     ".claude-plugin/scripts/livespec_orchestrator_git_jsonl/",
-    ".claude-plugin/scripts/livespec_impl_beads/",
     ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/",
     ".claude-plugin/scripts/bin/",
     "livespec/",
