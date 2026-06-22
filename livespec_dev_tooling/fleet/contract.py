@@ -27,6 +27,7 @@ from livespec_dev_tooling.fleet._reconcile import (
     reconcile_shim_workflows,
     reconcile_topic,
 )
+from livespec_dev_tooling.fleet._rows_beads import assert_tenant_connection_consistency
 from livespec_dev_tooling.fleet._rows_files import (
     assert_bump_pin_workflow,
     assert_ci_workflow,
@@ -175,6 +176,16 @@ OBLIGATION_ROWS: tuple[ObligationRow, ...] = (
         applies_to=_ALL_CLASSES,
         assert_member=assert_topic,
         reconcile=reconcile_topic,
+    ),
+    ObligationRow(
+        row_id="beads-tenant-connection-consistency",
+        obligation_type="committed-file",
+        applies_to=_ALL_CLASSES,
+        assert_member=assert_tenant_connection_consistency,
+        manual_hint=(
+            "reconcile .beads/config.yaml (dolt.* keys) and .livespec.jsonc's impl-plugin "
+            "connection block so the five tenant-connection fields agree, in a repo-local commit"
+        ),
     ),
 )
 
