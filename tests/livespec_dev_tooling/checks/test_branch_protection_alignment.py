@@ -7,6 +7,7 @@ branch protection's required-checks list.
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -129,10 +130,24 @@ def _setup_repo_with_ci_yml(*, tmp_path: Path, matrix_targets: list[str]) -> Non
     _ = (workflows / "ci.yml").write_text(ci_yml, encoding="utf-8")
 
 
+def _checks_payload(*, contexts: list[object], strict: bool = False) -> str:
+    """Serialize a `required_status_checks` object payload.
+
+    The check reads the `repos/<owner>/<repo>/branches/master/protection/
+    required_status_checks` endpoint, which returns an OBJECT shaped
+    `{"strict": <bool>, "contexts": [<str>, ...]}` — NOT the bare
+    contexts list the older `/contexts` sub-endpoint returned. `strict`
+    defaults to False because the strict-off merge-gate rule (livespec
+    NFR §"CI as a merge gate (branch protection)") makes strict-off the
+    only aligned state.
+    """
+    return json.dumps({"strict": strict, "contexts": contexts})
+
+
 def _install_fake_gh(
     *,
     tmp_path: Path,
-    stdout: str = "[]",
+    stdout: str = '{"strict": false, "contexts": []}',
     stderr: str = "",
     returncode: int = 0,
     git_origin_url: str = "https://github.com/test-owner/test-repo.git",
@@ -190,7 +205,7 @@ def test_required_missing_from_ci_yml_fails(*, tmp_path: Path) -> None:
     _setup_repo_with_ci_yml(tmp_path=tmp_path, matrix_targets=["check-foo"])
     fake_path = _install_fake_gh(
         tmp_path=tmp_path,
-        stdout='["check-foo", "check-missing"]',
+        stdout=_checks_payload(contexts=["check-foo", "check-missing"]),
     )
     result = _run_check(cwd=tmp_path, env_path=fake_path)
     assert result.returncode == 4, (
@@ -213,12 +228,39 @@ def test_aligned_lists_pass(*, tmp_path: Path) -> None:
     _setup_repo_with_ci_yml(tmp_path=tmp_path, matrix_targets=["check-foo", "check-bar"])
     fake_path = _install_fake_gh(
         tmp_path=tmp_path,
-        stdout='["check-foo", "check-bar"]',
+        stdout=_checks_payload(contexts=["check-foo", "check-bar"]),
     )
     result = _run_check(cwd=tmp_path, env_path=fake_path)
     assert result.returncode == 0
     assert "required check has no matching" not in result.stderr
     assert "no branch protection" not in result.stderr
+    assert "strict" not in result.stderr
+
+
+def test_strict_enabled_fails(*, tmp_path: Path) -> None:
+    """Protection present with required_status_checks.strict TRUE → exit 4.
+
+    Strict (require-branches-up-to-date) MUST be OFF per livespec
+    NFR §"CI as a merge gate (branch protection)": strict makes GitHub
+    keep a behind PR current by merging master into its branch,
+    injecting a `Merge branch 'master'` commit that violates
+    required_linear_history and buries the Red-Green-Replay TDD
+    trailers. The check FAILS (exit 4) with a structured `fail` finding
+    (failure_mode strict_enabled). The matrix is otherwise aligned, so
+    only the strict assertion fires.
+    """
+    _setup_repo_with_ci_yml(tmp_path=tmp_path, matrix_targets=["check-foo"])
+    fake_path = _install_fake_gh(
+        tmp_path=tmp_path,
+        stdout=_checks_payload(contexts=["check-foo"], strict=True),
+    )
+    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    assert result.returncode == 4, (
+        f"expected exit 4 when strict is enabled; "
+        f"got {result.returncode}, stderr={result.stderr!r}"
+    )
+    assert "strict_enabled" in result.stderr
+    assert "strict" in result.stderr
 
 
 def test_protection_absent_fails(*, tmp_path: Path) -> None:
@@ -305,7 +347,7 @@ def test_blank_and_comment_lines_in_matrix_are_skipped(*, tmp_path: Path) -> Non
     _ = (workflows / "ci.yml").write_text(ci_yml, encoding="utf-8")
     fake_path = _install_fake_gh(
         tmp_path=tmp_path,
-        stdout='["check-foo", "check-bar"]',
+        stdout=_checks_payload(contexts=["check-foo", "check-bar"]),
     )
     result = _run_check(cwd=tmp_path, env_path=fake_path)
     assert result.returncode == 0, (
@@ -320,7 +362,7 @@ def test_extra_ci_job_warns(*, tmp_path: Path) -> None:
     _setup_repo_with_ci_yml(tmp_path=tmp_path, matrix_targets=["check-foo", "check-extra"])
     fake_path = _install_fake_gh(
         tmp_path=tmp_path,
-        stdout='["check-foo"]',
+        stdout=_checks_payload(contexts=["check-foo"]),
     )
     result = _run_check(cwd=tmp_path, env_path=fake_path)
     assert result.returncode == 0
@@ -377,26 +419,54 @@ def test_non_github_remote_skips_gracefully(*, tmp_path: Path) -> None:
 
 
 def test_unexpected_payload_shape(*, tmp_path: Path) -> None:
-    """gh returns non-list payload → exit 0 with error log (no enforcement)."""
+    """gh returns non-object payload → exit 0 with error log (no enforcement).
+
+    The `required_status_checks` endpoint returns a JSON OBJECT; a bare
+    JSON value that is not an object (here a string) has an unexpected
+    shape and the check skips rather than enforces.
+    """
     _setup_repo_with_ci_yml(tmp_path=tmp_path, matrix_targets=["check-foo"])
-    fake_path = _install_fake_gh(tmp_path=tmp_path, stdout='{"not": "a list"}')
+    fake_path = _install_fake_gh(tmp_path=tmp_path, stdout='"not an object"')
     result = _run_check(cwd=tmp_path, env_path=fake_path)
     assert result.returncode == 0
     assert "unexpected gh api response shape" in result.stderr
 
 
 def test_payload_with_non_string_entries(*, tmp_path: Path) -> None:
-    """gh list contains non-string entries → silently skip them (covers the False branch)."""
+    """gh contexts list contains non-string entries → silently skip them (covers the False branch)."""
     _setup_repo_with_ci_yml(tmp_path=tmp_path, matrix_targets=["check-foo"])
     fake_path = _install_fake_gh(
         tmp_path=tmp_path,
-        stdout='["check-foo", 42, null, "check-bar"]',
+        stdout=_checks_payload(contexts=["check-foo", 42, None, "check-bar"]),
     )
     result = _run_check(cwd=tmp_path, env_path=fake_path)
     # Only "check-foo" and "check-bar" are extracted as required;
     # ci.yml has only "check-foo", so "check-bar" is missing → exit 4.
     assert result.returncode == 4
     assert "check-bar" in result.stderr
+
+
+def test_payload_with_non_list_contexts(*, tmp_path: Path) -> None:
+    """`contexts` absent / not a list → treated as empty required set (covers the False branch).
+
+    The `required_status_checks` object normally carries a `contexts`
+    list, but a malformed payload may omit it or give it a non-list
+    value. The check then treats the required-check set as EMPTY: with
+    strict off, the alignment gate has nothing required, so every ci.yml
+    job is merely "not required" (warning) and the check exits 0. This
+    pins the `isinstance(contexts_raw, list)` False branch.
+    """
+    _setup_repo_with_ci_yml(tmp_path=tmp_path, matrix_targets=["check-foo"])
+    fake_path = _install_fake_gh(
+        tmp_path=tmp_path,
+        stdout='{"strict": false}',
+    )
+    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    assert result.returncode == 0, (
+        f"expected exit 0 when contexts absent (empty required set); "
+        f"got {result.returncode}, stderr={result.stderr!r}"
+    )
+    assert "not in branch-protection required list" in result.stderr
 
 
 def test_module_importable_without_running_main() -> None:
