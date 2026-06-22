@@ -33,6 +33,7 @@ from livespec_dev_tooling.fleet._rows_files import (
     RELEASE_DISPATCH_WORKFLOW,
 )
 from livespec_dev_tooling.fleet._rows_github import (
+    REQUIRED_MERGE_SETTINGS,
     REQUIRED_SECRET_NAMES,
     SIBLING_TOPIC,
     member_matrix_targets,
@@ -41,6 +42,7 @@ from livespec_dev_tooling.fleet._rows_github import (
 __all__: list[str] = [
     "SHIM_BRANCH",
     "reconcile_branch_protection",
+    "reconcile_merge_settings",
     "reconcile_secret_names",
     "reconcile_shim_workflows",
     "reconcile_topic",
@@ -201,6 +203,21 @@ def reconcile_branch_protection(*, ctx: FleetContext, member: FleetMember) -> Ro
     if result.returncode != 0:
         return RowFinding(message=f"{member.repo}: setting branch protection failed")
     return RowPass(note="branch protection set (strict=off + enforce_admins + ci matrix checks)")
+
+
+def reconcile_merge_settings(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:
+    """Set repo-level merge settings to rebase-only (+ auto-merge enabled).
+
+    PATCHes the repo object with the family-mandated merge-strategy
+    flags (livespec NFR §"Commit and merge discipline"): merge-commit
+    and squash-merge OFF, rebase-merge ON, auto-merge ON. Idempotent —
+    re-PATCHing an already-rebase-only repo changes nothing.
+    """
+    body = json.dumps(dict(REQUIRED_MERGE_SETTINGS))
+    result = ctx.api(path=f"repos/{ctx.owner}/{member.repo}", method="PATCH", body=body)
+    if result.returncode != 0:
+        return RowFinding(message=f"{member.repo}: setting merge settings failed")
+    return RowPass(note="merge settings set (rebase-only + auto-merge)")
 
 
 def _open_shim_pr(*, ctx: FleetContext, member: FleetMember, missing: list[str]) -> RowOutcome:
