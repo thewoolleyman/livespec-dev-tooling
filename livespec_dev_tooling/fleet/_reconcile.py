@@ -187,7 +187,7 @@ def reconcile_branch_protection(*, ctx: FleetContext, member: FleetMember) -> Ro
         )
     body = json.dumps(
         {
-            "required_status_checks": {"strict": True, "contexts": sorted(matrix)},
+            "required_status_checks": {"strict": False, "contexts": sorted(matrix)},
             "enforce_admins": True,
             "required_pull_request_reviews": None,
             "restrictions": None,
@@ -200,7 +200,7 @@ def reconcile_branch_protection(*, ctx: FleetContext, member: FleetMember) -> Ro
     )
     if result.returncode != 0:
         return RowFinding(message=f"{member.repo}: setting branch protection failed")
-    return RowPass(note="branch protection set (strict + enforce_admins + ci matrix checks)")
+    return RowPass(note="branch protection set (strict=off + enforce_admins + ci matrix checks)")
 
 
 def _open_shim_pr(*, ctx: FleetContext, member: FleetMember, missing: list[str]) -> RowOutcome:
