@@ -11,12 +11,18 @@ Guard Layer 1 mechanical check with two responsibilities:
    `livespec/SPECIFICATION/non-functional-requirements.md` §"CI as a
    merge gate (branch protection)".
 
-2. ALIGNMENT gate (only when protection exists). Two-direction
-   comparison between the required-checks list and ci.yml's matrix,
-   preventing the v039-D1-style drift where a CI job is added or
-   removed without updating the master-branch required-checks list
-   (or vice versa):
+2. ALIGNMENT gate (only when protection exists). A `strict`-off
+   assertion plus a two-direction comparison between the
+   required-checks list and ci.yml's matrix, preventing the
+   v039-D1-style drift where a CI job is added or removed without
+   updating the master-branch required-checks list (or vice versa):
 
+   - `required_status_checks.strict` is enabled → ERROR (strict MUST
+     be OFF: strict makes GitHub keep a behind PR current by merging
+     master into its branch, injecting a merge commit that violates
+     required_linear_history and buries the Red-Green-Replay TDD
+     trailers; since master accepts only rebase-merges, strict adds
+     no correctness guarantee).
    - Required check missing from ci.yml's matrix → ERROR (the
      v039 / `check-tests` failure: GitHub blocks merges because
      the required check never reports).
@@ -58,10 +64,12 @@ Exit codes:
 - `1` — precondition failure: ci.yml present but its matrix.target is
   empty or unparseable (legacy code; the project state needed for the
   alignment gate is not met).
-- `4` — check failed with structured stderr findings: either master
+- `4` — check failed with structured stderr findings: master
   protection is definitively absent (`failure_mode`
-  `protection_absent`), or a required check has no matching ci.yml
-  job (`failure_mode` `required_check_missing_from_ci`).
+  `protection_absent`), or `required_status_checks.strict` is enabled
+  (`failure_mode` `strict_enabled`; strict MUST be OFF), or a required
+  check has no matching ci.yml job (`failure_mode`
+  `required_check_missing_from_ci`).
 
 Output discipline matches sibling checks: structlog JSON to stderr;
 no `print`, no `sys.stderr.write`.
@@ -122,9 +130,15 @@ class _ProtectionAbsent:
 
 @dataclass(frozen=True, kw_only=True)
 class _RequiredContexts:
-    """The API succeeded; `contexts` is master's required-checks list."""
+    """The API succeeded; carries master's required_status_checks object.
+
+    `contexts` is the required-checks list; `strict` is the
+    require-branches-up-to-date flag, which MUST be OFF per livespec
+    NFR §"CI as a merge gate (branch protection)".
+    """
 
     contexts: frozenset[str]
+    strict: bool
 
 
 def _parse_ci_matrix(*, source: str) -> set[str]:
@@ -198,12 +212,12 @@ def _resolve_owner_repo(*, log: structlog.stdlib.BoundLogger) -> str | None:
 def _fetch_required_contexts(
     *, log: structlog.stdlib.BoundLogger
 ) -> _RequiredContexts | _ProtectionAbsent | None:
-    """Fetch master branch protection's required_status_checks.contexts.
+    """Fetch master branch protection's required_status_checks object.
 
     Three-way result:
 
     - `_RequiredContexts` — the API succeeded; carries master's
-      required-checks list (possibly empty).
+      required-checks list (possibly empty) AND the `strict` flag.
     - `_ProtectionAbsent` — the API definitively reported NO protection
       (the canonical "Branch not protected" 404). Fail-trigger.
     - `None` — graceful skip: `gh` is unavailable, the call failed for
@@ -223,7 +237,11 @@ def _fetch_required_contexts(
     owner_repo = _resolve_owner_repo(log=log)
     if owner_repo is None:
         return None
-    api_path = f"repos/{owner_repo}/branches/master/protection/required_status_checks/contexts"
+    # Read the full required_status_checks OBJECT (not the bare
+    # /contexts sub-endpoint) so the response carries both `strict` and
+    # `contexts`: the strict-off assertion needs the `strict` flag, which
+    # the /contexts list endpoint does not return.
+    api_path = f"repos/{owner_repo}/branches/master/protection/required_status_checks"
     completed = subprocess.run(
         ["gh", "api", api_path],
         capture_output=True,
@@ -249,20 +267,23 @@ def _fetch_required_contexts(
         )
         return None
     parsed = json.loads(completed.stdout)
-    if not isinstance(parsed, list):
+    if not isinstance(parsed, dict):
         log.error("unexpected gh api response shape", payload_type=type(parsed).__name__)
         return None
     # The `cast` is the single typed parse boundary: `json.loads` yields
-    # `Any`, the `isinstance` guard narrows to `list`, and the cast gives the
-    # elements a typed `object` shape so the per-element `isinstance(entry,
-    # str)` filter stays a load-bearing runtime guard against a malformed
-    # `gh api` payload.
-    payload = cast("list[object]", parsed)
+    # `Any`, the `isinstance` guard narrows to `dict`, and the cast gives the
+    # object's members a typed `object` shape so the per-element
+    # `isinstance(entry, str)` filter and the `bool(...)` strict coercion stay
+    # load-bearing runtime guards against a malformed `gh api` payload.
+    payload = cast("dict[str, object]", parsed)
+    contexts_raw = payload.get("contexts")
     contexts: set[str] = set()
-    for entry in payload:
-        if isinstance(entry, str):
-            contexts.add(entry)
-    return _RequiredContexts(contexts=frozenset(contexts))
+    if isinstance(contexts_raw, list):
+        for entry in cast("list[object]", contexts_raw):
+            if isinstance(entry, str):
+                contexts.add(entry)
+    strict = bool(payload.get("strict"))
+    return _RequiredContexts(contexts=frozenset(contexts), strict=strict)
 
 
 def _run_alignment_gate(
@@ -336,6 +357,21 @@ def main() -> int:
                 '§"CI as a merge gate (branch protection)"; an unprotected '
                 "master lets PRs auto-merge before CI finishes and lets a "
                 "red PR land on master"
+            ),
+        )
+        return 4
+    if fetched.strict:
+        log.error(
+            "required_status_checks.strict is enabled; strict MUST be OFF",
+            failure_mode="strict_enabled",
+            hint=(
+                "disable strict (require-branches-up-to-date) on master's "
+                "branch protection per livespec/SPECIFICATION/"
+                'non-functional-requirements.md §"CI as a merge gate '
+                '(branch protection)"; strict makes GitHub keep a behind PR '
+                "current by merging master into its branch, injecting a "
+                "merge commit that violates required_linear_history and "
+                "buries the per-commit Red-Green-Replay TDD trailers"
             ),
         )
         return 4
