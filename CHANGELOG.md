@@ -2,9 +2,14 @@
 
 ## Unreleased
 
+### Features
+
+* **fleet:** assert beads tenant-connection consistency between `.beads/config.yaml` and `.livespec.jsonc`'s impl-plugin `connection` block, making per-repo tenant-connection drift un-mergeable (qg0f.2).
+
 ### Bug Fixes
 
 * **checks:** make `branch_protection_alignment` exit 0 cleanly when `.github/workflows/ci.yml` is absent (graceful absence-handling, epic li-univck Phase 1.1, li-chkabs).
+* **checks:** drop the dead pre-rename `livespec_impl_*` impl prefixes from the red-green-replay `_IMPL_PREFIXES`, and prefer the `livespec-orchestrator-git-jsonl` `canonical_branch` key in `no_stale_revise_branches`; flip stale `livespec-impl-*` references in comments/docstrings to the renamed orchestrators (qg0f.5).
 
 ### Notes
 
