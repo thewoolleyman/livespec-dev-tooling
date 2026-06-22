@@ -43,6 +43,7 @@ from livespec_dev_tooling.fleet._rows_github import (
     assert_secret_names,
     assert_topic,
 )
+from livespec_dev_tooling.fleet._rows_instructions import assert_agent_instruction_surface
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -185,6 +186,17 @@ OBLIGATION_ROWS: tuple[ObligationRow, ...] = (
         manual_hint=(
             "reconcile .beads/config.yaml (dolt.* keys) and .livespec.jsonc's impl-plugin "
             "connection block so the five tenant-connection fields agree, in a repo-local commit"
+        ),
+    ),
+    ObligationRow(
+        row_id="agent-instruction-surface",
+        obligation_type="committed-file",
+        applies_to=_TEMPLATE_BORN_CLASSES,
+        assert_member=assert_agent_instruction_surface,
+        manual_hint=(
+            "bring AGENTS.md up to the family-universal agent-instruction core and register the "
+            "beads-access guard hook (.claude/hooks/beads-access-guard.sh) in "
+            ".claude/settings.json, in a repo-local commit"
         ),
     ),
 )
