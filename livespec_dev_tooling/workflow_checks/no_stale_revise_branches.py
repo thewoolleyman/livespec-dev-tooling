@@ -15,9 +15,9 @@ wiring-completeness invariant.
 Algorithm (per the contracts §"`no_stale_revise_branches` check"):
 
 1. Resolve the canonical branch name. Priority:
-   a. `.livespec.jsonc`'s `livespec-impl-git-jsonl.canonical_branch`
+   a. `.livespec.jsonc`'s `livespec-orchestrator-git-jsonl.canonical_branch`
       (or any other impl-plugin block's `canonical_branch` key when
-      `livespec-impl-git-jsonl` is absent).
+      `livespec-orchestrator-git-jsonl` is absent).
    b. `git symbolic-ref --short refs/remotes/origin/HEAD`.
    c. Hard-coded fallback `master`.
 2. Enumerate local refs via
@@ -121,7 +121,7 @@ def _canonical_branch_from_jsonc(*, cwd: Path) -> str | None:
     Returns the first non-empty string found at
     `<impl-plugin>.canonical_branch`, scanning the document's top-level
     keys for any dict-shaped value carrying a `canonical_branch` field.
-    The `livespec-impl-git-jsonl` block is preferred when present; any
+    The `livespec-orchestrator-git-jsonl` block is preferred when present; any
     other impl-plugin block's key is accepted as a fallback so the
     check generalizes to siblings that may register a different impl
     plugin.
@@ -138,14 +138,14 @@ def _canonical_branch_from_jsonc(*, cwd: Path) -> str | None:
     # gives the document a typed `dict[str, object]` shape so each block's
     # `.get("canonical_branch")` access below narrows from `object`.
     parsed = cast("dict[str, object]", raw)
-    preferred = parsed.get("livespec-impl-git-jsonl")
+    preferred = parsed.get("livespec-orchestrator-git-jsonl")
     if isinstance(preferred, dict):
         preferred_block = cast("dict[str, object]", preferred)
         value = preferred_block.get("canonical_branch")
         if isinstance(value, str) and value:
             return value
     for key, block in parsed.items():
-        if key == "livespec-impl-git-jsonl" or not isinstance(block, dict):
+        if key == "livespec-orchestrator-git-jsonl" or not isinstance(block, dict):
             continue
         block_dict = cast("dict[str, object]", block)
         candidate = block_dict.get("canonical_branch")
