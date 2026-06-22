@@ -39,8 +39,11 @@
   "livespec-orchestrator-beads-fabro": {
     "format": "beads",
     "compat": { "livespec": ">=0.1.0,<1.0.0", "pinned": "master" },
-    // Per-repo beads tenant CONNECTION block. prefix==tenant==database==server_user is the
-    // load-bearing identity rule. The tenant PASSWORD is deliberately ABSENT — supplied only via
+    // Per-repo beads tenant CONNECTION block. tenant==database==server_user is the load-bearing
+    // tenant identity (one ≤32-char Dolt name serving all three). The beads issue-ID `prefix` is
+    // bd's server-stored create-prefix — a short alias that MAY be DECOUPLED from the tenant DB
+    // name (here it equals the tenant, but is no longer a required rule — e.g. the orchestrator
+    // tenants use `bd-ib`/`bd-gj`). The tenant PASSWORD is deliberately ABSENT — supplied only via
     // the BEADS_DOLT_PASSWORD env var at bd-call time, never committed. TCP-only (the dolt.sock is
     // not reachable by sandboxed callers), so no `socket` key.
     "connection": {
