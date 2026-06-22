@@ -200,7 +200,11 @@ def test_reconcile_topic_failed_put_is_finding() -> None:
     assert isinstance(outcome, RowFinding)
 
 
-def test_reconcile_protection_sets_strict_admins_and_matrix() -> None:
+def test_reconcile_protection_sets_strict_off_admins_and_matrix() -> None:
+    # The reconciler MUST set strict OFF per livespec NFR §"CI as a merge
+    # gate (branch protection)": strict (require-branches-up-to-date)
+    # injects a merge commit that violates required_linear_history and
+    # buries the Red-Green-Replay trailers.
     calls: list[tuple[tuple[str, ...], str | None]] = []
     table = {
         _CI_ARGS: GhResult(returncode=0, stdout=_CI_YML, stderr=""),
@@ -214,7 +218,7 @@ def test_reconcile_protection_sets_strict_admins_and_matrix() -> None:
     assert body is not None
     parsed = json.loads(body)
     assert parsed["enforce_admins"] is True
-    assert parsed["required_status_checks"] == {"strict": True, "contexts": ["check-lint"]}
+    assert parsed["required_status_checks"] == {"strict": False, "contexts": ["check-lint"]}
     assert parsed["restrictions"] is None
 
 
