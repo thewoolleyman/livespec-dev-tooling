@@ -23,6 +23,7 @@ from livespec_dev_tooling.fleet._context import (
 from livespec_dev_tooling.fleet._reconcile import (
     SHIM_BRANCH,
     reconcile_branch_protection,
+    reconcile_merge_settings,
     reconcile_secret_names,
     reconcile_shim_workflows,
     reconcile_topic,
@@ -33,6 +34,7 @@ from livespec_dev_tooling.fleet._rows_files import (
     PIN_FRESHNESS_WORKFLOW,
     RELEASE_DISPATCH_WORKFLOW,
 )
+from livespec_dev_tooling.fleet._rows_github import REQUIRED_MERGE_SETTINGS
 
 if TYPE_CHECKING:
     import pytest
@@ -56,6 +58,14 @@ _PROTECTION_PUT: tuple[str, ...] = (
     "repos/acme/widget/branches/master/protection",
     "--method",
     "PUT",
+    "--input",
+    "-",
+)
+_REPO_PATCH: tuple[str, ...] = (
+    "api",
+    "repos/acme/widget",
+    "--method",
+    "PATCH",
     "--input",
     "-",
 )
@@ -232,6 +242,35 @@ def test_reconcile_protection_failed_put_is_finding() -> None:
     table = {_CI_ARGS: GhResult(returncode=0, stdout=_CI_YML, stderr="")}
     outcome = reconcile_branch_protection(ctx=make_context(table=table, calls=[]), member=_MEMBER)
     assert isinstance(outcome, RowFinding)
+
+
+def test_reconcile_merge_settings_patches_repo_rebase_only() -> None:
+    # The reconciler PATCHes the repo object to rebase-only + auto-merge,
+    # per livespec NFR §"Commit and merge discipline": a freshly-
+    # scaffolded repo defaults to allow_merge_commit=true, so future
+    # repos must be flipped rebase-only without a manual gh api call.
+    calls: list[tuple[tuple[str, ...], str | None]] = []
+    table = {_REPO_PATCH: ok(payload={})}
+    outcome = reconcile_merge_settings(ctx=make_context(table=table, calls=calls), member=_MEMBER)
+    assert isinstance(outcome, RowPass)
+    assert "rebase-only" in outcome.note
+    assert "auto-merge" in outcome.note
+    body = next(stdin for args, stdin in calls if args == _REPO_PATCH)
+    assert body is not None
+    parsed = json.loads(body)
+    assert parsed == {
+        "allow_merge_commit": False,
+        "allow_squash_merge": False,
+        "allow_rebase_merge": True,
+        "allow_auto_merge": True,
+    }
+    assert parsed == REQUIRED_MERGE_SETTINGS
+
+
+def test_reconcile_merge_settings_failed_patch_is_finding() -> None:
+    outcome = reconcile_merge_settings(ctx=make_context(table={}, calls=[]), member=_MEMBER)
+    assert isinstance(outcome, RowFinding)
+    assert "merge settings" in outcome.message
 
 
 def _tree(*, paths: list[str]) -> GhResult:
