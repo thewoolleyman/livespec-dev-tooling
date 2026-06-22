@@ -15,7 +15,7 @@ import subprocess
 import sys
 from typing import TYPE_CHECKING
 
-from _protection_fixtures import aligned_protection_payload
+from _protection_fixtures import aligned_merge_settings_payload, aligned_protection_payload
 
 from livespec_dev_tooling.fleet import wire_fleet_member
 from livespec_dev_tooling.fleet._context import (
@@ -56,6 +56,7 @@ _LATEST_ARGS: tuple[str, ...] = ("api", "repos/acme/livespec-dev-tooling/release
 _SECRETS_ARGS: tuple[str, ...] = ("api", "repos/acme/widget/actions/secrets")
 _INSTALL_ARGS: tuple[str, ...] = ("api", "installation/repositories?per_page=100")
 _PROTECTION_ARGS: tuple[str, ...] = ("api", "repos/acme/widget/branches/master/protection")
+_REPO_ARGS: tuple[str, ...] = ("api", "repos/acme/widget")
 _TOPICS_GET: tuple[str, ...] = ("api", "repos/acme/widget/topics")
 _TOPICS_PUT: tuple[str, ...] = (
     "api",
@@ -119,6 +120,7 @@ def _green_table(*, topics: list[str] | None = None) -> dict[tuple[str, ...], Gh
         _SECRETS_ARGS: ok(payload={"secrets": [{"name": "APP_ID"}, {"name": "APP_PRIVATE_KEY"}]}),
         _INSTALL_ARGS: ok(payload={"repositories": [{"name": "widget"}]}),
         _PROTECTION_ARGS: ok(payload=aligned_protection_payload()),
+        _REPO_ARGS: ok(payload=aligned_merge_settings_payload()),
         _CI_ARGS: raw(text=_CI_YML),
         _TOPICS_GET: ok(payload={"names": topics if topics is not None else ["livespec-sibling"]}),
     }

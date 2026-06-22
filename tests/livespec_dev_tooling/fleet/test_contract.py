@@ -7,6 +7,8 @@ two consuming engines rely on.
 
 from __future__ import annotations
 
+from livespec_dev_tooling.fleet._reconcile import reconcile_merge_settings
+from livespec_dev_tooling.fleet._rows_github import assert_merge_settings
 from livespec_dev_tooling.fleet.contract import (
     OBLIGATION_ROWS,
     REPO_CLASSES,
@@ -112,8 +114,22 @@ def test_universal_rows_apply_to_every_class() -> None:
         "secret-names",
         "app-installation",
         "branch-protection",
+        "merge-settings",
         "topic-livespec-sibling",
     }
     for repo_class in REPO_CLASSES:
         row_ids = {row.row_id for row in rows_for(repo_class=repo_class)}
         assert universal <= row_ids, repo_class
+
+
+def test_merge_settings_row_is_wired_with_assert_and_reconcile() -> None:
+    # The merge-settings row must be registered with BOTH its assert
+    # (fleet_conformance, CI mode) and its reconcile (wire-fleet-member),
+    # exactly like branch-protection — so a freshly-scaffolded family
+    # repo's default allow_merge_commit=true is both caught and fixed.
+    row = next((r for r in OBLIGATION_ROWS if r.row_id == "merge-settings"), None)
+    assert row is not None
+    assert row.obligation_type == "github-state"
+    assert row.applies_to == frozenset(REPO_CLASSES)
+    assert row.assert_member is assert_merge_settings
+    assert row.reconcile is reconcile_merge_settings
