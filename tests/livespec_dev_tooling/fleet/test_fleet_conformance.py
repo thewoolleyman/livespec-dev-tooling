@@ -14,6 +14,8 @@ import subprocess
 import sys
 from typing import TYPE_CHECKING
 
+from _protection_fixtures import aligned_protection_payload
+
 from livespec_dev_tooling.fleet import fleet_conformance
 from livespec_dev_tooling.fleet._context import FleetContext, GhResult, GhRunner
 from livespec_dev_tooling.fleet.fleet_conformance import (
@@ -107,12 +109,7 @@ def _green_table(
         _LATEST_ARGS: ok(payload={"tag_name": latest_tag}),
         _SECRETS_ARGS: ok(payload={"secrets": [{"name": "APP_ID"}, {"name": "APP_PRIVATE_KEY"}]}),
         _INSTALL_ARGS: ok(payload={"repositories": [{"name": "widget"}]}),
-        _PROTECTION_ARGS: ok(
-            payload={
-                "enforce_admins": {"enabled": True},
-                "required_status_checks": {"strict": True, "contexts": ["check-a"]},
-            }
-        ),
+        _PROTECTION_ARGS: ok(payload=aligned_protection_payload()),
         _CI_ARGS: raw(text=_CI_YML),
         _TOPICS_ARGS: ok(payload={"names": topics if topics is not None else ["livespec-sibling"]}),
         _REPOS_ARGS: ok(payload=_owner_repos_payload()),

@@ -15,6 +15,8 @@ import subprocess
 import sys
 from typing import TYPE_CHECKING
 
+from _protection_fixtures import aligned_protection_payload
+
 from livespec_dev_tooling.fleet import wire_fleet_member
 from livespec_dev_tooling.fleet._context import (
     FleetContext,
@@ -116,12 +118,7 @@ def _green_table(*, topics: list[str] | None = None) -> dict[tuple[str, ...], Gh
         _LATEST_ARGS: ok(payload={"tag_name": "v1.0.0"}),
         _SECRETS_ARGS: ok(payload={"secrets": [{"name": "APP_ID"}, {"name": "APP_PRIVATE_KEY"}]}),
         _INSTALL_ARGS: ok(payload={"repositories": [{"name": "widget"}]}),
-        _PROTECTION_ARGS: ok(
-            payload={
-                "enforce_admins": {"enabled": True},
-                "required_status_checks": {"strict": True, "contexts": ["check-a"]},
-            }
-        ),
+        _PROTECTION_ARGS: ok(payload=aligned_protection_payload()),
         _CI_ARGS: raw(text=_CI_YML),
         _TOPICS_GET: ok(payload={"names": topics if topics is not None else ["livespec-sibling"]}),
     }
