@@ -34,7 +34,7 @@ verdicts. See `_parse_mutmut_results`.
 
 Nested-layout staging cwd (work-item livespec-dev-tooling-q3r): mutmut
 runs from a configurable import-root staging directory. Nested-layout
-repos (livespec + livespec-impl-git-jsonl, source under
+repos (livespec + livespec-orchestrator-git-jsonl, source under
 `.claude-plugin/scripts/`) declare `mutation_staging_dir` in their
 `[tool.livespec_dev_tooling]` block; the check runs `mutmut run` /
 `results` with `cwd=<repo_root>/<mutation_staging_dir>` so the

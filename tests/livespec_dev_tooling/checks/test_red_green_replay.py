@@ -1136,14 +1136,14 @@ def test_classify_staged_recognizes_sibling_library_impl_paths() -> None:
     `livespec/SPECIFICATION/contracts.md` §"Cross-repo coordination —
     pin-and-bump", the dev-tooling repo's RGR check is consumed by
     every livespec-governed sibling repo: livespec-runtime,
-    livespec-impl-git-jsonl, livespec-dev-tooling itself, and future
-    livespec-impl-<X> plugins. Each repo's impl tree lives at a
-    repo-specific prefix:
+    livespec-orchestrator-git-jsonl, livespec-dev-tooling itself, and
+    future livespec-orchestrator-<X> plugins. Each repo's impl tree
+    lives at a repo-specific prefix:
 
       - `livespec_runtime/`                          (livespec-runtime)
       - `livespec_dev_tooling/`                     (livespec-dev-tooling, self)
-      - `.claude-plugin/scripts/livespec_impl_git_jsonl/`
-                                                    (livespec-impl-git-jsonl)
+      - `.claude-plugin/scripts/livespec_orchestrator_git_jsonl/`
+                                                (livespec-orchestrator-git-jsonl)
 
     Without these prefixes in `_IMPL_PREFIXES`, `feat:` / `fix:`
     commits in those repos that touch the package source classify as
@@ -1164,7 +1164,7 @@ def test_classify_staged_recognizes_sibling_library_impl_paths() -> None:
     paths = [
         "livespec_runtime/cross_repo/resolve.py",
         "livespec_dev_tooling/checks/red_green_replay.py",
-        ".claude-plugin/scripts/livespec_impl_git_jsonl/commands/list_memos.py",
+        ".claude-plugin/scripts/livespec_orchestrator_git_jsonl/commands/list_memos.py",
         "tests/livespec_runtime/test_smoke.py",
         "README.md",
     ]
@@ -1175,34 +1175,35 @@ def test_classify_staged_recognizes_sibling_library_impl_paths() -> None:
     assert "livespec_dev_tooling/checks/red_green_replay.py" in impl_paths, (
         f"`livespec_dev_tooling/...` path should be in impl bucket; " f"got impl_paths={impl_paths}"
     )
-    assert ".claude-plugin/scripts/livespec_impl_git_jsonl/commands/list_memos.py" in impl_paths, (
-        f"`.claude-plugin/scripts/livespec_impl_git_jsonl/...` path should be in impl bucket; "
-        f"got impl_paths={impl_paths}"
+    assert (
+        ".claude-plugin/scripts/livespec_orchestrator_git_jsonl/commands/list_memos.py"
+        in impl_paths
+    ), (
+        f"`.claude-plugin/scripts/livespec_orchestrator_git_jsonl/...` path should be in "
+        f"impl bucket; got impl_paths={impl_paths}"
     )
     assert (
         "README.md" not in impl_paths
     ), f"top-level docs path should NOT be in impl bucket; got impl_paths={impl_paths}"
 
 
-def test_classify_staged_recognizes_impl_beads_path() -> None:
-    """`_classify_staged` buckets `livespec-impl-beads` impl paths as impl.
+def test_classify_staged_drops_dead_pre_rename_impl_prefixes() -> None:
+    """`_classify_staged` no longer recognizes the dead pre-rename impl prefixes.
 
-    Per the cross-repo coordination contract in
-    `livespec/SPECIFICATION/contracts.md` §"Cross-repo coordination —
-    pin-and-bump", the `livespec-impl-beads` plugin's impl tree lives
-    at `.claude-plugin/scripts/livespec_impl_beads/`, mirroring the
-    `livespec-impl-git-jsonl` sibling. Without that prefix in
-    `_IMPL_PREFIXES`, every `feat:` / `fix:` commit touching the
-    plugin's package source classifies as test-only (no impl bucket),
-    which incorrectly trips the Red-without-Green diagnostic and blocks
-    the plugin from committing ANY product `.py` via the RGR ritual.
-    This test pins recognition of the beads impl prefix and that it
-    pairs with a `tests/livespec_impl_beads/...` test path.
+    The orchestrator-rename wave renamed the impl-side plugin package
+    dirs from `livespec_impl_<X>` to `livespec_orchestrator_<X>`; the
+    old `.claude-plugin/scripts/livespec_impl_git_jsonl/` and
+    `.claude-plugin/scripts/livespec_impl_beads/` package dirs no longer
+    exist in any repo. Carrying their prefixes in `_IMPL_PREFIXES` is
+    dead weight — recognition of the live orchestrator prefixes is
+    pinned by `test_classify_staged_recognizes_orchestrator_package_dirs`.
+    This test pins their REMOVAL: a `.py` under either pre-rename prefix
+    must NOT classify into the impl bucket.
     """
     import importlib.util
 
     spec = importlib.util.spec_from_file_location(
-        "red_green_replay_for_impl_beads_classify_test",
+        "red_green_replay_for_dead_prefix_classify_test",
         str(_RED_GREEN_REPLAY),
     )
     assert spec is not None and spec.loader is not None
@@ -1211,21 +1212,20 @@ def test_classify_staged_recognizes_impl_beads_path() -> None:
 
     paths = [
         ".claude-plugin/scripts/livespec_impl_beads/_beads_client.py",
-        "tests/livespec_impl_beads/test_beads_client.py",
+        ".claude-plugin/scripts/livespec_impl_git_jsonl/commands/list_memos.py",
         "README.md",
     ]
-    tests_paths, impl_paths = module._classify_staged(paths=paths)  # noqa: SLF001
-    assert ".claude-plugin/scripts/livespec_impl_beads/_beads_client.py" in impl_paths, (
-        f"`.claude-plugin/scripts/livespec_impl_beads/...` path should be in impl bucket; "
-        f"got impl_paths={impl_paths}"
-    )
-    assert "tests/livespec_impl_beads/test_beads_client.py" in tests_paths, (
-        f"`tests/livespec_impl_beads/...` path should be in tests bucket; "
-        f"got tests_paths={tests_paths}"
+    _tests_paths, impl_paths = module._classify_staged(paths=paths)  # noqa: SLF001
+    assert ".claude-plugin/scripts/livespec_impl_beads/_beads_client.py" not in impl_paths, (
+        f"dead `.claude-plugin/scripts/livespec_impl_beads/...` prefix should NOT classify as "
+        f"impl; got impl_paths={impl_paths}"
     )
     assert (
-        ".claude-plugin/scripts/livespec_impl_beads/_beads_client.py" not in tests_paths
-    ), f"beads impl path should NOT be in tests bucket; got tests_paths={tests_paths}"
+        ".claude-plugin/scripts/livespec_impl_git_jsonl/commands/list_memos.py" not in impl_paths
+    ), (
+        f"dead `.claude-plugin/scripts/livespec_impl_git_jsonl/...` prefix should NOT classify "
+        f"as impl; got impl_paths={impl_paths}"
+    )
     assert (
         "README.md" not in impl_paths
     ), f"top-level docs path should NOT be in impl bucket; got impl_paths={impl_paths}"

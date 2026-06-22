@@ -342,7 +342,7 @@ def load_mutation_staging_dir(*, repo_root: Path) -> Path | None:
     Reads `<repo_root>/pyproject.toml`'s `[tool.livespec_dev_tooling]` block,
     key `mutation_staging_dir` — a single repo-root-relative path (POSIX
     separators) naming the import-root staging directory `check_mutation`
-    runs mutmut from. Nested-layout repos (livespec + livespec-impl-git-jsonl,
+    runs mutmut from. Nested-layout repos (livespec + livespec-orchestrator-git-jsonl,
     source under `.claude-plugin/scripts/`) need mutmut run from an
     import-root staging dir so mutant keys (module-name keyed via the
     trampoline) match the file-path-dotted `paths_to_mutate`; otherwise every

@@ -21,7 +21,7 @@ statement, and is not part of the AST body):
 The main-import module's top-level package is the OWNING
 plugin's distribution package: `livespec` for livespec-core, or
 `livespec_<suffix>` for an impl-plugin (e.g.
-`livespec_impl_git_jsonl`, `livespec_impl_beads`). The shared
+`livespec_orchestrator_git_jsonl`, `livespec_orchestrator_beads_fabro`). The shared
 check runs across every livespec-family repo via the pin-and-bump
 cross-repo mechanism, so it accepts any livespec-family top-level
 package, not just the core `livespec.` prefix.
@@ -75,7 +75,7 @@ _CANONICAL_WRAPPER_STMT_COUNT: int = 5
 # The main-import statement of a canonical wrapper imports `main`
 # from the OWNING plugin's package. For livespec-core that package
 # is `livespec`; for each impl-plugin it is the plugin's own
-# distribution package (`livespec_impl_git_jsonl`, `livespec_impl_beads`,
+# distribution package (`livespec_orchestrator_git_jsonl`, `livespec_orchestrator_beads_fabro`,
 # etc.). The shared check runs across every livespec-family repo via
 # the pin-and-bump cross-repo mechanism, so it must accept any
 # livespec-FAMILY top-level package, not just the core `livespec.`
