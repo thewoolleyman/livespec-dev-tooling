@@ -382,7 +382,7 @@ check-changed:
 # run leaves COVERAGE_FILE unset and falls back to the repo-root
 # `.coverage` the recipe's own suite produces.
 # Central fleet-membership conformance check (livespec v108 §"Fleet
-# membership contract"): fetches fleet-manifest.jsonc from livespec
+# membership contract"): fetches .livespec-fleet-manifest.jsonc from livespec
 # master, asserts every member's per-class obligations from the
 # central vantage point, and runs the discovery sweep. Always invoked
 # plainly; the module self-manages its RUN/SKIP lever (the

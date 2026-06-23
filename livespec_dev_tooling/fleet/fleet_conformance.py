@@ -64,7 +64,7 @@ __all__: list[str] = []
 
 _RUN_ENV_VAR = "LIVESPEC_RUN_FLEET_CONFORMANCE"
 _MANIFEST_REPO = "livespec"
-_MANIFEST_PATH = "fleet-manifest.jsonc"
+_MANIFEST_PATH = ".livespec-fleet-manifest.jsonc"
 
 
 def fetch_manifest(*, ctx: FleetContext) -> Manifest | None:
@@ -139,7 +139,7 @@ def run_discovery_sweep(
                 "family-shaped repo is not registered in the fleet manifest",
                 repo=name,
                 hint=(
-                    "register it in livespec fleet-manifest.jsonc FIRST, then run "
+                    "register it in livespec .livespec-fleet-manifest.jsonc FIRST, then run "
                     "wire-fleet-member (register-first repo birth procedure)"
                 ),
             )

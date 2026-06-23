@@ -41,7 +41,7 @@ _MEMBER = FleetMember(repo="widget", repo_class="library")
 _MANIFEST_SOURCE = '{"owner": "acme", "members": [{"repo": "widget", "class": "library"}]}'
 _MANIFEST_ARGS: tuple[str, ...] = (
     "api",
-    "repos/acme/livespec/contents/fleet-manifest.jsonc",
+    "repos/acme/livespec/contents/.livespec-fleet-manifest.jsonc",
     "-H",
     "Accept: application/vnd.github.raw",
 )
