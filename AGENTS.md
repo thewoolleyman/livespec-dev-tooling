@@ -37,6 +37,14 @@ runtime; no `AGENTS.md` skill-to-prose mapping is required. See
 `livespec/SPECIFICATION/non-functional-requirements.md` §"Codex dogfooding
 contracts" for the authoritative install and resolution contracts.
 
+The Codex TUI picker displays skills by short name with the plugin as context.
+In `/skills` → `List skills` (or the `@` picker), search the operation name,
+for example `orchestrate`; the row renders as
+`orchestrate (livespec-orchestrator-beads-fabro)` with kind `Skill`. The
+colon-qualified form `livespec-orchestrator-beads-fabro:orchestrate` is still
+valid for prompt / `codex exec` name selection and model-visible skill
+references, but it is not the picker row operators should expect.
+
 ## Repository mutation protocol
 
 Every repo change uses a worktree → PR → merge → cleanup path. Treat
