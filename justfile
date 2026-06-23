@@ -73,6 +73,11 @@ bootstrap:
     cp dev-tooling/livespec-commit-refuse-hook.sh "$(git rev-parse --git-common-dir)/hooks/pre-push"
     chmod +x "$(git rev-parse --git-common-dir)/hooks/pre-commit" "$(git rev-parse --git-common-dir)/hooks/pre-push"
     git config --file "$(git rev-parse --git-common-dir)/config" livespec.primaryPath "$(git rev-parse --git-common-dir | xargs dirname | xargs realpath)"
+    # Harden the beads tenant-pointer dir to owner-only on first-touch (bd
+    # recommends 0700; only the owning user's bd reads it — the Dolt server
+    # connects over TCP and never reads this dir). Guarded: repos with no beads
+    # tenant have no .beads.
+    [ -d "$(dirname "$(git rev-parse --git-common-dir)")/.beads" ] && chmod 700 "$(dirname "$(git rev-parse --git-common-dir)")/.beads" || true
     just ensure-plugins
     just ensure-codex-plugins
 
