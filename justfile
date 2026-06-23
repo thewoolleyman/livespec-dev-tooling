@@ -74,6 +74,7 @@ bootstrap:
     chmod +x "$(git rev-parse --git-common-dir)/hooks/pre-commit" "$(git rev-parse --git-common-dir)/hooks/pre-push"
     git config --file "$(git rev-parse --git-common-dir)/config" livespec.primaryPath "$(git rev-parse --git-common-dir | xargs dirname | xargs realpath)"
     just ensure-plugins
+    just ensure-codex-plugins
 
 # Idempotent: `claude plugin marketplace add` / `install` / `update` all exit 0
 # when the target is already present / already at latest. The `update` calls
@@ -89,6 +90,28 @@ ensure-plugins:
     claude plugin install -s project livespec-orchestrator-beads-fabro@livespec-orchestrator-beads-fabro
     claude plugin update -s project livespec@livespec
     claude plugin update -s project livespec-orchestrator-beads-fabro@livespec-orchestrator-beads-fabro
+
+# Idempotent host-wide Codex plugin provisioning. Codex does not support
+# project-scoped plugin enablement, so these registrations intentionally land in
+# the user's default CODEX_HOME and are visible to every repo on the host. Codex
+# is an optional dogfooding runtime; bootstrap skips this target when the CLI is
+# absent but fails on real install errors when Codex is present.
+ensure-codex-plugins:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if ! command -v codex >/dev/null 2>&1; then
+        echo "codex CLI not found; skipping host-wide Codex plugin install." >&2
+        exit 0
+    fi
+    codex plugin marketplace add thewoolleyman/livespec
+    codex plugin marketplace add thewoolleyman/livespec-driver-codex
+    codex plugin marketplace add thewoolleyman/livespec-orchestrator-beads-fabro
+    codex plugin marketplace upgrade livespec
+    codex plugin marketplace upgrade livespec-driver-codex
+    codex plugin marketplace upgrade livespec-orchestrator-beads-fabro
+    codex plugin add livespec@livespec
+    codex plugin add livespec@livespec-driver-codex
+    codex plugin add livespec-orchestrator-beads-fabro@livespec-orchestrator-beads-fabro
 
 # ---------------------------------------------------------------
 # Aggregate check — wires EVERY canonical check slug emitted by
