@@ -9,7 +9,7 @@ membership contract": "assert mode is CI; reconcile mode is wiring"):
 gitlink removal). The table is statically enumerated with explicit
 typed imports so the type checker sees every dispatch target.
 
-`parse_manifest` parses livespec core's `fleet-manifest.jsonc` (the
+`parse_manifest` parses livespec core's `.livespec-fleet-manifest.jsonc` (the
 committed member list, fetched from livespec master at run time).
 """
 
@@ -241,7 +241,7 @@ def _parse_member(*, entry: object) -> FleetMember | None:
 
 
 def parse_manifest(*, source: str) -> Manifest | None:
-    """Parse `fleet-manifest.jsonc` text; None when malformed.
+    """Parse `.livespec-fleet-manifest.jsonc` text; None when malformed.
 
     Malformed means: invalid JSONC, a non-object root, a non-string
     `owner`, a non-list `members`, any malformed member entry (missing

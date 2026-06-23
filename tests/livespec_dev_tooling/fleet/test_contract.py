@@ -20,7 +20,7 @@ __all__: list[str] = []
 
 
 _VALID_MANIFEST = """\
-// fleet-manifest.jsonc — header comment survives JSONC parsing.
+// .livespec-fleet-manifest.jsonc — header comment survives JSONC parsing.
 {
   "owner": "acme",
   "members": [

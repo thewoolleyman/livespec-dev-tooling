@@ -14,7 +14,7 @@
 # shim on `on: release: types: [published]`. The shim passes through
 # `source_repo`, `tag`, and `release_url` plus `secrets: inherit`; this
 # workflow then reads the member list from livespec core's
-# fleet-manifest.jsonc (fetched from livespec master at run time, per
+# .livespec-fleet-manifest.jsonc (fetched from livespec master at run time, per
 # livespec SPECIFICATION/non-functional-requirements.md §"Fleet
 # membership contract" — the `livespec-sibling` topic is demoted to a
 # discovery safety net enforced by the fleet-conformance check),
@@ -113,7 +113,7 @@ jobs:
           # (topic search demoted to the conformance check's discovery
           # safety net). The manifest carries full-line // comments
           # only, so a line-wise strip yields plain JSON for jq.
-          manifest=$(gh api "repos/$OWNER/livespec/contents/fleet-manifest.jsonc" \
+          manifest=$(gh api "repos/$OWNER/livespec/contents/.livespec-fleet-manifest.jsonc" \
             -H "Accept: application/vnd.github.raw" | grep -v '^[[:space:]]*//')
           # Exclude the publishing repo from the dispatch fan-out so the
           # release does not echo back to itself. Keep the {name: ...}

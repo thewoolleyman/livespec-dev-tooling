@@ -177,7 +177,7 @@ def main() -> int:
             "repo is not a registered fleet member",
             repo=repo,
             hint=(
-                "register it in livespec fleet-manifest.jsonc FIRST (register-first "
+                "register it in livespec .livespec-fleet-manifest.jsonc FIRST (register-first "
                 "repo birth procedure), then re-run wire-fleet-member"
             ),
         )
