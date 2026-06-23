@@ -83,12 +83,12 @@ bootstrap:
 # livespec plugin plus the ACTIVE impl plugin (livespec-orchestrator-beads-fabro), mirroring
 # the canonical recipe in livespec-orchestrator-beads-fabro/justfile.
 ensure-plugins:
-    claude plugin marketplace add thewoolleyman/livespec
-    claude plugin marketplace add thewoolleyman/livespec-orchestrator-beads-fabro
-    claude plugin install livespec@livespec
-    claude plugin install livespec-orchestrator-beads-fabro@livespec-orchestrator-beads-fabro
-    claude plugin update livespec@livespec
-    claude plugin update livespec-orchestrator-beads-fabro@livespec-orchestrator-beads-fabro
+    claude plugin marketplace add --scope project thewoolleyman/livespec
+    claude plugin marketplace add --scope project thewoolleyman/livespec-orchestrator-beads-fabro
+    claude plugin install -s project livespec@livespec
+    claude plugin install -s project livespec-orchestrator-beads-fabro@livespec-orchestrator-beads-fabro
+    claude plugin update -s project livespec@livespec
+    claude plugin update -s project livespec-orchestrator-beads-fabro@livespec-orchestrator-beads-fabro
 
 # ---------------------------------------------------------------
 # Aggregate check — wires EVERY canonical check slug emitted by
