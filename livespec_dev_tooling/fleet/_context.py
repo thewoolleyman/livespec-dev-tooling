@@ -6,7 +6,7 @@ which all GitHub state flows. Row functions receive a context and
 return outcome VALUES; they never log and never touch `subprocess`
 directly, so the obligation table stays hermetically testable with a
 canned-response runner. The default runner shells out to the `gh`
-CLI (the family precedent for GitHub reads — see
+CLI (the fleet precedent for GitHub reads — see
 `checks/branch_protection_alignment.py`).
 """
 
@@ -52,7 +52,7 @@ class GhRunner(Protocol):
 
 @dataclass(frozen=True, kw_only=True)
 class FleetMember:
-    """One manifest entry: a family repo and its repo class."""
+    """One manifest entry: a fleet repo and its repo class."""
 
     repo: str
     repo_class: str

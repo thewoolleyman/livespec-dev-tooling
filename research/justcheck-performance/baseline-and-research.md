@@ -165,7 +165,7 @@ Two load-bearing facts:
    C tracer adds ~85–95s to a ~45–50s suite. The `sysmon` coverage
    core (`COVERAGE_CORE=sysmon`) that removes most tracing overhead
    requires Python ≥ 3.12 (and branch-coverage support there is even
-   newer); the family pins **3.10.16**, so this lever is locked
+   newer); the fleet pins **3.10.16**, so this lever is locked
    behind a Python-bump epic. Recorded here so any future bump epic
    picks it up.
 2. **18 workers is slower than 8 with coverage on this host** (132.8
@@ -282,7 +282,7 @@ instrumentation doesn't exist yet.
 ## Proposed impl child items (ordered by impact/effort)
 
 1. **Parallel check-aggregate dispatcher (dev-tooling first, then
-   family).** Replace the serial for-loop in `check:` with a
+   fleet).** Replace the serial for-loop in `check:` with a
    parallel scheduler: heavy lane (check-per-file-coverage, capped
    `-n 8..12`) starts first; cheap lane fans out at `-P 4..8`;
    explicit edge per-file-coverage → check-coverage; per-target
@@ -309,7 +309,7 @@ instrumentation doesn't exist yet.
    impl-beads + impl-git-jsonl + runtime.** Measured ~0.25s/target
    (~12.5s/pass in livespec); also the safety prerequisite for item
    1's parallel `uv run`s and closes the concurrent-sync corruption
-   window family-wide. Acceptance: all four `check:` recipes sync
+   window fleet-wide. Acceptance: all four `check:` recipes sync
    once up-front and export UV_NO_SYNC=1. Risk: low (pattern proven
    in this repo).
 4. **Scope the livespec Red-leg target set by staged-path class.**

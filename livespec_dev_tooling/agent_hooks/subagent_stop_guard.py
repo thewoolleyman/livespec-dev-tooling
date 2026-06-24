@@ -34,7 +34,7 @@ Marker derivation (all DERIVED — no sentinel files):
    b. unpushed commits (`git rev-list --count HEAD --not
       --remotes=origin`);
    c. only when the branch is fully pushed AND carries work ahead of
-      `origin/master` (the family-wide canonical branch): an open PR
+      `origin/master` (the fleet-wide canonical branch): an open PR
       without auto-merge armed, or no PR at all, via `gh pr view
       --json state,autoMergeRequest` (fail-open on any `gh` failure,
       with a hard subprocess timeout).

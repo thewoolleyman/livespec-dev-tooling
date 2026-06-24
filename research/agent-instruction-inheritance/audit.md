@@ -1,13 +1,13 @@
-# Agent-instruction inheritance — family gap audit
+# Agent-instruction inheritance — fleet gap audit
 
 Audit deliverable for work-item `livespec-4g2pg3`, the read-only audit
 slice of the agent-instruction-inheritance coordinating epic
-(`livespec-ad4ov7`). A point-in-time gap matrix of the livespec family's
+(`livespec-ad4ov7`). A point-in-time gap matrix of the livespec fleet's
 agent-instruction surface, taken 2026-06-22.
 
 ## Why
 
-The family inherits its **spec** cleanly (copier template plus the
+The fleet inherits its **spec** cleanly (copier template plus the
 "inherited from livespec" convention), but its **agent-instruction
 surface** was inherited only partially and drifted by hand. The trigger
 was a real, multi-turn interactive `bd` access failure: the rule "all
@@ -26,7 +26,7 @@ only in upstream `livespec/AGENTS.md` and never reached the impl repos.
 
 ## Gap matrix (at audit time)
 
-Dimensions: **Core** = the family-universal agent-instruction core
+Dimensions: **Core** = the fleet-universal agent-instruction core
 present in `AGENTS.md`; **Symlink** = `.claude/CLAUDE.md` is a symlink to
 `../AGENTS.md`; **Beads-prereqs** = the Beads runtime prerequisites
 section present (beads-backed members); **Guard** = the beads-access
@@ -61,7 +61,7 @@ section present (beads-backed members); **Guard** = the beads-access
    the "auth-fail means you are outside the wrapper" correction.
 4. **No beads-access guard anywhere.** A `PreToolUse` hook that blocks a
    bare `bd`/`dolt`/`mysql` invocation outside the wrapper is absent
-   family-wide. Remediation: slice `livespec-zam76c` adds it to the
+   fleet-wide. Remediation: slice `livespec-zam76c` adds it to the
    template.
 5. **Enforcement gap.** Nothing mechanically catches instruction-surface
    drift. Remediation: slice `livespec-3yebgl` extends the dev-tooling
@@ -87,4 +87,4 @@ section present (beads-backed members); **Guard** = the beads-access
 ## Spec backing
 
 The contract this audit informs was ratified as `contracts.md` section
-"Family agent-instruction core" (livespec v125, PR #517).
+"Fleet agent-instruction core" (livespec v125, PR #517).

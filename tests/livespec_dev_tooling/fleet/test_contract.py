@@ -125,7 +125,7 @@ def test_universal_rows_apply_to_every_class() -> None:
 def test_merge_settings_row_is_wired_with_assert_and_reconcile() -> None:
     # The merge-settings row must be registered with BOTH its assert
     # (fleet_conformance, CI mode) and its reconcile (wire-fleet-member),
-    # exactly like branch-protection — so a freshly-scaffolded family
+    # exactly like branch-protection — so a freshly-scaffolded fleet
     # repo's default allow_merge_commit=true is both caught and fixed.
     row = next((r for r in OBLIGATION_ROWS if r.row_id == "merge-settings"), None)
     assert row is not None

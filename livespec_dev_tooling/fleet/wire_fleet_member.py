@@ -4,7 +4,7 @@ Per livespec v108 §"Fleet membership contract" ("assert mode is CI;
 reconcile mode is wiring"): walks the SAME obligation table as
 `fleet_conformance` for ONE member, and for each violated row applies
 the row's reconcile reference — secrets pushed from the 1Password-
-wrapper environment (per livespec §"Family secrets — 1Password
+wrapper environment (per livespec §"Fleet secrets — 1Password
 Environment as canonical source"; values flow env→stdin only), branch
 protection set from the member's ci.yml matrix, the topic applied,
 ONE shim-workflow PR opened for missing shims — or surfaces the row's

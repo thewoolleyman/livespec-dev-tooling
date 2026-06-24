@@ -148,7 +148,7 @@ The schema declares roles, not paths-per-check. A role is a layered semantic abo
 
 The role-key inventory:
 
-- **`source_trees`** — array of strings. Repo-root-relative paths each shape-checking check walks for `.py` files. Required for every check in the AST-shape family (`assert_never_exhaustiveness`, `keyword_only_args`, `match_keyword_only`, `no_inheritance`, `all_declared`, `main_guard`, `private_calls`, `global_writes`), the style family (`comment_line_anchors`, `no_lloc_soft_warnings`, `claude_md_coverage`), and the test-infrastructure family (`pbt_coverage_pure_modules`, `no_todo_registry`).
+- **`source_trees`** — array of strings. Repo-root-relative paths each shape-checking check walks for `.py` files. Required for every check in the AST-shape class (`assert_never_exhaustiveness`, `keyword_only_args`, `match_keyword_only`, `no_inheritance`, `all_declared`, `main_guard`, `private_calls`, `global_writes`), the style class (`comment_line_anchors`, `no_lloc_soft_warnings`, `claude_md_coverage`), and the test-infrastructure class (`pbt_coverage_pure_modules`, `no_todo_registry`).
 
 - **`io_trees`** — array of strings. Subset of `source_trees` where `try/except` is wholesale permitted (the "I/O layer" of the ROP architecture per `livespec/SPECIFICATION/non-functional-requirements.md` §"ROP discipline"). Consumed by `no_except_outside_io`, `no_raise_outside_io`, `public_api_result_typed`, `no_write_direct`. Default empty array — for consumers with a flat (non-layered) Python package, no `try/except` is wholesale exempt; the supervisor-bug-catcher exemption (via `supervisor_entry_files`) still applies.
 
@@ -434,7 +434,7 @@ Consequently:
   ```
 
   with the payload shape per §"`repository_dispatch` payload contract".
-- **This rule applies to every event-triggered workflow in the family** (`repository_dispatch`, `release`, `push`) — when the fix landed post-event, re-trigger the event; never rerun.
+- **This rule applies to every event-triggered workflow in the fleet** (`repository_dispatch`, `release`, `push`) — when the fix landed post-event, re-trigger the event; never rerun.
 
 Mechanical guard: `reusable-bump-pin-from-dispatch.yml` SHALL detect the invalid retry — when `github.run_attempt > 1` AND the consumer's default-branch HEAD no longer equals the event-pinned SHA, the workflow MUST fail fast with an actionable error that includes the fresh-dispatch command for the in-flight tag. A flake rerun on an unmoved branch proceeds normally. Refusal on ANY post-event movement — related to the failure or not — is correct: building a stale HEAD also produces BEHIND PRs, which is undesirable regardless of why the branch moved.
 

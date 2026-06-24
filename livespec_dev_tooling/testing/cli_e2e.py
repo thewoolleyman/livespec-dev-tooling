@@ -2,7 +2,7 @@
 
 This module is the Phase 2 implementation of the `## CLI end-to-end harness
 contract` in `livespec/SPECIFICATION/contracts.md`. It is the *top-of-pyramid*
-tier of the family's end-to-end testing: a sibling to (not a superset of) the
+tier of the fleet's end-to-end testing: a sibling to (not a superset of) the
 wrapper-chain tier (`## E2E harness contract`), exercising the `claude` CLI
 binary itself exactly as a real end user does. Both tiers coexist in CI.
 
@@ -49,7 +49,7 @@ payload-generation step that a real LLM would perform". The seam is the
 `CliRunner` protocol: `RealCliRunner` shells out to the real `claude` binary;
 a consumer's (or this library's own) self-test injects a deterministic fake.
 
-`select_runner` reads the family-wide `LIVESPEC_E2E_HARNESS` selector — the
+`select_runner` reads the fleet-wide `LIVESPEC_E2E_HARNESS` selector — the
 SAME env-var dialect the wrapper-chain tier uses, NOT a new one:
 
 - `mock` (default) — the caller MUST supply an injected runner; `claude` is
@@ -471,7 +471,7 @@ def _write_settings(*, home: Path, config: HarnessConfig) -> None:
     """Pre-populate `<home>/.claude/settings.json` with marketplace + plugins.
 
     Declares the marketplace coordinates and the enabled plugin set so the
-    `claude` binary resolves the family plugins on the first turn — the
+    `claude` binary resolves the fleet plugins on the first turn — the
     sole-entry-point setup the contract requires (requirement 1).
     """
     claude_dir = home / ".claude"
@@ -565,7 +565,7 @@ def run_workflow(
 
 
 def select_runner(*, injected_runner: CliRunner | None) -> CliRunner:
-    """Resolve the driver from the `LIVESPEC_E2E_HARNESS` family selector.
+    """Resolve the driver from the `LIVESPEC_E2E_HARNESS` fleet selector.
 
     - `real` → `RealCliRunner` (shells out to `claude`; needs ANTHROPIC_API_KEY;
       NOT in `just check`).

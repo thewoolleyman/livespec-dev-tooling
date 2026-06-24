@@ -1,7 +1,7 @@
 """fabro_image_pin_lockstep — Fabro sandbox image pins match this repo's pins.
 
-The family Fabro sandbox image (docker/fabro-sandbox/Dockerfile) bakes
-the family toolchain as a container; the versions it bakes are
+The fleet Fabro sandbox image (docker/fabro-sandbox/Dockerfile) bakes
+the fleet toolchain as a container; the versions it bakes are
 declared as greppable `ARG NAME=value` lines, and they MUST stay in
 lockstep with this repo's own pin sources:
 

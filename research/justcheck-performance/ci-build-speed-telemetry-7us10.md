@@ -1,4 +1,4 @@
-# Telemetry-informed CI build-speed analysis — livespec family
+# Telemetry-informed CI build-speed analysis — livespec fleet
 
 **Work-item:** livespec-dev-tooling-7us.10 (epic 7us — agent-loop + enforcement-suite performance)
 **Data source:** Honeycomb env `livespec`, dataset `github-ci` (closed-loop CI export per livespec `SPECIFICATION/non-functional-requirements.md` §"CI telemetry export", history/v121).
@@ -91,7 +91,7 @@ export-telemetry                            ← master/merge_group only
 
 So on a master push the critical path is **`setup` (~9–15s) → `check-coverage` (~52s)** ≈ the observed ~73s wall-clock. The ~30 floor jobs run in parallel and finish (~15s) long before coverage, so **they do not affect wall-clock** — they cost runner-minutes (billing), not latency.
 
-Empirical corroboration: **livespec-driver-claude has no `setup` job** (unified matrix, jobs self-restore the uv cache) and posts the **lowest wall-clock (16s)** in the family.
+Empirical corroboration: **livespec-driver-claude has no `setup` job** (unified matrix, jobs self-restore the uv cache) and posts the **lowest wall-clock (16s)** in the fleet.
 
 ---
 
@@ -99,7 +99,7 @@ Empirical corroboration: **livespec-driver-claude has no `setup` job** (unified 
 
 Each item carries an explicit **coverage-preservation rationale** (no check is removed or weakened by any proposal here).
 
-### W1 — De-serialize the `setup` uv pre-warm  ★ top remaining win, family-wide
+### W1 — De-serialize the `setup` uv pre-warm  ★ top remaining win, fleet-wide
 
 **Finding.** `setup` runs `mise install` + `actions/cache` + `uv sync --all-groups` to pre-warm `~/.cache/uv` *once* before the matrix; every matrix job `needs: setup`, so **check-coverage cannot start until the pre-warm finishes** (~9–15s on the critical path, every run). But:
 - `actions/cache` **persists across runs** keyed on `uv.lock`. On the >99% of runs where the lock is unchanged, the cache already exists globally → matrix jobs hit the exact key and never touch PyPI **with or without the warm**. The pre-warm is redundant on these runs yet still serializes the whole matrix behind it.
@@ -111,7 +111,7 @@ Each item carries an explicit **coverage-preservation rationale** (no check is r
 
 **Coverage preservation.** No check removed; the `py_changed` gate logic is byte-identical; matrix self-restore already exists. The only behavioral change is on lock-change runs (parallel delta-fetch instead of one serial warm), bounded by the prefix restore-key + retries. **driver-claude already runs exactly this de-serialized shape in production with no ill effect.**
 
-**Scope (family-wide).**
+**Scope (fleet-wide).**
 - Hand-authored `ci.yml` — fix directly, one PR each: **livespec, livespec-dev-tooling, livespec-runtime**.
 - Copier template `templates/impl-plugin/.github/workflows/ci.yml.jinja` — fix once; **impl-beads + impl-git-jsonl** inherit via `copier update --vcs-ref=master`.
 - **driver-claude** — N/A (already de-serialized).
@@ -126,7 +126,7 @@ Each item carries an explicit **coverage-preservation rationale** (no check is r
 
 ### W3 — Collapse the ~30-job fixed-overhead floor — *spec-level tradeoff, not a cheap PR*
 
-**Finding.** ~30 trivial AST/grep checks each pay ~9–14s of fixed startup to do ~1–2s of work. This is the family's largest **billing** cost (~30 × ~10s ≈ 300 wasted runner-seconds per livespec run) — but **not** a wall-clock cost (they finish before coverage).
+**Finding.** ~30 trivial AST/grep checks each pay ~9–14s of fixed startup to do ~1–2s of work. This is the fleet's largest **billing** cost (~30 × ~10s ≈ 300 wasted runner-seconds per livespec run) — but **not** a wall-clock cost (they finish before coverage).
 
 **Why not a cheap PR.** Consolidating fast checks into fewer jobs collides with the `SPECIFICATION/non-functional-requirements.md` check-invocation-surface contract ("one job per check via a matrix strategy"), with branch-protection per-check required-status-check names, and with the per-`ci.job.name` granularity the telemetry export itself depends on. Changing it is a deliberate contract decision (propose-change/revise), not a tactical optimization.
 
@@ -142,13 +142,13 @@ Each item carries an explicit **coverage-preservation rationale** (no check is r
 
 ## 5. Recommendation
 
-1. **Land W1** as a family epic: livespec + dev-tooling + runtime (direct), plus the copier template (→ impl-beads, impl-git-jsonl). Recommend doing **livespec first**, letting the closed-loop telemetry confirm the wall-clock drop on master, then propagating to the template + siblings (telemetry-informed propagation, matching the repo's careful style).
+1. **Land W1** as a fleet epic: livespec + dev-tooling + runtime (direct), plus the copier template (→ impl-beads, impl-git-jsonl). Recommend doing **livespec first**, letting the closed-loop telemetry confirm the wall-clock drop on master, then propagating to the template + siblings (telemetry-informed propagation, matching the repo's careful style).
 2. **Coverage (the true #1 long pole) stays with 7us.7.** This analysis confirms it is the dominant cost and that CI's `-n auto` already caps at runner cores; add a coordination note to 7us.7 with the CI-side numbers.
 3. **W2/W3/W4** are documented above as deliberately-not-cheap; W3 (job-floor consolidation) is the largest *efficiency* prize but is a spec-level call for the maintainer.
 
 ---
 
-## 6. Rollout (W1) — executed as a family epic (2026-06-20)
+## 6. Rollout (W1) — executed as a fleet epic (2026-06-20)
 
 | repo | change | PR |
 |---|---|---|

@@ -113,7 +113,7 @@ def run_member_rows(
 def run_discovery_sweep(
     *, ctx: FleetContext, manifest: Manifest, log: structlog.stdlib.BoundLogger
 ) -> int:
-    """Flag owner repos matching the family shape but absent from the manifest."""
+    """Flag owner repos matching the fleet shape but absent from the manifest."""
     payload = ctx.api_object(path=f"users/{ctx.owner}/repos?per_page=100")
     if not isinstance(payload, list):
         log.warning(
@@ -132,11 +132,11 @@ def run_discovery_sweep(
             continue
         topics_raw = record.get("topics")
         topics = cast("list[object]", topics_raw) if isinstance(topics_raw, list) else []
-        family_shaped = name.startswith("livespec") or SIBLING_TOPIC in topics
-        if family_shaped and name not in known:
+        fleet_shaped = name.startswith("livespec") or SIBLING_TOPIC in topics
+        if fleet_shaped and name not in known:
             errors += 1
             log.error(
-                "family-shaped repo is not registered in the fleet manifest",
+                "fleet-shaped repo is not registered in the fleet manifest",
                 repo=name,
                 hint=(
                     "register it in livespec .livespec-fleet-manifest.jsonc FIRST, then run "

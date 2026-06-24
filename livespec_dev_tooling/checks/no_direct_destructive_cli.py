@@ -20,7 +20,7 @@ direct invocations of known-destructive-default CLIs:
 - `gh repo delete`
 
 The banned tuple is the extension point: when a new
-destructive-default tool joins the family toolchain, add its
+destructive-default tool joins the fleet toolchain, add its
 invocation pattern here.
 
 Allowlist: a file whose repo-root-relative POSIX path starts with an
@@ -67,7 +67,7 @@ _SCANNED_TREES = (
 _VENDOR_MARKER = "_vendor"
 _PYCACHE_MARKER = "__pycache__"
 
-# (cli, pattern) pairs; `cli` names the destructive-default CLI family
+# (cli, pattern) pairs; `cli` names the destructive-default CLI category
 # in the structured finding. The force-push pattern stops at shell
 # command separators / comment starts so an unrelated `-f` later on the
 # same line (e.g., a chained `rm -f`) is not attributed to `git push`.

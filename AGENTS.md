@@ -9,7 +9,7 @@ enablement is **HOST-WIDE**: each registration persists in `~/.codex/config.toml
 and applies to every project on the host. Codex offers no project-scoped plugin
 enablement, so there is no committed-settings analogue for the Codex path.
 
-Install the three family plugins host-wide: livespec CORE (the artifact carrier
+Install the three fleet plugins host-wide: livespec CORE (the artifact carrier
 that ships the spec-side prose and wrappers), the `livespec-driver-codex` Codex
 Driver (which supplies the `/livespec:*` operation surface over core's prose),
 and the selected orchestrator plugin:

@@ -10,7 +10,7 @@ Subdirectories group docs by topic. As of writing:
 
 - `justcheck-performance/` — `just check` wall-time baselines and
   optimization research (work-item livespec-dev-tooling-7us.1).
-- `agent-instruction-inheritance/` — family agent-instruction surface
+- `agent-instruction-inheritance/` — fleet agent-instruction surface
   gap audit (work-item livespec-4g2pg3).
 
 ## What this directory is NOT

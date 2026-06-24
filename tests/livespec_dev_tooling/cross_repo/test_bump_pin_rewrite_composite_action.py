@@ -299,7 +299,7 @@ def test_commit_step_excludes_support_module_checkout() -> None:
 def test_commit_step_guards_against_staged_gitlink() -> None:
     """The commit step refuses to commit any staged gitlink (mode 160000).
 
-    Per livespec-dev-tooling-8ml: defense-in-depth — the family uses no
+    Per livespec-dev-tooling-8ml: defense-in-depth — the fleet uses no
     submodules, so a staged gitlink can only be a stray nested-checkout
     footgun. The guard MUST sit after `git add -A` and before `git commit`,
     matching on mode 160000 and exiting non-zero.

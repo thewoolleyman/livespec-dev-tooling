@@ -203,14 +203,14 @@ def test_wrapper_shape_accepts_canonical_wrapper(*, tmp_path: Path) -> None:
     )
 
 
-def test_wrapper_shape_accepts_impl_plugin_family_wrapper(*, tmp_path: Path) -> None:
-    """A canonical wrapper importing main from a `livespec_<suffix>` family package passes.
+def test_wrapper_shape_accepts_impl_plugin_fleet_wrapper(*, tmp_path: Path) -> None:
+    """A canonical wrapper importing main from a `livespec_<suffix>` fleet member package passes.
 
     Fixture: a bin/*.py wrapper that is canonical in every
     respect except the main-import module path is
     `livespec_impl_git_jsonl.commands.next` (the impl-plugin's
     own package name) rather than the core `livespec.` prefix.
-    The check MUST accept any livespec-family top-level package
+    The check MUST accept any fleet-member top-level package
     (`livespec` or `livespec_<suffix>`), not just `livespec.`,
     so impl-plugin wrappers conforming to the canonical
     5-statement shape pass (li-ini4rz).
@@ -241,19 +241,19 @@ def test_wrapper_shape_accepts_impl_plugin_family_wrapper(*, tmp_path: Path) -> 
     )
 
     assert result.returncode == 0, (
-        f"wrapper_shape should accept a livespec-family impl-plugin wrapper with exit 0; "
+        f"wrapper_shape should accept a fleet impl-plugin wrapper with exit 0; "
         f"got returncode={result.returncode} "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
 
 
-def test_wrapper_shape_rejects_non_family_main_import(*, tmp_path: Path) -> None:
-    """A wrapper whose main import is from a non-family package fails.
+def test_wrapper_shape_rejects_non_fleet_main_import(*, tmp_path: Path) -> None:
+    """A wrapper whose main import is from a non-fleet package fails.
 
     Fixture: a wrapper canonical in every respect except the
     main-import module path is `os.path` (a clearly
-    non-livespec-family top-level package). The relaxed
-    family-prefix predicate must still reject module paths
+    non-fleet-member top-level package). The relaxed
+    fleet-prefix predicate must still reject module paths
     whose top-level package is neither `livespec` nor
     `livespec_<suffix>` (li-ini4rz).
     """
@@ -284,18 +284,18 @@ def test_wrapper_shape_rejects_non_family_main_import(*, tmp_path: Path) -> None
 
     assert result.returncode != 0, (
         f"wrapper_shape should reject a wrapper whose main import is from a "
-        f"non-livespec-family package; "
+        f"non-fleet member package; "
         f"got returncode={result.returncode} "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
 
 
-def test_wrapper_shape_rejects_lookalike_non_family_prefix(*, tmp_path: Path) -> None:
+def test_wrapper_shape_rejects_lookalike_non_fleet_prefix(*, tmp_path: Path) -> None:
     """A wrapper importing from `livespecfoo.` (no separator) fails.
 
     Fixture: the main import is `livespecfoo.commands.seed` -
     a package whose name STARTS WITH the literal text
-    `livespec` but is NOT a family member (the family rule
+    `livespec` but is NOT a fleet member (the fleet rule
     requires either the bare `livespec` package or a
     `livespec_<suffix>` package, i.e. an underscore
     separator). This guards the relaxation against an
@@ -328,7 +328,7 @@ def test_wrapper_shape_rejects_lookalike_non_family_prefix(*, tmp_path: Path) ->
 
     assert result.returncode != 0, (
         f"wrapper_shape should reject a wrapper importing from a livespec-lookalike "
-        f"non-family package (`livespecfoo.`); "
+        f"non-fleet package (`livespecfoo.`); "
         f"got returncode={result.returncode} "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )

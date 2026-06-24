@@ -95,7 +95,7 @@ def assert_copier_answers(*, ctx: FleetContext, member: FleetMember) -> RowOutco
 
 
 def assert_no_tracked_gitlinks(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:
-    """No mode-160000 (gitlink) entries on master — the family uses no submodules."""
+    """No mode-160000 (gitlink) entries on master — the fleet uses no submodules."""
     tree = ctx.tree(repo=member.repo)
     if not tree.readable:
         return RowSkip(reason=f"{member.repo}: master tree unreadable")

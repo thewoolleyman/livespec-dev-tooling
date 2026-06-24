@@ -1,7 +1,7 @@
 """Outside-in test for `checks/skill_invocation_paths.py` — fenced SKILL.md wrapper-invocation form.
 
 Per the shared `skill_invocation_paths` check (work-item
-li-skillpath-family-wi1): every `bin/<name>.py` wrapper
+legacy skill-invocation-paths work item): every `bin/<name>.py` wrapper
 invocation that appears INSIDE a fenced code block of a
 `.claude-plugin/skills/*/SKILL.md` file MUST use the canonical
 form `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/bin/<name>.py"`:

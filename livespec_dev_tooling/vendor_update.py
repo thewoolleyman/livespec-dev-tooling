@@ -15,7 +15,7 @@ edited in place via the normal propose-change cycle.
 
 This module ships in the installed `livespec_dev_tooling` package (it was
 relocated from livespec-core's `dev-tooling/vendor_update.py` so the
-family's release→bump-pin automation can re-vendor in every consumer
+fleet's release→bump-pin automation can re-vendor in every consumer
 repo: each governed project invokes `python -m
 livespec_dev_tooling.vendor_update <lib>` from its own root, and the
 manifest + vendor-destination paths resolve against the caller's `cwd`,

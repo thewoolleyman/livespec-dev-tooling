@@ -13,7 +13,7 @@ Local constraints for an agent editing this directory:
 - The one mocked boundary is the `claude -p` subprocess (the `CliRunner`
   seam); discovery, fixture loading, the coverage gate, and orchestration
   always run for real.
-- Tier selection rides the family-wide `LIVESPEC_E2E_HARNESS=mock|real`
+- Tier selection rides the fleet-wide `LIVESPEC_E2E_HARNESS=mock|real`
   selector — do NOT invent a new env-var dialect.
 - These are library helpers consumed via import, NOT `python -m`-invocable
   checks.
