@@ -177,7 +177,7 @@ def test_member_rows_counts_errors_but_not_warnings_or_skips() -> None:
     assert run_member_rows(ctx=ctx, manifest=manifest, log=_log()) == 1
 
 
-def test_discovery_sweep_flags_unmanifested_family_repos() -> None:
+def test_discovery_sweep_flags_unmanifested_fleet_repos() -> None:
     table = _green_table()
     sweep_payload: list[object] = [
         {"name": "widget", "topics": ["livespec-sibling"]},
