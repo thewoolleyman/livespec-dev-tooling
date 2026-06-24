@@ -58,6 +58,29 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.17.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.16.0...v0.17.0) (2026-06-24)
+
+
+### Features
+
+* assert agent-instruction surface in the fleet contract (livespec-3yebgl) ([90f2cd5](https://github.com/thewoolleyman/livespec-dev-tooling/commit/90f2cd5ef1c14bdefe9744ad585b01358810476a))
+* **fleet:** assert beads tenant-connection consistency across config sources (qg0f.2) ([693f11b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/693f11b1ccc8810081522e08ff01fb80ed04ee8d))
+
+
+### Bug Fixes
+
+* add assert_merge_settings fleet conformance row ([1a5ee52](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1a5ee5207f5235031c33fd4320c9b93c53bda3f4))
+* add reconcile_merge_settings to wire-fleet-member ([3ebdd44](https://github.com/thewoolleyman/livespec-dev-tooling/commit/3ebdd4436f4cab1d046342077ac2844ce8ea3a8e))
+* add strict_enabled fail branch to standalone branch_protection_alignment check ([e5cb8f4](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e5cb8f44a91743ad7b584b38e5cd3d04901f3e64))
+* **agent-hooks:** recognize ~/.worktrees/&lt;repo&gt;/&lt;branch&gt; in stop-guard ([d6564a6](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d6564a64f763e64716e11a57a9fa3204f562d94c))
+* drop dead pre-rename impl prefixes from RGR _IMPL_PREFIXES (qg0f.5) ([b9b8733](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b9b8733b4a51ef92ad270bedd2b4608efe1d6e41))
+* flag strict-enabled branch protection in fleet assert_branch_protection ([f0badc9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f0badc9e12568e6fb41623ab08425f8320f5da6e))
+* migrate fleet terminology ([7dfc218](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7dfc2186335dc889e53da55cac72b2831281d200))
+* prefer livespec-orchestrator-git-jsonl canonical_branch key in no_stale_revise_branches (qg0f.5) ([8caf5f8](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8caf5f8b408796d65dd0dd71908435404d3bc21e))
+* read renamed livespec fleet manifest ([cc7e4e4](https://github.com/thewoolleyman/livespec-dev-tooling/commit/cc7e4e42634688dd6f451e3c8c48b96391c6b585))
+* reconcile master branch protection with strict OFF ([2e896ff](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2e896ff577ec3222afdcb5cad9379a0a8e7c6c6e))
+* wire the merge-settings row into the fleet obligation table ([e21a2e7](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e21a2e7d702f89249553386c4894a4f72396baf7))
+
 ## [0.16.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.15.0...v0.16.0) (2026-06-21)
 
 
