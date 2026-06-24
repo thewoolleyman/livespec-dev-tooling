@@ -182,6 +182,20 @@ def test_extract_worktree_paths_matches_both_layouts_and_dedupes() -> None:
     ]
 
 
+def test_extract_worktree_paths_matches_new_root_through_branch_segment() -> None:
+    # The fleet-wide worktree root is ~/.worktrees/<repo>/<branch> (a
+    # leading-dot `.worktrees` dir with TWO path segments). The match
+    # MUST capture through <branch> so the downstream `git -C <match>`
+    # probes target the real worktree dir, not just ~/.worktrees/<repo>.
+    text = (
+        "cd /home/ubuntu/.worktrees/somerepo/some-branch && git status\n"
+        "deeper /home/ubuntu/.worktrees/somerepo/some-branch/pkg/file.py\n"
+        "no worktree mention here\n"
+    )
+    paths = _extract_worktree_paths(transcript_text=text)
+    assert paths == [Path("/home/ubuntu/.worktrees/somerepo/some-branch")]
+
+
 def test_extract_worktree_paths_empty_on_plain_text() -> None:
     assert _extract_worktree_paths(transcript_text="nothing relevant") == []
 

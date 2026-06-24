@@ -60,10 +60,15 @@ stopping points.
    ```
 
 2. If the change will modify tracked files, create a dedicated worktree
-   from the primary checkout's `master` and do all edits there:
+   from the primary checkout's `master` and do all edits there. Every
+   fleet worktree lives under the per-user root `~/.worktrees/<repo>/<branch>`
+   (never a peer of the clones in `/data/projects`); `just bootstrap`
+   registers `~/.worktrees` in mise's `trusted_config_paths`, so a
+   freshly created worktree's `.mise.toml` auto-trusts and the first
+   `mise exec` inside it never stops on the "config not trusted" prompt:
 
    ```bash
-   mise exec -- git -C /data/projects/livespec-dev-tooling worktree add -b <branch> /data/projects/<worktree> master
+   mise exec -- git -C /data/projects/livespec-dev-tooling worktree add -b <branch> "$HOME/.worktrees/livespec-dev-tooling/<branch>" master
    ```
 
 3. Use `mise exec -- git commit ...` and `mise exec -- git push ...` so
