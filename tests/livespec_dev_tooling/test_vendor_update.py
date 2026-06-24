@@ -7,7 +7,7 @@ copies the package tree under `.claude-plugin/scripts/_vendor/<lib>/`,
 preserves/copies `LICENSE`, and stamps the entry's `vendored_at`.
 
 It was RELOCATED from livespec-core's `dev-tooling/vendor_update.py`
-into this installed package (work-item livespec-9ixg) so the family's
+into this installed package (work-item livespec-9ixg) so the fleet's
 release→bump-pin automation can re-vendor in every consumer repo. The
 first test below asserts the NEW import path resolves — the load-bearing
 proof of the relocation.

@@ -131,6 +131,25 @@ def _log() -> structlog.stdlib.BoundLogger:
     return structlog.get_logger("test_fleet_conformance")
 
 
+class RecordingLog:
+    """Small logger test double for asserting structured event text."""
+
+    def __init__(self) -> None:
+        self.events: list[str] = []
+
+    def error(self, event: str, **kwargs: object) -> None:
+        del kwargs
+        self.events.append(event)
+
+    def warning(self, event: str, **kwargs: object) -> None:
+        del kwargs
+        self.events.append(event)
+
+    def info(self, event: str, **kwargs: object) -> None:
+        del kwargs
+        self.events.append(event)
+
+
 def test_fetch_manifest_success_and_failure_modes() -> None:
     ctx = make_context(table={_MANIFEST_ARGS: raw(text=_MANIFEST_SOURCE)})
     manifest = fetch_manifest(ctx=ctx)
@@ -173,6 +192,18 @@ def test_discovery_sweep_flags_unmanifested_family_repos() -> None:
     manifest = fetch_manifest(ctx=ctx)
     assert manifest is not None
     assert run_discovery_sweep(ctx=ctx, manifest=manifest, log=_log()) == 2
+
+
+def test_discovery_sweep_uses_fleet_shape_wording() -> None:
+    table = _green_table()
+    table[_REPOS_ARGS] = ok(payload=[{"name": "livespec-straggler", "topics": []}])
+    ctx = make_context(table=table)
+    manifest = fetch_manifest(ctx=ctx)
+    log = RecordingLog()
+
+    assert manifest is not None
+    assert run_discovery_sweep(ctx=ctx, manifest=manifest, log=log) == 1
+    assert log.events == ["fleet-shaped repo is not registered in the fleet manifest"]
 
 
 def test_discovery_sweep_unreadable_repo_list_warns_and_passes() -> None:

@@ -1,6 +1,6 @@
 """tdd_commit — mechanize the Red-commit-then-Green-amend TDD ritual.
 
-The livespec family commits product `.py` changes via a 2-step,
+The livespec fleet commits product `.py` changes via a 2-step,
 single-commit TDD ritual enforced by the `red_green_replay` commit-msg
 hook (`livespec_dev_tooling/checks/red_green_replay.py`): the test file
 is staged ALONE and committed (Red), then the implementation file(s)

@@ -66,7 +66,7 @@ Or, for a single composite action:
 ## CLI end-to-end test harness
 
 `livespec_dev_tooling.testing.cli_e2e` is the single canonical
-implementation of the family's *top-of-pyramid*, user-surface
+implementation of the fleet's *top-of-pyramid*, user-surface
 end-to-end test (per `livespec`'s
 `SPECIFICATION/contracts.md` §"CLI end-to-end harness contract"). Its
 sole interaction surface is the `claude` CLI binary itself — it installs
@@ -127,7 +127,7 @@ def test_cli_e2e(*, tmp_path: Path) -> None:
 The one mocked boundary is the `claude -p` subprocess itself (the
 `CliRunner` seam) — everything else (discovery, fixtures, the coverage
 gate, orchestration) always runs for real. Tier selection rides the
-SAME family-wide `LIVESPEC_E2E_HARNESS=mock|real` selector the
+SAME fleet-wide `LIVESPEC_E2E_HARNESS=mock|real` selector the
 wrapper-chain tier uses:
 
 - `mock` (default) — the caller supplies a deterministic injected
@@ -208,9 +208,9 @@ migration path.
 
 ## Observability
 
-The livespec family dogfoods its own telemetry. CI runs, Red→Green commit-gate cycles, the beads+fabro dispatcher, sandbox runs, and harness sub-agents are published to a shared Honeycomb environment:
+The livespec fleet dogfoods its own telemetry. CI runs, Red→Green commit-gate cycles, the beads+fabro dispatcher, sandbox runs, and harness sub-agents are published to a shared Honeycomb environment:
 
-- **[livespec family — all activity](https://ui.honeycomb.io/thewoolleyweb/environments/livespec/board/krThv8DvcwS)** — the cross-repo activity board (Honeycomb, `livespec` environment).
+- **[livespec fleet — all activity](https://ui.honeycomb.io/thewoolleyweb/environments/livespec/board/krThv8DvcwS)** — the cross-repo activity board (Honeycomb, `livespec` environment).
 
 ## More
 

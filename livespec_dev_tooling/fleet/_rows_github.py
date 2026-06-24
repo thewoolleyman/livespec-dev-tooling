@@ -44,11 +44,11 @@ __all__: list[str] = [
 REQUIRED_SECRET_NAMES = ("APP_ID", "APP_PRIVATE_KEY")
 SIBLING_TOPIC = "livespec-sibling"
 
-# Repo-level merge-strategy settings the family mandates per livespec
+# Repo-level merge-strategy settings the fleet mandates per livespec
 # NFR §"Commit and merge discipline": `master` accepts only
 # rebase-merge, so merge-commit and squash-merge are forbidden at the
 # GitHub repo-settings level. `allow_auto_merge` is enabled so
-# `gh pr merge --auto` (the family merge driver, per §"CI as a merge
+# `gh pr merge --auto` (the fleet merge driver, per §"CI as a merge
 # gate (branch protection)") is available. A freshly-scaffolded repo
 # defaults to GitHub's `allow_merge_commit: true`, so this is a real
 # obligation, not a no-op.
@@ -134,7 +134,7 @@ def assert_secret_names(*, ctx: FleetContext, member: FleetMember) -> RowOutcome
 
 
 def assert_app_installation(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:
-    """The family GitHub App's installation covers the member repo."""
+    """The fleet GitHub App's installation covers the member repo."""
     installed = ctx.installed_repos()
     if installed is None:
         return RowSkip(
@@ -214,7 +214,7 @@ def assert_merge_settings(*, ctx: FleetContext, member: FleetMember) -> RowOutco
 
     Per livespec NFR §"Commit and merge discipline": `master` accepts
     only rebase-merge (`allow_merge_commit` / `allow_squash_merge` OFF,
-    `allow_rebase_merge` ON), with `allow_auto_merge` ON so the family's
+    `allow_rebase_merge` ON), with `allow_auto_merge` ON so the fleet's
     `gh pr merge --auto` driver works. A freshly-scaffolded repo
     defaults to GitHub's `allow_merge_commit: true`, so a manifest
     member that has never been reconciled fails this row.

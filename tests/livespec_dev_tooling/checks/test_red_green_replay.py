@@ -2372,7 +2372,7 @@ def test_no_arg_range_commit_touching_only_non_product_paths_exits_zero(
 
 # ---------------------------------------------------------------------------
 # Branch-4/5 head-state routing (work-item livespec-dev-tooling-xn0, found
-# live during the v0.11.0 family bump): the Green-amend leg (Branch 4) is
+# live during the v0.11.0 fleet bump): the Green-amend leg (Branch 4) is
 # only for a GENUINE amend-in-progress — HEAD carrying TDD-Red-* trailers
 # WITHOUT TDD-Green-* trailers. A completed Red+Green commit at HEAD also
 # carries Red trailers, so keying on Red-trailer PRESENCE alone misrouted

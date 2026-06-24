@@ -1,7 +1,7 @@
 """Outside-in test for `livespec_dev_tooling/fabro_image_pin_lockstep.py`.
 
 The Fabro sandbox image (docker/fabro-sandbox/Dockerfile) bakes the
-family toolchain as a container; the versions it bakes are declared
+fleet toolchain as a container; the versions it bakes are declared
 as `ARG NAME=value` lines. The check fails when any image-baked pin
 drifts from this repo's own pin sources:
 

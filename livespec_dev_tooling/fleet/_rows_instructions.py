@@ -1,9 +1,9 @@
 """Agent-instruction-surface obligation row for the fleet-membership contract.
 
-Every impl-plugin family member MUST carry the family-universal
+Every impl-plugin fleet member MUST carry the fleet-universal
 agent-instruction core in its `AGENTS.md` and register the beads-access
 guard hook in `.claude/settings.json`, per `livespec`'s contract section
-"Family agent-instruction core". This row asserts both from the central
+"Fleet agent-instruction core". This row asserts both from the central
 fleet vantage point (the member's committed `AGENTS.md` and
 `.claude/settings.json`), making instruction-surface drift un-mergeable —
 mirroring the sibling `_rows_beads` tenant-connection consistency row.
@@ -36,7 +36,7 @@ AGENTS_PATH = "AGENTS.md"
 SETTINGS_PATH = ".claude/settings.json"
 _GUARD_MARKER = "beads-access-guard"
 
-# The family-universal agent-instruction core H2 headings every impl-plugin
+# The fleet-universal agent-instruction core H2 headings every impl-plugin
 # member's AGENTS.md must carry (substring-matched, so a heading with a
 # trailing suffix still satisfies its bare prefix).
 REQUIRED_AGENTS_HEADINGS: tuple[str, ...] = (

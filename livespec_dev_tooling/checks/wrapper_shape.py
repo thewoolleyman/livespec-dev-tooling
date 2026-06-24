@@ -14,7 +14,7 @@ statement, and is not part of the AST body):
 
     bootstrap()
 
-    from <livespec-family-package>.<...> import main
+    from <fleet-member-package>.<...> import main
 
     raise SystemExit(main())
 
@@ -22,8 +22,8 @@ The main-import module's top-level package is the OWNING
 plugin's distribution package: `livespec` for livespec-core, or
 `livespec_<suffix>` for an impl-plugin (e.g.
 `livespec_orchestrator_git_jsonl`, `livespec_orchestrator_beads_fabro`). The shared
-check runs across every livespec-family repo via the pin-and-bump
-cross-repo mechanism, so it accepts any livespec-family top-level
+check runs across every livespec fleet repo via the pin-and-bump
+cross-repo mechanism, so it accepts any fleet-member top-level
 package, not just the core `livespec.` prefix.
 
 The AST module body has exactly 5 top-level statements (the
@@ -76,14 +76,14 @@ _CANONICAL_WRAPPER_STMT_COUNT: int = 5
 # from the OWNING plugin's package. For livespec-core that package
 # is `livespec`; for each impl-plugin it is the plugin's own
 # distribution package (`livespec_orchestrator_git_jsonl`, `livespec_orchestrator_beads_fabro`,
-# etc.). The shared check runs across every livespec-family repo via
+# etc.). The shared check runs across every livespec fleet repo via
 # the pin-and-bump cross-repo mechanism, so it must accept any
-# livespec-FAMILY top-level package, not just the core `livespec.`
-# prefix. The family rule: the top-level package is either the bare
+# fleet-member top-level package, not just the core `livespec.`
+# prefix. The fleet rule: the top-level package is either the bare
 # `livespec` package or a `livespec_<suffix>` package (an underscore
 # separator). A lookalike like `livespecfoo.` (no separator) is NOT
-# a family member and an unrelated module like `os.` is rejected.
-_FAMILY_MAIN_IMPORT_RE = re.compile(r"^livespec(_[a-z0-9_]+)?\.")
+# a fleet member and an unrelated module like `os.` is rejected.
+_FLEET_MAIN_IMPORT_RE = re.compile(r"^livespec(_[a-z0-9_]+)?\.")
 
 
 def _is_docstring(*, stmt: ast.stmt) -> bool:
@@ -118,7 +118,7 @@ def _is_livespec_main_import(*, stmt: ast.stmt) -> bool:
     return (
         isinstance(stmt, ast.ImportFrom)
         and stmt.module is not None
-        and _FAMILY_MAIN_IMPORT_RE.match(stmt.module) is not None
+        and _FLEET_MAIN_IMPORT_RE.match(stmt.module) is not None
         and len(stmt.names) == 1
         and stmt.names[0].name == "main"
     )

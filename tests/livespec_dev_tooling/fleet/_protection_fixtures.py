@@ -57,6 +57,6 @@ def aligned_merge_settings_payload() -> dict[str, object]:
     The rebase-only-plus-auto-merge state `assert_merge_settings`
     accepts, shared by the `test_fleet_conformance.py` and
     `test_wire_fleet_member.py` green tables so a change to what the
-    family mandates is a one-line edit at `REQUIRED_MERGE_SETTINGS`.
+    fleet mandates is a one-line edit at `REQUIRED_MERGE_SETTINGS`.
     """
     return dict(REQUIRED_MERGE_SETTINGS)

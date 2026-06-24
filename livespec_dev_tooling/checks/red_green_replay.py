@@ -237,7 +237,7 @@ def _validate_range() -> int:
     TDD-Suite-Green-* shape, regardless of its subject prefix — the
     load-bearing branch-level gate behind the per-commit commit-msg
     hook (which a rebase, a squash, or a history rewrite can bypass).
-    Merge commits are skipped (`--no-merges`): the family's protected
+    Merge commits are skipped (`--no-merges`): the fleet's protected
     branches enforce linear history, so a merge in the range carries
     no diff of its own. On `master` itself the range is empty and the
     gate trivially passes.

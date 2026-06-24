@@ -1,6 +1,6 @@
-# livespec family Fabro sandbox image.
+# livespec fleet Fabro sandbox image.
 #
-# Bakes the family-pinned toolchain so a Fabro C-mode docker run needs
+# Bakes the fleet-pinned toolchain so a Fabro C-mode docker run needs
 # no per-run installs:
 #   - mise (single tool manager; version mirrors the host)
 #   - uv / just / lefthook at this repo's .mise.toml pins

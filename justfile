@@ -234,7 +234,7 @@ check:
         # Fabro sandbox image pin-lockstep gate — repo-private extra,
         # NOT a canonical slug (the module lives at
         # livespec_dev_tooling/fabro_image_pin_lockstep.py, not under
-        # checks/: this repo OWNS the family Fabro sandbox image at
+        # checks/: this repo OWNS the fleet Fabro sandbox image at
         # docker/fabro-sandbox/Dockerfile, so siblings have nothing
         # to wire). See the recipe comment below.
         check-fabro-image-pin-lockstep
@@ -400,7 +400,7 @@ check-fleet-conformance:
     uv run python -m livespec_dev_tooling.fleet.fleet_conformance
 
 # Fabro sandbox image pin-lockstep gate — repo-private extra (this
-# repo owns the family Fabro sandbox image; the module deliberately
+# repo owns the fleet Fabro sandbox image; the module deliberately
 # lives OUTSIDE livespec_dev_tooling/checks/ so it stays out of the
 # canonical fleet-universal slug set). Fails when any tool version
 # baked into docker/fabro-sandbox/Dockerfile (its greppable ARG-form

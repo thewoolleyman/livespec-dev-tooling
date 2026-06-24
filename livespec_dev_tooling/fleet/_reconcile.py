@@ -208,7 +208,7 @@ def reconcile_branch_protection(*, ctx: FleetContext, member: FleetMember) -> Ro
 def reconcile_merge_settings(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:
     """Set repo-level merge settings to rebase-only (+ auto-merge enabled).
 
-    PATCHes the repo object with the family-mandated merge-strategy
+    PATCHes the repo object with the fleet-mandated merge-strategy
     flags (livespec NFR §"Commit and merge discipline"): merge-commit
     and squash-merge OFF, rebase-merge ON, auto-merge ON. Idempotent —
     re-PATCHing an already-rebase-only repo changes nothing.

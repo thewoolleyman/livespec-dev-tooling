@@ -164,7 +164,7 @@ OBLIGATION_ROWS: tuple[ObligationRow, ...] = (
         obligation_type="github-state",
         applies_to=_ALL_CLASSES,
         assert_member=assert_app_installation,
-        manual_hint="install the family GitHub App on the repo (owner settings → GitHub Apps)",
+        manual_hint="install the fleet GitHub App on the repo (owner settings → GitHub Apps)",
     ),
     ObligationRow(
         row_id="branch-protection",
@@ -203,7 +203,7 @@ OBLIGATION_ROWS: tuple[ObligationRow, ...] = (
         applies_to=_TEMPLATE_BORN_CLASSES,
         assert_member=assert_agent_instruction_surface,
         manual_hint=(
-            "bring AGENTS.md up to the family-universal agent-instruction core and register the "
+            "bring AGENTS.md up to the fleet-universal agent-instruction core and register the "
             "beads-access guard hook (.claude/hooks/beads-access-guard.sh) in "
             ".claude/settings.json, in a repo-local commit"
         ),
