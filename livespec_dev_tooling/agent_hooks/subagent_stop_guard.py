@@ -22,8 +22,12 @@ broken hook must never wedge a healthy agent.
 
 Marker derivation (all DERIVED — no sentinel files):
 
-1. Scope: absolute paths matching `**/[.claude/]worktrees/<slug>`
-   mentioned in THIS sub-agent's transcript (capped at
+1. Scope: absolute worktree paths mentioned in THIS sub-agent's
+   transcript, in either the fleet new-root form
+   `**/.worktrees/<repo>/<branch>` (leading-dot `.worktrees`, two
+   segments — matched through `<branch>` so the git probes target the
+   real worktree dir) or the legacy `**/[.claude/]worktrees/<slug>`
+   janitor form (capped at
    `_MAX_WORKTREES`). Agents that never touched a worktree (Explore /
    Plan / conversational turns) yield no candidates and are never
    blocked. The scoping is heuristic — a transcript that merely
@@ -73,7 +77,18 @@ import structlog  # noqa: E402  — vendor-path-aware import after sys.path inse
 __all__: list[str] = []
 
 
-_WORKTREE_PATH_RE = re.compile(r"/[^\s\"'\\]*?/(?:\.claude/)?worktrees/[A-Za-z0-9][A-Za-z0-9._-]*")
+_WORKTREE_SEGMENT = r"[A-Za-z0-9][A-Za-z0-9._-]*"
+_WORKTREE_PATH_RE = re.compile(
+    r"/[^\s\"'\\]*?/(?:"
+    # Fleet new root: ~/.worktrees/<repo>/<branch> — leading-dot
+    # `.worktrees` with TWO segments; capture through <branch> so the
+    # downstream `git -C <match>` probes hit the real worktree dir.
+    rf"\.worktrees/{_WORKTREE_SEGMENT}/{_WORKTREE_SEGMENT}"
+    r"|"
+    # Legacy janitor / .claude forms: [.claude/]worktrees/<slug>.
+    rf"(?:\.claude/)?worktrees/{_WORKTREE_SEGMENT}"
+    r")"
+)
 _CANONICAL_REMOTE_REF = "origin/master"
 _MAX_WORKTREES = 8
 _MAX_BLOCKS_PER_SESSION = 3
