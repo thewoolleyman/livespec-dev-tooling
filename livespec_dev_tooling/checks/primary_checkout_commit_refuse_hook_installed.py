@@ -8,8 +8,13 @@ and `livespec/SPECIFICATION/non-functional-requirements.md`
 primary checkout MUST install a `.git/hooks/pre-commit` AND a
 `.git/hooks/pre-push` hook whose body refuses to run when invoked
 at the primary checkout. The hook is a no-op at secondary
-worktrees (whose `git rev-parse --show-toplevel` returns the
-worktree's own path, not the primary's).
+worktrees: the current canonical body detects the primary
+STRUCTURALLY (refuse when `git rev-parse --git-dir` equals
+`git rev-parse --git-common-dir`; a worktree's git-dir differs), so
+it is armed on install with no `livespec.primaryPath` arming step to
+miss. The legacy body detected the primary by comparing
+`git rev-parse --show-toplevel` to `livespec.primaryPath`; both
+detection mechanisms are recognized during the fleet migration.
 
 The contract supersedes the v091-v094 `core.bare = true` mechanism
 (see `primary_checkout_bare_flag_set.py` in earlier releases). The
@@ -23,11 +28,14 @@ consumed (per the sibling spec's §"Shared check inventory"
 partition criterion — this check is layout-independent).
 
 Hook body recognition: the canonical body carries the stable marker
-comment string `# livespec commit-refuse hook` AND invokes
-`git rev-parse --show-toplevel` AND contains an `exit 1` branch.
-The check verifies the presence of all three substrings (tolerant
-fingerprint — survives portable-shell variations such as alternate
-quoting or whitespace).
+comment string `# livespec commit-refuse hook` AND an `exit 1`
+branch AND a primary-detection invocation that is EITHER
+`git rev-parse --git-common-dir` (the structural mechanism, current
+canonical body) OR `git rev-parse --show-toplevel` (the legacy
+mechanism). The check verifies the marker, the `exit 1` branch, and
+at least one of the two detection invocations (tolerant fingerprint
+— survives portable-shell variations such as alternate quoting or
+whitespace, and the migration between detection mechanisms).
 
 Exit codes:
 - `0` — pass. Both `.git/hooks/pre-commit` and `.git/hooks/pre-push`
@@ -87,11 +95,18 @@ _FAIL_EXIT = 4
 # the canonical body is recognized via a marker comment string.
 _CANONICAL_MARKER = "# livespec commit-refuse hook"
 
-# Additional canonical fingerprint substrings — the body MUST invoke
-# `git rev-parse --show-toplevel` AND contain an `exit 1` branch
-# (the refuse-at-primary path). The tolerant fingerprint survives
-# portable-shell variations.
+# Additional canonical fingerprint substrings — the body MUST contain
+# an `exit 1` branch (the refuse-at-primary path) AND a primary-detection
+# invocation, which is EITHER the structural `git rev-parse
+# --git-common-dir` mechanism (refuse when git-dir == git-common-dir;
+# armed on install, the current canonical body) OR the legacy
+# `git rev-parse --show-toplevel` mechanism (refuse when toplevel ==
+# livespec.primaryPath). Both are accepted during the fleet migration to
+# the structural body (a repo on the legacy body keeps passing this
+# shared check until it re-bootstraps to the structural one). The
+# tolerant substring fingerprint survives portable-shell variations.
 _CANONICAL_TOPLEVEL_INVOCATION = "git rev-parse --show-toplevel"
+_CANONICAL_STRUCTURAL_INVOCATION = "git rev-parse --git-common-dir"
 _CANONICAL_REFUSE_EXIT = "exit 1"
 
 _HOOK_NAMES: tuple[str, ...] = ("pre-commit", "pre-push")
@@ -205,12 +220,17 @@ def _hook_body_is_canonical(*, body: str) -> bool:
     Tolerant: substring presence (not exact equality) so portable-
     shell rewrites (alternate quoting, extra whitespace, additional
     diagnostic echoes) are accepted as long as the load-bearing
-    elements remain.
+    elements remain. The primary-detection element is satisfied by
+    EITHER the structural `git rev-parse --git-common-dir` mechanism
+    (the current canonical body) OR the legacy `git rev-parse
+    --show-toplevel` mechanism, so a repo still on the legacy body
+    passes this shared check until it re-bootstraps to the structural
+    one.
     """
     return (
         _CANONICAL_MARKER in body
-        and _CANONICAL_TOPLEVEL_INVOCATION in body
         and _CANONICAL_REFUSE_EXIT in body
+        and (_CANONICAL_STRUCTURAL_INVOCATION in body or _CANONICAL_TOPLEVEL_INVOCATION in body)
     )
 
 

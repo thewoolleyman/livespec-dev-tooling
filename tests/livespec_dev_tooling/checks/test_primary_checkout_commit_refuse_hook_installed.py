@@ -64,6 +64,26 @@ exit 0
 """
 
 
+# The current canonical body detects the primary STRUCTURALLY (refuse when
+# git-dir == git-common-dir) and reads the sandbox-exempt marker, with no
+# `git rev-parse --show-toplevel` and no `livespec.primaryPath` arming step.
+# The fingerprint must accept it via the `git rev-parse --git-common-dir`
+# detection invocation (alongside the legacy `--show-toplevel` body above).
+_STRUCTURAL_HOOK_BODY = """#!/bin/sh
+# livespec commit-refuse hook — structural refuse, armed on install.
+unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE GIT_PREFIX
+git_dir="$(git rev-parse --git-dir 2>/dev/null || true)"
+common_dir="$(git rev-parse --git-common-dir 2>/dev/null || true)"
+sandbox_exempt="$(git config --get livespec.sandboxExempt || true)"
+if [ -n "$git_dir" ] && [ "$git_dir" = "$common_dir" ] && [ "$sandbox_exempt" != "true" ]; then
+  echo "livespec: refusing commit/push at primary checkout; use a worktree" >&2
+  exit 1
+fi
+hook_name="$(basename "$0")"
+exec mise exec -- lefthook run --no-auto-install "$hook_name" "$@"
+"""
+
+
 def _scrubbed_env(*, path_override: str | None = None) -> dict[str, str]:
     """Return a copy of `os.environ` with GIT_* vars removed.
 
@@ -375,6 +395,38 @@ def test_passes_with_tolerant_body_variant(*, tmp_path: Path) -> None:
         repo_root=project_root,
         hook_name="pre-push",
         body=tolerant_body,
+        executable=True,
+    )
+
+    result = _run_check(cwd=project_root)
+    assert result.returncode == 0, (
+        f"expected exit 0; got {result.returncode}, "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_passes_with_structural_body_variant(*, tmp_path: Path) -> None:
+    """(j2) exit 0 when both hooks carry the structural (current canonical) body.
+
+    The structural body detects the primary via `git rev-parse
+    --git-common-dir` (refuse when git-dir == git-common-dir) and carries
+    NO `git rev-parse --show-toplevel`. The fingerprint accepts it via the
+    structural detection invocation, so a repo migrated to the structural
+    body passes this shared check.
+    """
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    _git_init(cwd=project_root)
+    _ = _install_hook(
+        repo_root=project_root,
+        hook_name="pre-commit",
+        body=_STRUCTURAL_HOOK_BODY,
+        executable=True,
+    )
+    _ = _install_hook(
+        repo_root=project_root,
+        hook_name="pre-push",
+        body=_STRUCTURAL_HOOK_BODY,
         executable=True,
     )
 
