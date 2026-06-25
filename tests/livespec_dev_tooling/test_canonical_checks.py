@@ -41,6 +41,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 __all__: list[str] = []
 
 
@@ -304,3 +306,56 @@ def test_canonical_checks_module_importable_without_running_main() -> None:
         module.canonical_check_slugs
     ), "canonical_check_slugs must be importable without invocation"
     assert callable(module.main), "main must be importable without invocation"
+
+
+def test_baseline_check_slugs_returns_the_seeded_slug() -> None:
+    """`baseline_check_slugs()` returns exactly the curated baseline profile.
+
+    Seeded with the one slug
+    `check-primary-checkout-commit-refuse-hook-installed`. Bound to the
+    exact tuple (not just membership) because the baseline profile is a
+    deliberately small curated registry whose contents are a product
+    decision, not a filesystem derivation.
+    """
+    module = _import_canonical_checks()
+
+    slugs = module.baseline_check_slugs()
+
+    assert slugs == (
+        "check-primary-checkout-commit-refuse-hook-installed",
+    ), f"baseline profile must be the seeded curated slug; got {slugs}"
+
+
+def test_baseline_check_slugs_are_sorted_and_subset_of_canonical() -> None:
+    """Every baseline slug is alphabetically sorted AND a real canonical check slug."""
+    module = _import_canonical_checks()
+
+    baseline = module.baseline_check_slugs()
+    canonical = module.canonical_check_slugs()
+
+    assert list(baseline) == sorted(baseline), f"baseline slugs must be sorted; got {baseline}"
+    for slug in baseline:
+        assert slug in canonical, f"baseline slug {slug} missing from canonical set"
+
+
+def test_validate_baseline_subset_passes_for_canonical_subset() -> None:
+    """`_validate_baseline_subset` is a no-op when every baseline slug is canonical."""
+    module = _import_canonical_checks()
+
+    result = module._validate_baseline_subset(  # noqa: SLF001  — internal invariant guard under test
+        baseline=("check-foo", "check-bar"),
+        canonical=("check-foo", "check-bar", "check-baz"),
+    )
+
+    assert result is None
+
+
+def test_validate_baseline_subset_raises_for_non_canonical_slug() -> None:
+    """`_validate_baseline_subset` raises AssertionError on a non-canonical baseline slug."""
+    module = _import_canonical_checks()
+
+    with pytest.raises(AssertionError):
+        module._validate_baseline_subset(  # noqa: SLF001  — internal invariant guard under test
+            baseline=("check-not-a-real-check",),
+            canonical=("check-foo",),
+        )

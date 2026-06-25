@@ -55,24 +55,24 @@ default:
 bootstrap:
     uv sync --all-groups
     uv run lefthook install
-    # Idempotent install of the canonical livespec commit-refuse hook
-    # at the primary checkout's `.git/hooks/pre-commit` AND
-    # `.git/hooks/pre-push`. Per livespec/SPECIFICATION/
+    # Idempotent install of the canonical livespec commit-refuse hook at
+    # the primary checkout's shared `.git/hooks/{pre-commit,pre-push,
+    # commit-msg}`, delegated to the `install-commit-refuse-hooks` recipe
+    # (the installer module `livespec_dev_tooling.install_commit_refuse_hooks`
+    # is the single canonical-body carrier). Per livespec/SPECIFICATION/
     # non-functional-requirements.md §"Commit-refuse hook bootstrap
     # procedure"; self-hosts the `check-primary-checkout-commit-refuse-
-    # hook-installed` shared check. Targets `git rev-parse
-    # --git-common-dir` so the install lands in the primary's shared
-    # hooks directory regardless of whether bootstrap is invoked from
-    # the primary or a secondary worktree. Runs AFTER `lefthook install`
-    # because the canonical hook DELEGATES to `lefthook run <hook-name>`
-    # after the refuse-at-primary check — overwriting the lefthook stubs
-    # is intentional, the canonical hook subsumes them. NO
-    # `livespec.primaryPath` write: the structural body detects the
-    # primary as `git-dir == git-common-dir`, so it is ARMED ON INSTALL
-    # with no config arming step to set (and so no fail-open window).
-    cp dev-tooling/livespec-commit-refuse-hook.sh "$(git rev-parse --git-common-dir)/hooks/pre-commit"
-    cp dev-tooling/livespec-commit-refuse-hook.sh "$(git rev-parse --git-common-dir)/hooks/pre-push"
-    chmod +x "$(git rev-parse --git-common-dir)/hooks/pre-commit" "$(git rev-parse --git-common-dir)/hooks/pre-push"
+    # hook-installed` shared check. Runs AFTER `lefthook install` because
+    # the canonical hook DELEGATES to `lefthook run <hook-name>` after the
+    # refuse-at-primary check — overwriting the lefthook stubs is
+    # intentional, the canonical hook subsumes them. The installer targets
+    # `git rev-parse --git-common-dir` so the install lands in the
+    # primary's shared hooks directory regardless of whether bootstrap is
+    # invoked from the primary or a secondary worktree. NO
+    # `livespec.primaryPath` write: the structural body detects the primary
+    # as `git-dir == git-common-dir`, so it is ARMED ON INSTALL with no
+    # config arming step to set (and so no fail-open window).
+    just install-commit-refuse-hooks
     # Harden the beads tenant-pointer dir to owner-only on first-touch (bd
     # recommends 0700; only the owning user's bd reads it — the Dolt server
     # connects over TCP and never reads this dir). Guarded: repos with no beads
@@ -92,6 +92,18 @@ bootstrap:
     if ! mise settings get trusted_config_paths 2>/dev/null | grep -qF "${HOME}/.worktrees"; then mise settings add trusted_config_paths "${HOME}/.worktrees"; fi
     just ensure-plugins
     just ensure-codex-plugins
+
+# Install (or idempotently re-install) the canonical livespec commit-refuse
+# hook at the primary checkout's shared `.git/hooks/{pre-commit,pre-push,
+# commit-msg}`. The installer module is the single canonical-body carrier; it
+# resolves the target via `git rev-parse --git-common-dir` so the hooks land in
+# the primary's shared hooks directory even when invoked from a secondary
+# worktree. Armed on install (structural primary detection, no
+# `livespec.primaryPath`); the lone opt-out is `git config
+# livespec.sandboxExempt true`. Invoked by `bootstrap` and re-runnable
+# standalone to repair a fresh clone's hooks.
+install-commit-refuse-hooks:
+    uv run python -m livespec_dev_tooling.install_commit_refuse_hooks
 
 # Idempotent: `claude plugin marketplace add` / `install` / `update` all exit 0
 # when the target is already present / already at latest. The `update` calls
