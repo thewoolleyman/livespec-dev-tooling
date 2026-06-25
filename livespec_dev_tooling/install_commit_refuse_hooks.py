@@ -24,9 +24,15 @@ The canonical body ships as the module-level `CANONICAL_HOOK_BODY`
 string constant in THIS module so it travels in the wheel: only the
 `livespec_dev_tooling/` package is packaged, with no `data/` resource
 directory, so embedding the body as a Python string is the wheel-safe
-carrier (no package-data config, no data-file resource). The string is
-byte-identical to the repo-tracked `dev-tooling/livespec-commit-refuse-hook.sh`
-fixture used by `just bootstrap` / CI during the migration.
+carrier (no package-data config, no data-file resource). This module is
+the SINGLE source of truth for the canonical body: `just bootstrap`, the
+`just install-commit-refuse-hooks` recipe, and CI all install it by
+invoking this installer, so there is no second copy to drift. The
+structural body it ships differs from the retired
+`git rev-parse --show-toplevel` / `livespec.primaryPath` legacy body
+(no longer carried in the repo); the verifier still ACCEPTS that legacy
+body so a repo that has not re-bootstrapped stays green during the fleet
+migration.
 
 CLI:
     python -m livespec_dev_tooling.install_commit_refuse_hooks
