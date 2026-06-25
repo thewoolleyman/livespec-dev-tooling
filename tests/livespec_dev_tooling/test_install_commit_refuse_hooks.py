@@ -282,3 +282,24 @@ def test_installed_commit_msg_hook_forwards_message_file_arg(
     captured = capture.read_text(encoding="utf-8")
     assert "commit-msg" in captured, captured
     assert str(msg_file) in captured, captured
+
+
+def test_canonical_body_is_structural() -> None:
+    """The canonical body carries the structural fingerprint + exemption marker.
+
+    Locks the shape the verifier
+    (`primary_checkout_commit_refuse_hook_installed`) fingerprints: the
+    marker comment, the structural `git rev-parse --git-common-dir`
+    detection, the `exit 1` refuse branch, and the
+    `livespec.sandboxExempt` exemption marker MUST all be present — so a
+    future edit cannot silently break verifier recognition or drop the
+    declared sandbox exemption. The retired primaryPath arming step's
+    executable read (`git config --get livespec.primaryPath`) is gone
+    (its name survives only in the explanatory comment describing what
+    the structural body supersedes).
+    """
+    assert "# livespec commit-refuse hook" in CANONICAL_HOOK_BODY
+    assert "git rev-parse --git-common-dir" in CANONICAL_HOOK_BODY
+    assert "exit 1" in CANONICAL_HOOK_BODY
+    assert "livespec.sandboxExempt" in CANONICAL_HOOK_BODY
+    assert "git config --get livespec.primaryPath" not in CANONICAL_HOOK_BODY

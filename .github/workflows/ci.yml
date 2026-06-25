@@ -229,19 +229,17 @@ jobs:
       # per livespec/SPECIFICATION/non-functional-requirements.md
       # §"Primary-checkout commit-refuse hook" and §"Commit-refuse
       # hook bootstrap procedure". `actions/checkout` clones a fresh
-      # working tree with no bootstrap step run; installing the
-      # canonical hook from the repo-tracked
-      # `dev-tooling/livespec-commit-refuse-hook.sh` here satisfies
-      # the invariant. Only the check-primary-checkout-commit-refuse-
-      # hook-installed matrix entry needs this — other check-metadata
-      # entries are unaffected by hook installation.
+      # working tree with no bootstrap step run; invoking the canonical
+      # installer module here satisfies the invariant — the installer is
+      # the single source of truth for the structural body (it needs only
+      # the stdlib + the in-package vendored structlog, so it runs on the
+      # runner's system python3 before the mise/uv setup steps below).
+      # Only the check-primary-checkout-commit-refuse-hook-installed
+      # matrix entry needs this — other check-metadata entries are
+      # unaffected by hook installation.
       - name: Install canonical commit-refuse hook (satisfy invariant)
         if: matrix.target == 'check-primary-checkout-commit-refuse-hook-installed'
-        run: |
-          cp dev-tooling/livespec-commit-refuse-hook.sh .git/hooks/pre-commit
-          cp dev-tooling/livespec-commit-refuse-hook.sh .git/hooks/pre-push
-          chmod +x .git/hooks/pre-commit .git/hooks/pre-push
-          git config livespec.primaryPath "$(pwd)"
+        run: python3 -m livespec_dev_tooling.install_commit_refuse_hooks
 
       - name: Install pinned binaries via mise
         uses: jdx/mise-action@v2
