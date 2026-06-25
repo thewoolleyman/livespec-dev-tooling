@@ -57,22 +57,22 @@ bootstrap:
     uv run lefthook install
     # Idempotent install of the canonical livespec commit-refuse hook
     # at the primary checkout's `.git/hooks/pre-commit` AND
-    # `.git/hooks/pre-push`, plus the `livespec.primaryPath` config
-    # entry the hook body reads. Per livespec/SPECIFICATION/
+    # `.git/hooks/pre-push`. Per livespec/SPECIFICATION/
     # non-functional-requirements.md §"Commit-refuse hook bootstrap
     # procedure"; self-hosts the `check-primary-checkout-commit-refuse-
-    # hook-installed` shared check shipped at v0.5.0. Targets
-    # `git rev-parse --git-common-dir` so the install lands in the
-    # primary's shared hooks directory regardless of whether bootstrap
-    # is invoked from the primary or a secondary worktree. Runs AFTER
-    # `lefthook install` because the canonical hook DELEGATES to
-    # `lefthook run <hook-name>` after the refuse-at-primary check —
-    # overwriting the lefthook stubs is intentional, the canonical
-    # hook subsumes them.
+    # hook-installed` shared check. Targets `git rev-parse
+    # --git-common-dir` so the install lands in the primary's shared
+    # hooks directory regardless of whether bootstrap is invoked from
+    # the primary or a secondary worktree. Runs AFTER `lefthook install`
+    # because the canonical hook DELEGATES to `lefthook run <hook-name>`
+    # after the refuse-at-primary check — overwriting the lefthook stubs
+    # is intentional, the canonical hook subsumes them. NO
+    # `livespec.primaryPath` write: the structural body detects the
+    # primary as `git-dir == git-common-dir`, so it is ARMED ON INSTALL
+    # with no config arming step to set (and so no fail-open window).
     cp dev-tooling/livespec-commit-refuse-hook.sh "$(git rev-parse --git-common-dir)/hooks/pre-commit"
     cp dev-tooling/livespec-commit-refuse-hook.sh "$(git rev-parse --git-common-dir)/hooks/pre-push"
     chmod +x "$(git rev-parse --git-common-dir)/hooks/pre-commit" "$(git rev-parse --git-common-dir)/hooks/pre-push"
-    git config --file "$(git rev-parse --git-common-dir)/config" livespec.primaryPath "$(git rev-parse --git-common-dir | xargs dirname | xargs realpath)"
     # Harden the beads tenant-pointer dir to owner-only on first-touch (bd
     # recommends 0700; only the owning user's bd reads it — the Dolt server
     # connects over TCP and never reads this dir). Guarded: repos with no beads
