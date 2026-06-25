@@ -58,6 +58,18 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.19.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.18.0...v0.19.0) (2026-06-25)
+
+
+### Features
+
+* add baseline check profile and structural commit-refuse hook installer ([1018fdf](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1018fdf0c21504043968659aea9b2705c9a8fd7e))
+
+
+### Refactoring
+
+* make the commit-refuse installer the sole canonical-body source (M2-1) ([8dac46b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8dac46b01a35a97af4b966704250921b1f6f67f1))
+
 ## [0.18.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.17.0...v0.18.0) (2026-06-25)
 
 
