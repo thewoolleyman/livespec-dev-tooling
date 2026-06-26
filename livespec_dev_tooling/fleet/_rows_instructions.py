@@ -16,6 +16,13 @@ when absent, the unregistered beads-access guard hook.
 
 from __future__ import annotations
 
+import posixpath
+
+from livespec_dev_tooling.checks._ai_references import (
+    AGENTS_FILENAME,
+    is_excluded_agents_path,
+    iter_ai_references,
+)
 from livespec_dev_tooling.fleet._context import (
     FleetContext,
     FleetMember,
@@ -29,6 +36,7 @@ __all__: list[str] = [
     "AGENTS_PATH",
     "REQUIRED_AGENTS_HEADINGS",
     "SETTINGS_PATH",
+    "assert_agent_ai_references_resolve",
     "assert_agent_instruction_surface",
 ]
 
@@ -72,4 +80,49 @@ def assert_agent_instruction_surface(*, ctx: FleetContext, member: FleetMember) 
                 f"{', '.join(missing)}"
             )
         )
+    return RowPass()
+
+
+def assert_agent_ai_references_resolve(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:
+    """Every `.ai/<topic>.md` an `AGENTS.md` references resolves to a tree file.
+
+    Reads the member's recursive master tree, enumerates every
+    `AGENTS.md` at any directory level (excluding vendored/generated/
+    archival trees via `is_excluded_agents_path`), and resolves each
+    concrete `.ai/<topic>.md` reference relative to that file's own
+    directory against the tree's path set. A reference that resolves to
+    no tree path is a finding (instruction-surface drift is un-mergeable).
+
+    Per the fleet's can't-read-is-not-absent discipline: an unreadable
+    or truncated tree skips (a truncated tree cannot prove a `.ai/`
+    target absent), and an `AGENTS.md` whose content is unreadable is
+    itself skipped — never a false finding.
+    """
+    tree = ctx.tree(repo=member.repo)
+    if not tree.readable:
+        return RowSkip(reason=f"{member.repo}: master tree unreadable")
+    if tree.truncated:
+        return RowSkip(
+            reason=f"{member.repo}: tree truncated; .ai/ reference absence not definitive"
+        )
+    agents_paths = sorted(
+        p
+        for p in tree.paths
+        if p.rsplit("/", 1)[-1] == AGENTS_FILENAME
+        and not is_excluded_agents_path(segments=tuple(p.split("/")))
+    )
+    for ap in agents_paths:
+        text = ctx.file_text(repo=member.repo, path=ap)
+        if text is None:
+            continue
+        dir_prefix = ap.rsplit("/", 1)[0] if "/" in ap else ""
+        for line, ref in iter_ai_references(text=text):
+            resolved = posixpath.normpath(posixpath.join(dir_prefix, ref))
+            if resolved not in tree.paths:
+                return RowFinding(
+                    message=(
+                        f"{member.repo}: {ap}:{line} references {ref} which does not "
+                        f"resolve to an existing file (expected {resolved})"
+                    )
+                )
     return RowPass()

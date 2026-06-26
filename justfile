@@ -188,6 +188,7 @@ check:
     fi
     export UV_NO_SYNC=1
     targets=(
+        check-agents-ai-references-resolve
         check-aggregate-completeness
         check-all-declared
         check-assert-never-exhaustiveness
@@ -455,6 +456,9 @@ check-coverage:
 # resolves to `uv run python -m livespec_dev_tooling.checks.<slug>`
 # with the snake_case slug.
 # ---------------------------------------------------------------
+
+check-agents-ai-references-resolve:
+    uv run python -m livespec_dev_tooling.checks.agents_ai_references_resolve
 
 # Wiring-completeness gate — verifies the targets=(...) array in this
 # very justfile carries every canonical slug in alphabetical order
