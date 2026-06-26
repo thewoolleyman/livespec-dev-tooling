@@ -43,7 +43,7 @@ The partition MUST be re-evaluated whenever a new check is authored: if the chec
 
 - **Configurability is the partition criterion.** A check is shared if and only if its layout-dependent inputs are configurable via the §"Consumer configuration schema" role keys (such that the check runs unmodified against any consumer's declared layout). A check that asserts a property of a single consumer's layout — properties that cannot be expressed as role keys — stays consumer-private. Two of the original v0.1.0 carve-outs (`schema_dataclass_pairing`, `copier_template_smoke`) qualify under this criterion: the former asserts livespec-core's specific dataclass-naming convention, the latter asserts livespec-core's copier template structure. The partition itself MUST be re-evaluated whenever a new check is authored OR a role key is added to the schema (the addition MAY make a previously-private check shareable).
 
-**The `baseline` profile.** `canonical_checks.baseline_check_slugs()` returns the `baseline` profile — a deliberately static, curated SUBSET of the canonical check set naming the checks a governed repo wires to claim the universal worktree-discipline conformance floor (the `baseline` profile of `livespec/SPECIFICATION/non-functional-requirements.md` §"Conformance Pattern"). Unlike the canonical set (filesystem-derived from `checks/<slug>.py`), the baseline profile is a hand-maintained registry — a curated product decision NOT mechanically derivable from the checks directory, per the project convention "static enumeration only for typed dispatch". Every entry MUST also be a real canonical check slug (the accessor asserts this). `check-primary-checkout-commit-refuse-hook-installed` is currently the sole member.
+**The `baseline` profile.** `canonical_checks.baseline_check_slugs()` returns the `baseline` profile — a deliberately static, curated SUBSET of the canonical check set naming the checks a governed repo wires to claim the universal worktree-discipline conformance floor (the `baseline` profile of `livespec/SPECIFICATION/non-functional-requirements.md` §"Conformance Pattern"). Unlike the canonical set (filesystem-derived from `checks/<slug>.py`), the baseline profile is a hand-maintained registry — a curated product decision NOT mechanically derivable from the checks directory, per the project convention "static enumeration only for typed dispatch". Every entry MUST also be a real canonical check slug (the accessor asserts this). The profile carries one Verifier per Conformance-Pattern concern with a shared baseline check: `check-plugin-resolution` (Cross-harness plugin-resolution, concern #2) and `check-primary-checkout-commit-refuse-hook-installed` (Worktree-discipline, concern #1).
 
 ### `branch_protection_alignment` check
 
@@ -139,6 +139,39 @@ Each `fail` finding carries:
 (The `skipped` paths at steps 1, 2, and 4 emit a `warning`/`info` log carrying `check_id` plus a `hint`/`cwd` field respectively; only the `fail` paths carry the `status` field.)
 
 Consumers MAY wire the check into `just check` aggregates and/or CI matrices. Per the migration phase, each sibling's wiring is its own follow-up and MAY be staged so the wiring lands after that sibling's primary has had the bootstrap step run.
+
+### `plugin_resolution` check
+
+Invocation: `python -m livespec_dev_tooling.checks.plugin_resolution`. Exit `0` on pass OR skipped, exit `4` with structured stderr findings on fail.
+
+This is the **Verifier** slot of the Conformance Pattern's **Cross-harness plugin-resolution** concern (concern #2), per `livespec/SPECIFICATION/non-functional-requirements.md` §"Conformance Pattern". Per §"Sibling spec ownership" the specific Verifier inventory lives here, in dev-tooling's own spec; the Pattern's five-slot anatomy is owned by core. The five slots for concern #2: **Contract** — a governed repo's documented command/skill surface MUST resolve *and run* from a fresh session of each *declared* harness; **Mechanism** — real per-harness install records plus marketplace registration; **Installer** — the documented per-harness install procedure; **Verifier** — this check; **Exemption** — an unsupported harness declared explicitly. It catches the ob-4ts breakage class: a plugin adoption that shipped "done" while the `/livespec:*` slash commands did not resolve, because the acceptance tolerated a raw `bd` fallback. A fail-closed Verifier makes that un-shippable.
+
+The check reads the optional `harnesses` declaration from the repo's local `.livespec.jsonc` — a project-config concern (sibling to `template` / `spec_root` / `implementation`), NOT the source-tree-layout schema of `pyproject.toml` `[tool.livespec_dev_tooling]` (§"Schema location" confines that schema to layout role keys). The declaration is an object keyed by harness name; each entry has a `status` of `supported` (with a `canonical_command`) or `exempt` (with a `reason`):
+
+```jsonc
+"harnesses": {
+  "codex":  { "status": "supported", "canonical_command": "livespec:next" },
+  "claude": { "status": "exempt", "reason": "<why this harness is unsupported here>" }
+}
+```
+
+The check has two layers.
+
+**Always-on declaration-integrity gate** (runs in every `just check`, deterministic, no subprocess). Parse `harnesses`:
+
+- Absent `.livespec.jsonc`, unreadable `.livespec.jsonc` (deferred to the dedicated config-integrity tooling), a non-object top-level document, or no `harnesses` key → exit `0` (skipped; an info log). The `harnesses` declaration is OPTIONAL here; a future fleet-wide migration MAY make it required.
+- Present `harnesses` → validate fail-closed: each key MUST be a known harness (`claude`/`codex`); each entry MUST be an object with `status` ∈ {`supported`, `exempt`}; a `supported` entry MUST carry a non-empty `canonical_command`; an `exempt` entry MUST carry a non-empty `reason`. A malformed/unknown/garbled declaration → exit `4` (`failure_mode` `malformed_declaration`). This declaration-integrity gate is what makes the check meaningfully always-invoked per the "carve-outs are a severity lever; always wired + always invoked" discipline.
+
+**Live resolution smoke** (opt-in, env-gated by the SAME `LIVESPEC_E2E_HARNESS` dialect the cli_e2e harness uses — NOT a new env var). In `mock` (the default `just check` value) the live layer does NOT run, so the aggregate stays deterministic and subprocess-free; in `real` it runs the per-harness smoke, reusing the cli_e2e `CliRunner` seam (`RealCliRunner` shells out to the real harness binary). For each declared harness the decision logic — which folds in work-item livespec-mjnv's skip-vs-fail distinction — is:
+
+- `status: exempt` → PASS (the declared Exemption slot; no smoke run).
+- `supported` + the harness binary unavailable in this environment → **SKIP**, NOT fail (mjnv: "can't run here" ≠ "command failed"; the smoke runs where the binary is present, e.g. CI).
+- `supported` + available + the canonical command resolves and returns (exit `0` through the command surface) → PASS.
+- `supported` + available + the canonical command does NOT resolve, OR only a raw-CLI fallback would succeed → **FAIL** (the ob-4ts class). The Verifier ONLY ever invokes the slash-/name-selected command surface (`/livespec:next` on claude; the name-selected `livespec:next` on codex); it NEVER substitutes a raw-CLI (`bd`) success for a command-surface success. The per-harness smoke is pluggable behind an injectable seam (`ResolutionRunner`), so adding a harness is fill-in-the-blank.
+
+Exit `4` if any `supported`+available harness fails to resolve; otherwise exit `0`.
+
+Inputs are project-agnostic — no `[tool.livespec_dev_tooling]` role keys are consumed. The check qualifies under §"Configurability is the partition criterion" without any role-key wiring; its sole input is the local `.livespec.jsonc` `harnesses` declaration.
 
 ## Consumer configuration schema
 

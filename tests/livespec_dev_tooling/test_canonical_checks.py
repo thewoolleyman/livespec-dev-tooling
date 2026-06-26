@@ -311,19 +311,22 @@ def test_canonical_checks_module_importable_without_running_main() -> None:
 def test_baseline_check_slugs_returns_the_seeded_slug() -> None:
     """`baseline_check_slugs()` returns exactly the curated baseline profile.
 
-    Seeded with the one slug
-    `check-primary-checkout-commit-refuse-hook-installed`. Bound to the
-    exact tuple (not just membership) because the baseline profile is a
-    deliberately small curated registry whose contents are a product
-    decision, not a filesystem derivation.
+    Seeded with one Verifier per Conformance-Pattern concern that carries a
+    shared baseline check: Cross-harness plugin-resolution (concern #2,
+    `check-plugin-resolution`) and Worktree-discipline (concern #1,
+    `check-primary-checkout-commit-refuse-hook-installed`). Bound to the exact
+    (alphabetically-sorted) tuple — not just membership — because the baseline
+    profile is a deliberately small curated registry whose contents are a
+    product decision, not a filesystem derivation.
     """
     module = _import_canonical_checks()
 
     slugs = module.baseline_check_slugs()
 
     assert slugs == (
+        "check-plugin-resolution",
         "check-primary-checkout-commit-refuse-hook-installed",
-    ), f"baseline profile must be the seeded curated slug; got {slugs}"
+    ), f"baseline profile must be the curated two-slug set; got {slugs}"
 
 
 def test_baseline_check_slugs_are_sorted_and_subset_of_canonical() -> None:
