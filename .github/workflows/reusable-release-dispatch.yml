@@ -117,9 +117,11 @@ jobs:
             -H "Accept: application/vnd.github.raw" | grep -v '^[[:space:]]*//')
           # Exclude the publishing repo from the dispatch fan-out so the
           # release does not echo back to itself. Keep the {name: ...}
-          # element shape the dispatch matrix consumes.
+          # element shape the dispatch matrix consumes. Read the fleet
+          # array from the `fleet` key, falling back to the legacy
+          # `members` key (the required-key rename migration seam).
           siblings=$(echo "$manifest" | jq -c \
-            "[.members[].repo | select(. != \"$SOURCE_REPO\") | {name: .}]")
+            "[(.fleet // .members)[].repo | select(. != \"$SOURCE_REPO\") | {name: .}]")
           echo "siblings=$siblings" >> "$GITHUB_OUTPUT"
           echo "::notice::manifest lists $(echo "$siblings" | jq 'length') member(s) (excluding $SOURCE_REPO)"
 
