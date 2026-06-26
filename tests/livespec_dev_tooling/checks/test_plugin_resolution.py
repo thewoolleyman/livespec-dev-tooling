@@ -306,15 +306,40 @@ def test_main_passes_declaration_gate_in_mock_mode(
 def test_main_real_mode_skips_unavailable_binary(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`real` mode + unavailable binary → SKIP, exit 0 (mjnv; via the real RealCliRunner wiring)."""
+    """`real` mode + unavailable claude binary → SKIP, exit 0 (mjnv; via the real RealCliRunner wiring)."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("LIVESPEC_E2E_HARNESS", "real")
     monkeypatch.setattr(shutil, "which", _which_none)
     _write_livespec_jsonc(
         root=tmp_path,
+        body='{ "harnesses": { "claude": { "status": "supported", "canonical_command": "livespec:next" } } }',
+    )
+    assert plugin_resolution.main() == 0
+
+
+def test_main_real_mode_codex_delegated_to_repo_local_smoke(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`real` mode + a `supported` codex harness whose binary IS available → SKIP (delegated), exit 0.
+
+    codex's genuine live resolution smoke is the repo-local `check-codex-skill-picker`,
+    NOT this dev-tooling cross-harness live layer (whose `CliResolutionRunner` shells the
+    `claude` binary). So a `supported` codex harness must be routed to a delegated runner
+    and SKIP — the claude-backed runner must NEVER be invoked for codex (which would
+    mis-route `livespec:next` through `claude -p`). The empty `fake.recorded` is the
+    anti-mis-route assertion.
+    """
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("LIVESPEC_E2E_HARNESS", "real")
+    monkeypatch.setattr(shutil, "which", _which_path)
+    fake = _ResolvingCliRunner()
+    monkeypatch.setattr(plugin_resolution, "select_runner", _runner_factory(fake))
+    _write_livespec_jsonc(
+        root=tmp_path,
         body='{ "harnesses": { "codex": { "status": "supported", "canonical_command": "livespec:next" } } }',
     )
     assert plugin_resolution.main() == 0
+    assert fake.recorded == []
 
 
 def test_main_real_mode_passes_when_command_resolves(
