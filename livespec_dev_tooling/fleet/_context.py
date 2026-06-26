@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Protocol, cast
 
 __all__: list[str] = [
+    "Adopter",
     "FleetContext",
     "FleetMember",
     "GhResult",
@@ -56,6 +57,15 @@ class FleetMember:
 
     repo: str
     repo_class: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class Adopter:
+    """One manifest adopter entry: a repo, its profile layers, and its posture."""
+
+    repo: str
+    profile: tuple[str, ...]
+    posture: str
 
 
 @dataclass(frozen=True, kw_only=True)
