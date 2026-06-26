@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.21.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.21.0...v0.21.1) (2026-06-26)
+
+
+### Bug Fixes
+
+* **ci:** fan-out reads fleet manifest via raw.githubusercontent.com (livespec-2rab) ([19e1603](https://github.com/thewoolleyman/livespec-dev-tooling/commit/19e16030f6b96440d731b4e25872eb5258188f19))
+
 ## [0.21.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.20.0...v0.21.0) (2026-06-26)
 
 
