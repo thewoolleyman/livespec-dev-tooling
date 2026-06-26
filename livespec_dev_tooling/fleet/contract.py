@@ -45,7 +45,10 @@ from livespec_dev_tooling.fleet._rows_github import (
     assert_secret_names,
     assert_topic,
 )
-from livespec_dev_tooling.fleet._rows_instructions import assert_agent_instruction_surface
+from livespec_dev_tooling.fleet._rows_instructions import (
+    assert_agent_ai_references_resolve,
+    assert_agent_instruction_surface,
+)
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -215,6 +218,16 @@ OBLIGATION_ROWS: tuple[ObligationRow, ...] = (
             "bring AGENTS.md up to the fleet-universal agent-instruction core and register the "
             "beads-access guard hook (.claude/hooks/beads-access-guard.sh) in "
             ".claude/settings.json, in a repo-local commit"
+        ),
+    ),
+    ObligationRow(
+        row_id="agent-ai-references-resolve",
+        obligation_type="committed-file",
+        applies_to=_ALL_CLASSES,
+        assert_member=assert_agent_ai_references_resolve,
+        manual_hint=(
+            "add the missing .ai/<topic>.md file(s) an AGENTS.md references, or remove the "
+            "dangling reference, in a repo-local commit"
         ),
     ),
 )

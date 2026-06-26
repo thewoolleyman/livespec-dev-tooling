@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from livespec_dev_tooling.fleet._reconcile import reconcile_merge_settings
 from livespec_dev_tooling.fleet._rows_github import assert_merge_settings
+from livespec_dev_tooling.fleet._rows_instructions import assert_agent_ai_references_resolve
 from livespec_dev_tooling.fleet.contract import (
     OBLIGATION_ROWS,
     REPO_CLASSES,
@@ -208,3 +209,17 @@ def test_merge_settings_row_is_wired_with_assert_and_reconcile() -> None:
     assert row.applies_to == frozenset(REPO_CLASSES)
     assert row.assert_member is assert_merge_settings
     assert row.reconcile is reconcile_merge_settings
+
+
+def test_agent_ai_references_resolve_row_is_wired_for_every_class() -> None:
+    # The .ai/-reference resolvability obligation applies to EVERY member
+    # (livespec core itself carries a concrete .ai/ reference), is a
+    # committed-file fact, and is not machine-reconcilable from the central
+    # vantage point — so it carries a manual hint instead of a reconcile.
+    row = next((r for r in OBLIGATION_ROWS if r.row_id == "agent-ai-references-resolve"), None)
+    assert row is not None
+    assert row.obligation_type == "committed-file"
+    assert row.applies_to == frozenset(REPO_CLASSES)
+    assert row.assert_member is assert_agent_ai_references_resolve
+    assert row.reconcile is None
+    assert row.manual_hint
