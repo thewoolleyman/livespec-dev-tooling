@@ -8,6 +8,7 @@ two consuming engines rely on.
 from __future__ import annotations
 
 from livespec_dev_tooling.fleet._reconcile import reconcile_merge_settings
+from livespec_dev_tooling.fleet._rows_baseline import assert_baseline_harnesses
 from livespec_dev_tooling.fleet._rows_github import assert_merge_settings
 from livespec_dev_tooling.fleet._rows_instructions import assert_agent_ai_references_resolve
 from livespec_dev_tooling.fleet.contract import (
@@ -221,5 +222,20 @@ def test_agent_ai_references_resolve_row_is_wired_for_every_class() -> None:
     assert row.obligation_type == "committed-file"
     assert row.applies_to == frozenset(REPO_CLASSES)
     assert row.assert_member is assert_agent_ai_references_resolve
+    assert row.reconcile is None
+    assert row.manual_hint
+
+
+def test_baseline_harnesses_row_is_wired_for_every_class() -> None:
+    # The baseline-harnesses obligation (Conformance Pattern concern #2,
+    # cross-harness plugin-resolution) applies to EVERY governed member, is
+    # a committed-file fact (the .livespec.jsonc `harnesses` declaration),
+    # and is not machine-reconcilable from the central vantage point — so it
+    # carries a manual hint instead of a reconcile.
+    row = next((r for r in OBLIGATION_ROWS if r.row_id == "baseline-harnesses"), None)
+    assert row is not None
+    assert row.obligation_type == "committed-file"
+    assert row.applies_to == frozenset(REPO_CLASSES)
+    assert row.assert_member is assert_baseline_harnesses
     assert row.reconcile is None
     assert row.manual_hint

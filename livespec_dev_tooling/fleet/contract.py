@@ -28,6 +28,7 @@ from livespec_dev_tooling.fleet._reconcile import (
     reconcile_shim_workflows,
     reconcile_topic,
 )
+from livespec_dev_tooling.fleet._rows_baseline import assert_baseline_harnesses
 from livespec_dev_tooling.fleet._rows_beads import assert_tenant_connection_consistency
 from livespec_dev_tooling.fleet._rows_files import (
     assert_bump_pin_workflow,
@@ -228,6 +229,16 @@ OBLIGATION_ROWS: tuple[ObligationRow, ...] = (
         manual_hint=(
             "add the missing .ai/<topic>.md file(s) an AGENTS.md references, or remove the "
             "dangling reference, in a repo-local commit"
+        ),
+    ),
+    ObligationRow(
+        row_id="baseline-harnesses",
+        obligation_type="committed-file",
+        applies_to=_ALL_CLASSES,
+        assert_member=assert_baseline_harnesses,
+        manual_hint=(
+            "declare a non-empty `harnesses` object in .livespec.jsonc (Conformance "
+            "Pattern concern #2 cross-harness plugin-resolution; zs22.7.7 M6)"
         ),
     ),
 )
