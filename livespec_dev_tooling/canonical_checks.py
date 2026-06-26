@@ -81,7 +81,15 @@ _SLUG_PREFIX = "check-"
 # real canonical check slug; `baseline_check_slugs()` asserts this
 # (an invariant — a baseline slug with no backing check module is a
 # registry bug, not an expected runtime condition).
-_BASELINE_CHECK_SLUGS: tuple[str, ...] = ("check-primary-checkout-commit-refuse-hook-installed",)
+#
+# Two baseline concerns, one Verifier each, both shared from this library:
+# Worktree-discipline (Conformance-Pattern concern #1,
+# `check-primary-checkout-commit-refuse-hook-installed`) and Cross-harness
+# plugin-resolution (concern #2, `check-plugin-resolution`).
+_BASELINE_CHECK_SLUGS: tuple[str, ...] = (
+    "check-plugin-resolution",
+    "check-primary-checkout-commit-refuse-hook-installed",
+)
 
 
 def _discover_slugs(*, package_path: Path) -> tuple[str, ...]:

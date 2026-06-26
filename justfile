@@ -217,6 +217,7 @@ check:
         check-no-write-direct
         check-pbt-coverage-pure-modules
         check-per-file-coverage
+        check-plugin-resolution
         check-primary-checkout-commit-refuse-hook-installed
         check-private-calls
         check-public-api-result-typed
@@ -606,6 +607,20 @@ check-per-file-coverage:
     set -uo pipefail
     uv run pytest -n auto --cov --cov-branch --cov-config=pyproject.toml --cov-report=term-missing
     uv run python -m livespec_dev_tooling.checks.per_file_coverage
+
+# Cross-harness plugin-resolution Verifier (Conformance-Pattern concern
+# #2, per livespec/SPECIFICATION/non-functional-requirements.md
+# §"Conformance Pattern"). Always-on layer: validate the repo's local
+# `.livespec.jsonc` `harnesses` declaration (absent → skip; garbled →
+# fail). Live layer (opt-in, env-gated by the same LIVESPEC_E2E_HARNESS
+# dialect cli_e2e uses — `real` runs it, default `mock` does not): a
+# fresh-session resolution smoke that invokes each supported harness's
+# canonical command through the command surface and asserts it resolves
+# and returns, rejecting a raw-CLI fallback as proof (the ob-4ts class);
+# an unavailable binary SKIPs (work-item livespec-mjnv), an exempt harness
+# PASSes by declaration.
+check-plugin-resolution:
+    uv run python -m livespec_dev_tooling.checks.plugin_resolution
 
 # Universal cross-boundary invariant: every livespec-governed primary
 # checkout MUST install `.git/hooks/pre-commit` AND `.git/hooks/pre-push`
