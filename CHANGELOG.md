@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.22.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.21.2...v0.22.0) (2026-06-26)
+
+
+### Features
+
+* **checks:** require harnesses declaration fleet-wide (zs22.7.7 M6-g) ([8e41be2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8e41be2b118f84654fbc9b3a072af685d1cee266))
+* **fleet:** report baseline harnesses-declaration conformance (zs22.7.7 M6-c) ([67c5080](https://github.com/thewoolleyman/livespec-dev-tooling/commit/67c5080858973232c2b431e095e6e469855f1954))
+
 ## [0.21.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.21.1...v0.21.2) (2026-06-26)
 
 
