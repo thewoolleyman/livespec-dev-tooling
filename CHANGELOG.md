@@ -58,6 +58,19 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.21.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.20.0...v0.21.0) (2026-06-26)
+
+
+### Features
+
+* **checks:** add cross-harness plugin-resolution Verifier (concern [#2](https://github.com/thewoolleyman/livespec-dev-tooling/issues/2)) ([80dab47](https://github.com/thewoolleyman/livespec-dev-tooling/commit/80dab475b00f00eded6d6f163641d4c7e12ef7f7))
+* **checks:** assert AGENTS.md .ai/&lt;topic&gt;.md references resolve ([0353f79](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0353f797a11663aa5dc2812f10d9498d4a8b8889))
+
+
+### Bug Fixes
+
+* **checks:** route plugin-resolution live smoke per-harness so codex does not mis-route through claude ([a31eb4f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a31eb4f499ffa135f4bf851c130c06cff389c197))
+
 ## [0.20.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.19.0...v0.20.0) (2026-06-26)
 
 
