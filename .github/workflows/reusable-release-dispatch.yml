@@ -93,17 +93,9 @@ jobs:
     outputs:
       siblings: ${{ steps.discover.outputs.siblings }}
     steps:
-      - name: Mint App token (read-only metadata for discovery)
-        id: app-token
-        uses: actions/create-github-app-token@v1
-        with:
-          app-id: ${{ secrets.APP_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
-
       - name: Read fleet manifest from livespec master
         id: discover
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           SOURCE_REPO: ${{ inputs.source_repo }}
           OWNER: ${{ github.repository_owner }}
         run: |
@@ -111,17 +103,33 @@ jobs:
           # Per livespec §"Fleet membership contract", the fan-out MUST
           # read the manifest fetched from livespec master at run time
           # (topic search demoted to the conformance check's discovery
-          # safety net). The manifest carries full-line // comments
+          # safety net). livespec is PUBLIC, so fetch the raw file from
+          # raw.githubusercontent.com — no auth, always the raw bytes.
+          # This deliberately replaces an authenticated `gh api
+          # .../contents -H Accept: raw` read that, under this workflow's
+          # App installation token, returned content lacking the
+          # fleet/members keys on the first post-`members`->`fleet` rename
+          # fan-out (livespec-2rab: jq saw `null` though the identical
+          # pipeline worked with a normal token and the prior release
+          # fan-out succeeded). The raw read removes the token/media-type
+          # variable entirely. The manifest carries full-line // comments
           # only, so a line-wise strip yields plain JSON for jq.
-          manifest=$(gh api "repos/$OWNER/livespec/contents/.livespec-fleet-manifest.jsonc" \
-            -H "Accept: application/vnd.github.raw" | grep -v '^[[:space:]]*//')
+          manifest=$(curl -fsSL \
+            "https://raw.githubusercontent.com/$OWNER/livespec/master/.livespec-fleet-manifest.jsonc" \
+            | grep -v '^[[:space:]]*//')
           # Exclude the publishing repo from the dispatch fan-out so the
           # release does not echo back to itself. Keep the {name: ...}
           # element shape the dispatch matrix consumes. Read the fleet
           # array from the `fleet` key, falling back to the legacy
-          # `members` key (the required-key rename migration seam).
-          siblings=$(echo "$manifest" | jq -c \
-            "[(.fleet // .members)[].repo | select(. != \"$SOURCE_REPO\") | {name: .}]")
+          # `members` key (the required-key rename migration seam). On a
+          # parse failure, echo the fetched head so the next regression is
+          # diagnosable from the run log instead of a bare jq null error.
+          if ! siblings=$(echo "$manifest" | jq -ce \
+            "[(.fleet // .members)[].repo | select(. != \"$SOURCE_REPO\") | {name: .}]"); then
+            echo "::error::fleet manifest did not parse into a fleet/members array — fetched head:" >&2
+            echo "$manifest" | head -20 >&2
+            exit 1
+          fi
           echo "siblings=$siblings" >> "$GITHUB_OUTPUT"
           echo "::notice::manifest lists $(echo "$siblings" | jq 'length') member(s) (excluding $SOURCE_REPO)"
 
