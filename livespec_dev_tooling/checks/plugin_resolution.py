@@ -37,10 +37,16 @@ Two layers:
   wired + always invoked" discipline.
 - **Live resolution smoke** (opt-in, env-gated by the SAME `LIVESPEC_E2E_HARNESS`
   dialect the cli_e2e harness uses — `real` runs it, default `mock` does NOT):
-  for each `supported` harness, issue the canonical command through the
-  harness's command surface (reusing the cli_e2e `CliRunner` seam) and decide,
-  folding in work-item livespec-mjnv's skip-vs-fail distinction:
+  each `supported` harness is routed to ITS OWN runner (`_build_live_runners`) so
+  a codex command is never issued through the claude binary. `claude` runs the
+  genuine cli_e2e smoke (issue the `/`-prefixed slash command through the
+  `CliRunner` seam, whose `RealCliRunner` shells `claude`); `codex` delegates to
+  its repo-local smoke (`check-codex-skill-picker`) via a `DelegatedResolutionRunner`
+  → SKIP, rather than mis-routing. The decision per harness, folding in work-item
+  livespec-mjnv's skip-vs-fail distinction:
     - `exempt` → PASS (the declared Exemption slot — no smoke run).
+    - `supported` but delegated to a repo-local smoke (codex) → SKIP (the genuine
+      live proof is the delegated check, not this layer).
     - `supported` + binary unavailable → SKIP, NOT fail (mjnv: "can't run here"
       ≠ "command failed"; the smoke runs where the binary is present, e.g. CI).
     - `supported` + available + resolves and returns (exit 0) → PASS.
@@ -209,6 +215,52 @@ class CliResolutionRunner:
         return ResolutionOutcome(available=True, resolved=result.exit_code == 0)
 
 
+@dataclass(frozen=True, kw_only=True)
+class DelegatedResolutionRunner:
+    """A `ResolutionRunner` for a harness whose genuine live smoke is repo-local.
+
+    Some harnesses' resolve-and-run proof lives in the harness's OWN repo — codex's
+    is the repo-local `check-codex-skill-picker` PTY smoke — not this dev-tooling
+    cross-harness live layer, whose `CliResolutionRunner` shells the `claude` binary.
+    Routing such a harness here returns an unavailable outcome (→ SKIP) so the
+    dev-tooling check NEVER mis-routes the canonical command through a DIFFERENT
+    harness's binary (e.g. `claude -p "livespec:next"` for a codex command); the
+    genuine live proof is the delegated repo-local check. `reason` is the
+    human-readable delegation note for diagnostics.
+    """
+
+    reason: str
+
+    def resolve(self, *, harness: str, canonical_command: str) -> ResolutionOutcome:
+        _ = (harness, canonical_command)
+        return ResolutionOutcome(available=False, resolved=False)
+
+
+# codex's genuine live resolution smoke is the repo-local check-codex-skill-picker
+# PTY check, not this cross-harness live layer; delegate it so the dev-tooling check
+# never routes a codex command through the claude binary.
+_CODEX_DELEGATION_REASON = (
+    "codex live resolution is verified by the repo-local codex resolution check "
+    "(check-codex-skill-picker), not the dev-tooling cross-harness live layer"
+)
+
+
+def _build_live_runners(*, claude_runner: CliRunner) -> dict[str, ResolutionRunner]:
+    """Map each known harness to its live-resolution runner (per-harness routing).
+
+    `claude` runs the genuine cli_e2e smoke (the injected `claude_runner`); `codex`
+    delegates to its repo-local smoke (a `DelegatedResolutionRunner` → SKIP) rather
+    than mis-routing through the claude binary. The map covers exactly
+    `_KNOWN_HARNESSES`, which the declaration-integrity gate guarantees every
+    `supported` declaration is drawn from; adding a harness with a genuine
+    dev-tooling live runner is a one-line registry addition.
+    """
+    return {
+        "claude": CliResolutionRunner(cli_runner=claude_runner),
+        "codex": DelegatedResolutionRunner(reason=_CODEX_DELEGATION_REASON),
+    }
+
+
 def _configure_logger() -> structlog.stdlib.BoundLogger:
     structlog.configure(
         processors=[
@@ -324,13 +376,18 @@ def decide_harness(*, decl: HarnessDecl, runner: ResolutionRunner) -> str:
 def run_live_layer(
     *,
     declarations: tuple[HarnessDecl, ...],
-    runner: ResolutionRunner,
+    runners: dict[str, ResolutionRunner],
     log: structlog.stdlib.BoundLogger,
 ) -> int:
-    """Run the per-harness resolution smoke; return `0` (pass/skip/exempt) or `4` (any fail)."""
+    """Run the per-harness resolution smoke; return `0` (pass/skip/exempt) or `4` (any fail).
+
+    Each declared harness is decided against ITS OWN runner from `runners` (keyed
+    by harness name), so a codex declaration resolves through the codex runner,
+    never the claude one.
+    """
     any_fail = False
     for decl in declarations:
-        decision = decide_harness(decl=decl, runner=runner)
+        decision = decide_harness(decl=decl, runner=runners[decl.harness])
         if decision == _DECISION_FAIL:
             any_fail = True
             log.error(
@@ -389,8 +446,8 @@ def main() -> int:
             declared=[decl.harness for decl in load.declarations],
         )
         return 0
-    runner = CliResolutionRunner(cli_runner=select_runner(injected_runner=None))
-    return run_live_layer(declarations=load.declarations, runner=runner, log=log)
+    runners = _build_live_runners(claude_runner=select_runner(injected_runner=None))
+    return run_live_layer(declarations=load.declarations, runners=runners, log=log)
 
 
 if __name__ == "__main__":
