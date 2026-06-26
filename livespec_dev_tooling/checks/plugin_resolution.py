@@ -112,6 +112,7 @@ _HARNESS_MOCK = "mock"
 
 # load_harnesses outcome states.
 _LOAD_SKIP = "skip"
+_LOAD_ABSENT = "absent"
 _LOAD_MALFORMED = "malformed"
 _LOAD_OK = "ok"
 
@@ -140,7 +141,9 @@ class HarnessDecl:
 class HarnessLoad:
     """Outcome of reading the `harnesses` declaration from `.livespec.jsonc`.
 
-    `state` is one of `_LOAD_SKIP` (no/unreadable declaration — a no-op),
+    `state` is one of `_LOAD_SKIP` (no/unreadable `.livespec.jsonc` — a no-op
+    for a non-governed dir), `_LOAD_ABSENT` (a `.livespec.jsonc` exists but
+    declares no `harnesses` — fail-closed; required fleet-wide since M6),
     `_LOAD_MALFORMED` (declaration present but garbled — fail-closed), or
     `_LOAD_OK` (well-formed `declarations`). `detail` carries the human-readable
     reason for diagnostics.
@@ -331,18 +334,20 @@ def _read_livespec_document(*, root: Path) -> tuple[dict[str, object] | None, st
 def load_harnesses(*, root: Path) -> HarnessLoad:
     """Read the `harnesses` declaration from `<root>/.livespec.jsonc`.
 
-    Returns a `HarnessLoad`. SKIP states (a no-op): the file is absent, the file
-    is unreadable JSONC, the top-level document is not an object, or the
-    `harnesses` key is absent. A present-but-garbled `harnesses` block is
-    MALFORMED (fail-closed); a well-formed block is OK with parsed `declarations`.
+    Returns a `HarnessLoad`. SKIP states (a no-op for a non-governed dir): the
+    file is absent, the file is unreadable JSONC, or the top-level document is
+    not an object. A `.livespec.jsonc` that exists but declares no `harnesses`
+    key is ABSENT (fail-closed; required fleet-wide since M6). A
+    present-but-garbled `harnesses` block is MALFORMED (fail-closed); a
+    well-formed block is OK with parsed `declarations`.
     """
     document, skip_detail = _read_livespec_document(root=root)
     if document is None:
         return HarnessLoad(state=_LOAD_SKIP, detail=skip_detail)
     if _HARNESSES_KEY not in document:
         return HarnessLoad(
-            state=_LOAD_SKIP,
-            detail="no `harnesses` declaration (M6 will make it required fleet-wide)",
+            state=_LOAD_ABSENT,
+            detail="no `harnesses` declaration (required fleet-wide since M6; livespec-zs22.7.7)",
         )
     harnesses = document[_HARNESSES_KEY]
     if not isinstance(harnesses, dict):
@@ -421,6 +426,22 @@ def main() -> int:
     if load.state == _LOAD_SKIP:
         log.info("plugin-resolution: skipped", check_id=_CHECK_ID, reason=load.detail)
         return 0
+    if load.state == _LOAD_ABSENT:
+        log.error(
+            "plugin-resolution: required `harnesses` declaration is absent",
+            check_id=_CHECK_ID,
+            status="fail",
+            failure_mode="absent_declaration",
+            detail=load.detail,
+            path=_LIVESPEC_JSONC,
+            line=0,
+            hint=(
+                "declare a top-level `harnesses` object in .livespec.jsonc; mark each agent "
+                "runtime ('claude'/'codex') `status` 'supported' (with a `canonical_command`) "
+                "or 'exempt' (with a `reason`)"
+            ),
+        )
+        return _FAIL_EXIT
     if load.state == _LOAD_MALFORMED:
         log.error(
             "plugin-resolution: malformed `harnesses` declaration",

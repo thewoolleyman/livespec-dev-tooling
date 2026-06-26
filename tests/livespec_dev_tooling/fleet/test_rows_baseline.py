@@ -3,10 +3,10 @@
 The baseline-harnesses row asserts that a governed member declares a
 non-empty top-level `harnesses` object in `.livespec.jsonc` (the
 Conformance Pattern's cross-harness plugin-resolution concern, concern
-#2). It reports at WARNING severity while the fleet backfill is in
-flight, so an un-backfilled member logs without failing the
-fleet-conformance sweep. Exercised across pass (a non-empty harnesses
-object), warning-finding (harnesses absent / empty / not an object), and
+#2). It reports at ERROR severity (the M6-g required-key flip): the
+declaration is required fleet-wide, so an un-declared member is a hard
+fleet-conformance failure. Exercised across pass (a non-empty harnesses
+object), error-finding (harnesses absent / empty / not an object), and
 skip (file unreadable, unparseable, or non-object root) through a
 canned-response `FleetContext` (no network, no real `gh`).
 """
@@ -72,27 +72,27 @@ def test_declared_harnesses_object_passes() -> None:
     assert assert_baseline_harnesses(ctx=ctx, member=_MEMBER) == RowPass()
 
 
-def test_absent_harnesses_is_warning_finding_naming_the_member() -> None:
+def test_absent_harnesses_is_error_finding_naming_the_member() -> None:
     ctx = make_context(table={_JSONC_ARGS: _ok(text='{\n  "template": "livespec"\n}\n')})
     outcome = assert_baseline_harnesses(ctx=ctx, member=_MEMBER)
     assert isinstance(outcome, RowFinding)
-    assert outcome.severity == "warning"
+    assert outcome.severity == "error"
     assert "widget" in outcome.message
     assert "harnesses" in outcome.message
 
 
-def test_empty_harnesses_object_is_warning_finding() -> None:
+def test_empty_harnesses_object_is_error_finding() -> None:
     ctx = make_context(table={_JSONC_ARGS: _ok(text='{\n  "harnesses": {}\n}\n')})
     outcome = assert_baseline_harnesses(ctx=ctx, member=_MEMBER)
     assert isinstance(outcome, RowFinding)
-    assert outcome.severity == "warning"
+    assert outcome.severity == "error"
 
 
-def test_non_object_harnesses_is_warning_finding() -> None:
+def test_non_object_harnesses_is_error_finding() -> None:
     ctx = make_context(table={_JSONC_ARGS: _ok(text='{\n  "harnesses": "nope"\n}\n')})
     outcome = assert_baseline_harnesses(ctx=ctx, member=_MEMBER)
     assert isinstance(outcome, RowFinding)
-    assert outcome.severity == "warning"
+    assert outcome.severity == "error"
 
 
 def test_missing_livespec_jsonc_skips() -> None:

@@ -139,11 +139,11 @@ def test_load_harnesses_skips_when_top_level_not_object(*, tmp_path: Path) -> No
     assert "not an object" in load.detail
 
 
-def test_load_harnesses_skips_when_no_harnesses_key(*, tmp_path: Path) -> None:
-    """A `.livespec.jsonc` without a `harnesses` key → SKIP (M6 makes it required)."""
+def test_load_harnesses_fails_when_no_harnesses_key(*, tmp_path: Path) -> None:
+    """A `.livespec.jsonc` present WITHOUT a `harnesses` key → ABSENT (required since M6)."""
     _write_livespec_jsonc(root=tmp_path, body='{ "template": "livespec" }')
     load = plugin_resolution.load_harnesses(root=tmp_path)
-    assert load.state == "skip"
+    assert load.state == "absent"
     assert "harnesses" in load.detail
 
 
@@ -274,11 +274,23 @@ def test_cli_resolution_runner_unresolved_on_nonzero_exit(
 # ---------------------------------------------------------------------------
 
 
-def test_main_skips_when_no_declaration(*, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """No `harnesses` declaration → exit 0 (the always-on gate is a no-op)."""
+def test_main_skips_when_no_livespec_jsonc(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No `.livespec.jsonc` at all → exit 0 (non-governed dir; the gate is a no-op)."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("LIVESPEC_E2E_HARNESS", raising=False)
     assert plugin_resolution.main() == 0
+
+
+def test_main_fails_when_harnesses_key_absent(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A `.livespec.jsonc` present but WITHOUT a `harnesses` key → exit 4 (required since M6)."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("LIVESPEC_E2E_HARNESS", raising=False)
+    _write_livespec_jsonc(root=tmp_path, body='{ "template": "livespec" }')
+    assert plugin_resolution.main() == 4
 
 
 def test_main_fails_on_malformed_declaration(
