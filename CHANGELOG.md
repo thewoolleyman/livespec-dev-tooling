@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.21.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.21.1...v0.21.2) (2026-06-26)
+
+
+### Bug Fixes
+
+* **ci:** bump cross-repo coordination reusable-workflow pins v0.17.0-&gt;v0.21.1 (livespec-2rab) ([32345ba](https://github.com/thewoolleyman/livespec-dev-tooling/commit/32345bab0afeed1fa26e551ed08b31ea91010ef6))
+
 ## [0.21.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.21.0...v0.21.1) (2026-06-26)
 
 
