@@ -24,6 +24,14 @@
   "template": "livespec",
   "spec_root": "SPECIFICATION",
   "implementation": { "plugin": "livespec-orchestrator-beads-fabro" },
+  // Cross-harness plugin-resolution (Conformance Pattern concern #2): this
+  // library ships no command/skill surface to resolve from a harness, so both
+  // harnesses are declared exempt. The always-on `check-plugin-resolution`
+  // declaration-integrity gate (wired into `just check`) reads this.
+  "harnesses": {
+    "claude": { "status": "exempt", "reason": "livespec-dev-tooling is an enforcement-suite library; it ships no command/skill surface to resolve from a harness" },
+    "codex":  { "status": "exempt", "reason": "livespec-dev-tooling is an enforcement-suite library; it ships no command/skill surface to resolve from a harness" }
+  },
   "livespec-dev-tooling": {
     "compat": {
       // semver range and pinned tag against livespec-core. The pinned
