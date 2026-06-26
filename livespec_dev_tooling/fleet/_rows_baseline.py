@@ -9,12 +9,11 @@ that declaration at commit time; this fleet-time row reports, from the
 central vantage point, whether a member carries the declaration at all,
 so an un-backfilled member is surfaced across the whole fleet.
 
-Reports at WARNING severity by contract: while the fleet backfill is in
-flight an absent declaration must log without failing the
-fleet-conformance sweep / the release fan-out preflight (both gate on
-error-severity findings only). The required-key flip — absent declaration
-to error severity, once every governed repo declares `harnesses` — is the
-M6-g milestone, not this row.
+Reports at ERROR severity (the M6-g required-key flip, livespec-zs22.7.7):
+every governed repo now declares `harnesses`, so an absent declaration is a
+hard fleet-conformance failure (exit 4) rather than an advisory warning —
+the fleet-conformance sweep and the release fan-out preflight both gate on
+error-severity findings.
 
 Per the fleet contract's can't-read-is-not-absent discipline, a member
 whose `.livespec.jsonc` is unreadable, unparseable, or not a JSON object
@@ -58,8 +57,8 @@ def assert_baseline_harnesses(*, ctx: FleetContext, member: FleetMember) -> RowO
     Skips a member whose `.livespec.jsonc` is unreadable, unparseable, or
     not a JSON object (can't-read is not absent). A readable document
     carrying a non-empty top-level `harnesses` object passes; one missing
-    it yields a WARNING-severity finding (the backfill is in flight; the
-    M6-g flip raises it to error once every governed repo declares it).
+    it yields an ERROR-severity finding (the declaration is required
+    fleet-wide since M6).
     """
     text = ctx.file_text(repo=member.repo, path=LIVESPEC_JSONC_PATH)
     if text is None:
@@ -76,7 +75,7 @@ def assert_baseline_harnesses(*, ctx: FleetContext, member: FleetMember) -> RowO
     return RowFinding(
         message=(
             f"{member.repo}: {LIVESPEC_JSONC_PATH} declares no `harnesses` object "
-            "(Conformance Pattern concern #2 baseline backfill; zs22.7.7 M6)"
+            "(Conformance Pattern concern #2 — required fleet-wide since zs22.7.7 M6)"
         ),
-        severity="warning",
+        severity="error",
     )
