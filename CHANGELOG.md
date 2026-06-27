@@ -58,6 +58,18 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.24.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.23.0...v0.24.0) (2026-06-27)
+
+
+### Features
+
+* port check_plugin_structure into the dev-tooling package (zs22.7.9.2) ([ef6b9d5](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ef6b9d5041bc0da6485e7e8596175ce7ec0c2500))
+
+
+### Bug Fixes
+
+* red_green_replay drops .py deletions from commit-msg and range checks ([2cde6c8](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2cde6c873797a6fcf095a9455b9665863f2956ba))
+
 ## [0.23.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.22.0...v0.23.0) (2026-06-27)
 
 
