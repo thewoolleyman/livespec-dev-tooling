@@ -1,20 +1,31 @@
-"""plugin_structure — one canonical structural gate for a Driver plugin bundle.
+"""plugin_structure — the single structural gate for a Driver plugin bundle.
 
 This is the single reconciliation of the two formerly-divergent vendored
 copies that lived in the two Driver repos: the CLAUDE packaging profile
 (`livespec-driver-claude`) and the CODEX packaging profile
-(`livespec-driver-codex`). Both Drivers will later import THIS module and
-delete their own copies; this file is the union, not a merge that weakens
+(`livespec-driver-codex`). Both Drivers invoke THIS module (via
+`python -m livespec_dev_tooling.driver_checks.plugin_structure`) and have
+deleted their own copies; this file is the union, not a merge that weakens
 either side — each profile's invariants are preserved VERBATIM and run
 mutually-exclusively under a profile auto-detect.
+
+It lives under `driver_checks/` (NOT `checks/`) deliberately: a
+driver-specific gate is not a fleet-universal canonical invariant, so it
+must stay out of the `canonical_checks` set that `check-aggregate-
+completeness` forces onto every consumer (livespec-2exa).
 
 Profile auto-detect (anchored on `--project-root`, default `Path.cwd()`):
 
 - `<root>/.claude-plugin/plugin.json` present → the CLAUDE profile.
 - else `<root>/.agents/plugins/marketplace.json` present → the CODEX
   profile.
-- else → SKIP (exit 0). dev-tooling runs this check against ITSELF (it
-  has no plugin manifest), so the self-skip branch is load-bearing.
+- else → SKIP (exit 0). The self-skip branch is load-bearing: it keeps
+  the check a clean no-op on any non-Driver tree (e.g. livespec-core or
+  the orchestrator plugins, which carry no Driver manifest). The claude
+  profile is also hardened to fail SOFT (a `missing skills directory`
+  violation, not an uncaught `FileNotFoundError`) when a `.claude-plugin/`
+  carries plugin.json but no `skills/` dir — the livespec-core
+  artifact-carrier topology (livespec-2exa).
 
 CLAUDE profile invariants (preserved verbatim from the claude copy):
 
@@ -190,6 +201,12 @@ def _claude_manifest_violations(*, root: Path) -> list[str]:
 def _claude_skill_set_violations(*, root: Path) -> list[str]:
     skills_dir = root / ".claude-plugin" / "skills"
     out: list[str] = []
+    if not skills_dir.is_dir():
+        # Fail soft (mirrors the codex profile's guard): a `.claude-plugin/`
+        # tree with plugin.json but no `skills/` dir is the artifact-carrier
+        # topology of livespec-core. Report it as a violation rather than
+        # crashing on `iterdir()` of a missing directory.
+        return [f"missing skills directory: {skills_dir.relative_to(root)}/"]
     found = {p.name for p in skills_dir.iterdir() if p.is_dir()}
     for missing in sorted(_EXPECTED_SKILLS - found):
         out.append(f"missing skill directory: skills/{missing}/")

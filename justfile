@@ -218,7 +218,6 @@ check:
         check-pbt-coverage-pure-modules
         check-per-file-coverage
         check-plugin-resolution
-        check-plugin-structure
         check-primary-checkout-commit-refuse-hook-installed
         check-private-calls
         check-public-api-result-typed
@@ -622,16 +621,6 @@ check-per-file-coverage:
 # PASSes by declaration.
 check-plugin-resolution:
     uv run python -m livespec_dev_tooling.checks.plugin_resolution
-
-# Unified Driver-plugin structural gate (work-item livespec-zs22.7.9.2).
-# Profile-auto-detecting: `.claude-plugin/plugin.json` → CLAUDE profile;
-# `.agents/plugins/marketplace.json` → CODEX profile; neither → SKIP. The
-# one canonical reconciliation of the two formerly-divergent vendored
-# copies in the driver repos (each profile's invariants preserved verbatim
-# and run mutually-exclusively). dev-tooling has no plugin manifest, so it
-# self-skips here.
-check-plugin-structure:
-    uv run python -m livespec_dev_tooling.checks.plugin_structure
 
 # Universal cross-boundary invariant: every livespec-governed primary
 # checkout MUST install `.git/hooks/pre-commit` AND `.git/hooks/pre-push`
