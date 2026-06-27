@@ -144,6 +144,36 @@ def test_main_installs_worktree_just_fragment(
     assert "./dev-tooling/worktree-lib.sh create" in content
 
 
+def test_main_installs_branch_protection_just_fragment(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`main()` writes `dev-tooling/branch-protection.just` NON-executable, carrying the recipes.
+
+    Like `worktree.just`, the `branch-protection.just` recipe fragment is
+    `import`ed by the consumer root justfile — never run directly — so it is
+    installed without the executable bit. Its body carries the two canonical
+    branch-protection recipe stanzas (`protect-default-branch` /
+    `check-branch-protection`), each a one-line pass-through onto
+    `./dev-tooling/branch-protection.sh`.
+    """
+    _scrub_git_env(monkeypatch=monkeypatch)
+    primary = tmp_path / "project"
+    _init_repo(repo=primary)
+    monkeypatch.chdir(primary)
+
+    rc = main()
+
+    assert rc == 0
+    fragment = primary / "dev-tooling" / "branch-protection.just"
+    assert fragment.is_file(), "branch-protection.just not installed"
+    assert not os.access(fragment, os.X_OK), "branch-protection.just must not be executable"
+    content = fragment.read_text(encoding="utf-8")
+    for recipe in ("protect-default-branch", "check-branch-protection"):
+        assert recipe in content, f"{recipe} recipe stanza missing from branch-protection.just"
+    assert "./dev-tooling/branch-protection.sh apply" in content
+    assert "./dev-tooling/branch-protection.sh check" in content
+
+
 def test_main_from_worktree_installs_into_that_worktree_root(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
