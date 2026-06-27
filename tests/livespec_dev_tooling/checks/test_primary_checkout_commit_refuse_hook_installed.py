@@ -1,21 +1,27 @@
 """Outside-in test for `livespec_dev_tooling/checks/primary_checkout_commit_refuse_hook_installed.py`.
 
 Per `livespec/SPECIFICATION/contracts.md` §"Doctor cross-boundary
-invariants" → §"`primary-checkout-commit-refuse-hook-installed`":
-every livespec-governed primary checkout MUST install
-`.git/hooks/pre-commit` AND `.git/hooks/pre-push` hooks whose body
-matches the canonical livespec commit-refuse fingerprint. The check
-fires `fail` (exit 4) when either hook is missing, non-executable,
-or contains a non-canonical body. The contract does not distinguish
-between the failure modes at the structural level — all three flavors
-fire equally; all three are corrected by the same bootstrap step.
+invariants" → §"`primary-checkout-commit-refuse-hook-installed`": every
+livespec-governed primary checkout MUST install `.git/hooks/pre-commit`,
+`.git/hooks/pre-push`, AND `.git/hooks/commit-msg` hooks whose body is
+the canonical livespec commit-refuse body. As of zs22.7.9.5 the verifier
+is STRICT BYTE-IDENTITY against
+`livespec_dev_tooling.install_commit_refuse_hooks.CANONICAL_HOOK_BODY`
+(the single source) — the retired loose substring fingerprint, which
+also accepted the legacy `git rev-parse --show-toplevel` body during the
+fleet migration, is gone. The check fires `fail` (exit 4) when any hook
+is missing, non-executable, or byte-different — INCLUDING a body that
+would have satisfied the old loose fingerprint (the load-bearing
+regression below).
 
-The hook is a no-op at secondary worktrees because
-`git rev-parse --show-toplevel` returns the worktree's path there
-(not the primary's). The check itself inspects the common-dir
-hooks directory (via `git rev-parse --git-common-dir`) which is
-shared by every worktree, so the check passes equally from the
-primary and from any secondary worktree once the hooks are
+A second arm fails on any vendored hook-source copy
+(`git-hook-wrapper.sh` / `livespec-commit-refuse-hook.sh`) in the repo
+tree, carving out `templates/` (the template-source domain of
+zs22.7.9.3) and `.git/`.
+
+The check inspects the common-dir hooks directory (via `git rev-parse
+--git-common-dir`), shared by every worktree, so it passes equally from
+the primary and from any secondary worktree once the canonical hooks are
 installed at the primary.
 """
 
@@ -26,6 +32,8 @@ import stat
 import subprocess
 import sys
 from pathlib import Path
+
+from livespec_dev_tooling.install_commit_refuse_hooks import CANONICAL_HOOK_BODY
 
 __all__: list[str] = []
 
@@ -51,7 +59,15 @@ _GIT_ENV_PASSTHROUGH_VARS: tuple[str, ...] = (
 )
 
 
-_CANONICAL_HOOK_BODY = """#!/bin/sh
+_HOOK_NAMES: tuple[str, ...] = ("pre-commit", "pre-push", "commit-msg")
+
+
+# A legacy body that PASSES the retired loose substring fingerprint
+# (marker comment + `git rev-parse --show-toplevel` + `exit 1`) but is
+# NOT byte-identical to CANONICAL_HOOK_BODY. Under the strict verifier
+# this MUST fail — the load-bearing regression that proves the loose
+# tolerance is gone.
+_LEGACY_LOOSE_BODY = """#!/bin/sh
 # livespec commit-refuse hook — refuses commits/pushes at the primary checkout.
 # No-op at worktrees because git rev-parse --show-toplevel returns the worktree path there.
 primary_path="$(git config --get livespec.primaryPath || true)"
@@ -64,33 +80,13 @@ exit 0
 """
 
 
-# The current canonical body detects the primary STRUCTURALLY (refuse when
-# git-dir == git-common-dir) and reads the sandbox-exempt marker, with no
-# `git rev-parse --show-toplevel` and no `livespec.primaryPath` arming step.
-# The fingerprint must accept it via the `git rev-parse --git-common-dir`
-# detection invocation (alongside the legacy `--show-toplevel` body above).
-_STRUCTURAL_HOOK_BODY = """#!/bin/sh
-# livespec commit-refuse hook — structural refuse, armed on install.
-unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE GIT_PREFIX
-git_dir="$(git rev-parse --git-dir 2>/dev/null || true)"
-common_dir="$(git rev-parse --git-common-dir 2>/dev/null || true)"
-sandbox_exempt="$(git config --get livespec.sandboxExempt || true)"
-if [ -n "$git_dir" ] && [ "$git_dir" = "$common_dir" ] && [ "$sandbox_exempt" != "true" ]; then
-  echo "livespec: refusing commit/push at primary checkout; use a worktree" >&2
-  exit 1
-fi
-hook_name="$(basename "$0")"
-exec mise exec -- lefthook run --no-auto-install "$hook_name" "$@"
-"""
-
-
 def _scrubbed_env(*, path_override: str | None = None) -> dict[str, str]:
     """Return a copy of `os.environ` with GIT_* vars removed.
 
-    When tests run as part of a git pre-commit hook (lefthook), git
-    sets GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE pointing at the
-    surrounding repo. Scrubbing the vars confines git to the
-    tmp_path fixture's `.git` directory.
+    When tests run as part of a git pre-commit hook (lefthook), git sets
+    GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE pointing at the surrounding
+    repo. Scrubbing the vars confines git to the tmp_path fixture's
+    `.git` directory.
     """
     env = {k: v for k, v in os.environ.items() if k not in _GIT_ENV_PASSTHROUGH_VARS}
     if path_override is not None:
@@ -106,8 +102,8 @@ def _run_check(
     """Run the check script with cwd set to a path.
 
     Preserves the parent env (incl. COVERAGE_PROCESS_START) so
-    pytest-cov's subprocess auto-init works; overrides only PATH
-    when `path_override` is given.
+    pytest-cov's subprocess auto-init works; overrides only PATH when
+    `path_override` is given.
     """
     return subprocess.run(
         [sys.executable, str(_CHECK)],
@@ -145,8 +141,8 @@ def _git_init(*, cwd: Path) -> None:
 def _install_hook(*, repo_root: Path, hook_name: str, body: str, executable: bool) -> Path:
     """Install a hook file at `<repo_root>/.git/hooks/<hook_name>` with `body`.
 
-    When `executable` is True, sets the user-execute bit. Returns
-    the absolute hook path.
+    When `executable` is True, sets the user-execute bit. Returns the
+    absolute hook path.
     """
     hooks_dir = repo_root / ".git" / "hooks"
     hooks_dir.mkdir(parents=True, exist_ok=True)
@@ -163,23 +159,22 @@ def _install_hook(*, repo_root: Path, hook_name: str, body: str, executable: boo
 
 
 def _install_canonical_hooks(*, repo_root: Path) -> None:
-    """Install canonical pre-commit AND pre-push hooks, both executable."""
-    _ = _install_hook(
-        repo_root=repo_root,
-        hook_name="pre-commit",
-        body=_CANONICAL_HOOK_BODY,
-        executable=True,
-    )
-    _ = _install_hook(
-        repo_root=repo_root,
-        hook_name="pre-push",
-        body=_CANONICAL_HOOK_BODY,
-        executable=True,
-    )
+    """Install canonical pre-commit, pre-push AND commit-msg hooks, all executable.
+
+    Each is byte-identical to CANONICAL_HOOK_BODY (the single source the
+    strict verifier compares against).
+    """
+    for hook_name in _HOOK_NAMES:
+        _ = _install_hook(
+            repo_root=repo_root,
+            hook_name=hook_name,
+            body=CANONICAL_HOOK_BODY,
+            executable=True,
+        )
 
 
-def test_passes_when_both_hooks_installed_canonically(*, tmp_path: Path) -> None:
-    """(a) exit 0 when both pre-commit and pre-push carry the canonical body."""
+def test_passes_when_all_three_canonical_installed(*, tmp_path: Path) -> None:
+    """(a) exit 0 when all three hooks carry the byte-identical canonical body."""
     project_root = tmp_path / "project"
     project_root.mkdir()
     _git_init(cwd=project_root)
@@ -192,227 +187,69 @@ def test_passes_when_both_hooks_installed_canonically(*, tmp_path: Path) -> None
     )
 
 
-def test_fails_when_both_hooks_missing(*, tmp_path: Path) -> None:
-    """(b) exit 4 when neither hook file exists."""
-    project_root = tmp_path / "project"
-    project_root.mkdir()
-    _git_init(cwd=project_root)
-    # No hook install.
+def test_fails_when_legacy_loose_body_byte_differs(*, tmp_path: Path) -> None:
+    """(b) exit 4 when hooks carry the legacy body that PASSED the old loose fingerprint.
 
-    result = _run_check(cwd=project_root)
-    assert result.returncode == 4
-    assert "pre-commit" in result.stderr
-    assert "pre-push" in result.stderr
-    assert "missing" in result.stderr
-
-
-def test_fails_when_only_pre_commit_missing(*, tmp_path: Path) -> None:
-    """(c) exit 4 when pre-commit is missing but pre-push is canonical."""
-    project_root = tmp_path / "project"
-    project_root.mkdir()
-    _git_init(cwd=project_root)
-    _ = _install_hook(
-        repo_root=project_root,
-        hook_name="pre-push",
-        body=_CANONICAL_HOOK_BODY,
-        executable=True,
-    )
-
-    result = _run_check(cwd=project_root)
-    assert result.returncode == 4
-    assert "pre-commit" in result.stderr
-    assert "missing" in result.stderr
-
-
-def test_fails_when_only_pre_push_missing(*, tmp_path: Path) -> None:
-    """(d) exit 4 when pre-push is missing but pre-commit is canonical."""
-    project_root = tmp_path / "project"
-    project_root.mkdir()
-    _git_init(cwd=project_root)
-    _ = _install_hook(
-        repo_root=project_root,
-        hook_name="pre-commit",
-        body=_CANONICAL_HOOK_BODY,
-        executable=True,
-    )
-
-    result = _run_check(cwd=project_root)
-    assert result.returncode == 4
-    assert "pre-push" in result.stderr
-    assert "missing" in result.stderr
-
-
-def test_fails_when_pre_commit_not_executable(*, tmp_path: Path) -> None:
-    """(e) exit 4 when pre-commit has canonical body but lacks the execute bit."""
-    project_root = tmp_path / "project"
-    project_root.mkdir()
-    _git_init(cwd=project_root)
-    _ = _install_hook(
-        repo_root=project_root,
-        hook_name="pre-commit",
-        body=_CANONICAL_HOOK_BODY,
-        executable=False,
-    )
-    _ = _install_hook(
-        repo_root=project_root,
-        hook_name="pre-push",
-        body=_CANONICAL_HOOK_BODY,
-        executable=True,
-    )
-
-    result = _run_check(cwd=project_root)
-    assert result.returncode == 4
-    assert "pre-commit" in result.stderr
-    assert "not_executable" in result.stderr
-
-
-def test_fails_when_pre_push_not_executable(*, tmp_path: Path) -> None:
-    """(f) exit 4 when pre-push has canonical body but lacks the execute bit."""
-    project_root = tmp_path / "project"
-    project_root.mkdir()
-    _git_init(cwd=project_root)
-    _ = _install_hook(
-        repo_root=project_root,
-        hook_name="pre-commit",
-        body=_CANONICAL_HOOK_BODY,
-        executable=True,
-    )
-    _ = _install_hook(
-        repo_root=project_root,
-        hook_name="pre-push",
-        body=_CANONICAL_HOOK_BODY,
-        executable=False,
-    )
-
-    result = _run_check(cwd=project_root)
-    assert result.returncode == 4
-    assert "pre-push" in result.stderr
-    assert "not_executable" in result.stderr
-
-
-def test_fails_when_pre_commit_body_non_canonical(*, tmp_path: Path) -> None:
-    """(g) exit 4 when pre-commit is executable but body lacks the canonical fingerprint."""
-    project_root = tmp_path / "project"
-    project_root.mkdir()
-    _git_init(cwd=project_root)
-    # Body looks vaguely shell-shaped but lacks every canonical marker.
-    _ = _install_hook(
-        repo_root=project_root,
-        hook_name="pre-commit",
-        body="#!/bin/sh\necho 'custom hook'\nexit 0\n",
-        executable=True,
-    )
-    _ = _install_hook(
-        repo_root=project_root,
-        hook_name="pre-push",
-        body=_CANONICAL_HOOK_BODY,
-        executable=True,
-    )
-
-    result = _run_check(cwd=project_root)
-    assert result.returncode == 4
-    assert "pre-commit" in result.stderr
-    assert "non_canonical_body" in result.stderr
-
-
-def test_fails_when_pre_push_body_non_canonical(*, tmp_path: Path) -> None:
-    """(h) exit 4 when pre-push is executable but body lacks the canonical fingerprint."""
-    project_root = tmp_path / "project"
-    project_root.mkdir()
-    _git_init(cwd=project_root)
-    _ = _install_hook(
-        repo_root=project_root,
-        hook_name="pre-commit",
-        body=_CANONICAL_HOOK_BODY,
-        executable=True,
-    )
-    _ = _install_hook(
-        repo_root=project_root,
-        hook_name="pre-push",
-        body="#!/bin/sh\necho 'custom push hook'\nexit 0\n",
-        executable=True,
-    )
-
-    result = _run_check(cwd=project_root)
-    assert result.returncode == 4
-    assert "pre-push" in result.stderr
-    assert "non_canonical_body" in result.stderr
-
-
-def test_fails_when_pre_commit_body_empty(*, tmp_path: Path) -> None:
-    """(i) exit 4 when pre-commit is executable but the body is empty (covers empty-file case)."""
-    project_root = tmp_path / "project"
-    project_root.mkdir()
-    _git_init(cwd=project_root)
-    _ = _install_hook(
-        repo_root=project_root,
-        hook_name="pre-commit",
-        body="",
-        executable=True,
-    )
-    _ = _install_hook(
-        repo_root=project_root,
-        hook_name="pre-push",
-        body=_CANONICAL_HOOK_BODY,
-        executable=True,
-    )
-
-    result = _run_check(cwd=project_root)
-    assert result.returncode == 4
-    assert "pre-commit" in result.stderr
-    assert "non_canonical_body" in result.stderr
-
-
-def test_passes_with_tolerant_body_variant(*, tmp_path: Path) -> None:
-    """(j) exit 0 when the body carries the marker + toplevel + exit 1 substrings with portable-shell rewrites.
-
-    The fingerprint is substring-based, not exact-equality, so a
-    semantically-equivalent body with rearranged whitespace and
-    extra diagnostic echoes is still accepted.
+    Load-bearing regression: the legacy `git rev-parse --show-toplevel`
+    body satisfies the retired substring fingerprint but is NOT
+    byte-identical to CANONICAL_HOOK_BODY, so the strict verifier MUST
+    fail it with `body_mismatch`.
     """
     project_root = tmp_path / "project"
     project_root.mkdir()
     _git_init(cwd=project_root)
-    tolerant_body = (
-        "#!/bin/sh\n"
-        "# livespec commit-refuse hook (portable variant)\n"
-        "set -e\n"
-        'PRIMARY="$(git config --get livespec.primaryPath || true)"\n'
-        'TOP="$(git rev-parse --show-toplevel)"\n'
-        'if [ "$TOP" = "$PRIMARY" ]; then\n'
-        '  echo "livespec: refusing at primary" >&2\n'
-        "  exit 1\n"
-        "fi\n"
-        "exit 0\n"
-    )
-    _ = _install_hook(
-        repo_root=project_root,
-        hook_name="pre-commit",
-        body=tolerant_body,
-        executable=True,
-    )
-    _ = _install_hook(
-        repo_root=project_root,
-        hook_name="pre-push",
-        body=tolerant_body,
-        executable=True,
-    )
+    for hook_name in _HOOK_NAMES:
+        _ = _install_hook(
+            repo_root=project_root,
+            hook_name=hook_name,
+            body=_LEGACY_LOOSE_BODY,
+            executable=True,
+        )
 
     result = _run_check(cwd=project_root)
-    assert result.returncode == 0, (
-        f"expected exit 0; got {result.returncode}, "
+    assert result.returncode == 4, (
+        f"expected exit 4; got {result.returncode}, "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
+    assert "body_mismatch" in result.stderr
+    assert "pre-commit" in result.stderr
 
 
-def test_passes_with_structural_body_variant(*, tmp_path: Path) -> None:
-    """(j2) exit 0 when both hooks carry the structural (current canonical) body.
+def test_fails_when_canonical_plus_trailing_byte_differs(*, tmp_path: Path) -> None:
+    """(c) exit 4 when a hook is canonical + one extra trailing byte (pure byte-identity).
 
-    The structural body detects the primary via `git rev-parse
-    --git-common-dir` (refuse when git-dir == git-common-dir) and carries
-    NO `git rev-parse --show-toplevel`. The fingerprint accepts it via the
-    structural detection invocation, so a repo migrated to the structural
-    body passes this shared check.
+    The body carries every canonical substring (it is a superset of the
+    structural fingerprint), so it would survive a substring check — but
+    a single appended byte breaks byte-identity, which the strict
+    verifier rejects.
+    """
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    _git_init(cwd=project_root)
+    _install_canonical_hooks(repo_root=project_root)
+    # Overwrite one hook with canonical-plus-a-trailing-space.
+    _ = _install_hook(
+        repo_root=project_root,
+        hook_name="pre-push",
+        body=CANONICAL_HOOK_BODY + " ",
+        executable=True,
+    )
+
+    result = _run_check(cwd=project_root)
+    assert result.returncode == 4, (
+        f"expected exit 4; got {result.returncode}, "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    assert "body_mismatch" in result.stderr
+    assert "pre-push" in result.stderr
+
+
+def test_fails_when_commit_msg_missing(*, tmp_path: Path) -> None:
+    """(d) exit 4 when commit-msg is missing but pre-commit and pre-push are canonical.
+
+    The third hook (commit-msg) is now part of the required set; omitting
+    it is a `missing` failure that the prior two-hook check would have
+    silently passed.
     """
     project_root = tmp_path / "project"
     project_root.mkdir()
@@ -420,15 +257,87 @@ def test_passes_with_structural_body_variant(*, tmp_path: Path) -> None:
     _ = _install_hook(
         repo_root=project_root,
         hook_name="pre-commit",
-        body=_STRUCTURAL_HOOK_BODY,
+        body=CANONICAL_HOOK_BODY,
         executable=True,
     )
     _ = _install_hook(
         repo_root=project_root,
         hook_name="pre-push",
-        body=_STRUCTURAL_HOOK_BODY,
+        body=CANONICAL_HOOK_BODY,
         executable=True,
     )
+    # commit-msg deliberately not installed.
+
+    result = _run_check(cwd=project_root)
+    assert result.returncode == 4, (
+        f"expected exit 4; got {result.returncode}, "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    assert "commit-msg" in result.stderr
+    assert "missing" in result.stderr
+
+
+def test_fails_when_a_hook_not_executable(*, tmp_path: Path) -> None:
+    """(e) exit 4 when a hook has the canonical body but lacks the execute bit."""
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    _git_init(cwd=project_root)
+    _install_canonical_hooks(repo_root=project_root)
+    # Strip the execute bit from commit-msg (canonical body, not executable).
+    _ = _install_hook(
+        repo_root=project_root,
+        hook_name="commit-msg",
+        body=CANONICAL_HOOK_BODY,
+        executable=False,
+    )
+
+    result = _run_check(cwd=project_root)
+    assert result.returncode == 4, (
+        f"expected exit 4; got {result.returncode}, "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    assert "commit-msg" in result.stderr
+    assert "not_executable" in result.stderr
+
+
+def test_fails_when_vendored_copy_present(*, tmp_path: Path) -> None:
+    """(f) exit 4 when a vendored hook-source copy exists outside the carve-outs.
+
+    All three hooks are canonical, so the ONLY failure is the vendored
+    `git-hook-wrapper.sh` at the repo root — proving the no-vendored-copy
+    arm fires independently of the byte-identity arm.
+    """
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    _git_init(cwd=project_root)
+    _install_canonical_hooks(repo_root=project_root)
+    vendored = project_root / "git-hook-wrapper.sh"
+    _ = vendored.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+
+    result = _run_check(cwd=project_root)
+    assert result.returncode == 4, (
+        f"expected exit 4; got {result.returncode}, "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    assert "vendored_copy_present" in result.stderr
+    assert "git-hook-wrapper.sh" in result.stderr
+
+
+def test_passes_when_copy_under_templates(*, tmp_path: Path) -> None:
+    """(g) exit 0 when the only hook-source copy lives under templates/ (carve-out).
+
+    The template-source copy under `templates/` is the zs22.7.9.3 domain
+    and is NOT a vendored/installed copy, so it is carved out and the
+    check passes.
+    """
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    _git_init(cwd=project_root)
+    _install_canonical_hooks(repo_root=project_root)
+    templates_dir = project_root / "templates" / "hooks"
+    templates_dir.mkdir(parents=True)
+    carved = templates_dir / "livespec-commit-refuse-hook.sh"
+    _ = carved.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
 
     result = _run_check(cwd=project_root)
     assert result.returncode == 0, (
@@ -438,12 +347,13 @@ def test_passes_with_structural_body_variant(*, tmp_path: Path) -> None:
 
 
 def test_passes_with_secondary_worktrees(*, tmp_path: Path) -> None:
-    """(k) exit 0 when invoked from a secondary worktree (common-dir hooks resolve to primary).
+    """(h) exit 0 when invoked from a secondary worktree (common-dir hooks resolve to primary).
 
-    The check reads `<git-common-dir>/hooks/{pre-commit,pre-push}`,
-    and the common dir is shared by every worktree, so a check
-    invoked from a worktree resolves to the primary's hooks
-    directory and passes when the primary is set up correctly.
+    The check reads `<git-common-dir>/hooks/{pre-commit,pre-push,commit-msg}`,
+    and the common dir is shared by every worktree, so a check invoked
+    from a worktree resolves to the primary's hooks directory and passes
+    when the primary is set up correctly. Also exercises the absolute
+    common-dir resolution branch.
     """
     project_root = tmp_path / "project"
     project_root.mkdir()
@@ -478,17 +388,17 @@ def test_passes_with_secondary_worktrees(*, tmp_path: Path) -> None:
     )
     _install_canonical_hooks(repo_root=project_root)
 
-    # From the primary checkout: pass.
+    # From the primary checkout: pass (relative common-dir resolution).
     result_primary = _run_check(cwd=project_root)
     assert result_primary.returncode == 0, result_primary.stderr
-    # From the secondary worktree: also pass — the common-dir
-    # hooks resolve to the primary's `.git/hooks/`.
+    # From the secondary worktree: also pass — the common-dir hooks
+    # resolve to the primary's `.git/hooks/` (absolute common-dir).
     result_secondary = _run_check(cwd=wt_path)
     assert result_secondary.returncode == 0, result_secondary.stderr
 
 
 def test_skipped_when_not_a_git_repo(*, tmp_path: Path) -> None:
-    """(l) exit 0 (skipped) when cwd is not a git repository at all."""
+    """(i) exit 0 (skipped) when cwd is not a git repository at all."""
     project_root = tmp_path / "project"
     project_root.mkdir()
     # No `git init` — cwd is a bare directory (no surrounding repo).
@@ -499,16 +409,7 @@ def test_skipped_when_not_a_git_repo(*, tmp_path: Path) -> None:
 
 
 def test_fails_when_core_bare_set(*, tmp_path: Path) -> None:
-    """(l2) exit 4 (fail) when the repo has `core.bare = true` (legacy bare-flag regression).
-
-    Realizes the MAY in `livespec/SPECIFICATION/contracts.md`
-    §"`primary-checkout-commit-refuse-hook-installed`": the doctor
-    invariant MAY surface a `fail` when `core.bare = true` is set on
-    the primary, to catch the eliminated legacy bare-flag state. A
-    bare repo is a git repo that is NOT a work tree, so the prior
-    work-tree-only skip silently passed it; the dedicated branch
-    fires `fail` with the `core_bare_set` failure_mode instead.
-    """
+    """(j) exit 4 (fail) when the repo has `core.bare = true` (legacy bare-flag regression)."""
     project_root = tmp_path / "project"
     project_root.mkdir()
     _git_init(cwd=project_root)
@@ -530,13 +431,13 @@ def test_fails_when_core_bare_set(*, tmp_path: Path) -> None:
 
 
 def test_skipped_when_git_repo_but_not_a_work_tree(*, tmp_path: Path) -> None:
-    """(l3) exit 0 (skipped) when cwd is a git repo but NOT inside a work tree.
+    """(k) exit 0 (skipped) when cwd is a git repo but NOT inside a work tree.
 
-    A non-bare git repo whose cwd is inside the `.git` directory is a
-    git context (`git rev-parse --git-dir` exits 0) that is NOT a
-    working tree (`git rev-parse --is-inside-work-tree` is `false`).
-    With `core.bare` unset (git's default `false`), the check falls
-    through the bare-flag fail branch to the work-tree skip.
+    A non-bare git repo whose cwd is inside the `.git` directory is a git
+    context (`git rev-parse --git-dir` exits 0) that is NOT a working
+    tree (`git rev-parse --is-inside-work-tree` is `false`). With
+    `core.bare` unset (git's default `false`), the check falls through
+    the bare-flag fail branch to the work-tree skip.
     """
     project_root = tmp_path / "project"
     project_root.mkdir()
@@ -552,7 +453,7 @@ def test_skipped_when_git_repo_but_not_a_work_tree(*, tmp_path: Path) -> None:
 
 
 def test_skipped_when_git_unavailable(*, tmp_path: Path) -> None:
-    """(m) exit 0 (skipped) when `git` is not on PATH."""
+    """(l) exit 0 (skipped) when `git` is not on PATH."""
     project_root = tmp_path / "project"
     project_root.mkdir()
     # Empty PATH → `shutil.which("git")` returns None.
