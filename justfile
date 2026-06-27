@@ -105,6 +105,19 @@ bootstrap:
 install-commit-refuse-hooks:
     uv run python -m livespec_dev_tooling.install_commit_refuse_hooks
 
+# Install (or idempotently re-install) the canonical worktree-discipline pack
+# (`worktree-lib.sh` + `branch-protection.sh`) into the current checkout's
+# `dev-tooling/` directory, each executable. The installer module is the single
+# canonical-body carrier (its `CANONICAL_WORKTREE_LIB_BODY` /
+# `CANONICAL_BRANCH_PROTECTION_BODY` constants), retiring the copier-template
+# COPIES. The pack scripts are TRACKED files, so the installer targets the
+# work-tree root (`git rev-parse --show-toplevel`) and the result is committed
+# through the normal worktree → PR flow. The
+# `check-primary-checkout-commit-refuse-hook-installed` verifier guards the
+# installed bytes against drift.
+install-worktree-pack:
+    uv run python -m livespec_dev_tooling.install_worktree_pack
+
 # Idempotent: `claude plugin marketplace add` / `install` / `update` all exit 0
 # when the target is already present / already at latest. The `update` calls
 # after each `install` are required because `install` is a no-op when any
