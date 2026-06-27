@@ -31,9 +31,9 @@
 # in a LINKED worktree they DIFFER (the git-dir is
 # <primary>/.git/worktrees/<name>). This is config-free and portable: it
 # needs no `git config` key, no environment marker, and works identically in
-# every clone. The structural commit-refuse hook (git-hook-wrapper.sh) uses the
-# exact same test so the hook and the lifecycle helpers always agree on what
-# "primary" means.
+# every clone. The structural commit-refuse hook (installed from the shared
+# livespec_dev_tooling package) uses the exact same test so the hook and the
+# lifecycle helpers always agree on what "primary" means.
 #
 # HYDRATION IS AN OVERRIDABLE HOOK
 # ================================
@@ -70,8 +70,8 @@ set -euo pipefail
 
 # worktree_is_primary: exit 0 iff the current worktree IS the primary
 # checkout (git-common-dir == git-dir, realpath-normalized). Exit 1 in a
-# linked worktree. Mirrors the structural commit-refuse hook
-# (git-hook-wrapper.sh) exactly.
+# linked worktree. Mirrors the structural commit-refuse hook (installed from
+# the shared livespec_dev_tooling package) exactly.
 worktree_is_primary() {
     common_dir="$(git rev-parse --git-common-dir)"
     git_dir="$(git rev-parse --git-dir)"

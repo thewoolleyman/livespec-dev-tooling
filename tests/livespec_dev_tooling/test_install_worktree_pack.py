@@ -169,6 +169,24 @@ def test_canonical_worktree_lib_body_carries_distinctive_markers() -> None:
     assert CANONICAL_WORKTREE_LIB_BODY.endswith("\n")
 
 
+def test_canonical_worktree_lib_uses_from_package_hook_phrasing() -> None:
+    """The canonical worktree-lib body carries the POST-CONVERGENCE from-package phrasing.
+
+    The fleet's two pre-existing copies had drifted: core's template
+    (blob cd21441) still describes the commit-refuse hook as the vendored
+    `git-hook-wrapper.sh`, while `livespec-orchestrator-git-jsonl`'s copy
+    (blob 94b8034) describes it as "installed from the shared
+    livespec_dev_tooling package" — the correct phrasing now that the hook
+    installs from-package and the vendored wrapper is retired. The canonical
+    package-data body MUST be the from-package one, so it never references a
+    file the convergence deletes. This locks that choice against a future
+    re-sync from the (still-lagging) core template.
+    """
+    assert "installed from the shared" in CANONICAL_WORKTREE_LIB_BODY
+    assert "livespec_dev_tooling package" in CANONICAL_WORKTREE_LIB_BODY
+    assert "git-hook-wrapper.sh" not in CANONICAL_WORKTREE_LIB_BODY
+
+
 def test_canonical_branch_protection_body_carries_distinctive_markers() -> None:
     """Lock distinctive structural markers of the branch-protection body."""
     assert "branch-protection.sh — the SERVER-SIDE mirror" in CANONICAL_BRANCH_PROTECTION_BODY
