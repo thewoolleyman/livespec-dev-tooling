@@ -34,12 +34,14 @@ can drift. The repo's `templates/` tree (the template-source domain of
 zs22.7.9.3) and the `.git/` directory are carved out.
 
 A third arm (zs22.7.9.3) guards the worktree-discipline PACK —
-`dev-tooling/worktree-lib.sh`, `dev-tooling/branch-protection.sh`, and
+`dev-tooling/worktree-lib.sh`, `dev-tooling/branch-protection.sh`,
 `dev-tooling/worktree.just` (the worktree-lifecycle recipe fragment,
-added zs22.7.9 W2c/.4) — which the companion `install_worktree_pack`
-installer ships from the SAME single package source (its
-`CANONICAL_WORKTREE_LIB_BODY` / `CANONICAL_BRANCH_PROTECTION_BODY` /
-`CANONICAL_WORKTREE_JUST_BODY` constants, imported here). Both the
+added zs22.7.9 W2c/.4), and `dev-tooling/branch-protection.just` (the
+branch-protection recipe fragment, added zs22 jzpx) — which the companion
+`install_worktree_pack` installer ships from the SAME single package source
+(its `CANONICAL_WORKTREE_LIB_BODY` / `CANONICAL_BRANCH_PROTECTION_BODY` /
+`CANONICAL_WORKTREE_JUST_BODY` / `CANONICAL_BRANCH_PROTECTION_JUST_BODY`
+constants, imported here). Both the
 hook and the pack are facets of Conformance-Pattern concern #1
 (Worktree-discipline), so the pack's byte-identity guard rides this
 existing slug rather than a NEW canonical check slug — adding a new
@@ -80,8 +82,9 @@ Exit codes:
   byte-different from `CANONICAL_HOOK_BODY`; OR a vendored hook-source
   copy exists outside the carve-outs; OR an installed worktree-pack
   file (`dev-tooling/worktree-lib.sh` / `dev-tooling/branch-protection.sh` /
-  `dev-tooling/worktree.just`) has drifted (`worktree_pack_body_mismatch`)
-  or is partially installed (`worktree_pack_file_missing`). Corrective
+  `dev-tooling/worktree.just` / `dev-tooling/branch-protection.just`) has
+  drifted (`worktree_pack_body_mismatch`) or is partially installed
+  (`worktree_pack_file_missing`). Corrective
   action: run
   `just install-commit-refuse-hooks` and/or `just install-worktree-pack`
   (the from-package installers that are the single source of each body),
@@ -128,6 +131,7 @@ from livespec_dev_tooling.install_commit_refuse_hooks import (  # noqa: E402
 # the hook arm imports `CANONICAL_HOOK_BODY`.
 from livespec_dev_tooling.install_worktree_pack import (  # noqa: E402
     CANONICAL_BRANCH_PROTECTION_BODY,
+    CANONICAL_BRANCH_PROTECTION_JUST_BODY,
     CANONICAL_WORKTREE_JUST_BODY,
     CANONICAL_WORKTREE_LIB_BODY,
 )
@@ -175,12 +179,13 @@ _VENDORED_COPY_REMEDY = (
     "drift from it"
 )
 
-# Worktree-pack arm: the tracked `dev-tooling/` pack files paired with the
+# Worktree-pack arm: the installed `dev-tooling/` pack files paired with the
 # canonical bodies the `install_worktree_pack` installer writes — the two
-# `.sh` scripts plus the `worktree.just` recipe fragment. The pack is
+# `.sh` scripts plus the two `.just` recipe fragments. The pack is
 # OPTIONAL — absent entirely it is skipped — but once ANY pack file is
 # present ALL MUST be present and byte-identical.
 _WORKTREE_PACK_FILES: tuple[tuple[str, str], ...] = (
+    ("branch-protection.just", CANONICAL_BRANCH_PROTECTION_JUST_BODY),
     ("branch-protection.sh", CANONICAL_BRANCH_PROTECTION_BODY),
     ("worktree-lib.sh", CANONICAL_WORKTREE_LIB_BODY),
     ("worktree.just", CANONICAL_WORKTREE_JUST_BODY),
@@ -191,8 +196,9 @@ _WORKTREE_PACK_MISSING_FAILURE_MODE = "worktree_pack_file_missing"
 _WORKTREE_PACK_REMEDY = (
     "run `just install-worktree-pack` (the from-package installer that "
     "writes the single canonical `worktree-lib.sh`, `branch-protection.sh`, "
-    "and `worktree.just` bodies byte-for-byte into `dev-tooling/`); a drifted "
-    "or partially installed pack is a copy that diverged from the package source"
+    "`worktree.just`, and `branch-protection.just` bodies byte-for-byte into "
+    "`dev-tooling/`); a drifted or partially installed pack is a copy that "
+    "diverged from the package source"
 )
 
 
@@ -358,7 +364,8 @@ def _inspect_worktree_pack(*, repo_root: Path) -> list[tuple[str, str]]:
     """Return `(file_name, failure_mode)` tuples for worktree-pack drift.
 
     The worktree-discipline pack (`dev-tooling/worktree-lib.sh` +
-    `dev-tooling/branch-protection.sh` + `dev-tooling/worktree.just`) is
+    `dev-tooling/branch-protection.sh` + `dev-tooling/worktree.just` +
+    `dev-tooling/branch-protection.just`) is
     OPTIONAL per repo: a repo that installs NO pack file legitimately lacks
     the pack, so this returns an empty list (skip — no false-fail). But once
     a repo installs ANY pack file the pack is considered present, and ALL

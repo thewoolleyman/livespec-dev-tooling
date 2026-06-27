@@ -21,7 +21,9 @@ zs22.7.9.3) and `.git/`.
 
 A third arm (zs22.7.9.3) guards the worktree-discipline pack
 (`dev-tooling/worktree-lib.sh` / `dev-tooling/branch-protection.sh` /
-`dev-tooling/worktree.just`, the recipe fragment added zs22.7.9 W2c/.4)
+`dev-tooling/worktree.just`, the worktree-lifecycle recipe fragment added
+zs22.7.9 W2c/.4, plus `dev-tooling/branch-protection.just`, the
+branch-protection recipe fragment added zs22 jzpx)
 against drift from the single `install_worktree_pack` package source: the
 pack is OPTIONAL (absent entirely → skip), but once any pack file is
 present ALL MUST be present and byte-identical, else
@@ -44,6 +46,7 @@ from pathlib import Path
 from livespec_dev_tooling.install_commit_refuse_hooks import CANONICAL_HOOK_BODY
 from livespec_dev_tooling.install_worktree_pack import (
     CANONICAL_BRANCH_PROTECTION_BODY,
+    CANONICAL_BRANCH_PROTECTION_JUST_BODY,
     CANONICAL_WORKTREE_JUST_BODY,
     CANONICAL_WORKTREE_LIB_BODY,
 )
@@ -53,11 +56,12 @@ __all__: list[str] = []
 
 # The pack's installed basenames paired with their canonical bodies — the
 # fixture mirror of the verifier's `_WORKTREE_PACK_FILES` (the two `.sh`
-# scripts plus the `worktree.just` recipe fragment).
+# scripts plus the two `.just` recipe fragments).
 _WORKTREE_PACK_EXPECTED: tuple[tuple[str, str], ...] = (
     ("worktree-lib.sh", CANONICAL_WORKTREE_LIB_BODY),
     ("branch-protection.sh", CANONICAL_BRANCH_PROTECTION_BODY),
     ("worktree.just", CANONICAL_WORKTREE_JUST_BODY),
+    ("branch-protection.just", CANONICAL_BRANCH_PROTECTION_JUST_BODY),
 )
 
 
@@ -666,3 +670,58 @@ def test_fails_when_worktree_just_absent_with_scripts_present(*, tmp_path: Path)
     )
     assert "worktree_pack_file_missing" in result.stderr
     assert "worktree.just" in result.stderr
+
+
+def test_fails_when_branch_protection_just_drifts(*, tmp_path: Path) -> None:
+    """(s) exit 4 when the `branch-protection.just` recipe fragment's bytes drift.
+
+    All three hooks, both `.sh` scripts, and `worktree.just` are canonical, so
+    the ONLY failure is the drifted `branch-protection.just` — proving the
+    branch-protection recipe fragment rides the same pack byte-identity arm as
+    the worktree fragment and the scripts.
+    """
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    _git_init(cwd=project_root)
+    _install_canonical_hooks(repo_root=project_root)
+    _install_canonical_worktree_pack(repo_root=project_root)
+    # Drift one byte of branch-protection.just.
+    drifted = project_root / "dev-tooling" / "branch-protection.just"
+    _ = drifted.write_text(CANONICAL_BRANCH_PROTECTION_JUST_BODY + "# drift\n", encoding="utf-8")
+
+    result = _run_check(cwd=project_root)
+    assert result.returncode == 4, (
+        f"expected exit 4; got {result.returncode}, "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    assert "worktree_pack_body_mismatch" in result.stderr
+    assert "branch-protection.just" in result.stderr
+
+
+def test_fails_when_branch_protection_just_absent_with_others_present(*, tmp_path: Path) -> None:
+    """(t) exit 4 when the other three pack files are canonical but `branch-protection.just` is absent.
+
+    Once any pack file is present the whole pack is considered installed, so a
+    missing `branch-protection.just` is a partial install: it fails as
+    `worktree_pack_file_missing`.
+    """
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    _git_init(cwd=project_root)
+    _install_canonical_hooks(repo_root=project_root)
+    pack_dir = project_root / "dev-tooling"
+    pack_dir.mkdir()
+    # The two `.sh` scripts + worktree.just present (canonical); branch-protection.just absent.
+    _ = (pack_dir / "worktree-lib.sh").write_text(CANONICAL_WORKTREE_LIB_BODY, encoding="utf-8")
+    _ = (pack_dir / "branch-protection.sh").write_text(
+        CANONICAL_BRANCH_PROTECTION_BODY, encoding="utf-8"
+    )
+    _ = (pack_dir / "worktree.just").write_text(CANONICAL_WORKTREE_JUST_BODY, encoding="utf-8")
+
+    result = _run_check(cwd=project_root)
+    assert result.returncode == 4, (
+        f"expected exit 4; got {result.returncode}, "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    assert "worktree_pack_file_missing" in result.stderr
+    assert "branch-protection.just" in result.stderr

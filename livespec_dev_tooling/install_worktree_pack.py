@@ -1,21 +1,28 @@
 """install_worktree_pack — install the canonical livespec worktree-discipline pack.
 
 Writes the canonical worktree-discipline pack into a governed repo's
-`dev-tooling/` directory. The pack is three files from a single package
+`dev-tooling/` directory. The pack is four files from a single package
 source: the two executable shell scripts `worktree-lib.sh` (the portable,
 ecosystem-neutral worktree-lifecycle core) and `branch-protection.sh` (the
-server-side branch-protection mirror), plus the non-executable justfile
-fragment `worktree.just` (the four `just worktree-*` lifecycle recipe
-stanzas, the consumer root justfile `import`s rather than copies). The two
-`.sh` scripts are made executable (the recipes invoke them directly via
-`./dev-tooling/…`); `worktree.just` is a justfile fragment that is `import`ed,
-never run directly, so it is NOT made executable. The target directory is the
-repository's work-tree root resolved via `git rev-parse --show-toplevel`, so
-the pack lands beside the consumer's other `dev-tooling/` scripts and is
-committed through the normal worktree → PR flow. This differs from the
-commit-refuse hook precedent's install target: the pack files are TRACKED
-repo files under `dev-tooling/`, whereas the hooks live in the untracked
-shared `.git/hooks/` directory.
+server-side branch-protection mirror), plus the two non-executable justfile
+fragments `worktree.just` (the four `just worktree-*` lifecycle recipe
+stanzas) and `branch-protection.just` (the `protect-default-branch` /
+`check-branch-protection` recipe stanzas), each `import`ed by the consumer
+root justfile rather than copied. The two `.sh` scripts are made executable
+(the recipes invoke them directly via `./dev-tooling/…`); the two `.just`
+fragments are `import`ed, never run directly, so they are NOT made
+executable. The target directory is the repository's work-tree root resolved
+via `git rev-parse --show-toplevel`, so the pack lands beside the consumer's
+other `dev-tooling/` files.
+
+The pack files are UNTRACKED-AND-INSTALLED, NOT tracked-committed: a consumer
+`git rm`s them from version control, gitignores them, and (re)materializes
+them via `just install-worktree-pack` from `bootstrap`/CI. This mirrors the
+commit-refuse hook precedent, which installs its single canonical body into
+the untracked shared `.git/hooks/` directory — the only difference is the
+install target (`dev-tooling/` here, `.git/hooks/` for the hooks). Because
+nothing tracks the installed copy, the `primary_checkout_commit_refuse_hook_installed`
+verifier byte-checks it against the package source on every `just check`.
 
 DELIVERY CARRIER — package-data, not an inline string constant. The
 commit-refuse hook precedent (`install_commit_refuse_hooks`) embeds its
@@ -29,15 +36,15 @@ anti-pattern the project forbids. Instead the canonical bodies ship as
 genuine PACKAGE-DATA files under `livespec_dev_tooling/worktree_pack/`
 (resolved by `__file__`-relative path, mirroring the existing `_VENDOR_DIR`
 pattern). ruff never lints those `.sh` files, the bytes stay faithful with
-zero escaping, and the package file IS the single canonical source. The
-`worktree.just` recipe fragment ships the same way — a genuine package-data
-file (ruff does not lint `.just`), not a `.py` string constant. This module
-still EXPOSES the three bodies as the `CANONICAL_WORKTREE_LIB_BODY` /
-`CANONICAL_BRANCH_PROTECTION_BODY` / `CANONICAL_WORKTREE_JUST_BODY` string
-constants (read once at import), so the
-`primary_checkout_commit_refuse_hook_installed` verifier imports the SAME
-constants to assert byte-identity against the installed files — there is no
-second copy to drift.
+zero escaping, and the package file IS the single canonical source. The two
+`.just` recipe fragments ship the same way — genuine package-data files (ruff
+does not lint `.just`), not `.py` string constants. This module still EXPOSES
+the four bodies as the `CANONICAL_WORKTREE_LIB_BODY` /
+`CANONICAL_BRANCH_PROTECTION_BODY` / `CANONICAL_WORKTREE_JUST_BODY` /
+`CANONICAL_BRANCH_PROTECTION_JUST_BODY` string constants (read once at
+import), so the `primary_checkout_commit_refuse_hook_installed` verifier
+imports the SAME constants to assert byte-identity against the installed
+files — there is no second copy to drift.
 
 Retires the copy-based delivery: the bodies were previously shipped ONLY as
 copier-template COPIES under livespec core's
@@ -73,6 +80,7 @@ import structlog  # noqa: E402  — vendor-path-aware import after sys.path inse
 
 __all__: list[str] = [
     "CANONICAL_BRANCH_PROTECTION_BODY",
+    "CANONICAL_BRANCH_PROTECTION_JUST_BODY",
     "CANONICAL_WORKTREE_JUST_BODY",
     "CANONICAL_WORKTREE_LIB_BODY",
     "install_pack",
@@ -92,24 +100,27 @@ def _read_canonical_body(*, name: str) -> str:
     return (_PACK_DATA_DIR / name).read_text(encoding="utf-8")
 
 
-# The three canonical bodies, read once at import from package-data. Exposed
+# The four canonical bodies, read once at import from package-data. Exposed
 # as module constants so the verifier imports the SAME bytes it asserts the
 # installed files against (no drift seam).
 CANONICAL_WORKTREE_LIB_BODY = _read_canonical_body(name="worktree-lib.sh")
 CANONICAL_BRANCH_PROTECTION_BODY = _read_canonical_body(name="branch-protection.sh")
 CANONICAL_WORKTREE_JUST_BODY = _read_canonical_body(name="worktree.just")
+CANONICAL_BRANCH_PROTECTION_JUST_BODY = _read_canonical_body(name="branch-protection.just")
 
 
 # The pack's installed layout: `(basename, canonical body, executable)`
 # tuples written under the consumer repo's `dev-tooling/` directory. The two
-# `.sh` scripts are made executable (the `worktree-*` recipes invoke them
-# directly via `./dev-tooling/…`); `worktree.just` is a justfile fragment the
-# consumer root justfile `import`s — never run directly — so it is installed
+# `.sh` scripts are made executable (the `worktree-*` / branch-protection
+# recipes invoke them directly via `./dev-tooling/…`); the two `.just`
+# fragments (`worktree.just`, `branch-protection.just`) are `import`ed by the
+# consumer root justfile — never run directly — so they are installed
 # NON-executable.
 _PACK_FILES: tuple[tuple[str, str, bool], ...] = (
     ("worktree-lib.sh", CANONICAL_WORKTREE_LIB_BODY, True),
     ("branch-protection.sh", CANONICAL_BRANCH_PROTECTION_BODY, True),
     ("worktree.just", CANONICAL_WORKTREE_JUST_BODY, False),
+    ("branch-protection.just", CANONICAL_BRANCH_PROTECTION_JUST_BODY, False),
 )
 
 
@@ -128,12 +139,12 @@ def _configure_logger() -> structlog.stdlib.BoundLogger:
 def _work_tree_root(*, cwd: Path) -> Path:
     """Return the absolute path to the git work-tree root for `cwd`.
 
-    Uses `git rev-parse --show-toplevel`. The pack is a set of TRACKED
-    repo files under `dev-tooling/`, so it installs into the work-tree
-    root of wherever the installer runs (then committed through the
-    normal worktree → PR flow). Uses `check=True` so a failed invocation
-    raises (a bug — the installer is only ever run inside a repo) rather
-    than silently returning a sentinel.
+    Uses `git rev-parse --show-toplevel`. The pack is a set of
+    UNTRACKED-AND-INSTALLED files under `dev-tooling/` (gitignored, never
+    tracked-committed), so it installs into the work-tree root of wherever
+    the installer runs. Uses `check=True` so a failed invocation raises (a
+    bug — the installer is only ever run inside a repo) rather than silently
+    returning a sentinel.
     """
     completed = subprocess.run(  # noqa: S603
         ["git", "rev-parse", "--show-toplevel"],  # noqa: S607
@@ -150,8 +161,8 @@ def install_pack(*, cwd: Path, log: structlog.stdlib.BoundLogger) -> int:
 
     Writes each `_PACK_FILES` body to `<root>/dev-tooling/<name>`, setting
     the executable bit only on the entries flagged executable (the two `.sh`
-    scripts; the `worktree.just` recipe fragment is `import`ed, never run, so
-    it stays non-executable). Idempotent: re-running overwrites with the
+    scripts; the two `.just` recipe fragments are `import`ed, never run, so
+    they stay non-executable). Idempotent: re-running overwrites with the
     identical canonical bodies. Returns 0 on success.
     """
     pack_dir = _work_tree_root(cwd=cwd) / "dev-tooling"
