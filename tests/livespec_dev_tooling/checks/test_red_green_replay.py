@@ -2579,3 +2579,191 @@ def test_red_green_cycles_route_correctly_in_sequence(*, tmp_path: Path) -> None
     assert (
         "TDD-Suite-Green-Captured-At:" not in third_msg
     ), f"the amend on a Red-only HEAD must not take the suite leg; got {third_msg!r}"
+
+
+# ---------------------------------------------------------------------------
+# `.py` DELETIONS (work-item livespec-zs22.7.9.7). A staged deletion carries
+# no content to Red/Green- or suite-verify, so it must drop out of the staged
+# set the hook classifies (commit-msg path) AND out of the touched set the
+# range validator inspects (no-argv path). Before the fix, `_staged_files_list`
+# (`git diff --cached --name-only`) and `_commit_violates`
+# (`git diff-tree --name-only`) BOTH listed deletions: a deleted `tests/*.py`
+# routed into the Red leg, whose handler `read_bytes` the absent file and
+# crashed (uncaught FileNotFoundError, hook exit 1), and a range commit
+# deleting an impl `.py` was flagged `range-missing-trailers`. The fix excludes
+# deletions from both via `--diff-filter=d` (lowercase = exclude). This BLOCKED
+# zs22.7.9.2 / .3, which delete vendored `.py` files.
+# ---------------------------------------------------------------------------
+
+
+def test_chore_deleting_a_test_py_file_exits_zero_without_crash(*, tmp_path: Path) -> None:
+    """A commit that DELETES a test `.py` file passes the commit-msg hook.
+
+    Regression for livespec-zs22.7.9.7: `_staged_files_list` used
+    `git diff --cached --name-only`, which INCLUDES deletions, so a
+    staged deletion of a `tests/*.py` file classified into the tests
+    bucket; a chore subject with no impl then routed to the Red leg,
+    which `read_bytes` the now-absent file and crashed with an
+    uncaught FileNotFoundError (hook exit 1 — a `.py` deletion could
+    not be committed). A deletion cannot be Red/Green-tested, so it
+    must drop out of classification entirely: the hook exits 0.
+    """
+    subprocess.run(["git", "init", "-q"], cwd=str(tmp_path), check=True, env=_scrubbed_env())
+    subprocess.run(
+        ["git", "config", "user.email", "test@test.test"],
+        cwd=str(tmp_path),
+        check=True,
+        env=_scrubbed_env(),
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test User"],
+        cwd=str(tmp_path),
+        check=True,
+        env=_scrubbed_env(),
+    )
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_doomed.py").write_text(
+        "def test_x() -> None:\n    assert True\n",
+        encoding="utf-8",
+    )
+    subprocess.run(
+        ["git", "add", "tests/test_doomed.py"],
+        cwd=str(tmp_path),
+        check=True,
+        env=_scrubbed_env(),
+    )
+    subprocess.run(
+        ["git", "commit", "-qm", "chore: add a test fixture"],
+        cwd=str(tmp_path),
+        check=True,
+        env=_scrubbed_env(),
+    )
+    subprocess.run(
+        ["git", "rm", "-q", "tests/test_doomed.py"],
+        cwd=str(tmp_path),
+        check=True,
+        env=_scrubbed_env(),
+    )
+
+    msg_path = tmp_path / "COMMIT_EDITMSG"
+    msg_path.write_text("chore: remove obsolete test\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_scrubbed_env(),
+    )
+
+    assert result.returncode == 0, (
+        f"deleting a test .py must not crash the hook; got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    assert "Traceback" not in result.stderr, (
+        f"the hook must not crash with an uncaught exception on a .py deletion; "
+        f"got stderr={result.stderr!r}"
+    )
+
+
+def test_chore_deleting_an_impl_py_file_exits_zero(*, tmp_path: Path) -> None:
+    """A commit that DELETES an impl `.py` file passes the commit-msg hook.
+
+    Companion to the test-file-deletion regression. A staged deletion
+    of an impl-prefixed `.py` (here under `dev-tooling/`) must also
+    drop out of classification. Before the fix it fell through to the
+    suite-green leg, forcing a full-suite run on a pure deletion (and
+    rejecting `suite-red` in a fixture repo with no collectable
+    tests). A deletion carries no behavior to verify, so the hook
+    exits 0 without dispatching any leg.
+    """
+    subprocess.run(["git", "init", "-q"], cwd=str(tmp_path), check=True, env=_scrubbed_env())
+    subprocess.run(
+        ["git", "config", "user.email", "test@test.test"],
+        cwd=str(tmp_path),
+        check=True,
+        env=_scrubbed_env(),
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test User"],
+        cwd=str(tmp_path),
+        check=True,
+        env=_scrubbed_env(),
+    )
+    (tmp_path / "dev-tooling").mkdir()
+    (tmp_path / "dev-tooling" / "doomed.py").write_text(
+        "VALUE: int = 1\n",
+        encoding="utf-8",
+    )
+    subprocess.run(
+        ["git", "add", "dev-tooling/doomed.py"],
+        cwd=str(tmp_path),
+        check=True,
+        env=_scrubbed_env(),
+    )
+    subprocess.run(
+        ["git", "commit", "-qm", "chore: add an impl module"],
+        cwd=str(tmp_path),
+        check=True,
+        env=_scrubbed_env(),
+    )
+    subprocess.run(
+        ["git", "rm", "-q", "dev-tooling/doomed.py"],
+        cwd=str(tmp_path),
+        check=True,
+        env=_scrubbed_env(),
+    )
+
+    msg_path = tmp_path / "COMMIT_EDITMSG"
+    msg_path.write_text("chore: remove obsolete impl module\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_scrubbed_env(),
+    )
+
+    assert result.returncode == 0, (
+        f"deleting an impl .py must not dispatch a leg; got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    assert "Traceback" not in result.stderr, (
+        f"the hook must not crash with an uncaught exception on a .py deletion; "
+        f"got stderr={result.stderr!r}"
+    )
+
+
+def test_no_arg_range_commit_deleting_product_py_exits_zero(*, tmp_path: Path) -> None:
+    """No argv + a range commit that DELETES product impl `.py` → exit 0.
+
+    The commit-range validator (`_commit_violates`) enumerated touched
+    paths via `git diff-tree --name-only`, which lists deletions, so a
+    range commit deleting an impl `.py` with no trailers was flagged
+    `range-missing-trailers` and failed `just check` / pre-push — even
+    though a deletion carries no Red/Green evidence to require. The
+    product `.py` must exist at `origin/master` so the range commit can
+    DELETE it; the deletion is then excluded from the touched set and
+    the commit passes the range check.
+    """
+    _range_git(tmp_path=tmp_path, args=["init", "-q"])
+    _range_git(tmp_path=tmp_path, args=["config", "user.email", "test@example.com"])
+    _range_git(tmp_path=tmp_path, args=["config", "user.name", "Test"])
+    _range_git(tmp_path=tmp_path, args=["config", "commit.gpgsign", "false"])
+    (tmp_path / "livespec").mkdir()
+    (tmp_path / "livespec" / "foo.py").write_text("VALUE: int = 1\n", encoding="utf-8")
+    _range_git(tmp_path=tmp_path, args=["add", "-A"])
+    _range_git(tmp_path=tmp_path, args=["commit", "-qm", "chore: base with product code"])
+    _range_git(tmp_path=tmp_path, args=["update-ref", "refs/remotes/origin/master", "HEAD"])
+    _range_git(tmp_path=tmp_path, args=["rm", "-q", "livespec/foo.py"])
+    _range_git(tmp_path=tmp_path, args=["commit", "-qm", "chore: remove obsolete product module"])
+
+    result = _run_no_arg(tmp_path=tmp_path)
+
+    assert result.returncode == 0, (
+        f"a range commit that only DELETES product .py must pass the range check; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )

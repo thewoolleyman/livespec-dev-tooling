@@ -176,7 +176,18 @@ def _git_stdout_lines(*, args: list[str]) -> list[str]:
 
 
 def _staged_files_list() -> list[str]:
-    return _git_stdout_lines(args=["diff", "--cached", "--name-only"])
+    """Return staged paths, EXCLUDING deletions (`--diff-filter=d`).
+
+    A staged deletion carries no content to Red/Green- or
+    suite-verify, so it must drop out of classification entirely.
+    `git diff --cached --name-only` alone INCLUDES deletions, which
+    routed a deleted `tests/*.py` into the Red leg — whose handler then
+    `read_bytes` the absent file and crashed with an uncaught
+    FileNotFoundError, so a `.py` deletion could not be committed
+    (work-item livespec-zs22.7.9.7). The lowercase `d` filter excludes
+    deleted paths while keeping additions and modifications.
+    """
+    return _git_stdout_lines(args=["diff", "--cached", "--name-only", "--diff-filter=d"])
 
 
 def _staged_tests_pass(*, tests_paths: list[str]) -> bool:
@@ -209,10 +220,15 @@ def _commit_violates(*, sha: str) -> bool:
     Red->Green commit) or `TDD-Suite-Green-*` (a green-verified
     behavior-preserving commit). `--root` makes a root commit diff
     against the empty tree, so a range that begins at a repo's first
-    commit is still enumerable.
+    commit is still enumerable. `--diff-filter=d` excludes DELETED
+    paths (lowercase = exclude): a commit that only deletes product
+    impl `.py` carries no Red/Green evidence to require, so the range
+    validator must not flag it (work-item livespec-zs22.7.9.7) — the
+    same deletion carve-out the commit-msg path applies in
+    `_staged_files_list`.
     """
     touched = _git_stdout_lines(
-        args=["diff-tree", "--no-commit-id", "--name-only", "-r", "--root", sha],
+        args=["diff-tree", "--no-commit-id", "--name-only", "-r", "--root", "--diff-filter=d", sha],
     )
     product_paths = [p for p in touched if p.endswith(".py") and p.startswith(_IMPL_PREFIXES)]
     if not product_paths:
