@@ -70,7 +70,7 @@ __all__: list[str] = [
 ]
 
 
-REPO_CLASSES = ("core", "enforcement-suite", "impl-plugin", "driver-plugin", "library")
+REPO_CLASSES = ("core", "enforcement-suite", "impl-plugin", "driver-plugin", "library", "console")
 
 # The ordered profile layers an adopter may declare (the cumulative
 # conformance partition: each layer adds obligations atop the prior).
@@ -79,12 +79,19 @@ PROFILE_LAYERS = ("baseline", "fleet-infra", "orchestrator-plugin", "app")
 ADOPTER_POSTURES = ("released", "pinned", "none")
 
 _ALL_CLASSES: frozenset[str] = frozenset(REPO_CLASSES)
-# Every current class participates in the pin-and-bump web (verified
-# 2026-06-12: all six members carry all three shim workflows), so the
-# shim rows apply fleet-wide. The dev-tooling-pin row excludes only the
-# enforcement-suite class — dev-tooling cannot pin itself.
-_PIN_CONSUMING_CLASSES = _ALL_CLASSES
+# The classes participating in the pin-and-bump web — i.e. carrying the
+# three shim workflows (bump-pin-from-dispatch / pin-freshness /
+# release-dispatch). Every class EXCEPT the Control-Plane console: the
+# console (livespec-console-beads-fabro) is a non-pin-consuming fleet
+# member that carries the dev-tooling pin (see _DEV_TOOLING_PIN_CLASSES)
+# but ships none of the shims, so its pin freshness is monitored centrally
+# by the dev-tooling-pin row's warning-severity staleness leg rather than
+# auto-bumped (livespec-dev-tooling contracts.md §"Bump-pin policy").
+_PIN_WEB_CLASSES = _ALL_CLASSES - {"console"}
 _TEMPLATE_BORN_CLASSES = frozenset({"impl-plugin"})
+# The dev-tooling-pin row excludes only the enforcement-suite class —
+# dev-tooling cannot pin itself; every other class, the console included,
+# carries a [tool.uv.sources] livespec-dev-tooling tag pin.
 _DEV_TOOLING_PIN_CLASSES = _ALL_CLASSES - {"enforcement-suite"}
 
 
@@ -123,21 +130,21 @@ OBLIGATION_ROWS: tuple[ObligationRow, ...] = (
     ObligationRow(
         row_id="workflow-bump-pin-from-dispatch",
         obligation_type="committed-file",
-        applies_to=_PIN_CONSUMING_CLASSES,
+        applies_to=_PIN_WEB_CLASSES,
         assert_member=assert_bump_pin_workflow,
         reconcile=reconcile_shim_workflows,
     ),
     ObligationRow(
         row_id="workflow-pin-freshness",
         obligation_type="committed-file",
-        applies_to=_PIN_CONSUMING_CLASSES,
+        applies_to=_PIN_WEB_CLASSES,
         assert_member=assert_pin_freshness_workflow,
         reconcile=reconcile_shim_workflows,
     ),
     ObligationRow(
         row_id="workflow-release-dispatch",
         obligation_type="committed-file",
-        applies_to=_PIN_CONSUMING_CLASSES,
+        applies_to=_PIN_WEB_CLASSES,
         assert_member=assert_release_dispatch_workflow,
         reconcile=reconcile_shim_workflows,
     ),

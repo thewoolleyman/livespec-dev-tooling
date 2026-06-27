@@ -239,3 +239,26 @@ def test_baseline_harnesses_row_is_wired_for_every_class() -> None:
     assert row.assert_member is assert_baseline_harnesses
     assert row.reconcile is None
     assert row.manual_hint
+
+
+def test_console_class_scopes_pin_web_rows() -> None:
+    # The Control-Plane console (livespec-console-beads-fabro) is a fleet
+    # member that carries the livespec-dev-tooling pin for its own toolchain
+    # but ships none of the three pin-and-bump shim workflows. So the console
+    # class is EXCLUDED from the three shim-workflow rows while keeping the
+    # dev-tooling-pin row and every universal row; it is also outside the
+    # template-born rows (no copier-answers / agent-instruction-surface),
+    # per the per-class applies_to scoping derived against the console's M3
+    # committed state (livespec-zs22.7.8).
+    assert "console" in REPO_CLASSES
+    console_rows = {row.row_id for row in rows_for(repo_class="console")}
+    assert "dev-tooling-pin" in console_rows
+    assert "workflow-bump-pin-from-dispatch" not in console_rows
+    assert "workflow-pin-freshness" not in console_rows
+    assert "workflow-release-dispatch" not in console_rows
+    assert "copier-answers" not in console_rows
+    assert "agent-instruction-surface" not in console_rows
+    assert "workflow-ci" in console_rows
+    assert "no-tracked-gitlinks" in console_rows
+    assert "beads-tenant-connection-consistency" in console_rows
+    assert "baseline-harnesses" in console_rows
