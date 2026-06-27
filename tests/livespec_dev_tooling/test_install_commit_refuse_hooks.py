@@ -303,3 +303,46 @@ def test_canonical_body_is_structural() -> None:
     assert "exit 1" in CANONICAL_HOOK_BODY
     assert "livespec.sandboxExempt" in CANONICAL_HOOK_BODY
     assert "git config --get livespec.primaryPath" not in CANONICAL_HOOK_BODY
+
+
+def test_canonical_body_unsets_git_dir_env_before_lefthook() -> None:
+    """The canonical body clears git-injected GIT_DIR env before invoking lefthook (core.bare-flip fix).
+
+    Relocated from livespec core's
+    `test_git_hook_wrapper_unsets_git_dir_env_before_lefthook`
+    (convergence zs22.7.9, W2b) now that the canonical body is the SINGLE
+    source for the hook. The body MUST carry the `unset GIT_DIR
+    GIT_INDEX_FILE GIT_WORK_TREE GIT_PREFIX` line on its own line, and it
+    MUST appear BEFORE the `lefthook run --no-auto-install` exec.
+    Otherwise lefthook, run with the git-injected GIT_DIR, misreads the
+    repo as bare and writes core.bare=true into the shared config,
+    corrupting every checkout that shares it (root cause li-iroguc).
+    """
+    lines = CANONICAL_HOOK_BODY.splitlines()
+
+    unset_line_indices = [
+        i
+        for i, line in enumerate(lines)
+        if line.strip() == "unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE GIT_PREFIX"
+    ]
+    assert unset_line_indices, (
+        "CANONICAL_HOOK_BODY is missing the "
+        "'unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE GIT_PREFIX' line; "
+        "without it lefthook (run with the git-injected GIT_DIR) writes "
+        "core.bare=true to the shared config (li-iroguc)."
+    )
+
+    lefthook_exec_indices = [
+        i for i, line in enumerate(lines) if "lefthook run --no-auto-install" in line
+    ]
+    assert lefthook_exec_indices, (
+        "CANONICAL_HOOK_BODY is missing the 'lefthook run --no-auto-install' exec line; "
+        "the canonical body's dispatch contract is broken."
+    )
+
+    assert min(unset_line_indices) < min(lefthook_exec_indices), (
+        "CANONICAL_HOOK_BODY has the unset line AFTER the 'lefthook run' exec line; "
+        "it must come BEFORE so the env is cleared before lefthook resolves the repo. "
+        f"unset at line {min(unset_line_indices) + 1}, "
+        f"lefthook exec at line {min(lefthook_exec_indices) + 1}."
+    )
