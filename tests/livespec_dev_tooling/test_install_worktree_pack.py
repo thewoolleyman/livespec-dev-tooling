@@ -1,13 +1,16 @@
 """Outside-in test for `livespec_dev_tooling/install_worktree_pack.py`.
 
-The installer writes the two canonical worktree-discipline scripts —
-`worktree-lib.sh` and `branch-protection.sh` — into a governed repo's
-`dev-tooling/` directory, each executable, resolving the target via
-`git rev-parse --show-toplevel` so the pack lands at the work-tree root of
-wherever the installer runs (the scripts are TRACKED repo files, committed
-through the normal worktree → PR flow). This mirrors
-`install_commit_refuse_hooks`, whose body ships as a wheel-safe module-level
-string constant rather than a data-file resource.
+The installer writes the canonical worktree-discipline pack — the two
+executable scripts `worktree-lib.sh` and `branch-protection.sh` plus the
+non-executable justfile fragment `worktree.just` — into a governed repo's
+`dev-tooling/` directory, resolving the target via `git rev-parse
+--show-toplevel` so the pack lands at the work-tree root of wherever the
+installer runs (the pack files are TRACKED repo files, committed through the
+normal worktree → PR flow). The `.sh` scripts are made executable (the
+`worktree-*` recipes invoke them directly); `worktree.just` is `import`ed by
+the consumer root justfile, never run directly, so it is installed
+non-executable. The canonical bodies ship as wheel-safe package-data
+resources read once at import.
 
 The installer is exercised IN-PROCESS (`main()` with `monkeypatch.chdir`) —
 no Python subprocess spawn (this test is not on the
@@ -111,6 +114,34 @@ def test_main_installs_both_pack_scripts(
         assert script.is_file(), f"{name} not installed"
         assert os.access(script, os.X_OK), f"{name} not executable"
         assert script.read_text(encoding="utf-8") == body
+
+
+def test_main_installs_worktree_just_fragment(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`main()` writes `dev-tooling/worktree.just` NON-executable, carrying the four recipes.
+
+    Unlike the two `.sh` scripts, the `worktree.just` recipe fragment is
+    `import`ed by the consumer root justfile — never run directly — so it is
+    installed without the executable bit. Its body carries the four canonical
+    `worktree-*` lifecycle recipe stanzas, each a one-line pass-through onto
+    `./dev-tooling/worktree-lib.sh`.
+    """
+    _scrub_git_env(monkeypatch=monkeypatch)
+    primary = tmp_path / "project"
+    _init_repo(repo=primary)
+    monkeypatch.chdir(primary)
+
+    rc = main()
+
+    assert rc == 0
+    fragment = primary / "dev-tooling" / "worktree.just"
+    assert fragment.is_file(), "worktree.just not installed"
+    assert not os.access(fragment, os.X_OK), "worktree.just must not be executable"
+    content = fragment.read_text(encoding="utf-8")
+    for recipe in ("worktree-create", "worktree-hydrate", "worktree-land", "worktree-reap"):
+        assert recipe in content, f"{recipe} recipe stanza missing from worktree.just"
+    assert "./dev-tooling/worktree-lib.sh create" in content
 
 
 def test_main_from_worktree_installs_into_that_worktree_root(

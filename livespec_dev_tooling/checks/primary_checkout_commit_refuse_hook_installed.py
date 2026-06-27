@@ -34,22 +34,24 @@ can drift. The repo's `templates/` tree (the template-source domain of
 zs22.7.9.3) and the `.git/` directory are carved out.
 
 A third arm (zs22.7.9.3) guards the worktree-discipline PACK —
-`dev-tooling/worktree-lib.sh` and `dev-tooling/branch-protection.sh` —
-which the companion `install_worktree_pack` installer ships from the
-SAME single package source (its `CANONICAL_WORKTREE_LIB_BODY` /
-`CANONICAL_BRANCH_PROTECTION_BODY` constants, imported here). Both the
+`dev-tooling/worktree-lib.sh`, `dev-tooling/branch-protection.sh`, and
+`dev-tooling/worktree.just` (the worktree-lifecycle recipe fragment,
+added zs22.7.9 W2c/.4) — which the companion `install_worktree_pack`
+installer ships from the SAME single package source (its
+`CANONICAL_WORKTREE_LIB_BODY` / `CANONICAL_BRANCH_PROTECTION_BODY` /
+`CANONICAL_WORKTREE_JUST_BODY` constants, imported here). Both the
 hook and the pack are facets of Conformance-Pattern concern #1
 (Worktree-discipline), so the pack's byte-identity guard rides this
 existing slug rather than a NEW canonical check slug — adding a new
 `checks/<slug>.py` would force fleet-wide
 `check-aggregate-completeness` re-wiring across every consumer, which
 this arm deliberately avoids. Unlike the MANDATORY hooks, the pack is
-OPTIONAL per repo: a repo that installs NEITHER pack script
-legitimately lacks it and is SKIPPED. But once a repo installs ANY
-pack script, BOTH MUST be present and byte-identical to the canonical
-bodies — a drifted script is a `worktree_pack_body_mismatch` FAIL and
-an absent sibling of a present script is a `worktree_pack_file_missing`
-FAIL (a partial/drifted install).
+OPTIONAL per repo: a repo that installs NO pack file legitimately
+lacks it and is SKIPPED. But once a repo installs ANY pack file, ALL
+of them MUST be present and byte-identical to the canonical bodies — a
+drifted file is a `worktree_pack_body_mismatch` FAIL and an absent
+sibling of a present file is a `worktree_pack_file_missing` FAIL (a
+partial/drifted install).
 
 The contract supersedes the v091-v094 `core.bare = true` mechanism
 (see `primary_checkout_bare_flag_set.py` in earlier releases). The
@@ -77,9 +79,10 @@ Exit codes:
 - `4` — fail. Any of the three hooks is missing, non-executable, or
   byte-different from `CANONICAL_HOOK_BODY`; OR a vendored hook-source
   copy exists outside the carve-outs; OR an installed worktree-pack
-  script (`dev-tooling/worktree-lib.sh` / `dev-tooling/branch-protection.sh`)
-  has drifted (`worktree_pack_body_mismatch`) or is partially installed
-  (`worktree_pack_file_missing`). Corrective action: run
+  file (`dev-tooling/worktree-lib.sh` / `dev-tooling/branch-protection.sh` /
+  `dev-tooling/worktree.just`) has drifted (`worktree_pack_body_mismatch`)
+  or is partially installed (`worktree_pack_file_missing`). Corrective
+  action: run
   `just install-commit-refuse-hooks` and/or `just install-worktree-pack`
   (the from-package installers that are the single source of each body),
   and delete any vendored copy. The narration names the specific failure
@@ -125,6 +128,7 @@ from livespec_dev_tooling.install_commit_refuse_hooks import (  # noqa: E402
 # the hook arm imports `CANONICAL_HOOK_BODY`.
 from livespec_dev_tooling.install_worktree_pack import (  # noqa: E402
     CANONICAL_BRANCH_PROTECTION_BODY,
+    CANONICAL_WORKTREE_JUST_BODY,
     CANONICAL_WORKTREE_LIB_BODY,
 )
 
@@ -171,22 +175,24 @@ _VENDORED_COPY_REMEDY = (
     "drift from it"
 )
 
-# Worktree-pack arm: the two tracked `dev-tooling/` scripts paired with the
-# canonical bodies the `install_worktree_pack` installer writes. The pack is
-# OPTIONAL — absent entirely it is skipped — but once ANY script is present
-# both MUST be present and byte-identical.
+# Worktree-pack arm: the tracked `dev-tooling/` pack files paired with the
+# canonical bodies the `install_worktree_pack` installer writes — the two
+# `.sh` scripts plus the `worktree.just` recipe fragment. The pack is
+# OPTIONAL — absent entirely it is skipped — but once ANY pack file is
+# present ALL MUST be present and byte-identical.
 _WORKTREE_PACK_FILES: tuple[tuple[str, str], ...] = (
     ("branch-protection.sh", CANONICAL_BRANCH_PROTECTION_BODY),
     ("worktree-lib.sh", CANONICAL_WORKTREE_LIB_BODY),
+    ("worktree.just", CANONICAL_WORKTREE_JUST_BODY),
 )
 _WORKTREE_PACK_DIR_NAME = "dev-tooling"
 _WORKTREE_PACK_BODY_MISMATCH_FAILURE_MODE = "worktree_pack_body_mismatch"
 _WORKTREE_PACK_MISSING_FAILURE_MODE = "worktree_pack_file_missing"
 _WORKTREE_PACK_REMEDY = (
     "run `just install-worktree-pack` (the from-package installer that "
-    "writes the single canonical `worktree-lib.sh` and `branch-protection.sh` "
-    "bodies byte-for-byte into `dev-tooling/`); a drifted or partially "
-    "installed pack is a copy that diverged from the package source"
+    "writes the single canonical `worktree-lib.sh`, `branch-protection.sh`, "
+    "and `worktree.just` bodies byte-for-byte into `dev-tooling/`); a drifted "
+    "or partially installed pack is a copy that diverged from the package source"
 )
 
 
@@ -349,21 +355,21 @@ def _find_vendored_hook_copies(*, repo_root: Path) -> list[Path]:
 
 
 def _inspect_worktree_pack(*, repo_root: Path) -> list[tuple[str, str]]:
-    """Return `(script_name, failure_mode)` tuples for worktree-pack drift.
+    """Return `(file_name, failure_mode)` tuples for worktree-pack drift.
 
     The worktree-discipline pack (`dev-tooling/worktree-lib.sh` +
-    `dev-tooling/branch-protection.sh`) is OPTIONAL per repo: a repo that
-    installs NEITHER script legitimately lacks the pack, so this returns an
-    empty list (skip — no false-fail). But once a repo installs ANY pack
-    script the pack is considered present, and BOTH scripts MUST then exist
-    and be byte-identical to the single canonical source (the
-    `install_worktree_pack` constants):
+    `dev-tooling/branch-protection.sh` + `dev-tooling/worktree.just`) is
+    OPTIONAL per repo: a repo that installs NO pack file legitimately lacks
+    the pack, so this returns an empty list (skip — no false-fail). But once
+    a repo installs ANY pack file the pack is considered present, and ALL
+    pack files MUST then exist and be byte-identical to the single canonical
+    source (the `install_worktree_pack` constants):
 
-    - a present script whose bytes differ → `worktree_pack_body_mismatch`;
+    - a present file whose bytes differ → `worktree_pack_body_mismatch`;
     - a sibling absent while the pack is otherwise present →
       `worktree_pack_file_missing` (a partial/drifted install).
 
-    Returns the failures sorted by script name for deterministic narration.
+    Returns the failures sorted by file name for deterministic narration.
     """
     pack_dir = repo_root / _WORKTREE_PACK_DIR_NAME
     any_present = any((pack_dir / name).is_file() for name, _ in _WORKTREE_PACK_FILES)
