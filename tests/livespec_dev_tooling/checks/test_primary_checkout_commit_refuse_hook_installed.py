@@ -19,6 +19,13 @@ A second arm fails on any vendored hook-source copy
 tree, carving out `templates/` (the template-source domain of
 zs22.7.9.3) and `.git/`.
 
+A third arm (zs22.7.9.3) guards the worktree-discipline pack
+(`dev-tooling/worktree-lib.sh` / `dev-tooling/branch-protection.sh`)
+against drift from the single `install_worktree_pack` package source: the
+pack is OPTIONAL (absent entirely → skip), but once any script is present
+both MUST be present and byte-identical, else `worktree_pack_body_mismatch`
+/ `worktree_pack_file_missing` (exit 4).
+
 The check inspects the common-dir hooks directory (via `git rev-parse
 --git-common-dir`), shared by every worktree, so it passes equally from
 the primary and from any secondary worktree once the canonical hooks are
@@ -34,8 +41,28 @@ import sys
 from pathlib import Path
 
 from livespec_dev_tooling.install_commit_refuse_hooks import CANONICAL_HOOK_BODY
+from livespec_dev_tooling.install_worktree_pack import (
+    CANONICAL_BRANCH_PROTECTION_BODY,
+    CANONICAL_WORKTREE_LIB_BODY,
+)
 
 __all__: list[str] = []
+
+
+# The pack's installed basenames paired with their canonical bodies — the
+# fixture mirror of the verifier's `_WORKTREE_PACK_FILES`.
+_WORKTREE_PACK_EXPECTED: tuple[tuple[str, str], ...] = (
+    ("worktree-lib.sh", CANONICAL_WORKTREE_LIB_BODY),
+    ("branch-protection.sh", CANONICAL_BRANCH_PROTECTION_BODY),
+)
+
+
+def _install_canonical_worktree_pack(*, repo_root: Path) -> None:
+    """Write both canonical pack scripts under `<repo_root>/dev-tooling/`."""
+    pack_dir = repo_root / "dev-tooling"
+    pack_dir.mkdir(parents=True, exist_ok=True)
+    for name, body in _WORKTREE_PACK_EXPECTED:
+        _ = (pack_dir / name).write_text(body, encoding="utf-8")
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -495,3 +522,90 @@ def test_module_re_import_with_vendor_in_sys_path() -> None:
     module2 = importlib.util.module_from_spec(spec2)
     spec2.loader.exec_module(module2)
     assert callable(module2.main)
+
+
+def test_passes_when_no_worktree_pack(*, tmp_path: Path) -> None:
+    """(m) exit 0 when the worktree pack is absent (it is OPTIONAL per repo).
+
+    Canonical hooks are installed and `dev-tooling/` carries no pack
+    scripts; the pack arm SKIPS rather than false-failing a repo that
+    legitimately has not installed the pack.
+    """
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    _git_init(cwd=project_root)
+    _install_canonical_hooks(repo_root=project_root)
+    # A `dev-tooling/` dir with an unrelated file but no pack scripts.
+    dev_tooling = project_root / "dev-tooling"
+    dev_tooling.mkdir()
+    _ = (dev_tooling / "CLAUDE.md").write_text("# unrelated\n", encoding="utf-8")
+
+    result = _run_check(cwd=project_root)
+    assert result.returncode == 0, (
+        f"expected exit 0; got {result.returncode}, "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_passes_when_worktree_pack_canonical(*, tmp_path: Path) -> None:
+    """(n) exit 0 when both pack scripts are present and byte-identical."""
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    _git_init(cwd=project_root)
+    _install_canonical_hooks(repo_root=project_root)
+    _install_canonical_worktree_pack(repo_root=project_root)
+
+    result = _run_check(cwd=project_root)
+    assert result.returncode == 0, (
+        f"expected exit 0; got {result.returncode}, "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_fails_when_worktree_lib_drifts(*, tmp_path: Path) -> None:
+    """(o) exit 4 when a present pack script's bytes differ from canonical.
+
+    All three hooks and `branch-protection.sh` are canonical, so the ONLY
+    failure is the drifted `worktree-lib.sh` — proving the pack byte-identity
+    arm fires independently.
+    """
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    _git_init(cwd=project_root)
+    _install_canonical_hooks(repo_root=project_root)
+    _install_canonical_worktree_pack(repo_root=project_root)
+    # Drift one byte of worktree-lib.sh.
+    drifted = project_root / "dev-tooling" / "worktree-lib.sh"
+    _ = drifted.write_text(CANONICAL_WORKTREE_LIB_BODY + "# drift\n", encoding="utf-8")
+
+    result = _run_check(cwd=project_root)
+    assert result.returncode == 4, (
+        f"expected exit 4; got {result.returncode}, "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    assert "worktree_pack_body_mismatch" in result.stderr
+    assert "worktree-lib.sh" in result.stderr
+
+
+def test_fails_when_worktree_pack_partially_installed(*, tmp_path: Path) -> None:
+    """(p) exit 4 when one pack script is present (canonical) but its sibling is absent.
+
+    A present-but-incomplete pack is a partial/drifted install: the missing
+    sibling fails as `worktree_pack_file_missing`.
+    """
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    _git_init(cwd=project_root)
+    _install_canonical_hooks(repo_root=project_root)
+    pack_dir = project_root / "dev-tooling"
+    pack_dir.mkdir()
+    # Only worktree-lib.sh present (canonical); branch-protection.sh absent.
+    _ = (pack_dir / "worktree-lib.sh").write_text(CANONICAL_WORKTREE_LIB_BODY, encoding="utf-8")
+
+    result = _run_check(cwd=project_root)
+    assert result.returncode == 4, (
+        f"expected exit 4; got {result.returncode}, "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    assert "worktree_pack_file_missing" in result.stderr
+    assert "branch-protection.sh" in result.stderr

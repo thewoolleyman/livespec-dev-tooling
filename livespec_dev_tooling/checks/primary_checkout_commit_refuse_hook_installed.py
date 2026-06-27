@@ -33,6 +33,24 @@ body is the package constant and any tracked-or-untracked shell copy
 can drift. The repo's `templates/` tree (the template-source domain of
 zs22.7.9.3) and the `.git/` directory are carved out.
 
+A third arm (zs22.7.9.3) guards the worktree-discipline PACK —
+`dev-tooling/worktree-lib.sh` and `dev-tooling/branch-protection.sh` —
+which the companion `install_worktree_pack` installer ships from the
+SAME single package source (its `CANONICAL_WORKTREE_LIB_BODY` /
+`CANONICAL_BRANCH_PROTECTION_BODY` constants, imported here). Both the
+hook and the pack are facets of Conformance-Pattern concern #1
+(Worktree-discipline), so the pack's byte-identity guard rides this
+existing slug rather than a NEW canonical check slug — adding a new
+`checks/<slug>.py` would force fleet-wide
+`check-aggregate-completeness` re-wiring across every consumer, which
+this arm deliberately avoids. Unlike the MANDATORY hooks, the pack is
+OPTIONAL per repo: a repo that installs NEITHER pack script
+legitimately lacks it and is SKIPPED. But once a repo installs ANY
+pack script, BOTH MUST be present and byte-identical to the canonical
+bodies — a drifted script is a `worktree_pack_body_mismatch` FAIL and
+an absent sibling of a present script is a `worktree_pack_file_missing`
+FAIL (a partial/drifted install).
+
 The contract supersedes the v091-v094 `core.bare = true` mechanism
 (see `primary_checkout_bare_flag_set.py` in earlier releases). The
 bare-flag mechanism caused stale-on-disk-read failures at primaries
@@ -47,7 +65,9 @@ inventory" partition criterion — this check is layout-independent).
 Exit codes:
 - `0` — pass. All three hooks exist, are executable, and are
   byte-identical to `CANONICAL_HOOK_BODY`, AND no vendored hook-source
-  copy exists outside the `templates/` / `.git/` carve-outs.
+  copy exists outside the `templates/` / `.git/` carve-outs, AND the
+  worktree-discipline pack is either absent (legitimately not installed)
+  or fully present and byte-identical to its canonical bodies.
 - `0` — skipped (cwd is not a git repository at all, or `git` is
   unavailable, or cwd is a git repository but not inside a work tree).
   Skipped is `0` so the check is a no-op in those environments rather
@@ -56,11 +76,14 @@ Exit codes:
   fail-open hole this check closes).
 - `4` — fail. Any of the three hooks is missing, non-executable, or
   byte-different from `CANONICAL_HOOK_BODY`; OR a vendored hook-source
-  copy exists outside the carve-outs. Corrective action: run
-  `just install-commit-refuse-hooks` (the from-package installer that
-  is the single source of the body), and delete any vendored copy.
-  The narration names the specific failure mode + offending path for
-  diagnostic clarity.
+  copy exists outside the carve-outs; OR an installed worktree-pack
+  script (`dev-tooling/worktree-lib.sh` / `dev-tooling/branch-protection.sh`)
+  has drifted (`worktree_pack_body_mismatch`) or is partially installed
+  (`worktree_pack_file_missing`). Corrective action: run
+  `just install-commit-refuse-hooks` and/or `just install-worktree-pack`
+  (the from-package installers that are the single source of each body),
+  and delete any vendored copy. The narration names the specific failure
+  mode + offending path for diagnostic clarity.
 - `4` — fail. The repo IS a git repository but has `core.bare = true`
   set (`failure_mode` `core_bare_set`). This is the eliminated legacy
   bare-flag state (the v091-v094 mechanism the commit-refuse hook
@@ -94,6 +117,15 @@ import structlog  # noqa: E402  — vendor-path-aware import after sys.path inse
 # against the exact bytes the installer writes — there is no drift seam.
 from livespec_dev_tooling.install_commit_refuse_hooks import (  # noqa: E402
     CANONICAL_HOOK_BODY,
+)
+
+# The worktree-pack bodies are the SAME single package source the
+# `install_worktree_pack` installer writes; importing the constants (not a
+# second copy) keeps the byte-identity arm free of a drift seam, exactly as
+# the hook arm imports `CANONICAL_HOOK_BODY`.
+from livespec_dev_tooling.install_worktree_pack import (  # noqa: E402
+    CANONICAL_BRANCH_PROTECTION_BODY,
+    CANONICAL_WORKTREE_LIB_BODY,
 )
 
 __all__: list[str] = []
@@ -137,6 +169,24 @@ _VENDORED_COPY_REMEDY = (
     "body is the `CANONICAL_HOOK_BODY` package constant installed via "
     "`just install-commit-refuse-hooks` — a repo-tracked shell copy can "
     "drift from it"
+)
+
+# Worktree-pack arm: the two tracked `dev-tooling/` scripts paired with the
+# canonical bodies the `install_worktree_pack` installer writes. The pack is
+# OPTIONAL — absent entirely it is skipped — but once ANY script is present
+# both MUST be present and byte-identical.
+_WORKTREE_PACK_FILES: tuple[tuple[str, str], ...] = (
+    ("branch-protection.sh", CANONICAL_BRANCH_PROTECTION_BODY),
+    ("worktree-lib.sh", CANONICAL_WORKTREE_LIB_BODY),
+)
+_WORKTREE_PACK_DIR_NAME = "dev-tooling"
+_WORKTREE_PACK_BODY_MISMATCH_FAILURE_MODE = "worktree_pack_body_mismatch"
+_WORKTREE_PACK_MISSING_FAILURE_MODE = "worktree_pack_file_missing"
+_WORKTREE_PACK_REMEDY = (
+    "run `just install-worktree-pack` (the from-package installer that "
+    "writes the single canonical `worktree-lib.sh` and `branch-protection.sh` "
+    "bodies byte-for-byte into `dev-tooling/`); a drifted or partially "
+    "installed pack is a copy that diverged from the package source"
 )
 
 
@@ -298,6 +348,91 @@ def _find_vendored_hook_copies(*, repo_root: Path) -> list[Path]:
     return sorted(found)
 
 
+def _inspect_worktree_pack(*, repo_root: Path) -> list[tuple[str, str]]:
+    """Return `(script_name, failure_mode)` tuples for worktree-pack drift.
+
+    The worktree-discipline pack (`dev-tooling/worktree-lib.sh` +
+    `dev-tooling/branch-protection.sh`) is OPTIONAL per repo: a repo that
+    installs NEITHER script legitimately lacks the pack, so this returns an
+    empty list (skip — no false-fail). But once a repo installs ANY pack
+    script the pack is considered present, and BOTH scripts MUST then exist
+    and be byte-identical to the single canonical source (the
+    `install_worktree_pack` constants):
+
+    - a present script whose bytes differ → `worktree_pack_body_mismatch`;
+    - a sibling absent while the pack is otherwise present →
+      `worktree_pack_file_missing` (a partial/drifted install).
+
+    Returns the failures sorted by script name for deterministic narration.
+    """
+    pack_dir = repo_root / _WORKTREE_PACK_DIR_NAME
+    any_present = any((pack_dir / name).is_file() for name, _ in _WORKTREE_PACK_FILES)
+    if not any_present:
+        return []
+    failures: list[tuple[str, str]] = []
+    for name, canonical_body in _WORKTREE_PACK_FILES:
+        script_path = pack_dir / name
+        if not script_path.is_file():
+            failures.append((name, _WORKTREE_PACK_MISSING_FAILURE_MODE))
+            continue
+        if script_path.read_text(encoding="utf-8") != canonical_body:
+            failures.append((name, _WORKTREE_PACK_BODY_MISMATCH_FAILURE_MODE))
+    return sorted(failures)
+
+
+def _emit_failures(
+    *,
+    log: structlog.stdlib.BoundLogger,
+    hooks_dir: Path,
+    repo_root: Path,
+    hook_failures: list[tuple[str, str]],
+    vendored_copies: list[Path],
+    pack_failures: list[tuple[str, str]],
+) -> None:
+    """Emit one structured `fail` finding per detected violation.
+
+    Extracted from `main` so each of the three arms (hook byte-identity,
+    no-vendored-copy, worktree-pack drift) narrates independently while
+    keeping `main`'s cyclomatic complexity within the lint budget.
+    """
+    for hook_name, failure_mode in hook_failures:
+        log.error(
+            "primary-checkout-commit-refuse-hook-installed: hook failure",
+            check_id=_CHECK_ID,
+            status="fail",
+            hook=hook_name,
+            failure_mode=failure_mode,
+            hooks_dir=str(hooks_dir),
+            hint=_HOOK_REMEDY,
+            path="",
+            line=0,
+        )
+    for copy_path in vendored_copies:
+        log.error(
+            "primary-checkout-commit-refuse-hook-installed: vendored hook copy present",
+            check_id=_CHECK_ID,
+            status="fail",
+            hook="",
+            failure_mode=_VENDORED_COPY_FAILURE_MODE,
+            hooks_dir=str(hooks_dir),
+            hint=_VENDORED_COPY_REMEDY,
+            path=str(copy_path),
+            line=0,
+        )
+    for script_name, failure_mode in pack_failures:
+        log.error(
+            "primary-checkout-commit-refuse-hook-installed: worktree-pack drift",
+            check_id=_CHECK_ID,
+            status="fail",
+            hook="",
+            failure_mode=failure_mode,
+            hooks_dir=str(hooks_dir),
+            hint=_WORKTREE_PACK_REMEDY,
+            path=str(repo_root / _WORKTREE_PACK_DIR_NAME / script_name),
+            line=0,
+        )
+
+
 def main() -> int:
     log = _configure_logger()
     cwd = Path.cwd()
@@ -351,32 +486,17 @@ def main() -> int:
             hook_failures.append((hook_name, failure_mode))
     repo_root = _work_tree_root(cwd=cwd)
     vendored_copies = _find_vendored_hook_copies(repo_root=repo_root)
-    if not hook_failures and not vendored_copies:
+    pack_failures = _inspect_worktree_pack(repo_root=repo_root)
+    if not hook_failures and not vendored_copies and not pack_failures:
         return 0
-    for hook_name, failure_mode in hook_failures:
-        log.error(
-            "primary-checkout-commit-refuse-hook-installed: hook failure",
-            check_id=_CHECK_ID,
-            status="fail",
-            hook=hook_name,
-            failure_mode=failure_mode,
-            hooks_dir=str(hooks_dir),
-            hint=_HOOK_REMEDY,
-            path="",
-            line=0,
-        )
-    for copy_path in vendored_copies:
-        log.error(
-            "primary-checkout-commit-refuse-hook-installed: vendored hook copy present",
-            check_id=_CHECK_ID,
-            status="fail",
-            hook="",
-            failure_mode=_VENDORED_COPY_FAILURE_MODE,
-            hooks_dir=str(hooks_dir),
-            hint=_VENDORED_COPY_REMEDY,
-            path=str(copy_path),
-            line=0,
-        )
+    _emit_failures(
+        log=log,
+        hooks_dir=hooks_dir,
+        repo_root=repo_root,
+        hook_failures=hook_failures,
+        vendored_copies=vendored_copies,
+        pack_failures=pack_failures,
+    )
     return _FAIL_EXIT
 
 
