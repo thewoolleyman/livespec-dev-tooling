@@ -7,7 +7,7 @@
 # this shim delegates to the upstream reusable workflow which:
 #   - runs pin-autodiscovery for the source_repo against this repo's
 #     four pin formats (.livespec.jsonc compat.pinned, pyproject.toml
-#     [tool.uv.sources], .vendor.jsonc, .copier-answers.yml _commit),
+#     [tool.uv.sources], .vendor.jsonc, .github/workflows uses: refs),
 #   - rewrites every matching pin to the new tag,
 #   - runs `just check` to verify the consumer's checks still pass,
 #   - commits with the `chore(deps):` convention (excluded from

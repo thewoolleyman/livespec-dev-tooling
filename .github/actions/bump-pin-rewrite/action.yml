@@ -116,7 +116,6 @@ runs:
         #   - livespec_jsonc_compat_pinned: `compat.pinned` targeted rewrite
         #   - pyproject_toml_uv_sources: regex on the `tag = "X"` field
         #   - vendor_jsonc: `upstream_ref` targeted rewrite
-        #   - copier_answers_commit: regex on `_commit:` line
         echo "$RECORDS" | jq -c '.[]' | while read -r rec; do
           fmt=$(echo "$rec" | jq -r '.pin_format')
           file=$(echo "$rec" | jq -r '.file_path')
@@ -174,19 +173,6 @@ runs:
         new_text, n = pattern.subn(r'\1' + "$TAG" + r'\2', text, count=1)
         if n != 1:
             raise SystemExit(f"failed to rewrite upstream_ref for $key in $file")
-        p.write_text(new_text, encoding="utf-8")
-        PYEOF
-              ;;
-            copier_answers_commit)
-              python - <<PYEOF
-        import re
-        import pathlib
-        p = pathlib.Path("$file")
-        text = p.read_text(encoding="utf-8")
-        pattern = re.compile(r'^_commit\s*:\s*.*$', re.MULTILINE)
-        new_text, n = pattern.subn('_commit: ' + "$TAG", text, count=1)
-        if n != 1:
-            raise SystemExit(f"failed to rewrite _commit in $file")
         p.write_text(new_text, encoding="utf-8")
         PYEOF
               ;;
