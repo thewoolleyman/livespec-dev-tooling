@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.23.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.22.0...v0.23.0) (2026-06-27)
+
+
+### Features
+
+* add console fleet repo class — scope pin-and-bump shim rows (zs22.7.8) ([1428d2d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1428d2d6929f0db22489ad3236a029e4e24d82a2))
+
 ## [0.22.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.21.2...v0.22.0) (2026-06-26)
 
 
