@@ -15,16 +15,26 @@
 #      the consumer's `just vendor-update <lib>` recipe so re-vendoring
 #      lands atomically in the same commit per
 #      §"reusable-bump-pin-from-dispatch.yml" .vendor.jsonc clause.
-#   5. Run `just check` — the consumer's full enforcement suite gates
-#      the bump per §"Fallback to known-good pin" (no force-push past
-#      failing checks).
-#   6. Commit with the `chore(deps): bump <source_repo> pin to <tag>`
+#   5. Commit with the `chore(deps): bump <source_repo> pin to <tag>`
 #      message per §"PR commit-message convention" and push the branch.
-#   7. Open the bump PR with the supplied title and body, then enable
+#   6. Open the bump PR with the supplied title and body, then enable
 #      `--auto --rebase` per
 #      SPECIFICATION/non-functional-requirements.md §"Commit and merge
 #      discipline". The auto-merge-enable failure surfaces as a
 #      `::error::` per li-u7any4 (no swallowed warnings).
+#
+# This Action deliberately does NOT run the consumer's `just check`:
+# per SPECIFICATION/contracts.md §"Fallback to known-good pin", the
+# authoritative gate is the consumer's OWN CI / branch-protection
+# status checks on the opened auto-merge PR — NOT an in-Action check
+# run in this incomplete CI environment (which lacks the consumer's
+# installed plugin, its `.livespec-core` checkout, and its installed
+# hooks, so a faithful `just check` is not reconstructable here). The
+# `--auto` merge defers until the consumer's required checks pass; a
+# failure surfaces on the PR's status checks and the human contributor
+# handles resolution per the spec's manual-pin path. This is why no
+# commit-refuse-hook install step precedes the commit: nothing in this
+# Action runs the byte-identity verifier that step existed to satisfy.
 #
 # Secrets cannot be passed to composite Actions directly; the App token
 # and App slug arrive as inputs from the calling reusable workflow,
@@ -35,7 +45,7 @@
 #   source_repo (required) — publishing repository's short name, used
 #     in branch naming, commit message, and PR title.
 #   tag (required) — published release tag — every matching pin gets
-#     rewritten to this value before `just check` runs.
+#     rewritten to this value into the bump commit.
 #   records (required) — JSON-encoded autodiscovery records array (the
 #     `records` GITHUB_OUTPUT from the caller's autodiscovery step).
 #     Each record is `{pin_format, file_path, pin_key, current_value,
@@ -63,7 +73,7 @@ inputs:
     description: Publishing repository short name (used in branch naming, commit message, and PR title).
     required: true
   tag:
-    description: Published release tag — every matching pin gets rewritten to this value before `just check` runs.
+    description: Published release tag — every matching pin gets rewritten to this value into the bump commit.
     required: true
   records:
     description: JSON-encoded autodiscovery records array from the caller's pin-autodiscovery step.
@@ -226,43 +236,6 @@ runs:
           echo "::notice::running just vendor-update $lib"
           just vendor-update "$lib"
         done
-
-    - name: Install commit-refuse hook (satisfy primary-checkout-commit-refuse-hook-installed invariant)
-      # The full `just check` aggregate below includes
-      # check-primary-checkout-commit-refuse-hook-installed, a shared
-      # livespec-dev-tooling check verifying that .git/hooks/pre-commit AND
-      # .git/hooks/pre-push carry the canonical commit-refuse body. The
-      # actions/checkout clone of the consumer repo does NOT install the
-      # hook, so we install the canonical stub here. Per
-      # livespec/SPECIFICATION/non-functional-requirements.md
-      # §"Primary-checkout commit-refuse hook" the body carries the marker
-      # `# livespec commit-refuse hook`, a `git rev-parse --show-toplevel`
-      # invocation, and an `exit 1` branch (the fingerprint the check
-      # verifies). We deliberately do NOT set `livespec.primaryPath`, so the
-      # hook's refuse-branch stays inactive and the bump's own commit/push
-      # below proceed. Mirrors the per-matrix-target satisfier in each
-      # consumer's ci.yml.
-      shell: bash
-      run: |
-        mkdir -p .git/hooks
-        for hook in pre-commit pre-push; do
-          {
-            printf '%s\n' '#!/bin/sh'
-            printf '%s\n' '# livespec commit-refuse hook'
-            printf '%s\n' 'toplevel="$(git rev-parse --show-toplevel)"'
-            printf '%s\n' 'primary="$(git config --get livespec.primaryPath || true)"'
-            printf '%s\n' 'if [ -n "$primary" ] && [ "$toplevel" = "$primary" ]; then'
-            printf '%s\n' '  echo "livespec: refusing commit/push at primary checkout" >&2'
-            printf '%s\n' '  exit 1'
-            printf '%s\n' 'fi'
-            printf '%s\n' 'exit 0'
-          } > ".git/hooks/$hook"
-          chmod 755 ".git/hooks/$hook"
-        done
-
-    - name: just check
-      shell: bash
-      run: just check
 
     - name: Commit + push bump branch
       shell: bash
