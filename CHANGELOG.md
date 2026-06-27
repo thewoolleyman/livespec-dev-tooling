@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.25.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.25.0...v0.25.1) (2026-06-27)
+
+
+### Bug Fixes
+
+* relocate driver-only plugin_structure out of the canonical checks/ set + fail soft (livespec-2exa) ([0057bd6](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0057bd698e225fa1f48aa0795abc0cb80b79b8ff))
+
 ## [0.25.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.24.0...v0.25.0) (2026-06-27)
 
 
