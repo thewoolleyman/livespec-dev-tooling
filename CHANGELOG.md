@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.25.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.24.0...v0.25.0) (2026-06-27)
+
+
+### Features
+
+* strict byte-identity commit-refuse-hook verifier (zs22.7.9.5) ([03bfc93](https://github.com/thewoolleyman/livespec-dev-tooling/commit/03bfc93fed6b8b457c4090de8395f8abd2f4ed54))
+
 ## [0.24.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.23.0...v0.24.0) (2026-06-27)
 
 
