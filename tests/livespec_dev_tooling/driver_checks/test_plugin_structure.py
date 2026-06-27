@@ -1,4 +1,4 @@
-"""Outside-in test for `livespec_dev_tooling/checks/plugin_structure.py`.
+"""Outside-in test for `livespec_dev_tooling/driver_checks/plugin_structure.py`.
 
 The unified structural gate reconciles the two formerly-divergent Driver
 copies (CLAUDE + CODEX packaging profiles) into one profile-auto-detecting
@@ -23,7 +23,7 @@ from pathlib import Path
 
 import pytest
 
-from livespec_dev_tooling.checks import plugin_structure
+from livespec_dev_tooling.driver_checks import plugin_structure
 
 __all__: list[str] = []
 
@@ -264,6 +264,20 @@ def test_claude_skill_set_missing_directory(*, tmp_path: Path) -> None:
     shutil.rmtree(tmp_path / ".claude-plugin" / "skills" / "seed")
     assert any(
         "missing skill directory: skills/seed/" in v for v in _claude_violations(root=tmp_path)
+    )
+
+
+def test_claude_skill_set_absent_skills_dir_fails_soft(*, tmp_path: Path) -> None:
+    """A claude tree with NO `skills/` dir at all → a clean 'missing skills directory'
+    violation, never an uncaught FileNotFoundError. This is the exact topology of
+    livespec-core: a `.claude-plugin/` artifact carrier with plugin.json but no
+    skills tree. The codex profile already fails soft here (`_codex_skill_set_violations`
+    guards a missing skills dir); the claude profile must too."""
+    _make_claude_tree(root=tmp_path)
+    shutil.rmtree(tmp_path / ".claude-plugin" / "skills")
+    assert any(
+        "missing skills directory: .claude-plugin/skills/" in v
+        for v in _claude_violations(root=tmp_path)
     )
 
 
