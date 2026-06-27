@@ -2,7 +2,7 @@
 
 Per `SPECIFICATION/contracts.md` §"Pin autodiscovery rules", the walk
 inspects the consumer repository for every supported pin format and
-yields a normalized record per discovered pin. The walk covers five
+yields a normalized record per discovered pin. The walk covers four
 formats:
 
 - `.livespec.jsonc` `compat.pinned` — every top-level key whose value
@@ -17,14 +17,15 @@ formats:
   matches the source repository's normalized Python package name
   (hyphen-to-underscore). The `upstream_ref` field is the pin's
   current value.
-- `.copier-answers.yml` `_commit` — the singular `_commit` field; the
-  implicit source repository is the one referenced by `_src_path`,
-  and the value is a git ref (tag or commit SHA).
 - `.github/workflows/*.yml` / `*.yaml` `uses:` ref — every line of the
   form `uses: <owner>/<repo>/<path>@<ref>` in any GitHub Actions
   workflow file. The pin's source repo is derived from the `<repo>`
   segment; `current_value` is `<ref>`; `pin_key` is
   `<owner>/<repo>/<path>` (the full `uses:` reference without `@ref`).
+
+`.copier-answers.yml` `_commit` is deliberately NOT a pin format: it
+is copier render-provenance, not a version pin, so rewriting it would
+desync the render-provenance marker and poison future `copier update`s.
 
 Source-repo-name normalization for `.vendor.jsonc` matching is
 hyphen-to-underscore (e.g., `livespec-runtime` matches
@@ -75,12 +76,10 @@ __all__: list[str] = []
 _LIVESPEC_JSONC = ".livespec.jsonc"
 _PYPROJECT_TOML = "pyproject.toml"
 _VENDOR_JSONC = ".vendor.jsonc"
-_COPIER_ANSWERS_YML = ".copier-answers.yml"
 
 _PIN_FORMAT_LIVESPEC = "livespec_jsonc_compat_pinned"
 _PIN_FORMAT_UV_SOURCES = "pyproject_toml_uv_sources"
 _PIN_FORMAT_VENDOR = "vendor_jsonc"
-_PIN_FORMAT_COPIER = "copier_answers_commit"
 _PIN_FORMAT_WORKFLOW_USES = "github_workflow_uses_ref"
 _PIN_FORMAT_UNRECOGNIZED = "unrecognized"
 
@@ -307,72 +306,6 @@ def _walk_vendor_jsonc(
     return out
 
 
-_COPIER_KEY_RE = re.compile(r"^(?P<key>[A-Za-z_][A-Za-z0-9_]*)\s*:\s*(?P<value>.+?)\s*$")
-
-
-def _parse_copier_answers(*, text: str) -> dict[str, str]:
-    """Tolerant parse of `.copier-answers.yml`'s top-level scalar keys.
-
-    The file is a flat YAML map of `<key>: <scalar>` lines, occasionally
-    quoted. We only need `_commit` and `_src_path`, both of which are
-    always present and always scalar in a copier-generated answers file.
-    """
-    out: dict[str, str] = {}
-    for raw in text.splitlines():
-        stripped = raw.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        match = _COPIER_KEY_RE.match(stripped)
-        if match is None:
-            continue
-        value = match.group("value").strip()
-        if (value.startswith('"') and value.endswith('"')) or (
-            value.startswith("'") and value.endswith("'")
-        ):
-            value = value[1:-1]
-        out[match.group("key")] = value
-    return out
-
-
-def _walk_copier_answers(
-    *, root: Path, source_repo_filter: str | None, log: structlog.stdlib.BoundLogger
-) -> list[dict[str, str]]:
-    path = root / _COPIER_ANSWERS_YML
-    if not path.is_file():
-        return []
-    rel_path = _COPIER_ANSWERS_YML
-    text = path.read_text(encoding="utf-8")
-    answers = _parse_copier_answers(text=text)
-    commit = answers.get("_commit")
-    src_path = answers.get("_src_path")
-    if commit is None or src_path is None:
-        log.warning(
-            "unrecognized .copier-answers.yml — missing _commit or _src_path",
-            file_path=rel_path,
-        )
-        return [
-            _record(
-                pin_format=_PIN_FORMAT_UNRECOGNIZED,
-                file_path=rel_path,
-                pin_key="",
-                current_value="",
-                source_repo="",
-            )
-        ]
-    source_repo = _source_repo_from_git_url(url=src_path)
-    if source_repo_filter is not None and source_repo_filter != source_repo:
-        return []
-    return [
-        _record(
-            pin_format=_PIN_FORMAT_COPIER,
-            file_path=rel_path,
-            pin_key="_commit",
-            current_value=commit,
-            source_repo=source_repo,
-        )
-    ]
-
-
 _WORKFLOW_USES_RE = re.compile(
     r"""
     ^\s+uses:\s+
@@ -426,7 +359,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "Walk a consumer repo and emit a JSON array of pin records per "
             'SPECIFICATION/contracts.md §"Pin autodiscovery rules". Covers '
             ".livespec.jsonc, pyproject.toml [tool.uv.sources], .vendor.jsonc, "
-            ".copier-answers.yml, and .github/workflows/*.yml uses: refs."
+            "and .github/workflows/*.yml uses: refs."
         ),
     )
     _ = parser.add_argument(
@@ -476,7 +409,6 @@ def discover(*, root: Path, source_repo: str | None) -> list[dict[str, str]]:
     records.extend(_walk_livespec_jsonc(root=root, source_repo_filter=source_repo, log=log))
     records.extend(_walk_pyproject_toml(root=root, source_repo_filter=source_repo, log=log))
     records.extend(_walk_vendor_jsonc(root=root, source_repo_filter=source_repo, log=log))
-    records.extend(_walk_copier_answers(root=root, source_repo_filter=source_repo, log=log))
     records.extend(_walk_github_workflow_uses(root=root, source_repo_filter=source_repo, log=log))
     return records
 

@@ -57,14 +57,14 @@ _REQUIRED_ACTION_INPUTS = (
 # step clones this repo on the caller side.
 _COMPOSITE_USES_PATH = "./.livespec-dev-tooling/.github/actions/bump-pin-rewrite"
 
-# The four pin formats from SPECIFICATION/contracts.md §"Pin
-# autodiscovery rules" — every case-arm value the rewrite step
-# dispatches on.
+# Three of the `pin_format` case-arm values the rewrite step dispatches
+# on, per SPECIFICATION/contracts.md §"Pin autodiscovery rules" — this
+# regression guard checks they were extracted out of the reusable
+# workflows into the composite Action.
 _PIN_FORMAT_CASE_ARMS = (
     "livespec_jsonc_compat_pinned)",
     "pyproject_toml_uv_sources)",
     "vendor_jsonc)",
-    "copier_answers_commit)",
 )
 
 # Per livespec-dev-tooling-8ml: the calling reusable workflows check out
