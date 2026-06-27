@@ -58,6 +58,18 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.26.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.25.1...v0.26.0) (2026-06-27)
+
+
+### Features
+
+* **zs22.7.9.3:** ship worktree-discipline pack as package-data + installer ([a1f2633](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a1f26330a8e2c435cc6b336b53e18f45ecba52c9))
+
+
+### Bug Fixes
+
+* **zs22.7.9.6:** drop copier_answers_commit from bump-pin autodiscovery ([f9b84a3](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f9b84a3fc085b3782fe0310ac09ac47571d5af1b))
+
 ## [0.25.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.25.0...v0.25.1) (2026-06-27)
 
 
