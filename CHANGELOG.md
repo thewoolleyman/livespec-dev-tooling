@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.27.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.26.0...v0.27.0) (2026-06-27)
+
+
+### Features
+
+* **zs22.7.9:** ship worktree lifecycle recipes (worktree.just) as single-source package-data (W2c/.4) ([ad3ccf8](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ad3ccf80645cde5eea6accb9b744d6d60c0e4997))
+
 ## [0.26.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.25.1...v0.26.0) (2026-06-27)
 
 
