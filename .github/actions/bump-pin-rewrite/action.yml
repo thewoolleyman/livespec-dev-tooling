@@ -237,6 +237,35 @@ runs:
           just vendor-update "$lib"
         done
 
+    - name: Refresh uv.lock for bumped pyproject pins
+      shell: bash
+      env:
+        RECORDS: ${{ inputs.records }}
+      run: |
+        set -euo pipefail
+        # Per livespec-glv6: the calling reusable workflow runs
+        # `uv sync --all-groups` BEFORE this Action rewrites the pin, so
+        # that sync re-locks uv.lock against the PRE-bump pyproject tag.
+        # Without re-locking AFTER the rewrite, the committed uv.lock lags
+        # the bumped pin by one release (the lock keeps the prior tag while
+        # pyproject advances). Re-lock each bumped uv-sources package so the
+        # committed lock matches the pin it ships beside; `--refresh-package`
+        # defeats a stale uv git-ref cache that would otherwise re-resolve
+        # the just-pushed tag to the previously-cached ref. Only
+        # `pyproject_toml_uv_sources` pins touch uv.lock — `compat.pinned`,
+        # `.vendor.jsonc`, and workflow `uses:` refs do not.
+        pkgs=$(echo "$RECORDS" | jq -r '.[] | select(.pin_format == "pyproject_toml_uv_sources") | .pin_key')
+        if [[ -z "$pkgs" ]]; then
+          echo "::notice::no [tool.uv.sources] pin among the bumped records; uv.lock unaffected"
+          exit 0
+        fi
+        refresh_args=()
+        for pkg in $pkgs; do
+          refresh_args+=(--refresh-package "$pkg")
+        done
+        echo "::notice::refreshing uv.lock for: ${pkgs//$'\n'/ }"
+        uv lock "${refresh_args[@]}"
+
     - name: Commit + push bump branch
       shell: bash
       env:

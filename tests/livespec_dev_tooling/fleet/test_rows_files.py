@@ -224,3 +224,101 @@ def test_pin_row_unreadable_pyproject_content_skips() -> None:
     outcome = assert_dev_tooling_pin(ctx=ctx, member=_MEMBER)
     assert isinstance(outcome, RowSkip)
     assert "unreadable" in outcome.reason
+
+
+# --- uv.lock <-> pin lockstep leg (livespec-glv6) -------------------------
+
+_UVLOCK_ARGS: tuple[str, ...] = (
+    "api",
+    "repos/acme/widget/contents/uv.lock",
+    "-H",
+    "Accept: application/vnd.github.raw",
+)
+
+
+def _dt_lock(*, tag: str) -> str:
+    """A minimal uv.lock locking livespec-dev-tooling at `tag` via a git source."""
+    return (
+        "[[package]]\n"
+        'name = "livespec-dev-tooling"\n'
+        'version = "1.2.0"\n'
+        f'source = {{ git = "https://github.com/acme/livespec-dev-tooling.git?tag={tag}#abc" }}\n'
+    )
+
+
+def _pin_lock_table(
+    *, pyproject: str, latest_tag: str, uv_lock: str | None
+) -> dict[tuple[str, ...], GhResult]:
+    """A `_pin_table` that always lists `uv.lock` in the tree (content optional).
+
+    `uv_lock=None` lists the file but serves no content, so `file_text`
+    returns None — the lock-present-but-unreadable case.
+    """
+    table = tree_table(paths=["pyproject.toml", "uv.lock"])
+    table[_PYPROJECT_ARGS] = GhResult(returncode=0, stdout=pyproject, stderr="")
+    if uv_lock is not None:
+        table[_UVLOCK_ARGS] = GhResult(returncode=0, stdout=uv_lock, stderr="")
+    table[_LATEST_ARGS] = GhResult(
+        returncode=0, stdout=json.dumps({"tag_name": latest_tag}), stderr=""
+    )
+    return table
+
+
+def test_pin_row_lock_mismatch_is_error_finding() -> None:
+    # pyproject pins v1.2.0 (== latest, so the freshness leg alone would
+    # PASS), but the committed uv.lock still locks v1.1.0 — the lockstep
+    # leg must red the fleet at error severity (livespec-glv6).
+    ctx = make_context(
+        table=_pin_lock_table(
+            pyproject=_PINNED_PYPROJECT, latest_tag="v1.2.0", uv_lock=_dt_lock(tag="v1.1.0")
+        )
+    )
+    outcome = assert_dev_tooling_pin(ctx=ctx, member=_MEMBER)
+    assert isinstance(outcome, RowFinding)
+    assert outcome.severity == "error"
+    assert "v1.1.0" in outcome.message
+    assert "v1.2.0" in outcome.message
+    assert "uv lock --refresh-package" in outcome.message
+
+
+def test_pin_row_lock_match_passes() -> None:
+    ctx = make_context(
+        table=_pin_lock_table(
+            pyproject=_PINNED_PYPROJECT, latest_tag="v1.2.0", uv_lock=_dt_lock(tag="v1.2.0")
+        )
+    )
+    assert assert_dev_tooling_pin(ctx=ctx, member=_MEMBER) == RowPass()
+
+
+def test_pin_row_lock_present_but_unreadable_defers_to_freshness() -> None:
+    # uv.lock is listed in the tree but its content can't be fetched →
+    # defer to freshness rather than false-red. With a stale pin, the
+    # freshness leg then warns (proving control reached it).
+    ctx = make_context(
+        table=_pin_lock_table(pyproject=_PINNED_PYPROJECT, latest_tag="v1.3.0", uv_lock=None)
+    )
+    outcome = assert_dev_tooling_pin(ctx=ctx, member=_MEMBER)
+    assert isinstance(outcome, RowFinding)
+    assert outcome.severity == "warning"
+
+
+def test_pin_row_lock_shapes_without_a_dt_tag_defer() -> None:
+    # Every uv.lock shape from which no dev-tooling git tag is extractable
+    # defers to the freshness leg (never a false red). latest == pin, so
+    # each defer yields a clean pass.
+    defer_locks = [
+        "[[[",  # unparseable TOML
+        'package = "x"\n',  # `package` is not an array
+        'package = ["x"]\n',  # array element is not a table
+        '[[package]]\nname = "other"\n',  # no dev-tooling entry
+        '[[package]]\nname = "livespec-dev-tooling"\nsource = "x"\n',  # source not a table
+        '[[package]]\nname = "livespec-dev-tooling"\nsource = { rev = "x" }\n',  # no git key
+        # git source carrying no ?tag= query:
+        '[[package]]\nname = "livespec-dev-tooling"\n'
+        'source = { git = "https://github.com/acme/livespec-dev-tooling.git#abc" }\n',
+    ]
+    for lock in defer_locks:
+        ctx = make_context(
+            table=_pin_lock_table(pyproject=_PINNED_PYPROJECT, latest_tag="v1.2.0", uv_lock=lock)
+        )
+        assert assert_dev_tooling_pin(ctx=ctx, member=_MEMBER) == RowPass(), lock

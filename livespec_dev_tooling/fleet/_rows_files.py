@@ -11,6 +11,7 @@ assert distinguishes definitive absence (finding) from can't-read
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 from typing import cast
@@ -129,6 +130,37 @@ def _pinned_tag(*, pyproject_text: str) -> str | None:
     return tag if isinstance(tag, str) else None
 
 
+def _locked_tag(*, uv_lock_text: str) -> str | None:
+    """The committed `uv.lock` git tag locked for livespec-dev-tooling, or None.
+
+    `uv.lock` is TOML: a `[[package]]` array where the dev-tooling entry
+    carries `source = { git = "…/livespec-dev-tooling.git?tag=vX.Y.Z#<sha>" }`.
+    Returns the `tag=` query value, or None when the lock is unparseable,
+    carries no such package, or the package is not a git-tag source.
+    """
+    try:
+        data: dict[str, object] = tomli.loads(uv_lock_text)
+    except tomli.TOMLDecodeError:
+        return None
+    packages = data.get("package")
+    if not isinstance(packages, list):
+        return None
+    for pkg in cast("list[object]", packages):
+        if not isinstance(pkg, dict):
+            continue
+        if cast("dict[str, object]", pkg).get("name") != _DEV_TOOLING_REPO:
+            continue
+        source = cast("dict[str, object]", pkg).get("source")
+        if not isinstance(source, dict):
+            return None
+        git = cast("dict[str, object]", source).get("git")
+        if not isinstance(git, str):
+            return None
+        match = re.search(r"[?&]tag=([^#&]+)", git)
+        return match.group(1) if match else None
+    return None
+
+
 def _latest_dev_tooling_tag(*, ctx: FleetContext) -> str | None:
     """`livespec-dev-tooling`'s latest release tag, or None when unreadable."""
     payload = ctx.api_object(path=f"repos/{ctx.owner}/{_DEV_TOOLING_REPO}/releases/latest")
@@ -157,11 +189,44 @@ def _freshness_outcome(*, ctx: FleetContext, member: FleetMember, tag: str) -> R
     return RowPass()
 
 
-def assert_dev_tooling_pin(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:
-    """A `[tool.uv.sources]` pin on livespec-dev-tooling exists; staleness warns.
+def _lock_outcome(*, ctx: FleetContext, member: FleetMember, tag: str) -> RowFinding | None:
+    """Lock-lockstep leg — ERROR severity on a definitive committed uv.lock<->pin mismatch.
 
-    Presence is the hard obligation (error severity); the staleness leg
-    is delegated to `_freshness_outcome` (warning severity).
+    The committed `uv.lock` MUST pin the same livespec-dev-tooling tag as
+    `pyproject.toml`'s `[tool.uv.sources]` entry. The automated bump path's
+    pre-rewrite `uv sync` re-locks against the OLD pin, so without a
+    post-rewrite re-lock the committed lock lags the pin by one release
+    (livespec-glv6). Returns a finding ONLY on a definitive mismatch;
+    returns None — deferring to the freshness leg — when the lock is
+    absent, unreadable, or carries no git-tag source (never a false red).
+    """
+    tree = ctx.tree(repo=member.repo)
+    if "uv.lock" not in tree.paths:
+        return None
+    text = ctx.file_text(repo=member.repo, path="uv.lock")
+    if text is None:
+        return None
+    locked = _locked_tag(uv_lock_text=text)
+    if locked is None:
+        return None
+    if locked != tag:
+        return RowFinding(
+            message=(
+                f"{member.repo}: committed uv.lock pins dev-tooling {locked} but "
+                f"pyproject pins {tag} — run "
+                f"'uv lock --refresh-package {_DEV_TOOLING_REPO}' and commit the lock"
+            )
+        )
+    return None
+
+
+def assert_dev_tooling_pin(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:
+    """A `[tool.uv.sources]` pin on livespec-dev-tooling exists; lock matches; staleness warns.
+
+    Presence is the hard obligation (error severity); the committed
+    `uv.lock` MUST lock the same tag the pin names (`_lock_outcome`,
+    error severity, livespec-glv6); the staleness leg is delegated to
+    `_freshness_outcome` (warning severity).
     """
     tree = ctx.tree(repo=member.repo)
     if not tree.readable:
@@ -180,4 +245,12 @@ def assert_dev_tooling_pin(*, ctx: FleetContext, member: FleetMember) -> RowOutc
                 f"{member.repo}: no [tool.uv.sources] {_DEV_TOOLING_REPO} tag pin in pyproject.toml"
             )
         )
-    return _freshness_outcome(ctx=ctx, member=member, tag=tag)
+    # Lock-lockstep leg (error) takes precedence over the freshness leg
+    # (warning); a single tail return keeps the function within the
+    # max-returns budget.
+    lock_finding = _lock_outcome(ctx=ctx, member=member, tag=tag)
+    return (
+        lock_finding
+        if lock_finding is not None
+        else _freshness_outcome(ctx=ctx, member=member, tag=tag)
+    )

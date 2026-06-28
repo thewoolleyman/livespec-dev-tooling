@@ -320,6 +320,66 @@ def test_commit_step_guards_against_staged_gitlink() -> None:
 
 
 # ---------------------------------------------------------------------------
+# uv.lock re-lock step (livespec-glv6)
+# ---------------------------------------------------------------------------
+
+# The composite Action MUST re-lock uv.lock AFTER rewriting the pin, else
+# the committed lock lags the bumped pyproject pin by one release: the
+# caller's pre-rewrite `uv sync` re-locks against the OLD tag and nothing
+# re-locks afterward (livespec-glv6).
+_RELOCK_STEP_NAME = "Refresh uv.lock for bumped pyproject pins"
+# Only this pin format touches uv.lock, so the step selects these records.
+_RELOCK_PIN_FORMAT = "pyproject_toml_uv_sources"
+# `--refresh-package` defeats a stale uv git-ref cache that would otherwise
+# re-resolve the just-pushed tag to the previously-cached ref.
+_RELOCK_REFRESH_FLAG = "--refresh-package"
+
+
+def _relock_step_body(*, text: str) -> str:
+    """Return the body of the `Refresh uv.lock for bumped pyproject pins` step.
+
+    Slices from the step's `name:` line to the next 4-space-indented step
+    or end-of-file, so assertions cannot be satisfied by lines elsewhere.
+    """
+    match = re.search(
+        r"^    - name: Refresh uv\.lock for bumped pyproject pins\b.*?(?=^    - name: |\Z)",
+        text,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert match, f"composite Action missing the {_RELOCK_STEP_NAME!r} step"
+    return match.group(0)
+
+
+def test_relock_step_refreshes_lock_before_commit() -> None:
+    """The Action re-locks the bumped uv-sources package(s) before committing.
+
+    Per livespec-glv6: the step selects `pyproject_toml_uv_sources` records
+    (the only pin format that touches uv.lock) and runs
+    `uv lock --refresh-package` for each, and MUST precede the
+    `Commit + push bump branch` step so the refreshed lock is committed.
+    """
+    text = _read(path=_ACTION_PATH)
+    body = _relock_step_body(text=text)
+    assert _RELOCK_PIN_FORMAT in body, (
+        f"the re-lock step must select {_RELOCK_PIN_FORMAT!r} records (the only "
+        "pin format that touches uv.lock)"
+    )
+    assert (
+        _command_pos(body=body, command="uv lock") != -1
+    ), "the re-lock step no longer runs `uv lock`"
+    assert _RELOCK_REFRESH_FLAG in body, (
+        f"the re-lock step must pass {_RELOCK_REFRESH_FLAG!r} to defeat a stale " "uv git-ref cache"
+    )
+    relock_pos = text.find(_RELOCK_STEP_NAME)
+    commit_pos = text.find("- name: Commit + push bump branch")
+    assert relock_pos != -1 and commit_pos != -1, "composite Action step shape changed"
+    assert relock_pos < commit_pos, (
+        "the re-lock step MUST precede `Commit + push bump branch` so the "
+        "refreshed uv.lock is committed alongside the rewritten pin"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Stale-SHA rerun guard (livespec-dev-tooling-e37)
 # ---------------------------------------------------------------------------
 
