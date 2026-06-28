@@ -33,6 +33,7 @@ _EXPECTED_LOCAL_ROW_IDS = (
     "beads-dir-perms",
     "claude-plugins",
     "codex-plugins",
+    "livespec-jsonc-complete",
     "beads-bd-binary",
     "beads-dolt-server",
     "beads-tenant-secret",
