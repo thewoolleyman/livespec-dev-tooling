@@ -33,7 +33,7 @@ __all__: list[str] = []
 _MEMBER = FleetMember(repo="widget", repo_class="impl-plugin")
 _JSONC_ARGS: tuple[str, ...] = (
     "api",
-    "repos/acme/widget/contents/.livespec.jsonc",
+    "repos/acme/widget/contents/.livespec.jsonc?ref=master",
     "-H",
     "Accept: application/vnd.github.raw",
 )
@@ -154,3 +154,37 @@ def test_non_object_root_skips() -> None:
     ctx = make_context(table={_JSONC_ARGS: _ok(text="[1, 2, 3]\n")})
     outcome = assert_baseline_harnesses(ctx=ctx, member=_MEMBER)
     assert isinstance(outcome, RowSkip)
+
+
+def test_genuine_master_absence_finds_even_when_default_branch_carries_the_file() -> None:
+    # Hardening for a non-master-default member (livespec-esac): the guard pins
+    # BOTH the file read and the tree read to the canonical `master` ref, so a
+    # copy on the member's DEFAULT branch cannot mask a genuine `master` absence.
+    # Here .livespec.jsonc EXISTS (harnesses-bearing) on the default branch — the
+    # no-`?ref=` contents path — but the canonical master tree genuinely LACKS it:
+    # the outcome MUST be the vacuous-pass-closure FINDING (zs22.8 M3), not the
+    # skip the default-branch copy would yield if file_text read a different ref
+    # than tree (file_text used to read the repo DEFAULT branch; tree pins master).
+    default_branch_jsonc_args = (
+        "api",
+        "repos/acme/widget/contents/.livespec.jsonc",
+        "-H",
+        "Accept: application/vnd.github.raw",
+    )
+    jsonc = (
+        "{\n"
+        '  "harnesses": {\n'
+        '    "claude": { "status": "supported", "canonical_command": "widget:next" }\n'
+        "  }\n"
+        "}\n"
+    )
+    ctx = make_context(
+        table={
+            default_branch_jsonc_args: _ok(text=jsonc),
+            _TREE_ARGS: _tree(paths=("README.md", "justfile")),
+        }
+    )
+    outcome = assert_baseline_harnesses(ctx=ctx, member=_MEMBER)
+    assert isinstance(outcome, RowFinding)
+    assert outcome.severity == "error"
+    assert ".livespec.jsonc" in outcome.message
