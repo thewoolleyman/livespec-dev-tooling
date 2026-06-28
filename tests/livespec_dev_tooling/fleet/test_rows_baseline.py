@@ -37,6 +37,17 @@ _JSONC_ARGS: tuple[str, ...] = (
     "-H",
     "Accept: application/vnd.github.raw",
 )
+_TREE_ARGS: tuple[str, ...] = (
+    "api",
+    "repos/acme/widget/git/trees/master?recursive=1",
+)
+
+
+def _tree(*, paths: tuple[str, ...], truncated: bool = False) -> GhResult:
+    """A canned `git/trees` payload listing `paths` (each a regular blob)."""
+    entries = ", ".join(f'{{"path": "{p}", "mode": "100644"}}' for p in paths)
+    truncated_json = "true" if truncated else "false"
+    return _ok(text=f'{{"truncated": {truncated_json}, "tree": [{entries}]}}')
 
 
 def make_context(*, table: dict[tuple[str, ...], GhResult]) -> FleetContext:
@@ -95,11 +106,42 @@ def test_non_object_harnesses_is_error_finding() -> None:
     assert outcome.severity == "error"
 
 
-def test_missing_livespec_jsonc_skips() -> None:
+def test_missing_file_with_unreadable_tree_skips() -> None:
+    # Empty table: both the contents read AND the tree read fail (returncode 1),
+    # so the tree is unreadable — can't-read is not absent → SKIP.
     ctx = make_context(table={})
     outcome = assert_baseline_harnesses(ctx=ctx, member=_MEMBER)
     assert isinstance(outcome, RowSkip)
     assert "widget" in outcome.reason
+
+
+def test_genuinely_absent_livespec_jsonc_is_error_finding() -> None:
+    # The contents read fails (no _JSONC_ARGS canned) but the master tree IS
+    # readable and does NOT list .livespec.jsonc — genuine absence, the
+    # vacuous-pass hole (zs22.8 M3). A governed manifest member with no config
+    # is a FINDING, not a skip.
+    ctx = make_context(table={_TREE_ARGS: _tree(paths=("README.md", "justfile"))})
+    outcome = assert_baseline_harnesses(ctx=ctx, member=_MEMBER)
+    assert isinstance(outcome, RowFinding)
+    assert outcome.severity == "error"
+    assert "widget" in outcome.message
+    assert ".livespec.jsonc" in outcome.message
+
+
+def test_present_file_unreadable_contents_skips() -> None:
+    # The master tree lists .livespec.jsonc (the file exists) but the contents
+    # read fails transiently — can't-read is not absent → SKIP, not a finding.
+    ctx = make_context(table={_TREE_ARGS: _tree(paths=("README.md", ".livespec.jsonc"))})
+    outcome = assert_baseline_harnesses(ctx=ctx, member=_MEMBER)
+    assert isinstance(outcome, RowSkip)
+
+
+def test_absent_file_with_truncated_tree_skips() -> None:
+    # A truncated tree cannot prove absence (the missing path may have been
+    # dropped by truncation) — inconclusive → SKIP.
+    ctx = make_context(table={_TREE_ARGS: _tree(paths=("README.md",), truncated=True)})
+    outcome = assert_baseline_harnesses(ctx=ctx, member=_MEMBER)
+    assert isinstance(outcome, RowSkip)
 
 
 def test_unparseable_livespec_jsonc_skips() -> None:
