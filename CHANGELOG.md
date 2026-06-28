@@ -58,6 +58,20 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.29.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.28.1...v0.29.0) (2026-06-28)
+
+
+### Features
+
+* **governed-lifecycle:** local first-touch reconcile verb (livespec-zs22.8.2) ([38072c2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/38072c2f160b47412b7518efc2a668775e828cb5))
+
+
+### Bug Fixes
+
+* document fleet wiring uv path wrapper ([b82ad8b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b82ad8b7f5a5843b9435bfd18e9d0c163477fbd6))
+* read fleet secret values from GitHub env projection ([9d06f02](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9d06f0266a39a5a750205dc894e32b51f8c2a8c6))
+* **subagent-stop-guard:** scope worktrees to those THIS agent CREATED, not merely mentioned ([230747a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/230747aa4728df202830f20378f0765e309230cd))
+
 ## [0.28.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.28.0...v0.28.1) (2026-06-27)
 
 
