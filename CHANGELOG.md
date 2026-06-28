@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.29.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.29.0...v0.29.1) (2026-06-28)
+
+
+### Bug Fixes
+
+* **governed-lifecycle:** genuine-absence guard closes the vacuous-pass hole (livespec-zs22.8.3) ([5a338f0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5a338f05e9ba715bcde5b906953f135ea62e3bec))
+
 ## [0.29.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.28.1...v0.29.0) (2026-06-28)
 
 
