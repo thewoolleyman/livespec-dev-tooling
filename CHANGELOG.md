@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.30.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.29.1...v0.30.0) (2026-06-28)
+
+
+### Features
+
+* **governed-lifecycle:** beads-runtime detect-and-guide rows (livespec-zs22.8.4) ([ac60e60](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ac60e6088dfdf674150619151a60173ddd3f08b2))
+
 ## [0.29.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.29.0...v0.29.1) (2026-06-28)
 
 
