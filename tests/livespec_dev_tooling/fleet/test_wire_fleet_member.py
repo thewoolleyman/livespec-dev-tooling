@@ -72,9 +72,18 @@ _CI_ARGS: tuple[str, ...] = (
     "-H",
     "Accept: application/vnd.github.raw",
 )
+_LIVESPEC_JSONC_ARGS: tuple[str, ...] = (
+    "api",
+    "repos/acme/widget/contents/.livespec.jsonc",
+    "-H",
+    "Accept: application/vnd.github.raw",
+)
 
 _CI_YML = "jobs:\n  check:\n    strategy:\n      matrix:\n        target:\n          - check-a\n"
 _PYPROJECT = '[tool.uv.sources]\nlivespec-dev-tooling = { git = "x", tag = "v1.0.0" }\n'
+_LIVESPEC_JSONC = (
+    '{"harnesses": {"claude": {"status": "exempt", "reason": "library; no harness surface"}}}'
+)
 
 
 def make_runner(*, table: dict[tuple[str, ...], GhResult]) -> GhRunner:
@@ -110,11 +119,13 @@ def _green_table(*, topics: list[str] | None = None) -> dict[tuple[str, ...], Gh
         ".github/workflows/pin-freshness.yml",
         ".github/workflows/release-dispatch.yml",
         "pyproject.toml",
+        ".livespec.jsonc",
     ]
     tree_payload = {"tree": [{"path": p, "mode": "100644"} for p in paths], "truncated": False}
     return {
         _MANIFEST_ARGS: raw(text=_MANIFEST_SOURCE),
         _TREE_ARGS: ok(payload=tree_payload),
+        _LIVESPEC_JSONC_ARGS: raw(text=_LIVESPEC_JSONC),
         _PYPROJECT_ARGS: raw(text=_PYPROJECT),
         _LATEST_ARGS: ok(payload={"tag_name": "v1.0.0"}),
         _SECRETS_ARGS: ok(payload={"secrets": [{"name": "APP_ID"}, {"name": "APP_PRIVATE_KEY"}]}),

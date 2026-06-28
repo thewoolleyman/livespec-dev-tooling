@@ -16,9 +16,14 @@ the fleet-conformance sweep and the release fan-out preflight both gate on
 error-severity findings.
 
 Per the fleet contract's can't-read-is-not-absent discipline, a member
-whose `.livespec.jsonc` is unreadable, unparseable, or not a JSON object
-yields a skip rather than a false finding. `.livespec.jsonc` is parsed
-with the vendored `jsoncomment`, mirroring `_rows_beads` and `contract`.
+whose `.livespec.jsonc` is transiently unreadable, unparseable, or not a
+JSON object yields a skip rather than a false finding. A GENUINELY-absent
+`.livespec.jsonc` is the exception: proven via the member's master tree (a
+readable, non-truncated tree that does not list the file), it is an ERROR
+finding — the vacuous-pass closure (livespec-zs22.8 M3), which stops a
+config-less governed member from passing the conformance net vacuously.
+`.livespec.jsonc` is parsed with the vendored `jsoncomment`, mirroring
+`_rows_beads` and `contract`.
 """
 
 from __future__ import annotations
@@ -51,18 +56,54 @@ __all__: list[str] = [
 LIVESPEC_JSONC_PATH = ".livespec.jsonc"
 
 
+def _absent_or_unreadable(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:
+    """Resolve a `None` contents read into a genuine-absence finding or a skip.
+
+    The contents API returned nothing — but `None` conflates "the file is
+    genuinely absent on master" with "the read failed transiently". The
+    member's recursive master tree disambiguates them: when the tree is
+    READABLE, NOT truncated, and does NOT list `.livespec.jsonc`, the file is
+    genuinely absent — a governed manifest member with no config, the
+    vacuous-pass hole the conformance net used to skip past (livespec-zs22.8
+    M3). That is an ERROR finding, not a skip. Every other shape (tree
+    unreadable, tree truncated so absence is unprovable, or the file present
+    but its contents read failed) is can't-read-is-not-absent → SKIP.
+    """
+    tree = ctx.tree(repo=member.repo)
+    if tree.readable and not tree.truncated and LIVESPEC_JSONC_PATH not in tree.paths:
+        return RowFinding(
+            message=(
+                f"{member.repo}: no {LIVESPEC_JSONC_PATH} (a governed member MUST carry a "
+                "harnesses-bearing config; a config-less member passed the conformance net "
+                "vacuously — vacuous-pass closure, livespec-zs22.8 M3)"
+            ),
+            severity="error",
+        )
+    return RowSkip(
+        reason=(
+            f"{member.repo}: {LIVESPEC_JSONC_PATH} unreadable or its absence is unprovable "
+            "(can't-read is not absent)"
+        )
+    )
+
+
 def assert_baseline_harnesses(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:
     """The member declares a non-empty `harnesses` object in `.livespec.jsonc`.
 
-    Skips a member whose `.livespec.jsonc` is unreadable, unparseable, or
-    not a JSON object (can't-read is not absent). A readable document
-    carrying a non-empty top-level `harnesses` object passes; one missing
-    it yields an ERROR-severity finding (the declaration is required
-    fleet-wide since M6).
+    A GENUINELY-ABSENT `.livespec.jsonc` on a governed manifest member is an
+    ERROR finding (the vacuous-pass closure, livespec-zs22.8 M3): the
+    conformance net used to skip a config-less member, letting it pass
+    vacuously. Genuine absence is proven via the member's master tree (a
+    readable, non-truncated tree that does not list the file); a transiently
+    unreadable read stays a skip (can't-read is not absent). A member whose
+    `.livespec.jsonc` is unparseable or not a JSON object also skips. A
+    readable document carrying a non-empty top-level `harnesses` object passes;
+    one missing it yields an ERROR-severity finding (the declaration is
+    required fleet-wide since M6).
     """
     text = ctx.file_text(repo=member.repo, path=LIVESPEC_JSONC_PATH)
     if text is None:
-        return RowSkip(reason=f"{member.repo}: {LIVESPEC_JSONC_PATH} unreadable or absent")
+        return _absent_or_unreadable(ctx=ctx, member=member)
     try:
         raw = cast("object", jsoncomment.loads(text))
     except ValueError:
