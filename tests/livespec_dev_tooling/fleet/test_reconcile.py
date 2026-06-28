@@ -72,7 +72,7 @@ _REPO_PATCH: tuple[str, ...] = (
 )
 _CI_ARGS: tuple[str, ...] = (
     "api",
-    "repos/acme/widget/contents/.github/workflows/ci.yml",
+    "repos/acme/widget/contents/.github/workflows/ci.yml?ref=master",
     "-H",
     "Accept: application/vnd.github.raw",
 )

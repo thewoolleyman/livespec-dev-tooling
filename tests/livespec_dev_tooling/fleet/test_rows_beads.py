@@ -34,13 +34,13 @@ __all__: list[str] = []
 _MEMBER = FleetMember(repo="widget", repo_class="impl-plugin")
 _BEADS_ARGS: tuple[str, ...] = (
     "api",
-    "repos/acme/widget/contents/.beads/config.yaml",
+    "repos/acme/widget/contents/.beads/config.yaml?ref=master",
     "-H",
     "Accept: application/vnd.github.raw",
 )
 _JSONC_ARGS: tuple[str, ...] = (
     "api",
-    "repos/acme/widget/contents/.livespec.jsonc",
+    "repos/acme/widget/contents/.livespec.jsonc?ref=master",
     "-H",
     "Accept: application/vnd.github.raw",
 )

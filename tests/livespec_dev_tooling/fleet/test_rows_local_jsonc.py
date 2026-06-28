@@ -170,8 +170,8 @@ def _write_checkout(*, tmp_path: Path, jsonc: str, beads: str | None = None) -> 
 def _fleet_ctx(*, jsonc_text: str, beads_text: str) -> FleetContext:
     """A canned-response `FleetContext` serving the two connection sources for `widget`."""
     accept = ("-H", "Accept: application/vnd.github.raw")
-    beads_args = ("api", "repos/acme/widget/contents/.beads/config.yaml", *accept)
-    jsonc_args = ("api", "repos/acme/widget/contents/.livespec.jsonc", *accept)
+    beads_args = ("api", "repos/acme/widget/contents/.beads/config.yaml?ref=master", *accept)
+    jsonc_args = ("api", "repos/acme/widget/contents/.livespec.jsonc?ref=master", *accept)
     table = {
         beads_args: GhResult(returncode=0, stdout=beads_text, stderr=""),
         jsonc_args: GhResult(returncode=0, stdout=jsonc_text, stderr=""),

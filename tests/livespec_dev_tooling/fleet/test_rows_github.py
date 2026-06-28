@@ -41,7 +41,7 @@ _REPO_ARGS: tuple[str, ...] = ("api", "repos/acme/widget")
 _TOPICS_ARGS: tuple[str, ...] = ("api", "repos/acme/widget/topics")
 _CI_ARGS: tuple[str, ...] = (
     "api",
-    "repos/acme/widget/contents/.github/workflows/ci.yml",
+    "repos/acme/widget/contents/.github/workflows/ci.yml?ref=master",
     "-H",
     "Accept: application/vnd.github.raw",
 )

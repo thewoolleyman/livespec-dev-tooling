@@ -29,13 +29,13 @@ __all__: list[str] = []
 _MEMBER = FleetMember(repo="widget", repo_class="impl-plugin")
 _AGENTS_ARGS: tuple[str, ...] = (
     "api",
-    "repos/acme/widget/contents/AGENTS.md",
+    "repos/acme/widget/contents/AGENTS.md?ref=master",
     "-H",
     "Accept: application/vnd.github.raw",
 )
 _SETTINGS_ARGS: tuple[str, ...] = (
     "api",
-    "repos/acme/widget/contents/.claude/settings.json",
+    "repos/acme/widget/contents/.claude/settings.json?ref=master",
     "-H",
     "Accept: application/vnd.github.raw",
 )
@@ -131,7 +131,7 @@ def _tree_table(*, paths: list[str], truncated: bool = False) -> dict[tuple[str,
 def _contents_args(*, path: str) -> tuple[str, ...]:
     return (
         "api",
-        f"repos/acme/widget/contents/{path}",
+        f"repos/acme/widget/contents/{path}?ref=master",
         "-H",
         "Accept: application/vnd.github.raw",
     )

@@ -40,7 +40,7 @@ _MEMBER = FleetMember(repo="widget", repo_class="impl-plugin")
 _TREE_ARGS: tuple[str, ...] = ("api", "repos/acme/widget/git/trees/master?recursive=1")
 _PYPROJECT_ARGS: tuple[str, ...] = (
     "api",
-    "repos/acme/widget/contents/pyproject.toml",
+    "repos/acme/widget/contents/pyproject.toml?ref=master",
     "-H",
     "Accept: application/vnd.github.raw",
 )
@@ -230,7 +230,7 @@ def test_pin_row_unreadable_pyproject_content_skips() -> None:
 
 _UVLOCK_ARGS: tuple[str, ...] = (
     "api",
-    "repos/acme/widget/contents/uv.lock",
+    "repos/acme/widget/contents/uv.lock?ref=master",
     "-H",
     "Accept: application/vnd.github.raw",
 )

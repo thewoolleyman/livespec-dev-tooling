@@ -41,14 +41,14 @@ _MEMBER = FleetMember(repo="widget", repo_class="library")
 _MANIFEST_SOURCE = '{"owner": "acme", "members": [{"repo": "widget", "class": "library"}]}'
 _MANIFEST_ARGS: tuple[str, ...] = (
     "api",
-    "repos/acme/livespec/contents/.livespec-fleet-manifest.jsonc",
+    "repos/acme/livespec/contents/.livespec-fleet-manifest.jsonc?ref=master",
     "-H",
     "Accept: application/vnd.github.raw",
 )
 _TREE_ARGS: tuple[str, ...] = ("api", "repos/acme/widget/git/trees/master?recursive=1")
 _PYPROJECT_ARGS: tuple[str, ...] = (
     "api",
-    "repos/acme/widget/contents/pyproject.toml",
+    "repos/acme/widget/contents/pyproject.toml?ref=master",
     "-H",
     "Accept: application/vnd.github.raw",
 )
@@ -68,13 +68,13 @@ _TOPICS_PUT: tuple[str, ...] = (
 )
 _CI_ARGS: tuple[str, ...] = (
     "api",
-    "repos/acme/widget/contents/.github/workflows/ci.yml",
+    "repos/acme/widget/contents/.github/workflows/ci.yml?ref=master",
     "-H",
     "Accept: application/vnd.github.raw",
 )
 _LIVESPEC_JSONC_ARGS: tuple[str, ...] = (
     "api",
-    "repos/acme/widget/contents/.livespec.jsonc",
+    "repos/acme/widget/contents/.livespec.jsonc?ref=master",
     "-H",
     "Accept: application/vnd.github.raw",
 )

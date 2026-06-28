@@ -111,6 +111,12 @@ _REMOTE_URL_PATTERN = re.compile(
     r"^(?:https?://github\.com/|git@github\.com:)([^/]+)/([^/]+?)(?:\.git)?/?$"
 )
 _GITLINK_MODE = "160000"
+# The fleet's canonical branch. `file_text` and `tree` BOTH pin this single
+# ref so the genuine-absence guard — which reads a member's file (file_text)
+# and then its tree (tree) to tell genuine absence from transient
+# unreadability — can never evaluate the two against divergent branches
+# (e.g. a member whose default branch is not `master`). One source of truth.
+_CANONICAL_REF = "master"
 
 
 def default_gh_runner(*, args: list[str], stdin: str | None = None) -> GhResult:
@@ -204,11 +210,17 @@ class FleetContext:
             return None
 
     def file_text(self, *, repo: str, path: str) -> str | None:
-        """Raw master-tree file content via the contents API; None on failure."""
+        """Raw file content at the canonical `master` ref via the contents API.
+
+        The ref is pinned EXPLICITLY (`?ref=master`) to match `tree`'s pin, so
+        a guard that reads a file and then the tree never resolves the two
+        against divergent branches on a non-master-default member. None on
+        failure.
+        """
         result = self.run_gh(
             args=[
                 "api",
-                f"repos/{self.owner}/{repo}/contents/{path}",
+                f"repos/{self.owner}/{repo}/contents/{path}?ref={_CANONICAL_REF}",
                 "-H",
                 "Accept: application/vnd.github.raw",
             ]
@@ -222,7 +234,9 @@ class FleetContext:
         cached = self.tree_cache.get(repo)
         if cached is not None:
             return cached
-        payload = self.api_object(path=f"repos/{self.owner}/{repo}/git/trees/master?recursive=1")
+        payload = self.api_object(
+            path=f"repos/{self.owner}/{repo}/git/trees/{_CANONICAL_REF}?recursive=1"
+        )
         state = (
             TreeState(readable=False) if payload is None else _parse_tree_payload(payload=payload)
         )

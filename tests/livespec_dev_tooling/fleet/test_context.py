@@ -166,13 +166,13 @@ def test_api_object_parses_failures_and_bad_json() -> None:
 def test_file_text_returns_raw_content_or_none() -> None:
     raw_args = (
         "api",
-        "repos/acme/widget/contents/pyproject.toml",
+        "repos/acme/widget/contents/pyproject.toml?ref=master",
         "-H",
         "Accept: application/vnd.github.raw",
     )
     missing_args = (
         "api",
-        "repos/acme/widget/contents/nope.txt",
+        "repos/acme/widget/contents/nope.txt?ref=master",
         "-H",
         "Accept: application/vnd.github.raw",
     )
