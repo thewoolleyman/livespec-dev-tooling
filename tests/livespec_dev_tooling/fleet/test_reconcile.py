@@ -35,6 +35,7 @@ from livespec_dev_tooling.fleet._rows_files import (
     RELEASE_DISPATCH_WORKFLOW,
 )
 from livespec_dev_tooling.fleet._rows_github import REQUIRED_MERGE_SETTINGS
+from livespec_dev_tooling.fleet.wire_fleet_member import __doc__ as wire_fleet_member_doc
 
 if TYPE_CHECKING:
     import pytest
@@ -182,6 +183,8 @@ def test_reconcile_secrets_falls_back_to_destination_env_names(
 
 
 def test_reconcile_secrets_missing_env_var_is_finding(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("GITHUB_APP_ID", raising=False)
+    monkeypatch.delenv("GITHUB_PRIVATE_KEY", raising=False)
     monkeypatch.delenv("APP_ID", raising=False)
     monkeypatch.delenv("APP_PRIVATE_KEY", raising=False)
     outcome = reconcile_secret_names(ctx=make_context(table={}, calls=[]), member=_MEMBER)
@@ -190,12 +193,21 @@ def test_reconcile_secrets_missing_env_var_is_finding(*, monkeypatch: pytest.Mon
 
 
 def test_reconcile_secrets_failed_push_is_finding(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("GITHUB_APP_ID", raising=False)
+    monkeypatch.delenv("GITHUB_PRIVATE_KEY", raising=False)
     monkeypatch.setenv("APP_ID", "12345")
     monkeypatch.setenv("APP_PRIVATE_KEY", "PEMPEM")
     outcome = reconcile_secret_names(ctx=make_context(table={}, calls=[]), member=_MEMBER)
     assert isinstance(outcome, RowFinding)
     assert "gh secret set APP_ID failed" in outcome.message
     assert "12345" not in outcome.message
+
+
+def test_wire_fleet_member_doc_invocation_preserves_uv_path() -> None:
+    assert wire_fleet_member_doc is not None
+    assert 'with-livespec-env.sh -- env PATH="$HOME/.local/bin:$PATH" uv run' in (
+        wire_fleet_member_doc
+    )
 
 
 def test_reconcile_topic_applies_and_preserves_existing() -> None:
