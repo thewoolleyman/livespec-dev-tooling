@@ -313,6 +313,44 @@ def test_main_passes_against_fully_covered_real_repo_pair(*, tmp_path: Path) -> 
     )
 
 
+def test_main_honors_inherited_coverage_file_namespace(*, tmp_path: Path) -> None:
+    """Dispatcher-provided COVERAGE_FILE is the data path used by pytest and report.
+
+    The parallel check dispatcher isolates coverage-touching targets by
+    exporting a target-specific COVERAGE_FILE. The incremental check must
+    use that inherited path instead of its repo-relative fallback, or a
+    concurrent full-tree coverage combine can still erase its data file.
+    """
+    data_file = tmp_path / "covns" / ".coverage"
+    data_file.parent.mkdir()
+    env = _isolated_git_env()
+    env["COVERAGE_FILE"] = str(data_file)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(_CHECK_PATH),
+            "--paths",
+            "livespec_dev_tooling/checks/all_declared.py",
+        ],
+        cwd=str(_REPO_ROOT),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+
+    assert result.returncode == 0, (
+        f"check_coverage_incremental should pass with an inherited coverage namespace; "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    assert data_file.is_file(), (
+        "expected inherited COVERAGE_FILE to receive the inner pytest data; "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Epic li-cvaudit (cvnoarg): with NO --paths, the check derives the changed
 # impl-file list from `git diff --name-only origin/master...HEAD` (filtered

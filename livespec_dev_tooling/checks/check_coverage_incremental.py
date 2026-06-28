@@ -273,7 +273,10 @@ def main() -> int:
         return 1
 
     inner_env = {k: v for k, v in os.environ.items() if not k.startswith(_COV_CORE_ENV_PREFIX)}
-    inner_env["COVERAGE_FILE"] = _DATA_FILE
+    data_file = inner_env.get("COVERAGE_FILE", _DATA_FILE)
+    if data_file == os.environ.get("COV_CORE_DATAFILE"):
+        data_file = _DATA_FILE
+    inner_env["COVERAGE_FILE"] = data_file
 
     # Coverage-threshold policy by invocation mode (epic li-cvaudit, cvnoarg):
     #   - Explicit `--paths` (interactive fast-feedback): enforce the per-file
@@ -314,7 +317,7 @@ def main() -> int:
             "run",
             "coverage",
             "report",
-            f"--data-file={_DATA_FILE}",
+            f"--data-file={data_file}",
             f"--include={include}",
             f"--fail-under={fail_under}",
         ],
