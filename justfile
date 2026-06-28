@@ -256,9 +256,11 @@ check:
         # meta-check (canonical block above) enforces that both-surfaces
         # wiring (epic li-pyright-gate, work-item li-pyright-gate-wi3,
         # LITERAL-membership design). check-coverage gates the aggregate
-        # `fail_under = 100` off the SINGLE pytest run that the canonical
-        # check-per-file-coverage already performed (it reads the existing
-        # `.coverage`), so wiring it here adds NO duplicate suite run.
+        # `fail_under = 100` by running its OWN clean `pytest --cov`
+        # (COVERAGE_FILE unset), measuring IDENTICALLY to the CI standalone
+        # check-coverage job — a deliberate duplicate suite run (see the
+        # recipe header below) chosen so the local gate can never
+        # green-light coverage that CI will fail.
         check-lint
         check-format
         check-types
@@ -401,25 +403,38 @@ check-changed:
     just check-check-coverage-incremental --paths "${changed[@]}"
 
 # Aggregate (total) coverage gate at `fail_under = 100` (pyproject.toml
-# [tool.coverage.report]). To avoid a DUPLICATE full pytest run when
-# invoked inside the `just check` aggregate, this recipe gates off the
-# EXISTING coverage data file when present (the canonical
-# check-per-file-coverage slug runs `pytest --cov` upfront in the SAME
-# coverage namespace, so the data file is already produced by the time
-# this runs). When it is ABSENT — the CI check-python matrix runs
-# check-coverage as a standalone job in its own runner with no prior
-# pytest — the recipe runs the suite itself so the aggregate gate still
-# fires there. Either way the result is the `fail_under = 100` aggregate
-# assertion with NO duplicate suite run in `just check`.
+# [tool.coverage.report]). This recipe ALWAYS runs its own clean
+# `pytest --cov` with COVERAGE_FILE UNSET, measuring coverage IDENTICALLY
+# to CI's standalone check-coverage matrix job — so the local / pre-PR
+# gate is a faithful predictor of CI by construction.
 #
-# Coverage-data isolation (work-item livespec-dev-tooling-cmn): the
-# parallel check dispatcher exports COVERAGE_FILE pointed at this
-# target's isolated namespace dir (shared with its producer
-# check-per-file-coverage). `${COVERAGE_FILE:-.coverage}` reads THAT
-# file as the explicit producer->consumer data dependency; pytest-cov
-# and `coverage report` both honor COVERAGE_FILE natively. A standalone
-# run leaves COVERAGE_FILE unset and falls back to the repo-root
-# `.coverage` the recipe's own suite produces.
+# WHY NOT reuse check-per-file-coverage's data (the prior optimization):
+# the parallel check dispatcher runs check-per-file-coverage's `pytest
+# --cov` with COVERAGE_FILE EXPORTED to an isolated namespace dir (the
+# coverage-data isolation of work-item livespec-dev-tooling-cmn). For a
+# module whose OWN coverage is self-referential on coverage's machinery
+# — e.g. code that branches on `COVERAGE_FILE == COV_CORE_DATAFILE` — an
+# exported COVERAGE_FILE makes that branch execute during the suite (the
+# two paths are equal), so the line reads as COVERED. CI runs
+# check-coverage standalone with COVERAGE_FILE UNSET, where that branch
+# does NOT execute, so the same line reads as UNCOVERED. Reusing the
+# exported-namespace data therefore measured LENIENTLY and let `just
+# check` green-light lines CI then failed (the pre-PR gate that Fabro's
+# janitor runs passed at a false 100% while the PR's CI check-coverage
+# failed at 99.99%). Running the clean suite here closes that gap.
+#
+# TRADE-OFF: this re-introduces ONE duplicate full pytest run in the
+# `just check` aggregate (check-per-file-coverage runs the suite for its
+# per-file gate; this gate runs it again, clean, for the total). Gate
+# correctness over speed; the optimization is reversible if a future
+# design measures both gates identically without the divergence.
+#
+# NOTE on the dispatcher: check-coverage remains check-per-file-coverage's
+# namespace-shared CONSUMER in parallel_check_dispatcher.py, so it still
+# runs only after that producer completes. It no longer READS the
+# producer's data file, so that ordering is now a benign serialization
+# rather than a data dependency — a dispatcher-side simplification is a
+# possible follow-up, kept out of this justfile-scoped change.
 # Central fleet-membership conformance check (livespec v108 §"Fleet
 # membership contract"): fetches .livespec-fleet-manifest.jsonc from livespec
 # master, asserts every member's per-class obligations from the
@@ -455,14 +470,16 @@ check-fabro-image-pin-lockstep:
 check-coverage:
     #!/usr/bin/env bash
     set -uo pipefail
-    data_file="${COVERAGE_FILE:-.coverage}"
-    if [[ -f "${data_file}" ]]; then
-        echo ":: check-coverage: reading existing ${data_file} (produced by check-per-file-coverage); no duplicate suite run"
-        uv run coverage report --fail-under=100
-    else
-        echo ":: check-coverage: no ${data_file} data file (CI standalone job); running the suite"
-        uv run pytest -n auto --cov --cov-branch --cov-config=pyproject.toml --cov-report=term-missing
-    fi
+    # Always measure the `fail_under = 100` aggregate gate the SAME way CI's
+    # standalone check-coverage job does: a clean `pytest --cov` with
+    # COVERAGE_FILE UNSET (`env -u`). In the `just check` aggregate the
+    # parallel dispatcher exports COVERAGE_FILE for this target's namespace;
+    # `env -u COVERAGE_FILE` strips it so the suite runs exactly as the CI
+    # standalone runner does. See the header comment above for why reusing
+    # check-per-file-coverage's exported-namespace data measured LENIENTLY
+    # (it green-lit self-referential lines that CI's clean run then failed).
+    echo ":: check-coverage: clean standalone suite (COVERAGE_FILE unset) — strict, matches CI"
+    env -u COVERAGE_FILE uv run pytest -n auto --cov --cov-branch --cov-config=pyproject.toml --cov-report=term-missing
 
 # ---------------------------------------------------------------
 # Canonical aggregate recipes — one per canonical slug emitted by
