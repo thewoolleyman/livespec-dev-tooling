@@ -138,8 +138,33 @@ def test_shim_content_templates_owner_and_repo() -> None:
 
 
 def test_reconcile_secrets_pushes_values_via_stdin_only(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GITHUB_APP_ID", "12345")
+    monkeypatch.setenv("GITHUB_PRIVATE_KEY", "PEMPEM")
+    monkeypatch.delenv("APP_ID", raising=False)
+    monkeypatch.delenv("APP_PRIVATE_KEY", raising=False)
+    calls: list[tuple[tuple[str, ...], str | None]] = []
+    table = {
+        ("secret", "set", "APP_ID", "--repo", "acme/widget"): ok(payload={}),
+        ("secret", "set", "APP_PRIVATE_KEY", "--repo", "acme/widget"): ok(payload={}),
+    }
+    ctx = make_context(table=table, calls=calls)
+    outcome = reconcile_secret_names(ctx=ctx, member=_MEMBER)
+    assert isinstance(outcome, RowPass)
+    assert [stdin for _args, stdin in calls] == ["12345", "PEMPEM"]
+    for args, _stdin in calls:
+        assert "12345" not in " ".join(args)
+        assert "PEMPEM" not in " ".join(args)
+    assert "12345" not in outcome.note
+    assert "PEMPEM" not in outcome.note
+
+
+def test_reconcile_secrets_falls_back_to_destination_env_names(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("APP_ID", "12345")
     monkeypatch.setenv("APP_PRIVATE_KEY", "PEMPEM")
+    monkeypatch.delenv("GITHUB_APP_ID", raising=False)
+    monkeypatch.delenv("GITHUB_PRIVATE_KEY", raising=False)
     calls: list[tuple[tuple[str, ...], str | None]] = []
     table = {
         ("secret", "set", "APP_ID", "--repo", "acme/widget"): ok(payload={}),

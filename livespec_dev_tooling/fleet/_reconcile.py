@@ -51,6 +51,11 @@ __all__: list[str] = [
 
 SHIM_BRANCH = "wire-fleet-member/shim-workflows"
 
+_SECRET_SOURCE_ENV_NAMES: dict[str, tuple[str, ...]] = {
+    "APP_ID": ("GITHUB_APP_ID", "APP_ID"),
+    "APP_PRIVATE_KEY": ("GITHUB_PRIVATE_KEY", "APP_PRIVATE_KEY"),
+}
+
 _SHIM_WORKFLOWS = (BUMP_PIN_WORKFLOW, PIN_FRESHNESS_WORKFLOW, RELEASE_DISPATCH_WORKFLOW)
 
 # Canonical shim bodies, mirroring livespec-dev-tooling's own committed
@@ -134,20 +139,33 @@ def shim_content(*, path: str, ctx: FleetContext, member: FleetMember) -> str:
     return _SHIM_BODIES[path].format(owner=ctx.owner, repo=member.repo)
 
 
+def _secret_value_from_env(*, destination_name: str) -> str | None:
+    """Resolve the source env value for one destination Actions secret name."""
+    for source_name in _SECRET_SOURCE_ENV_NAMES[destination_name]:
+        value = os.environ.get(source_name)
+        if value is not None:
+            return value
+    return None
+
+
 def reconcile_secret_names(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:
     """Push APP_ID + APP_PRIVATE_KEY from env via `gh secret set` (stdin only).
 
     The operator invokes wire-fleet-member under the 1Password
-    environment wrapper, so the canonical values are present as env
-    vars; they flow to GitHub via stdin and are never echoed.
+    environment wrapper, which projects the canonical values as
+    GITHUB_APP_ID and GITHUB_PRIVATE_KEY. Those source env vars flow
+    to GitHub via stdin under the destination secret names APP_ID and
+    APP_PRIVATE_KEY, with the destination names also accepted as a
+    back-compat fallback. Values are never echoed.
     """
     for name in REQUIRED_SECRET_NAMES:
-        value = os.environ.get(name)
+        value = _secret_value_from_env(destination_name=name)
         if value is None:
+            source_names = ", ".join(_SECRET_SOURCE_ENV_NAMES[name])
             return RowFinding(
                 message=(
-                    f"{member.repo}: env var {name} absent — invoke under "
-                    "with-livespec-env.sh so the 1Password projection provides it"
+                    f"{member.repo}: env var(s) {source_names} absent — invoke under "
+                    "with-livespec-env.sh so the 1Password projection provides them"
                 )
             )
         result = ctx.run_gh(
