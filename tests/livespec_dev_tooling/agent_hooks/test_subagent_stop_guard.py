@@ -525,9 +525,75 @@ def test_gather_worktrees_keeps_only_existing_git_worktrees(tmp_path: Path) -> N
     real = _make_pushed_repo(tmp_path=tmp_path)
     phantom = tmp_path / "worktrees" / "phantom"
     transcript = tmp_path / "transcript.jsonl"
-    _ = transcript.write_text(f'{{"text": "{real} and {phantom}"}}\n', encoding="utf-8")
+    _ = transcript.write_text(
+        f'{{"text": "git worktree add -b feature {real} master; mention {phantom}"}}\n',
+        encoding="utf-8",
+    )
     gathered = _gather_worktrees(hook_input={"transcript_path": str(transcript)})
     assert gathered == [real]
+
+
+def test_gather_worktrees_ignores_merely_mentioned_sibling_worktree(tmp_path: Path) -> None:
+    sibling = _make_pushed_repo(tmp_path=tmp_path)
+    transcript = tmp_path / "transcript.jsonl"
+    _ = transcript.write_text(
+        f'{{"text": "sibling still dirty at {sibling}, do not touch it"}}\n',
+        encoding="utf-8",
+    )
+    assert _gather_worktrees(hook_input={"transcript_path": str(transcript)}) == []
+
+
+def test_gather_worktrees_requires_worktree_add_with_branch_option(tmp_path: Path) -> None:
+    worktree = _make_pushed_repo(tmp_path=tmp_path)
+    transcript = tmp_path / "transcript.jsonl"
+    _ = transcript.write_text(
+        f"git status {worktree}\n"
+        f"git worktree add {worktree} master\n"
+        f"git worktree add -b feature /tmp/plain master\n",
+        encoding="utf-8",
+    )
+    assert _gather_worktrees(hook_input={"transcript_path": str(transcript)}) == []
+
+
+def test_gather_worktrees_accepts_nested_jsonl_string_values_and_options(
+    tmp_path: Path,
+) -> None:
+    worktree = _make_pushed_repo(tmp_path=tmp_path)
+    transcript = tmp_path / "transcript.jsonl"
+    payload = {
+        "messages": [
+            {"text": "not a command"},
+            {"text": f"git worktree add --lock --reason keep -Bfeature {worktree} master"},
+        ]
+    }
+    _ = transcript.write_text(json.dumps(payload), encoding="utf-8")
+    assert _gather_worktrees(hook_input={"transcript_path": str(transcript)}) == [worktree]
+
+
+def test_gather_worktrees_accepts_created_path_after_option_separator(tmp_path: Path) -> None:
+    worktree = _make_pushed_repo(tmp_path=tmp_path)
+    transcript = tmp_path / "transcript.jsonl"
+    _ = transcript.write_text(
+        f"git worktree add -b feature -- {worktree} master\n",
+        encoding="utf-8",
+    )
+    assert _gather_worktrees(hook_input={"transcript_path": str(transcript)}) == [worktree]
+
+
+def test_gather_worktrees_ignores_unparseable_shell_segment(tmp_path: Path) -> None:
+    worktree = _make_pushed_repo(tmp_path=tmp_path)
+    transcript = tmp_path / "transcript.jsonl"
+    _ = transcript.write_text(
+        f"git worktree add -b 'unterminated {worktree}\n",
+        encoding="utf-8",
+    )
+    assert _gather_worktrees(hook_input={"transcript_path": str(transcript)}) == []
+
+
+def test_gather_worktrees_ignores_json_without_string_segments(tmp_path: Path) -> None:
+    transcript = tmp_path / "transcript.jsonl"
+    _ = transcript.write_text('{"value": 1}\n', encoding="utf-8")
+    assert _gather_worktrees(hook_input={"transcript_path": str(transcript)}) == []
 
 
 # ---------------------------------------------------------------------------
@@ -558,7 +624,10 @@ def test_main_allows_when_worktree_is_handed_off(
 ) -> None:
     worktree = _make_pushed_repo(tmp_path=tmp_path)
     transcript = tmp_path / "transcript.jsonl"
-    _ = transcript.write_text(f'{{"text": "working in {worktree}"}}\n', encoding="utf-8")
+    _ = transcript.write_text(
+        f'{{"text": "git worktree add -b feature {worktree} master"}}\n',
+        encoding="utf-8",
+    )
     payload = json.dumps({"session_id": "s2", "transcript_path": str(transcript)})
     assert _run_main(monkeypatch=monkeypatch, stdin_text=payload) == 0
 
@@ -572,7 +641,10 @@ def test_main_blocks_on_unpushed_commits_and_counts_blocks(
     worktree = _make_pushed_repo(tmp_path=tmp_path)
     _add_unpushed_commit(worktree=worktree)
     transcript = tmp_path / "transcript.jsonl"
-    _ = transcript.write_text(f'{{"text": "working in {worktree}"}}\n', encoding="utf-8")
+    _ = transcript.write_text(
+        f'{{"text": "git worktree add -b feature {worktree} master"}}\n',
+        encoding="utf-8",
+    )
     payload = json.dumps({"session_id": "s3", "transcript_path": str(transcript)})
     assert _run_main(monkeypatch=monkeypatch, stdin_text=payload) == 2
     assert _read_block_count(path=_state_path(session_id="s3")) == 1
@@ -587,7 +659,10 @@ def test_main_fails_open_past_the_block_cap(
     worktree = _make_pushed_repo(tmp_path=tmp_path)
     _add_unpushed_commit(worktree=worktree)
     transcript = tmp_path / "transcript.jsonl"
-    _ = transcript.write_text(f'{{"text": "working in {worktree}"}}\n', encoding="utf-8")
+    _ = transcript.write_text(
+        f'{{"text": "git worktree add -b feature {worktree} master"}}\n',
+        encoding="utf-8",
+    )
     _record_block(path=_state_path(session_id="s4"), count=_MAX_BLOCKS_PER_SESSION)
     payload = json.dumps({"session_id": "s4", "transcript_path": str(transcript)})
     assert _run_main(monkeypatch=monkeypatch, stdin_text=payload) == 0
@@ -611,7 +686,10 @@ def test_script_blocks_then_allows_end_to_end(tmp_path: Path) -> None:
     worktree = _make_pushed_repo(tmp_path=tmp_path)
     _add_unpushed_commit(worktree=worktree)
     transcript = tmp_path / "transcript.jsonl"
-    _ = transcript.write_text(f'{{"text": "working in {worktree}"}}\n', encoding="utf-8")
+    _ = transcript.write_text(
+        f'{{"text": "git worktree add -b feature {worktree} master"}}\n',
+        encoding="utf-8",
+    )
     state_dir = tmp_path / "state"
     state_dir.mkdir()
     payload = json.dumps({"session_id": "e2e", "transcript_path": str(transcript)})
