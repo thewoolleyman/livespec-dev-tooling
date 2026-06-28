@@ -9,6 +9,8 @@ Environment as canonical source"; values flow env→stdin only), branch
 protection set from the member's ci.yml matrix, the topic applied,
 ONE shim-workflow PR opened for missing shims — or surfaces the row's
 `manual_hint` where no machine fix exists from this vantage point.
+The secret source env vars are GITHUB_APP_ID and GITHUB_PRIVATE_KEY;
+the destination Actions secret names remain APP_ID and APP_PRIVATE_KEY.
 
 Operator-invoked, NOT CI (no run lever): the repo-birth procedure is
 scaffold → register in the manifest FIRST → run this → fleet

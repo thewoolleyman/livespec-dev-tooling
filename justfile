@@ -433,7 +433,7 @@ check-changed:
 # preflight in reusable-release-dispatch.yml set it) → the full
 # central sweep runs. No external gate, no silent skip. The reconcile
 # twin is operator-invoked, NOT CI:
-#   with-livespec-env.sh -- uv run python -m \
+#   with-livespec-env.sh -- env PATH="$HOME/.local/bin:$PATH" uv run python -m \
 #       livespec_dev_tooling.fleet.wire_fleet_member --repo <member>
 check-fleet-conformance:
     uv run python -m livespec_dev_tooling.fleet.fleet_conformance
