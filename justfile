@@ -49,49 +49,23 @@ default:
 # First-time setup.
 # ---------------------------------------------------------------
 
-# Install the lefthook git hooks so pre-commit / commit-msg / pre-push
-# gates fire automatically. Re-running is idempotent: `lefthook install`
-# rewrites the hook files atomically.
+# First-touch setup — a THIN delegator to this package's OWN LOCAL first-touch
+# reconcile verb (`livespec_dev_tooling.fleet.local_reconcile`), the generalized
+# successor to this recipe's former inline steps (livespec-zs22.8 M5). This repo
+# IS livespec_dev_tooling, so `uv run python -m ...` runs the local package
+# directly (no external pin). The verb walks the LOCAL obligation partition
+# (`contract.LOCAL_OBLIGATION_ROWS`): mise trust/install, uv sync, the structural
+# commit-refuse hooks (subsuming `lefthook install` — the canonical hook
+# overwrites the lefthook stubs and delegates to `lefthook run`), the advisory
+# `refs/notes/*` refspec, the worktree-root mise-trust entry, the beads
+# tenant-dir hardening, the beads-runtime detect-and-guide probes, and
+# project-scoped Claude/Codex plugin registration via THIS repo's own
+# `ensure-plugins` / `ensure-codex-plugins` recipes below (a member lacking
+# either recipe SKIPs that row). The verb resolves the target checkout
+# worktree-safely via `git rev-parse --git-common-dir`. Dogfoods the verb against
+# its own package — the most direct exercise of the local-reconcile contract.
 bootstrap:
-    uv sync --all-groups
-    uv run lefthook install
-    # Idempotent install of the canonical livespec commit-refuse hook at
-    # the primary checkout's shared `.git/hooks/{pre-commit,pre-push,
-    # commit-msg}`, delegated to the `install-commit-refuse-hooks` recipe
-    # (the installer module `livespec_dev_tooling.install_commit_refuse_hooks`
-    # is the single canonical-body carrier). Per livespec/SPECIFICATION/
-    # non-functional-requirements.md §"Commit-refuse hook bootstrap
-    # procedure"; self-hosts the `check-primary-checkout-commit-refuse-
-    # hook-installed` shared check. Runs AFTER `lefthook install` because
-    # the canonical hook DELEGATES to `lefthook run <hook-name>` after the
-    # refuse-at-primary check — overwriting the lefthook stubs is
-    # intentional, the canonical hook subsumes them. The installer targets
-    # `git rev-parse --git-common-dir` so the install lands in the
-    # primary's shared hooks directory regardless of whether bootstrap is
-    # invoked from the primary or a secondary worktree. NO
-    # `livespec.primaryPath` write: the structural body detects the primary
-    # as `git-dir == git-common-dir`, so it is ARMED ON INSTALL with no
-    # config arming step to set (and so no fail-open window).
-    just install-commit-refuse-hooks
-    # Harden the beads tenant-pointer dir to owner-only on first-touch (bd
-    # recommends 0700; only the owning user's bd reads it — the Dolt server
-    # connects over TCP and never reads this dir). Guarded: repos with no beads
-    # tenant have no .beads.
-    [ -d "$(dirname "$(git rev-parse --git-common-dir)")/.beads" ] && chmod 700 "$(dirname "$(git rev-parse --git-common-dir)")/.beads" || true
-    # Idempotent worktree-root + mise-trust setup. Every git worktree in
-    # the fleet lives under a single per-user root, ~/.worktrees/<repo>/
-    # <branch>. Registering that root as one of mise's
-    # trusted_config_paths makes each freshly created worktree's
-    # .mise.toml auto-trusted, so the first `mise exec` inside it never
-    # stops on the "config not trusted" prompt — the failure that
-    # otherwise wastes a tool round-trip on every new worktree. The grep
-    # guard keeps the global ~/.config/mise/config.toml entry single on
-    # repeated bootstraps; the value is the absolute $HOME-rooted path so
-    # it resolves identically from any invocation site.
-    mkdir -p "${HOME}/.worktrees"
-    if ! mise settings get trusted_config_paths 2>/dev/null | grep -qF "${HOME}/.worktrees"; then mise settings add trusted_config_paths "${HOME}/.worktrees"; fi
-    just ensure-plugins
-    just ensure-codex-plugins
+    uv run python -m livespec_dev_tooling.fleet.local_reconcile
 
 # Install (or idempotently re-install) the canonical livespec commit-refuse
 # hook at the primary checkout's shared `.git/hooks/{pre-commit,pre-push,
