@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.30.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.30.0...v0.30.1) (2026-06-28)
+
+
+### Bug Fixes
+
+* **governed-lifecycle:** verb plugin rows skip when the recipe is absent (livespec-zs22.8.5) ([0b92960](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0b92960c6656206cbe257f9b2be6c68df04af88b))
+
 ## [0.30.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.29.1...v0.30.0) (2026-06-28)
 
 
