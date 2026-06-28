@@ -64,6 +64,13 @@ from livespec_dev_tooling.fleet._rows_local import (
     reconcile_uv_sync,
     reconcile_worktree_root_trust,
 )
+from livespec_dev_tooling.fleet._rows_local_beads import (
+    reconcile_beads_bd_binary,
+    reconcile_beads_config_committed,
+    reconcile_beads_dolt_server,
+    reconcile_beads_metadata_present,
+    reconcile_beads_tenant_secret,
+)
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -342,6 +349,36 @@ LOCAL_OBLIGATION_ROWS: tuple[LocalObligationRow, ...] = (
         row_id="codex-plugins",
         assert_local=None,
         reconcile_local=reconcile_codex_plugins,
+    ),
+    # Beads-runtime detect-and-guide rows (livespec-zs22.8 M4): each PROBES one
+    # ledger-backend prerequisite and, when unmet, emits a WARNING-severity guided
+    # TODO the verb surfaces rather than fails on. All are gated on a `.beads/`
+    # directory (a non-beads repo skips). They carry no `assert_local` — the probe
+    # IS the reconcile (it cannot machine-fix a host/secret/runtime seam).
+    LocalObligationRow(
+        row_id="beads-bd-binary",
+        assert_local=None,
+        reconcile_local=reconcile_beads_bd_binary,
+    ),
+    LocalObligationRow(
+        row_id="beads-dolt-server",
+        assert_local=None,
+        reconcile_local=reconcile_beads_dolt_server,
+    ),
+    LocalObligationRow(
+        row_id="beads-tenant-secret",
+        assert_local=None,
+        reconcile_local=reconcile_beads_tenant_secret,
+    ),
+    LocalObligationRow(
+        row_id="beads-config-committed",
+        assert_local=None,
+        reconcile_local=reconcile_beads_config_committed,
+    ),
+    LocalObligationRow(
+        row_id="beads-metadata-present",
+        assert_local=None,
+        reconcile_local=reconcile_beads_metadata_present,
     ),
 )
 

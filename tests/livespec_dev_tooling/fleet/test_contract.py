@@ -33,6 +33,11 @@ _EXPECTED_LOCAL_ROW_IDS = (
     "beads-dir-perms",
     "claude-plugins",
     "codex-plugins",
+    "beads-bd-binary",
+    "beads-dolt-server",
+    "beads-tenant-secret",
+    "beads-config-committed",
+    "beads-metadata-present",
 )
 
 

@@ -16,7 +16,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from livespec_dev_tooling.fleet import local_reconcile
+from livespec_dev_tooling.fleet._context import RowFinding, RowOutcome
 from livespec_dev_tooling.fleet._local_context import CommandResult, LocalContext
+from livespec_dev_tooling.fleet.contract import LocalObligationRow
 from livespec_dev_tooling.fleet.local_reconcile import _resolve_checkout_root, reconcile_checkout
 
 if TYPE_CHECKING:
@@ -56,6 +58,25 @@ def test_reconcile_checkout_counts_failed_rows(*, tmp_path: Path) -> None:
     table = {("uv", "sync", "--all-groups"): CommandResult(returncode=1, stdout="", stderr="x")}
     ctx = LocalContext(checkout=tmp_path, home=tmp_path / "home", run=_runner(table=table))
     assert reconcile_checkout(ctx=ctx, log=_log()) == 1
+
+
+def test_warning_severity_finding_is_guidance_not_unresolved(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A detect-and-guide row that emits a WARNING-severity finding (a human seam
+    # the verb cannot machine-fix) is surfaced as guidance, NOT counted as an
+    # unresolved row — so it never fails the verb (mirrors fleet_conformance's
+    # warning/error split).
+    def guide(*, ctx: LocalContext) -> RowOutcome:
+        del ctx
+        return RowFinding(message="run under the configured env wrapper", severity="warning")
+
+    warn_row = LocalObligationRow(
+        row_id="synthetic-warn-guidance", assert_local=None, reconcile_local=guide
+    )
+    monkeypatch.setattr(local_reconcile, "LOCAL_OBLIGATION_ROWS", (warn_row,))
+    ctx = LocalContext(checkout=tmp_path, home=tmp_path / "home", run=_runner())
+    assert reconcile_checkout(ctx=ctx, log=_log()) == 0
 
 
 def test_resolve_root_returns_none_when_not_a_checkout(*, tmp_path: Path) -> None:

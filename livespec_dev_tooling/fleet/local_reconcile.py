@@ -71,7 +71,16 @@ def _resolve_checkout_root(*, target: Path, run: CommandRunner) -> Path | None:
 
 
 def reconcile_checkout(*, ctx: LocalContext, log: structlog.stdlib.BoundLogger) -> int:
-    """Assert-then-reconcile every local first-touch row; return the unresolved count."""
+    """Assert-then-reconcile every local first-touch row; return the unresolved count.
+
+    A `RowFinding` is split by severity, reusing the `RowFinding.severity` field
+    the central `fleet_conformance` reader already distinguishes: a `warning`
+    finding is DETECT-AND-GUIDE guidance — an out-of-band human seam the verb
+    cannot machine-fix (a missing runtime binary, an unreachable backend, an
+    absent secret) — surfaced via `log.warning` and NOT counted as unresolved, so
+    it never fails the verb; an `error` finding is a genuine unmet obligation that
+    counts toward the unresolved exit code.
+    """
     unresolved = 0
     for row in LOCAL_OBLIGATION_ROWS:
         if row.assert_local is not None:
@@ -84,6 +93,12 @@ def reconcile_checkout(*, ctx: LocalContext, log: structlog.stdlib.BoundLogger) 
             log.info("row reconciled", row=row.row_id, note=fixed.note)
         elif isinstance(fixed, RowSkip):
             log.info("row not applicable", row=row.row_id, reason=fixed.reason)
+        elif fixed.severity == "warning":
+            log.warning(
+                "row needs out-of-band action (detect-and-guide)",
+                row=row.row_id,
+                hint=fixed.message,
+            )
         else:
             unresolved += 1
             log.error("row did not reconcile", row=row.row_id, detail=fixed.message)
