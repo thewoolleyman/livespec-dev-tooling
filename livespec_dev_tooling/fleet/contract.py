@@ -71,6 +71,7 @@ from livespec_dev_tooling.fleet._rows_local_beads import (
     reconcile_beads_metadata_present,
     reconcile_beads_tenant_secret,
 )
+from livespec_dev_tooling.fleet._rows_local_jsonc import reconcile_livespec_jsonc_complete
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -349,6 +350,18 @@ LOCAL_OBLIGATION_ROWS: tuple[LocalObligationRow, ...] = (
         row_id="codex-plugins",
         assert_local=None,
         reconcile_local=reconcile_codex_plugins,
+    ),
+    # Config-completeness row (livespec-zs22.8 M6): GUARANTEES a harnesses-bearing
+    # .livespec.jsonc and MACHINE-FILLS the beads `connection` block from
+    # .beads/config.yaml. It carries no `assert_local` — its reconcile both detects
+    # (an absent / unparseable / harnesses-less config, or an existing connection's
+    # drift → a warning the operator resolves by hand, the `harnesses` statuses being
+    # a human-judgment seam never fabricated) and machine-fixes (the non-secret
+    # connection block; the tenant password stays the beads-tenant-secret row).
+    LocalObligationRow(
+        row_id="livespec-jsonc-complete",
+        assert_local=None,
+        reconcile_local=reconcile_livespec_jsonc_complete,
     ),
     # Beads-runtime detect-and-guide rows (livespec-zs22.8 M4): each PROBES one
     # ledger-backend prerequisite and, when unmet, emits a WARNING-severity guided
