@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Protocol, cast
 
 from livespec_dev_tooling.fleet._context import Adopter, FleetContext, FleetMember, RowOutcome
+from livespec_dev_tooling.fleet._local_context import LocalContext
 from livespec_dev_tooling.fleet._reconcile import (
     reconcile_branch_protection,
     reconcile_merge_settings,
@@ -50,6 +51,19 @@ from livespec_dev_tooling.fleet._rows_instructions import (
     assert_agent_ai_references_resolve,
     assert_agent_instruction_surface,
 )
+from livespec_dev_tooling.fleet._rows_local import (
+    assert_commit_refuse_hooks,
+    assert_git_notes_refspec,
+    assert_worktree_root_trust,
+    reconcile_beads_dir_perms,
+    reconcile_claude_plugins,
+    reconcile_codex_plugins,
+    reconcile_commit_refuse_hooks,
+    reconcile_git_notes_refspec,
+    reconcile_mise_trust_install,
+    reconcile_uv_sync,
+    reconcile_worktree_root_trust,
+)
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -59,10 +73,12 @@ import jsoncomment  # noqa: E402  — vendor-path-aware import after sys.path in
 
 __all__: list[str] = [
     "ADOPTER_POSTURES",
+    "LOCAL_OBLIGATION_ROWS",
     "OBLIGATION_ROWS",
     "PROFILE_LAYERS",
     "REPO_CLASSES",
     "Adopter",
+    "LocalObligationRow",
     "Manifest",
     "ObligationRow",
     "parse_manifest",
@@ -254,6 +270,80 @@ OBLIGATION_ROWS: tuple[ObligationRow, ...] = (
 def rows_for(*, repo_class: str) -> tuple[ObligationRow, ...]:
     """The obligation rows that apply to `repo_class`."""
     return tuple(row for row in OBLIGATION_ROWS if repo_class in row.applies_to)
+
+
+class LocalRowFn(Protocol):
+    """One LOCAL-vantage obligation-row operation (assert or reconcile) over a checkout."""
+
+    def __call__(self, *, ctx: LocalContext) -> RowOutcome: ...
+
+
+@dataclass(frozen=True, kw_only=True)
+class LocalObligationRow:
+    """One LOCAL-vantage first-touch obligation: a reconcile + an optional drift assert.
+
+    `assert_local` is None for pure provisioning rows (toolchain install,
+    dependency sync, plugin registration, beads-dir hardening) that carry
+    no persistent committed state a drift sweep can re-check; the verb
+    runs their idempotent `reconcile_local` unconditionally. A row that
+    leaves persistent state (the commit-refuse hooks, the notes refspec,
+    the worktree-root mise-trust entry) carries a real `assert_local`, so
+    the assert/drift side gains the matching local check for free and the
+    verb reconciles only an unmet row.
+
+    These rows run from the LOCAL vantage only (per
+    `livespec/SPECIFICATION/non-functional-requirements.md`
+    §"Governed-repo lifecycle"); the central rows (`OBLIGATION_ROWS`) run
+    against the manifest from the GitHub vantage, and no row needs both.
+    """
+
+    row_id: str
+    assert_local: LocalRowFn | None
+    reconcile_local: LocalRowFn
+
+
+LOCAL_OBLIGATION_ROWS: tuple[LocalObligationRow, ...] = (
+    LocalObligationRow(
+        row_id="mise-trust-install",
+        assert_local=None,
+        reconcile_local=reconcile_mise_trust_install,
+    ),
+    LocalObligationRow(
+        row_id="uv-sync",
+        assert_local=None,
+        reconcile_local=reconcile_uv_sync,
+    ),
+    LocalObligationRow(
+        row_id="commit-refuse-hooks",
+        assert_local=assert_commit_refuse_hooks,
+        reconcile_local=reconcile_commit_refuse_hooks,
+    ),
+    LocalObligationRow(
+        row_id="git-notes-refspec",
+        assert_local=assert_git_notes_refspec,
+        reconcile_local=reconcile_git_notes_refspec,
+    ),
+    LocalObligationRow(
+        row_id="worktree-root-mise-trust",
+        assert_local=assert_worktree_root_trust,
+        reconcile_local=reconcile_worktree_root_trust,
+    ),
+    LocalObligationRow(
+        row_id="beads-dir-perms",
+        assert_local=None,
+        reconcile_local=reconcile_beads_dir_perms,
+    ),
+    LocalObligationRow(
+        row_id="claude-plugins",
+        assert_local=None,
+        reconcile_local=reconcile_claude_plugins,
+    ),
+    LocalObligationRow(
+        row_id="codex-plugins",
+        assert_local=None,
+        reconcile_local=reconcile_codex_plugins,
+    ),
+)
 
 
 @dataclass(frozen=True, kw_only=True)
