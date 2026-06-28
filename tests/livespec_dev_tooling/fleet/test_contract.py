@@ -12,14 +12,51 @@ from livespec_dev_tooling.fleet._rows_baseline import assert_baseline_harnesses
 from livespec_dev_tooling.fleet._rows_github import assert_merge_settings
 from livespec_dev_tooling.fleet._rows_instructions import assert_agent_ai_references_resolve
 from livespec_dev_tooling.fleet.contract import (
+    LOCAL_OBLIGATION_ROWS,
     OBLIGATION_ROWS,
     REPO_CLASSES,
     Adopter,
+    LocalObligationRow,
     parse_manifest,
     rows_for,
 )
 
 __all__: list[str] = []
+
+
+_EXPECTED_LOCAL_ROW_IDS = (
+    "mise-trust-install",
+    "uv-sync",
+    "commit-refuse-hooks",
+    "git-notes-refspec",
+    "worktree-root-mise-trust",
+    "beads-dir-perms",
+    "claude-plugins",
+    "codex-plugins",
+)
+
+
+def test_local_obligation_rows_have_the_expected_ordered_ids() -> None:
+    assert tuple(row.row_id for row in LOCAL_OBLIGATION_ROWS) == _EXPECTED_LOCAL_ROW_IDS
+
+
+def test_local_obligation_row_ids_are_unique() -> None:
+    ids = [row.row_id for row in LOCAL_OBLIGATION_ROWS]
+    assert len(set(ids)) == len(ids)
+
+
+def test_only_persistent_state_rows_carry_a_drift_assert() -> None:
+    assert_bearing = {row.row_id for row in LOCAL_OBLIGATION_ROWS if row.assert_local is not None}
+    assert assert_bearing == {
+        "commit-refuse-hooks",
+        "git-notes-refspec",
+        "worktree-root-mise-trust",
+    }
+
+
+def test_every_local_row_carries_a_callable_reconcile() -> None:
+    assert all(isinstance(row, LocalObligationRow) for row in LOCAL_OBLIGATION_ROWS)
+    assert all(callable(row.reconcile_local) for row in LOCAL_OBLIGATION_ROWS)
 
 
 _VALID_MANIFEST = """\
