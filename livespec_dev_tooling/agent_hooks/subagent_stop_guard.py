@@ -22,17 +22,15 @@ broken hook must never wedge a healthy agent.
 
 Marker derivation (all DERIVED — no sentinel files):
 
-1. Scope: absolute worktree paths mentioned in THIS sub-agent's
-   transcript, in either the fleet new-root form
+1. Scope: absolute worktree paths CREATED by THIS sub-agent, derived
+   from `git worktree add -b <branch> <path>` commands in the
+   transcript. Created paths must use either the fleet new-root form
    `**/.worktrees/<repo>/<branch>` (leading-dot `.worktrees`, two
-   segments — matched through `<branch>` so the git probes target the
-   real worktree dir) or the legacy `**/[.claude/]worktrees/<slug>`
-   janitor form (capped at
-   `_MAX_WORKTREES`). Agents that never touched a worktree (Explore /
-   Plan / conversational turns) yield no candidates and are never
-   blocked. The scoping is heuristic — a transcript that merely
-   MENTIONS a foreign worktree can pull it into scope — so blocks are
-   capped (anti-wedge below) rather than unconditional.
+   segments) or the legacy `**/[.claude/]worktrees/<slug>` janitor form
+   (capped at `_MAX_WORKTREES`). Agents that never created a worktree
+   (Explore / Plan / conversational turns) yield no candidates and are
+   never blocked. Mere mentions of sibling worktrees are intentionally
+   ignored.
 2. Per worktree, first marker wins:
    a. uncommitted tracked changes (`git status --porcelain -uno`);
    b. unpushed commits (`git rev-list --count HEAD --not
@@ -62,6 +60,7 @@ import contextlib
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -93,6 +92,7 @@ _CANONICAL_REMOTE_REF = "origin/master"
 _MAX_WORKTREES = 8
 _MAX_BLOCKS_PER_SESSION = 3
 _GH_TIMEOUT_SECONDS = 8
+_COMPACT_BRANCH_OPTION_PREFIX_LENGTH = 2
 _STATE_DIR_ENV = "LIVESPEC_STOP_GUARD_STATE_DIR"
 
 
@@ -114,6 +114,100 @@ def _extract_worktree_paths(*, transcript_text: str) -> list[Path]:
     for match in _WORKTREE_PATH_RE.finditer(transcript_text):
         seen.setdefault(match.group(0), None)
     return [Path(raw) for raw in seen]
+
+
+def _extract_created_worktree_paths(*, transcript_text: str) -> list[Path]:
+    """Return unique worktree paths created by `git worktree add -b` commands."""
+    seen: dict[str, None] = {}
+    for line in transcript_text.splitlines():
+        for segment in _transcript_line_segments(line=line):
+            for path in _created_worktree_targets_from_segment(segment=segment):
+                seen.setdefault(str(path), None)
+    return [Path(raw) for raw in seen]
+
+
+def _transcript_line_segments(*, line: str) -> list[str]:
+    try:
+        payload = json.loads(line)
+    except json.JSONDecodeError:
+        return [line]
+    segments = _json_string_values(value=payload)
+    if not segments:
+        return [line]
+    return segments
+
+
+def _json_string_values(*, value: object) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        strings: list[str] = []
+        data = cast("dict[object, object]", value)
+        for item in data.values():
+            strings.extend(_json_string_values(value=item))
+        return strings
+    if isinstance(value, list):
+        strings = []
+        data = cast("list[object]", value)
+        for item in data:
+            strings.extend(_json_string_values(value=item))
+        return strings
+    return []
+
+
+def _created_worktree_targets_from_segment(*, segment: str) -> list[Path]:
+    try:
+        tokens = shlex.split(segment)
+    except ValueError:
+        return []
+    targets: list[Path] = []
+    for index, word in enumerate(tokens):
+        if word != "git":
+            continue
+        target = _created_worktree_target_from_git_args(args=tokens[index + 1 :])
+        if target is not None:
+            targets.append(target)
+    return targets
+
+
+def _created_worktree_target_from_git_args(*, args: list[str]) -> Path | None:
+    for index in range(len(args) - 1):
+        if args[index] == "worktree" and args[index + 1] == "add":
+            return _worktree_add_target(args=args[index + 2 :])
+    return None
+
+
+def _worktree_add_target(*, args: list[str]) -> Path | None:
+    positional: list[str] = []
+    saw_branch = False
+    index = 0
+    while index < len(args):
+        word = args[index]
+        if word == "--":
+            positional.extend(args[index + 1 :])
+            break
+        if word in {"-b", "-B"}:
+            saw_branch = True
+            index += 2
+            continue
+        if word.startswith(("-b", "-B")) and len(word) > _COMPACT_BRANCH_OPTION_PREFIX_LENGTH:
+            saw_branch = True
+            index += 1
+            continue
+        if word == "--reason":
+            index += 2
+            continue
+        if word.startswith("-"):
+            index += 1
+            continue
+        positional.append(word.rstrip(";,"))
+        index += 1
+    if not saw_branch or not positional:
+        return None
+    target = positional[0]
+    if _extract_worktree_paths(transcript_text=target) != [Path(target)]:
+        return None
+    return Path(target)
 
 
 def _run_git(*, worktree: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -269,7 +363,7 @@ def _load_hook_input(*, raw: str) -> dict[str, object] | None:
 
 
 def _gather_worktrees(*, hook_input: dict[str, object]) -> list[Path]:
-    """Worktree paths from this agent's transcript that exist as git worktrees."""
+    """Created worktree paths from this agent's transcript that still exist."""
     transcript_raw = hook_input.get("transcript_path")
     if not isinstance(transcript_raw, str) or not transcript_raw:
         return []
@@ -277,7 +371,7 @@ def _gather_worktrees(*, hook_input: dict[str, object]) -> list[Path]:
         text = Path(transcript_raw).read_text(encoding="utf-8", errors="replace")
     except OSError:
         return []
-    candidates = _extract_worktree_paths(transcript_text=text)
+    candidates = _extract_created_worktree_paths(transcript_text=text)
     return [path for path in candidates if (path / ".git").exists()]
 
 
