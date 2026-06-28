@@ -241,6 +241,29 @@ def test_codex_plugins_failure_is_finding(*, tmp_path: Path) -> None:
     assert isinstance(reconcile_codex_plugins(ctx=_ctx(checkout=tmp_path, table=table)), RowFinding)
 
 
+def test_claude_plugins_skips_when_recipe_absent(*, tmp_path: Path) -> None:
+    # A member whose justfile has no `ensure-plugins` recipe declares no plugin
+    # surface for this runtime — the verb has nothing to delegate, so it SKIPs
+    # rather than failing on `just`'s recipe-not-found error.
+    table = {
+        ("just", "--show", "ensure-plugins"): CommandResult(
+            returncode=1, stdout="", stderr="no recipe"
+        )
+    }
+    assert isinstance(reconcile_claude_plugins(ctx=_ctx(checkout=tmp_path, table=table)), RowSkip)
+
+
+def test_codex_plugins_skips_when_recipe_absent(*, tmp_path: Path) -> None:
+    # e.g. livespec-driver-codex carries no `ensure-codex-plugins` recipe: the
+    # verb SKIPs rather than failing on the recipe-not-found error.
+    table = {
+        ("just", "--show", "ensure-codex-plugins"): CommandResult(
+            returncode=1, stdout="", stderr="no recipe"
+        )
+    }
+    assert isinstance(reconcile_codex_plugins(ctx=_ctx(checkout=tmp_path, table=table)), RowSkip)
+
+
 def test_outcome_union_members_are_distinct() -> None:
     # Guard that the row helpers return the shared RowOutcome vocabulary.
     outcomes: list[RowOutcome] = [RowPass(), RowFinding(message="m"), RowSkip(reason="r")]

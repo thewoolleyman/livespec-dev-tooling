@@ -145,8 +145,21 @@ def reconcile_beads_dir_perms(*, ctx: LocalContext) -> RowOutcome:
     return RowPass(note=".beads hardened to owner-only")
 
 
+def _recipe_present(*, ctx: LocalContext, recipe: str) -> bool:
+    """True when the checkout's justfile defines `recipe` (`just --show` exits 0)."""
+    return ctx.exec(args=["just", "--show", recipe]).returncode == 0
+
+
 def reconcile_claude_plugins(*, ctx: LocalContext) -> RowOutcome:
-    """Register the checkout's Claude marketplaces + plugins via its own recipe."""
+    """Register the checkout's Claude marketplaces + plugins via its own recipe.
+
+    A member whose justfile has no `ensure-plugins` recipe declares no Claude
+    plugin surface — the verb has nothing to delegate, so it SKIPs rather than
+    failing on `just`'s recipe-not-found error (the verb delegates to the
+    member's own recipe; an absent recipe is nothing to do, not a fault).
+    """
+    if not _recipe_present(ctx=ctx, recipe="ensure-plugins"):
+        return RowSkip(reason="no ensure-plugins recipe (member declares no Claude plugin surface)")
     result = ctx.exec(args=["just", "ensure-plugins"])
     if result.returncode != 0:
         return RowFinding(message="claude plugin registration (just ensure-plugins) failed")
@@ -154,7 +167,16 @@ def reconcile_claude_plugins(*, ctx: LocalContext) -> RowOutcome:
 
 
 def reconcile_codex_plugins(*, ctx: LocalContext) -> RowOutcome:
-    """Register the checkout's Codex plugins via its own (self-skipping) recipe."""
+    """Register the checkout's Codex plugins via its own (self-skipping) recipe.
+
+    A member whose justfile has no `ensure-codex-plugins` recipe (e.g.
+    livespec-driver-codex) declares no Codex plugin surface for the verb to
+    delegate to — it SKIPs rather than failing on the recipe-not-found error.
+    """
+    if not _recipe_present(ctx=ctx, recipe="ensure-codex-plugins"):
+        return RowSkip(
+            reason="no ensure-codex-plugins recipe (member declares no Codex plugin surface)"
+        )
     result = ctx.exec(args=["just", "ensure-codex-plugins"])
     if result.returncode != 0:
         return RowFinding(message="codex plugin registration (just ensure-codex-plugins) failed")
