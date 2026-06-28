@@ -17,7 +17,7 @@ scaffold → register in the manifest FIRST → run this → fleet
 conformance green. Invoke under the environment wrapper so the secret
 projection is present:
 
-    with-livespec-env.sh -- uv run python -m \\
+    with-livespec-env.sh -- env PATH="$HOME/.local/bin:$PATH" uv run python -m \\
         livespec_dev_tooling.fleet.wire_fleet_member --repo <member>
 
 Exit codes:
