@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.31.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.30.1...v0.31.0) (2026-06-28)
+
+
+### Features
+
+* **governed-lifecycle:** livespec-jsonc-complete verb row — machine-fill connection, detect-and-guide harnesses (livespec-zs22.8.6) ([584082d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/584082d0c479459f72c3fd6bff33873e835631bf))
+
 ## [0.30.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.30.0...v0.30.1) (2026-06-28)
 
 
