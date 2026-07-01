@@ -24,6 +24,8 @@
   "template": "livespec",
   "spec_root": "SPECIFICATION",
   "implementation": { "plugin": "livespec-orchestrator-beads-fabro" },
+  // Credential-injection wrapper (fleet default) prefixed to the beads CLIs so a bare invocation self-heals its tenant secret.
+  "credential_wrapper": ["/usr/local/bin/with-livespec-env.sh", "--"],
   // Cross-harness plugin-resolution (Conformance Pattern concern #2): this
   // library ships no command/skill surface to resolve from a harness, so both
   // harnesses are declared exempt. The always-on `check-plugin-resolution`
