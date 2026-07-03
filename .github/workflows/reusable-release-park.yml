@@ -1,0 +1,107 @@
+# reusable-release-park.yml — periodic release-PARK freshness backstop.
+#
+# Authority: livespec plan/fleet-plugin-currency/research/design.md §L0c
+#   ("park-staleness backstop: reusable-release-park.yml"). This is the
+#   INDEPENDENT backstop to L0a's auto-enable-merge fix: L0a merges
+#   release-please PRs hands-off; this workflow is the ALARM that fires if
+#   L0a ever regresses and a release PR sits UNMERGED. It performs NO
+#   auto-merge and NO mutation — a red scheduled job IS the alarm.
+#
+# Motivating incident: across 2026-06-30..2026-07-03 the fleet release
+# train stalled in all six release-please repos — release-please's
+# App-authored release PRs were never auto-merged and parked silently for
+# days. A parked release train must fail something VISIBLE, never sit
+# silent; this guard makes that failure loud.
+#
+# Dispatch model: each release-please repo's own `release-park.yml` shim
+# `uses:` this workflow on `on: schedule` (mirrors pin-freshness's daily
+# 13:00 UTC cadence) + `workflow_dispatch`. The shim MAY override the
+# `park_threshold_hours` input; the default is 24.
+#
+# Detection: query the caller repo's OPEN pull requests for one authored
+# by the fleet's release-please App bot on a `release-please--*` head
+# branch, and FAIL the job (exit 1, naming the PR) when it has been open
+# longer than `park_threshold_hours`.
+
+name: reusable-release-park
+
+on:
+  workflow_call:
+    inputs:
+      park_threshold_hours:
+        description: >-
+          Hours an OPEN release-please PR may remain before the job fails
+          loud. Defaults to 24.
+        required: false
+        type: number
+        default: 24
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  detect-parked-release-pr:
+    name: detect-parked-release-pr
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if a release-please PR has been parked past the threshold
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          THRESHOLD_HOURS: ${{ inputs.park_threshold_hours }}
+        run: |
+          set -euo pipefail
+
+          # Author-login shape note: `gh pr list --json author` (GraphQL)
+          # returns the App bot's login as `app/livespec-pr-bot`, whereas
+          # the webhook `pull_request` payload consumed by
+          # auto-enable-merge.yml spells the SAME identity
+          # `livespec-pr-bot[bot]`. We match either spelling so this stays
+          # correct across gh output shapes.
+          open_release_prs=$(gh pr list --repo "$REPO" \
+            --state open \
+            --json number,title,author,headRefName,createdAt,url \
+            --jq '[ .[]
+              | select(
+                  (.author.login == "app/livespec-pr-bot"
+                   or .author.login == "livespec-pr-bot[bot]")
+                  and (.headRefName | startswith("release-please--"))
+                ) ]')
+
+          echo "::group::open release-please PRs on $REPO"
+          echo "$open_release_prs" | jq '.'
+          echo "::endgroup::"
+
+          now=$(date -u +%s)
+          threshold_seconds=$(( THRESHOLD_HOURS * 3600 ))
+
+          # Age from createdAt, NOT updatedAt: release-please FORCE-UPDATES
+          # its release branch (bumping updatedAt to ~now) every time a new
+          # feat/fix lands on master. An updatedAt-based age would reset on
+          # every push, so a genuinely parked release PR would never "age"
+          # past the threshold. createdAt is stamped once when the release
+          # PR is first opened and is the true measure of how long the
+          # release train has been parked.
+          parked=$(echo "$open_release_prs" | jq -c \
+            --argjson now "$now" \
+            --argjson limit "$threshold_seconds" '
+              [ .[]
+                | . as $pr
+                | ($pr.createdAt | fromdateiso8601) as $created
+                | ($now - $created) as $age_seconds
+                | select($age_seconds >= $limit)
+                | { number: $pr.number,
+                    title: $pr.title,
+                    url: $pr.url,
+                    age_hours: (($age_seconds) / 3600 | floor) } ]')
+
+          parked_count=$(echo "$parked" | jq 'length')
+
+          if [[ "$parked_count" -gt 0 ]]; then
+            echo "::error::$parked_count release-please PR(s) on $REPO parked longer than ${THRESHOLD_HOURS}h — the release train is stalled. Merge or investigate:"
+            echo "$parked" | jq -r '.[] | "  - #\(.number) \(.title) — open ~\(.age_hours)h — \(.url)"'
+            exit 1
+          fi
+
+          echo "No release-please PR on $REPO parked beyond ${THRESHOLD_HOURS}h — release train healthy."
