@@ -94,3 +94,57 @@ def test_fleet_marketplace_relative_sources_skips_when_no_catalogs(
 
     assert result.returncode == 0
     assert result.stdout == ""
+
+
+def _write_object_catalog(*, path: Path, source_json: str) -> None:
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        "{\n"
+        '  "name": "livespec",\n'
+        '  "plugins": [\n'
+        '    { "name": "livespec", "source": ' + source_json + " }\n"
+        "  ]\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+
+def test_fleet_marketplace_relative_sources_accepts_codex_object_local_source(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The Codex catalog's object-form local source with a `./` path passes.
+
+    The paired cross-runtime packaging ships `.agents/plugins/marketplace.json`
+    with `{"source": "local", "path": "./.claude-plugin"}` — checkout-relative,
+    so it preserves the marketplace ref pin exactly like the string form.
+    """
+    catalog = tmp_path / ".agents" / "plugins" / "marketplace.json"
+    _write_object_catalog(
+        path=catalog, source_json='{ "source": "local", "path": "./.claude-plugin" }'
+    )
+
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode == 0
+    assert result.stdout == ""
+
+
+def test_fleet_marketplace_relative_sources_rejects_non_relative_object_shapes(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Object sources that are github-type, absolute, path-less, or non-path fail."""
+    offenders = (
+        ("github-object", '{ "source": "github", "repo": "thewoolleyman/livespec" }'),
+        ("absolute-path", '{ "source": "local", "path": "/abs/.claude-plugin" }'),
+        ("missing-path", '{ "source": "local" }'),
+        ("numeric-source", "7"),
+    )
+    for name, source_json in offenders:
+        catalog = tmp_path / name / ".agents" / "plugins" / "marketplace.json"
+        _write_object_catalog(path=catalog, source_json=source_json)
+
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode != 0
+    assert result.stderr.count("ref pin") >= len(offenders)
+    assert result.stdout == ""

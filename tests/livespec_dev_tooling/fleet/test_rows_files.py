@@ -352,6 +352,11 @@ def test_claude_plugin_currency_edge_outcomes() -> None:
         assert isinstance(outcome, outcome_type), text
         detail = outcome.reason if isinstance(outcome, RowSkip) else outcome.message
         assert text in detail
+        if isinstance(outcome, RowFinding):
+            # Rollout-gap posture: the row shipped ahead of the fleet recipe
+            # collapse (livespec-c1k9.11), so every finding is demoted to
+            # warning severity until that rollout closes.
+            assert outcome.severity == "warning"
 
 
 def test_claude_plugin_currency_passes_standard_wrapper_with_comments() -> None:

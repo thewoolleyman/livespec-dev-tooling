@@ -6,7 +6,11 @@ silently ignores the registered marketplace ref and clones the default branch
 HEAD instead of the pinned `release` tip, which reintroduces stale plugin code
 without an install-time error. This structural check scans every
 `marketplace.json` catalog present in the consumer tree and fails loud unless
-every plugin entry's `source` is a string beginning with `./`.
+every plugin entry's `source` is checkout-relative: either a string beginning
+with `./` (the Claude catalog shape) or an object
+`{"source": "local", "path": "./..."}` (the Codex catalog shape — the paired
+cross-runtime packaging carries both catalog files pointing at the same
+checkout-relative plugin root).
 
 The check is deterministic and always invoked through `just check`; repos with
 no marketplace catalogs are outside this check's role and pass with an info log.
@@ -61,6 +65,24 @@ def _entry_source(*, entry: object) -> object:
     return cast("dict[str, object]", entry).get("source")
 
 
+def _is_relative_source(*, source: object) -> bool:
+    """True iff the plugin source preserves ref pinning (checkout-relative).
+
+    Two legitimate shapes exist: the Claude catalog's plain string
+    (`"./.claude-plugin"`) and the Codex catalog's object form
+    (`{"source": "local", "path": "./.claude-plugin"}`). Anything else —
+    github-type strings or objects, absolute paths, non-`./` relatives,
+    objects missing `path` — bypasses the marketplace ref pin and fails.
+    """
+    if isinstance(source, str):
+        return source.startswith("./")
+    if isinstance(source, dict):
+        typed = cast("dict[str, object]", source)
+        path = typed.get("path")
+        return typed.get("source") == "local" and isinstance(path, str) and path.startswith("./")
+    return False
+
+
 def _non_relative_sources(*, root: Path, path: Path) -> tuple[tuple[Path, object], ...]:
     catalog_obj: object = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(catalog_obj, dict):  # pragma: no cover - malformed catalog
@@ -73,7 +95,7 @@ def _non_relative_sources(*, root: Path, path: Path) -> tuple[tuple[Path, object
     return tuple(
         (path.relative_to(root), source)
         for source in (_entry_source(entry=entry) for entry in plugins)
-        if not str(source).startswith("./")
+        if not _is_relative_source(source=source)
     )
 
 
