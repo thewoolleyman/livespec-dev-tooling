@@ -10,11 +10,6 @@ Subdirectories group docs by topic. As of writing:
 
 - `justcheck-performance/` — `just check` wall-time baselines and
   optimization research (work-item livespec-dev-tooling-7us.1).
-- `agent-instruction-inheritance/` — fleet agent-instruction surface
-  gap audit (work-item livespec-4g2pg3).
-- `shell-logic-audit/` — fleet-wide audit of substantive logic living
-  in untested shell / heredoc-Python, the decided rule + gates policy,
-  and the per-concern remediation map (epic livespec-dev-tooling-9j8).
 
 ## What this directory is NOT
 
