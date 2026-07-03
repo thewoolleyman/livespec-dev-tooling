@@ -34,6 +34,7 @@ from livespec_dev_tooling.fleet._rows_beads import assert_tenant_connection_cons
 from livespec_dev_tooling.fleet._rows_files import (
     assert_bump_pin_workflow,
     assert_ci_workflow,
+    assert_claude_plugin_currency,
     assert_copier_answers,
     assert_dev_tooling_pin,
     assert_no_tracked_gitlinks,
@@ -195,6 +196,18 @@ OBLIGATION_ROWS: tuple[ObligationRow, ...] = (
         applies_to=_ALL_CLASSES,
         assert_member=assert_no_tracked_gitlinks,
         manual_hint="remove the tracked gitlink (mode 160000) in a repo-local commit",
+    ),
+    ObligationRow(
+        row_id="claude-plugin-currency",
+        obligation_type="committed-file",
+        applies_to=_ALL_CLASSES,
+        assert_member=assert_claude_plugin_currency,
+        manual_hint=(
+            "wire .claude/settings.json SessionStart to `mise exec -- just ensure-plugins` "
+            "and make the justfile ensure-plugins recipe the standard "
+            "`mise exec -- uv run --no-sync python -m livespec_dev_tooling.fleet.ensure_plugins` "
+            "wrapper, or declare livespecPluginCurrencySuccessor with mechanism + documentedIn"
+        ),
     ),
     ObligationRow(
         row_id="secret-names",

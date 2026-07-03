@@ -63,12 +63,40 @@ _LIVESPEC_JSONC_ARGS: tuple[str, ...] = (
     "-H",
     "Accept: application/vnd.github.raw",
 )
+_SETTINGS_ARGS: tuple[str, ...] = (
+    "api",
+    "repos/acme/widget/contents/.claude/settings.json?ref=master",
+    "-H",
+    "Accept: application/vnd.github.raw",
+)
+_JUSTFILE_ARGS: tuple[str, ...] = (
+    "api",
+    "repos/acme/widget/contents/justfile?ref=master",
+    "-H",
+    "Accept: application/vnd.github.raw",
+)
 _REPOS_ARGS: tuple[str, ...] = ("api", "users/acme/repos?per_page=100")
 
 _CI_YML = "jobs:\n  check:\n    strategy:\n      matrix:\n        target:\n          - check-a\n"
 _PYPROJECT = '[tool.uv.sources]\nlivespec-dev-tooling = { git = "x", tag = "v1.0.0" }\n'
 _LIVESPEC_JSONC = (
     '{"harnesses": {"claude": {"status": "exempt", "reason": "library; no harness surface"}}}'
+)
+_PLUGIN_SETTINGS = json.dumps(
+    {
+        "hooks": {
+            "SessionStart": [
+                {
+                    "matcher": "",
+                    "hooks": [{"type": "command", "command": "mise exec -- just ensure-plugins"}],
+                }
+            ]
+        }
+    }
+)
+_STANDARD_JUSTFILE = (
+    "ensure-plugins:\n"
+    "    mise exec -- uv run --no-sync python -m livespec_dev_tooling.fleet.ensure_plugins\n"
 )
 
 
@@ -108,6 +136,8 @@ def _green_table(
         ".github/workflows/release-dispatch.yml",
         "pyproject.toml",
         ".livespec.jsonc",
+        ".claude/settings.json",
+        "justfile",
     ]
     tree_payload = {
         "tree": [{"path": p, "mode": "100644"} for p in tracked],
@@ -117,6 +147,8 @@ def _green_table(
         _MANIFEST_ARGS: raw(text=_MANIFEST_SOURCE),
         _TREE_ARGS: ok(payload=tree_payload),
         _LIVESPEC_JSONC_ARGS: raw(text=_LIVESPEC_JSONC),
+        _SETTINGS_ARGS: raw(text=_PLUGIN_SETTINGS),
+        _JUSTFILE_ARGS: raw(text=_STANDARD_JUSTFILE),
         _PYPROJECT_ARGS: raw(text=_PYPROJECT),
         _LATEST_ARGS: ok(payload={"tag_name": latest_tag}),
         _SECRETS_ARGS: ok(payload={"secrets": [{"name": "APP_ID"}, {"name": "APP_PRIVATE_KEY"}]}),
