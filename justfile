@@ -96,15 +96,20 @@ install-worktree-pack:
 # when the target is already present / already at latest. The `update` calls
 # after each `install` are required because `install` is a no-op when any
 # version is already present locally — without `update`, a bumped upstream
-# release never reaches a previously-bootstrapped working copy. Installs the
-# livespec plugin plus the ACTIVE impl plugin (livespec-orchestrator-beads-fabro), mirroring
-# the canonical recipe in livespec-orchestrator-beads-fabro/justfile.
+# release never reaches a previously-bootstrapped working copy. Registers this
+# repo's full `.claude/settings.json` `enabledPlugins` set (livespec +
+# livespec-driver-claude + livespec-orchestrator-beads-fabro); the SessionStart
+# hook in `.claude/settings.json` runs this recipe so each new session's
+# project-scope plugins are current.
 ensure-plugins:
     claude plugin marketplace add --scope project thewoolleyman/livespec
+    claude plugin marketplace add --scope project thewoolleyman/livespec-driver-claude
     claude plugin marketplace add --scope project thewoolleyman/livespec-orchestrator-beads-fabro
     claude plugin install -s project livespec@livespec
+    claude plugin install -s project livespec@livespec-driver-claude
     claude plugin install -s project livespec-orchestrator-beads-fabro@livespec-orchestrator-beads-fabro
     claude plugin update -s project livespec@livespec
+    claude plugin update -s project livespec@livespec-driver-claude
     claude plugin update -s project livespec-orchestrator-beads-fabro@livespec-orchestrator-beads-fabro
 
 # Idempotent host-wide Codex plugin provisioning. Codex does not support

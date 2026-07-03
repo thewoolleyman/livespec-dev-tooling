@@ -4,6 +4,17 @@
     "BASH_MAX_TIMEOUT_MS": "1200000"
   },
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "mise exec -- just ensure-plugins"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Bash",
