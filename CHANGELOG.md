@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.31.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.31.0...v0.31.1) (2026-07-03)
+
+
+### Bug Fixes
+
+* **fleet:** gate committed uv.lock against the dev-tooling pin ([ea6e362](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ea6e362cf5206927d49a2f85127ff6deb0211d78))
+* **fleet:** pin file_text to canonical master ref to match tree() ([50b559c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/50b559cc2f471a55a9b09fb144e9375e1853ca12))
+
 ## [0.31.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.30.1...v0.31.0) (2026-06-28)
 
 
