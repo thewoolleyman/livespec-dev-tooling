@@ -26,6 +26,7 @@ no `print`, no `sys.stderr.write`.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -60,6 +61,16 @@ _PENDING_STATUSES: frozenset[str] = frozenset(
 _RED_CONCLUSIONS: frozenset[str] = frozenset(
     {"failure", "cancelled", "timed_out", "action_required", "stale", "startup_failure"},
 )
+
+# The standard per-check severity lever (warn-vs-fail). A red master
+# normally exits 1 — but that hard posture also blocks the very push that
+# repairs a red master, because pre-commit/pre-push run this check while
+# master is still red (the repair-circularity this lever exists to break).
+# `LIVESPEC_MASTER_CI_GREEN=warn` demotes a red-master finding to a warning
+# for exactly that repair push; CI never sets it, so CI keeps the hard
+# fail-closed posture.
+_WARN_ENV_VAR = "LIVESPEC_MASTER_CI_GREEN"
+_WARN_VALUE = "warn"
 
 
 def _fetch_latest_master_ci(
@@ -153,6 +164,15 @@ def main() -> int:
     if conclusion in _GREEN_CONCLUSIONS:
         return 0
     if conclusion in _RED_CONCLUSIONS:
+        if os.environ.get(_WARN_ENV_VAR) == _WARN_VALUE:
+            log.warning(
+                "master CI is red; demoted to warning by the repair lever",
+                status=status,
+                conclusion=conclusion,
+                lever=f"{_WARN_ENV_VAR}={_WARN_VALUE}",
+                hint="lever is for the red-master repair push only; CI stays hard",
+            )
+            return 0
         log.error(
             "master CI is red on its most recent run",
             status=status,
