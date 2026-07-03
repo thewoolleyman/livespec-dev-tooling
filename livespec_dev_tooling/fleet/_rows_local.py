@@ -169,9 +169,9 @@ def reconcile_claude_plugins(*, ctx: LocalContext) -> RowOutcome:
 def reconcile_codex_plugins(*, ctx: LocalContext) -> RowOutcome:
     """Register the checkout's Codex plugins via its own (self-skipping) recipe.
 
-    A member whose justfile has no `ensure-codex-plugins` recipe (e.g.
-    livespec-driver-codex) declares no Codex plugin surface for the verb to
-    delegate to — it SKIPs rather than failing on the recipe-not-found error.
+    A member whose justfile has no `ensure-codex-plugins` recipe declares no
+    Codex plugin surface for the verb to delegate to — it SKIPs rather than
+    failing on the recipe-not-found error.
     """
     if not _recipe_present(ctx=ctx, recipe="ensure-codex-plugins"):
         return RowSkip(
