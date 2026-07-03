@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.32.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.31.3...v0.32.0) (2026-07-03)
+
+
+### Features
+
+* enforce Claude plugin currency wiring ([ad807ea](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ad807ea13bc0028640aadf4bbdf5eb20fdf6095b))
+
 ## [0.31.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.31.2...v0.31.3) (2026-07-03)
 
 
