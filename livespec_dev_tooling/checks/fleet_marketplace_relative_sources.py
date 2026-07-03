@@ -6,7 +6,8 @@ silently ignores the registered marketplace ref and clones the default branch
 HEAD instead of the pinned `release` tip, which reintroduces stale plugin code
 without an install-time error. This structural check scans every
 `marketplace.json` catalog present in the consumer tree and fails loud unless
-every plugin entry's `source` is a string beginning with `./`.
+every plugin entry's `source` is either a string beginning with `./` or
+a Codex local-source object whose `path` begins with `./`.
 
 The check is deterministic and always invoked through `just check`; repos with
 no marketplace catalogs are outside this check's role and pass with an info log.
@@ -61,6 +62,16 @@ def _entry_source(*, entry: object) -> object:
     return cast("dict[str, object]", entry).get("source")
 
 
+def _source_is_checkout_relative(*, source: object) -> bool:
+    if isinstance(source, str):
+        return source.startswith("./")
+    if not isinstance(source, dict):  # pragma: no cover - malformed catalog source
+        return False
+    source_obj = cast("dict[str, object]", source)
+    path = source_obj.get("path")
+    return source_obj.get("source") == "local" and isinstance(path, str) and path.startswith("./")
+
+
 def _non_relative_sources(*, root: Path, path: Path) -> tuple[tuple[Path, object], ...]:
     catalog_obj: object = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(catalog_obj, dict):  # pragma: no cover - malformed catalog
@@ -73,7 +84,7 @@ def _non_relative_sources(*, root: Path, path: Path) -> tuple[tuple[Path, object
     return tuple(
         (path.relative_to(root), source)
         for source in (_entry_source(entry=entry) for entry in plugins)
-        if not str(source).startswith("./")
+        if not _source_is_checkout_relative(source=source)
     )
 
 
@@ -103,7 +114,8 @@ def main() -> int:
             line=0,
             source=source,
             hint=(
-                "use a checkout-relative source beginning './'; github-type or other "
+                "use a checkout-relative string source beginning './' or a local "
+                "object source with a path beginning './'; github-type or other "
                 "non-relative sources silently ignore the marketplace ref pin"
             ),
         )
