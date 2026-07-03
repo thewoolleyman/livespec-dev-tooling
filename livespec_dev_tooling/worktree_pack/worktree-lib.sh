@@ -107,6 +107,45 @@ worktree_root() {
     fi
 }
 
+
+# worktree_provision_pack_from_primary: copy the canonical, gitignored
+# worktree-discipline pack from the primary checkout into a freshly added
+# linked worktree before hydration runs. The primary is expected to have been
+# bootstrapped with `just install-worktree-pack`; if it is partial, stop with a
+# named repair instead of creating another drifted partial install.
+worktree_provision_pack_from_primary() {
+    primary="${1:-}"
+    dest="${2:-}"
+    if [ -z "$primary" ] || [ -z "$dest" ]; then
+        echo "worktree-lib provision-pack: BLOCKED — primary and destination are required." >&2
+        return 2
+    fi
+
+    source_dir="$primary/dev-tooling"
+    dest_dir="$dest/dev-tooling"
+    pack_files="worktree-lib.sh branch-protection.sh worktree.just branch-protection.just"
+
+    missing=0
+    for pack_file in $pack_files; do
+        if [ ! -f "$source_dir/$pack_file" ]; then
+            echo "worktree-lib provision-pack: BLOCKED — missing $source_dir/$pack_file" >&2
+            missing=1
+        fi
+    done
+    if [ "$missing" -ne 0 ]; then
+        echo "  Repair the primary checkout with: just install-worktree-pack" >&2
+        return 1
+    fi
+
+    mkdir -p "$dest_dir"
+    for pack_file in $pack_files; do
+        cp "$source_dir/$pack_file" "$dest_dir/$pack_file"
+    done
+    chmod +x "$dest_dir/worktree-lib.sh" "$dest_dir/branch-protection.sh"
+    chmod a-x "$dest_dir/worktree.just" "$dest_dir/branch-protection.just"
+    echo "worktree-lib provision-pack: installed worktree-discipline pack in $dest_dir"
+}
+
 # --------------------------------------------------------------------------
 # create — branch a fresh worktree from <base-ref> (default origin's default
 # branch) under ~/.worktrees/<repo>/<branch>, then hydrate it.
@@ -136,6 +175,9 @@ worktree_create() {
     git -C "$primary" fetch origin
     echo "worktree-lib create: git worktree add -b $branch $dest $base_ref"
     git -C "$primary" worktree add -b "$branch" "$dest" "$base_ref"
+
+    echo "worktree-lib create: provisioning worktree-discipline pack in $dest"
+    worktree_provision_pack_from_primary "$primary" "$dest"
 
     echo "worktree-lib create: hydrating $dest"
     ( cd "$dest" && worktree_hydrate )

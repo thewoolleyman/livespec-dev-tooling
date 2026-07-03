@@ -26,8 +26,13 @@ from pathlib import Path
 
 import pytest
 
+from livespec_dev_tooling.checks.primary_checkout_commit_refuse_hook_installed import (
+    _inspect_worktree_pack,
+)
 from livespec_dev_tooling.install_worktree_pack import (
     CANONICAL_BRANCH_PROTECTION_BODY,
+    CANONICAL_BRANCH_PROTECTION_JUST_BODY,
+    CANONICAL_WORKTREE_JUST_BODY,
     CANONICAL_WORKTREE_LIB_BODY,
     main,
 )
@@ -35,10 +40,17 @@ from livespec_dev_tooling.install_worktree_pack import (
 __all__: list[str] = []
 
 
-# The pack's installed basenames paired with their canonical bodies.
-_PACK_EXPECTED: tuple[tuple[str, str], ...] = (
+# The pack's executable script basenames paired with their canonical bodies.
+_PACK_SCRIPT_EXPECTED: tuple[tuple[str, str], ...] = (
     ("worktree-lib.sh", CANONICAL_WORKTREE_LIB_BODY),
     ("branch-protection.sh", CANONICAL_BRANCH_PROTECTION_BODY),
+)
+
+# Every pack file basename paired with its canonical body.
+_PACK_EXPECTED: tuple[tuple[str, str], ...] = (
+    *_PACK_SCRIPT_EXPECTED,
+    ("worktree.just", CANONICAL_WORKTREE_JUST_BODY),
+    ("branch-protection.just", CANONICAL_BRANCH_PROTECTION_JUST_BODY),
 )
 
 # git sets these in a hook's environment when it fires inside a worktree;
@@ -74,12 +86,30 @@ def _run_git(*, args: list[str], cwd: Path) -> None:
     )
 
 
+def _run_git_capture(*, args: list[str], cwd: Path) -> str:
+    """Run a git command in `cwd`, returning stdout."""
+    completed = subprocess.run(
+        ["git", *args],
+        cwd=str(cwd),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return completed.stdout.strip()
+
+
 def _init_repo(*, repo: Path) -> None:
     """Initialize a git repo at `repo` with a local identity."""
     repo.mkdir(parents=True, exist_ok=True)
     _run_git(args=["init", "--quiet"], cwd=repo)
     _run_git(args=["config", "--local", "user.name", "Test User"], cwd=repo)
     _run_git(args=["config", "--local", "user.email", "test@example.com"], cwd=repo)
+
+
+def _init_bare_remote(*, remote: Path) -> None:
+    """Initialize a bare remote with `master` as its advertised default."""
+    _run_git(args=["init", "--bare", "--quiet", str(remote)], cwd=remote.parent)
+    _run_git(args=["symbolic-ref", "HEAD", "refs/heads/master"], cwd=remote)
 
 
 def _init_primary_with_worktree(*, tmp_path: Path) -> tuple[Path, Path]:
@@ -96,6 +126,78 @@ def _init_primary_with_worktree(*, tmp_path: Path) -> tuple[Path, Path]:
     return primary, worktree
 
 
+def _init_primary_with_remote(*, tmp_path: Path) -> Path:
+    """Create a primary checkout whose origin has an advertised default branch."""
+    primary = tmp_path / "project"
+    remote = tmp_path / "origin.git"
+    _init_bare_remote(remote=remote)
+    _init_repo(repo=primary)
+    seed = primary / "seed.md"
+    _ = seed.write_text("# seed\n", encoding="utf-8")
+    _run_git(args=["add", "seed.md"], cwd=primary)
+    _run_git(args=["commit", "--quiet", "-m", "fixture commit"], cwd=primary)
+    _run_git(args=["remote", "add", "origin", str(remote)], cwd=primary)
+    _run_git(args=["push", "--quiet", "-u", "origin", "master"], cwd=primary)
+    _run_git(args=["remote", "set-head", "origin", "--auto"], cwd=primary)
+    return primary
+
+
+def _run_worktree_create(
+    *,
+    primary: Path,
+    branch: str,
+    worktree_root: Path,
+) -> None:
+    """Invoke the canonical shell `worktree_create` function in `primary`."""
+    script = primary / "dev-tooling" / "worktree-lib.sh"
+    _ = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1" && worktree_create "$2"',
+            "bash",
+            str(script),
+            branch,
+        ],
+        cwd=str(primary),
+        env={**os.environ, "WORKTREE_ROOT": str(worktree_root)},
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_worktree_create_provisions_pack_from_primary(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fresh `worktree_create` worktrees receive the canonical pack before hydration."""
+    _scrub_git_env(monkeypatch=monkeypatch)
+    primary = _init_primary_with_remote(tmp_path=tmp_path)
+    monkeypatch.chdir(primary)
+    assert main() == 0
+
+    branch = "feature/pack-provisioned"
+    worktree_root = tmp_path / "worktrees"
+    _run_worktree_create(primary=primary, branch=branch, worktree_root=worktree_root)
+
+    worktree = worktree_root / branch
+    assert _run_git_capture(args=["rev-parse", "--show-toplevel"], cwd=worktree) == str(worktree)
+    for name, body in _PACK_EXPECTED:
+        installed = worktree / "dev-tooling" / name
+        assert installed.is_file(), f"{name} not provisioned into created worktree"
+        assert installed.read_text(encoding="utf-8") == body
+
+    assert _inspect_worktree_pack(repo_root=worktree) == []
+    branch_check = subprocess.run(
+        ["./dev-tooling/branch-protection.sh", "check"],
+        cwd=str(worktree),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert branch_check.returncode == 0
+
+
 def test_main_installs_both_pack_scripts(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -109,7 +211,7 @@ def test_main_installs_both_pack_scripts(
 
     assert rc == 0
     pack_dir = primary / "dev-tooling"
-    for name, body in _PACK_EXPECTED:
+    for name, body in _PACK_SCRIPT_EXPECTED:
         script = pack_dir / name
         assert script.is_file(), f"{name} not installed"
         assert os.access(script, os.X_OK), f"{name} not executable"
@@ -191,7 +293,7 @@ def test_main_from_worktree_installs_into_that_worktree_root(
     rc = main()
 
     assert rc == 0
-    for name, body in _PACK_EXPECTED:
+    for name, body in _PACK_SCRIPT_EXPECTED:
         installed = worktree / "dev-tooling" / name
         assert installed.is_file(), f"{name} not installed into worktree root"
         assert installed.read_text(encoding="utf-8") == body
