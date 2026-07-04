@@ -8,7 +8,7 @@ trims check legs that a staged unit-test change cannot affect
 (structurally orthogonal legs such as livespec's e2e-mock / prompts /
 doctor-static), keyed by staged-path CLASS. Per work-item
 livespec-dev-tooling-7us.6 and the just-check-performance research
-(research/justcheck-performance/baseline-and-research.md §(2),
+(archive/research/justcheck-performance/baseline-and-research.md §(2),
 proposed item #4).
 
 HARD INVARIANT this module preserves: it NEVER touches the

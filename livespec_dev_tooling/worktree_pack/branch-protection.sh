@@ -12,7 +12,7 @@
 # publishes a new release.
 #
 # The worktree concern's five conformance slots
-# (research/factory-conformance/cross-repo-conformance-pattern.md), server side:
+# (archive/research/factory-conformance/cross-repo-conformance-pattern.md), server side:
 #   CONTRACT   the default branch advances only via PR/merge; direct + force
 #              pushes are rejected.
 #   MECHANISM  GitHub branch protection (the existing primitive — no bespoke
