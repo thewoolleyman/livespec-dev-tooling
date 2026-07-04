@@ -16,7 +16,12 @@ from pathlib import Path
 from typing import Final, Literal, cast
 from urllib.parse import quote
 
-from livespec_dev_tooling.fleet._context import FleetContext, default_gh_runner, resolve_owner
+from livespec_dev_tooling.fleet._context import (
+    FleetContext,
+    GhResult,
+    default_gh_runner,
+    resolve_owner,
+)
 from livespec_dev_tooling.fleet.contract import Manifest, parse_manifest
 
 __all__: list[str] = [
@@ -56,6 +61,20 @@ class RepoSweepReport:
     repo: str
     sweepable: tuple[SweepableBranch, ...]
     deleted: tuple[SweepableBranch, ...] = ()
+    error: str | None = None
+
+
+@dataclass(frozen=True, kw_only=True)
+class _ApiFailure:
+    repo: str
+    path: str
+    stderr: str
+
+    def message(self) -> str:
+        return f"GitHub API failed for {self.repo} at {self.path}: {self.stderr}"
+
+
+_ApiPayload = tuple[object, ...] | _ApiFailure
 
 
 def fetch_manifest(*, ctx: FleetContext) -> Manifest | None:
@@ -73,6 +92,11 @@ def run_sweep(
     reports: list[RepoSweepReport] = []
     for member in manifest.members:
         sweepable = _sweepable_branches(ctx=ctx, repo=member.repo)
+        if isinstance(sweepable, _ApiFailure):
+            reports.append(
+                RepoSweepReport(repo=member.repo, sweepable=(), error=sweepable.message())
+            )
+            continue
         deleted = _delete_sweepable(ctx=ctx, repo=member.repo, branches=sweepable, mode=mode)
         reports.append(
             RepoSweepReport(repo=member.repo, sweepable=tuple(sweepable), deleted=tuple(deleted))
@@ -85,6 +109,9 @@ def format_reports(*, reports: tuple[RepoSweepReport, ...], mode: _SweepModeValu
     lines: list[str] = []
     for report in reports:
         lines.append(report.repo)
+        if report.error is not None:
+            lines.append(f"  ERROR {report.error}")
+            continue
         if not report.sweepable:  # pragma: no cover
             lines.append("  no sweepable branches")
             continue
@@ -94,19 +121,27 @@ def format_reports(*, reports: tuple[RepoSweepReport, ...], mode: _SweepModeValu
     return "\n".join(lines) + "\n"
 
 
-def _sweepable_branches(*, ctx: FleetContext, repo: str) -> list[SweepableBranch]:
+def _sweepable_branches(*, ctx: FleetContext, repo: str) -> list[SweepableBranch] | _ApiFailure:
+    branch_names = _branch_names(ctx=ctx, repo=repo)
+    if isinstance(branch_names, _ApiFailure):
+        return branch_names
     sweepable: list[SweepableBranch] = []
-    for branch in _branch_names(ctx=ctx, repo=repo):
+    for branch in branch_names:
         if branch in _PROTECTED_BRANCHES:
             continue
         merged = _merged_pr_head(ctx=ctx, repo=repo, branch=branch)
+        if isinstance(merged, _ApiFailure):
+            return merged
         if merged is not None:
             sweepable.append(merged)
     return sweepable
 
 
-def _branch_names(*, ctx: FleetContext, repo: str) -> tuple[str, ...]:
-    payload = _api_pages(ctx=ctx, path=f"repos/{ctx.owner}/{repo}/branches?per_page=100")
+def _branch_names(*, ctx: FleetContext, repo: str) -> tuple[str, ...] | _ApiFailure:
+    path = f"repos/{ctx.owner}/{repo}/branches?per_page=100"
+    payload = _api_pages(ctx=ctx, repo=repo, path=path)
+    if isinstance(payload, _ApiFailure):
+        return payload
     names: list[str] = []
     for entry in payload:
         if isinstance(entry, dict):  # pragma: no branch
@@ -116,8 +151,12 @@ def _branch_names(*, ctx: FleetContext, repo: str) -> tuple[str, ...]:
     return tuple(names)
 
 
-def _merged_pr_head(*, ctx: FleetContext, repo: str, branch: str) -> SweepableBranch | None:
+def _merged_pr_head(
+    *, ctx: FleetContext, repo: str, branch: str
+) -> SweepableBranch | _ApiFailure | None:
     pulls = _pulls_for_head(ctx=ctx, repo=repo, branch=branch)
+    if isinstance(pulls, _ApiFailure):
+        return pulls
     if any(_is_open_pull(record=record) for record in pulls):
         return None
     merged = [_pull_number(record=record) for record in pulls if _is_merged_pull(record=record)]
@@ -127,12 +166,14 @@ def _merged_pr_head(*, ctx: FleetContext, repo: str, branch: str) -> SweepableBr
     return SweepableBranch(branch=branch, pr_number=max(numbers))
 
 
-def _pulls_for_head(*, ctx: FleetContext, repo: str, branch: str) -> tuple[dict[str, object], ...]:
+def _pulls_for_head(
+    *, ctx: FleetContext, repo: str, branch: str
+) -> tuple[dict[str, object], ...] | _ApiFailure:
     head = quote(f"{ctx.owner}:{branch}")
-    payload = _api_pages(
-        ctx=ctx,
-        path=f"repos/{ctx.owner}/{repo}/pulls?head={head}&state=all&per_page=100",
-    )
+    path = f"repos/{ctx.owner}/{repo}/pulls?head={head}&state=all&per_page=100"
+    payload = _api_pages(ctx=ctx, repo=repo, path=path)
+    if isinstance(payload, _ApiFailure):
+        return payload
     pulls: list[dict[str, object]] = []
     for entry in payload:
         if isinstance(entry, dict):  # pragma: no branch
@@ -169,27 +210,27 @@ def _delete_sweepable(
     return deleted
 
 
-def _api_pages(*, ctx: FleetContext, path: str) -> tuple[object, ...]:
-    result = ctx.run_gh(args=["api", "--paginate", "--slurp", path])
-    if result.returncode != 0:  # pragma: no cover
-        return ()
-    try:
-        payload = cast("object", json.loads(result.stdout))
-    except json.JSONDecodeError:  # pragma: no cover
-        return ()
-    return _flatten_pages(payload=payload)
-
-
-def _flatten_pages(*, payload: object) -> tuple[object, ...]:
-    if not isinstance(payload, list):  # pragma: no cover
-        return ()
+def _api_pages(*, ctx: FleetContext, repo: str, path: str) -> _ApiPayload:
+    result = ctx.run_gh(args=["api", "--paginate", "--jq", ".[]", path])
+    if result.returncode != 0:
+        return _ApiFailure(repo=repo, path=path, stderr=_stderr_text(result=result))
     items: list[object] = []
-    for page in cast("list[object]", payload):
-        if isinstance(page, list):
-            items.extend(cast("list[object]", page))
-        else:  # pragma: no cover
-            items.append(page)
+    for line in result.stdout.splitlines():
+        try:
+            items.append(cast("object", json.loads(line)))
+        except json.JSONDecodeError as exc:  # pragma: no cover
+            return _ApiFailure(
+                repo=repo,
+                path=path,
+                stderr=f"invalid JSON from gh: {exc.msg}",
+            )
     return tuple(items)
+
+
+def _stderr_text(*, result: GhResult) -> str:
+    if result.stderr.strip():
+        return result.stderr.strip()
+    return "gh api exited non-zero without stderr"
 
 
 def _build_parser() -> argparse.ArgumentParser:  # pragma: no cover
@@ -226,7 +267,7 @@ def main() -> int:  # pragma: no cover
     mode = SweepMode.EXECUTE if bool(args.execute) else SweepMode.DRY_RUN
     reports = run_sweep(ctx=ctx, manifest=manifest, mode=mode)
     _ = sys.stdout.write(format_reports(reports=reports, mode=mode))
-    return 0
+    return 1 if any(report.error is not None for report in reports) else 0
 
 
 if __name__ == "__main__":  # pragma: no cover

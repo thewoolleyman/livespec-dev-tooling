@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from livespec_dev_tooling.fleet._context import FleetContext, GhResult, GhRunner
 from livespec_dev_tooling.fleet.merged_branch_sweep import (
+    RepoSweepReport,
     SweepMode,
     fetch_manifest,
     format_reports,
+    main,
     run_sweep,
 )
 
@@ -25,7 +29,8 @@ _MANIFEST_ARGS: tuple[str, ...] = (
 _BRANCHES_ARGS: tuple[str, ...] = (
     "api",
     "--paginate",
-    "--slurp",
+    "--jq",
+    ".[]",
     "repos/acme/widget/branches?per_page=100",
 )
 
@@ -44,8 +49,12 @@ class RecordingRunner:
         return self.table.get(key, GhResult(returncode=1, stdout="", stderr="no canned"))
 
 
-def ok(*, payload: object) -> GhResult:
-    return GhResult(returncode=0, stdout=json.dumps(payload), stderr="")
+def json_lines(*, payload: tuple[object, ...]) -> GhResult:
+    return GhResult(
+        returncode=0,
+        stdout="".join(f"{json.dumps(entry)}\n" for entry in payload),
+        stderr="",
+    )
 
 
 def raw(*, text: str) -> GhResult:
@@ -60,7 +69,8 @@ def prs_args(*, branch: str) -> tuple[str, ...]:
     return (
         "api",
         "--paginate",
-        "--slurp",
+        "--jq",
+        ".[]",
         f"repos/acme/widget/pulls?head=acme%3A{branch}&state=all&per_page=100",
     )
 
@@ -79,54 +89,46 @@ def delete_args(*, branch: str) -> tuple[str, ...]:
 def base_table() -> dict[tuple[str, ...], GhResult]:
     return {
         _MANIFEST_ARGS: raw(text=_MANIFEST_SOURCE),
-        _BRANCHES_ARGS: ok(
-            payload=[
-                [
-                    {"name": "feat/merged"},
-                    {"name": "feat/open"},
-                    {"name": "master"},
-                    {"name": "release"},
-                    {"name": "feat/unmerged"},
-                ]
-            ]
+        _BRANCHES_ARGS: json_lines(
+            payload=(
+                {"name": "feat/merged"},
+                {"name": "feat/open"},
+                {"name": "master"},
+                {"name": "release"},
+                {"name": "feat/unmerged"},
+            )
         ),
-        prs_args(branch="feat/merged"): ok(
-            payload=[
-                [
-                    {
-                        "number": 12,
-                        "state": "closed",
-                        "merged_at": "2026-07-03T12:00:00Z",
-                    }
-                ]
-            ]
+        prs_args(branch="feat/merged"): json_lines(
+            payload=(
+                {
+                    "number": 12,
+                    "state": "closed",
+                    "merged_at": "2026-07-03T12:00:00Z",
+                },
+            )
         ),
-        prs_args(branch="feat/open"): ok(
-            payload=[
-                [
-                    {
-                        "number": 13,
-                        "state": "open",
-                        "merged_at": None,
-                    },
-                    {
-                        "number": 11,
-                        "state": "closed",
-                        "merged_at": "2026-07-02T12:00:00Z",
-                    },
-                ]
-            ]
+        prs_args(branch="feat/open"): json_lines(
+            payload=(
+                {
+                    "number": 13,
+                    "state": "open",
+                    "merged_at": None,
+                },
+                {
+                    "number": 11,
+                    "state": "closed",
+                    "merged_at": "2026-07-02T12:00:00Z",
+                },
+            )
         ),
-        prs_args(branch="feat/unmerged"): ok(
-            payload=[
-                [
-                    {
-                        "number": 14,
-                        "state": "closed",
-                        "merged_at": None,
-                    }
-                ]
-            ]
+        prs_args(branch="feat/unmerged"): json_lines(
+            payload=(
+                {
+                    "number": 14,
+                    "state": "closed",
+                    "merged_at": None,
+                },
+            )
         ),
     }
 
@@ -181,3 +183,107 @@ def test_execute_deletes_only_sweepable_branches() -> None:
     assert delete_args(branch="feat/merged") in runner.calls
     assert delete_args(branch="feat/open") not in runner.calls
     assert delete_args(branch="feat/unmerged") not in runner.calls
+
+
+def test_failed_branch_listing_is_reported_loudly_without_false_empty() -> None:
+    table = base_table()
+    table[_BRANCHES_ARGS] = GhResult(
+        returncode=1,
+        stdout="",
+        stderr="unknown flag: --slurp",
+    )
+    runner = RecordingRunner(table=table)
+    manifest = fetch_manifest(ctx=make_context(runner=runner))
+    assert manifest is not None
+
+    reports = run_sweep(ctx=make_context(runner=runner), manifest=manifest, mode=SweepMode.DRY_RUN)
+
+    assert reports[0].error == (
+        "GitHub API failed for widget at repos/acme/widget/branches?per_page=100: "
+        "unknown flag: --slurp"
+    )
+    assert "no sweepable branches" not in format_reports(reports=reports, mode=SweepMode.DRY_RUN)
+    assert format_reports(reports=reports, mode=SweepMode.DRY_RUN) == (
+        "widget\n"
+        "  ERROR GitHub API failed for widget at repos/acme/widget/branches?per_page=100: "
+        "unknown flag: --slurp\n"
+    )
+
+
+def test_failed_branch_listing_without_stderr_reports_nonzero_exit() -> None:
+    table = base_table()
+    table[_BRANCHES_ARGS] = GhResult(returncode=1, stdout="", stderr="")
+    runner = RecordingRunner(table=table)
+    manifest = fetch_manifest(ctx=make_context(runner=runner))
+    assert manifest is not None
+
+    reports = run_sweep(ctx=make_context(runner=runner), manifest=manifest, mode=SweepMode.DRY_RUN)
+
+    assert reports[0].error == (
+        "GitHub API failed for widget at repos/acme/widget/branches?per_page=100: "
+        "gh api exited non-zero without stderr"
+    )
+
+
+def test_failed_pr_query_is_reported_loudly() -> None:
+    table = base_table()
+    table[prs_args(branch="feat/open")] = GhResult(
+        returncode=1,
+        stdout="",
+        stderr="GraphQL rate limit",
+    )
+    runner = RecordingRunner(table=table)
+    manifest = fetch_manifest(ctx=make_context(runner=runner))
+    assert manifest is not None
+
+    reports = run_sweep(ctx=make_context(runner=runner), manifest=manifest, mode=SweepMode.DRY_RUN)
+
+    assert reports[0].error == (
+        "GitHub API failed for widget at "
+        "repos/acme/widget/pulls?head=acme%3Afeat/open&state=all&per_page=100: "
+        "GraphQL rate limit"
+    )
+    assert "no sweepable branches" not in format_reports(reports=reports, mode=SweepMode.DRY_RUN)
+
+
+def test_no_sweepable_branches_prints_only_after_successful_listing() -> None:
+    table = base_table()
+    table[_BRANCHES_ARGS] = json_lines(payload=({"name": "master"},))
+    runner = RecordingRunner(table=table)
+    manifest = fetch_manifest(ctx=make_context(runner=runner))
+    assert manifest is not None
+
+    reports = run_sweep(ctx=make_context(runner=runner), manifest=manifest, mode=SweepMode.DRY_RUN)
+
+    assert format_reports(reports=reports, mode=SweepMode.DRY_RUN) == (
+        "widget\n" "  no sweepable branches\n"
+    )
+
+
+def test_main_returns_nonzero_when_any_repo_report_has_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_fetch_manifest(*, ctx: FleetContext) -> object:
+        del ctx
+        return object()
+
+    def fake_run_sweep(
+        *, ctx: FleetContext, manifest: object, mode: object
+    ) -> tuple[RepoSweepReport, ...]:
+        del ctx, manifest, mode
+        return (
+            RepoSweepReport(
+                repo="widget",
+                sweepable=(),
+                error="GitHub API failed for widget at repos/acme/widget/branches?per_page=100: boom",
+            ),
+        )
+
+    monkeypatch.setattr("sys.argv", ["merged-branch-sweep", "--owner", "acme"])
+    monkeypatch.setattr(
+        "livespec_dev_tooling.fleet.merged_branch_sweep.fetch_manifest",
+        fake_fetch_manifest,
+    )
+    monkeypatch.setattr("livespec_dev_tooling.fleet.merged_branch_sweep.run_sweep", fake_run_sweep)
+
+    assert main() == 1
