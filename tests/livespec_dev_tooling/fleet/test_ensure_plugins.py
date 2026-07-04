@@ -177,7 +177,10 @@ def test_claude_plugin_currency_fails_loudly_when_hook_missing() -> None:
     ctx = _make_context(table=_plugin_currency_table(settings=settings))
     outcome = assert_claude_plugin_currency(ctx=ctx, member=_MEMBER)
     assert isinstance(outcome, RowFinding)
-    assert outcome.severity == "error"
+    # Temporarily WARNING severity until the fleet-plugin-currency wiring
+    # fan-out lands in all members (livespec-dev-tooling-h7z flips this
+    # back to error).
+    assert outcome.severity == "warning"
     assert "widget" in outcome.message
     assert "SessionStart" in outcome.message
 

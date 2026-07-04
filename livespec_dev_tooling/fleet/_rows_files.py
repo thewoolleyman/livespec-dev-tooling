@@ -178,6 +178,12 @@ def _has_standard_ensure_plugins_recipe(*, justfile_text: str) -> bool:
     return False
 
 
+# Currency findings are WARNING severity until the fleet-plugin-currency
+# wiring fan-out lands the standard wrapper in every member;
+# livespec-dev-tooling-h7z flips this back to "error".
+_CURRENCY_SEVERITY = "warning"
+
+
 def _claude_settings_presence_outcome(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:
     """Pass when `.claude/settings.json` is definitively present and readable."""
     tree = ctx.tree(repo=member.repo)
@@ -187,7 +193,10 @@ def _claude_settings_presence_outcome(*, ctx: FleetContext, member: FleetMember)
         return RowPass()
     if tree.truncated:
         return RowSkip(reason=f"{member.repo}: tree truncated; {CLAUDE_SETTINGS} not definitive")
-    return RowFinding(message=f"{member.repo}: required file {CLAUDE_SETTINGS} missing")
+    return RowFinding(
+        message=f"{member.repo}: required file {CLAUDE_SETTINGS} missing",
+        severity=_CURRENCY_SEVERITY,
+    )
 
 
 def _settings_currency_outcome(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:
@@ -197,7 +206,10 @@ def _settings_currency_outcome(*, ctx: FleetContext, member: FleetMember) -> Row
         return RowSkip(reason=f"{member.repo}: {CLAUDE_SETTINGS} unreadable")
     settings = _settings_payload(settings_text=settings_text)
     if settings is None:
-        return RowFinding(message=f"{member.repo}: {CLAUDE_SETTINGS} is not parseable JSON object")
+        return RowFinding(
+            message=f"{member.repo}: {CLAUDE_SETTINGS} is not parseable JSON object",
+            severity=_CURRENCY_SEVERITY,
+        )
     if _has_documented_currency_successor(settings=settings):
         return RowPass()
     if _has_ensure_plugins_session_start(settings=settings):
@@ -206,7 +218,8 @@ def _settings_currency_outcome(*, ctx: FleetContext, member: FleetMember) -> Row
         message=(
             f"{member.repo}: SessionStart does not invoke "
             "`mise exec -- just ensure-plugins` and no documented successor is declared"
-        )
+        ),
+        severity=_CURRENCY_SEVERITY,
     )
 
 
@@ -223,11 +236,15 @@ def _justfile_currency_outcome(*, ctx: FleetContext, member: FleetMember) -> Row
             message=(
                 f"{member.repo}: ensure-plugins recipe is not the standard wrapper "
                 f"`{_STANDARD_ENSURE_PLUGINS_COMMAND}`"
-            )
+            ),
+            severity=_CURRENCY_SEVERITY,
         )
     if tree.truncated:
         return RowSkip(reason=f"{member.repo}: tree truncated; justfile not definitive")
-    return RowFinding(message=f"{member.repo}: justfile missing; ensure-plugins wrapper absent")
+    return RowFinding(
+        message=f"{member.repo}: justfile missing; ensure-plugins wrapper absent",
+        severity=_CURRENCY_SEVERITY,
+    )
 
 
 def assert_claude_plugin_currency(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:

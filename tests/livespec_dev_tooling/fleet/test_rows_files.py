@@ -352,6 +352,11 @@ def test_claude_plugin_currency_edge_outcomes() -> None:
         assert isinstance(outcome, outcome_type), text
         detail = outcome.reason if isinstance(outcome, RowSkip) else outcome.message
         assert text in detail
+        # Temporarily WARNING severity until the fleet-plugin-currency
+        # wiring fan-out lands in all members (livespec-dev-tooling-h7z
+        # flips this back to error).
+        if isinstance(outcome, RowFinding):
+            assert outcome.severity == "warning", text
 
 
 def test_claude_plugin_currency_passes_standard_wrapper_with_comments() -> None:
