@@ -1,0 +1,233 @@
+"""Sweep stale remote branches whose head PRs are already merged.
+
+This is an operator tool, not a CI check. It reads livespec core's fleet
+manifest at run time, evaluates each remote branch strictly from PR state,
+and defaults to a dry-run report. Branch ancestry is intentionally not
+consulted because the fleet rebase-merges PRs.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Final, Literal, cast
+from urllib.parse import quote
+
+from livespec_dev_tooling.fleet._context import FleetContext, default_gh_runner, resolve_owner
+from livespec_dev_tooling.fleet.contract import Manifest, parse_manifest
+
+__all__: list[str] = [
+    "RepoSweepReport",
+    "SweepMode",
+    "SweepableBranch",
+    "fetch_manifest",
+    "format_reports",
+    "main",
+    "run_sweep",
+]
+
+_MANIFEST_REPO = "livespec"
+_MANIFEST_PATH = ".livespec-fleet-manifest.jsonc"
+_PROTECTED_BRANCHES = frozenset({"master", "release"})
+_ModeName = Literal["dry-run", "execute"]
+
+
+@dataclass(frozen=True, kw_only=True)
+class _SweepModeValue:
+    value: _ModeName
+
+
+class SweepMode:
+    DRY_RUN: Final = _SweepModeValue(value="dry-run")
+    EXECUTE: Final = _SweepModeValue(value="execute")
+
+
+@dataclass(frozen=True, kw_only=True)
+class SweepableBranch:
+    branch: str
+    pr_number: int
+
+
+@dataclass(frozen=True, kw_only=True)
+class RepoSweepReport:
+    repo: str
+    sweepable: tuple[SweepableBranch, ...]
+    deleted: tuple[SweepableBranch, ...] = ()
+
+
+def fetch_manifest(*, ctx: FleetContext) -> Manifest | None:
+    """Fetch livespec core's committed fleet manifest from `master`."""
+    text = ctx.file_text(repo=_MANIFEST_REPO, path=_MANIFEST_PATH)
+    if text is None:  # pragma: no cover
+        return None
+    return parse_manifest(source=text)
+
+
+def run_sweep(
+    *, ctx: FleetContext, manifest: Manifest, mode: _SweepModeValue
+) -> tuple[RepoSweepReport, ...]:
+    """Classify every manifest repo and optionally delete sweepable refs."""
+    reports: list[RepoSweepReport] = []
+    for member in manifest.members:
+        sweepable = _sweepable_branches(ctx=ctx, repo=member.repo)
+        deleted = _delete_sweepable(ctx=ctx, repo=member.repo, branches=sweepable, mode=mode)
+        reports.append(
+            RepoSweepReport(repo=member.repo, sweepable=tuple(sweepable), deleted=tuple(deleted))
+        )
+    return tuple(reports)
+
+
+def format_reports(*, reports: tuple[RepoSweepReport, ...], mode: _SweepModeValue) -> str:
+    """Human-readable per-repo report for stdout."""
+    lines: list[str] = []
+    for report in reports:
+        lines.append(report.repo)
+        if not report.sweepable:  # pragma: no cover
+            lines.append("  no sweepable branches")
+            continue
+        for item in report.sweepable:
+            suffix = " deleted" if mode == SweepMode.EXECUTE and item in report.deleted else ""
+            lines.append(f"  {item.branch} -> merged PR #{item.pr_number}{suffix}")
+    return "\n".join(lines) + "\n"
+
+
+def _sweepable_branches(*, ctx: FleetContext, repo: str) -> list[SweepableBranch]:
+    sweepable: list[SweepableBranch] = []
+    for branch in _branch_names(ctx=ctx, repo=repo):
+        if branch in _PROTECTED_BRANCHES:
+            continue
+        merged = _merged_pr_head(ctx=ctx, repo=repo, branch=branch)
+        if merged is not None:
+            sweepable.append(merged)
+    return sweepable
+
+
+def _branch_names(*, ctx: FleetContext, repo: str) -> tuple[str, ...]:
+    payload = _api_pages(ctx=ctx, path=f"repos/{ctx.owner}/{repo}/branches?per_page=100")
+    names: list[str] = []
+    for entry in payload:
+        if isinstance(entry, dict):  # pragma: no branch
+            name = cast("dict[str, object]", entry).get("name")
+            if isinstance(name, str):  # pragma: no branch
+                names.append(name)
+    return tuple(names)
+
+
+def _merged_pr_head(*, ctx: FleetContext, repo: str, branch: str) -> SweepableBranch | None:
+    pulls = _pulls_for_head(ctx=ctx, repo=repo, branch=branch)
+    if any(_is_open_pull(record=record) for record in pulls):
+        return None
+    merged = [_pull_number(record=record) for record in pulls if _is_merged_pull(record=record)]
+    numbers = [number for number in merged if number is not None]
+    if not numbers:
+        return None
+    return SweepableBranch(branch=branch, pr_number=max(numbers))
+
+
+def _pulls_for_head(*, ctx: FleetContext, repo: str, branch: str) -> tuple[dict[str, object], ...]:
+    head = quote(f"{ctx.owner}:{branch}")
+    payload = _api_pages(
+        ctx=ctx,
+        path=f"repos/{ctx.owner}/{repo}/pulls?head={head}&state=all&per_page=100",
+    )
+    pulls: list[dict[str, object]] = []
+    for entry in payload:
+        if isinstance(entry, dict):  # pragma: no branch
+            pulls.append(cast("dict[str, object]", entry))
+    return tuple(pulls)
+
+
+def _is_open_pull(*, record: dict[str, object]) -> bool:
+    return record.get("state") == "open"
+
+
+def _is_merged_pull(*, record: dict[str, object]) -> bool:
+    return record.get("state") == "closed" and isinstance(record.get("merged_at"), str)
+
+
+def _pull_number(*, record: dict[str, object]) -> int | None:
+    number = record.get("number")
+    if isinstance(number, int):
+        return number
+    return None  # pragma: no cover
+
+
+def _delete_sweepable(
+    *, ctx: FleetContext, repo: str, branches: list[SweepableBranch], mode: _SweepModeValue
+) -> list[SweepableBranch]:
+    if mode == SweepMode.DRY_RUN:
+        return []
+    deleted: list[SweepableBranch] = []
+    for branch in branches:
+        path = f"repos/{ctx.owner}/{repo}/git/refs/heads/{quote(branch.branch, safe='/')}"
+        result = ctx.api(path=path, method="DELETE", body="{}")
+        if result.returncode == 0:  # pragma: no branch
+            deleted.append(branch)
+    return deleted
+
+
+def _api_pages(*, ctx: FleetContext, path: str) -> tuple[object, ...]:
+    result = ctx.run_gh(args=["api", "--paginate", "--slurp", path])
+    if result.returncode != 0:  # pragma: no cover
+        return ()
+    try:
+        payload = cast("object", json.loads(result.stdout))
+    except json.JSONDecodeError:  # pragma: no cover
+        return ()
+    return _flatten_pages(payload=payload)
+
+
+def _flatten_pages(*, payload: object) -> tuple[object, ...]:
+    if not isinstance(payload, list):  # pragma: no cover
+        return ()
+    items: list[object] = []
+    for page in cast("list[object]", payload):
+        if isinstance(page, list):
+            items.extend(cast("list[object]", page))
+        else:  # pragma: no cover
+            items.append(page)
+    return tuple(items)
+
+
+def _build_parser() -> argparse.ArgumentParser:  # pragma: no cover
+    parser = argparse.ArgumentParser(
+        prog="merged-branch-sweep",
+        description="Dry-run or execute stale merged-PR head branch cleanup across the fleet.",
+    )
+    _ = parser.add_argument(
+        "--owner",
+        default=None,
+        help="GitHub owner override; defaults to the origin remote's owner.",
+    )
+    _ = parser.add_argument(
+        "--execute",
+        action="store_true",
+        help="Delete sweepable remote branches. Omit for the default dry-run report.",
+    )
+    return parser
+
+
+def main() -> int:  # pragma: no cover
+    args = _build_parser().parse_args()
+    owner = cast("str | None", args.owner) or resolve_owner(cwd=Path.cwd())
+    if owner is None:
+        _ = sys.stderr.write("owner unresolvable: pass --owner or run inside a github.com clone\n")
+        return 1
+    ctx = FleetContext(owner=owner, run_gh=default_gh_runner)
+    manifest = fetch_manifest(ctx=ctx)
+    if manifest is None:
+        _ = sys.stderr.write(
+            f"fleet manifest unavailable: {owner}/{_MANIFEST_REPO}:{_MANIFEST_PATH}\n"
+        )
+        return 1
+    mode = SweepMode.EXECUTE if bool(args.execute) else SweepMode.DRY_RUN
+    reports = run_sweep(ctx=ctx, manifest=manifest, mode=mode)
+    _ = sys.stdout.write(format_reports(reports=reports, mode=mode))
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())
