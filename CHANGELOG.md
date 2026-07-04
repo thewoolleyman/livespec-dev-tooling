@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.33.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.33.3...v0.33.4) (2026-07-04)
+
+
+### Bug Fixes
+
+* restore claude plugin currency errors ([8707ef7](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8707ef79ccccae5c196e89fb35dd2d111a561ba0))
+
 ## [0.33.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.33.2...v0.33.3) (2026-07-04)
 
 
