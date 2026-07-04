@@ -30,8 +30,8 @@ def _run_check(
 
     Preserves the parent env (incl. COVERAGE_PROCESS_START) so pytest-cov's
     subprocess auto-init works; overrides only PATH when env_path is given,
-    plus any explicit `env_extra` entries (e.g. pinning the repair-lever var
-    so a test's expectation cannot flip with the invoking shell's env).
+    plus any explicit `env_extra` entries (e.g. pinning an env var a test's
+    expectation depends on, so it cannot flip with the invoking shell's env).
     """
     env = {**os.environ, **(env_extra or {})}
     if env_path is not None:
@@ -59,13 +59,13 @@ def test_gh_unavailable_skips_gracefully(*, tmp_path: Path) -> None:
 def test_real_repo_passes(*, tmp_path: Path) -> None:  # noqa: ARG001
     """Run the check against the real repo cwd; expect exit 0.
 
-    Exercises the real-`gh` path end-to-end. The repair lever is pinned so
-    the expectation cannot flip with the LIVE color of master CI (green or
-    pending → 0 regardless; red → 0 only via the lever) — the hard red path
-    is covered deterministically by the fake-`gh` tests. With `gh`
-    unauthenticated the check still exits 0 (graceful skip).
+    Exercises the real-`gh` path end-to-end against a green master (a red
+    master legitimately fails this test — that is the gate working; the
+    remedy is to revert whatever reddened master, never to soften this
+    check). With `gh` unauthenticated the check still exits 0 (graceful
+    skip).
     """
-    result = _run_check(cwd=_REPO_ROOT, env_extra={"LIVESPEC_MASTER_CI_GREEN": "warn"})
+    result = _run_check(cwd=_REPO_ROOT)
     assert result.returncode == 0, (
         f"expected exit 0 against real repo; got {result.returncode}, "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
@@ -94,7 +94,7 @@ def test_success_conclusion_passes(*, tmp_path: Path) -> None:
 
 
 def test_failure_conclusion_fails(*, tmp_path: Path) -> None:
-    """Latest CI is failure → exit 1 with error diagnostic (lever unset)."""
+    """Latest CI is failure → exit 1 with error diagnostic."""
     fake_path = _install_fake_gh(
         tmp_path=tmp_path,
         stdout='[{"status": "completed", "conclusion": "failure"}]',
@@ -108,12 +108,17 @@ def test_failure_conclusion_fails(*, tmp_path: Path) -> None:
     assert "master CI is red" in result.stderr
 
 
-def test_failure_conclusion_warns_under_repair_lever(*, tmp_path: Path) -> None:
-    """Latest CI is failure + `LIVESPEC_MASTER_CI_GREEN=warn` → exit 0, warning.
+def test_red_conclusion_fails_regardless_of_lever_env(*, tmp_path: Path) -> None:
+    """A red master fails even with `LIVESPEC_MASTER_CI_GREEN=warn` in the env.
 
-    The lever exists to break the repair circularity: pre-commit/pre-push run
-    this check while master is still red, which would otherwise block the very
-    push that repairs the red. CI never sets the lever, so CI stays hard.
+    This gate deliberately has NO escape lever (wontfix li-4x3a45, upheld and
+    broadened by maintainer directive 2026-07-04 after a warn lever briefly
+    landed and was removed the same day): an env var that demotes a red
+    master to a warning lets agents push onto a broken master, which is the
+    exact failure the check exists to prevent. The remedy for a gate
+    deadlock is a server-side revert PR of the breaking change and a
+    re-land in the right order — never a bypass. This test pins the env var
+    to having NO effect so the lever cannot be quietly reintroduced.
     """
     fake_path = _install_fake_gh(
         tmp_path=tmp_path,
@@ -124,8 +129,8 @@ def test_failure_conclusion_warns_under_repair_lever(*, tmp_path: Path) -> None:
         env_path=fake_path,
         env_extra={"LIVESPEC_MASTER_CI_GREEN": "warn"},
     )
-    assert result.returncode == 0
-    assert "demoted to warning by the repair lever" in result.stderr
+    assert result.returncode == 1
+    assert "master CI is red" in result.stderr
 
 
 def test_pending_status_passes(*, tmp_path: Path) -> None:
