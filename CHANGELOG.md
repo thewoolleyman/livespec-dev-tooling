@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.32.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.32.1...v0.32.2) (2026-07-04)
+
+
+### Bug Fixes
+
+* remove the master_ci_green repair lever — no escape gates on CI-green gates ([188bca6](https://github.com/thewoolleyman/livespec-dev-tooling/commit/188bca68018caef3e8b339d71797ff6d17ef7fb6))
+
 ## [0.32.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.32.0...v0.32.1) (2026-07-04)
 
 
