@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.32.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.32.0...v0.32.1) (2026-07-04)
+
+
+### Bug Fixes
+
+* repair the three fleet-check postures reddening the fleet ([caab92a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/caab92ae4840dc16ebd30d9e462a71d207463e08))
+
 ## [0.32.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.31.3...v0.32.0) (2026-07-03)
 
 
