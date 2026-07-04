@@ -214,10 +214,18 @@ def _api_pages(*, ctx: FleetContext, repo: str, path: str) -> _ApiPayload:
     result = ctx.run_gh(args=["api", "--paginate", "--jq", ".[]", path])
     if result.returncode != 0:
         return _ApiFailure(repo=repo, path=path, stderr=_stderr_text(result=result))
+    decoder = json.JSONDecoder()
+    text = result.stdout
     items: list[object] = []
-    for line in result.stdout.splitlines():
+    index = 0
+    while index < len(text):
+        while index < len(text) and text[index].isspace():
+            index += 1
+        if index >= len(text):
+            break
         try:
-            items.append(cast("object", json.loads(line)))
+            item, index = decoder.raw_decode(text, index)
+            items.append(cast("object", item))
         except json.JSONDecodeError as exc:  # pragma: no cover
             return _ApiFailure(
                 repo=repo,

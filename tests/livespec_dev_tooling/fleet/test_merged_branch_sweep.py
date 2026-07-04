@@ -49,10 +49,10 @@ class RecordingRunner:
         return self.table.get(key, GhResult(returncode=1, stdout="", stderr="no canned"))
 
 
-def json_lines(*, payload: tuple[object, ...]) -> GhResult:
+def gh_jq_objects(*, payload: tuple[object, ...]) -> GhResult:
     return GhResult(
         returncode=0,
-        stdout="".join(f"{json.dumps(entry)}\n" for entry in payload),
+        stdout="\n".join(json.dumps(entry, indent=2) for entry in payload) + "\n",
         stderr="",
     )
 
@@ -89,7 +89,7 @@ def delete_args(*, branch: str) -> tuple[str, ...]:
 def base_table() -> dict[tuple[str, ...], GhResult]:
     return {
         _MANIFEST_ARGS: raw(text=_MANIFEST_SOURCE),
-        _BRANCHES_ARGS: json_lines(
+        _BRANCHES_ARGS: gh_jq_objects(
             payload=(
                 {"name": "feat/merged"},
                 {"name": "feat/open"},
@@ -98,7 +98,7 @@ def base_table() -> dict[tuple[str, ...], GhResult]:
                 {"name": "feat/unmerged"},
             )
         ),
-        prs_args(branch="feat/merged"): json_lines(
+        prs_args(branch="feat/merged"): gh_jq_objects(
             payload=(
                 {
                     "number": 12,
@@ -107,7 +107,7 @@ def base_table() -> dict[tuple[str, ...], GhResult]:
                 },
             )
         ),
-        prs_args(branch="feat/open"): json_lines(
+        prs_args(branch="feat/open"): gh_jq_objects(
             payload=(
                 {
                     "number": 13,
@@ -121,7 +121,7 @@ def base_table() -> dict[tuple[str, ...], GhResult]:
                 },
             )
         ),
-        prs_args(branch="feat/unmerged"): json_lines(
+        prs_args(branch="feat/unmerged"): gh_jq_objects(
             payload=(
                 {
                     "number": 14,
@@ -248,7 +248,35 @@ def test_failed_pr_query_is_reported_loudly() -> None:
 
 def test_no_sweepable_branches_prints_only_after_successful_listing() -> None:
     table = base_table()
-    table[_BRANCHES_ARGS] = json_lines(payload=({"name": "master"},))
+    table[_BRANCHES_ARGS] = gh_jq_objects(payload=({"name": "master"},))
+    runner = RecordingRunner(table=table)
+    manifest = fetch_manifest(ctx=make_context(runner=runner))
+    assert manifest is not None
+
+    reports = run_sweep(ctx=make_context(runner=runner), manifest=manifest, mode=SweepMode.DRY_RUN)
+
+    assert format_reports(reports=reports, mode=SweepMode.DRY_RUN) == (
+        "widget\n" "  no sweepable branches\n"
+    )
+
+
+def test_whitespace_only_paginated_output_reports_no_sweepable_branches() -> None:
+    table = base_table()
+    table[_BRANCHES_ARGS] = raw(text="\n  \n")
+    runner = RecordingRunner(table=table)
+    manifest = fetch_manifest(ctx=make_context(runner=runner))
+    assert manifest is not None
+
+    reports = run_sweep(ctx=make_context(runner=runner), manifest=manifest, mode=SweepMode.DRY_RUN)
+
+    assert format_reports(reports=reports, mode=SweepMode.DRY_RUN) == (
+        "widget\n" "  no sweepable branches\n"
+    )
+
+
+def test_empty_paginated_output_reports_no_sweepable_branches() -> None:
+    table = base_table()
+    table[_BRANCHES_ARGS] = raw(text="")
     runner = RecordingRunner(table=table)
     manifest = fetch_manifest(ctx=make_context(runner=runner))
     assert manifest is not None
