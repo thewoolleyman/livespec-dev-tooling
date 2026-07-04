@@ -24,6 +24,7 @@ from livespec_dev_tooling.fleet._context import Adopter, FleetContext, FleetMemb
 from livespec_dev_tooling.fleet._local_context import LocalContext
 from livespec_dev_tooling.fleet._reconcile import (
     reconcile_branch_protection,
+    reconcile_delete_branch_on_merge,
     reconcile_merge_settings,
     reconcile_secret_names,
     reconcile_shim_workflows,
@@ -243,7 +244,7 @@ OBLIGATION_ROWS: tuple[ObligationRow, ...] = (
         obligation_type="github-state",
         applies_to=_ALL_CLASSES,
         assert_member=assert_delete_branch_on_merge,
-        manual_hint="enable GitHub repo setting delete_branch_on_merge",
+        reconcile=reconcile_delete_branch_on_merge,
     ),
     ObligationRow(
         row_id="topic-livespec-sibling",
