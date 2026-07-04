@@ -59,4 +59,6 @@ def aligned_merge_settings_payload() -> dict[str, object]:
     `test_wire_fleet_member.py` green tables so a change to what the
     fleet mandates is a one-line edit at `REQUIRED_MERGE_SETTINGS`.
     """
-    return dict(REQUIRED_MERGE_SETTINGS)
+    payload = dict(REQUIRED_MERGE_SETTINGS)
+    payload["delete_branch_on_merge"] = True
+    return payload
