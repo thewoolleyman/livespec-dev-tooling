@@ -23,6 +23,7 @@ from livespec_dev_tooling.fleet._context import (
 from livespec_dev_tooling.fleet._reconcile import (
     SHIM_BRANCH,
     reconcile_branch_protection,
+    reconcile_delete_branch_on_merge,
     reconcile_merge_settings,
     reconcile_secret_names,
     reconcile_shim_workflows,
@@ -308,6 +309,36 @@ def test_reconcile_merge_settings_failed_patch_is_finding() -> None:
     outcome = reconcile_merge_settings(ctx=make_context(table={}, calls=[]), member=_MEMBER)
     assert isinstance(outcome, RowFinding)
     assert "merge settings" in outcome.message
+
+
+def test_reconcile_delete_branch_on_merge_patches_repo_setting() -> None:
+    calls: list[tuple[tuple[str, ...], str | None]] = []
+    table = {_REPO_PATCH: ok(payload={})}
+    outcome = reconcile_delete_branch_on_merge(
+        ctx=make_context(table=table, calls=calls), member=_MEMBER
+    )
+    assert isinstance(outcome, RowPass)
+    assert "delete_branch_on_merge" in outcome.note
+    body = next(stdin for args, stdin in calls if args == _REPO_PATCH)
+    assert body is not None
+    assert json.loads(body) == {"delete_branch_on_merge": True}
+
+
+def test_reconcile_delete_branch_on_merge_permission_failure_is_actionable() -> None:
+    table = {
+        _REPO_PATCH: GhResult(
+            returncode=1,
+            stdout='{"message":"Resource not accessible by integration"}',
+            stderr="",
+        )
+    }
+    outcome = reconcile_delete_branch_on_merge(
+        ctx=make_context(table=table, calls=[]), member=_MEMBER
+    )
+    assert isinstance(outcome, RowFinding)
+    assert "Administration" in outcome.message
+    assert "gh api repos/acme/widget --method PATCH" in outcome.message
+    assert "delete_branch_on_merge" in outcome.message
 
 
 def _tree(*, paths: list[str]) -> GhResult:

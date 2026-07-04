@@ -42,6 +42,7 @@ from livespec_dev_tooling.fleet._rows_github import (
 __all__: list[str] = [
     "SHIM_BRANCH",
     "reconcile_branch_protection",
+    "reconcile_delete_branch_on_merge",
     "reconcile_merge_settings",
     "reconcile_secret_names",
     "reconcile_shim_workflows",
@@ -236,6 +237,26 @@ def reconcile_merge_settings(*, ctx: FleetContext, member: FleetMember) -> RowOu
     if result.returncode != 0:
         return RowFinding(message=f"{member.repo}: setting merge settings failed")
     return RowPass(note="merge settings set (rebase-only + auto-merge)")
+
+
+def reconcile_delete_branch_on_merge(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:
+    """Enable automatic deletion of merged PR head branches for the member repo."""
+    body = json.dumps({"delete_branch_on_merge": True})
+    result = ctx.api(path=f"repos/{ctx.owner}/{member.repo}", method="PATCH", body=body)
+    if result.returncode != 0:
+        command = (
+            f"gh api repos/{ctx.owner}/{member.repo} --method PATCH "
+            "--input - <<< '{\"delete_branch_on_merge\":true}'"
+        )
+        return RowFinding(
+            message=(
+                f"{member.repo}: setting delete_branch_on_merge failed; re-run "
+                "wire-fleet-member with a token that has GitHub repository "
+                "Administration permission, or run: "
+                f"{command}"
+            )
+        )
+    return RowPass(note="delete_branch_on_merge enabled")
 
 
 def _open_shim_pr(*, ctx: FleetContext, member: FleetMember, missing: list[str]) -> RowOutcome:
