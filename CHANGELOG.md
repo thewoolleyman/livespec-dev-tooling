@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.33.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.32.2...v0.33.0) (2026-07-04)
+
+
+### Features
+
+* add merged branch sweep tests ([3a2959a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/3a2959a1c203b08ebd1dde2cf690e02449b7b2f5))
+
 ## [0.32.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.32.1...v0.32.2) (2026-07-04)
 
 
