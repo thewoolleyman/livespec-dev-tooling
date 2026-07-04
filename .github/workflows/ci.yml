@@ -89,7 +89,7 @@ jobs:
       # fetch. A serial pre-warm here would only help the first run after
       # a lock change — already bounded to the delta wheels by the prefix
       # restore-key — so it is not worth taxing every run's wall-clock.
-      # See livespec-dev-tooling-7us.10 (research/justcheck-performance).
+      # See livespec-dev-tooling-7us.10 (archive/research/justcheck-performance).
 
   check-python:
     name: ${{ matrix.target }}

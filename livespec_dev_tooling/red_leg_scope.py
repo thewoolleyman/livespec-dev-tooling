@@ -12,7 +12,7 @@ cannot tell us anything useful about that tree and so are skipped:
    touch (livespec's `e2e-test-claude-code-mock`, `check-prompts`,
    `check-doctor-static`: gated on `tests/e2e/`, `tests/prompts/`, and
    `SPECIFICATION/` + prose respectively). Per the just-check-
-   performance research (research/justcheck-performance/
+   performance research (archive/research/justcheck-performance/
    baseline-and-research.md §(2), proposed item #4) trimming these at
    Red cuts the livespec Red leg ~89s -> ~40-50s with zero safety loss
    (Green / pre-push / CI run the full aggregate unchanged).
