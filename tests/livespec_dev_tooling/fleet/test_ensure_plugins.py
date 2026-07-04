@@ -177,9 +177,7 @@ def test_claude_plugin_currency_fails_loudly_when_hook_missing() -> None:
     ctx = _make_context(table=_plugin_currency_table(settings=settings))
     outcome = assert_claude_plugin_currency(ctx=ctx, member=_MEMBER)
     assert isinstance(outcome, RowFinding)
-    # Rollout-gap posture: warning severity until the fleet recipe collapse
-    # (livespec-c1k9.11) closes; error severity returns with that rollout.
-    assert outcome.severity == "warning"
+    assert outcome.severity == "error"
     assert "widget" in outcome.message
     assert "SessionStart" in outcome.message
 

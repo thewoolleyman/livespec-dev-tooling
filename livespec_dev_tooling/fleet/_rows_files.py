@@ -232,16 +232,7 @@ def _justfile_currency_outcome(*, ctx: FleetContext, member: FleetMember) -> Row
 
 def assert_claude_plugin_currency(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:
     """SessionStart wires plugin currency, or settings document its successor."""
-    outcome = _claude_plugin_currency_outcome(ctx=ctx, member=member)
-    # Rollout-gap posture: this obligation row shipped ahead of the fleet
-    # recipe collapse it asserts (core work-item livespec-c1k9.11 plus the
-    # per-repo hook adoption), so binding at error severity reddens every
-    # member the rollout has not reached. Findings are demoted to warning
-    # severity until that rollout closes; restoring error severity is part
-    # of livespec-c1k9.11's acceptance.
-    if isinstance(outcome, RowFinding):
-        return RowFinding(message=outcome.message, severity="warning")
-    return outcome
+    return _claude_plugin_currency_outcome(ctx=ctx, member=member)
 
 
 def _claude_plugin_currency_outcome(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:
