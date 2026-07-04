@@ -44,6 +44,7 @@ from livespec_dev_tooling.fleet._rows_files import (
 from livespec_dev_tooling.fleet._rows_github import (
     assert_app_installation,
     assert_branch_protection,
+    assert_delete_branch_on_merge,
     assert_merge_settings,
     assert_secret_names,
     assert_topic,
@@ -236,6 +237,13 @@ OBLIGATION_ROWS: tuple[ObligationRow, ...] = (
         applies_to=_ALL_CLASSES,
         assert_member=assert_merge_settings,
         reconcile=reconcile_merge_settings,
+    ),
+    ObligationRow(
+        row_id="delete-branch-on-merge",
+        obligation_type="github-state",
+        applies_to=_ALL_CLASSES,
+        assert_member=assert_delete_branch_on_merge,
+        manual_hint="enable GitHub repo setting delete_branch_on_merge",
     ),
     ObligationRow(
         row_id="topic-livespec-sibling",

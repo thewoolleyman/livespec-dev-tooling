@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import json
 import textwrap
+from typing import TYPE_CHECKING
 
+from livespec_dev_tooling.fleet import _rows_github
 from livespec_dev_tooling.fleet._context import (
     FleetContext,
     FleetMember,
@@ -29,6 +31,9 @@ from livespec_dev_tooling.fleet._rows_github import (
     member_matrix_targets,
     parse_ci_matrix,
 )
+
+if TYPE_CHECKING:
+    import pytest
 
 __all__: list[str] = []
 
@@ -290,6 +295,43 @@ def test_merge_settings_unreadable_skips() -> None:
     outcome = assert_merge_settings(ctx=make_context(table={}), member=_MEMBER)
     assert isinstance(outcome, RowSkip)
     assert "admin scope" in outcome.reason
+
+
+def test_delete_branch_on_merge_true_passes(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    ctx = make_context(table={_REPO_ARGS: ok(payload={"delete_branch_on_merge": True})})
+    assert _rows_github.assert_delete_branch_on_merge(ctx=ctx, member=_MEMBER) == RowPass()
+
+
+def test_delete_branch_on_merge_false_fails_when_token_present(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("GH_TOKEN", "token")
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    ctx = make_context(table={_REPO_ARGS: ok(payload={"delete_branch_on_merge": False})})
+
+    outcome = _rows_github.assert_delete_branch_on_merge(ctx=ctx, member=_MEMBER)
+
+    assert isinstance(outcome, RowFinding)
+    assert outcome.severity == "error"
+    assert "widget" in outcome.message
+    assert "delete_branch_on_merge" in outcome.message
+
+
+def test_delete_branch_on_merge_false_warns_without_token(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    ctx = make_context(table={_REPO_ARGS: ok(payload={"delete_branch_on_merge": False})})
+
+    outcome = _rows_github.assert_delete_branch_on_merge(ctx=ctx, member=_MEMBER)
+
+    assert isinstance(outcome, RowFinding)
+    assert outcome.severity == "warning"
+    assert "widget" in outcome.message
+    assert "delete_branch_on_merge" in outcome.message
 
 
 def test_topic_present_passes() -> None:

@@ -14,6 +14,7 @@ the App-token workflow runs jointly cover every row.
 from __future__ import annotations
 
 import json
+import os
 import re
 from typing import cast
 
@@ -33,6 +34,7 @@ __all__: list[str] = [
     "SIBLING_TOPIC",
     "assert_app_installation",
     "assert_branch_protection",
+    "assert_delete_branch_on_merge",
     "assert_merge_settings",
     "assert_secret_names",
     "assert_topic",
@@ -233,6 +235,33 @@ def assert_merge_settings(*, ctx: FleetContext, member: FleetMember) -> RowOutco
             message=f"{member.repo}: merge settings not rebase-only: {'; '.join(problems)}"
         )
     return RowPass()
+
+
+def _delete_branch_on_merge_severity() -> str:
+    """Severity lever: token-bearing runs fail; tokenless local runs warn."""
+    if os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN"):
+        return "error"
+    return "warning"
+
+
+def assert_delete_branch_on_merge(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:
+    """Merged PR head branches are deleted automatically for every fleet repo.
+
+    The repo setting is read from the same repo-object payload as merge
+    settings. It needs a GitHub token in real runs; tokenless local
+    runs still report the offender at warning severity rather than
+    silently skipping, while token-bearing contexts fail on any
+    non-true value.
+    """
+    severity = _delete_branch_on_merge_severity()
+    payload = ctx.api_object(path=f"repos/{ctx.owner}/{member.repo}")
+    setting = cast("dict[str, object]", payload or {}).get("delete_branch_on_merge")
+    if setting is True:
+        return RowPass()
+    return RowFinding(
+        message=f"{member.repo}: delete_branch_on_merge is {setting!r}, must be True",
+        severity=severity,
+    )
 
 
 def assert_topic(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:
