@@ -17,6 +17,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 from typing import cast
 
 from livespec_dev_tooling.fleet._context import (
@@ -140,6 +141,31 @@ def shim_content(*, path: str, ctx: FleetContext, member: FleetMember) -> str:
     return _SHIM_BODIES[path].format(owner=ctx.owner, repo=member.repo)
 
 
+_PEM_PRIVATE_KEY_RE = re.compile(
+    r"-----BEGIN ((?:[A-Z0-9]+ )*PRIVATE KEY)-----(.*?)-----END \1-----",
+    re.DOTALL,
+)
+
+
+def _rewrap_pem(*, value: str) -> str:
+    """Re-wrap a PEM private key to canonical 64-column lines (idempotent).
+
+    The 1Password Environment stores the App key un-wrapped (single-line), and
+    `op run` cannot be relied on to preserve interior newlines. A GitHub Actions
+    secret set from that raw value fails to decode (`DECODER routines`). Extract
+    the base64 body, strip all whitespace, and re-emit a canonical 64-column PEM
+    so the minted-token step can parse it. A non-PEM value (e.g. APP_ID) has no
+    match and passes through unchanged; an already-wrapped PEM re-wraps to itself.
+    """
+    match = _PEM_PRIVATE_KEY_RE.search(value)
+    if match is None:
+        return value
+    label = match.group(1)
+    body = re.sub(r"\s+", "", match.group(2))
+    wrapped = "\n".join(body[i : i + 64] for i in range(0, len(body), 64))
+    return f"-----BEGIN {label}-----\n{wrapped}\n-----END {label}-----\n"
+
+
 def _secret_value_from_env(*, destination_name: str) -> str | None:
     """Resolve the source env value for one destination Actions secret name."""
     for source_name in _SECRET_SOURCE_ENV_NAMES[destination_name]:
@@ -169,6 +195,7 @@ def reconcile_secret_names(*, ctx: FleetContext, member: FleetMember) -> RowOutc
                     "with-livespec-env.sh so the 1Password projection provides them"
                 )
             )
+        value = _rewrap_pem(value=value)
         result = ctx.run_gh(
             args=["secret", "set", name, "--repo", f"{ctx.owner}/{member.repo}"],
             stdin=value,

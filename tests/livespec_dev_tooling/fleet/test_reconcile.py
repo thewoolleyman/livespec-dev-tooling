@@ -22,6 +22,7 @@ from livespec_dev_tooling.fleet._context import (
 )
 from livespec_dev_tooling.fleet._reconcile import (
     SHIM_BRANCH,
+    _rewrap_pem,
     reconcile_branch_protection,
     reconcile_delete_branch_on_merge,
     reconcile_merge_settings,
@@ -202,6 +203,43 @@ def test_reconcile_secrets_failed_push_is_finding(*, monkeypatch: pytest.MonkeyP
     assert isinstance(outcome, RowFinding)
     assert "gh secret set APP_ID failed" in outcome.message
     assert "12345" not in outcome.message
+
+
+def test_rewrap_pem_normalizes_collapsed_single_line_key() -> None:
+    # The 1Password Environment stores GITHUB_PRIVATE_KEY as a collapsed
+    # single-line PEM (interior newlines stripped). Piped verbatim to
+    # `gh secret set`, that value fails `create-github-app-token` decode
+    # (OpenSSL `DECODER routines::unsupported`). `_rewrap_pem` must
+    # normalize it to canonical 64-column multi-line PEM, be idempotent on
+    # an already-wrapped key, and pass a non-PEM value (APP_ID) through.
+    canonical = (
+        "-----BEGIN RSA PRIVATE KEY-----\n"
+        + "A" * 64
+        + "\n"
+        + "B" * 64
+        + "\n"
+        + "CCCC\n"
+        + "-----END RSA PRIVATE KEY-----\n"
+    )
+    collapsed = (
+        "-----BEGIN RSA PRIVATE KEY-----"
+        + "A" * 64
+        + "B" * 64
+        + "CCCC"
+        + "-----END RSA PRIVATE KEY-----"
+    )
+    rewrapped = _rewrap_pem(value=collapsed)
+    # (a) collapsed single-line key becomes canonical multi-line form.
+    assert rewrapped == canonical
+    lines = rewrapped.splitlines()
+    assert len(lines) > 3
+    assert lines[0] == "-----BEGIN RSA PRIVATE KEY-----"
+    assert lines[-1] == "-----END RSA PRIVATE KEY-----"
+    assert all(len(line) <= 64 for line in lines[1:-1])
+    # (b) an already-wrapped PEM re-wraps to itself (idempotent).
+    assert _rewrap_pem(value=canonical) == canonical
+    # (c) a non-PEM value (e.g. APP_ID) passes through unchanged.
+    assert _rewrap_pem(value="1234567") == "1234567"
 
 
 def test_wire_fleet_member_doc_invocation_preserves_uv_path() -> None:
