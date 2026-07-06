@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.33.5](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.33.4...v0.33.5) (2026-07-06)
+
+
+### Bug Fixes
+
+* re-wrap collapsed single-line App-key PEM before setting fleet secret ([f4b4428](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f4b44286b0d79c7c2a0ba78a48d3e0b00fc05adf))
+
 ## [0.33.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.33.3...v0.33.4) (2026-07-04)
 
 
