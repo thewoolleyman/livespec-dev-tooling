@@ -457,9 +457,12 @@ def load_config(*, repo_root: Path) -> Config:
 # addition: no existing check is rerouted through this choke point yet.
 # ---------------------------------------------------------------------------
 
-# Ecosystem-generic file-extension -> native line-comment prefix(es)
-# registry `is_generated` uses to recognize the `@generated` sentinel in
-# EACH ecosystem's own comment syntax — never hardcoded to Python's `#`.
+# Ecosystem-generic file-extension -> native comment prefix(es) registry
+# `is_generated` uses to recognize the `@generated` sentinel in EACH
+# ecosystem's own comment syntax — never hardcoded to Python's `#`. A
+# prefix is matched at line start, so it may be a line-comment marker
+# (`#`, `//`, `--`) OR a block-comment OPEN delimiter (`/*`, `<!--`);
+# that lets a single-line block comment such as `/* @generated */` count.
 # Only `.py` is exercised by any current fleet repo; the rest is
 # future-proofing for the day a non-Python first-party tree needs the
 # same sentinel.
@@ -469,12 +472,12 @@ _COMMENT_PREFIXES_BY_EXTENSION: dict[str, tuple[str, ...]] = {
     ".yaml": ("#",),
     ".yml": ("#",),
     ".toml": ("#",),
-    ".rs": ("//",),
-    ".ts": ("//",),
-    ".js": ("//",),
-    ".go": ("//",),
-    ".c": ("//",),
-    ".h": ("//",),
+    ".rs": ("//", "/*"),
+    ".ts": ("//", "/*"),
+    ".js": ("//", "/*"),
+    ".go": ("//", "/*"),
+    ".c": ("//", "/*"),
+    ".h": ("//", "/*"),
     ".sql": ("--",),
     ".html": ("<!--",),
     ".md": ("<!--",),
@@ -493,10 +496,13 @@ def is_generated(*, path: Path) -> bool:
     directory name and never a per-repo glob list (which would recreate
     the fail-open allowlist this mechanism replaces). A line counts as a
     comment when its text, stripped of leading whitespace, starts with
-    one of the extension's native prefixes; `@generated` appearing on a
-    non-comment line (e.g. inside a docstring, which does not start
-    with `#`) does NOT count. An unrecognized extension is treated as
-    not-generated.
+    one of the extension's native prefixes — a line-comment marker (`#`,
+    `//`, `--`) or a block-comment OPEN delimiter (`/*`, `<!--`), so a
+    single-line block comment such as `/* @generated */` counts.
+    `@generated` appearing on a non-comment line (e.g. inside a docstring,
+    which does not start with `#`), or on a block-comment CONTINUATION
+    line (` * @generated`, which starts with `*` not `/*`), does NOT
+    count. An unrecognized extension is treated as not-generated.
     """
     prefixes = _COMMENT_PREFIXES_BY_EXTENSION.get(path.suffix)
     if prefixes is None:
