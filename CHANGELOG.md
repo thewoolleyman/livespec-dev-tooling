@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.34.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.34.1...v0.34.2) (2026-07-08)
+
+
+### Bug Fixes
+
+* reroute file_lloc coverage to the git-derived first-party universe ([4562773](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4562773557ddd7c0ffd38a5ffcc09386a994c4d0))
+
 ## [0.34.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.34.0...v0.34.1) (2026-07-08)
 
 
