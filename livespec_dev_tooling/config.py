@@ -458,23 +458,27 @@ def load_config(*, repo_root: Path) -> Config:
 # ---------------------------------------------------------------------------
 
 # Ecosystem-generic file-extension -> native line-comment prefix(es)
-# registry `is_generated` uses to recognize the `@generated` sentinel in
-# EACH ecosystem's own comment syntax — never hardcoded to Python's `#`.
-# Only `.py` is exercised by any current fleet repo; the rest is
-# future-proofing for the day a non-Python first-party tree needs the
-# same sentinel.
+# registry `is_generated` uses to recognize the generated-code sentinel
+# (see `_GENERATED_MARKER` below) in EACH ecosystem's own comment syntax
+# — never hardcoded to Python's `#`. Only `.py` is exercised by any
+# current fleet repo; the rest is future-proofing for the day a
+# non-Python first-party tree needs the same sentinel. NOTE: this
+# comment deliberately avoids spelling out the literal sentinel token —
+# a `#`-comment that names it directly would trip `is_generated` on
+# THIS FILE (a real self-referential false positive found by re-running
+# the fleet sanity check after landing this mechanism).
 _COMMENT_PREFIXES_BY_EXTENSION: dict[str, tuple[str, ...]] = {
     ".py": ("#",),
     ".sh": ("#",),
     ".yaml": ("#",),
     ".yml": ("#",),
     ".toml": ("#",),
-    ".rs": ("//",),
-    ".ts": ("//",),
-    ".js": ("//",),
-    ".go": ("//",),
-    ".c": ("//",),
-    ".h": ("//",),
+    ".rs": ("//", "/*"),
+    ".ts": ("//", "/*"),
+    ".js": ("//", "/*"),
+    ".go": ("//", "/*"),
+    ".c": ("//", "/*"),
+    ".h": ("//", "/*"),
     ".sql": ("--",),
     ".html": ("<!--",),
     ".md": ("<!--",),
@@ -497,6 +501,13 @@ def is_generated(*, path: Path) -> bool:
     non-comment line (e.g. inside a docstring, which does not start
     with `#`) does NOT count. An unrecognized extension is treated as
     not-generated.
+
+    The C-family extensions carry BOTH `//` and `/*` prefixes, so a
+    single-line block comment (`/* @generated ... */`) matches exactly
+    like a line comment. Out of scope: a MULTI-line block comment whose
+    `@generated` sits on a continuation line (e.g. a line starting with
+    `*`, not `/*`) — that shape is intentionally not recognized here, to
+    avoid a bare `*`-prefix producing false positives on unrelated code.
     """
     prefixes = _COMMENT_PREFIXES_BY_EXTENSION.get(path.suffix)
     if prefixes is None:
