@@ -58,11 +58,31 @@ _CLEAN_SOURCE = (
 )
 
 
+def _git(*, cwd: Path, args: list[str]) -> None:
+    """Run a `git` subcommand in `cwd` with a hermetic 3-key env.
+
+    The rerouted checks derive their file universe from the git index
+    (`config.resolve_check_universe`), so the consumer fixture must be a
+    real git working tree. `git` is not a Python spawn, so it is allowed;
+    the hardcoded env keeps `COVERAGE_PROCESS_START` out of this child.
+    """
+    _ = subprocess.run(
+        ["git", *args],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=True,
+        env={"HOME": str(cwd), "GIT_CONFIG_GLOBAL": "/dev/null", "PATH": "/usr/bin:/bin"},
+    )
+
+
 def _write_clean_consumer_fixture(*, root: Path) -> None:
     (root / "pyproject.toml").write_text(_CONSUMER_PYPROJECT, encoding="utf-8")
     src = root / "src"
     src.mkdir()
     (src / "mod.py").write_text(_CLEAN_SOURCE, encoding="utf-8")
+    _git(cwd=root, args=["init", "-q"])
+    _git(cwd=root, args=["add", "-A"])
 
 
 def _run_check_as_consumer(*, slug: str, cwd: Path) -> subprocess.CompletedProcess[str]:

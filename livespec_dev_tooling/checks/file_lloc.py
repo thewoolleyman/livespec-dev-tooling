@@ -69,7 +69,11 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
-from livespec_dev_tooling.config import iter_first_party_py_files  # noqa: E402
+from livespec_dev_tooling.config import (  # noqa: E402
+    is_under_any_tree,
+    iter_first_party_py_files,
+    resolve_repo_root,
+)
 
 __all__: list[str] = []
 
@@ -133,11 +137,6 @@ def _count_lloc(*, source: str) -> int:
     return len(code_lines)
 
 
-def _under_legacy_hardfail_tree(*, rel: Path) -> bool:
-    """True iff `rel` (a repo-root-relative path) sits under a legacy hard-fail tree."""
-    return any(rel.is_relative_to(tree) for tree in _LEGACY_HARDFAIL_TREES)
-
-
 def main() -> int:
     structlog.configure(
         processors=[
@@ -148,16 +147,16 @@ def main() -> int:
         logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
     )
     log = structlog.get_logger("file_lloc")
-    cwd = Path.cwd()
+    root = resolve_repo_root()
     legacy_soft_offenders: list[tuple[Path, int]] = []
     legacy_hard_offenders: list[tuple[Path, int]] = []
     newly_covered_offenders: list[tuple[Path, int]] = []
-    for rel in iter_first_party_py_files(repo_root=cwd):
-        source = (cwd / rel).read_text(encoding="utf-8")
+    for rel in iter_first_party_py_files(repo_root=root):
+        source = (root / rel).read_text(encoding="utf-8")
         lloc = _count_lloc(source=source)
         if lloc <= _LLOC_SOFT_CEILING:
             continue
-        if not _under_legacy_hardfail_tree(rel=rel):
+        if not is_under_any_tree(rel=rel, trees=_LEGACY_HARDFAIL_TREES):
             newly_covered_offenders.append((rel, lloc))
         elif lloc > _LLOC_HARD_CEILING:
             legacy_hard_offenders.append((rel, lloc))

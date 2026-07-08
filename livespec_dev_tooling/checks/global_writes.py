@@ -10,10 +10,22 @@ state from nested functions) is banned for the same reason —
 state flows down via parameters, up via return values, never
 through scoped mutation.
 
-The check walks every `.py` file under `.claude-plugin/
-scripts/livespec/`, parses each via `ast`, and inspects every
-`Global` and `Nonlocal` node. Any occurrence emits a structlog
-ERROR with file path and line number; the script exits 1.
+The check walks the git-derived first-party `.py` universe
+(`config.resolve_check_universe`), parses each via `ast`, and
+inspects every `Global` and `Nonlocal` node.
+
+Phase-0 rollout severity (fleet-check-coverage): the file
+universe is the git-derived first-party `.py` set
+(`config.iter_first_party_py_files`) rather than a
+`config.source_trees` walk. `config.source_trees` is retained
+ONLY as a delta-WARN severity classifier: a `global`/`nonlocal`
+in a file UNDER a `source_trees` tree keeps today's hard gate
+(an `error`-level diagnostic contributing to exit 1); the same
+violation in a file newly pulled into the git-derived universe
+emits at WARN (`warning`-level, `phase="0-warn"`, no exit-1
+contribution) until Phase 2 flips its repo to the hard gate. A
+genuinely codeless repo (zero first-party `.py`) passes with an
+info-level "nothing to check".
 
 Output discipline: per spec, `print` (T20) and
 `sys.stderr.write` (`check-no-write-direct`) are banned in
@@ -34,7 +46,12 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
-from livespec_dev_tooling.config import iter_py_files, load_config  # noqa: E402
+from livespec_dev_tooling.config import (  # noqa: E402
+    is_under_any_tree,
+    load_config,
+    resolve_check_universe,
+    resolve_repo_root,
+)
 
 __all__: list[str] = []
 
@@ -60,24 +77,41 @@ def main() -> int:
         logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
     )
     log = structlog.get_logger("global_writes")
-    cwd = Path.cwd()
-    config = load_config(repo_root=cwd)
-    offenders: list[tuple[Path, int, str]] = []
-    for tree_rel in config.source_trees:
-        for py_file in iter_py_files(root=cwd / tree_rel):
-            source = py_file.read_text(encoding="utf-8")
-            for lineno, keyword in _find_offenders(source=source):
-                offenders.append((py_file.relative_to(cwd), lineno, keyword))
-    if offenders:
-        for path, lineno, keyword in offenders:
-            log.error(
-                "module-level mutable writes from functions are banned",
-                file=str(path),
-                line=lineno,
-                keyword=keyword,
-            )
-        return 1
-    return 0
+    root = resolve_repo_root()
+    universe = resolve_check_universe(repo_root=root)
+    if not universe:
+        log.info("no first-party Python to check")
+        return 0
+    config = load_config(repo_root=root)
+    legacy_offenders: list[tuple[Path, int, str]] = []
+    newly_offenders: list[tuple[Path, int, str]] = []
+    for rel in universe:
+        source = (root / rel).read_text(encoding="utf-8")
+        for lineno, keyword in _find_offenders(source=source):
+            record = (rel, lineno, keyword)
+            if is_under_any_tree(rel=rel, trees=config.source_trees):
+                legacy_offenders.append(record)
+            else:
+                newly_offenders.append(record)
+    for path, lineno, keyword in legacy_offenders:
+        log.error(
+            "module-level mutable writes from functions are banned",
+            file=str(path),
+            line=lineno,
+            keyword=keyword,
+        )
+    for path, lineno, keyword in newly_offenders:
+        log.warning(
+            "module-level mutable writes from functions are banned — newly "
+            "git-derived coverage; Phase-0 WARN (hard-fails once this repo is "
+            "flipped to the hard gate in Phase 2)",
+            file=str(path),
+            line=lineno,
+            keyword=keyword,
+            phase="0-warn",
+            newly_covered=True,
+        )
+    return 1 if legacy_offenders else 0
 
 
 if __name__ == "__main__":

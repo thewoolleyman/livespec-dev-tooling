@@ -1,17 +1,28 @@
-"""Outside-in test for `dev-tooling/checks/all_declared.py` — `__all__` declaration discipline.
+"""Outside-in test for `livespec_dev_tooling/checks/all_declared.py` — `__all__` declaration discipline.
 
 Per `python-skill-script-style-requirements.md` §"Canonical
-target list" (the `check-all-declared` row), every module
-under `.claude-plugin/scripts/livespec/**` MUST declare a
-module-top `__all__: list[str]` (typed annotation, list
-literal). Every name in `__all__` must also be defined in the
-module. Two failure modes:
+target list" (the `check-all-declared` row), every livespec
+module MUST declare a module-top `__all__: list[str]` (typed
+annotation, list literal). Every name in `__all__` must also be
+defined in the module. Two failure modes: a missing `__all__`
+declaration, and a name in `__all__` not defined as a module-top
+name.
 
-- Missing `__all__` declaration entirely.
-- Names in `__all__` that are not defined as module-top names
-  (def, class, assignment, import).
+The check now resolves the files it inspects from the git-derived
+first-party `.py` universe (`config.resolve_check_universe`),
+root-anchored via `config.resolve_repo_root`, rather than a
+`config.source_trees` walk — so each fixture is a real git repo
+(`git init` + `git add -A`) before the check subprocess runs.
+Phase-0 delta-WARN severity: `config.source_trees` is retained as
+a classifier — either failure mode in a `source_trees` file keeps
+today's hard gate (`error`, exit 1); the identical failure in a
+NEWLY-covered file emits at WARN (`newly_covered` /
+`phase="0-warn"`, exit 0).
 
-Cycle 149 pins the first failure mode (missing `__all__`).
+The check is invoked as a `sys.executable` subprocess (this file is
+in the documented `subprocess_spawn_allowlist`); pytest-cov's
+pth-installed startup hook instruments the child so per-file
+coverage is measured.
 """
 
 from __future__ import annotations
@@ -26,32 +37,65 @@ __all__: list[str] = []
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _ALL_DECLARED = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "all_declared.py"
 
+_MISSING_ALL_SOURCE = (
+    "from __future__ import annotations\n" "\n" "\n" "def main() -> int:\n" "    return 0\n"
+)
+_UNDEFINED_NAME_SOURCE = (
+    "from __future__ import annotations\n"
+    "\n"
+    '__all__: list[str] = ["bogus"]\n'
+    "\n"
+    "\n"
+    "def real_thing() -> int:\n"
+    "    return 0\n"
+)
 
-def test_all_declared_rejects_module_missing_all_declaration(*, tmp_path: Path) -> None:
-    """A livespec module without `__all__: list[str] = ...` fails the check.
 
-    Fixture: `.claude-plugin/scripts/livespec/foo.py` contains
-    only `from __future__ import annotations` plus a function
-    definition — no `__all__` declaration. The check, invoked
-    with `cwd=tmp_path`, must walk the livespec subtree, parse
-    the file, detect the missing declaration, exit non-zero,
-    and surface the offending file path.
-    """
-    package_dir = tmp_path / ".claude-plugin" / "scripts" / "livespec"
-    package_dir.mkdir(parents=True)
-    source = package_dir / "foo.py"
-    source.write_text(
-        "from __future__ import annotations\n" "\n" "\n" "def main() -> int:\n" "    return 0\n",
-        encoding="utf-8",
+def _git(*, cwd: Path, args: list[str]) -> None:
+    """Run a `git` subcommand in `cwd` with a hermetic 3-key env (no os.environ)."""
+    _ = subprocess.run(
+        ["git", *args],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=True,
+        env={"HOME": str(cwd), "GIT_CONFIG_GLOBAL": "/dev/null", "PATH": "/usr/bin:/bin"},
     )
 
-    result = subprocess.run(
+
+def _init_repo_with_files(*, tmp_path: Path) -> None:
+    """`git init` the fixture and stage every file already written under it."""
+    _git(cwd=tmp_path, args=["init", "-q"])
+    _git(cwd=tmp_path, args=["add", "-A"])
+
+
+def _run_all_declared(*, cwd: Path) -> subprocess.CompletedProcess[str]:
+    """`git init` + stage the fixture, then run the check as a consumer would."""
+    _init_repo_with_files(tmp_path=cwd)
+    return subprocess.run(
         [sys.executable, str(_ALL_DECLARED)],
-        cwd=str(tmp_path),
+        cwd=str(cwd),
         capture_output=True,
         text=True,
         check=False,
     )
+
+
+def _write(*, tmp_path: Path, rel_path: str, source: str) -> None:
+    full = tmp_path / rel_path
+    full.parent.mkdir(parents=True, exist_ok=True)
+    _ = full.write_text(source, encoding="utf-8")
+
+
+def test_all_declared_rejects_module_missing_all_declaration(*, tmp_path: Path) -> None:
+    """A `source_trees` module without `__all__` fails hard (error, exit 1)."""
+    _write(
+        tmp_path=tmp_path,
+        rel_path=".claude-plugin/scripts/livespec/foo.py",
+        source=_MISSING_ALL_SOURCE,
+    )
+
+    result = _run_all_declared(cwd=tmp_path)
 
     assert result.returncode != 0, (
         f"all_declared should reject module without `__all__` with non-zero exit; "
@@ -67,34 +111,14 @@ def test_all_declared_rejects_module_missing_all_declaration(*, tmp_path: Path) 
 
 
 def test_all_declared_rejects_undefined_name_in_all(*, tmp_path: Path) -> None:
-    """An `__all__` entry not defined in the module fails the check.
-
-    Fixture: `.claude-plugin/scripts/livespec/foo.py` declares
-    `__all__: list[str] = ["bogus"]` but does not define
-    `bogus`. The check exits non-zero and surfaces both the
-    file path and the offending name.
-    """
-    package_dir = tmp_path / ".claude-plugin" / "scripts" / "livespec"
-    package_dir.mkdir(parents=True)
-    source = package_dir / "foo.py"
-    source.write_text(
-        "from __future__ import annotations\n"
-        "\n"
-        '__all__: list[str] = ["bogus"]\n'
-        "\n"
-        "\n"
-        "def real_thing() -> int:\n"
-        "    return 0\n",
-        encoding="utf-8",
+    """An `__all__` entry not defined in a `source_trees` module fails (exit 1)."""
+    _write(
+        tmp_path=tmp_path,
+        rel_path=".claude-plugin/scripts/livespec/foo.py",
+        source=_UNDEFINED_NAME_SOURCE,
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_ALL_DECLARED)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_all_declared(cwd=tmp_path)
 
     assert result.returncode != 0, (
         f"all_declared should reject undefined name in `__all__` with non-zero exit; "
@@ -109,23 +133,14 @@ def test_all_declared_rejects_undefined_name_in_all(*, tmp_path: Path) -> None:
 
 
 def test_all_declared_accepts_module_with_complete_all_declaration(*, tmp_path: Path) -> None:
-    """A livespec module with valid `__all__` listing all defined exports passes (exit 0).
+    """A module with valid `__all__` listing all defined exports passes (exit 0).
 
-    Pass-case: `__all__: list[str] = ["main"]` and `def main()`
-    is defined. The check walks the file, finds the
-    declaration, verifies every listed name is defined, exits 0.
+    The fixture exercises every recognized definition form (`import os`,
+    `from typing import Any`, `CONST = 1`, `x: int = 0`, `def fn`,
+    `class Cls`, tuple-unpack assign) so per-file coverage of
+    `_module_top_defined_names` holds.
     """
-    package_dir = tmp_path / ".claude-plugin" / "scripts" / "livespec"
-    package_dir.mkdir(parents=True)
-    source = package_dir / "foo.py"
-    # Pass-case fixture exercises every recognized definition
-    # form: `import os` (`Import`), `from typing import Any`
-    # (`ImportFrom`), `CONST = 1` (`Assign`), `x: int = 0`
-    # (`AnnAssign`), `def fn` (`FunctionDef`), `class Cls`
-    # (`ClassDef`). Exercises every elif arm of
-    # _module_top_defined_names so per-file 100% branch
-    # coverage holds.
-    source.write_text(
+    source = (
         '"""Module docstring exercises the top-level Expr fall-through arm."""\n'
         "from __future__ import annotations\n"
         "\n"
@@ -145,17 +160,11 @@ def test_all_declared_accepts_module_with_complete_all_declaration(*, tmp_path: 
         "\n"
         "\n"
         "class Cls:\n"
-        "    pass\n",
-        encoding="utf-8",
+        "    pass\n"
     )
+    _write(tmp_path=tmp_path, rel_path=".claude-plugin/scripts/livespec/foo.py", source=source)
 
-    result = subprocess.run(
-        [sys.executable, str(_ALL_DECLARED)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_all_declared(cwd=tmp_path)
 
     assert result.returncode == 0, (
         f"all_declared should accept valid module with exit 0; "
@@ -164,21 +173,41 @@ def test_all_declared_accepts_module_with_complete_all_declaration(*, tmp_path: 
     )
 
 
-def test_all_declared_accepts_tree_without_livespec_directory(*, tmp_path: Path) -> None:
-    """A repo cwd without `.claude-plugin/scripts/livespec/` passes the check (exit 0).
+def test_all_declared_warns_newly_covered_missing_all(*, tmp_path: Path) -> None:
+    """A missing-`__all__` module OUTSIDE `source_trees` WARNS (newly-covered), exit 0."""
+    _write(tmp_path=tmp_path, rel_path="pkg/foo.py", source=_MISSING_ALL_SOURCE)
 
-    Closes the `if livespec_root.is_dir():` False arm.
-    """
-    result = subprocess.run(
-        [sys.executable, str(_ALL_DECLARED)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_all_declared(cwd=tmp_path)
+
+    assert result.returncode == 0
+    combined = result.stdout + result.stderr
+    assert "pkg/foo.py" in combined
+    assert "newly_covered" in combined
+    assert '"level": "error"' not in combined
+
+
+def test_all_declared_warns_newly_covered_undefined_name(*, tmp_path: Path) -> None:
+    """An undefined-`__all__`-name module OUTSIDE `source_trees` WARNS (newly-covered), exit 0."""
+    _write(tmp_path=tmp_path, rel_path="pkg/foo.py", source=_UNDEFINED_NAME_SOURCE)
+
+    result = _run_all_declared(cwd=tmp_path)
+
+    assert result.returncode == 0
+    combined = result.stdout + result.stderr
+    assert "pkg/foo.py" in combined
+    assert "bogus" in combined
+    assert "newly_covered" in combined
+    assert '"level": "error"' not in combined
+
+
+def test_all_declared_accepts_codeless_repo(*, tmp_path: Path) -> None:
+    """A genuinely codeless repo (0 first-party `.py`) passes (exit 0)."""
+    _ = (tmp_path / "README.md").write_text("no code\n", encoding="utf-8")
+
+    result = _run_all_declared(cwd=tmp_path)
 
     assert result.returncode == 0, (
-        f"all_declared should accept empty tree with exit 0; "
+        f"all_declared should accept a codeless repo with exit 0; "
         f"got returncode={result.returncode} "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )

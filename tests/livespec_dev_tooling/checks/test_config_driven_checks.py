@@ -31,9 +31,30 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 _CHECKS_DIR = _REPO_ROOT / "livespec_dev_tooling" / "checks"
 
 
+def _git(*, cwd: Path, args: list[str]) -> None:
+    """Run a `git` subcommand in `cwd` with a hermetic 3-key env.
+
+    The source-tree-walking checks now derive their file universe from the
+    git index (`config.resolve_check_universe`), so the fixture must be a
+    real git working tree. `git` is not a Python spawn, so it is allowed;
+    the hardcoded env keeps `COVERAGE_PROCESS_START` out of this child.
+    """
+    _ = subprocess.run(
+        ["git", *args],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=True,
+        env={"HOME": str(cwd), "GIT_CONFIG_GLOBAL": "/dev/null", "PATH": "/usr/bin:/bin"},
+    )
+
+
 def _run_check(*, slug: str, cwd: Path) -> subprocess.CompletedProcess[str]:
     # S603: argv is a fixed list (the venv interpreter + a repo-controlled
-    # check path); no untrusted shell input.
+    # check path); no untrusted shell input. `git init` + stage first, so the
+    # git-derived universe (and root-anchoring) resolves against the fixture.
+    _git(cwd=cwd, args=["init", "-q"])
+    _git(cwd=cwd, args=["add", "-A"])
     return subprocess.run(
         [sys.executable, str(_CHECKS_DIR / f"{slug}.py")],
         cwd=str(cwd),
@@ -75,13 +96,18 @@ def test_source_trees_check_walks_config_declared_tree(*, tmp_path: Path) -> Non
     assert "custom_pkg/mod.py" in result.stderr
 
 
-def test_source_trees_check_ignores_default_tree_when_block_present(*, tmp_path: Path) -> None:
-    """With a present block declaring an unrelated tree, the default tree is NOT walked.
+def test_source_trees_violation_outside_declared_trees_is_newly_covered_warn(
+    *, tmp_path: Path
+) -> None:
+    """A violation OUTSIDE the declared `source_trees` is newly-covered (WARN), not a hard fail.
 
-    A violation seeded under the livespec-core default tree
-    `.claude-plugin/scripts/livespec/` must be IGNORED when the block
-    declares only `source_trees = ["custom_pkg"]` — the present-block
-    regime opts out of the livespec-core fallback.
+    Under the git-derived reroute, `source_trees` no longer SELECTS the file
+    universe (the check walks the whole git index via
+    `config.resolve_check_universe`); it is the delta-WARN severity
+    classifier. So a violation seeded under the livespec-core default tree
+    `.claude-plugin/scripts/livespec/` — outside the declared
+    `source_trees = ["custom_pkg"]` — IS walked, but emits at WARN
+    (`newly_covered`, `phase="0-warn"`) and does NOT contribute to exit 1.
     """
     _write_block(repo_root=tmp_path, body='source_trees = ["custom_pkg"]\n')
     (tmp_path / "custom_pkg").mkdir()
@@ -98,9 +124,11 @@ def test_source_trees_check_ignores_default_tree_when_block_present(*, tmp_path:
     )
     result = _run_check(slug="no_inheritance", cwd=tmp_path)
     assert result.returncode == 0, (
-        f"no_inheritance must not walk the livespec-core default tree when a "
-        f"block declares a different source_trees; stderr={result.stderr!r}"
+        f"a violation outside the declared source_trees must NOT hard-fail; "
+        f"stderr={result.stderr!r}"
     )
+    assert ".claude-plugin/scripts/livespec/bad.py" in result.stderr
+    assert "newly_covered" in result.stderr
 
 
 def _assert_noop_on_absent_role_key(*, slug: str, role: str, tmp_path: Path) -> None:
