@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.34.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.34.0...v0.34.1) (2026-07-08)
+
+
+### Bug Fixes
+
+* recognize [@generated](https://github.com/generated) marker in C-family block comments ([c0eca10](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c0eca10705057d9856e60fcdf75cca7af36ce5a4))
+
 ## [0.34.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.33.5...v0.34.0) (2026-07-08)
 
 
