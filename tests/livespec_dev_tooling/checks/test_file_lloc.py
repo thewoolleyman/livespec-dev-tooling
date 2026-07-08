@@ -1,9 +1,27 @@
-"""Outside-in test for `dev-tooling/checks/file_lloc.py` — per-file LLOC two-tier policy.
+"""Outside-in test for `livespec_dev_tooling/checks/file_lloc.py` — per-file LLOC policy.
 
 Per `SPECIFICATION/constraints.md` §"File LLOC ceiling" (post-v005):
 files at 201-250 LLOC pass with a structured warning (SOFT ceiling);
 files above 250 LLOC fail (HARD ceiling). LLOC excludes blank lines,
 comment-only lines, and module/class/function docstrings.
+
+The check now resolves the files it inspects from the git-derived
+first-party `.py` universe (`config.iter_first_party_py_files`) rather
+than a hardcoded `_COVERED_TREES` tuple, so every test builds a real
+temp git working tree and `git add`s its files before invoking
+`main()` under a monkeypatched cwd — the same hermetic shape the
+`iter_first_party_py_files` foundation tests use in
+`tests/livespec_dev_tooling/test_config.py`. `git ls-files` reads the
+index, so files must be `git add`ed (no commit is needed).
+
+Phase-0 severity: the three legacy trees
+(`.claude-plugin/scripts/livespec`, `.claude-plugin/scripts/bin`,
+`dev-tooling`) are retained ONLY as a severity classifier. A file
+UNDER a legacy tree keeps today's hard gate (soft-warn 201-250,
+hard-fail >250, exit 1); a file NEWLY pulled into the git-derived
+universe emits every LLOC diagnostic at WARN (even >250, no exit-1
+contribution) with a `newly_covered` / `phase="0-warn"` marker, until
+Phase 2 flips its repo to the hard gate.
 
 The check is driven IN-PROCESS (`monkeypatch.chdir(tmp_path)` +
 `capsys` + `rc = main()`) rather than via a `sys.executable`
@@ -16,6 +34,7 @@ reads `Path.cwd()`, so the monkeypatched cwd is the fixture root.
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 from pathlib import Path
 from types import ModuleType
 from typing import NamedTuple
@@ -54,6 +73,28 @@ class _CheckRun(NamedTuple):
     stderr: str
 
 
+def _git(*, cwd: Path, args: list[str]) -> None:
+    """Run a `git` subcommand in `cwd` with a hermetic env.
+
+    `git` is not a Python spawn (`tests_no_subprocess_spawn` only forbids
+    `sys.executable`/`python`/`python3` argv[0]), so this is allowed in
+    `tests/`. The env is a hardcoded 3-key dict (never an `os.environ`
+    passthrough), so `COVERAGE_PROCESS_START` / `COV_CORE_*` can never leak
+    into the child — the same shape `test_config.py` uses for the
+    `iter_first_party_py_files` foundation tests.
+    """
+    # S603/S607: argv is a fixed list (literal git binary + repo-controlled
+    # args); no untrusted shell input.
+    _ = subprocess.run(
+        ["git", *args],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=True,
+        env={"HOME": str(cwd), "GIT_CONFIG_GLOBAL": "/dev/null", "PATH": "/usr/bin:/bin"},
+    )
+
+
 def _run_check(
     *, cwd: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> _CheckRun:
@@ -74,15 +115,22 @@ def _write_py_with_lloc(*, tmp_path: Path, rel_path: str, n_statements: int) -> 
     )
 
 
-def test_file_lloc_rejects_file_exceeding_hard_ceiling(
+def _init_repo_with_files(*, tmp_path: Path) -> None:
+    """`git init` the fixture and stage every file already written under it."""
+    _git(cwd=tmp_path, args=["init", "-q"])
+    _git(cwd=tmp_path, args=["add", "-A"])
+
+
+def test_file_lloc_rejects_legacy_hard_offender(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A `.py` file with > 250 LLOC fails (exit 1)."""
+    """A legacy-tree `.py` file with > 250 LLOC fails (exit 1) — the hard gate is preserved."""
     _write_py_with_lloc(
         tmp_path=tmp_path,
         rel_path=".claude-plugin/scripts/livespec/big.py",
         n_statements=300,
     )
+    _init_repo_with_files(tmp_path=tmp_path)
     result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode != 0
     combined = result.stdout + result.stderr
@@ -90,15 +138,16 @@ def test_file_lloc_rejects_file_exceeding_hard_ceiling(
     assert "hard ceiling" in combined
 
 
-def test_file_lloc_warns_but_passes_in_soft_band(
+def test_file_lloc_warns_legacy_soft_offender(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A `.py` file with 201-250 LLOC passes with exit 0 but emits a warning."""
+    """A legacy-tree `.py` file with 201-250 LLOC passes (exit 0) but warns."""
     _write_py_with_lloc(
         tmp_path=tmp_path,
         rel_path=".claude-plugin/scripts/livespec/medium.py",
         n_statements=220,
     )
+    _init_repo_with_files(tmp_path=tmp_path)
     result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
     combined = result.stdout + result.stderr
@@ -106,15 +155,16 @@ def test_file_lloc_warns_but_passes_in_soft_band(
     assert ".claude-plugin/scripts/livespec/medium.py" in combined
 
 
-def test_file_lloc_accepts_file_at_or_below_soft_ceiling(
+def test_file_lloc_accepts_legacy_file_below_soft_ceiling(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A `.py` file with ≤ 200 LLOC passes silently (no warning, exit 0)."""
+    """A legacy-tree `.py` file with ≤ 200 LLOC passes silently (no warning, exit 0)."""
     _write_py_with_lloc(
         tmp_path=tmp_path,
         rel_path=".claude-plugin/scripts/livespec/small.py",
         n_statements=50,
     )
+    _init_repo_with_files(tmp_path=tmp_path)
     result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
     combined = result.stdout + result.stderr
@@ -122,25 +172,26 @@ def test_file_lloc_accepts_file_at_or_below_soft_ceiling(
     assert "hard ceiling" not in combined
 
 
-def test_file_lloc_accepts_file_at_exactly_hard_ceiling(
+def test_file_lloc_accepts_legacy_file_at_hard_ceiling(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A `.py` file with exactly 250 LLOC passes (warning emitted, exit 0).
+    """A legacy-tree `.py` file at exactly 250 LLOC passes (soft band, exit 0).
 
     250 is in the soft band (201-250); only > 250 is the hard fail.
-    Constructing exactly 250 LLOC: 3 setup lines (future-import,
-    blank line, __all__) plus 247 assignment statements. blank lines
-    don't count, future-import and __all__ count as 2 LLOC, +247 = 249.
-    Use 248 statements to land at exactly 250 LLOC.
+    `_write_py_with_lloc` emits 2 setup statements (future-import,
+    `__all__`) plus `n_statements` assignments, so 248 statements lands
+    at exactly 250 LLOC.
     """
     _write_py_with_lloc(
         tmp_path=tmp_path,
         rel_path=".claude-plugin/scripts/livespec/edge.py",
         n_statements=248,
     )
+    _init_repo_with_files(tmp_path=tmp_path)
     result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
-    # Exit 0 either way (in soft band or below); just verify no hard fail.
     assert result.returncode == 0
+    combined = result.stdout + result.stderr
+    assert "hard ceiling" not in combined
 
 
 def test_file_lloc_excludes_blank_lines_and_comments_and_docstrings(
@@ -166,14 +217,15 @@ def test_file_lloc_excludes_blank_lines_and_comments_and_docstrings(
         "z = 2\n",
         encoding="utf-8",
     )
+    _init_repo_with_files(tmp_path=tmp_path)
     result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
 
 
-def test_file_lloc_emits_both_tiers_in_one_run(
+def test_file_lloc_emits_legacy_soft_and_hard_in_one_run(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """When both soft and hard offenders exist, hard wins (exit 1) + both diagnostics emit."""
+    """When both soft and hard legacy offenders exist, hard wins (exit 1) + both diagnostics."""
     _write_py_with_lloc(
         tmp_path=tmp_path,
         rel_path=".claude-plugin/scripts/livespec/medium.py",
@@ -184,6 +236,7 @@ def test_file_lloc_emits_both_tiers_in_one_run(
         rel_path=".claude-plugin/scripts/livespec/big.py",
         n_statements=300,
     )
+    _init_repo_with_files(tmp_path=tmp_path)
     result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode != 0
     combined = result.stdout + result.stderr
@@ -191,10 +244,64 @@ def test_file_lloc_emits_both_tiers_in_one_run(
     assert "hard ceiling" in combined
 
 
-def test_file_lloc_accepts_empty_tree(
+def test_file_lloc_warns_newly_covered_hard_offender(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """An empty repo cwd passes (exit 0)."""
+    """A > 250-LLOC file OUTSIDE the legacy trees WARNS (newly-covered) and passes (exit 0).
+
+    This is the fail-open hole the reroute closes: the old
+    `_COVERED_TREES` rglob never saw a file at `pkg/big.py`, so a repo
+    with an oversized non-legacy file reported green. The git-derived
+    universe now sees it, but Phase-0 severity keeps it at WARN (with a
+    `newly_covered` marker) rather than hard-failing.
+    """
+    _write_py_with_lloc(tmp_path=tmp_path, rel_path="pkg/big.py", n_statements=300)
+    _init_repo_with_files(tmp_path=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 0
+    combined = result.stdout + result.stderr
+    assert "pkg/big.py" in combined
+    assert "newly_covered" in combined
+    # WARN-not-error: the legacy hard-fail error message must NOT appear.
+    assert "250-line hard ceiling" not in combined
+
+
+def test_file_lloc_warns_orchestrator_shaped_repo(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A repo whose package dir is NOT named `livespec/` (orchestrator shape) WARNS, exit 0.
+
+    The orchestrator's package is `livespec_orchestrator_beads_fabro/`
+    with a 2,616-line `dispatcher.py`; the old rglob over
+    `.claude-plugin/scripts/livespec` etc. walked zero files there. The
+    git-derived universe finds the package regardless of its name, and
+    Phase-0 severity emits at WARN, not red.
+    """
+    _write_py_with_lloc(
+        tmp_path=tmp_path,
+        rel_path="livespec_orchestrator_beads_fabro/dispatcher.py",
+        n_statements=300,
+    )
+    _init_repo_with_files(tmp_path=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 0
+    combined = result.stdout + result.stderr
+    assert "livespec_orchestrator_beads_fabro/dispatcher.py" in combined
+    assert "newly_covered" in combined
+    assert "250-line hard ceiling" not in combined
+
+
+def test_file_lloc_accepts_codeless_repo(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A genuinely codeless repo (0 first-party `.py`) walks nothing and passes (exit 0).
+
+    The verified fleet case is `livespec-console-beads-fabro`; the
+    git-derived universe is empty, which is a legitimate result, not an
+    error.
+    """
+    _ = (tmp_path / "README.md").write_text("no code here\n", encoding="utf-8")
+    _init_repo_with_files(tmp_path=tmp_path)
     result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
 
