@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.34.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.33.5...v0.34.0) (2026-07-08)
+
+
+### Features
+
+* git-derived first-party .py universe primitive (foundation, no reroute) ([70b4cc0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/70b4cc060760ae975689aba16f387ad2de3ada13))
+
 ## [0.33.5](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.33.4...v0.33.5) (2026-07-06)
 
 
