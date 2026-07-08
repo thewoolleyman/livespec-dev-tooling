@@ -19,6 +19,17 @@ Two default regimes, per §"Default layout fallback" + §"Role keys":
    keys"). The consumer declares only the role keys its layout actually
    has.
 
+Alongside the consumer-config loader, this module also derives the
+git-index first-party `.py` universe (`iter_first_party_py_files`) — the
+foundation of the fleet-check-coverage mechanism (`livespec` repo's
+`plan/fleet-check-coverage/research/design.md`; epic `livespec-i5ebqd`,
+item `livespec-fa3eu5`): `git ls-files '*.py'` minus the exemptions
+`filter_first_party_py` applies (`_vendor/`, the configured test tree,
+`templates/**`, and any `@generated`-marked file per `is_generated`).
+This is a PURE ADDITION — nothing here reroutes any existing check or
+changes its behavior; wiring an actual check through this choke point
+is a later PR.
+
 Output discipline: per spec, `print` (T20) and `sys.stderr.write`
 (`check-no-write-direct`) are banned in this package. This module raises
 a typed `ConfigParseError` (an IO-layer exception caught by each check's
@@ -27,8 +38,10 @@ a typed `ConfigParseError` (an IO-layer exception caught by each check's
 
 from __future__ import annotations
 
+import os
+import subprocess
 import sys
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -50,7 +63,12 @@ else:
 __all__: list[str] = [
     "Config",
     "ConfigParseError",
+    "GitLsFilesError",
     "MirrorPairing",
+    "filter_first_party_py",
+    "has_first_party_py",
+    "is_generated",
+    "iter_first_party_py_files",
     "iter_py_files",
     "load_config",
     "load_destructive_cli_allowlist",
@@ -71,6 +89,17 @@ class ConfigParseError(Exception):
     An IO-layer exception per `SPECIFICATION/contracts.md` §"Configuration
     loader" — each check's `main()` supervisor catches it and renders a
     structured diagnostic.
+    """
+
+
+class GitLsFilesError(Exception):
+    """Raised when the `git ls-files` subprocess fails.
+
+    An IO-layer exception (the `iter_first_party_py_files` analog of
+    `ConfigParseError`) raised when `repo_root` is not inside a git
+    working tree, or the `git` binary otherwise exits non-zero, rather
+    than silently returning an empty universe — the exact fail-open
+    shape the fleet-check-coverage design replaces.
     """
 
 
@@ -420,3 +449,152 @@ def load_config(*, repo_root: Path) -> Config:
         target_dirs=overrides.get("target_dirs", baseline.target_dirs),
         mirror_pairings=overrides.get("mirror_pairings", baseline.mirror_pairings),
     )
+
+
+# ---------------------------------------------------------------------------
+# Git-derived first-party `.py` universe — fleet-check-coverage Phase-0
+# foundation (epic `livespec-i5ebqd`, item `livespec-fa3eu5`). Pure
+# addition: no existing check is rerouted through this choke point yet.
+# ---------------------------------------------------------------------------
+
+# Ecosystem-generic file-extension -> native line-comment prefix(es)
+# registry `is_generated` uses to recognize the `@generated` sentinel in
+# EACH ecosystem's own comment syntax — never hardcoded to Python's `#`.
+# Only `.py` is exercised by any current fleet repo; the rest is
+# future-proofing for the day a non-Python first-party tree needs the
+# same sentinel.
+_COMMENT_PREFIXES_BY_EXTENSION: dict[str, tuple[str, ...]] = {
+    ".py": ("#",),
+    ".sh": ("#",),
+    ".yaml": ("#",),
+    ".yml": ("#",),
+    ".toml": ("#",),
+    ".rs": ("//",),
+    ".ts": ("//",),
+    ".js": ("//",),
+    ".go": ("//",),
+    ".c": ("//",),
+    ".h": ("//",),
+    ".sql": ("--",),
+    ".html": ("<!--",),
+    ".md": ("<!--",),
+}
+_GENERATED_MARKER = "@generated"
+_TEMPLATES_PREFIX = "templates/"
+
+
+def is_generated(*, path: Path) -> bool:
+    """True iff `path` carries the `@generated` sentinel in its native comment syntax.
+
+    Per the fleet-check-coverage design's OQ1 resolution, a file counts
+    as generated ONLY when the literal token `@generated` appears on a
+    line that IS a comment in that file's own ecosystem — looked up by
+    extension in `_COMMENT_PREFIXES_BY_EXTENSION` — never merely a
+    directory name and never a per-repo glob list (which would recreate
+    the fail-open allowlist this mechanism replaces). A line counts as a
+    comment when its text, stripped of leading whitespace, starts with
+    one of the extension's native prefixes; `@generated` appearing on a
+    non-comment line (e.g. inside a docstring, which does not start
+    with `#`) does NOT count. An unrecognized extension is treated as
+    not-generated.
+    """
+    prefixes = _COMMENT_PREFIXES_BY_EXTENSION.get(path.suffix)
+    if prefixes is None:
+        return False
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith(prefixes) and _GENERATED_MARKER in stripped:
+            return True
+    return False
+
+
+def filter_first_party_py(
+    *,
+    tracked_py: Iterable[Path],
+    repo_root: Path,
+    tests_tree_prefix: str,
+) -> tuple[Path, ...]:
+    """Filter a tracked `.py` set down to its first-party subset (pure — no listing IO).
+
+    Per the fleet-check-coverage design's recommended predicate: a
+    `git ls-files`-tracked, repo-root-relative `.py` path is first-party
+    unless it (a) has a `_vendor` path segment, (b) is under the
+    configured test tree (`tests_tree_prefix`, prefix-matched exactly
+    like `config.tests_tree_prefix` is used elsewhere in this module) or
+    is named `conftest.py`, (c) is under `templates/` (copier payload
+    livespec ships but does not govern), or (d) carries the `@generated`
+    sentinel (`is_generated`). This function does no subprocess/listing
+    IO of its own — `tracked_py` is assumed already obtained (e.g. from
+    `git ls-files`) — though `is_generated` DOES read file contents, so
+    `repo_root` is needed to resolve each candidate to an absolute path
+    for that read. Returns the sorted survivors.
+    """
+    out: list[Path] = []
+    for rel in tracked_py:
+        if _VENDOR_MARKER in rel.parts:
+            continue
+        posix = rel.as_posix()
+        if posix.startswith(tests_tree_prefix) or rel.name == "conftest.py":
+            continue
+        if posix.startswith(_TEMPLATES_PREFIX):
+            continue
+        if is_generated(path=repo_root / rel):
+            continue
+        out.append(rel)
+    return tuple(sorted(out))
+
+
+def iter_first_party_py_files(*, repo_root: Path) -> tuple[Path, ...]:
+    """Return the first-party `.py` universe: `git ls-files '*.py'` minus exemptions.
+
+    The git-index-derived choke point the fleet-check-coverage design
+    introduces: shells `git ls-files '*.py'` in `repo_root` (an argv
+    list, so the glob is passed literally with no shell expansion),
+    loads the consumer's configured `tests_tree_prefix` via `load_config`
+    (the single source of truth), and passes both through
+    `filter_first_party_py`. Unlike `iter_py_files` (a filesystem
+    `rglob` under a caller-supplied root), this walks the git INDEX —
+    auto-excluding gitignored scratch (`.venv/`, `mutants/`,
+    `__pycache__/`) and finding a non-`livespec`-named package directory
+    with no per-repo config.
+
+    Raises `GitLsFilesError` if the `git ls-files` subprocess exits
+    non-zero (e.g. `repo_root` is not a git working tree). Returns an
+    empty tuple for a repo with genuinely zero first-party `.py` (the
+    verified fleet case: livespec-console-beads-fabro) — that is a
+    legitimate result, not an error; telling the two cases apart is a
+    later fail-closed guard's job, not this function's.
+    """
+    # S603/S607: argv is a fixed list of literal git args; no shell input.
+    # Every GIT_* var is stripped from the child env: a parent process
+    # (e.g. a git hook) can inject GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE,
+    # which would override `cwd` and point the listing at the WRONG repo.
+    git_env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    completed = subprocess.run(  # noqa: S603
+        ["git", "ls-files", "*.py"],  # noqa: S607
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=str(repo_root),
+        env=git_env,
+    )
+    if completed.returncode != 0:
+        msg = f"git ls-files failed (exit {completed.returncode}): {completed.stderr.strip()}"
+        raise GitLsFilesError(msg)
+    tracked = tuple(Path(line) for line in completed.stdout.splitlines() if line)
+    config = load_config(repo_root=repo_root)
+    return filter_first_party_py(
+        tracked_py=tracked, repo_root=repo_root, tests_tree_prefix=config.tests_tree_prefix
+    )
+
+
+def has_first_party_py(*, repo_root: Path) -> bool:
+    """True iff `repo_root` has at least one first-party `.py` file.
+
+    A trivial derivation of `iter_first_party_py_files`, added ahead of
+    need for a later fail-closed empty-walk guard (that guard's
+    "genuinely codeless" branch — the console repo — is what this
+    predicate answers). Changes no existing behavior; wiring the guard
+    itself is a later PR.
+    """
+    return bool(iter_first_party_py_files(repo_root=repo_root))
