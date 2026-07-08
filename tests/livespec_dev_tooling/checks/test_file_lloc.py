@@ -138,6 +138,32 @@ def test_file_lloc_rejects_legacy_hard_offender(
     assert "hard ceiling" in combined
 
 
+def test_file_lloc_anchors_on_repo_root_from_subdirectory(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Invoked from a SUBDIRECTORY, file_lloc still hard-fails a legacy-tree > 250 file.
+
+    file_lloc's PR1 walk anchored on `Path.cwd()`; invoked from a subdir it
+    would shell `git ls-files` in that subdir and miss the oversized
+    legacy-tree file (a silent exit 0). Re-anchoring on `resolve_repo_root`
+    (PR2) makes the walk invocation-location-independent, so the hard gate
+    fires regardless of cwd depth.
+    """
+    _write_py_with_lloc(
+        tmp_path=tmp_path,
+        rel_path=".claude-plugin/scripts/livespec/big.py",
+        n_statements=300,
+    )
+    subdir = tmp_path / "pkg" / "nested"
+    subdir.mkdir(parents=True)
+    _init_repo_with_files(tmp_path=tmp_path)
+    result = _run_check(cwd=subdir, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode != 0
+    combined = result.stdout + result.stderr
+    assert ".claude-plugin/scripts/livespec/big.py" in combined
+    assert "hard ceiling" in combined
+
+
 def test_file_lloc_warns_legacy_soft_offender(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

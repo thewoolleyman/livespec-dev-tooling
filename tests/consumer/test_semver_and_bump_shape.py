@@ -54,6 +54,24 @@ def _declared_version() -> str:
     return match.group("version")
 
 
+def _git(*, cwd: Path, args: list[str]) -> None:
+    """Run a `git` subcommand in `cwd` with a hermetic 3-key env.
+
+    The rerouted checks derive their file universe from the git index
+    (`config.resolve_check_universe`), so the consumer fixture must be a
+    real git working tree. `git` is not a Python spawn, so it is allowed;
+    the hardcoded env keeps `COVERAGE_PROCESS_START` out of this child.
+    """
+    _ = subprocess.run(
+        ["git", *args],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=True,
+        env={"HOME": str(cwd), "GIT_CONFIG_GLOBAL": "/dev/null", "PATH": "/usr/bin:/bin"},
+    )
+
+
 def test_declared_version_is_a_wellformed_three_part_semver() -> None:
     """The package version is `MAJOR.MINOR.PATCH` of non-negative integers.
 
@@ -86,6 +104,8 @@ def test_existing_check_argv_and_exit_code_contract_is_stable(*, tmp_path: Path)
     (tmp_path / "pyproject.toml").write_text(
         "[tool.livespec_dev_tooling]\nsource_trees = []\n", encoding="utf-8"
     )
+    _git(cwd=tmp_path, args=["init", "-q"])
+    _git(cwd=tmp_path, args=["add", "-A"])
 
     result = subprocess.run(
         [sys.executable, "-m", "livespec_dev_tooling.checks.no_inheritance"],

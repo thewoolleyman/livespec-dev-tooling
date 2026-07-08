@@ -1,14 +1,25 @@
-"""Outside-in test for `dev-tooling/checks/assert_never_exhaustiveness.py` — `case _: assert_never(<subject>)` terminator.
+"""Outside-in test for `livespec_dev_tooling/checks/assert_never_exhaustiveness.py`.
 
 Per `python-skill-script-style-requirements.md` §"Canonical
 target list" (the `check-assert-never-exhaustiveness` row),
 every `match` statement in `livespec/**` MUST terminate with
-`case _: assert_never(<subject>)` where `<subject>` is the
-match-statement's subject expression. Conservative scope:
-every match, regardless of subject type.
+`case _: assert_never(<subject>)`. Conservative scope: every
+match, regardless of subject type.
 
-Cycle 156 pins the rejection of a match without a final
-`case _:` arm.
+The check now resolves the files it inspects from the git-derived
+first-party `.py` universe (`config.resolve_check_universe`),
+root-anchored via `config.resolve_repo_root`, rather than a
+`config.source_trees` walk — so each fixture is a real git repo
+(`git init` + `git add -A`) before the check subprocess runs.
+Phase-0 delta-WARN severity: `config.source_trees` is retained as
+a classifier — a non-compliant `match` in a `source_trees` file
+keeps today's hard gate (`error`, exit 1); the identical violation
+in a NEWLY-covered file emits at WARN (`newly_covered` /
+`phase="0-warn"`, exit 0).
+
+The check is invoked as a `sys.executable` subprocess (this file is
+in the documented `subprocess_spawn_allowlist`); pytest-cov's
+pth-installed startup hook instruments the child.
 """
 
 from __future__ import annotations
@@ -25,43 +36,68 @@ _ASSERT_NEVER_EXHAUSTIVENESS = (
     _REPO_ROOT / "livespec_dev_tooling" / "checks" / "assert_never_exhaustiveness.py"
 )
 
+_MISSING_TERMINATOR_SOURCE = (
+    "from __future__ import annotations\n"
+    "\n"
+    "__all__: list[str] = []\n"
+    "\n"
+    "\n"
+    "def handle(val: int) -> int:\n"
+    "    match val:\n"
+    "        case 0:\n"
+    "            return 1\n"
+    "        case 1:\n"
+    "            return 2\n"
+)
 
-def test_assert_never_exhaustiveness_rejects_match_missing_case_underscore(
-    *,
-    tmp_path: Path,
-) -> None:
-    """A `match` lacking a final `case _: assert_never(...)` arm fails the check.
 
-    Fixture: a livespec module with a match statement that
-    handles two specific cases but does not terminate with
-    `case _: assert_never(val)`. Banned — the universal
-    terminator is required.
-    """
-    package_dir = tmp_path / ".claude-plugin" / "scripts" / "livespec"
-    package_dir.mkdir(parents=True)
-    source = package_dir / "foo.py"
-    source.write_text(
-        "from __future__ import annotations\n"
-        "\n"
-        "__all__: list[str] = []\n"
-        "\n"
-        "\n"
-        "def handle(val: int) -> int:\n"
-        "    match val:\n"
-        "        case 0:\n"
-        "            return 1\n"
-        "        case 1:\n"
-        "            return 2\n",
-        encoding="utf-8",
+def _git(*, cwd: Path, args: list[str]) -> None:
+    """Run a `git` subcommand in `cwd` with a hermetic 3-key env (no os.environ)."""
+    _ = subprocess.run(
+        ["git", *args],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=True,
+        env={"HOME": str(cwd), "GIT_CONFIG_GLOBAL": "/dev/null", "PATH": "/usr/bin:/bin"},
     )
 
-    result = subprocess.run(
+
+def _init_repo_with_files(*, tmp_path: Path) -> None:
+    """`git init` the fixture and stage every file already written under it."""
+    _git(cwd=tmp_path, args=["init", "-q"])
+    _git(cwd=tmp_path, args=["add", "-A"])
+
+
+def _run_check(*, cwd: Path) -> subprocess.CompletedProcess[str]:
+    """`git init` + stage the fixture, then run the check as a consumer would."""
+    _init_repo_with_files(tmp_path=cwd)
+    return subprocess.run(
         [sys.executable, str(_ASSERT_NEVER_EXHAUSTIVENESS)],
-        cwd=str(tmp_path),
+        cwd=str(cwd),
         capture_output=True,
         text=True,
         check=False,
     )
+
+
+def _write(*, tmp_path: Path, rel_path: str, source: str) -> None:
+    full = tmp_path / rel_path
+    full.parent.mkdir(parents=True, exist_ok=True)
+    _ = full.write_text(source, encoding="utf-8")
+
+
+def test_assert_never_exhaustiveness_rejects_match_missing_case_underscore(
+    *, tmp_path: Path
+) -> None:
+    """A `match` in a `source_trees` file lacking the terminator fails hard (exit 1)."""
+    _write(
+        tmp_path=tmp_path,
+        rel_path=".claude-plugin/scripts/livespec/foo.py",
+        source=_MISSING_TERMINATOR_SOURCE,
+    )
+
+    result = _run_check(cwd=tmp_path)
 
     assert result.returncode != 0, (
         f"assert_never_exhaustiveness should reject match without case _: assert_never; "
@@ -80,37 +116,26 @@ def test_assert_never_exhaustiveness_rejects_case_underscore_with_non_assert_nev
     *,
     tmp_path: Path,
 ) -> None:
-    """A `case _: pass` (or anything other than `assert_never(<subject>)`) fails the check.
-
-    Fixture: match terminates with `case _: return 0` instead
-    of `assert_never(val)`. Banned — the body must be
-    `assert_never(<subject>)` exactly.
-    """
-    package_dir = tmp_path / ".claude-plugin" / "scripts" / "livespec"
-    package_dir.mkdir(parents=True)
-    source = package_dir / "foo.py"
-    source.write_text(
-        "from __future__ import annotations\n"
-        "\n"
-        "__all__: list[str] = []\n"
-        "\n"
-        "\n"
-        "def handle(val: int) -> int:\n"
-        "    match val:\n"
-        "        case 0:\n"
-        "            return 1\n"
-        "        case _:\n"
-        "            return 0\n",
-        encoding="utf-8",
+    """A `case _:` body other than `assert_never(<subject>)` fails the check (exit 1)."""
+    _write(
+        tmp_path=tmp_path,
+        rel_path=".claude-plugin/scripts/livespec/foo.py",
+        source=(
+            "from __future__ import annotations\n"
+            "\n"
+            "__all__: list[str] = []\n"
+            "\n"
+            "\n"
+            "def handle(val: int) -> int:\n"
+            "    match val:\n"
+            "        case 0:\n"
+            "            return 1\n"
+            "        case _:\n"
+            "            return 0\n"
+        ),
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_ASSERT_NEVER_EXHAUSTIVENESS)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path)
 
     assert result.returncode != 0, (
         f"assert_never_exhaustiveness should reject `case _:` with non-assert_never body; "
@@ -119,41 +144,29 @@ def test_assert_never_exhaustiveness_rejects_case_underscore_with_non_assert_nev
     )
 
 
-def test_assert_never_exhaustiveness_accepts_proper_match_terminator(
-    *,
-    tmp_path: Path,
-) -> None:
-    """A match ending with `case _: assert_never(val)` passes the check (exit 0).
-
-    Pass-case: the canonical terminator pattern.
-    """
-    package_dir = tmp_path / ".claude-plugin" / "scripts" / "livespec"
-    package_dir.mkdir(parents=True)
-    source = package_dir / "foo.py"
-    source.write_text(
-        "from __future__ import annotations\n"
-        "\n"
-        "from typing_extensions import assert_never\n"
-        "\n"
-        "__all__: list[str] = []\n"
-        "\n"
-        "\n"
-        "def handle(val: int) -> int:\n"
-        "    match val:\n"
-        "        case 0:\n"
-        "            return 1\n"
-        "        case _:\n"
-        "            assert_never(val)\n",
-        encoding="utf-8",
+def test_assert_never_exhaustiveness_accepts_proper_match_terminator(*, tmp_path: Path) -> None:
+    """A match ending with `case _: assert_never(val)` passes the check (exit 0)."""
+    _write(
+        tmp_path=tmp_path,
+        rel_path=".claude-plugin/scripts/livespec/foo.py",
+        source=(
+            "from __future__ import annotations\n"
+            "\n"
+            "from typing_extensions import assert_never\n"
+            "\n"
+            "__all__: list[str] = []\n"
+            "\n"
+            "\n"
+            "def handle(val: int) -> int:\n"
+            "    match val:\n"
+            "        case 0:\n"
+            "            return 1\n"
+            "        case _:\n"
+            "            assert_never(val)\n"
+        ),
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_ASSERT_NEVER_EXHAUSTIVENESS)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path)
 
     assert result.returncode == 0, (
         f"assert_never_exhaustiveness should accept proper terminator with exit 0; "
@@ -162,18 +175,27 @@ def test_assert_never_exhaustiveness_accepts_proper_match_terminator(
     )
 
 
-def test_assert_never_exhaustiveness_accepts_empty_tree(*, tmp_path: Path) -> None:
-    """An empty repo cwd passes the check (exit 0)."""
-    result = subprocess.run(
-        [sys.executable, str(_ASSERT_NEVER_EXHAUSTIVENESS)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+def test_assert_never_exhaustiveness_warns_newly_covered_offender(*, tmp_path: Path) -> None:
+    """A non-compliant `match` OUTSIDE `source_trees` WARNS (newly-covered), exit 0."""
+    _write(tmp_path=tmp_path, rel_path="pkg/foo.py", source=_MISSING_TERMINATOR_SOURCE)
+
+    result = _run_check(cwd=tmp_path)
+
+    assert result.returncode == 0
+    combined = result.stdout + result.stderr
+    assert "pkg/foo.py" in combined
+    assert "newly_covered" in combined
+    assert '"level": "error"' not in combined
+
+
+def test_assert_never_exhaustiveness_accepts_codeless_repo(*, tmp_path: Path) -> None:
+    """A genuinely codeless repo (0 first-party `.py`) passes (exit 0)."""
+    _ = (tmp_path / "README.md").write_text("no code\n", encoding="utf-8")
+
+    result = _run_check(cwd=tmp_path)
 
     assert result.returncode == 0, (
-        f"assert_never_exhaustiveness should accept empty tree with exit 0; "
+        f"assert_never_exhaustiveness should accept a codeless repo with exit 0; "
         f"got returncode={result.returncode} "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )

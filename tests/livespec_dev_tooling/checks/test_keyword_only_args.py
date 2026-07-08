@@ -1,17 +1,26 @@
-"""Outside-in test for `dev-tooling/checks/keyword_only_args.py` — `*`-separator + strict-dataclass triple.
+"""Outside-in test for `livespec_dev_tooling/checks/keyword_only_args.py` — `*`-separator on every `def`.
 
 Per `python-skill-script-style-requirements.md` §"Canonical
-target list" (the `check-keyword-only-args` row), every `def`
-in `livespec/**` uses `*` as the first separator (all
-parameters keyword-only); every `@dataclass` declares
-`frozen=True, kw_only=True, slots=True`. Exempts Python-
-mandated dunder signatures and `__init__` of Exception
-subclasses that forward to `super().__init__(msg)`.
+target list" (the `check-keyword-only-args` row), every `def` in
+`livespec/**` uses `*` as the first separator (all parameters
+keyword-only). Exempts Python-mandated dunder signatures, a
+leading `self`/`cls`, and callables passed as `key=` to
+`sorted`/`.sort()` (Python calls them positionally).
 
-Cycle 154 implements the `def`-level check (kw-only
-separator on every regular function); subsequent cycles can
-widen to the dataclass-strict-triple verification when
-fixtures demand it.
+The check now resolves the files it inspects from the git-derived
+first-party `.py` universe (`config.resolve_check_universe`),
+root-anchored via `config.resolve_repo_root`, rather than a
+`config.source_trees` walk — so each fixture is a real git repo
+(`git init` + `git add -A`) before the check subprocess runs.
+Phase-0 delta-WARN severity: `config.source_trees` is retained as
+a classifier — a `def` missing the `*` separator in a
+`source_trees` file keeps today's hard gate (`error`, exit 1); the
+identical violation in a NEWLY-covered file emits at WARN
+(`newly_covered` / `phase="0-warn"`, exit 0).
+
+The check is invoked as a `sys.executable` subprocess (this file is
+in the documented `subprocess_spawn_allowlist`); pytest-cov's
+pth-installed startup hook instruments the child.
 """
 
 from __future__ import annotations
@@ -26,37 +35,62 @@ __all__: list[str] = []
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _KEYWORD_ONLY_ARGS = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "keyword_only_args.py"
 
+_POSITIONAL_ARG_SOURCE = (
+    "from __future__ import annotations\n"
+    "\n"
+    "__all__: list[str] = []\n"
+    "\n"
+    "\n"
+    "def fn(x: int) -> int:\n"
+    "    return x\n"
+)
 
-def test_keyword_only_args_rejects_def_with_positional_arg(*, tmp_path: Path) -> None:
-    """A `def fn(x: int):` (positional arg, no `*` separator) fails the check.
 
-    Fixture: `.claude-plugin/scripts/livespec/foo.py` defines
-    `def fn(x: int) -> int`. The check must walk the livespec
-    subtree, parse the file, detect the missing `*`, exit
-    non-zero, and surface the file plus line number plus
-    function name.
-    """
-    package_dir = tmp_path / ".claude-plugin" / "scripts" / "livespec"
-    package_dir.mkdir(parents=True)
-    source = package_dir / "foo.py"
-    source.write_text(
-        "from __future__ import annotations\n"
-        "\n"
-        "__all__: list[str] = []\n"
-        "\n"
-        "\n"
-        "def fn(x: int) -> int:\n"
-        "    return x\n",
-        encoding="utf-8",
+def _git(*, cwd: Path, args: list[str]) -> None:
+    """Run a `git` subcommand in `cwd` with a hermetic 3-key env (no os.environ)."""
+    _ = subprocess.run(
+        ["git", *args],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=True,
+        env={"HOME": str(cwd), "GIT_CONFIG_GLOBAL": "/dev/null", "PATH": "/usr/bin:/bin"},
     )
 
-    result = subprocess.run(
+
+def _init_repo_with_files(*, tmp_path: Path) -> None:
+    """`git init` the fixture and stage every file already written under it."""
+    _git(cwd=tmp_path, args=["init", "-q"])
+    _git(cwd=tmp_path, args=["add", "-A"])
+
+
+def _run_check(*, cwd: Path) -> subprocess.CompletedProcess[str]:
+    """`git init` + stage the fixture, then run the check as a consumer would."""
+    _init_repo_with_files(tmp_path=cwd)
+    return subprocess.run(
         [sys.executable, str(_KEYWORD_ONLY_ARGS)],
-        cwd=str(tmp_path),
+        cwd=str(cwd),
         capture_output=True,
         text=True,
         check=False,
     )
+
+
+def _write(*, tmp_path: Path, rel_path: str, source: str) -> None:
+    full = tmp_path / rel_path
+    full.parent.mkdir(parents=True, exist_ok=True)
+    _ = full.write_text(source, encoding="utf-8")
+
+
+def test_keyword_only_args_rejects_def_with_positional_arg(*, tmp_path: Path) -> None:
+    """A `def fn(x: int):` in a `source_trees` file fails hard (exit 1)."""
+    _write(
+        tmp_path=tmp_path,
+        rel_path=".claude-plugin/scripts/livespec/foo.py",
+        source=_POSITIONAL_ARG_SOURCE,
+    )
+
+    result = _run_check(cwd=tmp_path)
 
     assert result.returncode != 0, (
         f"keyword_only_args should reject positional arg with non-zero exit; "
@@ -76,32 +110,22 @@ def test_keyword_only_args_rejects_def_with_positional_arg(*, tmp_path: Path) ->
 
 
 def test_keyword_only_args_accepts_def_with_kw_only_separator(*, tmp_path: Path) -> None:
-    """A `def fn(*, x: int):` (kw-only separator present) passes the check (exit 0).
-
-    Pass-case: a livespec function with the `*` separator and
-    every parameter keyword-only.
-    """
-    package_dir = tmp_path / ".claude-plugin" / "scripts" / "livespec"
-    package_dir.mkdir(parents=True)
-    source = package_dir / "foo.py"
-    source.write_text(
-        "from __future__ import annotations\n"
-        "\n"
-        "__all__: list[str] = []\n"
-        "\n"
-        "\n"
-        "def fn(*, x: int) -> int:\n"
-        "    return x\n",
-        encoding="utf-8",
+    """A `def fn(*, x: int):` (kw-only separator present) passes the check (exit 0)."""
+    _write(
+        tmp_path=tmp_path,
+        rel_path=".claude-plugin/scripts/livespec/foo.py",
+        source=(
+            "from __future__ import annotations\n"
+            "\n"
+            "__all__: list[str] = []\n"
+            "\n"
+            "\n"
+            "def fn(*, x: int) -> int:\n"
+            "    return x\n"
+        ),
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_KEYWORD_ONLY_ARGS)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path)
 
     assert result.returncode == 0, (
         f"keyword_only_args should accept kw-only def with exit 0; "
@@ -111,31 +135,22 @@ def test_keyword_only_args_accepts_def_with_kw_only_separator(*, tmp_path: Path)
 
 
 def test_keyword_only_args_accepts_zero_arg_def(*, tmp_path: Path) -> None:
-    """A `def fn() -> int` (no args) passes the check (exit 0).
-
-    Zero-arg functions are trivially keyword-only-safe.
-    """
-    package_dir = tmp_path / ".claude-plugin" / "scripts" / "livespec"
-    package_dir.mkdir(parents=True)
-    source = package_dir / "foo.py"
-    source.write_text(
-        "from __future__ import annotations\n"
-        "\n"
-        "__all__: list[str] = []\n"
-        "\n"
-        "\n"
-        "def fn() -> int:\n"
-        "    return 0\n",
-        encoding="utf-8",
+    """A `def fn() -> int` (no args) passes the check (exit 0)."""
+    _write(
+        tmp_path=tmp_path,
+        rel_path=".claude-plugin/scripts/livespec/foo.py",
+        source=(
+            "from __future__ import annotations\n"
+            "\n"
+            "__all__: list[str] = []\n"
+            "\n"
+            "\n"
+            "def fn() -> int:\n"
+            "    return 0\n"
+        ),
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_KEYWORD_ONLY_ARGS)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path)
 
     assert result.returncode == 0, (
         f"keyword_only_args should accept zero-arg def with exit 0; "
@@ -145,37 +160,26 @@ def test_keyword_only_args_accepts_zero_arg_def(*, tmp_path: Path) -> None:
 
 
 def test_keyword_only_args_accepts_dunder_methods(*, tmp_path: Path) -> None:
-    """Dunder methods (`__init__`, `__call__`, etc.) are exempt from the check.
-
-    Pass-case: `def __init__(self, msg: str) -> None` is
-    Python-mandated positional and exempt per the canonical
-    row's exemption clause.
-    """
-    package_dir = tmp_path / ".claude-plugin" / "scripts" / "livespec"
-    package_dir.mkdir(parents=True)
-    source = package_dir / "foo.py"
-    source.write_text(
-        "from __future__ import annotations\n"
-        "\n"
-        "__all__: list[str] = []\n"
-        "\n"
-        "\n"
-        "class Foo:\n"
-        "    def __init__(self, msg: str) -> None:\n"
-        "        self.msg = msg\n"
-        "\n"
-        "    def __repr__(self) -> str:\n"
-        '        return f"Foo({self.msg!r})"\n',
-        encoding="utf-8",
+    """Dunder methods (`__init__`, `__repr__`, etc.) are exempt (exit 0)."""
+    _write(
+        tmp_path=tmp_path,
+        rel_path=".claude-plugin/scripts/livespec/foo.py",
+        source=(
+            "from __future__ import annotations\n"
+            "\n"
+            "__all__: list[str] = []\n"
+            "\n"
+            "\n"
+            "class Foo:\n"
+            "    def __init__(self, msg: str) -> None:\n"
+            "        self.msg = msg\n"
+            "\n"
+            "    def __repr__(self) -> str:\n"
+            '        return f"Foo({self.msg!r})"\n'
+        ),
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_KEYWORD_ONLY_ARGS)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path)
 
     assert result.returncode == 0, (
         f"keyword_only_args should exempt dunder methods with exit 0; "
@@ -185,35 +189,23 @@ def test_keyword_only_args_accepts_dunder_methods(*, tmp_path: Path) -> None:
 
 
 def test_keyword_only_args_accepts_method_with_self_then_kw_only(*, tmp_path: Path) -> None:
-    """A method `def m(self, *, x: int)` (self + kw-only) passes the check (exit 0).
-
-    Methods on classes have an implicit positional `self` (or
-    `cls` for classmethods). The check tolerates a single
-    `self`/`cls` first parameter when followed by the `*`
-    separator and all-keyword-only thereafter.
-    """
-    package_dir = tmp_path / ".claude-plugin" / "scripts" / "livespec"
-    package_dir.mkdir(parents=True)
-    source = package_dir / "foo.py"
-    source.write_text(
-        "from __future__ import annotations\n"
-        "\n"
-        "__all__: list[str] = []\n"
-        "\n"
-        "\n"
-        "class Foo:\n"
-        "    def m(self, *, x: int) -> int:\n"
-        "        return x\n",
-        encoding="utf-8",
+    """A method `def m(self, *, x: int)` (self + kw-only) passes (exit 0)."""
+    _write(
+        tmp_path=tmp_path,
+        rel_path=".claude-plugin/scripts/livespec/foo.py",
+        source=(
+            "from __future__ import annotations\n"
+            "\n"
+            "__all__: list[str] = []\n"
+            "\n"
+            "\n"
+            "class Foo:\n"
+            "    def m(self, *, x: int) -> int:\n"
+            "        return x\n"
+        ),
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_KEYWORD_ONLY_ARGS)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path)
 
     assert result.returncode == 0, (
         f"keyword_only_args should accept self+kw-only method with exit 0; "
@@ -222,18 +214,27 @@ def test_keyword_only_args_accepts_method_with_self_then_kw_only(*, tmp_path: Pa
     )
 
 
-def test_keyword_only_args_accepts_empty_tree(*, tmp_path: Path) -> None:
-    """An empty repo cwd passes the check (exit 0)."""
-    result = subprocess.run(
-        [sys.executable, str(_KEYWORD_ONLY_ARGS)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+def test_keyword_only_args_warns_newly_covered_offender(*, tmp_path: Path) -> None:
+    """A positional-arg `def` OUTSIDE `source_trees` WARNS (newly-covered), exit 0."""
+    _write(tmp_path=tmp_path, rel_path="pkg/foo.py", source=_POSITIONAL_ARG_SOURCE)
+
+    result = _run_check(cwd=tmp_path)
+
+    assert result.returncode == 0
+    combined = result.stdout + result.stderr
+    assert "pkg/foo.py" in combined
+    assert "newly_covered" in combined
+    assert '"level": "error"' not in combined
+
+
+def test_keyword_only_args_accepts_codeless_repo(*, tmp_path: Path) -> None:
+    """A genuinely codeless repo (0 first-party `.py`) passes (exit 0)."""
+    _ = (tmp_path / "README.md").write_text("no code\n", encoding="utf-8")
+
+    result = _run_check(cwd=tmp_path)
 
     assert result.returncode == 0, (
-        f"keyword_only_args should accept empty tree with exit 0; "
+        f"keyword_only_args should accept a codeless repo with exit 0; "
         f"got returncode={result.returncode} "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
@@ -254,38 +255,27 @@ def test_keyword_only_args_module_importable_without_running_main() -> None:
 
 
 def test_keyword_only_args_accepts_sort_key_callable_in_sorted(*, tmp_path: Path) -> None:
-    """A function used as `key=` in `sorted()` is exempt from the kw-only check.
-
-    Python calls `key=` callables positionally (one arg), so they MUST
-    keep a positional parameter. `def _key(x: int)` referenced as
-    `sorted(items, key=_key)` must pass the check (exit 0).
-    """
-    package_dir = tmp_path / ".claude-plugin" / "scripts" / "livespec"
-    package_dir.mkdir(parents=True)
-    source = package_dir / "foo.py"
-    source.write_text(
-        "from __future__ import annotations\n"
-        "\n"
-        "__all__: list[str] = []\n"
-        "\n"
-        "items = [3, 1, 2]\n"
-        "\n"
-        "\n"
-        "def _key(x: int) -> int:\n"
-        "    return -x\n"
-        "\n"
-        "\n"
-        "result = sorted(items, key=_key)\n",
-        encoding="utf-8",
+    """A function used as `key=` in `sorted()` is exempt (exit 0)."""
+    _write(
+        tmp_path=tmp_path,
+        rel_path=".claude-plugin/scripts/livespec/foo.py",
+        source=(
+            "from __future__ import annotations\n"
+            "\n"
+            "__all__: list[str] = []\n"
+            "\n"
+            "items = [3, 1, 2]\n"
+            "\n"
+            "\n"
+            "def _key(x: int) -> int:\n"
+            "    return -x\n"
+            "\n"
+            "\n"
+            "result = sorted(items, key=_key)\n"
+        ),
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_KEYWORD_ONLY_ARGS)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path)
 
     assert result.returncode == 0, (
         f"keyword_only_args should exempt sort key callable used in sorted(); "
@@ -295,38 +285,27 @@ def test_keyword_only_args_accepts_sort_key_callable_in_sorted(*, tmp_path: Path
 
 
 def test_keyword_only_args_accepts_sort_key_callable_in_list_sort(*, tmp_path: Path) -> None:
-    """A function used as `key=` in `.sort()` is exempt from the kw-only check.
-
-    Python calls `key=` callables positionally (one arg), so they MUST
-    keep a positional parameter. `def _key(x: int)` referenced as
-    `items.sort(key=_key)` must pass the check (exit 0).
-    """
-    package_dir = tmp_path / ".claude-plugin" / "scripts" / "livespec"
-    package_dir.mkdir(parents=True)
-    source = package_dir / "foo.py"
-    source.write_text(
-        "from __future__ import annotations\n"
-        "\n"
-        "__all__: list[str] = []\n"
-        "\n"
-        "items = [3, 1, 2]\n"
-        "\n"
-        "\n"
-        "def _key(x: int) -> int:\n"
-        "    return -x\n"
-        "\n"
-        "\n"
-        "items.sort(key=_key)\n",
-        encoding="utf-8",
+    """A function used as `key=` in `.sort()` is exempt (exit 0)."""
+    _write(
+        tmp_path=tmp_path,
+        rel_path=".claude-plugin/scripts/livespec/foo.py",
+        source=(
+            "from __future__ import annotations\n"
+            "\n"
+            "__all__: list[str] = []\n"
+            "\n"
+            "items = [3, 1, 2]\n"
+            "\n"
+            "\n"
+            "def _key(x: int) -> int:\n"
+            "    return -x\n"
+            "\n"
+            "\n"
+            "items.sort(key=_key)\n"
+        ),
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_KEYWORD_ONLY_ARGS)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path)
 
     assert result.returncode == 0, (
         f"keyword_only_args should exempt sort key callable used in list.sort(); "
@@ -336,42 +315,32 @@ def test_keyword_only_args_accepts_sort_key_callable_in_list_sort(*, tmp_path: P
 
 
 def test_keyword_only_args_accepts_attribute_sort_key_callable(*, tmp_path: Path) -> None:
-    """A function used as `key=obj.method` (Attribute) in `sorted()` is exempt.
+    """A function used as `key=obj.method` (Attribute) in `sorted()` is exempt (exit 0).
 
-    Python calls `key=` callables positionally regardless of how they are
-    referenced. `def method(x: int)` referenced as `sorted(items,
-    key=obj.method, reverse=True)` must pass the check (exit 0).
-    Also exercises: a sort call with a non-key keyword (reverse=True) and a
-    non-sort call (str(result)), covering all branches of the key-name
-    collector.
+    Also exercises a sort call with a non-key keyword (reverse=True) and a
+    non-sort call (str(result)), covering the key-name collector branches.
     """
-    package_dir = tmp_path / ".claude-plugin" / "scripts" / "livespec"
-    package_dir.mkdir(parents=True)
-    source = package_dir / "foo.py"
-    source.write_text(
-        "from __future__ import annotations\n"
-        "\n"
-        "__all__: list[str] = []\n"
-        "\n"
-        "items = [3, 1, 2]\n"
-        "\n"
-        "\n"
-        "def method(x: int) -> int:\n"
-        "    return -x\n"
-        "\n"
-        "\n"
-        "result = sorted(items, key=obj.method, reverse=True)\n"
-        "other = str(result)\n",
-        encoding="utf-8",
+    _write(
+        tmp_path=tmp_path,
+        rel_path=".claude-plugin/scripts/livespec/foo.py",
+        source=(
+            "from __future__ import annotations\n"
+            "\n"
+            "__all__: list[str] = []\n"
+            "\n"
+            "items = [3, 1, 2]\n"
+            "\n"
+            "\n"
+            "def method(x: int) -> int:\n"
+            "    return -x\n"
+            "\n"
+            "\n"
+            "result = sorted(items, key=obj.method, reverse=True)\n"
+            "other = str(result)\n"
+        ),
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_KEYWORD_ONLY_ARGS)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path)
 
     assert result.returncode == 0, (
         f"keyword_only_args should exempt attribute sort key callable; "
@@ -383,40 +352,28 @@ def test_keyword_only_args_accepts_attribute_sort_key_callable(*, tmp_path: Path
 def test_keyword_only_args_lambda_key_does_not_block_named_sort_key_carve_out(
     *, tmp_path: Path
 ) -> None:
-    """A lambda used as key= in sorted() does not interfere with the named-key carve-out.
-
-    When key= is a lambda expression (not a Name/Attribute), the sort-key
-    collector ignores it. A named function with a positional arg that is also
-    used as key= via a Name reference in the same file is still properly
-    exempted; the overall check exits 0.
-    """
-    package_dir = tmp_path / ".claude-plugin" / "scripts" / "livespec"
-    package_dir.mkdir(parents=True)
-    source = package_dir / "foo.py"
-    source.write_text(
-        "from __future__ import annotations\n"
-        "\n"
-        "__all__: list[str] = []\n"
-        "\n"
-        "items = [3, 1, 2]\n"
-        "\n"
-        "\n"
-        "def _key(x: int) -> int:\n"
-        "    return -x\n"
-        "\n"
-        "\n"
-        "result = sorted(items, key=lambda x: -x)\n"
-        "items.sort(key=_key)\n",
-        encoding="utf-8",
+    """A lambda `key=` does not interfere with the named-key carve-out (exit 0)."""
+    _write(
+        tmp_path=tmp_path,
+        rel_path=".claude-plugin/scripts/livespec/foo.py",
+        source=(
+            "from __future__ import annotations\n"
+            "\n"
+            "__all__: list[str] = []\n"
+            "\n"
+            "items = [3, 1, 2]\n"
+            "\n"
+            "\n"
+            "def _key(x: int) -> int:\n"
+            "    return -x\n"
+            "\n"
+            "\n"
+            "result = sorted(items, key=lambda x: -x)\n"
+            "items.sort(key=_key)\n"
+        ),
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_KEYWORD_ONLY_ARGS)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path)
 
     assert result.returncode == 0, (
         f"keyword_only_args should accept named sort-key callable used alongside a lambda key; "
