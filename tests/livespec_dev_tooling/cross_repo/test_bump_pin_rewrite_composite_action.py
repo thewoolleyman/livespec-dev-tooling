@@ -380,6 +380,67 @@ def test_relock_step_refreshes_lock_before_commit() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Canonical check wiring reconcile step (fleet-check-coverage PR4 fallout)
+# ---------------------------------------------------------------------------
+
+# When a livespec-dev-tooling release adds a new module under
+# `livespec_dev_tooling/checks/`, the live canonical-check set grows. Consumers
+# that already run `check-aggregate-completeness` must have their `justfile`
+# canonical block reconciled in the same bump PR, or the bump is guaranteed to
+# fail before the new check can be adopted.
+_RECONCILE_STEP_NAME = "Reconcile canonical check wiring"
+_CANONICAL_CHECKS_MODULE = "livespec_dev_tooling.canonical_checks"
+_AGGREGATE_CHECK_SLUG = "check-aggregate-completeness"
+_TARGETS_ARRAY_SENTINEL = "targets=("
+_GENERIC_RECIPE_MODULE_PREFIX = "livespec_dev_tooling.checks."
+
+
+def _reconcile_step_body(*, text: str) -> str:
+    """Return the body of the canonical check wiring reconcile step."""
+    match = re.search(
+        r"^    - name: Reconcile canonical check wiring\b.*?(?=^    - name: |\Z)",
+        text,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert match, f"composite Action missing the {_RECONCILE_STEP_NAME!r} step"
+    return match.group(0)
+
+
+def test_reconcile_step_adds_new_canonical_slugs_before_commit() -> None:
+    """The Action reconciles consumer `justfile` wiring before committing.
+
+    The bump PR already updates the dev-tooling pin. If that pin introduces a
+    new canonical check, the same commit must also add the missing
+    `check-<slug>` target and recipe so `check-aggregate-completeness` can pass
+    on the consumer PR.
+    """
+    text = _read(path=_ACTION_PATH)
+    body = _reconcile_step_body(text=text)
+    assert _CANONICAL_CHECKS_MODULE in body, (
+        "the reconcile step must read the canonical slug set from the bumped "
+        "livespec-dev-tooling support checkout"
+    )
+    assert _AGGREGATE_CHECK_SLUG in body, (
+        "the reconcile step must be scoped to consumers that already carry "
+        "check-aggregate-completeness wiring"
+    )
+    assert (
+        _TARGETS_ARRAY_SENTINEL in body
+    ), "the reconcile step must update the justfile targets=(...) canonical block"
+    assert _GENERIC_RECIPE_MODULE_PREFIX in body, (
+        "the reconcile step must emit generic canonical recipes using "
+        "uv run python -m livespec_dev_tooling.checks.<module>"
+    )
+    reconcile_pos = text.find(_RECONCILE_STEP_NAME)
+    commit_pos = text.find("- name: Commit + push bump branch")
+    assert reconcile_pos != -1 and commit_pos != -1, "composite Action step shape changed"
+    assert reconcile_pos < commit_pos, (
+        "the reconcile step MUST precede `Commit + push bump branch` so the "
+        "consumer justfile wiring is committed with the pin bump"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Stale-SHA rerun guard (livespec-dev-tooling-e37)
 # ---------------------------------------------------------------------------
 
