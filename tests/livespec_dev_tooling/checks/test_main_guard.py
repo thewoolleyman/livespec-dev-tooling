@@ -195,6 +195,105 @@ def test_main_guard_accepts_tree_without_livespec_directory(
     )
 
 
+def test_main_guard_ignores_main_guard_outside_plugin_scripts_tree(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A `__main__` guard OUTSIDE `.claude-plugin/scripts/` is not reported.
+
+    `main_guard` is ROLE-SCOPED to the plugin-packaging convention:
+    the `__main__` ban exists because the plugin installer flattens
+    `.claude-plugin/scripts/`, so runnable entry points must live in
+    `bin/*.py` wrappers there. A first-party module OUTSIDE that tree —
+    e.g. dev-tooling's own `livespec_dev_tooling/**` package, invoked as
+    `python -m livespec_dev_tooling.checks.X` — legitimately carries a
+    `__main__` guard and MUST NOT be flagged (neither ERROR nor WARN).
+    """
+    package_dir = tmp_path / "livespec_dev_tooling" / "checks"
+    package_dir.mkdir(parents=True)
+    source = package_dir / "foo.py"
+    source.write_text(
+        "from __future__ import annotations\n"
+        "\n"
+        "__all__: list[str] = []\n"
+        "\n"
+        "\n"
+        "def main() -> int:\n"
+        "    return 0\n"
+        "\n"
+        "\n"
+        'if __name__ == "__main__":\n'
+        "    raise SystemExit(main())\n",
+        encoding="utf-8",
+    )
+
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode == 0, (
+        f"main_guard should ignore a `__main__` guard outside .claude-plugin/scripts/ "
+        f"(exit 0); got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    combined = result.stdout + result.stderr
+    off_tree_path = "livespec_dev_tooling/checks/foo.py"
+    assert off_tree_path not in combined, (
+        f"main_guard must NOT surface `{off_tree_path}` — it is outside the plugin-packaging "
+        f"tree (.claude-plugin/scripts/) and not subject to the __main__ ban; "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_main_guard_warns_main_guard_in_nonlegacy_plugin_scripts_tree(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A `__main__` guard under a non-legacy `.claude-plugin/scripts/<pkg>/` tree WARNs.
+
+    Files under a plugin-packaging tree OTHER than the legacy
+    `.claude-plugin/scripts/livespec/` tree ARE subject to the ban, but
+    at Phase-0 WARN severity (`newly_covered`, exit 0) rather than the
+    legacy ERROR. This keeps the delta-WARN model: the orchestrator's
+    `.claude-plugin/scripts/livespec_orchestrator_beads_fabro/**` guards
+    are reported (they belong in `bin/*.py` wrappers) without hard-failing
+    until the repo is flipped in Phase 2.
+    """
+    package_dir = (
+        tmp_path / ".claude-plugin" / "scripts" / "livespec_orchestrator_beads_fabro" / "commands"
+    )
+    package_dir.mkdir(parents=True)
+    source = package_dir / "foo.py"
+    source.write_text(
+        "from __future__ import annotations\n"
+        "\n"
+        "__all__: list[str] = []\n"
+        "\n"
+        "\n"
+        "def main() -> int:\n"
+        "    return 0\n"
+        "\n"
+        "\n"
+        'if __name__ == "__main__":\n'
+        "    raise SystemExit(main())\n",
+        encoding="utf-8",
+    )
+
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode == 0, (
+        f"main_guard should WARN (not error) on a newly-covered plugin tree; "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    combined = result.stdout + result.stderr
+    in_tree_path = ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/foo.py"
+    assert in_tree_path in combined, (
+        f"main_guard must surface `{in_tree_path}` — it is inside the plugin-packaging tree; "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    assert "newly_covered" in combined, (
+        f"main_guard should emit the newly_covered WARN field for a non-legacy plugin tree; "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
 def test_main_guard_module_importable_without_running_main() -> None:
     """The check module imports cleanly without invoking main().
 
