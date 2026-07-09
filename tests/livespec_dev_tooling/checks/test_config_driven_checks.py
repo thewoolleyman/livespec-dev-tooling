@@ -168,12 +168,131 @@ def test_newtype_domain_primitives_noops_without_dataclasses_tree(*, tmp_path: P
 
 
 def test_no_write_direct_noops_without_covered_trees(*, tmp_path: Path) -> None:
-    """`no_write_direct` no-ops when `covered_trees` is absent."""
-    _assert_noop_on_absent_role_key(slug="no_write_direct", role="covered_trees", tmp_path=tmp_path)
+    """`no_write_direct` scans newly-covered files outside `covered_trees` at WARN."""
+    _write_block(repo_root=tmp_path, body='covered_trees = ["legacy"]\n')
+    legacy = tmp_path / "legacy"
+    legacy.mkdir()
+    _ = (legacy / "ok.py").write_text(
+        "from __future__ import annotations\n\n__all__: list[str] = []\n",
+        encoding="utf-8",
+    )
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    _ = (pkg / "bad.py").write_text(
+        "from __future__ import annotations\n\n"
+        "__all__: list[str] = []\n\n"
+        "import sys\n\n"
+        "sys.stderr.write('bad')\n",
+        encoding="utf-8",
+    )
+    result = _run_check(slug="no_write_direct", cwd=tmp_path)
+    assert result.returncode == 0, (
+        f"newly-covered no_write_direct offender should warn, not fail; "
+        f"stderr={result.stderr!r}"
+    )
+    assert "pkg/bad.py" in result.stderr
+    assert "newly_covered" in result.stderr
+    assert '"level": "warning"' in result.stderr
 
 
 def test_no_lloc_soft_warnings_noops_without_covered_trees(*, tmp_path: Path) -> None:
-    """`no_lloc_soft_warnings` no-ops when `covered_trees` is absent."""
-    _assert_noop_on_absent_role_key(
-        slug="no_lloc_soft_warnings", role="covered_trees", tmp_path=tmp_path
+    """`no_lloc_soft_warnings` scans newly-covered files despite the release lever."""
+    _write_block(repo_root=tmp_path, body='covered_trees = ["legacy"]\n')
+    legacy = tmp_path / "legacy"
+    legacy.mkdir()
+    _ = (legacy / "ok.py").write_text(
+        "from __future__ import annotations\n\n__all__: list[str] = []\n",
+        encoding="utf-8",
     )
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    body_lines = "\n".join(f"x_{i} = {i}" for i in range(220))
+    _ = (pkg / "medium.py").write_text(
+        "from __future__ import annotations\n\n__all__: list[str] = []\n\n" + body_lines + "\n",
+        encoding="utf-8",
+    )
+    result = _run_check(slug="no_lloc_soft_warnings", cwd=tmp_path)
+    assert result.returncode == 0, (
+        f"newly-covered no_lloc_soft_warnings offender should warn, not fail; "
+        f"stderr={result.stderr!r}"
+    )
+    assert "pkg/medium.py" in result.stderr
+    assert "newly_covered" in result.stderr
+    assert '"level": "warning"' in result.stderr
+
+
+def test_comment_line_anchors_warns_for_newly_covered_file(*, tmp_path: Path) -> None:
+    """A line-anchor comment outside `target_dirs` is newly-covered at WARN."""
+    _write_block(repo_root=tmp_path, body='target_dirs = ["legacy"]\n')
+    legacy = tmp_path / "legacy"
+    legacy.mkdir()
+    _ = (legacy / "ok.py").write_text(
+        "from __future__ import annotations\n\n__all__: list[str] = []\n",
+        encoding="utf-8",
+    )
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    _ = (pkg / "bad.py").write_text(
+        "from __future__ import annotations\n\n"
+        "__all__: list[str] = []\n\n"
+        "# See lines 12-14 in sibling.py\n"
+        "x = 1\n",
+        encoding="utf-8",
+    )
+    result = _run_check(slug="comment_line_anchors", cwd=tmp_path)
+    assert result.returncode == 0, (
+        f"newly-covered comment_line_anchors offender should warn, not fail; "
+        f"stderr={result.stderr!r}"
+    )
+    assert "pkg/bad.py" in result.stderr
+    assert "newly_covered" in result.stderr
+    assert '"level": "warning"' in result.stderr
+
+
+def test_main_guard_warns_for_newly_covered_package(*, tmp_path: Path) -> None:
+    """A `__main__` guard outside the old livespec tree is newly-covered at WARN."""
+    _write_block(repo_root=tmp_path, body="")
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    _ = (pkg / "bad.py").write_text(
+        "from __future__ import annotations\n\n"
+        "__all__: list[str] = []\n\n"
+        "if __name__ == '__main__':\n"
+        "    raise SystemExit(0)\n",
+        encoding="utf-8",
+    )
+    result = _run_check(slug="main_guard", cwd=tmp_path)
+    assert (
+        result.returncode == 0
+    ), f"newly-covered main_guard offender should warn, not fail; stderr={result.stderr!r}"
+    assert "pkg/bad.py" in result.stderr
+    assert "newly_covered" in result.stderr
+    assert '"level": "warning"' in result.stderr
+
+
+def test_rop_pipeline_shape_warns_for_newly_covered_package(*, tmp_path: Path) -> None:
+    """A malformed `@rop_pipeline` class outside the old livespec tree warns."""
+    _write_block(repo_root=tmp_path, body="")
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    _ = (pkg / "bad.py").write_text(
+        "from __future__ import annotations\n\n"
+        "__all__: list[str] = []\n\n"
+        "def rop_pipeline(cls: type[object]) -> type[object]:\n"
+        "    return cls\n\n\n"
+        "@rop_pipeline\n"
+        "class Bad:\n"
+        "    def first(self) -> None:\n"
+        "        pass\n\n"
+        "    def second(self) -> None:\n"
+        "        pass\n",
+        encoding="utf-8",
+    )
+    result = _run_check(slug="rop_pipeline_shape", cwd=tmp_path)
+    assert result.returncode == 0, (
+        f"newly-covered rop_pipeline_shape offender should warn, not fail; "
+        f"stderr={result.stderr!r}"
+    )
+    assert "pkg/bad.py" in result.stderr
+    assert "newly_covered" in result.stderr
+    assert '"level": "warning"' in result.stderr

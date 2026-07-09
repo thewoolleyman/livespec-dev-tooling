@@ -218,6 +218,16 @@ def test_tests_tree_prefix_non_string_raises(*, tmp_path: Path) -> None:
         _ = load_config(repo_root=tmp_path)
 
 
+def test_tests_tree_prefix_empty_string_raises(*, tmp_path: Path) -> None:
+    """An empty `tests_tree_prefix` would exempt every path and must fail closed."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body='[tool.livespec_dev_tooling]\ntests_tree_prefix = ""\n',
+    )
+    with pytest.raises(ConfigParseError, match="`tests_tree_prefix` must be a non-empty string"):
+        _ = load_config(repo_root=tmp_path)
+
+
 def test_mirror_pairings_not_a_list_raises(*, tmp_path: Path) -> None:
     """A scalar `mirror_pairings` raises `ConfigParseError`."""
     _write_pyproject(

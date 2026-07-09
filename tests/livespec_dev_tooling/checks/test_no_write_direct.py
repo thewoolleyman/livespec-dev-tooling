@@ -31,6 +31,29 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 _NO_WRITE_DIRECT = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "no_write_direct.py"
 
 
+def _git(*, cwd: Path, args: list[str]) -> None:
+    _ = subprocess.run(
+        ["git", *args],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=True,
+        env={"HOME": str(cwd), "GIT_CONFIG_GLOBAL": "/dev/null", "PATH": "/usr/bin:/bin"},
+    )
+
+
+def _run_check(*, cwd: Path) -> subprocess.CompletedProcess[str]:
+    _git(cwd=cwd, args=["init", "-q"])
+    _git(cwd=cwd, args=["add", "-A"])
+    return subprocess.run(
+        [sys.executable, str(_NO_WRITE_DIRECT)],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
 def test_no_write_direct_rejects_sys_stdout_write_in_livespec(*, tmp_path: Path) -> None:
     """A `sys.stdout.write(...)` call inside livespec/ fails the check.
 
@@ -58,13 +81,7 @@ def test_no_write_direct_rejects_sys_stdout_write_in_livespec(*, tmp_path: Path)
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_NO_WRITE_DIRECT)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path)
 
     assert result.returncode != 0, (
         f"no_write_direct should reject sys.stdout.write call; "
@@ -107,13 +124,7 @@ def test_no_write_direct_rejects_sys_stderr_write_in_dev_tooling(*, tmp_path: Pa
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_NO_WRITE_DIRECT)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path)
 
     assert result.returncode != 0, (
         f"no_write_direct should reject sys.stderr.write call in dev-tooling/; "
@@ -149,13 +160,7 @@ def test_no_write_direct_accepts_module_without_banned_calls(*, tmp_path: Path) 
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_NO_WRITE_DIRECT)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path)
 
     assert result.returncode == 0, (
         f"no_write_direct should accept clean module with exit 0; "
@@ -188,13 +193,7 @@ def test_no_write_direct_accepts_bin_bootstrap_file_scope_exemption(*, tmp_path:
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_NO_WRITE_DIRECT)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path)
 
     assert result.returncode == 0, (
         f"no_write_direct should exempt bin/_bootstrap.py with exit 0; "
@@ -233,13 +232,7 @@ def test_no_write_direct_accepts_doctor_run_static_file_scope(*, tmp_path: Path)
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_NO_WRITE_DIRECT)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path)
 
     assert result.returncode == 0, (
         f"no_write_direct should exempt doctor/run_static.py file-scope with exit 0; "
@@ -278,13 +271,7 @@ def test_no_write_direct_accepts_commands_file_scope(*, tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_NO_WRITE_DIRECT)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path)
 
     assert result.returncode == 0, (
         f"no_write_direct should exempt commands/ file-scope with exit 0; "
@@ -299,13 +286,7 @@ def test_no_write_direct_accepts_empty_tree(*, tmp_path: Path) -> None:
     Closes the `if root.is_dir():` False arm for every covered
     subtree.
     """
-    result = subprocess.run(
-        [sys.executable, str(_NO_WRITE_DIRECT)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path)
 
     assert result.returncode == 0, (
         f"no_write_direct should accept empty tree with exit 0; "

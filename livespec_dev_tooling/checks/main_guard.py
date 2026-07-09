@@ -34,6 +34,8 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling.config import is_under_any_tree, resolve_check_universe  # noqa: E402
+
 __all__: list[str] = []
 
 
@@ -67,21 +69,32 @@ def main() -> int:
         logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
     )
     log = structlog.get_logger("main_guard")
-    cwd = Path.cwd()
-    livespec_root = cwd / _LIVESPEC_TREE
-    offenders: list[tuple[Path, int]] = []
-    if livespec_root.is_dir():
-        for py_file in sorted(livespec_root.rglob("*.py")):
-            source = py_file.read_text(encoding="utf-8")
-            for lineno in _find_main_guard_lines(source=source):
-                offenders.append((py_file.relative_to(cwd), lineno))
-    if offenders:
-        for path, lineno in offenders:
-            log.error(
-                "`__main__` guard banned in livespec/**",
-                file=str(path),
-                line=lineno,
-            )
+    root, universe = resolve_check_universe()
+    legacy_offenders: list[tuple[Path, int]] = []
+    newly_covered_offenders: list[tuple[Path, int]] = []
+    for rel in universe:
+        source = (root / rel).read_text(encoding="utf-8")
+        for lineno in _find_main_guard_lines(source=source):
+            if is_under_any_tree(rel=rel, trees=(_LIVESPEC_TREE,)):
+                legacy_offenders.append((rel, lineno))
+            else:
+                newly_covered_offenders.append((rel, lineno))
+    for path, lineno in newly_covered_offenders:
+        log.warning(
+            "`__main__` guard banned in first-party modules — newly git-derived coverage; "
+            "Phase-0 WARN (hard-fails once this repo is flipped to the hard gate in Phase 2)",
+            file=str(path),
+            line=lineno,
+            phase="0-warn",
+            newly_covered=True,
+        )
+    for path, lineno in legacy_offenders:
+        log.error(
+            "`__main__` guard banned in livespec/**",
+            file=str(path),
+            line=lineno,
+        )
+    if legacy_offenders:
         return 1
     return 0
 

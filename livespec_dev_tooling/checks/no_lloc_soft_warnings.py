@@ -44,7 +44,11 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
-from livespec_dev_tooling.config import iter_py_files, load_config  # noqa: E402
+from livespec_dev_tooling.config import (  # noqa: E402
+    is_under_any_tree,
+    load_config,
+    resolve_check_universe,
+)
 
 __all__: list[str] = []
 
@@ -110,25 +114,22 @@ def main() -> int:
         logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
     )
     log = structlog.get_logger("no_lloc_soft_warnings")
-    cwd = Path.cwd()
-    config = load_config(repo_root=cwd)
-    if not config.covered_trees:
-        log.info(
-            "role key absent — check no-ops",
-            check_id="no_lloc_soft_warnings",
-            role="covered_trees",
-        )
-        return 0
-    soft_band_offenders: list[tuple[Path, int]] = []
-    for tree_rel in config.covered_trees:
-        for py_file in iter_py_files(root=cwd / tree_rel):
-            source = py_file.read_text(encoding="utf-8")
-            lloc = _count_lloc(source=source)
-            if _LLOC_SOFT_CEILING < lloc <= _LLOC_HARD_CEILING:
-                soft_band_offenders.append((py_file.relative_to(cwd), lloc))
-    if soft_band_offenders:
-        fail = bool(os.environ.get(_FAIL_ENV_VAR))
-        for path, lloc in soft_band_offenders:
+    root, universe = resolve_check_universe()
+    config = load_config(repo_root=root)
+    legacy_soft_offenders: list[tuple[Path, int]] = []
+    newly_covered_soft_offenders: list[tuple[Path, int]] = []
+    for rel in universe:
+        source = (root / rel).read_text(encoding="utf-8")
+        lloc = _count_lloc(source=source)
+        if not (_LLOC_SOFT_CEILING < lloc <= _LLOC_HARD_CEILING):
+            continue
+        if is_under_any_tree(rel=rel, trees=config.covered_trees):
+            legacy_soft_offenders.append((rel, lloc))
+        else:
+            newly_covered_soft_offenders.append((rel, lloc))
+    fail = bool(os.environ.get(_FAIL_ENV_VAR))
+    if legacy_soft_offenders:
+        for path, lloc in legacy_soft_offenders:
             emit = log.error if fail else log.warning
             emit(
                 "file in 201-250 LLOC soft band",
@@ -139,7 +140,21 @@ def main() -> int:
                 fail_env_var=_FAIL_ENV_VAR,
                 failing=fail,
             )
-        return 1 if fail else 0
+    for path, lloc in newly_covered_soft_offenders:
+        log.warning(
+            "file in 201-250 LLOC soft band — newly git-derived coverage; Phase-0 WARN "
+            "(hard-fails once this repo is flipped to the hard gate in Phase 2)",
+            file=str(path),
+            lloc=lloc,
+            soft_ceiling=_LLOC_SOFT_CEILING,
+            hard_ceiling=_LLOC_HARD_CEILING,
+            fail_env_var=_FAIL_ENV_VAR,
+            failing=False,
+            phase="0-warn",
+            newly_covered=True,
+        )
+    if legacy_soft_offenders and fail:
+        return 1
     return 0
 
 

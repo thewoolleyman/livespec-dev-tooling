@@ -29,6 +29,7 @@ fixture root.
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 from pathlib import Path
 from types import ModuleType
 from typing import NamedTuple
@@ -40,6 +41,17 @@ __all__: list[str] = []
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _MAIN_GUARD = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "main_guard.py"
+
+
+def _git(*, cwd: Path, args: list[str]) -> None:
+    _ = subprocess.run(
+        ["git", *args],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=True,
+        env={"HOME": str(cwd), "GIT_CONFIG_GLOBAL": "/dev/null", "PATH": "/usr/bin:/bin"},
+    )
 
 
 def _load_check_module() -> ModuleType:
@@ -71,6 +83,8 @@ def _run_check(
     *, cwd: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> _CheckRun:
     """Invoke the check's `main()` in-process under `cwd` and capture output."""
+    _git(cwd=cwd, args=["init", "-q"])
+    _git(cwd=cwd, args=["add", "-A"])
     monkeypatch.chdir(cwd)
     rc = _MODULE.main()
     captured = capsys.readouterr()

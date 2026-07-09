@@ -256,6 +256,9 @@ def _as_str(*, value: object, key: str) -> str:
     if not isinstance(value, str):
         msg = f"`{key}` must be a string"
         raise ConfigParseError(msg)
+    if key == "tests_tree_prefix" and value == "":
+        msg = "`tests_tree_prefix` must be a non-empty string"
+        raise ConfigParseError(msg)
     return value
 
 
