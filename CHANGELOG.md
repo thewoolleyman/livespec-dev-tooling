@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.34.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.34.3...v0.34.4) (2026-07-09)
+
+
+### Refactoring
+
+* reshape resolve_check_universe to own root-resolution; drop vacuous empty-walk guard ([c72db0e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c72db0e6033f302ef8fccf4eafc00d3059e41945))
+
 ## [0.34.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.34.2...v0.34.3) (2026-07-09)
 
 
