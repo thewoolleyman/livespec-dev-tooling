@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.35.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.34.5...v0.35.0) (2026-07-09)
+
+
+### Features
+
+* add partition completeness check ([b4d0882](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b4d08829946f476ddbef9302d0d538bf7be3f43d))
+
 ## [0.34.5](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.34.4...v0.34.5) (2026-07-09)
 
 
