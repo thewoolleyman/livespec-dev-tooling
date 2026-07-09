@@ -23,11 +23,9 @@ from pathlib import Path
 
 import pytest
 
-import livespec_dev_tooling.config as config_mod
 from livespec_dev_tooling.config import (
     Config,
     ConfigParseError,
-    EmptyUniverseError,
     GitLsFilesError,
     GitToplevelError,
     MirrorPairing,
@@ -704,20 +702,12 @@ def test_iter_first_party_py_files_raises_on_git_failure(*, tmp_path: Path) -> N
 
 # --- resolve_repo_root / is_under_any_tree / resolve_check_universe ----------
 #
-# The applies-to-all check anchoring + delta-WARN helpers (fleet-check-coverage
-# PR2). `resolve_repo_root` runs `git rev-parse --show-toplevel` in the PROCESS
-# cwd, so its tests `monkeypatch.chdir(...)` a real `tmp_path` git repo; the
-# other two are pure functions over an explicit `repo_root`.
-
-
-def _fake_empty_universe(**_: object) -> tuple[Path, ...]:
-    """Monkeypatch stand-in: an always-empty first-party universe."""
-    return ()
-
-
-def _fake_has_first_party(**_: object) -> bool:
-    """Monkeypatch stand-in: claims the repo HAS first-party `.py`."""
-    return True
+# The applies-to-all check anchoring + delta-WARN helpers (fleet-check-coverage).
+# Both `resolve_repo_root` and `resolve_check_universe` run git in the PROCESS
+# cwd — `resolve_check_universe` OWNS root-resolution (it takes no `repo_root`),
+# so a caller cannot pass a mis-anchored root — so their tests
+# `monkeypatch.chdir(...)` a real `tmp_path` git repo; `is_under_any_tree` is a
+# pure classifier over explicit args.
 
 
 def test_resolve_repo_root_returns_toplevel_from_subdirectory(
@@ -774,36 +764,52 @@ def test_is_under_any_tree_classifies_relative_paths() -> None:
     assert is_under_any_tree(rel=Path("mod.py"), trees=()) is False
 
 
-def test_resolve_check_universe_returns_the_first_party_universe(*, tmp_path: Path) -> None:
-    """A repo with first-party `.py` yields that (root-relative) universe."""
+def test_resolve_check_universe_returns_root_and_universe(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """From inside the repo, `resolve_check_universe()` returns `(root, universe)`.
+
+    It OWNS root-resolution (no `repo_root` argument), so a caller cannot pass a
+    mis-anchored root — the root is the git toplevel of the process cwd.
+    """
     _git(cwd=tmp_path, args=["init", "-q"])
     kept = Path("pkg") / "a.py"
     full = tmp_path / kept
     full.parent.mkdir(parents=True)
     _ = full.write_text("x = 1\n", encoding="utf-8")
     _git(cwd=tmp_path, args=["add", "-A"])
-    assert resolve_check_universe(repo_root=tmp_path) == (kept,)
+    monkeypatch.chdir(tmp_path)
+    root, universe = resolve_check_universe()
+    assert root.samefile(tmp_path)
+    assert universe == (kept,)
 
 
-def test_resolve_check_universe_empty_for_genuinely_codeless_repo(*, tmp_path: Path) -> None:
-    """A repo with zero first-party `.py` returns an empty universe (a legitimate PASS)."""
+def test_resolve_check_universe_empty_for_genuinely_codeless_repo(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A repo with zero first-party `.py` yields an empty universe (a legitimate PASS)."""
     _git(cwd=tmp_path, args=["init", "-q"])
     _ = (tmp_path / "README.md").write_text("no code\n", encoding="utf-8")
     _git(cwd=tmp_path, args=["add", "-A"])
-    assert resolve_check_universe(repo_root=tmp_path) == ()
+    monkeypatch.chdir(tmp_path)
+    root, universe = resolve_check_universe()
+    assert root.samefile(tmp_path)
+    assert universe == ()
 
 
-def test_resolve_check_universe_fails_closed_on_inconsistent_empty(
+def test_resolve_check_universe_raises_outside_git_tree(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Empty universe while `has_first_party_py` is True raises `EmptyUniverseError`.
+    """Outside any git working tree, `resolve_check_universe()` fails closed.
 
-    The fail-closed backstop. It cannot fire in production (both derive from the
-    same root-anchored `iter_first_party_py_files`); forcing the two to disagree
-    via monkeypatch exercises the defense-in-depth guard against a future
-    root-resolution regression.
+    Real fail-closed coverage: because the resolver OWNS root-resolution, a
+    non-git cwd raises `GitToplevelError` — never a spuriously-empty walk. This
+    replaces the former monkeypatch-only `EmptyUniverseError` test, which
+    exercised a provably-unreachable branch (`not X and bool(X)` is always
+    False), and pins the protection that actually holds.
     """
-    monkeypatch.setattr(config_mod, "iter_first_party_py_files", _fake_empty_universe)
-    monkeypatch.setattr(config_mod, "has_first_party_py", _fake_has_first_party)
-    with pytest.raises(EmptyUniverseError, match="empty first-party universe"):
-        _ = config_mod.resolve_check_universe(repo_root=tmp_path)
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    monkeypatch.chdir(plain)
+    with pytest.raises(GitToplevelError, match="git rev-parse --show-toplevel failed"):
+        _ = resolve_check_universe()

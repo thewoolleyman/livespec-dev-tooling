@@ -63,7 +63,6 @@ else:
 __all__: list[str] = [
     "Config",
     "ConfigParseError",
-    "EmptyUniverseError",
     "GitLsFilesError",
     "GitToplevelError",
     "MirrorPairing",
@@ -116,20 +115,6 @@ class GitToplevelError(Exception):
     git working tree (or `git` otherwise exits non-zero), so the
     applies-to-all checks fail closed rather than anchoring on a
     mis-resolved root.
-    """
-
-
-class EmptyUniverseError(Exception):
-    """Raised when the first-party universe is empty but the repo has first-party `.py`.
-
-    The fail-closed backstop `resolve_check_universe` enforces for the
-    applies-to-all checks: after root-anchoring, an empty first-party
-    universe is a legitimate PASS ONLY when the repo genuinely has zero
-    first-party `.py` (`has_first_party_py` False — the verified
-    `livespec-console-beads-fabro` case). If the walked universe is empty
-    yet `has_first_party_py` is True, root resolution is inconsistent — a
-    hard error naming the repo, never the silent green the
-    fleet-check-coverage mechanism exists to eliminate.
     """
 
 
@@ -627,22 +612,25 @@ def iter_first_party_py_files(*, repo_root: Path) -> tuple[Path, ...]:
 def has_first_party_py(*, repo_root: Path) -> bool:
     """True iff `repo_root` has at least one first-party `.py` file.
 
-    A trivial derivation of `iter_first_party_py_files`, added ahead of
-    need for a later fail-closed empty-walk guard (that guard's
-    "genuinely codeless" branch — the console repo — is what this
-    predicate answers). Changes no existing behavior; wiring the guard
-    itself is a later PR.
+    A trivial derivation of `iter_first_party_py_files`. Exported as a
+    standalone predicate a cross-check completeness meta-check (the
+    fleet-check-coverage partition check) can consume; the applies-to-all
+    checks themselves do NOT call it — they derive their whole universe
+    from the single `resolve_check_universe` entry point.
     """
     return bool(iter_first_party_py_files(repo_root=repo_root))
 
 
 # ---------------------------------------------------------------------------
 # Applies-to-all check anchoring + delta-WARN helpers — fleet-check-coverage
-# PR2 (epic `livespec-i5ebqd`). The shared surface the seven `source_trees`
+# (epic `livespec-i5ebqd`). The shared surface the seven `source_trees`
 # structural checks and `file_lloc` route through so every applies-to-all
-# check derives its file universe from the SAME root-anchored git index,
-# classifies each file legacy-vs-newly identically, and fails closed on an
-# inconsistent empty walk.
+# check derives its file universe from the SAME root-anchored git index and
+# classifies each file legacy-vs-newly identically. `resolve_check_universe`
+# is the single entry point: it OWNS root-resolution, so no check can pass a
+# mis-anchored root. Root-anchoring plus the typed git errors
+# (`GitToplevelError` / `GitLsFilesError`) are the fail-closed protection —
+# a check cannot silently walk zero files from a wrong root or a git failure.
 # ---------------------------------------------------------------------------
 
 
@@ -694,22 +682,27 @@ def is_under_any_tree(*, rel: Path, trees: tuple[Path, ...]) -> bool:
     return any(rel.is_relative_to(tree) for tree in trees)
 
 
-def resolve_check_universe(*, repo_root: Path) -> tuple[Path, ...]:
-    """Return an applies-to-all check's first-party `.py` universe, fail-closed.
+def resolve_check_universe() -> tuple[Path, tuple[Path, ...]]:
+    """Resolve the repo root and its first-party `.py` universe for a check.
 
-    Wraps `iter_first_party_py_files` with the empty-walk guard the
-    applies-to-all checks share. An empty universe is a legitimate result
-    ONLY for a genuinely codeless repo (`has_first_party_py` False — the
-    caller then passes with an info-level "nothing to check"). If the
-    universe is empty yet `has_first_party_py` is True, root resolution is
-    inconsistent — raises `EmptyUniverseError` naming the repo rather than
-    silently walking nothing and exiting 0 (the fail-open shape this
-    mechanism replaces). In the normal case both derive from the same
-    root-anchored `iter_first_party_py_files`, so the guard is
-    defense-in-depth against a future root-resolution regression.
+    The single entry point every applies-to-all check (the seven
+    `source_trees` checks and `file_lloc`) uses to obtain BOTH the
+    root-anchored `repo_root` and its git-derived first-party universe. It
+    OWNS root-resolution — resolving the git toplevel via
+    `resolve_repo_root` (every `GIT_*` var stripped) rather than trusting a
+    caller-supplied root — so a check cannot pass a wrong or subdirectory
+    root and silently walk a partial universe. That ownership, together
+    with the typed git errors, is the fail-closed protection: a
+    non-git-tree cwd raises `GitToplevelError`, a `git ls-files` failure
+    raises `GitLsFilesError`, and neither yields a spuriously-empty walk.
+
+    Returns `(repo_root, universe)`. An empty `universe` means the repo is
+    genuinely codeless (zero tracked first-party `.py`) — a legitimate
+    result the caller passes on with an info-level "nothing to check".
+    Because every applies-to-all check derives from THIS one entry point,
+    there is no reachable per-check "empty-but-code-exists" divergence to
+    guard at runtime; cross-check completeness is a separate meta-check's
+    concern, not a same-function comparison here.
     """
-    universe = iter_first_party_py_files(repo_root=repo_root)
-    if not universe and has_first_party_py(repo_root=repo_root):
-        msg = f"empty first-party universe despite tracked first-party .py in {repo_root}"
-        raise EmptyUniverseError(msg)
-    return universe
+    root = resolve_repo_root()
+    return root, iter_first_party_py_files(repo_root=root)

@@ -58,7 +58,6 @@ from livespec_dev_tooling.config import (  # noqa: E402
     is_under_any_tree,
     load_config,
     resolve_check_universe,
-    resolve_repo_root,
 )
 
 __all__: list[str] = []
@@ -93,8 +92,7 @@ def main() -> int:
         logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
     )
     log = structlog.get_logger("match_keyword_only")
-    root = resolve_repo_root()
-    universe = resolve_check_universe(repo_root=root)
+    root, universe = resolve_check_universe()
     if not universe:
         log.info("no first-party Python to check")
         return 0

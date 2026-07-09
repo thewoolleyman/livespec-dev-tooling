@@ -71,8 +71,7 @@ import structlog  # noqa: E402  — vendor-path-aware import after sys.path inse
 
 from livespec_dev_tooling.config import (  # noqa: E402
     is_under_any_tree,
-    iter_first_party_py_files,
-    resolve_repo_root,
+    resolve_check_universe,
 )
 
 __all__: list[str] = []
@@ -147,11 +146,11 @@ def main() -> int:
         logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
     )
     log = structlog.get_logger("file_lloc")
-    root = resolve_repo_root()
+    root, universe = resolve_check_universe()
     legacy_soft_offenders: list[tuple[Path, int]] = []
     legacy_hard_offenders: list[tuple[Path, int]] = []
     newly_covered_offenders: list[tuple[Path, int]] = []
-    for rel in iter_first_party_py_files(repo_root=root):
+    for rel in universe:
         source = (root / rel).read_text(encoding="utf-8")
         lloc = _count_lloc(source=source)
         if lloc <= _LLOC_SOFT_CEILING:
