@@ -250,10 +250,18 @@ def test_comment_line_anchors_warns_for_newly_covered_file(*, tmp_path: Path) ->
 
 
 def test_main_guard_warns_for_newly_covered_package(*, tmp_path: Path) -> None:
-    """A `__main__` guard outside the old livespec tree is newly-covered at WARN."""
+    """A `__main__` guard in a non-legacy plugin tree is newly-covered at WARN.
+
+    main_guard is ROLE-SCOPED to the plugin-packaging convention: the ban
+    applies only under `.claude-plugin/scripts/`. A `__main__` guard in a
+    non-legacy plugin package there (not the legacy
+    `.claude-plugin/scripts/livespec/` tree) is newly-covered at WARN. A
+    package OUTSIDE `.claude-plugin/scripts/` is not subject to the ban at all
+    (covered by test_main_guard_ignores_main_guard_outside_plugin_scripts_tree).
+    """
     _write_block(repo_root=tmp_path, body="")
-    pkg = tmp_path / "pkg"
-    pkg.mkdir()
+    pkg = tmp_path / ".claude-plugin" / "scripts" / "pkg"
+    pkg.mkdir(parents=True)
     _ = (pkg / "bad.py").write_text(
         "from __future__ import annotations\n\n"
         "__all__: list[str] = []\n\n"
@@ -265,7 +273,7 @@ def test_main_guard_warns_for_newly_covered_package(*, tmp_path: Path) -> None:
     assert (
         result.returncode == 0
     ), f"newly-covered main_guard offender should warn, not fail; stderr={result.stderr!r}"
-    assert "pkg/bad.py" in result.stderr
+    assert ".claude-plugin/scripts/pkg/bad.py" in result.stderr
     assert "newly_covered" in result.stderr
     assert '"level": "warning"' in result.stderr
 

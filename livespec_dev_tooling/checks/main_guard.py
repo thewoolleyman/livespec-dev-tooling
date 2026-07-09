@@ -1,19 +1,26 @@
-"""main_guard — bans `if __name__ == "__main__":` inside `livespec/**`.
+"""main_guard — bans `if __name__ == "__main__":` inside plugin-packaging trees.
 
 Per `python-skill-script-style-requirements.md` §"Canonical
 target list" (the `check-main-guard` row), no `.py` file under
-`.claude-plugin/scripts/livespec/**` may contain an
-`if __name__ == "__main__":` guard at any nesting level.
-livespec's runnable entry points live in `bin/*.py` (the
-shebang wrappers); a `__main__` guard inside `livespec/**`
-indicates a wrapper-style file in the wrong tree.
+a `.claude-plugin/scripts/` plugin-packaging tree may contain an
+`if __name__ == "__main__":` guard at any nesting level. A
+plugin's runnable entry points live in `bin/*.py` (the shebang
+wrappers the installer flattens `.claude-plugin/scripts/`
+around); a `__main__` guard inside a plugin tree indicates a
+wrapper-style file in the wrong place.
 
-The check walks every `.py` file under `.claude-plugin/scripts/
-livespec/`, parses each via `ast`, and inspects every `If`
-node whose test unparses to the canonical `__name__ ==
-"__main__"` string (either operand order). Any match emits a
-structlog ERROR carrying the file path and line number, and
-the script exits 1. With no violations, exits 0.
+The ban is ROLE-SCOPED to that convention: the check inspects
+only files under `.claude-plugin/scripts/` (any package name).
+First-party modules OUTSIDE that tree — a `python -m`-invoked
+package such as `livespec_dev_tooling/**`, a library package, a
+harness hook — legitimately carry `__main__` guards and are not
+subject to the ban. Within scope, files under the legacy
+`.claude-plugin/scripts/livespec/` tree emit a structlog ERROR
+(exit 1); files under any other plugin tree emit a Phase-0 WARN
+(`newly_covered`, exit 0) per the delta-WARN model. It parses
+each file via `ast` and inspects every `If` node whose test
+unparses to the canonical `__name__ == "__main__"` string
+(either operand order). With no legacy violations, exits 0.
 
 Output discipline: per spec, `print` (T20) and
 `sys.stderr.write` (`check-no-write-direct`) are banned in
@@ -39,6 +46,7 @@ from livespec_dev_tooling.config import is_under_any_tree, resolve_check_univers
 __all__: list[str] = []
 
 
+_PLUGIN_SCRIPTS_TREE = Path(".claude-plugin") / "scripts"
 _LIVESPEC_TREE = Path(".claude-plugin") / "scripts" / "livespec"
 _MAIN_GUARD_TEXTS = frozenset(
     {
@@ -73,6 +81,14 @@ def main() -> int:
     legacy_offenders: list[tuple[Path, int]] = []
     newly_covered_offenders: list[tuple[Path, int]] = []
     for rel in universe:
+        if not is_under_any_tree(rel=rel, trees=(_PLUGIN_SCRIPTS_TREE,)):
+            # main_guard is ROLE-SCOPED to the plugin-packaging convention:
+            # the `__main__` ban applies only under `.claude-plugin/scripts/`
+            # (the installer-flattened surface where `bin/*.py` wrappers are the
+            # entry convention). First-party modules outside that tree — a
+            # `python -m`-invoked package, a library, a hook — legitimately
+            # carry `__main__` guards and are not subject to the ban.
+            continue
         source = (root / rel).read_text(encoding="utf-8")
         for lineno in _find_main_guard_lines(source=source):
             if is_under_any_tree(rel=rel, trees=(_LIVESPEC_TREE,)):
