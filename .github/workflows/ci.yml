@@ -207,6 +207,7 @@ jobs:
           - check-aggregate-completeness
           - check-fabro-image-pin-lockstep
           - check-no-direct-destructive-cli
+          - check-partition-completeness
           - check-primary-checkout-commit-refuse-hook-installed
           - check-red-green-replay
           - check-tool-backed-check-completeness

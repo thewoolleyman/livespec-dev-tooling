@@ -197,6 +197,7 @@ check:
         check-no-raise-outside-io
         check-no-todo-registry
         check-no-write-direct
+        check-partition-completeness
         check-pbt-coverage-pure-modules
         check-per-file-coverage
         check-plugin-resolution
@@ -588,6 +589,9 @@ check-no-todo-registry:
 
 check-no-write-direct:
     uv run python -m livespec_dev_tooling.checks.no_write_direct
+
+check-partition-completeness:
+    uv run python -m livespec_dev_tooling.checks.partition_completeness
 
 check-pbt-coverage-pure-modules:
     uv run python -m livespec_dev_tooling.checks.pbt_coverage_pure_modules
