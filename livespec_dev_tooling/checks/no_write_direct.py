@@ -49,7 +49,12 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
-from livespec_dev_tooling.config import Config, iter_py_files, load_config  # noqa: E402
+from livespec_dev_tooling.config import (  # noqa: E402
+    Config,
+    is_under_any_tree,
+    load_config,
+    resolve_check_universe,
+)
 
 __all__: list[str] = []
 
@@ -87,31 +92,36 @@ def main() -> int:
         logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
     )
     log = structlog.get_logger("no_write_direct")
-    cwd = Path.cwd()
-    config = load_config(repo_root=cwd)
-    if not config.covered_trees:
-        log.info(
-            "role key absent — check no-ops",
-            check_id="no_write_direct",
-            role="covered_trees",
+    root, universe = resolve_check_universe()
+    config = load_config(repo_root=root)
+    legacy_offenders: list[tuple[Path, int]] = []
+    newly_covered_offenders: list[tuple[Path, int]] = []
+    for rel in universe:
+        if _is_file_scope_exempt(rel_path=rel, config=config):
+            continue
+        source = (root / rel).read_text(encoding="utf-8")
+        for lineno in _find_banned_calls(source=source):
+            if is_under_any_tree(rel=rel, trees=config.covered_trees):
+                legacy_offenders.append((rel, lineno))
+            else:
+                newly_covered_offenders.append((rel, lineno))
+    for path, lineno in newly_covered_offenders:
+        log.warning(
+            "`sys.stdout.write`/`sys.stderr.write` banned outside exemption surface — "
+            "newly git-derived coverage; Phase-0 WARN "
+            "(hard-fails once this repo is flipped to the hard gate in Phase 2)",
+            file=str(path),
+            line=lineno,
+            phase="0-warn",
+            newly_covered=True,
         )
-        return 0
-    offenders: list[tuple[Path, int]] = []
-    for tree_rel in config.covered_trees:
-        for py_file in iter_py_files(root=cwd / tree_rel):
-            rel = py_file.relative_to(cwd)
-            if _is_file_scope_exempt(rel_path=rel, config=config):
-                continue
-            source = py_file.read_text(encoding="utf-8")
-            for lineno in _find_banned_calls(source=source):
-                offenders.append((rel, lineno))
-    if offenders:
-        for path, lineno in offenders:
-            log.error(
-                "`sys.stdout.write`/`sys.stderr.write` banned outside exemption surface",
-                file=str(path),
-                line=lineno,
-            )
+    for path, lineno in legacy_offenders:
+        log.error(
+            "`sys.stdout.write`/`sys.stderr.write` banned outside exemption surface",
+            file=str(path),
+            line=lineno,
+        )
+    if legacy_offenders:
         return 1
     return 0
 

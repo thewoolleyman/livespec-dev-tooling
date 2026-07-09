@@ -24,6 +24,7 @@ toggled via `monkeypatch.setenv`/`delenv`.
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 from pathlib import Path
 from types import ModuleType
 from typing import NamedTuple
@@ -37,6 +38,17 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 _NO_LLOC_SOFT_WARNINGS = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "no_lloc_soft_warnings.py"
 
 _FAIL_VAR = "LIVESPEC_FAIL_IF_LLOC_SOFT_WARNINGS_EXIST"
+
+
+def _git(*, cwd: Path, args: list[str]) -> None:
+    _ = subprocess.run(
+        ["git", *args],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=True,
+        env={"HOME": str(cwd), "GIT_CONFIG_GLOBAL": "/dev/null", "PATH": "/usr/bin:/bin"},
+    )
 
 
 def _load_check_module() -> ModuleType:
@@ -79,6 +91,8 @@ def _run_check(
     warn-only state); any string sets it to that value via
     `monkeypatch.setenv`.
     """
+    _git(cwd=cwd, args=["init", "-q"])
+    _git(cwd=cwd, args=["add", "-A"])
     monkeypatch.chdir(cwd)
     if fail_var is None:
         monkeypatch.delenv(_FAIL_VAR, raising=False)
@@ -243,17 +257,10 @@ def test_accepts_empty_tree(
     assert result.returncode == 0
 
 
-def test_no_op_when_covered_trees_absent(
+def test_warns_when_covered_trees_absent(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A config with an empty `covered_trees` role key → no-op exit 0.
-
-    Writing a `pyproject.toml` with a `[tool.livespec_dev_tooling]`
-    block that explicitly empties `covered_trees` drives the
-    `if not config.covered_trees:` branch. (A bare block present with
-    the key omitted would also work — both resolve `covered_trees`
-    to the empty flat baseline rather than the livespec-core fallback.)
-    """
+    """An empty `covered_trees` classifier makes offenders newly-covered WARNs."""
     _write_py_with_lloc(
         tmp_path=tmp_path,
         rel_path=".claude-plugin/scripts/livespec/medium.py",
@@ -265,11 +272,13 @@ def test_no_op_when_covered_trees_absent(
     )
     result = _run_check(cwd=tmp_path, fail_var="true", monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0, (
-        f"empty covered_trees should no-op exit 0; "
+        f"empty covered_trees should warn as newly-covered without failing; "
         f"got returncode={result.returncode} stderr={result.stderr!r}"
     )
     combined = result.stdout + result.stderr
-    assert "role key absent" in combined
+    assert ".claude-plugin/scripts/livespec/medium.py" in combined
+    assert "newly_covered" in combined
+    assert '"level": "warning"' in combined
 
 
 def test_module_importable_without_running_main() -> None:

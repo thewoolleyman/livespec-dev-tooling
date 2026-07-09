@@ -21,6 +21,29 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 _ROP_PIPELINE_SHAPE = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "rop_pipeline_shape.py"
 
 
+def _git(*, cwd: Path, args: list[str]) -> None:
+    _ = subprocess.run(
+        ["git", *args],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=True,
+        env={"HOME": str(cwd), "GIT_CONFIG_GLOBAL": "/dev/null", "PATH": "/usr/bin:/bin"},
+    )
+
+
+def _run_check(*, cwd: Path) -> subprocess.CompletedProcess[str]:
+    _git(cwd=cwd, args=["init", "-q"])
+    _git(cwd=cwd, args=["add", "-A"])
+    return subprocess.run(
+        [sys.executable, str(_ROP_PIPELINE_SHAPE)],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
 def test_rop_pipeline_shape_rejects_class_with_two_public_methods(*, tmp_path: Path) -> None:
     """A `@rop_pipeline` class with two non-underscore methods fails the check."""
     package_dir = tmp_path / ".claude-plugin" / "scripts" / "livespec"
@@ -44,13 +67,7 @@ def test_rop_pipeline_shape_rejects_class_with_two_public_methods(*, tmp_path: P
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_ROP_PIPELINE_SHAPE)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path)
 
     assert result.returncode != 0, (
         f"rop_pipeline_shape should reject two-public-methods class; "
@@ -94,13 +111,7 @@ def test_rop_pipeline_shape_accepts_class_with_one_public_method(*, tmp_path: Pa
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_ROP_PIPELINE_SHAPE)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path)
 
     assert result.returncode == 0, (
         f"rop_pipeline_shape should accept one-public-method class with exit 0; "
@@ -141,13 +152,7 @@ def test_rop_pipeline_shape_accepts_bare_decorator_and_class_attributes(
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_ROP_PIPELINE_SHAPE)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path)
 
     assert result.returncode == 0, (
         f"rop_pipeline_shape should accept class with attributes; "
@@ -176,13 +181,7 @@ def test_rop_pipeline_shape_ignores_undecorated_classes(*, tmp_path: Path) -> No
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_ROP_PIPELINE_SHAPE)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path)
 
     assert result.returncode == 0, (
         f"rop_pipeline_shape should ignore undecorated classes; "
@@ -192,13 +191,7 @@ def test_rop_pipeline_shape_ignores_undecorated_classes(*, tmp_path: Path) -> No
 
 def test_rop_pipeline_shape_accepts_empty_tree(*, tmp_path: Path) -> None:
     """An empty repo cwd passes (exit 0)."""
-    result = subprocess.run(
-        [sys.executable, str(_ROP_PIPELINE_SHAPE)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path)
 
     assert (
         result.returncode == 0

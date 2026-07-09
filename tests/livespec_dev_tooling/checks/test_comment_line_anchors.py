@@ -28,7 +28,20 @@ _CHECK_PATH = (
 )
 
 
+def _git(*, cwd: Path, args: list[str]) -> None:
+    _ = subprocess.run(
+        ["git", *args],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=True,
+        env={"HOME": str(cwd), "GIT_CONFIG_GLOBAL": "/dev/null", "PATH": "/usr/bin:/bin"},
+    )
+
+
 def _run_check(*, cwd: Path) -> subprocess.CompletedProcess[str]:
+    _git(cwd=cwd, args=["init", "-q"])
+    _git(cwd=cwd, args=["add", "-A"])
     return subprocess.run(
         [sys.executable, str(_CHECK_PATH)],
         cwd=cwd,

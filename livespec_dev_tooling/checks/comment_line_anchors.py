@@ -37,7 +37,11 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
-from livespec_dev_tooling.config import iter_py_files, load_config  # noqa: E402
+from livespec_dev_tooling.config import (  # noqa: E402
+    is_under_any_tree,
+    load_config,
+    resolve_check_universe,
+)
 
 __all__: list[str] = []
 
@@ -99,30 +103,28 @@ def _scan_file(*, path: Path) -> list[tuple[int, str]]:
     return _docstring_hits(source=source) + _comment_hits(source=source)
 
 
-def _walk_targets(*, cwd: Path, target_dirs: tuple[Path, ...]) -> list[Path]:
-    paths: list[Path] = []
-    for target in target_dirs:
-        paths.extend(iter_py_files(root=cwd / target))
-    return paths
-
-
 def main() -> int:
     log = _configure_logger()
-    cwd = Path.cwd()
-    config = load_config(repo_root=cwd)
-    offenders = 0
-    for path in _walk_targets(cwd=cwd, target_dirs=config.target_dirs):
-        for lineno, matched in _scan_file(path=path):
-            offenders += 1
-            log.error(
+    root, universe = resolve_check_universe()
+    config = load_config(repo_root=root)
+    legacy_offenders = 0
+    for rel in universe:
+        is_legacy = is_under_any_tree(rel=rel, trees=config.target_dirs)
+        for lineno, matched in _scan_file(path=root / rel):
+            emit = log.error if is_legacy else log.warning
+            extra = {} if is_legacy else {"phase": "0-warn", "newly_covered": True}
+            emit(
                 "line-number anchor in docstring or comment",
                 check_id="comment-line-anchor",
-                path=str(path.relative_to(cwd)),
+                path=str(rel),
                 lineno=lineno,
                 matched=matched,
                 hint=_REMINDER,
+                **extra,
             )
-    if offenders:
+            if is_legacy:
+                legacy_offenders += 1
+    if legacy_offenders:
         return 1
     return 0
 
