@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.36.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.36.2...v0.36.3) (2026-07-10)
+
+
+### Bug Fixes
+
+* **fabro-sandbox:** bake bubblewrap + codex-acp adapter ([7339303](https://github.com/thewoolleyman/livespec-dev-tooling/commit/733930370790fcd74ebc6ec6e2e468cf30f0e2f6))
+
 ## [0.36.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.36.1...v0.36.2) (2026-07-10)
 
 
