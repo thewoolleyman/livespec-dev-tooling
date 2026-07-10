@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.36.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.36.1...v0.36.2) (2026-07-10)
+
+
+### Bug Fixes
+
+* ban --canonical-from override flag in canonical recipe bodies ([5f75348](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5f7534856db5a3b88393ad1056c1afbf091cd506))
+
 ## [0.36.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.36.0...v0.36.1) (2026-07-10)
 
 
