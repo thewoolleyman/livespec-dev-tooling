@@ -61,6 +61,7 @@ else:
     import tomli as _toml
 
 __all__: list[str] = [
+    "BIN_WRAPPER_TREE",
     "Config",
     "ConfigParseError",
     "GitLsFilesError",
@@ -68,6 +69,7 @@ __all__: list[str] = [
     "MirrorPairing",
     "filter_first_party_py",
     "has_first_party_py",
+    "is_bin_wrapper",
     "is_generated",
     "is_under_any_tree",
     "iter_first_party_py_files",
@@ -683,6 +685,39 @@ def is_under_any_tree(*, rel: Path, trees: tuple[Path, ...]) -> bool:
     applies-to-all check shares one implementation.
     """
     return any(rel.is_relative_to(tree) for tree in trees)
+
+
+# The single definition of the `bin/*.py` shebang-wrapper set. A wrapper is
+# a DIRECT-CHILD `*.py` under `.claude-plugin/scripts/bin/`, excluding
+# `_bootstrap.py` (which carries real bootstrap logic, not the canonical
+# 5-statement wrapper shape). `wrapper_shape` enforces that exact shape over
+# this set — a shape that by construction carries NO `__all__` — and
+# `all_declared` imports the SAME predicate to drop these launchers from its
+# `__all__` universe (they are thin launchers with no public API to declare).
+# Factored here beside `is_under_any_tree` so neither check hardcodes a
+# second, independently-drifting `bin/*.py` glob. `BIN_WRAPPER_TREE` is
+# exported so `wrapper_shape` scans exactly the tree the predicate matches.
+BIN_WRAPPER_TREE = _p(".claude-plugin", "scripts", "bin")
+_BIN_WRAPPER_EXEMPT_NAMES = frozenset({"_bootstrap.py"})
+
+
+def is_bin_wrapper(*, rel: Path) -> bool:
+    """True iff `rel` (a repo-root-relative path) is a `bin/*.py` shebang wrapper.
+
+    The shared wrapper-identity both `wrapper_shape` and `all_declared`
+    read as their single source of truth: `rel` is a wrapper when it is a
+    DIRECT-CHILD `.py` file of `BIN_WRAPPER_TREE`
+    (`.claude-plugin/scripts/bin/`) and is not one of
+    `_BIN_WRAPPER_EXEMPT_NAMES` (`_bootstrap.py`). A file nested deeper than
+    a direct child, a non-`.py` file, a file outside the tree, and the
+    exempt `_bootstrap.py` are all NOT wrappers — mirroring `wrapper_shape`'s
+    non-recursive `bin/*.py` glob minus its `_bootstrap.py` exemption.
+    """
+    return (
+        rel.parent == BIN_WRAPPER_TREE
+        and rel.suffix == ".py"
+        and rel.name not in _BIN_WRAPPER_EXEMPT_NAMES
+    )
 
 
 def resolve_check_universe() -> tuple[Path, tuple[Path, ...]]:
