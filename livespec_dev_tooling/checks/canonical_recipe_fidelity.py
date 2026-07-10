@@ -42,12 +42,19 @@ Algorithm:
    - Recipe absent → `canonical_recipe_missing` finding.
    - Recipe present but body lacks the shared-module invocation →
      `recipe_not_pinned_to_shared_module` finding.
+   - Recipe body carries the test-only `--canonical-from` override flag →
+     `override_flag_in_recipe` finding. This scan is run over the LIVE
+     canonical set (unioned with the loaded set), NOT the possibly-emptied
+     `--canonical-from` set, so a recipe that passes `--canonical-from
+     empty.json` to neuter the gate is still caught — the guard's own
+     recipe (a live canonical slug) is always inspected.
 
 Exit codes:
 
 - `0` — every canonical recipe is present and invokes the shared module.
-- `1` — one or more fidelity violations (missing recipe or repointed
-  recipe); structured findings on stderr.
+- `1` — one or more fidelity violations (missing recipe, repointed
+  recipe, or a recipe carrying the `--canonical-from` override flag);
+  structured findings on stderr.
 - `2` — usage error (bad CLI invocation; argparse default).
 - `4` — the `justfile` could not be found at cwd.
 
@@ -96,6 +103,13 @@ __all__: list[str] = []
 _JUSTFILE_NAME = "justfile"
 _CHECK_PREFIX = "check-"
 _SHARED_MODULE_STEM = "python -m livespec_dev_tooling.checks."
+# The `--canonical-from` override flag is a TEST-ONLY fixture surface. It must
+# never appear in a consumer's justfile recipe body: placed there it neuters
+# this very gate (a recipe passing `--canonical-from empty.json` with
+# `{"slugs": []}` empties the canonical set, so the per-slug fidelity loop runs
+# over nothing and a co-resident fork passes). Banning the flag in canonical
+# recipe bodies closes that bypass.
+_CANONICAL_FROM_FLAG = "--canonical-from"
 _EXIT_FIDELITY_VIOLATIONS = 1
 _EXIT_JUSTFILE_ABSENT = 4
 
@@ -241,6 +255,20 @@ def _classify_slug(*, justfile_text: str, slug: str) -> _Violation | None:
     return None
 
 
+def _recipe_carries_override_flag(*, justfile_text: str, slug: str) -> bool:
+    """Return True when the slug's recipe exists and its body carries `--canonical-from`.
+
+    The override-flag scan is deliberately INDEPENDENT of the (attacker-
+    controllable) `--canonical-from` slug set: an emptied override must not
+    be able to neuter it. `main()` runs this over the LIVE canonical set
+    (unioned with the loaded set) so the guard's own recipe — the one the
+    bypass has to modify — is always inspected even when the loaded set is
+    empty.
+    """
+    body = _extract_recipe_body(justfile_text=justfile_text, slug=slug)
+    return body is not None and _CANONICAL_FROM_FLAG in body
+
+
 def _emit_missing(*, log: structlog.stdlib.BoundLogger, violation: _Violation) -> None:
     log.error(
         (
@@ -265,6 +293,21 @@ def _emit_repointed(*, log: structlog.stdlib.BoundLogger, violation: _Violation)
         failure_mode=violation.failure_mode,
         slug=violation.slug,
         expected_invocation=_SHARED_MODULE_STEM + violation.module,
+        status="fail",
+    )
+
+
+def _emit_override(*, log: structlog.stdlib.BoundLogger, violation: _Violation) -> None:
+    log.error(
+        (
+            "canonical `check-<slug>:` recipe carries the test-only `--canonical-from` "
+            "override flag — placed in a recipe body it neuters this gate (an empty "
+            "override set skips every per-slug fidelity check)"
+        ),
+        check_id="canonical_recipe_fidelity",
+        failure_mode=violation.failure_mode,
+        slug=violation.slug,
+        banned_flag=_CANONICAL_FROM_FLAG,
         status="fail",
     )
 
@@ -295,15 +338,39 @@ def main() -> int:
         )
         return _EXIT_JUSTFILE_ABSENT
     justfile_text = justfile_path.read_text(encoding="utf-8")
-    violations = [
-        v
-        for slug in loaded.slugs
-        if (v := _classify_slug(justfile_text=justfile_text, slug=slug)) is not None
+    # Override-flag scan: INDEPENDENT of the (attacker-controllable) loaded
+    # slug set. Scan the union of the LIVE canonical set and the loaded set so
+    # the guard's own recipe (a live slug — the one the bypass must modify) is
+    # inspected even when `--canonical-from` empties the loaded set, AND a
+    # hermetic synthetic recipe (a loaded slug) is inspected in tests. Ordered
+    # de-dupe via `dict.fromkeys`.
+    scan_slugs = list(dict.fromkeys([*canonical_check_slugs(), *loaded.slugs]))
+    override_slugs = {
+        slug
+        for slug in scan_slugs
+        if _recipe_carries_override_flag(justfile_text=justfile_text, slug=slug)
+    }
+    violations: list[_Violation] = [
+        _Violation(
+            slug=slug, failure_mode="override_flag_in_recipe", module=_slug_to_module(slug=slug)
+        )
+        for slug in scan_slugs
+        if slug in override_slugs
     ]
+    # Per-slug fidelity check over the loaded set; a slug already reported for
+    # the override flag is not double-reported.
+    for slug in loaded.slugs:
+        if slug in override_slugs:
+            continue
+        fidelity = _classify_slug(justfile_text=justfile_text, slug=slug)
+        if fidelity is not None:
+            violations.append(fidelity)
     if not violations:
         return 0
     for violation in violations:
-        if violation.failure_mode == "canonical_recipe_missing":
+        if violation.failure_mode == "override_flag_in_recipe":
+            _emit_override(log=log, violation=violation)
+        elif violation.failure_mode == "canonical_recipe_missing":
             _emit_missing(log=log, violation=violation)
         else:
             _emit_repointed(log=log, violation=violation)

@@ -205,6 +205,84 @@ def test_missing_canonical_recipe_fails(
     assert missing[0].get("slug") == "check-beta"
 
 
+def test_override_flag_in_recipe_body_is_flagged(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A canonical recipe body carrying the test-only `--canonical-from` flag → exit 1 + finding.
+
+    The `--canonical-from` override is a test fixture surface; placed in a
+    recipe body it neuters this gate. Even though the recipe still invokes
+    the pinned shared module (so the body-fidelity check passes), the
+    presence of the flag is itself a violation.
+    """
+    slugs = ["check-alpha"]
+    _ = _write_canonical_json(cwd=tmp_path, slugs=list(slugs))
+    sneaky = (
+        "check-alpha:\n"
+        "    uv run python -m livespec_dev_tooling.checks.alpha --canonical-from empty.json\n"
+    )
+    _ = _write_justfile(cwd=tmp_path, body=_justfile_with_recipes(recipes=[sneaky]))
+    result = _run_check(
+        cwd=tmp_path,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        extra_argv=["--canonical-from", "canonical.json"],
+    )
+    assert (
+        result.returncode == 1
+    ), f"expected exit 1 for --canonical-from in a recipe body; stderr={result.stderr!r}"
+    findings = _parse_findings(stderr=result.stderr)
+    override = [
+        f
+        for f in findings
+        if f.get("status") == "fail" and f.get("failure_mode") == "override_flag_in_recipe"
+    ]
+    assert len(override) == 1, f"expected one override_flag_in_recipe finding; got {override!r}"
+    assert override[0].get("slug") == "check-alpha"
+    assert override[0].get("banned_flag") == "--canonical-from"
+
+
+def test_empty_override_bypass_is_closed(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The empty-`--canonical-from` bypass is caught even with an emptied loaded set.
+
+    Models the real escape hatch: the guard's OWN recipe is repointed to
+    `... canonical_recipe_fidelity --canonical-from empty.json` with
+    `{"slugs": []}`, while a co-resident `check-wrapper-shape:` is forked to a
+    bash script. Invoked with the empty override, the loaded slug set is
+    empty, so the per-slug fidelity loop inspects nothing — but the
+    override-flag scan runs over the LIVE canonical set (which includes
+    `check-canonical-recipe-fidelity`), so the neutering flag on the guard's
+    own recipe is still detected and the check fails closed (exit 1).
+    """
+    empty = tmp_path / "empty.json"
+    _ = empty.write_text(json.dumps({"slugs": []}), encoding="utf-8")
+    forked = "check-wrapper-shape:\n    bash dev-tooling/checks/wrapper-shape-compat.sh\n"
+    neutered_guard = (
+        "check-canonical-recipe-fidelity:\n"
+        "    uv run python -m livespec_dev_tooling.checks.canonical_recipe_fidelity"
+        " --canonical-from empty.json\n"
+    )
+    _ = _write_justfile(cwd=tmp_path, body=_justfile_with_recipes(recipes=[forked, neutered_guard]))
+    result = _run_check(
+        cwd=tmp_path,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        extra_argv=["--canonical-from", "empty.json"],
+    )
+    assert result.returncode == 1, (
+        f"expected exit 1: the empty-override bypass must fail closed; "
+        f"got {result.returncode}, stderr={result.stderr!r}"
+    )
+    findings = _parse_findings(stderr=result.stderr)
+    override = [f for f in findings if f.get("failure_mode") == "override_flag_in_recipe"]
+    assert len(override) == 1, f"expected one override_flag_in_recipe finding; got {override!r}"
+    assert (
+        override[0].get("slug") == "check-canonical-recipe-fidelity"
+    ), f"the guard's own neutered recipe must be named; got {override!r}"
+
+
 def test_recipe_with_args_parameter_matches(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
