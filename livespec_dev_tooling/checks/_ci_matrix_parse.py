@@ -55,6 +55,18 @@ _MATRIX_TARGET_LINE = re.compile(r"^\s*-\s*([\w-]+)\s*$")
 _JOBS_HEADER = re.compile(r"^jobs:\s*$")
 _JUST_RUN_INVOCATION = re.compile(r"\bjust\s+(check-[\w-]+)\b")
 
+# A BROADENED `just <target>` invocation — any target, canonical or not —
+# used only for the (b) gating classification (`livespec-dev-tooling-o6b`). A
+# job that runs a non-canonical gating target (`just e2e-cli`, `just
+# acceptance`, `just check-doctor-static`) contributes no canonical slug, so
+# `_JUST_RUN_INVOCATION` (canonical-only, feeding assertion (a)) misses it —
+# yet (b) must still require it in `ci-green.needs`. The matrix leg `just ${{
+# matrix.target }}` cannot match (`${{` is not a `[\w-]` token), so a matrix
+# job is classified gating via its `strategy.matrix.target` list instead (see
+# `_build_job`). `export-telemetry`/`enable-auto-merge`/`setup` run no `just`
+# target and carry no matrix, so they are excluded with no hardcoded denylist.
+_JUST_RUN_ANY = re.compile(r"\bjust\s+([\w-]+)\b")
+
 # `needs:` in its three YAML shapes: inline scalar (`needs: setup`), inline
 # flow list (`needs: [a, b]`), and a block list (`needs:` then `- a` bullets).
 _NEEDS_BLOCK_KEY = re.compile(r"^\s*needs:\s*$")
@@ -70,11 +82,19 @@ class _SlugOverride(TypedDict, total=False):
 
 @dataclass(frozen=True, kw_only=True)
 class CiJob:
-    """One top-level ci.yml job: its name, its `needs:`, and its check slugs."""
+    """One top-level ci.yml job: its name, `needs:`, check slugs, and gating flag.
+
+    `contributed_check_slugs` (the CANONICAL slugs the job runs) feeds
+    assertion (a). `gating` — whether the job runs any `just <target>`
+    command or carries a `strategy.matrix.target` list — feeds the BROADER
+    assertion (b): a `ci-green` gate must fan in every gating job, canonical
+    or not (`livespec-dev-tooling-o6b`).
+    """
 
     name: str
     needs: frozenset[str]
     contributed_check_slugs: frozenset[str]
+    gating: bool
 
 
 def load_canonical(*, canonical_from: str | None, cwd: Path) -> tuple[str, ...]:
@@ -160,6 +180,16 @@ def _parse_run_slugs(*, body_lines: list[str]) -> set[str]:
     return slugs
 
 
+def _runs_any_just(*, body_lines: list[str]) -> bool:
+    """Whether a job invokes any `just <target>` command in a non-comment line."""
+    for raw in body_lines:
+        if raw.strip().startswith("#"):
+            continue
+        if _JUST_RUN_ANY.search(raw) is not None:
+            return True
+    return False
+
+
 def _parse_needs_value(*, value: str) -> set[str]:
     """Parse a scalar (`setup`) or flow-list (`[a, b]`) `needs:` value."""
     text = value.strip()
@@ -196,10 +226,12 @@ def _build_job(*, name: str, body_lines: list[str]) -> CiJob:
     matrix_targets = _parse_matrix_targets(body_lines=body_lines)
     run_slugs = _parse_run_slugs(body_lines=body_lines)
     contributed = {t for t in matrix_targets if t.startswith(_CHECK_PREFIX)} | run_slugs
+    gating = bool(matrix_targets) or _runs_any_just(body_lines=body_lines)
     return CiJob(
         name=name,
         needs=_parse_job_needs(body_lines=body_lines),
         contributed_check_slugs=frozenset(contributed),
+        gating=gating,
     )
 
 

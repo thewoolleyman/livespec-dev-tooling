@@ -18,12 +18,19 @@ meta-check, reading a repo's OWN committed files only, asserts both:
   `just ${{ matrix.target }}` contributes via (i), not (ii)). A canonical
   aggregate slug absent from that union fails (a).
 - **(b) `ci-green` gates the whole aggregate.** A job named `ci-green`
-  exists and its `needs:` list covers every CHECK-BEARING job — a job that
-  contributes at least one canonical slug by the (a) rule. Telemetry /
-  export / auto-merge jobs contribute no canonical slug and are therefore
+  exists and its `needs:` list covers every GATING job — a job that runs
+  any `just <target>` command (canonical OR not: `check-doctor-static`,
+  `e2e-cli`, `acceptance`) or carries a `strategy.matrix.target` list (whose
+  leg runs `just ${{ matrix.target }}`). This is BROADER than (a)'s
+  canonical scope on purpose (`livespec-dev-tooling-o6b`): a dedicated
+  non-canonical gating job contributes no canonical slug, so scoping (b) to
+  canonical jobs would never require it in `ci-green.needs` — a red
+  `e2e-cli` / `acceptance` / `doctor-static` could then merge under a
+  require-only-`ci-green` branch protection. Telemetry / export / auto-merge
+  / setup jobs run no `just` target and carry no matrix, so they are
   excluded automatically (no hardcoded exclude list). When a repo protects
   master by requiring only `ci-green`, an incomplete `needs:` list would
-  let a red check-bearing job land on master.
+  let a red gating job land on master.
 
 Warn-vs-fail severity lever (mirrors `no_todo_registry` /
 `no_lloc_soft_warnings`): the scan ALWAYS runs (no skip carve-out). When
@@ -88,7 +95,7 @@ _MSG_CI_GREEN_MISSING = (
     "context over the whole aggregate"
 )
 _MSG_NEEDS_INCOMPLETE = (
-    "check-bearing job is absent from `ci-green.needs`; requiring only `ci-green` "
+    "gating job is absent from `ci-green.needs`; requiring only `ci-green` "
     "would not gate merges on it"
 )
 
@@ -157,9 +164,14 @@ def _evaluate(
         if job.name == _CI_GREEN_JOB:
             ci_green = job
             continue
-        job_canonical = job.contributed_check_slugs & canonical_set
-        ci_covered |= job_canonical
-        if job_canonical:
+        # (a) is canonical-scoped: only the CANONICAL slugs a job runs count
+        # toward CI coverage of the `just check` aggregate.
+        ci_covered |= job.contributed_check_slugs & canonical_set
+        # (b) is BROADER (o6b): every GATING job — canonical or not — must be
+        # fanned into `ci-green.needs`, else a red non-canonical gating job
+        # (e2e-cli / acceptance / doctor-static) could merge under a
+        # require-only-`ci-green` branch protection.
+        if job.gating:
             check_bearing.append(job.name)
     findings = [
         _finding(mode="ci-matrix-missing-aggregate-slug", message=_MSG_MISSING_SLUG, slug=slug)
