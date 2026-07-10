@@ -121,6 +121,7 @@ subprocess_spawn_allowlist = [
     "tests/livespec_dev_tooling/checks/test_check_coverage_incremental.py",
     "tests/livespec_dev_tooling/checks/test_check_mutation.py",
     "tests/livespec_dev_tooling/checks/test_check_tools.py",
+    "tests/livespec_dev_tooling/checks/test_ci_matrix_completeness.py",
     "tests/livespec_dev_tooling/checks/test_claude_md_coverage.py",
     "tests/livespec_dev_tooling/checks/test_comment_line_anchors.py",
     "tests/livespec_dev_tooling/checks/test_commit_pairs_source_and_test.py",

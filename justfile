@@ -178,6 +178,7 @@ check:
         check-check-coverage-incremental
         check-check-mutation
         check-check-tools
+        check-ci-matrix-completeness
         check-claude-md-coverage
         check-comment-line-anchors
         check-commit-pairs-source-and-test
@@ -520,6 +521,16 @@ check-check-mutation:
 
 check-check-tools:
     uv run python -m livespec_dev_tooling.checks.check_tools
+
+# CI-aggregate drift-guard (epic fleet-ci-aggregate-coverage, slice 1).
+# Asserts, from this repo's OWN committed files, that CI runs (a) and
+# gates (b) the whole canonical aggregate: the CI-covered canonical slug
+# set is a superset of the justfile aggregate, and a `ci-green` job's
+# `needs:` covers every check-bearing job. Warn-default (severity lever
+# `LIVESPEC_FAIL_IF_CI_MATRIX_GAPS_EXIST`), so the slug propagates and
+# warns each not-yet-wired repo without reddening it.
+check-ci-matrix-completeness:
+    uv run python -m livespec_dev_tooling.checks.ci_matrix_completeness
 
 check-claude-md-coverage:
     uv run python -m livespec_dev_tooling.checks.claude_md_coverage
