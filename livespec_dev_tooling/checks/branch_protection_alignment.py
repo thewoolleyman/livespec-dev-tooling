@@ -13,9 +13,10 @@ Guard Layer 1 mechanical check with two responsibilities:
 
 2. ALIGNMENT gate (only when protection exists). A `strict`-off
    assertion plus a two-direction comparison between the
-   required-checks list and ci.yml's matrix, preventing the
-   v039-D1-style drift where a CI job is added or removed without
-   updating the master-branch required-checks list (or vice versa):
+   required-checks list and ci.yml (its matrix legs AND its top-level
+   jobs), preventing the v039-D1-style drift where a CI job is added or
+   removed without updating the master-branch required-checks list (or
+   vice versa):
 
    - `required_status_checks.strict` is enabled → ERROR (strict MUST
      be OFF: strict makes GitHub keep a behind PR current by merging
@@ -23,12 +24,16 @@ Guard Layer 1 mechanical check with two responsibilities:
      required_linear_history and buries the Red-Green-Replay TDD
      trailers; since master accepts only rebase-merges, strict adds
      no correctness guarantee).
-   - Required check missing from ci.yml's matrix → ERROR (the
-     v039 / `check-tests` failure: GitHub blocks merges because
-     the required check never reports).
-   - ci.yml job that is NOT in the required list → WARNING (some
+   - Required check matching NEITHER a ci.yml matrix leg NOR a
+     top-level job (its id or literal `name:`) → ERROR (the v039 /
+     `check-tests` failure: GitHub blocks merges because the required
+     check never reports). A required top-level GATE job — the
+     single-gate model's `ci-green` aggregate — is a valid target and
+     does NOT error here even though it is not a matrix leg.
+   - ci.yml matrix leg that is NOT in the required list → WARNING (some
      jobs are intentionally not required, e.g., experimental
-     workflows; emit a diagnostic but exit 0).
+     workflows; emit a diagnostic but exit 0). Top-level jobs (setup,
+     export-telemetry, ci-green) are not flagged as should-be-required.
 
 External state: the script shells out to `gh api` to fetch the
 required-checks list. The three outcomes are distinguished by the
@@ -99,6 +104,18 @@ _CI_YML_PATH = Path(".github/workflows/ci.yml")
 _MATRIX_TARGET_LINE = re.compile(r"^\s*-\s*([\w-]+)\s*$")
 _MATRIX_HEADER = re.compile(r"^\s*matrix:\s*$")
 _MATRIX_TARGET_KEY = re.compile(r"^\s*target:\s*$")
+# Top-level job recognition, for the single-gate model where branch
+# protection requires only an aggregate gate job (e.g. `ci-green`) that is
+# a TOP-LEVEL job — not a matrix leg. `_JOBS_HEADER` marks the `jobs:`
+# block; `_JOB_ID_LINE` matches a job key at the 2-space job indent
+# (`  ci-green:` → `ci-green`); `_JOB_NAME_LINE` matches a job's `name:`
+# value (a non-matrix job's reported status-check context is its `name:`,
+# falling back to the job id when `name:` is absent). `_JOB_NAME_LINE`'s
+# leading-`\s+`-then-`name:` shape deliberately does NOT match step-level
+# `- name:` lines (those carry a `- ` prefix before `name:`).
+_JOBS_HEADER = re.compile(r"^jobs:\s*$")
+_JOB_ID_LINE = re.compile(r"^  ([A-Za-z0-9_-]+):")
+_JOB_NAME_LINE = re.compile(r"^\s+name:\s*(.+?)\s*$")
 # Match the two canonical github.com remote URL forms emitted by `git remote
 # get-url origin`: `https://github.com/<owner>/<repo>(.git)` and
 # `git@github.com:<owner>/<repo>(.git)`. The library is consumed across
@@ -173,6 +190,49 @@ def _parse_ci_matrix(*, source: str) -> set[str]:
                 continue
             targets.add(match.group(1))
     return targets
+
+
+def _parse_top_level_jobs(*, source: str) -> set[str]:
+    """Extract the top-level job identifiers and literal `name:` values from ci.yml.
+
+    Under the single-gate model, branch protection requires only an
+    aggregate gate job (e.g. `ci-green`) that is a TOP-LEVEL job, not a
+    matrix leg — so `_parse_ci_matrix` alone cannot see it. This parser
+    collects, from within the `jobs:` block:
+
+    - each 2-space-indented job KEY (`  ci-green:` → `ci-green`), and
+    - each job's literal `name:` VALUE, because a non-matrix job's
+      reported status-check context is its `name:` (falling back to the
+      job id when `name:` is absent).
+
+    Templated `name:` values (`name: ${{ matrix.target }}`) are SKIPPED:
+    matrix legs report under `${{ matrix.target }}` and are already
+    covered by `_parse_ci_matrix`. Step-level `- name:` lines (a `- `
+    prefix) are not matched. Scanning stops at the next column-0 key
+    after `jobs:`.
+    """
+    names: set[str] = set()
+    in_jobs = False
+    for raw in source.splitlines():
+        if _JOBS_HEADER.match(raw):
+            in_jobs = True
+            continue
+        if not in_jobs:
+            continue
+        if raw and not raw[0].isspace():
+            # A column-0 key ends the `jobs:` block.
+            in_jobs = False
+            continue
+        job_match = _JOB_ID_LINE.match(raw)
+        if job_match is not None:
+            names.add(job_match.group(1))
+            continue
+        name_match = _JOB_NAME_LINE.match(raw)
+        if name_match is not None:
+            value = name_match.group(1)
+            if "${{" not in value:
+                names.add(value)
+    return names
 
 
 def _resolve_owner_repo(*, log: structlog.stdlib.BoundLogger) -> str | None:
@@ -291,14 +351,24 @@ def _run_alignment_gate(
     log: structlog.stdlib.BoundLogger,
     required: frozenset[str],
     matrix_targets: set[str],
+    job_names: set[str],
 ) -> int:
-    """Two-direction comparison between required checks and ci.yml matrix.
+    """Two-direction comparison between required checks and ci.yml.
 
-    Returns `4` when one or more required checks have no matching ci.yml
-    job (the drift the gate prevents); `0` otherwise. Extra ci.yml jobs
-    not in the required list are warnings only (optional jobs allowed).
+    A required check is satisfied when it matches EITHER a matrix leg
+    (`matrix_targets`) OR a top-level job's id or literal `name:`
+    (`job_names`) — the latter covers the single-gate model, where branch
+    protection requires only an aggregate gate job (e.g. `ci-green`) that
+    is a top-level job rather than a matrix leg.
+
+    Returns `4` when one or more required checks match neither a matrix
+    leg nor a top-level job (the drift the gate prevents); `0` otherwise.
+    Extra matrix legs not in the required list are warnings only (optional
+    jobs allowed). `not_required` is deliberately computed against
+    `matrix_targets` ONLY — top-level jobs (setup, export-telemetry,
+    ci-green) are NOT flagged as "should be required".
     """
-    missing_from_ci = required - matrix_targets
+    missing_from_ci = required - (matrix_targets | job_names)
     not_required = matrix_targets - required
     for name in sorted(missing_from_ci):
         log.error(
@@ -336,10 +406,12 @@ def main() -> int:
         # ci.yml; the branch-protection alignment invariant is vacuously
         # satisfied. Exit 0 so the check is safe to wire universally.
         return 0
-    matrix_targets = _parse_ci_matrix(source=ci_yml.read_text(encoding="utf-8"))
+    ci_source = ci_yml.read_text(encoding="utf-8")
+    matrix_targets = _parse_ci_matrix(source=ci_source)
     if not matrix_targets:
         log.error("ci.yml matrix.target is empty or unparseable", path=str(_CI_YML_PATH))
         return 1
+    job_names = _parse_top_level_jobs(source=ci_source)
     fetched = _fetch_required_contexts(log=log)
     if fetched is None:
         # Graceful skip: gh unavailable / unauthenticated /
@@ -375,7 +447,12 @@ def main() -> int:
             ),
         )
         return 4
-    return _run_alignment_gate(log=log, required=fetched.contexts, matrix_targets=matrix_targets)
+    return _run_alignment_gate(
+        log=log,
+        required=fetched.contexts,
+        matrix_targets=matrix_targets,
+        job_names=job_names,
+    )
 
 
 if __name__ == "__main__":
