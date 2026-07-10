@@ -139,6 +139,85 @@ def test_no_write_direct_rejects_sys_stderr_write_in_dev_tooling(*, tmp_path: Pa
     )
 
 
+def test_no_write_direct_rejects_sys_stderr_buffer_write_in_dev_tooling(*, tmp_path: Path) -> None:
+    """A `sys.stderr.buffer.write(...)` byte-stream call inside dev-tooling/ fails the check.
+
+    Closes the `.buffer.write` dodge: rewriting `sys.stderr.write(...)`
+    into `sys.stderr.buffer.write(...)` reaches the same stream but
+    evaded the check's exact-AST match. The banned-target set now
+    carries the `.buffer.write` forms, so this must be flagged
+    identically to the plain write.
+    """
+    package_dir = tmp_path / "dev-tooling" / "checks"
+    package_dir.mkdir(parents=True)
+    source = package_dir / "foo.py"
+    source.write_text(
+        "from __future__ import annotations\n"
+        "\n"
+        "import sys\n"
+        "\n"
+        "__all__: list[str] = []\n"
+        "\n"
+        "\n"
+        "def main() -> int:\n"
+        '    _ = sys.stderr.buffer.write(b"oops\\n")\n'
+        "    return 0\n",
+        encoding="utf-8",
+    )
+
+    result = _run_check(cwd=tmp_path)
+
+    assert result.returncode != 0, (
+        f"no_write_direct should reject sys.stderr.buffer.write dodge in dev-tooling/; "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    combined = result.stdout + result.stderr
+    expected_path = "dev-tooling/checks/foo.py"
+    assert expected_path in combined, (
+        f"no_write_direct diagnostic does not surface offending file `{expected_path}`; "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_no_write_direct_rejects_sys_stdout_buffer_write_in_livespec(*, tmp_path: Path) -> None:
+    """A `sys.stdout.buffer.write(...)` byte-stream call inside livespec/ fails the check.
+
+    The stdout `.buffer.write` form is banned identically to the stderr
+    form — both were escape hatches around the exact-AST match.
+    """
+    package_dir = tmp_path / ".claude-plugin" / "scripts" / "livespec"
+    package_dir.mkdir(parents=True)
+    source = package_dir / "foo.py"
+    source.write_text(
+        "from __future__ import annotations\n"
+        "\n"
+        "import sys\n"
+        "\n"
+        "__all__: list[str] = []\n"
+        "\n"
+        "\n"
+        "def main() -> int:\n"
+        '    _ = sys.stdout.buffer.write(b"hello\\n")\n'
+        "    return 0\n",
+        encoding="utf-8",
+    )
+
+    result = _run_check(cwd=tmp_path)
+
+    assert result.returncode != 0, (
+        f"no_write_direct should reject sys.stdout.buffer.write dodge in livespec/; "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    combined = result.stdout + result.stderr
+    expected_path = ".claude-plugin/scripts/livespec/foo.py"
+    assert expected_path in combined, (
+        f"no_write_direct diagnostic does not surface offending file `{expected_path}`; "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
 def test_no_write_direct_accepts_module_without_banned_calls(*, tmp_path: Path) -> None:
     """A module with no `sys.{stdout,stderr}.write` calls passes the check (exit 0).
 

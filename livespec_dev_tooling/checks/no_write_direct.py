@@ -1,8 +1,11 @@
-"""no_write_direct — bans `sys.stdout.write`/`sys.stderr.write` outside exemption surface.
+"""no_write_direct — bans `sys.{stdout,stderr}[.buffer].write` outside exemption surface.
 
 Per `python-skill-script-style-requirements.md` §"Canonical
 target list" (the `check-no-write-direct` row),
-`sys.stdout.write(...)` and `sys.stderr.write(...)` calls are
+`sys.stdout.write(...)` and `sys.stderr.write(...)` calls — plus
+their `sys.stdout.buffer.write(...)` / `sys.stderr.buffer.write(...)`
+byte-stream forms, which reach the same streams and were used to
+evade this exact-AST check — are
 banned in `.claude-plugin/scripts/livespec/**`,
 `.claude-plugin/scripts/bin/**`, and
 `<repo-root>/dev-tooling/**`. Pairs with ruff `T20` (which
@@ -59,7 +62,18 @@ from livespec_dev_tooling.config import (  # noqa: E402
 __all__: list[str] = []
 
 
-_BANNED_CALL_TARGETS = frozenset({"sys.stdout.write", "sys.stderr.write"})
+# The `.buffer.write` forms are banned identically to the plain writes:
+# `sys.stdout.buffer.write(...)` / `sys.stderr.buffer.write(...)` reach the
+# same underlying streams and were used to evade this check's exact-AST
+# match, so they carry the same ban.
+_BANNED_CALL_TARGETS = frozenset(
+    {
+        "sys.stdout.write",
+        "sys.stderr.write",
+        "sys.stdout.buffer.write",
+        "sys.stderr.buffer.write",
+    }
+)
 
 
 def _is_file_scope_exempt(*, rel_path: Path, config: Config) -> bool:
@@ -107,7 +121,7 @@ def main() -> int:
                 newly_covered_offenders.append((rel, lineno))
     for path, lineno in newly_covered_offenders:
         log.warning(
-            "`sys.stdout.write`/`sys.stderr.write` banned outside exemption surface — "
+            "`sys.{stdout,stderr}[.buffer].write` banned outside exemption surface — "
             "newly git-derived coverage; Phase-0 WARN "
             "(hard-fails once this repo is flipped to the hard gate in Phase 2)",
             file=str(path),
@@ -117,7 +131,7 @@ def main() -> int:
         )
     for path, lineno in legacy_offenders:
         log.error(
-            "`sys.stdout.write`/`sys.stderr.write` banned outside exemption surface",
+            "`sys.{stdout,stderr}[.buffer].write` banned outside exemption surface",
             file=str(path),
             line=lineno,
         )
