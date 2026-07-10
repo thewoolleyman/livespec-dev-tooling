@@ -1,0 +1,613 @@
+"""Outside-in test for `livespec_dev_tooling/checks/ci_matrix_completeness.py`.
+
+Per epic `livespec-cf4bcu` (fleet-ci-aggregate-coverage) slice 1, the
+drift-guard asserts, from a repo's OWN committed files, that CI runs (a)
+and gates (b) the whole canonical `just check` aggregate:
+
+- (a) the CI-covered canonical slug set (per-job matrix targets plus `just
+  <canonical-slug>` run-line invocations) is a superset of the justfile
+  `check:` aggregate's canonical slugs;
+- (b) a `ci-green` job exists and its `needs:` covers every check-bearing
+  job (a job contributing at least one canonical slug).
+
+The scan ALWAYS runs; the `LIVESPEC_FAIL_IF_CI_MATRIX_GAPS_EXIST` lever
+only flips findings from WARNING (exit 0) to ERROR (exit 4).
+
+Tests inject a synthetic canonical set via `--canonical-from` so they stay
+hermetic from the live `checks/` package and from sibling-PR landings.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+__all__: list[str] = []
+
+
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_CHECK = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "ci_matrix_completeness.py"
+
+
+def _run_check(
+    *,
+    cwd: Path,
+    extra_argv: list[str] | None = None,
+    env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    argv = [sys.executable, str(_CHECK)]
+    if extra_argv is not None:
+        argv.extend(extra_argv)
+    run_env: dict[str, str] | None = None
+    if env is not None:
+        run_env = {**os.environ, **env}
+    return subprocess.run(
+        argv,
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=run_env,
+    )
+
+
+def _write_canonical_json(*, cwd: Path, slugs: list[str], name: str = "canonical.json") -> Path:
+    path = cwd / name
+    _ = path.write_text(json.dumps({"slugs": slugs}), encoding="utf-8")
+    return path
+
+
+def _justfile_with_targets(*, targets: list[str]) -> str:
+    """Render a minimal `justfile` whose `check:` recipe wires `targets`."""
+    indented = "\n".join(f"        {t}" for t in targets)
+    return (
+        "default:\n"
+        "    @just --list\n"
+        "\n"
+        "check:\n"
+        "    #!/usr/bin/env bash\n"
+        "    set -uo pipefail\n"
+        "    targets=(\n"
+        f"{indented}\n"
+        "    )\n"
+        '    for t in "${targets[@]}"; do\n'
+        '        just "$t" || exit 1\n'
+        "    done\n"
+    )
+
+
+def _write_justfile(*, cwd: Path, body: str) -> Path:
+    path = cwd / "justfile"
+    _ = path.write_text(body, encoding="utf-8")
+    return path
+
+
+def _matrix_job(*, key: str, targets: list[str], needs: str | None = None) -> str:
+    """A per-target matrix job running `just ${{ matrix.target }}`."""
+    bullets = "\n".join(f"          - {t}" for t in targets)
+    lines = [f"  {key}:"]
+    if needs is not None:
+        lines.append(f"    needs: {needs}")
+    lines.append("    runs-on: ubuntu-latest")
+    lines.append("    strategy:")
+    lines.append("      fail-fast: false")
+    lines.append("      matrix:")
+    lines.append("        target:")
+    lines.append(bullets)
+    lines.append("    steps:")
+    lines.append("      - run: just ${{ matrix.target }}")
+    return "\n".join(lines) + "\n"
+
+
+def _dedicated_job(*, key: str, slug: str, needs: str | None = None) -> str:
+    """A single job running one `just <slug>`."""
+    lines = [f"  {key}:"]
+    if needs is not None:
+        lines.append(f"    needs: {needs}")
+    lines.append("    runs-on: ubuntu-latest")
+    lines.append("    steps:")
+    lines.append(f"      - run: just {slug}")
+    return "\n".join(lines) + "\n"
+
+
+def _ci_green_job(*, needs: str) -> str:
+    """The all-green gate job whose `needs:` fans in the check-bearing jobs."""
+    lines = [
+        "  ci-green:",
+        f"    needs: {needs}",
+        "    if: always()",
+        "    runs-on: ubuntu-latest",
+        "    steps:",
+        "      - name: gate",
+        "        if: ${{ contains(needs.*.result, 'failure') }}",
+        "        run: exit 1",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def _write_ci_yml(*, cwd: Path, jobs: list[str], trailer: str = "") -> Path:
+    workflows = cwd / ".github" / "workflows"
+    workflows.mkdir(parents=True, exist_ok=True)
+    body = "name: CI\non: [push]\njobs:\n" + "".join(jobs) + trailer
+    path = workflows / "ci.yml"
+    _ = path.write_text(body, encoding="utf-8")
+    return path
+
+
+def _parse_findings(*, stderr: str) -> list[dict[str, object]]:
+    """Parse structlog JSON-per-line findings from the check's stderr."""
+    return [json.loads(line) for line in stderr.splitlines() if line.strip().startswith("{")]
+
+
+def _fully_wired_jobs() -> list[str]:
+    """A matrix job (alpha, beta) + a dedicated gamma job + a complete ci-green."""
+    return [
+        _matrix_job(key="check", targets=["check-alpha", "check-beta"], needs="setup"),
+        _dedicated_job(key="check-gamma-job", slug="check-gamma", needs="setup"),
+        _ci_green_job(needs="[check, check-gamma-job]"),
+    ]
+
+
+def test_fully_wired_repo_passes(*, tmp_path: Path) -> None:
+    """CI matrix and dedicated jobs cover the aggregate; ci-green.needs complete -> exit 0."""
+    slugs = ["check-alpha", "check-beta", "check-gamma"]
+    _ = _write_canonical_json(cwd=tmp_path, slugs=slugs)
+    _ = _write_justfile(cwd=tmp_path, body=_justfile_with_targets(targets=slugs))
+    _ = _write_ci_yml(cwd=tmp_path, jobs=_fully_wired_jobs())
+    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    assert (
+        result.returncode == 0
+    ), f"expected exit 0 for a fully-wired repo; got {result.returncode}, stderr={result.stderr!r}"
+
+
+def test_ci_matrix_omits_aggregate_slug_reports_finding_a(*, tmp_path: Path) -> None:
+    """A canonical aggregate slug run nowhere in CI → finding (a); warn-default → exit 0."""
+    slugs = ["check-alpha", "check-beta", "check-gamma"]
+    _ = _write_canonical_json(cwd=tmp_path, slugs=slugs)
+    _ = _write_justfile(cwd=tmp_path, body=_justfile_with_targets(targets=slugs))
+    # CI runs only alpha + beta (matrix); gamma is nowhere. ci-green.needs
+    # covers the sole check-bearing job so (b) is not implicated.
+    jobs = [
+        _matrix_job(key="check", targets=["check-alpha", "check-beta"], needs="setup"),
+        _ci_green_job(needs="[check]"),
+    ]
+    _ = _write_ci_yml(cwd=tmp_path, jobs=jobs)
+    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    assert (
+        result.returncode == 0
+    ), f"expected exit 0 under warn-default; got {result.returncode}, stderr={result.stderr!r}"
+    findings = _parse_findings(stderr=result.stderr)
+    missing = [f for f in findings if f.get("failure_mode") == "ci-matrix-missing-aggregate-slug"]
+    assert len(missing) == 1, f"expected one missing-aggregate-slug finding; got {missing!r}"
+    assert missing[0].get("slug") == "check-gamma"
+    assert missing[0].get("level") == "warning", f"expected WARNING level; got {missing[0]!r}"
+
+
+def test_ci_green_needs_incomplete_reports_finding_b(*, tmp_path: Path) -> None:
+    """Full matrix coverage but ci-green.needs omits a check-bearing job → finding (b)."""
+    slugs = ["check-alpha", "check-beta", "check-gamma"]
+    _ = _write_canonical_json(cwd=tmp_path, slugs=slugs)
+    _ = _write_justfile(cwd=tmp_path, body=_justfile_with_targets(targets=slugs))
+    # gamma IS covered (dedicated job) so (a) is clean; ci-green.needs omits
+    # that check-bearing dedicated job.
+    jobs = [
+        _matrix_job(key="check", targets=["check-alpha", "check-beta"], needs="setup"),
+        _dedicated_job(key="check-gamma-job", slug="check-gamma", needs="setup"),
+        _ci_green_job(needs="[check]"),
+    ]
+    _ = _write_ci_yml(cwd=tmp_path, jobs=jobs)
+    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    assert (
+        result.returncode == 0
+    ), f"expected exit 0 under warn-default; got {result.returncode}, stderr={result.stderr!r}"
+    findings = _parse_findings(stderr=result.stderr)
+    incomplete = [f for f in findings if f.get("failure_mode") == "ci-green-needs-incomplete"]
+    assert (
+        len(incomplete) == 1
+    ), f"expected one ci-green-needs-incomplete finding; got {incomplete!r}"
+    assert incomplete[0].get("job") == "check-gamma-job"
+    # (a) must be clean: gamma is covered by the dedicated job.
+    missing = [f for f in findings if f.get("failure_mode") == "ci-matrix-missing-aggregate-slug"]
+    assert missing == [], f"expected no (a) findings; got {missing!r}"
+
+
+def test_ci_green_job_missing_reports_finding(*, tmp_path: Path) -> None:
+    """No `ci-green` job at all → ci-green-job-missing finding naming the check-bearing jobs."""
+    slugs = ["check-alpha", "check-beta"]
+    _ = _write_canonical_json(cwd=tmp_path, slugs=slugs)
+    _ = _write_justfile(cwd=tmp_path, body=_justfile_with_targets(targets=slugs))
+    jobs = [_matrix_job(key="check", targets=["check-alpha", "check-beta"], needs="setup")]
+    _ = _write_ci_yml(cwd=tmp_path, jobs=jobs)
+    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    assert result.returncode == 0
+    findings = _parse_findings(stderr=result.stderr)
+    absent = [f for f in findings if f.get("failure_mode") == "ci-green-job-missing"]
+    assert len(absent) == 1, f"expected one ci-green-job-missing finding; got {absent!r}"
+    assert absent[0].get("check_bearing_jobs") == ["check"]
+
+
+def test_lever_set_flips_findings_to_error_and_exit_4(*, tmp_path: Path) -> None:
+    """With the lever set, the same findings emit at ERROR and exit 4."""
+    slugs = ["check-alpha", "check-beta", "check-gamma"]
+    _ = _write_canonical_json(cwd=tmp_path, slugs=slugs)
+    _ = _write_justfile(cwd=tmp_path, body=_justfile_with_targets(targets=slugs))
+    jobs = [
+        _matrix_job(key="check", targets=["check-alpha", "check-beta"], needs="setup"),
+        _ci_green_job(needs="[check]"),
+    ]
+    _ = _write_ci_yml(cwd=tmp_path, jobs=jobs)
+    result = _run_check(
+        cwd=tmp_path,
+        extra_argv=["--canonical-from", "canonical.json"],
+        env={"LIVESPEC_FAIL_IF_CI_MATRIX_GAPS_EXIST": "1"},
+    )
+    assert (
+        result.returncode == 4
+    ), f"expected exit 4 with lever set; got {result.returncode}, stderr={result.stderr!r}"
+    findings = _parse_findings(stderr=result.stderr)
+    missing = [f for f in findings if f.get("failure_mode") == "ci-matrix-missing-aggregate-slug"]
+    assert len(missing) == 1
+    assert (
+        missing[0].get("level") == "error"
+    ), f"expected ERROR level with lever set; got {missing[0]!r}"
+    assert missing[0].get("failing") is True
+
+
+def test_non_canonical_matrix_slug_is_not_ci_covered_or_check_bearing(*, tmp_path: Path) -> None:
+    """A matrix/dedicated slug outside the canonical set counts for neither (a) nor (b)."""
+    slugs = ["check-alpha"]
+    _ = _write_canonical_json(cwd=tmp_path, slugs=slugs)
+    _ = _write_justfile(cwd=tmp_path, body=_justfile_with_targets(targets=slugs))
+    # `check-lint` is NOT canonical here: the job running it contributes no
+    # canonical slug, so it is not check-bearing and ci-green need not list it.
+    # Both jobs omit `needs:` (a standalone-job shape, like `setup`).
+    jobs = [
+        _matrix_job(key="check", targets=["check-alpha"]),
+        _dedicated_job(key="lint", slug="check-lint"),
+        _ci_green_job(needs="[check]"),
+    ]
+    _ = _write_ci_yml(cwd=tmp_path, jobs=jobs)
+    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    assert result.returncode == 0, (
+        f"expected exit 0; the non-canonical `lint` job is not check-bearing; "
+        f"got {result.returncode}, stderr={result.stderr!r}"
+    )
+
+
+def test_scalar_and_block_needs_shapes_parsed(*, tmp_path: Path) -> None:
+    """ci-green with a block-list `needs:` covering scalar-`needs:` jobs → exit 0."""
+    slugs = ["check-alpha", "check-gamma"]
+    _ = _write_canonical_json(cwd=tmp_path, slugs=slugs)
+    _ = _write_justfile(cwd=tmp_path, body=_justfile_with_targets(targets=slugs))
+    ci_green_block = (
+        "  ci-green:\n"
+        "    needs:\n"
+        "      - check\n"
+        "      - check-gamma-job\n"
+        "    if: always()\n"
+        "    runs-on: ubuntu-latest\n"
+        "    steps:\n"
+        "      - run: exit 0\n"
+    )
+    jobs = [
+        _matrix_job(key="check", targets=["check-alpha"], needs="setup"),
+        _dedicated_job(key="check-gamma-job", slug="check-gamma", needs="setup"),
+        ci_green_block,
+    ]
+    _ = _write_ci_yml(cwd=tmp_path, jobs=jobs)
+    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    assert (
+        result.returncode == 0
+    ), f"expected exit 0 with block-list needs; got {result.returncode}, stderr={result.stderr!r}"
+
+
+def test_empty_flow_needs_yields_incomplete_when_check_bearing_exists(*, tmp_path: Path) -> None:
+    """`needs: []` covers nothing, so a check-bearing job trips (b)."""
+    slugs = ["check-alpha"]
+    _ = _write_canonical_json(cwd=tmp_path, slugs=slugs)
+    _ = _write_justfile(cwd=tmp_path, body=_justfile_with_targets(targets=slugs))
+    jobs = [
+        _matrix_job(key="check", targets=["check-alpha"], needs="setup"),
+        _ci_green_job(needs="[]"),
+    ]
+    _ = _write_ci_yml(cwd=tmp_path, jobs=jobs)
+    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    assert result.returncode == 0
+    findings = _parse_findings(stderr=result.stderr)
+    incomplete = [f for f in findings if f.get("failure_mode") == "ci-green-needs-incomplete"]
+    assert {f.get("job") for f in incomplete} == {"check"}, f"got {incomplete!r}"
+
+
+def test_comments_and_blanks_in_ci_and_targets_filtered(*, tmp_path: Path) -> None:
+    """Comment/blank lines in the matrix target list, run body, and targets array are skipped."""
+    slugs = ["check-alpha", "check-beta"]
+    _ = _write_canonical_json(cwd=tmp_path, slugs=slugs)
+    justfile_body = (
+        "default:\n"
+        "    @just --list\n"
+        "\n"
+        "check:\n"
+        "    #!/usr/bin/env bash\n"
+        "    set -uo pipefail\n"
+        "    targets=(\n"
+        "        # leading comment\n"
+        "        bootstrap\n"
+        "        check-alpha  # inline trailing comment\n"
+        "\n"
+        "        check-beta\n"
+        "    )\n"
+        '    for t in "${targets[@]}"; do just "$t"; done\n'
+    )
+    _ = _write_justfile(cwd=tmp_path, body=justfile_body)
+    matrix_with_comment = (
+        "  check:\n"
+        "    needs: setup\n"
+        "    runs-on: ubuntu-latest\n"
+        "    strategy:\n"
+        "      matrix:\n"
+        "        target:\n"
+        "          # a comment inside the target list\n"
+        "          - check-alpha\n"
+        "\n"
+        "          - check-beta\n"
+        "    steps:\n"
+        "      # a comment line in the run body\n"
+        "      - run: just ${{ matrix.target }}\n"
+    )
+    jobs = [matrix_with_comment, _ci_green_job(needs="[check]")]
+    _ = _write_ci_yml(cwd=tmp_path, jobs=jobs)
+    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    assert result.returncode == 0, (
+        f"expected exit 0 with comments/blanks filtered; "
+        f"got {result.returncode}, stderr={result.stderr!r}"
+    )
+
+
+def test_top_level_key_after_jobs_still_parses_jobs(*, tmp_path: Path) -> None:
+    """A top-level key after the jobs table ends the section without losing the last job."""
+    slugs = ["check-alpha", "check-beta", "check-gamma"]
+    _ = _write_canonical_json(cwd=tmp_path, slugs=slugs)
+    _ = _write_justfile(cwd=tmp_path, body=_justfile_with_targets(targets=slugs))
+    _ = _write_ci_yml(cwd=tmp_path, jobs=_fully_wired_jobs(), trailer="concurrency: ci-group\n")
+    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    assert result.returncode == 0, (
+        f"expected exit 0 with a trailing top-level key; "
+        f"got {result.returncode}, stderr={result.stderr!r}"
+    )
+
+
+def test_missing_justfile_reports_absence(*, tmp_path: Path) -> None:
+    """No justfile at cwd → justfile_not_found finding."""
+    _ = _write_canonical_json(cwd=tmp_path, slugs=["check-alpha"])
+    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    assert result.returncode == 0
+    findings = _parse_findings(stderr=result.stderr)
+    absence = [f for f in findings if f.get("failure_mode") == "justfile_not_found"]
+    assert len(absence) == 1, f"expected one justfile_not_found finding; got {absence!r}"
+
+
+def test_missing_check_recipe_reports_absence(*, tmp_path: Path) -> None:
+    """Justfile without a `check:` recipe → check_recipe_not_found finding."""
+    _ = _write_canonical_json(cwd=tmp_path, slugs=["check-alpha"])
+    _ = _write_justfile(
+        cwd=tmp_path, body="default:\n    @just --list\n\nfmt:\n    ruff format .\n"
+    )
+    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    assert result.returncode == 0
+    findings = _parse_findings(stderr=result.stderr)
+    absence = [f for f in findings if f.get("failure_mode") == "check_recipe_not_found"]
+    assert len(absence) == 1, f"expected one check_recipe_not_found finding; got {absence!r}"
+
+
+def test_targets_array_missing_reports_absence(*, tmp_path: Path) -> None:
+    """`check:` recipe without a `targets=(...)` array → targets_array_not_found finding."""
+    _ = _write_canonical_json(cwd=tmp_path, slugs=["check-alpha"])
+    _ = _write_justfile(
+        cwd=tmp_path,
+        body=(
+            "default:\n"
+            "    @just --list\n"
+            "\n"
+            "check:\n"
+            "    #!/usr/bin/env bash\n"
+            '    echo "no targets array here"\n'
+        ),
+    )
+    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    assert result.returncode == 0
+    findings = _parse_findings(stderr=result.stderr)
+    absence = [f for f in findings if f.get("failure_mode") == "targets_array_not_found"]
+    assert len(absence) == 1, f"expected one targets_array_not_found finding; got {absence!r}"
+
+
+def test_unclosed_targets_array_reports_absence(*, tmp_path: Path) -> None:
+    """`targets=(...)` never closed → targets_array_not_found finding."""
+    _ = _write_canonical_json(cwd=tmp_path, slugs=["check-alpha"])
+    _ = _write_justfile(
+        cwd=tmp_path,
+        body=(
+            "default:\n"
+            "    @just --list\n"
+            "\n"
+            "check:\n"
+            "    #!/usr/bin/env bash\n"
+            "    set -uo pipefail\n"
+            "    targets=(\n"
+            "        check-alpha\n"
+            "    # never closed (no `)` line before EOF)\n"
+        ),
+    )
+    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    assert result.returncode == 0
+    findings = _parse_findings(stderr=result.stderr)
+    absence = [f for f in findings if f.get("failure_mode") == "targets_array_not_found"]
+    assert len(absence) == 1
+
+
+def test_recipe_body_stops_at_next_recipe_header(*, tmp_path: Path) -> None:
+    """A recipe after `check:` terminates the body scan (the break branch)."""
+    slugs = ["check-alpha"]
+    _ = _write_canonical_json(cwd=tmp_path, slugs=slugs)
+    body = (
+        "default:\n"
+        "    @just --list\n"
+        "\n"
+        "check:\n"
+        "    #!/usr/bin/env bash\n"
+        "    set -uo pipefail\n"
+        "    targets=(\n"
+        "        check-alpha\n"
+        "    )\n"
+        '    for t in "${targets[@]}"; do just "$t"; done\n'
+        "\n"
+        "fmt:\n"
+        "    ruff format .\n"
+    )
+    _ = _write_justfile(cwd=tmp_path, body=body)
+    jobs = [
+        _matrix_job(key="check", targets=["check-alpha"], needs="setup"),
+        _ci_green_job(needs="[check]"),
+    ]
+    _ = _write_ci_yml(cwd=tmp_path, jobs=jobs)
+    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    assert result.returncode == 0, (
+        f"expected exit 0 when another recipe follows `check:`; "
+        f"got {result.returncode}, stderr={result.stderr!r}"
+    )
+
+
+def test_missing_ci_yml_reports_absence(*, tmp_path: Path) -> None:
+    """A wired justfile but no `.github/workflows/ci.yml` → ci_yml_not_found finding."""
+    slugs = ["check-alpha"]
+    _ = _write_canonical_json(cwd=tmp_path, slugs=slugs)
+    _ = _write_justfile(cwd=tmp_path, body=_justfile_with_targets(targets=slugs))
+    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    assert result.returncode == 0
+    findings = _parse_findings(stderr=result.stderr)
+    absence = [f for f in findings if f.get("failure_mode") == "ci_yml_not_found"]
+    assert len(absence) == 1, f"expected one ci_yml_not_found finding; got {absence!r}"
+
+
+def test_no_jobs_header_yields_ci_green_missing(*, tmp_path: Path) -> None:
+    """A ci.yml with no `jobs:` table → no jobs → ci-green-job-missing (empty canonical isolates it)."""
+    _ = _write_canonical_json(cwd=tmp_path, slugs=[])
+    _ = _write_justfile(cwd=tmp_path, body=_justfile_with_targets(targets=["check-alpha"]))
+    workflows = tmp_path / ".github" / "workflows"
+    workflows.mkdir(parents=True, exist_ok=True)
+    _ = (workflows / "ci.yml").write_text("name: CI\non: [push]\n", encoding="utf-8")
+    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    assert result.returncode == 0
+    findings = _parse_findings(stderr=result.stderr)
+    absent = [f for f in findings if f.get("failure_mode") == "ci-green-job-missing"]
+    assert len(absent) == 1, f"expected ci-green-job-missing; got {findings!r}"
+    assert absent[0].get("check_bearing_jobs") == []
+
+
+def test_jobs_header_with_no_child_jobs_yields_ci_green_missing(*, tmp_path: Path) -> None:
+    """A `jobs:` table whose only content is a comment → no jobs parsed."""
+    _ = _write_canonical_json(cwd=tmp_path, slugs=[])
+    _ = _write_justfile(cwd=tmp_path, body=_justfile_with_targets(targets=["check-alpha"]))
+    workflows = tmp_path / ".github" / "workflows"
+    workflows.mkdir(parents=True, exist_ok=True)
+    _ = (workflows / "ci.yml").write_text(
+        "name: CI\non: [push]\njobs:\n  # no jobs yet\n", encoding="utf-8"
+    )
+    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    assert result.returncode == 0
+    findings = _parse_findings(stderr=result.stderr)
+    absent = [f for f in findings if f.get("failure_mode") == "ci-green-job-missing"]
+    assert len(absent) == 1, f"expected ci-green-job-missing; got {findings!r}"
+
+
+def test_jobs_section_without_valid_job_header_parses_no_jobs(*, tmp_path: Path) -> None:
+    """A `jobs:` table whose lines are a comment + a non-`key:` line → zero jobs parsed.
+
+    Exercises the loop's `current_name is None` paths in `_parse_ci_jobs`: a
+    line before any job header (the leading comment) and a body with no header
+    at all (so the final append is skipped).
+    """
+    _ = _write_canonical_json(cwd=tmp_path, slugs=[])
+    _ = _write_justfile(cwd=tmp_path, body=_justfile_with_targets(targets=["check-alpha"]))
+    workflows = tmp_path / ".github" / "workflows"
+    workflows.mkdir(parents=True, exist_ok=True)
+    _ = (workflows / "ci.yml").write_text(
+        "name: CI\non: [push]\njobs:\n  # a note\n  scalar-without-colon value\n",
+        encoding="utf-8",
+    )
+    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    assert result.returncode == 0
+    findings = _parse_findings(stderr=result.stderr)
+    absent = [f for f in findings if f.get("failure_mode") == "ci-green-job-missing"]
+    assert len(absent) == 1, f"expected ci-green-job-missing; got {findings!r}"
+    assert absent[0].get("check_bearing_jobs") == []
+
+
+def test_default_canonical_source_is_live_package(*, tmp_path: Path) -> None:
+    """Without `--canonical-from`, the live canonical set is used (this module's own slug)."""
+    # The justfile wires exactly this module's own canonical slug; the live
+    # canonical set contains it (this module exists), so it is the sole
+    # `required` slug. CI runs it nowhere → one (a) finding for it.
+    own_slug = "check-ci-matrix-completeness"
+    _ = _write_justfile(cwd=tmp_path, body=_justfile_with_targets(targets=[own_slug]))
+    jobs = [
+        _matrix_job(key="check", targets=["check-other"], needs="setup"),
+        _ci_green_job(needs="[setup]"),
+    ]
+    _ = _write_ci_yml(cwd=tmp_path, jobs=jobs)
+    result = _run_check(cwd=tmp_path)
+    assert result.returncode == 0
+    findings = _parse_findings(stderr=result.stderr)
+    missing = {
+        f.get("slug")
+        for f in findings
+        if f.get("failure_mode") == "ci-matrix-missing-aggregate-slug"
+    }
+    assert own_slug in missing, (
+        f"expected {own_slug} in missing-aggregate-slug findings under live canonical; "
+        f"got {missing!r}"
+    )
+
+
+def test_malformed_canonical_json_treated_as_empty(*, tmp_path: Path) -> None:
+    """`--canonical-from` JSON whose `slugs` is not a list → empty canonical → no (a) findings."""
+    bad = tmp_path / "canonical.json"
+    _ = bad.write_text(json.dumps({"slugs": "not-a-list"}), encoding="utf-8")
+    _ = _write_justfile(cwd=tmp_path, body=_justfile_with_targets(targets=["check-anything"]))
+    jobs = [
+        _matrix_job(key="check", targets=["check-anything"], needs="setup"),
+        _ci_green_job(needs="[check]"),
+    ]
+    _ = _write_ci_yml(cwd=tmp_path, jobs=jobs)
+    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    assert result.returncode == 0, (
+        f"expected exit 0 when canonical set is empty; "
+        f"got {result.returncode}, stderr={result.stderr!r}"
+    )
+
+
+def test_non_dict_canonical_json_treated_as_empty(*, tmp_path: Path) -> None:
+    """`--canonical-from` JSON that is not an object at all → empty canonical → exit 0."""
+    bad = tmp_path / "canonical.json"
+    _ = bad.write_text(json.dumps(["check-alpha", "check-beta"]), encoding="utf-8")
+    _ = _write_justfile(cwd=tmp_path, body=_justfile_with_targets(targets=["check-alpha"]))
+    jobs = [
+        _matrix_job(key="check", targets=["check-alpha"], needs="setup"),
+        _ci_green_job(needs="[check]"),
+    ]
+    _ = _write_ci_yml(cwd=tmp_path, jobs=jobs)
+    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    assert result.returncode == 0, (
+        f"expected exit 0 when canonical json is a non-dict; "
+        f"got {result.returncode}, stderr={result.stderr!r}"
+    )
+
+
+def test_help_flag_exits_zero(*, tmp_path: Path) -> None:
+    """`--help` exits 0 with usage text on stdout."""
+    result = _run_check(cwd=tmp_path, extra_argv=["--help"])
+    assert result.returncode == 0
+    combined = result.stdout.lower()
+    assert "ci-matrix-completeness" in combined or "usage" in combined
