@@ -64,6 +64,7 @@ __all__: list[str] = [
     "baseline_check_slugs",
     "canonical_check_slugs",
     "main",
+    "world_gate_check_slugs",
 ]
 
 
@@ -89,6 +90,36 @@ _SLUG_PREFIX = "check-"
 _BASELINE_CHECK_SLUGS: tuple[str, ...] = (
     "check-plugin-resolution",
     "check-primary-checkout-commit-refuse-hook-installed",
+)
+
+# The `world-gate` set: canonical checks that verify the WORLD the change
+# lands on (master CI state, master branch-protection config) rather than
+# the CHANGE in a pull request. Per `livespec/.ai/ci-gate-discipline.md`
+# §"verify the CHANGE vs verify the WORLD", these gates enforce at
+# PRE-PUSH under the maintainer's admin-scoped `gh` token — where they can
+# actually read master's state — and are deliberately NOT required to run
+# in per-PR CI:
+#
+# - `check-branch-protection-alignment` — its own docstring states it "is
+#   intentionally NOT a required CI matrix entry, which would always-skip
+#   and be pointless" (the default Actions token cannot read protection).
+# - `check-master-ci-green` — token-less it self-skips; token-gated in
+#   per-PR CI it would fail every PR whenever master is red, deadlocking
+#   even the master-repair PR (an escape mechanism the ci-gate discipline
+#   forbids).
+#
+# `check-ci-matrix-completeness` subtracts this set from its "CI must run
+# every aggregate slug" requirement (assertion (a)). Like the baseline
+# profile, this is a curated PRODUCT decision (which checks verify the
+# world), NOT a filesystem derivation — so it stays a hand-maintained
+# tuple per "static enumeration only for typed dispatch". These slugs
+# REMAIN canonical and REMAIN wired in the `just check` aggregate
+# (pre-push enforcement is untouched); only the CI-mirror requirement
+# excludes them. Every entry MUST also be a canonical slug;
+# `world_gate_check_slugs()` asserts this.
+_WORLD_GATE_CHECK_SLUGS: tuple[str, ...] = (
+    "check-branch-protection-alignment",
+    "check-master-ci-green",
 )
 
 
@@ -144,6 +175,25 @@ def _validate_baseline_subset(*, baseline: tuple[str, ...], canonical: tuple[str
         )
 
 
+def _validate_world_gate_subset(
+    *, world_gates: tuple[str, ...], canonical: tuple[str, ...]
+) -> None:
+    """Assert every world-gate slug is also a canonical check slug.
+
+    Invariant guard mirroring `_validate_baseline_subset`: the world-gate
+    set is a curated SUBSET of the canonical check set. A world-gate slug
+    with no backing `checks/<slug>.py` module is a registry bug (a typo,
+    or a check renamed/removed without updating the world-gate tuple), not
+    an expected runtime condition — so it trips an `assert` rather than
+    the Result failure track.
+    """
+    for slug in world_gates:
+        assert slug in canonical, (  # noqa: S101  — invariant guard; `raise` is banned outside io/
+            f"world-gate check slug {slug!r} has no canonical check module; "
+            "every world-gate slug MUST also appear in canonical_check_slugs()"
+        )
+
+
 def baseline_check_slugs() -> tuple[str, ...]:
     """Return the alphabetically-sorted tuple of baseline-profile check slugs.
 
@@ -156,6 +206,25 @@ def baseline_check_slugs() -> tuple[str, ...]:
     baseline = tuple(sorted(_BASELINE_CHECK_SLUGS))
     _validate_baseline_subset(baseline=baseline, canonical=canonical_check_slugs())
     return baseline
+
+
+def world_gate_check_slugs() -> tuple[str, ...]:
+    """Return the alphabetically-sorted tuple of world-gate check slugs.
+
+    World-gate checks verify the WORLD the change lands on (master CI
+    green, master branch-protection config) rather than the change
+    itself, so they enforce at pre-push under the maintainer's
+    admin-scoped `gh` token and are excluded from
+    `check-ci-matrix-completeness`'s "CI must run every aggregate slug"
+    requirement (assertion (a)). A curated static registry
+    (`_WORLD_GATE_CHECK_SLUGS`), NOT filesystem-derived; returns it sorted
+    alphabetically, after asserting every entry is a real canonical check
+    slug. The slugs stay canonical and stay wired in the `just check`
+    aggregate — only the CI-mirror requirement excludes them.
+    """
+    world_gates = tuple(sorted(_WORLD_GATE_CHECK_SLUGS))
+    _validate_world_gate_subset(world_gates=world_gates, canonical=canonical_check_slugs())
+    return world_gates
 
 
 def _build_parser() -> argparse.ArgumentParser:

@@ -71,6 +71,7 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling.canonical_checks import world_gate_check_slugs  # noqa: E402
 from livespec_dev_tooling.checks._ci_matrix_parse import (  # noqa: E402
     CiJob,
     extract_check_recipe_body,
@@ -151,12 +152,26 @@ def _configure_logger() -> structlog.stdlib.BoundLogger:
 def _evaluate(
     *,
     canonical: tuple[str, ...],
+    world_gates: frozenset[str],
     justfile_targets: list[str],
     jobs: list[CiJob],
 ) -> list[_Finding]:
-    """Compute (a) missing-in-CI and (b) ci-green-needs findings."""
+    """Compute (a) missing-in-CI and (b) ci-green-needs findings.
+
+    Assertion (a) excludes WORLD-GATE canonical checks (`world_gates`):
+    they verify master/world state (not the PR change), enforce at
+    pre-push under the maintainer's admin-scoped `gh` token, and are
+    deliberately NOT required to run in per-PR CI (see
+    `canonical_checks.world_gate_check_slugs` and
+    `livespec/.ai/ci-gate-discipline.md`). They stay canonical and stay
+    wired in the `just check` aggregate — only the CI-mirror requirement
+    drops them. Assertion (b) is unaffected: it classifies JOBS, not
+    slugs.
+    """
     canonical_set = set(canonical)
-    required = [slug for slug in justfile_targets if slug in canonical_set]
+    required = [
+        slug for slug in justfile_targets if slug in canonical_set and slug not in world_gates
+    ]
     ci_covered: set[str] = set()
     check_bearing: list[str] = []
     ci_green: CiJob | None = None
@@ -198,7 +213,9 @@ def _ci_green_findings(*, ci_green: CiJob | None, check_bearing: list[str]) -> l
     ]
 
 
-def _collect_findings(*, cwd: Path, canonical: tuple[str, ...]) -> list[_Finding]:
+def _collect_findings(
+    *, cwd: Path, canonical: tuple[str, ...], world_gates: frozenset[str]
+) -> list[_Finding]:
     """Resolve preconditions then evaluate; a precondition returns one finding."""
     justfile_path = cwd / _JUSTFILE_NAME
     if not justfile_path.is_file():
@@ -233,7 +250,12 @@ def _collect_findings(*, cwd: Path, canonical: tuple[str, ...]) -> list[_Finding
             )
         ]
     jobs = parse_ci_jobs(source=ci_yml_path.read_text(encoding="utf-8"))
-    return _evaluate(canonical=canonical, justfile_targets=justfile_targets, jobs=jobs)
+    return _evaluate(
+        canonical=canonical,
+        world_gates=world_gates,
+        justfile_targets=justfile_targets,
+        jobs=jobs,
+    )
 
 
 def _absence(*, mode: str, message: str, path: Path) -> _Finding:
@@ -265,7 +287,8 @@ def main() -> int:
     log = _configure_logger()
     cwd = Path.cwd()
     canonical = load_canonical(canonical_from=canonical_from, cwd=cwd)
-    findings = _collect_findings(cwd=cwd, canonical=canonical)
+    world_gates = frozenset(world_gate_check_slugs())
+    findings = _collect_findings(cwd=cwd, canonical=canonical, world_gates=world_gates)
     return _report(log=log, findings=findings)
 
 

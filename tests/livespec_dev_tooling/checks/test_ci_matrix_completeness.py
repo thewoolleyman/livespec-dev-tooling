@@ -205,6 +205,51 @@ def test_ci_matrix_omits_aggregate_slug_reports_finding_a(*, tmp_path: Path) -> 
     assert missing[0].get("level") == "warning", f"expected WARNING level; got {missing[0]!r}"
 
 
+def test_world_gate_aggregate_slug_absent_from_ci_is_not_flagged(*, tmp_path: Path) -> None:
+    """A world-gate canonical slug in the aggregate but nowhere in CI is NOT a finding (a).
+
+    World-gate checks (`check-master-ci-green`, `check-branch-protection-alignment`)
+    verify master/world state — not the PR change — enforce at pre-push under the
+    maintainer's admin-scoped `gh` token, and are deliberately excluded from the
+    CI-mirror requirement (`canonical_checks.world_gate_check_slugs`; see
+    `livespec/.ai/ci-gate-discipline.md` §"verify the CHANGE vs verify the WORLD").
+    They stay canonical and stay wired in the `just check` aggregate — only
+    assertion (a)'s "must run in CI" requirement drops them.
+
+    Fixture: the aggregate wires `check-alpha`, `check-beta`, and the real
+    world-gate `check-master-ci-green`; CI runs only `check-alpha`. The regular
+    `check-beta` absent from CI is STILL flagged (proving the exclusion is
+    world-gate-specific, not a blanket suppression); the world-gate absent from
+    CI is NOT flagged.
+    """
+    slugs = ["check-alpha", "check-beta", "check-master-ci-green"]
+    _ = _write_canonical_json(cwd=tmp_path, slugs=slugs)
+    _ = _write_justfile(cwd=tmp_path, body=_justfile_with_targets(targets=slugs))
+    jobs = [
+        _matrix_job(key="check", targets=["check-alpha"], needs="setup"),
+        _ci_green_job(needs="[check]"),
+    ]
+    _ = _write_ci_yml(cwd=tmp_path, jobs=jobs)
+    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    assert (
+        result.returncode == 0
+    ), f"expected exit 0 under warn-default; got {result.returncode}, stderr={result.stderr!r}"
+    findings = _parse_findings(stderr=result.stderr)
+    missing_slugs = {
+        f.get("slug")
+        for f in findings
+        if f.get("failure_mode") == "ci-matrix-missing-aggregate-slug"
+    }
+    assert "check-master-ci-green" not in missing_slugs, (
+        "a world-gate slug absent from CI must NOT be flagged as a missing aggregate "
+        f"slug (it is pre-push-only); got missing={missing_slugs!r}"
+    )
+    assert "check-beta" in missing_slugs, (
+        "a regular canonical slug absent from CI must STILL be flagged — the exclusion "
+        f"is world-gate-specific, not blanket; got missing={missing_slugs!r}"
+    )
+
+
 def test_ci_green_needs_incomplete_reports_finding_b(*, tmp_path: Path) -> None:
     """Full matrix coverage but ci-green.needs omits a check-bearing job → finding (b)."""
     slugs = ["check-alpha", "check-beta", "check-gamma"]
