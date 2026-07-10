@@ -7,9 +7,17 @@
 #   - node (required for the ACP adapter — Fabro does not install
 #     node/npx at runtime; mirrors the host)
 #   - gh (the pr node's CLI; mirrors the host)
+#   - bubblewrap (required by the codex-acp adapter for BOTH its
+#     require_escalated command execution AND its apply_patch edit
+#     tool — without it every command/edit degrades to fragile
+#     escalated local writes; mirrors the host)
 #   - uv-managed CPython at this repo's .python-version pin
 #   - @agentclientprotocol/claude-agent-acp preinstalled globally so
 #     `npx -y @agentclientprotocol/claude-agent-acp` resolves locally
+#   - @zed-industries/codex-acp preinstalled globally so
+#     `npx -y @zed-industries/codex-acp` resolves locally (the
+#     orchestrator's Codex implementer adapter, baked not per-run
+#     npx-fetched; version mirrors the orchestrator's pin)
 #   - uv package cache pre-warmed from this repo's uv.lock
 #
 # NO secrets are baked. Credentials reach the sandbox per run via the
@@ -34,8 +42,10 @@ FROM buildpack-deps:noble
 # LEFTHOOK_VERSION MUST match this repo's .mise.toml `[tools]` pins
 # and PYTHON_VERSION MUST match .python-version (the check fails the
 # build pipeline on drift). MISE_VERSION / NODE_VERSION / GH_VERSION /
-# CLAUDE_AGENT_ACP_VERSION have no repo-side pin source — they mirror
-# the host toolchain and are tracked only here.
+# CLAUDE_AGENT_ACP_VERSION / CODEX_ACP_VERSION have no repo-side pin
+# source — they mirror the host toolchain (CODEX_ACP_VERSION mirrors
+# the orchestrator's hardcoded implementer-adapter pin) and are
+# tracked only here.
 # ---------------------------------------------------------------
 ARG MISE_VERSION=v2026.2.7
 ARG UV_VERSION=0.9.26
@@ -45,6 +55,16 @@ ARG NODE_VERSION=26.3.0
 ARG GH_VERSION=2.46.0
 ARG PYTHON_VERSION=3.10.16
 ARG CLAUDE_AGENT_ACP_VERSION=0.44.0
+ARG CODEX_ACP_VERSION=0.16.0
+
+# bubblewrap — required by the codex-acp adapter for BOTH its
+# require_escalated command execution AND its apply_patch edit tool.
+# The base (buildpack-deps:noble) is Debian/Ubuntu, so apt is correct;
+# clean the apt lists in the same layer to keep the image lean.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends bubblewrap \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # The mise.run installer reads MISE_VERSION from the environment.
 ENV MISE_VERSION=${MISE_VERSION}
@@ -58,6 +78,8 @@ RUN mise use -g uv@${UV_VERSION} just@${JUST_VERSION} lefthook@${LEFTHOOK_VERSIO
 RUN uv python install ${PYTHON_VERSION}
 
 RUN npm install -g @agentclientprotocol/claude-agent-acp@${CLAUDE_AGENT_ACP_VERSION}
+
+RUN npm install -g @zed-industries/codex-acp@${CODEX_ACP_VERSION}
 
 # Neutral committer identity for in-sandbox commits (matches the host
 # checkout identity so RGR trailer authorship is consistent).
