@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.37.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.37.0...v0.37.1) (2026-07-10)
+
+
+### Bug Fixes
+
+* ci-matrix-completeness (b) covers non-canonical gating jobs (o6b) ([c268fb7](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c268fb78be7a8713f111b689da8371cb3b669410))
+
 ## [0.37.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.36.3...v0.37.0) (2026-07-10)
 
 
