@@ -193,6 +193,130 @@ def _install_fake_gh(
     return f"{bin_dir}:/usr/bin:/bin"
 
 
+def _setup_repo_with_gate_and_matrix(*, tmp_path: Path) -> None:
+    """Write a ci.yml modeling the single-gate CI shape.
+
+    A matrix job (`check-python`) whose legs report as
+    `${{ matrix.target }}` — the templated `name:` `_parse_ci_matrix`
+    already covers — plus a top-level `ci-green` aggregate GATE job
+    carrying a literal `name: ci-green`. Under the single-gate model,
+    master branch protection requires ONLY the `ci-green` gate, a
+    top-level job (not a matrix leg), so this is the fixture that
+    exercises gate-job recognition.
+    """
+    workflows = tmp_path / ".github" / "workflows"
+    workflows.mkdir(parents=True)
+    ci_yml = (
+        "name: CI\n"
+        "on: push\n"
+        "jobs:\n"
+        "  check-python:\n"
+        "    name: ${{ matrix.target }}\n"
+        "    strategy:\n"
+        "      matrix:\n"
+        "        target:\n"
+        "          - check-foo\n"
+        "          - check-bar\n"
+        "    runs-on: ubuntu-latest\n"
+        "    steps:\n"
+        "      - name: run\n"
+        "        run: echo hi\n"
+        "  ci-green:\n"
+        "    name: ci-green\n"
+        "    needs: [check-python]\n"
+        "    if: always()\n"
+        "    runs-on: ubuntu-latest\n"
+        "    steps:\n"
+        "      - name: report\n"
+        "        run: echo ok\n"
+    )
+    _ = (workflows / "ci.yml").write_text(ci_yml, encoding="utf-8")
+
+
+def test_gate_job_recognized_as_required(*, tmp_path: Path) -> None:
+    """A required top-level GATE job (`ci-green`) is recognized, not flagged missing.
+
+    Under the single-gate model, master branch protection requires only
+    the `ci-green` aggregate gate — a TOP-LEVEL job (with `name: ci-green`),
+    NOT a matrix leg — so `_parse_ci_matrix` alone cannot see it. The
+    alignment gate unions top-level jobs into the satisfied set, so it must
+    NOT emit `required_check_missing_from_ci` and must exit 0 (protection
+    present + strict off).
+    """
+    _setup_repo_with_gate_and_matrix(tmp_path=tmp_path)
+    fake_path = _install_fake_gh(
+        tmp_path=tmp_path,
+        stdout=_checks_payload(contexts=["ci-green"]),
+    )
+    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    assert result.returncode == 0, (
+        f"expected exit 0 when the required check is the ci-green gate job; "
+        f"got {result.returncode}, stderr={result.stderr!r}"
+    )
+    assert "required_check_missing_from_ci" not in result.stderr
+    assert "required check has no matching" not in result.stderr
+
+
+def test_genuinely_missing_required_still_fails(*, tmp_path: Path) -> None:
+    """A required check matching neither a matrix leg nor a top-level job → exit 4.
+
+    Guards against over-broadening the gate-job recognition: `check-phantom`
+    is not a matrix leg (`check-foo`/`check-bar`), not a top-level job id
+    (`check-python`/`ci-green`), and not a literal `name:` (`ci-green`), so
+    the union cannot rescue it and the check MUST still error exit 4. The
+    recognized `ci-green` gate is NOT flagged (exactly one missing-check
+    error is emitted).
+    """
+    _setup_repo_with_gate_and_matrix(tmp_path=tmp_path)
+    fake_path = _install_fake_gh(
+        tmp_path=tmp_path,
+        stdout=_checks_payload(contexts=["ci-green", "check-phantom"]),
+    )
+    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    assert result.returncode == 4, (
+        f"expected exit 4 when a genuinely-missing check is required; "
+        f"got {result.returncode}, stderr={result.stderr!r}"
+    )
+    assert "check-phantom" in result.stderr
+    assert result.stderr.count("required_check_missing_from_ci") == 1, (
+        f"only check-phantom should be flagged missing (ci-green is a "
+        f"recognized gate job, not missing); stderr={result.stderr!r}"
+    )
+
+
+def test_parse_top_level_jobs_collects_ids_and_literal_names() -> None:
+    """`_parse_top_level_jobs` collects job ids + literal names and stops at column 0.
+
+    Directly exercises the parser: it collects each 2-space job id
+    (`build`, `matrix-job`) and each literal `name:` value (`ci-green`),
+    SKIPS templated names (`${{ matrix.target }}`), does NOT match
+    step-level `- name:` lines, and stops scanning at the next column-0
+    key (`permissions:`) so nested keys under it (`contents:`) are not
+    collected as jobs.
+    """
+    from livespec_dev_tooling.checks.branch_protection_alignment import (
+        _parse_top_level_jobs,
+    )
+
+    source = (
+        "name: CI\n"
+        "on: push\n"
+        "jobs:\n"
+        "  build:\n"
+        "    name: ci-green\n"
+        "    runs-on: ubuntu-latest\n"
+        "    steps:\n"
+        "      - name: a-step\n"
+        "        run: echo hi\n"
+        "  matrix-job:\n"
+        "    name: ${{ matrix.target }}\n"
+        "permissions:\n"
+        "  contents: read\n"
+    )
+    result = _parse_top_level_jobs(source=source)
+    assert result == {"build", "ci-green", "matrix-job"}, result
+
+
 def test_required_missing_from_ci_yml_fails(*, tmp_path: Path) -> None:
     """Required check absent from ci.yml matrix → exit 4 (check failed).
 
