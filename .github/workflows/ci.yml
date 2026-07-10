@@ -103,6 +103,35 @@ jobs:
           - check-format
           - check-coverage
           - check-types
+          # fleet-ci-aggregate-coverage (epic livespec-cf4bcu) slice 5:
+          # canonical `just check` aggregate slugs that inspect .py source
+          # but were not yet run in CI. The py_changed gate is correct for
+          # these — nothing to check when a PR changes no .py.
+          # (check-check-mutation runs mutmut only when LIVESPEC_RUN_MUTATION
+          # is set, which CI never does, so it is a fast skip here.)
+          - check-all-declared
+          - check-assert-never-exhaustiveness
+          - check-check-mutation
+          - check-file-lloc
+          - check-global-writes
+          - check-keyword-only-args
+          - check-main-guard
+          - check-match-keyword-only
+          - check-newtype-domain-primitives
+          - check-no-except-outside-io
+          - check-no-inheritance
+          - check-no-lloc-soft-warnings
+          - check-no-raise-outside-io
+          - check-no-write-direct
+          - check-pbt-coverage-pure-modules
+          - check-per-file-coverage
+          - check-private-calls
+          - check-public-api-result-typed
+          - check-rop-pipeline-shape
+          - check-supervisor-discipline
+          - check-tests-mirror-pairing
+          - check-tests-no-subprocess-spawn
+          - check-wrapper-shape
     steps:
       # Per-step `if:` (not job-level) so each matrix entry still
       # reports a status check named `${{ matrix.target }}`.
@@ -219,6 +248,32 @@ jobs:
           - check-primary-checkout-commit-refuse-hook-installed
           - check-red-green-replay
           - check-tool-backed-check-completeness
+          # fleet-ci-aggregate-coverage (epic livespec-cf4bcu) slice 5:
+          # canonical aggregate slugs that inspect NON-.py surfaces
+          # (justfile, docs, marketplace, SKILL.md, .ai/ references), need
+          # full history, or gate CI config — so they belong in the
+          # always-run, fetch-depth:0 metadata matrix, NOT the py-gated one.
+          # check-check-coverage-incremental diffs origin/master...HEAD (needs
+          # the base ref this matrix's fetch-depth:0 provides) and spawns its
+          # own pytest, so it is self-contained here. The two world-gate
+          # checks (check-master-ci-green, check-branch-protection-alignment)
+          # are deliberately ABSENT: v0.37.2 excludes them from the CI-mirror
+          # requirement (they enforce at pre-push under an admin token; see
+          # .ai/ci-gate-discipline.md).
+          - check-agents-ai-references-resolve
+          - check-check-coverage-incremental
+          - check-check-tools
+          - check-ci-matrix-completeness
+          - check-claude-md-coverage
+          - check-comment-line-anchors
+          - check-commit-pairs-source-and-test
+          - check-fleet-marketplace-relative-sources
+          - check-heading-coverage
+          - check-no-direct-tool-invocation
+          - check-no-todo-registry
+          - check-plugin-resolution
+          - check-skill-invocation-paths
+          - check-vendor-manifest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -264,6 +319,14 @@ jobs:
         run: uv sync --all-groups
 
       - name: just ${{ matrix.target }}
+        env:
+          # Arm the CI-matrix drift guard (epic livespec-cf4bcu slice 5):
+          # now that this repo's matrices + ci-green are complete, flip
+          # check-ci-matrix-completeness from warn (exit 0) to FAIL (exit 4),
+          # so any future canonical slug wired into `just check` but dropped
+          # from CI reddens this leg instead of silently warning. Harmless
+          # for the other metadata legs — they do not read this var.
+          LIVESPEC_FAIL_IF_CI_MATRIX_GAPS_EXIST: "true"
         run: just ${{ matrix.target }}
 
   # Closed-loop CI-telemetry export — mirrors the reference landed in
@@ -295,3 +358,23 @@ jobs:
           RUN_ID: ${{ github.run_id }}
           HONEYCOMB_GITHUB_CI_INGEST_KEY_LIVESPEC: ${{ secrets.HONEYCOMB_GITHUB_CI_INGEST_KEY_LIVESPEC }}
         run: bash .github/scripts/export-ci-telemetry.sh
+
+  # fleet-ci-aggregate-coverage (epic livespec-cf4bcu) slice 5: the single
+  # all-green gate job. It `needs:` every check-bearing job and fails if any
+  # dependency failed or was cancelled — a pure GitHub-expression gate (no
+  # external action, no direct tool invocation, so it satisfies
+  # non-functional-requirements.md §"Toolchain pins"). Branch protection
+  # requires ONLY this context, so one stable name gates the whole matrix and
+  # never churns as checks are added. A SKIPPED dependency (e.g. the entire
+  # check-python matrix on a zero-.py PR) is not a failure, so ci-green stays
+  # green then. setup (detect-py-changes) and export-telemetry are NOT gates,
+  # so they are intentionally absent from `needs:`.
+  ci-green:
+    name: ci-green
+    needs: [check-python, check-fleet-conformance, check-metadata]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: All required checks passed
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: exit 1
