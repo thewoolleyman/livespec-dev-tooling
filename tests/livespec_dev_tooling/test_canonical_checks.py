@@ -362,3 +362,62 @@ def test_validate_baseline_subset_raises_for_non_canonical_slug() -> None:
             baseline=("check-not-a-real-check",),
             canonical=("check-foo",),
         )
+
+
+def test_world_gate_check_slugs_returns_the_curated_set() -> None:
+    """`world_gate_check_slugs()` returns exactly the curated world-gate set.
+
+    The two world-gate checks verify master/world state (not the PR
+    change) — `check-branch-protection-alignment` (branch-protection
+    config) and `check-master-ci-green` (master CI status) — and are
+    excluded from `check-ci-matrix-completeness`'s CI-mirror requirement
+    (assertion (a)). Bound to the exact (alphabetically-sorted) tuple —
+    not just membership — because the world-gate set is a deliberately
+    small curated registry whose contents are a product decision, not a
+    filesystem derivation.
+    """
+    module = _import_canonical_checks()
+
+    slugs = module.world_gate_check_slugs()
+
+    assert slugs == (
+        "check-branch-protection-alignment",
+        "check-master-ci-green",
+    ), f"world-gate set must be the curated two-slug set; got {slugs}"
+
+
+def test_world_gate_check_slugs_are_sorted_and_subset_of_canonical() -> None:
+    """Every world-gate slug is alphabetically sorted AND a real canonical check slug."""
+    module = _import_canonical_checks()
+
+    world_gates = module.world_gate_check_slugs()
+    canonical = module.canonical_check_slugs()
+
+    assert list(world_gates) == sorted(
+        world_gates
+    ), f"world-gate slugs must be sorted; got {world_gates}"
+    for slug in world_gates:
+        assert slug in canonical, f"world-gate slug {slug} missing from canonical set"
+
+
+def test_validate_world_gate_subset_passes_for_canonical_subset() -> None:
+    """`_validate_world_gate_subset` is a no-op when every world-gate slug is canonical."""
+    module = _import_canonical_checks()
+
+    result = module._validate_world_gate_subset(  # noqa: SLF001  — internal invariant guard under test
+        world_gates=("check-foo", "check-bar"),
+        canonical=("check-foo", "check-bar", "check-baz"),
+    )
+
+    assert result is None
+
+
+def test_validate_world_gate_subset_raises_for_non_canonical_slug() -> None:
+    """`_validate_world_gate_subset` raises AssertionError on a non-canonical world-gate slug."""
+    module = _import_canonical_checks()
+
+    with pytest.raises(AssertionError):
+        module._validate_world_gate_subset(  # noqa: SLF001  — internal invariant guard under test
+            world_gates=("check-not-a-real-check",),
+            canonical=("check-foo",),
+        )
