@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.37.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.36.3...v0.37.0) (2026-07-10)
+
+
+### Features
+
+* add check-ci-matrix-completeness drift-guard (warn-default) ([c442e13](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c442e13c8a402eb907b81b02ea3fc5f7f338d9c3))
+
 ## [0.36.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.36.2...v0.36.3) (2026-07-10)
 
 
