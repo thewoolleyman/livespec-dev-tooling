@@ -7,8 +7,12 @@ and gates (b) the whole canonical `just check` aggregate:
 - (a) the CI-covered canonical slug set (per-job matrix targets plus `just
   <canonical-slug>` run-line invocations) is a superset of the justfile
   `check:` aggregate's canonical slugs;
-- (b) a `ci-green` job exists and its `needs:` covers every check-bearing
-  job (a job contributing at least one canonical slug).
+- (b) a `ci-green` job exists and its `needs:` covers every GATING job — a
+  job running any `just <target>` command (canonical OR not) or carrying a
+  `strategy.matrix.target` list. (b) is deliberately broader than (a)'s
+  canonical scope so a dedicated non-canonical gating job (e2e-cli,
+  acceptance, check-doctor-static) is still required in `ci-green.needs`
+  (`livespec-dev-tooling-o6b`).
 
 The scan ALWAYS runs; the `LIVESPEC_FAIL_IF_CI_MATRIX_GAPS_EXIST` lever
 only flips findings from WARNING (exit 0) to ERROR (exit 4).
@@ -110,6 +114,21 @@ def _dedicated_job(*, key: str, slug: str, needs: str | None = None) -> str:
     lines.append("    runs-on: ubuntu-latest")
     lines.append("    steps:")
     lines.append(f"      - run: just {slug}")
+    return "\n".join(lines) + "\n"
+
+
+def _non_just_job(*, key: str, run_cmd: str, needs: str | None = None) -> str:
+    """A job running a NON-`just` command (telemetry export, auto-merge, setup).
+
+    Such a job runs no gating `just <target>` and carries no `matrix.target`,
+    so it is not gating and `ci-green.needs` need not list it.
+    """
+    lines = [f"  {key}:"]
+    if needs is not None:
+        lines.append(f"    needs: {needs}")
+    lines.append("    runs-on: ubuntu-latest")
+    lines.append("    steps:")
+    lines.append(f"      - run: {run_cmd}")
     return "\n".join(lines) + "\n"
 
 
@@ -256,14 +275,21 @@ def test_lever_set_flips_findings_to_error_and_exit_4(*, tmp_path: Path) -> None
     assert missing[0].get("failing") is True
 
 
-def test_non_canonical_matrix_slug_is_not_ci_covered_or_check_bearing(*, tmp_path: Path) -> None:
-    """A matrix/dedicated slug outside the canonical set counts for neither (a) nor (b)."""
+def test_non_canonical_slug_ignored_by_a_but_its_job_gating_for_b(*, tmp_path: Path) -> None:
+    """A non-canonical `just <slug>` counts for neither (a)'s coverage — yet its job IS gating for (b).
+
+    Post-o6b: assertion (a) stays canonical-scoped (a non-canonical
+    `check-lint` neither covers the aggregate nor surfaces as missing), while
+    assertion (b) broadens — the dedicated `lint` job runs a `just <target>`,
+    so it is gating and MUST appear in `ci-green.needs`. Before o6b this same
+    scenario tripped nothing, which was the bug.
+    """
     slugs = ["check-alpha"]
     _ = _write_canonical_json(cwd=tmp_path, slugs=slugs)
     _ = _write_justfile(cwd=tmp_path, body=_justfile_with_targets(targets=slugs))
-    # `check-lint` is NOT canonical here: the job running it contributes no
-    # canonical slug, so it is not check-bearing and ci-green need not list it.
-    # Both jobs omit `needs:` (a standalone-job shape, like `setup`).
+    # `check-lint` is NOT canonical here. The matrix covers the whole aggregate
+    # (check-alpha), so (a) is clean; ci-green.needs omits the gating `lint`
+    # job, so (b) trips. Both jobs omit `needs:` (a standalone-job shape).
     jobs = [
         _matrix_job(key="check", targets=["check-alpha"]),
         _dedicated_job(key="lint", slug="check-lint"),
@@ -271,10 +297,115 @@ def test_non_canonical_matrix_slug_is_not_ci_covered_or_check_bearing(*, tmp_pat
     ]
     _ = _write_ci_yml(cwd=tmp_path, jobs=jobs)
     result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    assert (
+        result.returncode == 0
+    ), f"expected exit 0 under warn-default; got {result.returncode}, stderr={result.stderr!r}"
+    findings = _parse_findings(stderr=result.stderr)
+    # (a): a non-canonical slug never surfaces as a missing-aggregate finding.
+    missing = [f for f in findings if f.get("failure_mode") == "ci-matrix-missing-aggregate-slug"]
+    assert missing == [], f"expected no (a) findings; got {missing!r}"
+    # (b): the non-canonical gating `lint` job must be required in ci-green.needs.
+    incomplete = [f for f in findings if f.get("failure_mode") == "ci-green-needs-incomplete"]
+    assert {f.get("job") for f in incomplete} == {"lint"}, f"got {incomplete!r}"
+
+
+def test_non_canonical_gating_jobs_required_in_ci_green_needs(*, tmp_path: Path) -> None:
+    """Real fleet non-canonical gating jobs (e2e-cli, check-doctor-static) must be in ci-green.needs (o6b).
+
+    They run `just e2e-cli` / `just check-doctor-static` — non-canonical
+    targets — so before o6b they were not check-bearing and could be omitted
+    from `ci-green.needs`, letting a RED e2e-cli/doctor-static merge under a
+    require-only-`ci-green` protection. Each omitted gating job now yields a
+    (b) finding; `check-doctor-static`/`e2e-cli` are NOT canonical here (the
+    injected canonical set is only `check-alpha`), so this proves (b) is
+    broader than (a)'s canonical scope.
+    """
+    slugs = ["check-alpha"]
+    _ = _write_canonical_json(cwd=tmp_path, slugs=slugs)
+    _ = _write_justfile(cwd=tmp_path, body=_justfile_with_targets(targets=slugs))
+    jobs = [
+        _matrix_job(key="check", targets=["check-alpha"], needs="setup"),
+        _dedicated_job(key="e2e-cli", slug="e2e-cli", needs="setup"),
+        _dedicated_job(key="check-doctor-static", slug="check-doctor-static", needs="setup"),
+        # ci-green fans in only the matrix job, omitting BOTH gating jobs.
+        _ci_green_job(needs="[check]"),
+    ]
+    _ = _write_ci_yml(cwd=tmp_path, jobs=jobs)
+    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    assert (
+        result.returncode == 0
+    ), f"expected exit 0 under warn-default; got {result.returncode}, stderr={result.stderr!r}"
+    findings = _parse_findings(stderr=result.stderr)
+    incomplete = {
+        f.get("job") for f in findings if f.get("failure_mode") == "ci-green-needs-incomplete"
+    }
+    assert incomplete == {"e2e-cli", "check-doctor-static"}, f"got {incomplete!r}"
+
+
+def test_telemetry_and_auto_merge_jobs_auto_excluded_from_b(*, tmp_path: Path) -> None:
+    """export-telemetry / enable-auto-merge run no `just` target → not gating → not required (o6b).
+
+    They are excluded with NO hardcoded denylist: neither runs a `just
+    <target>` command nor carries a `matrix.target`, so omitting them from
+    `ci-green.needs` yields no (b) finding.
+    """
+    slugs = ["check-alpha"]
+    _ = _write_canonical_json(cwd=tmp_path, slugs=slugs)
+    _ = _write_justfile(cwd=tmp_path, body=_justfile_with_targets(targets=slugs))
+    jobs = [
+        _matrix_job(key="check", targets=["check-alpha"], needs="setup"),
+        _non_just_job(
+            key="export-telemetry",
+            run_cmd="bash .github/scripts/export-ci-telemetry.sh",
+            needs="check",
+        ),
+        _non_just_job(key="enable-auto-merge", run_cmd="gh pr merge --auto --rebase"),
+        # ci-green fans in only the gating `check` job; the two non-gating jobs
+        # are correctly absent and must NOT trip (b).
+        _ci_green_job(needs="[check]"),
+    ]
+    _ = _write_ci_yml(cwd=tmp_path, jobs=jobs)
+    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
     assert result.returncode == 0, (
-        f"expected exit 0; the non-canonical `lint` job is not check-bearing; "
+        f"expected exit 0; telemetry/auto-merge are not gating; "
         f"got {result.returncode}, stderr={result.stderr!r}"
     )
+    findings = _parse_findings(stderr=result.stderr)
+    incomplete = [f for f in findings if f.get("failure_mode") == "ci-green-needs-incomplete"]
+    assert incomplete == [], f"telemetry/auto-merge must auto-exclude from (b); got {incomplete!r}"
+
+
+def test_comment_line_in_non_matrix_job_skipped_by_gating_scan(*, tmp_path: Path) -> None:
+    """A comment line in a non-matrix job's body is skipped; its `just <target>` still makes it gating.
+
+    A matrix job short-circuits the gating scan on its `matrix.target` list, so
+    the comment-skip branch of the broadened `just <target>` scan is reached
+    only via a dedicated (non-matrix) job — this exercises that branch.
+    """
+    slugs = ["check-alpha"]
+    _ = _write_canonical_json(cwd=tmp_path, slugs=slugs)
+    _ = _write_justfile(cwd=tmp_path, body=_justfile_with_targets(targets=slugs))
+    gate_with_comment = (
+        "  e2e-cli:\n"
+        "    needs: setup\n"
+        "    runs-on: ubuntu-latest\n"
+        "    steps:\n"
+        "      # a note before the gating invocation\n"
+        "      - run: just e2e-cli\n"
+    )
+    jobs = [
+        _matrix_job(key="check", targets=["check-alpha"], needs="setup"),
+        gate_with_comment,
+        _ci_green_job(needs="[check]"),  # omits the gating e2e-cli
+    ]
+    _ = _write_ci_yml(cwd=tmp_path, jobs=jobs)
+    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    assert result.returncode == 0
+    findings = _parse_findings(stderr=result.stderr)
+    incomplete = {
+        f.get("job") for f in findings if f.get("failure_mode") == "ci-green-needs-incomplete"
+    }
+    assert incomplete == {"e2e-cli"}, f"got {incomplete!r}"
 
 
 def test_scalar_and_block_needs_shapes_parsed(*, tmp_path: Path) -> None:
