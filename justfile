@@ -174,6 +174,7 @@ check:
         check-all-declared
         check-assert-never-exhaustiveness
         check-branch-protection-alignment
+        check-canonical-recipe-fidelity
         check-check-coverage-incremental
         check-check-mutation
         check-check-tools
@@ -476,6 +477,18 @@ check-assert-never-exhaustiveness:
 
 check-branch-protection-alignment:
     uv run python -m livespec_dev_tooling.checks.branch_protection_alignment
+
+# Anti-fork guard: verifies every canonical `check-<slug>:` recipe in
+# this justfile invokes the pinned shared module
+# `python -m livespec_dev_tooling.checks.<module>`. Closes the gap
+# check-aggregate-completeness (targets-array membership only) and
+# check-tool-backed-check-completeness (four tool slugs) leave open —
+# neither inspects the recipe BODY, so a consumer could satisfy both
+# while repointing a shared check at a local script / bash fork (the
+# "B1" incident). Self-validating: this very recipe must invoke the
+# shared module.
+check-canonical-recipe-fidelity:
+    uv run python -m livespec_dev_tooling.checks.canonical_recipe_fidelity
 
 # Path-scoped fast-feedback variant of check-coverage. With explicit
 # `--paths <impl_path> [<impl_path>...]` (repo-root-relative) it scopes
