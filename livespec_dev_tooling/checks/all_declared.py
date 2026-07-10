@@ -9,6 +9,17 @@ also be defined within the module — as a top-level `def`,
 `class`, plain assignment, annotated assignment, or
 `from <pkg> import <name>` statement.
 
+The `bin/*.py` shebang wrappers are EXEMPT: `wrapper_shape`
+governs them into the canonical 5-statement form, which by
+construction carries NO `__all__`, and they are thin launchers
+with no meaningful public API to declare. They drop out of this
+check's universe entirely (neither ERROR nor WARN) via the SAME
+wrapper-identity `wrapper_shape` uses (`config.is_bin_wrapper`),
+so the two checks never conflict on the same file. `_bootstrap.py`
+is NOT a wrapper (`wrapper_shape` exempts it from the shape), so
+it is NOT dropped — the exemption is scoped to the wrapper set and
+does not fail open.
+
 The check walks the git-derived first-party `.py` universe
 (`config.resolve_check_universe`), parses each via `ast`, and
 inspects every module-top `AnnAssign` whose target is
@@ -53,6 +64,7 @@ if str(_VENDOR_DIR) not in sys.path:
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
 from livespec_dev_tooling.config import (  # noqa: E402
+    is_bin_wrapper,
     is_under_any_tree,
     load_config,
     resolve_check_universe,
@@ -140,6 +152,15 @@ def _scan_universe(
         legacy_missing=[], newly_missing=[], legacy_undefined=[], newly_undefined=[]
     )
     for rel in universe:
+        # `bin/*.py` shebang wrappers are exempt: `wrapper_shape` governs
+        # them into the canonical 5-statement form, which by construction
+        # carries NO `__all__`, and they are thin launchers with no public
+        # API to declare. Skip via the SAME wrapper-identity `wrapper_shape`
+        # uses (`config.is_bin_wrapper`), so the two checks never conflict.
+        # `_bootstrap.py` is NOT a wrapper (wrapper_shape exempts it from the
+        # shape), so it is NOT skipped here — the exemption does not fail open.
+        if is_bin_wrapper(rel=rel):
+            continue
         tree = ast.parse((root / rel).read_text(encoding="utf-8"))
         is_legacy = is_under_any_tree(rel=rel, trees=source_trees)
         names = _all_value_names(tree=tree)

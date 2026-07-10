@@ -59,11 +59,12 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling.config import (  # noqa: E402
+    BIN_WRAPPER_TREE,
+    is_bin_wrapper,
+)
+
 __all__: list[str] = []
-
-
-_BIN_TREE = Path(".claude-plugin") / "scripts" / "bin"
-_EXEMPT_NAMES = frozenset({"_bootstrap.py"})
 
 # Per python-skill-script-style-requirements.md:
 # the canonical shebang wrapper has exactly five top-level
@@ -163,15 +164,19 @@ def main() -> int:
     )
     log = structlog.get_logger("wrapper_shape")
     cwd = Path.cwd()
-    bin_root = cwd / _BIN_TREE
+    bin_root = cwd / BIN_WRAPPER_TREE
     offenders: list[Path] = []
     if bin_root.is_dir():
         for py_file in sorted(bin_root.glob("*.py")):
-            if py_file.name in _EXEMPT_NAMES:
+            rel = py_file.relative_to(cwd)
+            # `is_bin_wrapper` is the single wrapper-identity source of
+            # truth (shared with `all_declared`): it filters out the exempt
+            # `_bootstrap.py` so this check governs exactly the wrapper set.
+            if not is_bin_wrapper(rel=rel):
                 continue
             source = py_file.read_text(encoding="utf-8")
             if not _is_compliant_wrapper(source=source):
-                offenders.append(py_file.relative_to(cwd))
+                offenders.append(rel)
     if offenders:
         for path in offenders:
             log.error(

@@ -31,6 +31,7 @@ from livespec_dev_tooling.config import (
     MirrorPairing,
     filter_first_party_py,
     has_first_party_py,
+    is_bin_wrapper,
     is_generated,
     is_under_any_tree,
     iter_first_party_py_files,
@@ -772,6 +773,23 @@ def test_is_under_any_tree_classifies_relative_paths() -> None:
     )
     assert is_under_any_tree(rel=Path("pkg") / "mod.py", trees=trees) is False
     assert is_under_any_tree(rel=Path("mod.py"), trees=()) is False
+
+
+def test_is_bin_wrapper_identifies_the_wrapper_set() -> None:
+    """`is_bin_wrapper` is the single wrapper-identity both checks share.
+
+    A DIRECT-CHILD `.claude-plugin/scripts/bin/*.py` file is a wrapper
+    UNLESS it is the exempt `_bootstrap.py`. A non-`.py` file under the
+    tree, a file nested deeper than a direct child, and a file outside the
+    tree are all NOT wrappers. This pins every branch of the predicate so
+    `wrapper_shape` and `all_declared` read ONE definition.
+    """
+    bin_tree = Path(".claude-plugin") / "scripts" / "bin"
+    assert is_bin_wrapper(rel=bin_tree / "seed.py") is True
+    assert is_bin_wrapper(rel=bin_tree / "_bootstrap.py") is False
+    assert is_bin_wrapper(rel=bin_tree / "notes.txt") is False
+    assert is_bin_wrapper(rel=Path("pkg") / "mod.py") is False
+    assert is_bin_wrapper(rel=bin_tree / "sub" / "deep.py") is False
 
 
 def test_resolve_check_universe_returns_root_and_universe(

@@ -49,6 +49,22 @@ _UNDEFINED_NAME_SOURCE = (
     "def real_thing() -> int:\n"
     "    return 0\n"
 )
+# A canonical `bin/*.py` shebang wrapper: the 5-statement shape
+# `wrapper_shape` enforces, which by construction carries NO `__all__` (an
+# `__all__` statement would break that exact shape). all_declared must SKIP
+# such wrappers entirely — they are thin launchers with no public API.
+_BIN_WRAPPER_SOURCE = (
+    "#!/usr/bin/env python3\n"
+    '"""Shebang wrapper for foo. No logic."""\n'
+    "\n"
+    "from _bootstrap import bootstrap\n"
+    "\n"
+    "bootstrap()\n"
+    "\n"
+    "from livespec.commands.foo import main\n"
+    "\n"
+    "raise SystemExit(main())\n"
+)
 
 
 def _git(*, cwd: Path, args: list[str]) -> None:
@@ -198,6 +214,70 @@ def test_all_declared_warns_newly_covered_undefined_name(*, tmp_path: Path) -> N
     assert "bogus" in combined
     assert "newly_covered" in combined
     assert '"level": "error"' not in combined
+
+
+def test_all_declared_ignores_bin_wrapper_without_all(*, tmp_path: Path) -> None:
+    """A `bin/*.py` shebang wrapper (no `__all__`) is NOT flagged by all_declared.
+
+    The bin-wrapper launchers `wrapper_shape` governs into the canonical
+    5-statement form carry NO `__all__` by construction and have no
+    meaningful public API to declare. They drop OUT of all_declared's
+    universe entirely (neither ERROR nor WARN) via the shared
+    `config.is_bin_wrapper` predicate — the SAME wrapper-identity
+    `wrapper_shape` uses as its single source of truth. A normal
+    non-wrapper module missing `__all__` is still surfaced (a newly-covered
+    WARN here), proving the exemption is scoped to the wrapper set and does
+    not fail open.
+    """
+    _write(
+        tmp_path=tmp_path,
+        rel_path=".claude-plugin/scripts/bin/foo.py",
+        source=_BIN_WRAPPER_SOURCE,
+    )
+    _write(tmp_path=tmp_path, rel_path="pkg/normal.py", source=_MISSING_ALL_SOURCE)
+
+    result = _run_all_declared(cwd=tmp_path)
+
+    assert result.returncode == 0, (
+        f"a bin-wrapper exemption plus a newly-covered normal file must not "
+        f"hard-fail; stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    combined = result.stdout + result.stderr
+    assert ".claude-plugin/scripts/bin/foo.py" not in combined, (
+        f"all_declared must SKIP bin/*.py wrappers entirely (neither ERROR nor "
+        f"WARN); the wrapper was surfaced. stderr={result.stderr!r}"
+    )
+    assert "pkg/normal.py" in combined, (
+        f"a normal module missing `__all__` must still be flagged (the exemption "
+        f"must not fail open); stderr={result.stderr!r}"
+    )
+    assert "newly_covered" in combined
+
+
+def test_all_declared_still_flags_bootstrap_bin_file(*, tmp_path: Path) -> None:
+    """`_bootstrap.py` under `bin/` is NOT a wrapper — it is still flagged.
+
+    `wrapper_shape` EXEMPTS `_bootstrap.py` from the canonical wrapper shape
+    (it carries real bootstrap logic), so it is NOT part of the wrapper set
+    `config.is_bin_wrapper` identifies. all_declared therefore does NOT
+    exempt it: a `_bootstrap.py` missing `__all__` is still surfaced
+    (newly-covered WARN here). This pins the exemption boundary — only true
+    bin wrappers drop out, never every file under `bin/`.
+    """
+    _write(
+        tmp_path=tmp_path,
+        rel_path=".claude-plugin/scripts/bin/_bootstrap.py",
+        source=_MISSING_ALL_SOURCE,
+    )
+
+    result = _run_all_declared(cwd=tmp_path)
+
+    assert result.returncode == 0
+    combined = result.stdout + result.stderr
+    assert ".claude-plugin/scripts/bin/_bootstrap.py" in combined, (
+        f"_bootstrap.py is not a wrapper and must still be flagged; " f"stderr={result.stderr!r}"
+    )
+    assert "newly_covered" in combined
 
 
 def test_all_declared_accepts_codeless_repo(*, tmp_path: Path) -> None:
