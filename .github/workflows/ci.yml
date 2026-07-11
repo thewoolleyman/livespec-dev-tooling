@@ -328,6 +328,14 @@ jobs:
           # from CI reddens this leg instead of silently warning. Harmless
           # for the other metadata legs — they do not read this var.
           LIVESPEC_FAIL_IF_CI_MATRIX_GAPS_EXIST: "true"
+          # Arm the formatter-suppression guard (check-no-fmt-directives, a
+          # check-metadata leg): flip it from warn (exit 0) to FAIL (exit 1)
+          # so a `# fmt: off`/`on`/`skip` counter-shave in this mechanism
+          # package's own first-party code reddens CI instead of silently
+          # warning. This repo is clean, so the leg still exits 0; every
+          # OTHER repo stays warn-only until it arms this lever in its own
+          # PR. Harmless for the other metadata legs — they do not read it.
+          LIVESPEC_FAIL_IF_FMT_DIRECTIVES_EXIST: "true"
         run: just ${{ matrix.target }}
 
   # Closed-loop CI-telemetry export — mirrors the reference landed in
