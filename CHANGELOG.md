@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.38.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.37.3...v0.38.0) (2026-07-11)
+
+
+### Features
+
+* ban formatter-suppression directives to make file_lloc ungameable by line-packing ([5617599](https://github.com/thewoolleyman/livespec-dev-tooling/commit/561759912b6950bc77d777ff4f03a763aeeba3b9))
+
 ## [0.37.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.37.2...v0.37.3) (2026-07-10)
 
 
