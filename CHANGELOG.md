@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.38.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.38.0...v0.38.1) (2026-07-11)
+
+
+### Bug Fixes
+
+* switch check-no-fmt-directives to an env-lever severity model ([8601e3c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8601e3c137483197b689e97a721e261f7a722db0))
+
 ## [0.38.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.37.3...v0.38.0) (2026-07-11)
 
 
