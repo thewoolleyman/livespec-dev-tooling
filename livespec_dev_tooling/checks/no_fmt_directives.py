@@ -21,14 +21,20 @@ Vendored libraries, the configured test tree, `templates/`, and
 `@generated`-marked files are already outside `resolve_check_universe`,
 so their legitimate directives are never flagged.
 
-Delta-WARN severity (identical to `comment_line_anchors`): a file under
-one of this repo's legacy trees (`config.target_dirs`) emits at ERROR and
-contributes to exit 1; a newly-git-derived file outside every legacy tree
-emits at WARNING with `phase="0-warn"` and does NOT fail the check. A
-blanket hard-fail would redden every repo still carrying a pre-existing
-counter-shave the moment the pin bumps — before its fix-forward lands;
-delta-WARN surfaces the offender loudly in `just check` output without
-breaking CI mid-sequence, exactly like every other Phase-0 reroute.
+Warn-vs-fail severity lever (the blessed pattern, mirroring
+`ci_matrix_completeness` / `no_todo_registry` / `no_lloc_soft_warnings`):
+the scan ALWAYS runs — the lever controls warn-vs-fail ONLY, never
+run-vs-skip. This is a NET-NEW check, so NOTHING is "legacy" (the
+delta-WARN `config.target_dirs` classifier the sibling structural checks
+use means "already historically covered", which is false here); every
+finding is Phase-0 newly-covered. When
+`LIVESPEC_FAIL_IF_FMT_DIRECTIVES_EXIST` is set to a non-empty value (a
+repo sets it in its CI once it is clean), findings emit at ERROR level
+and the check exits 1. When the lever is unset (or empty), the SAME
+findings emit at WARNING level with `phase="0-warn"`,
+`newly_covered=True` and the check exits 0 — so the slug propagates
+fleet-wide and warns each not-yet-clean repo without reddening it before
+its own fix-forward lands. Each repo flips to fail in its own PR.
 
 Output discipline: per spec, `print` and direct `sys.stderr.write` are
 banned in this package; diagnostics flow through structlog (JSON to
@@ -37,6 +43,7 @@ stderr) per the vendor-path-aware import below.
 
 from __future__ import annotations
 
+import os
 import re
 import sys
 import tokenize
@@ -48,11 +55,7 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
-from livespec_dev_tooling.config import (  # noqa: E402
-    is_under_any_tree,
-    load_config,
-    resolve_check_universe,
-)
+from livespec_dev_tooling.config import resolve_check_universe  # noqa: E402
 
 __all__: list[str] = []
 
@@ -64,6 +67,8 @@ __all__: list[str] = []
 # between `off` and `set` — while a benign comment whose text merely
 # contains "fmt" never reaches the `fmt:` literal.
 _FMT_DIRECTIVE_RE = re.compile(r"^#\s*fmt:\s*(?:off|on|skip)\b")
+_FAIL_ENV_VAR = "LIVESPEC_FAIL_IF_FMT_DIRECTIVES_EXIST"
+_EXIT_VIOLATIONS = 1
 _HINT = (
     "Formatter-suppression directives (`# fmt: off` / `# fmt: on` / "
     "`# fmt: skip`) are banned in the first-party universe: suppressing "
@@ -109,19 +114,20 @@ def _scan_file(*, path: Path) -> list[tuple[int, str]]:
 def main() -> int:
     log = _configure_logger()
     root, universe = resolve_check_universe()
-    config = load_config(repo_root=root)
-    # Legacy classifier: `config.target_dirs`, the SAME classifier
-    # `comment_line_anchors` uses. This check is that check's direct
-    # structural sibling — both scan `#` comment tokens across the one
-    # git-derived first-party universe — so sharing the classifier keeps
-    # the two uniform: a file that is "legacy" for one is "legacy" for
-    # the other.
-    legacy_offenders = 0
+    # Warn-vs-fail lever ONLY (never run-vs-skip): a repo arms
+    # `LIVESPEC_FAIL_IF_FMT_DIRECTIVES_EXIST` in its CI once it is clean.
+    # Unset/empty → WARN + exit 0 (Phase-0 propagation); set → ERROR + exit 1.
+    fail = bool(os.environ.get(_FAIL_ENV_VAR))
+    findings = 0
     for rel in universe:
-        is_legacy = is_under_any_tree(rel=rel, trees=config.target_dirs)
         for lineno, matched in _scan_file(path=root / rel):
-            emit = log.error if is_legacy else log.warning
-            extra = {} if is_legacy else {"phase": "0-warn", "newly_covered": True}
+            findings += 1
+            emit = log.error if fail else log.warning
+            # A net-new check has no legacy coverage, so every finding is
+            # newly-covered; the `phase`/`newly_covered` markers ride the WARN
+            # path, `failing` rides the armed path — mirroring the peer
+            # `ci_matrix_completeness` structured-diagnostic shape.
+            extra = {"failing": True} if fail else {"phase": "0-warn", "newly_covered": True}
             emit(
                 "formatter-suppression directive in a first-party file",
                 check_id="no-fmt-directives",
@@ -129,12 +135,11 @@ def main() -> int:
                 lineno=lineno,
                 directive=matched,
                 hint=_HINT,
+                fail_env_var=_FAIL_ENV_VAR,
                 **extra,
             )
-            if is_legacy:
-                legacy_offenders += 1
-    if legacy_offenders:
-        return 1
+    if fail and findings:
+        return _EXIT_VIOLATIONS
     return 0
 
 
