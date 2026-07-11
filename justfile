@@ -194,6 +194,7 @@ check:
         check-no-direct-destructive-cli
         check-no-direct-tool-invocation
         check-no-except-outside-io
+        check-no-fmt-directives
         check-no-inheritance
         check-no-lloc-soft-warnings
         check-no-raise-outside-io
@@ -587,6 +588,9 @@ check-no-direct-tool-invocation:
 
 check-no-except-outside-io:
     uv run python -m livespec_dev_tooling.checks.no_except_outside_io
+
+check-no-fmt-directives:
+    uv run python -m livespec_dev_tooling.checks.no_fmt_directives
 
 check-no-inheritance:
     uv run python -m livespec_dev_tooling.checks.no_inheritance

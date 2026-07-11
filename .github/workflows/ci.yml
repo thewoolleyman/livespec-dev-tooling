@@ -270,6 +270,7 @@ jobs:
           - check-fleet-marketplace-relative-sources
           - check-heading-coverage
           - check-no-direct-tool-invocation
+          - check-no-fmt-directives
           - check-no-todo-registry
           - check-plugin-resolution
           - check-skill-invocation-paths

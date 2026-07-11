@@ -133,6 +133,7 @@ subprocess_spawn_allowlist = [
     "tests/livespec_dev_tooling/checks/test_newtype_domain_primitives.py",
     "tests/livespec_dev_tooling/checks/test_no_direct_tool_invocation.py",
     "tests/livespec_dev_tooling/checks/test_no_except_outside_io.py",
+    "tests/livespec_dev_tooling/checks/test_no_fmt_directives.py",
     "tests/livespec_dev_tooling/checks/test_no_raise_outside_io.py",
     "tests/livespec_dev_tooling/checks/test_no_write_direct.py",
     "tests/livespec_dev_tooling/checks/test_pbt_coverage_pure_modules.py",
