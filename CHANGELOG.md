@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.39.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.38.1...v0.39.0) (2026-07-12)
+
+
+### Features
+
+* add per-repo file_lloc hard-gate flip lever ([d69210c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d69210cf6fe140d243fafbda036c806aa462c78f))
+
 ## [0.38.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.38.0...v0.38.1) (2026-07-11)
 
 
