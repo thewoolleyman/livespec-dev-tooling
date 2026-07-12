@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.40.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.40.3...v0.40.4) (2026-07-12)
+
+
+### Refactoring
+
+* **checks,agent_hooks:** decompose the last 3 files &gt;250 (fleet-check-coverage) ([4eed3f7](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4eed3f753758455b90e5142d513ed1367e096fef))
+
 ## [0.40.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.40.2...v0.40.3) (2026-07-12)
 
 
