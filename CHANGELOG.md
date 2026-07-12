@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.40.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.39.0...v0.40.0) (2026-07-12)
+
+
+### Features
+
+* cover fabro-sandbox docker image tag as the 5th bump-pin format ([ebf54cc](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ebf54cc4a0c5721f76bbd0ac4f320b607f89297b))
+
 ## [0.39.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.38.1...v0.39.0) (2026-07-12)
 
 
