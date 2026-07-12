@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.42.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.41.1...v0.42.0) (2026-07-12)
+
+
+### Features
+
+* **dev-tooling:** livespec-step-timer — bake sandbox prepare-step timing wrapper ([b05c687](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b05c6872044ed81fd175443bb56d57de3e57f774))
+
 ## [0.41.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.41.0...v0.41.1) (2026-07-12)
 
 
