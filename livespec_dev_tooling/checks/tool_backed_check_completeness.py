@@ -75,7 +75,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -86,6 +85,15 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
+
+# Justfile + CI-matrix parsers extracted to a private sibling module (the
+# LLOC-reduction split mirroring `_ci_matrix_parse`); the parent keeps the
+# CLI, the slug policy, the presence evaluation, and every diagnostic.
+from livespec_dev_tooling.checks._tool_backed_surfaces import (  # noqa: E402
+    collect_ci_matrix_targets,
+    extract_check_recipe_body,
+    extract_targets_array_tokens,
+)
 
 __all__: list[str] = []
 
@@ -105,18 +113,6 @@ _DEFAULT_TOOL_BACKED_SLUGS: tuple[str, ...] = (
     "check-types",
     "check-coverage",
 )
-
-# justfile `check:` recipe + `targets=(...)` array anchors (mirrors
-# aggregate_completeness's parser so the two checks agree on what
-# "literal targets-array membership" means).
-_CHECK_RECIPE_HEADER = re.compile(r"^check:\s*$", re.MULTILINE)
-_TARGETS_ARRAY_START = re.compile(r"^\s*targets=\(\s*$", re.MULTILINE)
-_TARGETS_ARRAY_END = re.compile(r"^\s*\)\s*$")
-
-# CI matrix anchors (mirrors branch_protection_alignment's parser).
-_MATRIX_HEADER = re.compile(r"^\s*matrix:\s*$")
-_MATRIX_TARGET_KEY = re.compile(r"^\s*target:\s*$")
-_MATRIX_TARGET_LINE = re.compile(r"^\s*-\s*([\w-]+)\s*$")
 
 
 class _SlugOverride(TypedDict, total=False):
@@ -194,96 +190,6 @@ def _load_tool_backed_slugs(*, tool_backed_from: str | None, cwd: Path) -> tuple
     return tuple(s for s in slug_field if isinstance(s, str))
 
 
-def _extract_check_recipe_body(*, justfile_text: str) -> str | None:
-    """Return the text body of the `check:` recipe, or None when absent.
-
-    A just recipe body extends from the recipe header to the next
-    recipe header (a non-indented line ending in `:`) or to EOF.
-    """
-    header_match = _CHECK_RECIPE_HEADER.search(justfile_text)
-    if header_match is None:
-        return None
-    body_start = header_match.end()
-    lines = justfile_text[body_start:].splitlines()
-    body_lines: list[str] = []
-    for raw in lines:
-        if raw and not raw.startswith((" ", "\t")) and ":" in raw:
-            break
-        body_lines.append(raw)
-    return "\n".join(body_lines)
-
-
-def _extract_targets_array_tokens(*, recipe_body: str) -> list[str] | None:
-    """Return the `check-*` slugs inside `targets=(...)`, or None when absent.
-
-    Blank lines, full-line comments, inline trailing comments, and any
-    token that does not start with `check-` are dropped — matching
-    aggregate_completeness's filtering so the two checks agree on what
-    counts as a literal targets-array slug.
-    """
-    start_match = _TARGETS_ARRAY_START.search(recipe_body)
-    if start_match is None:
-        return None
-    after_start = recipe_body[start_match.end() :]
-    collected: list[str] = []
-    closed = False
-    for raw in after_start.splitlines():
-        if _TARGETS_ARRAY_END.match(raw):
-            closed = True
-            break
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        token = line.split("#", 1)[0].strip()
-        if token.startswith("check-"):
-            collected.append(token)
-    if not closed:
-        return None
-    return collected
-
-
-def _parse_ci_matrix_targets(*, source: str) -> set[str]:
-    """Extract every `matrix.target` job slug from one workflow file's text.
-
-    Walks the file line-by-line: enters the `matrix:` table, then the
-    `target:` key, then collects `- check-foo` bullet entries until a
-    non-bullet line ends the list.
-    """
-    targets: set[str] = set()
-    in_matrix = False
-    in_target_list = False
-    for raw in source.splitlines():
-        if _MATRIX_HEADER.match(raw):
-            in_matrix = True
-            in_target_list = False
-            continue
-        if not in_matrix:
-            continue
-        if _MATRIX_TARGET_KEY.match(raw):
-            in_target_list = True
-            continue
-        if in_target_list:
-            stripped = raw.strip()
-            if not stripped or stripped.startswith("#"):
-                continue
-            match = _MATRIX_TARGET_LINE.match(raw)
-            if match is None:
-                in_target_list = False
-                continue
-            targets.add(match.group(1))
-    return targets
-
-
-def _collect_ci_matrix_targets(*, workflows_dir: Path) -> set[str]:
-    """Union the `matrix.target` slugs across every workflow file in the dir."""
-    targets: set[str] = set()
-    for path in sorted(workflows_dir.glob("*.yml")):
-        targets |= _parse_ci_matrix_targets(source=path.read_text(encoding="utf-8"))
-    for path in sorted(workflows_dir.glob("*.yaml")):
-        targets |= _parse_ci_matrix_targets(source=path.read_text(encoding="utf-8"))
-    return targets
-
-
 def _emit_absence(
     *,
     log: structlog.stdlib.BoundLogger,
@@ -351,9 +257,7 @@ def main() -> int:
             path=str(justfile_path),
         )
         return _EXIT_VIOLATIONS
-    recipe_body = _extract_check_recipe_body(
-        justfile_text=justfile_path.read_text(encoding="utf-8")
-    )
+    recipe_body = extract_check_recipe_body(justfile_text=justfile_path.read_text(encoding="utf-8"))
     if recipe_body is None:
         _emit_absence(
             log=log,
@@ -362,7 +266,7 @@ def main() -> int:
             path=str(justfile_path),
         )
         return _EXIT_VIOLATIONS
-    justfile_targets = _extract_targets_array_tokens(recipe_body=recipe_body)
+    justfile_targets = extract_targets_array_tokens(recipe_body=recipe_body)
     if justfile_targets is None:
         _emit_absence(
             log=log,
@@ -387,7 +291,7 @@ def main() -> int:
             path=str(workflows_dir),
         )
         return _EXIT_VIOLATIONS
-    ci_targets = _collect_ci_matrix_targets(workflows_dir=workflows_dir)
+    ci_targets = collect_ci_matrix_targets(workflows_dir=workflows_dir)
 
     presences = _evaluate(
         tool_backed=tool_backed,
