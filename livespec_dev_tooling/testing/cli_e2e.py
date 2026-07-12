@@ -9,32 +9,24 @@ binary itself exactly as a real end user does. Both tiers coexist in CI.
 The harness ships from `livespec-dev-tooling` and is consumed by every plugin
 repo via the existing pin-bump dependency flow (contract requirement 6). Each
 consumer wires the imported `test_workflow_full_round_trip` entry point into
-its own pytest collection. The five components the contract enumerates all
-live here:
+its own pytest collection. The five components the contract enumerates split
+across three cohesive modules:
 
-1. **Driver** (`RealCliRunner`, `run_workflow`) — every workflow step is a
-   `claude -p` subprocess issuing a slash command; the first step pre-populates
-   a tmp `HOME` with `~/.claude/settings.json` declaring the marketplace and
-   the enabled plugin. Multi-turn continuity flows via `--continue` /
-   `--resume <session-id>`. The harness never reaches around to wrapper Python
-   files and never depends on cache layout (contract requirement 1).
-2. **Structural skill discovery** (`discover_skills`) — walks
-   `<installed-plugin>/skills/*/SKILL.md` in each plugin's installed location
-   and reads the slash-command prefix from `plugin.json`'s `name` field. There
-   is no parallel manifest file: the plugin directory structure IS the source
-   of truth (contract requirement 3).
-3. **Per-skill fixtures loader** (`discover_fixtures`) — a fixtures directory
-   `<consumer-repo>/tests/e2e-cli/fixtures/<skill>/` holds a `prompt.md` and an
-   `expected_files.txt` per skill; discovery walks the same way: directory
-   present == fixture exists (contract requirement 4).
-4. **Time-bomb coverage gate** (`assert_coverage`) — fail-closed assertion that
-   `discovered_skills - fixtured_skills - exempt_skills` is empty, with an
-   `EXEMPT_SKILLS` escape carrying a written justification (contract
-   requirement 5).
-5. **Step orchestrator** (`run_workflow`) — for each discovered skill, looks up
-   its fixture, runs the prompt via the driver, and asserts the expected files
-   exist and the exit code is 0.
+1. **Driver** (`RealCliRunner`, `CliRunner`, `CliResult`) — in
+   `_cli_e2e_driver`; every workflow step is a `claude -p` subprocess issuing
+   a slash command. The harness never reaches around to wrapper Python files
+   and never depends on cache layout (contract requirement 1).
+2. **Structural skill discovery** (`discover_skills`) and **per-skill fixtures
+   loader** (`discover_fixtures`, `FixturedSkill`) — in `_cli_e2e_discovery`;
+   the plugin directory structure IS the source of truth (contract
+   requirements 3, 4).
+3. **Time-bomb coverage gate** (`assert_coverage`) and **step orchestrator**
+   (`run_workflow`) — here; the gate fails closed on any un-fixtured,
+   non-exempt skill (requirement 5), and the orchestrator drives each
+   discovered skill's fixture through the injected runner (requirement 5).
 
+The driver and discovery components are re-exported below so the public
+surface (`__all__`) is unchanged for consumers importing from this module.
 The impl-plugin id is a parameter (`HarnessConfig.impl_plugin_id`); the
 spec-side skill set is fixed, the impl-side skill set is whatever the installed
 impl plugin exposes (contract requirement 2).
@@ -66,17 +58,26 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol, cast
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
+
+from livespec_dev_tooling.testing._cli_e2e_discovery import (  # noqa: E402
+    FixturedSkill,
+    discover_fixtures,
+    discover_skills,
+)
+from livespec_dev_tooling.testing._cli_e2e_driver import (  # noqa: E402
+    CliResult,
+    CliRunner,
+    RealCliRunner,
+)
 
 __all__: list[str] = [
     "CliResult",
@@ -100,20 +101,6 @@ __all__: list[str] = [
 _HARNESS_SELECTOR_ENV = "LIVESPEC_E2E_HARNESS"
 _HARNESS_MOCK = "mock"
 _HARNESS_REAL = "real"
-
-# Coverage child-process env vars scrubbed from the real `claude` subprocess
-# so it does not self-instrument under `pytest --cov` (the cmn-pairing
-# belt-and-suspenders against the coverage-collision race; see
-# `tests_no_subprocess_spawn`, work-item livespec-dev-tooling-4i5).
-_COVERAGE_PROCESS_START_VAR = "COVERAGE_PROCESS_START"
-_COVERAGE_CHILD_VAR_PREFIX = "COV_CORE_"
-
-_PLUGIN_MANIFEST = "plugin.json"
-_SKILLS_DIRNAME = "skills"
-_SKILL_FILENAME = "SKILL.md"
-
-_PROMPT_FILENAME = "prompt.md"
-_EXPECTED_FILES_FILENAME = "expected_files.txt"
 
 # Module-level message constant keeps the raise site terse (TRY003); `{mode}`
 # is the resolved selector value.
@@ -158,101 +145,6 @@ class WorkflowFailedError(Exception):
 
 
 @dataclass(frozen=True, kw_only=True)
-class CliResult:
-    """One `claude -p` invocation's outcome — the driver's return shape.
-
-    `session_id` is the resumable session identifier the CLI prints for the
-    turn (consumed by `--resume <session-id>` on the next turn); it is `None`
-    when the invocation did not produce one.
-    """
-
-    exit_code: int
-    stdout: str
-    stderr: str
-    session_id: str | None = None
-
-
-class CliRunner(Protocol):
-    """The injectable driver seam — one `claude -p` slash-command invocation.
-
-    `RealCliRunner` is the production implementation; a self-test (this
-    library's own or a consumer's) injects a deterministic fake conforming to
-    this protocol so the harness's discovery / coverage-gate / orchestration
-    logic is exercised WITHOUT a real `claude` binary or API key.
-    """
-
-    def run(
-        self,
-        *,
-        prompt: str,
-        home: Path,
-        cwd: Path,
-        resume_session_id: str | None,
-    ) -> CliResult:
-        """Issue one `claude -p <prompt>` turn under `HOME=home`, `cwd=cwd`.
-
-        When `resume_session_id` is not None the turn MUST continue the named
-        session (`--resume <session-id>`); otherwise it starts a fresh session.
-        """
-        ...
-
-
-@dataclass(frozen=True, kw_only=True)
-class RealCliRunner:
-    """Production driver — shells out to the real `claude` CLI binary.
-
-    Selected when `LIVESPEC_E2E_HARNESS=real`; requires `ANTHROPIC_API_KEY`.
-    The argv is a fixed list anchored on the `claude_binary` name (default
-    `claude`, overridable for a self-test that points at a fake shim on PATH);
-    the only variable element is the prompt text and the optional resume id.
-    """
-
-    claude_binary: str = "claude"
-
-    def run(
-        self,
-        *,
-        prompt: str,
-        home: Path,
-        cwd: Path,
-        resume_session_id: str | None,
-    ) -> CliResult:
-        argv = [self.claude_binary, "-p", prompt]
-        if resume_session_id is not None:
-            argv = [self.claude_binary, "--resume", resume_session_id, "-p", prompt]
-        # Scrub COVERAGE_PROCESS_START + COV_CORE_* so the spawned `claude`
-        # child (a Python process) does NOT self-instrument under
-        # `pytest --cov`: an instrumented child writes `.coverage.*` that
-        # races concurrent coverage runs under the parallel dispatcher (the
-        # 7us.6 flaky "No data to report" failure). `claude` is never a
-        # coverage target, so dropping these is purely the belt-and-suspenders
-        # pairing with cmn — see the `tests_no_subprocess_spawn` check (4i5).
-        env = {
-            k: v
-            for k, v in os.environ.items()
-            if k != _COVERAGE_PROCESS_START_VAR and not k.startswith(_COVERAGE_CHILD_VAR_PREFIX)
-        }
-        env["HOME"] = str(home)
-        # S603: argv is a fixed list (binary name + literal flags + caller-
-        # supplied prompt text); no shell, no untrusted argv[0]. The prompt is
-        # passed as a single argv element, never interpolated into a shell.
-        completed = subprocess.run(
-            argv,
-            cwd=str(cwd),
-            env=env,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        return CliResult(
-            exit_code=completed.returncode,
-            stdout=completed.stdout,
-            stderr=completed.stderr,
-            session_id=None,
-        )
-
-
-@dataclass(frozen=True, kw_only=True)
 class HarnessConfig:
     """Inputs to one harness run — the parameter object the contract requires.
 
@@ -280,15 +172,6 @@ class HarnessConfig:
     fixtures_root: Path
     exempt_skills: frozenset[str] = frozenset()
     install_command: str | None = None
-
-
-@dataclass(frozen=True, kw_only=True)
-class FixturedSkill:
-    """One discovered fixture directory — `prompt.md` + `expected_files.txt`."""
-
-    skill: str
-    prompt: str
-    expected_files: tuple[str, ...]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -330,117 +213,12 @@ def _configure_logger() -> structlog.stdlib.BoundLogger:
     return structlog.get_logger("cli_e2e")
 
 
-def _read_plugin_prefix(*, plugin_dir: Path) -> str | None:
-    """Read the slash-command prefix from `<plugin_dir>/plugin.json` `name`.
-
-    Returns the `name` field verbatim (the slash prefix, e.g. `livespec`), or
-    `None` when the manifest is absent or carries no usable `name`. There MUST
-    be no parallel manifest file — `plugin.json` is the canonical source of the
-    prefix (contract requirement 3).
-    """
-    manifest = plugin_dir / _PLUGIN_MANIFEST
-    if not manifest.is_file():
-        return None
-    text = manifest.read_text(encoding="utf-8")
-    try:
-        parsed = json.loads(text)
-    except (ValueError, json.JSONDecodeError):
-        return None
-    if not isinstance(parsed, dict):
-        return None
-    # The `cast` is the single typed parse boundary: `json.loads` yields `Any`;
-    # casting to `dict[str, object]` (under the `isinstance` guard above) types
-    # `.get("name")` so the result narrows from `object` via the `isinstance`
-    # guard below — the same typed-boundary pattern as `pin_autodiscovery`.
-    manifest_dict = cast("dict[str, object]", parsed)
-    name = manifest_dict.get("name")
-    return name if isinstance(name, str) and name else None
-
-
-def _walk_skill_dirs(*, plugin_dir: Path) -> list[str]:
-    """Return the skill names under `<plugin_dir>/skills/*/SKILL.md`, sorted.
-
-    A skill is a subdirectory of `skills/` containing a `SKILL.md`; the skill
-    name is the subdirectory name (matching the slash sub-command). Walking
-    the directory layout — not a manifest — is the contract's source of truth.
-    """
-    skills_dir = plugin_dir / _SKILLS_DIRNAME
-    if not skills_dir.is_dir():
-        return []
-    names: list[str] = []
-    for child in sorted(skills_dir.iterdir()):
-        if child.is_dir() and (child / _SKILL_FILENAME).is_file():
-            names.append(child.name)
-    return names
-
-
-def discover_skills(*, plugin_install_dirs: tuple[Path, ...]) -> dict[str, tuple[str, ...]]:
-    """Walk each installed plugin and map its slash prefix → discovered skills.
-
-    For each directory in `plugin_install_dirs`, reads the slash-command prefix
-    from `plugin.json` `name` and enumerates `skills/*/SKILL.md`. A directory
-    whose manifest is missing/unreadable, or whose `skills/` dir is absent, is
-    skipped. The returned mapping is keyed by slash prefix so a caller can pair
-    the fixed spec-side plugin with the parametrized impl-side plugin.
-    """
-    out: dict[str, tuple[str, ...]] = {}
-    for plugin_dir in plugin_install_dirs:
-        prefix = _read_plugin_prefix(plugin_dir=plugin_dir)
-        if prefix is None:
-            continue
-        skills = _walk_skill_dirs(plugin_dir=plugin_dir)
-        out[prefix] = tuple(skills)
-    return out
-
-
 def _flatten_discovered(*, discovered: dict[str, tuple[str, ...]]) -> tuple[str, ...]:
     """Flatten the per-plugin discovery map into a sorted, de-duplicated set."""
     names: set[str] = set()
     for skills in discovered.values():
         names.update(skills)
     return tuple(sorted(names))
-
-
-def _parse_expected_files(*, text: str) -> tuple[str, ...]:
-    """Parse `expected_files.txt` — one path per line, blanks/`#` comments out."""
-    out: list[str] = []
-    for raw in text.splitlines():
-        stripped = raw.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        out.append(stripped)
-    return tuple(out)
-
-
-def discover_fixtures(*, fixtures_root: Path) -> dict[str, FixturedSkill]:
-    """Walk `<fixtures_root>/<skill>/` and load each `prompt.md` fixture.
-
-    Directory present (with a `prompt.md`) == fixture exists (contract
-    requirement 4). The optional `expected_files.txt` enumerates paths that
-    MUST exist after the skill's turn; an absent file means no file assertions.
-    Returns a mapping of skill name → its loaded fixture.
-    """
-    if not fixtures_root.is_dir():
-        return {}
-    out: dict[str, FixturedSkill] = {}
-    for child in sorted(fixtures_root.iterdir()):
-        if not child.is_dir():
-            continue
-        prompt_path = child / _PROMPT_FILENAME
-        if not prompt_path.is_file():
-            continue
-        expected_path = child / _EXPECTED_FILES_FILENAME
-        expected = (
-            _parse_expected_files(text=expected_path.read_text(encoding="utf-8"))
-            if expected_path.is_file()
-            else ()
-        )
-        out[child.name] = FixturedSkill(
-            skill=child.name,
-            prompt=prompt_path.read_text(encoding="utf-8"),
-            expected_files=expected,
-        )
-    return out
 
 
 def assert_coverage(
