@@ -89,6 +89,11 @@ dev = [
 source_trees = ["livespec_dev_tooling"]
 target_dirs = ["livespec_dev_tooling"]
 source_tree_prefixes = ["livespec_dev_tooling/"]
+# Phase-2 flip (fleet-check-coverage epic livespec-i5ebqd): arm the file_lloc
+# hard gate over this repo's whole git-derived first-party universe. Every
+# first-party .py is <=250 LLOC after the decomposition, so >250 now hard-fails
+# (severity increase only — no escape hatch).
+file_lloc_hard_gate = true
 mirror_pairings = [
     { source_tree = "livespec_dev_tooling", test_tree = "tests/livespec_dev_tooling" },
 ]
