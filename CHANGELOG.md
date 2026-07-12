@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.41.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.41.0...v0.41.1) (2026-07-12)
+
+
+### Bug Fixes
+
+* recognize parameterized recipe headers in bump-pin canonical reconcile ([d90494b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d90494b8926a8b0307df81d3688a5d32b1f35131))
+
 ## [0.41.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.40.4...v0.41.0) (2026-07-12)
 
 
