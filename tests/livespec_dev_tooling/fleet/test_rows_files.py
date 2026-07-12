@@ -27,13 +27,11 @@ from livespec_dev_tooling.fleet._context import (
 from livespec_dev_tooling.fleet._rows_files import (
     BUMP_PIN_WORKFLOW,
     CI_WORKFLOW,
-    CLAUDE_SETTINGS,
     COPIER_ANSWERS,
     PIN_FRESHNESS_WORKFLOW,
     RELEASE_DISPATCH_WORKFLOW,
     assert_bump_pin_workflow,
     assert_ci_workflow,
-    assert_claude_plugin_currency,
     assert_copier_answers,
     assert_dev_tooling_pin,
     assert_no_tracked_gitlinks,
@@ -56,48 +54,8 @@ _PYPROJECT_ARGS: tuple[str, ...] = (
     "Accept: application/vnd.github.raw",
 )
 _LATEST_ARGS: tuple[str, ...] = ("api", "repos/acme/livespec-dev-tooling/releases/latest")
-_PLUGIN_SETTINGS_ARGS: tuple[str, ...] = (
-    "api",
-    "repos/acme/widget/contents/.claude/settings.json?ref=master",
-    "-H",
-    "Accept: application/vnd.github.raw",
-)
-_PLUGIN_JUSTFILE_ARGS: tuple[str, ...] = (
-    "api",
-    "repos/acme/widget/contents/justfile?ref=master",
-    "-H",
-    "Accept: application/vnd.github.raw",
-)
 
 _PINNED_PYPROJECT = '[tool.uv.sources]\nlivespec-dev-tooling = { git = "x", tag = "v1.2.0" }\n'
-_PLUGIN_SETTINGS = json.dumps(
-    {
-        "hooks": {
-            "SessionStart": [
-                {
-                    "matcher": "",
-                    "hooks": [
-                        {"type": "command", "command": "mise exec -- just ensure-plugins"},
-                        {"type": "command", "command": 7},
-                    ],
-                },
-                "junk",
-                {"matcher": "", "hooks": "not-list"},
-                {"matcher": "", "hooks": ["junk"]},
-            ]
-        }
-    }
-)
-_STANDARD_JUSTFILE = (
-    "other:\n"
-    "    echo ok\n"
-    "ensure-plugins:\n"
-    "    # comment\n"
-    "\n"
-    "    mise exec -- uv run --no-sync python -m livespec_dev_tooling.fleet.ensure_plugins\n"
-    "next:\n"
-    "    echo done\n"
-)
 
 
 def make_context(*, table: dict[tuple[str, ...], GhResult]) -> FleetContext:
@@ -275,90 +233,6 @@ def test_pin_row_unreadable_pyproject_content_skips() -> None:
     outcome = assert_dev_tooling_pin(ctx=ctx, member=_MEMBER)
     assert isinstance(outcome, RowSkip)
     assert "unreadable" in outcome.reason
-
-
-def _plugin_currency_table(
-    *,
-    paths: list[str],
-    settings: str | None = _PLUGIN_SETTINGS,
-    justfile: str | None = _STANDARD_JUSTFILE,
-    truncated: bool = False,
-) -> dict[tuple[str, ...], GhResult]:
-    """A canned table for the Claude plugin-currency row."""
-    table = tree_table(paths=paths, truncated=truncated)
-    if settings is not None:
-        table[_PLUGIN_SETTINGS_ARGS] = GhResult(returncode=0, stdout=settings, stderr="")
-    if justfile is not None:
-        table[_PLUGIN_JUSTFILE_ARGS] = GhResult(returncode=0, stdout=justfile, stderr="")
-    return table
-
-
-def test_claude_plugin_currency_edge_outcomes() -> None:
-    cases = [
-        ({}, RowSkip, "unreadable"),
-        (
-            _plugin_currency_table(paths=["README.md"]),
-            RowFinding,
-            CLAUDE_SETTINGS,
-        ),
-        (
-            _plugin_currency_table(paths=["README.md"], truncated=True),
-            RowSkip,
-            "truncated",
-        ),
-        (
-            _plugin_currency_table(paths=[CLAUDE_SETTINGS], settings="["),
-            RowFinding,
-            "parseable",
-        ),
-        (
-            _plugin_currency_table(paths=[CLAUDE_SETTINGS], settings="[]"),
-            RowFinding,
-            "parseable",
-        ),
-        (
-            _plugin_currency_table(paths=[CLAUDE_SETTINGS], settings=json.dumps({"hooks": []})),
-            RowFinding,
-            "SessionStart",
-        ),
-        (
-            _plugin_currency_table(paths=[CLAUDE_SETTINGS], settings=None),
-            RowSkip,
-            CLAUDE_SETTINGS,
-        ),
-        (
-            _plugin_currency_table(paths=[CLAUDE_SETTINGS], justfile=None),
-            RowFinding,
-            "justfile missing",
-        ),
-        (
-            _plugin_currency_table(paths=[CLAUDE_SETTINGS], justfile=None, truncated=True),
-            RowSkip,
-            "truncated",
-        ),
-        (
-            _plugin_currency_table(paths=[CLAUDE_SETTINGS, "justfile"], justfile=None),
-            RowSkip,
-            "justfile unreadable",
-        ),
-        (
-            _plugin_currency_table(paths=[CLAUDE_SETTINGS, "justfile"], justfile="other:\n"),
-            RowFinding,
-            "standard wrapper",
-        ),
-    ]
-    for table, outcome_type, text in cases:
-        outcome = assert_claude_plugin_currency(ctx=make_context(table=table), member=_MEMBER)
-        assert isinstance(outcome, outcome_type), text
-        detail = outcome.reason if isinstance(outcome, RowSkip) else outcome.message
-        assert text in detail
-        if isinstance(outcome, RowFinding):
-            assert outcome.severity == "error"
-
-
-def test_claude_plugin_currency_passes_standard_wrapper_with_comments() -> None:
-    table = _plugin_currency_table(paths=[CLAUDE_SETTINGS, "justfile"])
-    assert assert_claude_plugin_currency(ctx=make_context(table=table), member=_MEMBER) == RowPass()
 
 
 def test_ensure_plugins_planner_ignores_malformed_optional_shapes() -> None:

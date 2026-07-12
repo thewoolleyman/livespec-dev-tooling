@@ -51,7 +51,7 @@ from livespec_dev_tooling.fleet._context import (
     default_gh_runner,
     resolve_owner,
 )
-from livespec_dev_tooling.fleet.contract import ObligationRow, rows_for
+from livespec_dev_tooling.fleet._contract_rows import ObligationRow, rows_for
 from livespec_dev_tooling.fleet.fleet_conformance import fetch_manifest
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"

@@ -14,11 +14,11 @@ from livespec_dev_tooling.fleet._context import (
     RowPass,
     RowSkip,
 )
-from livespec_dev_tooling.fleet._rows_files import (
+from livespec_dev_tooling.fleet._contract_rows import OBLIGATION_ROWS, REPO_CLASSES
+from livespec_dev_tooling.fleet._rows_claude_plugin import (
     CLAUDE_SETTINGS,
     assert_claude_plugin_currency,
 )
-from livespec_dev_tooling.fleet.contract import OBLIGATION_ROWS, REPO_CLASSES
 from livespec_dev_tooling.fleet.ensure_plugins import (
     CommandResult,
     planned_commands,
