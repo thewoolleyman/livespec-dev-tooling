@@ -649,6 +649,37 @@ def test_filter_first_party_py_excludes_templates_tree(*, tmp_path: Path) -> Non
     assert result == (kept,)
 
 
+def test_filter_first_party_py_excludes_claude_agent_runtime_infra(*, tmp_path: Path) -> None:
+    """Any repo-root-relative `.py` under `.claude/` is excluded (host-only agent-runtime infra).
+
+    `.claude/` holds Claude Code hooks + local-only skills — out of scope for
+    livespec's product/dev-tooling code rules, the same treatment ruff
+    (`extend-exclude`) and pyright (`include`) already give `.claude/hooks/**`.
+    All three `.claude/` inputs are excluded — a hook, a skill module, and a
+    `test_`-prefixed skill file the tests-tree rule does NOT catch (it is not
+    under `tests/` and is not named `conftest.py`) — while a normal first-party
+    path survives. The pre-existing `_vendor` / tests-tree / `templates/`
+    exemptions are re-asserted so the new branch is proven additive, not a
+    replacement.
+    """
+    kept = Path("livespec_dev_tooling") / "config.py"
+    claude_hook = Path(".claude") / "hooks" / "livespec_footgun_guard.py"
+    claude_skill = Path(".claude") / "skills" / "overseer" / "registry.py"
+    claude_skill_test = Path(".claude") / "skills" / "overseer" / "test_registry.py"
+    vendored = Path("pkg") / "_vendor" / "v.py"
+    tested = Path("tests") / "test_a.py"
+    templated = Path("templates") / "hook.py"
+    inputs = (kept, claude_hook, claude_skill, claude_skill_test, vendored, tested, templated)
+    for rel in inputs:
+        full = tmp_path / rel
+        full.parent.mkdir(parents=True, exist_ok=True)
+        _ = full.write_text("x = 1\n", encoding="utf-8")
+    result = filter_first_party_py(
+        tracked_py=list(inputs), repo_root=tmp_path, tests_tree_prefix="tests/"
+    )
+    assert result == (kept,)
+
+
 def test_filter_first_party_py_excludes_generated_marker(*, tmp_path: Path) -> None:
     """A file carrying the `@generated` sentinel is excluded."""
     kept = Path("pkg") / "a.py"
