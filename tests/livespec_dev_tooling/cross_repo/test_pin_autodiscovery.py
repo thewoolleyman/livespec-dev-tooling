@@ -1,11 +1,13 @@
 """Outside-in test for `cross_repo/pin_autodiscovery.py` — pin-format walk.
 
 Per `SPECIFICATION/contracts.md` §"Pin autodiscovery rules", the walk
-inspects four pin formats (`.livespec.jsonc` `compat.pinned`,
-`pyproject.toml` `[tool.uv.sources]`, `.vendor.jsonc`, and
-`.github/workflows/*.yml` `uses:` refs) and yields normalized records.
-A `.copier-answers.yml` `_commit` marker is copier render-provenance,
-NOT a version pin, so the walk deliberately emits no record for it.
+inspects five pin formats (`.livespec.jsonc` `compat.pinned`,
+`pyproject.toml` `[tool.uv.sources]`, `.vendor.jsonc`,
+`.github/workflows/*.yml` `uses:` refs, and the fabro-sandbox docker
+image tag in `.fabro` `workflow.toml` files) and yields normalized
+records. A `.copier-answers.yml` `_commit` marker is copier
+render-provenance, NOT a version pin, so the walk deliberately emits no
+record for it.
 This test file exercises each format individually, the source-repo
 filter, the hyphen-to-underscore normalization for `.vendor.jsonc`
 matching, the missing-file tolerance, the unrecognized-format
@@ -438,6 +440,139 @@ def test_discover_github_workflow_uses_yaml_extension(*, tmp_path: Path) -> None
     result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
     assert len(result) == 1
     assert result[0]["current_value"] == "v0.3.0"
+
+
+# ---------------------------------------------------------------------------
+# fabro-sandbox docker image tag tests (fifth pin format)
+# ---------------------------------------------------------------------------
+
+
+_FABRO_IMAGE = "ghcr.io/thewoolleyman/livespec-fabro-sandbox"
+
+
+def _write_fabro_workflow(
+    *, root: Path, base_parts: tuple[str, ...], workflow: str, tag: str
+) -> None:
+    """Write a minimal Fabro `workflow.toml` carrying the docker image pin."""
+    workflow_dir = root.joinpath(*base_parts, workflow)
+    workflow_dir.mkdir(parents=True)
+    (workflow_dir / "workflow.toml").write_text(
+        "[image]\n" 'provider = "docker"\n' f'docker = "{_FABRO_IMAGE}:{tag}"\n',
+        encoding="utf-8",
+    )
+
+
+def test_discover_fabro_docker_claude_plugin_path_emits_record(*, tmp_path: Path) -> None:
+    """The orchestrator layout (`.claude-plugin/.fabro/workflows/`) emits one record."""
+    _write_fabro_workflow(
+        root=tmp_path,
+        base_parts=(".claude-plugin", ".fabro", "workflows"),
+        workflow="implement-work-item",
+        tag="v0.39.0",
+    )
+    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    assert len(result) == 1
+    record = result[0]
+    assert record["pin_format"] == "fabro_sandbox_docker_image"
+    assert (
+        record["file_path"] == ".claude-plugin/.fabro/workflows/implement-work-item/workflow.toml"
+    )
+    assert record["pin_key"] == _FABRO_IMAGE
+    assert record["current_value"] == "v0.39.0"
+    assert record["source_repo"] == "livespec-dev-tooling"
+
+
+def test_discover_fabro_docker_root_fabro_path_emits_record(*, tmp_path: Path) -> None:
+    """The console layout (top-level `.fabro/workflows/`) also emits one record."""
+    _write_fabro_workflow(
+        root=tmp_path,
+        base_parts=(".fabro", "workflows"),
+        workflow="implement-work-item",
+        tag="sha-ea684ad",
+    )
+    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    assert len(result) == 1
+    record = result[0]
+    assert record["pin_format"] == "fabro_sandbox_docker_image"
+    assert record["file_path"] == ".fabro/workflows/implement-work-item/workflow.toml"
+    assert record["pin_key"] == _FABRO_IMAGE
+    assert record["current_value"] == "sha-ea684ad"
+    assert record["source_repo"] == "livespec-dev-tooling"
+
+
+def test_discover_fabro_docker_absent_yields_nothing(*, tmp_path: Path) -> None:
+    """A consumer repo with no `.fabro` workflow dir yields no docker record."""
+    (tmp_path / "unrelated.txt").write_text("no fabro here\n", encoding="utf-8")
+    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    assert result == []
+
+
+def test_discover_fabro_docker_workflow_without_docker_line_yields_nothing(
+    *, tmp_path: Path
+) -> None:
+    """A `workflow.toml` present but carrying no docker line yields no record."""
+    workflow_dir = tmp_path / ".fabro" / "workflows" / "implement-work-item"
+    workflow_dir.mkdir(parents=True)
+    (workflow_dir / "workflow.toml").write_text('[run]\ngoal = "do a thing"\n', encoding="utf-8")
+    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    assert result == []
+
+
+def test_discover_fabro_docker_empty_workflows_dir_yields_nothing(*, tmp_path: Path) -> None:
+    """A `.fabro/workflows/` dir with no `*/workflow.toml` yields no record."""
+    (tmp_path / ".fabro" / "workflows").mkdir(parents=True)
+    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    assert result == []
+
+
+def test_discover_fabro_docker_multiple_workflows(*, tmp_path: Path) -> None:
+    """More than one workflow dir each with a docker line emits one record each."""
+    _write_fabro_workflow(
+        root=tmp_path,
+        base_parts=(".claude-plugin", ".fabro", "workflows"),
+        workflow="implement-work-item",
+        tag="v0.39.0",
+    )
+    _write_fabro_workflow(
+        root=tmp_path,
+        base_parts=(".claude-plugin", ".fabro", "workflows"),
+        workflow="groom-work-item",
+        tag="v0.39.0",
+    )
+    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    assert len(result) == 2
+    workflows = sorted(r["file_path"] for r in result)
+    assert workflows == [
+        ".claude-plugin/.fabro/workflows/groom-work-item/workflow.toml",
+        ".claude-plugin/.fabro/workflows/implement-work-item/workflow.toml",
+    ]
+    assert all(r["source_repo"] == "livespec-dev-tooling" for r in result)
+
+
+def test_discover_fabro_docker_source_repo_filter_match(*, tmp_path: Path) -> None:
+    """`--source-repo livespec-dev-tooling` includes the fabro docker record."""
+    _write_fabro_workflow(
+        root=tmp_path,
+        base_parts=(".claude-plugin", ".fabro", "workflows"),
+        workflow="implement-work-item",
+        tag="v0.39.0",
+    )
+    result = pin_autodiscovery.discover(root=tmp_path, source_repo="livespec-dev-tooling")
+    assert len(result) == 1
+    assert result[0]["pin_format"] == "fabro_sandbox_docker_image"
+    assert result[0]["source_repo"] == "livespec-dev-tooling"
+
+
+def test_discover_fabro_docker_source_repo_filter_no_match(*, tmp_path: Path) -> None:
+    """`--source-repo other` excludes the fabro docker record entirely."""
+    _write_fabro_workflow(
+        root=tmp_path,
+        base_parts=(".claude-plugin", ".fabro", "workflows"),
+        workflow="implement-work-item",
+        tag="v0.39.0",
+    )
+    result = pin_autodiscovery.discover(root=tmp_path, source_repo="other")
+    assert result == []
 
 
 def test_discover_all_four_pin_formats_coexisting(*, tmp_path: Path) -> None:

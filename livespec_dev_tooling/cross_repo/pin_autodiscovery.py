@@ -2,7 +2,7 @@
 
 Per `SPECIFICATION/contracts.md` §"Pin autodiscovery rules", the walk
 inspects the consumer repository for every supported pin format and
-yields a normalized record per discovered pin. The walk covers four
+yields a normalized record per discovered pin. The walk covers five
 formats:
 
 - `.livespec.jsonc` `compat.pinned` — every top-level key whose value
@@ -22,6 +22,16 @@ formats:
   workflow file. The pin's source repo is derived from the `<repo>`
   segment; `current_value` is `<ref>`; `pin_key` is
   `<owner>/<repo>/<path>` (the full `uses:` reference without `@ref`).
+- fabro-sandbox docker image tag — the
+  `docker = "ghcr.io/thewoolleyman/livespec-fabro-sandbox:<tag>"` line in
+  every Fabro `workflow.toml` under either `.claude-plugin/.fabro/workflows/`
+  or the root `.fabro/workflows/` (fleet consumers carry it at one or the
+  other; both are walked so no consumer is missed). `pin_key` is the image
+  reference WITHOUT the tag; `current_value` is `<tag>`. Unlike the other
+  formats, the source repo is HARDCODED to `livespec-dev-tooling` — the
+  image is built and released by this repo and its tag tracks the
+  dev-tooling release version, so a dev-tooling release fan-out rewrites
+  this docker tag in the SAME bump commit as the pyproject/compat pins.
 
 `.copier-answers.yml` `_commit` is deliberately NOT a pin format: it
 is copier render-provenance, not a version pin, so rewriting it would
@@ -81,7 +91,21 @@ _PIN_FORMAT_LIVESPEC = "livespec_jsonc_compat_pinned"
 _PIN_FORMAT_UV_SOURCES = "pyproject_toml_uv_sources"
 _PIN_FORMAT_VENDOR = "vendor_jsonc"
 _PIN_FORMAT_WORKFLOW_USES = "github_workflow_uses_ref"
+_PIN_FORMAT_FABRO_DOCKER = "fabro_sandbox_docker_image"
 _PIN_FORMAT_UNRECOGNIZED = "unrecognized"
+
+# The fabro-sandbox image is BUILT + RELEASED by livespec-dev-tooling and its
+# tag tracks the dev-tooling release version, so this pin's source repo is
+# HARDCODED (unlike pyproject, whose source repo derives from the git URL).
+_FABRO_SANDBOX_IMAGE = "ghcr.io/thewoolleyman/livespec-fabro-sandbox"
+_FABRO_SANDBOX_SOURCE_REPO = "livespec-dev-tooling"
+# Fleet consumers carry the Fabro workflow config at one of two roots: the
+# orchestrator under `.claude-plugin/.fabro/workflows/`, the console under the
+# top-level `.fabro/workflows/`. Both are walked so neither consumer is missed.
+_FABRO_WORKFLOW_DIRS: tuple[tuple[str, ...], ...] = (
+    (".claude-plugin", ".fabro", "workflows"),
+    (".fabro", "workflows"),
+)
 
 
 def _normalize_for_vendor_match(*, name: str) -> str:
@@ -352,6 +376,45 @@ def _walk_github_workflow_uses(
     return out
 
 
+_FABRO_DOCKER_RE = re.compile(
+    r'^\s*docker\s*=\s*"' + re.escape(_FABRO_SANDBOX_IMAGE) + r':(?P<tag>[^"]+)"',
+    re.MULTILINE,
+)
+
+
+def _walk_fabro_workflow_docker(
+    *, root: Path, source_repo_filter: str | None, log: structlog.stdlib.BoundLogger
+) -> list[dict[str, str]]:
+    # The source repo is fixed at the literal "livespec-dev-tooling" (the image
+    # is released by this repo; its tag tracks the dev-tooling release version),
+    # so honor the filter up front — nothing here can match another source.
+    source_repo = _FABRO_SANDBOX_SOURCE_REPO
+    if source_repo_filter is not None and source_repo_filter != source_repo:
+        return []
+    out: list[dict[str, str]] = []
+    for parts in _FABRO_WORKFLOW_DIRS:
+        workflows_dir = root.joinpath(*parts)
+        if not workflows_dir.is_dir():
+            continue
+        for toml_path in sorted(workflows_dir.glob("*/workflow.toml")):
+            rel_path = str(toml_path.relative_to(root))
+            text = toml_path.read_text(encoding="utf-8")
+            match = _FABRO_DOCKER_RE.search(text)
+            if match is None:
+                continue
+            out.append(
+                _record(
+                    pin_format=_PIN_FORMAT_FABRO_DOCKER,
+                    file_path=rel_path,
+                    pin_key=_FABRO_SANDBOX_IMAGE,
+                    current_value=match.group("tag"),
+                    source_repo=source_repo,
+                )
+            )
+    _ = log
+    return out
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="pin-autodiscovery",
@@ -359,7 +422,8 @@ def _build_parser() -> argparse.ArgumentParser:
             "Walk a consumer repo and emit a JSON array of pin records per "
             'SPECIFICATION/contracts.md §"Pin autodiscovery rules". Covers '
             ".livespec.jsonc, pyproject.toml [tool.uv.sources], .vendor.jsonc, "
-            "and .github/workflows/*.yml uses: refs."
+            ".github/workflows/*.yml uses: refs, and the fabro-sandbox docker "
+            "image tag in .fabro workflow.toml files."
         ),
     )
     _ = parser.add_argument(
@@ -410,6 +474,7 @@ def discover(*, root: Path, source_repo: str | None) -> list[dict[str, str]]:
     records.extend(_walk_pyproject_toml(root=root, source_repo_filter=source_repo, log=log))
     records.extend(_walk_vendor_jsonc(root=root, source_repo_filter=source_repo, log=log))
     records.extend(_walk_github_workflow_uses(root=root, source_repo_filter=source_repo, log=log))
+    records.extend(_walk_fabro_workflow_docker(root=root, source_repo_filter=source_repo, log=log))
     return records
 
 

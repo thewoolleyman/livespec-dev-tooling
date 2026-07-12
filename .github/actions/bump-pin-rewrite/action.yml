@@ -126,6 +126,8 @@ runs:
         #   - livespec_jsonc_compat_pinned: `compat.pinned` targeted rewrite
         #   - pyproject_toml_uv_sources: regex on the `tag = "X"` field
         #   - vendor_jsonc: `upstream_ref` targeted rewrite
+        #   - github_workflow_uses_ref: `uses: <key>@<ref>` targeted rewrite
+        #   - fabro_sandbox_docker_image: `docker = "<key>:<tag>"` targeted rewrite
         echo "$RECORDS" | jq -c '.[]' | while read -r rec; do
           fmt=$(echo "$rec" | jq -r '.pin_format')
           file=$(echo "$rec" | jq -r '.file_path')
@@ -201,6 +203,24 @@ runs:
         new_text, n = pattern.subn(r'\1@' + "$TAG" + r'\2', text, count=1)
         if n != 1:
             raise SystemExit(f"failed to rewrite uses ref for $key in $file")
+        p.write_text(new_text, encoding="utf-8")
+        PYEOF
+              ;;
+            fabro_sandbox_docker_image)
+              python - <<PYEOF
+        import re
+        import pathlib
+        p = pathlib.Path("$file")
+        text = p.read_text(encoding="utf-8")
+        pattern = re.compile(
+            r'(^\s*docker\s*=\s*"' + re.escape("$key") + r':)' +
+            re.escape("$current") +
+            r'(")',
+            re.MULTILINE,
+        )
+        new_text, n = pattern.subn(r'\1' + "$TAG" + r'\2', text, count=1)
+        if n != 1:
+            raise SystemExit(f"failed to rewrite docker image tag for $key in $file")
         p.write_text(new_text, encoding="utf-8")
         PYEOF
               ;;
