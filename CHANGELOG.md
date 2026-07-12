@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.40.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.40.2...v0.40.3) (2026-07-12)
+
+
+### Refactoring
+
+* **cross_repo,driver_checks,testing:** decompose pin_autodiscovery + plugin_structure + cli_e2e ≤250 (fleet-check-coverage) ([0a77aac](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0a77aac48dcf6399c40568cad721feac6568836b))
+
 ## [0.40.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.40.1...v0.40.2) (2026-07-12)
 
 
