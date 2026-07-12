@@ -106,8 +106,10 @@ mirror_pairings = [
 #   - fleet/merged_branch_sweep.py  main() → sweep report to stdout + unresolvable/manifest errors to stderr
 #   - parallel_check_dispatcher.py  _write() streams per-target subprocess output to stdout
 #   - red_leg_scope.py              _write() emits the computed Red skip set to stdout
+#   - cross_repo/justfile_canonical_reconcile.py  main() → `::notice::` annotations to stdout
 supervisor_entry_files = [
     "livespec_dev_tooling/canonical_checks.py",
+    "livespec_dev_tooling/cross_repo/justfile_canonical_reconcile.py",
     "livespec_dev_tooling/cross_repo/pin_autodiscovery.py",
     "livespec_dev_tooling/fleet/merged_branch_sweep.py",
     "livespec_dev_tooling/parallel_check_dispatcher.py",

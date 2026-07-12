@@ -387,12 +387,16 @@ def test_relock_step_refreshes_lock_before_commit() -> None:
 # `livespec_dev_tooling/checks/`, the live canonical-check set grows. Consumers
 # that already run `check-aggregate-completeness` must have their `justfile`
 # canonical block reconciled in the same bump PR, or the bump is guaranteed to
-# fail before the new check can be adopted.
+# fail before the new check can be adopted. The reconcile ALGORITHM lives in the
+# typed, unit-tested `livespec_dev_tooling.cross_repo.justfile_canonical_reconcile`
+# module (extracted from a former inline heredoc); this composite-Action step
+# just reads the canonical set and dispatches that module, so the step-shape
+# assertions below verify the WIRING (reads canonical_checks, invokes the
+# reconcile module, precedes commit) — the reconcile behavior itself is covered
+# by `tests/livespec_dev_tooling/cross_repo/test_justfile_canonical_reconcile.py`.
 _RECONCILE_STEP_NAME = "Reconcile canonical check wiring"
 _CANONICAL_CHECKS_MODULE = "livespec_dev_tooling.canonical_checks"
-_AGGREGATE_CHECK_SLUG = "check-aggregate-completeness"
-_TARGETS_ARRAY_SENTINEL = "targets=("
-_GENERIC_RECIPE_MODULE_PREFIX = "livespec_dev_tooling.checks."
+_RECONCILE_MODULE = "livespec_dev_tooling.cross_repo.justfile_canonical_reconcile"
 
 
 def _reconcile_step_body(*, text: str) -> str:
@@ -406,13 +410,15 @@ def _reconcile_step_body(*, text: str) -> str:
     return match.group(0)
 
 
-def test_reconcile_step_adds_new_canonical_slugs_before_commit() -> None:
-    """The Action reconciles consumer `justfile` wiring before committing.
+def test_reconcile_step_dispatches_reconcile_module_before_commit() -> None:
+    """The Action reads the canonical set and dispatches the reconcile module before committing.
 
     The bump PR already updates the dev-tooling pin. If that pin introduces a
-    new canonical check, the same commit must also add the missing
-    `check-<slug>` target and recipe so `check-aggregate-completeness` can pass
-    on the consumer PR.
+    new canonical check, the same commit must also reconcile the consumer's
+    `justfile` wiring so `check-aggregate-completeness` can pass on the consumer
+    PR. The step reads the canonical slug set from `canonical_checks` and hands
+    it to the extracted reconcile module via `$CANONICAL_JSON`, before the
+    commit step captures the result.
     """
     text = _read(path=_ACTION_PATH)
     body = _reconcile_step_body(text=text)
@@ -420,16 +426,13 @@ def test_reconcile_step_adds_new_canonical_slugs_before_commit() -> None:
         "the reconcile step must read the canonical slug set from the bumped "
         "livespec-dev-tooling support checkout"
     )
-    assert _AGGREGATE_CHECK_SLUG in body, (
-        "the reconcile step must be scoped to consumers that already carry "
-        "check-aggregate-completeness wiring"
+    assert f"python -m {_RECONCILE_MODULE}" in body, (
+        "the reconcile step must dispatch the extracted "
+        "justfile_canonical_reconcile module (not an inline heredoc)"
     )
-    assert (
-        _TARGETS_ARRAY_SENTINEL in body
-    ), "the reconcile step must update the justfile targets=(...) canonical block"
-    assert _GENERIC_RECIPE_MODULE_PREFIX in body, (
-        "the reconcile step must emit generic canonical recipes using "
-        "uv run python -m livespec_dev_tooling.checks.<module>"
+    assert 'CANONICAL_JSON="$canonical_json"' in body, (
+        "the reconcile step must pass the captured canonical set to the module "
+        "via the CANONICAL_JSON environment variable"
     )
     reconcile_pos = text.find(_RECONCILE_STEP_NAME)
     commit_pos = text.find("- name: Commit + push bump branch")
