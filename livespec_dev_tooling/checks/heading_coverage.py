@@ -47,11 +47,17 @@ The allowlist of integration-tier node-id prefixes is read per
 consumer repo from the `[tool.livespec_dev_tooling]` block's
 `scenario_tiers` array in the consuming repo's root `pyproject.toml`
 (via `livespec_dev_tooling.config.load_scenario_tiers`). When the
-table/key is absent, the module-level documented default
-`_DEFAULT_SCENARIO_TIERS` is used:
-`("tests.e2e", "tests.integration", "tests.consumer",
+table/key is absent, the documented default `DEFAULT_SCENARIO_TIERS`
+(defined in the `_heading_coverage_tier_resolution` sibling module) is
+used: `("tests.e2e", "tests.integration", "tests.consumer",
 "tests.prompts")`. Each consumer thus declares its own
 integration-test directory convention without amending this check.
+
+Direction 4's tier-resolution logic — the allowlist-prefix test and the
+static AST marker scan — lives in the private sibling module
+`_heading_coverage_tier_resolution.py` (an LLOC-reduction split); this
+file keeps the spec-heading walk, the registry diff, and the
+diagnostics.
 
 The check SKIPS `##` headings whose text begins with the literal
 `Scenario:` prefix in every spec file EXCEPT `scenarios.md`. In
@@ -75,7 +81,6 @@ _vendor/structlog` is added to `sys.path` at module import time.
 
 from __future__ import annotations
 
-import ast
 import json
 import sys
 from pathlib import Path
@@ -87,6 +92,14 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+# Direction-4 scenario integration-tier resolution (the allowlist-prefix and
+# AST-marker logic) extracted to a private sibling module — the LLOC-reduction
+# split mirroring `_ci_matrix_parse`. The parent keeps the spec-heading walk,
+# the registry diff, and every structured diagnostic.
+from livespec_dev_tooling.checks._heading_coverage_tier_resolution import (  # noqa: E402
+    DEFAULT_SCENARIO_TIERS,
+    scenario_tier_violations,
+)
 from livespec_dev_tooling.config import load_scenario_tiers  # noqa: E402
 
 __all__: list[str] = []
@@ -104,36 +117,6 @@ _TREE_ROOT_NLSPEC_FILES = (
 )
 _SCENARIO_PREFIX = "Scenario:"
 _SCENARIOS_FILE = "scenarios.md"
-
-# The documented default integration-tier node-id prefix allowlist, used when a
-# consumer repo declares no `[tool.livespec_dev_tooling].scenario_tiers` array.
-# A `scenarios.md` heading's mapped test node id is integration-tier-or-above
-# when its leading dotted path component matches one of these prefixes.
-_DEFAULT_SCENARIO_TIERS: tuple[str, ...] = (
-    "tests.e2e",
-    "tests.integration",
-    "tests.consumer",
-    "tests.prompts",
-)
-
-# Tier-acknowledgment keywords (case-insensitive) a `scenarios.md` TODO's
-# `reason` MUST contain to satisfy the integration-tier requirement during
-# transition. The non-empty-`reason` TODO check still applies independently.
-_TIER_REASON_KEYWORDS: tuple[str, ...] = (
-    "tier",
-    "integration",
-    "e2e",
-    "consumer",
-    "pyramid",
-)
-
-# pytest marker names that satisfy the integration-tier-or-above requirement
-# when found (statically) as a decorator / class marker / module `pytestmark`.
-_INTEGRATION_TIER_MARKERS: frozenset[str] = frozenset({"integration", "e2e", "consumer", "prompts"})
-
-# A resolvable dotted node id needs at least a module component and a function
-# component (`module.func`); `pytest.mark.<name>` likewise needs `mark.<name>`.
-_MIN_DOTTED_PARTS = 2
 
 
 def _enumerate_tree_roots(*, repo_root: Path) -> list[Path]:
@@ -210,144 +193,6 @@ def _registry_triples_and_todo_violations(
     return triples, todo_missing_reason
 
 
-def _node_id_has_allowlisted_prefix(*, test_id: str, tiers: tuple[str, ...]) -> bool:
-    return any(test_id == prefix or test_id.startswith(prefix + ".") for prefix in tiers)
-
-
-def _reason_acknowledges_tier(*, reason: str) -> bool:
-    lowered = reason.lower()
-    return any(keyword in lowered for keyword in _TIER_REASON_KEYWORDS)
-
-
-def _split_node_id(*, test_id: str) -> tuple[list[str], str] | None:
-    """Split a dotted node id into (module-path components, function name).
-
-    `tests.e2e.test_happy_path.test_happy_path_minimal` →
-    `(["tests", "e2e", "test_happy_path"], "test_happy_path_minimal")`.
-    Returns `None` when the node id has no dot (cannot resolve to a
-    file/function) so the caller treats it as "no marker found".
-    """
-    parts = test_id.split(".")
-    if len(parts) < _MIN_DOTTED_PARTS:
-        return None
-    return parts[:-1], parts[-1]
-
-
-def _decorator_marker_names(*, decorators: list[ast.expr]) -> set[str]:
-    """The set of `pytest.mark.<name>` (or `mark.<name>`) names among decorators."""
-    out: set[str] = set()
-    for decorator in decorators:
-        target = decorator.func if isinstance(decorator, ast.Call) else decorator
-        # `pytest.mark.integration` unparses to that dotted string; the marker
-        # name is the terminal attribute, with `mark` as its immediate parent.
-        rendered = ast.unparse(target)
-        components = rendered.split(".")
-        if len(components) >= _MIN_DOTTED_PARTS and components[-2] == "mark":
-            out.add(components[-1])
-    return out
-
-
-def _module_pytestmark_names(*, tree: ast.Module) -> set[str]:
-    """Marker names declared via a module-level `pytestmark = ...` assignment."""
-    out: set[str] = set()
-    for node in tree.body:
-        if isinstance(node, ast.Assign):
-            targets: list[ast.expr] = node.targets
-            value: ast.expr | None = node.value
-        elif isinstance(node, ast.AnnAssign):
-            targets = [node.target]
-            value = node.value
-        else:
-            continue
-        if value is None:
-            continue
-        if not any(isinstance(t, ast.Name) and t.id == "pytestmark" for t in targets):
-            continue
-        expressions = value.elts if isinstance(value, ast.List | ast.Tuple) else [value]
-        out |= _decorator_marker_names(decorators=list(expressions))
-    return out
-
-
-def _function_has_integration_marker(*, tree: ast.Module, func_name: str) -> bool:
-    """Statically decide whether `func_name` carries an integration-tier marker.
-
-    Accepts a function-level decorator, a class-level marker on the enclosing
-    class, or a module-level `pytestmark`. Never executes pytest.
-    """
-    module_markers = _module_pytestmark_names(tree=tree)
-    if module_markers & _INTEGRATION_TIER_MARKERS:
-        return True
-    for node in ast.walk(tree):
-        if isinstance(node, ast.ClassDef):
-            class_markers = _decorator_marker_names(decorators=list(node.decorator_list))
-            class_carries = bool(class_markers & _INTEGRATION_TIER_MARKERS)
-            for child in ast.walk(node):
-                if (
-                    isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef)
-                    and child.name == func_name
-                ):
-                    func_markers = _decorator_marker_names(decorators=list(child.decorator_list))
-                    if class_carries or (func_markers & _INTEGRATION_TIER_MARKERS):
-                        return True
-        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and node.name == func_name:
-            func_markers = _decorator_marker_names(decorators=list(node.decorator_list))
-            if func_markers & _INTEGRATION_TIER_MARKERS:
-                return True
-    return False
-
-
-def _node_id_resolves_with_marker(*, repo_root: Path, test_id: str) -> bool:
-    """Resolve a dotted node id to a file + function and AST-scan for the marker.
-
-    `tests.e2e.test_happy_path.test_happy_path_minimal` →
-    `tests/e2e/test_happy_path.py`, function `test_happy_path_minimal`. If the
-    node id cannot be resolved to a file/function (no dot, missing file, parse
-    error), returns `False` ("no marker found") so the prefix path governs.
-    """
-    split = _split_node_id(test_id=test_id)
-    if split is None:
-        return False
-    module_parts, func_name = split
-    candidate = repo_root / Path(*module_parts).with_suffix(".py")
-    if not candidate.is_file():
-        return False
-    try:
-        tree = ast.parse(candidate.read_text(encoding="utf-8"))
-    except (OSError, SyntaxError):
-        return False
-    return _function_has_integration_marker(tree=tree, func_name=func_name)
-
-
-def _scenario_tier_violations(
-    *, repo_root: Path, entries: list[dict[str, object]], tiers: tuple[str, ...]
-) -> list[dict[str, object]]:
-    """Registry entries for `scenarios.md` mapped to a unit-tier test (direction 4)."""
-    out: list[dict[str, object]] = []
-    for entry in entries:
-        if entry.get("spec_file") != _SCENARIOS_FILE:
-            continue
-        test_id = entry.get("test")
-        if not isinstance(test_id, str):
-            continue
-        if test_id == "TODO":
-            reason = entry.get("reason")
-            # An empty/absent reason is already reported by direction 3; only
-            # fire direction 4 for a non-empty reason that omits tier wording.
-            if (
-                isinstance(reason, str)
-                and reason.strip()
-                and not _reason_acknowledges_tier(reason=reason)
-            ):
-                out.append(entry)
-            continue
-        if _node_id_has_allowlisted_prefix(test_id=test_id, tiers=tiers):
-            continue
-        if _node_id_resolves_with_marker(repo_root=repo_root, test_id=test_id):
-            continue
-        out.append(entry)
-    return out
-
-
 def main() -> int:
     structlog.configure(
         processors=[
@@ -378,13 +223,11 @@ def main() -> int:
     registry_set, todo_missing_reason = _registry_triples_and_todo_violations(
         entries=coverage_entries
     )
-    tiers = load_scenario_tiers(repo_root=cwd) or _DEFAULT_SCENARIO_TIERS
-    scenario_tier_violations = _scenario_tier_violations(
-        repo_root=cwd, entries=coverage_entries, tiers=tiers
-    )
+    tiers = load_scenario_tiers(repo_root=cwd) or DEFAULT_SCENARIO_TIERS
+    tier_violations = scenario_tier_violations(repo_root=cwd, entries=coverage_entries, tiers=tiers)
     uncovered = sorted(spec_set - registry_set)
     orphan = sorted(registry_set - spec_set)
-    if not uncovered and not orphan and not todo_missing_reason and not scenario_tier_violations:
+    if not uncovered and not orphan and not todo_missing_reason and not tier_violations:
         return 0
     for spec_root, spec_file, heading in uncovered:
         log.error(
@@ -402,7 +245,7 @@ def main() -> int:
         )
     for entry in todo_missing_reason:
         log.error("TODO registry entry missing reason", entry=entry)
-    for entry in scenario_tier_violations:
+    for entry in tier_violations:
         log.error(
             "scenario heading mapped to unit-tier test",
             spec_root=entry.get("spec_root"),
