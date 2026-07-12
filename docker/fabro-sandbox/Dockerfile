@@ -87,6 +87,17 @@ RUN git config --system user.name "E2E Test" \
     && git config --system user.email "e2e-test@example.com" \
     && git config --system init.defaultBranch master
 
+# Bake the sandbox prepare-step timing wrapper onto PATH. Each prepare
+# step in the dispatched workflow.toml runs as
+# `livespec-step-timer <slug> -- <cmd>`: it times <cmd>, passes its exit
+# code + stdin/stdout/stderr through UNCHANGED, and best-effort POSTs one
+# OTLP span to the host receiver ($LIVESPEC_SANDBOX_OTEL_ENDPOINT) so the
+# in-sandbox setup/janitor timing is MEASURED in the fabro-sandbox
+# dataset. It is stdlib-only so it resolves via the base image's python3
+# BEFORE the first `uv sync`. The adjacent Dockerfile.dockerignore
+# allowlists this one file into the (repo-root) build context.
+COPY --chmod=0755 livespec_dev_tooling/otel_step_timer.py /usr/local/bin/livespec-step-timer
+
 # Pre-warm the uv wheel/build cache against this repo's lockfile so
 # the in-run `uv sync` is cache-hits only. The throwaway project dir
 # is removed; the cache under /root/.cache/uv persists in the image.
