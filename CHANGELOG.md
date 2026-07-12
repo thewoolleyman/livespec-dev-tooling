@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.41.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.40.4...v0.41.0) (2026-07-12)
+
+
+### Features
+
+* exempt .claude/ agent-runtime infra from the first-party .py universe ([0814815](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0814815f9959dfc6c3dddcce8ff5b9a931be896a))
+
 ## [0.40.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.40.3...v0.40.4) (2026-07-12)
 
 
