@@ -67,12 +67,22 @@ dev = [
 # Per SPECIFICATION/constraints.md §"Self-application" + contracts.md
 # §"Consumer configuration schema", `just check` runs every shared check
 # against this library's OWN source tree. This block declares the flat
-# package layout: only the role keys this library has. The omitted role
-# keys (io_trees, commands_trees, supervisor_entry_files, dataclasses_tree,
-# pure_trees, covered_trees) are empty/null, so the corresponding checks
-# (no_except_outside_io, no_raise_outside_io, public_api_result_typed,
-# no_write_direct, no_lloc_soft_warnings, newtype_domain_primitives) no-op
-# against this flat-layout library, per contracts.md §"Role keys".
+# package layout and the role keys this library needs.
+#
+# The fleet-check-coverage git-derived-universe change made the file-role
+# checks walk this repo's first-party Python universe
+# (`livespec_dev_tooling/**`) instead of no-opping: no_except_outside_io,
+# no_raise_outside_io, public_api_result_typed, no_write_direct,
+# no_lloc_soft_warnings, and newtype_domain_primitives now cover
+# `livespec_dev_tooling/**` at Phase-0 WARN (they hard-fail once this repo
+# is flipped to the hard gate in Phase 2), per contracts.md §"Role keys".
+#
+# `supervisor_entry_files` below declares the five CLI/supervisor files
+# whose `main()` / `_write` helpers own legitimate stdout/stderr contracts
+# (JSON payloads, CLI reports, streamed subprocess output) — the exact
+# surface `no_write_direct` exempts. The remaining role keys (io_trees,
+# commands_trees, dataclasses_tree, pure_trees, covered_trees) stay
+# empty/null: this flat-layout library has no code in those roles.
 # ---------------------------------------------------------------------------
 
 [tool.livespec_dev_tooling]
@@ -81,6 +91,22 @@ target_dirs = ["livespec_dev_tooling"]
 source_tree_prefixes = ["livespec_dev_tooling/"]
 mirror_pairings = [
     { source_tree = "livespec_dev_tooling", test_tree = "tests/livespec_dev_tooling" },
+]
+# CLI/supervisor entry files whose `main()` / `_write` helpers own
+# legitimate stdout/stderr contracts — the surface `no_write_direct`
+# (and `no_except_outside_io`) exempt. Each write here is a JSON payload,
+# a CLI report, an error diagnostic, or streamed subprocess output:
+#   - canonical_checks.py           main() → JSON `{"slugs": [...]}` to stdout
+#   - cross_repo/pin_autodiscovery.py  main() → discovered-pin JSON to stdout
+#   - fleet/merged_branch_sweep.py  main() → sweep report to stdout + unresolvable/manifest errors to stderr
+#   - parallel_check_dispatcher.py  _write() streams per-target subprocess output to stdout
+#   - red_leg_scope.py              _write() emits the computed Red skip set to stdout
+supervisor_entry_files = [
+    "livespec_dev_tooling/canonical_checks.py",
+    "livespec_dev_tooling/cross_repo/pin_autodiscovery.py",
+    "livespec_dev_tooling/fleet/merged_branch_sweep.py",
+    "livespec_dev_tooling/parallel_check_dispatcher.py",
+    "livespec_dev_tooling/red_leg_scope.py",
 ]
 # Integration-tier-or-above node-id prefix allowlist for the
 # `heading_coverage` check's `scenarios.md` tier gate (per
