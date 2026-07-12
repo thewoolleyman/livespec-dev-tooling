@@ -76,7 +76,9 @@ from _red_green_replay_modes import (  # noqa: E402  — sibling private import
     _handle_green_mode,
     _handle_red_mode,
     _handle_suite_green_mode,
-    _head_red_awaiting_green,
+)
+from _red_green_replay_trailers import (  # noqa: E402  — sibling private import
+    head_red_awaiting_green,
 )
 
 __all__: list[str] = []
@@ -333,7 +335,7 @@ def main() -> int:
         # Branch 3, other prefixes — a passing test-only cleanup is
         # green-verified.
         return _handle_suite_green_mode(msg_path=msg_path, log=log, staged_paths=staged_paths)
-    if _head_red_awaiting_green():
+    if head_red_awaiting_green():
         # Branch 4 — a genuine amend-in-progress (Red WITHOUT Green at
         # HEAD), prefix-agnostic. Red-trailer PRESENCE alone is not
         # enough: a completed Red+Green commit at HEAD also carries

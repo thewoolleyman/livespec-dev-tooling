@@ -43,7 +43,6 @@ from livespec_dev_tooling.agent_hooks.subagent_stop_guard import (
     _commits_ahead_of_canonical,
     _decide,
     _derive_markers,
-    _extract_worktree_paths,
     _gather_worktrees,
     _git_count,
     _has_uncommitted_tracked_changes,
@@ -161,43 +160,6 @@ def _install_fake_gh(
     _ = gh_stub.write_text(script, encoding="utf-8")
     gh_stub.chmod(0o755)
     return f"{bin_dir}:/usr/bin:/bin"
-
-
-# ---------------------------------------------------------------------------
-# _extract_worktree_paths
-# ---------------------------------------------------------------------------
-
-
-def test_extract_worktree_paths_matches_both_layouts_and_dedupes() -> None:
-    text = (
-        "cd /data/projects/x/worktrees/slug-1 && ls\n"
-        '"/data/projects/y/.claude/worktrees/s2"\n'
-        "again /data/projects/x/worktrees/slug-1/deeper/file.py\n"
-        "no worktree mention here\n"
-    )
-    paths = _extract_worktree_paths(transcript_text=text)
-    assert paths == [
-        Path("/data/projects/x/worktrees/slug-1"),
-        Path("/data/projects/y/.claude/worktrees/s2"),
-    ]
-
-
-def test_extract_worktree_paths_matches_new_root_through_branch_segment() -> None:
-    # The fleet-wide worktree root is ~/.worktrees/<repo>/<branch> (a
-    # leading-dot `.worktrees` dir with TWO path segments). The match
-    # MUST capture through <branch> so the downstream `git -C <match>`
-    # probes target the real worktree dir, not just ~/.worktrees/<repo>.
-    text = (
-        "cd /home/ubuntu/.worktrees/somerepo/some-branch && git status\n"
-        "deeper /home/ubuntu/.worktrees/somerepo/some-branch/pkg/file.py\n"
-        "no worktree mention here\n"
-    )
-    paths = _extract_worktree_paths(transcript_text=text)
-    assert paths == [Path("/home/ubuntu/.worktrees/somerepo/some-branch")]
-
-
-def test_extract_worktree_paths_empty_on_plain_text() -> None:
-    assert _extract_worktree_paths(transcript_text="nothing relevant") == []
 
 
 # ---------------------------------------------------------------------------

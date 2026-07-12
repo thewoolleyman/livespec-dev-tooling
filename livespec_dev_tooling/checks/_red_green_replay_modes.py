@@ -21,6 +21,19 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:  # pragma: no cover
     import structlog.stdlib
 
+# Make the script's own directory importable so the sibling `_*` trailer-I/O
+# module resolves when this module is loaded standalone (the importlib test
+# path) as well as via the parent supervisor's own sys.path insert.
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
+
+from _red_green_replay_trailers import (  # noqa: E402  — sibling private import
+    current_head_sha,
+    head_trailer_value,
+    write_trailers,
+)
+
 # These symbols form this private sibling module's public surface to
 # its sole importer, `red_green_replay.py` (the parent supervisor imports
 # them after a runtime `sys.path.insert`). Declaring them in `__all__` marks
@@ -32,7 +45,6 @@ __all__: list[str] = [
     "_handle_green_mode",
     "_handle_red_mode",
     "_handle_suite_green_mode",
-    "_head_red_awaiting_green",
 ]
 
 
@@ -60,98 +72,6 @@ RED_GREEN_REPLAY_PROTOCOL: str = (
     "leg: the FULL pytest suite must pass against the staged tree, and TDD-Suite-Green-* "
     "trailers are recorded as the evidence shape."
 )
-
-
-def _head_red_awaiting_green() -> bool:
-    """Return True iff HEAD carries `TDD-Red-*` trailers WITHOUT `TDD-Green-*`.
-
-    The genuine amend-in-progress signature (work-item
-    livespec-dev-tooling-xn0): a COMPLETED Red+Green commit at HEAD
-    also carries Red trailers — the normal state of real history —
-    so keying Branch-4 routing on Red-trailer presence alone
-    misrouted every fresh product commit atop a completed pair into
-    the Green-amend leg, stamping bare `TDD-Green-*` trailers that
-    the commit-range validator then rejected. Only a Red awaiting
-    its Green may take the amend leg; everything else falls through
-    to the suite-green leg.
-    """
-    result = subprocess.run(
-        ["git", "log", "-1", "--format=%B"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    message = result.stdout
-    return "TDD-Red-Test-File-Checksum:" in message and "TDD-Green-Verified-At:" not in message
-
-
-def _head_trailer_value(*, key: str) -> str:
-    """Return the value of HEAD~0's named trailer, or empty if absent."""
-    result = subprocess.run(
-        ["git", "log", "-1", f"--pretty=%(trailers:key={key},valueonly)"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    return result.stdout.strip()
-
-
-def _current_head_sha() -> str:
-    """Return the current HEAD SHA via `git rev-parse HEAD`, or empty on failure."""
-    result = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    return result.stdout.strip()
-
-
-def _write_trailers(*, msg_path: Path, trailers: tuple[tuple[str, str], ...]) -> None:
-    # Two-step write to handle the v034 D2-D3 Red re-amend case
-    # (surfaced concretely 2026-05-04 during v039 D3 authoring):
-    # three Red re-amends produced three sets of `TDD-Red-*`
-    # trailers in the commit message, after which
-    # `_head_trailer_value` returned a newline-joined string of
-    # three identical paths and the Green-mode handler raised
-    # FileNotFoundError on Path.read_bytes().
-    #
-    # Step 1: pre-strip any line in the existing message whose
-    # leading token matches one of the keys we're about to write.
-    # We CANNOT use `git interpret-trailers --if-exists=replace`
-    # here because git's `replace` matching uses prefix-aliasing
-    # (treats `TDD-Red-Test` and `TDD-Red-Test-File-Checksum` as
-    # the same trailer when one is a prefix of the other) and
-    # silently DROPS the longer-keyed trailer when a shorter
-    # prefix is present. The Red trailer schema has exactly
-    # this collision (`TDD-Red-Test` is a strict prefix of
-    # `TDD-Red-Test-File-Checksum` and `TDD-Red-Output-Checksum`'s
-    # base form), so prefix-matching corrupts the trailer set
-    # rather than fixing the duplicate-append bug.
-    #
-    # Step 2: invoke `git interpret-trailers --in-place` to add
-    # the new trailers. Git's trailer-block-formatting rules
-    # (blank-line separator between body and trailer block,
-    # `Key: value` formatting, etc.) are preserved.
-    keys_to_replace = {key for key, _ in trailers}
-    original_text = msg_path.read_text(encoding="utf-8")
-    stripped_lines: list[str] = []
-    for line in original_text.splitlines(keepends=True):
-        head = line.split(":", 1)[0]
-        if head in keys_to_replace:
-            continue
-        stripped_lines.append(line)
-    _ = msg_path.write_text("".join(stripped_lines), encoding="utf-8")
-
-    args: list[str] = []
-    for key, value in trailers:
-        args.extend(["--trailer", f"{key}: {value}"])
-    _ = subprocess.run(
-        ["git", "interpret-trailers", "--in-place", *args, str(msg_path)],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
 
 
 def _handle_red_mode(
@@ -215,7 +135,7 @@ def _handle_red_mode(
     output_checksum = f"sha256:{hashlib.sha256(pytest_output.encode('utf-8')).hexdigest()}"
     captured_at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     failure_reason = " ".join(pytest_output.split())[:200]
-    _write_trailers(
+    write_trailers(
         msg_path=msg_path,
         trailers=(
             ("TDD-Red-Test", tests_paths[0]),
@@ -277,7 +197,7 @@ def _handle_suite_green_mode(
         return 1
     output_checksum = f"sha256:{hashlib.sha256(suite_output.encode('utf-8')).hexdigest()}"
     captured_at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    _write_trailers(
+    write_trailers(
         msg_path=msg_path,
         trailers=(
             ("TDD-Suite-Green-Scope", "full-suite"),
@@ -299,8 +219,8 @@ def _handle_green_mode(
         check_id="red-green-replay-green-mode-candidate",
         impl_paths=impl_paths,
     )
-    recorded_test = _head_trailer_value(key="TDD-Red-Test")
-    recorded_checksum = _head_trailer_value(key="TDD-Red-Test-File-Checksum")
+    recorded_test = head_trailer_value(key="TDD-Red-Test")
+    recorded_checksum = head_trailer_value(key="TDD-Red-Test-File-Checksum")
     green_test_path = Path.cwd() / recorded_test
     green_test_bytes = green_test_path.read_bytes()
     green_test_checksum = f"sha256:{hashlib.sha256(green_test_bytes).hexdigest()}"
@@ -340,8 +260,8 @@ def _handle_green_mode(
         )
         return 1
     green_verified_at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    green_parent_reflog = _current_head_sha()
-    _write_trailers(
+    green_parent_reflog = current_head_sha()
+    write_trailers(
         msg_path=msg_path,
         trailers=(
             ("TDD-Green-Verified-At", green_verified_at),
