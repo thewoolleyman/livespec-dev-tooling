@@ -295,113 +295,24 @@ runs:
         # grows. Consumers that already run check-aggregate-completeness
         # must adopt that new slug in the same bump commit, or the bump PR
         # is guaranteed to fail before the new check can propagate.
+        #
+        # The reconcile logic lives in the typed, unit-tested module
+        # livespec_dev_tooling.cross_repo.justfile_canonical_reconcile
+        # (extracted from a former inline heredoc so the recipe-presence
+        # guard is testable). That guard now recognizes a canonical slug's
+        # recipe in ANY header form — bare `check-<slug>:`, variadic
+        # `check-<slug> *args:`, or named-param — not just the bare form, so
+        # a hand-defined parameterized recipe (e.g. both Driver repos'
+        # `check-red-green-replay *args:`) is never re-appended as a
+        # duplicate that breaks the consumer's `just` parse. The module
+        # reads the justfile in cwd, the canonical set from $CANONICAL_JSON,
+        # and emits the same `::notice::` annotations this step always did.
         if [[ ! -f justfile ]]; then
           echo "::notice::no justfile found; skipping canonical check wiring reconcile"
           exit 0
         fi
         canonical_json=$(uv run --project .livespec-dev-tooling python -m livespec_dev_tooling.canonical_checks --json)
-        CANONICAL_JSON="$canonical_json" python - <<'PYEOF'
-        import json
-        import os
-        import pathlib
-
-        JUSTFILE = pathlib.Path("justfile")
-        AGGREGATE_SLUG = "check-aggregate-completeness"
-        CHECK_PREFIX = "check-"
-
-        text = JUSTFILE.read_text(encoding="utf-8")
-        if AGGREGATE_SLUG not in text:
-            print("::notice::consumer does not carry check-aggregate-completeness; skipping canonical check wiring reconcile")
-            raise SystemExit(0)
-
-        payload = json.loads(os.environ["CANONICAL_JSON"])
-        canonical = tuple(str(slug) for slug in payload.get("slugs", []) if isinstance(slug, str))
-        canonical_set = set(canonical)
-
-        lines = text.splitlines(keepends=True)
-
-        def token_for(line: str) -> str | None:
-            stripped = line.strip()
-            if not stripped or stripped.startswith("#"):
-                return None
-            token = stripped.split("#", 1)[0].strip()
-            return token if token.startswith(CHECK_PREFIX) else None
-
-        check_header = next((i for i, line in enumerate(lines) if line == "check:\n" or line == "check:"), None)
-        if check_header is None:
-            print("::notice::justfile has no bare check: recipe; skipping canonical check wiring reconcile")
-            raise SystemExit(0)
-
-        recipe_end = len(lines)
-        for i in range(check_header + 1, len(lines)):
-            line = lines[i]
-            if line and not line.startswith((" ", "\t")) and ":" in line:
-                recipe_end = i
-                break
-
-        targets_start = next(
-            (i for i in range(check_header + 1, recipe_end) if lines[i].strip() == "targets=("),
-            None,
-        )
-        if targets_start is None:
-            print("::notice::check: recipe has no targets=(...) array; skipping canonical check wiring reconcile")
-            raise SystemExit(0)
-
-        targets_end = next(
-            (i for i in range(targets_start + 1, recipe_end) if lines[i].strip() == ")"),
-            None,
-        )
-        if targets_end is None:
-            print("::notice::check: recipe targets=(...) array is unterminated; skipping canonical check wiring reconcile")
-            raise SystemExit(0)
-
-        wired_tokens = [
-            token
-            for token in (token_for(line) for line in lines[targets_start + 1 : targets_end])
-            if token is not None
-        ]
-        missing = [slug for slug in canonical if slug not in wired_tokens]
-        target_indent = "        "
-        for line in lines[targets_start + 1 : targets_end]:
-            token = token_for(line)
-            if token is not None:
-                target_indent = line[: len(line) - len(line.lstrip())]
-                break
-
-        for slug in missing:
-            insert_at = None
-            last_canonical = None
-            for i in range(targets_start + 1, targets_end):
-                token = token_for(lines[i])
-                if token in canonical_set:
-                    last_canonical = i
-                    if token > slug:
-                        insert_at = i
-                        break
-            if insert_at is None:
-                insert_at = targets_start + 1 if last_canonical is None else last_canonical + 1
-            lines.insert(insert_at, f"{target_indent}{slug}\n")
-            targets_end += 1
-            recipe_end += 1
-
-        recipe_chunks: list[str] = []
-        for slug in missing:
-            recipe_name = f"{slug}:"
-            if any(line == f"{recipe_name}\n" or line == recipe_name for line in lines):
-                continue
-            module = slug.removeprefix(CHECK_PREFIX).replace("-", "_")
-            recipe_chunks.append(
-                f"\n{recipe_name}\n"
-                f"    uv run python -m livespec_dev_tooling.checks.{module}\n"
-            )
-
-        if missing or recipe_chunks:
-            new_text = "".join(lines) + "".join(recipe_chunks)
-            JUSTFILE.write_text(new_text, encoding="utf-8")
-            print(f"::notice::reconciled canonical check wiring for: {', '.join(missing)}")
-        else:
-            print("::notice::canonical check wiring already current")
-        PYEOF
+        CANONICAL_JSON="$canonical_json" uv run --project .livespec-dev-tooling python -m livespec_dev_tooling.cross_repo.justfile_canonical_reconcile
 
     - name: Re-stamp canonical-slugs projection
       shell: bash
