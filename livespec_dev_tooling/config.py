@@ -558,6 +558,7 @@ _COMMENT_PREFIXES_BY_EXTENSION: dict[str, tuple[str, ...]] = {
 }
 _GENERATED_MARKER = "@generated"
 _TEMPLATES_PREFIX = "templates/"
+_CLAUDE_PREFIX = ".claude/"
 
 
 def is_generated(*, path: Path) -> bool:
@@ -602,8 +603,13 @@ def filter_first_party_py(
     configured test tree (`tests_tree_prefix`, prefix-matched exactly
     like `config.tests_tree_prefix` is used elsewhere in this module) or
     is named `conftest.py`, (c) is under `templates/` (copier payload
-    livespec ships but does not govern), or (d) carries the `@generated`
-    sentinel (`is_generated`). This function does no subprocess/listing
+    livespec ships but does not govern), (d) is under `.claude/`
+    (host-only, agent-runtime infra — Claude Code hooks + local-only
+    skills — which is out of scope for livespec's product/dev-tooling
+    code rules, the same treatment ruff `extend-exclude` and pyright
+    `include` already give `.claude/hooks/**`; this keeps the mechanical
+    first-party suite consistent with them), or (e) carries the
+    `@generated` sentinel (`is_generated`). This function does no subprocess/listing
     IO of its own — `tracked_py` is assumed already obtained (e.g. from
     `git ls-files`) — though `is_generated` DOES read file contents, so
     `repo_root` is needed to resolve each candidate to an absolute path
@@ -617,6 +623,8 @@ def filter_first_party_py(
         if posix.startswith(tests_tree_prefix) or rel.name == "conftest.py":
             continue
         if posix.startswith(_TEMPLATES_PREFIX):
+            continue
+        if posix.startswith(_CLAUDE_PREFIX):
             continue
         if is_generated(path=repo_root / rel):
             continue
