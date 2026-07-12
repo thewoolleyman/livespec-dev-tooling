@@ -38,12 +38,12 @@ from pathlib import Path
 from typing import cast
 
 from livespec_dev_tooling.fleet._context import RowPass, RowSkip
+from livespec_dev_tooling.fleet._contract_local_rows import LOCAL_OBLIGATION_ROWS
 from livespec_dev_tooling.fleet._local_context import (
     CommandRunner,
     LocalContext,
     default_command_runner,
 )
-from livespec_dev_tooling.fleet.contract import LOCAL_OBLIGATION_ROWS
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:

@@ -27,7 +27,7 @@ from livespec_dev_tooling.fleet._context import (
     RowOutcome,
     RowSkip,
 )
-from livespec_dev_tooling.fleet.contract import ObligationRow
+from livespec_dev_tooling.fleet._contract_rows import ObligationRow
 from livespec_dev_tooling.fleet.wire_fleet_member import reconcile_member
 
 if TYPE_CHECKING:

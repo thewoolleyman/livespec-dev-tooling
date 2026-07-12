@@ -17,8 +17,8 @@ from typing import TYPE_CHECKING
 
 from livespec_dev_tooling.fleet import local_reconcile
 from livespec_dev_tooling.fleet._context import RowFinding, RowOutcome
+from livespec_dev_tooling.fleet._contract_local_rows import LocalObligationRow
 from livespec_dev_tooling.fleet._local_context import CommandResult, LocalContext
-from livespec_dev_tooling.fleet.contract import LocalObligationRow
 from livespec_dev_tooling.fleet.local_reconcile import _resolve_checkout_root, reconcile_checkout
 
 if TYPE_CHECKING:
