@@ -7,3 +7,4 @@
 *
 !pyproject.toml
 !uv.lock
+!livespec_dev_tooling/otel_step_timer.py
