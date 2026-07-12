@@ -46,7 +46,21 @@ under a legacy tree keeps today's hard gate (soft-warn 201-250,
 hard-fail >250, exit 1); a file newly pulled into the git-derived
 universe emits ALL its LLOC diagnostics at WARN (even >250, with NO
 exit-1 contribution) until Phase 2 flips its repo to the hard gate.
-The classifier is removed in Phase 2.
+
+Phase-2 flip lever (`config.load_file_lloc_hard_gate`): the legacy-tree
+classifier is hardcoded to livespec-core's package path, so ONLY
+livespec-core could ever hard-gate `file_lloc`; a non-core repo (whose
+package dir is not `.claude-plugin/scripts/livespec/`) could never flip
+to the hard gate because its files never match the hardcoded tree. A repo
+opts its WHOLE git-derived universe into the hard gate by committing
+`file_lloc_hard_gate = true` in its `[tool.livespec_dev_tooling]` block —
+a committed pyproject declaration, not an env var. When the flip is set,
+every over-ceiling file is hard-gated (soft-warn 201-250, hard-fail >250,
+exit 1) regardless of legacy-tree membership; when it is absent or false,
+behavior is byte-identical to today (only legacy-tree files hard-gate,
+everything else WARNs), so the widening remains backward-compatible per
+repo. The `_LEGACY_HARDFAIL_TREES` classifier is removed once every repo
+has flipped.
 
 Output discipline: per spec, `print` (T20) and
 `sys.stderr.write` (`check-no-write-direct`) are banned in
@@ -71,6 +85,7 @@ import structlog  # noqa: E402  — vendor-path-aware import after sys.path inse
 
 from livespec_dev_tooling.config import (  # noqa: E402
     is_under_any_tree,
+    load_file_lloc_hard_gate,
     resolve_check_universe,
 )
 
@@ -147,21 +162,27 @@ def main() -> int:
     )
     log = structlog.get_logger("file_lloc")
     root, universe = resolve_check_universe()
-    legacy_soft_offenders: list[tuple[Path, int]] = []
-    legacy_hard_offenders: list[tuple[Path, int]] = []
+    # Phase-2 flip lever: when the consuming repo commits
+    # `file_lloc_hard_gate = true`, its WHOLE git-derived universe is hard-gated
+    # (the legacy-tree classifier is superseded). Absent/false → today's
+    # behavior: only the hardcoded legacy trees hard-gate, everything else WARNs.
+    hard_gate = bool(load_file_lloc_hard_gate(repo_root=root))
+    soft_offenders: list[tuple[Path, int]] = []
+    hard_offenders: list[tuple[Path, int]] = []
     newly_covered_offenders: list[tuple[Path, int]] = []
     for rel in universe:
         source = (root / rel).read_text(encoding="utf-8")
         lloc = _count_lloc(source=source)
         if lloc <= _LLOC_SOFT_CEILING:
             continue
-        if not is_under_any_tree(rel=rel, trees=_LEGACY_HARDFAIL_TREES):
+        gated = hard_gate or is_under_any_tree(rel=rel, trees=_LEGACY_HARDFAIL_TREES)
+        if not gated:
             newly_covered_offenders.append((rel, lloc))
         elif lloc > _LLOC_HARD_CEILING:
-            legacy_hard_offenders.append((rel, lloc))
+            hard_offenders.append((rel, lloc))
         else:
-            legacy_soft_offenders.append((rel, lloc))
-    for path, lloc in legacy_soft_offenders:
+            soft_offenders.append((rel, lloc))
+    for path, lloc in soft_offenders:
         log.warning(
             "file LLOC exceeds 200-line soft ceiling — flag for refactor",
             file=str(path),
@@ -180,14 +201,14 @@ def main() -> int:
             phase="0-warn",
             newly_covered=True,
         )
-    for path, lloc in legacy_hard_offenders:
+    for path, lloc in hard_offenders:
         log.error(
             "file LLOC exceeds 250-line hard ceiling",
             file=str(path),
             lloc=lloc,
             hard_ceiling=_LLOC_HARD_CEILING,
         )
-    if legacy_hard_offenders:
+    if hard_offenders:
         return 1
     return 0
 

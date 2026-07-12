@@ -76,6 +76,7 @@ __all__: list[str] = [
     "iter_py_files",
     "load_config",
     "load_destructive_cli_allowlist",
+    "load_file_lloc_hard_gate",
     "load_mutation_staging_dir",
     "load_scenario_tiers",
     "load_subprocess_spawn_allowlist",
@@ -264,6 +265,17 @@ def _as_str(*, value: object, key: str) -> str:
     return value
 
 
+def _as_bool(*, value: object, key: str) -> bool:
+    # TOML `true`/`false` parse to Python `bool`; anything else (string,
+    # int, array) is a schema violation. `bool` is checked before `int`
+    # would matter because in TOML a bare `1` is an int, not a bool — so
+    # `isinstance(value, bool)` rejects it, matching the `_as_str` shape.
+    if not isinstance(value, bool):
+        msg = f"`{key}` must be a boolean"
+        raise ConfigParseError(msg)
+    return value
+
+
 def _parse_mirror_pairings(*, value: object) -> tuple[MirrorPairing, ...]:
     if not isinstance(value, list):
         msg = "`mirror_pairings` must be an array of {source_tree, test_tree} tables"
@@ -413,6 +425,48 @@ def load_mutation_staging_dir(*, repo_root: Path) -> Path | None:
     if table is None or "mutation_staging_dir" not in table:
         return None
     return _as_path(value=table["mutation_staging_dir"], key="mutation_staging_dir")
+
+
+def load_file_lloc_hard_gate(*, repo_root: Path) -> bool | None:
+    """Return the `file_lloc_hard_gate` flip, or `None` if the key is absent.
+
+    Reads `<repo_root>/pyproject.toml`'s `[tool.livespec_dev_tooling]` block,
+    key `file_lloc_hard_gate` — a single boolean the `file_lloc` check reads to
+    decide whether THIS repo's whole git-derived first-party `.py` universe is
+    hard-gated (Phase-2) rather than only its historical legacy trees.
+
+    The `file_lloc` check widened its file universe from three hardcoded trees
+    to the whole git index (the fleet-check-coverage reroute), but kept a
+    hardcoded legacy-tree severity classifier so the widening did not turn every
+    previously-unwalked repo red in one step: a file under a legacy tree keeps
+    the hard gate, a file only in the newly git-derived universe emits Phase-0
+    WARN. That classifier is hardcoded to livespec-core's package path
+    (`.claude-plugin/scripts/livespec/`), so ONLY livespec-core could hard-gate
+    `file_lloc`; a non-core repo (e.g. the orchestrator, package
+    `livespec_orchestrator_beads_fabro/`) could never flip to the hard gate
+    because its files never match the hardcoded tree. This key is that
+    per-repo flip lever — a committed pyproject declaration, not an env var,
+    per the fleet's "flip lever is a committed pyproject declaration"
+    principle: setting `file_lloc_hard_gate = true` opts the whole universe into
+    the hard gate (soft-warn 201-250, hard-fail >250, exit 1), superseding the
+    legacy-tree classifier for that repo.
+
+    Returns `None` when the whole block is absent OR the key is omitted, so the
+    calling check applies its documented default — today's behavior, in which
+    only the hardcoded legacy trees hard-gate and everything else stays Phase-0
+    WARN. Absence is therefore fully backward-compatible: no repo's `file_lloc`
+    severity changes unless it explicitly opts in. Raises `ConfigParseError` on
+    a non-boolean value, consistent with the rest of the loader.
+
+    Like `scenario_tiers`, `destructive_cli_allowlist`, and
+    `mutation_staging_dir`, this is intentionally NOT a `Config` role key: it is
+    a single-check concern (`file_lloc`), so it is read directly off the table
+    rather than threaded through the typed layout dataclass.
+    """
+    table = _read_table(repo_root=repo_root)
+    if table is None or "file_lloc_hard_gate" not in table:
+        return None
+    return _as_bool(value=table["file_lloc_hard_gate"], key="file_lloc_hard_gate")
 
 
 def load_config(*, repo_root: Path) -> Config:

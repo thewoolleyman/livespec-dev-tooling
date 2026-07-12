@@ -38,6 +38,7 @@ from livespec_dev_tooling.config import (
     iter_py_files,
     load_config,
     load_destructive_cli_allowlist,
+    load_file_lloc_hard_gate,
     load_mutation_staging_dir,
     load_scenario_tiers,
     load_subprocess_spawn_allowlist,
@@ -413,6 +414,52 @@ def test_mutation_staging_dir_non_string_raises(*, tmp_path: Path) -> None:
     )
     with pytest.raises(ConfigParseError, match="`mutation_staging_dir` must be a string"):
         _ = load_mutation_staging_dir(repo_root=tmp_path)
+
+
+def test_file_lloc_hard_gate_none_when_no_pyproject(*, tmp_path: Path) -> None:
+    """No `pyproject.toml` → `load_file_lloc_hard_gate` returns `None` (caller defaults off)."""
+    assert load_file_lloc_hard_gate(repo_root=tmp_path) is None
+
+
+def test_file_lloc_hard_gate_none_when_key_absent(*, tmp_path: Path) -> None:
+    """A block present but omitting `file_lloc_hard_gate` → `None` (today's behavior)."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body='[tool.livespec_dev_tooling]\nsource_trees = ["pkg"]\n',
+    )
+    assert load_file_lloc_hard_gate(repo_root=tmp_path) is None
+
+
+def test_file_lloc_hard_gate_true(*, tmp_path: Path) -> None:
+    """`file_lloc_hard_gate = true` → `True` (repo opts its universe into the hard gate)."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body="[tool.livespec_dev_tooling]\nfile_lloc_hard_gate = true\n",
+    )
+    assert load_file_lloc_hard_gate(repo_root=tmp_path) is True
+
+
+def test_file_lloc_hard_gate_false(*, tmp_path: Path) -> None:
+    """`file_lloc_hard_gate = false` → `False` (explicit off, identical to absence)."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body="[tool.livespec_dev_tooling]\nfile_lloc_hard_gate = false\n",
+    )
+    assert load_file_lloc_hard_gate(repo_root=tmp_path) is False
+
+
+def test_file_lloc_hard_gate_non_bool_raises(*, tmp_path: Path) -> None:
+    """A non-boolean `file_lloc_hard_gate` raises `ConfigParseError`.
+
+    TOML `1` parses to an int, not a bool, so it is rejected — the flip is a
+    strict boolean.
+    """
+    _write_pyproject(
+        repo_root=tmp_path,
+        body="[tool.livespec_dev_tooling]\nfile_lloc_hard_gate = 1\n",
+    )
+    with pytest.raises(ConfigParseError, match="`file_lloc_hard_gate` must be a boolean"):
+        _ = load_file_lloc_hard_gate(repo_root=tmp_path)
 
 
 def test_subprocess_spawn_allowlist_none_when_no_pyproject(*, tmp_path: Path) -> None:

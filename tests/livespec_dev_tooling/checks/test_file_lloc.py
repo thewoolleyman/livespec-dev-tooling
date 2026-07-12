@@ -115,6 +115,17 @@ def _write_py_with_lloc(*, tmp_path: Path, rel_path: str, n_statements: int) -> 
     )
 
 
+def _write_pyproject(*, tmp_path: Path, body: str) -> None:
+    """Write a `pyproject.toml` at the fixture root carrying `body`.
+
+    `file_lloc`'s flip lever (`config.load_file_lloc_hard_gate`) reads the
+    `[tool.livespec_dev_tooling]` block off this file directly from disk, so it
+    need only exist at the git-toplevel root the check resolves — it is never
+    part of the `*.py` universe `git ls-files` walks.
+    """
+    _ = (tmp_path / "pyproject.toml").write_text(body, encoding="utf-8")
+
+
 def _init_repo_with_files(*, tmp_path: Path) -> None:
     """`git init` the fixture and stage every file already written under it."""
     _git(cwd=tmp_path, args=["init", "-q"])
@@ -330,6 +341,147 @@ def test_file_lloc_accepts_codeless_repo(
     _init_repo_with_files(tmp_path=tmp_path)
     result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
+
+
+_HARD_GATE_BLOCK = "[tool.livespec_dev_tooling]\nfile_lloc_hard_gate = true\n"
+
+
+def test_file_lloc_hard_gate_flip_fails_non_legacy_hard_offender(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """With `file_lloc_hard_gate = true`, a NON-legacy > 250 file hard-fails (exit 1).
+
+    This is the flip lever the mechanism adds: a repo whose package dir is not
+    livespec-core's `.claude-plugin/scripts/livespec/` (here a bare `pkg/`) opts
+    its whole git-derived universe into the hard gate via a committed pyproject
+    declaration. Without the flip this same file would only WARN (Phase-0
+    newly-covered); with it, the > 250 file exits 1.
+    """
+    _write_py_with_lloc(tmp_path=tmp_path, rel_path="pkg/big.py", n_statements=300)
+    _write_pyproject(tmp_path=tmp_path, body=_HARD_GATE_BLOCK)
+    _init_repo_with_files(tmp_path=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode != 0
+    combined = result.stdout + result.stderr
+    assert "pkg/big.py" in combined
+    assert "hard ceiling" in combined
+    # The flip supersedes the Phase-0 classifier: no newly-covered WARN marker.
+    assert "newly_covered" not in combined
+
+
+def test_file_lloc_hard_gate_flip_warns_non_legacy_soft_offender(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """With the flip on, a NON-legacy 201-250 file passes (exit 0) but soft-warns.
+
+    The flip applies the SAME two-tier policy the legacy trees already had — a
+    soft band below the hard ceiling — to the whole universe, not just a hard
+    cliff.
+    """
+    _write_py_with_lloc(tmp_path=tmp_path, rel_path="pkg/medium.py", n_statements=220)
+    _write_pyproject(tmp_path=tmp_path, body=_HARD_GATE_BLOCK)
+    _init_repo_with_files(tmp_path=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 0
+    combined = result.stdout + result.stderr
+    assert "pkg/medium.py" in combined
+    assert "soft ceiling" in combined
+    assert "newly_covered" not in combined
+
+
+def test_file_lloc_hard_gate_flip_all_under_ceiling_passes(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """With the flip on, a repo whose files are all ≤ 200 LLOC passes silently."""
+    _write_py_with_lloc(tmp_path=tmp_path, rel_path="pkg/a.py", n_statements=50)
+    _write_py_with_lloc(tmp_path=tmp_path, rel_path="pkg/b.py", n_statements=120)
+    _write_pyproject(tmp_path=tmp_path, body=_HARD_GATE_BLOCK)
+    _init_repo_with_files(tmp_path=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 0
+    combined = result.stdout + result.stderr
+    assert "soft ceiling" not in combined
+    assert "hard ceiling" not in combined
+
+
+def test_file_lloc_hard_gate_flip_empty_universe_is_noop(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A codeless repo (0 first-party `.py`) with the flip on still walks nothing, exit 0."""
+    _write_pyproject(tmp_path=tmp_path, body=_HARD_GATE_BLOCK)
+    _ = (tmp_path / "README.md").write_text("no code here\n", encoding="utf-8")
+    _init_repo_with_files(tmp_path=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 0
+    combined = result.stdout + result.stderr
+    assert "hard ceiling" not in combined
+
+
+def test_file_lloc_block_present_but_flip_key_absent_preserves_warn(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A `[tool.livespec_dev_tooling]` block WITHOUT the flip key keeps Phase-0 WARN.
+
+    The default-preserving arm for a non-core repo that already carries a config
+    block (for `source_trees` etc.) but has not opted in: its > 250 non-legacy
+    file WARNs (exit 0), exactly as today.
+    """
+    _write_py_with_lloc(tmp_path=tmp_path, rel_path="pkg/big.py", n_statements=300)
+    _write_pyproject(
+        tmp_path=tmp_path,
+        body='[tool.livespec_dev_tooling]\nsource_trees = ["pkg"]\n',
+    )
+    _init_repo_with_files(tmp_path=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 0
+    combined = result.stdout + result.stderr
+    assert "pkg/big.py" in combined
+    assert "newly_covered" in combined
+    assert "250-line hard ceiling" not in combined
+
+
+def test_file_lloc_flip_key_false_preserves_warn(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An explicit `file_lloc_hard_gate = false` is identical to today's behavior.
+
+    The explicit-off arm: a repo may write the key `= false` and still get the
+    Phase-0 WARN for a non-legacy > 250 file, no exit-1 contribution.
+    """
+    _write_py_with_lloc(tmp_path=tmp_path, rel_path="pkg/big.py", n_statements=300)
+    _write_pyproject(
+        tmp_path=tmp_path,
+        body="[tool.livespec_dev_tooling]\nfile_lloc_hard_gate = false\n",
+    )
+    _init_repo_with_files(tmp_path=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 0
+    combined = result.stdout + result.stderr
+    assert "pkg/big.py" in combined
+    assert "newly_covered" in combined
+    assert "250-line hard ceiling" not in combined
+
+
+def test_file_lloc_hard_gate_flip_still_hard_fails_legacy_tree_file(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """With the flip on, a legacy-tree > 250 file still hard-fails (the gate is a superset).
+
+    The flip widens the hard gate to the whole universe; a file that already
+    hard-gated under the legacy classifier keeps hard-gating.
+    """
+    _write_py_with_lloc(
+        tmp_path=tmp_path,
+        rel_path=".claude-plugin/scripts/livespec/big.py",
+        n_statements=300,
+    )
+    _write_pyproject(tmp_path=tmp_path, body=_HARD_GATE_BLOCK)
+    _init_repo_with_files(tmp_path=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode != 0
+    combined = result.stdout + result.stderr
+    assert ".claude-plugin/scripts/livespec/big.py" in combined
+    assert "hard ceiling" in combined
 
 
 def test_file_lloc_module_importable_without_running_main() -> None:
