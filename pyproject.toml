@@ -266,8 +266,9 @@ ban-relative-imports = "all"
 # subprocess.run with a fixed argv list (binary name + literal flags + the
 # caller-supplied prompt as a single argv element, no shell). S603/S607/S404
 # are over-strict for this documented user-surface-driver pattern, exactly as
-# for the check modules above.
-"livespec_dev_tooling/testing/cli_e2e.py" = ["S603", "S607", "S404"]
+# for the check modules above. The RealCliRunner (and its subprocess call) now
+# lives in the extracted `_cli_e2e_driver` module.
+"livespec_dev_tooling/testing/_cli_e2e_driver.py" = ["S603", "S607", "S404"]
 
 # ---------------------------------------------------------------------------
 # Pyright — strict + seven strict-plus diagnostics. Per

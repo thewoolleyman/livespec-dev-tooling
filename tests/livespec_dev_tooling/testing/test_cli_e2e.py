@@ -1,4 +1,4 @@
-"""Outside-in test for `testing/cli_e2e.py` — the CLI e2e harness.
+"""Outside-in test for `testing/cli_e2e.py` — the CLI e2e harness orchestrator.
 
 Per `livespec/SPECIFICATION/contracts.md` §"CLI end-to-end harness contract",
 the harness ships five components — driver, structural skill discovery,
@@ -6,25 +6,26 @@ per-skill fixtures loader, time-bomb coverage gate, step orchestrator — behind
 the importable `test_workflow_full_round_trip` entry point, with the `claude -p`
 subprocess as the one injectable seam (selected via `LIVESPEC_E2E_HARNESS`).
 
-This test exercises every component WITHOUT a real `claude` binary or API key:
+The driver and discovery components live in cohesive helper modules
+(`_cli_e2e_driver`, `_cli_e2e_discovery`) exercised by their own mirror test
+files. This file exercises the parent orchestration surface WITHOUT a real
+`claude` binary or API key:
 
 - **Self-test against a tiny single-skill fixture-plugin** (the committed
   `fixtures/single_skill_plugin/` tree) proving discovery + coverage gate +
   a fixture round-trip work in isolation, driven by a deterministic fake
-  `CliRunner` that materializes the expected files (the contract's
-  acceptance criterion for Phase 2).
-- The structural-discovery edge branches (missing manifest, unparsable
-  manifest, non-dict manifest, missing/blank `name`, absent `skills/` dir,
-  a `skills/` child that is a file or lacks `SKILL.md`).
-- The fixtures loader edge branches (absent root, non-dir child, missing
-  `prompt.md`, absent vs. present `expected_files.txt`, comment/blank lines).
-- The time-bomb coverage gate (pass when covered or exempt; fail closed with
-  the missing list otherwise).
+  `CliRunner` that materializes the expected files.
+- The time-bomb coverage gate (pass when covered or exempt; fail closed).
 - The `LIVESPEC_E2E_HARNESS` selector (real → RealCliRunner; mock with an
   injected runner; mock with no injected runner → ValueError).
 - The orchestrator's session resume, install-command first turn, exempt-skill
   skipping, and the failing-step assertion path.
-- `RealCliRunner.run` argv shape via a fake `claude` shim on PATH (no API).
+- The re-export surface (`__all__` sorted + exhaustive over the module).
+
+This module OWNS the synthetic plugin/fixture builders (`_make_plugin`,
+`_make_fixture`) and the deterministic `_FakeCliRunner`; the discovery mirror
+test module imports the builders from here (via the testing-test conftest
+sys.path insertion). No subprocess is ever spawned by these tests.
 
 Coverage target: 100% line + branch of `cli_e2e.py`.
 """
@@ -33,7 +34,6 @@ from __future__ import annotations
 
 import json
 import os
-import stat
 import sys
 from pathlib import Path
 
@@ -48,7 +48,6 @@ from livespec_dev_tooling.testing.cli_e2e import (
     WorkflowFailedError,
     assert_coverage,
     discover_fixtures,
-    discover_skills,
     run_workflow,
     select_runner,
 )
@@ -177,127 +176,6 @@ def test_self_test_single_skill_plugin_round_trip(*, tmp_path: Path) -> None:
     written = json.loads((home / ".claude" / "settings.json").read_text(encoding="utf-8"))
     assert written["marketplaces"] == ["local/marketplace.json"]
     assert written["enabledPlugins"] == ["fixture-plugin@local"]
-
-
-# ---------------------------------------------------------------------------
-# Structural skill discovery.
-# ---------------------------------------------------------------------------
-
-
-def test_discover_skills_reads_prefix_and_walks_skill_dirs(*, tmp_path: Path) -> None:
-    plugin = _make_plugin(
-        root=tmp_path / "p", name="livespec", skills={"seed": True, "doctor": True}
-    )
-    discovered = discover_skills(plugin_install_dirs=(plugin,))
-    assert discovered == {"livespec": ("doctor", "seed")}
-
-
-def test_discover_skills_skips_plugin_with_missing_manifest(*, tmp_path: Path) -> None:
-    plugin_dir = tmp_path / "no-manifest"
-    (plugin_dir / "skills").mkdir(parents=True)
-    discovered = discover_skills(plugin_install_dirs=(plugin_dir,))
-    assert discovered == {}
-
-
-def test_discover_skills_skips_unparsable_manifest(*, tmp_path: Path) -> None:
-    plugin_dir = tmp_path / "bad-json"
-    plugin_dir.mkdir()
-    _ = (plugin_dir / "plugin.json").write_text("{not json", encoding="utf-8")
-    discovered = discover_skills(plugin_install_dirs=(plugin_dir,))
-    assert discovered == {}
-
-
-def test_discover_skills_skips_non_dict_manifest(*, tmp_path: Path) -> None:
-    plugin_dir = tmp_path / "list-json"
-    plugin_dir.mkdir()
-    _ = (plugin_dir / "plugin.json").write_text("[1, 2, 3]", encoding="utf-8")
-    discovered = discover_skills(plugin_install_dirs=(plugin_dir,))
-    assert discovered == {}
-
-
-def test_discover_skills_skips_manifest_missing_name(*, tmp_path: Path) -> None:
-    plugin_dir = tmp_path / "no-name"
-    plugin_dir.mkdir()
-    _ = (plugin_dir / "plugin.json").write_text(json.dumps({"version": "0.1.0"}), encoding="utf-8")
-    discovered = discover_skills(plugin_install_dirs=(plugin_dir,))
-    assert discovered == {}
-
-
-def test_discover_skills_skips_manifest_blank_name(*, tmp_path: Path) -> None:
-    plugin_dir = tmp_path / "blank-name"
-    plugin_dir.mkdir()
-    _ = (plugin_dir / "plugin.json").write_text(json.dumps({"name": ""}), encoding="utf-8")
-    discovered = discover_skills(plugin_install_dirs=(plugin_dir,))
-    assert discovered == {}
-
-
-def test_discover_skills_empty_when_no_skills_dir(*, tmp_path: Path) -> None:
-    plugin_dir = tmp_path / "no-skills-dir"
-    plugin_dir.mkdir()
-    _ = (plugin_dir / "plugin.json").write_text(json.dumps({"name": "livespec"}), encoding="utf-8")
-    discovered = discover_skills(plugin_install_dirs=(plugin_dir,))
-    assert discovered == {"livespec": ()}
-
-
-def test_discover_skills_skips_skill_child_without_skill_md(*, tmp_path: Path) -> None:
-    plugin = _make_plugin(
-        root=tmp_path / "p", name="livespec", skills={"good": True, "empty": False}
-    )
-    # A stray FILE inside skills/ must also be ignored.
-    _ = (plugin / "skills" / "stray.txt").write_text("x", encoding="utf-8")
-    discovered = discover_skills(plugin_install_dirs=(plugin,))
-    assert discovered == {"livespec": ("good",)}
-
-
-# ---------------------------------------------------------------------------
-# Per-skill fixtures loader.
-# ---------------------------------------------------------------------------
-
-
-def test_discover_fixtures_absent_root_yields_empty(*, tmp_path: Path) -> None:
-    assert discover_fixtures(fixtures_root=tmp_path / "nope") == {}
-
-
-def test_discover_fixtures_loads_prompt_and_expected(*, tmp_path: Path) -> None:
-    root = tmp_path / "fixtures"
-    _make_fixture(root=root, skill="seed", prompt="/livespec:seed go", expected=("a.md", "b.md"))
-    fixtures = discover_fixtures(fixtures_root=root)
-    assert set(fixtures) == {"seed"}
-    assert fixtures["seed"].prompt == "/livespec:seed go"
-    assert fixtures["seed"].expected_files == ("a.md", "b.md")
-
-
-def test_discover_fixtures_absent_expected_files_means_no_assertions(*, tmp_path: Path) -> None:
-    root = tmp_path / "fixtures"
-    _make_fixture(root=root, skill="help", prompt="/livespec:help", expected=None)
-    fixtures = discover_fixtures(fixtures_root=root)
-    assert fixtures["help"].expected_files == ()
-
-
-def test_discover_fixtures_skips_non_dir_child(*, tmp_path: Path) -> None:
-    root = tmp_path / "fixtures"
-    root.mkdir()
-    _ = (root / "README.md").write_text("not a fixture dir", encoding="utf-8")
-    assert discover_fixtures(fixtures_root=root) == {}
-
-
-def test_discover_fixtures_skips_dir_without_prompt(*, tmp_path: Path) -> None:
-    root = tmp_path / "fixtures"
-    (root / "incomplete").mkdir(parents=True)
-    assert discover_fixtures(fixtures_root=root) == {}
-
-
-def test_discover_fixtures_strips_comments_and_blanks_in_expected(*, tmp_path: Path) -> None:
-    root = tmp_path / "fixtures"
-    sd = root / "seed"
-    sd.mkdir(parents=True)
-    _ = (sd / "prompt.md").write_text("/livespec:seed", encoding="utf-8")
-    _ = (sd / "expected_files.txt").write_text(
-        "# a comment\n\nSPECIFICATION/spec.md\n   \n# trailing\n",
-        encoding="utf-8",
-    )
-    fixtures = discover_fixtures(fixtures_root=root)
-    assert fixtures["seed"].expected_files == ("SPECIFICATION/spec.md",)
 
 
 # ---------------------------------------------------------------------------
@@ -568,69 +446,8 @@ def test_workflow_result_passed_true_when_no_steps(*, tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# RealCliRunner argv shape — exercised against a fake `claude` shim on PATH.
-# No API key, no network: the shim is a tiny script that echoes its argv.
+# The re-export surface + Python-version floor guard.
 # ---------------------------------------------------------------------------
-
-
-def _install_fake_claude(*, bin_dir: Path) -> Path:
-    bin_dir.mkdir(parents=True, exist_ok=True)
-    shim = bin_dir / "fake-claude"
-    _ = shim.write_text(
-        "#!/usr/bin/env python3\n"
-        "import sys\n"
-        "sys.stdout.write(' '.join(sys.argv[1:]))\n"
-        "raise SystemExit(0)\n",
-        encoding="utf-8",
-    )
-    shim.chmod(shim.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
-    return shim
-
-
-def test_real_cli_runner_fresh_session_argv(*, tmp_path: Path) -> None:
-    bin_dir = tmp_path / "bin"
-    shim = _install_fake_claude(bin_dir=bin_dir)
-    runner = RealCliRunner(claude_binary=str(shim))
-    result = runner.run(
-        prompt="/livespec:seed",
-        home=tmp_path / "home",
-        cwd=tmp_path,
-        resume_session_id=None,
-    )
-    assert result.exit_code == 0
-    assert result.stdout == "-p /livespec:seed"
-    assert result.session_id is None
-
-
-def test_real_cli_runner_resume_session_argv(*, tmp_path: Path) -> None:
-    bin_dir = tmp_path / "bin"
-    shim = _install_fake_claude(bin_dir=bin_dir)
-    runner = RealCliRunner(claude_binary=str(shim))
-    result = runner.run(
-        prompt="/livespec:doctor",
-        home=tmp_path / "home",
-        cwd=tmp_path,
-        resume_session_id="sess-9",
-    )
-    assert result.stdout == "--resume sess-9 -p /livespec:doctor"
-
-
-def test_real_cli_runner_sets_home_env(*, tmp_path: Path) -> None:
-    bin_dir = tmp_path / "bin"
-    home = tmp_path / "myhome"
-    shim = bin_dir / "echo-home"
-    bin_dir.mkdir(parents=True)
-    _ = shim.write_text(
-        "#!/usr/bin/env python3\n"
-        "import os, sys\n"
-        "sys.stdout.write(os.environ['HOME'])\n"
-        "raise SystemExit(0)\n",
-        encoding="utf-8",
-    )
-    shim.chmod(shim.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
-    runner = RealCliRunner(claude_binary=str(shim))
-    result = runner.run(prompt="x", home=home, cwd=tmp_path, resume_session_id=None)
-    assert result.stdout == str(home)
 
 
 def test_module_all_is_sorted_and_exhaustive() -> None:
