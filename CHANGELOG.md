@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.43.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.42.0...v0.43.0) (2026-07-13)
+
+
+### Features
+
+* **dev-tooling:** split fabro-sandbox image into base/python/python-rust layers ([a03be53](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a03be53858223186f6678253c0eeaba34fa2740f))
+
 ## [0.42.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.41.1...v0.42.0) (2026-07-12)
 
 
