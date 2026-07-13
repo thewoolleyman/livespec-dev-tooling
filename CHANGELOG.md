@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.43.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.43.1...v0.43.2) (2026-07-13)
+
+
+### Bug Fixes
+
+* **config:** narrow first-party-.py exemption from .claude/ to .claude/skills/ ([1e4dd51](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1e4dd5125bb4fbae82d2daf80470e737bbe62e92))
+
 ## [0.43.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.43.0...v0.43.1) (2026-07-13)
 
 
