@@ -90,6 +90,15 @@ inputs:
   app_slug:
     description: GitHub App slug (from the same mint step) — used for the git committer identity.
     required: true
+  no_auto_merge:
+    description: >-
+      When 'true', open the bump PR WITHOUT enabling auto-merge (the codex-acp
+      factory-gate path per SPECIFICATION/contracts.md §"codex-acp factory gate":
+      the PR merges only once the orchestrator's live golden-master gate posts a
+      green status and enables auto-merge). Defaults to 'false' — the standard
+      fleet-release bump path keeps `--auto --rebase` enablement.
+    required: false
+    default: 'false'
 
 runs:
   using: composite
@@ -128,6 +137,7 @@ runs:
         #   - vendor_jsonc: `upstream_ref` targeted rewrite
         #   - github_workflow_uses_ref: `uses: <key>@<ref>` targeted rewrite
         #   - fabro_sandbox_docker_image: `docker = "<key>:<tag>"` targeted rewrite
+        #   - codex_acp_docker_arg: `ARG CODEX_ACP_VERSION=<value>` bare-value rewrite
         echo "$RECORDS" | jq -c '.[]' | while read -r rec; do
           fmt=$(echo "$rec" | jq -r '.pin_format')
           file=$(echo "$rec" | jq -r '.file_path')
@@ -218,6 +228,20 @@ runs:
               # is the caller-side support checkout (see the Reconcile step).
               PIN_FILE="$file" PIN_KEY="$key" PIN_CURRENT="$current" PIN_TAG="$TAG" \
                 uv run --project .livespec-dev-tooling python -m livespec_dev_tooling.cross_repo.fabro_image_pin_rewrite
+              ;;
+            codex_acp_docker_arg)
+              # External-source (npm) bare-value ARG pin: rewrite the
+              # `ARG CODEX_ACP_VERSION=<version>` line in the base-layer
+              # Dockerfile via the typed, unit-tested
+              # livespec_dev_tooling.cross_repo.codex_acp_pin_rewrite module
+              # (behavioral coverage the inline heredoc never had). Per
+              # SPECIFICATION/contracts.md §"codex-acp factory gate" this pin's
+              # source is the external npm package @zed-industries/codex-acp, so
+              # a bump is factory-gated (the caller opens the PR with
+              # no_auto_merge='true'). `.livespec-dev-tooling` is the caller-side
+              # support checkout (see the Reconcile step).
+              PIN_FILE="$file" PIN_KEY="$key" PIN_CURRENT="$current" PIN_TAG="$TAG" \
+                uv run --project .livespec-dev-tooling python -m livespec_dev_tooling.cross_repo.codex_acp_pin_rewrite
               ;;
             unrecognized)
               echo "::warning::skipping unrecognized pin in $file"
@@ -382,6 +406,7 @@ runs:
         TAG: ${{ inputs.tag }}
         PR_BODY: ${{ inputs.pr_body }}
         BRANCH: ${{ steps.branch.outputs.name }}
+        NO_AUTO_MERGE: ${{ inputs.no_auto_merge }}
       run: |
         set -uo pipefail
         # Per livespec-dev-tooling SPECIFICATION/non-functional-requirements.md
@@ -412,6 +437,16 @@ runs:
           --body "$PR_BODY" \
           --head "$BRANCH" \
           --base master
+        # Per SPECIFICATION/contracts.md §"codex-acp factory gate": the
+        # codex-acp bump PR is opened WITHOUT auto-merge (no_auto_merge=true) so
+        # it cannot merge on its own — the orchestrator's live golden-master
+        # gate enables auto-merge only after a green run. Every other
+        # (fleet-release) bump PR keeps the standard `--auto --rebase`
+        # enablement below.
+        if [[ "$NO_AUTO_MERGE" == "true" ]]; then
+          echo "::notice::opened PR for ${BRANCH} WITHOUT auto-merge (codex-acp factory-gate path); the golden-master gate enables merge on a green run"
+          exit 0
+        fi
         if merge_err=$(gh pr merge "$BRANCH" --repo "$GITHUB_REPOSITORY" --auto --rebase 2>&1); then
           echo "Auto-merge enabled on PR for ${BRANCH} (rebase strategy)"
         else

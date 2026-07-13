@@ -14,12 +14,21 @@ These ARGs now live in DIFFERENT layer files (`JUST_VERSION` /
 so the parser reads the ARG lines from the whole SET of layer Dockerfiles
 and merges them. Keep each obligated ARG in exactly one layer.
 
-The image's remaining ARG pins (mise itself, node, gh, the ACP adapters,
-`RUST_VERSION`) have no repo-side pin source — they mirror the host
-toolchain (or, for Rust, the console's `rust-toolchain.toml`, checked on
-the CONSUMER side per the No-Circular-Dependency Directive) — so they carry
-no lockstep obligation here. No image layer pre-warms the uv cache, so
-there is no lockfile to drift.
+The image's remaining ARG pins (mise itself, node, gh, the Claude ACP
+adapter `CLAUDE_AGENT_ACP_VERSION`, `RUST_VERSION`) have no repo-side pin
+source — they mirror the host toolchain (or, for Rust, the console's
+`rust-toolchain.toml`, checked on the CONSUMER side per the
+No-Circular-Dependency Directive) — so they carry no lockstep obligation
+here. `CODEX_ACP_VERSION` is the exception among the ACP adapters: it now
+has an EXTERNAL npm source (`@zed-industries/codex-acp`) and IS
+autodiscovered and bumpable — the pin-autodiscovery walk emits it
+(pin_format `codex_acp_docker_arg`) and the pin-freshness surface opens a
+bump PR on any npm `latest` difference under a live Codex-provider factory
+gate (see `SPECIFICATION/contracts.md` §"codex-acp factory gate"). That
+external source is verified cross-repo by the factory gate, NOT by this
+in-repo lockstep check, so `CODEX_ACP_VERSION` still carries no
+`.mise.toml` / `.python-version` lockstep obligation here. No image layer
+pre-warms the uv cache, so there is no lockfile to drift.
 
 Repo-private check: this repo OWNS the image, so siblings have nothing to
 wire — the module deliberately lives OUTSIDE `livespec_dev_tooling/checks/`

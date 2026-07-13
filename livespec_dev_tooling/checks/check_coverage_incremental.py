@@ -57,8 +57,10 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
@@ -70,24 +72,37 @@ import structlog  # noqa: E402  — vendor-path-aware import after sys.path inse
 from livespec_dev_tooling.config import MirrorPairing, load_config  # noqa: E402
 
 __all__: list[str] = []
-# Isolated coverage data file. The script spawns its own pytest as
-# a subprocess; if we let pytest-cov default to `.coverage` the
-# inner data file would clash with any outer pytest-cov session
-# that ALSO writes to `.coverage` (e.g., the test that exercises
-# this script's own happy path runs INSIDE pytest, which is
-# already writing to `.coverage` for the outer session). The
-# unique `_DATA_FILE` name keeps the inner data isolated; the
-# `coverage report` step reads the same file via `--data-file`.
-_DATA_FILE: str = ".coverage.check-coverage-incremental"
+# Isolated coverage data-file directory prefix. The script spawns its own
+# pytest as a subprocess; if we let pytest-cov default to `.coverage` the
+# inner data file would clash with any outer pytest-cov session that ALSO
+# writes to `.coverage` (e.g., the test that exercises this script's own
+# happy path runs INSIDE pytest, already writing to `.coverage`).
+#
+# The isolated data file lives in a PER-INVOCATION temp directory OUTSIDE
+# the repo tree (created via `tempfile.mkdtemp`), for two reasons:
+#   1. Repo-root `.coverage.<name>` files are swept by coverage.py's
+#      `.coverage.*` combine glob. Under `just check`'s parallel dispatcher
+#      this target runs concurrently with `check-coverage` /
+#      `check-per-file-coverage` (`pytest -n auto --cov`), whose end-of-run
+#      `coverage combine` globs `.coverage.*` in the repo root — sweeping a
+#      repo-root isolated file mid-run and leaving a clobbered/partial file
+#      this target's `coverage report` then reads as `no such table: arc`.
+#      A system-temp path is invisible to that repo-root combine.
+#   2. UNIQUE per invocation: a mirror test that itself invokes THIS check
+#      as a subprocess (`test_check_coverage_incremental`) would otherwise
+#      reuse one fixed data-file name and clobber the outer run's data. A
+#      fresh `mkdtemp` per invocation keeps every (possibly nested) run
+#      isolated. The temp dir is removed after `coverage report`.
+_DATA_DIR_PREFIX: str = "livespec-cov-incremental-"
 # pytest-cov's `.pth` startup hook activates inside ANY subprocess
 # whose env has `COV_CORE_*` set — including the inner pytest the
 # script spawns when invoked under an outer pytest-cov session
 # (this script's own happy-path test). Activating the hook in the
 # inner subprocess would attach the inner coverage measurement to
-# the OUTER session's data file, defeating the `_DATA_FILE`
-# isolation above. Strip those vars from the env handed to the
-# inner pytest invocation so it starts a fresh measurement against
-# `_DATA_FILE` only.
+# the OUTER session's data file, defeating the per-invocation temp
+# data-file isolation above. Strip those vars from the env handed to
+# the inner pytest invocation so it starts a fresh measurement against
+# the temp data file only.
 _COV_CORE_ENV_PREFIX: str = "COV_CORE_"
 
 
@@ -272,8 +287,13 @@ def main() -> int:
     if test_paths is None:
         return 1
 
+    # Per-invocation isolated data file in a system-temp dir (NOT the repo
+    # root): outside the `.coverage.*` combine glob AND unique per (possibly
+    # nested) invocation. See the `_DATA_DIR_PREFIX` comment above.
+    data_dir = tempfile.mkdtemp(prefix=_DATA_DIR_PREFIX)
+    data_file = str(Path(data_dir) / "coverage.dat")
     inner_env = {k: v for k, v in os.environ.items() if not k.startswith(_COV_CORE_ENV_PREFIX)}
-    inner_env["COVERAGE_FILE"] = _DATA_FILE
+    inner_env["COVERAGE_FILE"] = data_file
 
     # Coverage-threshold policy by invocation mode (epic li-cvaudit, cvnoarg):
     #   - Explicit `--paths` (interactive fast-feedback): enforce the per-file
@@ -314,12 +334,13 @@ def main() -> int:
             "run",
             "coverage",
             "report",
-            f"--data-file={_DATA_FILE}",
+            f"--data-file={data_file}",
             f"--include={include}",
             f"--fail-under={fail_under}",
         ],
         check=False,
     ).returncode
+    shutil.rmtree(data_dir, ignore_errors=True)
     return max(pytest_rc, coverage_rc)
 
 

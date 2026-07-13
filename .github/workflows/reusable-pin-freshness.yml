@@ -4,19 +4,28 @@
 #   automation surface" — specifically the §"reusable-pin-freshness.yml"
 #   subsection (inputs/behavior including the `staleness_threshold_releases`
 #   default of 1), §"Pin-freshness threshold defaults" (the daily
-#   cadence recommendation), §"Pin autodiscovery rules" (the four
-#   covered formats), §"PR commit-message convention" (`chore(deps):`
-#   prefix), §"GitHub App auth model" (App-token auth), and
-#   §"Fallback to known-good pin" (no force-push past failing checks).
+#   cadence recommendation), §"Pin autodiscovery rules" (the covered
+#   formats, including the external-source codex-acp Dockerfile ARG),
+#   §"PR commit-message convention" (`chore(deps):` prefix), §"GitHub
+#   App auth model" (App-token auth, `statuses: write`), §"codex-acp
+#   factory gate" (the external-source pin's dispatch + no-auto-merge
+#   PR), and §"Fallback to known-good pin" (no force-push past failing
+#   checks).
 #
 # Dispatch model: invoked by each sibling's own `pin-freshness.yml`
 # shim on `on: schedule: cron: ...` (consumer-owned cadence; spec
 # recommends daily at 13:00 UTC). The shim threads
 # `staleness_threshold_releases` (defaulting to 1) and `secrets:
 # inherit`; this workflow runs pin-autodiscovery (all sources),
-# queries each discovered source's latest release tag via `gh release
-# view --json tagName`, and opens a bump PR per stale `(source_repo,
-# current_pin, latest_tag)` triple.
+# queries each discovered FLEET source's latest release tag via `gh
+# release view --json tagName`, and opens a bump PR per stale
+# `(source_repo, current_pin, latest_tag)` triple. The external-source
+# codex-acp Dockerfile ARG record has no fleet release: its latest
+# version is queried from the npm registry (`npm view
+# @zed-industries/codex-acp version`), it is stale on ANY difference,
+# and its bump PR is opened WITHOUT auto-merge and factory-gated via a
+# `codex-acp-golden-master` repository_dispatch at the orchestrator
+# (per §"codex-acp factory gate").
 #
 # Consumers invoke this workflow from their own `pin-freshness.yml`
 # shim via
@@ -132,12 +141,37 @@ jobs:
           seen_sources=$(echo "$RECORDS" | jq -r '.[].source_repo' | sort -u | grep -v '^$' || true)
           stale=()
           for source in $seen_sources; do
+            current=$(echo "$RECORDS" | jq -r --arg s "$source" '[.[] | select(.source_repo == $s)] | .[0].current_value')
+            # External-source codex-acp Dockerfile ARG pin (per
+            # SPECIFICATION/contracts.md §"Pin autodiscovery rules"): its latest
+            # version comes from the npm registry — the `latest` dist-tag of the
+            # same @zed-industries/codex-acp package the base Dockerfile bakes
+            # from — NOT a fleet release tag, and it is stale on ANY difference
+            # (the ordinal staleness_threshold_releases measure does not apply to
+            # a non-fleet source). Because a bump changes the baked Codex
+            # adapter, the resulting PR is factory-gated (§"codex-acp factory
+            # gate"): the stale entry carries no_auto_merge=true, so the
+            # open-bump-pr job opens its PR WITHOUT auto-merge and fires the
+            # golden-master dispatch.
+            if [[ "$source" == "zed-industries/codex-acp" ]]; then
+              latest=$(npm view @zed-industries/codex-acp version 2>/dev/null || true)
+              if [[ -z "$latest" ]]; then
+                echo "::warning::could not query npm latest for @zed-industries/codex-acp; skipping"
+                continue
+              fi
+              if [[ "$current" == "$latest" ]]; then
+                echo "::notice::codex-acp pinned at $current, already current (npm latest)"
+                continue
+              fi
+              echo "::notice::codex-acp stale: current=$current latest=$latest (npm; any-diff, factory-gated)"
+              stale+=("$(jq -nc --arg source_repo "$source" --arg tag "$latest" '{source_repo: $source_repo, tag: $tag, no_auto_merge: "true"}')")
+              continue
+            fi
             latest=$(gh release view --repo "$OWNER/$source" --json tagName -q .tagName 2>/dev/null || true)
             if [[ -z "$latest" ]]; then
               echo "::warning::could not query latest release for $OWNER/$source (no releases yet, App missing, or repo not found); skipping"
               continue
             fi
-            current=$(echo "$RECORDS" | jq -r --arg s "$source" '[.[] | select(.source_repo == $s)] | .[0].current_value')
             if [[ "$current" == "$latest" ]]; then
               echo "::notice::$source pinned at $current, already current"
               continue
@@ -157,7 +191,7 @@ jobs:
             fi
             if (( ordinal_distance >= STALENESS_THRESHOLD )); then
               echo "::notice::$source stale: current=$current latest=$latest distance=$ordinal_distance"
-              stale+=("$(jq -nc --arg source_repo "$source" --arg tag "$latest" '{source_repo: $source_repo, tag: $tag}')")
+              stale+=("$(jq -nc --arg source_repo "$source" --arg tag "$latest" '{source_repo: $source_repo, tag: $tag, no_auto_merge: "false"}')")
             fi
           done
           if [[ ${#stale[@]} -eq 0 ]]; then
@@ -249,3 +283,64 @@ jobs:
           pr_body: ${{ steps.pr_body.outputs.body }}
           app_token: ${{ steps.app-token.outputs.token }}
           app_slug: ${{ steps.app-token.outputs.app-slug }}
+          # Per SPECIFICATION/contracts.md §"codex-acp factory gate": the
+          # codex-acp bump PR is opened WITHOUT auto-merge (its stale entry
+          # carries no_auto_merge='true'); every fleet-release target carries
+          # 'false' and keeps the standard `--auto --rebase` enablement.
+          no_auto_merge: ${{ matrix.target.no_auto_merge }}
+
+      # Codex-acp factory-gate dispatch (per SPECIFICATION/contracts.md
+      # §"codex-acp factory gate" + §"`repository_dispatch` payload contract").
+      # After the composite opens the codex-acp bump PR WITHOUT auto-merge, fire
+      # a `codex-acp-golden-master` repository_dispatch at the orchestrator,
+      # carrying the new version and the bump PR's head SHA + number. The
+      # orchestrator runs its live golden-master gate against the new codex-acp
+      # version and posts a commit status back (context `codex-acp-golden-master`,
+      # via the App's `statuses: write` per §"GitHub App auth model"); on success
+      # it enables the PR's auto-merge. The dispatch needs a token scoped to the
+      # orchestrator repository, minted separately from this repo's App token.
+      - name: Mint orchestrator-scoped App token (codex-acp gate dispatch)
+        id: orch-app-token
+        if: ${{ matrix.target.source_repo == 'zed-industries/codex-acp' }}
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: livespec-orchestrator-beads-fabro
+
+      - name: Dispatch codex-acp golden-master factory gate
+        if: ${{ matrix.target.source_repo == 'zed-industries/codex-acp' }}
+        env:
+          THIS_REPO_TOKEN: ${{ steps.app-token.outputs.token }}
+          ORCH_TOKEN: ${{ steps.orch-app-token.outputs.token }}
+          OWNER: ${{ github.repository_owner }}
+          CODEX_ACP_VERSION: ${{ matrix.target.tag }}
+          # The composite created branch `<prefix>-<source_repo>-<tag>` with
+          # prefix `chore/freshness-bump`; reconstruct it verbatim to look up
+          # the just-opened bump PR's number + head SHA.
+          BRANCH: chore/freshness-bump-${{ matrix.target.source_repo }}-${{ matrix.target.tag }}
+        run: |
+          set -euo pipefail
+          # Look up the bump PR (this repository) with THIS repo's App token, then
+          # fire the dispatch at the orchestrator with the orchestrator-scoped
+          # token. Payload shape per §"`repository_dispatch` payload contract" —
+          # event_type fixed at "codex-acp-golden-master"; client_payload carries
+          # the bare npm codex_acp_version, the bump PR head_sha + pr_number, and
+          # the literal source_repo "livespec-dev-tooling" (the repo the PR lives
+          # in, where the gate posts its status callback).
+          pr_json=$(GH_TOKEN="$THIS_REPO_TOKEN" gh pr view "$BRANCH" \
+            --json number,headRefOid)
+          pr_number=$(echo "$pr_json" | jq -r '.number')
+          head_sha=$(echo "$pr_json" | jq -r '.headRefOid')
+          payload=$(jq -nc \
+            --arg codex_acp_version "$CODEX_ACP_VERSION" \
+            --arg head_sha "$head_sha" \
+            --argjson pr_number "$pr_number" \
+            '{event_type: "codex-acp-golden-master", client_payload: {codex_acp_version: $codex_acp_version, head_sha: $head_sha, pr_number: $pr_number, source_repo: "livespec-dev-tooling"}}')
+          echo "$payload" | GH_TOKEN="$ORCH_TOKEN" gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/$OWNER/livespec-orchestrator-beads-fabro/dispatches" \
+            --input -
+          echo "::notice::dispatched codex-acp-golden-master (version=$CODEX_ACP_VERSION pr=$pr_number head_sha=$head_sha)"

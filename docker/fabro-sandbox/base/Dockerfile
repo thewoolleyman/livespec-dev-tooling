@@ -39,10 +39,18 @@ FROM buildpack-deps:noble
 # parse them mechanically across the layer Dockerfiles. JUST_VERSION /
 # LEFTHOOK_VERSION MUST match this repo's .mise.toml `[tools]` pins (the
 # check fails the build pipeline on drift). MISE_VERSION / NODE_VERSION /
-# GH_VERSION / CLAUDE_AGENT_ACP_VERSION / CODEX_ACP_VERSION have no
-# repo-side pin source — they mirror the host toolchain
-# (CODEX_ACP_VERSION mirrors the orchestrator's hardcoded
-# implementer-adapter pin) and are tracked only here.
+# GH_VERSION / CLAUDE_AGENT_ACP_VERSION have no repo-side pin source —
+# they mirror the host toolchain and are tracked only here.
+#
+# CODEX_ACP_VERSION is DIFFERENT: this ARG is now the SINGLE SOURCE OF
+# TRUTH for the baked @zed-industries/codex-acp adapter version — it no
+# longer merely mirrors the orchestrator's hardcoded implementer-adapter
+# pin. The pin-autodiscovery walk emits it (pin_format
+# `codex_acp_docker_arg`) autodiscovered from the npm registry, and the
+# pin-freshness surface opens a bump PR on any npm `latest` difference,
+# gated by a live Codex-provider factory run before the bump may merge.
+# See livespec-dev-tooling/SPECIFICATION/contracts.md §"codex-acp factory
+# gate" and tracker bd-ib-ss7rkr.
 # ---------------------------------------------------------------
 ARG MISE_VERSION=v2026.2.7
 ARG JUST_VERSION=1.36.0

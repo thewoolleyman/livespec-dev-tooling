@@ -271,3 +271,71 @@ def test_module_importable_without_running_main() -> None:
     spec.loader.exec_module(module)
     assert callable(module.main)
     assert callable(module.discover)
+
+
+# ---------------------------------------------------------------------------
+# codex-acp Dockerfile ARG (sixth pin format) — external-source walker +
+# source-repo-filter rule, driven through the public discover() entry point.
+# ---------------------------------------------------------------------------
+
+
+_CODEX_ACP_DOCKERFILE_PARTS = ("docker", "fabro-sandbox", "base", "Dockerfile")
+
+
+def _write_codex_acp_dockerfile(*, root: Path, version: str) -> None:
+    """Write a minimal base-layer Dockerfile carrying the codex-acp ARG pin."""
+    dockerfile = root.joinpath(*_CODEX_ACP_DOCKERFILE_PARTS)
+    dockerfile.parent.mkdir(parents=True)
+    _ = dockerfile.write_text(
+        f"FROM buildpack-deps:noble\nARG CODEX_ACP_VERSION={version}\nRUN echo hi\n",
+        encoding="utf-8",
+    )
+
+
+def test_discover_codex_acp_arg_emits_record(*, tmp_path: Path) -> None:
+    """The `docker/fabro-sandbox/base/Dockerfile` ARG line emits one codex-acp record."""
+    _write_codex_acp_dockerfile(root=tmp_path, version="0.16.0")
+    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    assert len(result) == 1
+    record = result[0]
+    assert record["pin_format"] == "codex_acp_docker_arg"
+    assert record["file_path"] == "docker/fabro-sandbox/base/Dockerfile"
+    assert record["pin_key"] == "CODEX_ACP_VERSION"
+    assert record["current_value"] == "0.16.0"
+    assert record["source_repo"] == "zed-industries/codex-acp"
+
+
+def test_discover_codex_acp_arg_absent_yields_nothing(*, tmp_path: Path) -> None:
+    """A consumer repo without the base-layer Dockerfile yields no codex-acp record."""
+    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    assert result == []
+
+
+def test_discover_codex_acp_dockerfile_without_arg_yields_nothing(*, tmp_path: Path) -> None:
+    """A base-layer Dockerfile with no CODEX_ACP_VERSION ARG line yields no record."""
+    dockerfile = tmp_path.joinpath(*_CODEX_ACP_DOCKERFILE_PARTS)
+    dockerfile.parent.mkdir(parents=True)
+    _ = dockerfile.write_text("FROM buildpack-deps:noble\nRUN echo hi\n", encoding="utf-8")
+    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    assert result == []
+
+
+def test_discover_codex_acp_source_repo_filter_match(*, tmp_path: Path) -> None:
+    """`--source-repo zed-industries/codex-acp` includes the codex-acp record."""
+    _write_codex_acp_dockerfile(root=tmp_path, version="0.16.0")
+    result = pin_autodiscovery.discover(root=tmp_path, source_repo="zed-industries/codex-acp")
+    assert len(result) == 1
+    assert result[0]["pin_format"] == "codex_acp_docker_arg"
+    assert result[0]["source_repo"] == "zed-industries/codex-acp"
+
+
+def test_discover_codex_acp_source_repo_filter_fleet_no_match(*, tmp_path: Path) -> None:
+    """A fleet `--source-repo` NEVER matches the external-source codex-acp pin.
+
+    Per `SPECIFICATION/contracts.md` §"Pin autodiscovery rules": the codex-acp
+    pin's source is EXTERNAL to the fleet, so no fleet release fan-out may
+    rewrite it — a `sibling-released` bump can never touch CODEX_ACP_VERSION.
+    """
+    _write_codex_acp_dockerfile(root=tmp_path, version="0.16.0")
+    result = pin_autodiscovery.discover(root=tmp_path, source_repo="livespec-dev-tooling")
+    assert result == []
