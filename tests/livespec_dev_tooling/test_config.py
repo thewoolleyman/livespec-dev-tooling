@@ -99,6 +99,7 @@ def test_livespec_core_fallback_when_no_pyproject(*, tmp_path: Path) -> None:
             test_tree=Path("tests") / "livespec_dev_tooling" / "checks",
         ),
     )
+    assert config.neutral_hook_body_path is None
 
 
 def test_livespec_core_fallback_when_pyproject_has_no_tool_table(*, tmp_path: Path) -> None:
@@ -136,6 +137,7 @@ def test_present_block_omitting_keys_yields_flat_baseline(*, tmp_path: Path) -> 
     assert config.target_dirs == ()
     assert config.mirror_pairings == ()
     assert config.tests_tree_prefix == "tests/"
+    assert config.neutral_hook_body_path is None
 
 
 def test_full_override(*, tmp_path: Path) -> None:
@@ -155,6 +157,7 @@ def test_full_override(*, tmp_path: Path) -> None:
             'tests_tree_prefix = "t/"\n'
             'target_dirs = ["pkg"]\n'
             'mirror_pairings = [{ source_tree = "pkg", test_tree = "t/pkg" }]\n'
+            'neutral_hook_body_path = "hooks/no_shadow_ledger.py"\n'
         ),
     )
     config = load_config(repo_root=tmp_path)
@@ -171,6 +174,7 @@ def test_full_override(*, tmp_path: Path) -> None:
     assert config.mirror_pairings == (
         MirrorPairing(source_tree=Path("pkg"), test_tree=Path("t/pkg")),
     )
+    assert config.neutral_hook_body_path == "hooks/no_shadow_ledger.py"
 
 
 def test_malformed_toml_raises(*, tmp_path: Path) -> None:
@@ -277,12 +281,23 @@ def test_iter_py_files_missing_root_yields_nothing(*, tmp_path: Path) -> None:
     assert list(iter_py_files(root=tmp_path / "absent")) == []
 
 
+def test_neutral_hook_body_path_non_string_raises(*, tmp_path: Path) -> None:
+    """A non-string `neutral_hook_body_path` raises `ConfigParseError`."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body="[tool.livespec_dev_tooling]\nneutral_hook_body_path = 3\n",
+    )
+    with pytest.raises(ConfigParseError, match="`neutral_hook_body_path` must be a string"):
+        _ = load_config(repo_root=tmp_path)
+
+
 def test_bare_config_is_flat_baseline() -> None:
     """`Config()` is the flat baseline — every role key empty/null."""
     config = Config()
     assert config.source_trees == ()
     assert config.dataclasses_tree is None
     assert config.tests_tree_prefix == "tests/"
+    assert config.neutral_hook_body_path is None
 
 
 def test_scenario_tiers_none_when_no_pyproject(*, tmp_path: Path) -> None:

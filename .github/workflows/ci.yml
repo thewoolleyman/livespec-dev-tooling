@@ -271,6 +271,7 @@ jobs:
           - check-heading-coverage
           - check-no-direct-tool-invocation
           - check-no-fmt-directives
+          - check-no-shadow-ledger-body-identical
           - check-no-todo-registry
           - check-plugin-resolution
           - check-skill-invocation-paths
