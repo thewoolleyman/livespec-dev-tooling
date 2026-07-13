@@ -107,8 +107,10 @@ mirror_pairings = [
 #   - parallel_check_dispatcher.py  _write() streams per-target subprocess output to stdout
 #   - red_leg_scope.py              _write() emits the computed Red skip set to stdout
 #   - cross_repo/justfile_canonical_reconcile.py  main() → `::notice::` annotations to stdout
+#   - cross_repo/fabro_image_pin_rewrite.py  main() → in-place fabro docker pin rewrite; `::error::` on miss
 supervisor_entry_files = [
     "livespec_dev_tooling/canonical_checks.py",
+    "livespec_dev_tooling/cross_repo/fabro_image_pin_rewrite.py",
     "livespec_dev_tooling/cross_repo/justfile_canonical_reconcile.py",
     "livespec_dev_tooling/cross_repo/pin_autodiscovery.py",
     "livespec_dev_tooling/fleet/merged_branch_sweep.py",
