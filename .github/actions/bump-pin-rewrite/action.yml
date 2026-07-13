@@ -207,22 +207,17 @@ runs:
         PYEOF
               ;;
             fabro_sandbox_docker_image)
-              python - <<PYEOF
-        import re
-        import pathlib
-        p = pathlib.Path("$file")
-        text = p.read_text(encoding="utf-8")
-        pattern = re.compile(
-            r'(^\s*docker\s*=\s*"' + re.escape("$key") + r':)' +
-            re.escape("$current") +
-            r'(")',
-            re.MULTILINE,
-        )
-        new_text, n = pattern.subn(r'\1' + "$TAG" + r'\2', text, count=1)
-        if n != 1:
-            raise SystemExit(f"failed to rewrite docker image tag for $key in $file")
-        p.write_text(new_text, encoding="utf-8")
-        PYEOF
+              # Prefix-preserving rewrite (livespec-3lev.4): since the layer
+              # split, the fabro-sandbox pin carries a <layer>- prefix
+              # (python-/python-rust-) over the vX.Y.Z release. A bare-$TAG
+              # rewrite would drop that prefix and break the pin on the next
+              # release, so the tag rewrite lives in the typed, unit-tested
+              # livespec_dev_tooling.cross_repo.fabro_image_pin_rewrite module
+              # (behavioral coverage the inline heredoc never had) — it rewrites
+              # only the version and preserves the prefix. `.livespec-dev-tooling`
+              # is the caller-side support checkout (see the Reconcile step).
+              PIN_FILE="$file" PIN_KEY="$key" PIN_CURRENT="$current" PIN_TAG="$TAG" \
+                uv run --project .livespec-dev-tooling python -m livespec_dev_tooling.cross_repo.fabro_image_pin_rewrite
               ;;
             unrecognized)
               echo "::warning::skipping unrecognized pin in $file"

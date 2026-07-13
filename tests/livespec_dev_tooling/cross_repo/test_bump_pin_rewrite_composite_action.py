@@ -239,6 +239,44 @@ def test_pin_rewrite_case_block_lives_in_composite_action() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Fabro docker pin: prefix-preserving rewrite via the tested module (livespec-3lev.4)
+# ---------------------------------------------------------------------------
+
+# Since the layered-image split, the fabro-sandbox pin carries a `<layer>-`
+# prefix (`python-`/`python-rust-`) over the `vX.Y.Z` release. A bare-`$TAG`
+# rewrite would drop that prefix and break the pin on the next release, so the
+# `fabro_sandbox_docker_image` case dispatches the typed, unit-tested
+# `fabro_image_pin_rewrite` module (behavioral coverage in
+# `test_fabro_image_pin_rewrite.py`) instead of the inline heredoc that dropped
+# the prefix.
+_FABRO_PIN_REWRITE_MODULE = "livespec_dev_tooling.cross_repo.fabro_image_pin_rewrite"
+
+
+def test_fabro_docker_pin_case_dispatches_prefix_preserving_module() -> None:
+    """The `fabro_sandbox_docker_image` case dispatches the tested rewrite module.
+
+    Per livespec-3lev.4: the fabro-sandbox pin now carries a `<layer>-` prefix,
+    so the rewrite MUST preserve it. That logic lives in the typed, unit-tested
+    `fabro_image_pin_rewrite` module (behavioral coverage in
+    `test_fabro_image_pin_rewrite.py`), invoked here via `python -m` instead of
+    an inline heredoc whose bare-`$TAG` rewrite silently dropped the prefix.
+    """
+    text = _read(path=_ACTION_PATH)
+    assert (
+        "fabro_sandbox_docker_image)" in text
+    ), "composite Action missing the fabro_sandbox_docker_image case arm"
+    assert f"python -m {_FABRO_PIN_REWRITE_MODULE}" in text, (
+        f"the fabro_sandbox_docker_image case MUST dispatch the "
+        f"{_FABRO_PIN_REWRITE_MODULE} module (not an inline heredoc that could "
+        "drop the <layer>- prefix)"
+    )
+    assert "failed to rewrite docker image tag" not in text, (
+        "the inline heredoc for the docker pin (with its prefix-dropping "
+        "bare-$TAG rewrite) MUST be replaced by the module dispatch"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Stray-gitlink footgun guard (livespec-dev-tooling-8ml)
 # ---------------------------------------------------------------------------
 
