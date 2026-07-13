@@ -2,7 +2,7 @@
 
 Per `SPECIFICATION/contracts.md` §"Pin autodiscovery rules", the walk
 inspects the consumer repository for every supported pin format and
-yields a normalized record per discovered pin. The walk covers five
+yields a normalized record per discovered pin. The walk covers six
 formats, split across two cohesive helper modules:
 
 - single-file formats (`_pin_single_file_formats`): `.livespec.jsonc`
@@ -11,7 +11,12 @@ formats, split across two cohesive helper modules:
 - directory-scan formats (`_pin_directory_scan_formats`): the
   `.github/workflows/*.yml` `uses:` ref and the fabro-sandbox docker
   image tag in `.fabro` `workflow.toml` files — each scans a directory
-  of files. The shared `record` normalizer lives there too.
+  of files. Co-located there: the codex-acp Dockerfile `ARG` pin
+  (`ARG CODEX_ACP_VERSION=<version>` in
+  `docker/fabro-sandbox/base/Dockerfile`), whose EXTERNAL npm source
+  (`zed-industries/codex-acp`) means no fleet fan-out rewrites it and a
+  bump is factory-gated (§"codex-acp factory gate"). The shared `record`
+  normalizer lives there too.
 
 `.copier-answers.yml` `_commit` is deliberately NOT a pin format: it
 is copier render-provenance, not a version pin, so rewriting it would
@@ -53,6 +58,7 @@ if str(_VENDOR_DIR) not in sys.path:
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
 from livespec_dev_tooling.cross_repo._pin_directory_scan_formats import (  # noqa: E402
+    walk_codex_acp_docker_arg,
     walk_fabro_workflow_docker,
     walk_github_workflow_uses,
 )
@@ -72,8 +78,9 @@ def _build_parser() -> argparse.ArgumentParser:
             "Walk a consumer repo and emit a JSON array of pin records per "
             'SPECIFICATION/contracts.md §"Pin autodiscovery rules". Covers '
             ".livespec.jsonc, pyproject.toml [tool.uv.sources], .vendor.jsonc, "
-            ".github/workflows/*.yml uses: refs, and the fabro-sandbox docker "
-            "image tag in .fabro workflow.toml files."
+            ".github/workflows/*.yml uses: refs, the fabro-sandbox docker "
+            "image tag in .fabro workflow.toml files, and the codex-acp "
+            "Dockerfile ARG CODEX_ACP_VERSION pin."
         ),
     )
     _ = parser.add_argument(
@@ -125,6 +132,7 @@ def discover(*, root: Path, source_repo: str | None) -> list[dict[str, str]]:
     records.extend(walk_vendor_jsonc(root=root, source_repo_filter=source_repo, log=log))
     records.extend(walk_github_workflow_uses(root=root, source_repo_filter=source_repo, log=log))
     records.extend(walk_fabro_workflow_docker(root=root, source_repo_filter=source_repo, log=log))
+    records.extend(walk_codex_acp_docker_arg(root=root, source_repo_filter=source_repo, log=log))
     return records
 
 

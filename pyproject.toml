@@ -108,8 +108,10 @@ mirror_pairings = [
 #   - red_leg_scope.py              _write() emits the computed Red skip set to stdout
 #   - cross_repo/justfile_canonical_reconcile.py  main() → `::notice::` annotations to stdout
 #   - cross_repo/fabro_image_pin_rewrite.py  main() → in-place fabro docker pin rewrite; `::error::` on miss
+#   - cross_repo/codex_acp_pin_rewrite.py  main() → in-place codex-acp Dockerfile ARG rewrite; `::error::` on miss
 supervisor_entry_files = [
     "livespec_dev_tooling/canonical_checks.py",
+    "livespec_dev_tooling/cross_repo/codex_acp_pin_rewrite.py",
     "livespec_dev_tooling/cross_repo/fabro_image_pin_rewrite.py",
     "livespec_dev_tooling/cross_repo/justfile_canonical_reconcile.py",
     "livespec_dev_tooling/cross_repo/pin_autodiscovery.py",

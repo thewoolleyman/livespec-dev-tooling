@@ -1,9 +1,9 @@
 """_pin_directory_scan_formats — directory-scanning pin-format walks.
 
-Extracted verbatim from `pin_autodiscovery` (cohesive seam: the two pin
+Extracted verbatim from `pin_autodiscovery` (cohesive seam: the pin
 formats that scan a DIRECTORY of files rather than reading a single
 well-known file). Per `SPECIFICATION/contracts.md` §"Pin autodiscovery
-rules", these two formats are:
+rules", the directory-scan formats are:
 
 - `.github/workflows/*.yml` / `*.yaml` `uses:` ref — every line of the
   form `uses: <owner>/<repo>/<path>@<ref>` in any GitHub Actions
@@ -12,6 +12,15 @@ rules", these two formats are:
   `docker = "ghcr.io/thewoolleyman/livespec-fabro-sandbox:<tag>"` line in
   every Fabro `workflow.toml` under either `.claude-plugin/.fabro/workflows/`
   or the root `.fabro/workflows/`.
+
+Co-located here (it is the sibling docker-image adapter pin, though it
+reads one well-known file rather than scanning a directory):
+
+- codex-acp Dockerfile `ARG` — the `ARG CODEX_ACP_VERSION=<version>` line
+  in `docker/fabro-sandbox/base/Dockerfile`. Unlike every other format
+  its source is EXTERNAL to the fleet (the npm package
+  `zed-industries/codex-acp`), so no fleet release fan-out ever rewrites
+  it and it is factory-gated on bump (§"codex-acp factory gate").
 
 The shared `record` normalizer lives here (imported by
 `_pin_single_file_formats`) — every discovered pin, single-file or
@@ -33,6 +42,7 @@ import structlog  # noqa: E402  — vendor-path-aware import after sys.path inse
 
 __all__: list[str] = [
     "record",
+    "walk_codex_acp_docker_arg",
     "walk_fabro_workflow_docker",
     "walk_github_workflow_uses",
 ]
@@ -40,6 +50,7 @@ __all__: list[str] = [
 
 _PIN_FORMAT_WORKFLOW_USES = "github_workflow_uses_ref"
 _PIN_FORMAT_FABRO_DOCKER = "fabro_sandbox_docker_image"
+_PIN_FORMAT_CODEX_ACP = "codex_acp_docker_arg"
 
 # The fabro-sandbox image is BUILT + RELEASED by livespec-dev-tooling and its
 # tag tracks the dev-tooling release version, so this pin's source repo is
@@ -155,3 +166,49 @@ def walk_fabro_workflow_docker(
             )
     _ = log
     return out
+
+
+# The codex-acp adapter version is baked into the fabro-sandbox BASE-layer
+# Dockerfile as a bare-semver `ARG`. Its source is the EXTERNAL npm package
+# `@zed-industries/codex-acp` (the Codex ACP adapter the orchestrator's
+# implementer nodes run), so — unlike the fabro image tag, released BY this
+# fleet — the source repo is HARDCODED to the external GitHub repository and no
+# fleet release fan-out ever rewrites it. `current_value` is the bare npm semver
+# (no `v` prefix).
+_CODEX_ACP_SOURCE_REPO = "zed-industries/codex-acp"
+_CODEX_ACP_ARG_NAME = "CODEX_ACP_VERSION"
+_CODEX_ACP_DOCKERFILE: tuple[str, ...] = ("docker", "fabro-sandbox", "base", "Dockerfile")
+_CODEX_ACP_ARG_RE = re.compile(
+    r"^ARG\s+" + re.escape(_CODEX_ACP_ARG_NAME) + r"=(?P<version>\S+)\s*$",
+    re.MULTILINE,
+)
+
+
+def walk_codex_acp_docker_arg(
+    *, root: Path, source_repo_filter: str | None, log: structlog.stdlib.BoundLogger
+) -> list[dict[str, str]]:
+    # The source is the EXTERNAL npm package zed-industries/codex-acp, not a
+    # fleet repo, so honor the filter up front: a fleet-release fan-out
+    # (`--source-repo <fleet-repo>`) must NEVER match this pin — that would let a
+    # sibling release rewrite the baked Codex adapter version. The record is
+    # emitted only when the filter is absent (the freshness scan) or equals the
+    # external source `zed-industries/codex-acp`.
+    source_repo = _CODEX_ACP_SOURCE_REPO
+    if source_repo_filter is not None and source_repo_filter != source_repo:
+        return []
+    dockerfile = root.joinpath(*_CODEX_ACP_DOCKERFILE)
+    if not dockerfile.is_file():
+        return []
+    match = _CODEX_ACP_ARG_RE.search(dockerfile.read_text(encoding="utf-8"))
+    if match is None:
+        return []
+    _ = log
+    return [
+        record(
+            pin_format=_PIN_FORMAT_CODEX_ACP,
+            file_path=str(dockerfile.relative_to(root)),
+            pin_key=_CODEX_ACP_ARG_NAME,
+            current_value=match.group("version"),
+            source_repo=source_repo,
+        )
+    ]
