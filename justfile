@@ -201,6 +201,7 @@ check:
         check-global-writes
         check-heading-coverage
         check-keyword-only-args
+        check-local-memory-drift-audit
         check-main-guard
         check-master-ci-green
         check-match-keyword-only
@@ -575,6 +576,9 @@ check-heading-coverage:
 
 check-keyword-only-args:
     uv run python -m livespec_dev_tooling.checks.keyword_only_args
+
+check-local-memory-drift-audit:
+    uv run python -m livespec_dev_tooling.checks.local_memory_drift_audit
 
 check-main-guard:
     uv run python -m livespec_dev_tooling.checks.main_guard
