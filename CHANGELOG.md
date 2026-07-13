@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.45.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.44.0...v0.45.0) (2026-07-13)
+
+
+### Features
+
+* codex-acp external-source pin + factory-gated auto-bump ([81b7da3](https://github.com/thewoolleyman/livespec-dev-tooling/commit/81b7da3c62cc5564627bea15c7563905041bb78e))
+
 ## [0.44.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.43.2...v0.44.0) (2026-07-13)
 
 
