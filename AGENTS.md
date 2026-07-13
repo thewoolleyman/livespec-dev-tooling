@@ -45,6 +45,18 @@ colon-qualified form `livespec-orchestrator-beads-fabro:orchestrate` is still
 valid for prompt / `codex exec` name selection and model-visible skill
 references, but it is not the picker row operators should expect.
 
+## Progressive durable guidance
+
+This file carries the always-load instructions. Load the sibling guidance files
+only when their topic is active:
+
+- Read `.ai/livespec-operation-gotchas.md` before running or editing
+  livespec revise/propose-change flows, spec heading coverage, or commit-prefix
+  classification logic.
+- Read `.ai/fleet-and-secrets.md` before changing fleet coordination workflows,
+  maintainer signaling, GitHub App automation, or 1Password-backed secret
+  projection.
+
 ## Repository mutation protocol
 
 Every repo change uses a worktree → PR → merge → cleanup path. Treat
