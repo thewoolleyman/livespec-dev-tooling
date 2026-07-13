@@ -79,6 +79,20 @@ bootstrap:
 install-commit-refuse-hooks:
     uv run python -m livespec_dev_tooling.install_commit_refuse_hooks
 
+# Install (or idempotently re-install) the canonical neutral no-shadow-ledger
+# Stop-hook body at the current checkout's configured `neutral_hook_body_path`
+# role key (a `[tool.livespec_dev_tooling]` key in `pyproject.toml`). The
+# installer module is the single canonical-body carrier, mirroring
+# `install-commit-refuse-hooks`; the body is the Stop-hook BOTH livespec
+# Driver plugins ship (livespec-driver-claude, livespec-driver-codex), so
+# this keeps each Driver's copy byte-identical to the single dev-tooling
+# source. No-ops when the role key is absent (this consumer does not carry
+# the neutral hook body). The
+# `check-no-shadow-ledger-body-identical` verifier guards the installed
+# bytes against drift.
+install-no-shadow-ledger:
+    uv run python -m livespec_dev_tooling.install_no_shadow_ledger
+
 # Install (or idempotently re-install) the canonical worktree-discipline pack
 # (`worktree-lib.sh` + `branch-protection.sh`) into the current checkout's
 # `dev-tooling/` directory, each executable. The installer module is the single
@@ -198,6 +212,7 @@ check:
         check-no-inheritance
         check-no-lloc-soft-warnings
         check-no-raise-outside-io
+        check-no-shadow-ledger-body-identical
         check-no-todo-registry
         check-no-write-direct
         check-partition-completeness
@@ -604,6 +619,17 @@ check-no-lloc-soft-warnings:
 
 check-no-raise-outside-io:
     uv run python -m livespec_dev_tooling.checks.no_raise_outside_io
+
+# Byte-identity Verifier for the neutral no-shadow-ledger Stop-hook body
+# BOTH livespec Driver plugins ship (livespec-driver-claude at
+# `.claude-plugin/hooks/`, livespec-driver-codex at `livespec/hooks/`),
+# mirroring the commit-refuse-hook precedent (Conformance-Pattern concern
+# #1). OPT-IN via the `neutral_hook_body_path` role key: absent → no-op
+# (this consumer does not carry the neutral hook body); present → the
+# configured path MUST be byte-identical to the single packaged carrier
+# constant `install_no_shadow_ledger.CANONICAL_NO_SHADOW_LEDGER_BODY`.
+check-no-shadow-ledger-body-identical:
+    uv run python -m livespec_dev_tooling.checks.no_shadow_ledger_body_identical
 
 # Always invoked plainly; the module self-manages its severity lever
 # (epic li-cvaudit, cvtodo). The heading-coverage.json TODO scan ALWAYS

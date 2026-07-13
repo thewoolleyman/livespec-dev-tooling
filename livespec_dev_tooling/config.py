@@ -151,6 +151,7 @@ class Config:
     tests_tree_prefix: str = "tests/"
     target_dirs: tuple[Path, ...] = ()
     mirror_pairings: tuple[MirrorPairing, ...] = ()
+    neutral_hook_body_path: str | None = None
 
 
 def _p(*parts: str) -> Path:
@@ -508,6 +509,10 @@ def load_config(*, repo_root: Path) -> Config:
         )
     if "mirror_pairings" in table:
         overrides["mirror_pairings"] = _parse_mirror_pairings(value=table["mirror_pairings"])
+    if "neutral_hook_body_path" in table:
+        overrides["neutral_hook_body_path"] = _as_str(
+            value=table["neutral_hook_body_path"], key="neutral_hook_body_path"
+        )
     return Config(
         source_trees=overrides.get("source_trees", baseline.source_trees),
         io_trees=overrides.get("io_trees", baseline.io_trees),
@@ -522,6 +527,9 @@ def load_config(*, repo_root: Path) -> Config:
         tests_tree_prefix=overrides.get("tests_tree_prefix", baseline.tests_tree_prefix),
         target_dirs=overrides.get("target_dirs", baseline.target_dirs),
         mirror_pairings=overrides.get("mirror_pairings", baseline.mirror_pairings),
+        neutral_hook_body_path=overrides.get(
+            "neutral_hook_body_path", baseline.neutral_hook_body_path
+        ),
     )
 
 
