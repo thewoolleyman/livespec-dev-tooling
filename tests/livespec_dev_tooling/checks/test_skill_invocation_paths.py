@@ -4,15 +4,21 @@ Per the shared `skill_invocation_paths` check (work-item
 legacy skill-invocation-paths work item): every `bin/<name>.py` wrapper
 invocation that appears INSIDE a fenced code block of a
 `.claude-plugin/skills/*/SKILL.md` file MUST use the canonical
-form `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/bin/<name>.py"`:
+form for its plugin model. `uv run` and the `.claude-plugin/scripts`
+literal are banned in BOTH models. The check AUTO-DETECTS the model by
+whether the repo ships its own `.claude-plugin/scripts/` tree:
 
-- MUST contain the `${CLAUDE_PLUGIN_ROOT}/` token.
-- MUST NOT use `uv run` (the installed cache omits
-  pyproject.toml / uv.lock so `uv run` cannot synthesize a venv).
-- MUST NOT hard-code the `.claude-plugin/scripts` literal (the
-  installer flattens `.claude-plugin/scripts/` to `scripts/`).
-- The `${CLAUDE_PLUGIN_ROOT}/<relpath>.py` token MUST resolve to
-  a real file under `.claude-plugin/<relpath>` in the repo.
+- **Plugin-ships-scripts model (livespec CORE).** Ships
+  `.claude-plugin/scripts/`. Canonical fenced form is
+  `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/bin/<name>.py"`, and the
+  `${CLAUDE_PLUGIN_ROOT}/<relpath>.py` token MUST resolve to a real
+  file under `.claude-plugin/<relpath>` in the repo.
+- **Runtime-resolving Driver model (livespec-driver-claude).** Ships
+  skills but NO `.claude-plugin/scripts/` tree; invokes CORE wrappers
+  at runtime. Canonical fenced form is
+  `python3 "$LIVESPEC_CORE_ROOT/scripts/bin/<name>.py"`; only the token
+  SHAPE is asserted (the wrapper lives in CORE, so no local file
+  resolution).
 
 The core semantic guarded here is the fenced-vs-prose
 distinction: an invocation is a fenced exec line, NOT an inline
@@ -67,7 +73,13 @@ def _write_skill(*, tmp_path: Path, skill_name: str, body: str) -> None:
 
 
 def _write_wrapper(*, tmp_path: Path, relpath: str) -> None:
-    """Create a real wrapper file under `.claude-plugin/<relpath>`."""
+    """Create a real wrapper file under `.claude-plugin/<relpath>`.
+
+    Creating any file under `.claude-plugin/scripts/` ALSO materializes
+    the scripts tree, which is what puts the repo in the
+    plugin-ships-scripts model; Driver-model tests deliberately never
+    call this, leaving no scripts tree.
+    """
     target = tmp_path / ".claude-plugin" / relpath
     target.parent.mkdir(parents=True, exist_ok=True)
     _ = target.write_text("#!/usr/bin/env python3\n", encoding="utf-8")
@@ -152,8 +164,11 @@ def test_rejects_bare_invocation_without_plugin_root_token(
 def test_rejects_invocation_not_resolving_to_real_file(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A canonical-form invocation whose target file does not exist is rejected."""
-    # Note: no wrapper file is created — the token must fail to resolve.
+    """A core-model invocation whose target file does not exist is rejected."""
+    # A DIFFERENT real wrapper materializes the scripts tree (so the
+    # repo is the plugin-ships-scripts model), but the referenced
+    # `missing.py` token deliberately has no file to resolve to.
+    _write_wrapper(tmp_path=tmp_path, relpath="scripts/bin/present.py")
     _write_skill(
         tmp_path=tmp_path,
         skill_name="foo",
@@ -164,6 +179,103 @@ def test_rejects_invocation_not_resolving_to_real_file(
             'python3 "${CLAUDE_PLUGIN_ROOT}/scripts/bin/missing.py"\n'
             "```\n"
         ),
+    )
+    monkeypatch.chdir(tmp_path)
+    main = _load_main()
+    assert main() == 1  # type: ignore[operator]
+
+
+def test_accepts_driver_core_root_form_when_no_scripts_tree(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A Driver-model `$LIVESPEC_CORE_ROOT` invocation (no scripts tree) passes (exit 0)."""
+    # No `_write_wrapper` call: the repo ships skills but NO
+    # `.claude-plugin/scripts/` tree, so it is the runtime-resolving
+    # Driver model and the `$LIVESPEC_CORE_ROOT` form is canonical.
+    _write_skill(
+        tmp_path=tmp_path,
+        skill_name="critique",
+        body=(
+            "## Invocation\n"
+            "\n"
+            "```bash\n"
+            'python3 "$LIVESPEC_CORE_ROOT/scripts/bin/critique.py" --findings-json <path>\n'
+            "```\n"
+        ),
+    )
+    monkeypatch.chdir(tmp_path)
+    main = _load_main()
+    assert main() == 0  # type: ignore[operator]
+
+
+def test_rejects_plugin_root_form_in_driver_mode(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """In Driver mode, the CORE-model `${CLAUDE_PLUGIN_ROOT}` form is rejected (exit 1)."""
+    # A Driver ships no scripts tree, so `${CLAUDE_PLUGIN_ROOT}` cannot
+    # resolve a wrapper; the Driver's own spec forbids it.
+    _write_skill(
+        tmp_path=tmp_path,
+        skill_name="critique",
+        body=(
+            "## Invocation\n"
+            "\n"
+            "```bash\n"
+            'python3 "${CLAUDE_PLUGIN_ROOT}/scripts/bin/critique.py"\n'
+            "```\n"
+        ),
+    )
+    monkeypatch.chdir(tmp_path)
+    main = _load_main()
+    assert main() == 1  # type: ignore[operator]
+
+
+def test_rejects_uv_run_in_driver_mode(*, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`uv run` stays banned in Driver mode even with a `$LIVESPEC_CORE_ROOT` path (exit 1)."""
+    _write_skill(
+        tmp_path=tmp_path,
+        skill_name="critique",
+        body=(
+            "## Invocation\n"
+            "\n"
+            "```bash\n"
+            'uv run python3 "$LIVESPEC_CORE_ROOT/scripts/bin/critique.py"\n'
+            "```\n"
+        ),
+    )
+    monkeypatch.chdir(tmp_path)
+    main = _load_main()
+    assert main() == 1  # type: ignore[operator]
+
+
+def test_rejects_claude_plugin_scripts_literal_in_driver_mode(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The `.claude-plugin/scripts` literal stays banned in Driver mode (exit 1)."""
+    _write_skill(
+        tmp_path=tmp_path,
+        skill_name="critique",
+        body=(
+            "## Invocation\n"
+            "\n"
+            "```bash\n"
+            'python3 ".claude-plugin/scripts/bin/critique.py"\n'
+            "```\n"
+        ),
+    )
+    monkeypatch.chdir(tmp_path)
+    main = _load_main()
+    assert main() == 1  # type: ignore[operator]
+
+
+def test_rejects_bare_invocation_in_driver_mode(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fenced bare `bin/foo.py` invocation with no token is rejected in Driver mode (exit 1)."""
+    _write_skill(
+        tmp_path=tmp_path,
+        skill_name="critique",
+        body=("## Invocation\n" "\n" "```bash\n" "python3 bin/critique.py\n" "```\n"),
     )
     monkeypatch.chdir(tmp_path)
     main = _load_main()

@@ -1,4 +1,4 @@
-"""skill_invocation_paths — canonical `${CLAUDE_PLUGIN_ROOT}/` form for fenced SKILL.md invocations.
+"""skill_invocation_paths — canonical fenced SKILL.md wrapper-invocation form, per plugin model.
 
 Root cause (li-m4q4h5): Claude Code's plugin installer FLATTENS
 `.claude-plugin/scripts/` to `scripts/` and `.claude-plugin/skills/`
@@ -10,12 +10,38 @@ fenced run command that quotes `uv run python3
 installed cache on two counts: the literal path does not exist
 post-flatten, and `uv run` has no project to resolve.
 
-The canonical invocation form is
-`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/bin/<name>.py" "$@"`:
-`${CLAUDE_PLUGIN_ROOT}` is the established Claude Code plugin
-convention and resolves to the plugin root in BOTH the flattened
-cache and `--plugin-dir .` dev mode, with `scripts/` directly beneath
-it in both.
+Two plugin models ship SKILL.md files, and the canonical fenced form
+differs between them. The check AUTO-DETECTS which model a repo is by
+whether the plugin ships its OWN scripts tree — no per-repo config:
+
+- **Plugin-ships-scripts model (livespec CORE).** The plugin bundles
+  `.claude-plugin/scripts/` under its own root, so a wrapper resolves
+  under `${CLAUDE_PLUGIN_ROOT}`. The canonical fenced form is
+  `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/bin/<name>.py" "$@"`:
+  `${CLAUDE_PLUGIN_ROOT}` is the established Claude Code plugin
+  convention and resolves to the plugin root in BOTH the flattened
+  cache and `--plugin-dir .` dev mode, with `scripts/` directly beneath
+  it. The `<relpath>.py` token MUST additionally resolve to a real
+  file under `.claude-plugin/<relpath>` in the repo.
+
+- **Runtime-resolving Driver model (livespec-driver-claude).** The
+  Driver plugin ships ONLY skill bindings and NO `.claude-plugin/scripts/`
+  tree; it resolves livespec CORE at runtime and invokes CORE's wrappers
+  via `$LIVESPEC_CORE_ROOT` (its own spec MANDATES `$LIVESPEC_CORE_ROOT`
+  and FORBIDS `${CLAUDE_PLUGIN_ROOT}`, whose plugin root carries no
+  scripts). The canonical fenced form is therefore
+  `python3 "$LIVESPEC_CORE_ROOT/scripts/bin/<name>.py"`. Because the
+  wrapper lives in CORE, not this repo, the check requires the
+  `$LIVESPEC_CORE_ROOT/scripts/bin/<name>.py` token shape but does NOT
+  require it to resolve to a local file.
+
+Model detection: the check runs only when `.claude-plugin/skills/`
+exists (else a VACUOUS SKIP — see below). Among those repos, one that
+also ships `.claude-plugin/scripts/` is the plugin-ships-scripts model;
+one with skills but NO `.claude-plugin/scripts/` tree is the
+runtime-resolving Driver model. Auto-detection keeps the fix
+behavior-neutral for every plugin-ships-scripts consumer and needs no
+config fan-out.
 
 How an invocation is IDENTIFIED — the load-bearing semantic:
 
@@ -28,16 +54,10 @@ are IGNORED. This fenced-vs-prose distinction is the core of the
 check: it scopes the assertion to actual executable command lines and
 spares explanatory prose.
 
-For each discovered fenced invocation line the check asserts the
-canonical form:
-
-- MUST contain the `${CLAUDE_PLUGIN_ROOT}/` token.
-- MUST NOT contain `uv run`.
-- MUST NOT contain the literal `.claude-plugin/scripts`.
-- The `${CLAUDE_PLUGIN_ROOT}/<relpath>.py` token MUST resolve to a
-  real file under `.claude-plugin/<relpath>` in the repo (once
-  `${CLAUDE_PLUGIN_ROOT}/` maps to `.claude-plugin/`, the path
-  exists).
+For each discovered fenced invocation line the check bans `uv run`
+(the cache omits pyproject.toml / uv.lock) and the literal
+`.claude-plugin/scripts` (flattened in the cache) in BOTH models, then
+requires the model-appropriate canonical token described above.
 
 Any violation logs a structlog ERROR (skill name, file path, line,
 reason) and the check returns 1. If no `.claude-plugin/skills/`
@@ -70,6 +90,10 @@ __all__: list[str] = []
 
 _SKILLS_TREE = Path(".claude-plugin") / "skills"
 _PLUGIN_ROOT_TREE = Path(".claude-plugin")
+# A skills-bearing repo that ALSO ships this subdirectory under its
+# plugin root is the plugin-ships-scripts model; its absence marks the
+# runtime-resolving Driver model.
+_SCRIPTS_DIRNAME = "scripts"
 
 _FENCE = "```"
 _UV_RUN_TOKEN = "uv run"
@@ -81,11 +105,16 @@ _CLAUDE_PLUGIN_SCRIPTS_LITERAL = ".claude-plugin/scripts"
 # affects), ignoring illustrative snippets that merely import package
 # modules.
 _WRAPPER_INVOCATION_RE = re.compile(r"bin/[a-z_]+\.py\b")
-# The required canonical path token form: ${CLAUDE_PLUGIN_ROOT}/<relpath>.py.
+# Plugin-ships-scripts canonical token: ${CLAUDE_PLUGIN_ROOT}/<relpath>.py.
 # A successful match BOTH proves the token is present AND captures the
 # relpath to resolve, so the token-presence and extraction steps are a
 # single regex rather than two separate branches.
 _PLUGIN_ROOT_PATH_RE = re.compile(r"\$\{CLAUDE_PLUGIN_ROOT\}/(\S+?\.py)")
+# Runtime-resolving Driver canonical token:
+# $LIVESPEC_CORE_ROOT/scripts/bin/<name>.py (bare or braced). The wrapper
+# lives in CORE, so only the token SHAPE is asserted — never local file
+# resolution (this repo ships no scripts tree to resolve against).
+_CORE_ROOT_PATH_RE = re.compile(r"\$\{?LIVESPEC_CORE_ROOT\}?/scripts/bin/[a-z_]+\.py")
 
 
 def _fenced_invocation_lines(*, skill_path: Path) -> list[str]:
@@ -111,28 +140,43 @@ def _fenced_invocation_lines(*, skill_path: Path) -> list[str]:
     return [line for line in in_fence_lines if _WRAPPER_INVOCATION_RE.search(line)]
 
 
-def _violation_reason(*, command: str, plugin_root: Path) -> str | None:
+def _core_model_reason(*, command: str, plugin_root: Path) -> str | None:
+    """Return a plugin-ships-scripts-model violation reason, or None if canonical.
+
+    Requires an extractable `${CLAUDE_PLUGIN_ROOT}/<relpath>.py` token
+    (the single `_PLUGIN_ROOT_PATH_RE` match proves the token is present
+    AND yields the relpath) that resolves to a real file under
+    `.claude-plugin/` — the plugin bundles its own scripts tree, so the
+    wrapper must exist locally.
+    """
+    match = _PLUGIN_ROOT_PATH_RE.search(command)
+    if match is None:
+        return "missing the canonical `${CLAUDE_PLUGIN_ROOT}/<path>.py` token"
+    relative_path = match.group(1)
+    if not (plugin_root / relative_path).is_file():
+        return f"`${{CLAUDE_PLUGIN_ROOT}}/{relative_path}` does not resolve to a real file"
+    return None
+
+
+def _violation_reason(*, command: str, plugin_root: Path, driver_mode: bool) -> str | None:
     """Return a violation reason for `command`, or None if it is canonical.
 
-    Applies the canonical-form rules in order: ban `uv run`, ban the
-    `.claude-plugin/scripts` literal, require an extractable canonical
-    `${CLAUDE_PLUGIN_ROOT}/<relpath>.py` token (the single
-    `_PLUGIN_ROOT_PATH_RE` match proves the token is present AND yields
-    the relpath), and require that `<relpath>` resolve to a real file
-    under `.claude-plugin/`.
+    `uv run` and the `.claude-plugin/scripts` literal are banned in BOTH
+    models. After those, the required canonical token depends on the
+    detected model: the runtime-resolving Driver model (`driver_mode`)
+    requires the `$LIVESPEC_CORE_ROOT/scripts/bin/<name>.py` token shape
+    and does NOT resolve it locally (the wrapper lives in CORE); the
+    plugin-ships-scripts model delegates to `_core_model_reason`.
     """
     if _UV_RUN_TOKEN in command:
         return "uses `uv run` (the installed cache omits pyproject.toml / uv.lock)"
     if _CLAUDE_PLUGIN_SCRIPTS_LITERAL in command:
         return "hard-codes the `.claude-plugin/scripts/...` literal (flattened in the cache)"
-    match = _PLUGIN_ROOT_PATH_RE.search(command)
-    if match is None:
-        return "missing the canonical `${CLAUDE_PLUGIN_ROOT}/<path>.py` token"
-    relative_path = match.group(1)
-    resolved = plugin_root / relative_path
-    if not resolved.is_file():
-        return f"`${{CLAUDE_PLUGIN_ROOT}}/{relative_path}` does not resolve to a real file"
-    return None
+    if driver_mode:
+        if _CORE_ROOT_PATH_RE.search(command) is None:
+            return "missing the canonical `$LIVESPEC_CORE_ROOT/scripts/bin/<name>.py` token"
+        return None
+    return _core_model_reason(command=command, plugin_root=plugin_root)
 
 
 def main() -> int:
@@ -152,12 +196,19 @@ def main() -> int:
         # Vacuous skip: repos without plugin skills (dev-tooling,
         # runtime) pass — there is nothing to guard.
         return 0
+    # Auto-detect the plugin model: a skills-bearing repo that ships NO
+    # own scripts tree is the runtime-resolving Driver (it invokes CORE
+    # wrappers via $LIVESPEC_CORE_ROOT); one that ships scripts is the
+    # plugin-ships-scripts model (${CLAUDE_PLUGIN_ROOT}).
+    driver_mode = not (plugin_root / _SCRIPTS_DIRNAME).is_dir()
     offenders_found = False
     for skill_path in sorted(skills_root.glob("*/SKILL.md")):
         skill_name = skill_path.parent.name
         rel_path = skill_path.relative_to(cwd)
         for command in _fenced_invocation_lines(skill_path=skill_path):
-            reason = _violation_reason(command=command, plugin_root=plugin_root)
+            reason = _violation_reason(
+                command=command, plugin_root=plugin_root, driver_mode=driver_mode
+            )
             if reason is not None:
                 offenders_found = True
                 log.error(
