@@ -73,9 +73,8 @@ stopping points.
 
 3. Use `mise exec -- git commit ...` and `mise exec -- git push ...` so
    the mise-managed lefthook hooks actually run. Never pass
-   `--no-verify`, and never set `LEFTHOOK=0`, `LEFTHOOK=false`,
-   `LEFTHOOK=off`, or `LEFTHOOK=no`; those disable the same load-bearing
-   hook surface. If a hook fails, fix the cause or halt with the failure.
+   `--no-verify`; if a hook fails, fix the cause or halt with the
+   failure.
 4. Open a PR, wait for required checks, and merge through the PR using
    the repo's rebase-merge discipline.
 5. After merge, refresh `/data/projects/livespec-dev-tooling` to
