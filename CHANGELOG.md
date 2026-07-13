@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.46.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.46.0...v0.46.1) (2026-07-13)
+
+
+### Bug Fixes
+
+* **skill-invocation-paths:** auto-detect runtime-resolving Driver model ([b884881](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b88488153b059628968b62f4650129393541b16d))
+
 ## [0.46.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.45.0...v0.46.0) (2026-07-13)
 
 
