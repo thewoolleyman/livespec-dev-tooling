@@ -1,30 +1,34 @@
 # fabro-sandbox-image.yml — build + publish the family Fabro sandbox image.
 #
 # This repo OWNS the family Fabro C-mode sandbox image (the family
-# toolchain as a container) at docker/fabro-sandbox/Dockerfile. Three
+# toolchain as a container), now built as a `base -> python ->
+# python-rust` LAYER CHAIN under docker/fabro-sandbox/<layer>/Dockerfile.
+# Each layer is a separately-published image whose `FROM` pins the exact
+# DIGEST of the layer just built (hermetic — never a floating tag). Three
 # triggers:
 #
-#   - pull_request touching image-affecting paths: build WITHOUT
-#     publishing — PR-time validation that the image still builds.
-#   - push to master touching the same paths: build and publish the
-#     immutable per-commit tag `sha-<short>`.
-#   - release published: build and publish the immutable semver tag
-#     `v<X.Y.Z>` (release-please authenticates via the livespec App
-#     installation token, so its releases DO fire this event — see
-#     release-please.yml's auth-model note). `paths` filters do not
-#     apply to release events, so EVERY release gets a semver-tagged
-#     image; `just check-fabro-image-pin-lockstep` (justfile aggregate
-#     + CI check-metadata matrix) guarantees the image pins match the
-#     released tree's .mise.toml / .python-version.
+#   - pull_request touching image-affecting paths: build the whole chain
+#     WITHOUT publishing to GHCR — the layers are pushed to an EPHEMERAL
+#     in-job `localhost:5000` registry so the `FROM`-by-digest chain
+#     resolves, validating that every layer still builds.
+#   - push to master touching the same paths: build + publish the
+#     immutable per-commit tags `base-sha-<short>` / `python-sha-<short>`
+#     / `python-rust-sha-<short>`.
+#   - release published: build + publish the immutable semver tags
+#     `base-v<X.Y.Z>` / `python-v<X.Y.Z>` / `python-rust-v<X.Y.Z>`
+#     (release-please authenticates via the livespec App installation
+#     token, so its releases DO fire this event). `paths` filters do not
+#     apply to release events, so EVERY release gets semver-tagged layer
+#     images; `just check-fabro-image-pin-lockstep` guarantees the baked
+#     pins match the released tree's .mise.toml / .python-version.
 #
-# NO mutable `latest` tag is published (flavor: latest=false):
-# consumers pin an immutable sha-* or v* tag.
+# NO mutable `latest` tag is published (flavor: latest=false): consumers
+# pin an immutable layer-prefixed sha-* or v* tag.
 #
 # Auth: the default Actions GITHUB_TOKEN with packages:write suffices —
-# the image publishes to this repo's own GHCR namespace
+# the images publish to this repo's own GHCR namespace
 # (ghcr.io/<owner>/livespec-fabro-sandbox) and nothing downstream
-# triggers off the publish, so the App-token recursion workaround used
-# by release-please.yml is not needed here.
+# triggers off the publish.
 
 name: Fabro sandbox image
 
@@ -61,12 +65,23 @@ jobs:
   build:
     name: build-fabro-sandbox-image
     runs-on: ubuntu-latest
+    # Ephemeral registry so the FROM-by-digest chain resolves on PRs
+    # (where nothing is pushed to GHCR). BuildKit treats localhost as an
+    # insecure HTTP registry by default; the buildx builder reaches it via
+    # `network=host`.
+    services:
+      registry:
+        image: registry:2
+        ports:
+          - 5000:5000
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: network=host
 
       - name: Log in to GHCR
         if: github.event_name != 'pull_request'
@@ -76,28 +91,91 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # type=sha emits the immutable per-commit `sha-<short>` tag on
-      # every trigger; type=semver emits `v<X.Y.Z>` only when the ref
-      # is a release-please semver tag (release events). latest=false
-      # keeps the tag set fully immutable.
-      - name: Compute image tags
-        id: meta
+      # On a PR the layers go to the ephemeral localhost registry (never
+      # GHCR); on master push / release they go to the published GHCR repo.
+      # Either way `push: true`, so the FROM-by-digest chain always
+      # resolves against a real registry.
+      - name: Resolve target registry image
+        id: target
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "image=localhost:5000/livespec-fabro-sandbox" >> "$GITHUB_OUTPUT"
+          else
+            echo "image=ghcr.io/${{ github.repository_owner }}/livespec-fabro-sandbox" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ---- base layer ----
+      - name: Compute base tags
+        id: meta_base
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/livespec-fabro-sandbox
-          flavor: |
-            latest=false
+          images: ${{ steps.target.outputs.image }}
+          flavor: latest=false
           tags: |
-            type=sha
-            type=semver,pattern=v{{version}}
+            type=sha,prefix=base-sha-
+            type=semver,pattern=v{{version}},prefix=base-
 
-      - name: Build (publish on master push / release)
+      - name: Build + push base
+        id: build_base
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: docker/fabro-sandbox/Dockerfile
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          file: docker/fabro-sandbox/base/Dockerfile
+          push: true
+          provenance: false
+          tags: ${{ steps.meta_base.outputs.tags }}
+          labels: ${{ steps.meta_base.outputs.labels }}
+          cache-from: type=gha,scope=base
+          cache-to: type=gha,scope=base,mode=max
+
+      # ---- python layer (FROM the base digest just built) ----
+      - name: Compute python tags
+        id: meta_python
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.target.outputs.image }}
+          flavor: latest=false
+          tags: |
+            type=sha,prefix=python-sha-
+            type=semver,pattern=v{{version}},prefix=python-
+
+      - name: Build + push python
+        id: build_python
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/fabro-sandbox/python/Dockerfile
+          push: true
+          provenance: false
+          build-args: |
+            BASE_IMAGE=${{ steps.target.outputs.image }}@${{ steps.build_base.outputs.digest }}
+          tags: ${{ steps.meta_python.outputs.tags }}
+          labels: ${{ steps.meta_python.outputs.labels }}
+          cache-from: type=gha,scope=python
+          cache-to: type=gha,scope=python,mode=max
+
+      # ---- python-rust layer (FROM the python digest just built) ----
+      - name: Compute python-rust tags
+        id: meta_python_rust
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.target.outputs.image }}
+          flavor: latest=false
+          tags: |
+            type=sha,prefix=python-rust-sha-
+            type=semver,pattern=v{{version}},prefix=python-rust-
+
+      - name: Build + push python-rust
+        id: build_python_rust
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/fabro-sandbox/python-rust/Dockerfile
+          push: true
+          provenance: false
+          build-args: |
+            PYTHON_IMAGE=${{ steps.target.outputs.image }}@${{ steps.build_python.outputs.digest }}
+          tags: ${{ steps.meta_python_rust.outputs.tags }}
+          labels: ${{ steps.meta_python_rust.outputs.labels }}
+          cache-from: type=gha,scope=python-rust
+          cache-to: type=gha,scope=python-rust,mode=max

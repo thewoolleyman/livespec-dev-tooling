@@ -1,0 +1,3 @@
+# The PYTHON layer COPYs nothing (it FROMs the base layer's published
+# image), so the entire repo-root build context is excluded.
+*

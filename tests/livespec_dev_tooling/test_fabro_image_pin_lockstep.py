@@ -1,8 +1,9 @@
 """Outside-in test for `livespec_dev_tooling/fabro_image_pin_lockstep.py`.
 
-The Fabro sandbox image (docker/fabro-sandbox/Dockerfile) bakes the
-fleet toolchain as a container; the versions it bakes are declared
-as `ARG NAME=value` lines. The check fails when any image-baked pin
+The Fabro sandbox image is a `base -> python -> python-rust` layer chain
+(`docker/fabro-sandbox/<layer>/Dockerfile`); the versions each layer bakes
+are declared as `ARG NAME=value` lines. The check reads the ARG lines from
+the whole SET of layer Dockerfiles and fails when any image-baked pin
 drifts from this repo's own pin sources:
 
 - `ARG UV_VERSION` / `ARG JUST_VERSION` / `ARG LEFTHOOK_VERSION`
@@ -25,30 +26,48 @@ __all__: list[str] = []
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _CHECK = _REPO_ROOT / "livespec_dev_tooling" / "fabro_image_pin_lockstep.py"
 
-_DOCKERFILE_REL = Path("docker") / "fabro-sandbox" / "Dockerfile"
+_LAYER_DIR = Path("docker") / "fabro-sandbox"
 
-# Lockstep fixture set: Dockerfile ARG pins matching the .mise.toml /
-# .python-version fixtures below. The Dockerfile body carries non-ARG
-# lines (comment, FROM, ENV, RUN) so the ARG-line parser's no-match
-# arm is exercised alongside the match arm; NODE_VERSION is a
-# deliberately un-obligated extra ARG (no repo-side pin source).
-_LOCKSTEP_DOCKERFILE = (
-    "# Fabro sandbox image fixture\n"
+# Layer fixture set — the obligated ARG pins are SPLIT across layers
+# exactly as the real image splits them (JUST/LEFTHOOK in base, UV/PYTHON
+# in python). Each layer body carries non-ARG lines (comment, FROM, RUN)
+# and a value-less `ARG BASE_IMAGE`/`ARG PYTHON_IMAGE` (the FROM-chain
+# arg — deliberately NOT matched by the `ARG NAME=value` parser), plus a
+# deliberately un-obligated extra (`NODE_VERSION`, `RUST_VERSION`) with no
+# repo-side pin source, so both parser arms are exercised.
+_LOCKSTEP_BASE_DOCKERFILE = (
+    "# base layer fixture\n"
     "FROM buildpack-deps:noble\n"
     "ARG MISE_VERSION=v2026.2.7\n"
-    "ARG UV_VERSION=0.5.20\n"
     "ARG JUST_VERSION=1.36.0\n"
     "ARG LEFTHOOK_VERSION=1.13.6\n"
     "ARG NODE_VERSION=26.3.0\n"
+    "RUN mise use -g just@${JUST_VERSION}\n"
+)
+_LOCKSTEP_PYTHON_DOCKERFILE = (
+    "# python layer fixture\n"
+    "ARG BASE_IMAGE\n"
+    "FROM ${BASE_IMAGE}\n"
+    "ARG UV_VERSION=0.5.20\n"
     "ARG PYTHON_VERSION=3.10.16\n"
-    "ENV PATH=/root/.local/bin:$PATH\n"
     "RUN uv python install ${PYTHON_VERSION}\n"
 )
+_LOCKSTEP_PYTHON_RUST_DOCKERFILE = (
+    "# python-rust layer fixture\n"
+    "ARG PYTHON_IMAGE\n"
+    "FROM ${PYTHON_IMAGE}\n"
+    "ARG RUST_VERSION=1.92.0\n"
+)
+_LOCKSTEP_LAYERS = {
+    "base": _LOCKSTEP_BASE_DOCKERFILE,
+    "python": _LOCKSTEP_PYTHON_DOCKERFILE,
+    "python-rust": _LOCKSTEP_PYTHON_RUST_DOCKERFILE,
+}
 
 # The `[tools]` table parser mirrors check_tools' fixture coverage:
-# preamble comment, stray key outside any section, a non-tools
-# section, an inline comment inside `[tools]`, and a malformed line
-# (no quoted version) — each closes a distinct parser branch.
+# preamble comment, stray key outside any section, a non-tools section, an
+# inline comment inside `[tools]`, and a malformed line (no quoted
+# version) — each closes a distinct parser branch.
 _LOCKSTEP_MISE_TOML = (
     "# preamble comment\n"
     "stray-key = 1\n"
@@ -68,19 +87,20 @@ _LOCKSTEP_PYTHON_VERSION = "3.10.16\n"
 def _write_fixture(
     *,
     root: Path,
-    dockerfile: str | None,
+    layers: dict[str, str] | None,
     mise_toml: str | None,
     python_version: str | None,
 ) -> None:
-    """Write the three lockstep input files; `None` omits a file."""
-    if dockerfile is not None:
-        dockerfile_path = root / _DOCKERFILE_REL
-        dockerfile_path.parent.mkdir(parents=True)
-        dockerfile_path.write_text(dockerfile, encoding="utf-8")
+    """Write the layer Dockerfiles + pin sources; `None` omits that input."""
+    if layers is not None:
+        for layer_name, content in layers.items():
+            dockerfile_path = root / _LAYER_DIR / layer_name / "Dockerfile"
+            dockerfile_path.parent.mkdir(parents=True, exist_ok=True)
+            _ = dockerfile_path.write_text(content, encoding="utf-8")
     if mise_toml is not None:
-        (root / ".mise.toml").write_text(mise_toml, encoding="utf-8")
+        _ = (root / ".mise.toml").write_text(mise_toml, encoding="utf-8")
     if python_version is not None:
-        (root / ".python-version").write_text(python_version, encoding="utf-8")
+        _ = (root / ".python-version").write_text(python_version, encoding="utf-8")
 
 
 def _run_check(*, cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -94,10 +114,10 @@ def _run_check(*, cwd: Path) -> subprocess.CompletedProcess[str]:
 
 
 def test_accepts_image_pins_in_lockstep(*, tmp_path: Path) -> None:
-    """All four obligated ARG pins matching the repo pins passes (exit 0)."""
+    """All four obligated ARG pins (split across layers) matching passes (exit 0)."""
     _write_fixture(
         root=tmp_path,
-        dockerfile=_LOCKSTEP_DOCKERFILE,
+        layers=_LOCKSTEP_LAYERS,
         mise_toml=_LOCKSTEP_MISE_TOML,
         python_version=_LOCKSTEP_PYTHON_VERSION,
     )
@@ -110,15 +130,15 @@ def test_accepts_image_pins_in_lockstep(*, tmp_path: Path) -> None:
     )
 
 
-def test_rejects_missing_dockerfile(*, tmp_path: Path) -> None:
-    """A repo without the image Dockerfile fails and names the missing path.
+def test_rejects_missing_layer_dockerfiles(*, tmp_path: Path) -> None:
+    """A repo without the layer Dockerfile tree fails and names the layer dir.
 
-    This repo owns the image, so the Dockerfile's absence is itself
-    drift (e.g. a deletion without retiring the check), not a no-op.
+    This repo owns the image, so the layers' absence is itself drift (e.g. a
+    deletion without retiring the check), not a no-op.
     """
     _write_fixture(
         root=tmp_path,
-        dockerfile=None,
+        layers=None,
         mise_toml=_LOCKSTEP_MISE_TOML,
         python_version=_LOCKSTEP_PYTHON_VERSION,
     )
@@ -126,12 +146,12 @@ def test_rejects_missing_dockerfile(*, tmp_path: Path) -> None:
     result = _run_check(cwd=tmp_path)
 
     assert result.returncode != 0, (
-        f"missing Dockerfile should fail; got returncode={result.returncode} "
+        f"missing layer Dockerfiles should fail; got returncode={result.returncode} "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
     combined = result.stdout + result.stderr
-    assert "docker/fabro-sandbox/Dockerfile" in combined, (
-        f"diagnostic should name the missing Dockerfile; "
+    assert "docker/fabro-sandbox" in combined, (
+        f"diagnostic should name the layer dir; "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
 
@@ -140,7 +160,7 @@ def test_rejects_missing_mise_toml_and_python_version(*, tmp_path: Path) -> None
     """Missing repo-side pin sources fail; both absentees are named."""
     _write_fixture(
         root=tmp_path,
-        dockerfile=_LOCKSTEP_DOCKERFILE,
+        layers=_LOCKSTEP_LAYERS,
         mise_toml=None,
         python_version=None,
     )
@@ -160,13 +180,13 @@ def test_rejects_missing_mise_toml_and_python_version(*, tmp_path: Path) -> None
 
 def test_rejects_mise_pin_mismatch(*, tmp_path: Path) -> None:
     """An image-baked uv version drifting from .mise.toml fails, naming both values."""
-    drifted = _LOCKSTEP_DOCKERFILE.replace(
+    drifted_python = _LOCKSTEP_PYTHON_DOCKERFILE.replace(
         "ARG UV_VERSION=0.5.20",
         "ARG UV_VERSION=0.5.99",
     )
     _write_fixture(
         root=tmp_path,
-        dockerfile=drifted,
+        layers={**_LOCKSTEP_LAYERS, "python": drifted_python},
         mise_toml=_LOCKSTEP_MISE_TOML,
         python_version=_LOCKSTEP_PYTHON_VERSION,
     )
@@ -188,7 +208,7 @@ def test_rejects_python_version_mismatch(*, tmp_path: Path) -> None:
     """An image-baked interpreter drifting from .python-version fails."""
     _write_fixture(
         root=tmp_path,
-        dockerfile=_LOCKSTEP_DOCKERFILE,
+        layers=_LOCKSTEP_LAYERS,
         mise_toml=_LOCKSTEP_MISE_TOML,
         python_version="3.11.1\n",
     )
@@ -206,20 +226,29 @@ def test_rejects_python_version_mismatch(*, tmp_path: Path) -> None:
     )
 
 
-def test_rejects_dockerfile_missing_obligated_args(*, tmp_path: Path) -> None:
-    """A Dockerfile lacking LEFTHOOK_VERSION and PYTHON_VERSION ARGs fails.
+def test_rejects_layers_missing_obligated_args(*, tmp_path: Path) -> None:
+    """Layers lacking LEFTHOOK_VERSION (base) and PYTHON_VERSION (python) fail.
 
-    Covers both missing-ARG arms (the mise-pinned trio loop and the
-    python pin) in one fixture.
+    Covers both missing-ARG arms (the mise-pinned trio loop and the python
+    pin) across two different layer files in one fixture.
     """
-    stripped = "".join(
+    base_without_lefthook = "".join(
         line + "\n"
-        for line in _LOCKSTEP_DOCKERFILE.splitlines()
-        if not line.startswith(("ARG LEFTHOOK_VERSION=", "ARG PYTHON_VERSION="))
+        for line in _LOCKSTEP_BASE_DOCKERFILE.splitlines()
+        if not line.startswith("ARG LEFTHOOK_VERSION=")
+    )
+    python_without_pyver = "".join(
+        line + "\n"
+        for line in _LOCKSTEP_PYTHON_DOCKERFILE.splitlines()
+        if not line.startswith("ARG PYTHON_VERSION=")
     )
     _write_fixture(
         root=tmp_path,
-        dockerfile=stripped,
+        layers={
+            **_LOCKSTEP_LAYERS,
+            "base": base_without_lefthook,
+            "python": python_without_pyver,
+        },
         mise_toml=_LOCKSTEP_MISE_TOML,
         python_version=_LOCKSTEP_PYTHON_VERSION,
     )
@@ -242,7 +271,7 @@ def test_rejects_mise_toml_missing_tool_pin(*, tmp_path: Path) -> None:
     mise_without_just = _LOCKSTEP_MISE_TOML.replace('just     = "1.36.0"\n', "")
     _write_fixture(
         root=tmp_path,
-        dockerfile=_LOCKSTEP_DOCKERFILE,
+        layers=_LOCKSTEP_LAYERS,
         mise_toml=mise_without_just,
         python_version=_LOCKSTEP_PYTHON_VERSION,
     )

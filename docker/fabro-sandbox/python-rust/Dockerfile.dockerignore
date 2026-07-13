@@ -1,0 +1,3 @@
+# The PYTHON-RUST layer COPYs nothing (it FROMs the python layer's
+# published image), so the entire repo-root build context is excluded.
+*
