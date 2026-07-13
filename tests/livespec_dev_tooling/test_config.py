@@ -649,18 +649,23 @@ def test_filter_first_party_py_excludes_templates_tree(*, tmp_path: Path) -> Non
     assert result == (kept,)
 
 
-def test_filter_first_party_py_excludes_claude_agent_runtime_infra(*, tmp_path: Path) -> None:
-    """Any repo-root-relative `.py` under `.claude/` is excluded (host-only agent-runtime infra).
+def test_filter_first_party_py_excludes_claude_skills_but_covers_claude_hooks(
+    *, tmp_path: Path
+) -> None:
+    """`.claude/skills/` is excluded (local-only skill infra); `.claude/hooks/` stays COVERED.
 
-    `.claude/` holds Claude Code hooks + local-only skills — out of scope for
-    livespec's product/dev-tooling code rules, the same treatment ruff
-    (`extend-exclude`) and pyright (`include`) already give `.claude/hooks/**`.
-    All three `.claude/` inputs are excluded — a hook, a skill module, and a
-    `test_`-prefixed skill file the tests-tree rule does NOT catch (it is not
-    under `tests/` and is not named `conftest.py`) — while a normal first-party
-    path survives. The pre-existing `_vendor` / tests-tree / `templates/`
-    exemptions are re-asserted so the new branch is proven additive, not a
-    replacement.
+    The exemption is deliberately narrowed to `.claude/skills/` — host-only,
+    LOCAL-ONLY agent-runtime skills (e.g. the overseer daemon) livespec ships to
+    no one and governs under its own thread — and NOT all of `.claude/`.
+    `.claude/hooks/**` holds first-party hook `.py` (e.g. the Driver-shipped
+    footgun/no-shadow guards) that the fleet-check-coverage epic requires
+    COVERED: a Driver repo's hooks are its entire first-party universe, so
+    dropping them would leave that repo's product code ungoverned. A skill
+    module AND a `test_`-prefixed skill file (which the tests-tree rule does NOT
+    catch — not under `tests/`, not named `conftest.py`) are excluded, while a
+    `.claude/hooks/` file and a normal first-party path survive. The pre-existing
+    `_vendor` / tests-tree / `templates/` exemptions are re-asserted so the
+    narrowed branch is proven additive, not a replacement.
     """
     kept = Path("livespec_dev_tooling") / "config.py"
     claude_hook = Path(".claude") / "hooks" / "livespec_footgun_guard.py"
@@ -677,7 +682,7 @@ def test_filter_first_party_py_excludes_claude_agent_runtime_infra(*, tmp_path: 
     result = filter_first_party_py(
         tracked_py=list(inputs), repo_root=tmp_path, tests_tree_prefix="tests/"
     )
-    assert result == (kept,)
+    assert result == (claude_hook, kept)
 
 
 def test_filter_first_party_py_excludes_generated_marker(*, tmp_path: Path) -> None:
