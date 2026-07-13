@@ -1,34 +1,37 @@
 """fabro_image_pin_lockstep — Fabro sandbox image pins match this repo's pins.
 
-The fleet Fabro sandbox image (docker/fabro-sandbox/Dockerfile) bakes
-the fleet toolchain as a container; the versions it bakes are
-declared as greppable `ARG NAME=value` lines, and they MUST stay in
-lockstep with this repo's own pin sources:
+The fleet Fabro sandbox image is built as a `base → python → python-rust`
+LAYER CHAIN (`docker/fabro-sandbox/<layer>/Dockerfile`); the versions each
+layer bakes are declared as greppable `ARG NAME=value` lines, and the
+obligated ones MUST stay in lockstep with this repo's own pin sources:
 
 - `ARG UV_VERSION` / `ARG JUST_VERSION` / `ARG LEFTHOOK_VERSION`
   ↔ the `.mise.toml` `[tools]` pins (`uv` / `just` / `lefthook`).
 - `ARG PYTHON_VERSION` ↔ `.python-version`.
 
-The image's remaining ARG pins (mise itself, node, gh, the ACP
-adapter) have no repo-side pin source — they mirror the host
-toolchain and are tracked only in the Dockerfile — so they carry no
-lockstep obligation. The uv package-cache pre-warm carries no drift
-risk by construction: the image build COPYs this repo's own
-`pyproject.toml` + `uv.lock` from the build context, so it cannot
-reference a stale lockfile.
+These ARGs now live in DIFFERENT layer files (`JUST_VERSION` /
+`LEFTHOOK_VERSION` in `base`; `UV_VERSION` / `PYTHON_VERSION` in `python`),
+so the parser reads the ARG lines from the whole SET of layer Dockerfiles
+and merges them. Keep each obligated ARG in exactly one layer.
 
-Repo-private check: this repo OWNS the image, so siblings have
-nothing to wire — the module deliberately lives OUTSIDE
-`livespec_dev_tooling/checks/` to stay out of the canonical
-(fleet-universal) slug set discovered by `canonical_checks`. Wired
-in this repo's justfile `check:` aggregate (repo-private block) and
-the CI check-metadata matrix.
+The image's remaining ARG pins (mise itself, node, gh, the ACP adapters,
+`RUST_VERSION`) have no repo-side pin source — they mirror the host
+toolchain (or, for Rust, the console's `rust-toolchain.toml`, checked on
+the CONSUMER side per the No-Circular-Dependency Directive) — so they carry
+no lockstep obligation here. No image layer pre-warms the uv cache, so
+there is no lockfile to drift.
+
+Repo-private check: this repo OWNS the image, so siblings have nothing to
+wire — the module deliberately lives OUTSIDE `livespec_dev_tooling/checks/`
+to stay out of the canonical (fleet-universal) slug set discovered by
+`canonical_checks`. Wired in this repo's justfile `check:` aggregate
+(repo-private block) and the CI check-metadata matrix.
 
 Output discipline: per spec, `print` (T20) and `sys.stderr.write`
-(`check-no-write-direct`) are banned. Diagnostics flow through
-structlog (JSON to stderr); the vendored copy under
-`livespec_dev_tooling/_vendor/structlog` is added to `sys.path` at
-module import time.
+(`check-no-write-direct`) are banned. Diagnostics flow through structlog
+(JSON to stderr); the vendored copy under
+`livespec_dev_tooling/_vendor/structlog` is added to `sys.path` at module
+import time.
 """
 
 from __future__ import annotations
@@ -46,7 +49,7 @@ import structlog  # noqa: E402  — vendor-path-aware import after sys.path inse
 __all__: list[str] = []
 
 
-_DOCKERFILE_PATH = Path("docker") / "fabro-sandbox" / "Dockerfile"
+_LAYER_DIR = Path("docker") / "fabro-sandbox"
 _MISE_PATH = Path(".mise.toml")
 _PYTHON_VERSION_PATH = Path(".python-version")
 
@@ -65,13 +68,24 @@ _MISE_LOCKSTEP_ARGS = (
 _PYTHON_LOCKSTEP_ARG = "PYTHON_VERSION"
 
 
-def _parse_dockerfile_args(*, source: str) -> dict[str, str]:
-    """Parse the Dockerfile's `ARG NAME=value` pin lines into a dict."""
+def _discover_layer_dockerfiles(*, cwd: Path) -> list[Path]:
+    """Discover the layer Dockerfiles at `docker/fabro-sandbox/<layer>/Dockerfile`.
+
+    Globs one directory level so a new layer (a new `<name>/Dockerfile`)
+    is picked up automatically. Returns the matches sorted for stable
+    diagnostics; empty when the layer tree is absent.
+    """
+    return sorted((cwd / _LAYER_DIR).glob("*/Dockerfile"))
+
+
+def _parse_dockerfile_args(*, sources: list[str]) -> dict[str, str]:
+    """Parse and merge `ARG NAME=value` pin lines across the layer Dockerfiles."""
     args: dict[str, str] = {}
-    for raw in source.splitlines():
-        match = _ARG_LINE.match(raw)
-        if match is not None:
-            args[match.group(1)] = match.group(2)
+    for source in sources:
+        for raw in source.splitlines():
+            match = _ARG_LINE.match(raw)
+            if match is not None:
+                args[match.group(1)] = match.group(2)
     return args
 
 
@@ -106,7 +120,7 @@ def _lockstep_issues(
         image_value = dockerfile_args.get(arg_name)
         repo_value = mise_tools.get(tool_name)
         if image_value is None:
-            issues.append(f"{arg_name}: obligated ARG pin missing from {_DOCKERFILE_PATH}")
+            issues.append(f"{arg_name}: obligated ARG pin missing from the {_LAYER_DIR} layers")
             continue
         if repo_value is None:
             issues.append(f"{tool_name}: pin missing from {_MISE_PATH} [tools]")
@@ -118,7 +132,9 @@ def _lockstep_issues(
             )
     image_python = dockerfile_args.get(_PYTHON_LOCKSTEP_ARG)
     if image_python is None:
-        issues.append(f"{_PYTHON_LOCKSTEP_ARG}: obligated ARG pin missing from {_DOCKERFILE_PATH}")
+        issues.append(
+            f"{_PYTHON_LOCKSTEP_ARG}: obligated ARG pin missing from the {_LAYER_DIR} layers"
+        )
     elif image_python != python_version:
         issues.append(
             f"{_PYTHON_LOCKSTEP_ARG}: image bakes {image_python!r} but "
@@ -138,12 +154,15 @@ def main() -> int:
     )
     log = structlog.get_logger("fabro_image_pin_lockstep")
     cwd = Path.cwd()
-    inputs = (
-        cwd / _DOCKERFILE_PATH,
-        cwd / _MISE_PATH,
-        cwd / _PYTHON_VERSION_PATH,
-    )
-    missing = [path for path in inputs if not path.is_file()]
+    layer_dockerfiles = _discover_layer_dockerfiles(cwd=cwd)
+    if not layer_dockerfiles:
+        log.error(
+            "no fabro-sandbox layer Dockerfiles found",
+            glob=str(_LAYER_DIR / "*" / "Dockerfile"),
+        )
+        return 1
+    pin_sources = (cwd / _MISE_PATH, cwd / _PYTHON_VERSION_PATH)
+    missing = [path for path in pin_sources if not path.is_file()]
     if missing:
         for path in missing:
             log.error(
@@ -151,11 +170,13 @@ def main() -> int:
                 file=str(path.relative_to(cwd)),
             )
         return 1
-    dockerfile_source, mise_source, python_source = (
-        path.read_text(encoding="utf-8") for path in inputs
+    mise_source = (cwd / _MISE_PATH).read_text(encoding="utf-8")
+    python_source = (cwd / _PYTHON_VERSION_PATH).read_text(encoding="utf-8")
+    dockerfile_args = _parse_dockerfile_args(
+        sources=[path.read_text(encoding="utf-8") for path in layer_dockerfiles]
     )
     issues = _lockstep_issues(
-        dockerfile_args=_parse_dockerfile_args(source=dockerfile_source),
+        dockerfile_args=dockerfile_args,
         mise_tools=_parse_mise_tools(source=mise_source),
         python_version=python_source.strip(),
     )

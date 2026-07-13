@@ -1,0 +1,7 @@
+# Context allowlist for the BASE layer Dockerfile (BuildKit reads the
+# `<Dockerfile-name>.dockerignore` beside the Dockerfile). The build
+# context is the REPO ROOT, but the base image only COPYs the
+# livespec-step-timer wrapper — allowlisting just that file keeps the
+# context transfer tiny and the build hermetic.
+*
+!livespec_dev_tooling/otel_step_timer.py
