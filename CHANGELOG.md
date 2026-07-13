@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.46.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.45.0...v0.46.0) (2026-07-13)
+
+
+### Features
+
+* add local-memory drift audit ([6ae50e6](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6ae50e634303eda376f415eaf0e8768116db88f9))
+
 ## [0.45.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.44.0...v0.45.0) (2026-07-13)
 
 
