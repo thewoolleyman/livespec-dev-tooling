@@ -9,7 +9,9 @@ set -uo pipefail
 RU=ci-runner
 XDG=/run/user/$(id -u "$RU" 2>/dev/null || echo 1001)
 POD=(sudo -n -u "$RU" env HOME=/home/$RU XDG_RUNTIME_DIR="$XDG" podman)
-IMG=ghcr.io/thewoolleyman/livespec-fabro-sandbox:v0.38.1
+# Parameterized so the suite tracks the current sandbox tag (the layered split
+# ships base-/python-/python-rust- tags); override with LIVESPEC_CI_RUNNER_IMAGE.
+IMG=${LIVESPEC_CI_RUNNER_IMAGE:-ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v0.43.2}
 KIND2=(/var/lib/doltdb /data/projects/1password-env-wrapper/.env.local)
 WF=${1:-/data/projects/livespec/.github/workflows}   # workflows dir for static audit
 P=0 F=0 S=0
