@@ -30,6 +30,19 @@ WorkingDirectory=/home/ubuntu/gate-runner/actions-runner
 LoadCredential=jit:/run/gate-runner/%i.jit
 Environment=HOME=/home/ubuntu
 Environment=PATH=/home/ubuntu/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# EPHEMERAL RUNNER => EPHEMERAL WORKSPACE. The gate drives Docker containers that
+# run as ROOT and bind-mount the workspace, so they leave root-owned artifacts
+# behind in it (e.g. __pycache__/*.pyc). On the NEXT run, actions/checkout — which
+# runs as the unprivileged runner user — cannot delete those files and the job dies
+# before it starts:
+#   EACCES: permission denied, unlink '.../__pycache__/_bootstrap.cpython-312.pyc'
+#   ##[warning]Unable to clean or reset the repository.
+# A reused workspace on a privileged runner therefore poisons itself. The `+` prefix
+# runs this with full privileges (root), ignoring User=, so every JIT runner starts
+# on a pristine tree regardless of what the previous run's containers left behind.
+# Fixing it here, at the source, is what keeps it from recurring as a mystery
+# checkout failure that a human has to hand-clean.
+ExecStartPre=+/usr/bin/rm -rf /home/ubuntu/gate-runner/_work
 ExecStart=/usr/local/lib/ci-runner/run-gate-jit-runner.sh
 # One job then gone — the supervisor owns the lifecycle; never auto-restart.
 Restart=no
