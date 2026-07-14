@@ -1,0 +1,40 @@
+# gate-runner-supervisor.service — the on-demand, trigger-verified minter for the
+# PRIVILEGED golden-master gate runner. Runs as ci-sup, the same low-priv account
+# that supervises the contained CI lane and the only one that reads the App private
+# key (from the dedicated github-ci-runners 1Password environment, injected ONLY
+# into these supervisor services — never into a runner or a job).
+#
+# It mints NOTHING until a queued run passes every trust check (gate workflow +
+# write-access-gated event + master). It then starts gate-runner@<name>.service via
+# the narrow polkit rule (50-gate-runner-supervisor.rules) and waits out the job.
+[Unit]
+Description=Golden-master gate runner supervisor (on-demand privileged JIT runner)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ci-sup
+Group=ci-sup
+# The 1Password CLI needs a writable HOME of its own.
+Environment=HOME=/var/lib/ci-sup
+# Its OWN runtime dir (0700 ci-sup), separate from the contained lane's
+# /run/ci-runner, so neither supervisor's lifecycle can remove the other's staged
+# JIT configs. root (the runner unit's LoadCredential) can still read them.
+RuntimeDirectory=gate-runner
+RuntimeDirectoryMode=0700
+ExecStart=/usr/local/bin/with-github-ci-runners-env.sh -- /usr/local/lib/ci-runner/gate-runner-supervisor.sh
+Restart=always
+RestartSec=10
+# Hardening — the supervisor holds the most powerful secret, so lock down what can
+# be locked down. (The RUNNER it starts is privileged by design; the SUPERVISOR is
+# not.) NoNewPrivileges is deliberately NOT set: the 1Password wrapper self-escalates
+# via `sudo -n` to systemd-creds-decrypt its service-account token, and that flag
+# would block the escalation and the unit would never start.
+ProtectSystem=strict
+ReadWritePaths=/run/gate-runner /var/lib/ci-sup
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

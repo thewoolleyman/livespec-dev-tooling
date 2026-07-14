@@ -1,0 +1,22 @@
+// 50-gate-runner-supervisor.rules — the NARROW privilege bridge for the gate lane.
+// Allows the low-priv `ci-sup` supervisor user to start/stop/restart ONLY
+// gate-runner@*.service instances (fixed User=ubuntu, fixed ExecStart, so an
+// instance NAME can grant no new privilege). It confers no other systemctl
+// authority and no broad sudo.
+//
+// This is the sibling of 49-ci-runner-supervisor.rules, which bridges the
+// CONTAINED lane's runner@*.service. Two rules, two unit patterns, one supervisor
+// user — so each lane's units stay separately auditable.
+// Install at /etc/polkit-1/rules.d/50-gate-runner-supervisor.rules.
+polkit.addRule(function(action, subject) {
+    if (action.id === "org.freedesktop.systemd1.manage-units" &&
+        subject.user === "ci-sup") {
+        var unit = action.lookup("unit") || "";
+        var verb = action.lookup("verb") || "";
+        if (/^gate-runner@.+\.service$/.test(unit) &&
+            (verb === "start" || verb === "stop" || verb === "restart")) {
+            return polkit.Result.YES;
+        }
+    }
+    return polkit.Result.NOT_HANDLED;
+});
