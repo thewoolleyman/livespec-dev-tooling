@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.46.5](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.46.4...v0.46.5) (2026-07-14)
+
+
+### Bug Fixes
+
+* **ci-runner:** serialize podman network-prune against container removal ([1dedd17](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1dedd17aa8bc1065e5b44b8b164d55115af8cd17))
+
 ## [0.46.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.46.3...v0.46.4) (2026-07-14)
 
 
