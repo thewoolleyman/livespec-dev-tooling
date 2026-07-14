@@ -13,6 +13,13 @@ Wants=network-online.target
 Type=simple
 User=ci-sup
 Group=ci-sup
+# The 1Password CLI needs a writable HOME of its own.
+Environment=HOME=/var/lib/ci-sup
+# The runner pool this supervisor maintains. Personal accounts only support
+# repo-level runners, so pools are per-repo.
+Environment=CI_RUNNER_REPOS=thewoolleyman/livespec
+Environment=CI_RUNNER_SLOTS_PER_REPO=1
+Environment=CI_RUNNER_LABELS=self-hosted,local-ci
 # ci-sup is a supplementary member of ci-runner only if a shared read is needed;
 # the JIT handoff uses LoadCredential (root), so no group sharing is required.
 # /run/ci-runner is this unit's private runtime dir (0700 ci-sup); root (the runner
@@ -24,19 +31,18 @@ RuntimeDirectoryMode=0700
 ExecStart=/usr/local/bin/with-github-ci-runners-env.sh -- /usr/local/lib/ci-runner/ci-runner-supervisor.sh
 Restart=always
 RestartSec=10
-# Hardening — the supervisor holds the most powerful secret, so lock it down.
-NoNewPrivileges=true
+# Hardening — the supervisor holds the most powerful secret, so lock down what can
+# be locked down. NoNewPrivileges is deliberately NOT set: the 1Password wrapper
+# self-escalates via `sudo -n` to systemd-creds-decrypt its service-account token,
+# and that flag blocks the escalation ("sudo: The 'no new privileges' flag is set")
+# so the unit never starts. This file previously carried NoNewPrivileges=true plus a
+# kernel/namespace hardening block that the live host does not run; the drift was
+# caught (2026-07-14) when the gate lane reused this unit as its template and the
+# copy failed to boot. This is now what actually runs.
 ProtectSystem=strict
-ReadWritePaths=/run/ci-runner
+ReadWritePaths=/run/ci-runner /var/lib/ci-sup
 ProtectHome=true
 PrivateTmp=true
-ProtectKernelTunables=true
-ProtectKernelModules=true
-ProtectControlGroups=true
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
-RestrictNamespaces=true
-LockPersonality=true
-MemoryDenyWriteExecute=true
 
 [Install]
 WantedBy=multi-user.target

@@ -1,0 +1,38 @@
+# gate-runner@.service — a single EPHEMERAL, PRIVILEGED GitHub Actions runner.
+# %i is the unique runner name the gate supervisor minted a JIT config for. The
+# runner takes exactly ONE job (JIT + ephemeral), auto-deregisters, and exits;
+# no privileged runner idles between gate runs.
+#
+# User=ubuntu — the OPERATOR, deliberately. The gate workflow is specified against
+# the operator's environment: the host `fabro` binary ($HOME/.fabro/bin/fabro), the
+# host Codex credential (~/.codex/auth.json), the docker daemon, and
+# /data/projects/1password-env-wrapper/with-livespec-env.sh. A dedicated user would
+# buy NO isolation (it would still need the docker group, which is root-equivalent)
+# while forcing a copy of the Codex subscription credential — a secret duplicated
+# for nothing. The trust boundary is the gate supervisor's trigger check, NOT the uid.
+#
+# NO container hooks: gate steps run directly on the host (the workflow declares no
+# `container:`). NO NoNewPrivileges: the 1Password wrapper self-escalates via
+# `sudo -n` to decrypt its systemd-creds token.
+#
+# Fixed User= and fixed ExecStart mean instance-name variation grants no new
+# privilege; the polkit rule authorizes ci-sup to start gate-runner@*.service only.
+[Unit]
+Description=Ephemeral privileged golden-master gate runner %i
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/gate-runner/actions-runner
+LoadCredential=jit:/run/gate-runner/%i.jit
+Environment=HOME=/home/ubuntu
+Environment=PATH=/home/ubuntu/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/usr/local/lib/ci-runner/run-gate-jit-runner.sh
+# One job then gone — the supervisor owns the lifecycle; never auto-restart.
+Restart=no
+# /usr and /boot read-only is free hygiene; everything the gate legitimately needs
+# (docker, /data/projects, $HOME, /tmp) stays writable.
+ProtectSystem=true
