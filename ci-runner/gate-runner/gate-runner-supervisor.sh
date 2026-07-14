@@ -24,6 +24,16 @@
 #   --select-trusted   read a workflow-runs JSON payload on stdin, print the id of
 #                      the first trusted run (or nothing). The testable seam the
 #                      trigger-surface exit tests drive.
+#
+# CONFIG DEFAULTS ARE THE REAL CONFIG — do NOT try to override these with a systemd
+# `Environment=` in the unit. This script runs behind the credential wrapper, which
+# scrubs the environment (`env -i`), so any Environment= the unit sets is DISCARDED
+# before the script sees it. (The sibling ci-runner-supervisor.sh learned this the
+# hard way — its unit carried Environment=CI_RUNNER_SLOTS_PER_REPO=18 and silently
+# ran on the default of 1. It now takes ARGUMENTS, which survive the scrub.) The
+# GATE_RUNNER_* reads below therefore only ever see values exported INSIDE the
+# wrapper; to change this lane's config, change these defaults or add argument
+# parsing as the CI supervisor did.
 set -euo pipefail
 
 GATE_REPO="${GATE_RUNNER_REPO:-thewoolleyman/livespec-orchestrator-beads-fabro}"

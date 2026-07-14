@@ -95,4 +95,47 @@ DOCKER_HOST=unix://${XDG}/podman/podman.sock
 XDG_RUNTIME_DIR=${XDG}
 EOF
 
-log "DONE. Register the runner via the supervisor/JIT step, then run the 11 isolation exit tests."
+# ---------------------------------------------------------------------------
+log "6. Per-slot runner INSTANCE dirs (one per concurrent runner — NOT shared)"
+# EVERY CONCURRENT RUNNER NEEDS ITS OWN DIRECTORY. The Actions runner materializes
+# its JIT config to `.runner` / `.credentials` in its ROOT dir at startup, and it
+# writes `_diag` there too; its `_work` folder is likewise per-runner. Point N
+# runners at ONE directory and they overwrite each other's session files — the
+# symptom is every runner looping "√ Connected to GitHub" every ~30s, GitHub
+# reporting them `offline`, and jobs stalling in `queued`.
+#
+# Phase 0 shipped a single shared dir because it only ever ran ONE slot, so the
+# collision was invisible. It surfaced the moment the pool was raised to 18 for the
+# Phase 2 CI matrix (2026-07-14). Fixed at the source: a per-slot instance dir.
+#
+# bin/ and externals/ MUST be real directories, NOT symlinks. Runner.Listener
+# resolves its runner ROOT from its OWN executable path, so a symlinked bin/ sends
+# it straight back to the shared install and every runner writes .runner /
+# .credentials / _diag there anyway — the collision survives, and the runners loop
+# "Deleting Runner Session..." forever (observed 2026-07-14; the symlink attempt
+# looked right and changed nothing). They are HARD-LINKED copies (`cp -al`), so 18
+# instances cost near-zero disk while each still resolves its own root.
+SLOTS="${CI_RUNNER_SLOTS:-18}"
+REPOSLUGS="${CI_RUNNER_REPOSLUGS:-thewoolleyman-livespec}"
+INSTANCES_ROOT=${RUNNER_HOME}/runners
+runuser -u "$RUNNER_USER" -- bash -eu <<EOF
+mkdir -p "${INSTANCES_ROOT}"
+for slug in ${REPOSLUGS}; do
+  for n in \$(seq 1 ${SLOTS}); do
+    inst="${INSTANCES_ROOT}/\${slug}-\${n}"
+    mkdir -p "\$inst/_work" "\$inst/_diag"
+    # Hard-linked copies: real dirs (so Runner.Listener resolves THIS root), but
+    # sharing inodes with the one install, so N instances cost near-zero disk.
+    for d in bin externals container-hooks; do
+      [ -d "\$inst/\$d" ] || cp -al "${RUNNER_DIR}/\$d" "\$inst/\$d"
+    done
+    # Per-instance: the launch scripts + env (so .runner/.credentials land HERE).
+    for f in run.sh run-helper.sh config.sh env.sh safe_sleep.sh .env; do
+      [ -e "${RUNNER_DIR}/\$f" ] && cp -f "${RUNNER_DIR}/\$f" "\$inst/\$f" || true
+    done
+  done
+done
+EOF
+printf 'provisioned %s instance dirs per repo-slug under %s\n' "$SLOTS" "$INSTANCES_ROOT"
+
+log "DONE. Register the runners via the supervisor/JIT step, then run the 11 isolation exit tests."

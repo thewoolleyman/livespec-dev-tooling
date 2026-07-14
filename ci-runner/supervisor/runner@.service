@@ -17,7 +17,18 @@ Wants=network-online.target
 Type=simple
 User=ci-runner
 Group=ci-runner
-WorkingDirectory=/home/ci-runner/actions-runner
+# %i is the STABLE per-(repo,slot) instance id, and this is its OWN runner
+# directory — never the shared install. Concurrent runners MUST NOT share a
+# directory: the runner materializes its JIT config to .runner/.credentials in its
+# root, so a shared dir makes N runners clobber each other's session (endless
+# "√ Connected to GitHub" reconnects, GitHub reporting them offline, jobs stuck
+# queued). bin/ and externals/ inside are symlinks to the one shared install, so
+# this costs no meaningful disk.
+WorkingDirectory=/home/ci-runner/runners/%i
+# Each job starts on a pristine _work tree (the runner is ephemeral; its workspace
+# should be too). Runs as root via the '+' prefix so nothing a job left behind can
+# survive to break the next checkout.
+ExecStartPre=+/usr/bin/rm -rf /home/ci-runner/runners/%i/_work
 LoadCredential=jit:/run/ci-runner/%i.jit
 Environment=XDG_RUNTIME_DIR=/run/user/1001
 Environment=DOCKER_HOST=unix:///run/user/1001/podman/podman.sock
