@@ -417,6 +417,32 @@ def test_relock_step_refreshes_lock_before_commit() -> None:
     )
 
 
+def test_relock_step_resyncs_the_consumer_venv_after_relocking() -> None:
+    """The re-lock step also RE-SYNCS the consumer venv against the bumped pin.
+
+    The calling reusable workflow syncs the consumer's environment BEFORE the
+    pin rewrite, so without a re-sync here the venv holds the PRE-bump
+    livespec-dev-tooling for the rest of the job. Every later step that resolves
+    canonical data or runs a `just` recipe out of the consumer's OWN environment
+    (the canonical-slug capture below, the canonical-slugs projection re-stamp)
+    would then read the old version's answer while the committed pin says the
+    new one.
+    """
+    body = _relock_step_body(text=_read(path=_ACTION_PATH))
+    # `_command_pos` anchors on the script's 8-space indent, so the step's own
+    # `#` comment — which mentions the caller's PRE-rewrite `uv sync` — cannot
+    # be mistaken for the command itself.
+    lock_pos = _command_pos(body=body, command="uv lock")
+    sync_pos = _command_pos(body=body, command="uv sync --all-groups")
+    assert sync_pos != -1, (
+        "the re-lock step must re-sync the consumer venv (`uv sync --all-groups`) "
+        "so the environment holds the version the bumped pin names"
+    )
+    assert (
+        lock_pos != -1 and lock_pos < sync_pos
+    ), "the re-sync must follow `uv lock`, not precede it"
+
+
 # ---------------------------------------------------------------------------
 # Canonical check wiring reconcile step (fleet-check-coverage PR4 fallout)
 # ---------------------------------------------------------------------------
@@ -435,6 +461,19 @@ def test_relock_step_refreshes_lock_before_commit() -> None:
 _RECONCILE_STEP_NAME = "Reconcile canonical check wiring"
 _CANONICAL_CHECKS_MODULE = "livespec_dev_tooling.canonical_checks"
 _RECONCILE_MODULE = "livespec_dev_tooling.cross_repo.justfile_canonical_reconcile"
+# The ci.yml half of the same reconcile: check-ci-matrix-completeness requires
+# CI to RUN every canonical slug the justfile aggregate WIRES, so the step that
+# grows the aggregate must grow CI's matrix in the same commit.
+_CI_MATRIX_STEP_NAME = "Reconcile canonical CI matrix wiring"
+_CI_MATRIX_MODULE = "livespec_dev_tooling.cross_repo.ci_yaml_canonical_reconcile"
+# The TOOL runs from the master support checkout (a consumer's pinned release
+# predates the reconcile module); the canonical DATA must NOT. `.livespec-dev-tooling`
+# is this repo at MASTER — ahead of every consumer pin — so resolving the
+# filesystem-derived canonical slug set there injects slugs the consumer's PINNED
+# aggregate-completeness gate does not recognize, reddening the bump PR by
+# construction. The canonical capture therefore runs in the CONSUMER's environment.
+_SUPPORT_CHECKOUT_PROJECT = "--project .livespec-dev-tooling"
+_CANONICAL_CAPTURE = f"canonical_json=$(uv run python -m {_CANONICAL_CHECKS_MODULE} --json)"
 
 
 def _reconcile_step_body(*, text: str) -> str:
@@ -445,6 +484,17 @@ def _reconcile_step_body(*, text: str) -> str:
         re.MULTILINE | re.DOTALL,
     )
     assert match, f"composite Action missing the {_RECONCILE_STEP_NAME!r} step"
+    return match.group(0)
+
+
+def _ci_matrix_step_body(*, text: str) -> str:
+    """Return the body of the canonical CI matrix wiring reconcile step."""
+    match = re.search(
+        r"^    - name: Reconcile canonical CI matrix wiring\b.*?(?=^    - name: |\Z)",
+        text,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert match, f"composite Action missing the {_CI_MATRIX_STEP_NAME!r} step"
     return match.group(0)
 
 
@@ -460,10 +510,9 @@ def test_reconcile_step_dispatches_reconcile_module_before_commit() -> None:
     """
     text = _read(path=_ACTION_PATH)
     body = _reconcile_step_body(text=text)
-    assert _CANONICAL_CHECKS_MODULE in body, (
-        "the reconcile step must read the canonical slug set from the bumped "
-        "livespec-dev-tooling support checkout"
-    )
+    assert (
+        _CANONICAL_CHECKS_MODULE in body
+    ), "the reconcile step must read the canonical slug set from `canonical_checks`"
     assert f"python -m {_RECONCILE_MODULE}" in body, (
         "the reconcile step must dispatch the extracted "
         "justfile_canonical_reconcile module (not an inline heredoc)"
@@ -478,6 +527,70 @@ def test_reconcile_step_dispatches_reconcile_module_before_commit() -> None:
     assert reconcile_pos < commit_pos, (
         "the reconcile step MUST precede `Commit + push bump branch` so the "
         "consumer justfile wiring is committed with the pin bump"
+    )
+
+
+def test_canonical_slug_capture_resolves_from_the_consumer_not_the_support_checkout() -> None:
+    """Both reconcile steps capture the canonical slug set from the CONSUMER's environment.
+
+    The load-bearing version-skew fix. `canonical_check_slugs()` is a FILESYSTEM
+    WALK of whatever `livespec_dev_tooling.checks` package is running, and the
+    `.livespec-dev-tooling` support checkout is this repo at MASTER (the calling
+    workflow checks it out with no `ref:`), which is ahead of every consumer's
+    pin. Resolving the canonical set there injected slugs the consumer's PINNED
+    `check-aggregate-completeness` did not recognize — they landed interleaved
+    inside its canonical block (`out_of_order_canonical_slugs`) and reddened the
+    bump PR by construction, deadlocking the fan-out.
+
+    Capturing the set in the consumer's own environment makes the reconcile and
+    the gate derive it from the SAME version, so they agree by construction at
+    whatever the consumer pins. The reconcile MODULES keep `--project
+    .livespec-dev-tooling` deliberately: they are the TOOL, not the DATA, and a
+    consumer's pinned release predates them.
+    """
+    text = _read(path=_ACTION_PATH)
+    for body in (_reconcile_step_body(text=text), _ci_matrix_step_body(text=text)):
+        assert _CANONICAL_CAPTURE in body, (
+            "the canonical slug set MUST be captured from the CONSUMER's environment "
+            f"(plain `uv run`, no {_SUPPORT_CHECKOUT_PROJECT!r}) — resolving it from the "
+            "master support checkout is the version skew that deadlocked the fan-out"
+        )
+        capture_line = next(
+            line for line in body.splitlines() if _CANONICAL_CHECKS_MODULE in line and "$(" in line
+        )
+        assert (
+            _SUPPORT_CHECKOUT_PROJECT not in capture_line
+        ), "the canonical-slug capture must NOT run against the master support checkout"
+
+
+def test_ci_matrix_reconcile_step_runs_after_the_justfile_reconcile_before_commit() -> None:
+    """The ci.yml matrix reconcile follows the justfile reconcile and precedes the commit.
+
+    `check-ci-matrix-completeness` asserts the canonical slugs CI RUNS are a
+    SUPERSET of the canonical slugs the justfile `check:` aggregate WIRES. The
+    justfile reconcile GROWS that aggregate — which is exactly what leaves the
+    consumer's hand-maintained `strategy.matrix.target` list short the new
+    entries. Reconciling the justfile alone therefore traded one guaranteed-red
+    bump PR for another, on a different check with the same root cause; the
+    matrix must be reconciled in the SAME commit.
+    """
+    text = _read(path=_ACTION_PATH)
+    body = _ci_matrix_step_body(text=text)
+    assert (
+        f"python -m {_CI_MATRIX_MODULE}" in body
+    ), "the CI matrix step must dispatch the ci_yaml_canonical_reconcile module"
+    assert 'CANONICAL_JSON="$canonical_json"' in body, (
+        "the CI matrix step must pass the captured canonical set to the module "
+        "via the CANONICAL_JSON environment variable"
+    )
+    justfile_pos = text.find(_RECONCILE_STEP_NAME)
+    ci_matrix_pos = text.find(_CI_MATRIX_STEP_NAME)
+    commit_pos = text.find("- name: Commit + push bump branch")
+    assert ci_matrix_pos != -1, "composite Action step shape changed"
+    assert justfile_pos < ci_matrix_pos < commit_pos, (
+        "the CI matrix reconcile MUST follow the justfile reconcile (whose newly-wired "
+        "aggregate slugs it mirrors into CI) and precede `Commit + push bump branch` "
+        "(so the reconciled ci.yml is committed with the pin bump)"
     )
 
 
