@@ -42,6 +42,36 @@
 #   - EXTERNAL bot PRs (dependabot, future renovate) — author neither
 #     in the human allowlist nor the fleet's release-please App.
 #   - Future collaborator PRs — same gate.
+#   - The codex-acp FRESHNESS-BUMP PR — and this exclusion is
+#     LOAD-BEARING, not incidental. See below.
+#
+# DO NOT WIDEN THE ALLOWLIST WITHOUT READING THIS.
+#
+# The codex-acp factory gate (SPECIFICATION/contracts.md §"codex-acp
+# factory gate") is fail-closed ONLY because nothing here enables
+# auto-merge on its bump PR. That bump PR is opened by
+# reusable-pin-freshness.yml with an App token, so its author is
+# `livespec-pr-bot[bot]` and its head branch is
+# `chore/freshness-bump-*` — which matches NEITHER enable path above:
+# not the human allowlist, and not the App path (which is scoped to
+# `release-please--*` branches). It therefore stays open until the LIVE
+# golden-master gate proves the new codex-acp version works and turns
+# auto-merge on itself.
+#
+# So: adding the bump PR's author to the human allowlist, or relaxing
+# the `release-please--` branch-shape guard on the App path, would let
+# an UNVERIFIED codex-acp version merge on green CI alone, silently
+# defeating the factory gate. The gate is not a required check (it
+# cannot be — GitHub scopes required checks to the base branch, which
+# would deadlock every unrelated PR), so this exclusion is the only
+# thing holding the property.
+#
+# Verified live 2026-07-14: a hand-made throwaway PR authored by
+# `thewoolleyman` DID get auto-merge from the human-allowlist path and
+# merged on green CI while the gate's own status was `failure` —
+# exactly the bypass described above. It was harmless there (the PR was
+# a doc change, and the real bump PR takes the App path), but it is the
+# precise footgun this note exists to prevent.
 #
 # Why the release-please App path exists: across 2026-06-30..2026-07-03
 # the fleet's release train stalled in all six repos — release-please's
