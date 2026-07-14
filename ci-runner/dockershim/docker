@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# docker — a thin serialization shim in FRONT of the real docker CLI, for the
+# ci-runner agent ONLY (runner@.service puts this directory first on PATH).
+#
+# WHY THIS EXISTS
+# ---------------
+# All CI runner slots share ONE rootless podman instance (one storage under
+# /home/ci-runner/.local/share/containers, one API socket). `podman network prune`
+# is NOT concurrency-safe against container removal: to decide which networks are
+# still in use it walks the GLOBAL container database — the `--filter label=...`
+# only narrows what it DELETES, not what it SCANS. So when job A removes its
+# container while job B prunes its own network, B's scan trips over the container
+# A just deleted and the whole prune fails:
+#
+#     [command]/usr/bin/docker rm --force fe249311…      -> fe249311…   (A: succeeds)
+#     [command]/usr/bin/docker network prune --force --filter label=<B's label>
+#     Error response from daemon: no container with ID 3724a5df… found in database
+#                                                       ^^^^^^^^ that is A's container
+#
+# The job's own work has already passed at that point; only the runner's "Stop
+# containers" teardown fails — but it still reds the job. It needs real
+# concurrency to appear, so a single-slot pool never saw it. Observed live
+# 2026-07-14 on a 12-job matrix: 12/12 green once, then 10/12 and 8/12 RED.
+#
+# THE FIX
+# -------
+# Nothing may mutate podman's global container/network database while a prune is
+# scanning it. A readers-writer lock expresses exactly that, and nothing more:
+#
+#   * `network prune`                      -> EXCLUSIVE (-x): no mutation may overlap it.
+#   * `create` / `rm` / other `network` ops -> SHARED    (-s): they may run concurrently
+#                                             with each other (they never raced), but
+#                                             never during a prune.
+#   * everything else (pull, ps, start, exec, inspect, logs, …) -> UNLOCKED.
+#
+# So the SLOW operations — image pull, container start, and every `docker exec`
+# that runs the actual job steps — stay fully parallel across slots. Only the
+# sub-second prune is serialized against removals, so the parallelism this whole
+# runner pool exists for is preserved.
+#
+# This is a workaround for a podman-side race, held here (rather than by
+# serializing the container hooks wholesale) because it is the narrowest place
+# that fixes it: the hooks would serialize container SETUP and TEARDOWN entirely,
+# putting a multi-minute serial floor under a 60-job matrix.
+set -uo pipefail
+
+# Both overridable so dockershim-exit-tests.sh can drive the lock discipline
+# against a fake docker without a podman on the box. Defaults are the live paths.
+REAL_DOCKER="${CI_RUNNER_REAL_DOCKER:-/usr/bin/docker}"
+# ci-runner-owned tmpfs; flock creates the file if absent.
+LOCK="${CI_RUNNER_PODMAN_LOCK:-${XDG_RUNTIME_DIR:-/run/user/1001}/ci-runner-podman-db.lock}"
+
+sub="${1:-}"
+sub2="${2:-}"
+
+if [ "$sub" = "network" ] && [ "$sub2" = "prune" ]; then
+  exec /usr/bin/flock -x "$LOCK" "$REAL_DOCKER" "$@"
+fi
+
+case "$sub" in
+  create | rm | network)
+    exec /usr/bin/flock -s "$LOCK" "$REAL_DOCKER" "$@"
+    ;;
+esac
+
+exec "$REAL_DOCKER" "$@"

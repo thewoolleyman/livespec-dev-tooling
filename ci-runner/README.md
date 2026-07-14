@@ -21,6 +21,8 @@ tests are specified in the **livespec** repo at
 | `isolation-exit-tests.sh` | The full 11-test isolation exit suite, runnable + re-runnable against the live host (throwaway containers only). Exit 0 iff every non-skipped test passes. |
 | `sanitize-hook.js` | `ACTIONS_RUNNER_CONTAINER_HOOKS` shim: strips the host docker socket and host-namespace/privilege escalations from container create-options before delegating to the real container hook. |
 | `containers.conf` | `ci-runner`'s rootless podman defaults: private netns + public DNS (host-loopback services stay unreachable from the job container). |
+| `dockershim/docker` | Serialization shim in front of the real `docker` CLI (first on the runner agent's `PATH`). Every slot shares one rootless podman, and podman's `network prune` scans the **global** container database, so one job's prune dies on a container another job is removing. The shim readers-writer-locks prune against removal and passes everything else through unlocked. **Required for more than one slot** — without it a 12-job matrix reds 8–10 of 12 in teardown. |
+| `dockershim/dockershim-exit-tests.sh` | 11 behavioral exit tests for that lock discipline (which calls block on a held lock, which do not), against a fake docker — no podman or runner needed. |
 | `supervisor/` | The ephemeral JIT-runner supervisor (systemd units, polkit bridge, mint/launch scripts) + its README. |
 
 ## Nature
