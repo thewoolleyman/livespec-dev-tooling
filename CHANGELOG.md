@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.46.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.46.1...v0.46.2) (2026-07-14)
+
+
+### Bug Fixes
+
+* **ci-runner:** give the ephemeral gate runner an ephemeral workspace ([eb26595](https://github.com/thewoolleyman/livespec-dev-tooling/commit/eb26595419832b58204147444aa3141b4ec07ee6))
+
 ## [0.46.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.46.0...v0.46.1) (2026-07-13)
 
 
