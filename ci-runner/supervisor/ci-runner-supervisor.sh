@@ -14,18 +14,42 @@
 #   4. relaunch the slot.
 # The App key never crosses to ci-runner or the job container.
 #
-# Env (github-ci-runners 1Password environment, supervisor-only):
+# Secrets (github-ci-runners 1Password environment, supervisor-only) arrive in the
+# env because the WRAPPER injects them:
 #   GITHUB_APP_ID_CI_RUNNER, GITHUB_APP_INSTALLATION_ID_CI_RUNNER,
 #   GITHUB_PRIVATE_KEY_CI_RUNNER (real-newline PEM).
-# Config: CI_RUNNER_REPOS (space-separated owner/repo), CI_RUNNER_SLOTS_PER_REPO,
-#   CI_RUNNER_LABELS (default self-hosted,local-ci), CI_RUNNER_WORK.
+#
+# CONFIG ARRIVES AS ARGUMENTS, NOT ENVIRONMENT — this is load-bearing.
+# The credential wrapper this script runs behind scrubs the environment (`env -i`),
+# so a systemd `Environment=CI_RUNNER_SLOTS_PER_REPO=18` in the unit NEVER reaches
+# this process: the wrapper wipes it and the script silently falls back to its
+# default. That is exactly what happened (2026-07-14) — the unit had carried
+# Environment= lines since Phase 0 and every one of them was being discarded. It
+# went unnoticed only because the repo/label defaults happened to equal the unit's
+# values; the slot count did NOT, so the pool stayed stuck at ONE runner while the
+# unit claimed 18. Arguments survive the scrub (they are "$@"); environment does not.
+#
+# Usage: ci-runner-supervisor.sh [--repos "<owner/repo ...>"] [--slots N]
+#                                [--labels a,b] [--work DIR] [--mint PATH]
 set -euo pipefail
 
-REPOS="${CI_RUNNER_REPOS:-thewoolleyman/livespec}"
-SLOTS_PER_REPO="${CI_RUNNER_SLOTS_PER_REPO:-1}"
-LABELS_CSV="${CI_RUNNER_LABELS:-self-hosted,local-ci}"
-WORK_FOLDER="${CI_RUNNER_WORK:-/home/ci-runner/_work}"
-MINT="${CI_RUNNER_MINT:-/usr/local/lib/ci-runner/mint-jitconfig.sh}"
+REPOS="thewoolleyman/livespec"
+SLOTS_PER_REPO=1
+LABELS_CSV="self-hosted,local-ci"
+WORK_FOLDER="/home/ci-runner/_work"
+MINT="/usr/local/lib/ci-runner/mint-jitconfig.sh"
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --repos)  REPOS="$2"; shift 2;;
+    --slots)  SLOTS_PER_REPO="$2"; shift 2;;
+    --labels) LABELS_CSV="$2"; shift 2;;
+    --work)   WORK_FOLDER="$2"; shift 2;;
+    --mint)   MINT="$2"; shift 2;;
+    *) echo "ci-runner-supervisor: unknown argument: $1" >&2; exit 2;;
+  esac
+done
+printf 'ci-runner-supervisor: repos=[%s] slots=%s labels=%s\n' "$REPOS" "$SLOTS_PER_REPO" "$LABELS_CSV"
 JIT_DIR=/run/ci-runner                 # tmpfs, ci-runner-readable one-shot handoff
 
 : "${GITHUB_APP_ID_CI_RUNNER:?}"; : "${GITHUB_APP_INSTALLATION_ID_CI_RUNNER:?}"
@@ -35,22 +59,32 @@ JIT_DIR=/run/ci-runner                 # tmpfs, ci-runner-readable one-shot hand
 labels_json="$(printf '%s' "$LABELS_CSV" | jq -R 'split(",")')"
 
 run_one() {
-  local repo="$1" slot="$2" name jit unit jf reposlug
+  local repo="$1" slot="$2" name jit unit jf reposlug inst work
   reposlug="${repo//\//-}"
-  name="ci-${reposlug}-${slot}-$$-${RANDOM}"
+  # TWO DISTINCT IDENTIFIERS, deliberately:
+  #   inst — STABLE per (repo, slot). It names the systemd unit instance AND the
+  #          runner's own directory, which must be per-runner: the Actions runner
+  #          materializes its JIT config to .runner/.credentials in its root dir,
+  #          so N runners sharing one dir overwrite each other's session and loop
+  #          on "√ Connected to GitHub" forever while jobs stall queued.
+  #   name — UNIQUE per mint. It is the GitHub-side runner name inside the JIT
+  #          config; each ephemeral runner is a fresh registration.
+  inst="${reposlug}-${slot}"
+  name="ci-${inst}-$$-${RANDOM}"
+  work="/home/ci-runner/runners/${inst}/_work"
   jit="$(APP_ID="$GITHUB_APP_ID_CI_RUNNER" \
         INSTALLATION_ID="$GITHUB_APP_INSTALLATION_ID_CI_RUNNER" \
         APP_KEY_PEM="$GITHUB_PRIVATE_KEY_CI_RUNNER" \
-        REPO="$repo" RUNNER_NAME="$name" LABELS="$labels_json" WORK_FOLDER="$WORK_FOLDER" \
+        REPO="$repo" RUNNER_NAME="$name" LABELS="$labels_json" WORK_FOLDER="$work" \
         "$MINT")"
   # JIT_DIR is the supervisor unit's RuntimeDirectory (0700 ci-sup). The runner
   # unit's LoadCredential= reads the file as root and stages it into the runner's
   # $CREDENTIALS_DIRECTORY (ci-runner-only) — so no cross-user chown is needed and
   # ci-runner never has raw access to the JIT file here.
   mkdir -p "$JIT_DIR"
-  jf="$JIT_DIR/${name}.jit"
+  jf="$JIT_DIR/${inst}.jit"
   ( umask 0177; printf '%s' "$jit" > "$jf" )
-  unit="runner@${name}.service"
+  unit="runner@${inst}.service"
   systemctl start "$unit"                 # polkit-granted for runner@*.service only
   while systemctl is-active --quiet "$unit"; do sleep 5; done
   rm -f "$jf"

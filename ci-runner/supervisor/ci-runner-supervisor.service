@@ -13,22 +13,34 @@ Wants=network-online.target
 Type=simple
 User=ci-sup
 Group=ci-sup
-# The 1Password CLI needs a writable HOME of its own.
+# The 1Password CLI needs a writable HOME of its own. (The wrapper re-derives HOME
+# for the invoker anyway; this is belt-and-braces for the pre-wrapper stage.)
 Environment=HOME=/var/lib/ci-sup
-# The runner pool this supervisor maintains. Personal accounts only support
-# repo-level runners, so pools are per-repo.
-Environment=CI_RUNNER_REPOS=thewoolleyman/livespec
-Environment=CI_RUNNER_SLOTS_PER_REPO=1
-Environment=CI_RUNNER_LABELS=self-hosted,local-ci
 # ci-sup is a supplementary member of ci-runner only if a shared read is needed;
 # the JIT handoff uses LoadCredential (root), so no group sharing is required.
 # /run/ci-runner is this unit's private runtime dir (0700 ci-sup); root (the runner
 # unit's LoadCredential) can still read the staged JIT files.
 RuntimeDirectory=ci-runner
 RuntimeDirectoryMode=0700
-# App key + config from the github-ci-runners 1Password environment (dedicated
-# wrapper the maintainer provisions, analogous to with-livespec-env.sh).
-ExecStart=/usr/local/bin/with-github-ci-runners-env.sh -- /usr/local/lib/ci-runner/ci-runner-supervisor.sh
+#
+# CONFIG IS PASSED AS ARGUMENTS, NEVER AS Environment= — load-bearing.
+# The App key + secrets come from the github-ci-runners 1Password environment via
+# the wrapper below, and that wrapper SCRUBS the environment (`env -i`). So any
+# `Environment=CI_RUNNER_*` set here would be silently DISCARDED before the script
+# ever sees it. This unit used to carry exactly such lines, and every one of them
+# was being thrown away (2026-07-14): the repo/label values happened to match the
+# script's own defaults so nothing looked wrong, but the slot count did not — the
+# pool sat at ONE runner while this file claimed 18. Arguments survive the scrub.
+#
+# --slots 18 (one per core): livespec's CI is a per-target MATRIX (~60 jobs) and each
+# ephemeral runner takes exactly ONE job, so the slot count IS the CI parallelism —
+# at 1 slot the whole matrix serializes through a single runner. The matrix is
+# deliberately KEPT (free per-check failure isolation, individual PR status checks,
+# granular required-checks); the concurrency knob is the slot count, NOT collapsing
+# the matrix. The full matrix is only ~591 CPU-seconds/run, so 18 cores match
+# GitHub's wall-clock. See livespec plan/fabro-ci-image-factoring/handoff.md
+# §"Additional research".
+ExecStart=/usr/local/bin/with-github-ci-runners-env.sh -- /usr/local/lib/ci-runner/ci-runner-supervisor.sh --repos thewoolleyman/livespec --slots 18 --labels self-hosted,local-ci
 Restart=always
 RestartSec=10
 # Hardening — the supervisor holds the most powerful secret, so lock down what can

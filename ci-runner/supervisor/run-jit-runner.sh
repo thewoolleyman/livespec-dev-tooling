@@ -5,4 +5,6 @@
 # path the job container can reach (the sanitize-hook mounts only _work).
 set -euo pipefail
 jit="$(cat "${CREDENTIALS_DIRECTORY}/jit")"
-exec /home/ci-runner/actions-runner/run.sh --jitconfig "$jit"
+# Run from THIS instance's own directory (the unit's WorkingDirectory), never the
+# shared install — concurrent runners must not share a runner root. See runner@.service.
+exec ./run.sh --jitconfig "$jit"
