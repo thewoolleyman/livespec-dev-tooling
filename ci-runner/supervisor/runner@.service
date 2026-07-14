@@ -22,8 +22,11 @@ Group=ci-runner
 # directory: the runner materializes its JIT config to .runner/.credentials in its
 # root, so a shared dir makes N runners clobber each other's session (endless
 # "√ Connected to GitHub" reconnects, GitHub reporting them offline, jobs stuck
-# queued). bin/ and externals/ inside are symlinks to the one shared install, so
-# this costs no meaningful disk.
+# queued). bin/ and externals/ inside are HARD-LINKED copies of the one shared
+# install (cp -al) — real directories, so Runner.Listener resolves THIS root, yet
+# sharing inodes, so N instances cost near-zero disk. They must NOT be symlinks:
+# Runner.Listener derives its root from its own executable path, so a symlinked
+# bin/ sends it straight back to the shared install and the collision survives.
 WorkingDirectory=/home/ci-runner/runners/%i
 # Each job starts on a pristine _work tree (the runner is ephemeral; its workspace
 # should be too). Runs as root via the '+' prefix so nothing a job left behind can
@@ -32,6 +35,12 @@ ExecStartPre=+/usr/bin/rm -rf /home/ci-runner/runners/%i/_work
 LoadCredential=jit:/run/ci-runner/%i.jit
 Environment=XDG_RUNTIME_DIR=/run/user/1001
 Environment=DOCKER_HOST=unix:///run/user/1001/podman/podman.sock
+# The container hooks resolve `docker` from PATH. Put our serialization shim in
+# FRONT of the real CLI: every slot shares one rootless podman, and podman's
+# `network prune` scans the GLOBAL container DB, so one job's prune fails when
+# another job removes a container underneath it. The shim readers-writer-locks
+# exactly those calls and nothing else. See ci-runner/dockershim/docker.
+Environment=PATH=/usr/local/lib/ci-runner/dockershim:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Environment=ACTIONS_RUNNER_CONTAINER_HOOKS=/home/ci-runner/actions-runner/container-hooks/sanitize-hook.js
 ExecStart=/usr/local/lib/ci-runner/run-jit-runner.sh
 # One job then gone — the supervisor owns the lifecycle; never auto-restart.

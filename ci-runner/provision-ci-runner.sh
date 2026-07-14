@@ -138,4 +138,20 @@ done
 EOF
 printf 'provisioned %s instance dirs per repo-slug under %s\n' "$SLOTS" "$INSTANCES_ROOT"
 
+# ---------------------------------------------------------------------------
+log "7. docker serialization shim (podman network-prune race — REQUIRED for >1 slot)"
+# Every slot shares ONE rootless podman. `podman network prune` walks the GLOBAL
+# container DB to find in-use networks (the label filter only narrows what it
+# DELETES), so it fails when a CONCURRENT job removes a container mid-scan:
+#   "Error response from daemon: no container with ID <other job's id> found in database"
+# The job's work has already passed; only the runner's "Stop containers" teardown
+# fails — but that still reds the job. Invisible at one slot; at 12 concurrent it
+# red 8-10 of 12. runner@.service puts this dir FIRST on the agent's PATH, so the
+# container hooks resolve THIS `docker`; it readers-writer-locks prune against
+# removal and passes everything else (pull/start/exec) straight through unlocked.
+mkdir -p /usr/local/lib/ci-runner/dockershim
+cp -f "$(dirname "$0")/dockershim/docker" /usr/local/lib/ci-runner/dockershim/docker
+chown root:root /usr/local/lib/ci-runner/dockershim/docker
+chmod 0755 /usr/local/lib/ci-runner/dockershim/docker
+
 log "DONE. Register the runners via the supervisor/JIT step, then run the 11 isolation exit tests."
