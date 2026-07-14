@@ -51,6 +51,13 @@ FROM buildpack-deps:noble
 # gated by a live Codex-provider factory run before the bump may merge.
 # See livespec-dev-tooling/SPECIFICATION/contracts.md §"codex-acp factory
 # gate" and tracker bd-ib-ss7rkr.
+#
+# WHERE THAT GATE RUNS: on an ON-DEMAND PRIVILEGED runner (ci-runner/
+# gate-runner/), not the contained CI runner — the golden master needs
+# Docker, the host Codex credential, and the operator's secrets, all of
+# which the CI containment denies. No privileged runner idles: one
+# single-use runner is minted only for a queued gate-workflow run on a
+# write-access-gated event, so a bump PR (and nothing else) can reach it.
 # ---------------------------------------------------------------
 ARG MISE_VERSION=v2026.2.7
 ARG JUST_VERSION=1.36.0
