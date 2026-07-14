@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.46.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.46.3...v0.46.4) (2026-07-14)
+
+
+### Bug Fixes
+
+* **cross-repo:** reconcile the consumer ci.yml canonical matrix in the pin bump ([7dc0d9b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7dc0d9b7477e1be443764ba61c2123905231e0e8))
+
 ## [0.46.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.46.2...v0.46.3) (2026-07-14)
 
 
