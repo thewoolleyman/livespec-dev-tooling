@@ -304,6 +304,15 @@ runs:
         done
         echo "::notice::refreshing uv.lock for: ${pkgs//$'\n'/ }"
         uv lock "${refresh_args[@]}"
+        # Re-SYNC the consumer's venv against the just-relocked pin. The
+        # calling reusable workflow syncs BEFORE the rewrite, so without
+        # this the venv still holds the PRE-bump livespec-dev-tooling for
+        # the rest of this job — and every step below that resolves
+        # canonical data or runs a `just` recipe out of the consumer's own
+        # environment (the canonical-slug capture, the canonical-slugs
+        # projection re-stamp) would read the OLD version's answer while
+        # the committed pin says the new one.
+        uv sync --all-groups
 
     - name: Reconcile canonical check wiring
       shell: bash
@@ -326,12 +335,74 @@ runs:
         # duplicate that breaks the consumer's `just` parse. The module
         # reads the justfile in cwd, the canonical set from $CANONICAL_JSON,
         # and emits the same `::notice::` annotations this step always did.
+        #
+        # TOOL vs DATA — the distinction that keeps this reconcile honest.
+        # The canonical slug set is a FILESYSTEM WALK of whatever
+        # livespec_dev_tooling.checks package is RUNNING. The support
+        # checkout .livespec-dev-tooling/ is this repo at MASTER (the
+        # calling workflow checks it out with no `ref:`), which is ahead of
+        # every consumer's pin — so resolving the canonical DATA there
+        # injected slugs the consumer's PINNED aggregate-completeness gate
+        # does not recognize, landing them interleaved inside its canonical
+        # block and reddening the bump PR by construction
+        # (`out_of_order_canonical_slugs`). The canonical DATA therefore
+        # comes from the CONSUMER's own environment — plain `uv run`, no
+        # --project — so the reconcile and the gate derive the set from the
+        # SAME version and agree BY CONSTRUCTION at whatever the consumer
+        # pins. The reconcile MODULE below is the TOOL, not the data: it is
+        # deliberately still run from the master support checkout, because a
+        # consumer's pinned release predates the fix and would not carry it.
+        #
+        # The aggregate-slug guard makes the consumer-env resolution safe:
+        # a repo that wires check-aggregate-completeness runs
+        # `uv run python -m livespec_dev_tooling.checks.aggregate_completeness`
+        # as its own recipe, so livespec_dev_tooling is importable from its
+        # environment by construction. A repo that does not is skipped here
+        # exactly as the module itself would skip it.
         if [[ ! -f justfile ]]; then
           echo "::notice::no justfile found; skipping canonical check wiring reconcile"
           exit 0
         fi
-        canonical_json=$(uv run --project .livespec-dev-tooling python -m livespec_dev_tooling.canonical_checks --json)
+        if ! grep -q 'check-aggregate-completeness' justfile; then
+          echo "::notice::consumer does not carry check-aggregate-completeness; skipping canonical check wiring reconcile"
+          exit 0
+        fi
+        canonical_json=$(uv run python -m livespec_dev_tooling.canonical_checks --json)
         CANONICAL_JSON="$canonical_json" uv run --project .livespec-dev-tooling python -m livespec_dev_tooling.cross_repo.justfile_canonical_reconcile
+
+    - name: Reconcile canonical CI matrix wiring
+      shell: bash
+      run: |
+        set -euo pipefail
+        # The ci.yml half of the reconcile above. check-ci-matrix-completeness
+        # asserts the canonical slugs CI RUNS are a SUPERSET of the canonical
+        # slugs the justfile `check:` aggregate WIRES. The step above just grew
+        # that aggregate — which is precisely what makes the consumer's
+        # hand-maintained strategy.matrix.target list short the new entries.
+        # Reconciling the justfile ALONE therefore traded one guaranteed-red
+        # bump PR for another, on a different check with the same root cause.
+        #
+        # Same TOOL-vs-DATA split as the step above: the canonical set is DATA
+        # captured from the CONSUMER's own environment (plain `uv run`), while
+        # the reconcile MODULE is the TOOL, run from the master support checkout
+        # because the consumer's pinned release predates it. The module inserts
+        # each newly-adopted canonical slug, in alphabetical position, into the
+        # matrix target list that already carries check-aggregate-completeness,
+        # subtracting the world-gate checks that ci_matrix_completeness itself
+        # subtracts and skipping any slug CI already runs elsewhere. If a
+        # consumer has slugs to adopt but NO such matrix, the module emits an
+        # `::error::` naming the exact lines to add and exits non-zero — failing
+        # this job rather than opening a PR that is red by construction.
+        if [[ ! -f justfile ]]; then
+          echo "::notice::no justfile found; skipping canonical CI matrix reconcile"
+          exit 0
+        fi
+        if ! grep -q 'check-aggregate-completeness' justfile; then
+          echo "::notice::consumer does not carry check-aggregate-completeness; skipping canonical CI matrix reconcile"
+          exit 0
+        fi
+        canonical_json=$(uv run python -m livespec_dev_tooling.canonical_checks --json)
+        CANONICAL_JSON="$canonical_json" uv run --project .livespec-dev-tooling python -m livespec_dev_tooling.cross_repo.ci_yaml_canonical_reconcile
 
     - name: Re-stamp canonical-slugs projection
       shell: bash

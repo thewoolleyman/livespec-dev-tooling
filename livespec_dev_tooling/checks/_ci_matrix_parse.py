@@ -26,9 +26,14 @@ from typing import TypedDict, cast
 
 from livespec_dev_tooling.canonical_checks import canonical_check_slugs
 
-# Names in `__all__` mark this private sibling's public surface to its sole
-# importer, `ci_matrix_completeness.py`, so pyright's per-file analysis does
-# not flag them unused across the package boundary.
+# Names in `__all__` mark this private sibling's public surface to its two
+# importers — `ci_matrix_completeness.py` (the gate) and
+# `cross_repo/ci_yaml_canonical_reconcile.py` (the bump-time reconcile that
+# WRITES what the gate then demands) — so pyright's per-file analysis does not
+# flag them unused across the package boundary. The reconcile deliberately
+# shares these parsers rather than duplicating them: the matrix it writes and
+# the matrix the gate requires are then derived from ONE parser and cannot
+# drift into a red-by-construction bump PR.
 __all__: list[str] = [
     "CiJob",
     "extract_check_recipe_body",
