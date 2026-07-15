@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.48.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.48.0...v0.48.1) (2026-07-15)
+
+
+### Bug Fixes
+
+* routing check must see triggers under a quoted "on": key ([ca57678](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ca5767820ab339b57fa32de4e41cccca3a54418d))
+
 ## [0.48.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.47.0...v0.48.0) (2026-07-15)
 
 
