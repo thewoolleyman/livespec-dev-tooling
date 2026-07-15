@@ -59,11 +59,39 @@ timeout 6 bash -c "exec 3<>/dev/tcp/1.1.1.1/443" 2>/dev/null || echo "NO-INTERNE
 exit $f' 2>/dev/null && pass "all host-loopback denied" || fail "a host-loopback route reachable"
 
 echo "== T9: static workflow audit — no self-hosted job on a forbidden trigger =="
+# A workflow is a hole iff it BOTH uses a self-hosted runner AND can be
+# triggered by a forbidden event (fork-reachable / base-privileged triggers
+# that must never reach the unprivileged runner — routing design
+# §"Trusted-event routing"). The forbidden set deliberately EXCLUDES the two
+# allowed events (`push` to master, same-repo `pull_request`); the same-repo
+# predicate + the all_external_contributors approval gate carry the fork case.
+#
+# The prior check grepped the WHOLE FILE as flat text, so a COMMENT that names
+# a forbidden trigger false-failed a safe workflow — e.g. the shadow lane's
+# "# NEVER pull_request / merge_group / workflow_dispatch" doc line, which
+# DOCUMENTS the safety it was flagged for. YAML comments never carry real
+# config, so we strip them and test the actual top-level `on:` trigger block,
+# not prose. (Corrected 2026-07-15; a full YAML parser is deferred to the
+# Phase-3 fleet-wide CI check — see plan/fabro-ci-image-factoring/handoff.md.)
+FORBIDDEN='pull_request_target|workflow_run|issue_comment|repository_dispatch|merge_group|workflow_dispatch'
 bad=0
 for wf in "$WF"/*.yml "$WF"/*.yaml; do
   [ -f "$wf" ] || continue
-  if grep -qE 'self-hosted' "$wf" && grep -qE 'pull_request_target|workflow_run|issue_comment|repository_dispatch|merge_group|workflow_dispatch' "$wf"; then
-    echo "  suspect: $wf"; bad=1
+  # Strip full-line and trailing (` # ...`) comments so doc prose cannot match.
+  stripped=$(sed -E 's/[[:space:]]+#.*$//; /^[[:space:]]*#/d' "$wf")
+  # Only workflows that actually use a self-hosted runner are in scope.
+  echo "$stripped" | grep -qE 'self-hosted' || continue
+  # Extract the top-level `on:` block (block form, inline `[..]` list, or scalar)
+  # — a col-0 key line other than `on:` ends it — and test IT for forbidden events.
+  on_block=$(echo "$stripped" | awk '
+    /^[^[:space:]]/ {
+      if ($0 ~ /^([Oo][Nn]|"on"|'\''on'\''):/) { c=1; print; next } else { c=0 }
+    }
+    c { print }
+  ')
+  hit=$(echo "$on_block" | grep -oE "$FORBIDDEN" | sort -u | paste -sd, -)
+  if [ -n "$hit" ]; then
+    echo "  suspect: $wf — self-hosted + forbidden trigger(s): $hit"; bad=1
   fi
 done
 [ "$bad" = 0 ] && pass "no self-hosted job reachable from a forbidden trigger" || fail "self-hosted job on forbidden trigger"
