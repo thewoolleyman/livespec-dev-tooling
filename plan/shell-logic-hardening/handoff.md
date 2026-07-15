@@ -47,14 +47,19 @@ cross-references to this epic (never typed cross-tenant `depends_on`).
 
 ## Next action (one path)
 
-Run the status-read command above, then dispatch/implement the ready
+Run the status-read command above, then dispatch the ready
 `livespec-dev-tooling-9j8` children (`9j8.1` is the FIRST READY per the
 epic description; the epic notes it still needs grooming into final
 ready / dependency-layered slices — groom first if `bd show` reveals no
-ready child). Implementation of each child goes through the normal
-factory path (`/livespec-orchestrator-beads-fabro:implement <id>` in its
-own worktree, Red→Green, `just check` green, PR, merge, close the child
-in the ledger).
+ready child). Implementation of each child goes through the factory:
+dispatch it via the `drive` operation of the orchestrator plugin
+(`/livespec-orchestrator-beads-fabro:drive --action impl:<id>`) or let
+the host Dispatcher drain it once `ready`, then monitor the run to
+merged PR and child closure in the ledger. Do NOT implement children
+in-session — the in-session Red→Green `implement` driver is NOT the
+factory path; it is reserved for items explicitly recorded as
+factory-ineligible, for factory outages, or for explicit maintainer
+direction, with the reason recorded in the closure audit.
 
 ## Resume command
 
