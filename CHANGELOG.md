@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.48.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.47.0...v0.48.0) (2026-07-15)
+
+
+### Features
+
+* self-hosted-routing check — forbidden triggers must not reach a local-ci runner ([2121fcb](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2121fcb8995a80d63963939fcb57697627055776))
+
 ## [0.47.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.46.6...v0.47.0) (2026-07-15)
 
 
