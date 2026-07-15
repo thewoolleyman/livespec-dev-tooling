@@ -199,6 +199,7 @@ check:
         check-file-lloc
         check-fleet-marketplace-relative-sources
         check-global-writes
+        check-handoff-dispatch-routing
         check-heading-coverage
         check-keyword-only-args
         check-local-memory-drift-audit
@@ -570,6 +571,14 @@ check-fleet-marketplace-relative-sources:
 
 check-global-writes:
     uv run python -m livespec_dev_tooling.checks.global_writes
+
+# Handoff dispatch-routing lint — active plan-thread handoffs
+# (plan/*/handoff.md, excluding plan/archive/) MUST route implementation
+# through the factory dispatch route (the `drive` operation impl:<id> / the
+# Dispatcher drain), never the colon-qualified in-session-implement token.
+# Keeps the 2026-07-15 defective-handoff-wording incident from regenerating.
+check-handoff-dispatch-routing:
+    uv run python -m livespec_dev_tooling.checks.handoff_dispatch_routing
 
 check-heading-coverage:
     uv run python -m livespec_dev_tooling.checks.heading_coverage
