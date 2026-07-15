@@ -226,6 +226,7 @@ check:
         check-public-api-result-typed
         check-red-green-replay
         check-rop-pipeline-shape
+        check-self-hosted-routing
         check-skill-invocation-paths
         check-supervisor-discipline
         check-tests-mirror-pairing
@@ -738,6 +739,20 @@ check-red-green-replay *args:
 
 check-rop-pipeline-shape:
     uv run python -m livespec_dev_tooling.checks.rop_pipeline_shape
+
+# Self-hosted CI runner routing guard (security). Reading a repo's OWN
+# .github/workflows/*.yml|*.yaml, fails when any workflow whose `on:` set
+# contains a FORBIDDEN trigger (pull_request_target, workflow_run,
+# issue_comment, repository_dispatch, merge_group, workflow_dispatch) also
+# has a job whose `runs-on` references the unprivileged `local-ci`
+# self-hosted label — the code-execution hole a fork-reachable/privileged
+# non-PR event opens on the contained CI lane. Keyed on `local-ci`
+# specifically (not generic self-hosted), so the privileged
+# `livespec-orchestrator` gate runner is out of scope. Fail-by-default (no
+# severity lever): this is a security guard, not a style check. A no-op for
+# every repo with no local-ci job.
+check-self-hosted-routing:
+    uv run python -m livespec_dev_tooling.checks.self_hosted_routing
 
 check-skill-invocation-paths:
     uv run python -m livespec_dev_tooling.checks.skill_invocation_paths

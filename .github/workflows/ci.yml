@@ -276,6 +276,7 @@ jobs:
           - check-no-shadow-ledger-body-identical
           - check-no-todo-registry
           - check-plugin-resolution
+          - check-self-hosted-routing
           - check-skill-invocation-paths
           - check-vendor-manifest
     steps:
