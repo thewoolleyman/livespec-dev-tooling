@@ -189,6 +189,34 @@ def test_scalar_forbidden_trigger_to_local_ci_fails(
     assert findings[0].get("forbidden_triggers") == ["repository_dispatch"]
 
 
+def test_quoted_on_key_forbidden_trigger_to_local_ci_fails(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A quoted `"on":` key + `workflow_dispatch` + a local-ci job → exit 1.
+
+    YAML 1.1 reads a bare `on` as the boolean `true`, so authors legitimately
+    quote the key as `"on":` (or `'on':`). The guard must see the trigger block
+    under a quoted key exactly as it does under the bare key — else a forbidden
+    trigger hides behind the quoting. The shell backstop (T9) already handles
+    the quoted forms; this brings the static check to parity.
+    """
+    body = (
+        "name: bad-quoted\n"
+        '"on":\n'
+        "  workflow_dispatch:\n"
+        "jobs:\n"
+        "  build:\n"
+        "    runs-on: [self-hosted, local-ci]\n"
+        "    steps:\n"
+        "      - run: echo hi\n"
+    )
+    _ = _write_workflow(tmp_path=tmp_path, name="quoted.yml", body=body)
+    rc, combined = _run_main(tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert rc == 1, f"workflow_dispatch under a quoted on-key must fail; combined={combined!r}"
+    findings = _findings(combined=combined)
+    assert findings[0].get("forbidden_triggers") == ["workflow_dispatch"]
+
+
 # --- The privileged second tier must NOT be flagged (keyed on local-ci) ------
 
 
@@ -381,6 +409,18 @@ def test_triggers_block_mapping_at_eof() -> None:
 
 def test_triggers_absent_on_key_is_empty() -> None:
     assert workflow_triggers(stripped="name: x\njobs:\n  a:\n") == frozenset()
+
+
+def test_triggers_double_quoted_on_key_block_mapping() -> None:
+    """A `"on":` (double-quoted) block key resolves its trigger names."""
+    assert workflow_triggers(stripped='"on":\n  push:\n  workflow_dispatch:\n') == frozenset(
+        {"push", "workflow_dispatch"}
+    )
+
+
+def test_triggers_single_quoted_on_key_scalar() -> None:
+    """A `'on':` (single-quoted) scalar resolves its single trigger."""
+    assert workflow_triggers(stripped="'on': push") == frozenset({"push"})
 
 
 # --- Pure parser unit coverage: runs_on_values ------------------------------

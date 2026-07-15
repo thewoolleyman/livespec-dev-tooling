@@ -41,10 +41,13 @@ __all__: list[str] = [
 
 
 # `runs-on:` at any indent; the value is the inline remainder (may be empty for
-# a block-list form). `on:` only at column 0 (the top-level trigger key). A
+# a block-list form). `on:` only at column 0 (the top-level trigger key),
+# optionally wrapped in matching quotes (`"on":` / `'on':`) and case-insensitive
+# — YAML 1.1 reads a bare `on` as the boolean `true`, so authors legitimately
+# quote the key, and the guard must read the triggers under it either way. A
 # block-mapping trigger key is an indented `name:` line.
 _RUNS_ON_LINE = re.compile(r"^(?P<indent>[ \t]*)runs-on:(?P<value>.*)$")
-_TOP_ON_LINE = re.compile(r"^on:(?P<value>.*)$")
+_TOP_ON_LINE = re.compile(r"^(?P<q>[\"']?)on(?P=q):(?P<value>.*)$", re.IGNORECASE)
 _BLOCK_KEY_LINE = re.compile(r"^(?P<indent>[ \t]+)(?P<key>[A-Za-z_][\w-]*)\s*:")
 
 
