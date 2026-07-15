@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.47.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.46.6...v0.47.0) (2026-07-15)
+
+
+### Features
+
+* handoff dispatch-routing lint — active plan handoffs must route implementation through the factory (work-item livespec-dev-tooling-64x6mb) ([734e92c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/734e92c563ec5b423f26828f1f1bb3ddd77c16e5))
+
 ## [0.46.6](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.46.5...v0.46.6) (2026-07-15)
 
 
