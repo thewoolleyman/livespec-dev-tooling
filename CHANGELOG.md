@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.48.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.48.1...v0.48.2) (2026-07-16)
+
+
+### Bug Fixes
+
+* make ROP sweep checks config-driven ([3de4223](https://github.com/thewoolleyman/livespec-dev-tooling/commit/3de4223dc105203d5dd05b6b985ca7e400bdc180))
+
 ## [0.48.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.48.0...v0.48.1) (2026-07-15)
 
 
