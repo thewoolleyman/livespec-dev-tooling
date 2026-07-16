@@ -66,7 +66,7 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402 — vendor-path-aware import after sys.path insert.
 
-from livespec_dev_tooling.config import load_mutation_staging_dir  # noqa: E402
+from livespec_dev_tooling.config import load_config, load_mutation_staging_dir  # noqa: E402
 
 __all__: list[str] = [
     "_baseline_is_placeholder",
@@ -118,6 +118,31 @@ def _resolve_staging_cwd(*, repo_root: Path) -> Path:
     if staging is None:
         return repo_root
     return repo_root / staging
+
+
+def _noops_without_pure_trees(*, repo_root: Path, log: structlog.stdlib.BoundLogger) -> bool:
+    """Return True after logging when the consumer has no mutation-applicable pure layer."""
+    config = load_config(repo_root=repo_root)
+    if config.pure_trees:
+        return False
+    log.info(
+        "role key absent — check no-ops",
+        role="pure_trees",
+        run_env_var=_RUN_ENV_VAR,
+    )
+    return True
+
+
+def _configure_logger() -> structlog.stdlib.BoundLogger:
+    structlog.configure(
+        processors=[
+            structlog.processors.add_log_level,
+            structlog.processors.TimeStamper(fmt="iso", utc=True),
+            structlog.processors.JSONRenderer(),
+        ],
+        logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
+    )
+    return structlog.get_logger("check_mutation")
 
 
 # mutmut 3.x verdict vocabulary, mirrored from mutmut's own
@@ -206,15 +231,7 @@ def _update_baseline(*, baseline_path: Path, killed: int, total: int) -> None:
 
 
 def main() -> int:
-    structlog.configure(
-        processors=[
-            structlog.processors.add_log_level,
-            structlog.processors.TimeStamper(fmt="iso", utc=True),
-            structlog.processors.JSONRenderer(),
-        ],
-        logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
-    )
-    log = structlog.get_logger("check_mutation")
+    log = _configure_logger()
     if not os.environ.get(_RUN_ENV_VAR):
         log.info(
             "skipped (slow; runs in CI when LIVESPEC_RUN_MUTATION=true)",
@@ -222,6 +239,8 @@ def main() -> int:
         )
         return 0
     repo_root = Path.cwd()
+    if _noops_without_pure_trees(repo_root=repo_root, log=log):
+        return 0
     # The ratchet file is version-controlled at the repo root; the staging
     # cwd (nested-layout import-root) only relocates WHERE mutmut runs, never
     # where the baseline lives.

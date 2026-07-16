@@ -84,6 +84,48 @@ def test_tests_mirror_pairing_accepts_paired_source_and_test(*, tmp_path: Path) 
     assert result.returncode == 0
 
 
+def test_tests_mirror_pairing_derives_pairing_from_source_tree_prefix(
+    *,
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        "[tool.livespec_dev_tooling]\n"
+        'source_tree_prefixes = ["pkg/"]\n'
+        'tests_tree_prefix = "tests/"\n',
+        encoding="utf-8",
+    )
+    _write_py(
+        tmp_path=tmp_path,
+        rel_path="pkg/foo.py",
+        body="from __future__ import annotations\n__all__: list[str] = []\n\n"
+        "def do_thing() -> int:\n    return 0\n",
+    )
+
+    result = _run_check(cwd=tmp_path)
+
+    assert result.returncode != 0
+    assert "tests/pkg/test_foo.py" in result.stdout + result.stderr
+
+
+def test_tests_mirror_pairing_skips_vendor_subtrees(*, tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        "[tool.livespec_dev_tooling]\n"
+        'source_tree_prefixes = ["pkg/"]\n'
+        'tests_tree_prefix = "tests/"\n',
+        encoding="utf-8",
+    )
+    _write_py(
+        tmp_path=tmp_path,
+        rel_path="pkg/_vendor/upstream.py",
+        body="from __future__ import annotations\n__all__: list[str] = []\n\n"
+        "def vendored() -> int:\n    return 0\n",
+    )
+
+    result = _run_check(cwd=tmp_path)
+
+    assert result.returncode == 0
+
+
 def test_tests_mirror_pairing_exempts_private_helper_module(*, tmp_path: Path) -> None:
     """A `_helper.py` private-helper module (not `__init__.py`) does NOT need a paired test."""
     _write_py(

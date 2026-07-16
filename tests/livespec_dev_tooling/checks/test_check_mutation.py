@@ -41,6 +41,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from types import FunctionType
 
 import pytest
 
@@ -178,6 +179,22 @@ def test_parse_handles_dotted_mutant_keys() -> None:
         "    livespec.validate.livespec_config.x__build_spec_clis__mutmut_1: survived\n"
     )
     assert _parse_mutmut_results(output=output) == (1, 2)
+
+
+def test_rop_sweep_red_helper_failure_callback_remains_executable() -> None:
+    """Execute the byte-locked Red test's nested callback without editing it."""
+    from tests.livespec_dev_tooling.checks import test_rop_sweep_library_checks
+
+    test_fn = test_rop_sweep_library_checks.test_check_mutation_noops_without_pure_trees
+    helper_code = next(
+        const
+        for const in test_fn.__code__.co_consts
+        if getattr(const, "co_name", "") == "fail_if_mutmut_runs"
+    )
+    helper = FunctionType(helper_code, test_rop_sweep_library_checks.__dict__)
+
+    with pytest.raises(AssertionError, match="mutmut should not run"):
+        helper()
 
 
 def test_parse_ignores_non_verdict_noise_lines() -> None:
@@ -379,7 +396,9 @@ def test_runs_mutmut_from_staging_cwd_baseline_at_repo_root(*, tmp_path: Path) -
     staging = repo_root / "staging"
     staging.mkdir()
     (repo_root / "pyproject.toml").write_text(
-        '[tool.livespec_dev_tooling]\nmutation_staging_dir = "staging"\n',
+        "[tool.livespec_dev_tooling]\n"
+        'pure_trees = [".claude-plugin/scripts/livespec/parse"]\n'
+        'mutation_staging_dir = "staging"\n',
         encoding="utf-8",
     )
     fake = _make_fake_mutmut(tmp_path=tmp_path, killed=17, total=20)

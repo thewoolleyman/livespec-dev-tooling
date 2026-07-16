@@ -39,14 +39,11 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling.config import MirrorPairing, load_config  # noqa: E402
+
 __all__: list[str] = []
 
 
-_SOURCE_TREES_TO_TESTS: dict[Path, Path] = {
-    Path(".claude-plugin") / "scripts" / "livespec": Path("tests") / "livespec",
-    Path(".claude-plugin") / "scripts" / "bin": Path("tests") / "bin",
-    Path("dev-tooling") / "checks": Path("tests") / "dev-tooling" / "checks",
-}
 _BOOTSTRAP_REL = Path(".claude-plugin") / "scripts" / "bin" / "_bootstrap.py"
 
 
@@ -81,7 +78,19 @@ def _is_exempt(*, source_path: Path, cwd: Path) -> bool:
 
 
 def _iter_python_files(*, root: Path) -> list[Path]:
-    return sorted(p for p in root.rglob("*.py") if p.is_file())
+    return sorted(p for p in root.rglob("*.py") if p.is_file() and "_vendor" not in p.parts)
+
+
+def _derived_pairings_from_prefixes(
+    *, source_tree_prefixes: tuple[str, ...], tests_tree_prefix: str
+) -> tuple[MirrorPairing, ...]:
+    return tuple(
+        MirrorPairing(
+            source_tree=Path(prefix.rstrip("/")),
+            test_tree=Path(tests_tree_prefix) / prefix.rstrip("/"),
+        )
+        for prefix in source_tree_prefixes
+    )
 
 
 def main() -> int:
@@ -95,8 +104,15 @@ def main() -> int:
     )
     log = structlog.get_logger("tests_mirror_pairing")
     cwd = Path.cwd()
+    config = load_config(repo_root=cwd)
+    pairings = config.mirror_pairings or _derived_pairings_from_prefixes(
+        source_tree_prefixes=config.source_tree_prefixes,
+        tests_tree_prefix=config.tests_tree_prefix,
+    )
     offenders: list[tuple[Path, Path]] = []
-    for source_tree_rel, tests_tree_rel in _SOURCE_TREES_TO_TESTS.items():
+    for pairing in pairings:
+        source_tree_rel = pairing.source_tree
+        tests_tree_rel = pairing.test_tree
         source_tree = cwd / source_tree_rel
         if not source_tree.is_dir():
             continue

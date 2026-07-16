@@ -144,6 +144,92 @@ def test_pbt_coverage_accepts_validate_test_with_given_decorator(*, tmp_path: Pa
     )
 
 
+def test_pbt_coverage_uses_first_matching_configured_mirror_pairing(
+    *,
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        "[tool.livespec_dev_tooling]\n"
+        'pure_trees = ["consumer_pkg/parse"]\n'
+        "mirror_pairings = [\n"
+        '  { source_tree = "other_pkg", test_tree = "tests/other_pkg" },\n'
+        '  { source_tree = "consumer_pkg", test_tree = "tests/consumer_pkg" },\n'
+        "]\n",
+        encoding="utf-8",
+    )
+    test_dir = tmp_path / "tests" / "consumer_pkg" / "parse"
+    test_dir.mkdir(parents=True)
+    (test_dir / "test_parser.py").write_text(
+        "from __future__ import annotations\n"
+        "__all__: list[str] = []\n"
+        "def test_parser() -> None:\n"
+        "    assert True\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(_PBT_COVERAGE)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "tests/consumer_pkg/parse/test_parser.py" in result.stdout + result.stderr
+
+
+def test_pbt_coverage_falls_back_when_no_mirror_pairing_matches(
+    *,
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        "[tool.livespec_dev_tooling]\n"
+        'pure_trees = ["consumer_pkg/parse"]\n'
+        'mirror_pairings = [{ source_tree = "other_pkg", test_tree = "tests/other_pkg" }]\n'
+        'tests_tree_prefix = "tests/"\n',
+        encoding="utf-8",
+    )
+    test_dir = tmp_path / "tests" / "consumer_pkg" / "parse"
+    test_dir.mkdir(parents=True)
+    (test_dir / "test_parser.py").write_text(
+        "from __future__ import annotations\n"
+        "__all__: list[str] = []\n"
+        "def test_parser() -> None:\n"
+        "    assert True\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(_PBT_COVERAGE)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "tests/consumer_pkg/parse/test_parser.py" in result.stdout + result.stderr
+
+
+def test_pbt_coverage_noops_without_configured_pure_trees(*, tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.livespec_dev_tooling]\nsource_trees = ["consumer_pkg"]\n',
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(_PBT_COVERAGE)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert "pure_trees" in result.stdout + result.stderr
+
+
 def test_pbt_coverage_accepts_empty_tree(*, tmp_path: Path) -> None:
     """An empty repo cwd passes (exit 0)."""
     result = subprocess.run(
