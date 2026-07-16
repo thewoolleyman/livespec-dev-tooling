@@ -35,13 +35,9 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling.config import Config, load_config  # noqa: E402
+
 __all__: list[str] = []
-
-
-_PURE_TEST_TREES = (
-    Path("tests") / "livespec" / "parse",
-    Path("tests") / "livespec" / "validate",
-)
 
 
 def _decorator_terminal_name(*, decorator: ast.expr) -> str:
@@ -61,6 +57,19 @@ def _module_has_given_decorated_test(*, source: str) -> bool:
     return False
 
 
+def _test_tree_for_pure_tree(*, pure_tree: Path, config: Config) -> Path:
+    for pairing in config.mirror_pairings:
+        if pure_tree.is_relative_to(pairing.source_tree):
+            return pairing.test_tree / pure_tree.relative_to(pairing.source_tree)
+    return Path(config.tests_tree_prefix) / pure_tree
+
+
+def _pure_test_trees(*, config: Config) -> tuple[Path, ...]:
+    return tuple(
+        _test_tree_for_pure_tree(pure_tree=tree, config=config) for tree in config.pure_trees
+    )
+
+
 def main() -> int:
     structlog.configure(
         processors=[
@@ -72,8 +81,13 @@ def main() -> int:
     )
     log = structlog.get_logger("pbt_coverage_pure_modules")
     cwd = Path.cwd()
+    config = load_config(repo_root=cwd)
+    pure_test_trees = _pure_test_trees(config=config)
+    if not pure_test_trees:
+        log.info("role key absent — check no-ops", role="pure_trees")
+        return 0
     offenders: list[Path] = []
-    for tree_rel in _PURE_TEST_TREES:
+    for tree_rel in pure_test_trees:
         root = cwd / tree_rel
         if not root.is_dir():
             continue

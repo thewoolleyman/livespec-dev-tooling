@@ -41,13 +41,16 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
-from livespec_dev_tooling.config import is_under_any_tree, resolve_check_universe  # noqa: E402
+from livespec_dev_tooling.config import (  # noqa: E402
+    is_under_any_tree,
+    load_config,
+    resolve_check_universe,
+)
 
 __all__: list[str] = []
 
 
 _PLUGIN_SCRIPTS_TREE = Path(".claude-plugin") / "scripts"
-_LIVESPEC_TREE = Path(".claude-plugin") / "scripts" / "livespec"
 _MAIN_GUARD_TEXTS = frozenset(
     {
         "__name__ == '__main__'",
@@ -78,6 +81,7 @@ def main() -> int:
     )
     log = structlog.get_logger("main_guard")
     root, universe = resolve_check_universe()
+    config = load_config(repo_root=root)
     legacy_offenders: list[tuple[Path, int]] = []
     newly_covered_offenders: list[tuple[Path, int]] = []
     for rel in universe:
@@ -91,7 +95,7 @@ def main() -> int:
             continue
         source = (root / rel).read_text(encoding="utf-8")
         for lineno in _find_main_guard_lines(source=source):
-            if is_under_any_tree(rel=rel, trees=(_LIVESPEC_TREE,)):
+            if is_under_any_tree(rel=rel, trees=config.source_trees):
                 legacy_offenders.append((rel, lineno))
             else:
                 newly_covered_offenders.append((rel, lineno))

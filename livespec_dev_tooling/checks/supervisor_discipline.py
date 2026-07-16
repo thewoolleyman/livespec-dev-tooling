@@ -40,10 +40,17 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling.config import (  # noqa: E402
+    BIN_WRAPPER_TREE,
+    is_under_any_tree,
+    load_config,
+    resolve_check_universe,
+)
+
 __all__: list[str] = []
 
 
-_LIVESPEC_TREE = Path(".claude-plugin") / "scripts" / "livespec"
+_PLUGIN_SCRIPTS_TREE = Path(".claude-plugin") / "scripts"
 
 
 def _find_termination_sites(*, source: str) -> list[tuple[int, str]]:
@@ -71,24 +78,43 @@ def main() -> int:
         logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
     )
     log = structlog.get_logger("supervisor_discipline")
-    cwd = Path.cwd()
-    livespec_root = cwd / _LIVESPEC_TREE
-    offenders: list[tuple[Path, int, str]] = []
-    if livespec_root.is_dir():
-        for py_file in sorted(livespec_root.rglob("*.py")):
-            source = py_file.read_text(encoding="utf-8")
-            for lineno, form in _find_termination_sites(source=source):
-                offenders.append((py_file.relative_to(cwd), lineno, form))
-    if offenders:
-        for path, lineno, form in offenders:
-            log.error(
-                "process termination outside `bin/` is banned",
-                file=str(path),
-                line=lineno,
-                form=form,
-            )
-        return 1
-    return 0
+    root, universe = resolve_check_universe()
+    if not universe:
+        log.info("no first-party Python to check")
+        return 0
+    config = load_config(repo_root=root)
+    legacy_offenders: list[tuple[Path, int, str]] = []
+    newly_covered_offenders: list[tuple[Path, int, str]] = []
+    for rel in universe:
+        if rel.is_relative_to(BIN_WRAPPER_TREE) or rel in config.supervisor_entry_files:
+            continue
+        source = (root / rel).read_text(encoding="utf-8")
+        for lineno, form in _find_termination_sites(source=source):
+            if form == "raise SystemExit" and not rel.is_relative_to(_PLUGIN_SCRIPTS_TREE):
+                continue
+            record = (rel, lineno, form)
+            if is_under_any_tree(rel=rel, trees=config.source_trees):
+                legacy_offenders.append(record)
+            else:
+                newly_covered_offenders.append(record)
+    for path, lineno, form in newly_covered_offenders:
+        log.warning(
+            "process termination outside `bin/` is banned — newly git-derived coverage; "
+            "Phase-0 WARN (hard-fails once this repo is flipped to the hard gate in Phase 2)",
+            file=str(path),
+            line=lineno,
+            form=form,
+            phase="0-warn",
+            newly_covered=True,
+        )
+    for path, lineno, form in legacy_offenders:
+        log.error(
+            "process termination outside `bin/` is banned",
+            file=str(path),
+            line=lineno,
+            form=form,
+        )
+    return 1 if legacy_offenders else 0
 
 
 if __name__ == "__main__":

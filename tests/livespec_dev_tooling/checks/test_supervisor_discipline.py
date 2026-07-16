@@ -22,6 +22,29 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 _SUPERVISOR_DISCIPLINE = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "supervisor_discipline.py"
 
 
+def _git(*, cwd: Path, args: list[str]) -> None:
+    _ = subprocess.run(
+        ["git", *args],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=True,
+        env={"HOME": str(cwd), "GIT_CONFIG_GLOBAL": "/dev/null", "PATH": "/usr/bin:/bin"},
+    )
+
+
+def _run_check(*, cwd: Path) -> subprocess.CompletedProcess[str]:
+    _git(cwd=cwd, args=["init", "-q"])
+    _git(cwd=cwd, args=["add", "-A"])
+    return subprocess.run(
+        [sys.executable, str(_SUPERVISOR_DISCIPLINE)],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
 def test_supervisor_discipline_rejects_sys_exit_in_livespec(*, tmp_path: Path) -> None:
     """A `sys.exit(...)` call inside livespec/ fails the check.
 
@@ -47,13 +70,7 @@ def test_supervisor_discipline_rejects_sys_exit_in_livespec(*, tmp_path: Path) -
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_SUPERVISOR_DISCIPLINE)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path)
 
     assert result.returncode != 0, (
         f"supervisor_discipline should reject sys.exit() in livespec; "
@@ -92,13 +109,7 @@ def test_supervisor_discipline_rejects_raise_systemexit_in_livespec(*, tmp_path:
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_SUPERVISOR_DISCIPLINE)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path)
 
     assert result.returncode != 0, (
         f"supervisor_discipline should reject raise SystemExit in livespec; "
@@ -132,19 +143,62 @@ def test_supervisor_discipline_accepts_sys_exit_inside_bin(*, tmp_path: Path) ->
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_SUPERVISOR_DISCIPLINE)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path)
 
     assert result.returncode == 0, (
         f"supervisor_discipline should accept SystemExit in bin/ with exit 0; "
         f"got returncode={result.returncode} "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
+
+
+def test_supervisor_discipline_warns_for_git_covered_sys_exit_outside_source_tree(
+    *,
+    tmp_path: Path,
+) -> None:
+    """A `sys.exit(...)` outside configured source trees is Phase-0 WARN-only."""
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.livespec_dev_tooling]\nsource_trees = [".claude-plugin/scripts/livespec"]\n',
+        encoding="utf-8",
+    )
+    support_dir = tmp_path / "support"
+    support_dir.mkdir()
+    (support_dir / "runner.py").write_text(
+        "from __future__ import annotations\n"
+        "import sys\n"
+        "__all__: list[str] = []\n"
+        "sys.exit(0)\n",
+        encoding="utf-8",
+    )
+
+    result = _run_check(cwd=tmp_path)
+
+    assert result.returncode == 0
+    combined = result.stdout + result.stderr
+    assert "support/runner.py" in combined
+    assert "newly_covered" in combined
+
+
+def test_supervisor_discipline_ignores_raise_systemexit_outside_plugin_scripts(
+    *,
+    tmp_path: Path,
+) -> None:
+    """Flat-package CLIs may still use `raise SystemExit(main())` at the edge."""
+    support_dir = tmp_path / "support"
+    support_dir.mkdir()
+    (support_dir / "runner.py").write_text(
+        "from __future__ import annotations\n"
+        "__all__: list[str] = []\n"
+        "def main() -> int:\n"
+        "    return 0\n"
+        "raise SystemExit(main())\n",
+        encoding="utf-8",
+    )
+
+    result = _run_check(cwd=tmp_path)
+
+    assert result.returncode == 0
+    assert result.stdout + result.stderr == ""
 
 
 def test_supervisor_discipline_accepts_clean_livespec(*, tmp_path: Path) -> None:
@@ -183,13 +237,7 @@ def test_supervisor_discipline_accepts_clean_livespec(*, tmp_path: Path) -> None
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_SUPERVISOR_DISCIPLINE)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path)
 
     assert result.returncode == 0, (
         f"supervisor_discipline should accept clean livespec with exit 0; "
@@ -200,13 +248,7 @@ def test_supervisor_discipline_accepts_clean_livespec(*, tmp_path: Path) -> None
 
 def test_supervisor_discipline_accepts_empty_tree(*, tmp_path: Path) -> None:
     """A repo cwd without `.claude-plugin/scripts/livespec/` passes the check (exit 0)."""
-    result = subprocess.run(
-        [sys.executable, str(_SUPERVISOR_DISCIPLINE)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path)
 
     assert result.returncode == 0, (
         f"supervisor_discipline should accept empty tree with exit 0; "

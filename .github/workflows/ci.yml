@@ -335,6 +335,7 @@ jobs:
           - check-plugin-resolution
           - check-self-hosted-routing
           - check-skill-invocation-paths
+          - check-source-trees-scoped-to-consumer
           - check-vendor-manifest
     steps:
       - name: Checkout
