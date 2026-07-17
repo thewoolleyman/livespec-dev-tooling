@@ -46,6 +46,41 @@ The epic is intentionally left `backlog` (it has no assignee; forcing `active`
 would violate the `active ⟹ assignee` state invariant). The factory promotes
 the epic when the first child is dispatched.
 
+## Current Status — 2026-07-18 (read first on resume)
+
+**Structuring + validation are COMPLETE and merged.** Dispatch is blocked only on
+a Fabro-runtime outage (below); nothing else is pending.
+
+- **Dependency chain wired + verified** (`bd dep tree`): `i5barz → w2elyx →
+  qt44u2 → zkh4pk`; `bd next` ranks only `i5barz` (a0). Epic left `backlog`.
+- **Design of record validated against the live repo + ledger** (prototype runs,
+  not the shipped modules — those are `i5barz`'s job via the factory):
+  - *Module A (static anchor):* passes both active handoffs (incl. the mid-line
+    `l2sm` anchor), ignores `plan/archive/`, and fails `<epic-id>` / `<...>` /
+    `TBD` / missing-anchor — exit 1 on violation, 0 clean. First-match is
+    load-bearing (a handoff documenting the check carries multiple occurrences).
+  - *Module B (ledger parity):* `scsj5e`→`backlog` = ok; `l2sm`→`closed` =
+    flagged — it detects exactly the drift `w2elyx` archives, and does not
+    false-flag the rollout's own open epic.
+  - *`w2elyx` confirmation set:* `list-plan-threads` and
+    `check-handoff-dispatch-routing` agree the active set is
+    `{fleet-plan-lifecycle-enforcement, work-item-state-machine}` (routing exit 0).
+  - *`qt44u2` fan-out list:* the live `.livespec-fleet-manifest.jsonc` confirms
+    the 8 members / 7 fan-out siblings and adopters `openbrain`, `resume`.
+- **⛔ Dispatch BLOCKED — Fabro runtime down.** Four `drive impl:i5barz` attempts
+  on 2026-07-18 all failed at the `fabro-run` stage: first an ACP attach-stream
+  drop, then three `Connection refused (os error 111)` to the run API
+  (`http://127.0.0.1:32276/api/v1/runs`); the Fabro API was observed bound to the
+  Tailscale interface, not loopback. No work landed (no branch/worktree/PR).
+  `i5barz` was reset to `ready` after each attempt and is `ready` now.
+
+**To resume once the runtime is healthy** — one command, no re-structuring:
+`livespec-orchestrator-beads-fabro:drive --action impl:livespec-dev-tooling-i5barz`.
+A Claude Code restart to pick up the pending plugin update
+(`acb10cc8a4c2 → 0f9a87f5af14`) may resolve the dispatcher's loopback-vs-Tailscale
+connection and restores the `move:<id>:ready` recovery action (this session's
+version lacked it, so resets used `bd update --status ready`).
+
 ## Execution Order & Why It Is Safe (self-gating analysis)
 
 The naive worry is that wiring a plan-lifecycle check while this repo still
