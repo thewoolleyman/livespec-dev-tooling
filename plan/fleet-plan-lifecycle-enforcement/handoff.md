@@ -92,12 +92,22 @@ are private helpers and excluded.
 - Enumerate active handoffs exactly as `handoff_dispatch_routing._active_handoffs`
   does: glob `plan/*/handoff.md`, **excluding `plan/archive/`**
   (`_ARCHIVE_DIR_NAME = "archive"`). Return 0 when `plan/` is absent.
-- For each active handoff, require a concrete `**Ledger anchor:**` line naming a
-  real epic id. **Fail** when the line is missing, empty, or a placeholder
-  (e.g. `<...>`, `TBD`, `<epic-id>`, a bare `epic` with no id). Emit findings as
-  structlog JSON to stderr with a `remediation` field; `return 1 if offenders`.
+- For each active handoff, require a concrete `**Ledger anchor:**` naming a real
+  epic id. **Search the whole file** for the first `**Ledger anchor:**`
+  occurrence — it may sit **mid-line** after a `·` separator (as in
+  `work-item-state-machine`, whose thread line reads
+  `**Thread:** … · **Ledger anchor:** epic <id>`), so a line-start-only scan
+  misses it. **Fail** when it is missing, empty, or a
+  placeholder (contains `<`/`>`, or is a sentinel like `TBD`/`TODO`, or a bare
+  `epic` with no id, or not of the concrete `<tenant>-<suffix>` id shape). Emit
+  findings as structlog JSON to stderr with a `remediation` field;
+  `return 1 if offenders`.
 - No ledger read, no creds, no network → runs green everywhere, including every
   credential-less consumer CI. **This is the fleet-wide canonical slug.**
+- **Design validated 2026-07-18** (prototype run against the live repo): both
+  active handoffs pass (`scsj5e`, and the mid-line `l2sm`), `plan/archive/` is
+  ignored, and every bad variant fails — `<epic-id>`, `<...>`, `TBD`, and a
+  missing anchor — exit 1 on violations, 0 when clean.
 
 **Module B — ledger-aware COMPANION** (armed-only, creds-gated):
 `livespec_dev_tooling/checks/plan_thread_epic_parity.py`
@@ -123,28 +133,45 @@ are private helpers and excluded.
 
 ### Wiring — every file that must be touched (or `just check` breaks)
 
-Per module (both A and B):
+Steps 1–3, 5, 6 apply to **both** modules; **step 4 differs by module** (this is
+the correction — a ledger-aware check that self-skips in CI must be world-gated,
+not put in the required CI matrix):
 
 1. `livespec_dev_tooling/checks/<slug>.py` — the module (auto-canonical).
 2. `justfile` — add `check-<slug>` to the `check:` aggregate `targets=(…)` array
    (recipe header ~`justfile:151`), **in alphabetical order within the canonical
-   block** (`aggregate_completeness` enforces membership + alpha order).
+   block** (`aggregate_completeness` enforces membership + alpha order). Both
+   modules — world-gate slugs REMAIN in the aggregate (pre-push enforcement is
+   untouched); only the CI-mirror requirement excludes them.
 3. `justfile` — a standalone `check-<slug>:` recipe whose body is
    `uv run python -m livespec_dev_tooling.checks.<module>` (model
    `check-handoff-dispatch-routing`, ~`justfile:582`). `canonical_recipe_fidelity`
    requires the literal `python -m livespec_dev_tooling.checks.<module>` substring.
-4. `.github/workflows/ci.yml` — add `check-<slug>` to the **`check-metadata`**
-   matrix (~`ci.yml:300-339`, next to `check-handoff-dispatch-routing`), **not**
-   `check-python`. `ci_matrix_completeness` fails hard
-   (`LIVESPEC_FAIL_IF_CI_MATRIX_GAPS_EXIST=true`) if a non-world-gate canonical
-   slug is missing from CI. `ci-green.needs` already lists `check-metadata`.
+4. **CI wiring — differs by module:**
+   - **Module A (static)** → add `check-plan-thread-anchor-declared` to the
+     **`check-metadata`** matrix in `.github/workflows/ci.yml` (~`ci.yml:300-339`,
+     next to `check-handoff-dispatch-routing`), **not** `check-python`. It runs
+     green everywhere, so it belongs in the required CI mirror.
+   - **Module B (ledger-aware)** → add `check-plan-thread-epic-parity` to
+     `_WORLD_GATE_CHECK_SLUGS` in `livespec_dev_tooling/canonical_checks.py`
+     (alongside `check-master-ci-green`), **not** the CI matrix. It self-skips
+     creds-less, so a CI-matrix entry would always-skip and be pointless — exactly
+     the world-gate category. `ci_matrix_completeness` subtracts world-gate slugs
+     from its "CI must run every aggregate slug" requirement, and
+     `world_gate_check_slugs()` asserts each entry is canonical.
+   - `ci_matrix_completeness` fails hard (`LIVESPEC_FAIL_IF_CI_MATRIX_GAPS_EXIST=true`)
+     if a **non-world-gate** canonical slug is missing from CI — so Module A MUST
+     be in the matrix and Module B MUST be world-gated (else it demands a pointless
+     always-skip matrix entry). `ci-green.needs` already lists `check-metadata`.
 5. `tests/livespec_dev_tooling/checks/test_<slug>.py` — mirror-paired test
    (`tests_mirror_pairing`), driving the in-process `main()` with
    `monkeypatch.chdir` + `capsys` (avoids `tests_no_subprocess_spawn`).
 6. **100% line+branch coverage** of each new module (`per_file_coverage`,
    `fail_under=100`).
 
-Do **not** need to touch: `canonical_checks.py` (auto-discovers),
+Do **not** need to touch: `canonical_checks.py`'s slug *discovery* (it
+auto-discovers both modules) — but Module B DOES add one line to its
+`_WORLD_GATE_CHECK_SLUGS` tuple per step 4. Also untouched:
 `pbt_coverage_pure_modules` (no-ops here), any SPECIFICATION coverage row (the
 enforced string lives in livespec-core, not here), `checks/CLAUDE.md` (exists).
 
