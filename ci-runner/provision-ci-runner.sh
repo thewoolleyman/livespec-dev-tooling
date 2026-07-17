@@ -154,4 +154,36 @@ cp -f "$(dirname "$0")/dockershim/docker" /usr/local/lib/ci-runner/dockershim/do
 chown root:root /usr/local/lib/ci-runner/dockershim/docker
 chmod 0755 /usr/local/lib/ci-runner/dockershim/docker
 
+# ---------------------------------------------------------------------------
+log "8. T10 cache-tiering — per-repo warm-cache lower dirs (livespec-dev-tooling-9mp)"
+# sanitize-hook.js mounts these READ-ONLY into each job via a throwaway overlay
+# (the upper is per-job and discarded), so a fork PR job can READ the warm cache
+# but can NEVER mutate it — trust-tiering by construction, no forgeable signal.
+# We only create the lower dirs here; warm-ci-cache.sh (trusted, host-side)
+# populates them. The hook caches a subdir IFF its lower dir EXISTS:
+#   uv     — ALL repos (cold uv is cheap but non-zero; closes the .5 follow-on)
+#   cargo  — Rust repos only (registry + git; skip the network fetch)
+#   target — Rust repos only (the big win: skip the TEN redundant dep recompiles
+#            that make the Rust matrix a 2x regression without a cache)
+# The CACHE_ROOT's mere existence is the kill switch — remove it and the hook is
+# a byte-for-byte no-op of the Phase-0 containment behaviour.
+CACHE_ROOT=${RUNNER_HOME}/cache
+RUST_REPOSLUGS="${CI_RUNNER_RUST_REPOSLUGS:-thewoolleyman-livespec-console-beads-fabro}"
+runuser -u "$RUNNER_USER" -- bash -eu <<EOF
+mkdir -p "${CACHE_ROOT}/.overlay"
+for slug in ${REPOSLUGS}; do
+  mkdir -p "${CACHE_ROOT}/\${slug}/uv"
+done
+for slug in ${RUST_REPOSLUGS}; do
+  mkdir -p "${CACHE_ROOT}/\${slug}/cargo" "${CACHE_ROOT}/\${slug}/target"
+done
+EOF
+# Reclaim any overlay left mounted under a previous run's instance scratch
+# (idempotent; safe because no job container is active during provisioning).
+while IFS= read -r m; do
+  [ -n "$m" ] && runuser -u "$RUNNER_USER" -- fusermount3 -u "$m" 2>/dev/null || true
+done < <(findmnt -rno TARGET 2>/dev/null | grep "^${CACHE_ROOT}/.overlay/" || true)
+runuser -u "$RUNNER_USER" -- find "${CACHE_ROOT}/.overlay" -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null || true
+printf 'T10 cache lower dirs ready under %s (rust: %s)\n' "$CACHE_ROOT" "$RUST_REPOSLUGS"
+
 log "DONE. Register the runners via the supervisor/JIT step, then run the 11 isolation exit tests."
