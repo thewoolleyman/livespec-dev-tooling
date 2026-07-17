@@ -96,8 +96,39 @@ for wf in "$WF"/*.yml "$WF"/*.yaml; do
 done
 [ "$bad" = 0 ] && pass "no self-hosted job reachable from a forbidden trigger" || fail "self-hosted job on forbidden trigger"
 
-echo "== T10: cache write-denial (supervisor-classified) =="
-skip "T10 needs the supervisor event-classifier + writable/RO cache mounts (PR lane RO)"
+echo "== T10: trust-tiered cache — a job cannot mutate the shared warm cache =="
+# sanitize-hook.js mounts /home/ci-runner/cache/<repo>/{cargo,target,uv} into a
+# job READ-ONLY via a throwaway overlay (upper per-job, discarded). Prove the
+# security invariant directly: a container writing THROUGH the injected mount
+# leaves the shared LOWER byte-for-byte unchanged, so a fork PR job physically
+# cannot poison the cache that feeds master builds.
+T10D=/home/$RU/.t10-exittest
+sudo -n -u "$RU" bash -c "rm -rf '$T10D'; mkdir -p '$T10D'/{lower,upper,work,merged}; echo warm-cache-object > '$T10D/lower/dep.crate'"
+if sudo -n -u "$RU" env XDG_RUNTIME_DIR="$XDG" fuse-overlayfs -o "lowerdir=$T10D/lower,upperdir=$T10D/upper,workdir=$T10D/work" "$T10D/merged" 2>/dev/null; then
+  "${POD[@]}" run --rm -v "$T10D/merged:/opt/ci-cache/cargo" "$IMG" \
+    bash -c 'cat /opt/ci-cache/cargo/dep.crate >/dev/null && echo poison > /opt/ci-cache/cargo/evil.crate' 2>/dev/null
+  sudo -n -u "$RU" env XDG_RUNTIME_DIR="$XDG" fusermount3 -u "$T10D/merged" 2>/dev/null || true
+  ok=1
+  sudo -n -u "$RU" test -e "$T10D/lower/evil.crate" && ok=0   # lower must NOT hold the write
+  sudo -n -u "$RU" test -e "$T10D/upper/evil.crate" || ok=0   # write must have landed in upper
+  [ "$ok" = 1 ] && pass "job write stayed in throwaway upper; shared lower unchanged" || fail "job mutated the shared lower (cache poison)"
+else
+  skip "T10 overlay could not mount (fuse-overlayfs unavailable)"
+fi
+sudo -n -u "$RU" rm -rf "$T10D" 2>/dev/null || true
+# Defense-in-depth: the hook STRIPS a workflow-declared raw-cache mount so a fork
+# PR cannot bind the lower read-write itself (drives the installed hook via node).
+HOOK=${LIVESPEC_SANITIZE_HOOK:-/home/$RU/actions-runner/container-hooks/sanitize-hook.js}
+NODE=$(command -v node || true)
+if [ -n "$NODE" ] && [ -f "$HOOK" ]; then
+  fp='{"command":"prepare_job","args":{"container":{"image":"x","userMountVolumes":[{"sourceVolumePath":"/home/ci-runner/cache/foo/cargo","targetVolumePath":"/evil","readOnly":false}],"environmentVariables":{}}}}'
+  out=$(printf '%s\n' "$fp" | LIVESPEC_HOOK_TEST_MODE=1 "$NODE" "$HOOK" 2>/dev/null || echo '{}')
+  echo "$out" | grep -q '/home/ci-runner/cache/foo/cargo' \
+    && fail "hook did not strip a forged raw-cache mount" \
+    || pass "hook strips a forged raw-cache mount"
+else
+  skip "T10 forged-mount strip check (no node or hook not installed)"
+fi
 
 echo "== T11: runner-agent material unreachable from a job (PID/user ns) =="
 # job container is private PID ns: cannot see an arbitrary host PID
