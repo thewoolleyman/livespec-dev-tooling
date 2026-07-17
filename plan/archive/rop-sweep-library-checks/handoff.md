@@ -1,5 +1,22 @@
 # rop-sweep-library-checks — make scope-hardcoded checks config-driven + add a drift-guardrail
 
+**Archived:** 2026-07-17. This thread is complete and was moved from
+`plan/rop-sweep-library-checks/` to `plan/archive/rop-sweep-library-checks/`
+per the plan-thread lifecycle rule that closed threads do not remain in the
+active `plan/<topic>/` set.
+
+**Closure evidence:** implemented and merged through PR
+[#420](https://github.com/thewoolleyman/livespec-dev-tooling/pull/420).
+The PR rebase-merged at `2026-07-16T09:55:27Z`; merge commit
+`3de4223dc105203d5dd05b6b985ca7e400bdc180` is on `master`.
+
+**Ledger note:** this drafted plan did not carry a ledger epic anchor. That was a
+lifecycle miss in the original thread setup; do not treat this file as a status
+source. The implementation status is the merged PR above and the active plan
+inventory excludes this archived directory.
+
+---
+
 **Part of the `rop-sweep-*` coordinated set (do these ASAP, together).** Sibling
 plans, findable fleet-wide via `plan/rop-sweep-*`:
 - **`rop-sweep-consumer-cleanup`** (in `livespec-orchestrator-beads-fabro`) — the
@@ -7,9 +24,9 @@ plans, findable fleet-wide via `plan/rop-sweep-*`:
 - **`rop-sweep-fleet-policy`** (in `livespec` core) — fleet enforcement audit, the
   Ruff `BLE` policy, and the scaffold-template fix.
 
-**Not started — a drafted plan for a fresh session.** Authored 2026-07-16 from a
-read-only audit. This is the `livespec-dev-tooling` (shared enforcement library)
-slice: fixes that benefit **every** consumer, not just the one that surfaced them.
+Authored 2026-07-16 from a read-only audit. This was the
+`livespec-dev-tooling` (shared enforcement library) slice: fixes that benefit
+**every** consumer, not just the one that surfaced them.
 
 ---
 
