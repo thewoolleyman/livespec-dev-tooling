@@ -93,12 +93,14 @@ _BASELINE_CHECK_SLUGS: tuple[str, ...] = (
 )
 
 # The `world-gate` set: canonical checks that verify the WORLD the change
-# lands on (master CI state, master branch-protection config) rather than
-# the CHANGE in a pull request. Per `livespec/.ai/ci-gate-discipline.md`
-# §"verify the CHANGE vs verify the WORLD", these gates enforce at
-# PRE-PUSH under the maintainer's admin-scoped `gh` token — where they can
-# actually read master's state — and are deliberately NOT required to run
-# in per-PR CI:
+# lands on (master CI state, master branch-protection config, or ledger-state
+# parity read from the beads ledger) rather than the CHANGE in a pull request.
+# Per `livespec/.ai/ci-gate-discipline.md` §"verify the CHANGE vs verify the
+# WORLD", these gates enforce at PRE-PUSH under the maintainer's admin-scoped
+# credentials — where they can actually read master's state or the ledger — and
+# are deliberately NOT required to run in per-PR CI. The category is thus not
+# only master-CI/branch-protection: any check that reads external world state
+# unavailable to the credential-less per-PR CI runner belongs here.
 #
 # - `check-branch-protection-alignment` — its own docstring states it "is
 #   intentionally NOT a required CI matrix entry, which would always-skip
@@ -107,6 +109,12 @@ _BASELINE_CHECK_SLUGS: tuple[str, ...] = (
 #   per-PR CI it would fail every PR whenever master is red, deadlocking
 #   even the master-repair PR (an escape mechanism the ci-gate discipline
 #   forbids).
+# - `check-plan-thread-epic-parity` — reads the beads LEDGER (an active plan
+#   thread must not point at a done/closed epic) under the maintainer's
+#   credentials; the credential-less per-PR CI runner cannot read the ledger,
+#   so it self-skips there and would always-skip-and-be-pointless as a matrix
+#   entry. Its STATIC sibling `check-plan-thread-anchor-declared` needs no
+#   ledger and REMAINS a required CI matrix entry.
 #
 # `check-ci-matrix-completeness` subtracts this set from its "CI must run
 # every aggregate slug" requirement (assertion (a)). Like the baseline
@@ -120,6 +128,7 @@ _BASELINE_CHECK_SLUGS: tuple[str, ...] = (
 _WORLD_GATE_CHECK_SLUGS: tuple[str, ...] = (
     "check-branch-protection-alignment",
     "check-master-ci-green",
+    "check-plan-thread-epic-parity",
 )
 
 

@@ -367,14 +367,15 @@ def test_validate_baseline_subset_raises_for_non_canonical_slug() -> None:
 def test_world_gate_check_slugs_returns_the_curated_set() -> None:
     """`world_gate_check_slugs()` returns exactly the curated world-gate set.
 
-    The two world-gate checks verify master/world state (not the PR
-    change) — `check-branch-protection-alignment` (branch-protection
-    config) and `check-master-ci-green` (master CI status) — and are
-    excluded from `check-ci-matrix-completeness`'s CI-mirror requirement
-    (assertion (a)). Bound to the exact (alphabetically-sorted) tuple —
-    not just membership — because the world-gate set is a deliberately
-    small curated registry whose contents are a product decision, not a
-    filesystem derivation.
+    The world-gate checks verify master/world state (not the PR change) —
+    `check-branch-protection-alignment` (branch-protection config),
+    `check-master-ci-green` (master CI status), and
+    `check-plan-thread-epic-parity` (beads ledger-state parity, read under the
+    maintainer's credentials) — and are excluded from
+    `check-ci-matrix-completeness`'s CI-mirror requirement (assertion (a)).
+    Bound to the exact (alphabetically-sorted) tuple — not just membership —
+    because the world-gate set is a deliberately small curated registry whose
+    contents are a product decision, not a filesystem derivation.
     """
     module = _import_canonical_checks()
 
@@ -383,7 +384,8 @@ def test_world_gate_check_slugs_returns_the_curated_set() -> None:
     assert slugs == (
         "check-branch-protection-alignment",
         "check-master-ci-green",
-    ), f"world-gate set must be the curated two-slug set; got {slugs}"
+        "check-plan-thread-epic-parity",
+    ), f"world-gate set must be the curated set; got {slugs}"
 
 
 def test_world_gate_check_slugs_are_sorted_and_subset_of_canonical() -> None:

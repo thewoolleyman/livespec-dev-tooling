@@ -339,6 +339,7 @@ jobs:
           - check-no-fmt-directives
           - check-no-shadow-ledger-body-identical
           - check-no-todo-registry
+          - check-plan-thread-anchor-declared
           - check-plugin-resolution
           - check-self-hosted-routing
           - check-skill-invocation-paths

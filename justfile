@@ -220,6 +220,8 @@ check:
         check-partition-completeness
         check-pbt-coverage-pure-modules
         check-per-file-coverage
+        check-plan-thread-anchor-declared
+        check-plan-thread-epic-parity
         check-plugin-resolution
         check-primary-checkout-commit-refuse-hook-installed
         check-private-calls
@@ -686,6 +688,19 @@ check-per-file-coverage:
     set -uo pipefail
     uv run pytest -n 4 --cov --cov-branch --cov-config=pyproject.toml --cov-report=term-missing
     uv run python -m livespec_dev_tooling.checks.per_file_coverage
+
+# Plan-lifecycle enforcement — static half: every active plan/*/handoff.md
+# declares a concrete `**Ledger anchor:**` epic id (credential-free, runs
+# everywhere, including consumer CI).
+check-plan-thread-anchor-declared:
+    uv run python -m livespec_dev_tooling.checks.plan_thread_anchor_declared
+
+# Plan-lifecycle enforcement — ledger-parity half: an active plan thread must
+# not point at a done/closed epic. Armed-only — self-skips unless
+# LIVESPEC_RUN_PLAN_EPIC_PARITY and BEADS_DOLT_PASSWORD are set, so it never
+# self-gates a credential-less `just check`.
+check-plan-thread-epic-parity:
+    uv run python -m livespec_dev_tooling.checks.plan_thread_epic_parity
 
 # Cross-harness plugin-resolution Verifier (Conformance-Pattern concern
 # #2, per livespec/SPECIFICATION/non-functional-requirements.md
