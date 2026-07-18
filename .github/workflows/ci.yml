@@ -185,6 +185,13 @@ jobs:
         if: needs.setup.outputs.py_changed == 'true'
         uses: actions/checkout@v4
 
+      # Hosted routing keeps the baked container but checks out as runner uid
+      # 1001 while steps run git as ROOT → "dubious ownership" (exit 128). Trust
+      # the workspace globally (HOME survives config.py's GIT_* scrub). No-op self-hosted.
+      - name: Trust workspace for git (hosted container root-vs-checkout uid)
+        if: needs.setup.outputs.py_changed == 'true'
+        run: git config --global --add safe.directory '*'
+
       # Tools are baked into the image; `mise install` is a near-no-op that just
       # confirms the pinned versions. A fresh container does not TRUST the repo
       # .mise.toml, so `mise trust` is required for the shims to resolve.
@@ -349,6 +356,12 @@ jobs:
           # never silently passes). Cheap for this repo; harmless for
           # the other metadata entries.
           fetch-depth: 0
+
+      # Hosted routing keeps the baked container but checks out as runner uid
+      # 1001 while steps run git as ROOT → "dubious ownership" (exit 128). Trust
+      # the workspace globally (HOME survives config.py's GIT_* scrub). No-op self-hosted.
+      - name: Trust workspace for git (hosted container root-vs-checkout uid)
+        run: git config --global --add safe.directory '*'
 
       # The primary-checkout-commit-refuse-hook-installed check
       # verifies the canonical livespec commit-refuse hook is
