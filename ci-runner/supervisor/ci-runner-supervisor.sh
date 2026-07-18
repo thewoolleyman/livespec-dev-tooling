@@ -70,7 +70,13 @@ run_one() {
   #   name — UNIQUE per mint. It is the GitHub-side runner name inside the JIT
   #          config; each ephemeral runner is a fresh registration.
   inst="${reposlug}-${slot}"
-  name="ci-${inst}-$$-${RANDOM}"
+  # GitHub rejects a runner name >64 chars ("A valid runner name is 64 characters
+  # or less"). The org/owner prefix is REDUNDANT in the name — the runner is already
+  # registered to a specific repo — so drop it here and use the repo name without
+  # owner. This keeps the longest fleet repo
+  # (thewoolleyman/livespec-orchestrator-beads-fabro) comfortably under the cap;
+  # inst above stays org-qualified because it names the systemd unit + runner dir.
+  name="ci-${repo##*/}-${slot}-$$-${RANDOM}"
   work="/home/ci-runner/runners/${inst}/_work"
   jit="$(APP_ID="$GITHUB_APP_ID_CI_RUNNER" \
         INSTALLATION_ID="$GITHUB_APP_INSTALLATION_ID_CI_RUNNER" \
