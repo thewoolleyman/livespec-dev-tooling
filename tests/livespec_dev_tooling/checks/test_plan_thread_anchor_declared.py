@@ -45,6 +45,14 @@ class _CheckRun(NamedTuple):
     stderr: str
 
 
+def _opt_in(*, root: Path) -> None:
+    """Declare this repo's plan-thread anchor convention for the check under test."""
+    _ = (root / "pyproject.toml").write_text(
+        "[tool.livespec_dev_tooling]\nplan_lifecycle_anchor = true\n",
+        encoding="utf-8",
+    )
+
+
 def _run_check(
     *, cwd: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> _CheckRun:
@@ -68,6 +76,7 @@ def test_concrete_anchor_passes(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A handoff header with a concrete `**Ledger anchor:**` epic id passes (exit 0)."""
+    _opt_in(root=tmp_path)
     _write_handoff(
         root=tmp_path,
         thread="fleet-plan",
@@ -81,6 +90,7 @@ def test_mid_line_anchor_passes(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The anchor may sit mid-line after a `·` separator (as work-item-state-machine's does)."""
+    _opt_in(root=tmp_path)
     _write_handoff(
         root=tmp_path,
         thread="work-item-state-machine",
@@ -94,6 +104,7 @@ def test_missing_anchor_fails(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A handoff with no `**Ledger anchor:**` line fails and names the file."""
+    _opt_in(root=tmp_path)
     _write_handoff(root=tmp_path, thread="no-anchor", body="# H\n\nNo anchor here.\n")
     result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 1, f"missing anchor should fail; stderr={result.stderr!r}"
@@ -106,6 +117,7 @@ def test_angle_placeholder_fails(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """An angle-bracket placeholder anchor (`<epic-id>`) fails."""
+    _opt_in(root=tmp_path)
     _write_handoff(root=tmp_path, thread="ph", body="# H\n\n**Ledger anchor:** epic `<epic-id>`\n")
     result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 1, f"angle placeholder should fail; stderr={result.stderr!r}"
@@ -115,6 +127,7 @@ def test_sentinel_word_placeholder_fails(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A sentinel-word anchor (`TBD`) fails."""
+    _opt_in(root=tmp_path)
     _write_handoff(root=tmp_path, thread="tbd", body="# H\n\n**Ledger anchor:** epic `TBD`\n")
     result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 1, f"TBD anchor should fail; stderr={result.stderr!r}"
@@ -124,6 +137,7 @@ def test_non_concrete_shape_fails(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A token that is neither placeholder nor a concrete `<tenant>-<id>` shape fails."""
+    _opt_in(root=tmp_path)
     _write_handoff(
         root=tmp_path, thread="bad-shape", body="# H\n\n**Ledger anchor:** epic `singleword`\n"
     )
@@ -135,6 +149,7 @@ def test_archived_handoffs_ignored(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Handoffs under `plan/archive/` are ignored — nested and directly under archive."""
+    _opt_in(root=tmp_path)
     nested = tmp_path / "plan" / "archive" / "old-thread"
     nested.mkdir(parents=True, exist_ok=True)
     (nested / "handoff.md").write_text("# H\n\nNo anchor.\n", encoding="utf-8")
@@ -148,8 +163,68 @@ def test_no_plan_dir_passes(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A repo with no `plan/` directory passes trivially (exit 0)."""
+    _opt_in(root=tmp_path)
     result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0, f"missing plan/ should exit 0; got {result.returncode}"
+
+
+def test_no_pyproject_self_skips(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """No `pyproject.toml` -> the check self-skips with structured info."""
+    _write_handoff(root=tmp_path, thread="consumer-thread", body="# H\n\nNo anchor here.\n")
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 0, f"absent opt-in must self-skip; stderr={result.stderr!r}"
+    assert result.stdout == ""
+    assert '"level": "info"' in result.stderr
+    assert "plan_lifecycle_anchor" in result.stderr
+    assert "check self-skips" in result.stderr
+
+
+def test_block_without_plan_lifecycle_anchor_self_skips(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A present block omitting `plan_lifecycle_anchor` -> structured self-skip."""
+    _ = (tmp_path / "pyproject.toml").write_text(
+        '[tool.livespec_dev_tooling]\nsource_trees = ["pkg"]\n',
+        encoding="utf-8",
+    )
+    _write_handoff(root=tmp_path, thread="consumer-thread", body="# H\n\nNo anchor here.\n")
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 0, f"omitted opt-in must self-skip; stderr={result.stderr!r}"
+    assert '"level": "info"' in result.stderr
+    assert "plan_lifecycle_anchor" in result.stderr
+
+
+def test_false_plan_lifecycle_anchor_self_skips(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`plan_lifecycle_anchor = false` -> explicit structured self-skip."""
+    _ = (tmp_path / "pyproject.toml").write_text(
+        "[tool.livespec_dev_tooling]\nplan_lifecycle_anchor = false\n",
+        encoding="utf-8",
+    )
+    _write_handoff(root=tmp_path, thread="consumer-thread", body="# H\n\nNo anchor here.\n")
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 0, f"false opt-in must self-skip; stderr={result.stderr!r}"
+    assert '"level": "info"' in result.stderr
+    assert "plan_lifecycle_anchor" in result.stderr
+
+
+def test_non_boolean_plan_lifecycle_anchor_reports_config_error(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A non-boolean `plan_lifecycle_anchor` fails closed as a structured config error."""
+    _ = (tmp_path / "pyproject.toml").write_text(
+        '[tool.livespec_dev_tooling]\nplan_lifecycle_anchor = "true"\n',
+        encoding="utf-8",
+    )
+    _write_handoff(root=tmp_path, thread="consumer-thread", body="# H\n\nNo anchor here.\n")
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 1, f"bad opt-in must fail closed; stderr={result.stderr!r}"
+    assert '"level": "error"' in result.stderr
+    assert "configuration error" in result.stderr
+    assert "`plan_lifecycle_anchor` must be a boolean" in result.stderr
 
 
 def test_module_importable_without_running_main() -> None:

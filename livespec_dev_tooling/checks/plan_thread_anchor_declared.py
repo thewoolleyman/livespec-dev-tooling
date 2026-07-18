@@ -35,12 +35,18 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling.config import (  # noqa: E402
+    ConfigParseError,
+    load_plan_lifecycle_anchor,
+)
+
 __all__: list[str] = []
 
 
 _PLAN_DIR_NAME = "plan"
 _ARCHIVE_DIR_NAME = "archive"
 _HANDOFF_GLOB = "*/handoff.md"
+_CONFIG_KEY = "plan_lifecycle_anchor"
 
 # The anchor may sit mid-line after a `·` separator, so the whole file is searched
 # for the FIRST `**Ledger anchor:**` occurrence. The captured token is the epic id
@@ -88,6 +94,24 @@ def main() -> int:
     )
     log = structlog.get_logger("plan_thread_anchor_declared")
     cwd = Path.cwd()
+    try:
+        enabled = load_plan_lifecycle_anchor(repo_root=cwd)
+    except ConfigParseError as exc:
+        log.exception(
+            "configuration error",
+            check_id="plan_thread_anchor_declared",
+            key=_CONFIG_KEY,
+            error=str(exc),
+        )
+        return 1
+    if enabled is not True:
+        log.info(
+            "plan-lifecycle anchor convention not declared by this consumer; check self-skips",
+            check_id="plan_thread_anchor_declared",
+            key=_CONFIG_KEY,
+            value=enabled,
+        )
+        return 0
     plan_dir = cwd / _PLAN_DIR_NAME
     if not plan_dir.is_dir():
         return 0

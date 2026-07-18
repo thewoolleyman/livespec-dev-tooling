@@ -78,6 +78,7 @@ __all__: list[str] = [
     "load_destructive_cli_allowlist",
     "load_file_lloc_hard_gate",
     "load_mutation_staging_dir",
+    "load_plan_lifecycle_anchor",
     "load_scenario_tiers",
     "load_subprocess_spawn_allowlist",
     "resolve_check_universe",
@@ -468,6 +469,34 @@ def load_file_lloc_hard_gate(*, repo_root: Path) -> bool | None:
     if table is None or "file_lloc_hard_gate" not in table:
         return None
     return _as_bool(value=table["file_lloc_hard_gate"], key="file_lloc_hard_gate")
+
+
+def load_plan_lifecycle_anchor(*, repo_root: Path) -> bool | None:
+    """Return the `plan_lifecycle_anchor` opt-in, or `None` if the key is absent.
+
+    Reads `<repo_root>/pyproject.toml`'s `[tool.livespec_dev_tooling]` block,
+    key `plan_lifecycle_anchor` — a single boolean the
+    `plan_thread_anchor_declared` check reads to decide whether THIS repo uses
+    the dev-tooling plan-thread convention where every active handoff declares
+    a concrete `**Ledger anchor:**` line. Fleet siblings write plan-thread
+    handoffs without that convention, so the check self-skips unless a
+    consumer explicitly opts in with `plan_lifecycle_anchor = true`.
+
+    Returns `None` when the whole block is absent OR the key is omitted, so the
+    calling check no-ops for consumers that have not declared this convention.
+    Raises `ConfigParseError` on a non-boolean value, consistent with the rest
+    of the loader.
+
+    Like `scenario_tiers`, `destructive_cli_allowlist`,
+    `mutation_staging_dir`, and `file_lloc_hard_gate`, this is intentionally
+    NOT a `Config` role key: it is a single-check concern
+    (`plan_thread_anchor_declared`), so it is read directly off the table
+    rather than threaded through the typed layout dataclass.
+    """
+    table = _read_table(repo_root=repo_root)
+    if table is None or "plan_lifecycle_anchor" not in table:
+        return None
+    return _as_bool(value=table["plan_lifecycle_anchor"], key="plan_lifecycle_anchor")
 
 
 def load_config(*, repo_root: Path) -> Config:
