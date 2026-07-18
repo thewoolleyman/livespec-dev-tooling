@@ -102,12 +102,19 @@ function dirExists(p) {
 }
 
 // The runner materializes each ephemeral runner under a STABLE per-(repo,slot)
-// instance dir /home/ci-runner/runners/<reposlug>-<slot>/, set by the supervisor
-// (NOT by any workflow), so it is a non-forgeable identity. Because the overlay
-// makes every write throwaway, this is only ever a CACHE KEY — forging it can at
-// worst read another repo's public dependency cache read-only, which is harmless;
-// it can never poison anything. Derive it (in order): cwd, then the payload's own
-// mount paths, then the minted RUNNER_NAME (ci-<reposlug>-<slot>-<pid>-<rand>).
+// instance dir /home/ci-runner/runners/<reposlug>-<slot>/, set by the supervisor.
+// This is only ever a CACHE KEY, and the overlay makes every write throwaway, so
+// the WORST a wrong key can do is READ another repo's cache read-only (it can
+// never poison anything). Derivation, in order of trust:
+//   1. process.cwd() — the runner's own working dir, supervisor-set, NON-forgeable;
+//      wins first in production (steps run under /home/ci-runner/runners/<inst>/_work).
+//   2. the payload's own runner mount paths — a fallback that IS workflow-influenced
+//      (the prepare_job JSON is base-repo-controlled for pull_request), so it is not
+//      trusted for anything but this read-only cache-key; bounded to a cross-repo
+//      READ, never a write.
+//   3. the minted RUNNER_NAME (ci-<reposlug>-<slot>-<pid>-<rand>) — supervisor-set.
+// The char classes below forbid '/' in every capture, so a key can never escape the
+// cache/overlay tree (defence in depth for the path built from it).
 function deriveInst(raw) {
   const RUN_DIR_RE = /\/home\/ci-runner\/runners\/([A-Za-z0-9._]+(?:-[A-Za-z0-9._]+)*-\d+)(?:\/|$)/;
   let cwd = '';
@@ -117,7 +124,7 @@ function deriveInst(raw) {
   m = String(raw || '').match(RUN_DIR_RE);
   if (m) return m[1];
   const rn = process.env.RUNNER_NAME || '';
-  const mm = rn.match(/^ci-(.+-\d+)-\d+-\d+$/);
+  const mm = rn.match(/^ci-([A-Za-z0-9._]+(?:-[A-Za-z0-9._]+)*-\d+)-\d+-\d+$/);
   if (mm) return mm[1];
   return null;
 }
