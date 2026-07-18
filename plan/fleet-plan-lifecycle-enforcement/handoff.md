@@ -48,8 +48,9 @@ the epic when the first child is dispatched.
 
 ## Current Status — 2026-07-18 (read first on resume)
 
-**Structuring + validation are COMPLETE and merged.** Dispatch is blocked only on
-a Fabro-runtime outage (below); nothing else is pending.
+**Structuring + validation are COMPLETE and merged.** The `w2elyx` dogfood
+repair is in progress in Fabro sandbox branch
+`fabro/run/01KXTK2DPH7GX6E4YAN0HHNCJ0`.
 
 - **Dependency chain wired + verified** (`bd dep tree`): `i5barz → w2elyx →
   qt44u2 → zkh4pk`; `bd next` ranks only `i5barz` (a0). Epic left `backlog`.
@@ -80,6 +81,54 @@ A Claude Code restart to pick up the pending plugin update
 (`acb10cc8a4c2 → 0f9a87f5af14`) may resolve the dispatcher's loopback-vs-Tailscale
 connection and restores the `move:<id>:ready` recovery action (this session's
 version lacked it, so resets used `bd update --status ready`).
+
+## Dogfood Repair Evidence — `w2elyx` (2026-07-18)
+
+Known drift repaired: `plan/work-item-state-machine/handoff.md` declared ledger
+anchor `livespec-dev-tooling-l2sm`, and the thread itself recorded the L2 tenant
+migration as applied and verified with only closure remaining. That epic is
+completed in the live ledger per the `w2elyx` dispatch evidence, so the active
+directory violated active/archive parity.
+
+Repair applied in this branch:
+
+```text
+mise exec -- git mv plan/work-item-state-machine plan/archive/work-item-state-machine
+```
+
+Filesystem evidence after the move:
+
+```text
+plan/fleet-plan-lifecycle-enforcement/handoff.md
+plan/archive/rop-sweep-library-checks/handoff.md
+plan/archive/shell-logic-hardening/handoff.md
+plan/archive/work-item-state-machine/handoff.md
+plan/archive/work-item-state-machine/research/00-l2-thin-migration.md
+```
+
+Remaining active plan-thread set:
+
+```text
+{fleet-plan-lifecycle-enforcement}
+```
+
+Sandbox limitation: the live-wrapper dogfood command cannot be executed inside
+this Fabro sandbox because `/data/projects/1password-env-wrapper/with-livespec-env.sh`
+does not exist here, and neither `bd` nor `codex` is installed in the sandbox.
+The attempted command failed before any ledger read:
+
+```text
+source /data/projects/1password-env-wrapper/with-livespec-env.sh env LIVESPEC_RUN_PLAN_EPIC_PARITY=1 just check-plan-thread-epic-parity
+/bin/bash: line 1: /data/projects/1password-env-wrapper/with-livespec-env.sh: No such file or directory
+```
+
+Repository-local lifecycle evidence after the move:
+
+- `just check-plan-thread-anchor-declared` passes for the remaining active set.
+- `just check-handoff-dispatch-routing` passes for the remaining active set.
+- `just check-plan-thread-epic-parity` self-skips unless explicitly armed with
+  the missing live ledger credentials; no active same-tenant completed epic
+  remains in the filesystem-derived active set.
 
 ## Execution Order & Why It Is Safe (self-gating analysis)
 
