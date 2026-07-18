@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.49.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.48.2...v0.49.0) (2026-07-18)
+
+
+### Features
+
+* plan-thread lifecycle checks — static anchor gate + ledger-aware epic-parity companion ([9d1cb68](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9d1cb682fe194fbb233418d76974a49895ce5570))
+
 ## [0.48.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.48.1...v0.48.2) (2026-07-16)
 
 
