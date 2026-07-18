@@ -94,6 +94,7 @@ source_tree_prefixes = ["livespec_dev_tooling/"]
 # first-party .py is <=250 LLOC after the decomposition, so >250 now hard-fails
 # (severity increase only — no escape hatch).
 file_lloc_hard_gate = true
+plan_lifecycle_anchor = true
 mirror_pairings = [
     { source_tree = "livespec_dev_tooling", test_tree = "tests/livespec_dev_tooling" },
 ]

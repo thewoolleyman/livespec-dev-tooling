@@ -23,6 +23,7 @@ from pathlib import Path
 
 import pytest
 
+import livespec_dev_tooling.config as config_module
 from livespec_dev_tooling.config import (
     Config,
     ConfigParseError,
@@ -54,6 +55,14 @@ _LIVESPEC = Path(".claude-plugin") / "scripts" / "livespec"
 
 def _write_pyproject(*, repo_root: Path, body: str) -> None:
     _ = (repo_root / "pyproject.toml").write_text(body, encoding="utf-8")
+
+
+def _load_plan_lifecycle_anchor(*, repo_root: Path) -> bool | None:
+    loader = getattr(config_module, "load_plan_lifecycle_anchor", None)
+    assert callable(loader)
+    value = loader(repo_root=repo_root)
+    assert value is None or isinstance(value, bool)
+    return value
 
 
 def test_livespec_core_fallback_when_no_pyproject(*, tmp_path: Path) -> None:
@@ -475,6 +484,54 @@ def test_file_lloc_hard_gate_non_bool_raises(*, tmp_path: Path) -> None:
     )
     with pytest.raises(ConfigParseError, match="`file_lloc_hard_gate` must be a boolean"):
         _ = load_file_lloc_hard_gate(repo_root=tmp_path)
+
+
+def test_plan_lifecycle_anchor_none_when_no_pyproject(*, tmp_path: Path) -> None:
+    """No `pyproject.toml` -> `load_plan_lifecycle_anchor` returns `None`."""
+    assert _load_plan_lifecycle_anchor(repo_root=tmp_path) is None
+
+
+def test_plan_lifecycle_anchor_none_when_no_livespec_block(*, tmp_path: Path) -> None:
+    """No `[tool.livespec_dev_tooling]` block -> `None`, not core fallback."""
+    _write_pyproject(repo_root=tmp_path, body="[tool.ruff]\nline-length = 100\n")
+    assert _load_plan_lifecycle_anchor(repo_root=tmp_path) is None
+
+
+def test_plan_lifecycle_anchor_none_when_key_absent(*, tmp_path: Path) -> None:
+    """A present block omitting `plan_lifecycle_anchor` -> `None`."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body='[tool.livespec_dev_tooling]\nsource_trees = ["pkg"]\n',
+    )
+    assert _load_plan_lifecycle_anchor(repo_root=tmp_path) is None
+
+
+def test_plan_lifecycle_anchor_true(*, tmp_path: Path) -> None:
+    """`plan_lifecycle_anchor = true` -> `True`."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body="[tool.livespec_dev_tooling]\nplan_lifecycle_anchor = true\n",
+    )
+    assert _load_plan_lifecycle_anchor(repo_root=tmp_path) is True
+
+
+def test_plan_lifecycle_anchor_false(*, tmp_path: Path) -> None:
+    """`plan_lifecycle_anchor = false` -> `False`."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body="[tool.livespec_dev_tooling]\nplan_lifecycle_anchor = false\n",
+    )
+    assert _load_plan_lifecycle_anchor(repo_root=tmp_path) is False
+
+
+def test_plan_lifecycle_anchor_non_bool_raises(*, tmp_path: Path) -> None:
+    """A non-boolean `plan_lifecycle_anchor` raises `ConfigParseError`."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body='[tool.livespec_dev_tooling]\nplan_lifecycle_anchor = "true"\n',
+    )
+    with pytest.raises(ConfigParseError, match="`plan_lifecycle_anchor` must be a boolean"):
+        _ = _load_plan_lifecycle_anchor(repo_root=tmp_path)
 
 
 def test_subprocess_spawn_allowlist_none_when_no_pyproject(*, tmp_path: Path) -> None:
