@@ -10,6 +10,67 @@
 > ```
 > (the wrapper injects the tenant password; never echo it).
 
+## CLOSED — 2026-07-18 (rollout complete; thread archived)
+
+Epic `livespec-dev-tooling-scsj5e` closed in the ledger (`resolution=completed`
+in metadata; full audit on the epic and each child). All five children closed:
+
+- `i5barz` — checks implemented (PR #441, merge `9d1cb68`).
+- `w2elyx` — dogfood repair (PR #443; archive commit `7c658f1`).
+- `1bu` — **fleet-portability hotfix** (filed this session as a child of the
+  epic after the defect below blocked the v0.49.0 fan-out): config-gated
+  `plan_thread_anchor_declared` behind the `plan_lifecycle_anchor` key in
+  `[tool.livespec_dev_tooling]` (loader `config.load_plan_lifecycle_anchor`,
+  modeled on `file_lloc_hard_gate`; self-skip info + exit 0 unless the consumer
+  opts in; dev-tooling's pyproject sets it `true`). Factory-dispatched
+  (`drive impl:…`): PR #451, fix commit `2039838`, Red-Green-Replay trailers,
+  100% coverage, ci.yml untouched. Module B `plan_thread_epic_parity` audited
+  fleet-safe as shipped (creds+lever gate, same-tenant-only anchors) — no change.
+- `qt44u2` — closed manually (orchestration, no code): release `v0.49.1`
+  (release PR #450, merge `7c19501`) auto-published (App-authored) and
+  re-fanned out (release-dispatch run success, blocking fleet-preflight green).
+- `zkh4pk` — fleet verification, evidence below.
+
+**Fleet evidence (per member, all pins `tag = "v0.49.1"` on master, all bump
+PRs merged with green CI):**
+
+| sibling | v0.49.1 bump PR | slug wired (justfile + ci.yml) |
+|---|---|---|
+| livespec (core) | #1366 (merge `7401b1e`) | yes |
+| livespec-driver-claude | #202 | yes |
+| livespec-driver-codex | #186 | yes |
+| livespec-orchestrator-beads-fabro | #766 | yes |
+| livespec-orchestrator-git-jsonl | #322 | yes |
+| livespec-runtime | #259 | yes |
+| livespec-console-beads-fabro | #281 | n/a — established selective consumer (pure-Rust; reuses hooks/fleet modules only; livespec doctor `wiring-completeness-cross-repo` treats it exempt) |
+
+Superseded/blocked bump PRs closed with explanation: livespec #1339 + #1355
+(#1355 was the fan-out's v0.49.1 PR; it went check-green but turned
+merge-conflicted against moving master, so it was superseded via the
+`pin-freshness` `workflow_dispatch` recovery lever → #1366), driver-claude
+#197, beads-fabro #759 + #760, git-jsonl #316 + #318. livespec core's extra
+`check-doctor-static` failure (`wiring-completeness-cross-repo` vs git-jsonl)
+cleared once git-jsonl's bump merged — merge order matters: git-jsonl before
+core.
+
+Armed dogfood at close: `LIVESPEC_RUN_PLAN_EPIC_PARITY=1 just
+check-plan-thread-epic-parity` green against the live ledger;
+`check-plan-thread-anchor-declared` green (dev-tooling opted in).
+
+**Split-out follow-ups (deliberately outside this epic, filed `open`):**
+
+- `livespec-dev-tooling-paz` — adopter coverage decision (`openbrain`,
+  `resume`; outside the manifest auto-fanout).
+- `livespec-dev-tooling-d1j` — standing armed home for
+  `check-plan-thread-epic-parity` (fleet CI has no beads creds; today the
+  parity sweep only runs operator-armed).
+
+The fabro-sandbox `workflows`-scope gap (durable finding below) remains an
+upstream fabro/`livespec-fabro-sandbox` fix; the interim workaround
+(in-session + host credential) is recorded under "Durable finding".
+
+Everything below this section is the historical working state.
+
 ## Why This Thread Exists
 
 The `rop-sweep-library-checks` work was treated as complete after the
