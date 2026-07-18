@@ -471,7 +471,7 @@ check-coverage:
     # check-per-file-coverage's exported-namespace data measured LENIENTLY
     # (it green-lit self-referential lines that CI's clean run then failed).
     echo ":: check-coverage: clean standalone suite (COVERAGE_FILE unset) — strict, matches CI"
-    env -u COVERAGE_FILE uv run pytest -n auto --cov --cov-branch --cov-config=pyproject.toml --cov-report=term-missing
+    env -u COVERAGE_FILE uv run pytest -n 4 --cov --cov-branch --cov-config=pyproject.toml --cov-report=term-missing
 
 # ---------------------------------------------------------------
 # Canonical aggregate recipes — one per canonical slug emitted by
@@ -684,7 +684,7 @@ check-pbt-coverage-pure-modules:
 check-per-file-coverage:
     #!/usr/bin/env bash
     set -uo pipefail
-    uv run pytest -n auto --cov --cov-branch --cov-config=pyproject.toml --cov-report=term-missing
+    uv run pytest -n 4 --cov --cov-branch --cov-config=pyproject.toml --cov-report=term-missing
     uv run python -m livespec_dev_tooling.checks.per_file_coverage
 
 # Cross-harness plugin-resolution Verifier (Conformance-Pattern concern
