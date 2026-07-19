@@ -27,6 +27,15 @@
 # so the full aggregate stays the safety net.
 skip := ""
 
+# pytest-xdist worker count, lane-aware (plan/fabro-ci-image-factoring cont.5).
+# GitHub-hosted CI (LIVESPEC_CI_LANE=hosted, set from CI_RUNNER_LABELS in
+# ci.yml) uses all cores (-n auto — GH runners are small + dedicated). The
+# self-hosted/local lane throttles to LIVESPEC_TEST_PARALLELISM, defaulting to
+# 25% of cores (min 1) so a shared host is never oversubscribed. Tune per host
+# by exporting LIVESPEC_TEST_PARALLELISM (a dedicated box can set it to `auto`
+# or a high N); local dev may export it to speed a laptop run.
+test_nprocs := if env_var_or_default("LIVESPEC_CI_LANE", "local") == "hosted" { "auto" } else { env_var_or_default("LIVESPEC_TEST_PARALLELISM", `c=$(nproc 2>/dev/null || echo 4); n=$(( c / 4 )); [ "$n" -ge 1 ] || n=1; echo "$n"`) }
+
 # `red_staged` — the single staged test path at a Red commit (empty
 # otherwise). When non-empty, `check:` derives the Red-mode skip set
 # from the staged-path CLASS via `red_leg_scope` and UNIONs it into
@@ -473,7 +482,7 @@ check-coverage:
     # check-per-file-coverage's exported-namespace data measured LENIENTLY
     # (it green-lit self-referential lines that CI's clean run then failed).
     echo ":: check-coverage: clean standalone suite (COVERAGE_FILE unset) — strict, matches CI"
-    env -u COVERAGE_FILE uv run pytest -n 4 --cov --cov-branch --cov-config=pyproject.toml --cov-report=term-missing
+    env -u COVERAGE_FILE uv run pytest -n {{test_nprocs}} --cov --cov-branch --cov-config=pyproject.toml --cov-report=term-missing
 
 # ---------------------------------------------------------------
 # Canonical aggregate recipes — one per canonical slug emitted by
@@ -686,7 +695,7 @@ check-pbt-coverage-pure-modules:
 check-per-file-coverage:
     #!/usr/bin/env bash
     set -uo pipefail
-    uv run pytest -n 4 --cov --cov-branch --cov-config=pyproject.toml --cov-report=term-missing
+    uv run pytest -n {{test_nprocs}} --cov --cov-branch --cov-config=pyproject.toml --cov-report=term-missing
     uv run python -m livespec_dev_tooling.checks.per_file_coverage
 
 # Plan-lifecycle enforcement — static half: every active plan/*/handoff.md
