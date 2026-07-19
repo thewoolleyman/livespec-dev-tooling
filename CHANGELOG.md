@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.50.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.50.2...v0.50.3) (2026-07-19)
+
+
+### Bug Fixes
+
+* **ci-runner:** derive the isolation suite's image from ci.yml instead of a stale hardcoded tag ([1ed3d57](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1ed3d57d8c005f3bb0745cd8a95609b15f3159f6))
+
 ## [0.50.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.50.1...v0.50.2) (2026-07-19)
 
 
