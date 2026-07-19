@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.50.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.50.1...v0.50.2) (2026-07-19)
+
+
+### Refactoring
+
+* **ci:** restore set -e in bump-pin-rewrite's PR-open step (livespec-dev-tooling-7m1) ([4474b2d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4474b2d714d591944493f48d905e00ffb779120a))
+
 ## [0.50.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.50.0...v0.50.1) (2026-07-19)
 
 
