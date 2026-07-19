@@ -9,9 +9,35 @@ set -uo pipefail
 RU=ci-runner
 XDG=/run/user/$(id -u "$RU" 2>/dev/null || echo 1001)
 POD=(sudo -n -u "$RU" env HOME=/home/$RU XDG_RUNTIME_DIR="$XDG" podman)
-# Parameterized so the suite tracks the current sandbox tag (the layered split
-# ships base-/python-/python-rust- tags); override with LIVESPEC_CI_RUNNER_IMAGE.
-IMG=${LIVESPEC_CI_RUNNER_IMAGE:-ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v0.43.2}
+# The image under test is DERIVED from this repo's own ci.yml container pin, not
+# hardcoded. That pin is auto-reconciled to every release by the
+# `self-reconcile-pins` job in fabro-sandbox-image.yml (livespec-dev-tooling-5r3),
+# so this suite tracks the released image with no manual step.
+#
+# It used to hardcode a default, which had silently drifted SEVEN releases
+# (python-v0.43.2 while the repo ran python-v0.50.1). An unparameterized run
+# therefore exercised a stale artifact and still reported success — the exact
+# failure mode a containment suite must not have, since "14 pass" on the wrong
+# image proves nothing about the image actually in use. Per the repo discipline
+# that a recurring drift is handled AT ITS SOURCE rather than worked around, the
+# value is now derived; `LIVESPEC_CI_RUNNER_IMAGE` still overrides for ad-hoc runs
+# against a specific tag.
+#
+# Fails LOUD rather than falling back to a literal: a silent fallback would
+# reintroduce exactly the stale-default bug this replaces.
+_ISO_REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+_ISO_CI_YML="$_ISO_REPO_ROOT/.github/workflows/ci.yml"
+if [[ -z ${LIVESPEC_CI_RUNNER_IMAGE:-} ]]; then
+  _ISO_DERIVED=$(grep -oE 'ghcr\.io/thewoolleyman/livespec-fabro-sandbox:[A-Za-z0-9._-]+' \
+    "$_ISO_CI_YML" 2>/dev/null | head -1)
+  if [[ -z $_ISO_DERIVED ]]; then
+    echo "FATAL: could not derive the sandbox image from $_ISO_CI_YML" >&2
+    echo "  Set LIVESPEC_CI_RUNNER_IMAGE=<image>:<tag> to run against an explicit tag." >&2
+    exit 2
+  fi
+fi
+IMG=${LIVESPEC_CI_RUNNER_IMAGE:-$_ISO_DERIVED}
+echo "== image under test: $IMG =="
 KIND2=(/var/lib/doltdb /data/projects/1password-env-wrapper/.env.local)
 WF=${1:-/data/projects/livespec/.github/workflows}   # workflows dir for static audit
 P=0 F=0 S=0
