@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.50.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.50.0...v0.50.1) (2026-07-19)
+
+
+### Refactoring
+
+* **cross-repo:** resolve pin_staleness from the support checkout, not the consumer env (livespec-dev-tooling-3tu) ([913e244](https://github.com/thewoolleyman/livespec-dev-tooling/commit/913e244ae8fc199573cfc1e789ba62378aea7c45))
+
 ## [0.50.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.49.4...v0.50.0) (2026-07-19)
 
 
