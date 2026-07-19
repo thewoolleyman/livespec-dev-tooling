@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.49.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.49.2...v0.49.3) (2026-07-19)
+
+
+### Bug Fixes
+
+* **cross-repo:** check every distinct pin per source in the freshness scan ([4ad8344](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4ad83440adea6b8fa3387d4204314926112ffdaa))
+
 ## [0.49.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.49.1...v0.49.2) (2026-07-19)
 
 
