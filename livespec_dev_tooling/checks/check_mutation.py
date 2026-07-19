@@ -13,6 +13,8 @@ with-ceiling mechanism:
     (the pre-implementation placeholder), the check runs mutmut, saves
     the result as the new baseline, and exits 0. This allows the very
     first release-tag CI run to capture the baseline without a hard fail.
+    A run that enumerated zero mutants is NOT eligible: it captures no
+    baseline and fails (see the z45 note below).
 
 RUN/SKIP lever: mutation testing is slow, so the suite is gated behind
 the `LIVESPEC_RUN_MUTATION` env var (the blocker is runtime cost, not
@@ -46,6 +48,34 @@ unchanged. The `.mutmut-baseline.json` ratchet ALWAYS lives at the repo
 root regardless of the staging cwd, so the baseline is version-controlled
 in the repo, not in the (typically `.gitignore`d) staging tree.
 
+Armed-but-inspected-nothing (work-item livespec-dev-tooling-z45): the
+check formerly could not distinguish "mutation testing ran and found
+nothing wrong" from "mutation testing never ran". Three independent masks
+composed so that no misconfiguration could fail CI — (1) mutmut's rc 1
+was tolerated unconditionally, though rc 1 is BOTH the legitimate
+survivors-present exit AND what a hard crash returns (a
+`FileNotFoundError` out of `guess_paths_to_mutate()` under a
+misconfigured staging cwd); (2) a `total == 0` parse was an unconditional
+pass; (3) first-run mode promoted whatever it had just measured —
+possibly 0 — into the committed ratchet, which would pin it at 0.0%
+permanently and then fail the 80% floor forever with no obvious cause.
+Each is individually defensible; composed, they made a check that
+inspected NOTHING indistinguishable from one that passed.
+
+The three are now closed as follows, with no skip flag or env lever
+anywhere in the path:
+
+  - An ARMED check (non-empty `pure_trees`) whose run enumerates zero
+    mutants is an ERROR. Nothing legitimately produces zero mutants from
+    a non-empty pure tree.
+  - `_is_crashed_run` separates mutmut's legitimate rc 1 (survivors
+    present, verdicts parseable) from a crash (rc 1 with no parseable
+    verdicts); the crash fails and surfaces mutmut's own stderr.
+  - `_update_baseline` refuses a zero-mutant write outright, so no failed
+    measurement can be promoted over the placeholder.
+  - The mutant count and kill rate are logged before any verdict branch,
+    so "inspected 0" is visible in CI output rather than silent.
+
 Output discipline: per spec, `print` (T20) and `sys.stderr.write`
 (`check-no-write-direct`) are banned in dev-tooling/**. Diagnostics flow
 through structlog (JSON to stderr).
@@ -71,6 +101,7 @@ from livespec_dev_tooling.config import load_config, load_mutation_staging_dir  
 __all__: list[str] = [
     "_baseline_is_placeholder",
     "_derive_exit_code",
+    "_is_crashed_run",
     "_parse_mutmut_results",
     "_resolve_staging_cwd",
     "_update_baseline",
@@ -203,13 +234,37 @@ def _parse_mutmut_results(*, output: str) -> tuple[int, int]:
     return killed, total
 
 
+def _is_crashed_run(*, returncode: int, total: int) -> bool:
+    """Return True when mutmut's exit is a crash rather than a survivors-present run.
+
+    mutmut exits 1 in two entirely different situations: legitimately, when
+    mutants survived the suite; and on a hard crash before it enumerates
+    anything (the observed case: a `FileNotFoundError` out of
+    `guess_paths_to_mutate()` when the staging cwd has no `pyproject.toml`).
+    Tolerating rc 1 unconditionally therefore absorbed every crash as a
+    normal result — mask 1 of work-item livespec-dev-tooling-z45.
+
+    The two are told apart by whether the run enumerated any mutant at all:
+    a survivors-present run parses to a non-zero `total`, whereas a crash
+    produces no parseable verdicts. A non-zero return code with an empty
+    tally is therefore a crash, and the caller surfaces mutmut's stderr
+    instead of reporting success.
+    """
+    return returncode != 0 and total == 0
+
+
 def _derive_exit_code(*, killed: int, total: int, baseline: _Baseline) -> int:
     """Return exit code 0 (pass) or 1 (fail) based on kill rate vs baseline + floor.
 
-    Zero-mutant case (total=0) passes unconditionally — nothing to kill.
+    Zero-mutant case (total=0) FAILS. This helper is only ever reached with
+    the check armed (`main` returns early when `pure_trees` is empty), and
+    nothing legitimately produces zero mutants from a non-empty pure tree —
+    so an empty tally means the run inspected nothing, which must never be
+    indistinguishable from a run that passed (mask 2 of work-item
+    livespec-dev-tooling-z45).
     """
     if total == 0:
-        return 0
+        return 1
     kill_rate = (killed / total) * 100.0
     baseline_rate = float(baseline.get("kill_rate_percent", 0.0))
     if kill_rate < _KILL_RATE_FLOOR:
@@ -219,15 +274,108 @@ def _derive_exit_code(*, killed: int, total: int, baseline: _Baseline) -> int:
     return 0
 
 
-def _update_baseline(*, baseline_path: Path, killed: int, total: int) -> None:
-    """Write a new baseline JSON file with the current mutation results."""
-    kill_rate = (killed / total) * 100.0 if total > 0 else 0.0
+def _update_baseline(*, baseline_path: Path, killed: int, total: int) -> bool:
+    """Write a new baseline JSON file with the current mutation results.
+
+    Returns True when the baseline was written, False when the write was
+    REFUSED because the run enumerated zero mutants. A zero-mutant run is a
+    failed measurement, and promoting it over the `mutants_total: 0`
+    placeholder would pin the committed ratchet at 0.0% permanently — after
+    which the 80% hard floor fails every subsequent release with no obvious
+    cause (mask 3 of work-item livespec-dev-tooling-z45). The refusal lives
+    here, in the writer, so no caller can route around it.
+    """
+    if total == 0:
+        return False
+    kill_rate = (killed / total) * 100.0
     payload: dict[str, object] = {
         "kill_rate_percent": round(kill_rate, 2),
         "mutants_surviving": total - killed,
         "mutants_total": total,
     }
     _ = baseline_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    return True
+
+
+def _load_baseline(*, baseline_path: Path) -> _Baseline:
+    """Read the recorded ratchet, or an empty baseline when the file is absent.
+
+    An absent file reads as `{}`, which `_baseline_is_placeholder` treats as
+    the `mutants_total: 0` placeholder — the same first-run regime as an
+    explicitly-placeholder file.
+    """
+    if not baseline_path.is_file():
+        return {}
+    # The `cast` is the single typed parse boundary: `json.loads` yields
+    # `Any`, and the cast asserts the recorded baseline shape so the
+    # downstream `int(...)`/`float(...)` reads resolve from typed fields.
+    return cast("_Baseline", json.loads(baseline_path.read_text(encoding="utf-8")))
+
+
+def _invoke_mutmut(
+    *, staging_cwd: Path
+) -> tuple[subprocess.CompletedProcess[str], subprocess.CompletedProcess[str]]:
+    """Run `mutmut run` then `mutmut results --all True`, returning both completions.
+
+    `results` is invoked unconditionally, whatever `run` exited with: the
+    return code alone cannot classify the outcome (work-item
+    livespec-dev-tooling-z45), so the verdict tally is the evidence, and a
+    single guard downstream decides whether the pair yielded a usable
+    measurement.
+
+    `--all True` lists EVERY mutant with its verdict; without it `mutmut
+    results` prints only survivors, which the parser cannot tally into a
+    kill/total. The summary lives only in the transient `run` emoji line.
+    """
+    run_result = subprocess.run(
+        [sys.executable, "-m", "mutmut", "run"],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=str(staging_cwd),
+    )
+    results_result = subprocess.run(
+        [sys.executable, "-m", "mutmut", "results", "--all", "True"],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=str(staging_cwd),
+    )
+    return run_result, results_result
+
+
+def _measurement_is_unusable(
+    *,
+    log: structlog.stdlib.BoundLogger,
+    run_result: subprocess.CompletedProcess[str],
+    results_result: subprocess.CompletedProcess[str],
+    total: int,
+) -> bool:
+    """Return True, after logging why, when the run yielded no usable measurement.
+
+    The single place an armed run is allowed to be declared a failure of
+    MEASUREMENT rather than of kill rate (work-item
+    livespec-dev-tooling-z45). Both branches surface mutmut's own stderr,
+    which the previous rc-1 tolerance discarded; a caller that reaches past
+    this guard is holding a tally of at least one real mutant.
+    """
+    if _is_crashed_run(returncode=run_result.returncode, total=total):
+        log.error(
+            "mutmut crashed — non-zero exit with no parseable verdicts, not a survivors run",
+            returncode=run_result.returncode,
+            run_stderr=run_result.stderr[:500],
+            results_stderr=results_result.stderr[:500],
+        )
+        return True
+    if total == 0:
+        log.error(
+            "armed check enumerated zero mutants — it inspected nothing, so it cannot pass",
+            returncode=run_result.returncode,
+            run_stderr=run_result.stderr[:500],
+            results_stderr=results_result.stderr[:500],
+        )
+        return True
+    return False
 
 
 def main() -> int:
@@ -246,49 +394,16 @@ def main() -> int:
     # where the baseline lives.
     baseline_path = repo_root / _BASELINE_PATH
     staging_cwd = _resolve_staging_cwd(repo_root=repo_root)
-
-    baseline: _Baseline = {}
-    if baseline_path.is_file():
-        # The `cast` is the single typed parse boundary: `json.loads` yields
-        # `Any`, and the cast asserts the recorded baseline shape so the
-        # downstream `int(...)`/`float(...)` reads resolve from typed fields.
-        baseline = cast("_Baseline", json.loads(baseline_path.read_text(encoding="utf-8")))
-
+    baseline = _load_baseline(baseline_path=baseline_path)
     first_run = _baseline_is_placeholder(baseline=baseline)
 
-    run_result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "mutmut",
-            "run",
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-        cwd=str(staging_cwd),
-    )
-    if run_result.returncode not in (0, 1):
-        log.error(
-            "mutmut run failed",
-            returncode=run_result.returncode,
-            stderr=run_result.stderr[:500],
-        )
-        return 1
-
-    # `--all True` lists EVERY mutant with its verdict; without it `mutmut
-    # results` prints only survivors, which the parser cannot tally into a
-    # kill/total. The summary lives only in the transient `run` emoji line.
-    results_result = subprocess.run(
-        [sys.executable, "-m", "mutmut", "results", "--all", "True"],
-        capture_output=True,
-        text=True,
-        check=False,
-        cwd=str(staging_cwd),
-    )
+    run_result, results_result = _invoke_mutmut(staging_cwd=staging_cwd)
     killed, total = _parse_mutmut_results(output=results_result.stdout)
     kill_rate = (killed / total) * 100.0 if total > 0 else 0.0
 
+    # Logged BEFORE any verdict branch so the tally a CI reader needs is
+    # present on every path, including the failing ones: "inspected 0" must
+    # never render the same as "passed".
     log.info(
         "mutation results",
         killed=killed,
@@ -297,9 +412,13 @@ def main() -> int:
         first_run=first_run,
         staging_cwd=str(staging_cwd),
     )
+    if _measurement_is_unusable(
+        log=log, run_result=run_result, results_result=results_result, total=total
+    ):
+        return 1
 
     if first_run:
-        _update_baseline(baseline_path=baseline_path, killed=killed, total=total)
+        _ = _update_baseline(baseline_path=baseline_path, killed=killed, total=total)
         log.info("baseline captured", baseline_path=str(baseline_path))
         return 0
 
@@ -307,7 +426,7 @@ def main() -> int:
     if exit_code == 0:
         baseline_rate = float(baseline.get("kill_rate_percent", 0.0))
         if kill_rate > baseline_rate:
-            _update_baseline(baseline_path=baseline_path, killed=killed, total=total)
+            _ = _update_baseline(baseline_path=baseline_path, killed=killed, total=total)
             log.info("baseline improved and updated", new_rate=round(kill_rate, 2))
     else:
         baseline_rate = float(baseline.get("kill_rate_percent", 0.0))
