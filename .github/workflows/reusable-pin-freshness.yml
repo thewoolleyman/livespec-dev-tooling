@@ -132,16 +132,30 @@ jobs:
           STALENESS_THRESHOLD: ${{ inputs.staleness_threshold_releases }}
         run: |
           set -euo pipefail
-          # Build a `(source_repo, current_pin, latest_tag)` triple per
-          # record. Multiple records can share a source_repo (e.g., a
-          # consumer with the same source pinned in both pyproject.toml
-          # and .vendor.jsonc); we still emit one bump-PR-trigger
-          # entry per source_repo, deferring the per-record rewrite to
-          # the bump step below.
-          seen_sources=$(echo "$RECORDS" | jq -r '.[].source_repo' | sort -u | grep -v '^$' || true)
+          # Check a `(source_repo, current_pin, latest_tag)` triple for EVERY
+          # DISTINCT pin, per SPECIFICATION/contracts.md §"Reusable workflow
+          # inventory". Multiple records can share a source_repo (e.g., the same
+          # source pinned in both pyproject.toml and .vendor.jsonc, or the fabro
+          # image pinned in a Fabro workflow.toml AND in several per-job
+          # `container:` blocks) — and those records may hold DIFFERENT values.
+          #
+          # This previously collapsed each source to `.[0].current_value`, so a
+          # source whose first record happened to be FRESH emitted nothing even
+          # when its other pins were stale — the safety net went blind exactly
+          # where drift hides (livespec-dev-tooling-p73). The selection now comes
+          # from the tested `pin_staleness` module rather than inline jq.
+          pins=$(RECORDS="$RECORDS" uv run python -m livespec_dev_tooling.cross_repo.pin_staleness)
           stale=()
-          for source in $seen_sources; do
-            current=$(echo "$RECORDS" | jq -r --arg s "$source" '[.[] | select(.source_repo == $s)] | .[0].current_value')
+          emitted_sources=""
+          while IFS=$'\t' read -r source current; do
+            [ -n "$source" ] || continue
+            # One bump entry per source_repo is sufficient AND necessary: the
+            # rewrite step below updates EVERY record for that source, and the
+            # bump branch is named on (source, tag), so a second entry for the
+            # same source would collide on the branch name. Skipping only once a
+            # source has ALREADY produced a stale entry means a fresh pin never
+            # suppresses a stale sibling pin, whatever order they arrive in.
+            case " $emitted_sources " in *" $source "*) continue ;; esac
             # External-source codex-acp Dockerfile ARG pin (per
             # SPECIFICATION/contracts.md §"Pin autodiscovery rules"): its latest
             # version comes from the npm registry — the `latest` dist-tag of the
@@ -165,6 +179,7 @@ jobs:
               fi
               echo "::notice::codex-acp stale: current=$current latest=$latest (npm; any-diff, factory-gated)"
               stale+=("$(jq -nc --arg source_repo "$source" --arg tag "$latest" '{source_repo: $source_repo, tag: $tag, no_auto_merge: "true"}')")
+              emitted_sources="$emitted_sources $source"
               continue
             fi
             latest=$(gh release view --repo "$OWNER/$source" --json tagName -q .tagName 2>/dev/null || true)
@@ -192,8 +207,9 @@ jobs:
             if (( ordinal_distance >= STALENESS_THRESHOLD )); then
               echo "::notice::$source stale: current=$current latest=$latest distance=$ordinal_distance"
               stale+=("$(jq -nc --arg source_repo "$source" --arg tag "$latest" '{source_repo: $source_repo, tag: $tag, no_auto_merge: "false"}')")
+              emitted_sources="$emitted_sources $source"
             fi
-          done
+          done < <(echo "$pins" | jq -r '.[] | [.source_repo, .current_value] | @tsv')
           if [[ ${#stale[@]} -eq 0 ]]; then
             echo "stale=[]" >> "$GITHUB_OUTPUT"
           else
