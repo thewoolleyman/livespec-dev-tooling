@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.49.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.49.3...v0.49.4) (2026-07-19)
+
+
+### Bug Fixes
+
+* **cross-repo:** stop SIGPIPE corrupting the freshness ordinal-distance capture ([bd108ef](https://github.com/thewoolleyman/livespec-dev-tooling/commit/bd108efb08f01c9c8e5b099f90538c3ec3b0cc74))
+
 ## [0.49.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.49.2...v0.49.3) (2026-07-19)
 
 
