@@ -23,7 +23,7 @@ Co-located here (it is the sibling docker-image adapter pin, though it
 reads one well-known file rather than scanning a directory):
 
 - codex-acp Dockerfile `ARG` — the `ARG CODEX_ACP_VERSION=<version>` line
-  in `docker/fabro-sandbox/base/Dockerfile`. Unlike every other format
+  in `docker/fabro-sandbox/agent/Dockerfile`. Unlike every other format
   its source is EXTERNAL to the fleet (the npm package
   `zed-industries/codex-acp`), so no fleet release fan-out ever rewrites
   it and it is factory-gated on bump (§"codex-acp factory gate").
@@ -232,7 +232,7 @@ def walk_github_workflow_container_image(
     return out
 
 
-# The codex-acp adapter version is baked into the fabro-sandbox BASE-layer
+# The codex-acp adapter version is baked into the fabro-sandbox AGENT-layer
 # Dockerfile as a bare-semver `ARG`. Its source is the EXTERNAL npm package
 # `@zed-industries/codex-acp` (the Codex ACP adapter the orchestrator's
 # implementer nodes run), so — unlike the fabro image tag, released BY this
@@ -241,7 +241,7 @@ def walk_github_workflow_container_image(
 # (no `v` prefix).
 _CODEX_ACP_SOURCE_REPO = "zed-industries/codex-acp"
 _CODEX_ACP_ARG_NAME = "CODEX_ACP_VERSION"
-_CODEX_ACP_DOCKERFILE: tuple[str, ...] = ("docker", "fabro-sandbox", "base", "Dockerfile")
+_CODEX_ACP_DOCKERFILE: tuple[str, ...] = ("docker", "fabro-sandbox", "agent", "Dockerfile")
 _CODEX_ACP_ARG_RE = re.compile(
     r"^ARG\s+" + re.escape(_CODEX_ACP_ARG_NAME) + r"=(?P<version>\S+)\s*$",
     re.MULTILINE,

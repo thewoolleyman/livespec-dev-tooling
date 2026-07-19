@@ -17,7 +17,7 @@ formats, split across two cohesive helper modules:
   record. Each scans a directory of files. Co-located there: the
   codex-acp Dockerfile `ARG` pin
   (`ARG CODEX_ACP_VERSION=<version>` in
-  `docker/fabro-sandbox/base/Dockerfile`), whose EXTERNAL npm source
+  `docker/fabro-sandbox/agent/Dockerfile`), whose EXTERNAL npm source
   (`zed-industries/codex-acp`) means no fleet fan-out rewrites it and a
   bump is factory-gated (§"codex-acp factory gate"). The shared `record`
   normalizer lives there too.

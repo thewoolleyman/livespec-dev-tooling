@@ -1,21 +1,40 @@
 # fabro-sandbox-image.yml — build + publish the family Fabro sandbox image.
 #
 # This repo OWNS the family Fabro C-mode sandbox image (the family
-# toolchain as a container), now built as a `base -> python ->
-# python-rust` LAYER CHAIN under docker/fabro-sandbox/<layer>/Dockerfile.
+# toolchain as a container), built as a FIVE-layer TREE under
+# docker/fabro-sandbox/<layer>/Dockerfile:
+#
+#   base                     toolchain only — mise/just/lefthook/node/gh
+#    +- python               + uv + CPython                  <- CI pulls
+#    |   +- python-agent     + bubblewrap + both ACP adapters
+#    |                                            <- Fabro sandbox pulls
+#    +- python-rust          + the Rust toolchain            <- CI pulls
+#        +- python-rust-agent + bubblewrap + both ACP adapters
+#                                                 <- Fabro sandbox pulls
+#
+# The agent-only payload (bubblewrap + the two ACP adapters) sits in the
+# leaf `agent` layer rather than in `base`, so a CI job pulls only the
+# toolchain it actually uses (~42% less) while still running BYTE-
+# IDENTICAL toolchain layers to the Fabro sandbox — one image chain, no
+# separate slim CI image and therefore no CI-vs-sandbox drift. The single
+# docker/fabro-sandbox/agent/Dockerfile is built TWICE, once atop each of
+# python and python-rust, via its value-less PARENT_IMAGE build-arg.
+#
 # Each layer is a separately-published image whose `FROM` pins the exact
 # DIGEST of the layer just built (hermetic — never a floating tag). Three
 # triggers:
 #
-#   - pull_request touching image-affecting paths: build the whole chain
+#   - pull_request touching image-affecting paths: build the whole tree
 #     WITHOUT publishing to GHCR — the layers are pushed to an EPHEMERAL
 #     in-job `localhost:5000` registry so the `FROM`-by-digest chain
 #     resolves, validating that every layer still builds.
 #   - push to master touching the same paths: build + publish the
 #     immutable per-commit tags `base-sha-<short>` / `python-sha-<short>`
-#     / `python-rust-sha-<short>`.
+#     / `python-agent-sha-<short>` / `python-rust-sha-<short>` /
+#     `python-rust-agent-sha-<short>`.
 #   - release published: build + publish the immutable semver tags
-#     `base-v<X.Y.Z>` / `python-v<X.Y.Z>` / `python-rust-v<X.Y.Z>`
+#     `base-v<X.Y.Z>` / `python-v<X.Y.Z>` / `python-agent-v<X.Y.Z>` /
+#     `python-rust-v<X.Y.Z>` / `python-rust-agent-v<X.Y.Z>`
 #     (release-please authenticates via the livespec App installation
 #     token, so its releases DO fire this event). `paths` filters do not
 #     apply to release events, so EVERY release gets semver-tagged layer
@@ -154,6 +173,32 @@ jobs:
           cache-from: type=gha,scope=python
           cache-to: type=gha,scope=python,mode=max
 
+      # ---- python-agent layer (FROM the python digest just built) ----
+      - name: Compute python-agent tags
+        id: meta_python_agent
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.target.outputs.image }}
+          flavor: latest=false
+          tags: |
+            type=sha,prefix=python-agent-sha-
+            type=semver,pattern=v{{version}},prefix=python-agent-
+
+      - name: Build + push python-agent
+        id: build_python_agent
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/fabro-sandbox/agent/Dockerfile
+          push: true
+          provenance: false
+          build-args: |
+            PARENT_IMAGE=${{ steps.target.outputs.image }}@${{ steps.build_python.outputs.digest }}
+          tags: ${{ steps.meta_python_agent.outputs.tags }}
+          labels: ${{ steps.meta_python_agent.outputs.labels }}
+          cache-from: type=gha,scope=python-agent
+          cache-to: type=gha,scope=python-agent,mode=max
+
       # ---- python-rust layer (FROM the python digest just built) ----
       - name: Compute python-rust tags
         id: meta_python_rust
@@ -179,6 +224,32 @@ jobs:
           labels: ${{ steps.meta_python_rust.outputs.labels }}
           cache-from: type=gha,scope=python-rust
           cache-to: type=gha,scope=python-rust,mode=max
+
+      # ---- python-rust-agent layer (FROM the python-rust digest just built) ----
+      - name: Compute python-rust-agent tags
+        id: meta_python_rust_agent
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.target.outputs.image }}
+          flavor: latest=false
+          tags: |
+            type=sha,prefix=python-rust-agent-sha-
+            type=semver,pattern=v{{version}},prefix=python-rust-agent-
+
+      - name: Build + push python-rust-agent
+        id: build_python_rust_agent
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/fabro-sandbox/agent/Dockerfile
+          push: true
+          provenance: false
+          build-args: |
+            PARENT_IMAGE=${{ steps.target.outputs.image }}@${{ steps.build_python_rust.outputs.digest }}
+          tags: ${{ steps.meta_python_rust_agent.outputs.tags }}
+          labels: ${{ steps.meta_python_rust_agent.outputs.labels }}
+          cache-from: type=gha,scope=python-rust-agent
+          cache-to: type=gha,scope=python-rust-agent,mode=max
 
   # ---------------------------------------------------------------------------
   # Producer-side self-reconcile of this repository's OWN self-sourced pins.

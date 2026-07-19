@@ -2,7 +2,7 @@
 
 Per `SPECIFICATION/contracts.md` §"Pin autodiscovery rules", the codex-acp pin is
 the `ARG CODEX_ACP_VERSION=<version>` line in
-`docker/fabro-sandbox/base/Dockerfile`, carrying the bare npm semver (no `v`
+`docker/fabro-sandbox/agent/Dockerfile`, carrying the bare npm semver (no `v`
 prefix) of the `@zed-industries/codex-acp` adapter. Unlike the fabro image tag
 (a `<layer>-vX.Y.Z` prefixed value), this pin is a plain bare value, so the
 rewrite replaces the whole value on the anchored `ARG` line. These tests give
