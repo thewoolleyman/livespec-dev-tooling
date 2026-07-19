@@ -1,8 +1,9 @@
 """Outside-in tests for `cross_repo/_pin_directory_scan_formats.py`.
 
 The directory-scanning pin formats — the `.github/workflows/*.yml`
-`uses:` ref and the fabro-sandbox docker image tag in `.fabro`
-`workflow.toml` files — each scan a directory of files rather than
+`uses:` ref and the fabro-sandbox docker image tag, which appears both
+in `.fabro` `workflow.toml` files and (per job `container:` block) in
+`.github/workflows/*.yml` — each scan a directory of files rather than
 reading one well-known file. This mirror file exercises each format
 individually, the source-repo filter, the missing-directory tolerance,
 and the multi-file / multi-workflow coexistence cases. The walks are
@@ -255,6 +256,170 @@ def test_discover_fabro_docker_source_repo_filter_no_match(*, tmp_path: Path) ->
         base_parts=(".claude-plugin", ".fabro", "workflows"),
         workflow="implement-work-item",
         tag="v0.39.0",
+    )
+    result = pin_autodiscovery.discover(root=tmp_path, source_repo="other")
+    assert result == []
+
+
+def test_discover_fabro_docker_multiple_lines_in_one_workflow_toml(*, tmp_path: Path) -> None:
+    """Two docker lines in ONE `workflow.toml` emit one record each, not just the first.
+
+    Per `SPECIFICATION/contracts.md` §"Pin autodiscovery rules", the
+    per-matching-line rule binds the WHOLE `fabro_sandbox_docker_image` format,
+    not only its `.github/workflows/` surface — so the `workflow.toml` walk is
+    find-ALL, removing the latent first-match-per-file assumption.
+    """
+    workflow_dir = tmp_path / ".fabro" / "workflows" / "implement-work-item"
+    workflow_dir.mkdir(parents=True)
+    (workflow_dir / "workflow.toml").write_text(
+        "[image]\n"
+        f'docker = "{_FABRO_IMAGE}:python-v0.43.2"\n'
+        "[fallback.image]\n"
+        f'docker = "{_FABRO_IMAGE}:python-rust-v0.48.2"\n',
+        encoding="utf-8",
+    )
+    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    assert len(result) == 2
+    assert [r["current_value"] for r in result] == ["python-v0.43.2", "python-rust-v0.48.2"]
+    assert all(r["pin_format"] == "fabro_sandbox_docker_image" for r in result)
+    assert all(
+        r["file_path"] == ".fabro/workflows/implement-work-item/workflow.toml" for r in result
+    )
+
+
+# ---------------------------------------------------------------------------
+# fabro-sandbox docker image tag — the `.github/workflows/` container: surface
+#
+# The SAME `fabro_sandbox_docker_image` format, found at a SECOND location: a
+# cut-over consumer runs its CI jobs inside the baked sandbox image, so the
+# image reference is repeated per job under `container:`. Per
+# `SPECIFICATION/contracts.md` §"Pin autodiscovery rules" EVERY such line is
+# walked, yielding ONE RECORD PER MATCHING LINE across files AND within one
+# file — a walk that stopped at the first match per file would leave jobs 2..N
+# pinned to the stale tag.
+# ---------------------------------------------------------------------------
+
+
+def _container_job(*, job: str, tag: str) -> str:
+    """Render one CI job whose `container:` block pins the fabro-sandbox image."""
+    return (
+        f"  {job}:\n"
+        "    runs-on: ubuntu-latest\n"
+        "    container:\n"
+        f"      image: {_FABRO_IMAGE}:{tag}\n"
+    )
+
+
+def test_discover_workflow_container_image_multiple_jobs_one_file(*, tmp_path: Path) -> None:
+    """Several `container:`-block `image:` lines in ONE workflow file emit one record each."""
+    workflows_dir = tmp_path / ".github" / "workflows"
+    workflows_dir.mkdir(parents=True)
+    (workflows_dir / "ci.yml").write_text(
+        "jobs:\n"
+        + _container_job(job="check-python", tag="python-v0.43.2")
+        + _container_job(job="check-docs", tag="python-v0.43.2"),
+        encoding="utf-8",
+    )
+    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    assert len(result) == 2
+    for record in result:
+        assert record["pin_format"] == "fabro_sandbox_docker_image"
+        assert record["file_path"] == ".github/workflows/ci.yml"
+        assert record["pin_key"] == _FABRO_IMAGE
+        assert record["current_value"] == "python-v0.43.2"
+        assert record["source_repo"] == "livespec-dev-tooling"
+
+
+def test_discover_workflow_container_image_multiple_files(*, tmp_path: Path) -> None:
+    """Matching lines spread across MORE THAN ONE workflow file are all emitted.
+
+    Mirrors the real `livespec` layout: two jobs in `ci.yml` plus three in
+    `ci-selfhosted-shadow.yml`, for five records total.
+    """
+    workflows_dir = tmp_path / ".github" / "workflows"
+    workflows_dir.mkdir(parents=True)
+    (workflows_dir / "ci.yml").write_text(
+        "jobs:\n"
+        + _container_job(job="check-python", tag="python-v0.43.2")
+        + _container_job(job="check-docs", tag="python-v0.43.2"),
+        encoding="utf-8",
+    )
+    (workflows_dir / "ci-selfhosted-shadow.yml").write_text(
+        "jobs:\n"
+        + _container_job(job="shadow-a", tag="python-v0.43.2")
+        + _container_job(job="shadow-b", tag="python-v0.43.2")
+        + _container_job(job="shadow-c", tag="python-v0.43.2"),
+        encoding="utf-8",
+    )
+    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    assert len(result) == 5
+    per_file = sorted(r["file_path"] for r in result)
+    assert per_file == [
+        ".github/workflows/ci-selfhosted-shadow.yml",
+        ".github/workflows/ci-selfhosted-shadow.yml",
+        ".github/workflows/ci-selfhosted-shadow.yml",
+        ".github/workflows/ci.yml",
+        ".github/workflows/ci.yml",
+    ]
+
+
+def test_discover_workflow_container_image_one_line_shorthand(*, tmp_path: Path) -> None:
+    """The one-line `container: <image>` shorthand is covered by the same scoped match."""
+    workflows_dir = tmp_path / ".github" / "workflows"
+    workflows_dir.mkdir(parents=True)
+    (workflows_dir / "ci.yaml").write_text(
+        "jobs:\n" "  check:\n" f"    container: {_FABRO_IMAGE}:python-rust-v0.48.2\n",
+        encoding="utf-8",
+    )
+    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    assert len(result) == 1
+    assert result[0]["pin_format"] == "fabro_sandbox_docker_image"
+    assert result[0]["file_path"] == ".github/workflows/ci.yaml"
+    assert result[0]["current_value"] == "python-rust-v0.48.2"
+
+
+def test_discover_workflow_container_image_scoped_to_fabro_sandbox(*, tmp_path: Path) -> None:
+    """An unrelated `container:` / `image:` line yields NO record — the match is scoped."""
+    workflows_dir = tmp_path / ".github" / "workflows"
+    workflows_dir.mkdir(parents=True)
+    (workflows_dir / "ci.yml").write_text(
+        "jobs:\n"
+        "  build:\n"
+        "    container:\n"
+        "      image: ghcr.io/thewoolleyman/some-other-image:v1.0.0\n"
+        "  publish:\n"
+        "    container: ubuntu:24.04\n",
+        encoding="utf-8",
+    )
+    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    assert result == []
+
+
+def test_discover_workflow_container_image_source_repo_filter_match(*, tmp_path: Path) -> None:
+    """`--source-repo livespec-dev-tooling` includes the CI container-image record.
+
+    The source repo is HARDCODED (the image is built and released by
+    livespec-dev-tooling), which is what lets a dev-tooling release fan-out
+    rewrite the CI image in the SAME bump commit as the pyproject/compat pins.
+    """
+    workflows_dir = tmp_path / ".github" / "workflows"
+    workflows_dir.mkdir(parents=True)
+    (workflows_dir / "ci.yml").write_text(
+        "jobs:\n" + _container_job(job="check-python", tag="python-v0.43.2"),
+        encoding="utf-8",
+    )
+    result = pin_autodiscovery.discover(root=tmp_path, source_repo="livespec-dev-tooling")
+    assert len(result) == 1
+    assert result[0]["source_repo"] == "livespec-dev-tooling"
+
+
+def test_discover_workflow_container_image_source_repo_filter_no_match(*, tmp_path: Path) -> None:
+    """`--source-repo other` excludes the CI container-image record entirely."""
+    workflows_dir = tmp_path / ".github" / "workflows"
+    workflows_dir.mkdir(parents=True)
+    (workflows_dir / "ci.yml").write_text(
+        "jobs:\n" + _container_job(job="check-python", tag="python-v0.43.2"),
+        encoding="utf-8",
     )
     result = pin_autodiscovery.discover(root=tmp_path, source_repo="other")
     assert result == []

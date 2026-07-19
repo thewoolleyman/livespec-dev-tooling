@@ -10,8 +10,12 @@ formats, split across two cohesive helper modules:
   `.vendor.jsonc` — each reads a single well-known file at the repo root.
 - directory-scan formats (`_pin_directory_scan_formats`): the
   `.github/workflows/*.yml` `uses:` ref and the fabro-sandbox docker
-  image tag in `.fabro` `workflow.toml` files — each scans a directory
-  of files. Co-located there: the codex-acp Dockerfile `ARG` pin
+  image tag — the latter found at two surfaces walked as ONE format,
+  the `docker =` line in `.fabro` `workflow.toml` files and the
+  per-job `container:` block's `image:` line in
+  `.github/workflows/*.yml`, each matching line yielding its own
+  record. Each scans a directory of files. Co-located there: the
+  codex-acp Dockerfile `ARG` pin
   (`ARG CODEX_ACP_VERSION=<version>` in
   `docker/fabro-sandbox/base/Dockerfile`), whose EXTERNAL npm source
   (`zed-industries/codex-acp`) means no fleet fan-out rewrites it and a
@@ -60,6 +64,7 @@ import structlog  # noqa: E402  — vendor-path-aware import after sys.path inse
 from livespec_dev_tooling.cross_repo._pin_directory_scan_formats import (  # noqa: E402
     walk_codex_acp_docker_arg,
     walk_fabro_workflow_docker,
+    walk_github_workflow_container_image,
     walk_github_workflow_uses,
 )
 from livespec_dev_tooling.cross_repo._pin_single_file_formats import (  # noqa: E402
@@ -132,6 +137,9 @@ def discover(*, root: Path, source_repo: str | None) -> list[dict[str, str]]:
     records.extend(walk_vendor_jsonc(root=root, source_repo_filter=source_repo, log=log))
     records.extend(walk_github_workflow_uses(root=root, source_repo_filter=source_repo, log=log))
     records.extend(walk_fabro_workflow_docker(root=root, source_repo_filter=source_repo, log=log))
+    records.extend(
+        walk_github_workflow_container_image(root=root, source_repo_filter=source_repo, log=log)
+    )
     records.extend(walk_codex_acp_docker_arg(root=root, source_repo_filter=source_repo, log=log))
     return records
 
