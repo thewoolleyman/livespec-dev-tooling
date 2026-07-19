@@ -62,14 +62,34 @@ next unrewritten occurrence). Emitting discovery records without extending the
 matcher would convert a silent drift into a hard fan-out failure — strictly worse
 than the status quo.
 
-**Implementation warning carried from the independent review:** the existing
+**Implementation warnings carried from the independent reviews.** The existing
 fabro-sandbox walk is FIRST-MATCH-PER-FILE (`_FABRO_DOCKER_RE.search()`), and its
-tests assert exactly one record per `workflow.toml`. The CI surface is not like
-that — every cut-over consumer's `ci.yml` carries several matching lines (measured
-2026-07-19: `livespec` 2, `livespec-dev-tooling` 2, `livespec-driver-claude` 3,
-`livespec-driver-codex` 3, `livespec-runtime` 3, `livespec-console-beads-fabro` 3,
-`livespec-orchestrator-git-jsonl` 5). The implementation MUST find ALL matches per
-file and MUST carry a multi-job fixture, or jobs 2..N silently keep the stale tag.
+tests assert exactly one record per `workflow.toml`. The CI surface is NOT like
+that, in two distinct ways an implementer must handle:
+
+- **Many matching lines per FILE.** Every cut-over consumer repeats a job
+  `container:` block per containerized job. Measured in `ci.yml` on each repo's
+  `origin/master`, 2026-07-19: `livespec` 2, `livespec-dev-tooling` 2,
+  `livespec-driver-claude` 3, `livespec-driver-codex` 3, `livespec-runtime` 3,
+  `livespec-console-beads-fabro` 3, `livespec-orchestrator-git-jsonl` 5.
+- **Many matching FILES per repo.** `ci.yml` is not the only workflow carrying the
+  pin: `livespec` also carries 3 matching lines in
+  `.github/workflows/ci-selfhosted-shadow.yml`, so its true surface is 5 lines
+  across 2 files. Counting every workflow file, the real fan-out rewrites
+  **24 lines across 8 files in 7 repos** (`livespec-orchestrator-beads-fabro` has
+  none — it is not cut over).
+
+So the implementation MUST find ALL matches per file, and its fixtures MUST include
+BOTH a multi-job consumer AND a multi-FILE consumer. A first-match walk leaves jobs
+2..N — and entire additional workflow files — pinned to the stale tag.
+
+Two further implementation notes: the per-line rule now binds the WHOLE format,
+including the `workflow.toml` surface, which stays conformant today only because
+every real `workflow.toml` happens to carry exactly one `docker =` line — unify both
+surfaces to find-all semantics rather than leaving a latent single-match assumption.
+And the one-line `container: <image>` shorthand the amendment covers is currently
+unexercised fleet-wide (zero uses), so it needs its own fixture or the clause
+becomes dead prose.
 
 ### Proposed Changes
 
@@ -92,9 +112,11 @@ REPLACE WITH:
 
 - No `## ` heading is added, changed, or removed by this proposal, so no
   `tests/heading-coverage.json` co-edit is required.
-- The amendment deliberately states the multiple-records-per-`pin_key` consequence,
-  because a consumer that carries BOTH a Fabro `workflow.toml` and a cut-over
-  `ci.yml` now yields two records sharing one `pin_key`, distinguished only by
-  `file_path`.
+- The amendment deliberately states the multiple-records-per-`pin_key` consequence.
+  A consumer now yields MULTIPLE records sharing one `pin_key` — ONE PER MATCHING
+  LINE. They are NOT all distinguishable by `file_path`: several records routinely
+  come from the SAME file (one per job `container:` block), so `file_path` alone
+  identifies a file, not a record. `livespec-console-beads-fabro`, for example,
+  yields 4 records for this one `pin_key` (1 in `workflow.toml` + 3 in `ci.yml`).
 - The source repo for the new surface stays HARDCODED to `livespec-dev-tooling`,
   exactly as the existing format specifies — it is not derived from the file.
