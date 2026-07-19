@@ -32,7 +32,7 @@ import json
 import os
 import sys
 
-__all__: list[str] = ["distinct_source_pins"]
+__all__: list[str] = ["distinct_source_pins", "ordinal_distance"]
 
 
 def distinct_source_pins(*, records: list[dict[str, str]]) -> list[tuple[str, str]]:
@@ -53,13 +53,63 @@ def distinct_source_pins(*, records: list[dict[str, str]]) -> list[tuple[str, st
     return sorted(pairs)
 
 
-def main() -> int:
-    """IO entry point — read `RECORDS` JSON from env, emit the pins to check.
+def ordinal_distance(*, tags: list[str], current: str, fallback: int) -> int:
+    """Return how many releases `current` is behind the newest, or `fallback`.
 
-    Emits a JSON array of `{"source_repo": ..., "current_value": ...}` objects on
-    stdout, which the freshness workflow iterates. Replaces the inline
-    `jq '... | .[0].current_value'` that only ever yielded one pin per source.
+    `tags` is the release list newest-first, so the index of `current` IS the
+    ordinal distance: 0 means the pin is the latest release.
+
+    Consumes the WHOLE list rather than stopping at the match. That is the point
+    of this function, not an inefficiency: the shell version it replaces stopped
+    early, which SIGPIPEd the upstream producer, and under `pipefail` the failed
+    pipeline triggered a `||` fallback whose output was captured ALONGSIDE the
+    real answer. Reading to the end means there is no early exit for a producer
+    to trip over.
+
+    A `current` absent from the list (an unrecognizable or pre-scheme tag) yields
+    `fallback` — deliberately the staleness threshold, so an unreadable pin reads
+    as STALE rather than silently as fresh.
     """
+    found = -1
+    for index, tag in enumerate(tags):
+        if found < 0 and tag == current:
+            found = index
+    return fallback if found < 0 else found
+
+
+def _ordinal_distance_main(*, current: str, fallback: str) -> int:
+    """`--ordinal-distance` mode — read the tag list on stdin, print ONE integer.
+
+    Reads stdin to EOF, so the upstream producer is never SIGPIPEd, and prints a
+    single bare integer with no fallback path that could append a second value.
+    Both properties are the fix: the shell version this replaces could emit two
+    lines, which made the caller's numeric comparison syntax-error and silently
+    evaluate false.
+
+    Blank lines are ignored so a producer's trailing newline cannot shift the
+    distance by one.
+    """
+    tags = [line.strip() for line in sys.stdin.read().splitlines() if line.strip()]
+    distance = ordinal_distance(tags=tags, current=current, fallback=int(fallback))
+    _ = sys.stdout.write(f"{distance}\n")
+    return 0
+
+
+def main() -> int:
+    """IO entry point — two modes, selected by argv.
+
+    With `--ordinal-distance <current> <fallback>`: read the release-tag list on
+    stdin and print how many releases `current` is behind.
+
+    Otherwise: read `RECORDS` JSON from env and emit a JSON array of
+    `{"source_repo": ..., "current_value": ...}` objects, which the freshness
+    workflow iterates. Replaces the inline `jq '... | .[0].current_value'` that
+    only ever yielded one pin per source.
+    """
+    argv = sys.argv[1:]
+    if argv and argv[0] == "--ordinal-distance":
+        return _ordinal_distance_main(current=argv[1], fallback=argv[2])
+
     raw = os.environ.get("RECORDS", "[]")
     records: list[dict[str, str]] = json.loads(raw)
     pins = distinct_source_pins(records=records)

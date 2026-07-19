@@ -197,12 +197,28 @@ jobs:
             # ahead". With default 1, any tag mismatch qualifies.
             # Higher thresholds let a consumer tolerate brief drift
             # windows without noise.
+            #
+            # Computed by the TESTED `pin_staleness` module, not inline shell.
+            # The previous form piped the release list into an awk that `exit`ed
+            # at the match with a `|| echo` fallback. The early exit SIGPIPEd
+            # `gh`; under `pipefail` that made the PIPELINE non-zero, so the
+            # fallback ALSO ran and the substitution captured TWO values
+            # ("9\n1"). The `(( ))` below then syntax-errored, evaluated FALSE,
+            # and SILENTLY dropped a stale source — and because the early exit
+            # only fires when the tag IS found, it broke exactly the stale case
+            # this scan exists to catch, while still reporting success
+            # (livespec-dev-tooling-ews). The module reads stdin to EOF, so
+            # there is no early exit to SIGPIPE, and prints one bare integer.
             ordinal_distance=$(gh release list --repo "$OWNER/$source" --limit 100 \
               --json tagName -q '.[].tagName' \
-              | awk -v current="$current" 'BEGIN{n=0} {if($0==current){print n; exit} n++}' \
-              || echo "$STALENESS_THRESHOLD")
-            if [[ -z "$ordinal_distance" ]]; then
-              ordinal_distance="$STALENESS_THRESHOLD"
+              | uv run --project .livespec-dev-tooling python -m \
+                  livespec_dev_tooling.cross_repo.pin_staleness \
+                  --ordinal-distance "$current" "$STALENESS_THRESHOLD")
+            # Fail LOUDLY on a non-integer rather than letting `(( ))` swallow
+            # it as false — a silent false is what hid the original defect.
+            if ! [[ "$ordinal_distance" =~ ^[0-9]+$ ]]; then
+              echo "::error::ordinal distance for $source is not a single integer: [$ordinal_distance]"
+              exit 1
             fi
             if (( ordinal_distance >= STALENESS_THRESHOLD )); then
               echo "::notice::$source stale: current=$current latest=$latest distance=$ordinal_distance"
