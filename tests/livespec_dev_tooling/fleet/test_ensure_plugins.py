@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Final
 
 from livespec_dev_tooling.fleet._context import (
     FleetContext,
@@ -21,8 +22,11 @@ from livespec_dev_tooling.fleet._rows_claude_plugin import (
 )
 from livespec_dev_tooling.fleet.ensure_plugins import (
     CommandResult,
+    ensure,
     planned_commands,
+    registry_findings,
     run_from_settings,
+    settings_findings,
 )
 
 __all__: list[str] = []
@@ -219,3 +223,250 @@ def test_claude_plugin_currency_row_is_wired_for_every_class() -> None:
     assert row.assert_member is assert_claude_plugin_currency
     assert row.reconcile is None
     assert row.manual_hint
+
+
+_M3: Final[str] = json.dumps(
+    {
+        "extraKnownMarketplaces": {
+            "alpha": {"source": {"source": "github", "repo": "acme/alpha", "ref": "release"}},
+            "beta": {"source": {"source": "github", "repo": "acme/beta", "ref": "release"}},
+        },
+        "enabledPlugins": {"one@alpha": True, "two@beta": True},
+    }
+)
+
+
+def _settings(*, enabled: object) -> str:
+    return json.dumps(
+        {
+            "extraKnownMarketplaces": {
+                "alpha": {"source": {"source": "github", "repo": "acme/alpha", "ref": "release"}},
+                "beta": {"source": {"source": "github", "repo": "acme/beta", "ref": "release"}},
+            },
+            "enabledPlugins": enabled,
+        }
+    )
+
+
+def _registry(*, entries: dict[str, list[dict[str, str]]]) -> str:
+    return json.dumps({"plugins": entries})
+
+
+def test_settings_findings_pass_when_every_marketplace_is_covered() -> None:
+    assert settings_findings(settings_text=_M3) == ()
+
+
+def test_settings_findings_reject_empty_enablement() -> None:
+    findings = settings_findings(settings_text=_settings(enabled={}))
+    assert findings != ()
+    assert any("no plugin is enabled" in f for f in findings)
+
+
+def test_settings_findings_reject_all_false_enablement() -> None:
+    findings = settings_findings(
+        settings_text=_settings(enabled={"one@alpha": False, "two@beta": False})
+    )
+    assert findings != ()
+    assert any("no plugin is enabled" in f for f in findings)
+
+
+def test_settings_findings_reject_partially_stripped_enablement() -> None:
+    findings = settings_findings(settings_text=_settings(enabled={"one@alpha": True}))
+    assert findings != ()
+    assert any("beta" in f for f in findings)
+
+
+def test_settings_findings_distinguish_disabled_from_stripped() -> None:
+    disabled = settings_findings(
+        settings_text=_settings(enabled={"one@alpha": True, "two@beta": False})
+    )
+    stripped = settings_findings(settings_text=_settings(enabled={"one@alpha": True}))
+    assert any("disabled" in f for f in disabled)
+    assert not any("disabled" in f for f in stripped)
+
+
+def test_settings_findings_reject_non_boolean_values() -> None:
+    findings = settings_findings(settings_text=_settings(enabled={"one@alpha": "true"}))
+    assert findings != ()
+    assert any("boolean" in f for f in findings)
+
+
+def test_registry_findings_pass_when_project_path_matches() -> None:
+    registry = _registry(
+        entries={
+            "one@alpha": [{"projectPath": "/repo"}],
+            "two@beta": [{"projectPath": "/repo"}],
+        }
+    )
+    assert registry_findings(settings_text=_M3, project_root="/repo", registry_text=registry) == ()
+
+
+def test_registry_findings_reject_record_for_a_different_project() -> None:
+    registry = _registry(
+        entries={
+            "one@alpha": [{"projectPath": "/elsewhere"}],
+            "two@beta": [{"projectPath": "/repo"}],
+        }
+    )
+    findings = registry_findings(settings_text=_M3, project_root="/repo", registry_text=registry)
+    assert any("one@alpha" in f for f in findings)
+
+
+def test_registry_findings_reject_absent_registry() -> None:
+    findings = registry_findings(settings_text=_M3, project_root="/repo", registry_text=None)
+    assert findings != ()
+
+
+def test_registry_findings_ignore_disabled_plugins() -> None:
+    settings = _settings(enabled={"one@alpha": True, "two@beta": False})
+    registry = _registry(entries={"one@alpha": [{"projectPath": "/repo"}]})
+    assert (
+        registry_findings(settings_text=settings, project_root="/repo", registry_text=registry)
+        == ()
+    )
+
+
+def test_ensure_returns_no_findings_when_provisioning_succeeds() -> None:
+    registry = _registry(
+        entries={
+            "one@alpha": [{"projectPath": "/repo"}],
+            "two@beta": [{"projectPath": "/repo"}],
+        }
+    )
+    ran: list[tuple[str, ...]] = []
+
+    def runner(*, args: tuple[str, ...]) -> CommandResult:
+        ran.append(args)
+        return CommandResult(returncode=0)
+
+    findings = ensure(
+        settings_text=_M3,
+        project_root="/repo",
+        runner=runner,
+        read_registry=lambda: registry,
+    )
+    assert findings == ()
+    assert ran != []
+
+
+def test_ensure_refuses_to_run_commands_when_settings_are_vacuous() -> None:
+    ran: list[tuple[str, ...]] = []
+
+    def runner(*, args: tuple[str, ...]) -> CommandResult:  # pragma: no cover
+        ran.append(args)
+        return CommandResult(returncode=0)
+
+    findings = ensure(
+        settings_text=_settings(enabled={}),
+        project_root="/repo",
+        runner=runner,
+        read_registry=lambda: None,
+    )
+    assert findings != ()
+    assert ran == []
+
+
+def test_ensure_reports_when_commands_succeed_but_no_record_lands() -> None:
+    """The exit-status trap: every command exits 0, yet nothing was provisioned."""
+    ran: list[tuple[str, ...]] = []
+
+    def runner(*, args: tuple[str, ...]) -> CommandResult:
+        ran.append(args)
+        return CommandResult(returncode=0)
+
+    findings = ensure(
+        settings_text=_M3,
+        project_root="/repo",
+        runner=runner,
+        read_registry=lambda: _registry(entries={}),
+    )
+    assert findings != ()
+    assert any("one@alpha" in f for f in findings)
+
+
+def test_settings_findings_reject_non_object_document() -> None:
+    assert settings_findings(settings_text=json.dumps([1, 2])) != ()
+
+
+def test_settings_findings_reject_non_object_marketplaces() -> None:
+    text = json.dumps({"extraKnownMarketplaces": ["alpha"], "enabledPlugins": {}})
+    assert settings_findings(settings_text=text) != ()
+
+
+def test_settings_findings_reject_non_object_enablement() -> None:
+    text = json.dumps({"extraKnownMarketplaces": {}, "enabledPlugins": 7})
+    assert settings_findings(settings_text=text) != ()
+
+
+def test_settings_findings_reject_list_enablement_with_non_string_entry() -> None:
+    assert settings_findings(settings_text=_settings(enabled=[1])) != ()
+
+
+def test_settings_findings_accept_legacy_list_enablement() -> None:
+    assert settings_findings(settings_text=_settings(enabled=["one@alpha", "two@beta"])) == ()
+
+
+def test_settings_findings_pass_when_no_marketplace_is_declared() -> None:
+    assert settings_findings(settings_text=json.dumps({"enabledPlugins": {}})) == ()
+
+
+def test_registry_findings_reject_non_object_document() -> None:
+    assert (
+        registry_findings(settings_text=json.dumps([1]), project_root="/repo", registry_text=None)
+        != ()
+    )
+
+
+def test_registry_findings_surface_enablement_shape_errors() -> None:
+    assert (
+        registry_findings(
+            settings_text=_settings(enabled={"one@alpha": "yes"}),
+            project_root="/repo",
+            registry_text=None,
+        )
+        != ()
+    )
+
+
+def test_registry_findings_treat_non_object_registry_as_empty() -> None:
+    assert (
+        registry_findings(settings_text=_M3, project_root="/repo", registry_text=json.dumps([1]))
+        != ()
+    )
+
+
+def test_registry_findings_treat_non_object_plugins_map_as_empty() -> None:
+    assert (
+        registry_findings(
+            settings_text=_M3, project_root="/repo", registry_text=json.dumps({"plugins": []})
+        )
+        != ()
+    )
+
+
+def test_registry_findings_treat_non_list_entries_as_empty() -> None:
+    text = json.dumps({"plugins": {"one@alpha": {"projectPath": "/repo"}}})
+    assert registry_findings(settings_text=_M3, project_root="/repo", registry_text=text) != ()
+
+
+def test_registry_findings_ignore_non_object_entries() -> None:
+    text = json.dumps({"plugins": {"one@alpha": ["nope"], "two@beta": [{"projectPath": "/repo"}]}})
+    findings = registry_findings(settings_text=_M3, project_root="/repo", registry_text=text)
+    assert any("one@alpha" in f for f in findings)
+
+
+def test_ensure_reports_a_failing_command_and_stops() -> None:
+    ran: list[tuple[str, ...]] = []
+
+    def runner(*, args: tuple[str, ...]) -> CommandResult:
+        ran.append(args)
+        return CommandResult(returncode=9)
+
+    findings = ensure(
+        settings_text=_M3,
+        project_root="/repo",
+        runner=runner,
+        read_registry=lambda: None,
+    )
+    assert any("exit 9" in f for f in findings)
+    assert len(ran) == 1
