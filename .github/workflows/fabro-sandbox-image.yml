@@ -179,3 +179,140 @@ jobs:
           labels: ${{ steps.meta_python_rust.outputs.labels }}
           cache-from: type=gha,scope=python-rust
           cache-to: type=gha,scope=python-rust,mode=max
+
+  # ---------------------------------------------------------------------------
+  # Producer-side self-reconcile of this repository's OWN self-sourced pins.
+  #
+  # Authority: SPECIFICATION/contracts.md §"Self-hosting".
+  #
+  # This library is a sibling consumer of its own coordination surface, but the
+  # release fan-out (`reusable-release-dispatch.yml`) deliberately EXCLUDES the
+  # publishing repository from its dispatch matrix so a release does not echo
+  # back to itself. Consequently no `sibling-released` dispatch announcing THIS
+  # library's own release ever arrives here, and a SELF-SOURCED pin — one whose
+  # source repo is this library — is structurally unreachable by the dispatch
+  # path that reconciles every other pin. Two formats are self-sourced today and
+  # this job reconciles BOTH:
+  #
+  #   - `fabro_sandbox_docker_image` — the `container: image:` tag in this
+  #     repo's own `.github/workflows/ci.yml`, whose source repo is HARDCODED to
+  #     `livespec-dev-tooling` (the repository that builds and releases it).
+  #   - `github_workflow_uses_ref` — this repo's own `uses:` refs into its own
+  #     reusable workflows (the consumer shims `release-dispatch.yml`,
+  #     `bump-pin-from-dispatch.yml`, `pin-freshness.yml`, `release-park.yml`),
+  #     whose source repo derives to this library from the `<repo>` segment.
+  #
+  # The pin set is DISCOVERED by the shipped autodiscovery walk rather than
+  # enumerated here, so a newly-added self-sourced pin is picked up without
+  # editing this workflow (and the enumeration above cannot rot into a lie).
+  #
+  # `needs: build` is load-bearing, not cosmetic: per §"Self-hosting" the image
+  # tag MUST NOT be rewritten before the released image exists, or CI gets
+  # pinned to a tag nothing ever pushed. Depending on the build job makes that
+  # ordering hold STRUCTURALLY rather than by hope. (A `uses:` ref carries no
+  # such constraint — its tag exists the moment the release is published — but
+  # both formats share this job, so both simply wait.)
+  #
+  # This cannot recurse: the composite Action commits with the `chore(deps):`
+  # convention, and a `chore:` commit cuts no release
+  # (§"PR commit-message convention").
+  # ---------------------------------------------------------------------------
+  self-reconcile-pins:
+    name: self-reconcile-pins
+    needs: build
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mint App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      # Branch from the CURRENT default-branch tip, not the release-tagged
+      # commit. The release commit is normally the tip, but if master has moved
+      # since, rewriting against the stale tree would open a bump PR that is
+      # BEHIND and may conflict. The pins being reconciled are a property of
+      # current master, so master is the correct base.
+      - name: Checkout master with App token
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
+
+      # The shared `bump-pin-rewrite` composite Action resolves its rewrite
+      # modules via `uv run --project .livespec-dev-tooling` — the caller-side
+      # support checkout every CONSUMER of the dispatch path materializes. Self-
+      # hosting is the same shape with the same repo on both ends, so we
+      # materialize it identically rather than special-casing the Action. The
+      # Action git-excludes this path, so it never lands in the bump commit.
+      - name: Checkout livespec-dev-tooling support modules
+        uses: actions/checkout@v4
+        with:
+          repository: thewoolleyman/livespec-dev-tooling
+          path: .livespec-dev-tooling
+          fetch-depth: 1
+
+      - name: Install pinned binaries via mise
+        uses: jdx/mise-action@v2
+
+      - name: Install Python deps via uv
+        run: uv sync --all-groups
+
+      - name: Run pin-autodiscovery for self-sourced pins
+        id: autodiscover
+        run: |
+          set -euo pipefail
+          records=$(uv run --project .livespec-dev-tooling python -m \
+            livespec_dev_tooling.cross_repo.pin_autodiscovery \
+            --root . --source-repo livespec-dev-tooling)
+          echo "::group::self-sourced pin-autodiscovery records"
+          echo "$records"
+          echo "::endgroup::"
+          count=$(echo "$records" | jq 'length')
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          {
+            echo 'records<<JSONEOF'
+            echo "$records"
+            echo 'JSONEOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: No-op when zero self-sourced pins
+        if: steps.autodiscover.outputs.count == '0'
+        run: |
+          echo "::notice::no self-sourced pins discovered; nothing to reconcile (spec §\"Self-hosting\")"
+
+      - name: Compose PR body
+        if: steps.autodiscover.outputs.count != '0'
+        id: pr_body
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          RELEASE_URL: ${{ github.event.release.html_url }}
+        run: |
+          set -euo pipefail
+          body=$(printf 'Automated producer-side reconcile of this repository'"'"'s OWN self-sourced pins to %s.\n\nRelease: %s\n\nThe release fan-out excludes the publishing repository from its dispatch matrix, so these pins are unreachable by the `sibling-released` path that reconciles every other pin. They are reconciled here instead, per `SPECIFICATION/contracts.md` §"Self-hosting".\n' \
+            "$TAG" "$RELEASE_URL")
+          {
+            echo 'body<<BODYEOF'
+            echo "$body"
+            echo 'BODYEOF'
+          } >> "$GITHUB_OUTPUT"
+
+      # Reuses the SAME rewrite machinery as the dispatch path, per
+      # §"Self-hosting" — notably the prefix-preserving
+      # `fabro_image_pin_rewrite`, which rewrites only the trailing `vX.Y.Z` and
+      # preserves the `python-` / `python-rust-` layer prefix. That is why the
+      # bare release tag is the correct `tag` input for BOTH formats at once.
+      - name: Rewrite self-sourced pins + commit + open auto-merge PR
+        if: steps.autodiscover.outputs.count != '0'
+        uses: ./.github/actions/bump-pin-rewrite
+        with:
+          source_repo: livespec-dev-tooling
+          tag: ${{ github.event.release.tag_name }}
+          records: ${{ steps.autodiscover.outputs.records }}
+          branch_prefix: chore/self-bump
+          pr_body: ${{ steps.pr_body.outputs.body }}
+          app_token: ${{ steps.app-token.outputs.token }}
+          app_slug: ${{ steps.app-token.outputs.app-slug }}
