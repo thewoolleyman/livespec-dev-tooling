@@ -144,7 +144,28 @@ jobs:
           # when its other pins were stale — the safety net went blind exactly
           # where drift hides (livespec-dev-tooling-p73). The selection now comes
           # from the tested `pin_staleness` module rather than inline jq.
-          pins=$(RECORDS="$RECORDS" uv run python -m livespec_dev_tooling.cross_repo.pin_staleness)
+          #
+          # Resolved from the master support checkout (`--project
+          # .livespec-dev-tooling`), NOT the consumer's environment, per the
+          # TOOL-vs-DATA split documented in
+          # `.github/actions/bump-pin-rewrite/action.yml`: a module whose
+          # behavior should not be version-matched to the consumer is a TOOL and
+          # must come from the support checkout, "because a consumer's pinned
+          # release predates the fix and would not carry it". `pin_staleness`
+          # takes its input as DATA on $RECORDS and merely computes the distinct
+          # pins, so nothing about it should track the consumer's pin. This
+          # invocation previously used a bare `uv run` while the other three in
+          # this workflow (lines ~115, ~214, ~278) all used the support checkout
+          # — an oversight in the p73 change, since the later ews change added
+          # the second `pin_staleness` call with the correct form
+          # (livespec-dev-tooling-3tu). Consumer-env resolution coupled the scan
+          # to the consumer having livespec-dev-tooling >= v0.49.3 importable
+          # from its OWN environment; a consumer below that (or with no
+          # livespec-dev-tooling Python dependency at all) would have died on
+          # ModuleNotFoundError under `set -euo pipefail`, taking the whole
+          # freshness scan down with it.
+          pins=$(RECORDS="$RECORDS" uv run --project .livespec-dev-tooling python -m \
+            livespec_dev_tooling.cross_repo.pin_staleness)
           stale=()
           emitted_sources=""
           while IFS=$'\t' read -r source current; do
