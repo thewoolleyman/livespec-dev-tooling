@@ -1,10 +1,10 @@
 """Outside-in test for `livespec_dev_tooling/fabro_image_pin_lockstep.py`.
 
-The Fabro sandbox image is a `base -> python -> python-rust` layer chain
-(`docker/fabro-sandbox/<layer>/Dockerfile`); the versions each layer bakes
-are declared as `ARG NAME=value` lines. The check reads the ARG lines from
-the whole SET of layer Dockerfiles and fails when any image-baked pin
-drifts from this repo's own pin sources:
+The Fabro sandbox image is a `base -> python -> {python-agent, python-rust
+-> python-rust-agent}` layer tree (`docker/fabro-sandbox/<layer>/Dockerfile`);
+the versions each layer bakes are declared as `ARG NAME=value` lines. The
+check reads the ARG lines from the whole SET of layer Dockerfiles and fails
+when any image-baked pin drifts from this repo's own pin sources:
 
 - `ARG UV_VERSION` / `ARG JUST_VERSION` / `ARG LEFTHOOK_VERSION`
   must match `.mise.toml` `[tools]` `uv` / `just` / `lefthook`.

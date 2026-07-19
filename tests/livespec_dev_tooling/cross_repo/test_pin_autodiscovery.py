@@ -279,11 +279,11 @@ def test_module_importable_without_running_main() -> None:
 # ---------------------------------------------------------------------------
 
 
-_CODEX_ACP_DOCKERFILE_PARTS = ("docker", "fabro-sandbox", "base", "Dockerfile")
+_CODEX_ACP_DOCKERFILE_PARTS = ("docker", "fabro-sandbox", "agent", "Dockerfile")
 
 
 def _write_codex_acp_dockerfile(*, root: Path, version: str) -> None:
-    """Write a minimal base-layer Dockerfile carrying the codex-acp ARG pin."""
+    """Write a minimal agent-layer Dockerfile carrying the codex-acp ARG pin."""
     dockerfile = root.joinpath(*_CODEX_ACP_DOCKERFILE_PARTS)
     dockerfile.parent.mkdir(parents=True)
     _ = dockerfile.write_text(
@@ -293,26 +293,26 @@ def _write_codex_acp_dockerfile(*, root: Path, version: str) -> None:
 
 
 def test_discover_codex_acp_arg_emits_record(*, tmp_path: Path) -> None:
-    """The `docker/fabro-sandbox/base/Dockerfile` ARG line emits one codex-acp record."""
+    """The `docker/fabro-sandbox/agent/Dockerfile` ARG line emits one codex-acp record."""
     _write_codex_acp_dockerfile(root=tmp_path, version="0.16.0")
     result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
     assert len(result) == 1
     record = result[0]
     assert record["pin_format"] == "codex_acp_docker_arg"
-    assert record["file_path"] == "docker/fabro-sandbox/base/Dockerfile"
+    assert record["file_path"] == "docker/fabro-sandbox/agent/Dockerfile"
     assert record["pin_key"] == "CODEX_ACP_VERSION"
     assert record["current_value"] == "0.16.0"
     assert record["source_repo"] == "zed-industries/codex-acp"
 
 
 def test_discover_codex_acp_arg_absent_yields_nothing(*, tmp_path: Path) -> None:
-    """A consumer repo without the base-layer Dockerfile yields no codex-acp record."""
+    """A consumer repo without the agent-layer Dockerfile yields no codex-acp record."""
     result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
     assert result == []
 
 
 def test_discover_codex_acp_dockerfile_without_arg_yields_nothing(*, tmp_path: Path) -> None:
-    """A base-layer Dockerfile with no CODEX_ACP_VERSION ARG line yields no record."""
+    """An agent-layer Dockerfile with no CODEX_ACP_VERSION ARG line yields no record."""
     dockerfile = tmp_path.joinpath(*_CODEX_ACP_DOCKERFILE_PARTS)
     dockerfile.parent.mkdir(parents=True)
     _ = dockerfile.write_text("FROM buildpack-deps:noble\nRUN echo hi\n", encoding="utf-8")

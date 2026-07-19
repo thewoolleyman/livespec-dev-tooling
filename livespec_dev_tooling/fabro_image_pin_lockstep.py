@@ -1,18 +1,23 @@
 """fabro_image_pin_lockstep — Fabro sandbox image pins match this repo's pins.
 
-The fleet Fabro sandbox image is built as a `base → python → python-rust`
-LAYER CHAIN (`docker/fabro-sandbox/<layer>/Dockerfile`); the versions each
-layer bakes are declared as greppable `ARG NAME=value` lines, and the
-obligated ones MUST stay in lockstep with this repo's own pin sources:
+The fleet Fabro sandbox image is built as a LAYER TREE
+(`docker/fabro-sandbox/<layer>/Dockerfile`): `base → python →
+{python-agent, python-rust → python-rust-agent}`, where the `agent` leaf
+Dockerfile is built twice, once atop each of `python` and `python-rust`.
+The versions each layer bakes are declared as greppable `ARG NAME=value`
+lines, and the obligated ones MUST stay in lockstep with this repo's own
+pin sources:
 
 - `ARG UV_VERSION` / `ARG JUST_VERSION` / `ARG LEFTHOOK_VERSION`
   ↔ the `.mise.toml` `[tools]` pins (`uv` / `just` / `lefthook`).
 - `ARG PYTHON_VERSION` ↔ `.python-version`.
 
-These ARGs now live in DIFFERENT layer files (`JUST_VERSION` /
-`LEFTHOOK_VERSION` in `base`; `UV_VERSION` / `PYTHON_VERSION` in `python`),
-so the parser reads the ARG lines from the whole SET of layer Dockerfiles
-and merges them. Keep each obligated ARG in exactly one layer.
+These ARGs live in DIFFERENT layer files (`JUST_VERSION` /
+`LEFTHOOK_VERSION` in `base`; `UV_VERSION` / `PYTHON_VERSION` in `python`;
+the two ACP adapter pins in `agent`), so the parser reads the ARG lines
+from the whole SET of layer Dockerfiles and merges them. Keep each ARG in
+exactly one layer — the merge means a duplicated ARG would NOT fail this
+check, it would silently let the two copies drift.
 
 The image's remaining ARG pins (mise itself, node, gh, the Claude ACP
 adapter `CLAUDE_AGENT_ACP_VERSION`, `RUST_VERSION`) have no repo-side pin
