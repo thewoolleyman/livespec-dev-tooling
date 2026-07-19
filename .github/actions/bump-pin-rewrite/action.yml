@@ -426,7 +426,20 @@ runs:
         BRANCH: ${{ steps.branch.outputs.name }}
         NO_AUTO_MERGE: ${{ inputs.no_auto_merge }}
       run: |
-        set -uo pipefail
+        set -euo pipefail
+        # `-e` is deliberate and matches the eight other steps in this Action
+        # (livespec-dev-tooling-7m1). It was previously absent here alone, which
+        # left a failing `gh pr create` below unhandled: execution fell through
+        # to the auto-merge enablement, where it either got MASKED (a PR for the
+        # branch already existed, so `gh pr merge` succeeded and the step
+        # reported success despite creation having failed) or MISDIAGNOSED (the
+        # `::error::` blamed auto-merge and pointed the reader at the
+        # allow_auto_merge / branch-protection causes listed below, none of which
+        # were the actual fault). Keeping `-e` does NOT interfere with the
+        # `if merge_err=$(...)` capture idiom this step depends on: POSIX exempts
+        # commands in an `if` condition from `-e`, so the else-branch still runs
+        # and still yields the captured stderr.
+        #
         # Per livespec-dev-tooling SPECIFICATION/non-functional-requirements.md
         # §"Commit and merge discipline": merge strategy MUST be
         # rebase-merge so Conventional Commits subjects land intact on
