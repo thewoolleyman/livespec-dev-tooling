@@ -11,7 +11,13 @@ rules", the directory-scan formats are:
 - fabro-sandbox docker image tag — the
   `docker = "ghcr.io/thewoolleyman/livespec-fabro-sandbox:<tag>"` line in
   every Fabro `workflow.toml` under either `.claude-plugin/.fabro/workflows/`
-  or the root `.fabro/workflows/`.
+  or the root `.fabro/workflows/`, AND the same image reference as the
+  `image:` line under a job's `container:` block in every
+  `.github/workflows/*.yml` (where a cut-over consumer runs its CI inside
+  the baked sandbox image). Both surfaces are the one format, walked by a
+  function each; every matching line yields its own record, so one release
+  fan-out reconciles a consumer's CI image and its Fabro sandbox image
+  together instead of leaving CI behind.
 
 Co-located here (it is the sibling docker-image adapter pin, though it
 reads one well-known file rather than scanning a directory):
@@ -44,6 +50,7 @@ __all__: list[str] = [
     "record",
     "walk_codex_acp_docker_arg",
     "walk_fabro_workflow_docker",
+    "walk_github_workflow_container_image",
     "walk_github_workflow_uses",
 ]
 
@@ -152,7 +159,64 @@ def walk_fabro_workflow_docker(
         for toml_path in sorted(workflows_dir.glob("*/workflow.toml")):
             rel_path = str(toml_path.relative_to(root))
             text = toml_path.read_text(encoding="utf-8")
-            match = _FABRO_DOCKER_RE.search(text)
+            # Find-ALL, not first-match-per-file: the contract's one-record-per-
+            # matching-line rule binds the whole `fabro_sandbox_docker_image`
+            # format, not only its `.github/workflows/` surface.
+            for match in _FABRO_DOCKER_RE.finditer(text):
+                out.append(
+                    record(
+                        pin_format=_PIN_FORMAT_FABRO_DOCKER,
+                        file_path=rel_path,
+                        pin_key=_FABRO_SANDBOX_IMAGE,
+                        current_value=match.group("tag"),
+                        source_repo=source_repo,
+                    )
+                )
+    _ = log
+    return out
+
+
+# The SAME fabro-sandbox image, pinned at a SECOND surface: a cut-over consumer
+# runs its CI jobs inside the baked sandbox image, so the reference appears in
+# `.github/workflows/*.yml` as the `image:` line nested under a job's
+# `container:` block. GitHub Actions has no workflow-level `container:`, so a
+# consumer repeats that block PER JOB — hence one record per matching line, both
+# across files and within one file. The one-line `container: <image>` shorthand
+# is covered by the same scoped match. The match is scoped to the fabro-sandbox
+# image itself so an unrelated `container:` / `image:` line yields no record.
+_WORKFLOW_CONTAINER_IMAGE_RE = re.compile(
+    r"""
+    ^\s*(?:image|container):\s+
+    ["']?
+    """
+    + re.escape(_FABRO_SANDBOX_IMAGE)
+    + r""":
+    (?P<tag>[^\s"'#]+)
+    """,
+    re.VERBOSE,
+)
+
+
+def walk_github_workflow_container_image(
+    *, root: Path, source_repo_filter: str | None, log: structlog.stdlib.BoundLogger
+) -> list[dict[str, str]]:
+    # Same hardcoded source repo as the `workflow.toml` surface (the image is
+    # released by livespec-dev-tooling and its tag tracks the dev-tooling release
+    # version), which is what lets a dev-tooling release fan-out rewrite a
+    # consumer's CI image in the SAME bump commit as its pyproject/compat pins.
+    source_repo = _FABRO_SANDBOX_SOURCE_REPO
+    if source_repo_filter is not None and source_repo_filter != source_repo:
+        return []
+    workflows_dir = root / ".github" / "workflows"
+    if not workflows_dir.is_dir():
+        return []
+    out: list[dict[str, str]] = []
+    yml_paths = sorted(list(workflows_dir.glob("*.yml")) + list(workflows_dir.glob("*.yaml")))
+    for yml_path in yml_paths:
+        rel_path = str(yml_path.relative_to(root))
+        text = yml_path.read_text(encoding="utf-8")
+        for line in text.splitlines():
+            match = _WORKFLOW_CONTAINER_IMAGE_RE.match(line)
             if match is None:
                 continue
             out.append(

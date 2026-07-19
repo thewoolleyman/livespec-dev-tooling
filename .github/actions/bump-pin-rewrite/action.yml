@@ -136,7 +136,10 @@ runs:
         #   - pyproject_toml_uv_sources: regex on the `tag = "X"` field
         #   - vendor_jsonc: `upstream_ref` targeted rewrite
         #   - github_workflow_uses_ref: `uses: <key>@<ref>` targeted rewrite
-        #   - fabro_sandbox_docker_image: `docker = "<key>:<tag>"` targeted rewrite
+        #   - fabro_sandbox_docker_image: `docker = "<key>:<tag>"` (Fabro
+        #     workflow.toml) or `image: <key>:<tag>` under a job `container:`
+        #     block (.github/workflows) targeted rewrite — one record, and so
+        #     one invocation, per matching line
         #   - codex_acp_docker_arg: `ARG CODEX_ACP_VERSION=<value>` bare-value rewrite
         echo "$RECORDS" | jq -c '.[]' | while read -r rec; do
           fmt=$(echo "$rec" | jq -r '.pin_format')

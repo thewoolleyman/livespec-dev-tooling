@@ -4,7 +4,11 @@ Extracted from the embedded Python heredoc in
 `.github/actions/bump-pin-rewrite/action.yml`'s "Rewrite matching pins to new
 tag" step (the `fabro_sandbox_docker_image` case). Per
 `SPECIFICATION/contracts.md` §"Pin autodiscovery rules", the fabro-sandbox image
-pin is `docker = "ghcr.io/thewoolleyman/livespec-fabro-sandbox:<tag>"`.
+pin is `docker = "ghcr.io/thewoolleyman/livespec-fabro-sandbox:<tag>"` in a
+Fabro `workflow.toml`, and the SAME image reference under a GitHub Actions job's
+`container:` block (`image: ghcr.io/…:<tag>`) where a cut-over consumer runs its
+CI inside the baked sandbox image. Both surfaces are the one format and this
+module rewrites both.
 
 Since the layer split (livespec-3lev.4) that `<tag>` carries a `<layer>-` prefix
 — `python-v<X.Y.Z>` / `python-rust-v<X.Y.Z>` — over the bare release version.
@@ -56,19 +60,39 @@ def rewrite_pin_in_text(
 ) -> tuple[str, int]:
     """Return (rewritten_text, match_count) for the fabro docker pin in `text`.
 
-    Matches the single `docker = "<image_key>:<current_tag>"` line and rewrites
-    its tag via `rewrite_layered_docker_tag`. `match_count` is 0 (pin absent,
-    text returned unchanged) or 1 (pin rewritten) — the caller enforces the
-    expected 1.
+    Matches EITHER surface of the one `fabro_sandbox_docker_image` format per
+    `SPECIFICATION/contracts.md` §"Pin autodiscovery rules" — the Fabro
+    `workflow.toml` line `docker = "<image_key>:<current_tag>"`, or the GitHub
+    Actions job `container:` block's `image: <image_key>:<current_tag>` line
+    (including its one-line `container: <image>` shorthand) — and rewrites the
+    tag via `rewrite_layered_docker_tag`. `match_count` is 0 (pin absent, text
+    returned unchanged) or 1 (pin rewritten) — the caller enforces the expected 1.
+
+    Exactly ONE occurrence is rewritten per invocation, which is what makes the
+    autodiscovery walk's one-record-per-matching-line rule converge: a file
+    carrying the pin on N lines yields N records, and each record's invocation
+    consumes the next still-unrewritten occurrence.
     """
     new_tag = rewrite_layered_docker_tag(current_tag=current_tag, release_tag=release_tag)
+    escaped_key = re.escape(image_key)
     pattern = re.compile(
-        r'(^\s*docker\s*=\s*"' + re.escape(image_key) + r":)" + re.escape(current_tag) + r'(")',
+        r"("
+        # Fabro workflow.toml: docker = "<image>:<tag>"
+        r'^[ \t]*docker\s*=\s*"' + escaped_key + r":"
+        r"|"
+        # GitHub Actions: a job container: block's image: line, or the
+        # one-line `container: <image>` shorthand.
+        r"^[ \t]*(?:image|container):[ \t]+[\"']?" + escaped_key + r":"
+        r")"
+        + re.escape(current_tag)
+        +
+        # Assert (without consuming) that the tag ENDS here, so a longer tag
+        # sharing this one's prefix is never truncated — and so whatever
+        # closes the line (the TOML quote, a YAML quote, a comment) survives.
+        r"(?=[\"'\s#]|$)",
         re.MULTILINE,
     )
-    new_text, count = pattern.subn(
-        lambda match: match.group(1) + new_tag + match.group(2), text, count=1
-    )
+    new_text, count = pattern.subn(lambda match: match.group(1) + new_tag, text, count=1)
     return new_text, count
 
 
