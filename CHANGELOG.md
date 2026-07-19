@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.50.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.49.4...v0.50.0) (2026-07-19)
+
+
+### Features
+
+* **fleet:** enforce install verification in ensure_plugins (livespec-zxf6) ([6233905](https://github.com/thewoolleyman/livespec-dev-tooling/commit/62339057b3cd20477cf80b13e7276e5ce69fb46a))
+
 ## [0.49.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.49.3...v0.49.4) (2026-07-19)
 
 
