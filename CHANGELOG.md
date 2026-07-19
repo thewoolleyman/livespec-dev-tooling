@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.50.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.50.3...v0.50.4) (2026-07-19)
+
+
+### Refactoring
+
+* **ci:** move agent payload to an on-top image layer ([f1a5a65](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f1a5a654c166aad6e812c103274a1e9c990387f0))
+
 ## [0.50.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.50.2...v0.50.3) (2026-07-19)
 
 
