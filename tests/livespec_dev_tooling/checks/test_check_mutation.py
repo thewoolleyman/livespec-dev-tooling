@@ -28,10 +28,23 @@ from `_resolve_staging_cwd(repo_root=...)` — the configured
 when the key is absent. The `.mutmut-baseline.json` ratchet always lives at
 the repo root regardless of the staging cwd.
 
+Armed-but-inspected-nothing (work-item livespec-dev-tooling-z45): the check
+formerly carried three composing masks that made ANY misconfiguration pass
+green — rc-1 tolerance (mutmut's legitimate survivor exit is also what a
+crash returns), `total == 0` as an unconditional pass, and a placeholder
+baseline rewritten from whatever the run measured (possibly 0, pinning the
+ratchet at 0.0% forever). The tests below pin each: an ARMED run
+(non-empty `pure_trees`) that enumerates zero mutants FAILS; an rc-1 run
+with no parseable verdicts is classified as a CRASH and surfaces mutmut's
+stderr; and `_update_baseline` refuses a zero-mutant write outright.
+
 Tests invoke check_mutation.py via subprocess with a fake mutmut package
 injected through PYTHONPATH, following the established dev-tooling test
 pattern. This approach lets mutmut properly substitute the mutated module
-when running its own tests.
+when running its own tests. A bare `tmp_path` carries no
+`[tool.livespec_dev_tooling]` block, so `load_config` returns the
+livespec-core fallback whose `pure_trees` is non-empty — every subprocess
+test below therefore runs the check ARMED.
 """
 
 from __future__ import annotations
@@ -46,8 +59,11 @@ from types import FunctionType
 import pytest
 
 from livespec_dev_tooling.checks.check_mutation import (
+    _derive_exit_code,
+    _is_crashed_run,
     _parse_mutmut_results,
     _resolve_staging_cwd,
+    _update_baseline,
 )
 
 __all__: list[str] = []
@@ -59,13 +75,24 @@ _CHECK_MUTATION_SCRIPT = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "check
 _RUN_VAR = "LIVESPEC_RUN_MUTATION"
 
 
-def _make_fake_mutmut(*, tmp_path: Path, killed: int, total: int, run_rc: int = 0) -> Path:
+def _make_fake_mutmut(
+    *,
+    tmp_path: Path,
+    killed: int,
+    total: int,
+    run_rc: int = 0,
+    run_stderr: str = "",
+) -> Path:
     """Write a fake mutmut package into tmp_path that emits mutmut-3.x results.
 
     The fake mirrors mutmut 3.2.3's actual surface:
 
-    - `run` exits with `run_rc` and writes a `MUTMUT_RAN_IN.txt` marker into
-      its own cwd (the staging-cwd test reads it to prove WHERE mutmut ran).
+    - `run` writes `run_stderr` to its stderr (empty by default), exits with
+      `run_rc`, and writes a `MUTMUT_RAN_IN.txt` marker into its own cwd (the
+      staging-cwd test reads it to prove WHERE mutmut ran). `run_stderr` lets
+      a test reproduce a real mutmut CRASH — an rc-1 exit carrying a traceback
+      on stderr and enumerating no mutants — as opposed to mutmut's legitimate
+      rc-1 survivor exit.
     - `results` (no flag) prints ONLY the surviving mutants, one
       `    <key>: survived` line each (mutmut 3.x suppresses killed verdicts
       unless `--all True` is passed).
@@ -99,6 +126,7 @@ cmd = sys.argv[1] if len(sys.argv) > 1 else ""
 if cmd == "run":
     with open("MUTMUT_RAN_IN.txt", "w", encoding="utf-8") as fh:
         fh.write(os.getcwd())
+    sys.stderr.write({run_stderr!r})
     sys.exit({run_rc})
 elif cmd == "results":
     all_flag = sys.argv[2:] == ["--all", "True"]
@@ -373,13 +401,118 @@ def test_mutmut_run_failure_returns_1(*, tmp_path: Path) -> None:
     assert result.returncode == 1
 
 
-def test_zero_mutants_non_first_run_passes(*, tmp_path: Path) -> None:
-    """Zero total mutants in non-first-run mode passes (nothing to kill)."""
-    # baseline has total>0 → not placeholder; but current run returns total=0
+# --- armed-but-inspected-nothing (work-item livespec-dev-tooling-z45) ---
+
+
+def test_armed_zero_mutants_fails(*, tmp_path: Path) -> None:
+    """An ARMED run that enumerated zero mutants FAILS — it inspected nothing.
+
+    Mask 2 of work-item livespec-dev-tooling-z45: `total == 0` was an
+    unconditional pass, so a misconfigured or crashed mutmut — which produces
+    no parseable verdicts — reported success. Nothing legitimately produces
+    zero mutants from a non-empty `pure_trees`, so the only honest verdict is
+    a failure. The baseline here has `mutants_total > 0`, which puts the check
+    in ratchet mode rather than first-run mode.
+    """
     fake = _make_fake_mutmut(tmp_path=tmp_path, killed=0, total=0, run_rc=0)
     baseline = {"kill_rate_percent": 85.0, "mutants_surviving": 3, "mutants_total": 20}
     result = _run_check(tmp_path=tmp_path, fake_mutmut_dir=fake, baseline=baseline)
-    assert result.returncode == 0
+    assert result.returncode == 1, (
+        f"an armed run enumerating zero mutants must FAIL, not pass; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+    combined = result.stdout + result.stderr
+    assert (
+        "zero mutants" in combined
+    ), f"the failure must name the zero-mutant cause; stderr={result.stderr!r}"
+
+
+def test_armed_zero_mutants_refuses_to_write_baseline(*, tmp_path: Path) -> None:
+    """A zero-mutant run never promotes its garbage measurement into the ratchet.
+
+    Mask 3 of work-item livespec-dev-tooling-z45: first-run mode recorded
+    whatever it had just measured — possibly 0 — pinning the committed ratchet
+    at 0.0%, after which the 80% hard floor fails every subsequent release with
+    no obvious cause. No baseline file exists here, which is treated as the
+    placeholder, so this is exactly the first-run path.
+    """
+    fake = _make_fake_mutmut(tmp_path=tmp_path, killed=0, total=0, run_rc=0)
+    result = _run_check(tmp_path=tmp_path, fake_mutmut_dir=fake)
+    assert result.returncode == 1, (
+        f"a zero-mutant first run must FAIL rather than capture a baseline; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+    assert not (
+        tmp_path / ".mutmut-baseline.json"
+    ).is_file(), "a zero-mutant run must not write the ratchet"
+
+
+def test_crashed_mutmut_rc1_fails_and_surfaces_stderr(*, tmp_path: Path) -> None:
+    """rc 1 with no parseable verdicts is a CRASH, not a survivor run.
+
+    Mask 1 of work-item livespec-dev-tooling-z45: exit 1 is legitimate for
+    mutmut when mutants survive, but it is also what a hard crash returns — a
+    `FileNotFoundError` from `guess_paths_to_mutate()` under a misconfigured
+    staging cwd exits 1 and was indistinguishable from a normal survivor run.
+    The two are told apart by whether any mutant was enumerated at all, and
+    the crash must surface mutmut's own stderr rather than absorbing it.
+    """
+    fake = _make_fake_mutmut(
+        tmp_path=tmp_path,
+        killed=0,
+        total=0,
+        run_rc=1,
+        run_stderr="FileNotFoundError: [Errno 2] No such file or directory: 'pyproject.toml'\n",
+    )
+    baseline = {"kill_rate_percent": 85.0, "mutants_surviving": 3, "mutants_total": 20}
+    result = _run_check(tmp_path=tmp_path, fake_mutmut_dir=fake, baseline=baseline)
+    assert result.returncode == 1, (
+        f"a crashed mutmut must FAIL rather than be absorbed as rc 1; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+    combined = result.stdout + result.stderr
+    assert (
+        "FileNotFoundError" in combined
+    ), f"the crash must surface mutmut's stderr; stderr={result.stderr!r}"
+
+
+def test_reports_mutant_count_and_kill_rate(*, tmp_path: Path) -> None:
+    """A passing run still emits the tally, so "inspected 0" cannot look like "passed"."""
+    fake = _make_fake_mutmut(tmp_path=tmp_path, killed=17, total=20)
+    baseline = {"kill_rate_percent": 85.0, "mutants_surviving": 3, "mutants_total": 20}
+    result = _run_check(tmp_path=tmp_path, fake_mutmut_dir=fake, baseline=baseline)
+    assert result.returncode == 0, f"stderr={result.stderr!r}"
+    combined = result.stdout + result.stderr
+    assert '"total": 20' in combined, f"the mutant count must be visible; got {combined!r}"
+    assert '"kill_rate_percent": 85.0' in combined, f"the kill rate must be visible; {combined!r}"
+
+
+def test_is_crashed_run_separates_survivors_from_crash() -> None:
+    """rc 1 + zero verdicts is a crash; rc 1 + a real tally is a survivor run."""
+    assert _is_crashed_run(returncode=1, total=0) is True
+    assert _is_crashed_run(returncode=1, total=20) is False
+    assert _is_crashed_run(returncode=0, total=0) is False
+
+
+def test_derive_exit_code_fails_on_zero_total() -> None:
+    """`total == 0` is a failure, not the former unconditional pass."""
+    assert _derive_exit_code(killed=0, total=0, baseline={"kill_rate_percent": 85.0}) == 1
+
+
+def test_update_baseline_refuses_zero_mutant_write(*, tmp_path: Path) -> None:
+    """`_update_baseline` writes nothing and reports False for a zero-mutant run."""
+    baseline_path = tmp_path / ".mutmut-baseline.json"
+    assert _update_baseline(baseline_path=baseline_path, killed=0, total=0) is False
+    assert not baseline_path.exists()
+
+
+def test_update_baseline_writes_when_mutants_present(*, tmp_path: Path) -> None:
+    """`_update_baseline` writes and reports True when the run enumerated mutants."""
+    baseline_path = tmp_path / ".mutmut-baseline.json"
+    assert _update_baseline(baseline_path=baseline_path, killed=17, total=20) is True
+    written = json.loads(baseline_path.read_text(encoding="utf-8"))
+    assert written["mutants_total"] == 20
+    assert written["kill_rate_percent"] == pytest.approx(85.0)
 
 
 def test_runs_mutmut_from_staging_cwd_baseline_at_repo_root(*, tmp_path: Path) -> None:
