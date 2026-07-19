@@ -119,6 +119,7 @@ supervisor_entry_files = [
     "livespec_dev_tooling/cross_repo/fabro_image_pin_rewrite.py",
     "livespec_dev_tooling/cross_repo/justfile_canonical_reconcile.py",
     "livespec_dev_tooling/cross_repo/pin_rewrite.py",
+    "livespec_dev_tooling/cross_repo/pin_staleness.py",
     "livespec_dev_tooling/cross_repo/pin_autodiscovery.py",
     "livespec_dev_tooling/fleet/merged_branch_sweep.py",
     "livespec_dev_tooling/parallel_check_dispatcher.py",
