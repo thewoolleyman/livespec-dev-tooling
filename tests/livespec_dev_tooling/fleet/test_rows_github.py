@@ -68,6 +68,29 @@ _CI_YML = textwrap.dedent(
     """
 )
 
+# The SINGLE-GATE ci.yml shape the fleet actually runs: a matrix job whose
+# legs report under the templated `${{ matrix.target }}` name, plus a
+# TOP-LEVEL `ci-green` aggregate gate job that fans the matrix in through
+# `needs:`. Per livespec NFR §"CI as a merge gate (branch protection)" the
+# required-check set is exactly that one gate job — which is NOT a matrix
+# leg, so a matrix-only view of ci.yml cannot see it.
+_CI_YML_SINGLE_GATE = textwrap.dedent(
+    """\
+    name: CI
+    jobs:
+      check:
+        name: ${{ matrix.target }}
+        strategy:
+          matrix:
+            target:
+              - check-lint
+              - check-types
+      ci-green:
+        name: ci-green
+        needs: [check]
+    """
+)
+
 
 def make_context(*, table: dict[tuple[str, ...], GhResult]) -> FleetContext:
     """A `FleetContext` for owner `acme` over a canned-response runner."""
@@ -247,6 +270,42 @@ def test_branch_protection_required_check_missing_from_matrix_is_finding() -> No
     outcome = assert_branch_protection(ctx=ctx, member=_MEMBER)
     assert isinstance(outcome, RowFinding)
     assert "check-gone" in outcome.message
+
+
+def test_branch_protection_top_level_gate_job_is_not_flagged() -> None:
+    """A required TOP-LEVEL `ci-green` gate job is a valid required check.
+
+    livespec NFR §"CI as a merge gate (branch protection)": "A required
+    top-level all-green gate job (the `ci-green` single-gate model) is a
+    valid required check and is NOT flagged, even though it is not a matrix
+    leg, because requiring it gates the whole matrix through its `needs:`."
+    Diffing the required contexts against the matrix legs ALONE therefore
+    reports a phantom check for the exact configuration the contract
+    mandates.
+    """
+    ctx = _protection_ctx(
+        payload=_protection_payload(contexts=["ci-green"]),
+        ci_text=_CI_YML_SINGLE_GATE,
+    )
+    assert assert_branch_protection(ctx=ctx, member=_MEMBER) == RowPass()
+
+
+def test_branch_protection_phantom_flagged_alongside_recognized_gate_job() -> None:
+    """Widening to top-level jobs does not blind the row to a real phantom.
+
+    `check-phantom` matches neither a matrix leg (`check-lint`,
+    `check-types`) nor a top-level job id (`check`, `ci-green`) nor a
+    literal `name:` (`ci-green`), so it is still reported — while the
+    recognized `ci-green` gate job is not.
+    """
+    ctx = _protection_ctx(
+        payload=_protection_payload(contexts=["ci-green", "check-phantom"]),
+        ci_text=_CI_YML_SINGLE_GATE,
+    )
+    outcome = assert_branch_protection(ctx=ctx, member=_MEMBER)
+    assert isinstance(outcome, RowFinding)
+    assert "check-phantom" in outcome.message
+    assert "ci-green" not in outcome.message
 
 
 def test_branch_protection_alignment_skipped_when_ci_unreadable() -> None:

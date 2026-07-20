@@ -15,9 +15,12 @@ from __future__ import annotations
 
 import json
 import os
-import re
 from typing import cast
 
+from livespec_dev_tooling.checks._ci_job_names import (
+    parse_ci_matrix,
+    parse_top_level_jobs,
+)
 from livespec_dev_tooling.fleet._context import (
     FleetContext,
     FleetMember,
@@ -38,7 +41,12 @@ __all__: list[str] = [
     "assert_merge_settings",
     "assert_secret_names",
     "assert_topic",
+    "member_ci_check_names",
     "member_matrix_targets",
+    # A RE-EXPORT, not a definition: `parse_ci_matrix` is owned by
+    # `checks/_ci_job_names.py` and shared with the repo-local
+    # `branch_protection_alignment` check. Naming it here keeps the fleet
+    # surface stable for this module's existing importers.
     "parse_ci_matrix",
 ]
 
@@ -67,43 +75,6 @@ REQUIRED_MERGE_SETTINGS: dict[str, bool] = {
 # stays a skip. Mirrors the sibling `branch_protection_alignment` check.
 _NOT_PROTECTED_MARKER = "Branch not protected"
 
-_MATRIX_TARGET_LINE = re.compile(r"^\s*-\s*([\w-]+)\s*$")
-_MATRIX_HEADER = re.compile(r"^\s*matrix:\s*$")
-_MATRIX_TARGET_KEY = re.compile(r"^\s*target:\s*$")
-
-
-def parse_ci_matrix(*, source: str) -> set[str]:
-    """Extract `matrix.target` job names from a ci.yml source text.
-
-    Same line-walk shape as the per-repo `branch_protection_alignment`
-    check's parser (that one is module-private, so the fleet surface
-    carries its own): find `matrix:`, then `target:`, then collect
-    bullet entries until a non-bullet non-comment line ends the list.
-    """
-    targets: set[str] = set()
-    in_matrix = False
-    in_target_list = False
-    for raw in source.splitlines():
-        if _MATRIX_HEADER.match(raw):
-            in_matrix = True
-            in_target_list = False
-            continue
-        if not in_matrix:
-            continue
-        if _MATRIX_TARGET_KEY.match(raw):
-            in_target_list = True
-            continue
-        if in_target_list:
-            stripped = raw.strip()
-            if not stripped or stripped.startswith("#"):
-                continue
-            match = _MATRIX_TARGET_LINE.match(raw)
-            if match is None:
-                in_target_list = False
-                continue
-            targets.add(match.group(1))
-    return targets
-
 
 def member_matrix_targets(*, ctx: FleetContext, member: FleetMember) -> set[str] | None:
     """The member's ci.yml `matrix.target` set, or None when unreadable/empty."""
@@ -112,6 +83,27 @@ def member_matrix_targets(*, ctx: FleetContext, member: FleetMember) -> set[str]
         return None
     targets = parse_ci_matrix(source=text)
     return targets or None
+
+
+def member_ci_check_names(*, ctx: FleetContext, member: FleetMember) -> set[str] | None:
+    """Every ci.yml name a required status check may legitimately match.
+
+    The union of the member's `matrix.target` legs and its top-level job
+    ids / literal `name:` values, from ONE read of ci.yml. Both halves are
+    load-bearing: per livespec NFR §"CI as a merge gate (branch
+    protection)" the required-check set is exactly the single top-level
+    all-green gate job, which is NOT a matrix leg — so a matrix-only view
+    reports the mandated configuration as a phantom check.
+
+    None when ci.yml is unreadable or names nothing, so the caller skips
+    the comparison rather than reporting every required check missing
+    (can't-read is not absent).
+    """
+    text = ctx.file_text(repo=member.repo, path=CI_WORKFLOW)
+    if text is None:
+        return None
+    names = parse_ci_matrix(source=text) | parse_top_level_jobs(source=text)
+    return names or None
 
 
 def assert_secret_names(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:
@@ -177,10 +169,10 @@ def _protection_problems(
     if not contexts:
         problems.append("required-check set is empty")
         return problems
-    matrix = member_matrix_targets(ctx=ctx, member=member)
-    if matrix is not None:
-        for name in sorted(contexts - matrix):
-            problems.append(f"required check {name} has no ci.yml matrix job")
+    ci_names = member_ci_check_names(ctx=ctx, member=member)
+    if ci_names is not None:
+        for name in sorted(contexts - ci_names):
+            problems.append(f"required check {name} matches no ci.yml matrix leg or top-level job")
     return problems
 
 
@@ -189,8 +181,13 @@ def assert_branch_protection(*, ctx: FleetContext, member: FleetMember) -> RowOu
 
     Aligned means: `enforce_admins`, `strict` OFF, a non-empty
     required-check set, and every required check matched by a ci.yml
-    matrix job (the direction that blocks merges when violated), per
-    livespec §"CI as a merge gate (branch protection)".
+    matrix leg OR a top-level ci.yml job (the direction that blocks
+    merges when violated), per livespec §"CI as a merge gate (branch
+    protection)". A required check matching NEITHER is a phantom that can
+    never report and would deadlock every merge; a required TOP-LEVEL
+    all-green gate job (the `ci-green` single-gate model the contract
+    mandates) matches and is NOT flagged, even though it is not a matrix
+    leg, because requiring it gates the whole matrix through its `needs:`.
     """
     result = ctx.api(path=f"repos/{ctx.owner}/{member.repo}/branches/master/protection")
     if result.returncode != 0:

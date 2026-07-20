@@ -197,7 +197,7 @@ def _setup_repo_with_gate_and_matrix(*, tmp_path: Path) -> None:
     """Write a ci.yml modeling the single-gate CI shape.
 
     A matrix job (`check-python`) whose legs report as
-    `${{ matrix.target }}` — the templated `name:` `_parse_ci_matrix`
+    `${{ matrix.target }}` — the templated `name:` `parse_ci_matrix`
     already covers — plus a top-level `ci-green` aggregate GATE job
     carrying a literal `name: ci-green`. Under the single-gate model,
     master branch protection requires ONLY the `ci-green` gate, a
@@ -238,7 +238,7 @@ def test_gate_job_recognized_as_required(*, tmp_path: Path) -> None:
 
     Under the single-gate model, master branch protection requires only
     the `ci-green` aggregate gate — a TOP-LEVEL job (with `name: ci-green`),
-    NOT a matrix leg — so `_parse_ci_matrix` alone cannot see it. The
+    NOT a matrix leg — so `parse_ci_matrix` alone cannot see it. The
     alignment gate unions top-level jobs into the satisfied set, so it must
     NOT emit `required_check_missing_from_ci` and must exit 0 (protection
     present + strict off).
@@ -285,7 +285,7 @@ def test_genuinely_missing_required_still_fails(*, tmp_path: Path) -> None:
 
 
 def test_parse_top_level_jobs_collects_ids_and_literal_names() -> None:
-    """`_parse_top_level_jobs` collects job ids + literal names and stops at column 0.
+    """`parse_top_level_jobs` collects job ids + literal names and stops at column 0.
 
     Directly exercises the parser: it collects each 2-space job id
     (`build`, `matrix-job`) and each literal `name:` value (`ci-green`),
@@ -294,8 +294,8 @@ def test_parse_top_level_jobs_collects_ids_and_literal_names() -> None:
     key (`permissions:`) so nested keys under it (`contents:`) are not
     collected as jobs.
     """
-    from livespec_dev_tooling.checks.branch_protection_alignment import (
-        _parse_top_level_jobs,
+    from livespec_dev_tooling.checks._ci_job_names import (
+        parse_top_level_jobs,
     )
 
     source = (
@@ -313,7 +313,7 @@ def test_parse_top_level_jobs_collects_ids_and_literal_names() -> None:
         "permissions:\n"
         "  contents: read\n"
     )
-    result = _parse_top_level_jobs(source=source)
+    result = parse_top_level_jobs(source=source)
     assert result == {"build", "ci-green", "matrix-job"}, result
 
 
@@ -449,7 +449,7 @@ def test_blank_and_comment_lines_in_matrix_are_skipped(*, tmp_path: Path) -> Non
     """Blank lines and `# comment` lines within the matrix target bullets are skipped.
 
     Exercises the in-bullet-list `continue` branch in
-    `_parse_ci_matrix` so an author may insert blank lines or
+    `parse_ci_matrix` so an author may insert blank lines or
     comments to group jobs without breaking the parser.
     """
     workflows = tmp_path / ".github" / "workflows"
