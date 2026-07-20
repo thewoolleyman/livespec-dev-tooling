@@ -121,3 +121,34 @@ def test_console_class_scopes_pin_web_rows() -> None:
     assert "no-tracked-gitlinks" in console_rows
     assert "beads-tenant-connection-consistency" in console_rows
     assert "baseline-harnesses" in console_rows
+
+
+def test_control_plane_tool_class_is_pin_consuming_unlike_console() -> None:
+    # `control-plane-tool` is the second Control-Plane class: a member that
+    # ships an operator TOOL rather than the cockpit APPLICATION `console`
+    # carries, a PEER of `console` and never a component of it (livespec
+    # non-functional-requirements.md §"Fleet membership contract", ratified
+    # v171). The distinguishing property — and the whole reason `console`
+    # could not simply be reused — is that this class IS a pin-and-bump
+    # consumer: its ruff / pyright-strict / coverage / Result-railway gates
+    # come from livespec-dev-tooling, so a dev-tooling release directly
+    # determines whether such a member stays green. `_PIN_WEB_CLASSES` is the
+    # subtraction set `_ALL_CLASSES - {"console"}`, so the three shim rows
+    # attach automatically; asserting them here is what pins that the new
+    # class did NOT inherit the console's pin-web exemption.
+    assert "control-plane-tool" in REPO_CLASSES
+    tool_rows = {row.row_id for row in rows_for(repo_class="control-plane-tool")}
+    assert "workflow-bump-pin-from-dispatch" in tool_rows
+    assert "workflow-pin-freshness" in tool_rows
+    assert "workflow-release-dispatch" in tool_rows
+    assert "dev-tooling-pin" in tool_rows
+    # Not template-born: only `impl-plugin` is, so the copier-scaffold rows
+    # stay off this class (`_TEMPLATE_BORN_CLASSES` is the one ADDITIVE set,
+    # which is why a newly-added class is excluded from it for free).
+    assert "copier-answers" not in tool_rows
+    assert "agent-instruction-surface" not in tool_rows
+    # The universal rows still bind.
+    assert "workflow-ci" in tool_rows
+    assert "no-tracked-gitlinks" in tool_rows
+    assert "beads-tenant-connection-consistency" in tool_rows
+    assert "baseline-harnesses" in tool_rows
