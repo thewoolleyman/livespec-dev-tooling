@@ -425,6 +425,7 @@ runs:
         PR_BODY: ${{ inputs.pr_body }}
         BRANCH: ${{ steps.branch.outputs.name }}
         NO_AUTO_MERGE: ${{ inputs.no_auto_merge }}
+        RECORDS: ${{ inputs.records }}
       run: |
         set -euo pipefail
         # `-e` is deliberate and matches the eight other steps in this Action
@@ -468,6 +469,31 @@ runs:
           --body "$PR_BODY" \
           --head "$BRANCH" \
           --base master
+
+        open_prs=$(gh pr list --state open --json number,headRefName,title)
+        close_plan=$(OPEN_PRS="$open_prs" RECORDS="$RECORDS" CONSUMER="${GITHUB_REPOSITORY#*/}" \
+          uv run --project .livespec-dev-tooling python -m livespec_dev_tooling.cross_repo.bump_pr_supersession)
+        close_count=$(echo "$close_plan" | jq 'length')
+        if [[ "$close_count" == "0" ]]; then
+          echo "::notice::no superseded bump PRs to close for ${SOURCE_REPO} ${TAG}"
+        else
+          echo "::notice::closing ${close_count} superseded bump PR(s) for ${SOURCE_REPO}"
+          closed_current=false
+          while read -r decision; do
+            number=$(echo "$decision" | jq -r '.number')
+            branch=$(echo "$decision" | jq -r '.branch')
+            comment=$(echo "$decision" | jq -r '.comment')
+            if [[ "$branch" == "$BRANCH" ]]; then
+              closed_current=true
+            fi
+            gh pr close "$number" --comment "$comment" --delete-branch
+          done < <(echo "$close_plan" | jq -c '.[]')
+          if [[ "$closed_current" == "true" ]]; then
+            echo "::notice::the just-opened PR for ${BRANCH} was superseded and closed; skipping auto-merge enablement"
+            exit 0
+          fi
+        fi
+
         # Per SPECIFICATION/contracts.md §"codex-acp factory gate": the
         # codex-acp bump PR is opened WITHOUT auto-merge (no_auto_merge=true) so
         # it cannot merge on its own — the orchestrator's live golden-master
