@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.51.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.51.1...v0.51.2) (2026-07-20)
+
+
+### Bug Fixes
+
+* **fleet:** accept a top-level ci-green gate job as a valid required check ([c20463c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c20463c943caf879e55e3da75365680ba98513b8))
+
 ## [0.51.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.51.0...v0.51.1) (2026-07-20)
 
 
