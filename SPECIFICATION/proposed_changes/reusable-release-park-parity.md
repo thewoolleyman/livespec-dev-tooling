@@ -9,10 +9,11 @@ created_at: 2026-07-04T09:59:25Z
 ### Target specification files
 
 - SPECIFICATION/contracts.md
+- SPECIFICATION/spec.md
 
 ### Summary
 
-Adds the `#### `reusable-release-park.yml`` subsection to §"Reusable workflow inventory" in SPECIFICATION/contracts.md, documenting the release-train park backstop at parity with the three pin-and-bump reusable-workflow subsections. Per the design-record-authority rule the contract describes the TWO-leg design from design.md §L0c — leg (a) a parked open `release-please--*` pull request older than the threshold, and leg (b) unreleased `feat`/`fix` commits on the default branch newer than the latest release tag beyond the threshold — both governed by the single `park_threshold_hours` input. Also sweeps two neighbouring statements the addition would falsify: the H2 intro's "three thin shim workflows" count is qualified to "pin-and-bump" and notes the extra release-park shim, and the inventory intro notes three of the four workflows implement the pin-and-bump policy while the fourth is the independent read-only park backstop.
+Adds the `#### `reusable-release-park.yml`` subsection to §"Reusable workflow inventory" in SPECIFICATION/contracts.md, documenting the release-train park backstop at parity with the three pin-and-bump reusable-workflow subsections. Per the design-record-authority rule the contract describes the TWO-leg design from design.md §L0c — leg (a) a parked open `release-please--*` pull request older than the threshold, and leg (b) unreleased `feat`/`fix` commits on the default branch newer than the latest release tag beyond the threshold — both governed by the single `park_threshold_hours` input. Also sweeps three neighbouring statements the addition would falsify: the H2 intro's "three thin shim workflows" count is qualified to "pin-and-bump" and notes the extra release-park shim; the inventory intro notes three of the four workflows implement the pin-and-bump policy while the fourth is the independent read-only park backstop; and — added 2026-07-21 after an independent adversarial review found the original sweep incomplete — `spec.md`'s definition of the cross-repo coordination category, which claims that category's workflows "implement the pin-and-bump mechanism" and enumerates four functions omitting the park backstop. The first two sweeps are inside `contracts.md`; the third is the reason `SPECIFICATION/spec.md` is now a second target file.
 
 ### Motivation
 
@@ -77,5 +78,36 @@ REPLACE WITH:
 Per the DRY discipline, every consumer's per-repo pin-and-bump coordination footprint is three thin shim workflows that delegate to the reusable workflows defined here; no coordination logic is duplicated across consumers. Release-please members additionally carry the independent `release-park.yml` shim — the read-only release-train park backstop that participates in no pin rewrite — per §"Reusable workflow inventory".
 ```
 
-Heading-coverage co-edit: NOT required. The change adds only a `####` (H4) subsection and edits prose; it changes NO `## ` (H2) heading set, and `tests/heading-coverage.json` tracks only H2 headings. So no `../tests/heading-coverage.json` entry is added to `resulting_files[]`.
+#### 4. `SPECIFICATION/spec.md` — the category definition this addition falsifies
+
+**Added 2026-07-21** after an independent adversarial review found the original
+sweep incomplete. The three sweeps above stay inside `contracts.md`, but the
+statement that DEFINES the cross-repo coordination category lives in `spec.md`,
+and this addition falsifies it in the same stroke.
+
+`spec.md` says the coordination category "ships reusable workflows that
+implement the pin-and-bump mechanism", then enumerates four functions — none of
+which is the park backstop. Once `reusable-release-park.yml` joins that
+category's "full inventory" (the very inventory `spec.md` points at), the
+definition contradicts the contract text this proposal adds, which states in so
+many words that the fourth workflow "participates in no pin rewrite". Sweeping
+`contracts.md` alone would leave the spec asserting the category is
+pin-and-bump-only while its own inventory says otherwise.
+
+FIND (verbatim):
+```
+The **cross-repo coordination category** ships reusable workflows that implement the pin-and-bump mechanism declared in `livespec/SPECIFICATION/contracts.md` §"Cross-repo coordination — pin-and-bump" — release-dispatch fan-out, autodiscovery-driven bump-pin pull requests, vendored-library re-bump, and periodic pin-freshness sweeps.
+```
+
+REPLACE WITH:
+```
+The **cross-repo coordination category** ships reusable workflows that implement the pin-and-bump mechanism declared in `livespec/SPECIFICATION/contracts.md` §"Cross-repo coordination — pin-and-bump" — release-dispatch fan-out, autodiscovery-driven bump-pin pull requests, vendored-library re-bump, and periodic pin-freshness sweeps — plus the independent read-only release-train park backstop (`reusable-release-park.yml`), which guards the release train FEEDING that mechanism and participates in no pin rewrite.
+```
+
+The wording deliberately mirrors the inventory intro's own phrasing in sweep 2
+("guards the release train FEEDING that policy … participates in no pin
+rewrite"), so the two statements read as one rule rather than two overlapping
+ones.
+
+Heading-coverage co-edit: NOT required. The change adds only a `####` (H4) subsection and edits prose; it changes NO `## ` (H2) heading set, and `tests/heading-coverage.json` tracks only H2 headings. So no `../tests/heading-coverage.json` entry is added to `resulting_files[]`. Sweep 4 edits a `spec.md` paragraph and likewise changes no H2.
 
