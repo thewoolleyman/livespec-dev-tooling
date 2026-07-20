@@ -393,3 +393,41 @@ def test_main_returns_nonzero_with_migration_error_for_unrewritable_tag(
     assert "migrate" in err.lower()
     # Distinct from the pin-absent annotation.
     assert "failed to rewrite docker image tag" not in err
+
+
+def test_unrewritable_tag_error_names_the_layer_choice_by_role(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The refusal names BOTH candidate roles and never offers the build-internal `base-` layer.
+
+    The guidance IS the feature here: this guard exists to tell an operator what
+    to do, and the choice it has to disambiguate is CI-job-container vs Fabro
+    sandbox. Naming only one form — or presenting the layers as a flat menu —
+    reproduces the mistake the guard exists to prevent, because the slim
+    `python-` / `python-rust-` layers carry no ACP adapters and a sandbox pinned
+    to one is broken in a way the tag itself does not reveal.
+
+    `base-` is deliberately absent: it is build-internal, no consumer in the
+    fleet pins it, and offering it can only invite a wrong choice.
+    """
+    monkeypatch.chdir(tmp_path)
+    pin_file = tmp_path / "workflow.toml"
+    _ = pin_file.write_text(f'docker = "{_IMAGE}:sha-ea684ad"\n', encoding="utf-8")
+    monkeypatch.setenv("PIN_FILE", str(pin_file))
+    monkeypatch.setenv("PIN_KEY", _IMAGE)
+    monkeypatch.setenv("PIN_CURRENT", "sha-ea684ad")
+    monkeypatch.setenv("PIN_TAG", "v0.44.0")
+    assert main() == 1
+    err = capsys.readouterr().err
+    # Both slim CI-container forms, at the release tag being rewritten to.
+    assert "python-v0.44.0" in err
+    assert "python-rust-v0.44.0" in err
+    # Both adapter-carrying sandbox forms.
+    assert "python-agent-v0.44.0" in err
+    assert "python-rust-agent-v0.44.0" in err
+    # The roles are named, so the choice is decidable rather than a flat menu.
+    assert "container" in err.lower()
+    assert "sandbox" in err.lower()
+    assert "adapter" in err.lower()
+    # The build-internal layer is never offered.
+    assert "base-" not in err

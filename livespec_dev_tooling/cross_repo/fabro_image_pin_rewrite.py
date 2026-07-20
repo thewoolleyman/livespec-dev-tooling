@@ -158,11 +158,12 @@ def main() -> int:
     )
     if rewritten is None:
         _ = sys.stderr.write(
-            f'::error::cannot rewrite docker image tag "{current_tag}" for {image_key} in '
-            f"{path}: the pin carries no layer prefix, so the only rewrite available is a "
-            f"bare {release_tag} — a tag the layered image build never publishes. Migrate "
-            f'this pin to a prefixed tag (e.g. "python-{release_tag}") by hand before the '
-            f"fan-out can maintain it.\n"
+            f'::error::refusing to rewrite docker image tag "{current_tag}" for {image_key} in '
+            f"{path}: it carries no layer prefix, so the correct target layer cannot be inferred. "
+            f"Migrate this pin by hand to a layer-prefixed tag first — a CI job container wants "
+            f"the slim python-{release_tag} or python-rust-{release_tag}; a Fabro sandbox wants "
+            f"python-agent-{release_tag} or python-rust-agent-{release_tag}, because the slim "
+            f"layers carry no ACP adapters.\n"
         )
         return 1
     new_text, count = rewritten
