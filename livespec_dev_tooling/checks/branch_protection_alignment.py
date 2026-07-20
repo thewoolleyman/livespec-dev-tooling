@@ -97,25 +97,15 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402
 
+from livespec_dev_tooling.checks._ci_job_names import (  # noqa: E402
+    parse_ci_matrix,
+    parse_top_level_jobs,
+)
+
 __all__: list[str] = []
 
 
 _CI_YML_PATH = Path(".github/workflows/ci.yml")
-_MATRIX_TARGET_LINE = re.compile(r"^\s*-\s*([\w-]+)\s*$")
-_MATRIX_HEADER = re.compile(r"^\s*matrix:\s*$")
-_MATRIX_TARGET_KEY = re.compile(r"^\s*target:\s*$")
-# Top-level job recognition, for the single-gate model where branch
-# protection requires only an aggregate gate job (e.g. `ci-green`) that is
-# a TOP-LEVEL job — not a matrix leg. `_JOBS_HEADER` marks the `jobs:`
-# block; `_JOB_ID_LINE` matches a job key at the 2-space job indent
-# (`  ci-green:` → `ci-green`); `_JOB_NAME_LINE` matches a job's `name:`
-# value (a non-matrix job's reported status-check context is its `name:`,
-# falling back to the job id when `name:` is absent). `_JOB_NAME_LINE`'s
-# leading-`\s+`-then-`name:` shape deliberately does NOT match step-level
-# `- name:` lines (those carry a `- ` prefix before `name:`).
-_JOBS_HEADER = re.compile(r"^jobs:\s*$")
-_JOB_ID_LINE = re.compile(r"^  ([A-Za-z0-9_-]+):")
-_JOB_NAME_LINE = re.compile(r"^\s+name:\s*(.+?)\s*$")
 # Match the two canonical github.com remote URL forms emitted by `git remote
 # get-url origin`: `https://github.com/<owner>/<repo>(.git)` and
 # `git@github.com:<owner>/<repo>(.git)`. The library is consumed across
@@ -156,83 +146,6 @@ class _RequiredContexts:
 
     contexts: frozenset[str]
     strict: bool
-
-
-def _parse_ci_matrix(*, source: str) -> set[str]:
-    """Extract the matrix.target job names from ci.yml.
-
-    Walks the file line-by-line looking for the `matrix:` table,
-    then the `target:` key, then bullet entries that look like
-    job slugs (`- check-foo`). Stops collecting once a non-bullet
-    non-comment line outside the bullet block is hit.
-    """
-    targets: set[str] = set()
-    in_matrix = False
-    in_target_list = False
-    for raw in source.splitlines():
-        if _MATRIX_HEADER.match(raw):
-            in_matrix = True
-            in_target_list = False
-            continue
-        if not in_matrix:
-            continue
-        if _MATRIX_TARGET_KEY.match(raw):
-            in_target_list = True
-            continue
-        if in_target_list:
-            stripped = raw.strip()
-            if not stripped or stripped.startswith("#"):
-                continue
-            match = _MATRIX_TARGET_LINE.match(raw)
-            if match is None:
-                # End of bullet list (next YAML key or section).
-                in_target_list = False
-                continue
-            targets.add(match.group(1))
-    return targets
-
-
-def _parse_top_level_jobs(*, source: str) -> set[str]:
-    """Extract the top-level job identifiers and literal `name:` values from ci.yml.
-
-    Under the single-gate model, branch protection requires only an
-    aggregate gate job (e.g. `ci-green`) that is a TOP-LEVEL job, not a
-    matrix leg — so `_parse_ci_matrix` alone cannot see it. This parser
-    collects, from within the `jobs:` block:
-
-    - each 2-space-indented job KEY (`  ci-green:` → `ci-green`), and
-    - each job's literal `name:` VALUE, because a non-matrix job's
-      reported status-check context is its `name:` (falling back to the
-      job id when `name:` is absent).
-
-    Templated `name:` values (`name: ${{ matrix.target }}`) are SKIPPED:
-    matrix legs report under `${{ matrix.target }}` and are already
-    covered by `_parse_ci_matrix`. Step-level `- name:` lines (a `- `
-    prefix) are not matched. Scanning stops at the next column-0 key
-    after `jobs:`.
-    """
-    names: set[str] = set()
-    in_jobs = False
-    for raw in source.splitlines():
-        if _JOBS_HEADER.match(raw):
-            in_jobs = True
-            continue
-        if not in_jobs:
-            continue
-        if raw and not raw[0].isspace():
-            # A column-0 key ends the `jobs:` block.
-            in_jobs = False
-            continue
-        job_match = _JOB_ID_LINE.match(raw)
-        if job_match is not None:
-            names.add(job_match.group(1))
-            continue
-        name_match = _JOB_NAME_LINE.match(raw)
-        if name_match is not None:
-            value = name_match.group(1)
-            if "${{" not in value:
-                names.add(value)
-    return names
 
 
 def _resolve_owner_repo(*, log: structlog.stdlib.BoundLogger) -> str | None:
@@ -407,11 +320,11 @@ def main() -> int:
         # satisfied. Exit 0 so the check is safe to wire universally.
         return 0
     ci_source = ci_yml.read_text(encoding="utf-8")
-    matrix_targets = _parse_ci_matrix(source=ci_source)
+    matrix_targets = parse_ci_matrix(source=ci_source)
     if not matrix_targets:
         log.error("ci.yml matrix.target is empty or unparseable", path=str(_CI_YML_PATH))
         return 1
-    job_names = _parse_top_level_jobs(source=ci_source)
+    job_names = parse_top_level_jobs(source=ci_source)
     fetched = _fetch_required_contexts(log=log)
     if fetched is None:
         # Graceful skip: gh unavailable / unauthenticated /
