@@ -76,6 +76,14 @@ anywhere in the path:
   - The mutant count and kill rate are logged before any verdict branch,
     so "inspected 0" is visible in CI output rather than silent.
 
+Crashed-with-verdicts (work-item livespec-dev-tooling-6j6): the rc-1
+distinction above must not be generalized to every return code. Deciding
+crash-vs-survivors by the tally is correct for rc 1 and WRONG for anything
+higher, because mutmut persists verdicts as it goes — so a run killed
+part-way leaves a non-empty tally that is partial, skews high, and would be
+ratcheted in. `_is_crashed_run` therefore restores an unconditional hard
+fail for rc >= 2 alongside the rc-1 tally test.
+
 Output discipline: per spec, `print` (T20) and `sys.stderr.write`
 (`check-no-write-direct`) are banned in dev-tooling/**. Diagnostics flow
 through structlog (JSON to stderr).
@@ -249,8 +257,22 @@ def _is_crashed_run(*, returncode: int, total: int) -> bool:
     produces no parseable verdicts. A non-zero return code with an empty
     tally is therefore a crash, and the caller surfaces mutmut's stderr
     instead of reporting success.
+
+    That tally test applies to rc 1 ALONE, and the first disjunct below is
+    what confines it there (work-item livespec-dev-tooling-6j6). rc 1 is the
+    only non-zero code mutmut itself returns for a legitimate outcome, so it
+    is the only one a non-empty tally may excuse; every other non-zero code
+    is a crash whatever the tally says. Judging rc >= 2 by the tally too — as
+    this helper did when it replaced an unconditional `not in (0, 1)` hard
+    fail — reopened the hole from the other side: mutmut persists each verdict
+    as it completes, so a run that DIES part-way (rc 137 is a SIGKILL/OOM
+    death, process-level and independent of mutmut's own exit table) leaves
+    real verdicts on disk. Its partial tally then reads as a normal survivors
+    run, and being partial it skews HIGH — so it is promoted into the
+    committed ratchet, and every subsequent legitimate full run fails against
+    a rate no complete run can reach.
     """
-    return returncode != 0 and total == 0
+    return returncode not in (0, 1) or (returncode != 0 and total == 0)
 
 
 def _derive_exit_code(*, killed: int, total: int, baseline: _Baseline) -> int:
