@@ -58,6 +58,15 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.50.5](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.50.4...v0.50.5) (2026-07-20)
+
+
+### Bug Fixes
+
+* **checks:** a crashed mutmut run must fail even when verdicts are present ([2e1cd24](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2e1cd24fd03198bc1311fa3a53e4137a025e4184))
+* **checks:** check_mutation must fail when it inspected nothing ([e9dcf46](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e9dcf4696dec9e40fdc73ecea5439e6f9cb2cead))
+* **cross-repo:** refuse an unrewritable fabro image pin instead of bumping it bare ([f1274d5](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f1274d53f337293be7dae3d61ef8544c2a8d29ad))
+
 ## [0.50.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.50.3...v0.50.4) (2026-07-19)
 
 
