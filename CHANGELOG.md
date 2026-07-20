@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.50.8](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.50.7...v0.50.8) (2026-07-20)
+
+
+### Bug Fixes
+
+* **checks:** fail loudly when a credentialed gh cannot reach the API ([d5d1b7c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d5d1b7cd8ca508882d80cfcefc8d587c98ba1460))
+
 ## [0.50.7](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.50.6...v0.50.7) (2026-07-20)
 
 
