@@ -470,7 +470,7 @@ runs:
           --head "$BRANCH" \
           --base master
 
-        open_prs=$(gh pr list --state open --json number,headRefName,title)
+        open_prs=$(gh pr list --state open --limit 100 --json number,headRefName,title)
         close_plan=$(OPEN_PRS="$open_prs" RECORDS="$RECORDS" CONSUMER="${GITHUB_REPOSITORY#*/}" \
           uv run --project .livespec-dev-tooling python -m livespec_dev_tooling.cross_repo.bump_pr_supersession)
         close_count=$(echo "$close_plan" | jq 'length')

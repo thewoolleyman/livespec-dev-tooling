@@ -693,6 +693,34 @@ def test_restamp_step_between_reconcile_and_commit() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Superseded bump PR close sweep (livespec-dev-tooling-5o6ssu)
+# ---------------------------------------------------------------------------
+
+_SUPERSESSION_MODULE = "livespec_dev_tooling.cross_repo.bump_pr_supersession"
+_OPEN_PR_SWEEP_LIMIT = "--limit 100"
+
+
+def test_superseded_bump_pr_sweep_fetches_more_than_the_default_pr_page() -> None:
+    """The close sweep must inspect enough open bump PRs to cover accumulated fan-out backlogs."""
+    text = _read(path=_ACTION_PATH)
+    assert f"python -m {_SUPERSESSION_MODULE}" in text, (
+        "the composite Action must dispatch the tested supersession classifier "
+        "instead of embedding the decision logic in shell"
+    )
+    pr_list_match = re.search(
+        r"^\s+open_prs=\$\(gh pr list (?P<args>[^\n]+)\)$",
+        text,
+        re.MULTILINE,
+    )
+    assert pr_list_match, "composite Action no longer captures open PRs for the supersession sweep"
+    assert _OPEN_PR_SWEEP_LIMIT in pr_list_match.group("args"), (
+        "the superseded-bump close sweep must pass `gh pr list --limit 100`; "
+        "the default page can miss older superseded PRs in exactly the backlog "
+        "this automation is meant to clear"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Stale-SHA rerun guard (livespec-dev-tooling-e37)
 # ---------------------------------------------------------------------------
 
