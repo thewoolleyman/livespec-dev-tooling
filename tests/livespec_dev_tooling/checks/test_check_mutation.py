@@ -38,6 +38,15 @@ ratchet at 0.0% forever). The tests below pin each: an ARMED run
 with no parseable verdicts is classified as a CRASH and surfaces mutmut's
 stderr; and `_update_baseline` refuses a zero-mutant write outright.
 
+Crashed-with-verdicts (work-item livespec-dev-tooling-6j6): z45 replaced an
+unconditional `returncode not in (0, 1)` hard fail with `_is_crashed_run`,
+which keys off an EMPTY tally — so a run that died with rc >= 2 AFTER
+enumerating some mutants was reclassified as a normal survivors run. mutmut
+persists each verdict as it completes, so a killed run leaves a non-empty
+tally on disk; the tests below pin that rc 1 is the only non-zero code the
+tally may excuse, and that a crashed run's partial measurement never reaches
+the ratchet.
+
 Tests invoke check_mutation.py via subprocess with a fake mutmut package
 injected through PYTHONPATH, following the established dev-tooling test
 pattern. This approach lets mutmut properly substitute the mutated module
@@ -394,11 +403,22 @@ def test_no_baseline_update_when_equal(*, tmp_path: Path) -> None:
 
 
 def test_mutmut_run_failure_returns_1(*, tmp_path: Path) -> None:
-    """Mutmut run returning non-0/1 exit code causes check to fail."""
-    fake = _make_fake_mutmut(tmp_path=tmp_path, killed=0, total=0, run_rc=2)
-    baseline = {"kill_rate_percent": 0, "mutants_surviving": 0, "mutants_total": 0}
+    """Mutmut run returning a non-0/1 exit code causes the check to fail.
+
+    The tally is deliberately NON-empty (20 mutants, 18 killed, a 90% rate
+    that clears both the floor and the 85% baseline), so the ONLY thing that
+    can fail this run is the return code itself. The fixture previously set
+    `total=0`, which tripped the zero-mutant branch instead — leaving the test
+    green no matter what the return code did and hollowing out the very
+    assertion its name makes (work-item livespec-dev-tooling-6j6).
+    """
+    fake = _make_fake_mutmut(tmp_path=tmp_path, killed=18, total=20, run_rc=2)
+    baseline = {"kill_rate_percent": 85.0, "mutants_surviving": 3, "mutants_total": 20}
     result = _run_check(tmp_path=tmp_path, fake_mutmut_dir=fake, baseline=baseline)
-    assert result.returncode == 1
+    assert result.returncode == 1, (
+        f"a non-0/1 mutmut exit must FAIL even when verdicts are present; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
 
 
 # --- armed-but-inspected-nothing (work-item livespec-dev-tooling-z45) ---
@@ -476,6 +496,42 @@ def test_crashed_mutmut_rc1_fails_and_surfaces_stderr(*, tmp_path: Path) -> None
     ), f"the crash must surface mutmut's stderr; stderr={result.stderr!r}"
 
 
+# --- crashed-with-verdicts (work-item livespec-dev-tooling-6j6) ---
+
+
+def test_killed_mutmut_with_partial_verdicts_does_not_poison_the_ratchet(*, tmp_path: Path) -> None:
+    """An OOM-killed run's PARTIAL tally must never be promoted into the ratchet.
+
+    Work-item livespec-dev-tooling-6j6. `mutmut run` persists each verdict to
+    `mutants/mutmut-meta.json` as it completes (mutmut 3.2.3 `register_result`
+    calls `save()` per mutant), so a run killed part-way — OOM/SIGKILL is rc
+    137, a process-level death independent of mutmut's own exit table — leaves
+    a NON-EMPTY tally on disk that `mutmut results --all True` happily reports.
+    `_is_crashed_run` keyed only off an EMPTY tally, so that partial
+    measurement was classified as a normal survivors run.
+
+    The harm is second-order and is what makes this worse than a stray green:
+    the partial tally here (5 of 400 mutants, all killed) reads as a PERFECT
+    100% rate, so it is promoted over a healthy 85% ratchet — after which every
+    subsequent LEGITIMATE full run fails the ratchet with no obvious cause.
+    That is exactly the damage mask 3 of livespec-dev-tooling-z45 exists to
+    prevent, reached through the return code instead of through `total == 0`.
+    """
+    fake = _make_fake_mutmut(tmp_path=tmp_path, killed=5, total=5, run_rc=137)
+    baseline = {"kill_rate_percent": 85.0, "mutants_surviving": 60, "mutants_total": 400}
+    result = _run_check(tmp_path=tmp_path, fake_mutmut_dir=fake, baseline=baseline)
+    assert result.returncode == 1, (
+        f"a killed mutmut run must FAIL even though its partial tally parses; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+    written = json.loads((tmp_path / ".mutmut-baseline.json").read_text(encoding="utf-8"))
+    assert written["kill_rate_percent"] == pytest.approx(85.0), (
+        f"a crashed run's partial measurement must not be promoted into the "
+        f"ratchet; baseline is now {written!r}"
+    )
+    assert written["mutants_total"] == 400, f"the ratchet was overwritten: {written!r}"
+
+
 def test_reports_mutant_count_and_kill_rate(*, tmp_path: Path) -> None:
     """A passing run still emits the tally, so "inspected 0" cannot look like "passed"."""
     fake = _make_fake_mutmut(tmp_path=tmp_path, killed=17, total=20)
@@ -488,10 +544,21 @@ def test_reports_mutant_count_and_kill_rate(*, tmp_path: Path) -> None:
 
 
 def test_is_crashed_run_separates_survivors_from_crash() -> None:
-    """rc 1 + zero verdicts is a crash; rc 1 + a real tally is a survivor run."""
+    """rc 1 + zero verdicts is a crash; rc 1 + a real tally is a survivor run.
+
+    rc 1 is the ONLY non-zero code mutmut itself returns that can mean
+    "survivors present", so it alone is judged by the tally. Every other
+    non-zero code is a crash whatever the tally says (work-item
+    livespec-dev-tooling-6j6): rc 2 is a hard failure and rc 137 is a
+    SIGKILL/OOM death, and neither becomes a legitimate measurement just
+    because verdicts were persisted before the process died.
+    """
     assert _is_crashed_run(returncode=1, total=0) is True
     assert _is_crashed_run(returncode=1, total=20) is False
     assert _is_crashed_run(returncode=0, total=0) is False
+    assert _is_crashed_run(returncode=0, total=20) is False
+    assert _is_crashed_run(returncode=2, total=20) is True
+    assert _is_crashed_run(returncode=137, total=20) is True
 
 
 def test_derive_exit_code_fails_on_zero_total() -> None:
