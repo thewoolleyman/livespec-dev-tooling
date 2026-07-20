@@ -112,6 +112,7 @@ mirror_pairings = [
 #   - cross_repo/fabro_image_pin_rewrite.py  main() → in-place fabro docker pin rewrite; `::error::` on miss
 #   - cross_repo/codex_acp_pin_rewrite.py  main() → in-place codex-acp Dockerfile ARG rewrite; `::error::` on miss
 #   - cross_repo/pin_rewrite.py  main() → in-place legacy regex pin rewrites; `::error::` on miss
+#   - cross_repo/bump_pr_supersession.py  main() → JSON close plan for superseded bump PRs to stdout
 supervisor_entry_files = [
     "livespec_dev_tooling/canonical_checks.py",
     "livespec_dev_tooling/cross_repo/ci_yaml_canonical_reconcile.py",
@@ -121,6 +122,7 @@ supervisor_entry_files = [
     "livespec_dev_tooling/cross_repo/pin_rewrite.py",
     "livespec_dev_tooling/cross_repo/pin_staleness.py",
     "livespec_dev_tooling/cross_repo/pin_autodiscovery.py",
+    "livespec_dev_tooling/cross_repo/bump_pr_supersession.py",
     "livespec_dev_tooling/fleet/merged_branch_sweep.py",
     "livespec_dev_tooling/parallel_check_dispatcher.py",
     "livespec_dev_tooling/red_leg_scope.py",
