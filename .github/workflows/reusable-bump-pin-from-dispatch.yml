@@ -35,7 +35,7 @@
 #     extracted from `client_payload.source_repo`.
 #   tag (required) — the published release tag, extracted from
 #     `client_payload.tag`. Every matching pin is rewritten to this
-#     value before `just check` runs.
+#     value. No consumer checks run here — see the Outputs note below.
 #   release_url (optional, default "") — included in the PR body for
 #     traceability per §"PR commit-message convention".
 #
@@ -58,9 +58,10 @@
 #   doesn't actually consume the publishing repo.
 #
 # Fallback per §"Fallback to known-good pin": this workflow MUST NOT
-#   force-push past a failing `just check`; the failure surfaces on
-#   the PR's status checks and the human contributor handles
-#   resolution per the spec's manual-pin path.
+#   force-push past the consumer's failing CI; it runs no consumer
+#   checks itself, so the failure surfaces on the PR's own status
+#   checks and the human contributor handles resolution per the
+#   spec's manual-pin path.
 
 name: reusable-bump-pin-from-dispatch
 

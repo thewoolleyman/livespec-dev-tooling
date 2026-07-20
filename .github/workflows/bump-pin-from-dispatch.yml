@@ -9,7 +9,9 @@
 #     four pin formats (.livespec.jsonc compat.pinned, pyproject.toml
 #     [tool.uv.sources], .vendor.jsonc, .github/workflows uses: refs),
 #   - rewrites every matching pin to the new tag,
-#   - runs `just check` to verify the consumer's checks still pass,
+#   - deliberately runs NO consumer checks — the consumer's own PR CI
+#     and branch protection are the sole gate (a faithful `just check`
+#     is not reconstructable in the action's incomplete environment),
 #   - commits with the `chore(deps):` convention (excluded from
 #     release-please MINOR/PATCH bumps to avoid auto-bump cycles),
 #   - opens an auto-merge PR via the livespec GitHub App.
