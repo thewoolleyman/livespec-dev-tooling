@@ -62,7 +62,15 @@ __all__: list[str] = [
 ]
 
 
-REPO_CLASSES = ("core", "enforcement-suite", "impl-plugin", "driver-plugin", "library", "console")
+REPO_CLASSES = (
+    "core",
+    "enforcement-suite",
+    "impl-plugin",
+    "driver-plugin",
+    "library",
+    "console",
+    "control-plane-tool",
+)
 
 _ALL_CLASSES: frozenset[str] = frozenset(REPO_CLASSES)
 # The classes participating in the pin-and-bump web — i.e. carrying the
@@ -73,6 +81,10 @@ _ALL_CLASSES: frozenset[str] = frozenset(REPO_CLASSES)
 # but ships none of the shims, so its pin freshness is monitored centrally
 # by the dev-tooling-pin row's warning-severity staleness leg rather than
 # auto-bumped (livespec-dev-tooling contracts.md §"Bump-pin policy").
+# The exemption is the CONSOLE's specifically, NOT the Control Plane's: the
+# sibling Control-Plane class `control-plane-tool` ships an operator tool
+# whose gates come from this library, so it IS in the web. Read the
+# subtraction literally — one class is named, not a plane.
 _PIN_WEB_CLASSES = _ALL_CLASSES - {"console"}
 _TEMPLATE_BORN_CLASSES = frozenset({"impl-plugin"})
 # The dev-tooling-pin row excludes only the enforcement-suite class —
