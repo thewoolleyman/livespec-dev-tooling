@@ -32,50 +32,27 @@ __all__: list[str] = []
 
 
 _MANIFEST_SOURCE = '{"owner": "acme", "members": [{"repo": "widget", "class": "library"}]}'
+_TWO_MEMBER_MANIFEST_SOURCE = (
+    '{"owner": "acme", "members": ['
+    '{"repo": "widget", "class": "library"}, '
+    '{"repo": "gadget", "class": "library"}]}'
+)
 _MANIFEST_ARGS: tuple[str, ...] = (
     "api",
     "repos/acme/livespec/contents/.livespec-fleet-manifest.jsonc?ref=master",
     "-H",
     "Accept: application/vnd.github.raw",
 )
-_TREE_ARGS: tuple[str, ...] = ("api", "repos/acme/widget/git/trees/master?recursive=1")
-_PYPROJECT_ARGS: tuple[str, ...] = (
-    "api",
-    "repos/acme/widget/contents/pyproject.toml?ref=master",
-    "-H",
-    "Accept: application/vnd.github.raw",
-)
 _LATEST_ARGS: tuple[str, ...] = ("api", "repos/acme/livespec-dev-tooling/releases/latest")
 _SECRETS_ARGS: tuple[str, ...] = ("api", "repos/acme/widget/actions/secrets")
 _INSTALL_ARGS: tuple[str, ...] = ("api", "installation/repositories?per_page=100")
-_PROTECTION_ARGS: tuple[str, ...] = ("api", "repos/acme/widget/branches/master/protection")
-_REPO_ARGS: tuple[str, ...] = ("api", "repos/acme/widget")
-_TOPICS_ARGS: tuple[str, ...] = ("api", "repos/acme/widget/topics")
-_CI_ARGS: tuple[str, ...] = (
-    "api",
-    "repos/acme/widget/contents/.github/workflows/ci.yml?ref=master",
-    "-H",
-    "Accept: application/vnd.github.raw",
-)
-_LIVESPEC_JSONC_ARGS: tuple[str, ...] = (
-    "api",
-    "repos/acme/widget/contents/.livespec.jsonc?ref=master",
-    "-H",
-    "Accept: application/vnd.github.raw",
-)
-_SETTINGS_ARGS: tuple[str, ...] = (
-    "api",
-    "repos/acme/widget/contents/.claude/settings.json?ref=master",
-    "-H",
-    "Accept: application/vnd.github.raw",
-)
-_JUSTFILE_ARGS: tuple[str, ...] = (
-    "api",
-    "repos/acme/widget/contents/justfile?ref=master",
-    "-H",
-    "Accept: application/vnd.github.raw",
-)
 _REPOS_ARGS: tuple[str, ...] = ("api", "users/acme/repos?per_page=100")
+
+# The exact `event` string `run_member_rows` emits for a row that applied to at
+# least one member and was evaluable for none of them. Asserted verbatim (the
+# `test_discovery_sweep_uses_fleet_shape_wording` precedent) because the wording
+# IS the signal an operator scans a green run's log for.
+_BLIND_ROW_EVENT = "obligation row enforced NOTHING this run (skipped for every applicable member)"
 
 _CI_YML = "jobs:\n  check:\n    strategy:\n      matrix:\n        target:\n          - check-a\n"
 _PYPROJECT = '[tool.uv.sources]\nlivespec-dev-tooling = { git = "x", tag = "v1.0.0" }\n'
@@ -125,10 +102,19 @@ def raw(*, text: str) -> GhResult:
     return GhResult(returncode=0, stdout=text, stderr="")
 
 
-def _green_table(
-    *, latest_tag: str = "v1.0.0", topics: list[str] | None = None
+def _member_entries(
+    *, repo: str, topics: list[str] | None = None
 ) -> dict[tuple[str, ...], GhResult]:
-    """A table where every row of the one-member manifest passes."""
+    """Canned per-repo responses making every applicable row pass for `repo`."""
+
+    def contents(path: str) -> tuple[str, ...]:
+        return (
+            "api",
+            f"repos/acme/{repo}/contents/{path}?ref=master",
+            "-H",
+            "Accept: application/vnd.github.raw",
+        )
+
     tracked = [
         ".github/workflows/ci.yml",
         ".github/workflows/bump-pin-from-dispatch.yml",
@@ -144,21 +130,69 @@ def _green_table(
         "truncated": False,
     }
     return {
-        _MANIFEST_ARGS: raw(text=_MANIFEST_SOURCE),
-        _TREE_ARGS: ok(payload=tree_payload),
-        _LIVESPEC_JSONC_ARGS: raw(text=_LIVESPEC_JSONC),
-        _SETTINGS_ARGS: raw(text=_PLUGIN_SETTINGS),
-        _JUSTFILE_ARGS: raw(text=_STANDARD_JUSTFILE),
-        _PYPROJECT_ARGS: raw(text=_PYPROJECT),
-        _LATEST_ARGS: ok(payload={"tag_name": latest_tag}),
-        _SECRETS_ARGS: ok(payload={"secrets": [{"name": "APP_ID"}, {"name": "APP_PRIVATE_KEY"}]}),
-        _INSTALL_ARGS: ok(payload={"repositories": [{"name": "widget"}]}),
-        _PROTECTION_ARGS: ok(payload=aligned_protection_payload()),
-        _REPO_ARGS: ok(payload=aligned_merge_settings_payload()),
-        _CI_ARGS: raw(text=_CI_YML),
-        _TOPICS_ARGS: ok(payload={"names": topics if topics is not None else ["livespec-sibling"]}),
-        _REPOS_ARGS: ok(payload=_owner_repos_payload()),
+        ("api", f"repos/acme/{repo}/git/trees/master?recursive=1"): ok(payload=tree_payload),
+        contents(".livespec.jsonc"): raw(text=_LIVESPEC_JSONC),
+        contents(".claude/settings.json"): raw(text=_PLUGIN_SETTINGS),
+        contents("justfile"): raw(text=_STANDARD_JUSTFILE),
+        contents("pyproject.toml"): raw(text=_PYPROJECT),
+        contents(".github/workflows/ci.yml"): raw(text=_CI_YML),
+        ("api", f"repos/acme/{repo}/actions/secrets"): ok(
+            payload={"secrets": [{"name": "APP_ID"}, {"name": "APP_PRIVATE_KEY"}]}
+        ),
+        ("api", f"repos/acme/{repo}/branches/master/protection"): ok(
+            payload=aligned_protection_payload()
+        ),
+        ("api", f"repos/acme/{repo}"): ok(payload=aligned_merge_settings_payload()),
+        ("api", f"repos/acme/{repo}/topics"): ok(
+            payload={"names": topics if topics is not None else ["livespec-sibling"]}
+        ),
     }
+
+
+def _green_table(
+    *, latest_tag: str = "v1.0.0", topics: list[str] | None = None
+) -> dict[tuple[str, ...], GhResult]:
+    """A table where every row of the one-member manifest passes."""
+    return {
+        _MANIFEST_ARGS: raw(text=_MANIFEST_SOURCE),
+        _LATEST_ARGS: ok(payload={"tag_name": latest_tag}),
+        _INSTALL_ARGS: ok(payload={"repositories": [{"name": "widget"}]}),
+        _REPOS_ARGS: ok(payload=_owner_repos_payload()),
+        **_member_entries(repo="widget", topics=topics),
+    }
+
+
+def _two_member_table(
+    *, blind_app_installation: bool = True, gadget_topics_readable: bool = True
+) -> dict[tuple[str, ...], GhResult]:
+    """Two green members; optionally blind the App-installation or topics reads.
+
+    `blind_app_installation` drops the single `installation/repositories`
+    entry, which is the one read the `app-installation` row depends on for
+    EVERY member — so the row skips fleet-wide (evaluated for nobody).
+    `gadget_topics_readable=False` instead drops ONE member's topics read,
+    leaving `topic-livespec-sibling` evaluable for the other member — the
+    partial-skip case that must NOT be reported as blind.
+    """
+    table = {
+        _MANIFEST_ARGS: raw(text=_TWO_MEMBER_MANIFEST_SOURCE),
+        _LATEST_ARGS: ok(payload={"tag_name": "v1.0.0"}),
+        _REPOS_ARGS: ok(
+            payload=[
+                {"name": "widget", "topics": ["livespec-sibling"]},
+                {"name": "gadget", "topics": ["livespec-sibling"]},
+            ]
+        ),
+        **_member_entries(repo="widget"),
+        **_member_entries(repo="gadget"),
+    }
+    if not blind_app_installation:
+        table[_INSTALL_ARGS] = ok(
+            payload={"repositories": [{"name": "widget"}, {"name": "gadget"}]}
+        )
+    if not gadget_topics_readable:
+        del table[("api", "repos/acme/gadget/topics")]
+    return table
 
 
 def _owner_repos_payload() -> list[object]:
@@ -175,22 +209,27 @@ def _log() -> structlog.stdlib.BoundLogger:
 
 
 class RecordingLog:
-    """Small logger test double for asserting structured event text."""
+    """Logger test double capturing each event's text AND its structured fields."""
 
     def __init__(self) -> None:
         self.events: list[str] = []
+        self.records: list[tuple[str, dict[str, object]]] = []
 
     def error(self, event: str, **kwargs: object) -> None:
-        del kwargs
         self.events.append(event)
+        self.records.append((event, kwargs))
 
     def warning(self, event: str, **kwargs: object) -> None:
-        del kwargs
         self.events.append(event)
+        self.records.append((event, kwargs))
 
     def info(self, event: str, **kwargs: object) -> None:
-        del kwargs
         self.events.append(event)
+        self.records.append((event, kwargs))
+
+    def fields_for(self, *, event: str) -> list[dict[str, object]]:
+        """The structured fields of every record whose event text is `event`."""
+        return [fields for recorded, fields in self.records if recorded == event]
 
 
 def test_fetch_manifest_success_and_failure_modes() -> None:
@@ -203,11 +242,64 @@ def test_fetch_manifest_success_and_failure_modes() -> None:
     assert fetch_manifest(ctx=bad) is None
 
 
+def _blind_rows_by_id(*, log: RecordingLog) -> dict[object, dict[str, object]]:
+    """The blind-row warnings the sweep emitted, keyed by obligation row id."""
+    return {fields["row"]: fields for fields in log.fields_for(event=_BLIND_ROW_EVENT)}
+
+
+def test_blind_row_reported_when_no_applicable_member_could_be_evaluated() -> None:
+    """A row skipped for EVERY applicable member enforced nothing — say so, loudly."""
+    ctx = make_context(table=_two_member_table())
+    manifest = fetch_manifest(ctx=ctx)
+    log = RecordingLog()
+
+    assert manifest is not None
+    result = run_member_rows(ctx=ctx, manifest=manifest, log=log)
+    blind = _blind_rows_by_id(log=log)
+
+    assert "app-installation" in blind
+    assert blind["app-installation"]["applicable"] == 2
+    assert blind["app-installation"]["skipped"] == 2
+    # Per-member reasons carry a `<repo>: ` prefix; the blind-row warning reports
+    # the DISTINCT underlying causes, so two members sharing one cause read as one.
+    assert blind["app-installation"]["reasons"] == (
+        "installation repositories unreadable (needs an App installation token)",
+    )
+    assert result.blind_rows == len(blind)
+    assert result.error_findings == 0
+
+
+def test_blind_rows_never_change_the_error_count() -> None:
+    """Blindness is WARNING-severity new signal, never an error-count contribution."""
+    ctx = make_context(table=_two_member_table())
+    manifest = fetch_manifest(ctx=ctx)
+    assert manifest is not None
+    assert run_member_rows(ctx=ctx, manifest=manifest, log=_log()).error_findings == 0
+
+
+def test_partially_skipped_row_is_not_blind() -> None:
+    """A row evaluated for even ONE applicable member did enforce something."""
+    table = _two_member_table(blind_app_installation=False, gadget_topics_readable=False)
+    ctx = make_context(table=table)
+    manifest = fetch_manifest(ctx=ctx)
+    log = RecordingLog()
+
+    assert manifest is not None
+    result = run_member_rows(ctx=ctx, manifest=manifest, log=log)
+    blind = _blind_rows_by_id(log=log)
+
+    # `topic-livespec-sibling` skipped for gadget but answered for widget, and
+    # `app-installation` answered for both: partial blindness is not blindness.
+    assert "topic-livespec-sibling" not in blind
+    assert "app-installation" not in blind
+    assert result.blind_rows == len(blind)
+
+
 def test_member_rows_all_green_yields_zero_errors() -> None:
     ctx = make_context(table=_green_table())
     manifest = fetch_manifest(ctx=ctx)
     assert manifest is not None
-    assert run_member_rows(ctx=ctx, manifest=manifest, log=_log()) == 0
+    assert run_member_rows(ctx=ctx, manifest=manifest, log=_log()).error_findings == 0
 
 
 def test_member_rows_counts_errors_but_not_warnings_or_skips() -> None:
@@ -217,7 +309,7 @@ def test_member_rows_counts_errors_but_not_warnings_or_skips() -> None:
     ctx = make_context(table=table)
     manifest = fetch_manifest(ctx=ctx)
     assert manifest is not None
-    assert run_member_rows(ctx=ctx, manifest=manifest, log=_log()) == 1
+    assert run_member_rows(ctx=ctx, manifest=manifest, log=_log()).error_findings == 1
 
 
 def test_discovery_sweep_flags_unmanifested_fleet_repos() -> None:
@@ -297,6 +389,14 @@ def test_main_green_fleet_exits_zero(*, monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setenv("LIVESPEC_RUN_FLEET_CONFORMANCE", "true")
     monkeypatch.setattr(sys, "argv", ["fleet-conformance", "--owner", "acme"])
     _patch_runner(monkeypatch=monkeypatch, table=_green_table())
+    assert fleet_conformance.main() == 0
+
+
+def test_main_blind_row_still_exits_zero(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A sweep whose rows went blind is still a PASS: warning severity, exit 0."""
+    monkeypatch.setenv("LIVESPEC_RUN_FLEET_CONFORMANCE", "true")
+    monkeypatch.setattr(sys, "argv", ["fleet-conformance", "--owner", "acme"])
+    _patch_runner(monkeypatch=monkeypatch, table=_two_member_table())
     assert fleet_conformance.main() == 0
 
 
