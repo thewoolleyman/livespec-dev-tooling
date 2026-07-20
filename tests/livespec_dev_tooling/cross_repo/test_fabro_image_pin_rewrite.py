@@ -8,6 +8,14 @@ release fan-out MUST rewrite only the trailing `vX.Y.Z` and preserve the prefix
 — the pre-extraction inline heredoc dropped it, breaking the pin on every
 release. These tests give the extracted module the behavioral coverage the
 heredoc never had.
+
+They also pin the UNREWRITABLE-SHAPE guard. `.github/workflows/fabro-sandbox-image.yml`
+publishes five layers (`base-`, `python-`, `python-agent-`, `python-rust-`,
+`python-rust-agent-`) and every published tag carries its layer prefix, so a
+rewrite yielding a BARE `vX.Y.Z` names an image that will never exist. A tag with
+no prefix to preserve is therefore refused (`None`) rather than silently rewritten
+bare — the silent rewrite produced a clean-looking diff and a green auto-merge
+bump PR pointing at nothing.
 """
 
 from __future__ import annotations
@@ -30,6 +38,9 @@ _IMAGE = "ghcr.io/thewoolleyman/livespec-fabro-sandbox"
 
 # ---------------------------------------------------------------------------
 # rewrite_layered_docker_tag — pure prefix-preserving version bump
+#
+# One case per layer the image build publishes, so the rewrite is proven over
+# the whole published prefix set rather than over a sample of it.
 # ---------------------------------------------------------------------------
 
 
@@ -57,20 +68,52 @@ def test_preserves_base_prefix() -> None:
     )
 
 
-def test_bare_version_rewrites_to_bare_release() -> None:
-    """A bare `vX.Y.Z` tag (no layer prefix) rewrites to the bare release tag."""
-    assert rewrite_layered_docker_tag(current_tag="v0.43.0", release_tag="v0.44.0") == "v0.44.0"
+def test_preserves_python_agent_prefix() -> None:
+    """A `python-agent-` layer prefix survives; only the version is bumped."""
+    assert (
+        rewrite_layered_docker_tag(current_tag="python-agent-v0.43.0", release_tag="v0.44.0")
+        == "python-agent-v0.44.0"
+    )
 
 
-def test_prefixed_non_semver_tag_falls_back_to_bare() -> None:
-    """A tag with no `vX.Y.Z` anchor (a pre-layer `sha-` tag) rewrites bare.
+def test_preserves_python_rust_agent_prefix() -> None:
+    """A `python-rust-agent-` layer prefix survives; only the version is bumped."""
+    assert (
+        rewrite_layered_docker_tag(current_tag="python-rust-agent-v0.43.0", release_tag="v0.44.0")
+        == "python-rust-agent-v0.44.0"
+    )
 
-    Such a tag carries no version to anchor a prefix against, so there is
-    nothing to preserve — the rewrite yields the bare release tag. This case
-    does not recur once consumers pin `<layer>-v<X.Y.Z>`, but the fallback is
-    total rather than raising.
+
+# ---------------------------------------------------------------------------
+# rewrite_layered_docker_tag — the unrewritable shapes
+#
+# Both shapes below would have yielded a BARE `release_tag` before the guard.
+# The image build publishes no bare tag, so that result named an image that
+# never exists — a green bump PR pointing at nothing. Refusing is the only
+# honest answer; the pin must be migrated to a prefixed tag by hand.
+# ---------------------------------------------------------------------------
+
+
+def test_bare_version_is_unrewritable() -> None:
+    """A bare `vX.Y.Z` tag has no prefix to preserve, so the rewrite is refused."""
+    assert rewrite_layered_docker_tag(current_tag="v0.38.1", release_tag="v0.44.0") is None
+
+
+def test_sha_tag_without_layer_prefix_is_unrewritable() -> None:
+    """A pre-layer `sha-<short>` tag carries no `vX.Y.Z` anchor, so it is refused."""
+    assert rewrite_layered_docker_tag(current_tag="sha-ea684ad", release_tag="v0.44.0") is None
+
+
+def test_layer_prefixed_sha_tag_is_unrewritable() -> None:
+    """A published `<layer>-sha-<short>` tag has no version anchor either.
+
+    The build publishes `python-sha-<short>` alongside `python-v<X.Y.Z>`, but a
+    sha-pinned tag names one commit's image — there is no version in it to bump,
+    so the fan-out cannot maintain it and must say so rather than invent one.
     """
-    assert rewrite_layered_docker_tag(current_tag="sha-ea684ad", release_tag="v0.44.0") == "v0.44.0"
+    assert (
+        rewrite_layered_docker_tag(current_tag="python-sha-ea684ad", release_tag="v0.44.0") is None
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -81,12 +124,14 @@ def test_prefixed_non_semver_tag_falls_back_to_bare() -> None:
 def test_rewrite_pin_in_text_rewrites_single_pin() -> None:
     """The `docker = "<image>:<tag>"` line is rewritten once, prefix preserved."""
     text = f'[image]\ndocker = "{_IMAGE}:python-rust-v0.43.0"\n'
-    new_text, count = rewrite_pin_in_text(
+    result = rewrite_pin_in_text(
         text=text,
         image_key=_IMAGE,
         current_tag="python-rust-v0.43.0",
         release_tag="v0.44.0",
     )
+    assert result is not None
+    new_text, count = result
     assert count == 1
     assert new_text == f'[image]\ndocker = "{_IMAGE}:python-rust-v0.44.0"\n'
 
@@ -94,14 +139,36 @@ def test_rewrite_pin_in_text_rewrites_single_pin() -> None:
 def test_rewrite_pin_in_text_reports_zero_when_absent() -> None:
     """When the pin line is not present, the count is zero and text is unchanged."""
     text = "no docker pin here\n"
-    new_text, count = rewrite_pin_in_text(
+    result = rewrite_pin_in_text(
         text=text,
         image_key=_IMAGE,
         current_tag="python-rust-v0.43.0",
         release_tag="v0.44.0",
     )
+    assert result is not None
+    new_text, count = result
     assert count == 0
     assert new_text == text
+
+
+def test_rewrite_pin_in_text_refuses_unrewritable_tag() -> None:
+    """An unrewritable `current_tag` short-circuits to `None` — the text is never touched.
+
+    The refusal happens BEFORE the pattern is built, so a matching pin line is
+    left alone rather than rewritten to a bare tag. `None` is distinct from the
+    `(text, 0)` "pin absent" answer: the pin is present, it simply cannot be
+    maintained by the fan-out.
+    """
+    text = f'[image]\ndocker = "{_IMAGE}:sha-ea684ad"\n'
+    assert (
+        rewrite_pin_in_text(
+            text=text,
+            image_key=_IMAGE,
+            current_tag="sha-ea684ad",
+            release_tag="v0.44.0",
+        )
+        is None
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -129,12 +196,14 @@ def _container_job(*, job: str, tag: str) -> str:
 def test_rewrite_pin_in_text_rewrites_workflow_container_image() -> None:
     """A job `container:` block's `image:` line is rewritten, layer prefix preserved."""
     text = "jobs:\n" + _container_job(job="check-python", tag="python-v0.43.2")
-    new_text, count = rewrite_pin_in_text(
+    result = rewrite_pin_in_text(
         text=text,
         image_key=_IMAGE,
         current_tag="python-v0.43.2",
         release_tag="v0.44.0",
     )
+    assert result is not None
+    new_text, count = result
     assert count == 1
     assert new_text == "jobs:\n" + _container_job(job="check-python", tag="python-v0.44.0")
 
@@ -142,12 +211,14 @@ def test_rewrite_pin_in_text_rewrites_workflow_container_image() -> None:
 def test_rewrite_pin_in_text_rewrites_container_shorthand() -> None:
     """The one-line `container: <image>` shorthand is rewritten too."""
     text = f"jobs:\n  check:\n    container: {_IMAGE}:python-rust-v0.48.2\n"
-    new_text, count = rewrite_pin_in_text(
+    result = rewrite_pin_in_text(
         text=text,
         image_key=_IMAGE,
         current_tag="python-rust-v0.48.2",
         release_tag="v0.49.0",
     )
+    assert result is not None
+    new_text, count = result
     assert count == 1
     assert new_text == f"jobs:\n  check:\n    container: {_IMAGE}:python-rust-v0.49.0\n"
 
@@ -168,12 +239,14 @@ def test_repeated_invocations_converge_every_matching_line() -> None:
         + _container_job(job="check-shell", tag="python-v0.43.2")
     )
     for _ in range(3):
-        text, count = rewrite_pin_in_text(
+        result = rewrite_pin_in_text(
             text=text,
             image_key=_IMAGE,
             current_tag="python-v0.43.2",
             release_tag="v0.44.0",
         )
+        assert result is not None
+        text, count = result
         assert count == 1
     assert text == (
         "jobs:\n"
@@ -182,12 +255,14 @@ def test_repeated_invocations_converge_every_matching_line() -> None:
         + _container_job(job="check-shell", tag="python-v0.44.0")
     )
     # A fourth invocation finds nothing left to rewrite.
-    _, count = rewrite_pin_in_text(
+    fourth = rewrite_pin_in_text(
         text=text,
         image_key=_IMAGE,
         current_tag="python-v0.43.2",
         release_tag="v0.44.0",
     )
+    assert fourth is not None
+    _, count = fourth
     assert count == 0
 
 
@@ -199,12 +274,14 @@ def test_rewrite_pin_in_text_leaves_unrelated_container_image_untouched() -> Non
         "    container:\n"
         "      image: ghcr.io/thewoolleyman/some-other-image:python-v0.43.2\n"
     )
-    new_text, count = rewrite_pin_in_text(
+    result = rewrite_pin_in_text(
         text=text,
         image_key=_IMAGE,
         current_tag="python-v0.43.2",
         release_tag="v0.44.0",
     )
+    assert result is not None
+    new_text, count = result
     assert count == 0
     assert new_text == text
 
@@ -216,12 +293,14 @@ def test_rewrite_pin_in_text_does_not_truncate_a_longer_tag() -> None:
     stray `0` behind; the tag has to end where the record says it ends.
     """
     text = "jobs:\n" + _container_job(job="check-python", tag="python-v0.43.20")
-    new_text, count = rewrite_pin_in_text(
+    result = rewrite_pin_in_text(
         text=text,
         image_key=_IMAGE,
         current_tag="python-v0.43.2",
         release_tag="v0.44.0",
     )
+    assert result is not None
+    new_text, count = result
     assert count == 0
     assert new_text == text
 
@@ -271,7 +350,7 @@ def test_main_rewrites_file_in_place(tmp_path: Path, monkeypatch: pytest.MonkeyP
 
 
 def test_main_returns_nonzero_when_pin_absent(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`main()` reports a non-zero exit and leaves the file untouched when the pin is absent."""
     monkeypatch.chdir(tmp_path)
@@ -283,3 +362,34 @@ def test_main_returns_nonzero_when_pin_absent(
     monkeypatch.setenv("PIN_TAG", "v0.44.0")
     assert main() == 1
     assert pin_file.read_text(encoding="utf-8") == "no docker pin here\n"
+    assert "::error::failed to rewrite docker image tag" in capsys.readouterr().err
+
+
+def test_main_returns_nonzero_with_migration_error_for_unrewritable_tag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`main()` refuses an unprefixed pin with its OWN error, not the pin-absent one.
+
+    The two failures need different operator actions — a missing pin means the
+    autodiscovery record went stale, while an unprefixed pin means the pin must
+    be MIGRATED to a layer-prefixed tag by hand — so the annotations must be
+    distinguishable. The file is left byte-identical either way.
+    """
+    monkeypatch.chdir(tmp_path)
+    pin_file = tmp_path / "workflow.toml"
+    original = f'docker = "{_IMAGE}:sha-ea684ad"\n'
+    _ = pin_file.write_text(original, encoding="utf-8")
+    monkeypatch.setenv("PIN_FILE", str(pin_file))
+    monkeypatch.setenv("PIN_KEY", _IMAGE)
+    monkeypatch.setenv("PIN_CURRENT", "sha-ea684ad")
+    monkeypatch.setenv("PIN_TAG", "v0.44.0")
+    assert main() == 1
+    assert pin_file.read_text(encoding="utf-8") == original
+    err = capsys.readouterr().err
+    assert err.startswith("::error::")
+    # Names the offending tag and the required operator action.
+    assert "sha-ea684ad" in err
+    assert "no layer prefix" in err
+    assert "migrate" in err.lower()
+    # Distinct from the pin-absent annotation.
+    assert "failed to rewrite docker image tag" not in err
