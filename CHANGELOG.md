@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.51.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.50.8...v0.51.0) (2026-07-20)
+
+
+### Features
+
+* **fleet:** add the control-plane-tool repo class ([0a86807](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0a86807aa9e8dfc9490a7bfe4c0d9c9e98521019))
+
 ## [0.50.8](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.50.7...v0.50.8) (2026-07-20)
 
 
