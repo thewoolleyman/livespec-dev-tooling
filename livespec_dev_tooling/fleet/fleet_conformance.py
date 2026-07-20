@@ -20,10 +20,25 @@ reads); set to a non-empty value (the scheduled workflow, the release
 fan-out preflight, and the CI job set it) → the full sweep runs. No
 external gate, no silent skip.
 
+Blind rows: a `RowSkip` means "could not be evaluated", which is NOT
+the same as "passed" — yet historically it was logged at `info` and
+touched neither the exit code nor any summary, so a row skipped for
+EVERY applicable member enforced nothing while the run reported
+success. Every row is now tallied (evaluated vs skipped) over the
+members it actually applied to, and a row with skips and zero
+evaluations is reported as blind, with a blind-row count in the run
+summary. Severity is WARNING and never moves the exit code: this is
+NEW signal rather than a demoted gate, and two rows
+(`branch-protection`, `secret-names`) are structurally blind in CI
+until their own repairs land. Escalating to error once those land is
+the recorded intended end state, not an optional nicety. There is no
+lever, exemption list, or opt-out — every row is always counted.
+
 Exit codes:
 
 - `0` — lever unset (logged skip), or every applicable row passed /
-  skipped with no error-severity finding.
+  skipped with no error-severity finding (blind rows included: they
+  warn, they do not fail).
 - `1` — precondition failure with the lever set: owner unresolvable,
   or the manifest unfetchable / unparseable (the manifest is the root
   fact; per the fail-fast decision the run is loud, not silent).
@@ -40,6 +55,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
@@ -66,6 +82,20 @@ __all__: list[str] = []
 _RUN_ENV_VAR = "LIVESPEC_RUN_FLEET_CONFORMANCE"
 _MANIFEST_REPO = "livespec"
 _MANIFEST_PATH = ".livespec-fleet-manifest.jsonc"
+_BLIND_ROW_EVENT = "obligation row enforced NOTHING this run (skipped for every applicable member)"
+
+
+@dataclass(frozen=True, kw_only=True)
+class MemberRowsResult:
+    """What the member-row sweep found: error findings, plus rows that went blind.
+
+    The two counts are deliberately SEPARATE. `error_findings` alone drives
+    the exit code; `blind_rows` is reported so a green run that enforced
+    nothing is visibly different from a green run that enforced everything.
+    """
+
+    error_findings: int
+    blind_rows: int
 
 
 def fetch_manifest(*, ctx: FleetContext) -> Manifest | None:
@@ -78,12 +108,34 @@ def fetch_manifest(*, ctx: FleetContext) -> Manifest | None:
 
 def run_member_rows(
     *, ctx: FleetContext, manifest: Manifest, log: structlog.stdlib.BoundLogger
-) -> int:
-    """Assert every member's applicable rows; return the error-finding count."""
+) -> MemberRowsResult:
+    """Assert every member's applicable rows; report error findings and blind rows.
+
+    Rows are selected PER MEMBER via `rows_for`, so different rows apply to
+    different numbers of members; the tallies below therefore count only the
+    members a row actually applied to, never the whole membership.
+    """
     errors = 0
+    evaluated: dict[str, int] = {}
+    skips: dict[str, list[str]] = {}
     for member in manifest.members:
         for row in rows_for(repo_class=member.repo_class):
             outcome = row.assert_member(ctx=ctx, member=member)
+            if isinstance(outcome, RowSkip):
+                # Row functions prefix their reason with the member repo; the
+                # blind-row warning reports the underlying CAUSES, and the
+                # member is already implied by "every applicable member".
+                skips.setdefault(row.row_id, []).append(
+                    outcome.reason.removeprefix(f"{member.repo}: ")
+                )
+                log.info(
+                    "fleet obligation not evaluable (can't-read is not absent)",
+                    row=row.row_id,
+                    member=member.repo,
+                    reason=outcome.reason,
+                )
+                continue
+            evaluated[row.row_id] = evaluated.get(row.row_id, 0) + 1
             if isinstance(outcome, RowFinding):
                 if outcome.severity == "warning":
                     log.warning(
@@ -101,14 +153,38 @@ def run_member_rows(
                         detail=outcome.message,
                         hint=row.manual_hint or "run wire-fleet-member to reconcile",
                     )
-            elif isinstance(outcome, RowSkip):
-                log.info(
-                    "fleet obligation not evaluable (can't-read is not absent)",
-                    row=row.row_id,
-                    member=member.repo,
-                    reason=outcome.reason,
-                )
-    return errors
+    return MemberRowsResult(
+        error_findings=errors,
+        blind_rows=_report_blind_rows(evaluated=evaluated, skips=skips, log=log),
+    )
+
+
+def _report_blind_rows(
+    *,
+    evaluated: dict[str, int],
+    skips: dict[str, list[str]],
+    log: structlog.stdlib.BoundLogger,
+) -> int:
+    """Warn for each row evaluable on NO applicable member; return how many.
+
+    A row present in `skips` but absent from `evaluated` applied to at least
+    one member and answered for none of them, so it enforced nothing this
+    run. `applicable` equals the skip count by construction — zero members
+    were evaluated — and both are reported so the reader need not infer it.
+    """
+    blind = 0
+    for row_id, reasons in skips.items():
+        if evaluated.get(row_id, 0):
+            continue
+        blind += 1
+        log.warning(
+            _BLIND_ROW_EVENT,
+            row=row_id,
+            applicable=len(reasons),
+            skipped=len(reasons),
+            reasons=tuple(dict.fromkeys(reasons)),
+        )
+    return blind
 
 
 def run_discovery_sweep(
@@ -200,14 +276,15 @@ def main() -> int:
             hint="the manifest on livespec master is the root fact; failing loud",
         )
         return 1
-    errors = run_member_rows(ctx=ctx, manifest=manifest, log=log)
-    errors += run_discovery_sweep(ctx=ctx, manifest=manifest, log=log)
+    result = run_member_rows(ctx=ctx, manifest=manifest, log=log)
+    errors = result.error_findings + run_discovery_sweep(ctx=ctx, manifest=manifest, log=log)
     if errors:
-        log.error("fleet conformance FAILED", error_findings=errors)
+        log.error("fleet conformance FAILED", error_findings=errors, blind_rows=result.blind_rows)
         return 4
     log.info(
         "fleet conformance passed",
         members=len(manifest.members),
+        blind_rows=result.blind_rows,
         owner=owner,
     )
     return 0
