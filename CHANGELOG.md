@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.50.7](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.50.6...v0.50.7) (2026-07-20)
+
+
+### Bug Fixes
+
+* classify superseded bump prs ([fba6d0a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/fba6d0a7fe11d279605d7b1c986a2435e2a52d9a))
+* widen superseded bump pr sweep ([17a5b63](https://github.com/thewoolleyman/livespec-dev-tooling/commit/17a5b633dab37a7114d7378213d1b1ef67b59587))
+
 ## [0.50.6](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.50.5...v0.50.6) (2026-07-20)
 
 
