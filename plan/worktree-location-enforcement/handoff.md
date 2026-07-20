@@ -1,6 +1,9 @@
 # Worktree-location enforcement — close the three fail-open layers
 
-**Epic anchor:** NONE YET — deliberately unfiled. See §"First act is the maintainer's".
+**Ledger anchor:** epic `livespec-dev-tooling-0eo`
+
+**No slices filed.** The epic is the thread's ledger identity only; A–E below are NOT
+work-items. See §"First act is the maintainer's".
 
 **Opened:** 2026-07-20, out of a live violation in `livespec-console-beads-fabro`
 (incident summary below). All analysis in this file was verified against
@@ -226,17 +229,23 @@ from real ones.
 
 ## First act is the maintainer's — nothing here is agent-dispatchable
 
-**No epic is anchored and no work-items are filed.** That is deliberate, not an omission:
-this repo's filing surfaces (`capture-work-item`, `capture-impl-gaps`, `groom`) are
-consent-gated — the maintainer owns the cut. A session wrapping up should not file
-against the ledger unprompted.
+**The epic is anchored; no slices are filed.** That split is deliberate. An active plan
+thread MUST declare a concrete ledger anchor — `plan_thread_anchor_declared` enforces it
+mechanically, and its rationale is exactly this thread's own failure mode ("a completed
+plan thread was once treated as done ... while the plan lifecycle was left incomplete").
+So `-0eo` exists as the thread's ledger identity. But *slicing* A–E into work-items is
+the maintainer's cut, and `capture-work-item` / `groom` are consent-gated — a session
+wrapping up should not file that unprompted.
 
 So the honest first act is a maintainer act:
 
 1. Answer §rollout order (blocks everything).
-2. Anchor an epic + file A–E as slices, or run
+2. File A–E as slices under `-0eo`, or run
    `/livespec-orchestrator-beads-fabro:plan worktree-location-enforcement` to resume this
    thread and let it do the filing with consent.
+
+Nothing here is agent-dispatchable until slices exist: `next` ranks work-items, and this
+thread has none.
 
 ## Sequencing
 
