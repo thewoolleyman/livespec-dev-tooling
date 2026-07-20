@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.50.6](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.50.5...v0.50.6) (2026-07-20)
+
+
+### Bug Fixes
+
+* **cross-repo:** name the target layer by role in the unrewritable-pin refusal ([1dc3bb0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1dc3bb0ca2ee7464c55aafbd2acb47146fcc4177))
+
 ## [0.50.5](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.50.4...v0.50.5) (2026-07-20)
 
 
