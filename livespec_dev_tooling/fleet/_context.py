@@ -111,11 +111,16 @@ _REMOTE_URL_PATTERN = re.compile(
     r"^(?:https?://github\.com/|git@github\.com:)([^/]+)/([^/]+?)(?:\.git)?/?$"
 )
 _GITLINK_MODE = "160000"
-# The fleet's canonical branch. `file_text` and `tree` BOTH pin this single
-# ref so the genuine-absence guard — which reads a member's file (file_text)
-# and then its tree (tree) to tell genuine absence from transient
-# unreadability — can never evaluate the two against divergent branches
-# (e.g. a member whose default branch is not `master`). One source of truth.
+# Fallback ref when a repo's default branch cannot be resolved. The single
+# source of truth for a repo's canonical ref is `FleetContext.canonical_ref`,
+# resolved and memoized PER REPO: `file_text` and `tree` BOTH route through it
+# so the genuine-absence guard — which reads a member's file (file_text) and
+# then its tree (tree) to tell genuine absence from transient unreadability —
+# can never evaluate the two against divergent branches. Resolving per repo
+# (rather than pinning one global branch) is what lets a governed repo whose
+# default branch is not `master` be evaluated at all instead of skipping every
+# row; memoizing the FALLBACK too keeps the two reads together even when the
+# lookup fails mid-run.
 _CANONICAL_REF = "master"
 
 
@@ -191,6 +196,7 @@ class FleetContext:
     tree_cache: dict[str, TreeState] = field(default_factory=dict)
     installed_cache: dict[str, frozenset[str] | None] = field(default_factory=dict)
     marker_cache: dict[str, bool] = field(default_factory=dict)
+    ref_cache: dict[str, str] = field(default_factory=dict)
 
     def api(self, *, path: str, method: str = "GET", body: str | None = None) -> GhResult:
         """Issue one `gh api` call; non-GET methods stream `body` via stdin."""
@@ -209,18 +215,40 @@ class FleetContext:
         except json.JSONDecodeError:
             return None
 
-    def file_text(self, *, repo: str, path: str) -> str | None:
-        """Raw file content at the canonical `master` ref via the contents API.
+    def canonical_ref(self, *, repo: str) -> str:
+        """Memoized default branch of `repo`; the `master` fallback when unresolvable.
 
-        The ref is pinned EXPLICITLY (`?ref=master`) to match `tree`'s pin, so
-        a guard that reads a file and then the tree never resolves the two
-        against divergent branches on a non-master-default member. None on
-        failure.
+        Resolving the ref per repo is what lets a governed repo whose default
+        branch is not `master` be evaluated at all — reading it on the wrong
+        branch makes every row skip. The result (fallback included) is memoized
+        so `file_text` and `tree` always agree on one ref for a given repo
+        within a run. Falling back rather than failing preserves the historical
+        behavior: an unresolvable lookup yields a can't-read skip downstream,
+        never a false pass.
+        """
+        cached = self.ref_cache.get(repo)
+        if cached is not None:
+            return cached
+        payload = self.api_object(path=f"repos/{self.owner}/{repo}")
+        resolved = _CANONICAL_REF
+        if isinstance(payload, dict):
+            branch = cast("dict[str, object]", payload).get("default_branch")
+            if isinstance(branch, str) and branch:
+                resolved = branch
+        self.ref_cache[repo] = resolved
+        return resolved
+
+    def file_text(self, *, repo: str, path: str) -> str | None:
+        """Raw file content at `repo`'s canonical ref via the contents API.
+
+        The ref is pinned EXPLICITLY (`?ref=<canonical_ref>`) to match `tree`'s
+        pin, so a guard that reads a file and then the tree never resolves the
+        two against divergent branches. None on failure.
         """
         result = self.run_gh(
             args=[
                 "api",
-                f"repos/{self.owner}/{repo}/contents/{path}?ref={_CANONICAL_REF}",
+                f"repos/{self.owner}/{repo}/contents/{path}?ref={self.canonical_ref(repo=repo)}",
                 "-H",
                 "Accept: application/vnd.github.raw",
             ]
@@ -230,13 +258,12 @@ class FleetContext:
         return result.stdout
 
     def tree(self, *, repo: str) -> TreeState:
-        """Memoized recursive master tree for `repo` (one API call per run)."""
+        """Memoized recursive canonical-ref tree for `repo` (one API call per run)."""
         cached = self.tree_cache.get(repo)
         if cached is not None:
             return cached
-        payload = self.api_object(
-            path=f"repos/{self.owner}/{repo}/git/trees/{_CANONICAL_REF}?recursive=1"
-        )
+        ref = self.canonical_ref(repo=repo)
+        payload = self.api_object(path=f"repos/{self.owner}/{repo}/git/trees/{ref}?recursive=1")
         state = (
             TreeState(readable=False) if payload is None else _parse_tree_payload(payload=payload)
         )
