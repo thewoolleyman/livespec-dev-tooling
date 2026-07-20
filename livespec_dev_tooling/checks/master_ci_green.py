@@ -5,11 +5,45 @@ pattern: master CI failed three weeks ago, every PR merged onto red
 master inherited the brokenness, no agent surfaced it. The check
 ensures master CI is in a known-green state at every commit.
 
-External state: shells out to `gh run list` to fetch the most
-recent master CI run's conclusion. When `gh` is unavailable or
-unauthenticated locally, exits 0 with a structured warning so local
-pre-commit runs are not blocked; CI sets `GH_TOKEN` so the call
-always succeeds there.
+External state: shells out to `gh run list` to fetch the most recent
+master CI run's conclusion. Three `gh` failure states are kept apart,
+because two of them mean "this host was never able to check at all"
+and one means "the check was attempted and returned no answer":
+
+- `gh` binary absent               -> exit 0 with a warning
+- `gh` present, no credential      -> exit 0 with a warning
+- `gh` credentialed, API call fails -> exit 1
+
+The first two are the local-developer tolerance the fail-soft exists
+for: someone who never installed or authenticated `gh` cannot learn
+master's CI state, and must not be blocked from running pre-commit.
+The third is not that case, and folding it into the same branch is
+what made this gate fail open.
+
+That fold rested on the premise "CI sets GH_TOKEN so the call always
+succeeds there", which is false twice over. This check is one of the
+two world gates deliberately EXCLUDED from the CI matrix (see the
+world-gate exclusion comment in `.github/workflows/ci.yml`); it
+enforces at pre-push instead, so "running in CI" is not a state it is
+ever in. And an authenticated call still returns HTTP 503 when GitHub
+is down. During the 2026-07-19 GitHub outage this check therefore
+logged a warning and exited 0 while master was genuinely red — the
+precise silent-red-master hole it exists to close. A caller that could
+have checked and got no answer has not proven master is green, so it
+does not pass.
+
+Credential presence is probed with `gh auth token`, deliberately not
+`gh auth status`: the token probe reads only local state and makes no
+network call, so an outage cannot flip a credentialed caller onto the
+fail-soft path and reopen the hole. That subprocess's stdout is the
+token itself; only its return code is ever read, and it is never
+logged.
+
+There is deliberately NO env lever, flag, or severity knob softening
+any of the above (wontfix li-4x3a45, broadened by maintainer directive
+2026-07-04; see livespec `.ai/ci-gate-discipline.md`). The remedy for
+a red or unprovable master is to fix or revert what reddened it, or to
+wait for the API to come back — never to bypass the gate.
 
 Acceptable conclusions:
 - "success"  → exit 0
@@ -30,7 +64,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import TypedDict, cast
+from typing import Literal, TypedDict, cast
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -62,23 +96,52 @@ _RED_CONCLUSIONS: frozenset[str] = frozenset(
 )
 
 
+def _gh_has_stored_credential() -> bool:
+    """Return True when `gh` holds a credential for the current host.
+
+    Probes `gh auth token`, which resolves the credential from the
+    environment (`GH_TOKEN` / `GITHUB_TOKEN`) or the local keyring /
+    `hosts.yml` and makes NO network call. That offline property is the
+    whole point: `gh auth status` validates against the API and would
+    report failure during an outage, which would route a credentialed
+    caller onto the fail-soft path and reopen the hole this split closes.
+
+    The subprocess's stdout is the token itself. Only `returncode` is
+    read; stdout and stderr are captured solely to keep them off the
+    terminal, and neither is logged.
+    """
+    completed = subprocess.run(
+        ["gh", "auth", "token"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return completed.returncode == 0
+
+
 def _fetch_latest_master_ci(
     *,
     log: structlog.stdlib.BoundLogger,
-) -> tuple[str | None, str | None] | None:
-    """Return (status, conclusion) for the latest master CI run.
+) -> tuple[str | None, str | None] | Literal["skip", "unprovable"]:
+    """Return (status, conclusion) for the latest master CI run, or an outcome.
 
-    Returns None when `gh` is unavailable or the call fails (caller
-    treats None as a non-blocking skip). On API success, returns the
-    pair (`status`, `conclusion`); `conclusion` is None until the
-    run completes.
+    On API success, returns the pair (`status`, `conclusion`);
+    `conclusion` is None until the run completes.
+
+    Returns the literal `"skip"` when this host was never able to check —
+    no `gh` binary, no stored credential, or no CI runs on master yet —
+    which the caller treats as a non-blocking pass.
+
+    Returns the literal `"unprovable"` when a credentialed `gh` attempted
+    the call and it failed. That is NOT a skip: the gate was armed, it ran,
+    and it did not come back with a green master, so the caller fails.
     """
     if shutil.which("gh") is None:
         log.warning(
             "gh CLI not on PATH; skipping master-CI-green check",
-            hint="install gh CLI or run in CI with GH_TOKEN set",
+            hint="install the gh CLI to arm the master-CI-green gate on this host",
         )
-        return None
+        return "skip"
     completed = subprocess.run(
         [
             "gh",
@@ -98,19 +161,29 @@ def _fetch_latest_master_ci(
         check=False,
     )
     if completed.returncode != 0:
-        log.warning(
-            "gh api call failed; skipping master-CI-green check",
+        if not _gh_has_stored_credential():
+            log.warning(
+                "gh CLI has no stored credential; skipping master-CI-green check",
+                stderr=completed.stderr.strip()[:200],
+                hint="run `gh auth login` (or set GH_TOKEN) to arm the master-CI-green gate",
+            )
+            return "skip"
+        log.error(
+            "gh api call failed while credentialed; cannot prove master CI is green",
             stderr=completed.stderr.strip()[:200],
-            hint="check gh auth status",
+            hint=(
+                "GitHub API error or outage - master CI state is unknown; "
+                "retry once the GitHub API is reachable"
+            ),
         )
-        return None
+        return "unprovable"
     parsed = json.loads(completed.stdout)
     if not isinstance(parsed, list) or not parsed:
         log.warning(
             "no CI runs on master yet; skipping master-CI-green check",
             hint="run CI on master to populate signal",
         )
-        return None
+        return "skip"
     # The `cast` is the single typed parse boundary: `json.loads` yields
     # `Any`, and the `isinstance` guard narrows to a non-empty `list`. The
     # elements are cast to `object` so the per-element `isinstance(first,
@@ -120,7 +193,7 @@ def _fetch_latest_master_ci(
     first = payload[0]
     if not isinstance(first, dict):
         log.error("unexpected gh response shape", payload_type=type(first).__name__)
-        return None
+        return "skip"
     run = cast("_CiRun", first)
     status_raw = run.get("status")
     conclusion_raw = run.get("conclusion")
@@ -140,7 +213,13 @@ def main() -> int:
     )
     log = structlog.get_logger("check_master_ci_green")
     fetched = _fetch_latest_master_ci(log=log)
-    if fetched is None:
+    # `isinstance(..., str)` is the narrowing form: it splits the outcome
+    # literals off the (status, conclusion) tuple so the unpacking below is
+    # type-safe, and it keeps "unprovable" a hard failure rather than
+    # collapsing back into the skip path the outage exploited.
+    if isinstance(fetched, str):
+        if fetched == "unprovable":
+            return 1
         return 0
     status, conclusion = fetched
     if status in _PENDING_STATUSES:

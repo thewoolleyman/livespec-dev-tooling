@@ -3,7 +3,14 @@
 Guard Layer 1 mechanical check that prevents the silent-red-master
 pattern: master CI failed weeks ago, every PR merged onto red master
 inherited the brokenness. The check ensures master CI is green at
-every commit (graceful skip when `gh` is unavailable locally).
+every commit.
+
+Three `gh` failure states are tested separately, because they do not
+deserve the same answer. A host with no `gh` binary, and a host whose
+`gh` holds no credential, were never able to check at all and skip
+gracefully so local pre-commit is not blocked. A host whose `gh` IS
+credentialed but whose API call failed attempted the check and got no
+answer — it has not proven master is green, so it fails loudly.
 """
 
 from __future__ import annotations
@@ -72,12 +79,39 @@ def test_real_repo_passes(*, tmp_path: Path) -> None:  # noqa: ARG001
     )
 
 
-def _install_fake_gh(*, tmp_path: Path, stdout: str = "[]", returncode: int = 0) -> str:
-    """Install a fake `gh` shell stub at tmp_path/bin/gh, return PATH including it."""
+def _install_fake_gh(
+    *,
+    tmp_path: Path,
+    stdout: str = "[]",
+    returncode: int = 0,
+    auth_returncode: int = 0,
+) -> str:
+    """Install a fake `gh` shell stub at tmp_path/bin/gh, return PATH including it.
+
+    The stub dispatches on the sub-command so the check's two distinct `gh`
+    invocations can be driven independently:
+
+    - `gh auth token` — the local credential probe. Exits `auth_returncode`
+      (0 = a credential is stored, 1 = none), printing nothing, mirroring the
+      real `gh` closely enough for the check while never emitting a token.
+    - anything else (i.e. `gh run list ...`) — prints `stdout` and exits
+      `returncode`.
+
+    `auth_returncode` defaults to 0 because the credential probe only runs on
+    the `gh run list` failure path, so a credentialed default leaves every
+    happy-path test's behavior unchanged.
+    """
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
     gh_path = bin_dir / "gh"
-    script = "#!/bin/sh\n" f"cat <<'STUB_EOF'\n{stdout}\nSTUB_EOF\n" f"exit {returncode}\n"
+    script = (
+        "#!/bin/sh\n"
+        'if [ "$1" = "auth" ] && [ "$2" = "token" ]; then\n'
+        f"  exit {auth_returncode}\n"
+        "fi\n"
+        f"cat <<'STUB_EOF'\n{stdout}\nSTUB_EOF\n"
+        f"exit {returncode}\n"
+    )
     _ = gh_path.write_text(script, encoding="utf-8")
     gh_path.chmod(0o755)
     return f"{bin_dir}:/usr/bin:/bin"
@@ -163,12 +197,95 @@ def test_empty_runs_list_skips(*, tmp_path: Path) -> None:
     assert "no CI runs on master yet" in result.stderr
 
 
-def test_gh_api_failure_skips_gracefully(*, tmp_path: Path) -> None:
-    """gh available but API call fails → exit 0 with warning."""
-    fake_path = _install_fake_gh(tmp_path=tmp_path, stdout="error", returncode=1)
+def test_gh_api_failure_without_credential_skips_gracefully(*, tmp_path: Path) -> None:
+    """gh present but holding NO credential, API call fails → exit 0 with warning.
+
+    This is the local-developer tolerance the fail-soft was built for: someone
+    who never ran `gh auth login` cannot check master's CI state, and must not
+    be blocked from running pre-commit. The hint points at authentication,
+    which is the actual remedy here.
+    """
+    fake_path = _install_fake_gh(
+        tmp_path=tmp_path,
+        stdout="error",
+        returncode=1,
+        auth_returncode=1,
+    )
     result = _run_check(cwd=tmp_path, env_path=fake_path)
-    assert result.returncode == 0
-    assert "gh api call failed" in result.stderr
+    assert result.returncode == 0, (
+        f"expected exit 0 when gh holds no credential; got {result.returncode}, "
+        f"stderr={result.stderr!r}"
+    )
+    assert "gh CLI has no stored credential" in result.stderr
+    assert "gh auth login" in result.stderr
+
+
+def test_gh_api_failure_with_credential_fails_loudly(*, tmp_path: Path) -> None:
+    """gh IS credentialed and the API call fails → exit 1, never a silent pass.
+
+    Regression pin for the 2026-07-19 GitHub outage (work-item
+    livespec-dev-tooling-aa7): an authenticated `gh` still returns HTTP 503
+    when GitHub is down, and the old catch-all fail-soft exited 0 while master
+    was genuinely red — the exact silent-red-master hole this gate exists to
+    close. A caller that COULD have checked but got no answer has not proven
+    master is green, so it does not pass.
+    """
+    fake_path = _install_fake_gh(
+        tmp_path=tmp_path,
+        stdout="error",
+        returncode=1,
+        auth_returncode=0,
+    )
+    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    assert result.returncode == 1, (
+        f"expected exit 1 when a credentialed gh cannot reach the API; "
+        f"got {result.returncode}, stderr={result.stderr!r}"
+    )
+    assert "cannot prove master CI is green" in result.stderr
+
+
+def test_credentialed_api_failure_hint_is_not_the_auth_hint(*, tmp_path: Path) -> None:
+    """The API-error hint must not misdiagnose an outage as an auth problem.
+
+    The pre-fix code emitted `check gh auth status` for every failure branch
+    including an HTTP 503, sending the reader somewhere useless. The two
+    branches now carry distinct, separately-actionable hints; this pins that
+    the credentialed branch does NOT reach for the authentication remedy.
+    """
+    fake_path = _install_fake_gh(
+        tmp_path=tmp_path,
+        stdout="error",
+        returncode=1,
+        auth_returncode=0,
+    )
+    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    assert "gh auth login" not in result.stderr
+    assert "gh auth status" not in result.stderr
+    assert "retry once the GitHub API is reachable" in result.stderr
+
+
+def test_credentialed_api_failure_fails_regardless_of_lever_env(*, tmp_path: Path) -> None:
+    """An unprovable master fails even with `LIVESPEC_MASTER_CI_GREEN=warn` set.
+
+    Same standing directive as the red-conclusion case below (wontfix
+    li-4x3a45, broadened 2026-07-04, see livespec `.ai/ci-gate-discipline.md`):
+    this gate has NO escape lever, flag, or severity knob. "Cannot prove green"
+    is a world-gate failure exactly as "known red" is, so it gets the same
+    pin against a lever being quietly reintroduced.
+    """
+    fake_path = _install_fake_gh(
+        tmp_path=tmp_path,
+        stdout="error",
+        returncode=1,
+        auth_returncode=0,
+    )
+    result = _run_check(
+        cwd=tmp_path,
+        env_path=fake_path,
+        env_extra={"LIVESPEC_MASTER_CI_GREEN": "warn"},
+    )
+    assert result.returncode == 1
+    assert "cannot prove master CI is green" in result.stderr
 
 
 def test_unexpected_payload_shape(*, tmp_path: Path) -> None:
