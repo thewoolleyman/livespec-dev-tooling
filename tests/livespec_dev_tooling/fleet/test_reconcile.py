@@ -414,6 +414,7 @@ def test_reconcile_shims_opens_one_pr_with_rendered_contents() -> None:
 
 
 def test_reconcile_shims_all_present_passes_without_calls_beyond_tree() -> None:
+    """The only calls are the one-time default-branch lookup and the tree read."""
     calls: list[tuple[tuple[str, ...], str | None]] = []
     table = {
         _TREE_ARGS: _tree(
@@ -423,7 +424,7 @@ def test_reconcile_shims_all_present_passes_without_calls_beyond_tree() -> None:
     outcome = reconcile_shim_workflows(ctx=make_context(table=table, calls=calls), member=_MEMBER)
     assert isinstance(outcome, RowPass)
     assert "all shim workflows present" in outcome.note
-    assert len(calls) == 1
+    assert len(calls) == 2
 
 
 def test_reconcile_shims_once_marker_dedupes_within_run() -> None:

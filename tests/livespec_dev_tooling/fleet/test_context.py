@@ -60,7 +60,15 @@ def tree_result(*, entries: list[dict[str, str]], truncated: bool = False) -> Gh
     return GhResult(returncode=0, stdout=json.dumps(payload), stderr="")
 
 
+def repo_result(*, default_branch: str) -> GhResult:
+    """A successful repo-metadata API result naming `default_branch`."""
+    import json
+
+    return GhResult(returncode=0, stdout=json.dumps({"default_branch": default_branch}), stderr="")
+
+
 _TREE_ARGS: tuple[str, ...] = ("api", "repos/acme/widget/git/trees/master?recursive=1")
+_REPO_ARGS: tuple[str, ...] = ("api", "repos/acme/widget")
 
 
 def test_default_runner_without_gh_yields_synthetic_failure(
@@ -163,6 +171,56 @@ def test_api_object_parses_failures_and_bad_json() -> None:
     assert ctx.api_object(path="fails") is None
 
 
+def test_canonical_ref_pins_file_text_and_tree_to_the_same_default_branch() -> None:
+    """A repo whose default branch is not `master` reads BOTH its file and its tree on it."""
+    contents_args = (
+        "api",
+        "repos/acme/widget/contents/justfile?ref=main",
+        "-H",
+        "Accept: application/vnd.github.raw",
+    )
+    table: dict[tuple[str, ...], GhResult] = {
+        _REPO_ARGS: repo_result(default_branch="main"),
+        contents_args: GhResult(returncode=0, stdout="default:\n", stderr=""),
+        ("api", "repos/acme/widget/git/trees/main?recursive=1"): tree_result(
+            entries=[{"path": "justfile", "mode": "100644"}]
+        ),
+    }
+    ctx = make_context(table=table)
+    assert ctx.file_text(repo="widget", path="justfile") == "default:\n"
+    assert ctx.tree(repo="widget").readable
+
+
+def test_canonical_ref_is_memoized_per_repo() -> None:
+    """The default-branch lookup costs one API call per repo per run."""
+    calls: list[tuple[tuple[str, ...], str | None]] = []
+    ctx = make_context(table={_REPO_ARGS: repo_result(default_branch="main")}, calls=calls)
+    assert ctx.canonical_ref(repo="widget") == "main"
+    assert ctx.canonical_ref(repo="widget") == "main"
+    assert len(calls) == 1
+
+
+def test_canonical_ref_falls_back_to_master_when_unresolvable() -> None:
+    """An unreadable or shapeless repo payload keeps the historical `master` pin.
+
+    The fallback is memoized too, so a transient failure can never let
+    `file_text` and `tree` resolve against divergent branches mid-run.
+    """
+    calls: list[tuple[tuple[str, ...], str | None]] = []
+    unreadable = make_context(table={}, calls=calls)
+    assert unreadable.canonical_ref(repo="widget") == "master"
+    assert unreadable.canonical_ref(repo="widget") == "master"
+    assert len(calls) == 1
+    non_dict = make_context(table={_REPO_ARGS: GhResult(returncode=0, stdout="[1, 2]", stderr="")})
+    assert non_dict.canonical_ref(repo="widget") == "master"
+    absent_key = make_context(
+        table={_REPO_ARGS: GhResult(returncode=0, stdout='{"name": "widget"}', stderr="")}
+    )
+    assert absent_key.canonical_ref(repo="widget") == "master"
+    blank_branch = make_context(table={_REPO_ARGS: repo_result(default_branch="")})
+    assert blank_branch.canonical_ref(repo="widget") == "master"
+
+
 def test_file_text_returns_raw_content_or_none() -> None:
     raw_args = (
         "api",
@@ -201,13 +259,14 @@ def test_tree_parses_paths_gitlinks_and_truncation() -> None:
 
 
 def test_tree_is_memoized_per_repo() -> None:
+    """One default-branch lookup plus one tree read; the second `tree` call is memoized."""
     calls: list[tuple[tuple[str, ...], str | None]] = []
     table = {_TREE_ARGS: tree_result(entries=[{"path": "justfile", "mode": "100644"}])}
     ctx = make_context(table=table, calls=calls)
     first = ctx.tree(repo="widget")
     second = ctx.tree(repo="widget")
     assert first is second
-    assert len(calls) == 1
+    assert len(calls) == 2
 
 
 def test_tree_unreadable_on_api_failure_or_bad_payload() -> None:
