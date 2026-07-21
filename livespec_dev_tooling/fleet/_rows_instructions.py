@@ -86,7 +86,7 @@ def assert_agent_instruction_surface(*, ctx: FleetContext, member: FleetMember) 
 def assert_agent_ai_references_resolve(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:
     """Every `.ai/<topic>.md` an `AGENTS.md` references resolves to a tree file.
 
-    Reads the member's recursive master tree, enumerates every
+    Reads the member's recursive canonical-ref tree, enumerates every
     `AGENTS.md` at any directory level (excluding vendored/generated/
     archival trees via `is_excluded_agents_path`), and resolves each
     concrete `.ai/<topic>.md` reference relative to that file's own
@@ -100,7 +100,8 @@ def assert_agent_ai_references_resolve(*, ctx: FleetContext, member: FleetMember
     """
     tree = ctx.tree(repo=member.repo)
     if not tree.readable:
-        return RowSkip(reason=f"{member.repo}: master tree unreadable")
+        ref = ctx.canonical_ref(repo=member.repo)
+        return RowSkip(reason=f"{member.repo}: {ref} tree unreadable")
     if tree.truncated:
         return RowSkip(
             reason=f"{member.repo}: tree truncated; .ai/ reference absence not definitive"

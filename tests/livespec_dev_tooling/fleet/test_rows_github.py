@@ -50,6 +50,15 @@ _CI_ARGS: tuple[str, ...] = (
     "-H",
     "Accept: application/vnd.github.raw",
 )
+# The same two reads addressed at a `main`-default member's canonical ref,
+# for the rows that must resolve the ref rather than assume `master`.
+_MAIN_PROTECTION_ARGS: tuple[str, ...] = ("api", "repos/acme/widget/branches/main/protection")
+_MAIN_CI_ARGS: tuple[str, ...] = (
+    "api",
+    "repos/acme/widget/contents/.github/workflows/ci.yml?ref=main",
+    "-H",
+    "Accept: application/vnd.github.raw",
+)
 
 _CI_YML = textwrap.dedent(
     """\
@@ -220,6 +229,34 @@ def test_branch_protection_unparseable_or_shapeless_payload_skips() -> None:
     assert isinstance(assert_branch_protection(ctx=bad_json, member=_MEMBER), RowSkip)
     not_dict = make_context(table={_PROTECTION_ARGS: ok(payload=[1])})
     assert isinstance(assert_branch_protection(ctx=not_dict, member=_MEMBER), RowSkip)
+
+
+def test_branch_protection_read_at_the_members_canonical_ref() -> None:
+    """A `main`-default member's protection is read at `main`, not `master`.
+
+    Addressing the protection API at a hardcoded `master` makes any
+    member whose default branch is not `master` read as
+    unprotected-or-unreadable regardless of its real configuration —
+    the same defect class the contents and tree reads already resolved
+    by routing through `canonical_ref`.
+    """
+    table = {
+        _REPO_ARGS: ok(payload={"default_branch": "main"}),
+        _MAIN_PROTECTION_ARGS: ok(payload=_protection_payload()),
+        _MAIN_CI_ARGS: GhResult(returncode=0, stdout=_CI_YML, stderr=""),
+    }
+    assert assert_branch_protection(ctx=make_context(table=table), member=_MEMBER) == RowPass()
+
+
+def test_branch_protection_absence_message_names_the_canonical_ref() -> None:
+    """The finding names the branch actually read, so it cannot misreport."""
+    table = {
+        _REPO_ARGS: ok(payload={"default_branch": "main"}),
+        _MAIN_PROTECTION_ARGS: GhResult(returncode=1, stdout="", stderr="404 Branch not protected"),
+    }
+    outcome = assert_branch_protection(ctx=make_context(table=table), member=_MEMBER)
+    assert isinstance(outcome, RowFinding)
+    assert outcome.message == "widget: main has no branch protection"
 
 
 def test_branch_protection_enforce_admins_disabled_is_finding() -> None:
