@@ -43,7 +43,11 @@ import re
 import sys
 from pathlib import Path
 
-__all__: list[str] = ["rewrite_layered_docker_tag", "rewrite_pin_in_text"]
+__all__: list[str] = [
+    "rewrite_layered_docker_tag",
+    "rewrite_pin_in_text",
+    "tag_version_component",
+]
 
 
 # The version anchor: the trailing `vX.Y.Z` semver in the tag. The `<layer>-`
@@ -51,7 +55,31 @@ __all__: list[str] = ["rewrite_layered_docker_tag", "rewrite_pin_in_text"]
 # `python-rust-` / `python-rust-agent-`) is preserved verbatim; only this
 # portion is replaced by the new release tag. The anchor must be present AND
 # preceded by a non-empty prefix — see `rewrite_layered_docker_tag`.
+#
+# This is the ONE definition of the tag grammar's version anchor in the package.
+# The staleness comparison in the sibling `pin_staleness` consumes it through
+# `tag_version_component` rather than re-deriving a second regex: the two halves
+# disagreeing about the grammar is precisely the defect that made every
+# layer-prefixed pin read as stale forever (work-item `livespec-dev-tooling-clrk`).
 _VERSION_RE = re.compile(r"v\d+\.\d+\.\d+")
+
+
+def tag_version_component(*, tag: str) -> str | None:
+    """Return the trailing `vX.Y.Z` version of `tag`, or `None` when it has none.
+
+    The public face of `_VERSION_RE`, so any caller needing to reason about the
+    VERSION a tag denotes — rather than the tag's literal bytes — shares this
+    module's grammar instead of writing a second one.
+
+    `python-v0.50.8` yields `v0.50.8`; a bare `v0.50.8` yields itself; a tag with
+    no semver anchor (`sha-deadbeef`, a `master` bootstrap placeholder) yields
+    `None`. Note this deliberately does NOT require a layer prefix — that stricter
+    condition belongs to `rewrite_layered_docker_tag`, which must have a prefix to
+    PRESERVE. Extraction is the weaker question and both prefixed and bare tags
+    answer it.
+    """
+    match = _VERSION_RE.search(tag)
+    return None if match is None else match.group(0)
 
 
 def rewrite_layered_docker_tag(*, current_tag: str, release_tag: str) -> str | None:
