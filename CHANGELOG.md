@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.51.7](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.51.6...v0.51.7) (2026-07-21)
+
+
+### Bug Fixes
+
+* **cross-repo:** compare pin currency by version component, not raw tag string ([9237c80](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9237c80b8567b14c1306b25ea613c4ac7a6c5e56))
+
 ## [0.51.6](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.51.5...v0.51.6) (2026-07-21)
 
 
