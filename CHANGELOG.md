@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.51.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.51.3...v0.51.4) (2026-07-21)
+
+
+### Bug Fixes
+
+* **fleet:** report unreadable merge settings as not-evaluable, not violated ([61f2d7b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/61f2d7bf97195f3761a0caca052a5585105d9a59))
+
 ## [0.51.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.51.2...v0.51.3) (2026-07-21)
 
 
