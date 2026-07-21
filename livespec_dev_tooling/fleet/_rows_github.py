@@ -217,11 +217,27 @@ def assert_merge_settings(*, ctx: FleetContext, member: FleetMember) -> RowOutco
     `gh pr merge --auto` driver works. A freshly-scaffolded repo
     defaults to GitHub's `allow_merge_commit: true`, so a manifest
     member that has never been reconciled fails this row.
+
+    A READABLE repo object that simply OMITS these keys is a can't-read,
+    not a misconfiguration: GitHub returns the merge-strategy fields only
+    to a token with admin access to the repo, so a token lacking it sees
+    a well-formed payload with the keys absent. Reading absence as `None`
+    and comparing it to the required value reported every setting as
+    violated on a repo whose settings were already correct, which is why
+    absence is separated from present-but-wrong here.
     """
     payload = ctx.api_object(path=f"repos/{ctx.owner}/{member.repo}")
     if not isinstance(payload, dict):
         return RowSkip(reason=f"{member.repo}: repo settings unreadable (needs admin scope)")
     settings = cast("dict[str, object]", payload)
+    absent = [key for key in REQUIRED_MERGE_SETTINGS if key not in settings]
+    if absent:
+        return RowSkip(
+            reason=(
+                f"{member.repo}: merge settings unreadable (needs admin scope): "
+                f"{', '.join(absent)} absent from the repo object"
+            )
+        )
     problems = [
         f"{key} is {settings.get(key)!r}, must be {want!r}"
         for key, want in REQUIRED_MERGE_SETTINGS.items()
@@ -249,10 +265,29 @@ def assert_delete_branch_on_merge(*, ctx: FleetContext, member: FleetMember) -> 
     runs still report the offender at warning severity rather than
     silently skipping, while token-bearing contexts fail on any
     non-true value.
+
+    "Non-true value" means a value that was actually READ. The setting is
+    admin-only, so a token without admin access gets a well-formed repo
+    object with the key missing; collapsing that onto `None` reported a
+    violation against a repo whose setting was already `true`. Absence is
+    therefore a skip at BOTH severities — an unreadable field is not a
+    finding the severity lever should grade — while an explicit `False`
+    still reports exactly as before. The membership test is what keeps
+    absent distinguishable from a genuine `False`.
     """
     severity = _delete_branch_on_merge_severity()
     payload = ctx.api_object(path=f"repos/{ctx.owner}/{member.repo}")
-    setting = cast("dict[str, object]", payload or {}).get("delete_branch_on_merge")
+    if not isinstance(payload, dict):
+        return RowSkip(reason=f"{member.repo}: repo settings unreadable (needs admin scope)")
+    settings = cast("dict[str, object]", payload)
+    if "delete_branch_on_merge" not in settings:
+        return RowSkip(
+            reason=(
+                f"{member.repo}: delete_branch_on_merge unreadable (needs admin scope): "
+                "absent from the repo object"
+            )
+        )
+    setting = settings["delete_branch_on_merge"]
     if setting is True:
         return RowPass()
     return RowFinding(
