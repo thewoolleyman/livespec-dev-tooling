@@ -322,6 +322,11 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Rewrite pins + commit + open auto-merge PR
+        # `id` is load-bearing: the codex-acp gate steps below gate on this
+        # step's `changed` output (livespec-dev-tooling-bmf). On the no-op
+        # path the composite pushes no branch and opens no PR, so a
+        # follow-up step that looks the PR up by branch name must not run.
+        id: bump
         # Per the `Checkout livespec-dev-tooling support modules` step
         # above: this repo is checked out at `.livespec-dev-tooling/`,
         # which is where the composite Action source lives. The `./`
@@ -355,7 +360,7 @@ jobs:
       # orchestrator repository, minted separately from this repo's App token.
       - name: Mint orchestrator-scoped App token (codex-acp gate dispatch)
         id: orch-app-token
-        if: ${{ matrix.target.source_repo == 'zed-industries/codex-acp' }}
+        if: ${{ matrix.target.source_repo == 'zed-industries/codex-acp' && steps.bump.outputs.changed == 'true' }}
         uses: actions/create-github-app-token@v1
         with:
           app-id: ${{ secrets.APP_ID }}
@@ -364,7 +369,12 @@ jobs:
           repositories: livespec-orchestrator-beads-fabro
 
       - name: Dispatch codex-acp golden-master factory gate
-        if: ${{ matrix.target.source_repo == 'zed-industries/codex-acp' }}
+        # Gated on `changed` as well as the source: on the composite's no-op
+        # path no branch was pushed and no PR opened, so the `gh pr view
+        # "$BRANCH"` lookup below would fail under `set -euo pipefail` —
+        # re-reddening the sweep at a confusing point right after
+        # livespec-dev-tooling-bmf stopped it failing at the commit.
+        if: ${{ matrix.target.source_repo == 'zed-industries/codex-acp' && steps.bump.outputs.changed == 'true' }}
         env:
           THIS_REPO_TOKEN: ${{ steps.app-token.outputs.token }}
           ORCH_TOKEN: ${{ steps.orch-app-token.outputs.token }}

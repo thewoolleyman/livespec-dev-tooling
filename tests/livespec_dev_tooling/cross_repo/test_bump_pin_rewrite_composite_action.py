@@ -203,6 +203,47 @@ def test_pin_freshness_workflow_invokes_composite_action() -> None:
     )
 
 
+def test_pin_freshness_composite_invocation_carries_the_bump_step_id() -> None:
+    """The composite invocation is addressable, so later steps can gate on its outputs.
+
+    Without an `id`, `steps.bump.outputs.changed` resolves to the empty string
+    and every gate keyed on it silently evaluates false — the codex-acp gate
+    would then NEVER dispatch rather than dispatch conditionally.
+    """
+    text = _read(path=_FRESHNESS_WORKFLOW_PATH)
+    assert "\n        id: bump\n" in text, (
+        "the composite invocation in reusable-pin-freshness.yml must carry `id: bump` "
+        "so the codex-acp gate steps can gate on its `changed` output"
+    )
+
+
+def test_codex_acp_gate_steps_are_gated_on_the_bump_changed_output() -> None:
+    """Both codex-acp gate steps skip on the composite's no-op path.
+
+    On that path the composite pushes no branch and opens no PR
+    (livespec-dev-tooling-bmf), so the dispatch step's `gh pr view "$BRANCH"`
+    lookup would fail under `set -euo pipefail` and re-redden the sweep at a
+    confusing point. Both the token-mint step and the dispatch step it feeds
+    must carry the guard — gating only the dispatch would still mint an
+    orchestrator-scoped token for a dispatch that never happens.
+    """
+    text = _read(path=_FRESHNESS_WORKFLOW_PATH)
+    guarded = (
+        "if: ${{ matrix.target.source_repo == 'zed-industries/codex-acp'"
+        " && steps.bump.outputs.changed == 'true' }}"
+    )
+    assert text.count(guarded) == 2, (
+        "both codex-acp gate steps (the orchestrator-scoped token mint and the "
+        "golden-master dispatch) must gate on `steps.bump.outputs.changed == 'true'`; "
+        f"found {text.count(guarded)} of the 2 expected occurrences"
+    )
+    bare = "if: ${{ matrix.target.source_repo == 'zed-industries/codex-acp' }}"
+    assert bare not in text, (
+        "an ungated codex-acp step remains — it would run on the composite's "
+        "no-op path and fail looking up a PR that was never opened"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Duplication-removal regression guard
 # ---------------------------------------------------------------------------
