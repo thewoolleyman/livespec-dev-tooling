@@ -358,6 +358,145 @@ def test_commit_step_guards_against_staged_gitlink() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Empty-staged-diff no-op guard (livespec-dev-tooling-bmf)
+# ---------------------------------------------------------------------------
+
+# Per livespec-dev-tooling-bmf: when the pin rewrite produces no change,
+# `git add -A` stages nothing, `git commit` exits non-zero with "nothing to
+# commit, working tree clean", and the step's `set -e` fails the whole run.
+# That reports a NO-OP as a hard failure, leaving the fleet's only
+# propagation backstop permanently red and its status uninformative. The
+# step MUST detect the empty staged diff and finish cleanly instead.
+#
+# `git diff --cached --quiet` exits 0 exactly when nothing is staged, so it
+# distinguishes "nothing to do" from "the commit failed". A `|| true` on the
+# commit would NOT: it also swallows a genuine commit failure, converting
+# this false positive into the false-NEGATIVE class already tracked as
+# livespec-dev-tooling-ews (a stale pin silently never flagged).
+_EMPTY_DIFF_CHECK = "git diff --cached --quiet"
+# The commit step carries an `id:` so its outcome can gate the PR step.
+_COMMIT_STEP_ID = "id: commit"
+# The flag propagating "did we actually commit?" to the `Open auto-merge PR`
+# step, which must NOT run with no branch pushed and no commit made.
+_CHANGED_OUTPUT_FALSE = "changed=false"
+_CHANGED_OUTPUT_TRUE = "changed=true"
+_STEP_OUTPUT_SINK = "GITHUB_OUTPUT"
+_PR_STEP_GATE = "steps.commit.outputs.changed == 'true'"
+
+
+def _open_pr_step_body(*, text: str) -> str:
+    """Return the body of the `Open auto-merge PR` step.
+
+    Slices from that step's `name:` line to the next 4-space-indented step
+    or end-of-file, mirroring `_commit_step_body`, so the assertions cannot
+    be satisfied by lines elsewhere in the Action.
+    """
+    match = re.search(
+        r"^    - name: Open auto-merge PR\b.*?(?=^    - name: |\Z)",
+        text,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert match, "composite Action missing the `Open auto-merge PR` step"
+    return match.group(0)
+
+
+def test_commit_step_treats_an_empty_staged_diff_as_a_clean_no_op() -> None:
+    """The commit step exits cleanly when the rewrite staged nothing.
+
+    Per livespec-dev-tooling-bmf: the empty-staged-diff check MUST sit after
+    `git add -A` and before `git commit`, and MUST record the outcome as a
+    step output so the PR step can be gated on it.
+    """
+    body = _commit_step_body(text=_read(path=_ACTION_PATH))
+    check_pos = body.find(_EMPTY_DIFF_CHECK)
+    assert check_pos != -1, (
+        "commit step has no empty-staged-diff check "
+        f"(expected {_EMPTY_DIFF_CHECK!r}); a no-op rewrite still fails the "
+        "step under `set -e` with 'nothing to commit, working tree clean'"
+    )
+    add_pos = _command_pos(body=body, command="git add -A")
+    commit_pos = _command_pos(body=body, command="git commit")
+    assert add_pos != -1 and commit_pos != -1, "commit step shape changed unexpectedly"
+    assert add_pos < check_pos < commit_pos, (
+        "the empty-staged-diff check MUST sit after `git add -A` (so it sees "
+        "the staged set) and before `git commit` (so the no-op never reaches "
+        "the failing commit)"
+    )
+    assert _COMMIT_STEP_ID in _read(path=_ACTION_PATH), (
+        f"the commit step MUST carry {_COMMIT_STEP_ID!r} so the PR step can " "reference its output"
+    )
+    assert _STEP_OUTPUT_SINK in body, (
+        "the commit step MUST record its outcome to $GITHUB_OUTPUT so the "
+        "no-op state propagates to the PR step"
+    )
+    for flag in (_CHANGED_OUTPUT_FALSE, _CHANGED_OUTPUT_TRUE):
+        assert flag in body, (
+            f"the commit step MUST emit {flag!r} so both the no-op and the "
+            "committed path are distinguishable downstream"
+        )
+
+
+def test_commit_step_does_not_swallow_a_genuine_commit_failure() -> None:
+    """The commit itself is never suffixed with `|| true`.
+
+    Per livespec-dev-tooling-bmf: swallowing the commit's exit status would
+    also hide a REAL commit failure, converting this false positive into the
+    false-negative class tracked as livespec-dev-tooling-ews. The no-op must
+    be detected explicitly, before the commit, not masked after it.
+    """
+    body = _commit_step_body(text=_read(path=_ACTION_PATH))
+    match = re.search(r"^        git commit\b.*$", body, re.MULTILINE)
+    assert match, "commit step no longer runs `git commit`"
+    commit_line = match.group(0)
+    assert "||" not in commit_line, (
+        "`git commit` MUST NOT be suffixed with `|| true` (or any `||` "
+        "fallback): that swallows a genuine commit failure as well as the "
+        f"no-op. Offending line: {commit_line!r}"
+    )
+
+
+def test_open_pr_step_is_gated_on_the_commit_step_change_flag() -> None:
+    """The PR step is skipped when the commit step made no commit.
+
+    Per livespec-dev-tooling-bmf: on the no-op path no branch is pushed and
+    no commit exists, so `Open auto-merge PR` has nothing to open a PR from
+    and MUST be skipped rather than run against a missing branch.
+    """
+    text = _read(path=_ACTION_PATH)
+    body = _open_pr_step_body(text=text)
+    assert _PR_STEP_GATE in body, (
+        f"the `Open auto-merge PR` step MUST be gated on {_PR_STEP_GATE!r}; "
+        "without it the step runs on the no-op path with no pushed branch"
+    )
+    gate_pos = body.find(_PR_STEP_GATE)
+    run_pos = body.find("run: |")
+    assert run_pos != -1 and gate_pos < run_pos, (
+        "the gate MUST be a step-level `if:` condition, not a line inside the " "step's script"
+    )
+
+
+def test_composite_action_exports_the_change_flag_as_an_output() -> None:
+    """The Action exports `changed` so callers can gate their own follow-up steps.
+
+    Per livespec-dev-tooling-bmf: a caller with a step that depends on the
+    bump PR existing (e.g. the codex-acp golden-master gate dispatch, which
+    looks the PR up by branch name) needs to know whether this Action
+    actually opened one.
+    """
+    text = _read(path=_ACTION_PATH)
+    match = re.search(r"^outputs:\n.*?(?=^\w+:)", text, re.MULTILINE | re.DOTALL)
+    assert match, "composite Action declares no top-level `outputs:` block"
+    outputs_block = match.group(0)
+    assert "changed:" in outputs_block, (
+        "composite Action MUST export a `changed` output so callers can gate "
+        "steps that require the bump PR to exist"
+    )
+    assert (
+        "steps.commit.outputs.changed" in outputs_block
+    ), "the `changed` output MUST take its value from the commit step's flag"
+
+
+# ---------------------------------------------------------------------------
 # uv.lock re-lock step (livespec-glv6)
 # ---------------------------------------------------------------------------
 

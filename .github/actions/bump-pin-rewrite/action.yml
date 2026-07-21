@@ -100,6 +100,18 @@ inputs:
     required: false
     default: 'false'
 
+outputs:
+  changed:
+    description: >
+      'true' when the pin rewrite produced a change that was committed, pushed,
+      and opened as a bump PR; 'false' when the rewrite produced no change and
+      this Action no-opped (livespec-dev-tooling-bmf). A caller with a follow-up
+      step that requires the bump PR to exist — e.g. the codex-acp
+      golden-master gate dispatch, which looks the PR up by branch name — MUST
+      gate that step on this output, because on the 'false' path no branch was
+      pushed and no PR was opened.
+    value: ${{ steps.commit.outputs.changed }}
+
 runs:
   using: composite
   steps:
@@ -384,6 +396,7 @@ runs:
         fi
 
     - name: Commit + push bump branch
+      id: commit
       shell: bash
       env:
         SOURCE_REPO: ${{ inputs.source_repo }}
@@ -413,10 +426,46 @@ runs:
           git diff --cached --raw | awk '$2 == "160000" { print "  stray gitlink: " $NF }' >&2
           exit 1
         fi
+        # A rewrite that produced NO change is a no-op, not an error
+        # (livespec-dev-tooling-bmf). Without this guard `git add -A` stages
+        # nothing, `git commit` exits non-zero with "nothing to commit,
+        # working tree clean", and the `set -e` above fails the whole step —
+        # reporting a no-op as a hard failure and leaving the fleet's only
+        # pin-propagation backstop permanently red, so its status carries no
+        # information.
+        #
+        # Detected BEFORE the commit rather than by suffixing the commit with
+        # `|| true`: that would ALSO swallow a genuine commit failure,
+        # converting this false positive into the false-NEGATIVE class
+        # tracked as livespec-dev-tooling-ews (a stale pin silently never
+        # flagged). `git diff --cached --quiet` exits 0 exactly when nothing
+        # is staged, so "nothing to do" and "the commit failed" stay
+        # distinguishable.
+        #
+        # The notice below states ONLY what this step establishes — that the
+        # rewrite changed nothing. It deliberately does NOT claim the pin is
+        # already current: a pin whose tag format differs from the release
+        # tag it is compared against (e.g. the `python-`-prefixed Fabro
+        # sandbox image tag `python-vX.Y.Z` compared against the bare release
+        # tag `vX.Y.Z`) is reported stale by the staleness comparison for
+        # every sweep, and then rewrites to nothing. This guard stops that
+        # from surfacing as a build failure; it does NOT fix the comparison,
+        # which is tracked separately as the prefixed-tag comparison defect.
+        if git diff --cached --quiet; then
+          echo "changed=false" >> "$GITHUB_OUTPUT"
+          echo "::notice::pin rewrite for ${SOURCE_REPO} to ${TAG} produced no change; nothing to commit — skipping bump branch push and PR"
+          exit 0
+        fi
+        echo "changed=true" >> "$GITHUB_OUTPUT"
         git commit -m "chore(deps): bump ${SOURCE_REPO} pin to ${TAG}"
         git push -u origin "$BRANCH"
 
     - name: Open auto-merge PR
+      # Skipped on the no-op path (livespec-dev-tooling-bmf): when the rewrite
+      # produced no change the commit step pushed no branch and made no
+      # commit, so there is nothing to open a PR from and `gh pr create` would
+      # fail against a missing branch.
+      if: ${{ steps.commit.outputs.changed == 'true' }}
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.app_token }}
