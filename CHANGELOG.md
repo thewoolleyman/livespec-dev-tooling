@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.51.5](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.51.4...v0.51.5) (2026-07-21)
+
+
+### Bug Fixes
+
+* **cross-repo:** treat an empty pin-rewrite diff as a clean no-op, not a failure ([c9c6d53](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c9c6d53b24a8016d03cb0fdb8c83cfe6072b08da))
+
 ## [0.51.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.51.3...v0.51.4) (2026-07-21)
 
 
