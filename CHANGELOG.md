@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.51.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.51.2...v0.51.3) (2026-07-21)
+
+
+### Bug Fixes
+
+* **fleet:** report obligation rows that enforced nothing (blind rows) ([a0f8225](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a0f82258f04fa0e94be573ee3ed91edb232467a6))
+
 ## [0.51.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.51.1...v0.51.2) (2026-07-20)
 
 
