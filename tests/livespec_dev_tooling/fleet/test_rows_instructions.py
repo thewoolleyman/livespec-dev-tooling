@@ -39,6 +39,9 @@ _SETTINGS_ARGS: tuple[str, ...] = (
     "-H",
     "Accept: application/vnd.github.raw",
 )
+# The repo-metadata read `canonical_ref` resolves the member's default
+# branch from; uncanned, it falls back to `master`.
+_REPO_ARGS: tuple[str, ...] = ("api", "repos/acme/widget")
 
 _FULL_AGENTS = "\n".join(
     (
@@ -190,6 +193,18 @@ def test_ai_references_unreadable_tree_skips() -> None:
     outcome = assert_agent_ai_references_resolve(ctx=ctx, member=_MEMBER)
     assert isinstance(outcome, RowSkip)
     assert "unreadable" in outcome.reason
+
+
+def test_ai_references_unreadable_tree_skip_names_the_canonical_ref() -> None:
+    """The skip names the ref the tree read used, never a hardcoded `master`.
+
+    An operator debugging a `main`-default member must not be told the
+    read failed on a branch that was never addressed.
+    """
+    table = {_REPO_ARGS: _ok(stdout=json.dumps({"default_branch": "main"}))}
+    outcome = assert_agent_ai_references_resolve(ctx=make_context(table=table), member=_MEMBER)
+    assert isinstance(outcome, RowSkip)
+    assert outcome.reason == "widget: main tree unreadable"
 
 
 def test_ai_references_truncated_tree_skips() -> None:

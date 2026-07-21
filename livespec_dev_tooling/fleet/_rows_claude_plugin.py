@@ -116,7 +116,8 @@ def _claude_settings_presence_outcome(*, ctx: FleetContext, member: FleetMember)
     """Pass when `.claude/settings.json` is definitively present and readable."""
     tree = ctx.tree(repo=member.repo)
     if not tree.readable:
-        return RowSkip(reason=f"{member.repo}: master tree unreadable")
+        ref = ctx.canonical_ref(repo=member.repo)
+        return RowSkip(reason=f"{member.repo}: {ref} tree unreadable")
     if CLAUDE_SETTINGS in tree.paths:
         return RowPass()
     if tree.truncated:

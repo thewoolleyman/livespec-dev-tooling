@@ -177,7 +177,12 @@ def _protection_problems(
 
 
 def assert_branch_protection(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:
-    """Master branch protection present AND aligned.
+    """Canonical-ref branch protection present AND aligned.
+
+    The ref is resolved per member rather than assumed to be `master`,
+    matching the contents and tree reads: addressing a hardcoded branch
+    makes a member whose default branch is not `master` read as
+    unprotected-or-unreadable whatever its real configuration.
 
     Aligned means: `enforce_admins`, `strict` OFF, a non-empty
     required-check set, and every required check matched by a ci.yml
@@ -189,10 +194,11 @@ def assert_branch_protection(*, ctx: FleetContext, member: FleetMember) -> RowOu
     mandates) matches and is NOT flagged, even though it is not a matrix
     leg, because requiring it gates the whole matrix through its `needs:`.
     """
-    result = ctx.api(path=f"repos/{ctx.owner}/{member.repo}/branches/master/protection")
+    ref = ctx.canonical_ref(repo=member.repo)
+    result = ctx.api(path=f"repos/{ctx.owner}/{member.repo}/branches/{ref}/protection")
     if result.returncode != 0:
         if _NOT_PROTECTED_MARKER in f"{result.stdout}\n{result.stderr}":
-            return RowFinding(message=f"{member.repo}: master has no branch protection")
+            return RowFinding(message=f"{member.repo}: {ref} has no branch protection")
         return RowSkip(reason=f"{member.repo}: branch protection unreadable (needs admin scope)")
     try:
         payload = cast("object", json.loads(result.stdout))

@@ -37,6 +37,9 @@ _PLUGIN_JUSTFILE_ARGS: tuple[str, ...] = (
     "-H",
     "Accept: application/vnd.github.raw",
 )
+# The repo-metadata read `canonical_ref` resolves the member's default
+# branch from; uncanned, it falls back to `master`.
+_REPO_ARGS: tuple[str, ...] = ("api", "repos/acme/widget")
 
 _PLUGIN_SETTINGS = json.dumps(
     {
@@ -150,3 +153,17 @@ def test_claude_plugin_currency_edge_outcomes() -> None:
 def test_claude_plugin_currency_passes_standard_wrapper_with_comments() -> None:
     table = _plugin_currency_table(paths=[CLAUDE_SETTINGS, "justfile"])
     assert assert_claude_plugin_currency(ctx=make_context(table=table), member=_MEMBER) == RowPass()
+
+
+def test_claude_plugin_unreadable_tree_skip_names_the_canonical_ref() -> None:
+    """The skip names the ref the tree read used, never a hardcoded `master`.
+
+    An operator debugging a `main`-default member must not be told the
+    read failed on a branch that was never addressed.
+    """
+    table = {
+        _REPO_ARGS: GhResult(returncode=0, stdout=json.dumps({"default_branch": "main"}), stderr="")
+    }
+    outcome = assert_claude_plugin_currency(ctx=make_context(table=table), member=_MEMBER)
+    assert isinstance(outcome, RowSkip)
+    assert outcome.reason == "widget: main tree unreadable"
