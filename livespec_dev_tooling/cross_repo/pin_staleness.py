@@ -32,7 +32,45 @@ import json
 import os
 import sys
 
-__all__: list[str] = ["distinct_source_pins", "ordinal_distance"]
+from livespec_dev_tooling.cross_repo.fabro_image_pin_rewrite import tag_version_component
+
+__all__: list[str] = ["denotes_same_release", "distinct_source_pins", "ordinal_distance"]
+
+
+def denotes_same_release(*, pinned_tag: str, release_tag: str) -> bool:
+    """Return whether a pin's tag names the SAME release as `release_tag`.
+
+    The freshness scan used to answer this with raw string equality on the
+    release-tag path (`[[ "$current" == "$latest" ]]`). That is correct only for
+    pin formats whose value IS a bare release tag. The
+    `fabro_sandbox_docker_image` format's value is a LAYER-PREFIXED image tag
+    (`python-v0.51.4`) over the bare release version (`v0.51.4`), so the two
+    strings are never equal even when they name the same release — and that pin
+    was therefore reported stale by construction on every sweep, forever
+    (work-item `livespec-dev-tooling-clrk`).
+
+    The grammar deciding what the version component IS comes from the sibling
+    `fabro_image_pin_rewrite.tag_version_component`, the same module the REWRITE
+    half already used. The two halves holding independent copies of the rule is
+    what let them disagree, so there is deliberately no second regex here.
+
+    The literal-equality short-circuit comes FIRST and is load-bearing: every
+    answer the old comparison called current stays current, so this is a pure
+    WIDENING and no unprefixed pin format can regress. Only the additional case —
+    two tags carrying the same version component but different surrounding text —
+    is newly recognized.
+
+    A pin with no version anchor at all (`sha-deadbeef`, a `master` bootstrap
+    placeholder) matches nothing but an identical literal, so it keeps reading as
+    STALE rather than silently as fresh — the same fail-toward-visible direction
+    `ordinal_distance` takes for an absent tag.
+    """
+    if pinned_tag == release_tag:
+        return True
+    pinned_version = tag_version_component(tag=pinned_tag)
+    if pinned_version is None:
+        return False
+    return pinned_version == tag_version_component(tag=release_tag)
 
 
 def distinct_source_pins(*, records: list[dict[str, str]]) -> list[tuple[str, str]]:
@@ -69,10 +107,20 @@ def ordinal_distance(*, tags: list[str], current: str, fallback: int) -> int:
     A `current` absent from the list (an unrecognizable or pre-scheme tag) yields
     `fallback` — deliberately the staleness threshold, so an unreadable pin reads
     as STALE rather than silently as fresh.
+
+    Matching goes through `denotes_same_release`, not raw equality, for the same
+    reason the currency check does: `tags` is a list of BARE release tags, so a
+    layer-prefixed `current` matched nothing and silently took the `fallback`
+    branch. That returned the threshold itself, which — since the caller tests
+    `distance >= threshold` — reported EVERY prefixed pin as maximally stale
+    regardless of how far behind it actually was. At the default threshold of 1
+    the wrong answer coincides with the right one for a genuinely stale pin, which
+    is why it hid; at any higher threshold a prefixed pin one release behind would
+    trip a gate meant to tolerate it (work-item `livespec-dev-tooling-clrk`).
     """
     found = -1
     for index, tag in enumerate(tags):
-        if found < 0 and tag == current:
+        if found < 0 and denotes_same_release(pinned_tag=current, release_tag=tag):
             found = index
     return fallback if found < 0 else found
 
@@ -95,8 +143,26 @@ def _ordinal_distance_main(*, current: str, fallback: str) -> int:
     return 0
 
 
+def _is_current_main(*, current: str, latest: str) -> int:
+    """`--is-current` mode — print exactly `true` or `false`, nothing else.
+
+    A bare two-valued token rather than an exit status, so a crash in this module
+    can never be mistaken for a verdict: the caller pattern-matches the output and
+    fails LOUDLY on anything else, mirroring the `^[0-9]+$` guard the sibling
+    `--ordinal-distance` caller already applies. An exit-status predicate would
+    have collapsed "not current" and "the tool broke" into the same signal.
+    """
+    verdict = "true" if denotes_same_release(pinned_tag=current, release_tag=latest) else "false"
+    _ = sys.stdout.write(f"{verdict}\n")
+    return 0
+
+
 def main() -> int:
-    """IO entry point — two modes, selected by argv.
+    """IO entry point — three modes, selected by argv.
+
+    With `--is-current <current> <latest>`: print whether the pin already names
+    the latest release, comparing the VERSION each tag denotes rather than the
+    raw tag strings.
 
     With `--ordinal-distance <current> <fallback>`: read the release-tag list on
     stdin and print how many releases `current` is behind.
@@ -107,6 +173,8 @@ def main() -> int:
     only ever yielded one pin per source.
     """
     argv = sys.argv[1:]
+    if argv and argv[0] == "--is-current":
+        return _is_current_main(current=argv[1], latest=argv[2])
     if argv and argv[0] == "--ordinal-distance":
         return _ordinal_distance_main(current=argv[1], fallback=argv[2])
 

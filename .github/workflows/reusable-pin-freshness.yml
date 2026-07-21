@@ -209,7 +209,42 @@ jobs:
               echo "::warning::could not query latest release for $OWNER/$source (no releases yet, App missing, or repo not found); skipping"
               continue
             fi
-            if [[ "$current" == "$latest" ]]; then
+            # Currency test: does the pin already name THIS release? Answered by
+            # the TESTED `pin_staleness` module comparing the VERSION each tag
+            # denotes, NOT by raw string equality on the tag bytes.
+            #
+            # The raw `[[ "$current" == "$latest" ]]` this replaces was correct
+            # only for pin formats whose value IS a bare release tag. The
+            # `fabro_sandbox_docker_image` format's value is a LAYER-PREFIXED
+            # image tag (`python-v0.51.4`) over the bare release version
+            # (`v0.51.4`), so `current` and `latest` were never equal even when
+            # they named the same release, and that pin was reported stale BY
+            # CONSTRUCTION on every sweep, forever — an unclosable bump-PR loop
+            # (livespec-dev-tooling-clrk). The observed sweep line was
+            # `livespec-dev-tooling stale: current=python-v0.50.8 latest=v0.50.8`
+            # while the unprefixed `livespec` and `livespec-runtime` pins in the
+            # SAME run evaluated correctly, isolating it to the prefixed format.
+            #
+            # The rewrite half (`fabro_image_pin_rewrite`) already knew this
+            # grammar; only the comparison half did not. The module now consumes
+            # that ONE definition rather than a second copy in this shell — a
+            # bash prefix-strip here would recreate exactly the two-copies split
+            # that let the halves disagree in the first place.
+            #
+            # NOTE this is the FLEET-RELEASE path only. The codex-acp branch
+            # above deliberately keeps its own raw equality: it compares an npm
+            # package version, not a fleet release tag, and its contract is
+            # "stale on ANY difference" (§"codex-acp factory gate").
+            currency=$(uv run --project .livespec-dev-tooling python -m \
+              livespec_dev_tooling.cross_repo.pin_staleness \
+              --is-current "$current" "$latest")
+            # Fail LOUDLY on anything but the two expected tokens, so a broken
+            # tool can never be silently read as a verdict.
+            if ! [[ "$currency" =~ ^(true|false)$ ]]; then
+              echo "::error::currency verdict for $source is not a bare true/false: [$currency]"
+              exit 1
+            fi
+            if [[ "$currency" == "true" ]]; then
               echo "::notice::$source pinned at $current, already current"
               continue
             fi
