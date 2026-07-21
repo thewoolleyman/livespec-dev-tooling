@@ -30,6 +30,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from typing import cast
 
 _VENDOR_DIR = Path(__file__).resolve().parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -92,19 +93,28 @@ def _load_stored_tree_hash(*, cwd: Path, log: structlog.stdlib.BoundLogger) -> s
     try:
         path = _token_path(cwd=cwd)
         raw = path.read_text(encoding="utf-8")
-        token = json.loads(raw)
-        stored = token.get("tree_hash")
+        token: object = json.loads(raw)
     except FileNotFoundError:
         log.info(
             "green token check: no token found (cold path); running full aggregate",
         )
         return None
-    except Exception as exc:
+    except (
+        OSError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        subprocess.CalledProcessError,
+    ) as exc:
         log.info(
             "green token check: token unreadable; running full aggregate",
             error=str(exc),
         )
         return None
+    # A token whose JSON root is not an object is malformed rather than
+    # unreadable, so it joins the missing-field case below on one report path.
+    stored: object = None
+    if isinstance(token, dict):
+        stored = cast("dict[str, object]", token).get("tree_hash")
     if not isinstance(stored, str):
         log.info(
             "green token check: invalid token format; running full aggregate",
@@ -124,7 +134,7 @@ def write_token(*, cwd: Path, log: structlog.stdlib.BoundLogger) -> int:
         path = _token_path(cwd=cwd)
         _ = path.write_text(json.dumps({"tree_hash": tree_hash}), encoding="utf-8")
         log.info("green token written", tree_hash=tree_hash, path=str(path))
-    except Exception as exc:  # pragma: no cover
+    except (OSError, subprocess.CalledProcessError) as exc:  # pragma: no cover
         log.warning("green token write failed; non-blocking", error=str(exc))
     return 0
 

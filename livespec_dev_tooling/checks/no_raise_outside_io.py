@@ -21,7 +21,9 @@ The check walks every `.py` file under `.claude-plugin/
 scripts/livespec/`, parses each via `ast`, and inspects every
 `Raise` node whose exception unparses to one of the
 domain-error names (or a parameterized call thereof). Files
-under `io/` and the single `errors.py` file are exempt.
+under `io/` and the single `errors.py` file are exempt; with
+`io_trees` unset nothing is exempt and every source file is
+inspected.
 
 Output discipline: per spec, `print` (T20) and
 `sys.stderr.write` (`check-no-write-direct`) are banned in
@@ -88,22 +90,32 @@ def main() -> int:
     log = structlog.get_logger("no_raise_outside_io")
     cwd = Path.cwd()
     config = load_config(repo_root=cwd)
-    if not config.io_trees:
+    if not config.source_trees:
         log.info(
             "role key absent — check no-ops",
             check_id="no_raise_outside_io",
-            role="io_trees",
+            role="source_trees",
         )
         return 0
     offenders: list[tuple[Path, int, str]] = []
+    inspected = 0
     for tree_rel in config.source_trees:
         for py_file in iter_py_files(root=cwd / tree_rel):
             rel = py_file.relative_to(cwd)
             if _is_exempt(rel_path=rel, config=config):
                 continue
+            inspected += 1
             source = py_file.read_text(encoding="utf-8")
             for lineno, error_name in _find_domain_raises(source=source):
                 offenders.append((rel, lineno, error_name))
+    # An inspected count of zero otherwise reads exactly like a clean pass, so
+    # it is reported on every run rather than inferred from silence.
+    log.info(
+        "inspection complete",
+        check_id="no_raise_outside_io",
+        files_inspected=inspected,
+        offenses=len(offenders),
+    )
     if offenders:
         for path, lineno, error_name in offenders:
             log.error(

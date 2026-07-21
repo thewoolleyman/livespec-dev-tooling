@@ -220,6 +220,22 @@ def test_check_exits_1_with_missing_tree_hash_field(*, tmp_path: Path) -> None:
     assert "invalid token format" in result.stderr
 
 
+def test_check_exits_1_with_non_object_token_root(*, tmp_path: Path) -> None:
+    """'check' exits 1 when the token JSON parses but its root is not an object.
+
+    Valid JSON whose root is a list has no 'tree_hash' field to read, so
+    it joins the missing-field report path rather than crashing on the
+    absent mapping interface.
+    """
+    _init_repo(repo=tmp_path)
+    token_path = _git_dir(repo=tmp_path) / "livespec-green-token.json"
+    token_path.write_text(json.dumps(["tree_hash"]), encoding="utf-8")
+
+    result = _run_module(cwd=tmp_path, command="check")
+    assert result.returncode == 1, f"expected exit 1 (non-object token); got {result.returncode}"
+    assert "invalid token format" in result.stderr
+
+
 def test_write_overwrites_existing_token(*, tmp_path: Path) -> None:
     """A second 'write' call updates the token to the new HEAD tree-hash."""
     _init_repo(repo=tmp_path)

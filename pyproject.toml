@@ -77,12 +77,27 @@ dev = [
 # `livespec_dev_tooling/**` at Phase-0 WARN (they hard-fail once this repo
 # is flipped to the hard gate in Phase 2), per contracts.md §"Role keys".
 #
-# `supervisor_entry_files` below declares the five CLI/supervisor files
-# whose `main()` / `_write` helpers own legitimate stdout/stderr contracts
-# (JSON payloads, CLI reports, streamed subprocess output) — the exact
-# surface `no_write_direct` exempts. The remaining role keys (io_trees,
-# commands_trees, dataclasses_tree, pure_trees, covered_trees) stay
-# empty/null: this flat-layout library has no code in those roles.
+# `supervisor_entry_files` below declares this repo's CLI/supervisor entry
+# files. Adding a path here grants it FOUR separate exemptions, so weigh
+# all four before adding one:
+#   - `no_write_direct` exempts the WHOLE FILE from the direct-write ban
+#     (its `main()` / `_write` helpers own legitimate stdout/stderr
+#     contracts: JSON payloads, CLI reports, streamed subprocess output).
+#     Note this is a whole-file exemption, not a `main()`-scoped one: a
+#     `print()` added anywhere in a listed file goes unflagged, which
+#     matters most for a guard hook, where stdout is a live hook-protocol
+#     channel rather than a report surface.
+#   - `supervisor_discipline` exempts it from the `sys.exit` /
+#     `raise SystemExit` confinement rule.
+#   - `no_except_outside_io` treats a `main()` direct-child `try` in it as
+#     the sole supervisor boundary where a MARKED broad catch is permitted.
+#   - `partition_completeness` records a `supervisor_entry_files` role
+#     claim for it.
+# The remaining role keys (io_trees, commands_trees, dataclasses_tree,
+# pure_trees, covered_trees) stay empty/null: this flat-layout library has
+# no code in those roles. With `io_trees` empty nothing is wholesale exempt
+# from the catch-position and domain-raise checks — they inspect the whole
+# `source_trees` universe.
 # ---------------------------------------------------------------------------
 
 [tool.livespec_dev_tooling]
@@ -113,7 +128,11 @@ mirror_pairings = [
 #   - cross_repo/codex_acp_pin_rewrite.py  main() → in-place codex-acp Dockerfile ARG rewrite; `::error::` on miss
 #   - cross_repo/pin_rewrite.py  main() → in-place legacy regex pin rewrites; `::error::` on miss
 #   - cross_repo/bump_pr_supersession.py  main() → JSON close plan for superseded bump PRs to stdout
+#   - agent_hooks/pretooluse_background_guard.py  main() → sole fail-open hook boundary
+#   - agent_hooks/subagent_stop_guard.py          main() → sole fail-open hook boundary
 supervisor_entry_files = [
+    "livespec_dev_tooling/agent_hooks/pretooluse_background_guard.py",
+    "livespec_dev_tooling/agent_hooks/subagent_stop_guard.py",
     "livespec_dev_tooling/canonical_checks.py",
     "livespec_dev_tooling/cross_repo/ci_yaml_canonical_reconcile.py",
     "livespec_dev_tooling/cross_repo/codex_acp_pin_rewrite.py",
@@ -215,8 +234,12 @@ line-length = 100
 extend-exclude = [".claude/hooks/**", "**/_vendor/**", "**/__pycache__/**", "mutants/**"]
 
 [tool.ruff.lint]
-# 27 categories: v011 baseline (11) + v012 additions (16). Per
+# 28 categories: v011 baseline (11) + v012 additions (16) + BLE. Per
 # livespec/SPECIFICATION/non-functional-requirements.md §"Linter rule set".
+# BLE is what makes the sanctioned `# noqa: BLE001 — sole …` boundary markers
+# live directives rather than RUF100-flagged dead ones: it polices catch
+# BREADTH at the construct level, while `check-no-except-outside-io` polices
+# catch POSITION. With BLE unselected the split has only one half.
 select = [
     # ----- v011 baseline (11 categories) -----
     "E",     # pycodestyle errors
@@ -247,6 +270,8 @@ select = [
     "ISC",   # flake8-implicit-str-concat — complements pyright
     "T20",   # flake8-print — bans print/pprint
     "S",     # flake8-bandit — security anti-patterns
+    # ----- catch-breadth (1 category) -----
+    "BLE",   # flake8-blind-except — construct-level ban on broad catches
 ]
 ignore = [
     "ISC001",  # implicit-str-concat on one line; conflicts with the formatter

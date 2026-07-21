@@ -147,7 +147,7 @@ def main() -> int:
     log = _configure_logger()
     try:
         return _guard(raw_input=sys.stdin.read(), log=log)
-    except Exception as exc:  # fail-open by contract: never wedge a healthy agent.
+    except Exception as exc:  # noqa: BLE001 — sole fail-open hook boundary: silent pass-through, exit 0
         log.warning(
             "pretooluse_background_guard crashed; failing open",
             check_id="pretooluse-background-guard-crash",
