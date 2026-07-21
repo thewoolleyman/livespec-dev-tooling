@@ -143,14 +143,82 @@ def _assert_noop_on_absent_role_key(*, slug: str, role: str, tmp_path: Path) -> 
     assert role in result.stderr
 
 
-def test_no_except_outside_io_noops_without_io_trees(*, tmp_path: Path) -> None:
-    """`no_except_outside_io` no-ops when `io_trees` is absent (flat-layout consumer)."""
-    _assert_noop_on_absent_role_key(slug="no_except_outside_io", role="io_trees", tmp_path=tmp_path)
+def _write_pkg_module(*, tmp_path: Path, body: str) -> None:
+    pkg = tmp_path / "pkg"
+    pkg.mkdir(exist_ok=True)
+    _ = (pkg / "mod.py").write_text(
+        "from __future__ import annotations\n\n__all__: list[str] = []\n\n\n" + body,
+        encoding="utf-8",
+    )
 
 
-def test_no_raise_outside_io_noops_without_io_trees(*, tmp_path: Path) -> None:
-    """`no_raise_outside_io` no-ops when `io_trees` is absent."""
-    _assert_noop_on_absent_role_key(slug="no_raise_outside_io", role="io_trees", tmp_path=tmp_path)
+def test_no_except_outside_io_runs_without_io_trees(*, tmp_path: Path) -> None:
+    """`no_except_outside_io` INSPECTS the source tree when `io_trees` is absent.
+
+    An absent `io_trees` means nothing is wholesale exempt, not that
+    there is nothing to check. A flat-layout consumer declares only
+    `source_trees`, and its broad catches must still be caught.
+    """
+    _write_block(repo_root=tmp_path, body='source_trees = ["pkg"]\n')
+    _write_pkg_module(
+        tmp_path=tmp_path,
+        body=(
+            "def do_thing() -> None:\n"
+            "    try:\n"
+            "        x = 1\n"
+            "    except Exception:\n"
+            "        x = 2\n"
+            "    _ = x\n"
+        ),
+    )
+    result = _run_check(slug="no_except_outside_io", cwd=tmp_path)
+    assert result.returncode == 1, (
+        f"no_except_outside_io must inspect `pkg/` when `io_trees` is absent; "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    assert "pkg/mod.py" in result.stderr
+
+
+def test_no_raise_outside_io_runs_without_io_trees(*, tmp_path: Path) -> None:
+    """`no_raise_outside_io` INSPECTS the source tree when `io_trees` is absent."""
+    _write_block(repo_root=tmp_path, body='source_trees = ["pkg"]\n')
+    _write_pkg_module(
+        tmp_path=tmp_path,
+        body='def do_thing() -> None:\n    raise ValidationError("boom")\n',
+    )
+    result = _run_check(slug="no_raise_outside_io", cwd=tmp_path)
+    assert result.returncode == 1, (
+        f"no_raise_outside_io must inspect `pkg/` when `io_trees` is absent; "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    assert "pkg/mod.py" in result.stderr
+
+
+def _assert_announces_absent_source_trees(*, slug: str, tmp_path: Path) -> None:
+    """An absent `source_trees` is named in the log, not silently walked as zero files.
+
+    Neither check guards `source_trees`, so an unset key would otherwise
+    run the walk for zero iterations and exit 0 — indistinguishable from
+    a clean pass over a real tree.
+    """
+    _write_block(repo_root=tmp_path, body='target_dirs = ["pkg"]\n')
+    result = _run_check(slug=slug, cwd=tmp_path)
+    assert result.returncode == 0, (
+        f"{slug} must exit 0 when `source_trees` is absent; "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    assert "role key absent" in result.stderr
+    assert "source_trees" in result.stderr
+
+
+def test_no_except_outside_io_announces_absent_source_trees(*, tmp_path: Path) -> None:
+    """`no_except_outside_io` names an absent `source_trees` rather than walking zero files."""
+    _assert_announces_absent_source_trees(slug="no_except_outside_io", tmp_path=tmp_path)
+
+
+def test_no_raise_outside_io_announces_absent_source_trees(*, tmp_path: Path) -> None:
+    """`no_raise_outside_io` names an absent `source_trees` rather than walking zero files."""
+    _assert_announces_absent_source_trees(slug="no_raise_outside_io", tmp_path=tmp_path)
 
 
 def test_public_api_result_typed_noops_without_pure_trees(*, tmp_path: Path) -> None:
