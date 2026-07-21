@@ -356,6 +356,70 @@ def test_merge_settings_unreadable_skips() -> None:
     assert "admin scope" in outcome.reason
 
 
+def test_merge_settings_absent_from_readable_payload_skips() -> None:
+    # The App-token shape: the repo object parses fine, but the admin-only
+    # merge-strategy keys are simply not in it. Absent must mean "can't
+    # read", never "misconfigured" — the live false positive on
+    # livespec-overseer read `allow_merge_commit is None, must be False`
+    # while an admin-scoped token showed every setting already correct.
+    ctx = make_context(table={_REPO_ARGS: ok(payload={"name": "widget"})})
+    outcome = assert_merge_settings(ctx=ctx, member=_MEMBER)
+    assert isinstance(outcome, RowSkip)
+    assert "admin scope" in outcome.reason
+
+
+def test_merge_settings_partially_absent_payload_skips() -> None:
+    # A payload carrying SOME of the required keys is still not evaluable:
+    # the missing ones cannot be distinguished from misconfiguration.
+    payload = _merge_payload()
+    del payload["allow_auto_merge"]
+    ctx = make_context(table={_REPO_ARGS: ok(payload=payload)})
+    outcome = assert_merge_settings(ctx=ctx, member=_MEMBER)
+    assert isinstance(outcome, RowSkip)
+    assert "admin scope" in outcome.reason
+
+
+def test_delete_branch_on_merge_absent_skips_when_token_present(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Absence skips regardless of the severity lever: a token-bearing run
+    # that still cannot see the field has read nothing, so it reports
+    # nothing.
+    monkeypatch.setenv("GH_TOKEN", "token")
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    ctx = make_context(table={_REPO_ARGS: ok(payload={"name": "widget"})})
+
+    outcome = _rows_github.assert_delete_branch_on_merge(ctx=ctx, member=_MEMBER)
+
+    assert isinstance(outcome, RowSkip)
+    assert "admin scope" in outcome.reason
+
+
+def test_delete_branch_on_merge_absent_skips_without_token(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    ctx = make_context(table={_REPO_ARGS: ok(payload={"name": "widget"})})
+
+    outcome = _rows_github.assert_delete_branch_on_merge(ctx=ctx, member=_MEMBER)
+
+    assert isinstance(outcome, RowSkip)
+    assert "admin scope" in outcome.reason
+
+
+def test_delete_branch_on_merge_unreadable_payload_skips(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("GH_TOKEN", "token")
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+
+    outcome = _rows_github.assert_delete_branch_on_merge(ctx=make_context(table={}), member=_MEMBER)
+
+    assert isinstance(outcome, RowSkip)
+    assert "admin scope" in outcome.reason
+
+
 def test_delete_branch_on_merge_true_passes(*, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("GH_TOKEN", raising=False)
     monkeypatch.delenv("GITHUB_TOKEN", raising=False)
