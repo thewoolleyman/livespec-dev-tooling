@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.51.10](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.51.9...v0.51.10) (2026-07-22)
+
+
+### Bug Fixes
+
+* **checks:** scope core-package declarations by repo identity, not directory census ([fec2d09](https://github.com/thewoolleyman/livespec-dev-tooling/commit/fec2d0933a39d0b7a5e8c579994f3265a5c29ef6))
+
 ## [0.51.9](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.51.8...v0.51.9) (2026-07-22)
 
 
