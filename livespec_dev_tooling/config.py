@@ -298,20 +298,27 @@ def _parse_mirror_pairings(*, value: object) -> tuple[MirrorPairing, ...]:
     return tuple(out)
 
 
+def _parse_pyproject(*, repo_root: Path) -> dict[str, Any] | None:
+    """Return the parsed `pyproject.toml` document, or None if the file is absent."""
+    pyproject = repo_root / "pyproject.toml"
+    if not pyproject.is_file():
+        return None
+    try:
+        return _toml.loads(pyproject.read_text(encoding="utf-8"))
+    except (_toml.TOMLDecodeError, ValueError) as exc:
+        msg = f"malformed pyproject.toml: {exc}"
+        raise ConfigParseError(msg) from exc
+
+
 def _read_table(*, repo_root: Path) -> dict[str, Any] | None:
     """Return the `[tool.livespec_dev_tooling]` table, or None if absent.
 
     `None` distinguishes "no block at all" (livespec-core fallback regime)
     from "block present but empty" (flat-baseline regime).
     """
-    pyproject = repo_root / "pyproject.toml"
-    if not pyproject.is_file():
+    parsed = _parse_pyproject(repo_root=repo_root)
+    if parsed is None:
         return None
-    try:
-        parsed = _toml.loads(pyproject.read_text(encoding="utf-8"))
-    except (_toml.TOMLDecodeError, ValueError) as exc:
-        msg = f"malformed pyproject.toml: {exc}"
-        raise ConfigParseError(msg) from exc
     tool = parsed.get("tool")
     if not isinstance(tool, dict):
         return None
@@ -319,6 +326,21 @@ def _read_table(*, repo_root: Path) -> dict[str, Any] | None:
     if not isinstance(table, dict):
         return None
     return cast("dict[str, Any]", table)
+
+
+def load_project_name(*, repo_root: Path) -> str | None:
+    """Return `<repo_root>/pyproject.toml`'s `[project].name`, or None if absent.
+
+    Raises `ConfigParseError` on malformed TOML, matching `load_config`.
+    """
+    parsed = _parse_pyproject(repo_root=repo_root)
+    if parsed is None:
+        return None
+    project = parsed.get("project")
+    if not isinstance(project, dict):
+        return None
+    name = cast("dict[str, Any]", project).get("name")
+    return name if isinstance(name, str) else None
 
 
 def load_scenario_tiers(*, repo_root: Path) -> tuple[str, ...] | None:

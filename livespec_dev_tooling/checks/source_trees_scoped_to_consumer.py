@@ -1,8 +1,9 @@
 """source_trees_scoped_to_consumer — guard against copied core path drift.
 
 Every configured layout role must point at a path that exists in the
-consumer repo. For plugin-layout consumers, a non-`livespec` package must
-not retain core's `.claude-plugin/scripts/livespec` scope.
+consumer repo, and only livespec core itself — the repo whose
+`[project].name` is `livespec` — may scope roles to core's
+`.claude-plugin/scripts/livespec` package tree.
 """
 
 from __future__ import annotations
@@ -18,14 +19,13 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
-from livespec_dev_tooling.config import Config, load_config  # noqa: E402
+from livespec_dev_tooling.config import Config, load_config, load_project_name  # noqa: E402
 
 __all__: list[str] = []
 
 
-_PLUGIN_SCRIPTS_TREE = Path(".claude-plugin") / "scripts"
-_CORE_PACKAGE_TREE = _PLUGIN_SCRIPTS_TREE / "livespec"
-_IGNORED_PLUGIN_DIRS = frozenset({"bin", "_vendor", "__pycache__"})
+_CORE_PACKAGE_TREE = Path(".claude-plugin") / "scripts" / "livespec"
+_CORE_PROJECT_NAME = "livespec"
 
 
 class _DeclaredPath(NamedTuple):
@@ -64,34 +64,23 @@ def _iter_role_paths(*, config: Config) -> tuple[_DeclaredPath, ...]:
     return tuple(out)
 
 
-def _plugin_package_dirs(*, repo_root: Path) -> tuple[Path, ...]:
-    scripts = repo_root / _PLUGIN_SCRIPTS_TREE
-    if not scripts.is_dir():
-        return ()
-    return tuple(
-        _PLUGIN_SCRIPTS_TREE / child.name
-        for child in sorted(scripts.iterdir())
-        if child.is_dir() and child.name not in _IGNORED_PLUGIN_DIRS
-    )
-
-
-def _has_foreign_package_drift(*, declared: Path, package_dirs: tuple[Path, ...]) -> bool:
+def _has_foreign_package_drift(*, declared: Path, is_core_repo: bool) -> bool:
     if not declared.is_relative_to(_CORE_PACKAGE_TREE):
         return False
-    return any(package_dir != _CORE_PACKAGE_TREE for package_dir in package_dirs)
+    return not is_core_repo
 
 
 def _find_scope_drift(
     *, declared_paths: Iterable[_DeclaredPath], repo_root: Path
 ) -> tuple[_Finding, ...]:
-    package_dirs = _plugin_package_dirs(repo_root=repo_root)
+    is_core_repo = load_project_name(repo_root=repo_root) == _CORE_PROJECT_NAME
     findings: list[_Finding] = []
     for declared in declared_paths:
         if not (repo_root / declared.path).exists():
             findings.append(
                 _Finding(role=declared.role, path=declared.path, failure_mode="missing")
             )
-        if _has_foreign_package_drift(declared=declared.path, package_dirs=package_dirs):
+        if _has_foreign_package_drift(declared=declared.path, is_core_repo=is_core_repo):
             findings.append(
                 _Finding(
                     role=declared.role,

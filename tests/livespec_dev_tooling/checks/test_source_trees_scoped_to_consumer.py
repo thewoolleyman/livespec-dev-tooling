@@ -105,3 +105,44 @@ def test_source_trees_scoped_to_consumer_accepts_repo_without_plugin_scripts(
 
     assert rc == 0
     assert combined == ""
+
+
+def test_source_trees_scoped_to_consumer_accepts_core_declaring_its_own_scope(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\n"
+        'name = "livespec"\n'
+        "[tool.livespec_dev_tooling]\n"
+        'source_trees = [".claude-plugin/scripts/livespec"]\n'
+        'io_trees = [".claude-plugin/scripts/livespec/io"]\n',
+        encoding="utf-8",
+    )
+    (tmp_path / ".claude-plugin" / "scripts" / "livespec" / "io").mkdir(parents=True)
+    (tmp_path / ".claude-plugin" / "scripts" / "_currency").mkdir()
+    (tmp_path / ".claude-plugin" / "scripts" / "_stubs").mkdir()
+
+    rc, combined = _run_check(root=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert rc == 0
+    assert combined == ""
+
+
+def test_source_trees_scoped_to_consumer_rejects_core_scope_kept_by_underscore_named_consumer(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\n"
+        'name = "my-plugin"\n'
+        "[tool.livespec_dev_tooling]\n"
+        'source_trees = [".claude-plugin/scripts/livespec"]\n'
+        'io_trees = [".claude-plugin/scripts/livespec/io"]\n',
+        encoding="utf-8",
+    )
+    (tmp_path / ".claude-plugin" / "scripts" / "livespec" / "io").mkdir(parents=True)
+    (tmp_path / ".claude-plugin" / "scripts" / "_myplugin").mkdir()
+
+    rc, combined = _run_check(root=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert rc != 0
+    assert "foreign_package" in combined
