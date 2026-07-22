@@ -101,19 +101,22 @@ def test_baseline_harnesses_row_is_wired_for_every_class() -> None:
 
 
 def test_console_class_scopes_pin_web_rows() -> None:
-    # The Control-Plane console (livespec-console-beads-fabro) is a fleet
-    # member that carries the livespec-dev-tooling pin for its own toolchain
-    # but ships none of the three pin-and-bump shim workflows. So the console
-    # class is EXCLUDED from the three shim-workflow rows while keeping the
-    # dev-tooling-pin row and every universal row; it is also outside the
-    # template-born rows (no copier-answers / agent-instruction-surface),
-    # per the per-class applies_to scoping derived against the console's M3
-    # committed state (livespec-zs22.7.8).
+    # The Control-Plane console (livespec-console-beads-fabro) is a pin
+    # CONSUMER: its toolchain gates come from livespec-dev-tooling, so it
+    # carries the dev-tooling pin AND ships the two RECEIVING shims
+    # (bump-pin-from-dispatch + pin-freshness) that keep that pin fresh. It
+    # does NOT ship the release-dispatch PRODUCER shim, because it produces
+    # no consumable release for downstream repos to pin. So the console class
+    # is IN the two receiving-shim rows, the dev-tooling-pin row, and every
+    # universal row, but EXCLUDED from the release-dispatch row; it is also
+    # outside the template-born rows (no copier-answers /
+    # agent-instruction-surface), per the per-class applies_to scoping
+    # (livespec-oq9w Option B).
     assert "console" in REPO_CLASSES
     console_rows = {row.row_id for row in rows_for(repo_class="console")}
     assert "dev-tooling-pin" in console_rows
-    assert "workflow-bump-pin-from-dispatch" not in console_rows
-    assert "workflow-pin-freshness" not in console_rows
+    assert "workflow-bump-pin-from-dispatch" in console_rows
+    assert "workflow-pin-freshness" in console_rows
     assert "workflow-release-dispatch" not in console_rows
     assert "copier-answers" not in console_rows
     assert "agent-instruction-surface" not in console_rows

@@ -73,19 +73,31 @@ REPO_CLASSES = (
 )
 
 _ALL_CLASSES: frozenset[str] = frozenset(REPO_CLASSES)
-# The classes participating in the pin-and-bump web — i.e. carrying the
-# three shim workflows (bump-pin-from-dispatch / pin-freshness /
-# release-dispatch). Every class EXCEPT the Control-Plane console: the
-# console (livespec-console-beads-fabro) is a non-pin-consuming fleet
-# member that carries the dev-tooling pin (see _DEV_TOOLING_PIN_CLASSES)
-# but ships none of the shims, so its pin freshness is monitored centrally
-# by the dev-tooling-pin row's warning-severity staleness leg rather than
-# auto-bumped (livespec-dev-tooling contracts.md §"Bump-pin policy").
-# The exemption is the CONSOLE's specifically, NOT the Control Plane's: the
+# The pin-and-bump web splits into two shim obligations, because the
+# console (livespec-console-beads-fabro) is a pin CONSUMER, not a
+# producer: its toolchain gates come from livespec-dev-tooling, so it
+# carries the dev-tooling pin (see _DEV_TOOLING_PIN_CLASSES) and ships the
+# two RECEIVING shims (bump-pin-from-dispatch + pin-freshness) that keep
+# that pin fresh — but it ships NO release-dispatch PRODUCER shim, because
+# it produces no consumable release for a downstream repo to pin
+# (livespec-dev-tooling contracts.md §"Bump-pin policy"; livespec-oq9w
+# Option B).
+#
+# `_PIN_WEB_CLASSES` is therefore specifically the set carrying the
+# release-dispatch PRODUCER shim — every class EXCEPT the console. The
+# exemption is the CONSOLE's specifically, NOT the Control Plane's: the
 # sibling Control-Plane class `control-plane-tool` ships an operator tool
-# whose gates come from this library, so it IS in the web. Read the
-# subtraction literally — one class is named, not a plane.
+# whose gates come from this library and produces its own release, so it
+# stays in the producer web. Read the subtraction literally — one class is
+# named, not a plane.
 _PIN_WEB_CLASSES = _ALL_CLASSES - {"console"}
+# `_RECEIVING_SHIM_CLASSES` carries the two RECEIVING shims
+# (bump-pin-from-dispatch + pin-freshness): the pin-web classes PLUS the
+# console, which consumes the dev-tooling pin and so must keep it fresh.
+# This equals _ALL_CLASSES, but is written as the union so the intent —
+# add the console back onto the receiving obligations while leaving it off
+# the release-dispatch producer row — stays legible.
+_RECEIVING_SHIM_CLASSES = _PIN_WEB_CLASSES | {"console"}
 _TEMPLATE_BORN_CLASSES = frozenset({"impl-plugin"})
 # The dev-tooling-pin row excludes only the enforcement-suite class —
 # dev-tooling cannot pin itself; every other class, the console included,
@@ -128,14 +140,14 @@ OBLIGATION_ROWS: tuple[ObligationRow, ...] = (
     ObligationRow(
         row_id="workflow-bump-pin-from-dispatch",
         obligation_type="committed-file",
-        applies_to=_PIN_WEB_CLASSES,
+        applies_to=_RECEIVING_SHIM_CLASSES,
         assert_member=assert_bump_pin_workflow,
         reconcile=reconcile_shim_workflows,
     ),
     ObligationRow(
         row_id="workflow-pin-freshness",
         obligation_type="committed-file",
-        applies_to=_PIN_WEB_CLASSES,
+        applies_to=_RECEIVING_SHIM_CLASSES,
         assert_member=assert_pin_freshness_workflow,
         reconcile=reconcile_shim_workflows,
     ),
