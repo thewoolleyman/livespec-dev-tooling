@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.51.8](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.51.7...v0.51.8) (2026-07-22)
+
+
+### Bug Fixes
+
+* **fleet:** require the console to ship the two receiving pin shims ([484039d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/484039d14c73291c59a2d0a8c7e90b05752939b8))
+
 ## [0.51.7](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.51.6...v0.51.7) (2026-07-21)
 
 
