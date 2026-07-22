@@ -12,6 +12,7 @@ import json
 import os
 import subprocess
 import sys
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from _protection_fixtures import aligned_merge_settings_payload, aligned_protection_payload
@@ -405,6 +406,34 @@ def test_main_error_findings_exit_four(*, monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setattr(sys, "argv", ["fleet-conformance", "--owner", "acme"])
     _patch_runner(monkeypatch=monkeypatch, table=_green_table(topics=[]))
     assert fleet_conformance.main() == 4
+
+
+def test_main_emits_member_verdicts(*, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    output_path = tmp_path / "member-verdicts.json"
+    table = _green_table(topics=[])
+    del table[_SECRETS_ARGS]
+    monkeypatch.setenv("LIVESPEC_RUN_FLEET_CONFORMANCE", "true")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "fleet-conformance",
+            "--owner",
+            "acme",
+            "--emit-member-verdicts",
+            str(output_path),
+        ],
+    )
+    _patch_runner(monkeypatch=monkeypatch, table=table)
+
+    assert fleet_conformance.main() == 4
+    assert json.loads(output_path.read_text()) == [
+        {
+            "member": "widget",
+            "conformant": False,
+            "failing_rows": ["topic-livespec-sibling"],
+        }
+    ]
 
 
 def test_module_invocation_with_lever_unset_skips() -> None:

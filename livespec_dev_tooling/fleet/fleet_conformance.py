@@ -53,6 +53,7 @@ no `print`, no `sys.stderr.write`.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from dataclasses import dataclass
@@ -86,16 +87,25 @@ _BLIND_ROW_EVENT = "obligation row enforced NOTHING this run (skipped for every 
 
 
 @dataclass(frozen=True, kw_only=True)
+class MemberVerdict:
+    """Machine-readable conformance result for one manifest member."""
+
+    member: str
+    failing_rows: tuple[str, ...]
+
+
+@dataclass(frozen=True, kw_only=True)
 class MemberRowsResult:
     """What the member-row sweep found: error findings, plus rows that went blind.
 
-    The two counts are deliberately SEPARATE. `error_findings` alone drives
-    the exit code; `blind_rows` is reported so a green run that enforced
+    The counts and verdicts are deliberately SEPARATE. `error_findings` alone
+    drives the exit code; `blind_rows` is reported so a green run that enforced
     nothing is visibly different from a green run that enforced everything.
     """
 
     error_findings: int
     blind_rows: int
+    member_verdicts: tuple[MemberVerdict, ...]
 
 
 def fetch_manifest(*, ctx: FleetContext) -> Manifest | None:
@@ -118,7 +128,9 @@ def run_member_rows(
     errors = 0
     evaluated: dict[str, int] = {}
     skips: dict[str, list[str]] = {}
+    failing_rows_by_member: dict[str, list[str]] = {}
     for member in manifest.members:
+        failing_rows_by_member[member.repo] = []
         for row in rows_for(repo_class=member.repo_class):
             outcome = row.assert_member(ctx=ctx, member=member)
             if isinstance(outcome, RowSkip):
@@ -146,6 +158,7 @@ def run_member_rows(
                     )
                 else:
                     errors += 1
+                    failing_rows_by_member[member.repo].append(row.row_id)
                     log.error(
                         "fleet obligation violated",
                         row=row.row_id,
@@ -156,6 +169,32 @@ def run_member_rows(
     return MemberRowsResult(
         error_findings=errors,
         blind_rows=_report_blind_rows(evaluated=evaluated, skips=skips, log=log),
+        member_verdicts=tuple(
+            MemberVerdict(member=member, failing_rows=tuple(failing_rows))
+            for member, failing_rows in failing_rows_by_member.items()
+        ),
+    )
+
+
+def _member_verdict_payload(
+    *, member_verdicts: tuple[MemberVerdict, ...]
+) -> list[dict[str, object]]:
+    """JSON-ready per-member verdict payload for workflow consumers."""
+    return [
+        {
+            "member": verdict.member,
+            "conformant": not verdict.failing_rows,
+            "failing_rows": list(verdict.failing_rows),
+        }
+        for verdict in member_verdicts
+    ]
+
+
+def _write_member_verdicts(*, path: Path, member_verdicts: tuple[MemberVerdict, ...]) -> None:
+    """Emit the per-member verdict artifact requested by the CLI caller."""
+    _ = path.write_text(
+        json.dumps(_member_verdict_payload(member_verdicts=member_verdicts), indent=2) + "\n",
+        encoding="utf-8",
     )
 
 
@@ -236,6 +275,12 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="GitHub owner override; defaults to the origin remote's owner.",
     )
+    _ = parser.add_argument(
+        "--emit-member-verdicts",
+        type=Path,
+        default=None,
+        help="Write per-member conformance verdicts as JSON to this path.",
+    )
     return parser
 
 
@@ -277,6 +322,11 @@ def main() -> int:
         )
         return 1
     result = run_member_rows(ctx=ctx, manifest=manifest, log=log)
+    if args.emit_member_verdicts is not None:
+        _write_member_verdicts(
+            path=cast("Path", args.emit_member_verdicts),
+            member_verdicts=result.member_verdicts,
+        )
     errors = result.error_findings + run_discovery_sweep(ctx=ctx, manifest=manifest, log=log)
     if errors:
         log.error("fleet conformance FAILED", error_findings=errors, blind_rows=result.blind_rows)
