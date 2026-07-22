@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.52.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.51.10...v0.52.0) (2026-07-22)
+
+
+### Features
+
+* emit fleet member verdicts ([886c76b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/886c76b67c454bc1173bc52e1f90e20e429b40e7))
+
 ## [0.51.10](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.51.9...v0.51.10) (2026-07-22)
 
 
