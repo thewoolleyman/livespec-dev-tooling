@@ -41,6 +41,7 @@ from livespec_dev_tooling.config import (
     load_destructive_cli_allowlist,
     load_file_lloc_hard_gate,
     load_mutation_staging_dir,
+    load_project_name,
     load_scenario_tiers,
     load_subprocess_spawn_allowlist,
     resolve_check_universe,
@@ -352,6 +353,32 @@ def test_scenario_tiers_non_string_element_raises(*, tmp_path: Path) -> None:
     )
     with pytest.raises(ConfigParseError, match="`scenario_tiers` must be an array of strings"):
         _ = load_scenario_tiers(repo_root=tmp_path)
+
+
+def test_project_name_none_when_no_pyproject(*, tmp_path: Path) -> None:
+    """No `pyproject.toml` → `load_project_name` returns `None`."""
+    assert load_project_name(repo_root=tmp_path) is None
+
+
+def test_project_name_none_when_project_table_absent(*, tmp_path: Path) -> None:
+    """A pyproject without a `[project]` table → `None`."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body='[tool.livespec_dev_tooling]\nsource_trees = ["pkg"]\n',
+    )
+    assert load_project_name(repo_root=tmp_path) is None
+
+
+def test_project_name_none_when_name_not_a_string(*, tmp_path: Path) -> None:
+    """A non-string `[project].name` → `None`."""
+    _write_pyproject(repo_root=tmp_path, body="[project]\nname = 3\n")
+    assert load_project_name(repo_root=tmp_path) is None
+
+
+def test_project_name_read_from_project_table(*, tmp_path: Path) -> None:
+    """`[project].name` is returned verbatim."""
+    _write_pyproject(repo_root=tmp_path, body='[project]\nname = "livespec"\n')
+    assert load_project_name(repo_root=tmp_path) == "livespec"
 
 
 def test_destructive_cli_allowlist_none_when_no_pyproject(*, tmp_path: Path) -> None:
