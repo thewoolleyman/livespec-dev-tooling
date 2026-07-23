@@ -35,8 +35,21 @@ trailers and the next commit's pre-commit sees the
 
 Cycle 1 implemented the bare rejection: any staged source-tree
 file without a co-staged tests/-tree file fails the check.
-Cycle 2.7 (this cycle) adds the v034 amend-mode skip described
-above. Subsequent cycles will add the closed carve-out set
+Cycle 2.7 adds the v034 amend-mode skip described above.
+
+**The declared neutral hook body is exempt.** A consumer that
+declares `neutral_hook_body_path` may stage that ONE file with no
+paired `tests/**` change. It is a generated carrier — written
+verbatim from the packaged `CANONICAL_NO_SHADOW_LEDGER_BODY` by
+`just install-no-shadow-ledger` and already gated for byte-identity
+by `check-no-shadow-ledger-body-identical` — so its re-render
+touches no test by construction, while having to travel in the SAME
+commit as the dev-tooling pin bump. Unexempted, this gate made a
+producer-side carrier change impossible to propagate by any route:
+the fan-out rewrites pins only, and the hand repair was refused
+here. The exemption is path-scoped, never prefix-wide.
+
+Subsequent cycles will add the rest of the closed carve-out set
 (refactor: prefix, ## Type: refactor / config / docs-only,
 deletion-only commits, config-only filenames like
 pyproject.toml / justfile / lefthook.yml / .mise.toml /
@@ -136,7 +149,26 @@ def main() -> int:
         return 0
 
     staged = _staged_files(cwd=cwd)
-    source_changes = [path for path in staged if path.startswith(config.source_tree_prefixes)]
+    # The declared neutral hook body is a GENERATED carrier, not authored
+    # source: `just install-no-shadow-ledger` writes it verbatim from the
+    # packaged CANONICAL_NO_SHADOW_LEDGER_BODY, and
+    # `check-no-shadow-ledger-body-identical` already gates it for
+    # byte-identity against that constant. Re-rendering it after a producer
+    # change touches no `tests/**` file BY CONSTRUCTION, and the re-render
+    # MUST travel in the same commit as the dev-tooling pin bump (the body
+    # alone would be compared against the old canonical, the pin alone
+    # against the new one). Without this exemption such a commit is
+    # unmakeable, so a carrier change propagates by neither the pin-only
+    # fan-out nor by hand. Exempting exactly the DECLARED path — never the
+    # prefix around it — keeps every hand-authored sibling gated.
+    exempt_paths = frozenset(
+        {config.neutral_hook_body_path} if config.neutral_hook_body_path else set()
+    )
+    source_changes = [
+        path
+        for path in staged
+        if path.startswith(config.source_tree_prefixes) and path not in exempt_paths
+    ]
     test_changes = [path for path in staged if path.startswith(config.tests_tree_prefix)]
 
     if source_changes and not test_changes:

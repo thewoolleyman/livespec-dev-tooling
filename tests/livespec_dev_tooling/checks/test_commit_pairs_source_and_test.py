@@ -400,3 +400,117 @@ def test_commit_pairs_accepts_staged_source_with_staged_test(*, tmp_path: Path) 
         f"with exit 0; got returncode={result.returncode} "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
+
+
+_CARRIER_PYPROJECT = """\
+[tool.livespec_dev_tooling]
+source_tree_prefixes = [".claude-plugin/hooks/"]
+neutral_hook_body_path = ".claude-plugin/hooks/no_shadow_ledger.py"
+"""
+
+
+def _init_carrier_repo(*, tmp_path: Path) -> None:
+    """A mini-repo whose source tree CONTAINS the declared carrier body.
+
+    Both role keys are declared deliberately. `load_config` uses a flat
+    `Config()` baseline once a `[tool.livespec_dev_tooling]` block is
+    present, so a fixture declaring `neutral_hook_body_path` ALONE would
+    leave `source_tree_prefixes` empty — the carrier would not be
+    classified as a source file at all and the exemption assertion would
+    pass VACUOUSLY, proving nothing. Declaring the prefix too is what
+    makes the carrier a genuine source-tree member that the check must
+    exempt on purpose rather than overlook.
+    """
+    _git(cwd=tmp_path, args=["init", "-q"])
+    _git(cwd=tmp_path, args=["config", "user.email", "test@example.com"])
+    _git(cwd=tmp_path, args=["config", "user.name", "Test"])
+    (tmp_path / "pyproject.toml").write_text(_CARRIER_PYPROJECT, encoding="utf-8")
+    (tmp_path / "README.md").write_text("baseline\n", encoding="utf-8")
+    _git(cwd=tmp_path, args=["add", "pyproject.toml", "README.md"])
+    _git(cwd=tmp_path, args=["commit", "-m", "baseline"])
+    (tmp_path / ".claude-plugin" / "hooks").mkdir(parents=True)
+
+
+def test_commit_pairs_exempts_the_declared_neutral_hook_body(*, tmp_path: Path) -> None:
+    """The declared carrier body may be re-rendered with no paired test change.
+
+    The neutral no-shadow-ledger body is a GENERATED carrier: it is
+    installed verbatim from the packaged
+    `CANONICAL_NO_SHADOW_LEDGER_BODY` by `just
+    install-no-shadow-ledger`, never hand-authored in the consumer, and
+    already gated for byte-identity by
+    `check-no-shadow-ledger-body-identical`.
+
+    When the producer changes that constant, every consumer MUST
+    re-render its copy in the SAME commit that moves the dev-tooling pin
+    (the body alone would be compared against the old canonical, the pin
+    alone against the new one). Such a commit touches no `tests/**` file
+    BY CONSTRUCTION, so the unexempted pairing rule refused it and the
+    carrier change could be propagated neither by the pin-only fan-out
+    NOR by hand — livespec-driver-claude and livespec-driver-codex were
+    both stalled on exactly this at dev-tooling v0.54.0.
+
+    Staging ONLY the declared carrier, with no `tests/` companion, must
+    therefore exit 0.
+    """
+    _init_carrier_repo(tmp_path=tmp_path)
+    carrier = tmp_path / ".claude-plugin" / "hooks" / "no_shadow_ledger.py"
+    carrier.write_text(
+        "from __future__ import annotations\n__all__: list[str] = []\nx = 1\n",
+        encoding="utf-8",
+    )
+    _git(cwd=tmp_path, args=["add", ".claude-plugin/hooks/no_shadow_ledger.py"])
+
+    # S603: argv is a fixed list (sys.executable + repo-controlled script path).
+    result = subprocess.run(
+        [sys.executable, str(_COMMIT_PAIRS_SOURCE_AND_TEST)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_scrubbed_env(),
+    )
+
+    assert result.returncode == 0, (
+        f"commit_pairs_source_and_test must exempt the declared "
+        f"neutral_hook_body_path and exit 0; got "
+        f"returncode={result.returncode} stdout={result.stdout!r} "
+        f"stderr={result.stderr!r}"
+    )
+
+
+def test_commit_pairs_exemption_does_not_widen_to_the_carrier_sibling(*, tmp_path: Path) -> None:
+    """The exemption is path-scoped, NOT prefix-wide — a sibling still fails.
+
+    Non-vacuity guard for the test above. The carrier lives INSIDE a
+    declared source-tree prefix, so an exemption implemented as "skip the
+    prefix" (rather than "skip exactly the declared path") would also pass
+    that test while silently disarming the pairing gate for every
+    hand-authored hook beside it.
+
+    A DIFFERENT `.py` under the SAME prefix, staged with no `tests/`
+    companion, must therefore still be rejected with exit 1.
+    """
+    _init_carrier_repo(tmp_path=tmp_path)
+    sibling = tmp_path / ".claude-plugin" / "hooks" / "block_auto_memory.py"
+    sibling.write_text(
+        "from __future__ import annotations\n__all__: list[str] = []\ny = 2\n",
+        encoding="utf-8",
+    )
+    _git(cwd=tmp_path, args=["add", ".claude-plugin/hooks/block_auto_memory.py"])
+
+    # S603: argv is a fixed list (sys.executable + repo-controlled script path).
+    result = subprocess.run(
+        [sys.executable, str(_COMMIT_PAIRS_SOURCE_AND_TEST)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_scrubbed_env(),
+    )
+
+    assert result.returncode == 1, (
+        f"a non-carrier sibling under the same source prefix must still be "
+        f"rejected with exit 1; got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
