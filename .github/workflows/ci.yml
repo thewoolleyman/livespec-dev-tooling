@@ -347,6 +347,7 @@ jobs:
           - check-no-direct-tool-invocation
           - check-no-fmt-directives
           - check-no-shadow-ledger-body-identical
+          - check-no-shadow-ledger-body-typechecks
           - check-no-todo-registry
           - check-plan-thread-anchor-declared
           - check-plugin-resolution

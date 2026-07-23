@@ -94,6 +94,7 @@ import json
 import re
 import sys
 from pathlib import Path
+from typing import cast
 
 # Mechanical "shadow-ledger smell" threshold: number of markdown checkbox
 # task-list items in a single persisted planning artifact.
@@ -109,30 +110,31 @@ PERSISTING_TOOLS = frozenset({"Write", "Edit", "MultiEdit"})
 _CHECKBOX_RE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+\[[ xX]\]")
 
 
-def _is_real_user_entry(*, entry: dict) -> bool:
+def _is_real_user_entry(*, entry: dict[str, object]) -> bool:
     """A user entry typed by the human — NOT a tool_result delivery."""
     if entry.get("type") != "user":
         return False
     message = entry.get("message")
     if not isinstance(message, dict):
         return False
-    content = message.get("content")
+    content = cast("dict[str, object]", message).get("content")
     if isinstance(content, str):
         return bool(content.strip())
     if not isinstance(content, list):
         return False
     has_text = False
-    for block in content:
+    for block in cast("list[object]", content):
         if not isinstance(block, dict):
             continue
-        if block.get("type") == "tool_result":
+        block_dict = cast("dict[str, object]", block)
+        if block_dict.get("type") == "tool_result":
             return False
-        if block.get("type") == "text":
+        if block_dict.get("type") == "text":
             has_text = True
     return has_text
 
 
-def _written_text(*, name: str, tool_input: dict) -> str:
+def _written_text(*, name: str, tool_input: dict[str, object]) -> str:
     """The content a persisting tool call wrote, aggregated to one string."""
     if name == "Write":
         text = tool_input.get("content")
@@ -144,14 +146,17 @@ def _written_text(*, name: str, tool_input: dict) -> str:
         edits = tool_input.get("edits")
         parts: list[str] = []
         if isinstance(edits, list):
-            for edit in edits:
-                if isinstance(edit, dict) and isinstance(edit.get("new_string"), str):
-                    parts.append(edit["new_string"])
+            for edit in cast("list[object]", edits):
+                if not isinstance(edit, dict):
+                    continue
+                new_string = cast("dict[str, object]", edit).get("new_string")
+                if isinstance(new_string, str):
+                    parts.append(new_string)
         return "\n".join(parts)
     return ""
 
 
-def _last_turn_writes(*, entries: list[dict]) -> list[tuple[str, str]]:
+def _last_turn_writes(*, entries: list[dict[str, object]]) -> list[tuple[str, str]]:
     """(path, written-text) pairs persisted after the last real user message."""
     start = 0
     for index, entry in enumerate(entries):
@@ -164,24 +169,26 @@ def _last_turn_writes(*, entries: list[dict]) -> list[tuple[str, str]]:
         message = entry.get("message")
         if not isinstance(message, dict):
             continue
-        content = message.get("content")
+        content = cast("dict[str, object]", message).get("content")
         if not isinstance(content, list):
             continue
-        for block in content:
+        for block in cast("list[object]", content):
             if not isinstance(block, dict):
                 continue
-            if block.get("type") != "tool_use":
+            block_dict = cast("dict[str, object]", block)
+            if block_dict.get("type") != "tool_use":
                 continue
-            name = block.get("name")
+            name = block_dict.get("name")
             if name not in PERSISTING_TOOLS:
                 continue
-            tool_input = block.get("input")
+            tool_input = block_dict.get("input")
             if not isinstance(tool_input, dict):
                 continue
-            path = tool_input.get("file_path")
+            tool_input_dict = cast("dict[str, object]", tool_input)
+            path = tool_input_dict.get("file_path")
             if not isinstance(path, str) or not path:
                 continue
-            writes.append((path, _written_text(name=name, tool_input=tool_input)))
+            writes.append((path, _written_text(name=name, tool_input=tool_input_dict)))
     return writes
 
 
@@ -204,15 +211,18 @@ def _checkbox_count(*, text: str) -> int:
 def _warning() -> str | None:
     """Return the systemMessage JSON, or None for a silent pass-through."""
     payload = json.load(sys.stdin)
-    if not isinstance(payload, dict) or payload.get("stop_hook_active"):
+    if not isinstance(payload, dict):
         return None
-    transcript_path = payload.get("transcript_path")
+    payload_dict = cast("dict[str, object]", payload)
+    if payload_dict.get("stop_hook_active"):
+        return None
+    transcript_path = payload_dict.get("transcript_path")
     if not isinstance(transcript_path, str) or not transcript_path:
         return None
     transcript = Path(transcript_path)
     if not transcript.is_file():
         return None
-    entries: list[dict] = []
+    entries: list[dict[str, object]] = []
     for line in transcript.read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
@@ -221,7 +231,7 @@ def _warning() -> str | None:
         except ValueError:
             continue  # fail-open per line: skip malformed transcript lines
         if isinstance(parsed, dict):
-            entries.append(parsed)
+            entries.append(cast("dict[str, object]", parsed))
     for path, text in _last_turn_writes(entries=entries):
         if not _is_planning_artifact(path=path):
             continue
@@ -252,10 +262,10 @@ def main() -> int:
     """
     try:
         warning = _warning()
-    except Exception:  # noqa: BLE001 — fail-open by contract
+    except Exception:  # noqa: BLE001 — sole fail-open hook boundary: silent pass-through, exit 0
         warning = None
     if warning is not None:
-        sys.stdout.write(warning + "\n")
+        _ = sys.stdout.write(warning + "\n")
     return 0
 
 
