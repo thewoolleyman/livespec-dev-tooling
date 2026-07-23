@@ -110,9 +110,28 @@ MANIFEST_REPO = "livespec"
 MANIFEST_PATH = ".livespec-fleet-manifest.jsonc"
 # GitHub App installation tokens are `ghs_`-prefixed (server-to-server);
 # the automated contexts mint one into GH_TOKEN via
-# actions/create-github-app-token. The prefix is inspected, never logged
+# actions/create-github-app-token, and the Fabro dispatch sandbox
+# projects one as GITHUB_TOKEN. The prefix is inspected, never logged
 # or echoed (secrets are probe-only).
 _APP_TOKEN_PREFIX = "ghs_"
+
+
+def holds_app_class_credential() -> bool:
+    """True when the run's effective gh credential is an App installation token.
+
+    The ONE implementation of the credential-class rule both lanes share
+    (the bounded-parser convention: a rule with two copies drifts). The
+    token is read from the same env pair `gh` itself consults, `GH_TOKEN`
+    first then `GITHUB_TOKEN` (the Fabro dispatch sandbox projects the
+    latter); the `ghs_` prefix marks GitHub's server-to-server
+    (installation) class. The central lane uses this to claim the
+    `central-app` vantage; the admin lane uses it to classify itself
+    out-of-vantage under a dispatch-class credential. This is a fact
+    about the credential, not a lever — changing it changes which reads
+    can actually answer.
+    """
+    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or ""
+    return token.startswith(_APP_TOKEN_PREFIX)
 
 
 def central_run_vantages() -> frozenset[str]:
@@ -125,12 +144,9 @@ def central_run_vantages() -> frozenset[str]:
     under which `GET /installation/repositories` answers — so the
     `app-installation` row is evaluated in the automated contexts that
     mint one and reported out-of-vantage (naming them) in a local
-    operator run. The token is read from the same env pair `gh` itself
-    consults, `GH_TOKEN` first; this is a fact about the credential, not
-    a lever — changing it changes which reads can actually answer.
+    operator run.
     """
-    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or ""
-    if token.startswith(_APP_TOKEN_PREFIX):
+    if holds_app_class_credential():
         return frozenset({CENTRAL_VANTAGE, CENTRAL_APP_VANTAGE})
     return frozenset({CENTRAL_VANTAGE})
 

@@ -281,7 +281,15 @@ check:
         # App-token context can read, under the operator's own gh
         # credentials at pre-push. Deliberately absent from the CI matrix
         # (it would always-skip there), exactly like check-master-ci-green
-        # and check-branch-protection-alignment. See the recipe comment.
+        # and check-branch-protection-alignment. CI is NOT the only
+        # deliberately-non-admin context that reaches this aggregate: a
+        # Fabro dispatch sandbox's commit hooks reach it too, holding only
+        # the `ghs_`-class App installation token (admin scope withheld by
+        # the livespec v045 capability boundary) — under that credential
+        # class the lane classifies itself OUT-OF-VANTAGE (owned by the
+        # operator's pre-push) and passes at zero API reads, while a
+        # user-class credential lacking admin scope still fails blind at
+        # exit 4. See the recipe comment.
         check-fleet-conformance-admin
         # Fabro sandbox image pin-lockstep gate — repo-private extra,
         # NOT a canonical slug (the module lives at
@@ -504,11 +512,29 @@ check-fleet-conformance:
 # small. It runs in parallel with the pytest/coverage targets that
 # dominate `just check`, so it does not extend the critical path.
 #
-# Running it without admin scope makes both rows skip fleet-wide, which
-# it reports as BLIND (error severity, exit 4) — this is the lane that
-# SHOULD read them, so a credential shortfall fails the run rather than
-# reading as a vacuous pass. No lever, env var, or exemption can demote
-# it (livespec-dev-tooling-29qo, the b02 recorded end state).
+# Credential-CLASS boundary (the context list above is exhaustive on
+# purpose — CI is not the only deliberately-non-admin context that
+# reaches this recipe): a Fabro dispatch sandbox's commit hooks run the
+# `just check` aggregate holding only the dispatch credential, a
+# `ghs_`-class GitHub App installation token projected as GITHUB_TOKEN,
+# from which admin scope is DELIBERATELY withheld (the ratified livespec
+# v045 capability boundary). That credential class is structurally NOT
+# this lane's vantage — the lane belongs to the operator's pre-push
+# under their own admin gh credentials — so under it the lane classifies
+# its rows (and the adopter leg) OUT-OF-VANTAGE, names that owning
+# context, and exits 0 at zero API reads. Treating the class as a
+# shortfall instead was the repo-wide factory outage journaled on
+# livespec-dev-tooling-34t2 (no sandbox could complete a Red commit).
+# This is vantage classification via the shared `ghs_` credential-class
+# rule (`holds_app_class_credential`), not a lever.
+#
+# Running it under a USER-class credential without admin scope makes
+# both rows skip fleet-wide, which it reports as BLIND (error severity,
+# exit 4) — this is the lane that SHOULD read them, so a credential
+# shortfall fails the run rather than reading as a vacuous pass. No
+# lever, env var, or exemption can demote it (livespec-dev-tooling-29qo,
+# the b02 recorded end state); the dispatch-class classification never
+# widens beyond the `ghs_` prefix.
 check-fleet-conformance-admin:
     uv run python -m livespec_dev_tooling.fleet.fleet_conformance_admin
 
