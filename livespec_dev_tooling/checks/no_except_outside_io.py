@@ -38,6 +38,7 @@ from __future__ import annotations
 import ast
 import io
 import re
+import subprocess
 import sys
 import tokenize
 from pathlib import Path
@@ -88,6 +89,61 @@ _UNMARKED_REASON = (
     "`# noqa: BLE001 — …` marker is banned"
 )
 _MISPLACED_REASON = "broad catch outside io/ and the sole supervisor boundary is banned"
+
+
+_RUFF_BLE001_SETTING = "blind-except (BLE001)"
+_RUFF_EXCLUDED_REASON = "inspected file is excluded from Ruff; BLE001 backstop is absent"
+_RUFF_NO_BLE_REASON = "Ruff lint select does not enable BLE/BLE001 for inspected file"
+
+
+def _explicit_ruff_lint_select_configured(*, repo_root: Path) -> bool:
+    pyproject = repo_root / "pyproject.toml"
+    if not pyproject.is_file():
+        return False
+    text = pyproject.read_text(encoding="utf-8")
+    return "[tool.ruff.lint]" in text and "select" in text
+
+
+def _ruff_show_files(*, repo_root: Path, source_trees: tuple[Path, ...]) -> frozenset[Path]:
+    result = subprocess.run(
+        ["ruff", "check", "--show-files", "--force-exclude", *(str(path) for path in source_trees)],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    resolved_root = repo_root.resolve()
+    out: set[Path] = set()
+    for line in result.stdout.splitlines():
+        out.add(Path(line).resolve().relative_to(resolved_root))
+    return frozenset(out)
+
+
+def _ruff_enables_ble001(*, repo_root: Path, rel_path: Path) -> bool:
+    result = subprocess.run(
+        ["ruff", "check", "--show-settings", str(rel_path)],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.returncode == 0 and _RUFF_BLE001_SETTING in result.stdout
+
+
+def _find_ruff_backstop_gaps(
+    *, repo_root: Path, source_trees: tuple[Path, ...], inspected_files: tuple[Path, ...]
+) -> list[tuple[Path, str]]:
+    """Return inspected files that Ruff will not lint with BLE001 enabled."""
+    if not _explicit_ruff_lint_select_configured(repo_root=repo_root):
+        return []
+    ruff_files = _ruff_show_files(repo_root=repo_root, source_trees=source_trees)
+    gaps: list[tuple[Path, str]] = []
+    for rel_path in inspected_files:
+        if rel_path not in ruff_files:
+            gaps.append((rel_path, _RUFF_EXCLUDED_REASON))
+        elif not _ruff_enables_ble001(repo_root=repo_root, rel_path=rel_path):
+            gaps.append((rel_path, _RUFF_NO_BLE_REASON))
+    return gaps
 
 
 def _is_under_any(*, rel_path: Path, trees: tuple[Path, ...]) -> bool:
@@ -284,13 +340,13 @@ def main() -> int:
         )
         return 0
     offenders: list[tuple[Path, int, str]] = []
-    inspected = 0
+    inspected_files: list[Path] = []
     for tree_rel in config.source_trees:
         for py_file in iter_py_files(root=cwd / tree_rel):
             rel = py_file.relative_to(cwd)
             if _is_under_any(rel_path=rel, trees=config.io_trees):
                 continue
-            inspected += 1
+            inspected_files.append(rel)
             source = py_file.read_text(encoding="utf-8")
             exempt = _is_supervisor_main_file(rel_path=rel, config=config)
             for lineno, reason in _find_offending_handlers(source=source, position_exempt=exempt):
@@ -300,9 +356,18 @@ def main() -> int:
     log.info(
         "inspection complete",
         check_id="no_except_outside_io",
-        files_inspected=inspected,
+        files_inspected=len(inspected_files),
         offenses=len(offenders),
     )
+    backstop_gaps = _find_ruff_backstop_gaps(
+        repo_root=cwd,
+        source_trees=config.source_trees,
+        inspected_files=tuple(inspected_files),
+    )
+    if backstop_gaps:
+        for path, reason in backstop_gaps:
+            log.error(reason, file=str(path))
+        return 1
     if offenders:
         for path, lineno, reason in offenders:
             log.error(reason, file=str(path), line=lineno)
