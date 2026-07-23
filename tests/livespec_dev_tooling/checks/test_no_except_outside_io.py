@@ -24,6 +24,10 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 _NO_EXCEPT_OUTSIDE_IO = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "no_except_outside_io.py"
 
 _SUPERVISOR_MARKER = "# noqa: BLE001 — sole supervisor bug-catcher: log traceback, exit 1"
+_FOREIGN_CODE_MARKER = (
+    "# noqa: BLE001 — foreign-code isolation: "
+    "custom doctor check crash captured as SyntaxError, reported"
+)
 
 
 def _run(*, cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -268,6 +272,251 @@ def test_no_except_outside_io_rejects_freeform_marker_on_boundary(*, tmp_path: P
 
     assert result.returncode != 0, (
         f"no_except_outside_io should reject a free-form marker on a boundary catch; "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_no_except_outside_io_rejects_marker_with_trailing_junk(*, tmp_path: Path) -> None:
+    """A sanctioned wording with APPENDED text fails: the set is exact.
+
+    The closed set admits no suffix. Text appended after a sanctioned
+    wording can invert its meaning wholesale, so a substring match
+    would let `… exit 1 -- but actually swallows silently` legalize
+    the very swallow the wording denies.
+    """
+    _write_module(
+        tmp_path=tmp_path,
+        rel=".claude-plugin/scripts/livespec/commands/seed.py",
+        body=(
+            "def main() -> int:\n"
+            "    try:\n"
+            "        return 0\n"
+            f"    except Exception:  {_SUPERVISOR_MARKER} -- but actually swallows silently\n"
+            "        return 1\n"
+        ),
+    )
+
+    result = _run(cwd=tmp_path)
+
+    assert result.returncode != 0, (
+        f"no_except_outside_io should reject a sanctioned marker with trailing junk; "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_no_except_outside_io_rejects_marker_with_leading_junk(*, tmp_path: Path) -> None:
+    """A sanctioned wording EMBEDDED in a larger comment fails.
+
+    A comment that merely CONTAINS the wording is not the directive
+    plus that wording. Ruff would not read it as a `noqa` directive
+    at all, so honoring it here would legalize a broad catch on the
+    strength of prose alone.
+    """
+    embedded = _SUPERVISOR_MARKER.removeprefix("# ")
+    _write_module(
+        tmp_path=tmp_path,
+        rel=".claude-plugin/scripts/livespec/commands/seed.py",
+        body=(
+            "def main() -> int:\n"
+            "    try:\n"
+            "        return 0\n"
+            f"    except Exception:  # see hook contract; {embedded}\n"
+            "        return 1\n"
+        ),
+    )
+
+    result = _run(cwd=tmp_path)
+
+    assert result.returncode != 0, (
+        f"no_except_outside_io should reject a sanctioned wording embedded in prose; "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_no_except_outside_io_accepts_filled_foreign_code_marker(*, tmp_path: Path) -> None:
+    """A foreign-code marker with BOTH template slots filled passes.
+
+    The fifth sanctioned wording is a template: `<surface>` and
+    `<ErrorType>` are filled per site and the wording ends at the
+    literal `, reported`. A filled instance at a sanctioned position
+    is conforming.
+    """
+    _write_module(
+        tmp_path=tmp_path,
+        rel=".claude-plugin/scripts/livespec/commands/seed.py",
+        body=(
+            "def main() -> int:\n"
+            "    try:\n"
+            "        return 0\n"
+            f"    except Exception:  {_FOREIGN_CODE_MARKER}\n"
+            "        return 1\n"
+        ),
+    )
+
+    result = _run(cwd=tmp_path)
+
+    assert result.returncode == 0, (
+        f"no_except_outside_io should accept a filled foreign-code isolation marker; "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_no_except_outside_io_rejects_foreign_code_marker_with_trailing_junk(
+    *, tmp_path: Path
+) -> None:
+    """A foreign-code marker with text after `, reported` fails.
+
+    The template's tail is literal: `, reported` ends the wording.
+    Anything appended dilutes the reported-upward claim the marker
+    exists to pin down.
+    """
+    _write_module(
+        tmp_path=tmp_path,
+        rel=".claude-plugin/scripts/livespec/commands/seed.py",
+        body=(
+            "def main() -> int:\n"
+            "    try:\n"
+            "        return 0\n"
+            f"    except Exception:  {_FOREIGN_CODE_MARKER} and retried\n"
+            "        return 1\n"
+        ),
+    )
+
+    result = _run(cwd=tmp_path)
+
+    assert result.returncode != 0, (
+        f"no_except_outside_io should reject a foreign-code marker with trailing junk; "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_no_except_outside_io_accepts_foreign_code_marker_with_dotted_error_type(
+    *, tmp_path: Path
+) -> None:
+    """A foreign-code marker whose `<ErrorType>` is a dotted identifier passes.
+
+    Exception types are named by (possibly dotted) identifiers —
+    `json.JSONDecodeError` is as legitimate a captured type as a
+    bare builtin name.
+    """
+    _write_module(
+        tmp_path=tmp_path,
+        rel=".claude-plugin/scripts/livespec/commands/seed.py",
+        body=(
+            "def main() -> int:\n"
+            "    try:\n"
+            "        return 0\n"
+            "    except Exception:  # noqa: BLE001 — foreign-code isolation:"
+            " template render crash captured as json.JSONDecodeError, reported\n"
+            "        return 1\n"
+        ),
+    )
+
+    result = _run(cwd=tmp_path)
+
+    assert result.returncode == 0, (
+        f"no_except_outside_io should accept a dotted-identifier ErrorType; "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_no_except_outside_io_rejects_foreign_code_marker_with_unfilled_placeholders(
+    *, tmp_path: Path
+) -> None:
+    """A foreign-code marker shipping the LITERAL template placeholders fails.
+
+    The spec writes the template with `<surface>` / `<ErrorType>`
+    placeholders to be filled per site. A site that ships them
+    verbatim has filled nothing, names no surface and no captured
+    type, and so asserts nothing.
+    """
+    _write_module(
+        tmp_path=tmp_path,
+        rel=".claude-plugin/scripts/livespec/commands/seed.py",
+        body=(
+            "def main() -> int:\n"
+            "    try:\n"
+            "        return 0\n"
+            "    except Exception:  # noqa: BLE001 — foreign-code isolation:"
+            " <surface> crash captured as <ErrorType>, reported\n"
+            "        return 1\n"
+        ),
+    )
+
+    result = _run(cwd=tmp_path)
+
+    assert result.returncode != 0, (
+        f"no_except_outside_io should reject literal unfilled template placeholders; "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_no_except_outside_io_rejects_foreign_code_marker_with_prose_error_type(
+    *, tmp_path: Path
+) -> None:
+    """A foreign-code marker whose `<ErrorType>` slot holds prose fails.
+
+    `<ErrorType>` names the captured exception type — an identifier,
+    optionally dotted — not free prose. Prose there can dilute or
+    invert the captured-and-reported claim the marker exists to pin
+    down (e.g. `… captured as SyntaxError but swallowed silently`).
+    """
+    _write_module(
+        tmp_path=tmp_path,
+        rel=".claude-plugin/scripts/livespec/commands/seed.py",
+        body=(
+            "def main() -> int:\n"
+            "    try:\n"
+            "        return 0\n"
+            "    except Exception:  # noqa: BLE001 — foreign-code isolation:"
+            " custom doctor check crash captured as SyntaxError but swallowed"
+            " silently, reported\n"
+            "        return 1\n"
+        ),
+    )
+
+    result = _run(cwd=tmp_path)
+
+    assert result.returncode != 0, (
+        f"no_except_outside_io should reject prose in the ErrorType slot; "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_no_except_outside_io_rejects_foreign_code_marker_with_empty_segments(
+    *, tmp_path: Path
+) -> None:
+    """A foreign-code marker with EMPTY template slots fails.
+
+    `<surface>` and `<ErrorType>` are per-site facts; an instance
+    that fills neither names no surface and no captured type, so it
+    asserts nothing and conforms to nothing.
+    """
+    _write_module(
+        tmp_path=tmp_path,
+        rel=".claude-plugin/scripts/livespec/commands/seed.py",
+        body=(
+            "def main() -> int:\n"
+            "    try:\n"
+            "        return 0\n"
+            "    except Exception:  # noqa: BLE001 — foreign-code isolation:"
+            "  crash captured as , reported\n"
+            "        return 1\n"
+        ),
+    )
+
+    result = _run(cwd=tmp_path)
+
+    assert result.returncode != 0, (
+        f"no_except_outside_io should reject a foreign-code marker with empty segments; "
         f"got returncode={result.returncode} "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
