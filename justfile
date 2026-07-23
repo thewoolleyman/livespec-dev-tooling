@@ -224,6 +224,7 @@ check:
         check-no-lloc-soft-warnings
         check-no-raise-outside-io
         check-no-shadow-ledger-body-identical
+        check-no-shadow-ledger-body-typechecks
         check-no-todo-registry
         check-no-write-direct
         check-partition-completeness
@@ -750,6 +751,17 @@ check-no-raise-outside-io:
 # constant `install_no_shadow_ledger.CANONICAL_NO_SHADOW_LEDGER_BODY`.
 check-no-shadow-ledger-body-identical:
     uv run python -m livespec_dev_tooling.checks.no_shadow_ledger_body_identical
+
+# Strict-type Verifier for the SAME single-sourced neutral no-shadow-ledger
+# Stop-hook body. The body ships as the wheel-safe string constant
+# `install_no_shadow_ledger.CANONICAL_NO_SHADOW_LEDGER_BODY` (a carrier, not a
+# real module), so pyright never sees it and an annotation regression would
+# ship silently. This check renders the constant to a throwaway `.py` and runs
+# pyright in strict mode (mirroring this repo's `[tool.pyright]` bar) against
+# it, failing on any error diagnostic. Always runs (the constant always
+# exists); the only skip is pyright being unavailable.
+check-no-shadow-ledger-body-typechecks:
+    uv run python -m livespec_dev_tooling.checks.no_shadow_ledger_body_typechecks
 
 # Always invoked plainly; the module self-manages its severity lever
 # (epic li-cvaudit, cvtodo). The heading-coverage.json TODO scan ALWAYS
