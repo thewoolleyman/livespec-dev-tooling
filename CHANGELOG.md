@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.52.7](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.52.6...v0.52.7) (2026-07-23)
+
+
+### Bug Fixes
+
+* **fleet:** never sweep a repo's default branch, whatever it is named ([4d8dc24](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4d8dc244196144b0a9d86aa7bd130b62485043da))
+
 ## [0.52.6](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.52.5...v0.52.6) (2026-07-23)
 
 
