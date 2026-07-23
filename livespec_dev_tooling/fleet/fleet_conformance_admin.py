@@ -46,21 +46,42 @@ alignment comparison, which is the part of the row that actually catches
 phantom required checks. The adopter leg adds ~3 reads per RELEASED
 adopter (one today) and zero for excluded postures.
 
-Credential shortfall is NOT silently tolerated. Running without admin scope
-makes both member rows skip for every member — and an unreadable released
-adopter makes the currency leg skip — which this lane reports as BLIND at
-ERROR severity and FAILS on: this IS the lane that should have read them,
-so a run that could not is a failed run, not a vacuous pass (the b02
-escalation, shipped once the vantage model left no row structurally blind
-in any healthy context; no lever, env var, or exemption can demote it).
-That is the opposite of the central lane's treatment, where the same two
-rows and the adopter leg are out-of-vantage: expected, and owned by this
-recipe.
+Credential CLASS precedes credential shortfall. The lane's own design
+scopes it to the OPERATOR's pre-push under the operator's own admin gh
+credentials — so a `ghs_`-class effective credential (a GitHub App
+installation token: the dispatch credential a Fabro sandbox holds,
+projected as GITHUB_TOKEN, whose commit hooks DO reach the `just check`
+aggregate) is structurally NOT this lane's vantage. Admin scope is
+DELIBERATELY withheld from that credential class (the ratified livespec
+v045 capability boundary), so under it this lane's rows — both admin
+member rows AND the adopter currency leg — are OUT-OF-VANTAGE in the
+established `_lanes` sense: owned by the operator's pre-push context,
+reported at info severity, exit 0, at ZERO API reads (the guard
+short-circuits before even the manifest fetch, so an expired or revoked
+dispatch token cannot turn classification into a precondition failure).
+This is vantage classification via `holds_app_class_credential` — the
+same shared credential-class rule `central_run_vantages` applies — NOT
+a lever: no env var, exemption, or demotion path exists, and the
+classification never widens beyond the `ghs_` class.
+
+Within the lane's own vantage — ANY user-class credential — shortfall
+is NOT silently tolerated. Running without admin scope makes both
+member rows skip for every member — and an unreadable released adopter
+makes the currency leg skip — which this lane reports as BLIND at ERROR
+severity and FAILS on: this IS the lane that should have read them, so
+a run that could not is a failed run, not a vacuous pass (the b02
+escalation, shipped once the vantage model left no row structurally
+blind in any healthy context; no lever, env var, or exemption can
+demote it). That is the opposite of the central lane's treatment, where
+the same two rows and the adopter leg are out-of-vantage: expected, and
+owned by this recipe.
 
 Exit codes:
 
 - `0` — every admin row and adopter-leg evaluation passed, or partially
-  skipped, with no error-severity finding and no blind row.
+  skipped, with no error-severity finding and no blind row; or the run
+  holds a dispatch-class (`ghs_`) credential, under which every row this
+  lane owns is out-of-vantage (owned by the operator's pre-push).
 - `1` — precondition failure: owner unresolvable, or the manifest
   unfetchable / unparseable (the manifest is the root fact; fail loud).
 - `4` — one or more error-severity findings, or one or more blind rows
@@ -75,17 +96,26 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
-from livespec_dev_tooling.fleet._adopter_lane import run_adopter_rows
+from livespec_dev_tooling.fleet._adopter_lane import ADOPTER_CURRENCY_ROW_ID, run_adopter_rows
 from livespec_dev_tooling.fleet._context import FleetContext, default_gh_runner, resolve_owner
-from livespec_dev_tooling.fleet._contract_rows import ADMIN_VANTAGE
-from livespec_dev_tooling.fleet._lanes import configure_lane_logging, run_member_rows
+from livespec_dev_tooling.fleet._contract_rows import ADMIN_VANTAGE, OBLIGATION_ROWS
+from livespec_dev_tooling.fleet._lanes import (
+    LANE_RECIPES,
+    OUT_OF_VANTAGE_EVENT,
+    configure_lane_logging,
+    run_member_rows,
+)
 from livespec_dev_tooling.fleet.fleet_conformance import (
     MANIFEST_PATH,
     MANIFEST_REPO,
     fetch_manifest,
+    holds_app_class_credential,
 )
+
+if TYPE_CHECKING:
+    import structlog.stdlib
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -94,6 +124,19 @@ if str(_VENDOR_DIR) not in sys.path:
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
 __all__: list[str] = []
+
+
+# Who enforces this lane's rows when a run holds the WRONG credential
+# class: composed from the recipe registry (never a second copy of the
+# recipe name) plus the credential context, mirroring the shape of the
+# `central-app` LANE_RECIPES entry, so the out-of-vantage report names a
+# context an operator can actually go run.
+_OPERATOR_PRE_PUSH_CONTEXT = (
+    f"{LANE_RECIPES[ADMIN_VANTAGE]} at the operator's own pre-push, under the "
+    "operator's own admin gh credentials (a user-class token — never the "
+    "dispatch App installation token, from which admin scope is deliberately "
+    "withheld per the livespec v045 capability boundary)"
+)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -113,10 +156,50 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _dispatch_class_out_of_vantage(*, log: structlog.stdlib.BoundLogger) -> int:
+    """Classify every row this lane owns out-of-vantage for a dispatch-class run.
+
+    Reached when the effective gh credential is `ghs_`-class (a GitHub
+    App installation token — the Fabro sandbox's dispatch credential,
+    whose commit hooks reach the `just check` aggregate). Admin scope is
+    deliberately withheld from that class (the livespec v045 capability
+    boundary), so this run is structurally not the lane's vantage:
+    treating it as a credential shortfall instead (blind, exit 4) killed
+    every factory dispatch to this repo at the Red commit hook — the
+    repo-wide outage journaled on livespec-dev-tooling-34t2.
+
+    Mirrors the existing out-of-vantage path's economics: rows are
+    classified BEFORE any assert runs, and the manifest itself is never
+    fetched — zero API reads, and an expired or revoked dispatch token
+    cannot turn classification into a precondition failure. The row set
+    is derived from the obligation table (the admin-vantage rows) plus
+    the adopter currency leg this lane owns; the owning context is named
+    so the report stays actionable, exactly like `_lanes`' reporting.
+    """
+    admin_row_ids = tuple(row.row_id for row in OBLIGATION_ROWS if row.vantage == ADMIN_VANTAGE)
+    for row_id in (*admin_row_ids, ADOPTER_CURRENCY_ROW_ID):
+        log.info(
+            OUT_OF_VANTAGE_EVENT,
+            row=row_id,
+            vantage=ADMIN_VANTAGE,
+            owned_by=_OPERATOR_PRE_PUSH_CONTEXT,
+        )
+    log.info(
+        "fleet admin conformance out-of-vantage under a dispatch-class credential",
+        credential_class="GitHub App installation token (ghs_-prefixed; probe-only, never logged)",
+        out_of_vantage_rows=len(admin_row_ids) + 1,
+        blind_rows=0,
+        owned_by=_OPERATOR_PRE_PUSH_CONTEXT,
+    )
+    return 0
+
+
 def main() -> int:
     configure_lane_logging()
     log = structlog.get_logger("fleet_conformance_admin")
     args = _build_parser().parse_args()
+    if holds_app_class_credential():
+        return _dispatch_class_out_of_vantage(log=log)
     owner = cast("str | None", args.owner) or resolve_owner()
     if owner is None:
         log.error(
