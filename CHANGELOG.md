@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.52.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.52.2...v0.52.3) (2026-07-23)
+
+
+### Bug Fixes
+
+* **fleet:** enforce the two admin-scoped rows in a world-gate lane ([ec66951](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ec669517171fd1e45614b39eee6771528a804b23))
+
 ## [0.52.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.52.1...v0.52.2) (2026-07-23)
 
 
