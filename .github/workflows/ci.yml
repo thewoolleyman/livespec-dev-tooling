@@ -231,10 +231,12 @@ jobs:
   # membership contract") — its own job (not a matrix entry) so the
   # run lever and the App token are scoped to it alone. The App
   # installation token makes contents / topics / installation-coverage
-  # readable across every fleet member; the admin-scoped rows (secret
-  # names, branch protection) skip gracefully under this token and are
-  # covered by operator-local `just check` runs (admin gh auth) and by
-  # the scheduled fleet-conformance.yml + release fan-out preflight.
+  # readable across every fleet member (its `ghs_` prefix claims the
+  # `central-app` vantage, so the app-installation row evaluates here);
+  # the admin-scoped rows (secret names, branch protection) are
+  # out-of-vantage under this token and are enforced by the admin
+  # world-gate lane (`just check-fleet-conformance-admin`) at pre-push
+  # under the operator's own admin gh credentials.
   check-fleet-conformance:
     name: check-fleet-conformance
     runs-on: ubuntu-latest

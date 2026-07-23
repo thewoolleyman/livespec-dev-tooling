@@ -20,50 +20,53 @@ reads); set to a non-empty value (the scheduled workflow, the release
 fan-out preflight, and the CI job set it) → the full sweep runs. No
 external gate, no silent skip.
 
-Vantage: this module is the CENTRAL lane. It runs the rows answerable
-under the fleet GitHub App installation token every automated context
-authenticates with. The two ADMIN-scoped rows (`branch-protection`,
-`secret-names`) are NOT run here — the App token deliberately lacks
-admin scope — and are reported as out-of-vantage naming the lane that
-does enforce them (`check-fleet-conformance-admin`, the pre-push world
-gate in `fleet_conformance_admin.py`). The posture-gated adopter
-currency leg (`_adopter_lane.run_adopter_rows`) gets the same
-treatment for the same reason: the fleet App's installation MUST be
-restricted to fleet repos only, so a private released adopter is
-structurally unreadable here, and the leg is reported out-of-vantage
-(owned by the admin lane) at zero API cost rather than evaluated
-vacuously.
+Vantage: this module is the CENTRAL lane. Its rows partition further
+by credential class: the plain `central` rows are answerable under
+whatever GitHub credential the lane runs with, while the `central-app`
+row (`app-installation`) answers only under the fleet GitHub App
+installation token itself — which exactly the automated contexts hold,
+each minting one into GH_TOKEN. `central_run_vantages` reads the
+run's credential class from that token's prefix, so an automated run
+evaluates the row and a local operator run reports it out-of-vantage
+naming the owning contexts, not blind. The two ADMIN-scoped rows
+(`branch-protection`, `secret-names`) are NOT run here — the App token
+deliberately lacks admin scope — and are reported as out-of-vantage
+naming the lane that does enforce them (`check-fleet-conformance-admin`,
+the pre-push world gate in `fleet_conformance_admin.py`). The
+posture-gated adopter currency leg (`_adopter_lane.run_adopter_rows`)
+gets the same treatment for the same reason: the fleet App's
+installation MUST be restricted to fleet repos only, so a private
+released adopter is structurally unreadable here, and the leg is
+reported out-of-vantage (owned by the admin lane) at zero API cost
+rather than evaluated vacuously.
 
 Blind rows: a `RowSkip` means "could not be evaluated", which is NOT
-the same as "passed" — yet historically it was logged at `info` and
-touched neither the exit code nor any summary, so a row skipped for
-EVERY applicable member enforced nothing while the run reported
-success. Every row this lane ATTEMPTS is now tallied (evaluated vs
-skipped) over the members it actually applied to, and a row with skips
-and zero evaluations is reported as blind, with a blind-row count in
-the run summary. Severity is WARNING and never moves the exit code:
-this is NEW signal rather than a demoted gate. There is no lever,
-exemption list, or opt-out — every attempted row is always counted.
-
-The two admin rows used to land in that blind tally on EVERY automated
-run, since no automated context can ever read them. A permanent
-warning nothing can clear is how a real signal gets tuned out, so they
-are now accounted separately as out-of-vantage rather than suppressed:
-blind still means "this lane should have read it and could not".
-Escalating blind rows to error severity remains the recorded intended
-end state, and is a follow-up to this split rather than part of it.
+the same as "passed" — historically it was logged at `info` and a row
+skipped for EVERY applicable member enforced nothing while the run
+reported success. Every row this lane ATTEMPTS is tallied (evaluated
+vs skipped) over the members it actually applied to, and a row with
+skips and zero evaluations is reported as BLIND at ERROR severity,
+failing the run: a lane that OWNS a row and could not read its source
+fails loud rather than passing vacuously. The warning-severity interim
+recorded here previously (while the two admin rows, and locally the
+app-installation row, were structurally blind) ended when the vantage
+model was completed: every row is now owned by a context that can
+answer it, so `blind_rows` is structurally 0 in EVERY context when
+nothing is actually wrong, and the escalation reddens no healthy run.
+There is no lever, env var, exemption list, or opt-out — every
+attempted row is always counted.
 
 Exit codes:
 
 - `0` — lever unset (logged skip), or every applicable row passed /
-  skipped with no error-severity finding (blind rows included: they
-  warn, they do not fail).
+  partially skipped with no error-severity finding and no blind row.
 - `1` — precondition failure with the lever set: owner unresolvable,
   or the manifest unfetchable / unparseable (the manifest is the root
   fact; per the fail-fast decision the run is loud, not silent).
-- `4` — one or more error-severity findings (member rows or the
-  discovery sweep). Warning-severity findings (pin staleness) log but
-  do not fail.
+- `4` — one or more error-severity findings (member rows, the adopter
+  leg, or the discovery sweep), or one or more blind rows (an owned
+  row that enforced nothing). Warning-severity findings (pin
+  staleness) log but do not fail.
 
 Output discipline matches sibling checks: structlog JSON to stderr;
 no `print`, no `sys.stderr.write`.
@@ -84,6 +87,7 @@ from livespec_dev_tooling.fleet._context import (
     default_gh_runner,
     resolve_owner,
 )
+from livespec_dev_tooling.fleet._contract_rows import CENTRAL_APP_VANTAGE, CENTRAL_VANTAGE
 from livespec_dev_tooling.fleet._lanes import (
     MemberVerdict,
     configure_lane_logging,
@@ -104,6 +108,31 @@ __all__: list[str] = []
 _RUN_ENV_VAR = "LIVESPEC_RUN_FLEET_CONFORMANCE"
 MANIFEST_REPO = "livespec"
 MANIFEST_PATH = ".livespec-fleet-manifest.jsonc"
+# GitHub App installation tokens are `ghs_`-prefixed (server-to-server);
+# the automated contexts mint one into GH_TOKEN via
+# actions/create-github-app-token. The prefix is inspected, never logged
+# or echoed (secrets are probe-only).
+_APP_TOKEN_PREFIX = "ghs_"
+
+
+def central_run_vantages() -> frozenset[str]:
+    """The credential-class vantages this central-lane run holds.
+
+    Every central run holds the plain `central` vantage (contents, topics,
+    and the other reads any GitHub credential the lane runs with can
+    answer). The `central-app` vantage is held exactly when the run's
+    token is a GitHub App installation token — the only credential class
+    under which `GET /installation/repositories` answers — so the
+    `app-installation` row is evaluated in the automated contexts that
+    mint one and reported out-of-vantage (naming them) in a local
+    operator run. The token is read from the same env pair `gh` itself
+    consults, `GH_TOKEN` first; this is a fact about the credential, not
+    a lever — changing it changes which reads can actually answer.
+    """
+    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or ""
+    if token.startswith(_APP_TOKEN_PREFIX):
+        return frozenset({CENTRAL_VANTAGE, CENTRAL_APP_VANTAGE})
+    return frozenset({CENTRAL_VANTAGE})
 
 
 def fetch_manifest(*, ctx: FleetContext) -> Manifest | None:
@@ -224,7 +253,7 @@ def main() -> int:
             hint="the manifest on livespec master is the root fact; failing loud",
         )
         return 1
-    result = run_member_rows(ctx=ctx, manifest=manifest, log=log)
+    result = run_member_rows(ctx=ctx, manifest=manifest, log=log, vantages=central_run_vantages())
     adopters = run_adopter_rows(ctx=ctx, manifest=manifest, log=log)
     if args.emit_member_verdicts is not None:
         _write_member_verdicts(
@@ -236,19 +265,20 @@ def main() -> int:
         + adopters.error_findings
         + run_discovery_sweep(ctx=ctx, manifest=manifest, log=log)
     )
+    blind_rows = result.blind_rows + adopters.blind_rows
     out_of_vantage_rows = result.out_of_vantage_rows + adopters.out_of_vantage_rows
-    if errors:
+    if errors or blind_rows:
         log.error(
             "fleet conformance FAILED",
             error_findings=errors,
-            blind_rows=result.blind_rows,
+            blind_rows=blind_rows,
             out_of_vantage_rows=out_of_vantage_rows,
         )
         return 4
     log.info(
         "fleet conformance passed",
         members=len(manifest.members),
-        blind_rows=result.blind_rows,
+        blind_rows=blind_rows,
         out_of_vantage_rows=out_of_vantage_rows,
         owner=owner,
     )

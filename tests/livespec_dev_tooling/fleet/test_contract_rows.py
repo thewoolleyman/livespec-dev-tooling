@@ -8,7 +8,13 @@ classes, reconcile-or-manual-hint completeness, per-class scoping via
 
 from __future__ import annotations
 
-from livespec_dev_tooling.fleet._contract_rows import OBLIGATION_ROWS, REPO_CLASSES, rows_for
+from livespec_dev_tooling.fleet._contract_rows import (
+    CENTRAL_APP_VANTAGE,
+    OBLIGATION_ROWS,
+    REPO_CLASSES,
+    rows_for,
+)
+from livespec_dev_tooling.fleet._lanes import LANE_RECIPES
 from livespec_dev_tooling.fleet._reconcile import reconcile_merge_settings
 from livespec_dev_tooling.fleet._rows_baseline import assert_baseline_harnesses
 from livespec_dev_tooling.fleet._rows_github import assert_merge_settings
@@ -56,6 +62,30 @@ def test_universal_rows_apply_to_every_class() -> None:
     for repo_class in REPO_CLASSES:
         row_ids = {row.row_id for row in rows_for(repo_class=repo_class)}
         assert universal <= row_ids, repo_class
+
+
+def test_every_declared_vantage_has_an_owning_context_registered() -> None:
+    # An out-of-vantage report is only actionable when it names the owning
+    # context; a row whose vantage has no LANE_RECIPES entry would report
+    # "(no lane runs this vantage)" — exactly the zero-enforcement hole the
+    # vantage split exists to close. Wiring-pinned so adding a vantage to
+    # the table without registering its owner fails fast.
+    for row in OBLIGATION_ROWS:
+        assert row.vantage in LANE_RECIPES, row.row_id
+
+
+def test_app_installation_row_carries_the_central_app_vantage() -> None:
+    # The app-installation read (`GET /installation/repositories`) answers
+    # only under the fleet App installation token, which exactly the
+    # automated central contexts hold — declared on the row (the same
+    # mechanism the two admin rows use) so a local central sweep reports
+    # it out-of-vantage naming those contexts instead of blind
+    # (livespec-dev-tooling-29qo).
+    row = next((r for r in OBLIGATION_ROWS if r.row_id == "app-installation"), None)
+    assert row is not None
+    assert row.vantage == CENTRAL_APP_VANTAGE
+    assert row.reconcile is None
+    assert row.manual_hint
 
 
 def test_merge_settings_row_is_wired_with_assert_and_reconcile() -> None:

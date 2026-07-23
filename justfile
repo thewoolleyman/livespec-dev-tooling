@@ -483,8 +483,8 @@ check-fleet-conformance:
 # automated central-lane context; homing the leg here is what keeps it
 # from being vacuously green. Pinned/none postures are reported as
 # posture-excluded (a declared choice, honored by never reading the
-# repo); an unreadable released adopter reports BLIND; findings are
-# error-severity (fail loud).
+# repo); an unreadable released adopter reports BLIND (error severity,
+# it fails the run); findings are error-severity (fail loud).
 #
 # This is a WORLD GATE in the same sense as check-master-ci-green and
 # check-branch-protection-alignment: it reads live world state under
@@ -505,8 +505,10 @@ check-fleet-conformance:
 # dominate `just check`, so it does not extend the critical path.
 #
 # Running it without admin scope makes both rows skip fleet-wide, which
-# it reports as BLIND (warning, exit 0) — this is the lane that SHOULD
-# read them, so a credential shortfall is surfaced, not swallowed.
+# it reports as BLIND (error severity, exit 4) — this is the lane that
+# SHOULD read them, so a credential shortfall fails the run rather than
+# reading as a vacuous pass. No lever, env var, or exemption can demote
+# it (livespec-dev-tooling-29qo, the b02 recorded end state).
 check-fleet-conformance-admin:
     uv run python -m livespec_dev_tooling.fleet.fleet_conformance_admin
 

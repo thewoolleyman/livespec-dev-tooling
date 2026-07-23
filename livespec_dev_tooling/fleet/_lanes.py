@@ -10,17 +10,23 @@ exists to prevent:
 
 - **Blind** — the running lane holds credentials that SHOULD have answered
   this row, and every applicable member still came back unreadable. That is
-  the b02 signal: the run reported success while enforcing nothing. It stays
-  WARNING severity and never moves the exit code.
+  the b02 signal: the run enforced nothing while claiming coverage. It is
+  ERROR severity and fails the run — the escalation b02 recorded as the
+  intended end state, shipped once the vantage model left no row
+  structurally blind in any healthy context. There is no lever, env var,
+  exemption list, or opt-out: a lane that owns a row it could not read
+  exits non-zero, always.
 - **Out-of-vantage** — no credential this lane holds could ever answer the
-  row, by design, and a DIFFERENT named lane owns it. Expected, so it is
-  reported at info severity with the owning lane's recipe name attached.
+  row, by design, and a DIFFERENT named context owns it. Expected, so it is
+  reported at info severity with the owning context attached.
 
 Before the split, the two admin-scoped rows (`branch-protection`,
 `secret-names`) were blind in every automated run — a warning no operator
-could ever clear, which is precisely how a real signal gets tuned out.
-Filtering by vantage happens BEFORE `assert_member` is called, so an
-out-of-vantage row also costs the lane zero API reads.
+could ever clear, which is precisely how a real signal gets tuned out; the
+`app-installation` row was likewise blind in every LOCAL central run until
+the `central-app` vantage completed the model. Filtering by vantage happens
+BEFORE `assert_member` is called, so an out-of-vantage row also costs the
+lane zero API reads.
 """
 
 from __future__ import annotations
@@ -31,7 +37,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from livespec_dev_tooling.fleet._context import RowFinding, RowSkip
-from livespec_dev_tooling.fleet._contract_rows import ADMIN_VANTAGE, CENTRAL_VANTAGE, rows_for
+from livespec_dev_tooling.fleet._contract_rows import (
+    ADMIN_VANTAGE,
+    CENTRAL_APP_VANTAGE,
+    CENTRAL_VANTAGE,
+    rows_for,
+)
 
 if TYPE_CHECKING:
     import structlog.stdlib
@@ -59,11 +70,17 @@ __all__: list[str] = [
 BLIND_ROW_EVENT = "obligation row enforced NOTHING this run (skipped for every applicable member)"
 OUT_OF_VANTAGE_EVENT = "obligation row is outside this lane's vantage (another lane owns it)"
 
-# The justfile recipe that OWNS each vantage. An out-of-vantage report is only
-# actionable if it names where the row does get enforced, so this map is the
-# reporting half of the vantage split — keep it in step with the recipes.
+# The invocation context that OWNS each vantage. An out-of-vantage report is
+# only actionable if it names where the row does get enforced, so this map is
+# the reporting half of the vantage split — keep it in step with the recipes
+# and the App-token workflow contexts.
 LANE_RECIPES: dict[str, str] = {
     CENTRAL_VANTAGE: "check-fleet-conformance",
+    CENTRAL_APP_VANTAGE: (
+        "check-fleet-conformance under the fleet GitHub App installation token "
+        "(the per-PR CI job, the scheduled fleet-conformance.yml, and the "
+        "release fan-out preflight)"
+    ),
     ADMIN_VANTAGE: "check-fleet-conformance-admin",
 }
 
@@ -85,13 +102,13 @@ class MemberVerdict:
 class MemberRowsResult:
     """What one lane's member-row sweep found across the three row outcomes.
 
-    The three counts are deliberately SEPARATE. `error_findings` alone drives
-    the exit code; `blind_rows` makes a green run that enforced nothing
-    visibly different from one that enforced everything; `out_of_vantage_rows`
-    accounts for the rows this lane never attempted, so the two zeroes cannot
-    be confused for each other. `member_verdicts` re-cuts the SAME
-    error-severity findings per member for workflow consumers; it introduces
-    no fourth outcome.
+    The three counts are deliberately SEPARATE. `error_findings` and
+    `blind_rows` BOTH fail the run (blind is error severity — an owned row
+    that enforced nothing), but stay distinct so a violated obligation reads
+    differently from an unreadable one; `out_of_vantage_rows` accounts for
+    the rows this lane never attempted, so the zeroes cannot be confused for
+    each other. `member_verdicts` re-cuts the SAME error-severity per-member
+    findings for workflow consumers; it introduces no fourth outcome.
     """
 
     error_findings: int
@@ -117,13 +134,17 @@ def run_member_rows(
     ctx: FleetContext,
     manifest: Manifest,
     log: structlog.stdlib.BoundLogger,
-    vantage: str = CENTRAL_VANTAGE,
+    vantages: frozenset[str] = frozenset({CENTRAL_VANTAGE}),
 ) -> MemberRowsResult:
-    """Assert every member's applicable rows that `vantage` can answer.
+    """Assert every member's applicable rows answerable from `vantages`.
 
-    Rows are selected PER MEMBER via `rows_for`, so different rows apply to
-    different numbers of members; the tallies below therefore count only the
-    members a row actually applied to, never the whole membership.
+    `vantages` is the set of credential-class vantages the RUNNING lane
+    holds: a local central sweep holds `central` alone, an automated one
+    adds `central-app` (the fleet App installation token), and the admin
+    lane holds `admin`. Rows are selected PER MEMBER via `rows_for`, so
+    different rows apply to different numbers of members; the tallies below
+    therefore count only the members a row actually applied to, never the
+    whole membership.
     """
     errors = 0
     evaluated: dict[str, int] = {}
@@ -133,7 +154,7 @@ def run_member_rows(
     for member in manifest.members:
         failing_rows_by_member[member.repo] = []
         for row in rows_for(repo_class=member.repo_class):
-            if row.vantage != vantage:
+            if row.vantage not in vantages:
                 key = (row.row_id, row.vantage)
                 out_of_vantage[key] = out_of_vantage.get(key, 0) + 1
                 continue
@@ -188,19 +209,21 @@ def _report_blind_rows(
     skips: dict[str, list[str]],
     log: structlog.stdlib.BoundLogger,
 ) -> int:
-    """Warn for each row evaluable on NO applicable member; return how many.
+    """Report an ERROR for each row evaluable on NO applicable member; count them.
 
     A row present in `skips` but absent from `evaluated` applied to at least
     one member and answered for none of them, so it enforced nothing this
-    run. `applicable` equals the skip count by construction — zero members
-    were evaluated — and both are reported so the reader need not infer it.
+    run — the lane owns the row and could not read its source, which fails
+    the run rather than passing vacuously. `applicable` equals the skip
+    count by construction — zero members were evaluated — and both are
+    reported so the reader need not infer it.
     """
     blind = 0
     for row_id, reasons in skips.items():
         if evaluated.get(row_id, 0):
             continue
         blind += 1
-        log.warning(
+        log.error(
             BLIND_ROW_EVENT,
             row=row_id,
             applicable=len(reasons),

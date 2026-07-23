@@ -129,16 +129,18 @@ def test_admin_lane_fails_on_an_admin_row_finding(monkeypatch: pytest.MonkeyPatc
     assert fleet_conformance_admin.main() == 4
 
 
-def test_admin_lane_reports_a_credential_shortfall_as_blind_not_as_pass(
+def test_admin_lane_fails_loud_on_a_credential_shortfall(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Running WITHOUT admin scope must not read as a clean run.
+    """Running WITHOUT admin scope must FAIL the lane, not read as a clean run.
 
     This is the inverse of the central lane's treatment: there, these rows
-    are out-of-vantage (expected, owned elsewhere). Here they are blind,
-    because this IS the lane that should have read them. Exit stays 0 —
-    blind is warning severity in both lanes — but the blind count is what
-    makes the shortfall visible rather than silent.
+    are out-of-vantage (expected, owned elsewhere). Here they are BLIND,
+    because this IS the lane that should have read them — and a blind row
+    is error severity now that the vantage model leaves no row structurally
+    blind in any healthy context (b02's recorded end state): a lane that
+    OWNS a row but could not read its source exits non-zero rather than
+    passing vacuously. No lever, env var, or exemption can demote this.
     """
     table = _two_member_table(blind_app_installation=False)
     for repo in ("widget", "gadget"):
@@ -147,7 +149,7 @@ def test_admin_lane_reports_a_credential_shortfall_as_blind_not_as_pass(
     _admin_argv(monkeypatch)
     _install_runner(monkeypatch, table=table)
 
-    assert fleet_conformance_admin.main() == 0
+    assert fleet_conformance_admin.main() == 4
 
 
 def test_admin_lane_has_no_run_lever(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -238,18 +240,19 @@ def test_admin_lane_reads_released_adopters_and_never_pinned_ones(
     assert not [call for call in calls if any("showcase" in arg for arg in call)]
 
 
-def test_admin_lane_stays_green_when_the_released_adopter_is_unreadable(
+def test_admin_lane_fails_when_the_released_adopter_is_unreadable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """An unreadable released adopter is BLIND (warning, exit 0), never a failure.
+    """An unreadable released adopter is BLIND — an error that fails the lane.
 
     This lane OWNS the adopter currency leg, so a released adopter it
-    cannot read is the b02 shape — reported blind (the leg enforced
-    nothing), matching the member rows' treatment: blind warns and never
-    moves the exit code. The blind/posture-excluded log accounting is
-    asserted at the unit level in `test_adopter_lane`.
+    cannot read is the b02 shape — the leg enforced nothing — matching
+    the member rows' treatment: blind is error severity and moves the
+    exit to the finding code, never a vacuous pass. The
+    blind/posture-excluded log accounting is asserted at the unit level
+    in `test_adopter_lane`.
     """
     _admin_argv(monkeypatch)
     _install_runner(monkeypatch, table=_adopter_table(adopted_settings=None))
 
-    assert fleet_conformance_admin.main() == 0
+    assert fleet_conformance_admin.main() == 4
