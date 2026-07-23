@@ -11,10 +11,23 @@
 # identity as the other cross-repo workflows, per livespec
 # contracts.md §"GitHub App auth model") makes member contents,
 # topics, and the installation-coverage row readable fleet-wide.
-# Admin-scoped rows (secret names, branch protection) skip gracefully
-# under this token — operator-local `just check` runs with admin gh
-# auth cover those — so a scheduled red here is always a definitive
-# finding, never a permissions artifact.
+# Admin-scoped rows (secret names, branch protection) are NOT run under
+# this token. They are declared `vantage: admin` on the obligation table
+# and reported as OUT-OF-VANTAGE here, naming the lane that does enforce
+# them: `just check-fleet-conformance-admin`
+# (livespec_dev_tooling/fleet/fleet_conformance_admin.py), the world-gate
+# lane wired into the `just check` aggregate and so run at pre-push under
+# the operator's own admin `gh` credentials.
+#
+# This comment previously claimed operator-local `just check` runs covered
+# those rows. It did not: `just check` does not set
+# LIVESPEC_RUN_FLEET_CONFORMANCE, so it skipped the sweep entirely, and
+# the rows were enforced in ZERO contexts. The admin lane is the fix; do
+# not restore the old claim.
+#
+# A scheduled red here is still always a definitive finding, never a
+# permissions artifact — out-of-vantage rows are not asserted at all, so
+# they can neither pass nor fail this run.
 
 name: Fleet conformance
 
