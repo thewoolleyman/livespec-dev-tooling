@@ -19,27 +19,46 @@ NOT mirrored into the per-PR CI matrix, where the App token would make it
 always-skip and the job would be pointless. Widening the App's permissions
 was considered and rejected (least privilege); so was deleting the rows.
 
-Scope discipline: it asserts ONLY the admin-vantage rows — nothing this
-lane cannot answer is read. Measured against the live 9-member fleet that
-is ~35 API reads and ~18s, i.e. roughly 4 per member: the secrets list,
-the protection payload, and (for branch-protection's ALIGNMENT leg) the
+This lane ALSO owns the posture-gated adopter currency leg
+(`_adopter_lane.run_adopter_rows`, livespec-dev-tooling-453): the
+manifest's `adopters` array iterated for exactly one concern —
+`claude-plugin-currency`, only where `posture == "released"` — and
+never for the per-class obligation rows, which the spec binds to the
+`fleet` array alone. The leg is admin-vantage for the same structural
+reason as the two member rows: the fleet App's installation MUST be
+restricted to fleet repos only, so a private released adopter is
+unreadable to every automated central-lane context, and a leg there
+could only ever skip while reading as coverage. Adopter findings are
+error-severity (fail loud, maintainer decision 2026-07-20); pinned /
+none postures are reported as posture-excluded, a declared choice
+honored by never reading the repo.
+
+Scope discipline: it asserts ONLY the admin-vantage rows and the
+adopter currency leg — nothing this lane cannot answer is read.
+Measured against the live 9-member fleet the member rows are ~35 API
+reads and ~18s, i.e. roughly 4 per member: the secrets list, the
+protection payload, and (for branch-protection's ALIGNMENT leg) the
 member's default branch plus its ci.yml. So this is proportionate, not
 cheap; the honest comparison is that it costs about what the central
 sweep costs, for two rows instead of sixteen, because those two rows are
 individually read-heavy. Trimming further would mean dropping the
 alignment comparison, which is the part of the row that actually catches
-phantom required checks.
+phantom required checks. The adopter leg adds ~3 reads per RELEASED
+adopter (one today) and zero for excluded postures.
 
 Credential shortfall is NOT silently tolerated. Running without admin scope
-makes both rows skip for every member, which this lane reports as BLIND —
-the b02 signal, loud — because this IS the lane that should have read them.
+makes both member rows skip for every member — and an unreadable released
+adopter makes the currency leg skip — which this lane reports as BLIND:
+the b02 signal, loud, because this IS the lane that should have read them.
 That is the opposite of the central lane's treatment, where the same two
-rows are out-of-vantage: expected, and owned by this recipe.
+rows and the adopter leg are out-of-vantage: expected, and owned by this
+recipe.
 
 Exit codes:
 
-- `0` — every admin row passed, or skipped without an error-severity
-  finding (blind rows warn; they do not fail, matching the central lane).
+- `0` — every admin row and adopter-leg evaluation passed, or skipped
+  without an error-severity finding (blind rows warn; they do not fail,
+  matching the central lane).
 - `1` — precondition failure: owner unresolvable, or the manifest
   unfetchable / unparseable (the manifest is the root fact; fail loud).
 - `4` — one or more error-severity findings.
@@ -55,6 +74,7 @@ import sys
 from pathlib import Path
 from typing import cast
 
+from livespec_dev_tooling.fleet._adopter_lane import run_adopter_rows
 from livespec_dev_tooling.fleet._context import FleetContext, default_gh_runner, resolve_owner
 from livespec_dev_tooling.fleet._contract_rows import ADMIN_VANTAGE
 from livespec_dev_tooling.fleet._lanes import configure_lane_logging, run_member_rows
@@ -78,8 +98,8 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="fleet-conformance-admin",
         description=(
             "Admin-vantage (world-gate) fleet-membership conformance lane: the "
-            "secret-names and branch-protection rows, under the operator's own "
-            "admin gh credentials."
+            "secret-names and branch-protection rows plus the posture-gated "
+            "adopter currency leg, under the operator's own admin gh credentials."
         ),
     )
     _ = parser.add_argument(
@@ -111,22 +131,28 @@ def main() -> int:
         )
         return 1
     result = run_member_rows(ctx=ctx, manifest=manifest, log=log, vantage=ADMIN_VANTAGE)
-    if result.error_findings:
+    adopters = run_adopter_rows(ctx=ctx, manifest=manifest, log=log, vantage=ADMIN_VANTAGE)
+    error_findings = result.error_findings + adopters.error_findings
+    blind_rows = result.blind_rows + adopters.blind_rows
+    if error_findings:
         log.error(
             "fleet admin conformance FAILED",
-            error_findings=result.error_findings,
-            blind_rows=result.blind_rows,
+            error_findings=error_findings,
+            blind_rows=blind_rows,
         )
         return 4
     log.info(
         "fleet admin conformance passed",
         members=len(manifest.members),
-        blind_rows=result.blind_rows,
+        adopters_evaluated=adopters.evaluated,
+        adopters_posture_excluded=adopters.posture_excluded,
+        blind_rows=blind_rows,
         vantage=ADMIN_VANTAGE,
         owner=owner,
         hint=(
             "blind rows here mean the running gh credential lacks admin scope on those "
-            "members — this lane is the one that SHOULD read them"
+            "members (or cannot read a released adopter) — this lane is the one that "
+            "SHOULD read them"
         ),
     )
     return 0

@@ -542,6 +542,41 @@ def test_main_emits_member_verdicts(*, monkeypatch: pytest.MonkeyPatch, tmp_path
     ]
 
 
+def test_main_defers_the_adopter_leg_out_of_vantage_without_reading_adopters(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The central lane never reads an adopter repo — the admin lane owns the leg.
+
+    The manifest carries a `released` adopter, but every automated
+    central-lane context holds the fleet App installation token, which
+    MUST NOT reach adopter repos (livespec non-functional-requirements:
+    the fleet App is restricted to fleet repos only) — so the adopter
+    currency leg is deferred out-of-vantage at zero API cost and the run
+    stays green with nothing else changed. The deferral line's fields
+    (owner recipe, applicable count) are asserted in `test_adopter_lane`.
+    """
+    calls: list[tuple[str, ...]] = []
+    table = _green_table()
+    table[_MANIFEST_ARGS] = raw(
+        text=(
+            '{"owner": "acme", "members": [{"repo": "widget", "class": "library"}], '
+            '"adopters": [{"repo": "adopted", "profile": ["baseline"], "posture": "released"}]}'
+        )
+    )
+    inner = make_runner(table=table)
+
+    def recording(*, args: list[str], stdin: str | None = None) -> GhResult:
+        calls.append(tuple(args))
+        return inner(args=args, stdin=stdin)
+
+    monkeypatch.setenv("LIVESPEC_RUN_FLEET_CONFORMANCE", "true")
+    monkeypatch.setattr(sys, "argv", ["fleet-conformance", "--owner", "acme"])
+    monkeypatch.setattr(fleet_conformance, "default_gh_runner", recording)
+
+    assert fleet_conformance.main() == 0
+    assert not [call for call in calls if any("adopted" in arg for arg in call)]
+
+
 def test_module_invocation_with_lever_unset_skips() -> None:
     env = {key: value for key, value in os.environ.items()}
     _ = env.pop("LIVESPEC_RUN_FLEET_CONFORMANCE", None)

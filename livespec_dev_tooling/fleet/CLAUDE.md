@@ -8,7 +8,11 @@ logic AND (where machine-fixable) reconcile logic — consumed by BOTH
 `python -m livespec_dev_tooling.fleet.fleet_conformance` (assert mode;
 central vantage point over every manifest member) and `python -m
 livespec_dev_tooling.fleet.wire_fleet_member` (idempotent reconcile
-mode; operator-invoked, NOT CI).
+mode; operator-invoked, NOT CI). Manifest `adopters` are consumed by
+`_adopter_lane.py` ONLY — the posture-gated `claude-plugin-currency`
+leg the ADMIN world-gate lane (`fleet_conformance_admin`) owns; the
+per-class obligation table never applies to adopters, and `profile`
+has no sweep reader by design.
 
 These are NOT canonical per-repo checks: nothing here lives under
 `livespec_dev_tooling/checks/`, so the canonical-slug discovery does
