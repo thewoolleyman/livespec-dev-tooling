@@ -23,7 +23,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "livespec-dev-tooling"
-version = "0.53.0"
+version = "0.53.1"
 description = "Shared enforcement-suite library for livespec-governed projects: ruff/pyright/coverage gates, AST checks, CI-alignment checks, red-green-replay discipline. Python package plus composite Actions and reusable workflows."
 requires-python = ">=3.10.16"
 authors = [
