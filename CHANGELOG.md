@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.53.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.53.0...v0.53.1) (2026-07-23)
+
+
+### Bug Fixes
+
+* **fleet:** filter non-conformant members out of the release-dispatch matrix instead of halting the fan-out ([4f6b00b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4f6b00b9a1fa9bf9ba0745429cbce08310f85754))
+* require ruff BLE backstop for no-except ([7c6b834](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7c6b8346de4c4e76e5f001c98cbc3795204ff9be))
+
 ## [0.53.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.52.9...v0.53.0) (2026-07-23)
 
 
