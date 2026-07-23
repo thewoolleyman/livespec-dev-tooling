@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.52.9](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.52.8...v0.52.9) (2026-07-23)
+
+
+### Bug Fixes
+
+* **fleet:** classify the admin lane out-of-vantage under a dispatch-class credential ([1e85cd1](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1e85cd1c628e3141aa38aecb2daca09ad7b58ee0))
+
 ## [0.52.8](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.52.7...v0.52.8) (2026-07-23)
 
 
