@@ -55,11 +55,35 @@ from livespec_dev_tooling.fleet._rows_instructions import (
 )
 
 __all__: list[str] = [
+    "ADMIN_VANTAGE",
+    "CENTRAL_VANTAGE",
     "OBLIGATION_ROWS",
     "REPO_CLASSES",
     "ObligationRow",
     "rows_for",
 ]
+
+
+# The VANTAGE a row's assert needs — i.e. which credential can answer it.
+# This is a property of the OBLIGATION, not of any particular run, which is
+# why it is declared on the row rather than hardcoded as a row-id list in a
+# runner: adding an admin-scoped row is then a one-field decision at the
+# table, and both lanes re-partition themselves automatically.
+#
+# `central` — readable under the fleet GitHub App installation token (repo
+# contents, topics, installation coverage). The automated contexts (per-PR
+# CI, the scheduled fleet-conformance.yml, the release fan-out preflight)
+# all authenticate this way, so these rows enforce there.
+#
+# `admin` — needs GitHub ADMIN scope on each member (the Actions-secrets
+# list and the branch-protection endpoints). The App token deliberately
+# lacks admin scope (least privilege, livespec
+# non-functional-requirements.md §"GitHub App auth model"), so these rows
+# can only be answered by an operator's own admin `gh` credentials. They
+# are enforced in the world-gate lane at pre-push — see
+# `fleet_conformance_admin.py`.
+CENTRAL_VANTAGE = "central"
+ADMIN_VANTAGE = "admin"
 
 
 REPO_CLASSES = (
@@ -119,6 +143,10 @@ class ObligationRow:
     this vantage point; `manual_hint` then tells the operator what to
     do (the hint never gates anything the check itself gates — the
     no-circular-gating rule).
+
+    `vantage` names the credential class that can answer the row, so a
+    lane runs the rows it can actually evaluate and reports the rest as
+    out-of-vantage (naming the owning lane) rather than as blind.
     """
 
     row_id: str
@@ -127,6 +155,7 @@ class ObligationRow:
     assert_member: RowFn
     reconcile: RowFn | None = None
     manual_hint: str = ""
+    vantage: str = CENTRAL_VANTAGE
 
 
 OBLIGATION_ROWS: tuple[ObligationRow, ...] = (
@@ -200,6 +229,7 @@ OBLIGATION_ROWS: tuple[ObligationRow, ...] = (
         applies_to=_ALL_CLASSES,
         assert_member=assert_secret_names,
         reconcile=reconcile_secret_names,
+        vantage=ADMIN_VANTAGE,
     ),
     ObligationRow(
         row_id="app-installation",
@@ -214,6 +244,7 @@ OBLIGATION_ROWS: tuple[ObligationRow, ...] = (
         applies_to=_ALL_CLASSES,
         assert_member=assert_branch_protection,
         reconcile=reconcile_branch_protection,
+        vantage=ADMIN_VANTAGE,
     ),
     ObligationRow(
         row_id="merge-settings",

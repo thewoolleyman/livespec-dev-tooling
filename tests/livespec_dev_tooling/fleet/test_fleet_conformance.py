@@ -55,6 +55,13 @@ _REPOS_ARGS: tuple[str, ...] = ("api", "users/acme/repos?per_page=100")
 # IS the signal an operator scans a green run's log for.
 _BLIND_ROW_EVENT = "obligation row enforced NOTHING this run (skipped for every applicable member)"
 
+# The exact `event` string emitted for a row the running lane structurally
+# cannot evaluate. Asserted verbatim for the same reason as the blind-row
+# event: an operator reading a green run must be able to tell "nobody
+# enforced this" (blind) from "another named lane enforces this"
+# (out-of-vantage) without reading the source.
+_OUT_OF_VANTAGE_EVENT = "obligation row is outside this lane's vantage (another lane owns it)"
+
 _CI_YML = "jobs:\n  check:\n    strategy:\n      matrix:\n        target:\n          - check-a\n"
 _PYPROJECT = '[tool.uv.sources]\nlivespec-dev-tooling = { git = "x", tag = "v1.0.0" }\n'
 _LIVESPEC_JSONC = (
@@ -304,13 +311,112 @@ def test_member_rows_all_green_yields_zero_errors() -> None:
 
 
 def test_member_rows_counts_errors_but_not_warnings_or_skips() -> None:
-    # Stale pin → warning; missing topic → error; unreadable secrets → skip.
+    # Stale pin → warning; missing topic → error. The secrets read is dropped
+    # too, but `secret-names` is an ADMIN-vantage row the central lane never
+    # calls, so its absence is inert here rather than a skip.
     table = _green_table(latest_tag="v2.0.0", topics=[])
     del table[_SECRETS_ARGS]
     ctx = make_context(table=table)
     manifest = fetch_manifest(ctx=ctx)
     assert manifest is not None
     assert run_member_rows(ctx=ctx, manifest=manifest, log=_log()).error_findings == 1
+
+
+def _blind_admin_table() -> dict[tuple[str, ...], GhResult]:
+    """Two green members whose ADMIN-scoped reads (secrets, protection) all fail.
+
+    This is the shape a real automated run has: the fleet GitHub App
+    installation token cannot read Actions secrets or branch protection, so
+    both admin rows answer for NOBODY. Before the vantage split that made
+    them blind rows — a permanent CI warning nothing could ever clear.
+    """
+    table = _two_member_table(blind_app_installation=False)
+    for repo in ("widget", "gadget"):
+        del table[("api", f"repos/acme/{repo}/actions/secrets")]
+        del table[("api", f"repos/acme/{repo}/branches/master/protection")]
+    return table
+
+
+def test_admin_rows_are_out_of_vantage_not_blind_in_the_central_lane() -> None:
+    """Structurally-unevaluable-here is a THIRD state, distinct from blind.
+
+    Blind means "this lane should have read it and could not" — b02's warning,
+    which must stay loud. Out-of-vantage means "no credential this lane holds
+    could ever answer this row, and a named other lane owns it". Collapsing
+    the two would flag both admin rows in every automated run forever, which
+    trains operators to ignore the blind-row signal entirely.
+    """
+    ctx = make_context(table=_blind_admin_table())
+    manifest = fetch_manifest(ctx=ctx)
+    log = RecordingLog()
+
+    assert manifest is not None
+    result = run_member_rows(ctx=ctx, manifest=manifest, log=log)
+    blind = _blind_rows_by_id(log=log)
+
+    assert "secret-names" not in blind
+    assert "branch-protection" not in blind
+    assert result.blind_rows == len(blind)
+    assert result.out_of_vantage_rows == 2
+
+
+def test_out_of_vantage_report_names_the_lane_that_owns_the_row() -> None:
+    """An out-of-vantage row is only actionable if the report says who DOES run it."""
+    ctx = make_context(table=_blind_admin_table())
+    manifest = fetch_manifest(ctx=ctx)
+    log = RecordingLog()
+
+    assert manifest is not None
+    _ = run_member_rows(ctx=ctx, manifest=manifest, log=log)
+    reported = {fields["row"]: fields for fields in log.fields_for(event=_OUT_OF_VANTAGE_EVENT)}
+
+    assert set(reported) == {"secret-names", "branch-protection"}
+    for fields in reported.values():
+        assert fields["applicable"] == 2
+        assert fields["vantage"] == "admin"
+        assert fields["owned_by"] == "check-fleet-conformance-admin"
+
+
+def test_central_lane_never_spends_an_api_read_on_an_admin_row() -> None:
+    """Out-of-vantage rows are skipped BEFORE their assert runs, not after.
+
+    The ~35-API-read cost of the central sweep is why local `just check` does
+    not run it. Filtering by vantage before dispatch means the split makes the
+    automated sweep cheaper, never more expensive.
+    """
+    calls: list[tuple[str, ...]] = []
+    table = _two_member_table(blind_app_installation=False)
+    inner = make_runner(table=table)
+
+    def recording(*, args: list[str], stdin: str | None = None) -> GhResult:
+        calls.append(tuple(args))
+        return inner(args=args, stdin=stdin)
+
+    ctx = FleetContext(owner="acme", run_gh=recording)
+    manifest = fetch_manifest(ctx=ctx)
+    assert manifest is not None
+    _ = run_member_rows(ctx=ctx, manifest=manifest, log=_log())
+
+    assert not [call for call in calls if any("actions/secrets" in arg for arg in call)]
+    assert not [call for call in calls if any("branches/master/protection" in arg for arg in call)]
+
+
+def test_admin_lane_runs_exactly_the_admin_rows() -> None:
+    """The mirror assertion: the admin lane evaluates the rows the central one cannot."""
+    ctx = make_context(table=_two_member_table(blind_app_installation=False))
+    manifest = fetch_manifest(ctx=ctx)
+    log = RecordingLog()
+
+    assert manifest is not None
+    result = run_member_rows(ctx=ctx, manifest=manifest, log=log, vantage="admin")
+    reported = {fields["row"] for fields in log.fields_for(event=_OUT_OF_VANTAGE_EVENT)}
+
+    # Every NON-admin row is out of the admin lane's vantage, and the two admin
+    # rows evaluated cleanly against the green table — zero blind, zero errors.
+    assert "secret-names" not in reported
+    assert "branch-protection" not in reported
+    assert result.blind_rows == 0
+    assert result.error_findings == 0
 
 
 def test_discovery_sweep_flags_unmanifested_fleet_repos() -> None:

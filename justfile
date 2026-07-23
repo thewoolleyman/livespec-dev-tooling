@@ -275,6 +275,14 @@ check:
         # point, so siblings do not each wire it). Always wired here;
         # the module self-manages its RUN/SKIP lever (see the recipe).
         check-fleet-conformance
+        # ADMIN-vantage world-gate lane of the SAME contract — repo-private
+        # extra for the same reason as the line above. It runs the two rows
+        # (secret-names, branch-protection) that need admin scope, which no
+        # App-token context can read, under the operator's own gh
+        # credentials at pre-push. Deliberately absent from the CI matrix
+        # (it would always-skip there), exactly like check-master-ci-green
+        # and check-branch-protection-alignment. See the recipe comment.
+        check-fleet-conformance-admin
         # Fabro sandbox image pin-lockstep gate — repo-private extra,
         # NOT a canonical slug (the module lives at
         # livespec_dev_tooling/fabro_image_pin_lockstep.py, not under
@@ -455,6 +463,40 @@ check-changed:
 #       livespec_dev_tooling.fleet.wire_fleet_member --repo <member>
 check-fleet-conformance:
     uv run python -m livespec_dev_tooling.fleet.fleet_conformance
+
+# ADMIN-vantage (world-gate) lane of the same fleet-membership contract.
+# Two obligation rows — `secret-names` and `branch-protection` — need
+# GitHub ADMIN scope on each member. Every AUTOMATED context that runs
+# the central sweep above (per-PR CI, the scheduled
+# fleet-conformance.yml, the release fan-out preflight) authenticates
+# with the fleet GitHub App installation token, which deliberately
+# lacks admin scope; and the central sweep's RUN lever is unset locally.
+# So before this lane existed, those two rows were enforced in ZERO
+# contexts.
+#
+# This is a WORLD GATE in the same sense as check-master-ci-green and
+# check-branch-protection-alignment: it reads live world state under
+# the OPERATOR's own admin `gh` credentials, is wired into the `just
+# check` aggregate so it reaches pre-push, and is deliberately NOT
+# mirrored into the per-PR CI matrix, where the App token would make it
+# always-skip. There is NO run lever: a lever defaulting to unset would
+# restore the zero-enforcement hole this recipe exists to close.
+#
+# COST, measured against the live 9-member fleet: ~35 GitHub API reads,
+# ~18s. That is NOT cheaper than the central sweep, and the comment that
+# used to sit here claiming otherwise would have been wrong. The reads
+# are ~4 per member: the secrets list, the protection payload, and — for
+# the branch-protection ALIGNMENT leg — the member's default branch plus
+# its ci.yml. Every one of those is intrinsic to what the two rows
+# assert; none is incidental, so the cost is proportionate rather than
+# small. It runs in parallel with the pytest/coverage targets that
+# dominate `just check`, so it does not extend the critical path.
+#
+# Running it without admin scope makes both rows skip fleet-wide, which
+# it reports as BLIND (warning, exit 0) — this is the lane that SHOULD
+# read them, so a credential shortfall is surfaced, not swallowed.
+check-fleet-conformance-admin:
+    uv run python -m livespec_dev_tooling.fleet.fleet_conformance_admin
 
 # Fabro sandbox image pin-lockstep gate — repo-private extra (this
 # repo owns the fleet Fabro sandbox image; the module deliberately
