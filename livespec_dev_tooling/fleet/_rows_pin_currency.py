@@ -15,6 +15,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, cast
 
+from livespec_dev_tooling.cross_repo.bump_pr_supersession import (
+    OpenBumpPullRequest,
+    parse_open_bump_prs,
+)
 from livespec_dev_tooling.cross_repo.pin_autodiscovery import discover
 from livespec_dev_tooling.cross_repo.pin_staleness import denotes_same_release
 from livespec_dev_tooling.fleet._context import (
@@ -29,6 +33,8 @@ __all__: list[str] = [
     "assert_fabro_sandbox_image_pin_currency",
     "assert_github_workflow_uses_pin_currency",
     "assert_livespec_compat_pin_currency",
+    "open_bump_prs_for",
+    "persisting_bump_pr_number",
 ]
 
 
@@ -159,6 +165,70 @@ def _stale_pins(
     return tuple(stale)
 
 
+def open_bump_prs_for(
+    *, ctx: FleetContext, member: FleetMember
+) -> list[OpenBumpPullRequest] | None:
+    """The member's open bump PRs; None when the PR list is unreadable.
+
+    A can't-read never escalates a finding (the livespec-dev-tooling-6ge
+    principle): the caller treats None exactly like "no bump PR found"
+    and stays at warning severity.
+    """
+    payload = ctx.api_object(path=f"repos/{ctx.owner}/{member.repo}/pulls?state=open&per_page=100")
+    if payload is None:
+        return None
+    return parse_open_bump_prs(payload=_normalized_rest_prs(payload=payload), consumer=member.repo)
+
+
+def _normalized_rest_prs(*, payload: object) -> object:
+    """Adapt REST `pulls` items to the `gh pr list --json` shape the parser reads.
+
+    The parser consumes `headRefName`; the REST endpoint nests the same
+    value at `head.ref`. Without this mapping every REST item is
+    silently skipped and the persisting-gap conjunction can never fire —
+    a vacuous non-implementation.
+    """
+    if not isinstance(payload, list):
+        return payload
+    normalized: list[object] = []
+    for item in cast("list[object]", payload):
+        if not isinstance(item, dict):
+            normalized.append(item)
+            continue
+        entry = dict(cast("dict[str, object]", item))
+        head = entry.get("head")
+        if "headRefName" not in entry and isinstance(head, dict):
+            ref = cast("dict[str, object]", head).get("ref")
+            if isinstance(ref, str):
+                entry["headRefName"] = ref
+        normalized.append(entry)
+    return normalized
+
+
+def persisting_bump_pr_number(
+    *,
+    open_prs: list[OpenBumpPullRequest] | None,
+    source_repo: str,
+    latest: str,
+) -> int | None:
+    """The open bump PR that would fix this stale pin, if one exists.
+
+    A stale pin WITH an open bump PR targeting the latest release is a
+    PERSISTING gap — the self-heal mechanism already fired and could not
+    land — which is the conjunction `livespec-dh9r` escalates to error.
+    An open bump PR for an older tag or another source does not qualify:
+    it does not prove the mechanism fired for the CURRENT release.
+    """
+    if open_prs is None:
+        return None
+    for pr in open_prs:
+        if pr.key.source_repo == source_repo and denotes_same_release(
+            pinned_tag=pr.key.target_version, release_tag=latest
+        ):
+            return pr.number
+    return None
+
+
 def _stale_pin_summary(*, pin: StalePin) -> str:
     return " ".join(
         (
@@ -200,13 +270,30 @@ def _pin_currency_outcome(
     stale = _stale_pins(ctx=ctx, records=records)
     if stale is None:
         return RowPass(note="pin records present; freshness unverified (latest release unreadable)")
-    return (
-        RowFinding(
-            message=_finding_message(member=member, spec=spec, stale=stale),
-            severity="warning",
+    if not stale:
+        return RowPass()
+    open_prs = open_bump_prs_for(ctx=ctx, member=member)
+    persisting: list[tuple[StalePin, int]] = []
+    for pin in stale:
+        number = persisting_bump_pr_number(
+            open_prs=open_prs, source_repo=pin.record.source_repo, latest=pin.latest
         )
-        if stale
-        else RowPass()
+        if number is not None:
+            persisting.append((pin, number))
+    if persisting:
+        findings = "; ".join(
+            f"{_stale_pin_summary(pin=pin)} (open bump PR #{number})" for pin, number in persisting
+        )
+        return RowFinding(
+            message=(
+                f"{member.repo}: {spec.pin_format} pin persisting gap "
+                f"(stale AND its bump PR is already open, unable to land): {findings}"
+            ),
+            severity="error",
+        )
+    return RowFinding(
+        message=_finding_message(member=member, spec=spec, stale=stale),
+        severity="warning",
     )
 
 

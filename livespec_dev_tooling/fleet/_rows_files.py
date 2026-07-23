@@ -24,6 +24,10 @@ from livespec_dev_tooling.fleet._context import (
     RowPass,
     RowSkip,
 )
+from livespec_dev_tooling.fleet._rows_pin_currency import (
+    open_bump_prs_for,
+    persisting_bump_pr_number,
+)
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -171,17 +175,34 @@ def _latest_dev_tooling_tag(*, ctx: FleetContext) -> str | None:
 
 
 def _freshness_outcome(*, ctx: FleetContext, member: FleetMember, tag: str) -> RowOutcome:
-    """Staleness leg of the pin row — WARNING severity only.
+    """Staleness leg of the pin row — WARNING, escalating on a PERSISTING gap.
 
-    Freshness has its own dedicated repo-local mechanism
-    (`pin-freshness.yml` + bump-PR automation); failing the fleet on a
-    not-yet-merged bump PR would gate the release fan-out on its own
-    downstream effect, so a stale pin warns rather than reds the fleet.
+    Plain staleness warns rather than reds the fleet: freshness has its
+    own dedicated repo-local mechanism (`pin-freshness.yml` + bump-PR
+    automation), and the minutes-long window between a release and its
+    bump PR merging is normal operation. The exception (livespec-dh9r)
+    is the PERSISTING gap — stale AND the bump PR that would fix it is
+    already open, i.e. the mechanism fired and could not land — which is
+    an error finding. An unreadable PR list never escalates (the
+    livespec-dev-tooling-6ge principle).
     """
     latest = _latest_dev_tooling_tag(ctx=ctx)
     if latest is None:
         return RowPass(note="pin present; freshness unverified (latest release unreadable)")
     if tag != latest:
+        number = persisting_bump_pr_number(
+            open_prs=open_bump_prs_for(ctx=ctx, member=member),
+            source_repo="livespec-dev-tooling",
+            latest=latest,
+        )
+        if number is not None:
+            return RowFinding(
+                message=(
+                    f"{member.repo}: dev-tooling pin {tag} persisting gap (stale, latest "
+                    f"release {latest}, open bump PR #{number} unable to land)"
+                ),
+                severity="error",
+            )
         return RowFinding(
             message=f"{member.repo}: dev-tooling pin {tag} is stale (latest release {latest})",
             severity="warning",
