@@ -8,12 +8,48 @@ sibling module: entry-point check scripts under
 neither a canonical slug (`canonical_check_slugs` skips `_`-prefixed
 modules) nor a mirror-paired module.
 
-The parsers are regex-based per the package convention (each check
-duplicates small self-contained parsers rather than sharing one) and are
-PURE — no IO, no logging — so the parent owns every diagnostic. The
-`justfile` `check:` recipe / `targets=(...)` anchors mirror
-`aggregate_completeness`; the `matrix.target` anchors mirror
-`branch_protection_alignment`.
+The parsers are regex-based and PURE — no IO, no logging — so the parent
+owns every diagnostic. The `justfile` `check:` recipe / `targets=(...)`
+anchors mirror `aggregate_completeness`; the `matrix.target` anchors
+mirror `branch_protection_alignment`.
+
+Parser-duplication convention — BOUNDED (maintainer decision on
+work-item livespec-dev-tooling-6cf). This package's convention used to
+read, unqualified, "each check duplicates small self-contained parsers
+rather than sharing one". That unbounded form caused the
+livespec-dev-tooling-ahg defect: the fleet surface carried its own copy
+of the ci.yml parser, the copy never learned the spec's
+top-level-gate-job acceptance rule, and the drifted copy reported eight
+false positives against a correctly configured fleet. The convention is
+therefore bounded:
+
+- Duplication REMAINS PERMITTED for mechanical-extraction parsers
+  ("give me the job names"): a copy is cheap, and two copies that
+  disagree produce an obvious, quickly-caught bug.
+- Duplication is FORBIDDEN for any parser that encodes a rule
+  originating in the spec (e.g. "a top-level gate job counts as a
+  valid required check even though it is not a matrix leg"): such a
+  parser MUST live in a shared module imported by every consumer. Two
+  copies of a rule-encoding parser can silently disagree about WHAT
+  THE SPEC SAYS while the wrong copy still reads as a faithful
+  implementation; derived from ONE parser, its consumers cannot
+  drift.
+- The mechanical marker for "rule-encoding": a parser whose docstring
+  or comments cite a livespec SPECIFICATION section (the house
+  citation style, e.g. `Per
+  livespec/SPECIFICATION/non-functional-requirements.md §"CI as a
+  merge gate (branch protection)"`) is by definition rule-encoding
+  and MUST be shared, never duplicated per check.
+
+Precedent for the sharing half: `_ci_job_names.py`, the shared home
+extracted by the livespec-dev-tooling-ahg fix for the
+branch-protection name grammar, imported by BOTH
+`branch_protection_alignment` and the fleet `assert_branch_protection`
+row — the pair whose previously independent copies drifted. A
+duplicate that STAYS: `_tool_backed_surfaces.py`'s
+`_parse_ci_matrix_targets` is a mechanical extractor carrying no spec
+citation, so it is PERMITTED under the bound — do not consolidate it
+reflexively.
 """
 
 from __future__ import annotations
@@ -30,10 +66,11 @@ from livespec_dev_tooling.canonical_checks import canonical_check_slugs
 # importers — `ci_matrix_completeness.py` (the gate) and
 # `cross_repo/ci_yaml_canonical_reconcile.py` (the bump-time reconcile that
 # WRITES what the gate then demands) — so pyright's per-file analysis does not
-# flag them unused across the package boundary. The reconcile deliberately
-# shares these parsers rather than duplicating them: the matrix it writes and
-# the matrix the gate requires are then derived from ONE parser and cannot
-# drift into a red-by-construction bump PR.
+# flag them unused across the package boundary. The reconcile shares these
+# parsers per the bounded parser-duplication convention in the module
+# docstring: the matrix it writes and the matrix the gate requires are
+# derived from ONE parser and cannot drift into a red-by-construction
+# bump PR.
 __all__: list[str] = [
     "CiJob",
     "extract_check_recipe_body",

@@ -18,8 +18,12 @@ single-gate model) is a valid required check and is NOT flagged, even
 though it is not a matrix leg, because requiring it gates the whole matrix
 through its `needs:`."
 
-The parsers are regex line-walks (the package convention) and are PURE — no
-IO, no logging — so each caller owns its own file access and diagnostics.
+The parsers are regex line-walks and are PURE — no IO, no logging — so
+each caller owns its own file access and diagnostics. This module is the
+sharing half of the package's BOUNDED parser-duplication convention (see
+`_ci_matrix_parse`'s module docstring): these parsers encode a spec rule
+and carry its citation, so they MUST live here, shared — never re-copied
+per check.
 This is deliberately NOT the richer job model in `_ci_matrix_parse`, whose
 `parse_ci_jobs` serves `ci_matrix_completeness`'s `needs:`-fan-in
 assertions and does not carry a job's literal `name:` value (the context a
