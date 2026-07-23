@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.54.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.53.2...v0.54.0) (2026-07-23)
+
+
+### Features
+
+* type-check the canonical no-shadow-ledger body (render-at-check-time) ([d08ca94](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d08ca94f23a1cfe6025d46694f5dd395f542098a))
+
 ## [0.53.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.53.1...v0.53.2) (2026-07-23)
 
 
