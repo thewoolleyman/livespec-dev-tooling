@@ -20,6 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
+from livespec_dev_tooling.fleet import _rows_pin_currency as pin_currency
 from livespec_dev_tooling.fleet._context import FleetContext, FleetMember, RowOutcome
 from livespec_dev_tooling.fleet._reconcile import (
     reconcile_branch_protection,
@@ -171,6 +172,21 @@ class ObligationRow:
     vantage: str = CENTRAL_VANTAGE
 
 
+assert_compat_pin_currency = pin_currency.assert_livespec_compat_pin_currency
+assert_uses_pin_currency = pin_currency.assert_github_workflow_uses_pin_currency
+assert_fabro_pin_currency = pin_currency.assert_fabro_sandbox_image_pin_currency
+
+
+def _warning_committed_file_row(*, row_id: str, assert_member: RowFn) -> ObligationRow:
+    return ObligationRow(
+        row_id=row_id,
+        obligation_type="committed-file",
+        applies_to=_ALL_CLASSES,
+        assert_member=assert_member,
+        manual_hint="update stale pin records to the latest source release",
+    )
+
+
 OBLIGATION_ROWS: tuple[ObligationRow, ...] = (
     ObligationRow(
         row_id="workflow-ci",
@@ -223,6 +239,13 @@ OBLIGATION_ROWS: tuple[ObligationRow, ...] = (
         applies_to=_ALL_CLASSES,
         assert_member=assert_no_tracked_gitlinks,
         manual_hint="remove the tracked gitlink (mode 160000) in a repo-local commit",
+    ),
+    _warning_committed_file_row(
+        row_id="compat-pin-currency", assert_member=assert_compat_pin_currency
+    ),
+    _warning_committed_file_row(row_id="uses-pin-currency", assert_member=assert_uses_pin_currency),
+    _warning_committed_file_row(
+        row_id="fabro-pin-currency", assert_member=assert_fabro_pin_currency
     ),
     ObligationRow(
         row_id="claude-plugin-currency",
