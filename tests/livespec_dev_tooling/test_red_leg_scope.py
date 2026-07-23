@@ -46,12 +46,13 @@ __all__: list[str] = []
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _MODULE = _REPO_ROOT / "livespec_dev_tooling" / "red_leg_scope.py"
 
-# The two coverage gates the Red leg has always skipped (verified at the
-# Green amend). Kept as the byte-identical floor of the skip set.
+# Test coverage gates skipped at the Red leg (verified at the Green
+# amend). Kept as the floor of the skip set.
 _DEVTOOLING_TARGETS = (
     "check-lint",
     "check-types",
     "check-coverage",
+    "check-check-coverage-incremental",
     "check-per-file-coverage",
 )
 
@@ -62,6 +63,7 @@ _DEVTOOLING_TARGETS = (
 _LIVESPEC_TARGETS = (
     "check-types",
     "check-coverage",
+    "check-check-coverage-incremental",
     "check-per-file-coverage",
     "check-doctor-static",
     "check-prompts",
@@ -84,8 +86,12 @@ def test_orthogonal_legs_table_is_nonempty_and_prefix_keyed() -> None:
 
 
 def test_coverage_gates_are_the_existing_floor() -> None:
-    """The coverage gates the Red leg has always skipped are preserved."""
-    assert _COVERAGE_GATES == ("check-coverage", "check-per-file-coverage")
+    """The test coverage gates the Red leg skips are preserved."""
+    assert _COVERAGE_GATES == (
+        "check-coverage",
+        "check-check-coverage-incremental",
+        "check-per-file-coverage",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -94,12 +100,13 @@ def test_coverage_gates_are_the_existing_floor() -> None:
 
 
 def test_coverage_gates_always_skipped_when_present() -> None:
-    """Both coverage gates present in the target list are always skipped."""
+    """All test coverage gates present in the target list are always skipped."""
     skip = red_mode_skip_targets(
         staged_paths=["tests/livespec_dev_tooling/test_config.py"],
         available_targets=list(_DEVTOOLING_TARGETS),
     )
     assert "check-coverage" in skip
+    assert "check-check-coverage-incremental" in skip
     assert "check-per-file-coverage" in skip
 
 
@@ -109,16 +116,51 @@ def test_devtooling_unit_test_skips_only_coverage_gates() -> None:
         staged_paths=["tests/livespec_dev_tooling/checks/test_no_inheritance.py"],
         available_targets=list(_DEVTOOLING_TARGETS),
     )
-    assert set(skip) == {"check-coverage", "check-per-file-coverage"}
+    assert set(skip) == {
+        "check-coverage",
+        "check-check-coverage-incremental",
+        "check-per-file-coverage",
+    }
+
+
+def test_stacked_red_skips_incremental_coverage_gate() -> None:
+    """A second Red on an impl-bearing branch skips the incremental coverage gate.
+
+    The staged tree is still tests-only, but HEAD may already contain a
+    prior Red->Green impl commit. In that stacked shape
+    check-check-coverage-incremental derives changed impl paths from
+    origin/master...HEAD, so it must share the Red coverage floor with
+    its full-suite coverage delegate.
+    """
+    skip = red_mode_skip_targets(
+        staged_paths=["tests/livespec_dev_tooling/checks/test_no_except_outside_io.py"],
+        available_targets=[
+            "check-check-coverage-incremental",
+            "check-per-file-coverage",
+            "check-coverage",
+            "check-lint",
+        ],
+    )
+    assert set(skip) == {
+        "check-check-coverage-incremental",
+        "check-coverage",
+        "check-per-file-coverage",
+    }
 
 
 def test_absent_coverage_gate_not_added_to_skip_set() -> None:
     """A coverage gate absent from the target list is not invented into the skip set."""
     skip = red_mode_skip_targets(
         staged_paths=["tests/livespec_dev_tooling/test_config.py"],
-        available_targets=["check-lint", "check-types", "check-per-file-coverage"],
+        available_targets=[
+            "check-lint",
+            "check-types",
+            "check-check-coverage-incremental",
+            "check-per-file-coverage",
+        ],
     )
     assert "check-coverage" not in skip
+    assert "check-check-coverage-incremental" in skip
     assert "check-per-file-coverage" in skip
 
 
@@ -218,7 +260,11 @@ def test_skipping_every_target_raises() -> None:
     with pytest.raises(ValueError, match="empty selection|every target"):
         _ = red_mode_skip_targets(
             staged_paths=["tests/livespec/validate/test_front_matter.py"],
-            available_targets=["check-coverage", "check-per-file-coverage"],
+            available_targets=[
+                "check-coverage",
+                "check-check-coverage-incremental",
+                "check-per-file-coverage",
+            ],
         )
 
 
@@ -344,6 +390,7 @@ def test_cli_emits_space_separated_skip_list_on_stdout(
             "--targets",
             "check-types",
             "check-coverage",
+            "check-check-coverage-incremental",
             "check-per-file-coverage",
             "check-doctor-static",
             "check-prompts",
@@ -354,6 +401,7 @@ def test_cli_emits_space_separated_skip_list_on_stdout(
     emitted = set(capsys.readouterr().out.split())
     assert {
         "check-coverage",
+        "check-check-coverage-incremental",
         "check-per-file-coverage",
         "check-doctor-static",
         "check-prompts",
@@ -397,11 +445,16 @@ def test_cli_emits_only_coverage_gates_for_devtooling_unit_test(
             "check-lint",
             "check-types",
             "check-coverage",
+            "check-check-coverage-incremental",
             "check-per-file-coverage",
         ],
     )
     assert rc == 0
-    assert set(capsys.readouterr().out.split()) == {"check-coverage", "check-per-file-coverage"}
+    assert set(capsys.readouterr().out.split()) == {
+        "check-coverage",
+        "check-check-coverage-incremental",
+        "check-per-file-coverage",
+    }
 
 
 def test_cli_reads_staged_from_git_when_staged_omitted(
@@ -421,6 +474,7 @@ def test_cli_reads_staged_from_git_when_staged_omitted(
             "--targets",
             "check-types",
             "check-coverage",
+            "check-check-coverage-incremental",
             "check-per-file-coverage",
             "check-doctor-static",
             "check-prompts",
