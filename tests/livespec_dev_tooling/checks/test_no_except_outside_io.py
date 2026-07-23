@@ -50,6 +50,10 @@ def _write_module(*, tmp_path: Path, rel: str, body: str) -> None:
     )
 
 
+def _write_pyproject(*, tmp_path: Path, extra: str) -> None:
+    (tmp_path / "pyproject.toml").write_text(extra, encoding="utf-8")
+
+
 def test_no_except_outside_io_accepts_narrow_catch_in_pure_layer(*, tmp_path: Path) -> None:
     """A NARROW catch in `livespec/parse/foo.py` passes (exit 0).
 
@@ -331,6 +335,29 @@ def test_no_except_outside_io_rejects_marker_with_leading_junk(*, tmp_path: Path
 
     assert result.returncode != 0, (
         f"no_except_outside_io should reject a sanctioned wording embedded in prose; "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_no_except_outside_io_rejects_marker_contained_mid_prose(*, tmp_path: Path) -> None:
+    """A comment containing the full directive mid-prose is not a marker."""
+    _write_module(
+        tmp_path=tmp_path,
+        rel=".claude-plugin/scripts/livespec/commands/seed.py",
+        body=(
+            "def main() -> int:\n"
+            "    try:\n"
+            "        return 0\n"
+            f"    except Exception:  # leading prose {_SUPERVISOR_MARKER}\n"
+            "        return 1\n"
+        ),
+    )
+
+    result = _run(cwd=tmp_path)
+
+    assert result.returncode != 0, (
+        f"no_except_outside_io should reject the directive plus wording embedded mid-prose; "
         f"got returncode={result.returncode} "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
@@ -878,6 +905,112 @@ def test_no_except_outside_io_reports_inspected_file_count(*, tmp_path: Path) ->
     assert '"files_inspected": 1' in combined, (
         f"no_except_outside_io should report the inspected file count; "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_no_except_outside_io_rejects_ruff_excluded_inspected_file(*, tmp_path: Path) -> None:
+    """Every inspected file must also be inside Ruff's BLE-selected file set."""
+    _write_pyproject(
+        tmp_path=tmp_path,
+        extra=(
+            "[tool.livespec_dev_tooling]\n"
+            'source_trees = ["pkg"]\n'
+            "\n"
+            "[tool.ruff]\n"
+            'extend-exclude = ["pkg/hidden/**"]\n'
+            "\n"
+            "[tool.ruff.lint]\n"
+            'select = ["BLE"]\n'
+        ),
+    )
+    _write_module(
+        tmp_path=tmp_path,
+        rel="pkg/hidden/thing.py",
+        body="def do_thing() -> None:\n    return None\n",
+    )
+
+    result = _run(cwd=tmp_path)
+
+    assert result.returncode != 0, (
+        f"no_except_outside_io should fail closed when Ruff excludes an inspected file; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+    combined = result.stdout + result.stderr
+    assert "pkg/hidden/thing.py" in combined, (
+        f"no_except_outside_io diagnostic should name the Ruff-excluded inspected file; "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_no_except_outside_io_rejects_ruff_lint_select_without_ble(*, tmp_path: Path) -> None:
+    """The semantic backstop is absent when Ruff does not enable BLE/BLE001."""
+    _write_pyproject(
+        tmp_path=tmp_path,
+        extra=(
+            "[tool.livespec_dev_tooling]\n"
+            'source_trees = ["pkg"]\n'
+            "\n"
+            "[tool.ruff.lint]\n"
+            'select = ["E"]\n'
+        ),
+    )
+    _write_module(
+        tmp_path=tmp_path,
+        rel="pkg/thing.py",
+        body="def do_thing() -> None:\n    return None\n",
+    )
+
+    result = _run(cwd=tmp_path)
+
+    assert result.returncode != 0, (
+        f"no_except_outside_io should fail closed when Ruff does not select BLE/BLE001; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+    combined = result.stdout + result.stderr
+    assert "pkg/thing.py" in combined, (
+        f"no_except_outside_io diagnostic should name the file without a BLE backstop; "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_no_except_outside_io_accepts_excludes_that_only_carve_uninspected_subsets(
+    *, tmp_path: Path
+) -> None:
+    """Ruff excludes for files the check never inspects do not fail the invariant."""
+    _write_pyproject(
+        tmp_path=tmp_path,
+        extra=(
+            "[tool.livespec_dev_tooling]\n"
+            'source_trees = ["pkg"]\n'
+            "\n"
+            "[tool.ruff]\n"
+            'extend-exclude = ["**/__pycache__/**", "mutants/**"]\n'
+            "\n"
+            "[tool.ruff.lint]\n"
+            'select = ["BLE"]\n'
+        ),
+    )
+    _write_module(
+        tmp_path=tmp_path,
+        rel="pkg/thing.py",
+        body="def do_thing() -> None:\n    return None\n",
+    )
+    _write_module(
+        tmp_path=tmp_path,
+        rel="pkg/__pycache__/ignored.py",
+        body="def ignored() -> None:\n    return None\n",
+    )
+    _write_module(
+        tmp_path=tmp_path,
+        rel="mutants/ignored.py",
+        body="def ignored() -> None:\n    return None\n",
+    )
+
+    result = _run(cwd=tmp_path)
+
+    assert result.returncode == 0, (
+        f"no_except_outside_io should accept Ruff excludes that only carve uninspected files; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
     )
 
 
