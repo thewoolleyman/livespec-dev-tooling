@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.52.5](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.52.4...v0.52.5) (2026-07-23)
+
+
+### Bug Fixes
+
+* **fleet:** consume manifest.adopters in an admin-lane currency leg ([69c1427](https://github.com/thewoolleyman/livespec-dev-tooling/commit/69c142747b46e40e3d2d743d3a2c38de75981aac))
+
 ## [0.52.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.52.3...v0.52.4) (2026-07-23)
 
 
