@@ -21,13 +21,17 @@
 # excludes the publishing repo, and fires one `repository_dispatch`
 # per remaining member.
 #
-# BLOCKING preflight (same spec section): the fleet-preflight job runs
-# the central fleet-conformance check BEFORE any dispatch goes out, so
-# an unwired member fails the release fast and loudly instead of being
-# silently skipped. No-circular-gating holds: every conformance
-# finding is fixable by wire-fleet-member / a member-repo PR / a
-# manifest PR on livespec — none of which depend on a dev-tooling
-# release or on this fan-out running.
+# Preflight as a PER-MEMBER FILTER (livespec-f73t Slice 2b): the
+# fleet-preflight job runs the central fleet-conformance check BEFORE
+# any dispatch goes out; a member failing its own obligations is
+# EXCLUDED from the dispatch matrix and named loudly (annotation +
+# step summary with its failing rows), while every conformant member
+# still receives its dispatch. Structural failures (conformance crash,
+# missing/malformed verdict artifact, manifest/verdict drift) stay
+# job-red and halt the whole fan-out, fail-closed. No-circular-gating
+# holds: every conformance finding is fixable by wire-fleet-member / a
+# member-repo PR / a manifest PR on livespec — none of which depend on
+# a dev-tooling release or on this fan-out running.
 #
 # Consumers invoke this workflow from their own `release-dispatch.yml`
 # shim via
@@ -133,17 +137,26 @@ jobs:
           echo "siblings=$siblings" >> "$GITHUB_OUTPUT"
           echo "::notice::manifest lists $(echo "$siblings" | jq 'length') member(s) (excluding $SOURCE_REPO)"
 
-  # BLOCKING preflight per livespec §"Fleet membership contract": the
-  # central fleet-conformance check runs against livespec-dev-tooling
-  # master BEFORE any sibling-released dispatch goes out (fail fast —
-  # an unwired member fails the release loudly instead of being
-  # silently skipped). The dispatch job needs this job, so a red fleet
-  # blocks the entire fan-out. Wiring fixes never depend on this
-  # fan-out (no-circular-gating): wire-fleet-member is operator-run,
-  # shim PRs land via member CI, manifest changes land via livespec.
+  # PREFLIGHT AS A PER-MEMBER FILTER (livespec-f73t Slice 2b): the
+  # central fleet-conformance check still runs BEFORE any dispatch goes
+  # out, but a member failing its own obligations is now EXCLUDED from
+  # the dispatch matrix (loudly — a `::warning::` annotation plus a
+  # step-summary row naming its failing rows, per the livespec-bmxs
+  # silent-omission hazard) instead of halting propagation to every
+  # conformant member. Blocking is PER-MEMBER: exclusion is how a
+  # covered member's failure blocks it (no lever, no warn-only mode).
+  # STRUCTURAL failures stay job-red and halt the whole fan-out,
+  # fail-closed: a conformance exit other than 0/4, a missing or
+  # malformed verdict artifact, or a sibling with no verdict entry.
+  # Wiring fixes never depend on this fan-out (no-circular-gating):
+  # wire-fleet-member is operator-run, shim PRs land via member CI,
+  # manifest changes land via livespec.
   fleet-preflight:
-    name: fleet-conformance preflight (blocking)
+    name: fleet-conformance preflight (per-member filter)
     runs-on: ubuntu-latest
+    needs: [discover-siblings]
+    outputs:
+      filtered_siblings: ${{ steps.filter.outputs.filtered_siblings }}
     steps:
       - name: Checkout livespec-dev-tooling master
         uses: actions/checkout@v4
@@ -168,21 +181,55 @@ jobs:
       - name: Install Python dev deps via uv
         run: uv sync --all-groups
 
-      - name: just check-fleet-conformance (BLOCKING)
+      - name: just check-fleet-conformance (per-member verdicts)
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           LIVESPEC_RUN_FLEET_CONFORMANCE: "true"
-        run: just check-fleet-conformance
+        run: |
+          # Exit 0: all members conformant. Exit 4 WITH a verdict
+          # artifact: per-member findings — the filter step below
+          # excludes the non-conformant members (livespec-f73t: a
+          # FILTER on the sibling set, not a GATE on the whole job).
+          # Anything else, or exit 4 with no artifact, is a STRUCTURAL
+          # failure: stay red, fail closed, no lever.
+          ec=0
+          just check-fleet-conformance --emit-member-verdicts member-verdicts.json || ec=$?
+          if [ "$ec" -eq 0 ]; then exit 0; fi
+          if [ "$ec" -eq 4 ] && [ -s member-verdicts.json ]; then
+            echo "::notice::conformance reported per-member findings; the dispatch matrix will be filtered (each excluded member is annotated by the filter step)"
+            exit 0
+          fi
+          exit "$ec"
+
+      - name: Filter dispatch matrix by per-member verdicts
+        id: filter
+        env:
+          SIBLINGS: ${{ needs.discover-siblings.outputs.siblings }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$SIBLINGS" > discovered-siblings.json
+          just filter-dispatch-matrix \
+            --verdicts member-verdicts.json \
+            --siblings discovered-siblings.json \
+            --filtered-out filtered-siblings.json \
+            --exclusions-out exclusions.json
+          echo "filtered_siblings=$(jq -c . filtered-siblings.json)" >> "$GITHUB_OUTPUT"
+          if [ "$(jq 'length' exclusions.json)" -gt 0 ]; then
+            {
+              echo "## Release-dispatch exclusions (non-conformant members)"
+              jq -r '.[] | "- **\(.member)** — failing rows: \(.failing_rows | join(", "))"' exclusions.json
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   dispatch:
     name: dispatch ${{ matrix.sibling.name }}
     needs: [discover-siblings, fleet-preflight]
-    if: needs.discover-siblings.outputs.siblings != '[]'
+    if: needs.fleet-preflight.outputs.filtered_siblings != '[]' && needs.fleet-preflight.outputs.filtered_siblings != ''
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        sibling: ${{ fromJSON(needs.discover-siblings.outputs.siblings) }}
+        sibling: ${{ fromJSON(needs.fleet-preflight.outputs.filtered_siblings) }}
     steps:
       - name: Mint App token (contents+PRs write for dispatch)
         id: app-token

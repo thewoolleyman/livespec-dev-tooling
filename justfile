@@ -469,8 +469,20 @@ check-changed:
 # twin is operator-invoked, NOT CI:
 #   with-livespec-env.sh -- env PATH="$HOME/.local/bin:$PATH" uv run python -m \
 #       livespec_dev_tooling.fleet.wire_fleet_member --repo <member>
-check-fleet-conformance:
-    uv run python -m livespec_dev_tooling.fleet.fleet_conformance
+check-fleet-conformance *args:
+    uv run python -m livespec_dev_tooling.fleet.fleet_conformance {{args}}
+
+# Release-dispatch sibling-matrix filter (livespec-f73t Slice 2b):
+# partitions the discovered sibling set by the per-member verdict
+# artifact `check-fleet-conformance --emit-member-verdicts` wrote, so
+# one non-conformant member is EXCLUDED from the fan-out (loudly, with
+# its failing rows) instead of halting dispatch to every conformant
+# member. Fail-closed: malformed/missing inputs or a sibling with no
+# verdict entry exit 1 and keep the preflight job red. Invoked by
+# reusable-release-dispatch.yml's fleet-preflight job; not part of the
+# `check:` aggregate (it is a workflow helper, not a repo gate).
+filter-dispatch-matrix *args:
+    uv run python -m livespec_dev_tooling.fleet.dispatch_matrix_filter {{args}}
 
 # ADMIN-vantage (world-gate) lane of the same fleet-membership contract.
 # Two obligation rows — `secret-names` and `branch-protection` — need
