@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import ast
 import io
+import re
 import sys
 import tokenize
 from pathlib import Path
@@ -54,18 +55,31 @@ __all__: list[str] = []
 
 # The closed set of BLE001 suppression reasons, quoted from
 # `livespec/SPECIFICATION/non-functional-requirements.md` §"Linter rule set".
-# Any other reason wording marks a violation rather than an escape, so the set
-# is matched literally and never pattern-relaxed. The foreign-code isolation
-# entry is a template (`<surface>` / `<ErrorType>` are filled per site), so it
-# is matched by its fixed prefix. The reason text alone is matched, never the
-# directive prefix, which would read as a live directive on this very line.
-_SANCTIONED_MARKERS = (
-    "— sole supervisor bug-catcher: log traceback, exit 1",
-    "— sole fail-open hook boundary: silent pass-through, exit 0",
-    "— sole fail-closed guard boundary: deny per policy, exit 0",
-    "— sole loop-iteration bug-catcher: log traceback, continue",
-    "— foreign-code isolation:",
+# Any other reason wording marks a violation rather than an escape, so a
+# conforming comment must BE the directive plus one sanctioned wording —
+# equality, not containment: text before, around, or after a wording
+# (which can invert its meaning outright) disqualifies the comment. The
+# foreign-code isolation entry is a template matched by an anchored shape
+# instead of equality: `<surface>` is per-site free text (non-empty, no
+# angle brackets — so the literal unfilled placeholder can never conform),
+# `<ErrorType>` names the captured exception type (a possibly-dotted
+# identifier, never prose), and the wording ends at the literal
+# `, reported`.
+_SANCTIONED_FIXED_WORDINGS = frozenset(
+    {
+        "— sole supervisor bug-catcher: log traceback, exit 1",
+        "— sole fail-open hook boundary: silent pass-through, exit 0",
+        "— sole fail-closed guard boundary: deny per policy, exit 0",
+        "— sole loop-iteration bug-catcher: log traceback, continue",
+    }
 )
+_FOREIGN_CODE_WORDING_SHAPE = re.compile(
+    r"\A— foreign-code isolation: [^<>\s][^<>]* crash captured as "
+    r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*, reported\Z"
+)
+# Built by concatenation so this source line never itself contains the live
+# directive text (kept from the containment-era implementation's rationale).
+_MARKER_COMMENT_PREFIX = "# " + "noqa: BLE001 "
 
 _BROAD_NAMES = frozenset({"Exception", "BaseException"})
 
@@ -190,13 +204,30 @@ def _clause_colon_line(*, handler: ast.ExceptHandler, colons: tuple[tuple[int, i
     return min((position[0] for position in colons if position >= start), default=handler.lineno)
 
 
+def _is_sanctioned_marker_comment(*, text: str) -> bool:
+    """True when a comment IS the directive plus one sanctioned wording.
+
+    Equality, not containment: the four fixed wordings must run to the
+    comment's end, and the templated foreign-code wording must fill both
+    slots with per-site facts — a bracket-free surface and an identifier
+    ErrorType — ending at the literal `, reported`. A comment that merely
+    contains a wording is prose, not a marker.
+    """
+    if not text.startswith(_MARKER_COMMENT_PREFIX):
+        return False
+    wording = text[len(_MARKER_COMMENT_PREFIX) :]
+    if wording in _SANCTIONED_FIXED_WORDINGS:
+        return True
+    return _FOREIGN_CODE_WORDING_SHAPE.fullmatch(wording) is not None
+
+
 def _carries_sanctioned_marker(
     *,
     handler: ast.ExceptHandler,
     comments: dict[int, tuple[str, ...]],
     colons: tuple[tuple[int, int], ...],
 ) -> bool:
-    """True when a sanctioned marker sits in a comment on the clause itself.
+    """True when a clause-line comment is exactly a sanctioned marker.
 
     The span ends at the clause's closing colon, so a comment BELOW it —
     inside the handler body — is inert. Ending the span at the first body
@@ -206,7 +237,7 @@ def _carries_sanctioned_marker(
     last = _clause_colon_line(handler=handler, colons=colons)
     for line in range(handler.lineno, last + 1):
         for text in comments.get(line, ()):
-            if any(marker in text for marker in _SANCTIONED_MARKERS):
+            if _is_sanctioned_marker_comment(text=text):
                 return True
     return False
 
