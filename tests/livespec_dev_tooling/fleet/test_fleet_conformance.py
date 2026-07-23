@@ -19,7 +19,9 @@ from _protection_fixtures import aligned_merge_settings_payload, aligned_protect
 
 from livespec_dev_tooling.fleet import fleet_conformance
 from livespec_dev_tooling.fleet._context import FleetContext, GhResult, GhRunner
+from livespec_dev_tooling.fleet._contract_rows import CENTRAL_APP_VANTAGE, CENTRAL_VANTAGE
 from livespec_dev_tooling.fleet.fleet_conformance import (
+    central_run_vantages,
     fetch_manifest,
     run_discovery_sweep,
     run_member_rows,
@@ -62,10 +64,29 @@ _BLIND_ROW_EVENT = "obligation row enforced NOTHING this run (skipped for every 
 # (out-of-vantage) without reading the source.
 _OUT_OF_VANTAGE_EVENT = "obligation row is outside this lane's vantage (another lane owns it)"
 
+# The vantage set an AUTOMATED central run holds (the fleet App
+# installation token claims `central-app` on top of plain `central`),
+# passed explicitly where a test exercises the CI-shaped sweep.
+_AUTOMATED_VANTAGES = frozenset({CENTRAL_VANTAGE, CENTRAL_APP_VANTAGE})
+
 _CI_YML = "jobs:\n  check:\n    strategy:\n      matrix:\n        target:\n          - check-a\n"
 _PYPROJECT = '[tool.uv.sources]\nlivespec-dev-tooling = { git = "x", tag = "v1.0.0" }\n'
+# The fixture members are BEADS-BACKED with a consistent connection pair,
+# like every live fleet member: blind rows are error severity, so a canned
+# fleet where `beads-tenant-connection-consistency` could never evaluate
+# would fail every sweep for a fixture artifact rather than a real defect.
+_BEADS_CONFIG = (
+    "dolt.server-host: 127.0.0.1\n"
+    "dolt.server-port: 3307\n"
+    "dolt.server-user: tenant\n"
+    "dolt.database: beads_tenant\n"
+    "dolt.prefix: fleet\n"
+)
 _LIVESPEC_JSONC = (
-    '{"harnesses": {"claude": {"status": "exempt", "reason": "library; no harness surface"}}}'
+    '{"harnesses": {"claude": {"status": "exempt", "reason": "library; no harness surface"}}, '
+    '"implementation": {"plugin": "impl-beads"}, '
+    '"impl-beads": {"connection": {"server_host": "127.0.0.1", "server_port": 3307, '
+    '"server_user": "tenant", "database": "beads_tenant", "prefix": "fleet"}}}'
 )
 _PLUGIN_SETTINGS = json.dumps(
     {
@@ -130,6 +151,7 @@ def _member_entries(
         ".github/workflows/release-dispatch.yml",
         "pyproject.toml",
         ".livespec.jsonc",
+        ".beads/config.yaml",
         ".claude/settings.json",
         "justfile",
     ]
@@ -140,6 +162,7 @@ def _member_entries(
     return {
         ("api", f"repos/acme/{repo}/git/trees/master?recursive=1"): ok(payload=tree_payload),
         contents(".livespec.jsonc"): raw(text=_LIVESPEC_JSONC),
+        contents(".beads/config.yaml"): raw(text=_BEADS_CONFIG),
         contents(".claude/settings.json"): raw(text=_PLUGIN_SETTINGS),
         contents("justfile"): raw(text=_STANDARD_JUSTFILE),
         contents("pyproject.toml"): raw(text=_PYPROJECT),
@@ -217,14 +240,21 @@ def _log() -> structlog.stdlib.BoundLogger:
 
 
 class RecordingLog:
-    """Logger test double capturing each event's text AND its structured fields."""
+    """Logger test double capturing each event's text AND its structured fields.
+
+    Error-level events are additionally captured in `error_events`, so a
+    severity escalation (blind rows are error, not warning) is assertable
+    rather than invisible behind the level-agnostic `events` list.
+    """
 
     def __init__(self) -> None:
         self.events: list[str] = []
+        self.error_events: list[str] = []
         self.records: list[tuple[str, dict[str, object]]] = []
 
     def error(self, event: str, **kwargs: object) -> None:
         self.events.append(event)
+        self.error_events.append(event)
         self.records.append((event, kwargs))
 
     def warning(self, event: str, **kwargs: object) -> None:
@@ -256,33 +286,47 @@ def _blind_rows_by_id(*, log: RecordingLog) -> dict[object, dict[str, object]]:
 
 
 def test_blind_row_reported_when_no_applicable_member_could_be_evaluated() -> None:
-    """A row skipped for EVERY applicable member enforced nothing — say so, loudly."""
+    """A row skipped for EVERY applicable member enforced nothing — an ERROR, loudly.
+
+    The sweep runs with the automated vantage set (the App token context
+    OWNS `app-installation`), and the one read that row depends on answers
+    for nobody: the row is blind, and the blind report is error-level (the
+    b02 escalation — an owned row that enforced nothing fails the run).
+    """
     ctx = make_context(table=_two_member_table())
     manifest = fetch_manifest(ctx=ctx)
     log = RecordingLog()
 
     assert manifest is not None
-    result = run_member_rows(ctx=ctx, manifest=manifest, log=log)
+    result = run_member_rows(ctx=ctx, manifest=manifest, log=log, vantages=_AUTOMATED_VANTAGES)
     blind = _blind_rows_by_id(log=log)
 
     assert "app-installation" in blind
     assert blind["app-installation"]["applicable"] == 2
     assert blind["app-installation"]["skipped"] == 2
-    # Per-member reasons carry a `<repo>: ` prefix; the blind-row warning reports
+    # Per-member reasons carry a `<repo>: ` prefix; the blind-row report lists
     # the DISTINCT underlying causes, so two members sharing one cause read as one.
     assert blind["app-installation"]["reasons"] == (
         "installation repositories unreadable (needs an App installation token)",
     )
+    assert _BLIND_ROW_EVENT in log.error_events
     assert result.blind_rows == len(blind)
     assert result.error_findings == 0
 
 
 def test_blind_rows_never_change_the_error_count() -> None:
-    """Blindness is WARNING-severity new signal, never an error-count contribution."""
+    """Blind rows fail the run at the lane level, never by inflating error_findings.
+
+    The two counts stay SEPARATE so a summary can attribute a failure to
+    violated obligations vs owned-but-unreadable rows; the lane mains fold
+    both into the same non-zero exit.
+    """
     ctx = make_context(table=_two_member_table())
     manifest = fetch_manifest(ctx=ctx)
     assert manifest is not None
-    assert run_member_rows(ctx=ctx, manifest=manifest, log=_log()).error_findings == 0
+    result = run_member_rows(ctx=ctx, manifest=manifest, log=_log(), vantages=_AUTOMATED_VANTAGES)
+    assert result.error_findings == 0
+    assert result.blind_rows == 1
 
 
 def test_partially_skipped_row_is_not_blind() -> None:
@@ -293,7 +337,7 @@ def test_partially_skipped_row_is_not_blind() -> None:
     log = RecordingLog()
 
     assert manifest is not None
-    result = run_member_rows(ctx=ctx, manifest=manifest, log=log)
+    result = run_member_rows(ctx=ctx, manifest=manifest, log=log, vantages=_AUTOMATED_VANTAGES)
     blind = _blind_rows_by_id(log=log)
 
     # `topic-livespec-sibling` skipped for gadget but answered for widget, and
@@ -351,7 +395,7 @@ def test_admin_rows_are_out_of_vantage_not_blind_in_the_central_lane() -> None:
     log = RecordingLog()
 
     assert manifest is not None
-    result = run_member_rows(ctx=ctx, manifest=manifest, log=log)
+    result = run_member_rows(ctx=ctx, manifest=manifest, log=log, vantages=_AUTOMATED_VANTAGES)
     blind = _blind_rows_by_id(log=log)
 
     assert "secret-names" not in blind
@@ -367,7 +411,7 @@ def test_out_of_vantage_report_names_the_lane_that_owns_the_row() -> None:
     log = RecordingLog()
 
     assert manifest is not None
-    _ = run_member_rows(ctx=ctx, manifest=manifest, log=log)
+    _ = run_member_rows(ctx=ctx, manifest=manifest, log=log, vantages=_AUTOMATED_VANTAGES)
     reported = {fields["row"]: fields for fields in log.fields_for(event=_OUT_OF_VANTAGE_EVENT)}
 
     assert set(reported) == {"secret-names", "branch-protection"}
@@ -375,6 +419,65 @@ def test_out_of_vantage_report_names_the_lane_that_owns_the_row() -> None:
         assert fields["applicable"] == 2
         assert fields["vantage"] == "admin"
         assert fields["owned_by"] == "check-fleet-conformance-admin"
+
+
+def test_local_central_run_reports_app_installation_out_of_vantage() -> None:
+    """Without the App installation token, `app-installation` is owned elsewhere.
+
+    A LOCAL central sweep holds an operator credential, under which
+    `GET /installation/repositories` can never answer — so the row is
+    out-of-vantage naming the App-token contexts that do enforce it, NOT
+    blind, and costs zero API reads. This is the completion of the vantage
+    model: after it, `blind_rows` is structurally 0 in every healthy
+    context, which is what made the blind-to-error escalation shippable.
+    """
+    calls: list[tuple[str, ...]] = []
+    inner = make_runner(table=_two_member_table())
+
+    def recording(*, args: list[str], stdin: str | None = None) -> GhResult:
+        calls.append(tuple(args))
+        return inner(args=args, stdin=stdin)
+
+    ctx = FleetContext(owner="acme", run_gh=recording)
+    manifest = fetch_manifest(ctx=ctx)
+    log = RecordingLog()
+
+    assert manifest is not None
+    result = run_member_rows(
+        ctx=ctx, manifest=manifest, log=log, vantages=frozenset({CENTRAL_VANTAGE})
+    )
+    reported = {fields["row"]: fields for fields in log.fields_for(event=_OUT_OF_VANTAGE_EVENT)}
+
+    assert result.blind_rows == 0
+    assert "app-installation" in reported
+    assert reported["app-installation"]["vantage"] == CENTRAL_APP_VANTAGE
+    owned_by = reported["app-installation"]["owned_by"]
+    assert isinstance(owned_by, str)
+    assert "App installation token" in owned_by
+    assert _INSTALL_ARGS not in calls
+
+
+def test_central_run_vantages_follows_the_credential_class(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`central-app` is held exactly when the run's token is an App installation token.
+
+    The `ghs_` prefix marks GitHub's server-to-server (installation)
+    tokens — the only credential class under which the app-installation
+    read answers. An operator PAT or no env token at all leaves the run
+    holding plain `central`; the fallback env var is the same second
+    slot `gh` itself consults.
+    """
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    assert central_run_vantages() == frozenset({CENTRAL_VANTAGE})
+    monkeypatch.setenv("GH_TOKEN", "ghp_operator-pat")
+    assert central_run_vantages() == frozenset({CENTRAL_VANTAGE})
+    monkeypatch.setenv("GH_TOKEN", "ghs_app-installation")
+    assert central_run_vantages() == _AUTOMATED_VANTAGES
+    monkeypatch.delenv("GH_TOKEN")
+    monkeypatch.setenv("GITHUB_TOKEN", "ghs_app-installation")
+    assert central_run_vantages() == _AUTOMATED_VANTAGES
 
 
 def test_central_lane_never_spends_an_api_read_on_an_admin_row() -> None:
@@ -408,7 +511,7 @@ def test_admin_lane_runs_exactly_the_admin_rows() -> None:
     log = RecordingLog()
 
     assert manifest is not None
-    result = run_member_rows(ctx=ctx, manifest=manifest, log=log, vantage="admin")
+    result = run_member_rows(ctx=ctx, manifest=manifest, log=log, vantages=frozenset({"admin"}))
     reported = {fields["row"] for fields in log.fields_for(event=_OUT_OF_VANTAGE_EVENT)}
 
     # Every NON-admin row is out of the admin lane's vantage, and the two admin
@@ -499,12 +602,57 @@ def test_main_green_fleet_exits_zero(*, monkeypatch: pytest.MonkeyPatch) -> None
     assert fleet_conformance.main() == 0
 
 
-def test_main_blind_row_still_exits_zero(*, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A sweep whose rows went blind is still a PASS: warning severity, exit 0."""
+def test_main_local_run_exits_zero_with_app_installation_out_of_vantage(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A tokenless local sweep is healthy: no blind row, exit 0.
+
+    The same table (no installation/repositories read canned) fails the
+    run under an App token, as a blind `app-installation` row. Locally
+    that read is structurally unanswerable, so the row is out-of-vantage
+    rather than blind — and the run stays green.
+    """
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
     monkeypatch.setenv("LIVESPEC_RUN_FLEET_CONFORMANCE", "true")
     monkeypatch.setattr(sys, "argv", ["fleet-conformance", "--owner", "acme"])
     _patch_runner(monkeypatch=monkeypatch, table=_two_member_table())
     assert fleet_conformance.main() == 0
+
+
+def test_main_app_token_run_fails_on_a_blind_app_installation_row(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Under an App installation token the lane OWNS `app-installation`: blind fails.
+
+    The `ghs_` token claims the `central-app` vantage, the canned table
+    answers the installation read for nobody, and the row this run should
+    have evaluated enforced nothing — error severity, exit 4 (b02's
+    recorded end state; no lever, env var, or exemption can demote it).
+    """
+    monkeypatch.setenv("GH_TOKEN", "ghs_minted-by-ci")
+    monkeypatch.setenv("LIVESPEC_RUN_FLEET_CONFORMANCE", "true")
+    monkeypatch.setattr(sys, "argv", ["fleet-conformance", "--owner", "acme"])
+    _patch_runner(monkeypatch=monkeypatch, table=_two_member_table())
+    assert fleet_conformance.main() == 4
+
+
+def test_main_blind_central_row_exits_four(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A blind row within the plain `central` vantage fails a local run too.
+
+    Both members' topics reads are dropped, so `topic-livespec-sibling` —
+    a row every central run owns whatever its credential — skips for
+    every applicable member: blind, error severity, exit 4.
+    """
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    table = _two_member_table(blind_app_installation=False)
+    for repo in ("widget", "gadget"):
+        del table[("api", f"repos/acme/{repo}/topics")]
+    monkeypatch.setenv("LIVESPEC_RUN_FLEET_CONFORMANCE", "true")
+    monkeypatch.setattr(sys, "argv", ["fleet-conformance", "--owner", "acme"])
+    _patch_runner(monkeypatch=monkeypatch, table=table)
+    assert fleet_conformance.main() == 4
 
 
 def test_main_error_findings_exit_four(*, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -56,6 +56,7 @@ from livespec_dev_tooling.fleet._rows_instructions import (
 
 __all__: list[str] = [
     "ADMIN_VANTAGE",
+    "CENTRAL_APP_VANTAGE",
     "CENTRAL_VANTAGE",
     "OBLIGATION_ROWS",
     "REPO_CLASSES",
@@ -64,16 +65,27 @@ __all__: list[str] = [
 ]
 
 
-# The VANTAGE a row's assert needs — i.e. which credential can answer it.
-# This is a property of the OBLIGATION, not of any particular run, which is
-# why it is declared on the row rather than hardcoded as a row-id list in a
-# runner: adding an admin-scoped row is then a one-field decision at the
-# table, and both lanes re-partition themselves automatically.
+# The VANTAGE a row's assert needs — i.e. which credential class can answer
+# it. This is a property of the OBLIGATION, not of any particular run, which
+# is why it is declared on the row rather than hardcoded as a row-id list in
+# a runner: adding a scoped row is then a one-field decision at the table,
+# and every lane re-partitions itself automatically.
 #
-# `central` — readable under the fleet GitHub App installation token (repo
-# contents, topics, installation coverage). The automated contexts (per-PR
-# CI, the scheduled fleet-conformance.yml, the release fan-out preflight)
-# all authenticate this way, so these rows enforce there.
+# `central` — readable under whatever GitHub credential the central lane
+# runs with (repo contents, topics, repo objects): the fleet App
+# installation token in the automated contexts (per-PR CI, the scheduled
+# fleet-conformance.yml, the release fan-out preflight) and the operator's
+# own credential in a local `check-fleet-conformance` run, so these rows
+# enforce in BOTH.
+#
+# `central-app` — needs the fleet GitHub App installation token ITSELF:
+# `GET /installation/repositories` (the app-installation row's one read)
+# answers only under an installation token, never under an operator PAT or
+# oauth credential. Exactly the automated central contexts hold one, so the
+# row enforces there; a local central sweep reports it out-of-vantage
+# naming those contexts. This completes the vantage model
+# (livespec-dev-tooling-29qo): with it, blind_rows is structurally 0 in
+# every healthy context, which is what made blind escalatable to error.
 #
 # `admin` — needs GitHub ADMIN scope on each member (the Actions-secrets
 # list and the branch-protection endpoints). The App token deliberately
@@ -83,6 +95,7 @@ __all__: list[str] = [
 # are enforced in the world-gate lane at pre-push — see
 # `fleet_conformance_admin.py`.
 CENTRAL_VANTAGE = "central"
+CENTRAL_APP_VANTAGE = "central-app"
 ADMIN_VANTAGE = "admin"
 
 
@@ -237,6 +250,7 @@ OBLIGATION_ROWS: tuple[ObligationRow, ...] = (
         applies_to=_ALL_CLASSES,
         assert_member=assert_app_installation,
         manual_hint="install the fleet GitHub App on the repo (owner settings → GitHub Apps)",
+        vantage=CENTRAL_APP_VANTAGE,
     ),
     ObligationRow(
         row_id="branch-protection",

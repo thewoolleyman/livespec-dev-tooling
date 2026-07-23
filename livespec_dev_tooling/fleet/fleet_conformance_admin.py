@@ -48,20 +48,23 @@ adopter (one today) and zero for excluded postures.
 
 Credential shortfall is NOT silently tolerated. Running without admin scope
 makes both member rows skip for every member — and an unreadable released
-adopter makes the currency leg skip — which this lane reports as BLIND:
-the b02 signal, loud, because this IS the lane that should have read them.
+adopter makes the currency leg skip — which this lane reports as BLIND at
+ERROR severity and FAILS on: this IS the lane that should have read them,
+so a run that could not is a failed run, not a vacuous pass (the b02
+escalation, shipped once the vantage model left no row structurally blind
+in any healthy context; no lever, env var, or exemption can demote it).
 That is the opposite of the central lane's treatment, where the same two
 rows and the adopter leg are out-of-vantage: expected, and owned by this
 recipe.
 
 Exit codes:
 
-- `0` — every admin row and adopter-leg evaluation passed, or skipped
-  without an error-severity finding (blind rows warn; they do not fail,
-  matching the central lane).
+- `0` — every admin row and adopter-leg evaluation passed, or partially
+  skipped, with no error-severity finding and no blind row.
 - `1` — precondition failure: owner unresolvable, or the manifest
   unfetchable / unparseable (the manifest is the root fact; fail loud).
-- `4` — one or more error-severity findings.
+- `4` — one or more error-severity findings, or one or more blind rows
+  (this lane owns a row it could not read anywhere).
 
 Output discipline matches sibling checks: structlog JSON to stderr;
 no `print`, no `sys.stderr.write`.
@@ -130,15 +133,22 @@ def main() -> int:
             hint="the manifest on livespec master is the root fact; failing loud",
         )
         return 1
-    result = run_member_rows(ctx=ctx, manifest=manifest, log=log, vantage=ADMIN_VANTAGE)
+    result = run_member_rows(
+        ctx=ctx, manifest=manifest, log=log, vantages=frozenset({ADMIN_VANTAGE})
+    )
     adopters = run_adopter_rows(ctx=ctx, manifest=manifest, log=log, vantage=ADMIN_VANTAGE)
     error_findings = result.error_findings + adopters.error_findings
     blind_rows = result.blind_rows + adopters.blind_rows
-    if error_findings:
+    if error_findings or blind_rows:
         log.error(
             "fleet admin conformance FAILED",
             error_findings=error_findings,
             blind_rows=blind_rows,
+            hint=(
+                "blind rows here mean the running gh credential lacks admin scope on "
+                "those members (or cannot read a released adopter) — this lane is the "
+                "one that SHOULD read them, so it fails rather than passing vacuously"
+            ),
         )
         return 4
     log.info(
@@ -149,11 +159,6 @@ def main() -> int:
         blind_rows=blind_rows,
         vantage=ADMIN_VANTAGE,
         owner=owner,
-        hint=(
-            "blind rows here mean the running gh credential lacks admin scope on those "
-            "members (or cannot read a released adopter) — this lane is the one that "
-            "SHOULD read them"
-        ),
     )
     return 0
 
