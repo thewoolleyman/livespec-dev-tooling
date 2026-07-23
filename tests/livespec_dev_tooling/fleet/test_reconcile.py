@@ -96,6 +96,27 @@ _PULLS_POST: tuple[str, ...] = (
     "--input",
     "-",
 )
+# main-default-repo argv shapes (livespec-dev-tooling-17o): when the canned
+# table answers the `repos/acme/widget` lookup with `default_branch: main`,
+# `FleetContext.canonical_ref` resolves `main` and every reconcile read AND
+# write must target it — never a hardcoded `master`.
+_REPO_GET: tuple[str, ...] = ("api", "repos/acme/widget")
+_CI_ARGS_MAIN: tuple[str, ...] = (
+    "api",
+    "repos/acme/widget/contents/.github/workflows/ci.yml?ref=main",
+    "-H",
+    "Accept: application/vnd.github.raw",
+)
+_PROTECTION_PUT_MAIN: tuple[str, ...] = (
+    "api",
+    "repos/acme/widget/branches/main/protection",
+    "--method",
+    "PUT",
+    "--input",
+    "-",
+)
+_TREE_ARGS_MAIN: tuple[str, ...] = ("api", "repos/acme/widget/git/trees/main?recursive=1")
+_MAIN_REF: tuple[str, ...] = ("api", "repos/acme/widget/git/ref/heads/main")
 
 _CI_YML = "jobs:\n  check:\n    strategy:\n      matrix:\n        target:\n          - check-lint\n"
 
@@ -320,6 +341,30 @@ def test_reconcile_protection_failed_put_is_finding() -> None:
     assert isinstance(outcome, RowFinding)
 
 
+def test_reconcile_protection_puts_to_resolved_default_branch() -> None:
+    """On a main-default member the protection PUT targets `branches/main`.
+
+    livespec-dev-tooling-17o: the WRITE path must route through the same
+    memoized `FleetContext.canonical_ref` resolver as the reads (7vj).
+    A hardcoded `master` PUT against a main-default repo configures
+    protection for a branch that does not exist, leaving the operator
+    believing the repo is protected while the real default branch is
+    wide open.
+    """
+    calls: list[tuple[tuple[str, ...], str | None]] = []
+    table = {
+        _REPO_GET: ok(payload={"default_branch": "main"}),
+        _CI_ARGS_MAIN: GhResult(returncode=0, stdout=_CI_YML, stderr=""),
+        _PROTECTION_PUT_MAIN: ok(payload={}),
+    }
+    outcome = reconcile_branch_protection(
+        ctx=make_context(table=table, calls=calls), member=_MEMBER
+    )
+    assert isinstance(outcome, RowPass)
+    assert any(args == _PROTECTION_PUT_MAIN for args, _stdin in calls)
+    assert all("branches/master" not in " ".join(args) for args, _stdin in calls)
+
+
 def test_reconcile_merge_settings_patches_repo_rebase_only() -> None:
     # The reconciler PATCHes the repo object to rebase-only + auto-merge,
     # per livespec NFR §"Commit and merge discipline": a freshly-
@@ -486,3 +531,32 @@ def test_reconcile_shims_failed_pr_creation_is_finding() -> None:
     outcome = reconcile_shim_workflows(ctx=make_context(table=table, calls=[]), member=_MEMBER)
     assert isinstance(outcome, RowFinding)
     assert "shim PR" in outcome.message
+
+
+def test_reconcile_shims_pr_bases_on_resolved_default_branch() -> None:
+    """On a main-default member the shim PR bases on `main` via `main`'s sha.
+
+    livespec-dev-tooling-17o: with `base` hardcoded to `master`, PR
+    creation against a main-default repo fails outright and shim
+    provisioning can never complete; the branch-point sha lookup one
+    step earlier fails the same way. Both must resolve through
+    `FleetContext.canonical_ref`.
+    """
+    calls: list[tuple[tuple[str, ...], str | None]] = []
+    table = {
+        _REPO_GET: ok(payload={"default_branch": "main"}),
+        _TREE_ARGS_MAIN: _tree(paths=[BUMP_PIN_WORKFLOW]),
+        _BRANCH_PROBE: GhResult(returncode=1, stdout="", stderr="Not Found"),
+        _MAIN_REF: ok(payload={"object": {"sha": "abc123"}}),
+        _REFS_POST: ok(payload={}),
+        _put_args(path=PIN_FRESHNESS_WORKFLOW): ok(payload={}),
+        _put_args(path=RELEASE_DISPATCH_WORKFLOW): ok(payload={}),
+        _PULLS_POST: ok(payload={"number": 7}),
+    }
+    outcome = reconcile_shim_workflows(ctx=make_context(table=table, calls=calls), member=_MEMBER)
+    assert isinstance(outcome, RowPass)
+    assert any(args == _MAIN_REF for args, _stdin in calls)
+    assert all("git/ref/heads/master" not in " ".join(args) for args, _stdin in calls)
+    pr_body = next(stdin for args, stdin in calls if args == _PULLS_POST)
+    assert pr_body is not None
+    assert json.loads(pr_body)["base"] == "main"

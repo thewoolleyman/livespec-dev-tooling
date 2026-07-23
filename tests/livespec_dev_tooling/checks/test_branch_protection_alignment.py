@@ -1,8 +1,8 @@
 """Outside-in test for `dev-tooling/checks/branch_protection_alignment.py`.
 
 Guard Layer 1 mechanical check that prevents the v039-D1-style
-drift between `.github/workflows/ci.yml`'s job matrix and master
-branch protection's required-checks list.
+drift between `.github/workflows/ci.yml`'s job matrix and the
+default branch protection's required-checks list.
 """
 
 from __future__ import annotations
@@ -133,8 +133,8 @@ def _setup_repo_with_ci_yml(*, tmp_path: Path, matrix_targets: list[str]) -> Non
 def _checks_payload(*, contexts: list[object], strict: bool = False) -> str:
     """Serialize a `required_status_checks` object payload.
 
-    The check reads the `repos/<owner>/<repo>/branches/master/protection/
-    required_status_checks` endpoint, which returns an OBJECT shaped
+    The check reads the `repos/<owner>/<repo>/branches/<default-branch>/
+    protection/required_status_checks` endpoint, which returns an OBJECT shaped
     `{"strict": <bool>, "contexts": [<str>, ...]}` — NOT the bare
     contexts list the older `/contexts` sub-endpoint returned. `strict`
     defaults to False because the strict-off merge-gate rule (livespec
@@ -152,27 +152,47 @@ def _install_fake_gh(
     returncode: int = 0,
     git_origin_url: str = "https://github.com/test-owner/test-repo.git",
     git_returncode: int = 0,
+    git_head_ref: str | None = "refs/remotes/origin/master",
+    repo_payload: str | None = None,
 ) -> str:
     """Install fake `gh` + `git` shell stubs at tmp_path/bin, return PATH including it.
 
     Both stubs are needed because the check resolves its target
     repository identifier from `git remote get-url origin` before
     invoking `gh api`. The git stub responds to `git remote get-url
-    origin` with `git_origin_url` and the given `git_returncode`;
-    every other git invocation exits 0 as a no-op so other code
-    paths (e.g., subprocess-cov instrumentation hooks) are unaffected.
+    origin` with `git_origin_url` and the given `git_returncode`, and
+    to `git symbolic-ref refs/remotes/origin/HEAD` with `git_head_ref`
+    (None → exit 1, modeling an unset symref); every other git
+    invocation exits 0 as a no-op so other code paths (e.g.,
+    subprocess-cov instrumentation hooks) are unaffected.
 
-    The gh stub writes `stdout` to its stdout and `stderr` to its
-    stderr, mirroring real `gh api`, which on an error puts the JSON
-    error body on stdout AND a human `gh: <message> (HTTP <code>)`
+    The gh stub appends each invocation's argv to `tmp_path/bin/gh.argv`
+    (one line per call) so tests can assert which API paths were hit.
+    When `repo_payload` is given, a `gh api repos/test-owner/test-repo`
+    call answers with it (exit 0) — the default-branch API fallback —
+    while every other call gets the canned `stdout`/`stderr`/
+    `returncode`, mirroring real `gh api`, which on an error puts the
+    JSON error body on stdout AND a human `gh: <message> (HTTP <code>)`
     line on stderr.
     """
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
     gh_path = bin_dir / "gh"
     gh_stderr_block = "" if not stderr else f"cat >&2 <<'STUB_ERR_EOF'\n{stderr}\nSTUB_ERR_EOF\n"
+    repo_dispatch_block = (
+        ""
+        if repo_payload is None
+        else (
+            'if [ "$1" = "api" ] && [ "$2" = "repos/test-owner/test-repo" ]; then\n'
+            f"cat <<'REPO_EOF'\n{repo_payload}\nREPO_EOF\n"
+            "exit 0\n"
+            "fi\n"
+        )
+    )
     gh_script = (
         "#!/bin/sh\n"
+        f"printf '%s\\n' \"$*\" >> '{bin_dir}/gh.argv'\n"
+        f"{repo_dispatch_block}"
         f"cat <<'STUB_EOF'\n{stdout}\nSTUB_EOF\n"
         f"{gh_stderr_block}"
         f"exit {returncode}\n"
@@ -180,17 +200,33 @@ def _install_fake_gh(
     _ = gh_path.write_text(gh_script, encoding="utf-8")
     gh_path.chmod(0o755)
     git_path = bin_dir / "git"
+    head_ref_block = (
+        'if [ "$1" = "symbolic-ref" ]; then\n  exit 1\nfi\n'
+        if git_head_ref is None
+        else (
+            'if [ "$1" = "symbolic-ref" ]; then\n'
+            f"  printf '%s\\n' '{git_head_ref}'\n"
+            "  exit 0\n"
+            "fi\n"
+        )
+    )
     git_script = (
         "#!/bin/sh\n"
         'if [ "$1" = "remote" ] && [ "$2" = "get-url" ] && [ "$3" = "origin" ]; then\n'
         f"  printf '%s\\n' '{git_origin_url}'\n"
         f"  exit {git_returncode}\n"
         "fi\n"
+        f"{head_ref_block}"
         "exit 0\n"
     )
     _ = git_path.write_text(git_script, encoding="utf-8")
     git_path.chmod(0o755)
     return f"{bin_dir}:/usr/bin:/bin"
+
+
+def _gh_argv_log(*, tmp_path: Path) -> str:
+    """The fake gh stub's recorded argv lines (one invocation per line)."""
+    return (tmp_path / "bin" / "gh.argv").read_text(encoding="utf-8")
 
 
 def _setup_repo_with_gate_and_matrix(*, tmp_path: Path) -> None:
@@ -500,6 +536,115 @@ def test_gh_api_failure_skips_gracefully(*, tmp_path: Path) -> None:
     fake_path = _install_fake_gh(tmp_path=tmp_path, stdout="error", returncode=1)
     result = _run_check(cwd=tmp_path, env_path=fake_path)
     assert result.returncode == 0
+    assert "gh api call failed" in result.stderr
+
+
+def test_main_default_branch_resolved_from_git_symref(*, tmp_path: Path) -> None:
+    """A main-default repo's protection is read at `branches/main` (17o).
+
+    The clone's `refs/remotes/origin/HEAD` symref points at
+    `refs/remotes/origin/main`, so the check MUST query
+    `branches/main/protection/...` — the historical hardcoded `master`
+    path read the protection of a nonexistent branch on such a repo
+    and misreported (livespec-dev-tooling-17o).
+    """
+    _setup_repo_with_ci_yml(tmp_path=tmp_path, matrix_targets=["check-foo"])
+    fake_path = _install_fake_gh(
+        tmp_path=tmp_path,
+        stdout=_checks_payload(contexts=["check-foo"]),
+        git_head_ref="refs/remotes/origin/main",
+    )
+    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    assert result.returncode == 0, (
+        f"expected exit 0 on an aligned main-default repo; "
+        f"got {result.returncode}, stderr={result.stderr!r}"
+    )
+    argv_log = _gh_argv_log(tmp_path=tmp_path)
+    assert "repos/test-owner/test-repo/branches/main/protection/required_status_checks" in argv_log
+    assert "branches/master" not in argv_log
+
+
+def test_default_branch_falls_back_to_repo_object_when_symref_unset(*, tmp_path: Path) -> None:
+    """Symref unset → the repo object's `default_branch` drives the path.
+
+    A single-ref CI fetch has no `refs/remotes/origin/HEAD`; the check
+    then reads `repos/<owner>/<repo>` (basic read access suffices) and
+    uses its `default_branch` — here `main`.
+    """
+    _setup_repo_with_ci_yml(tmp_path=tmp_path, matrix_targets=["check-foo"])
+    fake_path = _install_fake_gh(
+        tmp_path=tmp_path,
+        stdout=_checks_payload(contexts=["check-foo"]),
+        git_head_ref=None,
+        repo_payload='{"default_branch": "main"}',
+    )
+    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    assert result.returncode == 0, (
+        f"expected exit 0 via the repo-object fallback; "
+        f"got {result.returncode}, stderr={result.stderr!r}"
+    )
+    argv_log = _gh_argv_log(tmp_path=tmp_path)
+    assert "branches/main/protection/required_status_checks" in argv_log
+    assert "branches/master" not in argv_log
+
+
+def test_default_branch_shapeless_repo_payload_falls_back_to_master(*, tmp_path: Path) -> None:
+    """Non-origin symref + non-object repo payload → `master` fallback (warn).
+
+    The symref answers with a ref outside `refs/remotes/origin/` (so it
+    is rejected) and the repo object parses to a non-dict, so neither
+    resolver answers; the check warns and falls back to `master` —
+    preserving the pre-17o behavior for unresolvable repos.
+    """
+    _setup_repo_with_ci_yml(tmp_path=tmp_path, matrix_targets=["check-foo"])
+    fake_path = _install_fake_gh(
+        tmp_path=tmp_path,
+        stdout=_checks_payload(contexts=["check-foo"]),
+        git_head_ref="refs/heads/master",
+        repo_payload='"not an object"',
+    )
+    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    assert result.returncode == 0
+    assert "could not resolve the default branch" in result.stderr
+    argv_log = _gh_argv_log(tmp_path=tmp_path)
+    assert "branches/master/protection/required_status_checks" in argv_log
+
+
+def test_default_branch_non_string_in_repo_payload_falls_back_to_master(*, tmp_path: Path) -> None:
+    """Repo object without a usable `default_branch` string → `master` fallback."""
+    _setup_repo_with_ci_yml(tmp_path=tmp_path, matrix_targets=["check-foo"])
+    fake_path = _install_fake_gh(
+        tmp_path=tmp_path,
+        stdout=_checks_payload(contexts=["check-foo"]),
+        git_head_ref=None,
+        repo_payload='{"default_branch": 7}',
+    )
+    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    assert result.returncode == 0
+    assert "could not resolve the default branch" in result.stderr
+    argv_log = _gh_argv_log(tmp_path=tmp_path)
+    assert "branches/master/protection/required_status_checks" in argv_log
+
+
+def test_default_branch_api_failure_falls_back_to_master(*, tmp_path: Path) -> None:
+    """Symref unset + repo-object read fails → `master` fallback, then skip.
+
+    Covers the api-resolver's non-zero-exit branch: with no
+    `repo_payload` dispatch, the stub's canned failure answers the
+    `repos/<owner>/<repo>` read too, so both resolvers miss, the check
+    falls back to `master`, and the subsequent protection read fails
+    non-definitively → graceful skip (exit 0).
+    """
+    _setup_repo_with_ci_yml(tmp_path=tmp_path, matrix_targets=["check-foo"])
+    fake_path = _install_fake_gh(
+        tmp_path=tmp_path,
+        stdout="error",
+        returncode=1,
+        git_head_ref=None,
+    )
+    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    assert result.returncode == 0
+    assert "could not resolve the default branch" in result.stderr
     assert "gh api call failed" in result.stderr
 
 
