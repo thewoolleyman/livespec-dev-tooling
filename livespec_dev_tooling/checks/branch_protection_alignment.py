@@ -1,13 +1,17 @@
-"""branch_protection_alignment — master is protected AND ci.yml matches it.
+"""branch_protection_alignment — the default branch is protected AND ci.yml matches it.
 
-Guard Layer 1 mechanical check with two responsibilities:
+Guard Layer 1 mechanical check with two responsibilities, both run
+against the repo's resolved default branch (local `origin/HEAD` symref,
+then the repo object's `default_branch`, then a `master` fallback — a
+main-default governed repo is checked on `main`, never on a
+nonexistent `master`; livespec-dev-tooling-17o):
 
 1. PROTECTION-PRESENT gate. When `gh api` can definitively determine
-   that master has NO branch protection at all (GitHub returns the
-   canonical "Branch not protected" 404), the check FAILS. A repo
-   whose master is wide open lets PRs auto-merge before CI finishes
-   and lets a red PR land on master; the merge-gate invariant requires
-   required-check branch protection to be enabled. See
+   that the default branch has NO branch protection at all (GitHub
+   returns the canonical "Branch not protected" 404), the check FAILS.
+   A repo whose default branch is wide open lets PRs auto-merge before
+   CI finishes and lets a red PR land; the merge-gate invariant
+   requires required-check branch protection to be enabled. See
    `livespec/SPECIFICATION/non-functional-requirements.md` §"CI as a
    merge gate (branch protection)".
 
@@ -15,15 +19,15 @@ Guard Layer 1 mechanical check with two responsibilities:
    assertion plus a two-direction comparison between the
    required-checks list and ci.yml (its matrix legs AND its top-level
    jobs), preventing the v039-D1-style drift where a CI job is added or
-   removed without updating the master-branch required-checks list (or
-   vice versa):
+   removed without updating the default branch's required-checks list
+   (or vice versa):
 
    - `required_status_checks.strict` is enabled → ERROR (strict MUST
      be OFF: strict makes GitHub keep a behind PR current by merging
-     master into its branch, injecting a merge commit that violates
-     required_linear_history and buries the Red-Green-Replay TDD
-     trailers; since master accepts only rebase-merges, strict adds
-     no correctness guarantee).
+     the default branch into its branch, injecting a merge commit that
+     violates required_linear_history and buries the Red-Green-Replay
+     TDD trailers; since the default branch accepts only rebase-merges,
+     strict adds no correctness guarantee).
    - Required check matching NEITHER a ci.yml matrix leg NOR a
      top-level job (its id or literal `name:`) → ERROR (the v039 /
      `check-tests` failure: GitHub blocks merges because the required
@@ -69,7 +73,7 @@ Exit codes:
 - `1` — precondition failure: ci.yml present but its matrix.target is
   empty or unparseable (legacy code; the project state needed for the
   alignment gate is not met).
-- `4` — check failed with structured stderr findings: master
+- `4` — check failed with structured stderr findings: default-branch
   protection is definitively absent (`failure_mode`
   `protection_absent`), or `required_status_checks.strict` is enabled
   (`failure_mode` `strict_enabled`; strict MUST be OFF), or a required
@@ -122,22 +126,31 @@ _REMOTE_URL_PATTERN = re.compile(
 # "Resource not accessible by integration" instead, so the presence of
 # this literal phrase is the definitive "absent" disambiguator.
 _NOT_PROTECTED_MARKER = "Branch not protected"
+# `git symbolic-ref refs/remotes/origin/HEAD` answers with a ref of this
+# shape when the clone recorded origin's default branch; the branch name
+# is the remainder after the prefix.
+_ORIGIN_HEAD_PREFIX = "refs/remotes/origin/"
+# Last-resort default branch when neither the local symref nor the repo
+# object resolves one. Matches the fleet-side resolver's fallback
+# (`FleetContext.canonical_ref`): an unresolvable lookup then behaves
+# exactly as the pre-17o hardcoded path did.
+_FALLBACK_BRANCH = "master"
 
 
 @dataclass(frozen=True, kw_only=True)
 class _ProtectionAbsent:
-    """The API definitively reported master has no branch protection.
+    """The API definitively reported the default branch is unprotected.
 
     Distinct from the graceful-skip case (represented by `None`): an
-    admin-scoped token read master's protection and GitHub answered
-    with the canonical "Branch not protected" 404. This is a
+    admin-scoped token read the default branch's protection and GitHub
+    answered with the canonical "Branch not protected" 404. This is a
     fail-trigger, not a can't-read skip.
     """
 
 
 @dataclass(frozen=True, kw_only=True)
 class _RequiredContexts:
-    """The API succeeded; carries master's required_status_checks object.
+    """The API succeeded; carries the default branch's required_status_checks.
 
     `contexts` is the required-checks list; `strict` is the
     require-branches-up-to-date flag, which MUST be OFF per livespec
@@ -182,15 +195,90 @@ def _resolve_owner_repo(*, log: structlog.stdlib.BoundLogger) -> str | None:
     return f"{match.group(1)}/{match.group(2)}"
 
 
+def _default_branch_from_git() -> str | None:
+    """The default branch per the clone's `refs/remotes/origin/HEAD`, or None.
+
+    `git symbolic-ref refs/remotes/origin/HEAD` answers from local state
+    (no network); a normal clone records the symref at clone time. None
+    when the symref is unset (e.g. a single-ref CI fetch) or the output
+    is not a `refs/remotes/origin/<branch>` ref.
+    """
+    completed = subprocess.run(
+        ["git", "symbolic-ref", "refs/remotes/origin/HEAD"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        return None
+    ref = completed.stdout.strip()
+    branch = ref.removeprefix(_ORIGIN_HEAD_PREFIX)
+    if branch == ref or not branch:
+        return None
+    return branch
+
+
+def _default_branch_from_api(*, owner_repo: str) -> str | None:
+    """The default branch per the GitHub repo object, or None on any failure.
+
+    `GET repos/{owner_repo}` needs only basic repository read access
+    (the default Actions GITHUB_TOKEN has it), so this fallback still
+    resolves correctly where the symref is unset.
+    """
+    completed = subprocess.run(
+        ["gh", "api", f"repos/{owner_repo}"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        return None
+    parsed = json.loads(completed.stdout)
+    if not isinstance(parsed, dict):
+        return None
+    branch = cast("dict[str, object]", parsed).get("default_branch")
+    if not isinstance(branch, str) or not branch:
+        return None
+    return branch
+
+
+def _resolve_default_branch(*, log: structlog.stdlib.BoundLogger, owner_repo: str) -> str:
+    """Resolve the repo's default branch: local symref, then the API, then `master`.
+
+    The check historically hardcoded `master`, so on a main-default
+    governed repo it read the protection of a nonexistent branch and
+    misreported (livespec-dev-tooling-17o). Default-branch resolution is
+    mechanical extraction, not a spec-rule parser, so per the
+    livespec-dev-tooling-6cf convention it is implemented locally here
+    rather than shared with the fleet modules' `FleetContext.canonical_ref`
+    (`checks/` never imports from `fleet/`).
+    """
+    branch = _default_branch_from_git()
+    if branch is not None:
+        return branch
+    branch = _default_branch_from_api(owner_repo=owner_repo)
+    if branch is not None:
+        return branch
+    log.warning(
+        "could not resolve the default branch; falling back to 'master'",
+        hint=(
+            "record origin's default branch locally (git remote set-head "
+            "origin -a) or check gh auth status"
+        ),
+    )
+    return _FALLBACK_BRANCH
+
+
 def _fetch_required_contexts(
     *, log: structlog.stdlib.BoundLogger
 ) -> _RequiredContexts | _ProtectionAbsent | None:
-    """Fetch master branch protection's required_status_checks object.
+    """Fetch the default branch protection's required_status_checks object.
 
     Three-way result:
 
-    - `_RequiredContexts` — the API succeeded; carries master's
-      required-checks list (possibly empty) AND the `strict` flag.
+    - `_RequiredContexts` — the API succeeded; carries the default
+      branch's required-checks list (possibly empty) AND the `strict`
+      flag.
     - `_ProtectionAbsent` — the API definitively reported NO protection
       (the canonical "Branch not protected" 404). Fail-trigger.
     - `None` — graceful skip: `gh` is unavailable, the call failed for
@@ -210,11 +298,12 @@ def _fetch_required_contexts(
     owner_repo = _resolve_owner_repo(log=log)
     if owner_repo is None:
         return None
+    branch = _resolve_default_branch(log=log, owner_repo=owner_repo)
     # Read the full required_status_checks OBJECT (not the bare
     # /contexts sub-endpoint) so the response carries both `strict` and
     # `contexts`: the strict-off assertion needs the `strict` flag, which
     # the /contexts list endpoint does not return.
-    api_path = f"repos/{owner_repo}/branches/master/protection/required_status_checks"
+    api_path = f"repos/{owner_repo}/branches/{branch}/protection/required_status_checks"
     completed = subprocess.run(
         ["gh", "api", api_path],
         capture_output=True,
@@ -224,9 +313,10 @@ def _fetch_required_contexts(
     if completed.returncode != 0:
         combined = f"{completed.stdout}\n{completed.stderr}"
         if _NOT_PROTECTED_MARKER in combined:
-            # Definitive "absent": an admin-scoped token read master and
-            # GitHub answered with the canonical "Branch not protected"
-            # 404. This is the fail-trigger, NOT a can't-read skip.
+            # Definitive "absent": an admin-scoped token read the default
+            # branch and GitHub answered with the canonical "Branch not
+            # protected" 404. This is the fail-trigger, NOT a can't-read
+            # skip.
             return _ProtectionAbsent()
         log.warning(
             "gh api call failed for a non-definitive reason; "
@@ -334,14 +424,14 @@ def main() -> int:
         return 0
     if isinstance(fetched, _ProtectionAbsent):
         log.error(
-            "master has no branch protection; required-check protection MUST be enabled",
+            "default branch has no branch protection; " "required-check protection MUST be enabled",
             failure_mode="protection_absent",
             hint=(
-                "enable required-check branch protection on master "
+                "enable required-check branch protection on the default branch "
                 "per livespec/SPECIFICATION/non-functional-requirements.md "
                 '§"CI as a merge gate (branch protection)"; an unprotected '
-                "master lets PRs auto-merge before CI finishes and lets a "
-                "red PR land on master"
+                "default branch lets PRs auto-merge before CI finishes and "
+                "lets a red PR land"
             ),
         )
         return 4
@@ -350,11 +440,11 @@ def main() -> int:
             "required_status_checks.strict is enabled; strict MUST be OFF",
             failure_mode="strict_enabled",
             hint=(
-                "disable strict (require-branches-up-to-date) on master's "
-                "branch protection per livespec/SPECIFICATION/"
+                "disable strict (require-branches-up-to-date) on the default "
+                "branch's protection per livespec/SPECIFICATION/"
                 'non-functional-requirements.md §"CI as a merge gate '
                 '(branch protection)"; strict makes GitHub keep a behind PR '
-                "current by merging master into its branch, injecting a "
+                "current by merging the default branch into it, injecting a "
                 "merge commit that violates required_linear_history and "
                 "buries the per-commit Red-Green-Replay TDD trailers"
             ),

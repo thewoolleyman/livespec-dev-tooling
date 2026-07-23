@@ -224,7 +224,15 @@ def reconcile_topic(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:
 
 
 def reconcile_branch_protection(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:
-    """Set master branch protection from the member's own ci.yml matrix."""
+    """Set default-branch protection from the member's own ci.yml matrix.
+
+    The PUT targets the member's resolved default branch via the same
+    memoized `FleetContext.canonical_ref` the read path uses, so reads
+    and writes can never diverge for a repo (livespec-dev-tooling-17o):
+    a hardcoded `master` PUT against a main-default repo would configure
+    protection for a branch that does not exist, leaving the real
+    default branch wide open.
+    """
     matrix = member_matrix_targets(ctx=ctx, member=member)
     if matrix is None:
         return RowFinding(
@@ -242,7 +250,10 @@ def reconcile_branch_protection(*, ctx: FleetContext, member: FleetMember) -> Ro
         }
     )
     result = ctx.api(
-        path=f"repos/{ctx.owner}/{member.repo}/branches/master/protection",
+        path=(
+            f"repos/{ctx.owner}/{member.repo}/branches/"
+            f"{ctx.canonical_ref(repo=member.repo)}/protection"
+        ),
         method="PUT",
         body=body,
     )
@@ -287,17 +298,22 @@ def reconcile_delete_branch_on_merge(*, ctx: FleetContext, member: FleetMember) 
 
 
 def _open_shim_pr(*, ctx: FleetContext, member: FleetMember, missing: list[str]) -> RowOutcome:
-    """Create the shim branch, add each missing shim file, open the PR."""
+    """Create the shim branch off the member's default branch and open the PR.
+
+    Both the branch-point sha lookup and the PR `base` resolve through
+    `FleetContext.canonical_ref` (livespec-dev-tooling-17o): a PR based
+    on a hardcoded `master` fails outright on a main-default repo, so
+    shim provisioning could never complete there.
+    """
     repo_path = f"repos/{ctx.owner}/{member.repo}"
-    master_ref = ctx.api_object(path=f"{repo_path}/git/ref/heads/master")
+    base_ref = ctx.canonical_ref(repo=member.repo)
+    head_ref = ctx.api_object(path=f"{repo_path}/git/ref/heads/{base_ref}")
     sha_obj = (
-        cast("dict[str, object]", master_ref).get("object")
-        if isinstance(master_ref, dict)
-        else None
+        cast("dict[str, object]", head_ref).get("object") if isinstance(head_ref, dict) else None
     )
     sha = cast("dict[str, object]", sha_obj).get("sha") if isinstance(sha_obj, dict) else None
     if not isinstance(sha, str):
-        return RowFinding(message=f"{member.repo}: cannot resolve master sha for shim PR")
+        return RowFinding(message=f"{member.repo}: cannot resolve {base_ref} sha for shim PR")
     ref_body = json.dumps({"ref": f"refs/heads/{SHIM_BRANCH}", "sha": sha})
     if ctx.api(path=f"{repo_path}/git/refs", method="POST", body=ref_body).returncode != 0:
         return RowFinding(message=f"{member.repo}: creating shim branch failed")
@@ -317,7 +333,7 @@ def _open_shim_pr(*, ctx: FleetContext, member: FleetMember, missing: list[str])
         {
             "title": "chore(fleet): add missing pin-and-bump shim workflows",
             "head": SHIM_BRANCH,
-            "base": "master",
+            "base": base_ref,
             "body": (
                 "Opened by wire-fleet-member per livespec "
                 'SPECIFICATION/non-functional-requirements.md §"Fleet membership '
@@ -340,7 +356,9 @@ def reconcile_shim_workflows(*, ctx: FleetContext, member: FleetMember) -> RowOu
     """
     tree = ctx.tree(repo=member.repo)
     if not tree.readable:
-        return RowSkip(reason=f"{member.repo}: master tree unreadable; cannot reconcile shims")
+        return RowSkip(
+            reason=f"{member.repo}: default-branch tree unreadable; cannot reconcile shims"
+        )
     missing = [path for path in _SHIM_WORKFLOWS if path not in tree.paths]
     if not missing:
         return RowPass(note="all shim workflows present")
