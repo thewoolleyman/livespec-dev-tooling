@@ -36,7 +36,30 @@
 # Published by .github/workflows/fabro-sandbox-image.yml as
 # ghcr.io/<owner>/livespec-fabro-sandbox with immutable base-sha-<short>
 # (per master build) and base-v<X.Y.Z> (per release) tags.
-FROM buildpack-deps:noble
+#
+# WHY `-scm` AND NOT FULL buildpack-deps: the full variant's extra
+# 176.9 MB (compressed) is autoconf/automake and the C dev-header set,
+# which nothing in the base or python chain uses — both Python consumers'
+# COMPLETE dependency trees (`uv sync --all-groups --frozen`) install
+# with NO C compiler present (measured; see livespec-dev-tooling-oik).
+# `-scm` retains git, curl, and ca-certificates, which the steps below
+# (mise via `curl -fsSL https://mise.run`) and the sandbox's git
+# operations need. The ONE consumer that needs a compiler is the Rust
+# chain (rustc drives its linker through `cc`), and it re-adds a minimal
+# gcc + libc6-dev in the `python-rust` layer — NOT here — so the
+# CI-facing `python-` tag keeps the full saving.
+FROM buildpack-deps:noble-scm
+
+# libatomic1 — node's binary dynamically links libatomic.so.1. Full
+# buildpack-deps shipped it as a side effect of its gcc stack; `-scm`
+# does not, and the node install below fails without it ("error while
+# loading shared libraries: libatomic.so.1"). It is a 10.5 kB runtime
+# library (50.2 kB installed) — negligible against the 176.9 MB the
+# `-scm` re-base saves, and NOT a compiler or dev-header re-add.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libatomic1 \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # ---------------------------------------------------------------
 # Tool pins — ARG form so `just check-fabro-image-pin-lockstep` can

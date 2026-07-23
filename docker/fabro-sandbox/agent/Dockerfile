@@ -79,8 +79,8 @@ ARG CLAUDE_AGENT_ACP_VERSION=0.44.0
 ARG CODEX_ACP_VERSION=0.16.0
 
 # bubblewrap — required by the codex-acp adapter. The chain's root
-# (buildpack-deps:noble) is Debian/Ubuntu, so apt is correct; clean the
-# apt lists in the same layer to keep the image lean.
+# (buildpack-deps:noble-scm) is Debian/Ubuntu, so apt is correct; clean
+# the apt lists in the same layer to keep the image lean.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends bubblewrap \
     && apt-get clean \
