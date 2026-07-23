@@ -4,10 +4,11 @@ At the Red commit the pre-commit aggregate (`just check`) gates a tree
 that stages exactly one test file and no impl. Two classes of leg
 cannot tell us anything useful about that tree and so are skipped:
 
-1. The COVERAGE gates (`check-coverage`, `check-per-file-coverage`) —
+1. The test COVERAGE gates (`check-coverage`,
+   `check-check-coverage-incremental`, `check-per-file-coverage`) —
    already skipped today because coverage is verified at the Green
    amend (work-item livespec-dev-tooling-cvredmd). This module keeps
-   that floor byte-for-byte.
+   that floor explicit.
 2. ORTHOGONAL legs — check legs whose inputs a staged UNIT test cannot
    touch (livespec's `e2e-test-claude-code-mock`, `check-prompts`,
    `check-doctor-static`: gated on `tests/e2e/`, `tests/prompts/`, and
@@ -65,10 +66,22 @@ import structlog  # noqa: E402  — vendor-path-aware import after sys.path inse
 
 __all__: list[str] = []
 
-# The two coverage gates the Red leg has always skipped. Coverage is
-# verified at the Green amend, so gating it at Red yields nothing; this
-# tuple is the byte-identical floor of every Red-mode skip set.
-_COVERAGE_GATES: tuple[str, ...] = ("check-coverage", "check-per-file-coverage")
+# Test coverage gates the Red leg skips. Coverage is verified at the
+# Green amend, so gating it at Red yields nothing. The explicit base
+# gates plus check-check-coverage-* wrappers are one family: the
+# incremental wrapper delegates to the per-file coverage gate.
+_BASE_COVERAGE_GATES: frozenset[str] = frozenset(
+    {
+        "check-coverage",
+        "check-per-file-coverage",
+    }
+)
+_COVERAGE_GATE_PREFIXES: tuple[str, ...] = ("check-check-coverage-",)
+_COVERAGE_GATES: tuple[str, ...] = (
+    "check-coverage",
+    "check-check-coverage-incremental",
+    "check-per-file-coverage",
+)
 
 # Orthogonal legs: target name -> the input-path prefixes a staged file
 # would have to fall under to AFFECT that leg. A leg is skippable at Red
@@ -98,6 +111,11 @@ def _path_touches_any_prefix(*, staged_paths: list[str], prefixes: tuple[str, ..
     return any(path.startswith(prefixes) for path in staged_paths)
 
 
+def _is_coverage_gate(*, target: str) -> bool:
+    """Return True iff target is a pytest coverage gate skipped at Red."""
+    return target in _BASE_COVERAGE_GATES or target.startswith(_COVERAGE_GATE_PREFIXES)
+
+
 def red_mode_skip_targets(*, staged_paths: list[str], available_targets: list[str]) -> list[str]:
     """Return the sorted set of `just check` targets to skip at the Red gate.
 
@@ -121,7 +139,7 @@ def red_mode_skip_targets(*, staged_paths: list[str], available_targets: list[st
         )
         raise ValueError(msg)
     target_set = set(available_targets)
-    skip: set[str] = {gate for gate in _COVERAGE_GATES if gate in target_set}
+    skip: set[str] = {target for target in target_set if _is_coverage_gate(target=target)}
     for leg, prefixes in _ORTHOGONAL_LEGS.items():
         if leg in target_set and not _path_touches_any_prefix(
             staged_paths=staged_paths, prefixes=prefixes
