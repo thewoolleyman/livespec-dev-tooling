@@ -32,6 +32,20 @@ FROM ${PYTHON_IMAGE}
 
 ARG RUST_VERSION=1.92.0
 
+# Minimal C toolchain re-add — THIS LAYER ONLY. The chain's base is
+# buildpack-deps:noble-scm, which ships NO compiler (that is the point:
+# it keeps 176.9 MB of dev headers off the CI-facing `python-` tag). But
+# on linux-gnu rustc invokes `cc` as its linker driver, so `cargo build`
+# fails with "linker `cc` not found" without one (measured; see
+# livespec-dev-tooling-oik). gcc + libc6-dev (54.8 MB of archives) is the
+# minimal set that restores linking — deliberately NOT the full
+# buildpack-deps dev-header library set, and deliberately NOT in `base`,
+# so only the Rust consumer pays for it.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gcc libc6-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
 # Bake the pinned Rust toolchain (mirrors the console's
 # rust-toolchain.toml: channel + clippy + rustfmt). The minimal profile
 # keeps the layer lean; rustup lands cargo/rustc under /root/.cargo.
