@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.52.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.52.3...v0.52.4) (2026-07-23)
+
+
+### Bug Fixes
+
+* **fleet:** route reconcile writes through the member's resolved default branch ([f3b69bf](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f3b69bf5a6086f4117584a3cae7b740eb97a02f1))
+
 ## [0.52.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.52.2...v0.52.3) (2026-07-23)
 
 
