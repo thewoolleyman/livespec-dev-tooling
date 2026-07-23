@@ -133,6 +133,43 @@ def base_table() -> dict[tuple[str, ...], GhResult]:
     }
 
 
+def main_default_table() -> dict[tuple[str, ...], GhResult]:
+    """Canned fleet where widget's default branch is `main`, itself a merged-PR head."""
+    table = base_table()
+    table[("api", "repos/acme/widget")] = raw(text='{"default_branch": "main"}')
+    table[_BRANCHES_ARGS] = gh_jq_objects(
+        payload=(
+            {"name": "main"},
+            {"name": "feat/merged"},
+            {"name": "master"},
+            {"name": "release"},
+        )
+    )
+    table[prs_args(branch="main")] = gh_jq_objects(
+        payload=(
+            {
+                "number": 7,
+                "state": "closed",
+                "merged_at": "2026-07-01T12:00:00Z",
+            },
+        )
+    )
+    return table
+
+
+def test_default_branch_is_never_sweepable_even_when_named_main() -> None:
+    runner = RecordingRunner(table=main_default_table())
+    manifest = fetch_manifest(ctx=make_context(runner=runner))
+    assert manifest is not None
+
+    reports = run_sweep(ctx=make_context(runner=runner), manifest=manifest, mode=SweepMode.DRY_RUN)
+
+    assert [(item.branch, item.pr_number) for item in reports[0].sweepable] == [("feat/merged", 12)]
+    assert prs_args(branch="main") not in runner.calls
+    assert prs_args(branch="master") not in runner.calls
+    assert prs_args(branch="release") not in runner.calls
+
+
 def test_fetch_manifest_reads_livespec_core_fleet_manifest() -> None:
     runner = RecordingRunner(table=base_table())
     manifest = fetch_manifest(ctx=make_context(runner=runner))

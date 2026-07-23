@@ -3,7 +3,9 @@
 This is an operator tool, not a CI check. It reads livespec core's fleet
 manifest at run time, evaluates each remote branch strictly from PR state,
 and defaults to a dry-run report. Branch ancestry is intentionally not
-consulted because the fleet rebase-merges PRs.
+consulted because the fleet rebase-merges PRs. A repo's DEFAULT branch —
+whatever it is named — is never sweepable, even when it was once the head
+of a merged PR (e.g. after a `main` -> `master` migration).
 """
 
 from __future__ import annotations
@@ -36,6 +38,12 @@ __all__: list[str] = [
 
 _MANIFEST_REPO = "livespec"
 _MANIFEST_PATH = ".livespec-fleet-manifest.jsonc"
+# Fleet-convention literals protected in EVERY repo: `release` is the fleet's
+# release channel, and `master` stays as a belt-and-suspenders literal. These
+# are NOT the whole protection: each repo's ACTUAL default branch (whatever it
+# is named) is additionally protected per repo in `_sweepable_branches` via
+# `FleetContext.canonical_ref`, so a `main`-default repo can never have its
+# default branch swept.
 _PROTECTED_BRANCHES = frozenset({"master", "release"})
 _ModeName = Literal["dry-run", "execute"]
 
@@ -125,9 +133,10 @@ def _sweepable_branches(*, ctx: FleetContext, repo: str) -> list[SweepableBranch
     branch_names = _branch_names(ctx=ctx, repo=repo)
     if isinstance(branch_names, _ApiFailure):
         return branch_names
+    protected = _PROTECTED_BRANCHES | {ctx.canonical_ref(repo=repo)}
     sweepable: list[SweepableBranch] = []
     for branch in branch_names:
-        if branch in _PROTECTED_BRANCHES:
+        if branch in protected:
             continue
         merged = _merged_pr_head(ctx=ctx, repo=repo, branch=branch)
         if isinstance(merged, _ApiFailure):
