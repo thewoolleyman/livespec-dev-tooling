@@ -474,6 +474,18 @@ check-fleet-conformance:
 # So before this lane existed, those two rows were enforced in ZERO
 # contexts.
 #
+# This lane ALSO owns the posture-gated adopter currency leg
+# (livespec-dev-tooling-453): manifest `adopters` iterated for the
+# `claude-plugin-currency` concern only, `posture: released` only —
+# never the per-class obligation rows, which the spec binds to the
+# `fleet` array alone. The fleet App's installation MUST be restricted
+# to fleet repos, so a private released adopter is unreadable to every
+# automated central-lane context; homing the leg here is what keeps it
+# from being vacuously green. Pinned/none postures are reported as
+# posture-excluded (a declared choice, honored by never reading the
+# repo); an unreadable released adopter reports BLIND; findings are
+# error-severity (fail loud).
+#
 # This is a WORLD GATE in the same sense as check-master-ci-green and
 # check-branch-protection-alignment: it reads live world state under
 # the OPERATOR's own admin `gh` credentials, is wired into the `just

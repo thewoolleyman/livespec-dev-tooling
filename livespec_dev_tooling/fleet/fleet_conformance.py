@@ -26,7 +26,13 @@ authenticates with. The two ADMIN-scoped rows (`branch-protection`,
 `secret-names`) are NOT run here — the App token deliberately lacks
 admin scope — and are reported as out-of-vantage naming the lane that
 does enforce them (`check-fleet-conformance-admin`, the pre-push world
-gate in `fleet_conformance_admin.py`).
+gate in `fleet_conformance_admin.py`). The posture-gated adopter
+currency leg (`_adopter_lane.run_adopter_rows`) gets the same
+treatment for the same reason: the fleet App's installation MUST be
+restricted to fleet repos only, so a private released adopter is
+structurally unreadable here, and the leg is reported out-of-vantage
+(owned by the admin lane) at zero API cost rather than evaluated
+vacuously.
 
 Blind rows: a `RowSkip` means "could not be evaluated", which is NOT
 the same as "passed" — yet historically it was logged at `info` and
@@ -72,6 +78,7 @@ import sys
 from pathlib import Path
 from typing import cast
 
+from livespec_dev_tooling.fleet._adopter_lane import run_adopter_rows
 from livespec_dev_tooling.fleet._context import (
     FleetContext,
     default_gh_runner,
@@ -218,25 +225,31 @@ def main() -> int:
         )
         return 1
     result = run_member_rows(ctx=ctx, manifest=manifest, log=log)
+    adopters = run_adopter_rows(ctx=ctx, manifest=manifest, log=log)
     if args.emit_member_verdicts is not None:
         _write_member_verdicts(
             path=cast("Path", args.emit_member_verdicts),
             member_verdicts=result.member_verdicts,
         )
-    errors = result.error_findings + run_discovery_sweep(ctx=ctx, manifest=manifest, log=log)
+    errors = (
+        result.error_findings
+        + adopters.error_findings
+        + run_discovery_sweep(ctx=ctx, manifest=manifest, log=log)
+    )
+    out_of_vantage_rows = result.out_of_vantage_rows + adopters.out_of_vantage_rows
     if errors:
         log.error(
             "fleet conformance FAILED",
             error_findings=errors,
             blind_rows=result.blind_rows,
-            out_of_vantage_rows=result.out_of_vantage_rows,
+            out_of_vantage_rows=out_of_vantage_rows,
         )
         return 4
     log.info(
         "fleet conformance passed",
         members=len(manifest.members),
         blind_rows=result.blind_rows,
-        out_of_vantage_rows=result.out_of_vantage_rows,
+        out_of_vantage_rows=out_of_vantage_rows,
         owner=owner,
     )
     return 0
