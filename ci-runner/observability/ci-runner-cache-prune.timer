@@ -1,0 +1,12 @@
+# ci-runner-cache-prune.timer — daily storage hygiene for the CI lane.
+# Source of truth: livespec-dev-tooling ci-runner/observability/.
+[Unit]
+Description=CI runner rootless-podman cache prune (daily)
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
