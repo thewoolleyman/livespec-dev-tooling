@@ -248,12 +248,20 @@ def _as_path_tuple(*, value: object, key: str) -> tuple[Path, ...]:
 
 
 def _as_path(*, value: object, key: str) -> Path:
-    # TOML has no null literal: an absent `dataclasses_tree` IS the null
-    # default (handled by key-absence in `load_config`); a present key is
-    # always a non-None value, so only the string/non-string split remains.
     if not isinstance(value, str):
         msg = f"`{key}` must be a string or omitted"
         raise ConfigParseError(msg)
+    return Path(value)
+
+
+def _as_optional_path(*, value: object, key: str) -> Path | None:
+    # TOML has no null literal, so scalar role keys use the empty string as
+    # the declared-none spelling while preserving key omission as None.
+    if not isinstance(value, str):
+        msg = f"`{key}` must be a string or omitted"
+        raise ConfigParseError(msg)
+    if value == "":
+        return None
     return Path(value)
 
 
@@ -547,7 +555,7 @@ def load_config(*, repo_root: Path) -> Config:
         if key in table:
             overrides[key] = _as_path_tuple(value=table[key], key=key)
     if "dataclasses_tree" in table:
-        overrides["dataclasses_tree"] = _as_path(
+        overrides["dataclasses_tree"] = _as_optional_path(
             value=table["dataclasses_tree"], key="dataclasses_tree"
         )
     if "source_tree_prefixes" in table:

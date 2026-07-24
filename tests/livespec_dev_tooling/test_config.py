@@ -150,6 +150,24 @@ def test_present_block_omitting_keys_yields_flat_baseline(*, tmp_path: Path) -> 
     assert config.neutral_hook_body_path is None
 
 
+def test_dataclasses_tree_empty_string_is_declared_none(*, tmp_path: Path) -> None:
+    """`dataclasses_tree = ""` declares the null/no-op role key."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body='[tool.livespec_dev_tooling]\ndataclasses_tree = ""\n',
+    )
+    assert load_config(repo_root=tmp_path).dataclasses_tree is None
+
+
+def test_neutral_hook_body_path_empty_string_stays_falsy(*, tmp_path: Path) -> None:
+    """`neutral_hook_body_path = ""` remains the existing no-op/falsy value."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body='[tool.livespec_dev_tooling]\nneutral_hook_body_path = ""\n',
+    )
+    assert not load_config(repo_root=tmp_path).neutral_hook_body_path
+
+
 def test_full_override(*, tmp_path: Path) -> None:
     """Every role key declared in the block overrides the flat baseline."""
     _write_pyproject(
