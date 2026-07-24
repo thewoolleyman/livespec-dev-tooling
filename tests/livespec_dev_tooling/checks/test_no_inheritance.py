@@ -76,6 +76,41 @@ _ALLOWLISTED_SOURCE = (
     "class FooProto(Protocol):\n"
     "    def bar(self) -> None: ...\n"
 )
+_GENERIC_RAILWAY_SOURCE = (
+    "from __future__ import annotations\n"
+    "\n"
+    "from typing import Generic, TypeVar\n"
+    "\n"
+    "__all__: list[str] = []\n"
+    "\n"
+    '_T = TypeVar("_T")\n'
+    "\n"
+    "\n"
+    "class Success(Generic[_T]):\n"
+    "    pass\n"
+)
+_SUBSCRIPTED_PROTOCOL_SOURCE = (
+    "from __future__ import annotations\n"
+    "\n"
+    "from typing import Protocol, TypeVar\n"
+    "\n"
+    "__all__: list[str] = []\n"
+    "\n"
+    '_T = TypeVar("_T")\n'
+    "\n"
+    "\n"
+    "class Reader(Protocol[_T]):\n"
+    "    def read(self) -> _T: ...\n"
+)
+_SUBSCRIPTED_DISALLOWED_SOURCE = (
+    "from __future__ import annotations\n"
+    "\n"
+    "__all__: list[str] = []\n"
+    "\n"
+    "\n"
+    "class Foo(list[int]):\n"
+    "    pass\n"
+)
 
 
 def _load_check_module() -> ModuleType:
@@ -174,6 +209,71 @@ def test_no_inheritance_accepts_allowlisted_base_classes(
     _init_repo_with_files(tmp_path=tmp_path)
     result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
+
+
+def test_no_inheritance_accepts_generic_parameterized_base(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`Generic[...]` as a base is typing machinery the ratified railway REQUIRES — allowed.
+
+    The accepted Driver railway adoption (livespec-driver-claude-7u7 /
+    livespec-driver-codex-96q, per the ratified flat-full-ROP decision in
+    livespec non-functional-requirements v165 §"Shared content provenance")
+    lands `Success(Generic[_T])` / `Failure(Generic[_E])` containers, and the
+    3.10 fleet floor rules out the PEP 695 type-parameter syntax that would
+    remove the base entirely. `Generic[...]` parameterization is structural
+    typing machinery like the already-allowed `Protocol`/`NamedTuple`/
+    `TypedDict`, not implementation inheritance (livespec-dev-tooling-mg53).
+    """
+    _write(
+        tmp_path=tmp_path,
+        rel_path=".claude-plugin/scripts/livespec/foo.py",
+        source=_GENERIC_RAILWAY_SOURCE,
+    )
+    _init_repo_with_files(tmp_path=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 0
+
+
+def test_no_inheritance_accepts_subscripted_allowlisted_base(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A SUBSCRIPTED allowlisted base (`Protocol[_T]`) matches its allowlist entry.
+
+    `_base_terminal_name` previously rendered the whole subscription
+    (`'Protocol[_T]'`), which can never equal any allowlist entry — so
+    subscripting an allowlisted base silently forfeited its allowance. The
+    subscript is unwrapped to its value before rendering.
+    """
+    _write(
+        tmp_path=tmp_path,
+        rel_path=".claude-plugin/scripts/livespec/foo.py",
+        source=_SUBSCRIPTED_PROTOCOL_SOURCE,
+    )
+    _init_repo_with_files(tmp_path=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 0
+
+
+def test_no_inheritance_still_rejects_subscripted_disallowed_base(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Subscript unwrapping opens no hole: `list[int]` is still implementation inheritance.
+
+    Guards the unwrap against over-reach — the subscripted form of a
+    DISALLOWED base must keep failing exactly like its bare form, proving the
+    unwrap only restores allowlist matching and never widens the allowlist.
+    """
+    _write(
+        tmp_path=tmp_path,
+        rel_path=".claude-plugin/scripts/livespec/foo.py",
+        source=_SUBSCRIPTED_DISALLOWED_SOURCE,
+    )
+    _init_repo_with_files(tmp_path=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode != 0
+    combined = result.stdout + result.stderr
+    assert '"level": "error"' in combined
 
 
 def test_no_inheritance_warns_newly_covered_offender(
