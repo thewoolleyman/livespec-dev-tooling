@@ -10,9 +10,11 @@ nor a mirror-paired module (`tests_mirror_pairing` exempts `_`-prefixed files;
 its behavior is covered through the parent's subprocess tests, exactly as
 `_ci_matrix_parse` is covered through `test_ci_matrix_completeness`).
 
-The parsers are regex-based per the package convention (each check duplicates
-small self-contained parsers rather than sharing one) and are PURE — no
-logging — so the parent `main()` owns every diagnostic. The `justfile`
+The parsers are regex-based per the package's BOUNDED parser-duplication
+convention (canonical statement in `_ci_matrix_parse.py`'s docstring, which
+names this module's `_parse_ci_matrix_targets` as a PERMITTED mechanical
+duplicate) and are PURE — no logging — so the parent `main()` owns every
+diagnostic. The `justfile`
 `check:` recipe / `targets=(...)` anchors mirror `aggregate_completeness`; the
 `matrix.target` anchors mirror `branch_protection_alignment`. "Literal"
 membership on BOTH surfaces is the invariant the parent enforces
