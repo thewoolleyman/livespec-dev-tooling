@@ -514,3 +514,184 @@ def test_commit_pairs_exemption_does_not_widen_to_the_carrier_sibling(*, tmp_pat
         f"rejected with exit 1; got returncode={result.returncode} "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
+
+
+# A source module carrying a module docstring, an inline comment, a class with
+# a method docstring, and a plain function with NO docstring — the fixture the
+# docs-only carve-out (livespec-dev-tooling-5eow) tests re-stage with edits.
+_CARVEOUT_HEAD_SOURCE = (
+    '"""Module docstring — original."""\n'
+    "from __future__ import annotations\n\n"
+    "__all__: list[str] = []\n\n"
+    "X = 1  # original inline comment\n\n\n"
+    "class Foo:\n"
+    '    """Class docstring — original."""\n\n'
+    "    def method(self) -> int:\n"
+    '        """Method docstring — original."""\n'
+    "        return X\n\n\n"
+    "def bare() -> int:\n"
+    "    return X + 1\n"
+)
+_CARVEOUT_SOURCE_REL = ".claude-plugin/scripts/livespec/foo/bar.py"
+
+
+def _init_repo_with_committed_source(*, tmp_path: Path, body: str) -> Path:
+    """Init a repo, commit `body` at `_CARVEOUT_SOURCE_REL`, and return its abs path."""
+    _git(cwd=tmp_path, args=["init", "-q"])
+    _git(cwd=tmp_path, args=["config", "user.email", "test@example.com"])
+    _git(cwd=tmp_path, args=["config", "user.name", "Test"])
+    package_dir = tmp_path / ".claude-plugin" / "scripts" / "livespec" / "foo"
+    package_dir.mkdir(parents=True)
+    source = package_dir / "bar.py"
+    source.write_text(body, encoding="utf-8")
+    _git(cwd=tmp_path, args=["add", _CARVEOUT_SOURCE_REL])
+    _git(cwd=tmp_path, args=["commit", "-m", "baseline with source"])
+    return source
+
+
+def _run_check(*, tmp_path: Path) -> subprocess.CompletedProcess[str]:
+    """Invoke the commit-pairs check as a CLI with `cwd=tmp_path`."""
+    # S603: argv is a fixed list (sys.executable + repo-controlled script path).
+    return subprocess.run(
+        [sys.executable, str(_COMMIT_PAIRS_SOURCE_AND_TEST)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_scrubbed_env(),
+    )
+
+
+def test_commit_pairs_carveout_allows_docs_only_source_change(*, tmp_path: Path) -> None:
+    """A comments+docstring-only source edit with no staged test passes (5eow carve-out).
+
+    Fixture: a source file committed to HEAD, then re-staged with ONLY its
+    module, class, and method docstrings and its inline comment changed (and a
+    method docstring grown to several lines) — no logical-code change — and NO
+    `tests/` file co-staged. The check reads both the HEAD and the staged
+    (index) versions, strips every module/class/function docstring from each,
+    finds the docstring-stripped ASTs identical, and waives the pairing
+    requirement, exiting 0. Comments never reach the AST; docstrings do, so
+    stripping them is what makes a docstring-only edit compare equal.
+    """
+    source = _init_repo_with_committed_source(tmp_path=tmp_path, body=_CARVEOUT_HEAD_SOURCE)
+
+    staged_body = (
+        '"""Module docstring — REWORDED for clarity."""\n'
+        "from __future__ import annotations\n\n"
+        "__all__: list[str] = []\n\n"
+        "X = 1  # a different inline comment\n\n\n"
+        "class Foo:\n"
+        '    """Class docstring — REWORDED."""\n\n'
+        "    def method(self) -> int:\n"
+        '        """Method docstring — REWORDED, now spanning\n\n'
+        "        several lines of prose that live only in the\n"
+        "        docstring and change no logical code.\n"
+        '        """\n'
+        "        return X\n\n\n"
+        "def bare() -> int:\n"
+        "    return X + 1\n"
+    )
+    source.write_text(staged_body, encoding="utf-8")
+    _git(cwd=tmp_path, args=["add", _CARVEOUT_SOURCE_REL])
+
+    result = _run_check(tmp_path=tmp_path)
+
+    assert result.returncode == 0, (
+        f"docs-only source change (comments + docstrings only) should pass the "
+        f"carve-out with exit 0; got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_commit_pairs_carveout_rejects_real_source_change(*, tmp_path: Path) -> None:
+    """A real (logical-code) source edit with no staged test is still rejected.
+
+    The carve-out is content-keyed: a change touching anything beyond comments
+    and docstrings re-arms the pairing requirement. Fixture: the source file in
+    HEAD re-staged with a changed constant (`X = 1` → `X = 2`) and no `tests/`
+    co-stage. The docstring-stripped ASTs differ, so the check rejects with
+    exit 1 and surfaces the offending source path.
+    """
+    source = _init_repo_with_committed_source(tmp_path=tmp_path, body=_CARVEOUT_HEAD_SOURCE)
+    source.write_text(_CARVEOUT_HEAD_SOURCE.replace("X = 1", "X = 2"), encoding="utf-8")
+    _git(cwd=tmp_path, args=["add", _CARVEOUT_SOURCE_REL])
+
+    result = _run_check(tmp_path=tmp_path)
+
+    assert result.returncode != 0, (
+        f"a real code change should re-arm the pairing requirement (exit non-zero); "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    combined = result.stdout + result.stderr
+    assert _CARVEOUT_SOURCE_REL in combined, (
+        f"the rejection diagnostic should surface the offending source path "
+        f"`{_CARVEOUT_SOURCE_REL}`; stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_commit_pairs_carveout_fails_closed_on_staged_deletion(*, tmp_path: Path) -> None:
+    """A staged deletion of a source file falls back to the pairing requirement.
+
+    A deletion has no staged (index, stage-0) blob, so `_git_blob(":<path>")`
+    fails and `_is_docs_only_change` returns False (fail closed). Fixture: the
+    source file committed to HEAD, then `git rm`'d (staging the deletion) with
+    no `tests/` co-stage. The check rejects with exit 1 rather than treating a
+    removed file as a docs-only edit.
+    """
+    _init_repo_with_committed_source(tmp_path=tmp_path, body=_CARVEOUT_HEAD_SOURCE)
+    _git(cwd=tmp_path, args=["rm", "-q", _CARVEOUT_SOURCE_REL])
+
+    result = _run_check(tmp_path=tmp_path)
+
+    assert result.returncode != 0, (
+        f"a staged deletion should fail closed to the pairing requirement (exit "
+        f"non-zero); got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_commit_pairs_carveout_fails_closed_when_staged_unparseable(*, tmp_path: Path) -> None:
+    """A staged version that does not parse falls back to the pairing requirement.
+
+    `_dump_without_docstrings` returns None when `ast.parse` raises, so
+    `_is_docs_only_change` returns False (fail closed). Fixture: a valid source
+    file in HEAD re-staged with syntactically broken Python and no `tests/`
+    co-stage. The check rejects with exit 1.
+    """
+    source = _init_repo_with_committed_source(tmp_path=tmp_path, body=_CARVEOUT_HEAD_SOURCE)
+    source.write_text("def broken( this is not valid python\n", encoding="utf-8")
+    _git(cwd=tmp_path, args=["add", _CARVEOUT_SOURCE_REL])
+
+    result = _run_check(tmp_path=tmp_path)
+
+    assert result.returncode != 0, (
+        f"an unparseable staged version should fail closed (exit non-zero); "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_commit_pairs_carveout_fails_closed_when_head_unparseable(*, tmp_path: Path) -> None:
+    """A HEAD version that does not parse falls back to the pairing requirement.
+
+    Mirror of the staged-unparseable case for the HEAD side: `_is_docs_only_change`
+    parses the HEAD blob first and returns False (fail closed) when it does not
+    parse, before it even reads the staged blob. Fixture: syntactically broken
+    Python committed to HEAD, re-staged with a valid version and no `tests/`
+    co-stage. The check rejects with exit 1.
+    """
+    source = _init_repo_with_committed_source(
+        tmp_path=tmp_path, body="def broken( this is not valid python\n"
+    )
+    source.write_text(_CARVEOUT_HEAD_SOURCE, encoding="utf-8")
+    _git(cwd=tmp_path, args=["add", _CARVEOUT_SOURCE_REL])
+
+    result = _run_check(tmp_path=tmp_path)
+
+    assert result.returncode != 0, (
+        f"an unparseable HEAD version should fail closed (exit non-zero); "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
