@@ -368,6 +368,21 @@ check-static:
     uv run ruff check .
     uv run pyright
 
+# Factory-boundary helper: fail if the current branch changes GitHub workflow
+# files. This is intentionally outside the canonical aggregate; factory janitor
+# lanes invoke it before `check` so implementation branches never publish
+# `.github/workflows/` edits.
+check-no-workflow-edits:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    base=$(git merge-base HEAD origin/master 2>/dev/null || git merge-base HEAD master)
+    if git diff --quiet --name-only "$base"...HEAD -- .github/workflows; then
+        exit 0
+    fi
+    echo "ERROR: factory branches must not modify .github/workflows/ files" >&2
+    git diff --name-only "$base"...HEAD -- .github/workflows >&2
+    exit 1
+
 # `changed-files` — print the changed `.py` set this branch touches,
 # repo-root-relative, one path per line, sorted + de-duplicated
 # (work-item livespec-dev-tooling-7us.9). The set is the UNION of two
