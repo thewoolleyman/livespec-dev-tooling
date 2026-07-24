@@ -201,7 +201,11 @@ def _freshness_outcome(*, ctx: FleetContext, member: FleetMember, tag: str) -> R
                     f"{member.repo}: dev-tooling pin {tag} persisting gap (stale, latest "
                     f"release {latest}, open bump PR #{number} unable to land)"
                 ),
-                severity="error",
+                # Context-scoped exactly as the pin-currency rows are: error
+                # only in the filter-consuming fan-out preflight, warning in
+                # per-PR CI. Both persisting-gap sites must move together or
+                # the promotion is half-armed.
+                severity="error" if ctx.filter_consuming_preflight else "warning",
             )
         return RowFinding(
             message=f"{member.repo}: dev-tooling pin {tag} is stale (latest release {latest})",

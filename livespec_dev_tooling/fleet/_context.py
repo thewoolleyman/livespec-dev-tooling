@@ -193,6 +193,16 @@ class FleetContext:
 
     owner: str
     run_gh: GhRunner
+    # True when this run emits per-member verdicts — i.e. it is the fan-out
+    # preflight, whose findings the livespec-f73t dispatch-matrix filter
+    # consumes as per-member exclusions rather than as a halt. Rows use it to
+    # scope severity by CONTEXT: a persisting pin gap is an error HERE (the
+    # filter excludes that member and propagation continues) and a warning in
+    # ordinary per-PR CI, where a sibling's stall would otherwise red this
+    # repo's unrelated and repair PRs alike. Derived from the existing
+    # `--emit-member-verdicts` invocation, never from a lever or env var.
+    # Defaults False so every other construction site keeps warning behavior.
+    filter_consuming_preflight: bool = False
     tree_cache: dict[str, TreeState] = field(default_factory=dict)
     installed_cache: dict[str, frozenset[str] | None] = field(default_factory=dict)
     marker_cache: dict[str, bool] = field(default_factory=dict)

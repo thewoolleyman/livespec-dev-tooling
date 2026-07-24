@@ -260,7 +260,16 @@ def main() -> int:
             hint="pass --owner or run inside a github.com clone",
         )
         return 1
-    ctx = FleetContext(owner=owner, run_gh=default_gh_runner)
+    # Emitting per-member verdicts IS the fan-out preflight context: the
+    # livespec-f73t dispatch-matrix filter consumes those verdicts, so an
+    # exit-4 finding excludes the offending member loudly instead of halting
+    # propagation. Deriving the context from this existing flag keeps the
+    # persisting-gap severity scoped without a lever, env var, or exemption.
+    ctx = FleetContext(
+        owner=owner,
+        run_gh=default_gh_runner,
+        filter_consuming_preflight=args.emit_member_verdicts is not None,
+    )
     manifest = fetch_manifest(ctx=ctx)
     if manifest is None:
         log.error(
