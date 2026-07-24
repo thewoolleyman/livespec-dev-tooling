@@ -1,0 +1,17 @@
+# ci-runner-heartbeat.service — one liveness gauge emission (see the .timer).
+# Part of the 3lev.1 resource-health work (livespec
+# plan/fabro-ci-image-factoring): the paired Honeycomb trigger on
+# livespec-host-metrics alerts when livespec.ci_runners.active stays < 1.
+# Source of truth: livespec-dev-tooling ci-runner/observability/ — install
+# via install-observability.sh, never hand-edit the live copy (the s2t
+# recreatability rule).
+[Unit]
+Description=CI runner fleet liveness heartbeat (OTLP gauge to local collector)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+# Unprivileged and credential-free: systemctl status reads + loopback curl.
+DynamicUser=yes
+ExecStart=/usr/local/lib/ci-runner/ci-runner-heartbeat.sh

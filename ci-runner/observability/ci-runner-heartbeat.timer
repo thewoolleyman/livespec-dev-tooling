@@ -1,0 +1,12 @@
+# ci-runner-heartbeat.timer — fire the liveness gauge every 5 minutes.
+# Source of truth: livespec-dev-tooling ci-runner/observability/.
+[Unit]
+Description=CI runner fleet liveness heartbeat (every 5 min)
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
