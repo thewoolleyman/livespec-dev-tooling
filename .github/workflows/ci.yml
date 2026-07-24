@@ -302,7 +302,10 @@ jobs:
   check-metadata:
     name: ${{ matrix.target }}
     # Self-hosted in the baked image, same rationale as check-python above.
-    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["self-hosted","local-ci"]') }}
+    # `matrix.runner` (set ONLY by the sentinel include entry below) overrides
+    # the lane for that one target; every other target follows the
+    # CI_RUNNER_LABELS variable exactly as before.
+    runs-on: ${{ fromJSON(matrix.runner || vars.CI_RUNNER_LABELS || '["self-hosted","local-ci"]') }}
     container:
       image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v0.54.0
     env:
@@ -355,6 +358,21 @@ jobs:
           - check-skill-invocation-paths
           - check-source-trees-scoped-to-consumer
           - check-vendor-manifest
+        # THE LOCAL-LANE SENTINEL (maintainer-decided 2026-07-24, amending the
+        # 2026-07-19 local-runner deferral narrowly; design record:
+        # livespec plan/fabro-ci-image-factoring/handoff.md §"Permanent
+        # single-job local lane"). Exactly ONE tiny, always-run,
+        # credential-free target is pinned to the co-located runner fleet so
+        # the local lane is exercised on every CI run and cannot rot
+        # unnoticed. check-self-hosted-routing is that target on purpose: it
+        # is the security guard that keeps forbidden triggers away from
+        # `local-ci` jobs, so the lane continuously proves the very check
+        # that keeps the lane safe, and it fails CLOSED (pending/red blocks
+        # merge) if the runner fleet dies. Do NOT add further targets here
+        # without a maintainer decision — one job is the designed load.
+        include:
+          - target: check-self-hosted-routing
+            runner: '["self-hosted","local-ci"]'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
