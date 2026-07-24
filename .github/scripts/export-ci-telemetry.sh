@@ -45,23 +45,30 @@ run_end="$(iso_to_nanos "$(jq -r '.updatedAt' <<<"$run_json")")"
 run_concl="$(jq -r '.conclusion // ""' <<<"$run_json")"
 run_code=2; [ "$run_concl" = "success" ] && run_code=1
 
-run_span="$(jq -nc \
+# `$run_json` carries the whole `jobs` array and MUST reach jq on stdin, never
+# as a `--argjson` value: it grows without bound with the job count, and past
+# the runner's argv+envp budget the exec dies with "jq: Argument list too long"
+# (E2BIG, exit 126) — reddening master and, with it, hard-gating every
+# dark-factory dispatch that reads `check-master-ci-green`. That failure fired
+# for real in livespec-driver-codex (fixed there in PR #249, which this
+# mirrors); stdin has no argv limit, so routing the value there removes the
+# whole class rather than moving the threshold.
+run_span="$(jq -c \
   --arg trace "$trace_id" --arg span "$run_span_id" \
   --arg start "$run_start" --arg end "$run_end" \
-  --arg repo "$REPO" --argjson run_id "$RUN_ID" --argjson code "$run_code" \
-  --argjson run "$run_json" '
+  --arg repo "$REPO" --argjson run_id "$RUN_ID" --argjson code "$run_code" '
   {traceId:$trace, spanId:$span, name:"ci.run", kind:1,
    startTimeUnixNano:$start, endTimeUnixNano:$end,
    attributes:[
      {key:"repo",value:{stringValue:$repo}},
      {key:"ci.run_id",value:{intValue:($run_id|tostring)}},
-     {key:"ci.conclusion",value:{stringValue:($run.conclusion // "")}},
-     {key:"ci.title",value:{stringValue:($run.displayTitle // "")}},
-     {key:"git.commit.sha",value:{stringValue:($run.headSha // "")}},
-     {key:"git.branch",value:{stringValue:($run.headBranch // "")}},
-     {key:"ci.event",value:{stringValue:($run.event // "")}}
+     {key:"ci.conclusion",value:{stringValue:(.conclusion // "")}},
+     {key:"ci.title",value:{stringValue:(.displayTitle // "")}},
+     {key:"git.commit.sha",value:{stringValue:(.headSha // "")}},
+     {key:"git.branch",value:{stringValue:(.headBranch // "")}},
+     {key:"ci.event",value:{stringValue:(.event // "")}}
    ],
-   status:{code:$code}}')"
+   status:{code:$code}}' <<<"$run_json")"
 
 job_spans="[]"
 while IFS=$'\t' read -r jid jname jconcl jstart_iso jend_iso; do
@@ -88,9 +95,12 @@ while IFS=$'\t' read -r jid jname jconcl jstart_iso jend_iso; do
   job_spans="$(jq -c ". + [$span]" <<<"$job_spans")"
 done < <(jq -r '.jobs[] | [.databaseId, .name, (.conclusion // ""), (.startedAt // ""), (.completedAt // "")] | @tsv' <<<"$run_json")
 
+# Same argv-limit class as the run span above: `$job_spans` grows with the job
+# count, so it goes on stdin. `$run_span` stays a `--argjson` value because it
+# is a single fixed-shape span (seven attributes) and cannot grow with the run.
 payload_file="$(mktemp)"
-jq -nc \
-  --argjson run "$run_span" --argjson jobs "$job_spans" \
+jq -c \
+  --argjson run "$run_span" \
   --arg svc "$DATASET" --arg ns "$NAMESPACE" \
   --arg scope "$SCOPE_NAME" --arg ver "$SCOPE_VERSION" '
   {resourceSpans:[{
@@ -100,9 +110,9 @@ jq -nc \
      ]},
      scopeSpans:[{
        scope:{name:$scope, version:$ver},
-       spans:([$run] + $jobs)
+       spans:([$run] + .)
      }]
-   }]}' > "$payload_file"
+   }]}' <<<"$job_spans" > "$payload_file"
 
 span_count="$(jq '.resourceSpans[0].scopeSpans[0].spans | length' "$payload_file")"
 resp_file="$(mktemp)"
