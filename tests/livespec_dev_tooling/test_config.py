@@ -159,13 +159,13 @@ def test_dataclasses_tree_empty_string_is_declared_none(*, tmp_path: Path) -> No
     assert load_config(repo_root=tmp_path).dataclasses_tree is None
 
 
-def test_neutral_hook_body_path_empty_string_stays_falsy(*, tmp_path: Path) -> None:
-    """`neutral_hook_body_path = ""` remains the existing no-op/falsy value."""
+def test_neutral_hook_body_path_empty_string_is_declared_none(*, tmp_path: Path) -> None:
+    """`neutral_hook_body_path = ""` declares the null/no-op role key."""
     _write_pyproject(
         repo_root=tmp_path,
         body='[tool.livespec_dev_tooling]\nneutral_hook_body_path = ""\n',
     )
-    assert not load_config(repo_root=tmp_path).neutral_hook_body_path
+    assert load_config(repo_root=tmp_path).neutral_hook_body_path is None
 
 
 def test_full_override(*, tmp_path: Path) -> None:

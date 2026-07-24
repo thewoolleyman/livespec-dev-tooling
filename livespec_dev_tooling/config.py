@@ -569,8 +569,11 @@ def load_config(*, repo_root: Path) -> Config:
     if "mirror_pairings" in table:
         overrides["mirror_pairings"] = _parse_mirror_pairings(value=table["mirror_pairings"])
     if "neutral_hook_body_path" in table:
-        overrides["neutral_hook_body_path"] = _as_str(
+        neutral_hook_body_path = _as_optional_path(
             value=table["neutral_hook_body_path"], key="neutral_hook_body_path"
+        )
+        overrides["neutral_hook_body_path"] = (
+            neutral_hook_body_path.as_posix() if neutral_hook_body_path is not None else None
         )
     return Config(
         source_trees=overrides.get("source_trees", baseline.source_trees),
