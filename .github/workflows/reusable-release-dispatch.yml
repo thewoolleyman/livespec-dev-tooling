@@ -186,16 +186,26 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           LIVESPEC_RUN_FLEET_CONFORMANCE: "true"
         run: |
-          # Exit 0: all members conformant. Exit 4 WITH a verdict
-          # artifact: per-member findings — the filter step below
-          # excludes the non-conformant members (livespec-f73t: a
-          # FILTER on the sibling set, not a GATE on the whole job).
-          # Anything else, or exit 4 with no artifact, is a STRUCTURAL
-          # failure: stay red, fail closed, no lever.
+          # Exit 0: all members conformant. Exit 4 with a verdict
+          # artifact THAT NAMES A NON-CONFORMANT MEMBER: per-member
+          # findings — the filter step below excludes those members
+          # (livespec-f73t: a FILTER on the sibling set, not a GATE on
+          # the whole job).
+          #
+          # Exit 4 with an ALL-CONFORMANT artifact is a finding
+          # attributable to NO member — the discovery sweep's
+          # unregistered fleet-shaped repo, or a blind row. Those never
+          # enter a member's verdict, so the filter would exclude nobody
+          # and demote the finding to a log line. That is the fail-loud
+          # regression livespec-dev-tooling-jeqp closes: such an exit 4
+          # is STRUCTURAL and stays red, exactly as the pre-filter gate
+          # did. Anything else, or exit 4 with no artifact, is likewise
+          # structural. Fail closed, no lever.
           ec=0
           just check-fleet-conformance --emit-member-verdicts member-verdicts.json || ec=$?
           if [ "$ec" -eq 0 ]; then exit 0; fi
-          if [ "$ec" -eq 4 ] && [ -s member-verdicts.json ]; then
+          if [ "$ec" -eq 4 ] && [ -s member-verdicts.json ] \
+             && jq -e 'any(.[]; .conformant == false)' member-verdicts.json >/dev/null; then
             echo "::notice::conformance reported per-member findings; the dispatch matrix will be filtered (each excluded member is annotated by the filter step)"
             exit 0
           fi
