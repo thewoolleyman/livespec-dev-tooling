@@ -289,7 +289,12 @@ def _pin_currency_outcome(
                 f"{member.repo}: {spec.pin_format} pin persisting gap "
                 f"(stale AND its bump PR is already open, unable to land): {findings}"
             ),
-            severity="error",
+            # Context-scoped: an error only where the livespec-f73t filter
+            # consumes it as a per-member exclusion (the fan-out preflight);
+            # a warning in per-PR CI, where one member's stall must not red
+            # this repo's unrelated and repair PRs. Message identical either
+            # way — the scoping lowers severity, never the diagnostic.
+            severity="error" if ctx.filter_consuming_preflight else "warning",
         )
     return RowFinding(
         message=_finding_message(member=member, spec=spec, stale=stale),

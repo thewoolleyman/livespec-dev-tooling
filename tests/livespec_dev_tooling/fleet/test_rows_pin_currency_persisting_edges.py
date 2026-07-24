@@ -45,7 +45,13 @@ def _context(*, table: dict[tuple[str, ...], GhResult]) -> FleetContext:
         return table.get(tuple(args), GhResult(returncode=1, stdout="", stderr="no canned"))
 
     runner: GhRunner = run
-    return FleetContext(owner="acme", run_gh=runner)
+    # The filter-consuming preflight context, deliberately. The persisting-gap
+    # escalation is context-scoped, so in per-PR CI context EVERY outcome here
+    # would be a warning and each "stays warning" assertion below would pass
+    # vacuously — proving nothing about the conjunction's guard conditions.
+    # Exercising the escalating context is what keeps them falsifiable; the
+    # per-PR context is covered by test_rows_pin_currency_context_scope.py.
+    return FleetContext(owner="acme", run_gh=runner, filter_consuming_preflight=True)
 
 
 def _pin_table(*, open_prs_payload: object) -> dict[tuple[str, ...], GhResult]:
