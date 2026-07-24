@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.54.7](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.54.6...v0.54.7) (2026-07-24)
+
+
+### Bug Fixes
+
+* accept "" as declared-none for dataclasses_tree (e9j L0) ([39ce9fc](https://github.com/thewoolleyman/livespec-dev-tooling/commit/39ce9fc35837fd1b21b1b0a2e0556f45b07ab626))
+* add no-workflow-edits janitor recipe ([362340f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/362340f1b973d1f710259c2b1e96ed12c6b87797))
+
 ## [0.54.6](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.54.5...v0.54.6) (2026-07-24)
 
 
