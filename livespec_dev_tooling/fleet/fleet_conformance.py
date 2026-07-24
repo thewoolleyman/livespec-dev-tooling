@@ -9,8 +9,10 @@ matching `livespec-*` naming or carrying the `livespec-sibling` topic
 but absent from the manifest is a finding).
 
 Execution contexts: the dev-tooling `just check` aggregate (always
-wired), the scheduled fleet workflow, and the BLOCKING preflight of
-the release fan-out (`reusable-release-dispatch.yml`).
+wired), its per-PR CI job, the scheduled fleet workflow, and the
+release fan-out preflight (`reusable-release-dispatch.yml`) — a
+per-member FILTER there, blocking only on structural failure, per
+contracts.md §"`reusable-release-dispatch.yml`".
 
 Env lever (the single self-documenting per-check lever, mirroring
 `check_mutation`'s RUN/SKIP precedent for network-dependent checks):
