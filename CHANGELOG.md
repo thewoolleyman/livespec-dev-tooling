@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.54.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.54.3...v0.54.4) (2026-07-24)
+
+
+### Bug Fixes
+
+* route growing jq inputs to stdin in the CI telemetry export ([e3b3f58](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e3b3f582f87e439d9a4888cf9a2fcded679b7d14))
+
 ## [0.54.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.54.2...v0.54.3) (2026-07-24)
 
 
