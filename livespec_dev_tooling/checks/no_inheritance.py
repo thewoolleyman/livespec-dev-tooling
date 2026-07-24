@@ -5,12 +5,23 @@ target list" (the `check-no-inheritance` row), `class X(Y):`
 inside `.claude-plugin/scripts/livespec/**` is forbidden when
 `Y` is not in the closed direct-parent allowlist:
 `{Exception, BaseException, LivespecError, Protocol,
-NamedTuple, TypedDict}`. This codifies the flat-composition
-direction and the v013 M5 leaf-closed tightening:
-`LivespecError` subclasses themselves are NOT acceptable
-bases — `class RateLimitError(UsageError):` is rejected even
-though `UsageError` is itself a `LivespecError` subclass.
-`LivespecError` itself remains an open extension point.
+NamedTuple, TypedDict, Generic}`. This codifies the
+flat-composition direction and the v013 M5 leaf-closed
+tightening: `LivespecError` subclasses themselves are NOT
+acceptable bases — `class RateLimitError(UsageError):` is
+rejected even though `UsageError` is itself a `LivespecError`
+subclass. `LivespecError` itself remains an open extension
+point. `Generic` is allowlisted because `Generic[...]`
+parameterization is structural typing machinery, not
+implementation inheritance: the ratified flat-full-ROP railway
+(livespec non-functional-requirements v165 §"Shared content
+provenance", landed in the Drivers by accepted items 7u7/96q)
+requires `Success(Generic[_T])`-shaped containers, and the 3.10
+fleet floor rules out the PEP 695 type-parameter syntax that
+would remove the base. A SUBSCRIPTED base (`Generic[_T]`,
+`Protocol[_T]`) is unwrapped to its value before allowlist
+matching; a subscripted DISALLOWED base (`list[int]`) still
+fails exactly like its bare form.
 
 The check walks the git-derived first-party `.py` universe
 (`config.resolve_check_universe`), parses each via `ast`, and
@@ -61,12 +72,25 @@ __all__: list[str] = []
 
 
 _ALLOWED_PARENTS = frozenset(
-    {"Exception", "BaseException", "LivespecError", "Protocol", "NamedTuple", "TypedDict"}
+    {
+        "Exception",
+        "BaseException",
+        "LivespecError",
+        "Protocol",
+        "NamedTuple",
+        "TypedDict",
+        "Generic",
+    }
 )
 
 
 def _base_terminal_name(*, base: ast.expr) -> str:
-    rendered = ast.unparse(base)
+    # A subscripted base (`Generic[_T]`, `Protocol[_T]`) unwraps to its value
+    # first — the whole subscription can never equal an allowlist entry, and
+    # parameterization is not what the allowlist discriminates on. Subscripted
+    # DISALLOWED bases (`list[int]` -> `list`) still miss the allowlist.
+    target = base.value if isinstance(base, ast.Subscript) else base
+    rendered = ast.unparse(target)
     return rendered.rsplit(".", maxsplit=1)[-1]
 
 
