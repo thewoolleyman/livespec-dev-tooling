@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.54.6](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.54.5...v0.54.6) (2026-07-24)
+
+
+### Bug Fixes
+
+* allow Generic[...] bases in no_inheritance and match subscripted allowlist entries ([462192e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/462192e1895f9528207c679408260d516f2fa56f))
+* exempt the declared neutral hook body from the first-party check universe ([614c07e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/614c07ed5cc3250458d6ae7c49db7919b399f99f))
+
 ## [0.54.5](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.54.4...v0.54.5) (2026-07-24)
 
 
