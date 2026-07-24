@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.54.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.54.2...v0.54.3) (2026-07-24)
+
+
+### Bug Fixes
+
+* **fleet:** escalate a persisting pin gap (stale with an open bump PR for latest) to an error finding ([17ab424](https://github.com/thewoolleyman/livespec-dev-tooling/commit/17ab424188dd286d1711c518288fe71a2d38f3d8))
+* **fleet:** scope the persisting-gap escalation to the filter-consuming preflight ([4855a92](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4855a92d95b0f572d7ed0d19934a545b49183db5))
+
 ## [0.54.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.54.1...v0.54.2) (2026-07-24)
 
 
