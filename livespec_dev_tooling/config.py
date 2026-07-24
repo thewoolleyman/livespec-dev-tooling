@@ -653,6 +653,7 @@ def filter_first_party_py(
     tracked_py: Iterable[Path],
     repo_root: Path,
     tests_tree_prefix: str,
+    neutral_hook_body_path: str | None = None,
 ) -> tuple[Path, ...]:
     """Filter a tracked `.py` set down to its first-party subset (pure — no listing IO).
 
@@ -670,8 +671,16 @@ def filter_first_party_py(
     `.claude/hooks/**` holds first-party hook `.py` (e.g. the Driver-shipped
     footgun/no-shadow guards) that the fleet-check-coverage epic requires
     COVERED — a Driver repo's hooks are its entire first-party universe.
-    Finally, a file is exempt if it (e) carries the `@generated` sentinel
-    (`is_generated`). This function does no subprocess/listing
+    A file is exempt if it (e) carries the `@generated` sentinel
+    (`is_generated`). Finally (f), the exact path declared as
+    `neutral_hook_body_path` is exempt: that file is INSTALLED FOREIGN
+    CONTENT, byte-synced from the packaged canonical constant and
+    forbidden to hand-edit (`no-shadow-ledger-body-identical` enforces
+    the sync), so a universe-derived check demanding an edit to it (e.g.
+    `check-all-declared` demanding `__all__`) would deadlock against the
+    byte-identity rule; the identity check reads the configured path
+    directly, not via this universe, so drift detection is unaffected.
+    This function does no subprocess/listing
     IO of its own — `tracked_py` is assumed already obtained (e.g. from
     `git ls-files`) — though `is_generated` DOES read file contents, so
     `repo_root` is needed to resolve each candidate to an absolute path
@@ -687,6 +696,8 @@ def filter_first_party_py(
         if posix.startswith(_TEMPLATES_PREFIX):
             continue
         if posix.startswith(_CLAUDE_SKILLS_PREFIX):
+            continue
+        if neutral_hook_body_path is not None and posix == neutral_hook_body_path:
             continue
         if is_generated(path=repo_root / rel):
             continue
@@ -734,7 +745,10 @@ def iter_first_party_py_files(*, repo_root: Path) -> tuple[Path, ...]:
     tracked = tuple(Path(line) for line in completed.stdout.splitlines() if line)
     config = load_config(repo_root=repo_root)
     return filter_first_party_py(
-        tracked_py=tracked, repo_root=repo_root, tests_tree_prefix=config.tests_tree_prefix
+        tracked_py=tracked,
+        repo_root=repo_root,
+        tests_tree_prefix=config.tests_tree_prefix,
+        neutral_hook_body_path=config.neutral_hook_body_path,
     )
 
 
