@@ -2,10 +2,13 @@
 #
 # Authority: livespec SPECIFICATION/non-functional-requirements.md
 #   §"Fleet membership contract" — the conformance check "runs on a
-#   schedule AND as a BLOCKING preflight of the dev-tooling release
-#   fan-out". This workflow is the schedule leg; the preflight leg is
-#   the fleet-preflight job in reusable-release-dispatch.yml; the
-#   per-PR leg is ci.yml's check-fleet-conformance job.
+#   schedule AND as the preflight of the dev-tooling release
+#   fan-out". In the fan-out context the preflight is a per-member
+#   FILTER (blocking only on structural failure), per this repo's
+#   contracts.md §"reusable-release-dispatch.yml". This workflow is
+#   the schedule leg; the preflight leg is the fleet-preflight job in
+#   reusable-release-dispatch.yml; the per-PR leg is ci.yml's
+#   check-fleet-conformance job.
 #
 # Token model: the livespec GitHub App installation token (same
 # identity as the other cross-repo workflows, per livespec
