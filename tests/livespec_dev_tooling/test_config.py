@@ -885,6 +885,36 @@ def test_iter_first_party_py_files_respects_configured_tests_tree_prefix(*, tmp_
     assert iter_first_party_py_files(repo_root=tmp_path) == (kept,)
 
 
+def test_iter_first_party_py_files_excludes_declared_neutral_hook_body(*, tmp_path: Path) -> None:
+    """The config-declared `neutral_hook_body_path` is exempt from the first-party universe.
+
+    The neutral hook body is INSTALLED FOREIGN CONTENT — byte-synced from the
+    packaged canonical constant and forbidden to hand-edit (the
+    `no-shadow-ledger-body-identical` check enforces the sync) — so no
+    universe-derived structural check may demand edits to it (the observed
+    conflict: `check-all-declared` demanding `__all__` in a Driver's installed
+    body, deadlocking against the byte-identity requirement). The identity
+    check itself reads the configured path directly, not via this universe, so
+    exempting the path here cannot mask body drift. A sibling `.py` beside the
+    body stays covered, proving the exemption is exact-path, not tree-wide.
+    """
+    _git(cwd=tmp_path, args=["init", "-q"])
+    _ = (tmp_path / "pyproject.toml").write_text(
+        "[tool.livespec_dev_tooling]\n"
+        'neutral_hook_body_path = ".claude-plugin/hooks/no_shadow_ledger.py"\n',
+        encoding="utf-8",
+    )
+    sibling = Path(".claude-plugin") / "hooks" / "a_sibling_hook.py"
+    body = Path(".claude-plugin") / "hooks" / "no_shadow_ledger.py"
+    kept = Path("pkg") / "a.py"
+    for rel in (sibling, body, kept):
+        full = tmp_path / rel
+        full.parent.mkdir(parents=True, exist_ok=True)
+        _ = full.write_text("x = 1\n", encoding="utf-8")
+    _git(cwd=tmp_path, args=["add", "-A"])
+    assert iter_first_party_py_files(repo_root=tmp_path) == (sibling, kept)
+
+
 def test_iter_first_party_py_files_raises_on_git_failure(*, tmp_path: Path) -> None:
     """A `repo_root` that is not a git working tree raises `GitLsFilesError`."""
     not_a_repo = tmp_path / "not_a_repo"
