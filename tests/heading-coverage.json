@@ -72,7 +72,7 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
-    "heading": "## Consumer compat block — pin-and-bump policy",
+    "heading": "## Consumer compat block \u2014 pin-and-bump policy",
     "test": "TODO",
     "reason": "Added by the absorb-compat-schema-and-semver-discipline revise (compat-block schema + bump-pin policy relocated from livespec core at v103/v104). Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism."
   },
@@ -88,7 +88,7 @@
     "spec_file": "contracts.md",
     "heading": "## Semver discipline",
     "test": "TODO",
-    "reason": "Added by the absorb-compat-schema-and-semver-discipline revise (canonical surface enumeration relocated from constraints.md per livespec/SPECIFICATION/contracts.md §\"Shared code sync — livespec-dev-tooling\"). Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism."
+    "reason": "Added by the absorb-compat-schema-and-semver-discipline revise (canonical surface enumeration relocated from constraints.md per livespec/SPECIFICATION/contracts.md \u00a7\"Shared code sync \u2014 livespec-dev-tooling\"). Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism."
   },
   {
     "spec_root": "SPECIFICATION",
@@ -292,5 +292,12 @@
     "heading": "## Scenario: a check attempts forbidden network I/O",
     "test": "tests.consumer.test_no_network_io.test_no_shipped_check_imports_a_network_library",
     "reason": "Consumer-tier test: AST-asserts every shipped check module is free of network-library imports (the no-network-io determinism gate per constraints.md) (epic li-scetdt / Wave 6)."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Pin-currency severity policy",
+    "test": "TODO",
+    "reason": "Seeded with the livespec-dh9r Slice-3 severity-policy section. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism."
   }
 ]
