@@ -218,7 +218,7 @@ The role-key inventory:
 
 - **`dataclasses_tree`** — string. MUST be declared. Repo-root-relative path to the dataclass-definition tree the `newtype_domain_primitives` check walks. `""` is the declared-none spelling (TOML has no null literal) and no-ops the check on this consumer — it's a layered-domain-modeling property that not every consumer has. Absence is no longer a sanctioned spelling of "not applicable"; an undeclared key is a hard ERROR per §"Role keys".
 
-- **`pure_trees`** — array of strings. Subset of `source_trees` containing the pure ROP-railway-typed layer; consumed by `public_api_result_typed` to assert every public callable returns `Result` / `IOResult`. MUST be declared; `[]` is the sanctioned declared-empty spelling.
+- **`pure_trees`** — array of strings. Subset of `source_trees` containing the pure ROP-railway-typed layer; consumed by `public_api_result_typed` to assert every public callable returns `Result` / `IOResult`, and gated on by `pbt_coverage_pure_modules` and `check_mutation`. MUST be declared; `[]` is the sanctioned declared-empty spelling.
 
 - **`covered_trees`** — array of strings. Subset of `source_trees` to which `no_write_direct` and `no_lloc_soft_warnings` ceiling-rules apply. MUST be declared; `[]` is the sanctioned declared-empty spelling.
 
