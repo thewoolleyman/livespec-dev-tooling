@@ -1035,6 +1035,93 @@ so this fires at first *commit*, after the directory already exists. It cannot p
 creation. It converts a 25-minute silent violation into an immediate refusal — that is
 the actual promise; do not overstate it.
 
+#### B — IMPLEMENTATION-READY PREP (2026-07-25)
+
+B is first in the approved rollout order and is **boundary-independent** — it lands in the
+9 fleet clones under either reading of clause 2 — so it was prepared to
+implementation-ready while the boundary question is pending. Nothing below was implemented.
+
+**1. The sanctioned root already has one definition — reuse it, do not invent a second.**
+`livespec_dev_tooling/fleet/_rows_local.py:112-114` defines it as `<home>/.worktrees`, and
+the `worktree-root-mise-trust` obligation row uses exactly that. The hook must derive it
+the same way (`$HOME/.worktrees`), so the hook and the row can never disagree about what
+"sanctioned" means. This also matches the spec's "single **per-user** root" wording.
+
+**2. Deriving it from `$HOME` is what makes B testable.** `_run_installed_hook` in
+`tests/livespec_dev_tooling/test_install_commit_refuse_hooks.py:128-140` already builds an
+`env = dict(os.environ)` and mutates `PATH`; adding `env["HOME"] = str(tmp_path/"home")` is
+a one-line extension. A hook that read the root from anywhere else would need a new seam.
+
+**3. B BREAKS an existing passing test, and that is correct.**
+`test_installed_hook_delegates_at_worktree` (`:218-232`) asserts `returncode == 0` and no
+`"refusing"` for a worktree created by `_init_primary_with_worktree`, which places it at
+`tmp_path / "wt-feature"` (`:93`) — a pytest tmpdir, **not** under `$HOME/.worktrees`. Under
+B that worktree is unsanctioned and must be refused. The test encodes the *pre-B* contract
+("a worktree delegates"); B changes it to "a **sanctioned** worktree delegates, an
+unsanctioned one refuses". **Update that test as part of B's Red step** — either point its
+fixture at a sanctioned root under a faked `$HOME`, or split it into the sanctioned and
+unsanctioned cases. Do not delete it.
+
+**4. The sandbox-exempt regression is ALREADY covered — the suite will catch it.**
+`test_installed_hook_sandbox_exempt_bypasses_refuse_at_primary` (`:235-251`) asserts
+`returncode == 0` and no `"refusing"` at an exempt primary. Since `livespec.sandboxExempt`
+makes the existing arm fall through, a naive B refuses that primary and **this existing
+test goes red**. That upgrades the earlier finding from "remember to add a guard" to "the
+guard is already enforced by a test you cannot ignore". Keep it green by guarding the new
+branch on `sandbox_exempt`, or by anchoring the pattern so it cannot match the primary's own
+root.
+
+**5. The remedy message MUST NOT reference the pack.** The ruling pairs B with an
+actionable remedy, and B ships *before* D's wiring — so a message pointing at
+`just install-worktree-pack` or `just worktree-create` names a recipe absent from 5 of 9
+fleet repos at the moment B lands. The remedy must stand on plain git:
+
+```
+livespec: refusing commit from a worktree outside the sanctioned root
+  this worktree:  <this_root>
+  sanctioned:     $HOME/.worktrees/<repo>/<branch>
+  to fix:         git worktree move "<this_root>" "$HOME/.worktrees/<repo>/<branch>"
+```
+
+`git worktree move` is available everywhere and preserves unpushed work. Once D lands, the
+message MAY additionally mention `just worktree-create` for new worktrees — but the plain-git
+line must remain, because adopters and any repo mid-sweep will not have the recipe.
+
+**6. Red step (product `.py` → Red–Green–Replay).** Stage the test file ALONE with
+`CANONICAL_HOOK_BODY` unmodified on disk. New/updated cases, all driving the installed hook
+through the existing `_run_installed_hook` harness with a faked `$HOME`:
+
+| case | expected |
+|---|---|
+| worktree under `$HOME/.worktrees/<repo>/<branch>` | delegates, rc 0, no "refusing" |
+| worktree nested inside the primary's working tree | **refuses**, rc 1, message names the move command |
+| worktree that is a *peer* of the primary (not nested, not sanctioned) | **refuses** — this is the clause the spec names explicitly |
+| worktree under the primary's `.git/` (beads-sync shape) | delegates, rc 0 — the carve-out |
+| primary checkout, not exempt | refuses via the **existing** arm (unchanged message) |
+| primary checkout, `sandboxExempt=true` | delegates, rc 0 — existing test, must stay green |
+
+The peer case is the one with no current coverage at all and is the reason the spec's named
+prohibition went unenforced; it must be in the Red.
+
+**7. Acceptance evidence — the injected defects that must turn it red.** Per the charter, a
+verifier that cannot fail is not a verifier. Each of these must produce a red run:
+
+- delete the `.git/` carve-out arm → the beads-sync case reds (rehearsed: all three sampled
+  beads worktrees flip to refused);
+- drop the `sandbox_exempt` guard → the existing exempt-primary test reds;
+- replace the allow-list with the old nested-only test → the **peer** case reds;
+- point the sanctioned root at a literal other than `<home>/.worktrees` → the sanctioned
+  case reds.
+
+**8. Still needs a decision inside B: the janitor carve-out.** The spec's §"Worktree root"
+parenthetical puts "orchestrator-internal janitor worktrees, which the Dispatcher creates and
+removes **inside the integration clone**" out of scope. B refuses exactly that shape, and the
+`.git/` carve-out does not cover a janitor worktree in an integration clone's *working* tree.
+All 5 current `janitor-*` worktrees sit under `~/.worktrees/…-beads-fabro/` and pass, so
+nothing breaks today. B must either carve the case out explicitly or state that the
+inside-the-clone configuration is unsupported — silently refusing a spec-sanctioned case is
+the same class of error as silently allowing one.
+
 #### B rehearsed against real host paths — 2026-07-25
 
 The §B snippet was executed read-only against the live host (no repo mutated, no hook
