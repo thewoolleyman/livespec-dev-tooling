@@ -18,19 +18,18 @@ failing when pyright reports any error, so the body cannot drift off
 strict-clean even though it is never imported or executed in this repo.
 
 Strict parity: the rendered body is checked under a `pyrightconfig.json`
-mirroring this repo's `[tool.pyright]` strict bar — `typeCheckingMode =
+derived from this repo's `[tool.pyright]` strict bar — `typeCheckingMode =
 "strict"` plus the strict-plus diagnostics the repo elevates to errors
 (notably `reportUnusedCallResult`, which catches an unbound
 `sys.stdout.write(...)` result, and `reportUnnecessaryCast`) and the two it
 deliberately relaxes (so an intentional multi-line message assembly is not
-falsely flagged). The settings are held here as a module constant rather than
-read from `pyproject.toml`: this check ships in the wheel and must apply the
-SAME strict bar to the packaged constant wherever it runs, and a wheel install
-carries no repo `pyproject.toml` to read. The pass/fail verdict is pyright's
-EXIT CODE (0 = clean, non-zero = diagnostics) — the exact gate `uv run pyright`
-applies, and robust to a freshly-bootstrapped pyright printing platform-detection
-noise to stdout ahead of its JSON. The JSON is parsed only best-effort, to name
-the failing lines/rules in the structured error.
+falsely flagged). Repo-layout keys (`include`, `exclude`, `extraPaths`) are
+omitted because the rendered body is checked as one stdlib-only throwaway file.
+The pass/fail verdict is pyright's EXIT CODE (0 = clean, non-zero = diagnostics)
+— the exact gate `uv run pyright` applies, and robust to a freshly-bootstrapped
+pyright printing platform-detection noise to stdout ahead of its JSON. The JSON
+is parsed only best-effort, to name the failing lines/rules in the structured
+error.
 
 Exit codes:
 - `0` — the rendered body is pyright-strict clean (pyright reports no
@@ -60,6 +59,11 @@ _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
+if sys.version_info >= (3, 11):  # pragma: no cover — 3.11 path unused on the 3.10 floor.
+    import tomllib as _toml
+else:
+    import tomli as _toml
+
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
 # The canonical body is the SINGLE source of truth, shipped as a module
@@ -77,21 +81,7 @@ _CHECK_ID = "no_shadow_ledger_body_typechecks"
 _FAIL_EXIT = 4
 _RENDERED_BODY_FILENAME = "no_shadow_ledger_body.py"
 
-# A minimal pyright config mirroring this repo's `[tool.pyright]` strict bar
-# (see the module docstring for why it is held here rather than read from
-# `pyproject.toml`). Kept in lockstep with `[tool.pyright]` by review.
-_PYRIGHT_STRICT_CONFIG: dict[str, object] = {
-    "typeCheckingMode": "strict",
-    "pythonVersion": "3.10",
-    "reportUnusedCallResult": "error",
-    "reportImplicitOverride": "error",
-    "reportUninitializedInstanceVariable": "error",
-    "reportUnnecessaryTypeIgnoreComment": "error",
-    "reportUnnecessaryCast": "error",
-    "reportUnnecessaryIsInstance": "error",
-    "reportImplicitStringConcatenation": "warning",
-    "reportPrivateUsage": "none",
-}
+_PYRIGHT_REPO_LAYOUT_KEYS = frozenset({"include", "exclude", "extraPaths"})
 
 _REMEDY = (
     "fix the flagged annotations/bindings in "
@@ -117,6 +107,14 @@ def _pyright_available() -> bool:
     return importlib.util.find_spec("pyright") is not None
 
 
+def _pyright_strict_config(*, repo_root: Path) -> dict[str, object]:
+    """Strict pyright settings from `[tool.pyright]`, without repo-layout path keys."""
+    pyproject = _toml.loads((repo_root / "pyproject.toml").read_text(encoding="utf-8"))
+    tool = cast("dict[str, object]", pyproject["tool"])
+    pyright = cast("dict[str, object]", tool["pyright"])
+    return {key: value for key, value in pyright.items() if key not in _PYRIGHT_REPO_LAYOUT_KEYS}
+
+
 def _run_pyright_strict(*, body: str) -> tuple[int, str]:
     """Render `body` + the strict config to a throwaway dir, run pyright, return (rc, stdout).
 
@@ -129,7 +127,7 @@ def _run_pyright_strict(*, body: str) -> tuple[int, str]:
     with tempfile.TemporaryDirectory() as tmp:
         tmp_dir = Path(tmp)
         _ = (tmp_dir / _RENDERED_BODY_FILENAME).write_text(body, encoding="utf-8")
-        config = dict(_PYRIGHT_STRICT_CONFIG)
+        config = _pyright_strict_config(repo_root=Path.cwd())
         config["include"] = [_RENDERED_BODY_FILENAME]
         _ = (tmp_dir / "pyrightconfig.json").write_text(json.dumps(config), encoding="utf-8")
         # S603/S607: argv is a fixed list (this interpreter + literal `-m
