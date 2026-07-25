@@ -176,6 +176,7 @@ jobs:
           - check-per-file-coverage
           - check-private-calls
           - check-public-api-result-typed
+          - check-required-role-keys-declared
           - check-rop-pipeline-shape
           - check-supervisor-discipline
           - check-tests-mirror-pairing
