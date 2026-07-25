@@ -373,6 +373,70 @@ so this fires at first *commit*, after the directory already exists. It cannot p
 creation. It converts a 25-minute silent violation into an immediate refusal — that is
 the actual promise; do not overstate it.
 
+#### B rehearsed against real host paths — 2026-07-25
+
+The §B snippet was executed read-only against the live host (no repo mutated, no hook
+installed, no config written) to check it before anyone writes the Red test. The rule is
+sound on the cases the acceptance criteria name, but **the snippet as recorded above has
+one real defect**, and one of its stated justifications does not hold up.
+
+**Canonical rule — behaves as specified:**
+
+| case | verdict |
+|---|---|
+| primary `/data/projects/livespec-dev-tooling` | `PRIMARY-EXIT` — the existing `:120-123` arm fires; the new branch is never reached |
+| sanctioned `~/.worktrees/livespec-dev-tooling/ci-concurrency-group` | `ALLOW` |
+| nested `openbrain/.claude/worktrees/fix-ob-6vt-thought-detail-save` | **`REFUSE-NESTED`** ✅ |
+| beads `agent-flywheel/.git/beads-worktrees/beads-sync` | **`ALLOW-TOOLING`** ✅ |
+
+**Injected-defect proof — the rule CAN turn red.** Removing the `.git/` carve-out arm and
+re-running flips all three beads sync worktrees tested (`agent-flywheel`, `beads`,
+`personal-knowledge-base`) from `ALLOW-TOOLING` to `REFUSE-NESTED`. That is the concrete
+injected defect the acceptance criteria should name for slice B: **delete the carve-out
+arm and the beads-sync case must go red.** A carve-out test that cannot fail is not a
+test.
+
+**DEFECT in the snippet as recorded: a sandbox-exempt primary would be hard-refused.**
+
+`livespec.sandboxExempt=true` makes the existing arm at `:120` deliberately NOT exit —
+that is the documented in-sandbox opt-out (`install_commit_refuse_hooks.py:88`: "with it
+set the refuse branch is skipped so in-sandbox [commits work]"). Control therefore falls
+through to the new §B branch, where `this_root == primary_root`, and
+
+```
+case "/data/projects/livespec-dev-tooling/" in "/data/projects/livespec-dev-tooling"/*)
+```
+
+**matches**, because `*` matches the empty string after the trailing slash. Verdict:
+`REFUSE-NESTED`. The new branch would silently revoke the sandbox opt-out for every
+exempt primary.
+
+Latent, not live — `livespec.sandboxExempt` is unset in every repo checked on this host,
+so nothing is broken today and it would first surface in a sandboxed CI context. Two
+candidate fixes, both cheap: guard the new branch with the same `sandbox_exempt` test, or
+anchor the nested pattern as `"$primary_root"/?*` so it requires at least one character
+after the slash. **Slice B must carry a Red test for the exempt-primary case**, or this
+ships as a regression.
+
+**Also: the snippet shadows `git_dir`.** It assigns `git_dir=$(cd "$common_dir" && pwd -P)`,
+clobbering the value read at `:117`. Nothing after `:123` reads `git_dir` today (only
+`hook_name` and the `exec`), so it is not a live corruption — but it reads as if it reuses
+the earlier value when it does not. Rename it in the implementation.
+
+**Correction: `pwd -P` is NOT demonstrated load-bearing.** Re-running every case with
+`pwd -P` replaced by plain `pwd` changed **no verdict**. The reason is that
+`git rev-parse --show-toplevel` and `--git-common-dir` already emit *physical* paths: from
+`/home/ubuntu/workspace/openbrain/.claude/worktrees/fix-ob-6vt-…`, `--show-toplevel`
+returns `/data/projects/openbrain/.claude/…` and `--git-common-dir` returns
+`/data/projects/openbrain/.git`. Git normalizes before the comparison ever runs.
+
+The inode evidence in §E is still correct — the two trees *are* aliases — but it proves
+aliasing exists, not that aliasing changes a verdict. The earlier claim that this is "a
+real bug source here, not a hypothetical" is **unsupported**; treat `pwd -P` as cheap,
+harmless insurance rather than as a fix for an observed bug. (The one place it could
+matter — an aliased *primary* where `--git-common-dir` returns the relative `.git` — is
+reachable only in the sandbox-exempt case the defect above says to exclude outright.)
+
 ### C — installer + docs write the key with its default
 
 Installation docs must write `worktree_discipline.pack` with its default value, so new
@@ -448,6 +512,16 @@ not nested under their primary's working tree**, so §B's `case "$this_root/" in
 peer-directory worktree violates the prose rule exactly as a nested one does — item B
 will silently allow it. The four kilroy worktrees are tool-managed run scratch in a
 non-governed repo and are almost certainly fine to leave alone.
+
+> **Update, same day (2026-07-25): `/data/projects/homelab-substrate` no longer exists.**
+> It was removed by the `homelab` track during the hours this audit ran —
+> `git -C /data/projects/homelab worktree list` now shows only the primary, and the
+> worktree was not relocated under `~/.worktrees/`. This thread did not touch it and does
+> not own it. **The live instance is gone; the structural gap is not.** The rule below
+> still permits a peer-directory worktree of any governed repo, and the next one will be
+> just as silent. Do not let the disappearance of the example be read as closure of the
+> finding — that is exactly the "it fired once and was cleaned up, so nothing needs
+> fixing" pattern this whole thread exists to reject.
 
 This is a **scope finding, not a defect in the settled decision B**: the maintainer chose
 "refuse *nested*", and nested is what B refuses. But the handoff previously implied
