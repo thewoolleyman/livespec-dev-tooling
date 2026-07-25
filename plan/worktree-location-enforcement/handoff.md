@@ -30,9 +30,13 @@ The maintainer ruled that this thread MUST enforce **both** clauses of
 2. **Every governed fleet worktree must live under `~/.worktrees/<repo>/<branch>`** (the
    positive clause — what nothing addressed).
 
-Therefore the definition of done is **wider than the former A–E nested-only cut**, and the
-cut is re-drawn below with an **F** slice for the adopter baseline and positive-location
-enforcement that clause 2 requires.
+Therefore the definition of done is **wider than the former A–E nested-only cut**.
+
+*(Superseded detail, 2026-07-25: this section originally re-drew the cut "with an **F**
+slice for the adopter baseline". The subsequent NARROW boundary ruling removed F from this
+thread — see §"MAINTAINER RULING — NARROW boundary". **The current final cut is A, B, C, D,
+E, and optionally G.** Adopter baseline work is a separate follow-up, filed as `li-l53` and
+`hl-nhw`.)*
 
 ### The ruling makes item B SIMPLER, not harder
 
@@ -57,9 +61,13 @@ across all 40 worktrees on this host: 34 `ALLOW-SANCTIONED` (including all 5 orc
 Two scope notes on the clauses as worded. Clause 1 says "any repository clone", which is
 broader than "governed" — but the hook only runs where it is installed, so the practical
 enforcement surface is the governed set either way. And clause 2 is scoped to *governed
-fleet* worktrees, which is precisely why the adopter baseline (slice F) is load-bearing:
-three governed adopters currently run no livespec hook at all, so clause 2 is unenforceable
-there until F lands.
+fleet* worktrees.
+
+*(Superseded, 2026-07-25: this paragraph originally concluded that "the adopter baseline
+(slice F) is load-bearing". Under the NARROW ruling it is **not load-bearing for this
+thread** — clause 2 binds the 9 `fleet` repos, all of which have the substrate, so B and D
+alone satisfy it. The observation that three governed adopters run no livespec hook remains
+true and is the FOLLOW-UP's subject, tracked as `li-l53` and `hl-nhw`.)*
 
 ### Re-measured before re-cutting (2026-07-25T15:35Z)
 
@@ -137,7 +145,8 @@ be true today, so the maintainer may defer it; it should be a decision, not an o
 
 **Sequencing dependencies** (not an approved order — see §rollout): A's prerequisites must
 land before A's default flips or this repo's CI reds; D's wiring must exist before A's FAIL
-is actionable in the 6 unwired repos; F is independent of A–D and gates clause 2's reach;
+is actionable in the 6 unwired repos; **F is no longer in this thread** and gates nothing
+here (NARROW ruling — clause 2's reach across the 9 `fleet` repos is delivered by B and D);
 E is independent of everything and half-blocked on another session; G is independent.
 
 ### Adopter substrate is NOT uniform — measured 2026-07-25 (now the FOLLOW-UP's input, not F's)
@@ -166,10 +175,17 @@ records that explicitly.
   package, so it can run the installer and host a verifier recipe. Its work is real but
   bounded: install the canonical hook over the stock lefthook stub, wire the verifier, and
   reconcile `scripts/refuse-primary-commit.sh` so there is one location-aware rule.
-- **resume** carries only a `package.json`. There is **no `just` surface to add a verifier
-  recipe to, no lefthook to delegate through, and no way to run a Python installer.** Its
-  own `scripts/check-primary-checkout.ts` is TypeScript precisely because that is the only
-  ecosystem it has. The canonical hook body is portable `/bin/sh` and could be placed by
+- **resume** — corrected measured state (an earlier version of this bullet said it "carries
+  only a `package.json`", which understated it). resume has a **Bun/TypeScript harness**
+  (`package.json`, `bun.lock`), a **`mise.toml`** (note: no leading dot — the earlier
+  measurement wrongly tested for `.mise.toml`), a **bun bootstrap hook installer**,
+  **`.githooks/pre-commit`**, and **`scripts/check-primary-checkout.ts`**. What it does NOT
+  have is a `just` surface, a lefthook config, or any Python runtime — so the canonical
+  Python/`just` delivery path cannot simply be dropped in. Its own check is TypeScript
+  because that is its ecosystem, not because it lacks tooling. Route is native TypeScript
+  parity **or** a deliberate substrate change; `li-l53` records that decision explicitly so
+  Python or `just` is never imposed by accident. **This is follow-up input, not this
+  thread's work.** The canonical hook body is portable `/bin/sh` and could be placed by
   hand, but the *installer* and the *verifier* are Python and cannot run there today.
 - **homelab** has none of the four. The manifest itself records why: all its wiring is
   *"DEFERRED to the post-seed onboarding pass"* — an onboarding this thread does not own.
@@ -197,6 +213,9 @@ So there are two readings, and they size F very differently:
 This is **not** a re-litigation of the approved scope; both clauses stand either way. It is
 a question of which repo set clause 2 binds, and it changes whether F is in this thread or
 the next one. It should be answered alongside rollout order, not after slices are filed.
+**[ANSWERED — NARROW.** Clause 2 binds the 9 `fleet` repos
+(§"MAINTAINER RULING — NARROW boundary"). F is **not** in this thread; adopter backfill is
+`li-l53` and `hl-nhw`.**]**
 
 ## MAINTAINER RULING — rollout order: Option 3, hook-first, APPROVED (2026-07-25)
 
@@ -205,11 +224,23 @@ actionable remedy message**, followed by pack prerequisites and fleet wiring, an
 the required-default flip.
 
 ```
-E (openbrain half only)  →  B + remedy-string fix  →  A-prereq  →  D-wiring  →  A-flip  →  F  →  (G)
+E (openbrain half only)  →  B + remedy-string fix  →  A-prereq  →  D-wiring  →  A-flip
 ```
 
-Read the three options below for the evidence behind it; they are retained as the record of
-what was weighed, not as live alternatives.
+**Two notes on what this diagram does and does not say.**
+
+- **F is deliberately absent.** An earlier rendering of this diagram ended
+  `… → A-flip → F → (G)`. The later **NARROW boundary ruling removed F from this thread**
+  entirely (§"MAINTAINER RULING — NARROW boundary"), so a current ruling diagram must not
+  carry it. Adopter coverage is follow-up work tracked as `li-l53` and `hl-nhw`.
+- **C and G are unplaced, and that is not an oversight.** The rollout ruling specified early
+  hook enforcement with an actionable remedy, then pack prerequisites and fleet wiring,
+  then the required-default flip. It did **not** place **C** (installer + docs write the key
+  with its default) or **G** (birth procedure). **Their placement remains part of final-cut
+  approval** and must not be inferred from this diagram.
+
+Read the three options below for the evidence behind the choice; they are retained as the
+record of what was weighed, not as live alternatives.
 
 **Dependencies the ruling explicitly preserves — do not paper over these:**
 
@@ -257,8 +288,15 @@ Consequences, applied throughout this file:
   | `resume` (prefix `li`) | **`li-l53`** | Backfill worktree-location enforcement (both clauses) into resume's Bun/TypeScript harness |
   | `homelab` (prefix `hl`) | **`hl-nhw`** | Backfill worktree-location enforcement (both clauses) into homelab's POSIX hook substrate |
 
-  Both are `type: task`, `assignee: null`, label `origin:freeform`, no `gap_id`, no
-  `spec_commitment_hint`, `status: blocked`, and **absent from `bd ready`** (verified).
+  Both are `type: task`, label `origin:freeform`, no `gap_id`, no `spec_commitment_hint`,
+  `status: blocked`, and **absent from `bd ready`** (verified).
+
+  **On assignee/owner — stated precisely, correcting an earlier overclaim.** No explicit
+  assignee was supplied during capture, and `--json` reports `assignee: null`. But the
+  records are NOT ownerless: raw `bd show` displays `Owner: thewoolleyman`, and the JSON
+  `owner` field is **`chad@thewoolleyman.com`** (with `created_by: thewoolleyman`) — the
+  tenant/default owner applied at capture. An earlier version of this section claimed only
+  "`assignee: null`", which is not a supportable description of what these records expose.
   Each cites this thread and epic `livespec-dev-tooling-0eo`, names its repo target and
   autonomy tier (resume `wip_cap: 5`; homelab `wip_cap: 0`, dispatch-off), and carries
   objective **prerequisite / implementation / acceptance** sections.
@@ -272,6 +310,18 @@ Consequences, applied throughout this file:
   **openbrain has no backfill item** — only E's relocation, which stays in this thread.
 
 The evidence weighed before the ruling is retained below as decision history.
+
+### Provenance of the F-contradiction cleanup (2026-07-25)
+
+PR #658 recorded this ruling but left F described as current, required, and a gate in
+several places it had not touched, plus an understated description of resume's substrate and
+an unsupportable "`assignee: null`" characterisation of the two filed records. Those
+contradictions were **detected by the supervisor in an independent full-file review after
+#658 had already auto-merged**, and were corrected in a dedicated follow-up docs PR.
+
+**This was a correction of the record, NOT a new maintainer decision.** No ruling changed:
+scope remains full-location, rollout remains Option 3 hook-first, the boundary remains
+NARROW, and the final cut remains A, B, C, D, E, (G).
 
 ## Boundary question — the two readings weighed (record; NARROW approved above)
 
@@ -368,6 +418,13 @@ ruling B also became *simpler* (an allow-list, no nested detection) and it is **
 no fleet wiring to ship. Meanwhile the harm is measurably ongoing — a second live violation
 appeared during one day's audit, with commits landed from it.
 
+> **The `F` tails in the three option diagrams below are SUPERSEDED.** All three were
+> written before the NARROW boundary ruling, which removed F from this thread. Their
+> `→ F → (G)` endings are **not part of the current sequence** — the approved sequence is
+> the one in §"MAINTAINER RULING — rollout order", which ends at `A-flip`, with C and G
+> unplaced pending final-cut approval. The diagrams are kept verbatim so the comparison
+> that was actually weighed stays legible.
+
 **Option 1 — Prerequisites-first, enforce-last.**
 `A-prereq → D-wiring → E → A-flip → B → F → (G)`
 Nothing ever reds and nothing is refused unexpectedly; every step is additive until the end.
@@ -413,8 +470,11 @@ here names the section carrying its evidence.
 
 **The rule is ratified spec, not just prose.** `livespec/SPECIFICATION/non-functional-requirements.md:1013`
 states it positively — every worktree under `~/.worktrees/<repo>/<branch>` — and the one
-prohibition it spells out is the **peer** case, which item B does not catch. The nested
-case B does catch is never named. → §"THE SPEC ALREADY ANSWERS…"
+prohibition it spells out is the **peer** case. B, **as widened by the full-location
+ruling**, is a positive-location allow-list and therefore catches the peer case, the nested
+case, and anything else outside the sanctioned root. *(This line previously read "…the peer
+case, which item B does not catch" — true of the pre-ruling nested-only B, false of the
+current one.)* → §"THE SPEC ALREADY ANSWERS…"
 
 **There are two live nested violations, not one.** `openbrain/.claude/worktrees/fix-ob-6vt-…`
 and `livespec-overseer/.claude/worktrees/dod-corrections` — the latter **created during
@@ -955,17 +1015,29 @@ exactly so.
 This is independent support for decision B's *hard refuse* over a warn, and it was not
 part of the record when B was settled.
 
-### Status of the rollout question after these findings: STILL OPEN
+### Status of the rollout question after these findings — HISTORICAL PRE-RULING; ANSWERED
+
+> **CURRENT ANSWER, stated first: rollout order IS decided.** **Option 3, hook-first, is
+> APPROVED** by maintainer ruling (§"MAINTAINER RULING — rollout order"). The text below is
+> the pre-ruling status and is retained only as history. Do not read "STILL OPEN", "NOT been
+> decided", or "remain unresolved" below as current.
+>
+> The UI-race note below **remains valid and is unaffected**: that picker selection was void
+> then and is void now. It is simply not the basis of the current position — the later,
+> genuine maintainer ruling is, and that ruling is authoritative.
+
+*(Original pre-ruling text follows.)*
 
 A "wire-then-enforce" sequence (materialize the pack via a local obligation row plus a CI
 install step, then land the per-repo justfile/gitignore wiring, then flip the default) is
-a **recommendation only**. It has NOT been decided.
+a **recommendation only**. It has NOT been decided. **[SUPERSEDED — decided: Option 3.]**
 
 For the record, so it is never mistaken for a ruling: on 2026-07-25 a supervisor UI race
 caused an `AskUserQuestion` picker to display "Wire-then-enforce" as an answer when the
-maintainer had not chosen it. That selection is **void**. The three options in §rollout —
-repriced by the findings above — remain unresolved, and any slice cut that assumes an
-ordering is a draft.
+maintainer had not chosen it. That selection is **void**. *(Still true.)* The three options
+in §rollout — repriced by the findings above — remain unresolved, and any slice cut that
+assumes an ordering is a draft. **[SUPERSEDED — Option 3 was subsequently ruled by the
+maintainer; the options are resolved.]**
 
 ## The work
 
@@ -1574,6 +1646,9 @@ only nested-refusal leaves a ratified invariant unenforced in the very case it n
 live question is narrower and different: *does this thread widen to the spec's actual
 rule, or does it ship the nested-only cut and open a follow-on to close the rest?* Both
 are legitimate; presenting the first as "done" is not.
+**[ANSWERED — the thread widened. B is a positive-location allow-list, both clauses are
+enforced, and the boundary is the 9 `fleet` repos. The follow-on covers adopters only, as
+`li-l53` and `hl-nhw`.]**
 
 **A second thing the spec settles — and a possible collision with B.** The parenthetical
 carves out "orchestrator-internal janitor worktrees, which the Dispatcher creates and
@@ -1587,11 +1662,36 @@ third arm. Slice B should either state that this configuration is unsupported or
 out; silently refusing a spec-sanctioned case is the same class of error as silently
 allowing one.
 
-#### Does this change B, or the thread's definition of done?
+#### Does this change B, or the thread's definition of done? — HISTORICAL PRE-RULING ANALYSIS, FULLY SUPERSEDED
+
+> **READ THIS FIRST. Everything in this subsection is pre-ruling analysis, retained only as
+> decision history. It is NOT current advice, and several of its statements are now false.**
+>
+> **The current answers:**
+> - **B IS widened.** B is a **positive-location allow-list** — refuse any worktree that is
+>   neither tooling-internal nor under `~/.worktrees/`. It is no longer the nested-only rule
+>   this subsection analyses.
+> - **Both clauses are required.** Full-location scope was approved
+>   (§"MAINTAINER RULING — full-location scope"), so the "which clause" question below is
+>   settled: both.
+> - **The boundary is NARROW** — the 9 `fleet` repos
+>   (§"MAINTAINER RULING — NARROW boundary"). All 9 have the substrate, so clause 2 is
+>   delivered by **B and D**; there is no F slice in this thread.
+> - **Adopter gaps are follow-up work**, filed as **`li-l53`** (resume tenant) and
+>   **`hl-nhw`** (homelab tenant). openbrain keeps only E's relocation.
+> - **The current final cut is A, B, C, D, E, (G).**
+>
+> In particular, this subsection's closing "bottom line" — that the cut is approvable only
+> as *"close the nested fail-open"* and not as *"enforce the worktree-location rule"* — is
+> **superseded**. Under the approved full-location scope with a widened B, the cut DOES
+> enforce the rule, across the 9 fleet repos.
+
+*(Original text follows, unmodified except where a later measurement corrected a fact.)*
 
 It does **not** change B. B's charter is "refuse worktrees nested in the primary's
 working tree," and B does exactly that. Nothing measured here makes B wrong or
-incomplete against its own specification.
+incomplete against its own specification. **[SUPERSEDED — B's charter is now the
+positive-location allow-list; B was widened by the full-location ruling.]**
 
 It **does** put the thread's definition of done in question, and that must be settled
 before the A–E cut can be called approvable. The charter's own rule, as written at the
@@ -1605,28 +1705,44 @@ violates (i), and B will permit it silently. So landing all of A–E would close
 nested-worktree hole — a real, narrower, still-valuable claim — while leaving the
 charter's stated rule partially unenforced. A "done" claim phrased as "the rule is now
 enforced" would be false; phrased as "nested worktrees are now refused" it would be true.
+**[SUPERSEDED — the cut now enforces BOTH clauses across the 9 fleet repos, because B was
+widened to a positive-location allow-list. `homelab-substrate` no longer exists, and
+`homelab` is out of the narrow boundary in any case.]**
 
 Three distinguishable questions fall out, and collapsing them would be dishonest:
 
 1. **Should B widen** from "not nested" to "anything not under `~/.worktrees/`"? A scope
    change to an already-settled decision.
+   *(**ANSWERED: YES.** B was widened; the positive-location allow-list is the current B.
+   Rehearsed clean across 40 host worktrees — 2 refusals, zero false positives.)*
 2. **Is the thread done when A–E land**, given clause (i) stays unenforced? This
    determines whether an F slice exists and therefore whether A–E is the whole cut.
+   *(Historical. Answered: scope is full-location, and the boundary is NARROW — so F exists
+   only as follow-up work outside this thread. Current final cut: A, B, C, D, E, (G).)*
 3. **Should `homelab` (and `resume`, `dolt-server`) get baseline hook + verifier wiring
    at all?** Measured: `homelab` has no commit-refuse hook installed and no verifier
    recipe, so *nothing* in A–E — widened B included — reaches it today. That looks like
    adopter-onboarding work owned by another lane, not by this thread.
+   *(**ANSWERED: yes, but as a separate lane.** The NARROW boundary puts adopters outside
+   this thread; the backfill is filed as `li-l53` and `hl-nhw`, both blocked.)*
 
 Note the interaction with question 3: even answering question 1 "yes, widen B" would not
 catch `homelab-substrate`, because `homelab` runs no hook. Widening B buys coverage only
 in repos that already have the baseline. That materially weakens the case for folding a
 widened B into this thread, and strengthens treating clause (i) as a separately-scoped
-follow-on.
+follow-on. *(This reasoning was accepted — it is part of why the boundary was ruled NARROW.
+But note its premise held only for adopters: all 9 fleet repos DO have the baseline, so a
+widened B buys full clause-2 coverage there.)*
 
-**Bottom line for the maintainer:** the A–E cut is approvable as *"close the nested
-fail-open"*. It is **not** approvable as *"enforce the worktree-location rule"* until
-question 2 is answered. Do not accept a cut whose acceptance criteria quietly claim the
-latter.
+**Bottom line for the maintainer — SUPERSEDED, DO NOT ACT ON THIS.** The original text
+read: *"the A–E cut is approvable as 'close the nested fail-open'. It is not approvable as
+'enforce the worktree-location rule' until question 2 is answered."*
+
+That is no longer the position. Question 2 **was** answered — full-location scope, both
+clauses, NARROW boundary — and B **was** widened accordingly. **The current cut
+(A, B, C, D, E, (G)) IS approvable as "enforce the worktree-location rule", scoped to the
+9 `fleet` repos.** Acceptance criteria SHOULD claim exactly that, and must additionally
+name the boundary so the adopter gap is visible rather than implied.
 
 ## First act is the maintainer's — nothing here is agent-dispatchable
 
@@ -1635,7 +1751,8 @@ rollout order first; that ordering is superseded. Ask them in this order:
 
 1. ~~**Does this thread enforce the spec's rule, or only the nested half?**~~
    **ANSWERED 2026-07-25 — full-location scope approved, both clauses.** See §"MAINTAINER
-   RULING" at the top. The cut is now A–G, not A–E.
+   RULING" at the top. The cut was briefly drawn as A–G; after the NARROW boundary ruling
+   the **current final cut is A, B, C, D, E, (G)** — F is follow-up work, not this thread's.
 2. ~~**Rollout order**~~ **ANSWERED 2026-07-25 — Option 3, hook-first, approved.** See
    §"MAINTAINER RULING — rollout order". The next open decision is the fleet-boundary
    question — **ANSWERED: narrow** (§"MAINTAINER RULING — NARROW boundary"). Only the final
@@ -1659,9 +1776,13 @@ wrapping up should not file that unprompted.
 So the honest first act is a maintainer act:
 
 1. Answer §rollout order (blocks everything).
+   *(**DONE** — Option 3, hook-first, approved.)*
 2. File A–E as slices under `-0eo`, or run
    `/livespec-orchestrator-beads-fabro:plan worktree-location-enforcement` to resume this
    thread and let it do the filing with consent.
+   *(**STILL OPEN, and now the ONLY gate.** The cut to file is **A, B, C, D, E, (G)** — not
+   A–E as written above, and not A–G. Scope, rollout order, and the boundary are all
+   approved; filing awaits approval of the final cut and its acceptance criteria.)*
 
 Nothing here is agent-dispatchable until slices exist: `next` ranks work-items, and this
 thread has none.
@@ -1773,7 +1894,8 @@ ledger edit — and that remains true as of 2026-07-25.
 **Decision status as of 2026-07-25** (this paragraph records a snapshot of an earlier pass;
 these are its outcomes, not still-open items): scope is **APPROVED** — full-location, both
 clauses (§"MAINTAINER RULING — full-location scope"), so the definition-of-done question
-this pass raised is settled and the cut is A–G rather than A–E. Rollout order is
+this pass raised is settled; the cut was briefly A–G and is now **A, B, C, D, E, (G)** after
+the NARROW boundary ruling dropped F to a follow-up. Rollout order is
 **APPROVED** — Option 3, hook-first (§"MAINTAINER RULING — rollout order"), which supersedes
 the "wire-then-enforce" recommendation this pass floated; the picker answer that briefly
 displayed that recommendation was a supervisor UI race artifact and remains void
