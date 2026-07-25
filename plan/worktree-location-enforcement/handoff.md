@@ -268,6 +268,125 @@ question below was ANSWERED — narrow (§"MAINTAINER RULING — NARROW boundary
 be filed as a dev-tooling implementation slice, moved, dispatched, or implemented until the
 final cut is approved.
 
+## PROPOSED FINAL CUT — awaiting approval (presented 2026-07-25)
+
+**Status: PROPOSED, not approved.** Scope, rollout order, and boundary are all ruled; this
+is the last gate before filing. Nothing here may be filed, dispatched, or relocated until
+the four questions at the end are answered.
+
+### Exact sequence
+
+```
+E(openbrain)  →  B + remedy  →  A1-prereq  →  D-wiring  →  A2-flip + C  →  (G deferred)
+```
+
+### C placement — proposal, not inference
+
+**C lands in the same change as A2-flip.** C writes `worktree_discipline.pack` with its
+default into the installer and installation docs. Its central claim — that an absent key
+*means* `required` — becomes true only when A2 flips the default. Landing C earlier
+documents something false; landing it later leaves a window where a freshly wired repo is
+silently non-conformant because nothing told the operator to write the key. Same-change is
+the only placement where documentation and behaviour are never out of step.
+
+**The rollout ruling did not place C.** This is a proposal.
+
+### G — recommend DEFER, and file as a tracked follow-up
+
+The case for deferring strengthened during preparation: **once A2 lands, a new fleet member
+born unwired reds its own verifier.** `livespec-overseer` carried the verifier recipe and
+merely lacked the pack, so after this cut the born-unwired gap is **loud, not silent**. That
+makes G a friction fix rather than a hole.
+
+Defer must not become drop: without G the generator keeps producing what D cleans up, and
+that generator is where the second live violation appeared. G plausibly belongs to the
+fleet-membership / birth-procedure lane, like the adopter backfill.
+
+### Work-item split and dependency edges
+
+Six filable items:
+
+| # | slice | RGR | blocked by |
+|---|---|---|---|
+| 1 | **E-openbrain** — relocate the nested worktree | no | — |
+| 2 | **B** — positive-location hook + actionable remedy | **yes** | — (warn the overseer session before its clone reinstalls) |
+| 3 | **A1** — `worktree-pack` obligation row + CI install step + this repo's own wiring | **yes** | 2 (ordering only) |
+| 4 | **D** — 6 wiring PRs + 2 `just bootstrap` runs | no | 3 |
+| 5 | **A2 + C** — config-gated flip + `import?` assertion + installer/docs | **yes** | 3, 4 |
+| 6 | **E-overseer** — relocate | no | **another session** — not dispatchable |
+
+**Hard edges:** `3 → 5` (without A1, A2 reds this repo's own CI on its landing PR) and
+`4 → 5` (without D, A2 costs ~58 dead bump PRs per fleet-day). Items 1 and 2 have no
+blockers — which is why the approved order starts there. **Item 6 has no encodable blocker**:
+same prose-only class as `li-l53` / `hl-nhw`. G, if taken, is item 7 — blocked by nothing,
+gating nothing.
+
+### Per-slice acceptance criteria
+
+**B.** Sanctioned `~/.worktrees/<repo>/<branch>` delegates; primary refuses via the existing
+arm; nested refuses; **peer refuses** (the spec's named case, no coverage today);
+`.git/`-internal delegates; **sandbox-exempt primary still delegates** (existing test must
+stay green); a symlinked path yields an identical verdict. Remedy text names
+`git worktree move` and **no recipe**, because B ships before D. Injected defects that must
+red: remove the carve-out → beads-sync case; drop the exempt guard → the existing exempt
+test; revert to nested-only → the peer case; repoint the sanctioned root → the sanctioned
+case. Red–Green–Replay: test-only Red with `CANONICAL_HOOK_BODY` unmodified on disk.
+
+**A1.** `just bootstrap` in a pack-less clone materializes all four files, idempotently; the
+row sits **before** `commit-refuse-hooks` so that row's broad assert passes for the right
+reason; CI installs the pack for the verifier matrix entry; this repo's own
+gitignore/`import?`/bootstrap tail land so the materialized pack is not four untracked
+files. Injected defect: delete one pack file after bootstrap → the row's assert reds and its
+reconcile clears it. RGR.
+
+**A2 + C.** Key absent + pack absent → **FAIL**; explicit `"optional"` + pack absent →
+**skip**; malformed block → **FAIL**; **key absent + pack present → PASS** — the arm where
+the `harnesses` precedent diverges and must not be copied, pinned by its own test. Existing
+partial-install and byte-drift arms unchanged. Missing `import?` lines → **FAIL**, so a
+byte-perfect pack can no longer pass while `just --list` shows nothing. The
+`.livespec.jsonc`-absent arm's verdict must be a **stated choice with rationale**, not
+inherited. C: a freshly wired repo's config carries the key with its default and comment.
+Injected defect: remove `dev-tooling/` in a required repo → red; same repo with `"optional"`
+→ skip. RGR.
+
+**D.** All 6 unwired repos gain the four wiring components; **`just --list` shows
+`worktree-create` in all 9** (today: 1). The 2 wired-but-unhydrated repos go green on
+`just bootstrap` alone, **no PR**. Each repo's `just check` passes with the pack
+materialized. Do **not** copy git-jsonl's `chmod` of the hydrate stub — per-ecosystem and
+optional.
+
+**E.** openbrain lists at `~/.worktrees/openbrain/fix-ob-6vt-thought-detail-save`; `296dd1f`
+still reachable on its branch; `.claude/worktrees/` removed. A fleet rescan under B's rule
+reports **zero** refusals among governed repos. **E cannot close while the overseer worktree
+stands** — recording it done on the openbrain half is the failure mode to avoid.
+
+**G (if ever taken).** A repo scaffolded for each non-`impl-plugin` class is born with the
+four wiring components and the `.worktrees` prose.
+
+### Authority still needed for E
+
+**openbrain — none beyond approving this cut.** The original decision covered relocation,
+the NARROW ruling explicitly retained it, and it is inspected: clean tree, unpushed
+`296dd1f` with no upstream, no live owning process, stale since 2026-06-24.
+`git worktree move` preserves the commit; `remove` would destroy it.
+
+**`livespec-overseer/.claude/worktrees/dod-corrections` — not this thread's to take.** It
+belongs to another live session, was created mid-audit, and carries two commits. Two things
+are needed, neither of them this thread's to grant: that session's owner relocating it or
+explicitly handing it over, **and a warning to that session before B reaches the overseer
+clone**, since once its hook is reinstalled, commits from that worktree are refused.
+
+### THE FOUR OPEN APPROVAL QUESTIONS
+
+1. **A1/A2 split** — file A as two items (recommended: they land at different times with
+   different risk), or one item landing twice?
+2. **C placement** — same change as A2 (recommended), or separate?
+3. **G** — defer and file as a tracked follow-up (recommended), include in this cut, or drop?
+4. **E-overseer** — file item 6 as blocked-on-another-session now, or leave it out of the cut
+   and carry it in prose until that session acts?
+
+Everything else follows from rulings already given.
+
 ## MAINTAINER RULING — NARROW boundary APPROVED (2026-07-25)
 
 **This thread enforces both full-location clauses across the 9 repos classified `fleet` in
