@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.54.10](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.54.9...v0.54.10) (2026-07-25)
+
+
+### Bug Fixes
+
+* derive shadow ledger pyright config ([518ab4d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/518ab4d1ef18e0587806077c6a31eb743872bd7d))
+
 ## [0.54.9](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.54.8...v0.54.9) (2026-07-25)
 
 
