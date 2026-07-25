@@ -21,6 +21,8 @@ second pyright spawn.
 from __future__ import annotations
 
 import json
+import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -29,6 +31,7 @@ from livespec_dev_tooling.checks.no_shadow_ledger_body_typechecks import (
     _diagnostic_detail,
     _locate_pyright_json,
     _one_based_line,
+    _run_pyright_strict,
     _summary_line,
     _typecheck_body,
     main,
@@ -74,6 +77,56 @@ def test_flags_dirty_body() -> None:
     log = _configure_logger()
 
     assert _typecheck_body(body=_DIRTY_BODY, log=log) == 4
+
+
+def test_strict_config_is_derived_from_pyproject_without_layout_keys(
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Rendered-body pyright config follows `[tool.pyright]` while dropping repo paths."""
+    (tmp_path / "pyproject.toml").write_text(
+        "\n".join(
+            [
+                "[tool.pyright]",
+                'include = ["livespec_dev_tooling"]',
+                'exclude = ["**/_vendor/**"]',
+                'extraPaths = ["livespec_dev_tooling/_vendor"]',
+                'pythonVersion = "3.11"',
+                'typeCheckingMode = "strict"',
+                'reportUnusedCallResult = "error"',
+                'reportPrivateUsage = "none"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+    captured_config: dict[str, object] = {}
+
+    def fake_run(
+        args: list[str],
+        *,
+        cwd: str,
+        capture_output: bool,
+        text: bool,
+        check: bool,
+    ) -> subprocess.CompletedProcess[str]:
+        _ = capture_output
+        _ = text
+        _ = check
+        captured_config.update(json.loads((Path(cwd) / "pyrightconfig.json").read_text()))
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="{}")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    assert _run_pyright_strict(body="pass\n") == (0, "{}")
+    assert captured_config == {
+        "pythonVersion": "3.11",
+        "typeCheckingMode": "strict",
+        "reportUnusedCallResult": "error",
+        "reportPrivateUsage": "none",
+        "include": ["no_shadow_ledger_body.py"],
+    }
 
 
 # --- pyright-unavailable skip ----------------------------------------------
