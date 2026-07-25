@@ -82,8 +82,12 @@ exists to name.
 exit `4` for the `missing` and `body_mismatch` failure modes. The shipped module
 returns `1` (`checks/no_shadow_ledger_body_identical.py`, `_FAIL_EXIT`). A draft
 of this change had rewritten the spec to `4` → `1` to match the code. That
-rewrite has been REVERTED; those three lines are unchanged from master and this
-proposal declares no edit to them.
+rewrite has been REVERTED: every `4` on those three lines is unchanged from
+master, and the two algorithm-step lines are byte-identical to it. The invocation
+line alone was later extended, in a separate repair, with a third outcome — the
+§"Role keys" undeclared-key exit, which deliberately assigns no number. That is
+an addition beside the `4`, not an edit of it, and the `4` this ruling is about
+stands exactly as master has it.
 
 **The maintainer ruled: the spec ratifies `4`; the shipped `1` is a tracked code
 defect.** The reasoning, verified from git history rather than inferred:
@@ -114,6 +118,32 @@ Note for whoever fixes `1aba`: that module's own docstring already says `4`, so
 on this point the docstring is RIGHT and the code is wrong. Its separate,
 genuinely stale claim — that an undeclared key makes the check no-op — is
 tracked as `livespec-dev-tooling-eihv`.
+
+### Defects the review rounds introduced, and how they were caught
+
+Recorded because the pattern matters more than the individual fixes: in this
+change, THREE defects were introduced by repairs to earlier defects, and each was
+caught only by re-reviewing the amended bytes rather than the amended spots.
+
+1. A repair to the config-block misattribution introduced the claim that livespec
+   PR #1663 added "the first structural role keys". False — `dataclasses_tree`
+   was declared two days earlier in PR #1497. Note that `git log -S` on those key
+   names returns the SAME commit for all three and would have confirmed the wrong
+   answer; only the diff shows `source_trees` / `io_trees` appearing there inside
+   a comment reading "deliberately NOT declared here". A string search and a diff
+   disagreed, and the string search was the wrong instrument.
+2. A rewrite of the `livespec-orchestrator-git-jsonl` bullet asserted that the
+   keys not named as real-valued "are declared explicitly empty". False —
+   `supervisor_entry_files` carries real values there.
+3. Extending the check's invocation line with the undeclared-key exit silently
+   falsified this record's own earlier sentence that the three exit-code lines
+   were "unchanged from master". The contract text was right; the record sentence
+   it expired was not, and is corrected above.
+
+The operative lesson for anyone amending this spec: a fix is a prime suspect, not
+a settled matter, and a re-review scoped to "just the changed spots" would have
+missed defect 3 entirely — it lived in a different section from the edit that
+broke it.
 
 ### The third consumer bullet — corrected here, with the rest left to its own item
 
