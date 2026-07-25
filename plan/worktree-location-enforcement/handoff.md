@@ -6,13 +6,24 @@
 work-items. See §"First act is the maintainer's".
 
 **Opened:** 2026-07-20, out of a live violation in `livespec-console-beads-fabro`
-(incident summary below). All analysis in this file was verified against
-`origin/master` at **`2412e21`**; every line anchor is from that commit.
+(incident summary below). The original analysis was verified against `origin/master`
+at **`2412e21`**.
+
+**Remeasured 2026-07-25** against `origin/master` at **`413a407`** — 131 commits
+later. See §"Reactivation audit — 2026-07-25" at the end of this file for the
+measured delta, the corrections to premises that were wrong when written, and the
+facts below that survived. Inline numbers and anchors in this file have been
+updated to the 2026-07-25 measurement; do not reason from the `2412e21` counts.
 
 ## Charter
 
 The rule "every worktree lives under `~/.worktrees/<repo>/<branch>`, NEVER inside a
-clone" is stated in prose in each repo's `AGENTS.md` and enforced by **nothing**. Three
+clone" is stated in prose in *most* governed repos' `AGENTS.md` and enforced by
+**nothing**. (Measured 2026-07-25: 9 of 13 governed clones mention `.worktrees` at all;
+`livespec-driver-codex`, `livespec-overseer`, and `homelab` have zero mentions and
+`dolt-server` has no `AGENTS.md`. The original "each repo" claim was too generous —
+prose coverage is itself incomplete, which strengthens the case for a mechanical
+guard rather than weakening it.) Three
 layers were each assumed to cover it; all three fail open, silently, in exactly the
 scenario that occurred.
 
@@ -32,8 +43,10 @@ maintainer noticed only because `git status` on master showed `?? worktrees/`.
 The violation was live ~25 minutes. Master itself was never modified. The offending
 session relocated and cleaned up its own mess on request; the empty `worktrees/` dir was
 removed 2026-07-19. **Nothing about the root cause was fixed** — re-verified on
-`2412e21`: the fail-open line is untouched, no config key exists anywhere, no pack is
-installed in 7 of 8 governed repos.
+`413a407` (2026-07-25): the fail-open line is untouched and still at
+`:298-300`, `grep -rn worktree_discipline` over the whole repo returns **zero hits**
+(no config key exists anywhere), and no pack is installed in **8 of 9** verifier-running
+fleet repos.
 
 The causal chain, which is the actual design input:
 
@@ -62,7 +75,11 @@ The causal chain, which is the actual design input:
    ("required fleet-wide since M6"), block malformed → FAIL.
 5. `livespec_dev_tooling/install_worktree_pack.py` + `livespec_dev_tooling/worktree_pack/`
    — the four canonical pack bodies (single source).
-6. `AGENTS.md` §"Red-Green-Replay commit protocol" (`:100-142`) — binds item A.
+6. `AGENTS.md` §"Red-Green-Replay commit protocol" (`:100-147`, i.e. the section runs
+   to end-of-file) — binds item A. *(Anchor corrected 2026-07-25; `AGENTS.md` grew from
+   142 to 147 lines. The four `.py` files at items 2–5 are **byte-identical** to
+   `2412e21`, so every anchor into them still holds — verified by
+   `git diff 2412e21..origin/master` reporting no change for any of them.)*
 
 ## The two decisions the maintainer already made
 
@@ -130,37 +147,66 @@ Item A has the same shape: flipping the default reds every repo lacking a pack.
 So **both** items are pin-bump-coupled fleet sweeps, not local changes. That is the
 single most important fact in this file.
 
-## Fleet impact — verified 2026-07-19/20
+## Fleet impact — remeasured 2026-07-25
 
-8 repos run the verifier. Console names its recipe `check-baseline`; the other 7 name it
+**Membership source of truth** is livespec core's committed
+`.livespec-fleet-manifest.jsonc` (GitHub repo topics are only a discovery safety net).
+As of livespec `991943ef` it lists **9 fleet members** + **3 registered adopters**
+(openbrain, resume, homelab). `dolt-server` is *not* registered — its adopter
+registration is explicitly DEFERRED in the manifest — but its clone does carry a
+`.livespec.jsonc`, so it is a governed-ish carrier, not a fleet member. Counting it
+gives the 13 clones surveyed below.
+
+**Delta vs the 2026-07-19/20 table:** `livespec-overseer` was added to the fleet as the
+`control-plane-tool` class (livespec `f9664481`, class ratified in spec v171
+`a2afda9b`). It runs the verifier and has **no pack** — so the non-compliant
+verifier-running count went **7 → 8**, and the `.livespec.jsonc` carrier count went
+**12 → 13**.
+
+9 repos run the verifier. Console names its recipe `check-baseline`; the other 8 name it
 `check-primary-checkout-commit-refuse-hook-installed` (an earlier scan for `check-baseline`
 alone under-reported this — do not repeat that mistake).
 
-| Repo | verifier | pack |
-|---|---|---|
-| livespec | YES | **ABSENT** |
-| livespec-dev-tooling | YES | **ABSENT** |
-| livespec-driver-claude | YES | **ABSENT** |
-| livespec-driver-codex | YES | **ABSENT** |
-| livespec-orchestrator-beads-fabro | YES | **ABSENT** |
-| livespec-runtime | YES | **ABSENT** |
-| livespec-console-beads-fabro | YES | **ABSENT** |
-| livespec-orchestrator-git-jsonl | YES | present ✅ |
+| Repo | manifest | verifier recipe | pack (`dev-tooling/`) | installed hook |
+|---|---|---|---|---|
+| livespec | fleet/core | YES | **ABSENT** | canonical ✅ |
+| livespec-dev-tooling | fleet/enforcement-suite | YES | **ABSENT** | canonical ✅ |
+| livespec-driver-claude | fleet/driver-plugin | YES | **ABSENT** | canonical ✅ |
+| livespec-driver-codex | fleet/driver-plugin | YES | **ABSENT** | canonical ✅ |
+| livespec-orchestrator-beads-fabro | fleet/impl-plugin | YES | **ABSENT** | canonical ✅ |
+| livespec-runtime | fleet/library | YES | **ABSENT** | canonical ✅ |
+| livespec-console-beads-fabro | fleet/console | YES (`check-baseline`) | **ABSENT** | canonical ✅ |
+| **livespec-overseer** *(new)* | fleet/control-plane-tool | YES | **ABSENT** | canonical ✅ |
+| livespec-orchestrator-git-jsonl | fleet/impl-plugin | YES | present ✅ (4/4) | canonical ✅ |
+| openbrain | adopter (pinned) | **none** | ABSENT | **differs** (older pin) |
+| resume | adopter (pinned) | **none** | ABSENT | **no hook** |
+| homelab | adopter (released) | **none** | ABSENT | **no hook** |
+| dolt-server | *unregistered* | **none** | ABSENT | **no hook** |
 
-`livespec-orchestrator-git-jsonl` is the **only** compliant repo — model the sweep on it.
+`livespec-orchestrator-git-jsonl` is still the **only** compliant repo — model the sweep
+on it. All 4 pack files are present and byte-current there.
 
 Note `livespec-dev-tooling` itself is non-compliant. Fix it in the same change so the
 canonical repo is exemplary rather than exempt.
 
-12 repos carry `.livespec.jsonc` and get the key: the 8 above plus dolt-server, homelab,
-openbrain, resume. In those 4 the key is **inert documentation** — they wire no verifier,
-so nothing reads it. Say so rather than implying coverage.
+**The 9 fleet clones' installed hooks are all byte-identical to the current
+`CANONICAL_HOOK_BODY`** (sha256 prefix `3a3f60cbd4d2`, 3494 bytes) — so today there is
+no pre-existing hook drift for item B to be blamed for. `openbrain`'s hook differs
+(`b649c648302b`): it is a *pinned* adopter running an older `livespec-dev-tooling`, so
+it is byte-correct **against its own pin**, not against master. Do not read that row as
+drift. The byte-compare is always against the canonical body of the version that repo
+pins.
+
+The 4 non-fleet rows carry (or would carry) the key as **inert documentation** — they
+wire no verifier, so nothing reads it. Say so rather than implying coverage. `resume`,
+`homelab`, and `dolt-server` have no commit-refuse hook installed at all, so item B
+cannot reach them either.
 
 ## THE ONE OPEN QUESTION — rollout order
 
 Unanswered when the prior session ended. It gates all execution:
 
-- **Pack-install-first (no red window).** Run `install-worktree-pack` across the 7
+- **Pack-install-first (no red window).** Run `install-worktree-pack` across the 8
   non-compliant repos *before* landing the verifier change. Harmless on its own — an
   installed pack is already valid under today's rules. Nothing ever goes red.
 - **Verifier-first (red as forcing function).** Land the change; each repo goes red at
@@ -168,11 +214,57 @@ Unanswered when the prior session ended. It gates all execution:
 
 The prior session's recommendation was **pack-install-first**, on the grounds that
 staggered pin bumps mean the red window is not atomic and would surface as unrelated CI
-failures in 7 repos over an unpredictable window. Not a decision — a recommendation.
+failures in 7 (now 8) repos over an unpredictable window. Not a decision — a
+recommendation.
 
-The same question applies independently to item B's hook reinstall, where it is sharper:
-a byte-mismatched hook fails the verifier in **every** repo, including the 4 that
-currently pass by having no pack.
+### The mechanics under this question CHANGED since `2412e21` — reprice it
+
+Three findings from the 2026-07-25 remeasurement change the failure window of each
+option. Do not answer the old binary without them.
+
+1. **The release fan-out preflight became a per-member FILTER, not a blocking gate**
+   (`livespec_dev_tooling/fleet/dispatch_matrix_filter.py`, new since `2412e21`;
+   `reusable-release-dispatch.yml`). Previously a red fleet halted the whole fan-out.
+   Now a non-conformant member is **excluded from the dispatch matrix** and named in an
+   annotation + step summary, while conformant members still receive their dispatch.
+   This makes the verifier-first red *quieter and longer-lived* per repo, not louder:
+   an excluded repo stops receiving pin bumps until someone acts on the annotation.
+   Note this filter keys off **fleet-conformance** rows, not off the repo-local
+   `check-primary-checkout-commit-refuse-hook-installed` verifier — see item 3.
+
+2. **`reusable-pin-freshness.yml` no longer runs `just check` before opening the bump
+   PR** (that step was extracted out; the header now says it "runs no consumer checks
+   itself, so the failure surfaces on the PR's own status checks"). Under verifier-first,
+   each member's next bump PR therefore **opens and then goes red on its own CI**, and
+   auto-merge stalls. The failure mode is 8 stalled bump PRs, not 8 skipped bumps.
+
+3. **Item B never reds CI at all.** `ci.yml:409-411` installs the canonical hook via
+   `python3 -m livespec_dev_tooling.install_commit_refuse_hooks` from the *same wheel*
+   the check then verifies against, immediately before running the
+   `check-primary-checkout-commit-refuse-hook-installed` matrix entry. A fresh CI
+   checkout is therefore always byte-current by construction. **Item B's blast radius is
+   developer clones only** — which is materially smaller than the handoff previously
+   implied.
+
+### Correction to a premise that was wrong when written
+
+The original text said the hook reinstall "is per-clone and per-machine — it does not
+propagate with a pin bump", implying a manual `just install-commit-refuse-hooks` in every
+clone. That understates what already exists: `livespec_dev_tooling/fleet/local_reconcile.py`
+(which predates `2412e21` — this was a miss, not a delta) walks
+`contract.LOCAL_OBLIGATION_ROWS`, and the **`commit-refuse-hooks` row carries both an
+`assert_local` (runs the verifier) and a `reconcile_local` (runs the installer)**.
+`just bootstrap` is a thin delegator to it. So item B's per-clone reinstall is already
+mechanized: `just bootstrap` in each clone asserts and self-heals the hook.
+
+**But there is no worktree-pack local row.** `grep -rn worktree_pack livespec_dev_tooling/fleet/`
+returns nothing. So under item A, the `commit-refuse-hooks` row's assert (which shells
+out to the whole verifier, pack arm included) would go red in a pack-absent repo while
+its reconcile — which only installs the hook — **cannot clear it**. That is an
+un-self-healing row, and it is a design input for slice A/D: either add a
+`worktree-pack` local obligation row with `install_worktree_pack` as its reconcile, or
+extend the existing row's reconcile. This did not exist as a consideration in the
+original cut.
 
 ## The work
 
@@ -208,8 +300,14 @@ adopters get it without archaeology.
 
 ### D — fleet sweep
 
-Install the pack in the 7 non-compliant repos; write the key into all 12 `.livespec.jsonc`;
-re-run `install-commit-refuse-hooks` everywhere after B lands. Order per §rollout.
+Install the pack in the **8** non-compliant verifier-running repos; write the key into
+all **13** `.livespec.jsonc` carriers; ensure every clone's hook is current after B
+lands. Order per §rollout.
+
+Per the correction in §rollout, the hook leg of this sweep is `just bootstrap` (the
+`local_reconcile` `commit-refuse-hooks` row), not a bespoke per-clone
+`install-commit-refuse-hooks` walk. The pack leg has **no** such row today; adding one
+is part of the slice.
 
 ### E — openbrain has the last live violation
 
@@ -217,15 +315,66 @@ re-run `install-commit-refuse-hooks` everywhere after B lands. Order per §rollo
 /data/projects/openbrain/.claude/worktrees/fix-ob-6vt-thought-detail-save  [fix/ob-6vt-thought-detail-save]
 ```
 
-Confirmed still live 2026-07-20. It is in the **working tree**, not `.git/`, so item B
-will hard-refuse its next commit. Maintainer decided: **relocate it as part of the sweep**
-(`git worktree move` to `~/.worktrees/openbrain/<branch>`), before B ships, so nobody is
-stranded mid-branch. Check for uncommitted work there first and report before moving.
+**Re-inspected 2026-07-25 and still live.** Measured state:
 
-A fleet rescan on 2026-07-20 using the §B rule (with the `.git/` carve-out applied) found
-openbrain as the **only** genuine violation — which is independent confirmation the
-carve-out is drawn correctly: it cleanly separates beads' four internal sync worktrees
-from real ones.
+- working tree is **clean** — `git status --short` is empty, so there is no uncommitted
+  work to lose;
+- branch `fix/ob-6vt-thought-detail-save` sits at `296dd1f`
+  ("Fix thought detail save importance payload (ob-6vt)") with **no upstream** —
+  `git ls-remote --heads origin 'fix/ob-6vt*'` returns nothing, so that commit exists
+  **only** in this worktree's branch. It is unpushed work; a `git worktree move`
+  preserves it, a `git worktree remove` would destroy it;
+- directory mtime is **2026-06-24**, 31 days stale;
+- **no live process is cwd'd inside it** (scan of `/proc/*/cwd`), and there is no tmux
+  session for openbrain. No evidence of an owning live session.
+
+It is in the **working tree**, not `.git/`, so item B will hard-refuse its next commit.
+Maintainer decided: **relocate it as part of the sweep** (`git worktree move` to
+`~/.worktrees/openbrain/<branch>`), before B ships, so nobody is stranded mid-branch.
+The pre-move inspection this called for is now done and recorded above; the move itself
+still needs maintainer authority and has NOT been performed.
+
+A fleet rescan on 2026-07-25 using the §B rule (physical paths via `realpath`, `.git/`
+carve-out applied) across every clone under `/data/projects`, `/home/ubuntu/workspace`,
+and `~/.worktrees` again found openbrain as the **only** genuine nested violation, out of
+34 non-primary worktrees — independent confirmation the carve-out is still drawn
+correctly. The same four beads sync worktrees are still what the carve-out protects:
+
+```
+agent-flywheel                       .git/beads-worktrees/beads-sync
+beads                                .git/beads-worktrees/beads-metadata
+gdk-in-a-box-agent-flywheel-wrapper  .git/beads-worktrees/beads-sync
+personal-knowledge-base              .git/beads-worktrees/beads-sync
+```
+
+**`pwd -P` re-verified as load-bearing:** `/home/ubuntu/workspace` is a symlink whose
+`realpath` is `/data/projects`, and `.livespec.jsonc` in both paths resolves to the same
+inode (`29625545` for `livespec-dev-tooling`, `28075442` for `livespec`). Without
+physical-path resolution the prefix comparison still gives different answers depending
+on which path a worktree was created through.
+
+### The §B rule does NOT catch peer worktrees — a newly measured gap
+
+The 2026-07-25 rescan surfaced **5 worktrees that live outside `~/.worktrees/` but are
+not nested under their primary's working tree**, so §B's `case "$this_root/" in
+"$primary_root"/*)` arm never matches them:
+
+```
+/data/projects/homelab-substrate                     ← primary: /data/projects/homelab  (GOVERNED adopter)
+/home/ubuntu/.local/state/kilroy/attractor/runs/*/worktree  (×4)  ← primary: /data/projects/cxdb-graph-ui  (not governed)
+```
+
+`homelab-substrate` is the one that matters: `homelab` is a **registered adopter**, and a
+peer-directory worktree violates the prose rule exactly as a nested one does — item B
+will silently allow it. The four kilroy worktrees are tool-managed run scratch in a
+non-governed repo and are almost certainly fine to leave alone.
+
+This is a **scope finding, not a defect in the settled decision B**: the maintainer chose
+"refuse *nested*", and nested is what B refuses. But the handoff previously implied
+openbrain was the last violation fleet-wide, and that is no longer true under the prose
+rule — only under the narrower nested rule. Whether to widen the refusal to
+"anything not under `~/.worktrees/`" is a **new** question the maintainer has not been
+asked, and it is deliberately NOT folded into the A–E cut below.
 
 ## First act is the maintainer's — nothing here is agent-dispatchable
 
@@ -247,6 +396,14 @@ So the honest first act is a maintainer act:
 Nothing here is agent-dispatchable until slices exist: `next` ranks work-items, and this
 thread has none.
 
+**Re-verified 2026-07-25:** `bd show livespec-dev-tooling-0eo` reports the epic still
+`BACKLOG`, P2, updated 2026-07-20; `bd list --parent livespec-dev-tooling-0eo` reports
+"has no children" and `bd dep tree` shows the epic alone. There is still no topic
+implementation branch (`git branch -a --list '*worktree*' '*nested*' '*0eo*'` is empty),
+no topic worktree, and no open PR for this thread — the only open PR on the repo is
+#285 (`fix/generated-block-comment-syntax`), unrelated. The parked state is intact and
+nothing was filed in the interim.
+
 ## Sequencing
 
 1. **Rollout order decided first** — it changes the shape of D, not just its timing.
@@ -257,9 +414,72 @@ thread has none.
 5. Parallel-safe against `livespec-console-beads-fabro`'s `plan/repo-invariant-guards/`
    — no shared files. That thread's `-mvu22t` item ports `red_green_replay.py` **from**
    this repo; it reads, does not write, so there is no contention.
+   *(Re-checked 2026-07-25: that thread still exists at
+   `livespec-console-beads-fabro/plan/repo-invariant-guards/handoff.md` and the
+   no-shared-files claim still holds.)*
 
 ## Gates
 
 - Maintainer decision on rollout order.
 - Maintainer epic anchor + item filing (see above).
 - Red-Green-Replay on A and B (product `.py`; docs-only changes like this file are exempt).
+
+## Reactivation audit — 2026-07-25
+
+Measured against `origin/master` at `413a407` (131 commits past the `2412e21` base),
+livespec core at `991943ef`. What follows is the delta only; the sections above already
+carry the corrected facts.
+
+### Survived unchanged — the thread's premises are still true
+
+- All four `.py` files the analysis anchors into are **byte-identical** to `2412e21`
+  (`git diff 2412e21..origin/master` reports no change for the verifier, the hook
+  installer, the pack installer, or `plugin_resolution.py`). Every line anchor into them
+  holds.
+- The fail-open early return is still at `:298-300`.
+- `worktree_discipline` appears **nowhere** in the repo — decision A is entirely
+  unimplemented.
+- The `.git/` carve-out is still load-bearing (same 4 beads sync worktrees).
+- `pwd -P` is still load-bearing (`/home/ubuntu/workspace` → `/data/projects` symlink,
+  identical inodes).
+- openbrain is still the only genuine **nested** violation fleet-wide.
+- Epic `-0eo` still has zero children; no topic branch, worktree, or PR exists.
+- Parallel-safety against the console's `repo-invariant-guards` thread still holds.
+
+### Changed — and it changes the decision
+
+1. **Fleet membership grew.** `livespec-overseer` joined as `control-plane-tool`.
+   Non-compliant verifier-running repos **7 → 8**; `.livespec.jsonc` carriers **12 → 13**.
+2. **Release fan-out preflight: blocking gate → per-member filter**
+   (`dispatch_matrix_filter.py`, new). A non-conformant member is excluded from dispatch
+   and annotated; conformant members still get theirs. Structural failures still halt
+   fail-closed.
+3. **`reusable-pin-freshness.yml` dropped its pre-PR `just check`.** Bump PRs now open
+   unconditionally and fail on their own CI, so verifier-first yields *stalled bump PRs*
+   rather than *skipped bumps*.
+4. **Item B cannot red CI.** `ci.yml` installs the canonical hook from the same wheel
+   immediately before the check. B's blast radius is developer clones only.
+
+### Corrections to premises that were wrong when written
+
+- **`local_reconcile` already existed** (it predates `2412e21`; the original session
+  missed it). Its `commit-refuse-hooks` LOCAL row has both an assert and a reconcile, and
+  `just bootstrap` delegates to it — so per-clone hook reinstall is already mechanized.
+  The handoff's "does not propagate ... per-clone and per-machine" framing overstated the
+  manual burden of item B.
+- **There is no `worktree-pack` local row**, so under item A the `commit-refuse-hooks`
+  row becomes assert-red / reconcile-can't-fix in every pack-absent repo. New design
+  input for slices A/D.
+- **The prose rule is not in every repo's `AGENTS.md`** — 9 of 13 mention `.worktrees`;
+  `livespec-driver-codex`, `livespec-overseer`, `homelab` have none and `dolt-server` has
+  no `AGENTS.md`.
+- **openbrain is not the last violation under the prose rule** — only under the narrower
+  nested rule. `/data/projects/homelab-substrate` is a peer-directory worktree of the
+  governed adopter `homelab` that item B will not catch.
+- **`AGENTS.md` §Red-Green-Replay anchor** `:100-142` → `:100-147`.
+
+### Explicitly NOT done in this pass
+
+No slices filed, no worktree moved, no implementation dispatched, no spec change. The
+rollout-order decision and the A–E cut remain the maintainer's, and the peer-worktree
+scope question above is a new decision that has not been put to them.
