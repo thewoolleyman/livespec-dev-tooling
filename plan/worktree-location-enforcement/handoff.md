@@ -209,6 +209,36 @@ wrong, and it was inferred rather than inspected.** Inspected:
   LOCATION** — the identical fail-open this thread exists to close, independently
   reimplemented.
 
+##### The location-blind test exists in THREE independent implementations
+
+A fleet-wide sweep (2026-07-25) for bespoke refuse mechanisms beyond the canonical hook
+found that openbrain is not a one-off:
+
+| implementation | language | where | reaches |
+|---|---|---|---|
+| livespec `CANONICAL_HOOK_BODY` | `sh`, in `.git/hooks/` | `install_commit_refuse_hooks.py:72` | the **9 fleet clones** |
+| openbrain `scripts/refuse-primary-commit.sh` | `bash`, via lefthook | epic `ob-apw` | openbrain only |
+| resume `scripts/check-primary-checkout.ts` | TypeScript | resume | resume only |
+
+`resume`'s header states the same structural rule in the same terms — *"refuses a commit
+whose repository git-dir equals its git-common-dir — the signature of the primary
+checkout"* — and, like the other two, never mentions worktree location. (It is not
+referenced from `package.json`, `lefthook.yml`, or a `justfile`; where it is invoked from,
+if anywhere, was not established.)
+
+**Item B changes one of the three.** The other two are separate repos' files. So "the
+fail-open is closed" after B is true only of the fleet-clone population — a third of the
+implementations by count, and the two outside it belong to the adopters that carry no
+verifier and no canonical hook. Any acceptance criterion phrased fleet-wide must say
+which implementation it is talking about.
+
+This also reframes the root cause. The location-blindness is not one oversight in one
+hook body; it is what **everyone independently converges on** when they implement
+"worktree-mandatory" from the structural git-dir test, because that test answers "am I in
+the primary?" and nobody notices it never asked "am I in the right *place*?". A fix that
+lands only in `CANONICAL_HOOK_BODY` leaves the pattern intact and available to be
+reimplemented a fourth time.
+
 **Consequence for item B and slice E — item B does not reach openbrain.** The handoff's
 §E claim that openbrain's nested worktree "is in the working tree, not `.git/`, so item B
 will hard-refuse its next commit" **does not hold**: B changes `CANONICAL_HOOK_BODY`, and
@@ -801,6 +831,54 @@ openbrain was the last violation fleet-wide, and that is no longer true under th
 rule — only under the narrower nested rule. Whether to widen the refusal to
 "anything not under `~/.worktrees/`" is a **new** question the maintainer has not been
 asked, and it is deliberately NOT folded into the A–E cut below.
+
+#### THE SPEC ALREADY ANSWERS THE DEFINITION-OF-DONE QUESTION (2026-07-25)
+
+The rule is **not** merely `AGENTS.md` prose. It is a ratified invariant in livespec core
+at `SPECIFICATION/non-functional-requirements.md:1013`, §"Worktree root and mise trust":
+
+> Every git worktree lives under a single per-user root — `~/.worktrees/<repo>/<branch>` —
+> NEVER as a peer of the first-class clones in the workspace directory
+> (`/data/projects/<repo>`). … The rule is fleet-wide-by-intent: it applies uniformly to
+> `livespec` and every sibling repo. (Orchestrator-internal janitor worktrees, which the
+> Dispatcher creates and removes inside the integration clone per its own configuration,
+> are out of scope for this maintainer/agent convention.)
+
+Read it precisely, because it does not say what this thread assumed:
+
+1. **The primary clause is POSITIVE** — every worktree lives under
+   `~/.worktrees/<repo>/<branch>`. That is the invariant.
+2. **The one explicitly-named prohibition is the PEER case** — "NEVER as a peer of the
+   first-class clones in the workspace directory". The spec names
+   `/data/projects/<repo>`-adjacent placement by name. That is **exactly the case item B
+   does not catch**, and exactly what `/data/projects/homelab-substrate` was.
+3. **The nested case item B does catch is not named at all.** It is forbidden only as a
+   consequence of the positive clause.
+
+So the framing in this thread has been backwards. `homelab-substrate` was not a
+peripheral scope curiosity — it was a **direct violation of the only prohibition the spec
+spells out**, while openbrain's nested worktree violates the positive clause the spec
+leads with. A cut that closes the nested case and leaves the peer case open satisfies
+neither the letter nor the lead of the ratified invariant.
+
+**Consequence for the maintainer's first question:** the definition of done is not an open
+choice between "clause (ii) only" and "both clauses" — the spec already picked. Enforcing
+only nested-refusal leaves a ratified invariant unenforced in the very case it names. The
+live question is narrower and different: *does this thread widen to the spec's actual
+rule, or does it ship the nested-only cut and open a follow-on to close the rest?* Both
+are legitimate; presenting the first as "done" is not.
+
+**A second thing the spec settles — and a possible collision with B.** The parenthetical
+carves out "orchestrator-internal janitor worktrees, which the Dispatcher creates and
+removes **inside the integration clone**". Worktrees inside a clone are precisely what
+item B hard-refuses. The `.git/` carve-out does not help: it covers beads' sync worktrees
+under `.git/beads-worktrees/`, not a janitor worktree in an integration clone's *working
+tree*. Today's janitor worktrees all sit under `~/.worktrees/livespec-orchestrator-beads-fabro/`
+(`janitor-bd-ib-*`), so nothing is broken now — but if a Dispatcher ever creates them where
+the spec says it may, **B would refuse their commits**, and B's carve-out set would need a
+third arm. Slice B should either state that this configuration is unsupported or carve it
+out; silently refusing a spec-sanctioned case is the same class of error as silently
+allowing one.
 
 #### Does this change B, or the thread's definition of done?
 
