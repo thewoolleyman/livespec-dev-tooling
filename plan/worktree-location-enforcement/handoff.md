@@ -414,6 +414,26 @@ ordering is a draft.
 
 ### A — verifier: absent pack becomes a FAIL, gated on config
 
+**The fail-open, demonstrated rather than read (2026-07-25).** `_inspect_worktree_pack`
+was executed directly against four throwaway trees in a scratch dir — no repo touched:
+
+| tree state | verdict |
+|---|---|
+| pack entirely absent — **the live state of 8 of 9 verifier-running repos** | **`PASS`** ← the hole |
+| pack complete + byte-correct — the state of `livespec-orchestrator-git-jsonl` | `PASS` |
+| pack partial (one file removed) | `FAIL worktree_pack_file_missing` |
+| pack present but drifted | `FAIL worktree_pack_body_mismatch` |
+
+Stated as sharply as it goes: **installing three of the four pack files is a FAIL;
+installing none of them is a PASS.** The check punishes a partial install and rewards a
+total absence. That is the fail-open in one line, and it is now an executed result rather
+than an inference from `:298-300`.
+
+It also fixes the shape of slice A's Red test precisely: the test must assert that row 1
+becomes a FAIL under `required`, while rows 3 and 4 keep their existing failure modes
+unchanged — the §"Keep the existing partial-install and byte-drift arms exactly as they
+are" requirement below is what stops a fix for row 1 from collapsing rows 3 and 4 into it.
+
 `_inspect_worktree_pack` (`:279-309`) returns `[]` when no pack file exists (`:298-300`).
 That single early-return is the entire hole. Replace with a `.livespec.jsonc` read:
 `required` (default) → absent pack is a new `worktree_pack_absent` failure carrying the
