@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.54.15](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.54.14...v0.54.15) (2026-07-25)
+
+
+### Bug Fixes
+
+* **checks:** enforce per-artifact boundary-catch cardinality ([9695ea3](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9695ea3d47691ef80098247b6d3b00dae24d8505))
+
 ## [0.54.14](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.54.13...v0.54.14) (2026-07-25)
 
 
