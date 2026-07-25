@@ -110,14 +110,23 @@ repos, which need no PR at all.
 belongs to **another session** and must not be touched without its owner — E cannot close
 unilaterally.
 
-**F — adopter baseline and positive-location reach (NEW, required by the ruling).**
-Clause 2 is unenforceable in the three governed adopters today: openbrain runs a stock
-lefthook stub, resume and homelab run no hook at all, and none of the three wires the
-verifier. F installs the canonical commit-refuse hook and wires the verifier in openbrain,
-resume, and homelab — and reconciles the **two bespoke location-blind implementations**
+**F — adopter baseline and positive-location reach. NOT IN THIS THREAD (narrow boundary
+ruling, 2026-07-25).** F was originally cut as "required by the ruling" on the assumption
+that clause 2 might bind all 12 governed repos. The **narrow boundary is now approved** —
+this thread enforces both clauses across the **9 `fleet` repos only** (§"MAINTAINER RULING
+— narrow boundary"). All 9 already carry the substrate, so **clause 2 is met by B and D
+alone and F carries no work for this thread.**
+
+Adopter enforcement is a **separate follow-up**, already filed as two blocked backfill
+work-items (`li-l53` in the resume tenant, `hl-nhw` in the homelab tenant) — see the ruling
+section for their scope. openbrain has no backfill item yet; **E still retains the safe
+openbrain relocation**, which is hygiene and needs no substrate.
+
+Retained here for context only: clause 2 is unenforceable in the three governed adopters
+today — openbrain runs a stock lefthook stub, resume and homelab run no livespec hook, and
+none of the three wires the verifier — and two **bespoke location-blind implementations**
 (`openbrain/scripts/refuse-primary-commit.sh`, `resume/scripts/check-primary-checkout.ts`)
-so the fleet has one location-aware rule rather than three location-blind ones. These are
-other repos' files, so F is a cross-repo slice with its own PRs and review.
+remain unreconciled. That is now the follow-up's subject, not this thread's.
 
 **G — birth procedure (NEW, proposed; deferrable).** Only `impl-plugin` has a copier
 template, and it is the fully-compliant one. Members of the other six classes are
@@ -131,17 +140,27 @@ land before A's default flips or this repo's CI reds; D's wiring must exist befo
 is actionable in the 6 unwired repos; F is independent of A–D and gates clause 2's reach;
 E is independent of everything and half-blocked on another session; G is independent.
 
-### F is NOT uniform across the three adopters — measured 2026-07-25
+### Adopter substrate is NOT uniform — measured 2026-07-25 (now the FOLLOW-UP's input, not F's)
 
-F was written as "install the canonical hook and wire the verifier in openbrain, resume,
-and homelab". **As stated it is not executable in two of the three.** What each adopter
-can actually run:
+Per the narrow ruling this no longer scopes a slice in this thread; it is retained because
+it is the evidence the two filed backfill items (`li-l53`, `hl-nhw`) are built on.
 
-| adopter | justfile | `.mise.toml` | lefthook | dev-tooling package | verdict |
+F was originally written as "install the canonical hook and wire the verifier in openbrain,
+resume, and homelab". **As stated it was not executable in two of the three.** What each
+adopter can actually run:
+
+| adopter | justfile | mise config | lefthook | dev-tooling package | verdict |
 |---|---|---|---|---|---|
-| **openbrain** | yes | yes | yes | **vendored** `livespec_dev_tooling/` | **reachable** |
-| **resume** | **no** | **no** | **no** | no | needs substrate first |
-| **homelab** | **no** | **no** | **no** | no | **no substrate at all** |
+| **openbrain** | yes | `.mise.toml` | yes | **vendored** `livespec_dev_tooling/` | **reachable** |
+| **resume** | **no** | **`mise.toml`** (present) | no | no | needs substrate; has a Bun/TS harness |
+| **homelab** | **no** | no | no | no | **no substrate**; dependency-free POSIX hook only |
+
+**Correction (2026-07-25):** an earlier version of this table recorded resume as having no
+mise config. That was wrong — it was measured by testing for `.mise.toml`, and resume's file
+is **`mise.toml`** (no leading dot). resume also has `.githooks/pre-commit`, `package.json`,
+`bun.lock`, and `scripts/check-primary-checkout.ts`. Its route is native TypeScript parity
+*or* a deliberate substrate change — **not** an accidental import of Python/`just`. `li-l53`
+records that explicitly.
 
 - **openbrain** has a `just` surface, mise, lefthook, and a vendored `livespec_dev_tooling/`
   package, so it can run the installer and host a verifier recipe. Its work is real but
@@ -204,23 +223,61 @@ what was weighed, not as live alternatives.
   installed there, commits from that worktree are refused. B takes effect per clone only on
   hook reinstall (`just bootstrap`), so the rollout is operator-paced — use that pacing
   rather than assuming the session will notice.
-- **F's substrate does not exist in two of three adopters.** resume has no `just` surface,
-  no lefthook, and no way to run a Python installer; homelab has none of the four and the
+- **Adopter substrate does not exist in two of three.** resume has no `just` surface, no
+  lefthook, and no way to run a Python installer; homelab has none of the four and the
   manifest declares its wiring DEFERRED to an onboarding pass this thread does not own.
-  F is F1 (openbrain — reachable) + F2/F3 (blocked on substrate and onboarding). Do not
-  write F as a single uniform sweep.
+  **Superseded as an F-scoping note by the narrow ruling** — this is now the follow-up's
+  input (`li-l53`, `hl-nhw`), not a slice in this thread.
 - **The remedy message is part of B, not a follow-up.** `_WORKTREE_PACK_REMEDY` names
   `just install-worktree-pack`, which does not exist in 5 of 9 fleet repos. Shipping B
   before that is fixed produces refusals whose stated remedy fails.
 
-**Still gated, and blocking slice filing:** the fleet-boundary question below, and the final
-cut. Nothing may be filed, moved, dispatched, or implemented until both are approved.
+**Still gated, and blocking slice filing:** the FINAL CUT only. The fleet-boundary
+question below was ANSWERED — narrow (§"MAINTAINER RULING — NARROW boundary"). Nothing may
+be filed as a dev-tooling implementation slice, moved, dispatched, or implemented until the
+final cut is approved.
 
-## OPEN — the fleet-boundary question: 9 fleet members or 12 governed repos?
+## MAINTAINER RULING — NARROW boundary APPROVED (2026-07-25)
 
-The maintainer directed that this NOT be inferred. Below is the exact wording on both
-sides, re-checked 2026-07-25 against `livespec` master, with consequences and a
-recommendation.
+**This thread enforces both full-location clauses across the 9 repos classified `fleet` in
+the manifest.** Adopter enforcement is a **separate follow-up**. **E retains the safe
+openbrain relocation.**
+
+Consequences, applied throughout this file:
+
+- **Slice F carries no work for this thread.** All 9 fleet repos already have the
+  substrate, so clause 2 is met by **B and D alone**. F's original "required by the ruling"
+  framing is superseded.
+- **The final cut is A, B, C, D, E, (G)** — F drops out. G remains proposed and deferrable.
+- **Two backfill work-items were filed at maintainer direction** (filing consent given
+  explicitly; no further consent sought):
+
+  | tenant | id | title |
+  |---|---|---|
+  | `resume` (prefix `li`) | **`li-l53`** | Backfill worktree-location enforcement (both clauses) into resume's Bun/TypeScript harness |
+  | `homelab` (prefix `hl`) | **`hl-nhw`** | Backfill worktree-location enforcement (both clauses) into homelab's POSIX hook substrate |
+
+  Both are `type: task`, `assignee: null`, label `origin:freeform`, no `gap_id`, no
+  `spec_commitment_hint`, `status: blocked`, and **absent from `bd ready`** (verified).
+  Each cites this thread and epic `livespec-dev-tooling-0eo`, names its repo target and
+  autonomy tier (resume `wip_cap: 5`; homelab `wip_cap: 0`, dispatch-off), and carries
+  objective **prerequisite / implementation / acceptance** sections.
+
+  **Cross-tenant blockers are recorded in prose, not as edges.** beads `depends_on` is
+  same-tenant only, so neither record can encode its dependency on
+  `livespec-dev-tooling-0eo`. Both say so explicitly and warn that the absence of blocking
+  edges is by construction, not evidence of readiness. `hl-nhw` additionally carries the
+  manifest-deferred onboarding decision as a second unencodable blocker.
+
+  **openbrain has no backfill item** — only E's relocation, which stays in this thread.
+
+The evidence weighed before the ruling is retained below as decision history.
+
+## Boundary question — the two readings weighed (record; NARROW approved above)
+
+**ANSWERED 2026-07-25 — NARROW.** Retained as decision history. Below is the exact wording
+on both sides, re-checked against `livespec` master, with consequences and the
+recommendation that was made.
 
 ### The spec defines a ubiquitous language that separates the two
 
@@ -389,8 +446,9 @@ spec's rule was rehearsed".
 
 **Decision status (updated 2026-07-25).** **Scope approved** — full-location, both
 clauses (§"MAINTAINER RULING — full-location scope"). **Rollout order approved** — Option 3,
-hook-first (§"MAINTAINER RULING — rollout order"). **Still open and blocking slice filing:**
-the fleet-boundary question (9 fleet members vs 12 governed repos) and the final cut. No
+hook-first (§"MAINTAINER RULING — rollout order"). **Boundary approved** — NARROW, the 9
+`fleet` repos (§"MAINTAINER RULING — NARROW boundary"); F drops out and adopter backfill is
+filed as `li-l53` / `hl-nhw`. **Still open and blocking slice filing:** the final cut. No
 slices are filed, no worktree has been moved or touched, the ledger is untouched, and no
 product change has been made. A "wire-then-enforce"
 answer displayed on 2026-07-25 was a supervisor UI-race artifact and is void.
@@ -1109,7 +1167,9 @@ the actual promise; do not overstate it.
 
 B is first in the approved rollout order and is **boundary-independent** — it lands in the
 9 fleet clones under either reading of clause 2 — so it was prepared to
-implementation-ready while the boundary question is pending. Nothing below was implemented.
+implementation-ready while the boundary question was still pending. The boundary has since
+been ruled NARROW, which does not change any of it — B lands in the 9 fleet repos either
+way. Nothing below was implemented.
 
 **1. The sanctioned root already has one definition — reuse it, do not invent a second.**
 `livespec_dev_tooling/fleet/_rows_local.py:112-114` defines it as `<home>/.worktrees`, and
@@ -1578,7 +1638,8 @@ rollout order first; that ordering is superseded. Ask them in this order:
    RULING" at the top. The cut is now A–G, not A–E.
 2. ~~**Rollout order**~~ **ANSWERED 2026-07-25 — Option 3, hook-first, approved.** See
    §"MAINTAINER RULING — rollout order". The next open decision is the fleet-boundary
-   question (§"OPEN — the fleet-boundary question"), then the final cut.
+   question — **ANSWERED: narrow** (§"MAINTAINER RULING — NARROW boundary"). Only the final
+   cut remains.
 3. **The cut and its acceptance criteria**, re-cut once 1 and 2 settle — including the
    scope corrections to A (discoverability), B (sandbox-exempt guard, janitor carve-out,
    reach limited to fleet clones), D (6 tracked PRs + 3 bootstraps), and E (two worktrees
@@ -1718,5 +1779,5 @@ the "wire-then-enforce" recommendation this pass floated; the picker answer that
 displayed that recommendation was a supervisor UI race artifact and remains void
 independently of the later ruling.
 
-**Still open and blocking slice filing:** the fleet-boundary question (§"OPEN — the
-fleet-boundary question") and the final cut.
+**Still open and blocking slice filing:** the final cut. The fleet-boundary question was
+answered NARROW (§"MAINTAINER RULING — NARROW boundary").
