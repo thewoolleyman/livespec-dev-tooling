@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.54.14](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.54.13...v0.54.14) (2026-07-25)
+
+
+### Bug Fixes
+
+* derive red-green replay impl prefixes ([e5de4a9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e5de4a9d35319c4be18b896f9fbfa9f03b2605b5))
+
 ## [0.54.13](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.54.12...v0.54.13) (2026-07-25)
 
 
