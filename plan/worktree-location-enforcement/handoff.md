@@ -799,6 +799,83 @@ inode (`29625545` for `livespec-dev-tooling`, `28075442` for `livespec`). Withou
 physical-path resolution the prefix comparison still gives different answers depending
 on which path a worktree was created through.
 
+### A SECOND LIVE VIOLATION APPEARED DURING THIS AUDIT (2026-07-25)
+
+A fleet-wide rescan at 15:2x found a nested worktree that **did not exist** at the
+10:2x scan earlier the same day:
+
+```
+/data/projects/livespec-overseer/.claude/worktrees/dod-corrections   [docs/dod-corrections-pr78]
+```
+
+Read-only inspection (not touched, not moved — it is another session's worktree):
+
+- created **2026-07-25 15:21**, hours into this audit;
+- branch `docs/dod-corrections-pr78`, already carrying commits (`7e51fdf`, `c28b64b`);
+- working tree clean;
+- no process currently cwd'd inside — which does **not** establish abandonment; a session
+  between turns looks identical. Ownership was not established and no action was taken.
+
+**Why this matters more than the count.**
+
+1. **It is in a governed fleet repo that DOES run the canonical hook.** Unlike openbrain,
+   `livespec-overseer` carries the canonical `CANONICAL_HOOK_BODY` byte-for-byte. So item
+   B **would** have refused those two commits. This is the first measured case where B is
+   demonstrably the operative control rather than a control that cannot reach the repo.
+2. **It was completely invisible.** `git status` on the primary shows nothing, because
+   `livespec-overseer/.gitignore:5` ignores `.claude/worktrees/`. The 2026-07-19 incident
+   was caught *only* because `livespec-console-beads-fabro` does not gitignore its
+   worktrees directory. Here there was no tripwire at all — this was found by running the
+   §B rule, not by anyone noticing.
+3. **It changes the thread's own premise.** §"The incident" describes a violation that
+   "fired once for real". That is no longer accurate. It fires **repeatedly**, in fleet
+   repos, silently, and it fired again *while this thread was actively auditing the
+   hazard* — with commits landed from the offending worktree. The honest framing is a
+   recurring live defect with an unknown base rate, not a single historical incident with
+   one lingering remnant.
+
+That third point is the strongest argument in the file for doing this work at all, and it
+is empirical rather than rhetorical. It also argues against any rollout option whose cost
+is measured purely in dead PRs: every day the fail-open stays open is a day this can
+happen again unnoticed.
+
+### Widening to the spec's rule was rehearsed — it is cheap and clean
+
+Since `SPECIFICATION/non-functional-requirements.md:1013` states the rule positively (see
+§"THE SPEC ALREADY ANSWERS…"), a widened branch was rehearsed read-only against **every**
+worktree on this host — refuse anything that is neither tooling-internal nor under
+`~/.worktrees/`:
+
+```sh
+case "$this_root/" in
+  "$common_abs"/*)  ;;                        # tooling-internal — ALLOW
+  "$sanctioned"/*)  ;;                        # under ~/.worktrees — ALLOW
+  *)                refuse_unsanctioned ;;    # everything else — REFUSE
+esac
+```
+
+Result over 40 worktrees:
+
+| verdict | count | which |
+|---|---|---|
+| `ALLOW-SANCTIONED` | 34 | every worktree under `~/.worktrees/`, **including all 5 orchestrator `janitor-*` worktrees** |
+| `ALLOW-TOOLING` | 4 | the beads `.git/beads-worktrees/` sync worktrees |
+| **`REFUSE-UNSANCTIONED`** | **2** | `openbrain/.claude/worktrees/fix-ob-6vt-…`, `livespec-overseer/.claude/worktrees/dod-corrections` |
+
+**Zero false positives.** Both refusals are genuine violations. The janitor worktrees pass
+because they currently live under the sanctioned root, which also means the spec's
+janitor carve-out costs nothing *today* — though the collision noted in §"THE SPEC ALREADY
+ANSWERS…" still applies if a Dispatcher ever places them inside the integration clone.
+
+**Bearing on the maintainer's decision:** widening from "not nested" to the spec's actual
+rule is a **three-line change to the same `case` statement**, not a redesign, and on
+current host state it refuses exactly the two things that should be refused. Whatever the
+choice, it should not be made on an assumption that widening is expensive — measured, it
+is not.
+
+(The rehearsal also carries the sandbox-exempt guard from §B's earlier rehearsal; without
+it the widened arm refuses exempt primaries for the same reason.)
+
 ### The §B rule does NOT catch peer worktrees — a newly measured gap
 
 The 2026-07-25 rescan surfaced **5 worktrees that live outside `~/.worktrees/` but are
