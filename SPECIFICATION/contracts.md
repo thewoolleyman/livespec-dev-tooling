@@ -177,7 +177,7 @@ Inputs are project-agnostic — no `[tool.livespec_dev_tooling]` role keys are c
 
 ### `no_shadow_ledger_body_identical` check
 
-Invocation: `python -m livespec_dev_tooling.checks.no_shadow_ledger_body_identical`. Exit `0` on pass OR skipped, exit `4` with structured stderr findings on fail.
+Invocation: `python -m livespec_dev_tooling.checks.no_shadow_ledger_body_identical`. Exit `0` on pass OR skipped, exit `4` with structured stderr findings on fail, or the §"Role keys" undeclared-key exit when the gating key is absent.
 
 This is the **Verifier** slot of the Conformance Pattern's **Neutral-shared-hook-body** concern, per `livespec/SPECIFICATION/non-functional-requirements.md` §"Conformance Pattern" and the Contract stated at `livespec/SPECIFICATION/contracts.md` §"Driver-shipped hooks": a hook body whose core contract marks it a NEUTRAL SHARED body MUST ship BYTE-IDENTICALLY across every Driver that carries it — currently the `no_shadow_ledger.py` Stop hook, shipped by both `livespec-driver-claude` (`.claude-plugin/hooks/`) and `livespec-driver-codex` (`livespec/hooks/`); runtime-specific hooks share behavior, not bytes. Per §"Sibling spec ownership" the specific Verifier inventory lives here, in dev-tooling's own spec; the Pattern's five-slot anatomy is owned by core. The five slots for this concern: **Contract** — the neutral shared hook body is byte-identical across all Drivers that ship it; **Mechanism** — a single packaged carrier constant `CANONICAL_NO_SHADOW_LEDGER_BODY`, exported from `livespec_dev_tooling.install_no_shadow_ledger` (wheel-carried as a module-level string, exactly as concern #1's `CANONICAL_HOOK_BODY`; it is the `no_shadow_ledger.py` body with its run-on-import tail refactored to an importable `main() -> int`); **Installer** — the `just install-no-shadow-ledger` recipe → `python -m livespec_dev_tooling.install_no_shadow_ledger`, which idempotently writes the constant to the consumer's configured `neutral_hook_body_path`; **Verifier** — this check; **Exemption** — a consumer that DECLARES `neutral_hook_body_path = ""` ships no neutral shared body and is a legitimate no-op, not a fail; an UNDECLARED key is a hard error, not an exemption, per §"Role keys". The check IMPORTS the constant (it is NOT a second copy of the body) and asserts the consumer's local copy is byte-identical, so there is no drift seam. The dependency direction stays cycle-free per `livespec`'s No-Circular-Dependency Directive (`.ai/no-circular-dependency.md`): dev-tooling reads NO Driver repo; the check runs INSIDE each consumer checkout and reads only that consumer's own configured path.
 
@@ -246,7 +246,7 @@ The DECLARATION requirement is universal: every consumer wiring any layout-depen
 
 **DECLARED non-empty whose paths contain no `.py` file at all** is a hard ERROR: an armed check inspecting nothing is a configuration defect, not a pass. That error MUST key off the declared paths, NOT off the count of files actually inspected — a consumer whose entire declared source tree lies inside its declared `io_trees` legitimately inspects zero files with nothing misdeclared.
 
-The normative role-key set is the `REQUIRED_ROLE_KEYS` constant the loader exports (§"Configuration loader"), which is the single source of truth. Of the loader-recognized keys, `tests_tree_prefix` and `mirror_pairings` are deliberately NOT members. `repo` is not a loader key at all — see its bullet.
+The normative role-key set is the `REQUIRED_ROLE_KEYS` constant the loader exports (§"Configuration loader"), which is the single source of truth. Of the keys `Config` carries, `tests_tree_prefix` and `mirror_pairings` are deliberately NOT members. `repo` is not a loader key at all — see its bullet. The `[tool.livespec_dev_tooling]` table also holds keys outside the role-key inventory entirely (read by their own dedicated loader callables rather than by `load_config`, e.g. `scenario_tiers`, `file_lloc_hard_gate`); those are not role keys and this section does not govern them.
 
 ### Carve-out: project-wide invariants outside the role-key inventory
 
@@ -264,9 +264,11 @@ Two reasons it had to go. It stopped describing its only intended beneficiary: l
 
 A consumer that wires a layout-dependent check now gets an empty configuration when the block is absent, and each wired check that GATES on a key fails on that undeclared key per §"Role keys" — loudly, naming the key, instead of silently substituting paths that may not exist in that repo.
 
+This retirement is a MAJOR-class change by §"Semver discipline"'s own definition — it incompatibly reinterprets recognized `[tool.livespec_dev_tooling]` keys — and it shipped in the PATCH release v0.54.12. Recorded here rather than left implicit: the library is pre-1.0, where the MAJOR component is pinned at `0` and breaking changes necessarily land in lower components, and the change was sequenced so nothing broke in practice (every fleet consumer's declaration backfill landed BEFORE the enforcing release, so no repo reddened on the flip). The deviation is real nonetheless, and stating it is the point — a spec that indicts a smaller undocumented exit-code change in the same release while passing over this one in silence would be applying its own discipline selectively.
+
 ### Configuration loader
 
-The loader MUST live at `livespec_dev_tooling/config.py`. Its layout-configuration surface is one public callable plus the normative role-key set (the module exports other filesystem helpers alongside them):
+The loader MUST live at `livespec_dev_tooling/config.py`. Its layout-configuration surface is one public callable plus the normative role-key set (the module exports other configuration readers and filesystem helpers alongside them):
 
 ```python
 def load_config(*, repo_root: Path) -> Config:
@@ -274,7 +276,7 @@ def load_config(*, repo_root: Path) -> Config:
 
     Reads the `[tool.livespec_dev_tooling]` table via stdlib `tomllib`
     (Python 3.11+) or the vendored `tomli` (Python 3.10 fallback).
-    Returns a typed `Config` dataclass with one field per role key.
+    Returns a typed `Config` dataclass with one field per LOADER-RECOGNIZED role key.
     Raises `ConfigParseError` (an IO-layer exception, caught by the
     supervisor) on malformed TOML or schema-violating values.
     """
@@ -296,7 +298,7 @@ Three first-party consumers as of v0.2.x:
 
 - **`livespec-core`** — MUST publish the block and declare every role key, like every other consumer. It has carried its own block since livespec PR #367 (commit `8f6ecc59`, 2026-05-31), and PR #1663 later added the first structural role keys (`source_trees`, `io_trees`) to that already-existing block; the former MAY-omit allowance died with the fallback.
 - **`livespec-dev-tooling`** (self-application) — MUST publish `source_trees = ["livespec_dev_tooling"]`, `target_dirs = ["livespec_dev_tooling"]`, `source_tree_prefixes = ["livespec_dev_tooling/"]`, `mirror_pairings = [{ source_tree = "livespec_dev_tooling", test_tree = "tests/livespec_dev_tooling" }]`. It ALSO declares `supervisor_entry_files` with real values (its CLI and hook entry points own legitimate stdout/stderr contracts). The remaining six required keys (`io_trees`, `commands_trees`, `pure_trees`, `covered_trees`, `dataclasses_tree`, `neutral_hook_body_path`) MUST be declared EXPLICITLY EMPTY with a comment giving the reason, since the library has a flat package layout without the ROP-layered architecture livespec-core has. The effect on the corresponding checks splits along the gating distinction drawn above, and is NOT uniform across them. `public_api_result_typed` (gating on `pure_trees`), `newtype_domain_primitives` (on `dataclasses_tree`) and `no_shadow_ledger_body_identical` (on `neutral_hook_body_path`) each gate on a key this library declares empty, so each no-ops as the sanctioned opt-out and records that in a structured `info` entry. `no_except_outside_io`, `no_raise_outside_io` and `no_write_direct` do NOT no-op here: the first two gate on `source_trees`, which this library declares NON-empty, and the third derives its inspection universe from the git-tracked first-party set rather than from a role key. For those three the empty `io_trees`, `commands_trees` and `covered_trees` exempt no directory and classify severity — they scope the rules, they do not disarm the check, and all three inspect this library in full.
-- **`livespec-impl-git-jsonl`** — MUST publish its own block once Phase G.7 wiring lands. The exact values are the picking-up agent's call at that phase; the schema accommodates whatever layout that consumer adopts.
+- **`livespec-orchestrator-git-jsonl`** — publishes its own block with every role key declared. Its `source_trees`, `io_trees` and `commands_trees` carry real values; the remaining required keys are declared explicitly empty with reasons.
 
 Future siblings (any repo carrying the `livespec-sibling` GitHub topic that depends on this library) MUST publish their own block and declare every role key. Omitting the block no longer falls back to anything: any wired check that GATES on a key fails on that undeclared key, and the declaration-presence check fails on the omission regardless. That is deliberate — the silent-no-op the old fallback produced against a non-livespec-core layout is the exact failure this policy replaces.
 
@@ -307,7 +309,7 @@ Declaration presence is enforced mechanically, so the regime cannot rot back in 
 - A check in the `just check` aggregate asserting that the repo it runs in declares every key in `REQUIRED_ROLE_KEYS`.
 - A fleet-conformance row over `.livespec-fleet-manifest.jsonc` members applying the same rule cross-repo.
 
-The scope of both is **repos that wire at least one layout-dependent (`load_config`-consuming) check**. Scope MUST NOT be derived from whether a repo depends on livespec-dev-tooling: a repo can consume this library solely for surfaces that read no role keys — `livespec-console-beads-fabro` does exactly that, wiring only `primary_checkout_commit_refuse_hook_installed` and `plugin_resolution` — and scoping by dependency would fail it for omitting a block it has no reason to carry.
+The scope of both is **repos that wire at least one layout-dependent (`load_config`-consuming) check**. Scope MUST NOT be derived from whether a repo depends on livespec-dev-tooling: a repo can consume this library solely for surfaces that read no role keys — as of this section's ratification `livespec-console-beads-fabro` does exactly that, wiring only `primary_checkout_commit_refuse_hook_installed` and `plugin_resolution` — and scoping by dependency would fail it for omitting a block it has no reason to carry. That repo is named as the illustrative case of the class, not as part of the rule: the shipped scope is derived mechanically from which checks a repo wires, so if the console later wires a layout-dependent check it simply enters scope, and only this example goes stale.
 
 A repo excluded by that scope rule MUST be reported as excluded-with-reason, never silently skipped: a silent skip is indistinguishable from a pass, which is the failure mode this whole section exists to eliminate.
 

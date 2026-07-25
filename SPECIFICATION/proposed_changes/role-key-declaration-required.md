@@ -115,6 +115,36 @@ on this point the docstring is RIGHT and the code is wrong. Its separate,
 genuinely stale claim — that an undeclared key makes the check no-op — is
 tracked as `livespec-dev-tooling-eihv`.
 
+### The third consumer bullet — corrected here, with the rest left to its own item
+
+Independent review found the `livespec-impl-git-jsonl` consumer bullet false in
+two demonstrable ways, and this change corrects exactly those two:
+
+1. **The repo name was pre-rename.** `livespec-impl-git-jsonl` names no fleet
+   member — it occurs zero times in livespec core's
+   `.livespec-fleet-manifest.jsonc`, which lists the repo as
+   `livespec-orchestrator-git-jsonl`.
+2. **The deferral had already expired.** The bullet read "MUST publish its own
+   block once Phase G.7 wiring lands." That repo already publishes a complete
+   block, backfilled by THIS epic's own Wave-1. So the change would otherwise
+   have ratified a future-tense obligation that its own earlier slice had
+   already discharged — the "claims that expire at ratification" class.
+
+**Deliberately NOT corrected here, and why the boundary sits where it does.** The
+enclosing "Three first-party consumers as of v0.2.x" enumeration — its count, its
+`v0.2.x` qualifier, and the genuine question of what qualifies a repo as a
+first-party CONSUMER (notably how to treat `livespec-console-beads-fabro`, which
+depends on this library but wires no `load_config`-consuming check) — stays with
+`livespec-dev-tooling-1a6w`, which owns it. That is a real determination with its
+own failure modes, not a typo, and resolving it inside this ratification would
+widen a change that is otherwise complete.
+
+This does NOT contradict the earlier review note on `1a6w` recording that the
+bullet's obligation was "not a defect". That note answered whether the
+obligation's LOGIC is coherent under the new regime — it is, because the scope
+rule makes wiring the trigger. What is corrected here is narrower and factual:
+that trigger has already fired. Both hold at once.
+
 ### Summary
 
 Amend `SPECIFICATION/contracts.md` §"Consumer configuration schema" to replace
