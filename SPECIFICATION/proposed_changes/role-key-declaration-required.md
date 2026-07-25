@@ -10,10 +10,15 @@ created_at: 2026-07-25T00:15:00Z
 
 - SPECIFICATION/contracts.md
 
-No `## ` heading is added, renamed, or removed by this change (the amended
-`## Consumer configuration schema` heading is unchanged; the two edited
-subsections are `### ` level), so no `tests/heading-coverage.json` co-edit is
-required.
+No `## ` heading is added, renamed, or removed by this change, so no
+`tests/heading-coverage.json` co-edit is required. The change edits prose under
+several sections and adds one new heading, `### Declaration-presence
+enforcement`, but that heading is `### ` level and the `## ` set is byte-identical
+to `origin/master`. The co-edit rule keys off the `## ` set alone:
+`livespec_dev_tooling/checks/heading_coverage.py` extracts a heading only when it
+`startswith("## ")` AND not `startswith("### ")`, so `### ` headings are outside
+the coverage map by construction. Verified both ways — by diffing the `## ` sets
+and by reading the check — rather than assumed from the edit's shape.
 
 ### Ratification status — the file-early gate is now DISCHARGED
 
@@ -244,10 +249,30 @@ fallback section is retired, the declared-empty convention including the `""`
 scalar spelling is documented, the three-tier semantics are normative, and the
 enforcement is attributed mechanically with the correct scope criterion.
 
-**One deliberate exception, and it is the only one.** The exit code documented
-for `no_shadow_ledger_body_identical`'s `missing` / `body_mismatch` failure modes
-is `4`, while the shipped module returns `1`. That divergence is intended and
-ruled — see §"The exit-code question raised in review" above — and is tracked as
-`livespec-dev-tooling-1aba`. So "describes the shipped behavior" is asserted of
-the declaration regime this change is about, NOT of that one exit code. A future
-reader reconciling spec against code should close the gap by changing the CODE.
+**Two known spec-ahead-of-code divergences, both deliberate and both tracked.**
+In each the contract text is correct and the CODE is what should change; neither
+is an error in this ratification.
+
+1. **The exit code.** `no_shadow_ledger_body_identical`'s `missing` /
+   `body_mismatch` failure modes are documented as `4`, while the shipped module
+   returns `1`. Intended and ruled — see §"The exit-code question raised in
+   review" above. Tracked as `livespec-dev-tooling-1aba`.
+2. **The zero-`.py` error state.** §"Role keys" makes a DECLARED non-empty key
+   whose paths contain no `.py` file a hard ERROR. The shared gate implements
+   that for the checks routed through its paths-aware variant, but
+   `newtype_domain_primitives` calls only the plain gate: a `dataclasses_tree`
+   declared non-empty and pointing at a real directory holding no `.py` file
+   inspects nothing and exits `0`, where the text mandates an error. Surfaced by
+   independent review of this change and verified by reading the module. Tracked
+   as `livespec-dev-tooling-njyx`. No consumer is in the triggering state today
+   (every backfilled repo declares `dataclasses_tree` as the declared-none `""`,
+   which correctly takes the sanctioned no-op path), so nothing is silently
+   unenforced right now; it goes live the moment a consumer declares a real tree
+   that is empty or wrongly rooted.
+
+So "describes the shipped behavior" is asserted of the declaration regime this
+change is about, and not of those two points. A future reader reconciling spec
+against code should close both gaps by changing the CODE, not by weakening this
+text — the whole purpose of this epic is to stop enforcement claims outrunning
+enforcement, and silently restating the shortfall as the contract would be that
+same failure in a new place.
