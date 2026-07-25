@@ -440,6 +440,36 @@ That single early-return is the entire hole. Replace with a `.livespec.jsonc` re
 existing `_WORKTREE_PACK_REMEDY` (`:211`, already wired at `:359`); `optional` → today's
 skip. Malformed declaration → FAIL, per the `harnesses` precedent.
 
+**The `harnesses` precedent does NOT match decision A on the arm that matters.** Read
+`load_harnesses` (`plugin_resolution.py:334-361`) — its four states are:
+
+| `.livespec.jsonc` state | `harnesses` verdict | what decision A wants for `worktree_discipline` |
+|---|---|---|
+| file absent / unreadable / not an object | **SKIP** | *undecided — see below* |
+| file present, key absent | **FAIL** ("required fleet-wide since M6") | **apply the default `required`**, i.e. FAIL only if the pack is also absent |
+| key present, garbled | **FAIL** | FAIL — matches |
+| key present, well-formed | OK | OK — matches |
+
+The two agree on the malformed and well-formed arms. They **disagree on key-absent**:
+`harnesses` fails outright on a missing key, whereas decision A's whole design is that a
+missing key silently *means* `required`. So "copy the `harnesses` precedent" is the right
+instinct for the malformed arm and the wrong instruction for the key-absent arm. Slice A
+must implement the table's right-hand column, not `load_harnesses` verbatim, and its Red
+test should pin the key-absent-plus-pack-present case as a **PASS** — which
+`load_harnesses` would fail.
+
+**And the file-absent arm is an unclosed fail-open by a different door.** If A inherits
+`SKIP` for a missing `.livespec.jsonc`, then `rm .livespec.jsonc` becomes an undocumented,
+unreviewable opt-out from worktree discipline — the exact silent-opt-out shape decision A
+was written to eliminate (§"making any future `\"optional\"` an explicit reviewable
+opt-out rather than silence"). All 13 governed clones carry the file today, so this is
+latent, not live.
+
+SKIP is *defensible* here for the same reason `plugin_resolution` gives it — the check may
+run in a non-governed directory, where failing would be wrong. But it must be a **stated
+choice with that rationale**, not an arm inherited by copy-paste. Name it in slice A's
+acceptance criteria either way.
+
 Keep the existing partial-install and byte-drift arms exactly as they are.
 
 **Bound by Red-Green-Replay** (product `.py`): stage the test ALONE, commit, confirm it
