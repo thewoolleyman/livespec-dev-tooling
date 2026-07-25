@@ -237,6 +237,7 @@ check:
         check-private-calls
         check-public-api-result-typed
         check-red-green-replay
+        check-required-role-keys-declared
         check-rop-pipeline-shape
         check-self-hosted-routing
         check-skill-invocation-paths
@@ -882,6 +883,9 @@ check-public-api-result-typed:
 # gate).
 check-red-green-replay *args:
     uv run python -m livespec_dev_tooling.checks.red_green_replay {{args}}
+
+check-required-role-keys-declared:
+    uv run python -m livespec_dev_tooling.checks.required_role_keys_declared
 
 check-rop-pipeline-shape:
     uv run python -m livespec_dev_tooling.checks.rop_pipeline_shape

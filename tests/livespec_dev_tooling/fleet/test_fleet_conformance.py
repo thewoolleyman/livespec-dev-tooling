@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 
 from _protection_fixtures import aligned_merge_settings_payload, aligned_protection_payload
 
+from livespec_dev_tooling.config import REQUIRED_ROLE_KEYS, Config
 from livespec_dev_tooling.fleet import fleet_conformance
 from livespec_dev_tooling.fleet._context import FleetContext, GhResult, GhRunner
 from livespec_dev_tooling.fleet._contract_rows import CENTRAL_APP_VANTAGE, CENTRAL_VANTAGE
@@ -70,7 +71,22 @@ _OUT_OF_VANTAGE_EVENT = "obligation row is outside this lane's vantage (another 
 _AUTOMATED_VANTAGES = frozenset({CENTRAL_VANTAGE, CENTRAL_APP_VANTAGE})
 
 _CI_YML = "jobs:\n  check:\n    strategy:\n      matrix:\n        target:\n          - check-a\n"
-_PYPROJECT = '[tool.uv.sources]\nlivespec-dev-tooling = { git = "x", tag = "v1.0.0" }\n'
+
+
+def _all_required_empty_block() -> str:
+    lines = ["[tool.livespec_dev_tooling]"]
+    fields = Config.__dataclass_fields__
+    for key in sorted(REQUIRED_ROLE_KEYS):
+        default = fields[key].default
+        value = '""' if default is None else "[]"
+        lines.append(f"{key} = {value}")
+    return "\n".join(lines) + "\n"
+
+
+_PYPROJECT = (
+    '[tool.uv.sources]\nlivespec-dev-tooling = { git = "x", tag = "v1.0.0" }\n\n'
+    + _all_required_empty_block()
+)
 # The fixture members are BEADS-BACKED with a consistent connection pair,
 # like every live fleet member: blind rows are error severity, so a canned
 # fleet where `beads-tenant-connection-consistency` could never evaluate
@@ -352,6 +368,22 @@ def test_member_rows_all_green_yields_zero_errors() -> None:
     manifest = fetch_manifest(ctx=ctx)
     assert manifest is not None
     assert run_member_rows(ctx=ctx, manifest=manifest, log=_log()).error_findings == 0
+
+
+def test_member_rows_logs_named_exclusions() -> None:
+    ctx = make_context(table=_green_table())
+    manifest = fetch_manifest(ctx=ctx)
+    log = RecordingLog()
+
+    assert manifest is not None
+    result = run_member_rows(ctx=ctx, manifest=manifest, log=log)
+    reported = {
+        fields["row"]: fields
+        for fields in log.fields_for(event="fleet obligation excluded with reason")
+    }
+
+    assert result.error_findings == 0
+    assert reported["required-role-keys-declared"]["reason"] == ("no layout-dependent checks wired")
 
 
 def test_member_rows_counts_errors_but_not_warnings_or_skips() -> None:

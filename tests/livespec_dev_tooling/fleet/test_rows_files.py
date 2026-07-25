@@ -54,7 +54,6 @@ _PYPROJECT_ARGS: tuple[str, ...] = (
     "Accept: application/vnd.github.raw",
 )
 _LATEST_ARGS: tuple[str, ...] = ("api", "repos/acme/livespec-dev-tooling/releases/latest")
-
 _PINNED_PYPROJECT = '[tool.uv.sources]\nlivespec-dev-tooling = { git = "x", tag = "v1.2.0" }\n'
 
 
