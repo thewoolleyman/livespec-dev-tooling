@@ -648,6 +648,49 @@ Per the correction in §rollout, the hook leg of this sweep is `just bootstrap` 
 `install-commit-refuse-hooks` walk. The pack leg has **no** such row today; adding one
 is part of the slice.
 
+#### D is two different jobs, not one — WIRED vs HYDRATED (measured 2026-07-25)
+
+The fleet-impact table's `pack: ABSENT` column conflates two states that need completely
+different remedies. Measured across all 9 verifier-running repos, the four wiring
+components (`.gitignore` ×4, both `import?` lines, the `install-worktree-pack` recipe, the
+`bootstrap` tail) are present in **3** repos and absent in **6**:
+
+| state | repos | what clears A's new FAIL |
+|---|---|---|
+| **wired, not hydrated** — all 4 components present, pack files simply not materialized on this host | `livespec-orchestrator-beads-fabro`, `livespec-console-beads-fabro` | **`just bootstrap`.** No PR, no tracked change. Host-local, exactly like `.git/hooks/` |
+| **wired and hydrated** | `livespec-orchestrator-git-jsonl` | nothing — already green |
+| **unwired** — none of the 4 components | `livespec`, `livespec-dev-tooling`, `livespec-driver-claude`, `livespec-driver-codex`, `livespec-runtime`, `livespec-overseer` | a ~10-line tracked PR each, then `just bootstrap` |
+
+All three wired repos carry byte-identical wiring, including the same
+`chmod +x dev-tooling/worktree-hydrate.sh` bootstrap line.
+
+**This shrinks D and sharpens the rollout arithmetic.** The tracked fleet sweep is **6
+repos, not 8** — and two of the eight "non-compliant" repos are one command away from
+green with no PR at all. It also means A's FAIL, when it lands, will be a *different kind
+of problem* in each group, so the remedy string must cover both: run `just bootstrap`
+first, and only if the recipe does not exist, wire the repo.
+
+#### Why the fleet keeps producing unwired repos
+
+`livespec/templates/orchestrator-plugin/` is fully compliant — it ships all four wiring
+components plus 6 `.worktrees` mentions in its `AGENTS.md`. A repo scaffolded from it is
+**born compliant**, which is why the wired repos are wired.
+
+But it is the **only** template. The manifest defines seven classes — `core`,
+`enforcement-suite`, `impl-plugin`, `driver-plugin`, `library`, `console`,
+`control-plane-tool` — and `ls livespec/templates/` returns exactly one entry. Every
+member of the other six classes is scaffolded by hand.
+
+`livespec-overseer` is the proof: the newest fleet member, class `control-plane-tool`, a
+class with no template, born with **zero** wiring and **zero** `.worktrees` prose in its
+`AGENTS.md`. It did not drift out of compliance — it was never in it.
+
+So the fleet's own birth procedure reproduces exactly the non-compliance A–E is trying to
+sweep away, and will keep doing so for every future non-`impl-plugin` member. Sweeping the
+6 repos without addressing this fixes the population and not the generator. Whether that
+belongs in this thread or in the fleet-membership/birth-procedure lane is a scoping call
+for the maintainer — but it should be a decision, not an omission.
+
 ### E — openbrain has the last live violation
 
 ```
