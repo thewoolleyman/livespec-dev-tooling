@@ -42,6 +42,7 @@ import subprocess
 import sys
 import tokenize
 from pathlib import Path
+from typing import cast
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -83,6 +84,7 @@ _FOREIGN_CODE_WORDING_SHAPE = re.compile(
 _MARKER_COMMENT_PREFIX = "# " + "noqa: BLE001 "
 
 _BROAD_NAMES = frozenset({"Exception", "BaseException"})
+_TRY_STAR_NODE_NAME = "TryStar"
 
 _UNMARKED_REASON = (
     "broad catch at a supervisor boundary without a sanctioned "
@@ -156,13 +158,17 @@ def _is_supervisor_main_file(*, rel_path: Path, config: Config) -> bool:
     return _is_under_any(rel_path=rel_path, trees=config.commands_trees)
 
 
+def _is_try_node(*, node: ast.AST) -> bool:
+    return isinstance(node, ast.Try) or node.__class__.__name__ == _TRY_STAR_NODE_NAME
+
+
 def _supervisor_main_try_lines(*, tree: ast.Module) -> set[int]:
-    """Return line numbers of `Try` nodes that are direct children of `main()`'s body."""
+    """Return line numbers of `try` nodes that are direct children of `main()`'s body."""
     out: set[int] = set()
     for node in tree.body:
         if isinstance(node, ast.FunctionDef) and node.name == "main":
             for stmt in node.body:
-                if isinstance(stmt, ast.Try):
+                if _is_try_node(node=stmt):
                     out.add(stmt.lineno)
     return out
 
@@ -306,10 +312,11 @@ def _find_offending_handlers(*, source: str, position_exempt: bool) -> list[tupl
     boundary_try_lines = _supervisor_main_try_lines(tree=tree) if position_exempt else set[int]()
     out: list[tuple[int, str]] = []
     for node in ast.walk(tree):
-        if not isinstance(node, ast.Try):
+        if not _is_try_node(node=node):
             continue
-        at_boundary = node.lineno in boundary_try_lines
-        for handler in node.handlers:
+        try_node = cast(ast.Try, node)
+        at_boundary = try_node.lineno in boundary_try_lines
+        for handler in try_node.handlers:
             if not _is_broad(handler=handler, broad_names=broad_names):
                 continue
             if at_boundary and _carries_sanctioned_marker(
