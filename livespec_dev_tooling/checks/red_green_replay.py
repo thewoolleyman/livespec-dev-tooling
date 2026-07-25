@@ -81,6 +81,8 @@ from _red_green_replay_trailers import (  # noqa: E402  — sibling private impo
     head_red_awaiting_green,
 )
 
+from livespec_dev_tooling.config import Config, load_config  # noqa: E402
+
 __all__: list[str] = []
 
 
@@ -90,67 +92,60 @@ __all__: list[str] = []
 # commit for containing product code.
 _RED_INTENT_TYPE_RE = re.compile(r"^(feat|fix)(\([^)]+\))?!?:")
 _TESTS_PREFIX = "tests/"
-# Impl-tree prefixes spanning every livespec-governed sibling repo
-# that consumes this check via the pin-and-bump cross-repo mechanism
-# (livespec/SPECIFICATION/contracts.md §"Cross-repo coordination —
-# pin-and-bump"). Each repo's impl tree lives at a repo-specific
-# prefix; without recognition here, commits in those repos that touch
-# the package source classify as test-only and dispatch to the wrong
-# leg.
+# Product-implementation prefixes come from the current repo's declared
+# role keys, not from a fleet-wide hardcoded tuple. The union matters:
+# `source_trees` covers package directories for flat-library repos, while
+# `source_tree_prefixes` covers hook/bin/dev-tooling surfaces that are not
+# necessarily package roots. A source-tree directory is normalized to the
+# comparable prefix form by adding the trailing slash.
 #
-# livespec (core):             .claude-plugin/scripts/livespec/,
-#                              .claude-plugin/scripts/bin/, dev-tooling/
-# livespec-runtime:            livespec_runtime/
-# livespec-dev-tooling (self): livespec_dev_tooling/
-# livespec-orchestrator-git-jsonl: .claude-plugin/scripts/livespec_orchestrator_git_jsonl/
-#                              (bin/ for orchestrator-git-jsonl is covered by
-#                              .claude-plugin/scripts/bin/)
-# livespec-orchestrator-beads-fabro: .claude-plugin/scripts/livespec_orchestrator_beads_fabro/
-#                              (bin/ for orchestrator-beads-fabro is covered by
-#                              .claude-plugin/scripts/bin/)
-#
-# The orchestrator-rename wave renamed the impl-side plugin package
-# dirs from `livespec_impl_<X>` to `livespec_orchestrator_<X>`:
-#   livespec_impl_git_jsonl  -> livespec_orchestrator_git_jsonl
-#   livespec_impl_beads      -> livespec_orchestrator_beads_fabro
-# `_IMPL_PREFIXES` recognizes the renamed orchestrator package dirs.
-# The old `livespec_impl_*` package dirs no longer exist in any repo,
-# so their prefixes are not carried.
-#
-# Bare `livespec/` / `bin/` legacy prefixes remain for paired-test
-# fixture compatibility — tmp_path tests synthesize paths like
-# `livespec/foo.py`. Production has no top-level `livespec/` or
-# `bin/` dirs, so the legacy prefixes contribute zero false
-# positives in real repos.
-_IMPL_PREFIXES = (
-    ".claude-plugin/scripts/livespec/",
-    ".claude-plugin/scripts/livespec_orchestrator_git_jsonl/",
-    ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/",
-    ".claude-plugin/scripts/bin/",
-    "livespec/",
-    "livespec_runtime/",
-    "livespec_dev_tooling/",
-    "bin/",
-    "dev-tooling/",
-)
+# This removes the old accidental coverage from bare legacy prefixes such
+# as `livespec/` and `bin/`. Driver-codex is covered because it declares
+# `livespec/hooks/`; fixture-only bare prefixes are supplied explicitly by
+# tests that synthesize tmp_path repo layouts.
 _RED_TRAILER_KEY = "TDD-Red-Test-File-Checksum:"
 _GREEN_TRAILER_KEY = "TDD-Green-Verified-At:"
 _SUITE_TRAILER_KEY = "TDD-Suite-Green-Captured-At:"
 _RANGE_BASE = "origin/master"
 
 
-def _classify_staged(*, paths: list[str]) -> tuple[list[str], list[str]]:
+def _source_tree_prefix(*, tree: Path) -> str:
+    return f"{tree.as_posix().strip('/')}/"
+
+
+def _declared_prefix(*, prefix: str) -> str:
+    return f"{prefix.strip('/')}/"
+
+
+def _derive_impl_prefixes(*, config: Config) -> tuple[str, ...]:
+    prefixes = [
+        *[_source_tree_prefix(tree=tree) for tree in config.source_trees],
+        *[_declared_prefix(prefix=prefix) for prefix in config.source_tree_prefixes],
+    ]
+    return tuple(dict.fromkeys(prefixes))
+
+
+def _impl_prefixes_for_current_repo() -> tuple[str, ...]:
+    return _derive_impl_prefixes(config=load_config(repo_root=Path.cwd()))
+
+
+def _classify_staged(
+    *, paths: list[str], impl_prefixes: tuple[str, ...] | None = None
+) -> tuple[list[str], list[str]]:
     """Bucket staged `.py` paths into (tests, impl) — other paths are dropped.
 
     Content is the trigger, so only `.py` files participate: a path
     is a tests-bucket member iff it ends in `.py` AND starts with
     `tests/`; an impl-bucket member iff it ends in `.py` AND starts
-    with one of `_IMPL_PREFIXES`. Anything else (config, docs, data
-    files — even under an impl prefix) participates in neither
-    bucket and cannot trigger leg dispatch.
+    with one of the current repo's declared impl prefixes. Anything
+    else (config, docs, data files — even under an impl prefix)
+    participates in neither bucket and cannot trigger leg dispatch.
     """
+    active_impl_prefixes = (
+        _impl_prefixes_for_current_repo() if impl_prefixes is None else impl_prefixes
+    )
     tests_paths = [p for p in paths if p.endswith(".py") and p.startswith(_TESTS_PREFIX)]
-    impl_paths = [p for p in paths if p.endswith(".py") and p.startswith(_IMPL_PREFIXES)]
+    impl_paths = [p for p in paths if p.endswith(".py") and p.startswith(active_impl_prefixes)]
     return tests_paths, impl_paths
 
 
@@ -232,7 +227,8 @@ def _commit_violates(*, sha: str) -> bool:
     touched = _git_stdout_lines(
         args=["diff-tree", "--no-commit-id", "--name-only", "-r", "--root", "--diff-filter=d", sha],
     )
-    product_paths = [p for p in touched if p.endswith(".py") and p.startswith(_IMPL_PREFIXES)]
+    impl_prefixes = _impl_prefixes_for_current_repo()
+    product_paths = [p for p in touched if p.endswith(".py") and p.startswith(impl_prefixes)]
     if not product_paths:
         return False
     message_result = subprocess.run(
