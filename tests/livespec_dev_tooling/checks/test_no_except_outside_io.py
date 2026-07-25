@@ -89,6 +89,32 @@ def test_no_except_outside_io_accepts_narrow_catch_in_pure_layer(*, tmp_path: Pa
     )
 
 
+def test_no_except_outside_io_accepts_narrow_contextlib_suppress_in_pure_layer(
+    *, tmp_path: Path
+) -> None:
+    """A NARROW `contextlib.suppress` in a pure layer remains a seam catch."""
+    _write_module(
+        tmp_path=tmp_path,
+        rel=".claude-plugin/scripts/livespec/parse/foo.py",
+        body=(
+            "import contextlib\n"
+            "\n"
+            "\n"
+            "def parse_thing() -> None:\n"
+            "    with contextlib.suppress(FileNotFoundError):\n"
+            "        _ = 1 / 0\n"
+        ),
+    )
+
+    result = _run(cwd=tmp_path)
+
+    assert result.returncode == 0, (
+        f"no_except_outside_io should accept narrow contextlib.suppress in parse/; "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
 def test_no_except_outside_io_rejects_broad_catch_in_pure_layer(*, tmp_path: Path) -> None:
     """A BROAD catch in `livespec/parse/foo.py` fails the check.
 
@@ -120,6 +146,164 @@ def test_no_except_outside_io_rejects_broad_catch_in_pure_layer(*, tmp_path: Pat
     expected_path = ".claude-plugin/scripts/livespec/parse/foo.py"
     assert expected_path in combined, (
         f"no_except_outside_io diagnostic does not surface offending file `{expected_path}`; "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_no_except_outside_io_rejects_broad_contextlib_suppress_in_pure_layer(
+    *, tmp_path: Path
+) -> None:
+    """`contextlib.suppress(Exception)` is a broad catch and fails in pure code."""
+    _write_module(
+        tmp_path=tmp_path,
+        rel=".claude-plugin/scripts/livespec/parse/foo.py",
+        body=(
+            "import contextlib\n"
+            "\n"
+            "\n"
+            "def parse_thing() -> None:\n"
+            "    with contextlib.suppress(Exception):\n"
+            "        _ = 1 / 0\n"
+        ),
+    )
+
+    result = _run(cwd=tmp_path)
+
+    assert result.returncode != 0, (
+        f"no_except_outside_io should reject broad contextlib.suppress in parse/; "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    combined = result.stdout + result.stderr
+    expected_path = ".claude-plugin/scripts/livespec/parse/foo.py"
+    assert expected_path in combined, (
+        f"no_except_outside_io diagnostic does not surface offending file `{expected_path}`; "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_no_except_outside_io_rejects_bare_broad_suppress_import(*, tmp_path: Path) -> None:
+    """A bare `suppress` imported from contextlib is still contextlib.suppress."""
+    _write_module(
+        tmp_path=tmp_path,
+        rel=".claude-plugin/scripts/livespec/parse/foo.py",
+        body=(
+            "from contextlib import suppress\n"
+            "\n"
+            "\n"
+            "def parse_thing() -> None:\n"
+            "    with suppress(BaseException):\n"
+            "        _ = 1 / 0\n"
+        ),
+    )
+
+    result = _run(cwd=tmp_path)
+
+    assert result.returncode != 0, (
+        f"no_except_outside_io should reject broad suppress imported from contextlib; "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_no_except_outside_io_rejects_aliased_contextlib_suppress(*, tmp_path: Path) -> None:
+    """A module alias does not hide `contextlib.suppress(Exception)`."""
+    _write_module(
+        tmp_path=tmp_path,
+        rel=".claude-plugin/scripts/livespec/parse/foo.py",
+        body=(
+            "import contextlib as ctx\n"
+            "\n"
+            "\n"
+            "def parse_thing() -> None:\n"
+            "    with ctx.suppress(Exception):\n"
+            "        _ = 1 / 0\n"
+        ),
+    )
+
+    result = _run(cwd=tmp_path)
+
+    assert result.returncode != 0, (
+        f"no_except_outside_io should reject broad suppress through a contextlib alias; "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_no_except_outside_io_accepts_marked_supervisor_suppress_boundary(
+    *, tmp_path: Path
+) -> None:
+    """A marked broad suppress at the supervisor boundary is legal."""
+    _write_module(
+        tmp_path=tmp_path,
+        rel=".claude-plugin/scripts/livespec/commands/seed.py",
+        body=(
+            "import contextlib\n"
+            "\n"
+            "\n"
+            "def main() -> int:\n"
+            f"    with contextlib.suppress(Exception):  {_SUPERVISOR_MARKER}\n"
+            "        _ = 1 / 0\n"
+            "    return 0\n"
+        ),
+    )
+
+    result = _run(cwd=tmp_path)
+
+    assert result.returncode == 0, (
+        f"no_except_outside_io should accept a marked supervisor suppress boundary; "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_no_except_outside_io_rejects_unmarked_supervisor_suppress_boundary(
+    *, tmp_path: Path
+) -> None:
+    """Position alone does not legalize a broad suppress boundary."""
+    _write_module(
+        tmp_path=tmp_path,
+        rel=".claude-plugin/scripts/livespec/commands/seed.py",
+        body=(
+            "import contextlib\n"
+            "\n"
+            "\n"
+            "def main() -> int:\n"
+            "    with contextlib.suppress(Exception):\n"
+            "        _ = 1 / 0\n"
+            "    return 0\n"
+        ),
+    )
+
+    result = _run(cwd=tmp_path)
+
+    assert result.returncode != 0, (
+        f"no_except_outside_io should reject an unmarked supervisor suppress boundary; "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_no_except_outside_io_rejects_async_broad_contextlib_suppress(*, tmp_path: Path) -> None:
+    """`async with contextlib.suppress(Exception)` is still a broad suppress."""
+    _write_module(
+        tmp_path=tmp_path,
+        rel=".claude-plugin/scripts/livespec/parse/foo.py",
+        body=(
+            "import contextlib\n"
+            "\n"
+            "\n"
+            "async def parse_thing() -> None:\n"
+            "    async with contextlib.suppress(Exception):\n"
+            "        _ = 1 / 0\n"
+        ),
+    )
+
+    result = _run(cwd=tmp_path)
+
+    assert result.returncode != 0, (
+        f"no_except_outside_io should reject broad async contextlib.suppress; "
+        f"got returncode={result.returncode} "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
 

@@ -38,7 +38,6 @@ from __future__ import annotations
 import ast
 import io
 import re
-import subprocess
 import sys
 import tokenize
 from pathlib import Path
@@ -50,6 +49,9 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling.checks._no_except_outside_io_ruff import (  # noqa: E402
+    find_ruff_backstop_gaps,
+)
 from livespec_dev_tooling.config import Config, iter_py_files, load_config  # noqa: E402
 
 __all__: list[str] = []
@@ -93,61 +95,6 @@ _UNMARKED_REASON = (
 _MISPLACED_REASON = "broad catch outside io/ and the sole supervisor boundary is banned"
 
 
-_RUFF_BLE001_SETTING = "blind-except (BLE001)"
-_RUFF_EXCLUDED_REASON = "inspected file is excluded from Ruff; BLE001 backstop is absent"
-_RUFF_NO_BLE_REASON = "Ruff lint select does not enable BLE/BLE001 for inspected file"
-
-
-def _explicit_ruff_lint_select_configured(*, repo_root: Path) -> bool:
-    pyproject = repo_root / "pyproject.toml"
-    if not pyproject.is_file():
-        return False
-    text = pyproject.read_text(encoding="utf-8")
-    return "[tool.ruff.lint]" in text and "select" in text
-
-
-def _ruff_show_files(*, repo_root: Path, source_trees: tuple[Path, ...]) -> frozenset[Path]:
-    result = subprocess.run(
-        ["ruff", "check", "--show-files", "--force-exclude", *(str(path) for path in source_trees)],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    resolved_root = repo_root.resolve()
-    out: set[Path] = set()
-    for line in result.stdout.splitlines():
-        out.add(Path(line).resolve().relative_to(resolved_root))
-    return frozenset(out)
-
-
-def _ruff_enables_ble001(*, repo_root: Path, rel_path: Path) -> bool:
-    result = subprocess.run(
-        ["ruff", "check", "--show-settings", str(rel_path)],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    return result.returncode == 0 and _RUFF_BLE001_SETTING in result.stdout
-
-
-def _find_ruff_backstop_gaps(
-    *, repo_root: Path, source_trees: tuple[Path, ...], inspected_files: tuple[Path, ...]
-) -> list[tuple[Path, str]]:
-    """Return inspected files that Ruff will not lint with BLE001 enabled."""
-    if not _explicit_ruff_lint_select_configured(repo_root=repo_root):
-        return []
-    ruff_files = _ruff_show_files(repo_root=repo_root, source_trees=source_trees)
-    gaps: list[tuple[Path, str]] = []
-    for rel_path in inspected_files:
-        if rel_path not in ruff_files:
-            gaps.append((rel_path, _RUFF_EXCLUDED_REASON))
-        elif not _ruff_enables_ble001(repo_root=repo_root, rel_path=rel_path):
-            gaps.append((rel_path, _RUFF_NO_BLE_REASON))
-    return gaps
-
-
 def _is_under_any(*, rel_path: Path, trees: tuple[Path, ...]) -> bool:
     return any(tree in rel_path.parents for tree in trees)
 
@@ -162,38 +109,48 @@ def _is_try_node(*, node: ast.AST) -> bool:
     return isinstance(node, ast.Try) or node.__class__.__name__ == _TRY_STAR_NODE_NAME
 
 
-def _supervisor_main_try_lines(*, tree: ast.Module) -> set[int]:
-    """Return line numbers of `try` nodes that are direct children of `main()`'s body."""
+def _supervisor_main_boundary_lines(*, tree: ast.Module) -> set[int]:
+    """Return line numbers of catch nodes that are direct children of `main()`'s body."""
     out: set[int] = set()
     for node in tree.body:
         if isinstance(node, ast.FunctionDef) and node.name == "main":
             for stmt in node.body:
-                if _is_try_node(node=stmt):
+                if _is_try_node(node=stmt) or isinstance(stmt, ast.With | ast.AsyncWith):
                     out.add(stmt.lineno)
     return out
 
 
-def _broad_local_names(*, tree: ast.Module) -> frozenset[str]:
-    """Every local name that denotes a broad builtin, including aliased imports.
+def _local_catch_names(
+    *, tree: ast.Module
+) -> tuple[frozenset[str], frozenset[str], frozenset[str]]:
+    """Return broad names plus contextlib module and suppress-function aliases.
 
-    `from builtins import Exception as Broad` rebinds a broad builtin under
-    a name the literal set would miss. Two evasions stay out of reach and
-    are accepted as parity with ruff, which misses them too: a plain
-    module-level rebinding (`Broad = Exception`) and a catch whose operand
-    is a variable holding an exception tuple.
+    Any catch operand shape beyond a dotted `Name` or a `Tuple` thereof stays
+    out of reach as accepted ruff parity. `contextlib.suppress(Exception)` is
+    not in that parity bucket: it is idiomatic, unobfuscated, and invisible to
+    ruff, so this check names it explicitly.
     """
-    out: set[str] = set(_BROAD_NAMES)
+    broad_names: set[str] = set(_BROAD_NAMES)
+    contextlib_names: set[str] = {"contextlib"}
+    suppress_names: set[str] = set()
     for node in ast.walk(tree):
-        if not isinstance(node, ast.ImportFrom):
-            continue
-        for alias in node.names:
-            if alias.name in _BROAD_NAMES:
-                out.add(alias.asname or alias.name)
-    return frozenset(out)
+        if isinstance(node, ast.Import):
+            contextlib_names.update(
+                alias.asname or alias.name for alias in node.names if alias.name == "contextlib"
+            )
+        elif isinstance(node, ast.ImportFrom):
+            broad_names.update(
+                alias.asname or alias.name for alias in node.names if alias.name in _BROAD_NAMES
+            )
+            if node.module == "contextlib":
+                suppress_names.update(
+                    alias.asname or alias.name for alias in node.names if alias.name == "suppress"
+                )
+    return frozenset(broad_names), frozenset(contextlib_names), frozenset(suppress_names)
 
 
-def _is_broad(*, handler: ast.ExceptHandler, broad_names: frozenset[str]) -> bool:
-    """True for a bare `except:`, a broad builtin, or a tuple containing one.
+def _is_broad_operand(*, caught: ast.expr | None, broad_names: frozenset[str]) -> bool:
+    """True for a broad builtin, a tuple containing one, or a bare `except:` operand.
 
     The operand is compared on its final dotted component, so the
     fully-qualified `builtins.Exception` classifies as broad. Matching the
@@ -203,11 +160,32 @@ def _is_broad(*, handler: ast.ExceptHandler, broad_names: frozenset[str]) -> boo
     count as used, so both halves of the enforcement split would fall
     together.
     """
-    caught = handler.type
     if caught is None:
         return True
     parts = list(caught.elts) if isinstance(caught, ast.Tuple) else [caught]
     return any(ast.unparse(part).rsplit(".", maxsplit=1)[-1] in broad_names for part in parts)
+
+
+def _is_broad(*, handler: ast.ExceptHandler, broad_names: frozenset[str]) -> bool:
+    return _is_broad_operand(caught=handler.type, broad_names=broad_names)
+
+
+def _is_broad_suppress_call(
+    *,
+    call: ast.Call,
+    broad_names: frozenset[str],
+    contextlib_names: frozenset[str],
+    suppress_names: frozenset[str],
+) -> bool:
+    func = call.func
+    recognized = (isinstance(func, ast.Name) and func.id in suppress_names) or (
+        isinstance(func, ast.Attribute)
+        and func.attr == "suppress"
+        and ast.unparse(func.value) in contextlib_names
+    )
+    return recognized and _is_broad_operand(
+        caught=ast.Tuple(elts=list(call.args), ctx=ast.Load()), broad_names=broad_names
+    )
 
 
 # The two token scans below deliberately return plain builtins rather than
@@ -253,17 +231,18 @@ def _statement_colons(*, source: str) -> tuple[tuple[int, int], ...]:
     return tuple(colons)
 
 
-def _clause_colon_line(*, handler: ast.ExceptHandler, colons: tuple[tuple[int, int], ...]) -> int:
-    """Line of the `:` that closes this handler's `except …:` clause.
+def _clause_colon_line(
+    *, node: ast.ExceptHandler | ast.With | ast.AsyncWith, colons: tuple[tuple[int, int], ...]
+) -> int:
+    """Line of the `:` that closes this catch clause.
 
-    The first statement-level colon at or after the handler's own start
+    The first statement-level colon at or after the node's own start
     position is that clause's colon; anything later belongs to the body.
-    Every `except …:` clause is closed by such a colon in any module
-    `ast.parse` accepted, so the handler's own line is a floor that only
-    a malformed parse could reach.
+    Every accepted catch clause is closed by such a colon, so the node's
+    own line is a floor that only a malformed parse could reach.
     """
-    start = (handler.lineno, handler.col_offset)
-    return min((position[0] for position in colons if position >= start), default=handler.lineno)
+    start = (node.lineno, node.col_offset)
+    return min((position[0] for position in colons if position >= start), default=node.lineno)
 
 
 def _is_sanctioned_marker_comment(*, text: str) -> bool:
@@ -285,7 +264,7 @@ def _is_sanctioned_marker_comment(*, text: str) -> bool:
 
 def _carries_sanctioned_marker(
     *,
-    handler: ast.ExceptHandler,
+    node: ast.ExceptHandler | ast.With | ast.AsyncWith,
     comments: dict[int, tuple[str, ...]],
     colons: tuple[tuple[int, int], ...],
 ) -> bool:
@@ -296,34 +275,73 @@ def _carries_sanctioned_marker(
     STATEMENT instead would admit a body comment sitting above that
     statement, since such a comment is not itself a statement.
     """
-    last = _clause_colon_line(handler=handler, colons=colons)
-    for line in range(handler.lineno, last + 1):
+    last = _clause_colon_line(node=node, colons=colons)
+    for line in range(node.lineno, last + 1):
         for text in comments.get(line, ()):
             if _is_sanctioned_marker_comment(text=text):
                 return True
     return False
 
 
+def _find_offending_suppress_lines(
+    *,
+    tree: ast.Module,
+    comments: dict[int, tuple[str, ...]],
+    colons: tuple[tuple[int, int], ...],
+    catch_names: tuple[frozenset[str], frozenset[str], frozenset[str]],
+    boundary_lines: set[int],
+) -> list[tuple[int, str]]:
+    broad_names, contextlib_names, suppress_names = catch_names
+    out: list[tuple[int, str]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.With | ast.AsyncWith):
+            continue
+        at_boundary = node.lineno in boundary_lines
+        for item in node.items:
+            if not isinstance(item.context_expr, ast.Call) or not _is_broad_suppress_call(
+                call=item.context_expr,
+                broad_names=broad_names,
+                contextlib_names=contextlib_names,
+                suppress_names=suppress_names,
+            ):
+                continue
+            if at_boundary and _carries_sanctioned_marker(
+                node=node, comments=comments, colons=colons
+            ):
+                continue
+            out.append((node.lineno, _UNMARKED_REASON if at_boundary else _MISPLACED_REASON))
+    return out
+
+
 def _find_offending_handlers(*, source: str, position_exempt: bool) -> list[tuple[int, str]]:
     tree = ast.parse(source)
     comments = _comment_lines(source=source)
     colons = _statement_colons(source=source)
-    broad_names = _broad_local_names(tree=tree)
-    boundary_try_lines = _supervisor_main_try_lines(tree=tree) if position_exempt else set[int]()
+    broad_names, contextlib_names, suppress_names = _local_catch_names(tree=tree)
+    boundary_lines = _supervisor_main_boundary_lines(tree=tree) if position_exempt else set[int]()
     out: list[tuple[int, str]] = []
     for node in ast.walk(tree):
         if not _is_try_node(node=node):
             continue
         try_node = cast(ast.Try, node)
-        at_boundary = try_node.lineno in boundary_try_lines
+        at_boundary = try_node.lineno in boundary_lines
         for handler in try_node.handlers:
             if not _is_broad(handler=handler, broad_names=broad_names):
                 continue
             if at_boundary and _carries_sanctioned_marker(
-                handler=handler, comments=comments, colons=colons
+                node=handler, comments=comments, colons=colons
             ):
                 continue
             out.append((handler.lineno, _UNMARKED_REASON if at_boundary else _MISPLACED_REASON))
+    out.extend(
+        _find_offending_suppress_lines(
+            tree=tree,
+            comments=comments,
+            colons=colons,
+            catch_names=(broad_names, contextlib_names, suppress_names),
+            boundary_lines=boundary_lines,
+        )
+    )
     return out
 
 
@@ -366,7 +384,7 @@ def main() -> int:
         files_inspected=len(inspected_files),
         offenses=len(offenders),
     )
-    backstop_gaps = _find_ruff_backstop_gaps(
+    backstop_gaps = find_ruff_backstop_gaps(
         repo_root=cwd,
         source_trees=config.source_trees,
         inspected_files=tuple(inspected_files),
