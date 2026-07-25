@@ -2,8 +2,11 @@
 
 **Ledger anchor:** epic `livespec-dev-tooling-0eo`
 
-**No slices filed.** The epic is the thread's ledger identity only; A–E below are NOT
-work-items. See §"First act is the maintainer's".
+**SLICES ARE FILED (2026-07-26).** All seven approved records live under the epic and are
+intake-routed — see §"MAINTAINER RULING — FINAL CUT APPROVED AND FILED" for ids, states,
+dependency edges, and lane evidence. *(This line previously read "No slices filed. The epic
+is the thread's ledger identity only; A–E below are NOT work-items." That was true until the
+final cut was approved.)*
 
 **Opened:** 2026-07-20, out of a live violation in `livespec-console-beads-fabro`
 (incident summary below). The original analysis was verified against `origin/master`
@@ -263,16 +266,86 @@ record of what was weighed, not as live alternatives.
   `just install-worktree-pack`, which does not exist in 5 of 9 fleet repos. Shipping B
   before that is fixed produces refusals whose stated remedy fails.
 
-**Still gated, and blocking slice filing:** the FINAL CUT only. The fleet-boundary
+**Nothing is gated any more — the final cut was APPROVED and FILED 2026-07-26** (see that
+ruling section for ids, states and lanes). *(This line previously read "Still gated, and
+blocking slice filing: the FINAL CUT only.")* The fleet-boundary
 question below was ANSWERED — narrow (§"MAINTAINER RULING — NARROW boundary"). Nothing may
 be filed as a dev-tooling implementation slice, moved, dispatched, or implemented until the
 final cut is approved.
 
-## PROPOSED FINAL CUT — awaiting approval (presented 2026-07-25)
+## MAINTAINER RULING — FINAL CUT APPROVED AND FILED (2026-07-26)
 
-**Status: PROPOSED, not approved.** Scope, rollout order, and boundary are all ruled; this
-is the last gate before filing. Nothing here may be filed, dispatched, or relocated until
-the four questions at the end are answered.
+The four open questions were answered **exactly as recommended**: (1) split A into A1 and
+A2 as two work-items; (2) place C in the same work-item as A2; (3) defer G but file it as a
+tracked follow-up; (4) file E-overseer now as blocked on the owning session.
+
+**All seven records are filed under epic `livespec-dev-tooling-0eo` and intake-routed.**
+
+| # | slice | id | state | depends on |
+|---|---|---|---|---|
+| 1 | **E-openbrain** — relocate | `livespec-dev-tooling-0eo.1` | **ready** | — |
+| 2 | **B** — positive-location hook + remedy | `livespec-dev-tooling-6fmfzk` | **ready** | — |
+| 3 | **A1** — obligation row + CI step + self-wiring | `livespec-dev-tooling-cmc3ah` | pending-approval | 2 |
+| 4 | **D** — fleet wiring + hydration sweep | `livespec-dev-tooling-o5vltq` | pending-approval | 3 |
+| 5 | **A2 + C** — flip + discoverability + docs | `livespec-dev-tooling-skl77m` | pending-approval | 3, 4 |
+| 6 | **E-overseer** — relocate | `livespec-dev-tooling-3iizsd` | **blocked** | cross-session (prose) |
+| 7 | **G (DEFERRED)** — birth procedure | `livespec-dev-tooling-xxdxqv` | **backlog** | — |
+
+Every record verified: exists exactly once, parented to the epic, `origin:freeform`,
+`intake:triaged`, **no `gap_id`**, no `spec_commitment_hint`, `assignee` unset (records
+expose the tenant/default owner `chad@thewoolleyman.com`). Dependency edges materialize as
+real `[blocks]` relations — `bd dep tree` shows `5 → {3, 4}` and `4 → 3 → 2`.
+
+**Lane evidence.** Only **`0eo.1` and `6fmfzk`** are in the ready lane. `cmc3ah`, `o5vltq`,
+`skl77m`, `3iizsd`, and `xxdxqv` are each verified **absent** from it. Note `bd ready`
+reports "No open issues" because it selects `status=open`; the orchestrator ready lane is
+`status=ready`, so `bd list --status ready` is the correct check.
+
+**G cannot dispatch as current-cut work**: routed to `backlog`, which is not the ready lane.
+Its checklist recorded `single_coherent_done=False` honestly — G's scope (this thread vs.
+the birth-procedure lane) is undecided, so it is not yet one coherent done-state.
+
+**E-overseer routes blocked** via `dependency_linked=False`, which is the honest gate
+answer: its real blocker is another live session's ownership of the worktree, which is not
+a beads issue and therefore **has no id to depend on**. It carries
+`blocked-reason:needs-human` and states in prose that the absence of a blocking edge is by
+construction, not evidence of readiness.
+
+### How they were filed — and a capability gap worth recording
+
+Filed via the required capture path: `append_work_item` (the orchestrator capture
+operation) → same-tenant `bd update --parent livespec-dev-tooling-0eo` → shared
+`apply_intake_dor`. Raw `bd create` was **not** used for items 2–7, because it bypasses the
+shared intake gate.
+
+**The capability gap, confirmed in the distributed code:** `WorkItem` has **no parent
+field** (24 fields enumerated; `parent-ish: NONE`), and `new_work_item_id` emits a flat
+`<prefix>-XXXXXX` id, so the capture operation cannot place a record under an epic at
+capture time. `bd update --parent` bridges it in the same tenant. The visible consequence
+is a **mixed id shape** — `0eo.1` was born hierarchical via an earlier `bd create --parent`,
+the rest are flat ids reparented afterwards. Cosmetic; all seven are true children.
+
+**Runtime note:** the orchestrator modules are NOT importable from `livespec-dev-tooling`'s
+uv environment (`livespec_runtime` absent). The correct runtime is the **distributed
+plugin's own bootstrap** — `.claude-plugin/scripts/bin/_bootstrap.py`, which inserts
+`scripts/` and `scripts/_vendor/` (where `livespec_runtime` is vendored) and self-heals
+credentials. Do not inject a sibling checkout and do not treat dev-tooling's uv env as the
+operation runtime.
+
+### Exact next action
+
+**Work `livespec-dev-tooling-6fmfzk` (B)** — it and `0eo.1` are the only ready items, and B
+is first in the approved hook-first order. Before B reaches the `livespec-overseer` clone,
+**warn the session owning `.claude/worktrees/dod-corrections`**; B takes effect per clone
+only on `just bootstrap`, so the rollout is operator-paced.
+
+*(Historical: the proposal below is what was approved. Retained as the record of what was
+put to the maintainer.)*
+
+## PROPOSED FINAL CUT — as presented 2026-07-25 (APPROVED; see the ruling above)
+
+**Status: APPROVED and filed** — see §"MAINTAINER RULING — FINAL CUT APPROVED AND FILED".
+The four questions at the end were all answered as recommended.
 
 ### Exact sequence
 
@@ -627,7 +700,7 @@ spec's rule was rehearsed".
 clauses (§"MAINTAINER RULING — full-location scope"). **Rollout order approved** — Option 3,
 hook-first (§"MAINTAINER RULING — rollout order"). **Boundary approved** — NARROW, the 9
 `fleet` repos (§"MAINTAINER RULING — NARROW boundary"); F drops out and adopter backfill is
-filed as `li-l53` / `hl-nhw`. **Still open and blocking slice filing:** the final cut. No
+filed as `li-l53` / `hl-nhw`. **The final cut is now APPROVED and FILED (2026-07-26).** No
 slices are filed, no worktree has been moved or touched, the ledger is untouched, and no
 product change has been made. A "wire-then-enforce"
 answer displayed on 2026-07-25 was a supervisor UI-race artifact and is void.
@@ -1884,6 +1957,10 @@ rollout order first; that ordering is superseded. Ask them in this order:
    unpushed `296dd1f`, no upstream, no live owner). `livespec-overseer`'s belongs to
    another session and must not be touched without its owner.
 
+**[SUPERSEDED 2026-07-26 — the slices ARE now filed](#) — seven records under the epic,
+intake-routed; see §"MAINTAINER RULING — FINAL CUT APPROVED AND FILED". The paragraph below
+describes the pre-approval state and its rationale, which is why filing waited for consent.**
+
 **The epic is anchored; no slices are filed.** That split is deliberate. An active plan
 thread MUST declare a concrete ledger anchor — `plan_thread_anchor_declared` enforces it
 mechanically, and its rationale is exactly this thread's own failure mode ("a completed
@@ -2008,7 +2085,9 @@ These four landed after the first audit PR and are recorded in the sections abov
 ### Explicitly NOT done in this pass
 
 No slices filed, no worktree moved, no implementation dispatched, no spec change, no
-ledger edit — and that remains true as of 2026-07-25.
+ledger edit — true as of that pass. **Superseded 2026-07-26: the seven approved slices are
+now filed and intake-routed.** No worktree has been moved and nothing has been dispatched or
+implemented.
 
 **Decision status as of 2026-07-25** (this paragraph records a snapshot of an earlier pass;
 these are its outcomes, not still-open items): scope is **APPROVED** — full-location, both
@@ -2020,5 +2099,5 @@ the "wire-then-enforce" recommendation this pass floated; the picker answer that
 displayed that recommendation was a supervisor UI race artifact and remains void
 independently of the later ruling.
 
-**Still open and blocking slice filing:** the final cut. The fleet-boundary question was
+**The final cut was APPROVED and FILED 2026-07-26.** The fleet-boundary question was
 answered NARROW (§"MAINTAINER RULING — NARROW boundary").
