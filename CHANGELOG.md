@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.54.13](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.54.12...v0.54.13) (2026-07-25)
+
+
+### Bug Fixes
+
+* require declared role keys for layout checks ([b2e82e1](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b2e82e1e1622c754bb4b69112ac9da400578e764))
+
 ## [0.54.12](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.54.11...v0.54.12) (2026-07-25)
 
 
