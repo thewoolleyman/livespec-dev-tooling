@@ -315,8 +315,8 @@ def test_public_api_result_typed_ignores_private_function(*, tmp_path: Path) -> 
     )
 
 
-def test_public_api_result_typed_accepts_empty_tree(*, tmp_path: Path) -> None:
-    """An empty repo cwd passes (exit 0)."""
+def test_public_api_result_typed_rejects_declared_tree_with_no_python(*, tmp_path: Path) -> None:
+    """A declared pure_trees path containing no Python files is a misdeclaration."""
     result = subprocess.run(
         [sys.executable, str(_PUBLIC_API_RESULT_TYPED)],
         cwd=str(tmp_path),
@@ -325,9 +325,11 @@ def test_public_api_result_typed_accepts_empty_tree(*, tmp_path: Path) -> None:
         check=False,
     )
 
-    assert (
-        result.returncode == 0
-    ), f"public_api_result_typed should accept empty tree; got returncode={result.returncode}"
+    assert result.returncode == 1, (
+        f"public_api_result_typed should reject a declared tree with no Python files; "
+        f"got returncode={result.returncode}"
+    )
+    assert "declared role key resolves to no Python files" in result.stderr
 
 
 def test_public_api_result_typed_module_importable_without_running_main() -> None:

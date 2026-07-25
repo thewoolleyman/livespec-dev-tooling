@@ -45,9 +45,11 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling.checks._role_key_gate import role_key_gate_exit_code  # noqa: E402
 from livespec_dev_tooling.config import load_config  # noqa: E402
 
 __all__: list[str] = []
+_DATACLASSES_TREE_GATE_BUG = "dataclasses_tree unexpectedly empty after role-key gate"
 _FIELD_TO_NEWTYPE: dict[str, str] = {
     "check_id": "CheckId",
     "run_id": "RunId",
@@ -114,16 +116,27 @@ def main() -> int:
     log = structlog.get_logger("newtype_domain_primitives")
     cwd = Path.cwd()
     config = load_config(repo_root=cwd)
-    if config.dataclasses_tree is None:
-        log.info(
-            "role key absent — check no-ops",
+    gate_exit = role_key_gate_exit_code(
+        config=config,
+        key="dataclasses_tree",
+        value_is_empty=config.dataclasses_tree is None,
+        log=log,
+        check_id="newtype_domain_primitives",
+    )
+    if gate_exit is not None:
+        return gate_exit
+    dataclasses_tree = config.dataclasses_tree
+    if dataclasses_tree is None:
+        raise RuntimeError(_DATACLASSES_TREE_GATE_BUG)
+    dataclasses_root = cwd / dataclasses_tree
+    if not dataclasses_root.is_dir():
+        log.error(
+            "declared dataclasses_tree is not a directory",
             check_id="newtype_domain_primitives",
             role="dataclasses_tree",
+            path=dataclasses_tree.as_posix(),
         )
-        return 0
-    dataclasses_root = cwd / config.dataclasses_tree
-    if not dataclasses_root.is_dir():
-        return 0
+        return 1
     offenders: list[tuple[Path, int, str, str, str]] = []
     for py_file in sorted(dataclasses_root.glob("*.py")):
         source = py_file.read_text(encoding="utf-8")

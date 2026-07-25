@@ -44,6 +44,7 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling.checks._role_key_gate import source_trees_exit_code  # noqa: E402
 from livespec_dev_tooling.config import Config, iter_py_files, load_config  # noqa: E402
 
 __all__: list[str] = []
@@ -90,13 +91,11 @@ def main() -> int:
     log = structlog.get_logger("no_raise_outside_io")
     cwd = Path.cwd()
     config = load_config(repo_root=cwd)
-    if not config.source_trees:
-        log.info(
-            "role key absent — check no-ops",
-            check_id="no_raise_outside_io",
-            role="source_trees",
-        )
-        return 0
+    gate_exit = source_trees_exit_code(
+        config=config, repo_root=cwd, log=log, check_id="no_raise_outside_io"
+    )
+    if gate_exit is not None:
+        return gate_exit
     offenders: list[tuple[Path, int, str]] = []
     inspected = 0
     for tree_rel in config.source_trees:

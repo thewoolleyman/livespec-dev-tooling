@@ -50,10 +50,9 @@ the ratchet.
 Tests invoke check_mutation.py via subprocess with a fake mutmut package
 injected through PYTHONPATH, following the established dev-tooling test
 pattern. This approach lets mutmut properly substitute the mutated module
-when running its own tests. A bare `tmp_path` carries no
-`[tool.livespec_dev_tooling]` block, so `load_config` returns the
-livespec-core fallback whose `pure_trees` is non-empty — every subprocess
-test below therefore runs the check ARMED.
+when running its own tests. Subprocess tests that exercise the armed path declare an explicit
+`pure_trees` role key and seed a Python file under it, so they do not
+depend on a whole-block fallback.
 """
 
 from __future__ import annotations
@@ -153,6 +152,20 @@ sys.exit(2)
     return tmp_path
 
 
+def _ensure_declared_pure_tree(*, repo_root: Path) -> None:
+    pyproject = repo_root / "pyproject.toml"
+    if "mutation_staging_dir" not in pyproject.read_text(encoding="utf-8"):
+        pyproject.write_text(
+            '[tool.livespec_dev_tooling]\npure_trees = ["pure"]\n',
+            encoding="utf-8",
+        )
+    pure = repo_root / "pure"
+    pure.mkdir(exist_ok=True)
+    module = pure / "mod.py"
+    if not module.is_file():
+        module.write_text("from __future__ import annotations\n\nx = 1\n", encoding="utf-8")
+
+
 def _run_check(
     *,
     tmp_path: Path,
@@ -172,6 +185,8 @@ def _run_check(
     imports `livespec_dev_tooling.config`), so the repo root is appended to
     `PYTHONPATH` alongside the fake-mutmut dir.
     """
+    if run_var:
+        _ensure_declared_pure_tree(repo_root=tmp_path)
     if baseline is not None:
         (tmp_path / ".mutmut-baseline.json").write_text(json.dumps(baseline), encoding="utf-8")
     env = {k: v for k, v in os.environ.items() if k != _RUN_VAR}
@@ -597,10 +612,13 @@ def test_runs_mutmut_from_staging_cwd_baseline_at_repo_root(*, tmp_path: Path) -
     staging.mkdir()
     (repo_root / "pyproject.toml").write_text(
         "[tool.livespec_dev_tooling]\n"
-        'pure_trees = [".claude-plugin/scripts/livespec/parse"]\n'
+        'pure_trees = ["pure"]\n'
         'mutation_staging_dir = "staging"\n',
         encoding="utf-8",
     )
+    pure = repo_root / "pure"
+    pure.mkdir()
+    (pure / "mod.py").write_text("from __future__ import annotations\n\nx = 1\n", encoding="utf-8")
     fake = _make_fake_mutmut(tmp_path=tmp_path, killed=17, total=20)
     result = _run_check(
         tmp_path=repo_root,

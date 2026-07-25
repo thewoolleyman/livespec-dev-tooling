@@ -1,15 +1,11 @@
 """Unit test for `livespec_dev_tooling.config` — the consumer-layout loader.
 
 Per `SPECIFICATION/contracts.md` §"Consumer configuration schema", the
-loader resolves the consumer's source-tree layout in two regimes:
-
-1. No `[tool.livespec_dev_tooling]` block (the livespec-core case) → the
-   full livespec-core historical fallback (every role key carries its
-   pre-G.4 path constant), so livespec-core stays bit-identical
-   (criterion 5).
-2. Block present but a role key omitted (a flat-layout consumer like
-   livespec-dev-tooling) → that key defaults empty/null, so the
-   consuming check no-ops; declared keys override.
+loader resolves the consumer's source-tree layout from the optional
+`[tool.livespec_dev_tooling]` block. Missing blocks and omitted keys keep
+the flat `Config()` defaults, while `declared_keys` records which keys
+were explicitly present so check-level gates can distinguish undeclared
+keys from declared-empty opt-outs.
 
 This test also pins every schema-violation path (→ `ConfigParseError`)
 and the shared `iter_py_files` walker (skips `_vendor`/`__pycache__`,
@@ -25,6 +21,7 @@ import pytest
 
 import livespec_dev_tooling.config as config_module
 from livespec_dev_tooling.config import (
+    REQUIRED_ROLE_KEYS,
     Config,
     ConfigParseError,
     GitLsFilesError,
@@ -51,9 +48,6 @@ from livespec_dev_tooling.config import (
 __all__: list[str] = []
 
 
-_LIVESPEC = Path(".claude-plugin") / "scripts" / "livespec"
-
-
 def _write_pyproject(*, repo_root: Path, body: str) -> None:
     _ = (repo_root / "pyproject.toml").write_text(body, encoding="utf-8")
 
@@ -66,76 +60,72 @@ def _load_plan_lifecycle_anchor(*, repo_root: Path) -> bool | None:
     return value
 
 
-def test_livespec_core_fallback_when_no_pyproject(*, tmp_path: Path) -> None:
-    """No `pyproject.toml` → the full livespec-core historical layout."""
+def test_no_pyproject_yields_flat_baseline(*, tmp_path: Path) -> None:
+    """No `pyproject.toml` -> bare flat baseline with no declared keys."""
     config = load_config(repo_root=tmp_path)
-    assert config.source_trees == (_LIVESPEC,)
-    assert config.io_trees == (_LIVESPEC / "io",)
-    assert config.commands_trees == (_LIVESPEC / "commands",)
-    assert config.supervisor_entry_files == (
-        _LIVESPEC / "doctor" / "run_static.py",
-        Path(".claude-plugin") / "scripts" / "bin" / "_bootstrap.py",
-    )
-    assert config.dataclasses_tree == _LIVESPEC / "schemas" / "dataclasses"
-    assert config.pure_trees == (_LIVESPEC / "parse", _LIVESPEC / "validate")
-    assert config.covered_trees == (
-        _LIVESPEC,
-        Path(".claude-plugin") / "scripts" / "bin",
-        Path("dev-tooling"),
-    )
-    assert config.source_tree_prefixes == (
-        ".claude-plugin/scripts/livespec/",
-        ".claude-plugin/scripts/bin/",
-        "dev-tooling/checks/",
-    )
-    assert config.tests_tree_prefix == "tests/"
-    assert config.target_dirs == (
-        Path(".claude-plugin") / "scripts",
-        Path("dev-tooling"),
-        Path("tests"),
-    )
-    assert config.mirror_pairings == (
-        MirrorPairing(source_tree=_LIVESPEC, test_tree=Path("tests") / "livespec"),
-        MirrorPairing(
-            source_tree=Path(".claude-plugin") / "scripts" / "bin",
-            test_tree=Path("tests") / "bin",
-        ),
-        MirrorPairing(
-            source_tree=Path("dev-tooling") / "checks",
-            test_tree=Path("tests") / "dev-tooling" / "checks",
-        ),
-        MirrorPairing(
-            source_tree=Path("livespec_dev_tooling") / "checks",
-            test_tree=Path("tests") / "livespec_dev_tooling" / "checks",
-        ),
-    )
-    assert config.neutral_hook_body_path is None
+    assert config == Config()
+    assert config.declared_keys == frozenset()
 
 
-def test_livespec_core_fallback_when_pyproject_has_no_tool_table(*, tmp_path: Path) -> None:
-    """`pyproject.toml` with no `[tool]` table → livespec-core fallback."""
+def test_pyproject_with_no_tool_table_yields_flat_baseline(*, tmp_path: Path) -> None:
+    """`pyproject.toml` with no `[tool]` table -> bare flat baseline."""
     _write_pyproject(repo_root=tmp_path, body='[project]\nname = "x"\n')
-    assert load_config(repo_root=tmp_path).source_trees == (_LIVESPEC,)
+    assert load_config(repo_root=tmp_path) == Config()
 
 
-def test_livespec_core_fallback_when_no_livespec_block(*, tmp_path: Path) -> None:
-    """`[tool.ruff]` present but no `[tool.livespec_dev_tooling]` → fallback."""
+def test_pyproject_with_no_livespec_block_yields_flat_baseline(*, tmp_path: Path) -> None:
+    """`[tool.ruff]` present but no `[tool.livespec_dev_tooling]` -> bare baseline."""
     _write_pyproject(repo_root=tmp_path, body="[tool.ruff]\nline-length = 100\n")
-    assert load_config(repo_root=tmp_path).io_trees == (_LIVESPEC / "io",)
+    assert load_config(repo_root=tmp_path) == Config()
+
+
+def test_required_role_keys_exports_exact_backfilled_keys() -> None:
+    """`REQUIRED_ROLE_KEYS` includes only the backfilled role-key families."""
+    tuple_path_roles = frozenset(
+        {
+            "source_trees",
+            "io_trees",
+            "commands_trees",
+            "supervisor_entry_files",
+            "pure_trees",
+            "covered_trees",
+            "target_dirs",
+        }
+    )
+    scalar_roles = frozenset(
+        {
+            "source_tree_prefixes",
+            "dataclasses_tree",
+            "neutral_hook_body_path",
+        }
+    )
+    excluded = frozenset(
+        {
+            "tests_tree_prefix",
+            "mirror_pairings",
+            "file_lloc_hard_gate",
+            "plan_lifecycle_anchor",
+            "scenario_tiers",
+        }
+    )
+    assert len(REQUIRED_ROLE_KEYS) == 10
+    assert tuple_path_roles <= REQUIRED_ROLE_KEYS
+    assert scalar_roles <= REQUIRED_ROLE_KEYS
+    assert REQUIRED_ROLE_KEYS.isdisjoint(excluded)
 
 
 def test_present_block_omitting_keys_yields_flat_baseline(*, tmp_path: Path) -> None:
     """A block declaring only `source_trees` → omitted role keys stay empty.
 
-    The flat-layout regime: a consumer that declares a block opts out of
-    the livespec-core fallback entirely; omitted role keys are empty/null
-    so the corresponding checks no-op against it.
+    The flat-layout regime: omitted role keys keep empty/null values,
+    while `declared_keys` records that only `source_trees` was present.
     """
     _write_pyproject(
         repo_root=tmp_path,
         body='[tool.livespec_dev_tooling]\nsource_trees = ["pkg"]\n',
     )
     config = load_config(repo_root=tmp_path)
+    assert config.declared_keys == frozenset({"source_trees"})
     assert config.source_trees == (Path("pkg"),)
     assert config.io_trees == ()
     assert config.commands_trees == ()
@@ -156,7 +146,9 @@ def test_dataclasses_tree_empty_string_is_declared_none(*, tmp_path: Path) -> No
         repo_root=tmp_path,
         body='[tool.livespec_dev_tooling]\ndataclasses_tree = ""\n',
     )
-    assert load_config(repo_root=tmp_path).dataclasses_tree is None
+    config = load_config(repo_root=tmp_path)
+    assert config.dataclasses_tree is None
+    assert "dataclasses_tree" in config.declared_keys
 
 
 def test_neutral_hook_body_path_empty_string_is_declared_none(*, tmp_path: Path) -> None:
@@ -165,7 +157,9 @@ def test_neutral_hook_body_path_empty_string_is_declared_none(*, tmp_path: Path)
         repo_root=tmp_path,
         body='[tool.livespec_dev_tooling]\nneutral_hook_body_path = ""\n',
     )
-    assert load_config(repo_root=tmp_path).neutral_hook_body_path is None
+    config = load_config(repo_root=tmp_path)
+    assert config.neutral_hook_body_path is None
+    assert "neutral_hook_body_path" in config.declared_keys
 
 
 def test_full_override(*, tmp_path: Path) -> None:
@@ -203,6 +197,22 @@ def test_full_override(*, tmp_path: Path) -> None:
         MirrorPairing(source_tree=Path("pkg"), test_tree=Path("t/pkg")),
     )
     assert config.neutral_hook_body_path == "hooks/no_shadow_ledger.py"
+    assert config.declared_keys == frozenset(
+        {
+            "source_trees",
+            "io_trees",
+            "commands_trees",
+            "supervisor_entry_files",
+            "dataclasses_tree",
+            "pure_trees",
+            "covered_trees",
+            "source_tree_prefixes",
+            "tests_tree_prefix",
+            "target_dirs",
+            "mirror_pairings",
+            "neutral_hook_body_path",
+        }
+    )
 
 
 def test_malformed_toml_raises(*, tmp_path: Path) -> None:
@@ -322,6 +332,7 @@ def test_neutral_hook_body_path_non_string_raises(*, tmp_path: Path) -> None:
 def test_bare_config_is_flat_baseline() -> None:
     """`Config()` is the flat baseline — every role key empty/null."""
     config = Config()
+    assert config.declared_keys == frozenset()
     assert config.source_trees == ()
     assert config.dataclasses_tree is None
     assert config.tests_tree_prefix == "tests/"

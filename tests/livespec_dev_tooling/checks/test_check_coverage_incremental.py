@@ -46,7 +46,7 @@ from pathlib import Path
 
 import pytest
 
-from livespec_dev_tooling.config import MirrorPairing, load_config
+from livespec_dev_tooling.config import MirrorPairing
 
 __all__: list[str] = []
 
@@ -56,8 +56,25 @@ _CHECK_PATH = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "check_coverage_i
 
 
 def _core_pairings() -> tuple[MirrorPairing, ...]:
-    """The livespec-core historical mirror pairings (no-block fallback)."""
-    return load_config(repo_root=Path("/livespec-dev-tooling-nonexistent-root")).mirror_pairings
+    """The livespec-core historical mirror pairings used by this check."""
+    return (
+        MirrorPairing(
+            source_tree=Path(".claude-plugin") / "scripts" / "livespec",
+            test_tree=Path("tests") / "livespec",
+        ),
+        MirrorPairing(
+            source_tree=Path(".claude-plugin") / "scripts" / "bin",
+            test_tree=Path("tests") / "bin",
+        ),
+        MirrorPairing(
+            source_tree=Path("dev-tooling") / "checks",
+            test_tree=Path("tests") / "dev-tooling" / "checks",
+        ),
+        MirrorPairing(
+            source_tree=Path("livespec_dev_tooling") / "checks",
+            test_tree=Path("tests") / "livespec_dev_tooling" / "checks",
+        ),
+    )
 
 
 def _load_check_module() -> types.ModuleType:

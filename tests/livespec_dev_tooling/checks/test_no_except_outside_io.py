@@ -21,6 +21,7 @@ from pathlib import Path
 import pytest
 
 from livespec_dev_tooling.checks import no_except_outside_io as _check
+from livespec_dev_tooling.checks._no_except_outside_io_ruff import find_ruff_backstop_gaps
 
 __all__: list[str] = []
 
@@ -57,6 +58,21 @@ def _write_module(*, tmp_path: Path, rel: str, body: str) -> None:
 
 def _write_pyproject(*, tmp_path: Path, extra: str) -> None:
     (tmp_path / "pyproject.toml").write_text(extra, encoding="utf-8")
+
+
+def test_ruff_backstop_noops_without_pyproject(*, tmp_path: Path) -> None:
+    """No pyproject means there is no explicit Ruff BLE001 backstop contract."""
+    assert (tmp_path / "pyproject.toml").is_file()
+    (tmp_path / "pyproject.toml").unlink()
+
+    assert (
+        find_ruff_backstop_gaps(
+            repo_root=tmp_path,
+            source_trees=(Path("pkg"),),
+            inspected_files=(Path("pkg/mod.py"),),
+        )
+        == []
+    )
 
 
 def test_no_except_outside_io_accepts_narrow_catch_in_pure_layer(*, tmp_path: Path) -> None:
@@ -1286,26 +1302,25 @@ def test_no_except_outside_io_announces_absent_source_trees(*, tmp_path: Path) -
 
     result = _run(cwd=tmp_path)
 
-    assert result.returncode == 0, (
-        f"no_except_outside_io should exit 0 when source_trees is unset; "
+    assert result.returncode == 1, (
+        f"no_except_outside_io should fail when source_trees is undeclared; "
         f"got returncode={result.returncode} stderr={result.stderr!r}"
     )
     combined = result.stdout + result.stderr
-    assert "source_trees" in combined, (
-        f"no_except_outside_io should name the absent `source_trees` role key; "
-        f"stdout={result.stdout!r} stderr={result.stderr!r}"
-    )
+    assert "role key undeclared" in combined
+    assert "source_trees" in combined
 
 
-def test_no_except_outside_io_accepts_empty_tree(*, tmp_path: Path) -> None:
-    """An empty repo cwd passes the check (exit 0)."""
+def test_no_except_outside_io_rejects_declared_tree_with_no_python(*, tmp_path: Path) -> None:
+    """A declared source tree containing no Python files is a misdeclaration."""
     result = _run(cwd=tmp_path)
 
-    assert result.returncode == 0, (
-        f"no_except_outside_io should accept empty tree with exit 0; "
+    assert result.returncode == 1, (
+        f"no_except_outside_io should reject a declared tree with no Python files; "
         f"got returncode={result.returncode} "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
+    assert "declared role key resolves to no Python files" in result.stderr
 
 
 def test_no_except_outside_io_module_importable_without_running_main() -> None:
