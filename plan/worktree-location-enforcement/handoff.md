@@ -86,7 +86,7 @@ Per the ruling's instruction not to rely on earlier counts:
 | pack wiring (gitignore + 2 `import?` + recipe) | **full in 3** (`…beads-fabro`, `…git-jsonl`, `…console`); **absent in 6 fleet + 3 adopters** |
 | pack materialized | **1** (`livespec-orchestrator-git-jsonl`) |
 | worktrees on host | **40** |
-| live violations under BOTH clauses | **2**, both nested, both in governed repos: `livespec-overseer/.claude/worktrees/dod-corrections` (fleet member; **another session's — do not touch**) and `openbrain/.claude/worktrees/fix-ob-6vt-…` (adopter; inspected, safe to move) |
+| live violations under BOTH clauses | **2**, both nested, both in governed repos: `livespec-overseer/.claude/worktrees/dod-corrections` (fleet member; **another session's — do not touch**) and `openbrain/.claude/worktrees/fix-ob-6vt-…` (adopter; inspected 2026-07-25 and clean THEN — the move is authorized but SUBJECT TO fresh ownership/cleanliness/reachability inspection immediately before it) |
 
 No peer-case violation is live right now (`homelab-substrate` was removed by the `homelab`
 track mid-audit), but the class remains unenforced until B widens.
@@ -116,8 +116,10 @@ fires at first *commit*. Product `.py` → Red–Green–Replay.
 `livespec-orchestrator-git-jsonl`; plus `just bootstrap` in the 2 wired-but-unhydrated
 repos, which need no PR at all.
 
-**E — relocate the live nested worktrees.** openbrain's is inspected and safe
-(clean tree, unpushed `296dd1f`, no upstream, no live owner). `livespec-overseer`'s
+**E — relocate the live nested worktrees.** openbrain's was inspected 2026-07-25 and was
+clean then (clean tree, unpushed `296dd1f`, no upstream, no live owner) — a **snapshot**,
+not a standing guarantee. The move is authorized **subject to fresh ownership, cleanliness
+and reachability inspection immediately before it**. `livespec-overseer`'s
 belongs to **another session** and must not be touched without its owner — E cannot close
 unilaterally.
 
@@ -130,8 +132,9 @@ alone and F carries no work for this thread.**
 
 Adopter enforcement is a **separate follow-up**, already filed as two blocked backfill
 work-items (`li-l53` in the resume tenant, `hl-nhw` in the homelab tenant) — see the ruling
-section for their scope. openbrain has no backfill item yet; **E still retains the safe
-openbrain relocation**, which is hygiene and needs no substrate.
+section for their scope. openbrain has no backfill item yet; **E still retains the
+authorized openbrain relocation, subject to fresh pre-move ownership, cleanliness and
+reachability inspection**. It is hygiene and needs no substrate.
 
 Retained here for context only: clause 2 is unenforceable in the three governed adopters
 today — openbrain runs a stock lefthook stub, resume and homelab run no livespec hook, and
@@ -139,7 +142,12 @@ none of the three wires the verifier — and two **bespoke location-blind implem
 (`openbrain/scripts/refuse-primary-commit.sh`, `resume/scripts/check-primary-checkout.ts`)
 remain unreconciled. That is now the follow-up's subject, not this thread's.
 
-**G — birth procedure (NEW, proposed; deferrable).** Only `impl-plugin` has a copier
+**G — birth procedure. CURRENT DISPOSITION (2026-07-26): DEFERRED and FILED** as
+`livespec-dev-tooling-xxdxqv`, routed to **`backlog`** so it cannot dispatch as current-cut
+work. It is no longer merely "proposed/optional" — it is a tracked follow-up whose own
+scoping decision (this thread vs. the fleet birth-procedure lane) comes first.
+
+Only `impl-plugin` has a copier
 template, and it is the fully-compliant one. Members of the other six classes are
 hand-scaffolded and born unwired — `livespec-overseer` is the proof, and it is also where
 the second live violation appeared. Without G the sweep fixes the population and not the
@@ -247,8 +255,10 @@ record of what was weighed, not as live alternatives.
 
 **Dependencies the ruling explicitly preserves — do not paper over these:**
 
-- **E is only half-closable by this thread.** openbrain's nested worktree is inspected and
-  safe to move (clean tree, unpushed `296dd1f`, no upstream, no live owner).
+- **E is only half-closable by this thread.** openbrain's nested worktree was inspected
+  2026-07-25 and was clean then (clean tree, unpushed `296dd1f`, no upstream, no live
+  owner) — a snapshot. **Re-inspect ownership, cleanliness and reachability immediately
+  before moving;** the authority is conditional on that.
   `livespec-overseer/.claude/worktrees/dod-corrections` belongs to **another live session**;
   this thread has no authority over it and MUST NOT touch it. E closes for openbrain and
   stays open for the overseer worktree until its owner acts. Do not record E as done on the
@@ -269,9 +279,13 @@ record of what was weighed, not as live alternatives.
 **Nothing is gated any more — the final cut was APPROVED and FILED 2026-07-26** (see that
 ruling section for ids, states and lanes). *(This line previously read "Still gated, and
 blocking slice filing: the FINAL CUT only.")* The fleet-boundary
-question below was ANSWERED — narrow (§"MAINTAINER RULING — NARROW boundary"). Nothing may
-be filed as a dev-tooling implementation slice, moved, dispatched, or implemented until the
-final cut is approved.
+question below was ANSWERED — narrow (§"MAINTAINER RULING — NARROW boundary").
+
+*(The pre-approval rule that stood here — "Nothing may be filed as a dev-tooling
+implementation slice, moved, dispatched, or implemented until the final cut is approved" —
+is **SUPERSEDED**. The cut was approved and the seven slices are filed. What remains true is
+narrower and stated where it belongs: no worktree has been moved and no product change has
+been made yet.)*
 
 ## MAINTAINER RULING — FINAL CUT APPROVED AND FILED (2026-07-26)
 
@@ -332,10 +346,90 @@ plugin's own bootstrap** — `.claude-plugin/scripts/bin/_bootstrap.py`, which i
 credentials. Do not inject a sibling checkout and do not treat dev-tooling's uv env as the
 operation runtime.
 
+### INTERRUPTION SNAPSHOT — 2026-07-25T23:44Z — correction-recovery record
+
+> **Point-in-time snapshot, deliberately historical.** It records the state at the moment
+> the repo-mutation protocol could not complete its PR/worktree cleanup leg. It stays
+> **true as written** after #667 merges and the worktree is removed — read it as "this is
+> what was interrupted and how it was to be recovered", never as current state.
+
+**Interrupted work.** PR **#667**, branch `docs/worktree-enforcement-next-action-fix`,
+worktree `/home/ubuntu/.worktrees/livespec-dev-tooling/docs-worktree-enforcement-next-action-fix`.
+**Auto-merge disabled** (deliberately; the PR bot re-enabled it twice after pushes, so it
+was re-disabled each time).
+
+**Validated state of the reviewed head before this note** — head `2cb5928`; worktree clean;
+`git diff --check` clean; full-document content review complete across all correction
+clusters; **no worktree move and no product implementation performed**; the untracked
+`install-livespec-pr-bot.png` and every foreign-session worktree untouched.
+
+**External blocker — not a content failure.** CI run `30179721817`, **attempts 1–3**, each
+fail **only** `check-fleet-conformance`, and only at the manifest fetch under the App token:
+`{"source": "thewoolleyman/livespec:.livespec-fleet-manifest.jsonc", "event": "fleet
+manifest unavailable"}`. Attempt 3 completed 23:44:06Z, ~9s, identical to attempt 2. Every
+other check is green; `ci-green` fails solely as the aggregate of that one job. The
+**identical traversal passes locally on this exact PR head** (9 members, `blind_rows=0`),
+and the same App-token job **passed on the immediately preceding master `3ab676a` at
+23:24**. So there is no content or fleet regression — the gate is external.
+
+**Exact recovery — do NOT bypass.**
+
+1. Establish an **external-state change** restoring the App installation's content-read of
+   the `livespec` manifest. Do not work around the check, do not disable it, never
+   `--no-verify`.
+2. **Rerun checks once.** Require **green** — no further blind reruns; three identical
+   failures already established the gate is external.
+3. **Rebase-merge #667.**
+4. **Fast-forward the primary** (`fetch` + `merge --ff-only`; never `reset`).
+5. **Remove this worktree** and **delete the local branch**.
+6. **Verify the primary is clean on `master`**, preserving the untracked
+   `install-livespec-pr-bot.png`.
+
+### RECOVERY UPDATE — 2026-07-26 — symptom cleared; historical cause was erased
+
+The external read path is healthy again. A fresh App-installation probe found the
+installation unsuspended, still selected-repository scoped, still containing both
+`livespec` and `livespec-dev-tooling`, and able to read
+`thewoolleyman/livespec:.livespec-fleet-manifest.jsonc` with HTTP 200. Subsequent fleet
+conformance runs outside this PR also returned green. This is the external-state change
+that permits one fresh CI run for #667; it is not evidence for the exact response received
+by the failed attempts.
+
+The historical root cause is **not recoverable from the run logs**. The implementation
+captures the failed `gh api` command's return code and stderr in `GhResult`, then
+`FleetContext.api_object()` / `file_text()` discard both and return `None`;
+`fetch_manifest()` finally maps API failure and malformed content to the same
+`fleet manifest unavailable` event. Therefore the failed runs cannot now be distinguished
+as 403, 404, 429, 5xx, authentication, networking, malformed API response, or malformed
+manifest. Do not promote the plausible transient-throttle explanation into a finding.
+
+The implementation bug is filed separately as **`livespec-dev-tooling-s22c5z`**,
+`origin:freeform`, intake-triaged **`ready`**:
+
+> Preserve GitHub API failure causes through FleetContext instead of collapsing them to
+> “unavailable”
+
+Its scope preserves typed, sanitized causes through all four manifest consumers while
+retaining the existing fail-closed and severity semantics. It explicitly excludes retries,
+exemptions, and gate weakening. This work item is diagnostic hardening; it does not block
+the already-recovered #667.
+
+**After recovery, the exact next action below stands unchanged:** work
+`livespec-dev-tooling-0eo.1` (E-openbrain), with fresh pre-move ownership, cleanliness and
+reachability inspection.
+
 ### Exact next action
 
-**Work `livespec-dev-tooling-6fmfzk` (B)** — it and `0eo.1` are the only ready items, and B
-is first in the approved hook-first order. Before B reaches the `livespec-overseer` clone,
+**Work `livespec-dev-tooling-0eo.1` (E-openbrain).** The authoritative sequence is
+**E(openbrain) → B → A1 → D → A2+C**, so the relocation is first and **B is second**, not
+the next action. Both are in the ready lane; take `0eo.1` first.
+
+Before moving: **re-inspect ownership, cleanliness, and reachability at that moment** — the
+2026-07-25 reading (clean tree, unpushed `296dd1f`, no upstream, no live owner) is stale by
+the time anyone acts. Then `git worktree move` (never `remove`).
+
+**Then** work `livespec-dev-tooling-6fmfzk` (B) — the first *implementation* slice after the
+relocation. Before B reaches the `livespec-overseer` clone,
 **warn the session owning `.claude/worktrees/dod-corrections`**; B takes effect per clone
 only on `just bootstrap`, so the rollout is operator-paced.
 
@@ -463,8 +557,9 @@ Everything else follows from rulings already given.
 ## MAINTAINER RULING — NARROW boundary APPROVED (2026-07-25)
 
 **This thread enforces both full-location clauses across the 9 repos classified `fleet` in
-the manifest.** Adopter enforcement is a **separate follow-up**. **E retains the safe
-openbrain relocation.**
+the manifest.** Adopter enforcement is a **separate follow-up**. **E retains the authorized
+openbrain relocation, subject to fresh pre-move ownership, cleanliness and reachability
+inspection.**
 
 Consequences, applied throughout this file:
 
@@ -681,7 +776,7 @@ one. → §"CORRECTION (2026-07-25)" in §"Fleet impact" and its sub-table.
 
 **Item A as specified does not close its layer.** A byte-perfect pack with no `import?`
 lines passes the verifier while `just --list` shows no `worktree-create`. Today the
-sanctioned tool is discoverable in **1 of 9** governed repos. → §"A AS SPECIFIED DOES
+sanctioned tool is discoverable in **1 of 9 fleet repos**. → §"A AS SPECIFIED DOES
 NOT CLOSE…" and §"Discoverability of the sanctioned tool".
 
 **The pack is gitignored-and-materialized, not tracked**, so "pack-install-first" was never
@@ -700,10 +795,12 @@ spec's rule was rehearsed".
 clauses (§"MAINTAINER RULING — full-location scope"). **Rollout order approved** — Option 3,
 hook-first (§"MAINTAINER RULING — rollout order"). **Boundary approved** — NARROW, the 9
 `fleet` repos (§"MAINTAINER RULING — NARROW boundary"); F drops out and adopter backfill is
-filed as `li-l53` / `hl-nhw`. **The final cut is now APPROVED and FILED (2026-07-26).** No
-slices are filed, no worktree has been moved or touched, the ledger is untouched, and no
-product change has been made. A "wire-then-enforce"
-answer displayed on 2026-07-25 was a supervisor UI-race artifact and is void.
+filed as `li-l53` / `hl-nhw`. **The final cut is APPROVED and FILED (2026-07-26): seven
+children exist under the epic and are intake-routed** — ids, states, dependency edges and
+lane evidence in §"MAINTAINER RULING — FINAL CUT APPROVED AND FILED". **Still true: no
+worktree has been moved or touched, and no product implementation has happened.** A
+"wire-then-enforce" answer displayed on 2026-07-25 was a supervisor UI-race artifact and is
+void.
 
 ### Superseded claims — do not act on these if you meet them elsewhere in the file
 
@@ -712,7 +809,7 @@ answer displayed on 2026-07-25 was a supervisor UI-race artifact and is void.
 | "one live violation remains fleet-wide (§openbrain)" / §E's heading "openbrain has the last live violation" | **superseded** — two nested violations, plus the peer case |
 | "openbrain's hook is an older canonical body, byte-correct against its own pin" | **wrong** — it is a stock lefthook stub with no livespec refuse logic |
 | "`pwd -P` is a real bug source here, not a hypothetical" | **unsupported** — changes no verdict; git already emits physical paths |
-| "the rule is stated in prose in each repo's `AGENTS.md`" | **too generous** — 9 of 13; and it is *also* ratified spec |
+| "the rule is stated in prose in each repo's `AGENTS.md`" | **too generous** — 9 of the 12 registered governed clones (9 of 13 surveyed, counting unregistered `dolt-server`); and it is *also* ratified spec |
 | "the hook reinstall does not propagate … per-clone and per-machine" | **overstated** — `local_reconcile`'s `commit-refuse-hooks` row already self-heals it |
 | "pack-install-first: run `install-worktree-pack` across the non-compliant repos" as a PR sweep | **false premise** — the pack is untracked |
 | `/data/projects/homelab-substrate` as a live peer violation | **gone** — removed by the `homelab` track mid-audit; the structural gap remains |
@@ -724,7 +821,10 @@ answer displayed on 2026-07-25 was a supervisor UI-race artifact and is void.
 
 The rule "every worktree lives under `~/.worktrees/<repo>/<branch>`, NEVER inside a
 clone" is stated in prose in *most* governed repos' `AGENTS.md` and enforced by
-**nothing**. (Measured 2026-07-25: 9 of 13 governed clones mention `.worktrees` at all;
+**nothing**. (Measured 2026-07-25: 9 of the **12 registered governed clones** — 9 fleet +
+3 registered adopters — mention `.worktrees` at all. `dolt-server` is the **13th surveyed**
+clone: it carries a `.livespec.jsonc` but is **not registered** in the manifest, so 13 is
+the surveyed count and 12 the registered-governed count. Specifically,
 `livespec-driver-codex`, `livespec-overseer`, and `homelab` have zero mentions and
 `dolt-server` has no `AGENTS.md`. The original "each repo" claim was too generous —
 prose coverage is itself incomplete, which strengthens the case for a mechanical
@@ -793,7 +893,16 @@ The causal chain, which is the actual design input:
 
 ## The two decisions the maintainer already made
 
+> **CURRENT ANSWER FIRST (2026-07-26).** Decision **B below is SUPERSEDED**. The current B
+> is a **positive-location allow-list** — refuse any worktree that is neither
+> tooling-internal nor under `~/.worktrees/` — per the approved full-location ruling. The
+> nested-only snippet below is the **original 2026-07-19 decision**, kept as history.
+> Decision A (the config key defaulting to `required`) still stands and is delivered by
+> slice **A2+C**.
+
 Both were settled 2026-07-19. Do not relitigate; they are inputs, not options.
+*(True when written. Decision B was later widened by maintainer ruling; "do not
+relitigate" no longer applies to B's nested-only formulation.)*
 
 **A. Config key, defaulting to required.** A `.livespec.jsonc` declaration, sibling to
 `harnesses`, whose *absence* means `required`:
@@ -834,11 +943,17 @@ gdk-in-a-box-agent-flywheel-wrapper  .git/beads-worktrees/beads-sync
 personal-knowledge-base              .git/beads-worktrees/beads-sync
 ```
 
-**`pwd -P` is also load-bearing on this host.** `/data/projects/<repo>` and
-`/home/ubuntu/workspace/<repo>` are the SAME repos — verified by identical inode on
-`.livespec.jsonc` (`28058364` for `livespec`). Without physical-path resolution the
-prefix comparison gives different answers depending on which path a worktree was created
-through. This is a real bug source here, not a hypothetical.
+**`pwd -P` is also load-bearing on this host — HISTORICAL (2026-07-19), UNSUPPORTED.**
+*(Original claim:)* `/data/projects/<repo>` and `/home/ubuntu/workspace/<repo>` are the SAME
+repos — verified by identical inode on `.livespec.jsonc` (`28058364` for `livespec`) —
+so without physical-path resolution the prefix comparison gives different answers depending
+on which path a worktree was created through; "a real bug source here, not a hypothetical".
+
+**Superseded by the 2026-07-25 rehearsal:** replacing `pwd -P` with plain `pwd` changed
+**no verdict** in any case tested, because `git rev-parse --show-toplevel` and
+`--git-common-dir` already emit *physical* paths. The aliasing is real; it does not change
+a verdict. Keep physical canonicalization as **cheap insurance**, not as a fix for an
+observed bug.
 
 ## The trap that makes rollout order the whole problem
 
@@ -888,7 +1003,7 @@ alone under-reported this — do not repeat that mistake).
 | livespec-console-beads-fabro | fleet/console | YES (`check-baseline`) | **ABSENT** | canonical ✅ |
 | **livespec-overseer** *(new)* | fleet/control-plane-tool | YES | **ABSENT** | canonical ✅ |
 | livespec-orchestrator-git-jsonl | fleet/impl-plugin | YES | present ✅ (4/4) | canonical ✅ |
-| openbrain | adopter (pinned) | **none** | ABSENT | **differs** (older pin) |
+| openbrain | adopter (pinned) | **none** | ABSENT | **stock lefthook stub / non-canonical** |
 | resume | adopter (pinned) | **none** | ABSENT | **no hook** |
 | homelab | adopter (released) | **none** | ABSENT | **no hook** |
 | dolt-server | *unregistered* | **none** | ABSENT | **no hook** |
@@ -984,7 +1099,7 @@ The table above reports pack *files*. What an operator actually experiences is w
 | livespec-console-beads-fabro | 2 | **no** | **no** ← `import?` no-ops |
 | livespec-orchestrator-git-jsonl | 2 | yes | **yes** |
 
-**The sanctioned tool is discoverable in exactly 1 of 9 governed repos.**
+**The sanctioned tool is discoverable in exactly 1 of 9 fleet repos.**
 
 The two middle-column failures are distinct and both matter. Six repos have neither half.
 But `livespec-orchestrator-beads-fabro` and `livespec-console-beads-fabro` have the
@@ -1283,7 +1398,8 @@ test should pin the key-absent-plus-pack-present case as a **PASS** — which
 `SKIP` for a missing `.livespec.jsonc`, then `rm .livespec.jsonc` becomes an undocumented,
 unreviewable opt-out from worktree discipline — the exact silent-opt-out shape decision A
 was written to eliminate (§"making any future `\"optional\"` an explicit reviewable
-opt-out rather than silence"). All 13 governed clones carry the file today, so this is
+opt-out rather than silence"). All **12 registered governed clones** carry the file today,
+as does the unregistered `dolt-server` — **13 surveyed carriers** in total — so this is
 latent, not live.
 
 SKIP is *defensible* here for the same reason `plugin_resolution` gives it — the check may
@@ -1366,7 +1482,9 @@ there.
 #### A AS SPECIFIED DOES NOT CLOSE THE LAYER IT WAS WRITTEN TO CLOSE
 
 Demonstrated 2026-07-25 in a scratch tree — pack installed byte-perfect, root justfile
-carrying no `import?` lines (the state of 5 governed repos):
+carrying no `import?` lines (the state of **6 fleet repos** — every fleet repo except
+`livespec-orchestrator-beads-fabro`, `livespec-console-beads-fabro`, and
+`livespec-orchestrator-git-jsonl`, per the discoverability table):
 
 ```
 verifier verdict with FULL byte-correct pack + no import? lines: PASS
@@ -1418,7 +1536,11 @@ pair. Existing tests to extend:
 `tests/livespec_dev_tooling/checks/test_primary_checkout_commit_refuse_hook_installed.py`
 and `tests/livespec_dev_tooling/test_install_worktree_pack.py`.
 
-### B — hook: refuse commits from a worktree nested in the primary's working tree
+### B — hook: positive-location enforcement (refuse any worktree outside the sanctioned root)
+
+> Current B is the **allow-list**: tooling-internal → allow; under `~/.worktrees/` → allow;
+> everything else → refuse. Clause 1 falls out of clause 2. Nested-only material below is
+> **superseded 2026-07-26** and retained as history.
 
 Insert the §B branch after `CANONICAL_HOOK_BODY:123`. Also `.py`, so also Red-Green-Replay.
 
@@ -1429,8 +1551,10 @@ the actual promise; do not overstate it.
 
 #### B — IMPLEMENTATION-READY PREP (2026-07-25)
 
-B is first in the approved rollout order and is **boundary-independent** — it lands in the
-9 fleet clones under either reading of clause 2 — so it was prepared to
+B is the **first implementation slice** in the approved rollout order — the authoritative
+sequence is **E(openbrain) → B → A1 → D → A2+C**, so the openbrain relocation precedes it —
+and B is **boundary-independent**: it lands in the
+9 fleet clones under either reading of clause 2, so it was prepared to
 implementation-ready while the boundary question was still pending. The boundary has since
 been ruled NARROW, which does not change any of it — B lands in the 9 fleet repos either
 way. Nothing below was implemented.
@@ -1587,9 +1711,23 @@ adopters get it without archaeology.
 
 ### D — fleet sweep
 
-Install the pack in the **8** non-compliant verifier-running repos; write the key into
-all **13** `.livespec.jsonc` carriers; ensure every clone's hook is current after B
-lands. Order per §rollout.
+**APPROVED NARROW D (2026-07-26), filed as `livespec-dev-tooling-o5vltq`.** Current scope is
+the **9 `fleet` repos**:
+
+- **6 tracked wiring PRs** — `livespec`, `livespec-dev-tooling`, `livespec-driver-claude`,
+  `livespec-driver-codex`, `livespec-runtime`, `livespec-overseer` — ~10 lines each,
+  modelled on `livespec-orchestrator-git-jsonl`;
+- **`just bootstrap` hydration only, no PR**, in the 2 already-wired fleet repos
+  (`livespec-orchestrator-beads-fabro`, `livespec-console-beads-fabro`);
+- `livespec-orchestrator-git-jsonl` is already green.
+
+**The required-default flip and the config/doc change belong to A2+C** (`skl77m`), not to D.
+
+*(Superseded original: "Install the pack in the 8 non-compliant verifier-running repos;
+write the key into all 13 `.livespec.jsonc` carriers; ensure every clone's hook is current
+after B lands." That predates the NARROW boundary and the untracked-pack finding — the pack
+is gitignored-and-materialized, so there is no pack-install sweep, and adopters are out of
+scope.)*
 
 Per the correction in §rollout, the hook leg of this sweep is `just bootstrap` (the
 `local_reconcile` `commit-refuse-hooks` row), not a bespoke per-clone
@@ -1641,11 +1779,17 @@ for the maintainer — but it should be a decision, not an omission.
 
 ### E — relocate the live nested worktrees (openbrain, and now livespec-overseer)
 
+**Current disposition (2026-07-26): the final cut is APPROVED and FILED.** E is split into
+two filed records — **`livespec-dev-tooling-0eo.1`** (openbrain, **ready**) and
+**`livespec-dev-tooling-3iizsd`** (overseer, **blocked**). **The openbrain relocation is
+AUTHORIZED**, subject to a fresh ownership / cleanliness / reachability inspection
+immediately before the move. **The overseer relocation remains blocked on its foreign
+owning session** and must not be touched by this thread.
+
 *(Heading corrected 2026-07-25 — it previously read "openbrain has the last live
-violation", which is no longer true on two counts: `livespec-overseer` acquired a nested
-worktree mid-audit, and the spec's named prohibition is the peer case, which E never
-covered. E's scope as written below is openbrain only; whether it grows to cover the
-overseer worktree — which belongs to another session — is part of the unapproved cut.)*
+violation", which was no longer true on two counts: `livespec-overseer` acquired a nested
+worktree mid-audit, and the spec's named prohibition is the peer case. The trailing clause
+of that note — "part of the unapproved cut" — is itself superseded: the cut is approved.)*
 
 ```
 /data/projects/openbrain/.claude/worktrees/fix-ob-6vt-thought-detail-save  [fix/ob-6vt-thought-detail-save]
@@ -1671,8 +1815,13 @@ lefthook stub), so changing `CANONICAL_HOOK_BODY` does not reach it. Relocate it
 hygiene and consistency with the rule, not because B would otherwise strand it.
 Maintainer decided: **relocate it as part of the sweep** (`git worktree move` to
 `~/.worktrees/openbrain/<branch>`), before B ships, so nobody is stranded mid-branch.
-The pre-move inspection this called for is now done and recorded above; the move itself
-still needs maintainer authority and has NOT been performed.
+The pre-move inspection this called for is recorded above. **As of 2026-07-26 the move is
+AUTHORIZED** (final cut approved; filed as `livespec-dev-tooling-0eo.1`, ready) and has
+**NOT yet been performed**. Re-inspect ownership, cleanliness and reachability immediately
+before moving — the 2026-07-25 reading is stale by the time anyone acts. *(The "before B
+ships, so nobody is stranded mid-branch" rationale is superseded: B changes
+`CANONICAL_HOOK_BODY`, which openbrain does not run, so B never strands it. E goes first for
+hygiene and because it is free, not to avoid stranding.)*
 
 A fleet rescan on 2026-07-25 using the §B rule (physical paths via `realpath`, `.git/`
 carve-out applied) across every clone under `/data/projects`, `/home/ubuntu/workspace`,
@@ -1687,11 +1836,13 @@ gdk-in-a-box-agent-flywheel-wrapper  .git/beads-worktrees/beads-sync
 personal-knowledge-base              .git/beads-worktrees/beads-sync
 ```
 
-**`pwd -P` re-verified as load-bearing:** `/home/ubuntu/workspace` is a symlink whose
-`realpath` is `/data/projects`, and `.livespec.jsonc` in both paths resolves to the same
-inode (`29625545` for `livespec-dev-tooling`, `28075442` for `livespec`). Without
-physical-path resolution the prefix comparison still gives different answers depending
-on which path a worktree was created through.
+**Physical aliases exist, but change no verdict — corrected 2026-07-25.**
+`/home/ubuntu/workspace` is a symlink whose `realpath` is `/data/projects`, and
+`.livespec.jsonc` in both paths resolves to the same inode (`29625545` for
+`livespec-dev-tooling`, `28075442` for `livespec`). *(An earlier version of this paragraph
+concluded from that "`pwd -P` re-verified as load-bearing".)* The rehearsal showed
+otherwise: dropping `pwd -P` changed **no verdict**, because git already emits physical
+paths. Retain canonicalization as cheap insurance.
 
 ### A SECOND LIVE VIOLATION APPEARED DURING THIS AUDIT (2026-07-25)
 
@@ -1936,7 +2087,16 @@ clauses, NARROW boundary — and B **was** widened accordingly. **The current cu
 9 `fleet` repos.** Acceptance criteria SHOULD claim exactly that, and must additionally
 name the boundary so the adopter gap is visible rather than implied.
 
-## First act is the maintainer's — nothing here is agent-dispatchable
+## First act is the maintainer's — HISTORICAL PRE-APPROVAL DIALOGUE, FULLY SUPERSEDED
+
+> **READ THIS FIRST. This whole section is the pre-approval decision dialogue, retained as
+> history. It is NOT current, and its "STILL OPEN" / "nothing is agent-dispatchable"
+> statements are false as of 2026-07-26.**
+>
+> **Current:** all four questions are **answered**; the final cut is **approved**; **seven
+> slices exist** under `livespec-dev-tooling-0eo` and are intake-routed. Two are in the ready
+> lane (`0eo.1`, `6fmfzk`), so work **is** dispatchable. See §"MAINTAINER RULING — FINAL CUT
+> APPROVED AND FILED" for ids, states, edges and lane evidence, and §"Exact next action".
 
 **The open questions, in dependency order (2026-07-25).** The original text below lists
 rollout order first; that ordering is superseded. Ask them in this order:
@@ -1953,13 +2113,15 @@ rollout order first; that ordering is superseded. Ask them in this order:
    scope corrections to A (discoverability), B (sandbox-exempt guard, janitor carve-out,
    reach limited to fleet clones), D (6 tracked PRs + 3 bootstraps), and E (two worktrees
    now, one of them another session's).
-4. **Authority to relocate.** openbrain is inspected and safe to move (clean tree,
-   unpushed `296dd1f`, no upstream, no live owner). `livespec-overseer`'s belongs to
-   another session and must not be touched without its owner.
+4. **Authority to relocate.** openbrain was inspected 2026-07-25 and was clean then (clean
+   tree, unpushed `296dd1f`, no upstream, no live owner) — a snapshot, so the move is
+   authorized only **subject to fresh inspection immediately before it**.
+   `livespec-overseer`'s belongs to another session and must not be touched without its
+   owner.
 
-**[SUPERSEDED 2026-07-26 — the slices ARE now filed](#) — seven records under the epic,
+**[SUPERSEDED 2026-07-26 — the slices ARE now filed]** — seven records under the epic,
 intake-routed; see §"MAINTAINER RULING — FINAL CUT APPROVED AND FILED". The paragraph below
-describes the pre-approval state and its rationale, which is why filing waited for consent.**
+describes the pre-approval state and its rationale, which is why filing waited for consent.
 
 **The epic is anchored; no slices are filed.** That split is deliberate. An active plan
 thread MUST declare a concrete ledger anchor — `plan_thread_anchor_declared` enforces it
@@ -1976,16 +2138,17 @@ So the honest first act is a maintainer act:
 2. File A–E as slices under `-0eo`, or run
    `/livespec-orchestrator-beads-fabro:plan worktree-location-enforcement` to resume this
    thread and let it do the filing with consent.
-   *(**STILL OPEN, and now the ONLY gate.** The cut to file is **A, B, C, D, E, (G)** — not
-   A–E as written above, and not A–G. Scope, rollout order, and the boundary are all
-   approved; filing awaits approval of the final cut and its acceptance criteria.)*
+   *(**DONE 2026-07-26.** The approved cut — A, B, C, D, E, (G), with A split into A1/A2 and
+   C carried with A2 — is filed as seven children of `-0eo` and intake-routed.)*
 
 Nothing here is agent-dispatchable until slices exist: `next` ranks work-items, and this
-thread has none.
+thread has none. **[SUPERSEDED 2026-07-26 — seven slices exist; two (`0eo.1`, `6fmfzk`) are
+in the ready lane, so this thread IS dispatchable.]**
 
-**Re-verified 2026-07-25:** `bd show livespec-dev-tooling-0eo` reports the epic still
-`BACKLOG`, P2, updated 2026-07-20; `bd list --parent livespec-dev-tooling-0eo` reports
-"has no children" and `bd dep tree` shows the epic alone. There is still no topic
+**Re-verified 2026-07-25 — snapshot, since superseded by the 2026-07-26 filing:**
+`bd show livespec-dev-tooling-0eo` reported the epic
+`BACKLOG`, P2, updated 2026-07-20; `bd list --parent livespec-dev-tooling-0eo` reported
+"has no children" and `bd dep tree` showed the epic alone. There was then no topic
 implementation branch (`git branch -a --list '*worktree*' '*nested*' '*0eo*'` is empty),
 no topic worktree, and no open PR for this thread — the only open PR on the repo is
 #285 (`fix/generated-block-comment-syntax`), unrelated. The parked state is intact and
@@ -1993,11 +2156,23 @@ nothing was filed in the interim.
 
 ## Sequencing
 
+**AUTHORITATIVE SEQUENCE (2026-07-26):**
+`E(openbrain) → B → A1 → D → A2+C`, with **G deferred** (filed to `backlog`).
+**E goes first because it is free and unblocked** — *not* because B would otherwise strand
+openbrain; B changes `CANONICAL_HOOK_BODY`, which openbrain does not run.
+
+*(Superseded list, retained as history — items 2 and 3 below are both false now: A and B do
+NOT share one fleet sweep (the pack is untracked, so there is no pack sweep; D is 6 wiring
+PRs + 2 bootstraps), and B does not reach openbrain.)*
+
 1. **Rollout order decided first** — it changes the shape of D, not just its timing.
+   *(Done: Option 3, hook-first.)*
 2. **A and B are independent code changes** but share one fleet sweep; land them close
-   together so the sweep runs once, not twice.
+   together so the sweep runs once, not twice. **[SUPERSEDED]**
 3. **E before B ships** — otherwise openbrain's live worktree is stranded on first commit.
+   **[SUPERSEDED — B does not reach openbrain.]**
 4. `livespec-dev-tooling`'s own pack install rides A (self-compliance).
+   *(Still true — it rides A1.)*
 5. Parallel-safe against `livespec-console-beads-fabro`'s `plan/repo-invariant-guards/`
    — no shared files. That thread's `-mvu22t` item ports `red_green_replay.py` **from**
    this repo; it reads, does not write, so there is no contention.
@@ -2007,9 +2182,21 @@ nothing was filed in the interim.
 
 ## Gates
 
-- Maintainer decision on rollout order.
-- Maintainer epic anchor + item filing (see above).
-- Red-Green-Replay on A and B (product `.py`; docs-only changes like this file are exempt).
+**COMPLETED (2026-07-25/26):** ~~scope~~ full-location approved · ~~rollout order~~ Option 3
+approved · ~~fleet boundary~~ NARROW approved · ~~final cut~~ approved ·
+~~epic anchor + item filing~~ seven children filed and intake-routed.
+
+**REMAINING, real gates:**
+
+- **Fresh pre-move evidence for `0eo.1`** — ownership, cleanliness, reachability
+  re-inspected immediately before the openbrain relocation.
+- **Foreign-session authority for `3iizsd`** — the overseer worktree's owning session must
+  act or hand over; this thread must not touch it.
+- **Red-Green-Replay** on the product-`.py` slices: B (`6fmfzk`), A1 (`cmc3ah`),
+  A2+C (`skl77m`). Docs-only changes like this file are exempt.
+- **PR checks + rebase-merge** on every tracked change.
+- **Dependency state** — `cmc3ah`, `o5vltq`, `skl77m` stay `pending-approval` until their
+  `[blocks]` predecessors close.
 
 ## Reactivation audit — 2026-07-25
 
@@ -2017,7 +2204,10 @@ Measured against `origin/master` at `413a407` (131 commits past the `2412e21` ba
 livespec core at `991943ef`. What follows is the delta only; the sections above already
 carry the corrected facts.
 
-### Survived unchanged — the thread's premises are still true
+### Survived unchanged — DATED SNAPSHOT of the early 2026-07-25 audit, NOT current state
+
+> Three bullets below were overtaken by later evidence the same day and are annotated
+> inline. Do not read this list as current.
 
 - All four `.py` files the analysis anchors into are **byte-identical** to `2412e21`
   (`git diff 2412e21..origin/master` reports no change for the verifier, the hook
@@ -2027,10 +2217,15 @@ carry the corrected facts.
 - `worktree_discipline` appears **nowhere** in the repo — decision A is entirely
   unimplemented.
 - The `.git/` carve-out is still load-bearing (same 4 beads sync worktrees).
-- `pwd -P` is still load-bearing (`/home/ubuntu/workspace` → `/data/projects` symlink,
-  identical inodes).
-- openbrain is still the only genuine **nested** violation fleet-wide.
-- Epic `-0eo` still has zero children; no topic branch, worktree, or PR exists.
+- ~~`pwd -P` is still load-bearing~~ **[SUPERSEDED same day — the rehearsal showed dropping
+  `pwd -P` changes no verdict; git already emits physical paths. Aliases exist; they do not
+  change a verdict. Keep canonicalization as cheap insurance.]**
+- ~~openbrain is still the only genuine **nested** violation fleet-wide.~~ **[SUPERSEDED
+  same day — a SECOND nested violation appeared mid-audit at
+  `livespec-overseer/.claude/worktrees/dod-corrections`, with commits landed from it.]**
+- ~~Epic `-0eo` still has zero children; no topic branch, worktree, or PR exists.~~
+  **[SUPERSEDED 2026-07-26 — the epic now has SEVEN children, all intake-routed. See
+  §"MAINTAINER RULING — FINAL CUT APPROVED AND FILED".]**
 - Parallel-safety against the console's `repo-invariant-guards` thread still holds.
 
 ### Changed — and it changes the decision
@@ -2057,7 +2252,8 @@ carry the corrected facts.
 - **There is no `worktree-pack` local row**, so under item A the `commit-refuse-hooks`
   row becomes assert-red / reconcile-can't-fix in every pack-absent repo. New design
   input for slices A/D.
-- **The prose rule is not in every repo's `AGENTS.md`** — 9 of 13 mention `.worktrees`;
+- **The prose rule is not in every repo's `AGENTS.md`** — 9 of the 12 registered governed
+  clones mention `.worktrees` (9 of 13 surveyed, counting unregistered `dolt-server`);
   `livespec-driver-codex`, `livespec-overseer`, `homelab` have none and `dolt-server` has
   no `AGENTS.md`.
 - **openbrain is not the last violation under the prose rule** — only under the narrower
