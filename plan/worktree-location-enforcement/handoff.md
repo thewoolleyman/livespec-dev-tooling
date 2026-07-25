@@ -197,6 +197,38 @@ it is byte-correct **against its own pin**, not against master. Do not read that
 drift. The byte-compare is always against the canonical body of the version that repo
 pins.
 
+### Discoverability of the sanctioned tool, measured directly (2026-07-25)
+
+The table above reports pack *files*. What an operator actually experiences is whether
+`just --list` offers `worktree-create`. Ran it in all 9 verifier-running repos:
+
+| repo | `import?` lines | pack file | `just --list` shows `worktree-create` |
+|---|---|---|---|
+| livespec | 0 | no | **no** |
+| livespec-dev-tooling | 0 | no | **no** |
+| livespec-driver-claude | 0 | no | **no** |
+| livespec-driver-codex | 0 | no | **no** |
+| livespec-runtime | 0 | no | **no** |
+| livespec-overseer | 0 | no | **no** |
+| livespec-orchestrator-beads-fabro | 2 | **no** | **no** ← `import?` no-ops |
+| livespec-console-beads-fabro | 2 | **no** | **no** ← `import?` no-ops |
+| livespec-orchestrator-git-jsonl | 2 | yes | **yes** |
+
+**The sanctioned tool is discoverable in exactly 1 of 9 governed repos.**
+
+The two middle-column failures are distinct and both matter. Six repos have neither half.
+But `livespec-orchestrator-beads-fabro` and `livespec-console-beads-fabro` have the
+`import?` lines *and no pack*, so the optional import silently no-ops — that is
+**fail-open layer 1 from §"The incident", live in two repos right now**, not a historical
+description.
+
+And the sharpest form of it: **`livespec-console-beads-fabro` is the repo where the
+incident happened.** Its preconditions are unchanged. A session there today runs
+`just --list`, sees no `worktree-create`, and has exactly the same reason to fall back to
+raw `git worktree add` that the 2026-07-19 session had. The remediation described in
+§"The incident" cleaned up the *instance*; this measurement is what "nothing about the
+root cause was fixed" looks like when you run it rather than read it.
+
 The 4 non-fleet rows carry (or would carry) the key as **inert documentation** — they
 wire no verifier, so nothing reads it. Say so rather than implying coverage. `resume`,
 `homelab`, and `dolt-server` have no commit-refuse hook installed at all, so item B
