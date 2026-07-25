@@ -121,9 +121,11 @@ tracked as `livespec-dev-tooling-eihv`.
 
 ### Defects the review rounds introduced, and how they were caught
 
-Recorded because the pattern matters more than the individual fixes: in this
-change, THREE defects were introduced by repairs to earlier defects, and each was
-caught only by re-reviewing the amended bytes rather than the amended spots.
+Recorded because the pattern matters more than any tally of it: repairs to
+earlier defects in this change repeatedly introduced NEW defects, each caught
+only by re-reviewing the amended bytes rather than the amended spots. Three are
+described below as the clearest instances; they are illustrative of the pattern,
+not an exhaustive count of it.
 
 1. A repair to the config-block misattribution introduced the claim that livespec
    PR #1663 added "the first structural role keys". False — `dataclasses_tree`
