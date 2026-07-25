@@ -213,7 +213,7 @@ not restated from memory — ten keys:
 `pure_trees`, `covered_trees`, `target_dirs`, `source_tree_prefixes`,
 `dataclasses_tree`, `neutral_hook_body_path`.
 
-Of the loader-recognized keys, `tests_tree_prefix` and `mirror_pairings` are
+Of the keys `Config` carries, `tests_tree_prefix` and `mirror_pairings` are
 deliberately NOT members: `tests_tree_prefix` carries a meaningful non-empty
 default (`"tests/"`), and neither is universally declared — requiring either
 would red every fleet repo. `repo` is documented in the inventory but is NOT a
@@ -288,6 +288,11 @@ sweep is enumerated here rather than left implicit:
   defect only.
 - The `Config` sentence "defaulting to the historical fallback values" and the
   loader docstring "merge with built-in defaults".
+- The loader docstring's "one field per role key", narrowed to "per
+  LOADER-RECOGNIZED role key" so it stops contradicting the `repo` bullet's
+  statement that the loader has no such field. Added to this list at review, not
+  found in the original sweep — the sentence below it had been amended while the
+  docstring line one paragraph up was left alone.
 - The `livespec-core` and `livespec-dev-tooling` consumer bullets, which
   asserted the MAY-omit allowance and empty/null defaults respectively.
 - The "future siblings" paragraph, which asserted the fallback.
@@ -329,11 +334,16 @@ is an error in this ratification.
    declared non-empty and pointing at a real directory holding no `.py` file
    inspects nothing and exits `0`, where the text mandates an error. Surfaced by
    independent review of this change and verified by reading the module. Tracked
-   as `livespec-dev-tooling-njyx`. No consumer is in the triggering state today
-   (every backfilled repo declares `dataclasses_tree` as the declared-none `""`,
-   which correctly takes the sanctioned no-op path), so nothing is silently
-   unenforced right now; it goes live the moment a consumer declares a real tree
-   that is empty or wrongly rooted.
+   as `livespec-dev-tooling-njyx`. No consumer is in the triggering state today,
+   which takes two different forms and neither is the gap: seven of the eight
+   consumers declare `dataclasses_tree` as the declared-none `""` and correctly
+   take the sanctioned no-op path, while `livespec-core` declares a REAL tree
+   (`.claude-plugin/scripts/livespec/schemas/dataclasses`, re-armed by this
+   epic's slice 1a) holding twelve `.py` files, so the check is armed and
+   inspecting there rather than skipped. The triggering state is a tree declared
+   non-empty that resolves to NO `.py` file, which no consumer is in. Nothing is
+   silently unenforced right now; the gap goes live the moment a consumer
+   declares a real tree that is empty or wrongly rooted.
 
 So "describes the shipped behavior" is asserted of the declaration regime this
 change is about, and not of those two points. A future reader reconciling spec
