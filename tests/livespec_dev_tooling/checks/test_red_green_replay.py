@@ -46,14 +46,30 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from types import ModuleType
 
 import pytest
+
+from livespec_dev_tooling.config import Config
 
 __all__: list[str] = []
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _RED_GREEN_REPLAY = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "red_green_replay.py"
+_HARDCODED_IMPL_PREFIXES_2026_07_25 = (
+    ".claude-plugin/scripts/livespec/",
+    ".claude-plugin/scripts/livespec_orchestrator_git_jsonl/",
+    ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/",
+    ".claude-plugin/scripts/bin/",
+    "livespec_runtime/",
+    "livespec_dev_tooling/",
+    "dev-tooling/",
+)
+_TEST_ONLY_LEGACY_FIXTURE_PREFIXES = (
+    "livespec/",
+    "bin/",
+)
 
 
 # When this test suite runs inside a git hook (lefthook pre-commit /
@@ -81,6 +97,175 @@ _GIT_ENV_PASSTHROUGH_VARS: tuple[str, ...] = (
 def _scrubbed_env() -> dict[str, str]:
     """Return a copy of `os.environ` with GIT_* hook vars removed."""
     return {k: v for k, v in os.environ.items() if k not in _GIT_ENV_PASSTHROUGH_VARS}
+
+
+@pytest.fixture(autouse=True)
+def _declare_livespec_tmp_path_impl_tree(*, request: pytest.FixtureRequest) -> None:
+    if "tmp_path" not in request.fixturenames:
+        return
+    tmp_path = request.getfixturevalue("tmp_path")
+    assert isinstance(tmp_path, Path)
+    (tmp_path / "pyproject.toml").write_text(
+        "[tool.livespec_dev_tooling]\n"
+        'source_trees = ["livespec"]\n'
+        'source_tree_prefixes = ["livespec/"]\n',
+        encoding="utf-8",
+    )
+
+
+def _load_red_green_replay_module(*, name: str) -> ModuleType:
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        name,
+        str(_RED_GREEN_REPLAY),
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _fixture_impl_prefixes(
+    *,
+    module: ModuleType,
+    source_trees: tuple[Path, ...] = (),
+    source_tree_prefixes: tuple[str, ...] = (),
+    test_only_legacy_prefixes: tuple[str, ...] = (),
+) -> tuple[str, ...]:
+    assert hasattr(module, "_derive_impl_prefixes")
+    return (
+        *module._derive_impl_prefixes(  # noqa: SLF001
+            config=Config(
+                source_trees=source_trees,
+                source_tree_prefixes=source_tree_prefixes,
+            ),
+        ),
+        *test_only_legacy_prefixes,
+    )
+
+
+@pytest.mark.parametrize(
+    ("repo_name", "source_trees", "source_tree_prefixes", "hardcoded_applicable"),
+    [
+        (
+            "livespec",
+            (Path(".claude-plugin/scripts/livespec"),),
+            (
+                ".claude-plugin/scripts/livespec/",
+                ".claude-plugin/scripts/bin/",
+                "dev-tooling/",
+            ),
+            (
+                ".claude-plugin/scripts/livespec/",
+                ".claude-plugin/scripts/bin/",
+                "dev-tooling/",
+            ),
+        ),
+        (
+            "livespec-dev-tooling",
+            (Path("livespec_dev_tooling"),),
+            ("livespec_dev_tooling/",),
+            ("livespec_dev_tooling/",),
+        ),
+        (
+            "livespec-driver-claude",
+            (Path(".claude/hooks"), Path(".claude-plugin/hooks")),
+            (".claude/hooks/", ".claude-plugin/hooks/"),
+            (),
+        ),
+        (
+            "livespec-driver-codex",
+            (),
+            ("livespec/hooks/",),
+            (),
+        ),
+        (
+            "livespec-runtime",
+            (Path("livespec_runtime"),),
+            (),
+            ("livespec_runtime/",),
+        ),
+        (
+            "livespec-orchestrator-beads-fabro",
+            (),
+            (
+                ".claude/hooks/",
+                ".claude-plugin/hooks/",
+                ".claude-plugin/scripts/bin/",
+                ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/",
+                "dev-tooling/",
+            ),
+            (
+                ".claude-plugin/scripts/bin/",
+                ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/",
+                "dev-tooling/",
+            ),
+        ),
+        (
+            "livespec-orchestrator-git-jsonl",
+            (Path(".claude-plugin/scripts/livespec_orchestrator_git_jsonl"),),
+            (),
+            (".claude-plugin/scripts/livespec_orchestrator_git_jsonl/",),
+        ),
+        (
+            "livespec-overseer",
+            (),
+            (),
+            (),
+        ),
+    ],
+)
+def test_impl_prefixes_derive_from_declared_role_key_union_without_dropping_fleet_coverage(
+    *,
+    repo_name: str,
+    source_trees: tuple[Path, ...],
+    source_tree_prefixes: tuple[str, ...],
+    hardcoded_applicable: tuple[str, ...],
+) -> None:
+    """Fleet fixture matrix: declaration-derived RGR coverage is a safe superset.
+
+    The matrix is in-repo fixture data, not sibling-repo inspection. It
+    excludes the bare `livespec/` and `bin/` legacy prefixes because those
+    survive only for tmp_path fixtures, never production derivation.
+    """
+    module = _load_red_green_replay_module(name=f"red_green_replay_for_{repo_name}_matrix")
+    assert hasattr(module, "_derive_impl_prefixes")
+
+    derived = module._derive_impl_prefixes(  # noqa: SLF001
+        config=Config(
+            source_trees=source_trees,
+            source_tree_prefixes=source_tree_prefixes,
+        ),
+    )
+
+    assert set(_TEST_ONLY_LEGACY_FIXTURE_PREFIXES).isdisjoint(derived)
+    assert set(hardcoded_applicable).issubset(derived), (
+        f"{repo_name} derived RGR impl prefixes must retain all applicable "
+        f"non-legacy hardcoded coverage; missing={set(hardcoded_applicable) - set(derived)} "
+        f"derived={derived}"
+    )
+    assert set(derived).issubset(
+        set(_HARDCODED_IMPL_PREFIXES_2026_07_25)
+        | set(source_tree_prefixes)
+        | {tree.as_posix().rstrip("/") + "/" for tree in source_trees}
+    )
+
+
+def test_impl_prefixes_add_livespec_driver_claude_hook_trees() -> None:
+    """The Claude driver hook trees are product impl and must enter RGR coverage."""
+    module = _load_red_green_replay_module(name="red_green_replay_for_driver_claude_matrix")
+    assert hasattr(module, "_derive_impl_prefixes")
+
+    derived = module._derive_impl_prefixes(  # noqa: SLF001
+        config=Config(
+            source_trees=(Path(".claude/hooks"), Path(".claude-plugin/hooks")),
+            source_tree_prefixes=(".claude/hooks/", ".claude-plugin/hooks/"),
+        ),
+    )
+
+    assert ".claude/hooks/" in derived
+    assert ".claude-plugin/hooks/" in derived
 
 
 def test_chore_commit_subject_exits_zero(*, tmp_path: Path) -> None:
@@ -1096,7 +1281,15 @@ def test_classify_staged_recognizes_production_claude_plugin_scripts_paths() -> 
         "dev-tooling/checks/data.json",
         "tests/livespec/fixture.json",
     ]
-    tests_paths, impl_paths = module._classify_staged(paths=paths)  # noqa: SLF001
+    impl_prefixes = _fixture_impl_prefixes(
+        module=module,
+        source_trees=(Path(".claude-plugin/scripts/livespec"),),
+        source_tree_prefixes=(".claude-plugin/scripts/bin/", "dev-tooling/"),
+        test_only_legacy_prefixes=_TEST_ONLY_LEGACY_FIXTURE_PREFIXES,
+    )
+    tests_paths, impl_paths = module._classify_staged(  # noqa: SLF001
+        paths=paths, impl_prefixes=impl_prefixes
+    )
     assert "dev-tooling/checks/data.json" not in impl_paths, (
         f"non-.py file under an impl prefix should NOT be in impl bucket "
         f"(content trigger is product .py); got impl_paths={impl_paths}"
@@ -1168,7 +1361,17 @@ def test_classify_staged_recognizes_sibling_library_impl_paths() -> None:
         "tests/livespec_runtime/test_smoke.py",
         "README.md",
     ]
-    _tests_paths, impl_paths = module._classify_staged(paths=paths)  # noqa: SLF001
+    impl_prefixes = _fixture_impl_prefixes(
+        module=module,
+        source_trees=(
+            Path("livespec_runtime"),
+            Path("livespec_dev_tooling"),
+            Path(".claude-plugin/scripts/livespec_orchestrator_git_jsonl"),
+        ),
+    )
+    _tests_paths, impl_paths = module._classify_staged(  # noqa: SLF001
+        paths=paths, impl_prefixes=impl_prefixes
+    )
     assert "livespec_runtime/cross_repo/resolve.py" in impl_paths, (
         f"`livespec_runtime/...` path should be in impl bucket; " f"got impl_paths={impl_paths}"
     )
@@ -1215,7 +1418,9 @@ def test_classify_staged_drops_dead_pre_rename_impl_prefixes() -> None:
         ".claude-plugin/scripts/livespec_impl_git_jsonl/commands/list_memos.py",
         "README.md",
     ]
-    _tests_paths, impl_paths = module._classify_staged(paths=paths)  # noqa: SLF001
+    _tests_paths, impl_paths = module._classify_staged(  # noqa: SLF001
+        paths=paths, impl_prefixes=()
+    )
     assert ".claude-plugin/scripts/livespec_impl_beads/_beads_client.py" not in impl_paths, (
         f"dead `.claude-plugin/scripts/livespec_impl_beads/...` prefix should NOT classify as "
         f"impl; got impl_paths={impl_paths}"
@@ -1266,7 +1471,16 @@ def test_classify_staged_recognizes_orchestrator_package_dirs() -> None:
         ".claude-plugin/scripts/livespec_orchestrator_git_jsonl/foo.py",
         "README.md",
     ]
-    _tests_paths, impl_paths = module._classify_staged(paths=paths)  # noqa: SLF001
+    impl_prefixes = _fixture_impl_prefixes(
+        module=module,
+        source_trees=(
+            Path(".claude-plugin/scripts/livespec_orchestrator_beads_fabro"),
+            Path(".claude-plugin/scripts/livespec_orchestrator_git_jsonl"),
+        ),
+    )
+    _tests_paths, impl_paths = module._classify_staged(  # noqa: SLF001
+        paths=paths, impl_prefixes=impl_prefixes
+    )
     assert ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/bar.py" in impl_paths, (
         f"`.claude-plugin/scripts/livespec_orchestrator_beads_fabro/...` path should be in "
         f"impl bucket; got impl_paths={impl_paths}"
