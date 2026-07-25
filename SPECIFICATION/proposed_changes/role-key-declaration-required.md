@@ -31,8 +31,20 @@ and slice C landed alongside them:
 - **D** — declaration-presence enforcement: PR #644, released v0.54.13.
 - **C** — `_IMPL_PREFIXES` derived from declared role keys: PR #648, released v0.54.14.
 
-All eight fleet repos sit on v0.54.14 with every master CI green, so this text
-describes shipped, fleet-verified behavior rather than intent.
+All eight PIN-CARRYING fleet repos sit on v0.54.14 — every manifest fleet member
+except `livespec-dev-tooling` itself, which produces that release rather than
+pinning it — and master CI is green on all nine, so this text describes shipped,
+fleet-verified behavior rather than intent.
+
+Both counts above are stated with their population named on purpose. This record
+refers to two DIFFERENT sets of eight — the eight repos pinning v0.54.14
+(excludes `livespec-dev-tooling`, includes the console) and the eight carrying a
+`[tool.livespec_dev_tooling]` block (includes `livespec-dev-tooling`, excludes
+the console) — and the fleet itself has NINE members. A bare "eight" is
+ambiguous between them: two independent reviewers of this very record read one
+such sentence against different populations and reached opposite conclusions
+about whether it was true. Any future amender restating either count must name
+which set it means.
 
 Every FIND anchor below was re-grepped against `origin/master` at ratification
 and resolves verbatim.
@@ -113,6 +125,23 @@ the CODE the thing that is wrong — tracked as `livespec-dev-tooling-1aba`, whi
 also covers the wider split (three check modules return `1` for genuine
 structured failures while four return `4`). Slice S stays spec-only: no code
 change, no Red-Green-Replay, no release or fan-out.
+
+**The undeclared-key exit is deliberately left unnumbered — a recorded deferral,
+not an oversight, and a different thing from the two spec-ahead-of-code
+divergences below** (there the spec states a value the code contradicts; here the
+spec deliberately states none). This change documents the undeclared-key
+outcome on the check's invocation line — it previously went unmentioned there
+despite the amended algorithm introducing it — but assigns it NO code, pointing
+instead at §"Role keys", which says only "MUST exit non-zero". The shipped gate
+returns `1`, which §"Exit-code table" defines as "internal bug (uncaught
+exception)"; an undeclared role key is a configuration error, and the table's `3`
+("precondition error") is arguably the correct code. Numbering it here would
+pre-empt exactly the suite-wide question `livespec-dev-tooling-1aba` exists to
+settle, and would do so for the seven gated checks at once. It is recorded on
+that item so the fix closes it in the same pass. Stating this beats silence: the
+same §"Semver discipline" clause that makes the `4` ruling load-bearing also pins
+each slug's exit-code semantics, so an unnumbered normative failure mode is a
+real, named shortfall rather than an unnoticed one.
 
 Note for whoever fixes `1aba`: that module's own docstring already says `4`, so
 on this point the docstring is RIGHT and the code is wrong. Its separate,
@@ -335,9 +364,12 @@ is an error in this ratification.
    inspects nothing and exits `0`, where the text mandates an error. Surfaced by
    independent review of this change and verified by reading the module. Tracked
    as `livespec-dev-tooling-njyx`. No consumer is in the triggering state today,
-   which takes two different forms and neither is the gap: seven of the eight
-   consumers declare `dataclasses_tree` as the declared-none `""` and correctly
-   take the sanctioned no-op path, while `livespec-core` declares a REAL tree
+   which takes two different forms and neither is the gap. Of the eight fleet
+   repos that CARRY a `[tool.livespec_dev_tooling]` block — every manifest fleet
+   member except `livespec-console-beads-fabro`, which carries no block at all
+   and wires no layout-dependent check — seven declare `dataclasses_tree` as the
+   declared-none `""` and correctly take the sanctioned no-op path, while the
+   eighth, `livespec-core`, declares a REAL tree
    (`.claude-plugin/scripts/livespec/schemas/dataclasses`, re-armed by this
    epic's slice 1a) holding twelve `.py` files, so the check is armed and
    inspecting there rather than skipped. The triggering state is a tree declared
