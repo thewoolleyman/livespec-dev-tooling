@@ -13,9 +13,14 @@ markers.
 
 from __future__ import annotations
 
+import ast
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
+
+from livespec_dev_tooling.checks import no_except_outside_io as _check
 
 __all__: list[str] = []
 
@@ -644,6 +649,76 @@ def test_no_except_outside_io_rejects_marker_on_handler_body(*, tmp_path: Path) 
         f"got returncode={result.returncode} "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
+
+
+class TryStar(ast.AST):
+    _fields = ("body", "handlers", "orelse", "finalbody")
+
+    body: list[ast.stmt]
+    handlers: list[ast.ExceptHandler]
+    orelse: list[ast.stmt]
+    finalbody: list[ast.stmt]
+    lineno: int
+    col_offset: int
+    end_lineno: int
+    end_col_offset: int
+
+
+def _broad_try_star(*, lineno: int) -> ast.AST:
+    handler = ast.ExceptHandler(
+        type=ast.Name(id="Exception", ctx=ast.Load()),
+        name=None,
+        body=[ast.Pass()],
+    )
+    handler.lineno = lineno + 2
+    handler.col_offset = 4
+    handler.end_lineno = lineno + 3
+    handler.end_col_offset = 12
+    node = TryStar()
+    node.body = [ast.Pass()]
+    node.handlers = [handler]
+    node.orelse = []
+    node.finalbody = []
+    node.lineno = lineno
+    node.col_offset = 0
+    node.end_lineno = lineno + 3
+    node.end_col_offset = 12
+    return node
+
+
+def test_no_except_outside_io_rejects_broad_try_star_in_pure_layer(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A broad except-star handler is still broad outside supervisor boundaries."""
+    tree = ast.Module(body=[_broad_try_star(lineno=2)], type_ignores=[])
+    with monkeypatch.context() as patch:
+        patch.setattr(_check.ast, "parse", lambda *_args, **_kwargs: tree)
+        offenses = _check._find_offending_handlers(source="", position_exempt=False)  # noqa: SLF001
+
+    assert offenses == [(4, _check._MISPLACED_REASON)]  # noqa: SLF001
+
+
+def test_no_except_outside_io_accepts_marked_try_star_boundary(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A marked except-star handler remains legal at the supervisor boundary."""
+    try_star = _broad_try_star(lineno=2)
+    parsed = ast.parse("def main() -> int:\n    return 0\n")
+    main = parsed.body[0]
+    assert isinstance(main, ast.FunctionDef)
+    main.body = [try_star]
+    source = (
+        "def main() -> int:\n"
+        "    try:\n"
+        "        return 0\n"
+        f"    except Exception:  {_SUPERVISOR_MARKER}\n"
+        "        return 1\n"
+    )
+    with monkeypatch.context() as patch:
+        patch.setattr(_check.ast, "parse", lambda *_args, **_kwargs: parsed)
+        offenses = _check._find_offending_handlers(source=source, position_exempt=True)  # noqa: SLF001
+
+    assert offenses == []
 
 
 def test_no_except_outside_io_rejects_dotted_broad_catch(*, tmp_path: Path) -> None:
