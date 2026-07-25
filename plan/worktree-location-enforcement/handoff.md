@@ -179,9 +179,128 @@ This is **not** a re-litigation of the approved scope; both clauses stand either
 a question of which repo set clause 2 binds, and it changes whether F is in this thread or
 the next one. It should be answered alongside rollout order, not after slices are filed.
 
-## Rollout order — the three live options, as presented 2026-07-25
+## MAINTAINER RULING — rollout order: Option 3, hook-first, APPROVED (2026-07-25)
 
-Recorded durably so this survives the session. **None is approved.**
+**Approved ordering:** early positive-location hook enforcement, **paired with an
+actionable remedy message**, followed by pack prerequisites and fleet wiring, and only then
+the required-default flip.
+
+```
+E (openbrain half only)  →  B + remedy-string fix  →  A-prereq  →  D-wiring  →  A-flip  →  F  →  (G)
+```
+
+Read the three options below for the evidence behind it; they are retained as the record of
+what was weighed, not as live alternatives.
+
+**Dependencies the ruling explicitly preserves — do not paper over these:**
+
+- **E is only half-closable by this thread.** openbrain's nested worktree is inspected and
+  safe to move (clean tree, unpushed `296dd1f`, no upstream, no live owner).
+  `livespec-overseer/.claude/worktrees/dod-corrections` belongs to **another live session**;
+  this thread has no authority over it and MUST NOT touch it. E closes for openbrain and
+  stays open for the overseer worktree until its owner acts. Do not record E as done on the
+  openbrain half alone.
+- **B needs that session warned before it reaches the overseer clone.** Once B's hook is
+  installed there, commits from that worktree are refused. B takes effect per clone only on
+  hook reinstall (`just bootstrap`), so the rollout is operator-paced — use that pacing
+  rather than assuming the session will notice.
+- **F's substrate does not exist in two of three adopters.** resume has no `just` surface,
+  no lefthook, and no way to run a Python installer; homelab has none of the four and the
+  manifest declares its wiring DEFERRED to an onboarding pass this thread does not own.
+  F is F1 (openbrain — reachable) + F2/F3 (blocked on substrate and onboarding). Do not
+  write F as a single uniform sweep.
+- **The remedy message is part of B, not a follow-up.** `_WORKTREE_PACK_REMEDY` names
+  `just install-worktree-pack`, which does not exist in 5 of 9 fleet repos. Shipping B
+  before that is fixed produces refusals whose stated remedy fails.
+
+**Still gated, and blocking slice filing:** the fleet-boundary question below, and the final
+cut. Nothing may be filed, moved, dispatched, or implemented until both are approved.
+
+## OPEN — the fleet-boundary question: 9 fleet members or 12 governed repos?
+
+The maintainer directed that this NOT be inferred. Below is the exact wording on both
+sides, re-checked 2026-07-25 against `livespec` master, with consequences and a
+recommendation.
+
+### The spec defines a ubiquitous language that separates the two
+
+`SPECIFICATION/non-functional-requirements.md:209`, verbatim:
+
+> **Ubiquitous language.** A **governed repo** is any repository under the workflow (it
+> carries a `.livespec.jsonc`); the **livespec fleet** is `livespec`'s own self-application
+> family; an **adopter** is a governed repo or family that *adopted* the workflow but is not
+> the livespec fleet (it MAY be a fleet itself).
+
+So `governed ⊃ {fleet, adopters}`, and "fleet" **excludes** adopters by definition. The
+manifest says the same at `.livespec-fleet-manifest.jsonc:38-40`: adopters are *"governed
+repos … that adopted the workflow but are **NOT** the livespec fleet"*.
+
+### The worktree rule's own wording is mixed
+
+`SPECIFICATION/non-functional-requirements.md:1013`, verbatim, with the scoping phrases
+marked:
+
+> **Every git worktree** lives under a single per-user root — `~/.worktrees/<repo>/<branch>`
+> — NEVER as a peer of the first-class clones in the workspace directory
+> (`/data/projects/<repo>`). The workspace directory therefore holds only original clones,
+> and **every fleet repo's** worktrees are isolated under one enumerable, reapable root. The
+> rule is **fleet-wide-by-intent**: it applies uniformly to `livespec` and **every sibling
+> repo**.
+
+Three scoping phrases, and they do not agree: an **unqualified** opener ("Every git
+worktree"), then two **fleet-scoped** restatements ("every fleet repo's", "fleet-wide … and
+every sibling repo").
+
+### The decisive contrast: this document has a term for "both", and did not use it here
+
+The same spec says **"fleet+adopter-wide"** when it means both — twice, in the two
+obligations that most resemble this one:
+
+- `:113` — *"**Red-green-replay is fleet+adopter-wide.** … REQUIRED in EVERY
+  livespec-governed repo …"*
+- `:114` — *"**The ROP railway is fleet+adopter-wide.** Every livespec-governed repo …"*
+
+§"Worktree root" says **"fleet-wide"**, not "fleet+adopter-wide", and does not use
+"governed" anywhere. In a document that demonstrably distinguishes the two forms, that is a
+deliberate contrast rather than loose drafting.
+
+**Counterweight, stated fairly.** The opener is unqualified, and `:215` mandates `just` for
+*"every governed repo — fleet and adopter"*, so the document does extend some floor
+obligations to adopters. And openbrain — an adopter — is where one of the two live
+violations actually sits.
+
+### Consequences of each reading
+
+| | **Narrow — the 9 `fleet` entries** | **Broad — all 12 governed repos** |
+|---|---|---|
+| Substrate | all 9 have justfile, mise, verifier, canonical hook | 3 adopters: 1 reachable, 2 without substrate |
+| Slice F | **reduces to nothing**; clause 2 met by B + D | required, and 2/3 blocked on work this thread does not own |
+| Reachable "done" | yes, entirely within this thread | **no** — depends on homelab's manifest-DEFERRED onboarding |
+| Coverage left open | adopter repos, incl. openbrain's live violation | none in principle |
+| Bespoke forks reconciled | no — openbrain's bash and resume's TypeScript stay | yes |
+
+### Recommendation: NARROW, with adopter coverage split into its own thread
+
+Four reasons. The spec's own contrast between "fleet-wide" and "fleet+adopter-wide" is the
+strongest textual signal and points narrow. Both of §"Worktree root"'s restatements are
+fleet-scoped. Under narrow, clause 2 is fully achievable here — every one of the 9 has the
+substrate today. And under broad, this thread's done-ness becomes hostage to an onboarding
+pass the manifest itself defers and another lane owns, which is how threads end up
+permanently almost-finished.
+
+**What the narrow reading must NOT be allowed to hide:** openbrain has a live violation and
+two adopters run location-blind forks of the same structural test. Narrow does not make
+that acceptable — it says it is *a different thread's* work, with its own gates. Two
+concrete guards if narrow is chosen: keep **E's openbrain relocation in this thread**
+(relocation is hygiene and needs no substrate, so it is severable from enforcement reach),
+and file the adopter-coverage follow-on **before** closing this one, so the gap is carried
+rather than dropped.
+
+## Rollout order — the three options weighed (record; Option 3 approved above)
+
+**Option 3 is APPROVED** (§"MAINTAINER RULING — rollout order", 2026-07-25). Options 1 and
+2 are retained below **only as decision history** — the evidence that was weighed — and are
+NOT live alternatives. Do not re-open them without a new ruling.
 
 **What changed about this question under the widened scope.** The old binary pitted
 "pack-install-first" against "verifier-first", both about item A. That is now secondary:
@@ -268,11 +387,12 @@ repo classes has a copier template. → §"D is two different jobs".
 allows, 4 tooling allows, exactly 2 refusals, zero false positives. → §"Widening to the
 spec's rule was rehearsed".
 
-**Decision status (updated 2026-07-25).** **Scope IS approved** — full-location, both
-clauses, per §"MAINTAINER RULING" at the top of this file; the re-cut there (A–G) reflects
-it. **Rollout order remains UNDECIDED**, and it is now the single next decision. No slices
-are filed, no worktree has been moved, the ledger is untouched, and no product change has
-been made. A "wire-then-enforce"
+**Decision status (updated 2026-07-25).** **Scope approved** — full-location, both
+clauses (§"MAINTAINER RULING — full-location scope"). **Rollout order approved** — Option 3,
+hook-first (§"MAINTAINER RULING — rollout order"). **Still open and blocking slice filing:**
+the fleet-boundary question (9 fleet members vs 12 governed repos) and the final cut. No
+slices are filed, no worktree has been moved or touched, the ledger is untouched, and no
+product change has been made. A "wire-then-enforce"
 answer displayed on 2026-07-25 was a supervisor UI-race artifact and is void.
 
 ### Superseded claims — do not act on these if you meet them elsewhere in the file
@@ -1299,9 +1419,9 @@ rollout order first; that ordering is superseded. Ask them in this order:
 1. ~~**Does this thread enforce the spec's rule, or only the nested half?**~~
    **ANSWERED 2026-07-25 — full-location scope approved, both clauses.** See §"MAINTAINER
    RULING" at the top. The cut is now A–G, not A–E.
-2. **Rollout order**, repriced against the untracked-pack finding and the measured cadence
-   (~7.3 releases/day; tag-scoped bump branches, so stalls accumulate at ~58 dead PRs per
-   fleet-day; against ~10 tracked lines × ~6 repos of wiring).
+2. ~~**Rollout order**~~ **ANSWERED 2026-07-25 — Option 3, hook-first, approved.** See
+   §"MAINTAINER RULING — rollout order". The next open decision is the fleet-boundary
+   question (§"OPEN — the fleet-boundary question"), then the final cut.
 3. **The cut and its acceptance criteria**, re-cut once 1 and 2 settle — including the
    scope corrections to A (discoverability), B (sandbox-exempt guard, janitor carve-out,
    reach limited to fleet clones), D (6 tracked PRs + 3 bootstraps), and E (two worktrees
@@ -1430,13 +1550,16 @@ These four landed after the first audit PR and are recorded in the sections abov
 ### Explicitly NOT done in this pass
 
 No slices filed, no worktree moved, no implementation dispatched, no spec change, no
-ledger edit. **The rollout order is UNDECIDED** — the "wire-then-enforce" sequence in
-§rollout is a recommendation, and the picker answer that briefly displayed it was a
-supervisor UI race artifact, now recorded as void.
+ledger edit — and that remains true as of 2026-07-25.
 
-The A–E cut is likewise unapproved, and per §"Does this change B, or the thread's
-definition of done?" it is not yet approvable *as a charter-closing cut* at all: the
-first genuinely maintainer-owned question is whether this thread's definition of done is
-clause (ii) only (nested worktrees refused) or both clauses of the rule (every worktree
-under `~/.worktrees/`). That answer determines whether an F slice exists, and therefore
-whether A–E is the whole cut — which is upstream of sequencing it.
+**Decision status as of 2026-07-25** (this paragraph records a snapshot of an earlier pass;
+these are its outcomes, not still-open items): scope is **APPROVED** — full-location, both
+clauses (§"MAINTAINER RULING — full-location scope"), so the definition-of-done question
+this pass raised is settled and the cut is A–G rather than A–E. Rollout order is
+**APPROVED** — Option 3, hook-first (§"MAINTAINER RULING — rollout order"), which supersedes
+the "wire-then-enforce" recommendation this pass floated; the picker answer that briefly
+displayed that recommendation was a supervisor UI race artifact and remains void
+independently of the later ruling.
+
+**Still open and blocking slice filing:** the fleet-boundary question (§"OPEN — the
+fleet-boundary question") and the final cut.
