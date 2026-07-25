@@ -13,7 +13,7 @@ Each check MUST:
 - Exit `0` on pass and a documented non-zero code on fail. The non-zero exit MUST be accompanied by structured findings emitted on stderr describing what failed and where.
 - Perform no network I/O. Reading the local filesystem and invoking project-local subprocesses (git, ruff, pyright, pytest) is permitted; reaching out to a remote service is forbidden per `constraints.md` §"No network I/O".
 
-Beyond the check modules, the library exposes three operational CLI modules under the same semver-stable invocation contract. The first is the commit-refuse hook installer `python -m livespec_dev_tooling.install_commit_refuse_hooks`. It idempotently writes the canonical structural commit-refuse hook body to the primary checkout's shared `.git/hooks/pre-commit`, `pre-push`, AND `commit-msg` (resolved via `git rev-parse --git-common-dir`, so the install is worktree-safe — it lands in the primary's shared hooks directory even when invoked from a secondary worktree), makes each executable, and exits `0` on success. The module is the SINGLE source of truth for the canonical body (its module-level `CANONICAL_HOOK_BODY` string constant — wheel-carried because only the `livespec_dev_tooling/` package is packaged), so there is no second on-disk copy to drift. Consumers invoke it through the `just install-commit-refuse-hooks` recipe (also driven by `just bootstrap`). The second is the worktree-discipline pack installer `python -m livespec_dev_tooling.install_worktree_pack` (recipe `just install-worktree-pack`): it idempotently writes the canonical worktree-discipline pack — the `worktree-lib.sh` and `branch-protection.sh` scripts plus the `worktree.just` and `branch-protection.just` recipe fragments (its wheel-carried `CANONICAL_WORKTREE_LIB_BODY` / `CANONICAL_BRANCH_PROTECTION_BODY` / `CANONICAL_WORKTREE_JUST_BODY` / `CANONICAL_BRANCH_PROTECTION_JUST_BODY` constants) — into the checkout's `dev-tooling/` directory. The third is the neutral-shared-hook-body sync `python -m livespec_dev_tooling.install_no_shadow_ledger` (recipe `just install-no-shadow-ledger`): it idempotently writes the canonical neutral no-shadow-ledger Stop-hook body — `CANONICAL_NO_SHADOW_LEDGER_BODY`, the wheel-carried single source of truth exported from that module — to the consumer's configured `neutral_hook_body_path` (§"Consumer configuration schema"), or no-ops when that role key is null. Like the commit-refuse installer it is the SINGLE source of its body, so there is no second on-disk copy to drift; the paired byte-identity Verifier is the `no_shadow_ledger_body_identical` check (§"Shared check inventory").
+Beyond the check modules, the library exposes three operational CLI modules under the same semver-stable invocation contract. The first is the commit-refuse hook installer `python -m livespec_dev_tooling.install_commit_refuse_hooks`. It idempotently writes the canonical structural commit-refuse hook body to the primary checkout's shared `.git/hooks/pre-commit`, `pre-push`, AND `commit-msg` (resolved via `git rev-parse --git-common-dir`, so the install is worktree-safe — it lands in the primary's shared hooks directory even when invoked from a secondary worktree), makes each executable, and exits `0` on success. The module is the SINGLE source of truth for the canonical body (its module-level `CANONICAL_HOOK_BODY` string constant — wheel-carried because only the `livespec_dev_tooling/` package is packaged), so there is no second on-disk copy to drift. Consumers invoke it through the `just install-commit-refuse-hooks` recipe (also driven by `just bootstrap`). The second is the worktree-discipline pack installer `python -m livespec_dev_tooling.install_worktree_pack` (recipe `just install-worktree-pack`): it idempotently writes the canonical worktree-discipline pack — the `worktree-lib.sh` and `branch-protection.sh` scripts plus the `worktree.just` and `branch-protection.just` recipe fragments (its wheel-carried `CANONICAL_WORKTREE_LIB_BODY` / `CANONICAL_BRANCH_PROTECTION_BODY` / `CANONICAL_WORKTREE_JUST_BODY` / `CANONICAL_BRANCH_PROTECTION_JUST_BODY` constants) — into the checkout's `dev-tooling/` directory. The third is the neutral-shared-hook-body sync `python -m livespec_dev_tooling.install_no_shadow_ledger` (recipe `just install-no-shadow-ledger`): it idempotently writes the canonical neutral no-shadow-ledger Stop-hook body — `CANONICAL_NO_SHADOW_LEDGER_BODY`, the wheel-carried single source of truth exported from that module — to the consumer's configured `neutral_hook_body_path` (§"Consumer configuration schema"), or no-ops when that role key is declared empty (`""`) or undeclared — the installer is a provisioning surface, not a gating check, so it never hard-errors on an undeclared key. Like the commit-refuse installer it is the SINGLE source of its body, so there is no second on-disk copy to drift; the paired byte-identity Verifier is the `no_shadow_ledger_body_identical` check (§"Shared check inventory").
 
 ## Exit-code table
 
@@ -177,17 +177,17 @@ Inputs are project-agnostic — no `[tool.livespec_dev_tooling]` role keys are c
 
 ### `no_shadow_ledger_body_identical` check
 
-Invocation: `python -m livespec_dev_tooling.checks.no_shadow_ledger_body_identical`. Exit `0` on pass OR skipped, exit `4` with structured stderr findings on fail.
+Invocation: `python -m livespec_dev_tooling.checks.no_shadow_ledger_body_identical`. Exit `0` on pass OR skipped, exit `1` with structured stderr findings on fail.
 
-This is the **Verifier** slot of the Conformance Pattern's **Neutral-shared-hook-body** concern, per `livespec/SPECIFICATION/non-functional-requirements.md` §"Conformance Pattern" and the Contract stated at `livespec/SPECIFICATION/contracts.md` §"Driver-shipped hooks": a hook body whose core contract marks it a NEUTRAL SHARED body MUST ship BYTE-IDENTICALLY across every Driver that carries it — currently the `no_shadow_ledger.py` Stop hook, shipped by both `livespec-driver-claude` (`.claude-plugin/hooks/`) and `livespec-driver-codex` (`livespec/hooks/`); runtime-specific hooks share behavior, not bytes. Per §"Sibling spec ownership" the specific Verifier inventory lives here, in dev-tooling's own spec; the Pattern's five-slot anatomy is owned by core. The five slots for this concern: **Contract** — the neutral shared hook body is byte-identical across all Drivers that ship it; **Mechanism** — a single packaged carrier constant `CANONICAL_NO_SHADOW_LEDGER_BODY`, exported from `livespec_dev_tooling.install_no_shadow_ledger` (wheel-carried as a module-level string, exactly as concern #1's `CANONICAL_HOOK_BODY`; it is the `no_shadow_ledger.py` body with its run-on-import tail refactored to an importable `main() -> int`); **Installer** — the `just install-no-shadow-ledger` recipe → `python -m livespec_dev_tooling.install_no_shadow_ledger`, which idempotently writes the constant to the consumer's configured `neutral_hook_body_path`; **Verifier** — this check; **Exemption** — a consumer that declares NO `neutral_hook_body_path` ships no neutral shared body and is a legitimate no-op, not a fail. The check IMPORTS the constant (it is NOT a second copy of the body) and asserts the consumer's local copy is byte-identical, so there is no drift seam. The dependency direction stays cycle-free per `livespec`'s No-Circular-Dependency Directive (`.ai/no-circular-dependency.md`): dev-tooling reads NO Driver repo; the check runs INSIDE each consumer checkout and reads only that consumer's own configured path.
+This is the **Verifier** slot of the Conformance Pattern's **Neutral-shared-hook-body** concern, per `livespec/SPECIFICATION/non-functional-requirements.md` §"Conformance Pattern" and the Contract stated at `livespec/SPECIFICATION/contracts.md` §"Driver-shipped hooks": a hook body whose core contract marks it a NEUTRAL SHARED body MUST ship BYTE-IDENTICALLY across every Driver that carries it — currently the `no_shadow_ledger.py` Stop hook, shipped by both `livespec-driver-claude` (`.claude-plugin/hooks/`) and `livespec-driver-codex` (`livespec/hooks/`); runtime-specific hooks share behavior, not bytes. Per §"Sibling spec ownership" the specific Verifier inventory lives here, in dev-tooling's own spec; the Pattern's five-slot anatomy is owned by core. The five slots for this concern: **Contract** — the neutral shared hook body is byte-identical across all Drivers that ship it; **Mechanism** — a single packaged carrier constant `CANONICAL_NO_SHADOW_LEDGER_BODY`, exported from `livespec_dev_tooling.install_no_shadow_ledger` (wheel-carried as a module-level string, exactly as concern #1's `CANONICAL_HOOK_BODY`; it is the `no_shadow_ledger.py` body with its run-on-import tail refactored to an importable `main() -> int`); **Installer** — the `just install-no-shadow-ledger` recipe → `python -m livespec_dev_tooling.install_no_shadow_ledger`, which idempotently writes the constant to the consumer's configured `neutral_hook_body_path`; **Verifier** — this check; **Exemption** — a consumer that DECLARES `neutral_hook_body_path = ""` ships no neutral shared body and is a legitimate no-op, not a fail; an UNDECLARED key is a hard error, not an exemption, per §"Role keys". The check IMPORTS the constant (it is NOT a second copy of the body) and asserts the consumer's local copy is byte-identical, so there is no drift seam. The dependency direction stays cycle-free per `livespec`'s No-Circular-Dependency Directive (`.ai/no-circular-dependency.md`): dev-tooling reads NO Driver repo; the check runs INSIDE each consumer checkout and reads only that consumer's own configured path.
 
 Inputs: the `neutral_hook_body_path` role key from the consumer's `[tool.livespec_dev_tooling]` block (§"Consumer configuration schema"). The check is layout-DEPENDENT and qualifies under §"Configurability is the partition criterion" via that role key.
 
 Algorithm:
 
-1. Load `neutral_hook_body_path` via `load_config(repo_root=Path.cwd())`. If it is null (unconfigured) → exit `0` with the structured `info` no-op event (`role key absent — check no-ops`, per §"Role keys"). This is the Exemption slot: a consumer that ships no neutral shared body.
-2. Otherwise resolve `<repo-root>/<neutral_hook_body_path>`. If it is missing or not a regular file → exit `4` (`failure_mode` `missing`).
-3. Otherwise, if its bytes differ from `CANONICAL_NO_SHADOW_LEDGER_BODY` → exit `4` (`failure_mode` `body_mismatch`).
+1. Load `neutral_hook_body_path` via `load_config(repo_root=Path.cwd())`. If it is DECLARED-EMPTY (`""`, the declared-none spelling) → exit `0` with the structured `info` no-op event, per §"Role keys". This is the Exemption slot: a consumer that ships no neutral shared body. If the key is UNDECLARED → exit non-zero naming the key, per the same section; absence is not an exemption.
+2. Otherwise resolve `<repo-root>/<neutral_hook_body_path>`. If it is missing or not a regular file → exit `1` (`failure_mode` `missing`).
+3. Otherwise, if its bytes differ from `CANONICAL_NO_SHADOW_LEDGER_BODY` → exit `1` (`failure_mode` `body_mismatch`).
 4. Otherwise → exit `0` (pass).
 
 Each `fail` finding carries `check_id` `no_shadow_ledger_body_identical`, `status` `fail`, `failure_mode` (`missing` | `body_mismatch`), `path` (the inspected copy), and a `hint` directing the consumer to run `just install-no-shadow-ledger` (the from-package installer that is the single source of the body). The corrective action for both failure modes is the same installer invocation.
@@ -196,7 +196,7 @@ Consumers wire the check into `just check` aggregates and CI matrices per the sa
 
 ## Consumer configuration schema
 
-Every shared check that depends on the consumer's source-tree layout MUST read its layout-dependent paths from a `[tool.livespec_dev_tooling]` block in the consuming repo's `pyproject.toml`. The schema is the single source of truth for layout configuration; checks MUST NOT hardcode consumer-specific path constants. Missing keys MUST fall back to livespec-core's historical defaults (codified in §"Default layout fallback" below) so v0.x is backward-compatible — livespec-core's `pyproject.toml` MAY omit the block entirely and keep its bit-identical pre-G.6 behavior.
+Every shared check that depends on the consumer's source-tree layout MUST read its layout-dependent paths from a `[tool.livespec_dev_tooling]` block in the consuming repo's `pyproject.toml`. The schema is the single source of truth for layout configuration; checks MUST NOT hardcode consumer-specific path constants. The block is REQUIRED for every consumer that wires any layout-dependent check, and every structural role key MUST be declared explicitly. There is no historical-defaults fallback: a consumer that wires such a check while omitting the block gets an empty configuration, and each wired check that GATES on a key then fails on that undeclared key per §"Role keys".
 
 ### Schema location
 
@@ -208,33 +208,45 @@ The schema declares roles, not paths-per-check. A role is a layered semantic abo
 
 The role-key inventory:
 
-- **`source_trees`** — array of strings. Repo-root-relative paths each shape-checking check walks for `.py` files. Required for every check in the AST-shape class (`assert_never_exhaustiveness`, `keyword_only_args`, `match_keyword_only`, `no_inheritance`, `all_declared`, `main_guard`, `private_calls`, `global_writes`), the style class (`comment_line_anchors`, `no_lloc_soft_warnings`, `claude_md_coverage`), and the test-infrastructure class (`pbt_coverage_pure_modules`, `no_todo_registry`).
+- **`source_trees`** — array of strings. MUST be declared; `[]` is the sanctioned declared-empty spelling. Repo-root-relative paths each shape-checking check walks for `.py` files. Required for every check in the AST-shape class (`assert_never_exhaustiveness`, `keyword_only_args`, `match_keyword_only`, `no_inheritance`, `all_declared`, `main_guard`, `private_calls`, `global_writes`), the style class (`comment_line_anchors`, `no_lloc_soft_warnings`, `claude_md_coverage`), and the test-infrastructure class (`pbt_coverage_pure_modules`, `no_todo_registry`).
 
-- **`io_trees`** — array of strings. Subset of `source_trees` where `try/except` is wholesale permitted (the "I/O layer" of the ROP architecture per `livespec/SPECIFICATION/non-functional-requirements.md` §"ROP discipline"). Consumed by `no_except_outside_io`, `no_raise_outside_io`, `public_api_result_typed`, `no_write_direct`. Default empty array — for consumers with a flat (non-layered) Python package, no `try/except` is wholesale exempt; the supervisor-bug-catcher exemption (via `supervisor_entry_files`) still applies.
+- **`io_trees`** — array of strings. Subset of `source_trees` where `try/except` is wholesale permitted (the "I/O layer" of the ROP architecture per `livespec/SPECIFICATION/non-functional-requirements.md` §"ROP discipline"). Consumed by `no_except_outside_io`, `no_raise_outside_io`, `public_api_result_typed`, `no_write_direct`. MUST be declared; `[]` is the sanctioned declared-empty spelling — for consumers with a flat (non-layered) Python package, no `try/except` is wholesale exempt; the supervisor-bug-catcher exemption (via `supervisor_entry_files`) still applies.
 
-- **`commands_trees`** — array of strings. Subset of `source_trees` whose direct-child `main()` `try/except` block is exempt (the "command supervisor" layer per the ROP architecture). Consumed by `no_except_outside_io`, `no_write_direct`. Default empty array.
+- **`commands_trees`** — array of strings. Subset of `source_trees` whose direct-child `main()` `try/except` block is exempt (the "command supervisor" layer per the ROP architecture). Consumed by `no_except_outside_io`, `no_write_direct`. MUST be declared; `[]` is the sanctioned declared-empty spelling.
 
-- **`supervisor_entry_files`** — array of strings. Repo-root-relative `.py` files whose `main()` direct-child `try/except` is exempt — narrower than `commands_trees` (file-level, not directory-level). Consumed by `no_except_outside_io`. Default empty array.
+- **`supervisor_entry_files`** — array of strings. Repo-root-relative `.py` files whose `main()` direct-child `try/except` is exempt — narrower than `commands_trees` (file-level, not directory-level). Consumed by `no_except_outside_io`. MUST be declared; `[]` is the sanctioned declared-empty spelling.
 
-- **`dataclasses_tree`** — string or null. Repo-root-relative path to the dataclass-definition tree the `newtype_domain_primitives` check walks. When null, the check no-ops on this consumer (it's a layered-domain-modeling property that not every consumer has). Default null.
+- **`dataclasses_tree`** — string. MUST be declared. Repo-root-relative path to the dataclass-definition tree the `newtype_domain_primitives` check walks. `""` is the declared-none spelling (TOML has no null literal) and no-ops the check on this consumer — it's a layered-domain-modeling property that not every consumer has. Absence is no longer a sanctioned spelling of "not applicable"; an undeclared key is a hard ERROR per §"Role keys".
 
-- **`pure_trees`** — array of strings. Subset of `source_trees` containing the pure ROP-railway-typed layer; consumed by `public_api_result_typed` to assert every public callable returns `Result` / `IOResult`. Default empty array.
+- **`pure_trees`** — array of strings. Subset of `source_trees` containing the pure ROP-railway-typed layer; consumed by `public_api_result_typed` to assert every public callable returns `Result` / `IOResult`. MUST be declared; `[]` is the sanctioned declared-empty spelling.
 
-- **`covered_trees`** — array of strings. Subset of `source_trees` to which `no_write_direct` and `no_lloc_soft_warnings` ceiling-rules apply. Default empty array.
+- **`covered_trees`** — array of strings. Subset of `source_trees` to which `no_write_direct` and `no_lloc_soft_warnings` ceiling-rules apply. MUST be declared; `[]` is the sanctioned declared-empty spelling.
 
-- **`source_tree_prefixes`** — array of strings, each ending in `/`. Used by `commit_pairs_source_and_test` to recognize a staged file as "source" (vs "test"). The trailing `/` is significant — the check matches via `str.startswith(prefix)`. Default `["livespec_dev_tooling/", "dev-tooling/"]` (the livespec-core layout); consumers MAY add or replace.
+- **`source_tree_prefixes`** — array of strings, each ending in `/`. Used by `commit_pairs_source_and_test` to recognize a staged file as "source" (vs "test"). The trailing `/` is significant — the check matches via `str.startswith(prefix)`. MUST be declared; `[]` is the sanctioned declared-empty spelling. There is no default value — the former `["livespec_dev_tooling/", "dev-tooling/"]` came from the retired §"Default layout fallback" and no longer applies to any consumer.
 
 - **`tests_tree_prefix`** — string ending in `/`. Used by `commit_pairs_source_and_test` to recognize a staged file as "test". Default `"tests/"`.
 
-- **`target_dirs`** — array of strings. Used by `comment_line_anchors` to scope its walk; behaves like a `source_trees` analogue for that check specifically (the check has a different exclusion rule for `_vendor`). Default `["livespec_dev_tooling/", "dev-tooling/"]`.
+- **`target_dirs`** — array of strings. Used by `comment_line_anchors` to scope its walk; behaves like a `source_trees` analogue for that check specifically (the check has a different exclusion rule for `_vendor`). MUST be declared; `[]` is the sanctioned declared-empty spelling. There is no default value — the former `["livespec_dev_tooling/", "dev-tooling/"]` came from the retired §"Default layout fallback".
 
-- **`mirror_pairings`** — array of objects each shaped `{"source_tree": "<path>", "test_tree": "<path>"}`. Used by `check_coverage_incremental` to resolve a source `.py` file to its paired test `.py` file. Default carries livespec-core's two historical mirrors: `livespec/` → `tests/livespec/` and `dev-tooling/checks/` → `tests/dev-tooling/checks/`.
+- **`mirror_pairings`** — array of objects each shaped `{"source_tree": "<path>", "test_tree": "<path>"}`. Used by `check_coverage_incremental` to resolve a source `.py` file to its paired test `.py` file. Defaults to empty. It is NOT a required role key, so absence is legal — but there is NO fallback derivation: `check_coverage_incremental` resolves an impl path to its test path from these pairings alone, so a consumer with changed impl files and no declared pairings fails resolution. Declare the pairings if that check is wired. The two historical livespec-core mirrors it used to default to came from the retired §"Default layout fallback" and no longer apply.
 
-- **`repo`** — object shaped `{"owner": "<gh-owner>", "name": "<gh-repo>"}` or null. Used by `branch_protection_alignment` to query the consumer's GitHub branch protection. When null, the check resolves owner/repo from `git remote get-url origin` (the graceful-skip behavior shipped in PR #11). Default null.
+- **`repo`** — DOCUMENTED BUT NOT LOADER-IMPLEMENTED: the loader has no `repo` field and never parses this key, so declaring it has no effect. `branch_protection_alignment` resolves owner/repo unconditionally from `git remote get-url origin`. Retained here only to describe the intended, never-implemented shape — an object `{"owner": "<gh-owner>", "name": "<gh-repo>"}` or null that would have let a consumer override the git-remote-derived owner/repo. The check ALWAYS resolves via `git remote get-url origin` (the graceful-skip behavior shipped in PR #11), regardless of any declared value.
 
-- **`neutral_hook_body_path`** — string or null. Repo-root-relative path to the consumer's NEUTRAL SHARED hook body — a hook whose core contract (`livespec/SPECIFICATION/contracts.md` §"Driver-shipped hooks") marks it byte-identical across every Driver that ships it (currently `no_shadow_ledger.py`). Consumed by `no_shadow_ledger_body_identical`. When null, that check no-ops (the consumer ships no neutral shared body). Default null.
+- **`neutral_hook_body_path`** — string. Repo-root-relative path to the consumer's NEUTRAL SHARED hook body — a hook whose core contract (`livespec/SPECIFICATION/contracts.md` §"Driver-shipped hooks") marks it byte-identical across every Driver that ships it (currently `no_shadow_ledger.py`). Consumed by `no_shadow_ledger_body_identical`. MUST be declared; `""` is the declared-none spelling (TOML has no null literal) and no-ops that check — the consumer ships no neutral shared body. Absence is no longer a sanctioned spelling of "not applicable"; an undeclared key is a hard ERROR per §"Role keys".
 
-Role keys absent from the schema mean "the check no-ops on this consumer" for that role. The check itself MUST log a structured `info`-level event (`{"check_id": "<slug>", "role": "<key>", "event": "role key absent — check no-ops", "level": "info"}`) so the consumer's `just check` output makes the no-op explicit; no-op MUST NOT degrade silently to pass.
+The DECLARATION requirement is universal: every consumer wiring any layout-dependent check MUST declare every key in `REQUIRED_ROLE_KEYS`, without exception. Its ENFORCEMENT has two distinct surfaces, and conflating them misreads the contract.
+
+**Declaration presence** is enforced for ALL required keys by the dedicated check and fleet-conformance row of §"Declaration-presence enforcement". That surface is what makes the mandate universal, and it is the one that catches a silently-omitted key regardless of how any particular check consumes it.
+
+**Per-check gating** applies to a GATING key — one a check cannot proceed without, because it supplies the tree that check walks or the file it inspects. A check whose gating key is undeclared MUST fail rather than quietly inspect nothing. Not every role-key consumer has a gating key in this sense: some read a role key only to classify severity or scope an exemption while deriving their inspection universe elsewhere (e.g. from the git-tracked first-party set), and those checks still inspect that full universe when the key is absent — they are not silently disarmed, so they carry no gate. Where a check DOES gate, the key has three states, and they are not interchangeable.
+
+**UNDECLARED** — the key is absent from the block — is a hard ERROR: the gating check MUST exit non-zero and name both the offending key and the two sanctioned outs (declare the real value, or declare it explicitly empty with a comment giving the reason).
+
+**DECLARED-EMPTY** — `[]` for the list keys, `""` for the scalar keys `dataclasses_tree` and `neutral_hook_body_path` (the declared-none convention, since TOML has no null literal) — is the sanctioned, VISIBLE opt-out: the gating check no-ops and MUST log a structured `info`-level event naming the key, so the consumer's `just check` output makes the no-op explicit. A no-op MUST NOT degrade silently to pass.
+
+**DECLARED non-empty whose paths contain no `.py` file at all** is a hard ERROR: an armed check inspecting nothing is a configuration defect, not a pass. That error MUST key off the declared paths, NOT off the count of files actually inspected — a consumer whose entire declared source tree lies inside its declared `io_trees` legitimately inspects zero files with nothing misdeclared.
+
+The normative role-key set is the `REQUIRED_ROLE_KEYS` constant the loader exports (§"Configuration loader"), which is the single source of truth. Of the loader-recognized keys, `tests_tree_prefix` and `mirror_pairings` are deliberately NOT members. `repo` is not a loader key at all — see its bullet.
 
 ### Carve-out: project-wide invariants outside the role-key inventory
 
@@ -246,37 +258,19 @@ Future carve-outs require explicit propose-change documentation; the default for
 
 ### Default layout fallback
 
-When `pyproject.toml` carries no `[tool.livespec_dev_tooling]` block at all (the livespec-core case until livespec-core opts in), every role key falls back to the historical livespec-core defaults baked into the loader:
+RETIRED in v0.54.12. The loader previously substituted livespec-core's historical layout whenever `pyproject.toml` carried no `[tool.livespec_dev_tooling]` block at all. That fallback is gone, and no block-absent default remains.
 
-```toml
-[tool.livespec_dev_tooling]
-source_trees       = [".claude-plugin/scripts/livespec"]
-io_trees           = [".claude-plugin/scripts/livespec/io"]
-commands_trees     = [".claude-plugin/scripts/livespec/commands"]
-supervisor_entry_files = [".claude-plugin/scripts/livespec/doctor/run_static.py"]
-dataclasses_tree   = ".claude-plugin/scripts/livespec/schemas/dataclasses"
-pure_trees         = [".claude-plugin/scripts/livespec"]
-covered_trees      = [".claude-plugin/scripts/livespec"]
-source_tree_prefixes = ["livespec_dev_tooling/", "dev-tooling/"]
-tests_tree_prefix    = "tests/"
-target_dirs        = ["livespec_dev_tooling/", "dev-tooling/"]
-mirror_pairings    = [
-  { source_tree = ".claude-plugin/scripts/livespec",       test_tree = "tests/livespec" },
-  { source_tree = "livespec_dev_tooling/checks",            test_tree = "tests/livespec_dev_tooling/checks" },
-]
-repo               = nil  # resolved via `git remote get-url origin`
-neutral_hook_body_path = nil  # livespec-core ships no neutral shared Driver hook body
-```
+Two reasons it had to go. It stopped describing its only intended beneficiary: livespec-core has declared its own block since livespec PR #1663, so the fallback served nobody it was written for. Worse, the regime switch was implicit in whether the block was absent, so declaring ANY key in that block silently withdrew the historical defaults for EVERY other key — which is how core's structural gate suite ran inert from 2026-05-31 until slice L, while CI reported green throughout.
 
-The fallback set MUST stay bit-identical to livespec-core's pre-G.6 behavior; any change is a major-version bump per §"Semver discipline".
+A consumer that wires a layout-dependent check now gets an empty configuration when the block is absent, and each wired check that GATES on a key fails on that undeclared key per §"Role keys" — loudly, naming the key, instead of silently substituting paths that may not exist in that repo.
 
 ### Configuration loader
 
-The loader MUST live at `livespec_dev_tooling/config.py` and expose a single public callable:
+The loader MUST live at `livespec_dev_tooling/config.py`. Its layout-configuration surface is one public callable plus the normative role-key set (the module exports other filesystem helpers alongside them):
 
 ```python
 def load_config(*, repo_root: Path) -> Config:
-    """Read `<repo_root>/pyproject.toml` and merge with built-in defaults.
+    """Read `<repo_root>/pyproject.toml` into a typed `Config`.
 
     Reads the `[tool.livespec_dev_tooling]` table via stdlib `tomllib`
     (Python 3.11+) or the vendored `tomli` (Python 3.10 fallback).
@@ -286,7 +280,11 @@ def load_config(*, repo_root: Path) -> Config:
     """
 ```
 
-`Config` MUST be a frozen, keyword-only dataclass (per `livespec/SPECIFICATION/non-functional-requirements.md` §"Keyword-only Python") with one field per role key, defaulting to the historical fallback values. Every check MUST call `load_config(repo_root=Path.cwd())` in its `main()` before walking the filesystem; no module-level path constants remain.
+`Config` MUST be a frozen, keyword-only dataclass (per `livespec/SPECIFICATION/non-functional-requirements.md` §"Keyword-only Python") with one field per LOADER-RECOGNIZED role key. Every key in `REQUIRED_ROLE_KEYS` defaults to empty; `tests_tree_prefix` defaults to `"tests/"`. Every check MUST call `load_config(repo_root=Path.cwd())` in its `main()` before walking the filesystem; no module-level path constants remain.
+
+The loader MUST record WHICH keys the consumer actually declared, distinctly from their values, and expose that on `Config`. Value alone cannot carry the distinction: the declared-none spelling `""` parses to the same empty value an absent key produces, so without recorded declaration-presence a check cannot tell a sanctioned opt-out from a silent omission — which is the whole distinction §"Role keys" rests on.
+
+The loader MUST also export `REQUIRED_ROLE_KEYS` as the SINGLE source of truth for which role keys every consumer must declare. Each enforcing check MUST read that constant rather than restate the list; a second copy of the set is precisely the drift this contract exists to prevent.
 
 The Python 3.10 floor (per `constraints.md` §"Runtime") forces the `tomli` fallback. `tomli` MUST be vendored under `livespec_dev_tooling/_vendor/tomli` and listed in `.vendor.jsonc` per `livespec/SPECIFICATION/contracts.md` §"Vendor manifest". The loader MUST select `tomllib` when available and `tomli` otherwise; both libraries expose an identical `loads(text: str) -> dict` API.
 
@@ -296,11 +294,24 @@ Each livespec-governed consumer MUST publish its own `[tool.livespec_dev_tooling
 
 Three first-party consumers as of v0.2.x:
 
-- **`livespec-core`** — MAY omit the block entirely (the fallback matches its historical layout). If the block is added, every key MUST be bit-identical to the fallback values above.
-- **`livespec-dev-tooling`** (self-application) — MUST publish `source_trees = ["livespec_dev_tooling"]`, `target_dirs = ["livespec_dev_tooling"]`, `source_tree_prefixes = ["livespec_dev_tooling/"]`, `mirror_pairings = [{ source_tree = "livespec_dev_tooling", test_tree = "tests/livespec_dev_tooling" }]`. The other role keys (`io_trees`, `commands_trees`, `supervisor_entry_files`, `dataclasses_tree`, `pure_trees`, `covered_trees`) default to empty/null since the library has a flat package layout without the ROP-layered architecture livespec-core has. The corresponding checks (`no_except_outside_io`, `no_raise_outside_io`, `public_api_result_typed`, `no_write_direct`, `newtype_domain_primitives`) no-op against this library; their structured `info` log entries document the no-op.
+- **`livespec-core`** — MUST publish the block and declare every role key, like every other consumer. It has carried its own block since livespec PR #1663; the former MAY-omit allowance died with the fallback.
+- **`livespec-dev-tooling`** (self-application) — MUST publish `source_trees = ["livespec_dev_tooling"]`, `target_dirs = ["livespec_dev_tooling"]`, `source_tree_prefixes = ["livespec_dev_tooling/"]`, `mirror_pairings = [{ source_tree = "livespec_dev_tooling", test_tree = "tests/livespec_dev_tooling" }]`. It ALSO declares `supervisor_entry_files` with real values (its CLI and hook entry points own legitimate stdout/stderr contracts). The remaining six required keys (`io_trees`, `commands_trees`, `pure_trees`, `covered_trees`, `dataclasses_tree`, `neutral_hook_body_path`) MUST be declared EXPLICITLY EMPTY with a comment giving the reason, since the library has a flat package layout without the ROP-layered architecture livespec-core has. The corresponding checks (`no_except_outside_io`, `no_raise_outside_io`, `public_api_result_typed`, `no_write_direct`, `newtype_domain_primitives`) then no-op against this library as the sanctioned opt-out; their structured `info` log entries document the no-op.
 - **`livespec-impl-git-jsonl`** — MUST publish its own block once Phase G.7 wiring lands. The exact values are the picking-up agent's call at that phase; the schema accommodates whatever layout that consumer adopts.
 
-Future siblings (any repo carrying the `livespec-sibling` GitHub topic that depends on this library) MUST publish their own block; omitting the block falls back to livespec-core's defaults, which will silent-no-op against any non-livespec-core layout (the trade-off the v0.x backward-compat guarantee accepts).
+Future siblings (any repo carrying the `livespec-sibling` GitHub topic that depends on this library) MUST publish their own block and declare every role key. Omitting the block no longer falls back to anything: any wired check that GATES on a key fails on that undeclared key, and the declaration-presence check fails on the omission regardless. That is deliberate — the silent-no-op the old fallback produced against a non-livespec-core layout is the exact failure this policy replaces.
+
+### Declaration-presence enforcement
+
+Declaration presence is enforced mechanically, so the regime cannot rot back in via a newly-added fleet member. Two surfaces, both REQUIRED:
+
+- A check in the `just check` aggregate asserting that the repo it runs in declares every key in `REQUIRED_ROLE_KEYS`.
+- A fleet-conformance row over `.livespec-fleet-manifest.jsonc` members applying the same rule cross-repo.
+
+The scope of both is **repos that wire at least one layout-dependent (`load_config`-consuming) check**. Scope MUST NOT be derived from whether a repo depends on livespec-dev-tooling: a repo can consume this library solely for surfaces that read no role keys — `livespec-console-beads-fabro` does exactly that, wiring only `primary_checkout_commit_refuse_hook_installed` and `plugin_resolution` — and scoping by dependency would fail it for omitting a block it has no reason to carry.
+
+A repo excluded by that scope rule MUST be reported as excluded-with-reason, never silently skipped: a silent skip is indistinguishable from a pass, which is the failure mode this whole section exists to eliminate.
+
+This enforcement lives in the `just check` aggregate and the fleet-conformance surface only. It is deliberately NOT exposed on consumers' `/livespec:doctor` surface.
 
 ## Composite Actions wire contract
 
