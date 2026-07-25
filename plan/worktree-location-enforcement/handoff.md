@@ -971,6 +971,76 @@ acceptance criteria either way.
 
 Keep the existing partial-install and byte-drift arms exactly as they are.
 
+#### A-PREREQ — IMPLEMENTATION-READY PREP (2026-07-25)
+
+The two prerequisites A cannot land without — the `worktree-pack` local obligation row and
+the CI install step — prepared to implementation-ready. Both live in `livespec-dev-tooling`
+only, so both are **boundary-independent**. Nothing implemented.
+
+**1. Row ORDER is the whole design, and the obvious placement is wrong.**
+`local_reconcile.py:85-91` walks `LOCAL_OBLIGATION_ROWS` **sequentially in tuple order**,
+asserting first and reconciling only an unmet row. The `commit-refuse-hooks` row sits at
+position 3 (`_contract_local_rows.py:89`) and its `assert_local` shells out to the **whole
+verifier module** — pack arm included.
+
+So if a `worktree-pack` row is appended anywhere *after* it, then in a pack-absent repo
+under A:
+
+1. `commit-refuse-hooks` asserts → runs the whole verifier → **FAILS on the pack arm**;
+2. its reconcile installs the hook — which was never the problem — and the row still
+   reports a finding;
+3. the pack is only materialized later, by a different row.
+
+The result is a row failing for another row's obligation, with a reconcile that cannot
+clear it. That is the un-self-healing shape flagged earlier, made worse by the failing row
+running first.
+
+**Resolution — place `worktree-pack` at position 3, immediately BEFORE `commit-refuse-hooks`
+(after `uv-sync`).** Then the pack is materialized first and the hook row's broad assert
+passes for the right reason. `uv-sync` must still precede it, because the reconcile runs
+`python -m livespec_dev_tooling.install_worktree_pack`.
+
+The purer alternative — narrowing `commit-refuse-hooks`'s assert so each row asserts only
+its own obligation — is a larger diff that changes existing behaviour, and it discards a
+useful end-to-end check. Prefer the reorder; keep narrowing in reserve if row attribution
+later becomes confusing. Note the residue either way: if the pack row's reconcile *fails*,
+the hook row fails too and the same cause is reported twice.
+
+**2. The row itself.** `assert_local` byte-compares the four `_WORKTREE_PACK_FILES` in
+`dev-tooling/` (the same comparison `_inspect_worktree_pack` already makes — import the
+constants, do not restate the bodies); `reconcile_local` runs the installer, mirroring
+`reconcile_commit_refuse_hooks` at `_rows_local.py:86-93`. It is a row *with* a real
+`assert_local`, not a pure provisioning row, because it leaves persistent state — exactly
+the criterion `_contract_local_rows.py:55-64` states.
+
+**3. The CI step can mirror the hook step verbatim — verified.**
+`ci.yml:410-412` installs the hook with plain `python3` **before** `mise trust` and
+`uv sync`, because it needs only the stdlib plus the in-package vendored `structlog`.
+`install_worktree_pack` has the same import surface — `stat`, `subprocess`, `sys`,
+`pathlib`, vendored `structlog` — and imports cleanly under system `python3` 3.13.7 with a
+`main()`. So the step is:
+
+```yaml
+- name: Install canonical worktree pack (satisfy invariant)
+  if: matrix.target == 'check-primary-checkout-commit-refuse-hook-installed'
+  run: python3 -m livespec_dev_tooling.install_worktree_pack
+```
+
+placed beside the existing hook step and gated on the same matrix target. **Without this
+step A reds this repo's own CI on the PR that lands it** — tracked `dev-tooling/` holds only
+`CLAUDE.md`, so a fresh CI checkout has zero pack files.
+
+**4. This repo also needs its own wiring, and it rides A-prereq.** `livespec-dev-tooling`
+has the `install-worktree-pack` recipe but **no** `.gitignore` entries, **no** `import?`
+lines, and **no** `bootstrap` tail. Adding the row supplies the bootstrap path, but the
+gitignore entries are still required or the freshly materialized pack shows up as four
+untracked files in `git status` — the canonical repo failing its own rule. Include them.
+
+**5. Sequencing inside the approved order.** A-prereq is additive: the row and the CI step
+change no verdict while the default is still today's skip-when-absent. It can land any time
+after B and before D without a red window, which is exactly why the approved order places it
+there.
+
 #### A AS SPECIFIED DOES NOT CLOSE THE LAYER IT WAS WRITTEN TO CLOSE
 
 Demonstrated 2026-07-25 in a scratch tree — pack installed byte-perfect, root justfile
