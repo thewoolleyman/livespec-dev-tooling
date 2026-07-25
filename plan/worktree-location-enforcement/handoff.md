@@ -131,6 +131,103 @@ land before A's default flips or this repo's CI reds; D's wiring must exist befo
 is actionable in the 6 unwired repos; F is independent of A–D and gates clause 2's reach;
 E is independent of everything and half-blocked on another session; G is independent.
 
+### F is NOT uniform across the three adopters — measured 2026-07-25
+
+F was written as "install the canonical hook and wire the verifier in openbrain, resume,
+and homelab". **As stated it is not executable in two of the three.** What each adopter
+can actually run:
+
+| adopter | justfile | `.mise.toml` | lefthook | dev-tooling package | verdict |
+|---|---|---|---|---|---|
+| **openbrain** | yes | yes | yes | **vendored** `livespec_dev_tooling/` | **reachable** |
+| **resume** | **no** | **no** | **no** | no | needs substrate first |
+| **homelab** | **no** | **no** | **no** | no | **no substrate at all** |
+
+- **openbrain** has a `just` surface, mise, lefthook, and a vendored `livespec_dev_tooling/`
+  package, so it can run the installer and host a verifier recipe. Its work is real but
+  bounded: install the canonical hook over the stock lefthook stub, wire the verifier, and
+  reconcile `scripts/refuse-primary-commit.sh` so there is one location-aware rule.
+- **resume** carries only a `package.json`. There is **no `just` surface to add a verifier
+  recipe to, no lefthook to delegate through, and no way to run a Python installer.** Its
+  own `scripts/check-primary-checkout.ts` is TypeScript precisely because that is the only
+  ecosystem it has. The canonical hook body is portable `/bin/sh` and could be placed by
+  hand, but the *installer* and the *verifier* are Python and cannot run there today.
+- **homelab** has none of the four. The manifest itself records why: all its wiring is
+  *"DEFERRED to the post-seed onboarding pass"* — an onboarding this thread does not own.
+
+**Consequence: clause 2 cannot be fully realized by this thread alone under a broad
+reading.** F splits into F1 (openbrain — do it), F2 (resume — blocked on baseline
+substrate), F3 (homelab — blocked on a manifest-declared onboarding owned elsewhere).
+
+### A scoping edge in the ruling's clause 2 — needs one word from the maintainer
+
+Clause 2 reads *"every governed **fleet** worktree must live under
+`~/.worktrees/<repo>/<branch>`"*. The manifest draws that distinction explicitly
+(`.livespec-fleet-manifest.jsonc:38-40`): adopters are *"governed repos … that adopted the
+workflow but are **NOT the livespec fleet**"*.
+
+So there are two readings, and they size F very differently:
+
+- **Narrow (fleet = the 9 manifest `fleet` entries).** All 9 already have the substrate —
+  justfile, mise, the verifier, and a canonical hook. F reduces to **nothing**, and clause 2
+  is fully achievable by B + D alone. F1–F3 become a separate hardening thread.
+- **Broad (all 12 governed repos).** F is required, and two thirds of it is blocked on
+  substrate and onboarding work this thread does not own — so the thread cannot reach
+  "done" without adopting or waiting on that work.
+
+This is **not** a re-litigation of the approved scope; both clauses stand either way. It is
+a question of which repo set clause 2 binds, and it changes whether F is in this thread or
+the next one. It should be answered alongside rollout order, not after slices are filed.
+
+## Rollout order — the three live options, as presented 2026-07-25
+
+Recorded durably so this survives the session. **None is approved.**
+
+**What changed about this question under the widened scope.** The old binary pitted
+"pack-install-first" against "verifier-first", both about item A. That is now secondary:
+**A is not the slice that stops violations — B is.** A makes the sanctioned tool
+discoverable and mandatory; B refuses the commit when someone bypasses it anyway. Under the
+ruling B also became *simpler* (an allow-list, no nested detection) and it is **CI-immune**
+(`ci.yml` installs the hook from the same wheel it verifies), so it reds nothing and needs
+no fleet wiring to ship. Meanwhile the harm is measurably ongoing — a second live violation
+appeared during one day's audit, with commits landed from it.
+
+**Option 1 — Prerequisites-first, enforce-last.**
+`A-prereq → D-wiring → E → A-flip → B → F → (G)`
+Nothing ever reds and nothing is refused unexpectedly; every step is additive until the end.
+Cost is exposure: the fail-open stays open across ~7 landings before anything is refused.
+Given the measured recurrence, that exposure is not theoretical.
+
+**Option 2 — Enforce-first, red as forcing function.**
+`A-flip → repos go red → wiring follows under pressure`
+Not literally executable without the CI install step (this repo's own CI reds on the landing
+PR). Measured cost past that: ~7.3 releases/day, tag-scoped bump branches that never retry
+in place, giving roughly **58 dead bump PRs per fleet-day** across 8 repos with pins frozen.
+Weaker than it looks under the ruling: it pressures the *pack* layer while B — the layer
+that actually stops violations — is independent and arrives no sooner.
+
+**Option 3 — Hook-first (the recommendation).**
+`E (openbrain half) → B → A-prereq → D-wiring → A-flip → F → (G)`
+B ships early because it is the cheap one: no wiring dependency, no CI red, and it rehearsed
+clean across all 40 host worktrees (34 allow-sanctioned incl. every `janitor-*`, 4
+allow-tooling, **2 refusals, zero false positives**). A and D follow as unhurried hygiene,
+with A's flip *after* D, so Option 2's red window never opens at all. Rollout is naturally
+gradual: B takes effect per clone only when that clone's hook is reinstalled via
+`just bootstrap`.
+Two costs to weigh. `livespec-overseer/.claude/worktrees/dod-corrections` belongs to a live
+session and would be refused once B reaches that clone — hence E's openbrain half first and
+a heads-up to that session before B lands; **this thread must not touch that worktree.** And
+B without A leaves `just worktree-create` undiscoverable in 8 of 9 repos, so operators hit a
+refusal whose remedy names a command that does not exist there — pair B with the
+remedy-string fix.
+
+**Recommendation: Option 3.** The harm is silent violations, B is the only slice that stops
+them, and B is the cheapest and least disruptive item in the cut. Landing A's flip after D's
+wiring means Option 2's cost is simply never incurred — so the red-window debate that has
+gated this thread since it opened largely dissolves once B is no longer sequenced behind A.
+Treat G as deferrable but *decided*: without it the sweep fixes the population while the
+generator keeps minting unwired repos, which is exactly where the second violation appeared.
+
 ## CURRENT STATE — read this before anything else
 
 This file grew from 265 to ~1200 lines during the 2026-07-25 audit, and several of its
