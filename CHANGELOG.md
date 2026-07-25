@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.54.11](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.54.10...v0.54.11) (2026-07-25)
+
+
+### Bug Fixes
+
+* reject broad contextlib suppress outside boundary ([f4158f3](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f4158f3b387d4119265effd4012e17b014d400cb))
+
 ## [0.54.10](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.54.9...v0.54.10) (2026-07-25)
 
 
