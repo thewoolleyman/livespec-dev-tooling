@@ -322,6 +322,15 @@ sweep is enumerated here rather than left implicit:
   statement that the loader has no such field. Added to this list at review, not
   found in the original sweep — the sentence below it had been amended while the
   docstring line one paragraph up was left alone.
+- The `pure_trees` bullet's consumer enumeration, which named only
+  `public_api_result_typed` while this change's own self-application text named
+  three checks gating on that key. **This entry is a different category from
+  every other item above.** The rest are clauses the OLD regime left behind, and
+  the sweep's job was to find them. This one was made false by THIS change's
+  widening — the enumeration was consistent until the widening landed, and the
+  edit that broke it sat in a different section of the same file. A sweep run
+  before the widening could not have found it; only re-reading the whole amended
+  document after each repair did.
 - The `livespec-core` and `livespec-dev-tooling` consumer bullets, which
   asserted the MAY-omit allowance and empty/null defaults respectively.
 - The "future siblings" paragraph, which asserted the fallback.
