@@ -15,6 +15,68 @@ measured delta, the corrections to premises that were wrong when written, and th
 facts below that survived. Inline numbers and anchors in this file have been
 updated to the 2026-07-25 measurement; do not reason from the `2412e21` counts.
 
+---
+
+## CURRENT STATE — read this before anything else
+
+This file grew from 265 to ~1200 lines during the 2026-07-25 audit, and several of its
+original section headings and opening lines were written before findings that contradict
+them. **Where an older passage and this section disagree, this section wins.** Each claim
+here names the section carrying its evidence.
+
+**The rule is ratified spec, not just prose.** `livespec/SPECIFICATION/non-functional-requirements.md:1013`
+states it positively — every worktree under `~/.worktrees/<repo>/<branch>` — and the one
+prohibition it spells out is the **peer** case, which item B does not catch. The nested
+case B does catch is never named. → §"THE SPEC ALREADY ANSWERS…"
+
+**There are two live nested violations, not one.** `openbrain/.claude/worktrees/fix-ob-6vt-…`
+and `livespec-overseer/.claude/worktrees/dod-corrections` — the latter **created during
+this audit**, with commits landed from it, invisible to `git status` because that repo
+gitignores `.claude/worktrees/`. The premise that this "fired once for real" is retired.
+→ §"A SECOND LIVE VIOLATION…"
+
+**Item B reaches fewer repos than assumed.** It changes `CANONICAL_HOOK_BODY`, which
+9 fleet clones run. openbrain runs a stock lefthook stub plus its own bespoke script;
+resume has a third implementation in TypeScript. All three are location-blind; B fixes
+one. → §"CORRECTION (2026-07-25)" in §"Fleet impact" and its sub-table.
+
+**Item A as specified does not close its layer.** A byte-perfect pack with no `import?`
+lines passes the verifier while `just --list` shows no `worktree-create`. Today the
+sanctioned tool is discoverable in **1 of 9** governed repos. → §"A AS SPECIFIED DOES
+NOT CLOSE…" and §"Discoverability of the sanctioned tool".
+
+**The pack is gitignored-and-materialized, not tracked**, so "pack-install-first" was never
+a sequence of PRs, and landing A reds this repo's own CI on the PR that lands it.
+→ §"The pack is GITIGNORED-AND-MATERIALIZED".
+
+**Slice D is 6 tracked PRs, not 8 repos.** Three repos are already wired; two of those need
+only `just bootstrap`. And the fleet keeps minting unwired repos because only one of seven
+repo classes has a copier template. → §"D is two different jobs".
+
+**Widening B to the spec's rule is a three-line change** and rehearses clean: 34 sanctioned
+allows, 4 tooling allows, exactly 2 refusals, zero false positives. → §"Widening to the
+spec's rule was rehearsed".
+
+**Decision status: NOTHING is approved.** Rollout order is undecided; the A–E cut is
+unapproved and, per the spec finding, not approvable *as a charter-closing cut*; no slices
+are filed; no worktree has been moved; the ledger is untouched. A "wire-then-enforce"
+answer displayed on 2026-07-25 was a supervisor UI-race artifact and is void.
+
+### Superseded claims — do not act on these if you meet them elsewhere in the file
+
+| claim, as originally written | status |
+|---|---|
+| "one live violation remains fleet-wide (§openbrain)" / §E's heading "openbrain has the last live violation" | **superseded** — two nested violations, plus the peer case |
+| "openbrain's hook is an older canonical body, byte-correct against its own pin" | **wrong** — it is a stock lefthook stub with no livespec refuse logic |
+| "`pwd -P` is a real bug source here, not a hypothetical" | **unsupported** — changes no verdict; git already emits physical paths |
+| "the rule is stated in prose in each repo's `AGENTS.md`" | **too generous** — 9 of 13; and it is *also* ratified spec |
+| "the hook reinstall does not propagate … per-clone and per-machine" | **overstated** — `local_reconcile`'s `commit-refuse-hooks` row already self-heals it |
+| "pack-install-first: run `install-worktree-pack` across the non-compliant repos" as a PR sweep | **false premise** — the pack is untracked |
+| `/data/projects/homelab-substrate` as a live peer violation | **gone** — removed by the `homelab` track mid-audit; the structural gap remains |
+| `AGENTS.md` §Red-Green-Replay at `:100-142` | `:100-147` |
+
+---
+
 ## Charter
 
 The rule "every worktree lives under `~/.worktrees/<repo>/<branch>`, NEVER inside a
@@ -29,9 +91,14 @@ scenario that occurred.
 
 Unlike `livespec-console-beads-fabro`'s `plan/repo-invariant-guards/` (a sibling thread
 of the same *mechanism* — mechanical guards for unenforced invariants), this is **not**
-a latent gap. It fired once for real, and one live violation remains fleet-wide
-(§openbrain). That difference is why this is its own thread rather than a fourth item
-there.
+a latent gap. It has fired for real **more than once**, and violations remain live
+fleet-wide. That difference is why this is its own thread rather than a fourth item there.
+
+*(Originally written as "it fired once for real, and one live violation remains
+fleet-wide (§openbrain)". Retired 2026-07-25: a second nested violation appeared in
+`livespec-overseer` **during this audit**, with commits landed from it — see §"A SECOND
+LIVE VIOLATION". Treat the base rate as unknown and non-zero, not as one historical
+incident with one remnant.)*
 
 ## The incident (why this exists)
 
@@ -295,6 +362,13 @@ wire no verifier, so nothing reads it. Say so rather than implying coverage. `re
 cannot reach them either.
 
 ## THE ONE OPEN QUESTION — rollout order
+
+> **It is no longer the one open question, and it is no longer first.** The 2026-07-25
+> audit found that the definition of done is settled by ratified spec (§"THE SPEC ALREADY
+> ANSWERS…"), which determines whether the cut is A–E or wider — and that is upstream of
+> sequencing it. It also found the binary below rests on a false premise (§"The pack is
+> GITIGNORED-AND-MATERIALIZED"). Read the two subsections after the original text before
+> treating any option here as live.
 
 Unanswered when the prior session ended. It gates all execution:
 
@@ -751,7 +825,13 @@ sweep away, and will keep doing so for every future non-`impl-plugin` member. Sw
 belongs in this thread or in the fleet-membership/birth-procedure lane is a scoping call
 for the maintainer — but it should be a decision, not an omission.
 
-### E — openbrain has the last live violation
+### E — relocate the live nested worktrees (openbrain, and now livespec-overseer)
+
+*(Heading corrected 2026-07-25 — it previously read "openbrain has the last live
+violation", which is no longer true on two counts: `livespec-overseer` acquired a nested
+worktree mid-audit, and the spec's named prohibition is the peer case, which E never
+covered. E's scope as written below is openbrain only; whether it grows to cover the
+overseer worktree — which belongs to another session — is part of the unapproved cut.)*
 
 ```
 /data/projects/openbrain/.claude/worktrees/fix-ob-6vt-thought-detail-save  [fix/ob-6vt-thought-detail-save]
@@ -999,6 +1079,25 @@ question 2 is answered. Do not accept a cut whose acceptance criteria quietly cl
 latter.
 
 ## First act is the maintainer's — nothing here is agent-dispatchable
+
+**The open questions, in dependency order (2026-07-25).** The original text below lists
+rollout order first; that ordering is superseded. Ask them in this order:
+
+1. **Does this thread enforce the spec's rule, or only the nested half?** The spec states
+   the rule positively and names the *peer* case explicitly, so the nested-only cut cannot
+   honestly be called done. Widening measures clean (2 refusals, zero false positives) and
+   is a three-line change. This determines whether the cut is A–E or wider — everything
+   else is downstream.
+2. **Rollout order**, repriced against the untracked-pack finding and the measured cadence
+   (~7.3 releases/day; tag-scoped bump branches, so stalls accumulate at ~58 dead PRs per
+   fleet-day; against ~10 tracked lines × ~6 repos of wiring).
+3. **The cut and its acceptance criteria**, re-cut once 1 and 2 settle — including the
+   scope corrections to A (discoverability), B (sandbox-exempt guard, janitor carve-out,
+   reach limited to fleet clones), D (6 tracked PRs + 3 bootstraps), and E (two worktrees
+   now, one of them another session's).
+4. **Authority to relocate.** openbrain is inspected and safe to move (clean tree,
+   unpushed `296dd1f`, no upstream, no live owner). `livespec-overseer`'s belongs to
+   another session and must not be touched without its owner.
 
 **The epic is anchored; no slices are filed.** That split is deliberate. An active plan
 thread MUST declare a concrete ledger anchor — `plan_thread_anchor_declared` enforces it
