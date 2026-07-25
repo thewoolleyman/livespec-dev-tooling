@@ -104,6 +104,18 @@ dev = [
 source_trees = ["livespec_dev_tooling"]
 target_dirs = ["livespec_dev_tooling"]
 source_tree_prefixes = ["livespec_dev_tooling/"]
+# Flat-layout library has no wholesale IO exemption tree.
+io_trees = []
+# Flat-layout library has no command-surface subtree.
+commands_trees = []
+# Flat-layout library has no pure-module subtree for mutation/PBT/API gates.
+pure_trees = []
+# Coverage/size checks derive this repo's first-party universe from git.
+covered_trees = []
+# Flat-layout library has no dataclasses schema tree.
+dataclasses_tree = ""
+# Ships the canonical body constant but installs no neutral hook body itself.
+neutral_hook_body_path = ""
 # Phase-2 flip (fleet-check-coverage epic livespec-i5ebqd): arm the file_lloc
 # hard gate over this repo's whole git-derived first-party universe. Every
 # first-party .py is <=250 LLOC after the decomposition, so >250 now hard-fails
