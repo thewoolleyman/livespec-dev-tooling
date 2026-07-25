@@ -66,6 +66,50 @@ have codified a false contract:
    by describing the gating property structurally rather than enumerating which
    checks currently gate (an enumeration would rot the moment the set changes).
 
+### The exit-code question raised in review — ruled, and deliberately NOT changed here
+
+This is recorded because after ratification the spec and the shipped code
+DISAGREE on one number, on purpose. Anyone who later notices the disagreement
+and "fixes" the spec to match the code will reintroduce the defect this ruling
+exists to name.
+
+`SPECIFICATION/contracts.md` §"`no_shadow_ledger_body_identical` check" documents
+exit `4` for the `missing` and `body_mismatch` failure modes. The shipped module
+returns `1` (`checks/no_shadow_ledger_body_identical.py`, `_FAIL_EXIT`). A draft
+of this change had rewritten the spec to `4` → `1` to match the code. That
+rewrite has been REVERTED; those three lines are unchanged from master and this
+proposal declares no edit to them.
+
+**The maintainer ruled: the spec ratifies `4`; the shipped `1` is a tracked code
+defect.** The reasoning, verified from git history rather than inferred:
+
+- The module shipped `_FAIL_EXIT = 4` from creation and was changed to `1` by
+  slice L (`b8ea4e6`, "fix: enforce declared role keys", PR #633), whose commit
+  message declares no exit-code change. It was an undeclared side effect of this
+  epic's own enforcement slice, not a considered contract decision.
+- Slice L introduced the shared `checks/_role_key_gate.py`, whose
+  `role_key_gate_exit_code()` returns `1` for ITS condition — an undeclared role
+  key. `_FAIL_EXIT` governs a DIFFERENT condition. The two appear to have been
+  aligned despite being distinct failure classes.
+- §"Exit-code table" defines `1` as "internal bug (uncaught exception)" and `4`
+  as "check failed (structured findings on stderr)". A body mismatch is a
+  structured finding, so `4` is the semantically correct code.
+- §"Semver discipline" pins each slug's exit-code semantics as part of the
+  library's semver-stable surface; the flip shipped in the `0.x` PATCH release
+  v0.54.12 with no acknowledgment anywhere.
+
+Documenting `1` here would have ratified a defect and destroyed the spec's
+ability to name it. Leaving the contract at `4` keeps the spec correct and makes
+the CODE the thing that is wrong — tracked as `livespec-dev-tooling-1aba`, which
+also covers the wider split (three check modules return `1` for genuine
+structured failures while four return `4`). Slice S stays spec-only: no code
+change, no Red-Green-Replay, no release or fan-out.
+
+Note for whoever fixes `1aba`: that module's own docstring already says `4`, so
+on this point the docstring is RIGHT and the code is wrong. Its separate,
+genuinely stale claim — that an undeclared key makes the check no-op — is
+tracked as `livespec-dev-tooling-eihv`.
+
 ### Summary
 
 Amend `SPECIFICATION/contracts.md` §"Consumer configuration schema" to replace
@@ -194,8 +238,16 @@ describing a key it retypes. The CODE divergence is filed as
 
 ### Acceptance shape
 
-After ratification, contracts.md describes exactly the shipped behavior: no
-absent-key-no-op clause survives anywhere in the section, the fallback section
-is retired, the declared-empty convention including the `""` scalar spelling is
-documented, the three-tier semantics are normative, and the enforcement is
-attributed mechanically with the correct scope criterion.
+After ratification, contracts.md describes exactly the shipped DECLARATION
+behavior: no absent-key-no-op clause survives anywhere in the section, the
+fallback section is retired, the declared-empty convention including the `""`
+scalar spelling is documented, the three-tier semantics are normative, and the
+enforcement is attributed mechanically with the correct scope criterion.
+
+**One deliberate exception, and it is the only one.** The exit code documented
+for `no_shadow_ledger_body_identical`'s `missing` / `body_mismatch` failure modes
+is `4`, while the shipped module returns `1`. That divergence is intended and
+ruled — see §"The exit-code question raised in review" above — and is tracked as
+`livespec-dev-tooling-1aba`. So "describes the shipped behavior" is asserted of
+the declaration regime this change is about, NOT of that one exit code. A future
+reader reconciling spec against code should close the gap by changing the CODE.
