@@ -30,6 +30,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 _NO_EXCEPT_OUTSIDE_IO = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "no_except_outside_io.py"
 
 _SUPERVISOR_MARKER = "# noqa: BLE001 — sole supervisor bug-catcher: log traceback, exit 1"
+_LOOP_ITERATION_MARKER = "# noqa: BLE001 — sole loop-iteration bug-catcher: log traceback, continue"
 _FOREIGN_CODE_MARKER = (
     "# noqa: BLE001 — foreign-code isolation: "
     "custom doctor check crash captured as SyntaxError, reported"
@@ -427,6 +428,119 @@ def test_no_except_outside_io_accepts_marked_boundary_in_entry_file(*, tmp_path:
 
     assert result.returncode == 0, (
         f"no_except_outside_io should accept a marked boundary in a supervisor entry file; "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_no_except_outside_io_rejects_second_marked_boundary_in_one_artifact(
+    *, tmp_path: Path
+) -> None:
+    """Two MARKED boundary catches in one entry artifact fail the check.
+
+    Position and marker are necessary but not sufficient. The
+    ratified cardinality is absolute — at most ONE broad catch
+    per process entry artifact — so `sole` is load-bearing in
+    each boundary wording, and a second conforming-LOOKING
+    handler is a violation rather than a second boundary.
+    """
+    _write_module(
+        tmp_path=tmp_path,
+        rel=".claude-plugin/scripts/livespec/commands/seed.py",
+        body=(
+            "def main() -> int:\n"
+            "    outcome = 0\n"
+            "    try:\n"
+            "        outcome = 1\n"
+            f"    except Exception:  {_SUPERVISOR_MARKER}\n"
+            "        outcome = 2\n"
+            "    try:\n"
+            "        outcome = 3\n"
+            f"    except Exception:  {_SUPERVISOR_MARKER}\n"
+            "        outcome = 4\n"
+            "    return outcome\n"
+        ),
+    )
+
+    result = _run(cwd=tmp_path)
+
+    assert result.returncode != 0, (
+        f"no_except_outside_io should reject a SECOND marked boundary catch in one entry "
+        f"artifact; got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_no_except_outside_io_loop_iteration_marker_does_not_consume_boundary_slot(
+    *, tmp_path: Path
+) -> None:
+    """A boundary catch and a loop-iteration catch may coexist in one artifact.
+
+    `sole` scopes per accounting unit, so the loop-iteration
+    marker is counted per supervision loop rather than against
+    the artifact's single boundary slot. An entry artifact
+    running such a loop may therefore carry BOTH. Flavor-to-
+    position pairing stays review-enforced, which is why the
+    loop-iteration catch is accepted here at a `main()` boundary.
+    """
+    _write_module(
+        tmp_path=tmp_path,
+        rel=".claude-plugin/scripts/livespec/commands/seed.py",
+        body=(
+            "def main() -> int:\n"
+            "    outcome = 0\n"
+            "    try:\n"
+            "        outcome = 1\n"
+            f"    except Exception:  {_SUPERVISOR_MARKER}\n"
+            "        outcome = 2\n"
+            "    try:\n"
+            "        outcome = 3\n"
+            f"    except Exception:  {_LOOP_ITERATION_MARKER}\n"
+            "        outcome = 4\n"
+            "    return outcome\n"
+        ),
+    )
+
+    result = _run(cwd=tmp_path)
+
+    assert result.returncode == 0, (
+        f"a loop-iteration marker must not consume the artifact's boundary slot; "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_no_except_outside_io_foreign_code_suppress_does_not_consume_boundary_slot(
+    *, tmp_path: Path
+) -> None:
+    """A foreign-code suppress is accounted per invocation surface, not per artifact.
+
+    The suppress form takes the same accounting path as the
+    `except` form, so a foreign-code-marked suppress leaves the
+    single boundary slot free for the artifact's real boundary
+    catch.
+    """
+    _write_module(
+        tmp_path=tmp_path,
+        rel=".claude-plugin/scripts/livespec/commands/seed.py",
+        body=(
+            "import contextlib\n"
+            "\n"
+            "\n"
+            "def main() -> int:\n"
+            f"    with contextlib.suppress(Exception):  {_FOREIGN_CODE_MARKER}\n"
+            "        _ = 1 / 0\n"
+            "    try:\n"
+            "        return 0\n"
+            f"    except Exception:  {_SUPERVISOR_MARKER}\n"
+            "        return 1\n"
+        ),
+    )
+
+    result = _run(cwd=tmp_path)
+
+    assert result.returncode == 0, (
+        f"a foreign-code suppress must not consume the artifact's boundary slot; "
         f"got returncode={result.returncode} "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
