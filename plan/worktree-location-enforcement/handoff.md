@@ -472,6 +472,55 @@ acceptance criteria either way.
 
 Keep the existing partial-install and byte-drift arms exactly as they are.
 
+#### A AS SPECIFIED DOES NOT CLOSE THE LAYER IT WAS WRITTEN TO CLOSE
+
+Demonstrated 2026-07-25 in a scratch tree — pack installed byte-perfect, root justfile
+carrying no `import?` lines (the state of 5 governed repos):
+
+```
+verifier verdict with FULL byte-correct pack + no import? lines: PASS
+just --list  ->  Available recipes:
+                     check
+worktree-create present?  ->  0
+```
+
+**The verifier never reads the justfile.** `_inspect_worktree_pack` looks only for four
+files under `dev-tooling/`; it returned PASS on a bare temp directory whose entire content
+was that pack. Nothing anywhere verifies the two `import?` lines —
+`grep -rn "import?" livespec_dev_tooling/checks/ livespec_dev_tooling/fleet/` is empty, and
+`canonical_recipe_fidelity` covers only `check-<slug>:` recipes, not the pack's imports.
+
+Now re-read §"The incident" causal chain. Step 1 was *"ran `just --list`, found no
+`worktree-create` recipe, and fell back to raw `git worktree add worktrees/<branch>`"*.
+The operative failure was **the sanctioned tool was not discoverable**, not "four files
+were missing from a directory". Item A as written makes the *files* mandatory and leaves
+*discoverability* exactly as it was.
+
+**And A's remedy actively rewards the broken state.** After A lands, the cheapest way for
+a repo to clear a `worktree_pack_absent` FAIL is to install the four files and stop —
+which is precisely the configuration demonstrated above: **verifier-green and
+operator-broken.** A session in such a repo runs `just --list`, still sees no
+`worktree-create`, and falls back to raw `git worktree add` exactly as in the incident.
+Only item B would then catch it, at first commit, after the directory exists.
+
+That incentive inversion is invisible today only because no repo is currently in the
+pack-files-without-imports state — the 3 repos with imports also have the recipe, and the
+5 without have neither. Landing A creates the pressure that produces that state for the
+first time.
+
+**Slice A must therefore also assert discoverability**, by one of:
+
+- extending the verifier to require the two `import?` lines in the root justfile (keeps
+  the single-source byte-compare shape, adds a `worktree_pack_not_imported` failure mode);
+  or
+- having `install_worktree_pack` write the `import?` lines itself, so installing the pack
+  is inherently sufficient — at the cost of the installer mutating a tracked file, which
+  is a shape it does not currently have.
+
+The first is the smaller change and matches how the pack is already verified. Either way
+this is a **correction to slice A's scope, not an optional extra**: without it, A closes a
+proxy for the hole rather than the hole.
+
 **Bound by Red-Green-Replay** (product `.py`): stage the test ALONE, commit, confirm it
 fails; then `git commit --amend` with the impl. Test bytes must be identical across the
 pair. Existing tests to extend:
