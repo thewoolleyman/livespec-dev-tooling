@@ -266,6 +266,86 @@ un-self-healing row, and it is a design input for slice A/D: either add a
 extend the existing row's reconcile. This did not exist as a consideration in the
 original cut.
 
+### The pack is GITIGNORED-AND-MATERIALIZED, not tracked — this invalidates the question as posed
+
+Measured 2026-07-25, after the first audit PR (#631) had already merged. This is the
+single most consequential correction in the thread, because the maintainer's open
+question was framed on the opposite assumption.
+
+**Evidence.**
+
+- `livespec_dev_tooling/install_worktree_pack.py:19-21` states it outright: "The pack
+  files are UNTRACKED-AND-INSTALLED, NOT tracked-committed: a consumer `git rm`s them
+  from version control, gitignores them, and (re)materializes them via
+  `just install-worktree-pack` from `bootstrap`/CI."
+- `livespec-orchestrator-git-jsonl/.gitignore:12-16` gitignores all four pack files;
+  `git ls-files dev-tooling/` there tracks only `CLAUDE.md` and `worktree-hydrate.sh`.
+- What actually makes that repo compliant is `livespec-orchestrator-git-jsonl/justfile:196-199`
+  — a `bootstrap` TAIL calling `just install-worktree-pack`, whose own comment says the
+  tail is "not a verb obligation row, so both MUST survive the rewire."
+
+**Consequence 1 — "pack-install-first" is not a sequence of PRs.** There is nothing to
+commit. The §rollout option described as "run `install-worktree-pack` across the
+non-compliant repos before landing the verifier change" cannot be a fleet sweep of pack
+bodies, because pack bodies are never committed anywhere. The tracked work is entirely
+different: `.gitignore` entries, the two `import?` lines, an `install-worktree-pack`
+recipe, and a `bootstrap` tail.
+
+**Consequence 2 — item A reds `livespec-dev-tooling`'s OWN CI on the very PR that lands
+it.** `git ls-tree -r origin/master dev-tooling/` returns only `CLAUDE.md`; this repo's
+`.gitignore` has no pack entries; the pack is not materialized here; and `bootstrap`
+(`justfile:76-77`) delegates to `local_reconcile`, which has no worktree-pack row.
+Meanwhile `ci.yml:409-411` installs the commit-refuse *hook* before the
+`check-primary-checkout-commit-refuse-hook-installed` matrix entry but **never installs
+the pack**. So a fresh CI checkout has zero pack files; today that is a skip, and under A
+with the default `required` it is an immediate FAIL. The red is not deferred to a
+downstream pin bump — it lands on the enforcement PR itself.
+
+**Consequence 3 — A's remedy string names a command most repos do not have.**
+`_WORKTREE_PACK_REMEDY` (`:211`) says "run `just install-worktree-pack`". Measured across
+the 9 verifier-running repos:
+
+| | repos |
+|---|---|
+| has `install-worktree-pack` recipe | 4 — `livespec-dev-tooling`, `livespec-orchestrator-beads-fabro`, `livespec-orchestrator-git-jsonl`, `livespec-console-beads-fabro` |
+| has the two `import?` lines | 3 — `livespec-orchestrator-beads-fabro`, `livespec-orchestrator-git-jsonl`, `livespec-console-beads-fabro` |
+| has **neither** | 5 — `livespec`, `livespec-driver-claude`, `livespec-driver-codex`, `livespec-runtime`, `livespec-overseer` |
+
+In those 5, an operator hitting A's new FAIL is told to run a recipe that does not exist.
+And even after the pack files exist, without the `import?` lines `just --list` still shows
+no `worktree-create` — **which is causal-chain steps 1–2 of the original incident,
+unchanged**. Installing pack bodies alone does not close the hole in those repos.
+
+`livespec-dev-tooling` itself has the recipe but no `import?` lines, no gitignore entries,
+and no `bootstrap` tail — so it is non-compliant in a *different* way than the table in
+§"Fleet impact" implies. That table's `pack: ABSENT` column is accurate about the files;
+it does not capture the wiring, which is the part that is actually tracked.
+
+### A new argument FOR item B: the `git status` tripwire mostly does not exist
+
+The 2026-07-19 incident was caught only because `git status` on master showed an
+untracked `worktrees/`. Measured 2026-07-25 across the 9 verifier-running repos: **8 of 9
+gitignore a worktrees directory** (`.claude/worktrees/` or equivalent).
+`livespec-console-beads-fabro` — the one repo where the incident fired and was caught — is
+the **only** one that does not. Everywhere else the tripwire that caught it is absent by
+construction, and openbrain's live violation sits in a gitignored `.claude/worktrees/`
+exactly so.
+
+This is independent support for decision B's *hard refuse* over a warn, and it was not
+part of the record when B was settled.
+
+### Status of the rollout question after these findings: STILL OPEN
+
+A "wire-then-enforce" sequence (materialize the pack via a local obligation row plus a CI
+install step, then land the per-repo justfile/gitignore wiring, then flip the default) is
+a **recommendation only**. It has NOT been decided.
+
+For the record, so it is never mistaken for a ruling: on 2026-07-25 a supervisor UI race
+caused an `AskUserQuestion` picker to display "Wire-then-enforce" as an answer when the
+maintainer had not chosen it. That selection is **void**. The three options in §rollout —
+repriced by the findings above — remain unresolved, and any slice cut that assumes an
+ordering is a draft.
+
 ## The work
 
 ### A — verifier: absent pack becomes a FAIL, gated on config
@@ -376,6 +456,47 @@ rule — only under the narrower nested rule. Whether to widen the refusal to
 "anything not under `~/.worktrees/`" is a **new** question the maintainer has not been
 asked, and it is deliberately NOT folded into the A–E cut below.
 
+#### Does this change B, or the thread's definition of done?
+
+It does **not** change B. B's charter is "refuse worktrees nested in the primary's
+working tree," and B does exactly that. Nothing measured here makes B wrong or
+incomplete against its own specification.
+
+It **does** put the thread's definition of done in question, and that must be settled
+before the A–E cut can be called approvable. The charter's own rule, as written at the
+top of this file, has two clauses:
+
+- **(i) positive** — every worktree lives under `~/.worktrees/<repo>/<branch>`;
+- **(ii) negative** — never inside a clone.
+
+**A–E as cut enforces only (ii).** `/data/projects/homelab-substrate` satisfies (ii) and
+violates (i), and B will permit it silently. So landing all of A–E would close the
+nested-worktree hole — a real, narrower, still-valuable claim — while leaving the
+charter's stated rule partially unenforced. A "done" claim phrased as "the rule is now
+enforced" would be false; phrased as "nested worktrees are now refused" it would be true.
+
+Three distinguishable questions fall out, and collapsing them would be dishonest:
+
+1. **Should B widen** from "not nested" to "anything not under `~/.worktrees/`"? A scope
+   change to an already-settled decision.
+2. **Is the thread done when A–E land**, given clause (i) stays unenforced? This
+   determines whether an F slice exists and therefore whether A–E is the whole cut.
+3. **Should `homelab` (and `resume`, `dolt-server`) get baseline hook + verifier wiring
+   at all?** Measured: `homelab` has no commit-refuse hook installed and no verifier
+   recipe, so *nothing* in A–E — widened B included — reaches it today. That looks like
+   adopter-onboarding work owned by another lane, not by this thread.
+
+Note the interaction with question 3: even answering question 1 "yes, widen B" would not
+catch `homelab-substrate`, because `homelab` runs no hook. Widening B buys coverage only
+in repos that already have the baseline. That materially weakens the case for folding a
+widened B into this thread, and strengthens treating clause (i) as a separately-scoped
+follow-on.
+
+**Bottom line for the maintainer:** the A–E cut is approvable as *"close the nested
+fail-open"*. It is **not** approvable as *"enforce the worktree-location rule"* until
+question 2 is answered. Do not accept a cut whose acceptance criteria quietly claim the
+latter.
+
 ## First act is the maintainer's — nothing here is agent-dispatchable
 
 **The epic is anchored; no slices are filed.** That split is deliberate. An active plan
@@ -478,8 +599,33 @@ carry the corrected facts.
   governed adopter `homelab` that item B will not catch.
 - **`AGENTS.md` §Red-Green-Replay anchor** `:100-142` → `:100-147`.
 
+### Late findings — measured after PR #631 merged
+
+These four landed after the first audit PR and are recorded in the sections above:
+
+1. **The pack is gitignored-and-materialized, not tracked** — so the rollout question's
+   "pack-install-first" option was framed on a false premise. See §"The pack is
+   GITIGNORED-AND-MATERIALIZED".
+2. **Only 4 of 9 verifier-running repos expose an `install-worktree-pack` recipe**, and
+   only 3 carry the `import?` lines. A's remedy string is unactionable in 5 repos, and
+   pack bodies alone would not restore `just --list` discoverability there — the original
+   incident's causal steps 1–2.
+3. **Item A reds `livespec-dev-tooling`'s own CI on its landing PR**, because `ci.yml`
+   materializes the hook but never the pack and `bootstrap` has no worktree-pack row.
+4. **8 of 9 verifier-running repos gitignore a worktrees directory**, so the `git status`
+   tripwire that caught the original incident is absent almost everywhere — independent
+   support for B's hard refuse.
+
 ### Explicitly NOT done in this pass
 
-No slices filed, no worktree moved, no implementation dispatched, no spec change. The
-rollout-order decision and the A–E cut remain the maintainer's, and the peer-worktree
-scope question above is a new decision that has not been put to them.
+No slices filed, no worktree moved, no implementation dispatched, no spec change, no
+ledger edit. **The rollout order is UNDECIDED** — the "wire-then-enforce" sequence in
+§rollout is a recommendation, and the picker answer that briefly displayed it was a
+supervisor UI race artifact, now recorded as void.
+
+The A–E cut is likewise unapproved, and per §"Does this change B, or the thread's
+definition of done?" it is not yet approvable *as a charter-closing cut* at all: the
+first genuinely maintainer-owned question is whether this thread's definition of done is
+clause (ii) only (nested worktrees refused) or both clauses of the rule (every worktree
+under `~/.worktrees/`). That answer determines whether an F slice exists, and therefore
+whether A–E is the whole cut — which is upstream of sequencing it.
