@@ -129,11 +129,14 @@ not an exhaustive count of it.
 
 1. A repair to the config-block misattribution introduced the claim that livespec
    PR #1663 added "the first structural role keys". False — `dataclasses_tree`
-   was declared two days earlier in PR #1497. Note that `git log -S` on those key
-   names returns the SAME commit for all three and would have confirmed the wrong
-   answer; only the diff shows `source_trees` / `io_trees` appearing there inside
-   a comment reading "deliberately NOT declared here". A string search and a diff
-   disagreed, and the string search was the wrong instrument.
+   was declared two days earlier in PR #1497. Note the shape of the wrong
+   evidence: `git log -S` on those three key names has the SAME EARLIEST hit for
+   all of them, so the natural check — "did one of these keys land before the
+   others?" — answers "no" and confirms the defective wording. Only the diff
+   shows that the shared commit DECLARES `dataclasses_tree` while mentioning
+   `source_trees` / `io_trees` inside a comment reading "deliberately NOT
+   declared here". A string search and a diff disagreed, and the string search
+   was the wrong instrument.
 2. A rewrite of the `livespec-orchestrator-git-jsonl` bullet asserted that the
    keys not named as real-valued "are declared explicitly empty". False —
    `supervisor_entry_files` carries real values there.
