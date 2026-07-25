@@ -191,11 +191,41 @@ canonical repo is exemplary rather than exempt.
 
 **The 9 fleet clones' installed hooks are all byte-identical to the current
 `CANONICAL_HOOK_BODY`** (sha256 prefix `3a3f60cbd4d2`, 3494 bytes) — so today there is
-no pre-existing hook drift for item B to be blamed for. `openbrain`'s hook differs
-(`b649c648302b`): it is a *pinned* adopter running an older `livespec-dev-tooling`, so
-it is byte-correct **against its own pin**, not against master. Do not read that row as
-drift. The byte-compare is always against the canonical body of the version that repo
-pins.
+no pre-existing hook drift for item B to be blamed for.
+
+**CORRECTION (2026-07-25), superseding an earlier claim in this file.** The `openbrain`
+row was previously recorded here as "hook differs (`b649c648302b`) — a *pinned* adopter
+running an older `livespec-dev-tooling`, byte-correct against its own pin." **That was
+wrong, and it was inferred rather than inspected.** Inspected:
+
+- `openbrain/.git/hooks/pre-commit` is a **stock lefthook stub**. `grep -c "livespec
+  commit-refuse hook"` against it returns **0** — it carries no livespec refuse logic of
+  any version. It is not an older canonical body; it is not a canonical body at all.
+- `openbrain` carries its **own, unrelated** primary-refuse mechanism:
+  `scripts/refuse-primary-commit.sh` (epic `ob-apw`), wired through `lefthook.yml:25-26`
+  and `:183-184`. It is *not* installed as the pre-commit hook; lefthook invokes it.
+- That script uses the same `--git-dir` vs `--git-common-dir` structural test as the
+  livespec hook, so it enforces "not the primary" and is **equally blind to worktree
+  LOCATION** — the identical fail-open this thread exists to close, independently
+  reimplemented.
+
+**Consequence for item B and slice E — item B does not reach openbrain.** The handoff's
+§E claim that openbrain's nested worktree "is in the working tree, not `.git/`, so item B
+will hard-refuse its next commit" **does not hold**: B changes `CANONICAL_HOOK_BODY`, and
+openbrain does not run that body. Landing B, and openbrain later bumping any pin, changes
+nothing there. Closing the openbrain violation mechanically would additionally require
+either installing the livespec canonical hook in openbrain or porting the §B location
+test into `scripts/refuse-primary-commit.sh` — neither of which is in the A–E cut, and
+the second of which is another repo's file.
+
+This does not change E's *relocation* action, which stands on its own. It changes E's
+stated *justification*: relocating openbrain's worktree is hygiene and consistency with
+the rule, **not** "otherwise B strands it mid-branch". Do not carry the stranding
+rationale forward.
+
+The byte-compare point that survives: it is always against the canonical body of the
+version a repo pins, so a fleet clone on an older pin can legitimately differ from
+master. That is simply not what is happening in openbrain.
 
 ### Discoverability of the sanctioned tool, measured directly (2026-07-25)
 
@@ -710,7 +740,11 @@ for the maintainer — but it should be a decision, not an omission.
 - **no live process is cwd'd inside it** (scan of `/proc/*/cwd`), and there is no tmux
   session for openbrain. No evidence of an owning live session.
 
-It is in the **working tree**, not `.git/`, so item B will hard-refuse its next commit.
+It is in the **working tree**, not `.git/`, so it is a genuine violation of the rule.
+**But item B will NOT refuse its next commit** — see the correction in §"Fleet impact":
+`openbrain` runs no livespec canonical hook at all (its `.git/hooks/pre-commit` is a stock
+lefthook stub), so changing `CANONICAL_HOOK_BODY` does not reach it. Relocate it for
+hygiene and consistency with the rule, not because B would otherwise strand it.
 Maintainer decided: **relocate it as part of the sweep** (`git worktree move` to
 `~/.worktrees/openbrain/<branch>`), before B ships, so nobody is stranded mid-branch.
 The pre-move inspection this called for is now done and recorded above; the move itself
