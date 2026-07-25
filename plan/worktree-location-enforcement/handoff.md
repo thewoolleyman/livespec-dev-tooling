@@ -17,6 +17,120 @@ updated to the 2026-07-25 measurement; do not reason from the `2412e21` counts.
 
 ---
 
+## MAINTAINER RULING — full-location scope APPROVED (2026-07-25)
+
+**This supersedes the definition-of-done question and every scope statement in this file
+that assumes a nested-only cut.**
+
+The maintainer ruled that this thread MUST enforce **both** clauses of
+`livespec/SPECIFICATION/non-functional-requirements.md:1013`:
+
+1. **No worktree may live inside any repository clone** (the negative clause — what the
+   former item B addressed).
+2. **Every governed fleet worktree must live under `~/.worktrees/<repo>/<branch>`** (the
+   positive clause — what nothing addressed).
+
+Therefore the definition of done is **wider than the former A–E nested-only cut**, and the
+cut is re-drawn below with an **F** slice for the adopter baseline and positive-location
+enforcement that clause 2 requires.
+
+### The ruling makes item B SIMPLER, not harder
+
+Worth stating plainly because the opposite is the natural assumption. A nested-only rule
+needs *nested detection* — compute the primary root, compare prefixes, then carve out
+`.git/`. A positive-location rule needs only an **allow-list**:
+
+```sh
+case "$this_root/" in
+  "$common_abs"/*)  ;;                       # tooling-internal (beads sync) — ALLOW
+  "$sanctioned"/*)  ;;                       # under ~/.worktrees — ALLOW
+  *)                refuse_unsanctioned ;;   # everything else — REFUSE
+esac
+```
+
+**Clause 1 falls out of clause 2 for free**: anything inside a clone is, by construction,
+not under `~/.worktrees/`, so it is refused without a separate nested test. The
+`primary_root` computation and the prefix comparison both disappear. Rehearsed read-only
+across all 40 worktrees on this host: 34 `ALLOW-SANCTIONED` (including all 5 orchestrator
+`janitor-*`), 4 `ALLOW-TOOLING`, **2 `REFUSE`, zero false positives**.
+
+Two scope notes on the clauses as worded. Clause 1 says "any repository clone", which is
+broader than "governed" — but the hook only runs where it is installed, so the practical
+enforcement surface is the governed set either way. And clause 2 is scoped to *governed
+fleet* worktrees, which is precisely why the adopter baseline (slice F) is load-bearing:
+three governed adopters currently run no livespec hook at all, so clause 2 is unenforceable
+there until F lands.
+
+### Re-measured before re-cutting (2026-07-25T15:35Z)
+
+Per the ruling's instruction not to rely on earlier counts:
+
+| dimension | measurement |
+|---|---|
+| `origin/master` | `c16f358` (24 commits past the audit's `413a407` start) |
+| ledger epic `livespec-dev-tooling-0eo` | still **BACKLOG**, **no children**, updated 2026-07-20 |
+| fleet membership | **9 fleet members + 3 adopters** (openbrain/pinned, resume/pinned, homelab/released); unchanged |
+| installed hooks | **9 of 9 fleet clones canonical** (`3a3f60cbd4d2`); openbrain a **stub/other**; resume and homelab **none** |
+| verifier wired | **9 of 9 fleet**; **0 of 3 adopters** |
+| pack wiring (gitignore + 2 `import?` + recipe) | **full in 3** (`…beads-fabro`, `…git-jsonl`, `…console`); **absent in 6 fleet + 3 adopters** |
+| pack materialized | **1** (`livespec-orchestrator-git-jsonl`) |
+| worktrees on host | **40** |
+| live violations under BOTH clauses | **2**, both nested, both in governed repos: `livespec-overseer/.claude/worktrees/dod-corrections` (fleet member; **another session's — do not touch**) and `openbrain/.claude/worktrees/fix-ob-6vt-…` (adopter; inspected, safe to move) |
+
+No peer-case violation is live right now (`homelab-substrate` was removed by the `homelab`
+track mid-audit), but the class remains unenforced until B widens.
+
+### The re-cut
+
+**A — verifier: absent pack becomes a FAIL, gated on config, AND discoverability asserted.**
+Scope-corrected twice over. Adds the `worktree_discipline.pack` read (absent key → default
+`required`; `optional` → skip; malformed → FAIL) **and** an assertion that the two
+`import?` lines are present, without which a byte-perfect pack passes while `just --list`
+shows nothing. Prerequisites in the same slice: a `worktree-pack` LOCAL obligation row so
+`just bootstrap` self-heals, and a CI install step mirroring `ci.yml:409-411` — without
+them A reds this repo's own CI on its landing PR. Product `.py` → Red–Green–Replay.
+
+**B — hook: positive-location enforcement (supersedes nested-only).** The allow-list `case`
+above, satisfying both clauses. Carries the sandbox-exempt guard (an exempt primary falls
+through the earlier arm and would otherwise be refused — measured), a decision on the
+spec's janitor carve-out for worktrees inside an integration clone, and a rename of the
+shadowed `git_dir`. Honest limit unchanged: no `pre-worktree-add` hook exists, so this
+fires at first *commit*. Product `.py` → Red–Green–Replay.
+
+**C — installer + docs write the key with its default.** Unchanged.
+
+**D — fleet wiring + hydration sweep.** **6 tracked wiring PRs** (`livespec`,
+`livespec-dev-tooling`, `livespec-driver-claude`, `livespec-driver-codex`,
+`livespec-runtime`, `livespec-overseer`), ~10 lines each, modelled on
+`livespec-orchestrator-git-jsonl`; plus `just bootstrap` in the 2 wired-but-unhydrated
+repos, which need no PR at all.
+
+**E — relocate the live nested worktrees.** openbrain's is inspected and safe
+(clean tree, unpushed `296dd1f`, no upstream, no live owner). `livespec-overseer`'s
+belongs to **another session** and must not be touched without its owner — E cannot close
+unilaterally.
+
+**F — adopter baseline and positive-location reach (NEW, required by the ruling).**
+Clause 2 is unenforceable in the three governed adopters today: openbrain runs a stock
+lefthook stub, resume and homelab run no hook at all, and none of the three wires the
+verifier. F installs the canonical commit-refuse hook and wires the verifier in openbrain,
+resume, and homelab — and reconciles the **two bespoke location-blind implementations**
+(`openbrain/scripts/refuse-primary-commit.sh`, `resume/scripts/check-primary-checkout.ts`)
+so the fleet has one location-aware rule rather than three location-blind ones. These are
+other repos' files, so F is a cross-repo slice with its own PRs and review.
+
+**G — birth procedure (NEW, proposed; deferrable).** Only `impl-plugin` has a copier
+template, and it is the fully-compliant one. Members of the other six classes are
+hand-scaffolded and born unwired — `livespec-overseer` is the proof, and it is also where
+the second live violation appeared. Without G the sweep fixes the population and not the
+generator, and clause 2 decays with each new member. Not strictly required for clause 2 to
+be true today, so the maintainer may defer it; it should be a decision, not an omission.
+
+**Sequencing dependencies** (not an approved order — see §rollout): A's prerequisites must
+land before A's default flips or this repo's CI reds; D's wiring must exist before A's FAIL
+is actionable in the 6 unwired repos; F is independent of A–D and gates clause 2's reach;
+E is independent of everything and half-blocked on another session; G is independent.
+
 ## CURRENT STATE — read this before anything else
 
 This file grew from 265 to ~1200 lines during the 2026-07-25 audit, and several of its
@@ -57,9 +171,11 @@ repo classes has a copier template. → §"D is two different jobs".
 allows, 4 tooling allows, exactly 2 refusals, zero false positives. → §"Widening to the
 spec's rule was rehearsed".
 
-**Decision status: NOTHING is approved.** Rollout order is undecided; the A–E cut is
-unapproved and, per the spec finding, not approvable *as a charter-closing cut*; no slices
-are filed; no worktree has been moved; the ledger is untouched. A "wire-then-enforce"
+**Decision status (updated 2026-07-25).** **Scope IS approved** — full-location, both
+clauses, per §"MAINTAINER RULING" at the top of this file; the re-cut there (A–G) reflects
+it. **Rollout order remains UNDECIDED**, and it is now the single next decision. No slices
+are filed, no worktree has been moved, the ledger is untouched, and no product change has
+been made. A "wire-then-enforce"
 answer displayed on 2026-07-25 was a supervisor UI-race artifact and is void.
 
 ### Superseded claims — do not act on these if you meet them elsewhere in the file
@@ -1083,11 +1199,9 @@ latter.
 **The open questions, in dependency order (2026-07-25).** The original text below lists
 rollout order first; that ordering is superseded. Ask them in this order:
 
-1. **Does this thread enforce the spec's rule, or only the nested half?** The spec states
-   the rule positively and names the *peer* case explicitly, so the nested-only cut cannot
-   honestly be called done. Widening measures clean (2 refusals, zero false positives) and
-   is a three-line change. This determines whether the cut is A–E or wider — everything
-   else is downstream.
+1. ~~**Does this thread enforce the spec's rule, or only the nested half?**~~
+   **ANSWERED 2026-07-25 — full-location scope approved, both clauses.** See §"MAINTAINER
+   RULING" at the top. The cut is now A–G, not A–E.
 2. **Rollout order**, repriced against the untracked-pack finding and the measured cadence
    (~7.3 releases/day; tag-scoped bump branches, so stalls accumulate at ~58 dead PRs per
    fleet-day; against ~10 tracked lines × ~6 repos of wiring).
