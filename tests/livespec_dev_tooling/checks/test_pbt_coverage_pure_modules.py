@@ -214,7 +214,7 @@ def test_pbt_coverage_falls_back_when_no_mirror_pairing_matches(
 
 def test_pbt_coverage_noops_without_configured_pure_trees(*, tmp_path: Path) -> None:
     (tmp_path / "pyproject.toml").write_text(
-        '[tool.livespec_dev_tooling]\nsource_trees = ["consumer_pkg"]\n',
+        "[tool.livespec_dev_tooling]\npure_trees = []\n",
         encoding="utf-8",
     )
 
@@ -230,8 +230,8 @@ def test_pbt_coverage_noops_without_configured_pure_trees(*, tmp_path: Path) -> 
     assert "pure_trees" in result.stdout + result.stderr
 
 
-def test_pbt_coverage_accepts_empty_tree(*, tmp_path: Path) -> None:
-    """An empty repo cwd passes (exit 0)."""
+def test_pbt_coverage_rejects_declared_tree_with_no_python(*, tmp_path: Path) -> None:
+    """A declared pure test tree containing no Python files is a misdeclaration."""
     result = subprocess.run(
         [sys.executable, str(_PBT_COVERAGE)],
         cwd=str(tmp_path),
@@ -240,9 +240,11 @@ def test_pbt_coverage_accepts_empty_tree(*, tmp_path: Path) -> None:
         check=False,
     )
 
-    assert (
-        result.returncode == 0
-    ), f"pbt_coverage should accept empty tree; got returncode={result.returncode}"
+    assert result.returncode == 1, (
+        f"pbt_coverage should reject a declared tree with no Python files; "
+        f"got returncode={result.returncode}"
+    )
+    assert "declared role key resolves to no Python files" in result.stderr
 
 
 def test_pbt_coverage_module_importable_without_running_main() -> None:

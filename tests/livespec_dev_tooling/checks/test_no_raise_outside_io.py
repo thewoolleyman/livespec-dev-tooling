@@ -187,8 +187,8 @@ def test_no_raise_outside_io_accepts_bug_class_raise_in_pure_layer(*, tmp_path: 
     )
 
 
-def test_no_raise_outside_io_accepts_empty_tree(*, tmp_path: Path) -> None:
-    """An empty repo cwd passes the check (exit 0)."""
+def test_no_raise_outside_io_rejects_declared_tree_with_no_python(*, tmp_path: Path) -> None:
+    """A declared source tree containing no Python files is a misdeclaration."""
     result = subprocess.run(
         [sys.executable, str(_NO_RAISE_OUTSIDE_IO)],
         cwd=str(tmp_path),
@@ -197,8 +197,8 @@ def test_no_raise_outside_io_accepts_empty_tree(*, tmp_path: Path) -> None:
         check=False,
     )
 
-    assert result.returncode == 0, (
-        f"no_raise_outside_io should accept empty tree with exit 0; "
+    assert result.returncode == 1, (
+        f"no_raise_outside_io should reject a declared tree with no Python files; "
         f"got returncode={result.returncode} "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )

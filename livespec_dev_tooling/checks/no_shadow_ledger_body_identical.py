@@ -41,6 +41,7 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling.checks._role_key_gate import role_key_gate_exit_code  # noqa: E402
 from livespec_dev_tooling.config import load_config  # noqa: E402
 
 # The canonical body is the SINGLE source of truth, shipped as a module
@@ -55,10 +56,11 @@ __all__: list[str] = []
 
 
 _CHECK_ID = "no_shadow_ledger_body_identical"
-_FAIL_EXIT = 4
+_FAIL_EXIT = 1
 
 _MISSING_FAILURE_MODE = "missing"
 _BODY_MISMATCH_FAILURE_MODE = "body_mismatch"
+_NEUTRAL_HOOK_BODY_PATH_GATE_BUG = "neutral_hook_body_path unexpectedly empty after role-key gate"
 _REMEDY = (
     "run `just install-no-shadow-ledger` (the from-package installer that "
     "writes the single canonical neutral no-shadow-ledger hook body "
@@ -81,18 +83,22 @@ def _configure_logger() -> structlog.stdlib.BoundLogger:
 def main() -> int:
     log = _configure_logger()
     config = load_config(repo_root=Path.cwd())
-    if config.neutral_hook_body_path is None:
-        log.info(
-            "role key absent — check no-ops",
-            check_id=_CHECK_ID,
-            role="neutral_hook_body_path",
-            level="info",
-        )
-        return 0
-    path = Path.cwd() / config.neutral_hook_body_path
+    gate_exit = role_key_gate_exit_code(
+        config=config,
+        key="neutral_hook_body_path",
+        value_is_empty=config.neutral_hook_body_path is None,
+        log=log,
+        check_id=_CHECK_ID,
+    )
+    if gate_exit is not None:
+        return gate_exit
+    neutral_hook_body_path = config.neutral_hook_body_path
+    if neutral_hook_body_path is None:
+        raise RuntimeError(_NEUTRAL_HOOK_BODY_PATH_GATE_BUG)
+    path = Path.cwd() / neutral_hook_body_path
     if not path.is_file():
         log.error(
-            "no_shadow_ledger_body_identical: hook body missing",
+            "declared neutral_hook_body_path is not a file",
             check_id=_CHECK_ID,
             status="fail",
             failure_mode=_MISSING_FAILURE_MODE,

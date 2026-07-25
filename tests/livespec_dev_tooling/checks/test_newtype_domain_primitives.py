@@ -16,7 +16,13 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
+
+import pytest
+
+from livespec_dev_tooling import config as config_module
+from livespec_dev_tooling.checks import newtype_domain_primitives as _check
 
 __all__: list[str] = []
 
@@ -25,6 +31,28 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 _NEWTYPE_DOMAIN_PRIMITIVES = (
     _REPO_ROOT / "livespec_dev_tooling" / "checks" / "newtype_domain_primitives.py"
 )
+
+
+def test_newtype_domain_primitives_bug_guard_after_gate(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """If the gate is bypassed, a declared-empty dataclasses tree remains a bug."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(_check, "role_key_gate_exit_code", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        _check,
+        "load_config",
+        lambda **_kwargs: replace(
+            config_module.Config(),
+            declared_keys=frozenset({"dataclasses_tree"}),
+            dataclasses_tree=None,
+        ),
+    )
+
+    with pytest.raises(
+        RuntimeError, match="dataclasses_tree unexpectedly empty after role-key gate"
+    ):
+        _check.main()
 
 
 def test_newtype_domain_primitives_rejects_canonical_field_with_raw_type(
@@ -406,8 +434,8 @@ def test_newtype_domain_primitives_rejects_canonical_field_with_non_optional_uni
     )
 
 
-def test_newtype_domain_primitives_accepts_empty_tree(*, tmp_path: Path) -> None:
-    """An empty repo cwd passes (exit 0)."""
+def test_newtype_domain_primitives_rejects_missing_declared_tree(*, tmp_path: Path) -> None:
+    """A declared dataclasses_tree must exist as a directory."""
     result = subprocess.run(
         [sys.executable, str(_NEWTYPE_DOMAIN_PRIMITIVES)],
         cwd=str(tmp_path),
@@ -416,10 +444,11 @@ def test_newtype_domain_primitives_accepts_empty_tree(*, tmp_path: Path) -> None
         check=False,
     )
 
-    assert result.returncode == 0, (
-        f"newtype_domain_primitives should accept empty tree; "
+    assert result.returncode == 1, (
+        f"newtype_domain_primitives should reject a missing declared tree; "
         f"got returncode={result.returncode}"
     )
+    assert "declared dataclasses_tree is not a directory" in result.stderr
 
 
 def test_newtype_domain_primitives_module_importable_without_running_main() -> None:

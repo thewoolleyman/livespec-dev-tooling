@@ -49,7 +49,9 @@ def _git(*, cwd: Path, args: list[str]) -> None:
     )
 
 
-def _run_check(*, slug: str, cwd: Path) -> subprocess.CompletedProcess[str]:
+def _run_check(
+    *, slug: str, cwd: Path, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
     # S603: argv is a fixed list (the venv interpreter + a repo-controlled
     # check path); no untrusted shell input. `git init` + stage first, so the
     # git-derived universe (and root-anchoring) resolves against the fixture.
@@ -61,6 +63,7 @@ def _run_check(*, slug: str, cwd: Path) -> subprocess.CompletedProcess[str]:
         capture_output=True,
         text=True,
         check=False,
+        env=env,
     )
 
 
@@ -131,15 +134,39 @@ def test_source_trees_violation_outside_declared_trees_is_newly_covered_warn(
     assert "newly_covered" in result.stderr
 
 
-def _assert_noop_on_absent_role_key(*, slug: str, role: str, tmp_path: Path) -> None:
-    """A layered check no-ops (exit 0 + info log) when its role key is absent."""
+def _assert_errors_on_undeclared_role_key(
+    *, slug: str, role: str, tmp_path: Path, env: dict[str, str] | None = None
+) -> None:
+    """A layered check fails closed when its governing role key is undeclared."""
     _write_block(repo_root=tmp_path, body='source_trees = ["pkg"]\n')
-    result = _run_check(slug=slug, cwd=tmp_path)
-    assert result.returncode == 0, (
-        f"{slug} must no-op (exit 0) when `{role}` is absent; "
+    result = _run_check(slug=slug, cwd=tmp_path, env=env)
+    assert result.returncode == 1, (
+        f"{slug} must fail when `{role}` is undeclared; "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
-    assert "role key absent" in result.stderr
+    assert "role key undeclared" in result.stderr
+    assert "declare the real tree" in result.stderr
+    assert "declare it explicitly empty with a comment giving the reason" in result.stderr
+    assert role in result.stderr
+
+
+def _assert_noop_on_declared_empty_role_key(
+    *,
+    slug: str,
+    role: str,
+    declaration: str,
+    tmp_path: Path,
+    env: dict[str, str] | None = None,
+) -> None:
+    """A declared-empty role key is a visible sanctioned opt-out."""
+    _write_block(repo_root=tmp_path, body=declaration)
+    result = _run_check(slug=slug, cwd=tmp_path, env=env)
+    assert result.returncode == 0, (
+        f"{slug} must no-op (exit 0) when `{role}` is declared empty; "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    assert "role key declared empty" in result.stderr
+    assert "sanctioned opt-out" in result.stderr
     assert role in result.stderr
 
 
@@ -195,7 +222,7 @@ def test_no_raise_outside_io_runs_without_io_trees(*, tmp_path: Path) -> None:
 
 
 def _assert_announces_absent_source_trees(*, slug: str, tmp_path: Path) -> None:
-    """An absent `source_trees` is named in the log, not silently walked as zero files.
+    """An undeclared `source_trees` is named in the log and fails closed.
 
     Neither check guards `source_trees`, so an unset key would otherwise
     run the walk for zero iterations and exit 0 — indistinguishable from
@@ -203,11 +230,13 @@ def _assert_announces_absent_source_trees(*, slug: str, tmp_path: Path) -> None:
     """
     _write_block(repo_root=tmp_path, body='target_dirs = ["pkg"]\n')
     result = _run_check(slug=slug, cwd=tmp_path)
-    assert result.returncode == 0, (
-        f"{slug} must exit 0 when `source_trees` is absent; "
+    assert result.returncode == 1, (
+        f"{slug} must exit 1 when `source_trees` is undeclared; "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
-    assert "role key absent" in result.stderr
+    assert "role key undeclared" in result.stderr
+    assert "declare the real tree" in result.stderr
+    assert "declare it explicitly empty with a comment giving the reason" in result.stderr
     assert "source_trees" in result.stderr
 
 
@@ -222,17 +251,130 @@ def test_no_raise_outside_io_announces_absent_source_trees(*, tmp_path: Path) ->
 
 
 def test_public_api_result_typed_noops_without_pure_trees(*, tmp_path: Path) -> None:
-    """`public_api_result_typed` no-ops when `pure_trees` is absent."""
-    _assert_noop_on_absent_role_key(
+    """`public_api_result_typed` fails when `pure_trees` is undeclared."""
+    _assert_errors_on_undeclared_role_key(
         slug="public_api_result_typed", role="pure_trees", tmp_path=tmp_path
     )
 
 
 def test_newtype_domain_primitives_noops_without_dataclasses_tree(*, tmp_path: Path) -> None:
-    """`newtype_domain_primitives` no-ops when `dataclasses_tree` is null."""
-    _assert_noop_on_absent_role_key(
+    """`newtype_domain_primitives` fails when `dataclasses_tree` is undeclared."""
+    _assert_errors_on_undeclared_role_key(
         slug="newtype_domain_primitives", role="dataclasses_tree", tmp_path=tmp_path
     )
+
+
+def test_all_role_gated_checks_error_on_undeclared_keys(*, tmp_path: Path) -> None:
+    """Every role-key-gated check fails closed on an undeclared governing key."""
+    cases = (
+        ("no_shadow_ledger_body_identical", "neutral_hook_body_path", None),
+        ("pbt_coverage_pure_modules", "pure_trees", None),
+        ("check_mutation", "pure_trees", {"LIVESPEC_RUN_MUTATION": "true"}),
+    )
+    for index, (slug, role, env) in enumerate(cases):
+        case_root = tmp_path / f"case_{index}"
+        case_root.mkdir()
+        _assert_errors_on_undeclared_role_key(
+            slug=slug,
+            role=role,
+            tmp_path=case_root,
+            env=env,
+        )
+
+
+def test_declared_empty_role_keys_are_sanctioned_opt_outs(*, tmp_path: Path) -> None:
+    """Declared-empty keys stay a visible no-op rather than a misconfiguration."""
+    cases = (
+        ("no_except_outside_io", "source_trees", "source_trees = []\n", None),
+        ("no_raise_outside_io", "source_trees", "source_trees = []\n", None),
+        ("public_api_result_typed", "pure_trees", "pure_trees = []\n", None),
+        ("pbt_coverage_pure_modules", "pure_trees", "pure_trees = []\n", None),
+        (
+            "check_mutation",
+            "pure_trees",
+            "pure_trees = []\n",
+            {"LIVESPEC_RUN_MUTATION": "true"},
+        ),
+        ("newtype_domain_primitives", "dataclasses_tree", 'dataclasses_tree = ""\n', None),
+        (
+            "no_shadow_ledger_body_identical",
+            "neutral_hook_body_path",
+            'neutral_hook_body_path = ""\n',
+            None,
+        ),
+    )
+    for index, (slug, role, declaration, env) in enumerate(cases):
+        case_root = tmp_path / f"case_{index}"
+        case_root.mkdir()
+        _assert_noop_on_declared_empty_role_key(
+            slug=slug,
+            role=role,
+            declaration=declaration,
+            tmp_path=case_root,
+            env=env,
+        )
+
+
+def test_declared_source_trees_with_no_python_files_errors(*, tmp_path: Path) -> None:
+    """A non-empty `source_trees` declaration must resolve to at least one `.py` file."""
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    _write_block(repo_root=tmp_path, body='source_trees = ["empty"]\n')
+    result = _run_check(slug="no_raise_outside_io", cwd=tmp_path)
+    assert (
+        result.returncode == 1
+    ), f"declared source_trees with no .py files must fail; stderr={result.stderr!r}"
+    assert "declared role key resolves to no Python files" in result.stderr
+    assert "source_trees" in result.stderr
+    assert "empty" in result.stderr
+
+
+def test_io_exempt_source_tree_still_passes_when_tree_contains_python(*, tmp_path: Path) -> None:
+    """`files_inspected == 0` is not an error when declared source files are IO-exempt."""
+    _write_block(repo_root=tmp_path, body='source_trees = ["pkg"]\nio_trees = ["pkg"]\n')
+    _write_pkg_module(
+        tmp_path=tmp_path,
+        body=(
+            "def do_thing() -> None:\n"
+            "    try:\n"
+            "        x = 1\n"
+            "    except Exception:\n"
+            "        x = 2\n"
+            "    _ = x\n"
+        ),
+    )
+    result = _run_check(slug="no_except_outside_io", cwd=tmp_path)
+    assert result.returncode == 0, (
+        f"IO-exempt source files should not be treated as a misdeclared source tree; "
+        f"stderr={result.stderr!r}"
+    )
+    assert '"files_inspected": 0' in result.stderr
+    assert '"offenses": 0' in result.stderr
+
+
+def test_scalar_role_paths_must_exist_when_declared_non_empty(*, tmp_path: Path) -> None:
+    """Non-walking scalar role keys fail when their declared path is missing."""
+    cases = (
+        (
+            "newtype_domain_primitives",
+            'dataclasses_tree = "missing_dataclasses"\n',
+            "declared dataclasses_tree is not a directory",
+        ),
+        (
+            "no_shadow_ledger_body_identical",
+            'neutral_hook_body_path = "missing-hook.sh"\n',
+            "declared neutral_hook_body_path is not a file",
+        ),
+    )
+    for index, (slug, declaration, message) in enumerate(cases):
+        case_root = tmp_path / f"case_{index}"
+        case_root.mkdir()
+        _write_block(repo_root=case_root, body=declaration)
+        result = _run_check(slug=slug, cwd=case_root)
+        assert (
+            result.returncode == 1
+        ), f"{slug} must reject a missing declared path; stderr={result.stderr!r}"
+        assert message in result.stderr
 
 
 def test_no_write_direct_noops_without_covered_trees(*, tmp_path: Path) -> None:

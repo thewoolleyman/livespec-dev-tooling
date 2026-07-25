@@ -7,17 +7,11 @@ block in the consuming repo's root `pyproject.toml`. This module is the
 single loader (via stdlib `tomllib` on 3.11+, or the vendored `tomli` on
 the 3.10 floor).
 
-Two default regimes, per §"Default layout fallback" + §"Role keys":
-
-1. **No `[tool.livespec_dev_tooling]` block at all** (the livespec-core
-   case) → every role key falls back to livespec-core's historical
-   pre-G.4 path constant, so livespec-core stays bit-identical (the
-   criterion-5 backward-compat guarantee).
-2. **Block present but a role key omitted** (a flat-layout consumer like
-   livespec-dev-tooling itself) → that key defaults empty/null, which
-   makes the consuming check no-op against this consumer (per §"Role
-   keys"). The consumer declares only the role keys its layout actually
-   has.
+The typed `Config` carries both the parsed role-key values and the
+set of keys explicitly declared in the consumer block. That declared-ness
+is semantically meaningful: a scalar role key can be declared empty (for
+example `dataclasses_tree = ""`) and parse to `None`, which must remain
+distinguishable from an omitted key at the check layer.
 
 Alongside the consumer-config loader, this module also derives the
 git-index first-party `.py` universe (`iter_first_party_py_files`) — the
@@ -62,6 +56,7 @@ else:
 
 __all__: list[str] = [
     "BIN_WRAPPER_TREE",
+    "REQUIRED_ROLE_KEYS",
     "Config",
     "ConfigParseError",
     "GitLsFilesError",
@@ -89,6 +84,25 @@ __all__: list[str] = [
 _TABLE_KEY = "livespec_dev_tooling"
 _VENDOR_MARKER = "_vendor"
 _PYCACHE_MARKER = "__pycache__"
+
+REQUIRED_ROLE_KEYS = frozenset(
+    {
+        "source_trees",
+        "io_trees",
+        "commands_trees",
+        "supervisor_entry_files",
+        "pure_trees",
+        "covered_trees",
+        "target_dirs",
+        "source_tree_prefixes",
+        "dataclasses_tree",
+        "neutral_hook_body_path",
+    }
+)
+
+_PATH_TUPLE_ROLE_KEYS = REQUIRED_ROLE_KEYS - frozenset(
+    {"source_tree_prefixes", "dataclasses_tree", "neutral_hook_body_path"}
+)
 
 
 class ConfigParseError(Exception):
@@ -134,13 +148,13 @@ class MirrorPairing:
 class Config:
     """Typed layout configuration. The bare `Config()` is the flat baseline.
 
-    A bare `Config()` carries empty role keys — the regime a flat-layout
-    consumer (one that declares a `[tool.livespec_dev_tooling]` block but
-    omits a key) sees for that key: the consuming check no-ops. The
-    livespec-core historical fallback (whole block absent) is built by
-    `_livespec_core_config()`.
+    `declared_keys` records which keys were present in the consumer's
+    `[tool.livespec_dev_tooling]` block. Value emptiness and declared-ness
+    are separate signals: omitted role keys are configuration errors for
+    role-gated checks, while declared-empty role keys are sanctioned opt-outs.
     """
 
+    declared_keys: frozenset[str] = frozenset()
     source_trees: tuple[Path, ...] = ()
     io_trees: tuple[Path, ...] = ()
     commands_trees: tuple[Path, ...] = ()
@@ -157,62 +171,6 @@ class Config:
 
 def _p(*parts: str) -> Path:
     return Path(*parts)
-
-
-def _livespec_core_config() -> Config:
-    """The historical livespec-core layout used when the block is absent.
-
-    Each value is the literal path constant the corresponding check
-    carried before the G.4 migration, so livespec-core (which omits the
-    `[tool.livespec_dev_tooling]` block) stays bit-identical to its
-    pre-G.6 behavior.
-    """
-    livespec = _p(".claude-plugin", "scripts", "livespec")
-    return Config(
-        source_trees=(livespec,),
-        io_trees=(_p(".claude-plugin", "scripts", "livespec", "io"),),
-        commands_trees=(_p(".claude-plugin", "scripts", "livespec", "commands"),),
-        supervisor_entry_files=(
-            _p(".claude-plugin", "scripts", "livespec", "doctor", "run_static.py"),
-            _p(".claude-plugin", "scripts", "bin", "_bootstrap.py"),
-        ),
-        dataclasses_tree=_p(".claude-plugin", "scripts", "livespec", "schemas", "dataclasses"),
-        pure_trees=(
-            _p(".claude-plugin", "scripts", "livespec", "parse"),
-            _p(".claude-plugin", "scripts", "livespec", "validate"),
-        ),
-        covered_trees=(
-            livespec,
-            _p(".claude-plugin", "scripts", "bin"),
-            _p("dev-tooling"),
-        ),
-        source_tree_prefixes=(
-            ".claude-plugin/scripts/livespec/",
-            ".claude-plugin/scripts/bin/",
-            "dev-tooling/checks/",
-        ),
-        tests_tree_prefix="tests/",
-        target_dirs=(
-            _p(".claude-plugin", "scripts"),
-            _p("dev-tooling"),
-            _p("tests"),
-        ),
-        mirror_pairings=(
-            MirrorPairing(source_tree=livespec, test_tree=_p("tests", "livespec")),
-            MirrorPairing(
-                source_tree=_p(".claude-plugin", "scripts", "bin"),
-                test_tree=_p("tests", "bin"),
-            ),
-            MirrorPairing(
-                source_tree=_p("dev-tooling", "checks"),
-                test_tree=_p("tests", "dev-tooling", "checks"),
-            ),
-            MirrorPairing(
-                source_tree=_p("livespec_dev_tooling", "checks"),
-                test_tree=_p("tests", "livespec_dev_tooling", "checks"),
-            ),
-        ),
-    )
 
 
 def iter_py_files(*, root: Path) -> Iterator[Path]:
@@ -321,8 +279,8 @@ def _parse_pyproject(*, repo_root: Path) -> dict[str, Any] | None:
 def _read_table(*, repo_root: Path) -> dict[str, Any] | None:
     """Return the `[tool.livespec_dev_tooling]` table, or None if absent.
 
-    `None` distinguishes "no block at all" (livespec-core fallback regime)
-    from "block present but empty" (flat-baseline regime).
+    `None` means no consumer block was declared, which `load_config` maps
+    to the same flat baseline as an empty block but with no declared keys.
     """
     parsed = _parse_pyproject(repo_root=repo_root)
     if parsed is None:
@@ -532,26 +490,17 @@ def load_plan_lifecycle_anchor(*, repo_root: Path) -> bool | None:
 def load_config(*, repo_root: Path) -> Config:
     """Read `<repo_root>/pyproject.toml`'s block and resolve the layout.
 
-    No `[tool.livespec_dev_tooling]` block → the livespec-core historical
-    fallback. Block present → a flat baseline (`Config()`) with each
-    declared role key overridden; an omitted key stays empty/null so the
-    consuming check no-ops on this consumer. Raises `ConfigParseError` on
-    malformed TOML or a schema-violating value.
+    No `[tool.livespec_dev_tooling]` block → a bare flat baseline with no
+    declared keys. Block present → the same flat baseline with each declared
+    key overridden and `declared_keys` preserving key presence. Raises
+    `ConfigParseError` on malformed TOML or a schema-violating value.
     """
     table = _read_table(repo_root=repo_root)
     if table is None:
-        return _livespec_core_config()
+        return Config()
     baseline = Config()
     overrides: dict[str, Any] = {}
-    for key in (
-        "source_trees",
-        "io_trees",
-        "commands_trees",
-        "supervisor_entry_files",
-        "pure_trees",
-        "covered_trees",
-        "target_dirs",
-    ):
+    for key in _PATH_TUPLE_ROLE_KEYS:
         if key in table:
             overrides[key] = _as_path_tuple(value=table[key], key=key)
     if "dataclasses_tree" in table:
@@ -576,6 +525,7 @@ def load_config(*, repo_root: Path) -> Config:
             neutral_hook_body_path.as_posix() if neutral_hook_body_path is not None else None
         )
     return Config(
+        declared_keys=frozenset(table),
         source_trees=overrides.get("source_trees", baseline.source_trees),
         io_trees=overrides.get("io_trees", baseline.io_trees),
         commands_trees=overrides.get("commands_trees", baseline.commands_trees),
