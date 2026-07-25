@@ -217,6 +217,70 @@ staggered pin bumps mean the red window is not atomic and would surface as unrel
 failures in 7 (now 8) repos over an unpredictable window. Not a decision — a
 recommendation.
 
+### The red window, actually measured (2026-07-25)
+
+That "unpredictable window" reasoning was never quantified. It is now, and the numbers
+point the same direction but for a **different and much stronger reason**.
+
+| measurement | value |
+|---|---|
+| `livespec-dev-tooling` releases, last 7 days | **51** (~7.3/day) |
+| `livespec-dev-tooling` releases, last 30 days | 128 |
+| pin bumps landed per member, last 30 days | 98–112 (~3.5/day); `livespec-overseer` 25, it joined recently |
+| members whose last pin bump landed on 2026-07-25 | **8 of 8** |
+| bump branch naming | `<prefix>-<source_repo>-<tag>` (`.github/actions/bump-pin-rewrite/action.yml:135`) |
+
+Two consequences, and they pull against each other:
+
+**The window is not long-tailed — it is immediate.** Every member bumped its pin *today*.
+A verifier-first red would therefore hit all 8 non-compliant repos within hours, not
+drift in as scattered mystery failures weeks apart. On that axis the original worry was
+misplaced: the red would be loud and simultaneous, which is what a forcing function is
+supposed to be.
+
+**But stalled bump PRs ACCUMULATE rather than being retried in place.** The bump branch
+is **tag-scoped**, so each new release mints a *fresh* branch and a *fresh* PR. A repo
+that goes red does not sit on one failing PR waiting to be fixed — it collects a new one
+per release. At ~7.3 releases/day across 8 non-compliant repos that is on the order of
+**~58 new dead bump PRs per fleet-day**, every day, until each repo is wired. Their pins
+freeze meanwhile, so those members stop receiving unrelated genuine fixes for the
+duration.
+
+So the honest framing of the trade is not "no red window vs. an unpredictable one". It is:
+
+- **wire first** → zero dead PRs, and the fail-open stays open for however long the wiring
+  takes;
+- **enforce first** → the hole closes at once and the red is unmissable, at a cost of
+  roughly 58 dead PRs per day and 8 frozen pins until the wiring lands.
+
+That cost scales with how long the wiring takes, which is the next measurement.
+
+### What the per-repo wiring actually costs (2026-07-25)
+
+Measured off `livespec-orchestrator-git-jsonl`, the only compliant repo, which is the
+model to copy. The tracked change per repo is small:
+
+- `.gitignore` — **4 lines** (`:13-16`), one per pack file;
+- `justfile` — **2** `import?` lines (`:91`, `:135`), a **2-line** `install-worktree-pack`
+  recipe, and a **1-line** `bootstrap` tail calling it.
+
+That is roughly **10 tracked lines per repo**, plus explanatory comments, in 5 repos that
+have none — `livespec`, `livespec-driver-claude`, `livespec-driver-codex`,
+`livespec-runtime`, `livespec-overseer` — and a partial top-up in `livespec-dev-tooling`
+(has the recipe; needs gitignore, imports, and the bootstrap tail). Two repos
+(`livespec-orchestrator-beads-fabro`, `livespec-console-beads-fabro`) have the recipe and
+imports and need only their gitignore and bootstrap tail confirmed.
+
+`git-jsonl`'s third bootstrap line (`chmod +x dev-tooling/worktree-hydrate.sh`) is
+**not** general — the hydrate stub is per-ecosystem and optional
+(`worktree_pack/worktree-lib.sh:45-50` treats it as "if present", and the shipped one is a
+no-op). Do not copy it blindly.
+
+**Bearing on the decision:** ~10 lines × ~6 repos is a short wiring pass, not a campaign.
+That materially favours wiring first — the fail-open's extra exposure is measured in a
+handful of small PRs, whereas the enforce-first cost is ~58 dead PRs per day of the same
+interval. Still the maintainer's call; this is the arithmetic, not the ruling.
+
 ### The mechanics under this question CHANGED since `2412e21` — reprice it
 
 Three findings from the 2026-07-25 remeasurement change the failure window of each
