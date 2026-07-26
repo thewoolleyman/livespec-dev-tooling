@@ -17,14 +17,22 @@ POSITION — which trees a broad catch may live in, and which
 `main()` direct-children are exempt — plus the per-artifact
 boundary CARDINALITY: a second exempted boundary catch in one
 entry artifact is an offense, since `sole` is load-bearing in
-each boundary wording. Loop-iteration and foreign-code
-catches carry their own accounting units (per supervision
-loop; per extension invocation surface), so they never
-consume the artifact's single boundary slot. Neither
-mechanism covers the whole rule on its own: the POSITION rule
-for the loop-iteration flavor, the pairing of each catch with
-its correct marker flavor, and per-flavor contract discharge
-all remain review-enforced.
+each boundary wording. Foreign-code catches carry their own
+accounting unit (per extension invocation surface), so they
+never consume the artifact's single boundary slot.
+
+TWO accounting units, not three: the loop-iteration flavor —
+accounted per supervision loop — was RETIRED by the maintainer
+ruling of 2026-07-26, which holds that a daemon does not get a
+per-iteration broad catch ("let it crash, systemd restarts";
+exactly one broad catch per program, in `main()`).
+
+Neither mechanism covers the whole rule on its own: the
+pairing of each catch with its correct marker flavor, and
+per-flavor contract discharge, both remain review-enforced.
+The loop-iteration POSITION rule is no longer among the gaps —
+it ceased to exist with the flavor rather than being
+mechanized.
 
 Files under `io_trees` are wholesale exempt; with `io_trees`
 unset nothing is exempt and every source file is inspected.
