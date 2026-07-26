@@ -380,3 +380,241 @@ def test_keyword_only_args_lambda_key_does_not_block_named_sort_key_carve_out(
         f"got returncode={result.returncode} "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
+
+
+# --------------------------------------------------------------------------- #
+# The externally-fixed calling convention exemption (livespec-dev-tooling-2prg).
+#
+# A callable BOUND AS A VALUE into a position whose calling convention is fixed
+# OUTSIDE this repository cannot be made keyword-only without ceasing to be a
+# substitute for the thing it stands in for. The evidence is derived from the
+# consumer's own code, never declared: a `monkeypatch.setattr` against a
+# stdlib-owned name, and an `argparse` `type=` callback.
+#
+# The NEGATIVE direction is the load-bearing half. Exempting every monkeypatched
+# double would silently disarm the check against a double of the repo's OWN
+# keyword-only function — a real defect found live in `livespec-overseer` while
+# this exemption was being designed.
+# --------------------------------------------------------------------------- #
+
+
+def test_keyword_only_args_accepts_double_substituted_for_a_stdlib_module_attr(
+    *, tmp_path: Path
+) -> None:
+    """`monkeypatch.setattr(os, "fsync", _boom)` exempts `_boom` (exit 0).
+
+    `os.fsync(fd)` is called positionally by code this repo does not own, so a
+    double taking `*, fd` is not a double of it.
+    """
+    _write(
+        tmp_path=tmp_path,
+        rel_path=".claude-plugin/scripts/livespec/foo.py",
+        source=(
+            "from __future__ import annotations\n"
+            "\n"
+            "import os\n"
+            "\n"
+            "__all__: list[str] = []\n"
+            "\n"
+            "\n"
+            "def _install(*, monkeypatch) -> None:\n"
+            "    def _boom(_fd):\n"
+            "        raise OSError(28, 'No space left on device')\n"
+            "\n"
+            "    monkeypatch.setattr(os, 'fsync', _boom)\n"
+        ),
+    )
+
+    result = _run_check(cwd=tmp_path)
+
+    assert result.returncode == 0, (
+        f"keyword_only_args should exempt a double substituted for a stdlib module attr; "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_keyword_only_args_accepts_double_substituted_for_a_stdlib_name_on_a_first_party_module(
+    *, tmp_path: Path
+) -> None:
+    """`monkeypatch.setattr(mymod, "Path", _redirect)` exempts `_redirect` (exit 0).
+
+    The target module is first-party but the ATTRIBUTE is a stdlib name this file
+    imports from `pathlib`, so the convention is still fixed elsewhere.
+    """
+    _write(
+        tmp_path=tmp_path,
+        rel_path=".claude-plugin/scripts/livespec/foo.py",
+        source=(
+            "from __future__ import annotations\n"
+            "\n"
+            "from pathlib import Path\n"
+            "\n"
+            "__all__: list[str] = []\n"
+            "\n"
+            "\n"
+            "def _install(*, mymod, monkeypatch) -> None:\n"
+            "    def _redirect(arg):\n"
+            "        return Path(str(arg))\n"
+            "\n"
+            "    monkeypatch.setattr(mymod, 'Path', _redirect)\n"
+        ),
+    )
+
+    result = _run_check(cwd=tmp_path)
+
+    assert result.returncode == 0, (
+        f"keyword_only_args should exempt a double substituted for a stdlib name held by a "
+        f"first-party module; got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_keyword_only_args_accepts_double_substituted_via_an_attribute_chain_to_stdlib(
+    *, tmp_path: Path
+) -> None:
+    """`monkeypatch.setattr(cfg.subprocess, "run", fake_run)` exempts `fake_run` (exit 0).
+
+    Reaching the stdlib module THROUGH a first-party module is the documented way to
+    make a patch land on the reader's own binding; the convention is still stdlib's.
+    """
+    _write(
+        tmp_path=tmp_path,
+        rel_path=".claude-plugin/scripts/livespec/foo.py",
+        source=(
+            "from __future__ import annotations\n"
+            "\n"
+            "__all__: list[str] = []\n"
+            "\n"
+            "\n"
+            "def _install(*, cfg, monkeypatch) -> None:\n"
+            "    def fake_run(argv, **_kwargs):\n"
+            "        return argv\n"
+            "\n"
+            "    monkeypatch.setattr(cfg.subprocess, 'run', fake_run)\n"
+        ),
+    )
+
+    result = _run_check(cwd=tmp_path)
+
+    assert result.returncode == 0, (
+        f"keyword_only_args should exempt a double reached through an attribute chain whose "
+        f"last component is a stdlib module; got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_keyword_only_args_still_rejects_a_double_of_a_first_party_keyword_only_function(
+    *, tmp_path: Path
+) -> None:
+    """`monkeypatch.setattr(mod, "run_daemon", _fake_run)` STILL fails (exit 1).
+
+    THE NEGATIVE DIRECTION. `run_daemon` is the repo's OWN function and is already
+    keyword-only, so a positional double is a genuine defect, not an externally-fixed
+    convention. An exemption keyed merely to "is monkeypatched" would swallow it —
+    which is exactly what happened to one of the twelve `livespec-overseer` offenders
+    this exemption was measured against.
+    """
+    _write(
+        tmp_path=tmp_path,
+        rel_path=".claude-plugin/scripts/livespec/foo.py",
+        source=(
+            "from __future__ import annotations\n"
+            "\n"
+            "__all__: list[str] = []\n"
+            "\n"
+            "\n"
+            "def _install(*, mod, monkeypatch) -> None:\n"
+            "    def _fake_run(warn_percent=None):\n"
+            "        return warn_percent\n"
+            "\n"
+            "    monkeypatch.setattr(mod, 'run_daemon', _fake_run)\n"
+        ),
+    )
+
+    result = _run_check(cwd=tmp_path)
+
+    assert result.returncode != 0, (
+        f"keyword_only_args must NOT exempt a double of a first-party function merely "
+        f"because it is monkeypatched; got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    assert "_fake_run" in result.stdout + result.stderr, (
+        f"keyword_only_args diagnostic does not name the offending double `_fake_run`; "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_keyword_only_args_accepts_methods_of_a_class_standing_in_for_a_stdlib_name(
+    *, tmp_path: Path
+) -> None:
+    """A stand-in class's methods are exempt when the class replaces a stdlib name (exit 0).
+
+    `monkeypatch.setattr(mymod, "Path", lambda _p: _UnlistableDir())` makes
+    `_UnlistableDir` a `Path` stand-in, so `glob(self, pattern)` implements a stdlib
+    interface. The `TtyOut.write` bind-the-real-method trick cannot help here: the
+    method must RAISE, so there is nothing to delegate to.
+    """
+    _write(
+        tmp_path=tmp_path,
+        rel_path=".claude-plugin/scripts/livespec/foo.py",
+        source=(
+            "from __future__ import annotations\n"
+            "\n"
+            "from pathlib import Path\n"
+            "\n"
+            "__all__: list[str] = []\n"
+            "\n"
+            "\n"
+            "def _install(*, mymod, monkeypatch) -> None:\n"
+            "    class _UnlistableDir:\n"
+            "        def glob(self, _pattern):\n"
+            "            raise OSError(5, 'Input/output error')\n"
+            "\n"
+            "    monkeypatch.setattr(mymod, 'Path', lambda _path: _UnlistableDir())\n"
+            "    assert Path\n"
+        ),
+    )
+
+    result = _run_check(cwd=tmp_path)
+
+    assert result.returncode == 0, (
+        f"keyword_only_args should exempt methods of a class standing in for a stdlib name; "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_keyword_only_args_accepts_argparse_type_callback(*, tmp_path: Path) -> None:
+    """A function passed as `add_argument(..., type=_fn)` is exempt (exit 0).
+
+    argparse calls its `type=` callback with one positional string. This is the same
+    shape as the existing `sorted(key=...)` carve-out, from the same cause.
+    """
+    _write(
+        tmp_path=tmp_path,
+        rel_path=".claude-plugin/scripts/livespec/foo.py",
+        source=(
+            "from __future__ import annotations\n"
+            "\n"
+            "import argparse\n"
+            "\n"
+            "__all__: list[str] = []\n"
+            "\n"
+            "\n"
+            "def _warn_percent(value: str) -> int:\n"
+            "    return int(value)\n"
+            "\n"
+            "\n"
+            "def build(*, parser: argparse.ArgumentParser) -> None:\n"
+            "    parser.add_argument('--warn-percent', type=_warn_percent, default=None)\n"
+        ),
+    )
+
+    result = _run_check(cwd=tmp_path)
+
+    assert result.returncode == 0, (
+        f"keyword_only_args should exempt an argparse `type=` callback; "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
