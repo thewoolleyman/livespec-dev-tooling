@@ -11,8 +11,10 @@ final slice, asserted a property that **cannot hold in a fresh clone**, which to
 every factory dispatch in `livespec-orchestrator-beads-fabro` and caused that repo to
 revert its pin to **v0.54.19**, behind **all three** layers this thread shipped.
 
-**Fixed and merged as `5550a93` (PR #703).** One leg remains, and it is NOT in this repo —
-see §"CORRECTION — the cut was not done". Do not start coding from the
+**Fixed, merged as `5550a93` (PR #703), released in `v0.54.25`, and 8 of 9 fleet repos
+already carry it.** The remaining legs are **NOT in this repo** — they are beads-fabro's
+guarded pin re-bump and `bd-ib-u46hcv`'s consumer-side gate; see §"CORRECTION — the cut was
+not done". Do not start coding from the
 analysis sections below — most of them are pre-implementation history, kept as the decision
 record, and several describe states that no longer exist.
 
@@ -166,6 +168,61 @@ that test. Tree restored to HEAD afterwards.
 
 **Until leg 2 completes the fleet is 8/9 on every layer this thread shipped.** Do not record
 this cut as fully realized on the strength of the post-release audit further down this file.
+
+### Final verified state after the fix shipped (measured 2026-07-26T19:52Z)
+
+The fix rode **`v0.54.25`** (`git tag --contains 5550a93` → `v0.54.25`), and the fan-out is
+**settled, not in flight** — zero open bump PRs anywhere in the fleet at the time of
+measurement.
+
+| measurement | result |
+|---|---|
+| fleet pins on `origin/master` | **8 of 9 at `v0.54.25`** (they carry the fix); `livespec-orchestrator-beads-fabro` held at **`v0.54.19`** by its own two guards |
+| repos exposed to this class | **exactly ONE** — beads-fabro is the **only** fleet repo with a Fabro workflow at all (1 `workflow.toml`, 2 dev-tooling check steps). No other fleet repo can hit it today. |
+| fresh-clone matrix, all 9, exemption DECLARED | **9 of 9 exit 0** |
+| fresh-clone matrix, all 9, marker UNSET | **9 of 9 exit 4** — enforcement fully intact for real primaries |
+| tracked pack wiring in a fresh clone, all 9 | **2/2 `import?` lines** |
+
+**Full prepare-step replay** on a fresh `--no-hardlinks` clone of beads-fabro against
+v0.54.25, in the workflow's own order — `install_commit_refuse_hooks` → `git config
+livespec.sandboxExempt true` → Verifier #1 → Verifier #2 (`plugin_resolution`) — **all four
+exit 0.**
+
+**Read that replay honestly.** It removes the known blocker; it is **NOT** the proof
+`bd-ib-u46hcv` demands. It ran on the host against the host's env, not inside the
+`python-agent-v0.54.25` sandbox image, and the record is explicit that only **a REAL
+dispatch surviving setup** clears the guards. Do not promote this into that proof.
+
+**Re-measure before trusting any number above.** Master moved to `v0.54.26` during this very
+session; the fleet is under continuous release churn.
+
+**RETRACTED and re-rooted: the "`livespec-overseer` has a stale `uv.lock`" observation.**
+
+Measured against `origin/master`, **`livespec-overseer` is IN SYNC** (`pyproject.toml`
+0.13.1 == `uv.lock` 0.13.1). The original note — and a first re-measurement in this session
+that "confirmed" it as 0.13.1 vs 0.13.0 — were both read from a **local checkout sitting 2
+commits behind `origin/master`**. That is precisely the trap D recorded (*"Never read a pin
+from a local checkout"*), walked into twice on a different field. **Do not re-file it
+against `livespec-overseer`.**
+
+The class is real, but it lives **here**, and it is the RELEASE PROCESS:
+
+- `origin/master` of `livespec-dev-tooling` right now is `pyproject.toml` **0.54.26** vs
+  `uv.lock` **0.54.25**.
+- Cause: the release-please commit's file scope is exactly
+  `{.release-please-manifest.json, CHANGELOG.md, pyproject.toml}` — **`uv.lock` is not in
+  it** (verified on `abd2f93`).
+- Effect: between a release commit and the next commit that happens to run `uv sync`, **any
+  `uv run` regenerates the lock and dirties the tree** — in the primary and in every fresh
+  worktree. This session hit it: `just bootstrap` in a new worktree produced a lone
+  `M uv.lock`, which was deliberately NOT committed.
+- Fleet-wide sweep: 7 of 9 repos are at placeholder version `0.0.0` (trivially in sync),
+  `livespec-runtime` and `livespec-overseer` are in sync, and **`livespec-dev-tooling` is
+  the only repo currently lagging** — consistent with it being the only one that just
+  released.
+
+Still **unfiled**, and still not this thread's to fix — but file it against the **release
+workflow**, not against a repo.
 
 ### E-overseer (`3iizsd`) — evidence gathered, deliberately still NOT closed
 
