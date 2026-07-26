@@ -222,6 +222,65 @@ def test_private_calls_accepts_codeless_repo(*, tmp_path: Path) -> None:
     )
 
 
+_BESIDE_TEST_PYPROJECT = (
+    "[tool.livespec_dev_tooling]\n"
+    'source_trees = ["pkg"]\n'
+    "\n"
+    "[tool.ruff.lint.per-file-ignores]\n"
+    '"pkg/test_*.py" = ["SLF001"]\n'
+)
+
+
+def test_private_calls_exempts_a_consumer_declared_beside_test(*, tmp_path: Path) -> None:
+    """A beside-test the consumer already exempted from ruff's SLF001 passes (exit 0).
+
+    `check-private-calls` and ruff's `SLF001` police the SAME rule. Where the
+    consumer's own `per-file-ignores` has already ratified that a beside-test may
+    call the private decision helpers it exists to test, this check honours that
+    ratification rather than contradicting it.
+    """
+    _write(tmp_path=tmp_path, rel_path="pyproject.toml", source=_BESIDE_TEST_PYPROJECT)
+    _write(tmp_path=tmp_path, rel_path="pkg/test_foo.py", source=_CROSS_MODULE_PRIVATE_SOURCE)
+
+    result = _run_check(cwd=tmp_path)
+
+    assert result.returncode == 0, (
+        f"private_calls should exempt a beside-test the consumer granted SLF001; "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    combined = result.stdout + result.stderr
+    assert '"level": "error"' not in combined, (
+        f"an exempted beside-test must emit no error-level diagnostic; "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_private_calls_beside_test_exemption_does_not_leak_to_production(*, tmp_path: Path) -> None:
+    """The SAME repo's PRODUCTION file still fails hard (exit 1) — the other direction.
+
+    The exemption is scoped to the consumer's declared beside-test pattern. A
+    production file under the same `source_trees` tree does not match that pattern
+    and keeps the hard gate, so the carve-out cannot widen into a general test
+    escape hatch.
+    """
+    _write(tmp_path=tmp_path, rel_path="pyproject.toml", source=_BESIDE_TEST_PYPROJECT)
+    _write(tmp_path=tmp_path, rel_path="pkg/foo.py", source=_CROSS_MODULE_PRIVATE_SOURCE)
+
+    result = _run_check(cwd=tmp_path)
+
+    assert result.returncode != 0, (
+        f"private_calls must still reject a cross-module _-call in PRODUCTION; "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    combined = result.stdout + result.stderr
+    assert "pkg/foo.py" in combined, (
+        f"private_calls diagnostic does not surface offending file `pkg/foo.py`; "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
 def test_private_calls_module_importable_without_running_main() -> None:
     """The check module imports cleanly without invoking main()."""
     import importlib.util
