@@ -2,6 +2,59 @@
 
 **Ledger anchor:** epic `livespec-dev-tooling-0eo`
 
+---
+
+## ⛔ READ THIS FIRST — THE IMPLEMENTATION WORK IS DONE (2026-07-26)
+
+**All three fail-open layers are closed. Every implementation slice in the approved cut is
+`done`. There is NOTHING in this thread to implement.** Do not start coding from the
+analysis sections below — most of them are pre-implementation history, kept as the decision
+record, and several describe states that no longer exist.
+
+| # | slice | id | status |
+|---|---|---|---|
+| 1 | E-openbrain — relocate | `livespec-dev-tooling-0eo.1` | **done** |
+| 2 | B — positive-location hook | `livespec-dev-tooling-6fmfzk` | **done** (`7cf38db`) |
+| 3 | A1 — obligation row + CI step | `livespec-dev-tooling-cmc3ah` | **done** (`414cc5e`) |
+| 4 | D — fleet wiring + hydration | `livespec-dev-tooling-o5vltq` | **done** (5 wiring PRs) |
+| 5 | A2 + C — required default + docs | `livespec-dev-tooling-skl77m` | **done** (`313bdd71`) |
+| 6 | E-overseer — relocate | `livespec-dev-tooling-3iizsd` | **blocked** — needs a human |
+| 7 | G — birth procedure | `livespec-dev-tooling-xxdxqv` | **backlog** — needs a scoping decision |
+
+**Shipped and verified in the fleet.** A2+C released as **v0.54.24**; all **9 fleet repos
+are pinned v0.54.24**, clean on `master`, carry the canonical hook, show `worktree-create`
+in `just --list`, have the pack materialized, and **PASS the new required-default verifier
+(9/9)**. Discoverability went from the measured baseline of **1 of 9 to 9 of 9**.
+
+### The only two items still open are HUMAN DECISIONS, not coding tasks
+
+- **`3iizsd` (E-overseer).** The offending path is absent and registers no worktree, but
+  **cause and owner action were never established**, so absence alone does not close it.
+  It carries `blocked-reason:needs-human` and has no encodable blocking edge by
+  construction. **Do NOT close it on absence evidence, and do not touch foreign state.**
+- **`xxdxqv` (G, birth procedure).** Routed `backlog` deliberately; its scoping decision
+  (this thread vs. the fleet birth-procedure lane) comes first. Deferred is not dropped:
+  without it the generator keeps minting unwired repos — though after A2 a born-unwired
+  member now **reds its own verifier**, so the gap is loud rather than silent.
+
+**If you have no maintainer instruction, the correct action is to report this status and
+stop** — not to invent follow-on work. Everything else this thread produced is either
+merged or filed elsewhere (`li-l53`, `hl-nhw`, `s22c5z`).
+
+### Unfiled observations — recorded so they are not lost, NOT this thread's to fix
+
+- **`livespec-overseer` has a stale `uv.lock`** (`pyproject.toml` `0.12.4` vs lock
+  `0.12.3`), so any `uv run` there dirties the working tree. Revert, do not commit it.
+- **Three pre-A1 wired repos still carry a redundant `bootstrap` tail** calling
+  `just install-worktree-pack`; since A1 the obligation row is the bootstrap path.
+- **`homelab` had two LIVE peer-worktree violations** at last scan
+  (`/data/projects/homelab-floor-gaps` and its counterpart, branch `floor-gaps-proposal`).
+  `homelab` is an **adopter outside the NARROW boundary that runs no livespec hook**, so B
+  and A2 do not reach it; this belongs to **`hl-nhw`**. It was another session's live work —
+  **not touched**. Treat the specific paths as volatile; the recurring *class* is the point.
+
+---
+
 **SLICES ARE FILED (2026-07-26).** All seven approved records live under the epic and are
 intake-routed — see §"MAINTAINER RULING — FINAL CUT APPROVED AND FILED" for ids, states,
 dependency edges, and lane evidence. *(This line previously read "No slices filed. The epic
@@ -798,6 +851,21 @@ as a fresh Red. The fix was not `--no-verify` but redoing both legs — mixed-re
 Green files on disk, re-commit Red with the frozen bytes, restore, amend. **Red-mode is also
 detected only when exactly ONE test file is staged**, which is why every A2+C assertion lives
 in one test file.
+
+### Post-release verification (2026-07-26, after the handoff commit `aad2af4f`)
+
+Confirmed AFTER the release fan-out landed, so these are shipped-state facts, not
+pre-merge ones:
+
+- **`v0.54.24` carries A2+C** (`git tag --contains 313bdd71` → `v0.54.24`).
+- **All 9 fleet repos are pinned `v0.54.24`**, `0/0` against `origin/master`, tracked-clean.
+- **9/9 PASS the new required-default verifier**, re-run post-release against every primary.
+- Seven primaries were refreshed with **`merge --ff-only`** during that audit — six
+  bot-authored pin bumps plus one maintainer spec commit (`27980bb chore(spec): ratify the
+  per-state verb vocabulary as v050` in `livespec-orchestrator-beads-fabro`, which is NOT a
+  pin bump). **Primaries only; no linked or foreign worktree was touched, no resets.**
+- The fleet is under **active fan-out**, so behind-counts move between reads. Re-measure;
+  never inherit a count from this file.
 
 ### Exact next action
 
