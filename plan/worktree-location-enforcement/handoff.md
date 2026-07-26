@@ -463,9 +463,65 @@ or how, was NOT determined** — do not infer an actor. This thread never touche
 `livespec-dev-tooling-3iizsd` (E-overseer) **remains blocked**, pending reassessment against
 owner evidence — **it was not closed here.**
 
+### B — IMPLEMENTED, PR #685 OPEN, AWAITING SUPERVISOR REVIEW (2026-07-26)
+
+**`livespec-dev-tooling-6fmfzk` is `active`, not closed.** The work is done and pushed; it
+is parked at the review gate, deliberately unmerged.
+
+- **PR #685**, branch `fix/positive-location-hook`, worktree
+  `/home/ubuntu/.worktrees/livespec-dev-tooling/fix-positive-location-hook`.
+- **Commit `45636e8`** — ONE commit, **5 `TDD-Red-*` + 2 `TDD-Green-*`** trailers.
+- **62 checks green**, `autoMergeRequest` **null** (auto-merge deliberately held off).
+- Test bytes frozen across the Red→Green pair at
+  `d8bd82d0749c62083faa64bc3883e617f125ba80fd146cc2bd8f7eb896816aec`.
+
+**What it does.** Widens `CANONICAL_HOOK_BODY` to a positive-location **allow-list**:
+tooling-internal (under the repo's git dir) → allow; under `$HOME/.worktrees` → allow;
+everything else → refuse. Both spec clauses satisfied by one rule. Sanctioned root derived
+as `<home>/.worktrees`, reusing `_rows_local`'s single definition.
+
+**Rulings now IN THE CODE, not just the plan.** Janitor configuration: sanctioned-root and
+git-dir-internal janitors allowed; **inside-clone janitors UNSUPPORTED** — the hook sees
+only a path and cannot authenticate janitor identity, so a carve-out admitting them would
+readmit everything. Honest limit in docstring and body: no `pre-worktree-add` hook, so this
+fires at first **commit**. Remedy names `git worktree move` and **no** `just` recipe (B
+ships before D), pinned by a test.
+
+**Injected-defect proofs — all four red, tree restored to HEAD after each:** remove the
+tooling carve-out → beads-sync case; drop the sandbox-exempt guard → the pre-existing exempt
+test; revert to nested-only → the **peer** case; repoint the sanctioned root → symlink +
+delegate + commit-msg tests.
+
+**One operational fact the next session MUST know.** The Green amend first failed
+`body_mismatch` — the verifier byte-compares the installed hook against
+`CANONICAL_HOOK_BODY`, so changing the constant invalidated the installed copy. This is the
+trap this thread predicted, observed for real. It was cleared by the prescribed per-clone
+`mise exec -- just install-commit-refuse-hooks`, after a rescan confirmed no governed
+violation in this clone. **`/data/projects/livespec-dev-tooling/.git/hooks/` now carries the
+NEW body**, which every worktree of this repo shares. Expect the same `body_mismatch` in any
+other clone until it too reinstalls — that is slice D's hydration leg, not a defect.
+
+**Rescan finding, not this thread's to fix:** two live peer-worktree violations exist in
+`homelab` — `/data/projects/homelab-hl-wp3gyg` and `/data/projects/homelab-sup-corrections`.
+`homelab` is an adopter outside the NARROW boundary and runs no livespec hook, so B does not
+reach them; they belong to `hl-nhw`. **Not touched.**
+
 ### Exact next action
 
-**Work `livespec-dev-tooling-6fmfzk` (B — positive-location hook + actionable remedy).**
+**Await supervisor acceptance of PR #685.** On acceptance: rebase-merge it, `fetch` +
+`merge --ff-only` the primary, remove the `fix-positive-location-hook` worktree, delete the
+local branch, verify the primary clean on `master` preserving
+`install-livespec-pr-bot.png`, then **close `6fmfzk`** with the verified outcome and record
+it here. After that the sequence advances to **A1 (`livespec-dev-tooling-cmc3ah`)**, which
+becomes ready once `6fmfzk` closes.
+
+*(Superseded pointer: this section previously read "work `6fmfzk`". That is now in review,
+not pending.)*
+
+### Superseded — the pre-implementation pointer to B
+
+*(Historical pointer, superseded 2026-07-26 — B is implemented and in review; see
+§"B — IMPLEMENTED, PR #685 OPEN".)* **Work `livespec-dev-tooling-6fmfzk` (B — positive-location hook + actionable remedy).**
 
 `0eo.1` is **done and closed** (§"E-openbrain — COMPLETE"), so the authoritative sequence
 **E(openbrain) → B → A1 → D → A2+C** now stands at **B**. It is the only item in the ready
