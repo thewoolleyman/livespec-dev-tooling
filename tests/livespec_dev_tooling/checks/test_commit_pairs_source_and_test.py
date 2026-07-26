@@ -695,3 +695,29 @@ def test_commit_pairs_carveout_fails_closed_when_head_unparseable(*, tmp_path: P
         f"got returncode={result.returncode} "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
+
+
+def test_commit_pairs_ignores_non_python_source_tree_file(*, tmp_path: Path) -> None:
+    """A Markdown file under a source tree needs no paired test.
+
+    The pairing contract is defined on Python: the mirror transform
+    maps `<name>.py` to `test_<name>.py`, so a non-`.py` file has no
+    paired test that could exist, and demanding one is unsatisfiable.
+    The docs-only carve-out cannot rescue it either — that carve-out
+    compares docstring-stripped ASTs, and a Markdown file does not
+    parse as Python, so it fails closed into the very requirement it
+    can never meet. Fixture: a `CLAUDE.md` under the source tree,
+    staged alone with no `tests/` co-stage.
+    """
+    _init_repo_with_committed_source(tmp_path=tmp_path, body=_CARVEOUT_HEAD_SOURCE)
+    doc = tmp_path / ".claude-plugin" / "scripts" / "livespec" / "foo" / "CLAUDE.md"
+    doc.write_text("# orientation\n\nProse only — no behavior to test.\n", encoding="utf-8")
+    _git(cwd=tmp_path, args=["add", ".claude-plugin/scripts/livespec/foo/CLAUDE.md"])
+
+    result = _run_check(tmp_path=tmp_path)
+
+    assert result.returncode == 0, (
+        f"a non-Python file under a source tree should not require a paired test; "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )

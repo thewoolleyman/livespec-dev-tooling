@@ -268,10 +268,20 @@ def main() -> int:
     exempt_paths = frozenset(
         {config.neutral_hook_body_path} if config.neutral_hook_body_path else set()
     )
+    # Scoped to `.py` deliberately. The pairing contract is defined on Python —
+    # the mirror transform maps `<name>.py` to `test_<name>.py` — so a
+    # non-Python file under a source tree (an orientation `CLAUDE.md`, a shell
+    # helper) has no paired test that could exist, and demanding one is
+    # unsatisfiable rather than merely strict. The docs-only carve-out below
+    # cannot rescue it either: it compares docstring-stripped ASTs, and a
+    # non-Python file does not parse, so it fails closed into exactly the
+    # requirement it can never meet.
     source_changes = [
         path
         for path in staged
-        if path.startswith(config.source_tree_prefixes) and path not in exempt_paths
+        if path.startswith(config.source_tree_prefixes)
+        and path.endswith(".py")
+        and path not in exempt_paths
     ]
     test_changes = [path for path in staged if path.startswith(config.tests_tree_prefix)]
 
