@@ -53,9 +53,10 @@ __all__: list[str] = [
 
 # Worktree-pack arm: the installed `dev-tooling/` pack files paired with the
 # canonical bodies the `install_worktree_pack` installer writes — the two
-# `.sh` scripts plus the two `.just` recipe fragments. The pack is
-# OPTIONAL — absent entirely it is skipped — but once ANY pack file is
-# present ALL MUST be present and byte-identical.
+# `.sh` scripts plus the two `.just` recipe fragments. The pack is REQUIRED
+# by default (A2) — absent entirely it FAILS unless the repo declares
+# `"pack": "optional"` or the tree declares the sandbox exemption — and once
+# ANY pack file is present ALL MUST be present and byte-identical.
 _WORKTREE_PACK_FILES: tuple[tuple[str, str], ...] = (
     ("branch-protection.just", CANONICAL_BRANCH_PROTECTION_JUST_BODY),
     ("branch-protection.sh", CANONICAL_BRANCH_PROTECTION_BODY),
@@ -215,7 +216,9 @@ def _inspect_pack_imports(*, repo_root: Path) -> list[tuple[str, str]]:
     ]
 
 
-def inspect_worktree_pack(*, repo_root: Path) -> list[tuple[str, str]]:
+def inspect_worktree_pack(
+    *, repo_root: Path, sandbox_exempt: bool = False
+) -> list[tuple[str, str]]:
     """Return `(file_name, failure_mode)` tuples for worktree-pack violations.
 
     The pack is REQUIRED BY DEFAULT (zs22 A2). Absence of the
@@ -225,7 +228,26 @@ def inspect_worktree_pack(*, repo_root: Path) -> list[tuple[str, str]]:
     decline the pack, but only by DECLARING `"pack": "optional"` in tracked
     config where a reviewer sees it.
 
+    `sandbox_exempt` is the caller's reading of the DECLARED
+    `livespec.sandboxExempt` git-config marker, and it suppresses the PRESENCE
+    arm only. The pack is gitignored by design, so it exists only after
+    `just bootstrap`; a Fabro sandbox is a fresh full clone that runs this
+    check as a SETUP step BEFORE bootstrap, where pack presence is not a
+    property that can hold. Requiring it there is a false positive, and it took
+    every dispatch in `livespec-orchestrator-beads-fabro` down. This reuses the
+    same marker `CANONICAL_HOOK_BODY` already honours in its refuse-at-primary
+    and positive-location arms — the Exemption slot of the Conformance
+    Pattern's concern #1 Worktree-discipline — rather than inventing a second
+    opt-out.
+
+    It defaults to False (fail-closed, the pre-fix behaviour) so a caller that
+    forgets to wire it loses the exemption rather than the enforcement. The
+    wiring itself is proven end-to-end by the parent check's subprocess tests,
+    which set the real git config in a real repo — a direct call here cannot
+    show that `main()` reads the marker at all.
+
     - governed, `required`, no pack at all → `worktree_pack_absent`;
+    - `required` but the tree DECLARES the sandbox exemption, no pack → skip;
     - `optional` (or ungoverned), no pack at all → skip;
     - garbled `worktree_discipline` block → `worktree_discipline_malformed`;
     - a present file whose bytes differ → `worktree_pack_body_mismatch`;
@@ -235,8 +257,10 @@ def inspect_worktree_pack(*, repo_root: Path) -> list[tuple[str, str]]:
       `worktree_pack_not_imported`.
 
     The byte-identity arms run whenever a pack is present, INDEPENDENT of
-    policy: an installed pack must be canonical even in a repo that declared
-    the pack optional or carries no config at all.
+    policy AND of the sandbox exemption: an installed pack must be canonical
+    even in a repo that declared the pack optional, carries no config at all,
+    or is an exempt sandbox. Exempting drift too would retire the very
+    detection this arm exists for.
 
     Returns the failures sorted by file name for deterministic narration.
     """
@@ -246,7 +270,7 @@ def inspect_worktree_pack(*, repo_root: Path) -> list[tuple[str, str]]:
     pack_dir = repo_root / WORKTREE_PACK_DIR_NAME
     any_present = any((pack_dir / name).is_file() for name, _ in _WORKTREE_PACK_FILES)
     if not any_present:
-        if policy == _PACK_POLICY_REQUIRED:
+        if policy == _PACK_POLICY_REQUIRED and not sandbox_exempt:
             return [(WORKTREE_PACK_DIR_NAME, _WORKTREE_PACK_ABSENT_FAILURE_MODE)]
         return []
     failures: list[tuple[str, str]] = []

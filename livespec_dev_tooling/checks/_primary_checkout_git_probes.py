@@ -23,6 +23,7 @@ __all__: list[str] = [
     "git_common_dir",
     "is_git_repo_at_all",
     "is_inside_work_tree",
+    "sandbox_exempt_is_true",
     "work_tree_root",
 ]
 
@@ -77,6 +78,30 @@ def core_bare_is_true(*, cwd: Path) -> bool:
     """
     completed = subprocess.run(
         ["git", "config", "--get", "core.bare"],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return completed.stdout.strip() == "true"
+
+
+def sandbox_exempt_is_true(*, cwd: Path) -> bool:
+    """Return True when `git config --get livespec.sandboxExempt` resolves to `true`.
+
+    The DECLARED sandbox-exemption marker, set by the Fabro sandbox's prepare
+    step and already read by `CANONICAL_HOOK_BODY` in two places (the
+    refuse-at-primary arm and the positive-location arm). Reading it here lets
+    the pack-presence arm honour the same declaration rather than assert a
+    property that cannot hold in a fresh, un-bootstrapped clone.
+
+    Same shape as `core_bare_is_true`: an unset key exits non-zero AND prints
+    nothing, so empty stdout compares unequal to `"true"` and yields False
+    without a dedicated returncode branch. Only the literal `true` exempts —
+    the marker is a declaration, not the mere presence of a key.
+    """
+    completed = subprocess.run(
+        ["git", "config", "--get", "livespec.sandboxExempt"],
         cwd=str(cwd),
         capture_output=True,
         text=True,

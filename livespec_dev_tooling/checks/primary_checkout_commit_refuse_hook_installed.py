@@ -129,6 +129,7 @@ from _primary_checkout_git_probes import (  # noqa: E402  — sibling private im
     git_common_dir,
     is_git_repo_at_all,
     is_inside_work_tree,
+    sandbox_exempt_is_true,
     work_tree_root,
 )
 
@@ -359,7 +360,14 @@ def main() -> int:
             hook_failures.append((hook_name, failure_mode))
     repo_root = work_tree_root(cwd=cwd)
     vendored_copies = _find_vendored_hook_copies(repo_root=repo_root)
-    pack_failures = inspect_worktree_pack(repo_root=repo_root)
+    # The pack-presence arm honours the DECLARED sandbox exemption, read here
+    # (not inside the sibling) so every git probe stays in one module. A fresh
+    # sandbox clone cannot carry the gitignored pack; the byte-identity arms
+    # still fire there.
+    pack_failures = inspect_worktree_pack(
+        repo_root=repo_root,
+        sandbox_exempt=sandbox_exempt_is_true(cwd=cwd),
+    )
     if not hook_failures and not vendored_copies and not pack_failures:
         return 0
     _emit_failures(
