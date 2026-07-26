@@ -45,8 +45,11 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
-from livespec_dev_tooling.checks._role_key_gate import role_key_gate_exit_code  # noqa: E402
-from livespec_dev_tooling.config import load_config  # noqa: E402
+from livespec_dev_tooling.checks._role_key_gate import (  # noqa: E402
+    ensure_declared_paths_contain_python,
+    role_key_gate_exit_code,
+)
+from livespec_dev_tooling.config import iter_py_files, load_config  # noqa: E402
 
 __all__: list[str] = []
 _DATACLASSES_TREE_GATE_BUG = "dataclasses_tree unexpectedly empty after role-key gate"
@@ -137,8 +140,21 @@ def main() -> int:
             path=dataclasses_tree.as_posix(),
         )
         return 1
+    # Composed AFTER the is_dir check rather than via `role_key_paths_exit_code`,
+    # which bundles both: a non-directory would otherwise collapse into the
+    # generic "resolves to no Python files" wording and lose the specific
+    # diagnostic above. Keyed off the DECLARED PATHS, never off the count of
+    # files actually inspected, per `contracts.md` §"Role keys".
+    if not ensure_declared_paths_contain_python(
+        repo_root=cwd,
+        key="dataclasses_tree",
+        paths=(dataclasses_tree,),
+        log=log,
+        check_id="newtype_domain_primitives",
+    ):
+        return 1
     offenders: list[tuple[Path, int, str, str, str]] = []
-    for py_file in sorted(dataclasses_root.glob("*.py")):
+    for py_file in iter_py_files(root=dataclasses_root):
         source = py_file.read_text(encoding="utf-8")
         for lineno, field, actual, required in _find_offenders(source=source):
             offenders.append((py_file.relative_to(cwd), lineno, field, actual, required))
