@@ -121,6 +121,22 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _resolve_invoked_worktree(*, target: Path, run: CommandRunner) -> Path:
+    """The work-tree root `target` sits in.
+
+    Distinct from `_resolve_checkout_root`: that returns the PRIMARY root via
+    `--git-common-dir`, which is what shared obligations need. This returns the
+    root of the worktree actually invoked, which per-worktree artifacts need.
+
+    No failure branch: the sole caller resolves the checkout root FIRST and
+    bails when that fails, so by the time this runs `target` is known to be a
+    git checkout and `--show-toplevel` cannot fail. A dead error path here
+    would be untestable by construction.
+    """
+    result = run(args=["git", "rev-parse", "--show-toplevel"], cwd=target)
+    return Path(result.stdout.strip())
+
+
 def main() -> int:
     structlog.configure(
         processors=[
@@ -142,7 +158,13 @@ def main() -> int:
             hint="pass --checkout <path> pointing at a governed repo checkout",
         )
         return 1
-    ctx = LocalContext(checkout=root, home=Path.home(), run=default_command_runner)
+    worktree = _resolve_invoked_worktree(target=target, run=default_command_runner)
+    ctx = LocalContext(
+        checkout=root,
+        home=Path.home(),
+        run=default_command_runner,
+        worktree=worktree,
+    )
     unresolved = reconcile_checkout(ctx=ctx, log=log)
     if unresolved:
         log.error(

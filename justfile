@@ -58,12 +58,19 @@ default:
 # First-time setup.
 # ---------------------------------------------------------------
 
+# Worktree-discipline pack recipe fragments — OPTIONAL imports (`import?`, NOT
+# plain `import`): the fragments are gitignored-and-installed by
+# `just install-worktree-pack` (run from the `worktree-pack` local obligation
+# row that `bootstrap` walks), so they are absent on a fresh clone until then.
+import? 'dev-tooling/worktree.just'
+import? 'dev-tooling/branch-protection.just'
 # First-touch setup — a THIN delegator to this package's OWN LOCAL first-touch
 # reconcile verb (`livespec_dev_tooling.fleet.local_reconcile`), the generalized
 # successor to this recipe's former inline steps (livespec-zs22.8 M5). This repo
 # IS livespec_dev_tooling, so `uv run python -m ...` runs the local package
 # directly (no external pin). The verb walks the LOCAL obligation partition
-# (`contract.LOCAL_OBLIGATION_ROWS`): mise trust/install, uv sync, the structural
+# (`contract.LOCAL_OBLIGATION_ROWS`): mise trust/install, uv sync, the
+# canonical worktree pack, the structural
 # commit-refuse hooks (subsuming `lefthook install` — the canonical hook
 # overwrites the lefthook stubs and delegates to `lefthook run`), the advisory
 # `refs/notes/*` refspec, the worktree-root mise-trust entry, the beads
@@ -102,14 +109,15 @@ install-commit-refuse-hooks:
 install-no-shadow-ledger:
     uv run python -m livespec_dev_tooling.install_no_shadow_ledger
 
-# Install (or idempotently re-install) the canonical worktree-discipline pack
-# (`worktree-lib.sh` + `branch-protection.sh`) into the current checkout's
-# `dev-tooling/` directory, each executable. The installer module is the single
-# canonical-body carrier (its `CANONICAL_WORKTREE_LIB_BODY` /
-# `CANONICAL_BRANCH_PROTECTION_BODY` constants), retiring the copier-template
-# COPIES. The pack scripts are TRACKED files, so the installer targets the
-# work-tree root (`git rev-parse --show-toplevel`) and the result is committed
-# through the normal worktree → PR flow. The
+# Install (or idempotently re-install) the canonical worktree-discipline pack —
+# FOUR files: `worktree-lib.sh` + `branch-protection.sh` (executable) and
+# `worktree.just` + `branch-protection.just` (imported, not executable) — into
+# the current checkout's `dev-tooling/` directory. The installer module is the
+# single canonical-body carrier, retiring the copier-template COPIES. The pack
+# files are GITIGNORED-AND-MATERIALIZED, never tracked: nothing is committed,
+# and each checkout re-materializes them. `bootstrap` covers this automatically
+# via the `worktree-pack` LOCAL obligation row, so this recipe is the standalone
+# repair path rather than a step bootstrap must duplicate. The
 # `check-primary-checkout-commit-refuse-hook-installed` verifier guards the
 # installed bytes against drift.
 install-worktree-pack:

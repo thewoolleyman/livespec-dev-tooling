@@ -82,7 +82,25 @@ class LocalContext:
     checkout: Path
     home: Path
     run: CommandRunner
+    worktree: Path | None = None
+
+    @property
+    def invoked_worktree(self) -> Path:
+        """The worktree the verb was invoked from; falls back to `checkout`.
+
+        `checkout` is the PRIMARY root (resolved via `--git-common-dir`), which
+        is right for shared obligations: hooks in `.git/hooks`, the notes
+        refspec, mise trust. A row whose artifact is PER-WORKTREE — the
+        worktree-discipline pack, whose `import?` lines resolve relative to the
+        checkout you stand in — must use this instead. Optional, defaulting to
+        `checkout`, so every existing row and caller is unaffected.
+        """
+        return self.worktree if self.worktree is not None else self.checkout
 
     def exec(self, *, args: list[str]) -> CommandResult:
         """Run a command with the target checkout as the working directory."""
         return self.run(args=args, cwd=self.checkout)
+
+    def exec_in_worktree(self, *, args: list[str]) -> CommandResult:
+        """Run a command with the INVOKED worktree as the working directory."""
+        return self.run(args=args, cwd=self.invoked_worktree)
