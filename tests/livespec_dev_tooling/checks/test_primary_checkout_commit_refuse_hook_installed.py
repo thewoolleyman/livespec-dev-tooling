@@ -199,6 +199,21 @@ def _git_init(*, cwd: Path) -> None:
     )
 
 
+def _declare_sandbox_exempt(*, repo_root: Path, value: str) -> None:
+    """Set the local `livespec.sandboxExempt` marker to `value`.
+
+    The same declared git-config marker the Fabro sandbox's prepare step sets
+    and `CANONICAL_HOOK_BODY` reads. `value` is written verbatim so a test can
+    assert that only the literal `"true"` exempts.
+    """
+    _ = subprocess.run(
+        ["git", "config", "--local", "livespec.sandboxExempt", value],
+        cwd=str(repo_root),
+        check=True,
+        env=_scrubbed_env(),
+    )
+
+
 def _install_hook(*, repo_root: Path, hook_name: str, body: str, executable: bool) -> Path:
     """Install a hook file at `<repo_root>/.git/hooks/<hook_name>` with `body`.
 
@@ -908,6 +923,101 @@ def test_skips_pack_arm_when_livespec_jsonc_absent(*, tmp_path: Path) -> None:
         f"expected exit 0; got {result.returncode}, "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
+
+
+# ---------------------------------------------------------------
+# The DECLARED sandbox exemption reaches the pack-PRESENCE arm.
+#
+# A Fabro sandbox is a fresh FULL clone that never runs `just bootstrap`, and
+# the pack is gitignored by design — so the four pack files CANNOT be present
+# there. A2 made an absent pack a FAIL without honouring the exemption slot the
+# hook body already reads, which made the assertion unsatisfiable in exactly
+# the environment the dispatch gate runs in: every ImplementWorkItem dispatch
+# in `livespec-orchestrator-beads-fabro` died at its `verify-commit-refuse-hook`
+# setup step, and that repo pinned dev-tooling back to v0.54.19 to recover.
+#
+# The fix reuses the SAME declared marker `livespec.sandboxExempt`, which
+# `CANONICAL_HOOK_BODY` already honours in two places (the refuse-at-primary
+# arm and the positive-location arm). It is the Exemption slot of the
+# Conformance Pattern's concern #1 Worktree-discipline — a variation point the
+# checker reads, never an incidental fail-open.
+#
+# Only the PRESENCE arm is exempted. A pack that IS installed must still be
+# byte-canonical everywhere, so the drift the check exists to catch keeps
+# firing inside a sandbox too.
+# ---------------------------------------------------------------
+
+
+def test_skips_pack_absent_arm_when_sandbox_exempt_declared(*, tmp_path: Path) -> None:
+    """Exit 0 when the pack is absent in a tree DECLARED `livespec.sandboxExempt`.
+
+    ACCEPTANCE 10. This is the fresh-clone shape the Fabro sandbox runs the
+    check in: canonical hooks installed, exemption declared, and the gitignored
+    pack necessarily absent because bootstrap has not run. Requiring the pack
+    here asserts a property that CANNOT hold, which is a false positive rather
+    than a drift signal.
+    """
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    _git_init(cwd=project_root)
+    _install_canonical_hooks(repo_root=project_root)
+    _write_livespec_config(repo_root=project_root, body='{"template": "livespec"}\n')
+    _declare_sandbox_exempt(repo_root=project_root, value="true")
+
+    result = _run_check(cwd=project_root)
+    assert result.returncode == 0, (
+        f"expected exit 0; got {result.returncode}, "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_fails_when_pack_absent_and_sandbox_exemption_not_declared(*, tmp_path: Path) -> None:
+    """Exit 4 when the marker is present but is NOT `true`.
+
+    ACCEPTANCE 11. The exemption is a DECLARATION, not the mere existence of a
+    key: a real primary checkout that never bootstrapped still fails, and its
+    `just bootstrap` remedy still works there. Without this arm the fix could
+    degrade into a blanket skip and reopen the fail-open A2 closed.
+    """
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    _git_init(cwd=project_root)
+    _install_canonical_hooks(repo_root=project_root)
+    _write_livespec_config(repo_root=project_root, body='{"template": "livespec"}\n')
+    _declare_sandbox_exempt(repo_root=project_root, value="false")
+
+    result = _run_check(cwd=project_root)
+    assert result.returncode == 4, (
+        f"expected exit 4; got {result.returncode}, "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    assert "worktree_pack_absent" in result.stderr
+
+
+def test_fails_when_installed_pack_drifts_even_though_sandbox_exempt(*, tmp_path: Path) -> None:
+    """Exit 4 on a DRIFTED pack even in a declared-exempt tree.
+
+    ACCEPTANCE 12 — the injected defect the record names: skipping the whole
+    arm whenever a sandbox is exempt would stop detecting real drift, which is
+    the check's entire purpose. Only the PRESENCE arm is exempt; byte-identity
+    is not.
+    """
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    _git_init(cwd=project_root)
+    _install_canonical_hooks(repo_root=project_root)
+    _install_canonical_worktree_pack(repo_root=project_root)
+    _write_pack_imports(repo_root=project_root)
+    drifted = project_root / "dev-tooling" / "worktree-lib.sh"
+    _ = drifted.write_text(CANONICAL_WORKTREE_LIB_BODY + "# drift\n", encoding="utf-8")
+    _declare_sandbox_exempt(repo_root=project_root, value="true")
+
+    result = _run_check(cwd=project_root)
+    assert result.returncode == 4, (
+        f"expected exit 4; got {result.returncode}, "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    assert "worktree_pack_body_mismatch" in result.stderr
 
 
 # ---------------------------------------------------------------
