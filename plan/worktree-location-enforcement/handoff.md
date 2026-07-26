@@ -86,7 +86,7 @@ Per the ruling's instruction not to rely on earlier counts:
 | pack wiring (gitignore + 2 `import?` + recipe) | **full in 3** (`…beads-fabro`, `…git-jsonl`, `…console`); **absent in 6 fleet + 3 adopters** |
 | pack materialized | **1** (`livespec-orchestrator-git-jsonl`) |
 | worktrees on host | **40** |
-| live violations under BOTH clauses | **2**, both nested, both in governed repos: `livespec-overseer/.claude/worktrees/dod-corrections` (fleet member; **another session's — do not touch**) and `openbrain/.claude/worktrees/fix-ob-6vt-…` (adopter; inspected 2026-07-25 and clean THEN — the move is authorized but SUBJECT TO fresh ownership/cleanliness/reachability inspection immediately before it) |
+| live violations under BOTH clauses | **2 as measured 2026-07-25** (dated row): `livespec-overseer/.claude/worktrees/dod-corrections` and `openbrain/.claude/worktrees/fix-ob-6vt-…`. **CURRENT 2026-07-26: openbrain RELOCATED and `0eo.1` CLOSED; the overseer path is absent and registers no worktree (cause not established); `3iizsd` still blocked.** |
 
 No peer-case violation is live right now (`homelab-substrate` was removed by the `homelab`
 track mid-audit), but the class remains unenforced until B widens.
@@ -116,12 +116,12 @@ fires at first *commit*. Product `.py` → Red–Green–Replay.
 `livespec-orchestrator-git-jsonl`; plus `just bootstrap` in the 2 wired-but-unhydrated
 repos, which need no PR at all.
 
-**E — relocate the live nested worktrees.** openbrain's was inspected 2026-07-25 and was
-clean then (clean tree, unpushed `296dd1f`, no upstream, no live owner) — a **snapshot**,
-not a standing guarantee. The move is authorized **subject to fresh ownership, cleanliness
-and reachability inspection immediately before it**. `livespec-overseer`'s
-belongs to **another session** and must not be touched without its owner — E cannot close
-unilaterally.
+**E — relocate the live nested worktrees.** **openbrain: COMPLETE** — relocated after a
+fresh pre-move inspection; `0eo.1` **closed** 2026-07-26 (§"E-openbrain — COMPLETE"). Current overseer evidence: the path
+`/data/projects/livespec-overseer/.claude/worktrees/dod-corrections` is **absent** and no
+worktree of that name is registered; branch `docs/dod-corrections-pr78` is at `7efb87d`;
+**cause/owner action NOT established**. `3iizsd` stays **blocked pending reassessment**;
+this thread must not touch foreign state.
 
 **F — adopter baseline and positive-location reach. NOT IN THIS THREAD (narrow boundary
 ruling, 2026-07-25).** F was originally cut as "required by the ruling" on the assumption
@@ -132,9 +132,8 @@ alone and F carries no work for this thread.**
 
 Adopter enforcement is a **separate follow-up**, already filed as two blocked backfill
 work-items (`li-l53` in the resume tenant, `hl-nhw` in the homelab tenant) — see the ruling
-section for their scope. openbrain has no backfill item yet; **E still retains the
-authorized openbrain relocation, subject to fresh pre-move ownership, cleanliness and
-reachability inspection**. It is hygiene and needs no substrate.
+section for their scope. openbrain has no backfill item; **E's openbrain relocation is COMPLETE** (`0eo.1` closed
+2026-07-26). It was hygiene and needed no substrate.
 
 Retained here for context only: clause 2 is unenforceable in the three governed adopters
 today — openbrain runs a stock lefthook stub, resume and homelab run no livespec hook, and
@@ -158,7 +157,8 @@ be true today, so the maintainer may defer it; it should be a decision, not an o
 land before A's default flips or this repo's CI reds; D's wiring must exist before A's FAIL
 is actionable in the 6 unwired repos; **F is no longer in this thread** and gates nothing
 here (NARROW ruling — clause 2's reach across the 9 `fleet` repos is delivered by B and D);
-E is independent of everything and half-blocked on another session; G is independent.
+**E-openbrain is COMPLETE** (`0eo.1` closed 2026-07-26) and **E-overseer (`3iizsd`) is
+separately blocked pending reassessment**; G is independent.
 
 ### Adopter substrate is NOT uniform — measured 2026-07-25 (now the FOLLOW-UP's input, not F's)
 
@@ -255,18 +255,20 @@ record of what was weighed, not as live alternatives.
 
 **Dependencies the ruling explicitly preserves — do not paper over these:**
 
-- **E is only half-closable by this thread.** openbrain's nested worktree was inspected
-  2026-07-25 and was clean then (clean tree, unpushed `296dd1f`, no upstream, no live
-  owner) — a snapshot. **Re-inspect ownership, cleanliness and reachability immediately
-  before moving;** the authority is conditional on that.
-  `livespec-overseer/.claude/worktrees/dod-corrections` belongs to **another live session**;
-  this thread has no authority over it and MUST NOT touch it. E closes for openbrain and
-  stays open for the overseer worktree until its owner acts. Do not record E as done on the
-  openbrain half alone.
-- **B needs that session warned before it reaches the overseer clone.** Once B's hook is
-  installed there, commits from that worktree are refused. B takes effect per clone only on
-  hook reinstall (`just bootstrap`), so the rollout is operator-paced — use that pacing
-  rather than assuming the session will notice.
+- **E is only half-closable by this thread** *(ruling premise, 2026-07-25)*: openbrain was
+  movable subject to fresh inspection; the overseer worktree belonged to another live
+  session and was untouchable. **CURRENT OUTCOME (2026-07-26):** openbrain **relocated and
+  `0eo.1` closed**; the overseer path is **absent** with **no registered worktree**, branch
+  `docs/dod-corrections-pr78` at `7efb87d`, **cause/owner action not established**, so
+  `3iizsd` stays **blocked pending reassessment**. E as a whole is still **not** done — do
+  not record it done on the openbrain half alone.
+- **B: rescan before each clone reinstall, and warn only a live owner then observed.** Once
+  B's hook is installed in a clone, commits from any worktree outside the sanctioned root
+  are refused. B takes effect per clone only on hook reinstall (`just bootstrap`), so the
+  rollout is operator-paced — use that pacing: **re-run the positive-location scan
+  immediately before each clone's reinstall, and warn the owner of any live foreign
+  violating worktree it then reports.** **No overseer warning is currently due** — that path
+  is absent and registers no worktree (2026-07-26).
 - **Adopter substrate does not exist in two of three.** resume has no `just` surface, no
   lefthook, and no way to run a Python installer; homelab has none of the four and the
   manifest declares its wiring DEFERRED to an onboarding pass this thread does not own.
@@ -283,9 +285,9 @@ question below was ANSWERED — narrow (§"MAINTAINER RULING — NARROW boundary
 
 *(The pre-approval rule that stood here — "Nothing may be filed as a dev-tooling
 implementation slice, moved, dispatched, or implemented until the final cut is approved" —
-is **SUPERSEDED**. The cut was approved and the seven slices are filed. What remains true is
-narrower and stated where it belongs: no worktree has been moved and no product change has
-been made yet.)*
+is **SUPERSEDED**: the cut was approved, the seven slices are filed, and the openbrain
+worktree has since been relocated under `0eo.1`. What remains true is narrower — **no
+product implementation has been made**.)*
 
 ## MAINTAINER RULING — FINAL CUT APPROVED AND FILED (2026-07-26)
 
@@ -297,12 +299,12 @@ tracked follow-up; (4) file E-overseer now as blocked on the owning session.
 
 | # | slice | id | state | depends on |
 |---|---|---|---|---|
-| 1 | **E-openbrain** — relocate | `livespec-dev-tooling-0eo.1` | **ready** | — |
+| 1 | **E-openbrain** — relocate | `livespec-dev-tooling-0eo.1` | **CLOSED 2026-07-26 — relocated** | — |
 | 2 | **B** — positive-location hook + remedy | `livespec-dev-tooling-6fmfzk` | **ready** | — |
 | 3 | **A1** — obligation row + CI step + self-wiring | `livespec-dev-tooling-cmc3ah` | pending-approval | 2 |
 | 4 | **D** — fleet wiring + hydration sweep | `livespec-dev-tooling-o5vltq` | pending-approval | 3 |
 | 5 | **A2 + C** — flip + discoverability + docs | `livespec-dev-tooling-skl77m` | pending-approval | 3, 4 |
-| 6 | **E-overseer** — relocate | `livespec-dev-tooling-3iizsd` | **blocked** | cross-session (prose) |
+| 6 | **E-overseer** — relocate | `livespec-dev-tooling-3iizsd` | **blocked** | cause/owner action unestablished; reassessment blocked (prose) |
 | 7 | **G (DEFERRED)** — birth procedure | `livespec-dev-tooling-xxdxqv` | **backlog** | — |
 
 Every record verified: exists exactly once, parented to the epic, `origin:freeform`,
@@ -310,8 +312,9 @@ Every record verified: exists exactly once, parented to the epic, `origin:freefo
 expose the tenant/default owner `chad@thewoolleyman.com`). Dependency edges materialize as
 real `[blocks]` relations — `bd dep tree` shows `5 → {3, 4}` and `4 → 3 → 2`.
 
-**Lane evidence.** Only **`0eo.1` and `6fmfzk`** are in the ready lane. `cmc3ah`, `o5vltq`,
-`skl77m`, `3iizsd`, and `xxdxqv` are each verified **absent** from it. Note `bd ready`
+**Lane evidence.** *(As filed 2026-07-26: `0eo.1` and `6fmfzk` were both ready.)* **CURRENT
+under this epic: `0eo.1` is CLOSED, so `6fmfzk` is the only ready item.** `cmc3ah`,
+`o5vltq`, `skl77m`, `3iizsd`, and `xxdxqv` are each verified **absent** from the ready lane. Note `bd ready`
 reports "No open issues" because it selects `status=open`; the orchestrator ready lane is
 `status=ready`, so `bd list --status ready` is the correct check.
 
@@ -320,8 +323,10 @@ Its checklist recorded `single_coherent_done=False` honestly — G's scope (this
 the birth-procedure lane) is undecided, so it is not yet one coherent done-state.
 
 **E-overseer routes blocked** via `dependency_linked=False`, which is the honest gate
-answer: its real blocker is another live session's ownership of the worktree, which is not
-a beads issue and therefore **has no id to depend on**. It carries
+answer: its real blocker was another live session's ownership of the worktree, which is not
+a beads issue and therefore **has no id to depend on**. *(It remains blocked: the path is now
+absent with no registered worktree, but cause/owner action was never established, so absence
+alone does not close it.)* It carries
 `blocked-reason:needs-human` and states in prose that the absence of a blocking edge is by
 construction, not evidence of readiness.
 
@@ -414,24 +419,69 @@ retaining the existing fail-closed and severity semantics. It explicitly exclude
 exemptions, and gate weakening. This work item is diagnostic hardening; it does not block
 the already-recovered #667.
 
-**After recovery, the exact next action below stands unchanged:** work
-`livespec-dev-tooling-0eo.1` (E-openbrain), with fresh pre-move ownership, cleanliness and
-reachability inspection.
+**After recovery, the exact next action below stands unchanged.** *(Snapshot note: at the
+time of writing that was `0eo.1` (E-openbrain). `0eo.1` has since been **relocated and
+CLOSED**; the current next action is **B, `6fmfzk`** — see §"Exact next action".)*
+
+### E-openbrain — COMPLETE (2026-07-26)
+
+**`livespec-dev-tooling-0eo.1` is CLOSED.** The relocation was performed with
+`git worktree move` (never `remove`):
+
+```
+/data/projects/openbrain/.claude/worktrees/fix-ob-6vt-thought-detail-save
+  → /home/ubuntu/.worktrees/openbrain/fix-ob-6vt-thought-detail-save
+```
+
+Premises re-verified immediately before the move: source clean, branch
+`fix/ob-6vt-thought-detail-save` at `296dd1f`, no remote head, destination absent, no
+process cwd'd inside, no tmux pane rooted there.
+
+**Verified acceptance:**
+
+1. `git -C /data/projects/openbrain worktree list` shows the worktree at
+   `/home/ubuntu/.worktrees/openbrain/fix-ob-6vt-thought-detail-save` `[fix/ob-6vt-thought-detail-save]`.
+2. `296dd1f2f131326065c4729099103cfa2a860eef` is still reachable —
+   `merge-base --is-ancestor 296dd1f fix/ob-6vt-thought-detail-save` passes. The unpushed
+   commit survived.
+3. The offending child path is **absent**.
+4. The worktree is still **clean** at the new location.
+5. The positive-location scan reports **no openbrain refusal**.
+
+**ACCEPTANCE CORRECTION (recorded durably).** Criterion 3 previously read
+"`/data/projects/openbrain/.claude/worktrees/` no longer exists". **That was wrong and must
+not be reinstated.** That directory also contains an unrelated **`OB1` symlink →
+`/data/projects/OB1`**, which is preserved. The parent directory was **not** deleted; the
+correct criterion is that the **exact offending child path** is gone, which is what was
+verified. Deleting the parent would have destroyed unrelated openbrain state.
+
+**Incidental observation — not this thread's action.** **Observed evidence only, cause NOT established.** As of 2026-07-26: the path
+`/data/projects/livespec-overseer/.claude/worktrees/dod-corrections` is **absent**; `git
+worktree list` in that repo registers **no** worktree of that name (relocated or otherwise);
+and the local branch `docs/dod-corrections-pr78` is still at **`7efb87d`**. **Who removed it,
+or how, was NOT determined** — do not infer an actor. This thread never touched it.
+`livespec-dev-tooling-3iizsd` (E-overseer) **remains blocked**, pending reassessment against
+owner evidence — **it was not closed here.**
 
 ### Exact next action
 
-**Work `livespec-dev-tooling-0eo.1` (E-openbrain).** The authoritative sequence is
-**E(openbrain) → B → A1 → D → A2+C**, so the relocation is first and **B is second**, not
-the next action. Both are in the ready lane; take `0eo.1` first.
+**Work `livespec-dev-tooling-6fmfzk` (B — positive-location hook + actionable remedy).**
 
-Before moving: **re-inspect ownership, cleanliness, and reachability at that moment** — the
-2026-07-25 reading (clean tree, unpushed `296dd1f`, no upstream, no live owner) is stale by
-the time anyone acts. Then `git worktree move` (never `remove`).
+`0eo.1` is **done and closed** (§"E-openbrain — COMPLETE"), so the authoritative sequence
+**E(openbrain) → B → A1 → D → A2+C** now stands at **B**. It is the only item in the ready
+lane **under this epic / the current cut** (the tenant's ready lane holds unrelated items).
 
-**Then** work `livespec-dev-tooling-6fmfzk` (B) — the first *implementation* slice after the
-relocation. Before B reaches the `livespec-overseer` clone,
-**warn the session owning `.claude/worktrees/dod-corrections`**; B takes effect per clone
-only on `just bootstrap`, so the rollout is operator-paced.
+Two things B must carry, both already worked out in §"B — IMPLEMENTATION-READY PREP":
+
+- **Warn the session owning any live foreign worktree before B reaches its clone.** B takes
+  effect per clone only on `just bootstrap`, so the rollout is operator-paced. *(The
+  `livespec-overseer` worktree that prompted this is no longer present — see the incidental
+  observation above — but the discipline stands for any other.)*
+- **The remedy message must not reference the pack**, because B ships before D and the
+  recipe is absent from most fleet repos at that moment. Use `git worktree move`.
+
+Product `.py` → **Red-Green-Replay**: test-only Red with `CANONICAL_HOOK_BODY` unmodified on
+disk, then Green amend with byte-identical test bytes.
 
 *(Historical: the proposal below is what was approved. Retained as the record of what was
 put to the maintainer.)*
@@ -476,11 +526,11 @@ Six filable items:
 | # | slice | RGR | blocked by |
 |---|---|---|---|
 | 1 | **E-openbrain** — relocate the nested worktree | no | — |
-| 2 | **B** — positive-location hook + actionable remedy | **yes** | — (warn the overseer session before its clone reinstalls) |
+| 2 | **B** — positive-location hook + actionable remedy | **yes** | — (rescan before each clone reinstall; warn only a live owner then observed — none currently due) |
 | 3 | **A1** — `worktree-pack` obligation row + CI install step + this repo's own wiring | **yes** | 2 (ordering only) |
 | 4 | **D** — 6 wiring PRs + 2 `just bootstrap` runs | no | 3 |
 | 5 | **A2 + C** — config-gated flip + `import?` assertion + installer/docs | **yes** | 3, 4 |
-| 6 | **E-overseer** — relocate | no | **another session** — not dispatchable |
+| 6 | **E-overseer** — relocate | no | **cause/owner action unestablished** — blocked pending reassessment, not dispatchable |
 
 **Hard edges:** `3 → 5` (without A1, A2 reds this repo's own CI on its landing PR) and
 `4 → 5` (without D, A2 costs ~58 dead bump PRs per fleet-day). Items 1 and 2 have no
@@ -537,11 +587,13 @@ the NARROW ruling explicitly retained it, and it is inspected: clean tree, unpus
 `296dd1f` with no upstream, no live owning process, stale since 2026-06-24.
 `git worktree move` preserves the commit; `remove` would destroy it.
 
-**`livespec-overseer/.claude/worktrees/dod-corrections` — not this thread's to take.** It
-belongs to another live session, was created mid-audit, and carries two commits. Two things
-are needed, neither of them this thread's to grant: that session's owner relocating it or
-explicitly handing it over, **and a warning to that session before B reaches the overseer
-clone**, since once its hook is reinstalled, commits from that worktree are refused.
+**`livespec-overseer/.claude/worktrees/dod-corrections` — not this thread's to take.** *(As
+written 2026-07-25:)* it belonged to another live session, was created mid-audit, and
+carried two commits; what was needed was that session's owner relocating it or handing it
+over, plus a warning before B reached that clone. **CURRENT 2026-07-26: the path is absent
+and no worktree of that name is registered; cause NOT established; branch
+`docs/dod-corrections-pr78` is at `7efb87d`. `3iizsd` remains blocked pending reassessment.**
+The per-clone pre-warning discipline still applies to any other live foreign worktree.
 
 ### THE FOUR OPEN APPROVAL QUESTIONS
 
@@ -557,9 +609,8 @@ Everything else follows from rulings already given.
 ## MAINTAINER RULING — NARROW boundary APPROVED (2026-07-25)
 
 **This thread enforces both full-location clauses across the 9 repos classified `fleet` in
-the manifest.** Adopter enforcement is a **separate follow-up**. **E retains the authorized
-openbrain relocation, subject to fresh pre-move ownership, cleanliness and reachability
-inspection.**
+the manifest.** Adopter enforcement is a **separate follow-up**. **E's openbrain relocation is COMPLETE**
+(`0eo.1` closed 2026-07-26); `3iizsd` remains blocked.
 
 Consequences, applied throughout this file:
 
@@ -734,9 +785,14 @@ allow-tooling, **2 refusals, zero false positives**). A and D follow as unhurrie
 with A's flip *after* D, so Option 2's red window never opens at all. Rollout is naturally
 gradual: B takes effect per clone only when that clone's hook is reinstalled via
 `just bootstrap`.
-Two costs to weigh. `livespec-overseer/.claude/worktrees/dod-corrections` belongs to a live
-session and would be refused once B reaches that clone — hence E's openbrain half first and
-a heads-up to that session before B lands; **this thread must not touch that worktree.** And
+Two costs to weigh. *(Dated premise, 2026-07-25:)*
+`livespec-overseer/.claude/worktrees/dod-corrections` belonged to a live session and would be
+refused once B reached that clone — hence E's openbrain half first and a heads-up to that
+session before B landed; this thread must not touch that worktree. **Actual 2026-07-26
+evidence: that path is absent, no worktree of that name is registered, branch
+`docs/dod-corrections-pr78` is at `7efb87d`, and cause/owner action was NOT established — so
+no overseer warning is currently due.** The generic rule stands: rescan before each clone
+reinstall and warn the owner of any live foreign violating worktree then observed. And
 B without A leaves `just worktree-create` undiscoverable in 8 of 9 repos, so operators hit a
 refusal whose remedy names a command that does not exist there — pair B with the
 remedy-string fix.
@@ -763,11 +819,13 @@ case, and anything else outside the sanctioned root. *(This line previously read
 case, which item B does not catch" — true of the pre-ruling nested-only B, false of the
 current one.)* → §"THE SPEC ALREADY ANSWERS…"
 
-**There are two live nested violations, not one.** `openbrain/.claude/worktrees/fix-ob-6vt-…`
+**There WERE two live nested violations, not one — dated 2026-07-25.** `openbrain/.claude/worktrees/fix-ob-6vt-…`
 and `livespec-overseer/.claude/worktrees/dod-corrections` — the latter **created during
 this audit**, with commits landed from it, invisible to `git status` because that repo
 gitignores `.claude/worktrees/`. The premise that this "fired once for real" is retired.
-→ §"A SECOND LIVE VIOLATION…"
+
+**CURRENT (2026-07-26):** openbrain is **relocated and CLOSED** (`0eo.1`). The overseer path is **absent** and registers **no** worktree; cause not established. **Zero** live nested violations are currently observed; `3iizsd` remains **blocked** pending reassessment.
+→ §"A SECOND LIVE VIOLATION…" and §"E-openbrain — COMPLETE"
 
 **Item B reaches fewer repos than assumed.** It changes `CANONICAL_HOOK_BODY`, which
 9 fleet clones run. openbrain runs a stock lefthook stub plus its own bespoke script;
@@ -797,8 +855,8 @@ hook-first (§"MAINTAINER RULING — rollout order"). **Boundary approved** — 
 `fleet` repos (§"MAINTAINER RULING — NARROW boundary"); F drops out and adopter backfill is
 filed as `li-l53` / `hl-nhw`. **The final cut is APPROVED and FILED (2026-07-26): seven
 children exist under the epic and are intake-routed** — ids, states, dependency edges and
-lane evidence in §"MAINTAINER RULING — FINAL CUT APPROVED AND FILED". **Still true: no
-worktree has been moved or touched, and no product implementation has happened.** A
+lane evidence in §"MAINTAINER RULING — FINAL CUT APPROVED AND FILED". **CURRENT: the openbrain worktree HAS been relocated (`0eo.1` closed 2026-07-26); no
+product implementation has happened, and no foreign worktree has been touched.** A
 "wire-then-enforce" answer displayed on 2026-07-25 was a supervisor UI-race artifact and is
 void.
 
@@ -834,8 +892,13 @@ scenario that occurred.
 
 Unlike `livespec-console-beads-fabro`'s `plan/repo-invariant-guards/` (a sibling thread
 of the same *mechanism* — mechanical guards for unenforced invariants), this is **not**
-a latent gap. It has fired for real **more than once**, and violations remain live
-fleet-wide. That difference is why this is its own thread rather than a fourth item there.
+a latent gap. It has **fired for real more than once** — a recurring history, not a
+hypothetical. **As of 2026-07-26 no live nested violation is observed** (openbrain relocated
+and `0eo.1` closed; the overseer path absent and unregistered), but **the structural
+fail-open itself is still wide open**: nothing yet refuses a worktree outside the sanctioned
+root, so the next violation would be just as silent. **That hole closes with B, which has
+not yet landed.** The recurrence plus the still-open hole is why this is its own thread
+rather than a fourth item there.
 
 *(Originally written as "it fired once for real, and one live violation remains
 fleet-wide (§openbrain)". Retired 2026-07-25: a second nested violation appeared in
@@ -1780,11 +1843,12 @@ for the maintainer — but it should be a decision, not an omission.
 ### E — relocate the live nested worktrees (openbrain, and now livespec-overseer)
 
 **Current disposition (2026-07-26): the final cut is APPROVED and FILED.** E is split into
-two filed records — **`livespec-dev-tooling-0eo.1`** (openbrain, **ready**) and
-**`livespec-dev-tooling-3iizsd`** (overseer, **blocked**). **The openbrain relocation is
-AUTHORIZED**, subject to a fresh ownership / cleanliness / reachability inspection
-immediately before the move. **The overseer relocation remains blocked on its foreign
-owning session** and must not be touched by this thread.
+two filed records — **`livespec-dev-tooling-0eo.1`** (openbrain, **CLOSED 2026-07-26 —
+relocated**) and **`livespec-dev-tooling-3iizsd`** (overseer, **still blocked**). The
+openbrain relocation was performed after a fresh pre-move inspection; see
+§"E-openbrain — COMPLETE". The overseer relocation **remains blocked**: its path is now
+absent and registers no worktree, but the cause was not established, so `3iizsd` awaits
+reassessment against owner evidence and must not be touched by this thread.
 
 *(Heading corrected 2026-07-25 — it previously read "openbrain has the last live
 violation", which was no longer true on two counts: `livespec-overseer` acquired a nested
@@ -1815,13 +1879,13 @@ lefthook stub), so changing `CANONICAL_HOOK_BODY` does not reach it. Relocate it
 hygiene and consistency with the rule, not because B would otherwise strand it.
 Maintainer decided: **relocate it as part of the sweep** (`git worktree move` to
 `~/.worktrees/openbrain/<branch>`), before B ships, so nobody is stranded mid-branch.
-The pre-move inspection this called for is recorded above. **As of 2026-07-26 the move is
-AUTHORIZED** (final cut approved; filed as `livespec-dev-tooling-0eo.1`, ready) and has
-**NOT yet been performed**. Re-inspect ownership, cleanliness and reachability immediately
-before moving — the 2026-07-25 reading is stale by the time anyone acts. *(The "before B
+The pre-move inspection this called for is recorded above. **The move was PERFORMED and
+`0eo.1` CLOSED on 2026-07-26** — see §"E-openbrain — COMPLETE". *(This paragraph previously
+read "AUTHORIZED … NOT yet been performed"; the fresh pre-move re-inspection it required
+was carried out before the move.)* *(The "before B
 ships, so nobody is stranded mid-branch" rationale is superseded: B changes
-`CANONICAL_HOOK_BODY`, which openbrain does not run, so B never strands it. E goes first for
-hygiene and because it is free, not to avoid stranding.)*
+`CANONICAL_HOOK_BODY`, which openbrain does not run, so B never stranded it. E went first for
+hygiene and because it was free, not to avoid stranding — and it is now **complete**.)*
 
 A fleet rescan on 2026-07-25 using the §B rule (physical paths via `realpath`, `.git/`
 carve-out applied) across every clone under `/data/projects`, `/home/ubuntu/workspace`,
@@ -2094,8 +2158,9 @@ name the boundary so the adopter gap is visible rather than implied.
 > statements are false as of 2026-07-26.**
 >
 > **Current:** all four questions are **answered**; the final cut is **approved**; **seven
-> slices exist** under `livespec-dev-tooling-0eo` and are intake-routed. Two are in the ready
-> lane (`0eo.1`, `6fmfzk`), so work **is** dispatchable. See §"MAINTAINER RULING — FINAL CUT
+> slices exist** under `livespec-dev-tooling-0eo` and are intake-routed. `0eo.1` is now
+> **closed**, so **`6fmfzk` (B) is the only ready item** under this epic; work **is**
+> dispatchable. See §"MAINTAINER RULING — FINAL CUT
 > APPROVED AND FILED" for ids, states, edges and lane evidence, and §"Exact next action".
 
 **The open questions, in dependency order (2026-07-25).** The original text below lists
@@ -2113,11 +2178,10 @@ rollout order first; that ordering is superseded. Ask them in this order:
    scope corrections to A (discoverability), B (sandbox-exempt guard, janitor carve-out,
    reach limited to fleet clones), D (6 tracked PRs + 3 bootstraps), and E (two worktrees
    now, one of them another session's).
-4. **Authority to relocate.** openbrain was inspected 2026-07-25 and was clean then (clean
-   tree, unpushed `296dd1f`, no upstream, no live owner) — a snapshot, so the move is
-   authorized only **subject to fresh inspection immediately before it**.
-   `livespec-overseer`'s belongs to another session and must not be touched without its
-   owner.
+4. **Authority to relocate.** *(Historical question, now answered.)* openbrain was
+   authorized subject to fresh inspection — that inspection was done and **the move is
+   COMPLETE** (`0eo.1` closed). `livespec-overseer`'s must not be touched without its owner;
+   `3iizsd` remains blocked.
 
 **[SUPERSEDED 2026-07-26 — the slices ARE now filed]** — seven records under the epic,
 intake-routed; see §"MAINTAINER RULING — FINAL CUT APPROVED AND FILED". The paragraph below
@@ -2142,8 +2206,9 @@ So the honest first act is a maintainer act:
    C carried with A2 — is filed as seven children of `-0eo` and intake-routed.)*
 
 Nothing here is agent-dispatchable until slices exist: `next` ranks work-items, and this
-thread has none. **[SUPERSEDED 2026-07-26 — seven slices exist; two (`0eo.1`, `6fmfzk`) are
-in the ready lane, so this thread IS dispatchable.]**
+thread has none. **[SUPERSEDED 2026-07-26 — seven slices exist and this thread IS
+dispatchable. (At filing time `0eo.1` and `6fmfzk` were both ready; `0eo.1` has since been
+closed, leaving `6fmfzk` the only ready item under this epic.)]**
 
 **Re-verified 2026-07-25 — snapshot, since superseded by the 2026-07-26 filing:**
 `bd show livespec-dev-tooling-0eo` reported the epic
@@ -2157,9 +2222,10 @@ nothing was filed in the interim.
 ## Sequencing
 
 **AUTHORITATIVE SEQUENCE (2026-07-26):**
-`E(openbrain) → B → A1 → D → A2+C`, with **G deferred** (filed to `backlog`).
-**E goes first because it is free and unblocked** — *not* because B would otherwise strand
-openbrain; B changes `CANONICAL_HOOK_BODY`, which openbrain does not run.
+`E(openbrain) ✅ → B ◀ current → A1 → D → A2+C`, with **G deferred** (filed to `backlog`).
+**E(openbrain) is COMPLETE** (`0eo.1` closed 2026-07-26); the pointer is now at **B**.
+*(E went first because it was free and unblocked — not because B would otherwise strand
+openbrain; B changes `CANONICAL_HOOK_BODY`, which openbrain does not run.)*
 
 *(Superseded list, retained as history — items 2 and 3 below are both false now: A and B do
 NOT share one fleet sweep (the pack is untracked, so there is no pack sweep; D is 6 wiring
@@ -2182,16 +2248,18 @@ PRs + 2 bootstraps), and B does not reach openbrain.)*
 
 ## Gates
 
-**COMPLETED (2026-07-25/26):** ~~scope~~ full-location approved · ~~rollout order~~ Option 3
+**COMPLETED (2026-07-25/26):** ~~fresh pre-move evidence for `0eo.1`~~ gathered and the
+relocation performed · ~~scope~~ full-location approved · ~~rollout order~~ Option 3
 approved · ~~fleet boundary~~ NARROW approved · ~~final cut~~ approved ·
 ~~epic anchor + item filing~~ seven children filed and intake-routed.
 
 **REMAINING, real gates:**
 
-- **Fresh pre-move evidence for `0eo.1`** — ownership, cleanliness, reachability
-  re-inspected immediately before the openbrain relocation.
-- **Foreign-session authority for `3iizsd`** — the overseer worktree's owning session must
-  act or hand over; this thread must not touch it.
+- **`3iizsd` (E-overseer) — blocked pending reassessment.** Current evidence: the path
+  `/data/projects/livespec-overseer/.claude/worktrees/dod-corrections` is **absent**, **no**
+  worktree of that name is registered, and branch `docs/dod-corrections-pr78` is at
+  `7efb87d`. **Cause and owner action were NOT established**, so absence alone does not
+  close it. This thread must not touch foreign state.
 - **Red-Green-Replay** on the product-`.py` slices: B (`6fmfzk`), A1 (`cmc3ah`),
   A2+C (`skl77m`). Docs-only changes like this file are exempt.
 - **PR checks + rebase-merge** on every tracked change.
@@ -2282,8 +2350,8 @@ These four landed after the first audit PR and are recorded in the sections abov
 
 No slices filed, no worktree moved, no implementation dispatched, no spec change, no
 ledger edit — true as of that pass. **Superseded 2026-07-26: the seven approved slices are
-now filed and intake-routed.** No worktree has been moved and nothing has been dispatched or
-implemented.
+filed and intake-routed, AND the openbrain worktree HAS been relocated (`0eo.1` closed).**
+Still true: no product implementation has been dispatched or performed.
 
 **Decision status as of 2026-07-25** (this paragraph records a snapshot of an earlier pass;
 these are its outcomes, not still-open items): scope is **APPROVED** — full-location, both
