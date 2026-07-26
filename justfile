@@ -761,10 +761,15 @@ check-no-raise-outside-io:
 # BOTH livespec Driver plugins ship (livespec-driver-claude at
 # `.claude-plugin/hooks/`, livespec-driver-codex at `livespec/hooks/`),
 # mirroring the commit-refuse-hook precedent (Conformance-Pattern concern
-# #1). OPT-IN via the `neutral_hook_body_path` role key: absent → no-op
-# (this consumer does not carry the neutral hook body); present → the
-# configured path MUST be byte-identical to the single packaged carrier
-# constant `install_no_shadow_ledger.CANONICAL_NO_SHADOW_LEDGER_BODY`.
+# #1). OPT-IN via the `neutral_hook_body_path` role key: DECLARED-EMPTY
+# (`""`) → sanctioned `info` no-op (this consumer does not carry the neutral
+# hook body); declared non-empty → the configured path MUST be byte-identical
+# to the single packaged carrier constant
+# `install_no_shadow_ledger.CANONICAL_NO_SHADOW_LEDGER_BODY`. An UNDECLARED
+# key is a hard ERROR naming it, per v0.54.12 — absence is no longer a
+# sanctioned spelling of "not applicable". Note the installer recipe above
+# deliberately still no-ops on an ABSENT key: it is a provisioning surface,
+# not a gating check, and the two differ on exactly this point.
 check-no-shadow-ledger-body-identical:
     uv run python -m livespec_dev_tooling.checks.no_shadow_ledger_body_identical
 
