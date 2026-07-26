@@ -87,7 +87,6 @@ time.
 
 from __future__ import annotations
 
-import ast
 import subprocess
 import sys
 from pathlib import Path
@@ -98,6 +97,9 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling.checks._docs_only_change import (  # noqa: E402
+    is_docs_only_change,
+)
 from livespec_dev_tooling.config import load_config  # noqa: E402
 
 __all__: list[str] = []
@@ -151,85 +153,14 @@ def _head_has_unpaired_red_trailers(*, cwd: Path) -> bool:
     return has_red and not has_green
 
 
-def _git_blob(*, ref_and_path: str, cwd: Path) -> str | None:
-    """Return the text of a git object (`git show <ref>:<path>`), or None on failure.
-
-    `ref_and_path` is a `git show` object spec — `HEAD:<path>` for the
-    committed version, `:<path>` for the staged (index, stage-0) version.
-    A non-zero exit means the object does not exist (the path is absent in
-    HEAD — a new file — or has no stage-0 entry — a staged deletion), which
-    the carve-out treats as a fail-closed signal, so None is returned rather
-    than raising.
-    """
-    # S603/S607: argv is a fixed list (literal git binary + literal flags);
-    # bare `git` resolves via PATH; no untrusted shell input.
-    result = subprocess.run(
-        ["git", "show", ref_and_path],
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode != 0:
-        return None
-    return result.stdout
-
-
-def _dump_without_docstrings(*, source: str) -> str | None:
-    """Return `ast.dump` of `source` with every docstring stripped, or None if unparseable.
-
-    Comments are already absent from the AST, so `ast.dump` ignores them;
-    docstrings are NOT — the leading string-literal statement of a module,
-    class, or (async) function IS an `Expr`/`Constant`-str node in the tree,
-    so a docstring-only edit would still change the dump unless removed. This
-    strips those leading statements before dumping so both comment- and
-    docstring-only edits compare equal. `include_attributes` defaults to
-    False, so line/column shifts from added or removed comment lines do not
-    affect the dump. Returns None when the source does not parse (a syntax
-    error or embedded NUL), the carve-out's fail-closed signal.
-    """
-    try:
-        tree = ast.parse(source)
-    except (SyntaxError, ValueError):
-        return None
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
-            continue
-        body = node.body
-        if (
-            body
-            and isinstance(body[0], ast.Expr)
-            and isinstance(body[0].value, ast.Constant)
-            and isinstance(body[0].value.value, str)
-        ):
-            node.body = body[1:]
-    return ast.dump(tree)
-
-
 def _is_docs_only_change(*, path: str, cwd: Path) -> bool:
     """Whether a staged source path differs from HEAD only in comments/docstrings.
 
-    True iff BOTH the HEAD version and the staged (index) version exist, BOTH
-    parse, and their docstring-stripped ASTs are identical — meaning the only
-    differences are comments and/or docstrings. False (fail closed → the
-    pairing requirement applies) for a new file (absent in HEAD), a staged
-    deletion or rename (no stage-0 entry, or the new path is absent in HEAD),
-    an unparseable version on either side, or any real (non-comment,
-    non-docstring) source change.
+    Delegates to the shared rule so this gate and
+    `check_coverage_incremental` cannot drift into disagreeing about the
+    same edit. The staged (index) revision is spelled `:<path>`.
     """
-    head_source = _git_blob(ref_and_path=f"HEAD:{path}", cwd=cwd)
-    if head_source is None:
-        return False
-    staged_source = _git_blob(ref_and_path=f":{path}", cwd=cwd)
-    if staged_source is None:
-        return False
-    head_dump = _dump_without_docstrings(source=head_source)
-    if head_dump is None:
-        return False
-    staged_dump = _dump_without_docstrings(source=staged_source)
-    if staged_dump is None:
-        return False
-    return head_dump == staged_dump
+    return is_docs_only_change(before=f"HEAD:{path}", after=f":{path}", cwd=cwd)
 
 
 def main() -> int:

@@ -69,6 +69,9 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling.checks._docs_only_change import (  # noqa: E402
+    is_docs_only_change,
+)
 from livespec_dev_tooling.config import MirrorPairing, load_config  # noqa: E402
 
 __all__: list[str] = []
@@ -249,7 +252,21 @@ def _derive_paths_from_git(*, source_tree_prefixes: tuple[str, ...], cwd: Path) 
         cwd=str(cwd),
         env=git_env,
     ).stdout
-    return _changed_py_impl_paths(diff_output=diff, source_tree_prefixes=source_tree_prefixes)
+    changed = _changed_py_impl_paths(diff_output=diff, source_tree_prefixes=source_tree_prefixes)
+    # Comments and docstrings cannot change coverage, and a module with no
+    # behavior to test has no mirror-paired test the gate could resolve — so
+    # gating a docs-only edit makes it unpushable rather than merely strict.
+    # The same rule waives the sibling `commit_pairs_source_and_test` pairing
+    # requirement; both read it from one place so they cannot disagree.
+    return [
+        path
+        for path in changed
+        if not is_docs_only_change(
+            before=f"origin/master:{path.as_posix()}",
+            after=f"HEAD:{path.as_posix()}",
+            cwd=cwd,
+        )
+    ]
 
 
 def _configure_logger() -> structlog.stdlib.BoundLogger:

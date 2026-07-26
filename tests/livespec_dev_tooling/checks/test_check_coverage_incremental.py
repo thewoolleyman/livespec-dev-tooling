@@ -578,3 +578,46 @@ def test_derive_paths_from_git_excludes_deleted_impl(*, tmp_path: Path) -> None:
         cwd=tmp_path,
     )
     assert derived == [], f"a deleted impl must be excluded from the derived set; got {derived!r}"
+
+
+def test_derive_paths_from_git_excludes_docs_only_change(*, tmp_path: Path) -> None:
+    """A docstring-only edit is not a coverage-relevant impl change.
+
+    The per-file gate resolves each changed impl to a mirror-paired
+    test, so a module with no behavior to test — a package
+    `__init__.py` carrying only a docstring and `__all__` — makes a
+    pure docstring edit UNPUSHABLE: no such test exists and none
+    meaningfully could. The sibling `commit_pairs_source_and_test`
+    already waives its own pairing requirement for exactly this case,
+    so the two gates must agree; comments and docstrings cannot change
+    coverage.
+    """
+    _init_tmp_repo(tmp_path=tmp_path, with_mirror_pairing=True)
+    impl = tmp_path / "livespec_dev_tooling" / "checks" / "docs_only_mod.py"
+    impl.parent.mkdir(parents=True, exist_ok=True)
+    impl.write_text(
+        '"""Original docstring."""\n\nfrom __future__ import annotations\n\n'
+        "__all__ = ['v']\n\nv = 1  # original comment\n",
+        encoding="utf-8",
+    )
+    _git_in(tmp_path=tmp_path, args=("add", "-A"))
+    _git_in(tmp_path=tmp_path, args=("commit", "-qm", "baseline impl"))
+    _git_in(tmp_path=tmp_path, args=("update-ref", "refs/remotes/origin/master", "HEAD"))
+
+    impl.write_text(
+        '"""Reworded docstring — no logical change."""\n\nfrom __future__ import annotations\n\n'
+        "__all__ = ['v']\n\nv = 1  # reworded comment\n",
+        encoding="utf-8",
+    )
+    _git_in(tmp_path=tmp_path, args=("add", "-A"))
+    _git_in(tmp_path=tmp_path, args=("commit", "-qm", "docstring only"))
+
+    module = _load_check_module()
+    derived = module._derive_paths_from_git(  # noqa: SLF001
+        source_tree_prefixes=("livespec_dev_tooling/",),
+        cwd=tmp_path,
+    )
+
+    assert (
+        derived == []
+    ), f"a docstring-and-comment-only change must not be gated as a changed impl; got {derived!r}"
