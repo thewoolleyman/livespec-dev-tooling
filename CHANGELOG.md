@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.54.27](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.54.26...v0.54.27) (2026-07-26)
+
+
+### Bug Fixes
+
+* teach check-keyword-only-args the externally-fixed-calling-convention exception ([b85fed7](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b85fed718d47a99260e3ab91457166065c683930))
+
 ## [0.54.26](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.54.25...v0.54.26) (2026-07-26)
 
 
