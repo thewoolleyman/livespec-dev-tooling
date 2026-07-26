@@ -8,10 +8,17 @@ linked worktree.
 
 The installed body is the STRUCTURAL, armed-on-install commit-refuse
 hook (per `livespec/SPECIFICATION/non-functional-requirements.md`
-§"Primary-checkout commit-refuse hook"): it refuses when the
-repository's git-dir equals its git-common-dir (the structural
-signature of a primary checkout), UNLESS `livespec.sandboxExempt=true`.
-At a linked worktree the two differ, so the hook delegates to lefthook.
+§"Primary-checkout commit-refuse hook" and §"Worktree root and mise
+trust"). It enforces a POSITIVE-LOCATION allow-list:
+
+- a PRIMARY checkout (git-dir == git-common-dir) refuses, UNLESS
+  `livespec.sandboxExempt=true`, in which case it delegates;
+- a TOOLING-INTERNAL worktree under the repository's git dir (beads'
+  own `.git/beads-worktrees/*` sync worktrees) delegates;
+- a SANCTIONED worktree under `$HOME/.worktrees` delegates;
+- ANY OTHER linked worktree — nested inside a clone, or a peer of it —
+  is REFUSED. A linked worktree no longer delegates merely by virtue of
+  being linked; its LOCATION decides.
 
 The installer is exercised IN-PROCESS (`main()` with
 `monkeypatch.chdir`) — no Python subprocess spawn (this test is not on
@@ -81,6 +88,20 @@ def _init_repo(*, repo: Path) -> None:
     _run_git(args=["config", "--local", "user.email", "test@example.com"], cwd=repo)
 
 
+def _init_primary_with_worktree_at(*, tmp_path: Path, worktree: Path) -> Path:
+    """Create a primary checkout and add a linked worktree at `worktree`."""
+    primary = tmp_path / "project"
+    _init_repo(repo=primary)
+    seed = primary / "seed.md"
+    _ = seed.write_text("# seed\n", encoding="utf-8")
+    _run_git(args=["add", "seed.md"], cwd=primary)
+    _run_git(args=["commit", "--quiet", "-m", "fixture commit"], cwd=primary)
+    _run_git(args=["branch", "feature/wip"], cwd=primary)
+    worktree.parent.mkdir(parents=True, exist_ok=True)
+    _run_git(args=["worktree", "add", str(worktree), "feature/wip"], cwd=primary)
+    return primary
+
+
 def _init_primary_with_worktree(*, tmp_path: Path) -> tuple[Path, Path]:
     """Create a primary checkout plus one linked worktree; return both paths."""
     primary = tmp_path / "project"
@@ -123,10 +144,17 @@ def _run_installed_hook(
     fakebin: Path,
     capture_file: Path | None = None,
     extra_args: tuple[str, ...] = (),
+    home: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    """Invoke an installed hook script via `sh` with the stub mise on PATH."""
+    """Invoke an installed hook script via `sh` with the stub mise on PATH.
+
+    `home` overrides `$HOME` so a test can control the sanctioned worktree root
+    (`<home>/.worktrees`) the hook derives, matching `_rows_local._worktree_root`.
+    """
     env = dict(os.environ)
     env["PATH"] = f"{fakebin}{os.pathsep}{env.get('PATH', '')}"
+    if home is not None:
+        env["HOME"] = str(home)
     if capture_file is not None:
         env["MISE_CAPTURE_FILE"] = str(capture_file)
     return subprocess.run(
@@ -218,15 +246,21 @@ def test_installed_hook_refuses_at_primary(
 def test_installed_hook_delegates_at_worktree(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """(b) the installed hook does NOT refuse (delegates) when invoked from a worktree."""
+    """(b) a SANCTIONED worktree (under `$HOME/.worktrees`) delegates, not refuses.
+
+    Being a linked worktree is not sufficient — location decides. See the
+    nested/peer tests for the refusing cases.
+    """
     _scrub_git_env(monkeypatch=monkeypatch)
-    primary, worktree = _init_primary_with_worktree(tmp_path=tmp_path)
+    home = tmp_path / "home"
+    worktree = home / ".worktrees" / "project" / "feature-wip"
+    primary = _init_primary_with_worktree_at(tmp_path=tmp_path, worktree=worktree)
     monkeypatch.chdir(primary)
     assert main() == 0
     fakebin = _make_fake_mise(bin_dir=tmp_path / "fakebin")
     hook = primary / ".git" / "hooks" / "pre-commit"
 
-    result = _run_installed_hook(hook_path=hook, cwd=worktree, fakebin=fakebin)
+    result = _run_installed_hook(hook_path=hook, cwd=worktree, fakebin=fakebin, home=home)
 
     assert result.returncode == 0, (result.stdout, result.stderr)
     assert "refusing" not in result.stderr
@@ -261,7 +295,9 @@ def test_installed_commit_msg_hook_forwards_message_file_arg(
     through. The stub mise records the forwarded argv.
     """
     _scrub_git_env(monkeypatch=monkeypatch)
-    primary, worktree = _init_primary_with_worktree(tmp_path=tmp_path)
+    home = tmp_path / "home"
+    worktree = home / ".worktrees" / "project" / "feature-wip"
+    primary = _init_primary_with_worktree_at(tmp_path=tmp_path, worktree=worktree)
     monkeypatch.chdir(primary)
     assert main() == 0
     fakebin = _make_fake_mise(bin_dir=tmp_path / "fakebin")
@@ -276,6 +312,7 @@ def test_installed_commit_msg_hook_forwards_message_file_arg(
         fakebin=fakebin,
         capture_file=capture,
         extra_args=(str(msg_file),),
+        home=home,
     )
 
     assert result.returncode == 0, (result.stdout, result.stderr)
@@ -346,3 +383,117 @@ def test_canonical_body_unsets_git_dir_env_before_lefthook() -> None:
         f"unset at line {min(unset_line_indices) + 1}, "
         f"lefthook exec at line {min(lefthook_exec_indices) + 1}."
     )
+
+
+def test_installed_hook_refuses_nested_worktree(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A worktree NESTED inside the primary's working tree is refused (clause 1)."""
+    _scrub_git_env(monkeypatch=monkeypatch)
+    home = tmp_path / "home"
+    primary = tmp_path / "project"
+    worktree = primary / ".claude" / "worktrees" / "nested"
+    primary_created = _init_primary_with_worktree_at(tmp_path=tmp_path, worktree=worktree)
+    monkeypatch.chdir(primary_created)
+    assert main() == 0
+    fakebin = _make_fake_mise(bin_dir=tmp_path / "fakebin")
+    hook = primary_created / ".git" / "hooks" / "pre-commit"
+
+    result = _run_installed_hook(hook_path=hook, cwd=worktree, fakebin=fakebin, home=home)
+
+    assert result.returncode == 1, (result.stdout, result.stderr)
+    assert "refusing" in result.stderr
+
+
+def test_installed_hook_refuses_peer_worktree(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A PEER worktree — outside the clone, outside `~/.worktrees` — is refused.
+
+    This is the case the specification names explicitly and the case a
+    nested-only rule misses entirely.
+    """
+    _scrub_git_env(monkeypatch=monkeypatch)
+    home = tmp_path / "home"
+    worktree = tmp_path / "project-peer"
+    primary = _init_primary_with_worktree_at(tmp_path=tmp_path, worktree=worktree)
+    monkeypatch.chdir(primary)
+    assert main() == 0
+    fakebin = _make_fake_mise(bin_dir=tmp_path / "fakebin")
+    hook = primary / ".git" / "hooks" / "pre-commit"
+
+    result = _run_installed_hook(hook_path=hook, cwd=worktree, fakebin=fakebin, home=home)
+
+    assert result.returncode == 1, (result.stdout, result.stderr)
+    assert "refusing" in result.stderr
+
+
+def test_installed_hook_allows_tooling_internal_worktree(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A worktree under the primary's git dir (beads-sync shape) is ALLOWED."""
+    _scrub_git_env(monkeypatch=monkeypatch)
+    home = tmp_path / "home"
+    primary = tmp_path / "project"
+    worktree = primary / ".git" / "beads-worktrees" / "beads-sync"
+    primary_created = _init_primary_with_worktree_at(tmp_path=tmp_path, worktree=worktree)
+    monkeypatch.chdir(primary_created)
+    assert main() == 0
+    fakebin = _make_fake_mise(bin_dir=tmp_path / "fakebin")
+    hook = primary_created / ".git" / "hooks" / "pre-commit"
+
+    result = _run_installed_hook(hook_path=hook, cwd=worktree, fakebin=fakebin, home=home)
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert "refusing" not in result.stderr
+
+
+def test_refusal_remedy_uses_plain_git_and_names_no_recipe() -> None:
+    """The refusal remedy must work before slice D wires any `just` recipe.
+
+    B ships BEFORE D, so `just install-worktree-pack` / `just worktree-create`
+    name recipes absent from most fleet repos at that moment. The remedy must
+    stand on plain git.
+    """
+    assert "git worktree move" in CANONICAL_HOOK_BODY
+    refuse_section = CANONICAL_HOOK_BODY.split("sanctioned root", 1)[-1]
+    assert "install-worktree-pack" not in refuse_section
+    assert "worktree-create" not in refuse_section
+
+
+def test_installed_hook_symlinked_path_yields_identical_verdict(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The SAME sanctioned worktree yields the same verdict via a symlinked path.
+
+    `/data/projects` and `/home/ubuntu/workspace` are the same trees on this
+    host, so a worktree can be reached through either. The verdict must not
+    depend on which path it was reached through — hence physical
+    canonicalization before the prefix comparison. Both invocations must ALLOW.
+    """
+    _scrub_git_env(monkeypatch=monkeypatch)
+    real_home = tmp_path / "real-home"
+    worktree = real_home / ".worktrees" / "project" / "feature-wip"
+    primary = _init_primary_with_worktree_at(tmp_path=tmp_path, worktree=worktree)
+    monkeypatch.chdir(primary)
+    assert main() == 0
+    fakebin = _make_fake_mise(bin_dir=tmp_path / "fakebin")
+    hook = primary / ".git" / "hooks" / "pre-commit"
+
+    link_home = tmp_path / "linked-home"
+    link_home.symlink_to(real_home, target_is_directory=True)
+    linked_worktree = link_home / ".worktrees" / "project" / "feature-wip"
+
+    physical = _run_installed_hook(hook_path=hook, cwd=worktree, fakebin=fakebin, home=real_home)
+    through_symlink = _run_installed_hook(
+        hook_path=hook, cwd=linked_worktree, fakebin=fakebin, home=link_home
+    )
+
+    assert physical.returncode == through_symlink.returncode, (
+        physical.returncode,
+        through_symlink.returncode,
+        through_symlink.stderr,
+    )
+    assert ("refusing" in physical.stderr) == ("refusing" in through_symlink.stderr)
+    assert physical.returncode == 0, (physical.stdout, physical.stderr)
+    assert "refusing" not in through_symlink.stderr
