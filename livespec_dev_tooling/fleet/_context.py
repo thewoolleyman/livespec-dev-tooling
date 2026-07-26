@@ -142,8 +142,13 @@ def default_gh_runner(*, args: list[str], stdin: str | None = None) -> GhResult:
     )
 
 
-def resolve_owner(*, cwd: Path | None = None) -> str | None:
-    """Resolve the GitHub owner from `git remote get-url origin`, or None."""
+def _origin_remote_match(*, cwd: Path | None = None) -> re.Match[str] | None:
+    """Match `git remote get-url origin` against the owner/repo pattern, or None.
+
+    One parse shared by `resolve_owner` and `resolve_repo_name`: the two answers
+    come from the same remote URL, and a second copy of the pattern-and-subprocess
+    dance would be a rule with two copies, which drifts.
+    """
     completed = subprocess.run(
         ["git", "remote", "get-url", "origin"],
         capture_output=True,
@@ -153,10 +158,26 @@ def resolve_owner(*, cwd: Path | None = None) -> str | None:
     )
     if completed.returncode != 0:
         return None
-    match = _REMOTE_URL_PATTERN.match(completed.stdout.strip())
-    if match is None:
-        return None
-    return match.group(1)
+    return _REMOTE_URL_PATTERN.match(completed.stdout.strip())
+
+
+def resolve_owner(*, cwd: Path | None = None) -> str | None:
+    """Resolve the GitHub owner from `git remote get-url origin`, or None."""
+    match = _origin_remote_match(cwd=cwd)
+    return None if match is None else match.group(1)
+
+
+def resolve_repo_name(*, cwd: Path | None = None) -> str | None:
+    """Resolve the repository's short name from `git remote get-url origin`, or None.
+
+    This is the "which member am I RUNNING AS" derivation. It is DERIVED rather
+    than configured on purpose: a config key naming the running repo would be a
+    second source of truth that can drift from the checkout it describes, and the
+    remote already knows the answer. `.git` suffix and trailing slash are stripped
+    by the shared pattern, so a member's name matches the manifest entry directly.
+    """
+    match = _origin_remote_match(cwd=cwd)
+    return None if match is None else match.group(2)
 
 
 def _parse_tree_payload(*, payload: object) -> TreeState:
