@@ -4,17 +4,22 @@
 
 ---
 
-## ⛔ READ THIS FIRST — THE CUT SHIPPED, THEN BROKE A FLEET REPO (2026-07-26)
+## 🔴 RECOVERY ACTIVE — DO NOT ARCHIVE THIS THREAD (2026-07-26)
 
-**All five implementation slices are `done` — but "done" was NOT the end.** A2, this cut's
-final slice, asserted a property that **cannot hold in a fresh clone**, which took down
+**The epic is NOT closable and the thread MUST NOT be archived.** Recovery from a regression
+this cut itself shipped is **in flight**, tracked as child slice **8**,
+**`livespec-dev-tooling-wvuefu`** (`ready`). Archive is gated on that item's acceptance —
+see §"Slice 8 — RECOVERY (ACTIVE)" and §"Exact next actions and ownership".
+
+**All five original implementation slices are `done` — but "done" was NOT the end.** A2, this
+cut's final slice, asserted a property that **cannot hold in a fresh clone**, which took down
 every factory dispatch in `livespec-orchestrator-beads-fabro` and caused that repo to
 revert its pin to **v0.54.19**, behind **all three** layers this thread shipped.
 
-**Fixed, merged as `5550a93` (PR #703), released in `v0.54.25`, and 8 of 9 fleet repos
-already carry it.** The remaining legs are **NOT in this repo** — they are beads-fabro's
-guarded pin re-bump and `bd-ib-u46hcv`'s consumer-side gate; see §"CORRECTION — the cut was
-not done". Do not start coding from the
+**A fix is landed and released — its evaluation is the recovery item's first criterion.**
+`5550a93` (PR #703), released in `v0.54.25`. It is NOT to be re-implemented in a different
+shape merely to match the earlier hypothesis; slice 8 evaluates it against acceptance and
+records the verdict — retained, narrowed, or superseded. Do not start coding from the
 analysis sections below — most of them are pre-implementation history, kept as the decision
 record, and several describe states that no longer exist.
 
@@ -34,15 +39,77 @@ whether it passes where you stand.**
 | 5 | A2 + C — required default + docs | `livespec-dev-tooling-skl77m` | **done** (`313bdd71`) |
 | 6 | E-overseer — relocate | `livespec-dev-tooling-3iizsd` | **blocked** — needs a human |
 | 7 | G — birth procedure | `livespec-dev-tooling-xxdxqv` | **backlog** — needs a scoping decision |
+| 8 | **RECOVERY — fresh-sandbox conformance** | **`livespec-dev-tooling-wvuefu`** | **`ready`** — ACTIVE, gates archive |
 
-**Shipped in the fleet — but the "9/9" claims below are SUPERSEDED.** A2+C released as
-**v0.54.24**. *(This paragraph read: "all 9 fleet repos are pinned v0.54.24 … and PASS the
-new required-default verifier (9/9)". Re-measured 2026-07-26 against `origin/master`:
-**8 of 9**. `livespec-orchestrator-beads-fabro` pins **v0.54.19**, carries the **pre-B**
-hook body `3a3f60cbd4d2`, and fails the verifier `body_mismatch` ×3.)* Discoverability is
-**9 of 9** against the measured baseline of 1 of 9 — that claim survived re-measurement.
+### Slice 8 — RECOVERY (ACTIVE)
 
-### The only two items still open are HUMAN DECISIONS, not coding tasks
+**`livespec-dev-tooling-wvuefu`** — *restore fresh Fabro sandbox conformance without
+weakening worktree-pack required-default.* Type `bug`, `origin: freeform`, `gap_id: null`,
+no `depends_on`, parented to this epic, DoR verdict **`ready`**. Autonomy tier **host-only**
+(`factory_safety: mutates-host-machinery`) — it spans this repo's gate surface AND
+beads-fabro's sandbox workflow and release guards, so no sandboxed dispatch can apply it.
+
+Its peer record in the other tenant is **`bd-ib-u46hcv`** (beads-fabro tenant, `ready`,
+type `bug`). beads has **no cross-tenant `depends_on` edge**, so it cannot be linked —
+prose is the link, the same device `3iizsd` / `li-l53` / `hl-nhw` use. It is a **peer, not a
+prerequisite**: both close together.
+
+### THREE different "9/9"s — do not conflate them, and read the dates
+
+This is the correction that matters most for anyone resuming here.
+
+| measurement | value | date | meaning |
+|---|---|---|---|
+| **fleet ADOPTION** of the current release | **8 of 9** | 2026-07-26T20:55Z | beads-fabro alone still pins `v0.54.19`; its installed hook is the pre-B `3a3f60cbd4d2` vs canonical `1ebaebfe2271`, so it alone fails `body_mismatch` ×3 |
+| **the FIX's behaviour** across all nine repos' trees | **9 of 9** | 2026-07-26T19:52Z | the v0.54.25 verifier against fresh clones of all 9: **9/9 exit 0** with the sandbox exemption declared, **9/9 exit 4** without it |
+| **discoverability** (`worktree-create` in `just --list`) | **9 of 9** | 2026-07-26 | against the measured baseline of 1 of 9 — survived every re-measurement |
+
+**The still-open 1-of-9 is BY DESIGN, not a new defect.** beads-fabro's two hold guards
+deliberately suppress its bump; lifting them is slice 8's acceptance, and they must not be
+bypassed.
+
+**HISTORICAL — the audit / rollback state that prompted recovery (v0.54.24 era,
+2026-07-26 ~18:00Z): 8/9.** *(The original paragraph here read "all 9 fleet repos are pinned
+v0.54.24 … and PASS the new required-default verifier (9/9)". That claim was FALSE when
+written and is retained only as dated history.)*
+
+### Exact next actions and ownership
+
+**Owner of slice 8: a HOST session** (tier `host-only` / `mutates-host-machinery`). A
+sandboxed Fabro dispatch cannot perform any of it — the legs cross two repos and touch the
+machinery the sandbox image and the commit-refuse hooks are built from.
+
+In order, and each gated on the one before:
+
+1. **Evaluate `5550a93` against slice 8's acceptance and RECORD the verdict** — retained,
+   narrowed, or superseded. *Do not implement the `workflow.toml` pack-install shape merely
+   to match the earlier hypothesis;* it is warranted only if evaluation finds a criterion
+   `5550a93` fails. Owner: host session, this repo.
+2. **Land the adoption gate** so `just check` — the gate both pin-bump automations
+   auto-merge on — exercises **fresh-clone ordering** and can therefore go red on this
+   class. It runs today only on the bootstrapped primary, where this check has always
+   passed. Owner: host session; the gate itself belongs to whichever repo's `just check`
+   adopts the release.
+3. **Demonstrate required-default is preserved for ordinary checkouts** (key absent + pack
+   absent → FAIL). Demonstrated, not assumed.
+4. **Re-pin beads-fabro** off `v0.54.19` onto the current dev-tooling release. Owner:
+   beads-fabro, host-routed.
+5. **Prove a REAL Fabro dispatch survives the sandbox setup step** on the new pin. A green
+   `just check` is NOT that proof, and neither is the host-side prepare-step replay already
+   performed — it ran on the host, not inside the `python-agent-*` image.
+6. **Remove BOTH hold guards, only after step 5** — the GLOBAL
+   `staleness_threshold_releases: 99` in `pin-freshness.yml` (it suppresses freshness bumps
+   for **every** source) and the source-scoped `if:` in `bump-pin-from-dispatch.yml`.
+7. **Close both ledger items** — `livespec-dev-tooling-wvuefu` and `bd-ib-u46hcv`.
+8. **Re-measure current fleet evidence** from `origin/master`: canonical hook body and
+   verifier **9/9**, all primaries synced and clean.
+9. **Correct this file to current truth**, then and only then close epic
+   `livespec-dev-tooling-0eo` and archive the thread.
+
+**Not owned by slice 8, unchanged:** `3iizsd` and `xxdxqv` below, and the adopter backfill
+(`li-l53`, `hl-nhw`). Do not fold them into recovery.
+
+### Two items remain HUMAN DECISIONS, not coding tasks
 
 - **`3iizsd` (E-overseer).** The offending path is absent and registers no worktree, but
   **cause and owner action were never established**, so absence alone does not close it.
@@ -53,17 +120,18 @@ hook body `3a3f60cbd4d2`, and fails the verifier `body_mismatch` ×3.)* Discover
   without it the generator keeps minting unwired repos — though after A2 a born-unwired
   member now **reds its own verifier**, so the gap is loud rather than silent.
 
-**One implementation leg IS open, and it is not in this repo** — the consumer-side gate in
-`livespec-orchestrator-beads-fabro` (`bd-ib-u46hcv`), plus that repo's pin re-bump off
-v0.54.19. Beyond that, if you have no maintainer instruction, report status and stop rather
-than inventing follow-on work. *(This paragraph previously said no implementation leg
-remained at all.)* Everything else this thread produced is either merged or filed elsewhere
-(`li-l53`, `hl-nhw`, `s22c5z`).
+**Implementation IS open, tracked as slice 8 (`wvuefu`), and the maintainer has authorized
+autonomous recovery.** *(This paragraph previously said no implementation leg remained at
+all, then that the only open leg was not in this repo — both superseded: the recovery is now
+a filed child of this epic with legs in BOTH repos.)* Everything else this thread produced is
+either merged or filed elsewhere (`li-l53`, `hl-nhw`, `s22c5z`).
 
 ### Unfiled observations — recorded so they are not lost, NOT this thread's to fix
 
-- **`livespec-overseer` has a stale `uv.lock`** (`pyproject.toml` `0.12.4` vs lock
-  `0.12.3`), so any `uv run` there dirties the working tree. Revert, do not commit it.
+- ~~**`livespec-overseer` has a stale `uv.lock`**~~ — **RETRACTED.** Measured against
+  `origin/master` that repo is IN SYNC; both prior readings came from a local checkout 2
+  commits behind. The real instance is **this repo**, and the cause is the release commit's
+  file scope, which omits `uv.lock`. See §"RETRACTED and re-rooted" for the evidence.
 - **Three pre-A1 wired repos still carry a redundant `bootstrap` tail** calling
   `just install-worktree-pack`; since A1 the obligation row is the bootstrap path.
 - **`homelab` has LIVE peer-worktree violations, and the specific paths keep changing.**
@@ -151,7 +219,12 @@ the same file**.
 presence → `test_fails_when_installed_pack_drifts_even_though_sandbox_exempt` reds, and only
 that test. Tree restored to HEAD afterwards.
 
-### NOT done — the remaining leg is in beads-fabro, not here
+### NOT done — now tracked as slice 8, `livespec-dev-tooling-wvuefu`
+
+*(This section's heading previously read "the remaining leg is in beads-fabro, not here".
+Superseded: the maintainer authorized autonomous recovery and the work is a filed child of
+this epic with legs in BOTH repos. Its first criterion is EVALUATING the landed `5550a93`,
+not re-implementing it in the `workflow.toml` shape.)*
 
 1. **The consumer-side gate is still blind to this class.** `just check` — the gate both
    pin-bump automations auto-merge on — runs on the **bootstrapped primary**, where this
@@ -166,7 +239,9 @@ that test. Tree restored to HEAD afterwards.
    dispatch is proven to survive setup** on the new pin. A green `just check` is explicitly
    NOT that proof.
 
-**Until leg 2 completes the fleet is 8/9 on every layer this thread shipped.** Do not record
+**Until leg 2 completes, fleet ADOPTION is 8/9** — beads-fabro alone, held deliberately by
+its guards. That is distinct from the FIX's 9/9 behavioural evidence and from the 9/9
+discoverability figure; see §"THREE different 9/9s" before quoting any of them. Do not record
 this cut as fully realized on the strength of the post-release audit further down this file.
 
 ### Final verified state after the fix shipped (measured 2026-07-26T19:52Z)
@@ -1074,11 +1149,12 @@ pre-merge ones:
 
 ### Exact next action
 
-**SUPERSEDED — see §"CORRECTION — the cut was not done".** All five implementation slices
-are `done`, but A2's flip broke `livespec-orchestrator-beads-fabro`'s factory; the upstream
-fix merged as **`5550a93`** (PR #703) and the **consumer-side gate leg (`bd-ib-u46hcv`)
-plus that repo's pin re-bump remain OPEN**, in beads-fabro rather than here. *(This line
-previously read "No product work remains in this cut.")*
+**SUPERSEDED TWICE — the authoritative list is §"Exact next actions and ownership" at the
+top of this file.** All five ORIGINAL implementation slices are `done`, but A2's flip broke
+`livespec-orchestrator-beads-fabro`'s factory; the fix merged as **`5550a93`** (PR #703) and
+released in `v0.54.25`, and **recovery is now slice 8, `livespec-dev-tooling-wvuefu`
+(`ready`)**, which gates epic close and archive. *(This line previously read "No product work
+remains in this cut", then attributed the only open leg to beads-fabro alone.)*
 
 | # | slice | id | status |
 |---|---|---|---|
@@ -1089,10 +1165,14 @@ previously read "No product work remains in this cut.")*
 | 5 | A2 + C | `livespec-dev-tooling-skl77m` | **done** |
 | 6 | E-overseer | `livespec-dev-tooling-3iizsd` | **blocked** — cause/owner never established |
 | 7 | G (deferred) | `livespec-dev-tooling-xxdxqv` | **backlog** — scoping decision first |
+| 8 | **RECOVERY — fresh-sandbox conformance** | **`livespec-dev-tooling-wvuefu`** | **`ready`** — ACTIVE; **archive is STOPPED until it closes** |
 
-**What remains are the two records this thread deliberately did NOT close**, plus follow-ups
-filed elsewhere:
+**What remains: the ACTIVE recovery slice, the two records this thread deliberately did NOT
+close, and follow-ups filed elsewhere:**
 
+- **`wvuefu` (slice 8, RECOVERY)** — `ready`, host-only, ACTIVE. Gates epic close and
+  archive. Peer record `bd-ib-u46hcv` in the beads-fabro tenant, prose-linked because
+  cross-tenant edges do not exist. See §"Exact next actions and ownership".
 - **`3iizsd` (E-overseer)** — the path is absent and registers no worktree, but **cause and
   owner action were never established**, so absence alone does not close it. It carries
   `blocked-reason:needs-human` and has no encodable blocking edge by construction. **This
@@ -1105,10 +1185,11 @@ filed elsewhere:
   boundary, blocked in prose because beads `depends_on` is same-tenant only.
 - **`s22c5z`** — the `FleetContext` diagnostic-loss bug, `ready`, unrelated to this cut.
 
-**Two unfiled observations, recorded so they are not lost:** `livespec-overseer` has a stale
-`uv.lock` (`pyproject.toml` `0.12.4` vs lock `0.12.3`) so any `uv run` there dirties the tree;
-and the three pre-A1 wired repos still carry a now-redundant `just install-worktree-pack`
-tail in `bootstrap`.
+**Two unfiled observations, recorded so they are not lost:** the release commit's file scope
+omits `uv.lock`, so between a release and the next `uv sync` commit any `uv run` in **this**
+repo dirties the tree (the `livespec-overseer` version of this claim is **RETRACTED** — see
+§"RETRACTED and re-rooted"); and the three pre-A1 wired repos still carry a now-redundant
+`just install-worktree-pack` tail in `bootstrap`.
 
 **A ledger gap that will bite the next thread:** there is **no journaled close path for a
 hand-implemented slice** — `drive --action accept:` requires `acceptance`, which only
@@ -2835,12 +2916,13 @@ name the boundary so the adopter gap is visible rather than implied.
 > history. It is NOT current, and its "STILL OPEN" / "nothing is agent-dispatchable"
 > statements are false as of 2026-07-26.**
 >
-> **Current:** all four questions are **answered**; the final cut is **approved**; **seven
-> slices exist** under `livespec-dev-tooling-0eo` and are intake-routed. **FIVE are now
-> closed** — `0eo.1`, `6fmfzk` (B, `7cf38db`), `cmc3ah` (A1, `414cc5e`), `o5vltq` (D) and
-> `skl77m` (A2+C, `313bdd71`) — so **no product work remains in this cut**. *(This note
-> previously said A1 was next at `pending-approval`, then that A2+C was active; both
-> superseded.)* See §"MAINTAINER RULING —
+> **Current:** all four questions are **answered**; the final cut is **approved**; **EIGHT
+> slices exist** under `livespec-dev-tooling-0eo` and are intake-routed. **FIVE are closed** —
+> `0eo.1`, `6fmfzk` (B, `7cf38db`), `cmc3ah` (A1, `414cc5e`), `o5vltq` (D) and
+> `skl77m` (A2+C, `313bdd71`) — and **slice 8 `wvuefu` is `ready` and ACTIVE**, so product
+> work DOES remain. *(This note previously said A1 was next at `pending-approval`, then that
+> A2+C was active, then that "no product work remains in this cut" — all three superseded;
+> the last was falsified by the A2 regression.)* See §"MAINTAINER RULING —
 > FINAL CUT APPROVED AND FILED" for ids, states, edges and lane evidence, and §"Exact next
 > action".
 
@@ -2954,8 +3036,11 @@ approved · ~~fleet boundary~~ NARROW approved · ~~final cut~~ approved ·
   guarded-transitioned to `ready` via `set-admission:...:manual` + `approve`, then claimed,
   and has since **CLOSED** (PR #693 / `414cc5e`). `o5vltq` (D) was admitted the same way and
   has since **CLOSED** too (5 wiring PRs). `skl77m` (A2+C) hit the identical gap once D
-  cleared, was guarded-transitioned the same way, and is now **`active`** — the last item in
-  this epic that carried dependency edges.
+  cleared, was guarded-transitioned the same way, and is **`done`** (`313bdd71`) — it was the
+  last item in this epic that carried dependency edges. *(This bullet previously ended
+  "`skl77m` … is now `active`"; superseded when it closed.)* Slice 8 `wvuefu` was filed with
+  **no** `depends_on`, so the stale-routing gap has no purchase on it — it went straight to
+  `ready` on the DoR verdict.
 
 ## Reactivation audit — 2026-07-25
 
