@@ -190,6 +190,39 @@ just lint-fix    # ruff check --fix (mutating)
 | `.github/workflows/` | CI (`ci.yml`) and release automation (`release-please.yml`); composite Actions + reusable workflows land in Phase G.5 |
 | `pyproject.toml`, `justfile`, `lefthook.yml`, `.mise.toml`, `.python-version`, `.livespec.jsonc` | Toolchain configuration |
 
+## Worktree-discipline pack — `worktree_discipline.pack`
+
+Every governed repo must carry the canonical worktree-discipline pack, which
+is what puts `just worktree-create` in `just --list` so sessions find the
+sanctioned tool instead of falling back to a raw `git worktree add` inside the
+clone. `just bootstrap` materializes it; the pack files are
+gitignored-and-installed, never tracked.
+
+`.livespec.jsonc` declares the policy:
+
+```jsonc
+{
+  // "required" — the DEFAULT, and what an absent key means — makes
+  // `just check` fail when the canonical pack is not installed and imported
+  // by the root justfile. "optional" is the sanctioned, reviewable opt-out.
+  "worktree_discipline": { "pack": "required" },
+}
+```
+
+**An absent key means `required`.** `just install-worktree-pack` writes the
+key explicitly, with that comment, the first time it runs in a repo that has a
+`.livespec.jsonc` and no declaration — so the obligation is readable in config
+rather than discovered by tripping the verifier. An existing declaration is
+never rewritten, so a deliberate `"optional"` survives.
+
+`check-primary-checkout-commit-refuse-hook-installed` enforces it and reports
+four distinct states: `worktree_pack_absent` (required, nothing installed),
+`worktree_pack_file_missing` / `worktree_pack_body_mismatch` (partial or
+drifted install), and `worktree_pack_not_imported` (bytes correct, but the
+root justfile does not `import?` the fragments — so the recipes are invisible
+to `just --list`). Wiring a repo means four `.gitignore` entries, both
+`import?` lines, and the `install-worktree-pack` recipe.
+
 ## Provenance and coordination
 
 This library is **hand-authored** (not generated from copier). Per

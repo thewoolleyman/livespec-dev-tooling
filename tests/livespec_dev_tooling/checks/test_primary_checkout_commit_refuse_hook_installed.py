@@ -43,6 +43,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from livespec_dev_tooling.install_commit_refuse_hooks import CANONICAL_HOOK_BODY
 from livespec_dev_tooling.install_worktree_pack import (
     CANONICAL_BRANCH_PROTECTION_BODY,
@@ -50,6 +52,7 @@ from livespec_dev_tooling.install_worktree_pack import (
     CANONICAL_WORKTREE_JUST_BODY,
     CANONICAL_WORKTREE_LIB_BODY,
 )
+from livespec_dev_tooling.install_worktree_pack import main as install_worktree_pack_main
 
 __all__: list[str] = []
 
@@ -71,6 +74,29 @@ def _install_canonical_worktree_pack(*, repo_root: Path) -> None:
     pack_dir.mkdir(parents=True, exist_ok=True)
     for name, body in _WORKTREE_PACK_EXPECTED:
         _ = (pack_dir / name).write_text(body, encoding="utf-8")
+
+
+def _write_pack_imports(*, repo_root: Path, omit: str = "") -> None:
+    """Write a root `justfile` carrying the pack's two `import?` lines.
+
+    `omit` drops exactly one fragment's import line, which is how the
+    discoverability arm is exercised: the pack stays byte-perfect on disk
+    while `just --list` loses the corresponding recipes.
+    """
+    lines = [
+        line
+        for line in (
+            "import? 'dev-tooling/worktree.just'",
+            "import? 'dev-tooling/branch-protection.just'",
+        )
+        if omit not in line or omit == ""
+    ]
+    _ = (repo_root / "justfile").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _write_livespec_config(*, repo_root: Path, body: str) -> None:
+    """Write `<repo_root>/.livespec.jsonc` verbatim (JSONC, comments allowed)."""
+    _ = (repo_root / ".livespec.jsonc").write_text(body, encoding="utf-8")
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -556,12 +582,18 @@ def test_passes_when_no_worktree_pack(*, tmp_path: Path) -> None:
 
 
 def test_passes_when_worktree_pack_canonical(*, tmp_path: Path) -> None:
-    """(n) exit 0 when both pack scripts are present and byte-identical."""
+    """(n) exit 0 when every pack file is present, byte-identical, AND imported.
+
+    The `_write_pack_imports` call is load-bearing since the discoverability
+    arm landed: a byte-perfect pack that the root justfile does not `import?`
+    is invisible to `just --list` and is now its own FAIL.
+    """
     project_root = tmp_path / "project"
     project_root.mkdir()
     _git_init(cwd=project_root)
     _install_canonical_hooks(repo_root=project_root)
     _install_canonical_worktree_pack(repo_root=project_root)
+    _write_pack_imports(repo_root=project_root)
 
     result = _run_check(cwd=project_root)
     assert result.returncode == 0, (
@@ -725,3 +757,245 @@ def test_fails_when_branch_protection_just_absent_with_others_present(*, tmp_pat
     )
     assert "worktree_pack_file_missing" in result.stderr
     assert "branch-protection.just" in result.stderr
+
+
+# ---------------------------------------------------------------
+# Config-gated required default (A2) — `worktree_discipline.pack`.
+#
+# The pack arm used to fail OPEN: no pack file present meant "skip", so the
+# repo that fell through the originating incident stayed green. These arms
+# make ABSENCE OF THE KEY MEAN `required`, which is the exact point where
+# this design diverges from the `harnesses` precedent in
+# `checks/plugin_resolution.py` (there, a missing key is itself a FAIL).
+# ---------------------------------------------------------------
+
+
+def test_fails_when_pack_required_by_default_and_absent(*, tmp_path: Path) -> None:
+    """(s) exit 4 when `.livespec.jsonc` omits the key and no pack is installed.
+
+    ACCEPTANCE 1. An absent `worktree_discipline` key DEFAULTS to `required`,
+    so a governed repo with no pack is a FAIL carrying the remedy — this is
+    the fail-open that let the originating incident through.
+    """
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    _git_init(cwd=project_root)
+    _install_canonical_hooks(repo_root=project_root)
+    _write_livespec_config(repo_root=project_root, body='{"template": "livespec"}\n')
+
+    result = _run_check(cwd=project_root)
+    assert result.returncode == 4, (
+        f"expected exit 4; got {result.returncode}, "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    assert "worktree_pack_absent" in result.stderr
+
+
+def test_skips_when_pack_declared_optional_and_absent(*, tmp_path: Path) -> None:
+    """(t) exit 0 when the repo DECLARES `pack: "optional"` and installs none.
+
+    ACCEPTANCE 2. The sanctioned, reviewable opt-out: a repo may decline the
+    pack, but only by saying so in tracked config where a reviewer sees it.
+    """
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    _git_init(cwd=project_root)
+    _install_canonical_hooks(repo_root=project_root)
+    _write_livespec_config(
+        repo_root=project_root,
+        body='{\n  // declared opt-out\n  "worktree_discipline": {"pack": "optional"}\n}\n',
+    )
+
+    result = _run_check(cwd=project_root)
+    assert result.returncode == 0, (
+        f"expected exit 0; got {result.returncode}, "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_fails_when_worktree_discipline_block_malformed(*, tmp_path: Path) -> None:
+    """(u) exit 4 when `worktree_discipline` is present but garbled.
+
+    ACCEPTANCE 3. Fail-closed, matching the `harnesses` precedent's malformed
+    arm: an unparseable declaration must never read as a silent opt-out.
+    """
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    _git_init(cwd=project_root)
+    _install_canonical_hooks(repo_root=project_root)
+    _install_canonical_worktree_pack(repo_root=project_root)
+    _write_pack_imports(repo_root=project_root)
+    _write_livespec_config(
+        repo_root=project_root,
+        body='{"worktree_discipline": "required"}\n',
+    )
+
+    result = _run_check(cwd=project_root)
+    assert result.returncode == 4, (
+        f"expected exit 4; got {result.returncode}, "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    assert "worktree_discipline_malformed" in result.stderr
+
+
+def test_passes_when_key_absent_and_pack_present(*, tmp_path: Path) -> None:
+    """(v) exit 0 when the key is absent but the pack IS installed and imported.
+
+    ACCEPTANCE 4 — the arm where this design deliberately diverges from
+    `load_harnesses`. There, a missing key is ABSENT/fail-closed and reds the
+    repo outright. Here a missing key means `required`, and a repo that
+    SATISFIES `required` must pass. Pinned by its own test precisely because
+    copying the precedent would silently red every conformant fleet repo.
+    """
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    _git_init(cwd=project_root)
+    _install_canonical_hooks(repo_root=project_root)
+    _install_canonical_worktree_pack(repo_root=project_root)
+    _write_pack_imports(repo_root=project_root)
+    _write_livespec_config(repo_root=project_root, body='{"template": "livespec"}\n')
+
+    result = _run_check(cwd=project_root)
+    assert result.returncode == 0, (
+        f"expected exit 0; got {result.returncode}, "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_fails_when_pack_present_but_not_imported(*, tmp_path: Path) -> None:
+    """(w) exit 4 when the pack is byte-perfect but an `import?` line is missing.
+
+    ACCEPTANCE 7 — the discoverability arm, and the one that closes steps 1-2
+    of the originating causal chain. This exact state PASSED before A2: the
+    verifier compared bytes and never asked whether `just --list` could see
+    the recipes. The pack below is byte-identical to canonical; only the
+    `worktree.just` import is dropped.
+    """
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    _git_init(cwd=project_root)
+    _install_canonical_hooks(repo_root=project_root)
+    _install_canonical_worktree_pack(repo_root=project_root)
+    _write_pack_imports(repo_root=project_root, omit="worktree.just")
+
+    result = _run_check(cwd=project_root)
+    assert result.returncode == 4, (
+        f"expected exit 4; got {result.returncode}, "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    assert "worktree_pack_not_imported" in result.stderr
+    assert "worktree.just" in result.stderr
+
+
+def test_skips_pack_arm_when_livespec_jsonc_absent(*, tmp_path: Path) -> None:
+    """(x) exit 0 when there is no `.livespec.jsonc` at all and no pack.
+
+    ACCEPTANCE 8 — the STATED choice, not an inherited one. `.livespec.jsonc`
+    is what makes a directory governed, so its absence means "not a governed
+    repo" and the pack arm cannot be more governed-aware than the file that
+    defines governance. This is deliberately NOT a usable opt-out: deleting
+    the file from a real fleet repo strips `template` / `spec_root` /
+    `harnesses` / `compat` and reds fleet conformance loudly, so it trades a
+    silent gap for an unmissable one.
+    """
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    _git_init(cwd=project_root)
+    _install_canonical_hooks(repo_root=project_root)
+
+    result = _run_check(cwd=project_root)
+    assert result.returncode == 0, (
+        f"expected exit 0; got {result.returncode}, "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+# ---------------------------------------------------------------
+# C — the installer writes `worktree_discipline.pack` with its default.
+#
+# C lives in THIS file, beside the A2 arms it documents, because the two are
+# one changeset under the single-commit Red-Green-Replay protocol: A2 makes an
+# absent key MEAN `required`, and C is what stops that from being folklore. A
+# new adopter should read its own `.livespec.jsonc` and SEE the obligation
+# rather than infer it from a verifier failure.
+#
+# The installer is exercised IN-PROCESS via `monkeypatch.chdir` + `main()`,
+# matching `tests/livespec_dev_tooling/test_install_worktree_pack.py`; the only
+# subprocess here remains `git` for repo setup.
+# ---------------------------------------------------------------
+
+
+def test_installer_writes_worktree_discipline_default_when_key_absent(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ACCEPTANCE 9. The installer adds the key with its default AND a comment."""
+    for var in _GIT_ENV_PASSTHROUGH_VARS:
+        monkeypatch.delenv(var, raising=False)
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    _git_init(cwd=project_root)
+    config = project_root / ".livespec.jsonc"
+    _ = config.write_text('{\n  "template": "livespec"\n}\n', encoding="utf-8")
+    monkeypatch.chdir(project_root)
+
+    rc = install_worktree_pack_main()
+
+    assert rc == 0
+    written = config.read_text(encoding="utf-8")
+    assert '"worktree_discipline"' in written
+    assert '"pack": "required"' in written
+    # The comment is the whole point of C — the key must be self-explaining.
+    assert "//" in written
+    # Pre-existing content survives.
+    assert '"template": "livespec"' in written
+
+
+def test_installer_leaves_an_existing_worktree_discipline_block_untouched(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A declared `optional` opt-out MUST NOT be silently rewritten to `required`.
+
+    The installer provisions a default for repos that never declared one; it is
+    not a policy enforcer. Overwriting a deliberate, reviewed opt-out would make
+    the sanctioned escape hatch unusable — and would turn `just bootstrap` into
+    a config mutation nobody asked for.
+    """
+    for var in _GIT_ENV_PASSTHROUGH_VARS:
+        monkeypatch.delenv(var, raising=False)
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    _git_init(cwd=project_root)
+    config = project_root / ".livespec.jsonc"
+    original = '{\n  "worktree_discipline": {"pack": "optional"}\n}\n'
+    _ = config.write_text(original, encoding="utf-8")
+    monkeypatch.chdir(project_root)
+
+    rc = install_worktree_pack_main()
+
+    assert rc == 0
+    assert config.read_text(encoding="utf-8") == original
+
+
+def test_installer_does_not_create_livespec_jsonc_when_absent(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No `.livespec.jsonc` means a non-governed dir — the installer MUST NOT mint one.
+
+    Pairs with the verifier's `.livespec.jsonc`-absent SKIP arm: both treat the
+    file's absence as "not governed" rather than as something to fix. Minting a
+    governance file as a side effect of installing recipe fragments would be a
+    surprising mutation, and would make the SKIP arm unreachable in practice.
+    """
+    for var in _GIT_ENV_PASSTHROUGH_VARS:
+        monkeypatch.delenv(var, raising=False)
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    _git_init(cwd=project_root)
+    monkeypatch.chdir(project_root)
+
+    rc = install_worktree_pack_main()
+
+    assert rc == 0
+    assert not (project_root / ".livespec.jsonc").exists()
+    # The pack itself still installed.
+    assert (project_root / "dev-tooling" / "worktree-lib.sh").is_file()
