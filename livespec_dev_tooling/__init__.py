@@ -11,8 +11,9 @@ those check modules (each check's argv contract and exit-code
 semantics) plus the composite Actions and reusable workflows at
 .github/. Internal module structure is implementation detail and MAY
 change at any version increment per
-livespec/SPECIFICATION/contracts.md §"Shared code sync —
-livespec-dev-tooling".
+livespec/SPECIFICATION/non-functional-requirements.md — file level
+deliberately, since heading-level citations rot on rename and the
+code-side rule forbids the form outright.
 """
 
 __all__: list[str] = []
