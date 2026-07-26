@@ -4,12 +4,24 @@
 
 ---
 
-## ⛔ READ THIS FIRST — THE IMPLEMENTATION WORK IS DONE (2026-07-26)
+## ⛔ READ THIS FIRST — THE CUT SHIPPED, THEN BROKE A FLEET REPO (2026-07-26)
 
-**All three fail-open layers are closed. Every implementation slice in the approved cut is
-`done`. There is NOTHING in this thread to implement.** Do not start coding from the
+**All five implementation slices are `done` — but "done" was NOT the end.** A2, this cut's
+final slice, asserted a property that **cannot hold in a fresh clone**, which took down
+every factory dispatch in `livespec-orchestrator-beads-fabro` and caused that repo to
+revert its pin to **v0.54.19**, behind **all three** layers this thread shipped.
+
+**Fixed and merged as `5550a93` (PR #703).** One leg remains, and it is NOT in this repo —
+see §"CORRECTION — the cut was not done". Do not start coding from the
 analysis sections below — most of them are pre-implementation history, kept as the decision
 record, and several describe states that no longer exist.
+
+**The lesson this thread must not lose:** the acceptance evidence for A2 was *"the new
+verifier run against all 9 fleet primaries → 9/9 PASS."* A primary is bootstrapped by
+definition, so that simulation was **structurally incapable** of seeing the failure. It is
+the same shape as A1's recorded lesson — a proof that never exercised the real resolution
+path — and it recurred one slice later. **Ask where the check actually runs, not only
+whether it passes where you stand.**
 
 | # | slice | id | status |
 |---|---|---|---|
@@ -21,10 +33,12 @@ record, and several describe states that no longer exist.
 | 6 | E-overseer — relocate | `livespec-dev-tooling-3iizsd` | **blocked** — needs a human |
 | 7 | G — birth procedure | `livespec-dev-tooling-xxdxqv` | **backlog** — needs a scoping decision |
 
-**Shipped and verified in the fleet.** A2+C released as **v0.54.24**; all **9 fleet repos
-are pinned v0.54.24**, clean on `master`, carry the canonical hook, show `worktree-create`
-in `just --list`, have the pack materialized, and **PASS the new required-default verifier
-(9/9)**. Discoverability went from the measured baseline of **1 of 9 to 9 of 9**.
+**Shipped in the fleet — but the "9/9" claims below are SUPERSEDED.** A2+C released as
+**v0.54.24**. *(This paragraph read: "all 9 fleet repos are pinned v0.54.24 … and PASS the
+new required-default verifier (9/9)". Re-measured 2026-07-26 against `origin/master`:
+**8 of 9**. `livespec-orchestrator-beads-fabro` pins **v0.54.19**, carries the **pre-B**
+hook body `3a3f60cbd4d2`, and fails the verifier `body_mismatch` ×3.)* Discoverability is
+**9 of 9** against the measured baseline of 1 of 9 — that claim survived re-measurement.
 
 ### The only two items still open are HUMAN DECISIONS, not coding tasks
 
@@ -37,9 +51,12 @@ in `just --list`, have the pack materialized, and **PASS the new required-defaul
   without it the generator keeps minting unwired repos — though after A2 a born-unwired
   member now **reds its own verifier**, so the gap is loud rather than silent.
 
-**If you have no maintainer instruction, the correct action is to report this status and
-stop** — not to invent follow-on work. Everything else this thread produced is either
-merged or filed elsewhere (`li-l53`, `hl-nhw`, `s22c5z`).
+**One implementation leg IS open, and it is not in this repo** — the consumer-side gate in
+`livespec-orchestrator-beads-fabro` (`bd-ib-u46hcv`), plus that repo's pin re-bump off
+v0.54.19. Beyond that, if you have no maintainer instruction, report status and stop rather
+than inventing follow-on work. *(This paragraph previously said no implementation leg
+remained at all.)* Everything else this thread produced is either merged or filed elsewhere
+(`li-l53`, `hl-nhw`, `s22c5z`).
 
 ### Unfiled observations — recorded so they are not lost, NOT this thread's to fix
 
@@ -47,13 +64,144 @@ merged or filed elsewhere (`li-l53`, `hl-nhw`, `s22c5z`).
   `0.12.3`), so any `uv run` there dirties the working tree. Revert, do not commit it.
 - **Three pre-A1 wired repos still carry a redundant `bootstrap` tail** calling
   `just install-worktree-pack`; since A1 the obligation row is the bootstrap path.
-- **`homelab` had two LIVE peer-worktree violations** at last scan
-  (`/data/projects/homelab-floor-gaps` and its counterpart, branch `floor-gaps-proposal`).
-  `homelab` is an **adopter outside the NARROW boundary that runs no livespec hook**, so B
-  and A2 do not reach it; this belongs to **`hl-nhw`**. It was another session's live work —
-  **not touched**. Treat the specific paths as volatile; the recurring *class* is the point.
+- **`homelab` has LIVE peer-worktree violations, and the specific paths keep changing.**
+  Rescanned 2026-07-26 with the exact allow-list B installed: **36 `ALLOW-SANCTIONED`, 4
+  `ALLOW-TOOLING`, 4 `REFUSE` — and ZERO governed-fleet refusals.** All four refusals are
+  peer worktrees of `homelab`: `homelab-handoff-refresh`, `homelab-hl-rbdrja`,
+  `homelab-hl-unt`, `homelab-sup-precedents`. These are the **third distinct set** of paths
+  this file has recorded (earlier: `homelab-floor-gaps`; then `homelab-hl-wp3gyg` /
+  `homelab-sup-corrections`, later measured absent). `homelab` is an **adopter outside the
+  NARROW boundary that runs no livespec hook**, so B and A2 do not reach it; this belongs to
+  **`hl-nhw`**. Live work of other sessions — **not touched**. Treat the specific paths as
+  volatile; the recurring *class* is the point, and it has now recurred three times.
 
 ---
+
+## CORRECTION — the cut was not done (2026-07-26, later session)
+
+**This file's lead said "there is NOTHING in this thread to implement." That was wrong when
+written.** Acting on this file's own standing instruction — *"Re-measure; never inherit a
+count from this file"* — an independent re-measurement found that **A2, this cut's final
+slice, took the factory down in a fleet repo**, and that the repo had been rolled back
+behind all three layers this thread shipped.
+
+### What the re-measurement found (read-only, 2026-07-26)
+
+| claim in this file | measured | verdict |
+|---|---|---|
+| all 9 fleet repos pinned `v0.54.24` | **8 of 9**; `livespec-orchestrator-beads-fabro` pins **`v0.54.19`** | **FALSE** |
+| 9/9 pass the required-default verifier | **8 of 9**; beads-fabro fails `body_mismatch` ×3 | **FALSE** |
+| installed hook canonical fleet-wide | 8 carry `1ebaebfe2271`; beads-fabro carries **`3a3f60cbd4d2`** — the **pre-B** body this file itself names | **FALSE** |
+| `worktree-create` discoverable in 9/9 | **9 of 9** | holds |
+| zero governed positive-location refusals | **zero** (4 refusals, all `homelab`, ungoverned by B) | holds |
+
+The pin was read from `origin/master:pyproject.toml`, never a local checkout, per D's own
+corrected premise. **`v0.54.19` predates B (first in `v0.54.21`), A1 (`v0.54.23`) and A2+C
+(`v0.54.24`)**, so that repo currently enforces **none** of the three layers — and because
+its verifier and its hook both come from the same stale pin, they agree with each other and
+**its own CI is green**. The regression is invisible from inside the repo it broke.
+
+### Why — A2's flip asserts a property that CANNOT hold in a fresh clone
+
+Not a stuck bot: a **deliberate revert**, `a26228c`, *"revert livespec-dev-tooling pin to
+v0.54.19 — factory is down"*. It reverted all five bump commits rather than editing the pin,
+because the sandbox image tag rides in `workflow.toml:203` and a `pyproject.toml`-only edit
+would have fixed nothing while drifting CI out of sync.
+
+1. A2 made an absent pack a **FAIL by default**.
+2. The pack is **gitignored by design** — it exists only after `just bootstrap`.
+3. beads-fabro's Fabro sandbox runs the verifier as a **fixed SETUP step on a fresh full
+   clone, BEFORE bootstrap** (`workflow.toml:310`, present since `be34561`, 2026-06-29).
+4. So **every `ImplementWorkItem` dispatch** died ~24s in on `worktree_pack_absent`.
+5. The repo pinned back to v0.54.19 to restore throughput — losing B, A1 and A2+C with it.
+
+Filed upstream defect: **`bd-ib-u46hcv`** (beads-fabro tenant, `ready`, `origin:freeform`,
+`factory_safety: mutates-host-machinery`; beads has no cross-tenant edge, so its prose is
+the link).
+
+### The fix — PR #703, merged as `5550a93`
+
+The pack-**presence** arm now honours the **declared `livespec.sandboxExempt` marker** — the
+same marker `CANONICAL_HOOK_BODY` already reads in **two** places (refuse-at-primary and
+positive-location). It is the **Exemption slot** of the Conformance Pattern's concern #1
+Worktree-discipline, not a new carve-out invented for this bug.
+
+**Only presence is exempted.** Byte-identity fires everywhere, so an installed pack must
+still be canonical inside a sandbox.
+
+One RGR commit `e0e3af3`, **5 `TDD-Red-*` + 2 `TDD-Green-*`**, test bytes frozen at
+`66590ddf7fa471359156c475815945cd611b339bb92b0b9bbeb8f9c2aafaf1d4`; Red failed on a genuine
+assertion (`assert 4 == 0`) with the impl unmodified on disk. **62 checks green, 1 skipped,
+zero failures.** Also corrected a stale module comment still describing the pack as
+*"OPTIONAL — absent entirely it is skipped"*, which contradicted the flip A2 shipped **in
+the same file**.
+
+**Evidence was a replica, not a unit test.** A fresh `--no-hardlinks` clone of beads-fabro's
+`origin/master`, with canonical hooks installed and `livespec.sandboxExempt=true`:
+
+| state | before fix | after fix (merged master) |
+|---|---|---|
+| exempt declared, no pack (the sandbox) | **exit 4 `worktree_pack_absent`** | **exit 0** |
+| marker unset, no pack (a real primary) | exit 4 | **exit 4** — enforcement intact |
+| exempt declared, pack DRIFTED | exit 4 | **exit 4** — drift still caught |
+
+**Injected defect (the one the record names):** exempt the *whole* arm instead of just
+presence → `test_fails_when_installed_pack_drifts_even_though_sandbox_exempt` reds, and only
+that test. Tree restored to HEAD afterwards.
+
+### NOT done — the remaining leg is in beads-fabro, not here
+
+1. **The consumer-side gate is still blind to this class.** `just check` — the gate both
+   pin-bump automations auto-merge on — runs on the **bootstrapped primary**, where this
+   check has always passed. It cannot detect that a release breaks sandbox setup, which is
+   exactly how v0.54.24 merged green while taking the factory down. `bd-ib-u46hcv` requires
+   that gate to exercise the `workflow.toml` setup commands against a **fresh,
+   un-bootstrapped clone**.
+2. **beads-fabro is still pinned v0.54.19, and its two hold guards are still armed** — a
+   **global** `staleness_threshold_releases: 99` in `pin-freshness.yml` (it suppresses
+   freshness bumps for **every** source, not just this one) and a source-scoped `if:` in
+   `bump-pin-from-dispatch.yml`. Both must be removed together, and only after **a REAL
+   dispatch is proven to survive setup** on the new pin. A green `just check` is explicitly
+   NOT that proof.
+
+**Until leg 2 completes the fleet is 8/9 on every layer this thread shipped.** Do not record
+this cut as fully realized on the strength of the post-release audit further down this file.
+
+### E-overseer (`3iizsd`) — evidence gathered, deliberately still NOT closed
+
+This file said cause and owner action "were never established". They are better established
+now, though **still not attributed**, and the record was **not** closed:
+
+- The offending child path is **absent**, no worktree is registered, and **no stale
+  `.git/worktrees/` metadata** remains — the registration was removed cleanly, not orphaned.
+- The **parent `/data/projects/livespec-overseer/.claude/worktrees/` still exists and is
+  EMPTY.** Unlike openbrain — where the parent was deliberately kept for an unrelated `OB1`
+  symlink — nothing here is being preserved, and its continued existence invites the same
+  violation again.
+- Branch `docs/dod-corrections-pr78` is at `7efb87d` with **17 unmerged commits across 3
+  files (+898/−5)**. It was **never pushed** (`git ls-remote --heads origin` empty, no
+  upstream configured) and **never had a PR** (`gh pr list --state all --head …` → `[]`).
+- Directory mtime puts the removal at **~19:54 on 2026-07-25, ~8 minutes after that
+  branch's final commit at 19:46**.
+
+**Reading, offered not asserted:** the location violation is resolved, but the work is
+abandoned in place — unpushed, unmerged, PR-less, surviving only in that one local clone.
+**Who removed it was still not determined; do not infer an actor.** The decision `3iizsd`
+needs from a human is whether an absent worktree plus an unpushed 17-commit branch closes
+it.
+
+### Two process facts worth carrying
+
+- **"Disable auto-merge at PR creation" is NOT sufficient in this fleet.** Auto-merge was
+  disabled on #703 seconds after creation; the `livespec-pr-bot` **re-enabled it** at
+  19:28:44Z and merged the PR (REBASE) before the deliberate merge command landed. The
+  exact-head review had already completed, so nothing unreviewed shipped — but the D-section
+  lesson needs strengthening: **expect the bot to re-enable, and re-check immediately before
+  you rely on auto-merge being off.**
+- **A fresh worktree cannot commit until `just bootstrap` runs there.** The very bug this
+  section fixes bit this session's own worktree: `check-pre-commit` refused the Red commit
+  with `worktree_pack_absent` because A1's obligation row had not yet materialized the pack
+  into the new worktree. Expected behaviour, not a defect — but budget the bootstrap step.
 
 **SLICES ARE FILED (2026-07-26).** All seven approved records live under the epic and are
 intake-routed — see §"MAINTAINER RULING — FINAL CUT APPROVED AND FILED" for ids, states,
@@ -869,7 +1017,11 @@ pre-merge ones:
 
 ### Exact next action
 
-**No product work remains in this cut.** All five implementation slices are `done`:
+**SUPERSEDED — see §"CORRECTION — the cut was not done".** All five implementation slices
+are `done`, but A2's flip broke `livespec-orchestrator-beads-fabro`'s factory; the upstream
+fix merged as **`5550a93`** (PR #703) and the **consumer-side gate leg (`bd-ib-u46hcv`)
+plus that repo's pin re-bump remain OPEN**, in beads-fabro rather than here. *(This line
+previously read "No product work remains in this cut.")*
 
 | # | slice | id | status |
 |---|---|---|---|
