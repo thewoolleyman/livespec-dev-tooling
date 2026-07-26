@@ -301,8 +301,8 @@ tracked follow-up; (4) file E-overseer now as blocked on the owning session.
 |---|---|---|---|---|
 | 1 | **E-openbrain** — relocate | `livespec-dev-tooling-0eo.1` | **CLOSED 2026-07-26 — relocated** | — |
 | 2 | **B** — positive-location hook + remedy | `livespec-dev-tooling-6fmfzk` | **CLOSED 2026-07-26 — merged as PR #685 / `7cf38db`** | — |
-| 3 | **A1** — obligation row + CI step + self-wiring | `livespec-dev-tooling-cmc3ah` | pending-approval | 2 |
-| 4 | **D** — fleet wiring + hydration sweep | `livespec-dev-tooling-o5vltq` | pending-approval | 3 |
+| 3 | **A1** — obligation row + CI step + self-wiring | `livespec-dev-tooling-cmc3ah` | **CLOSED 2026-07-26 — merged as PR #693 / `414cc5e`** | 2 |
+| 4 | **D** — fleet wiring + hydration sweep | `livespec-dev-tooling-o5vltq` | **active** (admitted 2026-07-26) | 3 |
 | 5 | **A2 + C** — flip + discoverability + docs | `livespec-dev-tooling-skl77m` | pending-approval | 3, 4 |
 | 6 | **E-overseer** — relocate | `livespec-dev-tooling-3iizsd` | **blocked** | cause/owner action unestablished; reassessment blocked (prose) |
 | 7 | **G (DEFERRED)** — birth procedure | `livespec-dev-tooling-xxdxqv` | **backlog** | — |
@@ -335,7 +335,8 @@ drive --action approve:livespec-dev-tooling-cmc3ah
 
 Step one works because item-level policy takes precedence (line 126 precedes line 128),
 making the item effective-manual and therefore eligible for the `approve` guard.
-`o5vltq` (D), `skl77m` (A2+C), `3iizsd`, and `xxdxqv` remain absent from the ready lane. Note `bd ready`
+`skl77m` (A2+C), `3iizsd`, and `xxdxqv` remain absent from the ready lane; `o5vltq` (D) was
+admitted 2026-07-26 and is now `active`. Note `bd ready`
 reports "No open issues" because it selects `status=open`; the orchestrator ready lane is
 `status=ready`, so `bd list --status ready` is the correct check.
 
@@ -531,36 +532,67 @@ other clone until it too reinstalls — that is slice D's hydration leg, not a d
 `homelab` is an adopter outside the NARROW boundary and runs no livespec hook, so B does not
 reach them; they belong to `hl-nhw`. **Not touched.**
 
+### A1 — MERGED AND CLOSED (2026-07-26)
+
+**`livespec-dev-tooling-cmc3ah` is CLOSED.** PR **#693** merged as **`414cc5e`**; branches
+and worktree removed; primary clean (PNG only).
+
+Single commit `2f7ebad`, **5 `TDD-Red-*` + 2 `TDD-Green-*`**, test bytes frozen at
+`f72861ffb08d90004f37278e18fa1948609e4a60efc3bdb87e57fff927afe9d3`. 100% coverage on
+`_rows_local.py`, `_local_context.py`, `local_reconcile.py`; 1896 tests pass.
+
+**Shipped:** the `worktree-pack` LOCAL row at **position 3** (`uv-sync < worktree-pack <
+commit-refuse-hooks`), the CI pack-install step, `.gitignore` entries, both root `justfile`
+`import?` lines, and a corrected `install-worktree-pack` comment (the pack is
+**gitignored-and-materialized, four files**; `bootstrap` needs **no tail** because the row
+IS the bootstrap path).
+
+**A defect the mutation table could not catch, found by a runtime proof.** `local_reconcile`
+resolves `ctx.checkout` to the **primary** via `--git-common-dir`, so the pack was
+materializing only into the primary — leaving every linked worktree with no
+`worktree-create` in `just --list`, the very hole this thread closes. Every mutation proof
+passed because each built a `LocalContext` directly and so never exercised the verb's
+resolution. **Fixed narrowly:** `LocalContext` gained an optional `worktree` field
+defaulting to `checkout` via an `invoked_worktree` property (existing rows untouched),
+`main` resolves it with `git rev-parse --show-toplevel`, and **only** the pack row uses it.
+
+**Lesson to carry:** for any per-checkout artifact, a direct-`LocalContext` unit proof is
+insufficient — run the verb in a detached worktree.
+
 ### Exact next action
 
-**Work A1 — `livespec-dev-tooling-cmc3ah`.** B is merged and closed, so the sequence
-`E ✅ → B ✅ → A1 ◀ current → D → A2+C` stands at A1.
+**Work D — `livespec-dev-tooling-o5vltq`.** Already **admitted and `active`** (guarded
+`set-admission:...:manual` → `approve`, both green). Sequence:
+`E ✅ → B ✅ → A1 ✅ → D ◀ current → A2+C`, G deferred, `3iizsd` blocked.
 
-**`cmc3ah` rests at `pending-approval` BY DESIGN — manual admission, not a stuck
-transition.** `intake_dor.py:158` routes a filed item to `ready` only when
-`effective_admission_policy(...) == "auto"`; otherwise it stops at `pending-approval`. All
-seven items were filed with `admission_policy=None`, which inherits the **manual** default.
-Closing B **cleared A1's dependency but was never sufficient for admission** — a deliberate
-approval is required, and that is the gate working as intended.
+**D is a cross-repo wiring sweep, not a code slice.** Scope is **APPROVED NARROW** — the 9
+`fleet` repos — so no further sequencing approval is needed. `livespec-dev-tooling`
+self-wired as part of A1, leaving **eight other fleet repos**, which account for exactly
+5 + 2 + 1:
 
-**The exact approved transition command:**
+- **FIVE repos need a ~10-line tracked wiring PR each** — `livespec`,
+  `livespec-driver-claude`, `livespec-driver-codex`, `livespec-runtime`,
+  `livespec-overseer`: `.gitignore` entries, both `import?` lines, the
+  `install-worktree-pack` recipe.
+- **TWO already-wired repos need hydration only** — `livespec-orchestrator-beads-fabro` and
+  `livespec-console-beads-fabro`: `just bootstrap`, **no PR**.
+- **ONE is already green, no action** — `livespec-orchestrator-git-jsonl`.
 
-```
-/livespec-orchestrator-beads-fabro:drive --action approve:livespec-dev-tooling-cmc3ah --repo /data/projects/livespec-dev-tooling
-```
+**Two facts A1 and B changed about D:**
 
-`drive`'s action surface defines `approve:<work-item-id>` as "moves an effective-manual
-`pending-approval` item to `ready`". Do NOT use `set-admission:<id>:auto` — it changes
-policy without changing status, which is not what is wanted here.
+1. **Hydration is per-worktree now.** The pack row materializes into the invoked worktree,
+   so hydrating a repo means bootstrapping the clones that matter there, not just its
+   primary.
+2. **Expect `body_mismatch` in every un-hydrated clone.** B changed `CANONICAL_HOOK_BODY`,
+   so each clone's installed hook is byte-stale until it reinstalls. That is **expected**,
+   and clearing it is exactly D's hydration leg — not a defect. The prescribed remedy is
+   `mise exec -- just install-commit-refuse-hooks` in that clone, after a positive-location
+   rescan confirms no live violation there.
 
-A1's design is settled in §"A-PREREQ — IMPLEMENTATION-READY PREP": the `worktree-pack`
-obligation row must sit at **position 3, before `commit-refuse-hooks` and after `uv-sync`**
-(otherwise that row fails for another row's obligation with a reconcile that cannot clear
-it); the CI step mirrors `ci.yml`'s hook install verbatim; and this repo's own
-`.gitignore` / `import?` / `bootstrap` tail ride along. Product `.py` → Red-Green-Replay.
-
-*(Superseded pointer: this section previously read "work `6fmfzk`". B is now **merged and
-closed** — see §"B — MERGED AND CLOSED".)*
+**Before touching any clone:** re-run the positive-location scan and warn the owner of any
+live foreign violating worktree it reports. At last scan, two live peer violations existed
+in `homelab` (`homelab-hl-wp3gyg`, `homelab-sup-corrections`) — an adopter outside the
+NARROW boundary with no livespec hook, so D does not reach them; they belong to `hl-nhw`.
 
 ### Superseded — the pre-implementation pointer to B
 
@@ -2384,8 +2416,8 @@ approved · ~~fleet boundary~~ NARROW approved · ~~final cut~~ approved ·
   `pending-approval` after `6fmfzk` closed**, because it was effective-AUTO with a stale
   `depends_on` and dependency clearance does not re-trigger intake routing. It was
   guarded-transitioned to `ready` via `set-admission:...:manual` + `approve`, then claimed,
-  and is now **`active`**. `o5vltq` (D) and `skl77m` (A2+C) remain dependency-gated behind
-  it.
+  and has since **CLOSED** (PR #693 / `414cc5e`). `o5vltq` (D) was admitted the same way and
+  is **`active`**; `skl77m` (A2+C) remains dependency-gated behind it.
 
 ## Reactivation audit — 2026-07-25
 
