@@ -37,6 +37,7 @@ import subprocess
 import sys
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
+from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any, cast
 
@@ -66,6 +67,7 @@ __all__: list[str] = [
     "has_first_party_py",
     "is_bin_wrapper",
     "is_generated",
+    "is_slf001_exempt",
     "is_under_any_tree",
     "iter_first_party_py_files",
     "iter_py_files",
@@ -75,6 +77,7 @@ __all__: list[str] = [
     "load_mutation_staging_dir",
     "load_plan_lifecycle_anchor",
     "load_scenario_tiers",
+    "load_slf001_exempt_globs",
     "load_subprocess_spawn_allowlist",
     "resolve_check_universe",
     "resolve_repo_root",
@@ -82,6 +85,9 @@ __all__: list[str] = [
 
 
 _TABLE_KEY = "livespec_dev_tooling"
+# Ruff's `private-member-access` — the ONE rule that polices the same invariant
+# `check-private-calls` does, and therefore the only grant this check honours.
+_SLF001 = "SLF001"
 _VENDOR_MARKER = "_vendor"
 _PYCACHE_MARKER = "__pycache__"
 
@@ -329,6 +335,56 @@ def load_scenario_tiers(*, repo_root: Path) -> tuple[str, ...] | None:
     if table is None or "scenario_tiers" not in table:
         return None
     return _as_str_tuple(value=table["scenario_tiers"], key="scenario_tiers")
+
+
+def load_slf001_exempt_globs(*, repo_root: Path) -> tuple[str, ...]:
+    """Return the consumer's own glob patterns that already grant ruff's `SLF001`.
+
+    Reads `<repo_root>/pyproject.toml`'s `[tool.ruff.lint.per-file-ignores]` — a
+    map of glob pattern to ignored rule codes — and returns every pattern whose
+    ignore list contains `SLF001` (`private-member-access`). Empty when the file,
+    the table, or any such grant is absent.
+
+    This deliberately reads the CONSUMER'S ruff config rather than a
+    `[tool.livespec_dev_tooling]` key of our own. `SLF001` and
+    `check-private-calls` police the SAME invariant — do not reach into another
+    module's privates — so where a consumer has already ratified an exemption for
+    ruff, a second, independently-declared list would be a drift source rather
+    than a decision. Keying off that one rule is also what keeps the exemption
+    narrow: a consumer granting a file some UNRELATED rule gets no exemption here,
+    so this can never widen into a general "tests may do anything" hatch.
+
+    A non-conforming shape is IGNORED rather than raising: this reads a table the
+    consumer maintains for ruff, not for us, and a future ruff schema change must
+    not break an unrelated check. A malformed `per-file-ignores` is ruff's own
+    error to report.
+    """
+    parsed = _parse_pyproject(repo_root=repo_root)
+    if parsed is None:
+        return ()
+    node: dict[str, Any] = parsed
+    for key in ("tool", "ruff", "lint", "per-file-ignores"):
+        child: object = node.get(key)
+        if not isinstance(child, dict):
+            return ()
+        node = cast("dict[str, Any]", child)
+    return tuple(
+        pattern
+        for pattern, codes in node.items()
+        if isinstance(codes, list) and _SLF001 in cast("list[Any]", codes)
+    )
+
+
+def is_slf001_exempt(*, rel: Path, globs: tuple[str, ...]) -> bool:
+    """True iff `rel` matches any pattern in `globs`, the way ruff matches them.
+
+    Ruff matches a `per-file-ignores` key against the path relative to the
+    project root AND against the bare file name, so `"overseer/test_*.py"` and
+    `"test_*.py"` both select the same beside-tests. Both forms are honoured
+    here, or the check would disagree with ruff about the very config it reads.
+    """
+    posix = rel.as_posix()
+    return any(fnmatch(posix, pattern) or fnmatch(rel.name, pattern) for pattern in globs)
 
 
 def load_destructive_cli_allowlist(*, repo_root: Path) -> tuple[str, ...] | None:

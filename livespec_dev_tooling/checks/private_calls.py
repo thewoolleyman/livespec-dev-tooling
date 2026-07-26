@@ -22,6 +22,22 @@ Subsequent cycles can tighten by verifying the receiver is
 an imported module name (vs an arbitrary local variable
 holding an instance).
 
+BESIDE-TEST EXEMPTION. This check and ruff's `SLF001`
+(`private-member-access`) police the SAME invariant, and they
+disagreed about beside-tests: a beside-test calling the private
+decision helper it exists to test is exactly what such a test
+is FOR. Where a consumer's own
+`[tool.ruff.lint.per-file-ignores]` already grants `SLF001` to
+a pattern, this check honours that ratification and skips the
+matching files (`config.load_slf001_exempt_globs` /
+`config.is_slf001_exempt`). The scope is deliberately narrow:
+the exemption is keyed to the one ruff rule that polices this
+same invariant, so it cannot widen into a general "tests may do
+anything" hatch, and the pattern is DERIVED from the consumer's
+configuration rather than hardcoded to any one repo's layout.
+The production invariant is untouched — a production file that
+does not match the consumer's declared pattern still fails.
+
 Phase-0 rollout severity (fleet-check-coverage): the file
 universe is the git-derived first-party `.py` set
 (`config.iter_first_party_py_files`) rather than a
@@ -56,8 +72,10 @@ if str(_VENDOR_DIR) not in sys.path:
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
 from livespec_dev_tooling.config import (  # noqa: E402
+    is_slf001_exempt,
     is_under_any_tree,
     load_config,
+    load_slf001_exempt_globs,
     resolve_check_universe,
 )
 
@@ -107,9 +125,15 @@ def main() -> int:
         log.info("no first-party Python to check")
         return 0
     config = load_config(repo_root=root)
+    slf001_exempt = load_slf001_exempt_globs(repo_root=root)
     legacy_offenders: list[tuple[Path, int, str]] = []
     newly_offenders: list[tuple[Path, int, str]] = []
     for rel in universe:
+        if is_slf001_exempt(rel=rel, globs=slf001_exempt):
+            # The consumer's own ruff config already grants this file `SLF001`,
+            # the rule policing this same invariant. Honour that ratification
+            # rather than contradicting it with a second verdict on one rule.
+            continue
         source = (root / rel).read_text(encoding="utf-8")
         for lineno, attr_path in _find_offenders(source=source):
             record = (rel, lineno, attr_path)

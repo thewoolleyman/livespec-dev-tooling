@@ -31,6 +31,7 @@ from livespec_dev_tooling.config import (
     has_first_party_py,
     is_bin_wrapper,
     is_generated,
+    is_slf001_exempt,
     is_under_any_tree,
     iter_first_party_py_files,
     iter_py_files,
@@ -40,6 +41,7 @@ from livespec_dev_tooling.config import (
     load_mutation_staging_dir,
     load_project_name,
     load_scenario_tiers,
+    load_slf001_exempt_globs,
     load_subprocess_spawn_allowlist,
     resolve_check_universe,
     resolve_repo_root,
@@ -337,6 +339,78 @@ def test_bare_config_is_flat_baseline() -> None:
     assert config.dataclasses_tree is None
     assert config.tests_tree_prefix == "tests/"
     assert config.neutral_hook_body_path is None
+
+
+_SLF001_GRANT = (
+    "[tool.ruff.lint.per-file-ignores]\n"
+    '"overseer/test_*.py" = ["SLF001", "PLR2004"]\n'
+    '"scripts/one_off.py" = ["T201"]\n'
+)
+
+
+def test_slf001_exempt_globs_empty_when_no_pyproject(*, tmp_path: Path) -> None:
+    """No `pyproject.toml` → no consumer grant to honour."""
+    assert load_slf001_exempt_globs(repo_root=tmp_path) == ()
+
+
+def test_slf001_exempt_globs_empty_when_ruff_table_absent(*, tmp_path: Path) -> None:
+    """A `pyproject.toml` with no `[tool.ruff]` at all → no grant."""
+    _write_pyproject(
+        repo_root=tmp_path, body='[tool.livespec_dev_tooling]\nsource_trees = ["pkg"]\n'
+    )
+    assert load_slf001_exempt_globs(repo_root=tmp_path) == ()
+
+
+def test_slf001_exempt_globs_empty_when_ruff_lacks_per_file_ignores(*, tmp_path: Path) -> None:
+    """`[tool.ruff.lint]` present but no `per-file-ignores` → no grant."""
+    _write_pyproject(repo_root=tmp_path, body='[tool.ruff.lint]\nselect = ["ALL"]\n')
+    assert load_slf001_exempt_globs(repo_root=tmp_path) == ()
+
+
+def test_slf001_exempt_globs_returns_only_slf001_patterns(*, tmp_path: Path) -> None:
+    """ONLY a pattern whose ignore list contains `SLF001` is returned.
+
+    The narrow scope is the point: a consumer granting some file an UNRELATED
+    rule (here `T201`) gets no exemption from this check, so the carve-out can
+    never widen into a general test escape hatch.
+    """
+    _write_pyproject(repo_root=tmp_path, body=_SLF001_GRANT)
+    assert load_slf001_exempt_globs(repo_root=tmp_path) == ("overseer/test_*.py",)
+
+
+def test_slf001_exempt_globs_ignores_a_non_conforming_shape(*, tmp_path: Path) -> None:
+    """A non-list ignore value is skipped rather than raising.
+
+    This reads a table the consumer maintains for ruff, not for us; a future
+    ruff schema change must not break an unrelated check.
+    """
+    _write_pyproject(
+        repo_root=tmp_path,
+        body='[tool.ruff.lint.per-file-ignores]\n"pkg/test_*.py" = "SLF001"\n',
+    )
+    assert load_slf001_exempt_globs(repo_root=tmp_path) == ()
+
+
+def test_slf001_exempt_globs_ignores_a_non_table_per_file_ignores(*, tmp_path: Path) -> None:
+    """A `per-file-ignores` that is not a table at all is skipped rather than raising."""
+    _write_pyproject(repo_root=tmp_path, body='[tool.ruff.lint]\nper-file-ignores = "nope"\n')
+    assert load_slf001_exempt_globs(repo_root=tmp_path) == ()
+
+
+def test_is_slf001_exempt_matches_a_root_relative_pattern() -> None:
+    """Ruff matches `per-file-ignores` keys against the root-relative path."""
+    assert is_slf001_exempt(rel=Path("overseer/test_foo.py"), globs=("overseer/test_*.py",))
+    assert not is_slf001_exempt(rel=Path("overseer/foo.py"), globs=("overseer/test_*.py",))
+
+
+def test_is_slf001_exempt_matches_a_bare_file_name_pattern() -> None:
+    """Ruff also matches a bare-name key, so `"test_*.py"` selects the same files."""
+    assert is_slf001_exempt(rel=Path("deep/nested/test_foo.py"), globs=("test_*.py",))
+
+
+def test_is_slf001_exempt_is_false_with_no_globs() -> None:
+    """A consumer that granted nothing exempts nothing."""
+    assert not is_slf001_exempt(rel=Path("overseer/test_foo.py"), globs=())
 
 
 def test_scenario_tiers_none_when_no_pyproject(*, tmp_path: Path) -> None:
