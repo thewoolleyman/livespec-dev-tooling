@@ -132,23 +132,22 @@ from _primary_checkout_git_probes import (  # noqa: E402  — sibling private im
     work_tree_root,
 )
 
+# Sibling `_*` worktree-pack module — the third arm, split out when this file
+# crossed its 250-LLOC hard ceiling, exactly as `_primary_checkout_git_probes`
+# was. It owns the config-policy read, the byte-identity comparison, and the
+# discoverability assertion; this module owns the narration.
+from _primary_checkout_worktree_pack import (  # noqa: E402  — sibling private import
+    inspect_worktree_pack,
+    pack_failure_hint,
+    pack_failure_path,
+)
+
 # The canonical body is the SINGLE source of truth, shipped as a module
 # constant in the installer so it travels in the wheel. The check imports
 # it (rather than carrying a second copy) so byte-identity is verified
 # against the exact bytes the installer writes — there is no drift seam.
 from livespec_dev_tooling.install_commit_refuse_hooks import (  # noqa: E402
     CANONICAL_HOOK_BODY,
-)
-
-# The worktree-pack bodies are the SAME single package source the
-# `install_worktree_pack` installer writes; importing the constants (not a
-# second copy) keeps the byte-identity arm free of a drift seam, exactly as
-# the hook arm imports `CANONICAL_HOOK_BODY`.
-from livespec_dev_tooling.install_worktree_pack import (  # noqa: E402
-    CANONICAL_BRANCH_PROTECTION_BODY,
-    CANONICAL_BRANCH_PROTECTION_JUST_BODY,
-    CANONICAL_WORKTREE_JUST_BODY,
-    CANONICAL_WORKTREE_LIB_BODY,
 )
 
 __all__: list[str] = []
@@ -192,28 +191,6 @@ _VENDORED_COPY_REMEDY = (
     "body is the `CANONICAL_HOOK_BODY` package constant installed via "
     "`just install-commit-refuse-hooks` — a repo-tracked shell copy can "
     "drift from it"
-)
-
-# Worktree-pack arm: the installed `dev-tooling/` pack files paired with the
-# canonical bodies the `install_worktree_pack` installer writes — the two
-# `.sh` scripts plus the two `.just` recipe fragments. The pack is
-# OPTIONAL — absent entirely it is skipped — but once ANY pack file is
-# present ALL MUST be present and byte-identical.
-_WORKTREE_PACK_FILES: tuple[tuple[str, str], ...] = (
-    ("branch-protection.just", CANONICAL_BRANCH_PROTECTION_JUST_BODY),
-    ("branch-protection.sh", CANONICAL_BRANCH_PROTECTION_BODY),
-    ("worktree-lib.sh", CANONICAL_WORKTREE_LIB_BODY),
-    ("worktree.just", CANONICAL_WORKTREE_JUST_BODY),
-)
-_WORKTREE_PACK_DIR_NAME = "dev-tooling"
-_WORKTREE_PACK_BODY_MISMATCH_FAILURE_MODE = "worktree_pack_body_mismatch"
-_WORKTREE_PACK_MISSING_FAILURE_MODE = "worktree_pack_file_missing"
-_WORKTREE_PACK_REMEDY = (
-    "run `just install-worktree-pack` (the from-package installer that "
-    "writes the single canonical `worktree-lib.sh`, `branch-protection.sh`, "
-    "`worktree.just`, and `branch-protection.just` bodies byte-for-byte into "
-    "`dev-tooling/`); a drifted or partially installed pack is a copy that "
-    "diverged from the package source"
 )
 
 
@@ -276,39 +253,6 @@ def _find_vendored_hook_copies(*, repo_root: Path) -> list[Path]:
     return sorted(found)
 
 
-def _inspect_worktree_pack(*, repo_root: Path) -> list[tuple[str, str]]:
-    """Return `(file_name, failure_mode)` tuples for worktree-pack drift.
-
-    The worktree-discipline pack (`dev-tooling/worktree-lib.sh` +
-    `dev-tooling/branch-protection.sh` + `dev-tooling/worktree.just` +
-    `dev-tooling/branch-protection.just`) is
-    OPTIONAL per repo: a repo that installs NO pack file legitimately lacks
-    the pack, so this returns an empty list (skip — no false-fail). But once
-    a repo installs ANY pack file the pack is considered present, and ALL
-    pack files MUST then exist and be byte-identical to the single canonical
-    source (the `install_worktree_pack` constants):
-
-    - a present file whose bytes differ → `worktree_pack_body_mismatch`;
-    - a sibling absent while the pack is otherwise present →
-      `worktree_pack_file_missing` (a partial/drifted install).
-
-    Returns the failures sorted by file name for deterministic narration.
-    """
-    pack_dir = repo_root / _WORKTREE_PACK_DIR_NAME
-    any_present = any((pack_dir / name).is_file() for name, _ in _WORKTREE_PACK_FILES)
-    if not any_present:
-        return []
-    failures: list[tuple[str, str]] = []
-    for name, canonical_body in _WORKTREE_PACK_FILES:
-        script_path = pack_dir / name
-        if not script_path.is_file():
-            failures.append((name, _WORKTREE_PACK_MISSING_FAILURE_MODE))
-            continue
-        if script_path.read_text(encoding="utf-8") != canonical_body:
-            failures.append((name, _WORKTREE_PACK_BODY_MISMATCH_FAILURE_MODE))
-    return sorted(failures)
-
-
 def _emit_failures(
     *,
     log: structlog.stdlib.BoundLogger,
@@ -356,8 +300,8 @@ def _emit_failures(
             hook="",
             failure_mode=failure_mode,
             hooks_dir=str(hooks_dir),
-            hint=_WORKTREE_PACK_REMEDY,
-            path=str(repo_root / _WORKTREE_PACK_DIR_NAME / script_name),
+            hint=pack_failure_hint(failure_mode=failure_mode),
+            path=str(pack_failure_path(repo_root=repo_root, script_name=script_name)),
             line=0,
         )
 
@@ -415,7 +359,7 @@ def main() -> int:
             hook_failures.append((hook_name, failure_mode))
     repo_root = work_tree_root(cwd=cwd)
     vendored_copies = _find_vendored_hook_copies(repo_root=repo_root)
-    pack_failures = _inspect_worktree_pack(repo_root=repo_root)
+    pack_failures = inspect_worktree_pack(repo_root=repo_root)
     if not hook_failures and not vendored_copies and not pack_failures:
         return 0
     _emit_failures(

@@ -67,6 +67,7 @@ Output discipline: structlog JSON to stderr; no `print`, no
 
 from __future__ import annotations
 
+import json
 import stat
 import subprocess
 import sys
@@ -76,6 +77,7 @@ _VENDOR_DIR = Path(__file__).resolve().parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
+import jsoncomment  # noqa: E402  — vendor-path-aware import after sys.path insert.
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
 __all__: list[str] = [
@@ -156,6 +158,69 @@ def _work_tree_root(*, cwd: Path) -> Path:
     return Path(completed.stdout.strip())
 
 
+_LIVESPEC_JSONC_NAME = ".livespec.jsonc"
+_WORKTREE_DISCIPLINE_KEY = "worktree_discipline"
+
+# The provisioned default block, written verbatim so the key arrives WITH its
+# rationale. The verifier treats an absent key as `required`; without this
+# block that default is folklore a new adopter can only discover by tripping
+# the check. Indentation matches the two-space house style of the governed
+# `.livespec.jsonc` files.
+_WORKTREE_DISCIPLINE_DEFAULT_BLOCK = """\
+  // Worktree-discipline pack policy. "required" — the DEFAULT, and what an
+  // absent key means — makes `just check` fail when the canonical pack is not
+  // installed and imported by the root justfile. "optional" is the sanctioned,
+  // reviewable opt-out. Written explicitly at install time so the obligation is
+  // readable here rather than inferred from a verifier failure.
+  "worktree_discipline": { "pack": "required" },
+"""
+
+
+def _ensure_worktree_discipline_default(*, root: Path, log: structlog.stdlib.BoundLogger) -> None:
+    """Write `worktree_discipline` with its default into `<root>/.livespec.jsonc`.
+
+    Three deliberate no-ops:
+
+    - **No `.livespec.jsonc`** → do nothing. Its absence means the directory is
+      not governed, and minting a governance file as a side effect of
+      installing recipe fragments would be a surprising mutation.
+    - **Key already present** → do nothing, whatever its value. A declared
+      `"optional"` is a reviewed decision; silently rewriting it to `required`
+      would make the sanctioned escape hatch unusable and turn `just bootstrap`
+      into a config mutation nobody asked for.
+    - **No `{`-only anchor line** → do nothing. The file is JSONC WITH
+      COMMENTS, so this splices text rather than re-serializing: a `json.dumps`
+      round-trip would silently delete every comment in a consumer's config.
+      When the opening brace is not on its own line there is no safe splice
+      point, so the installer declines rather than guessing.
+    """
+    config_path = root / _LIVESPEC_JSONC_NAME
+    if not config_path.is_file():
+        return
+    text = config_path.read_text(encoding="utf-8")
+    try:
+        parsed = jsoncomment.loads(text)
+    except (ValueError, json.JSONDecodeError):
+        return
+    if not isinstance(parsed, dict) or _WORKTREE_DISCIPLINE_KEY in parsed:
+        return
+    lines = text.splitlines(keepends=True)
+    anchor = next((i for i, line in enumerate(lines) if line.strip() == "{"), None)
+    if anchor is None:
+        log.info(
+            "skipped worktree_discipline default: no splice anchor",
+            path=str(config_path),
+        )
+        return
+    lines.insert(anchor + 1, _WORKTREE_DISCIPLINE_DEFAULT_BLOCK)
+    _ = config_path.write_text("".join(lines), encoding="utf-8")
+    log.info(
+        "wrote worktree_discipline default",
+        path=str(config_path),
+        pack="required",
+    )
+
+
 def install_pack(*, cwd: Path, log: structlog.stdlib.BoundLogger) -> int:
     """Install the canonical worktree pack into `<work-tree-root>/dev-tooling/`.
 
@@ -165,7 +230,8 @@ def install_pack(*, cwd: Path, log: structlog.stdlib.BoundLogger) -> int:
     they stay non-executable). Idempotent: re-running overwrites with the
     identical canonical bodies. Returns 0 on success.
     """
-    pack_dir = _work_tree_root(cwd=cwd) / "dev-tooling"
+    root = _work_tree_root(cwd=cwd)
+    pack_dir = root / "dev-tooling"
     pack_dir.mkdir(parents=True, exist_ok=True)
     for name, body, executable in _PACK_FILES:
         path = pack_dir / name
@@ -179,6 +245,7 @@ def install_pack(*, cwd: Path, log: structlog.stdlib.BoundLogger) -> int:
             executable=executable,
             path=str(path),
         )
+    _ensure_worktree_discipline_default(root=root, log=log)
     return 0
 
 

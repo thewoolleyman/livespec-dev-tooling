@@ -20,8 +20,12 @@ second pyright spawn.
 
 from __future__ import annotations
 
+import fcntl
 import json
 import subprocess
+import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -66,17 +70,56 @@ _BOOTSTRAP_NOISE = "{'x86': False, 'risc': False, 'lts': False}\n"
 
 # --- real-pyright arms -----------------------------------------------------
 
+# These two arms are the ONLY tests that shell out to real pyright, and they
+# must not do so concurrently. `python -m pyright` is the pyright-python
+# wrapper, which lazily builds a shared nodeenv under
+# `<cache>/pyright-python/nodeenv` and installs the pyright npm package into it
+# on FIRST use. Under xdist the two arms land in different workers, so on a cold
+# hosted container both race to populate that one cache; the loser reads a
+# half-extracted typeshed and pyright fails with `Stub file not found for
+# "typing"` — a non-zero exit that looks exactly like a real type error.
+#
+# EVIDENCE vs INFERENCE, stated honestly. Observed: the SAME commit produced
+# different verdicts across consecutive CI runs; the failure was always
+# `test_passes_on_clean_canonical_body` asserting `4 == 0`; and pyright's own
+# output carried `Stub file not found for "typing"`, meaning it ran but could
+# not resolve its bundled typeshed. Inferred: a first-use race on the shared
+# nodeenv is the mechanism. That inference is NOT locally reproduced — a cold
+# `PYRIGHT_PYTHON_CACHE_DIR` under `-n 2` passed here repeatedly, because this
+# host wins the download fast enough. Treat the mechanism as the leading
+# explanation, not a confirmed finding.
+#
+# The lock is justified either way: it costs one serialized subprocess in the
+# only two tests that spawn pyright, and it removes concurrent first-use as a
+# variable. It serializes across PROCESSES (xdist workers are separate
+# processes, so a threading lock would not help). Whichever arm runs first pays
+# the download once and leaves a complete cache for the second.
+_PYRIGHT_CACHE_LOCK = Path(tempfile.gettempdir()) / "livespec-pyright-nodeenv.lock"
+
+
+@contextmanager
+def _serialized_pyright() -> Iterator[None]:
+    """Hold an exclusive cross-process lock while a real pyright run happens."""
+    with _PYRIGHT_CACHE_LOCK.open("w", encoding="utf-8") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+
 
 def test_passes_on_clean_canonical_body() -> None:
     """(a) the shipped canonical body is pyright-strict clean → exit 0 via main()."""
-    assert main() == 0
+    with _serialized_pyright():
+        assert main() == 0
 
 
 def test_flags_dirty_body() -> None:
     """(b) a body with a strict violation → pyright exits non-zero → exit 4."""
     log = _configure_logger()
 
-    assert _typecheck_body(body=_DIRTY_BODY, log=log) == 4
+    with _serialized_pyright():
+        assert _typecheck_body(body=_DIRTY_BODY, log=log) == 4
 
 
 def test_strict_config_is_derived_from_pyproject_without_layout_keys(

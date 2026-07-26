@@ -26,8 +26,8 @@ from pathlib import Path
 
 import pytest
 
-from livespec_dev_tooling.checks.primary_checkout_commit_refuse_hook_installed import (
-    _inspect_worktree_pack,
+from livespec_dev_tooling.checks._primary_checkout_worktree_pack import (
+    inspect_worktree_pack,
 )
 from livespec_dev_tooling.install_worktree_pack import (
     CANONICAL_BRANCH_PROTECTION_BODY,
@@ -127,14 +127,29 @@ def _init_primary_with_worktree(*, tmp_path: Path) -> tuple[Path, Path]:
 
 
 def _init_primary_with_remote(*, tmp_path: Path) -> Path:
-    """Create a primary checkout whose origin has an advertised default branch."""
+    """Create a primary checkout whose origin has an advertised default branch.
+
+    The fixture carries a root justfile with the pack's two `import?` lines
+    because that is what a WIRED governed repo looks like. Since A2 the
+    verifier asserts discoverability as well as byte-identity: a pack whose
+    fragments nothing imports is invisible to `just --list` and is its own
+    failure mode, so a fixture without them would be asserting that an
+    operator-broken repo is clean.
+    """
     primary = tmp_path / "project"
     remote = tmp_path / "origin.git"
     _init_bare_remote(remote=remote)
     _init_repo(repo=primary)
+    _ = (primary / "justfile").write_text(
+        "import? 'dev-tooling/worktree.just'\nimport? 'dev-tooling/branch-protection.just'\n",
+        encoding="utf-8",
+    )
     seed = primary / "seed.md"
     _ = seed.write_text("# seed\n", encoding="utf-8")
-    _run_git(args=["add", "seed.md"], cwd=primary)
+    # The justfile is COMMITTED, not merely written: `worktree_create` checks
+    # out a fresh branch, so an untracked justfile would not reach the created
+    # worktree and the discoverability arm would fire there.
+    _run_git(args=["add", "seed.md", "justfile"], cwd=primary)
     _run_git(args=["commit", "--quiet", "-m", "fixture commit"], cwd=primary)
     _run_git(args=["remote", "add", "origin", str(remote)], cwd=primary)
     _run_git(args=["push", "--quiet", "-u", "origin", "master"], cwd=primary)
@@ -187,7 +202,7 @@ def test_worktree_create_provisions_pack_from_primary(
         assert installed.is_file(), f"{name} not provisioned into created worktree"
         assert installed.read_text(encoding="utf-8") == body
 
-    assert _inspect_worktree_pack(repo_root=worktree) == []
+    assert inspect_worktree_pack(repo_root=worktree) == []
     branch_check = subprocess.run(
         ["./dev-tooling/branch-protection.sh", "check"],
         cwd=str(worktree),
@@ -355,3 +370,81 @@ def test_canonical_branch_protection_body_carries_distinctive_markers() -> None:
     assert "branch-protection.sh — the SERVER-SIDE mirror" in CANONICAL_BRANCH_PROTECTION_BODY
     assert "LIVESPEC_BRANCH_PROTECTION_CHECK" in CANONICAL_BRANCH_PROTECTION_BODY
     assert CANONICAL_BRANCH_PROTECTION_BODY.endswith("\n")
+
+
+def test_main_leaves_unreadable_livespec_jsonc_untouched(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Garbled JSONC is the config-integrity tooling's problem, not the installer's.
+
+    The installer must neither crash nor "repair" a file it cannot parse —
+    splicing into a broken document could corrupt it further.
+    """
+    _scrub_git_env(monkeypatch=monkeypatch)
+    primary = tmp_path / "project"
+    _init_repo(repo=primary)
+    config = primary / ".livespec.jsonc"
+    garbled = "{ this is not json at all ["
+    _ = config.write_text(garbled, encoding="utf-8")
+    monkeypatch.chdir(primary)
+
+    assert main() == 0
+    assert config.read_text(encoding="utf-8") == garbled
+
+
+def test_main_declines_to_splice_when_no_anchor_line(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A single-line config has no safe splice point, so it is left alone.
+
+    The write is a TEXT splice, not a re-serialization, precisely so a
+    consumer's comments survive. That trade means the installer needs an
+    opening brace on its own line; without one it declines rather than guessing
+    where the block belongs.
+    """
+    _scrub_git_env(monkeypatch=monkeypatch)
+    primary = tmp_path / "project"
+    _init_repo(repo=primary)
+    config = primary / ".livespec.jsonc"
+    one_liner = '{ "template": "livespec" }\n'
+    _ = config.write_text(one_liner, encoding="utf-8")
+    monkeypatch.chdir(primary)
+
+    assert main() == 0
+    assert config.read_text(encoding="utf-8") == one_liner
+
+
+def test_inspect_treats_unreadable_config_as_ungoverned(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unparseable `.livespec.jsonc` must not turn the pack arm into a FAIL.
+
+    Failing here would double-report one broken file: the config-integrity
+    check already owns that diagnosis, and a second voice adds noise, not
+    signal.
+    """
+    _scrub_git_env(monkeypatch=monkeypatch)
+    primary = tmp_path / "project"
+    _init_repo(repo=primary)
+    _ = (primary / ".livespec.jsonc").write_text("{ broken [", encoding="utf-8")
+
+    assert inspect_worktree_pack(repo_root=primary) == []
+
+
+def test_inspect_rejects_an_unknown_pack_policy_value(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unrecognized `pack` value is MALFORMED, never a silent opt-out.
+
+    Fail-closed: a typo such as `"optionl"` must not read as "optional" and
+    quietly disable the gate.
+    """
+    _scrub_git_env(monkeypatch=monkeypatch)
+    primary = tmp_path / "project"
+    _init_repo(repo=primary)
+    _ = (primary / ".livespec.jsonc").write_text(
+        '{\n  "worktree_discipline": {"pack": "optionl"}\n}\n', encoding="utf-8"
+    )
+
+    failures = inspect_worktree_pack(repo_root=primary)
+    assert [mode for _name, mode in failures] == ["worktree_discipline_malformed"]
