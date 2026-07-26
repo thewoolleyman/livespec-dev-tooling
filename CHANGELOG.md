@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.54.19](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.54.18...v0.54.19) (2026-07-26)
+
+
+### Bug Fixes
+
+* **docs:** drop the rotted heading-level spec citation from the package docstring ([0b0dca4](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0b0dca4711405ae0fb1d5e4936cb944ef30bff25))
+
 ## [0.54.18](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.54.17...v0.54.18) (2026-07-26)
 
 
