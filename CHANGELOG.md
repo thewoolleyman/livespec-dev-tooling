@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.54.20](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.54.19...v0.54.20) (2026-07-26)
+
+
+### Bug Fixes
+
+* **checks:** retire the loop-iteration marker from the closed conforming set ([1e031aa](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1e031aaf888f934e01ffe48d0268bed15fd22aae))
+
 ## [0.54.19](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.54.18...v0.54.19) (2026-07-26)
 
 
