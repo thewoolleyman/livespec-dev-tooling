@@ -451,6 +451,77 @@ def test_newtype_domain_primitives_rejects_missing_declared_tree(*, tmp_path: Pa
     assert "declared dataclasses_tree is not a directory" in result.stderr
 
 
+def test_newtype_domain_primitives_rejects_declared_tree_with_no_python(*, tmp_path: Path) -> None:
+    """A declared tree resolving to zero `.py` files is a hard ERROR.
+
+    An armed check inspecting nothing is a configuration defect,
+    not a pass. Per `contracts.md` §"Role keys" the error keys off
+    the DECLARED PATHS, never off the count of files actually
+    inspected — so a real directory carrying no Python at all is
+    the misdeclaration this catches.
+    """
+    tree = tmp_path / ".claude-plugin" / "scripts" / "livespec" / "schemas" / "dataclasses"
+    tree.mkdir(parents=True)
+    (tree / "README.md").write_text("declared, populated, but no Python\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, str(_NEWTYPE_DOMAIN_PRIMITIVES)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1, (
+        f"newtype_domain_primitives should reject a declared tree containing no .py; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+    assert "declared role key resolves to no Python files" in result.stderr
+
+
+def test_newtype_domain_primitives_walks_nested_modules(*, tmp_path: Path) -> None:
+    """The declared tree is WALKED, not globbed at its top level only.
+
+    `contracts.md` calls this key "the dataclass-definition tree
+    the check walks", and `iter_py_files` is the shared walker
+    every other shape-checking check uses. A top-level-only glob
+    would let a nested module carry an offender unseen while the
+    declared-paths gate — which does walk — reports the tree
+    populated, converting a real violation into a silent pass.
+    """
+    nested = (
+        tmp_path / ".claude-plugin" / "scripts" / "livespec" / "schemas" / "dataclasses" / "nested"
+    )
+    nested.mkdir(parents=True)
+    (nested / "deep.py").write_text(
+        "from __future__ import annotations\n"
+        "\n"
+        "from dataclasses import dataclass\n"
+        "\n"
+        "__all__: list[str] = []\n"
+        "\n"
+        "\n"
+        "@dataclass(frozen=True, kw_only=True, slots=True)\n"
+        "class Deep:\n"
+        "    check_id: str\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(_NEWTYPE_DOMAIN_PRIMITIVES)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0, (
+        f"newtype_domain_primitives should walk into subdirectories of the declared tree; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+    assert "check_id" in result.stdout + result.stderr
+
+
 def test_newtype_domain_primitives_module_importable_without_running_main() -> None:
     """The check module imports cleanly without invoking main()."""
     import importlib.util
