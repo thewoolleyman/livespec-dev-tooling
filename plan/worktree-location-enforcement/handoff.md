@@ -4,12 +4,25 @@
 
 ---
 
-## 🔴 RECOVERY ACTIVE — DO NOT ARCHIVE THIS THREAD (2026-07-26)
+## 🔴 RECOVERY ACTIVE — 4 OF 6 LEGS LANDED — DO NOT ARCHIVE (updated 2026-07-26T23:31Z)
 
-**The epic is NOT closable and the thread MUST NOT be archived.** Recovery from a regression
-this cut itself shipped is **in flight**, tracked as child slice **8**,
-**`livespec-dev-tooling-wvuefu`** (`ready`). Archive is gated on that item's acceptance —
-see §"Slice 8 — RECOVERY (ACTIVE)" and §"Exact next actions and ownership".
+**The epic is NOT closable and the thread MUST NOT be archived.** Recovery is tracked as
+child slice **8**, **`livespec-dev-tooling-wvuefu`** — status **`active`** (claimed via
+`bd update --status active`; there is no supported `ready → active` door for in-session
+host work, see §"A ledger gap worth recording").
+
+**FOUR legs are merged. TWO remain.** Start at §"⏭️ EXACT NEXT ACTIONS (start here)".
+
+| leg | state | evidence |
+|---|---|---|
+| 1. Evaluate `5550a93` against acceptance | ✅ **RETAINED** | 4-arm fresh-clone matrix below |
+| 2. Consumer adoption gate | ✅ **merged** | beads-fabro PR #1011 → **`add1e29`** |
+| 3. Repin beads-fabro off v0.54.19 | ✅ **merged** | beads-fabro PR #1017 → **`98231a2`** (non-workflow half) |
+| 4. Janitor venue fix (newly exposed) | ✅ **merged** | beads-fabro PR #1020 → **`14c3cae`** (RGR) |
+| 5. **REAL Fabro dispatch proof on the new pin** | ❌ **NOT DONE** | see §"⏭️" — now unblocked |
+| 6. Guard removal + both ledger closes + archive | ❌ **NOT DONE** | gated on leg 5 |
+
+**Guards are still armed, correctly.** Do not remove them until leg 5 produces its proof.
 
 **All five original implementation slices are `done` — but "done" was NOT the end.** A2, this
 cut's final slice, asserted a property that **cannot hold in a fresh clone**, which took down
@@ -39,13 +52,13 @@ whether it passes where you stand.**
 | 5 | A2 + C — required default + docs | `livespec-dev-tooling-skl77m` | **done** (`313bdd71`) |
 | 6 | E-overseer — relocate | `livespec-dev-tooling-3iizsd` | **blocked** — needs a human |
 | 7 | G — birth procedure | `livespec-dev-tooling-xxdxqv` | **backlog** — needs a scoping decision |
-| 8 | **RECOVERY — fresh-sandbox conformance** | **`livespec-dev-tooling-wvuefu`** | **`ready`** — ACTIVE, gates archive |
+| 8 | **RECOVERY — fresh-sandbox conformance** | **`livespec-dev-tooling-wvuefu`** | **`active`** — 4 of 6 legs landed; gates archive |
 
 ### Slice 8 — RECOVERY (ACTIVE)
 
 **`livespec-dev-tooling-wvuefu`** — *restore fresh Fabro sandbox conformance without
 weakening worktree-pack required-default.* Type `bug`, `origin: freeform`, `gap_id: null`,
-no `depends_on`, parented to this epic, DoR verdict **`ready`**. Autonomy tier **host-only**
+no `depends_on`, parented to this epic, DoR verdict was `ready` and it is now **`active`**. Autonomy tier **host-only**
 (`factory_safety: mutates-host-machinery`) — it spans this repo's gate surface AND
 beads-fabro's sandbox workflow and release guards, so no sandboxed dispatch can apply it.
 
@@ -54,19 +67,184 @@ type `bug`). beads has **no cross-tenant `depends_on` edge**, so it cannot be li
 prose is the link, the same device `3iizsd` / `li-l53` / `hl-nhw` use. It is a **peer, not a
 prerequisite**: both close together.
 
+## ⏭️ EXACT NEXT ACTIONS (start here) — updated 2026-07-26T23:31Z
+
+Everything below is **verified state**, not plan. Two legs remain.
+
+### Leg 5 — the REAL Fabro dispatch proof. FULLY UNBLOCKED; do this first.
+
+**Preconditions are now MET and were each verified from the installed files:**
+
+- Installed plugin is **`e470f4d`** = beads-fabro **release 0.46.23**, updated through the
+  supported path (`claude plugin marketplace update livespec-orchestrator-beads-fabro` FIRST,
+  then `claude plugin update livespec-orchestrator-beads-fabro@livespec-orchestrator-beads-fabro
+  --scope project`). The marketplace refresh is REQUIRED — without it the plugin update lands
+  on the previous release and looks successful.
+- Installed `_DEFAULT_JANITOR` **includes `install-worktree-pack`** ✅
+- Installed packaged `workflow.toml` image is **`python-agent-v0.54.26`** ✅
+- `14c3cae` is an ancestor of `e470f4d` ✅
+- The host Fabro server is up on `127.0.0.1:32276` (PID was 3616318). Installing the plugin
+  does NOT start it; the maintainer runs `~/.fabro/bin/fabro server start --bind
+  127.0.0.1:32276 --no-web --no-upgrade-check`. Never `pkill -f 'fabro server'`.
+
+**THE ITEM IS CHOSEN: `bd-ib-5ymv5p`** — *"move_item leaves a STALE assignee: moving an item
+out of `active` violates the discipline"*. Factory eligibility RE-VERIFIED 2026-07-26T23:50:39Z:
+`status: ready`, `factory_safety: None` (NOT `mutates-host-machinery`, NOT `fork-upstream`),
+`depends_on: []`, `assignee: None`, `type: bug`, in-repo code fix, no `.github/workflows/`
+involvement.
+
+**RE-VERIFY READINESS FIRST — and use THIS command, not `bd`.** A direct `bd show` /
+`bd list` from a fresh session fails with a MySQL **`Access denied`**: bare `bd` is **not
+credential-projected**. The wrapper below self-reinvokes under `credential_wrapper` and
+injects the tenant secret, so it works from a cold session:
+
+```bash
+cd /data/projects/livespec-orchestrator-beads-fabro && \
+python3 /home/ubuntu/.claude/plugins/marketplaces/livespec-orchestrator-beads-fabro/.claude-plugin/scripts/bin/list_work_items.py --json \
+  | python3 -c "
+import json,sys
+for i in json.load(sys.stdin):
+    if i['id'] == 'bd-ib-5ymv5p':
+        print('status        :', i['status'])
+        print('factory_safety:', i.get('factory_safety'))
+        print('depends_on    :', i.get('depends_on'))
+        print('assignee      :', i.get('assignee'))
+        print('type          :', i.get('type'))
+"
+```
+
+**Expected eligibility fields — all five must match, or do NOT dispatch this item:**
+
+| field | required value | why |
+|---|---|---|
+| `status` | `ready` | anything else means it is claimed, blocked, or done |
+| `factory_safety` | `None` | `mutates-host-machinery` and `fork-upstream` are NOT factory-dispatchable |
+| `depends_on` | `[]` | a dependency edge must not be bypassed |
+| `assignee` | `None` | non-null means another dispatch already holds it |
+| `type` | `bug` | confirms this is the same record, not a renumbered one |
+
+(Independently reproduced by the reviewer: the wrapper self-reinvoked under
+`credential_wrapper` and returned `ready` / `None` / `[]` / `None` / `bug`.)
+
+If any field has drifted — another session took it — the fallback is **`bd-ib-elvxv2`**
+(chore, docs, `factory_safety: None`, no deps); re-run the SAME check against that id first.
+Do NOT use `bd-ib-p16s` (may touch workflows, which the factory boundary forbids) and do NOT
+use any `mutates-host-machinery` item.
+
+**Do, verbatim** — this is the exact supported installed path, not a placeholder:
+
+```bash
+cd /data/projects/livespec-orchestrator-beads-fabro
+python3 /home/ubuntu/.claude/plugins/marketplaces/livespec-orchestrator-beads-fabro/.claude-plugin/scripts/bin/drive.py \
+  --action impl:bd-ib-5ymv5p --repo /data/projects/livespec-orchestrator-beads-fabro
+```
+
+That `marketplaces/` path IS the installed distribution the supported plugin update writes —
+it is what `drive` resolves the workflow graph from, and it is where the two facts above were
+verified. Do NOT invoke a `drive.py` from the repo primary: that is the stale-resolution trap
+recorded below.
+
+**Proof required:** the run's environment image is **`python-agent-v0.54.26`**
+(`~/.fabro/bin/fabro inspect <run-id>`) AND setup completes so the run reaches agent work.
+A green `just check` is NOT the proof.
+
+### Leg 6 — only after leg 5's proof
+
+1. **Guard-removal PR in beads-fabro.** Delete BOTH: `pin-freshness.yml`'s
+   `staleness_threshold_releases: 99` (+ its `with:` block and TEMPORARY HOLD comment) and
+   `bump-pin-from-dispatch.yml`'s `if: github.event.client_payload.source_repo !=
+   'livespec-dev-tooling'` (+ its comment). **This PR touches `.github/workflows/`, so
+   `check-no-workflow-edits` WILL block a local push — it is unconditional.** Its own remedy
+   is: restore to master content, publish the rest, and hand the workflow diff to the
+   maintainer. So guard removal is **maintainer-side landing**, not agent-landable. Report it,
+   do not fight the guard, never `--no-verify`.
+2. **Close `bd-ib-u46hcv`** (beads-fabro tenant) and **`livespec-dev-tooling-wvuefu`** (this
+   tenant) with exact evidence. Note `bd update --status done` is REJECTED by the bd-guard;
+   use `bd close`, which surfaces as `done`.
+3. **Re-measure from `origin/master`** (never a local checkout): canonical hook body +
+   verifier **9/9**, discoverability 9/9, all primaries synced and clean.
+4. **Correct this file to final truth**, then close epic `livespec-dev-tooling-0eo` and
+   archive `plan/worktree-location-enforcement/` via a reviewed PR.
+
+### ⚠️ DEPARTED FOR MAINTAINER-SIDE LANDING — not lost, but not landed
+
+The repin PR #1017 deliberately shipped **only the non-workflow half**. The workflow half was
+restored to master content per `check-no-workflow-edits`' own remedy. It is **mechanically
+re-derivable** — in beads-fabro, replace `v0.54.19` → `v0.54.26` in:
+
+- `.github/workflows/ci.yml` — **5** occurrences of `livespec-fabro-sandbox:python-v0.54.19`
+  (note: `python-*`, NOT `python-agent-*`)
+- `.github/workflows/{pin-freshness,release-park,release-dispatch,bump-pin-from-dispatch}.yml`
+  — the four `reusable-*.yml@v0.54.19` refs
+- plus the two TEMPORARY-HOLD comment corrections (which fold into leg 6.1 anyway)
+
+None of it blocks a dispatch: the sandbox image comes from `workflow.toml`, which DID land.
+Cosmetic consequence only — the `uses-pin-currency` / `fabro-pin-currency` fleet rows report
+it as **warnings**.
+
+### 🧷 DURABLE RECORD 1 — the stale-resolution-path catch (cost two false proofs)
+
+**`drive` resolves the graph/workflow from the INSTALLED MARKETPLACE CHECKOUT, not from the
+repo primary.** This invalidated two attempts and is the single easiest way to fake a proof:
+
+- Run **`01KYG86RPPBEMQA9RW05E61EJW`** ran on image **`python-agent-v0.54.19`** even though the
+  primary already carried v0.54.26. It **succeeded** — PR #1018 merged as `d3d7cfd`, 92 checks
+  — and still **does not qualify** as the new-pin proof.
+- The first reconcile retry was stale for the same reason at one remove: release **0.46.22**
+  (`918170a`) predated the janitor fix `14c3cae`, so the installed `_DEFAULT_JANITOR` still
+  lacked `install-worktree-pack`.
+
+**Rule:** before trusting any dispatch as evidence, verify the **installed plugin**, never the
+primary — both the code path (`_DEFAULT_JANITOR`) and the packaged image tag. And refresh the
+**marketplace** before the plugin update, or the update silently lands on the previous release
+while reporting success.
+
+### 🧷 DURABLE RECORD 2 — the janitor venue, and why it was fixed by provisioning
+
+A **second fresh-tree venue** for this defect class, found by running the recovery rather than
+by reasoning about it. The post-merge janitor runs `just check` in a fresh worktree that never
+bootstrapped; the pack is gitignored, so it is absent by construction, and since v0.54.24 an
+absent pack FAILS. Adopting the *fixed* release therefore redded a **fully conformant** repo.
+
+Neither mitigation reached it: the sandbox exemption does not apply (a janitor is a normal
+worktree-equivalent, **not** a declared sandbox) and the adoption gate covers the sandbox
+setup order, not the janitor's.
+
+**Fixed by PROVISIONING, not exempting** — `install-worktree-pack` precedes `check`, so the
+assertion becomes TRUE rather than skipped; presence enforcement and the required-default are
+untouched and **no second `sandboxExempt` marker** was introduced. It runs with cwd = the
+**janitor checkout**, because the pack is **per-checkout**, unlike the shared `.git/hooks`
+that `janitor_bootstrap_argv` installs in the primary — that asymmetry is exactly why the
+pre-existing hooks-only bootstrap step did not already cover it.
+
+**Empirically proven:** after `14c3cae` was released and installed, `dispatcher.py
+reconcile-merged --item bd-ib-hvuhxp` returned `stage=done status=green` — *"merged, post-merge
+janitor green"* — and `bd-ib-hvuhxp` closed `done` / `resolution: completed` through the
+dispatcher's own valve, with the janitor worktree auto-removed.
+
+### Session hygiene at this handoff point
+
+Both primaries clean on `master`: `livespec-dev-tooling` at `57ed72a` (+ the untracked
+`install-livespec-pr-bot.png`, preserved) and `livespec-orchestrator-beads-fabro` at
+`e470f4d`. **Every worktree this session created has been removed** in both repos; the
+remaining ones (`janitor-bd-ib-*`, `orchestrator-selfhosted-cutover`, and the dev-tooling
+`fix/*` branches) are **other sessions' — do not touch them.**
+
 ### THREE different "9/9"s — do not conflate them, and read the dates
 
 This is the correction that matters most for anyone resuming here.
 
 | measurement | value | date | meaning |
 |---|---|---|---|
-| **fleet ADOPTION** of the current release | **8 of 9** | 2026-07-26T20:55Z | beads-fabro alone still pins `v0.54.19`; its installed hook is the pre-B `3a3f60cbd4d2` vs canonical `1ebaebfe2271`, so it alone fails `body_mismatch` ×3 |
+| **fleet ADOPTION** — **HISTORICAL, SUPERSEDED** | **8 of 9** | measured 2026-07-26T20:55Z | As measured THEN: beads-fabro alone still pinned `v0.54.19` with the pre-B hook `3a3f60cbd4d2`. **SUPERSEDED by PR #1017 (`98231a2`), which repinned it to v0.54.26.** Current adoption is UNMEASURED — leg 6 remeasures it. |
 | **the FIX's behaviour** across all nine repos' trees | **9 of 9** | 2026-07-26T19:52Z | the v0.54.25 verifier against fresh clones of all 9: **9/9 exit 0** with the sandbox exemption declared, **9/9 exit 4** without it |
 | **discoverability** (`worktree-create` in `just --list`) | **9 of 9** | 2026-07-26 | against the measured baseline of 1 of 9 — survived every re-measurement |
 
-**The still-open 1-of-9 is BY DESIGN, not a new defect.** beads-fabro's two hold guards
-deliberately suppress its bump; lifting them is slice 8's acceptance, and they must not be
-bypassed.
+**That 1-of-9 gap is CLOSED as of PR #1017 (`98231a2`)** — beads-fabro is repinned to
+v0.54.26. While the gap stood it was BY DESIGN, not a defect: its two hold guards suppressed
+the automatic bump. **The guards are still armed** (they gate automatic future bumps, not this
+manual repin) and come off only after leg 5's real-dispatch proof. **Do not quote any adoption
+count as current — leg 6 remeasures it from `origin/master`.**
 
 **HISTORICAL — the audit / rollback state that prompted recovery (v0.54.24 era,
 2026-07-26 ~18:00Z): 8/9.** *(The original paragraph here read "all 9 fleet repos are pinned
@@ -239,9 +417,11 @@ not re-implementing it in the `workflow.toml` shape.)*
    dispatch is proven to survive setup** on the new pin. A green `just check` is explicitly
    NOT that proof.
 
-**Until leg 2 completes, fleet ADOPTION is 8/9** — beads-fabro alone, held deliberately by
-its guards. That is distinct from the FIX's 9/9 behavioural evidence and from the 9/9
-discoverability figure; see §"THREE different 9/9s" before quoting any of them. Do not record
+**HISTORICAL:** while this section was written, fleet ADOPTION was 8/9 — beads-fabro alone,
+held deliberately by its guards. **SUPERSEDED: PR #1017 (`98231a2`) repinned it; current
+adoption is UNMEASURED and leg 6 remeasures it.** Adoption is distinct from the FIX's 9/9
+behavioural evidence and from the 9/9 discoverability figure; see §"THREE different 9/9s"
+before quoting any of them. Do not record
 this cut as fully realized on the strength of the post-release audit further down this file.
 
 ### Final verified state after the fix shipped (measured 2026-07-26T19:52Z)
@@ -252,7 +432,7 @@ measurement.
 
 | measurement | result |
 |---|---|
-| fleet pins on `origin/master` | **8 of 9 at `v0.54.25`** (they carry the fix); `livespec-orchestrator-beads-fabro` held at **`v0.54.19`** by its own two guards |
+| fleet pins on `origin/master` — **HISTORICAL** | As measured THEN: **8 of 9 at `v0.54.25`**; `livespec-orchestrator-beads-fabro` held at **`v0.54.19`**. **SUPERSEDED by PR #1017 (`98231a2`).** |
 | repos exposed to this class | **exactly ONE** — beads-fabro is the **only** fleet repo with a Fabro workflow at all (1 `workflow.toml`, 2 dev-tooling check steps). No other fleet repo can hit it today. |
 | fresh-clone matrix, all 9, exemption DECLARED | **9 of 9 exit 0** |
 | fresh-clone matrix, all 9, marker UNSET | **9 of 9 exit 4** — enforcement fully intact for real primaries |
@@ -1165,12 +1345,12 @@ remains in this cut", then attributed the only open leg to beads-fabro alone.)*
 | 5 | A2 + C | `livespec-dev-tooling-skl77m` | **done** |
 | 6 | E-overseer | `livespec-dev-tooling-3iizsd` | **blocked** — cause/owner never established |
 | 7 | G (deferred) | `livespec-dev-tooling-xxdxqv` | **backlog** — scoping decision first |
-| 8 | **RECOVERY — fresh-sandbox conformance** | **`livespec-dev-tooling-wvuefu`** | **`ready`** — ACTIVE; **archive is STOPPED until it closes** |
+| 8 | **RECOVERY — fresh-sandbox conformance** | **`livespec-dev-tooling-wvuefu`** | **`active`**; **archive is STOPPED until it closes** |
 
 **What remains: the ACTIVE recovery slice, the two records this thread deliberately did NOT
 close, and follow-ups filed elsewhere:**
 
-- **`wvuefu` (slice 8, RECOVERY)** — `ready`, host-only, ACTIVE. Gates epic close and
+- **`wvuefu` (slice 8, RECOVERY)** — `active`, host-only. Gates epic close and
   archive. Peer record `bd-ib-u46hcv` in the beads-fabro tenant, prose-linked because
   cross-tenant edges do not exist. See §"Exact next actions and ownership".
 - **`3iizsd` (E-overseer)** — the path is absent and registers no worktree, but **cause and
@@ -1686,23 +1866,34 @@ The causal chain, which is the actual design input:
 
 ## Read first
 
-1. This file.
-2. `livespec_dev_tooling/checks/primary_checkout_commit_refuse_hook_installed.py`
-   — the fail-open site is **`:298-300`** (`any_present` → `return []`). Pack constants
-   at `:202`, `:210-211`; the remedy string reused at `:359`.
-3. `livespec_dev_tooling/install_commit_refuse_hooks.py` — `CANONICAL_HOOK_BODY` starts
-   `:72`; the existing refuse branch is **`:117-123`**. The new branch goes after `:123`.
-4. `livespec_dev_tooling/checks/plugin_resolution.py` — **the precedent to copy.** Its
-   `harnesses` key (`:96-97`, `load_harnesses`) is a `.livespec.jsonc` declaration with
-   exactly the fail-closed semantics wanted here: file absent → SKIP, key absent → FAIL
-   ("required fleet-wide since M6"), block malformed → FAIL.
-5. `livespec_dev_tooling/install_worktree_pack.py` + `livespec_dev_tooling/worktree_pack/`
-   — the four canonical pack bodies (single source).
-6. `AGENTS.md` §"Red-Green-Replay commit protocol" (`:100-147`, i.e. the section runs
-   to end-of-file) — binds item A. *(Anchor corrected 2026-07-25; `AGENTS.md` grew from
-   142 to 147 lines. The four `.py` files at items 2–5 are **byte-identical** to
-   `2412e21`, so every anchor into them still holds — verified by
-   `git diff 2412e21..origin/master` reporting no change for any of them.)*
+**⚠️ LINE-NUMBER ANCHORS REMOVED (2026-07-26).** The former anchors here were stale and
+FALSE: they claimed the fail-open lived at `:298-300` (`any_present` → `return []`), that
+`CANONICAL_HOOK_BODY` started at `:72` with a refuse branch at `:117-123`, and that four
+`.py` files were byte-identical to `2412e21`. **None of that holds** — B, A1 and A2+C
+rewrote those files, the pack arm moved to a NEW module, and the fail-open they pointed at
+no longer exists. Navigate by SYMBOL, never by line number; these files change every slice.
+
+1. This file, then §"⏭️ EXACT NEXT ACTIONS (start here)".
+2. `livespec_dev_tooling/checks/primary_checkout_commit_refuse_hook_installed.py` — the
+   parent check. Grep `main`, `inspect_worktree_pack`, `sandbox_exempt_is_true`. The former
+   fail-open is CLOSED.
+3. `livespec_dev_tooling/checks/_primary_checkout_worktree_pack.py` — **the pack arm**,
+   split out when the parent crossed its 250-LLOC ceiling. Grep `inspect_worktree_pack`,
+   `_read_pack_policy`, `_WORKTREE_PACK_ABSENT_FAILURE_MODE`, `sandbox_exempt`.
+4. `livespec_dev_tooling/checks/_primary_checkout_git_probes.py` — grep
+   `sandbox_exempt_is_true` (the declared-exemption probe added by `5550a93`).
+5. `livespec_dev_tooling/install_commit_refuse_hooks.py` — grep `CANONICAL_HOOK_BODY`; the
+   body carries the refuse-at-primary arm AND the positive-location allow-list, both
+   skipped when `livespec.sandboxExempt` is `true`.
+6. `livespec_dev_tooling/install_worktree_pack.py` — the four canonical pack bodies
+   (single source): `worktree-lib.sh`, `branch-protection.sh`, `worktree.just`,
+   `branch-protection.just`.
+7. `livespec_dev_tooling/checks/plugin_resolution.py` — the `harnesses` precedent this
+   design deliberately DIVERGES from (there an absent key is itself fail-closed; here the
+   default is a policy, so key-absent + pack-present must PASS).
+8. `.claude/CLAUDE.md` §"Red-Green-Replay commit protocol" — binds every product `.py`
+   change. In beads-fabro read `AGENTS.md` §"Execution gotchas" too: **Red stages exactly
+   ONE test file**; remaining test files ride along at the Green `--amend`.
 
 ## The two decisions the maintainer already made
 
@@ -2176,14 +2367,14 @@ was executed directly against four throwaway trees in a scratch dir — no repo 
 Stated as sharply as it goes: **installing three of the four pack files is a FAIL;
 installing none of them is a PASS.** The check punishes a partial install and rewards a
 total absence. That is the fail-open in one line, and it is now an executed result rather
-than an inference from `:298-300`.
+than an inference from `:298-300`. **[STALE ANCHOR — pre-implementation; the fail-open is CLOSED and the pack arm moved to `checks/_primary_checkout_worktree_pack.py`. Navigate by symbol.]**
 
 It also fixes the shape of slice A's Red test precisely: the test must assert that row 1
 becomes a FAIL under `required`, while rows 3 and 4 keep their existing failure modes
 unchanged — the §"Keep the existing partial-install and byte-drift arms exactly as they
 are" requirement below is what stops a fix for row 1 from collapsing rows 3 and 4 into it.
 
-`_inspect_worktree_pack` (`:279-309`) returns `[]` when no pack file exists (`:298-300`).
+`_inspect_worktree_pack` (`:279-309`) returned `[]` when no pack file existed (`:298-300`). **[STALE ANCHOR — pre-implementation; the fail-open is CLOSED and the pack arm moved to `checks/_primary_checkout_worktree_pack.py`. Navigate by symbol.]**
 That single early-return is the entire hole. Replace with a `.livespec.jsonc` read:
 `required` (default) → absent pack is a new `worktree_pack_absent` failure carrying the
 existing `_WORKTREE_PACK_REMEDY` (`:211`, already wired at `:359`); `optional` → today's
@@ -2919,7 +3110,7 @@ name the boundary so the adopter gap is visible rather than implied.
 > **Current:** all four questions are **answered**; the final cut is **approved**; **EIGHT
 > slices exist** under `livespec-dev-tooling-0eo` and are intake-routed. **FIVE are closed** —
 > `0eo.1`, `6fmfzk` (B, `7cf38db`), `cmc3ah` (A1, `414cc5e`), `o5vltq` (D) and
-> `skl77m` (A2+C, `313bdd71`) — and **slice 8 `wvuefu` is `ready` and ACTIVE**, so product
+> `skl77m` (A2+C, `313bdd71`) — and **slice 8 `wvuefu` is `active`**, so product
 > work DOES remain. *(This note previously said A1 was next at `pending-approval`, then that
 > A2+C was active, then that "no product work remains in this cut" — all three superseded;
 > the last was falsified by the A2 regression.)* See §"MAINTAINER RULING —
@@ -3057,7 +3248,7 @@ carry the corrected facts.
   (`git diff 2412e21..origin/master` reports no change for the verifier, the hook
   installer, the pack installer, or `plugin_resolution.py`). Every line anchor into them
   holds.
-- The fail-open early return is still at `:298-300`.
+- ~~The fail-open early return is still at `:298-300`.~~ **[STALE ANCHOR — pre-implementation; the fail-open is CLOSED and the pack arm moved to `checks/_primary_checkout_worktree_pack.py`. Navigate by symbol.]**
 - `worktree_discipline` appears **nowhere** in the repo — decision A is entirely
   unimplemented.
 - The `.git/` carve-out is still load-bearing (same 4 beads sync worktrees).
