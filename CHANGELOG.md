@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.54.16](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.54.15...v0.54.16) (2026-07-26)
+
+
+### Bug Fixes
+
+* **checks:** newtype_domain_primitives errors on a declared tree with no Python ([6e69718](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6e697183390e5eb42f4ce216187ca77d429d2566))
+
 ## [0.54.15](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.54.14...v0.54.15) (2026-07-25)
 
 
