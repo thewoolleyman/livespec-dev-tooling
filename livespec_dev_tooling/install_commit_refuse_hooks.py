@@ -11,7 +11,25 @@ hook firing reads that same shared directory).
 Structural mechanism (armed on install): the installed body refuses the
 operation whenever the repository's git-dir equals its git-common-dir —
 the structural signature of a real primary checkout (a linked worktree's
-git-dir is `<common-dir>/worktrees/<name>`, which differs). This RETIRES
+git-dir is `<common-dir>/worktrees/<name>`, which differs).
+
+POSITIVE-LOCATION mechanism (per `livespec/SPECIFICATION/
+non-functional-requirements.md` §"Worktree root and mise trust"): being a
+linked worktree is NOT sufficient to proceed. The body additionally
+enforces an allow-list — a worktree under the repository's git dir
+(tooling-internal, e.g. beads' `.git/beads-worktrees/*`) or under
+`$HOME/.worktrees` delegates; anything else is refused. That single
+allow-list satisfies both clauses of the invariant: whatever sits inside a
+clone is by construction not under the sanctioned root, so "never inside a
+clone" needs no separate nested-path test.
+
+HONEST LIMIT: git has no `pre-worktree-add` hook, so location enforcement
+fires at the first COMMIT, after the offending directory already exists.
+It cannot prevent creation. What it converts is a silent, long-lived
+violation into an immediate, actionable refusal — that is the whole of the
+promise, and it should not be overstated.
+
+This RETIRES
 the older `livespec.primaryPath` git-config mechanism: there is no config
 to set and so no fail-open window between clone and arming step. The
 single declared opt-out is the `livespec.sandboxExempt=true` git config,
@@ -120,6 +138,59 @@ sandbox_exempt="$(git config --get livespec.sandboxExempt || true)"
 if [ -n "$git_dir" ] && [ "$git_dir" = "$common_dir" ] && [ "$sandbox_exempt" != "true" ]; then
   echo "livespec: refusing commit/push at primary checkout; use a worktree" >&2
   exit 1
+fi
+
+# POSITIVE-LOCATION enforcement: every worktree lives under the per-user root
+# `$HOME/.worktrees/<repo>/<branch>`. This is an ALLOW-LIST, not a nested-path
+# test: anything inside a clone is by construction NOT under the sanctioned
+# root, so "never inside a clone" falls out for free and no primary-root prefix
+# computation is needed.
+#
+# Two arms allow. (1) TOOLING-INTERNAL: worktrees under the repo's git dir —
+# beads' own `.git/beads-worktrees/*` sync worktrees live there by design, and
+# refusing them would break the tool that maintains the ledger. (2) SANCTIONED:
+# anything under `$HOME/.worktrees`, matching the single definition the
+# `worktree-root-mise-trust` obligation row already uses, so the hook and that
+# row can never disagree about what "sanctioned" means.
+#
+# JANITOR CONFIGURATION: orchestrator janitor worktrees under the sanctioned
+# root are allowed by arm (2), which is where they live today. Janitors created
+# INSIDE a clone's working tree are UNSUPPORTED — the hook sees only a path and
+# cannot authenticate janitor identity from it, so any carve-out wide enough to
+# admit them would readmit every other in-clone worktree and reopen the
+# invariant. Unsupported-with-rationale is the honest answer; a broad bypass is
+# not.
+#
+# `pwd -P` canonicalizes physically so a worktree reached through a symlinked
+# path yields the same verdict as its real path.
+#
+# HONEST LIMIT: git has no `pre-worktree-add` hook, so this fires at the first
+# COMMIT — after the offending directory already exists. It cannot prevent
+# creation. It converts a silent, long-lived violation into an immediate,
+# actionable refusal; that is the whole promise, and it is not more than that.
+#
+# Skipped entirely when `sandbox_exempt` is true: an exempt primary
+# deliberately falls through the arm above, and must not be refused here.
+# Named `sanctioned_dir`/`common_abs`, NOT `git_dir`, so the values read at the
+# top of this hook are never shadowed.
+if [ "$sandbox_exempt" != "true" ]; then
+  common_abs="$(cd "$common_dir" 2>/dev/null && pwd -P || true)"
+  this_root="$(cd "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null && pwd -P || true)"
+  sanctioned_dir="$(cd "$HOME/.worktrees" 2>/dev/null && pwd -P || echo "$HOME/.worktrees")"
+  if [ -n "$this_root" ]; then
+    case "$this_root/" in
+      "$common_abs"/*) ;;
+      "$sanctioned_dir"/*) ;;
+      *)
+        echo "livespec: refusing commit from a worktree outside the sanctioned root" >&2
+        echo "  this worktree:  $this_root" >&2
+        echo "  sanctioned:     $HOME/.worktrees/<repo>/<branch>" >&2
+        sanctioned_hint="$HOME/.worktrees/<repo>/<branch>"
+        echo "  to fix:         git worktree move '$this_root' '$sanctioned_hint'" >&2
+        exit 1
+        ;;
+    esac
+  fi
 fi
 
 # Delegate to lefthook at worktrees (and in declared-exempt sandboxes) so the
