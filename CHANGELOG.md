@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.54.26](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.54.25...v0.54.26) (2026-07-26)
+
+
+### Bug Fixes
+
+* teach check-private-calls the beside-test distinction SLF001 already makes ([8367848](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8367848648b8db3daa9fa95595074f9cbfb33dc7))
+
 ## [0.54.25](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.54.24...v0.54.25) (2026-07-26)
 
 
