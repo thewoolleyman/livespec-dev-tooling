@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.54.23](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.54.22...v0.54.23) (2026-07-26)
+
+
+### Bug Fixes
+
+* add a worktree-local worktree-pack obligation row before commit-refuse-hooks ([414cc5e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/414cc5e7de0e795ee11077cf59ef933511066232))
+
 ## [0.54.22](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.54.21...v0.54.22) (2026-07-26)
 
 
