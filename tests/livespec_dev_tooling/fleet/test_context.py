@@ -19,6 +19,7 @@ from livespec_dev_tooling.fleet._context import (
     TreeState,
     default_gh_runner,
     resolve_owner,
+    resolve_repo_name,
 )
 
 if TYPE_CHECKING:
@@ -330,3 +331,50 @@ def test_once_fires_exactly_once_per_key() -> None:
     assert ctx.once(key="shim-pr:widget")
     assert not ctx.once(key="shim-pr:widget")
     assert ctx.once(key="shim-pr:gadget")
+
+
+def test_resolve_repo_name_parses_both_remote_forms(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The running-member derivation: the repo short name, `.git` and slash stripped.
+
+    This is the "which member am I RUNNING AS" answer the member-CI exit scoping
+    depends on. It shares one parse with `resolve_owner` — same subprocess, same
+    pattern, different capture group — because a rule with two copies drifts.
+    """
+    for remote, expected in (
+        ("https://github.com/acme/widget.git\n", "widget"),
+        ("git@github.com:acme/widget\n", "widget"),
+        ("https://github.com/acme/livespec-dev-tooling/\n", "livespec-dev-tooling"),
+    ):
+
+        def fake_run(
+            cmd: list[str], *, _remote: str = remote, **_kwargs: object
+        ) -> subprocess.CompletedProcess[str]:
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=_remote, stderr="")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        assert resolve_repo_name() == expected
+
+
+def test_resolve_repo_name_is_none_when_git_fails_or_remote_is_not_github(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Unresolvable is None, never a guess.
+
+    The member-CI caller turns this None into a loud precondition failure rather than
+    a pass, because scoping an exit to an unidentifiable repo would scope it to
+    nothing and enforce nothing while reporting success.
+    """
+
+    def git_fails(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(args=cmd, returncode=128, stdout="", stderr="fatal")
+
+    monkeypatch.setattr(subprocess, "run", git_fails)
+    assert resolve_repo_name() is None
+
+    def not_github(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(
+            args=cmd, returncode=0, stdout="git@gitlab.com:acme/widget.git\n", stderr=""
+        )
+
+    monkeypatch.setattr(subprocess, "run", not_github)
+    assert resolve_repo_name() is None

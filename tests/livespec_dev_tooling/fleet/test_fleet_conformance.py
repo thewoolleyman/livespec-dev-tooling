@@ -769,3 +769,120 @@ def test_module_invocation_with_lever_unset_skips() -> None:
     )
     assert result.returncode == 0
     assert "skipped" in result.stderr
+
+
+def _unwired_member_table() -> dict[tuple[str, ...], GhResult]:
+    """Two members where `gadget` is REGISTERED but UNWIRED, and `widget` is clean.
+
+    This is the shape of the incident this scoping exists for: a member was added to
+    the manifest before its wiring landed, and because the manifest is fetched at run
+    time the obligation applied instantly — reddening a repo that neither owned nor
+    could fix the problem.
+    """
+    table = _two_member_table(blind_app_installation=False)
+    unwired_tree = {
+        "tree": [
+            {"path": path, "mode": "100644"}
+            for path in (
+                ".github/workflows/ci.yml",
+                "pyproject.toml",
+                ".livespec.jsonc",
+                ".beads/config.yaml",
+                ".claude/settings.json",
+                "justfile",
+            )
+        ],
+        "truncated": False,
+    }
+    table[("api", "repos/acme/gadget/git/trees/master?recursive=1")] = ok(payload=unwired_tree)
+    return table
+
+
+def test_member_ci_exit_is_scoped_to_the_running_member(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The incident, pinned: an unwired member must not redden a DIFFERENT member's CI.
+
+    `gadget` is registered but unwired. Running as `widget` under `--member-ci`, the
+    exit status must be 0 — widget owns no violation and cannot fix gadget's. Running
+    as `gadget` must be non-zero, because it owns the violation. Same manifest, same
+    canned reads, same evaluation; only the ATTRIBUTION of the exit differs.
+
+    Surfacing and BLOCKING are separable, and this separates them: gadget's finding is
+    still REPORTED in widget's log (asserted below), because register-first
+    deliberately wants an unwired member visible. What it must not do is fail the merge
+    gate of a repo with no defect of its own.
+    """
+    monkeypatch.setenv("LIVESPEC_RUN_FLEET_CONFORMANCE", "true")
+    monkeypatch.setattr(sys, "argv", ["fleet-conformance", "--owner", "acme", "--member-ci"])
+    _patch_runner(monkeypatch=monkeypatch, table=_unwired_member_table())
+
+    monkeypatch.setattr(fleet_conformance, "resolve_repo_name", lambda **_kwargs: "widget")
+    assert fleet_conformance.main() == 0, "an unwired OTHER member must not fail this repo's CI"
+
+    monkeypatch.setattr(fleet_conformance, "resolve_repo_name", lambda **_kwargs: "gadget")
+    assert fleet_conformance.main() != 0, "a member owning the violation MUST fail its own CI"
+
+
+def test_member_ci_still_reports_other_members_findings(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Scoping changes the EXIT STATUS only — evaluation and reporting are untouched.
+
+    Filtering the evaluation instead would make each repo blind to fleet state and
+    would silently shrink what the central sweep's own per-repo runs cover, so the
+    other member's violation must still appear at error severity in the log even
+    though it no longer affects this repo's exit.
+    """
+    monkeypatch.setenv("LIVESPEC_RUN_FLEET_CONFORMANCE", "true")
+    monkeypatch.setattr(sys, "argv", ["fleet-conformance", "--owner", "acme", "--member-ci"])
+    _patch_runner(monkeypatch=monkeypatch, table=_unwired_member_table())
+    monkeypatch.setattr(fleet_conformance, "resolve_repo_name", lambda **_kwargs: "widget")
+
+    recorder = RecordingLog()
+    monkeypatch.setattr(fleet_conformance.structlog, "get_logger", lambda *_a, **_k: recorder)
+
+    assert fleet_conformance.main() == 0
+    violations = [
+        fields
+        for fields in recorder.fields_for(event="fleet obligation violated")
+        if fields.get("member") == "gadget"
+    ]
+    assert violations, f"gadget's violation must still be reported; got {recorder.records!r}"
+
+
+def test_fleet_view_is_the_default_so_a_forgotten_flag_fails_safe(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """WITHOUT `--member-ci` the run is fleet-wide and ANY member's violation fails.
+
+    The polarity is deliberate and load-bearing. The scheduled sweep and the release
+    fan-out preflight are the fleet-level contexts, and all three legs run inside a
+    livespec-dev-tooling checkout, so running-as derivation alone cannot tell them
+    apart. Defaulting to the STRICT behavior means a future fleet-level caller that
+    forgets to declare its surface still fails loudly, instead of silently becoming a
+    one-repo gate — which is the vacuity hole livespec-dev-tooling-b02 and -29qo exist
+    to close.
+    """
+    monkeypatch.setenv("LIVESPEC_RUN_FLEET_CONFORMANCE", "true")
+    monkeypatch.setattr(sys, "argv", ["fleet-conformance", "--owner", "acme"])
+    _patch_runner(monkeypatch=monkeypatch, table=_unwired_member_table())
+    monkeypatch.setattr(fleet_conformance, "resolve_repo_name", lambda **_kwargs: "widget")
+
+    assert fleet_conformance.main() != 0, "the default must remain fleet-wide and strict"
+
+
+def test_member_ci_fails_loudly_when_the_running_repo_is_not_in_the_manifest(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unresolvable or unregistered running repo is a precondition failure, not a pass.
+
+    If the running-as derivation cannot place this repo in the manifest, scoping the
+    exit to "this repo's findings" would scope it to NOTHING and pass vacuously — a
+    gate that enforces nothing while reporting success. It must say so loudly instead.
+    """
+    monkeypatch.setenv("LIVESPEC_RUN_FLEET_CONFORMANCE", "true")
+    monkeypatch.setattr(sys, "argv", ["fleet-conformance", "--owner", "acme", "--member-ci"])
+    _patch_runner(monkeypatch=monkeypatch, table=_unwired_member_table())
+
+    monkeypatch.setattr(fleet_conformance, "resolve_repo_name", lambda **_kwargs: "not-a-member")
+    assert fleet_conformance.main() == 1
+
+    monkeypatch.setattr(fleet_conformance, "resolve_repo_name", lambda **_kwargs: None)
+    assert fleet_conformance.main() == 1

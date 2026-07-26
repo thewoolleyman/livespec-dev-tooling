@@ -14,6 +14,30 @@ release fan-out preflight (`reusable-release-dispatch.yml`) — a
 per-member FILTER there, blocking only on structural failure, per
 contracts.md §"`reusable-release-dispatch.yml`".
 
+Exit ATTRIBUTION splits those contexts in two, and the split is a
+declared mode rather than an inferred one. All three automated legs run
+inside a livespec-dev-tooling checkout — the fan-out preflight checks
+that repo out explicitly, because `workflow_call` runs in the CALLER's
+context — so deriving the surface from "which repo am I in" cannot tell
+them apart. `--member-ci` declares the member leg:
+
+- WITHOUT it (the default) the run is FLEET-level and ANY member's
+  violation fails it. That is the scheduled sweep and the fan-out
+  preflight, and it is where a cross-member red belongs.
+- WITH it, every member is still evaluated and still reported, but only
+  the RUNNING member's violations affect the exit status.
+
+The default is the strict one deliberately: a future fleet-level caller
+that forgets to declare its surface still fails loudly instead of
+silently shrinking into a one-repo gate. Per the 2026-07-21 ruling, a
+non-conforming member must fail ONLY its own CI — a member's merge gate
+must not be blocked by a violation it neither owns nor can fix, which is
+what happened when a repo was registered before its wiring landed. This
+is a severity/ATTRIBUTION change, not a suppression: no obligation is
+relaxed, no row stops being evaluated, and `blind_rows` keeps failing in
+every context because it reports THIS CHECK's vacuity rather than any
+member's violation.
+
 Env lever (the single self-documenting per-check lever, mirroring
 `check_mutation`'s RUN/SKIP precedent for network-dependent checks):
 `LIVESPEC_RUN_FLEET_CONFORMANCE` unset → the check logs "skipped" and
@@ -63,8 +87,11 @@ Exit codes:
 - `0` — lever unset (logged skip), or every applicable row passed /
   partially skipped with no error-severity finding and no blind row.
 - `1` — precondition failure with the lever set: owner unresolvable,
-  or the manifest unfetchable / unparseable (the manifest is the root
-  fact; per the fail-fast decision the run is loud, not silent).
+  the manifest unfetchable / unparseable (the manifest is the root
+  fact; per the fail-fast decision the run is loud, not silent), or —
+  under `--member-ci` only — the running repo unresolvable or absent
+  from the manifest, since scoping the exit to a repo with no entry
+  would scope it to nothing and pass vacuously.
 - `4` — one or more error-severity findings (member rows, the adopter
   leg, or the discovery sweep), or one or more blind rows (an owned
   row that enforced nothing). Warning-severity findings (pin
@@ -88,6 +115,7 @@ from livespec_dev_tooling.fleet._context import (
     FleetContext,
     default_gh_runner,
     resolve_owner,
+    resolve_repo_name,
 )
 from livespec_dev_tooling.fleet._contract_rows import CENTRAL_APP_VANTAGE, CENTRAL_VANTAGE
 from livespec_dev_tooling.fleet._lanes import (
@@ -95,6 +123,7 @@ from livespec_dev_tooling.fleet._lanes import (
     configure_lane_logging,
     run_member_rows,
 )
+from livespec_dev_tooling.fleet._member_ci_exit import RunTallies, member_ci_exit_code
 from livespec_dev_tooling.fleet._rows_github import SIBLING_TOPIC
 from livespec_dev_tooling.fleet.contract import Manifest, parse_manifest
 
@@ -238,6 +267,18 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Write per-member conformance verdicts as JSON to this path.",
     )
+    _ = parser.add_argument(
+        "--member-ci",
+        action="store_true",
+        help=(
+            "Declare this run as a MEMBER's own CI leg: every member is still "
+            "evaluated and reported, but only the running member's violations "
+            "affect the exit status. Omit it for the fleet-level legs (the "
+            "scheduled sweep, the release fan-out preflight), which fail on ANY "
+            "member. Not a severity lever: no obligation is relaxed and no row "
+            "stops being evaluated."
+        ),
+    )
     return parser
 
 
@@ -294,6 +335,23 @@ def main() -> int:
     )
     blind_rows = result.blind_rows + adopters.blind_rows
     out_of_vantage_rows = result.out_of_vantage_rows + adopters.out_of_vantage_rows
+    if args.member_ci:
+        # Scope the EXIT ONLY. Every member's violation is already logged at error
+        # severity above and stays in the summary, so this run still reports fleet
+        # state; it simply no longer decides THIS repo's status. `resolve_repo_name`
+        # is called here rather than inside the helper so the resolution stays
+        # patchable at this module and the helper stays a pure decision over values.
+        return member_ci_exit_code(
+            manifest=manifest,
+            member_verdicts=result.member_verdicts,
+            running_as=resolve_repo_name(),
+            tallies=RunTallies(
+                errors=errors,
+                blind_rows=blind_rows,
+                out_of_vantage_rows=out_of_vantage_rows,
+            ),
+            log=log,
+        )
     if errors or blind_rows:
         log.error(
             "fleet conformance FAILED",

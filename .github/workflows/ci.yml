@@ -266,11 +266,21 @@ jobs:
       - name: Install Python dev deps via uv
         run: uv sync --all-groups
 
+      # `--member-ci` declares this as the MEMBER leg: every member is still
+      # evaluated and reported, but only THIS repo's violations affect the exit
+      # status, per the 2026-07-21 ruling that a non-conforming member must fail
+      # only its own CI. The fleet-level legs — the scheduled fleet-conformance.yml
+      # sweep and the release fan-out preflight — deliberately omit the flag and
+      # fail on ANY member, which is where a cross-member red belongs. Fleet view
+      # is the DEFAULT so a new fleet-level caller that forgets to declare its
+      # surface fails loudly rather than silently shrinking to a one-repo gate.
+      # Not a severity lever: no obligation is relaxed and no row stops being
+      # evaluated. `blind_rows` still fails here.
       - name: just check-fleet-conformance
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           LIVESPEC_RUN_FLEET_CONFORMANCE: "true"
-        run: just check-fleet-conformance
+        run: just check-fleet-conformance --member-ci
 
   # Metadata matrix runs unconditionally to preserve the repo-metadata
   # safety net. check-aggregate-completeness is the wiring-completeness
