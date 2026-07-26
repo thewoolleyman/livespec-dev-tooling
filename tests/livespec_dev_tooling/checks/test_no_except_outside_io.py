@@ -471,17 +471,28 @@ def test_no_except_outside_io_rejects_second_marked_boundary_in_one_artifact(
     )
 
 
-def test_no_except_outside_io_loop_iteration_marker_does_not_consume_boundary_slot(
-    *, tmp_path: Path
-) -> None:
-    """A boundary catch and a loop-iteration catch may coexist in one artifact.
+def test_no_except_outside_io_rejects_the_retired_loop_iteration_marker(*, tmp_path: Path) -> None:
+    """The loop-iteration marker is RETIRED and is no longer a sanctioned escape.
 
-    `sole` scopes per accounting unit, so the loop-iteration
-    marker is counted per supervision loop rather than against
-    the artifact's single boundary slot. An entry artifact
-    running such a loop may therefore carry BOTH. Flavor-to-
-    position pairing stays review-enforced, which is why the
-    loop-iteration catch is accepted here at a `main()` boundary.
+    This test is the INVERSION of an earlier one that asserted a boundary catch and
+    a loop-iteration catch may coexist in one artifact, on the reasoning that `sole`
+    scoped per accounting unit and the loop-iteration marker was counted per
+    supervision loop rather than against the artifact's single boundary slot.
+
+    That permission is GONE. Per the maintainer ruling of 2026-07-26, a daemon does
+    not get a per-iteration broad catch: "let it crash, systemd restarts", exactly
+    one broad catch per program, in `main()`. There is no longer a
+    per-supervision-loop accounting unit for `sole` to scope to.
+
+    It is inverted rather than DELETED deliberately. A deleted test silently stops
+    proving anything, so nothing would notice if the wording crept back into the
+    closed set; an inverted one proves the retired wording is actively REJECTED.
+    Same durable-guard shape as `test_red_conclusion_fails_regardless_of_lever_env`,
+    which pins a rejected escape mechanism to having no effect.
+
+    `_LOOP_ITERATION_MARKER` is kept as a module constant so the exact retired byte
+    string stays pinned here — the property under test is that THIS text no longer
+    conforms, which a paraphrase could not establish.
     """
     _write_module(
         tmp_path=tmp_path,
@@ -503,9 +514,10 @@ def test_no_except_outside_io_loop_iteration_marker_does_not_consume_boundary_sl
 
     result = _run(cwd=tmp_path)
 
-    assert result.returncode == 0, (
-        f"a loop-iteration marker must not consume the artifact's boundary slot; "
-        f"got returncode={result.returncode} "
+    assert result.returncode != 0, (
+        f"the retired loop-iteration marker must no longer conform: a broad catch "
+        f"carrying it at a main() boundary is an unmarked boundary catch and must be "
+        f"flagged; got returncode={result.returncode} "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
 

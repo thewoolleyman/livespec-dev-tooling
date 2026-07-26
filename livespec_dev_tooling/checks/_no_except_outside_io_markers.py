@@ -39,10 +39,17 @@ __all__: list[str] = [
 # The set is split by ACCOUNTING UNIT, not merely listed, because the word
 # `sole` scopes differently per flavor. The three BOUNDARY wordings are
 # "at most one per process entry artifact", so they share ONE slot and are
-# counted against it. The loop-iteration wording is "at most one per
-# supervision loop" and the foreign-code template is accounted per extension
-# invocation surface — neither consumes the artifact's boundary slot, so
-# neither may be tallied with them.
+# counted against it. The foreign-code template is accounted per extension
+# invocation surface, so it does not consume the artifact's boundary slot and
+# may not be tallied with them.
+#
+# A fourth wording — the loop-iteration bug-catcher, accounted per supervision
+# loop — was RETIRED by the maintainer ruling of 2026-07-26: a daemon does not
+# get a per-iteration broad catch ("let it crash, systemd restarts"; exactly one
+# broad catch per program, in `main()`). Two accounting units remain, not three;
+# there is no per-supervision-loop unit left for `sole` to scope to. Do NOT
+# reintroduce the wording — `test_no_except_outside_io_rejects_the_retired_loop_
+# iteration_marker` pins its rejection.
 _BOUNDARY_WORDINGS = frozenset(
     {
         "— sole supervisor bug-catcher: log traceback, exit 1",
@@ -50,7 +57,6 @@ _BOUNDARY_WORDINGS = frozenset(
         "— sole fail-closed guard boundary: deny per policy, exit 0",
     }
 )
-_LOOP_ITERATION_WORDING = "— sole loop-iteration bug-catcher: log traceback, continue"
 _FOREIGN_CODE_WORDING_SHAPE = re.compile(
     r"\A— foreign-code isolation: [^<>\s][^<>]* crash captured as "
     r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*, reported\Z"
@@ -60,16 +66,18 @@ _FOREIGN_CODE_WORDING_SHAPE = re.compile(
 _MARKER_COMMENT_PREFIX = "# " + "noqa: BLE001 "
 
 # Flavor labels, distinguished ONLY by accounting unit. `_SEPARATE_FLAVOR`
-# means sanctioned-but-not-against-the-artifact-slot; it deliberately does
-# not distinguish loop-iteration from foreign-code, because no caller needs
-# to tell them apart.
+# means sanctioned-but-not-against-the-artifact-slot. Since the retirement of
+# the loop-iteration wording it has exactly one member, foreign-code isolation;
+# the label is kept rather than collapsed into a foreign-code-specific name
+# because the distinction it draws is the ACCOUNTING UNIT, which is what every
+# caller cares about, and a future separately-accounted flavor would belong here.
 BOUNDARY_FLAVOR = "boundary"
 _SEPARATE_FLAVOR = "accounted-separately"
 
 CARDINALITY_REASON = (
     "second broad catch carrying a boundary marker in this process entry "
-    "artifact is banned; at most one is permitted (loop-iteration and "
-    "foreign-code catches are accounted separately)"
+    "artifact is banned; at most one is permitted (foreign-code catches are "
+    "accounted separately, per extension invocation surface)"
 )
 
 
@@ -141,8 +149,6 @@ def _marker_comment_flavor(*, text: str) -> str | None:
     wording = text[len(_MARKER_COMMENT_PREFIX) :]
     if wording in _BOUNDARY_WORDINGS:
         return BOUNDARY_FLAVOR
-    if wording == _LOOP_ITERATION_WORDING:
-        return _SEPARATE_FLAVOR
     if _FOREIGN_CODE_WORDING_SHAPE.fullmatch(wording) is not None:
         return _SEPARATE_FLAVOR
     return None
