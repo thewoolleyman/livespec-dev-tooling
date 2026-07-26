@@ -303,7 +303,7 @@ tracked follow-up; (4) file E-overseer now as blocked on the owning session.
 | 2 | **B** — positive-location hook + remedy | `livespec-dev-tooling-6fmfzk` | **CLOSED 2026-07-26 — merged as PR #685 / `7cf38db`** | — |
 | 3 | **A1** — obligation row + CI step + self-wiring | `livespec-dev-tooling-cmc3ah` | **CLOSED 2026-07-26 — merged as PR #693 / `414cc5e`** | 2 |
 | 4 | **D** — fleet wiring + hydration sweep | `livespec-dev-tooling-o5vltq` | **CLOSED 2026-07-26 — 5 PRs merged, fleet hydrated, 9/9 discoverable** | 3 |
-| 5 | **A2 + C** — flip + discoverability + docs | `livespec-dev-tooling-skl77m` | **ACTIVE 2026-07-26 — admitted via the guarded pair, then claimed ◀ current work** | 3 ✅, 4 ✅ |
+| 5 | **A2 + C** — flip + discoverability + docs | `livespec-dev-tooling-skl77m` | **CLOSED 2026-07-26 — merged as PR #698 / `313bdd71`** | 3 ✅, 4 ✅ |
 | 6 | **E-overseer** — relocate | `livespec-dev-tooling-3iizsd` | **blocked** | cause/owner action unestablished; reassessment blocked (prose) |
 | 7 | **G (DEFERRED)** — birth procedure | `livespec-dev-tooling-xxdxqv` | **backlog** | — |
 
@@ -313,9 +313,10 @@ expose the tenant/default owner `chad@thewoolleyman.com`). Dependency edges mate
 real `[blocks]` relations — `bd dep tree` shows `5 → {3, 4}` and `4 → 3 → 2`.
 
 **Lane evidence.** *(As filed 2026-07-26: `0eo.1` and `6fmfzk` were both ready.)* **CURRENT
-under this epic (verified 2026-07-26): `0eo.1`, `6fmfzk`, `cmc3ah` and `o5vltq` are all
-`done`; `skl77m` (A2+C) is `active`; `3iizsd` blocked; `xxdxqv` backlog.** *(This paragraph
-previously ended at "`cmc3ah` (A1) is `active`" — superseded twice over since.)* `A1` was
+under this epic (verified 2026-07-26): `0eo.1`, `6fmfzk`, `cmc3ah`, `o5vltq` AND `skl77m`
+are all `done` — every implementation slice is closed; `3iizsd` blocked; `xxdxqv` backlog.**
+*(This paragraph previously ended at "`cmc3ah` (A1) is `active`", then at "`skl77m` is
+`active`" — superseded three times over as each slice landed.)* `A1` was
 admitted 2026-07-26 via the guarded `set-admission:...:manual` + `approve` pair, which moved
 it to `ready`; it was then claimed, implemented, and closed.
 **CORRECTED 2026-07-26 — the earlier "manual admission by design" explanation was WRONG.**
@@ -338,9 +339,10 @@ drive --action approve:livespec-dev-tooling-cmc3ah
 
 Step one works because item-level policy takes precedence (line 126 precedes line 128),
 making the item effective-manual and therefore eligible for the `approve` guard.
-**CURRENT:** `o5vltq` (D) was admitted, implemented and is now **`done`**; `skl77m` (A2+C)
-was admitted the same way and is **`active`**. `3iizsd` and `xxdxqv` remain absent from the
-ready lane by construction. Note `bd ready`
+**CURRENT:** `o5vltq` (D) and `skl77m` (A2+C) were each admitted this same way, implemented,
+and are now both **`done`** — the guarded pair was used three times in this epic (`cmc3ah`,
+`o5vltq`, `skl77m`) and is the only supported admission route. `3iizsd` and `xxdxqv` remain
+absent from the ready lane by construction. Note `bd ready`
 reports "No open issues" because it selects `status=open`; the orchestrator ready lane is
 `status=ready`, so `bd list --status ready` is the correct check.
 
@@ -700,21 +702,106 @@ Worth filing as a capability gap alongside the already-recorded "`WorkItem` has 
 field" one: **an epic whose slices are all hand-implemented has no journaled close path.**
 Not filed by this thread.
 
+### A2 + C — MERGED AND CLOSED (2026-07-26)
+
+**`livespec-dev-tooling-skl77m` is CLOSED.** PR **#698** merged as **`313bdd71`**. **The
+third and last fail-open layer is closed, and this cut's product work is COMPLETE.**
+
+**One RGR commit**, `5 TDD-Red-* + 2 TDD-Green-*`, test bytes frozen at
+`75be4a1bf1a216411e89dd105054ffb61a630354c3a342d14b71c067d442c250`. Red failed on **four
+genuine assertions**, not a collection error, with the impl unmodified on disk.
+
+**Acceptance evidence, each item verified rather than asserted:**
+
+| evidence | result |
+|---|---|
+| exact-head CI (`1168d5b`) | **62 SUCCESS, 1 SKIPPED, zero failures** |
+| local aggregate | **100% coverage, 1929 tests** |
+| auto-merge | held **off** at creation; the bot re-enabled it twice and was disabled each time |
+| exact-head review | file scope exact, `git diff --check` clean, frozen bytes == recorded Red checksum |
+| merge | rebase-merged as **`313bdd71`**; primary fast-forwarded, never reset |
+| merged-master acceptance | the verifier runs **exit 0** in this repo's primary on master |
+| fleet simulation | the new verifier run against all **9 fleet primaries → 9/9 PASS** |
+| injected defects | **6/6** behaved as specified (table below) |
+| cleanup | worktree removed, branch deleted, primary clean on `master` (the untracked PNG preserved) |
+| ledger | `skl77m` closed **after** that evidence, not before |
+
+**What it does.** An absent `worktree_discipline` key now MEANS `required`. Opting out
+requires DECLARING `"pack": "optional"` in tracked config. Beyond byte-identity the arm
+asserts **discoverability**: a byte-perfect pack whose fragments the root justfile never
+`import?`s is invisible to `just --list` — steps 1-2 of the incident's causal chain — and is
+now `worktree_pack_not_imported`.
+
+**The `harnesses` divergence is pinned by its own test.** `load_harnesses` treats a missing
+key as fail-closed; here the default is a POLICY, so `key absent + pack present` must PASS.
+Copying the precedent would have redded every conformant fleet repo.
+
+**The `.livespec.jsonc`-absent verdict is SKIP, as a stated choice** with its rationale in
+the docstring: that file is what makes a directory governed, so the arm cannot be more
+governed-aware than the file defining governance. Not a usable opt-out — deleting it strips
+`template` / `spec_root` / `harnesses` / `compat` and reds fleet conformance loudly.
+
+**C shipped in the same commit.** The installer writes the key **with its comment** into any
+repo that has a `.livespec.jsonc` and no declaration; **this repo's own config now carries
+it**. An existing declaration is never rewritten, so a deliberate `"optional"` survives. The
+write is a **text splice, not a re-serialization**, so consumers' JSONC comments are not
+silently deleted. README documents the key and all four failure modes.
+
+**The remedy was fixed.** `_WORKTREE_PACK_REMEDY` named `just install-worktree-pack`, absent
+in an unwired repo — a remedy that fails exactly where the failure fires. It now names
+**`just bootstrap`** first and explains the wiring fallback; the three new modes route to
+three different remedies.
+
+**Six injected-defect proofs, run against real throwaway trees:** required+no pack → RED
+`worktree_pack_absent`; same repo `"optional"` → GREEN (gate real in both directions);
+byte-perfect pack minus one `import?` → RED `worktree_pack_not_imported` **with pack bytes
+verified still canonical**; malformed block → RED; key absent + pack present → GREEN;
+remedy names `just bootstrap`.
+
+**THE LARGEST RISK WAS VERIFIED, NOT TRUSTED.** This file warned that A2's flip must not red
+any fleet repo and said to check per repo. It was checked: the new verifier was run against
+all nine fleet primaries and **9 of 9 PASS**. That is D's payoff — before D the same
+simulation would have failed in the six unwired repos.
+
+**Structural note.** The check module crossed its 250-LLOC hard ceiling, so the pack arm
+moved to a private sibling `checks/_primary_checkout_worktree_pack.py`, exactly as
+`_primary_checkout_git_probes` was split before it. It ships no `main` and is not a check
+slug, so fleet-wide `check-aggregate-completeness` is untouched.
+
+### A flaky gate this slice surfaced — diagnosed, fixed, NOT weakened
+
+`check-per-file-coverage` failed three times on #698 while master was green. **The coverage
+shortfall was a symptom.** The real failure was
+`test_no_shadow_ledger_body_typechecks.py::test_passes_on_clean_canonical_body` asserting
+`4 == 0`, which left `no_shadow_ledger_body_typechecks.py:233` (the success-path `return 0`)
+unreached.
+
+**Observed:** the SAME commit produced different verdicts across consecutive runs, and
+pyright's own output carried `Stub file not found for "typing"` — it ran but could not
+resolve its bundled typeshed. The PR touched no pyright, dependency, workflow, or
+`no_shadow_ledger` file.
+
+**Inferred, and labelled as inference:** `python -m pyright` is the pyright-python wrapper,
+which lazily builds a shared nodeenv on first use; the two real-pyright arms land in
+different xdist workers, so on a cold container both race to populate one cache and the
+loser reads a half-extracted typeshed. **NOT locally reproduced** — a cold
+`PYRIGHT_PYTHON_CACHE_DIR` under `-n 2` passed repeatedly on this host. The code comment says
+so rather than presenting the mechanism as confirmed.
+
+**Fix:** a stdlib `fcntl.flock` cross-process lock around the two real-pyright arms only
+(xdist workers are separate processes, so a threading lock would not help). **No diagnostics
+weakened, no threshold relaxed, no gate exempted.**
+
+**Protocol note worth carrying.** The Green amend was initially REFUSED because
+`check-pre-commit` classifies by the STAGED diff: amending with only a test file staged reads
+as a fresh Red. The fix was not `--no-verify` but redoing both legs — mixed-reset, revert the
+Green files on disk, re-commit Red with the frozen bytes, restore, amend. **Red-mode is also
+detected only when exactly ONE test file is staged**, which is why every A2+C assertion lives
+in one test file.
+
 ### Exact next action
 
-**Work A2 + C — `livespec-dev-tooling-skl77m`** (config-gated flip + `import?` assertion +
-installer/docs). Sequence: `E ✅ → B ✅ → A1 ✅ → D ✅ → A2+C ◀ current`, G deferred
-(`xxdxqv`, backlog), `3iizsd` blocked.
-
-**It is already ADMITTED and `active` — verified, not assumed.** Its dependencies cleared
-(3 = A1 ✅, 4 = D ✅), and it was moved with the guarded pair, both journaled green:
-
-```
-drive --action set-admission:livespec-dev-tooling-skl77m:manual   # -> "admission policy -> manual"
-drive --action approve:livespec-dev-tooling-skl77m                # -> "pending-approval -> ready"
-```
-
-then claimed to `active`. **Do NOT re-run those valves.** Verified epic state:
+**No product work remains in this cut.** All five implementation slices are `done`:
 
 | # | slice | id | status |
 |---|---|---|---|
@@ -722,23 +809,34 @@ then claimed to `active`. **Do NOT re-run those valves.** Verified epic state:
 | 2 | B | `livespec-dev-tooling-6fmfzk` | **done** |
 | 3 | A1 | `livespec-dev-tooling-cmc3ah` | **done** |
 | 4 | D | `livespec-dev-tooling-o5vltq` | **done** |
-| 5 | **A2 + C** | `livespec-dev-tooling-skl77m` | **active ◀ current** |
-| 6 | E-overseer | `livespec-dev-tooling-3iizsd` | blocked |
-| 7 | G (deferred) | `livespec-dev-tooling-xxdxqv` | backlog |
+| 5 | A2 + C | `livespec-dev-tooling-skl77m` | **done** |
+| 6 | E-overseer | `livespec-dev-tooling-3iizsd` | **blocked** — cause/owner never established |
+| 7 | G (deferred) | `livespec-dev-tooling-xxdxqv` | **backlog** — scoping decision first |
 
-**The guarded pair was needed because of a routing gap that will NOT recur here.**
-`apply_intake_dor` routes to `ready` only when the verdict is `pending-approval` AND
-`not item.depends_on`, and **nothing re-runs that routing when a dependency later clears** —
-the same gap that stranded `cmc3ah`. `skl77m` was the last item with dependency edges, so
-the gap has no further victims in this epic. Check lanes with `bd list --status ready`,
-**not** `bd ready` (which selects `status=open`).
+**What remains are the two records this thread deliberately did NOT close**, plus follow-ups
+filed elsewhere:
 
-**Two preconditions A2 no longer has to carry, because D delivered them:** every fleet repo
-can now materialize the pack locally (`just bootstrap` via the obligation row) **and** in CI
-(the new pack-install step, now present in **9 of 9**, previously 4 of 9). A2's `required`
-flip should therefore not red any fleet repo's CI. **Verify that per repo rather than
-trusting it** — it is the single largest risk in A2, and this thread has now twice found a
-premise that was true only of a stale local checkout.
+- **`3iizsd` (E-overseer)** — the path is absent and registers no worktree, but **cause and
+  owner action were never established**, so absence alone does not close it. It carries
+  `blocked-reason:needs-human` and has no encodable blocking edge by construction. **This
+  thread must not close it on absence evidence.**
+- **`xxdxqv` (G, birth procedure)** — routed `backlog`; its own scoping decision (this thread
+  vs. the fleet birth-procedure lane) comes first. Without it the generator keeps minting
+  unwired repos — but after A2 a born-unwired member now **reds its own verifier**, so the
+  gap is loud rather than silent.
+- **Adopter backfill** — `li-l53` (resume) and `hl-nhw` (homelab), outside the NARROW
+  boundary, blocked in prose because beads `depends_on` is same-tenant only.
+- **`s22c5z`** — the `FleetContext` diagnostic-loss bug, `ready`, unrelated to this cut.
+
+**Two unfiled observations, recorded so they are not lost:** `livespec-overseer` has a stale
+`uv.lock` (`pyproject.toml` `0.12.4` vs lock `0.12.3`) so any `uv run` there dirties the tree;
+and the three pre-A1 wired repos still carry a now-redundant `just install-worktree-pack`
+tail in `bootstrap`.
+
+**A ledger gap that will bite the next thread:** there is **no journaled close path for a
+hand-implemented slice** — `drive --action accept:` requires `acceptance`, which only
+`dispatcher._complete_and_accept` writes after a Fabro dispatch. All five slices here were
+closed with `bd close`. See §"A ledger gap worth recording".
 
 ### Superseded — the pre-implementation pointer to B
 
@@ -803,11 +901,11 @@ fleet-membership / birth-procedure lane, like the adopter backfill.
 ### Work-item split and dependency edges
 
 **This is the FILING PLAN as approved, not live state.** Current completion as of
-2026-07-26: **1 (E-openbrain), 2 (B), 3 (A1) and 4 (D) are all CLOSED**; **5 (A2+C) is
-`active`** and is the only remaining product work; **6 (E-overseer) blocked**; **7 (G)
-deferred/backlog**. *(This paragraph previously said A1 was next at `pending-approval` with
-D and A2+C pending behind it — superseded as each landed.)* The `RGR` column
-records whether a slice is product `.py`; B's and A1's are complete, D carried none.
+2026-07-26: **1 (E-openbrain), 2 (B), 3 (A1), 4 (D) and 5 (A2+C) are ALL CLOSED — no product
+work remains**; **6 (E-overseer) blocked**; **7 (G) deferred/backlog**. *(This paragraph
+previously said A1 was next at `pending-approval`, then that A2+C was the only remaining
+product work — superseded as each landed.)* The `RGR` column
+records whether a slice is product `.py`; B's, A1's and A2+C's are complete, D carried none.
 
 Six filable items:
 
@@ -1144,11 +1242,11 @@ hook-first (§"MAINTAINER RULING — rollout order"). **Boundary approved** — 
 filed as `li-l53` / `hl-nhw`. **The final cut is APPROVED and FILED (2026-07-26): seven
 children exist under the epic and are intake-routed** — ids, states, dependency edges and
 lane evidence in §"MAINTAINER RULING — FINAL CUT APPROVED AND FILED". **CURRENT (verified
-2026-07-26): FOUR of the seven children are `done` — `0eo.1` (openbrain relocated),
-`6fmfzk` (B, merged `7cf38db`), `cmc3ah` (A1, merged `414cc5e`), and `o5vltq` (D, five
-wiring PRs merged; fleet at 9/9 discoverability). The ONLY remaining product work is
-A2+C (`skl77m`), which is admitted and `active`. `3iizsd` stays blocked, `xxdxqv` backlog.
-No foreign worktree has been touched.** A
+2026-07-26): FIVE of the seven children are `done` — `0eo.1` (openbrain relocated),
+`6fmfzk` (B, `7cf38db`), `cmc3ah` (A1, `414cc5e`), `o5vltq` (D, five wiring PRs; fleet at
+9/9 discoverability), and `skl77m` (A2+C, `313bdd71`). **ALL PRODUCT WORK IN THIS CUT IS
+COMPLETE**; all three fail-open layers are closed. `3iizsd` stays blocked (cause never
+established), `xxdxqv` backlog. No foreign worktree has been touched.** A
 "wire-then-enforce" answer displayed on 2026-07-25 was a supervisor UI-race artifact and is
 void.
 
@@ -2461,10 +2559,11 @@ name the boundary so the adopter gap is visible rather than implied.
 > statements are false as of 2026-07-26.**
 >
 > **Current:** all four questions are **answered**; the final cut is **approved**; **seven
-> slices exist** under `livespec-dev-tooling-0eo` and are intake-routed. **Four are now
-> closed** — `0eo.1`, `6fmfzk` (B, `7cf38db`), `cmc3ah` (A1, `414cc5e`) and `o5vltq` (D) —
-> and **`skl77m` (A2+C) is `active`**, the only remaining product work. *(This note
-> previously said A1 was next at `pending-approval`; superseded.)* See §"MAINTAINER RULING —
+> slices exist** under `livespec-dev-tooling-0eo` and are intake-routed. **FIVE are now
+> closed** — `0eo.1`, `6fmfzk` (B, `7cf38db`), `cmc3ah` (A1, `414cc5e`), `o5vltq` (D) and
+> `skl77m` (A2+C, `313bdd71`) — so **no product work remains in this cut**. *(This note
+> previously said A1 was next at `pending-approval`, then that A2+C was active; both
+> superseded.)* See §"MAINTAINER RULING —
 > FINAL CUT APPROVED AND FILED" for ids, states, edges and lane evidence, and §"Exact next
 > action".
 
@@ -2567,9 +2666,10 @@ approved · ~~fleet boundary~~ NARROW approved · ~~final cut~~ approved ·
   worktree of that name is registered, and branch `docs/dod-corrections-pr78` is at
   `7efb87d`. **Cause and owner action were NOT established**, so absence alone does not
   close it. This thread must not touch foreign state.
-- **Red-Green-Replay** on the REMAINING product-`.py` slices: A1 (`cmc3ah`) and A2+C
-  (`skl77m`). Docs-only changes like this file are exempt. *(B's RGR is **complete**: single
-  commit `45636e8` with 5 `TDD-Red-*` + 2 `TDD-Green-*` trailers, test bytes frozen.)*
+- **Red-Green-Replay** on every product-`.py` slice. Docs-only changes like this file are
+  exempt. **All three are COMPLETE**, each a single commit with 5 `TDD-Red-*` + 2
+  `TDD-Green-*` trailers and frozen test bytes: B `45636e8`, A1 `2f7ebad`, A2+C `1168d5b`
+  (merged `313bdd71`).
 - **PR checks + rebase-merge** on every tracked change.
 - **Dependency state — resolved 2026-07-26.** `cmc3ah` (A1) **had remained
   `pending-approval` after `6fmfzk` closed**, because it was effective-AUTO with a stale
