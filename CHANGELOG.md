@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.54.25](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.54.24...v0.54.25) (2026-07-26)
+
+
+### Bug Fixes
+
+* honour the declared sandbox exemption in the worktree-pack presence arm ([5550a93](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5550a93e579c26651ec2576dd4e9ca1cb81fb2ef))
+
 ## [0.54.24](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.54.23...v0.54.24) (2026-07-26)
 
 
