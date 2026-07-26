@@ -111,9 +111,10 @@ def _resolve_mirror_test_path(
 ) -> Path:
     """Map an impl path to its v033 D1 mirror-paired test path.
 
-    Walks the consumer's `mirror_pairings` (from the
-    `[tool.livespec_dev_tooling]` config, defaulting to the livespec-core
-    historical mirrors); on the first match, transforms
+    Walks the consumer's declared `mirror_pairings` (from the
+    `[tool.livespec_dev_tooling]` config) and nothing else — there is no
+    fallback derivation, the livespec-core historical mirrors having died
+    with the block-absent fallback in v0.54.12; on the first match, transforms
     `<rel_parent>/<name>.py` to `<tests_tree>/<rel_parent>/test_<name>.py`.
     Leading underscores in `<name>.py` are stripped before the `test_`
     prefix is added (matches `tests_mirror_pairing.py`'s
