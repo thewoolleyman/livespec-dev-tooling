@@ -313,12 +313,29 @@ expose the tenant/default owner `chad@thewoolleyman.com`). Dependency edges mate
 real `[blocks]` relations — `bd dep tree` shows `5 → {3, 4}` and `4 → 3 → 2`.
 
 **Lane evidence.** *(As filed 2026-07-26: `0eo.1` and `6fmfzk` were both ready.)* **CURRENT
-under this epic: `0eo.1` and `6fmfzk` are BOTH CLOSED, so the ready lane is EMPTY.** `A1`
-(`cmc3ah`) is the next sequence item but its ledger lane is still **`pending-approval`**
-until deliberately admitted — **manual admission by design**, not a failed auto-advance:
-items filed with `admission_policy=None` inherit the manual default, so closing B cleared
-A1's dependency but never its admission gate. `o5vltq`,
-`skl77m`, `3iizsd`, and `xxdxqv` remain absent from the ready lane. Note `bd ready`
+under this epic: `0eo.1` and `6fmfzk` are CLOSED and `cmc3ah` (A1) is `active`.** `A1` was admitted
+2026-07-26 via the guarded `set-admission:...:manual` + `approve` pair, which moved it to
+`ready`; it was then claimed and is now `active`.
+**CORRECTED 2026-07-26 — the earlier "manual admission by design" explanation was WRONG.**
+`_dispatcher_policy_settings.py:122-130` resolves admission as: item-level policy wins; else
+if the repo-global `auto_approve_ready` is set, **`auto`**; else the manual default. `cmc3ah`
+had `admission_policy=None` and this repo sets that global, so it was **effective-AUTO**, not
+manual. It was stranded because `apply_intake_dor` routes to `ready` only when the verdict is
+`pending-approval` AND `not item.depends_on` — at filing it *had* a `depends_on` edge to
+`6fmfzk`, and **nothing re-runs that routing when the dependency later clears**. That gap will
+recur for `o5vltq` and `skl77m`.
+
+**The supported guarded transition** (both journaled `drive` actions, no raw `bd` mutation) —
+executed 2026-07-26, the pair moved `cmc3ah` to `ready`; it was then claimed `active`:
+
+```
+drive --action set-admission:livespec-dev-tooling-cmc3ah:manual
+drive --action approve:livespec-dev-tooling-cmc3ah
+```
+
+Step one works because item-level policy takes precedence (line 126 precedes line 128),
+making the item effective-manual and therefore eligible for the `approve` guard.
+`o5vltq` (D), `skl77m` (A2+C), `3iizsd`, and `xxdxqv` remain absent from the ready lane. Note `bd ready`
 reports "No open issues" because it selects `status=open`; the orchestrator ready lane is
 `status=ready`, so `bd list --status ready` is the correct check.
 
@@ -2305,8 +2322,8 @@ So the honest first act is a maintainer act:
 Nothing here is agent-dispatchable until slices exist: `next` ranks work-items, and this
 thread has none. **[SUPERSEDED 2026-07-26 — seven slices exist and this thread IS
 dispatchable. (At filing time `0eo.1` and `6fmfzk` were both ready; BOTH have since closed,
-so the ready lane is empty and A1 (`cmc3ah`) awaits its deliberate manual admission —
-by design, per `admission_policy=None` inheriting the manual default.)]**
+A1 (`cmc3ah`) was then admitted via the guarded set-admission+approve pair, which moved it
+to `ready`; it was subsequently claimed and is now `active`.)]**
 
 **Re-verified 2026-07-25 — snapshot, since superseded by the 2026-07-26 filing:**
 `bd show livespec-dev-tooling-0eo` reported the epic
@@ -2363,13 +2380,12 @@ approved · ~~fleet boundary~~ NARROW approved · ~~final cut~~ approved ·
   (`skl77m`). Docs-only changes like this file are exempt. *(B's RGR is **complete**: single
   commit `45636e8` with 5 `TDD-Red-*` + 2 `TDD-Green-*` trailers, test bytes frozen.)*
 - **PR checks + rebase-merge** on every tracked change.
-- **Dependency state — observed 2026-07-26.** `cmc3ah` (A1) is **still `pending-approval`
-  even though its predecessor `6fmfzk` is CLOSED** — and that is **correct, not stuck**:
-  admission is MANUAL by design (`admission_policy=None` inherits the manual default; only
-  an `auto` policy routes to `ready` at intake). Closing B cleared the dependency, never the
-  admission gate. Advance it with
-  `drive --action approve:livespec-dev-tooling-cmc3ah`.
-  `o5vltq` (D) and `skl77m` (A2+C) remain genuinely dependency-gated behind A1.
+- **Dependency state — resolved 2026-07-26.** `cmc3ah` (A1) **had remained
+  `pending-approval` after `6fmfzk` closed**, because it was effective-AUTO with a stale
+  `depends_on` and dependency clearance does not re-trigger intake routing. It was
+  guarded-transitioned to `ready` via `set-admission:...:manual` + `approve`, then claimed,
+  and is now **`active`**. `o5vltq` (D) and `skl77m` (A2+C) remain dependency-gated behind
+  it.
 
 ## Reactivation audit — 2026-07-25
 

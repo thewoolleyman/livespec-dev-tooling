@@ -33,6 +33,7 @@ __all__: list[str] = [
     "NOTES_REFSPEC",
     "assert_commit_refuse_hooks",
     "assert_git_notes_refspec",
+    "assert_worktree_pack",
     "assert_worktree_root_trust",
     "reconcile_beads_dir_perms",
     "reconcile_claude_plugins",
@@ -41,6 +42,7 @@ __all__: list[str] = [
     "reconcile_git_notes_refspec",
     "reconcile_mise_trust_install",
     "reconcile_uv_sync",
+    "reconcile_worktree_pack",
     "reconcile_worktree_root_trust",
 ]
 
@@ -65,6 +67,52 @@ def reconcile_uv_sync(*, ctx: LocalContext) -> RowOutcome:
     if result.returncode != 0:
         return RowFinding(message="uv sync failed")
     return RowPass(note="uv dependencies synced")
+
+
+_WORKTREE_PACK_DIR_NAME = "dev-tooling"
+
+
+def _worktree_pack_files() -> tuple[tuple[str, str], ...]:
+    """The four canonical pack files, from the single installer source."""
+    from livespec_dev_tooling.install_worktree_pack import (
+        CANONICAL_BRANCH_PROTECTION_BODY,
+        CANONICAL_BRANCH_PROTECTION_JUST_BODY,
+        CANONICAL_WORKTREE_JUST_BODY,
+        CANONICAL_WORKTREE_LIB_BODY,
+    )
+
+    return (
+        ("branch-protection.just", CANONICAL_BRANCH_PROTECTION_JUST_BODY),
+        ("branch-protection.sh", CANONICAL_BRANCH_PROTECTION_BODY),
+        ("worktree-lib.sh", CANONICAL_WORKTREE_LIB_BODY),
+        ("worktree.just", CANONICAL_WORKTREE_JUST_BODY),
+    )
+
+
+def assert_worktree_pack(*, ctx: LocalContext) -> RowOutcome:
+    """The four canonical pack files exist, byte-identical, in THIS worktree.
+
+    Uses `ctx.invoked_worktree`, not `ctx.checkout`: the pack is per-worktree
+    (the root justfile `import?`s it relative to the checkout you stand in),
+    unlike the shared hooks/refspec/mise-trust rows.
+    """
+    pack_dir = ctx.invoked_worktree / _WORKTREE_PACK_DIR_NAME
+    for name, body in _worktree_pack_files():
+        path = pack_dir / name
+        installed = path.read_text(encoding="utf-8") if path.is_file() else None
+        if installed != body:
+            return RowFinding(message=f"worktree pack file absent or drifted: {name}")
+    return RowPass(note="worktree pack installed")
+
+
+def reconcile_worktree_pack(*, ctx: LocalContext) -> RowOutcome:
+    """Materialize the pack via the shared installer, in the INVOKED worktree."""
+    result = ctx.exec_in_worktree(
+        args=["uv", "run", "python", "-m", "livespec_dev_tooling.install_worktree_pack"]
+    )
+    if result.returncode != 0:
+        return RowFinding(message="installing the worktree pack failed")
+    return RowPass(note="worktree pack installed")
 
 
 def assert_commit_refuse_hooks(*, ctx: LocalContext) -> RowOutcome:

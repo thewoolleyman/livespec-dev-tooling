@@ -48,3 +48,11 @@ Icon
 Network Trash Folder
 Temporary Items
 .apdisk
+
+# Worktree-discipline pack — installed from the livespec-dev-tooling package
+# into dev-tooling/ at bootstrap (never tracked), mirroring how the
+# commit-refuse hooks are installed into the untracked shared .git/hooks/.
+/dev-tooling/worktree-lib.sh
+/dev-tooling/branch-protection.sh
+/dev-tooling/worktree.just
+/dev-tooling/branch-protection.just

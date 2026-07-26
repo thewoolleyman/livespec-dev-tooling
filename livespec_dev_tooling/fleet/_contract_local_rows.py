@@ -19,6 +19,7 @@ from livespec_dev_tooling.fleet._local_context import LocalContext
 from livespec_dev_tooling.fleet._rows_local import (
     assert_commit_refuse_hooks,
     assert_git_notes_refspec,
+    assert_worktree_pack,
     assert_worktree_root_trust,
     reconcile_beads_dir_perms,
     reconcile_claude_plugins,
@@ -27,6 +28,7 @@ from livespec_dev_tooling.fleet._rows_local import (
     reconcile_git_notes_refspec,
     reconcile_mise_trust_install,
     reconcile_uv_sync,
+    reconcile_worktree_pack,
     reconcile_worktree_root_trust,
 )
 from livespec_dev_tooling.fleet._rows_local_beads import (
@@ -84,6 +86,11 @@ LOCAL_OBLIGATION_ROWS: tuple[LocalObligationRow, ...] = (
         row_id="uv-sync",
         assert_local=None,
         reconcile_local=reconcile_uv_sync,
+    ),
+    LocalObligationRow(
+        row_id="worktree-pack",
+        assert_local=assert_worktree_pack,
+        reconcile_local=reconcile_worktree_pack,
     ),
     LocalObligationRow(
         row_id="commit-refuse-hooks",
