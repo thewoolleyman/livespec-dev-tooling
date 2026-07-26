@@ -300,7 +300,7 @@ tracked follow-up; (4) file E-overseer now as blocked on the owning session.
 | # | slice | id | state | depends on |
 |---|---|---|---|---|
 | 1 | **E-openbrain** — relocate | `livespec-dev-tooling-0eo.1` | **CLOSED 2026-07-26 — relocated** | — |
-| 2 | **B** — positive-location hook + remedy | `livespec-dev-tooling-6fmfzk` | **ready** | — |
+| 2 | **B** — positive-location hook + remedy | `livespec-dev-tooling-6fmfzk` | **CLOSED 2026-07-26 — merged as PR #685 / `7cf38db`** | — |
 | 3 | **A1** — obligation row + CI step + self-wiring | `livespec-dev-tooling-cmc3ah` | pending-approval | 2 |
 | 4 | **D** — fleet wiring + hydration sweep | `livespec-dev-tooling-o5vltq` | pending-approval | 3 |
 | 5 | **A2 + C** — flip + discoverability + docs | `livespec-dev-tooling-skl77m` | pending-approval | 3, 4 |
@@ -313,8 +313,12 @@ expose the tenant/default owner `chad@thewoolleyman.com`). Dependency edges mate
 real `[blocks]` relations — `bd dep tree` shows `5 → {3, 4}` and `4 → 3 → 2`.
 
 **Lane evidence.** *(As filed 2026-07-26: `0eo.1` and `6fmfzk` were both ready.)* **CURRENT
-under this epic: `0eo.1` is CLOSED, so `6fmfzk` is the only ready item.** `cmc3ah`,
-`o5vltq`, `skl77m`, `3iizsd`, and `xxdxqv` are each verified **absent** from the ready lane. Note `bd ready`
+under this epic: `0eo.1` and `6fmfzk` are BOTH CLOSED, so the ready lane is EMPTY.** `A1`
+(`cmc3ah`) is the next sequence item but its ledger lane is still **`pending-approval`**
+until deliberately admitted — **manual admission by design**, not a failed auto-advance:
+items filed with `admission_policy=None` inherit the manual default, so closing B cleared
+A1's dependency but never its admission gate. `o5vltq`,
+`skl77m`, `3iizsd`, and `xxdxqv` remain absent from the ready lane. Note `bd ready`
 reports "No open issues" because it selects `status=open`; the orchestrator ready lane is
 `status=ready`, so `bd list --status ready` is the correct check.
 
@@ -365,7 +369,8 @@ was re-disabled each time).
 
 **Validated state of the reviewed head before this note** — head `2cb5928`; worktree clean;
 `git diff --check` clean; full-document content review complete across all correction
-clusters; **no worktree move and no product implementation performed**; the untracked
+clusters; **no worktree move and no product implementation performed AT THAT TIME** *(both
+have since happened: `0eo.1` relocated, and B's product change merged as `7cf38db`)*; the untracked
 `install-livespec-pr-bot.png` and every foreign-session worktree untouched.
 
 **External blocker — not a content failure.** CI run `30179721817`, **attempts 1–3**, each
@@ -421,7 +426,8 @@ the already-recovered #667.
 
 **After recovery, the exact next action below stands unchanged.** *(Snapshot note: at the
 time of writing that was `0eo.1` (E-openbrain). `0eo.1` has since been **relocated and
-CLOSED**; the current next action is **B, `6fmfzk`** — see §"Exact next action".)*
+CLOSED**; B (`6fmfzk`) has since closed too, and the current next action is **A1,
+`cmc3ah`** — see §"Exact next action".)*
 
 ### E-openbrain — COMPLETE (2026-07-26)
 
@@ -463,10 +469,12 @@ or how, was NOT determined** — do not infer an actor. This thread never touche
 `livespec-dev-tooling-3iizsd` (E-overseer) **remains blocked**, pending reassessment against
 owner evidence — **it was not closed here.**
 
-### B — IMPLEMENTED, PR #685 OPEN, AWAITING SUPERVISOR REVIEW (2026-07-26)
+### B — MERGED AND CLOSED (2026-07-26)
 
-**`livespec-dev-tooling-6fmfzk` is `active`, not closed.** The work is done and pushed; it
-is parked at the review gate, deliberately unmerged.
+**`livespec-dev-tooling-6fmfzk` is CLOSED.** PR **#685** merged as **`7cf38db`**; the
+verifier **passes on master**; the branch and worktree are removed. *(This section briefly
+read "PR #685 OPEN, AWAITING SUPERVISOR REVIEW" — it was accepted and merged during
+wind-down.)*
 
 - **PR #685**, branch `fix/positive-location-hook`, worktree
   `/home/ubuntu/.worktrees/livespec-dev-tooling/fix-positive-location-hook`.
@@ -508,20 +516,42 @@ reach them; they belong to `hl-nhw`. **Not touched.**
 
 ### Exact next action
 
-**Await supervisor acceptance of PR #685.** On acceptance: rebase-merge it, `fetch` +
-`merge --ff-only` the primary, remove the `fix-positive-location-hook` worktree, delete the
-local branch, verify the primary clean on `master` preserving
-`install-livespec-pr-bot.png`, then **close `6fmfzk`** with the verified outcome and record
-it here. After that the sequence advances to **A1 (`livespec-dev-tooling-cmc3ah`)**, which
-becomes ready once `6fmfzk` closes.
+**Work A1 — `livespec-dev-tooling-cmc3ah`.** B is merged and closed, so the sequence
+`E ✅ → B ✅ → A1 ◀ current → D → A2+C` stands at A1.
 
-*(Superseded pointer: this section previously read "work `6fmfzk`". That is now in review,
-not pending.)*
+**`cmc3ah` rests at `pending-approval` BY DESIGN — manual admission, not a stuck
+transition.** `intake_dor.py:158` routes a filed item to `ready` only when
+`effective_admission_policy(...) == "auto"`; otherwise it stops at `pending-approval`. All
+seven items were filed with `admission_policy=None`, which inherits the **manual** default.
+Closing B **cleared A1's dependency but was never sufficient for admission** — a deliberate
+approval is required, and that is the gate working as intended.
+
+**The exact approved transition command:**
+
+```
+/livespec-orchestrator-beads-fabro:drive --action approve:livespec-dev-tooling-cmc3ah --repo /data/projects/livespec-dev-tooling
+```
+
+`drive`'s action surface defines `approve:<work-item-id>` as "moves an effective-manual
+`pending-approval` item to `ready`". Do NOT use `set-admission:<id>:auto` — it changes
+policy without changing status, which is not what is wanted here.
+
+A1's design is settled in §"A-PREREQ — IMPLEMENTATION-READY PREP": the `worktree-pack`
+obligation row must sit at **position 3, before `commit-refuse-hooks` and after `uv-sync`**
+(otherwise that row fails for another row's obligation with a reconcile that cannot clear
+it); the CI step mirrors `ci.yml`'s hook install verbatim; and this repo's own
+`.gitignore` / `import?` / `bootstrap` tail ride along. Product `.py` → Red-Green-Replay.
+
+*(Superseded pointer: this section previously read "work `6fmfzk`". B is now **merged and
+closed** — see §"B — MERGED AND CLOSED".)*
 
 ### Superseded — the pre-implementation pointer to B
 
-*(Historical pointer, superseded 2026-07-26 — B is implemented and in review; see
-§"B — IMPLEMENTED, PR #685 OPEN".)* **Work `livespec-dev-tooling-6fmfzk` (B — positive-location hook + actionable remedy).**
+*(Historical pointer, superseded 2026-07-26 — B is merged and closed; see
+§"B — MERGED AND CLOSED".)* **Work `livespec-dev-tooling-6fmfzk` (B — positive-location hook + actionable remedy).**
+
+*(OLD SNAPSHOT, as written when B was the pointer — retained to show what was handed over,
+NOT authoritative. Current: B is closed and the pointer is at A1; see §"Exact next action".)*
 
 `0eo.1` is **done and closed** (§"E-openbrain — COMPLETE"), so the authoritative sequence
 **E(openbrain) → B → A1 → D → A2+C** now stands at **B**. It is the only item in the ready
@@ -576,6 +606,12 @@ that generator is where the second live violation appeared. G plausibly belongs 
 fleet-membership / birth-procedure lane, like the adopter backfill.
 
 ### Work-item split and dependency edges
+
+**This is the FILING PLAN as approved, not live state.** Current completion as of
+2026-07-26: **1 (E-openbrain) CLOSED**, **2 (B) CLOSED** (merged `7cf38db`), **6
+(E-overseer) blocked**, **7 (G) deferred/backlog**; **3 (A1) is next** but sits at
+`pending-approval`, and **4 (D) and 5 (A2+C) remain pending** behind it. The `RGR` column
+records whether a slice is product `.py`; B's is complete.
 
 Six filable items:
 
@@ -911,8 +947,10 @@ hook-first (§"MAINTAINER RULING — rollout order"). **Boundary approved** — 
 `fleet` repos (§"MAINTAINER RULING — NARROW boundary"); F drops out and adopter backfill is
 filed as `li-l53` / `hl-nhw`. **The final cut is APPROVED and FILED (2026-07-26): seven
 children exist under the epic and are intake-routed** — ids, states, dependency edges and
-lane evidence in §"MAINTAINER RULING — FINAL CUT APPROVED AND FILED". **CURRENT: the openbrain worktree HAS been relocated (`0eo.1` closed 2026-07-26); no
-product implementation has happened, and no foreign worktree has been touched.** A
+lane evidence in §"MAINTAINER RULING — FINAL CUT APPROVED AND FILED". **CURRENT: the openbrain worktree HAS been relocated (`0eo.1` closed 2026-07-26), and B's
+product implementation IS merged (`7cf38db`, `6fmfzk` closed). Remaining product work is
+A1 (`cmc3ah`) and A2+C (`skl77m`); D (`o5vltq`) is the tracked-wiring sweep. No foreign
+worktree has been touched.** A
 "wire-then-enforce" answer displayed on 2026-07-25 was a supervisor UI-race artifact and is
 void.
 
@@ -950,10 +988,12 @@ Unlike `livespec-console-beads-fabro`'s `plan/repo-invariant-guards/` (a sibling
 of the same *mechanism* — mechanical guards for unenforced invariants), this is **not**
 a latent gap. It has **fired for real more than once** — a recurring history, not a
 hypothetical. **As of 2026-07-26 no live nested violation is observed** (openbrain relocated
-and `0eo.1` closed; the overseer path absent and unregistered), but **the structural
-fail-open itself is still wide open**: nothing yet refuses a worktree outside the sanctioned
-root, so the next violation would be just as silent. **That hole closes with B, which has
-not yet landed.** The recurrence plus the still-open hole is why this is its own thread
+and `0eo.1` closed; the overseer path absent and unregistered), and **the canonical code is now CLOSED**: B landed
+(`7cf38db`), so `CANONICAL_HOOK_BODY` refuses any worktree outside the sanctioned root.
+**What remains open is REACH, not the rule** — the refusal only takes effect in a clone once
+that clone reinstalls the hook, and fleet-wide hydration is **slice D's** job (6 wiring PRs
++ 2 bootstraps), still pending. Until D lands, a clone running the old body still fails
+open. The recurrence plus that incomplete rollout reach is why this is its own thread
 rather than a fourth item there.
 
 *(Originally written as "it fired once for real, and one live violation remains
@@ -2215,8 +2255,9 @@ name the boundary so the adopter gap is visible rather than implied.
 >
 > **Current:** all four questions are **answered**; the final cut is **approved**; **seven
 > slices exist** under `livespec-dev-tooling-0eo` and are intake-routed. `0eo.1` is now
-> **closed**, so **`6fmfzk` (B) is the only ready item** under this epic; work **is**
-> dispatchable. See §"MAINTAINER RULING — FINAL CUT
+> **closed**, and **`6fmfzk` (B) has since closed too** (merged `7cf38db`), so the ready
+> lane under this epic is empty; **A1 (`cmc3ah`) is next but sits at `pending-approval`**
+> until transitioned. See §"MAINTAINER RULING — FINAL CUT
 > APPROVED AND FILED" for ids, states, edges and lane evidence, and §"Exact next action".
 
 **The open questions, in dependency order (2026-07-25).** The original text below lists
@@ -2263,8 +2304,9 @@ So the honest first act is a maintainer act:
 
 Nothing here is agent-dispatchable until slices exist: `next` ranks work-items, and this
 thread has none. **[SUPERSEDED 2026-07-26 — seven slices exist and this thread IS
-dispatchable. (At filing time `0eo.1` and `6fmfzk` were both ready; `0eo.1` has since been
-closed, leaving `6fmfzk` the only ready item under this epic.)]**
+dispatchable. (At filing time `0eo.1` and `6fmfzk` were both ready; BOTH have since closed,
+so the ready lane is empty and A1 (`cmc3ah`) awaits its deliberate manual admission —
+by design, per `admission_policy=None` inheriting the manual default.)]**
 
 **Re-verified 2026-07-25 — snapshot, since superseded by the 2026-07-26 filing:**
 `bd show livespec-dev-tooling-0eo` reported the epic
@@ -2278,8 +2320,9 @@ nothing was filed in the interim.
 ## Sequencing
 
 **AUTHORITATIVE SEQUENCE (2026-07-26):**
-`E(openbrain) ✅ → B ◀ current → A1 → D → A2+C`, with **G deferred** (filed to `backlog`).
-**E(openbrain) is COMPLETE** (`0eo.1` closed 2026-07-26); the pointer is now at **B**.
+`E(openbrain) ✅ → B ✅ → A1 ◀ current → D → A2+C`, with **G deferred** (filed to `backlog`).
+**E(openbrain) and B are both COMPLETE** (`0eo.1` closed; B merged `7cf38db`, `6fmfzk`
+closed, both 2026-07-26); the pointer is now at **A1**.
 *(E went first because it was free and unblocked — not because B would otherwise strand
 openbrain; B changes `CANONICAL_HOOK_BODY`, which openbrain does not run.)*
 
@@ -2316,11 +2359,17 @@ approved · ~~fleet boundary~~ NARROW approved · ~~final cut~~ approved ·
   worktree of that name is registered, and branch `docs/dod-corrections-pr78` is at
   `7efb87d`. **Cause and owner action were NOT established**, so absence alone does not
   close it. This thread must not touch foreign state.
-- **Red-Green-Replay** on the product-`.py` slices: B (`6fmfzk`), A1 (`cmc3ah`),
-  A2+C (`skl77m`). Docs-only changes like this file are exempt.
+- **Red-Green-Replay** on the REMAINING product-`.py` slices: A1 (`cmc3ah`) and A2+C
+  (`skl77m`). Docs-only changes like this file are exempt. *(B's RGR is **complete**: single
+  commit `45636e8` with 5 `TDD-Red-*` + 2 `TDD-Green-*` trailers, test bytes frozen.)*
 - **PR checks + rebase-merge** on every tracked change.
-- **Dependency state** — `cmc3ah`, `o5vltq`, `skl77m` stay `pending-approval` until their
-  `[blocks]` predecessors close.
+- **Dependency state — observed 2026-07-26.** `cmc3ah` (A1) is **still `pending-approval`
+  even though its predecessor `6fmfzk` is CLOSED** — and that is **correct, not stuck**:
+  admission is MANUAL by design (`admission_policy=None` inherits the manual default; only
+  an `auto` policy routes to `ready` at intake). Closing B cleared the dependency, never the
+  admission gate. Advance it with
+  `drive --action approve:livespec-dev-tooling-cmc3ah`.
+  `o5vltq` (D) and `skl77m` (A2+C) remain genuinely dependency-gated behind A1.
 
 ## Reactivation audit — 2026-07-25
 
@@ -2407,7 +2456,8 @@ These four landed after the first audit PR and are recorded in the sections abov
 No slices filed, no worktree moved, no implementation dispatched, no spec change, no
 ledger edit — true as of that pass. **Superseded 2026-07-26: the seven approved slices are
 filed and intake-routed, AND the openbrain worktree HAS been relocated (`0eo.1` closed).**
-Still true: no product implementation has been dispatched or performed.
+*(That last clause is itself now superseded: B's product implementation was performed and
+merged as `7cf38db` on 2026-07-26.)*
 
 **Decision status as of 2026-07-25** (this paragraph records a snapshot of an earlier pass;
 these are its outcomes, not still-open items): scope is **APPROVED** — full-location, both
