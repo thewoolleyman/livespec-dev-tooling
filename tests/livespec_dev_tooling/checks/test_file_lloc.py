@@ -14,14 +14,17 @@ temp git working tree and `git add`s its files before invoking
 `tests/livespec_dev_tooling/test_config.py`. `git ls-files` reads the
 index, so files must be `git add`ed (no commit is needed).
 
-Phase-0 severity: the three legacy trees
-(`.claude-plugin/scripts/livespec`, `.claude-plugin/scripts/bin`,
-`dev-tooling`) are retained ONLY as a severity classifier. A file
-UNDER a legacy tree keeps today's hard gate (soft-warn 201-250,
-hard-fail >250, exit 1); a file NEWLY pulled into the git-derived
-universe emits every LLOC diagnostic at WARN (even >250, no exit-1
-contribution) with a `newly_covered` / `phase="0-warn"` marker, until
-Phase 2 flips its repo to the hard gate.
+THE CEILING IS UNCONDITIONAL (`livespec-dev-tooling-426a`). Every file
+in the git-derived universe is gated identically: there is no per-repo
+opt-in, no legacy-tree severity classifier, and no `newly_covered` /
+`phase="0-warn"` bucket. Fixtures below still write a
+`file_lloc_hard_gate` line in places, and that is deliberate — it pins
+that the retired key is INERT rather than an error, because eight fleet
+repos still carry it from the rollout.
+
+Several fixtures still place files under `.claude-plugin/scripts/livespec`.
+That path is no longer privileged; it survives only because these arms
+predate the retirement and their subject is the ceiling, not the path.
 
 The check is driven IN-PROCESS (`monkeypatch.chdir(tmp_path)` +
 `capsys` + `rc = main()`) rather than via a `sys.executable`
@@ -118,10 +121,11 @@ def _write_py_with_lloc(*, tmp_path: Path, rel_path: str, n_statements: int) -> 
 def _write_pyproject(*, tmp_path: Path, body: str) -> None:
     """Write a `pyproject.toml` at the fixture root carrying `body`.
 
-    `file_lloc`'s flip lever (`config.load_file_lloc_hard_gate`) reads the
-    `[tool.livespec_dev_tooling]` block off this file directly from disk, so it
-    need only exist at the git-toplevel root the check resolves — it is never
-    part of the `*.py` universe `git ls-files` walks.
+    `file_lloc` itself no longer reads any key off this file — the hard gate is
+    unconditional. Fixtures still write one to prove the RETIRED
+    `file_lloc_hard_gate` key is inert, and because other config-reading paths
+    resolve the `[tool.livespec_dev_tooling]` block from the git-toplevel root.
+    It is never part of the `*.py` universe `git ls-files` walks.
     """
     _ = (tmp_path / "pyproject.toml").write_text(body, encoding="utf-8")
 
@@ -132,10 +136,10 @@ def _init_repo_with_files(*, tmp_path: Path) -> None:
     _git(cwd=tmp_path, args=["add", "-A"])
 
 
-def test_file_lloc_rejects_legacy_hard_offender(
+def test_file_lloc_rejects_hard_offender(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A legacy-tree `.py` file with > 250 LLOC fails (exit 1) — the hard gate is preserved."""
+    """A `.py` file with > 250 LLOC fails (exit 1) — the hard ceiling."""
     _write_py_with_lloc(
         tmp_path=tmp_path,
         rel_path=".claude-plugin/scripts/livespec/big.py",
@@ -152,11 +156,11 @@ def test_file_lloc_rejects_legacy_hard_offender(
 def test_file_lloc_anchors_on_repo_root_from_subdirectory(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Invoked from a SUBDIRECTORY, file_lloc still hard-fails a legacy-tree > 250 file.
+    """Invoked from a SUBDIRECTORY, file_lloc still hard-fails a > 250 file.
 
     file_lloc's PR1 walk anchored on `Path.cwd()`; invoked from a subdir it
     would shell `git ls-files` in that subdir and miss the oversized
-    legacy-tree file (a silent exit 0). Re-anchoring on `resolve_repo_root`
+    over-ceiling file (a silent exit 0). Re-anchoring on `resolve_repo_root`
     (PR2) makes the walk invocation-location-independent, so the hard gate
     fires regardless of cwd depth.
     """
@@ -175,10 +179,10 @@ def test_file_lloc_anchors_on_repo_root_from_subdirectory(
     assert "hard ceiling" in combined
 
 
-def test_file_lloc_warns_legacy_soft_offender(
+def test_file_lloc_warns_soft_offender(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A legacy-tree `.py` file with 201-250 LLOC passes (exit 0) but warns."""
+    """A `.py` file with 201-250 LLOC passes (exit 0) but warns — the soft band."""
     _write_py_with_lloc(
         tmp_path=tmp_path,
         rel_path=".claude-plugin/scripts/livespec/medium.py",
@@ -192,10 +196,10 @@ def test_file_lloc_warns_legacy_soft_offender(
     assert ".claude-plugin/scripts/livespec/medium.py" in combined
 
 
-def test_file_lloc_accepts_legacy_file_below_soft_ceiling(
+def test_file_lloc_accepts_file_below_soft_ceiling(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A legacy-tree `.py` file with ≤ 200 LLOC passes silently (no warning, exit 0)."""
+    """A `.py` file with ≤ 200 LLOC passes silently (no warning, exit 0)."""
     _write_py_with_lloc(
         tmp_path=tmp_path,
         rel_path=".claude-plugin/scripts/livespec/small.py",
@@ -209,10 +213,10 @@ def test_file_lloc_accepts_legacy_file_below_soft_ceiling(
     assert "hard ceiling" not in combined
 
 
-def test_file_lloc_accepts_legacy_file_at_hard_ceiling(
+def test_file_lloc_accepts_file_at_hard_ceiling(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A legacy-tree `.py` file at exactly 250 LLOC passes (soft band, exit 0).
+    """A `.py` file at exactly 250 LLOC passes (soft band, exit 0).
 
     250 is in the soft band (201-250); only > 250 is the hard fail.
     `_write_py_with_lloc` emits 2 setup statements (future-import,
@@ -259,10 +263,10 @@ def test_file_lloc_excludes_blank_lines_and_comments_and_docstrings(
     assert result.returncode == 0
 
 
-def test_file_lloc_emits_legacy_soft_and_hard_in_one_run(
+def test_file_lloc_emits_soft_and_hard_in_one_run(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """When both soft and hard legacy offenders exist, hard wins (exit 1) + both diagnostics."""
+    """When both soft and hard offenders exist, hard wins (exit 1) + both diagnostics."""
     _write_py_with_lloc(
         tmp_path=tmp_path,
         rel_path=".claude-plugin/scripts/livespec/medium.py",
@@ -281,38 +285,49 @@ def test_file_lloc_emits_legacy_soft_and_hard_in_one_run(
     assert "hard ceiling" in combined
 
 
-def test_file_lloc_warns_newly_covered_hard_offender(
+def test_file_lloc_hard_fails_an_over_ceiling_file_with_no_opt_in_declared(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A > 250-LLOC file OUTSIDE the legacy trees WARNS (newly-covered) and passes (exit 0).
+    """A > 250-LLOC file hard-fails (exit 1) with NO `file_lloc_hard_gate` declared.
 
-    This is the fail-open hole the reroute closes: the old
-    `_COVERED_TREES` rglob never saw a file at `pkg/big.py`, so a repo
-    with an oversized non-legacy file reported green. The git-derived
-    universe now sees it, but Phase-0 severity keeps it at WARN (with a
-    `newly_covered` marker) rather than hard-failing.
+    THE RETIREMENT OF THE OPT-IN (livespec-dev-tooling-426a). This file is outside
+    the tree that used to be privileged, and the fixture repo declares no
+    `[tool.livespec_dev_tooling]` block at all, which used to mean Phase-0 WARN and
+    exit 0 -- the ceiling was repo-OPTIONAL, and a repo disarmed it fleet-wide by
+    simply never opting in. It is now unconditional: over the hard ceiling is red
+    everywhere, and the `newly_covered` / `phase="0-warn"` bucket no longer exists.
     """
     _write_py_with_lloc(tmp_path=tmp_path, rel_path="pkg/big.py", n_statements=300)
     _init_repo_with_files(tmp_path=tmp_path)
     result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
-    assert result.returncode == 0
+    assert result.returncode == 1, (
+        f"an over-hard-ceiling file must fail without any opt-in; "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
     combined = result.stdout + result.stderr
     assert "pkg/big.py" in combined
-    assert "newly_covered" in combined
-    # WARN-not-error: the legacy hard-fail error message must NOT appear.
-    assert "250-line hard ceiling" not in combined
+    assert (
+        "250-line hard ceiling" in combined
+    ), f"the hard-ceiling error must be emitted; combined={combined!r}"
+    assert (
+        "newly_covered" not in combined
+    ), f"the Phase-0 newly_covered bucket is retired; combined={combined!r}"
 
 
-def test_file_lloc_warns_orchestrator_shaped_repo(
+def test_file_lloc_hard_fails_orchestrator_shaped_repo(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A repo whose package dir is NOT named `livespec/` (orchestrator shape) WARNS, exit 0.
+    """A repo whose package dir is NOT named `livespec/` hard-fails too (exit 1).
 
-    The orchestrator's package is `livespec_orchestrator_beads_fabro/`
-    with a 2,616-line `dispatcher.py`; the old rglob over
-    `.claude-plugin/scripts/livespec` etc. walked zero files there. The
-    git-derived universe finds the package regardless of its name, and
-    Phase-0 severity emits at WARN, not red.
+    Two separate fail-open holes are pinned by this one arm. The old rglob over
+    `.claude-plugin/scripts/livespec` walked ZERO files in a repo shaped like the
+    orchestrator (package `livespec_orchestrator_beads_fabro/`, a 2,616-line
+    `dispatcher.py`), so the check reported green having scanned nothing; the
+    git-derived universe closed that. But the legacy-tree severity classifier
+    then kept such a file at WARN no matter how large it was, because it matched
+    no hardcoded tree -- so the ceiling was still unenforceable in exactly the
+    repos the widening was meant to reach. Both are gone.
     """
     _write_py_with_lloc(
         tmp_path=tmp_path,
@@ -321,11 +336,15 @@ def test_file_lloc_warns_orchestrator_shaped_repo(
     )
     _init_repo_with_files(tmp_path=tmp_path)
     result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
-    assert result.returncode == 0
+    assert result.returncode == 1, (
+        f"a package outside the old privileged tree must be hard-gated; "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
     combined = result.stdout + result.stderr
     assert "livespec_orchestrator_beads_fabro/dispatcher.py" in combined
-    assert "newly_covered" in combined
-    assert "250-line hard ceiling" not in combined
+    assert "250-line hard ceiling" in combined
+    assert "newly_covered" not in combined
 
 
 def test_file_lloc_accepts_codeless_repo(
@@ -343,43 +362,46 @@ def test_file_lloc_accepts_codeless_repo(
     assert result.returncode == 0
 
 
-_HARD_GATE_BLOCK = "[tool.livespec_dev_tooling]\nfile_lloc_hard_gate = true\n"
+# The RETIRED opt-in key, kept as a fixture to prove it is now inert.
+_RETIRED_KEY_BLOCK = "[tool.livespec_dev_tooling]\nfile_lloc_hard_gate = true\n"
 
 
-def test_file_lloc_hard_gate_flip_fails_non_legacy_hard_offender(
+def test_file_lloc_retired_key_present_still_hard_fails(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """With `file_lloc_hard_gate = true`, a NON-legacy > 250 file hard-fails (exit 1).
+    """A repo still carrying `file_lloc_hard_gate = true` hard-fails a > 250 file.
 
-    This is the flip lever the mechanism adds: a repo whose package dir is not
+    BACKWARD-COMPATIBILITY ARM. The key is retired and read by nothing; eight
+    fleet repos still carry it. This pins that its presence changes nothing —
+    the same result the no-key fixtures get. Historically: a repo whose package dir is not
     livespec-core's `.claude-plugin/scripts/livespec/` (here a bare `pkg/`) opts
     its whole git-derived universe into the hard gate via a committed pyproject
-    declaration. Without the flip this same file would only WARN (Phase-0
+    declaration. Before the retirement this same file would only WARN (Phase-0
     newly-covered); with it, the > 250 file exits 1.
     """
     _write_py_with_lloc(tmp_path=tmp_path, rel_path="pkg/big.py", n_statements=300)
-    _write_pyproject(tmp_path=tmp_path, body=_HARD_GATE_BLOCK)
+    _write_pyproject(tmp_path=tmp_path, body=_RETIRED_KEY_BLOCK)
     _init_repo_with_files(tmp_path=tmp_path)
     result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode != 0
     combined = result.stdout + result.stderr
     assert "pkg/big.py" in combined
     assert "hard ceiling" in combined
-    # The flip supersedes the Phase-0 classifier: no newly-covered WARN marker.
+    # No newly-covered WARN marker: that bucket is retired.
     assert "newly_covered" not in combined
 
 
-def test_file_lloc_hard_gate_flip_warns_non_legacy_soft_offender(
+def test_file_lloc_retired_key_present_still_soft_warns(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """With the flip on, a NON-legacy 201-250 file passes (exit 0) but soft-warns.
+    """A 201-250 file soft-warns and passes (exit 0), retired key present or not.
 
-    The flip applies the SAME two-tier policy the legacy trees already had — a
+    The two-tier policy is now uniform everywhere — a
     soft band below the hard ceiling — to the whole universe, not just a hard
     cliff.
     """
     _write_py_with_lloc(tmp_path=tmp_path, rel_path="pkg/medium.py", n_statements=220)
-    _write_pyproject(tmp_path=tmp_path, body=_HARD_GATE_BLOCK)
+    _write_pyproject(tmp_path=tmp_path, body=_RETIRED_KEY_BLOCK)
     _init_repo_with_files(tmp_path=tmp_path)
     result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
@@ -389,13 +411,13 @@ def test_file_lloc_hard_gate_flip_warns_non_legacy_soft_offender(
     assert "newly_covered" not in combined
 
 
-def test_file_lloc_hard_gate_flip_all_under_ceiling_passes(
+def test_file_lloc_retired_key_present_all_under_ceiling_passes(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """With the flip on, a repo whose files are all ≤ 200 LLOC passes silently."""
+    """A repo whose files are all ≤ 200 LLOC passes silently, retired key present."""
     _write_py_with_lloc(tmp_path=tmp_path, rel_path="pkg/a.py", n_statements=50)
     _write_py_with_lloc(tmp_path=tmp_path, rel_path="pkg/b.py", n_statements=120)
-    _write_pyproject(tmp_path=tmp_path, body=_HARD_GATE_BLOCK)
+    _write_pyproject(tmp_path=tmp_path, body=_RETIRED_KEY_BLOCK)
     _init_repo_with_files(tmp_path=tmp_path)
     result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
@@ -404,11 +426,11 @@ def test_file_lloc_hard_gate_flip_all_under_ceiling_passes(
     assert "hard ceiling" not in combined
 
 
-def test_file_lloc_hard_gate_flip_empty_universe_is_noop(
+def test_file_lloc_retired_key_present_empty_universe_is_noop(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A codeless repo (0 first-party `.py`) with the flip on still walks nothing, exit 0."""
-    _write_pyproject(tmp_path=tmp_path, body=_HARD_GATE_BLOCK)
+    """A codeless repo (0 first-party `.py`) walks nothing and passes, exit 0."""
+    _write_pyproject(tmp_path=tmp_path, body=_RETIRED_KEY_BLOCK)
     _ = (tmp_path / "README.md").write_text("no code here\n", encoding="utf-8")
     _init_repo_with_files(tmp_path=tmp_path)
     result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
@@ -417,14 +439,16 @@ def test_file_lloc_hard_gate_flip_empty_universe_is_noop(
     assert "hard ceiling" not in combined
 
 
-def test_file_lloc_block_present_but_flip_key_absent_preserves_warn(
+def test_file_lloc_hard_fails_when_a_config_block_exists_without_the_retired_key(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A `[tool.livespec_dev_tooling]` block WITHOUT the flip key keeps Phase-0 WARN.
+    """A `[tool.livespec_dev_tooling]` block that never mentions the key hard-fails.
 
-    The default-preserving arm for a non-core repo that already carries a config
-    block (for `source_trees` etc.) but has not opted in: its > 250 non-legacy
-    file WARNs (exit 0), exactly as today.
+    This was the shape of the OMISSION that made enforcement repo-optional: a repo
+    carrying a config block for `source_trees` and friends, simply never declaring
+    `file_lloc_hard_gate`, kept its over-ceiling files at WARN — and the silence
+    read as conformance rather than as an opt-out. The key is retired, so a block
+    without it is no longer a way to disarm the ceiling.
     """
     _write_py_with_lloc(tmp_path=tmp_path, rel_path="pkg/big.py", n_statements=300)
     _write_pyproject(
@@ -433,20 +457,31 @@ def test_file_lloc_block_present_but_flip_key_absent_preserves_warn(
     )
     _init_repo_with_files(tmp_path=tmp_path)
     result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
-    assert result.returncode == 0
+    assert result.returncode == 1, (
+        f"omitting the retired key must not disarm the ceiling; "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
     combined = result.stdout + result.stderr
     assert "pkg/big.py" in combined
-    assert "newly_covered" in combined
-    assert "250-line hard ceiling" not in combined
+    assert "250-line hard ceiling" in combined
+    assert "newly_covered" not in combined
 
 
-def test_file_lloc_flip_key_false_preserves_warn(
+def test_file_lloc_ignores_an_explicit_false_opt_out(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """An explicit `file_lloc_hard_gate = false` is identical to today's behavior.
+    """`file_lloc_hard_gate = false` is INERT — the file still hard-fails (exit 1).
 
-    The explicit-off arm: a repo may write the key `= false` and still get the
-    Phase-0 WARN for a non-legacy > 250 file, no exit-1 contribution.
+    THE ARM THAT MATTERS MOST after the retirement, and the reason the key is not
+    merely defaulted to true. A repo could previously write `= false` and switch
+    the ceiling off for its whole package. That escape hatch is gone: the key is
+    read by nothing, so an explicit opt-OUT no longer opts out of anything.
+
+    It is also the backward-compatibility arm. Eight fleet repos still carry a
+    `file_lloc_hard_gate` line from the rollout, and a stale value must not be an
+    error — it must simply have no effect, so no repo needs a coordinated edit
+    before this lands.
     """
     _write_py_with_lloc(tmp_path=tmp_path, rel_path="pkg/big.py", n_statements=300)
     _write_pyproject(
@@ -455,27 +490,33 @@ def test_file_lloc_flip_key_false_preserves_warn(
     )
     _init_repo_with_files(tmp_path=tmp_path)
     result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
-    assert result.returncode == 0
+    assert result.returncode == 1, (
+        f"an explicit `= false` must no longer disarm the ceiling; "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
     combined = result.stdout + result.stderr
     assert "pkg/big.py" in combined
-    assert "newly_covered" in combined
-    assert "250-line hard ceiling" not in combined
+    assert "250-line hard ceiling" in combined
+    assert "newly_covered" not in combined
 
 
-def test_file_lloc_hard_gate_flip_still_hard_fails_legacy_tree_file(
+def test_file_lloc_retired_key_present_hard_fails_core_tree_file(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """With the flip on, a legacy-tree > 250 file still hard-fails (the gate is a superset).
+    """A file in the once-privileged core tree still hard-fails (exit 1).
 
-    The flip widens the hard gate to the whole universe; a file that already
-    hard-gated under the legacy classifier keeps hard-gating.
+    `.claude-plugin/scripts/livespec/` was one of the three trees the retired
+    severity classifier hard-gated while everything else only warned. Removing
+    the classifier must not have removed the gate from the trees it did cover —
+    the retirement widened enforcement, it did not relocate it.
     """
     _write_py_with_lloc(
         tmp_path=tmp_path,
         rel_path=".claude-plugin/scripts/livespec/big.py",
         n_statements=300,
     )
-    _write_pyproject(tmp_path=tmp_path, body=_HARD_GATE_BLOCK)
+    _write_pyproject(tmp_path=tmp_path, body=_RETIRED_KEY_BLOCK)
     _init_repo_with_files(tmp_path=tmp_path)
     result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode != 0
