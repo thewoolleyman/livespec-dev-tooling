@@ -721,3 +721,64 @@ def test_commit_pairs_ignores_non_python_source_tree_file(*, tmp_path: Path) -> 
         f"got returncode={result.returncode} "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
+
+
+def test_commit_pairs_ignores_vendored_python_under_a_source_tree(*, tmp_path: Path) -> None:
+    """A vendored `.py` under a source tree needs no paired test.
+
+    `_vendor` exclusion is the fleet-wide first-party rule, not a
+    local courtesy: `config.filter_first_party_py` — the canonical
+    predicate behind `resolve_check_universe` — excludes any path
+    carrying a `_vendor` segment, and `pyproject.toml` excludes
+    `**/_vendor/**` from both ruff and pyright. Vendored code is
+    upstream source the repo does not author and must not mirror
+    into `tests/`, so demanding a paired test is unsatisfiable in
+    exactly the way the non-Python case above is.
+
+    Regression: vendoring `dry-python/returns` produced 115 of these
+    errors, one per vendored file, making the commit unmakeable
+    (livespec-dev-tooling-hh4d).
+    """
+    _init_repo_with_committed_source(tmp_path=tmp_path, body=_CARVEOUT_HEAD_SOURCE)
+    vendored = (
+        tmp_path / ".claude-plugin" / "scripts" / "livespec" / "_vendor" / "somelib" / "core.py"
+    )
+    vendored.parent.mkdir(parents=True, exist_ok=True)
+    vendored.write_text("def upstream_helper():\n    return 1\n", encoding="utf-8")
+    _git(
+        cwd=tmp_path,
+        args=["add", ".claude-plugin/scripts/livespec/_vendor/somelib/core.py"],
+    )
+
+    result = _run_check(tmp_path=tmp_path)
+
+    assert result.returncode == 0, (
+        f"a vendored `.py` under a source tree should not require a paired test; "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_commit_pairs_vendor_exclusion_does_not_widen_to_authored_siblings(
+    *, tmp_path: Path
+) -> None:
+    """The `_vendor` exclusion must not leak onto hand-authored source.
+
+    Paired with the test above so the exclusion cannot silently widen
+    into a hole: a file whose name merely CONTAINS the substring
+    `_vendor` — but which carries no `_vendor` path SEGMENT — is
+    authored source and stays gated. Without this, a substring match
+    would exempt `vendor_update.py` and every sibling like it.
+    """
+    _init_repo_with_committed_source(tmp_path=tmp_path, body=_CARVEOUT_HEAD_SOURCE)
+    authored = tmp_path / ".claude-plugin" / "scripts" / "livespec" / "_vendor_update.py"
+    authored.write_text("def authored_helper():\n    return 2\n", encoding="utf-8")
+    _git(cwd=tmp_path, args=["add", ".claude-plugin/scripts/livespec/_vendor_update.py"])
+
+    result = _run_check(tmp_path=tmp_path)
+
+    assert result.returncode == 1, (
+        f"authored source merely NAMED like the vendor tree must stay gated; "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
