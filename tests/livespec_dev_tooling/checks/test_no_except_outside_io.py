@@ -1461,3 +1461,66 @@ def test_no_except_outside_io_module_importable_without_running_main() -> None:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     assert callable(module.main), "main should be importable without invocation"
+
+
+def test_no_except_outside_io_reports_position_offenses_alongside_backstop_gaps(
+    *, tmp_path: Path
+) -> None:
+    """A backstop gap must NOT suppress the position offenses found in the same run.
+
+    THE DEFECT THIS PINS, found 2026-07-27 in the `rop-sweep-fleet-policy`
+    sweep. `main()` evaluated `find_ruff_backstop_gaps` first and returned on
+    any gap, BEFORE the block that logs position offenses. So in every repo
+    carrying a gap, real broad catches were computed, counted in the
+    `files_inspected`/`offenses` info line, and then never logged. Reading the
+    error stream — which is what a reviewer and a CI log do — reported zero
+    broad catches in exactly the repos most likely to have them. A fleet census
+    concluded "zero genuine broad catches" on that basis; there were SEVEN.
+
+    That is worse than a missing check, because it manufactures confidence: the
+    check exits 1, so it looks like it worked, while the offenses it found stay
+    invisible. The fixture therefore carries BOTH failure kinds at once — a
+    ruff-excluded inspected file (the gap) and, in a DIFFERENT file that Ruff
+    does lint, a broad catch outside any sanctioned boundary — and asserts both
+    are named. Asserting only the exit code would pass against the defect.
+    """
+    _write_pyproject(
+        tmp_path=tmp_path,
+        extra=(
+            "[tool.livespec_dev_tooling]\n"
+            'source_trees = ["pkg"]\n'
+            "\n"
+            "[tool.ruff]\n"
+            'extend-exclude = ["pkg/hidden/**"]\n'
+            "\n"
+            "[tool.ruff.lint]\n"
+            'select = ["BLE"]\n'
+        ),
+    )
+    _write_module(
+        tmp_path=tmp_path,
+        rel="pkg/hidden/thing.py",
+        body="def do_thing() -> None:\n    return None\n",
+    )
+    _write_module(
+        tmp_path=tmp_path,
+        rel="pkg/visible.py",
+        body=(
+            "def swallow() -> None:\n    try:\n        pass\n    except Exception:\n        pass\n"
+        ),
+    )
+
+    result = _run(cwd=tmp_path)
+    combined = result.stdout + result.stderr
+
+    assert result.returncode != 0, (
+        f"no_except_outside_io should fail when either a backstop gap or a position "
+        f"offense is present; got returncode={result.returncode} combined={combined!r}"
+    )
+    assert (
+        "pkg/hidden/thing.py" in combined
+    ), f"the ruff-excluded inspected file must still be named; combined={combined!r}"
+    assert "pkg/visible.py" in combined, (
+        f"the position offense must NOT be suppressed by the backstop gap — this is the "
+        f"early-return masking defect; combined={combined!r}"
+    )

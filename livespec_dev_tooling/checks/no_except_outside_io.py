@@ -300,15 +300,19 @@ def main() -> int:
         source_trees=config.source_trees,
         inspected_files=tuple(inspected_files),
     )
-    if backstop_gaps:
-        for path, reason in backstop_gaps:
-            log.error(reason, file=str(path))
-        return 1
-    if offenders:
-        for path, lineno, reason in offenders:
-            log.error(reason, file=str(path), line=lineno)
-        return 1
-    return 0
+    # BOTH failure kinds are reported in the SAME run. An earlier form returned
+    # on the first backstop gap, before this offender loop — so a repo carrying
+    # a gap had its real broad catches computed, counted in the info line above,
+    # and then never logged. That is worse than a missing check: the non-zero
+    # exit makes it look like the check worked while the offenses it found stay
+    # invisible to the error stream a reviewer and a CI log actually read. A
+    # fleet census concluded "zero genuine broad catches" on exactly that basis;
+    # there were seven, every one behind a gap.
+    for path, gap_reason in backstop_gaps:
+        log.error(gap_reason, file=str(path))
+    for path, lineno, reason in offenders:
+        log.error(reason, file=str(path), line=lineno)
+    return 1 if (backstop_gaps or offenders) else 0
 
 
 if __name__ == "__main__":
