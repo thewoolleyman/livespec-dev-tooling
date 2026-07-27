@@ -20,12 +20,19 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol, cast
 
+from livespec_dev_tooling.fleet._read_failure import (
+    ReadFailure,
+    classify_gh_failure,
+    sanitize_detail,
+)
+
 __all__: list[str] = [
     "Adopter",
     "FleetContext",
     "FleetMember",
     "GhResult",
     "GhRunner",
+    "ReadFailure",
     "RowFinding",
     "RowOutcome",
     "RowPass",
@@ -228,6 +235,11 @@ class FleetContext:
     installed_cache: dict[str, frozenset[str] | None] = field(default_factory=dict)
     marker_cache: dict[str, bool] = field(default_factory=dict)
     ref_cache: dict[str, str] = field(default_factory=dict)
+    # Diagnostics sink, mutated in place like the memo caches above. Reads
+    # keep returning None on failure — the fail-closed contract is unchanged —
+    # and the CAUSE is appended here so a consumer can report it instead of
+    # collapsing every failure to "unavailable".
+    read_failures: list[ReadFailure] = field(default_factory=list)
 
     def api(self, *, path: str, method: str = "GET", body: str | None = None) -> GhResult:
         """Issue one `gh api` call; non-GET methods stream `body` via stdin."""
@@ -236,14 +248,49 @@ class FleetContext:
             args.extend(["--method", method, "--input", "-"])
         return self.run_gh(args=args, stdin=body)
 
-    def api_object(self, *, path: str) -> object | None:
-        """GET `path` and parse the JSON payload; None on any failure."""
+    def record_read_failure(
+        self, *, operation: str, path: str, returncode: int, kind: str, detail: str
+    ) -> None:
+        """Append one preserved cause; never raises and never alters a verdict."""
+        self.read_failures.append(
+            ReadFailure(
+                operation=operation,
+                path=path,
+                returncode=returncode,
+                kind=kind,
+                detail=sanitize_detail(text=detail),
+            )
+        )
+
+    def api_object(self, *, path: str, operation: str = "api") -> object | None:
+        """GET `path` and parse the JSON payload; None on any failure.
+
+        Returns None exactly as before — callers are unchanged — while the
+        cause is preserved on `read_failures`. A transport/HTTP failure and a
+        200 carrying unparseable JSON are recorded as DIFFERENT kinds, because
+        "never reached the API" and "the API answered with nonsense" call for
+        different responses.
+        """
         result = self.api(path=path)
         if result.returncode != 0:
+            self.record_read_failure(
+                operation=operation,
+                path=path,
+                returncode=result.returncode,
+                kind=classify_gh_failure(stderr=result.stderr),
+                detail=result.stderr,
+            )
             return None
         try:
             return cast("object", json.loads(result.stdout))
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as exc:
+            self.record_read_failure(
+                operation=operation,
+                path=path,
+                returncode=result.returncode,
+                kind="malformed_payload",
+                detail=str(exc),
+            )
             return None
 
     def canonical_ref(self, *, repo: str) -> str:
@@ -260,7 +307,7 @@ class FleetContext:
         cached = self.ref_cache.get(repo)
         if cached is not None:
             return cached
-        payload = self.api_object(path=f"repos/{self.owner}/{repo}")
+        payload = self.api_object(path=f"repos/{self.owner}/{repo}", operation="repo_metadata")
         resolved = _CANONICAL_REF
         if isinstance(payload, dict):
             branch = cast("dict[str, object]", payload).get("default_branch")
@@ -285,6 +332,13 @@ class FleetContext:
             ]
         )
         if result.returncode != 0:
+            self.record_read_failure(
+                operation="contents",
+                path=f"{repo}:{path}",
+                returncode=result.returncode,
+                kind=classify_gh_failure(stderr=result.stderr),
+                detail=result.stderr,
+            )
             return None
         return result.stdout
 
@@ -294,7 +348,9 @@ class FleetContext:
         if cached is not None:
             return cached
         ref = self.canonical_ref(repo=repo)
-        payload = self.api_object(path=f"repos/{self.owner}/{repo}/git/trees/{ref}?recursive=1")
+        payload = self.api_object(
+            path=f"repos/{self.owner}/{repo}/git/trees/{ref}?recursive=1", operation="tree"
+        )
         state = (
             TreeState(readable=False) if payload is None else _parse_tree_payload(payload=payload)
         )
