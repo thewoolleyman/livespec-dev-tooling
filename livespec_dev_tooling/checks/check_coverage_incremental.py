@@ -72,7 +72,11 @@ import structlog  # noqa: E402  — vendor-path-aware import after sys.path inse
 from livespec_dev_tooling.checks._docs_only_change import (  # noqa: E402
     is_docs_only_change,
 )
-from livespec_dev_tooling.config import MirrorPairing, load_config  # noqa: E402
+from livespec_dev_tooling.config import (  # noqa: E402
+    MirrorPairing,
+    is_vendored_path,
+    load_config,
+)
 
 __all__: list[str] = []
 # Isolated coverage data-file directory prefix. The script spawns its own
@@ -159,6 +163,11 @@ def _resolve_test_paths(
     """
     test_paths: list[Path] = []
     for impl in impl_paths:
+        # Vendored `.py` has no mirror-paired test that could exist — upstream
+        # code the repo does not author is never mirrored into `tests/`. Same
+        # predicate the first-party universe uses, so the rule stays single-sourced.
+        if is_vendored_path(rel_path=impl):
+            continue
         try:
             test_path = _resolve_mirror_test_path(impl_path=impl, mirror_pairings=mirror_pairings)
         except ValueError as exc:
