@@ -2981,3 +2981,56 @@ def test_no_arg_range_commit_deleting_product_py_exits_zero(*, tmp_path: Path) -
         f"a range commit that only DELETES product .py must pass the range check; "
         f"got returncode={result.returncode} stderr={result.stderr!r}"
     )
+
+
+def test_classify_staged_excludes_vendored_python_from_the_impl_bucket() -> None:
+    """Vendored `.py` under an impl prefix is not PRODUCT impl.
+
+    `_classify_staged` classified any `.py` under a declared impl prefix
+    as product impl, with no `_vendor` exclusion. That makes a pure
+    vendoring commit look like an impl change subject to the Red→Green
+    ritual — a ritual it can never satisfy, since vendored upstream
+    code has no test to author.
+
+    `_vendor` exclusion is the fleet-wide first-party rule
+    (`config.is_vendored_path`, shared with `filter_first_party_py`
+    and the commit-pairs gate). Sibling of livespec-dev-tooling-hh4d;
+    filed as livespec-dev-tooling-pm4z site 2.
+    """
+    from livespec_dev_tooling.checks.red_green_replay import _classify_staged
+
+    tests_paths, impl_paths = _classify_staged(
+        paths=[
+            "livespec_dev_tooling/_vendor/returns/result.py",
+            "livespec_dev_tooling/config.py",
+        ],
+        impl_prefixes=("livespec_dev_tooling/",),
+    )
+
+    assert tests_paths == [], f"no tests staged; got {tests_paths!r}"
+    assert impl_paths == ["livespec_dev_tooling/config.py"], (
+        f"vendored `.py` must not be bucketed as product impl, and the authored "
+        f"sibling must still be; got impl_paths={impl_paths!r}"
+    )
+
+
+def test_classify_staged_vendor_exclusion_does_not_widen_to_authored_siblings() -> None:
+    """The `_vendor` exclusion must not leak onto hand-authored source.
+
+    Paired with the test above so the exclusion cannot silently widen:
+    a module whose filename merely CONTAINS `_vendor` — carrying no
+    `_vendor` path SEGMENT — is authored product impl and stays subject
+    to the ritual. A substring match would exempt `vendor_update.py`
+    and every sibling like it.
+    """
+    from livespec_dev_tooling.checks.red_green_replay import _classify_staged
+
+    _tests_paths, impl_paths = _classify_staged(
+        paths=["livespec_dev_tooling/_vendor_update.py"],
+        impl_prefixes=("livespec_dev_tooling/",),
+    )
+
+    assert impl_paths == ["livespec_dev_tooling/_vendor_update.py"], (
+        f"authored source merely NAMED like the vendor tree must stay product impl; "
+        f"got impl_paths={impl_paths!r}"
+    )

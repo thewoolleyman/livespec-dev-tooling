@@ -621,3 +621,71 @@ def test_derive_paths_from_git_excludes_docs_only_change(*, tmp_path: Path) -> N
     assert (
         derived == []
     ), f"a docstring-and-comment-only change must not be gated as a changed impl; got {derived!r}"
+
+
+def test_resolve_mirror_test_paths_skips_vendored_impl_paths() -> None:
+    """A vendored impl path has no mirror-paired test that could exist.
+
+    Vendoring `dry-python/returns` made `just check` fail with
+    `expected_test: tests/livespec_dev_tooling/_vendor/returns/test__init__.py`
+    — a file that must never be authored, since upstream code is not
+    mirrored into `tests/`. Uses the same `config.is_vendored_path`
+    predicate as the first-party universe and the commit-pairs gate.
+
+    Filed as livespec-dev-tooling-pm4z site 1.
+    """
+    import structlog
+
+    from livespec_dev_tooling.checks.check_coverage_incremental import (
+        _resolve_test_paths,
+    )
+
+    resolved = _resolve_test_paths(
+        impl_paths=[Path("livespec_dev_tooling/_vendor/returns/__init__.py")],
+        mirror_pairings=(
+            MirrorPairing(
+                source_tree=Path("livespec_dev_tooling"),
+                test_tree=Path("tests/livespec_dev_tooling"),
+            ),
+        ),
+        log=structlog.get_logger("test"),
+    )
+
+    assert resolved == [], (
+        f"a vendored impl path must resolve to no mirror test rather than "
+        f"demanding one; got {resolved!r}"
+    )
+
+
+def test_resolve_mirror_test_paths_vendor_skip_does_not_widen() -> None:
+    """The `_vendor` skip must not leak onto hand-authored source.
+
+    Paired with the test above so the skip cannot silently widen: a
+    module merely NAMED `_vendor_update.py`, carrying no `_vendor` path
+    SEGMENT, is still mirror-resolved rather than skipped. A substring
+    match would have exempted `vendor_update.py` and every sibling like
+    it. Its real mirror `tests/livespec_dev_tooling/test_vendor_update.py`
+    exists in this repo, so resolution succeeds — the point is that the
+    path went THROUGH resolution instead of being dropped.
+    """
+    import structlog
+
+    from livespec_dev_tooling.checks.check_coverage_incremental import (
+        _resolve_test_paths,
+    )
+
+    resolved = _resolve_test_paths(
+        impl_paths=[Path("livespec_dev_tooling/_vendor_update.py")],
+        mirror_pairings=(
+            MirrorPairing(
+                source_tree=Path("livespec_dev_tooling"),
+                test_tree=Path("tests/livespec_dev_tooling"),
+            ),
+        ),
+        log=structlog.get_logger("test"),
+    )
+
+    assert resolved == [Path("tests/livespec_dev_tooling/test_vendor_update.py")], (
+        f"authored source merely NAMED like the vendor tree must still be "
+        f"mirror-resolved, not skipped; got {resolved!r}"
+    )

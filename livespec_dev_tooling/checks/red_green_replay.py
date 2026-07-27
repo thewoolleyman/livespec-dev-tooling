@@ -81,7 +81,7 @@ from _red_green_replay_trailers import (  # noqa: E402  — sibling private impo
     head_red_awaiting_green,
 )
 
-from livespec_dev_tooling.config import Config, load_config  # noqa: E402
+from livespec_dev_tooling.config import Config, is_vendored_path, load_config  # noqa: E402
 
 __all__: list[str] = []
 
@@ -145,7 +145,18 @@ def _classify_staged(
         _impl_prefixes_for_current_repo() if impl_prefixes is None else impl_prefixes
     )
     tests_paths = [p for p in paths if p.endswith(".py") and p.startswith(_TESTS_PREFIX)]
-    impl_paths = [p for p in paths if p.endswith(".py") and p.startswith(active_impl_prefixes)]
+    # Vendored `.py` is upstream code the repo does not author, so it is not
+    # PRODUCT impl: bucketing it as such made a pure vendoring commit owe the
+    # Red->Green ritual, which vendored code can never satisfy (there is no
+    # test to author). Same predicate the first-party universe and the
+    # commit-pairs gate use, so the rule has one definition.
+    impl_paths = [
+        p
+        for p in paths
+        if p.endswith(".py")
+        and p.startswith(active_impl_prefixes)
+        and not is_vendored_path(rel_path=Path(p))
+    ]
     return tests_paths, impl_paths
 
 
