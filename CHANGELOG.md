@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.56.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.56.3...v0.56.4) (2026-07-27)
+
+
+### Bug Fixes
+
+* **checks:** exclude vendored .py from replay bucketing and coverage mirrors ([440acf2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/440acf2c18f0865b50ab0b1b4325aa5a4e71a9ff))
+
 ## [0.56.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.56.2...v0.56.3) (2026-07-27)
 
 
