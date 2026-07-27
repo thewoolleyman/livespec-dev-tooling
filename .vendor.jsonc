@@ -11,8 +11,24 @@
 // stdlib `tomllib`, so the loader falls back to this vendored copy (per
 // SPECIFICATION/contracts.md §"Configuration loader"). On Python 3.11+
 // the loader prefers stdlib `tomllib` and this copy is unused.
+//
+// `returns` is vendored to satisfy livespec
+// `SPECIFICATION/non-functional-requirements.md` §"Shared content
+// provenance": every governed repo carrying first-party Python "MUST put
+// its product logic on the `Result` / `IOResult` railway ...
+// `dry-python/returns` is vendored under `_vendor/`". This repo — the
+// enforcement suite itself — carried no copy, so it could not compose on
+// the railway even in principle. Version 0.25.0 matches the copy
+// `livespec` vendors, keeping one railway version across the fleet.
+// Landed as step 1 of livespec-dev-tooling-8o8e.
 {
   "libraries": [
+    {
+      "name": "returns",
+      "upstream_url": "https://github.com/dry-python/returns",
+      "upstream_ref": "0.25.0",
+      "vendored_at": "2026-07-27T19:20:00Z"
+    },
     {
       "name": "structlog",
       "upstream_url": "https://github.com/hynek/structlog",
