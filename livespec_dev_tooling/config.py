@@ -69,6 +69,7 @@ __all__: list[str] = [
     "is_generated",
     "is_slf001_exempt",
     "is_under_any_tree",
+    "is_vendored_path",
     "iter_first_party_py_files",
     "iter_py_files",
     "load_config",
@@ -662,7 +663,7 @@ def filter_first_party_py(
     """
     out: list[Path] = []
     for rel in tracked_py:
-        if _VENDOR_MARKER in rel.parts:
+        if is_vendored_path(rel_path=rel):
             continue
         posix = rel.as_posix()
         if posix.startswith(tests_tree_prefix) or rel.name == "conftest.py":
@@ -785,6 +786,24 @@ def resolve_repo_root() -> Path:
         )
         raise GitToplevelError(msg)
     return Path(completed.stdout.strip())
+
+
+def is_vendored_path(*, rel_path: Path) -> bool:
+    """True iff `rel_path` carries a `_vendor` path SEGMENT.
+
+    The one place the fleet's vendored-code rule is expressed, so every
+    caller shares it rather than re-deriving it. Vendored code is
+    upstream source a governed repo does not author: it is excluded from
+    the first-party universe (`filter_first_party_py` clause (a)), from
+    ruff and pyright (`pyproject.toml` `**/_vendor/**`), and from the
+    commit-pairs pairing contract (a vendored file has no paired test
+    that could exist, exactly like a non-Python file).
+
+    A SEGMENT test, never a substring: `_vendor_update.py` is
+    hand-authored source that stays governed, and a substring match
+    would silently exempt it and every sibling named like it.
+    """
+    return _VENDOR_MARKER in rel_path.parts
 
 
 def is_under_any_tree(*, rel: Path, trees: tuple[Path, ...]) -> bool:
