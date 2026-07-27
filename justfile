@@ -218,6 +218,7 @@ check:
         check-global-writes
         check-handoff-dispatch-routing
         check-heading-coverage
+        check-hook-trees-not-io-exempt
         check-keyword-only-args
         check-local-memory-drift-audit
         check-main-guard
@@ -919,6 +920,9 @@ check-self-hosted-routing:
 
 check-skill-invocation-paths:
     uv run python -m livespec_dev_tooling.checks.skill_invocation_paths
+
+check-hook-trees-not-io-exempt:
+    uv run python -m livespec_dev_tooling.checks.hook_trees_not_io_exempt
 
 check-source-trees-scoped-to-consumer:
     uv run python -m livespec_dev_tooling.checks.source_trees_scoped_to_consumer
