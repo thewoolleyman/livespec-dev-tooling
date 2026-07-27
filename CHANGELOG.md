@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.55.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.54.28...v0.55.0) (2026-07-27)
+
+
+### Features
+
+* **checks:** reject hook trees declared in io_trees ([1f89d75](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1f89d75122fc4ee948c2515ef3f1c88e88114f29))
+
 ## [0.54.28](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.54.27...v0.54.28) (2026-07-27)
 
 
