@@ -290,6 +290,22 @@ def _configure_logger() -> structlog.stdlib.BoundLogger:
     return structlog.get_logger("check_coverage_incremental")
 
 
+def _surviving_impl_paths(*, impl_paths: list[Path]) -> list[Path]:
+    """Drop vendored impl paths, keeping authored ones in order.
+
+    Vendored code is upstream source the repo does not author: it has no
+    mirror-paired test and contributes no coverage obligation. Filtering
+    here — rather than only at mirror resolution — lets `main()` see an
+    EMPTY result and short-circuit, instead of handing an empty include
+    set to `coverage report` (which exits non-zero with "No data to
+    report", turning nothing-to-do into a red gate).
+
+    Uses the shared `config.is_vendored_path`, a path SEGMENT test, so a
+    hand-authored `_vendor_update.py` survives.
+    """
+    return [path for path in impl_paths if not is_vendored_path(rel_path=path)]
+
+
 def main() -> int:
     log = _configure_logger()
     args = _build_parser().parse_args()
@@ -308,6 +324,17 @@ def main() -> int:
                 source_tree_prefixes=list(config.source_tree_prefixes),
             )
             return 0
+    # Applied to BOTH the explicit `--paths` and git-derived branches: a
+    # vendoring commit reaches here with an all-vendored set, and nothing to
+    # gate is a PASS — the same conclusion the git-derived branch above
+    # already reaches when it derives no paths at all.
+    impl_paths = _surviving_impl_paths(impl_paths=impl_paths)
+    if not impl_paths:
+        log.info(
+            "every candidate impl path is vendored; nothing to gate",
+            check_id="check_coverage_incremental",
+        )
+        return 0
     test_paths = _resolve_test_paths(
         impl_paths=impl_paths, mirror_pairings=config.mirror_pairings, log=log
     )

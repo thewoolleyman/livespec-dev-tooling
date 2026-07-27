@@ -689,3 +689,104 @@ def test_resolve_mirror_test_paths_vendor_skip_does_not_widen() -> None:
         f"authored source merely NAMED like the vendor tree must still be "
         f"mirror-resolved, not skipped; got {resolved!r}"
     )
+
+
+def test_surviving_impl_paths_drops_vendored_and_keeps_authored() -> None:
+    """Vendored impls are dropped; authored siblings survive.
+
+    Skipping vendored impls at mirror-resolution (pm4z site 1) left an
+    adjacent edge one layer up: when EVERY candidate path is vendored,
+    the surviving impl list is empty, so `coverage report --include=`
+    receives an empty include set and exits non-zero with "No data to
+    report" — turning a nothing-to-do invocation into a red gate. The
+    filter therefore has to happen in `main()`, where the empty result
+    can short-circuit, not only inside mirror resolution.
+
+    A SEGMENT test, never a substring: `_vendor_update.py` is authored
+    source and must survive, or a substring match would silently drop
+    `vendor_update.py` and every sibling like it from the coverage gate.
+    """
+    module = _load_check_module()
+
+    surviving = module._surviving_impl_paths(  # noqa: SLF001
+        impl_paths=[
+            Path("livespec_dev_tooling/_vendor/returns/result.py"),
+            Path("livespec_dev_tooling/config.py"),
+            Path("livespec_dev_tooling/_vendor_update.py"),
+        ]
+    )
+
+    assert surviving == [
+        Path("livespec_dev_tooling/config.py"),
+        Path("livespec_dev_tooling/_vendor_update.py"),
+    ], f"vendored dropped, authored kept (including the lookalike); got {surviving!r}"
+
+
+def test_surviving_impl_paths_returns_empty_for_an_all_vendored_set() -> None:
+    """An all-vendored set yields an empty list — the nothing-to-gate case.
+
+    This is the exact input that blocked the `returns` vendoring push:
+    every candidate path vendored. `main()` must reach the same PASS
+    conclusion it already encodes one branch earlier ("no changed impl
+    .py paths derived from git diff; nothing to gate"), rather than
+    handing an empty include set to `coverage report`.
+    """
+    module = _load_check_module()
+
+    surviving = module._surviving_impl_paths(  # noqa: SLF001
+        impl_paths=[
+            Path("livespec_dev_tooling/_vendor/returns/result.py"),
+            Path("livespec_dev_tooling/_vendor/returns/io/__init__.py"),
+        ]
+    )
+
+    assert surviving == [], (
+        f"an all-vendored set must survive as empty so main() can short-circuit; "
+        f"got {surviving!r}"
+    )
+
+
+def test_all_vendored_paths_short_circuit_without_running_the_suite() -> None:
+    """An all-vendored `--paths` set exits 0 promptly, never reaching pytest.
+
+    This is the exact invocation that blocked the `returns` vendoring
+    push. Without the `main()` filter, every candidate path is dropped at
+    mirror resolution, the resolved test set is empty, and the check
+    falls through to a pytest run with NO path filter — the entire
+    1987-test suite — before `coverage report --include=` finally fails
+    with "No data to report".
+
+    The bounded timeout is the assertion, not a convenience: the property
+    under test is that the check SHORT-CIRCUITS rather than doing all
+    that work to reach a wrong answer. A regression re-enters the
+    full-suite path and trips the bound instead of hanging the run for
+    ten minutes.
+    """
+    try:
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(_CHECK_PATH),
+                "--paths",
+                "livespec_dev_tooling/_vendor/returns/result.py",
+            ],
+            cwd=str(_REPO_ROOT),
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=60,
+        )
+    except subprocess.TimeoutExpired:  # pragma: no cover — regression signal only
+        pytest.fail(
+            "an all-vendored path set must short-circuit, but the check was still "
+            "running after 60s — it fell through to the unfiltered full-suite pytest run"
+        )
+
+    assert result.returncode == 0, (
+        f"nothing to gate is a PASS; got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    assert "No data to report" not in (result.stdout + result.stderr), (
+        f"the empty include-set must never reach `coverage report`; "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
