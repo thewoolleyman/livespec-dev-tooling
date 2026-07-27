@@ -93,26 +93,19 @@ dev = [
 #     the sole supervisor boundary where a MARKED broad catch is permitted.
 #   - `partition_completeness` records a `supervisor_entry_files` role
 #     claim for it.
-# `io_trees` below declares this repo's ONE boundary tree, `.claude/hooks`.
-# Hook scripts are fail-open boundary code: a blind `except Exception` that
-# exits 0 and a direct `print` of the hook-protocol payload are the CONTRACT
-# there, not a smell — which is why `.claude/hooks/**` is in ruff's
-# `extend-exclude` above. `io_trees` is the role key that records that fact,
-# and it grants exactly the right thing: wholesale exemption from the
-# catch-position and domain-raise checks. Nothing else in this flat-layout
-# library plays that role.
-#
-# The remaining role keys (commands_trees, dataclasses_tree, pure_trees,
-# covered_trees) stay empty/null: this flat-layout library has no code in
-# those roles.
+# The remaining role keys (io_trees, commands_trees, dataclasses_tree,
+# pure_trees, covered_trees) stay empty/null: this flat-layout library has
+# no code in those roles. With `io_trees` empty nothing is wholesale exempt
+# from the catch-position and domain-raise checks — they inspect the whole
+# `source_trees` universe.
 # ---------------------------------------------------------------------------
 
 [tool.livespec_dev_tooling]
 source_trees = ["livespec_dev_tooling"]
 target_dirs = ["livespec_dev_tooling"]
 source_tree_prefixes = ["livespec_dev_tooling/"]
-# Fail-open hook boundary: blind catches and direct prints are the contract.
-io_trees = [".claude/hooks"]
+# Flat-layout library has no wholesale IO exemption tree.
+io_trees = []
 # Flat-layout library has no command-surface subtree.
 commands_trees = []
 # Flat-layout library has no pure-module subtree for mutation/PBT/API gates.
