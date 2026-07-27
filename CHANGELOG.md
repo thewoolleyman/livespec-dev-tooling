@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.54.28](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.54.27...v0.54.28) (2026-07-27)
+
+
+### Bug Fixes
+
+* retire the file_lloc_hard_gate opt-in so the 250 LLOC ceiling is unconditional ([ac54fd6](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ac54fd6d8145cb6856854b3187964b788a275363))
+
 ## [0.54.27](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.54.26...v0.54.27) (2026-07-26)
 
 
