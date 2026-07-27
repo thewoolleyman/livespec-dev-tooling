@@ -363,6 +363,7 @@ jobs:
           - check-no-shadow-ledger-body-identical
           - check-no-shadow-ledger-body-typechecks
           - check-no-todo-registry
+          - check-hook-trees-not-io-exempt
           - check-plan-thread-anchor-declared
           - check-plugin-resolution
           - check-self-hosted-routing
