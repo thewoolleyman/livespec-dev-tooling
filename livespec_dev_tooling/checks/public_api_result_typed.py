@@ -52,6 +52,9 @@ __all__: list[str] = []
 
 
 _RESULT_NAMES = frozenset({"Result", "IOResult"})
+# The one non-`commands/` location the spec names for the `main() -> int`
+# supervisor exemption.
+_DOCTOR_RUN_STATIC = Path("doctor") / "run_static.py"
 _RAILWAY_LIFTING_DECORATORS = frozenset({"safe", "impure_safe"})
 
 
@@ -92,7 +95,50 @@ def _is_railway_compliant(*, func: ast.FunctionDef | ast.AsyncFunctionDef) -> bo
     return _annotation_head_name(annotation=func.returns) in _RESULT_NAMES
 
 
-def _find_offenders(*, source: str) -> list[tuple[int, str]]:
+def _returns_named(*, func: ast.FunctionDef | ast.AsyncFunctionDef, name: str) -> bool:
+    """True iff `func`'s return annotation's terminal name is `name`."""
+    if func.returns is None:
+        return False
+    return _annotation_head_name(annotation=func.returns) == name
+
+
+def _is_exempt_supervisor(
+    *,
+    func: ast.FunctionDef | ast.AsyncFunctionDef,
+    rel_path: Path,
+    commands_trees: tuple[Path, ...],
+) -> bool:
+    """True iff the spec exempts `func` from the Result/IOResult return rule.
+
+    Implements `non-functional-requirements.md` verbatim, INCLUDING its
+    path scoping — "a supervisor at a deliberate side-effect boundary
+    (`main() -> int` in `commands/*.py` and `doctor/run_static.py`, or
+    any function returning `None`) ... OR the `build_parser() ->
+    ArgumentParser` factory in `commands/**.py`".
+
+    The scoping is load-bearing, not decoration: a flat-layout repo that
+    declares no commands tree gets NO `main()` exemption, because the
+    spec grants it to a LOCATION, not to a name. Exempting every `main`
+    everywhere would be a reading of intent, not the stated rule.
+
+    Deliberately absent: `make_validator`, `get_logger`, `compile_schema`,
+    `rop_pipeline`. This module's docstring cites them to an
+    `archive/brainstorming/` document, which the repo's own convention
+    makes reference-only; they appear nowhere in `SPECIFICATION/`.
+    """
+    if _returns_named(func=func, name="None"):
+        return True
+    under_commands = any(rel_path.is_relative_to(tree) for tree in commands_trees)
+    if func.name == "main" and _returns_named(func=func, name="int"):
+        return under_commands or rel_path == _DOCTOR_RUN_STATIC
+    if func.name == "build_parser" and _returns_named(func=func, name="ArgumentParser"):
+        return under_commands
+    return False
+
+
+def _find_offenders(
+    *, source: str, rel_path: Path, commands_trees: tuple[Path, ...]
+) -> list[tuple[int, str]]:
     tree = ast.parse(source)
     declared = set(_all_value_names(tree=tree))
     out: list[tuple[int, str]] = []
@@ -101,6 +147,9 @@ def _find_offenders(*, source: str) -> list[tuple[int, str]]:
             isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
             and node.name in declared
             and not _is_railway_compliant(func=node)
+            and not _is_exempt_supervisor(
+                func=node, rel_path=rel_path, commands_trees=commands_trees
+            )
         ):
             out.append((node.lineno, node.name))
     return out
@@ -134,8 +183,11 @@ def main() -> int:
             if py_file.name.startswith("_"):
                 continue
             source = py_file.read_text(encoding="utf-8")
-            for lineno, name in _find_offenders(source=source):
-                offenders.append((py_file.relative_to(cwd), lineno, name))
+            rel_path = py_file.relative_to(cwd)
+            for lineno, name in _find_offenders(
+                source=source, rel_path=rel_path, commands_trees=config.commands_trees
+            ):
+                offenders.append((rel_path, lineno, name))
     if offenders:
         for path, lineno, name in offenders:
             log.error(
