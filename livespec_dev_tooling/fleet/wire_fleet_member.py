@@ -170,6 +170,11 @@ def main() -> int:
         log.error(
             "fleet manifest unavailable",
             hint="the manifest on livespec master is the root fact; failing loud",
+            # The CAUSES, not just the verdict. Without these a 403, a 404, a
+            # rate-limit and a malformed manifest all read identically as
+            # "unavailable", which is what made one transient credential
+            # rejection indistinguishable from a real blind spot.
+            causes=[failure.as_dict() for failure in ctx.read_failures],
         )
         return 1
     repo = cast("str", args.repo)

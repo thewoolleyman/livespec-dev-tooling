@@ -352,3 +352,28 @@ def test_main_returns_nonzero_when_any_repo_report_has_error(
     monkeypatch.setattr("livespec_dev_tooling.fleet.merged_branch_sweep.run_sweep", fake_run_sweep)
 
     assert main() == 1
+
+
+def test_fetch_manifest_records_malformed_content_distinctly_from_a_failed_fetch() -> None:
+    """A fetched-but-unparseable manifest is a different fact from an unreachable one.
+
+    Both used to return the same `None`, so an operator could not tell "the
+    manifest on livespec master is corrupt" from "I could not reach GitHub" —
+    which are opposite diagnoses with opposite responses.
+    """
+    ctx = FleetContext(
+        owner="thewoolleyman",
+        run_gh=_runner_returning(stdout="{ this is not valid jsonc"),
+    )
+
+    assert fetch_manifest(ctx=ctx) is None
+    kinds = [failure.kind for failure in ctx.read_failures]
+    assert "malformed_content" in kinds, f"got {kinds!r}"
+    assert "not_found" not in kinds, "a successful fetch must not record a fetch failure"
+
+
+def _runner_returning(*, stdout: str) -> GhRunner:
+    def run(*, args: list[str], stdin: str | None = None) -> GhResult:  # noqa: ARG001
+        return GhResult(returncode=0, stdout=stdout, stderr="")
+
+    return run

@@ -90,7 +90,20 @@ def fetch_manifest(*, ctx: FleetContext) -> Manifest | None:
     text = ctx.file_text(repo=_MANIFEST_REPO, path=_MANIFEST_PATH)
     if text is None:  # pragma: no cover
         return None
-    return parse_manifest(source=text)
+    manifest = parse_manifest(source=text)
+    if manifest is None:
+        # Reaching here means the fetch SUCCEEDED and the bytes are unparseable.
+        # Recording it separately is what makes "could not fetch the manifest"
+        # and "fetched a malformed manifest" distinguishable downstream; they
+        # were the same `None` before.
+        ctx.record_read_failure(
+            operation="manifest",
+            path=f"{_MANIFEST_REPO}:{_MANIFEST_PATH}",
+            returncode=0,
+            kind="malformed_content",
+            detail="manifest fetched but did not parse",
+        )
+    return manifest
 
 
 def run_sweep(
@@ -279,6 +292,11 @@ def main() -> int:  # pragma: no cover
     if manifest is None:
         _ = sys.stderr.write(
             f"fleet manifest unavailable: {owner}/{_MANIFEST_REPO}:{_MANIFEST_PATH}\n"
+            + "".join(
+                f"  cause: {failure.operation} {failure.path} "
+                f"[{failure.kind}] rc={failure.returncode} {failure.detail}\n"
+                for failure in ctx.read_failures
+            )
         )
         return 1
     mode = SweepMode.EXECUTE if bool(args.execute) else SweepMode.DRY_RUN
