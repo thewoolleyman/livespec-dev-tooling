@@ -17,13 +17,22 @@ by `errors.py`'s `__all__`): `LivespecError`, `UsageError`,
 to the hierarchy widen this set as consumer pressure surfaces
 new failure categories.
 
-The check walks every `.py` file under `.claude-plugin/
-scripts/livespec/`, parses each via `ast`, and inspects every
-`Raise` node whose exception unparses to one of the
-domain-error names (or a parameterized call thereof). Files
-under `io/` and the single `errors.py` file are exempt; with
-`io_trees` unset nothing is exempt and every source file is
-inspected.
+The check walks the GIT-DERIVED first-party universe
+(`resolve_check_universe`) — every tracked first-party `.py`,
+so a new module is covered the moment it is tracked — parses
+each via `ast`, and inspects every `Raise` node whose exception
+unparses to one of the domain-error names (or a parameterized
+call thereof). Files under `io/` and the single `errors.py`
+file are exempt; with `io_trees` unset nothing is exempt and
+every source file is inspected.
+
+The universe is deliberately NOT the declared `source_trees`
+allowlist. That made `source_trees = []` mean "scan nothing"
+while the declaration read as conformance — a scope dodge that
+disarmed this check over a whole package with one empty array.
+`io_trees` remains DECLARED because it records an architectural
+ROLE the git index cannot supply; a key that merely says "look
+here" is derived instead.
 
 Output discipline: per spec, `print` (T20) and
 `sys.stderr.write` (`check-no-write-direct`) are banned in
@@ -44,8 +53,11 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
-from livespec_dev_tooling.checks._role_key_gate import source_trees_exit_code  # noqa: E402
-from livespec_dev_tooling.config import Config, iter_py_files, load_config  # noqa: E402
+from livespec_dev_tooling.config import (  # noqa: E402
+    Config,
+    load_config,
+    resolve_check_universe,
+)
 
 __all__: list[str] = []
 
@@ -89,24 +101,24 @@ def main() -> int:
         logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
     )
     log = structlog.get_logger("no_raise_outside_io")
-    cwd = Path.cwd()
-    config = load_config(repo_root=cwd)
-    gate_exit = source_trees_exit_code(
-        config=config, repo_root=cwd, log=log, check_id="no_raise_outside_io"
-    )
-    if gate_exit is not None:
-        return gate_exit
+    root, universe = resolve_check_universe()
+    # A genuinely codeless repo is a PASS, not a configuration error. It is the
+    # one exemption the railway clause grants, and `resolve_check_universe`
+    # raises typed git errors rather than returning a spuriously-empty walk, so
+    # an empty universe here means exactly what it says.
+    if not universe:
+        log.info("no first-party Python to check", check_id="no_raise_outside_io")
+        return 0
+    config = load_config(repo_root=root)
     offenders: list[tuple[Path, int, str]] = []
     inspected = 0
-    for tree_rel in config.source_trees:
-        for py_file in iter_py_files(root=cwd / tree_rel):
-            rel = py_file.relative_to(cwd)
-            if _is_exempt(rel_path=rel, config=config):
-                continue
-            inspected += 1
-            source = py_file.read_text(encoding="utf-8")
-            for lineno, error_name in _find_domain_raises(source=source):
-                offenders.append((rel, lineno, error_name))
+    for rel in universe:
+        if _is_exempt(rel_path=rel, config=config):
+            continue
+        inspected += 1
+        source = (root / rel).read_text(encoding="utf-8")
+        for lineno, error_name in _find_domain_raises(source=source):
+            offenders.append((rel, lineno, error_name))
     # An inspected count of zero otherwise reads exactly like a clean pass, so
     # it is reported on every run rather than inferred from silence.
     log.info(

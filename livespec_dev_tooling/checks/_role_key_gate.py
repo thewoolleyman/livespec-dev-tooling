@@ -17,7 +17,6 @@ __all__: list[str] = [
     "ensure_declared_paths_contain_python",
     "role_key_gate_exit_code",
     "role_key_paths_exit_code",
-    "source_trees_exit_code",
 ]
 
 _UNDECLARED_ROLE_KEY_MESSAGE = " ".join(
@@ -103,21 +102,3 @@ def role_key_paths_exit_code(
     ):
         return 1
     return None
-
-
-def source_trees_exit_code(
-    *,
-    config: Config,
-    repo_root: Path,
-    log: structlog.stdlib.BoundLogger,
-    check_id: str,
-) -> int | None:
-    """Return the early exit for a `source_trees` role-key gate."""
-    return role_key_paths_exit_code(
-        config=config,
-        key="source_trees",
-        paths=config.source_trees,
-        repo_root=repo_root,
-        log=log,
-        check_id=check_id,
-    )

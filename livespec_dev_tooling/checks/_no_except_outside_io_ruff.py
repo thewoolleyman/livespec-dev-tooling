@@ -20,9 +20,9 @@ def _explicit_ruff_lint_select_configured(*, repo_root: Path) -> bool:
     return "[tool.ruff.lint]" in text and "select" in text
 
 
-def _ruff_show_files(*, repo_root: Path, source_trees: tuple[Path, ...]) -> frozenset[Path]:
+def _ruff_show_files(*, repo_root: Path, scan_roots: tuple[Path, ...]) -> frozenset[Path]:
     result = subprocess.run(
-        ["ruff", "check", "--show-files", "--force-exclude", *(str(path) for path in source_trees)],
+        ["ruff", "check", "--show-files", "--force-exclude", *(str(path) for path in scan_roots)],
         cwd=repo_root,
         capture_output=True,
         text=True,
@@ -47,12 +47,17 @@ def _ruff_enables_ble001(*, repo_root: Path, rel_path: Path) -> bool:
 
 
 def find_ruff_backstop_gaps(
-    *, repo_root: Path, source_trees: tuple[Path, ...], inspected_files: tuple[Path, ...]
+    *, repo_root: Path, scan_roots: tuple[Path, ...], inspected_files: tuple[Path, ...]
 ) -> list[tuple[Path, str]]:
-    """Return inspected files that Ruff will not lint with BLE001 enabled."""
+    """Return inspected files that Ruff will not lint with BLE001 enabled.
+
+    `scan_roots` is what Ruff is asked to enumerate. It used to be the caller's
+    declared `source_trees`; with a git-derived universe the caller passes the
+    repo root, so the enumeration covers the same files the universe does.
+    """
     if not _explicit_ruff_lint_select_configured(repo_root=repo_root):
         return []
-    ruff_files = _ruff_show_files(repo_root=repo_root, source_trees=source_trees)
+    ruff_files = _ruff_show_files(repo_root=repo_root, scan_roots=scan_roots)
     gaps: list[tuple[Path, str]] = []
     for rel_path in inspected_files:
         if rel_path not in ruff_files:

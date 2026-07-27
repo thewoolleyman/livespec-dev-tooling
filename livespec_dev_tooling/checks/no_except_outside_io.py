@@ -34,6 +34,15 @@ The loop-iteration POSITION rule is no longer among the gaps —
 it ceased to exist with the flavor rather than being
 mechanized.
 
+The universe is the GIT-DERIVED first-party set
+(`resolve_check_universe`), so a new module is covered the
+moment it is tracked. It is deliberately NOT the declared
+`source_trees` allowlist: that made `source_trees = []` mean
+"scan nothing" while the declaration read as conformance — a
+scope dodge that disarmed this check over a whole package with
+one empty array. `io_trees` remains DECLARED because it records
+an architectural ROLE the git index cannot supply.
+
 Files under `io_trees` are wholesale exempt; with `io_trees`
 unset nothing is exempt and every source file is inspected.
 The marker lives on the `except …:` clause itself, which
@@ -73,8 +82,11 @@ from livespec_dev_tooling.checks._no_except_outside_io_markers import (  # noqa:
 from livespec_dev_tooling.checks._no_except_outside_io_ruff import (  # noqa: E402
     find_ruff_backstop_gaps,
 )
-from livespec_dev_tooling.checks._role_key_gate import source_trees_exit_code  # noqa: E402
-from livespec_dev_tooling.config import Config, iter_py_files, load_config  # noqa: E402
+from livespec_dev_tooling.config import (  # noqa: E402
+    Config,
+    load_config,
+    resolve_check_universe,
+)
 
 __all__: list[str] = []
 
@@ -268,25 +280,25 @@ def main() -> int:
         logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
     )
     log = structlog.get_logger("no_except_outside_io")
-    cwd = Path.cwd()
-    config = load_config(repo_root=cwd)
-    gate_exit = source_trees_exit_code(
-        config=config, repo_root=cwd, log=log, check_id="no_except_outside_io"
-    )
-    if gate_exit is not None:
-        return gate_exit
+    root, universe = resolve_check_universe()
+    # A genuinely codeless repo is a PASS, not a configuration error. It is the
+    # one exemption the railway clause grants, and `resolve_check_universe`
+    # raises typed git errors rather than returning a spuriously-empty walk, so
+    # an empty universe here means exactly what it says.
+    if not universe:
+        log.info("no first-party Python to check", check_id="no_except_outside_io")
+        return 0
+    config = load_config(repo_root=root)
     offenders: list[tuple[Path, int, str]] = []
     inspected_files: list[Path] = []
-    for tree_rel in config.source_trees:
-        for py_file in iter_py_files(root=cwd / tree_rel):
-            rel = py_file.relative_to(cwd)
-            if _is_under_any(rel_path=rel, trees=config.io_trees):
-                continue
-            inspected_files.append(rel)
-            source = py_file.read_text(encoding="utf-8")
-            exempt = _is_supervisor_main_file(rel_path=rel, config=config)
-            for lineno, reason in _find_offending_handlers(source=source, position_exempt=exempt):
-                offenders.append((rel, lineno, reason))
+    for rel in universe:
+        if _is_under_any(rel_path=rel, trees=config.io_trees):
+            continue
+        inspected_files.append(rel)
+        source = (root / rel).read_text(encoding="utf-8")
+        exempt = _is_supervisor_main_file(rel_path=rel, config=config)
+        for lineno, reason in _find_offending_handlers(source=source, position_exempt=exempt):
+            offenders.append((rel, lineno, reason))
     # An inspected count of zero otherwise reads exactly like a clean pass, so
     # it is reported on every run rather than inferred from silence.
     log.info(
@@ -296,8 +308,8 @@ def main() -> int:
         offenses=len(offenders),
     )
     backstop_gaps = find_ruff_backstop_gaps(
-        repo_root=cwd,
-        source_trees=config.source_trees,
+        repo_root=root,
+        scan_roots=(Path(),),
         inspected_files=tuple(inspected_files),
     )
     # BOTH failure kinds are reported in the SAME run. An earlier form returned

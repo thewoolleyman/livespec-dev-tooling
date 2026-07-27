@@ -221,33 +221,12 @@ def test_no_raise_outside_io_runs_without_io_trees(*, tmp_path: Path) -> None:
     assert "pkg/mod.py" in result.stderr
 
 
-def _assert_announces_absent_source_trees(*, slug: str, tmp_path: Path) -> None:
-    """An undeclared `source_trees` is named in the log and fails closed.
-
-    Neither check guards `source_trees`, so an unset key would otherwise
-    run the walk for zero iterations and exit 0 — indistinguishable from
-    a clean pass over a real tree.
-    """
-    _write_block(repo_root=tmp_path, body='target_dirs = ["pkg"]\n')
-    result = _run_check(slug=slug, cwd=tmp_path)
-    assert result.returncode == 1, (
-        f"{slug} must exit 1 when `source_trees` is undeclared; "
-        f"stdout={result.stdout!r} stderr={result.stderr!r}"
-    )
-    assert "role key undeclared" in result.stderr
-    assert "declare the real tree" in result.stderr
-    assert "declare it explicitly empty with a comment giving the reason" in result.stderr
-    assert "source_trees" in result.stderr
-
-
-def test_no_except_outside_io_announces_absent_source_trees(*, tmp_path: Path) -> None:
-    """`no_except_outside_io` names an absent `source_trees` rather than walking zero files."""
-    _assert_announces_absent_source_trees(slug="no_except_outside_io", tmp_path=tmp_path)
-
-
-def test_no_raise_outside_io_announces_absent_source_trees(*, tmp_path: Path) -> None:
-    """`no_raise_outside_io` names an absent `source_trees` rather than walking zero files."""
-    _assert_announces_absent_source_trees(slug="no_raise_outside_io", tmp_path=tmp_path)
+# `_assert_announces_absent_source_trees` and its two callers were retired when
+# `livespec-dev-tooling-i532` moved `no_except_outside_io` / `no_raise_outside_io`
+# onto the git-derived universe. Neither check consults `source_trees` now, so
+# "announces an absent source_trees" is not a behavior they can have. The
+# invariant is NOT dropped: `source_trees` remains in `REQUIRED_ROLE_KEYS` and
+# `check-required-role-keys-declared` owns enforcing its declaration.
 
 
 def test_public_api_result_typed_noops_without_pure_trees(*, tmp_path: Path) -> None:
@@ -285,8 +264,6 @@ def test_all_role_gated_checks_error_on_undeclared_keys(*, tmp_path: Path) -> No
 def test_declared_empty_role_keys_are_sanctioned_opt_outs(*, tmp_path: Path) -> None:
     """Declared-empty keys stay a visible no-op rather than a misconfiguration."""
     cases = (
-        ("no_except_outside_io", "source_trees", "source_trees = []\n", None),
-        ("no_raise_outside_io", "source_trees", "source_trees = []\n", None),
         ("public_api_result_typed", "pure_trees", "pure_trees = []\n", None),
         ("pbt_coverage_pure_modules", "pure_trees", "pure_trees = []\n", None),
         (
@@ -315,18 +292,13 @@ def test_declared_empty_role_keys_are_sanctioned_opt_outs(*, tmp_path: Path) -> 
         )
 
 
-def test_declared_source_trees_with_no_python_files_errors(*, tmp_path: Path) -> None:
-    """A non-empty `source_trees` declaration must resolve to at least one `.py` file."""
-    empty = tmp_path / "empty"
-    empty.mkdir()
-    _write_block(repo_root=tmp_path, body='source_trees = ["empty"]\n')
-    result = _run_check(slug="no_raise_outside_io", cwd=tmp_path)
-    assert (
-        result.returncode == 1
-    ), f"declared source_trees with no .py files must fail; stderr={result.stderr!r}"
-    assert "declared role key resolves to no Python files" in result.stderr
-    assert "source_trees" in result.stderr
-    assert "empty" in result.stderr
+# `test_declared_source_trees_with_no_python_files_errors` was retired with the
+# same i532 change: it drove `no_raise_outside_io` through the
+# `source_trees_exit_code` gate, which that check no longer has. The
+# "declared role key resolves to no Python files" behavior still exists and is
+# still covered — `ensure_declared_paths_contain_python` is exercised through
+# `public_api_result_typed`, `pbt_coverage_pure_modules`, `check_mutation` and
+# `newtype_domain_primitives` in the cases above.
 
 
 def test_io_exempt_source_tree_still_passes_when_tree_contains_python(*, tmp_path: Path) -> None:
