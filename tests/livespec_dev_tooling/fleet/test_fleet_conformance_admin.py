@@ -376,3 +376,22 @@ def test_admin_lane_fails_when_the_released_adopter_is_unreadable(
     _install_runner(monkeypatch, table=_adopter_table(adopted_settings=None))
 
     assert fleet_conformance_admin.main() == 4
+
+
+def test_admin_lane_unusable_credential_fails_before_any_row_runs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The admin lane gets the same z4qi preflight, and the same non-relaxation.
+
+    It is the only context that enforces these rows, so a demoted credential
+    verdict here would be a zero-enforcement hole rather than merely a missed
+    signal.
+    """
+    _admin_argv(monkeypatch)
+    table = _two_member_table(blind_app_installation=False)
+    table[("api", "rate_limit")] = GhResult(
+        returncode=1, stdout="", stderr="gh: Resource not accessible (HTTP 403)"
+    )
+    _install_runner(monkeypatch, table=table)
+
+    assert fleet_conformance_admin.main() == 1
