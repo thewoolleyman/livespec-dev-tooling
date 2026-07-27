@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.56.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.56.1...v0.56.2) (2026-07-27)
+
+
+### Bug Fixes
+
+* **fleet:** probe the credential once before evaluating any obligation row ([75be7cd](https://github.com/thewoolleyman/livespec-dev-tooling/commit/75be7cd931ef8018acf2aa6a0f0e9cdbaa99f2b1))
+
 ## [0.56.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.56.0...v0.56.1) (2026-07-27)
 
 
