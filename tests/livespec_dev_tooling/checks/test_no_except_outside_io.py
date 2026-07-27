@@ -37,7 +37,28 @@ _FOREIGN_CODE_MARKER = (
 )
 
 
+def _git(*, cwd: Path, args: list[str]) -> None:
+    """Run a `git` subcommand in `cwd` with a hermetic 3-key env (no os.environ)."""
+    _ = subprocess.run(
+        ["git", *args],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=True,
+        env={"HOME": str(cwd), "GIT_CONFIG_GLOBAL": "/dev/null", "PATH": "/usr/bin:/bin"},
+    )
+
+
 def _run(*, cwd: Path) -> subprocess.CompletedProcess[str]:
+    """`git init` + stage the fixture, then run the check as a consumer would.
+
+    The check derives its universe from the git INDEX, so a fixture that is not
+    a git repo has no universe at all and an untracked file is invisible.
+    Staging happens HERE rather than in each test so every fixture gets it —
+    an untracked fixture would pass vacuously.
+    """
+    _git(cwd=cwd, args=["init", "-q"])
+    _git(cwd=cwd, args=["add", "-A"])
     return subprocess.run(
         [sys.executable, str(_NO_EXCEPT_OUTSIDE_IO)],
         cwd=str(cwd),
@@ -69,7 +90,7 @@ def test_ruff_backstop_noops_without_pyproject(*, tmp_path: Path) -> None:
     assert (
         find_ruff_backstop_gaps(
             repo_root=tmp_path,
-            source_trees=(Path("pkg"),),
+            scan_roots=(Path("pkg"),),
             inspected_files=(Path("pkg/mod.py"),),
         )
         == []
@@ -1406,6 +1427,11 @@ def test_no_except_outside_io_accepts_excludes_that_only_carve_uninspected_subse
         rel="mutants/ignored.py",
         body="def ignored() -> None:\n    return None\n",
     )
+    # Both are gitignored scratch in every real consumer, so the git index the
+    # universe derives from never carries them. Without this the fixture stages
+    # files no repo would, and the Ruff excludes stop lining up with what is
+    # actually inspected.
+    _ = (tmp_path / ".gitignore").write_text("__pycache__/\nmutants/\n", encoding="utf-8")
 
     result = _run(cwd=tmp_path)
 
@@ -1415,38 +1441,71 @@ def test_no_except_outside_io_accepts_excludes_that_only_carve_uninspected_subse
     )
 
 
-def test_no_except_outside_io_announces_absent_source_trees(*, tmp_path: Path) -> None:
-    """An unset `source_trees` is announced, never silently walked as zero files.
+def test_no_except_outside_io_accepts_a_codeless_repo(*, tmp_path: Path) -> None:
+    """A genuinely codeless repo (0 tracked first-party `.py`) passes with exit 0.
 
-    A zero-iteration walk exits 0 and reads exactly like a pass,
-    so the absent role key is named explicitly in the log.
+    Replaces two tests that pinned the `source_trees_exit_code` role-key gate —
+    one asserting an UNDECLARED `source_trees` is announced and fails, one
+    asserting a declared tree containing no Python is a misdeclaration. This
+    check no longer consults that key at all, so neither state is observable
+    from here. The invariant itself is NOT dropped: `source_trees` is still in
+    `REQUIRED_ROLE_KEYS`, and `check-required-role-keys-declared` is the check
+    that owns and enforces declaration.
+
+    What replaces them is the distinction that still matters and is easy to get
+    wrong under a derived universe: an EMPTY universe must be a PASS, not a
+    configuration error. It is the one exemption the railway clause grants — a
+    governed repo with zero first-party Python — and `livespec-console-beads-fabro`
+    is the verified fleet case. Failing closed here would redden a conforming repo.
     """
-    (tmp_path / "pyproject.toml").write_text(
-        '[tool.livespec_dev_tooling]\ntarget_dirs = ["pkg"]\n',
-        encoding="utf-8",
-    )
+    _ = (tmp_path / "README.md").write_text("no code\n", encoding="utf-8")
 
     result = _run(cwd=tmp_path)
 
-    assert result.returncode == 1, (
-        f"no_except_outside_io should fail when source_trees is undeclared; "
-        f"got returncode={result.returncode} stderr={result.stderr!r}"
-    )
-    combined = result.stdout + result.stderr
-    assert "role key undeclared" in combined
-    assert "source_trees" in combined
-
-
-def test_no_except_outside_io_rejects_declared_tree_with_no_python(*, tmp_path: Path) -> None:
-    """A declared source tree containing no Python files is a misdeclaration."""
-    result = _run(cwd=tmp_path)
-
-    assert result.returncode == 1, (
-        f"no_except_outside_io should reject a declared tree with no Python files; "
+    assert result.returncode == 0, (
+        f"no_except_outside_io should accept a codeless repo with exit 0; "
         f"got returncode={result.returncode} "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
-    assert "declared role key resolves to no Python files" in result.stderr
+
+
+def test_no_except_outside_io_covers_a_tracked_file_with_source_trees_declared_empty(
+    *, tmp_path: Path
+) -> None:
+    """`source_trees = []` must NOT mean "scan nothing" — the scope dodge is closed.
+
+    The sibling of the same invariant in `test_no_raise_outside_io.py`, and the
+    reason `livespec-dev-tooling-i532` exists. Under the allowlist universe a
+    repo disarmed both railway checks over its whole package by declaring one
+    empty array, and the declaration read as conformance.
+    """
+    _write_pyproject(
+        tmp_path=tmp_path,
+        extra=(
+            "[tool.livespec_dev_tooling]\n"
+            "source_trees = []\n"
+            "io_trees = []\n"
+            "\n"
+            "[tool.ruff.lint]\n"
+            'select = ["BLE"]\n'
+        ),
+    )
+    _write_module(
+        tmp_path=tmp_path,
+        rel="pkg/undeclared.py",
+        body="def swallow() -> None:\n    try:\n        pass\n    except Exception:\n        pass\n",
+    )
+
+    result = _run(cwd=tmp_path)
+
+    combined = result.stdout + result.stderr
+    assert result.returncode != 0, (
+        f"no_except_outside_io must inspect a tracked first-party file even with "
+        f"`source_trees = []`; got returncode={result.returncode} combined={combined!r}"
+    )
+    assert (
+        "pkg/undeclared.py" in combined
+    ), f"the diagnostic must name the undeclared-but-tracked offender; combined={combined!r}"
 
 
 def test_no_except_outside_io_module_importable_without_running_main() -> None:
