@@ -13,7 +13,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 from _protection_fixtures import aligned_merge_settings_payload, aligned_protection_payload
 
@@ -122,12 +122,25 @@ _STANDARD_JUSTFILE = (
 )
 
 
+# The credential preflight (livespec-dev-tooling-z4qi) probes `rate_limit`
+# before any row runs, so every fixture must answer it or the sweep correctly
+# stops at "credential unusable" before reaching what the test is about.
+# Answered HERE rather than in each table so the probe stays invisible to tests
+# that are not about it — and so a test that DOES want a rejected credential
+# still gets one simply by overriding this key.
+_PROBE_KEY = ("api", "rate_limit")
+_PROBE_OK = GhResult(returncode=0, stdout='{"rate": {"remaining": 4999}}', stderr="")
+
+
 def make_runner(*, table: dict[tuple[str, ...], GhResult]) -> GhRunner:
     """Canned-response `GhRunner` keyed on full arg tuples."""
 
     def run(*, args: list[str], stdin: str | None = None) -> GhResult:
         del stdin
-        return table.get(tuple(args), GhResult(returncode=1, stdout="", stderr="no canned"))
+        key = tuple(args)
+        if key == _PROBE_KEY and key not in table:
+            return _PROBE_OK
+        return table.get(key, GhResult(returncode=1, stdout="", stderr="no canned"))
 
     return run
 
@@ -886,3 +899,55 @@ def test_member_ci_fails_loudly_when_the_running_repo_is_not_in_the_manifest(
 
     monkeypatch.setattr(fleet_conformance, "resolve_repo_name", lambda **_kwargs: None)
     assert fleet_conformance.main() == 1
+
+
+def test_main_unusable_credential_fails_before_any_row_runs(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The gate is NOT relaxed by the z4qi preflight — a rejected token still reds.
+
+    This is the assertion that must never regress. `livespec-dev-tooling-z4qi`
+    fixed a FALSE red (one transient rejection surfacing as nine blind rows);
+    the standing risk while fixing it was demoting the TRUE red with it.
+    Rejecting the probe persistently must still exit 1.
+    """
+    monkeypatch.setenv("LIVESPEC_RUN_FLEET_CONFORMANCE", "true")
+    monkeypatch.setattr(sys, "argv", ["fleet-conformance", "--owner", "acme"])
+    table = _green_table()
+    table[_PROBE_KEY] = GhResult(
+        returncode=1, stdout="", stderr="gh: Resource not accessible (HTTP 403)"
+    )
+    _patch_runner(monkeypatch=monkeypatch, table=table)
+
+    assert fleet_conformance.main() == 1
+
+
+def test_main_transient_credential_rejection_recovers(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The z4qi scenario end to end: rejected once, then the sweep proceeds.
+
+    Before the preflight this run reddened master with nine blind rows on a
+    commit that changed nothing.
+    """
+    monkeypatch.setenv("LIVESPEC_RUN_FLEET_CONFORMANCE", "true")
+    monkeypatch.setattr(sys, "argv", ["fleet-conformance", "--owner", "acme"])
+    inner = make_runner(table=_green_table())
+    rejected: list[int] = [0]
+
+    def flaky(*, args: list[str], stdin: str | None = None) -> GhResult:
+        if tuple(args) == _PROBE_KEY and rejected[0] == 0:
+            rejected[0] += 1
+            return GhResult(returncode=1, stdout="", stderr="gh: bad credentials (HTTP 401)")
+        return inner(args=args, stdin=stdin)
+
+    monkeypatch.setattr(fleet_conformance, "default_gh_runner", flaky)
+    monkeypatch.setattr(fleet_conformance, "preflight_credential", _no_sleep_preflight)
+
+    assert fleet_conformance.main() == 0
+    assert rejected[0] == 1, "the transient rejection should have been exercised"
+
+
+def _no_sleep_preflight(*, ctx: object) -> object:
+    """`preflight_credential` with the real logic and no real delay."""
+    from livespec_dev_tooling.fleet._credential_preflight import preflight_credential
+
+    return preflight_credential(ctx=cast("Any", ctx), sleep=lambda _seconds: None)

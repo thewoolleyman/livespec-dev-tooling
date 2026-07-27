@@ -118,6 +118,7 @@ from livespec_dev_tooling.fleet._context import (
     resolve_repo_name,
 )
 from livespec_dev_tooling.fleet._contract_rows import CENTRAL_APP_VANTAGE, CENTRAL_VANTAGE
+from livespec_dev_tooling.fleet._credential_preflight import preflight_credential
 from livespec_dev_tooling.fleet._lanes import (
     MemberVerdict,
     configure_lane_logging,
@@ -295,6 +296,55 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _credential_usable(*, ctx: FleetContext, log: structlog.stdlib.BoundLogger) -> bool:
+    """One deliberate credential verdict, reported as a single cause.
+
+    Extracted from `main` so the reason a run stopped is legible in one place,
+    and so `main` stays under the return-count ceiling.
+    """
+    preflight = preflight_credential(ctx=ctx)
+    if preflight.usable:
+        return True
+    log.error(
+        "github credential unusable — no obligation row can see anything",
+        attempts=preflight.attempts,
+        cause=None if preflight.cause is None else preflight.cause.as_dict(),
+        hint=(
+            "the credential was probed and rejected; this is one cause, not N "
+            "blind rows. Fix the credential — do NOT demote blind rows"
+        ),
+    )
+    return False
+
+
+def _resolve_root_facts(
+    *, ctx: FleetContext, owner: str, log: structlog.stdlib.BoundLogger
+) -> Manifest | None:
+    """Both preconditions this sweep cannot proceed without, in order.
+
+    The credential verdict comes FIRST and deliberately: without it a single
+    transient rejection surfaces as N blind obligation rows and reds master on
+    a no-op commit (livespec-dev-tooling-z4qi). Neither step relaxes anything —
+    a genuinely unusable credential and a genuinely unavailable manifest both
+    still fail, now each naming ONE cause rather than N downstream symptoms.
+    """
+    if not _credential_usable(ctx=ctx, log=log):
+        return None
+    manifest = fetch_manifest(ctx=ctx)
+    if manifest is None:
+        log.error(
+            "fleet manifest unavailable",
+            source=f"{owner}/{MANIFEST_REPO}:{MANIFEST_PATH}",
+            hint="the manifest on livespec master is the root fact; failing loud",
+            # The CAUSES, not just the verdict. Without these a 403, a 404, a
+            # rate-limit and a malformed manifest all read identically as
+            # "unavailable", which is what made one transient credential
+            # rejection indistinguishable from a real blind spot.
+            causes=[failure.as_dict() for failure in ctx.read_failures],
+        )
+    return manifest
+
+
 def main() -> int:
     configure_lane_logging()
     log = structlog.get_logger("fleet_conformance")
@@ -326,18 +376,8 @@ def main() -> int:
         run_gh=default_gh_runner,
         filter_consuming_preflight=args.emit_member_verdicts is not None,
     )
-    manifest = fetch_manifest(ctx=ctx)
+    manifest = _resolve_root_facts(ctx=ctx, owner=owner, log=log)
     if manifest is None:
-        log.error(
-            "fleet manifest unavailable",
-            source=f"{owner}/{MANIFEST_REPO}:{MANIFEST_PATH}",
-            hint="the manifest on livespec master is the root fact; failing loud",
-            # The CAUSES, not just the verdict. Without these a 403, a 404, a
-            # rate-limit and a malformed manifest all read identically as
-            # "unavailable", which is what made one transient credential
-            # rejection indistinguishable from a real blind spot.
-            causes=[failure.as_dict() for failure in ctx.read_failures],
-        )
         return 1
     result = run_member_rows(ctx=ctx, manifest=manifest, log=log, vantages=central_run_vantages())
     adopters = run_adopter_rows(ctx=ctx, manifest=manifest, log=log)
