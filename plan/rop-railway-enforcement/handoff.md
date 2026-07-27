@@ -10,42 +10,66 @@ minutes — re-derive before acting.
 
 ---
 
-## ▶️ START HERE — one command, then one blocked push
+## ▶️ START HERE — this thread is BLOCKED on a schema fix, and may not close without it
 
-The maintainer RULED (2026-07-27, relayed by the supervisor): **enforce the railway for real,
-fleet-wide.** Build the mechanical check so "on the railway" means "actually composes on
-Result/IOResult", then bring every non-conforming repo into compliance — including
-`livespec-dev-tooling` itself. They chose this over scoping to new code only, and over narrowing
-the spec clause to match current reality. Their reasoning: *this is the same disease the rop-sweep
-just cured — a central requirement no check actually verifies.*
+The maintainer RULED (2026-07-27): **enforce the railway for real, fleet-wide.** Build the
+mechanical check so "on the railway" means "actually composes on Result/IOResult", then bring every
+non-conforming repo into compliance — including `livespec-dev-tooling` itself. Their reasoning:
+*this is the same disease the rop-sweep just cured — a central requirement no check actually
+verifies.*
 
 **Do NOT reach for a severity lever, a per-repo opt-in, or a declared-empty escape.** Every one of
-those is a shape the rop-sweep spent days removing. `check-hook-trees-not-io-exempt` exists
-because the exemption instinct keeps recurring.
+those is a shape the rop-sweep spent days removing. `check-hook-trees-not-io-exempt` exists because
+the exemption instinct keeps recurring.
 
-**Your next action is `livespec-dev-tooling-pm4z`** — a two-site fix that is fully diagnosed and
-mechanical. Read the item; it names both call sites and the exact predicate to apply. Then the
-blocked push below goes through.
+**Your next action is `livespec-dev-tooling-8o8e.1`, and its first deliverable is a CLASSIFICATION,
+not a code change.** Read the item first — the full ruling is there, and the ledger is authoritative
+over this file:
 
 ```bash
-cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh -- bd show livespec-dev-tooling-pm4z
+cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh -- bd show livespec-dev-tooling-8o8e.1
 ```
 
-### THE ONE PIECE OF UNCOMMITTED WORK IN FLIGHT
+### 🛑 CLOSURE PRECONDITION — read before planning anything else
 
-A worktree exists with an authored, **push-blocked** commit:
+**Neither `8o8e` nor THIS PLAN THREAD may close until `8o8e.1` is fixed FLEET-WIDE and VERIFIED**
+(maintainer-declared 2026-07-28). "Verified" means per-repo evidence that the ambiguous spelling is
+rejected and each repo declares the correct variant — **not** a green check in one repo. This is a
+blocking precondition on closure, not a follow-up.
 
-| field | value |
-|---|---|
-| worktree | `~/.worktrees/livespec-dev-tooling/vendor-returns` |
-| branch | `vendor-returns` (commit `085694c`) |
-| contents | `dry-python/returns` 0.25.0 vendored into `livespec_dev_tooling/_vendor/returns/` (115 `.py` + LICENSE) + `.vendor.jsonc` entry |
-| state | committed locally, **push REJECTED** by pre-push `just check` |
-| blocker | `check-check-coverage-incremental` — site 1 of `pm4z` |
-| after the fix | rebase onto master, `git push -u origin vendor-returns`, open the PR |
+### 🛑 A SUPERSEDED AUTHORIZATION — do NOT implement the weaker fix
 
-It is NOT abandoned and must NOT be reaped. Five OTHER `livespec-dev-tooling` worktrees are
-FOREIGN — `git worktree list` before touching anything.
+An earlier supervisor authorization said the `pure_trees` fix "cannot be reject-empty, it must be
+that emptiness stops implying scan-nothing". **The maintainer superseded that.** It removes THIS
+INSTANCE while leaving the ambiguity REPRESENTABLE, so the next key or the next reader re-creates
+the bug. The ruling is a TYPE-SYSTEM fix: a flat-layout repo declares a **different type**, not an
+empty array, encoded as a discriminated union parsed into distinct Python types at the config
+boundary. A bare `[]` becomes a hard load-time ERROR naming both blessed spellings.
+
+**State the guarantee precisely — overclaiming it is its own defect.** TOML has no sum types, so
+nothing stops a person TYPING `[]` into the file. What the design buys is: the ambiguity is
+**unrepresentable after parsing**, and ambiguous input **fails loud at load** instead of succeeding
+silently as "scan nothing". Say that; do not say "impossible to express".
+
+`check-newtype-domain-primitives` and `check-assert-never-exhaustiveness` already exist in this
+fleet and make it cheap: once the union is a real type, pyright strict + `assert_never` force EVERY
+consumer to handle both variants explicitly.
+
+### ⛔ DO NOT COMMIT TO A REMEDIATION SHAPE BEFORE THAT CLASSIFICATION LANDS
+
+This epic's remediation of six repos / 245 functions runs THROUGH the role-key loader `8o8e.1`
+changes. Taking arming decisions now means taking them against a schema about to move underneath
+them. Classify first, then design.
+
+`8o8e.1` is also a **required-key schema change**, which this fleet treats as a cross-repo EPIC:
+it must backfill all eight Python-bearing repos in the SAME epic, harden-first, and **no loader
+that rejects the ambiguous spelling lands until every consumer has migrated**.
+
+### ✅ NOTHING IS IN FLIGHT
+
+Every worktree and branch this thread created is reaped; `livespec-dev-tooling` is clean on
+`master`. Five OTHER `livespec-dev-tooling` worktrees are FOREIGN — run `git worktree list` before
+touching anything, and reap none of them.
 
 ---
 
@@ -113,8 +137,17 @@ Two corrections to the epic's original premise, both now on the item:
 2. **`livespec-driver-claude` and `livespec-driver-codex` are already clean** and are not in the
    remediation set.
 
-Reproduce with the script recorded in `8o8e`'s design notes. Re-measure with the CHANGED check
-before arming anything — never against these numbers.
+**⚠️ THESE NUMBERS ARE NOW KNOWN STALE — and stale in the direction that UNDERSTATES the work.**
+PR #748 implemented the exemptions LITERALLY, including their path scoping: the spec grants the
+`main()` exemption to a LOCATION (`commands/*.py`, `doctor/run_static.py`), not to a name, and
+`build_parser` only under `commands/**.py`. A flat-layout repo declaring no commands tree therefore
+gets NO `main()` exemption at all. The `−(a..f)` column above subtracted 75 `main()`/`build_parser()`
+hits fleet-wide as though the exemption were unscoped, so the TRUE counts are **higher** than the
+245 shown.
+
+Do not plan against this table. Re-measure with the CHANGED check — and only after `8o8e.1` lands,
+since the role-key loader those measurements run through is about to move. Reproduce with the
+script recorded in `8o8e`'s design notes.
 
 ---
 
@@ -125,17 +158,47 @@ the check turns its own `just check` red on 47 offenders, and `lefthook` then bl
 commit that would fix it. The remediation of dev-tooling is a **precondition** of the hardening,
 not a follow-up.
 
-1. ✅ **DONE** — `hh4d`: `check-commit-pairs-source-and-test` excluded `_vendor` (PR #739, merged).
+1. ✅ **DONE** — `hh4d`: `check-commit-pairs-source-and-test` excluded `_vendor` (PR #739).
    Promoted the rule to the public `config.is_vendored_path`.
-2. ⬅️ **NEXT** — `pm4z`: two remaining `_vendor` sites (`check_coverage_incremental` confirmed,
-   `red_green_replay` latent).
-3. **Then** — push/merge the `vendor-returns` branch described above.
-4. **Then** — convert dev-tooling's 47 public functions onto the railway. Verify against the
-   SIMULATED post-migration predicate, never the currently-vacuous check.
-5. **Then** — migrate `public_api_result_typed` to `resolve_check_universe()` AND wire the a–f +
-   `-> None` exemptions. dev-tooling is at zero by then, so it lands green.
-6. **Then** — siblings, one repo per PR, ascending: git-jsonl (26), livespec (29), runtime (43),
-   orchestrator-beads-fabro (48), overseer (52).
+2. ✅ **DONE** — `pm4z`: the two remaining `_vendor` sites (PR #743) plus the adjacent
+   empty-after-filter edge they exposed (PR #746). CLOSED.
+3. ✅ **DONE** — `dry-python/returns` 0.25.0 vendored into `livespec_dev_tooling/_vendor/`
+   (PR #746). The enforcement suite can now compose on the railway at all.
+4. ✅ **DONE** — the spec's stated exemptions wired into `public_api_result_typed` (PR #748).
+   Behavior today is unchanged, because the check is still `pure_trees`-scoped and scans zero
+   files — this is the harden-first prerequisite, landed green.
+5. ⬅️ **NEXT — `8o8e.1`, classification FIRST.** Enumerate EVERY role key and classify which
+   genuinely carry two meanings versus one. Report before touching loaders. Fix the CLASS, not the
+   instance. Then the discriminated-union design, then the cross-repo migration.
+6. **Then** — arm `public_api_result_typed` on the git-derived universe, and RE-MEASURE. The
+   counts below are now KNOWN STALE (see the warning under the blast-radius table).
+7. **Then** — remediate repo by repo, each landing green on its own.
+
+### 📌 ALSO ADOPTED, AND SHARING THIS DESIGN — Archive-on-epic-close (`pk2x`)
+
+The maintainer RULED (2026-07-28) to **ADOPT** the Archive-on-epic-close conformance member now:
+fill the unfilled Mechanism, Installer and Exemption slots, WITH the explicit declared opt-out the
+Conformance Pattern requires. Two binding constraints, both on `pk2x`:
+
+- **A repo that has NOT SPOKEN is NOT exempt — it is non-conforming and must say so in its own
+  config.** That is the entire difference between this adoption and the status quo, and it is the
+  part that will be tempting to soften during rollout.
+- **Harden-first**: land the Mechanism and its correct severity, measure the true blast radius
+  across all eight repos, THEN remediate.
+
+**The Exemption slot is the trap.** Design it as a DECLARATION a repo actively writes with a stated
+reason — never a default, an absence, or an empty value that reads as consent. *Every dodge this
+sweep found was an emptiness that meant yes.*
+
+**Sequencing chosen: `8o8e.1` first, then `pk2x`'s Exemption slot, designed to match.** They are the
+same disease — an emptiness or absence that silently means consent — and `8o8e.1`'s discriminated
+union establishes the declaration idiom (`not-applicable` as an ACTIVE spelling with a reason)
+that `pk2x`'s Exemption slot should reuse rather than reinvent. Doing `pk2x` first would mean
+designing that idiom twice, and the second design would have to migrate the first.
+
+Note also: `pk2x`'s **18-of-20 figure must be RE-DERIVED after the regex fix** — the current count
+is contaminated by bold-wrapped-id false positives, and a decision taken against a contaminated
+count is taken against a wrong number.
 
 Step 5 is the fleet-visible moment: on release, `bump-pin` fans the new dev-tooling to every
 sibling, so all five go red on their next pin bump. That is the intended consequence of enforcing
@@ -182,7 +245,14 @@ fixing another is the cheapest it will ever be to close, and the pattern is the 
 
 ## 📋 OPEN ITEMS FILED BY THIS THREAD
 
-`pm4z` (P1, next) · `hh4d` (P1, DONE) · `w25v` (P2) · `8o8e` (P1 epic, this thread's anchor) ·
-`pk2x` (P1 epic, livespec-dev-tooling — plan-anchor enforcement; Q1 answered on the item, and the
-disposition is that arming it fleet-wide means ADOPTING the Archive-on-epic-close conformance
-member, which the five-slot rule says requires all five slots filled).
+| item | state | what |
+|---|---|---|
+| `8o8e` | OPEN, epic | This thread's anchor. **Cannot close until `8o8e.1` is fleet-wide fixed AND verified.** |
+| `8o8e.1` | **OPEN, P1 — NEXT** | Role-key schema type-safety. Classification first, then the union, then cross-repo migration. |
+| `pk2x` | OPEN, P1 | Archive-on-epic-close — **ADOPT** ruling recorded. Sequenced after `8o8e.1`. |
+| `i04f` | OPEN, P2 (livespec) | Spec states the Result-return rule twice with incompatible exemption sets. Needs ratification. |
+| `w25v` | OPEN, P2 | `vendor_update` hardcodes the plugin layout; cannot vendor into this repo's own tree. |
+| `j5i9` | OPEN, P1 (livespec) | The cross-cutting FINDING: the repo that enforces the fleet is systematically the least enforced. |
+| `hh4d`, `pm4z` | CLOSED | The `_vendor` exclusion sweep. |
+
+Ledger status is authoritative over this table — read it, do not trust this file.
