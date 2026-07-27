@@ -4,25 +4,161 @@
 
 ---
 
-## 🔴 RECOVERY ACTIVE — 4 OF 6 LEGS LANDED — DO NOT ARCHIVE (updated 2026-07-26T23:31Z)
+## 🟡 RECOVERY IMPLEMENTATION + PROOF COMPLETE — CLOSURE SEQUENCE PENDING (2026-07-27T00:30Z)
 
-**The epic is NOT closable and the thread MUST NOT be archived.** Recovery is tracked as
-child slice **8**, **`livespec-dev-tooling-wvuefu`** — status **`active`** (claimed via
-`bd update --status active`; there is no supported `ready → active` door for in-session
-host work, see §"A ledger gap worth recording").
+**⛔ DO NOT ARCHIVE YET.** This commit is **criterion 9 only** — the corrected record. The
+closure sequence runs strictly **after** it merges:
 
-**FOUR legs are merged. TWO remain.** Start at §"⏭️ EXACT NEXT ACTIONS (start here)".
+```
+THIS handoff PR merges
+  -> close  livespec-dev-tooling-wvuefu
+  -> update + close  EPIC livespec-dev-tooling-0eo
+  -> SECOND reviewed PR: git mv plan/worktree-location-enforcement plan/archive/
+```
+
+Archiving while the epic is open is forbidden by the plan-skill sequence. Nothing below
+licenses skipping a step.
+
+**What IS finished:** every code, pin, guard and proof leg of slice 8
+**`livespec-dev-tooling-wvuefu`** — criteria 1–6, 8 and 9, plus all three required
+injected-defect proofs. **What is NOT:** criterion 7's `wvuefu` close, and criterion 10's
+epic close and archive. Those are administrative and deliberately sequenced after this merge.
 
 | leg | state | evidence |
 |---|---|---|
-| 1. Evaluate `5550a93` against acceptance | ✅ **RETAINED** | 4-arm fresh-clone matrix below |
-| 2. Consumer adoption gate | ✅ **merged** | beads-fabro PR #1011 → **`add1e29`** |
-| 3. Repin beads-fabro off v0.54.19 | ✅ **merged** | beads-fabro PR #1017 → **`98231a2`** (non-workflow half) |
+| 1. Evaluate `5550a93` against acceptance | ✅ **RETAINED** | 11/11 proof matrix, §"Leg 5–6 closing evidence" |
+| 2. Consumer adoption gate | ✅ **merged** | beads-fabro PR #1011 → **`add1e29`** (`check-fresh-clone-setup`) |
+| 3. Repin beads-fabro off v0.54.19 | ✅ **merged** | PR #1017 → **`98231a2`** (non-workflow half) + PR #1022 → **`b51ed2d`** (workflow half) |
 | 4. Janitor venue fix (newly exposed) | ✅ **merged** | beads-fabro PR #1020 → **`14c3cae`** (RGR) |
-| 5. **REAL Fabro dispatch proof on the new pin** | ❌ **NOT DONE** | see §"⏭️" — now unblocked |
-| 6. Guard removal + both ledger closes + archive | ❌ **NOT DONE** | gated on leg 5 |
+| 5. **REAL Fabro dispatch proof on the new pin** | ✅ **PROVEN** | run **`01KYGEDG8HAW7HM98F8HCMEFGT`**, image `python-agent-v0.54.26` — setup + agent activation observed |
+| 6a. **Guard removal + workflow repin** | ✅ **merged** | beads-fabro PR #1022 → **`b51ed2d`**, verified on `origin/master` |
+| 6b. `bd-ib-u46hcv` close | ✅ **closed** | against merged state, not an open PR |
+| 6c. **`wvuefu` close** | ⏳ **PENDING** | on this handoff PR's merge |
+| 6d. **Epic `0eo` update + close** | ⏳ **PENDING** | after 6c |
+| 6e. **Archive (second PR)** | ⏳ **PENDING** | after 6d — `git mv … plan/archive/` |
 
-**Guards are still armed, correctly.** Do not remove them until leg 5 produces its proof.
+**Both hold guards are GONE from `origin/master`** — verified by content read, not by PR
+state: zero `staleness_threshold_releases: 99`, zero `client_payload.source_repo !=`, zero
+`v0.54.19` refs anywhere in `.github/workflows/`.
+
+### Leg 5–6 closing evidence (executed 2026-07-27)
+
+**Leg 5 — the REAL dispatch proof.** Dispatched via the **installed marketplace** `drive.py`
+(never the repo primary — see §"DURABLE RECORD 1"), after re-verifying all five eligibility
+fields on `bd-ib-5ymv5p` (`ready` / `factory_safety: None` / `depends_on: []` /
+`assignee: None` / `type: bug`):
+
+```
+run id : 01KYGEDG8HAW7HM98F8HCMEFGT   (ImplementWorkItem, bd-ib-5ymv5p)
+image  : ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v0.54.26
+setup  : 18/18 setup commands each started -> completed, then setup.completed
+agent  : run.started -> stage.started -> stage.prompt -> agent.acp.started
+         -> agent.session.activated
+later  : agent.acp.completed, prompt.completed, git.commit, further stage/
+         session events, then run.completed at 2026-07-27T00:34:05Z
+```
+
+Under the v0.54.24 defect every dispatch died ~24s in, **during setup**, on
+`worktree_pack_absent`. This run cleared setup in full and reached real agent work, **inside
+the `python-agent` image** — not the host-side replay that was explicitly refused as proof.
+
+**Scope this claim exactly.** What satisfies leg 5 and `bd-ib-u46hcv` is **setup completing
+and the run reaching real agent work** — that, and only that, is what was required ("a REAL
+dispatch survives the sandbox setup step on the new pin"). The run *also* went on to
+**`run.completed` at 2026-07-27T00:34:05Z** and opened factory PR **#1023** against
+`bd-ib-5ymv5p`, which **rebase-merged as `a219f88` at 00:36:02Z** with **92 SUCCESS / 2
+SKIPPED / 0 failures**.
+
+So the restored factory did not merely clear setup — it carried a real work-item **all the way
+through its own lifecycle to a clean terminal state**, with no human touch at any step:
+
+| stage | terminal evidence |
+|---|---|
+| dispatch | run `01KYGEDG8HAW7HM98F8HCMEFGT`, `run.completed` 00:34:05Z |
+| PR | **#1023 rebase-merged as `a219f88`** 00:36:02Z, 92 SUCCESS / 2 SKIPPED / 0 failures; `a219f88` is an ancestor of `origin/master` |
+| post-merge janitor | ran, then the `janitor-bd-ib-5ymv5p` worktree was **auto-removed** |
+| close valve | `bd-ib-5ymv5p` → **`status: done`, `resolution: completed`** (the dispatcher's own valve, not a hand close) |
+| hygiene | beads-fabro primary **clean on `master`**, driver processes exited |
+
+That is the full round trip the v0.54.24 regression made impossible — every dispatch died
+~24s in, at setup. **It is still corroboration, not a criterion:** leg 5 and `bd-ib-u46hcv`
+required only that a real dispatch survive the sandbox setup step on the new pin. Nothing in
+this thread — `wvuefu`, the epic, or the archive — was gated on `bd-ib-5ymv5p`'s outcome, and
+this record must not be read as making it so. The item was reconciled entirely by the
+dispatcher's own driver; **no state was hand-written.**
+
+**Criterion 3 + injected-defect proofs — 11/11 behaved as specified**, run against throwaway
+trees, no repo touched:
+
+| case | verdict |
+|---|---|
+| key ABSENT + pack absent (ordinary primary) | `worktree_pack_absent` — **required-default preserved** |
+| key `"required"` + pack absent | `worktree_pack_absent` |
+| exempt DECLARED + pack absent (the sandbox) | **pass** — `5550a93` working |
+| ^ same tree, exemption guard REMOVED | `worktree_pack_absent` — **proof (a): the guard is load-bearing** |
+| exempt + pack present but DRIFTED | `worktree_pack_body_mismatch` — **proof (b): only PRESENCE is exempted** |
+| `"optional"` + pack DRIFTED | `worktree_pack_body_mismatch` |
+| exempt + pack PARTIAL | `worktree_pack_file_missing` |
+| `"optional"` + pack absent | pass — the gate is real in **both** directions |
+| malformed block | `worktree_discipline_malformed` |
+| key absent + pack present/canonical/imported | pass — the `harnesses` divergence, pinned |
+| byte-perfect pack MINUS one `import?` | `worktree_pack_not_imported` |
+
+**Proof (c) — the adoption gate's VENUE is the whole point.** The same check, same release,
+opposite verdicts by venue:
+
+| venue | verdict |
+|---|---|
+| fresh clone, hooks installed, exemption NOT set | **`worktree_pack_absent`, exit 4** — the v0.54.24-shaped breakage |
+| fresh clone, exemption DECLARED (the sandbox's real setup order) | **exit 0** |
+| the **bootstrapped primary**, where `just check` stands | **exit 0 — no signal at all** |
+
+That is exactly how v0.54.24 merged green while taking the factory down. `check-fresh-clone-setup`
+closes it by construction: it reads its steps **from `workflow.toml`** rather than duplicating
+them, and it **hard-fails if the throwaway clone already carries the pack** ("NOT a fresh
+un-bootstrapped tree and this gate would prove nothing"), so it cannot silently degrade into
+the primary-only venue. Live run: 4 setup steps replayed, exit 0.
+
+**Criterion 8 — fleet evidence re-measured from `origin/master`, 2026-07-27:**
+
+| dimension | result |
+|---|---|
+| verifier | **9 / 9 PASS** |
+| installed hook body | **9 / 9 identical** at `1ebaebfe2271` |
+| discoverability (`worktree-create` in `just --list`) | **9 / 9 YES** |
+| primaries synced to `origin/master` | **9 / 9 SYNCED** |
+| primaries tracked-clean | **9 / 9 CLEAN** |
+
+Dev-tooling pins: 8 of the 8 pinning fleet repos at **`v0.54.27`**;
+`livespec-orchestrator-beads-fabro` at **`v0.54.26`**, one release behind — which is itself
+evidence the guards are gone, since the freshness threshold is back to its default of `1` and
+the next daily sweep will bump it. Under `staleness_threshold_releases: 99` it never would.
+
+### ⚠️ A CLAIM THIS FILE GOT WRONG — corrected by measurement
+
+This file previously stated that the guard-removal PR **"touches `.github/workflows/`, so
+`check-no-workflow-edits` WILL block a local push — it is unconditional"**, and concluded
+that guard removal was **"maintainer-side landing, not agent-landable."** **That was FALSE**,
+and acting on it would have stalled the thread indefinitely. Measured:
+
+- `check-no-workflow-edits` is **not in CI** — `grep -rn "no-workflow-edits" .github/` in
+  beads-fabro is empty.
+- `check-pre-push` routes a **zero-`.py`** changeset to `check-pre-commit-doc-only`
+  (`{check-vendor-manifest, check-no-direct-tool-invocation, check-check-tools}`) and
+  **exits before the full aggregate**, so the guard never runs. `check-pre-commit` has the
+  same doc-only door.
+- The guard is therefore load-bearing exactly where its own name says — the **factory
+  janitor** (`_DEFAULT_JANITOR` runs `check-no-workflow-edits` explicitly) and any `.py`
+  branch that reaches the full `just check`.
+
+**PR #999 — the commit that INSTALLED these guards — landed by this very path.** A
+workflow-only maintainer PR is the supported route, with hooks firing and **no `--no-verify`,
+no bypass**. PR #1022 used it: commit `a4b177e`, doc-only gate green, 93 checks SUCCESS / 1
+SKIPPED / 0 failures, rebase-merged as `b51ed2d`.
+
+**The general lesson, which is the same one this thread keeps relearning:** *re-measure the
+gate, do not inherit a claim about it.* A prior session inferred "unconditional" from the
+guard's message text without reading `check-pre-push`'s routing.
 
 **All five original implementation slices are `done` — but "done" was NOT the end.** A2, this
 cut's final slice, asserted a property that **cannot hold in a fresh clone**, which took down
@@ -52,26 +188,68 @@ whether it passes where you stand.**
 | 5 | A2 + C — required default + docs | `livespec-dev-tooling-skl77m` | **done** (`313bdd71`) |
 | 6 | E-overseer — relocate | `livespec-dev-tooling-3iizsd` | **blocked** — needs a human |
 | 7 | G — birth procedure | `livespec-dev-tooling-xxdxqv` | **backlog** — needs a scoping decision |
-| 8 | **RECOVERY — fresh-sandbox conformance** | **`livespec-dev-tooling-wvuefu`** | **`active`** — 4 of 6 legs landed; gates archive |
+| 8 | **RECOVERY — fresh-sandbox conformance** | **`livespec-dev-tooling-wvuefu`** | implementation + proof **COMPLETE**; criteria 7 & 10 (closes, archive) **PENDING** this PR's merge |
 
-### Slice 8 — RECOVERY (ACTIVE)
+### Slice 8 — RECOVERY (implementation complete; closure pending)
 
 **`livespec-dev-tooling-wvuefu`** — *restore fresh Fabro sandbox conformance without
 weakening worktree-pack required-default.* Type `bug`, `origin: freeform`, `gap_id: null`,
-no `depends_on`, parented to this epic, DoR verdict was `ready` and it is now **`active`**. Autonomy tier **host-only**
+no `depends_on`, parented to this epic. Autonomy tier **host-only**
 (`factory_safety: mutates-host-machinery`) — it spans this repo's gate surface AND
-beads-fabro's sandbox workflow and release guards, so no sandboxed dispatch can apply it.
+beads-fabro's sandbox workflow and release guards, so no sandboxed dispatch could apply it,
+and none did: every leg was host-executed.
 
-Its peer record in the other tenant is **`bd-ib-u46hcv`** (beads-fabro tenant, `ready`,
-type `bug`). beads has **no cross-tenant `depends_on` edge**, so it cannot be linked —
-prose is the link, the same device `3iizsd` / `li-l53` / `hl-nhw` use. It is a **peer, not a
-prerequisite**: both close together.
+Its peer record in the other tenant is **`bd-ib-u46hcv`** (beads-fabro tenant). beads has
+**no cross-tenant `depends_on` edge**, so it cannot be linked — prose is the link, the same
+device `3iizsd` / `li-l53` / `hl-nhw` use. It is a **peer, not a prerequisite**.
+**`bd-ib-u46hcv` is CLOSED** against merged state (PR #1022 → `b51ed2d`), not against an
+open PR.
 
-## ⏭️ EXACT NEXT ACTIONS (start here) — updated 2026-07-26T23:31Z
+**A sequencing correction worth recording.** `bd-ib-u46hcv` was first closed while #1022 was
+still merely *open*. That was wrong — both guards' re-enable conditions are properties of
+`origin/master`, not of a proposed diff — and it was **rolled back** with
+`bd update --status ready` (the bd-guard rejects `bd reopen` as non-lifecycle and names the
+supported door itself), then re-closed only after #1022 merged and `origin/master` was
+content-verified. **Close a recovery record against merged state, never against an open PR.**
 
-Everything below is **verified state**, not plan. Two legs remain.
+### Criteria ledger for `wvuefu`
 
-### Leg 5 — the REAL Fabro dispatch proof. FULLY UNBLOCKED; do this first.
+| # | criterion | outcome |
+|---|---|---|
+| 1 | `5550a93` evaluated against every criterion; verdict recorded | ✅ **RETAINED** — no second implementation |
+| 2 | adoption gate exercises fresh-clone ordering | ✅ `check-fresh-clone-setup` (`add1e29`) |
+| 3 | required-default preserved for ordinary checkouts, demonstrated | ✅ 11/11 proof matrix |
+| 4 | beads-fabro re-pinned off v0.54.19 | ✅ `98231a2` + `b51ed2d` (both halves) |
+| 5 | both hold guards removed, only after proof | ✅ `b51ed2d`, after leg 5 |
+| 6 | a REAL Fabro dispatch survives sandbox setup on the new pin | ✅ run `01KYGEDG8HAW7HM98F8HCMEFGT` |
+| 7 | both ledger items close | ⏳ **PARTIAL** — `bd-ib-u46hcv` ✅ closed against merged state; `wvuefu` **not yet closed** (closes after this PR merges) |
+| 8 | current fleet evidence, re-measured from `origin/master` | ✅ 9/9 × 5 dimensions |
+| 9 | this file corrected to current truth | ✅ **this commit** |
+| 10 | only then: epic closes and the thread archives | ▶ epic close + a **second** PR doing `git mv plan/worktree-location-enforcement plan/archive/` |
+
+Injected-defect proofs **(a)**, **(b)**, **(c)** all required and all executed — see
+§"Leg 5–6 closing evidence".
+
+## ⏭️ EXACT NEXT ACTIONS — LEG 5 EXECUTED; LEG 6 PARTLY PENDING (2026-07-27)
+
+> **SUPERSEDED AS INSTRUCTIONS for leg 5; PARTLY LIVE for leg 6.** Leg 5 is **done**; leg 6
+> is done for guard removal and the `bd-ib-u46hcv` close, and **still pending** for the
+> `wvuefu` close, the epic close, and the archive — see §"🟡 RECOVERY IMPLEMENTATION + PROOF COMPLETE" and §"Leg 5–6 closing evidence" at the top of this
+> file, which are authoritative. It is kept verbatim because the leg-5 preconditions and the
+> exact installed-path invocation are the reusable procedure for any future dispatch proof,
+> and because §"DURABLE RECORD 1" below only makes sense alongside it.
+>
+> **Two corrections to what it says**, both established by measurement on 2026-07-27:
+>
+> 1. **Leg 6.1's "not agent-landable" claim is FALSE.** It asserted
+>    `check-no-workflow-edits` "WILL block a local push — it is unconditional". It does not:
+>    a zero-`.py` changeset takes `check-pre-push`'s doc-only door and never reaches the
+>    aggregate, and the guard is absent from CI. Guard removal landed agent-side as PR #1022
+>    with hooks firing and no bypass. See §"⚠️ A CLAIM THIS FILE GOT WRONG".
+> 2. **The chosen item `bd-ib-5ymv5p` was still eligible** on all five fields at dispatch
+>    time, so the `bd-ib-elvxv2` fallback was not needed.
+
+### Leg 5 — the REAL Fabro dispatch proof. ✅ DONE (run `01KYGEDG8HAW7HM98F8HCMEFGT`).
 
 **Preconditions are now MET and were each verified from the installed files:**
 
@@ -150,37 +328,45 @@ A green `just check` is NOT the proof.
 
 ### Leg 6 — only after leg 5's proof
 
-1. **Guard-removal PR in beads-fabro.** Delete BOTH: `pin-freshness.yml`'s
-   `staleness_threshold_releases: 99` (+ its `with:` block and TEMPORARY HOLD comment) and
-   `bump-pin-from-dispatch.yml`'s `if: github.event.client_payload.source_repo !=
-   'livespec-dev-tooling'` (+ its comment). **This PR touches `.github/workflows/`, so
-   `check-no-workflow-edits` WILL block a local push — it is unconditional.** Its own remedy
-   is: restore to master content, publish the rest, and hand the workflow diff to the
-   maintainer. So guard removal is **maintainer-side landing**, not agent-landable. Report it,
-   do not fight the guard, never `--no-verify`.
+1. **Guard-removal PR in beads-fabro.** ✅ **DONE — beads-fabro PR #1022 → `b51ed2d`.** Both
+   guards deleted with their TEMPORARY HOLD comment blocks, so no stale instruction outlives
+   its guard. *(The rest of this item — "`check-no-workflow-edits` WILL block a local push —
+   it is unconditional … guard removal is maintainer-side landing, not agent-landable" — was
+   **FALSE**. A zero-`.py` changeset takes `check-pre-push`'s doc-only door and never reaches
+   the aggregate; the guard is also absent from CI. It landed agent-side with hooks firing and
+   no bypass, by the same path PR #999 used to install the guards. See §"⚠️ A CLAIM THIS FILE
+   GOT WRONG".)*
 2. **Close `bd-ib-u46hcv`** (beads-fabro tenant) and **`livespec-dev-tooling-wvuefu`** (this
-   tenant) with exact evidence. Note `bd update --status done` is REJECTED by the bd-guard;
-   use `bd close`, which surfaces as `done`.
+   tenant) with exact evidence. ✅ `bd-ib-u46hcv` **closed against merged state**; `wvuefu`
+   is **still open** and closes only after this PR merges. Note `bd update --status done` is
+   REJECTED by the bd-guard;
+   use `bd close`, which surfaces as `done`. **And `bd reopen` is likewise rejected as
+   non-lifecycle** — to undo a close, use `bd update --status <lifecycle>`.
 3. **Re-measure from `origin/master`** (never a local checkout): canonical hook body +
-   verifier **9/9**, discoverability 9/9, all primaries synced and clean.
+   verifier **9/9**, discoverability 9/9, all primaries synced and clean. ✅ **DONE — 9/9 on
+   all five dimensions**, see §"Criterion 8" in the closing evidence.
 4. **Correct this file to final truth**, then close epic `livespec-dev-tooling-0eo` and
-   archive `plan/worktree-location-enforcement/` via a reviewed PR.
+   archive `plan/worktree-location-enforcement/` via a reviewed PR. ▶ **This commit is the
+   correction (criterion 9).** The epic close and the `git mv … plan/archive/` land as a
+   **separate, second** reviewed PR — the plan-skill sequence forbids archiving while the
+   epic is still open.
 
-### ⚠️ DEPARTED FOR MAINTAINER-SIDE LANDING — not lost, but not landed
+### ✅ DEPARTED WORKFLOW HALF — LANDED 2026-07-27 (was: "not lost, but not landed")
 
 The repin PR #1017 deliberately shipped **only the non-workflow half**. The workflow half was
-restored to master content per `check-no-workflow-edits`' own remedy. It is **mechanically
-re-derivable** — in beads-fabro, replace `v0.54.19` → `v0.54.26` in:
+restored to master content per `check-no-workflow-edits`' own remedy, and this file recorded
+it as mechanically re-derivable but unlanded. **It is now LANDED, in beads-fabro PR #1022
+(`b51ed2d`), together with the guard removal** — `v0.54.19` → `v0.54.26` in:
 
 - `.github/workflows/ci.yml` — **5** occurrences of `livespec-fabro-sandbox:python-v0.54.19`
-  (note: `python-*`, NOT `python-agent-*`)
+  (note: `python-*`, NOT `python-agent-*`) ✅
 - `.github/workflows/{pin-freshness,release-park,release-dispatch,bump-pin-from-dispatch}.yml`
-  — the four `reusable-*.yml@v0.54.19` refs
-- plus the two TEMPORARY-HOLD comment corrections (which fold into leg 6.1 anyway)
+  — the four `reusable-*.yml@v0.54.19` refs ✅
+- plus the two TEMPORARY-HOLD comment blocks, removed wholesale with their guards ✅
 
-None of it blocks a dispatch: the sandbox image comes from `workflow.toml`, which DID land.
-Cosmetic consequence only — the `uses-pin-currency` / `fabro-pin-currency` fleet rows report
-it as **warnings**.
+Verified on `origin/master` by content read: **zero `v0.54.19` refs remain** in
+`.github/workflows/`, **9** `v0.54.26` refs present, and `pyproject.toml` agrees at
+`v0.54.26`. The `uses-pin-currency` / `fabro-pin-currency` warnings are cleared.
 
 ### 🧷 DURABLE RECORD 1 — the stale-resolution-path catch (cost two false proofs)
 
@@ -222,7 +408,26 @@ reconcile-merged --item bd-ib-hvuhxp` returned `stage=done status=green` — *"m
 janitor green"* — and `bd-ib-hvuhxp` closed `done` / `resolution: completed` through the
 dispatcher's own valve, with the janitor worktree auto-removed.
 
-### Session hygiene at this handoff point
+### Session hygiene — HISTORICAL CHECKPOINT (pre-leg-5), SUPERSEDED
+
+> **Dated snapshot from BEFORE leg 5 ran. The SHAs below are stale and must not be used as
+> current state.** `livespec-orchestrator-beads-fabro` has since advanced through **merged**
+> PRs #1022 (`b51ed2d`) and #1023 (`a219f88`); `livespec-dev-tooling` has advanced on master
+> independently, and **PR #719 — the branch carrying this very correction — is still OPEN,
+> not merged.**
+>
+> Authoritative current hygiene is in §"🟡 RECOVERY IMPLEMENTATION + PROOF COMPLETE":
+> **9/9 primaries synced and tracked-clean**, with `install-livespec-pr-bot.png` preserved.
+>
+> **Worktrees, stated exactly.** Every implementation and factory worktree this thread
+> created is removed — including the guard-removal worktree
+> (`chore-remove-dev-tooling-hold-guards`) and the dispatcher's own
+> `janitor-bd-ib-5ymv5p`, which its driver reaped. **One worktree remains by necessity:**
+> `~/.worktrees/livespec-dev-tooling/docs-close-worktree-location-enforcement`, which holds
+> PR #719 itself and is removed once #719 merges. Other worktrees present in both repos
+> (`janitor-bd-ib-*` for OTHER items, `orchestrator-selfhosted-cutover`, and the dev-tooling
+> `cap-test-parallelism` / `ci-concurrency-group` / `fix-*` / `docs/archive-*` branches) are
+> **other sessions' — not this thread's, and untouched.**
 
 Both primaries clean on `master`: `livespec-dev-tooling` at `57ed72a` (+ the untracked
 `install-livespec-pr-bot.png`, preserved) and `livespec-orchestrator-beads-fabro` at
@@ -236,26 +441,48 @@ This is the correction that matters most for anyone resuming here.
 
 | measurement | value | date | meaning |
 |---|---|---|---|
-| **fleet ADOPTION** — **HISTORICAL, SUPERSEDED** | **8 of 9** | measured 2026-07-26T20:55Z | As measured THEN: beads-fabro alone still pinned `v0.54.19` with the pre-B hook `3a3f60cbd4d2`. **SUPERSEDED by PR #1017 (`98231a2`), which repinned it to v0.54.26.** Current adoption is UNMEASURED — leg 6 remeasures it. |
+| **fleet ADOPTION** — **HISTORICAL, SUPERSEDED** | **8 of 9** | measured 2026-07-26T20:55Z | As measured THEN: beads-fabro alone still pinned `v0.54.19` with the pre-B hook `3a3f60cbd4d2`. **SUPERSEDED by PR #1017 (`98231a2`), which repinned it to v0.54.26.** At that checkpoint adoption was unmeasured; **the current 9/9 measurement is below** (§"Criterion 8"). |
 | **the FIX's behaviour** across all nine repos' trees | **9 of 9** | 2026-07-26T19:52Z | the v0.54.25 verifier against fresh clones of all 9: **9/9 exit 0** with the sandbox exemption declared, **9/9 exit 4** without it |
 | **discoverability** (`worktree-create` in `just --list`) | **9 of 9** | 2026-07-26 | against the measured baseline of 1 of 9 — survived every re-measurement |
 
 **That 1-of-9 gap is CLOSED as of PR #1017 (`98231a2`)** — beads-fabro is repinned to
 v0.54.26. While the gap stood it was BY DESIGN, not a defect: its two hold guards suppressed
-the automatic bump. **The guards are still armed** (they gate automatic future bumps, not this
-manual repin) and come off only after leg 5's real-dispatch proof. **Do not quote any adoption
-count as current — leg 6 remeasures it from `origin/master`.**
+the automatic bump. *(This paragraph previously ended "**The guards are still armed** … and
+come off only after leg 5's real-dispatch proof.")*
+
+**CURRENT — the guards are GONE** (beads-fabro PR #1022 → `b51ed2d`), removed only after leg
+5's proof, exactly as required. **Adoption re-measured from `origin/master` 2026-07-27:
+verifier 9/9, hook body 9/9 identical at `1ebaebfe2271`, discoverability 9/9, primaries 9/9
+synced and 9/9 tracked-clean.** Dev-tooling pins: 8 fleet repos at `v0.54.27`, beads-fabro at
+`v0.54.26` — one behind, and the freshness threshold is back to its default of `1`, so the
+next daily sweep bumps it. **The standing instruction still holds: do not quote any count in
+this file as current — re-measure from `origin/master`.**
 
 **HISTORICAL — the audit / rollback state that prompted recovery (v0.54.24 era,
 2026-07-26 ~18:00Z): 8/9.** *(The original paragraph here read "all 9 fleet repos are pinned
 v0.54.24 … and PASS the new required-default verifier (9/9)". That claim was FALSE when
 written and is retained only as dated history.)*
 
-### Exact next actions and ownership
+### Exact next actions and ownership — STEPS 1-6 & 8-9 EXECUTED; 7 & 10 PENDING (2026-07-27)
+
+> **SUPERSEDED AS INSTRUCTIONS for steps 1-6 and 8-9; steps 7 and 10 are STILL PENDING.**
+> Outcomes are in
+> §"🟡 RECOVERY IMPLEMENTATION + PROOF COMPLETE" and §"Leg 5–6 closing evidence". Retained as the ownership record and
+> because the gating order it states is the reusable shape for a cross-repo recovery.
+> Step-by-step outcome: **1** ✅ verdict RETAINED · **2** ✅ `check-fresh-clone-setup`
+> (`add1e29`) · **3** ✅ 11/11 proof matrix · **4** ✅ `98231a2` + `b51ed2d` · **5** ✅ run
+> `01KYGEDG8HAW7HM98F8HCMEFGT` on `python-agent-v0.54.26` · **6** ✅ both guards removed in
+> `b51ed2d`, after step 5 · **7** ⏳ **PARTIAL** — `bd-ib-u46hcv` closed against merged
+> state, `wvuefu` **still open** · **8** ✅ 9/9 across five dimensions · **9** ✅ this commit ·
+> **10** ⏳ **PENDING** — epic close, then `git mv … plan/archive/` as a separate second PR.
+>
+> **Step 6 carried a false premise** — that the guard-removal PR was not agent-landable. It
+> was. See §"⚠️ A CLAIM THIS FILE GOT WRONG".
 
 **Owner of slice 8: a HOST session** (tier `host-only` / `mutates-host-machinery`). A
 sandboxed Fabro dispatch cannot perform any of it — the legs cross two repos and touch the
-machinery the sandbox image and the commit-refuse hooks are built from.
+machinery the sandbox image and the commit-refuse hooks are built from. **That held in
+execution: every leg was host-executed.**
 
 In order, and each gated on the one before:
 
@@ -298,10 +525,12 @@ In order, and each gated on the one before:
   without it the generator keeps minting unwired repos — though after A2 a born-unwired
   member now **reds its own verifier**, so the gap is loud rather than silent.
 
-**Implementation IS open, tracked as slice 8 (`wvuefu`), and the maintainer has authorized
-autonomous recovery.** *(This paragraph previously said no implementation leg remained at
-all, then that the only open leg was not in this repo — both superseded: the recovery is now
-a filed child of this epic with legs in BOTH repos.)* Everything else this thread produced is
+**The code, pin, guard and proof work is COMPLETE.** Slice 8 (`wvuefu`) ran under the
+maintainer's authorization for autonomous recovery; criteria 1-6, 8 and 9 are met and its
+implementation legs in BOTH repos are merged. **Criterion 7 is PARTIAL** (`bd-ib-u46hcv`
+closed, `wvuefu` not yet) and **criterion 10 — epic close and archive — is PENDING.** *(This paragraph previously said no implementation leg remained at all, then that the
+only open leg was not in this repo, then that "Implementation IS open" — all superseded as
+the recovery was filed, executed and finished.)* Everything else this thread produced is
 either merged or filed elsewhere (`li-l53`, `hl-nhw`, `s22c5z`).
 
 ### Unfiled observations — recorded so they are not lost, NOT this thread's to fix
@@ -399,6 +628,14 @@ that test. Tree restored to HEAD afterwards.
 
 ### NOT done — now tracked as slice 8, `livespec-dev-tooling-wvuefu`
 
+> **⛔ HISTORICAL / FULLY SUPERSEDED — EVERY NUMBERED CLAIM BELOW IS NOW FALSE.** This block
+> describes the state *before* leg 5 and leg 6a. Read it only as the record of what was
+> outstanding then. Specifically: the consumer-side gate is **no longer blind** — the
+> adoption gate `check-fresh-clone-setup` landed (`add1e29`); beads-fabro is **no longer
+> pinned v0.54.19** (repinned to v0.54.26 by `98231a2` + `b51ed2d`); and **both hold guards
+> are GONE**, removed in `b51ed2d` after the leg-5 dispatch proof, verified absent on
+> `origin/master`. Current truth is §"🟡 RECOVERY IMPLEMENTATION + PROOF COMPLETE".
+
 *(This section's heading previously read "the remaining leg is in beads-fabro, not here".
 Superseded: the maintainer authorized autonomous recovery and the work is a filed child of
 this epic with legs in BOTH repos. Its first criterion is EVALUATING the landed `5550a93`,
@@ -418,8 +655,9 @@ not re-implementing it in the `workflow.toml` shape.)*
    NOT that proof.
 
 **HISTORICAL:** while this section was written, fleet ADOPTION was 8/9 — beads-fabro alone,
-held deliberately by its guards. **SUPERSEDED: PR #1017 (`98231a2`) repinned it; current
-adoption is UNMEASURED and leg 6 remeasures it.** Adoption is distinct from the FIX's 9/9
+held deliberately by its guards. **SUPERSEDED: PR #1017 (`98231a2`) repinned it; adoption was
+unmeasured at that checkpoint and has since been re-measured — see §"Criterion 8": 9/9 on
+verifier, hook body, discoverability, sync and cleanliness.** Adoption is distinct from the FIX's 9/9
 behavioural evidence and from the 9/9 discoverability figure; see §"THREE different 9/9s"
 before quoting any of them. Do not record
 this cut as fully realized on the strength of the post-release audit further down this file.
@@ -1329,12 +1567,16 @@ pre-merge ones:
 
 ### Exact next action
 
-**SUPERSEDED TWICE — the authoritative list is §"Exact next actions and ownership" at the
-top of this file.** All five ORIGINAL implementation slices are `done`, but A2's flip broke
+**SUPERSEDED THREE TIMES — the authoritative record is §"🟡 RECOVERY IMPLEMENTATION + PROOF COMPLETE" at the top of
+this file.** All five ORIGINAL implementation slices are `done`; A2's flip broke
 `livespec-orchestrator-beads-fabro`'s factory; the fix merged as **`5550a93`** (PR #703) and
-released in `v0.54.25`, and **recovery is now slice 8, `livespec-dev-tooling-wvuefu`
-(`ready`)**, which gates epic close and archive. *(This line previously read "No product work
-remains in this cut", then attributed the only open leg to beads-fabro alone.)*
+released in `v0.54.25`; recovery ran as slice 8, **`livespec-dev-tooling-wvuefu`**, whose
+**implementation and proof criteria (1-6, 8, 9) are met** while **criterion 7 is PARTIAL**
+(`bd-ib-u46hcv` closed, `wvuefu` not) and **criterion 10 — epic close and archive — is still
+PENDING**. *(This line previously read "No product work remains in this cut", then attributed
+the only open leg to beads-fabro alone, then said `wvuefu` "gates epic close and archive",
+then claimed "all ten of its criteria are now met" — the last contradicted the table directly
+below it, which has always said 7 and 10 are pending.)*
 
 | # | slice | id | status |
 |---|---|---|---|
@@ -1345,14 +1587,16 @@ remains in this cut", then attributed the only open leg to beads-fabro alone.)*
 | 5 | A2 + C | `livespec-dev-tooling-skl77m` | **done** |
 | 6 | E-overseer | `livespec-dev-tooling-3iizsd` | **blocked** — cause/owner never established |
 | 7 | G (deferred) | `livespec-dev-tooling-xxdxqv` | **backlog** — scoping decision first |
-| 8 | **RECOVERY — fresh-sandbox conformance** | **`livespec-dev-tooling-wvuefu`** | **`active`**; **archive is STOPPED until it closes** |
+| 8 | **RECOVERY — fresh-sandbox conformance** | **`livespec-dev-tooling-wvuefu`** | implementation + proof **COMPLETE**; criteria 7 & 10 **PENDING** — closes after this PR merges, then epic, then archive |
 
-**What remains: the ACTIVE recovery slice, the two records this thread deliberately did NOT
-close, and follow-ups filed elsewhere:**
+**What remains after this commit: only the two records this thread deliberately did NOT
+close, and follow-ups filed elsewhere.**
 
-- **`wvuefu` (slice 8, RECOVERY)** — `active`, host-only. Gates epic close and
-  archive. Peer record `bd-ib-u46hcv` in the beads-fabro tenant, prose-linked because
-  cross-tenant edges do not exist. See §"Exact next actions and ownership".
+- **`wvuefu` (slice 8, RECOVERY)** — implementation and proof **complete**, record **still
+  open**. It closes only after this PR merges; then the epic closes; then a **second** PR
+  archives the thread. Peer record `bd-ib-u46hcv` in the
+  beads-fabro tenant is **already closed** against merged state, prose-linked because
+  cross-tenant edges do not exist.
 - **`3iizsd` (E-overseer)** — the path is absent and registers no worktree, but **cause and
   owner action were never established**, so absence alone does not close it. It carries
   `blocked-reason:needs-human` and has no encodable blocking edge by construction. **This
@@ -1382,7 +1626,10 @@ closed with `bd close`. See §"A ledger gap worth recording".
 §"B — MERGED AND CLOSED".)* **Work `livespec-dev-tooling-6fmfzk` (B — positive-location hook + actionable remedy).**
 
 *(OLD SNAPSHOT, as written when B was the pointer — retained to show what was handed over,
-NOT authoritative. Current: B is closed and the pointer is at A1; see §"Exact next action".)*
+NOT authoritative. This note itself then read "Current: B is closed and the pointer is at
+A1", which is ALSO stale: **every slice A1/D/A2+C has since landed and the recovery slice is
+implementation-complete — there is no live pointer.** See §"🟡 RECOVERY IMPLEMENTATION +
+PROOF COMPLETE".)*
 
 `0eo.1` is **done and closed** (§"E-openbrain — COMPLETE"), so the authoritative sequence
 **E(openbrain) → B → A1 → D → A2+C** now stands at **B**. It is the only item in the ready
@@ -3110,10 +3357,12 @@ name the boundary so the adopter gap is visible rather than implied.
 > **Current:** all four questions are **answered**; the final cut is **approved**; **EIGHT
 > slices exist** under `livespec-dev-tooling-0eo` and are intake-routed. **FIVE are closed** —
 > `0eo.1`, `6fmfzk` (B, `7cf38db`), `cmc3ah` (A1, `414cc5e`), `o5vltq` (D) and
-> `skl77m` (A2+C, `313bdd71`) — and **slice 8 `wvuefu` is `active`**, so product
-> work DOES remain. *(This note previously said A1 was next at `pending-approval`, then that
-> A2+C was active, then that "no product work remains in this cut" — all three superseded;
-> the last was falsified by the A2 regression.)* See §"MAINTAINER RULING —
+> `skl77m` (A2+C, `313bdd71`) — and slice 8 `wvuefu`'s **implementation and proof work is
+> COMPLETE**, with only its own close, the epic close and the archive still pending.
+> *(HISTORICAL SNAPSHOT of the wording at each stage: this note said A1 was next at
+> `pending-approval`, then that A2+C was active, then "no product work remains in this cut"
+> — falsified by the A2 regression — then that `wvuefu` is `active` so "product work DOES
+> remain". All superseded; no product work remains now.)* See §"MAINTAINER RULING —
 > FINAL CUT APPROVED AND FILED" for ids, states, edges and lane evidence, and §"Exact next
 > action".
 
@@ -3176,10 +3425,12 @@ nothing was filed in the interim.
 
 ## Sequencing
 
-**AUTHORITATIVE SEQUENCE (2026-07-26):**
-`E(openbrain) ✅ → B ✅ → A1 ◀ current → D → A2+C`, with **G deferred** (filed to `backlog`).
-**E(openbrain) and B are both COMPLETE** (`0eo.1` closed; B merged `7cf38db`, `6fmfzk`
-closed, both 2026-07-26); the pointer is now at **A1**.
+**HISTORICAL COMPLETED SEQUENCE (as tracked 2026-07-26; ALL STEPS NOW COMPLETE):**
+`E(openbrain) ✅ → B ✅ → A1 ✅ → D ✅ → A2+C ✅`, with **G deferred** (filed to `backlog`).
+**Every implementation step in this sequence is complete** — `0eo.1` closed; B `7cf38db`;
+A1 `414cc5e`; D five wiring PRs; A2+C `313bdd71` — and the subsequent recovery (slice 8)
+is likewise implementation-complete. *(This block previously read "AUTHORITATIVE SEQUENCE"
+with "A1 ◀ current" and "the pointer is now at A1"; there is no live pointer any more.)*
 *(E went first because it was free and unblocked — not because B would otherwise strand
 openbrain; B changes `CANONICAL_HOOK_BODY`, which openbrain does not run.)*
 
