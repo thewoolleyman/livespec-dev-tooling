@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.56.5](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.56.4...v0.56.5) (2026-07-27)
+
+
+### Bug Fixes
+
+* **checks:** treat an all-vendored path set as nothing to gate, not a red ([0a55f5b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0a55f5be9c9903f06463b9d65291ef6a7048a5ed))
+
 ## [0.56.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.56.3...v0.56.4) (2026-07-27)
 
 
