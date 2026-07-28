@@ -1047,14 +1047,43 @@ repo that owns it**, and **an emptiness or absence that silently means consent**
    does not fix that shape. **RE-DERIVED 2026-07-28 with the check's OWN `_declared_anchor`
    predicate (not another grep): 19 of 23 active fleet handoffs would fail, not 18 of 20** — and
    the old characterization *"armed only in the one repo with ZERO plan threads"* is stale twice
-   over. `livespec-dev-tooling` now has TWO active threads and is still the ONLY repo declaring
-   `plan_lifecycle_anchor = true` — and **both of its threads PASS.** So the shape is not "armed
+   over. `livespec-dev-tooling` is still the ONLY repo declaring
+   `plan_lifecycle_anchor = true` — and **its thread(s) PASS.** So the shape is not "armed
    where there is nothing to check" but **"armed only where it already passes"**, which is the
    same defect wearing a less obvious face: the repo that adopts a convention first is the repo
    whose adoption the check can then never demonstrate. All 19 offenders sit in the eight repos
    that have not armed it. Two UNARMED repos already pass voluntarily (`livespec-driver-codex`,
    and one of git-jsonl's two on a CROSS-TENANT anchor the predicate accepts by design), so the
    19 is not 19 repos-worth of resistance.
+
+   **RE-DERIVED AGAIN LATER THE SAME DAY, and the failure count is EXACTLY STABLE while the
+   DENOMINATOR MOVED: 19 of 22, not 19 of 23.** `livespec-dev-tooling` archived one of its two
+   threads in the interim, so it now has ONE active thread and it still passes. Both voluntary
+   passers reproduce exactly (`livespec-driver-codex` 1/1; git-jsonl 1 of 2). **Note the shape of
+   the drift** — the count of OFFENDERS did not move at all; the total did, because a compliant
+   repo tidied up. A ratio recorded without its denominator's provenance would have read as
+   progress.
+
+   **The per-repo distribution, which the earlier re-derivation did not record:**
+
+   | repo | armed | active | declares | FAILS |
+   |---|---|---|---|---|
+   | `livespec-orchestrator-beads-fabro` | no | 7 | 0 | **7** |
+   | `livespec-console-beads-fabro` | no | 5 | 0 | **5** |
+   | `livespec-overseer` | no | 4 | 0 | **4** |
+   | `livespec-orchestrator-git-jsonl` | no | 2 | 1 | **1** |
+   | `livespec` | no | 1 | 0 | **1** |
+   | `livespec-driver-claude` | no | 1 | 0 | **1** |
+   | `livespec-driver-codex` | no | 1 | 1 | 0 |
+   | `livespec-dev-tooling` | **YES** | 1 | 1 | 0 |
+   | `livespec-runtime` | no | 0 | 0 | 0 |
+   | **TOTAL** | | **22** | **3** | **19** |
+
+   **Two things the distribution shows that the bare 19 hides.** The failures are CONCENTRATED —
+   16 of 19 sit in three repos — so this is not a fleet-wide culture problem but three plan-heavy
+   tenants. And `livespec-console-beads-fabro`, the ZERO-PYTHON member excluded from every
+   Python-based conformance row, carries **5 active plan threads, all failing**: the member the
+   fleet's checks are least able to see is not the member with the least going on.
 3. `file_lloc_hard_gate` — retired under `426a` for exactly this: "the omission read as
    conformance". Its retirement sequence is the migration template Phase 4 follows.
 4. `commit_pairs` / `claude_md_coverage` / `tests_mirror_pairing` — disarmed by an empty role key
