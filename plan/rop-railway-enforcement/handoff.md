@@ -565,7 +565,7 @@ the entire fan-out would silently never trigger.
 |---|---|---|
 | `8o8e` | epic | This thread's anchor. Cannot close until `8o8e.1` is fleet-wide fixed AND verified. |
 | `8o8e.1` | **OPEN, P1 — the live item** | Role-key schema type-safety. Phases 0–3 DONE and landed; Phase 4 gated on the maintainer. Its notes carry the Phase 3 exercise evidence and the cross-tenant liveness measurement. |
-| `br4xar` | backlog | `tests_mirror_pairing` disarmed in 3 repos. **RE-DERIVED 2026-07-28 for git-jsonl and the headline number was an ARTIFACT: `0 fabricated / 6 REAL`, not 23 fabricated.** The source→test MAPPING this item asks for **already exists and is already consumed** — `config.mirror_pairings` takes precedence over the derived fallback at `tests_mirror_pairing.py:120`. 23 was what a prefix union produces WITHOUT a map. `livespec-runtime` (6) and `livespec-overseer` (58) were **NOT** re-derived. See the section below. |
+| `br4xar` | backlog | `tests_mirror_pairing` disarmed in 3 repos. **ALL THREE RE-DERIVED 2026-07-28: `23 / 6 / 58` is really `6 / 6 / ≤3`** — git-jsonl's 23 was a no-map artifact, runtime's 6 CONFIRMED unchanged, and overseer's 58 was 94% contamination (49 of the 58 are that repo's own co-located test files).** The source→test MAPPING this item asks for **already exists and is already consumed** — `config.mirror_pairings` takes precedence over the derived fallback at `tests_mirror_pairing.py:120`. 23 was what a prefix union produces WITHOUT a map. **Sizing: ~15 tests plus one design question, not an epic** — the only epic-shaped part left is overseer's co-located-layout question, which `tests_mirror_pairing` structurally cannot express. See the section below. |
 | `hgfnqd` | ready | Collapse `red_green_replay._derive_impl_prefixes` into `config.derive_source_prefixes`. Duplicate logic left deliberately: 3 tests assert the private helper by name, and refactoring a second commit-time gate inside a gate-arming PR risks losing the ability to commit at all. |
 | `pj3j` | **open, P2 — FILED by this session** | This repo's OWN `MISSING_KEYS_EVENT` (`checks/required_role_keys_declared.py:40-43`) and `Config` docstring (`config.py:407`) still teach the retired declared-empty spelling. Higher-leverage than any config comment: the diagnostic is read at the moment someone decides what to write, and it is interpolated into the FLEET report too (`fleet/_rows_required_role_keys.py:99`). **After Phase 4 its remediation routes the reader into a `ConfigParseError`** — so, like `fwcwxv`, it must land BEFORE Phase 4. Unlike `fwcwxv` it is code and factory-dispatchable. The item records the trap: `[]` is wrong for the five UNION keys only; it stays LEGITIMATE for the five CLEAN ones, and this check spans both. |
 | `oitd` | **CLOSED — PR #776 → `34c05c1`** | Decomposed `fleet/_contract_rows.py` (246 → 183 LLOC) by extracting the six `github-state` rows to `_contract_github_state_rows.py` and splicing them back in place. `OBLIGATION_ROWS` unchanged in content and ordering, verified by dumping every row's fields from both trees and diffing to empty. **195 LLOC** once the Phase 3 row was registered — still under the SOFT ceiling, so the next obligation does not re-open this. **Its recorded `depends on 8o8e.1` edge was INVERTED** (it was a prerequisite of `8o8e.1`'s Phase 3, not a consequent) and made the ledger show completed work as blocked; removed and re-recorded as a non-blocking `relates_to`. |
@@ -675,12 +675,11 @@ is DIVERGENCE — hashes and line counts, not behavior. Working out which copy b
 first real task and must precede picking a canonical body, because adopting the wrong one weakens
 the guard in seven repos in one commit. That is why `qv3k` is `needs-human`, not `ready`.
 
-### 🔢 `br4xar`'s "23 FABRICATED OFFENDERS" WAS AN ARTIFACT — re-derived to `0 fabricated / 6 REAL`
+### 🔢 `br4xar` RE-DERIVED IN FULL — `23 / 6 / 58` is really `6 / 6 / ≤3`
 
 Measured while working `m50u`, because `m50u`'s stated trap ("do not widen the prefix set — it
 reddens `tests_mirror_pairing` with the 23 offenders `br4xar` measured") depends on that number
-being true. **It is not.** This re-derives ONE of `br4xar`'s three repos: `livespec-runtime` (6) and
-`livespec-overseer` (58) were **NOT** re-derived — do not read this as having touched them.
+being true. **It is not** — and neither is overseer's 58. All three repos are re-derived below.
 
 **The mapping `br4xar` asks for ALREADY EXISTS and is ALREADY CONSUMED.**
 `checks/tests_mirror_pairing.py:120` reads `pairings = config.mirror_pairings or
@@ -708,11 +707,40 @@ So git-jsonl moves from "epic-shaped, dominated by false positives" to **"declar
 survives:** arming it turns those six red the moment the declaration lands, so the declaration and
 the six tests must land TOGETHER or the repo cannot commit.
 
-Observed, not measured, about the other two: `livespec-runtime` HAS a `tests/livespec_runtime/`
-mirror — exactly the DEFAULT derived shape — so its 6 is unlikely to be a mapping artifact.
-`livespec-overseer` has NO `tests/overseer/` tree at all (flat `tests/` plus `tests/integration/`
-and `tests/prompts/`), so its 58 is unlikely to collapse the way git-jsonl's 23 did, and it is the
-case that genuinely needs a design decision.
+**ALL THREE REPOS ARE NOW RE-DERIVED. `23 / 6 / 58` is really `6 / 6 / ≤3`.**
+
+| repo | `br4xar` recorded | re-derived | verdict |
+|---|---|---|---|
+| `livespec-orchestrator-git-jsonl` | 23 fabricated | **6 real, 0 fabricated** | a no-map artifact |
+| `livespec-runtime` | 6 real | **6 real** | **CONFIRMED unchanged** |
+| `livespec-overseer` | 58 real | **≤3 real** | 94% contamination |
+
+`livespec-runtime` holding EXACTLY is worth as much as the two corrections — it shows the method
+is not simply deflating everything it touches.
+
+**Overseer's 58 was the most wrong, and for an instructive reason: 49 of the 58 are the repo's own
+TEST FILES.** `livespec-overseer` **co-locates** its tests inside the source package. Of 84 `.py`
+under `overseer/`: **49 are `test_*.py`**, 23 are `_*.py` helpers, only **11 are production
+modules** — and just 6 `.py` live under `tests/` at all. The check demands a
+`test_test_claude_sessions.py` for `overseer/test_claude_sessions.py`. That is a category error,
+not a backlog. **8 of the 11 production modules already carry a co-located test**; three do not
+(`daemon.py`, `start.py`, `version.py`, and `start.py` is plausibly covered by
+`overseer/test_overseer_start.py`, which the naming rule cannot see).
+
+**THE STRUCTURAL FINDING, which matters more than the count: `tests_mirror_pairing` CANNOT MODEL A
+CO-LOCATED LAYOUT.** Its model is `source_tree` → a DIFFERENT `test_tree`, and no configuration
+helps — measured: `overseer → tests/overseer` gives 58, `overseer → tests` gives **58 as well**,
+and `overseer → overseer` would pair the 8 correctly and then demand `test_test_*.py` for all 49
+test files. So **`livespec-overseer`'s `convention_not_adopted` payload is TRUE** — the repo is not
+dodging a convention it could adopt; the convention has no spelling that fits it.
+
+**That is the balancing case for `m50u`, and it matters.** Two payloads checked: git-jsonl's
+`superseded_by` **FALSE**, overseer's `convention_not_adopted` **TRUE**. So the defect is *not*
+"declarations lie" — it is that **nothing distinguishes the two**, and only an out-of-band
+measurement did. An unchecked claim is not presumed false, it is **unranked**.
+
+**Sizing:** `br4xar` is roughly **15 tests plus one design question**, not an epic. The only
+epic-shaped part left is the co-located-layout question, and it belongs to one repo.
 
 ### Carried forward (not this thread's to drive, but part of the finding)
 
