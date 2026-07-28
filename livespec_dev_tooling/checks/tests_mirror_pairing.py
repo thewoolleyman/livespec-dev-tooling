@@ -39,6 +39,7 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling.checks._role_key_gate import resolve_role_prefixes  # noqa: E402
 from livespec_dev_tooling.config import MirrorPairing, load_config  # noqa: E402
 
 __all__: list[str] = []
@@ -105,8 +106,19 @@ def main() -> int:
     log = structlog.get_logger("tests_mirror_pairing")
     cwd = Path.cwd()
     config = load_config(repo_root=cwd)
+    # Resolved BEFORE the `or`, not inside the fallback arm. `source_tree_prefixes`
+    # is part of this check's configuration surface whether or not the
+    # `mirror_pairings` short-circuit consults it, and Phase 1's purpose is a
+    # COMPLETE per-repo count of un-migrated role keys. Announcing only on the
+    # fallback path would undercount exactly the repos that declare both.
+    declared_prefixes = resolve_role_prefixes(
+        role=config.source_tree_prefixes,
+        key="source_tree_prefixes",
+        log=log,
+        check_id="tests_mirror_pairing",
+    )
     pairings = config.mirror_pairings or _derived_pairings_from_prefixes(
-        source_tree_prefixes=config.source_tree_prefixes,
+        source_tree_prefixes=declared_prefixes,
         tests_tree_prefix=config.tests_tree_prefix,
     )
     offenders: list[tuple[Path, Path]] = []

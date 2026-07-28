@@ -41,8 +41,8 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
-from livespec_dev_tooling.checks._role_key_gate import role_key_gate_exit_code  # noqa: E402
-from livespec_dev_tooling.config import load_config  # noqa: E402
+from livespec_dev_tooling.checks._role_key_gate import role_absence_exit_code  # noqa: E402
+from livespec_dev_tooling.config import load_config, role_path  # noqa: E402
 
 # The canonical body is the SINGLE source of truth, shipped as a module
 # constant in the installer so it travels in the wheel. The check imports
@@ -83,16 +83,16 @@ def _configure_logger() -> structlog.stdlib.BoundLogger:
 def main() -> int:
     log = _configure_logger()
     config = load_config(repo_root=Path.cwd())
-    gate_exit = role_key_gate_exit_code(
+    gate_exit = role_absence_exit_code(
         config=config,
+        role=config.neutral_hook_body_path,
         key="neutral_hook_body_path",
-        value_is_empty=config.neutral_hook_body_path is None,
         log=log,
         check_id=_CHECK_ID,
     )
     if gate_exit is not None:
         return gate_exit
-    neutral_hook_body_path = config.neutral_hook_body_path
+    neutral_hook_body_path = role_path(role=config.neutral_hook_body_path)
     if neutral_hook_body_path is None:
         raise RuntimeError(_NEUTRAL_HOOK_BODY_PATH_GATE_BUG)
     path = Path.cwd() / neutral_hook_body_path

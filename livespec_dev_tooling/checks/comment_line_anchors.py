@@ -41,6 +41,7 @@ from livespec_dev_tooling.config import (  # noqa: E402
     is_under_any_tree,
     load_config,
     resolve_check_universe,
+    role_trees,
 )
 
 __all__: list[str] = []
@@ -109,7 +110,7 @@ def main() -> int:
     config = load_config(repo_root=root)
     legacy_offenders = 0
     for rel in universe:
-        is_legacy = is_under_any_tree(rel=rel, trees=config.target_dirs)
+        is_legacy = is_under_any_tree(rel=rel, trees=role_trees(role=config.target_dirs))
         for lineno, matched in _scan_file(path=root / rel):
             emit = log.error if is_legacy else log.warning
             extra = {} if is_legacy else {"phase": "0-warn", "newly_covered": True}

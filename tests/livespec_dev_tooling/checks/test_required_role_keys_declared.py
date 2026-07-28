@@ -9,7 +9,7 @@ from types import ModuleType
 
 import pytest
 
-from livespec_dev_tooling.config import REQUIRED_ROLE_KEYS, Config
+from livespec_dev_tooling.config import REQUIRED_ROLE_KEYS
 
 __all__: list[str] = []
 
@@ -53,12 +53,18 @@ def _write_justfile(*, root: Path, targets: tuple[str, ...]) -> None:
     )
 
 
+# The two role keys whose TOML spelling is a scalar rather than an array. Named
+# explicitly rather than inferred from `Config.__dataclass_fields__` defaults:
+# the union (livespec-dev-tooling-8o8e.1) made those defaults `LegacyAmbiguousEmpty`
+# for every key, so a `default is None` test silently emitted `[]` for the scalars
+# and produced a block that no longer parses.
+_SCALAR_SPELLED_ROLE_KEYS = frozenset({"dataclasses_tree", "neutral_hook_body_path"})
+
+
 def _all_required_empty_block() -> str:
     lines = ["[tool.livespec_dev_tooling]"]
-    fields = Config.__dataclass_fields__
     for key in sorted(REQUIRED_ROLE_KEYS):
-        default = fields[key].default
-        value = '""' if default is None else "[]"
+        value = '""' if key in _SCALAR_SPELLED_ROLE_KEYS else "[]"
         lines.append(f"{key} = {value}")
     return "\n".join(lines) + "\n"
 

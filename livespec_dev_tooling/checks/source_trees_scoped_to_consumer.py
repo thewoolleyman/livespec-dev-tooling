@@ -19,7 +19,13 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
-from livespec_dev_tooling.config import Config, load_config, load_project_name  # noqa: E402
+from livespec_dev_tooling.config import (  # noqa: E402
+    Config,
+    load_config,
+    load_project_name,
+    role_prefixes,
+    role_trees,
+)
 
 __all__: list[str] = []
 
@@ -49,14 +55,14 @@ def _iter_role_paths(*, config: Config) -> tuple[_DeclaredPath, ...]:
         ("source_trees", config.source_trees),
         ("io_trees", config.io_trees),
         ("commands_trees", config.commands_trees),
-        ("pure_trees", config.pure_trees),
+        ("pure_trees", role_trees(role=config.pure_trees)),
         ("covered_trees", config.covered_trees),
-        ("target_dirs", config.target_dirs),
+        ("target_dirs", role_trees(role=config.target_dirs)),
     ):
         out.extend(_DeclaredPath(role=role, path=path) for path in paths)
     out.extend(
         _DeclaredPath(role="source_tree_prefixes", path=Path(prefix.rstrip("/")))
-        for prefix in config.source_tree_prefixes
+        for prefix in role_prefixes(role=config.source_tree_prefixes)
     )
     for pairing in config.mirror_pairings:
         out.append(_DeclaredPath(role="mirror_pairings.source_tree", path=pairing.source_tree))

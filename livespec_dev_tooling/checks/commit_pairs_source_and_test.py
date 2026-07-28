@@ -104,6 +104,7 @@ from livespec_dev_tooling.config import (  # noqa: E402
     derive_source_prefixes,
     is_vendored_path,
     load_config,
+    role_path,
 )
 
 __all__: list[str] = []
@@ -200,8 +201,9 @@ def main() -> int:
     # unmakeable, so a carrier change propagates by neither the pin-only
     # fan-out nor by hand. Exempting exactly the DECLARED path — never the
     # prefix around it — keeps every hand-authored sibling gated.
+    neutral_hook_body = role_path(role=config.neutral_hook_body_path)
     exempt_paths = frozenset(
-        {config.neutral_hook_body_path} if config.neutral_hook_body_path else set()
+        {neutral_hook_body.as_posix()} if neutral_hook_body is not None else set()
     )
     # Scoped to `.py` deliberately. The pairing contract is defined on Python —
     # the mirror transform maps `<name>.py` to `test_<name>.py` — so a

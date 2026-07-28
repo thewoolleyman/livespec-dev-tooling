@@ -50,9 +50,28 @@ from types import ModuleType
 
 import pytest
 
-from livespec_dev_tooling.config import Config
+from livespec_dev_tooling.config import (
+    Config,
+    DeclaredPrefixes,
+    LegacyAmbiguousEmpty,
+    PrefixRole,
+)
 
 __all__: list[str] = []
+
+
+def _prefix_role(*, prefixes: tuple[str, ...]) -> PrefixRole:
+    """Wrap a fixture prefix tuple in the union type `Config` now carries.
+
+    `source_tree_prefixes` became a discriminated union in Phase 1 of
+    `livespec-dev-tooling-8o8e.1`: an EMPTY declaration is no longer a bare `()`
+    but a named `LegacyAmbiguousEmpty`, so a raw tuple can no longer stand in for
+    it. Keeping the fixture data as plain tuples and wrapping here preserves the
+    matrix's readability.
+    """
+    if not prefixes:
+        return LegacyAmbiguousEmpty(key="source_tree_prefixes", repo="fixture")
+    return DeclaredPrefixes(prefixes=prefixes)
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -138,7 +157,7 @@ def _fixture_impl_prefixes(
         *module._derive_impl_prefixes(  # noqa: SLF001
             config=Config(
                 source_trees=source_trees,
-                source_tree_prefixes=source_tree_prefixes,
+                source_tree_prefixes=_prefix_role(prefixes=source_tree_prefixes),
             ),
         ),
         *test_only_legacy_prefixes,
@@ -235,7 +254,7 @@ def test_impl_prefixes_derive_from_declared_role_key_union_without_dropping_flee
     derived = module._derive_impl_prefixes(  # noqa: SLF001
         config=Config(
             source_trees=source_trees,
-            source_tree_prefixes=source_tree_prefixes,
+            source_tree_prefixes=_prefix_role(prefixes=source_tree_prefixes),
         ),
     )
 
@@ -260,7 +279,7 @@ def test_impl_prefixes_add_livespec_driver_claude_hook_trees() -> None:
     derived = module._derive_impl_prefixes(  # noqa: SLF001
         config=Config(
             source_trees=(Path(".claude/hooks"), Path(".claude-plugin/hooks")),
-            source_tree_prefixes=(".claude/hooks/", ".claude-plugin/hooks/"),
+            source_tree_prefixes=_prefix_role(prefixes=(".claude/hooks/", ".claude-plugin/hooks/")),
         ),
     )
 

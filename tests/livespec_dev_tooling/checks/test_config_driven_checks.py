@@ -145,8 +145,14 @@ def _assert_errors_on_undeclared_role_key(
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
     assert "role key undeclared" in result.stderr
-    assert "declare the real tree" in result.stderr
-    assert "declare it explicitly empty with a comment giving the reason" in result.stderr
+    assert "declare the real value" in result.stderr
+    # The remediation hint must name the blessed spellings, NOT the retired
+    # "declare it explicitly empty" advice — that wording sent authors straight
+    # into the ambiguous spelling this union exists to retire
+    # (livespec-dev-tooling-8o8e.1).
+    assert "not_applicable / superseded_by / unarmed_until / convention_not_adopted" in (
+        result.stderr
+    )
     assert role in result.stderr
 
 
@@ -158,15 +164,21 @@ def _assert_noop_on_declared_empty_role_key(
     tmp_path: Path,
     env: dict[str, str] | None = None,
 ) -> None:
-    """A declared-empty role key is a visible sanctioned opt-out."""
+    """A declared-empty role key still no-ops, and now ANNOUNCES itself.
+
+    Phase 1 of the role-key union (livespec-dev-tooling-8o8e.1) preserves the
+    OUTCOME — exit 0, so no repo goes red — while replacing the old
+    "sanctioned opt-out" INFO with a WARN that names the ambiguous spelling.
+    The outcome is the contract; the wording is the migration signal.
+    """
     _write_block(repo_root=tmp_path, body=declaration)
     result = _run_check(slug=slug, cwd=tmp_path, env=env)
     assert result.returncode == 0, (
         f"{slug} must no-op (exit 0) when `{role}` is declared empty; "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
-    assert "role key declared empty" in result.stderr
-    assert "sanctioned opt-out" in result.stderr
+    assert "legacy-ambiguous-empty" in result.stderr
+    assert "AMBIGUOUS legacy empty spelling" in result.stderr
     assert role in result.stderr
 
 
@@ -486,3 +498,54 @@ def test_rop_pipeline_shape_warns_for_newly_covered_package(*, tmp_path: Path) -
     assert "pkg/bad.py" in result.stderr
     assert "newly_covered" in result.stderr
     assert '"level": "warning"' in result.stderr
+
+
+def test_superseded_by_declaration_is_announced_by_name(*, tmp_path: Path) -> None:
+    """A `superseded_by` role key no-ops and reports its own variant and reason.
+
+    The severities are deliberately NOT uniform across the union: a settled
+    declaration like this logs at INFO, while `unarmed_until` and the legacy
+    ambiguous spelling log at WARN because those are the states that should stay
+    visible (livespec-dev-tooling-8o8e.1).
+    """
+    _write_block(
+        repo_root=tmp_path,
+        body=(
+            'source_trees = ["pkg"]\n'
+            'pure_trees = { superseded_by = "git-derived universe via resolve_check_universe" }\n'
+        ),
+    )
+    result = _run_check(slug="public_api_result_typed", cwd=tmp_path)
+
+    assert result.returncode == 0, (
+        f"a `superseded_by` declaration must pass; "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    assert "superseded_by" in result.stderr
+    assert "git-derived universe via resolve_check_universe" in result.stderr
+    assert "SUPERSEDED" in result.stderr
+
+
+def test_convention_not_adopted_declaration_is_announced_by_name(*, tmp_path: Path) -> None:
+    """A `convention_not_adopted` role key no-ops and reports its own variant.
+
+    Maintainer-blessed 2026-07-28, and blessed only BECAUSE the coupling break
+    landed first: before that, declining one convention also switched off a
+    commit-time gate the declaration never named.
+    """
+    _write_block(
+        repo_root=tmp_path,
+        body=(
+            'source_trees = ["pkg"]\n'
+            'pure_trees = { convention_not_adopted = "pure-layer split not adopted here" }\n'
+        ),
+    )
+    result = _run_check(slug="public_api_result_typed", cwd=tmp_path)
+
+    assert result.returncode == 0, (
+        f"a `convention_not_adopted` declaration must pass; "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    assert "convention_not_adopted" in result.stderr
+    assert "pure-layer split not adopted here" in result.stderr
+    assert "CONVENTION NOT ADOPTED" in result.stderr

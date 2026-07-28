@@ -76,6 +76,7 @@ from livespec_dev_tooling.config import (  # noqa: E402
     MirrorPairing,
     is_vendored_path,
     load_config,
+    role_prefixes,
 )
 
 __all__: list[str] = []
@@ -315,13 +316,13 @@ def main() -> int:
     derived = not impl_paths
     if derived:
         impl_paths = _derive_paths_from_git(
-            source_tree_prefixes=config.source_tree_prefixes, cwd=cwd
+            source_tree_prefixes=role_prefixes(role=config.source_tree_prefixes), cwd=cwd
         )
         if not impl_paths:
             log.info(
                 "no changed impl .py paths derived from git diff; nothing to gate",
                 base="origin/master...HEAD",
-                source_tree_prefixes=list(config.source_tree_prefixes),
+                source_tree_prefixes=list(role_prefixes(role=config.source_tree_prefixes)),
             )
             return 0
     # Applied to BOTH the explicit `--paths` and git-derived branches: a

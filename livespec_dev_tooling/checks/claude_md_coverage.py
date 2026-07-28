@@ -34,6 +34,7 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling.checks._role_key_gate import resolve_role_trees  # noqa: E402
 from livespec_dev_tooling.config import load_config  # noqa: E402
 
 __all__: list[str] = []
@@ -74,7 +75,13 @@ def main() -> int:
     cwd = Path.cwd()
     config = load_config(repo_root=cwd)
     offenders: list[Path] = []
-    for root_rel in config.target_dirs:
+    target_dirs = resolve_role_trees(
+        role=config.target_dirs,
+        key="target_dirs",
+        log=log,
+        check_id="claude_md_coverage",
+    )
+    for root_rel in target_dirs:
         scope_root = cwd / root_rel
         for directory in _iter_in_scope_dirs(repo_root=cwd, scope_root=scope_root):
             claude_md = directory / "CLAUDE.md"

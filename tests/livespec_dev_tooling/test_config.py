@@ -24,9 +24,16 @@ from livespec_dev_tooling.config import (
     REQUIRED_ROLE_KEYS,
     Config,
     ConfigParseError,
+    ConventionNotAdopted,
+    DeclaredPath,
+    DeclaredPrefixes,
+    DeclaredTrees,
     GitLsFilesError,
     GitToplevelError,
+    LegacyAmbiguousEmpty,
     MirrorPairing,
+    NotApplicable,
+    SupersededBy,
     filter_first_party_py,
     has_first_party_py,
     is_bin_wrapper,
@@ -44,6 +51,9 @@ from livespec_dev_tooling.config import (
     load_subprocess_spawn_allowlist,
     resolve_check_universe,
     resolve_repo_root,
+    role_path,
+    role_prefixes,
+    role_trees,
 )
 
 __all__: list[str] = []
@@ -131,24 +141,34 @@ def test_present_block_omitting_keys_yields_flat_baseline(*, tmp_path: Path) -> 
     assert config.io_trees == ()
     assert config.commands_trees == ()
     assert config.supervisor_entry_files == ()
-    assert config.dataclasses_tree is None
-    assert config.pure_trees == ()
     assert config.covered_trees == ()
-    assert config.source_tree_prefixes == ()
-    assert config.target_dirs == ()
     assert config.mirror_pairings == ()
     assert config.tests_tree_prefix == "tests/"
-    assert config.neutral_hook_body_path is None
+    # The five union role keys resolve to an EMPTY universe exactly as before —
+    # asserted through the accessors, which is the contract consumers use.
+    assert role_trees(role=config.pure_trees) == ()
+    assert role_trees(role=config.target_dirs) == ()
+    assert role_prefixes(role=config.source_tree_prefixes) == ()
+    assert role_path(role=config.dataclasses_tree) is None
+    assert role_path(role=config.neutral_hook_body_path) is None
 
 
 def test_dataclasses_tree_empty_string_is_declared_none(*, tmp_path: Path) -> None:
-    """`dataclasses_tree = ""` declares the null/no-op role key."""
+    """`dataclasses_tree = ""` still parses and still resolves to no path.
+
+    Phase 1 of the role-key union accepts the legacy spelling unchanged — it is
+    the ACCEPTING loader, and rejecting here would redden every repo before any
+    of them could migrate. What changes is that the value is now a distinct
+    `LegacyAmbiguousEmpty` rather than a bare `None`, so consumers can announce
+    it (livespec-dev-tooling-8o8e.1).
+    """
     _write_pyproject(
         repo_root=tmp_path,
         body='[tool.livespec_dev_tooling]\ndataclasses_tree = ""\n',
     )
     config = load_config(repo_root=tmp_path)
-    assert config.dataclasses_tree is None
+    assert role_path(role=config.dataclasses_tree) is None
+    assert isinstance(config.dataclasses_tree, LegacyAmbiguousEmpty)
     assert "dataclasses_tree" in config.declared_keys
 
 
@@ -159,7 +179,8 @@ def test_neutral_hook_body_path_empty_string_is_declared_none(*, tmp_path: Path)
         body='[tool.livespec_dev_tooling]\nneutral_hook_body_path = ""\n',
     )
     config = load_config(repo_root=tmp_path)
-    assert config.neutral_hook_body_path is None
+    assert role_path(role=config.neutral_hook_body_path) is None
+    assert isinstance(config.neutral_hook_body_path, LegacyAmbiguousEmpty)
     assert "neutral_hook_body_path" in config.declared_keys
 
 
@@ -188,16 +209,19 @@ def test_full_override(*, tmp_path: Path) -> None:
     assert config.io_trees == (Path("pkg/io"),)
     assert config.commands_trees == (Path("pkg/commands"),)
     assert config.supervisor_entry_files == (Path("pkg/run.py"),)
-    assert config.dataclasses_tree == Path("pkg/schemas")
-    assert config.pure_trees == (Path("pkg/pure"),)
     assert config.covered_trees == (Path("pkg"),)
-    assert config.source_tree_prefixes == ("pkg/",)
     assert config.tests_tree_prefix == "t/"
-    assert config.target_dirs == (Path("pkg"),)
     assert config.mirror_pairings == (
         MirrorPairing(source_tree=Path("pkg"), test_tree=Path("t/pkg")),
     )
-    assert config.neutral_hook_body_path == "hooks/no_shadow_ledger.py"
+    # A POPULATED union role key parses into its `Declared*` wrapper, which is
+    # what makes "declared but empty" unrepresentable after parsing: the
+    # populated case is non-empty by construction.
+    assert config.dataclasses_tree == DeclaredPath(path=Path("pkg/schemas"))
+    assert config.pure_trees == DeclaredTrees(trees=(Path("pkg/pure"),))
+    assert config.target_dirs == DeclaredTrees(trees=(Path("pkg"),))
+    assert config.source_tree_prefixes == DeclaredPrefixes(prefixes=("pkg/",))
+    assert config.neutral_hook_body_path == DeclaredPath(path=Path("hooks/no_shadow_ledger.py"))
     assert config.declared_keys == frozenset(
         {
             "source_trees",
@@ -249,7 +273,7 @@ def test_dataclasses_tree_non_string_raises(*, tmp_path: Path) -> None:
         repo_root=tmp_path,
         body="[tool.livespec_dev_tooling]\ndataclasses_tree = 3\n",
     )
-    with pytest.raises(ConfigParseError, match="`dataclasses_tree` must be a string or omitted"):
+    with pytest.raises(ConfigParseError, match="`dataclasses_tree` must be a populated value"):
         _ = load_config(repo_root=tmp_path)
 
 
@@ -326,7 +350,9 @@ def test_neutral_hook_body_path_non_string_raises(*, tmp_path: Path) -> None:
         repo_root=tmp_path,
         body="[tool.livespec_dev_tooling]\nneutral_hook_body_path = 3\n",
     )
-    with pytest.raises(ConfigParseError, match="`neutral_hook_body_path` must be a string"):
+    with pytest.raises(
+        ConfigParseError, match="`neutral_hook_body_path` must be a populated value"
+    ):
         _ = load_config(repo_root=tmp_path)
 
 
@@ -335,9 +361,9 @@ def test_bare_config_is_flat_baseline() -> None:
     config = Config()
     assert config.declared_keys == frozenset()
     assert config.source_trees == ()
-    assert config.dataclasses_tree is None
     assert config.tests_tree_prefix == "tests/"
-    assert config.neutral_hook_body_path is None
+    assert role_path(role=config.dataclasses_tree) is None
+    assert role_path(role=config.neutral_hook_body_path) is None
 
 
 _SLF001_GRANT = (
@@ -1109,3 +1135,59 @@ def test_resolve_check_universe_raises_outside_git_tree(
     monkeypatch.chdir(plain)
     with pytest.raises(GitToplevelError, match="git rev-parse --show-toplevel failed"):
         _ = resolve_check_universe()
+
+
+def test_superseded_by_variant_parses(*, tmp_path: Path) -> None:
+    """`{ superseded_by = "<reason>" }` parses to its own type, not to not-applicable.
+
+    (C) is materially different from (A): under not-applicable there is nothing to
+    check, while under superseded-by the concept IS being checked, elsewhere.
+    Collapsing them would force three fleet repos to mis-declare
+    (livespec-dev-tooling-8o8e.1).
+    """
+    _write_pyproject(
+        repo_root=tmp_path,
+        body=(
+            "[tool.livespec_dev_tooling]\n"
+            "covered_trees = []\n"
+            'target_dirs = { superseded_by = "git-derived universe owns this" }\n'
+        ),
+    )
+    config = load_config(repo_root=tmp_path)
+    assert config.target_dirs == SupersededBy(reason="git-derived universe owns this")
+    assert role_trees(role=config.target_dirs) == ()
+
+
+def test_convention_not_adopted_variant_parses(*, tmp_path: Path) -> None:
+    """`{ convention_not_adopted = "<reason>" }` parses to its own type.
+
+    (D) — maintainer-blessed 2026-07-28. It is the state `livespec-runtime` was
+    already in, written in a comment no checker could read.
+    """
+    _write_pyproject(
+        repo_root=tmp_path,
+        body=(
+            "[tool.livespec_dev_tooling]\n"
+            'target_dirs = { convention_not_adopted = "per-directory CLAUDE.md not adopted" }\n'
+        ),
+    )
+    config = load_config(repo_root=tmp_path)
+    assert config.target_dirs == ConventionNotAdopted(reason="per-directory CLAUDE.md not adopted")
+
+
+def test_prefix_role_accepts_a_blessed_variant(*, tmp_path: Path) -> None:
+    """`source_tree_prefixes` takes the same inline-table vocabulary as the tree keys.
+
+    It is the key whose emptiness silently disarmed the commit-time TDD pairing
+    gate in three repos, so it must be able to say WHY it is absent.
+    """
+    _write_pyproject(
+        repo_root=tmp_path,
+        body=(
+            "[tool.livespec_dev_tooling]\n"
+            'source_tree_prefixes = { not_applicable = "no mirrored source surface" }\n'
+        ),
+    )
+    config = load_config(repo_root=tmp_path)
+    assert config.source_tree_prefixes == NotApplicable(reason="no mirrored source surface")
+    assert role_prefixes(role=config.source_tree_prefixes) == ()

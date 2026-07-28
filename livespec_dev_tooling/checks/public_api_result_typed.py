@@ -45,8 +45,15 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
-from livespec_dev_tooling.checks._role_key_gate import role_key_paths_exit_code  # noqa: E402
-from livespec_dev_tooling.config import iter_py_files, load_config  # noqa: E402
+from livespec_dev_tooling.checks._role_key_gate import (  # noqa: E402
+    ensure_declared_paths_contain_python,
+    role_absence_exit_code,
+)
+from livespec_dev_tooling.config import (  # noqa: E402
+    iter_py_files,
+    load_config,
+    role_trees,
+)
 
 __all__: list[str] = []
 
@@ -167,18 +174,26 @@ def main() -> int:
     log = structlog.get_logger("public_api_result_typed")
     cwd = Path.cwd()
     config = load_config(repo_root=cwd)
-    gate_exit = role_key_paths_exit_code(
+    gate_exit = role_absence_exit_code(
         config=config,
+        role=config.pure_trees,
         key="pure_trees",
-        paths=config.pure_trees,
-        repo_root=cwd,
         log=log,
         check_id="public_api_result_typed",
     )
     if gate_exit is not None:
         return gate_exit
+    pure_trees = role_trees(role=config.pure_trees)
+    if not ensure_declared_paths_contain_python(
+        repo_root=cwd,
+        key="pure_trees",
+        paths=pure_trees,
+        log=log,
+        check_id="public_api_result_typed",
+    ):
+        return 1
     offenders: list[tuple[Path, int, str]] = []
-    for tree_rel in config.pure_trees:
+    for tree_rel in pure_trees:
         for py_file in iter_py_files(root=cwd / tree_rel):
             if py_file.name.startswith("_"):
                 continue
