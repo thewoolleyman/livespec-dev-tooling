@@ -252,7 +252,10 @@ right move is to say so rather than to manufacture work. Listed with its owner:
    docstring still teach the retired spelling. Before Phase 4. Factory-dispatchable; leave it.
 4. **`bd-ib-6qb2mc` — A HUMAN, IN ANOTHER TENANT** (beads-fabro, `blocked`/`needs-human`). Carving
    that repo's real pure tree, which is what its `unarmed_until` promises.
-5. **Step 6 — NOT AUTHORIZED.** The arming migration. Do not start it.
+5. **`livespec-dev-tooling-m50u` — A HUMAN, then ANOTHER TENANT'S INTAKE.** A blessed
+   declared-absent payload measured FALSE in `livespec-orchestrator-git-jsonl`. The measurement is
+   done; the remedy is that repo's architectural call and must not be a naive prefix widening.
+6. **Step 6 — NOT AUTHORIZED.** The arming migration. Do not start it.
 
 ### ✅ PHASE 3 — LANDED, REGISTERED, AND **EXERCISED**. Three pieces of evidence, because green proves nothing here
 
@@ -560,12 +563,68 @@ the entire fan-out would silently never trigger.
 | `oitd` | **CLOSED — PR #776 → `34c05c1`** | Decomposed `fleet/_contract_rows.py` (246 → 183 LLOC) by extracting the six `github-state` rows to `_contract_github_state_rows.py` and splicing them back in place. `OBLIGATION_ROWS` unchanged in content and ordering, verified by dumping every row's fields from both trees and diffing to empty. **195 LLOC** once the Phase 3 row was registered — still under the SOFT ceiling, so the next obligation does not re-open this. **Its recorded `depends on 8o8e.1` edge was INVERTED** (it was a prerequisite of `8o8e.1`'s Phase 3, not a consequent) and made the ledger show completed work as blocked; removed and re-recorded as a non-blocking `relates_to`. |
 | `fwcwxv` | **FILED as PR #773 — needs a MAINTAINER** | The spec propose-change. Four proposals: retire declared-empty for the union keys; preserve `[]` for the CLEAN keys with the stricter-not-blinder reason; ratify the constraint-based discriminator plus `unarmed_until` liveness; and the acceptance scenarios. **Filing is not ratifying** — accept or reject at `/livespec:revise`. **Phase 4 is gated on acceptance.** |
 | `bd-ib-6qb2mc` | **blocked / needs-human — FILED this session, in the `beads-fabro` tenant** | Carve `livespec-orchestrator-beads-fabro`'s real pure tree. It is the named work that repo's `pure_trees = { unarmed_until = ... }` points at, so it is the ONLY open item whose closure is referenced from a parsed config value in another repo. **Do NOT close it by declaring `not_applicable`** — that re-hides an obligation its own ratified `constraints.md` imposes; if the constraint is wrong, amend the SPEC first. `blocked` is correct rather than a formality: verifying the result is mechanical, choosing the cut is architectural. |
+| `m50u` | **blocked / needs-human — FILED 2026-07-28** | A blessed declared-absent PAYLOAD can be false and nothing checks it. `livespec-orchestrator-git-jsonl`'s `source_tree_prefixes = { superseded_by = … }` is **measurably untrue** — 14 of 49 first-party `.py` fall outside the derived set — silently narrowing BOTH commit-time gates. Filed HERE rather than in the git-jsonl tenant deliberately: that repo's intake runs through its own orchestrator surface (the `bd-ib-6qb2mc` precedent), which is not installed here, and a raw cross-tenant `bd -C` would bypass the intake DoR that routed that precedent correctly. **First action: route the git-jsonl half through that repo's own intake.** |
 | `pk2x` | backlog | Archive-on-epic-close — **ADOPT** ruled. Carries a note from this thread: a union makes `[]` unrepresentable after parsing, but **a key nobody wrote still parses to the default**, so pk2x's Exemption slot needs PRESENCE REQUIRED, not merely value well-formedness. |
 
-**Possible stale item — VERIFY, do not assume:** `livespec-dev-tooling-fp5yfv` (2026-07-19,
-BLOCKED) describes `red_green_replay._IMPL_PREFIXES` as a hardcoded list and *recommends deriving
-impl paths from `source_tree_prefixes`* — which the code now does via `_derive_impl_prefixes`. It
-may be already-fixed or largely superseded, and it overlaps `hgfnqd`. Check before grooming either.
+**`fp5yfv` — VERIFIED 2026-07-28, and the answer is BOTH.** It is no longer a "possible stale
+item"; it was measured against the live fleet, and the same note is attached to all three
+entangled items (`fp5yfv`, `30g`, `9j8.7`) so whoever grooms them does not re-derive it.
+
+- **Its recommendation LANDED.** `_IMPL_PREFIXES` is gone from product code; `_derive_impl_prefixes`
+  unions each repo's own `source_trees` with its declared `source_tree_prefixes` — exactly what
+  `fp5yfv` recommended and what `9j8.7` asked for. The surviving `_IMPL_PREFIXES` references are
+  test-side only: `_HARDCODED_IMPL_PREFIXES_2026_07_25` is a REGRESSION BASELINE. **Do not "clean
+  it up"** — same trap as `test_config_driven_checks.py:150`.
+- **Every exposure the three items NAMED is CLOSED**, measured per repo: `livespec-driver-claude`
+  **0 of 7** uncovered (it was the FULLY EXPOSED repo), `livespec-driver-codex` **0 of 8**, and
+  beads-fabro's `.claude/hooks/` four-file exposure now covered because that repo DECLARES the
+  prefix. The "codex is covered only ACCIDENTALLY" trap closed in the RIGHT direction: it is
+  covered by a declared `livespec/hooks/`, and the bare legacy `livespec/` / `bin/` entries that
+  used to catch it by accident are gone.
+- **But the CLASS MOVED rather than closed — and it is LIVE.** Filed as
+  **`livespec-dev-tooling-m50u`** (P2, `blocked`/`needs-human`). See the section below.
+
+### 🔺 THE PATTERN WENT ONE LEVEL IN — a blessed PAYLOAD can be FALSE (`m50u`, filed 2026-07-28)
+
+The prefix gate is now honest: it derives from what each repo DECLARES. So the failure mode changed
+shape from *"a fleet-wide hardcoded list omits your tree"* to *"your own declaration omits your own
+code"* — and **the second is harder to see, because the declaration parses as well-formed and
+Phase 3's row passes it.**
+
+`livespec-orchestrator-git-jsonl/pyproject.toml:337` declares
+`source_tree_prefixes = { superseded_by = "first-party source surface already declared via
+source_trees" }`. **Measured on the forge, that payload is FALSE:** running the shipped
+`_derive_impl_prefixes` over its live config covers **35 of its 49** non-test, non-vendored
+first-party `.py`. **14 fall outside** — 11 under `.claude-plugin/scripts/bin/` (`next.py`,
+`list_work_items.py`, `detect_impl_gaps.py`, `needs_attention.py`, four `check_*.py`, and three
+more — that repo's own operation surface, not fixtures) plus `.claude/hooks/beads_access_guard.py`.
+
+**TWO commit-time gates are narrowed, not one.** `config.derive_source_prefixes` is the SHARED
+derivation, so a `.py` outside the set owes neither a Red→Green pair (`red_green_replay` sees
+`impl_paths == []`) nor a source/test pairing (`commit_pairs_source_and_test` sees no first-party
+source). Both exit 0 and log nothing.
+
+**This is exactly the non-guarantee Phase 3's row documents, with its first live instance.** The row
+checks the SPELLING of a declared-absent value, not the TRUTH of its payload — stated in its own
+docstring on purpose. **A payload no checker reads is a comment with better syntax highlighting.**
+That is not an argument against the union: the declaration is greppable, reasoned and reviewed,
+which the bare `[]` never was. It is the next layer of the same onion.
+
+**DO NOT fix it by widening the prefix set.** git-jsonl's own comment states the constraint: a
+prefix set there additionally needs a paired `mirror_pairings`, because its tests live at
+`tests/<pkg>` rather than mirroring `.claude-plugin/scripts/<pkg>`. Widening alone reddens
+`tests_mirror_pairing` with the **23 fabricated offenders `br4xar` already measured in that exact
+repo.** Trading a silent gap for 23 false positives is how a rollout loses its credibility.
+
+Smaller measured gaps, same run: `livespec` 9 uncovered (the 6-file
+`.claude-plugin/scripts/_currency/` package, the footgun guard, and 2 under
+`templates/orchestrator-plugin/` which are scaffold PAYLOAD — flagged, not asserted);
+`livespec-dev-tooling`, `livespec-overseer` and `livespec-runtime` 1 each, all the same
+`.claude/hooks/livespec_footgun_guard.py`.
+
+**Incidental, measured in passing and NOT investigated:** that footgun guard has **four distinct
+sha256s across the five places it lives.** Copies of a safety guard have drifted. Recorded so it is
+not lost; nobody should read this as having looked into it.
 
 ### Carried forward (not this thread's to drive, but part of the finding)
 
@@ -596,6 +655,13 @@ repo that owns it**, and **an emptiness or absence that silently means consent**
    converted "add a fleet obligation" into "refactor the central table first" — announced by
    nothing until the commit was already written. Not an emptiness this time but the same shape:
    **machinery correct for consumers and obstructive for the repo that owns it.**
+
+7. **`m50u` — the shape's NEXT LAYER.** An emptiness that meant consent became a DECLARATION that
+   means consent. `livespec-orchestrator-git-jsonl` declares `source_tree_prefixes = {
+   superseded_by = "…already declared via source_trees" }` and the claim is measurably false — 14
+   first-party `.py` outside the derived set, two commit-time gates narrowed. **A blessed payload
+   nobody reads is a comment with better syntax highlighting.** Found by MEASURING a claim rather
+   than by reading it; no check in the fleet would have surfaced it.
 
 **And its prose twin, found five times now** — *an amendment that changed the behavior and left an
 authoritative statement of that behavior standing*: the handoff's own heading → this repo's config
