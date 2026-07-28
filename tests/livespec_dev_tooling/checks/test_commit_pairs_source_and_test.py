@@ -782,3 +782,68 @@ def test_commit_pairs_vendor_exclusion_does_not_widen_to_authored_siblings(
         f"got returncode={result.returncode} "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
+
+
+# A repo that declares its first-party code via `source_trees` but leaves
+# `source_tree_prefixes` declared-empty. This is the live shape of
+# livespec-orchestrator-git-jsonl, livespec-overseer and livespec-runtime, each
+# of which declined the tests-mirror-pairing convention by emptying the prefix
+# key — and thereby switched off this commit-time pairing gate, which they never
+# named (livespec-dev-tooling-8o8e.1, meaning (D)).
+_SOURCE_TREES_ONLY_PYPROJECT = """\
+[tool.livespec_dev_tooling]
+source_trees = ["pkg"]
+source_tree_prefixes = []
+"""
+
+
+def test_commit_pairs_falls_back_to_source_trees_when_prefixes_declared_empty(
+    *, tmp_path: Path
+) -> None:
+    """An empty `source_tree_prefixes` must not empty the gate's whole universe.
+
+    `str.startswith(())` is False for EVERY input, so a declared-empty
+    `source_tree_prefixes` makes the source set empty by construction and
+    the pairing branch unreachable — the gate exits 0 no matter how much
+    unpaired source is staged, and says nothing while doing it.
+
+    `source_trees` is populated in all eight Python-bearing fleet repos and
+    is never empty, so unioning it in restores a real universe. This mirrors
+    `red_green_replay._derive_impl_prefixes`, which already unions the two
+    keys and is why THAT commit-time gate never lost its universe.
+
+    Fixture: a repo declaring `source_trees = ["pkg"]` with
+    `source_tree_prefixes = []`, staging one `pkg/mod.py` change and NO
+    `tests/**` change. The gate must reject it and surface the path.
+    """
+    _git(cwd=tmp_path, args=["init", "-q"])
+    _git(cwd=tmp_path, args=["config", "user.email", "test@example.com"])
+    _git(cwd=tmp_path, args=["config", "user.name", "Test"])
+    (tmp_path / "pyproject.toml").write_text(_SOURCE_TREES_ONLY_PYPROJECT, encoding="utf-8")
+    (tmp_path / "README.md").write_text("baseline\n", encoding="utf-8")
+    _git(cwd=tmp_path, args=["add", "pyproject.toml", "README.md"])
+    _git(cwd=tmp_path, args=["commit", "-m", "baseline"])
+
+    package_dir = tmp_path / "pkg"
+    package_dir.mkdir()
+    # Real behavior, not a docstring-only edit: the docs-only carve-out
+    # compares docstring-stripped ASTs against HEAD, and a file absent from
+    # HEAD with a live function body cannot be waived by it.
+    (package_dir / "mod.py").write_text(
+        "from __future__ import annotations\n\n\ndef compute() -> int:\n    return 1\n",
+        encoding="utf-8",
+    )
+    _git(cwd=tmp_path, args=["add", "pkg/mod.py"])
+
+    result = _run_check(tmp_path=tmp_path)
+
+    assert result.returncode != 0, (
+        f"an empty `source_tree_prefixes` must fall back to `source_trees` rather than "
+        f"emptying the gate's universe; got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    combined = result.stdout + result.stderr
+    assert "pkg/mod.py" in combined, (
+        f"the diagnostic must surface the unpaired source path `pkg/mod.py`; "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )

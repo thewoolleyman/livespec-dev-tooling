@@ -100,7 +100,11 @@ import structlog  # noqa: E402  — vendor-path-aware import after sys.path inse
 from livespec_dev_tooling.checks._docs_only_change import (  # noqa: E402
     is_docs_only_change,
 )
-from livespec_dev_tooling.config import is_vendored_path, load_config  # noqa: E402
+from livespec_dev_tooling.config import (  # noqa: E402
+    derive_source_prefixes,
+    is_vendored_path,
+    load_config,
+)
 
 __all__: list[str] = []
 
@@ -212,10 +216,16 @@ def main() -> int:
     # the first-party universe uses (`is_vendored_path`): upstream code a
     # governed repo does not author has no paired test that could exist, so
     # demanding one made vendoring any new library uncommittable.
+    # Derived, never read straight off `config.source_tree_prefixes`: an empty
+    # declared prefix set would otherwise empty this comprehension's universe
+    # by construction (`str.startswith(())` is False for every input) and make
+    # the pairing branch below unreachable. `derive_source_prefixes` unions in
+    # `source_trees`, which is populated in every Python-bearing fleet repo.
+    source_prefixes = derive_source_prefixes(config=config)
     source_changes = [
         path
         for path in staged
-        if path.startswith(config.source_tree_prefixes)
+        if path.startswith(source_prefixes)
         and path.endswith(".py")
         and path not in exempt_paths
         and not is_vendored_path(rel_path=Path(path))
