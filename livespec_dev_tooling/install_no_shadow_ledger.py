@@ -24,10 +24,19 @@ CLI:
     python -m livespec_dev_tooling.install_no_shadow_ledger
         Install (or idempotently re-install) the canonical body at the
         consumer's configured `neutral_hook_body_path`. No-ops (exit 0) when
-        the role key is absent — the check-side counterpart
-        (`checks/no_shadow_ledger_body_identical.py`) no-ops identically, so
-        a consumer that has not declared the role key sees neither installer
-        nor verifier activity.
+        the role key is declared ABSENT — one of the four blessed inline
+        tables — and the check-side counterpart
+        (`checks/no_shadow_ledger_body_identical.py`) no-ops identically
+        there, so a consumer that has declared the key absent sees neither
+        installer nor verifier activity.
+
+        The two DIVERGE when the key is UNDECLARED, and only the check is
+        gated: this installer reads `role_path` directly and no-ops, while
+        the check runs `role_absence_exit_code` first and hard-errors
+        (exit 1) naming the key, because `neutral_hook_body_path` is a
+        REQUIRED role key that every conformant consumer declares. Whether
+        the installer should be gated likewise is an open question, not a
+        settled asymmetry.
 
 Output discipline: structlog JSON to stderr; no `print`, no
 `sys.stdout.write` / `sys.stderr.write`.
@@ -292,11 +301,14 @@ def _configure_logger() -> structlog.stdlib.BoundLogger:
 def install_neutral_hook_body(*, cwd: Path, log: structlog.stdlib.BoundLogger) -> int:
     """Install the canonical neutral hook body at the consumer's configured path.
 
-    Reads `neutral_hook_body_path` via `load_config(repo_root=cwd)`. When the
-    role key is absent (`None` — the consumer has not declared it), logs a
-    structured info event and no-ops (returns 0): mirrors the check-side
-    counterpart's no-op-when-absent behavior, so a consumer that has not
-    opted in sees neither installer nor verifier activity. Otherwise writes
+    Reads `neutral_hook_body_path` via `load_config(repo_root=cwd)`. When
+    `role_path` resolves to `None` — the consumer declared the key absent via
+    one of the four blessed inline tables, OR did not declare it at all —
+    logs a structured info event and no-ops (returns 0). That mirrors the
+    check-side counterpart for a DECLARED-ABSENT key only: this installer
+    does not run `role_absence_exit_code`, so where the check hard-errors on
+    an UNDECLARED required key, this no-ops. See the module docstring.
+    Otherwise writes
     `CANONICAL_NO_SHADOW_LEDGER_BODY` to `cwd / neutral_hook_body_path`,
     creating parent directories as needed, and logs a structured info event.
     Idempotent: re-running overwrites with the identical canonical body.

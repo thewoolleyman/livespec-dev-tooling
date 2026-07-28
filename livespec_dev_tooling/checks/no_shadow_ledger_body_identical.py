@@ -12,15 +12,19 @@ body is the Stop-hook that BOTH livespec Driver plugins ship
 `livespec/hooks/`), so this check guards each Driver's copy against drift
 from the single dev-tooling-packaged source.
 
-Unlike the commit-refuse hook (mandatory at every primary checkout), this
-role key is OPT-IN: a consumer that has not declared
-`neutral_hook_body_path` is not a Driver repo (or has not yet wired the
-role key), so the check no-ops rather than failing.
+Unlike the commit-refuse hook (mandatory at every primary checkout), a
+consumer that is not a Driver repo carries no neutral hook body — but that
+is spelled by DECLARING the role key absent, not by omitting it.
+`neutral_hook_body_path` is a REQUIRED role key, so an omission is a hard
+error naming the key, exactly as for every other required key; only a
+declared-absent value no-ops.
 
 Exit codes:
-- `0` — the role key is absent (no-op — this consumer does not carry the
-  neutral hook body), or the configured path exists and is byte-identical
-  to the canonical body.
+- `0` — the role key is DECLARED ABSENT via one of the four blessed inline
+  tables (no-op — this consumer does not carry the neutral hook body), or
+  the configured path exists and is byte-identical to the canonical body.
+- `1` — the role key is UNDECLARED. Absence is not a spelling of "not
+  applicable" (v0.54.12); declare the blessed variant that is true.
 - `4` — fail. The configured path is missing (or not a regular file), or
   its bytes differ from the canonical body. Corrective action: run
   `just install-no-shadow-ledger` (the from-package installer that is the

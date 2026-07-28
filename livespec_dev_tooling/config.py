@@ -433,10 +433,15 @@ class Config:
     covered_trees: tuple[Path, ...] = ()
     tests_tree_prefix: str = "tests/"
     mirror_pairings: tuple[MirrorPairing, ...] = ()
-    # The five union-typed role keys. The baseline default is the legacy spelling
-    # rather than a sixth "undeclared" variant: key OMISSION is already a hard
-    # error via `declared_keys` in the shared gate, and that check runs first, so
-    # a bare `Config()` behaves exactly as it does today.
+    # The five union-typed role keys. The baseline default IS a distinct
+    # `Undeclared` variant, adopted by maintainer ruling in Phase 4 — see that
+    # class's docstring for why the earlier design (defaulting to the legacy
+    # `[]` spelling, on the grounds that key OMISSION already hard-errors via
+    # `declared_keys` in the shared gate) was a defect: it made one value carry
+    # BOTH "the consumer declared `[]`" AND "nobody wrote this key", inside the
+    # type introduced to make exactly that unrepresentable. It is unreachable
+    # through the gate and fully reachable through the domain model, which is
+    # how it survived three phases. `Undeclared` changes NO behavior.
     pure_trees: TreeRole = _BASELINE_PURE_TREES
     target_dirs: TreeRole = _BASELINE_TARGET_DIRS
     source_tree_prefixes: PrefixRole = _BASELINE_SOURCE_TREE_PREFIXES
