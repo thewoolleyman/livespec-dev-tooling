@@ -26,20 +26,22 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >    unmerged, and no background job is running. There is no half-finished edit to find.
 > 3. **ALL FOUR PHASES HAVE LANDED, AND THE SPEC IS RATIFIED.** Phase 3 + `oitd`
 >    (`606f17b`, `34c05c1`), spec v033 (`0500155`), `pj3j` (`c0c0472`), Phase 4 (`b36e0b8`).
-> 4. **⚠️ `8o8e.1` IS NOT DONE — IT IS `acceptance`, AWAITING FAN-OUT.** Phase 4 is MERGED,
->    **NOT RELEASED** (`git tag --contains b36e0b8` is EMPTY) and **CONSUMED BY NOBODY** (all
->    eight siblings pin `v0.58.1`). So "the ambiguous spelling is rejected" is true in exactly
->    ONE repo — the case the maintainer's precondition names as insufficient. **MERGED ≠
->    RELEASED ≠ CONSUMED, applied to this thread's own closing move.**
-> 5. **The fan-out is gated on `livespec-dev-tooling-5ror` (P1):** release-please's PR #794
->    proposes **1.0.0**, which collides with the spec's own recorded pre-1.0 stance. A
->    maintainer decides. **Do NOT trigger a release and do NOT hand-edit a sibling's pin.**
+> 4. **✅ `8o8e.1` IS CLOSED — the precondition is DISCHARGED with per-repo evidence.** The
+>    fan-out completed: **`v1.0.0` is tagged and CONTAINS `b36e0b8`**, and all eight siblings
+>    both DECLARE `tag = "v1.0.0"` and RESOLVE `livespec-dev-tooling==1.0.0` at rev
+>    `20227edb…` in their `uv.lock`. **Eighteen pieces of evidence** — see the discharge
+>    section below. Merged, released AND consumed.
+> 5. **`livespec-dev-tooling-5ror` (P1) has RESOLVED ITSELF IN ONE DIRECTION.** v1.0.0 is
+>    tagged, released and consumed fleet-wide, so the live question is no longer "should we go
+>    1.0.0" but **"`contracts.md:307` records this library as pre-1.0, and that is now
+>    false."** A SPEC change; do not edit it directly.
 > 6. **There is NO next action inside this thread's current authorization.** Every remaining
 >    item is gated on someone else — see 📋 OPEN ITEMS for who owns each.
 > 7. **Do NOT start step 6's ARMING.** Its blast radius is now measured (below); the number is
 >    an input to a maintainer decision, not a licence to begin.
-> 8. Phases 2–4 being complete is **not** the epic, and Phase 4 green is now the single most
->    misreadable fact on this thread. See the ⛔ paragraph immediately below.
+> 8. **`8o8e.1` being CLOSED is not the epic**, and it is now the single most misreadable fact
+>    on this thread. `check-public-api-result-typed` still scans ZERO files in every
+>    flat-layout repo. See the ⛔ paragraph immediately below.
 
 
 The blocking item is **`livespec-dev-tooling-8o8e.1`** (OPEN). Its ledger notes carry the full
@@ -297,11 +299,10 @@ auto-merge, and the race is invisible when you win it.
 Every remaining item is owned by someone else. **That is a real state, not a stall**, and the
 right move is to say so rather than to manufacture work. Listed with its owner:
 
-1. **`livespec-dev-tooling-5ror` — MAINTAINER, and it GATES EVERYTHING.** release-please's PR
-   #794 proposes **1.0.0**; the spec records a pre-1.0 stance. Until #794 merges or is replaced,
-   Phase 4 reaches no sibling and `8o8e.1` cannot discharge. **Do NOT trigger a release and do NOT
-   hand-edit a sibling's pin** — the fan-out is automation and racing it desynchronises a pin.
-   (`fwcwxv` is DONE — all four proposals ratified at v033, merged `0500155`.)
+1. **`livespec-dev-tooling-5ror` — MAINTAINER.** #794 merged and the fan-out ran, so this no
+   longer gates anything. The remaining half is a SPEC defect: `contracts.md:307` records the
+   library as pre-1.0 and v1.0.0 is now released and consumed fleet-wide. Propose-change + revise.
+   (`fwcwxv` and `8o8e.1` are both DONE.)
 2. **The `unarmed_until` LIVENESS check — ARCHITECTURE DECISION.** Blocked on a vantage/credential
    question, now with hard cross-tenant measurements; see the ⛔ block below. It is proposal 3 of
    the filed spec change, so the obligation gets ratified before it is enforced.
@@ -448,24 +449,47 @@ closing `8o8e`. Full detail is on the `8o8e` epic.
 spelling is rejected and each repo declares the correct variant — **not** a green check in one
 repo. Eight Python-bearing repos, eight pieces of evidence.
 
-**STATUS 2026-07-28 (LATE): one half discharged, the second half BUILT BUT NOT YET DELIVERED.**
+**STATUS 2026-07-28 (FINAL): ✅ DISCHARGED. `8o8e.1` is CLOSED, with eighteen pieces of evidence.**
 
-**I CLOSED `8o8e.1` ON THE STRENGTH OF PHASE 4 BEING MERGED. That was wrong and it was caught
-before it did any harm.** Phase 4 is merged and **not released** — `git tag --contains b36e0b8` is
-EMPTY, the latest release `v0.58.1` predates it, and **all eight siblings pin `v0.58.1`**, whose
-loader still ACCEPTS `[]` with a WARN. So the rejecting loader exists in one repo's tree and in no
-consumer, which is verbatim the case the maintainer's precondition excludes: *"not a green check in
-one repo."*
+The precondition is verbatim *"per-repo evidence that the ambiguous spelling is REJECTED and each
+repo declares the correct variant — **not a green check in one repo**"*. That is two claims across
+nine manifest members, and all eighteen hold.
 
-The item is now `acceptance`, not closed. **What discharges it:** release-please's #794 merges
-(gated on `5ror` — it proposes **1.0.0**) → `release-dispatch` fans out → each sibling's pin on the
-FORGE carries that tag → re-run the nine-repo measurement **against each sibling's OWN pinned
-loader**, which is the form the precondition actually demands.
+**THE DELIVERY CHAIN — merged, released AND consumed.**
 
-This thread wrote **MERGED ≠ RELEASED ≠ CONSUMED** into its own handoff, and then I applied the
-first term as though it were the third — on the item the rule was written for. Recorded rather than
-tidied away: it is the cheapest possible instance of this thread's defect, and it happened at the
-closing move.
+| link | evidence |
+|---|---|
+| merged | Phase 4 `b36e0b8` |
+| released | `git tag --contains b36e0b8` → **`v1.0.0`**; ancestry confirmed |
+| v1.0.0 commit | `20227edb6b10ed203f72ddb3a9233362472317f9` |
+| consumed | all eight siblings DECLARE `tag = "v1.0.0"` **and** their `uv.lock` RESOLVES `livespec-dev-tooling==1.0.0` at `20227edb…` — matched per repo |
+
+**Declared and RESOLVED were checked separately on purpose**: a repo that pins a tag whose lockfile
+has not resolved is not yet rejecting anything.
+
+**CLAIM 1 — REJECTED, per repo.** Exercised against the **checked-out `v1.0.0` tree** — the exact
+commit every `uv.lock` names, not dev-tooling's working tree. Five union keys × nine repos =
+**45 loads, 45 rejections**, every diagnostic naming all four blessed spellings. The pinned loader
+carries **no** `LegacyAmbiguousEmpty` and **does** carry `Undeclared`. Absent, not merely
+unreachable.
+
+**CLAIM 2 — CORRECT VARIANT, per repo.** Phase 3's row, verified REGISTERED in `OBLIGATION_ROWS`
+(`vantage=central`) and identity-checked against its assert function, run over the live manifest
+from the same v1.0.0 tree: **nine members, nine `RowPass`.** `livespec-console-beads-fabro` returns
+a NAMED `excluded-with-reason` — included deliberately, being the zero-Python member whose baseline
+surfaced the `Undeclared` finding.
+
+### ⚠️ THE CORRECTION THAT STAYS IN THIS RECORD
+
+**I closed `8o8e.1` once already, on the strength of Phase 4 being MERGED.** It was released by
+nobody and consumed by nobody; every sibling still pinned `v0.58.1`, whose loader accepted `[]`.
+This file carries **MERGED ≠ RELEASED ≠ CONSUMED** as a rule, and I applied the first term as
+though it were the third — on the item the rule was written for.
+
+Caught before it did harm, reversed to `acceptance`, then discharged properly when the fan-out
+actually completed. **Note the shape:** "not released, consumed by nobody" was TRUE when written
+and FALSE within the hour. A record that ages that fast is what this epic is about, and the fix is
+not to write faster — it is to re-derive before claiming.
 
 ---
 
@@ -476,14 +500,14 @@ closing move.
    them keep being true**: it landed, it is registered, and it is exercised against the live fleet
    by the central CI sweep. This half moved from a hand-gathered measurement to a standing
    guarantee on 2026-07-28.
-2. ⏳ **"the ambiguous spelling is REJECTED"** — **BUILT AND MERGED, NOT YET DELIVERED.** Phase 4
-   (`b36e0b8`) deletes `LegacyAmbiguousEmpty` and makes `[]` / `""` on the five UNION keys a hard
-   `ConfigParseError`. **In `livespec-dev-tooling`'s tree only.** Every sibling still pins
-   `v0.58.1` and still accepts `[]`. Necessary, built, and not yet true where it has to be true.
+2. ✅ **"the ambiguous spelling is REJECTED"** — **DISCHARGED.** Phase 4 (`b36e0b8`, released as
+   `v1.0.0`) deletes `LegacyAmbiguousEmpty` and makes `[]` / `""` on the five UNION keys a hard
+   `ConfigParseError`. Every sibling now RESOLVES that loader, and it was exercised against the
+   pinned tree per repo: 45 loads, 45 rejections.
 
-So: read Phase 4 as "the rejection is written and merged", never as "the precondition is met".
-Conflating a merge with a delivery is the same move as conflating a green check with a passing one
-— which is the defect this entire thread exists to close, and the one it nearly closed on.
+The rule that nearly broke this — conflating a merge with a delivery is the same move as
+conflating a green check with a passing one. It is the defect this thread exists to close, and it
+is the one the thread nearly closed on.
 
 ### ✅ WHAT PHASE 4 ACTUALLY CHANGED, MEASURED — the 426a property holds
 
@@ -665,8 +689,8 @@ the entire fan-out would silently never trigger.
 | id | state | what |
 |---|---|---|
 | `8o8e` | epic | This thread's anchor. Cannot close until `8o8e.1` is fleet-wide fixed AND verified. |
-| `8o8e.1` | **`acceptance`, P1 — built, awaiting FAN-OUT** | Role-key schema type-safety. All four phases landed and the spec is ratified at v033. **NOT closed:** Phase 4 is merged, not released, consumed by nobody — every sibling pins `v0.58.1`. Discharges when a release containing `b36e0b8` reaches every sibling and the nine-repo measurement is re-run against each sibling's OWN pinned loader. |
-| `5ror` | **blocked / needs-human, P1 — GATES THE FAN-OUT** | Phase 4's `feat(config)!` marker made release-please propose **1.0.0** (PR #794), colliding with the spec's own recorded pre-1.0 stance at `contracts.md` §"Default layout fallback". Both behaviors are correct by their own rule, which is why it is a maintainer call. Nothing ships until #794 merges or is replaced. |
+| `8o8e.1` | **✅ CLOSED — precondition DISCHARGED** | Role-key schema type-safety. All four phases landed, spec ratified at v033, Phase 4 released as **`v1.0.0`** and consumed by all eight siblings (declared AND resolved). Eighteen pieces of per-repo evidence: 45 rejections against the pinned loader, nine `RowPass` from the registered Phase 3 row. |
+| `5ror` | **blocked / needs-human, P1 — HALF-RESOLVED BY EVENTS** | #794 merged; **v1.0.0 is tagged, released and consumed fleet-wide**, so the fan-out is no longer gated. What remains is the other half: `contracts.md:307` still records this library as **pre-1.0**, and that is now FALSE. A spec change — do not edit it directly. |
 | `efxa` | open, P2 — factory-dispatchable | **30 of 31 checks never catch `ConfigParseError`**, so a config error escapes as a traceback rather than the structured diagnostic `contracts.md` promises. Unreachable before Phase 4; reachable now from a plausible config. The rejection works — what is owed is the RENDERING. |
 | `clkf` | **blocked / needs-human, P2** | v033 ratified the TRANSITIONAL accepting-loader regime that Phase 4 ended hours later: the "MUST log at WARN" clause and its acceptance scenario describe behavior that no longer exists, and the heading-coverage entry cites a test Phase 4 deleted. Ratifying it was CORRECT — it is what authorized Phase 4 — so the defect is the standing description, not the decision. Spec change; needs propose-change + revise. |
 | `kmdn` | **blocked / needs-human, P2** | v033 turned four repos' `pure_trees = { unarmed_until = … }` into a RATIFIED obligation to arm, which nobody has scheduled. Three of the four cite a CROSS-TENANT id and no verifier resolves any of them. All four point at open work today — so nobody is in breach, which is exactly why it was filed now: when `livespec-mutreal.1` closes, three repos breach at once and nothing notices. |
