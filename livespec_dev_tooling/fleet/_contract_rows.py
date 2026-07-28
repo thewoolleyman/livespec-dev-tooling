@@ -13,11 +13,19 @@ typed imports so the type checker sees every dispatch target.
 `applies_to` frozensets are derived from) and re-imported by
 `contract.py` for the manifest parser; the LOCAL-vantage table lives in
 `_contract_local_rows.py`.
+
+The github-state SLICE of this table lives in
+`_contract_github_state_rows.py` and is spliced in below at the position
+those rows already occupied (livespec-dev-tooling-oitd: this module had
+reached 246 of its 250-LLOC hard ceiling, which silently closed the fleet's
+one obligation table to new rows). `OBLIGATION_ROWS` remains the single
+exported table — a lane still reads exactly one name.
 """
 
 from __future__ import annotations
 
 from livespec_dev_tooling.fleet import _rows_pin_currency as pin_currency
+from livespec_dev_tooling.fleet._contract_github_state_rows import GITHUB_STATE_ROWS
 from livespec_dev_tooling.fleet._contract_model import (
     ADMIN_VANTAGE,
     CENTRAL_APP_VANTAGE,
@@ -25,14 +33,7 @@ from livespec_dev_tooling.fleet._contract_model import (
     ObligationRow,
     RowFn,
 )
-from livespec_dev_tooling.fleet._reconcile import (
-    reconcile_branch_protection,
-    reconcile_delete_branch_on_merge,
-    reconcile_merge_settings,
-    reconcile_secret_names,
-    reconcile_shim_workflows,
-    reconcile_topic,
-)
+from livespec_dev_tooling.fleet._reconcile import reconcile_shim_workflows
 from livespec_dev_tooling.fleet._rows_baseline import assert_baseline_harnesses
 from livespec_dev_tooling.fleet._rows_beads import assert_tenant_connection_consistency
 from livespec_dev_tooling.fleet._rows_claude_plugin import assert_claude_plugin_currency
@@ -44,14 +45,6 @@ from livespec_dev_tooling.fleet._rows_files import (
     assert_no_tracked_gitlinks,
     assert_pin_freshness_workflow,
     assert_release_dispatch_workflow,
-)
-from livespec_dev_tooling.fleet._rows_github import (
-    assert_app_installation,
-    assert_branch_protection,
-    assert_delete_branch_on_merge,
-    assert_merge_settings,
-    assert_secret_names,
-    assert_topic,
 )
 from livespec_dev_tooling.fleet._rows_instructions import (
     assert_agent_ai_references_resolve,
@@ -105,25 +98,6 @@ def _manual_committed_file_row(
         applies_to=applies_to,
         assert_member=assert_member,
         manual_hint=manual_hint,
-    )
-
-
-def _github_state_row(
-    *,
-    row_id: str,
-    assert_member: RowFn,
-    reconcile: RowFn | None = None,
-    manual_hint: str = "",
-    vantage: str = CENTRAL_VANTAGE,
-) -> ObligationRow:
-    return ObligationRow(
-        row_id=row_id,
-        obligation_type="github-state",
-        applies_to=ALL_CLASSES,
-        assert_member=assert_member,
-        reconcile=reconcile,
-        manual_hint=manual_hint,
-        vantage=vantage,
     )
 
 
@@ -203,39 +177,9 @@ OBLIGATION_ROWS: tuple[ObligationRow, ...] = (
             "wrapper, or declare livespecPluginCurrencySuccessor with mechanism + documentedIn"
         ),
     ),
-    _github_state_row(
-        row_id="secret-names",
-        assert_member=assert_secret_names,
-        reconcile=reconcile_secret_names,
-        vantage=ADMIN_VANTAGE,
-    ),
-    _github_state_row(
-        row_id="app-installation",
-        assert_member=assert_app_installation,
-        manual_hint="install the fleet GitHub App on the repo (owner settings → GitHub Apps)",
-        vantage=CENTRAL_APP_VANTAGE,
-    ),
-    _github_state_row(
-        row_id="branch-protection",
-        assert_member=assert_branch_protection,
-        reconcile=reconcile_branch_protection,
-        vantage=ADMIN_VANTAGE,
-    ),
-    _github_state_row(
-        row_id="merge-settings",
-        assert_member=assert_merge_settings,
-        reconcile=reconcile_merge_settings,
-    ),
-    _github_state_row(
-        row_id="delete-branch-on-merge",
-        assert_member=assert_delete_branch_on_merge,
-        reconcile=reconcile_delete_branch_on_merge,
-    ),
-    _github_state_row(
-        row_id="topic-livespec-sibling",
-        assert_member=assert_topic,
-        reconcile=reconcile_topic,
-    ),
+    # The github-state slice, verbatim and in position, from
+    # `_contract_github_state_rows.py`.
+    *GITHUB_STATE_ROWS,
     _manual_committed_file_row(
         row_id="beads-tenant-connection-consistency",
         assert_member=assert_tenant_connection_consistency,
