@@ -26,7 +26,7 @@ back to another session, do not proceed read-only.
 1. Supervised session exists:
 
 ```bash
-tmux has-session -t "rop-railway-enforcement"
+tmux has-session -t "=rop-railway-enforcement:"
 ```
 
 2. The supervised session is really a live agent session — its pane process tree
@@ -35,7 +35,7 @@ is a FAILURE. Runtime identity comes from exact live process evidence, NEVER
 from a session name; a leftover session named like an agent proves nothing.
 
 ```bash
-pane_pid=$(tmux display-message -p -t "rop-railway-enforcement" '#{pane_pid}')
+pane_pid=$(tmux display-message -p -t "=rop-railway-enforcement:" '#{pane_pid}')
 ps -o pid=,comm=,args= --ppid "$pane_pid" --pid "$pane_pid" -H
 # PASS only if a live `claude` or `codex` process appears in that tree.
 # A lone shell (zsh/bash) with no agent child is a HALT.
@@ -46,7 +46,7 @@ Report which driver was found.
 3. Supervisor session exists:
 
 ```bash
-tmux has-session -t "rop-railway-enforcement-supervisor"
+tmux has-session -t "=rop-railway-enforcement-supervisor:"
 ```
 
 4. The plan thread exists INSIDE the target repo — absolute path, because
@@ -61,7 +61,7 @@ test -d "/data/projects/livespec-dev-tooling/plan/rop-railway-enforcement"
 first — a symlinked path that merely LOOKS contained is a HALT:
 
 ```bash
-pane_cwd=$(tmux display-message -p -t "rop-railway-enforcement" '#{pane_current_path}')
+pane_cwd=$(tmux display-message -p -t "=rop-railway-enforcement:" '#{pane_current_path}')
 case "$(readlink -f "$pane_cwd")" in
   /data/projects/livespec-dev-tooling|/data/projects/livespec-dev-tooling/*) echo "PASS: $pane_cwd" ;;
   *) echo "HALT: pane cwd $pane_cwd is outside the target repo" ;;
@@ -133,7 +133,7 @@ called it out by name.
 Inspect read-only — last 40 lines of the worker pane:
 
 ```sh
-tmux capture-pane -p -t rop-railway-enforcement -S -40
+tmux capture-pane -p -t '=rop-railway-enforcement:' -S -40
 ```
 
 `-S -40` starts 40 lines back in history. Do NOT pipe to `tail -N` — `-N` is a
@@ -142,9 +142,9 @@ placeholder and `tail` rejects it.
 Short instruction — send the text, VERIFY, then send Enter SEPARATELY:
 
 ```sh
-tmux send-keys -t rop-railway-enforcement -- '<one line>'
-tmux capture-pane -p -t rop-railway-enforcement -S -10   # confirm it landed
-tmux send-keys -t rop-railway-enforcement Enter          # only after verifying
+tmux send-keys -t '=rop-railway-enforcement:' -- '<one line>'
+tmux capture-pane -p -t '=rop-railway-enforcement:' -S -10   # confirm it landed
+tmux send-keys -t '=rop-railway-enforcement:' Enter          # only after verifying
 ```
 
 Do NOT use the one-shot `… -- '<line>' Enter` form. Measured against a live
@@ -156,9 +156,9 @@ Longer text — load from a file, paste, VERIFY, then Enter as a separate step:
 
 ```sh
 tmux load-buffer -b sup /tmp/msg.txt
-tmux paste-buffer -b sup -t rop-railway-enforcement
-tmux capture-pane -p -t rop-railway-enforcement -S -20   # confirm it landed
-tmux send-keys -t rop-railway-enforcement Enter          # only after verifying
+tmux paste-buffer -b sup -t '=rop-railway-enforcement:'
+tmux capture-pane -p -t '=rop-railway-enforcement:' -S -20   # confirm it landed
+tmux send-keys -t '=rop-railway-enforcement:' Enter          # only after verifying
 ```
 
 Idle plus queued input means STUCK, not idle. Never name a variable `TMUX`, and
@@ -245,13 +245,49 @@ convert "someone else owns X" into idling or a `blocked:` declaration.
 
 **This thread has cross-repo lanes by construction** — the remediation spans six
 repos, the schema migration spans eight, and two open items (`i04f`, `j5i9`) live
-in `livespec` core rather than here. None of that blocks the thread: the
-`8o8e.1` CLASSIFICATION is a read-only pass over this repo's own role keys and is
-always available.
+in `livespec` core rather than here. None of that blocks the thread by itself.
+Re-derive which non-conflicting lane is live; do not treat an action that was
+available when this charter was written as permanently available.
 
 **The blocked-on-a-blocked-item trap.** `8o8e` cannot close until `8o8e.1` is
-fixed and verified. That is a CLOSURE precondition, not a work precondition — it
-does not mean "wait". It means drive `8o8e.1`.
+fixed and verified. That was a CLOSURE precondition, not a work precondition;
+never generalize a closure precondition into permission to wait. Re-derive the
+current ledger before naming the next action: a once-available child can close,
+and a role charter must not turn its old status into a permanent fallback.
+
+## Convergence: finish or ask, never park an active plan
+
+An unarchived plan directory whose anchor remains open is itself an **open
+obligation**. It is not a terminal `STAND BY` state. The phrase "no next action
+inside current authorization" identifies a decision boundary; it does not
+discharge the plan.
+
+On every pass, force the thread into exactly one of these states:
+
+1. **Drive:** a legitimate next action is running, and its completion is covered
+   by an armed re-entry mechanism.
+2. **Ask:** every legitimate next action requires maintainer authority, so issue
+   one batched `AskUserQuestion` in the SAME turn, with the recommended answer
+   first. Name the exact authorization or product decision, the immediate action
+   acceptance unlocks, and the cost of deferral or rejection.
+3. **Finish:** the anchor's acceptance is measured, so direct closure, archive
+   the plan through worktree -> PR -> rebase-merge -> cleanup, and verify the
+   primary checkout is clean.
+
+There is no fourth state. In particular:
+
+- Do not write `ready:`, "standing by", "all yours", or a status-only wrap-up
+  while the plan is unarchived and its anchor remains open.
+- Do not leave ripe maintainer valves as a prose list. A list reports the
+  blockage; an `AskUserQuestion` operates it.
+- Do not re-ask a decision the maintainer already made. Apply the granted
+  authority, drive the next action, and arm re-entry.
+- Do not archive merely to obtain a terminal state. Closure requires measured
+  acceptance; otherwise ask for the missing authority or a deliberate scope
+  ruling.
+- A handoff claim that nothing is authorized is INPUT TO VERIFY. If the ledger,
+  pane, or maintainer record grants authority, the live evidence wins. If it
+  does not, the claim triggers **Ask**, not `STAND BY`.
 
 ## Never end a turn without an armed re-entry
 
@@ -270,15 +306,26 @@ abandonment.
   wrap-up injection into that pane, so the condition that most needs attention is
   the one that mutes the only other watcher.
 
-Before ending ANY turn while the worker is mid-flight, ARM a re-entry — a
-background pane watcher is the primary mechanism, a long `ScheduleWakeup` (1200s+)
-only a backstop:
+Before ending ANY turn while **any open obligation remains**, ARM re-entry. A
+worker pane is only one kind of obligation. A PR check, release, ledger
+transition, factory dispatch, or promised maintainer follow-up also needs a
+condition watcher. An open `AskUserQuestion` is an acceptable terminal handoff
+because it visibly requests the missing decision; a prose question is not.
+
+Record the obligation and its wake mechanism in
+`tmp/overseer/rop-railway-enforcement/.supervisor-state`. The marker is not a
+substitute for the mechanism. `wake_mechanism: none` is invalid while the plan
+is active. Include at least the exact obligation, owner, condition, watcher or
+question identifier, and the action to take on wake.
+
+For a worker in flight, a background pane watcher is the primary mechanism; a
+long `ScheduleWakeup` (1200s+) is only a backstop:
 
 ```sh
 prev=""; stable=0
 for i in $(seq 1 180); do            # ~60 min ceiling, then give up loudly
   sleep 20
-  pane=$(tmux capture-pane -p -t rop-railway-enforcement -S -40)
+  pane=$(tmux capture-pane -p -t '=rop-railway-enforcement:' -S -40)
   case "$(printf '%s\n' "$pane" | tail -6)" in
     *"Enter to select · ↑/↓ to navigate"*) echo "WAKE: picker open"; exit 0 ;;
   esac
@@ -294,6 +341,11 @@ separates busy from idle without depending on TUI wording. **Match the picker
 footer only in the pane TAIL** — a bare `"Enter to select"` substring test
 false-positives when the worker is editing a file that contains this very
 watcher snippet, which was measured happening.
+
+For a non-pane event, poll the authoritative condition rather than sleeping
+blindly. A watcher ceiling is itself a WAKE: inspect immediately, then re-arm if
+the obligation remains. Never let watcher expiry quietly become the new stall.
+After every wake, either drive, ask, or finish before ending the turn.
 
 **A cross-repo fan-out is not a short wait.** Step 5 of the sequence is the
 fleet-visible moment: on release, `bump-pin` fans the new dev-tooling to every
@@ -376,6 +428,13 @@ of the supervised session's mistakes.
 
 Carried forward because they are role-level rather than track-level:
 
+- **Declared `STAND BY` while the plan and anchor were still open.** The
+  handoff said no action remained inside current authorization, and the
+  supervisor repeated that conclusion without either operating the ripe
+  maintainer valves or arming a decision/re-entry mechanism. The mechanism was
+  a false terminal state: authorization exhaustion was treated as obligation
+  exhaustion. An active plan must converge to **Drive, Ask, or Finish** in the
+  same turn.
 - **Ending a turn with the worker mid-flight and no armed re-entry.** The thread
   stopped until the maintainer intervened. An intention is not a mechanism.
 - **Reporting ripe maintainer valves as a prose list instead of asking them.**
