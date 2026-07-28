@@ -42,6 +42,16 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >    response is to re-derive the ledger, confirm the state below still holds, report it, and
 >    STAND BY — not to invent work.** Do not start step 6, `5ror`, `clkf`, `kmdn` or `efxa`;
 >    the first three need a maintainer and the last is the Dispatcher's.
+>
+>    **⚠️ "STAND BY" IS NOT "THE RECORD IS CORRECT." A 2026-07-28 cold start re-derived it and
+>    found TWO ledger statuses that were FALSE** — `pj3j` read `BACKLOG` and `fwcwxv` read
+>    `blocked` / `needs-human`, while both had verifiably landed on master (`c0c0472`,
+>    `0500155`). **The staleness pointed the dangerous way**: `fwcwxv` read as "a maintainer
+>    still owes a propose-change" for a change already RATIFIED, which this very file warns
+>    against re-filing. Re-deriving means reading the ARTIFACTS the item names, not just the
+>    item's status field — a status is a claim like any other. Both are now CLOSED with
+>    per-bullet evidence, and `fwcwxv`'s last owed bullet was discharged in PR #800
+>    (`27c1d94`).
 > 7. **Do NOT start step 6's ARMING.** Its blast radius is now measured (below); the number is
 >    an input to a maintainer decision, not a licence to begin.
 > 8. **`8o8e.1` being CLOSED is not the epic**, and it is now the single most misreadable fact
@@ -146,7 +156,7 @@ contradicts the implementation the day it ships.
 | Sibling consumption | **ALL SEVEN carry `v0.57.0`** — the pin gate is fully open; #296 merged after a re-run. **RE-DERIVE per repo.** |
 | Piece B — `livespec-driver-claude` prose (PR #317) | **merged `e8c8847`** |
 | Slice 3 — `livespec` values + prose (PR #1814) | **merged `6454b2cc`** — fleet's first `unarmed_until` |
-| Piece 1 — spec propose-change (PR #773) | **MERGED `f58e7d03` — the proposed-change FILE is ON MASTER at `SPECIFICATION/proposed_changes/role-key-declared-absent-spellings.md`. Do NOT re-file it.** It is FILED, not RATIFIED: `contracts.md`/`scenarios.md` are byte-unchanged, verified by diff. Awaiting a MAINTAINER at `/livespec:revise`. **Gates Phase 4.** |
+| Piece 1 — spec propose-change (PR #773) | **SUPERSEDED BY EVENTS — this row described the FILED state and was left standing after ratification.** It is now RATIFIED: `SPECIFICATION/history/v033/` exists, `proposed_changes/` is drained to `README.md` only (the change was CONSUMED by revise), and `contracts.md` carries the four-variant regime. Ratified at `0500155`, which `git merge-base --is-ancestor 0500155 b36e0b8` confirms landed BEFORE Phase 4. `fwcwxv` is **CLOSED**. Do NOT re-file the propose-change. |
 | Slice 4 — `livespec-runtime` values + prose (PR #366) | **merged `408388c`** — fleet's first two `convention_not_adopted` |
 
 **MERGED ≠ RELEASED ≠ CONSUMED.** Keep the three separate in every status claim. Conflating them
@@ -325,6 +335,12 @@ right move is to say so rather than to manufacture work. Listed with its owner:
 7. **Step 6's ARMING — NOT AUTHORIZED.** Blast radius now measured at **282** (above). The number
    is an input to a maintainer decision on sequencing, not a licence to begin. Remediating
    `livespec-dev-tooling`'s own 59 is a PRECONDITION of arming, not a follow-up.
+8. **`livespec-dev-tooling-nauzq6` — A HUMAN** (`blocked` / `needs-human`, filed 2026-07-28). The
+   installer/check divergence on an undeclared `neutral_hook_body_path`. The MEASUREMENT is done
+   and recorded; what is owed is a design ruling on whether an operator-invoked reconcile surface
+   may be lenient where its paired gate is strict. Do not "fix" it by gating the installer without
+   that ruling — that breaks `just install-no-shadow-ledger` for exactly the repo mid-adoption
+   that needs to run it.
 
 ### ✅ PHASE 3 — LANDED, REGISTERED, AND **EXERCISED**. Three pieces of evidence, because green proves nothing here
 
@@ -704,12 +720,13 @@ the entire fan-out would silently never trigger.
 | `kepq` | open, P2 (split) | Two standing `doctor-static` fail findings on master, so EVERY revise pass exits 3 on findings unrelated to the revision. The `canonical_checks.py` half is factory-dispatchable; the `SPECIFICATION/README.md` half MUST go through propose-change/revise. |
 | `br4xar` | backlog | `tests_mirror_pairing` disarmed in 3 repos. **ALL THREE RE-DERIVED 2026-07-28: `23 / 6 / 58` is really `6 / 6 / ≤3`** — git-jsonl's 23 was a no-map artifact, runtime's 6 CONFIRMED unchanged, and overseer's 58 was 94% contamination (49 of the 58 are that repo's own co-located test files).** The source→test MAPPING this item asks for **already exists and is already consumed** — `config.mirror_pairings` takes precedence over the derived fallback at `tests_mirror_pairing.py:120`. 23 was what a prefix union produces WITHOUT a map. **Sizing: ~15 tests plus one design question, not an epic** — the only epic-shaped part left is overseer's co-located-layout question, which `tests_mirror_pairing` structurally cannot express. See the section below. |
 | `hgfnqd` | ready | Collapse `red_green_replay._derive_impl_prefixes` into `config.derive_source_prefixes`. Duplicate logic left deliberately: 3 tests assert the private helper by name, and refactoring a second commit-time gate inside a gate-arming PR risks losing the ability to commit at all. |
-| `pj3j` | **CLOSED — merged `c0c0472`** | This repo's OWN `MISSING_KEYS_EVENT` (`checks/required_role_keys_declared.py:40-43`) and `Config` docstring (`config.py:407`) still teach the retired declared-empty spelling. Higher-leverage than any config comment: the diagnostic is read at the moment someone decides what to write, and it is interpolated into the FLEET report too (`fleet/_rows_required_role_keys.py:99`). **After Phase 4 its remediation routes the reader into a `ConfigParseError`** — so, like `fwcwxv`, it must land BEFORE Phase 4. Unlike `fwcwxv` it is code and factory-dispatchable. The item records the trap: `[]` is wrong for the five UNION keys only; it stays LEGITIMATE for the five CLEAN ones, and this check spans both. |
+| `pj3j` | **✅ CLOSED — merged `c0c0472`; ledger status transitioned 2026-07-28 after re-verifying BOTH sites by reading them** | This repo's OWN `MISSING_KEYS_EVENT` (`checks/required_role_keys_declared.py:40-43`) and `Config` docstring (`config.py:407`) still teach the retired declared-empty spelling. Higher-leverage than any config comment: the diagnostic is read at the moment someone decides what to write, and it is interpolated into the FLEET report too (`fleet/_rows_required_role_keys.py:99`). **After Phase 4 its remediation routes the reader into a `ConfigParseError`** — so, like `fwcwxv`, it must land BEFORE Phase 4. Unlike `fwcwxv` it is code and factory-dispatchable. The item records the trap: `[]` is wrong for the five UNION keys only; it stays LEGITIMATE for the five CLEAN ones, and this check spans both. |
 | `oitd` | **CLOSED — PR #776 → `34c05c1`** | Decomposed `fleet/_contract_rows.py` (246 → 183 LLOC) by extracting the six `github-state` rows to `_contract_github_state_rows.py` and splicing them back in place. `OBLIGATION_ROWS` unchanged in content and ordering, verified by dumping every row's fields from both trees and diffing to empty. **195 LLOC** once the Phase 3 row was registered — still under the SOFT ceiling, so the next obligation does not re-open this. **Its recorded `depends on 8o8e.1` edge was INVERTED** (it was a prerequisite of `8o8e.1`'s Phase 3, not a consequent) and made the ledger show completed work as blocked; removed and re-recorded as a non-blocking `relates_to`. |
-| `fwcwxv` | **RATIFIED — all four proposals ACCEPTED, v033, merged `0500155`** | The spec propose-change. Four proposals: retire declared-empty for the union keys; preserve `[]` for the CLEAN keys with the stricter-not-blinder reason; ratify the constraint-based discriminator plus `unarmed_until` liveness; and the acceptance scenarios. **Filing is not ratifying** — accept or reject at `/livespec:revise`. **Phase 4 is gated on acceptance.** |
+| `fwcwxv` | **✅ CLOSED 2026-07-28 — all three acceptance bullets discharged** | The spec propose-change, RATIFIED as v033 (`0500155`). Bullet 1: `history/v033/` exists and `proposed_changes/` is drained, and the CLEAN-keys carve-out survived into the RATIFIED TEXT — §"Clean role keys retain `[]`" is cited by name at each of the five clean entries (211/213/215/217/223), so the blanket-retirement trap was avoided in the spec and not merely in the proposal. Bullet 2: ordering verified as ANCESTRY, not a date — `git merge-base --is-ancestor 0500155 b36e0b8`. Bullet 3: the deferred docstring reword, merged `27c1d94` (PR #800). **Its ledger status read `blocked` / `needs-human` for hours after the human gate had cleared** — see the ⚠️ note in START HERE. |
 | `bd-ib-6qb2mc` | **blocked / needs-human — FILED this session, in the `beads-fabro` tenant** | Carve `livespec-orchestrator-beads-fabro`'s real pure tree. It is the named work that repo's `pure_trees = { unarmed_until = ... }` points at, so it is the ONLY open item whose closure is referenced from a parsed config value in another repo. **Do NOT close it by declaring `not_applicable`** — that re-hides an obligation its own ratified `constraints.md` imposes; if the constraint is wrong, amend the SPEC first. `blocked` is correct rather than a formality: verifying the result is mechanical, choosing the cut is architectural. |
 | `m50u` | **blocked / needs-human — FILED 2026-07-28** | A blessed declared-absent PAYLOAD can be false and nothing checks it. `livespec-orchestrator-git-jsonl`'s `source_tree_prefixes = { superseded_by = … }` is **measurably untrue** — 14 of 49 first-party `.py` fall outside the derived set — silently narrowing BOTH commit-time gates. Filed HERE rather than in the git-jsonl tenant deliberately: that repo's intake runs through its own orchestrator surface (the `bd-ib-6qb2mc` precedent), which is not installed here, and a raw cross-tenant `bd -C` would bypass the intake DoR that routed that precedent correctly. **First action: route the git-jsonl half through that repo's own intake.** |
 | `qv3k` | **blocked / needs-human — FILED 2026-07-28** | `livespec_footgun_guard.py` is the fleet's THIRD shared hook body and the only one with **no carrier constant, no installer and no byte-identity check** — 8 copies, **7 distinct contents**. The precedent exists twice (commit-refuse hooks; the no-shadow-ledger body) and was simply never extended. `needs-human` because picking a canonical body among eight divergent copies could weaken a SAFETY guard in seven repos at once, and nothing yet establishes which copy blocks least. |
+| `nauzq6` | **blocked / needs-human, P2 — FILED 2026-07-28** | `install_no_shadow_ledger` and `checks/no_shadow_ledger_body_identical` **DISAGREE on an UNDECLARED `neutral_hook_body_path`** — the installer reads `role_path` directly and no-ops (exit 0); the check runs `role_absence_exit_code` FIRST and hard-errors (exit 1). It is a REQUIRED union key, so omission is a misconfiguration — but the two modules are documented as mirroring each other, and BOTH docstrings claimed a consumer that "has not declared" it "sees neither installer nor verifier activity". **Measured false.** `needs-human` because the remedy is a design call, not a fix: gating the installer breaks it for the repo mid-adoption that most needs it, and "operator reconcile is deliberately lenient where the gate is strict" is a defensible answer nobody has ever written down. |
 | `pk2x` | backlog | Archive-on-epic-close — **ADOPT** ruled. Carries a note from this thread: a union makes `[]` unrepresentable after parsing, but **a key nobody wrote still parses to the default**, so pk2x's Exemption slot needs PRESENCE REQUIRED, not merely value well-formedness. |
 
 **`fp5yfv` — VERIFIED 2026-07-28, and the answer is BOTH.** It is no longer a "possible stale
@@ -970,12 +987,47 @@ repo that owns it**, and **an emptiness or absence that silently means consent**
    nobody reads is a comment with better syntax highlighting.** Found by MEASURING a claim rather
    than by reading it; no check in the fleet would have surfaced it.
 
-**And its prose twin, found five times now** — *an amendment that changed the behavior and left an
+**And its prose twin, found NINE times now** — *an amendment that changed the behavior and left an
 authoritative statement of that behavior standing*: the handoff's own heading → this repo's config
 header (Piece A) → four sibling headers (`livespec-driver-claude` = Piece B) → the ratified SPEC
-(`fwcwxv`) → the tool's own diagnostic output (`pj3j`). Each instance was found by re-reading the
-WHOLE document after a local edit, never by the edit itself. **A value-counting check cannot see
-any of them.**
+(`fwcwxv`) → the tool's own diagnostic output (`pj3j`) → **and four more on 2026-07-28, all in
+PR #800 (`27c1d94`)**. Each instance was found by re-reading the WHOLE document after a local edit,
+never by the edit itself. **A value-counting check cannot see any of them.**
+
+### 🔺 THE 2026-07-28 FOUR — and the finding is the SURFACE CLASS, not the count
+
+They were found while discharging `fwcwxv`'s last acceptance bullet, a ONE-LINE docstring reword.
+Re-reading the surrounding surfaces rather than grepping for the retired phrase turned one line
+into five sites, and **two of them outrank the bullet that led to them**:
+
+1. **`livespec_dev_tooling/checks/CLAUDE.md` carried the retired copy-paste family VERBATIM** —
+   "DECLARES EMPTY logs a structured `info` no-op … that is the sanctioned, visible opt-out".
+   **`CLAUDE.md` FILES WERE NEVER A SWEPT SURFACE ON THIS THREAD.** The sweeps covered plan
+   handoffs, `pyproject.toml` headers, the ratified spec and the tool's diagnostics — every one
+   of them a file a person OPENS. A `CLAUDE.md` is **auto-injected into the context of every
+   agent that touches its directory**, so it is the most-read prose in the repo and the least-read
+   file. `checks/` is where every check lives, which makes this the widest-reach instance found.
+   **Add `CLAUDE.md` to the sweep list for the next schema change.**
+2. **`config.py`'s comment on the five union fields ARGUED AGAINST the variant shipping three
+   lines below it** — "the baseline default is the legacy spelling rather than a sixth
+   `undeclared` variant" — with `_BASELINE_* = Undeclared(...)` directly beneath it. A reader
+   would conclude `Undeclared` had been considered and REJECTED. `Undeclared`'s own docstring 130
+   lines earlier gives the correct account, so one file held **both the account and its
+   contradiction, and the contradiction was the copy physically attached to the code.** This is
+   the worst sub-shape yet: not merely stale, but actively arguing against the shipped design at
+   the exact place a reader looks to understand it.
+3. **`livespec_dev_tooling/CLAUDE.md`** claimed `load_config` falls back to "the livespec-core
+   historical defaults"; the baseline is a bare flat `Config()` with NO declared keys, which is
+   not a working configuration at all.
+4. **Both no-shadow-ledger modules called `neutral_hook_body_path` "OPT-IN"** and claimed an
+   undeclared key is a no-op on both sides. **Measured FALSE** — and measuring it surfaced a real
+   BEHAVIORAL divergence beneath the prose, filed as **`nauzq6`** rather than fixed inline.
+
+**THE GENERALIZATION WORTH KEEPING.** Instances 1 and 3 say the sweep's selection criterion was
+wrong, not its diligence: it swept *documents*, and missed *injected context*. Instance 2 says
+proximity is not protection — the comment nearest the code was the one that was wrong, because it
+was written to justify a decision that was later reversed and nothing re-reads a justification.
+**A comment that argues for a design is the one most likely to survive that design's reversal.**
 
 When you find the next one, **file it rather than fixing it inline** — a same-shaped hole found
 while fixing another is the cheapest it will ever be to close, and the pattern is the finding. A
@@ -1033,6 +1085,18 @@ legitimately returns "not done".** The PR had already merged before the loop sta
 sub-command matters, not the tool: `gh pr view <n> --json state --jq .state` DOES support `--json`.
 Run the probe bare, look at the output, THEN loop — and give the loop an iteration ceiling that
 reports rather than hangs.
+
+**A LEDGER STATUS IS A CLAIM, NOT AN OBSERVATION — AND IT AGES LIKE ONE. MEASURED 2026-07-28.**
+This file calls the ledger authoritative over itself. On a cold start that was FALSE for two items:
+`pj3j` read `BACKLOG` and `fwcwxv` read `blocked` / `needs-human`, while both had verifiably landed
+(`c0c0472`, `0500155`). **The work landed and the record of the work did not** — which is this
+thread's own subject, one level up, in the tracker instead of the source. Note the asymmetry that
+makes it dangerous: a stale-OPEN item manufactures phantom work, and `fwcwxv` specifically read as
+"a maintainer still owes a propose-change" for a change already ratified, three lines from this
+file's own **"Do NOT re-file it."** **Re-derive by reading the ARTIFACTS an item names** — the
+commit, the file, the `history/vNNN/` directory — not by reading its status field. Closing a stale
+item is reconciliation, not new work; leaving it is how the next session gets sent to redo
+something.
 
 **A STALE LOCAL CLONE WILL HAND YOU STALE PROSE, NOT JUST A STALE PIN.** `/data/projects/livespec-
 runtime` read `tag = "v0.56.1"` while the forge had `v0.57.0` — six commits behind. The risk is not
