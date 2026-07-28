@@ -34,20 +34,114 @@ sibling repo without it.
 | `livespec-dev-tooling` master | `89b5ec0` (`chore(master): release 0.57.0`) |
 | Phase 0 — commit-pairs coupling break (PR #755) | **merged `5f82dbe`, RELEASED in `v0.56.7`** |
 | Phase 1 — accepting loader (PR #759) | **merged `8a61df6`, RELEASED in `v0.57.0`** (verified: `git tag --contains 8a61df6` → `v0.57.0`) |
-| Sibling consumption | **ZERO siblings consumed Phase 1 at the moment this was written.** The `v0.57.0` fan-out had just fired; bump PRs land per-repo, independently. **RE-DERIVE per repo.** |
+| Sibling consumption | **SIX of seven now carry `v0.57.0`** — the gate has OPENED. Only `livespec-driver-codex` lags at `v0.56.7` (bump PR #296 stuck). See the pin table below. **RE-DERIVE per repo.** |
 
 **MERGED ≠ RELEASED ≠ CONSUMED.** Keep the three separate in every status claim. Conflating them
 re-creates this thread's core defect — a green signal that means nothing — at the process level.
 
-Sibling pins measured on the FORGE 2026-07-28 — **ZERO carry `v0.57.0`**, so every sibling was OFF
-LIMITS at that moment. **This table ages in minutes; re-derive per repo, never act on it:**
+### 🚧 BLOCKED WHEN THIS SESSION ENDED — read this before doing anything
 
-| repo | pin | | repo | pin |
-|---|---|---|---|---|
-| livespec | `v0.56.6` | | livespec-orchestrator-git-jsonl | `v0.56.7` |
-| livespec-driver-claude | `v0.56.7` | | livespec-overseer | `v0.56.7` |
-| livespec-driver-codex | `v0.56.7` | | livespec-runtime | `v0.56.7` |
-| livespec-orchestrator-beads-fabro | `v0.56.7` | | | |
+`livespec-dev-tooling` **master CI is RED on `ca73e97`**, and it is NOT a defect and NOT caused by
+that commit (a docs-only handoff update). `check-fleet-conformance` reads sibling repos live
+through the **livespec GitHub App token**, and that pool was exhausted:
+
+```
+kind: "rate_limited"
+detail: "API rate limit exceeded for installation ID 131208965 (HTTP 403)"
+```
+
+Confirmed it is the APP pool, not the operator's — a user token concurrently read `4955/5000`.
+The reset was ~31 minutes out at session end (epoch `1785224458`).
+
+**It clears on RESET, not on retry.** The failed jobs were re-run once to test transience and
+failed again on the same cause. Do not keep re-running; each attempt burns the same pool.
+
+**Why it blocks everything here:** `check-master-ci-green` is in the `just check` aggregate, so
+`check-pre-commit` refuses every code commit while master CI is red. It also blocks the sibling
+slice — `livespec-driver-claude`'s CI runs the same shared fleet-conformance reusable workflow
+against the same App installation. (Doc-only commits take a reduced gate and DO still land; that is
+how this handoff got committed.)
+
+**FIRST ACTIONS ON RESUME:**
+
+1. `gh api rate_limit` — but note the operator pool is a DIFFERENT number; the failure is on
+   installation `131208965`. If unsure, just re-run and read the error.
+2. `gh run rerun <latest master CI run id> --failed`, wait for green.
+3. Then, and only then, Pieces A and B below.
+
+**One observation worth keeping, not a bug:** an earlier run of the same job failed as
+`agent-instruction-surface` "obligation row enforced NOTHING this run (skipped for every applicable
+member)" with `own_failing_rows: []`. All seven siblings' `AGENTS.md` were verified readable
+minutes later — it was the same rate limit surfacing as a BLIND ROW rather than a 403. That refusal
+is this epic's own defect class implemented correctly. The lesson is narrower: **a fleet-state
+check can redden master with no commit responsible**, so "master is red" here does not imply
+"someone broke master". Do not go hunting for a commit to revert.
+
+### ⏭️ PIECE A — PENDING, FULLY SPECIFIED, NOT LANDED
+
+`pyproject.toml` (this repo) lines ~96-100 still describe five role keys as staying "empty/null",
+but `pure_trees` and `dataclasses_tree` now carry `{ not_applicable = ... }`, and
+`neutral_hook_body_path` — absent from that list entirely — does too. The header contradicts the
+declarations twenty lines below it.
+
+**This matters more than an ordinary stale comment:** those config comments are the exact source
+the role-key classification reads to determine each key's meaning across eight repos. A future
+classification pass reading that header would mis-map two keys in the repo that owns the schema.
+
+The work was done and audited (no other survivors in the block) before the commit was refused; the
+worktree was REMOVED rather than orphaned. Replace the block beginning
+`# The remaining role keys (io_trees, commands_trees, dataclasses_tree,` and ending
+`` # `source_trees` universe. `` with a header stating: `io_trees`, `commands_trees` and
+`covered_trees` stay a bare `[]` because they are EXEMPTION / SEVERITY predicates whose consuming
+checks derive the universe from `resolve_check_universe()`, so empty makes them STRICTER never
+blinder; and `pure_trees`, `dataclasses_tree`, `neutral_hook_body_path` are no longer empty because
+their `[]` / `""` carried two incompatible meanings and each now declares a blessed variant
+carrying its reason in the parsed value. Config-only — no RGR ritual, normal worktree → PR path.
+
+### ⏭️ PIECE B — SIBLING SLICE CHOSEN AND MAPPED, NOT STARTED
+
+**Chosen: `livespec-driver-claude`.** Not the smallest key count (`livespec` has 2 vs its 3) but
+the smallest BLAST RADIUS — a peripheral Driver plugin with ~7 first-party modules, versus
+`livespec` which is core with 129 modules that every sibling pins. It also exercises TWO distinct
+variants, proving more of the union than a single-variant repo would.
+
+Mapping taken from that repo's OWN comments, not from taste:
+
+| key | its comment | variant |
+|---|---|---|
+| `pure_trees` | "this Driver has no pure parse/validate-style layer." | `not_applicable` (A) |
+| `dataclasses_tree` | "this Driver has no dataclasses/schema tree." | `not_applicable` (A) |
+| `target_dirs` | "no legacy target dirs; git-derived coverage owns the hook universe." | **`superseded_by` (C)** |
+
+Out of scope there: `neutral_hook_body_path` and `source_tree_prefixes` are POPULATED.
+`io_trees`, `commands_trees`, `covered_trees` are CLEAN keys and keep their `[]` — note
+`covered_trees`' comment reads as (C), but that key is out of the union BY DESIGN.
+
+Its `AGENTS.md` §"Repository mutation protocol" was READ, not assumed: worktree under
+`~/.worktrees/livespec-driver-claude/<branch>`, `mise exec` for commits/pushes, `--no-verify`
+banned, PR → rebase-merge → refresh → remove worktree → delete branch. Materially the same shape as
+this repo's. It has `install-worktree-pack` and `check` recipes and RGR wiring, though a
+config-only change does not trigger the ritual.
+
+**Acceptance:** its `LegacyAmbiguousEmpty` count RUN and reported before (expect 3) and after
+(expect 0), and its own full check suite green under its own pinned loader.
+
+### SIBLING PINS — the gate has OPENED for six of seven
+
+Measured on the FORGE 2026-07-28. **This ages in minutes; re-derive per repo, never act on it:**
+
+| repo | pin | |
+|---|---|---|
+| livespec | `v0.57.0` | migratable |
+| livespec-driver-claude | `v0.57.0` | migratable — **Piece B target** |
+| livespec-orchestrator-beads-fabro | `v0.57.0` | migratable |
+| livespec-orchestrator-git-jsonl | `v0.57.0` | migratable |
+| livespec-overseer | `v0.57.0` | migratable |
+| livespec-runtime | `v0.57.0` | migratable |
+| **livespec-driver-codex** | `v0.56.7` | **BLOCKED — bump PR #296 open and unable to land. Do not touch.** |
+
+**Only Piece B (`livespec-driver-claude`) is authorized.** The other five siblings are a separate
+authorization, and `livespec-driver-codex` is genuinely gated on #296.
 
 ### ⚠️ THE CONFLATION THAT WOULD MAKE ALL OF THIS WORTHLESS
 
@@ -157,7 +251,7 @@ changed, pyright enumerated all fourteen consumers — that is the mechanism wor
 
 ---
 
-## ▶️ PHASE 2 — the next step, NOT yet authorized
+## ▶️ PHASE 2 — slice 1 DONE; ONE sibling authorized, the rest not
 
 **Precondition, and it is PER-REPO, not fleet-wide:** a sibling cannot adopt a blessed spelling
 until **its own pin** carries the accepting loader. Adopting earlier fails that repo's `just check`
@@ -187,11 +281,24 @@ three now report `role_key_spelling: not_applicable`, all six consuming checks e
 SAME empty value for the OPPOSITE reason (`unarmed_until = "livespec-mutreal.1"`). One value, two
 meanings — now distinguishable.
 
-### ▶️ NEXT SLICE: the seven siblings, and it is NOT yet authorized
+### ▶️ NEXT SLICE: `livespec-driver-claude` ONLY (Piece B above) — the other five are NOT authorized
 
-26 pairs remain, all in siblings. Each is gated on **that repo's own pin reaching `>= v0.57.0`** —
-re-derive from the forge per repo. Sibling migration is a separate authorization, not a
-continuation of slice 1.
+26 pairs remain, all in siblings. Six of seven repos now carry `v0.57.0`, so the PIN gate is no
+longer what holds them — the authorization is. Exactly one sibling is authorized as the cross-repo
+proof: **`livespec-driver-claude`**, mapped in Piece B above.
+
+Per-repo remaining counts, so the fan-out is mechanical once authorized:
+
+| repo | keys | | repo | keys |
+|---|---|---|---|---|
+| livespec | 2 | | livespec-orchestrator-git-jsonl | 5 |
+| livespec-driver-claude | 3 — **Piece B** | | livespec-overseer | 5 |
+| livespec-driver-codex | 3 — **pin-blocked** | | livespec-runtime | 5 |
+| livespec-orchestrator-beads-fabro | 3 | | | |
+
+`livespec`'s `pure_trees` is the one known **(B) `unarmed_until = "livespec-mutreal.1"`** in the
+fleet — do NOT downgrade it to `not_applicable` because that reads tidier. Telling (B) from (A)
+apart is the entire point of the union.
 
 Then **Phase 3** (a fleet-conformance check asserting zero `LegacyAmbiguousEmpty` across all eight —
 this IS the closure precondition's evidence) and **Phase 4** (the rejecting loader; `[]` becomes a
