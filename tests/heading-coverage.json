@@ -299,5 +299,40 @@
     "heading": "## Pin-currency severity policy",
     "test": "TODO",
     "reason": "Seeded with the livespec-dh9r Slice-3 severity-policy section. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a blessed declared-absent spelling parses to a distinct variant carrying its reason",
+    "test": "TODO",
+    "reason": "Ratified with the scenario in the role-key-declared-absent-spellings revision. TODO is deliberate and NOT a coverage gap in the behavior: the property is already asserted at UNIT tier by `tests.livespec_dev_tooling.checks.test_role_key_variants.test_not_applicable_variant_parses_and_carries_its_reason`. What is missing is the INTEGRATION-tier (`tests.consumer`) test this project's Heading-taxonomy constraint requires of every `scenarios.md` heading, since a scenario describes user-observable behavior and a unit test cannot demonstrate it end-to-end. Replace TODO when the consumer-tier test lands."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a declared-absent variant with an empty payload is rejected at load",
+    "test": "TODO",
+    "reason": "Ratified with the scenario in the role-key-declared-absent-spellings revision. TODO is deliberate and NOT a coverage gap in the behavior: the property is already asserted at UNIT tier by `tests.livespec_dev_tooling.checks.test_role_key_variants.test_variant_with_empty_reason_is_rejected_at_load`. What is missing is the INTEGRATION-tier (`tests.consumer`) test this project's Heading-taxonomy constraint requires of every `scenarios.md` heading, since a scenario describes user-observable behavior and a unit test cannot demonstrate it end-to-end. Replace TODO when the consumer-tier test lands."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the legacy empty spelling on a union key warns and does not silently pass",
+    "test": "TODO",
+    "reason": "Ratified with the scenario in the role-key-declared-absent-spellings revision. TODO is deliberate and NOT a coverage gap in the behavior: the property is already asserted at UNIT tier by `tests.livespec_dev_tooling.checks.test_role_key_variants.test_legacy_empty_target_dirs_is_announced_at_warn`. What is missing is the INTEGRATION-tier (`tests.consumer`) test this project's Heading-taxonomy constraint requires of every `scenarios.md` heading, since a scenario describes user-observable behavior and a unit test cannot demonstrate it end-to-end. Replace TODO when the consumer-tier test lands."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an empty clean role key makes its consuming check stricter, not blinder",
+    "test": "TODO",
+    "reason": "Ratified with the scenario in the role-key-declared-absent-spellings revision. TODO is deliberate and NOT a coverage gap in the behavior: the property is already asserted at UNIT tier by `tests.livespec_dev_tooling.checks.test_config_driven_checks.test_no_except_outside_io_runs_without_io_trees`. What is missing is the INTEGRATION-tier (`tests.consumer`) test this project's Heading-taxonomy constraint requires of every `scenarios.md` heading, since a scenario describes user-observable behavior and a unit test cannot demonstrate it end-to-end. Replace TODO when the consumer-tier test lands."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an unarmed-until payload naming a closed work item is a conformance failure",
+    "test": "TODO",
+    "reason": "Ratified with the scenario in the role-key-declared-absent-spellings revision; the behavior is DELIBERATELY UNIMPLEMENTED, so no test of ANY tier exists and the integration-tier (`tests.consumer`) requirement is acknowledged as unmet. The verifier must resolve work-item identifiers ACROSS trackers, and no credential class in any current vantage can: the central fleet vantage holds a GitHub credential and reaches no ledger, while the local vantage holds ONE tenant's credential and live declarations cite two. A same-tenant resolver would report green while failing to resolve half the live declarations, which is the silent-consent shape this revision removes. Replace TODO once that vantage decision is made."
   }
 ]
