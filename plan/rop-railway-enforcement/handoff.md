@@ -31,76 +31,101 @@ sibling repo without it.
 
 | thing | state |
 |---|---|
-| `livespec-dev-tooling` master | `89b5ec0` (`chore(master): release 0.57.0`) |
+| `livespec-dev-tooling` master | re-derive; was `472bbfc` when this line was written |
 | Phase 0 — commit-pairs coupling break (PR #755) | **merged `5f82dbe`, RELEASED in `v0.56.7`** |
 | Phase 1 — accepting loader (PR #759) | **merged `8a61df6`, RELEASED in `v0.57.0`** (verified: `git tag --contains 8a61df6` → `v0.57.0`) |
-| Sibling consumption | **SIX of seven now carry `v0.57.0`** — the gate has OPENED. Only `livespec-driver-codex` lags at `v0.56.7` (bump PR #296 stuck). See the pin table below. **RE-DERIVE per repo.** |
+| Sibling consumption | **SIX of seven carry `v0.57.0`** (re-derived on the forge 2026-07-28) — the gate has OPENED. Only `livespec-driver-codex` lags at `v0.56.7`, and #296 is stuck on a PyPI TIMEOUT rather than a defect. See the pin table below. **RE-DERIVE per repo.** |
+| Piece B — `livespec-driver-claude` prose (PR #317) | **merged `e8c8847`** — first sibling complete on BOTH axes |
 
 **MERGED ≠ RELEASED ≠ CONSUMED.** Keep the three separate in every status claim. Conflating them
 re-creates this thread's core defect — a green signal that means nothing — at the process level.
 
-### 📊 FLEET PROGRESS — 2 of 8 repos migrated
+### 📊 FLEET PROGRESS — 2 of 8 repos DONE on both axes; 23 keys left, and the counts are now MEASURED
 
-| repo | values migrated | prose stale? |
-|---|---|---|
-| `livespec-dev-tooling` | ✅ `b27401c` (3 keys) | ✅ **CLEAN** — Piece A landed |
-| `livespec-driver-claude` | ✅ `c7c7272` (3 keys) | ⚠️ **YES — see prose finding** |
-| `livespec` | ✗ 2 keys | clean |
-| `livespec-orchestrator-beads-fabro` | ✗ 3 keys | ⚠️ YES |
-| `livespec-driver-codex` | ✗ 3 keys — **PIN-BLOCKED** | ⚠️ YES |
-| `livespec-orchestrator-git-jsonl` | ✗ 5 keys | clean |
-| `livespec-overseer` | ✗ 5 keys | clean |
-| `livespec-runtime` | ✗ 5 keys | ⚠️ YES |
+Re-derived 2026-07-28 by fetching all eight `pyproject.toml` from the **FORGE** and loading each
+through `master`'s union loader. This is a SCHEMA measurement under one loader — deliberately, so
+only the config varies — and is **NOT** each repo's CI result under its own pin.
 
-**⚠️ THE REMAINING PER-REPO COUNTS ARE ARITHMETIC, NOT A FRESH MEASUREMENT.** They are the
-original 29-pair fleet measurement minus the two migrated repos. **Re-run the count per repo before
-acting on it** — the numbers are a starting point, not evidence. (Running it: import each of the
-six union-consuming checks in the target repo and tally
-`role_key_spelling == "legacy-ambiguous-empty"` records.)
+| repo | values | the un-migrated keys | prose |
+|---|---|---|---|
+| `livespec-dev-tooling` | ✅ 0 (`b27401c`) | — | ✅ **CLEAN** — Piece A |
+| `livespec-driver-claude` | ✅ 0 (`c7c7272`) | — | ✅ **CLEAN** — Piece B (`e8c8847`) |
+| `livespec` | ✗ **2** | `pure_trees`, `neutral_hook_body_path` | clean |
+| `livespec-driver-codex` | ✗ **3** | `pure_trees`, `dataclasses_tree`, `target_dirs` | ⚠️ stale |
+| `livespec-orchestrator-beads-fabro` | ✗ **3** | `pure_trees`, `dataclasses_tree`, `neutral_hook_body_path` | ⚠️ stale |
+| `livespec-orchestrator-git-jsonl` | ✗ **5** | all five | clean |
+| `livespec-overseer` | ✗ **5** | all five | clean |
+| `livespec-runtime` | ✗ **5** | all five | ⚠️ stale |
 
-`livespec-driver-codex` is PIN-BLOCKED: pin `v0.56.7`, bump PR **#296** open and unable to land. Its
-VALUES cannot migrate until that lands — but its PROSE fix is independent of the pin.
+**FLEET TOTAL: 23 `LegacyAmbiguousEmpty`.** The previous arithmetic estimate was correct — this
+also names the exact KEYS, which subtraction could not. Note `livespec` is `pure_trees` +
+`neutral_hook_body_path`, **NOT** `source_tree_prefixes`.
+
+**`livespec-driver-codex` is NOT blocked by a defect — #296 died on a PyPI TIMEOUT.** The pin is
+still `v0.56.7` and bump PR **#296** is `OPEN | MERGEABLE | BLOCKED`, but 62 of 64 checks pass and
+the two failures are not check logic: `check-hook-trees-not-io-exempt` died in dependency INSTALL
+(`Failed to download ruff==0.8.6 ... operation timed out`) and `ci-green` failed because that job
+did. It is **one re-run away**, not incompatible with `v0.57.0`.
+
+**Deliberately NOT re-run.** Auto-merge is enabled on #296, so a re-run CHANGES that repo's pin
+rather than merely observing it — an authorization call, not a worker call. But decide it against
+what is true: "gated on a flake" and "gated on an incompatibility" deserve different answers, and
+the older record implied the second.
 
 ### ⚠️ PROSE STALENESS — Phase 2's definition of done is VALUES **AND** PROSE
 
-`livespec-driver-claude` has correct values and a header that still says:
+The retired wording is a header that still says:
 
 > "declare it explicitly empty (`[]` ... `""` ...) ... Declared-empty is the sanctioned, VISIBLE
 > opt-out: the gating check no-ops and says so in a structured info event."
 
 That is the pre-`8o8e.1` regime, wrong on every clause, and it **instructs the next reader to write
-the exact spelling this epic removes** — in a repo whose values are already migrated.
+the exact spelling this epic removes**.
 
-Four repos carry that wording (re-derived from the forge): `livespec-driver-claude`,
-`livespec-driver-codex`, `livespec-orchestrator-beads-fabro`, `livespec-runtime`. Four are clean:
-`livespec`, `livespec-dev-tooling`, `livespec-orchestrator-git-jsonl`, `livespec-overseer`.
-(`livespec-dev-tooling` carries a DIFFERENT variant of the same defect — Piece A.)
+**THREE repos still carry it** (swept on the forge 2026-07-28): `livespec-driver-codex`,
+`livespec-orchestrator-beads-fabro`, `livespec-runtime`. Five are clean: `livespec`,
+`livespec-dev-tooling`, `livespec-driver-claude`, `livespec-orchestrator-git-jsonl`,
+`livespec-overseer`.
+
+**All three remaining are ALSO value-un-migrated, so prose and values can land in ONE commit for
+every one of them.** Piece B was the last repo where the two were forced apart.
 
 **Phase 3's conformance check counts VALUES, so it can NEVER catch this.** A repo with perfect
 values and a header pointing the other way scores a clean zero, and the config drifts back one
-honest author at a time while the check stays green. For repos not yet migrated, prose and values
-can land in ONE commit.
+honest author at a time while the check stays green.
 
 Full detail — including the suggestion of a cheap literal-string companion check for Phase 3 — is
 on `livespec-dev-tooling-8o8e.1`.
 
-### ✅ PIECE A — DONE. `livespec-dev-tooling` is now BOTH value-migrated AND prose-clean
+### ✅ PIECES A AND B — BOTH DONE. Two repos are now complete on BOTH axes
 
-Its header no longer claims five keys "stay empty/null" while three carry variants. Swept: this
-repo has ZERO occurrences of the other retired shape (declared-empty as the "sanctioned/visible
-opt-out") in its config.
+**Piece A** (`livespec-dev-tooling`, `8b5ab7f`): its header no longer claims five keys "stay
+empty/null" while three carry variants.
 
-**Remaining prose work is FOUR repos, not three — get this arithmetic right:**
+**Piece B** (`livespec-driver-claude`, PR #317 → `e8c8847`): the **first sibling** complete on both
+axes, and necessarily a STANDALONE prose PR since its values had already landed in `c7c7272`.
+
+Piece B fixed **two** stale sites, not one. The known one was the `IMPORTANT` header. Re-reading the
+WHOLE block after the local edit — the discipline this thread keeps re-learning — turned up a
+second: the fleet-check-coverage paragraph closed with "the remaining heavy product-tree role keys
+are explicitly declared empty below", and three of them are not empty anymore. **Budget for the
+second stale sentence in every remaining repo; the grep for the known wording will not find it.**
+
+Its header now states the two-group split explicitly, including the part most likely to be lost in
+a rewrite: the CLEAN keys keep `[]` as a LEGITIMATE spelling, because for them empty makes the
+consuming check STRICTER rather than blinder. **Reuse that header as the template for the remaining
+three.**
+
+Values were verified UNCHANGED by measurement before and after the diff (`LegacyAmbiguousEmpty`
+count 0 both times), `just check` green, 64/64 CI checks pass.
+
+**Remaining prose work is THREE repos, and every one rides along with its values:**
 
 | repo | prose | values | how to land it |
 |---|---|---|---|
-| `livespec-driver-claude` | ⚠️ stale | ✅ done | **STANDALONE** — values already landed, so prose needs its own PR |
-| `livespec-driver-codex` | ⚠️ stale | ✗ pin-blocked (#296) | ride-along with values — **but prose is NOT pin-blocked and can land first** |
-| `livespec-orchestrator-beads-fabro` | ⚠️ stale | ✗ | ride-along: prose + values in ONE commit |
-| `livespec-runtime` | ⚠️ stale | ✗ | ride-along: prose + values in ONE commit |
-
-Clean of the prose shape: `livespec`, `livespec-dev-tooling`, `livespec-orchestrator-git-jsonl`,
-`livespec-overseer`.
+| `livespec-driver-codex` | ⚠️ stale | ✗ 3 keys — pin `v0.56.7` | ride-along — **but prose is NOT pin-gated and can land first** |
+| `livespec-orchestrator-beads-fabro` | ⚠️ stale | ✗ 3 keys | ride-along: prose + values in ONE commit |
+| `livespec-runtime` | ⚠️ stale | ✗ 5 keys | ride-along: prose + values in ONE commit |
 
 ### 🔺 THE RATIFIED SPEC ITSELF IS STALE — FILED as `livespec-dev-tooling-fwcwxv`
 
@@ -144,18 +169,27 @@ auto-merge, and the race is invisible when you win it.
 
 ### ▶️ EXACT NEXT ACTION
 
-1. The five unmigrated siblings, one slice at a time, **values AND prose together** where both
-   are outstanding. `livespec` is the delicate one — its `pure_trees` is the fleet's one known
-   **(B) `unarmed_until`** and must not be downgraded to `not_applicable`.
-2. `livespec-driver-claude` needs a **STANDALONE prose PR** — its values already landed, so it is
-   the one repo where the two cannot ride together.
-3. `livespec-driver-codex` values wait on **#296**; its prose does NOT and can land first.
+1. **The six remaining slices are all "values AND prose in ONE commit"** — Piece B was the last
+   repo where the two were forced apart. **NONE of the six is authorized yet.** Exact key lists are
+   in the fleet-progress table; they are measured, not arithmetic.
+2. `livespec` is the delicate one — its `pure_trees` is the fleet's one known
+   **(B) `unarmed_until = "livespec-mutreal.1"`** and must not be downgraded to `not_applicable`
+   because that reads tidier. Its other un-migrated key is `neutral_hook_body_path`, **not**
+   `source_tree_prefixes`.
+3. **Decide `livespec-driver-codex` against the corrected diagnosis.** #296 failed on a PyPI
+   download timeout, not on incompatibility — a re-run likely lands it and opens that lane. Auto-
+   merge is on, so re-running is a state change in a fenced repo and needs authorization. Its
+   PROSE fix is not pin-gated in any case.
 4. Execute `livespec-dev-tooling-fwcwxv` — the spec propose-change for
    `SPECIFICATION/contracts.md` §"Consumer configuration schema". Already FILED; it needs a
    maintainer, **before Phase 4**, via `/livespec:propose-change` and never a direct edit.
-5. Phase 3 (conformance check + consider a cheap literal-string companion check for the prose
-   shape, which the value-counting check structurally cannot catch), then Phase 4 (rejecting
-   loader) — which cannot land until all eight have migrated. Epic rule, non-negotiable.
+5. Execute `livespec-dev-tooling-pj3j` — this repo's OWN `MISSING_KEYS_EVENT` and `Config`
+   docstring still teach the retired spelling. **Before Phase 4**, for the same reason as `fwcwxv`:
+   after Phase 4 that remediation text routes its reader straight into a `ConfigParseError`.
+   Unlike `fwcwxv` it is code, autonomously verifiable, and factory-dispatchable.
+6. Phase 3 (conformance check + a cheap literal-string companion check for the prose shape, which
+   the value-counting check structurally cannot catch), then Phase 4 (rejecting loader) — which
+   cannot land until all eight have migrated. Epic rule, non-negotiable.
 
 ### SIBLING PINS — the gate has OPENED for six of seven
 
@@ -164,15 +198,16 @@ Measured on the FORGE 2026-07-28. **This ages in minutes; re-derive per repo, ne
 | repo | pin | |
 |---|---|---|
 | livespec | `v0.57.0` | migratable |
-| livespec-driver-claude | `v0.57.0` | ✅ **MIGRATED** (`c7c7272`) |
+| livespec-driver-claude | `v0.57.0` | ✅ **DONE** — values `c7c7272`, prose `e8c8847` |
 | livespec-orchestrator-beads-fabro | `v0.57.0` | migratable |
 | livespec-orchestrator-git-jsonl | `v0.57.0` | migratable |
 | livespec-overseer | `v0.57.0` | migratable |
 | livespec-runtime | `v0.57.0` | migratable |
-| **livespec-driver-codex** | `v0.56.7` | **BLOCKED — bump PR #296 open and unable to land. Do not touch.** |
+| **livespec-driver-codex** | `v0.56.7` | #296 open; **fails on a PyPI timeout, not a defect**. Do not touch without authorization — auto-merge is on. |
 
-**Only Piece B (`livespec-driver-claude`) is authorized.** The other five siblings are a separate
-authorization, and `livespec-driver-codex` is genuinely gated on #296.
+**Piece B is DONE and NOTHING is currently authorized.** All six remaining siblings are a separate
+authorization. `livespec-driver-codex` is gated on #296 — which is a re-run away, not a real
+incompatibility.
 
 ### ⚠️ THE CONFLATION THAT WOULD MAKE ALL OF THIS WORTHLESS
 
@@ -265,15 +300,10 @@ that WARNs naming the repo and key. **Phase 1 rejects nothing and reddens nothin
 runs, 47 exit 0. (The one non-zero, `livespec / claude_md_coverage`, is PRE-EXISTING: master's
 loader reproduces it identically. Flagged, not investigated — outside this item.)
 
-**The Phase 2 work list is derivable by RUNNING the checks. It was 29 (repo, key) pairs; slice 1
-migrated this repo's 3, leaving 26 — all of them in siblings.**
-
-| repo | un-migrated | | repo | un-migrated |
-|---|---|---|---|---|
-| livespec | 2 | | livespec-orchestrator-beads-fabro | 3 |
-| livespec-dev-tooling | **0 — MIGRATED** | | livespec-orchestrator-git-jsonl | **5** |
-| livespec-driver-claude | 3 | | livespec-overseer | **5** |
-| livespec-driver-codex | 3 | | livespec-runtime | **5** |
+**The Phase 2 work list is derivable by RUNNING the loader. It was 29 (repo, key) pairs; slice 1
+migrated this repo's 3 and slice 2 migrated `livespec-driver-claude`'s 3, leaving 23 — all of them
+in siblings.** The per-repo breakdown with the exact KEYS is the fleet-progress table near the top
+of this file; it is measured, and this paragraph is the history rather than the work list.
 
 Enforcement shape: two exhaustive `match` sites carry `assert_never` (`config.role_absence`,
 `_role_key_gate._announce_absence`) and every consumer routes through one, so a future variant
@@ -282,7 +312,7 @@ changed, pyright enumerated all fourteen consumers — that is the mechanism wor
 
 ---
 
-## ▶️ PHASE 2 — slice 1 DONE; ONE sibling authorized, the rest not
+## ▶️ PHASE 2 — slices 1 AND 2 DONE; NOTHING currently authorized
 
 **Precondition, and it is PER-REPO, not fleet-wide:** a sibling cannot adopt a blessed spelling
 until **its own pin** carries the accepting loader. Adopting earlier fails that repo's `just check`
@@ -312,12 +342,12 @@ three now report `role_key_spelling: not_applicable`, all six consuming checks e
 SAME empty value for the OPPOSITE reason (`unarmed_until = "livespec-mutreal.1"`). One value, two
 meanings — now distinguishable.
 
-### ▶️ NEXT SLICE: five siblings, NONE authorized yet
+### ▶️ NEXT SLICE: six siblings, NONE authorized yet
 
-Two of eight are migrated (`livespec-dev-tooling`, `livespec-driver-claude`). Six of seven siblings
-carry `v0.57.0`, so the PIN gate is no longer what holds the rest — the AUTHORIZATION is. Per-repo
-remaining counts are in the fleet-progress table near the top, **with the caveat that they are
-arithmetic rather than a fresh measurement.**
+Two of eight are DONE on both axes (`livespec-dev-tooling`, `livespec-driver-claude`). Six of seven
+siblings carry `v0.57.0`, so the PIN gate is no longer what holds the rest — the AUTHORIZATION is.
+Per-repo remaining counts and the exact un-migrated KEYS are in the fleet-progress table near the
+top; they are now **measured on the forge, not arithmetic**.
 
 `livespec`'s `pure_trees` is the fleet's one known **(B) `unarmed_until = "livespec-mutreal.1"`** —
 do NOT downgrade it to `not_applicable` because that reads tidier. Telling (B) from (A) apart is the
@@ -325,16 +355,6 @@ entire point of the union, and `livespec-driver-claude` already proved (C) `supe
 under real conditions.
 
 Every remaining slice migrates **values AND prose together** — see the prose-staleness section.
-
----|---|---|---|---|
-| livespec | 2 | | livespec-orchestrator-git-jsonl | 5 |
-| livespec-driver-claude | 3 — **Piece B** | | livespec-overseer | 5 |
-| livespec-driver-codex | 3 — **pin-blocked** | | livespec-runtime | 5 |
-| livespec-orchestrator-beads-fabro | 3 | | | |
-
-`livespec`'s `pure_trees` is the one known **(B) `unarmed_until = "livespec-mutreal.1"`** in the
-fleet — do NOT downgrade it to `not_applicable` because that reads tidier. Telling (B) from (A)
-apart is the entire point of the union.
 
 Then **Phase 3** (a fleet-conformance check asserting zero `LegacyAmbiguousEmpty` across all eight —
 this IS the closure precondition's evidence) and **Phase 4** (the rejecting loader; `[]` becomes a
@@ -367,6 +387,7 @@ the entire fan-out would silently never trigger.
 | `8o8e.1` | **OPEN, P1 — the live item** | Role-key schema type-safety. Phases 0–1 done; Phase 2 next. |
 | `br4xar` | backlog | `tests_mirror_pairing` disarmed in 3 repos. **The union is the WRONG fix there** — that check needs a source→test MAPPING, and a prefix union fabricates 23 false offenders in git-jsonl (whose real tests exist at `tests/<pkg>/`). Epic-shaped: 23 fabricated / 6 real (runtime) / 58 real (overseer, which has no `tests/overseer/` tree at all). |
 | `hgfnqd` | ready | Collapse `red_green_replay._derive_impl_prefixes` into `config.derive_source_prefixes`. Duplicate logic left deliberately: 3 tests assert the private helper by name, and refactoring a second commit-time gate inside a gate-arming PR risks losing the ability to commit at all. |
+| `pj3j` | **open, P2 — FILED by this session** | This repo's OWN `MISSING_KEYS_EVENT` (`checks/required_role_keys_declared.py:40-43`) and `Config` docstring (`config.py:407`) still teach the retired declared-empty spelling. Higher-leverage than any config comment: the diagnostic is read at the moment someone decides what to write, and it is interpolated into the FLEET report too (`fleet/_rows_required_role_keys.py:99`). **After Phase 4 its remediation routes the reader into a `ConfigParseError`** — so, like `fwcwxv`, it must land BEFORE Phase 4. Unlike `fwcwxv` it is code and factory-dispatchable. The item records the trap: `[]` is wrong for the five UNION keys only; it stays LEGITIMATE for the five CLEAN ones, and this check spans both. |
 | `pk2x` | backlog | Archive-on-epic-close — **ADOPT** ruled. Carries a note from this thread: a union makes `[]` unrepresentable after parsing, but **a key nobody wrote still parses to the default**, so pk2x's Exemption slot needs PRESENCE REQUIRED, not merely value well-formedness. |
 
 **Possible stale item — VERIFY, do not assume:** `livespec-dev-tooling-fp5yfv` (2026-07-19,
@@ -398,6 +419,13 @@ repo that owns it**, and **an emptiness or absence that silently means consent**
 4. `commit_pairs` / `claude_md_coverage` / `tests_mirror_pairing` — disarmed by an empty role key
    (`8o8e.1`), and `commit_pairs` was disarmed by a declaration that named two OTHER checks.
 5. `vendor_update` — the "only blessed re-vendor path" cannot target dev-tooling's own `_vendor/`.
+
+**And its prose twin, found five times now** — *an amendment that changed the behavior and left an
+authoritative statement of that behavior standing*: the handoff's own heading → this repo's config
+header (Piece A) → four sibling headers (`livespec-driver-claude` = Piece B) → the ratified SPEC
+(`fwcwxv`) → the tool's own diagnostic output (`pj3j`). Each instance was found by re-reading the
+WHOLE document after a local edit, never by the edit itself. **A value-counting check cannot see
+any of them.**
 
 When you find the next one, **file it rather than fixing it inline** — a same-shaped hole found
 while fixing another is the cheapest it will ever be to close, and the pattern is the finding. A
