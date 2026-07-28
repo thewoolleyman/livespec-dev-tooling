@@ -53,7 +53,7 @@ import pytest
 from livespec_dev_tooling.config import (
     Config,
     DeclaredPrefixes,
-    LegacyAmbiguousEmpty,
+    NotApplicable,
     PrefixRole,
 )
 
@@ -64,13 +64,15 @@ def _prefix_role(*, prefixes: tuple[str, ...]) -> PrefixRole:
     """Wrap a fixture prefix tuple in the union type `Config` now carries.
 
     `source_tree_prefixes` became a discriminated union in Phase 1 of
-    `livespec-dev-tooling-8o8e.1`: an EMPTY declaration is no longer a bare `()`
-    but a named `LegacyAmbiguousEmpty`, so a raw tuple can no longer stand in for
-    it. Keeping the fixture data as plain tuples and wrapping here preserves the
+    `livespec-dev-tooling-8o8e.1`, and Phase 4 removed the legacy empty variant
+    entirely — a bare `()` is no longer representable for this key at all. The
+    fixture's "no declared prefixes" row therefore wraps to a blessed
+    declared-absent variant, which is the spelling a real consumer must now use.
+    Keeping the fixture data as plain tuples and wrapping here preserves the
     matrix's readability.
     """
     if not prefixes:
-        return LegacyAmbiguousEmpty(key="source_tree_prefixes", repo="fixture")
+        return NotApplicable(reason="fixture repo declares no source-tree prefixes")
     return DeclaredPrefixes(prefixes=prefixes)
 
 

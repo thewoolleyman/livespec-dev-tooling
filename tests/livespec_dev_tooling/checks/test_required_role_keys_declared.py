@@ -55,15 +55,27 @@ def _write_justfile(*, root: Path, targets: tuple[str, ...]) -> None:
 
 # The two role keys whose TOML spelling is a scalar rather than an array. Named
 # explicitly rather than inferred from `Config.__dataclass_fields__` defaults:
-# the union (livespec-dev-tooling-8o8e.1) made those defaults `LegacyAmbiguousEmpty`
-# for every key, so a `default is None` test silently emitted `[]` for the scalars
-# and produced a block that no longer parses.
+# the union (livespec-dev-tooling-8o8e.1) made every default a declared-absent
+# variant, so a `default is None` test silently emitted `[]` for the scalars and
+# produced a block that no longer parses.
 _SCALAR_SPELLED_ROLE_KEYS = frozenset({"dataclasses_tree", "neutral_hook_body_path"})
 
 
 def _all_required_empty_block() -> str:
+    """Every required key declared the way a CONFORMANT consumer declares it.
+
+    The two halves are spelled differently because Phase 4 of
+    `livespec-dev-tooling-8o8e.1` made them different: a bare `[]` / `""` on a
+    UNION key is now a hard load error, while for every CLEAN key it remains
+    legitimate — emptiness there removes exemptions rather than files
+    (`SPECIFICATION` v033 §"Clean role keys retain `[]`"). Spelling both halves
+    alike would make this fixture unloadable AND teach the wrong rule.
+    """
     lines = ["[tool.livespec_dev_tooling]"]
     for key in sorted(REQUIRED_ROLE_KEYS):
+        if key in UNION_ROLE_KEYS:
+            lines.append(f'{key} = {{ not_applicable = "fixture consumer has no {key}" }}')
+            continue
         value = '""' if key in _SCALAR_SPELLED_ROLE_KEYS else "[]"
         lines.append(f"{key} = {value}")
     return "\n".join(lines) + "\n"

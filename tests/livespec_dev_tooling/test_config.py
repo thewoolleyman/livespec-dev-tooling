@@ -30,7 +30,6 @@ from livespec_dev_tooling.config import (
     DeclaredTrees,
     GitLsFilesError,
     GitToplevelError,
-    LegacyAmbiguousEmpty,
     MirrorPairing,
     NotApplicable,
     SupersededBy,
@@ -153,34 +152,41 @@ def test_present_block_omitting_keys_yields_flat_baseline(*, tmp_path: Path) -> 
     assert role_path(role=config.neutral_hook_body_path) is None
 
 
-def test_dataclasses_tree_empty_string_is_declared_none(*, tmp_path: Path) -> None:
-    """`dataclasses_tree = ""` still parses and still resolves to no path.
+def test_dataclasses_tree_declared_absent_resolves_to_no_path(*, tmp_path: Path) -> None:
+    """A declared-absent `dataclasses_tree` parses and resolves to no path.
 
-    Phase 1 of the role-key union accepts the legacy spelling unchanged — it is
-    the ACCEPTING loader, and rejecting here would redden every repo before any
-    of them could migrate. What changes is that the value is now a distinct
-    `LegacyAmbiguousEmpty` rather than a bare `None`, so consumers can announce
-    it (livespec-dev-tooling-8o8e.1).
+    This test used to assert the same property of the legacy `""` spelling.
+    Phase 4 of `livespec-dev-tooling-8o8e.1` made that spelling a hard load
+    error (covered parametrically in `test_config_role_key_rejection.py`), so the
+    property is retargeted onto the spelling that replaced it rather than
+    deleted: "declared absent still resolves to no path" is what the consuming
+    checks depend on, and it must keep holding across the change of spelling.
     """
     _write_pyproject(
         repo_root=tmp_path,
-        body='[tool.livespec_dev_tooling]\ndataclasses_tree = ""\n',
+        body=(
+            "[tool.livespec_dev_tooling]\n"
+            'dataclasses_tree = { not_applicable = "flat layout; no schema tree" }\n'
+        ),
     )
     config = load_config(repo_root=tmp_path)
     assert role_path(role=config.dataclasses_tree) is None
-    assert isinstance(config.dataclasses_tree, LegacyAmbiguousEmpty)
+    assert isinstance(config.dataclasses_tree, NotApplicable)
     assert "dataclasses_tree" in config.declared_keys
 
 
-def test_neutral_hook_body_path_empty_string_is_declared_none(*, tmp_path: Path) -> None:
-    """`neutral_hook_body_path = ""` declares the null/no-op role key."""
+def test_neutral_hook_body_path_declared_absent_is_the_no_op_spelling(*, tmp_path: Path) -> None:
+    """A declared-absent `neutral_hook_body_path` is the null/no-op role key."""
     _write_pyproject(
         repo_root=tmp_path,
-        body='[tool.livespec_dev_tooling]\nneutral_hook_body_path = ""\n',
+        body=(
+            "[tool.livespec_dev_tooling]\n"
+            'neutral_hook_body_path = { not_applicable = "not a Driver" }\n'
+        ),
     )
     config = load_config(repo_root=tmp_path)
     assert role_path(role=config.neutral_hook_body_path) is None
-    assert isinstance(config.neutral_hook_body_path, LegacyAmbiguousEmpty)
+    assert isinstance(config.neutral_hook_body_path, NotApplicable)
     assert "neutral_hook_body_path" in config.declared_keys
 
 

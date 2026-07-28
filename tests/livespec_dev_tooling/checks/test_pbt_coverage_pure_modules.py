@@ -214,7 +214,7 @@ def test_pbt_coverage_falls_back_when_no_mirror_pairing_matches(
 
 def test_pbt_coverage_noops_without_configured_pure_trees(*, tmp_path: Path) -> None:
     (tmp_path / "pyproject.toml").write_text(
-        "[tool.livespec_dev_tooling]\npure_trees = []\n",
+        '[tool.livespec_dev_tooling]\npure_trees = { not_applicable = "consumer has no pure tree" }\n',
         encoding="utf-8",
     )
 

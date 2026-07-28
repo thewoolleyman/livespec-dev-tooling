@@ -40,18 +40,24 @@ fixture value (three populated dirs) would produce no WARN and fail the test.
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import pytest
+import structlog
 
-from livespec_dev_tooling.checks import claude_md_coverage, public_api_result_typed
-from livespec_dev_tooling.config import ConfigParseError, load_config
+from livespec_dev_tooling.checks import (
+    _role_key_gate,
+    claude_md_coverage,
+    public_api_result_typed,
+)
+from livespec_dev_tooling.config import Config, ConfigParseError, load_config
+
+# The structured field every declared-absent announcement carries, naming the
+# variant the consumer declared.
+_SPELLING_FIELD = "role_key_spelling"
 
 __all__: list[str] = []
-
-
-_LEGACY_MARKER = "role_key_spelling"
-_LEGACY_VALUE = "legacy-ambiguous-empty"
 
 
 def _write_config(*, tmp_path: Path, body: str) -> None:
@@ -74,46 +80,43 @@ def _records(*, captured: str) -> list[dict[str, object]]:
     return [json.loads(line) for line in captured.splitlines()]
 
 
-def test_legacy_empty_target_dirs_is_announced_at_warn(
-    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+def test_legacy_empty_target_dirs_is_now_rejected_at_load(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A bare `target_dirs = []` still passes, but STOPS BEING SILENT.
+    """Phase 4: a bare `target_dirs = []` no longer warns — it FAILS THE LOAD.
 
-    This is the observability half of Phase 1 and the reason the phase exists.
-    `claude_md_coverage` iterates `config.target_dirs` with no gate at all, so a
-    declared-empty value walks zero directories and exits 0 emitting NOTHING —
-    strictly worse than `pure_trees`, which at least logs a sanctioned-opt-out
-    line. Five of eight fleet repos are in exactly that state.
+    This test previously asserted the Phase-1 behavior: still exit 0, but stop
+    being silent. That WARN existed for one purpose — to make a previously
+    INVISIBLE state countable before anyone migrated — and it has served it. All
+    eight Python-bearing consumers migrated and measure zero, so the accepting
+    loader's job is done; keeping it would leave the next author free to
+    re-create the defect it was built to expose.
 
-    Phase 1 must not change the OUTCOME (still exit 0 — no repo goes red) but
-    must make the state OBSERVABLE: a WARN carrying the key, the repo, and a
-    machine-greppable marker, so the fleet-wide count of un-migrated keys can be
-    taken before Phase 2 migrates anyone.
+    `claude_md_coverage` is the sharpest case and the reason the WARN was worth
+    building: it iterates `config.target_dirs` with NO gate at all, so a
+    declared-empty value walked zero directories and exited 0 emitting NOTHING —
+    strictly worse than `pure_trees`, which at least logged. Five of eight fleet
+    repos were in that state.
+
+    What is asserted is the LOADER guarantee, because that is what Phase 4
+    delivers: the config does not load, and the error names the key plus every
+    legal spelling. The check's `main()` does NOT yet wrap it in a structured
+    diagnostic — 30 of 31 checks reading `load_config` lack that catch, which
+    Phase 4 makes reachable for the first time and which is filed separately.
+    The exception is loud and non-zero either way; it is the RENDERING that is
+    owed, not the rejection.
     """
     _write_config(tmp_path=tmp_path, body="target_dirs = []\n")
     monkeypatch.chdir(tmp_path)
 
-    code = claude_md_coverage.main()
+    with pytest.raises(ConfigParseError) as excinfo:
+        _ = claude_md_coverage.main()
 
-    captured = capsys.readouterr()
-    assert code == 0, (
-        f"Phase 1 must REJECT NOTHING — a legacy-empty `target_dirs` still passes; "
-        f"got exit={code} output={captured.out + captured.err!r}"
-    )
-    records = _records(captured=captured.out + captured.err)
-    legacy = [r for r in records if r.get(_LEGACY_MARKER) == _LEGACY_VALUE]
-    assert legacy, (
-        f"a legacy-empty `target_dirs` must announce itself with "
-        f"`{_LEGACY_MARKER}={_LEGACY_VALUE}`; got records={records!r}"
-    )
-    record = legacy[0]
-    assert (
-        record.get("level") == "warning"
-    ), f"the legacy-empty announcement must be WARN, not info; got {record!r}"
-    assert (
-        record.get("role") == "target_dirs"
-    ), f"the announcement must name the ROLE KEY; got {record!r}"
-    assert record.get("repo"), f"the announcement must name the REPO; got {record!r}"
+    message = str(excinfo.value)
+    assert "target_dirs" in message
+    # A rejection that does not say what IS legal only relocates the confusion.
+    for spelling in ("not_applicable", "superseded_by", "unarmed_until", "convention_not_adopted"):
+        assert spelling in message, spelling
 
 
 def test_not_applicable_variant_parses_and_carries_its_reason(
@@ -139,7 +142,7 @@ def test_not_applicable_variant_parses_and_carries_its_reason(
         f"got exit={code} output={captured.out + captured.err!r}"
     )
     records = _records(captured=captured.out + captured.err)
-    declared = [r for r in records if r.get(_LEGACY_MARKER) == "not_applicable"]
+    declared = [r for r in records if r.get(_SPELLING_FIELD) == "not_applicable"]
     assert declared, f"the `not_applicable` variant must be reported by name; got {records!r}"
     assert "flat-layout library has no pure-module subtree" in json.dumps(declared[0]), (
         f"the parsed REASON must reach the log — that is the point of moving it out "
@@ -171,7 +174,7 @@ def test_unarmed_until_variant_is_warn_and_names_its_ledger_id(
         f"got exit={code} output={captured.out + captured.err!r}"
     )
     records = _records(captured=captured.out + captured.err)
-    unarmed = [r for r in records if r.get(_LEGACY_MARKER) == "unarmed_until"]
+    unarmed = [r for r in records if r.get(_SPELLING_FIELD) == "unarmed_until"]
     assert unarmed, f"the `unarmed_until` variant must be reported by name; got {records!r}"
     assert (
         unarmed[0].get("level") == "warning"
@@ -243,3 +246,40 @@ def test_unknown_variant_name_is_rejected_and_names_the_blessed_spellings(
             f"the diagnostic must name every blessed spelling so the author can fix the "
             f"typo; `{spelling}` missing from {message!r}"
         )
+
+
+def test_undeclared_baseline_announces_at_error_when_reached_off_the_gate(
+    *, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The defensive arm: a consumer reading a role off a bare `Config()` directly.
+
+    `role_absence_exit_code` tests `declared_keys` FIRST and hard-errors there,
+    so this arm is unreachable through the gate — which is exactly how the
+    baseline's double meaning stayed invisible under `LegacyAmbiguousEmpty`. It
+    is exercised deliberately rather than left uncovered: an unexercised arm is
+    an arm nobody has read, and this one exists to make sure the honest state
+    announces honestly if it is ever reached.
+
+    ERROR, not WARN: an undeclared key is a configuration defect, never an
+    opt-out, and it must not be able to read as one.
+    """
+    structlog.configure(
+        processors=[
+            structlog.processors.add_log_level,
+            structlog.processors.JSONRenderer(),
+        ],
+        logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
+    )
+    log = structlog.get_logger("undeclared_baseline_probe")
+
+    trees = _role_key_gate.resolve_role_trees(
+        role=Config().pure_trees, key="pure_trees", log=log, check_id="probe"
+    )
+
+    assert trees == ()
+    records = _records(captured=capsys.readouterr().err)
+    announcement = [r for r in records if r.get("role") == "pure_trees"]
+    assert announcement, records
+    record = announcement[0]
+    assert record.get("level") == "error", record
+    assert record.get(_SPELLING_FIELD) == "undeclared", record
