@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from _protection_fixtures import aligned_merge_settings_payload, aligned_protection_payload
 
-from livespec_dev_tooling.config import REQUIRED_ROLE_KEYS, Config
+from livespec_dev_tooling.config import REQUIRED_ROLE_KEYS, UNION_ROLE_KEYS, Config
 from livespec_dev_tooling.fleet import fleet_conformance
 from livespec_dev_tooling.fleet._context import FleetContext, GhResult, GhRunner
 from livespec_dev_tooling.fleet._contract_rows import CENTRAL_APP_VANTAGE, CENTRAL_VANTAGE
@@ -73,10 +73,25 @@ _AUTOMATED_VANTAGES = frozenset({CENTRAL_VANTAGE, CENTRAL_APP_VANTAGE})
 _CI_YML = "jobs:\n  check:\n    strategy:\n      matrix:\n        target:\n          - check-a\n"
 
 
-def _all_required_empty_block() -> str:
+def _all_required_role_keys_block() -> str:
+    """Every required role key declared the way a CONFORMANT member declares it.
+
+    The two halves are deliberately spelled differently, because the schema
+    treats them differently (livespec-dev-tooling-8o8e.1). For a UNION key the
+    declared value IS a consuming check's scan universe, so `[]` made that check
+    scan nothing and exit 0 — the ambiguity the `role-key-spellings` row now
+    rejects, which is why this fixture must carry a blessed declared-absent
+    spelling instead. For every OTHER required key emptiness makes the consuming
+    check STRICTER rather than blinder, so `[]` / `""` stays legitimate and is
+    kept here on purpose: rendering both halves the same way would teach the
+    next reader of this fixture a rule that is wrong for five of the keys.
+    """
     lines = ["[tool.livespec_dev_tooling]"]
     fields = Config.__dataclass_fields__
     for key in sorted(REQUIRED_ROLE_KEYS):
+        if key in UNION_ROLE_KEYS:
+            lines.append(f'{key} = {{ not_applicable = "fixture member has no {key}" }}')
+            continue
         default = fields[key].default
         value = '""' if default is None else "[]"
         lines.append(f"{key} = {value}")
@@ -85,7 +100,7 @@ def _all_required_empty_block() -> str:
 
 _PYPROJECT = (
     '[tool.uv.sources]\nlivespec-dev-tooling = { git = "x", tag = "v1.0.0" }\n\n'
-    + _all_required_empty_block()
+    + _all_required_role_keys_block()
 )
 # The fixture members are BEADS-BACKED with a consistent connection pair,
 # like every live fleet member: blind rows are error severity, so a canned
