@@ -16,6 +16,7 @@ import structlog  # noqa: E402  -- vendor-path-aware import after sys.path inser
 from livespec_dev_tooling.canonical_checks import canonical_check_slugs  # noqa: E402
 from livespec_dev_tooling.config import (  # noqa: E402
     REQUIRED_ROLE_KEYS,
+    UNION_ROLE_KEYS,
     ConfigParseError,
     load_config,
 )
@@ -37,9 +38,22 @@ _CHECK_RECIPE_HEADER = re.compile(r"^check:\s*$", re.MULTILINE)
 _TARGETS_ARRAY_START = re.compile(r"^\s*targets=\(\s*$", re.MULTILINE)
 _TARGETS_ARRAY_END = re.compile(r"^\s*\)\s*$")
 _LOAD_CONFIG_MODULE = "livespec_dev_tooling.config"
+# The remediation is read at the moment someone decides what to write, so it
+# names every legal spelling inline rather than referring to one — the standard
+# `config._spellings_hint` already sets. It MUST stay correct for BOTH key
+# groups: `REQUIRED_ROLE_KEYS` spans the UNION keys, where a bare `[]` / `""` is
+# the retired ambiguous spelling, AND the CLEAN keys, where it remains
+# legitimate because emptiness there removes exemptions rather than files
+# (SPECIFICATION v033 §"Clean role keys retain `[]`"). A blanket rewrite in
+# either direction would be a new defect.
 MISSING_KEYS_EVENT = (
-    "required role keys missing -- declare the real value, or declare it explicitly empty "
-    "with a comment giving the reason"
+    "required role keys missing -- declare the real value. For a UNION role key "
+    f"({', '.join(sorted(UNION_ROLE_KEYS))}) the only other legal spelling is exactly one "
+    "of the four declared-absent inline tables, each carrying a non-empty payload: "
+    '{ not_applicable = "<reason>" }, { superseded_by = "<reason>" }, '
+    '{ unarmed_until = "<ledger-id>" }, { convention_not_adopted = "<reason>" }. '
+    'For every OTHER required key a bare [] (or "" for a scalar key) remains legitimate, '
+    "because emptiness there makes the consuming check stricter rather than blinder"
 )
 
 

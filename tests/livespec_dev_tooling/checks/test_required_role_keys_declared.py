@@ -9,7 +9,7 @@ from types import ModuleType
 
 import pytest
 
-from livespec_dev_tooling.config import REQUIRED_ROLE_KEYS
+from livespec_dev_tooling.config import REQUIRED_ROLE_KEYS, UNION_ROLE_KEYS
 
 __all__: list[str] = []
 
@@ -115,3 +115,41 @@ def test_layout_independent_wiring_is_named_exclusion(
         and "no layout-dependent checks wired" in str(record.get("reason"))
         for record in records
     )
+
+
+def test_missing_keys_event_names_every_legal_spelling_for_both_key_groups() -> None:
+    """The remediation is read at the moment someone decides what to write.
+
+    That is why this outranks the config-comment instances of the same
+    staleness: `MISSING_KEYS_EVENT` is the text emitted when the check fires,
+    and after `livespec-dev-tooling-8o8e.1` Phase 4 a reader who follows
+    "declare it explicitly empty" on a UNION key lands in a hard
+    `ConfigParseError`. A diagnostic that routes its reader into the next
+    failure is worse than no diagnostic.
+
+    The precision that must survive: `[]` is retired for the five UNION keys
+    ONLY. For the five CLEAN keys it stays LEGITIMATE, because those are
+    exemption/severity predicates whose consuming checks derive the universe
+    from `resolve_check_universe()` — emptiness there removes exemptions, not
+    files. `REQUIRED_ROLE_KEYS` spans BOTH groups, so a blanket rewrite in
+    either direction would be a new defect, and this test pins both halves.
+    """
+    module = _load_check()
+    event: str = module.MISSING_KEYS_EVENT
+
+    # The retired instruction must be gone.
+    assert "declare it explicitly empty" not in event
+
+    # Every blessed declared-absent spelling is named INLINE, to the standard
+    # `config._spellings_hint` already sets: a rejection that does not say what
+    # IS legal only relocates the confusion.
+    for variant in ("not_applicable", "superseded_by", "unarmed_until", "convention_not_adopted"):
+        assert variant in event, variant
+
+    # The union keys are named, so a reader can tell which half they are in
+    # without consulting the spec.
+    for key in UNION_ROLE_KEYS:
+        assert key in event, key
+
+    # The CLEAN-key carve-out survives: a bare `[]` is still correct there.
+    assert "remains legitimate" in event

@@ -405,7 +405,14 @@ class Config:
     `declared_keys` records which keys were present in the consumer's
     `[tool.livespec_dev_tooling]` block. Value emptiness and declared-ness
     are separate signals: omitted role keys are configuration errors for
-    role-gated checks, while declared-empty role keys are sanctioned opt-outs.
+    role-gated checks, while a DECLARED-ABSENT role key is the sanctioned
+    opt-out. For a key in `UNION_ROLE_KEYS` that spelling is one of the four
+    blessed inline tables carrying a non-empty payload, never a bare `[]` /
+    `""` — that being the retired ambiguous spelling this union exists to
+    remove. For every other required key a bare `[]` remains legitimate,
+    because those keys scope an exemption or a severity rather than a scan
+    universe, so emptiness makes their consuming check stricter rather than
+    blinder (SPECIFICATION v033 §"Clean role keys retain `[]`").
     """
 
     declared_keys: frozenset[str] = frozenset()
