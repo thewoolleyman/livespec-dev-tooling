@@ -44,7 +44,10 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
-from livespec_dev_tooling.config import load_config  # noqa: E402
+from livespec_dev_tooling.config import (  # noqa: E402
+    load_config,
+    role_path,
+)
 
 __all__: list[str] = [
     "CANONICAL_NO_SHADOW_LEDGER_BODY",
@@ -300,13 +303,14 @@ def install_neutral_hook_body(*, cwd: Path, log: structlog.stdlib.BoundLogger) -
     Returns 0 on success.
     """
     config = load_config(repo_root=cwd)
-    if config.neutral_hook_body_path is None:
+    neutral_hook_body_path = role_path(role=config.neutral_hook_body_path)
+    if neutral_hook_body_path is None:
         log.info(
             "role key absent — installer no-ops",
             role="neutral_hook_body_path",
         )
         return 0
-    target = cwd / config.neutral_hook_body_path
+    target = cwd / neutral_hook_body_path
     target.parent.mkdir(parents=True, exist_ok=True)
     _ = target.write_text(CANONICAL_NO_SHADOW_LEDGER_BODY, encoding="utf-8")
     log.info(

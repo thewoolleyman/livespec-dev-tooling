@@ -50,7 +50,7 @@ def test_no_shadow_ledger_body_identical_bug_guard_after_gate(
 ) -> None:
     """If the gate is bypassed, a declared-empty hook path remains a bug."""
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(_check, "role_key_gate_exit_code", lambda **_kwargs: None)
+    monkeypatch.setattr(_check, "role_absence_exit_code", lambda **_kwargs: None)
     monkeypatch.setattr(
         _check,
         "load_config",

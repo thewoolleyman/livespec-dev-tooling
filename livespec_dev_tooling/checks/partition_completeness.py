@@ -41,6 +41,9 @@ from livespec_dev_tooling.config import (  # noqa: E402
     Config,
     load_config,
     resolve_check_universe,
+    role_path,
+    role_prefixes,
+    role_trees,
 )
 
 __all__: list[str] = []
@@ -69,9 +72,12 @@ def _specific_claims(*, rel: Path, config: Config) -> tuple[_Claim, ...]:
     claims.extend(_tree_claims(rel=rel, role="commands_trees", trees=config.commands_trees))
     if rel in config.supervisor_entry_files:
         claims.append(_Claim(role="supervisor_entry_files", scope=rel.as_posix()))
-    if config.dataclasses_tree is not None and rel.is_relative_to(config.dataclasses_tree):
-        claims.append(_Claim(role="dataclasses_tree", scope=config.dataclasses_tree.as_posix()))
-    claims.extend(_tree_claims(rel=rel, role="pure_trees", trees=config.pure_trees))
+    dataclasses_tree = role_path(role=config.dataclasses_tree)
+    if dataclasses_tree is not None and rel.is_relative_to(dataclasses_tree):
+        claims.append(_Claim(role="dataclasses_tree", scope=dataclasses_tree.as_posix()))
+    claims.extend(
+        _tree_claims(rel=rel, role="pure_trees", trees=role_trees(role=config.pure_trees))
+    )
     return tuple(claims)
 
 
@@ -79,12 +85,14 @@ def _broad_claims(*, rel: Path, config: Config) -> tuple[_Claim, ...]:
     claims: list[_Claim] = []
     claims.extend(_tree_claims(rel=rel, role="source_trees", trees=config.source_trees))
     claims.extend(_tree_claims(rel=rel, role="covered_trees", trees=config.covered_trees))
-    claims.extend(_tree_claims(rel=rel, role="target_dirs", trees=config.target_dirs))
+    claims.extend(
+        _tree_claims(rel=rel, role="target_dirs", trees=role_trees(role=config.target_dirs))
+    )
     for pairing in config.mirror_pairings:
         if rel.is_relative_to(pairing.source_tree):
             claims.append(_Claim(role="mirror_pairings", scope=pairing.source_tree.as_posix()))
     rel_posix = rel.as_posix()
-    for prefix in config.source_tree_prefixes:
+    for prefix in role_prefixes(role=config.source_tree_prefixes):
         if rel_posix.startswith(prefix):
             claims.append(_Claim(role="source_tree_prefixes", scope=prefix))
     return tuple(claims)

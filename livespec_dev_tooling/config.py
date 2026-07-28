@@ -9,9 +9,15 @@ the 3.10 floor).
 
 The typed `Config` carries both the parsed role-key values and the
 set of keys explicitly declared in the consumer block. That declared-ness
-is semantically meaningful: a scalar role key can be declared empty (for
-example `dataclasses_tree = ""`) and parse to `None`, which must remain
-distinguishable from an omitted key at the check layer.
+is semantically meaningful, and it is SEPARATE from the value: an OMITTED
+role key is a configuration error, while a DECLARED one may legitimately
+say the role does not apply here.
+
+Five role keys carry that "declared, but absent" state through a
+discriminated union rather than through an empty value
+(`livespec-dev-tooling-8o8e.1`). See the union block below for why: `[]`
+and `""` meant two incompatible things at once, and the shared gate read
+either as a sanctioned opt-out.
 
 Alongside the consumer-config loader, this module also derives the
 git-index first-party `.py` universe (`iter_first_party_py_files`) — the
@@ -39,7 +45,7 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from fnmatch import fnmatch
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, NoReturn, cast
 
 # stdlib `tomllib` lands in 3.11; the repo floor is 3.10 (per
 # `SPECIFICATION/constraints.md` §"Runtime"), so fall back to the
@@ -57,12 +63,27 @@ else:
 
 __all__: list[str] = [
     "BIN_WRAPPER_TREE",
+    "BLESSED_ROLE_SPELLINGS",
     "REQUIRED_ROLE_KEYS",
+    "UNION_ROLE_KEYS",
     "Config",
     "ConfigParseError",
+    "ConventionNotAdopted",
+    "DeclaredPath",
+    "DeclaredPrefixes",
+    "DeclaredTrees",
     "GitLsFilesError",
     "GitToplevelError",
+    "LegacyAmbiguousEmpty",
     "MirrorPairing",
+    "NotApplicable",
+    "PrefixRole",
+    "RoleAbsence",
+    "ScalarRole",
+    "SupersededBy",
+    "TreeRole",
+    "UnarmedUntil",
+    "assert_never",
     "derive_source_prefixes",
     "filter_first_party_py",
     "has_first_party_py",
@@ -82,6 +103,10 @@ __all__: list[str] = [
     "load_subprocess_spawn_allowlist",
     "resolve_check_universe",
     "resolve_repo_root",
+    "role_absence",
+    "role_path",
+    "role_prefixes",
+    "role_trees",
 ]
 
 
@@ -110,6 +135,44 @@ REQUIRED_ROLE_KEYS = frozenset(
 _PATH_TUPLE_ROLE_KEYS = REQUIRED_ROLE_KEYS - frozenset(
     {"source_tree_prefixes", "dataclasses_tree", "neutral_hook_body_path"}
 )
+
+# The FIVE role keys whose declared-empty spelling was measured to carry two
+# incompatible meanings, and which therefore parse into the discriminated union
+# (`livespec-dev-tooling-8o8e.1`). `pure_trees`, `source_tree_prefixes` and
+# `target_dirs` were measured two-meaning in the LIVE fleet configs;
+# `dataclasses_tree` and `neutral_hook_body_path` were proven two-meaning-capable
+# in a sandbox (a NewType-violating dataclass and a drifted hook body both survive
+# behind their empty spelling).
+#
+# The other FIVE required role keys — `source_trees`, `io_trees`, `commands_trees`,
+# `supervisor_entry_files`, `covered_trees` — are deliberately NOT here. Measured by
+# execution, they are exemption/severity PREDICATES: their consuming checks derive
+# the file universe from `resolve_check_universe()` and read the key only to decide
+# what is exempt, so an empty value makes those checks STRICTER rather than blinder.
+# Routing them through the union would be ceremony with no defect behind it.
+UNION_ROLE_KEYS = frozenset(
+    {
+        "pure_trees",
+        "target_dirs",
+        "source_tree_prefixes",
+        "dataclasses_tree",
+        "neutral_hook_body_path",
+    }
+)
+
+_UNION_TREE_ROLE_KEYS = frozenset({"pure_trees", "target_dirs"})
+_PLAIN_PATH_TUPLE_ROLE_KEYS = _PATH_TUPLE_ROLE_KEYS - _UNION_TREE_ROLE_KEYS
+
+# The four blessed declared-absent spellings, in the order every diagnostic lists
+# them. `unarmed_until` takes a LEDGER ID rather than free prose; the others take a
+# reason string.
+BLESSED_ROLE_SPELLINGS: tuple[str, ...] = (
+    "not_applicable",
+    "superseded_by",
+    "unarmed_until",
+    "convention_not_adopted",
+)
+_LEDGER_ID_SPELLING = "unarmed_until"
 
 
 class ConfigParseError(Exception):
@@ -143,6 +206,190 @@ class GitToplevelError(Exception):
     """
 
 
+def assert_never(value: NoReturn) -> NoReturn:
+    """Static exhaustiveness marker for `match` over a closed union.
+
+    `typing.assert_never` lands in 3.11 and this package's floor is 3.10.16
+    (`requires-python`), so the shim is defined here rather than imported. The
+    `NoReturn` parameter annotation is what gives pyright the same narrowing
+    behaviour as the stdlib function: once every variant has its own `case`, the
+    wildcard subject narrows to `Never` and the call type-checks; the moment a
+    variant is added and left unhandled, the subject no longer narrows and EVERY
+    consumer fails the type gate. That compile-time break is the enforcement — the
+    raise below is only the unreachable runtime backstop.
+    """
+    # Unreachable by construction: the compile-time narrowing IS the enforcement,
+    # and this body exists only so the call has a runtime shape. Coverage-exempt
+    # for the same reason the 3.11 `tomllib` branch above is.
+    msg = f"expected code to be unreachable, but got: {value!r}"  # pragma: no cover
+    raise AssertionError(msg)  # pragma: no cover
+
+
+# ---------------------------------------------------------------------------
+# The role-key discriminated union (`livespec-dev-tooling-8o8e.1`).
+#
+# A role key's `[]` / `""` spelling carried TWO incompatible meanings — "the
+# concept does not apply to this repo" and "the concept applies and is switched
+# off" — and the shared gate read either as a sanctioned opt-out. That silently
+# disarmed `check-public-api-result-typed` in all nine fleet repos,
+# `check-claude-md-coverage` in five, and the commit-time TDD pairing gate in
+# three.
+#
+# The remedy is a type, not a rule: each meaning gets its OWN spelling parsed into
+# its OWN Python type, and each carries its reason in the PARSED VALUE rather than
+# in a TOML comment no checker can read. Two of eight repos gave no reason at all
+# for their empty declarations and nothing noticed; a third wrote a careful reason
+# that still failed to mention the gate it was disarming.
+#
+# STATE THE GUARANTEE PRECISELY. TOML has no sum types and nothing prevents a
+# person TYPING `[]` into the file. What this buys is exactly two things: after
+# parsing the ambiguity is UNREPRESENTABLE in the domain model (the populated case
+# is non-empty by construction, and every other case is a named variant carrying a
+# reason), and — from Phase 4 — ambiguous input FAILS LOUD AT LOAD instead of
+# succeeding silently as scan-nothing. It is NOT "impossible to express".
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, kw_only=True)
+class NotApplicable:
+    """(A) The concept does not exist for this repo. `{ not_applicable = "<reason>" }`."""
+
+    reason: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class SupersededBy:
+    """(C) The concept applies and IS satisfied, by another mechanism.
+
+    `{ superseded_by = "<reason>" }` — e.g. a repo whose coverage universe is
+    derived from the git index rather than from a declared tree. Materially
+    different from `not_applicable`: under (A) there is nothing to check; under
+    (C) it IS being checked, elsewhere.
+    """
+
+    reason: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class UnarmedUntil:
+    """(B) The concept applies and is deliberately switched off pending named work.
+
+    `{ unarmed_until = "<ledger-id>" }` — the ONLY variant with an expiry, which is
+    why it takes a ledger id rather than prose. The loader validates SHAPE only:
+    `load_config` runs on every check invocation and must stay free of ledger I/O,
+    so whether the id still names an OPEN item is a separate check's job.
+    """
+
+    ledger_id: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class ConventionNotAdopted:
+    """(D) The convention exists, is understood, and this repo declines it.
+
+    `{ convention_not_adopted = "<reason>" }` — maintainer-blessed 2026-07-28. It
+    was blessed only because the coupling break landed first: before that, a repo
+    declining the tests-mirror convention ALSO switched off the commit-time TDD
+    pairing gate it never named. A declaration must never disarm a check outside
+    the one it speaks about.
+    """
+
+    reason: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class LegacyAmbiguousEmpty:
+    """The transitional `[]` / `""` spelling — accepted in Phase 1, rejected in Phase 4.
+
+    Carries its own provenance (`key`, `repo`) so the WARN a consumer emits can name
+    both without every call site threading them through. This variant exists purely
+    so the previously-INVISIBLE state becomes greppable and countable BEFORE any repo
+    migrates: it behaves exactly as today (scan nothing, exit 0) and reddens no repo.
+    """
+
+    key: str
+    repo: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class DeclaredTrees:
+    """A NON-EMPTY tree tuple. Constructed at exactly one site — the parser."""
+
+    trees: tuple[Path, ...]
+
+
+@dataclass(frozen=True, kw_only=True)
+class DeclaredPrefixes:
+    """A NON-EMPTY source-prefix tuple. Constructed at exactly one site — the parser."""
+
+    prefixes: tuple[str, ...]
+
+
+@dataclass(frozen=True, kw_only=True)
+class DeclaredPath:
+    """A declared single path. Constructed at exactly one site — the parser."""
+
+    path: Path
+
+
+RoleAbsence = (
+    NotApplicable | SupersededBy | UnarmedUntil | ConventionNotAdopted | LegacyAmbiguousEmpty
+)
+TreeRole = DeclaredTrees | RoleAbsence
+PrefixRole = DeclaredPrefixes | RoleAbsence
+ScalarRole = DeclaredPath | RoleAbsence
+
+
+def role_absence(*, role: TreeRole | PrefixRole | ScalarRole) -> RoleAbsence | None:
+    """Return the declared-absent variant, or `None` when the role is populated.
+
+    THE one exhaustive match over the union. Every other accessor and every
+    consuming check routes through it, so adding a variant breaks the type gate
+    here — once — rather than silently defaulting to "scan nothing" at fourteen
+    call sites that each forgot to handle it. That single break is the whole
+    point of `assert_never`: a new variant cannot be quietly ignored.
+    """
+    match role:
+        case DeclaredTrees() | DeclaredPrefixes() | DeclaredPath():
+            return None
+        case (
+            NotApplicable()
+            | SupersededBy()
+            | UnarmedUntil()
+            | ConventionNotAdopted()
+            | LegacyAmbiguousEmpty()
+        ):
+            return role
+        case _:
+            assert_never(role)
+
+
+def role_trees(*, role: TreeRole) -> tuple[Path, ...]:
+    """The declared trees, or `()` for any declared-absent variant."""
+    return role.trees if isinstance(role, DeclaredTrees) else ()
+
+
+def role_prefixes(*, role: PrefixRole) -> tuple[str, ...]:
+    """The declared source prefixes, or `()` for any declared-absent variant."""
+    return role.prefixes if isinstance(role, DeclaredPrefixes) else ()
+
+
+def role_path(*, role: ScalarRole) -> Path | None:
+    """The declared path, or `None` for any declared-absent variant."""
+    return role.path if isinstance(role, DeclaredPath) else None
+
+
+# The baseline values for the five union role keys. Bound as module constants
+# rather than inline in the field defaults because a dataclass default may not be
+# a CALL (ruff RUF009) — and because these are frozen, sharing one instance per
+# key across every bare `Config()` is safe.
+_BASELINE_PURE_TREES = LegacyAmbiguousEmpty(key="pure_trees", repo="")
+_BASELINE_TARGET_DIRS = LegacyAmbiguousEmpty(key="target_dirs", repo="")
+_BASELINE_SOURCE_TREE_PREFIXES = LegacyAmbiguousEmpty(key="source_tree_prefixes", repo="")
+_BASELINE_DATACLASSES_TREE = LegacyAmbiguousEmpty(key="dataclasses_tree", repo="")
+_BASELINE_NEUTRAL_HOOK_BODY_PATH = LegacyAmbiguousEmpty(key="neutral_hook_body_path", repo="")
+
+
 @dataclass(frozen=True, kw_only=True)
 class MirrorPairing:
     """One source-tree to test-tree mirror, consumed by check_coverage_incremental."""
@@ -166,14 +413,18 @@ class Config:
     io_trees: tuple[Path, ...] = ()
     commands_trees: tuple[Path, ...] = ()
     supervisor_entry_files: tuple[Path, ...] = ()
-    dataclasses_tree: Path | None = None
-    pure_trees: tuple[Path, ...] = ()
     covered_trees: tuple[Path, ...] = ()
-    source_tree_prefixes: tuple[str, ...] = ()
     tests_tree_prefix: str = "tests/"
-    target_dirs: tuple[Path, ...] = ()
     mirror_pairings: tuple[MirrorPairing, ...] = ()
-    neutral_hook_body_path: str | None = None
+    # The five union-typed role keys. The baseline default is the legacy spelling
+    # rather than a sixth "undeclared" variant: key OMISSION is already a hard
+    # error via `declared_keys` in the shared gate, and that check runs first, so
+    # a bare `Config()` behaves exactly as it does today.
+    pure_trees: TreeRole = _BASELINE_PURE_TREES
+    target_dirs: TreeRole = _BASELINE_TARGET_DIRS
+    source_tree_prefixes: PrefixRole = _BASELINE_SOURCE_TREE_PREFIXES
+    dataclasses_tree: ScalarRole = _BASELINE_DATACLASSES_TREE
+    neutral_hook_body_path: ScalarRole = _BASELINE_NEUTRAL_HOOK_BODY_PATH
 
 
 def _p(*parts: str) -> Path:
@@ -219,17 +470,6 @@ def _as_path(*, value: object, key: str) -> Path:
     return Path(value)
 
 
-def _as_optional_path(*, value: object, key: str) -> Path | None:
-    # TOML has no null literal, so scalar role keys use the empty string as
-    # the declared-none spelling while preserving key omission as None.
-    if not isinstance(value, str):
-        msg = f"`{key}` must be a string or omitted"
-        raise ConfigParseError(msg)
-    if value == "":
-        return None
-    return Path(value)
-
-
 def _as_str(*, value: object, key: str) -> str:
     if not isinstance(value, str):
         msg = f"`{key}` must be a string"
@@ -249,6 +489,75 @@ def _as_bool(*, value: object, key: str) -> bool:
         msg = f"`{key}` must be a boolean"
         raise ConfigParseError(msg)
     return value
+
+
+def _spellings_hint(*, key: str) -> str:
+    """The remediation clause every role-key diagnostic ends with.
+
+    A rejection that does not say what IS legal only relocates the confusion, so
+    every blessed spelling is named inline rather than referenced.
+    """
+    return (
+        f"`{key}` must be a populated value, or exactly one of the four "
+        f"declared-absent spellings: "
+        f'{{ not_applicable = "<reason>" }}, {{ superseded_by = "<reason>" }}, '
+        f'{{ unarmed_until = "<ledger-id>" }}, {{ convention_not_adopted = "<reason>" }}. '
+        f"Each requires a non-empty payload, so the reason lives in the parsed value "
+        f"rather than in a comment no checker can read."
+    )
+
+
+def _parse_role_absence(*, table: dict[str, Any], key: str) -> RoleAbsence:
+    """Parse one blessed declared-absent inline table into its variant."""
+    names = [name for name in table if name in BLESSED_ROLE_SPELLINGS]
+    if len(names) != 1 or len(table) != 1:
+        msg = _spellings_hint(key=key)
+        raise ConfigParseError(msg)
+    name = names[0]
+    payload = table[name]
+    if not isinstance(payload, str) or not payload.strip():
+        # An empty payload would be a NEW unreadable emptiness wearing a blessed
+        # name — precisely the defect the union replaces.
+        msg = (
+            f"`{key} = {{ {name} = ... }}` requires a non-empty string. {_spellings_hint(key=key)}"
+        )
+        raise ConfigParseError(msg)
+    if name == _LEDGER_ID_SPELLING:
+        return UnarmedUntil(ledger_id=payload)
+    if name == "superseded_by":
+        return SupersededBy(reason=payload)
+    if name == "convention_not_adopted":
+        return ConventionNotAdopted(reason=payload)
+    return NotApplicable(reason=payload)
+
+
+def _parse_tree_role(*, value: object, key: str, repo: str) -> TreeRole:
+    if isinstance(value, dict):
+        return _parse_role_absence(table=cast("dict[str, Any]", value), key=key)
+    paths = _as_path_tuple(value=value, key=key)
+    if not paths:
+        return LegacyAmbiguousEmpty(key=key, repo=repo)
+    return DeclaredTrees(trees=paths)
+
+
+def _parse_prefix_role(*, value: object, key: str, repo: str) -> PrefixRole:
+    if isinstance(value, dict):
+        return _parse_role_absence(table=cast("dict[str, Any]", value), key=key)
+    prefixes = _as_str_tuple(value=value, key=key)
+    if not prefixes:
+        return LegacyAmbiguousEmpty(key=key, repo=repo)
+    return DeclaredPrefixes(prefixes=prefixes)
+
+
+def _parse_scalar_role(*, value: object, key: str, repo: str) -> ScalarRole:
+    if isinstance(value, dict):
+        return _parse_role_absence(table=cast("dict[str, Any]", value), key=key)
+    if not isinstance(value, str):
+        msg = _spellings_hint(key=key)
+        raise ConfigParseError(msg)
+    if value == "":
+        return LegacyAmbiguousEmpty(key=key, repo=repo)
+    return DeclaredPath(path=Path(value))
 
 
 def _parse_mirror_pairings(*, value: object) -> tuple[MirrorPairing, ...]:
@@ -502,6 +811,25 @@ def load_plan_lifecycle_anchor(*, repo_root: Path) -> bool | None:
     return _as_bool(value=table["plan_lifecycle_anchor"], key="plan_lifecycle_anchor")
 
 
+def _parse_role_key_overrides(*, table: dict[str, Any], repo: str) -> dict[str, Any]:
+    """Parse every DECLARED role key off the consumer table into its typed value."""
+    overrides: dict[str, Any] = {}
+    for key in _PLAIN_PATH_TUPLE_ROLE_KEYS:
+        if key in table:
+            overrides[key] = _as_path_tuple(value=table[key], key=key)
+    for key in _UNION_TREE_ROLE_KEYS:
+        if key in table:
+            overrides[key] = _parse_tree_role(value=table[key], key=key, repo=repo)
+    if "source_tree_prefixes" in table:
+        overrides["source_tree_prefixes"] = _parse_prefix_role(
+            value=table["source_tree_prefixes"], key="source_tree_prefixes", repo=repo
+        )
+    for key in ("dataclasses_tree", "neutral_hook_body_path"):
+        if key in table:
+            overrides[key] = _parse_scalar_role(value=table[key], key=key, repo=repo)
+    return overrides
+
+
 def load_config(*, repo_root: Path) -> Config:
     """Read `<repo_root>/pyproject.toml`'s block and resolve the layout.
 
@@ -514,31 +842,13 @@ def load_config(*, repo_root: Path) -> Config:
     if table is None:
         return Config()
     baseline = Config()
-    overrides: dict[str, Any] = {}
-    for key in _PATH_TUPLE_ROLE_KEYS:
-        if key in table:
-            overrides[key] = _as_path_tuple(value=table[key], key=key)
-    if "dataclasses_tree" in table:
-        overrides["dataclasses_tree"] = _as_optional_path(
-            value=table["dataclasses_tree"], key="dataclasses_tree"
-        )
-    if "source_tree_prefixes" in table:
-        overrides["source_tree_prefixes"] = _as_str_tuple(
-            value=table["source_tree_prefixes"], key="source_tree_prefixes"
-        )
+    overrides: dict[str, Any] = _parse_role_key_overrides(table=table, repo=repo_root.name)
     if "tests_tree_prefix" in table:
         overrides["tests_tree_prefix"] = _as_str(
             value=table["tests_tree_prefix"], key="tests_tree_prefix"
         )
     if "mirror_pairings" in table:
         overrides["mirror_pairings"] = _parse_mirror_pairings(value=table["mirror_pairings"])
-    if "neutral_hook_body_path" in table:
-        neutral_hook_body_path = _as_optional_path(
-            value=table["neutral_hook_body_path"], key="neutral_hook_body_path"
-        )
-        overrides["neutral_hook_body_path"] = (
-            neutral_hook_body_path.as_posix() if neutral_hook_body_path is not None else None
-        )
     return Config(
         declared_keys=frozenset(table),
         source_trees=overrides.get("source_trees", baseline.source_trees),
@@ -720,11 +1030,12 @@ def iter_first_party_py_files(*, repo_root: Path) -> tuple[Path, ...]:
         raise GitLsFilesError(msg)
     tracked = tuple(Path(line) for line in completed.stdout.splitlines() if line)
     config = load_config(repo_root=repo_root)
+    neutral_hook_body = role_path(role=config.neutral_hook_body_path)
     return filter_first_party_py(
         tracked_py=tracked,
         repo_root=repo_root,
         tests_tree_prefix=config.tests_tree_prefix,
-        neutral_hook_body_path=config.neutral_hook_body_path,
+        neutral_hook_body_path=None if neutral_hook_body is None else neutral_hook_body.as_posix(),
     )
 
 
@@ -853,7 +1164,7 @@ def derive_source_prefixes(*, config: Config) -> tuple[str, ...]:
     """
     prefixes = [
         *[f"{tree.as_posix().strip('/')}/" for tree in config.source_trees],
-        *[f"{prefix.strip('/')}/" for prefix in config.source_tree_prefixes],
+        *[f"{prefix.strip('/')}/" for prefix in role_prefixes(role=config.source_tree_prefixes)],
     ]
     return tuple(dict.fromkeys(prefixes))
 

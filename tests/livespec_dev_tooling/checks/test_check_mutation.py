@@ -65,11 +65,13 @@ from pathlib import Path
 from types import FunctionType
 
 import pytest
+import structlog
 
 from livespec_dev_tooling.checks.check_mutation import (
     _derive_exit_code,
     _is_crashed_run,
     _parse_mutmut_results,
+    _pure_trees_gate_exit_code,
     _resolve_staging_cwd,
     _update_baseline,
 )
@@ -633,3 +635,60 @@ def test_runs_mutmut_from_staging_cwd_baseline_at_repo_root(*, tmp_path: Path) -
     assert not (repo_root / "MUTMUT_RAN_IN.txt").is_file()
     assert (repo_root / ".mutmut-baseline.json").is_file(), "baseline must land at the repo root"
     assert not (staging / ".mutmut-baseline.json").is_file()
+
+
+def test_pure_trees_gate_passes_through_when_the_tree_is_declared_and_populated(
+    *, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A populated `pure_trees` yields NO early exit — the check proceeds to mutmut.
+
+    Pins the pass-through arm of the role-key gate directly. Under the union
+    (livespec-dev-tooling-8o8e.1) the gate has three outcomes — undeclared (1),
+    declared-absent (0, announced by variant), and populated (None, proceed) —
+    and only the third one lets any mutation actually run.
+    """
+    _ = (tmp_path / "pyproject.toml").write_text(
+        '[tool.livespec_dev_tooling]\npure_trees = ["pure"]\n', encoding="utf-8"
+    )
+    pure = tmp_path / "pure"
+    pure.mkdir()
+    _ = (pure / "mod.py").write_text(
+        "from __future__ import annotations\n\nx = 1\n", encoding="utf-8"
+    )
+
+    gate_exit = _pure_trees_gate_exit_code(
+        repo_root=tmp_path,
+        log=structlog.get_logger("test_pure_trees_gate"),
+    )
+
+    _ = capsys.readouterr()
+    assert (
+        gate_exit is None
+    ), f"a declared, populated `pure_trees` must produce no early exit; got {gate_exit!r}"
+
+
+def test_pure_trees_gate_fails_when_the_declared_tree_holds_no_python(
+    *, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A DECLARED but Python-less `pure_trees` is a hard error, not a quiet pass.
+
+    This is the arm that keeps the union honest at the other end. Declaring a real
+    path is not enough — if it resolves to no Python, the check would scan zero
+    files while looking fully armed, which is the exact manufactured-confidence
+    shape `livespec-dev-tooling-8o8e.1` exists to remove. The union makes ABSENCE
+    say why; this keeps PRESENCE from lying.
+    """
+    _ = (tmp_path / "pyproject.toml").write_text(
+        '[tool.livespec_dev_tooling]\npure_trees = ["pure"]\n', encoding="utf-8"
+    )
+    (tmp_path / "pure").mkdir()
+
+    gate_exit = _pure_trees_gate_exit_code(
+        repo_root=tmp_path,
+        log=structlog.get_logger("test_pure_trees_gate_empty"),
+    )
+
+    _ = capsys.readouterr()
+    assert (
+        gate_exit == 1
+    ), f"a declared `pure_trees` resolving to no Python must fail closed; got {gate_exit!r}"

@@ -81,7 +81,12 @@ from _red_green_replay_trailers import (  # noqa: E402  — sibling private impo
     head_red_awaiting_green,
 )
 
-from livespec_dev_tooling.config import Config, is_vendored_path, load_config  # noqa: E402
+from livespec_dev_tooling.config import (  # noqa: E402
+    Config,
+    is_vendored_path,
+    load_config,
+    role_prefixes,
+)
 
 __all__: list[str] = []
 
@@ -120,7 +125,10 @@ def _declared_prefix(*, prefix: str) -> str:
 def _derive_impl_prefixes(*, config: Config) -> tuple[str, ...]:
     prefixes = [
         *[_source_tree_prefix(tree=tree) for tree in config.source_trees],
-        *[_declared_prefix(prefix=prefix) for prefix in config.source_tree_prefixes],
+        *[
+            _declared_prefix(prefix=prefix)
+            for prefix in role_prefixes(role=config.source_tree_prefixes)
+        ],
     ]
     return tuple(dict.fromkeys(prefixes))
 

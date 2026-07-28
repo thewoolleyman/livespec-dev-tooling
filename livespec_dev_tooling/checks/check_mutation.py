@@ -104,8 +104,15 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402 — vendor-path-aware import after sys.path insert.
 
-from livespec_dev_tooling.checks._role_key_gate import role_key_paths_exit_code  # noqa: E402
-from livespec_dev_tooling.config import load_config, load_mutation_staging_dir  # noqa: E402
+from livespec_dev_tooling.checks._role_key_gate import (  # noqa: E402
+    ensure_declared_paths_contain_python,
+    role_absence_exit_code,
+)
+from livespec_dev_tooling.config import (  # noqa: E402
+    load_config,
+    load_mutation_staging_dir,
+    role_trees,
+)
 
 __all__: list[str] = [
     "_baseline_is_placeholder",
@@ -163,14 +170,24 @@ def _resolve_staging_cwd(*, repo_root: Path) -> Path:
 def _pure_trees_gate_exit_code(*, repo_root: Path, log: structlog.stdlib.BoundLogger) -> int | None:
     """Return the early exit for a missing, empty, or misdeclared pure layer."""
     config = load_config(repo_root=repo_root)
-    return role_key_paths_exit_code(
+    gate_exit = role_absence_exit_code(
         config=config,
+        role=config.pure_trees,
         key="pure_trees",
-        paths=config.pure_trees,
-        repo_root=repo_root,
         log=log,
         check_id="check_mutation",
     )
+    if gate_exit is not None:
+        return gate_exit
+    if not ensure_declared_paths_contain_python(
+        repo_root=repo_root,
+        key="pure_trees",
+        paths=role_trees(role=config.pure_trees),
+        log=log,
+        check_id="check_mutation",
+    ):
+        return 1
+    return None
 
 
 def _configure_logger() -> structlog.stdlib.BoundLogger:

@@ -47,9 +47,13 @@ import structlog  # noqa: E402  — vendor-path-aware import after sys.path inse
 
 from livespec_dev_tooling.checks._role_key_gate import (  # noqa: E402
     ensure_declared_paths_contain_python,
-    role_key_gate_exit_code,
+    role_absence_exit_code,
 )
-from livespec_dev_tooling.config import iter_py_files, load_config  # noqa: E402
+from livespec_dev_tooling.config import (  # noqa: E402
+    iter_py_files,
+    load_config,
+    role_path,
+)
 
 __all__: list[str] = []
 _DATACLASSES_TREE_GATE_BUG = "dataclasses_tree unexpectedly empty after role-key gate"
@@ -119,16 +123,16 @@ def main() -> int:
     log = structlog.get_logger("newtype_domain_primitives")
     cwd = Path.cwd()
     config = load_config(repo_root=cwd)
-    gate_exit = role_key_gate_exit_code(
+    gate_exit = role_absence_exit_code(
         config=config,
+        role=config.dataclasses_tree,
         key="dataclasses_tree",
-        value_is_empty=config.dataclasses_tree is None,
         log=log,
         check_id="newtype_domain_primitives",
     )
     if gate_exit is not None:
         return gate_exit
-    dataclasses_tree = config.dataclasses_tree
+    dataclasses_tree = role_path(role=config.dataclasses_tree)
     if dataclasses_tree is None:
         raise RuntimeError(_DATACLASSES_TREE_GATE_BUG)
     dataclasses_root = cwd / dataclasses_tree
