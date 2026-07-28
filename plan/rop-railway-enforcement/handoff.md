@@ -24,17 +24,21 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >    `cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh -- bd show livespec-dev-tooling-8o8e.1`
 > 2. **NOTHING IS MID-FLIGHT.** No worktree of this thread's is open, no PR of its own is
 >    unmerged, and no background job is running. There is no half-finished edit to find.
-> 3. **PHASES 0, 1, 2 AND 3 HAVE ALL LANDED.** `oitd` is CLOSED (PR #776 → `34c05c1`) and
->    Phase 3 is MERGED **and REGISTERED** (PR #779 → `606f17b`). The row is demonstrably
->    walked by the real CI sweep — see the Phase 3 section for the three pieces of evidence.
-> 4. **There is NO next action inside this thread's current authorization.** Every remaining
->    item is gated on someone else: Phase 4 on a MAINTAINER, the liveness check on an
->    ARCHITECTURE decision, `pj3j` on the Dispatcher, `bd-ib-6qb2mc` on a human in another
->    tenant. Do not invent one; see 📋 OPEN ITEMS for who owns each.
-> 5. **Do NOT start Phase 4**, and do NOT run `/livespec:revise` — the spec change is filed and
->    awaiting a MAINTAINER, which is not this session's call.
-> 6. **Do NOT start step 6.** It is the arming work and it is out of scope until authorized.
-> 7. Phases 2 and 3 being complete is **not** the epic, and Phase 3 green is the single most
+> 3. **ALL FOUR PHASES HAVE LANDED, AND THE SPEC IS RATIFIED.** Phase 3 + `oitd`
+>    (`606f17b`, `34c05c1`), spec v033 (`0500155`), `pj3j` (`c0c0472`), Phase 4 (`b36e0b8`).
+> 4. **⚠️ `8o8e.1` IS NOT DONE — IT IS `acceptance`, AWAITING FAN-OUT.** Phase 4 is MERGED,
+>    **NOT RELEASED** (`git tag --contains b36e0b8` is EMPTY) and **CONSUMED BY NOBODY** (all
+>    eight siblings pin `v0.58.1`). So "the ambiguous spelling is rejected" is true in exactly
+>    ONE repo — the case the maintainer's precondition names as insufficient. **MERGED ≠
+>    RELEASED ≠ CONSUMED, applied to this thread's own closing move.**
+> 5. **The fan-out is gated on `livespec-dev-tooling-5ror` (P1):** release-please's PR #794
+>    proposes **1.0.0**, which collides with the spec's own recorded pre-1.0 stance. A
+>    maintainer decides. **Do NOT trigger a release and do NOT hand-edit a sibling's pin.**
+> 6. **There is NO next action inside this thread's current authorization.** Every remaining
+>    item is gated on someone else — see 📋 OPEN ITEMS for who owns each.
+> 7. **Do NOT start step 6's ARMING.** Its blast radius is now measured (below); the number is
+>    an input to a maintainer decision, not a licence to begin.
+> 8. Phases 2–4 being complete is **not** the epic, and Phase 4 green is now the single most
 >    misreadable fact on this thread. See the ⛔ paragraph immediately below.
 
 
@@ -60,6 +64,50 @@ repos yield an EMPTY tree list. Fleet total scan roots: 0.** Four `UnarmedUntil`
 (`livespec`, `livespec-orchestrator-beads-fabro`, `livespec-orchestrator-git-jsonl`,
 `livespec-overseer`) and four `NotApplicable` (`livespec-dev-tooling`, `livespec-driver-claude`,
 `livespec-driver-codex`, `livespec-runtime`). The thread's central claim is a measurement.
+
+### 📐 STEP 6's BLAST RADIUS — RE-MEASURED 2026-07-28. **282, not 245.** Read-only; nothing armed.
+
+The loader has stopped moving, so this is the first moment the number can be trusted — which is
+exactly the precondition this file has carried from the beginning.
+
+**Method:** `master` TARBALLS from the forge (no local clone touched — several are shared). The
+universe uses the SHIPPED `config.filter_first_party_py`, the same predicate
+`resolve_check_universe()` calls. Offenders use the SHIPPED
+`public_api_result_typed._find_offenders`, so **PR #748's PATH-SCOPED exemptions apply as
+IMPLEMENTED**, not as the old table assumed. Each repo's own `pyproject.toml` supplies
+`tests_tree_prefix`, `commands_trees` and `neutral_hook_body_path`.
+
+| repo | universe | files | OFFENDERS | `commands_trees` |
+|---|---|---|---|---|
+| `livespec-dev-tooling` | 145 | 21 | **59** | NONE |
+| `livespec-orchestrator-beads-fabro` | 184 | 25 | **58** | declared |
+| `livespec-overseer` | 84 | 11 | **56** | NONE |
+| `livespec-runtime` | 31 | 20 | **46** | NONE |
+| `livespec` | 129 | 17 | **35** | declared |
+| `livespec-orchestrator-git-jsonl` | 49 | 17 | **28** | declared |
+| `livespec-driver-claude` | 6 | 0 | **0** | NONE |
+| `livespec-driver-codex` | 7 | 0 | **0** | NONE |
+| `livespec-console-beads-fabro` | 0 | 0 | **0** | zero-Python |
+| **FLEET TOTAL** | **635** | **111** | **282** | |
+
+**THE STALE 245 IS RECONCILED, NOT MERELY REPLACED.** 35 of the 282 are `main` / `build_parser` in
+a location the spec does NOT exempt. Read the exemption as unscoped — granted to a NAME rather than
+a LOCATION — and the total falls to **247, within two of the recorded 245.** So the old figure was
+not wrong arithmetic; it was computed under the wrong reading, and this identifies which.
+Understated by **+37**, as this file warned.
+
+**Correction to this file's own estimate:** it said the scoping meant 245 "subtracted 75
+main()/build_parser() hits fleet-wide". The measured delta is **35, not 75**. Direction right,
+magnitude wrong; do not restore 75.
+
+**What it cannot settle:** whether every offender is a genuine violation (some may want a
+spec-stated exemption rather than a conversion — per-function judgement, not measurement); whether
+each is reachable public API (the rule is "top-level function named in `__all__`"); and the
+ORDERING TRAP, which still binds — `livespec-dev-tooling` runs this check on ITSELF, so arming
+turns its own `just check` red and lefthook blocks the very commit that would fix it.
+**Remediating dev-tooling is a PRECONDITION of arming, not a follow-up**, and at 59 offenders in
+21 files it is the largest single piece. **Nothing here says step 6 should proceed — it says what
+it would cost.**
 
 **AND PHASE 3 SHARPENED THAT, RATHER THAN SOFTENING IT.** Four repos now declare
 `pure_trees = { not_applicable = "…" }` **honestly and correctly**, which means arming the railway
@@ -249,21 +297,26 @@ auto-merge, and the race is invisible when you win it.
 Every remaining item is owned by someone else. **That is a real state, not a stall**, and the
 right move is to say so rather than to manufacture work. Listed with its owner:
 
-1. **`livespec-dev-tooling-fwcwxv` — MAINTAINER.** The spec change is FILED and MERGED to master
-   (PR #773 → `f58e7d03`); it needs a decision, not another filing. Accept or reject at
-   `/livespec:revise`. **Phase 4 cannot start until it is ACCEPTED**, or the spec actively
-   contradicts the implementation the day Phase 4 ships.
+1. **`livespec-dev-tooling-5ror` — MAINTAINER, and it GATES EVERYTHING.** release-please's PR
+   #794 proposes **1.0.0**; the spec records a pre-1.0 stance. Until #794 merges or is replaced,
+   Phase 4 reaches no sibling and `8o8e.1` cannot discharge. **Do NOT trigger a release and do NOT
+   hand-edit a sibling's pin** — the fan-out is automation and racing it desynchronises a pin.
+   (`fwcwxv` is DONE — all four proposals ratified at v033, merged `0500155`.)
 2. **The `unarmed_until` LIVENESS check — ARCHITECTURE DECISION.** Blocked on a vantage/credential
    question, now with hard cross-tenant measurements; see the ⛔ block below. It is proposal 3 of
    the filed spec change, so the obligation gets ratified before it is enforced.
-3. **`livespec-dev-tooling-pj3j` — DISPATCHER.** This repo's own `MISSING_KEYS_EVENT` and `Config`
-   docstring still teach the retired spelling. Before Phase 4. Factory-dispatchable; leave it.
+3. **`livespec-dev-tooling-efxa` — DISPATCHER.** 30 of 31 checks never catch `ConfigParseError`.
+   Factory-dispatchable; leave it. (`pj3j` is DONE — merged `c0c0472`.)
 4. **`bd-ib-6qb2mc` — A HUMAN, IN ANOTHER TENANT** (beads-fabro, `blocked`/`needs-human`). Carving
    that repo's real pure tree, which is what its `unarmed_until` promises.
 5. **`livespec-dev-tooling-m50u` — A HUMAN, then ANOTHER TENANT'S INTAKE.** A blessed
    declared-absent payload measured FALSE in `livespec-orchestrator-git-jsonl`. The measurement is
    done; the remedy is that repo's architectural call and must not be a naive prefix widening.
-6. **Step 6 — NOT AUTHORIZED.** The arming migration. Do not start it.
+6. **`livespec-dev-tooling-clkf` — MAINTAINER.** v033's transitional clause and its WARN scenario
+   describe a regime Phase 4 ended. Spec change; propose-change + revise.
+7. **Step 6's ARMING — NOT AUTHORIZED.** Blast radius now measured at **282** (above). The number
+   is an input to a maintainer decision on sequencing, not a licence to begin. Remediating
+   `livespec-dev-tooling`'s own 59 is a PRECONDITION of arming, not a follow-up.
 
 ### ✅ PHASE 3 — LANDED, REGISTERED, AND **EXERCISED**. Three pieces of evidence, because green proves nothing here
 
@@ -395,23 +448,71 @@ closing `8o8e`. Full detail is on the `8o8e` epic.
 spelling is rejected and each repo declares the correct variant — **not** a green check in one
 repo. Eight Python-bearing repos, eight pieces of evidence.
 
-**STATUS: EXACTLY ONE OF THE TWO HALVES IS DISCHARGED. Half a precondition discharged is not a
-discharged precondition, and this is the moment it would be easiest to round up.**
+**STATUS 2026-07-28 (LATE): one half discharged, the second half BUILT BUT NOT YET DELIVERED.**
+
+**I CLOSED `8o8e.1` ON THE STRENGTH OF PHASE 4 BEING MERGED. That was wrong and it was caught
+before it did any harm.** Phase 4 is merged and **not released** — `git tag --contains b36e0b8` is
+EMPTY, the latest release `v0.58.1` predates it, and **all eight siblings pin `v0.58.1`**, whose
+loader still ACCEPTS `[]` with a WARN. So the rejecting loader exists in one repo's tree and in no
+consumer, which is verbatim the case the maintainer's precondition excludes: *"not a green check in
+one repo."*
+
+The item is now `acceptance`, not closed. **What discharges it:** release-please's #794 merges
+(gated on `5ror` — it proposes **1.0.0**) → `release-dispatch` fans out → each sibling's pin on the
+FORGE carries that tag → re-run the nine-repo measurement **against each sibling's OWN pinned
+loader**, which is the form the precondition actually demands.
+
+This thread wrote **MERGED ≠ RELEASED ≠ CONSUMED** into its own handoff, and then I applied the
+first term as though it were the third — on the item the rule was written for. Recorded rather than
+tidied away: it is the cheapest possible instance of this thread's defect, and it happened at the
+closing move.
+
+---
+
+**THE TWO HALVES.**
 
 1. ✅ **"each repo declares the correct variant"** — DISCHARGED, and no longer a snapshot. The
    eight pieces of evidence exist (the fleet-progress table above), and **Phase 3 is what makes
    them keep being true**: it landed, it is registered, and it is exercised against the live fleet
    by the central CI sweep. This half moved from a hand-gathered measurement to a standing
    guarantee on 2026-07-28.
-2. ❌ **"the ambiguous spelling is REJECTED"** — still **FALSE**. Today `[]` parses to
-   `LegacyAmbiguousEmpty` and WARNs; it is **ACCEPTED**. Rejection is **Phase 4**, which is
-   unbuilt and gated on maintainer acceptance of the filed spec change. Every repo declaring the
-   right variant is necessary and not sufficient — **nothing yet stops the next author writing
-   `[]` again**; the fleet row would catch it after the fact, the loader would not refuse it.
+2. ⏳ **"the ambiguous spelling is REJECTED"** — **BUILT AND MERGED, NOT YET DELIVERED.** Phase 4
+   (`b36e0b8`) deletes `LegacyAmbiguousEmpty` and makes `[]` / `""` on the five UNION keys a hard
+   `ConfigParseError`. **In `livespec-dev-tooling`'s tree only.** Every sibling still pins
+   `v0.58.1` and still accepts `[]`. Necessary, built, and not yet true where it has to be true.
 
-So: read Phase 3 as "the migration can no longer silently regress", never as "the precondition is
-met". Conflating a conformance sweep with a rejecting loader is the same move as conflating a green
-check with a passing one — which is the defect this entire thread exists to close.
+So: read Phase 4 as "the rejection is written and merged", never as "the precondition is met".
+Conflating a merge with a delivery is the same move as conflating a green check with a passing one
+— which is the defect this entire thread exists to close, and the one it nearly closed on.
+
+### ✅ WHAT PHASE 4 ACTUALLY CHANGED, MEASURED — the 426a property holds
+
+All NINE repos loaded through the **rejecting** loader on the day it merged. **Zero rejected.** Two
+results carry it:
+
+- **Seven repos still declare a CLEAN key as `[]`** — 13 declared-empty clean keys fleet-wide, all
+  still parsing. The ratified carve-out (v033 §"Clean role keys retain `[]`") demonstrated rather
+  than argued, and direct evidence that a blanket rejection would have broken seven repos for a
+  defect they do not have.
+- `livespec-console-beads-fabro` reports `Undeclared` ×5 where it reported `LegacyAmbiguousEmpty`
+  ×5. **Same behavior, honest state.**
+
+### 🔺 THE DEFECT FOUND INSIDE THE FIX — `LegacyAmbiguousEmpty` carried TWO meanings
+
+It meant **both** "the consumer declared `[]`" **and** "the consumer never declared anything",
+because the five `_BASELINE_*` constants bound it for a bare `Config()`. Two incompatible meanings
+in one value — **inside the type introduced to make exactly that unrepresentable.**
+
+It hid the way the original did: `_role_key_gate` tests `declared_keys` FIRST and hard-errors
+there, so the baseline instance is never announced. **Unreachable through the gate, fully reachable
+through the domain model** — which is how it survived three phases. Surfaced only because the
+precondition was re-MEASURED rather than assumed: the console reported five, and checking why
+rather than trusting the count is what found it.
+
+Maintainer-ruled into a distinct **`Undeclared`** variant. Reusing `NotApplicable` was the tempting
+one-liner and the wrong fix — it writes a **falsehood** into parsed data for every consumer without
+a block. This also discharges `pk2x`'s standing note that "a key nobody wrote still parses to the
+default".
 
 ---
 
@@ -564,12 +665,17 @@ the entire fan-out would silently never trigger.
 | id | state | what |
 |---|---|---|
 | `8o8e` | epic | This thread's anchor. Cannot close until `8o8e.1` is fleet-wide fixed AND verified. |
-| `8o8e.1` | **OPEN, P1 — the live item** | Role-key schema type-safety. Phases 0–3 DONE and landed; Phase 4 gated on the maintainer. Its notes carry the Phase 3 exercise evidence and the cross-tenant liveness measurement. |
+| `8o8e.1` | **`acceptance`, P1 — built, awaiting FAN-OUT** | Role-key schema type-safety. All four phases landed and the spec is ratified at v033. **NOT closed:** Phase 4 is merged, not released, consumed by nobody — every sibling pins `v0.58.1`. Discharges when a release containing `b36e0b8` reaches every sibling and the nine-repo measurement is re-run against each sibling's OWN pinned loader. |
+| `5ror` | **blocked / needs-human, P1 — GATES THE FAN-OUT** | Phase 4's `feat(config)!` marker made release-please propose **1.0.0** (PR #794), colliding with the spec's own recorded pre-1.0 stance at `contracts.md` §"Default layout fallback". Both behaviors are correct by their own rule, which is why it is a maintainer call. Nothing ships until #794 merges or is replaced. |
+| `efxa` | open, P2 — factory-dispatchable | **30 of 31 checks never catch `ConfigParseError`**, so a config error escapes as a traceback rather than the structured diagnostic `contracts.md` promises. Unreachable before Phase 4; reachable now from a plausible config. The rejection works — what is owed is the RENDERING. |
+| `clkf` | **blocked / needs-human, P2** | v033 ratified the TRANSITIONAL accepting-loader regime that Phase 4 ended hours later: the "MUST log at WARN" clause and its acceptance scenario describe behavior that no longer exists, and the heading-coverage entry cites a test Phase 4 deleted. Ratifying it was CORRECT — it is what authorized Phase 4 — so the defect is the standing description, not the decision. Spec change; needs propose-change + revise. |
+| `kmdn` | **blocked / needs-human, P2** | v033 turned four repos' `pure_trees = { unarmed_until = … }` into a RATIFIED obligation to arm, which nobody has scheduled. Three of the four cite a CROSS-TENANT id and no verifier resolves any of them. All four point at open work today — so nobody is in breach, which is exactly why it was filed now: when `livespec-mutreal.1` closes, three repos breach at once and nothing notices. |
+| `kepq` | open, P2 (split) | Two standing `doctor-static` fail findings on master, so EVERY revise pass exits 3 on findings unrelated to the revision. The `canonical_checks.py` half is factory-dispatchable; the `SPECIFICATION/README.md` half MUST go through propose-change/revise. |
 | `br4xar` | backlog | `tests_mirror_pairing` disarmed in 3 repos. **ALL THREE RE-DERIVED 2026-07-28: `23 / 6 / 58` is really `6 / 6 / ≤3`** — git-jsonl's 23 was a no-map artifact, runtime's 6 CONFIRMED unchanged, and overseer's 58 was 94% contamination (49 of the 58 are that repo's own co-located test files).** The source→test MAPPING this item asks for **already exists and is already consumed** — `config.mirror_pairings` takes precedence over the derived fallback at `tests_mirror_pairing.py:120`. 23 was what a prefix union produces WITHOUT a map. **Sizing: ~15 tests plus one design question, not an epic** — the only epic-shaped part left is overseer's co-located-layout question, which `tests_mirror_pairing` structurally cannot express. See the section below. |
 | `hgfnqd` | ready | Collapse `red_green_replay._derive_impl_prefixes` into `config.derive_source_prefixes`. Duplicate logic left deliberately: 3 tests assert the private helper by name, and refactoring a second commit-time gate inside a gate-arming PR risks losing the ability to commit at all. |
-| `pj3j` | **open, P2 — FILED by this session** | This repo's OWN `MISSING_KEYS_EVENT` (`checks/required_role_keys_declared.py:40-43`) and `Config` docstring (`config.py:407`) still teach the retired declared-empty spelling. Higher-leverage than any config comment: the diagnostic is read at the moment someone decides what to write, and it is interpolated into the FLEET report too (`fleet/_rows_required_role_keys.py:99`). **After Phase 4 its remediation routes the reader into a `ConfigParseError`** — so, like `fwcwxv`, it must land BEFORE Phase 4. Unlike `fwcwxv` it is code and factory-dispatchable. The item records the trap: `[]` is wrong for the five UNION keys only; it stays LEGITIMATE for the five CLEAN ones, and this check spans both. |
+| `pj3j` | **CLOSED — merged `c0c0472`** | This repo's OWN `MISSING_KEYS_EVENT` (`checks/required_role_keys_declared.py:40-43`) and `Config` docstring (`config.py:407`) still teach the retired declared-empty spelling. Higher-leverage than any config comment: the diagnostic is read at the moment someone decides what to write, and it is interpolated into the FLEET report too (`fleet/_rows_required_role_keys.py:99`). **After Phase 4 its remediation routes the reader into a `ConfigParseError`** — so, like `fwcwxv`, it must land BEFORE Phase 4. Unlike `fwcwxv` it is code and factory-dispatchable. The item records the trap: `[]` is wrong for the five UNION keys only; it stays LEGITIMATE for the five CLEAN ones, and this check spans both. |
 | `oitd` | **CLOSED — PR #776 → `34c05c1`** | Decomposed `fleet/_contract_rows.py` (246 → 183 LLOC) by extracting the six `github-state` rows to `_contract_github_state_rows.py` and splicing them back in place. `OBLIGATION_ROWS` unchanged in content and ordering, verified by dumping every row's fields from both trees and diffing to empty. **195 LLOC** once the Phase 3 row was registered — still under the SOFT ceiling, so the next obligation does not re-open this. **Its recorded `depends on 8o8e.1` edge was INVERTED** (it was a prerequisite of `8o8e.1`'s Phase 3, not a consequent) and made the ledger show completed work as blocked; removed and re-recorded as a non-blocking `relates_to`. |
-| `fwcwxv` | **FILED as PR #773 — needs a MAINTAINER** | The spec propose-change. Four proposals: retire declared-empty for the union keys; preserve `[]` for the CLEAN keys with the stricter-not-blinder reason; ratify the constraint-based discriminator plus `unarmed_until` liveness; and the acceptance scenarios. **Filing is not ratifying** — accept or reject at `/livespec:revise`. **Phase 4 is gated on acceptance.** |
+| `fwcwxv` | **RATIFIED — all four proposals ACCEPTED, v033, merged `0500155`** | The spec propose-change. Four proposals: retire declared-empty for the union keys; preserve `[]` for the CLEAN keys with the stricter-not-blinder reason; ratify the constraint-based discriminator plus `unarmed_until` liveness; and the acceptance scenarios. **Filing is not ratifying** — accept or reject at `/livespec:revise`. **Phase 4 is gated on acceptance.** |
 | `bd-ib-6qb2mc` | **blocked / needs-human — FILED this session, in the `beads-fabro` tenant** | Carve `livespec-orchestrator-beads-fabro`'s real pure tree. It is the named work that repo's `pure_trees = { unarmed_until = ... }` points at, so it is the ONLY open item whose closure is referenced from a parsed config value in another repo. **Do NOT close it by declaring `not_applicable`** — that re-hides an obligation its own ratified `constraints.md` imposes; if the constraint is wrong, amend the SPEC first. `blocked` is correct rather than a formality: verifying the result is mechanical, choosing the cut is architectural. |
 | `m50u` | **blocked / needs-human — FILED 2026-07-28** | A blessed declared-absent PAYLOAD can be false and nothing checks it. `livespec-orchestrator-git-jsonl`'s `source_tree_prefixes = { superseded_by = … }` is **measurably untrue** — 14 of 49 first-party `.py` fall outside the derived set — silently narrowing BOTH commit-time gates. Filed HERE rather than in the git-jsonl tenant deliberately: that repo's intake runs through its own orchestrator surface (the `bd-ib-6qb2mc` precedent), which is not installed here, and a raw cross-tenant `bd -C` would bypass the intake DoR that routed that precedent correctly. **First action: route the git-jsonl half through that repo's own intake.** |
 | `qv3k` | **blocked / needs-human — FILED 2026-07-28** | `livespec_footgun_guard.py` is the fleet's THIRD shared hook body and the only one with **no carrier constant, no installer and no byte-identity check** — 8 copies, **7 distinct contents**. The precedent exists twice (commit-refuse hooks; the no-shadow-ledger body) and was simply never extended. `needs-human` because picking a canonical body among eight divergent copies could weaken a SAFETY guard in seven repos at once, and nothing yet establishes which copy blocks least. |
