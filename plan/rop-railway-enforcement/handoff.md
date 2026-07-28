@@ -557,7 +557,7 @@ the entire fan-out would silently never trigger.
 |---|---|---|
 | `8o8e` | epic | This thread's anchor. Cannot close until `8o8e.1` is fleet-wide fixed AND verified. |
 | `8o8e.1` | **OPEN, P1 — the live item** | Role-key schema type-safety. Phases 0–3 DONE and landed; Phase 4 gated on the maintainer. Its notes carry the Phase 3 exercise evidence and the cross-tenant liveness measurement. |
-| `br4xar` | backlog | `tests_mirror_pairing` disarmed in 3 repos. **The union is the WRONG fix there** — that check needs a source→test MAPPING, and a prefix union fabricates 23 false offenders in git-jsonl (whose real tests exist at `tests/<pkg>/`). Epic-shaped: 23 fabricated / 6 real (runtime) / 58 real (overseer, which has no `tests/overseer/` tree at all). |
+| `br4xar` | backlog | `tests_mirror_pairing` disarmed in 3 repos. **RE-DERIVED 2026-07-28 for git-jsonl and the headline number was an ARTIFACT: `0 fabricated / 6 REAL`, not 23 fabricated.** The source→test MAPPING this item asks for **already exists and is already consumed** — `config.mirror_pairings` takes precedence over the derived fallback at `tests_mirror_pairing.py:120`. 23 was what a prefix union produces WITHOUT a map. `livespec-runtime` (6) and `livespec-overseer` (58) were **NOT** re-derived. See the section below. |
 | `hgfnqd` | ready | Collapse `red_green_replay._derive_impl_prefixes` into `config.derive_source_prefixes`. Duplicate logic left deliberately: 3 tests assert the private helper by name, and refactoring a second commit-time gate inside a gate-arming PR risks losing the ability to commit at all. |
 | `pj3j` | **open, P2 — FILED by this session** | This repo's OWN `MISSING_KEYS_EVENT` (`checks/required_role_keys_declared.py:40-43`) and `Config` docstring (`config.py:407`) still teach the retired declared-empty spelling. Higher-leverage than any config comment: the diagnostic is read at the moment someone decides what to write, and it is interpolated into the FLEET report too (`fleet/_rows_required_role_keys.py:99`). **After Phase 4 its remediation routes the reader into a `ConfigParseError`** — so, like `fwcwxv`, it must land BEFORE Phase 4. Unlike `fwcwxv` it is code and factory-dispatchable. The item records the trap: `[]` is wrong for the five UNION keys only; it stays LEGITIMATE for the five CLEAN ones, and this check spans both. |
 | `oitd` | **CLOSED — PR #776 → `34c05c1`** | Decomposed `fleet/_contract_rows.py` (246 → 183 LLOC) by extracting the six `github-state` rows to `_contract_github_state_rows.py` and splicing them back in place. `OBLIGATION_ROWS` unchanged in content and ordering, verified by dumping every row's fields from both trees and diffing to empty. **195 LLOC** once the Phase 3 row was registered — still under the SOFT ceiling, so the next obligation does not re-open this. **Its recorded `depends on 8o8e.1` edge was INVERTED** (it was a prerequisite of `8o8e.1`'s Phase 3, not a consequent) and made the ledger show completed work as blocked; removed and re-recorded as a non-blocking `relates_to`. |
@@ -610,11 +610,14 @@ docstring on purpose. **A payload no checker reads is a comment with better synt
 That is not an argument against the union: the declaration is greppable, reasoned and reviewed,
 which the bare `[]` never was. It is the next layer of the same onion.
 
-**DO NOT fix it by widening the prefix set.** git-jsonl's own comment states the constraint: a
+**DO NOT fix it by widening the prefix set ALONE.** git-jsonl's own comment states the constraint: a
 prefix set there additionally needs a paired `mirror_pairings`, because its tests live at
-`tests/<pkg>` rather than mirroring `.claude-plugin/scripts/<pkg>`. Widening alone reddens
-`tests_mirror_pairing` with the **23 fabricated offenders `br4xar` already measured in that exact
-repo.** Trading a silent gap for 23 false positives is how a rollout loses its credibility.
+`tests/<pkg>` rather than mirroring `.claude-plugin/scripts/<pkg>`. Widening without the map is
+what fabricates offenders.
+
+**But the cost of doing it RIGHT is far lower than `br4xar` recorded — re-derived below: with the
+two maps declared, git-jsonl has `0 fabricated / 6 REAL` offenders, not 23 fabricated.** The
+declaration and those six tests must land together, or the repo cannot commit once armed.
 
 Smaller measured gaps, same run: `livespec` 9 uncovered (the 6-file
 `.claude-plugin/scripts/_currency/` package, the footgun guard, and 2 under
@@ -625,6 +628,45 @@ Smaller measured gaps, same run: `livespec` 9 uncovered (the 6-file
 **Incidental, measured in passing and NOT investigated:** that footgun guard has **four distinct
 sha256s across the five places it lives.** Copies of a safety guard have drifted. Recorded so it is
 not lost; nobody should read this as having looked into it.
+
+### 🔢 `br4xar`'s "23 FABRICATED OFFENDERS" WAS AN ARTIFACT — re-derived to `0 fabricated / 6 REAL`
+
+Measured while working `m50u`, because `m50u`'s stated trap ("do not widen the prefix set — it
+reddens `tests_mirror_pairing` with the 23 offenders `br4xar` measured") depends on that number
+being true. **It is not.** This re-derives ONE of `br4xar`'s three repos: `livespec-runtime` (6) and
+`livespec-overseer` (58) were **NOT** re-derived — do not read this as having touched them.
+
+**The mapping `br4xar` asks for ALREADY EXISTS and is ALREADY CONSUMED.**
+`checks/tests_mirror_pairing.py:120` reads `pairings = config.mirror_pairings or
+_derived_pairings_from_prefixes(...)`. `mirror_pairings` is a first-class role key that takes
+PRECEDENCE over the derived fallback, consumed by four checks. So `br4xar`'s premise is right about
+the union and wrong about the remedy needing to be built — **the remedy is a DECLARATION using
+machinery that already ships.**
+
+**Where 23 came from:** a prefix union with no map looks for tests at
+`tests/.claude-plugin/scripts/bin/…`, which no repo has. Every one of the 23 is fabricated by the
+MISSING MAP, not by missing tests. **A number produced by the wrong configuration is not a
+measurement of the repo.**
+
+Re-derived with the check's OWN `_expected_paired_test_path` naming rule and its OWN exemption
+predicates run against the real files from `master` (not by running the check in that repo's
+checkout — the evidence class is stated so it is not over-read):
+
+| declared map | result |
+|---|---|
+| `.claude-plugin/scripts/bin` → `tests/bin` | **0 offenders.** 11 source / 11 test: 8 pair by name, 3 exempt. **`tests/bin/` already exists and already mirrors** — the tree the 23 was loudest about is empty. |
+| `…/livespec_orchestrator_git_jsonl` → `tests/livespec_orchestrator_git_jsonl` | **6 real.** Of 35: 17 paired, 6 private-helper exempt, 6 pure-declaration exempt, 6 real. |
+
+So git-jsonl moves from "epic-shaped, dominated by false positives" to **"declare two
+`mirror_pairings` entries, then write six tests"** — which is not epic-shaped. **One caveat
+survives:** arming it turns those six red the moment the declaration lands, so the declaration and
+the six tests must land TOGETHER or the repo cannot commit.
+
+Observed, not measured, about the other two: `livespec-runtime` HAS a `tests/livespec_runtime/`
+mirror — exactly the DEFAULT derived shape — so its 6 is unlikely to be a mapping artifact.
+`livespec-overseer` has NO `tests/overseer/` tree at all (flat `tests/` plus `tests/integration/`
+and `tests/prompts/`), so its 58 is unlikely to collapse the way git-jsonl's 23 did, and it is the
+case that genuinely needs a design decision.
 
 ### Carried forward (not this thread's to drive, but part of the finding)
 
