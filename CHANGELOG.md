@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.58.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.58.0...v0.58.1) (2026-07-28)
+
+
+### Bug Fixes
+
+* **fabro-sandbox:** install tmux in base image ([0d933b7](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0d933b72c9ad7f4ac730a8fdd4c6dc73165649b9))
+
 ## [0.58.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.57.1...v0.58.0) (2026-07-28)
 
 
