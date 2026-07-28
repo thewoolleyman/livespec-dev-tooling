@@ -84,6 +84,18 @@ repos yield an EMPTY tree list. Fleet total scan roots: 0.** Four `UnarmedUntil`
 `livespec-overseer`) and four `NotApplicable` (`livespec-dev-tooling`, `livespec-driver-claude`,
 `livespec-driver-codex`, `livespec-runtime`). The thread's central claim is a measurement.
 
+**RE-DERIVED INDEPENDENTLY LATER THE SAME DAY, and it reproduces EXACTLY.** All NINE members'
+live `pyproject.toml` re-fetched from the forge and re-loaded: four `UnarmedUntil`, four
+`NotApplicable`, plus `livespec-console-beads-fabro` reporting `Undeclared` — **fleet total scan
+roots: 0**, and no member REJECTED by the loader. Two things make the re-run worth more than a
+repeat: it was taken through a loader first proven **behaviorally identical to the released
+`v1.0.0`** every sibling actually consumes (the `v1.0.0..master` diff of `config.py` is
+comment-only, verified line by line), and all eight siblings were re-confirmed to declare
+`tag = "v1.0.0"`. So the measurement is against the loader the fleet RUNS, not merely the one this
+repo has checked out. `public_api_result_typed.py:186` still reads
+`role_trees(role=config.pure_trees)`: **step 6 is NOT STARTED, and that is verified rather than
+inherited.**
+
 ### 📐 STEP 6's BLAST RADIUS — RE-MEASURED 2026-07-28. **282, not 245.** Read-only; nothing armed.
 
 The loader has stopped moving, so this is the first moment the number can be trusted — which is
@@ -427,6 +439,15 @@ Neither measures liveness.
 Both ids are in fact LIVE today (`livespec-mutreal.1` BACKLOG, `bd-ib-6qb2mc` BLOCKED), so all four
 `unarmed_until` declarations point at genuine pending work — **measured by hand, out of band, and
 NOT asserted by any check.**
+
+**RE-MEASURED 2026-07-28, BOTH TENANTS, AND IT STILL HOLDS — `livespec-mutreal.1` BACKLOG,
+`bd-ib-6qb2mc` BLOCKED.** The four declarations were ALSO re-read from the forge and still cite
+exactly those two ids, so neither half has drifted. **Re-check this FIRST on any future cold
+start**, ahead of anything else on this thread: it is the fastest-decaying fact here and the only
+one whose decay is SILENT. `kmdn` exists precisely because when `livespec-mutreal.1` closes, three
+repos breach a ratified obligation simultaneously and **nothing in the fleet notices** — no check
+resolves these ids, by the structural argument above. Two `bd -C` reads is the whole cost; the
+alternative is a fleet-wide ratified obligation quietly going false.
 
 So it needs a new credential class or changed local-row severity semantics — an architecture
 decision, not a check to bolt on. It is recorded as an explicit **non-guarantee in the row's own
@@ -1028,6 +1049,28 @@ wrong, not its diligence: it swept *documents*, and missed *injected context*. I
 proximity is not protection — the comment nearest the code was the one that was wrong, because it
 was written to justify a decision that was later reversed and nothing re-reads a justification.
 **A comment that argues for a design is the one most likely to survive that design's reversal.**
+
+#### ✅ AND THE FLEET-WIDE SWEEP OF THAT SURFACE IS DONE — **0 of 107. NOTHING IS OWED.**
+
+Finding a NEW unswept surface class in the producer raises the obvious question of whether the
+eight consumers carry it too. **Measured 2026-07-28, so nobody re-measures it:** every `CLAUDE.md`
+in all eight siblings was ENUMERATED from each repo's default-branch git tree and its BYTES
+fetched and searched — 51 in `livespec`, 25 in `-orchestrator-beads-fabro`, 17 in
+`-orchestrator-git-jsonl`, 8 in `-runtime`, 2 each in `-driver-claude` / `-driver-codex` /
+`-overseer`, 0 in `-console-beads-fabro`. **107 files, ZERO instances.**
+
+**The exposure was confined to `livespec-dev-tooling` alone**, and the reason generalizes: the
+PRODUCER's `CLAUDE.md` files describe the loader's role-key semantics because the loader is theirs;
+consumer `CLAUDE.md` files describe their own packages and never restate that contract. So the
+rule to carry forward is narrower and more useful than "sweep every CLAUDE.md fleet-wide" — it is
+**sweep the CLAUDE.md files of the repo that OWNS the contract you just changed.**
+
+**One false positive is worth recording, because it is the same hazard in miniature.** A code
+search for `sanctioned` flagged `livespec-orchestrator-beads-fabro/dev-tooling/checks/CLAUDE.md`.
+Fetching and READING it showed the word belongs to "the only sanctioned output surface" — structlog
+output discipline, unrelated. **The negative was verified by reading, not by trusting the search**;
+a session that had trusted the hit would have filed remediation against a clean repo, and one that
+had trusted a bare grep-count would have missed that the hit was spurious.
 
 When you find the next one, **file it rather than fixing it inline** — a same-shaped hole found
 while fixing another is the cheapest it will ever be to close, and the pattern is the finding. A
