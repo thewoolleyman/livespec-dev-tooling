@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.0.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.0.0...v1.0.1) (2026-07-28)
+
+
+### Bug Fixes
+
+* **checks:** a leading underscore is not public API, even inside __all__ ([b49c744](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b49c744261c4b898e207e3ca7e4f55b9e2c096d2))
+
 ## [1.0.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.58.1...v1.0.0) (2026-07-28)
 
 
