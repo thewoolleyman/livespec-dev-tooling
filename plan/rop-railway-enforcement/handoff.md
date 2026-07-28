@@ -24,34 +24,46 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >    `cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh -- bd show livespec-dev-tooling-8o8e.1`
 > 2. **NOTHING IS MID-FLIGHT.** No worktree of this thread's is open, no PR of its own is
 >    unmerged, and no background job is running. There is no half-finished edit to find.
-> 3. **The next action is `livespec-dev-tooling-oitd` (P1)** — decompose
->    `fleet/_contract_rows.py`, which is 4 LLOC under a hard ceiling and therefore accepts no
->    new obligation row. That is the ONLY thing between a written, tested, green Phase 3 row
->    (branch `feat/fleet-row-role-key-spellings`, `dacfec1`, pushed, no PR) and it running.
-> 4. **Do NOT start Phase 4**, and do NOT run `/livespec:revise` — the spec change is filed and
+> 3. **PHASES 0, 1, 2 AND 3 HAVE ALL LANDED.** `oitd` is CLOSED (PR #776 → `34c05c1`) and
+>    Phase 3 is MERGED **and REGISTERED** (PR #779 → `606f17b`). The row is demonstrably
+>    walked by the real CI sweep — see the Phase 3 section for the three pieces of evidence.
+> 4. **There is NO next action inside this thread's current authorization.** Every remaining
+>    item is gated on someone else: Phase 4 on a MAINTAINER, the liveness check on an
+>    ARCHITECTURE decision, `pj3j` on the Dispatcher, `bd-ib-6qb2mc` on a human in another
+>    tenant. Do not invent one; see 📋 OPEN ITEMS for who owns each.
+> 5. **Do NOT start Phase 4**, and do NOT run `/livespec:revise` — the spec change is filed and
 >    awaiting a MAINTAINER, which is not this session's call.
-> 5. Phase 2 being complete is **not** the epic. See the ⛔ paragraph immediately below; it is
->    the single most misreadable fact on this thread.
+> 6. **Do NOT start step 6.** It is the arming work and it is out of scope until authorized.
+> 7. Phases 2 and 3 being complete is **not** the epic, and Phase 3 green is the single most
+>    misreadable fact on this thread. See the ⛔ paragraph immediately below.
 
 
 The blocking item is **`livespec-dev-tooling-8o8e.1`** (OPEN). Its ledger notes carry the full
 record: the role-key classification, the maintainer ruling, the union design, the release
-mechanism, and the Phase 1 proof. **Read the item before planning anything** — it is far more
-detailed than this file, and this file deliberately does not duplicate it.
+mechanism, the Phase 1 proof, and the Phase 3 exercise evidence. **Read the item before
+planning anything** — it is far more detailed than this file, and this file deliberately does
+not duplicate it.
 
-**Phases 0, 1 and 2 have ALL LANDED. All eight repos measure ZERO `LegacyAmbiguousEmpty`.**
+**Phases 0, 1, 2 and 3 have ALL LANDED. All eight repos measure ZERO `LegacyAmbiguousEmpty`,
+and Phase 3 is what makes that keep being true.**
 
 **⛔ THAT IS NOT AN ARMED RAILWAY, AND THE DIFFERENCE IS THIS THREAD'S ENTIRE SUBJECT.**
 `check-public-api-result-typed` is STILL `pure_trees`-scoped, so it still scans **zero files** in
-every flat-layout repo — legitimately and honestly now, and still zero. Phase 2 made the SCHEMA
-honest; it did not make any check scan anything. Arming means migrating that check off `pure_trees`
-onto `resolve_check_universe()` — `8o8e`'s own **step 6, NOT STARTED**.
+every flat-layout repo — legitimately and honestly now, and still zero. Phases 2 and 3 made the
+SCHEMA honest and made it STAY honest; neither made any check scan anything. Arming means migrating
+that check off `pure_trees` onto `resolve_check_universe()` — `8o8e`'s own **step 6, NOT STARTED**.
 
-**Phase 3 is WRITTEN, TESTED and GREEN — and PARKED, not landed.** The conformance row that turns
-the eight-repo measurement below into a standing guarantee lives on branch
-`feat/fleet-row-role-key-spellings` (`dacfec1`) and cannot be REGISTERED, because
-`fleet/_contract_rows.py` is 246 LLOC against a 250 hard ceiling and the table accepts no new row.
-That is `livespec-dev-tooling-oitd` (P1) and it is the next action.
+**AND PHASE 3 SHARPENED THAT, RATHER THAN SOFTENING IT.** Four repos now declare
+`pure_trees = { not_applicable = "…" }` **honestly and correctly**, which means arming the railway
+in those four **cannot come from `pure_trees` at all** — there is no tree there to widen. Step 6 is
+not "fill in the empty key later"; it is a different universe source. A reader who sees Phase 3
+green and infers the railway is close to armed has inverted the finding.
+
+**Phase 3 is LANDED and REGISTERED — PR #779 → `606f17b`.** The conformance row that turns the
+eight-repo measurement below into a standing guarantee is merged AND wired into `OBLIGATION_ROWS`,
+which is the only step that makes it run. It was parked unregistered for hours on purpose: an
+unregistered row is walked by neither engine. `livespec-dev-tooling-oitd` (PR #776 → `34c05c1`)
+decomposed the table to make room and is **CLOSED**.
 
 **Phase 4 MUST NOT start.** It cannot land until the filed spec change (PR #773 -> `f58e7d03`,
 now on master as a PENDING proposed change) is ACCEPTED by a maintainer, or the spec actively
@@ -61,25 +73,33 @@ contradicts the implementation the day it ships.
 
 | thing | state |
 |---|---|
-| `livespec-dev-tooling` master | re-derive; was `6e13b03` at wrap-up |
+| `livespec-dev-tooling` master | re-derive; was `606f17b` at wrap-up |
+| `oitd` — obligation-table decomposition (PR #776) | **merged `34c05c1`, item CLOSED.** `_contract_rows.py` 246 → 183 → **195** with the Phase 3 row registered |
+| Phase 3 — conformance row + registration (PR #779) | **merged `606f17b`.** Two commits: the row (`8dc8027`) and its REGISTRATION (`606f17b`) |
 | Phase 0 — commit-pairs coupling break (PR #755) | **merged `5f82dbe`, RELEASED in `v0.56.7`** |
 | Phase 1 — accepting loader (PR #759) | **merged `8a61df6`, RELEASED in `v0.57.0`** (verified: `git tag --contains 8a61df6` → `v0.57.0`) |
 | Sibling consumption | **ALL SEVEN carry `v0.57.0`** — the pin gate is fully open; #296 merged after a re-run. **RE-DERIVE per repo.** |
 | Piece B — `livespec-driver-claude` prose (PR #317) | **merged `e8c8847`** |
 | Slice 3 — `livespec` values + prose (PR #1814) | **merged `6454b2cc`** — fleet's first `unarmed_until` |
 | Piece 1 — spec propose-change (PR #773) | **MERGED `f58e7d03` — the proposed-change FILE is ON MASTER at `SPECIFICATION/proposed_changes/role-key-declared-absent-spellings.md`. Do NOT re-file it.** It is FILED, not RATIFIED: `contracts.md`/`scenarios.md` are byte-unchanged, verified by diff. Awaiting a MAINTAINER at `/livespec:revise`. **Gates Phase 4.** |
-| Phase 3 — conformance row (`dacfec1`) | **BUILT + GREEN, PARKED — no PR.** Blocked on `oitd`; an unregistered row is a check that does not run. |
 | Slice 4 — `livespec-runtime` values + prose (PR #366) | **merged `408388c`** — fleet's first two `convention_not_adopted` |
 
 **MERGED ≠ RELEASED ≠ CONSUMED.** Keep the three separate in every status claim. Conflating them
 re-creates this thread's core defect — a green signal that means nothing — at the process level.
 
-### ✅ FLEET PROGRESS — 8 of 8 DONE. **FLEET TOTAL: 0.** This IS the closure-precondition evidence.
+### ✅ FLEET PROGRESS — 8 of 8 DONE. **FLEET TOTAL: 0.** This is HALF the closure-precondition evidence.
 
 Measured on the **FORGE** after every merge, loading each repo's `pyproject.toml` through
 `master`'s union loader. This is a SCHEMA measurement under one loader — deliberately, so only the
 config varies. Each repo's own suite was ALSO run green under its OWN pinned loader, which is the
 part the precondition demands.
+
+**Re-verified by the LANDED Phase 3 row on 2026-07-28**, against the live nine-member manifest from
+both the central CI sweep and a direct per-repo run: eight members EVALUATED and passed, and
+`livespec-console-beads-fabro` (no `[tool.livespec_dev_tooling]` block) returned a NAMED
+`excluded-with-reason` rather than a silent skip. So this table is no longer a snapshot someone has
+to re-take — but see the 🛑 CLOSURE PRECONDITION section: it is the half about DECLARING correctly,
+not the half about REJECTING the ambiguous spelling.
 
 | repo | legacy | the blessed variants it now carries | own suite |
 |---|---|---|---|
@@ -216,28 +236,68 @@ local-only amend is how a durable record quietly reverts.
 **Once checks are green, open a FRESH PR off the new master rather than amending.** Amending races
 auto-merge, and the race is invisible when you win it.
 
-### ▶️ EXACT NEXT ACTION — Phase 3 is BUILT but PARKED; one P1 unblocks it
+### ▶️ EXACT NEXT ACTION — there is NONE inside the current authorization
 
-1. **`livespec-dev-tooling-oitd` (P1) — decompose `fleet/_contract_rows.py`.** It measures **246
-   LLOC against a 250 HARD ceiling**, so the fleet obligation table accepts **no new row at all**:
-   registering one costs 257 in full form and **254 even at the tersest legal form**. This is the
-   single thing standing between a written, tested, green Phase 3 row and it actually running.
-2. **Then land `feat/fleet-row-role-key-spellings`** (commit `dacfec1`, pushed, **no PR**). It is a
-   complete Red→Green pair: the row module at **100% line+branch**, **16 tests passing**, full
-   `just check` **64/64**. It needs only its registration in the obligation table. It is parked
-   rather than merged because **an unregistered obligation row is a check that does not run** —
-   this epic's own defect.
-3. **`livespec-dev-tooling-fwcwxv` — the spec change is FILED and MERGED to master (PR #773 -> `f58e7d03`); it needs a MAINTAINER, not another filing.**
-   Accept or reject at `/livespec:revise`. **Phase 4 cannot start until it is ACCEPTED**, or the
-   spec actively contradicts the implementation the day Phase 4 ships.
-4. **The `unarmed_until` LIVENESS check needs a VANTAGE DECISION before it can be built** — see the
-   block below. It is proposal 3 of the filed spec change, so the obligation gets ratified before
-   it is enforced.
-5. **`livespec-dev-tooling-pj3j`** — this repo's own `MISSING_KEYS_EVENT` and `Config` docstring
-   still teach the retired spelling. Before Phase 4. Factory-dispatchable; leave it for the
-   Dispatcher.
-6. **`bd-ib-6qb2mc`** (beads-fabro, `blocked`/`needs-human`) — carving that repo's real pure tree,
-   which is what its `unarmed_until` promises.
+Every remaining item is owned by someone else. **That is a real state, not a stall**, and the
+right move is to say so rather than to manufacture work. Listed with its owner:
+
+1. **`livespec-dev-tooling-fwcwxv` — MAINTAINER.** The spec change is FILED and MERGED to master
+   (PR #773 → `f58e7d03`); it needs a decision, not another filing. Accept or reject at
+   `/livespec:revise`. **Phase 4 cannot start until it is ACCEPTED**, or the spec actively
+   contradicts the implementation the day Phase 4 ships.
+2. **The `unarmed_until` LIVENESS check — ARCHITECTURE DECISION.** Blocked on a vantage/credential
+   question, now with hard cross-tenant measurements; see the ⛔ block below. It is proposal 3 of
+   the filed spec change, so the obligation gets ratified before it is enforced.
+3. **`livespec-dev-tooling-pj3j` — DISPATCHER.** This repo's own `MISSING_KEYS_EVENT` and `Config`
+   docstring still teach the retired spelling. Before Phase 4. Factory-dispatchable; leave it.
+4. **`bd-ib-6qb2mc` — A HUMAN, IN ANOTHER TENANT** (beads-fabro, `blocked`/`needs-human`). Carving
+   that repo's real pure tree, which is what its `unarmed_until` promises.
+5. **Step 6 — NOT AUTHORIZED.** The arming migration. Do not start it.
+
+### ✅ PHASE 3 — LANDED, REGISTERED, AND **EXERCISED**. Three pieces of evidence, because green proves nothing here
+
+Merging a conformance row and running one are different facts, and this thread exists because they
+were confused. All three were taken against the LANDED code.
+
+1. **The CENTRAL CI SWEEP, App-token vantage** (job `90279534466`). The row ran against the LIVE
+   nine-member manifest. **`blind_rows: 0`** — the engine's own count of rows that applied to at
+   least one member and were evaluable for NONE — and **zero** `obligation row enforced NOTHING
+   this run` events. The row is `central` vantage, so it enforces in BOTH automated CI and a local
+   operator sweep; **it is out-of-vantage nowhere.**
+2. **A DIRECT PER-REPO RUN against the forge**, live `gh` reads. Eight Python-bearing members
+   EVALUATED and passed. `livespec-console-beads-fabro` returned
+   `excluded-with-reason: no [tool.livespec_dev_tooling] block; not a layout-config consumer` — a
+   **named** exclusion, not a silent skip. The per-repo table is the fleet-progress table below.
+3. **A NEGATIVE PROOF that it can FAIL**, from the engine's own path — the fixture, below.
+
+`_contract_rows.py` measures **195 LLOC** after registration: 55 under the hard ceiling, and still
+5 under the SOFT one, so the NEXT obligation does not re-open `oitd`.
+
+#### The fixture was supplying the very thing under test — and its failure is the proof
+
+Registering the row turned **twelve** `test_fleet_conformance.py` tests red, correctly.
+`_all_required_empty_block()` rendered EVERY required role key as `[]` / `""`, so the canned
+"green fleet" member declared all five union keys with the retired ambiguous spelling:
+
+```
+error_findings=1  member='widget'  failing_rows=('role-key-spellings',)
+widget: role key(s) still carrying the retired ambiguous empty spelling:
+dataclasses_tree, neutral_hook_body_path, pure_trees, source_tree_prefixes, target_dirs
+```
+
+That is what a green run cannot give: the **registered** row evaluated a member through the **real
+lane** and failed it. Renamed `_all_required_role_keys_block()` and split by half — the five UNION
+keys carry a blessed spelling; every other required key **keeps `[]` / `""` deliberately**, because
+for those emptiness makes the consuming check STRICTER rather than blinder. Rendering both halves
+alike would teach the next reader of that fixture a rule that is wrong for five of the keys.
+
+#### ⚠️ A LOCAL `just check` 64/64 does NOT mean the fleet row ran
+
+`check-fleet-conformance` is behind the `LIVESPEC_RUN_FLEET_CONFORMANCE` lever and **SKIPS
+locally**, counting toward "All 64 targets passed". It logs the skip with a hint, so it is honest
+rather than silent — but inferring "the new fleet row passes" from a local aggregate green would
+have been this thread's signature error. **CI sets the lever; local runs do not.** Verify a fleet
+row by running the sweep or by reading the CI job, never from the local aggregate.
 
 ### ⛔ THE LIVENESS CHECK IS BLOCKED ON A VANTAGE DECISION — measured, not assumed
 
@@ -252,10 +312,33 @@ item. **The fleet row cannot answer that**, and the reason is structural rather 
   documented discipline is *detect-and-guide*: WARNING-severity findings that explicitly "never fail
   the verb", plus a SKIP when the repo is not beads-backed. **That is exactly the wrong severity for
   a conformance gate** — it would ship a check that silently declines to enforce.
-- **Cross-tenant makes it worse, not merely harder.** Three repos cite `livespec-mutreal.1` (the
-  `livespec` tenant); one cites `bd-ib-6qb2mc` (its own). A verifier holding ONE tenant's credential
-  resolves at most one of the four — so a naive implementation false-negatives on the majority
-  **while reporting green**, which is this thread's signature failure.
+- **Cross-tenant makes it worse, not merely harder — and this is now MEASURED, not reasoned.**
+
+| declaring repo | cited id | that id's tenant | resolvable from the DECLARING repo's own tenant? |
+|---|---|---|---|
+| `livespec` | `livespec-mutreal.1` | livespec | **YES** |
+| `livespec-orchestrator-beads-fabro` | `bd-ib-6qb2mc` | livespec-orch-beads-fabro | **YES** |
+| `livespec-overseer` | `livespec-mutreal.1` | livespec | **NO** |
+| `livespec-orchestrator-git-jsonl` | `livespec-mutreal.1` | livespec | **NO** |
+
+**CORRECTION to the earlier framing, which said a same-tenant resolver fails on three of four.**
+Three repos DO cite `livespec-mutreal.1` — but one of those three is `livespec` ITSELF, where the
+id is same-tenant. The real figure is **2 of 4**. Do not restore the higher number.
+
+The conclusion is unchanged and sharper. **No single tenant credential resolves both ids:** the
+`livespec` tenant resolves `livespec-mutreal.1` and NOT `bd-ib-6qb2mc`; the beads-fabro tenant
+resolves the reverse. So this is not a per-repo mismatch to paper over — the declared id set spans
+**two tenants with no superset credential in evidence**.
+
+**The failure mode is the dangerous one.** A cross-tenant lookup returns
+`Error fetching <id>: no issue found matching "<id>"` — a NOT-FOUND, not a permission error. A
+defensively-written resolver treats not-found as a skip and **reports green**, which is precisely
+this thread's signature failure. A naively-strict one reports a bogus finding against a valid id.
+Neither measures liveness.
+
+Both ids are in fact LIVE today (`livespec-mutreal.1` BACKLOG, `bd-ib-6qb2mc` BLOCKED), so all four
+`unarmed_until` declarations point at genuine pending work — **measured by hand, out of band, and
+NOT asserted by any check.**
 
 So it needs a new credential class or changed local-row severity semantics — an architecture
 decision, not a check to bolt on. It is recorded as an explicit **non-guarantee in the row's own
@@ -301,20 +384,23 @@ closing `8o8e`. Full detail is on the `8o8e` epic.
 spelling is rejected and each repo declares the correct variant — **not** a green check in one
 repo. Eight Python-bearing repos, eight pieces of evidence.
 
-**STATUS: the eight pieces of evidence EXIST** (the fleet-progress table above — each repo measured
-at zero AND its own suite green under its own pinned loader). **But the precondition is not yet
-discharged, on two counts, and neither is a technicality:**
+**STATUS: EXACTLY ONE OF THE TWO HALVES IS DISCHARGED. Half a precondition discharged is not a
+discharged precondition, and this is the moment it would be easiest to round up.**
 
-1. **"the ambiguous spelling is REJECTED" is still FALSE.** Today `[]` parses to
-   `LegacyAmbiguousEmpty` and WARNs; it is ACCEPTED. Rejection is **Phase 4**, which is unbuilt.
-   Every repo declaring the right variant is necessary and not sufficient — nothing yet stops the
-   next author writing `[]` again.
-2. **The evidence is a hand-gathered snapshot, not a standing guarantee.** It was true at the
-   moment it was measured. **Phase 3 is what makes it keep being true**, and it is unbuilt.
+1. ✅ **"each repo declares the correct variant"** — DISCHARGED, and no longer a snapshot. The
+   eight pieces of evidence exist (the fleet-progress table above), and **Phase 3 is what makes
+   them keep being true**: it landed, it is registered, and it is exercised against the live fleet
+   by the central CI sweep. This half moved from a hand-gathered measurement to a standing
+   guarantee on 2026-07-28.
+2. ❌ **"the ambiguous spelling is REJECTED"** — still **FALSE**. Today `[]` parses to
+   `LegacyAmbiguousEmpty` and WARNs; it is **ACCEPTED**. Rejection is **Phase 4**, which is
+   unbuilt and gated on maintainer acceptance of the filed spec change. Every repo declaring the
+   right variant is necessary and not sufficient — **nothing yet stops the next author writing
+   `[]` again**; the fleet row would catch it after the fact, the loader would not refuse it.
 
-So: read the table as "the migration is done", never as "the precondition is met". Conflating a
-measurement with an enforcement is the same move as conflating a green check with a passing one —
-which is the defect this entire thread exists to close.
+So: read Phase 3 as "the migration can no longer silently regress", never as "the precondition is
+met". Conflating a conformance sweep with a rejecting loader is the same move as conflating a green
+check with a passing one — which is the defect this entire thread exists to close.
 
 ---
 
@@ -467,11 +553,11 @@ the entire fan-out would silently never trigger.
 | id | state | what |
 |---|---|---|
 | `8o8e` | epic | This thread's anchor. Cannot close until `8o8e.1` is fleet-wide fixed AND verified. |
-| `8o8e.1` | **OPEN, P1 — the live item** | Role-key schema type-safety. Phases 0–1 done; Phase 2 next. |
+| `8o8e.1` | **OPEN, P1 — the live item** | Role-key schema type-safety. Phases 0–3 DONE and landed; Phase 4 gated on the maintainer. Its notes carry the Phase 3 exercise evidence and the cross-tenant liveness measurement. |
 | `br4xar` | backlog | `tests_mirror_pairing` disarmed in 3 repos. **The union is the WRONG fix there** — that check needs a source→test MAPPING, and a prefix union fabricates 23 false offenders in git-jsonl (whose real tests exist at `tests/<pkg>/`). Epic-shaped: 23 fabricated / 6 real (runtime) / 58 real (overseer, which has no `tests/overseer/` tree at all). |
 | `hgfnqd` | ready | Collapse `red_green_replay._derive_impl_prefixes` into `config.derive_source_prefixes`. Duplicate logic left deliberately: 3 tests assert the private helper by name, and refactoring a second commit-time gate inside a gate-arming PR risks losing the ability to commit at all. |
 | `pj3j` | **open, P2 — FILED by this session** | This repo's OWN `MISSING_KEYS_EVENT` (`checks/required_role_keys_declared.py:40-43`) and `Config` docstring (`config.py:407`) still teach the retired declared-empty spelling. Higher-leverage than any config comment: the diagnostic is read at the moment someone decides what to write, and it is interpolated into the FLEET report too (`fleet/_rows_required_role_keys.py:99`). **After Phase 4 its remediation routes the reader into a `ConfigParseError`** — so, like `fwcwxv`, it must land BEFORE Phase 4. Unlike `fwcwxv` it is code and factory-dispatchable. The item records the trap: `[]` is wrong for the five UNION keys only; it stays LEGITIMATE for the five CLEAN ones, and this check spans both. |
-| `oitd` | **open, P1 — FILED this session. THE next action.** `fleet/_contract_rows.py` is **246 LLOC against a 250 HARD ceiling**, so the fleet obligation table accepts **no new row**: 257 with a full `manual_hint`, **254 even at the tersest legal form**. `OBLIGATION_ROWS` is the single table every lane reads, so the ceiling silently converts "add a fleet obligation" into "refactor the central table first" — and nothing announces that until the commit is written. Decompose it (a pure move; `OBLIGATION_ROWS` content and ordering MUST be unchanged), then register the parked Phase 3 row. |
+| `oitd` | **CLOSED — PR #776 → `34c05c1`** | Decomposed `fleet/_contract_rows.py` (246 → 183 LLOC) by extracting the six `github-state` rows to `_contract_github_state_rows.py` and splicing them back in place. `OBLIGATION_ROWS` unchanged in content and ordering, verified by dumping every row's fields from both trees and diffing to empty. **195 LLOC** once the Phase 3 row was registered — still under the SOFT ceiling, so the next obligation does not re-open this. **Its recorded `depends on 8o8e.1` edge was INVERTED** (it was a prerequisite of `8o8e.1`'s Phase 3, not a consequent) and made the ledger show completed work as blocked; removed and re-recorded as a non-blocking `relates_to`. |
 | `fwcwxv` | **FILED as PR #773 — needs a MAINTAINER** | The spec propose-change. Four proposals: retire declared-empty for the union keys; preserve `[]` for the CLEAN keys with the stricter-not-blinder reason; ratify the constraint-based discriminator plus `unarmed_until` liveness; and the acceptance scenarios. **Filing is not ratifying** — accept or reject at `/livespec:revise`. **Phase 4 is gated on acceptance.** |
 | `bd-ib-6qb2mc` | **blocked / needs-human — FILED this session, in the `beads-fabro` tenant** | Carve `livespec-orchestrator-beads-fabro`'s real pure tree. It is the named work that repo's `pure_trees = { unarmed_until = ... }` points at, so it is the ONLY open item whose closure is referenced from a parsed config value in another repo. **Do NOT close it by declaring `not_applicable`** — that re-hides an obligation its own ratified `constraints.md` imposes; if the constraint is wrong, amend the SPEC first. `blocked` is correct rather than a formality: verifying the result is mechanical, choosing the cut is architectural. |
 | `pk2x` | backlog | Archive-on-epic-close — **ADOPT** ruled. Carries a note from this thread: a union makes `[]` unrepresentable after parsing, but **a key nobody wrote still parses to the default**, so pk2x's Exemption slot needs PRESENCE REQUIRED, not merely value well-formedness. |
@@ -505,6 +591,11 @@ repo that owns it**, and **an emptiness or absence that silently means consent**
 4. `commit_pairs` / `claude_md_coverage` / `tests_mirror_pairing` — disarmed by an empty role key
    (`8o8e.1`), and `commit_pairs` was disarmed by a declaration that named two OTHER checks.
 5. `vendor_update` — the "only blessed re-vendor path" cannot target dev-tooling's own `_vendor/`.
+6. `file_lloc_hard_gate` **again, from the other side** (`oitd`): the repo that SHIPS the fleet's
+   size ceiling is the one whose own central obligation table hit it, and the ceiling silently
+   converted "add a fleet obligation" into "refactor the central table first" — announced by
+   nothing until the commit was already written. Not an emptiness this time but the same shape:
+   **machinery correct for consumers and obstructive for the repo that owns it.**
 
 **And its prose twin, found five times now** — *an amendment that changed the behavior and left an
 authoritative statement of that behavior standing*: the handoff's own heading → this repo's config
@@ -525,6 +616,13 @@ merged PR body is NOT a work queue; an untracked deferral is the disease this it
 while scanning ZERO files. Require the **file count actually scanned**, not exit status. Green is
 the failure signature on this thread.
 
+**AND A GREEN AGGREGATE CAN CONTAIN A SKIPPED TARGET.** Measured landing Phase 3:
+`just check`'s `check-fleet-conformance` is behind the `LIVESPEC_RUN_FLEET_CONFORMANCE` lever, so
+it SKIPS locally, exits 0, and counts toward "All 64 targets passed". The skip is logged with a
+hint — honest, not silent — but the number 64 does not distinguish "ran and passed" from "declined
+to run". **Verify a fleet row by running the sweep or reading the CI job**, and prefer the engine's
+own `blind_rows` count, which is exactly the "did anything actually get enforced" measurement.
+
 **A static grep names candidates; it has not measured them.** A grep for "checks lacking a vendor
 exclusion" returned a 19-module superset that was not a work list. Nine checks reading
 `config.source_trees` are exemption predicates, unaffected by emptiness. Only execution separates
@@ -538,10 +636,18 @@ honest; two say "NOT an oversight". The defect is the CATEGORY ERROR, not anyone
 returns the `requires-python` FLOOR, not the pin — the pin is `tag = "vX.Y.Z"` under
 `[tool.uv.sources]`, one of four formats.
 
-**Check whether a test fixture supplies the very thing under test.**
+**Check whether a test fixture supplies the very thing under test. HIT TWICE NOW.**
 `tests/livespec_dev_tooling/checks/conftest.py` overrides `tmp_path` to seed a FULL legacy
 `[tool.livespec_dev_tooling]` block. A test in that directory that only creates files inherits it
 and proves nothing. Overwrite `pyproject.toml` outright.
+
+The second instance is worth more than the first: `test_fleet_conformance.py`'s
+`_all_required_empty_block()` generated a "green fleet" member declaring EVERY required role key
+as `[]` / `""` — the exact spelling Phase 3's row rejects. Twelve tests went red on registration
+and **all twelve were right**. The lesson is directional: **a fixture that generates every key the
+SAME way encodes an assumption the schema may no longer hold.** When the schema splits a key set
+into halves that must be spelled differently, a uniform generator is the thing that breaks, and it
+breaks pointing at the new check rather than at itself.
 
 **`just check` passing does NOT mean a commit will land.** The staged-diff checks (`commit-pairs`,
 `red-green-replay`) run only at commit/push time over the STAGED set.
