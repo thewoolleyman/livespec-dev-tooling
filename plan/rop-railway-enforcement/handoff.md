@@ -96,6 +96,89 @@ repo has checked out. `public_api_result_typed.py:186` still reads
 `role_trees(role=config.pure_trees)`: **step 6 is NOT STARTED, and that is verified rather than
 inherited.**
 
+### ✅ AUTHORITY CHANGED 2026-07-29 — step 6 IS AUTHORIZED, and Piece 1 is DONE
+
+Maintainer ruling: do the propose-change, revise, grooming and implementation autonomously; on step
+6, **"remediate dev-tooling's 59, then arm, then fan out."** The items this file previously listed
+as human-gated are no longer parked on a maintainer. **The spec lifecycle is NOT waived** — changes
+still go through propose-change and revise as OPERATIONS — but the accept/reject decision at revise
+is delegated to this thread.
+
+**PIECE 1 IS COMPLETE: `5ror` and `clkf` are RATIFIED as v034 and both are CLOSED.** Batched into
+ONE propose-change/revise cycle because both target `contracts.md` and are the same class. Filed
+`c3a1915`, ratified `3a7d8d8` (PR #807). Details on the closed items; the two things most likely to
+be undone by a later editor are recorded in §"What v034 preserved" below.
+
+### 🛡️ WHAT v034 PRESERVED — three carve-outs a later editor is most likely to undo
+
+Recorded here because each was a deliberate NON-change inside a change, and none of them is
+self-evident from reading the ratified text alone:
+
+1. **The harden-first ordering clause SURVIVED the retirement of the regime it governed.** "A
+   rejecting loader MUST NOT land before every consumer has migrated" is the GENERAL rule for
+   future required-key schema changes; the `[]`-on-union-keys transition was one application of
+   it. Deleting the rule alongside its occasion was the obvious tidy and would have discarded the
+   constraint that made this whole epic land safely.
+2. **§"Clean role keys retain `[]`" is untouched.** A bare `[]` remains legitimate for
+   `source_trees`, `io_trees`, `commands_trees`, `supervisor_entry_files`, `covered_trees` — for
+   those, emptiness removes exemptions rather than files, so it makes the consuming check STRICTER.
+   "Declared-empty is retired" MUST NOT be generalized.
+3. **The v0.54.12 deviation record is retained as HISTORY, not deleted as embarrassment.** It now
+   reads as "that was the regime then in force" plus an explicit statement that it is NOT a
+   standing licence. The paragraph's purpose was always to record a deviation rather than smooth
+   it over; correcting its justification without deleting the record is the whole trick.
+
+**And the scenario was REWRITTEN, not deleted** — the behavior (a consumer declaring a union key as
+a bare `[]`/`""`) still exists and is still load-bearing; only its outcome changed from WARN to
+hard failure. No other scenario covers that input: the neighbouring one governs a blessed variant
+NAME with an empty payload, which is a different input. The line `And the emptiness MUST NOT be
+reported as a sanctioned opt-out` was carried over verbatim — it is the invariant the union exists
+to enforce, and it survives the change in outcome.
+
+### 🔬 STEP 6 TRIAGE — the 59 are triaged. **Only ~15 are genuine conversions. DO NOT convert 59.**
+
+The maintainer's sequence is remediate → arm → fan out, but this file's own measurement said it
+could not settle whether each offender is a genuine violation. **It is now settled, per function.**
+Reproduced exactly — 59 offenders in 21 files — by running the SHIPPED
+`public_api_result_typed._find_offenders` over the git-derived universe `resolve_check_universe()`
+returns, with this repo's real config (`commands_trees` is **empty**, which is load-bearing below).
+
+| # | class | verdict |
+|---|---|---|
+| **6** | **private name in `__all__`** | **NOT a violation — the check over-reaches.** All six are in `checks/check_mutation.py`, whose `__all__` contains ONLY `_`-prefixed helpers and does not even list `main`. `__all__` there exposes privates for testing; it is not a public-API declaration. The spec's rule is "every **public** function's return annotation"; a `_`-prefixed name is private by this repo's own convention. The check equates `__all__` membership with publicness, and for this module that equation is simply false. |
+| **12** | **`main() -> int` supervisor** | **NOT a conversion — needs a stated exemption or a declared location.** The spec exempts exactly this shape, but scopes it to `commands/*.py` and `doctor/run_static.py`. dev-tooling declares NO `commands_trees` and its supervisors sit flat at `livespec_dev_tooling/*.py` and `checks/*.py`. The check is faithfully implementing the spec — its own docstring says the scoping "is load-bearing, not decoration" — so the gap is in the SPEC's location-scoping, not the check. |
+| **7** | **exit-code returner** | **Mostly the same family.** `install_hooks`, `install_neutral_hook_body`, `install_pack`, `run`, `run_tdd_commit`, `run_from_settings` are supervisor BODIES returning an exit code, each called by an exempt-shaped `main()`. `ordinal_distance() -> int` is the odd one out — pure arithmetic, no failure mode. |
+| **6** | **hand-rolled failure track `X \| None`** | **CONVERT — the strongest candidates.** These already model failure; they just model it off-railway. `tag_version_component`, `rewrite_layered_docker_tag`, `rewrite_pin_in_text` (fabro), `parse_manifest`, `fetch_manifest`, `parse_argv`. |
+| **1** | **hand-rolled Either** | **CONVERT.** `fleet/dispatch_matrix_filter.filter_siblings() -> FilterOutcome \| FilterError` is literally an Either encoded by hand. |
+| **3** | **explicit `raise` / `try`** | **CONVERT.** `parse_manifest` (also `\| None`), `select_runner`, `test_workflow_full_round_trip`. |
+| **~3** | **real I/O, unhandled** | **CONVERT to `IOResult`.** `fleet/ensure_plugins.subprocess_runner` (`subprocess.run`), `testing/cli_e2e.run_workflow` (injected runner seam), `checks/required_role_keys_declared.layout_dependent_check_slugs` (`is_file`). |
+| **~22** | **genuinely total pure** | **DO NOT CONVERT.** Plain value in, plain value out; no raise, no try, no `None` failure return, no I/O. `Result` on a total function carries no information — the failure track would be uninhabited. Wrapping them satisfies the letter of "every public function" and defeats its purpose. |
+
+**Counts sum to 59** (the 6 `\| None` include `parse_manifest`, which also has a `try`, so the
+conversion set is the UNION, not the sum: **~15 distinct functions**).
+
+**⚠️ A HEURISTIC IN THIS TRIAGE WAS WRONG ONCE AND IS CORRECTED HERE.** A first pass flagged ten of
+the "total" functions as touching I/O by matching call names. Reading them showed most hits were
+`dict.get` / `settings.get`, not I/O. **Only three are real.** Recorded because the same
+name-matching shortcut would mis-triage the other five repos' 223 in the same direction — toward
+over-conversion, which is the expensive direction to be wrong in.
+
+**THE TWO STRUCTURAL FINDINGS, which matter more than the counts.** Both say the remaining 41
+non-conversions need a SPEC decision, not code:
+
+1. **The `main()` exemption is granted to a LOCATION, and the enforcement suite has no such
+   location.** Either dev-tooling declares a commands tree (fabricating a layout it does not have),
+   or the spec's exemption is restated to name the shape rather than the directory. **This is a
+   propose-change, and it must land BEFORE arming** — otherwise arming reddens 19 functions the
+   spec already means to exempt.
+2. **`__all__` is overloaded in this repo**, and the check's "public API = named in `__all__`"
+   premise is false wherever `__all__` is used to expose privates for testing.
+
+**SEQUENCE, REVISED BY THE TRIAGE:** spec change for the two structural classes → convert ~15 in
+slices (each its own Red-Green-Replay pair and its own PR) → re-measure → arm → fan out. **Arming
+still MUST NOT precede dev-tooling reaching zero**: the ordering trap is unchanged, this repo runs
+the check on itself, and lefthook would block the very commit that fixes it.
+
 ### 📐 STEP 6's BLAST RADIUS — RE-MEASURED 2026-07-28. **282, not 245.** Read-only; nothing armed.
 
 The loader has stopped moving, so this is the first moment the number can be trusted — which is
@@ -734,9 +817,9 @@ the entire fan-out would silently never trigger.
 |---|---|---|
 | `8o8e` | epic | This thread's anchor. Cannot close until `8o8e.1` is fleet-wide fixed AND verified. |
 | `8o8e.1` | **✅ CLOSED — precondition DISCHARGED** | Role-key schema type-safety. All four phases landed, spec ratified at v033, Phase 4 released as **`v1.0.0`** and consumed by all eight siblings (declared AND resolved). Eighteen pieces of per-repo evidence: 45 rejections against the pinned loader, nine `RowPass` from the registered Phase 3 row. |
-| `5ror` | **blocked / needs-human, P1 — HALF-RESOLVED BY EVENTS** | #794 merged; **v1.0.0 is tagged, released and consumed fleet-wide**, so the fan-out is no longer gated. What remains is the other half: `contracts.md:307` still records this library as **pre-1.0**, and that is now FALSE. A spec change — do not edit it directly. |
+| `5ror` | **✅ CLOSED 2026-07-29 — RATIFIED as v034 (`3a7d8d8`, PR #807)** | `contracts.md` recorded the library as pre-1.0 with MAJOR pinned at `0`, which a released and fleet-consumed `v1.0.0` made false. The clause was NORMATIVE, which is why it outranked ordinary prose staleness: it told a future editor a breaking change may land in a lower component. The v0.54.12 deviation record is PRESERVED and rescoped to the regime then in force. |
 | `efxa` | open, P2 — factory-dispatchable | **30 of 31 checks never catch `ConfigParseError`**, so a config error escapes as a traceback rather than the structured diagnostic `contracts.md` promises. Unreachable before Phase 4; reachable now from a plausible config. The rejection works — what is owed is the RENDERING. |
-| `clkf` | **blocked / needs-human, P2** | v033 ratified the TRANSITIONAL accepting-loader regime that Phase 4 ended hours later: the "MUST log at WARN" clause and its acceptance scenario describe behavior that no longer exists, and the heading-coverage entry cites a test Phase 4 deleted. Ratifying it was CORRECT — it is what authorized Phase 4 — so the defect is the standing description, not the decision. Spec change; needs propose-change + revise. |
+| `clkf` | **✅ CLOSED 2026-07-29 — RATIFIED as v034 (`3a7d8d8`, PR #807)** | v033 ratified the TRANSITIONAL accepting-loader regime that Phase 4 ended hours later. Ratifying it was CORRECT — it is what authorized Phase 4 — so the defect was the standing description, not the decision. All three targets fixed: the `contracts.md` WARN clause, the `scenarios.md` acceptance scenario (REWRITTEN, not deleted), and the `heading-coverage.json` entry citing a test Phase 4 deleted. |
 | `kmdn` | **blocked / needs-human, P2** | v033 turned four repos' `pure_trees = { unarmed_until = … }` into a RATIFIED obligation to arm, which nobody has scheduled. Three of the four cite a CROSS-TENANT id and no verifier resolves any of them. All four point at open work today — so nobody is in breach, which is exactly why it was filed now: when `livespec-mutreal.1` closes, three repos breach at once and nothing notices. |
 | `kepq` | open, P2 (split) | Two standing `doctor-static` fail findings on master, so EVERY revise pass exits 3 on findings unrelated to the revision. The `canonical_checks.py` half is factory-dispatchable; the `SPECIFICATION/README.md` half MUST go through propose-change/revise. |
 | `br4xar` | backlog | `tests_mirror_pairing` disarmed in 3 repos. **ALL THREE RE-DERIVED 2026-07-28: `23 / 6 / 58` is really `6 / 6 / ≤3`** — git-jsonl's 23 was a no-map artifact, runtime's 6 CONFIRMED unchanged, and overseer's 58 was 94% contamination (49 of the 58 are that repo's own co-located test files).** The source→test MAPPING this item asks for **already exists and is already consumed** — `config.mirror_pairings` takes precedence over the derived fallback at `tests_mirror_pairing.py:120`. 23 was what a prefix union produces WITHOUT a map. **Sizing: ~15 tests plus one design question, not an epic** — the only epic-shaped part left is overseer's co-located-layout question, which `tests_mirror_pairing` structurally cannot express. See the section below. |
@@ -1214,6 +1297,18 @@ breaks pointing at the new check rather than at itself.
 **`just check` passing does NOT mean a commit will land.** The staged-diff checks (`commit-pairs`,
 `red-green-replay`) run only at commit/push time over the STAGED set.
 
+**⛔ THE REMEDY FOR THE `$(...)` HAZARD — STATE IT, NOT JUST THE HAZARD. IT HAS COST THIS THREAD
+THREE TIMES.** The rule below has been re-learned three separate ways, so the fix is promoted above
+the anecdotes: **use a runner that RAISES on a non-zero exit, and enumerate before you fetch.** In
+practice that means a Python helper whose `subprocess.run` wrapper raises on `returncode != 0`,
+rather than a shell `$(...)` whose failure is indistinguishable from a legitimate empty result. The
+three instances: (1) `gh pr checks --json` printing "unknown flag", read as "not yet", spinning a
+loop for ~37 minutes; (2) a 404 body hashed as though it were a file, producing the WRONG `qv3k`
+divergence figure; (3) a broken `PATH` making `head` unavailable, so eight repos reported "ABSENT
+from tree" when the file was present in all eight. **All three were silent, and all three produced
+a confident wrong answer rather than an error.** Rewriting instance (3) in a raising Python runner
+is what produced the correct 8/7 measurement.
+
 **VERIFY A POLLING PROBE ONCE BEFORE WRAPPING IT IN AN UNTIL-LOOP.** Measured, and it cost ~37
 minutes: `until [ "$(gh pr checks <n> --json bucket --jq ...)" = "true" ]` spun forever because
 `gh pr checks` does **not** support `--json` — it printed "unknown flag" plus usage, which the test
@@ -1222,6 +1317,25 @@ legitimately returns "not done".** The PR had already merged before the loop sta
 sub-command matters, not the tool: `gh pr view <n> --json state --jq .state` DOES support `--json`.
 Run the probe bare, look at the output, THEN loop — and give the loop an iteration ceiling that
 reports rather than hangs.
+
+**THE REVISE STALE-BRANCH PRECONDITION FIRES ON THE REVISE'S OWN BRANCH. MEASURED 2026-07-29.**
+Step 3.5 of the revise prose runs `no_stale_revise_branches`, which fails any local `spec/*` branch
+ahead of `origin/master`. Filing a propose-change and revising it on ONE branch — which is the
+natural shape, and the shape this thread used — makes the filing commit itself the "stale branch",
+so the precondition fails on the very pass it is guarding. **It cannot distinguish an ABANDONED
+`spec/*` branch from the branch the revise is currently running on.** The prose's own escape is
+correct here (`--skip-stale-branch-check`) and it REQUIRES narrating the skip rather than taking it
+silently — do that, every time, because the same override would also mask a genuinely abandoned
+branch. Worth a check-side fix: excluding the current branch (`git rev-parse --abbrev-ref HEAD`)
+would keep the guard and remove the false positive.
+
+**⚠️ AND `revise` EXITING 3 IS NOT `revise` FAILING.** The post-step doctor runs AFTER the
+file-shaping work, so a `fail` finding lifts the exit code on a revision that HAS ALREADY LANDED.
+On 2026-07-29 it exited 3 with exactly `kepq`'s two standing findings (`README.md:19`,
+`canonical_checks.py:98`), both in files the change never touched — while v034 was cut, paired into
+history, and `proposed_changes/` drained. **Always verify what landed before treating exit 3 as a
+failed revise:** check `history/vNNN/` exists, the proposed change moved with its `-revision.md`
+pairing, and `doctor-out-of-band-edits` / `doctor-accept-decision-snapshot-consistency` passed.
 
 **A LEDGER STATUS IS A CLAIM, NOT AN OBSERVATION — AND IT AGES LIKE ONE. MEASURED 2026-07-28.**
 This file calls the ledger authoritative over itself. On a cold start that was FALSE for two items:
