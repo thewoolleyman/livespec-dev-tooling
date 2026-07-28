@@ -53,6 +53,14 @@ every flat-layout repo — legitimately and honestly now, and still zero. Phases
 SCHEMA honest and made it STAY honest; neither made any check scan anything. Arming means migrating
 that check off `pure_trees` onto `resolve_check_universe()` — `8o8e`'s own **step 6, NOT STARTED**.
 
+**AND IT IS NOW MEASURED, NOT ASSERTED.** On 2026-07-28, every repo's live `pyproject.toml` was
+loaded through the shipped loader and `config.pure_trees` resolved through the shipped
+`role_trees()` accessor — the same call `public_api_result_typed.py:186` makes. **All eight
+repos yield an EMPTY tree list. Fleet total scan roots: 0.** Four `UnarmedUntil`
+(`livespec`, `livespec-orchestrator-beads-fabro`, `livespec-orchestrator-git-jsonl`,
+`livespec-overseer`) and four `NotApplicable` (`livespec-dev-tooling`, `livespec-driver-claude`,
+`livespec-driver-codex`, `livespec-runtime`). The thread's central claim is a measurement.
+
 **AND PHASE 3 SHARPENED THAT, RATHER THAN SOFTENING IT.** Four repos now declare
 `pure_trees = { not_applicable = "…" }` **honestly and correctly**, which means arming the railway
 in those four **cannot come from `pure_trees` at all** — there is no tree there to widen. Step 6 is
@@ -564,6 +572,7 @@ the entire fan-out would silently never trigger.
 | `fwcwxv` | **FILED as PR #773 — needs a MAINTAINER** | The spec propose-change. Four proposals: retire declared-empty for the union keys; preserve `[]` for the CLEAN keys with the stricter-not-blinder reason; ratify the constraint-based discriminator plus `unarmed_until` liveness; and the acceptance scenarios. **Filing is not ratifying** — accept or reject at `/livespec:revise`. **Phase 4 is gated on acceptance.** |
 | `bd-ib-6qb2mc` | **blocked / needs-human — FILED this session, in the `beads-fabro` tenant** | Carve `livespec-orchestrator-beads-fabro`'s real pure tree. It is the named work that repo's `pure_trees = { unarmed_until = ... }` points at, so it is the ONLY open item whose closure is referenced from a parsed config value in another repo. **Do NOT close it by declaring `not_applicable`** — that re-hides an obligation its own ratified `constraints.md` imposes; if the constraint is wrong, amend the SPEC first. `blocked` is correct rather than a formality: verifying the result is mechanical, choosing the cut is architectural. |
 | `m50u` | **blocked / needs-human — FILED 2026-07-28** | A blessed declared-absent PAYLOAD can be false and nothing checks it. `livespec-orchestrator-git-jsonl`'s `source_tree_prefixes = { superseded_by = … }` is **measurably untrue** — 14 of 49 first-party `.py` fall outside the derived set — silently narrowing BOTH commit-time gates. Filed HERE rather than in the git-jsonl tenant deliberately: that repo's intake runs through its own orchestrator surface (the `bd-ib-6qb2mc` precedent), which is not installed here, and a raw cross-tenant `bd -C` would bypass the intake DoR that routed that precedent correctly. **First action: route the git-jsonl half through that repo's own intake.** |
+| `qv3k` | **blocked / needs-human — FILED 2026-07-28** | `livespec_footgun_guard.py` is the fleet's THIRD shared hook body and the only one with **no carrier constant, no installer and no byte-identity check** — 8 copies, **7 distinct contents**. The precedent exists twice (commit-refuse hooks; the no-shadow-ledger body) and was simply never extended. `needs-human` because picking a canonical body among eight divergent copies could weaken a SAFETY guard in seven repos at once, and nothing yet establishes which copy blocks least. |
 | `pk2x` | backlog | Archive-on-epic-close — **ADOPT** ruled. Carries a note from this thread: a union makes `[]` unrepresentable after parsing, but **a key nobody wrote still parses to the default**, so pk2x's Exemption slot needs PRESENCE REQUIRED, not merely value well-formedness. |
 
 **`fp5yfv` — VERIFIED 2026-07-28, and the answer is BOTH.** It is no longer a "possible stale
@@ -625,9 +634,46 @@ Smaller measured gaps, same run: `livespec` 9 uncovered (the 6-file
 `livespec-dev-tooling`, `livespec-overseer` and `livespec-runtime` 1 each, all the same
 `.claude/hooks/livespec_footgun_guard.py`.
 
-**Incidental, measured in passing and NOT investigated:** that footgun guard has **four distinct
-sha256s across the five places it lives.** Copies of a safety guard have drifted. Recorded so it is
-not lost; nobody should read this as having looked into it.
+**That footgun-guard aside was investigated after all, and the first figure was WRONG.** It said
+"four distinct sha256s across the five places it lives". **Corrected: the file lives in EIGHT
+repos and has SEVEN distinct contents** (239–313 lines; only `livespec-overseer` and
+`livespec-runtime` agree). Filed as **`livespec-dev-tooling-qv3k`** — see the section below.
+
+**HOW THE WRONG FIGURE HAPPENED — this repo's own hazard, in a new costume.** The path is NOT
+uniform: `livespec-driver-codex` carries the guard at `livespec/hooks/`, everyone else at
+`.claude/hooks/`. The first pass assumed `livespec-driver-claude` used `.claude-plugin/hooks/` by
+analogy with the no-shadow body (which DOES live there), the fetch 404'd, and **the 404 JSON body
+was hashed as though it were the file.** That is the `$(...)`-failure hazard already recorded
+below, wearing different clothes: *a command that fails inside a substitution is
+indistinguishable from one that legitimately returned something.* **Enumerate the tree first, then
+fetch known paths. Never fetch a guessed path and hash whatever comes back.**
+
+### 🛡️ `qv3k` — THE FLEET'S THIRD SHARED HOOK BODY HAS NO CARRIER AND NO IDENTITY CHECK, AND IT HAS FORKED
+
+`livespec_footgun_guard.py` mechanically enforces this fleet's loudest standing rule — it blocks
+`git commit/push --no-verify`, `git config core.bare true`, and a leading `LEFTHOOK=0` assignment.
+**Eight repos carry it. Seven distinct contents.**
+
+| repo | path | lines |
+|---|---|---|
+| `livespec` | `.claude/hooks/` | **313** |
+| `livespec-driver-claude` | `.claude/hooks/` | **276** |
+| `livespec-driver-codex` | `livespec/hooks/` | **246** |
+| `livespec-dev-tooling` · `-orchestrator-git-jsonl` · `-overseer` · `-runtime` | `.claude/hooks/` | 240 (three DIFFERENT contents; overseer = runtime) |
+| `livespec-orchestrator-beads-fabro` | `.claude/hooks/` | **239** |
+
+**The precedent for fixing this already exists TWICE and simply was never extended.** The
+commit-refuse hooks and the neutral no-shadow-ledger body each have a packaged carrier constant,
+an installer, and a byte-identity check (`no_shadow_ledger_body_identical`, whose docstring calls
+its target "INSTALLED FOREIGN CONTENT ... forbidden to hand-edit"). The footgun guard has **no
+carrier, no constant, no role key, no check** — it was copied. `config.py`'s own first-party
+universe comment names it in the SAME BREATH as the no-shadow guard, so the fleet's prose already
+treats them as a pair while only one has the machinery.
+
+**What is NOT claimed:** nothing establishes that any copy is WEAKER than another. The measurement
+is DIVERGENCE — hashes and line counts, not behavior. Working out which copy blocks least is the
+first real task and must precede picking a canonical body, because adopting the wrong one weakens
+the guard in seven repos in one commit. That is why `qv3k` is `needs-human`, not `ready`.
 
 ### 🔢 `br4xar`'s "23 FABRICATED OFFENDERS" WAS AN ARTIFACT — re-derived to `0 fabricated / 6 REAL`
 
@@ -684,9 +730,18 @@ One shape, found repeatedly — **machinery that is correct for consumers and in
 repo that owns it**, and **an emptiness or absence that silently means consent**:
 
 1. `check-public-api-result-typed` — scanned zero files in all nine repos (`8o8e`).
-2. `check-plan-thread-anchor-declared` — armed ONLY in the one repo with zero plan threads
-   (`pk2x`); 18 of 20 fleet handoffs would fail it. An **ABSENCE** meaning consent, not an
-   emptiness — a union does not fix that shape.
+2. `check-plan-thread-anchor-declared` — an **ABSENCE** meaning consent, not an emptiness; a union
+   does not fix that shape. **RE-DERIVED 2026-07-28 with the check's OWN `_declared_anchor`
+   predicate (not another grep): 19 of 23 active fleet handoffs would fail, not 18 of 20** — and
+   the old characterization *"armed only in the one repo with ZERO plan threads"* is stale twice
+   over. `livespec-dev-tooling` now has TWO active threads and is still the ONLY repo declaring
+   `plan_lifecycle_anchor = true` — and **both of its threads PASS.** So the shape is not "armed
+   where there is nothing to check" but **"armed only where it already passes"**, which is the
+   same defect wearing a less obvious face: the repo that adopts a convention first is the repo
+   whose adoption the check can then never demonstrate. All 19 offenders sit in the eight repos
+   that have not armed it. Two UNARMED repos already pass voluntarily (`livespec-driver-codex`,
+   and one of git-jsonl's two on a CROSS-TENANT anchor the predicate accepts by design), so the
+   19 is not 19 repos-worth of resistance.
 3. `file_lloc_hard_gate` — retired under `426a` for exactly this: "the omission read as
    conformance". Its retirement sequence is the migration template Phase 4 follows.
 4. `commit_pairs` / `claude_md_coverage` / `tests_mirror_pairing` — disarmed by an empty role key
