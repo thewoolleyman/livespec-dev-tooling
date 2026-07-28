@@ -895,6 +895,45 @@ is DIVERGENCE — hashes and line counts, not behavior. Working out which copy b
 first real task and must precede picking a canonical body, because adopting the wrong one weakens
 the guard in seven repos in one commit. That is why `qv3k` is `needs-human`, not `ready`.
 
+**RE-MEASURED INDEPENDENTLY 2026-07-28 — 8 bodies / 7 distinct contents CONFIRMED to the digit**
+(313 / 276 / 246 / 240×4 / 239, `livespec-overseer` == `livespec-runtime`). The method was chosen
+to be independent of the original: git-tree ENUMERATION per repo, blob fetch by the enumerated
+path, and **a runner that RAISES on a failed API call** — because the first figure was wrong from
+hashing a 404 body, and a shell loop attempting this re-measurement failed the same way again
+mid-run (a broken `PATH` made `head` unavailable, so eight repos reported "ABSENT from tree"). **A
+command that fails inside `$(...)` is indistinguishable from one that legitimately returned
+nothing — third instance on this thread. Prefer a runner that raises.**
+
+### ⚖️ AND THE BLOCKING QUESTION HAS FOUR ORACLES ALREADY WRITTEN — `qv3k` is cheaper than filed
+
+`qv3k` is `needs-human` because "nothing yet establishes which copy blocks least". **That premise
+is materially weaker than recorded: FOUR of the eight carrying repos already have a paired test
+for the guard, not one.**
+
+| repo | paired test | size |
+|---|---|---|
+| `livespec-driver-codex` | `tests/hooks/` | **540 lines** (against a 246-line guard) |
+| `livespec-orchestrator-beads-fabro` | `tests/hooks/` | **452 lines** |
+| `livespec` | `tests/claude/hooks/` | **289 lines** |
+| `livespec-driver-claude` | `tests/hooks/` | **144 lines** |
+| `livespec-dev-tooling` · `-git-jsonl` · `-overseer` · `-runtime` | **NONE** | — |
+
+So the question can be ANSWERED mechanically rather than argued: run each of the four suites
+against all seven distinct bodies — a 4×7 matrix — and the copies that fail somebody's test are
+the ones that block less. **This does not make `qv3k` `ready`** (adopting a canonical safety body
+across seven repos still wants a human), but it removes "no prior art" as the reason and replaces
+a reading exercise with a test run.
+
+**One correlation, deliberately NOT promoted to a finding:** the four repos WITHOUT a test are
+exactly the four SMALLEST bodies (239–240) and the four WITH one are the four largest (246–313),
+consistent with copies being forked and then extended where they were exercised. **That is a line
+count, not evidence that the untested copies block less.** Run the matrix before believing it.
+
+It also re-confirms `m50u`'s sequencing note: `livespec-dev-tooling` genuinely has **no**
+`tests/claude/hooks/test_livespec_footgun_guard.py` while `livespec` does. The sequence stands —
+`qv3k` picks the body → the test is written against THAT → `.claude/hooks/` is declared here. The
+four existing suites are the obvious raw material for that test.
+
 ### 🔢 `br4xar` RE-DERIVED IN FULL — `23 / 6 / 58` is really `6 / 6 / ≤3`
 
 Measured while working `m50u`, because `m50u`'s stated trap ("do not widen the prefix set — it
