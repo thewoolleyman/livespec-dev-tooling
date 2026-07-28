@@ -140,12 +140,13 @@ that WARNs naming the repo and key. **Phase 1 rejects nothing and reddens nothin
 runs, 47 exit 0. (The one non-zero, `livespec / claude_md_coverage`, is PRE-EXISTING: master's
 loader reproduces it identically. Flagged, not investigated — outside this item.)
 
-**The Phase 2 work list is now derivable by RUNNING the checks: 29 (repo, key) pairs.**
+**The Phase 2 work list is derivable by RUNNING the checks. It was 29 (repo, key) pairs; slice 1
+migrated this repo's 3, leaving 26 — all of them in siblings.**
 
 | repo | un-migrated | | repo | un-migrated |
 |---|---|---|---|---|
 | livespec | 2 | | livespec-orchestrator-beads-fabro | 3 |
-| livespec-dev-tooling | 3 | | livespec-orchestrator-git-jsonl | **5** |
+| livespec-dev-tooling | **0 — MIGRATED** | | livespec-orchestrator-git-jsonl | **5** |
 | livespec-driver-claude | 3 | | livespec-overseer | **5** |
 | livespec-driver-codex | 3 | | livespec-runtime | **5** |
 
@@ -172,12 +173,25 @@ pin on the FORGE per repo (`[tool.uv.sources]` `tag = "vX.Y.Z"`, ≥ `v0.57.0`) 
 **Do not trigger a release. Do not hand-edit a sibling's pin** — the fan-out does it, and a
 hand-edit races the automation.
 
-### Phase 1 is released, so `livespec-dev-tooling` itself can migrate FIRST
+### ✅ SLICE 1 IS DONE — `livespec-dev-tooling` migrated its own three keys (merged `b27401c`)
 
-It is the producer AND a consumer, and it is the one repo whose loader is always current. Its 3
-un-migrated keys (`dataclasses_tree`, `neutral_hook_body_path`, `pure_trees`) are migratable with
-no pin wait at all — a natural first slice that proves the spellings end-to-end before any sibling
-is touched. Still gated on Phase 2 authorization.
+The producer went first: both producer and consumer, always on the current loader, so no pin wait.
+All three took **(A) `not_applicable`**, each reason lifted from that key's own existing comment:
+`pure_trees`, `dataclasses_tree`, `neutral_hook_body_path`.
+
+**Verified on merged master by RUNNING it: this repo's `LegacyAmbiguousEmpty` count is 3 → 0**, all
+three now report `role_key_spelling: not_applicable`, all six consuming checks exit 0, `just check`
+64/64. The four spellings are now proven end-to-end against a real repo.
+
+`pure_trees` is the case that justifies the union: `livespec` and `livespec-overseer` carry the
+SAME empty value for the OPPOSITE reason (`unarmed_until = "livespec-mutreal.1"`). One value, two
+meanings — now distinguishable.
+
+### ▶️ NEXT SLICE: the seven siblings, and it is NOT yet authorized
+
+26 pairs remain, all in siblings. Each is gated on **that repo's own pin reaching `>= v0.57.0`** —
+re-derive from the forge per repo. Sibling migration is a separate authorization, not a
+continuation of slice 1.
 
 Then **Phase 3** (a fleet-conformance check asserting zero `LegacyAmbiguousEmpty` across all eight —
 this IS the closure precondition's evidence) and **Phase 4** (the rejecting loader; `[]` becomes a
