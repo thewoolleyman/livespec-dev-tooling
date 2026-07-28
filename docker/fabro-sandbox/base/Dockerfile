@@ -56,8 +56,13 @@ FROM buildpack-deps:noble-scm
 # loading shared libraries: libatomic.so.1"). It is a 10.5 kB runtime
 # library (50.2 kB installed) — negligible against the 176.9 MB the
 # `-scm` re-base saves, and NOT a compiler or dev-header re-add.
+# tmux — required by factory-tier acceptance tests that run inside this same
+# Fabro sandbox image and drive real private tmux sockets. It is a 468.6 kB
+# package (1,160.0 kB installed on noble amd64) with no daemon, and keeps
+# CI-vs-sandbox parity for tmux-dependent verifiers without adding a compiler
+# or dev headers back to base.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libatomic1 \
+    && apt-get install -y --no-install-recommends libatomic1 tmux \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
