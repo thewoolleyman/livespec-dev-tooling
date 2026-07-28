@@ -135,6 +135,76 @@ NAME with an empty payload, which is a different input. The line `And the emptin
 reported as a sanctioned opt-out` was carried over verbatim — it is the invariant the union exists
 to enforce, and it survives the change in outcome.
 
+### 🚦 STEP 6 PROGRESS — **59 → 51**, and the blocker is a DIFFERENT REPO'S SPEC
+
+| landed | effect |
+|---|---|
+| **#809** underscore rule (`b49c744`) | **59 → 53.** A `_`-prefixed name is not public API even inside `__all__`. |
+| **#812** ROP slice 1 (`8751a69`) | **53 → 51.** Two of `fabro_image_pin_rewrite`'s three `X \| None` returns converted. |
+
+### ⛔ THE RULE THIS CHECK ENFORCES IS NOT IN THIS REPO'S SPEC — verify before planning anything
+
+**`livespec-dev-tooling/SPECIFICATION/` never states the Result-return rule at all.** Measured:
+zero hits for `Result[_, _]` or "public function". The normative rule lives in
+**`livespec/SPECIFICATION/non-functional-requirements.md`**, and it is stated **TWICE with
+INCOMPATIBLE exemption sets**:
+
+- **line 655** — "…unless the function is a supervisor at a deliberate side-effect boundary
+  (`main() -> int` in `commands/*.py` and `doctor/run_static.py`, or any function returning
+  `None`). **The rule exempts only such supervisors.**"
+- **line 695** — the same sentence **plus** "OR the `build_parser() -> ArgumentParser` factory in
+  `commands/**.py`".
+
+That contradiction is **`livespec-i04f`**, already filed and listed here as carried-forward. The
+repo's own test file for this check has documented it for some time.
+
+**CONSEQUENCE: widening the supervisor exemption is a `livespec`-REPO spec change, not a
+dev-tooling one.** Line 655 is explicitly CLOSED ("exempts only such supervisors"), so honoring
+`supervisor_entry_files` in dev-tooling's check ALONE would ship an exemption the ratified rule
+does not grant — which is precisely the `io_trees` hook-tree dodge this epic REFUSED, "an
+unratified exemption invented in config rather than argued in the spec". **It was deliberately not
+implemented for that reason.**
+
+### 🔑 THE `supervisor_entry_files` LEVER IS REAL, AND STRONGER THAN IT LOOKED
+
+Verified rather than taken. `supervisor_entry_files` is consumed by **FOUR** checks —
+`no_except_outside_io`, `no_write_direct`, `supervisor_discipline`, `partition_completeness` — and
+**`public_api_result_typed` is the ONLY one of the five that never asks the repo.** So the
+Result-return check and the except-position check already disagree about what a supervisor is.
+
+**3 of the 12 `main()` offenders are ALREADY declared** (`canonical_checks.py`,
+`cross_repo/bump_pr_supersession.py`, `fleet/merged_branch_sweep.py`), so honoring the key exempts
+them with no new declaration at all; the other 9 would need an explicit, reasoned entry. That is
+the epic's own idiom — an ACTIVE per-file declaration, verbose and greppable, where a repo that has
+not spoken still gets nothing.
+
+**AND THIS REPO'S OWN SPEC UNDER-REPORTS IT.** `contracts.md:217` says `supervisor_entry_files` is
+"Consumed by `no_except_outside_io`" — **one of four**. Meanwhile `pyproject.toml`'s comment
+correctly says "Adding a path here grants it FOUR separate exemptions" and lists them. **The
+staleness is INVERTED from this thread's usual direction**: here the config comment is right and
+the ratified spec is wrong. Correcting that bullet is a dev-tooling propose-change and is
+independent of the livespec one.
+
+### 🔧 TWO MEASUREMENTS THAT CORRECT THE RECORD
+
+- **`returns` IS vendored in `livespec-dev-tooling`** (`livespec_dev_tooling/_vendor/returns`), so
+  conversion needs no vendoring prerequisite. The `8o8e` epic description's table saying this repo
+  does NOT vendor it is **STALE**. Zero first-party imports, though — "vendoring is not usage"
+  still holds exactly as the epic says.
+- **`Optional`-as-optional is NOT a failure track, and one of three in the strongest class was
+  not a conversion.** `tag_version_component() -> str | None` returns `None` because a tag HAS no
+  version component — a legitimate absence. Converting it would force every caller to unwrap a
+  `Failure` for an ordinary answer. **The "hand-rolled failure track" class must still be read per
+  function**, or the triage's own lesson gets re-lost one level down.
+
+### 🧭 METHOD CONSTRAINT FOR THE FAN-OUT — read the callee, do not match the name
+
+Binding on the other five repos' 223, not just on this pass. Matching call NAMES flagged ten
+"total" functions as touching I/O; reading them showed most hits were `dict.get` / `settings.get`
+and **only three were real** (`subprocess.run`, an injected runner seam, `Path.is_file`). The
+shortcut errs toward **over-conversion**, which is the expensive direction — it manufactures
+`Result` types whose failure track is uninhabited and sells it as progress.
+
 ### 🔬 STEP 6 TRIAGE — the 59 are triaged. **Only ~15 are genuine conversions. DO NOT convert 59.**
 
 The maintainer's sequence is remediate → arm → fan out, but this file's own measurement said it
