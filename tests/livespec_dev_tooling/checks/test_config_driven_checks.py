@@ -164,21 +164,23 @@ def _assert_noop_on_declared_empty_role_key(
     tmp_path: Path,
     env: dict[str, str] | None = None,
 ) -> None:
-    """A declared-empty role key still no-ops, and now ANNOUNCES itself.
+    """A DECLARED-ABSENT role key still no-ops, and ANNOUNCES which variant it is.
 
-    Phase 1 of the role-key union (livespec-dev-tooling-8o8e.1) preserves the
-    OUTCOME — exit 0, so no repo goes red — while replacing the old
-    "sanctioned opt-out" INFO with a WARN that names the ambiguous spelling.
-    The outcome is the contract; the wording is the migration signal.
+    The OUTCOME is the contract and it is unchanged across all four phases of
+    `livespec-dev-tooling-8o8e.1`: exit 0, so a consumer that legitimately has
+    no such tree never goes red. What changed is the announcement. Phase 1
+    replaced the old "sanctioned opt-out" INFO with a WARN naming the ambiguous
+    spelling; Phase 4 deleted that spelling outright, so what a conformant
+    consumer now announces is the BLESSED variant it declared, carrying the
+    reason from the parsed value rather than from a comment.
     """
     _write_block(repo_root=tmp_path, body=declaration)
     result = _run_check(slug=slug, cwd=tmp_path, env=env)
     assert result.returncode == 0, (
-        f"{slug} must no-op (exit 0) when `{role}` is declared empty; "
+        f"{slug} must no-op (exit 0) when `{role}` is declared absent; "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
-    assert "legacy-ambiguous-empty" in result.stderr
-    assert "AMBIGUOUS legacy empty spelling" in result.stderr
+    assert "not_applicable" in result.stderr
     assert role in result.stderr
 
 
@@ -273,22 +275,45 @@ def test_all_role_gated_checks_error_on_undeclared_keys(*, tmp_path: Path) -> No
         )
 
 
-def test_declared_empty_role_keys_are_sanctioned_opt_outs(*, tmp_path: Path) -> None:
-    """Declared-empty keys stay a visible no-op rather than a misconfiguration."""
+def test_declared_absent_role_keys_are_sanctioned_opt_outs(*, tmp_path: Path) -> None:
+    """A DECLARED-ABSENT union key stays a visible no-op rather than a misconfiguration.
+
+    Renamed from `..._declared_empty_...` with Phase 4 of
+    `livespec-dev-tooling-8o8e.1`: the empty spelling these cases used is now a
+    hard load error, so the sanctioned-opt-out property moved onto the blessed
+    spellings that replaced it. The property itself is unchanged and is the one
+    that must survive the rejection — a repo that legitimately has no pure tree
+    must still get a clean no-op, not a failure.
+    """
     cases = (
-        ("public_api_result_typed", "pure_trees", "pure_trees = []\n", None),
-        ("pbt_coverage_pure_modules", "pure_trees", "pure_trees = []\n", None),
+        (
+            "public_api_result_typed",
+            "pure_trees",
+            'pure_trees = { not_applicable = "consumer has no pure tree" }\n',
+            None,
+        ),
+        (
+            "pbt_coverage_pure_modules",
+            "pure_trees",
+            'pure_trees = { not_applicable = "consumer has no pure tree" }\n',
+            None,
+        ),
         (
             "check_mutation",
             "pure_trees",
-            "pure_trees = []\n",
+            'pure_trees = { not_applicable = "consumer has no pure tree" }\n',
             {"LIVESPEC_RUN_MUTATION": "true"},
         ),
-        ("newtype_domain_primitives", "dataclasses_tree", 'dataclasses_tree = ""\n', None),
+        (
+            "newtype_domain_primitives",
+            "dataclasses_tree",
+            'dataclasses_tree = { not_applicable = "consumer has no dataclasses tree" }\n',
+            None,
+        ),
         (
             "no_shadow_ledger_body_identical",
             "neutral_hook_body_path",
-            'neutral_hook_body_path = ""\n',
+            'neutral_hook_body_path = { not_applicable = "consumer is not a Driver" }\n',
             None,
         ),
     )

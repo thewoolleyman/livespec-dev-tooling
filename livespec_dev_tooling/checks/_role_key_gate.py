@@ -14,7 +14,6 @@ import structlog  # noqa: E402  — vendor-path-aware import after sys.path inse
 from livespec_dev_tooling.config import (  # noqa: E402
     Config,
     ConventionNotAdopted,
-    LegacyAmbiguousEmpty,
     NotApplicable,
     PrefixRole,
     RoleAbsence,
@@ -22,6 +21,7 @@ from livespec_dev_tooling.config import (  # noqa: E402
     SupersededBy,
     TreeRole,
     UnarmedUntil,
+    Undeclared,
     assert_never,
     iter_py_files,
     role_absence,
@@ -36,15 +36,19 @@ __all__: list[str] = [
     "role_absence_exit_code",
 ]
 
-_LEGACY_AMBIGUOUS_MESSAGE = " ".join(
+# Phase 4 deleted the legacy variant, so this announces the OTHER absence a
+# role can carry: nobody wrote the key. It is defensive rather than routine —
+# `role_absence_exit_code` tests `declared_keys` FIRST and hard-errors there, so
+# this arm is reached only if a consumer reads a role off a bare `Config()`
+# without going through the gate. It logs at ERROR for the same reason that path
+# does: an undeclared key is a configuration defect, never an opt-out.
+_UNDECLARED_BASELINE_MESSAGE = " ".join(
     (
-        "role key uses the AMBIGUOUS legacy empty spelling — it cannot say whether the",
-        "concept does not apply here or applies and is switched off; migrate to one of",
+        "role key was never declared — this is the parse-time baseline, not a",
+        "sanctioned absence; declare the real value, or declare it absent with one of",
         "not_applicable / superseded_by / unarmed_until / convention_not_adopted",
     )
 )
-_LEGACY_SPELLING = "legacy-ambiguous-empty"
-_MIGRATION_REF = "livespec-dev-tooling-8o8e.1"
 _BLESSED = (
     "not_applicable",
     "superseded_by",
@@ -82,14 +86,12 @@ def _announce_absence(
     The other three are settled declarations and log at INFO.
     """
     match absence:
-        case LegacyAmbiguousEmpty(key=legacy_key, repo=repo):
-            log.warning(
-                _LEGACY_AMBIGUOUS_MESSAGE,
+        case Undeclared(key=undeclared_key):
+            log.error(
+                _UNDECLARED_BASELINE_MESSAGE,
                 check_id=check_id,
-                role=legacy_key,
-                repo=repo,
-                role_key_spelling=_LEGACY_SPELLING,
-                migration=_MIGRATION_REF,
+                role=undeclared_key,
+                role_key_spelling="undeclared",
                 blessed_spellings=list(_BLESSED),
             )
         case UnarmedUntil(ledger_id=ledger_id):

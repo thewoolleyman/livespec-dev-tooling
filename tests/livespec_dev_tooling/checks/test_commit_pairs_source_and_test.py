@@ -793,7 +793,7 @@ def test_commit_pairs_vendor_exclusion_does_not_widen_to_authored_siblings(
 _SOURCE_TREES_ONLY_PYPROJECT = """\
 [tool.livespec_dev_tooling]
 source_trees = ["pkg"]
-source_tree_prefixes = []
+source_tree_prefixes = { not_applicable = "consumer declares no prefixes; source_trees is the union fallback" }
 """
 
 
@@ -813,7 +813,7 @@ def test_commit_pairs_falls_back_to_source_trees_when_prefixes_declared_empty(
     keys and is why THAT commit-time gate never lost its universe.
 
     Fixture: a repo declaring `source_trees = ["pkg"]` with
-    `source_tree_prefixes = []`, staging one `pkg/mod.py` change and NO
+    a DECLARED-ABSENT `source_tree_prefixes`, staging one `pkg/mod.py` change and NO
     `tests/**` change. The gate must reject it and surface the path.
     """
     _git(cwd=tmp_path, args=["init", "-q"])

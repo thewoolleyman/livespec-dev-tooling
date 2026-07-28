@@ -74,7 +74,6 @@ __all__: list[str] = [
     "DeclaredTrees",
     "GitLsFilesError",
     "GitToplevelError",
-    "LegacyAmbiguousEmpty",
     "MirrorPairing",
     "NotApplicable",
     "PrefixRole",
@@ -83,6 +82,7 @@ __all__: list[str] = [
     "SupersededBy",
     "TreeRole",
     "UnarmedUntil",
+    "Undeclared",
     "assert_never",
     "derive_source_prefixes",
     "filter_first_party_py",
@@ -298,17 +298,29 @@ class ConventionNotAdopted:
 
 
 @dataclass(frozen=True, kw_only=True)
-class LegacyAmbiguousEmpty:
-    """The transitional `[]` / `""` spelling — accepted in Phase 1, rejected in Phase 4.
+class Undeclared:
+    """NOBODY WROTE THIS KEY — distinct from every spelling someone could write.
 
-    Carries its own provenance (`key`, `repo`) so the WARN a consumer emits can name
-    both without every call site threading them through. This variant exists purely
-    so the previously-INVISIBLE state becomes greppable and countable BEFORE any repo
-    migrates: it behaves exactly as today (scan nothing, exit 0) and reddens no repo.
+    Phase 4 deleted `LegacyAmbiguousEmpty`, the transitional `[]` / `""` variant, and
+    that deletion surfaced a defect the variant had been hiding: it carried BOTH
+    "the consumer declared `[]`" AND "the consumer never declared anything", because
+    the five `_BASELINE_*` constants bound it for a bare `Config()`. Two incompatible
+    meanings in one value — inside the type introduced to make exactly that
+    unrepresentable.
+
+    It stayed invisible because `_role_key_gate.role_absence_exit_code` tests
+    `key not in config.declared_keys` FIRST and hard-errors there, so the baseline
+    instance is never announced: unreachable through the gate, fully reachable through
+    the domain model. The maintainer's guarantee is that the ambiguity is
+    UNREPRESENTABLE AFTER PARSING, and while one variant carried two meanings that
+    guarantee was false in the model.
+
+    This variant is NOT a spelling a consumer may write; it is the parse-time state of
+    a key absent from the block. It changes NO behavior — an undeclared key still hard
+    -errors at the gate naming the key, exactly as before.
     """
 
     key: str
-    repo: str
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -332,9 +344,7 @@ class DeclaredPath:
     path: Path
 
 
-RoleAbsence = (
-    NotApplicable | SupersededBy | UnarmedUntil | ConventionNotAdopted | LegacyAmbiguousEmpty
-)
+RoleAbsence = NotApplicable | SupersededBy | UnarmedUntil | ConventionNotAdopted | Undeclared
 TreeRole = DeclaredTrees | RoleAbsence
 PrefixRole = DeclaredPrefixes | RoleAbsence
 ScalarRole = DeclaredPath | RoleAbsence
@@ -357,7 +367,7 @@ def role_absence(*, role: TreeRole | PrefixRole | ScalarRole) -> RoleAbsence | N
             | SupersededBy()
             | UnarmedUntil()
             | ConventionNotAdopted()
-            | LegacyAmbiguousEmpty()
+            | Undeclared()
         ):
             return role
         case _:
@@ -383,11 +393,11 @@ def role_path(*, role: ScalarRole) -> Path | None:
 # rather than inline in the field defaults because a dataclass default may not be
 # a CALL (ruff RUF009) — and because these are frozen, sharing one instance per
 # key across every bare `Config()` is safe.
-_BASELINE_PURE_TREES = LegacyAmbiguousEmpty(key="pure_trees", repo="")
-_BASELINE_TARGET_DIRS = LegacyAmbiguousEmpty(key="target_dirs", repo="")
-_BASELINE_SOURCE_TREE_PREFIXES = LegacyAmbiguousEmpty(key="source_tree_prefixes", repo="")
-_BASELINE_DATACLASSES_TREE = LegacyAmbiguousEmpty(key="dataclasses_tree", repo="")
-_BASELINE_NEUTRAL_HOOK_BODY_PATH = LegacyAmbiguousEmpty(key="neutral_hook_body_path", repo="")
+_BASELINE_PURE_TREES = Undeclared(key="pure_trees")
+_BASELINE_TARGET_DIRS = Undeclared(key="target_dirs")
+_BASELINE_SOURCE_TREE_PREFIXES = Undeclared(key="source_tree_prefixes")
+_BASELINE_DATACLASSES_TREE = Undeclared(key="dataclasses_tree")
+_BASELINE_NEUTRAL_HOOK_BODY_PATH = Undeclared(key="neutral_hook_body_path")
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -538,32 +548,41 @@ def _parse_role_absence(*, table: dict[str, Any], key: str) -> RoleAbsence:
     return NotApplicable(reason=payload)
 
 
-def _parse_tree_role(*, value: object, key: str, repo: str) -> TreeRole:
+def _reject_legacy_empty(*, key: str) -> ConfigParseError:
+    """Phase 4: the ambiguous `[]` / `\"\"` spelling on a UNION key fails at LOAD.
+
+    The CLEAN keys never reach here — they are plain tuples, and `[]` stays legitimate
+    for them because emptiness there removes exemptions rather than files
+    (`SPECIFICATION` v033 §"Clean role keys retain `[]`").
+    """
+    return ConfigParseError(_spellings_hint(key=key))
+
+
+def _parse_tree_role(*, value: object, key: str) -> TreeRole:
     if isinstance(value, dict):
         return _parse_role_absence(table=cast("dict[str, Any]", value), key=key)
     paths = _as_path_tuple(value=value, key=key)
     if not paths:
-        return LegacyAmbiguousEmpty(key=key, repo=repo)
+        raise _reject_legacy_empty(key=key)
     return DeclaredTrees(trees=paths)
 
 
-def _parse_prefix_role(*, value: object, key: str, repo: str) -> PrefixRole:
+def _parse_prefix_role(*, value: object, key: str) -> PrefixRole:
     if isinstance(value, dict):
         return _parse_role_absence(table=cast("dict[str, Any]", value), key=key)
     prefixes = _as_str_tuple(value=value, key=key)
     if not prefixes:
-        return LegacyAmbiguousEmpty(key=key, repo=repo)
+        raise _reject_legacy_empty(key=key)
     return DeclaredPrefixes(prefixes=prefixes)
 
 
-def _parse_scalar_role(*, value: object, key: str, repo: str) -> ScalarRole:
+def _parse_scalar_role(*, value: object, key: str) -> ScalarRole:
     if isinstance(value, dict):
         return _parse_role_absence(table=cast("dict[str, Any]", value), key=key)
     if not isinstance(value, str):
-        msg = _spellings_hint(key=key)
-        raise ConfigParseError(msg)
+        raise _reject_legacy_empty(key=key)
     if value == "":
-        return LegacyAmbiguousEmpty(key=key, repo=repo)
+        raise _reject_legacy_empty(key=key)
     return DeclaredPath(path=Path(value))
 
 
@@ -818,7 +837,7 @@ def load_plan_lifecycle_anchor(*, repo_root: Path) -> bool | None:
     return _as_bool(value=table["plan_lifecycle_anchor"], key="plan_lifecycle_anchor")
 
 
-def _parse_role_key_overrides(*, table: dict[str, Any], repo: str) -> dict[str, Any]:
+def _parse_role_key_overrides(*, table: dict[str, Any]) -> dict[str, Any]:
     """Parse every DECLARED role key off the consumer table into its typed value."""
     overrides: dict[str, Any] = {}
     for key in _PLAIN_PATH_TUPLE_ROLE_KEYS:
@@ -826,14 +845,14 @@ def _parse_role_key_overrides(*, table: dict[str, Any], repo: str) -> dict[str, 
             overrides[key] = _as_path_tuple(value=table[key], key=key)
     for key in _UNION_TREE_ROLE_KEYS:
         if key in table:
-            overrides[key] = _parse_tree_role(value=table[key], key=key, repo=repo)
+            overrides[key] = _parse_tree_role(value=table[key], key=key)
     if "source_tree_prefixes" in table:
         overrides["source_tree_prefixes"] = _parse_prefix_role(
-            value=table["source_tree_prefixes"], key="source_tree_prefixes", repo=repo
+            value=table["source_tree_prefixes"], key="source_tree_prefixes"
         )
     for key in ("dataclasses_tree", "neutral_hook_body_path"):
         if key in table:
-            overrides[key] = _parse_scalar_role(value=table[key], key=key, repo=repo)
+            overrides[key] = _parse_scalar_role(value=table[key], key=key)
     return overrides
 
 
@@ -849,7 +868,7 @@ def load_config(*, repo_root: Path) -> Config:
     if table is None:
         return Config()
     baseline = Config()
-    overrides: dict[str, Any] = _parse_role_key_overrides(table=table, repo=repo_root.name)
+    overrides: dict[str, Any] = _parse_role_key_overrides(table=table)
     if "tests_tree_prefix" in table:
         overrides["tests_tree_prefix"] = _as_str(
             value=table["tests_tree_prefix"], key="tests_tree_prefix"

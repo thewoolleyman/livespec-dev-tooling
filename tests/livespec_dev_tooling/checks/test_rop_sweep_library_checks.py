@@ -196,7 +196,7 @@ def test_check_mutation_noops_without_pure_trees(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     (tmp_path / "pyproject.toml").write_text(
-        '[tool.livespec_dev_tooling]\nsource_trees = ["consumer_pkg"]\npure_trees = []\n',
+        '[tool.livespec_dev_tooling]\nsource_trees = ["consumer_pkg"]\npure_trees = { not_applicable = "consumer has no pure tree" }\n',
         encoding="utf-8",
     )
     module = _load_check(name="check_mutation")

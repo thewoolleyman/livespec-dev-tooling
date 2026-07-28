@@ -32,7 +32,7 @@ source_tree_prefixes = [
     "dev-tooling/checks/",
 ]
 target_dirs = [".claude-plugin/scripts", "dev-tooling", "tests"]
-neutral_hook_body_path = ""
+neutral_hook_body_path = { not_applicable = "fixture consumer is not a Driver and installs no neutral shared hook body" }
 mirror_pairings = [
     { source_tree = ".claude-plugin/scripts/livespec", test_tree = "tests/livespec" },
     { source_tree = ".claude-plugin/scripts/bin", test_tree = "tests/bin" },

@@ -36,12 +36,12 @@ source_trees = ["pkg"]
 io_trees = [{io_trees}]
 commands_trees = []
 supervisor_entry_files = []
-pure_trees = []
+pure_trees = {{ not_applicable = "fixture consumer has no pure tree" }}
 covered_trees = []
-target_dirs = []
-source_tree_prefixes = []
-dataclasses_tree = ""
-neutral_hook_body_path = ""
+target_dirs = {{ not_applicable = "fixture consumer declares no comment-anchor target dirs" }}
+source_tree_prefixes = {{ not_applicable = "fixture consumer declares no source-tree prefixes" }}
+dataclasses_tree = {{ not_applicable = "fixture consumer has no dataclasses tree" }}
+neutral_hook_body_path = {{ not_applicable = "fixture consumer is not a Driver" }}
 """
 
 
