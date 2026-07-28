@@ -93,11 +93,25 @@ dev = [
 #     the sole supervisor boundary where a MARKED broad catch is permitted.
 #   - `partition_completeness` records a `supervisor_entry_files` role
 #     claim for it.
-# The remaining role keys (io_trees, commands_trees, dataclasses_tree,
-# pure_trees, covered_trees) stay empty/null: this flat-layout library has
-# no code in those roles. With `io_trees` empty nothing is wholesale exempt
-# from the catch-position and domain-raise checks — they inspect the whole
-# `source_trees` universe.
+# The remaining role keys split into two groups, and the split is load-bearing
+# (livespec-dev-tooling-8o8e.1).
+#
+# `io_trees`, `commands_trees` and `covered_trees` stay a bare `[]`. They are
+# EXEMPTION / SEVERITY PREDICATES: their consuming checks derive the file
+# universe from `resolve_check_universe()` and read the key only to decide what
+# is exempt, so an empty value makes those checks STRICTER, never blinder. With
+# `io_trees` empty nothing is wholesale exempt from the catch-position and
+# domain-raise checks — they inspect the whole `source_trees` universe.
+#
+# `pure_trees`, `dataclasses_tree` and `neutral_hook_body_path` are NO LONGER
+# empty, and an empty value for them is no longer sanctioned. Their `[]` / `""`
+# spelling carried two incompatible meanings — "does not apply here" versus
+# "applies and is switched off" — so each now declares one of the four blessed
+# variants (`not_applicable`, `superseded_by`, `unarmed_until`,
+# `convention_not_adopted`), carrying its reason in the PARSED VALUE rather than
+# in a comment no checker can read. A bare `[]` / `""` now parses to
+# `LegacyAmbiguousEmpty` and WARNs; it becomes a hard `ConfigParseError` once
+# every repo has migrated. See each declaration below.
 # ---------------------------------------------------------------------------
 
 [tool.livespec_dev_tooling]
