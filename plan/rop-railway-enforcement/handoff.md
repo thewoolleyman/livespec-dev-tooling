@@ -39,92 +39,93 @@ sibling repo without it.
 **MERGED ≠ RELEASED ≠ CONSUMED.** Keep the three separate in every status claim. Conflating them
 re-creates this thread's core defect — a green signal that means nothing — at the process level.
 
-### 🚧 BLOCKED WHEN THIS SESSION ENDED — read this before doing anything
+### 📊 FLEET PROGRESS — 2 of 8 repos migrated
 
-`livespec-dev-tooling` **master CI is RED on `ca73e97`**, and it is NOT a defect and NOT caused by
-that commit (a docs-only handoff update). `check-fleet-conformance` reads sibling repos live
-through the **livespec GitHub App token**, and that pool was exhausted:
+| repo | values migrated | prose stale? |
+|---|---|---|
+| `livespec-dev-tooling` | ✅ `b27401c` (3 keys) | ⚠️ **YES — Piece A below** |
+| `livespec-driver-claude` | ✅ `c7c7272` (3 keys) | ⚠️ **YES — see prose finding** |
+| `livespec` | ✗ 2 keys | clean |
+| `livespec-orchestrator-beads-fabro` | ✗ 3 keys | ⚠️ YES |
+| `livespec-driver-codex` | ✗ 3 keys — **PIN-BLOCKED** | ⚠️ YES |
+| `livespec-orchestrator-git-jsonl` | ✗ 5 keys | clean |
+| `livespec-overseer` | ✗ 5 keys | clean |
+| `livespec-runtime` | ✗ 5 keys | ⚠️ YES |
 
-```
-kind: "rate_limited"
-detail: "API rate limit exceeded for installation ID 131208965 (HTTP 403)"
-```
+**⚠️ THE REMAINING PER-REPO COUNTS ARE ARITHMETIC, NOT A FRESH MEASUREMENT.** They are the
+original 29-pair fleet measurement minus the two migrated repos. **Re-run the count per repo before
+acting on it** — the numbers are a starting point, not evidence. (Running it: import each of the
+six union-consuming checks in the target repo and tally
+`role_key_spelling == "legacy-ambiguous-empty"` records.)
 
-Confirmed it is the APP pool, not the operator's — a user token concurrently read `4955/5000`.
-The reset was ~31 minutes out at session end (epoch `1785224458`).
+`livespec-driver-codex` is PIN-BLOCKED: pin `v0.56.7`, bump PR **#296** open and unable to land. Its
+VALUES cannot migrate until that lands — but its PROSE fix is independent of the pin.
 
-**It clears on RESET, not on retry.** The failed jobs were re-run once to test transience and
-failed again on the same cause. Do not keep re-running; each attempt burns the same pool.
+### ⚠️ PROSE STALENESS — Phase 2's definition of done is VALUES **AND** PROSE
 
-**Why it blocks everything here:** `check-master-ci-green` is in the `just check` aggregate, so
-`check-pre-commit` refuses every code commit while master CI is red. It also blocks the sibling
-slice — `livespec-driver-claude`'s CI runs the same shared fleet-conformance reusable workflow
-against the same App installation. (Doc-only commits take a reduced gate and DO still land; that is
-how this handoff got committed.)
+`livespec-driver-claude` has correct values and a header that still says:
 
-**FIRST ACTIONS ON RESUME:**
+> "declare it explicitly empty (`[]` ... `""` ...) ... Declared-empty is the sanctioned, VISIBLE
+> opt-out: the gating check no-ops and says so in a structured info event."
 
-1. `gh api rate_limit` — but note the operator pool is a DIFFERENT number; the failure is on
-   installation `131208965`. If unsure, just re-run and read the error.
-2. `gh run rerun <latest master CI run id> --failed`, wait for green.
-3. Then, and only then, Pieces A and B below.
+That is the pre-`8o8e.1` regime, wrong on every clause, and it **instructs the next reader to write
+the exact spelling this epic removes** — in a repo whose values are already migrated.
 
-**One observation worth keeping, not a bug:** an earlier run of the same job failed as
-`agent-instruction-surface` "obligation row enforced NOTHING this run (skipped for every applicable
-member)" with `own_failing_rows: []`. All seven siblings' `AGENTS.md` were verified readable
-minutes later — it was the same rate limit surfacing as a BLIND ROW rather than a 403. That refusal
-is this epic's own defect class implemented correctly. The lesson is narrower: **a fleet-state
-check can redden master with no commit responsible**, so "master is red" here does not imply
-"someone broke master". Do not go hunting for a commit to revert.
+Four repos carry that wording (re-derived from the forge): `livespec-driver-claude`,
+`livespec-driver-codex`, `livespec-orchestrator-beads-fabro`, `livespec-runtime`. Four are clean:
+`livespec`, `livespec-dev-tooling`, `livespec-orchestrator-git-jsonl`, `livespec-overseer`.
+(`livespec-dev-tooling` carries a DIFFERENT variant of the same defect — Piece A.)
 
-### ⏭️ PIECE A — PENDING, FULLY SPECIFIED, NOT LANDED
+**Phase 3's conformance check counts VALUES, so it can NEVER catch this.** A repo with perfect
+values and a header pointing the other way scores a clean zero, and the config drifts back one
+honest author at a time while the check stays green. For repos not yet migrated, prose and values
+can land in ONE commit.
+
+Full detail — including the suggestion of a cheap literal-string companion check for Phase 3 — is
+on `livespec-dev-tooling-8o8e.1`.
+
+### ⏭️ PIECE A — dev-tooling's own stale header, UNBLOCKED, NOT LANDED
+
+Master CI was red from a GitHub App rate limit (installation `131208965`) hit by
+`check-fleet-conformance`, which reads siblings live. **That has since been re-run and master is
+GREEN**, so this is no longer blocked. Recorded because the lesson survives the incident: a
+fleet-state check can redden master with **no commit responsible**, and it clears on RESET, not on
+retry — do not burn re-runs during a limit, and do not go hunting for a commit to revert.
 
 `pyproject.toml` (this repo) lines ~96-100 still describe five role keys as staying "empty/null",
-but `pure_trees` and `dataclasses_tree` now carry `{ not_applicable = ... }`, and
-`neutral_hook_body_path` — absent from that list entirely — does too. The header contradicts the
-declarations twenty lines below it.
+but `pure_trees` and `dataclasses_tree` now carry `{ not_applicable = ... }` and
+`neutral_hook_body_path` — absent from that list entirely — does too.
 
-**This matters more than an ordinary stale comment:** those config comments are the exact source
-the role-key classification reads to determine each key's meaning across eight repos. A future
-classification pass reading that header would mis-map two keys in the repo that owns the schema.
-
-The work was done and audited (no other survivors in the block) before the commit was refused; the
-worktree was REMOVED rather than orphaned. Replace the block beginning
-`# The remaining role keys (io_trees, commands_trees, dataclasses_tree,` and ending
-`` # `source_trees` universe. `` with a header stating: `io_trees`, `commands_trees` and
+Replace the block beginning `# The remaining role keys (io_trees, commands_trees, dataclasses_tree,`
+and ending `` # `source_trees` universe. `` with a header stating: `io_trees`, `commands_trees`,
 `covered_trees` stay a bare `[]` because they are EXEMPTION / SEVERITY predicates whose consuming
 checks derive the universe from `resolve_check_universe()`, so empty makes them STRICTER never
 blinder; and `pure_trees`, `dataclasses_tree`, `neutral_hook_body_path` are no longer empty because
-their `[]` / `""` carried two incompatible meanings and each now declares a blessed variant
-carrying its reason in the parsed value. Config-only — no RGR ritual, normal worktree → PR path.
+their `[]` / `""` carried two incompatible meanings and each now declares a blessed variant carrying
+its reason in the parsed value. Config-only — no RGR ritual, normal worktree → PR path.
 
-### ⏭️ PIECE B — SIBLING SLICE CHOSEN AND MAPPED, NOT STARTED
+### ✅ PIECE B — DONE. `livespec-driver-claude` migrated (merged `c7c7272`)
 
-**Chosen: `livespec-driver-claude`.** Not the smallest key count (`livespec` has 2 vs its 3) but
-the smallest BLAST RADIUS — a peripheral Driver plugin with ~7 first-party modules, versus
-`livespec` which is core with 129 modules that every sibling pins. It also exercises TWO distinct
-variants, proving more of the union than a single-variant repo would.
+The first CROSS-REPO cut, and it proved two things slice 1 could not: the sibling path works
+end-to-end under that repo's own AGENTS.md discipline and its own pinned `v0.57.0` loader (65-target
+`just check` green), and **`superseded_by` works** — the fleet's first non-`not_applicable` variant.
 
-Mapping taken from that repo's OWN comments, not from taste:
+`target_dirs = { superseded_by = "git-derived first-party universe owns the hook coverage" }`
+is deliberately (C) and NOT (A): the concept applies there and IS satisfied, by
+`resolve_check_universe()`. **Do not downgrade a (C) or a (B) into `not_applicable` because it reads
+tidier** — `livespec`'s `pure_trees` is the fleet's one known **(B) `unarmed_until =
+"livespec-mutreal.1"`** and must stay that way.
 
-| key | its comment | variant |
-|---|---|---|
-| `pure_trees` | "this Driver has no pure parse/validate-style layer." | `not_applicable` (A) |
-| `dataclasses_tree` | "this Driver has no dataclasses/schema tree." | `not_applicable` (A) |
-| `target_dirs` | "no legacy target dirs; git-derived coverage owns the hook universe." | **`superseded_by` (C)** |
+Verified on merged master by RUNNING it: `LegacyAmbiguousEmpty` 3 → 0.
 
-Out of scope there: `neutral_hook_body_path` and `source_tree_prefixes` are POPULATED.
-`io_trees`, `commands_trees`, `covered_trees` are CLEAN keys and keep their `[]` — note
-`covered_trees`' comment reads as (C), but that key is out of the union BY DESIGN.
+### ▶️ EXACT NEXT ACTION
 
-Its `AGENTS.md` §"Repository mutation protocol" was READ, not assumed: worktree under
-`~/.worktrees/livespec-driver-claude/<branch>`, `mise exec` for commits/pushes, `--no-verify`
-banned, PR → rebase-merge → refresh → remove worktree → delete branch. Materially the same shape as
-this repo's. It has `install-worktree-pack` and `check` recipes and RGR wiring, though a
-config-only change does not trigger the ritual.
-
-**Acceptance:** its `LegacyAmbiguousEmpty` count RUN and reported before (expect 3) and after
-(expect 0), and its own full check suite green under its own pinned loader.
+1. Land **Piece A** (above) — config-only, unblocked, this repo.
+2. Then the five unauthorized siblings, one slice at a time, **values AND prose together**.
+   `livespec` is the delicate one (its `pure_trees` is the (B) case).
+3. `livespec-driver-codex` values wait on **#296**; its prose need not.
+4. Phase 3 (conformance check + consider the prose companion check), then Phase 4 (rejecting
+   loader) — which cannot land until all eight have migrated. Epic rule, non-negotiable.
 
 ### SIBLING PINS — the gate has OPENED for six of seven
 
@@ -133,7 +134,7 @@ Measured on the FORGE 2026-07-28. **This ages in minutes; re-derive per repo, ne
 | repo | pin | |
 |---|---|---|
 | livespec | `v0.57.0` | migratable |
-| livespec-driver-claude | `v0.57.0` | migratable — **Piece B target** |
+| livespec-driver-claude | `v0.57.0` | ✅ **MIGRATED** (`c7c7272`) |
 | livespec-orchestrator-beads-fabro | `v0.57.0` | migratable |
 | livespec-orchestrator-git-jsonl | `v0.57.0` | migratable |
 | livespec-overseer | `v0.57.0` | migratable |
@@ -281,16 +282,21 @@ three now report `role_key_spelling: not_applicable`, all six consuming checks e
 SAME empty value for the OPPOSITE reason (`unarmed_until = "livespec-mutreal.1"`). One value, two
 meanings — now distinguishable.
 
-### ▶️ NEXT SLICE: `livespec-driver-claude` ONLY (Piece B above) — the other five are NOT authorized
+### ▶️ NEXT SLICE: five siblings, NONE authorized yet
 
-26 pairs remain, all in siblings. Six of seven repos now carry `v0.57.0`, so the PIN gate is no
-longer what holds them — the authorization is. Exactly one sibling is authorized as the cross-repo
-proof: **`livespec-driver-claude`**, mapped in Piece B above.
+Two of eight are migrated (`livespec-dev-tooling`, `livespec-driver-claude`). Six of seven siblings
+carry `v0.57.0`, so the PIN gate is no longer what holds the rest — the AUTHORIZATION is. Per-repo
+remaining counts are in the fleet-progress table near the top, **with the caveat that they are
+arithmetic rather than a fresh measurement.**
 
-Per-repo remaining counts, so the fan-out is mechanical once authorized:
+`livespec`'s `pure_trees` is the fleet's one known **(B) `unarmed_until = "livespec-mutreal.1"`** —
+do NOT downgrade it to `not_applicable` because that reads tidier. Telling (B) from (A) apart is the
+entire point of the union, and `livespec-driver-claude` already proved (C) `superseded_by` holds
+under real conditions.
 
-| repo | keys | | repo | keys |
-|---|---|---|---|---|
+Every remaining slice migrates **values AND prose together** — see the prose-staleness section.
+
+---|---|---|---|---|
 | livespec | 2 | | livespec-orchestrator-git-jsonl | 5 |
 | livespec-driver-claude | 3 — **Piece B** | | livespec-overseer | 5 |
 | livespec-driver-codex | 3 — **pin-blocked** | | livespec-runtime | 5 |
