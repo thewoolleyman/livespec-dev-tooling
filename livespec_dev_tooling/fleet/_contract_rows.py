@@ -53,6 +53,9 @@ from livespec_dev_tooling.fleet._rows_instructions import (
 from livespec_dev_tooling.fleet._rows_required_role_keys import (
     assert_required_role_keys_declared,
 )
+from livespec_dev_tooling.fleet._rows_role_key_spellings import (
+    assert_role_key_spellings_conformant,
+)
 
 __all__: list[str] = [
     "ADMIN_VANTAGE",
@@ -154,6 +157,19 @@ OBLIGATION_ROWS: tuple[ObligationRow, ...] = (
         manual_hint=(
             "declare every REQUIRED_ROLE_KEYS entry in [tool.livespec_dev_tooling], or "
             "declare sanctioned-empty values with comments explaining the absent role"
+        ),
+    ),
+    # The sibling of the row above: that one asserts the required keys are
+    # DECLARED, this one asserts the declaration uses a blessed SPELLING. A key
+    # declared `[]` satisfies the first and is exactly the ambiguity the second
+    # exists to reject (livespec-dev-tooling-8o8e.1 Phase 3).
+    _manual_committed_file_row(
+        row_id="role-key-spellings",
+        assert_member=assert_role_key_spellings_conformant,
+        manual_hint=(
+            "replace the retired ambiguous empty spelling on the named union role key(s) "
+            "with a populated value, or with one blessed declared-absent spelling carrying "
+            "a non-empty payload"
         ),
     ),
     _warning_committed_file_row(

@@ -19,6 +19,9 @@ from livespec_dev_tooling.fleet._reconcile import reconcile_merge_settings
 from livespec_dev_tooling.fleet._rows_baseline import assert_baseline_harnesses
 from livespec_dev_tooling.fleet._rows_github import assert_merge_settings
 from livespec_dev_tooling.fleet._rows_instructions import assert_agent_ai_references_resolve
+from livespec_dev_tooling.fleet._rows_role_key_spellings import (
+    assert_role_key_spellings_conformant,
+)
 
 __all__: list[str] = []
 
@@ -126,6 +129,25 @@ def test_baseline_harnesses_row_is_wired_for_every_class() -> None:
     assert row.obligation_type == "committed-file"
     assert row.applies_to == frozenset(REPO_CLASSES)
     assert row.assert_member is assert_baseline_harnesses
+    assert row.reconcile is None
+    assert row.manual_hint
+
+
+def test_role_key_spellings_row_is_registered_for_every_class() -> None:
+    # REGISTRATION is the whole point of this assertion, not a formality.
+    # `_rows_role_key_spellings.py` can be complete, tested and green while
+    # scanning nothing at all, because a row absent from OBLIGATION_ROWS is
+    # walked by neither engine — which is the defect shape
+    # livespec-dev-tooling-8o8e exists to remove, reproduced inside its own
+    # fix. It binds to EVERY class because the ambiguous spelling is a
+    # property of the config schema, which every config-bearing member shares;
+    # a member with no [tool.livespec_dev_tooling] block excludes itself with
+    # a stated reason at row-evaluation time rather than by class scoping.
+    row = next((r for r in OBLIGATION_ROWS if r.row_id == "role-key-spellings"), None)
+    assert row is not None
+    assert row.obligation_type == "committed-file"
+    assert row.applies_to == frozenset(REPO_CLASSES)
+    assert row.assert_member is assert_role_key_spellings_conformant
     assert row.reconcile is None
     assert row.manual_hint
 
