@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.57.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.57.0...v0.57.1) (2026-07-28)
+
+
+### Refactoring
+
+* **fleet:** extract the github-state slice so the obligation table can accept rows again ([34c05c1](https://github.com/thewoolleyman/livespec-dev-tooling/commit/34c05c134c0ea34f6543fc14e4d343f962196f03))
+
 ## [0.57.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.56.7...v0.57.0) (2026-07-28)
 
 
