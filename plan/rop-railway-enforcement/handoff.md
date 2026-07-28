@@ -102,7 +102,7 @@ opt-out") in its config.
 Clean of the prose shape: `livespec`, `livespec-dev-tooling`, `livespec-orchestrator-git-jsonl`,
 `livespec-overseer`.
 
-### 🔺 THE RATIFIED SPEC ITSELF IS STALE — bigger than any config comment, NOT fixed
+### 🔺 THE RATIFIED SPEC ITSELF IS STALE — FILED as `livespec-dev-tooling-fwcwxv`
 
 `livespec-dev-tooling/SPECIFICATION/contracts.md` §"Consumer configuration schema" **lines 243 and
 245** still define declared-empty as "the sanctioned, VISIBLE opt-out" logging an `info` event, and
@@ -118,7 +118,20 @@ The proposed change must also add what the spec currently does not say at all: t
 That distinction is the thing most likely to be lost in a rewrite.
 
 **Sequence it BEFORE Phase 4**, which would otherwise make the spec actively contradict the
-implementation. It does NOT block the remaining Phase 2 migrations. Full detail on `8o8e.1`.
+implementation. It does NOT block the remaining Phase 2 migrations.
+
+**TRACKED as `livespec-dev-tooling-fwcwxv`** — status `blocked`, `blocked-reason:needs-human`,
+depends on `8o8e.1`. That routing is deliberate: a spec propose-change is accepted or rejected by a
+maintainer, so it is NOT autonomously verifiable and must not sit in the factory's `ready` lane.
+The item carries the exact line numbers (188, 211/213/215/217, 221), the before-Phase-4 constraint,
+the CLEAN-keys-keep-`[]` trap, and one downstream docstring
+(`tests/livespec_dev_tooling/checks/test_hook_trees_not_io_exempt.py:140`) to reword AFTER
+ratification.
+
+Deliberately NOT in that item's scope:
+`tests/livespec_dev_tooling/checks/test_config_driven_checks.py:150`, which is a comment
+identifying the retired wording AS retired — a correct reference, not an instruction. Do not
+"fix" it; doing so deletes the explanation of why the wording changed.
 
 ### ⚠️ ROLE-LEVEL LESSON — do not amend an open PR once its checks are green
 
@@ -137,8 +150,9 @@ auto-merge, and the race is invisible when you win it.
 2. `livespec-driver-claude` needs a **STANDALONE prose PR** — its values already landed, so it is
    the one repo where the two cannot ride together.
 3. `livespec-driver-codex` values wait on **#296**; its prose does NOT and can land first.
-4. File the spec propose-change for `SPECIFICATION/contracts.md` §"Consumer configuration schema"
-   (above) — **before Phase 4**, via `/livespec:propose-change`, never a direct edit.
+4. Execute `livespec-dev-tooling-fwcwxv` — the spec propose-change for
+   `SPECIFICATION/contracts.md` §"Consumer configuration schema". Already FILED; it needs a
+   maintainer, **before Phase 4**, via `/livespec:propose-change` and never a direct edit.
 5. Phase 3 (conformance check + consider a cheap literal-string companion check for the prose
    shape, which the value-counting check structurally cannot catch), then Phase 4 (rejecting
    loader) — which cannot land until all eight have migrated. Epic rule, non-negotiable.
