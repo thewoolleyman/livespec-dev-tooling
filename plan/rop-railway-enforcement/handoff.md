@@ -23,9 +23,17 @@ record: the role-key classification, the maintainer ruling, the union design, th
 mechanism, and the Phase 1 proof. **Read the item before planning anything** — it is far more
 detailed than this file, and this file deliberately does not duplicate it.
 
-**Phases 0 and 1 have LANDED.** The next step is **Phase 2 (the per-repo migration), which is NOT
-yet authorized** — eight repos is its own authorization and the supervisor holds it. Do not touch a
-sibling repo without it.
+**Phases 0, 1 and 2 have ALL LANDED. All eight repos measure ZERO `LegacyAmbiguousEmpty`.**
+
+**⛔ THAT IS NOT AN ARMED RAILWAY, AND THE DIFFERENCE IS THIS THREAD'S ENTIRE SUBJECT.**
+`check-public-api-result-typed` is STILL `pure_trees`-scoped, so it still scans **zero files** in
+every flat-layout repo — legitimately and honestly now, and still zero. Phase 2 made the SCHEMA
+honest; it did not make any check scan anything. Arming means migrating that check off `pure_trees`
+onto `resolve_check_universe()` — `8o8e`'s own **step 6, NOT STARTED**.
+
+The next steps are **Phase 3** (the conformance check, which is what turns the eight-repo
+measurement below into a standing guarantee) and then **Phase 4**. Neither is built, neither is
+authorized, and Phase 4 cannot land until Phase 3 verifies the fleet.
 
 ### State as of 2026-07-28 (RE-DERIVE — this ages in minutes)
 
@@ -42,161 +50,107 @@ sibling repo without it.
 **MERGED ≠ RELEASED ≠ CONSUMED.** Keep the three separate in every status claim. Conflating them
 re-creates this thread's core defect — a green signal that means nothing — at the process level.
 
-### 📊 FLEET PROGRESS — 4 of 8 repos DONE on both axes; 16 keys left, and the counts are MEASURED
+### ✅ FLEET PROGRESS — 8 of 8 DONE. **FLEET TOTAL: 0.** This IS the closure-precondition evidence.
 
-Re-derived 2026-07-28 by fetching all eight `pyproject.toml` from the **FORGE** and loading each
-through `master`'s union loader. This is a SCHEMA measurement under one loader — deliberately, so
-only the config varies — and is **NOT** each repo's CI result under its own pin.
+Measured on the **FORGE** after every merge, loading each repo's `pyproject.toml` through
+`master`'s union loader. This is a SCHEMA measurement under one loader — deliberately, so only the
+config varies. Each repo's own suite was ALSO run green under its OWN pinned loader, which is the
+part the precondition demands.
 
-| repo | values | the un-migrated keys | prose |
+| repo | legacy | the blessed variants it now carries | own suite |
 |---|---|---|---|
-| `livespec-dev-tooling` | ✅ 0 (`b27401c`) | — | ✅ **CLEAN** — Piece A |
-| `livespec-driver-claude` | ✅ 0 (`c7c7272`) | — | ✅ **CLEAN** — Piece B (`e8c8847`) |
-| `livespec` | ✅ 0 (`6454b2cc`) | — | ✅ **CLEAN** — slice 3 |
-| `livespec-runtime` | ✅ 0 (PR #366) | — | ✅ **CLEAN** — slice 4 |
-| `livespec-orchestrator-beads-fabro` | ✗ **3** | `pure_trees` ⛔, `dataclasses_tree`, `neutral_hook_body_path` | ⚠️ stale |
-| `livespec-driver-codex` | ✗ **3** | `pure_trees`, `dataclasses_tree`, `target_dirs` | ⚠️ stale |
-| `livespec-orchestrator-git-jsonl` | ✗ **5** | all five | clean |
-| `livespec-overseer` | ✗ **5** | all five | clean |
+| `livespec` | **0** | `pure_trees`=**UnarmedUntil**, `neutral_hook_body_path`=NotApplicable | 73/73 |
+| `livespec-dev-tooling` | **0** | 3× NotApplicable | 64/64 |
+| `livespec-driver-claude` | **0** | 2× NotApplicable, `target_dirs`=SupersededBy | 64/64 CI |
+| `livespec-driver-codex` | **0** | 2× NotApplicable, `target_dirs`=SupersededBy | exit 0 / 66 |
+| `livespec-orchestrator-beads-fabro` | **0** | 2× NotApplicable, `pure_trees`=**UnarmedUntil** | 72/72 |
+| `livespec-orchestrator-git-jsonl` | **0** | 2× NotApplicable, `pure_trees`=**UnarmedUntil**, 2× SupersededBy | 65/65 |
+| `livespec-overseer` | **0** | 2× NotApplicable, `pure_trees`=**UnarmedUntil**, 2× ConventionNotAdopted | 62/62 |
+| `livespec-runtime` | **0** | 3× NotApplicable, 2× ConventionNotAdopted | 62/62 |
 
-**FLEET TOTAL: 23 → 16 `LegacyAmbiguousEmpty`; FOUR of eight repos are now DONE on both axes.**
-⛔ marks the one key in the fleet whose variant the record does NOT determine — see the
-beads-fabro block below.
+**29 → 0 (repo, key) pairs.** All four blessed spellings are exercised by real repos.
 
-### ✅ THE PIN GATE IS FULLY OPEN — #296 MERGED, all seven siblings carry `v0.57.0`
+PRs: Piece A `8b5ab7f` · Piece B #317 · livespec #1814 · runtime #366 · beads-fabro #1081 ·
+overseer #223 · git-jsonl #438 · driver-codex #297. One PR per repo, never batched.
+
+### 🔑 THE `pure_trees` SPLIT — the same key, and FOUR repos got the OPPOSITE answer correctly
+
+**This is the result most likely to be "tidied" by a later reader.** `pure_trees` is
+`UnarmedUntil` in four repos and `NotApplicable` in four. The discriminator is **whether that
+repo's OWN ratified `constraints.md` asserts an obligation the key gates** — NOT whether a `pure/`
+directory exists:
+
+- **`unarmed_until`** — `livespec` + `livespec-overseer` (`livespec-mutreal.1`),
+  `livespec-orchestrator-git-jsonl` (`livespec-mutreal.1`),
+  `livespec-orchestrator-beads-fabro` (`bd-ib-6qb2mc`). Both orchestrators ratify "property-based
+  test coverage on pure modules" AND wire `check-pbt-coverage-pure-modules` into `just check` — so
+  the concept applies, the check is wired, and it was scanning zero. `not_applicable` would have
+  been **factually false**.
+- **`not_applicable`** — `livespec-dev-tooling`, `livespec-driver-claude`, `livespec-driver-codex`,
+  `livespec-runtime`. Checked, not assumed: `livespec-driver-codex`'s `constraints.md` carries NO
+  coverage-on-pure-modules clause, so nothing there is deferred.
+
+Two repos with no `pure/` directory got opposite answers, correctly. **Do not collapse them.**
+
+### `bd-ib-6qb2mc` — the id filed so `unarmed_until` could be honest
+
+`livespec-orchestrator-beads-fabro`'s `pure_trees` was the one key in the fleet its own comments did
+not determine (it had none). Ruled `unarmed_until`, with the id filed rather than invented, through
+the orchestrator `capture-work-item` operation. It routed to **`blocked` / `needs-human`** via
+intake DoR — correct rather than a formality: verifying the RESULT is mechanical, but deciding
+WHICH modules are pure is an architectural judgement.
+
+It carries the `constraints.md:26` citation, the `8858c90` history, the measured armed control
+(23 files / 33 offenders — **arming proof, NOT its blast radius**), and an explicit
+**do-not-close-by-declaring-`not_applicable`** warning: if the repo genuinely has no pure layer, the
+CONSTRAINT must be amended through the spec lifecycle FIRST.
+
+### ✅ THE PIN GATE IS FULLY OPEN — every repo carries `v0.57.0`
 
 `livespec-driver-codex` was never blocked by a defect. #296 failed on a PyPI download timeout
 (`Failed to download ruff==0.8.6 ... operation timed out`) during dependency INSTALL, with 62 of 64
-checks passing and `ci-green` failing only because that job did. The supervisor re-ran it
-(`gh run rerun --failed`) and **it merged**. The lesson is worth keeping: *"gated on a flake" and
-"gated on an incompatibility" deserve different answers* — the record asserted the second for hours
-without anyone reading the log.
+checks passing and `ci-green` failing only because that job did. A `gh run rerun --failed` landed
+it. Keep the lesson: *"gated on a flake" and "gated on an incompatibility" deserve different
+answers* — the record asserted the second for hours without anyone reading the log.
 
-**There is no pin gate left anywhere in the fleet.** What holds the remaining four repos is
-AUTHORIZATION, plus one genuine open question on `livespec-orchestrator-beads-fabro`.
+### ✅ PROSE — ALL EIGHT REPOS CLEAN. And **a grep would have missed FIVE of the second sites.**
 
-### ⛔ BEADS-FABRO'S `pure_trees` — THE ONE VARIANT THE RECORD DOES NOT DETERMINE
+Phase 2's definition of done was VALUES **and** PROSE, and both are now done fleet-wide. The
+durable finding is about how the prose sites were found.
 
-**Do not guess this one.** `livespec-orchestrator-beads-fabro`'s `pure_trees = []` carries **NO
-reason comment**, so the `8o8e.1` classification — which maps variants from each repo's own
-comments — has no entry for it. Every other key in the fleet was determined by a comment its own
-authors wrote. This one was not.
+The retired wording — *"declare it explicitly empty ... Declared-empty is the sanctioned, VISIBLE
+opt-out: the gating check no-ops and says so in a structured info event"* — was only the
+**copy-paste family**. **Every repo migrated after Piece B also carried a SECOND stale sentence
+phrased differently, and the grep would have caught none of them. Five for five:**
 
-Evidence gathered, and it RULES OUT the tidy answer:
-
-- **`not_applicable` is FALSE here.** The repo wires `check-pbt-coverage-pure-modules`
-  (`justfile:380`, `:1001`) and carries hypothesis tests, and its own ratified
-  `SPECIFICATION/constraints.md` requires "property-based test coverage on **pure modules**". The
-  concept does not merely apply — the repo asserts it and wires the check.
-- **Why it went empty:** commit `8858c90` replaced a copy-paste of livespec-CORE's paths
-  (`.claude-plugin/scripts/livespec/parse`, `.../validate`) with this repo's real layout. It was
-  emptied because THOSE paths do not exist here — **not** because anyone decided the concept did
-  not apply. No deferral was recorded.
-- The package has real `io/` and `effects/` seams, so a pure remainder exists **by construction**;
-  it has simply never been carved into a declared subtree.
-- Arming it would go RED: the `8o8e.1` armed control measured **23 files scanned, 33 offenders**.
-
-So the honest options are `unarmed_until` (which REQUIRES a ledger id, and none exists for scoping
-this repo's pure tree) or `convention_not_adopted` — **and picking the latter for `pure_trees`
-would sanction the exact dodge this epic exists to remove.** That is a maintainer decision about
-this repo's architecture, not a spelling choice a migration worker may make.
-
-Its OTHER two keys are fully determined by their own comments and are not blocked:
-`dataclasses_tree` → `not_applicable` ("No generated dataclasses schema tree is installed in this
-orchestrator plugin"), `neutral_hook_body_path` → `not_applicable` ("No neutral hook body is
-installed in this orchestrator plugin").
-
-### ⚠️ PROSE STALENESS — Phase 2's definition of done is VALUES **AND** PROSE
-
-The retired wording is a header that still says:
-
-> "declare it explicitly empty (`[]` ... `""` ...) ... Declared-empty is the sanctioned, VISIBLE
-> opt-out: the gating check no-ops and says so in a structured info event."
-
-That is the pre-`8o8e.1` regime, wrong on every clause, and it **instructs the next reader to write
-the exact spelling this epic removes**.
-
-**TWO repos still carry it:** `livespec-driver-codex` and `livespec-orchestrator-beads-fabro`. Six
-are clean: `livespec`, `livespec-dev-tooling`, `livespec-driver-claude`, `livespec-runtime`,
-`livespec-orchestrator-git-jsonl`, `livespec-overseer`.
-
-**Both remaining are ALSO value-un-migrated, so prose and values land in ONE commit for each.**
-
-### 🕳️ A GREP CANNOT FIND THIS — MEASURED TWICE, ON THE FIRST TWO REPOS TRIED
-
-The wording above is only the SHAPE that happens to repeat. Every migrated repo also carried a
-SECOND stale sentence phrased differently, which no grep for the known wording would surface:
-
-- `livespec-driver-claude` — "the remaining heavy product-tree role keys **are explicitly declared
-  empty below**".
 - `livespec` — "A role core LACKS **is declared explicitly empty (list `[]`, scalar `""`) with a
-  reason**". Found by READING the block; `livespec` had been classified prose-CLEAN by grep.
-- `livespec-runtime` — the same shape again in its e9j Wave-1 note, on top of its known header.
+  reason**". *Repo had been classified prose-CLEAN by the grep.*
+- `livespec-runtime` — the same shape in its e9j Wave-1 note.
+- `livespec-overseer` — "Still empty, and NOT an oversight" AND "Declared-empty: these roles remain
+  unarmed". *Also classified prose-CLEAN by the grep.*
+- `livespec-orchestrator-git-jsonl` — the strongest case: the header argued the backfill was
+  "provably behavior-neutral" because "each key below resolves to the SAME empty/none Config as
+  omission does". **That equivalence WAS the defect, stated as a virtue.** Correcting it was a
+  reversal, not a touch-up.
+- `livespec-driver-codex` — claimed the remaining heavy role keys "stay deliberately OMITTED" while
+  `io_trees`/`commands_trees`/`covered_trees` are all declared twenty lines below. **Already
+  inaccurate before this epic touched it.**
 
-**Two for two on repos the grep called clean.** Budget a full read of the whole
-`[tool.livespec_dev_tooling]` block plus its header for every remaining repo, and assume at least
-one instance you cannot search for. This is also why Phase 3's value-counting check can never be
-the whole answer.
+**CONSEQUENCE FOR PHASE 3's COMPANION CHECK — do not oversell it.** A literal-string check for the
+retired wording is cheap and worth building, but it would have caught **ZERO of those five**, and
+**two of the repos it must catch were scored CLEAN by exactly that grep**. Build it; never describe
+it as closing the prose gap. The measured evidence is that the second site is the COMMON case and
+it is not searchable.
 
-**Phase 3's conformance check counts VALUES, so it can NEVER catch this.** A repo with perfect
-values and a header pointing the other way scores a clean zero, and the config drifts back one
-honest author at a time while the check stays green.
+### ⚠️ ONE TERSE COMMENT CAN COVER TWO MEANINGS — and `livespec-overseer` proved it
 
-Full detail — including the suggestion of a cheap literal-string companion check for Phase 3 — is
-on `livespec-dev-tooling-8o8e.1`.
-
-### ✅ SLICES 3 AND 4 — `livespec` and `livespec-runtime` DONE, all four variants now proven live
-
-**Slice 3 — `livespec` (PR #1814 → `6454b2cc`), 2 keys.** `pure_trees` became the fleet's **FIRST
-`unarmed_until`**: `{ unarmed_until = "livespec-mutreal.1" }`. Core genuinely HAS a pure
-parse/validate layer, so `not_applicable` would have read tidier and been FALSE — in the repo that
-owns the spec. `livespec-mutreal.1` was **verified to resolve** (BACKLOG, mutation staging-tree not
-productized) rather than copied on faith; a blessed variant's payload is now parsed data, so a
-wrong id is a durable lie rather than a stale comment. `neutral_hook_body_path` →
-`not_applicable`. Measured 2 → 0, `just check` 73/73.
-
-**Slice 4 — `livespec-runtime` (PR #366 → `408388c`), 5 keys — the largest set in the fleet.**
-Three `not_applicable` plus the fleet's **FIRST TWO `convention_not_adopted`** (`target_dirs`,
-`source_tree_prefixes`). Every variant was lifted from this file's own collective reason comment,
-which already drew the distinction between "flat consumer with no separate trees" and "adopts
-neither convention (declaring real values would redden `claude_md_coverage` /
-`tests_mirror_pairing`)" — two statements that had always shared one indistinguishable spelling.
-`covered_trees` deliberately stays a bare `[]`, with a comment now saying WHY. Measured 5 → 0,
-`just check` 62/62.
-
-**All four blessed spellings are now exercised by a real repo under its own pinned loader.**
-`livespec-runtime` is also the repo where the ambiguity did measurable damage — its empty
-`source_tree_prefixes` silently disarmed the commit-time TDD pairing gate — so its declaration is
-now honest about which of the two things it is saying.
-
-### ✅ PIECES A AND B — BOTH DONE. Two repos are now complete on BOTH axes
-
-**Piece A** (`livespec-dev-tooling`, `8b5ab7f`): its header no longer claims five keys "stay
-empty/null" while three carry variants.
-
-**Piece B** (`livespec-driver-claude`, PR #317 → `e8c8847`): the **first sibling** complete on both
-axes, and necessarily a STANDALONE prose PR since its values had already landed in `c7c7272`.
-
-Piece B fixed **two** stale sites, not one. The known one was the `IMPORTANT` header. Re-reading the
-WHOLE block after the local edit — the discipline this thread keeps re-learning — turned up a
-second: the fleet-check-coverage paragraph closed with "the remaining heavy product-tree role keys
-are explicitly declared empty below", and three of them are not empty anymore. **Budget for the
-second stale sentence in every remaining repo; the grep for the known wording will not find it.**
-
-Its header now states the two-group split explicitly, including the part most likely to be lost in
-a rewrite: the CLEAN keys keep `[]` as a LEGITIMATE spelling, because for them empty makes the
-consuming check STRICTER rather than blinder. **Reuse that header as the template for the remaining
-three.**
-
-Values were verified UNCHANGED by measurement before and after the diff (`LegacyAmbiguousEmpty`
-count 0 both times), `just check` green, 64/64 CI checks pass.
-
-**Remaining prose work is TWO repos, and both ride along with their values:**
-
-| repo | prose | values | how to land it |
-|---|---|---|---|
-| `livespec-orchestrator-beads-fabro` | ⚠️ stale | ✗ 3 keys — **`pure_trees` ⛔ undetermined** | ride-along, but the `pure_trees` variant needs a maintainer first |
-| `livespec-driver-codex` | ⚠️ stale | ✗ 3 keys — pin now `v0.57.0` | ride-along: prose + values in ONE commit |
+Its four keys shared ONE line: *"Declared-empty: these roles remain unarmed."* That single word
+covered a genuine `not_applicable` pair (no dataclasses tree; not a Driver, so no neutral hook body)
+**and** a genuine `convention_not_adopted` pair (`tests/` has NO `tests/overseer/` mirror tree at
+all, so arming `source_tree_prefixes` would redden `tests_mirror_pairing`; no per-directory
+CLAUDE.md layout for `claude_md_coverage` to walk). Inheriting the shared word would have produced
+two wrong declarations. **A single reason comment spanning several keys is a smell, not a
+convenience.**
 
 ### 🔺 THE RATIFIED SPEC ITSELF IS STALE — FILED as `livespec-dev-tooling-fwcwxv`
 
@@ -238,44 +192,43 @@ local-only amend is how a durable record quietly reverts.
 **Once checks are green, open a FRESH PR off the new master rather than amending.** Amending races
 auto-merge, and the race is invisible when you win it.
 
-### ▶️ EXACT NEXT ACTION
+### ▶️ EXACT NEXT ACTION — **Phase 2 is DONE; nothing below is authorized yet**
 
-1. **Answer the `beads-fabro` `pure_trees` question** (the ⛔ block above). It blocks that one repo
-   and nothing else. Its other two keys are determined and ready to ride along the moment it lands.
-2. **`livespec-orchestrator-git-jsonl` and `livespec-overseer` — 5 keys each, prose-clean by grep
-   (READ them anyway).** Both are pin-open and unblocked; neither is authorized yet. `overseer`'s
-   `pure_trees` is the fleet's OTHER known **(B)** — `unarmed_until = "livespec-mutreal.1"`, the
-   same gate `livespec` used — so do not downgrade it to `not_applicable`.
-3. **`livespec-driver-codex` — 3 keys plus prose, now fully unblocked** (#296 merged; pin
-   `v0.57.0`). Values and prose in ONE commit.
-4. Execute `livespec-dev-tooling-fwcwxv` — the spec propose-change for
-   `SPECIFICATION/contracts.md` §"Consumer configuration schema". Already FILED; it needs a
-   maintainer, **before Phase 4**, via `/livespec:propose-change` and never a direct edit.
-5. Execute `livespec-dev-tooling-pj3j` — this repo's OWN `MISSING_KEYS_EVENT` and `Config`
-   docstring still teach the retired spelling. **Before Phase 4**, for the same reason as `fwcwxv`:
-   after Phase 4 that remediation text routes its reader straight into a `ConfigParseError`.
-   Unlike `fwcwxv` it is code, autonomously verifiable, and factory-dispatchable.
-6. Phase 3 (conformance check + a cheap literal-string companion check for the prose shape, which
-   the value-counting check structurally cannot catch), then Phase 4 (rejecting loader) — which
-   cannot land until all eight have migrated. Epic rule, non-negotiable.
+1. **Phase 3 — the fleet-conformance check.** This is what turns the eight-repo measurement above
+   from a snapshot into a standing guarantee, and it IS the closure precondition's mechanism. Two
+   things beyond counting `LegacyAmbiguousEmpty`, both learned the hard way:
+   - **`unarmed_until` payloads must RESOLVE, not merely be well-formed.** A variant's reason is
+     PARSED DATA now, so a nonexistent id — or an ALREADY-CLOSED one — is a durable lie claiming
+     work is pending that is done. That is the emptiness-means-consent shape wearing a blessed
+     name. Both ids in the fleet were verified open before being written. **Cross-tenant wrinkle:**
+     three repos point at `livespec-mutreal.1` (the `livespec` tenant) and `beads-fabro` points at
+     `bd-ib-6qb2mc` (its own), so the check must resolve ids ACROSS tenants or it false-positives
+     on the majority case.
+   - **The literal-string prose companion check is necessary and NOT sufficient** — see the prose
+     section above. It would have caught zero of the five second sites.
+2. **Then Phase 4** (the rejecting loader; `[]` becomes a hard `ConfigParseError`). Per the `426a`
+   retirement template: verify everyone conforms, THEN remove the lever, so the flip changes no
+   repo's result on the day it lands. **It cannot land until Phase 3 verifies the fleet** — the
+   table above is evidence gathered by hand, not a check that will keep being true.
+3. **`livespec-dev-tooling-fwcwxv` — before Phase 4.** The spec propose-change for
+   `SPECIFICATION/contracts.md` §"Consumer configuration schema". FILED; human-gated, so it needs a
+   maintainer via `/livespec:propose-change` and never a direct edit.
+4. **`livespec-dev-tooling-pj3j` — before Phase 4.** This repo's OWN `MISSING_KEYS_EVENT` and
+   `Config` docstring still teach the retired spelling; after Phase 4 that remediation text routes
+   its reader straight into a `ConfigParseError`. Code, autonomously verifiable, factory-
+   dispatchable — leave it for the Dispatcher.
+5. **`bd-ib-6qb2mc`** (beads-fabro, `blocked`/`needs-human`) — carving that repo's real pure tree.
+   Not on this thread's critical path, but it is what `unarmed_until` promises, and closing it by
+   declaring `not_applicable` would undo the honesty this phase bought.
 
-### SIBLING PINS — the gate has OPENED for six of seven
+### SIBLING PINS — fully open, and no longer a gate
 
-Measured on the FORGE 2026-07-28. **This ages in minutes; re-derive per repo, never act on it:**
-
-| repo | pin | |
-|---|---|---|
-| livespec | `v0.57.0` | ✅ **DONE** — `6454b2cc` |
-| livespec-driver-claude | `v0.57.0` | ✅ **DONE** — values `c7c7272`, prose `e8c8847` |
-| livespec-runtime | `v0.57.0` | ✅ **DONE** — `408388c` |
-| livespec-driver-codex | `v0.57.0` | migratable — **#296 MERGED**, the last pin gate is gone |
-| livespec-orchestrator-beads-fabro | `v0.57.0` | migratable except `pure_trees` ⛔ |
-| livespec-orchestrator-git-jsonl | `v0.57.0` | migratable |
-| livespec-overseer | `v0.57.0` | migratable |
-
-**THE PIN GATE IS FULLY OPEN — all seven siblings carry `v0.57.0`.** Nothing is currently
-authorized; the four remaining repos are a separate authorization, and one of them additionally
-needs the `pure_trees` question answered.
+Every repo carries `v0.57.0` and all eight are migrated. Retained as the rule for the NEXT
+required-key schema change rather than as a live gate: a sibling cannot adopt a blessed spelling
+until its own pin carries the accepting loader, so check the pin on the FORGE
+(`[tool.uv.sources]` `tag = "vX.Y.Z"`) before touching a repo. **Do not trigger a release and do not
+hand-edit a sibling's pin** — the `release-dispatch` fan-out does it, and a hand-edit races the
+automation.
 
 ### ⚠️ THE CONFLATION THAT WOULD MAKE ALL OF THIS WORTHLESS
 
@@ -297,6 +250,21 @@ closing `8o8e`. Full detail is on the `8o8e` epic.
 (maintainer-declared 2026-07-28). "Verified" means **per-repo evidence** that the ambiguous
 spelling is rejected and each repo declares the correct variant — **not** a green check in one
 repo. Eight Python-bearing repos, eight pieces of evidence.
+
+**STATUS: the eight pieces of evidence EXIST** (the fleet-progress table above — each repo measured
+at zero AND its own suite green under its own pinned loader). **But the precondition is not yet
+discharged, on two counts, and neither is a technicality:**
+
+1. **"the ambiguous spelling is REJECTED" is still FALSE.** Today `[]` parses to
+   `LegacyAmbiguousEmpty` and WARNs; it is ACCEPTED. Rejection is **Phase 4**, which is unbuilt.
+   Every repo declaring the right variant is necessary and not sufficient — nothing yet stops the
+   next author writing `[]` again.
+2. **The evidence is a hand-gathered snapshot, not a standing guarantee.** It was true at the
+   moment it was measured. **Phase 3 is what makes it keep being true**, and it is unbuilt.
+
+So: read the table as "the migration is done", never as "the precondition is met". Conflating a
+measurement with an enforcement is the same move as conflating a green check with a passing one —
+which is the defect this entire thread exists to close.
 
 ---
 
@@ -368,11 +336,9 @@ that WARNs naming the repo and key. **Phase 1 rejects nothing and reddens nothin
 runs, 47 exit 0. (The one non-zero, `livespec / claude_md_coverage`, is PRE-EXISTING: master's
 loader reproduces it identically. Flagged, not investigated — outside this item.)
 
-**The Phase 2 work list is derivable by RUNNING the loader. It was 29 (repo, key) pairs; four
-slices have since migrated 13 of them — `livespec-dev-tooling` 3, `livespec-driver-claude` 3,
-`livespec` 2, `livespec-runtime` 5 — leaving 16, all in siblings.** The per-repo breakdown with the
-exact KEYS is the fleet-progress table near the top of this file; it is measured, and this
-paragraph is the history rather than the work list.
+**The Phase 2 work list was derivable by RUNNING the loader, and it is now EXHAUSTED: 29 (repo,
+key) pairs → 0, across eight slices.** The per-repo breakdown with the exact variants is the
+fleet-progress table near the top of this file. This paragraph is history, not a work list.
 
 Enforcement shape: two exhaustive `match` sites carry `assert_never` (`config.role_absence`,
 `_role_key_gate._announce_absence`) and every consumer routes through one, so a future variant
@@ -381,7 +347,7 @@ changed, pyright enumerated all fourteen consumers — that is the mechanism wor
 
 ---
 
-## ▶️ PHASE 2 — FOUR SLICES DONE (half the fleet); NOTHING currently authorized
+## ✅ PHASE 2 — COMPLETE. EIGHT SLICES, EIGHT REPOS, FLEET TOTAL 0
 
 **Precondition, and it is PER-REPO, not fleet-wide:** a sibling cannot adopt a blessed spelling
 until **its own pin** carries the accepting loader. Adopting earlier fails that repo's `just check`
@@ -412,27 +378,21 @@ three now report `role_key_spelling: not_applicable`, all six consuming checks e
 SAME empty value for the OPPOSITE reason (`unarmed_until = "livespec-mutreal.1"`). One value, two
 meanings — now distinguishable.
 
-### ▶️ NEXT SLICE: four siblings, NONE authorized yet
+### ✅ ALL EIGHT SLICES LANDED — and every spelling has a worked precedent
 
-Four of eight are DONE on both axes (`livespec-dev-tooling`, `livespec-driver-claude`, `livespec`,
-`livespec-runtime`). **All seven siblings now carry `v0.57.0`**, so the PIN gate is gone entirely —
-what holds the rest is AUTHORIZATION, plus the one `pure_trees` question. Per-repo counts and the
-exact un-migrated KEYS are in the fleet-progress table near the top; they are **measured, not
-arithmetic**.
+The full per-repo result, with each repo's own suite green under its OWN pinned loader, is the
+fleet-progress table near the top of this file. It is **measured on the forge, not arithmetic**.
 
-`livespec-overseer`'s `pure_trees` is the fleet's remaining known **(B)
-`unarmed_until = "livespec-mutreal.1"`** — do NOT downgrade it to `not_applicable` because that
-reads tidier. `livespec` already proved (B) holds under real conditions, `livespec-driver-claude`
-proved (C) `superseded_by`, and `livespec-runtime` proved (D) `convention_not_adopted`. **All four
-spellings are now exercised live**, so there is a worked precedent for every one of them.
+All four blessed spellings are exercised live: `livespec` proved (B) `unarmed_until`,
+`livespec-driver-claude` proved (C) `superseded_by`, `livespec-runtime` proved (D)
+`convention_not_adopted`, and (A) `not_applicable` is carried by four repos. A future repo has a
+worked example of whichever variant its own comments select — which removes the "no prior art"
+excuse for picking the tidy one.
 
-Every remaining slice migrates **values AND prose together** — see the prose-staleness section, and
-budget a full READ rather than a grep.
-
-Then **Phase 3** (a fleet-conformance check asserting zero `LegacyAmbiguousEmpty` across all eight —
-this IS the closure precondition's evidence) and **Phase 4** (the rejecting loader; `[]` becomes a
-hard `ConfigParseError`), per the `livespec-dev-tooling-426a` retirement template: verify everyone
-conforms, THEN remove the lever, so the flip changes no repo's result on the day it lands.
+Two results are worth protecting from a later tidy-up, and both are recorded in full above: the
+**`pure_trees` split** (four `unarmed_until` / four `not_applicable`, discriminated by the repo's
+own ratified constraint rather than by whether a `pure/` directory exists), and the **prose
+finding** (five for five on second sites a grep cannot reach).
 
 ---
 
@@ -461,6 +421,7 @@ the entire fan-out would silently never trigger.
 | `br4xar` | backlog | `tests_mirror_pairing` disarmed in 3 repos. **The union is the WRONG fix there** — that check needs a source→test MAPPING, and a prefix union fabricates 23 false offenders in git-jsonl (whose real tests exist at `tests/<pkg>/`). Epic-shaped: 23 fabricated / 6 real (runtime) / 58 real (overseer, which has no `tests/overseer/` tree at all). |
 | `hgfnqd` | ready | Collapse `red_green_replay._derive_impl_prefixes` into `config.derive_source_prefixes`. Duplicate logic left deliberately: 3 tests assert the private helper by name, and refactoring a second commit-time gate inside a gate-arming PR risks losing the ability to commit at all. |
 | `pj3j` | **open, P2 — FILED by this session** | This repo's OWN `MISSING_KEYS_EVENT` (`checks/required_role_keys_declared.py:40-43`) and `Config` docstring (`config.py:407`) still teach the retired declared-empty spelling. Higher-leverage than any config comment: the diagnostic is read at the moment someone decides what to write, and it is interpolated into the FLEET report too (`fleet/_rows_required_role_keys.py:99`). **After Phase 4 its remediation routes the reader into a `ConfigParseError`** — so, like `fwcwxv`, it must land BEFORE Phase 4. Unlike `fwcwxv` it is code and factory-dispatchable. The item records the trap: `[]` is wrong for the five UNION keys only; it stays LEGITIMATE for the five CLEAN ones, and this check spans both. |
+| `bd-ib-6qb2mc` | **blocked / needs-human — FILED this session, in the `beads-fabro` tenant** | Carve `livespec-orchestrator-beads-fabro`'s real pure tree. It is the named work that repo's `pure_trees = { unarmed_until = ... }` points at, so it is the ONLY open item whose closure is referenced from a parsed config value in another repo. **Do NOT close it by declaring `not_applicable`** — that re-hides an obligation its own ratified `constraints.md` imposes; if the constraint is wrong, amend the SPEC first. `blocked` is correct rather than a formality: verifying the result is mechanical, choosing the cut is architectural. |
 | `pk2x` | backlog | Archive-on-epic-close — **ADOPT** ruled. Carries a note from this thread: a union makes `[]` unrepresentable after parsing, but **a key nobody wrote still parses to the default**, so pk2x's Exemption slot needs PRESENCE REQUIRED, not merely value well-formedness. |
 
 **Possible stale item — VERIFY, do not assume:** `livespec-dev-tooling-fp5yfv` (2026-07-19,
