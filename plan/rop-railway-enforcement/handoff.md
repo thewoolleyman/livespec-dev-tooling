@@ -1,258 +1,302 @@
 # rop-railway-enforcement — arm the check that was never armed, then remediate six repos
 
-**Ledger anchor:** epic livespec-dev-tooling-8o8e
+**Ledger anchor:** epic `livespec-dev-tooling-8o8e`
 
 **Thread:** `plan/rop-railway-enforcement/` in **livespec-dev-tooling**
 (`https://github.com/thewoolleyman/livespec-dev-tooling/blob/master/plan/rop-railway-enforcement/handoff.md`)
 
-Status is READ from the ledger, never from this file. Every live-state claim below expires in
-minutes — re-derive before acting.
-
----
-
-## ▶️ START HERE — this thread is BLOCKED on a schema fix, and may not close without it
-
-The maintainer RULED (2026-07-27): **enforce the railway for real, fleet-wide.** Build the
-mechanical check so "on the railway" means "actually composes on Result/IOResult", then bring every
-non-conforming repo into compliance — including `livespec-dev-tooling` itself. Their reasoning:
-*this is the same disease the rop-sweep just cured — a central requirement no check actually
-verifies.*
-
-**Do NOT reach for a severity lever, a per-repo opt-in, or a declared-empty escape.** Every one of
-those is a shape the rop-sweep spent days removing. `check-hook-trees-not-io-exempt` exists because
-the exemption instinct keeps recurring.
-
-**Your next action is `livespec-dev-tooling-8o8e.1`, and its first deliverable is a CLASSIFICATION,
-not a code change.** Read the item first — the full ruling is there, and the ledger is authoritative
-over this file:
+**Supervised thread.** A supervisor session (`rop-railway-enforcement-supervisor`) drives this
+worker and owns `supervisor-handoff.md` — that file is the ROLE charter, this one is the LIVE
+RECORD, and **the ledger is authoritative over both**. Every live-state claim below expires in
+minutes; re-derive before acting:
 
 ```bash
 cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh -- bd show livespec-dev-tooling-8o8e.1
 ```
 
-### 🛑 CLOSURE PRECONDITION — read before planning anything else
+---
+
+## ▶️ START HERE — where the work actually is
+
+The blocking item is **`livespec-dev-tooling-8o8e.1`** (OPEN). Its ledger notes carry the full
+record: the role-key classification, the maintainer ruling, the union design, the release
+mechanism, and the Phase 1 proof. **Read the item before planning anything** — it is far more
+detailed than this file, and this file deliberately does not duplicate it.
+
+**Phases 0 and 1 have LANDED.** The next step is **Phase 2 (the per-repo migration), which is NOT
+yet authorized** — eight repos is its own authorization and the supervisor holds it. Do not touch a
+sibling repo without it.
+
+### State as of 2026-07-28 (RE-DERIVE — this ages in minutes)
+
+| thing | state |
+|---|---|
+| `livespec-dev-tooling` master | `89b5ec0` (`chore(master): release 0.57.0`) |
+| Phase 0 — commit-pairs coupling break (PR #755) | **merged `5f82dbe`, RELEASED in `v0.56.7`** |
+| Phase 1 — accepting loader (PR #759) | **merged `8a61df6`, RELEASED in `v0.57.0`** (verified: `git tag --contains 8a61df6` → `v0.57.0`) |
+| Sibling consumption | **ZERO siblings consumed Phase 1 at the moment this was written.** The `v0.57.0` fan-out had just fired; bump PRs land per-repo, independently. **RE-DERIVE per repo.** |
+
+**MERGED ≠ RELEASED ≠ CONSUMED.** Keep the three separate in every status claim. Conflating them
+re-creates this thread's core defect — a green signal that means nothing — at the process level.
+
+Sibling pins measured on the FORGE 2026-07-28 — **ZERO carry `v0.57.0`**, so every sibling was OFF
+LIMITS at that moment. **This table ages in minutes; re-derive per repo, never act on it:**
+
+| repo | pin | | repo | pin |
+|---|---|---|---|---|
+| livespec | `v0.56.6` | | livespec-orchestrator-git-jsonl | `v0.56.7` |
+| livespec-driver-claude | `v0.56.7` | | livespec-overseer | `v0.56.7` |
+| livespec-driver-codex | `v0.56.7` | | livespec-runtime | `v0.56.7` |
+| livespec-orchestrator-beads-fabro | `v0.56.7` | | | |
+
+### ⚠️ THE CONFLATION THAT WOULD MAKE ALL OF THIS WORTHLESS
+
+**Completing `8o8e.1` does NOT arm the railway check.** Declaring
+`pure_trees = { not_applicable = "…" }` makes the SCHEMA honest; it does not make
+`check-public-api-result-typed` scan anything, because that check is still `pure_trees`-scoped. So
+after Phases 2, 3 and 4 land perfectly, it will STILL scan zero files in every flat-layout repo —
+legitimately and honestly this time, and still zero.
+
+Arming it means migrating it OFF `pure_trees` onto the git-derived `resolve_check_universe()` —
+that is `8o8e`'s own step 6, and it is **NOT STARTED**. Closing `8o8e.1` must never be read as
+closing `8o8e`. Full detail is on the `8o8e` epic.
+
+---
+
+## 🛑 CLOSURE PRECONDITION — read before planning anything else
 
 **Neither `8o8e` nor THIS PLAN THREAD may close until `8o8e.1` is fixed FLEET-WIDE and VERIFIED**
-(maintainer-declared 2026-07-28). "Verified" means per-repo evidence that the ambiguous spelling is
-rejected and each repo declares the correct variant — **not** a green check in one repo. This is a
-blocking precondition on closure, not a follow-up.
-
-### 🛑 A SUPERSEDED AUTHORIZATION — do NOT implement the weaker fix
-
-An earlier supervisor authorization said the `pure_trees` fix "cannot be reject-empty, it must be
-that emptiness stops implying scan-nothing". **The maintainer superseded that.** It removes THIS
-INSTANCE while leaving the ambiguity REPRESENTABLE, so the next key or the next reader re-creates
-the bug. The ruling is a TYPE-SYSTEM fix: a flat-layout repo declares a **different type**, not an
-empty array, encoded as a discriminated union parsed into distinct Python types at the config
-boundary. A bare `[]` becomes a hard load-time ERROR naming both blessed spellings.
-
-**State the guarantee precisely — overclaiming it is its own defect.** TOML has no sum types, so
-nothing stops a person TYPING `[]` into the file. What the design buys is: the ambiguity is
-**unrepresentable after parsing**, and ambiguous input **fails loud at load** instead of succeeding
-silently as "scan nothing". Say that; do not say "impossible to express".
-
-`check-newtype-domain-primitives` and `check-assert-never-exhaustiveness` already exist in this
-fleet and make it cheap: once the union is a real type, pyright strict + `assert_never` force EVERY
-consumer to handle both variants explicitly.
-
-### ⛔ DO NOT COMMIT TO A REMEDIATION SHAPE BEFORE THAT CLASSIFICATION LANDS
-
-This epic's remediation of six repos / 245 functions runs THROUGH the role-key loader `8o8e.1`
-changes. Taking arming decisions now means taking them against a schema about to move underneath
-them. Classify first, then design.
-
-`8o8e.1` is also a **required-key schema change**, which this fleet treats as a cross-repo EPIC:
-it must backfill all eight Python-bearing repos in the SAME epic, harden-first, and **no loader
-that rejects the ambiguous spelling lands until every consumer has migrated**.
-
-### ✅ NOTHING IS IN FLIGHT
-
-Every worktree and branch this thread created is reaped; `livespec-dev-tooling` is clean on
-`master`. Five OTHER `livespec-dev-tooling` worktrees are FOREIGN — run `git worktree list` before
-touching anything, and reap none of them.
+(maintainer-declared 2026-07-28). "Verified" means **per-repo evidence** that the ambiguous
+spelling is rejected and each repo declares the correct variant — **not** a green check in one
+repo. Eight Python-bearing repos, eight pieces of evidence.
 
 ---
 
-## 🔑 THE FINDING THAT REFRAMES THE EPIC
+## THE MAINTAINER RULING (2026-07-28) — four variants, and meaning (D) is BLESSED
 
-**The enforcing check was never missing. It exists, runs in CI in every repo, reports green in all
-of them, and scans ZERO files in ALL NINE.**
+Blessed spellings, each requiring a **non-empty** payload:
 
-`check-public-api-result-typed` is named BY the spec as the enforcer of §"ROP composition"'s
-operative sentence — *"Every public function's `return` annotation MUST be `Result[_, _]` or
-`IOResult[_, _]` ... Enforced by `check-public-api-result-typed` (AST)"*. Its `main()` gates on the
-`pure_trees` role key and then iterates it. `_role_key_gate.role_key_gate_exit_code` returns **0**
-for an empty declaration, logging *"role key declared empty — sanctioned opt-out"*.
+```toml
+pure_trees = { not_applicable         = "<reason>" }
+pure_trees = { superseded_by          = "<reason>" }
+pure_trees = { unarmed_until          = "<ledger-id>" }
+pure_trees = { convention_not_adopted = "<reason>" }
+```
 
-**Every Python-bearing repo in the fleet declares `pure_trees = []`.** Live-run evidence, not
-inference: `uv run python -m livespec_dev_tooling.checks.public_api_result_typed` exits 0 in both
-`livespec-dev-tooling` and `livespec`, emitting only that info line — and `livespec` has 68 of 129
-modules genuinely on the railway.
+Accepted reasoning: **fewer variants force (B), (C) and (D) repos to LIE**, and that is how the
+next silent dodge gets created. Four is what the eight live configs actually exhibit.
 
-This is the **same dodge `i532` just closed**, still alive on the check that carries the clause.
-`pure_trees` is a LAYERED-ARCHITECTURE role key (it means `parse/` + `validate/`), so a flat-layout
-repo declares it empty *truthfully* — which is exactly why the gap is invisible. It is also
-OVERLOADED: two of the three repos comment that their empty declaration is gated on
-`livespec-mutreal.1` (mutation staging), so deferring the mutation concern disarmed the railway
-check as a side effect nobody chose.
+**The ruling carried an ORDERING CONDITION, and it is DISCHARGED.** Blessing (D) was safe only
+because the coupling break removes (D)'s ability to disarm a check it never named. Phase 0 landed
+first. Do not re-open this.
 
-**The fix shape already exists and is already validated**: `config.resolve_check_universe()`
-(`config.py:835`), the git-derived, fail-closed entry point the seven migrated `source_trees`
-checks and `file_lloc` already use. Migrating `public_api_result_typed` to it is the move `i532`
-made, and it keeps `pure_trees` as the genuine architectural marker it is.
+**Accepted cost, on the record:** blessing (D) permanently sanctions `claude_md_coverage` off in
+five of eight repos and `tests_mirror_pairing` off in three — visible and greppable rather than
+silent. It is **NOT** licence for the set to grow; a new `convention_not_adopted` still needs a
+written reason.
 
-Full detail is on `8o8e` as a dated note. Do not re-derive it.
+### State the guarantee precisely — overclaiming it is its own defect
+
+TOML has no sum types; nothing stops a person TYPING `[]`. The claim is exactly two things: after
+parsing the ambiguity is **unrepresentable in the domain model**, and ambiguous input **fails loud
+at load**. Never "impossible to express". The maintainer called this out by name.
+
+### A SUPERSEDED AUTHORIZATION — do NOT implement the weaker fix
+
+An early supervisor authorization said the fix "cannot be reject-empty, it must be that emptiness
+stops implying scan-nothing". **The maintainer superseded that** — it removes the instance and
+leaves the ambiguity representable. Do not resurrect it.
 
 ---
 
-## 📊 TRUE BLAST RADIUS — six repos, 245 functions (NOT "four repos")
+## WHAT LANDED, AND WHAT IT MEANS
 
-Measured by simulating the post-migration check exactly (`resolve_check_universe()`, same
-`_`-prefixed-file skip, the check's own `_find_offenders`). **The raw count is contaminated and
-must be split before any severity decision** — the check does not implement the exemptions the
-spec states, and its own docstring says the a–f exemptions are *"NOT yet wired in"*.
+### Phase 0 — `commit_pairs` coupling break (merged `5f82dbe`, released `v0.56.7`)
 
-| repo | raw | −(a..f) | −(`-> None`) | **TRUE** |
+`str.startswith(())` is False for every input, so `source_tree_prefixes = []` made the commit-time
+TDD pairing gate's source set empty **by construction** and its unpaired branch unreachable. Three
+repos (`livespec-orchestrator-git-jsonl`, `livespec-overseer`, `livespec-runtime`) had declined the
+tests-mirror convention by emptying that key and thereby switched off a gate **their config
+comments never named**.
+
+Fixed by `config.derive_source_prefixes` — union normalised `source_trees` into the prefix set.
+Measured **set-identical** to the declared prefixes in all five armed repos, so it cannot redden a
+passing repo; it adds exactly one prefix in each of the three disarmed ones.
+
+### Phase 1 — the accepting loader (merged `8a61df6`, released in `v0.57.0`)
+
+Five keys now parse into a discriminated union: `pure_trees`, `target_dirs`,
+`source_tree_prefixes`, `dataclasses_tree`, `neutral_hook_body_path`.
+
+**Five keys stay OUT, and that is deliberate** — `source_trees`, `io_trees`, `commands_trees`,
+`supervisor_entry_files`, `covered_trees`. Bounded CLEAN **by execution**: they are exemption /
+severity predicates whose consuming checks derive the universe from `resolve_check_universe()`, so
+emptiness makes them STRICTER, not blinder. Routing them through the union is ceremony with no
+defect behind it. (`source_trees` keeps one recorded caveat: empty WOULD be a severity softener, so
+it is not structurally immune — only currently unexercised at 0 of 8.)
+
+`[]` / `""` still parse and still behave exactly as today, as a distinct `LegacyAmbiguousEmpty`
+that WARNs naming the repo and key. **Phase 1 rejects nothing and reddens nothing** — measured, 48
+runs, 47 exit 0. (The one non-zero, `livespec / claude_md_coverage`, is PRE-EXISTING: master's
+loader reproduces it identically. Flagged, not investigated — outside this item.)
+
+**The Phase 2 work list is now derivable by RUNNING the checks: 29 (repo, key) pairs.**
+
+| repo | un-migrated | | repo | un-migrated |
 |---|---|---|---|---|
-| livespec-overseer | 58 | 4 | 2 | **52** |
-| livespec-orchestrator-beads-fabro | 76 | 24 | 4 | **48** |
-| livespec-dev-tooling | 61 | 12 | 2 | **47** |
-| livespec-runtime | 46 | 3 | 0 | **43** |
-| livespec | 55 | 20 | 6 | **29** |
-| livespec-orchestrator-git-jsonl | 38 | 12 | 0 | **26** |
-| livespec-driver-claude / -codex | 0 | – | – | **0** |
-| livespec-console-beads-fabro | 0 | – | – | **0** (zero-Python; sanctioned exemption) |
-| **FLEET** | **334** | **75** | **14** | **245** |
+| livespec | 2 | | livespec-orchestrator-beads-fabro | 3 |
+| livespec-dev-tooling | 3 | | livespec-orchestrator-git-jsonl | **5** |
+| livespec-driver-claude | 3 | | livespec-overseer | **5** |
+| livespec-driver-codex | 3 | | livespec-runtime | **5** |
 
-**Wiring the spec's own stated exemptions in is FIDELITY, not softening.** The "do not soften"
-instruction binds severity levers, per-repo opt-ins, and declared-empty escapes. Shipping a check
-that flags 75 supervisor `main()` functions the spec explicitly exempts would be a defect, and
-would burn the rollout's credibility on false positives.
-
-Two corrections to the epic's original premise, both now on the item:
-
-1. **Six repos, not four.** The original count was of repos that do not VENDOR `returns`. That is
-   a different set from repos with offenders: `livespec` (29) and `livespec-orchestrator-beads-fabro`
-   (48) vendor it and are among the worst; `livespec-driver-codex` does not vendor it and has ZERO.
-2. **`livespec-driver-claude` and `livespec-driver-codex` are already clean** and are not in the
-   remediation set.
-
-**⚠️ THESE NUMBERS ARE NOW KNOWN STALE — and stale in the direction that UNDERSTATES the work.**
-PR #748 implemented the exemptions LITERALLY, including their path scoping: the spec grants the
-`main()` exemption to a LOCATION (`commands/*.py`, `doctor/run_static.py`), not to a name, and
-`build_parser` only under `commands/**.py`. A flat-layout repo declaring no commands tree therefore
-gets NO `main()` exemption at all. The `−(a..f)` column above subtracted 75 `main()`/`build_parser()`
-hits fleet-wide as though the exemption were unscoped, so the TRUE counts are **higher** than the
-245 shown.
-
-Do not plan against this table. Re-measure with the CHANGED check — and only after `8o8e.1` lands,
-since the role-key loader those measurements run through is about to move. Reproduce with the
-script recorded in `8o8e`'s design notes.
+Enforcement shape: two exhaustive `match` sites carry `assert_never` (`config.role_absence`,
+`_role_key_gate._announce_absence`) and every consumer routes through one, so a future variant
+breaks the type gate rather than silently inheriting scan-nothing. When the five field types
+changed, pyright enumerated all fourteen consumers — that is the mechanism working.
 
 ---
 
-## 🧭 THE SEQUENCE — each PR green on its own, no lever anywhere
+## ▶️ PHASE 2 — the next step, NOT yet authorized
 
-`livespec-dev-tooling` runs `check-public-api-result-typed` on ITSELF (`justfile:247`). So arming
-the check turns its own `just check` red on 47 offenders, and `lefthook` then blocks the very
-commit that would fix it. The remediation of dev-tooling is a **precondition** of the hardening,
-not a follow-up.
+**Precondition, and it is PER-REPO, not fleet-wide:** a sibling cannot adopt a blessed spelling
+until **its own pin** carries the accepting loader. Adopting earlier fails that repo's `just check`
+with a `ConfigParseError` on an inline table its pinned loader cannot parse. Bump PRs land
+independently and at different times, so check each repo's pin before touching it.
 
-1. ✅ **DONE** — `hh4d`: `check-commit-pairs-source-and-test` excluded `_vendor` (PR #739).
-   Promoted the rule to the public `config.is_vendored_path`.
-2. ✅ **DONE** — `pm4z`: the two remaining `_vendor` sites (PR #743) plus the adjacent
-   empty-after-filter edge they exposed (PR #746). CLOSED.
-3. ✅ **DONE** — `dry-python/returns` 0.25.0 vendored into `livespec_dev_tooling/_vendor/`
-   (PR #746). The enforcement suite can now compose on the railway at all.
-4. ✅ **DONE** — the spec's stated exemptions wired into `public_api_result_typed` (PR #748).
-   Behavior today is unchanged, because the check is still `pure_trees`-scoped and scans zero
-   files — this is the harden-first prerequisite, landed green.
-5. ⬅️ **NEXT — `8o8e.1`, classification FIRST.** Enumerate EVERY role key and classify which
-   genuinely carry two meanings versus one. Report before touching loaders. Fix the CLASS, not the
-   instance. Then the discriminated-union design, then the cross-repo migration.
-6. **Then** — arm `public_api_result_typed` on the git-derived universe, and RE-MEASURE. The
-   counts below are now KNOWN STALE (see the warning under the blast-radius table).
-7. **Then** — remediate repo by repo, each landing green on its own.
+Sequence, and the first two steps are DONE: `v0.57.0` released → `release-dispatch` fans out →
+each sibling gets an auto-merge `chore(deps):` bump PR → **only then** is that repo migratable.
 
-### 📌 ALSO ADOPTED, AND SHARING THIS DESIGN — Archive-on-epic-close (`pk2x`)
+So Phase 2's gating question is now purely **"has THIS repo's bump PR landed yet?"** Check the
+pin on the FORGE per repo (`[tool.uv.sources]` `tag = "vX.Y.Z"`, ≥ `v0.57.0`) before migrating it.
 
-The maintainer RULED (2026-07-28) to **ADOPT** the Archive-on-epic-close conformance member now:
-fill the unfilled Mechanism, Installer and Exemption slots, WITH the explicit declared opt-out the
-Conformance Pattern requires. Two binding constraints, both on `pk2x`:
+**Do not trigger a release. Do not hand-edit a sibling's pin** — the fan-out does it, and a
+hand-edit races the automation.
 
-- **A repo that has NOT SPOKEN is NOT exempt — it is non-conforming and must say so in its own
-  config.** That is the entire difference between this adoption and the status quo, and it is the
-  part that will be tempting to soften during rollout.
-- **Harden-first**: land the Mechanism and its correct severity, measure the true blast radius
-  across all eight repos, THEN remediate.
+### Phase 1 is released, so `livespec-dev-tooling` itself can migrate FIRST
 
-**The Exemption slot is the trap.** Design it as a DECLARATION a repo actively writes with a stated
-reason — never a default, an absence, or an empty value that reads as consent. *Every dodge this
-sweep found was an emptiness that meant yes.*
+It is the producer AND a consumer, and it is the one repo whose loader is always current. Its 3
+un-migrated keys (`dataclasses_tree`, `neutral_hook_body_path`, `pure_trees`) are migratable with
+no pin wait at all — a natural first slice that proves the spellings end-to-end before any sibling
+is touched. Still gated on Phase 2 authorization.
 
-**Sequencing chosen: `8o8e.1` first, then `pk2x`'s Exemption slot, designed to match.** They are the
-same disease — an emptiness or absence that silently means consent — and `8o8e.1`'s discriminated
-union establishes the declaration idiom (`not-applicable` as an ACTIVE spelling with a reason)
-that `pk2x`'s Exemption slot should reuse rather than reinvent. Doing `pk2x` first would mean
-designing that idiom twice, and the second design would have to migrate the first.
+Then **Phase 3** (a fleet-conformance check asserting zero `LegacyAmbiguousEmpty` across all eight —
+this IS the closure precondition's evidence) and **Phase 4** (the rejecting loader; `[]` becomes a
+hard `ConfigParseError`), per the `livespec-dev-tooling-426a` retirement template: verify everyone
+conforms, THEN remove the lever, so the flip changes no repo's result on the day it lands.
 
-Note also: `pk2x`'s **18-of-20 figure must be RE-DERIVED after the regex fix** — the current count
-is contaminated by bold-wrapped-id false positives, and a decision taken against a contaminated
-count is taken against a wrong number.
+---
 
-Step 5 is the fleet-visible moment: on release, `bump-pin` fans the new dev-tooling to every
-sibling, so all five go red on their next pin bump. That is the intended consequence of enforcing
-for real — but it makes steps 5–6 a coordinated cross-repo epic with per-repo children, not
-independent PRs.
+## HOW A RELEASE ACTUALLY REACHES A SIBLING (established, with evidence)
 
-**Implementation runs factory-side** — the Dispatcher drains `ready` items, or an operator runs
-the `drive` operation (`impl:<id>`). Do not hand-code these conversions in a planning session.
+`release-please` (on push to master, opens/updates a release PR; merging it tags + releases)
+→ `release-dispatch.yml` (on `release: published`, discovers siblings via the **`livespec-sibling`
+GitHub topic**, fires `repository_dispatch: sibling-released`)
+→ `bump-pin-from-dispatch.yml` (rewrites **four** pin formats, commits `chore(deps):`, opens an
+auto-merge PR; deliberately runs NO consumer checks — the consumer's own CI is the gate).
+
+**Load-bearing detail:** release-please MUST authenticate via the livespec GitHub App token, never
+`GITHUB_TOKEN` — releases authored by `github-actions[bot]` do not fire `release: published`, so
+the entire fan-out would silently never trigger.
+
+---
+
+## 📋 OPEN ITEMS
+
+### Filed by this thread
+
+| id | state | what |
+|---|---|---|
+| `8o8e` | epic | This thread's anchor. Cannot close until `8o8e.1` is fleet-wide fixed AND verified. |
+| `8o8e.1` | **OPEN, P1 — the live item** | Role-key schema type-safety. Phases 0–1 done; Phase 2 next. |
+| `br4xar` | backlog | `tests_mirror_pairing` disarmed in 3 repos. **The union is the WRONG fix there** — that check needs a source→test MAPPING, and a prefix union fabricates 23 false offenders in git-jsonl (whose real tests exist at `tests/<pkg>/`). Epic-shaped: 23 fabricated / 6 real (runtime) / 58 real (overseer, which has no `tests/overseer/` tree at all). |
+| `hgfnqd` | ready | Collapse `red_green_replay._derive_impl_prefixes` into `config.derive_source_prefixes`. Duplicate logic left deliberately: 3 tests assert the private helper by name, and refactoring a second commit-time gate inside a gate-arming PR risks losing the ability to commit at all. |
+| `pk2x` | backlog | Archive-on-epic-close — **ADOPT** ruled. Carries a note from this thread: a union makes `[]` unrepresentable after parsing, but **a key nobody wrote still parses to the default**, so pk2x's Exemption slot needs PRESENCE REQUIRED, not merely value well-formedness. |
+
+**Possible stale item — VERIFY, do not assume:** `livespec-dev-tooling-fp5yfv` (2026-07-19,
+BLOCKED) describes `red_green_replay._IMPL_PREFIXES` as a hardcoded list and *recommends deriving
+impl paths from `source_tree_prefixes`* — which the code now does via `_derive_impl_prefixes`. It
+may be already-fixed or largely superseded, and it overlaps `hgfnqd`. Check before grooming either.
+
+### Carried forward (not this thread's to drive, but part of the finding)
+
+| id | what |
+|---|---|
+| `w25v` | `vendor_update` hardcodes the plugin layout; cannot vendor into this repo's own tree. |
+| `i04f` (livespec) | Spec states the Result-return rule twice with incompatible exemption sets. Needs ratification. |
+| `j5i9` (livespec) | The cross-cutting FINDING: the repo that enforces the fleet is systematically the least enforced. |
 
 ---
 
 ## 🕳️ THE PATTERN THIS THREAD KEEPS FINDING
 
-Four instances in one session of ONE shape — **machinery that is correct for consumers and inert
-or wrong for the repo that owns it**:
+One shape, found repeatedly — **machinery that is correct for consumers and inert or wrong for the
+repo that owns it**, and **an emptiness or absence that silently means consent**:
 
-1. `check-public-api-result-typed` — scans zero files in all nine repos (`8o8e`).
+1. `check-public-api-result-typed` — scanned zero files in all nine repos (`8o8e`).
 2. `check-plan-thread-anchor-declared` — armed ONLY in the one repo with zero plan threads
-   (`livespec-dev-tooling-pk2x`); 18 of 20 fleet handoffs would fail it.
-3. `vendor_update` — the "only blessed re-vendor path" hardcodes `.claude-plugin/scripts/_vendor/`
-   and cannot target dev-tooling's own `_vendor/` tree (`livespec-dev-tooling-w25v`).
-4. `_vendor` exclusion applied by `filter_first_party_py`, ruff and pyright but NOT by three
-   staged-diff checks (`hh4d` fixed, `pm4z` open).
+   (`pk2x`); 18 of 20 fleet handoffs would fail it. An **ABSENCE** meaning consent, not an
+   emptiness — a union does not fix that shape.
+3. `file_lloc_hard_gate` — retired under `426a` for exactly this: "the omission read as
+   conformance". Its retirement sequence is the migration template Phase 4 follows.
+4. `commit_pairs` / `claude_md_coverage` / `tests_mirror_pairing` — disarmed by an empty role key
+   (`8o8e.1`), and `commit_pairs` was disarmed by a declaration that named two OTHER checks.
+5. `vendor_update` — the "only blessed re-vendor path" cannot target dev-tooling's own `_vendor/`.
 
-When you find the next one, file it rather than fixing it inline — a same-shaped hole found while
-fixing another is the cheapest it will ever be to close, and the pattern is the finding.
+When you find the next one, **file it rather than fixing it inline** — a same-shaped hole found
+while fixing another is the cheapest it will ever be to close, and the pattern is the finding. A
+merged PR body is NOT a work queue; an untracked deferral is the disease this item is about.
 
 ---
 
-## ⚠️ TRAPS PAID FOR IN THIS SESSION
+## ⚠️ HAZARDS ALREADY PAID FOR
 
-- **A fresh worktree fails `check-primary-checkout-commit-refuse-hook-installed`** with
-  `failure_mode: worktree_pack_absent`. Run `just install-worktree-pack` in the new worktree
-  BEFORE the first commit. It cost two failed commit attempts here.
-- **`just check` passing does NOT mean a commit will land.** The staged-diff checks
-  (`commit-pairs`, `red-green-replay`) run only at commit/push time over the STAGED set. The
-  vendoring passed 64/64 in the working tree and was still rejected at commit, then again at push.
-- **A grep for "which checks lack a vendor exclusion" returns a 19-module SUPERSET** and is not a
-  work list: most derive their universe transitively via `resolve_check_universe`. The tight bound
-  is empirical — with the vendored tree present, 63 of 64 targets passed.
-- **`pure_trees = []` is documented and honest in every repo.** Do not read the comments as
-  admissions of an oversight; two explicitly say "NOT an oversight". The defect is the category
-  error (an architectural role key used as a check universe), not anyone's declaration.
+**A green check proves nothing here.** `check-public-api-result-typed` ran green in all nine repos
+while scanning ZERO files. Require the **file count actually scanned**, not exit status. Green is
+the failure signature on this thread.
 
-## 📋 OPEN ITEMS FILED BY THIS THREAD
+**A static grep names candidates; it has not measured them.** A grep for "checks lacking a vendor
+exclusion" returned a 19-module superset that was not a work list. Nine checks reading
+`config.source_trees` are exemption predicates, unaffected by emptiness. Only execution separates
+them.
 
-| item | state | what |
-|---|---|---|
-| `8o8e` | OPEN, epic | This thread's anchor. **Cannot close until `8o8e.1` is fleet-wide fixed AND verified.** |
-| `8o8e.1` | **OPEN, P1 — NEXT** | Role-key schema type-safety. Classification first, then the union, then cross-repo migration. |
-| `pk2x` | OPEN, P1 | Archive-on-epic-close — **ADOPT** ruling recorded. Sequenced after `8o8e.1`. |
-| `i04f` | OPEN, P2 (livespec) | Spec states the Result-return rule twice with incompatible exemption sets. Needs ratification. |
-| `w25v` | OPEN, P2 | `vendor_update` hardcodes the plugin layout; cannot vendor into this repo's own tree. |
-| `j5i9` | OPEN, P1 (livespec) | The cross-cutting FINDING: the repo that enforces the fleet is systematically the least enforced. |
-| `hh4d`, `pm4z` | CLOSED | The `_vendor` exclusion sweep. |
+**Read config comments as admissions, not negligence.** Every `pure_trees = []` was documented and
+honest; two say "NOT an oversight". The defect is the CATEGORY ERROR, not anyone's declaration.
 
-Ledger status is authoritative over this table — read it, do not trust this file.
+**Verify against the FORGE, never a local checkout.** Local sibling clones read five releases stale
+(`v0.56.1` where the forge said `v0.56.6`). Also: a naive `grep` for a version in `pyproject.toml`
+returns the `requires-python` FLOOR, not the pin — the pin is `tag = "vX.Y.Z"` under
+`[tool.uv.sources]`, one of four formats.
+
+**Check whether a test fixture supplies the very thing under test.**
+`tests/livespec_dev_tooling/checks/conftest.py` overrides `tmp_path` to seed a FULL legacy
+`[tool.livespec_dev_tooling]` block. A test in that directory that only creates files inherits it
+and proves nothing. Overwrite `pyproject.toml` outright.
+
+**`just check` passing does NOT mean a commit will land.** The staged-diff checks (`commit-pairs`,
+`red-green-replay`) run only at commit/push time over the STAGED set.
+
+### Red-Green-Replay traps, both hit here
+
+1. **`ruff format` can invalidate an already-committed Red.** The pair requires the test file
+   BYTE-IDENTICAL; a reformat trips `test-file-checksum-mismatch`. The fix is a fresh Red (the hook
+   says so itself) — never a bypass.
+2. **The pre-commit hook runs the FULL `just check` against the WORKING TREE.** A Red that also
+   carries test files IMPORTING not-yet-existing symbols produces collection errors, which tank
+   `check-per-file-coverage` and make the Red commit unmakeable. **Red carries ONLY the test file
+   that fails on ASSERTIONS with the impl untouched; every dependent test update travels with the
+   impl in the Green amend.**
+
+---
+
+## STANDING SAFETY
+
+- Never `--no-verify`. Halt and report on hook failure.
+- Every tracked-file change: worktree → PR → rebase-merge, under
+  `~/.worktrees/livespec-dev-tooling/<branch>`. Never commit on the primary checkout.
+- Run `just install-worktree-pack` in a fresh worktree BEFORE the first commit, or
+  `check-primary-checkout-commit-refuse-hook-installed` fails with `worktree_pack_absent`.
+- Branch off **forge-verified** `origin/master` — it moved twice under this session in one turn.
+- **Six or more FOREIGN worktrees exist.** `git worktree list` before acting; reap none of them.
+- Sibling repos are READ-ONLY until Phase 2 is authorized.
+- **Never kill the acting overseer daemon** (tmux `livespec-overseer:1.1`) — it supervises the
+  whole fleet and is the shipped product, not part of this thread.
