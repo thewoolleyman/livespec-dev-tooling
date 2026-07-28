@@ -779,9 +779,35 @@ Phase 3's row passes it.**
 `source_tree_prefixes = { superseded_by = "first-party source surface already declared via
 source_trees" }`. **Measured on the forge, that payload is FALSE:** running the shipped
 `_derive_impl_prefixes` over its live config covers **35 of its 49** non-test, non-vendored
-first-party `.py`. **14 fall outside** — 11 under `.claude-plugin/scripts/bin/` (`next.py`,
-`list_work_items.py`, `detect_impl_gaps.py`, `needs_attention.py`, four `check_*.py`, and three
-more — that repo's own operation surface, not fixtures) plus `.claude/hooks/beads_access_guard.py`.
+first-party `.py`. **14 fall outside.**
+
+**RE-MEASURED 2026-07-28 FROM A `master` TARBALL — 49 / 35 / 14 reproduces EXACTLY, and the
+ENUMERATION of the 14 is now COMPLETE.** The earlier breakdown listed 11 under
+`.claude-plugin/scripts/bin/` plus `.claude/hooks/beads_access_guard.py` — **that is 12 against a
+stated total of 14**, and the two it never named are the two that matter most:
+
+| # | uncovered | why it matters |
+|---|---|---|
+| 1–11 | `.claude-plugin/scripts/bin/*` | as recorded — that repo's own operation surface. (Small correction: **three** `check_*.py`, not four; the total of 11 is right.) |
+| 12 | `.claude/hooks/beads_access_guard.py` | as recorded |
+| **13** | **`.claude/hooks/livespec_footgun_guard.py`** | the **`qv3k`** guard — git-jsonl is tied into `qv3k` exactly as `livespec-dev-tooling` is: same file, same outside-its-own-prefixes position |
+| **14** | **`acceptance/test_git_jsonl_golden_master.py`** | **a TEST FILE classified as first-party PRODUCT code** |
+
+**ENTRY 14 IS A NEW FABRICATION MODE, AND IT BREAKS THE RECORDED REMEDY.** git-jsonl declares
+`tests_tree_prefix = "tests/"`, so its `acceptance/` tree sits OUTSIDE the tests exemption and
+`filter_first_party_py` classifies that test as product code. Widening the prefix set to cover it
+would make a TEST FILE owe a Red→Green pair (`red_green_replay` sees it as impl) **and** a paired
+test of its own — `tests_mirror_pairing` demanding a test FOR a test.
+
+That is the `livespec-overseer` category error **arriving in a second repo by a different route**:
+overseer gets there by CO-LOCATING tests inside the source package, git-jsonl by having a SECOND
+test root outside its declared `tests_tree_prefix`. Same absurd demand, different cause — which
+points at the real gap: **`tests_tree_prefix` is a SINGLE prefix, and at least two repos have more
+than one test root.**
+
+So the recorded remedy — "widen the prefixes, but declare `mirror_pairings` too" — is **necessary
+and NOT sufficient.** It does not cover entry 14, which needs either a second tests root (no such
+key exists today) or an explicit exemption.
 
 **TWO commit-time gates are narrowed, not one.** `config.derive_source_prefixes` is the SHARED
 derivation, so a `.py` outside the set owes neither a Red→Green pair (`red_green_replay` sees
