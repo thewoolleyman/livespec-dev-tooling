@@ -18,6 +18,22 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 
 ## ▶️ START HERE — where the work actually is
 
+> **COLD START, IN ORDER.** This file is all a fresh session inherits.
+>
+> 1. Re-derive live state — everything below ages in minutes:
+>    `cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh -- bd show livespec-dev-tooling-8o8e.1`
+> 2. **NOTHING IS MID-FLIGHT.** No worktree of this thread's is open, no PR of its own is
+>    unmerged, and no background job is running. There is no half-finished edit to find.
+> 3. **The next action is `livespec-dev-tooling-oitd` (P1)** — decompose
+>    `fleet/_contract_rows.py`, which is 4 LLOC under a hard ceiling and therefore accepts no
+>    new obligation row. That is the ONLY thing between a written, tested, green Phase 3 row
+>    (branch `feat/fleet-row-role-key-spellings`, `dacfec1`, pushed, no PR) and it running.
+> 4. **Do NOT start Phase 4**, and do NOT run `/livespec:revise` — the spec change is filed and
+>    awaiting a MAINTAINER, which is not this session's call.
+> 5. Phase 2 being complete is **not** the epic. See the ⛔ paragraph immediately below; it is
+>    the single most misreadable fact on this thread.
+
+
 The blocking item is **`livespec-dev-tooling-8o8e.1`** (OPEN). Its ledger notes carry the full
 record: the role-key classification, the maintainer ruling, the union design, the release
 mechanism, and the Phase 1 proof. **Read the item before planning anything** — it is far more
@@ -37,20 +53,21 @@ the eight-repo measurement below into a standing guarantee lives on branch
 `fleet/_contract_rows.py` is 246 LLOC against a 250 hard ceiling and the table accepts no new row.
 That is `livespec-dev-tooling-oitd` (P1) and it is the next action.
 
-**Phase 4 MUST NOT start.** It cannot land until the filed spec change (PR #773) is ACCEPTED by a
-maintainer, or the spec actively contradicts the implementation the day it ships.
+**Phase 4 MUST NOT start.** It cannot land until the filed spec change (PR #773 -> `f58e7d03`,
+now on master as a PENDING proposed change) is ACCEPTED by a maintainer, or the spec actively
+contradicts the implementation the day it ships.
 
 ### State as of 2026-07-28 (RE-DERIVE — this ages in minutes)
 
 | thing | state |
 |---|---|
-| `livespec-dev-tooling` master | re-derive; was `472bbfc` when this line was written |
+| `livespec-dev-tooling` master | re-derive; was `6e13b03` at wrap-up |
 | Phase 0 — commit-pairs coupling break (PR #755) | **merged `5f82dbe`, RELEASED in `v0.56.7`** |
 | Phase 1 — accepting loader (PR #759) | **merged `8a61df6`, RELEASED in `v0.57.0`** (verified: `git tag --contains 8a61df6` → `v0.57.0`) |
 | Sibling consumption | **ALL SEVEN carry `v0.57.0`** — the pin gate is fully open; #296 merged after a re-run. **RE-DERIVE per repo.** |
 | Piece B — `livespec-driver-claude` prose (PR #317) | **merged `e8c8847`** |
 | Slice 3 — `livespec` values + prose (PR #1814) | **merged `6454b2cc`** — fleet's first `unarmed_until` |
-| Piece 1 — spec propose-change (PR #773) | **FILED, awaiting a MAINTAINER** at `/livespec:revise`. Filing is NOT ratifying; `contracts.md` byte-untouched. **Gates Phase 4.** |
+| Piece 1 — spec propose-change (PR #773) | **MERGED `f58e7d03` — the proposed-change FILE is ON MASTER at `SPECIFICATION/proposed_changes/role-key-declared-absent-spellings.md`. Do NOT re-file it.** It is FILED, not RATIFIED: `contracts.md`/`scenarios.md` are byte-unchanged, verified by diff. Awaiting a MAINTAINER at `/livespec:revise`. **Gates Phase 4.** |
 | Phase 3 — conformance row (`dacfec1`) | **BUILT + GREEN, PARKED — no PR.** Blocked on `oitd`; an unregistered row is a check that does not run. |
 | Slice 4 — `livespec-runtime` values + prose (PR #366) | **merged `408388c`** — fleet's first two `convention_not_adopted` |
 
@@ -210,7 +227,7 @@ auto-merge, and the race is invisible when you win it.
    `just check` **64/64**. It needs only its registration in the obligation table. It is parked
    rather than merged because **an unregistered obligation row is a check that does not run** —
    this epic's own defect.
-3. **`livespec-dev-tooling-fwcwxv` — the spec change is FILED (PR #773) and needs a MAINTAINER.**
+3. **`livespec-dev-tooling-fwcwxv` — the spec change is FILED and MERGED to master (PR #773 -> `f58e7d03`); it needs a MAINTAINER, not another filing.**
    Accept or reject at `/livespec:revise`. **Phase 4 cannot start until it is ACCEPTED**, or the
    spec actively contradicts the implementation the day Phase 4 ships.
 4. **The `unarmed_until` LIVENESS check needs a VANTAGE DECISION before it can be built** — see the
