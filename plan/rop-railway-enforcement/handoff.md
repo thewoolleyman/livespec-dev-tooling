@@ -21,7 +21,8 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 > **COLD START, IN ORDER.** This file is all a fresh session inherits.
 >
 > 1. Re-derive live state — everything below ages in minutes:
->    `cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh -- bd show livespec-dev-tooling-8o8e.1`
+>    `cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh -- bd show livespec-dev-tooling-8o8e`
+>    (the EPIC — `8o8e.1` is CLOSED and is a record, not a work item)
 > 2. **NOTHING IS MID-FLIGHT.** No worktree of this thread's is open, no PR of its own is
 >    unmerged, and no background job is running. There is no half-finished edit to find.
 > 3. **ALL FOUR PHASES HAVE LANDED, AND THE SPEC IS RATIFIED.** Phase 3 + `oitd`
@@ -35,8 +36,12 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >    tagged, released and consumed fleet-wide, so the live question is no longer "should we go
 >    1.0.0" but **"`contracts.md:307` records this library as pre-1.0, and that is now
 >    false."** A SPEC change; do not edit it directly.
-> 6. **There is NO next action inside this thread's current authorization.** Every remaining
->    item is gated on someone else — see 📋 OPEN ITEMS for who owns each.
+> 6. **There is NO next action inside this thread's current authorization, and that is a REAL
+>    STATE — not a stall.** Every remaining item is gated on someone else (see 📋 OPEN ITEMS
+>    for who owns each). **If you are a fresh session handed only this file: the correct
+>    response is to re-derive the ledger, confirm the state below still holds, report it, and
+>    STAND BY — not to invent work.** Do not start step 6, `5ror`, `clkf`, `kmdn` or `efxa`;
+>    the first three need a maintainer and the last is the Dispatcher's.
 > 7. **Do NOT start step 6's ARMING.** Its blast radius is now measured (below); the number is
 >    an input to a maintainer decision, not a licence to begin.
 > 8. **`8o8e.1` being CLOSED is not the epic**, and it is now the single most misreadable fact
@@ -44,19 +49,21 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >    flat-layout repo. See the ⛔ paragraph immediately below.
 
 
-The blocking item is **`livespec-dev-tooling-8o8e.1`** (OPEN). Its ledger notes carry the full
-record: the role-key classification, the maintainer ruling, the union design, the release
-mechanism, the Phase 1 proof, and the Phase 3 exercise evidence. **Read the item before
-planning anything** — it is far more detailed than this file, and this file deliberately does
-not duplicate it.
+The open item is the EPIC, **`livespec-dev-tooling-8o8e`**. Its child **`8o8e.1` is CLOSED** —
+its ledger notes carry the full record (the role-key classification, the maintainer ruling, the
+union design, the release mechanism, the Phase 1 proof, the Phase 3 exercise evidence and the
+eighteen-piece discharge), and it is far more detailed than this file. **Read it for the record,
+never for the next action.**
 
-**Phases 0, 1, 2 and 3 have ALL LANDED. All eight repos measure ZERO `LegacyAmbiguousEmpty`,
-and Phase 3 is what makes that keep being true.**
+**ALL FOUR PHASES HAVE LANDED and the spec is ratified at v033. All eight repos measure ZERO
+`LegacyAmbiguousEmpty`, Phase 3 makes that keep being true, and Phase 4 (`v1.0.0`) makes the
+ambiguous spelling unloadable in every consumer.**
 
 **⛔ THAT IS NOT AN ARMED RAILWAY, AND THE DIFFERENCE IS THIS THREAD'S ENTIRE SUBJECT.**
 `check-public-api-result-typed` is STILL `pure_trees`-scoped, so it still scans **zero files** in
-every flat-layout repo — legitimately and honestly now, and still zero. Phases 2 and 3 made the
-SCHEMA honest and made it STAY honest; neither made any check scan anything. Arming means migrating
+every flat-layout repo — legitimately and honestly now, and still zero. Phases 2, 3 and 4 made the
+SCHEMA honest, made it STAY honest, and made the ambiguous spelling unloadable; none of them made
+any check scan anything. Arming means migrating
 that check off `pure_trees` onto `resolve_check_universe()` — `8o8e`'s own **step 6, NOT STARTED**.
 
 **AND IT IS NOW MEASURED, NOT ASSERTED.** On 2026-07-28, every repo's live `pyproject.toml` was
