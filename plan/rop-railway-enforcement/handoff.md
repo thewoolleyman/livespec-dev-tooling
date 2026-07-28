@@ -628,11 +628,56 @@ what fabricates offenders.
 two maps declared, git-jsonl has `0 fabricated / 6 REAL` offenders, not 23 fabricated.** The
 declaration and those six tests must land together, or the repo cannot commit once armed.
 
-Smaller measured gaps, same run: `livespec` 9 uncovered (the 6-file
-`.claude-plugin/scripts/_currency/` package, the footgun guard, and 2 under
-`templates/orchestrator-plugin/` which are scaffold PAYLOAD — flagged, not asserted);
-`livespec-dev-tooling`, `livespec-overseer` and `livespec-runtime` 1 each, all the same
-`.claude/hooks/livespec_footgun_guard.py`.
+**`livespec`'s 9 RESOLVED — and 6 are a SECOND instance in a DIFFERENT sub-shape.** The 2 under
+`templates/orchestrator-plugin/` are **legitimately exempt, not a judgement call**: `config.py`'s
+own first-party predicate exempts `templates/` by name ("copier payload livespec ships but does not
+govern"). 1 is the `qv3k` footgun guard. The remaining **6 under
+`.claude-plugin/scripts/_currency/` are a real gap** — unambiguously first-party (module
+docstrings, its own `CLAUDE.md`, and **a complete mirrored test tree at `tests/_currency/`**), just
+never added to `livespec`'s declared prefixes, of which it is a sibling.
+
+**Keep the sub-shapes apart.** git-jsonl's is a **FALSE PAYLOAD** — a blessed variant whose stated
+reason is untrue. `livespec`'s is an **INCOMPLETE LIST** — a populated, honest declaration that
+simply does not enumerate everything. Identical failure, but **an incomplete list has no payload to
+falsify**, so a payload-verifier would miss it entirely. The evidence that it is unintended rather
+than a decision is the mirrored test tree: a repo that did not want `_currency/` governed would not
+have written `tests/_currency/`.
+
+`livespec-overseer` and `livespec-runtime` are 1 each, both the `qv3k` guard.
+
+#### ✅ THE INCOMPLETE-LIST HALF IS MECHANICALLY CHECKABLE — oracle PROTOTYPED, check NOT built
+
+`m50u`'s filing deferred a mechanical successor on the grounds that verifying a `superseded_by`
+payload needs per-key semantics. **That holds for the false-payload half and NOT for the
+incomplete-list half**, which already has an oracle: `config.resolve_check_universe()` returns the
+repo's git-derived first-party `.py`. The check is a set difference —
+
+```
+universe  −  { p ∈ universe : p.startswith(derive_source_prefixes(config)) }  ==  ∅ ?
+```
+
+Run as a throwaway probe against THIS repo: universe 145, **uncovered 1 —
+`.claude/hooks/livespec_footgun_guard.py`**. The same single file the forge-side measurement found,
+by a completely different route (git `ls-files` + on-disk predicates vs. tree listing + fetched
+blobs). **Two independent methods agreeing.**
+
+**It wants to be a PER-REPO check under `checks/`, not a fleet row** — `resolve_check_universe()`
+needs a git checkout (`git ls-files`, and `is_generated` reads contents), which the central vantage
+has not. Locally it is free, and it puts the finding where the fix is: the repo that must edit its
+own `pyproject.toml` is the repo that goes red.
+
+**AND THE PROBE FOUND THIS REPO'S OWN INSTANCE.** `livespec-dev-tooling`'s universe INCLUDES
+`.claude/hooks/livespec_footgun_guard.py` — `config.py` narrows the `.claude/` exemption to
+`.claude/skills/` precisely so `.claude/hooks/**` stays first-party — while its declared
+`source_tree_prefixes` is `["livespec_dev_tooling"]`. First-party by its OWN rule, outside its OWN
+gates' prefix set. `livespec-j5i9` again: the repo that enforces the fleet is the least enforced.
+
+**Not fixed inline, for a specific reason rather than caution:** declaring `.claude/hooks/` here
+immediately subjects that file to `commit_pairs`, and **this repo has no
+`tests/claude/hooks/test_livespec_footgun_guard.py`** (`livespec` has one; this repo does not). So
+the one-line edit demands a test for a 240-line guard whose canonical content is itself `qv3k`'s
+open question. **Sequence: `qv3k` picks the canonical body → the test is written against THAT → the
+prefix is declared.**
 
 **That footgun-guard aside was investigated after all, and the first figure was WRONG.** It said
 "four distinct sha256s across the five places it lives". **Corrected: the file lives in EIGHT
