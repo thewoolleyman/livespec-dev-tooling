@@ -137,7 +137,14 @@ def test_accepts_a_genuine_layered_io_tree(
 def test_accepts_declared_empty_io_trees(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Declared-empty is the sanctioned opt-out and must not be reinterpreted."""
+    """`io_trees = []` is a LEGITIMATE declared value and must not be reinterpreted.
+
+    `io_trees` is a CLEAN role key, not one of the five `UNION_ROLE_KEYS`, so
+    the retirement of the ambiguous empty spelling does not reach it: emptiness
+    here removes an EXEMPTION rather than a scan universe, which makes the
+    consuming check stricter rather than blinder (SPECIFICATION v033
+    §"Clean role keys retain `[]`").
+    """
     code, output = _run(tmp_path=tmp_path, io_trees="", monkeypatch=monkeypatch, capsys=capsys)
 
     assert code == 0, f"must accept an empty io_trees; got {code}, output={output!r}"
