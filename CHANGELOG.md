@@ -58,6 +58,22 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.0.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.58.1...v1.0.0) (2026-07-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* **config:** reject the ambiguous empty spelling on the five union role keys
+
+### Features
+
+* **config:** reject the ambiguous empty spelling on the five union role keys ([b36e0b8](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b36e0b8e5928d9824c3c2a2cbd0ecfc7c9507104))
+
+
+### Bug Fixes
+
+* **checks:** the missing-role-keys remediation must name every legal spelling for BOTH key groups ([c0c0472](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c0c04727e95f488b452daca0a7bd88e6d4bc656c))
+
 ## [0.58.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.58.0...v0.58.1) (2026-07-28)
 
 
