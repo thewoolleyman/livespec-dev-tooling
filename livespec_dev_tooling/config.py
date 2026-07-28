@@ -63,6 +63,7 @@ __all__: list[str] = [
     "GitLsFilesError",
     "GitToplevelError",
     "MirrorPairing",
+    "derive_source_prefixes",
     "filter_first_party_py",
     "has_first_party_py",
     "is_bin_wrapper",
@@ -816,6 +817,45 @@ def is_under_any_tree(*, rel: Path, trees: tuple[Path, ...]) -> bool:
     applies-to-all check shares one implementation.
     """
     return any(rel.is_relative_to(tree) for tree in trees)
+
+
+def derive_source_prefixes(*, config: Config) -> tuple[str, ...]:
+    """Return the repo's source-path prefix set: `source_trees` UNIONED with the declared prefixes.
+
+    The shared source-universe derivation for the two commit-time gates
+    that classify a STAGED PATH as first-party source by string prefix
+    (`commit_pairs_source_and_test`, `red_green_replay`). Both normalise
+    each entry to a trailing-slash prefix and de-duplicate, preserving
+    first-seen order.
+
+    Unioning `source_trees` in is what stops an empty declared prefix set
+    from emptying the whole universe. `str.startswith(())` is False for
+    EVERY input, so a consumer that declares `source_tree_prefixes = []`
+    makes the source set empty BY CONSTRUCTION and the gate's unpaired
+    branch unreachable — it exits 0 however much unpaired source is
+    staged, and logs nothing while doing it. That is not a hypothetical:
+    three fleet repos declined the tests-mirror-pairing convention by
+    emptying this key and silently switched off the commit-pairs gate,
+    which none of their config comments named
+    (`livespec-dev-tooling-8o8e.1`).
+
+    `source_trees` is the right fallback because it is the key that means
+    "this is my first-party code": it is populated in all eight
+    Python-bearing fleet repos and empty in none. A repo with NEITHER key
+    populated has no first-party Python at all — the zero-Python case
+    already sanctioned for `livespec-console-beads-fabro`.
+
+    This is a UNION, never a replacement: a consumer whose prefixes are
+    narrower than its `source_trees` (a hook-only Driver, say) still gets
+    every declared prefix. Measured across the fleet, the union is
+    SET-IDENTICAL to the declared prefixes in all five repos that declare
+    any, so it cannot change a passing repo's result.
+    """
+    prefixes = [
+        *[f"{tree.as_posix().strip('/')}/" for tree in config.source_trees],
+        *[f"{prefix.strip('/')}/" for prefix in config.source_tree_prefixes],
+    ]
+    return tuple(dict.fromkeys(prefixes))
 
 
 # The single definition of the `bin/*.py` shebang-wrapper set. A wrapper is
