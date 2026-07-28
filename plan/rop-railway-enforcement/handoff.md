@@ -43,7 +43,7 @@ re-creates this thread's core defect — a green signal that means nothing — a
 
 | repo | values migrated | prose stale? |
 |---|---|---|
-| `livespec-dev-tooling` | ✅ `b27401c` (3 keys) | ⚠️ **YES — Piece A below** |
+| `livespec-dev-tooling` | ✅ `b27401c` (3 keys) | ✅ **CLEAN** — Piece A landed |
 | `livespec-driver-claude` | ✅ `c7c7272` (3 keys) | ⚠️ **YES — see prose finding** |
 | `livespec` | ✗ 2 keys | clean |
 | `livespec-orchestrator-beads-fabro` | ✗ 3 keys | ⚠️ YES |
@@ -84,47 +84,63 @@ can land in ONE commit.
 Full detail — including the suggestion of a cheap literal-string companion check for Phase 3 — is
 on `livespec-dev-tooling-8o8e.1`.
 
-### ⏭️ PIECE A — dev-tooling's own stale header, UNBLOCKED, NOT LANDED
+### ✅ PIECE A — DONE. `livespec-dev-tooling` is now BOTH value-migrated AND prose-clean
 
-Master CI was red from a GitHub App rate limit (installation `131208965`) hit by
-`check-fleet-conformance`, which reads siblings live. **That has since been re-run and master is
-GREEN**, so this is no longer blocked. Recorded because the lesson survives the incident: a
-fleet-state check can redden master with **no commit responsible**, and it clears on RESET, not on
-retry — do not burn re-runs during a limit, and do not go hunting for a commit to revert.
+Its header no longer claims five keys "stay empty/null" while three carry variants. Swept: this
+repo has ZERO occurrences of the other retired shape (declared-empty as the "sanctioned/visible
+opt-out") in its config.
 
-`pyproject.toml` (this repo) lines ~96-100 still describe five role keys as staying "empty/null",
-but `pure_trees` and `dataclasses_tree` now carry `{ not_applicable = ... }` and
-`neutral_hook_body_path` — absent from that list entirely — does too.
+**Remaining prose work is FOUR repos, not three — get this arithmetic right:**
 
-Replace the block beginning `# The remaining role keys (io_trees, commands_trees, dataclasses_tree,`
-and ending `` # `source_trees` universe. `` with a header stating: `io_trees`, `commands_trees`,
-`covered_trees` stay a bare `[]` because they are EXEMPTION / SEVERITY predicates whose consuming
-checks derive the universe from `resolve_check_universe()`, so empty makes them STRICTER never
-blinder; and `pure_trees`, `dataclasses_tree`, `neutral_hook_body_path` are no longer empty because
-their `[]` / `""` carried two incompatible meanings and each now declares a blessed variant carrying
-its reason in the parsed value. Config-only — no RGR ritual, normal worktree → PR path.
+| repo | prose | values | how to land it |
+|---|---|---|---|
+| `livespec-driver-claude` | ⚠️ stale | ✅ done | **STANDALONE** — values already landed, so prose needs its own PR |
+| `livespec-driver-codex` | ⚠️ stale | ✗ pin-blocked (#296) | ride-along with values — **but prose is NOT pin-blocked and can land first** |
+| `livespec-orchestrator-beads-fabro` | ⚠️ stale | ✗ | ride-along: prose + values in ONE commit |
+| `livespec-runtime` | ⚠️ stale | ✗ | ride-along: prose + values in ONE commit |
 
-### ✅ PIECE B — DONE. `livespec-driver-claude` migrated (merged `c7c7272`)
+Clean of the prose shape: `livespec`, `livespec-dev-tooling`, `livespec-orchestrator-git-jsonl`,
+`livespec-overseer`.
 
-The first CROSS-REPO cut, and it proved two things slice 1 could not: the sibling path works
-end-to-end under that repo's own AGENTS.md discipline and its own pinned `v0.57.0` loader (65-target
-`just check` green), and **`superseded_by` works** — the fleet's first non-`not_applicable` variant.
+### 🔺 THE RATIFIED SPEC ITSELF IS STALE — bigger than any config comment, NOT fixed
 
-`target_dirs = { superseded_by = "git-derived first-party universe owns the hook coverage" }`
-is deliberately (C) and NOT (A): the concept applies there and IS satisfied, by
-`resolve_check_universe()`. **Do not downgrade a (C) or a (B) into `not_applicable` because it reads
-tidier** — `livespec`'s `pure_trees` is the fleet's one known **(B) `unarmed_until =
-"livespec-mutreal.1"`** and must stay that way.
+`livespec-dev-tooling/SPECIFICATION/contracts.md` §"Consumer configuration schema" **lines 243 and
+245** still define declared-empty as "the sanctioned, VISIBLE opt-out" logging an `info` event, and
+still names only "two sanctioned outs". Every clause is now wrong for the five union keys: it is
+`LegacyAmbiguousEmpty`, it WARNs, Phase 4 makes it a hard error, and there are five spellings.
 
-Verified on merged master by RUNNING it: `LegacyAmbiguousEmpty` 3 → 0.
+**Deliberately NOT fixed.** Spec changes go through `/livespec:propose-change` and the revise
+lifecycle — a direct edit would be an out-of-band spec edit, which `doctor-out-of-band-edits`
+exists to catch. Bypassing that to fix a prose bug would be worse than the bug.
+
+The proposed change must also add what the spec currently does not say at all: the CLEAN keys keep
+`[]` as a LEGITIMATE spelling, because for them empty makes the check STRICTER rather than blinder.
+That distinction is the thing most likely to be lost in a rewrite.
+
+**Sequence it BEFORE Phase 4**, which would otherwise make the spec actively contradict the
+implementation. It does NOT block the remaining Phase 2 migrations. Full detail on `8o8e.1`.
+
+### ⚠️ ROLE-LEVEL LESSON — do not amend an open PR once its checks are green
+
+Measured the hard way on #765: it merged mid-amend, its branch auto-deleted, and the amend went
+**local-only**. The force-push FAILING is what surfaced it — nothing succeeding would have. A silent
+local-only amend is how a durable record quietly reverts.
+
+**Once checks are green, open a FRESH PR off the new master rather than amending.** Amending races
+auto-merge, and the race is invisible when you win it.
 
 ### ▶️ EXACT NEXT ACTION
 
-1. Land **Piece A** (above) — config-only, unblocked, this repo.
-2. Then the five unauthorized siblings, one slice at a time, **values AND prose together**.
-   `livespec` is the delicate one (its `pure_trees` is the (B) case).
-3. `livespec-driver-codex` values wait on **#296**; its prose need not.
-4. Phase 3 (conformance check + consider the prose companion check), then Phase 4 (rejecting
+1. The five unmigrated siblings, one slice at a time, **values AND prose together** where both
+   are outstanding. `livespec` is the delicate one — its `pure_trees` is the fleet's one known
+   **(B) `unarmed_until`** and must not be downgraded to `not_applicable`.
+2. `livespec-driver-claude` needs a **STANDALONE prose PR** — its values already landed, so it is
+   the one repo where the two cannot ride together.
+3. `livespec-driver-codex` values wait on **#296**; its prose does NOT and can land first.
+4. File the spec propose-change for `SPECIFICATION/contracts.md` §"Consumer configuration schema"
+   (above) — **before Phase 4**, via `/livespec:propose-change`, never a direct edit.
+5. Phase 3 (conformance check + consider a cheap literal-string companion check for the prose
+   shape, which the value-counting check structurally cannot catch), then Phase 4 (rejecting
    loader) — which cannot land until all eight have migrated. Epic rule, non-negotiable.
 
 ### SIBLING PINS — the gate has OPENED for six of seven
