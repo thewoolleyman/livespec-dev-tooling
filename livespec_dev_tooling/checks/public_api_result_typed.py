@@ -143,6 +143,28 @@ def _is_exempt_supervisor(
     return False
 
 
+def _is_public_name(*, name: str) -> bool:
+    """True iff `name` is PUBLIC API — a leading underscore is DECISIVE.
+
+    The ratified rule binds "every PUBLIC function's return annotation",
+    and PEP 8 makes a leading underscore the marker of a non-public name.
+    `__all__` membership alone is NOT sufficient: several modules in this
+    repo list `_`-prefixed helpers in `__all__` purely so their tests may
+    import them. `checks/check_mutation.py` is the clearest case — its
+    `__all__` holds six `_`-prefixed helpers and does not list `main` at
+    all, so there `__all__` is a test-visibility declaration rather than
+    a public-API one.
+
+    State the tension precisely rather than pretending it is absent:
+    `__all__` IS Python's explicit export declaration, so on a strict
+    reading a name in it is public BY DECLARATION. The rule adopted here
+    is that the underscore WINS, because the alternative reports a
+    private helper as unrailed public API — a false positive of exactly
+    the kind an unwired exemption would have produced.
+    """
+    return not name.startswith("_")
+
+
 def _find_offenders(
     *, source: str, rel_path: Path, commands_trees: tuple[Path, ...]
 ) -> list[tuple[int, str]]:
@@ -153,6 +175,7 @@ def _find_offenders(
         if (
             isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
             and node.name in declared
+            and _is_public_name(name=node.name)
             and not _is_railway_compliant(func=node)
             and not _is_exempt_supervisor(
                 func=node, rel_path=rel_path, commands_trees=commands_trees

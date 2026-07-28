@@ -425,3 +425,33 @@ def test_public_api_result_typed_build_parser_exemption_does_not_widen() -> None
     assert _offenders(body=body, rel="livespec_dev_tooling/thing.py") == [
         (4, "build_parser")
     ], "build_parser outside commands/ must stay flagged"
+
+
+def test_public_api_result_typed_treats_a_leading_underscore_as_not_public() -> None:
+    """A `_`-prefixed name is NOT public API, even when listed in `__all__`.
+
+    The ratified rule binds "every PUBLIC function's return annotation".
+    Python's own convention (PEP 8) makes a leading underscore the marker
+    of a non-public name, and this repo relies on that: several modules
+    list `_`-prefixed helpers in `__all__` purely so their tests may
+    import them. `checks/check_mutation.py` is the clearest case — its
+    `__all__` holds SIX `_`-prefixed helpers and does not list `main` at
+    all, so there `__all__` is a test-visibility declaration rather than
+    a public-API one.
+
+    State the tension precisely rather than pretending it is absent:
+    `__all__` IS Python's explicit export declaration, so a name in it is
+    public BY DECLARATION on a strict reading. The rule adopted here is
+    that the underscore is DECISIVE and wins over `__all__` membership,
+    because the alternative reports a private helper as unrailed public
+    API — a false positive of exactly the kind an unwired exemption
+    would have produced.
+    """
+    body = (
+        "__all__: list[str] = ['_helper']\n\n\n"
+        "def _helper(*, x: int) -> bool:\n    return bool(x)\n"
+    )
+
+    assert (
+        _offenders(body=body, rel="livespec_dev_tooling/checks/thing.py") == []
+    ), "a `_`-prefixed name in __all__ is not public API and must not be flagged"
