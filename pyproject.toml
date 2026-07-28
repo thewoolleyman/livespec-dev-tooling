@@ -108,14 +108,22 @@ source_tree_prefixes = ["livespec_dev_tooling/"]
 io_trees = []
 # Flat-layout library has no command-surface subtree.
 commands_trees = []
-# Flat-layout library has no pure-module subtree for mutation/PBT/API gates.
-pure_trees = []
+# NOT APPLICABLE, not deferred: a flat-layout library has no pure-module subtree at all,
+# so the mutation / PBT / public-api-result gates that read this role have nothing to scan
+# here. Distinct from `livespec` and `livespec-overseer`, which have the same EMPTY value
+# for the opposite reason (`unarmed_until = "livespec-mutreal.1"`) — telling those two
+# states apart is the whole point of the union (livespec-dev-tooling-8o8e.1).
+pure_trees = { not_applicable = "flat-layout library has no pure-module subtree" }
 # Coverage/size checks derive this repo's first-party universe from git.
 covered_trees = []
-# Flat-layout library has no dataclasses schema tree.
-dataclasses_tree = ""
-# Ships the canonical body constant but installs no neutral hook body itself.
-neutral_hook_body_path = ""
+# NOT APPLICABLE: a flat-layout library has no dataclasses/schema tree for
+# `check-newtype-domain-primitives` to police.
+dataclasses_tree = { not_applicable = "flat-layout library has no dataclasses schema tree" }
+# NOT APPLICABLE: this repo PRODUCES the canonical no-shadow-ledger body (it ships
+# `CANONICAL_NO_SHADOW_LEDGER_BODY` and the installer) but INSTALLS no neutral hook body of
+# its own — only the two Drivers do. There is no local file for
+# `check-no-shadow-ledger-body-identical` to byte-compare.
+neutral_hook_body_path = { not_applicable = "produces the canonical body but installs no neutral hook body" }
 # Phase-2 flip (fleet-check-coverage epic livespec-i5ebqd): arm the file_lloc
 # hard gate over this repo's whole git-derived first-party universe. Every
 # first-party .py is <=250 LLOC after the decomposition, so >250 now hard-fails
