@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [0.58.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.57.1...v0.58.0) (2026-07-28)
+
+
+### Features
+
+* **fleet:** assert every union role key uses a blessed declared-absent spelling ([8dc8027](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8dc8027333f619dabb2046489699fe7b258be63c))
+* **fleet:** register role-key-spellings so an engine actually walks it ([606f17b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/606f17b7e0062a8c42510599efe6c3fd65d6c026))
+
 ## [0.57.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v0.57.0...v0.57.1) (2026-07-28)
 
 
