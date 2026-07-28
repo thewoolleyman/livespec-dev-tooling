@@ -34,13 +34,15 @@ sibling repo without it.
 | `livespec-dev-tooling` master | re-derive; was `472bbfc` when this line was written |
 | Phase 0 — commit-pairs coupling break (PR #755) | **merged `5f82dbe`, RELEASED in `v0.56.7`** |
 | Phase 1 — accepting loader (PR #759) | **merged `8a61df6`, RELEASED in `v0.57.0`** (verified: `git tag --contains 8a61df6` → `v0.57.0`) |
-| Sibling consumption | **SIX of seven carry `v0.57.0`** (re-derived on the forge 2026-07-28) — the gate has OPENED. Only `livespec-driver-codex` lags at `v0.56.7`, and #296 is stuck on a PyPI TIMEOUT rather than a defect. See the pin table below. **RE-DERIVE per repo.** |
-| Piece B — `livespec-driver-claude` prose (PR #317) | **merged `e8c8847`** — first sibling complete on BOTH axes |
+| Sibling consumption | **ALL SEVEN carry `v0.57.0`** — the pin gate is fully open; #296 merged after a re-run. **RE-DERIVE per repo.** |
+| Piece B — `livespec-driver-claude` prose (PR #317) | **merged `e8c8847`** |
+| Slice 3 — `livespec` values + prose (PR #1814) | **merged `6454b2cc`** — fleet's first `unarmed_until` |
+| Slice 4 — `livespec-runtime` values + prose (PR #366) | **merged `408388c`** — fleet's first two `convention_not_adopted` |
 
 **MERGED ≠ RELEASED ≠ CONSUMED.** Keep the three separate in every status claim. Conflating them
 re-creates this thread's core defect — a green signal that means nothing — at the process level.
 
-### 📊 FLEET PROGRESS — 2 of 8 repos DONE on both axes; 23 keys left, and the counts are now MEASURED
+### 📊 FLEET PROGRESS — 4 of 8 repos DONE on both axes; 16 keys left, and the counts are MEASURED
 
 Re-derived 2026-07-28 by fetching all eight `pyproject.toml` from the **FORGE** and loading each
 through `master`'s union loader. This is a SCHEMA measurement under one loader — deliberately, so
@@ -50,27 +52,59 @@ only the config varies — and is **NOT** each repo's CI result under its own pi
 |---|---|---|---|
 | `livespec-dev-tooling` | ✅ 0 (`b27401c`) | — | ✅ **CLEAN** — Piece A |
 | `livespec-driver-claude` | ✅ 0 (`c7c7272`) | — | ✅ **CLEAN** — Piece B (`e8c8847`) |
-| `livespec` | ✗ **2** | `pure_trees`, `neutral_hook_body_path` | clean |
+| `livespec` | ✅ 0 (`6454b2cc`) | — | ✅ **CLEAN** — slice 3 |
+| `livespec-runtime` | ✅ 0 (PR #366) | — | ✅ **CLEAN** — slice 4 |
+| `livespec-orchestrator-beads-fabro` | ✗ **3** | `pure_trees` ⛔, `dataclasses_tree`, `neutral_hook_body_path` | ⚠️ stale |
 | `livespec-driver-codex` | ✗ **3** | `pure_trees`, `dataclasses_tree`, `target_dirs` | ⚠️ stale |
-| `livespec-orchestrator-beads-fabro` | ✗ **3** | `pure_trees`, `dataclasses_tree`, `neutral_hook_body_path` | ⚠️ stale |
 | `livespec-orchestrator-git-jsonl` | ✗ **5** | all five | clean |
 | `livespec-overseer` | ✗ **5** | all five | clean |
-| `livespec-runtime` | ✗ **5** | all five | ⚠️ stale |
 
-**FLEET TOTAL: 23 `LegacyAmbiguousEmpty`.** The previous arithmetic estimate was correct — this
-also names the exact KEYS, which subtraction could not. Note `livespec` is `pure_trees` +
-`neutral_hook_body_path`, **NOT** `source_tree_prefixes`.
+**FLEET TOTAL: 23 → 16 `LegacyAmbiguousEmpty`; FOUR of eight repos are now DONE on both axes.**
+⛔ marks the one key in the fleet whose variant the record does NOT determine — see the
+beads-fabro block below.
 
-**`livespec-driver-codex` is NOT blocked by a defect — #296 died on a PyPI TIMEOUT.** The pin is
-still `v0.56.7` and bump PR **#296** is `OPEN | MERGEABLE | BLOCKED`, but 62 of 64 checks pass and
-the two failures are not check logic: `check-hook-trees-not-io-exempt` died in dependency INSTALL
-(`Failed to download ruff==0.8.6 ... operation timed out`) and `ci-green` failed because that job
-did. It is **one re-run away**, not incompatible with `v0.57.0`.
+### ✅ THE PIN GATE IS FULLY OPEN — #296 MERGED, all seven siblings carry `v0.57.0`
 
-**Deliberately NOT re-run.** Auto-merge is enabled on #296, so a re-run CHANGES that repo's pin
-rather than merely observing it — an authorization call, not a worker call. But decide it against
-what is true: "gated on a flake" and "gated on an incompatibility" deserve different answers, and
-the older record implied the second.
+`livespec-driver-codex` was never blocked by a defect. #296 failed on a PyPI download timeout
+(`Failed to download ruff==0.8.6 ... operation timed out`) during dependency INSTALL, with 62 of 64
+checks passing and `ci-green` failing only because that job did. The supervisor re-ran it
+(`gh run rerun --failed`) and **it merged**. The lesson is worth keeping: *"gated on a flake" and
+"gated on an incompatibility" deserve different answers* — the record asserted the second for hours
+without anyone reading the log.
+
+**There is no pin gate left anywhere in the fleet.** What holds the remaining four repos is
+AUTHORIZATION, plus one genuine open question on `livespec-orchestrator-beads-fabro`.
+
+### ⛔ BEADS-FABRO'S `pure_trees` — THE ONE VARIANT THE RECORD DOES NOT DETERMINE
+
+**Do not guess this one.** `livespec-orchestrator-beads-fabro`'s `pure_trees = []` carries **NO
+reason comment**, so the `8o8e.1` classification — which maps variants from each repo's own
+comments — has no entry for it. Every other key in the fleet was determined by a comment its own
+authors wrote. This one was not.
+
+Evidence gathered, and it RULES OUT the tidy answer:
+
+- **`not_applicable` is FALSE here.** The repo wires `check-pbt-coverage-pure-modules`
+  (`justfile:380`, `:1001`) and carries hypothesis tests, and its own ratified
+  `SPECIFICATION/constraints.md` requires "property-based test coverage on **pure modules**". The
+  concept does not merely apply — the repo asserts it and wires the check.
+- **Why it went empty:** commit `8858c90` replaced a copy-paste of livespec-CORE's paths
+  (`.claude-plugin/scripts/livespec/parse`, `.../validate`) with this repo's real layout. It was
+  emptied because THOSE paths do not exist here — **not** because anyone decided the concept did
+  not apply. No deferral was recorded.
+- The package has real `io/` and `effects/` seams, so a pure remainder exists **by construction**;
+  it has simply never been carved into a declared subtree.
+- Arming it would go RED: the `8o8e.1` armed control measured **23 files scanned, 33 offenders**.
+
+So the honest options are `unarmed_until` (which REQUIRES a ledger id, and none exists for scoping
+this repo's pure tree) or `convention_not_adopted` — **and picking the latter for `pure_trees`
+would sanction the exact dodge this epic exists to remove.** That is a maintainer decision about
+this repo's architecture, not a spelling choice a migration worker may make.
+
+Its OTHER two keys are fully determined by their own comments and are not blocked:
+`dataclasses_tree` → `not_applicable` ("No generated dataclasses schema tree is installed in this
+orchestrator plugin"), `neutral_hook_body_path` → `not_applicable` ("No neutral hook body is
+installed in this orchestrator plugin").
 
 ### ⚠️ PROSE STALENESS — Phase 2's definition of done is VALUES **AND** PROSE
 
@@ -82,13 +116,27 @@ The retired wording is a header that still says:
 That is the pre-`8o8e.1` regime, wrong on every clause, and it **instructs the next reader to write
 the exact spelling this epic removes**.
 
-**THREE repos still carry it** (swept on the forge 2026-07-28): `livespec-driver-codex`,
-`livespec-orchestrator-beads-fabro`, `livespec-runtime`. Five are clean: `livespec`,
-`livespec-dev-tooling`, `livespec-driver-claude`, `livespec-orchestrator-git-jsonl`,
-`livespec-overseer`.
+**TWO repos still carry it:** `livespec-driver-codex` and `livespec-orchestrator-beads-fabro`. Six
+are clean: `livespec`, `livespec-dev-tooling`, `livespec-driver-claude`, `livespec-runtime`,
+`livespec-orchestrator-git-jsonl`, `livespec-overseer`.
 
-**All three remaining are ALSO value-un-migrated, so prose and values can land in ONE commit for
-every one of them.** Piece B was the last repo where the two were forced apart.
+**Both remaining are ALSO value-un-migrated, so prose and values land in ONE commit for each.**
+
+### 🕳️ A GREP CANNOT FIND THIS — MEASURED TWICE, ON THE FIRST TWO REPOS TRIED
+
+The wording above is only the SHAPE that happens to repeat. Every migrated repo also carried a
+SECOND stale sentence phrased differently, which no grep for the known wording would surface:
+
+- `livespec-driver-claude` — "the remaining heavy product-tree role keys **are explicitly declared
+  empty below**".
+- `livespec` — "A role core LACKS **is declared explicitly empty (list `[]`, scalar `""`) with a
+  reason**". Found by READING the block; `livespec` had been classified prose-CLEAN by grep.
+- `livespec-runtime` — the same shape again in its e9j Wave-1 note, on top of its known header.
+
+**Two for two on repos the grep called clean.** Budget a full read of the whole
+`[tool.livespec_dev_tooling]` block plus its header for every remaining repo, and assume at least
+one instance you cannot search for. This is also why Phase 3's value-counting check can never be
+the whole answer.
 
 **Phase 3's conformance check counts VALUES, so it can NEVER catch this.** A repo with perfect
 values and a header pointing the other way scores a clean zero, and the config drifts back one
@@ -96,6 +144,30 @@ honest author at a time while the check stays green.
 
 Full detail — including the suggestion of a cheap literal-string companion check for Phase 3 — is
 on `livespec-dev-tooling-8o8e.1`.
+
+### ✅ SLICES 3 AND 4 — `livespec` and `livespec-runtime` DONE, all four variants now proven live
+
+**Slice 3 — `livespec` (PR #1814 → `6454b2cc`), 2 keys.** `pure_trees` became the fleet's **FIRST
+`unarmed_until`**: `{ unarmed_until = "livespec-mutreal.1" }`. Core genuinely HAS a pure
+parse/validate layer, so `not_applicable` would have read tidier and been FALSE — in the repo that
+owns the spec. `livespec-mutreal.1` was **verified to resolve** (BACKLOG, mutation staging-tree not
+productized) rather than copied on faith; a blessed variant's payload is now parsed data, so a
+wrong id is a durable lie rather than a stale comment. `neutral_hook_body_path` →
+`not_applicable`. Measured 2 → 0, `just check` 73/73.
+
+**Slice 4 — `livespec-runtime` (PR #366 → `408388c`), 5 keys — the largest set in the fleet.**
+Three `not_applicable` plus the fleet's **FIRST TWO `convention_not_adopted`** (`target_dirs`,
+`source_tree_prefixes`). Every variant was lifted from this file's own collective reason comment,
+which already drew the distinction between "flat consumer with no separate trees" and "adopts
+neither convention (declaring real values would redden `claude_md_coverage` /
+`tests_mirror_pairing`)" — two statements that had always shared one indistinguishable spelling.
+`covered_trees` deliberately stays a bare `[]`, with a comment now saying WHY. Measured 5 → 0,
+`just check` 62/62.
+
+**All four blessed spellings are now exercised by a real repo under its own pinned loader.**
+`livespec-runtime` is also the repo where the ambiguity did measurable damage — its empty
+`source_tree_prefixes` silently disarmed the commit-time TDD pairing gate — so its declaration is
+now honest about which of the two things it is saying.
 
 ### ✅ PIECES A AND B — BOTH DONE. Two repos are now complete on BOTH axes
 
@@ -119,13 +191,12 @@ three.**
 Values were verified UNCHANGED by measurement before and after the diff (`LegacyAmbiguousEmpty`
 count 0 both times), `just check` green, 64/64 CI checks pass.
 
-**Remaining prose work is THREE repos, and every one rides along with its values:**
+**Remaining prose work is TWO repos, and both ride along with their values:**
 
 | repo | prose | values | how to land it |
 |---|---|---|---|
-| `livespec-driver-codex` | ⚠️ stale | ✗ 3 keys — pin `v0.56.7` | ride-along — **but prose is NOT pin-gated and can land first** |
-| `livespec-orchestrator-beads-fabro` | ⚠️ stale | ✗ 3 keys | ride-along: prose + values in ONE commit |
-| `livespec-runtime` | ⚠️ stale | ✗ 5 keys | ride-along: prose + values in ONE commit |
+| `livespec-orchestrator-beads-fabro` | ⚠️ stale | ✗ 3 keys — **`pure_trees` ⛔ undetermined** | ride-along, but the `pure_trees` variant needs a maintainer first |
+| `livespec-driver-codex` | ⚠️ stale | ✗ 3 keys — pin now `v0.57.0` | ride-along: prose + values in ONE commit |
 
 ### 🔺 THE RATIFIED SPEC ITSELF IS STALE — FILED as `livespec-dev-tooling-fwcwxv`
 
@@ -169,17 +240,14 @@ auto-merge, and the race is invisible when you win it.
 
 ### ▶️ EXACT NEXT ACTION
 
-1. **The six remaining slices are all "values AND prose in ONE commit"** — Piece B was the last
-   repo where the two were forced apart. **NONE of the six is authorized yet.** Exact key lists are
-   in the fleet-progress table; they are measured, not arithmetic.
-2. `livespec` is the delicate one — its `pure_trees` is the fleet's one known
-   **(B) `unarmed_until = "livespec-mutreal.1"`** and must not be downgraded to `not_applicable`
-   because that reads tidier. Its other un-migrated key is `neutral_hook_body_path`, **not**
-   `source_tree_prefixes`.
-3. **Decide `livespec-driver-codex` against the corrected diagnosis.** #296 failed on a PyPI
-   download timeout, not on incompatibility — a re-run likely lands it and opens that lane. Auto-
-   merge is on, so re-running is a state change in a fenced repo and needs authorization. Its
-   PROSE fix is not pin-gated in any case.
+1. **Answer the `beads-fabro` `pure_trees` question** (the ⛔ block above). It blocks that one repo
+   and nothing else. Its other two keys are determined and ready to ride along the moment it lands.
+2. **`livespec-orchestrator-git-jsonl` and `livespec-overseer` — 5 keys each, prose-clean by grep
+   (READ them anyway).** Both are pin-open and unblocked; neither is authorized yet. `overseer`'s
+   `pure_trees` is the fleet's OTHER known **(B)** — `unarmed_until = "livespec-mutreal.1"`, the
+   same gate `livespec` used — so do not downgrade it to `not_applicable`.
+3. **`livespec-driver-codex` — 3 keys plus prose, now fully unblocked** (#296 merged; pin
+   `v0.57.0`). Values and prose in ONE commit.
 4. Execute `livespec-dev-tooling-fwcwxv` — the spec propose-change for
    `SPECIFICATION/contracts.md` §"Consumer configuration schema". Already FILED; it needs a
    maintainer, **before Phase 4**, via `/livespec:propose-change` and never a direct edit.
@@ -197,17 +265,17 @@ Measured on the FORGE 2026-07-28. **This ages in minutes; re-derive per repo, ne
 
 | repo | pin | |
 |---|---|---|
-| livespec | `v0.57.0` | migratable |
+| livespec | `v0.57.0` | ✅ **DONE** — `6454b2cc` |
 | livespec-driver-claude | `v0.57.0` | ✅ **DONE** — values `c7c7272`, prose `e8c8847` |
-| livespec-orchestrator-beads-fabro | `v0.57.0` | migratable |
+| livespec-runtime | `v0.57.0` | ✅ **DONE** — `408388c` |
+| livespec-driver-codex | `v0.57.0` | migratable — **#296 MERGED**, the last pin gate is gone |
+| livespec-orchestrator-beads-fabro | `v0.57.0` | migratable except `pure_trees` ⛔ |
 | livespec-orchestrator-git-jsonl | `v0.57.0` | migratable |
 | livespec-overseer | `v0.57.0` | migratable |
-| livespec-runtime | `v0.57.0` | migratable |
-| **livespec-driver-codex** | `v0.56.7` | #296 open; **fails on a PyPI timeout, not a defect**. Do not touch without authorization — auto-merge is on. |
 
-**Piece B is DONE and NOTHING is currently authorized.** All six remaining siblings are a separate
-authorization. `livespec-driver-codex` is gated on #296 — which is a re-run away, not a real
-incompatibility.
+**THE PIN GATE IS FULLY OPEN — all seven siblings carry `v0.57.0`.** Nothing is currently
+authorized; the four remaining repos are a separate authorization, and one of them additionally
+needs the `pure_trees` question answered.
 
 ### ⚠️ THE CONFLATION THAT WOULD MAKE ALL OF THIS WORTHLESS
 
@@ -300,10 +368,11 @@ that WARNs naming the repo and key. **Phase 1 rejects nothing and reddens nothin
 runs, 47 exit 0. (The one non-zero, `livespec / claude_md_coverage`, is PRE-EXISTING: master's
 loader reproduces it identically. Flagged, not investigated — outside this item.)
 
-**The Phase 2 work list is derivable by RUNNING the loader. It was 29 (repo, key) pairs; slice 1
-migrated this repo's 3 and slice 2 migrated `livespec-driver-claude`'s 3, leaving 23 — all of them
-in siblings.** The per-repo breakdown with the exact KEYS is the fleet-progress table near the top
-of this file; it is measured, and this paragraph is the history rather than the work list.
+**The Phase 2 work list is derivable by RUNNING the loader. It was 29 (repo, key) pairs; four
+slices have since migrated 13 of them — `livespec-dev-tooling` 3, `livespec-driver-claude` 3,
+`livespec` 2, `livespec-runtime` 5 — leaving 16, all in siblings.** The per-repo breakdown with the
+exact KEYS is the fleet-progress table near the top of this file; it is measured, and this
+paragraph is the history rather than the work list.
 
 Enforcement shape: two exhaustive `match` sites carry `assert_never` (`config.role_absence`,
 `_role_key_gate._announce_absence`) and every consumer routes through one, so a future variant
@@ -312,18 +381,19 @@ changed, pyright enumerated all fourteen consumers — that is the mechanism wor
 
 ---
 
-## ▶️ PHASE 2 — slices 1 AND 2 DONE; NOTHING currently authorized
+## ▶️ PHASE 2 — FOUR SLICES DONE (half the fleet); NOTHING currently authorized
 
 **Precondition, and it is PER-REPO, not fleet-wide:** a sibling cannot adopt a blessed spelling
 until **its own pin** carries the accepting loader. Adopting earlier fails that repo's `just check`
 with a `ConfigParseError` on an inline table its pinned loader cannot parse. Bump PRs land
 independently and at different times, so check each repo's pin before touching it.
 
-Sequence, and the first two steps are DONE: `v0.57.0` released → `release-dispatch` fans out →
-each sibling gets an auto-merge `chore(deps):` bump PR → **only then** is that repo migratable.
-
-So Phase 2's gating question is now purely **"has THIS repo's bump PR landed yet?"** Check the
-pin on the FORGE per repo (`[tool.uv.sources]` `tag = "vX.Y.Z"`, ≥ `v0.57.0`) before migrating it.
+Sequence: `v0.57.0` released → `release-dispatch` fans out → each sibling gets an auto-merge
+`chore(deps):` bump PR → **only then** is that repo migratable. **Every step has now completed for
+all seven siblings**, so this precondition is SATISFIED fleet-wide and is retained as the rule for
+the next schema change rather than as a live gate. Still verify the pin on the FORGE
+(`[tool.uv.sources]` `tag = "vX.Y.Z"`, ≥ `v0.57.0`) before migrating a repo — cheap, and the
+failure mode is that repo's `just check` dying on a `ConfigParseError`.
 
 **Do not trigger a release. Do not hand-edit a sibling's pin** — the fan-out does it, and a
 hand-edit races the automation.
@@ -342,19 +412,22 @@ three now report `role_key_spelling: not_applicable`, all six consuming checks e
 SAME empty value for the OPPOSITE reason (`unarmed_until = "livespec-mutreal.1"`). One value, two
 meanings — now distinguishable.
 
-### ▶️ NEXT SLICE: six siblings, NONE authorized yet
+### ▶️ NEXT SLICE: four siblings, NONE authorized yet
 
-Two of eight are DONE on both axes (`livespec-dev-tooling`, `livespec-driver-claude`). Six of seven
-siblings carry `v0.57.0`, so the PIN gate is no longer what holds the rest — the AUTHORIZATION is.
-Per-repo remaining counts and the exact un-migrated KEYS are in the fleet-progress table near the
-top; they are now **measured on the forge, not arithmetic**.
+Four of eight are DONE on both axes (`livespec-dev-tooling`, `livespec-driver-claude`, `livespec`,
+`livespec-runtime`). **All seven siblings now carry `v0.57.0`**, so the PIN gate is gone entirely —
+what holds the rest is AUTHORIZATION, plus the one `pure_trees` question. Per-repo counts and the
+exact un-migrated KEYS are in the fleet-progress table near the top; they are **measured, not
+arithmetic**.
 
-`livespec`'s `pure_trees` is the fleet's one known **(B) `unarmed_until = "livespec-mutreal.1"`** —
-do NOT downgrade it to `not_applicable` because that reads tidier. Telling (B) from (A) apart is the
-entire point of the union, and `livespec-driver-claude` already proved (C) `superseded_by` holds
-under real conditions.
+`livespec-overseer`'s `pure_trees` is the fleet's remaining known **(B)
+`unarmed_until = "livespec-mutreal.1"`** — do NOT downgrade it to `not_applicable` because that
+reads tidier. `livespec` already proved (B) holds under real conditions, `livespec-driver-claude`
+proved (C) `superseded_by`, and `livespec-runtime` proved (D) `convention_not_adopted`. **All four
+spellings are now exercised live**, so there is a worked precedent for every one of them.
 
-Every remaining slice migrates **values AND prose together** — see the prose-staleness section.
+Every remaining slice migrates **values AND prose together** — see the prose-staleness section, and
+budget a full READ rather than a grep.
 
 Then **Phase 3** (a fleet-conformance check asserting zero `LegacyAmbiguousEmpty` across all eight —
 this IS the closure precondition's evidence) and **Phase 4** (the rejecting loader; `[]` becomes a
@@ -459,6 +532,20 @@ and proves nothing. Overwrite `pyproject.toml` outright.
 
 **`just check` passing does NOT mean a commit will land.** The staged-diff checks (`commit-pairs`,
 `red-green-replay`) run only at commit/push time over the STAGED set.
+
+**VERIFY A POLLING PROBE ONCE BEFORE WRAPPING IT IN AN UNTIL-LOOP.** Measured, and it cost ~37
+minutes: `until [ "$(gh pr checks <n> --json bucket --jq ...)" = "true" ]` spun forever because
+`gh pr checks` does **not** support `--json` — it printed "unknown flag" plus usage, which the test
+read as "not yet". **A command that FAILS inside `$(...)` is indistinguishable from one that
+legitimately returns "not done".** The PR had already merged before the loop started. Note the
+sub-command matters, not the tool: `gh pr view <n> --json state --jq .state` DOES support `--json`.
+Run the probe bare, look at the output, THEN loop — and give the loop an iteration ceiling that
+reports rather than hangs.
+
+**A STALE LOCAL CLONE WILL HAND YOU STALE PROSE, NOT JUST A STALE PIN.** `/data/projects/livespec-
+runtime` read `tag = "v0.56.1"` while the forge had `v0.57.0` — six commits behind. The risk is not
+only the version: the config COMMENTS you are mapping variants from may also be old. `git fetch`
+alone does not fix it; `pull --ff-only` before reading anything you intend to act on.
 
 ### Red-Green-Replay traps, both hit here
 
