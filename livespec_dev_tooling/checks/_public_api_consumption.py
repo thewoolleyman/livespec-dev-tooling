@@ -42,6 +42,16 @@ from __future__ import annotations
 import ast
 from typing import TYPE_CHECKING
 
+from livespec_dev_tooling.checks._import_resolution import (
+    attribute_reaches,
+    declared_all,
+    module_aliases,
+    module_name,
+    name_imports,
+    suffix_index,
+    top_level_functions,
+)
+
 if TYPE_CHECKING:
     from collections.abc import Mapping
     from pathlib import Path
@@ -55,139 +65,7 @@ __all__: list[str] = [
 ]
 
 
-_INIT_FILENAME = "__init__.py"
 _MAIN_GUARD_NAMES = frozenset({"__name__", "__main__"})
-
-
-def _module_name(*, rel: Path) -> str:
-    """Dotted module name for a repo-root-relative first-party `.py` path."""
-    parts = list(rel.parts)
-    if parts[-1] == _INIT_FILENAME:
-        parts = parts[:-1]
-    else:
-        parts[-1] = parts[-1].removesuffix(".py")
-    return ".".join(parts)
-
-
-def _declared_all(*, tree: ast.Module) -> frozenset[str]:
-    for node in tree.body:
-        if (
-            isinstance(node, ast.AnnAssign)
-            and isinstance(node.target, ast.Name)
-            and node.target.id == "__all__"
-            and isinstance(node.value, ast.List)
-        ):
-            return frozenset(
-                elt.value
-                for elt in node.value.elts
-                if isinstance(elt, ast.Constant) and isinstance(elt.value, str)
-            )
-    return frozenset()
-
-
-def _top_level_functions(*, tree: ast.Module) -> frozenset[str]:
-    return frozenset(
-        node.name for node in tree.body if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
-    )
-
-
-def _relative_base(*, current: str, level: int) -> str:
-    """Package `current` is `level` levels above — the anchor of a relative import."""
-    head = current.rsplit(".", maxsplit=level)
-    return head[0] if len(head) > level else ""
-
-
-def _import_from_target(*, node: ast.ImportFrom, current: str) -> str:
-    if node.level == 0:
-        return node.module or ""
-    base = _relative_base(current=current, level=node.level)
-    if not base:
-        return node.module or ""
-    return f"{base}.{node.module}" if node.module else base
-
-
-def _suffix_index(*, sources: Mapping[Path, str]) -> dict[str, frozenset[Path]]:
-    """Every dotted SUFFIX of every first-party module, mapped to its file(s).
-
-    A repo-root-relative path is NOT an import path. `livespec-dev-tooling`'s
-    package root IS its repo root, so `livespec_dev_tooling/config.py` really
-    is imported as `livespec_dev_tooling.config` — but a LAYERED consumer roots
-    its package deeper (`.claude-plugin/scripts/livespec/parse/foo.py` is
-    imported as `livespec.parse.foo`), and a repo-root reading would resolve
-    NOTHING there. Silently resolving nothing is the RELAXING direction, which
-    is the dangerous one for this check.
-
-    Resolution is therefore by dotted suffix. When a suffix is ambiguous
-    (two files whose paths end the same way), EVERY candidate is returned and
-    every one is treated as consumed — doubt resolves toward MORE enforcement,
-    never less. That is a far weaker claim than bare-NAME matching, which
-    compared only the function name and was measured wrong here.
-    """
-    index: dict[str, set[Path]] = {}
-    for rel in sources:
-        parts = _module_name(rel=rel).split(".")
-        for start in range(len(parts)):
-            index.setdefault(".".join(parts[start:]), set()).add(rel)
-    return {suffix: frozenset(files) for suffix, files in index.items()}
-
-
-def _module_aliases(
-    *, tree: ast.Module, current: str, index: Mapping[str, frozenset[Path]]
-) -> dict[str, str]:
-    """Local names bound to a first-party MODULE, for later attribute resolution."""
-    aliases: dict[str, str] = {}
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                aliases[alias.asname or alias.name] = alias.name
-        elif isinstance(node, ast.ImportFrom):
-            target = _import_from_target(node=node, current=current)
-            for alias in node.names:
-                submodule = f"{target}.{alias.name}"
-                if submodule in index:
-                    aliases[alias.asname or alias.name] = submodule
-    return aliases
-
-
-def _name_imports(
-    *, tree: ast.Module, current: str, index: Mapping[str, frozenset[Path]]
-) -> set[tuple[str, str]]:
-    """`(dotted module, name)` pairs this module imports by NAME."""
-    out: set[tuple[str, str]] = set()
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.ImportFrom):
-            continue
-        target = _import_from_target(node=node, current=current)
-        if target not in index:
-            continue
-        for alias in node.names:
-            if f"{target}.{alias.name}" in index or alias.name == "*":
-                continue
-            out.add((target, alias.name))
-    return out
-
-
-def _attribute_reaches(
-    *, tree: ast.Module, aliases: Mapping[str, str], index: Mapping[str, frozenset[Path]]
-) -> set[tuple[str, str]]:
-    """`(dotted module, name)` pairs reached as `<module alias>.<name>`.
-
-    The base MUST resolve through `aliases` — a name this module actually bound
-    to a module by an `import` — and never by treating any dotted expression
-    that happens to match a module path as one. Measured here: `config.pure_trees`
-    on a local `Config` INSTANCE matches the module `livespec_dev_tooling.config`
-    by name, and admitting it manufactured 19 phantom consumptions in this repo.
-    That is this thread's own "read the callee, do not match the name" lesson
-    recurring inside the oracle written to apply it.
-    """
-    out: set[tuple[str, str]] = set()
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Attribute):
-            continue
-        target = aliases.get(ast.unparse(node.value))
-        if target is not None and target in index:
-            out.add((target, node.attr))
-    return out
 
 
 def _entry_point_names(*, tree: ast.Module) -> frozenset[str]:
@@ -214,21 +92,21 @@ def repo_local_public_names(*, sources: Mapping[Path, str]) -> frozenset[tuple[P
     rather than a consumer whose contract the railway protects.
     """
     trees = {rel: ast.parse(source) for rel, source in sources.items()}
-    index = _suffix_index(sources=sources)
-    functions = {rel: _top_level_functions(tree=tree) for rel, tree in trees.items()}
+    index = suffix_index(sources=sources)
+    functions = {rel: top_level_functions(tree=tree) for rel, tree in trees.items()}
 
     public: set[tuple[Path, str]] = set()
     for rel, tree in trees.items():
-        current = _module_name(rel=rel)
-        aliases = _module_aliases(tree=tree, current=current, index=index)
-        reached = _name_imports(tree=tree, current=current, index=index) | _attribute_reaches(
+        current = module_name(rel=rel)
+        aliases = module_aliases(tree=tree, current=current, index=index)
+        reached = name_imports(tree=tree, current=current, index=index) | attribute_reaches(
             tree=tree, aliases=aliases, index=index
         )
         for dotted, name in reached:
             for defining in index[dotted]:
                 if defining != rel and name in functions[defining]:
                     public.add((defining, name))
-        for name in _entry_point_names(tree=tree) & _declared_all(tree=tree) & functions[rel]:
+        for name in _entry_point_names(tree=tree) & declared_all(tree=tree) & functions[rel]:
             public.add((rel, name))
     return frozenset(public)
 
@@ -238,7 +116,7 @@ def _resolved_declarations(
 ) -> tuple[frozenset[tuple[Path, str]], tuple[CrossRepoPublicApi, ...]]:
     """Split declared entries into the ones that resolve and the ones that do not."""
     functions = {
-        rel: _top_level_functions(tree=ast.parse(source)) for rel, source in sources.items()
+        rel: top_level_functions(tree=ast.parse(source)) for rel, source in sources.items()
     }
     resolved: set[tuple[Path, str]] = set()
     stale: list[CrossRepoPublicApi] = []
