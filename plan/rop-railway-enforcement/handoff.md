@@ -71,10 +71,29 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >    beads-fabro master `bc23b0d3`, pin `v1.0.5`, CI SUCCESS** — repaired at the CONSUMED end,
 >    not merely merged. No gate weakened, none bypassed. **Do not re-open; do not re-file.**
 >    The durable output is §"THE THIRD AXIS", which BINDS every remaining conversion.
-> 7. **⛔⛔ THE ARMING GATE IS NOW A SINGLE UNANSWERED QUESTION OVER ~6 FUNCTIONS, NOT 30.
->    READ THIS BEFORE PLANNING ANYTHING.** Step 6 is at **34** (measured on master with the
->    class-B declarations applied). Composition, measured per function with MODULE-QUALIFIED
->    import resolution:
+> 6b. **🔴 THE GATE IS NO LONGER "ZERO OFFENDERS". IT IS "NO OFFENDER THE RATIFIED RULE CALLS A
+>    VIOLATION", AND TODAY THAT NUMBER IS 3.** Both rulings landed: livespec **v178** (public =
+>    CONSUMED ACROSS A BOUNDARY) and **v179** (the rule reaches functions that HAVE an expected
+>    failure mode). **26 + 4 + 1 + 3 = 34.** Say which number you are measuring against in every
+>    status claim — "34" is what the check reports, "3" is what the rule considers wrong, and
+>    only the second is the gate. See §"THE GATE IS 3".
+> 6c. **⛔ TWO CLAIMS FROM THE PREVIOUS PASS ARE RETRACTED. The commit that introduced them is on
+>    master with "class C is EMPTY" IN ITS OWN TITLE — do not inherit it.**
+>    - **"Class C is EMPTY" is FALSE. Class C is THREE.** It rested on reading
+>      `test_workflow_full_round_trip`'s raise as the pytest COLLECTION protocol. That does not
+>      survive checking how the four siblings actually call it: they alias it to a
+>      non-`test_`-prefixed name **specifically to keep pytest from collecting it** and invoke it
+>      from a wrapper. So its raise is an ORDINARY domain raise and a conversion is owed.
+>    - **"Exactly 6 total functions" is FALSE. It is 4 mechanical + 1 declared.**
+>      `classify_role_key_declarations` was read BY HAND as total — no raise, no try, no I/O in
+>      its own body — and it calls `layout_dependent_check_slugs`, which walks the filesystem.
+>      **Hand judgement got 1 of 6 wrong; the mechanical fixpoint caught it.** That single result
+>      is why v179's member 1 is COMPUTED rather than DECLARED, and it is written into the
+>      ratified text as the reason clause (d) is load-bearing.
+> 7. **⛔⛔ THE ARMING GATE IS THREE ORDINARY CONVERSIONS, ONE OF WHICH NEEDS FOUR SIBLING
+>    WIRINGS FIRST. READ THIS BEFORE PLANNING ANYTHING.** Step 6 is at **34** as the check
+>    reports it (measured on master with the class-B declarations applied). Composition,
+>    measured per function with MODULE-QUALIFIED import resolution:
 >
 >    | class | n | path to zero |
 >    |---|---|---|
@@ -781,6 +800,103 @@ local-only amend is how a durable record quietly reverts.
 **Once checks are green, open a FRESH PR off the new master rather than amending.** Amending races
 auto-merge, and the race is invisible when you win it.
 
+### 🎯 THE GATE IS 3 — the exact arithmetic, and what each number is measured against
+
+**26 + 4 + 1 + 3 = 34.** Measured on master with the shipped `_find_offenders` over the shipped
+`resolve_check_universe()`, this repo's real config, class-B declarations applied, and a
+MODULE-QUALIFIED consumption oracle.
+
+| bucket | n | authority |
+|---|---|---|
+| removed — **not public API** | **26** | ratified **v178** |
+| removed — **mechanically no failure mode** | **4** | ratified **v179** member 1 |
+| removed — **declared legitimate absence** | **1** | ratified **v179** member 2 (`tag_version_component`) |
+| **REMAINING VIOLATIONS** | **3** | — |
+
+**TWO NUMBERS, AND CONFLATING THEM RE-CREATES THIS THREAD'S DEFECT.** **34** is what the check
+reports today, because neither ruling is IMPLEMENTED yet. **3** is what the ratified rule
+considers wrong. **The gate is 3.** `livespec-dev-tooling-u4ij` carries all three.
+
+**THE 4 MECHANICAL:** `canonical_check_slugs`, `world_gate_check_slugs`, `parse_open_bump_prs`,
+`denotes_same_release`. **THE 1 DECLARED:** `tag_version_component`.
+
+**THE 3 VIOLATIONS — all ORDINARY CONVERSIONS, none an exemption candidate:**
+
+1. **`classify_role_key_declarations` → `IOResult`.** Reaches the filesystem TRANSITIVELY via
+   `layout_dependent_check_slugs`. Zero siblings; no cross-repo wiring needed.
+2. **`select_runner` → convert.** Raises `ValueError` under a `mock` selector, and
+   `checks/plugin_resolution.py:470` calls it with `injected_runner=None`, so the raise is
+   reachable from PRODUCT code under a legitimate environment. Zero siblings.
+3. **`test_workflow_full_round_trip` → convert, but ONLY AFTER FOUR SIBLING WIRINGS.**
+   **⛔ THIS IS THE `dx8l` SHAPE AND WORSE.** All four consuming repos CALL it from a wrapper
+   test. Convert first and each wrapper receives a `Failure`, does not raise, and **four sibling
+   suites go SILENTLY GREEN while the round trip is broken.** A test that stops failing is
+   fail-stale aimed at a gate.
+
+### 🔑 v179 — THE RULE REACHES FUNCTIONS THAT *HAVE* AN EXPECTED FAILURE MODE
+
+Ratified 2026-07-29 into `livespec` (PR #1827). Two members, **no third mechanism and no
+per-function judgement at check time** — a rule needing one is a triage, and this thread has been
+there.
+
+- **MEMBER 1 — MECHANICAL, RECOMPUTED EVERY RUN.** No `raise`, no `try`, no I/O boundary call,
+  **every first-party callee likewise as a FIXPOINT**, and the return is not `X | None`.
+  Conservative in the DISQUALIFYING direction: an unresolved callee or any doubt demands a
+  `Result`. **It stores no claim, so it CANNOT ERODE** — add a raise or an I/O call and the rule
+  re-arms at that commit. **And it cannot become a dumping ground, because there is nothing to
+  add to**: membership is a function of the code, not of a list.
+- **MEMBER 2 — DECLARED, and it is the half that CAN decay.** An `X | None` return whose `None`
+  is a legitimate ABSENCE, declared per function with a reason in `total_absence_returns`.
+  Bounded four ways: a structural gate (only `X | None` can be declared at all), a required
+  reason, a **HARD-FAILING staleness detector** so a declaration cannot outlive its subject, and
+  a counted fleet-wide total so growth is measured rather than capped by an uncalibratable
+  number. **One residual is UNGUARDED and the ratified text says so:** a declared `None` shifting
+  from absence to failure while keeping its shape fires no detector.
+
+**⛔ CLAUSE (d) IS LOAD-BEARING — an implementation that inspects only a function's own body is
+WRONG.** That is not caution, it is the measured result: hand judgement called
+`classify_role_key_declarations` total and the fixpoint disqualified it on a callee's
+filesystem walk.
+
+**FIDELITY *AND* A NARROWING, both in the ratified text.** Fidelity, because the railway carries
+EXPECTED failures and a `Result` over a total function has an uninhabited failure track whose
+dead unwraps hide the live ones. A narrowing, because "every public function" is the core
+obligation of the ROP regime — and this is the **SECOND scoping in two revisions**, after v178
+scoped which functions are public. Read them together.
+
+**IT EXEMPTS NOTHING THAT RAISES.** A raise disqualifies under clause (a) whether it is
+domain-meaningful, a framework's protocol, or a report of a caller's wiring mistake.
+
+### 🔁 THE INVERTED HEURISTIC — carry this verbatim into the fan-out
+
+**"An explicit `raise` is the strongest signal to convert" is plausible and EXACTLY BACKWARDS.**
+The triage ranked the explicit-raise class as its strongest; it is its weakest. Three worked
+examples, each a different way a raise is load-bearing:
+
+- **`test_workflow_full_round_trip` — the raise reaches a FOREIGN framework.** Convert it without
+  wiring the four consumers first and a FAILING round trip reads as a PASS in four sibling repos.
+- **`run_workflow` — the raise IS a fail-CLOSED gate** (`CoverageGateError`). Converting a
+  fail-closed raise into a `Failure` return is `dx8l`'s fail-stale inversion aimed at a gate
+  instead of a marker.
+- **`select_runner` — the raise reports a CALLER'S WIRING BUG.** Bugs propagate; the railway
+  never carried them.
+
+**Ask what the raise IS before converting it.** In all three, converting makes the failure
+QUIETER — which is the wrong direction, and the direction this whole epic exists to reverse.
+
+### 🛠️ TWO PROCESS TRAPS — REMEDIES, NOT WARNINGS
+
+1. **Green amend: use `git commit --amend --no-edit`. NEVER `-F` or `-m`.** A message file
+   **discards the `TDD-Red-*` trailers** the Red leg recorded. The commit-msg hook reads Red
+   state from the PARENT commit, so it PASSES at amend time and the commit only fails later at
+   `check-red-green-replay` on PUSH — a delayed failure whose cause is three steps back. **There
+   is no repair in place; the pair must be rebuilt from master.**
+2. **Invoke `.claude-plugin/scripts/bin/<command>.py`, NEVER `python -m livespec.commands.<cmd>`.**
+   Those modules have **no `__main__` guard**, so `python -m` imports them and **exits 0 having
+   done nothing** — no output, no file, no error. Filed as `livespec-dev-tooling-ganj`, because a
+   lifecycle command that silently no-ops is this thread's signature shape occurring inside the
+   spec lifecycle's own tooling, not a gotcha to memorize.
+
 ### 📊 BRIEF 25 — WHAT LANDED, WITH THE ARITHMETIC STATED EXACTLY
 
 | item | state | effect |
@@ -889,19 +1005,27 @@ that shape into every remaining sibling wiring.**
 **The queue below is superseded through item 4.** Items 1–4 are DONE (see §"BRIEF 25 — WHAT
 LANDED"). What remains, in order:
 
-1. **Implement v178's repo-local half** — `public-api-consumed-criterion-check`. Takes the
-   measured count **34 → 8**. Red→Green-Replay, one slice per PR. The consumption oracle MUST
-   resolve imports to the DEFINING MODULE (see START-HERE 7a).
-2. **Implement the CENTRAL half** — `public-api-fleet-consumption-conformance-row`. This is the
-   half that catches the next `parse_manifest`. A repo-local check cannot.
-3. **THE ONE REMAINING RULING, and it is now the whole arming gate:** ~6 functions are PUBLIC by
-   v178 and TOTAL — `canonical_check_slugs`, `world_gate_check_slugs`,
-   `classify_role_key_declarations`, `parse_open_bump_prs`, `denotes_same_release`, plus
-   `select_runner` and `tag_version_component` as recorded non-conversions. **Conversion is the
-   wrong answer for all of them** (an uninhabited failure track). Zero is NOT reachable until the
-   rule says what it requires of a function with no failure mode. That is a propose-change, and
-   it is the LAST thing between here and arming.
-4. **Then re-measure, and ONLY at measured zero, arm.** Then fan out. **DO NOT ARM BEFORE.**
+**BOTH RULINGS ARE NOW RATIFIED — v178 AND v179. No spec work remains before arming.** What is
+left is implementation and three conversions:
+
+1. **Implement v178's repo-local half** — `721o`. The consumption oracle MUST resolve imports to
+   the DEFINING MODULE (see START-HERE 7a). **A repo-local check CANNOT see a sibling's import**,
+   so this half needs the repo to declare its cross-repo-consumed surface, with `5cai` verifying
+   the declaration against reality.
+2. **Implement v179's two members** — `no-expected-failure-mode-mechanical-member` and
+   `no-expected-failure-mode-declared-absence-key`. **Clause (d), the callee fixpoint, is not
+   optional** — without it the check exempts functions that reach I/O one call away.
+3. **Implement the CENTRAL half** — `5cai`. The half that catches the next `parse_manifest`.
+4. **The 3 conversions** — `u4ij`. Two are local; `test_workflow_full_round_trip` needs
+   DUAL-SHAPE wiring in FOUR siblings FIRST.
+5. **Then re-measure and arm ONLY when the ratified rule considers the remaining set correct.**
+   **That is no longer "zero offenders"** — v178 and v179 both narrow what counts. State which
+   number you mean. **DO NOT ARM BEFORE.**
+
+**⚠️ AND THE IMPLEMENTATIONS CARRY A MANUFACTURED-GREEN RISK OF EXACTLY THIS THREAD'S KIND.**
+`check-public-api-result-typed` is still `pure_trees`-scoped and scans ZERO files here, so new
+code paths in it are NOT exercised by this repo's own `just check`. **Test them directly on
+fixtures**, and do not read a green `just check` as evidence any of it works.
 
 ### 🗄️ (superseded through item 4) THE OLD NEXT ACTION
 
