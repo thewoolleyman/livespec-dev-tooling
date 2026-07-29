@@ -54,11 +54,18 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >    anything.** Measured on master `0788e93` with the shipped check: **25 dropped + 6 kept
 >    + 3 ADDED = 9**.
 >
->    **✅ `9sl0` AND `rvw3` ARE BOTH CLOSED. THE CHECK REPORTS 3; THE RATIFIED RULE
->    CONSIDERS 2 A VIOLATION.** Re-measured on master, not inherited: universe **149**,
->    member-1 exempt fleet-wide **377**, **3 offenders**.
->    **⛔ THAT IS NOT PERMISSION TO ARM** — the gate is that the two numbers AGREE, and 3 ≠ 2.
->    **THE NEXT ACTION IS `q5lb`, THEN `5cai`, THEN `vzwa`.** See 6i.
+>    **✅ `9sl0`, `rvw3` AND `q5lb` ARE ALL CLOSED. 🎯 THE TWO NUMBERS NOW AGREE AT 2.**
+>    Re-measured on merged master `2df1515` with the shipped code, never inherited: universe
+>    **149**, v178 public **167**, member-1 exempt **381**, member-2 exempt **1** (0 rejected,
+>    the two member sets verified DISJOINT), **2 offenders** — and the ratified rule considers
+>    exactly those **2** a violation.
+>
+>    **⛔⛔ AGREEMENT AT 2 IS NOT PERMISSION TO ARM, AND THIS IS THE SINGLE EASIEST LINE IN THIS
+>    FILE TO MISREAD.** The gate was always "the two numbers agree" AND "the number is zero".
+>    Agreement means the check is now HONEST; it does not mean the repo is clean. **Arming at 2
+>    reds dev-tooling on its own gate and lefthook then blocks the very commit that fixes it.**
+>    The 2 are `canonical_check_slugs` and `world_gate_check_slugs` — **`vzwa`**.
+>    **THE NEXT ACTION IS `vzwa`, THEN `5cai`, THEN ARM.** See 6i and 6k.
 >
 >    **🔴 "THE RATIFIED-RULE COUNT IS 0" IS RETRACTED. IT IS 2.** An earlier revision of this
 >    file said 0 on the strength of a HAND reading of six functions. `rvw3`'s fixpoint shipped
@@ -101,6 +108,100 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >    **A hand simulation of a fixpoint is not a measurement of it**, and this is the third time
 >    this thread has paid for treating one as such. No count for a sibling repo may be quoted
 >    from a hand reading of clause (d) — run the analysis.
+> 6k. **✅ `q5lb` IS CLOSED — v179 MEMBER 2 SHIPPED, AND THE TWO NUMBERS AGREE AT 2.** Three
+>    slices, all merged: **#891** SPECIFICATION **v037** (the `total_absence_returns` role-key
+>    bullet), **#892** the loader (bound 2) + `checks/_declared_absence_returns` (bounds 1+3),
+>    **#895** wired into the check + `tag_version_component` declared. The check went **3 → 2**.
+>
+>    | bound | what | where it landed |
+>    |---|---|---|
+>    | 1 | structural gate — only `X \| None` is declarable | `_declared_absence_returns`, **hard fail** |
+>    | 2 | a written reason is REQUIRED | the config loader, `ConfigParseError` |
+>    | 3 | staleness detector, **hard fail not warning** | `_declared_absence_returns` |
+>    | 4 | counted per-repo AND fleet-wide | **NOT DONE — it is `5cai`'s** |
+>
+>    **THE POLARITY IS THE THING A LATER EDITOR WILL GET WRONG, and it is written into the
+>    ratified text three times for that reason.** `cross_repo_public_api` is TIGHTENING-ONLY and
+>    says so three times in its own bullet; **this key REMOVES functions from the rule's scope**,
+>    so that argument is NOT available to it and v037 says so by name. **An EMPTY declaration is
+>    the STRICT end of this key** — the opposite polarity from the five union role keys, where
+>    empty was the blinding value. Carrying the reassuring "tightening-only" wording across
+>    because the two keys are otherwise parallel would be a false statement of exactly the kind
+>    this epic exists to remove.
+>
+>    **BOUND 1 REJECTS; IT DOES NOT SKIP.** Quietly ignoring a declared entry whose function is
+>    not `X | None` would satisfy the letter of the gate while making the mis-declaration
+>    invisible. Both wrong readings are foreclosed BY NAME in the ratified bullet ("neither
+>    silently ignored nor accepted") because each is individually plausible.
+>
+>    **AND THE LOADER DELIBERATELY DOES NOT ENFORCE BOUND 1.** The gate needs the declared
+>    file's SOURCE; the loader parses TOML and is imported by every check, so making it read
+>    `.py` files would buy a new I/O dependency for no gain. Bounds 1 and 3 are ONE detector
+>    where the universe already is. **A successful parse is HALF the gate**, and
+>    `_parse_total_absence_returns`'s docstring says so.
+>
+>    **TWO FINDINGS FILED, and the first is this epic's subject one level down:**
+>    - **`livespec-dev-tooling-ueni` (P1) — BOTH declaration keys' HARD-FAILING staleness gates
+>      are UNREACHABLE in this repo.** They sit BEHIND the `pure_trees` role-absence gate in
+>      `main()`, and dev-tooling declares `pure_trees = { not_applicable = … }`, so `main()`
+>      returns before reading a single declaration. **This repo's five declared entries — four
+>      `cross_repo_public_api` plus `tag_version_component` — are verified by fixture tests and
+>      by NOTHING ELSE.** Same for the four `unarmed_until` members. Not a defect in either
+>      detector (both are correct and tested), which is what makes it easy to miss. **The fix is
+>      a reorder with SIBLING BLAST RADIUS** — measure all nine members' declarations first, fix
+>      any stale entry in its own repo, then reorder. `dx8l` shape.
+>    - **`livespec-dev-tooling-k76y` (P1) — `5cai`'s naive build is ~653 GitHub API calls per
+>      run.** See 6l.
+>
+>    **THREE PROCESS FACTS PAID FOR HERE, all cheap to re-pay and easy to avoid:**
+>    - **RED MODE REQUIRES EXACTLY ONE STAGED TEST FILE.** `just check-pre-commit` gates on
+>      `test_count -eq 1 && impl_count -eq 0`; TWO staged test files fall through to the FULL
+>      aggregate, where the Red leg's stubbed impl fails `check-per-file-coverage` and
+>      `check-lint`. **A multi-module slice is several Red→Green PAIRS, not one pair with several
+>      test files.** Two pairs in one PR is fine and is what #892 did.
+>    - **A FRESH WORKTREE NEEDS `just install-worktree-pack`** before `just check` passes —
+>      `check-primary-checkout-commit-refuse-hook-installed` fails `worktree_pack_absent`
+>      otherwise. Doc-only commits never hit it, so it first appears on the first commit staging
+>      a `.py`, several commits into a session.
+>    - **🔴 AND THE RE-MEASURE SCRIPT WENT STALE MID-PASS, which is the one worth carrying.** It
+>      applied member 1 ALONE, bypassing `_scan`'s union, and reported **3** where the shipped
+>      check reports **2**. A measurement that UNDER-applies a ratified exemption reads as "the
+>      repo is dirtier than it is" — **it would have restored the very number this pass
+>      retracted.** Mirror `_scan`, never approximate it.
+> 6l. **📐 ONE SIBLING RE-MEASURED — `livespec-orchestrator-beads-fabro`: 58 → 17. THE STALE
+>    223/282 FIGURES ARE NOW REPLACEABLE FOR ONE REPO, MEASURED.** Taken 2026-07-30 from the
+>    FORGE MASTER TARBALL (`4ff67886`), so no shared clone was touched, with the shipped
+>    post-v178/v179 criterion and that repo's own `pyproject.toml`.
+>
+>    | oracle | offenders |
+>    |---|---|
+>    | recorded in this file (stale) | 58 |
+>    | **PRE-v178** `__all__` proxy, re-run on today's master | **55** |
+>    | **v178 applied** | **19** |
+>    | **v178 + v179 (what the check would report)** | **17** |
+>
+>    Universe 184 files, 1001 top-level functions, `__all__`-proxy public **462** vs v178
+>    consumption-public **363**, member-1 exempt **368**, member-2 exempt **0** (it declares
+>    neither `cross_repo_public_api` nor `total_absence_returns`).
+>
+>    **THE METHOD VALIDATES ITSELF: the old oracle re-run today gives 55 against a recorded 58**,
+>    so the recorded figure reproduces within 3 and the delta is other work landing since — not a
+>    measurement disagreement.
+>
+>    **⚠️ AND THE TIGHTENING HALF ADDED **ZERO** OFFENDERS HERE, against 3 in dev-tooling.** 6e's
+>    "unknown in BOTH directions" stands as a warning about the DIRECTION being repo-specific,
+>    and this is the first repo where it resolved entirely downward. **Do not now generalize the
+>    other way either** — one repo measured is one repo measured. The remaining seven are still
+>    unknown, and this figure may not be scaled by first-party count to guess them: beads-fabro
+>    dropped 36 of 55 because it declares `commands_trees` and 4 `supervisor_entry_files`, which
+>    a flat-layout member does not.
+>
+>    **🔎 AND 7 OF THE 17 ARE `main`.** Those are the v177 member-4 shape wanting a
+>    `supervisor_entry_files` DECLARATION rather than a conversion, so beads-fabro's
+>    ratified-rule count is materially BELOW 17 — **but that number is NOT stated here, because
+>    establishing it needs the per-function reading and this file's own newest standing
+>    constraint forbids hand-simulating the answer.** 17 is what the check reports; the
+>    ratified-rule count for this sibling is UNMEASURED.
 >
 >    **▶️ COLD-START ORIENTATION — the items this thread still owns, all FILED, none started.**
 >    Nothing is mid-flight: #867, #870, #874, #880, #883 and #886 are merged, every worktree of
@@ -110,9 +211,9 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >    |---|---|---|
 >    | ~~`9sl0`~~ | ~~the 3 genuine violations~~ | **✅ CLOSED — #867, #870, #874** |
 >    | ~~`rvw3`~~ | ~~v179 member 1, the clause-(d) fixpoint~~ | **✅ CLOSED — #880, #883, #886** |
->    | **`q5lb`** | v179 member 2 — the `total_absence_returns` key | **YES — START HERE** |
->    | **`5cai`** | the CENTRAL-vantage conformance row | **YES — binding, brief 30** |
->    | **`vzwa`** | the 2 GENUINE violations `rvw3` uncovered | **YES — new, untriaged** |
+>    | ~~`q5lb`~~ | ~~v179 member 2, the `total_absence_returns` key~~ | **✅ CLOSED — #891, #892, #895** |
+>    | **`vzwa`** | the 2 GENUINE violations — **THE ONLY THING BETWEEN HERE AND ZERO** | **YES — START HERE, untriaged** |
+>    | **`5cai`** | the CENTRAL-vantage conformance row | **YES — binding, brief 30. Read `k76y` FIRST: it is 3 slices, not 1** |
 >    | **`0yfo`** → `995m` | decompose `config.py`, then flip the `@generated` predicate | only via 6f's known-gap statement |
 >
 >    **Three NEW items were filed by this work. `vzwa` IS an arming blocker; the other two are
@@ -135,23 +236,26 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >      #1141, #450. Conversion 3's precondition is discharged and spent.
 >    - **Track C is DONE.** Ratified as **v035** on master (PR #824 → `703c5a6`).
 >    - **THE P0 IS CLOSED.** `dx8l` — see step 6a. Nothing is owed on it.
-> 6d. **⛔⛔ TWO NUMBERS. DO NOT ARM UNTIL THEY AGREE. TODAY THEY ARE 3 AND 2.** **3** is what
->    the check reports on master (v178 AND v179 member 1 are both implemented; member 2 is
->    NOT, so `tag_version_component` still counts). **2** is what the ratified rule considers a
->    violation. Arming before they agree turns dev-tooling RED ON ITS OWN GATE, and lefthook
->    then blocks the very commit that fixes it. **Arm only when both numbers agree, and SAY SO
->    EXPLICITLY in the arming commit.**
+> 6d. **⛔⛔ TWO NUMBERS. THEY NOW AGREE AT 2 — AND THAT IS STILL NOT PERMISSION TO ARM.**
+>    Both v179 members are implemented, so the check and the ratified rule finally answer the
+>    same question the same way. **The gate was always BOTH conditions: the numbers agree AND
+>    the number is zero.** Arming at a non-zero agreed count turns dev-tooling RED ON ITS OWN
+>    GATE, and lefthook then blocks the very commit that fixes it. **Arm only when both numbers
+>    agree AT ZERO, and state both explicitly in the arming commit.**
 >
->    **THE PATH TO AGREEMENT IS EXACTLY TWO STEPS, and it does NOT end at zero:**
+>    **THE PATH IS NOW EXACTLY ONE STEP — measured at each end, not projected:**
 >
 >    | after | check reports | ratified rule |
 >    |---|---|---|
->    | today | 3 | 2 |
->    | `q5lb` declares `tag_version_component` | **2** | **2** — they AGREE |
->    | `vzwa` fixes the two genuine violations | **0** | **0** |
+>    | ~~`721o`~~ (history) | ~~9~~ | ~~3~~ |
+>    | ~~`9sl0`~~ (history) | ~~7~~ | ~~0, RETRACTED — see 6i~~ |
+>    | ~~`rvw3`~~ (history) | ~~3~~ | ~~2~~ |
+>    | **today, `q5lb` landed** | **2** | **2** — they AGREE |
+>    | **`vzwa` fixes the two genuine violations** | **0** | **0** — then ARM |
 >
->    **Arming happens after `vzwa`, not after `q5lb`.** Agreement at 2 means the check is
->    honest, not that the repo is clean; arming at 2 reds this repo on its own gate.
+>    **The first three rows are kept rather than deleted because the `9sl0` row is a RETRACTION**
+>    — that 0 was a hand simulation and the shipped fixpoint disagreed. Deleting the row would
+>    delete the evidence for this file's strongest standing constraint.
 > 6i. **✅ `rvw3` IS CLOSED — AND ITS MECHANISM CONTRADICTED THIS FILE. THE RATIFIED-RULE
 >    COUNT IS 2, NOT 0.** Three slices, all merged: **#880** extracted the import-resolution
 >    graph, **#883** built the member-1 analysis, **#886** wired it into the check. The check
@@ -1417,11 +1521,32 @@ that shape into every remaining sibling wiring.**
    silent no-op that looks exactly like success. Invoke
    `.claude-plugin/scripts/bin/<command>.py` instead.
 
-### ▶️ EXACT NEXT ACTION — **`q5lb`, THEN `5cai`, THEN `vzwa`, THEN ARM. `rvw3` IS DONE.**
+### ▶️ EXACT NEXT ACTION — **`vzwa`, THEN `5cai`, THEN ARM. `q5lb` IS DONE AND THE NUMBERS AGREE AT 2.**
 
-**Start at `q5lb`. Nothing is mid-flight; nothing needs new authority** (briefs 30–32
+**Start at `vzwa`. Nothing is mid-flight; nothing needs new authority** (briefs 30–33
 authorized `q5lb`, `5cai` and the arming sequence — an item boundary is a place to REPORT,
-not to WAIT).
+not to WAIT). Every worktree of this thread's is removed and no branch of its own is open.
+
+**`vzwa` IS NOW THE ONLY THING BETWEEN THIS REPO AND ZERO.** Two functions,
+`canonical_check_slugs` and `world_gate_check_slugs`, both in `canonical_checks.py`. **Read 6i
+BEFORE converting: it is not a type change.** `pkgutil.iter_modules` on a MISSING directory
+yields no entries rather than raising, so `canonical_check_slugs()` returns an EMPTY tuple and
+every consumer reads that as "this repo has no canonical checks" — which PASSES. Typing it
+`IOResult` without deciding what an empty walk MEANS relocates the sentinel instead of removing
+it. The likely better answer is RESTRUCTURE (inject the slug set — the `#841` precedent), and
+**`canonical_check_slugs` is consumed by `livespec` PRODUCT code at 3 sites, so a signature
+change is a `dx8l`-shaped fan-out and the consumer wiring lands FIRST, dual-shape.**
+
+**THEN `5cai` — but read `livespec-dev-tooling-k76y` FIRST.** It is THREE slices, not one: a
+tarball primitive on `FleetContext` (9 API calls per run instead of ~653), the fleet consumption
+oracle, then the row plus its REGISTRATION in `OBLIGATION_ROWS`. The naive `file_text`-per-file
+build is ~70× more expensive than it needs to be, and a pending `livespec` proposed change
+(`github-app-request-budget.md`) exists because that budget is a live constraint.
+
+**(superseded ordering, kept so the change is legible)** This section previously read
+"`q5lb`, THEN `5cai`, THEN `vzwa`". `q5lb` landed and moved the check to 2, at which point
+`vzwa` — not `5cai` — became the only gate on reaching ZERO. `5cai` is still binding before
+ARMING; it is no longer binding before the count is clean.
 
 **`q5lb` — v179 member 2, the `total_absence_returns` role key.** It has exactly ONE subject
 in this repo today: `cross_repo/fabro_image_pin_rewrite.py:100 tag_version_component`, whose
@@ -1474,6 +1599,20 @@ remembering those are now unknown in BOTH directions (6e) — report it, and **S
   is expected raises `IsADirectoryError`). **Never reach for `skipif`** — a skipped negative
   test is worse than an absent one, because it reports as handled in the only environment that
   gates merges.
+- **RED MODE REQUIRES EXACTLY ONE STAGED TEST FILE.** `just check-pre-commit` gates the Red
+  scope on `test_count -eq 1 && impl_count -eq 0`. Stage TWO test files and it falls through to
+  the FULL aggregate, where the Red leg's stubbed impl fails `check-per-file-coverage` and
+  `check-lint` — a confusing failure that looks like a defect in the change. **A multi-module
+  slice is several Red→Green PAIRS**, and two pairs in one PR is fine.
+- **A FRESH WORKTREE NEEDS `just install-worktree-pack`.** Without it
+  `check-primary-checkout-commit-refuse-hook-installed` fails `worktree_pack_absent`. Doc-only
+  commits never reach that gate, so the failure first appears on the first commit that stages a
+  `.py` — often several commits into a session, far from its cause.
+- **MIRROR `_scan`, NEVER APPROXIMATE IT, when re-measuring.** This pass's own re-measure script
+  applied v179 member 1 ALONE and reported **3** where the shipped check reports **2**. A
+  measurement that UNDER-applies a ratified exemption reads as "the repo is dirtier than it is",
+  and it would have restored the exact number the same pass had just retracted. Import the
+  analyses the check imports and combine them the way `_scan` does.
 - **NEVER HAND-SIMULATE A FIXPOINT — RUN IT.** Clause (d) reaches transitively, so every clause
   a body-only reading CAN check may pass while the only clause that fails is the one it cannot.
   Measured twice: 1-of-6 wrong at `classify_role_key_declarations`, then **2-of-4 wrong** on the
