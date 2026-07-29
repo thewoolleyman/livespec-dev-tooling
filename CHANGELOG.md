@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.4.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.4.0...v1.4.1) (2026-07-29)
+
+
+### Bug Fixes
+
+* **cross-repo:** the pin walk types the file it could not read ([7459989](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7459989b88031c629dcbfce91adee6ce608215cb))
+
 ## [1.4.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.3.2...v1.4.0) (2026-07-29)
 
 
