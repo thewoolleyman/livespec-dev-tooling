@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.0.9](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.0.8...v1.0.9) (2026-07-29)
+
+
+### Bug Fixes
+
+* **rop:** put select_runner on the railway, unwrapped fail-closed at its one caller ([09f6a9d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/09f6a9d8beb3b833f605e8cc05b1eb8fd9a59e1d))
+
 ## [1.0.8](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.0.7...v1.0.8) (2026-07-29)
 
 
