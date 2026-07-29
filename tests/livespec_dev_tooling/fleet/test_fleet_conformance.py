@@ -69,6 +69,10 @@ _OUT_OF_VANTAGE_EVENT = "obligation row is outside this lane's vantage (another 
 # installation token claims `central-app` on top of plain `central`),
 # passed explicitly where a test exercises the CI-shaped sweep.
 _AUTOMATED_VANTAGES = frozenset({CENTRAL_VANTAGE, CENTRAL_APP_VANTAGE})
+# Named rather than inlined so ruff's S106 (hardcoded password in a
+# `token=` argument) does not fire on every credential-class assertion.
+_APP_TOKEN = "ghs_app-installation"
+_OPERATOR_TOKEN = "ghp_operator-pat"
 
 _CI_YML = "jobs:\n  check:\n    strategy:\n      matrix:\n        target:\n          - check-a\n"
 
@@ -517,27 +521,22 @@ def test_local_central_run_reports_app_installation_out_of_vantage() -> None:
     assert _INSTALL_ARGS not in calls
 
 
-def test_central_run_vantages_follows_the_credential_class(
-    *, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_central_run_vantages_follows_the_credential_class() -> None:
     """`central-app` is held exactly when the run's token is an App installation token.
 
     The `ghs_` prefix marks GitHub's server-to-server (installation)
     tokens — the only credential class under which the app-installation
-    read answers. An operator PAT or no env token at all leaves the run
-    holding plain `central`; the fallback env var is the same second
-    slot `gh` itself consults.
+    read answers. An operator PAT or no token at all leaves the run
+    holding plain `central`.
+
+    The token arrives as a PARAMETER now, so this pins the RULE and no
+    longer the environment; which env vars supply it, in which order, is
+    pinned at the boundary that reads them
+    (`test_main_reads_the_gh_token_env_pair_in_gh_s_own_order`).
     """
-    monkeypatch.delenv("GH_TOKEN", raising=False)
-    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
-    assert central_run_vantages() == frozenset({CENTRAL_VANTAGE})
-    monkeypatch.setenv("GH_TOKEN", "ghp_operator-pat")
-    assert central_run_vantages() == frozenset({CENTRAL_VANTAGE})
-    monkeypatch.setenv("GH_TOKEN", "ghs_app-installation")
-    assert central_run_vantages() == _AUTOMATED_VANTAGES
-    monkeypatch.delenv("GH_TOKEN")
-    monkeypatch.setenv("GITHUB_TOKEN", "ghs_app-installation")
-    assert central_run_vantages() == _AUTOMATED_VANTAGES
+    assert central_run_vantages(token="") == frozenset({CENTRAL_VANTAGE})
+    assert central_run_vantages(token=_OPERATOR_TOKEN) == frozenset({CENTRAL_VANTAGE})
+    assert central_run_vantages(token=_APP_TOKEN) == _AUTOMATED_VANTAGES
 
 
 def test_central_lane_never_spends_an_api_read_on_an_admin_row() -> None:
@@ -695,6 +694,34 @@ def test_main_app_token_run_fails_on_a_blind_app_installation_row(
     monkeypatch.setattr(sys, "argv", ["fleet-conformance", "--owner", "acme"])
     _patch_runner(monkeypatch=monkeypatch, table=_two_member_table())
     assert fleet_conformance.main() == 4
+
+
+def test_main_reads_the_gh_token_env_pair_in_gh_s_own_order(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`GH_TOKEN` first, `GITHUB_TOKEN` second — the pair `gh` itself consults.
+
+    The env read is the supervisor's, not the rule's, so THIS is where the
+    pair and its precedence are pinned. Both directions are asserted
+    against the same canned table, whose `app-installation` read answers
+    for nobody: a run that claims `central-app` exits 4 on the blind row,
+    one that does not exits 0. So the exit code reports which variable the
+    boundary actually believed.
+
+    The precedence leg sets the two variables to OPPOSITE classes. A
+    boundary that consulted only `GITHUB_TOKEN`, or that consulted the two
+    in the other order, would classify the run App-class and exit 4 — an
+    assertion on a single variable cannot tell those apart.
+    """
+    monkeypatch.setenv("LIVESPEC_RUN_FLEET_CONFORMANCE", "true")
+    monkeypatch.setattr(sys, "argv", ["fleet-conformance", "--owner", "acme"])
+    _patch_runner(monkeypatch=monkeypatch, table=_two_member_table())
+    monkeypatch.setenv("GH_TOKEN", "ghp_operator-pat")
+    monkeypatch.setenv("GITHUB_TOKEN", "ghs_dispatch-sandbox-projects-this")
+    precedence = fleet_conformance.main()
+    monkeypatch.delenv("GH_TOKEN")
+
+    assert precedence == 0 and fleet_conformance.main() == 4
 
 
 def test_main_blind_central_row_exits_four(*, monkeypatch: pytest.MonkeyPatch) -> None:

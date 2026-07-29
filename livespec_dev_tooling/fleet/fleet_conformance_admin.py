@@ -94,6 +94,7 @@ no `print`, no `sys.stderr.write`.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
@@ -199,7 +200,14 @@ def main() -> int:
     configure_lane_logging()
     log = structlog.get_logger("fleet_conformance_admin")
     args = _build_parser().parse_args()
-    if holds_app_class_credential():
+    # The env pair `gh` itself consults, in `gh`'s own precedence order —
+    # the Fabro dispatch sandbox projects its installation token as the
+    # second. This lane's supervisor is where the read belongs: it is
+    # already a deliberate side-effect boundary, and keeping it here is
+    # what leaves `holds_app_class_credential` total under livespec v179
+    # member 1 rather than disqualified by clause (c).
+    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or ""
+    if holds_app_class_credential(token=token):
         return _dispatch_class_out_of_vantage(log=log)
     owner = cast("str | None", args.owner) or resolve_owner()
     if owner is None:

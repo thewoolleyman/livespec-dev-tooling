@@ -149,26 +149,36 @@ MANIFEST_PATH = ".livespec-fleet-manifest.jsonc"
 _APP_TOKEN_PREFIX = "ghs_"
 
 
-def holds_app_class_credential() -> bool:
-    """True when the run's effective gh credential is an App installation token.
+def holds_app_class_credential(*, token: str) -> bool:
+    """True when `token` is a GitHub App installation token.
 
     The ONE implementation of the credential-class rule both lanes share
-    (the bounded-parser convention: a rule with two copies drifts). The
-    token is read from the same env pair `gh` itself consults, `GH_TOKEN`
-    first then `GITHUB_TOKEN` (the Fabro dispatch sandbox projects the
-    latter); the `ghs_` prefix marks GitHub's server-to-server
-    (installation) class. The central lane uses this to claim the
-    `central-app` vantage; the admin lane uses it to classify itself
-    out-of-vantage under a dispatch-class credential. This is a fact
-    about the credential, not a lever — changing it changes which reads
-    can actually answer.
+    (the bounded-parser convention: a rule with two copies drifts): the
+    `ghs_` prefix marks GitHub's server-to-server (installation) class.
+    The central lane uses this to claim the `central-app` vantage; the
+    admin lane uses it to classify itself out-of-vantage under a
+    dispatch-class credential. This is a fact about the credential, not a
+    lever — changing it changes which reads can actually answer.
+
+    THE TOKEN ARRIVES AS DATA, and that is the whole point of the shape.
+    This function used to read `GH_TOKEN` / `GITHUB_TOKEN` itself, which
+    disqualified it from livespec v179 member 1 under clause (c) — while
+    it has NO expected failure mode at all: an absent variable yields `""`
+    yields `False`. A `Result` here would carry an UNINHABITED failure
+    track, the outcome v179's own rationale forbids, so the correct
+    disposition was RESTRUCTURE rather than convert
+    (livespec-dev-tooling-9sl0). Each lane's `main()` — already a
+    deliberate side-effect boundary — reads the env pair `gh` itself
+    consults, `GH_TOKEN` first then `GITHUB_TOKEN` (the Fabro dispatch
+    sandbox projects the latter), and passes the result here. The read is
+    written out at each boundary rather than shared through a helper, so
+    that no function of this rule touches the environment surface at all.
     """
-    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or ""
     return token.startswith(_APP_TOKEN_PREFIX)
 
 
-def central_run_vantages() -> frozenset[str]:
-    """The credential-class vantages this central-lane run holds.
+def central_run_vantages(*, token: str) -> frozenset[str]:
+    """The credential-class vantages a central-lane run under `token` holds.
 
     Every central run holds the plain `central` vantage (contents, topics,
     and the other reads any GitHub credential the lane runs with can
@@ -178,8 +188,14 @@ def central_run_vantages() -> frozenset[str]:
     `app-installation` row is evaluated in the automated contexts that
     mint one and reported out-of-vantage (naming them) in a local
     operator run.
+
+    It takes the token rather than reading it because it is the one caller
+    of the rule that is NOT itself a boundary: stopping the injection at
+    `holds_app_class_credential` would relocate the environment read one
+    call deeper and leave THIS function disqualified by v179 clause (c)
+    instead.
     """
-    if holds_app_class_credential():
+    if holds_app_class_credential(token=token):
         return frozenset({CENTRAL_VANTAGE, CENTRAL_APP_VANTAGE})
     return frozenset({CENTRAL_VANTAGE})
 
@@ -386,7 +402,15 @@ def main() -> int:
     manifest = _resolve_root_facts(ctx=ctx, owner=owner, log=log)
     if manifest is None:
         return 1
-    result = run_member_rows(ctx=ctx, manifest=manifest, log=log, vantages=central_run_vantages())
+    # The env pair `gh` itself consults, in `gh`'s own precedence order.
+    # This lane's supervisor is where the read belongs: it is already a
+    # deliberate side-effect boundary, and keeping it here is what leaves
+    # `central_run_vantages` and `holds_app_class_credential` total under
+    # livespec v179 member 1 rather than disqualified by clause (c).
+    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or ""
+    result = run_member_rows(
+        ctx=ctx, manifest=manifest, log=log, vantages=central_run_vantages(token=token)
+    )
     adopters = run_adopter_rows(ctx=ctx, manifest=manifest, log=log)
     if args.emit_member_verdicts is not None:
         _write_member_verdicts(
