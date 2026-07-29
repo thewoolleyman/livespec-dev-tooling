@@ -52,6 +52,12 @@ from livespec_dev_tooling.testing.cli_e2e import (
     select_runner,
 )
 
+_VENDOR_DIR = Path(cli_e2e.__file__).resolve().parent.parent / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
+
+from returns.result import Failure, Success  # noqa: E402  — vendor-path-aware import.
+
 # The canonical entry point is named `test_workflow_full_round_trip` (fixed by
 # the contract's consumer import path). Importing that bare `test_*` name into
 # a pytest module makes pytest try to COLLECT it as a test with a missing
@@ -222,28 +228,72 @@ def test_coverage_gate_error_is_exception() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_select_runner_real_returns_real_cli_runner(*, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_select_runner_real_unwraps_to_a_real_cli_runner(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The `real` tier yields a `Success` CARRYING a `RealCliRunner`.
+
+    The `unwrap()` half is the point. A conversion bug that hands the CONTAINER to
+    the caller — dev-tooling shipped exactly that in `frozenset(IOResult.unwrap())`,
+    which silently produced a set holding the wrapper — satisfies every assertion
+    that only checks the call succeeded.
+
+    Both conditions sit in ONE `assert` on purpose: this repo enforces 100%
+    per-file coverage, and at the RED moment every line AFTER the first failing
+    assertion is unexecuted and therefore uncovered. A Red leg must leave no line
+    behind, which constrains a Red test to a single failing statement.
+    """
     monkeypatch.setenv("LIVESPEC_E2E_HARNESS", "real")
-    runner = select_runner(injected_runner=None)
-    assert isinstance(runner, RealCliRunner)
+
+    outcome = select_runner(injected_runner=None)
+
+    assert isinstance(outcome, Success) and isinstance(
+        outcome.unwrap(), RealCliRunner
+    ), f"the real tier must yield a Success carrying a RealCliRunner; got {outcome!r}"
 
 
-def test_select_runner_mock_returns_injected(*, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_select_runner_mock_unwraps_to_the_injected_runner(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("LIVESPEC_E2E_HARNESS", "mock")
     injected = _FakeCliRunner()
-    assert select_runner(injected_runner=injected) is injected
+
+    outcome = select_runner(injected_runner=injected)
+
+    assert (
+        isinstance(outcome, Success) and outcome.unwrap() is injected
+    ), f"the mock tier must yield a Success carrying the injected runner; got {outcome!r}"
 
 
 def test_select_runner_default_is_mock(*, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("LIVESPEC_E2E_HARNESS", raising=False)
     injected = _FakeCliRunner()
-    assert select_runner(injected_runner=injected) is injected
+
+    outcome = select_runner(injected_runner=injected)
+
+    assert (
+        isinstance(outcome, Success) and outcome.unwrap() is injected
+    ), f"an unset selector must default to the mock tier; got {outcome!r}"
 
 
-def test_select_runner_mock_without_injected_raises(*, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_select_runner_mock_without_injected_is_a_failure(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A `mock` selection with no injected runner lands on the FAILURE track.
+
+    It used to raise `ValueError`. Ratified livespec v179 clause (a) disqualifies
+    any `raise` from the no-expected-failure-mode member — deliberately, whichever
+    flavour the raise is — so this is an ordinary conversion rather than an
+    exemption: the misconfiguration is a real outcome a caller can act on.
+
+    The call is INSIDE the assert so the statement is still executed at the Red
+    moment, where the pre-conversion code raises instead of returning.
+    """
     monkeypatch.setenv("LIVESPEC_E2E_HARNESS", "mock")
-    with pytest.raises(ValueError, match="requires an injected"):
-        _ = select_runner(injected_runner=None)
+
+    assert isinstance(
+        select_runner(injected_runner=None), Failure
+    ), "a mock selection with no injected runner must land on the failure track"
 
 
 # ---------------------------------------------------------------------------
