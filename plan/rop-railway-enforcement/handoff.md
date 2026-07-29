@@ -54,21 +54,28 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >    anything.** Measured on master `0788e93` with the shipped check: **25 dropped + 6 kept
 >    + 3 ADDED = 9**.
 >
->    **⛔ THE TRIAGE IS DONE (6g). THE NEXT ACTION IS IMPLEMENTING `9sl0`'s THREE, THEN v179's
->    TWO MEMBERS (`rvw3`, `q5lb`), THEN `5cai`. NOT ARMING.** Re-measured on master `c236dbd`,
->    not inherited: universe 146, **9 offenders**, the same nine listed in 6g.
+>    **✅ `9sl0` IS CLOSED — ALL THREE LANDED. THE RATIFIED-RULE COUNT IS 0, AND THE CHECK
+>    REPORTS 7.** Re-measured on master `7459989`, not inherited: universe 146, **7 offenders**.
+>    **⛔ THAT IS NOT PERMISSION TO ARM** — the gate is that the two numbers AGREE, and 7 ≠ 0.
+>    **THE NEXT ACTION IS `rvw3`, THEN `q5lb`, THEN `5cai`.** See 6h for the three conversions
+>    and the two findings they produced.
 >
->    **▶️ COLD-START ORIENTATION — the five items this thread now owns, all FILED, none
->    started.** Nothing is mid-flight; every PR through brief 31 is merged and every worktree
->    of this thread's is removed. In dependency order:
+>    **▶️ COLD-START ORIENTATION — the four items this thread still owns, all FILED, none
+>    started.** Nothing is mid-flight: #867, #870 and #874 are merged, every worktree of this
+>    thread's is removed, and no branch of its own is open. In dependency order:
 >
 >    | id | what | gates arming? |
 >    |---|---|---|
->    | **`9sl0`** | the 3 genuine violations — restructure, convert, convert | **YES** |
+>    | ~~`9sl0`~~ | ~~the 3 genuine violations~~ | **✅ CLOSED — #867, #870, #874** |
 >    | **`rvw3`** | v179 member 1 — mechanical, clause (d) fixpoint | **YES** |
 >    | **`q5lb`** | v179 member 2 — the `total_absence_returns` key | **YES** |
 >    | **`5cai`** | the CENTRAL-vantage conformance row | **YES — binding, brief 30** |
 >    | **`0yfo`** → `995m` | decompose `config.py`, then flip the `@generated` predicate | only via 6f's known-gap statement |
+>
+>    **Two NEW items were filed from `9sl0`'s mandated consumer read and are NOT arming
+>    blockers** — but the first is this epic's own subject in the central sweep, so do not let
+>    it sink: **`2j2l`** (P1, the pin-currency row reads an UNPARSEABLE pin file as PASS) and
+>    **`xhbp`** (P2, the spec/impl divergence that created it). See 6h.
 >
 >    - **Both rulings are RATIFIED**: livespec **v178** (public = CONSUMED ACROSS A BOUNDARY,
 >      PR #1826 → `d230c9ff`) and **v179** (the rule reaches functions that HAVE an expected
@@ -83,12 +90,88 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >      #1141, #450. Conversion 3's precondition is discharged and spent.
 >    - **Track C is DONE.** Ratified as **v035** on master (PR #824 → `703c5a6`).
 >    - **THE P0 IS CLOSED.** `dx8l` — see step 6a. Nothing is owed on it.
-> 6d. **⛔⛔ TWO NUMBERS. DO NOT ARM UNTIL THEY AGREE.** **9** is what the check reports on
->    master today (v178 IS implemented; v179 is NOT, so every total function still counts).
->    What the ratified rule considers a violation is **NO LONGER KNOWN TO BE 0** — see 6e.
->    Arming before they agree turns dev-tooling RED ON ITS OWN GATE, and lefthook then blocks
->    the very commit that fixes it. **Arm only when both numbers agree, and SAY SO EXPLICITLY
->    in the arming commit.**
+> 6d. **⛔⛔ TWO NUMBERS. DO NOT ARM UNTIL THEY AGREE. TODAY THEY ARE 7 AND 0.** **7** is what
+>    the check reports on master `7459989` (v178 IS implemented; v179 is NOT, so every total
+>    function still counts). **0** is what the ratified rule considers a violation, now that
+>    `9sl0`'s three have landed. Arming before they agree turns dev-tooling RED ON ITS OWN
+>    GATE, and lefthook then blocks the very commit that fixes it. **Arm only when both numbers
+>    agree, and SAY SO EXPLICITLY in the arming commit.**
+>
+>    **⛔ AND THE 0 IS A HAND READING, NOT THE MECHANISM'S ANSWER.** It says the 7 decompose as
+>    6 member-1 candidates + 1 member-2 (`tag_version_component`). `rvw3` RECOMPUTES those six
+>    from the code. **A disagreement between the hand reading and the fixpoint is a FINDING
+>    about the hand reading, not a bug to smooth away** — hand judgement already got 1 of 6
+>    wrong once (`classify_role_key_declarations`, 6c), which is the whole reason member 1 is
+>    computed rather than declared.
+> 6h. **✅ `9sl0` IS DISCHARGED — the three conversions, and what each one actually taught.**
+>
+>    | function | disposition | PR | check | ratified rule |
+>    |---|---|---|---|---|
+>    | `holds_app_class_credential` | **RESTRUCTURE** — inject the token | #867 | 9 → 9 | 3 → 2 |
+>    | `fetch_manifest` | **CONVERT** → `Result[Manifest, ManifestUnavailable]` | #870 | 9 → 8 | 2 → 1 |
+>    | `discover` | **CONVERT** → `IOResult[list[...], PinFileUnreadable]` | #874 | 8 → 7 | 1 → **0** |
+>
+>    Re-measured after EACH, never only at the end. The offender SET changed as predicted and
+>    **nothing relocated** — the `#841` hazard did not recur.
+>
+>    - **`Result` vs `IOResult` was decided by the SEAM, not by the word "I/O".** `fetch_manifest`
+>      reaches the network through the injected `ctx.file_text`, so it is not itself a boundary →
+>      `Result`. `discover`'s seven walkers call `read_text` / `glob` DIRECTLY → `IOResult`, with
+>      the `unsafe_perform_io` discipline at every call site. **That is the same distinction that
+>      separates `fetch_manifest`'s conviction (clause (e)) from the clause-(c) reading that would
+>      wrongly convict `holds_app_class_credential`.** Carry it into the fan-out.
+>    - **A DELIBERATE NON-CHOICE worth not undoing:** conversion 1 has NO shared
+>      `effective_gh_token(*, environ: Mapping[str, str])` helper. It would have stated the
+>      env-pair precedence once, and it would have been "total" only because the environment
+>      arrived as an ARGUMENT — a syntactic totality, which is this thread's own subject. The
+>      one-line read is written out at each of the two `main()` boundaries instead.
+>    - **CONVERSION 3'S RED TEST CAUGHT THE IMPL BEING WEAKER THAN ITS OWN DOCSTRING.** The first
+>      implementation named the walk ROOT when the exception carried no filename
+>      (`UnicodeDecodeError` has none). The test asserted the FILE and failed. **The fix was to
+>      strengthen the impl, not weaken the assertion**: one shared `read_pin_text` re-raises a
+>      decode failure as `OSError(EILSEQ, …, path)`. `discover`'s catch is then a SINGLE `OSError`
+>      arm on purpose — a `UnicodeDecodeError` arm would look more thorough and be strictly worse,
+>      because a walker bypassing the shared reader would then fail QUIETLY into the weaker
+>      diagnostic instead of loudly.
+>    - **🔴 AND CI CAUGHT A TEST THAT WAS TRUE ONLY ON A DEVELOPER MACHINE.** The second Red test
+>      made a file unreadable with `chmod(0o000)`. **That denies nothing to root, and CI runs as
+>      root inside the sandbox container**, so it passed locally and failed in CI. Replaced with a
+>      DIRECTORY named `ci.yml` — globbed like a file, raises `IsADirectoryError`, uid-independent.
+>      **A `skipif` would have been the wrong fix**: it leaves the branch unexercised in the only
+>      environment that gates merges. Because the corrected file was the Red-RECORDED one, the
+>      byte-identity rule forced a full rebuild of the pair from master; there is no amend path.
+>    - **⚠️ AND A PROCESS TRAP PAID FOR IN THAT REBUILD, worth its own line.** `git diff master
+>      HEAD` is the WRONG way to save a branch's work when master has moved: it silently includes
+>      a REVERSAL of every commit master gained. Master shipped 1.3.2 mid-session, and the saved
+>      patch would have reverted the release, a pin bump and an unrelated fleet feature. **Diff
+>      against the FORK POINT** (`git diff <base> <tip>`), and read `git status` after applying a
+>      saved patch — the extra paths are the tell.
+>
+>    **TWO FINDINGS FILED FROM THE MANDATED CONSUMER READ — and the read is why they exist.**
+>    `9sl0` said "READ `_rows_pin_currency.py` FIRST — it may depend on the sentinel row". It does
+>    not. It does something worse:
+>
+>    - **`livespec-dev-tooling-2j2l` (P1) — the pin-currency row reads an UNPARSEABLE pin file as
+>      PASS.** `_records_for` filters records by `pin_format`, the sentinel's is `"unrecognized"`,
+>      so it is **silently DROPPED** → zero records → `_stale_pins` returns `()` → `RowPass()`.
+>      **MEASURED:** a truncated `.livespec.jsonc` and NO `.livespec.jsonc` at all are
+>      indistinguishable to the row, and both are GREEN. **This is `8o8e`'s own subject — a check
+>      reporting green over something it could not read — inside the CENTRAL FLEET SWEEP**, the
+>      vantage this epic keeps pointing at as the one that sees what repo-local checks cannot.
+>      Fixing it needs a §"Pin-currency severity policy" decision: that policy covers a
+>      can't-READ ("not a violation") and says nothing about a can't-PARSE, so the row has no
+>      ratified instruction for this input and its current answer is neither of the two the
+>      policy contemplates.
+>    - **`livespec-dev-tooling-xhbp` (P2) — spec/impl divergence that CREATED 2j2l.**
+>      `contracts.md` line 525 says an unrecognized format "produces NO RECORD and a workflow
+>      annotation"; the walk emits an in-band sentinel record and a `log.warning`. **The spec's
+>      carrier would not have created a fail-open** — an annotation is not something a row can
+>      silently drop. Decide it together with 2j2l; they are the same question at two levels.
+>
+>    **What conversion 3 DID fix there:** a can't-read now yields `RowSkip` — ratified as "a
+>    can't-read is not a violation" — where before it propagated as an uncaught raise and killed
+>    the whole nine-member sweep partway through one member. A skip is not free either: a row that
+>    skips for EVERY applicable member is BLIND, already error severity here.
 > 6e. **🔴 THE TIGHTENING HALF HAS TEETH HERE, AND v178's OWN RATIFIED TEXT SAYS IT DOES NOT.
 >    This is the most important result of the `721o` session and it MUST NOT be smoothed.**
 >    Implementing v178 dropped 25 offenders and ADDED **3** that the `__all__` proxy never
@@ -1235,7 +1318,41 @@ that shape into every remaining sibling wiring.**
    silent no-op that looks exactly like success. Invoke
    `.claude-plugin/scripts/bin/<command>.py` instead.
 
-### ▶️ EXACT NEXT ACTION — **TRIAGE THE 3, THEN v179, THEN `5cai`. `721o` IS DONE.**
+### ▶️ EXACT NEXT ACTION — **`rvw3`, THEN `q5lb`, THEN `5cai`. `721o` AND `9sl0` ARE DONE.**
+
+**Start at `rvw3`.** `9sl0`'s three conversions are merged (#867, #870, #874) and the
+ratified-rule count is 0; the check still reports 7 because v179 is not implemented. Closing
+that 7-vs-0 gap IS `rvw3` + `q5lb`. Design notes gathered while landing `9sl0`, so the next
+session does not re-derive them:
+
+- **The ratified member-1 text is `livespec/SPECIFICATION/non-functional-requirements.md`
+  lines 688–706** (member 2 at 708–719). Read it there rather than from the summaries in this
+  file — clause (d)'s "any doubt disqualifies" wording is the part implementations get wrong.
+- **Clause (d) needs an import-resolution graph, and one already exists**:
+  `checks/_public_api_consumption.py` has `_suffix_index`, `_module_aliases`, `_name_imports`,
+  `_attribute_reaches`, and it resolves a dotted name to its DEFINING MODULE (the fix for the
+  bare-name oracle defect, START-HERE 7a). **Extract that machinery rather than writing a
+  second copy** — two resolvers WILL drift, and the first one already had two measured defects,
+  both in the relaxing direction (START-HERE §"TWO ORACLE DEFECTS").
+- **⚠️ CLAUSE (c) CANNOT BE A TERMINAL-NAME MATCH, and this repo already paid for that
+  lesson.** Matching call NAMES flagged ten "total" functions as touching I/O and only three
+  were real — most hits were `dict.get` / `settings.get`. So `get` must NOT be an I/O verb.
+  Resolve the RECEIVER through an import binding (`os.environ.get` → `os` → I/O;
+  `settings.get` → a local → not). For a receiver that resolves to nothing (`path.read_text()`
+  where `path` is a parameter), fall back to an UNAMBIGUOUS verb set only — and note that
+  choosing that set is where the relaxing direction hides.
+- **`rvw3` MUST exempt exactly 5 of today's 7** — `canonical_check_slugs`,
+  `world_gate_check_slugs`, `parse_open_bump_prs`, `denotes_same_release`,
+  `classify_role_key_declarations` — **plus `holds_app_class_credential`, which #867 made
+  mechanically total.** That is 6; `q5lb` covers the 7th (`tag_version_component`). If the
+  mechanism disagrees with any of the six, see 6d: the hand reading is what is wrong.
+- **The check still scans ZERO files here** (`pure_trees`-scoped), so none of this is exercised
+  by `just check`. **Test it on fixtures.** A green aggregate is not evidence any of it works.
+- **`fleet/_rows_pin_currency.py` is at 246 LLOC and `fleet/fleet_conformance.py` at ~246,
+  both against a 250 HARD ceiling.** Neither is `rvw3`'s concern, but a casual addition to
+  either now reds the repo.
+
+### ▶️ (superseded) EXACT NEXT ACTION — TRIAGE THE 3, THEN v179, THEN `5cai`
 
 **✅ `721o` IS CLOSED — merged in four slices, all green on master:** SPECIFICATION **v036**
 (the `cross_repo_public_api` role key, PR #854 → `02c2b005`), the loader (PR #855 →
