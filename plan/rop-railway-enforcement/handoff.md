@@ -64,6 +64,44 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >    file said 0 on the strength of a HAND reading of six functions. `rvw3`'s fixpoint shipped
 >    and disagreed — see 6i. **Do not restore the 0.**
 >
+>    **▶️ WHY THE COUNT ROSE 0 → 2 — ANSWERED, AND THE ANSWER IS "THE SIMULATION WAS WRONG".**
+>    Asked by supervisor brief 33, which named the two admissible answers: (a) the BASIS
+>    changed, so the figures were never comparable; or (b) the implementation genuinely convicts
+>    functions the hand simulation exempted. **It is (b), and the basis did NOT change.**
+>    Re-derived on master `55c4206` with the shipped `_find_offenders` over the shipped
+>    `resolve_check_universe()` — universe **149**, v178 public **164**, member-1 exempt **377**,
+>    **3 offenders** — never inherited:
+>
+>    | function | hand simulation | shipped fixpoint |
+>    |---|---|---|
+>    | `canonical_check_slugs` | member-1 EXEMPT | **CONVICTED** — clause (d), 1 hop |
+>    | `world_gate_check_slugs` | member-1 EXEMPT | **CONVICTED** — clause (d), 2 hops |
+>    | `parse_open_bump_prs` | member-1 exempt | exempt ✅ |
+>    | `denotes_same_release` | member-1 exempt | exempt ✅ |
+>
+>    **THE HAND SIMULATION NAMED FOUR MEMBER-1 EXEMPTIONS AND GOT TWO OF THEM WRONG. Those two
+>    ARE the 0 → 2 delta, exactly — there is no other component.** `tag_version_component` is
+>    NOT part of it: it was counted exempt under member 2 in BOTH figures, and it is still the
+>    entire difference between the check's **3** and the rule's **2**, because member 2 is
+>    ratified and not yet implemented (that is `q5lb`).
+>
+>    **WHY THE SIMULATION WAS WRONG, in one sentence: it read the BODIES and clause (d) is not
+>    about the body.** Verified by reading `canonical_checks.py`, not by re-reading the ledger:
+>    `_discover_slugs` calls `pkgutil.iter_modules([str(package_path)])` — a filesystem walk, so
+>    clause (c) disqualifies it locally; `canonical_check_slugs`'s entire body is
+>    `return _discover_slugs(package_path=_CHECKS_PACKAGE_DIR)`; `world_gate_check_slugs` calls
+>    `canonical_check_slugs`. All three of (a) no `raise`, (b) no `try`, (e) return is
+>    `tuple[str, ...]` and not `X | None` hold for both — **every clause a body-only reading can
+>    check passes, and the only clause that fails is the only one that requires a fixpoint.**
+>
+>    **⚠️ AND THE ERROR RATE IS THE RESULT WORTH CARRYING, not the delta.** Hand judgement was
+>    **2 of 4 wrong** on the population it was MOST confident about — worse than the
+>    `classify_role_key_declarations` precedent (6c), which was 1 of 6. Two independent hand
+>    readings of clause (d), months apart, both erred in the SAME direction: toward exemption.
+>    **A hand simulation of a fixpoint is not a measurement of it**, and this is the third time
+>    this thread has paid for treating one as such. No count for a sibling repo may be quoted
+>    from a hand reading of clause (d) — run the analysis.
+>
 >    **▶️ COLD-START ORIENTATION — the items this thread still owns, all FILED, none started.**
 >    Nothing is mid-flight: #867, #870, #874, #880, #883 and #886 are merged, every worktree of
 >    this thread's is removed, and no branch of its own is open. In dependency order:
@@ -1436,6 +1474,19 @@ remembering those are now unknown in BOTH directions (6e) — report it, and **S
   is expected raises `IsADirectoryError`). **Never reach for `skipif`** — a skipped negative
   test is worse than an absent one, because it reports as handled in the only environment that
   gates merges.
+- **NEVER HAND-SIMULATE A FIXPOINT — RUN IT.** Clause (d) reaches transitively, so every clause
+  a body-only reading CAN check may pass while the only clause that fails is the one it cannot.
+  Measured twice: 1-of-6 wrong at `classify_role_key_declarations`, then **2-of-4 wrong** on the
+  member-1 exemptions this file itself recorded — both times erring toward EXEMPTION, the
+  relaxing direction. The remedy is mechanical and cheap: import
+  `functions_without_expected_failure_mode` and `repo_local_public_names`, feed them
+  `resolve_check_universe()`, and read the answer. **Quote no clause-(d) figure you did not
+  compute** — that is what makes a sibling's count honest when the fan-out reaches it.
+- **WIRE-UP IS ITSELF A TESTABLE CLAIM.** `rvw3` shipped a separate test file asserting the
+  CHECK CONSULTS the analysis, because a correct analysis nothing calls is this epic's own
+  subject arriving one level up, in the wiring rather than in the rule. Every remaining piece
+  here adds an analysis to a check; pin the consultation each time, BEFORE the failure can
+  occur rather than after discovering it.
 
 ### ▶️ (superseded) EXACT NEXT ACTION — TRIAGE THE 3, THEN v179, THEN `5cai`
 
