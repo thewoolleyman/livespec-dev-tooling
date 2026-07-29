@@ -385,7 +385,7 @@ def test_workflow_full_round_trip(
     home: Path,
     project_root: Path,
     injected_runner: CliRunner | None = None,
-) -> WorkflowResult:
+) -> Result[WorkflowResult, WorkflowFailedError]:
     """The importable pytest entry point consumers wire into their collection.
 
     A consumer imports this as
@@ -393,11 +393,20 @@ def test_workflow_full_round_trip(
     and calls it from a thin per-repo test that supplies the `HarnessConfig`,
     a tmp `home`, a tmp `project_root`, and — for the `mock` tier — an injected
     deterministic runner. The runner is resolved via `select_runner`, the full
-    workflow runs, and the aggregate `WorkflowResult` is asserted to pass.
+    workflow runs, and the aggregate `WorkflowResult` is returned on the railway.
 
-    Returns the `WorkflowResult` so a caller can make further assertions; raises
-    `CoverageGateError` (fail-closed) on a fixture gap and `AssertionError` on a
-    failing step.
+    ON THE RAILWAY, per ratified livespec v179 clause (a): a failing step is an
+    expected outcome and now flows as `Failure(WorkflowFailedError(...))` rather
+    than being raised.
+
+    *** CONSUMERS MUST UNWRAP, AND A CONSUMER THAT DOES NOT WILL GO SILENTLY
+    GREEN. *** `bool(Failure(...))` is TRUE and a `Failure` carries no `.passed`,
+    so wiring written for the old raising shape does not break — it STOPS
+    CHECKING. All four consuming repos were wired to tolerate both shapes BEFORE
+    this landed, for exactly that reason.
+
+    The coverage gate still raises `CoverageGateError` (fail-closed): a missing
+    fixture is a gap in the suite itself, not an outcome of the run.
     """
     # `.unwrap()` re-raises on the failure track, preserving this entry point's
     # existing fail-closed contract: a wiring error still surfaces as a test
@@ -410,7 +419,9 @@ def test_workflow_full_round_trip(
         project_root=project_root,
     )
     if not result.passed:
-        raise WorkflowFailedError(
-            failed_skills=[step.skill for step in result.steps if not step.passed]
+        return Failure(
+            WorkflowFailedError(
+                failed_skills=[step.skill for step in result.steps if not step.passed]
+            )
         )
-    return result
+    return Success(result)
