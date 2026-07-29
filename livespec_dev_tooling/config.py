@@ -81,6 +81,7 @@ __all__: list[str] = [
     "RoleAbsence",
     "ScalarRole",
     "SupersededBy",
+    "TotalAbsenceReturn",
     "TreeRole",
     "UnarmedUntil",
     "Undeclared",
@@ -430,6 +431,40 @@ class CrossRepoPublicApi:
 
 
 @dataclass(frozen=True, kw_only=True)
+class TotalAbsenceReturn:
+    """One `X | None` return this repo declares a legitimate ABSENCE, per v179 member 2.
+
+    `livespec` v179 member 1 refuses the whole `X | None` shape, because whether
+    a `None` models a FAILURE or a legitimate ABSENCE is a semantic question no
+    AST can answer. Member 2 is the narrow, DECLARED relief for that refusal, and
+    this is its carrier: `public_api_result_typed` treats each declared function
+    as outside the Result-return rule.
+
+    ⛔ THIS KEY IS RELAXING-ONLY, AND ITS SIBLING `CrossRepoPublicApi` IS THE
+    OPPOSITE. That key can only ADD names to the rule's scope; this one REMOVES
+    them, so the tightening-only argument that bounds `cross_repo_public_api` is
+    NOT available here and MUST NOT be carried across on the strength of the two
+    being otherwise parallel. What bounds this key instead is the STRUCTURAL GATE
+    (SPECIFICATION v037 §"Role keys" bound 1): the set of declarable functions is
+    a syntactic property of the code, recomputed every run, rather than the
+    consumer's choice.
+
+    **An empty declaration is the STRICT end of this key, not the relaxed one** —
+    the opposite polarity from the five union role keys, where empty was the
+    ambiguous, blinding value. A reader arriving from §"Declared-absent spellings
+    for the union role keys" carries the reverse intuition.
+
+    `reason` is part of the parsed VALUE rather than a TOML comment, for the same
+    reason `unarmed_until` carries a ledger id: an unexplained declaration is
+    indistinguishable from one that arrived by inheritance.
+    """
+
+    file: Path
+    function: str
+    reason: str
+
+
+@dataclass(frozen=True, kw_only=True)
 class MirrorPairing:
     """One source-tree to test-tree mirror, consumed by check_coverage_incremental."""
 
@@ -463,6 +498,7 @@ class Config:
     tests_tree_prefix: str = "tests/"
     mirror_pairings: tuple[MirrorPairing, ...] = ()
     cross_repo_public_api: tuple[CrossRepoPublicApi, ...] = ()
+    total_absence_returns: tuple[TotalAbsenceReturn, ...] = ()
     # The five union-typed role keys. The baseline default IS a distinct
     # `Undeclared` variant, adopted by maintainer ruling in Phase 4 — see that
     # class's docstring for why the earlier design (defaulting to the legacy
@@ -641,35 +677,72 @@ def _parse_mirror_pairings(*, value: object) -> tuple[MirrorPairing, ...]:
     return tuple(out)
 
 
-def _parse_cross_repo_public_api(*, value: object) -> tuple[CrossRepoPublicApi, ...]:
-    """Parse the sibling-consumed public surface, rejecting an unexplained entry.
+def _parse_file_function_reason(*, value: object, key: str) -> tuple[tuple[str, str, str], ...]:
+    """Parse a `{file, function, reason}` array, rejecting an unexplained entry.
 
-    The `reason` gate is a schema rule rather than a lint: SPECIFICATION v036
-    makes the written reason REQUIRED because a bare `<file, function>` pair
-    carries no evidence that anyone decided anything, and this key's whole
-    purpose is to stand in for a measurement the local check cannot take.
+    Shared by `cross_repo_public_api` (SPECIFICATION v036) and
+    `total_absence_returns` (v037), which have the same ENTRY schema and
+    OPPOSITE polarity — one tightening, one relaxing. Sharing the parser is safe
+    precisely because polarity lives in the CONSUMING check, not in the entry
+    shape; sharing anything above this line would not be.
+
+    The `reason` gate is a schema rule rather than a lint: both ratified bullets
+    make the written reason REQUIRED because a bare `<file, function>` pair
+    carries no evidence that anyone decided anything.
     """
     if not isinstance(value, list):
-        msg = "`cross_repo_public_api` must be an array of {file, function, reason} tables"
+        msg = f"`{key}` must be an array of {{file, function, reason}} tables"
         raise ConfigParseError(msg)
     entries = cast("list[object]", value)
-    out: list[CrossRepoPublicApi] = []
+    out: list[tuple[str, str, str]] = []
     for entry in entries:
         if not isinstance(entry, dict):
-            msg = "each `cross_repo_public_api` entry must be a table"
+            msg = f"each `{key}` entry must be a table"
             raise ConfigParseError(msg)
         table = cast("dict[str, Any]", entry)
         file = table.get("file")
         function = table.get("function")
         reason = table.get("reason")
         if not isinstance(file, str) or not isinstance(function, str):
-            msg = "each `cross_repo_public_api` entry needs string `file` + `function`"
+            msg = f"each `{key}` entry needs string `file` + `function`"
             raise ConfigParseError(msg)
         if not isinstance(reason, str) or not reason.strip():
-            msg = f"`cross_repo_public_api` entry `{file}:{function}` needs a non-empty `reason`"
+            msg = f"`{key}` entry `{file}:{function}` needs a non-empty `reason`"
             raise ConfigParseError(msg)
-        out.append(CrossRepoPublicApi(file=Path(file), function=function, reason=reason))
+        out.append((file, function, reason))
     return tuple(out)
+
+
+def _parse_cross_repo_public_api(*, value: object) -> tuple[CrossRepoPublicApi, ...]:
+    """Parse the sibling-consumed public surface (SPECIFICATION v036, TIGHTENING-ONLY)."""
+    return tuple(
+        CrossRepoPublicApi(file=Path(file), function=function, reason=reason)
+        for file, function, reason in _parse_file_function_reason(
+            value=value, key="cross_repo_public_api"
+        )
+    )
+
+
+def _parse_total_absence_returns(*, value: object) -> tuple[TotalAbsenceReturn, ...]:
+    """Parse the declared legitimate-absence returns (SPECIFICATION v037, RELAXING-ONLY).
+
+    ⛔ THE LOADER DELIBERATELY DOES NOT ENFORCE BOUND 1, the structural
+    `X | None` gate, and that is a placement decision rather than an omission.
+    The gate needs the SOURCE of the declared file to read its return
+    annotation, and this loader parses TOML with no access to a source universe.
+    Enforcing it here would mean reading `.py` files from a config loader — a
+    new I/O dependency in the module every check imports. Bound 1 and bound 3
+    (staleness) are therefore ONE detector in
+    `checks/_declared_absence_returns`, which already holds the universe, and
+    both HARD-FAIL there. A reader who takes a successful parse as evidence the
+    declaration is valid has read only half the gate.
+    """
+    return tuple(
+        TotalAbsenceReturn(file=Path(file), function=function, reason=reason)
+        for file, function, reason in _parse_file_function_reason(
+            value=value, key="total_absence_returns"
+        )
+    )
 
 
 def _parse_pyproject(*, repo_root: Path) -> dict[str, Any] | None:
@@ -945,6 +1018,10 @@ def load_config(*, repo_root: Path) -> Config:
         overrides["cross_repo_public_api"] = _parse_cross_repo_public_api(
             value=table["cross_repo_public_api"]
         )
+    if "total_absence_returns" in table:
+        overrides["total_absence_returns"] = _parse_total_absence_returns(
+            value=table["total_absence_returns"]
+        )
     return Config(
         declared_keys=frozenset(table),
         source_trees=overrides.get("source_trees", baseline.source_trees),
@@ -962,6 +1039,9 @@ def load_config(*, repo_root: Path) -> Config:
         mirror_pairings=overrides.get("mirror_pairings", baseline.mirror_pairings),
         cross_repo_public_api=overrides.get(
             "cross_repo_public_api", baseline.cross_repo_public_api
+        ),
+        total_absence_returns=overrides.get(
+            "total_absence_returns", baseline.total_absence_returns
         ),
         neutral_hook_body_path=overrides.get(
             "neutral_hook_body_path", baseline.neutral_hook_body_path
