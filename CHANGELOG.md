@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.7.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.6.0...v1.7.0) (2026-07-29)
+
+
+### Features
+
+* **checks:** bounds 1 and 3 of total_absence_returns — one detector, hard-failing ([8afcf42](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8afcf42854fa27cc0fd57b92dff244330cdee2da))
+* **config:** the total_absence_returns loader — bound 2, a required written reason ([440e1be](https://github.com/thewoolleyman/livespec-dev-tooling/commit/440e1bec8a5287a1c780fa63f8bf500ffb331bfb))
+
 ## [1.6.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.5.0...v1.6.0) (2026-07-29)
 
 
