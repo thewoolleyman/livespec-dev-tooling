@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.2.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.1.0...v1.2.0) (2026-07-29)
+
+
+### Features
+
+* **checks:** the v178 repo-local public-API consumption oracle ([a141df9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a141df9859e21ccf9213338e6fdbfa486d5f49b4))
+
 ## [1.1.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.0.10...v1.1.0) (2026-07-29)
 
 
