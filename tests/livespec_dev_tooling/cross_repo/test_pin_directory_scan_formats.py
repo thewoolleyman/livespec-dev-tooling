@@ -7,7 +7,7 @@ in `.fabro` `workflow.toml` files and (per job `container:` block) in
 reading one well-known file. This mirror file exercises each format
 individually, the source-repo filter, the missing-directory tolerance,
 and the multi-file / multi-workflow coexistence cases. The walks are
-driven through the public `pin_autodiscovery.discover()` entry point (the
+driven through the public `_walk()` entry point (the
 same outside-in surface these tests used before the decomposition).
 
 Coverage target: 100% line + branch of `_pin_directory_scan_formats.py`.
@@ -17,9 +17,26 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from returns.unsafe import unsafe_perform_io
+
 from livespec_dev_tooling.cross_repo import pin_autodiscovery
 
 __all__: list[str] = []
+
+
+def _walk(*, root: Path, source_repo: str | None = None) -> list[dict[str, str]]:
+    """The walk's records, failing loud if a pin file could not be READ.
+
+    `discover` returns `IOResult` since livespec-dev-tooling-9sl0. Every
+    test below drives readable fixtures, so `.unwrap()` is the right
+    accessor: an unexpected read failure raises here instead of degrading
+    to an empty record list, which is the shape that reads as "this repo
+    carries no pins" and would make a broken walk look like a passing one.
+    The `unreadable` sibling file pins the failure track itself.
+    """
+    return unsafe_perform_io(
+        pin_autodiscovery.discover(root=root, source_repo=source_repo).unwrap()
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -37,7 +54,7 @@ def test_discover_github_workflow_uses_emits_record(*, tmp_path: Path) -> None:
         "    uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-bump.yml@master\n",
         encoding="utf-8",
     )
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    result = _walk(root=tmp_path, source_repo=None)
     assert len(result) == 1
     record = result[0]
     assert record["pin_format"] == "github_workflow_uses_ref"
@@ -52,7 +69,7 @@ def test_discover_github_workflow_uses_emits_record(*, tmp_path: Path) -> None:
 
 def test_discover_github_workflow_uses_missing_dir_yields_nothing(*, tmp_path: Path) -> None:
     """A consumer repo without `.github/workflows/` yields no records from this format."""
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    result = _walk(root=tmp_path, source_repo=None)
     assert result == []
 
 
@@ -64,7 +81,7 @@ def test_discover_github_workflow_uses_skips_simple_action_uses(*, tmp_path: Pat
         "steps:\n" "  - uses: actions/checkout@v4\n" "  - uses: jdx/mise-action@v2\n",
         encoding="utf-8",
     )
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    result = _walk(root=tmp_path, source_repo=None)
     assert result == []
 
 
@@ -80,7 +97,7 @@ def test_discover_github_workflow_uses_multiple_files(*, tmp_path: Path) -> None
         "    uses: owner/repo-b/.github/workflows/reusable.yml@v0.2.0\n",
         encoding="utf-8",
     )
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    result = _walk(root=tmp_path, source_repo=None)
     assert len(result) == 2
     source_repos = sorted(r["source_repo"] for r in result)
     assert source_repos == ["repo-a", "repo-b"]
@@ -95,7 +112,7 @@ def test_discover_github_workflow_uses_multiple_per_file(*, tmp_path: Path) -> N
         "    uses: owner/repo-b/.github/workflows/step2.yml@v2\n",
         encoding="utf-8",
     )
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    result = _walk(root=tmp_path, source_repo=None)
     assert len(result) == 2
     refs = sorted(r["current_value"] for r in result)
     assert refs == ["v1", "v2"]
@@ -110,7 +127,7 @@ def test_discover_github_workflow_uses_source_repo_filter(*, tmp_path: Path) -> 
         "    uses: owner/other-repo/.github/workflows/reusable-b.yml@v1\n",
         encoding="utf-8",
     )
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo="livespec-dev-tooling")
+    result = _walk(root=tmp_path, source_repo="livespec-dev-tooling")
     assert len(result) == 1
     assert result[0]["source_repo"] == "livespec-dev-tooling"
 
@@ -123,7 +140,7 @@ def test_discover_github_workflow_uses_yaml_extension(*, tmp_path: Path) -> None
         "    uses: owner/some-repo/.github/workflows/reusable.yml@v0.3.0\n",
         encoding="utf-8",
     )
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    result = _walk(root=tmp_path, source_repo=None)
     assert len(result) == 1
     assert result[0]["current_value"] == "v0.3.0"
 
@@ -156,7 +173,7 @@ def test_discover_fabro_docker_claude_plugin_path_emits_record(*, tmp_path: Path
         workflow="implement-work-item",
         tag="v0.39.0",
     )
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    result = _walk(root=tmp_path, source_repo=None)
     assert len(result) == 1
     record = result[0]
     assert record["pin_format"] == "fabro_sandbox_docker_image"
@@ -176,7 +193,7 @@ def test_discover_fabro_docker_root_fabro_path_emits_record(*, tmp_path: Path) -
         workflow="implement-work-item",
         tag="sha-ea684ad",
     )
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    result = _walk(root=tmp_path, source_repo=None)
     assert len(result) == 1
     record = result[0]
     assert record["pin_format"] == "fabro_sandbox_docker_image"
@@ -189,7 +206,7 @@ def test_discover_fabro_docker_root_fabro_path_emits_record(*, tmp_path: Path) -
 def test_discover_fabro_docker_absent_yields_nothing(*, tmp_path: Path) -> None:
     """A consumer repo with no `.fabro` workflow dir yields no docker record."""
     (tmp_path / "unrelated.txt").write_text("no fabro here\n", encoding="utf-8")
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    result = _walk(root=tmp_path, source_repo=None)
     assert result == []
 
 
@@ -200,14 +217,14 @@ def test_discover_fabro_docker_workflow_without_docker_line_yields_nothing(
     workflow_dir = tmp_path / ".fabro" / "workflows" / "implement-work-item"
     workflow_dir.mkdir(parents=True)
     (workflow_dir / "workflow.toml").write_text('[run]\ngoal = "do a thing"\n', encoding="utf-8")
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    result = _walk(root=tmp_path, source_repo=None)
     assert result == []
 
 
 def test_discover_fabro_docker_empty_workflows_dir_yields_nothing(*, tmp_path: Path) -> None:
     """A `.fabro/workflows/` dir with no `*/workflow.toml` yields no record."""
     (tmp_path / ".fabro" / "workflows").mkdir(parents=True)
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    result = _walk(root=tmp_path, source_repo=None)
     assert result == []
 
 
@@ -225,7 +242,7 @@ def test_discover_fabro_docker_multiple_workflows(*, tmp_path: Path) -> None:
         workflow="groom-work-item",
         tag="v0.39.0",
     )
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    result = _walk(root=tmp_path, source_repo=None)
     assert len(result) == 2
     workflows = sorted(r["file_path"] for r in result)
     assert workflows == [
@@ -243,7 +260,7 @@ def test_discover_fabro_docker_source_repo_filter_match(*, tmp_path: Path) -> No
         workflow="implement-work-item",
         tag="v0.39.0",
     )
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo="livespec-dev-tooling")
+    result = _walk(root=tmp_path, source_repo="livespec-dev-tooling")
     assert len(result) == 1
     assert result[0]["pin_format"] == "fabro_sandbox_docker_image"
     assert result[0]["source_repo"] == "livespec-dev-tooling"
@@ -257,7 +274,7 @@ def test_discover_fabro_docker_source_repo_filter_no_match(*, tmp_path: Path) ->
         workflow="implement-work-item",
         tag="v0.39.0",
     )
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo="other")
+    result = _walk(root=tmp_path, source_repo="other")
     assert result == []
 
 
@@ -278,7 +295,7 @@ def test_discover_fabro_docker_multiple_lines_in_one_workflow_toml(*, tmp_path: 
         f'docker = "{_FABRO_IMAGE}:python-rust-v0.48.2"\n',
         encoding="utf-8",
     )
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    result = _walk(root=tmp_path, source_repo=None)
     assert len(result) == 2
     assert [r["current_value"] for r in result] == ["python-v0.43.2", "python-rust-v0.48.2"]
     assert all(r["pin_format"] == "fabro_sandbox_docker_image" for r in result)
@@ -320,7 +337,7 @@ def test_discover_workflow_container_image_multiple_jobs_one_file(*, tmp_path: P
         + _container_job(job="check-docs", tag="python-v0.43.2"),
         encoding="utf-8",
     )
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    result = _walk(root=tmp_path, source_repo=None)
     assert len(result) == 2
     for record in result:
         assert record["pin_format"] == "fabro_sandbox_docker_image"
@@ -351,7 +368,7 @@ def test_discover_workflow_container_image_multiple_files(*, tmp_path: Path) -> 
         + _container_job(job="shadow-c", tag="python-v0.43.2"),
         encoding="utf-8",
     )
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    result = _walk(root=tmp_path, source_repo=None)
     assert len(result) == 5
     per_file = sorted(r["file_path"] for r in result)
     assert per_file == [
@@ -371,7 +388,7 @@ def test_discover_workflow_container_image_one_line_shorthand(*, tmp_path: Path)
         "jobs:\n" "  check:\n" f"    container: {_FABRO_IMAGE}:python-rust-v0.48.2\n",
         encoding="utf-8",
     )
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    result = _walk(root=tmp_path, source_repo=None)
     assert len(result) == 1
     assert result[0]["pin_format"] == "fabro_sandbox_docker_image"
     assert result[0]["file_path"] == ".github/workflows/ci.yaml"
@@ -391,7 +408,7 @@ def test_discover_workflow_container_image_scoped_to_fabro_sandbox(*, tmp_path: 
         "    container: ubuntu:24.04\n",
         encoding="utf-8",
     )
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    result = _walk(root=tmp_path, source_repo=None)
     assert result == []
 
 
@@ -408,7 +425,7 @@ def test_discover_workflow_container_image_source_repo_filter_match(*, tmp_path:
         "jobs:\n" + _container_job(job="check-python", tag="python-v0.43.2"),
         encoding="utf-8",
     )
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo="livespec-dev-tooling")
+    result = _walk(root=tmp_path, source_repo="livespec-dev-tooling")
     assert len(result) == 1
     assert result[0]["source_repo"] == "livespec-dev-tooling"
 
@@ -421,5 +438,5 @@ def test_discover_workflow_container_image_source_repo_filter_no_match(*, tmp_pa
         "jobs:\n" + _container_job(job="check-python", tag="python-v0.43.2"),
         encoding="utf-8",
     )
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo="other")
+    result = _walk(root=tmp_path, source_repo="other")
     assert result == []

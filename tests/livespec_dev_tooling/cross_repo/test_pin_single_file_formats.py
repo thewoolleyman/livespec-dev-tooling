@@ -6,7 +6,7 @@ well-known file at the repo root. This mirror file exercises each format
 individually, the source-repo filter, the hyphen-to-underscore
 normalization for `.vendor.jsonc` matching, the missing-file tolerance,
 and the unrecognized-format tolerance. The walks are driven through the
-public `pin_autodiscovery.discover()` entry point (the same outside-in
+public `_walk()` entry point (the same outside-in
 surface these tests used before the decomposition).
 
 Coverage target: 100% line + branch of `_pin_single_file_formats.py`.
@@ -17,9 +17,26 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from returns.unsafe import unsafe_perform_io
+
 from livespec_dev_tooling.cross_repo import pin_autodiscovery
 
 __all__: list[str] = []
+
+
+def _walk(*, root: Path, source_repo: str | None = None) -> list[dict[str, str]]:
+    """The walk's records, failing loud if a pin file could not be READ.
+
+    `discover` returns `IOResult` since livespec-dev-tooling-9sl0. Every
+    test below drives readable fixtures, so `.unwrap()` is the right
+    accessor: an unexpected read failure raises here instead of degrading
+    to an empty record list, which is the shape that reads as "this repo
+    carries no pins" and would make a broken walk look like a passing one.
+    The `unreadable` sibling file pins the failure track itself.
+    """
+    return unsafe_perform_io(
+        pin_autodiscovery.discover(root=root, source_repo=source_repo).unwrap()
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -43,7 +60,7 @@ def test_discover_livespec_jsonc_emits_record(*, tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    result = _walk(root=tmp_path, source_repo=None)
     assert len(result) == 1
     record = result[0]
     assert record["pin_format"] == "livespec_jsonc_compat_pinned"
@@ -59,7 +76,7 @@ def test_discover_livespec_jsonc_skips_top_keys_missing_compat(*, tmp_path: Path
         json.dumps({"template": "livespec", "spec_root": "SPECIFICATION"}),
         encoding="utf-8",
     )
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    result = _walk(root=tmp_path, source_repo=None)
     assert result == []
 
 
@@ -75,14 +92,14 @@ def test_discover_livespec_jsonc_skips_compat_missing_required_fields(*, tmp_pat
         ),
         encoding="utf-8",
     )
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    result = _walk(root=tmp_path, source_repo=None)
     assert result == []
 
 
 def test_discover_livespec_jsonc_unrecognized_when_malformed(*, tmp_path: Path) -> None:
     """A `.livespec.jsonc` that fails to parse yields an `unrecognized` record."""
     (tmp_path / ".livespec.jsonc").write_text("not-valid-json{", encoding="utf-8")
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    result = _walk(root=tmp_path, source_repo=None)
     assert len(result) == 1
     assert result[0]["pin_format"] == "unrecognized"
     assert result[0]["file_path"] == ".livespec.jsonc"
@@ -91,7 +108,7 @@ def test_discover_livespec_jsonc_unrecognized_when_malformed(*, tmp_path: Path) 
 def test_discover_livespec_jsonc_non_dict_top_level_yields_nothing(*, tmp_path: Path) -> None:
     """A `.livespec.jsonc` that parses but is not a dict yields no records."""
     (tmp_path / ".livespec.jsonc").write_text("[]", encoding="utf-8")
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    result = _walk(root=tmp_path, source_repo=None)
     assert result == []
 
 
@@ -109,7 +126,7 @@ def test_discover_pyproject_uv_sources_emits_record(*, tmp_path: Path) -> None:
         "\n[tool.ruff]\nline-length = 100\n",
         encoding="utf-8",
     )
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    result = _walk(root=tmp_path, source_repo=None)
     assert len(result) == 1
     record = result[0]
     assert record["pin_format"] == "pyproject_toml_uv_sources"
@@ -127,7 +144,7 @@ def test_discover_pyproject_uv_sources_strips_dot_git_suffix(*, tmp_path: Path) 
         'libbar = { git = "https://github.com/owner/libbar", tag = "v2" }\n',
         encoding="utf-8",
     )
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    result = _walk(root=tmp_path, source_repo=None)
     sources = sorted(r["source_repo"] for r in result)
     assert sources == ["libbar", "libfoo"]
 
@@ -145,7 +162,7 @@ def test_discover_pyproject_uv_sources_skips_entries_without_tag(*, tmp_path: Pa
         'bar = { git = "https://github.com/o/bar", tag = "v1" }\n',
         encoding="utf-8",
     )
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    result = _walk(root=tmp_path, source_repo=None)
     assert len(result) == 1
     assert result[0]["pin_key"] == "bar"
 
@@ -158,7 +175,7 @@ def test_discover_pyproject_uv_sources_block_at_end_of_file(*, tmp_path: Path) -
         'libfoo = { git = "https://github.com/owner/libfoo.git", tag = "v1" }\n',
         encoding="utf-8",
     )
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    result = _walk(root=tmp_path, source_repo=None)
     assert len(result) == 1
     assert result[0]["pin_key"] == "libfoo"
 
@@ -169,7 +186,7 @@ def test_discover_pyproject_uv_sources_absent_section(*, tmp_path: Path) -> None
         '[project]\nname = "consumer"\n\n[tool.ruff]\nline-length = 100\n',
         encoding="utf-8",
     )
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    result = _walk(root=tmp_path, source_repo=None)
     assert result == []
 
 
@@ -179,7 +196,7 @@ def test_discover_pyproject_uv_sources_empty_block_unrecognized(*, tmp_path: Pat
         '[project]\nname = "consumer"\n\n[tool.uv.sources]\n\n[tool.ruff]\nline-length = 100\n',
         encoding="utf-8",
     )
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    result = _walk(root=tmp_path, source_repo=None)
     assert len(result) == 1
     assert result[0]["pin_format"] == "unrecognized"
     assert result[0]["file_path"] == "pyproject.toml"
@@ -207,7 +224,7 @@ def test_discover_vendor_jsonc_emits_record(*, tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    result = _walk(root=tmp_path, source_repo=None)
     assert len(result) == 1
     record = result[0]
     assert record["pin_format"] == "vendor_jsonc"
@@ -231,14 +248,14 @@ def test_discover_vendor_jsonc_skips_entries_with_missing_fields(*, tmp_path: Pa
         ),
         encoding="utf-8",
     )
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    result = _walk(root=tmp_path, source_repo=None)
     assert result == []
 
 
 def test_discover_vendor_jsonc_unrecognized_when_malformed(*, tmp_path: Path) -> None:
     """A `.vendor.jsonc` that fails to parse yields an `unrecognized` record."""
     (tmp_path / ".vendor.jsonc").write_text("not-valid-json", encoding="utf-8")
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    result = _walk(root=tmp_path, source_repo=None)
     assert len(result) == 1
     assert result[0]["pin_format"] == "unrecognized"
     assert result[0]["file_path"] == ".vendor.jsonc"
@@ -249,7 +266,7 @@ def test_discover_vendor_jsonc_libraries_not_a_list_yields_nothing(*, tmp_path: 
     (tmp_path / ".vendor.jsonc").write_text(
         json.dumps({"libraries": "not-a-list"}), encoding="utf-8"
     )
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    result = _walk(root=tmp_path, source_repo=None)
     assert result == []
 
 
@@ -279,7 +296,7 @@ def test_discover_source_repo_filter_livespec(*, tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo="livespec")
+    result = _walk(root=tmp_path, source_repo="livespec")
     assert len(result) == 1
     assert result[0]["source_repo"] == "livespec"
 
@@ -290,7 +307,7 @@ def test_discover_source_repo_filter_excludes_livespec_when_different(*, tmp_pat
         json.dumps({"myapp": {"compat": {"livespec": ">=0.1.0,<1.0.0", "pinned": "v0.5.0"}}}),
         encoding="utf-8",
     )
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo="other")
+    result = _walk(root=tmp_path, source_repo="other")
     assert result == []
 
 
@@ -302,7 +319,7 @@ def test_discover_source_repo_filter_pyproject(*, tmp_path: Path) -> None:
         'bar = { git = "https://github.com/o/bar", tag = "v2" }\n',
         encoding="utf-8",
     )
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo="foo")
+    result = _walk(root=tmp_path, source_repo="foo")
     assert len(result) == 1
     assert result[0]["source_repo"] == "foo"
 
@@ -330,6 +347,6 @@ def test_discover_source_repo_filter_vendor_hyphen_to_underscore(*, tmp_path: Pa
         ),
         encoding="utf-8",
     )
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo="livespec-runtime")
+    result = _walk(root=tmp_path, source_repo="livespec-runtime")
     assert len(result) == 1
     assert result[0]["pin_key"] == "livespec_runtime"
