@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.0.7](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.0.6...v1.0.7) (2026-07-29)
+
+
+### Reverts
+
+* remove unauthorized rop supervisor change ([7063aaa](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7063aaa5d9177fe6439bf6652bbe84142cd931aa))
+
 ## [1.0.6](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.0.5...v1.0.6) (2026-07-29)
 
 
