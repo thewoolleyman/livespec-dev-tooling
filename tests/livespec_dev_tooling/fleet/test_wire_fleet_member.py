@@ -94,7 +94,9 @@ _JUSTFILE_ARGS: tuple[str, ...] = (
 _CI_YML = "jobs:\n  check:\n    strategy:\n      matrix:\n        target:\n          - check-a\n"
 _PYPROJECT = '[tool.uv.sources]\nlivespec-dev-tooling = { git = "x", tag = "v1.0.0" }\n'
 _LIVESPEC_JSONC = (
-    '{"harnesses": {"claude": {"status": "exempt", "reason": "library; no harness surface"}}}'
+    '{"harnesses": {"claude": {"status": "exempt", "reason": "library; no harness surface"}}, '
+    '"implementation": {"plugin": "impl-beads"}, '
+    '"impl-beads": {"dispatcher": {"acceptance_mode": "ai-only"}}}'
 )
 _PLUGIN_SETTINGS = json.dumps(
     {

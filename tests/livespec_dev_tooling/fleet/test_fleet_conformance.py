@@ -121,7 +121,8 @@ _BEADS_CONFIG = (
 _LIVESPEC_JSONC = (
     '{"harnesses": {"claude": {"status": "exempt", "reason": "library; no harness surface"}}, '
     '"implementation": {"plugin": "impl-beads"}, '
-    '"impl-beads": {"connection": {"server_host": "127.0.0.1", "server_port": 3307, '
+    '"impl-beads": {"dispatcher": {"acceptance_mode": "ai-only"}, '
+    '"connection": {"server_host": "127.0.0.1", "server_port": 3307, '
     '"server_user": "tenant", "database": "beads_tenant", "prefix": "fleet"}}}'
 )
 _PLUGIN_SETTINGS = json.dumps(
