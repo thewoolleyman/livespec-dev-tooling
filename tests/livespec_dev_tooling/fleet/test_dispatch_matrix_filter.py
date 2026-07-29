@@ -7,10 +7,10 @@ from pathlib import Path
 
 from hypothesis import given, settings
 from hypothesis import strategies as st
+from returns.result import Failure, Success
 
 from livespec_dev_tooling.fleet.dispatch_matrix_filter import (
     FilterError,
-    FilterOutcome,
     filter_siblings,
     main,
 )
@@ -33,8 +33,9 @@ def test_all_conformant_passes_every_sibling_through_in_order() -> None:
         _verdict(member="beta", failing_rows=[]),
         _verdict(member="gamma", failing_rows=[]),
     ]
-    outcome = filter_siblings(siblings=siblings, verdicts=verdicts)
-    assert isinstance(outcome, FilterOutcome)
+    result = filter_siblings(siblings=siblings, verdicts=verdicts)
+    assert isinstance(result, Success), result
+    outcome = result.unwrap()
     assert outcome.filtered == ({"name": "alpha"}, {"name": "beta"}, {"name": "gamma"})
     assert outcome.excluded == ()
 
@@ -46,8 +47,9 @@ def test_non_conformant_sibling_is_excluded_with_its_failing_rows() -> None:
         _verdict(member="beta", failing_rows=["app-installation", "merge-settings"]),
         _verdict(member="gamma", failing_rows=[]),
     ]
-    outcome = filter_siblings(siblings=siblings, verdicts=verdicts)
-    assert isinstance(outcome, FilterOutcome)
+    result = filter_siblings(siblings=siblings, verdicts=verdicts)
+    assert isinstance(result, Success), result
+    outcome = result.unwrap()
     assert outcome.filtered == ({"name": "alpha"}, {"name": "gamma"})
     assert len(outcome.excluded) == 1
     exclusion = outcome.excluded[0]
@@ -58,9 +60,14 @@ def test_non_conformant_sibling_is_excluded_with_its_failing_rows() -> None:
 def test_sibling_without_a_verdict_entry_is_a_structural_error() -> None:
     siblings = [{"name": "alpha"}, {"name": "ghost"}]
     verdicts = [_verdict(member="alpha", failing_rows=[])]
-    outcome = filter_siblings(siblings=siblings, verdicts=verdicts)
-    assert isinstance(outcome, FilterError)
-    assert "ghost" in outcome.reason
+    result = filter_siblings(siblings=siblings, verdicts=verdicts)
+    assert isinstance(result, Failure), result
+    # A STRUCTURAL failure, distinct from an ordinary exclusion: drift
+    # must keep the preflight job red, while a non-conformant member
+    # rides the success track inside FilterOutcome.excluded.
+    failure = result.failure()
+    assert isinstance(failure, FilterError)
+    assert "ghost" in failure.reason
 
 
 def test_extra_verdict_members_not_in_the_sibling_set_are_ignored() -> None:
@@ -71,8 +78,9 @@ def test_extra_verdict_members_not_in_the_sibling_set_are_ignored() -> None:
         _verdict(member="alpha", failing_rows=[]),
         _verdict(member="publisher", failing_rows=[]),
     ]
-    outcome = filter_siblings(siblings=siblings, verdicts=verdicts)
-    assert isinstance(outcome, FilterOutcome)
+    result = filter_siblings(siblings=siblings, verdicts=verdicts)
+    assert isinstance(result, Success), result
+    outcome = result.unwrap()
     assert outcome.filtered == ({"name": "alpha"},)
 
 
@@ -95,8 +103,9 @@ def test_filtered_plus_excluded_partition_the_sibling_set(names: list[str], bad:
         )
         for index, name in enumerate(names)
     ]
-    outcome = filter_siblings(siblings=siblings, verdicts=verdicts)
-    assert isinstance(outcome, FilterOutcome)
+    result = filter_siblings(siblings=siblings, verdicts=verdicts)
+    assert isinstance(result, Success), result
+    outcome = result.unwrap()
     filtered_names = [entry["name"] for entry in outcome.filtered]
     excluded_names = [exclusion.member for exclusion in outcome.excluded]
     assert sorted(filtered_names + excluded_names) == sorted(names)
