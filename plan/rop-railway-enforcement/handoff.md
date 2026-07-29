@@ -49,12 +49,13 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >    and accepted under it (v177). **`5ror`, `clkf`, `fwcwxv`, `pj3j` and `livespec-i04f` are
 >    all CLOSED.** The spec lifecycle is NOT waived — changes still go through
 >    propose-change → revise as OPERATIONS — but the accept/reject decision is delegated.
-> 6. **▶️▶️ REMEDIATION IS COMPLETE. RATIFIED-RULE VIOLATIONS ARE ZERO. THE ONLY WORK LEFT IS
->    IMPLEMENTATION, AND THEN ARMING.** Measured on master `ce4e06d`:
->    **25 + 5 + 1 + 0 = 31**, via the shipped `_find_offenders` over the shipped
->    `resolve_check_universe()`, a MODULE-QUALIFIED oracle, and the v179 fixpoint.
+> 6. **▶️▶️ `721o` IS CLOSED AND MERGED. THE CRITERION IS LIVE, AND IT REPORTS **9**, NOT 0.
+>    "RATIFIED-RULE VIOLATIONS ARE ZERO" IS RETRACTED — read step 6e before planning
+>    anything.** Measured on master `0788e93` with the shipped check: **25 dropped + 6 kept
+>    + 3 ADDED = 9**.
 >
->    **⛔ THE NEXT ACTION IS `721o`, NOT ARMING. Read step 6d before touching anything.**
+>    **⛔ THE NEXT ACTION IS TRIAGING THE 3 UNDER v179, THEN v179's TWO MEMBERS, THEN `5cai`.
+>    NOT ARMING.**
 >
 >    - **Both rulings are RATIFIED**: livespec **v178** (public = CONSUMED ACROSS A BOUNDARY,
 >      PR #1826 → `d230c9ff`) and **v179** (the rule reaches functions that HAVE an expected
@@ -67,15 +68,44 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >      #1141, #450. Conversion 3's precondition is discharged and spent.
 >    - **Track C is DONE.** Ratified as **v035** on master (PR #824 → `703c5a6`).
 >    - **THE P0 IS CLOSED.** `dx8l` — see step 6a. Nothing is owed on it.
-> 6d. **⛔⛔ TWO NUMBERS. DO NOT ARM UNTIL THEY AGREE — this is the single most expensive
->    mistake available right now.** **31** is what the check REPORTS today, because neither
->    ruling is IMPLEMENTED: it still counts every `__all__` member and every total function.
->    **0** is what the ratified rule CONSIDERS a violation. **Arming today would turn
->    dev-tooling RED ON ITS OWN GATE** — the armed check would report 31 violations against a
->    rule that recognizes 0, and lefthook would then block the very commit that fixes it (the
->    ordering trap, in a new spelling). `721o`, `5cai` and v179's two members are EXACTLY what
->    closes the gap. **Arm only after them, only when both numbers agree, and SAY SO
->    EXPLICITLY in the arming commit.**
+> 6d. **⛔⛔ TWO NUMBERS. DO NOT ARM UNTIL THEY AGREE.** **9** is what the check reports on
+>    master today (v178 IS implemented; v179 is NOT, so every total function still counts).
+>    What the ratified rule considers a violation is **NO LONGER KNOWN TO BE 0** — see 6e.
+>    Arming before they agree turns dev-tooling RED ON ITS OWN GATE, and lefthook then blocks
+>    the very commit that fixes it. **Arm only when both numbers agree, and SAY SO EXPLICITLY
+>    in the arming commit.**
+> 6e. **🔴 THE TIGHTENING HALF HAS TEETH HERE, AND v178's OWN RATIFIED TEXT SAYS IT DOES NOT.
+>    This is the most important result of the `721o` session and it MUST NOT be smoothed.**
+>    Implementing v178 dropped 25 offenders and ADDED **3** that the `__all__` proxy never
+>    looked at, because they appear in no `__all__` and are imported by another first-party
+>    module:
+>
+>    | function | why it is public | v179 status |
+>    |---|---|---|
+>    | `fleet/fleet_conformance.py:187 fetch_manifest` | imported by `wire_fleet_member.py` + `fleet_conformance_admin.py` | **REACHES THE NETWORK — not exempt by member 1. Likely a genuine conversion.** |
+>    | `fleet/fleet_conformance.py:152 holds_app_class_credential` | imported by `fleet_conformance_admin.py` | reads the environment — triage it |
+>    | `cross_repo/pin_autodiscovery.py:126 discover` | imported by `fleet/_rows_pin_currency.py` | walks the filesystem — triage it |
+>
+>    **livespec v178 records "MEASURED EXPOSURE OF THE TIGHTENING HALF AT RATIFICATION: ZERO
+>    … the 11 imported-but-undeclared names were all SUBMODULES."** That measurement is FALSE
+>    for this repo, and it was ratified into the spec as a reassurance. Correcting it is a
+>    `livespec` propose-change and SHOULD be filed — a ratified clause that under-sells its
+>    own reach is the mirror image of one that over-sells it, and this thread has spent its
+>    life on the second kind.
+>
+>    **CONSEQUENCE FOR THE FAN-OUT: the other repos' counts are unknown in BOTH directions.**
+>    Every prior estimate assumed v178 only ever removes. It also ADDS, and nobody has
+>    measured the adding half anywhere but here.
+> 6f. **🐛 `livespec-dev-tooling-995m` (P1, filed) — `config.py` EXCLUDES ITSELF from every
+>    check universe.** `is_generated` treats any `#` line containing `@generated` as the
+>    sentinel, and `config.py` carries two such lines DESCRIBING the sentinel mechanism. So
+>    the module that implements the marker excludes itself, and the eight applies-to-all
+>    checks that derive from `resolve_check_universe()` never inspect the fleet's
+>    most-consumed module (~1300 lines, imported by every check and four sibling repos).
+>    `tests/livespec_dev_tooling/test_config.py` and
+>    `tests/livespec_dev_tooling/checks/test_no_fmt_directives.py` are excluded the same way.
+>    **This is this epic's own subject occurring inside the universe resolver the epic routes
+>    everything through**, and it is SILENT — nothing logs "skipped as generated".
 > 6a. **✅ `livespec-dev-tooling-dx8l` — CLOSED, and its LESSON is now a hard precondition.**
 >    Slice 2 broke `livespec-orchestrator-beads-fabro`'s master (its `codex_yolo_gate` hook
 >    imports `parse_manifest`). Repaired doctrine-exact per livespec `.ai/ci-gate-discipline.md`
@@ -813,7 +843,13 @@ local-only amend is how a durable record quietly reverts.
 **Once checks are green, open a FRESH PR off the new master rather than amending.** Amending races
 auto-merge, and the race is invisible when you win it.
 
-### 🟢 `u4ij` IS CLOSED — RATIFIED-RULE VIOLATIONS ARE **ZERO**. Remaining work is IMPLEMENTATION ONLY.
+### ⛔ (RETRACTED) `u4ij` IS CLOSED — "RATIFIED-RULE VIOLATIONS ARE ZERO" WAS TRUE OF THE OLD SCOPE ONLY
+
+**The 31 → 0 arithmetic below is correct for the population the `__all__` proxy could see, and
+that population was NOT the ratified one.** Implementing v178 (`721o`, merged) added 3
+offenders the proxy never looked at, so the ratified-rule count is no longer known to be 0 —
+see START-HERE 6e. The three conversions `u4ij` landed are still landed; what is retracted is
+the CONCLUSION drawn from the count, not the work.
 
 **25 + 5 + 1 + 0 = 31**, measured on master `244306b` with the shipped `_find_offenders` over the
 shipped `resolve_check_universe()`, module-qualified oracle, v179 fixpoint.
@@ -1105,32 +1141,79 @@ that shape into every remaining sibling wiring.**
    silent no-op that looks exactly like success. Invoke
    `.claude-plugin/scripts/bin/<command>.py` instead.
 
-### ▶️ EXACT NEXT ACTION — **IMPLEMENT `721o`. NO NEW AUTHORITY IS NEEDED. DO NOT ARM FIRST.**
+### ▶️ EXACT NEXT ACTION — **TRIAGE THE 3, THEN v179, THEN `5cai`. `721o` IS DONE.**
 
-**All remediation is DONE; only implementation remains.** Ratified-rule violations are **0**;
-the check still reports **31**. Implementing these four is what makes the two numbers agree,
-and arming before they agree turns this repo red on its own gate (START-HERE 6d).
+**✅ `721o` IS CLOSED — merged in four slices, all green on master:** SPECIFICATION **v036**
+(the `cross_repo_public_api` role key, PR #854 → `02c2b005`), the loader (PR #855 →
+`c11e8b08`), `checks/_public_api_consumption.py` (PR #858 → `a141df98`), and the criterion
+wired into the check (PR #861 → `0788e93c`). The check reports **9** and still scans zero
+files here, because it is still `pure_trees`-scoped.
 
-**THE ORDER, and each has an approved ledger item:**
+**THE ORDER:**
 
-1. **`721o` — v178's repo-local half.** The check's notion of "public" becomes CONSUMED ACROSS
-   A BOUNDARY. **The oracle MUST resolve an import to its DEFINING MODULE** — a bare-name
-   oracle is measurably wrong (it scored `merged_branch_sweep.fetch_manifest` public on two
-   consumers that import a DIFFERENT `fetch_manifest`, and produced 51 false `parse_argv` hits
-   against `livespec`'s homonym). **A repo-local check CANNOT see a sibling's import**, so this
-   half needs the repo to DECLARE its cross-repo-consumed surface, with `5cai` verifying that
-   declaration against reality.
+1. **⛔ TRIAGE THE 3 NEW OFFENDERS UNDER v179 — START-HERE 6e.** They arrived from the
+   TIGHTENING half and none was in the old count. `fetch_manifest` reaches the network, so at
+   least one is likely a genuine conversion. **Do this before anything else**, because every
+   downstream plan in this file was written assuming the ratified-rule count was 0.
+   **`fetch_manifest` has ZERO sibling importers of THAT function** (the two fleet-wide hits
+   belong to the homonym in `merged_branch_sweep.py`), so the `dx8l` sibling-wiring
+   precondition is discharged for it — but re-derive rather than trusting this line.
 2. **v179's two members** — `no-expected-failure-mode-mechanical-member` and
-   `no-expected-failure-mode-declared-absence-key`. **Clause (d), the callee FIXPOINT, is not
-   optional**: without it the check exempts functions that reach I/O one call away, which is
-   the exact defect a hand reading of `classify_role_key_declarations` produced.
+   `no-expected-failure-mode-declared-absence-key`. **NEITHER HAS A LEDGER ITEM YET; file
+   them.** **Clause (d), the callee FIXPOINT, is not optional**: without it the check exempts
+   functions that reach I/O one call away, which is the exact defect a hand reading of
+   `classify_role_key_declarations` produced. Member 2 needs a `total_absence_returns` role
+   key — model it on `cross_repo_public_api` (v036), which is the same shape: per-function,
+   reason-required, staleness-detected, NOT in `REQUIRED_ROLE_KEYS`.
 3. **`5cai` — the CENTRAL half. ⛔ NOT OPTIONAL, AND IT MUST LAND BEFORE ARMING.** A
    central-vantage conformance row over the fleet's real consumption graph. This is the half
-   that catches the next `parse_manifest` — and see the ⛔ block immediately below, which is a
-   BINDING ruling, not a preference.
+   that catches the next `parse_manifest` — see the ⛔ block below, a BINDING ruling.
+   **It now has a concrete first job**: three measured cross-repo consumptions are
+   deliberately UNDECLARED in this repo's `pyproject.toml` (see §"THE THREE UNDECLARED
+   CONSUMPTIONS"), and a central row must either surface them or explain why not.
 4. **Then re-measure, confirm BOTH numbers agree, and ARM.**
 5. **Then re-measure ONE sibling** to replace the retired 223/282 figures, report it, and
    **STOP — do not start the fan-out.**
+
+### 🕳️ THE THREE UNDECLARED CONSUMPTIONS — a hole in the check that is WIDER than the rule
+
+Measured while authoring this repo's own `cross_repo_public_api` declaration. All three are
+REAL — a sibling genuinely imports the name — and all three are deliberately NOT declared,
+because declaring them would assert a scope the check does not apply:
+
+| symbol | consumer | why it cannot be declared |
+|---|---|---|
+| `fleet/_context.py:resolve_owner` | beads-fabro's `codex_yolo_gate.py` HOOK | public NAME in a package-PRIVATE module |
+| `testing/_cli_e2e_discovery.py:discover_fixtures` | four siblings, via a `cli_e2e` re-export | same |
+| `config.py:iter_first_party_py_files` | git-jsonl's test tree | the FILE is not in the universe at all (`995m`) |
+
+**THE FIRST TWO ARE ONE DEFECT.** `public_api_result_typed` skips `_`-prefixed FILES
+wholesale, while v178 clause 0 disqualifies only a `_`-prefixed NAME. The file-level skip is
+therefore WIDER than the ratified rule, and two cross-repo consumers are reaching straight
+through it — one of them a HOOK, which is the `dx8l` blast-radius shape exactly.
+
+### 🧭 TWO ORACLE DEFECTS THE FIXTURES CAUGHT — both in the RELAXING direction
+
+Recorded because the fan-out will write this oracle's equivalent eight more times, and both
+defects produce a SMALLER count, which reads as progress:
+
+1. **A REPO-ROOT-RELATIVE PATH IS NOT AN IMPORT PATH.** `livespec-dev-tooling`'s package root
+   IS its repo root, so the naive reading happens to work here — but a LAYERED consumer roots
+   its package deeper (`.claude-plugin/scripts/livespec/parse/foo.py` is imported as
+   `livespec.parse.foo`), and the naive reading resolves NOTHING there. The shipped oracle
+   resolves module identity by dotted SUFFIX; on ambiguity every candidate counts, so doubt
+   resolves toward MORE enforcement. **A check that silently resolves nothing is this epic's
+   own failure mode, relocated into the oracle.**
+2. **`config.pure_trees` ON A LOCAL `Config` INSTANCE RESOLVED TO THE `config` MODULE**,
+   manufacturing 19 phantom consumptions. An attribute base must resolve through an actual
+   `import` binding, never by matching a dotted expression against a module path. **That is
+   this thread's own "read the callee, do not match the name" lesson recurring inside the
+   oracle written to apply it — the third time it has recurred inside its own fix.**
+
+**AND THE STALENESS DETECTOR EARNED ITS KEEP IMMEDIATELY**: it rejected two of the six
+first-draft `cross_repo_public_api` entries — one naming a function that lives in a different
+module than the consumer's import path suggests, one naming a file outside the universe.
+Both were authored from the CONSUMER's import statement without reading the DEFINITION.
 
 ### ⛔⛔ `5cai` IS NOT OPTIONAL — ARMING WITHOUT IT REINTRODUCES THIS EPIC'S DEFECT VIA ITS OWN FIX
 
