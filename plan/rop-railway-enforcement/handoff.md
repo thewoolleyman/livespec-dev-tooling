@@ -1124,15 +1124,45 @@ and arming before they agree turns this repo red on its own gate (START-HERE 6d)
    `no-expected-failure-mode-declared-absence-key`. **Clause (d), the callee FIXPOINT, is not
    optional**: without it the check exempts functions that reach I/O one call away, which is
    the exact defect a hand reading of `classify_role_key_declarations` produced.
-3. **`5cai` — the CENTRAL half.** A central-vantage conformance row over the fleet's
-   consumption graph. This is the half that catches the next `parse_manifest`.
+3. **`5cai` — the CENTRAL half. ⛔ NOT OPTIONAL, AND IT MUST LAND BEFORE ARMING.** A
+   central-vantage conformance row over the fleet's real consumption graph. This is the half
+   that catches the next `parse_manifest` — and see the ⛔ block immediately below, which is a
+   BINDING ruling, not a preference.
 4. **Then re-measure, confirm BOTH numbers agree, and ARM.**
 5. **Then re-measure ONE sibling** to replace the retired 223/282 figures, report it, and
    **STOP — do not start the fan-out.**
 
+### ⛔⛔ `5cai` IS NOT OPTIONAL — ARMING WITHOUT IT REINTRODUCES THIS EPIC'S DEFECT VIA ITS OWN FIX
+
+**BINDING supervisor ruling, brief 30. The arming gate is `721o` AND v179's TWO members AND
+`5cai`. Not three of four.**
+
+**WHY THE SPLIT EXISTS AT ALL.** A repo-local check structurally CANNOT see a sibling's import,
+so `721o` necessarily has the repo **DECLARE** its cross-repo-consumed surface. That declaration
+is also what answers the gameability objection to v178 — *"nobody imports it, therefore it is
+not public"* is gameable by simply not importing something. **The declare-then-centrally-verify
+split closes it: the repo declares, and a CENTRAL vantage checks the declaration against the
+fleet's ACTUAL consumption graph.** Neither half is sound alone.
+
+**SO SHIPPING `721o` WITHOUT `5cai` BUILDS A DECLARATION NOBODY VERIFIES — this epic's exact
+defect, reintroduced by its own fix, at the very end.** Concretely: **a repo could declare an
+EMPTY consumed-surface and every one of its public functions would fall out of scope, silently,
+with the check GREEN. That is `pure_trees = []` wearing a new name** — the same shape this whole
+epic exists to remove, one level up in the schema.
+
+**IF `5cai` TURNS OUT LARGER THAN EXPECTED, ARMING WAITS.** Do NOT arm with an unverified
+declaration and file `5cai` as a follow-up. The ruling is explicit: *"I would rather this epic
+stay open than close with that shape in it."*
+
 **⚠️ EVERY UNWRAP NEEDS A TEST THAT ASSERTS THE VALUE REACHES THE CALLER**, not merely that the
 call succeeded — a passing row is what the bug produces. Treat "I am being careful here" as ZERO
-evidence: the author of the fail-open warning committed that exact bug one commit leg later.
+evidence: the author of the fail-open warning committed that exact bug one commit leg later, and
+what caught it was a behavioural test, not attention.
+
+**⚠️ AND WHEN YOU ARM, EXPECT A SURPRISE AND TREAT IT AS A FINDING.** That is the first time this
+check has ever looked at this repo's 145 files. **If the armed count disagrees with the
+simulation in this file, the SIMULATION was wrong** — and that discrepancy is worth more than
+the arming. Do not smooth it.
 
 **⚠️ AND THE CHECK STILL SCANS ZERO FILES HERE** (`pure_trees`-scoped), so new code paths inside
 it are NOT exercised by this repo's own `just check`. **Test them on fixtures**; a green
