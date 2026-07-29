@@ -19,12 +19,21 @@ inspect each top-level FunctionDef whose name is in
 - It carries a decorator whose terminal name is `safe` or
   `impure_safe` (call form or bare).
 
-Documented exemptions (a-f from the canonical row) — the
-supervisor `main()`, `build_parser`, `make_validator`,
-`get_logger`, `compile_schema`, `rop_pipeline` — are NOT
-yet wired in; subsequent cycles widen as concrete files
-trigger them. Package-private modules (filename matching
-`_*.py`) are skipped.
+The exemption set is the EXHAUSTIVE four-member set ratified in
+livespec v177 (`non-functional-requirements.md` §"ROP
+composition"), and all four ARE wired in: `main() -> int` under
+`commands_trees` or at `doctor/run_static.py`; `build_parser()
+-> ArgumentParser` under `commands_trees`; any function
+annotated `None`; and a supervisor entry point in a file
+declared in `supervisor_entry_files`. `make_validator`,
+`get_logger`, `compile_schema` and `rop_pipeline` are NOT
+members — they are cited only to an `archive/brainstorming/`
+document this repo treats as reference-only, and appear nowhere
+in any `SPECIFICATION/`.
+
+Package-private modules (filename matching `_*.py`) are
+skipped, and a `_`-prefixed FUNCTION name is not public even
+when listed in `__all__` (see `_is_public_name`).
 
 Output discipline: per spec, `print` (T20) and
 `sys.stderr.write` (`check-no-write-direct`) are banned in
@@ -114,6 +123,7 @@ def _is_exempt_supervisor(
     func: ast.FunctionDef | ast.AsyncFunctionDef,
     rel_path: Path,
     commands_trees: tuple[Path, ...],
+    supervisor_entry_files: tuple[Path, ...] = (),
 ) -> bool:
     """True iff the spec exempts `func` from the Result/IOResult return rule.
 
@@ -128,6 +138,22 @@ def _is_exempt_supervisor(
     spec grants it to a LOCATION, not to a name. Exempting every `main`
     everywhere would be a reading of intent, not the stated rule.
 
+    MEMBER 4, ratified in livespec v177: a supervisor entry point in a file
+    the consumer DECLARES in `supervisor_entry_files`. It admits the SAME
+    category as the `commands/` members through a per-file declaration rather
+    than a directory glob, because a flat-layout consumer cannot satisfy a
+    LOCATION scoping at all — its process entry points sit beside its ordinary
+    modules. Four other checks (`no_except_outside_io`, `no_write_direct`,
+    `supervisor_discipline`, `partition_completeness`) already act on this same
+    declaration; this check was the only consumer of the supervisor concept
+    that never asked the repo.
+
+    The declaration is STRICTER than the glob it complements: `commands/*.py`
+    exempts every present and future file in that directory with nobody
+    deciding anything, whereas an undeclared file gets NOTHING here. And it is
+    BOUNDED — it exempts the supervisor ENTRY POINTS in a declared file, never
+    every function in it.
+
     Deliberately absent: `make_validator`, `get_logger`, `compile_schema`,
     `rop_pipeline`. This module's docstring cites them to an
     `archive/brainstorming/` document, which the repo's own convention
@@ -136,10 +162,11 @@ def _is_exempt_supervisor(
     if _returns_named(func=func, name="None"):
         return True
     under_commands = any(rel_path.is_relative_to(tree) for tree in commands_trees)
+    declared_supervisor = rel_path in supervisor_entry_files
     if func.name == "main" and _returns_named(func=func, name="int"):
-        return under_commands or rel_path == _DOCTOR_RUN_STATIC
+        return under_commands or declared_supervisor or rel_path == _DOCTOR_RUN_STATIC
     if func.name == "build_parser" and _returns_named(func=func, name="ArgumentParser"):
-        return under_commands
+        return under_commands or declared_supervisor
     return False
 
 
@@ -166,7 +193,11 @@ def _is_public_name(*, name: str) -> bool:
 
 
 def _find_offenders(
-    *, source: str, rel_path: Path, commands_trees: tuple[Path, ...]
+    *,
+    source: str,
+    rel_path: Path,
+    commands_trees: tuple[Path, ...],
+    supervisor_entry_files: tuple[Path, ...] = (),
 ) -> list[tuple[int, str]]:
     tree = ast.parse(source)
     declared = set(_all_value_names(tree=tree))
@@ -178,7 +209,10 @@ def _find_offenders(
             and _is_public_name(name=node.name)
             and not _is_railway_compliant(func=node)
             and not _is_exempt_supervisor(
-                func=node, rel_path=rel_path, commands_trees=commands_trees
+                func=node,
+                rel_path=rel_path,
+                commands_trees=commands_trees,
+                supervisor_entry_files=supervisor_entry_files,
             )
         ):
             out.append((node.lineno, node.name))
@@ -223,7 +257,10 @@ def main() -> int:
             source = py_file.read_text(encoding="utf-8")
             rel_path = py_file.relative_to(cwd)
             for lineno, name in _find_offenders(
-                source=source, rel_path=rel_path, commands_trees=config.commands_trees
+                source=source,
+                rel_path=rel_path,
+                commands_trees=config.commands_trees,
+                supervisor_entry_files=config.supervisor_entry_files,
             ):
                 offenders.append((rel_path, lineno, name))
     if offenders:
