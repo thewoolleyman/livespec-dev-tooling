@@ -9,6 +9,7 @@ from typing import cast
 from livespec_dev_tooling.checks.required_role_keys_declared import (
     MISSING_KEYS_EVENT,
     classify_role_key_declarations,
+    layout_dependent_check_slugs,
 )
 from livespec_dev_tooling.fleet._context import (
     FleetContext,
@@ -86,7 +87,9 @@ def _required_role_status_outcome(
 ) -> RowOutcome:
     """Map the reusable declaration classifier onto a fleet row outcome."""
     status = classify_role_key_declarations(
-        justfile_text=justfile_text, declared_keys=declared_keys
+        justfile_text=justfile_text,
+        declared_keys=declared_keys,
+        layout_dependent=frozenset(layout_dependent_check_slugs()),
     )
     if status.is_excluded():
         return RowPass(note=f"excluded-with-reason: {status.excluded_reason}")

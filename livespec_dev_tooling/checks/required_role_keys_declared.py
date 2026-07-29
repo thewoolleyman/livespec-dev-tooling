@@ -148,10 +148,16 @@ def _wired_check_slugs(*, justfile_text: str) -> tuple[str, ...]:
 
 
 def classify_role_key_declarations(
-    *, justfile_text: str, declared_keys: frozenset[str]
+    *, justfile_text: str, declared_keys: frozenset[str], layout_dependent: frozenset[str]
 ) -> RoleKeyDeclarationStatus:
-    """Classify one consumer from its justfile wiring and declared config keys."""
-    layout_dependent = frozenset(layout_dependent_check_slugs())
+    """Classify one consumer from its justfile wiring and declared config keys.
+
+    `layout_dependent` is INJECTED rather than walked. Resolving it here would
+    call `layout_dependent_check_slugs()`, which reads the filesystem, and that
+    reach — invisible in this function's own body — is what ratified livespec
+    v179 member 1 clause (d) disqualifies. Both callers already sit at an I/O
+    boundary, so the walk belongs one frame out and this stays total.
+    """
     wired = tuple(
         slug for slug in _wired_check_slugs(justfile_text=justfile_text) if slug in layout_dependent
     )
@@ -191,6 +197,7 @@ def _status_for_repo(*, repo_root: Path) -> RoleKeyDeclarationStatus:
     return classify_role_key_declarations(
         justfile_text=justfile.read_text(encoding="utf-8"),
         declared_keys=config.declared_keys,
+        layout_dependent=frozenset(layout_dependent_check_slugs()),
     )
 
 
