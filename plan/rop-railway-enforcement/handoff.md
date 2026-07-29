@@ -284,6 +284,47 @@ to zero today, and conversion is the wrong answer for it by the triage's own rul
 D is not public API, the D class largely dissolves and the arming gate becomes reachable. **That
 is the next thing to establish, and it is the critical path — not `zu85`.**
 
+### 🔴 THE THIRD AXIS, PAID FOR IN A RED SIBLING MASTER — grep the eight repos BEFORE converting
+
+**Slice 2 broke `livespec-orchestrator-beads-fabro` and turned its master RED.** Filed as
+**`livespec-dev-tooling-dx8l`** (P0). Read that item before converting anything else.
+
+`parse_manifest` moving to `Result` broke `codex_yolo_gate.py:104`, a HOOK in that repo which
+imports it. **The blast radius of an API change is only knowable at the CONSUMED end, and the
+auto-merge bump fan-out delivers "consumed" within minutes without anyone deciding.**
+
+**THE FAILURE MODE IS A BOOBY TRAP AND DESERVES ITS OWN NAME.** The consumer did
+`if manifest is None`. Against a `Result` that is permanently False, so the guard did not FAIL —
+**it silently STOPPED BEING A GUARD**, and control flowed into `manifest.owner` on a `Success`,
+raising an uncaught `AttributeError`. *A `None`-check does not survive a `Result` migration by
+breaking loudly; it survives by no longer checking anything.* And the consequence direction was
+the bad one: the refresh path crashed instead of returning 0, leaving an access-gating marker
+**STALE rather than failing closed**. **Fail-stale on an access gate is strictly worse than
+fail-closed.**
+
+**THE PRECONDITION, now binding on every remaining conversion here and on the other five repos'
+223:** before converting any public function, **grep all eight siblings for it**. This is the
+mechanical form of `.ai/ci-gate-discipline.md` step 3 — *consumer wiring lands BEFORE the
+dependency that assumes it* — which is exactly what slice 2 did backwards.
+
+**AND IT CORRECTS THE `__all__` ORACLE.** The boundary oracle asked "imported by another
+first-party module?" scoped to **THIS repo**. The siblings import symbols from this library **29
+times fleet-wide** (vs 65–68 `python -m` targets per repo, so module execution still dominates —
+the premise survives, the SCOPE was wrong). **A repo-local oracle would have classified
+`parse_manifest` as non-public: the exact function whose conversion broke a sibling.** The
+public-API criterion MUST therefore be **fleet-wide**, as a requirement and not a nicety — a
+criterion right about 40 functions and wrong about the 29 that cross repo boundaries is worse
+than none, because it is confidently wrong exactly where the blast radius is largest.
+
+| repo | symbol imports | notable |
+|---|---|---|
+| `livespec` | 9 | 3 in PRODUCT code (`canonical_check_slugs`) |
+| `livespec-orchestrator-beads-fabro` | 10 | **a HOOK importing `parse_manifest` + `resolve_owner`** |
+| `livespec-driver-claude` / `-codex` | 3 each | `install_no_shadow_ledger`, `testing.cli_e2e` |
+| `livespec-orchestrator-git-jsonl` | 3 | `config.iter_first_party_py_files` |
+| `livespec-runtime` | 1 | `checks` |
+| `livespec-overseer`, `livespec-console-beads-fabro` | 0 | — |
+
 ### 🧭 THE MISSING AXIS — the method constraint `zu85` added, binding on the fan-out
 
 The step-6 triage classified all 59 offenders by FAILURE SEMANTICS and never asked a second,
@@ -292,6 +333,9 @@ independent question. Both are required:
 1. **Does this function have a real failure track?** — the triage asked this well.
 2. **CAN this module import `returns` at all, in every environment it executes in?** — never
    asked, and a perfect answer to (1) is worthless when (2) is no.
+3. **Does any of the eight SIBLINGS import this symbol?** — never asked either, and it cost a
+   red sibling master (`dx8l`). If yes, the consumer is wired FIRST, in that sibling, and the
+   conversion lands only after.
 
 **Binding on the other five repos' 223**, where a module executed outside its package's
 dependency environment is MORE likely rather than less: the Drivers and orchestrators ship hook
