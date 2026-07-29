@@ -48,13 +48,19 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >    and accepted under it (v177). **`5ror`, `clkf`, `fwcwxv`, `pj3j` and `livespec-i04f` are
 >    all CLOSED.** The spec lifecycle is NOT waived — changes still go through
 >    propose-change → revise as OPERATIONS — but the accept/reject decision is delegated.
-> 6. **▶️ THE NEXT ACTION IS UNAMBIGUOUS AND NEEDS NO NEW AUTHORITY: execute `zu85` option (a),
->    which is RULED, fully JUSTIFIED and ready to start.** Step 6 is at **46** offenders
->    (from 59) on master `4976b69`. See §"EXACT NEXT ACTION" for the exact first edit.
->    - **Slices 1–3 have LANDED.** Slice 2 `parse_manifest` (`2ff79a5`, PR #821, released
->      `v1.0.4`); slice 3 `filter_siblings` — the hand-rolled Either — (`bcbe035`, PR #826).
->      **The conversion set is nearly EXHAUSTED: only 4 offenders still have a real failure
->      track.** Track B is roughly two slices from done, and it is NOT the critical path.
+> 6. **▶️ BRIEF 25's SCOPE IS DONE THROUGH ITEM 4. Step 6 is at 34, and the CONVERSION TRACK
+>    IS EXHAUSTED — that is a finding, not a pause.** See §"BRIEF 25 — WHAT LANDED" for the
+>    exact arithmetic and the two things a cold start must not re-derive.
+>    - **`zu85` option (a) LANDED** — PR #832 merged, released `v1.0.6`. `otel_step_timer`'s
+>      `__all__` narrowed to its three boundary-crossing names, each justified individually
+>      against the FLEET-WIDE oracle. **46 → 43.**
+>    - **THE FLEET-WIDE PUBLIC-API CRITERION IS RATIFIED** as livespec **v178**
+>      (PR #1826 → `d230c9ff`). This was brief 25's highest-value item and it is the one that
+>      moves the arming gate. See §"v178 — THE CRITERION".
+>    - **CLASS B LANDED/IN-FLIGHT** — PR #835, nine reasoned `supervisor_entry_files` entries.
+>      **43 → 34.** Re-derive its merge state; it was in CI at wrap-up.
+>    - **CLASS C IS EMPTY, AND THAT IS THE SURPRISE.** Every remaining conversion candidate was
+>      READ and every one is a NON-conversion. See §"CLASS C IS EMPTY".
 >    - **Track C is DONE.** Ratified as **v035** on master (PR #824 → `703c5a6`).
 >    - **THE P0 IS CLOSED.** `dx8l` — see step 6a. Nothing is owed on it.
 > 6a. **✅ `livespec-dev-tooling-dx8l` — CLOSED, and its LESSON is now a hard precondition.**
@@ -65,31 +71,36 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >    beads-fabro master `bc23b0d3`, pin `v1.0.5`, CI SUCCESS** — repaired at the CONSUMED end,
 >    not merely merged. No gate weakened, none bypassed. **Do not re-open; do not re-file.**
 >    The durable output is §"THE THIRD AXIS", which BINDS every remaining conversion.
-> 7. **⛔⛔ THE ARMING GATE IS NOT WHAT THIS THREAD THOUGHT, AND THE ARITHMETIC IS NOW MEASURED.
->    READ THIS BEFORE PLANNING ANYTHING.** Step 6 is at **46** (measured on master at
->    `bcbe035`). Its composition — measured per function, not inherited from the 59-triage:
+> 7. **⛔⛔ THE ARMING GATE IS NOW A SINGLE UNANSWERED QUESTION OVER ~6 FUNCTIONS, NOT 30.
+>    READ THIS BEFORE PLANNING ANYTHING.** Step 6 is at **34** (measured on master with the
+>    class-B declarations applied). Composition, measured per function with MODULE-QUALIFIED
+>    import resolution:
 >
 >    | class | n | path to zero |
 >    |---|---|---|
->    | **A** — `zu85` (`otel_step_timer`), cannot import the railway | **4** | option (a), **no spec change**, measured 4→0 |
->    | **B** — `main() -> int` supervisors | **8** | a reasoned `supervisor_entry_files` entry each (ratified v177 member 4) |
->    | **C** — real failure track, GENUINELY convertible | **4** (~7 with the triage's I/O reading) | conversion, in slices |
->    | **D** — genuinely TOTAL functions | **30** | **NO PATH EXISTS TODAY** |
+>    | **PUBLIC — product import** (v178 clause 1) | **7** | none convert; see below |
+>    | **PUBLIC — cross-repo test harness** (v178 clause 2) | **1** | `test_workflow_full_round_trip` — MUST NOT convert |
+>    | **NOT PUBLIC API** by ratified v178 | **26** | the criterion removes them once IMPLEMENTED |
 >
->    **CONVERTING EVERY CONVERTIBLE OFFENDER LANDS AT ~39, NOT 0.** An earlier revision of this
->    file said "the conversion floor is 43" — **that was wrong and is retracted.** C is **4**,
->    not the ~15 the old triage projected, because #809, #816 and slices 1–3 already removed
->    most of the conversion set. **The D class of 30 is now the critical path to arming, and it
->    is far larger than `zu85`'s 4.** Conversion is the WRONG answer for D by the triage's own
->    ruling — a `Result` on a total function has an uninhabited failure track. So arming needs
->    a ruling on what the Result-return rule requires of a function with no failure mode.
-> 8. **🔑 AND THE LIKELY ANSWER TO D IS MEASURED: 40 OF THE 46 ARE NOT PUBLIC API AT ALL.** See
->    §"THE `__all__` FINDING". Of 46 offenders, **40 are exported in `__all__` but imported by
->    NO other first-party module**; only **6** cross a module boundary. The check's premise
->    "public API = named in `__all__`" is false for this repo AT SCALE. #809 corrected the
->    `_`-prefixed spelling of exactly this defect (6 offenders); the un-prefixed spelling was
->    left standing. `check-all-declared` does NOT force it — it requires a well-formed
->    `__all__`, not that every function appear in one.
+>    **7 + 1 + 26 = 34, exactly.** So the criterion shrinks the unresolved population from
+>    **30 to 8**, and of those 8 every single one was read and **none has a genuine failure
+>    track**. Arming therefore still needs ONE ruling — what the Result-return rule requires of
+>    a function with no failure mode — but the population it applies to is ~6, not 30, and the
+>    conversion track that was supposed to shrink it is EXHAUSTED.
+> 7a. **⚠️ THE 46/40 FIGURES IN OLDER SECTIONS BELOW ARE SUPERSEDED, AND ONE OF THEM WAS
+>    MEASURED WRONG.** The "40 of 46 are not public API" figure came from a BARE-NAME oracle.
+>    Re-measured with module-qualified resolution, it over-credited at least one function:
+>    `merged_branch_sweep.fetch_manifest` was scored PUBLIC with two consumers, but **both
+>    consumers import a DIFFERENT `fetch_manifest`** — there are two functions of that name
+>    (`fleet/fleet_conformance.py:187` and `fleet/merged_branch_sweep.py:94`), and the offender
+>    has ZERO consumers. **That is this thread's own "read the callee, do not match the name"
+>    lesson recurring INSIDE the measurement built to apply it.** Any future oracle MUST
+>    resolve an import to its DEFINING MODULE. Do not re-derive the old numbers.
+> 8. **🔑 THE CRITERION IS RATIFIED — livespec v178, `d230c9ff`.** `__all__` membership no
+>    longer defines public API. A function is public when CONSUMED ACROSS A BOUNDARY, measured
+>    FLEET-WIDE, in four enumerated forms. See §"v178 — THE CRITERION" for what it costs and
+>    what it does NOT do. **It is ratified but NOT IMPLEMENTED** — two impl commitments are
+>    declared, and until the repo-local half ships, the check still reports 34.
 > 9. **⛔ `zu85` — the START-HERE target this file used to name is UNCONVERTIBLE.** Four of
 >    the 46 offenders live in `otel_step_timer.py`, and that file **cannot import the railway
 >    at all**: `docker/fabro-sandbox/base/Dockerfile:106` COPYs it ALONE to
@@ -770,7 +781,129 @@ local-only amend is how a durable record quietly reverts.
 **Once checks are green, open a FRESH PR off the new master rather than amending.** Amending races
 auto-merge, and the race is invisible when you win it.
 
-### ▶️ EXACT NEXT ACTION — **PICK UP TRACK B. NO NEW AUTHORITY IS NEEDED.**
+### 📊 BRIEF 25 — WHAT LANDED, WITH THE ARITHMETIC STATED EXACTLY
+
+| item | state | effect |
+|---|---|---|
+| 1. `zu85` option (a) — narrow `__all__` | **MERGED** PR #832, released `v1.0.6` | **46 → 43** |
+| 2. Fleet-wide public-API criterion | **RATIFIED** livespec **v178**, PR #1826 → `d230c9ff` | shrinks the unresolved set 30 → ~6 |
+| 3. Class B — nine reasoned declarations | PR **#835** (re-derive merge state) | **43 → 34** |
+| 4. Class C — the conversions | **EMPTY.** Every candidate read; every one a NON-conversion | **0** |
+| 5. Re-measure, then arm | **NOT ARMED**, correctly — the floor is not zero | — |
+
+**THE NUMBER THE ARMING GATE IS DEFINED AGAINST: 34 today; 8 once v178's repo-local half is
+implemented; and ZERO is still not reachable**, because all 8 are public-and-total.
+
+### 🔑 v178 — THE CRITERION. Ratified 2026-07-29 into `livespec`, and it is the load-bearing result
+
+`livespec/SPECIFICATION/non-functional-requirements.md` §"ROP composition". A top-level function
+is PUBLIC API for the Result-return rule **only when CONSUMED ACROSS A BOUNDARY**, measured
+**FLEET-WIDE**, in four forms: (1) product import, in this repo across a module boundary or in any
+sibling; (2) **cross-repo TEST import**; (3) process entry point (`python -m`, console script,
+baked binary); (4) a live non-Python distributed surface. Clause 0 preserves the ratified
+`_`-prefix rule rather than deleting it alongside its own generalization.
+
+**WHY CLAUSE 2 EXISTS, and it is the constraint most likely to be "simplified" away.** A rule
+saying "imported only by tests → not public" would have acquitted
+`livespec_dev_tooling/testing/cli_e2e.py` — **the most explicitly consumer-facing surface in the
+repo**, consumed from the test trees of FOUR siblings, one of which documents itself as "a
+CONSUMER" in its own module docstring. The line belongs at the **REPO** boundary, not the
+`tests/` boundary. A same-repo test importer is scaffolding; another repo's test suite is a
+consumer whose green gates break.
+
+**THE ANTI-GAMING HALF, and its honest measurement.** The criterion is `__all__`-INDEPENDENT in
+the tightening direction: a consumed function is public **whether or not** it appears in
+`__all__`, so deleting a line is not an escape. **Measured exposure of that half TODAY: ZERO** —
+no top-level function is consumed-but-undeclared fleet-wide; the 11 imported-but-undeclared names
+are all SUBMODULES, every one from test code. It is a guard against future gaming, not a
+correction of present state, and it turned nothing red. **Do not quote it as having teeth it does
+not yet have.**
+
+**IT IS BOTH A WEAKENING AND AN EXPRESSION, and the ratified text says so.** It expresses reality
+for the names it removes; it also **materially shrinks enforcement scope — 26 of 34 in this repo
+alone** — which is a real reduction, not a reclassification. The `__all__`-independent clause and
+the central-vantage row strengthen it back in the direction that matters.
+
+**ENFORCEMENT IS SPLIT AND NEITHER HALF SUFFICES — this is the part to implement.** A repo-local
+check **structurally CANNOT see a sibling's import**, so a fleet-wide claim enforced only locally
+would assert a guarantee nothing computes. Two impl commitments are declared:
+`public-api-consumed-criterion-check` (repo-local) and
+`public-api-fleet-consumption-conformance-row` (**central vantage — the half that would have
+caught `parse_manifest` BEFORE its conversion**).
+
+**KNOWN BLIND SPOT, ratified rather than discovered later:** the oracle is STATIC and cannot see
+`getattr` / `importlib` / string dispatch. A cross-repo dynamic reach MUST be declared.
+
+### ⛔ CLASS C IS EMPTY — every candidate was READ, and every one is a NON-conversion
+
+Brief 25 item 4 gated each conversion on the sibling grep. Doing the reading dissolved the track.
+**This is the triage's own lesson landing for the fourth time: read every function the
+classification CONVICTED.**
+
+| candidate | verdict |
+|---|---|
+| `merged_branch_sweep.fetch_manifest` | **NOT PUBLIC.** Zero consumers — the two `if manifest is None` guards belong to the OTHER `fetch_manifest` (`fleet_conformance.py:187`). The name-match fooled the first measurement. |
+| `cli_e2e.test_workflow_full_round_trip` | **MUST NOT CONVERT — and this is the strongest non-conversion this thread has found.** It is a pytest-collected entry point; **raising IS its protocol**. Returning a `Failure` would make a failing round-trip read as a PASS in FOUR sibling repos. That is the `dx8l` booby trap pointed at a test gate: *a test that stops failing.* |
+| `cli_e2e.run_workflow` | **NOT PUBLIC**, and would be a NON-conversion anyway: it raises `CoverageGateError` as a deliberate **fail-CLOSED** gate. Converting a fail-closed raise into a `Failure` return is precisely the fail-stale-instead-of-fail-closed inversion `dx8l` taught. |
+| `cli_e2e.select_runner` | **PUBLIC, but its `raise ValueError` is a consumer WIRING BUG** (mock tier with no injected runner), not an expected failure. The railway carries expected failures; bugs propagate. Left unconverted, reasoning recorded. |
+| `cross_repo/fabro_image_pin_rewrite.tag_version_component` | **NOT a conversion.** Legitimate absence. Recorded three times now — do not re-litigate. |
+| `ensure_plugins.subprocess_runner`, `required_role_keys_declared.layout_dependent_check_slugs` | **NOT PUBLIC** by v178. The triage's `IOResult` reading is moot for them. |
+
+**GENERALIZE THIS, because it binds the other five repos' 223:** the "explicit `raise`" class is
+the WEAKEST of the triage's convert classes, not the strongest. A raise can be a protocol
+(pytest), a fail-closed gate, or a bug — and in all three, converting to `Result` makes the
+failure QUIETER, which is the wrong direction. **Ask what the raise IS before converting it.**
+
+### 🕳️ THE BOOBY-TRAP CLASS — record it where the fan-out reads it (now also in ratified v178)
+
+`manifest is None` did not FAIL against a `Success`. Against a `Result` that test is permanently
+False, so **the guard silently STOPPED BEING A GUARD**, control flowed into `manifest.owner`, and
+an access-gating marker went **STALE rather than failing closed**. *Fail-stale on an access gate
+is strictly worse than fail-closed.*
+
+**GREPPING FOR THE SYMBOL FINDS THE IMPORT; IT DOES NOT FIND THE GUARD.** Every remaining
+conversion of a consumed symbol has this latent: a `None`-guard, a falsy test, an `or` default.
+The second one will look exactly like the first. So the precondition has TWO steps, not one:
+locate consumers by the v178 criterion, **then READ each consumption site's guard.**
+
+**AND THE DUAL-SHAPE FIX OUTRANKS THE SEQUENCED ONE.** The `dx8l` repair made the consumer
+tolerate BOTH `Manifest | None` and `Result[...]`, which satisfies "consumer wiring lands before
+the change that assumes it" for EVERY pin version simultaneously — so the pin can move in either
+direction without re-breaking, and neither a re-land nor a future revert can re-open it. **Carry
+that shape into every remaining sibling wiring.**
+
+### ⚠️ TWO PROCESS TRAPS PAID FOR THIS SESSION — both cost a rebuild
+
+1. **The Green amend MUST use `--no-edit`, never `-F`/`-m`.** Passing a message file to
+   `git commit --amend` **discards the `TDD-Red-*` trailers the Red leg recorded**; the
+   commit-msg hook then appends only `TDD-Green-*`. It reads Red state from the PARENT commit, so
+   it PASSES at amend time and the commit only fails later at `check-red-green-replay` on push.
+   The remedy is a full rebuild of the pair from master — there is no repair in place.
+2. **`propose_change.py` / `revise.py` have NO `__main__` guard.** `python -m
+   livespec.commands.propose_change` imports the module and **exits 0 having done nothing** — a
+   silent no-op that looks exactly like success. Invoke
+   `.claude-plugin/scripts/bin/<command>.py` instead.
+
+### ▶️ EXACT NEXT ACTION — **IMPLEMENT v178's REPO-LOCAL HALF. NO NEW AUTHORITY IS NEEDED.**
+
+**The queue below is superseded through item 4.** Items 1–4 are DONE (see §"BRIEF 25 — WHAT
+LANDED"). What remains, in order:
+
+1. **Implement v178's repo-local half** — `public-api-consumed-criterion-check`. Takes the
+   measured count **34 → 8**. Red→Green-Replay, one slice per PR. The consumption oracle MUST
+   resolve imports to the DEFINING MODULE (see START-HERE 7a).
+2. **Implement the CENTRAL half** — `public-api-fleet-consumption-conformance-row`. This is the
+   half that catches the next `parse_manifest`. A repo-local check cannot.
+3. **THE ONE REMAINING RULING, and it is now the whole arming gate:** ~6 functions are PUBLIC by
+   v178 and TOTAL — `canonical_check_slugs`, `world_gate_check_slugs`,
+   `classify_role_key_declarations`, `parse_open_bump_prs`, `denotes_same_release`, plus
+   `select_runner` and `tag_version_component` as recorded non-conversions. **Conversion is the
+   wrong answer for all of them** (an uninhabited failure track). Zero is NOT reachable until the
+   rule says what it requires of a function with no failure mode. That is a propose-change, and
+   it is the LAST thing between here and arming.
+4. **Then re-measure, and ONLY at measured zero, arm.** Then fan out. **DO NOT ARM BEFORE.**
+
+### 🗄️ (superseded through item 4) THE OLD NEXT ACTION
 
 ### ▶️▶️ START HERE — `zu85` OPTION (a). RULED, JUSTIFIED, AND THE FIRST EDIT IS WRITTEN OUT.
 
