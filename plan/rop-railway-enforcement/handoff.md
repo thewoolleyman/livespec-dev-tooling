@@ -54,12 +54,27 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >    anything.** Measured on master `0788e93` with the shipped check: **25 dropped + 6 kept
 >    + 3 ADDED = 9**.
 >
->    **⛔ THE NEXT ACTION IS TRIAGING THE 3 UNDER v179, THEN v179's TWO MEMBERS, THEN `5cai`.
->    NOT ARMING.**
+>    **⛔ THE TRIAGE IS DONE (6g). THE NEXT ACTION IS IMPLEMENTING `9sl0`'s THREE, THEN v179's
+>    TWO MEMBERS (`rvw3`, `q5lb`), THEN `5cai`. NOT ARMING.** Re-measured on master `c236dbd`,
+>    not inherited: universe 146, **9 offenders**, the same nine listed in 6g.
+>
+>    **▶️ COLD-START ORIENTATION — the five items this thread now owns, all FILED, none
+>    started.** Nothing is mid-flight; every PR through brief 31 is merged and every worktree
+>    of this thread's is removed. In dependency order:
+>
+>    | id | what | gates arming? |
+>    |---|---|---|
+>    | **`9sl0`** | the 3 genuine violations — restructure, convert, convert | **YES** |
+>    | **`rvw3`** | v179 member 1 — mechanical, clause (d) fixpoint | **YES** |
+>    | **`q5lb`** | v179 member 2 — the `total_absence_returns` key | **YES** |
+>    | **`5cai`** | the CENTRAL-vantage conformance row | **YES — binding, brief 30** |
+>    | **`0yfo`** → `995m` | decompose `config.py`, then flip the `@generated` predicate | only via 6f's known-gap statement |
 >
 >    - **Both rulings are RATIFIED**: livespec **v178** (public = CONSUMED ACROSS A BOUNDARY,
 >      PR #1826 → `d230c9ff`) and **v179** (the rule reaches functions that HAVE an expected
->      failure mode, PR #1827). **No spec work remains before arming.**
+>      failure mode, PR #1827). **No spec change BLOCKS arming** — but one is owed and PENDING:
+>      v178's "exposure of the tightening half: ZERO" paragraph is FALSE, and the correction is
+>      filed-not-ratified (see 6e). The earlier "no spec work remains" reading is retired.
 >    - **`zu85` CLOSED** (#832), **class B CLOSED** (#835, nine reasoned
 >      `supervisor_entry_files` entries), **`u4ij` CLOSED** — all three conversions landed:
 >      #841 `classify_role_key_declarations`, #846 `select_runner`, #849
@@ -99,9 +114,18 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >    than its pre-v178 figure.** "Unknown" is now the honest word in both directions, not just
 >    upward, and no figure may be quoted without a post-v178 re-measurement of that repo.
 >
->    **✅ THE CORRECTION IS FILED — `livespec` PR #1834** (propose-change only; that repo's
->    `proposed_changes/` already held two pending changes from other work, and a revise pass
->    would have forced a verdict on both, which is not this thread's to give). It requires the
+>    **✅ THE CORRECTION IS FILED — `livespec` PR #1834, MERGED to `livespec` master.**
+>    **⛔ MERGED ≠ RATIFIED, and conflating them here would be this thread's core defect at the
+>    process level.** #1834 lands a PENDING proposed change under
+>    `livespec/SPECIFICATION/proposed_changes/`; **v178's false paragraph is STILL IN THE
+>    RATIFIED TEXT** and stays there until a `livespec` revise pass consumes it. Do NOT cite
+>    the correction as ratified, and do NOT quote v178's "exposure: ZERO" as authority in the
+>    meantime — it is filed-as-wrong, not yet fixed.
+>    **Whoever runs that revise inherits a decision this thread declined**: that repo's
+>    `proposed_changes/` also held TWO pending changes from other work
+>    (`github-app-request-budget.md`, `owned-heading-coverage-todos.md`), and a revise consumes
+>    one decision PER FILE — so revising means adjudicating both. They are not this thread's to
+>    judge. Either their owners revise, or a maintainer rules. It requires the
 >    ratified text to carry the measured number, the named functions, the network-reaching
 >    detail, and the both-directions consequence — and to record the figure as WRONG WHEN
 >    WRITTEN rather than superseded, because **a clause's exposure cannot be measured before
