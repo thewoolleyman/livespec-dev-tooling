@@ -356,6 +356,20 @@ def _offenders(*, body: str, rel: str = "commands/run.py") -> list[tuple[int, st
     return _find_offenders(source=body, rel_path=Path(rel), commands_trees=_EXEMPT_TREES)
 
 
+def _offenders_with_supervisors(
+    *, body: str, rel: str, supervisor_entry_files: tuple[Path, ...]
+) -> list[tuple[int, str]]:
+    """Run the offender scan with a declared `supervisor_entry_files` set."""
+    from livespec_dev_tooling.checks.public_api_result_typed import _find_offenders
+
+    return _find_offenders(
+        source=body,
+        rel_path=Path(rel),
+        commands_trees=_EXEMPT_TREES,
+        supervisor_entry_files=supervisor_entry_files,
+    )
+
+
 def test_public_api_result_typed_exempts_any_function_returning_none() -> None:
     """`-> None` is exempt anywhere, per the ratified spec's own words.
 
@@ -455,3 +469,53 @@ def test_public_api_result_typed_treats_a_leading_underscore_as_not_public() -> 
     assert (
         _offenders(body=body, rel="livespec_dev_tooling/checks/thing.py") == []
     ), "a `_`-prefixed name in __all__ is not public API and must not be flagged"
+
+
+def test_public_api_result_typed_honors_a_declared_supervisor_entry_file() -> None:
+    """A file declared in `supervisor_entry_files` gets the supervisor exemption.
+
+    Member 4 of the EXHAUSTIVE exemption set ratified in livespec v177
+    (`non-functional-requirements.md` §"ROP composition"). It admits the SAME
+    category as the `commands/*.py` members — a supervisor at a deliberate
+    side-effect boundary — through a per-file declaration rather than a
+    directory glob, because a flat-layout consumer cannot satisfy a location
+    scoping at all: its process entry points sit beside its ordinary modules.
+
+    The declaration is STRICTER than the glob it complements. `commands/*.py`
+    exempts every present and future file in that directory with nobody
+    deciding anything; this names one file, and a repo that has not spoken
+    gets nothing — which the companion assertion below pins.
+    """
+    body = "__all__: list[str] = ['main']\n\n\ndef main() -> int:\n    return 0\n"
+    declared = (Path("livespec_dev_tooling/tdd_commit.py"),)
+
+    assert (
+        _offenders_with_supervisors(
+            body=body, rel="livespec_dev_tooling/tdd_commit.py", supervisor_entry_files=declared
+        )
+        == []
+    ), "a declared supervisor entry file's main() -> int is exempt"
+
+    assert _offenders_with_supervisors(
+        body=body, rel="livespec_dev_tooling/other.py", supervisor_entry_files=declared
+    ) == [(4, "main")], "an UNDECLARED file gets nothing — silence is not consent"
+
+
+def test_declared_supervisor_file_does_not_exempt_every_function_in_it() -> None:
+    """Member 4 is BOUNDED: it exempts supervisor entry points, not the whole file.
+
+    v177 states this explicitly, because the tempting reading is that
+    declaring a file switches the railway off inside it. A helper that is
+    neither a `main()`-shaped entry point nor annotated `None` stays subject
+    to the rule even in a declared file.
+    """
+    body = (
+        "__all__: list[str] = ['main', 'helper']\n\n\n"
+        "def main() -> int:\n    return 0\n\n\n"
+        "def helper(*, x: int) -> bool:\n    return bool(x)\n"
+    )
+    declared = (Path("livespec_dev_tooling/tdd_commit.py"),)
+
+    assert _offenders_with_supervisors(
+        body=body, rel="livespec_dev_tooling/tdd_commit.py", supervisor_entry_files=declared
+    ) == [(8, "helper")], "the helper is still on the hook; only the supervisor entry point is not"
