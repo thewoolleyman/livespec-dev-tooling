@@ -71,7 +71,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
     from pathlib import Path
 
-__all__: list[str] = ["functions_without_expected_failure_mode"]
+__all__: list[str] = ["functions_without_expected_failure_mode", "returns_x_or_none"]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -83,8 +83,13 @@ class _LocalAnalysis:
     x_or_none: set[tuple[Path, str]]
 
 
-def _returns_x_or_none(*, func: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+def returns_x_or_none(*, func: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     """Clause (e): is the return annotation of the form `X | None`?
+
+    PUBLIC to this package because member 2's STRUCTURAL GATE
+    (`_declared_absence_returns`, SPECIFICATION v037 bound 1) must gate EXACTLY
+    the shape this clause refuses. Two independent readers of the same annotation
+    is how a gate and the clause it relieves drift apart.
 
     Both spellings count — `X | None` parses to a `BinOp`, `Optional[X]` to a
     `Subscript` — because the shape the clause refuses is the hand-rolled
@@ -120,7 +125,7 @@ def _local_analysis(
             key = (rel, node.name)
             if any(isinstance(inner, ast.Raise | ast.Try) for inner in ast.walk(node)):
                 disqualified.add(key)
-            if _returns_x_or_none(func=node):
+            if returns_x_or_none(func=node):
                 x_or_none.add(key)
             outcome = calls_of(
                 func=node,
