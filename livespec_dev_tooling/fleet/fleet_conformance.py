@@ -126,14 +126,18 @@ from livespec_dev_tooling.fleet._lanes import (
 )
 from livespec_dev_tooling.fleet._member_ci_exit import RunTallies, member_ci_exit_code
 from livespec_dev_tooling.fleet._rows_github import SIBLING_TOPIC
-from livespec_dev_tooling.fleet.contract import Manifest, parse_manifest
+from livespec_dev_tooling.fleet.contract import (
+    Manifest,
+    ManifestUnavailable,
+    parse_manifest,
+)
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
-from returns.result import Failure  # noqa: E402  — vendor-path-aware import.
+from returns.result import Failure, Result, Success  # noqa: E402  — vendor-path-aware import.
 
 __all__: list[str] = []
 
@@ -200,17 +204,29 @@ def central_run_vantages(*, token: str) -> frozenset[str]:
     return frozenset({CENTRAL_VANTAGE})
 
 
-def fetch_manifest(*, ctx: FleetContext) -> Manifest | None:
-    """The fleet manifest from livespec master, or None when unavailable."""
+def fetch_manifest(*, ctx: FleetContext) -> Result[Manifest, ManifestUnavailable]:
+    """The fleet manifest from livespec master, or WHICH STAGE could not produce it.
+
+    `Result` rather than `IOResult` deliberately: every byte this function
+    reads arrives through the injected `ctx.file_text` seam, so it is not
+    itself an I/O boundary — the same seam-versus-direct-call reading that
+    separates this conversion's justification (v179 clause (e), an `X | None`
+    return over an inhabited failure track) from the clause-(c) reading that
+    would wrongly convict `holds_app_class_credential` too.
+
+    The two failures were the same `None` before, told apart only by whether
+    a `malformed_content` entry appeared on `ctx.read_failures`. That
+    recording is KEPT — it carries the interpolated parse reason an operator
+    reading a failure in ANOTHER repo needs, and every call site already logs
+    `ctx.read_failures` as `causes` — but it is no longer the only place the
+    distinction exists, which is what made it invisible to control flow.
+    """
     text = ctx.file_text(repo=MANIFEST_REPO, path=MANIFEST_PATH)
     if text is None:
-        return None
+        return Failure(ManifestUnavailable(reason="unreadable"))
     parsed = parse_manifest(source=text)
     if isinstance(parsed, Failure):
         # Reaching here means the fetch SUCCEEDED and the bytes are unparseable.
-        # Recording it separately is what makes "could not fetch the manifest"
-        # and "fetched a malformed manifest" distinguishable downstream; they
-        # were the same `None` before.
         #
         # The reason is interpolated because the manifest lives in ANOTHER
         # repo: whoever reads this line does not have the bytes in front of
@@ -223,8 +239,8 @@ def fetch_manifest(*, ctx: FleetContext) -> Manifest | None:
             kind="malformed_content",
             detail=f"manifest fetched but did not parse: {parsed.failure().reason}",
         )
-        return None
-    return parsed.unwrap()
+        return Failure(ManifestUnavailable(reason="unparseable"))
+    return Success(parsed.unwrap())
 
 
 def _member_verdict_payload(
@@ -353,11 +369,16 @@ def _resolve_root_facts(
     """
     if not _credential_usable(ctx=ctx, log=log):
         return None
-    manifest = fetch_manifest(ctx=ctx)
-    if manifest is None:
+    fetched = fetch_manifest(ctx=ctx)
+    if isinstance(fetched, Failure):
         log.error(
             "fleet manifest unavailable",
             source=f"{owner}/{MANIFEST_REPO}:{MANIFEST_PATH}",
+            # WHICH STAGE failed, straight off the failure track: an
+            # unanswered fetch and a fetched-but-malformed document want
+            # different responses, and reading which it was no longer means
+            # scanning `causes` for a `malformed_content` entry.
+            stage=fetched.failure().reason,
             hint="the manifest on livespec master is the root fact; failing loud",
             # The CAUSES, not just the verdict. Without these a 403, a 404, a
             # rate-limit and a malformed manifest all read identically as
@@ -365,7 +386,8 @@ def _resolve_root_facts(
             # rejection indistinguishable from a real blind spot.
             causes=[failure.as_dict() for failure in ctx.read_failures],
         )
-    return manifest
+        return None
+    return fetched.unwrap()
 
 
 def main() -> int:
