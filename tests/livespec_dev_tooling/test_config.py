@@ -34,6 +34,7 @@ from livespec_dev_tooling.config import (
     MirrorPairing,
     NotApplicable,
     SupersededBy,
+    TotalAbsenceReturn,
     filter_first_party_py,
     has_first_party_py,
     is_bin_wrapper,
@@ -440,6 +441,78 @@ def test_cross_repo_public_api_blank_reason_raises(*, tmp_path: Path) -> None:
         ),
     )
     with pytest.raises(ConfigParseError, match="needs a non-empty `reason`"):
+        _ = load_config(repo_root=tmp_path)
+
+
+def test_total_absence_returns_parses_entries(*, tmp_path: Path) -> None:
+    """A well-formed `total_absence_returns` array parses to typed entries.
+
+    SPECIFICATION v037 §"Role keys": the carrier `livespec` v179 member 2 names
+    for a public `X | None` whose `None` is a legitimate ABSENCE.
+    """
+    _write_pyproject(
+        repo_root=tmp_path,
+        body=(
+            "[tool.livespec_dev_tooling]\n"
+            "total_absence_returns = [\n"
+            '  { file = "pkg/a.py", function = "tag_part", reason = "no version component" },\n'
+            "]\n"
+        ),
+    )
+    resolved = load_config(repo_root=tmp_path)
+    assert resolved.total_absence_returns == (
+        TotalAbsenceReturn(
+            file=Path("pkg/a.py"), function="tag_part", reason="no version component"
+        ),
+    )
+
+
+def test_total_absence_returns_absent_key_parses_empty(*, tmp_path: Path) -> None:
+    """An undeclared `total_absence_returns` parses to an EMPTY declaration.
+
+    It is NOT a required role key (v037): adding it to `REQUIRED_ROLE_KEYS` would
+    hard-error every governed repo on its next pin bump to demand a declaration
+    most have no content for. And empty is the STRICT end of this key — it
+    exempts nothing — which is the OPPOSITE polarity from the union role keys.
+    """
+    _write_pyproject(repo_root=tmp_path, body="[tool.livespec_dev_tooling]\n")
+    assert load_config(repo_root=tmp_path).total_absence_returns == ()
+    assert "total_absence_returns" not in REQUIRED_ROLE_KEYS
+
+
+def test_total_absence_returns_blank_reason_raises(*, tmp_path: Path) -> None:
+    """A whitespace-only `reason` is rejected — v037 bound 2, a schema rule."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body=(
+            "[tool.livespec_dev_tooling]\n"
+            'total_absence_returns = [{ file = "pkg/a.py", function = "f", reason = " " }]\n'
+        ),
+    )
+    with pytest.raises(ConfigParseError, match="needs a non-empty `reason`"):
+        _ = load_config(repo_root=tmp_path)
+
+
+def test_total_absence_returns_non_array_raises(*, tmp_path: Path) -> None:
+    """A scalar `total_absence_returns` raises, naming the key."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body='[tool.livespec_dev_tooling]\ntotal_absence_returns = "nope"\n',
+    )
+    with pytest.raises(ConfigParseError, match="`total_absence_returns` must be an array"):
+        _ = load_config(repo_root=tmp_path)
+
+
+def test_total_absence_returns_entry_missing_function_raises(*, tmp_path: Path) -> None:
+    """An entry missing `function` raises — the shared entry-shape gate."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body=(
+            "[tool.livespec_dev_tooling]\n"
+            'total_absence_returns = [{ file = "pkg/a.py", reason = "why" }]\n'
+        ),
+    )
+    with pytest.raises(ConfigParseError, match="needs string `file`"):
         _ = load_config(repo_root=tmp_path)
 
 
