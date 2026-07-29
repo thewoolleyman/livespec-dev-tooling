@@ -90,7 +90,15 @@ def _run_check(*, cwd: Path) -> subprocess.CompletedProcess[str]:
 
 
 def test_public_api_result_typed_rejects_non_result_public_function(*, tmp_path: Path) -> None:
-    """A public function in `parse/` returning bare `int` (not Result) fails the check."""
+    """A public function in `parse/` returning bare `int` (not Result) fails the check.
+
+    The fixture RAISES, and that is load-bearing since livespec v179: the rule
+    reaches a public function only when it HAS an expected failure mode, so a
+    `return x` body would now be member-1 exempt and this test would assert the
+    check rejects something the ratified rule no longer asks it to. The subject
+    under test is the missing `Result`, and the raise is what keeps the
+    function in scope for it.
+    """
     package_dir = tmp_path / ".claude-plugin" / "scripts" / "livespec" / "parse"
     package_dir.mkdir(parents=True)
     source = package_dir / "foo.py"
@@ -101,6 +109,8 @@ def test_public_api_result_typed_rejects_non_result_public_function(*, tmp_path:
         "\n"
         "\n"
         "def compute(*, x: int) -> int:\n"
+        "    if x < 0:\n"
+        "        raise ValueError(x)\n"
         "    return x\n",
         encoding="utf-8",
     )
@@ -151,6 +161,13 @@ def test_public_api_result_typed_accepts_result_typed_function(*, tmp_path: Path
 def test_public_api_result_typed_accepts_safe_decorated_function(*, tmp_path: Path) -> None:
     """A public function decorated with `@safe(...)` passes (exit 0).
 
+    The body RAISES so the DECORATOR is what makes this pass. Since livespec
+    v179 a total body would be member-1 exempt, and the test would go green
+    without the decorator branch ever running — passing for the wrong reason,
+    which is the failure this suite exists to catch. The raise is also the
+    honest fixture: `@safe(exceptions=(ValueError,))` exists to lift exactly
+    this.
+
     Fixture stacks a non-railway decorator BEFORE the
     `@safe(...)` to exercise the `for decorator in
     decorator_list:` loop continuation past a non-matching
@@ -175,6 +192,8 @@ def test_public_api_result_typed_accepts_safe_decorated_function(*, tmp_path: Pa
         "@passthrough\n"
         "@safe(exceptions=(ValueError,))\n"
         "def compute(*, x: int) -> int:\n"
+        "    if x < 0:\n"
+        "        raise ValueError(x)\n"
         "    return x\n",
         encoding="utf-8",
     )
@@ -255,6 +274,10 @@ def test_public_api_result_typed_skips_module_without_all(*, tmp_path: Path) -> 
 def test_public_api_result_typed_accepts_bare_safe_decorator(*, tmp_path: Path) -> None:
     """A `@safe` (bare, not Call form) decorator passes the check.
 
+    Raises for the same reason as the Call-form case above: a total body would
+    be member-1 exempt since livespec v179, and this test would pass without
+    the bare-decorator branch ever running.
+
     Closes the `_decorator_terminal_name` non-Call branch
     (decorator IS a Name, not a Call).
     """
@@ -271,6 +294,8 @@ def test_public_api_result_typed_accepts_bare_safe_decorator(*, tmp_path: Path) 
         "\n"
         "@safe\n"
         "def compute(*, x: int) -> int:\n"
+        "    if x < 0:\n"
+        "        raise ValueError(x)\n"
         "    return x\n",
         encoding="utf-8",
     )
@@ -292,6 +317,11 @@ def test_public_api_result_typed_rejects_function_without_return_annotation(
     """A public function without a return annotation fails the check.
 
     Closes the `if func.returns is None: return False` branch.
+
+    The fixture RAISES for the same reason as the non-Result case above: since
+    livespec v179 the rule reaches a public function only when it HAS an
+    expected failure mode, so an unannotated `return x` is member-1 exempt and
+    the branch under test would never be reached.
     """
     package_dir = tmp_path / ".claude-plugin" / "scripts" / "livespec" / "parse"
     package_dir.mkdir(parents=True)
@@ -303,6 +333,8 @@ def test_public_api_result_typed_rejects_function_without_return_annotation(
         "\n"
         "\n"
         "def compute(*, x):\n"  # No return annotation
+        "    if x < 0:\n"
+        "        raise ValueError(x)\n"
         "    return x\n",
         encoding="utf-8",
     )

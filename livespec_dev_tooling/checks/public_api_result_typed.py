@@ -75,6 +75,9 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling.checks._no_expected_failure_mode import (  # noqa: E402
+    functions_without_expected_failure_mode,
+)
 from livespec_dev_tooling.checks._public_api_consumption import (  # noqa: E402
     declared_public_names,
     repo_local_public_names,
@@ -210,6 +213,7 @@ def _find_offenders(
     rel_path: Path,
     commands_trees: tuple[Path, ...],
     public_names: frozenset[str],
+    no_expected_failure_mode: frozenset[str] = frozenset(),
     supervisor_entry_files: tuple[Path, ...] = (),
 ) -> list[tuple[int, str]]:
     """Offending top-level functions in `source`, given this file's PUBLIC names.
@@ -219,6 +223,14 @@ def _find_offenders(
     consumer's `cross_repo_public_api` declaration. It replaces the
     `__all__`-membership proxy, which was false for this repo at scale: 25 of
     31 reported offenders were `__all__` members no boundary ever crossed.
+
+    `no_expected_failure_mode` is the v179 MEMBER 1 answer for this file, from
+    `_no_expected_failure_mode`. v178 scoped WHICH functions are public; v179
+    scopes which of them the rule reaches at all — a function with no expected
+    failure mode has nothing to flow, and a `Result` over it carries an
+    uninhabited failure track whose dead unwraps hide the live ones. Read the
+    two scopings together: they are the second and third narrowings of "every
+    public function" in as many revisions.
     """
     tree = ast.parse(source)
     out: list[tuple[int, str]] = []
@@ -226,6 +238,7 @@ def _find_offenders(
         if (
             isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
             and node.name in public_names
+            and node.name not in no_expected_failure_mode
             and _is_public_name(name=node.name)
             and not _is_railway_compliant(func=node)
             and not _is_exempt_supervisor(
@@ -258,6 +271,11 @@ def _scan(
     public = repo_local_public_names(sources=sources) | declared_public_names(
         declared=config.cross_repo_public_api, sources=sources
     )
+    # v179 member 1, recomputed here on EVERY run rather than declared. Its
+    # universe is the same git-derived set as the consumption graph's, because
+    # clause (d)'s fixpoint walks the whole call graph — a callee outside the
+    # analysed set is doubt, and doubt disqualifies.
+    total = functions_without_expected_failure_mode(sources=sources, io_trees=config.io_trees)
     offenders: list[tuple[Path, int, str]] = []
     for tree_rel in pure_trees:
         for py_file in iter_py_files(root=cwd / tree_rel):
@@ -269,6 +287,7 @@ def _scan(
                 rel_path=rel_path,
                 commands_trees=config.commands_trees,
                 public_names=frozenset(n for p, n in public if p == rel_path),
+                no_expected_failure_mode=frozenset(n for p, n in total if p == rel_path),
                 supervisor_entry_files=config.supervisor_entry_files,
             ):
                 offenders.append((rel_path, lineno, name))
