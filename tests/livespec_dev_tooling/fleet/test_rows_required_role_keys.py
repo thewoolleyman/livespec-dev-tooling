@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import sys
+from pathlib import Path
 
 import pytest
 
@@ -21,6 +23,12 @@ from livespec_dev_tooling.fleet._context import (
 from livespec_dev_tooling.fleet._rows_required_role_keys import (
     assert_required_role_keys_declared,
 )
+
+_VENDOR_DIR = Path(role_keys.__file__).resolve().parent.parent / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
+
+from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
 __all__: list[str] = []
 
@@ -94,6 +102,35 @@ def test_required_role_keys_row_fails_when_layout_check_omits_key() -> None:
     assert isinstance(outcome, RowFinding)
     assert missing_key in outcome.message
     assert "declare the real value" in outcome.message
+
+
+def test_required_role_keys_row_skips_when_the_checks_package_is_unreadable(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unreadable checks package SKIPS the row rather than passing it.
+
+    The walk that resolves layout-dependent slugs is railway-typed, and this is its
+    fail-closed branch. It exists because the natural unwrap is silently wrong: an
+    I/O error defaulted to an empty slug set reads as "no layout-dependent checks
+    wired", which is an EXCLUSION, which PASSES. `RowSkip` instead records the row as
+    UNEVALUATED, which the conformance engine already tracks — a row that could not
+    be determined must never be indistinguishable from a row that passed.
+    """
+    missing_key = sorted(REQUIRED_ROLE_KEYS)[0]
+    pyproject = _all_required_empty_block().replace(f"{missing_key} = []\n", "")
+    ctx = make_context(table=_role_key_table(justfile=_LAYOUT_JUSTFILE, pyproject=pyproject))
+    monkeypatch.setattr(
+        role_keys,
+        "layout_dependent_check_slugs",
+        lambda: IOFailure(OSError("checks package unreadable")),
+    )
+
+    outcome = assert_required_role_keys_declared(ctx=ctx, member=_MEMBER)
+
+    assert isinstance(
+        outcome, RowSkip
+    ), f"an unreadable checks package must SKIP, never pass; got {type(outcome).__name__}"
+    assert "checks package unreadable" in outcome.reason
 
 
 def test_required_role_keys_row_accepts_declared_empty_keys() -> None:

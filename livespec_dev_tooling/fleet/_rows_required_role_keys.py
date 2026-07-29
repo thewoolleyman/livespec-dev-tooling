@@ -26,6 +26,8 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import tomli  # noqa: E402  -- vendor-path-aware import after sys.path insert.
+from returns.io import IOSuccess  # noqa: E402  -- vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  -- vendor-path-aware import.
 
 __all__: list[str] = ["assert_required_role_keys_declared"]
 
@@ -86,10 +88,23 @@ def _required_role_status_outcome(
     *, justfile_text: str, declared_keys: frozenset[str], member: FleetMember
 ) -> RowOutcome:
     """Map the reusable declaration classifier onto a fleet row outcome."""
+    # FAIL CLOSED: an unreadable checks package yields RowSkip ("could not determine"),
+    # which the engine tracks as an UNEVALUATED row. Defaulting to an empty set would
+    # read as "no layout-dependent checks wired" — an exclusion, which passes the row.
+    #
+    # `.unwrap()` yields an `IO[T]`, NOT a `T`, so `unsafe_perform_io` is required to
+    # reach the slugs. Skipping it is silent rather than loud: `frozenset(IO(...))`
+    # succeeds and produces a set holding the TUPLE, so every slug comparison misses
+    # and the row passes. Destructuring `IOSuccess(x)` in a `match` is a third spelling
+    # of the same trap — it binds the inner `Result`, not the `IO`.
+    walk = layout_dependent_check_slugs()
+    if not isinstance(walk, IOSuccess):
+        return RowSkip(reason=f"{member.repo}: checks package unreadable")
+    layout_dependent = frozenset(unsafe_perform_io(walk.unwrap()))
     status = classify_role_key_declarations(
         justfile_text=justfile_text,
         declared_keys=declared_keys,
-        layout_dependent=frozenset(layout_dependent_check_slugs()),
+        layout_dependent=layout_dependent,
     )
     if status.is_excluded():
         return RowPass(note=f"excluded-with-reason: {status.excluded_reason}")

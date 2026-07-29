@@ -12,6 +12,8 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402  -- vendor-path-aware import after sys.path insert.
+from returns.io import impure_safe  # noqa: E402  -- vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  -- vendor-path-aware import.
 
 from livespec_dev_tooling.canonical_checks import canonical_check_slugs  # noqa: E402
 from livespec_dev_tooling.config import (  # noqa: E402
@@ -93,8 +95,19 @@ def _module_imports_load_config(*, path: Path) -> bool:
     return False
 
 
+@impure_safe(exceptions=(OSError,))
 def layout_dependent_check_slugs() -> tuple[str, ...]:
-    """Canonical check slugs whose implementation imports `load_config`."""
+    """Canonical check slugs whose implementation imports `load_config`.
+
+    Railway-lifted because this walk IS the I/O boundary: it stats every
+    canonical check module. `@impure_safe` is the sanctioned form here per
+    livespec §"ROP composition" — the raw exception is the payload and the
+    whole body is the seam.
+
+    Callers MUST fail closed. An empty slug set reads as "no layout-dependent
+    checks wired", which is an EXCLUSION, which PASSES — so swallowing an I/O
+    error into `()` would turn this check silently green.
+    """
     slugs: list[str] = []
     for slug in canonical_check_slugs():
         module_path = _CHECKS_PACKAGE_DIR / f"{_slug_to_module_name(slug=slug)}.py"
@@ -194,10 +207,22 @@ def _status_for_repo(*, repo_root: Path) -> RoleKeyDeclarationStatus:
             excluded_reason="justfile not found; no check aggregate wired",
         )
     config = load_config(repo_root=repo_root)
+    # FAIL CLOSED: `.unwrap()` re-raises if the walk failed, and `main()` uses the
+    # implicit supervisor form, so the interpreter prints the traceback and exits 1.
+    # Defaulting to an empty set instead would read as "no layout-dependent checks
+    # wired" — an exclusion, which PASSES — turning an I/O error silently green.
+    #
+    # `unsafe_perform_io` is NOT optional ceremony. `IOResult.unwrap()` returns an
+    # `IO[T]`, not a `T`, and `frozenset(IO(("a", "b")))` SILENTLY yields
+    # `{("a", "b")}` — a set holding the tuple rather than its slugs — instead of
+    # raising. Every slug comparison then misses, the status reads "excluded", and
+    # the check goes green. That mistake was made here and caught by
+    # `test_layout_dependent_wiring_missing_one_role_key_fails`.
+    walked = unsafe_perform_io(layout_dependent_check_slugs().unwrap())
     return classify_role_key_declarations(
         justfile_text=justfile.read_text(encoding="utf-8"),
         declared_keys=config.declared_keys,
-        layout_dependent=frozenset(layout_dependent_check_slugs()),
+        layout_dependent=frozenset(walked),
     )
 
 
