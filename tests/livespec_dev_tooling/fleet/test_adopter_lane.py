@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 
+from returns.result import Success
 from test_fleet_conformance import RecordingLog, make_context, make_runner, ok, raw
 
 from livespec_dev_tooling.fleet._adopter_lane import (
@@ -60,9 +61,9 @@ _NONCONFORMANT_SETTINGS = '{"hooks": {}}'
 
 
 def _manifest(*, source: str) -> Manifest:
-    manifest = parse_manifest(source=source)
-    assert manifest is not None
-    return manifest
+    outcome = parse_manifest(source=source)
+    assert isinstance(outcome, Success), outcome
+    return outcome.unwrap()
 
 
 def _recording_context(

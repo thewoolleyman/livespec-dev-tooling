@@ -133,6 +133,7 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
+from returns.result import Failure  # noqa: E402  — vendor-path-aware import.
 
 __all__: list[str] = []
 
@@ -188,20 +189,26 @@ def fetch_manifest(*, ctx: FleetContext) -> Manifest | None:
     text = ctx.file_text(repo=MANIFEST_REPO, path=MANIFEST_PATH)
     if text is None:
         return None
-    manifest = parse_manifest(source=text)
-    if manifest is None:
+    parsed = parse_manifest(source=text)
+    if isinstance(parsed, Failure):
         # Reaching here means the fetch SUCCEEDED and the bytes are unparseable.
         # Recording it separately is what makes "could not fetch the manifest"
         # and "fetched a malformed manifest" distinguishable downstream; they
         # were the same `None` before.
+        #
+        # The reason is interpolated because the manifest lives in ANOTHER
+        # repo: whoever reads this line does not have the bytes in front of
+        # them, and "did not parse" alone left them re-parsing a 39-member
+        # document by hand to find the one bad record.
         ctx.record_read_failure(
             operation="manifest",
             path=f"{MANIFEST_REPO}:{MANIFEST_PATH}",
             returncode=0,
             kind="malformed_content",
-            detail="manifest fetched but did not parse",
+            detail=f"manifest fetched but did not parse: {parsed.failure().reason}",
         )
-    return manifest
+        return None
+    return parsed.unwrap()
 
 
 def _member_verdict_payload(
