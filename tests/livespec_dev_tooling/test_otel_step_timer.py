@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pytest
 
+from livespec_dev_tooling.checks.public_api_result_typed import _find_offenders
 from livespec_dev_tooling.otel_step_timer import (
     DATASET,
     DEFAULT_ENDPOINT,
@@ -19,6 +21,9 @@ from livespec_dev_tooling.otel_step_timer import (
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+_OTEL_STEP_TIMER_REL = Path("livespec_dev_tooling/otel_step_timer.py")
+_OTEL_STEP_TIMER = Path(__file__).resolve().parents[2] / _OTEL_STEP_TIMER_REL
 
 
 def _recorder(store: list[dict[str, object]]) -> Callable[..., None]:
@@ -183,3 +188,34 @@ def test_main_drives_run_from_argv_and_env(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setattr("sys.argv", ["livespec-step-timer", "lefthook-install", "--", "true"])
     monkeypatch.setenv("LIVESPEC_SANDBOX_OTEL_ENDPOINT", "http://127.0.0.1:1")
     assert main() == 0
+
+
+def test_all_declares_only_the_boundary_crossing_entry_point() -> None:
+    """`__all__` names only what crosses a module boundary, so the ROP check sees the real surface.
+
+    This module cannot import the railway at ALL: the base image ``COPY``s this one
+    file to ``/usr/local/bin/livespec-step-timer`` and runs it on the system python3
+    BEFORE the first ``uv sync``, so a ``returns`` import would break every dispatched
+    Fabro prepare step. Its offenders therefore cannot be closed by conversion — only
+    by declaring the public surface honestly.
+
+    ``parse_argv``, ``build_trace_payload``, ``run`` and ``post_span`` are internal
+    helpers of a baked CLI, exported so this file could reach them. Each was justified
+    individually against the FLEET-WIDE boundary oracle (see the commit): zero
+    references in any of the eight siblings. ``main`` stays — the baked binary name is
+    referenced 15 times fleet-wide and every one of those enters through it.
+
+    The residual ``main`` offender is deliberately NOT closed here: it needs a reasoned
+    ``supervisor_entry_files`` entry, which grants FOUR exemptions, and bundling that
+    into this change would smuggle in exemptions this file does not need.
+    """
+    offenders = _find_offenders(
+        source=_OTEL_STEP_TIMER.read_text(encoding="utf-8"),
+        rel_path=_OTEL_STEP_TIMER_REL,
+        commands_trees=(),
+    )
+
+    assert [name for _lineno, name in offenders] == ["main"], (
+        "otel_step_timer's declared public surface should reduce to its single baked "
+        f"entry point; got {[name for _lineno, name in offenders]}"
+    )
