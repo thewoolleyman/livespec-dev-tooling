@@ -24,6 +24,22 @@ declared surface omits a name another member consumes is the
 central-vantage conformance row's obligation under v178's
 split-enforcement clause.
 
+WHICH PUBLIC FUNCTIONS THE RULE REACHES IS SCOPED AGAIN BY
+livespec v179, in two members read together here. Member 1 is
+COMPUTED every run (`checks/_no_expected_failure_mode`); member 2
+is DECLARED per function in `total_absence_returns` and gated by
+`checks/_declared_absence_returns` (SPECIFICATION v037). The two
+sets are disjoint by construction — clause (e) refuses every
+`X | None`, the only shape member 2 admits.
+
+⛔ BOTH DECLARATION KEYS' STALENESS GATES SIT BEHIND THE
+`pure_trees` ROLE-ABSENCE GATE, so a repo whose `pure_trees` is
+`not_applicable` or `unarmed_until` never reaches them and its
+declarations are UNVERIFIED locally until the check is armed
+there. That is an artifact of the gate ORDER, not of the
+detectors, and it is stated here rather than left to be
+discovered.
+
 The scan universe is still `pure_trees`-scoped; the
 CONSUMPTION universe is the git-derived first-party set from
 `resolve_check_universe()`, because a consumer of a pure-layer
@@ -75,6 +91,10 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling.checks._declared_absence_returns import (  # noqa: E402
+    declared_absence_names,
+    rejected_declarations,
+)
 from livespec_dev_tooling.checks._no_expected_failure_mode import (  # noqa: E402
     functions_without_expected_failure_mode,
 )
@@ -276,6 +296,14 @@ def _scan(
     # clause (d)'s fixpoint walks the whole call graph — a callee outside the
     # analysed set is doubt, and doubt disqualifies.
     total = functions_without_expected_failure_mode(sources=sources, io_trees=config.io_trees)
+    # v179 MEMBER 2, DECLARED rather than computed, unioned with member 1's computed
+    # set. The two are DISJOINT BY CONSTRUCTION — member 1's clause (e) refuses
+    # every `X | None`, and that is the only shape bound 1 admits — so the union
+    # adds exactly the declared absences, cannot let a declaration mask a member-1
+    # result, and cannot let a member-1 result launder an invalid declaration. An
+    # entry that FAILS bound 1 or bound 3 contributes nothing here; it fails the
+    # check outright in `main()`.
+    total |= declared_absence_names(declared=config.total_absence_returns, sources=sources)
     offenders: list[tuple[Path, int, str]] = []
     for tree_rel in pure_trees:
         for py_file in iter_py_files(root=cwd / tree_rel):
@@ -334,6 +362,17 @@ def main() -> int:
                 file=str(entry.file),
                 function=entry.function,
                 reason=entry.reason,
+            )
+        return 1
+    rejected = rejected_declarations(declared=config.total_absence_returns, sources=sources)
+    if rejected:
+        for item in rejected:
+            log.error(
+                "declared total_absence_returns entry is not a legitimate-absence declaration",
+                file=str(item.entry.file),
+                function=item.entry.function,
+                rejection=item.rejection,
+                reason=item.entry.reason,
             )
         return 1
     offenders = _scan(cwd=cwd, pure_trees=pure_trees, config=config, sources=sources)

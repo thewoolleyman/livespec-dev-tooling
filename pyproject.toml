@@ -189,6 +189,16 @@ cross_repo_public_api = [
     { file = "livespec_dev_tooling/testing/cli_e2e.py", function = "test_workflow_full_round_trip", reason = "cross-repo test import: the e2e round-trip suites of both Drivers and both orchestrators" },
     { file = "livespec_dev_tooling/testing/cli_e2e.py", function = "assert_coverage", reason = "cross-repo test import: livespec-driver-codex's tests/e2e-cli/test_cli_e2e.py" },
 ]
+# livespec v179 member 2 / SPECIFICATION v037: public `X | None` returns whose
+# `None` models a legitimate ABSENCE rather than a failure. RELAXING-ONLY, so
+# an EMPTY list is the STRICT end of this key — the opposite polarity from the
+# five union role keys, where empty was the blinding value. Every entry needs a
+# reason naming why the `None` is an absence, and both the structural `X | None`
+# gate (bound 1) and the staleness detector (bound 3) HARD-FAIL in
+# `public_api_result_typed`.
+total_absence_returns = [
+    { file = "livespec_dev_tooling/cross_repo/fabro_image_pin_rewrite.py", function = "tag_version_component", reason = "absence, not failure: a docker tag legitimately HAS no version component, so `None` is an ordinary answer every caller acts on. Converting it would force each caller to unwrap a Failure for a non-failure. Established four separate times across the rop-railway-enforcement thread: it sat in that triage's STRONGEST convert class (a hand-rolled `X | None` failure track) and was still not a conversion, which is what produced the standing rule to read every function a classification convicted." },
+]
 # CLI/supervisor entry files whose `main()` / `_write` helpers own
 # legitimate stdout/stderr contracts — the surface `no_write_direct`
 # (and `no_except_outside_io`) exempt. Each write here is a JSON payload,
