@@ -33,14 +33,15 @@ import urllib.error
 import urllib.request
 from collections.abc import Callable
 
+# Only names that cross a module boundary. `parse_argv`, `build_trace_payload`,
+# `run` and `post_span` are internal helpers of this baked CLI — each measured at
+# ZERO references across all eight sibling repos, reached only by this module's own
+# tests. `main` stays: the baked `livespec-step-timer` binary is referenced 15 times
+# fleet-wide and every one of those enters through it.
 __all__: list[str] = [
     "DATASET",
     "DEFAULT_ENDPOINT",
-    "build_trace_payload",
     "main",
-    "parse_argv",
-    "post_span",
-    "run",
 ]
 
 DEFAULT_ENDPOINT = "http://172.17.0.1:4318"
