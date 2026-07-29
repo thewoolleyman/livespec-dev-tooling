@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.6.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.5.0...v1.6.0) (2026-07-29)
+
+
+### Features
+
+* **checks:** the Result-return rule stops reaching total public functions ([4d38dd9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4d38dd9d2316d0f9e23ec2dd25913a7c0cc10f41))
+
 ## [1.5.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.4.2...v1.5.0) (2026-07-29)
 
 
