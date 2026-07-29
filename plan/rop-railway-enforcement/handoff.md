@@ -54,28 +54,35 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >    anything.** Measured on master `0788e93` with the shipped check: **25 dropped + 6 kept
 >    + 3 ADDED = 9**.
 >
->    **✅ `9sl0` IS CLOSED — ALL THREE LANDED. THE RATIFIED-RULE COUNT IS 0, AND THE CHECK
->    REPORTS 7.** Re-measured on master `7459989`, not inherited: universe 146, **7 offenders**.
->    **⛔ THAT IS NOT PERMISSION TO ARM** — the gate is that the two numbers AGREE, and 7 ≠ 0.
->    **THE NEXT ACTION IS `rvw3`, THEN `q5lb`, THEN `5cai`.** See 6h for the three conversions
->    and the two findings they produced.
+>    **✅ `9sl0` AND `rvw3` ARE BOTH CLOSED. THE CHECK REPORTS 3; THE RATIFIED RULE
+>    CONSIDERS 2 A VIOLATION.** Re-measured on master, not inherited: universe **149**,
+>    member-1 exempt fleet-wide **377**, **3 offenders**.
+>    **⛔ THAT IS NOT PERMISSION TO ARM** — the gate is that the two numbers AGREE, and 3 ≠ 2.
+>    **THE NEXT ACTION IS `q5lb`, THEN `5cai`, THEN `vzwa`.** See 6i.
 >
->    **▶️ COLD-START ORIENTATION — the four items this thread still owns, all FILED, none
->    started.** Nothing is mid-flight: #867, #870 and #874 are merged, every worktree of this
->    thread's is removed, and no branch of its own is open. In dependency order:
+>    **🔴 "THE RATIFIED-RULE COUNT IS 0" IS RETRACTED. IT IS 2.** An earlier revision of this
+>    file said 0 on the strength of a HAND reading of six functions. `rvw3`'s fixpoint shipped
+>    and disagreed — see 6i. **Do not restore the 0.**
+>
+>    **▶️ COLD-START ORIENTATION — the items this thread still owns, all FILED, none started.**
+>    Nothing is mid-flight: #867, #870, #874, #880, #883 and #886 are merged, every worktree of
+>    this thread's is removed, and no branch of its own is open. In dependency order:
 >
 >    | id | what | gates arming? |
 >    |---|---|---|
 >    | ~~`9sl0`~~ | ~~the 3 genuine violations~~ | **✅ CLOSED — #867, #870, #874** |
->    | **`rvw3`** | v179 member 1 — mechanical, clause (d) fixpoint | **YES** |
->    | **`q5lb`** | v179 member 2 — the `total_absence_returns` key | **YES** |
+>    | ~~`rvw3`~~ | ~~v179 member 1, the clause-(d) fixpoint~~ | **✅ CLOSED — #880, #883, #886** |
+>    | **`q5lb`** | v179 member 2 — the `total_absence_returns` key | **YES — START HERE** |
 >    | **`5cai`** | the CENTRAL-vantage conformance row | **YES — binding, brief 30** |
+>    | **`vzwa`** | the 2 GENUINE violations `rvw3` uncovered | **YES — new, untriaged** |
 >    | **`0yfo`** → `995m` | decompose `config.py`, then flip the `@generated` predicate | only via 6f's known-gap statement |
 >
->    **Two NEW items were filed from `9sl0`'s mandated consumer read and are NOT arming
->    blockers** — but the first is this epic's own subject in the central sweep, so do not let
->    it sink: **`2j2l`** (P1, the pin-currency row reads an UNPARSEABLE pin file as PASS) and
->    **`xhbp`** (P2, the spec/impl divergence that created it). See 6h.
+>    **Three NEW items were filed by this work. `vzwa` IS an arming blocker; the other two are
+>    NOT** — but the first of those is this epic's own subject in the central sweep, so do not
+>    let it sink: **`2j2l`** (P1, the pin-currency row reads an UNPARSEABLE pin file as PASS)
+>    and **`xhbp`** (P2, the spec/impl divergence that created it). See 6h. **Do not treat a P1
+>    as a gate it is not** — 2j2l needs a §"Pin-currency severity policy" decision and arming
+>    does not wait on it (supervisor brief 32).
 >
 >    - **Both rulings are RATIFIED**: livespec **v178** (public = CONSUMED ACROSS A BOUNDARY,
 >      PR #1826 → `d230c9ff`) and **v179** (the rule reaches functions that HAVE an expected
@@ -90,19 +97,73 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >      #1141, #450. Conversion 3's precondition is discharged and spent.
 >    - **Track C is DONE.** Ratified as **v035** on master (PR #824 → `703c5a6`).
 >    - **THE P0 IS CLOSED.** `dx8l` — see step 6a. Nothing is owed on it.
-> 6d. **⛔⛔ TWO NUMBERS. DO NOT ARM UNTIL THEY AGREE. TODAY THEY ARE 7 AND 0.** **7** is what
->    the check reports on master `7459989` (v178 IS implemented; v179 is NOT, so every total
->    function still counts). **0** is what the ratified rule considers a violation, now that
->    `9sl0`'s three have landed. Arming before they agree turns dev-tooling RED ON ITS OWN
->    GATE, and lefthook then blocks the very commit that fixes it. **Arm only when both numbers
->    agree, and SAY SO EXPLICITLY in the arming commit.**
+> 6d. **⛔⛔ TWO NUMBERS. DO NOT ARM UNTIL THEY AGREE. TODAY THEY ARE 3 AND 2.** **3** is what
+>    the check reports on master (v178 AND v179 member 1 are both implemented; member 2 is
+>    NOT, so `tag_version_component` still counts). **2** is what the ratified rule considers a
+>    violation. Arming before they agree turns dev-tooling RED ON ITS OWN GATE, and lefthook
+>    then blocks the very commit that fixes it. **Arm only when both numbers agree, and SAY SO
+>    EXPLICITLY in the arming commit.**
 >
->    **⛔ AND THE 0 IS A HAND READING, NOT THE MECHANISM'S ANSWER.** It says the 7 decompose as
->    6 member-1 candidates + 1 member-2 (`tag_version_component`). `rvw3` RECOMPUTES those six
->    from the code. **A disagreement between the hand reading and the fixpoint is a FINDING
->    about the hand reading, not a bug to smooth away** — hand judgement already got 1 of 6
->    wrong once (`classify_role_key_declarations`, 6c), which is the whole reason member 1 is
->    computed rather than declared.
+>    **THE PATH TO AGREEMENT IS EXACTLY TWO STEPS, and it does NOT end at zero:**
+>
+>    | after | check reports | ratified rule |
+>    |---|---|---|
+>    | today | 3 | 2 |
+>    | `q5lb` declares `tag_version_component` | **2** | **2** — they AGREE |
+>    | `vzwa` fixes the two genuine violations | **0** | **0** |
+>
+>    **Arming happens after `vzwa`, not after `q5lb`.** Agreement at 2 means the check is
+>    honest, not that the repo is clean; arming at 2 reds this repo on its own gate.
+> 6i. **✅ `rvw3` IS CLOSED — AND ITS MECHANISM CONTRADICTED THIS FILE. THE RATIFIED-RULE
+>    COUNT IS 2, NOT 0.** Three slices, all merged: **#880** extracted the import-resolution
+>    graph, **#883** built the member-1 analysis, **#886** wired it into the check. The check
+>    went **7 → 3**.
+>
+>    **`rvw3`'s OWN LEDGER said member 1 "is expected to clear five", naming
+>    `canonical_check_slugs` and `world_gate_check_slugs`. The fixpoint disqualifies BOTH.**
+>    Traced, not asserted:
+>
+>    | function | own body | final | why |
+>    |---|---|---|---|
+>    | `_discover_slugs` | **disqualified** | disqualified | calls `pkgutil.iter_modules` — a filesystem walk |
+>    | `canonical_check_slugs` | clean | **disqualified** | its ONLY callee is `_discover_slugs` |
+>    | `world_gate_check_slugs` | clean | **disqualified** | calls `canonical_check_slugs` — TWO hops |
+>
+>    **Both bodies are clean, which is exactly why the hand reading missed them.** This is the
+>    `classify_role_key_declarations` defect (6c) recurring INSIDE the list written to record
+>    it — the third time this thread's own lesson has recurred inside its own fix. **Filed as
+>    `livespec-dev-tooling-vzwa` (P1), untriaged, and it is an ARMING BLOCKER.**
+>
+>    **⚠️ `vzwa` IS NOT A TYPE CHANGE.** `pkgutil.iter_modules` on a MISSING directory yields no
+>    entries rather than raising, so `canonical_check_slugs()` returns an EMPTY tuple and every
+>    consumer reads that as "this repo has no canonical checks" — which PASSES. Typing it
+>    `IOResult` without deciding what an empty walk MEANS moves the sentinel instead of removing
+>    it. The likely better answer is RESTRUCTURE (inject the slug set, the #841 precedent), but
+>    `canonical_check_slugs` is consumed by `livespec` PRODUCT code, so a signature change is a
+>    `dx8l`-shaped fan-out and the consumer wiring lands FIRST, dual-shape.
+>
+>    **CLAUSE (d)'s VALUE, MEASURED AT REPO SCALE — quote this, not the anecdote.** Over **845**
+>    top-level functions: **310** disqualified by their own body, **394** after the fixpoint —
+>    **+84 TRANSITIVE**. Eighty-four functions reach I/O one or more calls away with a clean
+>    body of their own.
+>
+>    **THREE BUGS THE FIXTURES CAUGHT, all of which the fan-out will meet eight more times:**
+>    (1) `ast.unparse` renders a union WITH SPACES (`str | None`), so an unstripped membership
+>    test missed EVERY `X | None` return — silently exempting the exact shape clause (e) exists
+>    to refuse, and making member 2's key unnecessary; (2) `module_aliases` binds every
+>    `import X`, first-party or not, so treating any bound base as first-party made
+>    `pkgutil.iter_modules(...)` resolve to an EMPTY edge set and report no I/O at all — **the
+>    repo measurement was briefly RIGHT FOR THE WRONG REASON**, and only a fixture caught it;
+>    (3) a first-party callee under a declared `io_trees` resolved to an ordinary edge, so the
+>    tree's CONTENTS decided and a declared boundary stopped being one.
+>
+>    **AND FIVE EXISTING FIXTURES WERE PASSING FOR THE WRONG REASON.** Every one a total
+>    `def compute(*, x: int) -> int: return x`, across three test files. Two `@safe` decorator
+>    cases would have gone green **WITHOUT THE DECORATOR BRANCH EVER RUNNING** — caught by
+>    COVERAGE, not by review. All now raise, each carrying a docstring saying why, because the
+>    next editor's instinct on seeing a raise in a fixture is to delete it. **Expect this when
+>    wiring member 1 into any sibling: it does not only change the count, it exposes every test
+>    whose fixture was never in scope for what it claimed to test.**
 > 6h. **✅ `9sl0` IS DISCHARGED — the three conversions, and what each one actually taught.**
 >
 >    | function | disposition | PR | check | ratified rule |
@@ -1318,39 +1379,63 @@ that shape into every remaining sibling wiring.**
    silent no-op that looks exactly like success. Invoke
    `.claude-plugin/scripts/bin/<command>.py` instead.
 
-### ▶️ EXACT NEXT ACTION — **`rvw3`, THEN `q5lb`, THEN `5cai`. `721o` AND `9sl0` ARE DONE.**
+### ▶️ EXACT NEXT ACTION — **`q5lb`, THEN `5cai`, THEN `vzwa`, THEN ARM. `rvw3` IS DONE.**
 
-**Start at `rvw3`.** `9sl0`'s three conversions are merged (#867, #870, #874) and the
-ratified-rule count is 0; the check still reports 7 because v179 is not implemented. Closing
-that 7-vs-0 gap IS `rvw3` + `q5lb`. Design notes gathered while landing `9sl0`, so the next
-session does not re-derive them:
+**Start at `q5lb`. Nothing is mid-flight; nothing needs new authority** (briefs 30–32
+authorized `q5lb`, `5cai` and the arming sequence — an item boundary is a place to REPORT,
+not to WAIT).
 
-- **The ratified member-1 text is `livespec/SPECIFICATION/non-functional-requirements.md`
-  lines 688–706** (member 2 at 708–719). Read it there rather than from the summaries in this
-  file — clause (d)'s "any doubt disqualifies" wording is the part implementations get wrong.
-- **Clause (d) needs an import-resolution graph, and one already exists**:
-  `checks/_public_api_consumption.py` has `_suffix_index`, `_module_aliases`, `_name_imports`,
-  `_attribute_reaches`, and it resolves a dotted name to its DEFINING MODULE (the fix for the
-  bare-name oracle defect, START-HERE 7a). **Extract that machinery rather than writing a
-  second copy** — two resolvers WILL drift, and the first one already had two measured defects,
-  both in the relaxing direction (START-HERE §"TWO ORACLE DEFECTS").
-- **⚠️ CLAUSE (c) CANNOT BE A TERMINAL-NAME MATCH, and this repo already paid for that
-  lesson.** Matching call NAMES flagged ten "total" functions as touching I/O and only three
-  were real — most hits were `dict.get` / `settings.get`. So `get` must NOT be an I/O verb.
-  Resolve the RECEIVER through an import binding (`os.environ.get` → `os` → I/O;
-  `settings.get` → a local → not). For a receiver that resolves to nothing (`path.read_text()`
-  where `path` is a parameter), fall back to an UNAMBIGUOUS verb set only — and note that
-  choosing that set is where the relaxing direction hides.
-- **`rvw3` MUST exempt exactly 5 of today's 7** — `canonical_check_slugs`,
-  `world_gate_check_slugs`, `parse_open_bump_prs`, `denotes_same_release`,
-  `classify_role_key_declarations` — **plus `holds_app_class_credential`, which #867 made
-  mechanically total.** That is 6; `q5lb` covers the 7th (`tag_version_component`). If the
-  mechanism disagrees with any of the six, see 6d: the hand reading is what is wrong.
-- **The check still scans ZERO files here** (`pure_trees`-scoped), so none of this is exercised
-  by `just check`. **Test it on fixtures.** A green aggregate is not evidence any of it works.
+**`q5lb` — v179 member 2, the `total_absence_returns` role key.** It has exactly ONE subject
+in this repo today: `cross_repo/fabro_image_pin_rewrite.py:100 tag_version_component`, whose
+`None` means "this tag HAS no version component" — a legitimate ABSENCE, re-established three
+separate times in this file (§"METHOD CONSTRAINT FOR THE FAN-OUT"). Landing it takes the
+check from 3 to 2, at which point **the two numbers AGREE at 2**.
+
+- **MODEL IT ON `cross_repo_public_api` (SPECIFICATION v036), do not invent a second shape.**
+  Same bounds: per-function, reason REQUIRED and PARSED rather than commented,
+  staleness-detected with a HARD failure, and deliberately NOT in `REQUIRED_ROLE_KEYS` — a
+  required key hard-errors eight sibling masters on their next pin bump to demand a
+  declaration most have no content for. Reuse that loader and check shape.
+- **The four bounds are part of the RULE, not implementation detail** (ratified text at
+  `livespec/SPECIFICATION/non-functional-requirements.md` lines 708–719): a STRUCTURAL gate so
+  only an `X | None` annotation can be declared at all; a written reason; a hard-failing
+  staleness detector; and a fleet-wide COUNT reported by a central-vantage row — which is
+  `5cai`'s surface, so the two items meet there.
+- **The staleness detector earns its keep immediately** — it rejected two of six first-draft
+  `cross_repo_public_api` entries, both authored from a CONSUMER's import statement without
+  reading the DEFINITION.
+- **`_returns_x_or_none` in `checks/_no_expected_failure_mode.py` already implements the
+  structural gate** (clause (e)) and handles both `X | None` and `Optional[X]`. Reuse it rather
+  than writing a third annotation reader.
+
+**THEN `5cai`** — still binding before arming (brief 30). It is what makes `721o`'s
+declaration VERIFIED rather than merely written. **THEN `vzwa`** — the two genuine violations,
+see 6i, and read that block before converting anything: it is not a type change.
+
+**THEN re-measure, confirm both numbers agree, and ARM — stating both numbers in the arming
+commit.** If they disagree, the SIMULATION was wrong and that discrepancy is worth more than
+the arming. **Then re-measure ONE sibling** to replace the retired 223/282 figures —
+remembering those are now unknown in BOTH directions (6e) — report it, and **STOP**.
+
+**Standing constraints for all of it:**
+
+- **The check still scans ZERO files here** (`pure_trees`-scoped), so nothing new is exercised
+  by `just check`. **Test on fixtures.** A green aggregate is not evidence any of it works.
 - **`fleet/_rows_pin_currency.py` is at 246 LLOC and `fleet/fleet_conformance.py` at ~246,
-  both against a 250 HARD ceiling.** Neither is `rvw3`'s concern, but a casual addition to
-  either now reds the repo.
+  both against a 250 HARD ceiling.** A casual addition to either now reds the repo.
+- **`git diff master HEAD` is NOT how you save a branch's work.** If master moved while you
+  worked, that patch silently includes a REVERSAL of every commit master gained — here it
+  would have reverted a release, a pin bump and an unrelated fleet feature. **Diff against the
+  FORK POINT**, and read `git status` after applying a saved patch: the extra paths are the
+  tell.
+- **A Red-recorded test file is byte-identity-bound.** If it must change, the pair is REBUILT
+  from master; there is no amend path. Put additional Green-leg tests in a `*_edges.py`
+  sibling, which is this repo's existing idiom.
+- **CI runs as ROOT.** A test that relies on POSIX permission enforcement (`chmod(0o000)`)
+  passes locally and fails there. Prefer a uid-independent producer (a DIRECTORY where a file
+  is expected raises `IsADirectoryError`). **Never reach for `skipif`** — a skipped negative
+  test is worse than an absent one, because it reports as handled in the only environment that
+  gates merges.
 
 ### ▶️ (superseded) EXACT NEXT ACTION — TRIAGE THE 3, THEN v179, THEN `5cai`
 
