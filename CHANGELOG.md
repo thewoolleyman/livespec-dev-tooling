@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.0.5](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.0.4...v1.0.5) (2026-07-29)
+
+
+### Bug Fixes
+
+* **fleet:** put the dispatch-matrix filter's hand-rolled Either on the railway ([bcbe035](https://github.com/thewoolleyman/livespec-dev-tooling/commit/bcbe03577af5614fe6ecba4ec5a83111104a5df3))
+
 ## [1.0.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.0.3...v1.0.4) (2026-07-29)
 
 
