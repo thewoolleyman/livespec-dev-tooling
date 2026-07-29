@@ -78,6 +78,14 @@ def _run_check(
     return exit_code, captured.out + captured.err
 
 
+# Both fixtures RAISE, and that is load-bearing rather than incidental. This
+# file tests the v178 PUBLICNESS criterion, and since livespec v179 the rule
+# only reaches a public function that HAS an expected failure mode — so a
+# total `return x` body would be member-1 exempt and every assertion below
+# would pass or fail for a reason that has nothing to do with publicness.
+# v178 scopes WHICH functions are public; v179 scopes which of those the rule
+# reaches. Keeping the second from silently deciding this file's subject is
+# what the raise is for.
 _BARE_INT_PUBLIC = (
     "from __future__ import annotations\n"
     "\n"
@@ -85,6 +93,8 @@ _BARE_INT_PUBLIC = (
     "\n"
     "\n"
     "def compute(*, x: int) -> int:\n"
+    "    if x < 0:\n"
+    "        raise ValueError(x)\n"
     "    return x\n"
 )
 _BARE_INT_UNDECLARED = (
@@ -94,6 +104,8 @@ _BARE_INT_UNDECLARED = (
     "\n"
     "\n"
     "def compute(*, x: int) -> int:\n"
+    "    if x < 0:\n"
+    "        raise ValueError(x)\n"
     "    return x\n"
 )
 # The consumer imports ABSOLUTELY (`livespec.parse.foo`), which is how a
