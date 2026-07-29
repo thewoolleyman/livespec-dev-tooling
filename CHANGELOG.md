@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.3.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.2.0...v1.3.0) (2026-07-29)
+
+
+### Features
+
+* **checks:** apply the v178 consumed-across-a-boundary criterion ([0788e93](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0788e93c44ec97b35f98c65af6c71558b5744cf5))
+
 ## [1.2.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.1.0...v1.2.0) (2026-07-29)
 
 
