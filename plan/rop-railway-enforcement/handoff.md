@@ -135,7 +135,63 @@ NAME with an empty payload, which is a different input. The line `And the emptin
 reported as a sanctioned opt-out` was carried over verbatim — it is the invariant the union exists
 to enforce, and it survives the change in outcome.
 
-### 🚦 STEP 6 PROGRESS — **59 → 51**, and the blocker is a DIFFERENT REPO'S SPEC
+### 🚦 STEP 6 PROGRESS — **59 → 48**, and the cross-repo blocker is CLEARED
+
+| landed | effect |
+|---|---|
+| **#809** underscore rule (`b49c744`) | **59 → 53** |
+| **#812** ROP slice 1 (`8751a69`) | **53 → 51** |
+| **livespec #1821** — spec **v177** (`7acee70a`) | ratifies the exemption set; unblocks the next row |
+| **#816** honor `supervisor_entry_files` (`537ec6a`) | **51 → 48** |
+
+### ✅ THE CROSS-REPO SPEC CHANGE LANDED — livespec **v177**, and `i04f` is RESOLVED
+
+Authority was granted 2026-07-29 to file and accept in the `livespec` repo. Done, under that
+repo's OWN worktree→PR→merge protocol (read from its `AGENTS.md`, not dev-tooling's).
+
+**`livespec-i04f` is discharged.** The Result-return rule was stated TWICE with incompatible
+exemption sets — §"ROP composition" CLOSED it ("exempts only such supervisors"), §"Typechecker rule
+set" OPENED it with `e.g.` **and** added `build_parser`. Resolved by taking the second's CONTENT
+with the first's DISCIPLINE. **The set is now stated ONCE**, in §"ROP composition", and the
+typechecker section CITES it — because restating a normative set in two places is what produced the
+defect, and two copies would drift again.
+
+**The `e.g.` was the sharper half.** An open-ended list in a NORMATIVE exemption clause is the same
+ambiguity class this fleet spent an epic removing from the role-key schema, where a value meaning
+"whatever the reader needs" silently disarmed six checks.
+
+**The ratified set has exactly four members**: `main() -> int` under `commands/*.py` or
+`doctor/run_static.py`; `build_parser() -> ArgumentParser` under `commands/**.py`; any function
+annotated `None`; and **a supervisor entry point in a file declared in `supervisor_entry_files`**.
+
+### ⚖️ WHY MEMBER 4 IS NOT A WIDENING — and what it DOES cost
+
+Three things went into the RATIFIED TEXT rather than only a rationale, because each is the kind a
+later editor drops:
+
+- It admits the **SAME category** through a different mechanism and creates **NO new class** of
+  exempt function.
+- **A per-file declaration is STRICTER than a directory glob.** `commands/*.py` exempts every
+  present and future file with nobody deciding anything; `supervisor_entry_files` names each file,
+  and **a repo that has not spoken gets nothing**.
+- **The cost is real and recorded**: flat-layout consumers gain an exemption they cannot express
+  today, so the fleet-wide count of exempt functions WILL rise, and each claim must carry a written
+  reason rather than arriving by inheritance from a directory name.
+
+Member 4 is also **BOUNDED** — it exempts supervisor ENTRY POINTS in a declared file, never every
+function in it. Both properties are pinned by test in #816.
+
+### ⛔ DO NOT BULK-DECLARE THE REMAINING NINE SUPERVISORS
+
+#816 exempted only the **3** `main()`s already declared. Nine remain, and declaring them is NOT a
+formality: **`supervisor_entry_files` grants FOUR exemptions per file**, not one — this repo's own
+`pyproject.toml` comment says so and lists them (`no_write_direct`, `supervisor_discipline`,
+`no_except_outside_io`, `partition_completeness`). Bulk-declaring nine files to silence ONE check
+would hand each a stdout-write, `sys.exit`-confinement and broad-catch exemption it may not
+warrant. **Each needs the same per-file judgement the triage applied to functions** — which is the
+triage's own lesson arriving one level up, in the declarations rather than the code.
+
+### 🚦 (superseded) STEP 6 PROGRESS — 59 → 51, and the blocker is a DIFFERENT REPO'S SPEC
 
 | landed | effect |
 |---|---|
@@ -197,7 +253,19 @@ independent of the livespec one.
   `Failure` for an ordinary answer. **The "hand-rolled failure track" class must still be read per
   function**, or the triage's own lesson gets re-lost one level down.
 
-### 🧭 METHOD CONSTRAINT FOR THE FAN-OUT — read the callee, do not match the name
+### 🧭 METHOD CONSTRAINT FOR THE FAN-OUT — read EVERY function, including the convicted ones
+
+**The strongest form of this rule, and the one to carry hardest.** `tag_version_component` was in
+the STRONGEST convert class — a hand-rolled `X | None` failure track — and it was **still not a
+conversion**: its `None` means the tag HAS no version component, a legitimate absence. Wrapping it
+would force every caller to unwrap a `Failure` for an ordinary answer.
+
+**That is the triage's own lesson recurring INSIDE the triage's own output**, which is exactly how
+this thread's defect propagates: a classification convicts a set, the set is then treated as
+settled, and the reading stops. **Read every function the classification convicted, not only the
+ones it acquitted.** One of three in the strongest class was innocent.
+
+### 🧭 AND: read the callee, do not match the name
 
 Binding on the other five repos' 223, not just on this pass. Matching call NAMES flagged ten
 "total" functions as touching I/O; reading them showed most hits were `dict.get` / `settings.get`
