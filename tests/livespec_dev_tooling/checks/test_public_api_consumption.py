@@ -194,3 +194,20 @@ def test_an_import_of_a_module_outside_the_universe_is_ignored() -> None:
         Path("pkg/b.py"): "from json import loads\n\n\ndef use() -> int:\n    return loads('1')\n",
     }
     assert repo_local_public_names(sources=sources) == frozenset()
+
+
+def test_an_attribute_on_a_local_instance_is_not_consumption() -> None:
+    """A local object named like a module must not manufacture a consumption.
+
+    The oracle's resolution now lives in the shared `_import_resolution`
+    module, so this pins the property at the level a CALLER of the oracle
+    cares about: `config.pure_trees` on a `Config` INSTANCE matched the module
+    path `livespec_dev_tooling.config` by name and produced 19 phantom
+    consumptions here. Phantom consumption is the TIGHTENING direction — it
+    invents public API — and it is the mirror of the bare-name defect above.
+    """
+    sources = {
+        Path("pkg/config.py"): "def pure_trees() -> int:\n    return 1\n",
+        Path("pkg/b.py"): "def use(*, config: object) -> object:\n    return config.pure_trees()\n",
+    }
+    assert (Path("pkg/config.py"), "pure_trees") not in repo_local_public_names(sources=sources)
