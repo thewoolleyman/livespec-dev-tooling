@@ -44,6 +44,7 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
+from returns.result import Failure, Result, Success  # noqa: E402  — vendor-path-aware import.
 
 __all__: list[str] = [
     "Exclusion",
@@ -81,13 +82,28 @@ def filter_siblings(
     *,
     siblings: list[dict[str, str]],
     verdicts: list[dict[str, object]],
-) -> FilterOutcome | FilterError:
+) -> Result[FilterOutcome, FilterError]:
     """Partition the sibling set by conformance verdict, preserving order.
 
     Every sibling MUST have a verdict entry (the artifact covers every
     manifest member and the sibling set is a subset); a missing entry is
-    manifest/verdict drift and returns `FilterError` rather than
+    manifest/verdict drift and fails with `FilterError` rather than
     guessing (fail-closed, criterion 5).
+
+    The two outcomes were previously a hand-rolled `FilterOutcome |
+    FilterError` union — an Either encoded by hand, with `FilterError`
+    already serving as the failure payload. Only the ENCODING moved onto
+    the railway; the partition semantics, the fail-closed rules and every
+    reason string are unchanged.
+
+    Note what is NOT a failure: an EXCLUDED member. A non-conformant
+    sibling is an ordinary result carried on the success track inside
+    `FilterOutcome.excluded`, because excluding it is the filter working
+    as designed (criterion 2). The failure track is reserved for
+    STRUCTURAL problems that must keep the preflight job red — malformed
+    entries and manifest/verdict drift. Collapsing the two would turn a
+    routine exclusion into a red job and re-create the gate this filter
+    exists to replace.
     """
     verdict_by_member: dict[str, tuple[bool, tuple[str, ...]]] = {}
     for verdict in verdicts:
@@ -95,30 +111,30 @@ def filter_siblings(
         conformant = verdict.get("conformant")
         failing = verdict.get("failing_rows")
         if not isinstance(member, str) or not isinstance(conformant, bool):
-            return FilterError(reason=f"malformed verdict entry: {verdict!r}")
+            return Failure(FilterError(reason=f"malformed verdict entry: {verdict!r}"))
         if not isinstance(failing, list):
-            return FilterError(reason=f"malformed failing_rows for member {member}")
+            return Failure(FilterError(reason=f"malformed failing_rows for member {member}"))
         failing_items = cast("list[object]", failing)
         rows = tuple(row for row in failing_items if isinstance(row, str))
         if len(rows) != len(failing_items):
-            return FilterError(reason=f"non-string failing row in verdict for {member}")
+            return Failure(FilterError(reason=f"non-string failing row in verdict for {member}"))
         verdict_by_member[member] = (conformant, rows)
     filtered: list[dict[str, str]] = []
     excluded: list[Exclusion] = []
     for sibling in siblings:
         name = sibling.get("name")
         if not isinstance(name, str) or not name:
-            return FilterError(reason=f"malformed sibling entry: {sibling!r}")
+            return Failure(FilterError(reason=f"malformed sibling entry: {sibling!r}"))
         if name not in verdict_by_member:
-            return FilterError(
-                reason=f"sibling {name} has no verdict entry (manifest/verdict drift)"
+            return Failure(
+                FilterError(reason=f"sibling {name} has no verdict entry (manifest/verdict drift)")
             )
         conformant, rows = verdict_by_member[name]
         if conformant:
             filtered.append({"name": name})
         else:
             excluded.append(Exclusion(member=name, failing_rows=rows))
-    return FilterOutcome(filtered=tuple(filtered), excluded=tuple(excluded))
+    return Success(FilterOutcome(filtered=tuple(filtered), excluded=tuple(excluded)))
 
 
 def _read_json_list(*, path: Path) -> list[object] | None:
@@ -177,13 +193,14 @@ def main(*, argv: list[str] | None = None) -> int:
     if verdict_entries is None or sibling_entries is None:
         log.error("filter input entry is not an object (fail-closed)")
         return 1
-    outcome = filter_siblings(
+    filtered_result = filter_siblings(
         siblings=cast("list[dict[str, str]]", sibling_entries),
         verdicts=verdict_entries,
     )
-    if isinstance(outcome, FilterError):
-        log.error("dispatch-matrix filter failed closed", reason=outcome.reason)
+    if isinstance(filtered_result, Failure):
+        log.error("dispatch-matrix filter failed closed", reason=filtered_result.failure().reason)
         return 1
+    outcome = filtered_result.unwrap()
     for exclusion in outcome.excluded:
         rows = ", ".join(exclusion.failing_rows) or "(rows unavailable)"
         # stdout on purpose: the Actions runner parses workflow commands
