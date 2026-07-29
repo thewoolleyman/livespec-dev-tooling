@@ -55,9 +55,33 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >      the ⛔ block; declaring a file grants FOUR exemptions, not one.
 >    - **Track C is DONE.** Ratified as **v035** — and it grew from one bullet to a whole
 >      class. See §"TRACK C IS DONE — v035".
-> 7. **⛔ "REMEDIATE TO ZERO, THEN ARM" IS NOW KNOWN TO BE UNREACHABLE BY CONVERSION ALONE —
->    READ THIS BEFORE PLANNING ANYTHING.** Filed as **`livespec-dev-tooling-zu85`**. Four of
->    the 47 offenders live in `otel_step_timer.py`, and that file **cannot import the railway
+> 7. **⛔⛔ THE ARMING GATE IS NOT WHAT THIS THREAD THOUGHT, AND THE ARITHMETIC IS NOW MEASURED.
+>    READ THIS BEFORE PLANNING ANYTHING.** Step 6 is at **46** (measured on master at
+>    `bcbe035`). Its composition — measured per function, not inherited from the 59-triage:
+>
+>    | class | n | path to zero |
+>    |---|---|---|
+>    | **A** — `zu85` (`otel_step_timer`), cannot import the railway | **4** | option (a), **no spec change**, measured 4→0 |
+>    | **B** — `main() -> int` supervisors | **8** | a reasoned `supervisor_entry_files` entry each (ratified v177 member 4) |
+>    | **C** — real failure track, GENUINELY convertible | **4** (~7 with the triage's I/O reading) | conversion, in slices |
+>    | **D** — genuinely TOTAL functions | **30** | **NO PATH EXISTS TODAY** |
+>
+>    **CONVERTING EVERY CONVERTIBLE OFFENDER LANDS AT ~39, NOT 0.** An earlier revision of this
+>    file said "the conversion floor is 43" — **that was wrong and is retracted.** C is **4**,
+>    not the ~15 the old triage projected, because #809, #816 and slices 1–3 already removed
+>    most of the conversion set. **The D class of 30 is now the critical path to arming, and it
+>    is far larger than `zu85`'s 4.** Conversion is the WRONG answer for D by the triage's own
+>    ruling — a `Result` on a total function has an uninhabited failure track. So arming needs
+>    a ruling on what the Result-return rule requires of a function with no failure mode.
+> 8. **🔑 AND THE LIKELY ANSWER TO D IS MEASURED: 40 OF THE 46 ARE NOT PUBLIC API AT ALL.** See
+>    §"THE `__all__` FINDING". Of 46 offenders, **40 are exported in `__all__` but imported by
+>    NO other first-party module**; only **6** cross a module boundary. The check's premise
+>    "public API = named in `__all__`" is false for this repo AT SCALE. #809 corrected the
+>    `_`-prefixed spelling of exactly this defect (6 offenders); the un-prefixed spelling was
+>    left standing. `check-all-declared` does NOT force it — it requires a well-formed
+>    `__all__`, not that every function appear in one.
+> 9. **⛔ `zu85` — the START-HERE target this file used to name is UNCONVERTIBLE.** Four of
+>    the 46 offenders live in `otel_step_timer.py`, and that file **cannot import the railway
 >    at all**: `docker/fabro-sandbox/base/Dockerfile:106` COPYs it ALONE to
 >    `/usr/local/bin/livespec-step-timer`, its `Dockerfile.dockerignore` allowlists only that
 >    one file into the build context, and it runs on the base image's system python3 BEFORE
@@ -69,12 +93,14 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >    genuine" — the failure-semantics reading was RIGHT and the deployment reading was never
 >    done.** Do not retry it. Full record and the do-not-do-this-instead warning are on
 >    `zu85`.
-> 8. **DO NOT ARM until dev-tooling measures ZERO**, and do NOT start the other five repos'
+> 10. **DO NOT ARM until dev-tooling measures ZERO**, and do NOT start the other five repos'
 >    223 — fan-out follows arming. The ordering trap is unchanged and is the oldest constraint
 >    on this thread: this repo runs the check on ITSELF, so arming early turns its own
 >    `just check` red and lefthook then blocks the very commit that would fix it. **And per
->    `zu85` above, ZERO is not reachable by conversion — the four `otel_step_timer` offenders
->    need a ratified exemption first.**
+>    steps 7–9 above, ZERO is not reachable by conversion at all** — ~39 remain after every
+>    convertible offender is converted. `zu85` does not relax the gate and neither does the
+>    `__all__` finding: if the floor is non-zero, arming needs a ruling on what the gate MEANS,
+>    not an early arm.
 > 9. **`8o8e.1` being CLOSED is not the epic.** `check-public-api-result-typed` still scans
 >    ZERO files in every flat-layout repo — it is still `pure_trees`-scoped, and NOTHING landed
 >    so far has changed that. **Re-verified 2026-07-29 by reading the code, not the record:**
@@ -169,7 +195,7 @@ NAME with an empty payload, which is a different input. The line `And the emptin
 reported as a sanctioned opt-out` was carried over verbatim — it is the invariant the union exists
 to enforce, and it survives the change in outcome.
 
-### 🚦 STEP 6 PROGRESS — **59 → 47**, and the cross-repo blocker is CLEARED
+### 🚦 STEP 6 PROGRESS — **59 → 46**, and the cross-repo blocker is CLEARED
 
 | landed | effect |
 |---|---|
@@ -178,15 +204,99 @@ to enforce, and it survives the change in outcome.
 | **livespec #1821** — spec **v177** (`7acee70a`) | ratifies the exemption set; unblocks the next row |
 | **#816** honor `supervisor_entry_files` (`537ec6a`) | **51 → 48** |
 | **#821** ROP slice 2 — `parse_manifest` (`2ff79a5`, released `v1.0.4`) | **48 → 47** (20 files → 19) |
+| **#826** ROP slice 3 — `filter_siblings`, the hand-rolled Either (`bcbe035`) | **47 → 46** |
 
-**RE-MEASURED 2026-07-29 after slice 2, not inherited:** universe **145**, **19** files,
-**47** offenders — the shipped `public_api_result_typed._find_offenders` run over the
+**RE-MEASURED 2026-07-29 on master at `bcbe035`, not inherited:** universe **145**, **19** files,
+**46** offenders — the shipped `public_api_result_typed._find_offenders` run over the
 shipped `resolve_check_universe()` with this repo's real config. The 48 it started from
 reproduced exactly first, so the delta is measured at both ends.
 
-**⛔ 4 OF THE 47 ARE UNREACHABLE BY CONVERSION** — `otel_step_timer.py`'s `parse_argv`,
-`build_trace_payload`, `run` and `main`. See `zu85` and START-HERE step 7. The floor for
-conversion work is **43, not 0**, and closing the last four is a SPEC decision.
+**⛔ THE FLOOR IS ~39, NOT 43 AND NOT 0.** An earlier revision of this file said "the
+conversion floor is 43" — **wrong, and retracted.** Only **4** of the 46 have a real failure
+track (~7 after the triage's I/O reading); 8 are `main()` supervisors wanting a DECLARATION, 4
+are `zu85`'s, and **30 are genuinely TOTAL functions with no path to zero today**. See
+START-HERE steps 7–9.
+
+### ⚖️ `zu85` OPTIONS — COMPARED AND RECOMMENDED, NOTHING IMPLEMENTED. Awaiting a ruling.
+
+Produced under supervisor brief 22, which asked for a worked comparison rather than a stop. The
+full version with costs is on the `zu85` item; the decision content is here.
+
+**RECOMMENDATION: option (a). It needs NO spec change, and that is MEASURED.** Probing the
+SHIPPED `_find_offenders` against `otel_step_timer.py`, varying only `__all__` and the
+declaration:
+
+| variant | offenders |
+|---|---|
+| today | **4** |
+| `__all__` narrowed to `main` + the two constants | **1** |
+| that, plus the file declared in `supervisor_entry_files` | **0** |
+
+- **(a) NARROW THE PUBLIC SURFACE — RECOMMENDED. No split is required, and that is the
+  surprise.** The brief's hypothesis (a shim's public surface reduces to exempt shapes) is
+  right, but the mechanism is simpler: the problem was never the CODE's placement. None of
+  `parse_argv`, `build_trace_payload`, `run` is imported by any other first-party module — they
+  are internal helpers of a baked CLI, exported so unit tests can reach them. **EXPRESSES an
+  existing reality rather than weakening the rule.** Same premise `#809` was ratified on.
+  **A split would make it WORSE:** the shim must be self-contained (single-file `COPY`,
+  single-file dockerignore allowlist), so logic cannot move out — a split yields either a broken
+  image or a second forked copy, which is `qv3k`'s hazard and this fleet already has eight.
+  **THE HONEST RISK:** narrowing `__all__` purely to silence a check IS the `io_trees`
+  hook-tree dodge this epic refused. What makes it legitimate here is an ORACLE, not an
+  assertion — "is this name imported across a first-party module boundary?" — which is
+  mechanically answerable and was answered. If (a) is adopted the narrowing MUST be justified
+  per name against that oracle, never wholesale.
+- **(b) A FIFTH RATIFIED EXEMPTION — do NOT adopt, and it is unnecessary.** It is **genuinely
+  new in kind**, stated plainly: v177's four members all describe SUPERVISOR shapes; this would
+  describe a DEPLOYMENT fact. It also creates a class nothing mechanically verifies — `m50u`'s
+  finding that a blessed payload nobody checks is "a comment with better syntax highlighting".
+  Spending a widening on a problem a ratified mechanism already solves is the expensive
+  direction. Recommend only if (a) is rejected on the honesty ground above.
+- **(c) CHANGE THE BUILD — do NOT adopt. It DOES violate the constraint that created the
+  module.** The module is stdlib-only because it runs before the first `uv sync`, in BASE, on
+  the base image's system python3. Vendoring `returns` onto that interpreter's path puts the
+  fleet's ROP library into every consumer's base image, widens the dockerignore allowlist from
+  one file to a tree (whose stated purpose is a tiny hermetic context), grows the layer CI pulls
+  every run, and lets a `vendor_update` break the image. It buys railway-typing four functions
+  in one CLI wrapper. The cost/benefit is inverted.
+- **(e) THE OPTION NOT ON THE LIST, AND IT OUTRANKS ALL FOUR** — see the section below.
+
+### 🔑 THE `__all__` FINDING — `zu85` is a 4-of-46 instance of a 40-of-46 problem
+
+Measured while testing option (a), and it reframes the remediation. **Of the 46 current
+offenders, 40 are exported in `__all__` but imported by NO other first-party module. Only 6
+cross a module boundary.**
+
+The check's premise — "public API = named in `__all__`" — is **false for this repo at scale**,
+not in one module. `#809` corrected the `_`-prefixed spelling of exactly this defect (the 6
+`check_mutation.py` cases); **the un-prefixed spelling was left standing and is 40.**
+`check-all-declared` does NOT force it: it requires a well-formed `__all__`, not that every
+top-level function appear in one, so narrowing is compliant today.
+
+**CAVEAT, so the number is not over-read:** "not imported" is not "not used". `main` is reached
+via `python -m`, not by import, and the probe is a static regex over first-party sources plus the
+test tree. **40 is an UPPER BOUND on the mis-flagged set**, and each name still needs the
+per-function reading the triage's own lesson demands. It is NOT a licence to bulk-narrow 40
+`__all__` entries — that would be the bulk-declaration hazard one level over.
+
+**Why it matters more than the count:** the D class of 30 genuinely-total functions has no path
+to zero today, and conversion is the wrong answer for it by the triage's own ruling. If most of
+D is not public API, the D class largely dissolves and the arming gate becomes reachable. **That
+is the next thing to establish, and it is the critical path — not `zu85`.**
+
+### 🧭 THE MISSING AXIS — the method constraint `zu85` added, binding on the fan-out
+
+The step-6 triage classified all 59 offenders by FAILURE SEMANTICS and never asked a second,
+independent question. Both are required:
+
+1. **Does this function have a real failure track?** — the triage asked this well.
+2. **CAN this module import `returns` at all, in every environment it executes in?** — never
+   asked, and a perfect answer to (1) is worthless when (2) is no.
+
+**Binding on the other five repos' 223**, where a module executed outside its package's
+dependency environment is MORE likely rather than less: the Drivers and orchestrators ship hook
+entry points, and hook bodies are installed as foreign content into repos that do not carry the
+vendored tree. Add this beside "read the callee, do not match the name".
 
 ### 🔒 THE SWEEP THAT BOUNDED `zu85` — it is ONE file, and that was measured too
 
@@ -608,10 +718,27 @@ auto-merge, and the race is invisible when you win it.
 
 ### ▶️ EXACT NEXT ACTION — **PICK UP TRACK B. NO NEW AUTHORITY IS NEEDED.**
 
-**Start here, concretely:** convert `fleet/dispatch_matrix_filter.filter_siblings() ->
-FilterOutcome | FilterError`, which the triage calls *"literally an Either encoded by hand"* —
-the cleanest remaining conversion in the set. One slice per PR, each its own Red→Green pair,
-never batched.
+**Start here, concretely — and note the conversion set is nearly EXHAUSTED, which is the real
+news.** Slice 3 (`filter_siblings`) landed as `bcbe035` (PR #826). **Only 4 offenders still have
+a real failure track**, so Track B has roughly two slices left, not ten:
+
+- `fleet/merged_branch_sweep.fetch_manifest -> Manifest | None` — now the strongest candidate,
+  and its `None` genuinely carries TWO meanings (fetch failed vs. fetched-but-unparseable), a
+  distinction slice 2 already exposed at its call site.
+- `testing/cli_e2e.select_runner` and `cli_e2e.test_workflow_full_round_trip` — explicit
+  `raise`.
+- `cross_repo/fabro_image_pin_rewrite.tag_version_component` — **NOT a conversion.** Recorded
+  twice already as a legitimate absence. Do not re-litigate it; read §"METHOD CONSTRAINT".
+
+Plus the ~3 the triage read as real I/O wanting `IOResult` (`ensure_plugins.subprocess_runner`,
+`cli_e2e.run_workflow`, `required_role_keys_declared.layout_dependent_check_slugs`).
+
+**After those, conversion is DONE at ~39 offenders and the remaining work is not conversion at
+all.** One slice per PR, each its own Red→Green pair, never batched.
+
+**THE HIGHEST-VALUE NEXT ACTION IS NOT A SLICE.** It is establishing how much of the D class
+(30 genuinely-total functions) is not public API — see §"THE `__all__` FINDING". That is the
+critical path to arming; the remaining conversions are not.
 
 **DO NOT start with `otel_step_timer.parse_argv`**, which every prior revision of this file
 named as the START-HERE target. It is UNCONVERTIBLE — see `zu85` and START-HERE step 7.
@@ -648,14 +775,10 @@ convention. `propose_change.py`'s `target_spec_files` REQUIRE the `SPECIFICATION
 **Then re-measure, and ONLY at measured zero, arm.** Then fan out to the other five repos' 223 —
 not before. **Zero is not reachable until `zu85` is answered.**
 
-### ✅ TRACK C — cut as **v035**, and it grew from one bullet to a CLASS
+### ✅ TRACK C IS DONE — ratified as **v035** on master, and it grew from one bullet to a CLASS
 
-**STATE AT WRITING: the revision is CUT and COMMITTED on `spec/supervisor-entry-files-consumers`;
-PR #824 was OPEN and unmerged.** Said precisely rather than as "done", because this thread's own
-rule is that MERGED ≠ RELEASED ≠ CONSUMED and the previous session nearly closed a precondition on
-exactly that conflation. **RE-DERIVE:** `SPECIFICATION/history/v035/` on master, and `gh pr view
-824`. If #824 merged, v035 is ratified on master and Track C is closed; if it did not, the branch
-carries the work and nothing was lost.
+**MERGED: PR #824 → `703c5a6`.** `SPECIFICATION/history/v035/` is on master and
+`proposed_changes/` is drained. Track C is closed.
 
 Filed and accepted 2026-07-29 under the delegated accept/reject authority. The recorded scope was
 one bullet — `contracts.md`'s `supervisor_entry_files` entry naming 1 consumer of 4. **Re-reading the whole section turned it into four wrong keys, wrong in BOTH
