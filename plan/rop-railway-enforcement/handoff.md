@@ -23,13 +23,14 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 > 1. Re-derive live state — everything below ages in minutes:
 >    `cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh -- bd show livespec-dev-tooling-8o8e`
 >    (the EPIC — `8o8e.1` is CLOSED and is a record, not a work item)
-> 2. **NOTHING IS MID-FLIGHT.** No worktree of this thread's is open, no PR of its own is
->    unmerged, and no background job is running. There is no half-finished edit to find. This
->    holds in `livespec-orchestrator-beads-fabro` too — the `dx8l` P0 closed with that repo's
->    master GREEN (step 6a). Several FOREIGN worktrees exist in both repos; **reap none of them.**
+> 2. **NOTHING IS MID-FLIGHT.** No worktree of this thread's is open in ANY of the six repos
+>    it has touched (`livespec-dev-tooling`, `livespec`, both Drivers, both orchestrators), no
+>    PR of its own is unmerged, and no background job is running. There is no half-finished
+>    edit and no un-amended Red commit to find. Several FOREIGN worktrees exist in those repos;
+>    **reap none of them.**
 >    **Version note:** the `v1.0.0` figures in steps 3–4 are the HISTORICAL `8o8e.1` discharge
->    evidence. dev-tooling has since released through **`v1.0.5`** and the siblings' pins have
->    moved with it; do not read those steps as current pin state.
+>    evidence. dev-tooling has released well past it since; **do not read any step below as
+>    current pin state — re-derive the pin from the forge if you need it.**
 > 3. **ALL FOUR PHASES HAVE LANDED, AND THE SPEC IS RATIFIED.** Phase 3 + `oitd`
 >    (`606f17b`, `34c05c1`), spec v033 (`0500155`), `pj3j` (`c0c0472`), Phase 4 (`b36e0b8`).
 > 4. **✅ `8o8e.1` IS CLOSED — the precondition is DISCHARGED with per-repo evidence.** The
@@ -48,21 +49,33 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >    and accepted under it (v177). **`5ror`, `clkf`, `fwcwxv`, `pj3j` and `livespec-i04f` are
 >    all CLOSED.** The spec lifecycle is NOT waived — changes still go through
 >    propose-change → revise as OPERATIONS — but the accept/reject decision is delegated.
-> 6. **▶️ BRIEF 25's SCOPE IS DONE THROUGH ITEM 4. Step 6 is at 34, and the CONVERSION TRACK
->    IS EXHAUSTED — that is a finding, not a pause.** See §"BRIEF 25 — WHAT LANDED" for the
->    exact arithmetic and the two things a cold start must not re-derive.
->    - **`zu85` option (a) LANDED** — PR #832 merged, released `v1.0.6`. `otel_step_timer`'s
->      `__all__` narrowed to its three boundary-crossing names, each justified individually
->      against the FLEET-WIDE oracle. **46 → 43.**
->    - **THE FLEET-WIDE PUBLIC-API CRITERION IS RATIFIED** as livespec **v178**
->      (PR #1826 → `d230c9ff`). This was brief 25's highest-value item and it is the one that
->      moves the arming gate. See §"v178 — THE CRITERION".
->    - **CLASS B LANDED/IN-FLIGHT** — PR #835, nine reasoned `supervisor_entry_files` entries.
->      **43 → 34.** Re-derive its merge state; it was in CI at wrap-up.
->    - **CLASS C IS EMPTY, AND THAT IS THE SURPRISE.** Every remaining conversion candidate was
->      READ and every one is a NON-conversion. See §"CLASS C IS EMPTY".
+> 6. **▶️▶️ REMEDIATION IS COMPLETE. RATIFIED-RULE VIOLATIONS ARE ZERO. THE ONLY WORK LEFT IS
+>    IMPLEMENTATION, AND THEN ARMING.** Measured on master `ce4e06d`:
+>    **25 + 5 + 1 + 0 = 31**, via the shipped `_find_offenders` over the shipped
+>    `resolve_check_universe()`, a MODULE-QUALIFIED oracle, and the v179 fixpoint.
+>
+>    **⛔ THE NEXT ACTION IS `721o`, NOT ARMING. Read step 6d before touching anything.**
+>
+>    - **Both rulings are RATIFIED**: livespec **v178** (public = CONSUMED ACROSS A BOUNDARY,
+>      PR #1826 → `d230c9ff`) and **v179** (the rule reaches functions that HAVE an expected
+>      failure mode, PR #1827). **No spec work remains before arming.**
+>    - **`zu85` CLOSED** (#832), **class B CLOSED** (#835, nine reasoned
+>      `supervisor_entry_files` entries), **`u4ij` CLOSED** — all three conversions landed:
+>      #841 `classify_role_key_declarations`, #846 `select_runner`, #849
+>      `test_workflow_full_round_trip`.
+>    - **All FOUR sibling dual-shape wirings are merged and green on the forge** — #329, #309,
+>      #1141, #450. Conversion 3's precondition is discharged and spent.
 >    - **Track C is DONE.** Ratified as **v035** on master (PR #824 → `703c5a6`).
 >    - **THE P0 IS CLOSED.** `dx8l` — see step 6a. Nothing is owed on it.
+> 6d. **⛔⛔ TWO NUMBERS. DO NOT ARM UNTIL THEY AGREE — this is the single most expensive
+>    mistake available right now.** **31** is what the check REPORTS today, because neither
+>    ruling is IMPLEMENTED: it still counts every `__all__` member and every total function.
+>    **0** is what the ratified rule CONSIDERS a violation. **Arming today would turn
+>    dev-tooling RED ON ITS OWN GATE** — the armed check would report 31 violations against a
+>    rule that recognizes 0, and lefthook would then block the very commit that fixes it (the
+>    ordering trap, in a new spelling). `721o`, `5cai` and v179's two members are EXACTLY what
+>    closes the gap. **Arm only after them, only when both numbers agree, and SAY SO
+>    EXPLICITLY in the arming commit.**
 > 6a. **✅ `livespec-dev-tooling-dx8l` — CLOSED, and its LESSON is now a hard precondition.**
 >    Slice 2 broke `livespec-orchestrator-beads-fabro`'s master (its `codex_yolo_gate` hook
 >    imports `parse_manifest`). Repaired doctrine-exact per livespec `.ai/ci-gate-discipline.md`
@@ -1092,10 +1105,38 @@ that shape into every remaining sibling wiring.**
    silent no-op that looks exactly like success. Invoke
    `.claude-plugin/scripts/bin/<command>.py` instead.
 
-### ▶️ EXACT NEXT ACTION — **IMPLEMENT v178's REPO-LOCAL HALF. NO NEW AUTHORITY IS NEEDED.**
+### ▶️ EXACT NEXT ACTION — **IMPLEMENT `721o`. NO NEW AUTHORITY IS NEEDED. DO NOT ARM FIRST.**
 
-**The queue below is superseded through item 4.** Items 1–4 are DONE (see §"BRIEF 25 — WHAT
-LANDED"). What remains, in order:
+**All remediation is DONE; only implementation remains.** Ratified-rule violations are **0**;
+the check still reports **31**. Implementing these four is what makes the two numbers agree,
+and arming before they agree turns this repo red on its own gate (START-HERE 6d).
+
+**THE ORDER, and each has an approved ledger item:**
+
+1. **`721o` — v178's repo-local half.** The check's notion of "public" becomes CONSUMED ACROSS
+   A BOUNDARY. **The oracle MUST resolve an import to its DEFINING MODULE** — a bare-name
+   oracle is measurably wrong (it scored `merged_branch_sweep.fetch_manifest` public on two
+   consumers that import a DIFFERENT `fetch_manifest`, and produced 51 false `parse_argv` hits
+   against `livespec`'s homonym). **A repo-local check CANNOT see a sibling's import**, so this
+   half needs the repo to DECLARE its cross-repo-consumed surface, with `5cai` verifying that
+   declaration against reality.
+2. **v179's two members** — `no-expected-failure-mode-mechanical-member` and
+   `no-expected-failure-mode-declared-absence-key`. **Clause (d), the callee FIXPOINT, is not
+   optional**: without it the check exempts functions that reach I/O one call away, which is
+   the exact defect a hand reading of `classify_role_key_declarations` produced.
+3. **`5cai` — the CENTRAL half.** A central-vantage conformance row over the fleet's
+   consumption graph. This is the half that catches the next `parse_manifest`.
+4. **Then re-measure, confirm BOTH numbers agree, and ARM.**
+5. **Then re-measure ONE sibling** to replace the retired 223/282 figures, report it, and
+   **STOP — do not start the fan-out.**
+
+**⚠️ EVERY UNWRAP NEEDS A TEST THAT ASSERTS THE VALUE REACHES THE CALLER**, not merely that the
+call succeeded — a passing row is what the bug produces. Treat "I am being careful here" as ZERO
+evidence: the author of the fail-open warning committed that exact bug one commit leg later.
+
+**⚠️ AND THE CHECK STILL SCANS ZERO FILES HERE** (`pure_trees`-scoped), so new code paths inside
+it are NOT exercised by this repo's own `just check`. **Test them on fixtures**; a green
+`just check` is not evidence any of it works.
 
 ### 🧭 A THIRD DISPOSITION — RESTRUCTURE, beside convert and exempt
 
