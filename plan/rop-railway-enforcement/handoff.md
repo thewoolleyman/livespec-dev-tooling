@@ -168,40 +168,63 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >      check reports **2**. A measurement that UNDER-applies a ratified exemption reads as "the
 >      repo is dirtier than it is" — **it would have restored the very number this pass
 >      retracted.** Mirror `_scan`, never approximate it.
-> 6l. **📐 ONE SIBLING RE-MEASURED — `livespec-orchestrator-beads-fabro`: 58 → 17. THE STALE
->    223/282 FIGURES ARE NOW REPLACEABLE FOR ONE REPO, MEASURED.** Taken 2026-07-30 from the
->    FORGE MASTER TARBALL (`4ff67886`), so no shared clone was touched, with the shipped
->    post-v178/v179 criterion and that repo's own `pyproject.toml`.
+> 6l. **📐 THREE SIBLINGS RE-MEASURED, AND 6e's "UNKNOWN IN BOTH DIRECTIONS" IS NOW CONFIRMED
+>    RATHER THAN FEARED — ONE REPO GOES UP.** Taken 2026-07-30 from each repo's FORGE MASTER
+>    TARBALL, so no shared clone was touched, with the shipped post-v178/v179 criterion and each
+>    repo's own `pyproject.toml`. **The stale 223/282 figures are now replaceable for three
+>    repos.**
 >
->    | oracle | offenders |
->    |---|---|
->    | recorded in this file (stale) | 58 |
->    | **PRE-v178** `__all__` proxy, re-run on today's master | **55** |
->    | **v178 applied** | **19** |
->    | **v178 + v179 (what the check would report)** | **17** |
+>    | repo | recorded | PRE-v178 re-run today | v178 | **v178+v179 = what the check reports** | tightening ADDED |
+>    |---|---|---|---|---|---|
+>    | `livespec-orchestrator-beads-fabro` | 58 | 55 | 19 | **17** | **0** |
+>    | `livespec-overseer` | 56 | 55 | **80** ⬆️ | **53** | **26** |
+>    | `livespec` | 35 | 11 | 8 | **6** | **0** |
 >
->    Universe 184 files, 1001 top-level functions, `__all__`-proxy public **462** vs v178
->    consumption-public **363**, member-1 exempt **368**, member-2 exempt **0** (it declares
->    neither `cross_repo_public_api` nor `total_absence_returns`).
+>    **THE METHOD VALIDATES ITSELF ON TWO OF THREE: the PRE-v178 oracle re-run today reproduces
+>    the recorded figure within 3** (55 vs 58; 55 vs 56). `livespec`'s 11 vs 35 is NOT a
+>    disagreement — that repo has been actively converting (68 of 129 modules import `returns`),
+>    so the gap is real remediation since the figure was taken.
 >
->    **THE METHOD VALIDATES ITSELF: the old oracle re-run today gives 55 against a recorded 58**,
->    so the recorded figure reproduces within 3 and the delta is other work landing since — not a
->    measurement disagreement.
+>    **🔴 `livespec-overseer` GOES UP UNDER v178 — 55 → 80 — AND THE CAUSE IS NOT 26 NEW GENUINE
+>    VIOLATIONS. Filed as `livespec-dev-tooling-oip9` (P1).** That repo keeps **49 `test_*.py`
+>    files INSIDE its product package** (`overseer/test_supervisor.py`, …), not under `tests/`,
+>    and declares no `tests_tree_prefix`, so the default `"tests/"` matches none of them and
+>    `resolve_check_universe()` classifies all 49 as first-party PRODUCT code. v178 clause 1 then
+>    makes a function public when non-test first-party code imports it across a module boundary —
+>    and `overseer/test_supervisor_builders.py` is imported by its sibling `overseer/test_*.py`
+>    files, all inside the universe. **So 24 of the 26 added offenders are TEST-BUILDER HELPERS.**
+>    The other 2 are real (`supervisor.build_supervisor`, `supervisor.run_daemon`).
 >
->    **⚠️ AND THE TIGHTENING HALF ADDED **ZERO** OFFENDERS HERE, against 3 in dev-tooling.** 6e's
->    "unknown in BOTH directions" stands as a warning about the DIRECTION being repo-specific,
->    and this is the first repo where it resolved entirely downward. **Do not now generalize the
->    other way either** — one repo measured is one repo measured. The remaining seven are still
->    unknown, and this figure may not be scaled by first-party count to guess them: beads-fabro
->    dropped 36 of 55 because it declares `commands_trees` and 4 `supervisor_entry_files`, which
->    a flat-layout member does not.
+>    | `livespec-overseer` universe | pre-v178 | v178 | v178+v179 | added |
+>    |---|---|---|---|---|
+>    | as `resolve_check_universe()` sees it (84 files) | 55 | 80 | **53** | 26 |
+>    | co-located `test_*.py` EXCLUDED (35 files) | 49 | 43 | **33** | **2** |
 >
->    **🔎 AND 7 OF THE 17 ARE `main`.** Those are the v177 member-4 shape wanting a
->    `supervisor_entry_files` DECLARATION rather than a conversion, so beads-fabro's
->    ratified-rule count is materially BELOW 17 — **but that number is NOT stated here, because
->    establishing it needs the per-function reading and this file's own newest standing
->    constraint forbids hand-simulating the answer.** 17 is what the check reports; the
->    ratified-rule count for this sibling is UNMEASURED.
+>    **BOTH NUMBERS ARE TRUE AND THEY ANSWER DIFFERENT QUESTIONS.** **53** is what the ARMED
+>    CHECK WOULD REPORT there today — the work someone must actually clear. **33** is the count
+>    over genuinely-product code. The 20-offender gap is a UNIVERSE-CLASSIFICATION issue in that
+>    repo, not a railway issue, and a fan-out planned from the raw 80 would budget conversion
+>    work for 24 test builders. **NO SIBLING FIGURE MAY BE QUOTED WITHOUT SAYING WHICH UNIVERSE
+>    IT WAS MEASURED OVER** — these two differ by 38% and both are correct.
+>
+>    **⛔ AND DO NOT "FIX" THIS BY MAKING `test_*.py` A TEST BASENAME FLEET-WIDE.** `oip9` records
+>    three non-equivalent readings; the cheap one is a one-line `tests_tree_prefix` correction in
+>    that repo. Changing `resolve_check_universe()` would shrink several universes at once, and a
+>    universe that shrinks is a check that inspects LESS — the relaxing direction.
+>
+>    **🔎 AND THE RATIFIED-RULE COUNT FOR ALL THREE IS UNMEASURED, DELIBERATELY.** 7 of
+>    beads-fabro's 17 are `main` — the v177 member-4 shape wanting a `supervisor_entry_files`
+>    DECLARATION rather than a conversion — so its ratified-rule count is materially BELOW 17.
+>    **That number is NOT stated here**, because establishing it needs the per-function reading
+>    and this file's own newest standing constraint forbids hand-simulating the answer. The
+>    figures above are what the CHECK reports. Keep the two labelled apart, exactly as 6d does
+>    for this repo.
+>
+>    **AND THE FLEET SHAPE VARIES FAR MORE THAN ANY RATIO PREDICTS**, so do not scale by
+>    first-party count: beads-fabro dropped 36 of 55 because it declares `commands_trees` and 4
+>    `supervisor_entry_files`; overseer declares NO `commands_trees` and 1 supervisor file and
+>    dropped 1. **Flat-layout members are where v178 bites hardest — which is dev-tooling's own
+>    shape.** Six repos remain unmeasured.
 >
 >    **▶️ COLD-START ORIENTATION — the items this thread still owns, all FILED, none started.**
 >    Nothing is mid-flight: #867, #870, #874, #880, #883 and #886 are merged, every worktree of
