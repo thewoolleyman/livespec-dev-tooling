@@ -26,6 +26,12 @@ from livespec_dev_tooling.fleet._context import (
 )
 from livespec_dev_tooling.fleet.contract import Manifest, parse_manifest
 
+_VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
+
+from returns.result import Failure  # noqa: E402  — vendor-path-aware import.
+
 __all__: list[str] = [
     "RepoSweepReport",
     "SweepMode",
@@ -90,20 +96,26 @@ def fetch_manifest(*, ctx: FleetContext) -> Manifest | None:
     text = ctx.file_text(repo=_MANIFEST_REPO, path=_MANIFEST_PATH)
     if text is None:  # pragma: no cover
         return None
-    manifest = parse_manifest(source=text)
-    if manifest is None:
+    parsed = parse_manifest(source=text)
+    if isinstance(parsed, Failure):
         # Reaching here means the fetch SUCCEEDED and the bytes are unparseable.
         # Recording it separately is what makes "could not fetch the manifest"
         # and "fetched a malformed manifest" distinguishable downstream; they
         # were the same `None` before.
+        #
+        # The reason is interpolated because the manifest lives in ANOTHER
+        # repo: whoever reads this line does not have the bytes in front of
+        # them, and "did not parse" alone left them re-parsing a 39-member
+        # document by hand to find the one bad record.
         ctx.record_read_failure(
             operation="manifest",
             path=f"{_MANIFEST_REPO}:{_MANIFEST_PATH}",
             returncode=0,
             kind="malformed_content",
-            detail="manifest fetched but did not parse",
+            detail=f"manifest fetched but did not parse: {parsed.failure().reason}",
         )
-    return manifest
+        return None
+    return parsed.unwrap()
 
 
 def run_sweep(

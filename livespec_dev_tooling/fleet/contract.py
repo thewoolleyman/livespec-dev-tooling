@@ -15,7 +15,7 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
+from typing import Literal, cast
 
 from livespec_dev_tooling.fleet._context import Adopter, FleetMember
 from livespec_dev_tooling.fleet._contract_rows import REPO_CLASSES
@@ -25,6 +25,7 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import jsoncomment  # noqa: E402  — vendor-path-aware import after sys.path insert.
+from returns.result import Failure, Result, Success  # noqa: E402  — vendor-path-aware import.
 
 __all__: list[str] = [
     "ADOPTER_POSTURES",
@@ -32,6 +33,8 @@ __all__: list[str] = [
     "REPO_CLASSES",
     "Adopter",
     "Manifest",
+    "ManifestParseError",
+    "ManifestParseReason",
     "parse_manifest",
 ]
 
@@ -41,6 +44,56 @@ __all__: list[str] = [
 PROFILE_LAYERS = ("baseline", "fleet-infra", "orchestrator-plugin", "app")
 # The adoption postures an adopter may hold toward the fleet pins.
 ADOPTER_POSTURES = ("released", "pinned", "none")
+
+# The EXHAUSTIVE set of ways `.livespec-fleet-manifest.jsonc` can fail to
+# parse — one member per cause `parse_manifest`'s docstring documents.
+# Stated as a `Literal` rather than a bare `str` so adding a rejection
+# branch without naming it here is a type error rather than a new
+# undocumented reason string leaking into an operator's diagnostic.
+ManifestParseReason = Literal[
+    "invalid-jsonc",
+    "root-not-object",
+    "owner-not-string",
+    "fleet-not-list",
+    "malformed-member",
+    "duplicate-member",
+    "adopters-not-list",
+    "malformed-adopter",
+]
+
+# The failure subsets the two array parsers can produce. Kept NARROWER
+# than `ManifestParseReason` on purpose: the member parser cannot emit an
+# adopter reason and vice versa, and pyright enforces that at the widening
+# site rather than leaving it to a comment.
+_MemberFailure = Literal["fleet-not-list", "malformed-member", "duplicate-member"]
+_AdopterFailure = Literal["adopters-not-list", "malformed-adopter"]
+
+
+@dataclass(frozen=True, kw_only=True)
+class ManifestParseError:
+    """A fleet-manifest parse FAILED, naming WHICH documented cause it was.
+
+    The failure-track payload for `parse_manifest`. It exists because the
+    eight causes that function's docstring enumerates were previously all
+    spelled one `None`, so the two engines that fetch the manifest
+    (`fleet_conformance.fetch_manifest` and
+    `merged_branch_sweep.fetch_manifest`) could record only "manifest
+    fetched but did not parse" — a diagnostic that names the file and says
+    nothing about what is wrong with it.
+
+    That cost is concrete rather than theoretical. The manifest is fetched
+    from ANOTHER repo (`livespec` master) at run time, so the operator
+    reading the failure is typically not the person who broke it, and the
+    bytes are not in front of them. One bit of output ("malformed") for a
+    39-member document means re-parsing it by hand to discover that a
+    `posture` was misspelled.
+
+    The reason is a value rather than a rendered sentence so a caller may
+    branch on it — the central sweep and the local sweep want different
+    words for the same cause — instead of matching on prose.
+    """
+
+    reason: ManifestParseReason
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -57,7 +110,14 @@ class Manifest:
 
 
 def _parse_member(*, entry: object) -> FleetMember | None:
-    """One manifest member entry, or None when malformed."""
+    """One manifest member entry, or None when malformed.
+
+    Deliberately NOT on the railway: this helper has exactly ONE failure
+    meaning ("this entry is malformed"), so `None` carries the whole
+    answer and a `Result` would add a failure track with a single
+    inhabitant. Its CALLER is the function that must distinguish causes,
+    and that is where the conversion went.
+    """
     if not isinstance(entry, dict):
         return None
     record = cast("dict[str, object]", entry)
@@ -68,23 +128,34 @@ def _parse_member(*, entry: object) -> FleetMember | None:
     return FleetMember(repo=repo, repo_class=cast("str", repo_class))
 
 
-def _parse_members(*, raw: object) -> tuple[FleetMember, ...] | None:
-    """Parse the fleet member array; None when non-list, malformed, or duplicated."""
+def _parse_members(*, raw: object) -> Result[tuple[FleetMember, ...], _MemberFailure]:
+    """Parse the fleet member array, or name which of its three failures occurred.
+
+    Converted alongside its caller because it is where two of the eight
+    causes are DECIDED: a duplicate repo and a malformed entry are
+    different operator actions (deduplicate the list vs. fix one record),
+    and returning `None` for both meant `parse_manifest` could not tell
+    them apart to report them.
+    """
     if not isinstance(raw, list):
-        return None
+        return Failure("fleet-not-list")
     members: list[FleetMember] = []
     for entry in cast("list[object]", raw):
         member = _parse_member(entry=entry)
         if member is None:
-            return None
+            return Failure("malformed-member")
         members.append(member)
     if len({member.repo for member in members}) != len(members):
-        return None
-    return tuple(members)
+        return Failure("duplicate-member")
+    return Success(tuple(members))
 
 
 def _parse_adopter(*, entry: object) -> Adopter | None:
-    """One manifest adopter entry, or None when malformed."""
+    """One manifest adopter entry, or None when malformed.
+
+    Left on `None` for the same reason as `_parse_member`: one failure
+    meaning, so the failure track would have a single inhabitant.
+    """
     if not isinstance(entry, dict):
         return None
     record = cast("dict[str, object]", entry)
@@ -103,23 +174,29 @@ def _parse_adopter(*, entry: object) -> Adopter | None:
     return Adopter(repo=repo, profile=tuple(cast("list[str]", profile)), posture=posture)
 
 
-def _parse_adopters(*, raw: object) -> tuple[Adopter, ...] | None:
-    """Parse the optional adopters array; () when absent, None when malformed."""
+def _parse_adopters(*, raw: object) -> Result[tuple[Adopter, ...], _AdopterFailure]:
+    """Parse the optional adopters array; `Success(())` when absent.
+
+    `adopters` is OPTIONAL, so an ABSENT key is a success carrying the
+    empty tuple — not a failure. That distinction was already correct
+    before the conversion (`()` vs `None`) and is preserved exactly: the
+    railway must not turn "you did not declare adopters" into an error.
+    """
     if raw is None:
-        return ()
+        return Success(())
     if not isinstance(raw, list):
-        return None
+        return Failure("adopters-not-list")
     adopters: list[Adopter] = []
     for entry in cast("list[object]", raw):
         adopter = _parse_adopter(entry=entry)
         if adopter is None:
-            return None
+            return Failure("malformed-adopter")
         adopters.append(adopter)
-    return tuple(adopters)
+    return Success(tuple(adopters))
 
 
-def parse_manifest(*, source: str) -> Manifest | None:
-    """Parse `.livespec-fleet-manifest.jsonc` text; None when malformed.
+def parse_manifest(*, source: str) -> Result[Manifest, ManifestParseError]:
+    """Parse `.livespec-fleet-manifest.jsonc` text, or name why it would not.
 
     The fleet member array is read from the `fleet` key, falling back to
     the legacy `members` key when `fleet` is absent (the required-key
@@ -127,27 +204,45 @@ def parse_manifest(*, source: str) -> Manifest | None:
     the manifest key). The optional `adopters` array, when present, parses
     into `Adopter` records; an absent `adopters` key yields an empty tuple.
 
-    Malformed means: invalid JSONC, a non-object root, a non-string
-    `owner`, a non-list fleet array (under either `fleet` or `members`),
-    any malformed member entry (missing `repo`, unknown `class`),
-    duplicate member repos, a present-but-non-list `adopters` value, or
-    any malformed adopter entry (missing/empty `repo`, a `profile` that
-    is not a non-empty list of known layers, or an unknown `posture`).
+    The EIGHT rejection causes each arrive as a distinct
+    `ManifestParseError.reason` rather than as one shared `None`:
+    `invalid-jsonc`, `root-not-object`, `owner-not-string`,
+    `fleet-not-list` (under either `fleet` or `members`),
+    `malformed-member` (missing `repo`, unknown `class`),
+    `duplicate-member`, `adopters-not-list`, and `malformed-adopter`
+    (missing/empty `repo`, a `profile` that is not a non-empty list of
+    known layers, or an unknown `posture`).
+
+    CHECK ORDER IS PART OF THE CONTRACT NOW, because it decides which
+    reason a doubly-malformed manifest reports, and that was previously
+    unobservable — every order produced the same `None`. It runs
+    OUTERMOST-FIRST — JSONC, root, owner, fleet, adopters — so the
+    reported cause is always the outermost thing wrong: complaining about
+    a member entry inside a document whose root is not an object would
+    send the reader to the wrong line. One consequence is deliberate: a
+    manifest with BOTH a bad owner and a bad member reports
+    `owner-not-string`, and fixing it surfaces the next cause. This is
+    also a behavior change from the pre-conversion code, which parsed the
+    arrays BEFORE testing `owner` — invisible then, observable now.
     """
     parser = jsoncomment.JsonComment()
     try:
         data = cast("object", parser.loads(source))
     except ValueError:
-        return None
+        return Failure(ManifestParseError(reason="invalid-jsonc"))
     if not isinstance(data, dict):
-        return None
+        return Failure(ManifestParseError(reason="root-not-object"))
     mapping = cast("dict[str, object]", data)
     owner = mapping.get("owner")
+    if not isinstance(owner, str):
+        return Failure(ManifestParseError(reason="owner-not-string"))
     members_raw = mapping.get("fleet")
     if members_raw is None:
         members_raw = mapping.get("members")
     members = _parse_members(raw=members_raw)
+    if isinstance(members, Failure):
+        return Failure(ManifestParseError(reason=members.failure()))
     adopters = _parse_adopters(raw=mapping.get("adopters"))
-    if not isinstance(owner, str) or members is None or adopters is None:
-        return None
-    return Manifest(owner=owner, members=members, adopters=adopters)
+    if isinstance(adopters, Failure):
+        return Failure(ManifestParseError(reason=adopters.failure()))
+    return Success(Manifest(owner=owner, members=members.unwrap(), adopters=adopters.unwrap()))
