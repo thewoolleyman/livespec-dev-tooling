@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.3.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.3.1...v1.3.2) (2026-07-29)
+
+
+### Bug Fixes
+
+* **fleet:** fetch_manifest puts its two failures on the railway ([5b0aec2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5b0aec2cbacc7212dac4e9d85afc302aefc1ac10))
+
 ## [1.3.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.3.0...v1.3.1) (2026-07-29)
 
 
