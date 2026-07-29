@@ -25,6 +25,7 @@ from livespec_dev_tooling.config import (
     Config,
     ConfigParseError,
     ConventionNotAdopted,
+    CrossRepoPublicApi,
     DeclaredPath,
     DeclaredPrefixes,
     DeclaredTrees,
@@ -116,6 +117,11 @@ def test_required_role_keys_exports_exact_backfilled_keys() -> None:
             "file_lloc_hard_gate",
             "plan_lifecycle_anchor",
             "scenario_tiers",
+            # SPECIFICATION v036: `cross_repo_public_api` is deliberately NOT
+            # required. Making it required would hard-error every governed repo
+            # on its next pin bump to demand a declaration most have no content
+            # for, and its absence relaxes nothing — the key is tightening-only.
+            "cross_repo_public_api",
         }
     )
     assert len(REQUIRED_ROLE_KEYS) == 10
@@ -330,6 +336,110 @@ def test_mirror_pairings_entry_missing_keys_raises(*, tmp_path: Path) -> None:
         body='[tool.livespec_dev_tooling]\nmirror_pairings = [{ source_tree = "a" }]\n',
     )
     with pytest.raises(ConfigParseError, match="needs string `source_tree`"):
+        _ = load_config(repo_root=tmp_path)
+
+
+def test_cross_repo_public_api_parses_declared_entries(*, tmp_path: Path) -> None:
+    """Each declared entry resolves to a `CrossRepoPublicApi` carrying its reason.
+
+    SPECIFICATION v036 §"Role keys": the consumer's declaration of the names
+    OTHER governed repos consume, so `public_api_result_typed` can apply a
+    FLEET-WIDE criterion from a repo-local vantage. The `reason` is part of
+    the parsed value rather than a TOML comment, for the same reason
+    `unarmed_until` takes a payload: an unexplained declaration is
+    indistinguishable from an inherited one.
+    """
+    _write_pyproject(
+        repo_root=tmp_path,
+        body=(
+            "[tool.livespec_dev_tooling]\n"
+            "cross_repo_public_api = [\n"
+            '  { file = "pkg/contract.py", function = "parse_manifest", '
+            'reason = "product import: beads-fabro codex_yolo_gate.py hook" },\n'
+            '  { file = "pkg/testing/cli_e2e.py", function = "discover_fixtures", '
+            'reason = "cross-repo test import: four sibling e2e suites" },\n'
+            "]\n"
+        ),
+    )
+    config = load_config(repo_root=tmp_path)
+    assert config.cross_repo_public_api == (
+        CrossRepoPublicApi(
+            file=Path("pkg/contract.py"),
+            function="parse_manifest",
+            reason="product import: beads-fabro codex_yolo_gate.py hook",
+        ),
+        CrossRepoPublicApi(
+            file=Path("pkg/testing/cli_e2e.py"),
+            function="discover_fixtures",
+            reason="cross-repo test import: four sibling e2e suites",
+        ),
+    )
+
+
+def test_cross_repo_public_api_absent_yields_empty_declaration(*, tmp_path: Path) -> None:
+    """An omitted key loads clean and empty — it is NOT a required role key.
+
+    Absence must not be an error here: a required key would hard-error every
+    governed repo on its next pin bump. It relaxes nothing either, because the
+    key is TIGHTENING-ONLY — it can only ADD names to the rule's scope.
+    """
+    _write_pyproject(
+        repo_root=tmp_path,
+        body='[tool.livespec_dev_tooling]\nsource_trees = ["pkg"]\n',
+    )
+    config = load_config(repo_root=tmp_path)
+    assert config.cross_repo_public_api == ()
+
+
+def test_cross_repo_public_api_not_a_list_raises(*, tmp_path: Path) -> None:
+    """A scalar `cross_repo_public_api` raises `ConfigParseError`."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body='[tool.livespec_dev_tooling]\ncross_repo_public_api = "nope"\n',
+    )
+    with pytest.raises(ConfigParseError, match="`cross_repo_public_api` must be an array"):
+        _ = load_config(repo_root=tmp_path)
+
+
+def test_cross_repo_public_api_non_table_entry_raises(*, tmp_path: Path) -> None:
+    """A `cross_repo_public_api` array with a non-table entry raises."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body="[tool.livespec_dev_tooling]\ncross_repo_public_api = [1]\n",
+    )
+    with pytest.raises(
+        ConfigParseError, match="each `cross_repo_public_api` entry must be a table"
+    ):
+        _ = load_config(repo_root=tmp_path)
+
+
+def test_cross_repo_public_api_entry_missing_function_raises(*, tmp_path: Path) -> None:
+    """An entry missing `function` raises `ConfigParseError`."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body=(
+            "[tool.livespec_dev_tooling]\n"
+            'cross_repo_public_api = [{ file = "pkg/a.py", reason = "why" }]\n'
+        ),
+    )
+    with pytest.raises(ConfigParseError, match="needs string `file`"):
+        _ = load_config(repo_root=tmp_path)
+
+
+def test_cross_repo_public_api_blank_reason_raises(*, tmp_path: Path) -> None:
+    """A whitespace-only `reason` is rejected — a bare path is not a declaration.
+
+    SPECIFICATION v036 makes the written reason REQUIRED rather than advisory:
+    an entry nobody had to justify is the shape this rule set exists to remove.
+    """
+    _write_pyproject(
+        repo_root=tmp_path,
+        body=(
+            "[tool.livespec_dev_tooling]\n"
+            'cross_repo_public_api = [{ file = "pkg/a.py", function = "f", reason = "   " }]\n'
+        ),
+    )
+    with pytest.raises(ConfigParseError, match="needs a non-empty `reason`"):
         _ = load_config(repo_root=tmp_path)
 
 
