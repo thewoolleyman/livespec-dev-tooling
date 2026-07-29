@@ -32,31 +32,45 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >    both DECLARE `tag = "v1.0.0"` and RESOLVE `livespec-dev-tooling==1.0.0` at rev
 >    `20227edb…` in their `uv.lock`. **Eighteen pieces of evidence** — see the discharge
 >    section below. Merged, released AND consumed.
-> 5. **`livespec-dev-tooling-5ror` (P1) has RESOLVED ITSELF IN ONE DIRECTION.** v1.0.0 is
->    tagged, released and consumed fleet-wide, so the live question is no longer "should we go
->    1.0.0" but **"`contracts.md:307` records this library as pre-1.0, and that is now
->    false."** A SPEC change; do not edit it directly.
-> 6. **There is NO next action inside this thread's current authorization, and that is a REAL
->    STATE — not a stall.** Every remaining item is gated on someone else (see 📋 OPEN ITEMS
->    for who owns each). **If you are a fresh session handed only this file: the correct
->    response is to re-derive the ledger, confirm the state below still holds, report it, and
->    STAND BY — not to invent work.** Do not start step 6, `5ror`, `clkf`, `kmdn` or `efxa`;
->    the first three need a maintainer and the last is the Dispatcher's.
+> 5. **🟢 AUTHORITY IS GRANTED. THERE IS AUTHORIZED WORK QUEUED. DO NOT STAND BY.** Earlier
+>    revisions of this file told a cold start to stand by because everything was
+>    maintainer-gated. **That is now FALSE and is the single most dangerous stale line this
+>    file has ever carried.** Maintainer ruling 2026-07-29, verbatim in substance: *"Do the
+>    proposed change, the revise, the grooming, the implementation, and everything
+>    autonomously. Just get this work done unless you have an absolutely, truly blocking
+>    question for me."* And on step 6: *"Remediate dev-tooling's 59, then arm, then fan out."*
+>    The grant is **not repo-scoped** — a cross-repo propose-change into `livespec` was filed
+>    and accepted under it (v177). **`5ror`, `clkf`, `fwcwxv`, `pj3j` and `livespec-i04f` are
+>    all CLOSED.** The spec lifecycle is NOT waived — changes still go through
+>    propose-change → revise as OPERATIONS — but the accept/reject decision is delegated.
+> 6. **▶️ THE NEXT ACTION IS UNAMBIGUOUS AND NEEDS NO NEW AUTHORITY.** Step 6 is at **48
+>    offenders** (from 59). Three tracks, none blocking another — see §"STEP 6 PROGRESS" and
+>    §"EXACT NEXT ACTION":
+>    - **Track B — keep converting, in slices, each its own Red→Green pair and its own PR.**
+>      The next two are already READ and verified genuine: `otel_step_timer.parse_argv`
+>      (`None` is explicitly *"a usage error"*, four malformations collapsed into one bit) and
+>      `fleet/contract.parse_manifest` (**nine** documented failure causes, one bit of output).
+>    - **The nine undeclared supervisors** — per-file judgement, NOT a bulk declaration. See
+>      the ⛔ block; declaring a file grants FOUR exemptions, not one.
+>    - **Track C — the dev-tooling propose-change for `contracts.md:217`**, which under-reports
+>      `supervisor_entry_files` as 1 consumer of 4. Small, inside existing authority, never
+>      started.
+> 7. **DO NOT ARM until dev-tooling measures ZERO**, and do NOT start the other five repos'
+>    223 — fan-out follows arming. The ordering trap is unchanged and is the oldest constraint
+>    on this thread: this repo runs the check on ITSELF, so arming early turns its own
+>    `just check` red and lefthook then blocks the very commit that would fix it.
+> 8. **`8o8e.1` being CLOSED is not the epic.** `check-public-api-result-typed` still scans
+>    ZERO files in every flat-layout repo — it is still `pure_trees`-scoped, and NOTHING landed
+>    so far has changed that. Every reduction from 59 → 48 lowered what arming WILL report; it
+>    did not arm anything. See the ⛔ paragraph immediately below.
 >
->    **⚠️ "STAND BY" IS NOT "THE RECORD IS CORRECT." A 2026-07-28 cold start re-derived it and
->    found TWO ledger statuses that were FALSE** — `pj3j` read `BACKLOG` and `fwcwxv` read
->    `blocked` / `needs-human`, while both had verifiably landed on master (`c0c0472`,
->    `0500155`). **The staleness pointed the dangerous way**: `fwcwxv` read as "a maintainer
->    still owes a propose-change" for a change already RATIFIED, which this very file warns
->    against re-filing. Re-deriving means reading the ARTIFACTS the item names, not just the
->    item's status field — a status is a claim like any other. Both are now CLOSED with
->    per-bullet evidence, and `fwcwxv`'s last owed bullet was discharged in PR #800
->    (`27c1d94`).
-> 7. **Do NOT start step 6's ARMING.** Its blast radius is now measured (below); the number is
->    an input to a maintainer decision, not a licence to begin.
-> 8. **`8o8e.1` being CLOSED is not the epic**, and it is now the single most misreadable fact
->    on this thread. `check-public-api-result-typed` still scans ZERO files in every
->    flat-layout repo. See the ⛔ paragraph immediately below.
+>    **⚠️ AND "RE-DERIVE" MEANS READ THE ARTIFACT, NOT THE STATUS FIELD.** A 2026-07-28 cold
+>    start found TWO ledger statuses that were FALSE — `pj3j` read `BACKLOG` and `fwcwxv` read
+>    `blocked`/`needs-human` while both had verifiably landed (`c0c0472`, `0500155`). The
+>    staleness pointed the dangerous way: `fwcwxv` read as "a maintainer still owes a
+>    propose-change" for a change already RATIFIED, three lines from this file's own "Do NOT
+>    re-file it." **A status is a claim like any other.** Read the commit, the file, the
+>    `history/vNNN/` directory.
 
 
 The open item is the EPIC, **`livespec-dev-tooling-8o8e`**. Its child **`8o8e.1` is CLOSED** —
@@ -544,15 +558,33 @@ local-only amend is how a durable record quietly reverts.
 **Once checks are green, open a FRESH PR off the new master rather than amending.** Amending races
 auto-merge, and the race is invisible when you win it.
 
-### ▶️ EXACT NEXT ACTION — there is NONE inside the current authorization
+### ▶️ EXACT NEXT ACTION — **PICK UP TRACK B. NO NEW AUTHORITY IS NEEDED.**
 
-Every remaining item is owned by someone else. **That is a real state, not a stall**, and the
-right move is to say so rather than to manufacture work. Listed with its owner:
+**Start here, concretely:** convert `otel_step_timer.parse_argv` — it is already READ and
+verified genuine (its `None` is explicitly *"a usage error"*, collapsing FOUR distinct
+malformations into one bit). Then `fleet/contract.parse_manifest` (**nine** documented failure
+causes, one bit of output). One slice per PR, each its own Red→Green pair, never batched.
 
-1. **`livespec-dev-tooling-5ror` — MAINTAINER.** #794 merged and the fan-out ran, so this no
-   longer gates anything. The remaining half is a SPEC defect: `contracts.md:307` records the
-   library as pre-1.0 and v1.0.0 is now released and consumed fleet-wide. Propose-change + revise.
-   (`fwcwxv` and `8o8e.1` are both DONE.)
+**The Red→Green shape that cost two discarded attempts on slice 1, so it is written down:** when
+the existing tests assert the OLD signature and live in the SAME file as the new tests, the
+dependent updates MUST be in the **Red**, not the Green amend — the Red→Green byte-identity rule
+forbids touching the test file between the two legs. Author the whole final test file, commit it
+as Red with the impl untouched, then amend with the impl.
+
+**Then, in any order** (none blocks another):
+
+- **The nine undeclared supervisors** — per-file judgement, NOT a bulk declaration. See the ⛔
+  block: declaring a file grants FOUR exemptions, not one.
+- **Track C** — the dev-tooling propose-change for `contracts.md:217` under-reporting
+  `supervisor_entry_files` as 1 consumer of 4. Small, inside existing authority, never started.
+
+**Then re-measure, and ONLY at measured zero, arm.** Then fan out to the other five repos' 223 —
+not before.
+
+#### Still owned by someone else (unchanged)
+
+1. **`livespec-dev-tooling-5ror` — ✅ CLOSED 2026-07-29.** Ratified as v034 (`3a7d8d8`). Kept
+   here only so a reader of the old numbering does not go looking for it.
 2. **The `unarmed_until` LIVENESS check — ARCHITECTURE DECISION.** Blocked on a vantage/credential
    question, now with hard cross-tenant measurements; see the ⛔ block below. It is proposal 3 of
    the filed spec change, so the obligation gets ratified before it is enforced.
@@ -563,11 +595,13 @@ right move is to say so rather than to manufacture work. Listed with its owner:
 5. **`livespec-dev-tooling-m50u` — A HUMAN, then ANOTHER TENANT'S INTAKE.** A blessed
    declared-absent payload measured FALSE in `livespec-orchestrator-git-jsonl`. The measurement is
    done; the remedy is that repo's architectural call and must not be a naive prefix widening.
-6. **`livespec-dev-tooling-clkf` — MAINTAINER.** v033's transitional clause and its WARN scenario
-   describe a regime Phase 4 ended. Spec change; propose-change + revise.
-7. **Step 6's ARMING — NOT AUTHORIZED.** Blast radius now measured at **282** (above). The number
-   is an input to a maintainer decision on sequencing, not a licence to begin. Remediating
-   `livespec-dev-tooling`'s own 59 is a PRECONDITION of arming, not a follow-up.
+6. **`livespec-dev-tooling-clkf` — ✅ CLOSED 2026-07-29.** Ratified as v034 (`3a7d8d8`).
+7. **Step 6's ARMING — AUTHORIZED, but SEQUENCED LAST.** The maintainer's order is remediate →
+   arm → fan out. Remediating `livespec-dev-tooling`'s own offenders is a PRECONDITION of arming,
+   not a follow-up, and the count is now **48**, not the 59 the blast-radius table below assumes.
+   **Arm only at measured ZERO.** The 282 fleet figure below is the FAN-OUT radius and is
+   likewise pre-triage — it counts supervisor and `_`-prefixed cases the ratified v177 set and the
+   underscore rule now exempt, so it will fall substantially when re-measured per repo.
 8. **`livespec-dev-tooling-nauzq6` — A HUMAN** (`blocked` / `needs-human`, filed 2026-07-28). The
    installer/check divergence on an undeclared `neutral_hook_body_path`. The MEASUREMENT is done
    and recorded; what is owed is a design ruling on whether an operator-invoked reconcile surface
