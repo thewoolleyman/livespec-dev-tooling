@@ -43,26 +43,46 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >    and accepted under it (v177). **`5ror`, `clkf`, `fwcwxv`, `pj3j` and `livespec-i04f` are
 >    all CLOSED.** The spec lifecycle is NOT waived — changes still go through
 >    propose-change → revise as OPERATIONS — but the accept/reject decision is delegated.
-> 6. **▶️ THE NEXT ACTION IS UNAMBIGUOUS AND NEEDS NO NEW AUTHORITY.** Step 6 is at **48
->    offenders** (from 59). Three tracks, none blocking another — see §"STEP 6 PROGRESS" and
->    §"EXACT NEXT ACTION":
+> 6. **▶️ THE NEXT ACTION IS UNAMBIGUOUS AND NEEDS NO NEW AUTHORITY.** Step 6 is at **47
+>    offenders** (from 59). Two tracks remain, neither blocking the other — see §"STEP 6
+>    PROGRESS" and §"EXACT NEXT ACTION":
 >    - **Track B — keep converting, in slices, each its own Red→Green pair and its own PR.**
->      The next two are already READ and verified genuine: `otel_step_timer.parse_argv`
->      (`None` is explicitly *"a usage error"*, four malformations collapsed into one bit) and
->      `fleet/contract.parse_manifest` (**nine** documented failure causes, one bit of output).
+>      Slice 2 (`fleet/contract.parse_manifest`) LANDED 2026-07-29 as `2ff79a5` (PR #821),
+>      released in `v1.0.4`. The strongest remaining candidate is
+>      `fleet/dispatch_matrix_filter.filter_siblings`, which the triage calls *"literally an
+>      Either encoded by hand"*.
 >    - **The nine undeclared supervisors** — per-file judgement, NOT a bulk declaration. See
 >      the ⛔ block; declaring a file grants FOUR exemptions, not one.
->    - **Track C — the dev-tooling propose-change for `contracts.md:217`**, which under-reports
->      `supervisor_entry_files` as 1 consumer of 4. Small, inside existing authority, never
->      started.
-> 7. **DO NOT ARM until dev-tooling measures ZERO**, and do NOT start the other five repos'
+>    - **Track C is DONE.** Ratified as **v035** — and it grew from one bullet to a whole
+>      class. See §"TRACK C IS DONE — v035".
+> 7. **⛔ "REMEDIATE TO ZERO, THEN ARM" IS NOW KNOWN TO BE UNREACHABLE BY CONVERSION ALONE —
+>    READ THIS BEFORE PLANNING ANYTHING.** Filed as **`livespec-dev-tooling-zu85`**. Four of
+>    the 47 offenders live in `otel_step_timer.py`, and that file **cannot import the railway
+>    at all**: `docker/fabro-sandbox/base/Dockerfile:106` COPYs it ALONE to
+>    `/usr/local/bin/livespec-step-timer`, its `Dockerfile.dockerignore` allowlists only that
+>    one file into the build context, and it runs on the base image's system python3 BEFORE
+>    the first `uv sync`. The house vendor-path idiom would resolve to `/usr/local/_vendor`
+>    and `ImportError` at import time, breaking **every dispatched Fabro prepare step**. So
+>    dev-tooling cannot reach measured ZERO by converting, and arming is blocked on an
+>    exemption that does not exist today. **The handoff previously named
+>    `otel_step_timer.parse_argv` as the START-HERE target, "already READ and verified
+>    genuine" — the failure-semantics reading was RIGHT and the deployment reading was never
+>    done.** Do not retry it. Full record and the do-not-do-this-instead warning are on
+>    `zu85`.
+> 8. **DO NOT ARM until dev-tooling measures ZERO**, and do NOT start the other five repos'
 >    223 — fan-out follows arming. The ordering trap is unchanged and is the oldest constraint
 >    on this thread: this repo runs the check on ITSELF, so arming early turns its own
->    `just check` red and lefthook then blocks the very commit that would fix it.
-> 8. **`8o8e.1` being CLOSED is not the epic.** `check-public-api-result-typed` still scans
+>    `just check` red and lefthook then blocks the very commit that would fix it. **And per
+>    `zu85` above, ZERO is not reachable by conversion — the four `otel_step_timer` offenders
+>    need a ratified exemption first.**
+> 9. **`8o8e.1` being CLOSED is not the epic.** `check-public-api-result-typed` still scans
 >    ZERO files in every flat-layout repo — it is still `pure_trees`-scoped, and NOTHING landed
->    so far has changed that. Every reduction from 59 → 48 lowered what arming WILL report; it
->    did not arm anything. See the ⛔ paragraph immediately below.
+>    so far has changed that. **Re-verified 2026-07-29 by reading the code, not the record:**
+>    `public_api_result_typed.py` still resolves its universe as
+>    `role_trees(role=config.pure_trees)` behind a `role_absence_exit_code` gate, and this repo
+>    declares `pure_trees = { not_applicable = … }`, so the check gates out before scanning
+>    anything. Every reduction from 59 → 47 lowered what arming WILL report; it did not arm
+>    anything. See the ⛔ paragraph immediately below.
 >
 >    **⚠️ AND "RE-DERIVE" MEANS READ THE ARTIFACT, NOT THE STATUS FIELD.** A 2026-07-28 cold
 >    start found TWO ledger statuses that were FALSE — `pj3j` read `BACKLOG` and `fwcwxv` read
@@ -149,7 +169,7 @@ NAME with an empty payload, which is a different input. The line `And the emptin
 reported as a sanctioned opt-out` was carried over verbatim — it is the invariant the union exists
 to enforce, and it survives the change in outcome.
 
-### 🚦 STEP 6 PROGRESS — **59 → 48**, and the cross-repo blocker is CLEARED
+### 🚦 STEP 6 PROGRESS — **59 → 47**, and the cross-repo blocker is CLEARED
 
 | landed | effect |
 |---|---|
@@ -157,6 +177,34 @@ to enforce, and it survives the change in outcome.
 | **#812** ROP slice 1 (`8751a69`) | **53 → 51** |
 | **livespec #1821** — spec **v177** (`7acee70a`) | ratifies the exemption set; unblocks the next row |
 | **#816** honor `supervisor_entry_files` (`537ec6a`) | **51 → 48** |
+| **#821** ROP slice 2 — `parse_manifest` (`2ff79a5`, released `v1.0.4`) | **48 → 47** (20 files → 19) |
+
+**RE-MEASURED 2026-07-29 after slice 2, not inherited:** universe **145**, **19** files,
+**47** offenders — the shipped `public_api_result_typed._find_offenders` run over the
+shipped `resolve_check_universe()` with this repo's real config. The 48 it started from
+reproduced exactly first, so the delta is measured at both ends.
+
+**⛔ 4 OF THE 47 ARE UNREACHABLE BY CONVERSION** — `otel_step_timer.py`'s `parse_argv`,
+`build_trace_payload`, `run` and `main`. See `zu85` and START-HERE step 7. The floor for
+conversion work is **43, not 0**, and closing the last four is a SPEC decision.
+
+### 🔒 THE SWEEP THAT BOUNDED `zu85` — it is ONE file, and that was measured too
+
+Finding a deployment constraint that forbids conversion raises the obvious question of how
+many other offenders carry one. **Measured, so nobody re-measures it:** all 20
+offender-bearing modules were checked for a standalone/stdlib-only deployment constraint.
+`otel_step_timer.py` is the ONLY one — it is the sole `COPY` of a first-party `.py`
+anywhere under `docker/`, and the sole module whose docstring declares STDLIB ONLY. So the
+blocker costs exactly 4 offenders and **nothing else in Track B is affected**. Recorded
+because the cheap wrong response to `zu85` is to treat every remaining conversion as
+suspect.
+
+**THE GENERALIZABLE LESSON, and it binds the other five repos' 223.** The step-6 triage
+classified all 59 by FAILURE SEMANTICS — does this `None` model a failure? — and never
+asked whether the module can import `returns` at all. Those are independent questions and
+the triage only ever asked the first. **For the fan-out, ask both**: a module that is
+deployed standalone, vendored into another artifact, or executed outside the package cannot
+be converted no matter how genuine its failure track is.
 
 ### ✅ THE CROSS-REPO SPEC CHANGE LANDED — livespec **v177**, and `i04f` is RESOLVED
 
@@ -560,10 +608,13 @@ auto-merge, and the race is invisible when you win it.
 
 ### ▶️ EXACT NEXT ACTION — **PICK UP TRACK B. NO NEW AUTHORITY IS NEEDED.**
 
-**Start here, concretely:** convert `otel_step_timer.parse_argv` — it is already READ and
-verified genuine (its `None` is explicitly *"a usage error"*, collapsing FOUR distinct
-malformations into one bit). Then `fleet/contract.parse_manifest` (**nine** documented failure
-causes, one bit of output). One slice per PR, each its own Red→Green pair, never batched.
+**Start here, concretely:** convert `fleet/dispatch_matrix_filter.filter_siblings() ->
+FilterOutcome | FilterError`, which the triage calls *"literally an Either encoded by hand"* —
+the cleanest remaining conversion in the set. One slice per PR, each its own Red→Green pair,
+never batched.
+
+**DO NOT start with `otel_step_timer.parse_argv`**, which every prior revision of this file
+named as the START-HERE target. It is UNCONVERTIBLE — see `zu85` and START-HERE step 7.
 
 **The Red→Green shape that cost two discarded attempts on slice 1, so it is written down:** when
 the existing tests assert the OLD signature and live in the SAME file as the new tests, the
@@ -571,15 +622,80 @@ dependent updates MUST be in the **Red**, not the Green amend — the Red→Gree
 forbids touching the test file between the two legs. Author the whole final test file, commit it
 as Red with the impl untouched, then amend with the impl.
 
-**Then, in any order** (none blocks another):
+**AND THE STUB TECHNIQUE THAT MADE SLICE 2'S RED HONEST, which the two rules above do not
+cover.** When the new test imports a symbol the conversion INTRODUCES (`ManifestParseError`), a
+Red with the impl untouched dies on a COLLECTION error, which the hook accepts but which proves
+only that the module is unimportable. Put a minimal STUB of the new symbol on disk at Red —
+the dataclass and its `__all__` entry, with the converted function still returning the old type
+— so the test imports cleanly and fails on ASSERTIONS. Slice 2's Red was 8 assertion failures
+(`assert isinstance(None, Failure)`), zero collection errors. Then the Green amend replaces the
+stub with the real implementation. **Assert with `isinstance(outcome, Success)` rather than
+`is_successful(outcome)`**: `isinstance` never raises, so at Red it produces a clean assertion
+failure instead of an `AttributeError` on the un-wrapped return.
+
+**Also written down because it cost a duplicate file:** the two spec CLIs disagree on path
+convention. `propose_change.py`'s `target_spec_files` REQUIRE the `SPECIFICATION/` prefix;
+`revise.py`'s `resulting_files[].path` REJECT it (paths must be relative to `<spec-target>/`).
+
+**Then, in any order** (neither blocks the other):
 
 - **The nine undeclared supervisors** — per-file judgement, NOT a bulk declaration. See the ⛔
-  block: declaring a file grants FOUR exemptions, not one.
-- **Track C** — the dev-tooling propose-change for `contracts.md:217` under-reporting
-  `supervisor_entry_files` as 1 consumer of 4. Small, inside existing authority, never started.
+  block: declaring a file grants FOUR exemptions, not one. **v035 now states that fact in the
+  ratified spec** rather than only in this repo's `pyproject.toml` comment.
+- **The `zu85` exemption** — the spec decision that lets the four `otel_step_timer` offenders
+  reach zero. Nothing else can close them.
 
 **Then re-measure, and ONLY at measured zero, arm.** Then fan out to the other five repos' 223 —
-not before.
+not before. **Zero is not reachable until `zu85` is answered.**
+
+### ✅ TRACK C — cut as **v035**, and it grew from one bullet to a CLASS
+
+**STATE AT WRITING: the revision is CUT and COMMITTED on `spec/supervisor-entry-files-consumers`;
+PR #824 was OPEN and unmerged.** Said precisely rather than as "done", because this thread's own
+rule is that MERGED ≠ RELEASED ≠ CONSUMED and the previous session nearly closed a precondition on
+exactly that conflation. **RE-DERIVE:** `SPECIFICATION/history/v035/` on master, and `gh pr view
+824`. If #824 merged, v035 is ratified on master and Track C is closed; if it did not, the branch
+carries the work and nothing was lost.
+
+Filed and accepted 2026-07-29 under the delegated accept/reject authority. The recorded scope was
+one bullet — `contracts.md`'s `supervisor_entry_files` entry naming 1 consumer of 4. **Re-reading the whole section turned it into four wrong keys, wrong in BOTH
+directions**, every correction measured by enumerating the modules under
+`livespec_dev_tooling/checks/` that read `config.<key>`.
+
+| key | was | now |
+|---|---|---|
+| `supervisor_entry_files` | 1 | **4** — adds `no_write_direct`, `public_api_result_typed`, `supervisor_discipline` |
+| `commands_trees` | 2 | **3** — adds `public_api_result_typed` |
+| `io_trees` | 4, **two of them FALSE** | **3** — drops `public_api_result_typed` + `no_write_direct`, adds `hook_trees_not_io_exempt` |
+| `source_trees` | 13 named, **5 of them FALSE** | 8 AST-shape + `red_green_replay`, `rop_pipeline_shape`, `supervisor_discipline` |
+
+**THE OVER-REPORT IS THE MORE DANGEROUS HALF, and it is a new sub-shape of this thread's
+pattern.** An under-report understates a declaration's blast radius. An over-report documents an
+exemption that **does not exist** — a repo declaring `io_trees` expecting `public_api_result_typed`
+and `no_write_direct` to honor it gets a relaxation it never receives. That is the
+manufactured-confidence failure of a check that scans zero files, **relocated from the code into
+the schema documentation**. The thread has been hunting this shape in checks, config and prose;
+this is its first appearance in a ratified consumer-facing contract.
+
+**A PREAMBLE WAS RATIFIED FIRST, and it is what makes this durable rather than a data refresh.**
+`partition_completeness` and `source_trees_scoped_to_consumer` read nearly EVERY role key
+structurally, so the lists had two defensible readings producing different answers for every key
+— and two authorities in this repo already disagreed because of it (the `pyproject.toml` comment
+counted `partition_completeness` as a consumer, the spec did not). v035 defines the lists as
+BEHAVIORAL consumers and names both meta-checks as excluded **by rule**, so their absence reads
+as a decision rather than an oversight. Without that, the next editor correcting these lists has
+no way to know whether `partition_completeness` belongs in all eleven or none.
+
+**`pure_trees` and `covered_trees` were measured CORRECT and deliberately left alone.** Recorded
+so a later editor does not assume the whole section was wrong — and because a method that only
+ever deflates what it touches is not measuring.
+
+**AND THE COUNT HID AN ERROR IN THIS REPO'S OWN CONFIG COMMENT.** The `pyproject.toml` comment
+said `supervisor_entry_files` grants FOUR exemptions and listed them. Both halves were wrong and
+**they cancel in the count**: `public_api_result_typed` was missing (a real exemption, wired by
+#816 and never reflected) and `partition_completeness` was listed (it reads the key but grants no
+exemption — it is bookkeeping). Still four. **A reader checking only the number would have seen
+nothing wrong**, which is why this was found by measuring membership rather than by counting.
 
 #### Still owned by someone else (unchanged)
 
@@ -596,10 +712,13 @@ not before.
    declared-absent payload measured FALSE in `livespec-orchestrator-git-jsonl`. The measurement is
    done; the remedy is that repo's architectural call and must not be a naive prefix widening.
 6. **`livespec-dev-tooling-clkf` — ✅ CLOSED 2026-07-29.** Ratified as v034 (`3a7d8d8`).
-7. **Step 6's ARMING — AUTHORIZED, but SEQUENCED LAST.** The maintainer's order is remediate →
-   arm → fan out. Remediating `livespec-dev-tooling`'s own offenders is a PRECONDITION of arming,
-   not a follow-up, and the count is now **48**, not the 59 the blast-radius table below assumes.
-   **Arm only at measured ZERO.** The 282 fleet figure below is the FAN-OUT radius and is
+7. **Step 6's ARMING — AUTHORIZED, but SEQUENCED LAST and now BLOCKED ON `zu85`.** The
+   maintainer's order is remediate → arm → fan out. Remediating `livespec-dev-tooling`'s own
+   offenders is a PRECONDITION of arming, not a follow-up, and the count is now **47**, not the
+   59 the blast-radius table below assumes. **Arm only at measured ZERO — and ZERO IS NOT
+   REACHABLE BY CONVERSION**: 4 of the 47 are `otel_step_timer.py`'s, which cannot import the
+   railway at all (`zu85`). The conversion floor is **43**. Closing the last four is a SPEC
+   decision that nobody has started. The 282 fleet figure below is the FAN-OUT radius and is
    likewise pre-triage — it counts supervisor and `_`-prefixed cases the ratified v177 set and the
    underscore rule now exempt, so it will fall substantially when re-measured per repo.
 8. **`livespec-dev-tooling-nauzq6` — A HUMAN** (`blocked` / `needs-human`, filed 2026-07-28). The
@@ -695,11 +814,13 @@ Both ids are in fact LIVE today (`livespec-mutreal.1` BACKLOG, `bd-ib-6qb2mc` BL
 `unarmed_until` declarations point at genuine pending work — **measured by hand, out of band, and
 NOT asserted by any check.**
 
-**RE-MEASURED 2026-07-28, BOTH TENANTS, AND IT STILL HOLDS — `livespec-mutreal.1` BACKLOG,
-`bd-ib-6qb2mc` BLOCKED.** The four declarations were ALSO re-read from the forge and still cite
-exactly those two ids, so neither half has drifted. **Re-check this FIRST on any future cold
-start**, ahead of anything else on this thread: it is the fastest-decaying fact here and the only
-one whose decay is SILENT. `kmdn` exists precisely because when `livespec-mutreal.1` closes, three
+**RE-CHECKED 2026-07-29, BOTH TENANTS, AND IT STILL HOLDS — `livespec-mutreal.1` BACKLOG,
+`bd-ib-6qb2mc` BLOCKED.** Third consecutive session in which both resolve open, so all four
+`unarmed_until` declarations still point at genuine pending work and nobody is in breach.
+**Re-check this FIRST on any future cold start**, ahead of anything else on this thread: it is the
+fastest-decaying fact here and the only one whose decay is SILENT. Two `bd show` reads, one per
+tenant — `livespec-mutreal.1` from `/data/projects/livespec`, `bd-ib-6qb2mc` from
+`/data/projects/livespec-orchestrator-beads-fabro`, because no single credential resolves both. `kmdn` exists precisely because when `livespec-mutreal.1` closes, three
 repos breach a ratified obligation simultaneously and **nothing in the fleet notices** — no check
 resolves these ids, by the structural argument above. Two `bd -C` reads is the whole cost; the
 alternative is a fleet-wide ratified obligation quietly going false.
@@ -1003,6 +1124,8 @@ the entire fan-out would silently never trigger.
 | `m50u` | **blocked / needs-human — FILED 2026-07-28** | A blessed declared-absent PAYLOAD can be false and nothing checks it. `livespec-orchestrator-git-jsonl`'s `source_tree_prefixes = { superseded_by = … }` is **measurably untrue** — 14 of 49 first-party `.py` fall outside the derived set — silently narrowing BOTH commit-time gates. Filed HERE rather than in the git-jsonl tenant deliberately: that repo's intake runs through its own orchestrator surface (the `bd-ib-6qb2mc` precedent), which is not installed here, and a raw cross-tenant `bd -C` would bypass the intake DoR that routed that precedent correctly. **First action: route the git-jsonl half through that repo's own intake.** |
 | `qv3k` | **blocked / needs-human — FILED 2026-07-28** | `livespec_footgun_guard.py` is the fleet's THIRD shared hook body and the only one with **no carrier constant, no installer and no byte-identity check** — 8 copies, **7 distinct contents**. The precedent exists twice (commit-refuse hooks; the no-shadow-ledger body) and was simply never extended. `needs-human` because picking a canonical body among eight divergent copies could weaken a SAFETY guard in seven repos at once, and nothing yet establishes which copy blocks least. |
 | `nauzq6` | **blocked / needs-human, P2 — FILED 2026-07-28** | `install_no_shadow_ledger` and `checks/no_shadow_ledger_body_identical` **DISAGREE on an UNDECLARED `neutral_hook_body_path`** — the installer reads `role_path` directly and no-ops (exit 0); the check runs `role_absence_exit_code` FIRST and hard-errors (exit 1). It is a REQUIRED union key, so omission is a misconfiguration — but the two modules are documented as mirroring each other, and BOTH docstrings claimed a consumer that "has not declared" it "sees neither installer nor verifier activity". **Measured false.** `needs-human` because the remedy is a design call, not a fix: gating the installer breaks it for the repo mid-adoption that most needs it, and "operator reconcile is deliberately lenient where the gate is strict" is a defensible answer nobody has ever written down. |
+| `zu85` | **open, P2 — FILED 2026-07-29. BLOCKS ARMING.** | `otel_step_timer.py`'s 4 ROP offenders are UNCONVERTIBLE: the file is COPYd ALONE onto the fabro-sandbox image as `/usr/local/bin/livespec-step-timer`, its `Dockerfile.dockerignore` allowlists only that file into the build context, and it runs on the base image's system python3 before the first `uv sync`. The vendor-path idiom resolves to `/usr/local/_vendor` → `ImportError` at import time → every dispatched prepare step dies. Measured CONFINED: the only such module of the 20. Needs a ratified exemption (the v177 set has no member that fits, and `supervisor_entry_files` is the WRONG instrument — it would grant four unrelated exemptions to silence one check). **Do NOT close it by converting anyway and testing only the in-repo import path** — that passes green while the baked artifact is broken. |
+| `otrq` | open, P3 — FILED 2026-07-29 | ROP slice 1 left a stale ``returned `None` `` docstring at `fabro_image_pin_rewrite.py:211`, created BY the conversion that retired that `None`. The function's BODY correctly branches on `refusal.reason` fifteen lines below. Prose-twin instance #10, and the sharpest sub-shape yet: the docstring a reader consults FIRST contradicts the code directly beneath it. Docs-only, RGR-exempt. |
 | `pk2x` | backlog | Archive-on-epic-close — **ADOPT** ruled. Carries a note from this thread: a union makes `[]` unrepresentable after parsing, but **a key nobody wrote still parses to the default**, so pk2x's Exemption slot needs PRESENCE REQUIRED, not merely value well-formedness. |
 
 **`fp5yfv` — VERIFIED 2026-07-28, and the answer is BOTH.** It is no longer a "possible stale
@@ -1357,12 +1480,27 @@ repo that owns it**, and **an emptiness or absence that silently means consent**
    nobody reads is a comment with better syntax highlighting.** Found by MEASURING a claim rather
    than by reading it; no check in the fleet would have surfaced it.
 
-**And its prose twin, found NINE times now** — *an amendment that changed the behavior and left an
+**And its prose twin, found TEN times now** — *an amendment that changed the behavior and left an
 authoritative statement of that behavior standing*: the handoff's own heading → this repo's config
 header (Piece A) → four sibling headers (`livespec-driver-claude` = Piece B) → the ratified SPEC
-(`fwcwxv`) → the tool's own diagnostic output (`pj3j`) → **and four more on 2026-07-28, all in
-PR #800 (`27c1d94`)**. Each instance was found by re-reading the WHOLE document after a local edit,
-never by the edit itself. **A value-counting check cannot see any of them.**
+(`fwcwxv`) → the tool's own diagnostic output (`pj3j`) → **four more on 2026-07-28, all in
+PR #800 (`27c1d94`)** → **and `otrq` on 2026-07-29**. Each instance was found by re-reading the
+WHOLE document after a local edit, never by the edit itself. **A value-counting check cannot see
+any of them.**
+
+**INSTANCE 10 IS THE SHARPEST, because the conversion CREATED it.** `otrq` is a
+``returned `None` `` docstring at `fabro_image_pin_rewrite.py:211` — left standing by ROP slice 1,
+whose entire purpose was retiring that `None`. Fifteen lines below it the same function's body
+correctly unwraps a `Failure` and branches on `refusal.reason`, carrying a comment explaining that
+the railway conversion "earns its keep HERE". **One function, holding both the correct account and
+its contradiction, with the contradiction in the docstring** — the part a reader consults first to
+learn the contract. Slice 1 DID edit that function (it rewrote the body); it simply never re-read
+the docstring as prose. Found on the next slice by reading the whole file rather than the diff.
+
+**AND v035 IS THE SAME SHAPE ARRIVING IN A RATIFIED CONTRACT.** `contracts.md`'s `io_trees` entry
+named two consuming checks that do not read the key, and its `source_trees` entry named five. Not
+stale prose about behavior — a stale statement of WHICH CODE READS A KEY, in the document a
+consumer reads to decide what to declare. See §"TRACK C IS DONE — v035".
 
 ### 🔺 THE 2026-07-28 FOUR — and the finding is the SURFACE CLASS, not the count
 
