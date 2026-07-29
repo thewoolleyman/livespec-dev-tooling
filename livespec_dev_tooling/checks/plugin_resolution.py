@@ -467,7 +467,13 @@ def main() -> int:
             declared=[decl.harness for decl in load.declarations],
         )
         return 0
-    runners = _build_live_runners(claude_runner=select_runner(injected_runner=None))
+    # `.unwrap()`, not a match: the `mode != _HARNESS_REAL` gate above returns 0
+    # first, so by here the mode IS `real` and `select_runner` returns a Success
+    # unconditionally — the failure track is UNREACHABLE from this call site. A
+    # match would add a branch nothing can execute, and this repo enforces 100%
+    # per-file coverage, so closing it would mean manufacturing a test for an
+    # impossible state. `.unwrap()` stays fail-closed if that ever changes.
+    runners = _build_live_runners(claude_runner=select_runner(injected_runner=None).unwrap())
     return run_live_layer(declarations=load.declarations, runners=runners, log=log)
 
 

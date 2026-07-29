@@ -67,6 +67,7 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
+from returns.result import Failure, Result, Success  # noqa: E402  — vendor-path-aware.
 
 from livespec_dev_tooling.testing._cli_e2e_discovery import (  # noqa: E402
     FixturedSkill,
@@ -85,6 +86,7 @@ __all__: list[str] = [
     "CoverageGateError",
     "FixturedSkill",
     "HarnessConfig",
+    "HarnessSelectionError",
     "RealCliRunner",
     "StepResult",
     "WorkflowFailedError",
@@ -129,6 +131,19 @@ class CoverageGateError(Exception):
             f"with a written justification."
         )
         self.missing_skills = missing_skills
+
+
+class HarnessSelectionError(Exception):
+    """The `mock` tier was selected with no injected runner — a wiring error.
+
+    Carried on `select_runner`'s FAILURE track rather than raised. The message is
+    built in `__init__` so the construction site stays terse (TRY003), matching
+    the sibling error classes here.
+    """
+
+    def __init__(self, *, mode: str) -> None:
+        super().__init__(_MOCK_TIER_NEEDS_RUNNER_MSG.format(mode=mode))
+        self.mode = mode
 
 
 class WorkflowFailedError(Exception):
@@ -342,21 +357,26 @@ def run_workflow(
     )
 
 
-def select_runner(*, injected_runner: CliRunner | None) -> CliRunner:
+def select_runner(*, injected_runner: CliRunner | None) -> Result[CliRunner, HarnessSelectionError]:
     """Resolve the driver from the `LIVESPEC_E2E_HARNESS` fleet selector.
 
     - `real` → `RealCliRunner` (shells out to `claude`; needs ANTHROPIC_API_KEY;
       NOT in `just check`).
     - `mock` (default) → the caller-supplied `injected_runner` (deterministic;
       runs in `just check`). A `mock` selection with no injected runner is a
-      configuration error and raises `ValueError`.
+      configuration error and lands on the FAILURE track.
+
+    On the railway rather than raising, per ratified livespec v179: clause (a)
+    disqualifies any `raise` from the no-expected-failure-mode member, whichever
+    flavour the raise is. The misconfiguration is a real outcome a caller can act
+    on, so it flows as a value instead of being thrown.
     """
     mode = os.environ.get(_HARNESS_SELECTOR_ENV, _HARNESS_MOCK).strip().lower()
     if mode == _HARNESS_REAL:
-        return RealCliRunner()
+        return Success(RealCliRunner())
     if injected_runner is None:
-        raise ValueError(_MOCK_TIER_NEEDS_RUNNER_MSG.format(mode=mode))
-    return injected_runner
+        return Failure(HarnessSelectionError(mode=mode))
+    return Success(injected_runner)
 
 
 def test_workflow_full_round_trip(
@@ -379,7 +399,10 @@ def test_workflow_full_round_trip(
     `CoverageGateError` (fail-closed) on a fixture gap and `AssertionError` on a
     failing step.
     """
-    runner = select_runner(injected_runner=injected_runner)
+    # `.unwrap()` re-raises on the failure track, preserving this entry point's
+    # existing fail-closed contract: a wiring error still surfaces as a test
+    # failure rather than a silently-skipped run.
+    runner = select_runner(injected_runner=injected_runner).unwrap()
     result = run_workflow(
         config=config,
         runner=runner,

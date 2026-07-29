@@ -19,6 +19,7 @@ does not fail.
 from __future__ import annotations
 
 import shutil
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -26,7 +27,14 @@ from pathlib import Path
 import pytest
 
 from livespec_dev_tooling.checks import plugin_resolution
+from livespec_dev_tooling.testing import cli_e2e
 from livespec_dev_tooling.testing.cli_e2e import CliResult, CliRunner
+
+_VENDOR_DIR = Path(cli_e2e.__file__).resolve().parent.parent / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
+
+from returns.result import Result, Success  # noqa: E402  — vendor-path-aware import.
 
 __all__: list[str] = []
 
@@ -41,12 +49,17 @@ def _which_path(cmd: str) -> str | None:
     return "/usr/bin/" + cmd
 
 
-def _runner_factory(runner: CliRunner) -> Callable[..., CliRunner]:
-    """Build a typed `select_runner` stand-in that returns a fixed injected runner."""
+def _runner_factory(runner: CliRunner) -> Callable[..., Result[CliRunner, Exception]]:
+    """Build a typed `select_runner` stand-in returning a fixed injected runner.
 
-    def factory(*, injected_runner: CliRunner | None = None) -> CliRunner:
+    Returns a `Success`, matching `select_runner`'s converted shape — the stand-in
+    has to carry the same container the real function does, or `plugin_resolution`
+    would unwrap something this never produced.
+    """
+
+    def factory(*, injected_runner: CliRunner | None = None) -> Result[CliRunner, Exception]:
         _ = injected_runner
-        return runner
+        return Success(runner)
 
     return factory
 
