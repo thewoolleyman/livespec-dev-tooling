@@ -800,7 +800,49 @@ local-only amend is how a durable record quietly reverts.
 **Once checks are green, open a FRESH PR off the new master rather than amending.** Amending races
 auto-merge, and the race is invisible when you win it.
 
-### 🎯 THE GATE IS 3 — the exact arithmetic, and what each number is measured against
+### 🎯 THE GATE IS 2 — conversion 1 of 3 has LANDED (PR #841)
+
+**25 + 5 + 1 + 2 = 33.** Re-measured on master at `70c2eb6`, not inherited.
+
+`classify_role_key_declarations` is cleared. The two that remain are BOTH in
+`livespec_dev_tooling/testing/cli_e2e.py`:
+
+1. **`select_runner`** — local, no sibling consumers (grepped). **READ ITS ONE PRODUCT CALL
+   SITE BEFORE CONVERTING:** `checks/plugin_resolution.py` gates on the harness mode
+   (`if mode != _HARNESS_REAL: return 0`) BEFORE calling, so the `ValueError` is
+   **UNREACHABLE from product code**. A `Result` there would have an uninhabited failure
+   track at that call site — use `.unwrap()` (fail-closed, no dead branch) rather than a
+   match, because this repo enforces **100% per-file coverage** and an unreachable
+   failure branch cannot be covered.
+2. **`test_workflow_full_round_trip`** — **FOUR SIBLING WIRINGS FIRST.** Not paperwork:
+   convert first and all four consuming suites go silently green.
+
+### 🕳️ THE FAIL-OPEN TRAP HAS THREE SPELLINGS, ALL HIT IN ONE SITTING (PR #841)
+
+Recorded because the fan-out will meet every one of them, and NONE fails loudly. In
+`required_role_keys_declared`, an empty slug set reads as *"no layout-dependent checks
+wired"* → an EXCLUSION → a **PASS**. So any unwrap that degrades to `()` turns an I/O
+error silently green:
+
+1. **`value_or(())`** — the natural default. Silently green.
+2. **`frozenset(result.unwrap())`** — **`IOResult.unwrap()` returns `IO[T]`, NOT `T`**, and
+   `frozenset(IO(("a","b")))` **SUCCEEDS**, yielding a set holding the TUPLE. Every slug
+   comparison then misses. Caught only by an existing behavioural test.
+3. **`case IOSuccess(slugs)`** in a `match` — binds the inner `Result`, not the `IO`.
+   Caught by `check-types`.
+
+**`unsafe_perform_io(x.unwrap())` is the correct form.** All three wrong spellings produce
+a plausible value rather than an error — the booby-trap class in a new costume: the failure
+does not surface, it just **stops being checked**.
+
+**AND THE CONVERSION MOVED THE VIOLATION BEFORE IT REMOVED IT.** Injecting the slug set
+made `classify_role_key_declarations` total, and thereby made `layout_dependent_check_slugs`
+PUBLIC (a new cross-module import), so the violation RELOCATED onto the function that
+actually does the I/O. That is the rule working — the I/O got typed where it happens — but
+**expect a conversion to change the offender SET, not just shrink it.** Re-measure after
+every one.
+
+### 🎯 (superseded) THE GATE WAS 3 — the exact arithmetic, and what each number is measured against
 
 **26 + 4 + 1 + 3 = 34.** Measured on master with the shipped `_find_offenders` over the shipped
 `resolve_check_universe()`, this repo's real config, class-B declarations applied, and a
@@ -1025,7 +1067,30 @@ left is implementation and three conversions:
 **⚠️ AND THE IMPLEMENTATIONS CARRY A MANUFACTURED-GREEN RISK OF EXACTLY THIS THREAD'S KIND.**
 `check-public-api-result-typed` is still `pure_trees`-scoped and scans ZERO files here, so new
 code paths in it are NOT exercised by this repo's own `just check`. **Test them directly on
-fixtures**, and do not read a green `just check` as evidence any of it works.
+fixtures**, and do not read a green `just check` as evidence any of it works. The requirement
+is not "tests exist" — it is that the new paths RUN, in a way that would go red if they were
+wrong.
+
+### ⛔ THE FAN-OUT NUMBER IS UNKNOWN, NOT LARGE — do not quote 223 or 282
+
+**Both figures predate v178 and v179 entirely.** They were measured when "public API" meant
+`__all__` membership and when the rule reached every public function regardless of whether it
+had a failure mode. Both rulings narrow the count, and neither has been applied to any
+sibling's universe. In THIS repo the same two rulings took 34 down to 2 — a ~94% reduction —
+but that ratio is this repo's, not a fleet constant.
+
+**And arming publishes the change to the other eight on their next pin bump**, measured
+against THEIR universes, which nobody has re-measured since the criterion changed what public
+means. **Re-measure per repo before quoting any fan-out figure**, and say "unknown" until then
+rather than carrying a number whose basis was retired.
+
+### 🔎 WHAT ARMING WILL ACTUALLY DO — treat every surprise as a finding
+
+Arming runs `check-public-api-result-typed` over this repo's **145-file** universe for the
+FIRST TIME in this epic's history. It has never looked at this repo. **Anything unexpected
+there is a finding about the check or the repo, not something to smooth away** — the entire
+subject of this thread is a check that reported success while scanning nothing, so the first
+real scan is exactly where a suppressed surprise would be most expensive.
 
 ### 🗄️ (superseded through item 4) THE OLD NEXT ACTION
 
