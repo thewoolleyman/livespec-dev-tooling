@@ -59,6 +59,7 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
+from returns.result import Failure  # noqa: E402  — vendor-path-aware import.
 
 __all__: list[str] = []
 
@@ -165,10 +166,15 @@ def main() -> int:
         )
         return 1
     ctx = FleetContext(owner=owner, run_gh=default_gh_runner)
-    manifest = fetch_manifest(ctx=ctx)
-    if manifest is None:
+    fetched = fetch_manifest(ctx=ctx)
+    if isinstance(fetched, Failure):
         log.error(
             "fleet manifest unavailable",
+            # WHICH STAGE failed, straight off the failure track: an
+            # unanswered fetch and a fetched-but-malformed document want
+            # different responses, and reading which it was no longer means
+            # scanning `causes` for a `malformed_content` entry.
+            stage=fetched.failure().reason,
             hint="the manifest on livespec master is the root fact; failing loud",
             # The CAUSES, not just the verdict. Without these a 403, a 404, a
             # rate-limit and a malformed manifest all read identically as
@@ -177,6 +183,7 @@ def main() -> int:
             causes=[failure.as_dict() for failure in ctx.read_failures],
         )
         return 1
+    manifest = fetched.unwrap()
     repo = cast("str", args.repo)
     member = next((entry for entry in manifest.members if entry.repo == repo), None)
     if member is None:

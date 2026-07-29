@@ -68,6 +68,12 @@ ManifestParseReason = Literal[
 _MemberFailure = Literal["fleet-not-list", "malformed-member", "duplicate-member"]
 _AdopterFailure = Literal["adopters-not-list", "malformed-adopter"]
 
+# The EXHAUSTIVE set of ways a manifest FETCH can fail to produce one.
+# Strictly coarser than `ManifestParseReason`, and deliberately so: this
+# names WHICH STAGE failed, and the parse stage's own eight causes are
+# already named one level down.
+ManifestUnavailableReason = Literal["unreadable", "unparseable"]
+
 
 @dataclass(frozen=True, kw_only=True)
 class ManifestParseError:
@@ -94,6 +100,37 @@ class ManifestParseError:
     """
 
     reason: ManifestParseReason
+
+
+@dataclass(frozen=True, kw_only=True)
+class ManifestUnavailable:
+    """The fleet manifest could not be produced, naming WHICH STAGE failed.
+
+    The failure-track payload for `fleet_conformance.fetch_manifest`. Its
+    two inhabitants are real and were previously indistinguishable: the
+    fetch did not answer at all (`unreadable`), or it answered and the
+    bytes are no manifest (`unparseable`). Both were one `None`, told apart
+    only by whether a `malformed_content` entry had appeared on
+    `ctx.read_failures` — a SIDE EFFECT the caller had to go looking for,
+    and which therefore did not survive into the caller's control flow.
+
+    That collapse is what convicts `fetch_manifest` under livespec v179:
+    clause (e) disqualifies an `X | None` return outright, and the failure
+    track is genuinely INHABITED. It is NOT convicted by clause (c) — the
+    network reach is through the injected `ctx.file_text` seam — and the
+    distinction matters, because a clause-(c) reading also convicts
+    `holds_app_class_credential`, whose environment read cannot fail and
+    which was restructured rather than converted (livespec-dev-tooling-9sl0).
+
+    The reason is a VALUE rather than a rendered sentence, exactly as for
+    `ManifestParseError` above, so a caller may branch on it. The detail
+    behind each stays where it already was and is not duplicated here: the
+    per-read causes on `ctx.read_failures`, which every call site already
+    logs, and which carry the 403 / 404 / rate-limit classification this
+    value deliberately does not restate.
+    """
+
+    reason: ManifestUnavailableReason
 
 
 @dataclass(frozen=True, kw_only=True)

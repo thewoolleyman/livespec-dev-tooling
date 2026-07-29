@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from _protection_fixtures import aligned_merge_settings_payload, aligned_protection_payload
+from returns.result import Failure
 
 from livespec_dev_tooling.config import REQUIRED_ROLE_KEYS, UNION_ROLE_KEYS, Config
 from livespec_dev_tooling.fleet import fleet_conformance
@@ -319,13 +320,18 @@ class RecordingLog:
 
 
 def test_fetch_manifest_success_and_failure_modes() -> None:
+    """Both failure stages land on the failure track; the success carries the value.
+
+    The two failures are compared as VALUES here rather than as one
+    sentinel. Which stage each one is, and that they differ from each
+    other, is pinned in `test_fleet_conformance_manifest_result.py`.
+    """
     ctx = make_context(table={_MANIFEST_ARGS: raw(text=_MANIFEST_SOURCE)})
-    manifest = fetch_manifest(ctx=ctx)
-    assert manifest is not None
+    manifest = fetch_manifest(ctx=ctx).unwrap()
     assert manifest.member_names() == frozenset({"widget"})
-    assert fetch_manifest(ctx=make_context(table={})) is None
+    assert isinstance(fetch_manifest(ctx=make_context(table={})), Failure)
     bad = make_context(table={_MANIFEST_ARGS: raw(text="not jsonc {{{")})
-    assert fetch_manifest(ctx=bad) is None
+    assert isinstance(fetch_manifest(ctx=bad), Failure)
 
 
 def _blind_rows_by_id(*, log: RecordingLog) -> dict[object, dict[str, object]]:
@@ -342,7 +348,7 @@ def test_blind_row_reported_when_no_applicable_member_could_be_evaluated() -> No
     b02 escalation — an owned row that enforced nothing fails the run).
     """
     ctx = make_context(table=_two_member_table())
-    manifest = fetch_manifest(ctx=ctx)
+    manifest = fetch_manifest(ctx=ctx).unwrap()
     log = RecordingLog()
 
     assert manifest is not None
@@ -370,8 +376,7 @@ def test_blind_rows_never_change_the_error_count() -> None:
     both into the same non-zero exit.
     """
     ctx = make_context(table=_two_member_table())
-    manifest = fetch_manifest(ctx=ctx)
-    assert manifest is not None
+    manifest = fetch_manifest(ctx=ctx).unwrap()
     result = run_member_rows(ctx=ctx, manifest=manifest, log=_log(), vantages=_AUTOMATED_VANTAGES)
     assert result.error_findings == 0
     assert result.blind_rows == 1
@@ -381,7 +386,7 @@ def test_partially_skipped_row_is_not_blind() -> None:
     """A row evaluated for even ONE applicable member did enforce something."""
     table = _two_member_table(blind_app_installation=False, gadget_topics_readable=False)
     ctx = make_context(table=table)
-    manifest = fetch_manifest(ctx=ctx)
+    manifest = fetch_manifest(ctx=ctx).unwrap()
     log = RecordingLog()
 
     assert manifest is not None
@@ -397,14 +402,13 @@ def test_partially_skipped_row_is_not_blind() -> None:
 
 def test_member_rows_all_green_yields_zero_errors() -> None:
     ctx = make_context(table=_green_table())
-    manifest = fetch_manifest(ctx=ctx)
-    assert manifest is not None
+    manifest = fetch_manifest(ctx=ctx).unwrap()
     assert run_member_rows(ctx=ctx, manifest=manifest, log=_log()).error_findings == 0
 
 
 def test_member_rows_logs_named_exclusions() -> None:
     ctx = make_context(table=_green_table())
-    manifest = fetch_manifest(ctx=ctx)
+    manifest = fetch_manifest(ctx=ctx).unwrap()
     log = RecordingLog()
 
     assert manifest is not None
@@ -425,8 +429,7 @@ def test_member_rows_counts_errors_but_not_warnings_or_skips() -> None:
     table = _green_table(latest_tag="v2.0.0", topics=[])
     del table[_SECRETS_ARGS]
     ctx = make_context(table=table)
-    manifest = fetch_manifest(ctx=ctx)
-    assert manifest is not None
+    manifest = fetch_manifest(ctx=ctx).unwrap()
     assert run_member_rows(ctx=ctx, manifest=manifest, log=_log()).error_findings == 1
 
 
@@ -455,7 +458,7 @@ def test_admin_rows_are_out_of_vantage_not_blind_in_the_central_lane() -> None:
     trains operators to ignore the blind-row signal entirely.
     """
     ctx = make_context(table=_blind_admin_table())
-    manifest = fetch_manifest(ctx=ctx)
+    manifest = fetch_manifest(ctx=ctx).unwrap()
     log = RecordingLog()
 
     assert manifest is not None
@@ -471,7 +474,7 @@ def test_admin_rows_are_out_of_vantage_not_blind_in_the_central_lane() -> None:
 def test_out_of_vantage_report_names_the_lane_that_owns_the_row() -> None:
     """An out-of-vantage row is only actionable if the report says who DOES run it."""
     ctx = make_context(table=_blind_admin_table())
-    manifest = fetch_manifest(ctx=ctx)
+    manifest = fetch_manifest(ctx=ctx).unwrap()
     log = RecordingLog()
 
     assert manifest is not None
@@ -503,7 +506,7 @@ def test_local_central_run_reports_app_installation_out_of_vantage() -> None:
         return inner(args=args, stdin=stdin)
 
     ctx = FleetContext(owner="acme", run_gh=recording)
-    manifest = fetch_manifest(ctx=ctx)
+    manifest = fetch_manifest(ctx=ctx).unwrap()
     log = RecordingLog()
 
     assert manifest is not None
@@ -555,8 +558,7 @@ def test_central_lane_never_spends_an_api_read_on_an_admin_row() -> None:
         return inner(args=args, stdin=stdin)
 
     ctx = FleetContext(owner="acme", run_gh=recording)
-    manifest = fetch_manifest(ctx=ctx)
-    assert manifest is not None
+    manifest = fetch_manifest(ctx=ctx).unwrap()
     _ = run_member_rows(ctx=ctx, manifest=manifest, log=_log())
 
     assert not [call for call in calls if any("actions/secrets" in arg for arg in call)]
@@ -566,7 +568,7 @@ def test_central_lane_never_spends_an_api_read_on_an_admin_row() -> None:
 def test_admin_lane_runs_exactly_the_admin_rows() -> None:
     """The mirror assertion: the admin lane evaluates the rows the central one cannot."""
     ctx = make_context(table=_two_member_table(blind_app_installation=False))
-    manifest = fetch_manifest(ctx=ctx)
+    manifest = fetch_manifest(ctx=ctx).unwrap()
     log = RecordingLog()
 
     assert manifest is not None
@@ -593,8 +595,7 @@ def test_discovery_sweep_flags_unmanifested_fleet_repos() -> None:
     ]
     table[_REPOS_ARGS] = ok(payload=sweep_payload)
     ctx = make_context(table=table)
-    manifest = fetch_manifest(ctx=ctx)
-    assert manifest is not None
+    manifest = fetch_manifest(ctx=ctx).unwrap()
     assert run_discovery_sweep(ctx=ctx, manifest=manifest, log=_log()) == 2
 
 
@@ -602,7 +603,7 @@ def test_discovery_sweep_uses_fleet_shape_wording() -> None:
     table = _green_table()
     table[_REPOS_ARGS] = ok(payload=[{"name": "livespec-straggler", "topics": []}])
     ctx = make_context(table=table)
-    manifest = fetch_manifest(ctx=ctx)
+    manifest = fetch_manifest(ctx=ctx).unwrap()
     log = RecordingLog()
 
     assert manifest is not None
@@ -614,8 +615,7 @@ def test_discovery_sweep_unreadable_repo_list_warns_and_passes() -> None:
     table = _green_table()
     del table[_REPOS_ARGS]
     ctx = make_context(table=table)
-    manifest = fetch_manifest(ctx=ctx)
-    assert manifest is not None
+    manifest = fetch_manifest(ctx=ctx).unwrap()
     assert run_discovery_sweep(ctx=ctx, manifest=manifest, log=_log()) == 0
 
 
