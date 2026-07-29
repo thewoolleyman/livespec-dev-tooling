@@ -155,6 +155,40 @@ plan_lifecycle_anchor = true
 mirror_pairings = [
     { source_tree = "livespec_dev_tooling", test_tree = "tests/livespec_dev_tooling" },
 ]
+# The surface OTHER governed repos consume, per SPECIFICATION v036
+# §"Role keys". Read by `public_api_result_typed`, which cannot see a
+# sibling's import from inside this checkout. TIGHTENING-ONLY: every entry
+# ADDS a name to the Result-return rule's scope, and an omission removes
+# nothing the repo-local oracle already sees. Measured against all eight
+# siblings' masters rather than inherited; the CONSTANTS and CLASSES they
+# import (`CANONICAL_NO_SHADOW_LEDGER_BODY`, `CliResult`, `HarnessConfig`,
+# `FixturedSkill`, `CoverageGateError`) are deliberately absent — the rule
+# reaches top-level FUNCTIONS.
+#
+# THREE MEASURED CROSS-REPO CONSUMPTIONS ARE DELIBERATELY NOT LISTED, and
+# each omission is a FINDING rather than an oversight. All three are real —
+# a sibling genuinely imports the name — but declaring them would assert a
+# scope this check does not actually apply, which is the manufactured
+# confidence the whole epic exists to remove:
+#
+#   - `fleet/_context.py`'s `resolve_owner`, imported by
+#     `livespec-orchestrator-beads-fabro`'s `codex_yolo_gate.py` hook, and
+#   - `testing/_cli_e2e_discovery.py`'s `discover_fixtures`, reached by four
+#     siblings as `cli_e2e.discover_fixtures` through a re-export.
+#     Both are PUBLIC names inside package-PRIVATE modules. This check skips
+#     `_`-prefixed FILES wholesale, while v178 clause 0 disqualifies only a
+#     `_`-prefixed NAME — so the file-level skip is wider than the ratified
+#     rule, and a cross-repo consumer is reaching through it.
+#   - `config.py`'s `iter_first_party_py_files`, imported by
+#     `livespec-orchestrator-git-jsonl`'s test tree. config.py is not in the
+#     check universe AT ALL: `is_generated` matches its own `# ... @generated`
+#     prose, so it excludes itself. Filed as `livespec-dev-tooling-995m`.
+cross_repo_public_api = [
+    { file = "livespec_dev_tooling/canonical_checks.py", function = "canonical_check_slugs", reason = "product import: livespec's canonical_slugs_projection.py, copier_template_smoke_canonical.py and doctor/static/wiring_completeness_cross_repo.py" },
+    { file = "livespec_dev_tooling/fleet/contract.py", function = "parse_manifest", reason = "product import: livespec-orchestrator-beads-fabro's .claude-plugin/hooks/codex_yolo_gate.py — the dx8l consumer" },
+    { file = "livespec_dev_tooling/testing/cli_e2e.py", function = "test_workflow_full_round_trip", reason = "cross-repo test import: the e2e round-trip suites of both Drivers and both orchestrators" },
+    { file = "livespec_dev_tooling/testing/cli_e2e.py", function = "assert_coverage", reason = "cross-repo test import: livespec-driver-codex's tests/e2e-cli/test_cli_e2e.py" },
+]
 # CLI/supervisor entry files whose `main()` / `_write` helpers own
 # legitimate stdout/stderr contracts — the surface `no_write_direct`
 # (and `no_except_outside_io`) exempt. Each write here is a JSON payload,

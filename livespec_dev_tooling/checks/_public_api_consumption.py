@@ -46,7 +46,13 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
     from pathlib import Path
 
-__all__: list[str] = ["repo_local_public_names"]
+    from livespec_dev_tooling.config import CrossRepoPublicApi
+
+__all__: list[str] = [
+    "declared_public_names",
+    "repo_local_public_names",
+    "stale_declarations",
+]
 
 
 _INIT_FILENAME = "__init__.py"
@@ -100,7 +106,34 @@ def _import_from_target(*, node: ast.ImportFrom, current: str) -> str:
     return f"{base}.{node.module}" if node.module else base
 
 
-def _module_aliases(*, tree: ast.Module, current: str, modules: frozenset[str]) -> dict[str, str]:
+def _suffix_index(*, sources: Mapping[Path, str]) -> dict[str, frozenset[Path]]:
+    """Every dotted SUFFIX of every first-party module, mapped to its file(s).
+
+    A repo-root-relative path is NOT an import path. `livespec-dev-tooling`'s
+    package root IS its repo root, so `livespec_dev_tooling/config.py` really
+    is imported as `livespec_dev_tooling.config` — but a LAYERED consumer roots
+    its package deeper (`.claude-plugin/scripts/livespec/parse/foo.py` is
+    imported as `livespec.parse.foo`), and a repo-root reading would resolve
+    NOTHING there. Silently resolving nothing is the RELAXING direction, which
+    is the dangerous one for this check.
+
+    Resolution is therefore by dotted suffix. When a suffix is ambiguous
+    (two files whose paths end the same way), EVERY candidate is returned and
+    every one is treated as consumed — doubt resolves toward MORE enforcement,
+    never less. That is a far weaker claim than bare-NAME matching, which
+    compared only the function name and was measured wrong here.
+    """
+    index: dict[str, set[Path]] = {}
+    for rel in sources:
+        parts = _module_name(rel=rel).split(".")
+        for start in range(len(parts)):
+            index.setdefault(".".join(parts[start:]), set()).add(rel)
+    return {suffix: frozenset(files) for suffix, files in index.items()}
+
+
+def _module_aliases(
+    *, tree: ast.Module, current: str, index: Mapping[str, frozenset[Path]]
+) -> dict[str, str]:
     """Local names bound to a first-party MODULE, for later attribute resolution."""
     aliases: dict[str, str] = {}
     for node in ast.walk(tree):
@@ -111,40 +144,48 @@ def _module_aliases(*, tree: ast.Module, current: str, modules: frozenset[str]) 
             target = _import_from_target(node=node, current=current)
             for alias in node.names:
                 submodule = f"{target}.{alias.name}"
-                if submodule in modules:
+                if submodule in index:
                     aliases[alias.asname or alias.name] = submodule
     return aliases
 
 
 def _name_imports(
-    *, tree: ast.Module, current: str, modules: frozenset[str]
+    *, tree: ast.Module, current: str, index: Mapping[str, frozenset[Path]]
 ) -> set[tuple[str, str]]:
-    """`(defining module, name)` pairs this module imports by NAME."""
+    """`(dotted module, name)` pairs this module imports by NAME."""
     out: set[tuple[str, str]] = set()
     for node in ast.walk(tree):
         if not isinstance(node, ast.ImportFrom):
             continue
         target = _import_from_target(node=node, current=current)
-        if target not in modules or target == current:
+        if target not in index:
             continue
         for alias in node.names:
-            if f"{target}.{alias.name}" in modules or alias.name == "*":
+            if f"{target}.{alias.name}" in index or alias.name == "*":
                 continue
             out.add((target, alias.name))
     return out
 
 
 def _attribute_reaches(
-    *, tree: ast.Module, current: str, aliases: Mapping[str, str], modules: frozenset[str]
+    *, tree: ast.Module, aliases: Mapping[str, str], index: Mapping[str, frozenset[Path]]
 ) -> set[tuple[str, str]]:
-    """`(defining module, name)` pairs reached as `<module alias>.<name>`."""
+    """`(dotted module, name)` pairs reached as `<module alias>.<name>`.
+
+    The base MUST resolve through `aliases` — a name this module actually bound
+    to a module by an `import` — and never by treating any dotted expression
+    that happens to match a module path as one. Measured here: `config.pure_trees`
+    on a local `Config` INSTANCE matches the module `livespec_dev_tooling.config`
+    by name, and admitting it manufactured 19 phantom consumptions in this repo.
+    That is this thread's own "read the callee, do not match the name" lesson
+    recurring inside the oracle written to apply it.
+    """
     out: set[tuple[str, str]] = set()
     for node in ast.walk(tree):
         if not isinstance(node, ast.Attribute):
             continue
-        rendered = ast.unparse(node.value)
-        target = aliases.get(rendered, rendered)
-        if target in modules and target != current:
+        target = aliases.get(ast.unparse(node.value))
+        if target is not None and target in index:
             out.add((target, node.attr))
     return out
 
@@ -173,21 +214,66 @@ def repo_local_public_names(*, sources: Mapping[Path, str]) -> frozenset[tuple[P
     rather than a consumer whose contract the railway protects.
     """
     trees = {rel: ast.parse(source) for rel, source in sources.items()}
-    rel_by_module = {_module_name(rel=rel): rel for rel in trees}
-    modules = frozenset(rel_by_module)
+    index = _suffix_index(sources=sources)
     functions = {rel: _top_level_functions(tree=tree) for rel, tree in trees.items()}
 
     public: set[tuple[Path, str]] = set()
     for rel, tree in trees.items():
         current = _module_name(rel=rel)
-        aliases = _module_aliases(tree=tree, current=current, modules=modules)
-        reached = _name_imports(tree=tree, current=current, modules=modules) | _attribute_reaches(
-            tree=tree, current=current, aliases=aliases, modules=modules
+        aliases = _module_aliases(tree=tree, current=current, index=index)
+        reached = _name_imports(tree=tree, current=current, index=index) | _attribute_reaches(
+            tree=tree, aliases=aliases, index=index
         )
-        for module, name in reached:
-            defining = rel_by_module[module]
-            if name in functions[defining]:
-                public.add((defining, name))
+        for dotted, name in reached:
+            for defining in index[dotted]:
+                if defining != rel and name in functions[defining]:
+                    public.add((defining, name))
         for name in _entry_point_names(tree=tree) & _declared_all(tree=tree) & functions[rel]:
             public.add((rel, name))
     return frozenset(public)
+
+
+def _resolved_declarations(
+    *, declared: tuple[CrossRepoPublicApi, ...], sources: Mapping[Path, str]
+) -> tuple[frozenset[tuple[Path, str]], tuple[CrossRepoPublicApi, ...]]:
+    """Split declared entries into the ones that resolve and the ones that do not."""
+    functions = {
+        rel: _top_level_functions(tree=ast.parse(source)) for rel, source in sources.items()
+    }
+    resolved: set[tuple[Path, str]] = set()
+    stale: list[CrossRepoPublicApi] = []
+    for entry in declared:
+        if entry.function in functions.get(entry.file, frozenset()):
+            resolved.add((entry.file, entry.function))
+        else:
+            stale.append(entry)
+    return frozenset(resolved), tuple(stale)
+
+
+def declared_public_names(
+    *, declared: tuple[CrossRepoPublicApi, ...], sources: Mapping[Path, str]
+) -> frozenset[tuple[Path, str]]:
+    """The `cross_repo_public_api` entries that resolve to a real top-level function.
+
+    v178 measures consumption FLEET-WIDE, and forms 2 and 4 — plus form 1's
+    sibling half — are invisible from inside one checkout. This is the declared
+    stand-in, and it is TIGHTENING-ONLY (SPECIFICATION v036 §"Role keys"): the
+    caller UNIONS it with the repo-local set, so an absent declaration removes
+    nothing.
+    """
+    resolved, _ = _resolved_declarations(declared=declared, sources=sources)
+    return resolved
+
+
+def stale_declarations(
+    *, declared: tuple[CrossRepoPublicApi, ...], sources: Mapping[Path, str]
+) -> tuple[CrossRepoPublicApi, ...]:
+    """Declared entries whose file or function no longer exists.
+
+    SPECIFICATION v036 makes this a HARD failure rather than a warning: a
+    declaration that outlives its subject is the defect class this rule set
+    exists to remove, and the whole point of the key is to stand in for a
+    measurement the local check cannot take.
+    """
+    _, stale = _resolved_declarations(declared=declared, sources=sources)
+    return stale

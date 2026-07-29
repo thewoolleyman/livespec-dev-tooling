@@ -17,6 +17,7 @@ surface.
 
 from __future__ import annotations
 
+import ast
 import subprocess
 import sys
 from pathlib import Path
@@ -28,6 +29,64 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 _PUBLIC_API_RESULT_TYPED = (
     _REPO_ROOT / "livespec_dev_tooling" / "checks" / "public_api_result_typed.py"
 )
+_PARSE_TREE = ".claude-plugin/scripts/livespec/parse"
+_COMMANDS_TREE = ".claude-plugin/scripts/livespec/commands"
+
+
+def _git(*, cwd: Path, args: list[str]) -> None:
+    """Run a `git` subcommand in `cwd` with a hermetic 3-key env (no os.environ)."""
+    _ = subprocess.run(
+        ["git", *args],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=True,
+        env={"HOME": str(cwd), "GIT_CONFIG_GLOBAL": "/dev/null", "PATH": "/usr/bin:/bin"},
+    )
+
+
+def _consume(*, tmp_path: Path, module: str, name: str) -> None:
+    """Write a product module that imports `name` across a module boundary.
+
+    Under ratified livespec v178 a function is public API only when CONSUMED
+    ACROSS A BOUNDARY, so a fixture with no consumer asserts nothing about the
+    Result-return rule: the check would exit 0 whatever the annotation says.
+    Every fixture below that means to exercise the rule therefore ships a
+    consumer, and the import is ABSOLUTE (`livespec.parse.<module>`) because
+    that is how a layered consumer actually reaches a sibling.
+    """
+    consumer = tmp_path / _COMMANDS_TREE / "use.py"
+    consumer.parent.mkdir(parents=True, exist_ok=True)
+    _ = consumer.write_text(
+        "from __future__ import annotations\n"
+        "\n"
+        f"from livespec.parse.{module} import {name}\n"
+        "\n"
+        "__all__: list[str] = []\n"
+        "\n"
+        "\n"
+        "def run() -> None:\n"
+        f"    _ = {name}(x=1)\n",
+        encoding="utf-8",
+    )
+
+
+def _run_check(*, cwd: Path) -> subprocess.CompletedProcess[str]:
+    """`git init` + stage the fixture, then run the check as a consumer would.
+
+    The check resolves its consumption universe from the git-derived
+    first-party set (`resolve_check_universe`), so a fixture must be a real
+    git tree — the same fail-closed anchoring every applies-to-all check uses.
+    """
+    _git(cwd=cwd, args=["init", "-q"])
+    _git(cwd=cwd, args=["add", "-A"])
+    return subprocess.run(
+        [sys.executable, str(_PUBLIC_API_RESULT_TYPED)],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
 
 
 def test_public_api_result_typed_rejects_non_result_public_function(*, tmp_path: Path) -> None:
@@ -46,13 +105,9 @@ def test_public_api_result_typed_rejects_non_result_public_function(*, tmp_path:
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_PUBLIC_API_RESULT_TYPED)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    _consume(tmp_path=tmp_path, module="foo", name="compute")
+
+    result = _run_check(cwd=tmp_path)
 
     assert result.returncode != 0, (
         f"public_api_result_typed should reject non-Result public; "
@@ -83,13 +138,9 @@ def test_public_api_result_typed_accepts_result_typed_function(*, tmp_path: Path
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_PUBLIC_API_RESULT_TYPED)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    _consume(tmp_path=tmp_path, module="foo", name="compute")
+
+    result = _run_check(cwd=tmp_path)
 
     assert result.returncode == 0, (
         f"public_api_result_typed should accept Result-typed public function; "
@@ -128,13 +179,9 @@ def test_public_api_result_typed_accepts_safe_decorated_function(*, tmp_path: Pa
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_PUBLIC_API_RESULT_TYPED)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    _consume(tmp_path=tmp_path, module="foo", name="compute")
+
+    result = _run_check(cwd=tmp_path)
 
     assert result.returncode == 0, (
         f"public_api_result_typed should accept @safe-decorated public function; "
@@ -163,13 +210,9 @@ def test_public_api_result_typed_skips_private_filename(*, tmp_path: Path) -> No
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_PUBLIC_API_RESULT_TYPED)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    _consume(tmp_path=tmp_path, module="_helpers", name="raw")
+
+    result = _run_check(cwd=tmp_path)
 
     assert result.returncode == 0, (
         f"public_api_result_typed should skip _-prefixed filenames; "
@@ -178,9 +221,16 @@ def test_public_api_result_typed_skips_private_filename(*, tmp_path: Path) -> No
 
 
 def test_public_api_result_typed_skips_module_without_all(*, tmp_path: Path) -> None:
-    """A module without `__all__` declaration has empty declared set; nothing surfaces.
+    """A module with NEITHER an `__all__` nor a consumer is out of scope.
 
-    Closes the `_all_value_names` returns-empty-list branch.
+    This test used to close the `_all_value_names` empty-list branch. That
+    function is gone: ratified livespec v178 replaced `__all__` membership with
+    CONSUMED ACROSS A BOUNDARY, so the check no longer reads `__all__` to decide
+    publicness at all. The assertion is retargeted rather than deleted, because
+    what it now pins is still worth pinning — the RELAXING half, at integration
+    tier. Its companion (a consumed function with NO `__all__` is still public,
+    the anti-gaming half) lives in `test_public_api_criterion.py`, and the two
+    must be read together: neither alone shows the criterion is two-sided.
     """
     package_dir = tmp_path / ".claude-plugin" / "scripts" / "livespec" / "parse"
     package_dir.mkdir(parents=True)
@@ -194,13 +244,7 @@ def test_public_api_result_typed_skips_module_without_all(*, tmp_path: Path) -> 
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_PUBLIC_API_RESULT_TYPED)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path)
 
     assert result.returncode == 0, (
         f"public_api_result_typed should skip modules without __all__; "
@@ -231,13 +275,9 @@ def test_public_api_result_typed_accepts_bare_safe_decorator(*, tmp_path: Path) 
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_PUBLIC_API_RESULT_TYPED)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    _consume(tmp_path=tmp_path, module="foo", name="compute")
+
+    result = _run_check(cwd=tmp_path)
 
     assert result.returncode == 0, (
         f"public_api_result_typed should accept bare @safe decorator; "
@@ -267,13 +307,9 @@ def test_public_api_result_typed_rejects_function_without_return_annotation(
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_PUBLIC_API_RESULT_TYPED)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    _consume(tmp_path=tmp_path, module="foo", name="compute")
+
+    result = _run_check(cwd=tmp_path)
 
     assert result.returncode != 0, (
         f"public_api_result_typed should reject return-less function; "
@@ -301,13 +337,9 @@ def test_public_api_result_typed_ignores_private_function(*, tmp_path: Path) -> 
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_PUBLIC_API_RESULT_TYPED)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    _consume(tmp_path=tmp_path, module="foo", name="_helper")
+
+    result = _run_check(cwd=tmp_path)
 
     assert result.returncode == 0, (
         f"public_api_result_typed should ignore private function; "
@@ -317,13 +349,7 @@ def test_public_api_result_typed_ignores_private_function(*, tmp_path: Path) -> 
 
 def test_public_api_result_typed_rejects_declared_tree_with_no_python(*, tmp_path: Path) -> None:
     """A declared pure_trees path containing no Python files is a misdeclaration."""
-    result = subprocess.run(
-        [sys.executable, str(_PUBLIC_API_RESULT_TYPED)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path)
 
     assert result.returncode == 1, (
         f"public_api_result_typed should reject a declared tree with no Python files; "
@@ -349,11 +375,31 @@ def test_public_api_result_typed_module_importable_without_running_main() -> Non
 _EXEMPT_TREES = (Path("commands"),)
 
 
+def _every_function(*, body: str) -> frozenset[str]:
+    """Every top-level function in `body`, as this file's stand-in for v178.
+
+    These are EXEMPTION tests, not criterion tests: each asks what the rule
+    does once a function is public. Handing the scan every function keeps that
+    subject intact and makes the assertions strictly stronger, since nothing
+    can pass merely by falling out of scope. The criterion itself is tested in
+    `test_public_api_criterion.py`.
+    """
+    tree = ast.parse(body)
+    return frozenset(
+        node.name for node in tree.body if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+    )
+
+
 def _offenders(*, body: str, rel: str = "commands/run.py") -> list[tuple[int, str]]:
     """Run the offender scan over `body` as if it lived at `rel`."""
     from livespec_dev_tooling.checks.public_api_result_typed import _find_offenders
 
-    return _find_offenders(source=body, rel_path=Path(rel), commands_trees=_EXEMPT_TREES)
+    return _find_offenders(
+        source=body,
+        rel_path=Path(rel),
+        commands_trees=_EXEMPT_TREES,
+        public_names=_every_function(body=body),
+    )
 
 
 def _offenders_with_supervisors(
@@ -366,6 +412,7 @@ def _offenders_with_supervisors(
         source=body,
         rel_path=Path(rel),
         commands_trees=_EXEMPT_TREES,
+        public_names=_every_function(body=body),
         supervisor_entry_files=supervisor_entry_files,
     )
 

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
+from livespec_dev_tooling.checks._public_api_consumption import repo_local_public_names
 from livespec_dev_tooling.checks.public_api_result_typed import _find_offenders
 from livespec_dev_tooling.otel_step_timer import (
     DATASET,
@@ -209,10 +210,16 @@ def test_all_declares_only_the_boundary_crossing_entry_point() -> None:
     ``supervisor_entry_files`` entry, which grants FOUR exemptions, and bundling that
     into this change would smuggle in exemptions this file does not need.
     """
+    source = _OTEL_STEP_TIMER.read_text(encoding="utf-8")
+    # The v178 answer for this file, computed rather than asserted: `main` is a
+    # process entry point (a `__main__` guard, and named in `__all__`), and no
+    # other name in it crosses a boundary.
+    public = repo_local_public_names(sources={_OTEL_STEP_TIMER_REL: source})
     offenders = _find_offenders(
-        source=_OTEL_STEP_TIMER.read_text(encoding="utf-8"),
+        source=source,
         rel_path=_OTEL_STEP_TIMER_REL,
         commands_trees=(),
+        public_names=frozenset(name for _rel, name in public),
     )
 
     assert [name for _lineno, name in offenders] == ["main"], (
