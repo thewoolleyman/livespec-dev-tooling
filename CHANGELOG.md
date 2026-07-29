@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.3.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.3.0...v1.3.1) (2026-07-29)
+
+
+### Bug Fixes
+
+* **fleet:** the credential-class rule answers from an injected token ([d5324be](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d5324be17814cdaca828bb6e1d8e7ad897d68bfc))
+
 ## [1.3.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.2.0...v1.3.0) (2026-07-29)
 
 
