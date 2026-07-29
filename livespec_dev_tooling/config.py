@@ -69,6 +69,7 @@ __all__: list[str] = [
     "Config",
     "ConfigParseError",
     "ConventionNotAdopted",
+    "CrossRepoPublicApi",
     "DeclaredPath",
     "DeclaredPrefixes",
     "DeclaredTrees",
@@ -401,6 +402,34 @@ _BASELINE_NEUTRAL_HOOK_BODY_PATH = Undeclared(key="neutral_hook_body_path")
 
 
 @dataclass(frozen=True, kw_only=True)
+class CrossRepoPublicApi:
+    """One top-level function this repo's SIBLINGS consume, declared per v036.
+
+    `livespec` v178 makes a function PUBLIC API for the Result-return rule
+    only when it is CONSUMED ACROSS A BOUNDARY, measured FLEET-WIDE. The
+    check that enforces that rule runs inside ONE checkout and structurally
+    CANNOT see a sibling's import, so the consumer declares the surface its
+    siblings reach and `public_api_result_typed` treats each entry as public
+    regardless of `__all__` membership.
+
+    The key is TIGHTENING-ONLY (SPECIFICATION v036 §"Role keys"): it may only
+    ADD names to the rule's scope. The repo-local consumption forms are
+    recomputed from the code on every run and are unaffected by it, so an
+    absent or empty declaration cannot remove a single name from the check's
+    scope — it can only fail to add one that only a sibling sees. That
+    residual is what the central-vantage conformance row exists to catch.
+
+    `reason` is part of the parsed VALUE rather than a TOML comment, for the
+    same reason `unarmed_until` carries a ledger id: an unexplained
+    declaration is indistinguishable from one that arrived by inheritance.
+    """
+
+    file: Path
+    function: str
+    reason: str
+
+
+@dataclass(frozen=True, kw_only=True)
 class MirrorPairing:
     """One source-tree to test-tree mirror, consumed by check_coverage_incremental."""
 
@@ -433,6 +462,7 @@ class Config:
     covered_trees: tuple[Path, ...] = ()
     tests_tree_prefix: str = "tests/"
     mirror_pairings: tuple[MirrorPairing, ...] = ()
+    cross_repo_public_api: tuple[CrossRepoPublicApi, ...] = ()
     # The five union-typed role keys. The baseline default IS a distinct
     # `Undeclared` variant, adopted by maintainer ruling in Phase 4 — see that
     # class's docstring for why the earlier design (defaulting to the legacy
@@ -608,6 +638,37 @@ def _parse_mirror_pairings(*, value: object) -> tuple[MirrorPairing, ...]:
             msg = "each `mirror_pairings` entry needs string `source_tree` + `test_tree`"
             raise ConfigParseError(msg)
         out.append(MirrorPairing(source_tree=Path(source), test_tree=Path(test)))
+    return tuple(out)
+
+
+def _parse_cross_repo_public_api(*, value: object) -> tuple[CrossRepoPublicApi, ...]:
+    """Parse the sibling-consumed public surface, rejecting an unexplained entry.
+
+    The `reason` gate is a schema rule rather than a lint: SPECIFICATION v036
+    makes the written reason REQUIRED because a bare `<file, function>` pair
+    carries no evidence that anyone decided anything, and this key's whole
+    purpose is to stand in for a measurement the local check cannot take.
+    """
+    if not isinstance(value, list):
+        msg = "`cross_repo_public_api` must be an array of {file, function, reason} tables"
+        raise ConfigParseError(msg)
+    entries = cast("list[object]", value)
+    out: list[CrossRepoPublicApi] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            msg = "each `cross_repo_public_api` entry must be a table"
+            raise ConfigParseError(msg)
+        table = cast("dict[str, Any]", entry)
+        file = table.get("file")
+        function = table.get("function")
+        reason = table.get("reason")
+        if not isinstance(file, str) or not isinstance(function, str):
+            msg = "each `cross_repo_public_api` entry needs string `file` + `function`"
+            raise ConfigParseError(msg)
+        if not isinstance(reason, str) or not reason.strip():
+            msg = f"`cross_repo_public_api` entry `{file}:{function}` needs a non-empty `reason`"
+            raise ConfigParseError(msg)
+        out.append(CrossRepoPublicApi(file=Path(file), function=function, reason=reason))
     return tuple(out)
 
 
@@ -880,6 +941,10 @@ def load_config(*, repo_root: Path) -> Config:
         )
     if "mirror_pairings" in table:
         overrides["mirror_pairings"] = _parse_mirror_pairings(value=table["mirror_pairings"])
+    if "cross_repo_public_api" in table:
+        overrides["cross_repo_public_api"] = _parse_cross_repo_public_api(
+            value=table["cross_repo_public_api"]
+        )
     return Config(
         declared_keys=frozenset(table),
         source_trees=overrides.get("source_trees", baseline.source_trees),
@@ -895,6 +960,9 @@ def load_config(*, repo_root: Path) -> Config:
         tests_tree_prefix=overrides.get("tests_tree_prefix", baseline.tests_tree_prefix),
         target_dirs=overrides.get("target_dirs", baseline.target_dirs),
         mirror_pairings=overrides.get("mirror_pairings", baseline.mirror_pairings),
+        cross_repo_public_api=overrides.get(
+            "cross_repo_public_api", baseline.cross_repo_public_api
+        ),
         neutral_hook_body_path=overrides.get(
             "neutral_hook_body_path", baseline.neutral_hook_body_path
         ),
