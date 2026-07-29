@@ -800,6 +800,34 @@ local-only amend is how a durable record quietly reverts.
 **Once checks are green, open a FRESH PR off the new master rather than amending.** Amending races
 auto-merge, and the race is invisible when you win it.
 
+### ✅ ALL FOUR SIBLING DUAL-SHAPE WIRINGS ARE MERGED AND GREEN ON THE FORGE
+
+**Conversion 3's precondition is DISCHARGED. `test_workflow_full_round_trip` is now safe to
+convert.** Verified per repo from the forge — merged AND master CI `success`, not merely merged:
+
+| repo | PR | master CI |
+|---|---|---|
+| `livespec-driver-claude` | #329 | ✅ success |
+| `livespec-driver-codex` | #309 | ✅ success |
+| `livespec-orchestrator-beads-fabro` | #1141 | ✅ success |
+| `livespec-orchestrator-git-jsonl` | #450 | ✅ success |
+
+**EACH IS DUAL-SHAPE, SO THE PIN CAN MOVE IN EITHER DIRECTION.** `_round_trip_result` accepts a
+bare `WorkflowResult` (today's pin) OR a `Result` (post-conversion). The wiring is correct
+before, during and after the conversion, and **a later REVERT of the dev-tooling pin cannot
+re-break it either** — which a sequenced fix would not survive.
+
+**AND EACH IS PROVEN AGAINST BOTH SHAPES, NOT ASSUMED — three tests per repo.** Wiring for a
+shape nothing exercises is how the silent pass ships. The load-bearing one asserts the `Success`
+unwraps **TO ITS VALUE** (`is result`, then reads `.discovered_skills`), because *asserting the
+call succeeded is exactly what the silent-pass bug also satisfies.*
+
+**⛔ WHY THE ORDER WAS NON-NEGOTIABLE, measured rather than argued:** `bool(Failure(...))` is
+**True** and a `Failure` carries no `.passed`. So the pre-existing wrappers would NOT have
+raised against the new shape — they would have **stopped checking**, and four sibling suites
+would have gone GREEN on a broken round trip. `dx8l`'s failure mode aimed at a test gate, times
+four.
+
 ### 🎯 THE GATE IS 2 — conversion 1 of 3 has LANDED (PR #841)
 
 **25 + 5 + 1 + 2 = 33.** Re-measured on master at `70c2eb6`, not inherited.
@@ -1047,8 +1075,63 @@ that shape into every remaining sibling wiring.**
 **The queue below is superseded through item 4.** Items 1–4 are DONE (see §"BRIEF 25 — WHAT
 LANDED"). What remains, in order:
 
+### 🧭 A THIRD DISPOSITION — RESTRUCTURE, beside convert and exempt
+
+**The railway is not the only correct answer to an offender. Sometimes the offender is a
+function that should never have touched I/O.** Conversion 1 is the worked example: wrapping
+`classify_role_key_declarations` in `IOResult` would have TYPED its I/O; injecting the slug set
+REMOVED it, leaving the function genuinely total rather than merely honestly typed — and
+deleting the test's `monkeypatch.setattr` of a module attribute, which was the smell announcing
+the problem.
+
+**Carry all three dispositions into the fan-out:**
+
+1. **CONVERT** — the function has a real failure mode; put it on the railway.
+2. **RESTRUCTURE** — the function shouldn't reach I/O at all; push the I/O to a caller that is
+   already a boundary, and the function becomes total under v179 member 1 with no `Result`.
+3. **EXEMPT** — v179's two members, or a ratified supervisor declaration.
+
+**Prefer (2) when the I/O is incidental to what the function computes**, and check afterwards
+whether the violation MOVED rather than vanished (it did here — see below).
+
+### 🔁 A CONVERSION CHANGES THE OFFENDER SET, NOT JUST ITS SIZE — re-measure after EACH
+
+**Hard rule, not hygiene.** Injecting the slug set made the classifier total AND made
+`layout_dependent_check_slugs` public via a new cross-module import, so the violation
+**RELOCATED** onto the function that actually does the I/O. The count was unchanged at 3 until
+the second Red→Green pair typed the walker.
+
+**Consequence for the fan-out: it CANNOT be planned as N independent conversions against a
+fixed list.** A count taken before a conversion is not a count of the same thing afterwards.
+Re-measure between conversions, never only at the end.
+
+### 🧨 THIS CLASS IS CAUGHT BY MECHANISM, NEVER BY ATTENTION
+
+**Put this in the fan-out constraint verbatim, because the evidence is embarrassing and
+therefore worth trusting: the author of the warning committed the bug one leg after writing
+it.** While landing conversion 1 I wrote a code comment warning about the fail-open unwrap, and
+then committed spelling #2 of that exact trap in the next commit leg — **while actively thinking
+about the hazard.**
+
+What caught it was **a behavioural test and `check-types`**. Not vigilance. Not review. Not the
+comment.
+
+The reason is structural: every spelling produces a **plausible value rather than an error** —
+`value_or(())` yields an empty set, `frozenset(IOResult.unwrap())` yields a set holding the
+WRAPPER, `case IOSuccess(x)` binds the inner `Result`. None raises. **A warning you authored
+does not protect you**, and the person most likely to write this bug is the one who just
+documented it. Guard it with a test that asserts on the VALUE, or it is unguarded.
+
+### ✅ THE GATES WORKED, AND THAT IS WORTH STATING PLAINLY
+
+`check-assert-never-exhaustiveness` and `check-per-file-coverage` each caught a real defect
+before push — the latter on an untested fail-closed branch — and **nothing was bypassed, no
+`--no-verify`, no weakening.** This thread has spent most of its life on gates that did not
+work; a gate catching a genuine defect is the system operating as designed and deserves the same
+attention as a failure.
+
 **BOTH RULINGS ARE NOW RATIFIED — v178 AND v179. No spec work remains before arming.** What is
-left is implementation and three conversions:
+left is implementation and two conversions:
 
 1. **Implement v178's repo-local half** — `721o`. The consumption oracle MUST resolve imports to
    the DEFINING MODULE (see START-HERE 7a). **A repo-local check CANNOT see a sibling's import**,
@@ -1058,8 +1141,17 @@ left is implementation and three conversions:
    `no-expected-failure-mode-declared-absence-key`. **Clause (d), the callee fixpoint, is not
    optional** — without it the check exempts functions that reach I/O one call away.
 3. **Implement the CENTRAL half** — `5cai`. The half that catches the next `parse_manifest`.
-4. **The 3 conversions** — `u4ij`. Two are local; `test_workflow_full_round_trip` needs
-   DUAL-SHAPE wiring in FOUR siblings FIRST.
+4. **The 2 remaining conversions** — `u4ij`. Both in `livespec_dev_tooling/testing/cli_e2e.py`.
+   **Conversion 3's four-sibling precondition is DISCHARGED** (see the ✅ block above), so both
+   are now unblocked. **Re-measure after EACH, not after both.**
+   - **`select_runner`** — 1 product caller (`checks/plugin_resolution.py:470`, which GATES on
+     `mode != _HARNESS_REAL` and returns 0 first, so the `ValueError` is UNREACHABLE there →
+     use `.unwrap()`, not a match: 100% per-file coverage makes an unreachable failure branch
+     uncoverable, and manufacturing a test for it would be the ceremony this thread refuses),
+     1 internal caller (`cli_e2e.py:382`), 4 direct tests, plus `test_plugin_resolution.py`'s
+     `_runner_factory` monkeypatch which must return the new shape. **Dependent test updates go
+     in the RED leg** — the byte-identity rule forbids touching the test file between legs.
+   - **`test_workflow_full_round_trip`** — all four consumers now tolerate both shapes.
 5. **Then re-measure and arm ONLY when the ratified rule considers the remaining set correct.**
    **That is no longer "zero offenders"** — v178 and v179 both narrow what counts. State which
    number you mean. **DO NOT ARM BEFORE.**
