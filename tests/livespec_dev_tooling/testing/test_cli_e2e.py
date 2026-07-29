@@ -173,7 +173,7 @@ def test_self_test_single_skill_plugin_round_trip(*, tmp_path: Path) -> None:
         home=home,
         project_root=project,
         injected_runner=runner,
-    )
+    ).unwrap()
     assert result.discovered_skills == ("hello",)
     assert result.fixtured_skills == ("hello",)
     assert result.passed is True
@@ -471,13 +471,17 @@ def test_entry_point_asserts_on_failing_step(*, tmp_path: Path) -> None:
     fixtures_root = tmp_path / "fixtures"
     _make_fixture(root=fixtures_root, skill="seed", prompt="/seed", expected=("never.md",))
     runner = _FakeCliRunner(creates={})  # never.md never created → step fails
-    with pytest.raises(WorkflowFailedError, match="failing step"):
-        _ = run_full_round_trip(
-            config=_two_skill_config(plugin=plugin, fixtures_root=fixtures_root),
-            home=tmp_path / "home",
-            project_root=tmp_path / "proj",
-            injected_runner=runner,
-        )
+    outcome = run_full_round_trip(
+        config=_two_skill_config(plugin=plugin, fixtures_root=fixtures_root),
+        home=tmp_path / "home",
+        project_root=tmp_path / "proj",
+        injected_runner=runner,
+    )
+
+    # A failing step is now a VALUE on the failure track, not a raise (v179).
+    assert isinstance(outcome, Failure)
+    assert isinstance(outcome.failure(), WorkflowFailedError)
+    assert "failing step" in str(outcome.failure())
 
 
 def test_workflow_result_passed_true_when_no_steps(*, tmp_path: Path) -> None:
