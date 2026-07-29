@@ -800,6 +800,28 @@ local-only amend is how a durable record quietly reverts.
 **Once checks are green, open a FRESH PR off the new master rather than amending.** Amending races
 auto-merge, and the race is invisible when you win it.
 
+### 🟢 `u4ij` IS CLOSED — RATIFIED-RULE VIOLATIONS ARE **ZERO**. Remaining work is IMPLEMENTATION ONLY.
+
+**25 + 5 + 1 + 0 = 31**, measured on master `244306b` with the shipped `_find_offenders` over the
+shipped `resolve_check_universe()`, module-qualified oracle, v179 fixpoint.
+
+| conversion | PR | how |
+|---|---|---|
+| `classify_role_key_declarations` | #841 | **RESTRUCTURED**, not converted — injection removed the I/O |
+| `select_runner` | #846 | `Result[CliRunner, HarnessSelectionError]` |
+| `test_workflow_full_round_trip` | #849 | `Result[WorkflowResult, WorkflowFailedError]` |
+
+### ⛔⛔ TWO NUMBERS, AND ARMING DEPENDS ON THEM AGREEING — READ BEFORE ARMING
+
+- **31** — what the check reports today. Neither ruling is IMPLEMENTED, so it still counts every
+  `__all__` member and every total function.
+- **0** — what the ratified rule (v178 + v179) considers a violation.
+
+**⛔ ARMING NOW WOULD TURN dev-tooling RED ON ITS OWN GATE.** The armed check would report **31**
+violations against a rule that recognizes **0**. `721o`, `5cai` and v179's two members are
+exactly what closes that gap. **ARM ONLY AFTER THEM, and only when BOTH numbers agree — say so
+explicitly in the arming commit.**
+
 ### ✅ ALL FOUR SIBLING DUAL-SHAPE WIRINGS ARE MERGED AND GREEN ON THE FORGE
 
 **Conversion 3's precondition is DISCHARGED. `test_workflow_full_round_trip` is now safe to
@@ -1141,7 +1163,27 @@ left is implementation and two conversions:
    `no-expected-failure-mode-declared-absence-key`. **Clause (d), the callee fixpoint, is not
    optional** — without it the check exempts functions that reach I/O one call away.
 3. **Implement the CENTRAL half** — `5cai`. The half that catches the next `parse_manifest`.
-4. **The 2 remaining conversions** — `u4ij`. Both in `livespec_dev_tooling/testing/cli_e2e.py`.
+### 🧪 A RED-LEG CONSTRAINT THIS REPO IMPOSES — it shapes how a Red test may be written
+
+**100% per-file coverage applies to TEST files too, and at the Red moment every line AFTER the
+first failing assertion is unexecuted and therefore UNCOVERED.** A Red leg must leave no line
+behind. Three consequences, each paid for this pass:
+
+1. **A Red test's failing assertion must be its LAST statement.** Combine conditions with `and`
+   rather than stacking asserts.
+2. **When the pre-conversion code RAISES, put the call INSIDE the assert** — the statement then
+   still executes, so the line is covered even though the test fails.
+3. **A multi-assertion existing test cannot be converted in the Red leg.** Put the Red in a
+   SEPARATE new file (so the existing file still passes at Red) and move its call sites in the
+   GREEN leg. `test_cli_e2e.py` has eight assertions on the returned result; converting it at
+   Red would have left its whole body uncovered.
+
+A second file may also join the GREEN leg for the same reason — `test_plugin_resolution.py` and
+`test_rows_required_role_keys.py` both did. The byte-identity rule binds the RED-recorded test
+file only.
+
+4. **The 2 remaining conversions** — `u4ij`. **✅ CLOSED — all three landed.** Both were in
+   `livespec_dev_tooling/testing/cli_e2e.py`.
    **Conversion 3's four-sibling precondition is DISCHARGED** (see the ✅ block above), so both
    are now unblocked. **Re-measure after EACH, not after both.**
    - **`select_runner`** — 1 product caller (`checks/plugin_resolution.py:470`, which GATES on
