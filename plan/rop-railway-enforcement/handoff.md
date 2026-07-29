@@ -24,7 +24,12 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >    `cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh -- bd show livespec-dev-tooling-8o8e`
 >    (the EPIC — `8o8e.1` is CLOSED and is a record, not a work item)
 > 2. **NOTHING IS MID-FLIGHT.** No worktree of this thread's is open, no PR of its own is
->    unmerged, and no background job is running. There is no half-finished edit to find.
+>    unmerged, and no background job is running. There is no half-finished edit to find. This
+>    holds in `livespec-orchestrator-beads-fabro` too — the `dx8l` P0 closed with that repo's
+>    master GREEN (step 6a). Several FOREIGN worktrees exist in both repos; **reap none of them.**
+>    **Version note:** the `v1.0.0` figures in steps 3–4 are the HISTORICAL `8o8e.1` discharge
+>    evidence. dev-tooling has since released through **`v1.0.5`** and the siblings' pins have
+>    moved with it; do not read those steps as current pin state.
 > 3. **ALL FOUR PHASES HAVE LANDED, AND THE SPEC IS RATIFIED.** Phase 3 + `oitd`
 >    (`606f17b`, `34c05c1`), spec v033 (`0500155`), `pj3j` (`c0c0472`), Phase 4 (`b36e0b8`).
 > 4. **✅ `8o8e.1` IS CLOSED — the precondition is DISCHARGED with per-repo evidence.** The
@@ -43,18 +48,23 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >    and accepted under it (v177). **`5ror`, `clkf`, `fwcwxv`, `pj3j` and `livespec-i04f` are
 >    all CLOSED.** The spec lifecycle is NOT waived — changes still go through
 >    propose-change → revise as OPERATIONS — but the accept/reject decision is delegated.
-> 6. **▶️ THE NEXT ACTION IS UNAMBIGUOUS AND NEEDS NO NEW AUTHORITY.** Step 6 is at **47
->    offenders** (from 59). Two tracks remain, neither blocking the other — see §"STEP 6
->    PROGRESS" and §"EXACT NEXT ACTION":
->    - **Track B — keep converting, in slices, each its own Red→Green pair and its own PR.**
->      Slice 2 (`fleet/contract.parse_manifest`) LANDED 2026-07-29 as `2ff79a5` (PR #821),
->      released in `v1.0.4`. The strongest remaining candidate is
->      `fleet/dispatch_matrix_filter.filter_siblings`, which the triage calls *"literally an
->      Either encoded by hand"*.
->    - **The nine undeclared supervisors** — per-file judgement, NOT a bulk declaration. See
->      the ⛔ block; declaring a file grants FOUR exemptions, not one.
->    - **Track C is DONE.** Ratified as **v035** — and it grew from one bullet to a whole
->      class. See §"TRACK C IS DONE — v035".
+> 6. **▶️ THE NEXT ACTION IS UNAMBIGUOUS AND NEEDS NO NEW AUTHORITY: execute `zu85` option (a),
+>    which is RULED, fully JUSTIFIED and ready to start.** Step 6 is at **46** offenders
+>    (from 59) on master `4976b69`. See §"EXACT NEXT ACTION" for the exact first edit.
+>    - **Slices 1–3 have LANDED.** Slice 2 `parse_manifest` (`2ff79a5`, PR #821, released
+>      `v1.0.4`); slice 3 `filter_siblings` — the hand-rolled Either — (`bcbe035`, PR #826).
+>      **The conversion set is nearly EXHAUSTED: only 4 offenders still have a real failure
+>      track.** Track B is roughly two slices from done, and it is NOT the critical path.
+>    - **Track C is DONE.** Ratified as **v035** on master (PR #824 → `703c5a6`).
+>    - **THE P0 IS CLOSED.** `dx8l` — see step 6a. Nothing is owed on it.
+> 6a. **✅ `livespec-dev-tooling-dx8l` — CLOSED, and its LESSON is now a hard precondition.**
+>    Slice 2 broke `livespec-orchestrator-beads-fabro`'s master (its `codex_yolo_gate` hook
+>    imports `parse_manifest`). Repaired doctrine-exact per livespec `.ai/ci-gate-discipline.md`
+>    — server-side revert to the last green pin (#1134 → `cf1b7a8`), consumer wiring second
+>    (#1136 → `8af024c`), pin re-landed third (#1138 → `bc23b0d3`). **Verified from the FORGE:
+>    beads-fabro master `bc23b0d3`, pin `v1.0.5`, CI SUCCESS** — repaired at the CONSUMED end,
+>    not merely merged. No gate weakened, none bypassed. **Do not re-open; do not re-file.**
+>    The durable output is §"THE THIRD AXIS", which BINDS every remaining conversion.
 > 7. **⛔⛔ THE ARMING GATE IS NOT WHAT THIS THREAD THOUGHT, AND THE ARITHMETIC IS NOW MEASURED.
 >    READ THIS BEFORE PLANNING ANYTHING.** Step 6 is at **46** (measured on master at
 >    `bcbe035`). Its composition — measured per function, not inherited from the 59-triage:
@@ -762,8 +772,44 @@ auto-merge, and the race is invisible when you win it.
 
 ### ▶️ EXACT NEXT ACTION — **PICK UP TRACK B. NO NEW AUTHORITY IS NEEDED.**
 
-**Start here, concretely — and note the conversion set is nearly EXHAUSTED, which is the real
-news.** Slice 3 (`filter_siblings`) landed as `bcbe035` (PR #826). **Only 4 offenders still have
+### ▶️▶️ START HERE — `zu85` OPTION (a). RULED, JUSTIFIED, AND THE FIRST EDIT IS WRITTEN OUT.
+
+**Supervisor ruling (brief 24): option (a) APPROVED.** Per-name fleet-wide justification is
+COMPLETE and lives on the `zu85` item. **No further measurement is owed — start editing.**
+
+**Measured by tarball across ALL EIGHT siblings (not the search API, which rate-limited
+mid-sweep and must never be read as an empty result): `otel_step_timer` module references
+fleet-wide = 0.** No sibling imports the module or invokes it via `python -m`.
+
+**THE EDIT.** In `livespec_dev_tooling/otel_step_timer.py`, narrow `__all__` from seven entries
+to three:
+
+```python
+__all__: list[str] = ["DATASET", "DEFAULT_ENDPOINT", "main"]
+```
+
+Removing `parse_argv`, `build_trace_payload`, `run` and `post_span` — each 0 fleet references,
+each an internal helper of a baked CLI, exported only so unit tests could reach them. That is
+the SAME premise `#809` was ratified on (`check_mutation.py`'s `__all__` holds only `_`-prefixed
+helpers). `check-all-declared` does NOT force exhaustiveness, so narrowing is compliant.
+**`main` STAYS** — 15 fleet references invoke the baked binary `livespec-step-timer`, and they
+reference the BINARY name, not a Python symbol, so they constrain `main` alone.
+
+**Measured against the shipped `_find_offenders`: this takes the file 4 → 1.**
+
+**⚠️ AND SPLIT IT THERE — DO NOT ALSO DECLARE THE FILE IN `supervisor_entry_files` IN THE SAME
+CHANGE.** The probe's last step (1 → 0) needs that declaration, which grants FOUR exemptions —
+and checking them individually, `no_except_outside_io` is **NOT warranted** here: the module uses
+`contextlib.suppress`, not a broad `main()` `try`. Bundling it would smuggle in an exemption the
+file does not need, which is the bulk-declaration hazard the ⛔ block forbids. **Let the residual
+`main` join class B's 8 declarations**, where the four-exemption judgement is made per file.
+
+Doc-only note: `zu85` is `blocked` in the ledger pending this execution; close it after (a) lands
+and the class-B entry for this file lands.
+
+### ▶️ THEN — Track B, and note the conversion set is nearly EXHAUSTED
+
+Slice 3 (`filter_siblings`) landed as `bcbe035` (PR #826). **Only 4 offenders still have
 a real failure track**, so Track B has roughly two slices left, not ten:
 
 - `fleet/merged_branch_sweep.fetch_manifest -> Manifest | None` — now the strongest candidate,
@@ -780,7 +826,29 @@ Plus the ~3 the triage read as real I/O wanting `IOResult` (`ensure_plugins.subp
 **After those, conversion is DONE at ~39 offenders and the remaining work is not conversion at
 all.** One slice per PR, each its own Red→Green pair, never batched.
 
-**THE HIGHEST-VALUE NEXT ACTION IS NOT A SLICE.** It is establishing how much of the D class
+**⛔ BEFORE CONVERTING ANY OF THEM: GREP ALL EIGHT SIBLINGS FOR THE SYMBOL.** This is not
+advice, it is the precondition `dx8l` paid for — see §"THE THIRD AXIS". `fetch_manifest` and
+`run_workflow` are exactly the shape that broke beads-fabro (`testing.cli_e2e` IS imported by
+`livespec-driver-claude`, `-driver-codex` and `-orchestrator-git-jsonl`). **If a sibling imports
+it, wire that sibling FIRST, tolerant of both shapes, and land the conversion only after.**
+
+### 📋 THE WHOLE REMAINING QUEUE, IN ORDER (supervisor brief 23, scope items 1–5)
+
+1. **`zu85` option (a)** — the `__all__` narrowing above. Ruled, justified, ready. 46 → 43.
+2. **The FLEET-WIDE public-API criterion** — a propose-change defining what makes a function
+   public API, then implement it in the check under Red→Green-Replay. Constraints from brief 23,
+   as CORRECTED by brief 24: mechanically decidable; **not trivially gameable** (say plainly how
+   it resists "just don't import it", or record the exposure); a name imported only by TESTS is
+   NOT public API (say so, so nobody "fixes" it later); it must not let a genuinely
+   consumer-facing surface escape; and it **MUST be FLEET-WIDE, not repo-local** — a repo-local
+   oracle would have called `parse_manifest` non-public, the exact function that broke a sibling.
+   State whether it weakens the rule or makes an existing reality expressible.
+3. **Class B — 8 `main() -> int` supervisors**, a reasoned `supervisor_entry_files` entry EACH,
+   never bulk. Includes `otel_step_timer`'s residual `main` from (a).
+4. **Class C — the ~4–7 real conversions**, each gated on the sibling grep above.
+5. **Re-measure, and ONLY at measured zero, arm.** Then fan out.
+
+**THE HIGHEST-VALUE ITEM IS #2, NOT #1 OR #4.** It is establishing how much of the D class
 (30 genuinely-total functions) is not public API — see §"THE `__all__` FINDING". That is the
 critical path to arming; the remaining conversions are not.
 
