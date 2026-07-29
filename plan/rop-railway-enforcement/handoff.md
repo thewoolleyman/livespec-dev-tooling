@@ -93,9 +93,20 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >    own reach is the mirror image of one that over-sells it, and this thread has spent its
 >    life on the second kind.
 >
->    **CONSEQUENCE FOR THE FAN-OUT: the other repos' counts are unknown in BOTH directions.**
->    Every prior estimate assumed v178 only ever removes. It also ADDS, and nobody has
->    measured the adding half anywhere but here.
+>    **CONSEQUENCE FOR THE FAN-OUT: the other repos' counts are UNKNOWN IN BOTH DIRECTIONS.**
+>    Say it in those words. Every prior estimate — **223, 282, and any ratio derived from this
+>    repo** — assumed v178 only ever REMOVES. It also ADDS. **A sibling can come out HIGHER
+>    than its pre-v178 figure.** "Unknown" is now the honest word in both directions, not just
+>    upward, and no figure may be quoted without a post-v178 re-measurement of that repo.
+>
+>    **✅ THE CORRECTION IS FILED — `livespec` PR #1834** (propose-change only; that repo's
+>    `proposed_changes/` already held two pending changes from other work, and a revise pass
+>    would have forced a verdict on both, which is not this thread's to give). It requires the
+>    ratified text to carry the measured number, the named functions, the network-reaching
+>    detail, and the both-directions consequence — and to record the figure as WRONG WHEN
+>    WRITTEN rather than superseded, because **a clause's exposure cannot be measured before
+>    the clause is mechanized**. That reasoning is the part that generalizes to every future
+>    clause ratified ahead of its mechanization.
 > 6f. **🐛 `livespec-dev-tooling-995m` (P1, filed) — `config.py` EXCLUDES ITSELF from every
 >    check universe.** `is_generated` treats any `#` line containing `@generated` as the
 >    sentinel, and `config.py` carries two such lines DESCRIBING the sentinel mechanism. So
@@ -106,6 +117,65 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >    `tests/livespec_dev_tooling/checks/test_no_fmt_directives.py` are excluded the same way.
 >    **This is this epic's own subject occurring inside the universe resolver the epic routes
 >    everything through**, and it is SILENT — nothing logs "skipped as generated".
+>
+>    **⛔⛔ IT IS AN ACCEPTED KNOWN GAP, AND ARMING DOES NOT COVER `config.py`. Say so in the
+>    arming commit.** The one-line predicate fix was written, tested and MEASURED, and then
+>    deliberately NOT LANDED — because the moment `config.py` enters the universe it fails two
+>    checks:
+>
+>    | check | finding |
+>    |---|---|
+>    | `check-file-lloc` | `config.py` is **560 LLOC** against a **250 hard ceiling** — 2.24× over |
+>    | `check-keyword-only-args` | `config.py:210 assert_never` is missing the `*` separator |
+>
+>    So landing the fix alone turns this repo RED ON ITS OWN GATE and lefthook blocks the very
+>    commit that fixes it — **the ordering trap in a third spelling**. The sequence is
+>    REMEDIATE-THEN-FLIP, which is this repo's own ratified doctrine (v034 carve-out 1):
+>    decompose `config.py` first (**`livespec-dev-tooling-0yfo`**, filed, with the seam and two
+>    binding constraints), verifying green by applying the predicate change LOCALLY WITHOUT
+>    COMMITTING; then flip. The predicate diff and its three known-good tests are recorded on
+>    `995m` so nobody re-derives them.
+>
+>    **BLAST RADIUS OF THE FIX IS ZERO, and that is measured against FORGE masters, not clones.**
+>    All eight siblings: `beads-fabro` keeps its 2 exclusions, `livespec-runtime` keeps its 1,
+>    every other repo is 0 before and after. Only dev-tooling changes, reclaiming exactly its 3
+>    self-referential false positives. **No consumer wiring is needed — this is not a `dx8l`
+>    shape.**
+>
+>    **🔴 AND A SECOND FINDING, which is the more troubling one.** `check-file-lloc`'s own
+>    docstring records that retiring its legacy severity classifier was "gated on every governed
+>    repo satisfying the ceiling first … verified before the flip: all eight". **That
+>    verification was taken THROUGH THIS HOLE** — `config.py` was invisible to the universe when
+>    it ran, and `config.py` is 560 LLOC. The precondition for arming that gate was satisfied by
+>    a measurement that could not see the largest offender in the repo that ships the check.
+>    **A gate whose ARMING PRECONDITION was verified against a universe with a hole in it** is
+>    this epic's subject one level up, and it is the reason 995m is a blocker rather than a
+>    parallel finding.
+> 6g. **✅ THE 3 ARE TRIAGED — `livespec-dev-tooling-9sl0`. The ratified-rule count is 3, NOT 0.**
+>    **9 reported = 5 member-1 exempt + 1 member-2 declared + 3 GENUINE VIOLATIONS.** Each was
+>    established by reading the body AND its callees:
+>
+>    - **`fetch_manifest` → CONVERT. The brief's premise was right about the verdict and wrong
+>      about the reason, and the difference is load-bearing.** Its network reach is through an
+>      INJECTED seam (`ctx.file_text`), so clause (c) is NOT what convicts it. Clause (e)
+>      disqualifies `X | None` outright, and the failure track is genuinely INHABITED — by TWO
+>      failures collapsed into one sentinel (`could not fetch` vs `fetched but unparseable`),
+>      distinguished today only by a side effect. **A clause-(c) reading would also convict
+>      `holds_app_class_credential`, which must NOT be converted.**
+>      **⛔ BOOBY-TRAPPED AT BOTH CALL SITES** (`wire_fleet_member.py:169`,
+>      `fleet_conformance_admin.py:230` — both `if manifest is None`). Both in THIS repo, so no
+>      cross-repo wiring, but dual-shape consumer wiring still lands FIRST.
+>    - **`holds_app_class_credential` → RESTRUCTURE, do NOT convert.** Clause (c) disqualifies
+>      it (reads `GH_TOKEN`/`GITHUB_TOKEN`), but it HAS NO FAILURE MODE: an absent variable
+>      yields `""` yields `False`. A `Result` would carry an uninhabited failure track — the
+>      outcome v179's own rationale forbids. **This is a MEASURED FALSE POSITIVE of clause (c)**,
+>      a syntactic proxy that an unfailing env read defeats. Inject the token; the caller is
+>      already a boundary. Precedent: `classify_role_key_declarations` (#841).
+>    - **`discover` → CONVERT, design first.** Clause (d) disqualifies it (seven `walk_*`
+>      callees touch the filesystem). It already models failure OFF-RAILWAY AND LOSSILY: a parse
+>      failure becomes a SENTINEL RECORD (`pin_format="unrecognized"`) in the same list as
+>      successes, so "no pins" and "unparseable file" are indistinguishable to a caller. **Read
+>      `fleet/_rows_pin_currency.py` first** — it may depend on the sentinel row.
 > 6a. **✅ `livespec-dev-tooling-dx8l` — CLOSED, and its LESSON is now a hard precondition.**
 >    Slice 2 broke `livespec-orchestrator-beads-fabro`'s master (its `codex_yolo_gate` hook
 >    imports `parse_manifest`). Repaired doctrine-exact per livespec `.ai/ci-gate-discipline.md`
@@ -1151,20 +1221,23 @@ files here, because it is still `pure_trees`-scoped.
 
 **THE ORDER:**
 
-1. **⛔ TRIAGE THE 3 NEW OFFENDERS UNDER v179 — START-HERE 6e.** They arrived from the
-   TIGHTENING half and none was in the old count. `fetch_manifest` reaches the network, so at
-   least one is likely a genuine conversion. **Do this before anything else**, because every
-   downstream plan in this file was written assuming the ratified-rule count was 0.
-   **`fetch_manifest` has ZERO sibling importers of THAT function** (the two fleet-wide hits
-   belong to the homonym in `merged_branch_sweep.py`), so the `dx8l` sibling-wiring
-   precondition is discharged for it — but re-derive rather than trusting this line.
-2. **v179's two members** — `no-expected-failure-mode-mechanical-member` and
-   `no-expected-failure-mode-declared-absence-key`. **NEITHER HAS A LEDGER ITEM YET; file
-   them.** **Clause (d), the callee FIXPOINT, is not optional**: without it the check exempts
-   functions that reach I/O one call away, which is the exact defect a hand reading of
-   `classify_role_key_declarations` produced. Member 2 needs a `total_absence_returns` role
-   key — model it on `cross_repo_public_api` (v036), which is the same shape: per-function,
-   reason-required, staleness-detected, NOT in `REQUIRED_ROLE_KEYS`.
+1. **✅ THE 3 ARE TRIAGED — `9sl0` (filed). Now IMPLEMENT them.** See START-HERE 6g for each
+   verdict and its reason. Order within the item: `holds_app_class_credential` (RESTRUCTURE,
+   smallest, no consumer risk) → `fetch_manifest` (CONVERT, dual-shape wiring FIRST at both
+   in-repo call sites) → `discover` (CONVERT, read `_rows_pin_currency.py` first).
+   **Re-measure after EACH, never only at the end** — a conversion changes the offender SET,
+   not just its size.
+2. **v179's two members — FILED: `rvw3` (member 1, mechanical) and `q5lb` (member 2, the
+   `total_absence_returns` key).** **Clause (d), the callee FIXPOINT, is not optional**:
+   without it the check exempts functions that reach I/O one call away, which is the exact
+   defect a hand reading of `classify_role_key_declarations` produced. Member 2's key is the
+   same shape as `cross_repo_public_api` (v036) — per-function, reason-required,
+   staleness-detected, NOT in `REQUIRED_ROLE_KEYS` — so reuse that loader and check shape.
+   **`rvw3` carries the clause-(c) false positive as a first-class caveat**; do not implement
+   clause (c) as if it were the rule itself.
+2b. **`0yfo` — decompose `config.py`, then flip the `995m` predicate.** Not on the arming
+   critical path by itself, but 995m IS (START-HERE 6f): either it lands, or the arming commit
+   states in its own text that arming does not cover `config.py`.
 3. **`5cai` — the CENTRAL half. ⛔ NOT OPTIONAL, AND IT MUST LAND BEFORE ARMING.** A
    central-vantage conformance row over the fleet's real consumption graph. This is the half
    that catches the next `parse_manifest` — see the ⛔ block below, a BINDING ruling.
