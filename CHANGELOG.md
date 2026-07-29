@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.0.8](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.0.7...v1.0.8) (2026-07-29)
+
+
+### Bug Fixes
+
+* **rop:** inject the layout-dependent slug set so the classifier reaches no I/O ([e4b9f8f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e4b9f8f97d9eeed7a3f1ef269167be200bec675d))
+
 ## [1.0.7](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.0.6...v1.0.7) (2026-07-29)
 
 
