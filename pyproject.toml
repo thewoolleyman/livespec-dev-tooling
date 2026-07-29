@@ -195,6 +195,66 @@ supervisor_entry_files = [
     "livespec_dev_tooling/fleet/merged_branch_sweep.py",
     "livespec_dev_tooling/parallel_check_dispatcher.py",
     "livespec_dev_tooling/red_leg_scope.py",
+    # --- Class B: the nine remaining `main() -> int` supervisors, declared
+    # ONE AT A TIME with a written reason, never as a batch. Each was checked
+    # against ALL FOUR exemptions above rather than against the one that
+    # motivated the entry.
+    #
+    # WHAT EVERY ONE OF THE NINE ACTUALLY NEEDS: exactly ONE — the
+    # `public_api_result_typed` exemption for its `main() -> int`. MEASURED
+    # per file: none carries a broad `except Exception`, so
+    # `no_except_outside_io` is unused; only `dispatch_matrix_filter` writes
+    # directly, so `no_write_direct` is unused by the other eight; and every
+    # file's `raise SystemExit(main())` tail is ALREADY tolerated by
+    # `supervisor_discipline` (it exempts that form outside the plugin-scripts
+    # tree, `checks/supervisor_discipline.py:93`), so that exemption is unused
+    # by all nine.
+    #
+    # SO THE COST IS REAL AND IS RECORDED RATHER THAN GLOSSED: each entry
+    # grants three exemptions the file does not need today, which means a
+    # LATER edit adding a broad catch or a stray `print()` to any of these
+    # nine goes unflagged. That is a genuine widening of the unflagged
+    # surface, accepted here because ratified livespec v177 member 4 grants
+    # per FILE and there is no narrower spelling — not because the extra
+    # three are harmless.
+    #
+    # WHAT QUALIFIES EACH: it is a genuine process entry artifact — a
+    # `__main__` guard, a `main() -> int`, a `raise SystemExit(main())` tail,
+    # and an invocation as a PROCESS rather than by import. That is exactly
+    # the category member 4 admits, and it creates no new class.
+
+    # `just check-local-memory-drift-audit`. Audits agent-memory drift and
+    # returns the check exit code.
+    "livespec_dev_tooling/checks/local_memory_drift_audit.py",
+    # `just check-required-role-keys-declared`. The role-key declaration gate;
+    # its `main()` is the check supervisor.
+    "livespec_dev_tooling/checks/required_role_keys_declared.py",
+    # `just` + the release-dispatch workflow. THE ONE ENTRY THAT ALSO NEEDS
+    # `no_write_direct`: line 209 prints a `::warning::` workflow command that
+    # the Actions runner parses from stdout, so stdout is a protocol channel
+    # here rather than a report surface.
+    "livespec_dev_tooling/fleet/dispatch_matrix_filter.py",
+    # `just ensure-plugins` / `ensure-codex-plugins`. Reconciles marketplace
+    # and plugin registration; `main()` returns the reconcile exit code.
+    "livespec_dev_tooling/fleet/ensure_plugins.py",
+    # `just` + `.github/workflows/ci.yml`. Installs the commit-refuse hooks;
+    # `main()` is the installer supervisor.
+    "livespec_dev_tooling/install_commit_refuse_hooks.py",
+    # `just install-no-shadow-ledger`. Installs the neutral hook body.
+    "livespec_dev_tooling/install_no_shadow_ledger.py",
+    # `just` + `.github/workflows/ci.yml`. Installs the worktree pack.
+    "livespec_dev_tooling/install_worktree_pack.py",
+    # THE BAKED CLI. Not invoked from this repo's justfile at all: the base
+    # image `COPY`s this one file to `/usr/local/bin/livespec-step-timer`
+    # (`docker/fabro-sandbox/base/Dockerfile:106`) and 15 fleet-wide
+    # references invoke that BINARY. Its `main` is the residual offender left
+    # by PR #832, which narrowed the file's `__all__` to its boundary-crossing
+    # surface; #832 deliberately did NOT bundle this declaration, so the
+    # four-exemption judgement could be made here with the other eight.
+    "livespec_dev_tooling/otel_step_timer.py",
+    # `just` — the TDD commit ritual driver; `main()` returns the hook's
+    # refuse/accept exit code.
+    "livespec_dev_tooling/tdd_commit.py",
 ]
 # Integration-tier-or-above node-id prefix allowlist for the
 # `heading_coverage` check's `scenarios.md` tier gate (per
