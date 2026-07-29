@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.0.6](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.0.5...v1.0.6) (2026-07-29)
+
+
+### Bug Fixes
+
+* **rop:** narrow otel_step_timer's __all__ to its baked entry point ([6ffadbd](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6ffadbdf9f2f2a07a823a323f9971589025aa613))
+
 ## [1.0.5](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.0.4...v1.0.5) (2026-07-29)
 
 
