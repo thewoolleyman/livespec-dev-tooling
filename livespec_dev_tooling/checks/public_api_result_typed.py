@@ -1,17 +1,37 @@
 """public_api_result_typed — pure-layer public APIs return Result/IOResult or carry decorator.
 
-Per `python-skill-script-style-requirements.md` §"Canonical
-target list" (the `check-public-api-result-typed` row),
-every public function (per `__all__` declaration) returns
-`Result` or `IOResult` per annotation OR carries a railway-
-lifting decorator (`@impure_safe(...)` lifts to `IOResult`,
-`@safe(...)` lifts to `Result`).
+Every PUBLIC function returns `Result` or `IOResult` per
+annotation OR carries a railway-lifting decorator
+(`@impure_safe(...)` lifts to `IOResult`, `@safe(...)` lifts
+to `Result`).
 
-Cycle 169 implements minimum-viable: scope is
-`livespec/parse/` and `livespec/validate/` (the pure layers).
-For each `.py`, parse via `ast`, extract `__all__`, then
-inspect each top-level FunctionDef whose name is in
-`__all__`. A function passes if EITHER:
+WHAT COUNTS AS PUBLIC IS NO LONGER `__all__` MEMBERSHIP.
+Ratified livespec v178 (`non-functional-requirements.md`
+§"ROP composition") makes a top-level function public only
+when it is CONSUMED ACROSS A BOUNDARY, measured FLEET-WIDE.
+`checks/_public_api_consumption` computes the forms a
+repo-local vantage can see; the consumer DECLARES the rest in
+`cross_repo_public_api` (SPECIFICATION v036), because a
+repo-local check structurally CANNOT see a sibling's import.
+The declaration is TIGHTENING-ONLY — it is UNIONED with the
+computed set, so an absent declaration removes nothing — and
+a declared entry that no longer resolves to a real top-level
+function FAILS the check rather than being carried forward.
+
+COMPLETENESS OF THAT DECLARATION IS NOT VERIFIED HERE, and a
+green run does NOT mean it is complete: whether a member's
+declared surface omits a name another member consumes is the
+central-vantage conformance row's obligation under v178's
+split-enforcement clause.
+
+The scan universe is still `pure_trees`-scoped; the
+CONSUMPTION universe is the git-derived first-party set from
+`resolve_check_universe()`, because a consumer of a pure-layer
+function generally lives outside the pure layer.
+
+For each `.py` in scope, parse via `ast` and inspect each
+top-level FunctionDef the criterion calls public. A function
+passes if EITHER:
 
 - Its return annotation's terminal name is `Result` or
   `IOResult` (also matching `Result[...]` / `IOResult[...]`
@@ -32,8 +52,8 @@ document this repo treats as reference-only, and appear nowhere
 in any `SPECIFICATION/`.
 
 Package-private modules (filename matching `_*.py`) are
-skipped, and a `_`-prefixed FUNCTION name is not public even
-when listed in `__all__` (see `_is_public_name`).
+skipped, and a `_`-prefixed FUNCTION name is not public
+however it is reached — v178 clause 0 (see `_is_public_name`).
 
 Output discipline: per spec, `print` (T20) and
 `sys.stderr.write` (`check-no-write-direct`) are banned in
@@ -47,6 +67,7 @@ from __future__ import annotations
 import ast
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -54,6 +75,11 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling.checks._public_api_consumption import (  # noqa: E402
+    declared_public_names,
+    repo_local_public_names,
+    stale_declarations,
+)
 from livespec_dev_tooling.checks._role_key_gate import (  # noqa: E402
     ensure_declared_paths_contain_python,
     role_absence_exit_code,
@@ -61,8 +87,14 @@ from livespec_dev_tooling.checks._role_key_gate import (  # noqa: E402
 from livespec_dev_tooling.config import (  # noqa: E402
     iter_py_files,
     load_config,
+    resolve_check_universe,
     role_trees,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from livespec_dev_tooling.config import Config
 
 __all__: list[str] = []
 
@@ -84,22 +116,6 @@ def _annotation_head_name(*, annotation: ast.expr) -> str:
     rendered = ast.unparse(annotation)
     head = rendered.split("[", maxsplit=1)[0]
     return head.rsplit(".", maxsplit=1)[-1]
-
-
-def _all_value_names(*, tree: ast.Module) -> list[str]:
-    for node in tree.body:
-        if (
-            isinstance(node, ast.AnnAssign)
-            and isinstance(node.target, ast.Name)
-            and node.target.id == "__all__"
-            and isinstance(node.value, ast.List)
-        ):
-            return [
-                elt.value
-                for elt in node.value.elts
-                if isinstance(elt, ast.Constant) and isinstance(elt.value, str)
-            ]
-    return []
 
 
 def _is_railway_compliant(*, func: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
@@ -171,23 +187,19 @@ def _is_exempt_supervisor(
 
 
 def _is_public_name(*, name: str) -> bool:
-    """True iff `name` is PUBLIC API — a leading underscore is DECISIVE.
+    """True iff `name` survives v178 CLAUSE 0 — a leading underscore is DECISIVE.
 
-    The ratified rule binds "every PUBLIC function's return annotation",
-    and PEP 8 makes a leading underscore the marker of a non-public name.
-    `__all__` membership alone is NOT sufficient: several modules in this
-    repo list `_`-prefixed helpers in `__all__` purely so their tests may
-    import them. `checks/check_mutation.py` is the clearest case — its
-    `__all__` holds six `_`-prefixed helpers and does not list `main` at
-    all, so there `__all__` is a test-visibility declaration rather than
-    a public-API one.
+    Clause 0 of the ratified criterion disqualifies a `_`-prefixed name
+    outright, regardless of `__all__` membership or of any consumption
+    below it. Consumers legitimately list private helpers in `__all__` so
+    their tests may import them; `checks/check_mutation.py` is the
+    clearest case — its `__all__` holds six `_`-prefixed helpers and does
+    not list `main` at all.
 
-    State the tension precisely rather than pretending it is absent:
-    `__all__` IS Python's explicit export declaration, so on a strict
-    reading a name in it is public BY DECLARATION. The rule adopted here
-    is that the underscore WINS, because the alternative reports a
-    private helper as unrailed public API — a false positive of exactly
-    the kind an unwired exemption would have produced.
+    This is the ONE place `__all__` used to decide publicness and no
+    longer does. v178 replaced membership with CONSUMED ACROSS A
+    BOUNDARY; `_public_api_consumption` computes that, and clause 0
+    remains as a disqualifier layered on top of it.
     """
     return not name.startswith("_")
 
@@ -197,15 +209,23 @@ def _find_offenders(
     source: str,
     rel_path: Path,
     commands_trees: tuple[Path, ...],
+    public_names: frozenset[str],
     supervisor_entry_files: tuple[Path, ...] = (),
 ) -> list[tuple[int, str]]:
+    """Offending top-level functions in `source`, given this file's PUBLIC names.
+
+    `public_names` is the v178 answer for THIS file — computed by
+    `_public_api_consumption` from the repo's own consumption graph and the
+    consumer's `cross_repo_public_api` declaration. It replaces the
+    `__all__`-membership proxy, which was false for this repo at scale: 25 of
+    31 reported offenders were `__all__` members no boundary ever crossed.
+    """
     tree = ast.parse(source)
-    declared = set(_all_value_names(tree=tree))
     out: list[tuple[int, str]] = []
     for node in tree.body:
         if (
             isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
-            and node.name in declared
+            and node.name in public_names
             and _is_public_name(name=node.name)
             and not _is_railway_compliant(func=node)
             and not _is_exempt_supervisor(
@@ -217,6 +237,42 @@ def _find_offenders(
         ):
             out.append((node.lineno, node.name))
     return out
+
+
+def _scan(
+    *,
+    cwd: Path,
+    pure_trees: tuple[Path, ...],
+    config: Config,
+    sources: Mapping[Path, str],
+) -> list[tuple[Path, int, str]]:
+    """Offenders across the scanned trees, given the repo's consumption universe.
+
+    Two universes meet here and they are NOT the same set. The SCANNED universe
+    is `pure_trees`; the CONSUMPTION universe is `sources`, the git-derived
+    first-party set. A consumer of a pure-layer function generally lives
+    outside the pure layer, so deriving consumption from the scanned trees
+    alone would miss most of it — and missing consumption is the RELAXING
+    direction.
+    """
+    public = repo_local_public_names(sources=sources) | declared_public_names(
+        declared=config.cross_repo_public_api, sources=sources
+    )
+    offenders: list[tuple[Path, int, str]] = []
+    for tree_rel in pure_trees:
+        for py_file in iter_py_files(root=cwd / tree_rel):
+            if py_file.name.startswith("_"):
+                continue
+            rel_path = py_file.relative_to(cwd)
+            for lineno, name in _find_offenders(
+                source=py_file.read_text(encoding="utf-8"),
+                rel_path=rel_path,
+                commands_trees=config.commands_trees,
+                public_names=frozenset(n for p, n in public if p == rel_path),
+                supervisor_entry_files=config.supervisor_entry_files,
+            ):
+                offenders.append((rel_path, lineno, name))
+    return offenders
 
 
 def main() -> int:
@@ -249,20 +305,19 @@ def main() -> int:
         check_id="public_api_result_typed",
     ):
         return 1
-    offenders: list[tuple[Path, int, str]] = []
-    for tree_rel in pure_trees:
-        for py_file in iter_py_files(root=cwd / tree_rel):
-            if py_file.name.startswith("_"):
-                continue
-            source = py_file.read_text(encoding="utf-8")
-            rel_path = py_file.relative_to(cwd)
-            for lineno, name in _find_offenders(
-                source=source,
-                rel_path=rel_path,
-                commands_trees=config.commands_trees,
-                supervisor_entry_files=config.supervisor_entry_files,
-            ):
-                offenders.append((rel_path, lineno, name))
+    root, universe = resolve_check_universe()
+    sources = {rel: (root / rel).read_text(encoding="utf-8") for rel in universe}
+    stale = stale_declarations(declared=config.cross_repo_public_api, sources=sources)
+    if stale:
+        for entry in stale:
+            log.error(
+                "declared cross_repo_public_api entry no longer resolves to a public function",
+                file=str(entry.file),
+                function=entry.function,
+                reason=entry.reason,
+            )
+        return 1
+    offenders = _scan(cwd=cwd, pure_trees=pure_trees, config=config, sources=sources)
     if offenders:
         for path, lineno, name in offenders:
             log.error(
