@@ -9,6 +9,14 @@ fleet-conformance failure. Exercised across pass (a non-empty harnesses
 object), error-finding (harnesses absent / empty / not an object), and
 skip (file unreadable, unparseable, or non-object root) through a
 canned-response `FleetContext` (no network, no real `gh`).
+
+The acceptance-mode row is the module's second declaration obligation. It
+asserts the member DECLARES `dispatcher.acceptance_mode` explicitly, not
+that it declares any particular value: a repo that deliberately chooses
+`ai-then-human` still passes, while a repo that says nothing does not. The
+distinction is the whole point — the resolver's default is
+`ai-then-human`, so silence is indistinguishable from a choice, which is
+how five governed repos drifted off the fleet standard un-noticed.
 """
 
 from __future__ import annotations
@@ -23,7 +31,9 @@ from livespec_dev_tooling.fleet._context import (
     RowSkip,
 )
 from livespec_dev_tooling.fleet._rows_baseline import (
+    ACCEPTANCE_MODES,
     LIVESPEC_JSONC_PATH,
+    assert_acceptance_mode_declared,
     assert_baseline_harnesses,
 )
 
@@ -185,6 +195,129 @@ def test_genuine_master_absence_finds_even_when_default_branch_carries_the_file(
         }
     )
     outcome = assert_baseline_harnesses(ctx=ctx, member=_MEMBER)
+    assert isinstance(outcome, RowFinding)
+    assert outcome.severity == "error"
+    assert ".livespec.jsonc" in outcome.message
+
+
+def _config(*, plugin: str = '"acme-orchestrator"', block: str = "") -> str:
+    """A `.livespec.jsonc` naming an impl plugin, with `block` as that plugin's body."""
+    return (
+        "// hermetic test config\n"
+        "{\n"
+        f'  "implementation": {{ "plugin": {plugin} }},\n'
+        f'  "acme-orchestrator": {{{block}}}\n'
+        "}\n"
+    )
+
+
+def test_acceptance_modes_are_the_three_resolver_policies() -> None:
+    # Lockstep with `_dispatcher_policy_settings._ACCEPTANCE_POLICIES`: a value
+    # outside this set is not a choice, it silently falls back to the default.
+    assert frozenset({"ai-only", "ai-then-human", "human-only"}) == ACCEPTANCE_MODES
+
+
+def test_declared_acceptance_mode_passes() -> None:
+    jsonc = _config(block='\n    "dispatcher": { "acceptance_mode": "ai-only" }\n  ')
+    ctx = make_context(table={_JSONC_ARGS: _ok(text=jsonc)})
+    assert assert_acceptance_mode_declared(ctx=ctx, member=_MEMBER) == RowPass()
+
+
+def test_deliberate_non_fleet_standard_value_still_passes() -> None:
+    # The row asserts DECLARATION, never a particular value. A repo that
+    # deliberately chooses `ai-then-human` (as livespec-console-beads-fabro did
+    # on 2026-07-21, with a recorded reason) must not be forced off its choice
+    # by a check whose purpose is only to make SILENCE impossible.
+    jsonc = _config(block='\n    "dispatcher": { "acceptance_mode": "ai-then-human" }\n  ')
+    ctx = make_context(table={_JSONC_ARGS: _ok(text=jsonc)})
+    assert assert_acceptance_mode_declared(ctx=ctx, member=_MEMBER) == RowPass()
+
+
+def test_dispatcher_block_without_acceptance_mode_is_error_finding() -> None:
+    jsonc = _config(block='\n    "dispatcher": { "wip_cap": 5 }\n  ')
+    ctx = make_context(table={_JSONC_ARGS: _ok(text=jsonc)})
+    outcome = assert_acceptance_mode_declared(ctx=ctx, member=_MEMBER)
+    assert isinstance(outcome, RowFinding)
+    assert outcome.severity == "error"
+    assert "widget" in outcome.message
+    assert "acceptance_mode" in outcome.message
+
+
+def test_absent_dispatcher_block_is_error_finding() -> None:
+    ctx = make_context(table={_JSONC_ARGS: _ok(text=_config())})
+    outcome = assert_acceptance_mode_declared(ctx=ctx, member=_MEMBER)
+    assert isinstance(outcome, RowFinding)
+    assert outcome.severity == "error"
+
+
+def test_unknown_acceptance_mode_value_is_error_finding() -> None:
+    # The resolver accepts only the three known policies and silently returns
+    # its default for anything else, so a typo reads as a declaration while
+    # behaving as an omission. That is the exact failure this row exists for.
+    jsonc = _config(block='\n    "dispatcher": { "acceptance_mode": "ai_only" }\n  ')
+    ctx = make_context(table={_JSONC_ARGS: _ok(text=jsonc)})
+    outcome = assert_acceptance_mode_declared(ctx=ctx, member=_MEMBER)
+    assert isinstance(outcome, RowFinding)
+    assert outcome.severity == "error"
+    assert "ai_only" in outcome.message
+
+
+def test_missing_implementation_plugin_is_error_finding_not_a_vacuous_skip() -> None:
+    # No impl-plugin block means the dispatcher settings have no home at all.
+    # Skipping here would be a vacuous pass: dropping `implementation.plugin`
+    # would silently buy exemption from the row.
+    ctx = make_context(table={_JSONC_ARGS: _ok(text='{\n  "template": "livespec"\n}\n')})
+    outcome = assert_acceptance_mode_declared(ctx=ctx, member=_MEMBER)
+    assert isinstance(outcome, RowFinding)
+    assert outcome.severity == "error"
+    assert "implementation.plugin" in outcome.message
+
+
+def test_named_plugin_block_absent_is_error_finding() -> None:
+    # `implementation.plugin` names a block the document does not carry, so the
+    # dispatcher settings have nowhere to live.
+    jsonc = '{\n  "implementation": { "plugin": "acme-orchestrator" }\n}\n'
+    ctx = make_context(table={_JSONC_ARGS: _ok(text=jsonc)})
+    outcome = assert_acceptance_mode_declared(ctx=ctx, member=_MEMBER)
+    assert isinstance(outcome, RowFinding)
+    assert outcome.severity == "error"
+
+
+def test_non_object_dispatcher_is_error_finding() -> None:
+    jsonc = _config(block='\n    "dispatcher": "nope"\n  ')
+    ctx = make_context(table={_JSONC_ARGS: _ok(text=jsonc)})
+    outcome = assert_acceptance_mode_declared(ctx=ctx, member=_MEMBER)
+    assert isinstance(outcome, RowFinding)
+    assert outcome.severity == "error"
+
+
+def test_non_string_implementation_plugin_is_error_finding() -> None:
+    jsonc = '{\n  "implementation": { "plugin": 7 }\n}\n'
+    ctx = make_context(table={_JSONC_ARGS: _ok(text=jsonc)})
+    outcome = assert_acceptance_mode_declared(ctx=ctx, member=_MEMBER)
+    assert isinstance(outcome, RowFinding)
+    assert outcome.severity == "error"
+
+
+def test_acceptance_mode_row_skips_unparseable_config() -> None:
+    ctx = make_context(table={_JSONC_ARGS: _ok(text="{ not valid json ::: ")})
+    assert isinstance(assert_acceptance_mode_declared(ctx=ctx, member=_MEMBER), RowSkip)
+
+
+def test_acceptance_mode_row_skips_non_object_root() -> None:
+    ctx = make_context(table={_JSONC_ARGS: _ok(text="[1, 2, 3]\n")})
+    assert isinstance(assert_acceptance_mode_declared(ctx=ctx, member=_MEMBER), RowSkip)
+
+
+def test_acceptance_mode_row_skips_when_absence_is_unprovable() -> None:
+    # can't-read-is-not-absent, shared with the harnesses row.
+    ctx = make_context(table={})
+    assert isinstance(assert_acceptance_mode_declared(ctx=ctx, member=_MEMBER), RowSkip)
+
+
+def test_acceptance_mode_row_reports_genuinely_absent_config() -> None:
+    ctx = make_context(table={_TREE_ARGS: _tree(paths=("README.md", "justfile"))})
+    outcome = assert_acceptance_mode_declared(ctx=ctx, member=_MEMBER)
     assert isinstance(outcome, RowFinding)
     assert outcome.severity == "error"
     assert ".livespec.jsonc" in outcome.message

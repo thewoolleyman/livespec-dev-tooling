@@ -34,7 +34,10 @@ from livespec_dev_tooling.fleet._contract_model import (
     RowFn,
 )
 from livespec_dev_tooling.fleet._reconcile import reconcile_shim_workflows
-from livespec_dev_tooling.fleet._rows_baseline import assert_baseline_harnesses
+from livespec_dev_tooling.fleet._rows_baseline import (
+    assert_acceptance_mode_declared,
+    assert_baseline_harnesses,
+)
 from livespec_dev_tooling.fleet._rows_beads import assert_tenant_connection_consistency
 from livespec_dev_tooling.fleet._rows_claude_plugin import assert_claude_plugin_currency
 from livespec_dev_tooling.fleet._rows_files import (
@@ -228,6 +231,19 @@ OBLIGATION_ROWS: tuple[ObligationRow, ...] = (
         manual_hint=(
             "declare a non-empty `harnesses` object in .livespec.jsonc (Conformance "
             "Pattern concern #2 cross-harness plugin-resolution; zs22.7.7 M6)"
+        ),
+    ),
+    # The sibling of the row above, and the same kind of obligation: state the
+    # decision instead of leaving a default to stand in for one. Silence here is
+    # what let five governed repos sit off the fleet acceptance standard
+    # un-noticed until 2026-07-29.
+    _manual_committed_file_row(
+        row_id="acceptance-mode-declared",
+        assert_member=assert_acceptance_mode_declared,
+        manual_hint=(
+            "declare `dispatcher.acceptance_mode` explicitly in the .livespec.jsonc "
+            "impl-plugin block (one of ai-only / ai-then-human / human-only); the value is "
+            "the repo's own call, but omitting it silently inherits the ai-then-human default"
         ),
     ),
 )
