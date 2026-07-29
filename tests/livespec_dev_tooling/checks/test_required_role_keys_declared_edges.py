@@ -4,11 +4,18 @@ from __future__ import annotations
 
 import inspect
 import json
+import sys
 from pathlib import Path
 
 import pytest
 
 from livespec_dev_tooling.checks import required_role_keys_declared as check
+
+_VENDOR_DIR = Path(check.__file__).resolve().parent.parent / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
+
+from returns.io import IOSuccess  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
 __all__: list[str] = []
 
@@ -51,6 +58,32 @@ def test_layout_dependent_slugs_are_injected_rather_than_walked() -> None:
     )
 
     assert status.wired_layout_dependent_checks == ("check-alpha",)
+
+
+def test_layout_dependent_check_slugs_is_railway_typed() -> None:
+    """The walker is on the railway, because injection made it cross a module boundary.
+
+    Injecting the slug set into `classify_role_key_declarations` moved the filesystem
+    walk one frame out — and made `layout_dependent_check_slugs` PUBLIC under ratified
+    v178 clause 1, since `fleet/_rows_required_role_keys.py` now imports it. So the
+    violation did not vanish; it RELOCATED onto the function that actually does the I/O,
+    which is where the rule wants it and where it can honestly be typed.
+
+    `@impure_safe(exceptions=(OSError,))` is the sanctioned lift for this shape: the raw
+    exception IS the payload and the whole body is the seam.
+
+    NOTE FOR CALL SITES — the fail-open trap this nearly walked into. Unwrapping with
+    `value_or(())` would hand the classifier an EMPTY layout-dependent set, which reads
+    as "no layout-dependent checks wired", which is an EXCLUSION, which PASSES. An I/O
+    error would silently turn the check green. That is the same fail-stale shape as a
+    `None`-guard that stops guarding: the failure does not surface, it just stops being
+    checked. Both call sites therefore fail CLOSED instead.
+    """
+    outcome = check.layout_dependent_check_slugs()
+
+    assert isinstance(
+        outcome, IOSuccess
+    ), f"layout_dependent_check_slugs must return an IOResult; got {type(outcome).__name__}"
 
 
 def test_parser_edges_are_layout_independent_exclusions() -> None:
