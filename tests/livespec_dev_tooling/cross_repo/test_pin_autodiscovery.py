@@ -22,9 +22,27 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+from returns.unsafe import unsafe_perform_io
+
 from livespec_dev_tooling.cross_repo import pin_autodiscovery
 
 __all__: list[str] = []
+
+
+def _walk(*, root: Path, source_repo: str | None = None) -> list[dict[str, str]]:
+    """The walk's records, failing loud if a pin file could not be READ.
+
+    `discover` returns `IOResult` since livespec-dev-tooling-9sl0. Every
+    test below drives readable fixtures, so `.unwrap()` is the right
+    accessor: an unexpected read failure raises here instead of degrading
+    to an empty record list, which is the shape that reads as "this repo
+    carries no pins" and would make a broken walk look like a passing one.
+    The `unreadable` sibling file pins the failure track itself.
+    """
+    return unsafe_perform_io(
+        pin_autodiscovery.discover(root=root, source_repo=source_repo).unwrap()
+    )
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -38,7 +56,7 @@ _MODULE_PATH = _REPO_ROOT / "livespec_dev_tooling" / "cross_repo" / "pin_autodis
 
 def test_discover_empty_repo_yields_no_records(*, tmp_path: Path) -> None:
     """A consumer repo with none of the pin files yields zero records."""
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    result = _walk(root=tmp_path, source_repo=None)
     assert result == []
 
 
@@ -82,7 +100,7 @@ def test_discover_all_four_pin_formats_coexisting(*, tmp_path: Path) -> None:
         "    uses: owner/sibling-repo/.github/workflows/reusable.yml@v0.1.0\n",
         encoding="utf-8",
     )
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    result = _walk(root=tmp_path, source_repo=None)
     formats = sorted(r["pin_format"] for r in result)
     assert formats == [
         "github_workflow_uses_ref",
@@ -126,7 +144,7 @@ def test_discover_multiple_pin_formats_coexisting(*, tmp_path: Path) -> None:
         "_commit: v0.4.0\n_src_path: https://github.com/o/baz-template\n",
         encoding="utf-8",
     )
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    result = _walk(root=tmp_path, source_repo=None)
     formats = sorted(r["pin_format"] for r in result)
     assert formats == [
         "livespec_jsonc_compat_pinned",
@@ -144,7 +162,7 @@ def test_discover_multiple_pins_same_format(*, tmp_path: Path) -> None:
         'baz = { git = "https://github.com/o/baz", tag = "v3" }\n',
         encoding="utf-8",
     )
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    result = _walk(root=tmp_path, source_repo=None)
     assert len(result) == 3
     pin_keys = sorted(r["pin_key"] for r in result)
     assert pin_keys == ["bar", "baz", "foo"]
@@ -268,9 +286,19 @@ def test_module_importable_without_running_main() -> None:
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    assert callable(module.main)
-    assert callable(module.discover)
+    # Registering BEFORE `exec_module` is the documented importlib idiom, and
+    # it became load-bearing when the module gained a `@dataclass`:
+    # `dataclasses` resolves the defining module through
+    # `sys.modules[cls.__module__]`, so an unregistered module makes the
+    # decorator itself raise. Removed afterwards so the synthetic name does
+    # not leak into another test's import graph.
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+        assert callable(module.main)
+        assert callable(module.discover)
+    finally:
+        del sys.modules[spec.name]
 
 
 # ---------------------------------------------------------------------------
@@ -295,7 +323,7 @@ def _write_codex_acp_dockerfile(*, root: Path, version: str) -> None:
 def test_discover_codex_acp_arg_emits_record(*, tmp_path: Path) -> None:
     """The `docker/fabro-sandbox/agent/Dockerfile` ARG line emits one codex-acp record."""
     _write_codex_acp_dockerfile(root=tmp_path, version="0.16.0")
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    result = _walk(root=tmp_path, source_repo=None)
     assert len(result) == 1
     record = result[0]
     assert record["pin_format"] == "codex_acp_docker_arg"
@@ -307,7 +335,7 @@ def test_discover_codex_acp_arg_emits_record(*, tmp_path: Path) -> None:
 
 def test_discover_codex_acp_arg_absent_yields_nothing(*, tmp_path: Path) -> None:
     """A consumer repo without the agent-layer Dockerfile yields no codex-acp record."""
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    result = _walk(root=tmp_path, source_repo=None)
     assert result == []
 
 
@@ -316,14 +344,14 @@ def test_discover_codex_acp_dockerfile_without_arg_yields_nothing(*, tmp_path: P
     dockerfile = tmp_path.joinpath(*_CODEX_ACP_DOCKERFILE_PARTS)
     dockerfile.parent.mkdir(parents=True)
     _ = dockerfile.write_text("FROM buildpack-deps:noble\nRUN echo hi\n", encoding="utf-8")
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    result = _walk(root=tmp_path, source_repo=None)
     assert result == []
 
 
 def test_discover_codex_acp_source_repo_filter_match(*, tmp_path: Path) -> None:
     """`--source-repo zed-industries/codex-acp` includes the codex-acp record."""
     _write_codex_acp_dockerfile(root=tmp_path, version="0.16.0")
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo="zed-industries/codex-acp")
+    result = _walk(root=tmp_path, source_repo="zed-industries/codex-acp")
     assert len(result) == 1
     assert result[0]["pin_format"] == "codex_acp_docker_arg"
     assert result[0]["source_repo"] == "zed-industries/codex-acp"
@@ -337,5 +365,26 @@ def test_discover_codex_acp_source_repo_filter_fleet_no_match(*, tmp_path: Path)
     rewrite it — a `sibling-released` bump can never touch CODEX_ACP_VERSION.
     """
     _write_codex_acp_dockerfile(root=tmp_path, version="0.16.0")
-    result = pin_autodiscovery.discover(root=tmp_path, source_repo="livespec-dev-tooling")
+    result = _walk(root=tmp_path, source_repo="livespec-dev-tooling")
     assert result == []
+
+
+def test_main_fails_loud_and_writes_nothing_when_a_pin_file_cannot_be_read(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An unreadable pin file exits 1 with an EMPTY stdout, never `[]`.
+
+    The empty-stdout assertion is the load-bearing half. Emitting `[]` here
+    would be indistinguishable from a repo that genuinely carries no pins,
+    and every consumer of this stdout reads "no records" as "nothing to
+    bump" — so one unreadable file would silently skip a consumer in a
+    release fan-out. Asserting only the exit code would pass against exactly
+    that bug, since a caller piping stdout does not look at it.
+    """
+    _ = (tmp_path / ".livespec.jsonc").write_bytes(b'{"a": "\xff\xfe"}')
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "argv", ["pin-autodiscovery"])
+
+    exit_code = pin_autodiscovery.main()
+
+    assert exit_code == 1 and capsys.readouterr().out == ""

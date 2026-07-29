@@ -9,24 +9,36 @@ formats.
 
 from __future__ import annotations
 
+import sys
 import tempfile
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, cast
 
-from livespec_dev_tooling.cross_repo.bump_pr_supersession import (
+_VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
+
+from returns.io import IOFailure, IOResult  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
+
+from livespec_dev_tooling.cross_repo.bump_pr_supersession import (  # noqa: E402
     OpenBumpPullRequest,
     parse_open_bump_prs,
 )
-from livespec_dev_tooling.cross_repo.pin_autodiscovery import discover
-from livespec_dev_tooling.cross_repo.pin_staleness import denotes_same_release
-from livespec_dev_tooling.fleet._context import (
+from livespec_dev_tooling.cross_repo.pin_autodiscovery import (  # noqa: E402
+    PinFileUnreadable,
+    discover,
+)
+from livespec_dev_tooling.cross_repo.pin_staleness import denotes_same_release  # noqa: E402
+from livespec_dev_tooling.fleet._context import (  # noqa: E402
     FleetContext,
     FleetMember,
     RowFinding,
     RowOutcome,
     RowPass,
+    RowSkip,
 )
 
 __all__: list[str] = [
@@ -251,23 +263,42 @@ def _finding_message(
 
 def _records_for(
     *, ctx: FleetContext, member: FleetMember, spec: PinCurrencySpec
-) -> tuple[PinRecord, ...]:
+) -> IOResult[tuple[PinRecord, ...], PinFileUnreadable]:
     candidate_paths = _candidate_paths_for(tree_paths=ctx.tree(repo=member.repo).paths, spec=spec)
     with tempfile.TemporaryDirectory() as tmpdir:
         root = Path(tmpdir)
         _materialize_files(ctx=ctx, member=member, root=root, candidate_paths=candidate_paths)
-        return tuple(
-            _record_from_raw(raw=raw)
-            for raw in discover(root=root, source_repo=None)
-            if raw["pin_format"] == spec.pin_format
+        return discover(root=root, source_repo=None).map(
+            lambda raws: tuple(
+                _record_from_raw(raw=raw) for raw in raws if raw["pin_format"] == spec.pin_format
+            )
         )
 
 
 def _pin_currency_outcome(
     *, ctx: FleetContext, member: FleetMember, spec: PinCurrencySpec
 ) -> RowOutcome:
-    records = _records_for(ctx=ctx, member=member, spec=spec)
-    stale = _stale_pins(ctx=ctx, records=records)
+    walked = _records_for(ctx=ctx, member=member, spec=spec)
+    if isinstance(walked, IOFailure):
+        # A can't-read SKIPS rather than passing or failing — §"Pin-currency
+        # severity policy": "a can't-read is not a violation". The skip is not
+        # free: if every applicable member skips, the row is BLIND, which this
+        # repo already treats as error severity. Before the conversion this
+        # input reached no decision at all — the raise propagated and killed
+        # the whole sweep partway through.
+        unreadable = unsafe_perform_io(walked.failure())
+        return RowSkip(
+            reason=(
+                f"{spec.pin_format} pins unreadable in {member.repo}: "
+                f"{unreadable.file_path} ({unreadable.detail})"
+            )
+        )
+    # `unsafe_perform_io` and not `.unwrap()` alone: `IOResult.unwrap()` yields
+    # an `IO[T]`, and `for record in IO(())` raises here rather than silently
+    # iterating — but the sibling spellings of this mistake do NOT fail loudly
+    # (see `required_role_keys_declared`), so the correct form is used rather
+    # than the one that happens to be caught.
+    stale = _stale_pins(ctx=ctx, records=unsafe_perform_io(walked.unwrap()))
     if stale is None:
         return RowPass(note="pin records present; freshness unverified (latest release unreadable)")
     if not stale:

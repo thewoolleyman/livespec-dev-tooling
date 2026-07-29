@@ -36,7 +36,10 @@ if str(_VENDOR_DIR) not in sys.path:
 import jsoncomment  # noqa: E402  — vendor-path-aware import after sys.path insert.
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
-from livespec_dev_tooling.cross_repo._pin_directory_scan_formats import record  # noqa: E402
+from livespec_dev_tooling.cross_repo._pin_directory_scan_formats import (  # noqa: E402
+    read_pin_text,
+    record,
+)
 
 __all__: list[str] = [
     "walk_livespec_jsonc",
@@ -67,7 +70,7 @@ def walk_livespec_jsonc(
     if not path.is_file():
         return []
     rel_path = _LIVESPEC_JSONC
-    text = path.read_text(encoding="utf-8")
+    text = read_pin_text(path=path)
     try:
         parsed = jsoncomment.loads(text)
     except (ValueError, json.JSONDecodeError):
@@ -152,7 +155,7 @@ def walk_pyproject_toml(
     if not path.is_file():
         return []
     rel_path = _PYPROJECT_TOML
-    text = path.read_text(encoding="utf-8")
+    text = read_pin_text(path=path)
     block = _extract_uv_sources_block(text=text)
     if block is None:
         return []
@@ -203,7 +206,7 @@ def walk_vendor_jsonc(
     if not path.is_file():
         return []
     rel_path = _VENDOR_JSONC
-    text = path.read_text(encoding="utf-8")
+    text = read_pin_text(path=path)
     try:
         parsed = jsoncomment.loads(text)
     except (ValueError, json.JSONDecodeError):

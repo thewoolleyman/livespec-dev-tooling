@@ -36,6 +36,7 @@ exactly one place.
 
 from __future__ import annotations
 
+import errno
 import re
 import sys
 from pathlib import Path
@@ -47,6 +48,7 @@ if str(_VENDOR_DIR) not in sys.path:
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
 __all__: list[str] = [
+    "read_pin_text",
     "record",
     "walk_codex_acp_docker_arg",
     "walk_fabro_workflow_docker",
@@ -71,6 +73,34 @@ _FABRO_WORKFLOW_DIRS: tuple[tuple[str, ...], ...] = (
     (".claude-plugin", ".fabro", "workflows"),
     (".fabro", "workflows"),
 )
+
+
+def read_pin_text(*, path: Path) -> str:
+    """`path`'s UTF-8 text, with a decode failure re-raised CARRYING the path.
+
+    THE ONE READER every walker uses, in both walker modules. It exists for
+    a single reason: `UnicodeDecodeError` carries the offending BYTES and no
+    filename, so a decode failure escaping a walk could only ever be
+    reported against the walk ROOT — and the operator reading it is looking
+    at a materialized copy of ANOTHER repo's tree, where "some pin file did
+    not decode" is not something they can act on.
+
+    Re-raising it as an `OSError` with `EILSEQ` ("illegal byte sequence")
+    and the path in the `filename` slot is the stdlib's own way of saying
+    exactly this, and `filename` is the slot `pin_autodiscovery.discover`
+    reads when it turns a read failure into a failure-track value. A
+    `PermissionError` and every other `OSError` already populate that slot,
+    so after this the two flavors are indistinguishable to the caller —
+    which is the point.
+
+    A NEW `read_text` added to a walker without going through here would
+    reopen the hole silently, since the fallback it lands in is the weaker
+    root-named diagnostic.
+    """
+    try:
+        return path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as undecodable:
+        raise OSError(errno.EILSEQ, "pin file is not valid UTF-8", str(path)) from undecodable
 
 
 def record(
@@ -112,7 +142,7 @@ def walk_github_workflow_uses(
     yml_paths = sorted(list(workflows_dir.glob("*.yml")) + list(workflows_dir.glob("*.yaml")))
     for yml_path in yml_paths:
         rel_path = str(yml_path.relative_to(root))
-        text = yml_path.read_text(encoding="utf-8")
+        text = read_pin_text(path=yml_path)
         for line in text.splitlines():
             match = _WORKFLOW_USES_RE.match(line)
             if match is None:
@@ -158,7 +188,7 @@ def walk_fabro_workflow_docker(
             continue
         for toml_path in sorted(workflows_dir.glob("*/workflow.toml")):
             rel_path = str(toml_path.relative_to(root))
-            text = toml_path.read_text(encoding="utf-8")
+            text = read_pin_text(path=toml_path)
             # Find-ALL, not first-match-per-file: the contract's one-record-per-
             # matching-line rule binds the whole `fabro_sandbox_docker_image`
             # format, not only its `.github/workflows/` surface.
@@ -214,7 +244,7 @@ def walk_github_workflow_container_image(
     yml_paths = sorted(list(workflows_dir.glob("*.yml")) + list(workflows_dir.glob("*.yaml")))
     for yml_path in yml_paths:
         rel_path = str(yml_path.relative_to(root))
-        text = yml_path.read_text(encoding="utf-8")
+        text = read_pin_text(path=yml_path)
         for line in text.splitlines():
             match = _WORKFLOW_CONTAINER_IMAGE_RE.match(line)
             if match is None:
@@ -263,7 +293,7 @@ def walk_codex_acp_docker_arg(
     dockerfile = root.joinpath(*_CODEX_ACP_DOCKERFILE)
     if not dockerfile.is_file():
         return []
-    match = _CODEX_ACP_ARG_RE.search(dockerfile.read_text(encoding="utf-8"))
+    match = _CODEX_ACP_ARG_RE.search(read_pin_text(path=dockerfile))
     if match is None:
         return []
     _ = log
