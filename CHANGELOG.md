@@ -58,6 +58,18 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.10.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.9.0...v1.10.0) (2026-07-30)
+
+
+### Features
+
+* **fleet:** one archive read per member replaces ~653 per-file reads ([c24e8d4](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c24e8d47a12be419214f4db18d6881a4ba6e79e1))
+
+
+### Refactoring
+
+* **fleet:** extract the tree-state slice so the context can accept new reads ([5a6002b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5a6002bb1a92e5c2c62003cd90072555efb91c27))
+
 ## [1.9.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.8.4...v1.9.0) (2026-07-30)
 
 
