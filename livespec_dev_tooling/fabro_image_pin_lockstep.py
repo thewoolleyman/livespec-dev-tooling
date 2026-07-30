@@ -84,6 +84,15 @@ _MISE_LOCKSTEP_ARGS = (
 _PYTHON_LOCKSTEP_ARG = "PYTHON_VERSION"
 _GH_SUPPORTED_ARG = "GH_VERSION"
 _SUPPORTED_GH_VERSION = "2.96.0"
+_GH_KEYRING_PATH = "/etc/apt/keyrings/githubcli-archive-keyring.gpg"
+_GH_KEYRING_URL = "https://cli.github.com/packages/githubcli-archive-keyring.gpg"
+_GH_APT_SOURCE = (
+    "deb [arch=$(dpkg --print-architecture) signed-by="
+    + _GH_KEYRING_PATH
+    + "] https://cli.github.com/packages stable main"
+)
+_GH_PACKAGE_PIN = "gh=${GH_VERSION}"
+_GH_MISE_PIN = "gh@${GH_VERSION}"
 
 
 def _discover_layer_dockerfiles(*, cwd: Path) -> list[Path]:
@@ -131,6 +140,7 @@ def _lockstep_issues(
     dockerfile_args: dict[str, str],
     mise_tools: dict[str, str],
     python_version: str,
+    dockerfile_source: str,
 ) -> list[str]:
     """Compare the image-baked pins against the repo pins; return drift findings."""
     issues: list[str] = []
@@ -164,6 +174,25 @@ def _lockstep_issues(
             f"{_GH_SUPPORTED_ARG}: image bakes {image_gh!r} but "
             f"the supported GitHub CLI pin is {_SUPPORTED_GH_VERSION!r}"
         )
+    issues.extend(_gh_install_issues(dockerfile_source=dockerfile_source))
+    return issues
+
+
+def _gh_install_issues(*, dockerfile_source: str) -> list[str]:
+    issues: list[str] = []
+    if (
+        _GH_KEYRING_URL not in dockerfile_source
+        or _GH_KEYRING_PATH not in dockerfile_source
+        or _GH_APT_SOURCE not in dockerfile_source
+    ):
+        issues.append(
+            "GH_VERSION: gh apt source must be the signed cli.github.com repository "
+            f"{_GH_APT_SOURCE!r}"
+        )
+    if _GH_PACKAGE_PIN not in dockerfile_source:
+        issues.append(f"GH_VERSION: apt install must use the exact package pin {_GH_PACKAGE_PIN!r}")
+    if _GH_MISE_PIN in dockerfile_source:
+        issues.append("GH_VERSION: gh must not be installed by mise")
     return issues
 
 
@@ -196,13 +225,13 @@ def main() -> int:
         return 1
     mise_source = (cwd / _MISE_PATH).read_text(encoding="utf-8")
     python_source = (cwd / _PYTHON_VERSION_PATH).read_text(encoding="utf-8")
-    dockerfile_args = _parse_dockerfile_args(
-        sources=[path.read_text(encoding="utf-8") for path in layer_dockerfiles]
-    )
+    dockerfile_sources = [path.read_text(encoding="utf-8") for path in layer_dockerfiles]
+    dockerfile_args = _parse_dockerfile_args(sources=dockerfile_sources)
     issues = _lockstep_issues(
         dockerfile_args=dockerfile_args,
         mise_tools=_parse_mise_tools(source=mise_source),
         python_version=python_source.strip(),
+        dockerfile_source="\n".join(dockerfile_sources),
     )
     if issues:
         for issue in issues:
