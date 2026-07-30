@@ -419,8 +419,12 @@ ADDS, so sibling counts are unknown in BOTH directions — `oip9` is the first M
 confirmation that a sibling really can come out higher. Re-measure per repo; never quote
 the old numbers.
 
-**Foreign worktrees: EIGHT or more, not five.** The count in the HALT-first section is
-stale and grows. Enumerate every session; reap NONE.
+**Foreign worktrees: NEVER QUOTE A NUMBER — ENUMERATE.** The HALT-first section's "five"
+is stale, and the obvious repair of swapping in a bigger number is ALSO wrong: the count
+MOVES IN BOTH DIRECTIONS as sibling sessions open worktrees and reap their own after
+their PRs land. Measured on this one drive: **seven** foreign at its start, **six** an
+hour later. A supervisor who inherits a number will act on a stale one; a supervisor who
+runs `git worktree list` never can. Reap NONE of them regardless.
 
 **Live record:** `plan/rop-railway-enforcement/handoff.md` (the worker owns it) and the
 ledger, which is authoritative over both files. Re-derive before acting.
@@ -560,6 +564,17 @@ Carried forward because they are role-level rather than track-level:
   operation. Guard the idle branch on no background shell running. Separately: **do not
   re-arm a watcher whose wake condition is already satisfied** — a push-keyed watcher
   reused after the push lands fires instantly, forever.
+
+- **I CORRECTED A STALE COUNT BY INVENTING A LARGER ONE.** Replacing the HALT-first
+  section's "five foreign worktrees", I wrote "EIGHT or more" — from an eyeballed list
+  whose first line is the PRIMARY checkout, so I had miscounted, and the true figures
+  were seven at the drive's start and six an hour later. **The direction was right and
+  the number was fabricated**, which is this thread's signature defect committed inside
+  the paragraph correcting a different instance of it, in the same commit that recorded
+  "a supervisor's replacement hypothesis is held to the same standard as the one it
+  replaced". The durable fix was not a better number but REMOVING the number: a quantity
+  that moves in both directions must be enumerated, never quoted. **When a stale figure
+  needs correcting, first ask whether the figure should exist at all.**
 
 - **A DUPLICATED PARAGRAPH IS THE PROSE-TWIN DEFECT WITH THE SERIAL NUMBERS FILED OFF.**
   Editing this very section, I left two copies of the retired-figures paragraph. Two
