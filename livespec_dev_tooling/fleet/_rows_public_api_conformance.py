@@ -18,18 +18,23 @@ a declaration when it is (1) consumed by ANOTHER member, (2) not declared, and
 demand declarations for names the local check already scopes — manufacturing
 work, which is the failure mode that discredits a row on its first real run.
 
-⛔ THIS ROW IS NOT YET REGISTERED IN `OBLIGATION_ROWS`, AND THAT IS DELIBERATE
-RATHER THAN FORGOTTEN. Registration is the step that makes it gate; Phase 3
-proved an unregistered row is walked by neither engine. It ships inert because
-the pre-registration measurement (2026-07-30, all nine members, 0 skipped —
+THIS ROW IS REGISTERED IN `OBLIGATION_ROWS` AS `cross-repo-public-api-declared`,
+and it SHIPPED UNREGISTERED FIRST — deliberately, not by oversight. The order is
+recorded because the reasoning binds any future central row, not because it is
+history. Registration is the step that makes a row gate; Phase 3 proved an
+unregistered one is walked by neither engine. The pre-registration measurement
+(2026-07-30, all nine members read, 0 skipped, 0 unparsed —
 `plan/rop-railway-enforcement/5cai-fleet-measurement.md`) found TWENTY genuine
 undeclared consumptions: NINE in `livespec-dev-tooling` and ELEVEN in
-`livespec-runtime`. Registering at error today fires both blocking modes — this
-repo's own failing row would fail the registering PR's OWN CI so it could not
-land, and the sibling's would break the scheduled sweep and the release fan-out
-preflight fleet-wide. The severity is NOT softened to get around that; the
-sequence is REMEDIATE-THEN-FLIP, this repo's own ratified doctrine (v034
-carve-out 1). See `livespec-dev-tooling-wdn7` and `-nkkv`.
+`livespec-runtime`. Registering at error THEN would have fired both blocking
+modes — this repo's own failing row makes `own_failing_rows` non-empty, so the
+registering PR's OWN CI fails and it cannot land; and the sibling's would have
+left this repo green while breaking the scheduled sweep and the release fan-out
+preflight fleet-wide. The severity was never softened to get around that. Both
+were remediated first (`livespec-dev-tooling-wdn7`, `-nkkv`) and the fleet
+re-measured over the SAME denominator — nine read, 0 skipped, 0 unparsed, 58
+edges examined, 0 findings — before the flip. REMEDIATE-THEN-FLIP, this repo's
+own ratified doctrine (v034 carve-out 1).
 
 WHAT THE ROW PUTS IN ITS OWN OUTPUT RATHER THAN IN THIS DOCSTRING, because an
 operator reads the finding and not the source:
