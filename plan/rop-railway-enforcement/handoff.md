@@ -54,7 +54,13 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >    anything.** Measured on master `0788e93` with the shipped check: **25 dropped + 6 kept
 >    + 3 ADDED = 9**.
 >
->    **✅ `9sl0`, `rvw3` AND `q5lb` ARE ALL CLOSED. 🎯 THE TWO NUMBERS NOW AGREE AT 2.**
+>    **✅ `9sl0`, `rvw3`, `q5lb` AND `vzwa` ARE ALL CLOSED. 🎯🎯 THE TWO NUMBERS NOW AGREE AT
+>    **ZERO**.** Re-measured on the conversion branch with the shipped code: universe **150**,
+>    v178 public **167**, member-1 exempt **381**, member-2 exempt **1**, **0 offenders** — and
+>    the ratified rule considers **0** a violation. **The remediation half of step 6 is DONE.**
+>    Arming now waits on `5cai` and the `995m` known-gap statement, and on NOTHING in the count.
+>
+>    **(superseded, kept because the 2 was quoted for a day)** THE TWO NUMBERS AGREE AT 2.
 >    Re-measured on merged master `2df1515` with the shipped code, never inherited: universe
 >    **149**, v178 public **167**, member-1 exempt **381**, member-2 exempt **1** (0 rejected,
 >    the two member sets verified DISJOINT), **2 offenders** — and the ratified rule considers
@@ -168,6 +174,59 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >      check reports **2**. A measurement that UNDER-applies a ratified exemption reads as "the
 >      repo is dirtier than it is" — **it would have restored the very number this pass
 >      retracted.** Mirror `_scan`, never approximate it.
+> 6m. **✅ `vzwa` IS CLOSED AND THE REPO MEASURES ZERO. Two PRs, consumer-first.**
+>    **livespec #1847** landed the dual-shape READ in all three cross-repo consumers; the
+>    dev-tooling PR then converted `canonical_check_slugs` and `world_gate_check_slugs` to
+>    `IOResult`. Consumer wiring FIRST, so the pin is free to move in either direction —
+>    including a REVERT, which a sequenced fix would not survive (`dx8l`'s cost).
+>
+>    **THE CONVERSION WAS NEVER THE POINT — REMOVING THE SENTINEL WAS.**
+>    `pkgutil.iter_modules` on a MISSING directory yields no entries rather than raising, so the
+>    old surface returned an EMPTY TUPLE and every consumer read it as "this repo has no
+>    canonical checks" — a PASS. **Typing it `IOResult` while still returning `IOSuccess(())`
+>    for an empty walk would have MOVED the sentinel rather than removed it.** So an empty walk
+>    is `ChecksPackageUnreadable` on the FAILURE track, and that track is genuinely inhabited:
+>    `canonical_checks.py` ships INSIDE the same installed package as `checks/`, so zero modules
+>    means a broken install, never a repo with no checks.
+>
+>    **⛔ THE DODGE, REFUSED BY NAME IN THE DOCSTRING SO IT CANNOT RETURN AS A CLEVER TIDY.**
+>    Hoisting the walk to a module-level constant (`_SLUGS = _discover_slugs(...)` at import
+>    time) would make the function MECHANICALLY TOTAL — clauses (c) and (d) analyse function
+>    bodies and callees, and a module-level assignment is in neither. The check would go GREEN
+>    and the result would be STRICTLY WORSE: the I/O moves where the analysis cannot see it, the
+>    failure becomes implicit again, and an import-time empty walk is MORE invisible than a
+>    call-time one.
+>
+>    **BOTH FUNCTIONS CONVERTED IN ONE PAIR, and the arithmetic is why.** Clause (d) couples
+>    them — `world_gate_check_slugs` is two hops from the walk — so a split PR would have
+>    measured **2 → 2** and read as a FAILED conversion. The outer function FORWARDS the failure
+>    rather than re-wrapping it: it adds no failure mode of its own, and two error types for one
+>    condition make a caller distinguish two things that are one thing.
+>
+>    **AND THE COST LANDED WHERE PREDICTED: the coverage, not the typing.** All SEVEN in-repo
+>    call sites use `unsafe_perform_io(...unwrap())`, fail-closed, and added **ZERO** uncovered
+>    lines — every one of the six touched modules stayed at 100%. The `#846` precedent is what
+>    makes that legitimate: the failure means the installed `checks/` package is unreadable,
+>    which is not a reachable state for a check running out of that same package, so a `match`
+>    arm could never be covered under a 100%-per-file gate. **`value_or(())` was refused at every
+>    site** — it is the fail-open the commit removes. Only `main()`'s new diagnostic branch needed
+>    a test, and it went in a `*_edges.py` sibling because the Red file is byte-identity-bound.
+>
+>    **🔴 TWO TRAPS PAID FOR HERE, both cheap to re-pay:**
+>    - **MY OWN CALL-SITE SURVEY WAS INCOMPLETE, AND I RECORDED IT AS COMPLETE.** It said "every
+>      in-repo call site, enumerated" and listed 6; there were **7**. The seventh
+>      (`checks/_ci_matrix_parse.py:145`) was cut off by a `head -20` on the grep that produced
+>      the list. **`check-types` caught it, not review.** This thread's own "read the callee, do
+>      not match the name" lesson recurring as "do not trust a TRUNCATED view" — inside the
+>      inventory written to prevent re-derivation. Re-run any survey without a pager limit.
+>    - **A `@dataclass` BREAKS EVERY TEST THAT LOADS THE MODULE VIA `spec_from_file_location`
+>      WITHOUT REGISTERING IT IN `sys.modules`.** Under `from __future__ import annotations`,
+>      `dataclasses` resolves field annotations through `sys.modules[cls.__module__]`; for an
+>      unregistered module that is `None` and the decorator dies with `'NoneType' object has no
+>      attribute '__dict__'` — **at import, so the traceback names the import and not the
+>      cause.** It broke 16 pre-existing tests in one file. The fix is one line
+>      (`sys.modules[spec.name] = module`). Expect this in every sibling whose tests use that
+>      loader idiom, which is most of them.
 > 6l. **📐 THREE SIBLINGS RE-MEASURED, AND 6e's "UNKNOWN IN BOTH DIRECTIONS" IS NOW CONFIRMED
 >    RATHER THAN FEARED — ONE REPO GOES UP.** Taken 2026-07-30 from each repo's FORGE MASTER
 >    TARBALL, so no shared clone was touched, with the shipped post-v178/v179 criterion and each
@@ -235,7 +294,7 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >    | ~~`9sl0`~~ | ~~the 3 genuine violations~~ | **✅ CLOSED — #867, #870, #874** |
 >    | ~~`rvw3`~~ | ~~v179 member 1, the clause-(d) fixpoint~~ | **✅ CLOSED — #880, #883, #886** |
 >    | ~~`q5lb`~~ | ~~v179 member 2, the `total_absence_returns` key~~ | **✅ CLOSED — #891, #892, #895** |
->    | **`vzwa`** | the 2 GENUINE violations — **THE ONLY THING BETWEEN HERE AND ZERO** | **YES — START HERE, untriaged** |
+>    | ~~`vzwa`~~ | ~~the 2 genuine violations~~ | **✅ CLOSED — livespec #1847 + dev-tooling PR. The count is ZERO** |
 >    | **`5cai`** | the CENTRAL-vantage conformance row | **YES — binding, brief 30. Read `k76y` FIRST: it is 3 slices, not 1** |
 >    | **`0yfo`** → `995m` | decompose `config.py`, then flip the `@generated` predicate | only via 6f's known-gap statement |
 >
@@ -273,8 +332,11 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >    | ~~`721o`~~ (history) | ~~9~~ | ~~3~~ |
 >    | ~~`9sl0`~~ (history) | ~~7~~ | ~~0, RETRACTED — see 6i~~ |
 >    | ~~`rvw3`~~ (history) | ~~3~~ | ~~2~~ |
->    | **today, `q5lb` landed** | **2** | **2** — they AGREE |
->    | **`vzwa` fixes the two genuine violations** | **0** | **0** — then ARM |
+>    | ~~`q5lb` landed~~ | ~~2~~ | ~~2~~ |
+>    | **today, `vzwa` landed** | **0** | **0** — they AGREE AT ZERO |
+>
+>    **THE COUNT IS NO LONGER A GATE. `5cai` AND THE `995m` STATEMENT ARE.** Every row above was
+>    measured at both ends, never projected — including the `9sl0` row, which is a RETRACTION.
 >
 >    **The first three rows are kept rather than deleted because the `9sl0` row is a RETRACTION**
 >    — that 0 was a hand simulation and the shipped fixpoint disagreed. Deleting the row would
@@ -1544,7 +1606,7 @@ that shape into every remaining sibling wiring.**
    silent no-op that looks exactly like success. Invoke
    `.claude-plugin/scripts/bin/<command>.py` instead.
 
-### ▶️ EXACT NEXT ACTION — **`vzwa`, THEN `5cai`, THEN ARM. `q5lb` IS DONE AND THE NUMBERS AGREE AT 2.**
+### ▶️ EXACT NEXT ACTION — **`5cai`, THEN ARM. `vzwa` IS DONE AND THE COUNT IS ZERO.**
 
 **Start at `vzwa`. Nothing is mid-flight; nothing needs new authority** (briefs 30–33
 authorized `q5lb`, `5cai` and the arming sequence — an item boundary is a place to REPORT,
@@ -1636,6 +1698,18 @@ remembering those are now unknown in BOTH directions (6e) — report it, and **S
   measurement that UNDER-applies a ratified exemption reads as "the repo is dirtier than it is",
   and it would have restored the exact number the same pass had just retracted. Import the
   analyses the check imports and combine them the way `_scan` does.
+- **🔴 PROSE-TWIN INSTANCE 11 — AND IT WAS IN A LEDGER ITEM WRITTEN TO CORRECT A DEFECT.**
+  `livespec-dev-tooling-mmqe` was retitled, re-prioritised P0→P1 and re-scoped after its cause
+  was retracted — and its DESCRIPTION's first paragraph still asserted all three retracted
+  claims ("FAILING ON MASTER", "blocks EVERY pull request", "cannot be fixed from a PR"). A
+  reader opening the item got the wrong cause in the first sentence. **The tally now reads:
+  the ratified spec, four config headers, a diagnostic, a docstring, and the correction pass
+  itself.** The generalisation is the uncomfortable one: **an amendment that changes behavior
+  and leaves an authoritative statement of the old behavior standing is not a class of bug
+  this thread finds in other people's work — it is one this thread keeps committing.** When you
+  retract a cause, grep the artifact's OWN body and title for the retracted claim before
+  moving on; a status field, a title and a description are three surfaces, and fixing one is
+  the default failure.
 - **NEVER HAND-SIMULATE A FIXPOINT — RUN IT.** Clause (d) reaches transitively, so every clause
   a body-only reading CAN check may pass while the only clause that fails is the one it cannot.
   Measured twice: 1-of-6 wrong at `classify_role_key_declarations`, then **2-of-4 wrong** on the
