@@ -35,6 +35,11 @@ __all__: list[str] = []
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _CHECK = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "ci_matrix_completeness.py"
 
+# Env vars that change `ci_matrix_completeness`'s VERDICT rather than its behavior.
+# Cleared from every subprocess unless the test names one, so a test's expected exit
+# code cannot depend on the host that runs it.
+_AMBIENT_SEVERITY_VARS = ("LIVESPEC_FAIL_IF_CI_MATRIX_GAPS_EXIST",)
+
 
 def _run_check(
     *,
@@ -45,9 +50,28 @@ def _run_check(
     argv = [sys.executable, str(_CHECK)]
     if extra_argv is not None:
         argv.extend(extra_argv)
-    run_env: dict[str, str] | None = None
-    if env is not None:
-        run_env = {**os.environ, **env}
+    # ⛔ THE AMBIENT SEVERITY VARS ARE CLEARED UNLESS A TEST SETS THEM EXPLICITLY.
+    # `env=None` previously meant `run_env=None`, i.e. INHERIT the whole ambient
+    # environment — and this repo's CI sets
+    # `LIVESPEC_FAIL_IF_CI_MATRIX_GAPS_EXIST: "true"` for every `matrix.target` in
+    # the metadata job group. So the check under test flipped from warn (exit 0) to
+    # FAIL (exit 4) purely because of where it ran, and the 17 tests here that assert
+    # `returncode == 0` failed in CI while passing locally.
+    #
+    # It was LATENT, not new: that var has been set for the whole job group for some
+    # time, and `ci.yml` still asserts it is "Harmless for the other metadata legs —
+    # they do not read this var". That became FALSE once
+    # `check-check-coverage-incremental` began selecting this file, which happens
+    # whenever a change touches `ci_matrix_completeness.py`. A leg that SPAWNS the
+    # check reads the var transitively.
+    #
+    # Severity must be a property of the TEST, never of the host. The pass-through
+    # keeps everything the interpreter needs (PATH, HOME, venv vars) and removes only
+    # the flags that change the check's verdict.
+    run_env: dict[str, str] = {**os.environ, **(env or {})}
+    for var in _AMBIENT_SEVERITY_VARS:
+        if env is None or var not in env:
+            run_env.pop(var, None)
     return subprocess.run(
         argv,
         cwd=str(cwd),

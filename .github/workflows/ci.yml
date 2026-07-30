@@ -449,8 +449,14 @@ jobs:
           # now that this repo's matrices + ci-green are complete, flip
           # check-ci-matrix-completeness from warn (exit 0) to FAIL (exit 4),
           # so any future canonical slug wired into `just check` but dropped
-          # from CI reddens this leg instead of silently warning. Harmless
-          # for the other metadata legs — they do not read this var.
+          # from CI reddens this leg instead of silently warning.
+          # ⚠️ IT IS NOT HARMLESS FOR THE OTHER METADATA LEGS, and this comment
+          # asserted that it was. Any leg that SPAWNS check-ci-matrix-completeness
+          # reads this var transitively — `check-check-coverage-incremental` does,
+          # whenever a change touches `ci_matrix_completeness.py` and its test file
+          # enters the selection. That flipped 17 tests asserting exit 0 into exit 4
+          # in CI while they passed locally. The tests now clear it explicitly
+          # (`_AMBIENT_SEVERITY_VARS`); do not restore the "harmless" claim.
           LIVESPEC_FAIL_IF_CI_MATRIX_GAPS_EXIST: "true"
           # Arm the formatter-suppression guard (check-no-fmt-directives, a
           # check-metadata leg): flip it from warn (exit 0) to FAIL (exit 1)
