@@ -8,20 +8,37 @@ CLI entry point is exercised across its lever / precondition / finding
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import subprocess
 import sys
+import tarfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from _protection_fixtures import aligned_merge_settings_payload, aligned_protection_payload
+from returns.io import IOFailure
 from returns.result import Failure
 
 from livespec_dev_tooling.config import REQUIRED_ROLE_KEYS, UNION_ROLE_KEYS, Config
-from livespec_dev_tooling.fleet import fleet_conformance
-from livespec_dev_tooling.fleet._context import FleetContext, GhResult, GhRunner
-from livespec_dev_tooling.fleet._contract_rows import CENTRAL_APP_VANTAGE, CENTRAL_VANTAGE
+from livespec_dev_tooling.fleet import _lanes, fleet_conformance
+from livespec_dev_tooling.fleet._context import (
+    FleetContext,
+    FleetMember,
+    GhDownloader,
+    GhResult,
+    GhRunner,
+    RowOutcome,
+    RowPass,
+)
+from livespec_dev_tooling.fleet._contract_model import ObligationRow
+from livespec_dev_tooling.fleet._contract_rows import (
+    CENTRAL_APP_VANTAGE,
+    CENTRAL_VANTAGE,
+    REPO_CLASSES,
+)
+from livespec_dev_tooling.fleet._snapshot import DownloadOutcome
 from livespec_dev_tooling.fleet.fleet_conformance import (
     central_run_vantages,
     fetch_manifest,
@@ -166,9 +183,40 @@ def make_runner(*, table: dict[tuple[str, ...], GhResult]) -> GhRunner:
     return run
 
 
+def _empty_member_archive(*, repo: str) -> bytes:
+    """A real gzip tarball for `repo` carrying one empty first-party package.
+
+    FLEET-vantage rows read a member's whole TREE, not individual files, so a
+    fixture answering only `run_gh` leaves them unable to evaluate — they skip
+    for every member and trip the blind-row error. Serving a real (if bare)
+    archive is what lets a lane test exercise the LANE rather than the
+    downloader; a member with no consumable source has no cross-member edges
+    and passes ON THE MERITS, which is the outcome these tests want.
+    """
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w:gz") as bundle:
+        payload = b""
+        entry = tarfile.TarInfo(name=f"acme-{repo}-abc123/pkg/__init__.py")
+        entry.size = len(payload)
+        bundle.addfile(entry, io.BytesIO(payload))
+    return buffer.getvalue()
+
+
+def make_downloader() -> GhDownloader:
+    """A downloader serving every requested member a bare, valid archive."""
+
+    def download(*, args: list[str], dest: Path) -> DownloadOutcome:
+        _ = dest.write_bytes(_empty_member_archive(repo=args[1].split("/")[2]))
+        return DownloadOutcome(returncode=0, stderr="")
+
+    return download
+
+
 def make_context(*, table: dict[tuple[str, ...], GhResult]) -> FleetContext:
     """A `FleetContext` for owner `acme` over a canned-response runner."""
-    return FleetContext(owner="acme", run_gh=make_runner(table=table))
+    return FleetContext(
+        owner="acme", run_gh=make_runner(table=table), download_gh=make_downloader()
+    )
 
 
 def ok(*, payload: object) -> GhResult:
@@ -401,6 +449,72 @@ def test_partially_skipped_row_is_not_blind() -> None:
     assert result.blind_rows == len(blind)
 
 
+def test_run_member_rows_hands_row_functions_the_manifest_roster(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A FLEET-vantage row is answerable only if it can see the whole roster.
+
+    `FleetContext.members` defaults to EMPTY — the fail-closed spelling — and
+    its docstring says the central engine populates it once the manifest
+    resolves. NOTHING DID. The context is a FROZEN dataclass built in `main()`
+    BEFORE the manifest is fetched, no construction site anywhere passed a
+    roster, and there is no `dataclasses.replace` in the package, so the field
+    held its `()` default for every run either engine has ever made.
+
+    IT SURFACED ONLY WHEN A ROW NEEDED IT. No row asked for the roster until
+    the cross-repo public-API row, so an unpopulated field broke nothing and
+    READ AS WIRED — its docstring described an intention as a fact.
+
+    It would not have under-enforced quietly: a fleet-vantage row seeing an
+    empty roster returns the named skip it was built to return, and a row that
+    skips for EVERY applicable member is BLIND, which this repo escalates to an
+    error. So registering such a row would have failed the run forever rather
+    than passing green over nothing. The fail-closed default did its job; the
+    wiring behind it was simply absent.
+
+    `run_member_rows` is the ONE place holding both the context and the
+    manifest, which is why the join belongs here rather than in either engine's
+    `main()`: a caller cannot then pass a manifest alongside a roster-less
+    context, and both lanes are fixed by one edit.
+    """
+    seen: list[tuple[FleetMember, tuple[FleetMember, ...]]] = []
+    readable: list[bool] = []
+
+    def probe(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:
+        # Both halves are recorded on purpose: the row protocol hands a row ONE
+        # member, and the whole point of the roster is that it must ALSO see
+        # the other eight.
+        seen.append((member, ctx.members))
+        # And the roster must be USABLE, not merely present. A fleet row's next
+        # act after reading `ctx.members` is to read each member's TREE, so the
+        # probe does exactly that: a roster whose members cannot be snapshotted
+        # is a roster the row still cannot answer from, and asserting only on
+        # the list would pass over that.
+        readable.extend(
+            not isinstance(ctx.member_tree_snapshot(repo=other.repo), IOFailure)
+            for other in ctx.members
+        )
+        return RowPass()
+
+    probe_row = ObligationRow(
+        row_id="roster-probe",
+        obligation_type="committed-file",
+        applies_to=frozenset(REPO_CLASSES),
+        assert_member=probe,
+        manual_hint="probe row; never registered in OBLIGATION_ROWS",
+    )
+    monkeypatch.setattr(_lanes, "rows_for", lambda *, repo_class: (probe_row,))  # noqa: ARG005
+
+    ctx = make_context(table=_green_table())
+    manifest = fetch_manifest(ctx=ctx).unwrap()
+    run_member_rows(ctx=ctx, manifest=manifest, log=_log())
+
+    roster = tuple(manifest.members)
+    assert seen == [(member, roster) for member in roster]
+    assert roster != ()
+    assert readable == [True] * (len(roster) * len(roster))
+
+
 def test_member_rows_all_green_yields_zero_errors() -> None:
     ctx = make_context(table=_green_table())
     manifest = fetch_manifest(ctx=ctx).unwrap()
@@ -506,7 +620,7 @@ def test_local_central_run_reports_app_installation_out_of_vantage() -> None:
         calls.append(tuple(args))
         return inner(args=args, stdin=stdin)
 
-    ctx = FleetContext(owner="acme", run_gh=recording)
+    ctx = FleetContext(owner="acme", run_gh=recording, download_gh=make_downloader())
     manifest = fetch_manifest(ctx=ctx).unwrap()
     log = RecordingLog()
 
@@ -624,6 +738,11 @@ def _patch_runner(
     *, monkeypatch: pytest.MonkeyPatch, table: dict[tuple[str, ...], GhResult]
 ) -> None:
     monkeypatch.setattr(fleet_conformance, "default_gh_runner", make_runner(table=table))
+    # BOTH I/O seams, because a `main()` test replacing only the gh runner would
+    # still reach the real network through the tarball downloader — and would do
+    # so SILENTLY, since a failed download is a legitimate named skip rather than
+    # an error the test could notice.
+    monkeypatch.setattr(fleet_conformance, "default_gh_downloader", make_downloader())
 
 
 def test_main_lever_unset_skips_with_exit_zero(*, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -808,6 +927,7 @@ def test_main_defers_the_adopter_leg_out_of_vantage_without_reading_adopters(
     monkeypatch.setenv("LIVESPEC_RUN_FLEET_CONFORMANCE", "true")
     monkeypatch.setattr(sys, "argv", ["fleet-conformance", "--owner", "acme"])
     monkeypatch.setattr(fleet_conformance, "default_gh_runner", recording)
+    monkeypatch.setattr(fleet_conformance, "default_gh_downloader", make_downloader())
 
     assert fleet_conformance.main() == 0
     assert not [call for call in calls if any("adopted" in arg for arg in call)]
@@ -983,6 +1103,7 @@ def test_main_transient_credential_rejection_recovers(*, monkeypatch: pytest.Mon
         return inner(args=args, stdin=stdin)
 
     monkeypatch.setattr(fleet_conformance, "default_gh_runner", flaky)
+    monkeypatch.setattr(fleet_conformance, "default_gh_downloader", make_downloader())
     monkeypatch.setattr(fleet_conformance, "preflight_credential", _no_sleep_preflight)
 
     assert fleet_conformance.main() == 0

@@ -113,6 +113,7 @@ from typing import cast
 from livespec_dev_tooling.fleet._adopter_lane import run_adopter_rows
 from livespec_dev_tooling.fleet._context import (
     FleetContext,
+    default_gh_downloader,
     default_gh_runner,
     resolve_owner,
     resolve_repo_name,
@@ -419,6 +420,12 @@ def main() -> int:
     ctx = FleetContext(
         owner=owner,
         run_gh=default_gh_runner,
+        # Injected EXPLICITLY rather than left to the dataclass default, for
+        # the same reason `run_gh` is: a FLEET-vantage row reads whole member
+        # TREES through this seam, and a dataclass field default binds once at
+        # class-creation time, so a seam reachable only as a default is one no
+        # test can replace. Both I/O seams now enter at the same boundary.
+        download_gh=default_gh_downloader,
         filter_consuming_preflight=args.emit_member_verdicts is not None,
     )
     manifest = _resolve_root_facts(ctx=ctx, owner=owner, log=log)

@@ -32,7 +32,7 @@ lane zero API reads.
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -147,6 +147,16 @@ def run_member_rows(
     therefore count only the members a row actually applied to, never the
     whole membership.
     """
+    # THE ROSTER JOIN. `FleetContext.members` defaults to `()` — the
+    # fail-closed spelling — and every construction site builds the context
+    # BEFORE the manifest resolves, on a frozen dataclass. This is the one
+    # function holding both, so joining them here is what makes a FLEET-vantage
+    # row (one asking "does any OTHER member do X?") answerable at all; before
+    # it, such a row saw an empty roster, skipped for every member, and tripped
+    # the blind-row error. `replace` rather than a fresh construction because
+    # the memo caches are mutable dicts carried BY REFERENCE, so the manifest
+    # resolution's API reads survive into the rows that follow.
+    ctx = replace(ctx, members=tuple(manifest.members))
     errors = 0
     evaluated: dict[str, int] = {}
     skips: dict[str, list[str]] = {}
