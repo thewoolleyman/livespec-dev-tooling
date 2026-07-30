@@ -25,6 +25,7 @@ from livespec_dev_tooling.fleet._read_failure import (
     classify_gh_failure,
     sanitize_detail,
 )
+from livespec_dev_tooling.fleet._tree_state import TreeState, parse_tree_payload
 
 __all__: list[str] = [
     "Adopter",
@@ -100,16 +101,6 @@ class RowSkip:
 RowOutcome = RowPass | RowFinding | RowSkip
 
 
-@dataclass(frozen=True, kw_only=True)
-class TreeState:
-    """A member's recursive master tree: paths, gitlink entries, read status."""
-
-    readable: bool
-    truncated: bool = False
-    paths: frozenset[str] = frozenset()
-    gitlink_paths: tuple[str, ...] = ()
-
-
 # Matches the two canonical github.com remote URL forms emitted by
 # `git remote get-url origin`, mirroring the sibling
 # `branch_protection_alignment` resolver: the owner identifier comes
@@ -117,7 +108,6 @@ class TreeState:
 _REMOTE_URL_PATTERN = re.compile(
     r"^(?:https?://github\.com/|git@github\.com:)([^/]+)/([^/]+?)(?:\.git)?/?$"
 )
-_GITLINK_MODE = "160000"
 # Fallback ref when a repo's default branch cannot be resolved. The single
 # source of truth for a repo's canonical ref is `FleetContext.canonical_ref`,
 # resolved and memoized PER REPO: `file_text` and `tree` BOTH route through it
@@ -185,34 +175,6 @@ def resolve_repo_name(*, cwd: Path | None = None) -> str | None:
     """
     match = _origin_remote_match(cwd=cwd)
     return None if match is None else match.group(2)
-
-
-def _parse_tree_payload(*, payload: object) -> TreeState:
-    """Map a `git/trees` JSON payload onto a `TreeState` value."""
-    if not isinstance(payload, dict):
-        return TreeState(readable=False)
-    mapping = cast("dict[str, object]", payload)
-    entries = mapping.get("tree")
-    if not isinstance(entries, list):
-        return TreeState(readable=False)
-    paths: set[str] = set()
-    gitlinks: list[str] = []
-    for entry in cast("list[object]", entries):
-        if not isinstance(entry, dict):
-            continue
-        record = cast("dict[str, object]", entry)
-        path = record.get("path")
-        if not isinstance(path, str):
-            continue
-        paths.add(path)
-        if record.get("mode") == _GITLINK_MODE:
-            gitlinks.append(path)
-    return TreeState(
-        readable=True,
-        truncated=bool(mapping.get("truncated")),
-        paths=frozenset(paths),
-        gitlink_paths=tuple(sorted(gitlinks)),
-    )
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -352,7 +314,7 @@ class FleetContext:
             path=f"repos/{self.owner}/{repo}/git/trees/{ref}?recursive=1", operation="tree"
         )
         state = (
-            TreeState(readable=False) if payload is None else _parse_tree_payload(payload=payload)
+            TreeState(readable=False) if payload is None else parse_tree_payload(payload=payload)
         )
         self.tree_cache[repo] = state
         return state
