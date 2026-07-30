@@ -25,12 +25,19 @@ from livespec_dev_tooling.fleet._read_failure import (
     classify_gh_failure,
     sanitize_detail,
 )
+from livespec_dev_tooling.fleet._snapshot import (
+    GhDownloader,
+    SnapshotResult,
+    default_gh_downloader,
+    memoized_snapshot,
+)
 from livespec_dev_tooling.fleet._tree_state import TreeState, parse_tree_payload
 
 __all__: list[str] = [
     "Adopter",
     "FleetContext",
     "FleetMember",
+    "GhDownloader",
     "GhResult",
     "GhRunner",
     "ReadFailure",
@@ -38,7 +45,9 @@ __all__: list[str] = [
     "RowOutcome",
     "RowPass",
     "RowSkip",
+    "SnapshotResult",
     "TreeState",
+    "default_gh_downloader",
     "default_gh_runner",
     "resolve_owner",
 ]
@@ -193,6 +202,8 @@ class FleetContext:
     # `--emit-member-verdicts` invocation, never from a lever or env var.
     # Defaults False so every other construction site keeps warning behavior.
     filter_consuming_preflight: bool = False
+    download_gh: GhDownloader = default_gh_downloader
+    snapshot_cache: dict[str, SnapshotResult] = field(default_factory=dict)
     tree_cache: dict[str, TreeState] = field(default_factory=dict)
     installed_cache: dict[str, frozenset[str] | None] = field(default_factory=dict)
     marker_cache: dict[str, bool] = field(default_factory=dict)
@@ -318,6 +329,26 @@ class FleetContext:
         )
         self.tree_cache[repo] = state
         return state
+
+    def member_tree_snapshot(self, *, repo: str) -> SnapshotResult:
+        """`repo`'s whole tree at its canonical ref, materialized once per run.
+
+        ONE API call where a per-file `file_text` walk costs one per file —
+        the difference `livespec-dev-tooling-k76y` measured at ~653 reads per
+        run against a pool shared by all nine repos' automation.
+
+        Pinned through `canonical_ref` for the same reason `file_text` and
+        `tree` are: a row that reads the archive and then the tree must never
+        resolve the two against divergent branches.
+        """
+        return memoized_snapshot(
+            cache=self.snapshot_cache,
+            download=self.download_gh,
+            owner=self.owner,
+            repo=repo,
+            ref=self.canonical_ref(repo=repo),
+            record=self.record_read_failure,
+        )
 
     def installed_repos(self) -> frozenset[str] | None:
         """Repos visible to the current App installation token; None = can't read.
