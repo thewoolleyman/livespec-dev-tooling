@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.11.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.10.0...v1.11.0) (2026-07-30)
+
+
+### Features
+
+* **fleet:** measure consumption ACROSS members, which no checkout can see ([df04359](https://github.com/thewoolleyman/livespec-dev-tooling/commit/df04359a18fa260d2f029a70f3537168945ac8aa))
+* **fleet:** read a member's two source universes from its snapshot ([846c97c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/846c97c20f94e79cd534dc79e4c7757ad6406367))
+
 ## [1.10.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.9.0...v1.10.0) (2026-07-30)
 
 
