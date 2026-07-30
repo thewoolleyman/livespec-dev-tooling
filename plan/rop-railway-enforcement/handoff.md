@@ -64,8 +64,41 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >    **#905** (the conversion). Arming now waits on `5cai` and the `995m` known-gap statement,
 >    and on NOTHING in the count.
 >
->    **▶️▶️ THE NEXT ACTION IS `5cai`, AND IT MUST BE BUILT TARBALL-FIRST. READ
->    `livespec-dev-tooling-k76y` BEFORE WRITING A LINE.** The naive build calls
+>    **✅✅ ALL THREE `5cai` SLICES ARE LANDED AND ON MASTER. THE ROW EXISTS, IS TESTED, AND IS
+>    DELIBERATELY NOT REGISTERED. THE NEXT ACTION IS THE REMEDIATION — `wdn7` THEN `nkkv` —
+>    NOT THE ROW.** Merged: the tarball primitive (`c24e8d4`, v1.10.0), the oracle (`df04359`
+>    + `846c97c`, v1.11.0), the oracle correction (`56379a3`) and the row itself (`e20c3ab`),
+>    with the measured record at `plan/rop-railway-enforcement/5cai-fleet-measurement.md`
+>    (`eeffe60`). **READ THAT FILE BEFORE PLANNING ANYTHING** — it carries both offender lists.
+>
+>    **▶️ THE ROW WAS MEASURED AGAINST THE LIVE FLEET BEFORE REGISTRATION, AND IT CONVICTS TWO
+>    MEMBERS ON TWENTY GENUINE UNDECLARED CONSUMPTIONS.** Nine members read, **0 skipped, 0
+>    unparsed**: `livespec-dev-tooling` **9** (`checks/*.py::main`, 12 sites) and
+>    `livespec-runtime` **11** (product imports, 23 sites); the other seven are clean.
+>    **REGISTERING TODAY IS MECHANICALLY IMPOSSIBLE, not merely unwise** — dev-tooling's own
+>    failing row makes `own_failing_rows` non-empty, so the REGISTERING PR's OWN CI fails and it
+>    cannot land; and livespec-runtime's would leave this repo's PRs green while breaking the
+>    scheduled sweep and the RELEASE FAN-OUT PREFLIGHT fleet-wide. Hence REMEDIATE-THEN-FLIP
+>    (v034 carve-out 1). **The severity was NOT softened — the row is `error` and inert, which is
+>    the Phase 3 shape, and registration is a six-line follow-up.**
+>
+>    **⛔⛔ THE ONE RESOLUTION THAT IS FORBIDDEN, and it is the newest costume of this epic's own
+>    subject: DO NOT UNDER-DECLARE `cross_repo_public_api` TO KEEP THE COUNT AT ZERO.** Declaring
+>    dev-tooling's 9 makes them public for `public_api_result_typed`, taking the ratified-rule
+>    count from **0 to 9** unless each file also earns a REASONED `supervisor_entry_files` entry.
+>    Omitting a genuinely-consumed name to protect that number is `pure_trees = []` in a new
+>    costume — and `5cai` would convict this repo for exactly that, which is the row working on
+>    its own author. **If the honest resolution leaves the count non-zero, ARMING WAITS and the
+>    gate gets restated.** A delayed arming is acceptable; a clean number bought by an incomplete
+>    declaration is not.
+>
+>    **AND THE 9 ARE CLAUSE-2 SYMBOL IMPORTS, NOT CLAUSE-3 PROCESS ENTRY POINTS** — established
+>    by READING both consumers, which do `from livespec_dev_tooling.checks import (...)` and then
+>    `assert wrapper_shape.main() == 0` IN-PROCESS. So this is NOT the known `main() -> int`
+>    location-scoping spec defect and must not be filed as it.
+>
+>    **(history, kept because the tarball reasoning still binds any future central row)** The
+>    naive build calls
 >    `FleetContext.file_text()` once per file — **~653 GitHub API reads per run against a
 >    5000/hr installation pool that is SHARED across all nine repos' automation.** Across a
 >    nine-PR release fan-out that is ~5877 reads, **1.2× the entire hourly budget**, so it would
@@ -327,7 +360,9 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >    | ~~`rvw3`~~ | ~~v179 member 1, the clause-(d) fixpoint~~ | **✅ CLOSED — #880, #883, #886** |
 >    | ~~`q5lb`~~ | ~~v179 member 2, the `total_absence_returns` key~~ | **✅ CLOSED — #891, #892, #895** |
 >    | ~~`vzwa`~~ | ~~the 2 genuine violations~~ | **✅ CLOSED — livespec #1847 + dev-tooling PR. The count is ZERO** |
->    | **`5cai`** | the CENTRAL-vantage conformance row | **YES — binding, brief 30. Read `k76y` FIRST: it is 3 slices, not 1** |
+>    | ~~`5cai`~~ | ~~the CENTRAL-vantage conformance row~~ | **✅ ALL THREE SLICES LANDED — #919, #921, #924. The row is BUILT and deliberately UNREGISTERED** |
+>    | **`wdn7`** | dev-tooling's 9 undeclared `checks/*.py::main` | **YES — registration cannot land until this clears** |
+>    | **`nkkv`** | livespec-runtime's 11, cross-repo | **YES — else the fleet sweep and fan-out preflight break** |
 >    | **`0yfo`** → `995m` | decompose `config.py`, then flip the `@generated` predicate | only via 6f's known-gap statement |
 >
 >    **Three NEW items were filed by this work. `vzwa` IS an arming blocker; the other two are
@@ -1638,13 +1673,38 @@ that shape into every remaining sibling wiring.**
    silent no-op that looks exactly like success. Invoke
    `.claude-plugin/scripts/bin/<command>.py` instead.
 
-### ▶️ EXACT NEXT ACTION — **`5cai`, THEN ARM. `vzwa` IS DONE AND THE COUNT IS ZERO.**
+### ▶️ EXACT NEXT ACTION — **`wdn7`, THEN `nkkv`, THEN REGISTER, THEN ARM.**
 
-**Start at `5cai`, TARBALL-FIRST — read `livespec-dev-tooling-k76y` before writing a line;
-the naive build would red master on release day (see START-HERE). Nothing is mid-flight;
-nothing needs new authority** (briefs 30–37 authorized `q5lb`, `vzwa`, `5cai` and the arming
-sequence — an item boundary is a place to REPORT, not to WAIT). Every worktree of this
-thread's is reaped and no branch of its own is open.
+**`5cai`'s three slices are LANDED. The row exists, is tested at 100%, and is deliberately
+UNREGISTERED.** The next action is the remediation the pre-registration measurement found, in
+this order:
+
+1. **`livespec-dev-tooling-wdn7`** — this repo's 9 undeclared `checks/*.py::main` entries.
+   Declaring them is what unblocks registration, and it is what walks into the count
+   collision; read the ⛔ block in START-HERE before choosing how to resolve it.
+2. **`livespec-dev-tooling-nkkv`** — `livespec-runtime`'s 11, a CROSS-REPO change in that
+   repo. Measure that repo's own count before and after declaring rather than projecting it.
+3. **Register the row** in `OBLIGATION_ROWS` — a six-line follow-up, at `error`, once both
+   are clean. Registration is the step that makes it gate.
+4. **Then arm**, subject to the `995m` known-gap statement and to whatever the count
+   collision resolves to.
+
+**Nothing is mid-flight; nothing needs new authority** (briefs 30–44 authorized `q5lb`,
+`vzwa`, `5cai` and the arming sequence — an item boundary is a place to REPORT, not to WAIT).
+Every worktree of this thread's is reaped and no branch of its own is open. **Several FOREIGN
+worktrees exist; reap NONE of them, and enumerate with `git worktree list` rather than
+trusting any count in this file.**
+
+**⚠️ AND THE ROW'S FIRST REAL RUN FOUND TWO DEFECTS IN ITS OWN ORACLE — the generalizable
+result of the whole slice.** The first measurement reported 54 undeclared consumptions and
+**19 were false**: 14 from one byte-identical INSTALLED file whose consumer imports its own
+copy, and 5 from clause 0's `_`-prefix disqualifier. Both ran in the OVER-enforcing
+direction, which is the direction that discredits a row on its first run. **Measuring before
+registering cost ~9 API calls and caught both; discovering them by turning something red
+would have cost a red master and the row's credibility.** Do the same for any future
+central-vantage row.
+
+**(history, kept because it is why the tarball route exists)**
 
 **`vzwa` IS CLOSED — the count is ZERO.** The paragraphs below describing it as the next
 action are HISTORY; they are kept because the not-a-type-change reasoning is why the fix
