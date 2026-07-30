@@ -58,6 +58,18 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.13.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.12.1...v1.13.0) (2026-07-30)
+
+
+### Features
+
+* **fleet:** register the cross-repo public-API row so it actually gates ([6f38105](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6f3810552692ffa01c787647e00bb8f222124a05))
+
+
+### Bug Fixes
+
+* **fleet:** the manifest roster never reached the rows that need it ([ba65383](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ba65383dd89c0c229b86706284e39d71d2cce6cf))
+
 ## [1.12.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.12.0...v1.12.1) (2026-07-30)
 
 
