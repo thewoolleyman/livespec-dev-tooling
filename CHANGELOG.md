@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.9.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.8.4...v1.9.0) (2026-07-30)
+
+
+### Features
+
+* **checks:** canonical slug discovery joins the railway, and an empty walk FAILS ([89296e0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/89296e0725ca9e008881db07ae820c551c24696b))
+
 ## [1.8.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.8.3...v1.8.4) (2026-07-30)
 
 
