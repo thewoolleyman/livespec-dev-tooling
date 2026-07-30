@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.8.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.8.2...v1.8.3) (2026-07-30)
+
+
+### Bug Fixes
+
+* **checks:** incremental coverage selects the *_edges.py siblings it told authors to write ([226ca91](https://github.com/thewoolleyman/livespec-dev-tooling/commit/226ca915c47fec2323b0a9e7a3c3d7a88b7cc8db))
+
 ## [1.8.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.8.1...v1.8.2) (2026-07-30)
 
 
