@@ -374,7 +374,50 @@ considers 0, agreeing. `vzwa` was NOT a type change: an empty `pkgutil` walk is 
 `ChecksPackageUnreadable` on the failure track, because zero discovered modules is never
 a legitimate answer for a file shipping inside the package it walks.
 
-**THE ONLY THING BETWEEN HERE AND ARMING IS `5cai`, AND IT IS BINDING.** It is the
+**⛔ SUPERSEDED — `5cai` IS DONE. THE GATE IS NOW `qndn`.** `5cai` is BUILT, REGISTERED and
+VERIFIED GATING (`7f2abfd`, released `v1.13.0`), and its zero carries its denominator:
+9 roster members, 9 READ, 0 skipped, 0 unparsed, 58 edges. **The new blocker is
+`livespec-dev-tooling-qndn` (P0).** `public_api_result_typed._scan` skips `_`-prefixed
+**FILES** wholesale, hiding **65 files — 42% of the universe** — so the armed count is
+**0 with the skip and 75 without it**. Two cross-repo consumers already reach THROUGH the
+hole (`fleet/_context.py:resolve_owner`, `testing/_cli_e2e_discovery.py:discover_fixtures`,
+the second consumed by a beads-fabro HOOK — the `dx8l` blast-radius shape), and BOTH are in
+the 75.
+
+**DROPPING THE SKIP IS FIDELITY, NOT A TIGHTENING — refuse the other framing.** v178
+clause 0 disqualifies a `_`-prefixed **NAME**; the skip refuses a `_`-prefixed **FILE**. A
+check enforcing something WIDER than its ratified rule is not stricter, it is
+NON-CONFORMANT in the relaxing direction. The mirror of PR #748, where wiring the spec's own
+stated exemptions IN was fidelity. So "should we tighten?" is the wrong question: the check
+has been out of conformance, and the 75 is what conformance costs.
+
+**THE SEQUENCE IS REMEDIATE-THEN-FLIP (v034 carve-out 1), and it is AUTHORIZED standing
+work — not a new decision.** Triage the 75 per function the way the original 59 were, THEN
+drop the skip, THEN arm. Do NOT arm carrying the skip (a skip blinding 42% of the universe
+is the declared-empty escape this charter forbids, and nothing ratifies it). Do NOT drop the
+skip before the triage (75 reds this repo's own gate and lefthook blocks the fixing commit —
+the ordering trap where `8o8e` first named it). Triage skeleton, measured: **15 `X | None`,
+6 raise/try, 54 total-looking; 40 local vs 35 transitive.** Start with the 15 — that class
+splits into member-2 declarations versus genuine conversions and cheaply bounds how much of
+the 75 is DECLARATION rather than CODE. **RUN the clause-(d) fixpoint on the 35; never
+simulate it** — hand judgement has been wrong 1-of-6 then 2-of-4, both times toward
+exemption. **`qndn` is NOT `995m`'s predicate** — measured, and it does not shrink the job;
+keep them separate, because folding 65 undecided files into an accepted one-file carve-out
+would launder them through a ratification they never received.
+
+**THE OLD ZERO IS NOT RETRACTED.** It was honestly measured against a universe with a hole
+in it — which is `995m`'s own "a gate whose arming precondition was verified against a
+universe with a hole in it", recurring one level up.
+
+**🔺 AND THE META-FINDING, WHICH OUTRANKS THE 75.** This was ALREADY IN THE RECORD:
+`handoff.md` §"THE THREE UNDECLARED CONSUMPTIONS" states the skip is "WIDER than the
+ratified rule" and NAMES both consumers reaching through it. **A true record, written
+correctly, never re-read against the question it answered, until a measurement forced the
+join.** Every prior instance of this thread's signature defect was a FALSE record; this one
+is a true one nobody consulted. **Practical rule: when a finding is filed as an observation,
+ask what gate it blocks — or it will survive the epic built to close it.**
+
+**(historical, for the reasoning) `5cai` WAS BINDING AND HERE IS WHY.** It is the
 central-vantage fleet consumption conformance row that VERIFIES `721o`'s declaration
 against the real fleet graph. Without it a repo could declare an empty consumed-surface
 and every public function would fall out of scope silently with the check green —
@@ -392,11 +435,19 @@ optimization.** Measured: naive ~653 API calls per run, ~5877 across a nine-PR f
 A naive build would ship a new central row that reds master on release day, which is
 this epic's own defect authored by its own fix.
 
-**The arming gate is no longer the two numbers.** They now AGREE AT ZERO, so that
-condition is DISCHARGED. What remains is: **`5cai` landed, plus the `995m` known-gap
-statement carried in the arming commit's own text.** Arming runs the check over ~150
-files for the first time in this epic's history; a surprise there is a FINDING, not
-something to smooth.
+**The arming gate is no longer the two numbers.** They agreed at zero under the universe as
+then defined, so that condition is DISCHARGED — but see `qndn` above: that universe was 42%
+smaller than anyone knew. What remains is **`qndn`'s triage, then dropping the skip, then
+the `995m` known-gap statement carried in the arming commit's own text.**
+
+**THE "EXPECT A SURPRISE AND TREAT IT AS A FINDING" CLAUSE HAS NOW BEEN CASHED, AND IT PAID
+FOR EVERYTHING.** The worker ran the armed check BEFORE writing the arming commit, found the
+skip, refused to arm around it, committed nothing and reaped the worktree. **Arming with
+that skip would have closed `8o8e` by shipping a check with a 65-file blind spot nobody
+ratified — the epic ending by committing its own founding defect.** Keep the
+measure-before-you-commit discipline for the real arming: run it in the worktree, read the
+number, and only then write the commit, because a red arming turns this repo's own
+`just check` red and lefthook blocks the fix.
 
 **`995m` is an accepted KNOWN GAP, recorded, not silent.** `config.py` excludes itself
 from every check universe because `is_generated` matches its own `@generated` prose.
