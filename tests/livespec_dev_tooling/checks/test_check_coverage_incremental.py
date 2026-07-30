@@ -790,3 +790,105 @@ def test_all_vendored_paths_short_circuit_without_running_the_suite() -> None:
         f"the empty include-set must never reach `coverage report`; "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
+
+
+def test_resolve_test_paths_also_selects_edges_siblings(*, tmp_path: Path) -> None:
+    """The paired test's `*_edges.py` SIBLINGS are selected too, not just `test_<name>.py`.
+
+    ⛔ THIS CLOSES A SELF-DEFEATING INTERACTION BETWEEN TWO OF THIS REPO'S OWN RULES.
+    Red-Green-Replay makes a Red-recorded test file BYTE-IDENTITY-BOUND, and the
+    repo's stated remedy is to put additional Green-leg tests in a `*_edges.py`
+    sibling. This gate then measured the changed impl against ONLY `test_<name>.py`,
+    so **following the first rule guaranteed failing the second** whenever the
+    sibling carried a branch.
+
+    It was already latent and invisible:
+    `livespec_dev_tooling/checks/required_role_keys_declared.py` has NINE lines
+    covered solely by its `_edges.py` sibling, and nothing surfaced that until a
+    change touched the file and dragged it into this gate's scope.
+
+    Selecting more test files can only make the gate STRICTER — it never lowers the
+    100% bar, it just stops attributing a covered line to "uncovered" because the
+    test proving it lives in the file the repo told the author to create.
+    """
+    module = _load_check_module()
+    impl_dir = tmp_path / "livespec_dev_tooling" / "checks"
+    impl_dir.mkdir(parents=True)
+    _ = (impl_dir / "widget.py").write_text("", encoding="utf-8")
+    test_dir = tmp_path / "tests" / "livespec_dev_tooling" / "checks"
+    test_dir.mkdir(parents=True)
+    for name in ("test_widget.py", "test_widget_edges.py", "test_widget_extra.py"):
+        _ = (test_dir / name).write_text("", encoding="utf-8")
+    # A DIFFERENT impl's test must NOT be dragged in by a prefix match.
+    _ = (test_dir / "test_widgetry.py").write_text("", encoding="utf-8")
+
+    pairings = (
+        MirrorPairing(
+            source_tree=Path("livespec_dev_tooling/checks"),
+            test_tree=Path("tests/livespec_dev_tooling/checks"),
+        ),
+    )
+    log = module._configure_logger()  # noqa: SLF001
+    cwd = Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        resolved = module._resolve_test_paths(  # noqa: SLF001
+            impl_paths=[Path("livespec_dev_tooling/checks/widget.py")],
+            mirror_pairings=pairings,
+            log=log,
+        )
+    finally:
+        os.chdir(cwd)
+
+    assert resolved is not None, "resolution must succeed when the paired test exists"
+    names = sorted(p.name for p in resolved)
+    assert names == [
+        "test_widget.py",
+        "test_widget_edges.py",
+        "test_widget_extra.py",
+    ], f"the paired test AND its `test_<name>_*.py` siblings must be selected; got {names}"
+    assert "test_widgetry.py" not in names, (
+        "a different impl's test must not be dragged in by a bare prefix match — "
+        "`test_widget` must not match `test_widgetry.py`"
+    )
+
+
+def test_resolve_test_paths_still_fails_when_the_paired_test_is_absent(*, tmp_path: Path) -> None:
+    """Sibling selection does NOT relax the paired-test requirement.
+
+    The obvious way to implement sibling globbing is to collect whatever matches and
+    proceed — which would silently accept an impl with `_edges.py` alone and no
+    `test_<name>.py`, quietly retiring the mirror-pairing contract this gate exists
+    to enforce. The base pairing stays REQUIRED.
+    """
+    module = _load_check_module()
+    impl_dir = tmp_path / "livespec_dev_tooling" / "checks"
+    impl_dir.mkdir(parents=True)
+    _ = (impl_dir / "widget.py").write_text("", encoding="utf-8")
+    test_dir = tmp_path / "tests" / "livespec_dev_tooling" / "checks"
+    test_dir.mkdir(parents=True)
+    # ONLY the sibling exists; the paired test does not.
+    _ = (test_dir / "test_widget_edges.py").write_text("", encoding="utf-8")
+
+    pairings = (
+        MirrorPairing(
+            source_tree=Path("livespec_dev_tooling/checks"),
+            test_tree=Path("tests/livespec_dev_tooling/checks"),
+        ),
+    )
+    log = module._configure_logger()  # noqa: SLF001
+    cwd = Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        resolved = module._resolve_test_paths(  # noqa: SLF001
+            impl_paths=[Path("livespec_dev_tooling/checks/widget.py")],
+            mirror_pairings=pairings,
+            log=log,
+        )
+    finally:
+        os.chdir(cwd)
+
+    assert resolved is None, (
+        "an `_edges.py` sibling must NOT substitute for the required paired test; "
+        f"got {resolved!r}"
+    )

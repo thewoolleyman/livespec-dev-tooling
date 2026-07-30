@@ -143,6 +143,36 @@ def _resolve_mirror_test_path(
     raise ValueError(msg)
 
 
+def _sibling_test_paths(*, paired_test: Path) -> list[Path]:
+    """The `test_<name>_*.py` siblings beside `paired_test`, sorted.
+
+    ⛔ THIS EXISTS BECAUSE TWO OF THIS REPO'S RULES WERE SELF-DEFEATING WITHOUT IT.
+    Red-Green-Replay makes a Red-recorded test file BYTE-IDENTITY-BOUND, and the
+    repo's stated remedy is to put additional Green-leg tests in a `*_edges.py`
+    sibling. Measuring the changed impl against ONLY `test_<name>.py` therefore
+    guaranteed that following the first rule failed this gate whenever the sibling
+    carried a branch — and the author's only escape was to break byte-identity.
+
+    Already latent before this landed: `checks/required_role_keys_declared.py` has
+    NINE lines covered solely by its `_edges.py` sibling, invisible until an
+    unrelated one-line change dragged that file into this gate's scope.
+
+    **THE MATCH IS ANCHORED ON THE STEM PLUS `_`, NOT A BARE PREFIX.** A bare
+    `test_widget*` glob also matches `test_widgetry.py` — a DIFFERENT impl's test —
+    which would make one file's coverage depend on another's tests and widen the
+    measured set silently. The trailing underscore is what keeps the sibling
+    relationship a naming CONVENTION rather than an accident of shared letters.
+
+    Returns only files that exist; an impl with no siblings yields `[]`, and the
+    caller's required-paired-test check is unaffected — this widens the test
+    SELECTION, never the pass condition.
+    """
+    stem = paired_test.stem
+    return sorted(
+        candidate for candidate in paired_test.parent.glob(f"{stem}_*.py") if candidate.is_file()
+    )
+
+
 def _resolve_test_paths(
     *,
     impl_paths: list[Path],
@@ -186,7 +216,12 @@ def _resolve_test_paths(
             )
             return None
         test_paths.append(test_path)
-    return test_paths
+        test_paths.extend(_sibling_test_paths(paired_test=test_path))
+    # An impl and its sibling may resolve to the same test file, and pytest given a
+    # path twice re-collects it. De-dupe while PRESERVING ORDER so the selection
+    # stays deterministic across runs — a set here would reorder the pytest
+    # invocation between runs and make a flake look like a coverage change.
+    return list(dict.fromkeys(test_paths))
 
 
 def _build_parser() -> argparse.ArgumentParser:
