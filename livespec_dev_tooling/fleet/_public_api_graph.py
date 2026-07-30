@@ -23,6 +23,22 @@ is a cross-repo TEST import: four siblings' test trees consume
 `testing.cli_e2e` today. A same-repo test importer is still not a consumer,
 and that falls out for free — only edges BETWEEN members are emitted.
 
+A MEMBER THAT CAN SATISFY AN IMPORT ITSELF IS NOT REACHING ACROSS A BOUNDARY,
+and this is not a refinement — the first real fleet measurement produced 14
+false findings against 7 members without it. `.claude/hooks/
+livespec_footgun_guard.py` is INSTALLED FOREIGN CONTENT: a byte-identical copy
+ships in most members. `livespec-driver-codex` does `import
+livespec_footgun_guard` after a `sys.path` insert pointing at ITS OWN copy, and
+the bare suffix matched every member's. Python resolves that import to the
+copy on the path, so when the consuming member is itself among the candidates
+the import is LOCAL and no cross-member edge exists at all. Reporting one would
+fail a sibling for a file the consumer never opens.
+
+CLAUSE 0 IS APPLIED HERE RATHER THAN LEFT TO EACH CONSUMER. v178 keeps the
+`_`-prefix disqualifier, so an `_`-prefixed function is never public API no
+matter who imports it. The same measurement produced findings against
+`_check_segment` and `_decision` before this was applied.
+
 AMBIGUITY IS REPORTED RATHER THAN HIDDEN. `suffix_index` resolves an ambiguous
 dotted suffix toward EVERY candidate rather than guessing, because doubt must
 resolve toward more enforcement. Inside one repo that is purely the tightening
@@ -150,10 +166,22 @@ def _parsed(
     return trees
 
 
+def _public_functions(*, tree: ast.Module) -> frozenset[str]:
+    """The module's top-level functions minus the `_`-prefixed ones.
+
+    v178 clause 0 keeps the `_`-prefix disqualifier: an `_`-prefixed function
+    is never public API no matter who imports it. Applied HERE rather than left
+    to each consumer of the graph, because a consumer that forgot would report
+    a private helper as an undeclared public surface — which the first real
+    fleet measurement did, against `_check_segment` and `_decision`.
+    """
+    return frozenset(name for name in top_level_functions(tree=tree) if not name.startswith("_"))
+
+
 def _defining_index(
     *, members: Mapping[str, MemberSources], unparsed: list[UnparsedSource]
 ) -> tuple[dict[str, frozenset[Path]], dict[Path, frozenset[str]]]:
-    """The fleet-wide suffix index and the functions each defining file holds."""
+    """The fleet-wide suffix index and the public functions each defining file holds."""
     texts: dict[Path, str] = {}
     functions: dict[Path, frozenset[str]] = {}
     for member, sources in members.items():
@@ -161,7 +189,7 @@ def _defining_index(
         for rel, tree in trees.items():
             qualified = _qualified(member=member, rel=rel)
             texts[qualified] = sources.defining[rel]
-            functions[qualified] = top_level_functions(tree=tree)
+            functions[qualified] = _public_functions(tree=tree)
     return suffix_index(sources=texts), functions
 
 
@@ -203,13 +231,19 @@ def _edges_for(
     found: list[ConsumptionEdge] = []
     for dotted, name in reached:
         candidates = index[dotted]
+        if any(candidate.parts[0] == member for candidate in candidates):
+            # The consuming member defines this module ITSELF, so Python
+            # resolves the import to its own copy and nothing crosses a
+            # boundary. Measured: without this, one byte-identical installed
+            # hook produced 14 false findings across 7 members, because a
+            # bare-name import satisfied locally matched every member's copy.
+            continue
         for defining in candidates:
-            defining_member = defining.parts[0]
-            if defining_member == member or name not in functions[defining]:
+            if name not in functions[defining]:
                 continue
             found.append(
                 ConsumptionEdge(
-                    defining_member=defining_member,
+                    defining_member=defining.parts[0],
                     defining_file=Path(*defining.parts[1:]),
                     function=name,
                     consuming_member=member,
