@@ -183,11 +183,38 @@ mirror_pairings = [
 #     `livespec-orchestrator-git-jsonl`'s test tree. config.py is not in the
 #     check universe AT ALL: `is_generated` matches its own `# ... @generated`
 #     prose, so it excludes itself. Filed as `livespec-dev-tooling-995m`.
+#
+# THE NINE `checks/<slug>.py::main` ENTRIES BELOW WERE FOUND BY THE CENTRAL
+# VANTAGE, NOT BY THIS CHECKOUT, and that is the whole argument for the row
+# that found them. `_rows_public_api_conformance` read all nine members'
+# master tarballs (0 skipped, 0 unparsed) and measured 12 consumption sites
+# this repo's own oracle structurally cannot see. Filed as
+# `livespec-dev-tooling-wdn7`; the record with every site is
+# `plan/rop-railway-enforcement/5cai-fleet-measurement.md`.
+#
+# THEY ARE v178 CLAUSE-2 SYMBOL IMPORTS, NOT CLAUSE-3 PROCESS ENTRY POINTS,
+# established by READING both consumers rather than inferring from the name
+# `main`. Both do `from livespec_dev_tooling.checks import (all_declared, ...)`
+# and then `assert all_declared.main() == 0` — they hold `main` as a callable
+# and act on its return value IN-PROCESS. beads-fabro's file also carries
+# `assert "python -m ...wrapper_shape" in justfile`, which is a STRING
+# assertion ABOUT the justfile rather than an invocation. So this is NOT the
+# known `main() -> int` exemption-scoped-to-a-LOCATION spec defect and must
+# not be filed as it.
 cross_repo_public_api = [
     { file = "livespec_dev_tooling/canonical_checks.py", function = "canonical_check_slugs", reason = "product import: livespec's canonical_slugs_projection.py, copier_template_smoke_canonical.py and doctor/static/wiring_completeness_cross_repo.py" },
     { file = "livespec_dev_tooling/fleet/contract.py", function = "parse_manifest", reason = "product import: livespec-orchestrator-beads-fabro's .claude-plugin/hooks/codex_yolo_gate.py — the dx8l consumer" },
     { file = "livespec_dev_tooling/testing/cli_e2e.py", function = "test_workflow_full_round_trip", reason = "cross-repo test import: the e2e round-trip suites of both Drivers and both orchestrators" },
     { file = "livespec_dev_tooling/testing/cli_e2e.py", function = "assert_coverage", reason = "cross-repo test import: livespec-driver-codex's tests/e2e-cli/test_cli_e2e.py" },
+    { file = "livespec_dev_tooling/checks/all_declared.py", function = "main", reason = "cross-repo test import: livespec-orchestrator-beads-fabro's tests/test_phase1_mechanical_coverage.py and livespec-runtime's tests/livespec_runtime/test_phase1_mechanical_checks.py both import the submodule and assert `main() == 0` in-process" },
+    { file = "livespec_dev_tooling/checks/assert_never_exhaustiveness.py", function = "main", reason = "cross-repo test import: livespec-runtime's tests/livespec_runtime/test_phase1_mechanical_checks.py asserts `main() == 0` in-process" },
+    { file = "livespec_dev_tooling/checks/keyword_only_args.py", function = "main", reason = "cross-repo test import: livespec-orchestrator-beads-fabro's tests/test_phase1_mechanical_coverage.py and livespec-runtime's tests/livespec_runtime/test_phase1_mechanical_checks.py both assert `main() == 0` in-process" },
+    { file = "livespec_dev_tooling/checks/main_guard.py", function = "main", reason = "cross-repo test import: livespec-orchestrator-beads-fabro's tests/test_phase1_mechanical_coverage.py asserts `main() == 0` in-process" },
+    { file = "livespec_dev_tooling/checks/no_inheritance.py", function = "main", reason = "cross-repo test import: livespec-orchestrator-beads-fabro's tests/test_phase1_mechanical_coverage.py and livespec-runtime's tests/livespec_runtime/test_phase1_mechanical_checks.py both assert `main() == 0` in-process" },
+    { file = "livespec_dev_tooling/checks/no_lloc_soft_warnings.py", function = "main", reason = "cross-repo test import: livespec-orchestrator-beads-fabro's tests/test_phase1_mechanical_coverage.py asserts `main() == 0` in-process" },
+    { file = "livespec_dev_tooling/checks/no_write_direct.py", function = "main", reason = "cross-repo test import: livespec-orchestrator-beads-fabro's tests/test_phase1_mechanical_coverage.py asserts `main() == 0` in-process" },
+    { file = "livespec_dev_tooling/checks/private_calls.py", function = "main", reason = "cross-repo test import: livespec-orchestrator-beads-fabro's tests/test_phase1_mechanical_coverage.py asserts `main() == 0` in-process" },
+    { file = "livespec_dev_tooling/checks/wrapper_shape.py", function = "main", reason = "cross-repo test import: livespec-orchestrator-beads-fabro's tests/test_phase1_mechanical_coverage.py imports the submodule and asserts `main() == 0` in-process; the `python -m` string assertion in the same file is ABOUT the justfile, not an invocation" },
 ]
 # livespec v179 member 2 / SPECIFICATION v037: public `X | None` returns whose
 # `None` models a legitimate ABSENCE rather than a failure. RELAXING-ONLY, so
@@ -299,6 +326,86 @@ supervisor_entry_files = [
     # `just` — the TDD commit ritual driver; `main()` returns the hook's
     # refuse/accept exit code.
     "livespec_dev_tooling/tdd_commit.py",
+
+    # --- Class C: the nine `checks/<slug>.py` whose `main` the CENTRAL
+    # vantage measured as cross-repo consumed (`livespec-dev-tooling-wdn7`).
+    # Declaring them in `cross_repo_public_api` directly above makes them
+    # public for `public_api_result_typed`, and MEASURED — not projected —
+    # that takes this repo's offender count from 0 to exactly 9, every one
+    # `checks/<slug>.py::main`. These entries take it back to 0 by granting
+    # the ratified livespec v177 member-4 supervisor exemption each `main()`
+    # already qualifies for.
+    #
+    # ⛔ WHAT THIS IS NOT: under-declaring `cross_repo_public_api` to keep the
+    # count at zero. Omitting a genuinely consumed name to protect a number is
+    # `pure_trees = []` in a new costume, at the end of the epic that removed
+    # it — and the `5cai` row would convict this repo for exactly that. The
+    # nine ARE declared; the exemption is claimed separately, per file, on the
+    # supervisor shape, and it is visible in this file rather than implicit.
+    #
+    # WHAT QUALIFIES EACH, verified per file rather than assumed from the
+    # shared directory: a `main() -> int`, a `__main__` guard, a
+    # `raise SystemExit(main())` tail, and a real PROCESS invocation —
+    # `uv run python -m livespec_dev_tooling.checks.<slug>` from this repo's
+    # own justfile, confirmed for all nine.
+    #
+    # ⚠️ AND THE ONE PLACE THESE NINE DIFFER FROM CLASS B, recorded because
+    # the class-B block above says a qualifying file is invoked "as a PROCESS
+    # rather than by import" and these are invoked BOTH ways. That clause was
+    # written for a population with no cross-repo importers. It is not
+    # weakened here: the sibling suites call `main()` in-process and assert on
+    # its INT EXIT CODE, which is the supervisor contract itself rather than a
+    # library API — and it is this repo's own sanctioned test idiom, the one
+    # `subprocess_spawn_allowlist` below exists to migrate tests TOWARD,
+    # because a spawned child under `pytest --cov` self-instruments and races.
+    # The consumed contract is the exit code, so member 4 governs it.
+    #
+    # THE COST, MEASURED AND NOT GLOSSED: each entry grants FOUR exemptions
+    # and every one of the nine needs exactly ONE. Verified by running all
+    # four consuming checks on master with these files UNDECLARED — all pass.
+    # `no_write_direct` is unused (no file writes directly; the only
+    # `sys.stderr` reference in each is `structlog.PrintLoggerFactory`,
+    # which is logger configuration). `no_except_outside_io` is unused (none
+    # carries a broad `except`). `supervisor_discipline` is unused (each
+    # terminates solely via `raise SystemExit(main())`, which
+    # `supervisor_discipline.py:93` already tolerates outside the
+    # plugin-scripts tree). `partition_completeness` gains a SPECIFIC claim
+    # where a broad one stood, which is still exactly one claim — this repo
+    # declares no `io_trees`, `commands_trees`, `pure_trees` or
+    # `dataclasses_tree` that could collide. So a LATER edit adding a broad
+    # catch or a stray `print()` to any of these nine would go unflagged.
+    # That is a genuine widening of the unflagged surface, accepted because
+    # member 4 grants per FILE and there is no narrower spelling — not
+    # because the extra three are harmless.
+
+    # `just check-all-declared`. Consumed by beads-fabro's and
+    # livespec-runtime's Phase-1 mechanical-coverage suites.
+    "livespec_dev_tooling/checks/all_declared.py",
+    # `just check-assert-never-exhaustiveness`. Consumed by livespec-runtime's
+    # Phase-1 mechanical-check suite.
+    "livespec_dev_tooling/checks/assert_never_exhaustiveness.py",
+    # `just check-keyword-only-args`. Consumed by beads-fabro's and
+    # livespec-runtime's Phase-1 suites.
+    "livespec_dev_tooling/checks/keyword_only_args.py",
+    # `just check-main-guard`. Consumed by beads-fabro's Phase-1 suite.
+    "livespec_dev_tooling/checks/main_guard.py",
+    # `just check-no-inheritance`. Consumed by beads-fabro's and
+    # livespec-runtime's Phase-1 suites.
+    "livespec_dev_tooling/checks/no_inheritance.py",
+    # `just check-no-lloc-soft-warnings`. Consumed by beads-fabro's Phase-1
+    # suite.
+    "livespec_dev_tooling/checks/no_lloc_soft_warnings.py",
+    # `just check-no-write-direct`. Consumed by beads-fabro's Phase-1 suite.
+    # It is also the check whose own exemption this entry grants — the file
+    # contains no direct write, so the grant is unused, and saying so here is
+    # what keeps that from reading as self-exemption.
+    "livespec_dev_tooling/checks/no_write_direct.py",
+    # `just check-private-calls`. Consumed by beads-fabro's Phase-1 suite.
+    "livespec_dev_tooling/checks/private_calls.py",
+    # `just check-wrapper-shape`. Consumed by beads-fabro's Phase-1 suite,
+    # which asserts `main() == 0` in-process AND separately asserts the
+    # justfile still names the shared module — a fork-regression guard.
+    "livespec_dev_tooling/checks/wrapper_shape.py",
 ]
 # Integration-tier-or-above node-id prefix allowlist for the
 # `heading_coverage` check's `scenarios.md` tier gate (per
