@@ -6,6 +6,10 @@ tmp/
 .codex
 .idea/
 
+# Playwright MCP browser-tool scratch (page snapshots, console logs) —
+# per-session, never durable state.
+.playwright-mcp/
+
 ### Python toolchain artifacts
 # Note: .mypy_cache/ is intentionally NOT listed. Mypy is not used
 # (livespec-dev-tooling pins pyright); its cache path is therefore
