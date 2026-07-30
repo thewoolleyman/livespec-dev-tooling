@@ -175,6 +175,67 @@ def test_a_name_that_is_not_a_top_level_function_is_not_an_edge() -> None:
     assert [edge.function for edge in graph.edges] == ["compute"]
 
 
+def test_an_underscore_prefixed_function_is_never_an_edge() -> None:
+    """v178 clause 0 keeps the `_`-prefix disqualifier, whoever imports it.
+
+    Measured on the real fleet before this was applied: `_check_segment` and
+    `_decision` were reported as undeclared public surface across seven
+    members.
+    """
+    graph = cross_member_consumption(
+        members={
+            "alpha": sources(
+                defining={
+                    "pkg/mod.py": (
+                        "def _helper() -> int:\n    return 1\n\n\n"
+                        "def compute() -> int:\n    return _helper()\n"
+                    )
+                },
+                consuming={},
+            ),
+            "beta": sources(
+                defining={}, consuming={"app.py": "from pkg.mod import _helper, compute\n"}
+            ),
+        }
+    )
+    assert [edge.function for edge in graph.edges] == ["compute"]
+
+
+def test_an_import_the_consuming_member_satisfies_itself_crosses_no_boundary() -> None:
+    """Installed foreign content: the consumer imports ITS OWN byte-identical copy.
+
+    `.claude/hooks/livespec_footgun_guard.py` ships into most members, and
+    `livespec-driver-codex` does `import livespec_footgun_guard` after a
+    `sys.path` insert pointing at its own. Python resolves that to the copy on
+    the path. Measured: without this rule, that ONE file produced 14 false
+    findings across 7 members.
+    """
+    body = "def main() -> int:\n    return 0\n"
+    consumer = "import livespec_footgun_guard\n\nlivespec_footgun_guard.main()\n"
+    shared = {"hooks/livespec_footgun_guard.py": body}
+    graph = cross_member_consumption(
+        members={
+            "alpha": sources(defining=shared, consuming=shared),
+            "beta": sources(defining=shared, consuming=shared),
+            "codex": sources(defining=shared, consuming={**shared, "tests/test_hook.py": consumer}),
+        }
+    )
+    assert graph.edges == ()
+
+
+def test_the_same_import_is_an_edge_when_the_consumer_ships_no_copy() -> None:
+    """The control for the rule above: without a local copy, nothing resolves locally."""
+    body = "def main() -> int:\n    return 0\n"
+    consumer = "import livespec_footgun_guard\n\nlivespec_footgun_guard.main()\n"
+    graph = cross_member_consumption(
+        members={
+            "alpha": sources(defining={"hooks/livespec_footgun_guard.py": body}, consuming={}),
+            "codex": sources(defining={}, consuming={"tests/test_hook.py": consumer}),
+        }
+    )
+    assert [(edge.defining_member, edge.function) for edge in graph.edges] == [("alpha", "main")]
+
+
 def test_an_ambiguous_suffix_yields_every_candidate_and_says_it_is_ambiguous() -> None:
     """Doubt resolves toward MORE enforcement — and the edge admits the doubt.
 
