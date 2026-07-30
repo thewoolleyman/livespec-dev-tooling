@@ -351,3 +351,64 @@ def test_module_re_import_with_vendor_in_sys_path() -> None:
     assert callable(first.main)
     second = _load_module()
     assert callable(second.main)
+
+
+def _imports_vendored_returns(*, source: str) -> bool:
+    """True iff `source` has a module-level import of the VENDORED `returns`."""
+    return any(line.startswith(("from returns", "import returns")) for line in source.splitlines())
+
+
+def test_every_returns_importing_module_carries_the_vendor_path_preamble() -> None:
+    """A first-party module importing `returns` must put `_vendor/` on the path ITSELF.
+
+    `returns` is VENDORED, not installed, so a bare `from returns... import`
+    resolves only if some EARLIER import in the same process already inserted
+    `_vendor/` into `sys.path`. That makes a bare import work everywhere the
+    module is reached BY IMPORT and fail wherever it is the process ENTRY
+    POINT — the one environment no unit test exercises, because a test suite
+    has always imported something else first.
+
+    THAT IS NOT HYPOTHETICAL, AND THIS TEST EXISTS BECAUSE IT SHIPPED.
+    `cross_repo/ci_yaml_canonical_reconcile.py` gained a bare
+    `from returns.unsafe import unsafe_perform_io` in `89296e0`, the
+    `livespec-dev-tooling-vzwa` conversion. Its whole in-repo test suite
+    passed. It is also invoked as `python -m
+    livespec_dev_tooling.cross_repo.ci_yaml_canonical_reconcile` by the
+    reusable bump-pin workflow, where it is the entry point and nothing ran
+    before it — so every consumer's pin bump died on `ModuleNotFoundError: No
+    module named 'returns'`, and SEVEN of eight fleet members sat stuck at
+    `v1.8.4` while this repo released `v1.12.0`.
+
+    It asserts the invariant over the WHOLE first-party tree rather than over
+    the one module that broke, because the failing environment is invisible to
+    every other test in this suite: the next module to grow a `returns` import
+    has no local signal that it needs the preamble.
+
+    It is the mechanical form of this fleet's THIRD AXIS
+    (`livespec-dev-tooling-zu85` / `-dx8l`): "CAN this module import `returns`
+    at all, in EVERY environment it executes in?" — independent of whether the
+    conversion itself was correct, and not answered by answering the railway
+    question well.
+    """
+    package_root = Path(__file__).resolve().parents[2] / "livespec_dev_tooling"
+    sources = {
+        path: path.read_text(encoding="utf-8")
+        for path in sorted(package_root.rglob("*.py"))
+        if "_vendor" not in path.parts and "__pycache__" not in path.parts
+    }
+    importers = {
+        path: text for path, text in sources.items() if _imports_vendored_returns(source=text)
+    }
+    offenders = sorted(
+        path.relative_to(package_root).as_posix()
+        for path, text in importers.items()
+        if "_VENDOR_DIR" not in text
+    )
+    # THE DENOMINATOR, asserted rather than assumed. `offenders == []` over an
+    # EMPTY importer set is byte-identical green to `offenders == []` over a
+    # correct one, and telling those two apart is this repo's entire subject.
+    assert importers, f"swept {len(sources)} modules and found NONE importing `returns`"
+    assert offenders == [], (
+        "these modules import the VENDORED `returns` without putting `_vendor/` on "
+        f"sys.path themselves, so they break when run as `python -m`: {offenders}"
+    )

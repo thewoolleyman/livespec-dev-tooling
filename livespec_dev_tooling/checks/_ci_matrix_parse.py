@@ -56,13 +56,22 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TypedDict, cast
 
-from returns.unsafe import unsafe_perform_io
+# Carried even though this module is only ever reached BY IMPORT today: it
+# resolves only because each of its importers happens to carry the preamble,
+# which is a property of the callers rather than of this file. The module that
+# broke the fan-out was in exactly this state until it became an entry point.
+_VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
 
-from livespec_dev_tooling.canonical_checks import canonical_check_slugs
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
+
+from livespec_dev_tooling.canonical_checks import canonical_check_slugs  # noqa: E402
 
 # Names in `__all__` mark this private sibling's public surface to its two
 # importers — `ci_matrix_completeness.py` (the gate) and
