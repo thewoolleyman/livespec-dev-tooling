@@ -54,11 +54,31 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >    anything.** Measured on master `0788e93` with the shipped check: **25 dropped + 6 kept
 >    + 3 ADDED = 9**.
 >
->    **✅ `9sl0`, `rvw3`, `q5lb` AND `vzwa` ARE ALL CLOSED. 🎯🎯 THE TWO NUMBERS NOW AGREE AT
->    **ZERO**.** Re-measured on the conversion branch with the shipped code: universe **150**,
->    v178 public **167**, member-1 exempt **381**, member-2 exempt **1**, **0 offenders** — and
->    the ratified rule considers **0** a violation. **The remediation half of step 6 is DONE.**
->    Arming now waits on `5cai` and the `995m` known-gap statement, and on NOTHING in the count.
+>    **✅ `9sl0`, `rvw3`, `q5lb` AND `vzwa` ARE ALL CLOSED. 🎯🎯 THE TWO NUMBERS AGREE AT
+>    **ZERO**.** Re-measured on MERGED master `89296e0` with the shipped code, never inherited:
+>    universe **150**, v178 public **167**, member-1 exempt **382**, member-2 exempt **1**
+>    (0 rejected, the two member sets verified DISJOINT), **0 offenders** — and the ratified rule
+>    considers **0** a violation. **The remediation half of step 6 is DONE.** `vzwa` took four
+>    PRs, consumer-first: livespec **#1847** (dual-shape read), **#908** (the incremental gate
+>    selects `*_edges.py` siblings), **#913** (ci-matrix tests clear the ambient severity var),
+>    **#905** (the conversion). Arming now waits on `5cai` and the `995m` known-gap statement,
+>    and on NOTHING in the count.
+>
+>    **▶️▶️ THE NEXT ACTION IS `5cai`, AND IT MUST BE BUILT TARBALL-FIRST. READ
+>    `livespec-dev-tooling-k76y` BEFORE WRITING A LINE.** The naive build calls
+>    `FleetContext.file_text()` once per file — **~653 GitHub API reads per run against a
+>    5000/hr installation pool that is SHARED across all nine repos' automation.** Across a
+>    nine-PR release fan-out that is ~5877 reads, **1.2× the entire hourly budget**, so it would
+>    not merely be slow: it would ship a new central row that reds master on release day — this
+>    epic's own defect, authored by the fix for it. One tarball per member is **9 reads** (81
+>    across a fan-out), and this thread has already used that route twice. `FleetContext` has NO
+>    tarball method, so `5cai` is THREE slices: the primitive (`IOResult`, ref-pinned, memoized,
+>    named skip on failure), then the consumption oracle reusing
+>    `checks/_public_api_consumption`'s MODULE-QUALIFIED resolution (a bare-name oracle is
+>    measured wrong), then the row **plus its REGISTRATION in `OBLIGATION_ROWS`** — registration
+>    is the step that makes it run, and Phase 3 proved an unregistered row is walked by neither
+>    engine. The row must carry the guard warning and the static blind spot in its OWN OUTPUT,
+>    not in a docstring, and must report PER MEMBER rather than an aggregate.
 >
 >    **(superseded, kept because the 2 was quoted for a day)** THE TWO NUMBERS AGREE AT 2.
 >    Re-measured on merged master `2df1515` with the shipped code, never inherited: universe
@@ -71,11 +91,19 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >    Agreement means the check is now HONEST; it does not mean the repo is clean. **Arming at 2
 >    reds dev-tooling on its own gate and lefthook then blocks the very commit that fixes it.**
 >    The 2 are `canonical_check_slugs` and `world_gate_check_slugs` — **`vzwa`**.
->    **THE NEXT ACTION IS `vzwa`, THEN `5cai`, THEN ARM.** See 6i and 6k.
+>    ~~THE NEXT ACTION IS `vzwa`, THEN `5cai`, THEN ARM.~~ **SUPERSEDED — `vzwa` LANDED. The
+>    next action is `5cai`.** This line is struck rather than deleted because the paragraph
+>    above it is the still-correct explanation of why agreement alone is not permission to arm;
+>    a cold start greps for "NEXT ACTION" and must not find this one live.
 >
->    **🔴 "THE RATIFIED-RULE COUNT IS 0" IS RETRACTED. IT IS 2.** An earlier revision of this
->    file said 0 on the strength of a HAND reading of six functions. `rvw3`'s fixpoint shipped
->    and disagreed — see 6i. **Do not restore the 0.**
+>    **🔴 TWO DIFFERENT ZEROS, AND CONFLATING THEM WOULD UNDO THE WHOLE LESSON.** An earlier
+>    revision claimed the ratified-rule count was 0 on the strength of a HAND reading of six
+>    functions; `rvw3`'s fixpoint shipped and disagreed, and that 0 was RETRACTED as false —
+>    the count was 2. **Today's 0 is a DIFFERENT zero: it is MEASURED with the shipped
+>    analyses on merged master, after `q5lb` and `vzwa` actually removed the offenders.** The
+>    retracted 0 was a simulation of a fixpoint; this one is the fixpoint's own answer. **Do
+>    not cite the earlier retraction as doubt about the current count, and do not cite the
+>    current count as vindication of the hand reading.**
 >
 >    **▶️ WHY THE COUNT ROSE 0 → 2 — ANSWERED, AND THE ANSWER IS "THE SIMULATION WAS WRONG".**
 >    Asked by supervisor brief 33, which named the two admissible answers: (a) the BASIS
@@ -286,8 +314,12 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >    shape.** Six repos remain unmeasured.
 >
 >    **▶️ COLD-START ORIENTATION — the items this thread still owns, all FILED, none started.**
->    Nothing is mid-flight: #867, #870, #874, #880, #883 and #886 are merged, every worktree of
->    this thread's is removed, and no branch of its own is open. In dependency order:
+>    Nothing is mid-flight, verified at wrap-up 2026-07-30: every PR this thread opened is
+>    MERGED (#867, #870, #874, #880, #883, #886, #890, #891, #892, #895, #898, #905, #906, #908,
+>    #913, #914, plus livespec #1834 and #1847), the primary checkout is clean on `master`
+>    `89296e0`, every worktree of this thread's is REAPED, and no branch of its own is open.
+>    **SEVEN FOREIGN worktrees exist under `~/.worktrees/livespec-dev-tooling/` — reap NONE of
+>    them.** In dependency order:
 >
 >    | id | what | gates arming? |
 >    |---|---|---|
@@ -1608,9 +1640,15 @@ that shape into every remaining sibling wiring.**
 
 ### ▶️ EXACT NEXT ACTION — **`5cai`, THEN ARM. `vzwa` IS DONE AND THE COUNT IS ZERO.**
 
-**Start at `vzwa`. Nothing is mid-flight; nothing needs new authority** (briefs 30–33
-authorized `q5lb`, `5cai` and the arming sequence — an item boundary is a place to REPORT,
-not to WAIT). Every worktree of this thread's is removed and no branch of its own is open.
+**Start at `5cai`, TARBALL-FIRST — read `livespec-dev-tooling-k76y` before writing a line;
+the naive build would red master on release day (see START-HERE). Nothing is mid-flight;
+nothing needs new authority** (briefs 30–37 authorized `q5lb`, `vzwa`, `5cai` and the arming
+sequence — an item boundary is a place to REPORT, not to WAIT). Every worktree of this
+thread's is reaped and no branch of its own is open.
+
+**`vzwa` IS CLOSED — the count is ZERO.** The paragraphs below describing it as the next
+action are HISTORY; they are kept because the not-a-type-change reasoning is why the fix
+was a RESTRUCTURE-and-fail rather than a bare type change, and that reasoning generalizes.
 
 **`vzwa` IS NOW THE ONLY THING BETWEEN THIS REPO AND ZERO.** Two functions,
 `canonical_check_slugs` and `world_gate_check_slugs`, both in `canonical_checks.py`. **Read 6i
