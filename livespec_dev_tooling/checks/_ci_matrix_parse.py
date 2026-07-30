@@ -60,6 +60,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TypedDict, cast
 
+from returns.unsafe import unsafe_perform_io
+
 from livespec_dev_tooling.canonical_checks import canonical_check_slugs
 
 # Names in `__all__` mark this private sibling's public surface to its two
@@ -142,7 +144,17 @@ class CiJob:
 def load_canonical(*, canonical_from: str | None, cwd: Path) -> tuple[str, ...]:
     """Resolve the canonical-slug tuple from an override file or live discovery."""
     if canonical_from is None:
-        return canonical_check_slugs()
+        # `unsafe_perform_io(...unwrap())` is FAIL-CLOSED and deliberate.
+        # `canonical_check_slugs` is `IOResult` since `livespec-dev-tooling-vzwa`,
+        # and its failure means the installed `checks/` package is unreadable — a
+        # broken install, not a reachable state for a check running out of that same
+        # package. A `match` arm here could never be covered under this repo's
+        # 100%-per-file gate, so raising beats a dead branch (`#846`'s precedent).
+        # ⛔ NOT `value_or(())`: this function's OTHER early return is already `()`
+        # for a malformed override, and an empty canonical set is read downstream as
+        # "no canonical checks" and PASSES — the exact fail-open vzwa removed. The
+        # two must stay distinguishable.
+        return unsafe_perform_io(canonical_check_slugs().unwrap())
     parsed = json.loads((cwd / canonical_from).resolve().read_text(encoding="utf-8"))
     override = cast("_SlugOverride", parsed) if isinstance(parsed, dict) else None
     slug_field: list[object] | None = override.get("slugs") if override is not None else None

@@ -42,6 +42,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from returns.unsafe import unsafe_perform_io
 
 __all__: list[str] = []
 
@@ -89,6 +90,15 @@ def _import_canonical_checks() -> object:
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
+    # REGISTERING IN `sys.modules` IS REQUIRED, not tidiness. Since
+    # `livespec-dev-tooling-vzwa` the module defines a `@dataclass`
+    # (`ChecksPackageUnreadable`), and under `from __future__ import annotations`
+    # `dataclasses` resolves field annotations by looking up
+    # `sys.modules[cls.__module__]`. For a module loaded via
+    # `spec_from_file_location` and never registered, that lookup yields None and
+    # the decorator dies with `'NoneType' object has no attribute '__dict__'` —
+    # BEFORE any test body runs, so the failure names the import, not the cause.
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -196,7 +206,11 @@ def test_discover_slugs_handles_empty_package(*, tmp_path: Path) -> None:
 
 
 def test_canonical_check_slugs_returns_tuple_of_strings() -> None:
-    """`canonical_check_slugs()` returns a tuple over the real checks package.
+    """`canonical_check_slugs()` yields a tuple of slugs over the real checks package.
+
+    The surface is `IOResult` since `livespec-dev-tooling-vzwa`, so this unwraps; the
+    RAILWAY shape and the empty-walk failure are pinned in
+    `test_canonical_checks_railway.py` rather than duplicated here.
 
     Integration-style check: invokes the public API with no
     arguments. The result must be a tuple of strings, each
@@ -207,11 +221,11 @@ def test_canonical_check_slugs_returns_tuple_of_strings() -> None:
     """
     module = _import_canonical_checks()
 
-    slugs = module.canonical_check_slugs()
+    slugs = unsafe_perform_io(module.canonical_check_slugs().unwrap())
 
     assert isinstance(
         slugs, tuple
-    ), f"canonical_check_slugs() must return a tuple; got {type(slugs)}"
+    ), f"canonical_check_slugs() must yield a tuple of slugs; got {type(slugs)}"
     assert all(
         isinstance(s, str) for s in slugs
     ), f"every slug must be a string; got {[type(s) for s in slugs]}"
@@ -236,7 +250,7 @@ def test_canonical_check_slugs_excludes_helper_module() -> None:
     """
     module = _import_canonical_checks()
 
-    slugs = module.canonical_check_slugs()
+    slugs = unsafe_perform_io(module.canonical_check_slugs().unwrap())
 
     assert (
         "check--red-green-replay-modes" not in slugs
@@ -301,6 +315,9 @@ def test_canonical_checks_module_importable_without_running_main() -> None:
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
+    # Same `sys.modules` requirement as `_import_canonical_checks` — see the comment
+    # there. The module's `@dataclass` cannot resolve its annotations otherwise.
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     assert callable(
         module.canonical_check_slugs
@@ -334,7 +351,7 @@ def test_baseline_check_slugs_are_sorted_and_subset_of_canonical() -> None:
     module = _import_canonical_checks()
 
     baseline = module.baseline_check_slugs()
-    canonical = module.canonical_check_slugs()
+    canonical = unsafe_perform_io(module.canonical_check_slugs().unwrap())
 
     assert list(baseline) == sorted(baseline), f"baseline slugs must be sorted; got {baseline}"
     for slug in baseline:
@@ -379,7 +396,7 @@ def test_world_gate_check_slugs_returns_the_curated_set() -> None:
     """
     module = _import_canonical_checks()
 
-    slugs = module.world_gate_check_slugs()
+    slugs = unsafe_perform_io(module.world_gate_check_slugs().unwrap())
 
     assert slugs == (
         "check-branch-protection-alignment",
@@ -392,8 +409,8 @@ def test_world_gate_check_slugs_are_sorted_and_subset_of_canonical() -> None:
     """Every world-gate slug is alphabetically sorted AND a real canonical check slug."""
     module = _import_canonical_checks()
 
-    world_gates = module.world_gate_check_slugs()
-    canonical = module.canonical_check_slugs()
+    world_gates = unsafe_perform_io(module.world_gate_check_slugs().unwrap())
+    canonical = unsafe_perform_io(module.canonical_check_slugs().unwrap())
 
     assert list(world_gates) == sorted(
         world_gates

@@ -92,6 +92,7 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware.
 
 from livespec_dev_tooling.canonical_checks import (  # noqa: E402
     canonical_check_slugs,
@@ -182,8 +183,18 @@ def _configure_logger() -> structlog.stdlib.BoundLogger:
 
 def _load_canonical(*, canonical_from: str | None, cwd: Path) -> _LoadedCanonical:
     """Resolve the canonical-slug tuple from either an override file or live discovery."""
+    # `unsafe_perform_io(...unwrap())` is FAIL-CLOSED and deliberate.
+    # `canonical_check_slugs` is `IOResult` since `livespec-dev-tooling-vzwa`,
+    # and its failure means the installed `checks/` package is unreadable — a
+    # broken install, not a reachable state for a check running out of that same
+    # package. A `match` arm here could never be covered under this repo's
+    # 100%-per-file gate, so raising beats a dead branch (`#846`'s precedent).
+    # ⛔ NOT `value_or(())`: an empty slug set is read as 'no canonical checks'
+    # and PASSES — the exact fail-open vzwa removed.
     if canonical_from is None:
-        return _LoadedCanonical(slugs=canonical_check_slugs(), source="live")
+        return _LoadedCanonical(
+            slugs=unsafe_perform_io(canonical_check_slugs().unwrap()), source="live"
+        )
     path = (cwd / canonical_from).resolve()
     text = path.read_text(encoding="utf-8")
     parsed = json.loads(text)
@@ -344,7 +355,9 @@ def main() -> int:
     # inspected even when `--canonical-from` empties the loaded set, AND a
     # hermetic synthetic recipe (a loaded slug) is inspected in tests. Ordered
     # de-dupe via `dict.fromkeys`.
-    scan_slugs = list(dict.fromkeys([*canonical_check_slugs(), *loaded.slugs]))
+    scan_slugs = list(
+        dict.fromkeys([*unsafe_perform_io(canonical_check_slugs().unwrap()), *loaded.slugs])
+    )
     override_slugs = {
         slug
         for slug in scan_slugs
