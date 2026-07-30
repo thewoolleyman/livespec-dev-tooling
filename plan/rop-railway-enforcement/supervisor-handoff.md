@@ -368,7 +368,11 @@ supervisor-authorized. **Do not re-ask any of it.**
 `v036` (`cross_repo_public_api` key), `v177` (supervisor_entry_files as exemption
 member 4), `v178` (public API means CONSUMED ACROSS A BOUNDARY, fleet-wide),
 `v179` (no-expected-failure-mode: member 1 COMPUTED, member 2 declared).
-Implementations landed: `721o`, `rvw3`, `q5lb`. Released through **v1.8.0**.
+Implementations landed: `721o`, `rvw3`, `q5lb`, and **`vzwa` (PR #905 → `89296e0`,
+released `v1.9.0`)**. **THE COUNT IS ZERO** — the check reports 0 and the ratified rule
+considers 0, agreeing. `vzwa` was NOT a type change: an empty `pkgutil` walk is now
+`ChecksPackageUnreadable` on the failure track, because zero discovered modules is never
+a legitimate answer for a file shipping inside the package it walks.
 
 **THE ONLY THING BETWEEN HERE AND ARMING IS `5cai`, AND IT IS BINDING.** It is the
 central-vantage fleet consumption conformance row that VERIFIES `721o`'s declaration
@@ -377,21 +381,46 @@ and every public function would fall out of scope silently with the check green 
 `pure_trees = []` wearing a new name, at the end of the epic that removed it. If `5cai`
 proves larger than expected, ARMING WAITS. Do not accept "file it as a follow-up".
 
-**The arming gate is NOT "zero".** It is: the check's raw count and the ratified-rule
-count AGREE, and both are stated in the arming commit. As of PR #898 they agree at 2.
-If they ever disagree, THE SIMULATION WAS WRONG and that discrepancy outranks the
-arming. Arming runs the check over ~146 files for the first time in this epic's
-history; a surprise there is a FINDING, not something to smooth.
+**`5cai` IS THREE SLICES, AND THAT TRIGGERS THE CLAUSE ABOVE RATHER THAN EXCUSING IT**
+(`k76y`): (1) `FleetContext.member_tree_snapshot()`, the tarball primitive — `IOResult`,
+ref-pinned, memoized, named skip on failure; (2) the fleet consumption oracle, REUSING
+`checks/_public_api_consumption`'s module-qualified resolution — the bare-name shortcut
+is MEASURED wrong; (3) the row plus its **REGISTRATION** in `OBLIGATION_ROWS`, which is
+the step that makes it run. **Tarball-first is a CORRECTNESS requirement, not an
+optimization.** Measured: naive ~653 API calls per run, ~5877 across a nine-PR fan-out —
+**1.2× the App installation's entire 5000/hr pool**; the tarball route is ~9 per run.
+A naive build would ship a new central row that reds master on release day, which is
+this epic's own defect authored by its own fix.
+
+**The arming gate is no longer the two numbers.** They now AGREE AT ZERO, so that
+condition is DISCHARGED. What remains is: **`5cai` landed, plus the `995m` known-gap
+statement carried in the arming commit's own text.** Arming runs the check over ~150
+files for the first time in this epic's history; a surprise there is a FINDING, not
+something to smooth.
 
 **`995m` is an accepted KNOWN GAP, recorded, not silent.** `config.py` excludes itself
 from every check universe because `is_generated` matches its own `@generated` prose.
 Either it lands before arming, or the arming commit carries the known-gap statement.
 Silence is not an option.
 
+**Items filed since this section was last written, none of them arming gates:**
+`mmqe` (P1 — a `rate_limited` read presents as the SAME "unreadable" blind row as a
+permission gap; it was filed P0 on a MISDIAGNOSIS and corrected, see Corrections),
+`ueni` (P1 — both declaration keys' hard-failing staleness gates sit BEHIND the
+`pure_trees` role-absence gate, so this repo's five declarations are verified by nothing
+locally), `oip9` (P1 — `livespec-overseer` keeps 49 `test_*.py` inside its product tree,
+so v178 makes 24 test-builder helpers "public API"; its 80 is 33 over genuinely-product
+code, and a fan-out planned from the raw number budgets conversion work for test
+builders), `k76y` (the `5cai` request-budget design finding above).
+
 **The `223` / `282` fan-out figures are RETIRED.** They predate v178/v179 and were
 measured under a definition of "public" that no longer exists. v178 both REMOVES and
-ADDS, so sibling counts are unknown in BOTH directions. Re-measure per repo; never
-quote the old numbers.
+ADDS, so sibling counts are unknown in BOTH directions — `oip9` is the first MEASURED
+confirmation that a sibling really can come out higher. Re-measure per repo; never quote
+the old numbers.
+
+**Foreign worktrees: EIGHT or more, not five.** The count in the HALT-first section is
+stale and grows. Enumerate every session; reap NONE.
 
 **Live record:** `plan/rop-railway-enforcement/handoff.md` (the worker owns it) and the
 ledger, which is authoritative over both files. Re-derive before acting.
@@ -486,6 +515,56 @@ Carried forward because they are role-level rather than track-level:
 - **Do not let the worker wait for permission on authorized work.** It ended a pass with
   "say the word and I'll start `rvw3`" — authorized two briefs earlier. An item boundary
   is a place to REPORT, not to WAIT; each such stop costs a full turn.
+
+### First-hand, 2026-07-30 — supervisor errors from the vzwa / 5cai drive
+
+- **I BRIEFED A CAUSAL STORY ABOUT INFRASTRUCTURE AND IT HAD A COUNTEREXAMPLE WITHIN THE
+  HOUR.** Having correctly refuted the worker's `mmqe` misdiagnosis, I offered my own
+  mechanism — the release fan-out drains the App budget, so the gate 403s on the commits
+  the fan-out itself creates — and labelled it a candidate to verify. The next fan-out
+  (`v1.8.1`: release `a5f1002`, pin bump `3248ce4`) went GREEN on exactly the commits it
+  predicted would fail. The worker had already declined to claim it, on the better
+  ground that GitHub exposes no per-request attribution. **Refuting a wrong cause does
+  not entitle you to supply the right one.** A supervisor's replacement hypothesis is
+  held to the same standard as the one it replaced, and "labelled a candidate" does not
+  lower that bar — it still steers the worker's next hour.
+
+- **TWO HYPOTHESES IN ONE BRIEF, BOTH WRONG, BOTH THEORIZED FROM A PATCH DIFF.** On
+  #905's CI failure I claimed the 17 failing fixtures were green only because
+  `world_gates` was empty (the fail-open), and warned that a docstring premise might be
+  falsified. Neither survived: `ChecksPackageUnreadable` never fired and the walk never
+  yielded nothing. The real cause was ambient environment leaking into spawned
+  subprocesses (`LIVESPEC_FAIL_IF_CI_MATRIX_GAPS_EXIST` flipping warn→fail). The
+  worker's discriminator was one sentence and I could have applied it myself: *"if the
+  fixtures had been passing because `world_gates` was empty, they would have failed in
+  the full-suite legs too."* **Reading a diff is not running anything** — this thread's
+  own "never hand-simulate a fixpoint", arriving one level up in the supervisor.
+
+- **WHAT ACTUALLY EARNED ITS KEEP WAS CHEAP AND MECHANICAL, TWICE.** Grepping master for
+  `_EXIT_VIOLATIONS` BEFORE briefing killed my own first instinct (that exit 4 was the
+  new fail-closed path) and stopped the worker chasing the unwrap. And reading
+  `mergeStateStatus` on the forge caught a non-terminating `until` loop the worker could
+  not see from inside — `#913` was `DIRTY` with zero checks reported, so both exit
+  conditions were unreachable. **Prefer one forge read to one paragraph of reasoning.**
+
+- **THE UNTIL-LOOP LESSON NEEDED STRENGTHENING, NOT REPEATING.** This file already
+  carried "verify a polling probe once before wrapping it in an until-loop" from the
+  ~37-minute incident. Here BOTH probes were valid and the loop still could not
+  terminate, because its exit conditions did not COVER THE ACTUAL STATE. The recorded
+  remedy's other half is the one that was skipped: **give the loop an iteration ceiling
+  that reports rather than hangs.** A valid probe is not a terminating loop.
+
+- **THE CHARTER'S OWN WATCHER SNIPPET MISCLASSIFIES A LEGITIMATE HOLD AS IDLE.** A pane
+  frozen while a background shell runs is a worker correctly declining to touch shared
+  git state mid-push, not a stall; waking there burns a turn rediscovering an in-flight
+  operation. Guard the idle branch on no background shell running. Separately: **do not
+  re-arm a watcher whose wake condition is already satisfied** — a push-keyed watcher
+  reused after the push lands fires instantly, forever.
+
+- **A DUPLICATED PARAGRAPH IS THE PROSE-TWIN DEFECT WITH THE SERIAL NUMBERS FILED OFF.**
+  Editing this very section, I left two copies of the retired-figures paragraph. Two
+  copies of a normative statement is exactly what produced `livespec-i04f`. Caught by
+  grepping my own edit; do that before committing prose to a file this long.
 
 ### Verification lessons worth keeping at role level
 
