@@ -11,6 +11,8 @@ pin sources:
 - `ARG UV_VERSION` / `ARG JUST_VERSION` / `ARG LEFTHOOK_VERSION`
   ↔ the `.mise.toml` `[tools]` pins (`uv` / `just` / `lefthook`).
 - `ARG PYTHON_VERSION` ↔ `.python-version`.
+- `ARG GH_VERSION` ↔ the supported GitHub CLI pin required by the
+  Fabro PR orchestration surface.
 
 These ARGs live in DIFFERENT layer files (`JUST_VERSION` /
 `LEFTHOOK_VERSION` in `base`; `UV_VERSION` / `PYTHON_VERSION` in `python`;
@@ -19,7 +21,7 @@ from the whole SET of layer Dockerfiles and merges them. Keep each ARG in
 exactly one layer — the merge means a duplicated ARG would NOT fail this
 check, it would silently let the two copies drift.
 
-The image's remaining ARG pins (mise itself, node, gh, the Claude ACP
+The image's remaining ARG pins (mise itself, node, the Claude ACP
 adapter `CLAUDE_AGENT_ACP_VERSION`, `RUST_VERSION`) have no repo-side pin
 source — they mirror the host toolchain (or, for Rust, the console's
 `rust-toolchain.toml`, checked on the CONSUMER side per the
@@ -80,6 +82,8 @@ _MISE_LOCKSTEP_ARGS = (
     ("LEFTHOOK_VERSION", "lefthook"),
 )
 _PYTHON_LOCKSTEP_ARG = "PYTHON_VERSION"
+_GH_SUPPORTED_ARG = "GH_VERSION"
+_SUPPORTED_GH_VERSION = "2.96.0"
 
 
 def _discover_layer_dockerfiles(*, cwd: Path) -> list[Path]:
@@ -153,6 +157,12 @@ def _lockstep_issues(
         issues.append(
             f"{_PYTHON_LOCKSTEP_ARG}: image bakes {image_python!r} but "
             f"{_PYTHON_VERSION_PATH} pins {python_version!r}"
+        )
+    image_gh = dockerfile_args.get(_GH_SUPPORTED_ARG, "")
+    if image_gh != _SUPPORTED_GH_VERSION:
+        issues.append(
+            f"{_GH_SUPPORTED_ARG}: image bakes {image_gh!r} but "
+            f"the supported GitHub CLI pin is {_SUPPORTED_GH_VERSION!r}"
         )
     return issues
 
