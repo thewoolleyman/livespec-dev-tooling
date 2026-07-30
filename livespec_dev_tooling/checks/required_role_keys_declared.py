@@ -109,7 +109,15 @@ def layout_dependent_check_slugs() -> tuple[str, ...]:
     error into `()` would turn this check silently green.
     """
     slugs: list[str] = []
-    for slug in canonical_check_slugs():
+    # `unsafe_perform_io(...unwrap())` is FAIL-CLOSED and deliberate.
+    # `canonical_check_slugs` is `IOResult` since `livespec-dev-tooling-vzwa`,
+    # and its failure means the installed `checks/` package is unreadable — a
+    # broken install, not a reachable state for a check running out of that same
+    # package. A `match` arm here could never be covered under this repo's
+    # 100%-per-file gate, so raising beats a dead branch (`#846`'s precedent).
+    # ⛔ NOT `value_or(())`: an empty slug set is read as 'no canonical checks'
+    # and PASSES — the exact fail-open vzwa removed.
+    for slug in unsafe_perform_io(canonical_check_slugs().unwrap()):
         module_path = _CHECKS_PACKAGE_DIR / f"{_slug_to_module_name(slug=slug)}.py"
         if module_path.is_file() and _module_imports_load_config(path=module_path):
             slugs.append(slug)

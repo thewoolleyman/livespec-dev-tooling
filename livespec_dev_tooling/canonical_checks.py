@@ -31,9 +31,14 @@ Slug mapping: snake_case module name → kebab-case slug with
 
 Public API:
 
-- `canonical_check_slugs() -> tuple[str, ...]` — returns the
-  alphabetically-sorted slug tuple computed over the live
-  `livespec_dev_tooling.checks` package directory.
+- `canonical_check_slugs() -> IOResult[tuple[str, ...],
+  ChecksPackageUnreadable]` — the alphabetically-sorted slug tuple
+  computed over the live `livespec_dev_tooling.checks` package
+  directory, on the railway because the walk IS a filesystem
+  boundary (`livespec-dev-tooling-vzwa`). An EMPTY walk is a
+  FAILURE, not an empty success: `pkgutil.iter_modules` on a
+  missing directory yields nothing rather than raising, and every
+  consumer read that empty tuple as "no canonical checks" — a PASS.
 - `baseline_check_slugs() -> tuple[str, ...]` — returns the
   alphabetically-sorted tuple of the `baseline` PROFILE slugs: a
   deliberately STATIC, curated SUBSET of the canonical set naming the
@@ -47,9 +52,10 @@ Public API:
   transport surface emitting `{"slugs": [...]}` on stdout, exit 0.
 
 Output discipline: this module emits JSON to stdout (thin transport
-contract) when invoked via `--json`. No structlog wiring needed
-because no diagnostic surface exists — successful discovery is the
-only path.
+contract) when invoked via `--json`, and a JSON diagnostic to stderr
+when the checks package is unreadable. The file is declared in this
+repo's `supervisor_entry_files`, which is what makes both writes
+legible rather than `no_write_direct` violations.
 """
 
 from __future__ import annotations
@@ -58,6 +64,7 @@ import argparse
 import json
 import pkgutil
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 __all__: list[str] = [
@@ -67,6 +74,13 @@ __all__: list[str] = [
     "world_gate_check_slugs",
 ]
 
+
+_VENDOR_DIR = Path(__file__).resolve().parent / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
+
+from returns.io import IOFailure, IOResult, IOSuccess  # noqa: E402  — vendor-path-aware.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware.
 
 _CHECKS_PACKAGE_DIR = Path(__file__).resolve().parent / "checks"
 _SLUG_PREFIX = "check-"
@@ -156,15 +170,69 @@ def _discover_slugs(*, package_path: Path) -> tuple[str, ...]:
     return tuple(sorted(discovered))
 
 
-def canonical_check_slugs() -> tuple[str, ...]:
-    """Return the alphabetically-sorted tuple of canonical check slugs.
+@dataclass(frozen=True, kw_only=True)
+class ChecksPackageUnreadable:
+    """The checks package directory yielded NO modules — a failure, not an answer.
 
-    Computed over the live `livespec_dev_tooling.checks` package
-    directory at every invocation. Adding a new `checks/<name>.py`
-    file automatically extends the returned tuple on the next call;
-    no second source of truth.
+    `livespec-dev-tooling-vzwa`. `pkgutil.iter_modules` on a MISSING directory
+    yields no entries rather than raising, so the pre-conversion
+    `canonical_check_slugs()` returned an EMPTY tuple and every consumer read that
+    as "this repo has no canonical checks" — which PASSES. That is the fail-open
+    this type removes.
+
+    **ZERO DISCOVERED MODULES IS NEVER A LEGITIMATE ANSWER, and that is why the
+    failure track is genuinely inhabited rather than ceremonial.**
+    `canonical_checks.py` ships INSIDE the same installed package as `checks/`, so
+    `_CHECKS_PACKAGE_DIR` is present whenever this module imported at all. Zero
+    modules therefore means the directory is missing, unreadable, or the path is
+    wrong — a broken install, not an empty one.
     """
-    return _discover_slugs(package_path=_CHECKS_PACKAGE_DIR)
+
+    package_path: Path
+    reason: str
+
+
+def canonical_check_slugs() -> IOResult[tuple[str, ...], ChecksPackageUnreadable]:
+    """The alphabetically-sorted canonical check slugs, or why they are unreadable.
+
+    Computed over the live `livespec_dev_tooling.checks` package directory at every
+    invocation. Adding a new `checks/<name>.py` file automatically extends the
+    returned tuple on the next call; no second source of truth.
+
+    `IOResult` because the walk IS a filesystem boundary — ratified livespec v179
+    member 1 clause (c), and the same clause that reached this function
+    TRANSITIVELY through `_discover_slugs` while its own body looked total. Its
+    body being clean is exactly why a hand reading called it exempt and the
+    mechanical fixpoint did not.
+
+    ⛔ AN EMPTY WALK IS A **FAILURE**, NOT AN EMPTY SUCCESS. Returning
+    `IOSuccess(())` would move the sentinel instead of removing it: every consumer
+    reads an empty slug set as "no canonical checks" and passes. See
+    `ChecksPackageUnreadable`.
+
+    ⛔ AND DO NOT "SIMPLIFY" THIS BY HOISTING THE WALK TO A MODULE-LEVEL CONSTANT.
+    `_SLUGS = _discover_slugs(...)` at import time would make this function
+    MECHANICALLY TOTAL — clauses (c) and (d) analyse function bodies and callees,
+    and a module-level assignment is in neither — so the check would go green and
+    the result would be STRICTLY WORSE: the I/O moves where the analysis cannot see
+    it, the failure becomes implicit again, and an import-time empty walk is more
+    invisible than a call-time one. That is the manufactured-confidence shape this
+    epic exists to remove.
+    """
+    discovered = _discover_slugs(package_path=_CHECKS_PACKAGE_DIR)
+    if not discovered:
+        return IOFailure(
+            ChecksPackageUnreadable(
+                package_path=_CHECKS_PACKAGE_DIR,
+                reason=(
+                    "pkgutil.iter_modules yielded no modules; the checks package "
+                    "directory is missing or unreadable. It ships inside this "
+                    "installed package, so an empty walk is a broken install "
+                    "rather than a repo with no checks"
+                ),
+            )
+        )
+    return IOSuccess(discovered)
 
 
 def _validate_baseline_subset(*, baseline: tuple[str, ...], canonical: tuple[str, ...]) -> None:
@@ -213,11 +281,19 @@ def baseline_check_slugs() -> tuple[str, ...]:
     asserting every entry is a real canonical check slug.
     """
     baseline = tuple(sorted(_BASELINE_CHECK_SLUGS))
-    _validate_baseline_subset(baseline=baseline, canonical=canonical_check_slugs())
+    # `.unwrap()` is FAIL-CLOSED and deliberate: this function is not consumed
+    # across any boundary (tests only), so v178 does not make it public and the
+    # Result-return rule does not reach it. An unreadable checks package here is a
+    # broken install, and raising beats inventing an answer — `#846`'s precedent
+    # for an unreachable failure at a call site, where a `match` arm could never be
+    # covered under this repo's 100%-per-file gate.
+    _validate_baseline_subset(
+        baseline=baseline, canonical=unsafe_perform_io(canonical_check_slugs().unwrap())
+    )
     return baseline
 
 
-def world_gate_check_slugs() -> tuple[str, ...]:
+def world_gate_check_slugs() -> IOResult[tuple[str, ...], ChecksPackageUnreadable]:
     """Return the alphabetically-sorted tuple of world-gate check slugs.
 
     World-gate checks verify the WORLD the change lands on (master CI
@@ -230,10 +306,26 @@ def world_gate_check_slugs() -> tuple[str, ...]:
     alphabetically, after asserting every entry is a real canonical check
     slug. The slugs stay canonical and stay wired in the `just check`
     aggregate — only the CI-mirror requirement excludes them.
+
+    `IOResult` because it CANNOT be total while `canonical_check_slugs` is not:
+    v179 clause (d) reaches a caller through its callees as a FIXPOINT, so this
+    function is two hops from `pkgutil.iter_modules` and disqualified however clean
+    its own body looks. **Converting only the inner function would leave this one
+    still reported, so the pair converts together** — a split would measure 2 → 2
+    and read as a failed conversion.
+
+    The failure is FORWARDED unchanged rather than re-wrapped: this function adds
+    no failure mode of its own, and a second error type for the same condition
+    would make a caller distinguish two things that are one thing.
     """
+    canonical = canonical_check_slugs()
+    if isinstance(canonical, IOFailure):
+        return canonical
     world_gates = tuple(sorted(_WORLD_GATE_CHECK_SLUGS))
-    _validate_world_gate_subset(world_gates=world_gates, canonical=canonical_check_slugs())
-    return world_gates
+    _validate_world_gate_subset(
+        world_gates=world_gates, canonical=unsafe_perform_io(canonical.unwrap())
+    )
+    return IOSuccess(world_gates)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -264,8 +356,27 @@ def main() -> int:
     # the `--json` flag namespace; the parsed value is not consulted
     # because JSON is currently the only supported emission mode.
     _ = parser.parse_args()
-    slugs = canonical_check_slugs()
-    payload = {"slugs": list(slugs)}
+    canonical = canonical_check_slugs()
+    if isinstance(canonical, IOFailure):
+        # The module docstring used to say no diagnostic surface existed because
+        # "successful discovery is the only path". That is no longer true: the
+        # failure track is what `livespec-dev-tooling-vzwa` added, and emitting
+        # NOTHING here would hand a consumer an exit code with no reason. This file
+        # is declared in `supervisor_entry_files`, which is what makes a direct
+        # stderr write legible rather than a `no_write_direct` violation.
+        unreadable = unsafe_perform_io(canonical.failure())
+        _ = sys.stderr.write(
+            json.dumps(
+                {
+                    "check_id": "canonical-checks-package-unreadable",
+                    "package_path": str(unreadable.package_path),
+                    "reason": unreadable.reason,
+                }
+            )
+            + "\n"
+        )
+        return 1
+    payload = {"slugs": list(unsafe_perform_io(canonical.unwrap()))}
     _ = sys.stdout.write(json.dumps(payload) + "\n")
     return 0
 

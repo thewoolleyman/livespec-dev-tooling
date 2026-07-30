@@ -62,6 +62,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
+from returns.unsafe import unsafe_perform_io
+
 from livespec_dev_tooling.canonical_checks import world_gate_check_slugs
 from livespec_dev_tooling.checks._ci_matrix_parse import (
     extract_check_recipe_body,
@@ -378,7 +380,7 @@ def main() -> int:
         ci_yaml_text=ci_yaml_text,
         justfile_text=justfile.read_text(encoding="utf-8"),
         canonical_slugs=_slugs_from_env(),
-        world_gates=world_gate_check_slugs(),
+        world_gates=unsafe_perform_io(world_gate_check_slugs().unwrap()),
     )
 
     if result.skipped_reason is not None:

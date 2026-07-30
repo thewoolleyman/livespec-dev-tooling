@@ -70,6 +70,7 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware.
 
 from livespec_dev_tooling.canonical_checks import world_gate_check_slugs  # noqa: E402
 from livespec_dev_tooling.checks._ci_matrix_parse import (  # noqa: E402
@@ -287,7 +288,15 @@ def main() -> int:
     log = _configure_logger()
     cwd = Path.cwd()
     canonical = load_canonical(canonical_from=canonical_from, cwd=cwd)
-    world_gates = frozenset(world_gate_check_slugs())
+    # `unsafe_perform_io(...unwrap())` is FAIL-CLOSED and deliberate.
+    # `world_gate_check_slugs` is `IOResult` since `livespec-dev-tooling-vzwa`,
+    # and its failure means the installed `checks/` package is unreadable — a
+    # broken install, not a reachable state for a check running out of that same
+    # package. A `match` arm here could never be covered under this repo's
+    # 100%-per-file gate, so raising beats a dead branch (`#846`'s precedent).
+    # ⛔ NOT `value_or(())`: an empty slug set is read as 'no canonical checks'
+    # and PASSES — the exact fail-open vzwa removed.
+    world_gates = frozenset(unsafe_perform_io(world_gate_check_slugs().unwrap()))
     findings = _collect_findings(cwd=cwd, canonical=canonical, world_gates=world_gates)
     return _report(log=log, findings=findings)
 
