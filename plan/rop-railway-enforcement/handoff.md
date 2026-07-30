@@ -133,7 +133,132 @@ records the lane-scoped shape instead.
 >    selects `*_edges.py` siblings), **#913** (ci-matrix tests clear the ambient severity var),
 >    **#905** (the conversion). ~~Arming now waits on `5cai` and the `995m` known-gap statement,
 >    and on NOTHING in the count.~~ **SUPERSEDED — `5cai` IS REGISTERED (#934). Arming now waits
->    on the `995m` known-gap statement ALONE.**
+>    on the `995m` known-gap statement ALONE.~~ **SUPERSEDED AGAIN, 2026-07-31 — ARMING IS
+>    BLOCKED ON `qndn` (P0), WHICH IS NOW THE FIRST GATE. Read the ⛔ block immediately below
+>    before planning anything.**
+>
+>    **🔺🔺 THE META-FINDING, AND IT OUTRANKS THE 75: THE ANSWER WAS ALREADY IN THIS FILE, WRITTEN
+>    CORRECTLY, AND NOBODY READ IT AGAINST THE GATE IT BLOCKED.** §"THE THREE UNDECLARED
+>    CONSUMPTIONS" states it almost verbatim — *"this check skips `_`-prefixed FILES wholesale,
+>    while v178 clause 0 disqualifies only a `_`-prefixed NAME — so the file-level skip is wider
+>    than the ratified rule, and a cross-repo consumer is reaching through it"* — and it NAMES the
+>    two consumers, one of them a beads-fabro HOOK (the `dx8l` blast-radius shape). **Both are
+>    confirmed in the 75.** So the blocker sat in this thread's own handoff, true and specific,
+>    from before the arming attempt, and was never connected to the precondition it invalidated
+>    until a MEASUREMENT forced the join.
+>
+>    **THIS IS THIS THREAD'S SIGNATURE DEFECT IN A NEW PLACE, and it is worth more than the 75.**
+>    Every prior instance was a FALSE record — a stale count, a ratified paragraph contradicted by
+>    measurement, a status field that lied. **This one is a TRUE record nobody re-read against the
+>    current question.** A finding filed as an OBSERVATION, and never re-asked as a PRECONDITION,
+>    is how a known defect survives an epic built to close it. **Practical consequence for whoever
+>    reads this next: before accepting ANY precondition as discharged, grep this file for the
+>    surface it depends on. The answer to the next gate is more likely already written here than
+>    not** — and this file is long enough that "I read it" and "I read it against this question"
+>    are different claims.
+>
+>    **⛔⛔⛔ ARMING IS BLOCKED. `livespec-dev-tooling-qndn` (P0) IS THE FIRST GATE, AND IT WAS
+>    FOUND BY MEASURING BEFORE COMMITTING. THE NEXT ACTION IS THE TRIAGE OF 75 FUNCTIONS —
+>    AUTHORIZED STANDING WORK, NOT A NEW DECISION.**
+>
+>    **THE TWO NUMBERS DO NOT AGREE, AND THE WHOLE DIFFERENCE IS ONE LINE.** Measured on master
+>    `7f2abfd` with the shipped analyses over the shipped `resolve_check_universe()` — universe
+>    **155**, v178 public **182**, v179 member-1 exempt **390**, member-2 **1** (DISJOINT), 33
+>    `supervisor_entry_files`, 0 stale and 0 rejected declarations:
+>
+>    | arming variant | offenders |
+>    |---|---|
+>    | CARRIES `_scan`'s `_`-prefixed-**FILE** skip | **0** |
+>    | DROPS it | **75** |
+>
+>    The entire delta is `if py_file.name.startswith("_"): continue` at
+>    `public_api_result_typed.py:310`. Nothing else moves.
+>
+>    **⛔ WHY ARMING WITH THE SKIP IS FORBIDDEN: IT HIDES 65 OF 155 FILES — 42% OF THE UNIVERSE.**
+>    Arming while carrying it arms a check that structurally cannot see 42% of the universe it was
+>    just migrated onto. **That is `pure_trees = []` in its final costume, at the last step of the
+>    epic that exists to remove it** — the epic would close by committing its own founding defect.
+>    And the skip is WIDER THAN THE RATIFIED RULE: v178 clause 0 disqualifies a `_`-prefixed
+>    **NAME**, never a **FILE**. This repo's own `pyproject.toml` comment already says so and names
+>    two cross-repo consumers reaching through it — `fleet/_context.py::resolve_owner` (beads-fabro's
+>    `codex_yolo_gate.py` hook) and `testing/_cli_e2e_discovery.py::discover_fixtures` (four
+>    siblings). **BOTH ARE IN THE 75.**
+>
+>    **⛔ AND DROPPING THE SKIP FIRST IS ALSO FORBIDDEN** — it turns this repo's own `just check`
+>    RED at 75 and lefthook then blocks the very commit that would fix it. That is THE ORDERING
+>    TRAP, in the place `8o8e` originally named it.
+>
+>    **⛔ AND DROPPING THE SKIP IS *FIDELITY*, NOT A TIGHTENING — say it in those words, because it
+>    changes what KIND of decision this is.** v178 clause 0 disqualifies a `_`-prefixed **NAME**;
+>    `_scan` skips a `_`-prefixed **FILE**. A check enforcing something WIDER than its own ratified
+>    rule is not a stricter check — it is a **NON-CONFORMANT** one, in the RELAXING direction. This
+>    is the exact mirror of PR #748, where wiring the spec's own stated exemptions IN was fidelity
+>    rather than softening. **So "should we tighten?" is the WRONG QUESTION and must be refused if
+>    it comes up: the check has been out of conformance with its ratified rule, and the 75 is what
+>    conformance COSTS.** That framing also disposes of the temptation to ratify the skip after the
+>    fact (supervisor brief 51).
+>
+>    **✅ THE RULING (supervisor brief 50), so nobody re-asks it: REMEDIATE-THEN-FLIP under v034
+>    carve-out 1.** Read and triage the 75 per function the way the original 59 were → THEN drop the
+>    skip → THEN arm. **This is authorized standing work; an item boundary is a place to REPORT, not
+>    to WAIT.**
+>
+>    **THE 75 ARE NOT ARTIFACTS — established by READING, not assumed.** I did NOT read all 75 and
+>    do not claim they are all genuine; that reading IS the work. What is established:
+>    `resolve_owner(*, cwd) -> str | None` is a genuine violation — its `None` collapses THREE
+>    distinct failures (no origin remote, `git remote get-url` failing, a non-github remote) into
+>    one sentinel, and it reaches `subprocess` through `_origin_remote_match`, so member 1 does not
+>    exempt it and clause (e) refuses `X | None` outright.
+>
+>    **▶️ IS THIS `995m`'s PREDICATE? NO — MEASURED, AND IT DOES NOT SHRINK THE JOB.**
+>    `qndn` is a FILENAME predicate inside `_scan`'s own loop, and the 65 files ARE in
+>    `resolve_check_universe()`'s output — this ONE check discards them. `995m` is `is_generated`, a
+>    CONTENT predicate matching `@generated`, applied by the universe resolver itself (`config.py`
+>    verified ABSENT from the universe). Upstream vs downstream, 8 checks vs 1. **Fixing
+>    `is_generated` reclassifies NONE of the 65. The triage stands at 75.**
+>
+>    **▶️ THE TRIAGE SKELETON — mechanical, on `7f2abfd`. NONE OF IT IS A DISPOSITION.**
+>
+>    | by signature shape | n |   | by conviction clause | n |
+>    |---|---|---|---|---|
+>    | `X \| None` | **15** |   | **LOCAL** (a/b/c — own body raises, tries, reaches I/O) | **40** |
+>    | `raise` / `try` | **6** |   | **TRANSITIVE** (d — CLEAN BODY, a callee reaches I/O) | **35** |
+>    | supervisor-shaped | **0** |   | | |
+>    | total-looking signature | **54** |   | | |
+>
+>    **⚠️ THE 35 TRANSITIVE ARE THE DANGEROUS CLASS AND MUST NOT BE HAND-READ.** They are the
+>    `canonical_check_slugs` / `world_gate_check_slugs` shape exactly: every clause a body-only
+>    reading can check PASSES, and the only one that fails needs a fixpoint. This thread's hand
+>    judgement has been wrong 1-of-6 and then 2-of-4 on precisely this class, **both times toward
+>    EXEMPTION**. Run the analysis per function; never simulate it. And `tag_version_component` sat
+>    in the STRONGEST convict class and was still not a conversion — so **read every function this
+>    classification CONVICTS, not only the ones it acquits.**
+>
+>    **SUGGESTED FIRST UNIT:** the **15** `X | None`. That class splits cleanly into member-2
+>    `total_absence_returns` DECLARATIONS versus genuine conversions, so it tells you how much of
+>    the 75 is declaration rather than code before any conversion is attempted.
+>
+>    **THE THREE METHOD CONSTRAINTS BIND EVERY CANDIDATE, all already paid for:** (1) is the `None`
+>    a real failure or a legitimate ABSENCE? (2) **CAN this module import `returns` in EVERY
+>    environment it executes in?** — unasked once, and it cost a fleet-wide fan-out outage on
+>    2026-07-30. (3) does any SIBLING import this symbol? if so consumer wiring lands FIRST,
+>    dual-shape, in the consuming repo (`dx8l`).
+>
+>    **⛔ WHAT MUST NOT HAPPEN: do not narrow an `__all__`, adjust the universe, or add a
+>    declaration to make 75 become 0.** This thread has retracted 245, 282, 43, 40-of-46, "class C
+>    is empty", "exposure is zero", and its own 0 that was really 2 — every one caught by
+>    RE-DERIVING. A surprise on the first real scan is the most valuable finding available and the
+>    most tempting to tidy away, because it is the only thing between here and a finished epic.
+>
+>    **AND THE OLD ZERO IS NOT RETRACTED.** The count agreeing at zero was TRUE of the universe as
+>    it was then defined; that universe was smaller than anyone knew. It was honestly measured
+>    against a universe with a hole in it — which is `995m`'s own "a gate whose arming precondition
+>    was verified against a universe with a hole in it", now recurring ONE LEVEL UP.
+>
+>    **⛔ KEEP `qndn` AND `995m` SEPARATE, and the next reader's instinct will be to merge them.**
+>    `995m` is an ACCEPTED known gap whose written statement covers ONE file. `qndn` is 65 files and
+>    was never decided by anyone. Folding them together would launder 65 undecided files through a
+>    ratification they never received — the declaration-that-means-consent pattern.
 >
 >    **🎯🎯 `5cai` IS CLOSED. THE ROW IS REGISTERED AND VERIFIED GATING ON MASTER CI. THE ONLY
 >    THING LEFT BEFORE ARMING IS THE `995m` KNOWN-GAP STATEMENT.** PR **#934** → master
@@ -539,9 +664,16 @@ records the lane-scoped shape instead.
 >    dropped 1. **Flat-layout members are where v178 bites hardest — which is dev-tooling's own
 >    shape.** Six repos remain unmeasured.
 >
->    **✅ NOTHING OF THIS THREAD'S IS OPEN, re-verified at this wrap-up.** Every PR it opened is
->    MERGED (adding **#929, #930, #933, #934**, plus livespec-runtime **#398**), every worktree of
->    its own is REAPED, and no branch of its own remains. **The prior revision's warning about an
+>    **✅ NOTHING OF THIS THREAD'S IS OPEN, re-verified at the 2026-07-31 wrap-up.** Every PR it
+>    opened is MERGED (adding **#929, #930, #933, #934, #937**, plus livespec-runtime **#398**),
+>    every worktree of its own is REAPED, and no branch of its own remains. **The arming attempt
+>    was measured, NOT committed, and its worktree reaped — see the ⛔⛔⛔ block above.**
+>    **FIVE items were filed on 2026-07-31 and none is started:** **`qndn`** (P0, the arming
+>    blocker), **`0j3i`** (P0, pin-currency rows fire at warning severity and escalate to nobody;
+>    no row covers the `pyproject.toml` dependency pin), **`vt61`** (P1, ratify a Pin-currency
+>    severity policy — `2j2l` and `0j3i` are one question twice), **`vojo`** (P1, livespec-runtime's
+>    three convictions from the `nkkv` declaration), and the fan-out regression recorded under its
+>    own heading at the top of this file. **The prior revision's warning about an
 >    open `5cai-register-public-api-row` worktree is RETIRED — that branch was abandoned on stale
 >    master, reaped, and rebuilt from scratch as `feat/5cai-register-row`.** FOREIGN worktrees
 >    exist under `~/.worktrees/livespec-dev-tooling/`; **ENUMERATE with `git worktree list` rather
@@ -567,7 +699,8 @@ records the lane-scoped shape instead.
 >    | ~~`wdn7`~~ | ~~dev-tooling's 9 undeclared `checks/*.py::main`~~ | **✅ CLOSED — #929. Count 0 → 9 → 0, measured at each end** |
 >    | ~~`nkkv`~~ | ~~livespec-runtime's 11, cross-repo~~ | **✅ CLOSED — livespec-runtime #398. Its armed count 24 → 27; the +3 are `vojo`** |
 >    | ~~REGISTER~~ | ~~the row into `OBLIGATION_ROWS`~~ | **✅ DONE — #934. Registered, and VERIFIED EVALUATED on master CI via `blind_rows: 0`** |
->    | **`0yfo`** → `995m` | decompose `config.py`, then flip the `@generated` predicate | only via 6f's known-gap statement |
+>    | **`qndn`** | **the 75 — triage, then drop the `_`-FILE skip, then arm** | **YES — THE FIRST GATE. Start here.** |
+>    | **`0yfo`** → `995m` | decompose `config.py`, then flip the `@generated` predicate | the SECOND gate — via 6f's known-gap statement |
 >
 >    **Three NEW items were filed by this work. `vzwa` IS an arming blocker; the other two are
 >    NOT** — but the first of those is this epic's own subject in the central sweep, so do not
@@ -607,8 +740,9 @@ records the lane-scoped shape instead.
 >    | **today, `vzwa` landed** | **0** | **0** — they AGREE AT ZERO |
 >
 >    **THE COUNT IS NO LONGER A GATE.** ~~`5cai` AND THE `995m` STATEMENT ARE.~~ **SUPERSEDED —
->    `5cai` IS REGISTERED AND GATING (#934). THE `995m` KNOWN-GAP STATEMENT IS THE ONLY REMAINING
->    ARMING GATE.** Every row above was
+>    `5cai` IS REGISTERED AND GATING (#934).~~ ~~THE `995m` KNOWN-GAP STATEMENT IS THE ONLY
+>    REMAINING ARMING GATE.~~ **BOTH SUPERSEDED — `qndn` (P0) IS NOW THE FIRST ARMING GATE; the
+>    `995m` statement is the second.** Every row above was
 >    measured at both ends, never projected — including the `9sl0` row, which is a RETRACTION.
 >
 >    **The first three rows are kept rather than deleted because the `9sl0` row is a RETRACTION**
