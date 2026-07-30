@@ -28,7 +28,14 @@ __all__: list[str] = []
 _OK = CommandResult(returncode=0, stdout="", stderr="")
 _FAIL = CommandResult(returncode=1, stdout="", stderr="x")
 
-_BD_PROBE = ("bash", "-c", 'test -n "${LIVESPEC_BD_PATH:-}" && test -x "${LIVESPEC_BD_PATH:-}"')
+_BD_PROBE = (
+    "bash",
+    "-c",
+    'if test -n "${LIVESPEC_BD_PATH:-}"; then '
+    'test -x "$LIVESPEC_BD_PATH"; '
+    'else bd_path="$(command -v bd 2>/dev/null)" && '
+    'test -n "$bd_path" && test -x "$bd_path"; fi',
+)
 _DOLT_PROBE = (
     "timeout",
     "2",
@@ -78,6 +85,7 @@ def test_bd_binary_absent_is_warning_finding(*, tmp_path: Path) -> None:
     assert isinstance(outcome, RowFinding)
     assert outcome.severity == "warning"
     assert "LIVESPEC_BD_PATH" in outcome.message
+    assert "`bd` on PATH" in outcome.message
 
 
 def test_dolt_server_skips_without_beads(*, tmp_path: Path) -> None:

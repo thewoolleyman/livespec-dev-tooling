@@ -52,19 +52,27 @@ def _beads_applicable(*, ctx: LocalContext) -> bool:
 
 
 def reconcile_beads_bd_binary(*, ctx: LocalContext) -> RowOutcome:
-    """Probe that `$LIVESPEC_BD_PATH` is set and points at an executable `bd`."""
+    """Probe the explicit bd override, or fall back to executable `bd` on PATH."""
     if not _beads_applicable(ctx=ctx):
         return RowSkip(reason=_SKIP_NO_BEADS)
     probe = ctx.exec(
-        args=["bash", "-c", 'test -n "${LIVESPEC_BD_PATH:-}" && test -x "${LIVESPEC_BD_PATH:-}"']
+        args=[
+            "bash",
+            "-c",
+            'if test -n "${LIVESPEC_BD_PATH:-}"; then '
+            'test -x "$LIVESPEC_BD_PATH"; '
+            'else bd_path="$(command -v bd 2>/dev/null)" && '
+            'test -n "$bd_path" && test -x "$bd_path"; fi',
+        ]
     )
     if probe.returncode == 0:
-        return RowPass(note="bd binary present and executable at $LIVESPEC_BD_PATH")
+        return RowPass(note="bd binary present and executable via LIVESPEC_BD_PATH or PATH")
     return RowFinding(
         severity="warning",
         message=(
-            "beads `bd` binary unavailable: set LIVESPEC_BD_PATH to the pinned bd "
-            f"(v1.0.5, e.g. /usr/local/bin/bd) — see {_PREREQ_DOC}"
+            "beads `bd` binary unavailable: set LIVESPEC_BD_PATH to the guarded pinned bd "
+            "(v1.0.5, e.g. /usr/local/bin/bd), or install the guarded `bd` on PATH "
+            f"— see {_PREREQ_DOC}"
         ),
     )
 
