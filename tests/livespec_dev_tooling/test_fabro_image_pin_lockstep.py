@@ -44,6 +44,16 @@ _LOCKSTEP_BASE_DOCKERFILE = (
     "ARG LEFTHOOK_VERSION=1.13.6\n"
     "ARG NODE_VERSION=26.3.0\n"
     "ARG GH_VERSION=2.96.0\n"
+    "RUN mkdir -p -m 755 /etc/apt/keyrings \\\n"
+    "    && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \\\n"
+    "        -o /etc/apt/keyrings/githubcli-archive-keyring.gpg \\\n"
+    "    && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \\\n"
+    '    && echo "deb [arch=$(dpkg --print-architecture) '
+    "signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] "
+    'https://cli.github.com/packages stable main" \\\n'
+    "        > /etc/apt/sources.list.d/github-cli.list \\\n"
+    "    && apt-get update \\\n"
+    "    && apt-get install -y --no-install-recommends gh=${GH_VERSION}\n"
     "RUN mise use -g just@${JUST_VERSION}\n"
 )
 _LOCKSTEP_PYTHON_DOCKERFILE = (
@@ -250,6 +260,85 @@ def test_rejects_unsupported_gh_version(*, tmp_path: Path) -> None:
     combined = result.stdout + result.stderr
     assert "GH_VERSION" in combined and "2.46.0" in combined and "2.96.0" in combined, (
         f"diagnostic should carry the gh ARG name plus both versions; "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_rejects_gh_without_signed_cli_apt_repository(*, tmp_path: Path) -> None:
+    """The GitHub CLI must come from the official signed cli.github.com apt source."""
+    base_without_signed_repo = _LOCKSTEP_BASE_DOCKERFILE.replace(
+        "signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] "
+        "https://cli.github.com/packages stable main",
+        "https://example.invalid/packages stable main",
+    )
+    _write_fixture(
+        root=tmp_path,
+        layers={**_LOCKSTEP_LAYERS, "base": base_without_signed_repo},
+        mise_toml=_LOCKSTEP_MISE_TOML,
+        python_version=_LOCKSTEP_PYTHON_VERSION,
+    )
+
+    result = _run_check(cwd=tmp_path)
+
+    assert result.returncode != 0, (
+        f"unsigned gh apt source should fail; got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    combined = result.stdout + result.stderr
+    assert "cli.github.com" in combined and "signed-by" in combined, (
+        f"diagnostic should name the signed GitHub CLI apt source; "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_rejects_gh_apt_install_without_exact_package_pin(*, tmp_path: Path) -> None:
+    """Installing bare `gh` from apt is drift-prone; the package pin is exact."""
+    base_without_package_pin = _LOCKSTEP_BASE_DOCKERFILE.replace(
+        "gh=${GH_VERSION}",
+        "gh",
+    )
+    _write_fixture(
+        root=tmp_path,
+        layers={**_LOCKSTEP_LAYERS, "base": base_without_package_pin},
+        mise_toml=_LOCKSTEP_MISE_TOML,
+        python_version=_LOCKSTEP_PYTHON_VERSION,
+    )
+
+    result = _run_check(cwd=tmp_path)
+
+    assert result.returncode != 0, (
+        f"unpinned apt gh install should fail; got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    combined = result.stdout + result.stderr
+    assert "gh=${GH_VERSION}" in combined, (
+        f"diagnostic should require the exact gh package pin; "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_rejects_gh_installed_by_mise(*, tmp_path: Path) -> None:
+    """The Fabro image must not route gh through mise's aqua backend."""
+    base_with_mise_gh = _LOCKSTEP_BASE_DOCKERFILE.replace(
+        "RUN mise use -g just@${JUST_VERSION}",
+        "RUN mise use -g just@${JUST_VERSION} gh@${GH_VERSION}",
+    )
+    _write_fixture(
+        root=tmp_path,
+        layers={**_LOCKSTEP_LAYERS, "base": base_with_mise_gh},
+        mise_toml=_LOCKSTEP_MISE_TOML,
+        python_version=_LOCKSTEP_PYTHON_VERSION,
+    )
+
+    result = _run_check(cwd=tmp_path)
+
+    assert result.returncode != 0, (
+        f"mise-managed gh should fail; got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    combined = result.stdout + result.stderr
+    assert "mise" in combined and "gh" in combined, (
+        f"diagnostic should reject mise-managed gh; "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
 

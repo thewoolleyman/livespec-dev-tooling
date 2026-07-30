@@ -50,22 +50,6 @@
 # CI-facing `python-` tag keeps the full saving.
 FROM buildpack-deps:noble-scm
 
-# libatomic1 — node's binary dynamically links libatomic.so.1. Full
-# buildpack-deps shipped it as a side effect of its gcc stack; `-scm`
-# does not, and the node install below fails without it ("error while
-# loading shared libraries: libatomic.so.1"). It is a 10.5 kB runtime
-# library (50.2 kB installed) — negligible against the 176.9 MB the
-# `-scm` re-base saves, and NOT a compiler or dev-header re-add.
-# tmux — required by factory-tier acceptance tests that run inside this same
-# Fabro sandbox image and drive real private tmux sockets. It is a 468.6 kB
-# package (1,160.0 kB installed on noble amd64) with no daemon, and keeps
-# CI-vs-sandbox parity for tmux-dependent verifiers without adding a compiler
-# or dev headers back to base.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends libatomic1 tmux \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
-
 # ---------------------------------------------------------------
 # Tool pins — ARG form so `just check-fabro-image-pin-lockstep` can
 # parse them mechanically across the layer Dockerfiles. JUST_VERSION /
@@ -84,13 +68,35 @@ ARG LEFTHOOK_VERSION=1.13.6
 ARG NODE_VERSION=26.3.0
 ARG GH_VERSION=2.96.0
 
+# libatomic1 — node's binary dynamically links libatomic.so.1. Full
+# buildpack-deps shipped it as a side effect of its gcc stack; `-scm`
+# does not, and the node install below fails without it ("error while
+# loading shared libraries: libatomic.so.1"). It is a 10.5 kB runtime
+# library (50.2 kB installed) — negligible against the 176.9 MB the
+# `-scm` re-base saves, and NOT a compiler or dev-header re-add.
+# tmux — required by factory-tier acceptance tests that run inside this same
+# Fabro sandbox image and drive real private tmux sockets. It is a 468.6 kB
+# package (1,160.0 kB installed on noble amd64) with no daemon, and keeps
+# CI-vs-sandbox parity for tmux-dependent verifiers without adding a compiler
+# or dev headers back to base.
+RUN mkdir -p -m 755 /etc/apt/keyrings \
+    && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+        -o /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+    && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+        > /etc/apt/sources.list.d/github-cli.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends libatomic1 tmux gh=${GH_VERSION} \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
 # The mise.run installer reads MISE_VERSION from the environment.
 ENV MISE_VERSION=${MISE_VERSION}
 RUN curl -fsSL https://mise.run | sh
 ENV PATH=/root/.local/share/mise/shims:/root/.local/bin:$PATH
 
 RUN mise use -g just@${JUST_VERSION} lefthook@${LEFTHOOK_VERSION} \
-        node@${NODE_VERSION} gh@${GH_VERSION} \
+        node@${NODE_VERSION} \
     && mise reshim
 
 # Neutral committer identity for in-sandbox commits (matches the host
