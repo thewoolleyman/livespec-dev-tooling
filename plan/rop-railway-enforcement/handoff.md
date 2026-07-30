@@ -1710,6 +1710,73 @@ remembering those are now unknown in BOTH directions (6e) — report it, and **S
   retract a cause, grep the artifact's OWN body and title for the retracted claim before
   moving on; a status field, a title and a description are three surfaces, and fixing one is
   the default failure.
+- **🔴 A VALID PROBE IS NOT A TERMINATING LOOP. GIVE EVERY WAIT AN ITERATION CEILING THAT
+  REPORTS.** This thread has now burned ~37 minutes twice on an `until`-loop that could
+  never exit. The FIRST time the probe was invalid (`gh pr checks --json` was not a
+  flag), and the recorded remedy was "verify the probe once before wrapping it". **That
+  was necessary and NOT SUFFICIENT.** The second time BOTH probes were perfectly valid —
+  `gh pr view --json state` and `gh pr checks` — and the loop still could not terminate,
+  because the exit conditions did not COVER THE ACTUAL STATE: the PR was
+  `mergeStateStatus=DIRTY` (a merge CONFLICT, so `state` can never become `MERGED`) and
+  had **zero checks**, so a `grep fail` over check output could never match either. Two
+  reachable-looking conditions, neither reachable. **The remedy is structural, not
+  sharper predicates: bound the iterations and REPORT the state you actually observed
+  when the bound is hit.** A loop that says "still DIRTY with 0 checks after 10 tries"
+  finds the bug in one minute; a loop waiting for MERGED finds it never.
+- **AND THE STATE THAT LOOP WAS HIDING IS ITS OWN LESSON: "no checks reported" IS NOT
+  "pending".** A branch with ZERO runs and a conflict is the shape of a push that did not
+  land the way you think it did. **Verify a push CREATED a run** (`gh run list --branch
+  <b>`) rather than inferring the branch is merely early — and treat `DIRTY` as a
+  first-class outcome to check for, not something to discover after a timeout.
+- **🔴 PROSE-TWIN INSTANCES 11 AND 12 — and the pair is worse than either alone.**
+  **11:** `livespec-dev-tooling-mmqe` was retitled, re-prioritised P0→P1 and re-scoped
+  after its cause was retracted, and its DESCRIPTION's first paragraph still asserted all
+  three retracted claims; then the TITLE written to fix it still carried the refuted
+  mechanism. **Three surfaces — status, title, description — fixed one at a time,
+  twice.** **12:** `.github/workflows/ci.yml`'s comment on
+  `LIVESPEC_FAIL_IF_CI_MATRIX_GAPS_EXIST` read *"Harmless for the other metadata legs —
+  they do not read this var."* True when written, FALSE by the time it mattered, and
+  nobody edited it. **So 11 is in a ledger item written to correct this very defect, and
+  12 is in the config comment that asserted the failure mode was IMPOSSIBLE.** The tally:
+  the ratified spec, four config headers, a diagnostic, a docstring, the correction pass
+  itself, and an impossibility claim. **When you retract a cause, grep the artifact's own
+  title AND body for the retracted claim; when you arm a severity flag, grep for comments
+  asserting it is harmless.**
+- **⚠️ AN AMBIENT ENV VAR MAKES A TEST'S EXPECTED EXIT CODE A PROPERTY OF THE HOST.**
+  Measured: `test_ci_matrix_completeness.py`'s `_run_check` treated `env=None` as
+  `run_env=None` — INHERIT the whole ambient environment — and `ci.yml` sets
+  `LIVESPEC_FAIL_IF_CI_MATRIX_GAPS_EXIST: "true"` for every `matrix.target` in the
+  metadata job group, which flips that check from warn (exit 0) to FAIL (exit 4). **17
+  tests asserting `returncode == 0` failed in CI and passed locally.** Reproduced exactly
+  before fixing (`17 failed, 10 passed` with the var set; **27 pass** with the fix).
+  **LATENT, NOT NEW:** the var had been set for that whole job group for some time; what
+  changed is which legs RUN that file, and a leg that SPAWNS the check reads the var
+  transitively. **The discriminator that proved the code under test was innocent:
+  `check-coverage` and `check-per-file-coverage` PASSED on the same commit** — a
+  fail-open-fixture explanation would have failed there too. Clear severity-arming vars
+  from spawned subprocesses; keep only what the interpreter needs.
+- **🔴 TWO GATES IN MUTUAL CONTRADICTION IS A CLASS, NOT A BUG — and this repo had one.**
+  Red-Green-Replay makes a Red-recorded test file BYTE-IDENTITY-BOUND and its stated
+  remedy is to put extra Green-leg tests in a `*_edges.py` sibling.
+  `check_coverage_incremental` then measured each changed impl against ONLY
+  `test_<name>.py`. **So following the first rule GUARANTEED failing the second** whenever
+  the sibling carried a branch, and the author's only escape was to break byte-identity.
+  It was already latent and invisible: `checks/required_role_keys_declared.py` has NINE
+  lines covered solely by its `_edges.py` sibling, unnoticed until an unrelated one-line
+  change dragged that file into the gate's scope. Fixed in PR #908 by selecting
+  `test_<name>_*.py` siblings — an ANCHORED match, so `test_widget` does not drag in
+  `test_widgetry.py`, with the base pairing still REQUIRED so a sibling cannot substitute
+  for it. **Widening a test SELECTION can only make a coverage gate stricter**, which is
+  what made it safe to change a check nine repos run. **When two of this repo's own rules
+  meet, check whether satisfying one forecloses the other.**
+- **⚠️ `git add -A` PICKS UP `uv.lock`, AND THAT REVERTS THE RELEASE MASTER GAINED.** A
+  commit built in a worktree based on `1.8.3` carried `uv.lock`'s version back down from
+  `1.8.4` — invisible in the change's own diff, surfacing as a REBASE CONFLICT in a file
+  the change never meant to touch. Same family as "diff against the FORK POINT", one
+  spelling over: here the reversal arrives through a generated lockfile rather than a
+  stale diff base. **Read `git diff --cached --name-only <base>` before committing and
+  drop anything you did not intend**; `.livespec.jsonc` arrives the same way from
+  `just install-worktree-pack`.
 - **NEVER HAND-SIMULATE A FIXPOINT — RUN IT.** Clause (d) reaches transitively, so every clause
   a body-only reading CAN check may pass while the only clause that fails is the one it cannot.
   Measured twice: 1-of-6 wrong at `classify_role_key_declarations`, then **2-of-4 wrong** on the
