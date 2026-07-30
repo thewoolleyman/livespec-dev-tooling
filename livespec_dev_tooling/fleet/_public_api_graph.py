@@ -79,9 +79,12 @@ from livespec_dev_tooling.checks._import_resolution import (
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
+    from livespec_dev_tooling.config import Config
+
 __all__: list[str] = [
     "ConsumptionEdge",
     "ConsumptionGraph",
+    "FleetConsumption",
     "MemberSources",
     "UnparsedSource",
     "cross_member_consumption",
@@ -136,6 +139,24 @@ class ConsumptionGraph:
 
     edges: tuple[ConsumptionEdge, ...]
     unparsed: tuple[UnparsedSource, ...]
+
+
+@dataclass(frozen=True, kw_only=True)
+class FleetConsumption:
+    """The fleet graph plus every per-member input it was computed over.
+
+    Carried as ONE value because a row consuming it is called once per member
+    and must not recompute a nine-member graph nine times. `unavailable` is
+    part of the value rather than a side channel: a member whose tree or
+    config could not be read contributed NOTHING to the graph, and a consumer
+    that cannot tell that member from a clean one would report the fleet as
+    conformant on the strength of not having looked.
+    """
+
+    graph: ConsumptionGraph
+    sources: Mapping[str, MemberSources]
+    configs: Mapping[str, Config]
+    unavailable: Mapping[str, str]
 
 
 def _qualified(*, member: str, rel: Path) -> Path:
