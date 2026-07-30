@@ -70,9 +70,10 @@ RUN apt-get update \
 # Tool pins — ARG form so `just check-fabro-image-pin-lockstep` can
 # parse them mechanically across the layer Dockerfiles. JUST_VERSION /
 # LEFTHOOK_VERSION MUST match this repo's .mise.toml `[tools]` pins (the
-# check fails the build pipeline on drift). MISE_VERSION / NODE_VERSION /
-# GH_VERSION have no repo-side pin source — they mirror the host
-# toolchain and are tracked only here. The ACP adapter pins
+# check fails the build pipeline on drift). MISE_VERSION / NODE_VERSION
+# have no repo-side pin source — they mirror the host toolchain and are
+# tracked only here. GH_VERSION is the supported GitHub CLI pin enforced
+# by the repo-private lockstep check. The ACP adapter pins
 # (CLAUDE_AGENT_ACP_VERSION / CODEX_ACP_VERSION) live in the `agent`
 # layer alongside the adapters they pin; keep each ARG in exactly one
 # layer Dockerfile.
@@ -81,7 +82,7 @@ ARG MISE_VERSION=v2026.2.7
 ARG JUST_VERSION=1.36.0
 ARG LEFTHOOK_VERSION=1.13.6
 ARG NODE_VERSION=26.3.0
-ARG GH_VERSION=2.46.0
+ARG GH_VERSION=2.96.0
 
 # The mise.run installer reads MISE_VERSION from the environment.
 ENV MISE_VERSION=${MISE_VERSION}
