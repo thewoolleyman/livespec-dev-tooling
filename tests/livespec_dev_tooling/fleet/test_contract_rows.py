@@ -19,6 +19,9 @@ from livespec_dev_tooling.fleet._reconcile import reconcile_merge_settings
 from livespec_dev_tooling.fleet._rows_baseline import assert_baseline_harnesses
 from livespec_dev_tooling.fleet._rows_github import assert_merge_settings
 from livespec_dev_tooling.fleet._rows_instructions import assert_agent_ai_references_resolve
+from livespec_dev_tooling.fleet._rows_public_api_conformance import (
+    assert_cross_repo_public_api_declared,
+)
 from livespec_dev_tooling.fleet._rows_role_key_spellings import (
     assert_role_key_spellings_conformant,
 )
@@ -148,6 +151,44 @@ def test_role_key_spellings_row_is_registered_for_every_class() -> None:
     assert row.obligation_type == "committed-file"
     assert row.applies_to == frozenset(REPO_CLASSES)
     assert row.assert_member is assert_role_key_spellings_conformant
+    assert row.reconcile is None
+    assert row.manual_hint
+
+
+def test_cross_repo_public_api_row_is_registered_for_every_class() -> None:
+    """REGISTRATION is the entire deliverable, and this guards a state that existed.
+
+    `_rows_public_api_conformance.py` shipped COMPLETE, TESTED and GREEN while
+    being walked by NEITHER engine — the `role-key-spellings` precedent above,
+    and the same defect shape `livespec-dev-tooling-8o8e` exists to remove.
+
+    It held that way ON PURPOSE. The pre-registration measurement (all nine
+    members' master tarballs, 0 skipped, 0 unparsed) found TWENTY genuine
+    undeclared consumptions — nine here, eleven in `livespec-runtime`.
+    Registering at error severity then would have fired BOTH blocking modes:
+    this repo's own failing row makes `own_failing_rows` non-empty, so the
+    registering PR's OWN CI fails and it cannot land; and the sibling's would
+    have left this repo green while breaking the scheduled sweep and the
+    release fan-out preflight fleet-wide. Both were remediated first (`wdn7`,
+    `nkkv`) and the fleet re-measured PASSING before the flip —
+    REMEDIATE-THEN-FLIP, this repo's own ratified v034 carve-out 1. The
+    severity was never softened to get around the collision.
+
+    EVERY CLASS, because "does a sibling consume a name you did not declare?"
+    is a question about the fleet graph and every member is a node in it. A
+    member with no first-party Python has no outgoing edges and passes ON THE
+    MERITS rather than by class scoping; a member whose tree or config cannot
+    be read reports a NAMED skip, never a silent pass.
+    """
+    row = next((r for r in OBLIGATION_ROWS if r.row_id == "cross-repo-public-api-declared"), None)
+    assert row is not None
+    assert row.obligation_type == "committed-file"
+    assert row.applies_to == frozenset(REPO_CLASSES)
+    assert row.assert_member is assert_cross_repo_public_api_declared
+    # No reconcile: the fix is a per-entry WRITTEN REASON naming the consuming
+    # member, which is a judgement rather than a mechanical edit. A machine that
+    # bulk-filled this key would manufacture exactly the unreasoned bulk
+    # declaration the key exists to prevent.
     assert row.reconcile is None
     assert row.manual_hint
 

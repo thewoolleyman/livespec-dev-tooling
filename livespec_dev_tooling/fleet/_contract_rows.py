@@ -53,6 +53,9 @@ from livespec_dev_tooling.fleet._rows_instructions import (
     assert_agent_ai_references_resolve,
     assert_agent_instruction_surface,
 )
+from livespec_dev_tooling.fleet._rows_public_api_conformance import (
+    assert_cross_repo_public_api_declared,
+)
 from livespec_dev_tooling.fleet._rows_required_role_keys import (
     assert_required_role_keys_declared,
 )
@@ -173,6 +176,25 @@ OBLIGATION_ROWS: tuple[ObligationRow, ...] = (
             "replace the retired ambiguous empty spelling on the named union role key(s) "
             "with a populated value, or with one blessed declared-absent spelling carrying "
             "a non-empty payload"
+        ),
+    ),
+    # The third member of that family, and the only one needing the CENTRAL
+    # vantage to answer at all: the two rows above ask whether a member's own
+    # declaration is PRESENT and WELL-SPELLED, this one asks whether it is
+    # TRUE — measured against what the other eight members actually import. A
+    # repo-local check structurally cannot see a sibling's import, which is
+    # what let `parse_manifest` be converted on a repo-local reading that found
+    # no importer while a sibling's hook turned that repo's master red within
+    # minutes (livespec-dev-tooling-dx8l).
+    _manual_committed_file_row(
+        row_id="cross-repo-public-api-declared",
+        assert_member=assert_cross_repo_public_api_declared,
+        manual_hint=(
+            "add each named function to `cross_repo_public_api` in "
+            "[tool.livespec_dev_tooling], one entry per function with a written reason "
+            "naming the consuming member and file; do NOT omit a genuinely consumed name "
+            "to keep the count down, and do NOT bulk-fill the key without reading each "
+            "consumption site's guard first"
         ),
     ),
     _warning_committed_file_row(
