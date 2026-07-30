@@ -116,9 +116,31 @@ and each one has a cheap look-alike:
   bold-wrapped-id false positives. A decision taken against a contaminated count
   is taken against a wrong number. Require re-derivation after the regex fix.
 
+- **"The check fired, so it was caught" look-alike — NEW, and it is the inverse of all
+  the above.** On 2026-07-30 the release fan-out broke fleet-wide and seven of eight
+  members sat stuck at an old pin for hours. The pin-currency rows **fired, every time, on
+  every stale member**, naming the exact file and the exact stale ref — and **nothing
+  happened**, because all three are registered via `_warning_committed_file_row` at
+  `severity=warning`: they fail no run and gate no PR. **Detection was never the gap;
+  ESCALATION was.** So "a check exists and is correct" is as weak a claim as "a check is
+  green". Ask the third question every time: **can this finding STOP anything?** A check
+  that scans zero files and a check whose correct findings cannot gate are the same
+  failure seen from opposite ends, and this thread now holds both specimens.
+
 Hold the worker to the live form. A green run whose payload did nothing is the
 defect class this fleet keeps rediscovering — and this thread is the instance
 where it was found four times in one session.
+
+**AND THE SHARPEST VARIANT OF ALL, found 2026-07-30 at the arming gate: a TRUE record
+nobody re-read.** `handoff.md` already said the `_`-prefixed FILE skip was "WIDER than the
+ratified rule" and already NAMED the two cross-repo consumers reaching through it. That
+finding sat correctly written for days, was never re-asked as a PRECONDITION of the gate it
+blocked, and would have let the epic close around a 65-file blind spot had a measurement not
+forced the join. Every other instance of this thread's signature defect is a FALSE claim;
+this one is a TRUE one that was filed as an observation and never consulted. **Practical
+rule for the supervisor: when the worker files a finding, ask on the spot what GATE it
+blocks, and write the answer next to it.** A finding with no gate attached is a finding that
+will outlive the epic built to close it.
 
 ### The guarantee must be stated precisely
 
