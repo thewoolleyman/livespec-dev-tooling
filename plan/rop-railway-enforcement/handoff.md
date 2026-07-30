@@ -92,10 +92,71 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >    gate gets restated.** A delayed arming is acceptable; a clean number bought by an incomplete
 >    declaration is not.
 >
->    **AND THE 9 ARE CLAUSE-2 SYMBOL IMPORTS, NOT CLAUSE-3 PROCESS ENTRY POINTS** — established
->    by READING both consumers, which do `from livespec_dev_tooling.checks import (...)` and then
->    `assert wrapper_shape.main() == 0` IN-PROCESS. So this is NOT the known `main() -> int`
->    location-scoping spec defect and must not be filed as it.
+>    **AND THE 9 ARE CLAUSE-2 SYMBOL IMPORTS, NOT CLAUSE-3 PROCESS ENTRY POINTS — THE QUESTION
+>    IS ANSWERED, NOT OPEN.** Established by READING both consumers, which do
+>    `from livespec_dev_tooling.checks import (...)` and then `assert wrapper_shape.main() == 0`
+>    **IN-PROCESS**, asserting on the return value. beads-fabro's file also carries
+>    `assert "python -m ...wrapper_shape" in justfile` — a STRING assertion ABOUT the justfile,
+>    not an invocation, and the only place the process form appears at all. **So this is NOT the
+>    known `main() -> int` exemption-scoped-to-a-LOCATION spec defect and must not be filed as
+>    it.** The count going 0 → 9 would be nine genuine clause-2 consumptions, not one old spec
+>    defect reaching code.
+>
+>    **▶️ THE TWENTY, BY NAME — a count without its members cannot be re-derived, and this
+>    thread has retracted six numbers for exactly that reason.** Measured with the SHIPPED
+>    oracle against the LIVE fleet BEFORE registration; nine members read, 0 skipped, 0
+>    unparsed. Full record with consumer sites: `5cai-fleet-measurement.md`.
+>
+>    `livespec-dev-tooling` — **9**, every one `checks/<slug>.py::main`: `all_declared`,
+>    `assert_never_exhaustiveness`, `keyword_only_args`, `main_guard`, `no_inheritance`,
+>    `no_lloc_soft_warnings`, `no_write_direct`, `private_calls`, `wrapper_shape` (12 sites,
+>    consumed by beads-fabro's and livespec-runtime's test trees).
+>
+>    `livespec-runtime` — **11**, and it declares NOTHING: `credentials.py::decide_credentials`,
+>    `credentials.py::wrapper_launch_failure`, `cross_repo/types.py::parse_cross_repo_manifest`,
+>    `work_items/lifecycle.py::is_item_ready`, `work_items/lifecycle.py::lane_of`,
+>    `work_items/rank.py::key_between`, `work_items/rank.py::n_keys_between`,
+>    `work_items/reduce.py::materialize_work_items`, `work_items/reduce.py::random_id_suffix`,
+>    `work_items/reduce.py::reduce_work_item_heads`,
+>    `work_items/reduce.py::work_item_record_identity` (23 sites). **These are PRODUCT imports
+>    (clause 1)** from `store.py`, `_ids.py`, `bin/_bootstrap.py` and `commands/*.py` in two
+>    orchestrators and in `livespec` itself — so a conversion there is the `dx8l` shape exactly:
+>    consumer wiring lands FIRST, dual-shape, in the consuming repo.
+>
+>    **▶️ WHERE SLICE 3 STANDS, AND THE BYTE-IDENTITY LESSON PAID FOR AGAIN.** Branch
+>    `feat/fleet-public-api-row`, merged as **#924**, worktree reaped. The Red/Green pair was
+>    REBUILT mid-flight: `c672161` was superseded by `d589e71` because **`check-per-file-coverage`
+>    counts TEST files too**, and a deliberately-never-called guard function in the Red-recorded
+>    test was one uncovered line. The Red-recorded test file is byte-identity-bound, so fixing it
+>    forced a full rebuild of the pair from master — **there is no amend path**. Expect this
+>    whenever a test carries a "this must never run" assertion; make it an assertion about a
+>    RECORDED call instead of a raising stub.
+>
+>    **📐 THE APP INSTALLATION POOL, MEASURED — nobody on this thread had this number before.**
+>    Installation **131208965**, across the window that reset at 16:48:24Z, which spans TWO
+>    releases (v1.10.0 at 15:55, v1.11.0 at 16:43):
+>
+>    | time (UTC) | used | remaining |
+>    |---|---|---|
+>    | 16:35:54 | 303 | 4697 |
+>    | 16:38:48 | 330 | 4670 |
+>    | 16:43:16 | 434 | 4566 |
+>    | **16:46:16** | **532** | **4468** ← window peak |
+>    | 16:48:24 | *reset* | |
+>    | 16:49:19 | 0 | 5000 |
+>    | 17:04:35 | 77 | 4923 |
+>
+>    **Peak 532 of 5000 — 10.6%. The pool never approached exhaustion**, and an independent
+>    sample of the SAME window found SIX green `check-fleet-conformance` runs (15:53Z–16:44Z,
+>    four of them 40–50 min downstream of v1.10.0). **The two measurements AGREE, and
+>    release-correlation weakens.** So cumulative core exhaustion is unlikely to be `mmqe`'s
+>    mechanism, and a **SECONDARY rate limit** (burst/concurrency) fits what the core-pool story
+>    cannot: **it does not move `used`**, which is why every retrospective look at the counter
+>    found nothing. **Falsifiable cheaply — capture the response HEADERS on the next instance**
+>    (`Retry-After` / "exceeded a secondary rate limit" vs `x-ratelimit-remaining: 0`), not
+>    another window. One window is one window; this is a number, not a verdict. The probe is
+>    recorded in `5cai-fleet-measurement.md` (app JWT → installation token → `GET /rate_limit`,
+>    which does not itself consume quota — two consecutive reads showed 303 → 303).
 >
 >    **(history, kept because the tarball reasoning still binds any future central row)** The
 >    naive build calls
@@ -347,12 +408,14 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >    shape.** Six repos remain unmeasured.
 >
 >    **▶️ COLD-START ORIENTATION — the items this thread still owns, all FILED, none started.**
->    Nothing is mid-flight, verified at wrap-up 2026-07-30: every PR this thread opened is
->    MERGED (#867, #870, #874, #880, #883, #886, #890, #891, #892, #895, #898, #905, #906, #908,
->    #913, #914, plus livespec #1834 and #1847), the primary checkout is clean on `master`
->    `89296e0`, every worktree of this thread's is REAPED, and no branch of its own is open.
->    **SEVEN FOREIGN worktrees exist under `~/.worktrees/livespec-dev-tooling/` — reap NONE of
->    them.** In dependency order:
+>    Nothing is mid-flight, verified at wrap-up 2026-07-30 (second wrap-up of the day): every
+>    PR this thread opened is MERGED (#867, #870, #874, #880, #883, #886, #890, #891, #892,
+>    #895, #898, #905, #906, #908, #913, #914, **#919, #921, #924, #926**, plus livespec #1834
+>    and #1847), the primary checkout is clean on `master` **`e8769ad`** (released **v1.12.0**),
+>    every worktree of this thread's is REAPED, and no branch of its own is open.
+>    **FIVE FOREIGN worktrees exist under `~/.worktrees/livespec-dev-tooling/` — reap NONE of
+>    them, and ENUMERATE with `git worktree list` rather than trusting that count, including
+>    when it is this file's own.** In dependency order:
 >
 >    | id | what | gates arming? |
 >    |---|---|---|
