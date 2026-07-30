@@ -131,29 +131,70 @@ records the lane-scoped shape instead.
 >    considers **0** a violation. **The remediation half of step 6 is DONE.** `vzwa` took four
 >    PRs, consumer-first: livespec **#1847** (dual-shape read), **#908** (the incremental gate
 >    selects `*_edges.py` siblings), **#913** (ci-matrix tests clear the ambient severity var),
->    **#905** (the conversion). Arming now waits on `5cai` and the `995m` known-gap statement,
->    and on NOTHING in the count.
+>    **#905** (the conversion). ~~Arming now waits on `5cai` and the `995m` known-gap statement,
+>    and on NOTHING in the count.~~ **SUPERSEDED — `5cai` IS REGISTERED (#934). Arming now waits
+>    on the `995m` known-gap statement ALONE.**
 >
->    **✅✅✅ `wdn7` AND `nkkv` ARE BOTH CLOSED. THE TWENTY ARE ZERO, MEASURED WITH ITS
->    DENOMINATOR: nine members read from their master tarballs, 0 skipped, 0 unparsed, 58 edges
->    examined, ALL NINE PASS. THE NEXT ACTION IS THE REGISTRATION.** `wdn7` = dev-tooling's nine
+>    **🎯🎯 `5cai` IS CLOSED. THE ROW IS REGISTERED AND VERIFIED GATING ON MASTER CI. THE ONLY
+>    THING LEFT BEFORE ARMING IS THE `995m` KNOWN-GAP STATEMENT.** PR **#934** → master
+>    **`6f38105`**, two Red/Green pairs (`ba65383` the roster wiring, `6f38105` the registration).
+>
+>    **THE ZERO, WITH ITS DENOMINATOR — quote it this way or not at all.** A bare "0 findings" and
+>    "0 because I read nothing" are indistinguishable, and that indistinguishability is this
+>    epic's entire subject:
+>
+>    | | |
+>    |---|---|
+>    | roster members | 9 |
+>    | members **READ** (tarball + config) | **9** |
+>    | members SKIPPED | **0** |
+>    | files UNPARSED | **0** |
+>    | cross-member edges **EXAMINED** | **58** |
+>    | declarations fleet-wide | 24 |
+>    | verdicts | **9 PASS / 0 SKIP / 0 FINDING** |
+>
+>    The SAME denominator the pre-registration run used, when it found TWENTY.
+>
+>    **✅ VERIFIED GATING ON MASTER CI, NOT MERELY MERGED.** The post-merge run reports
+>    `{"own_failing_rows": [], "error_findings": 0, "blind_rows": 0, "out_of_vantage_rows": 3}`.
+>    **`blind_rows: 0` IS THE LOAD-BEARING NUMBER, not `error_findings: 0`.** Had the roster
+>    wiring been absent, the newly-registered row would have skipped for EVERY member,
+>    `blind_rows` would be ≥1, and the run would have FAILED. So the row was **EVALUATED**, not
+>    merely present — which is the exact distinction this epic exists to enforce, finally applied
+>    to its own last slice. **A future check of this row's health should read `blind_rows`, not
+>    the exit code.**
+>
+>    **🔴 AND REGISTRATION WAS NOT THE SIX-LINE FOLLOW-UP THIS FILE PROMISED — building it found a
+>    SECOND wiring hole.** `FleetContext.members` carries the fleet roster and its docstring said
+>    the central engine populates it "once the manifest resolves". **NOTHING DID** — frozen
+>    dataclass built in `main()` BEFORE the manifest is fetched, no construction site passing a
+>    roster, no `dataclasses.replace` anywhere. The field held its `()` default for every run
+>    either engine had ever made. **It surfaced only because a row finally needed it:** no row
+>    asked for the roster until this one, so an unpopulated field broke nothing and READ AS WIRED,
+>    its docstring stating an intention as a fact. **It would not have under-enforced quietly** —
+>    an empty roster yields the named skip, and a row blind for every applicable member is already
+>    an error, so registering as-is would have failed every run forever. Fixed in
+>    `run_member_rows`, the one function holding BOTH the context and the manifest;
+>    `dataclasses.replace` rather than a fresh construction, because the memo caches are mutable
+>    dicts carried BY REFERENCE and a rebuild re-spends the manifest's ~35 API reads.
+>
+>    **⚠️ TWO THINGS THE REBUILD PAID FOR, both cheap to re-pay and both likely to recur.**
+>    (1) **A PROBE MUST ASSERT THE ROSTER IS USABLE, NOT MERELY PRESENT.** The first version
+>    asserted only on the member list; its canned downloader was then never invoked and
+>    `check-per-file-coverage` failed on the dead fixture — the honest signal that the test proved
+>    less than it claimed. The probe now snapshots EVERY member's tree. (2) **THE BYTE-IDENTITY
+>    RULE COST A FULL PAIR REBUILD AGAIN**, for the reason recorded below: the fixture change
+>    belonged in pair 1's test file, was written after pair 1 was committed, and a Red-recorded
+>    file cannot be amended. **Write the fixture the LATER pair needs into the EARLIER pair's test
+>    file, or plan to rebuild.**
+>
+>    **(history, and the wrap-up entry it superseded is gone: nothing of this thread's is open)
+>    ✅✅✅ `wdn7` AND `nkkv` ARE BOTH CLOSED. THE TWENTY ARE ZERO.** `wdn7` = dev-tooling's nine
 >    (#929, `91e3bec`): declared, and each file earned a REASONED `supervisor_entry_files` entry,
 >    taking the ratified-rule count **0 → 9 → 0** measured at each end. `nkkv` = livespec-runtime's
 >    eleven (that repo's #398, `67bc22d`): declared, raising ITS armed count **24 → 27**, +3 and
 >    zero removed — `parse_cross_repo_manifest`, `lane_of`, `is_item_ready`, filed as
 >    **`vojo`**, NOT converted (they are `dx8l`-shaped, consumer wiring first).
->
->    **▶️ REGISTRATION IS NOT THE SIX-LINE FOLLOW-UP THIS FILE PROMISED, AND THE REASON IS A
->    SECOND WIRING HOLE.** `FleetContext.members` carries the fleet roster and its own docstring
->    says the central engine populates it "once the manifest resolves". **NOTHING DOES.** The
->    context is a FROZEN dataclass built in `main()` BEFORE the manifest is fetched, and there is
->    no `dataclasses.replace` anywhere in the package — so the field has held its `()` default for
->    every run either engine has ever made. No row needed the roster until this one, so an
->    unpopulated field broke nothing and READ AS WIRED. **It would not have under-enforced
->    quietly** — an empty roster makes the row skip for every member, and a row blind for every
->    applicable member is already an error here — so registering it as-is would have failed every
->    run forever. The join belongs in `run_member_rows`, the one function holding BOTH the context
->    and the manifest. Work is staged, not landed; see the wrap-up below.
 >
 >    **(superseded) ALL THREE `5cai` SLICES ARE LANDED AND ON MASTER. THE ROW EXISTS, IS TESTED,
 >    AND IS DELIBERATELY NOT REGISTERED. THE NEXT ACTION IS THE REMEDIATION — `wdn7` THEN `nkkv`
@@ -498,26 +539,13 @@ records the lane-scoped shape instead.
 >    dropped 1. **Flat-layout members are where v178 bites hardest — which is dev-tooling's own
 >    shape.** Six repos remain unmeasured.
 >
->    **⚠️ ONE WORKTREE OF THIS THREAD'S IS OPEN, WHICH IS A DEPARTURE FROM EVERY PRIOR WRAP-UP.**
->    `~/.worktrees/livespec-dev-tooling/5cai-register-public-api-row`, branch
->    `feat/5cai-register-public-api-row`, PUSHED to no PR. It holds the registration work,
->    ABANDONED MID-REBUILD when the fan-out P0 took priority, and it is **based on a stale master
->    and must be rebuilt, not resumed.** Its full diff against its fork point is the only thing
->    worth keeping. Two Red→Green pairs are needed and the ORDER is load-bearing — wiring FIRST,
->    registration SECOND, because registering onto an unwired roster makes every run fail:
->    - **pair 1** — `test_fleet_conformance.py` Red → `_lanes.py` Green. The roster join
->      (`ctx = replace(ctx, members=tuple(manifest.members))`); `replace` NOT a fresh construction,
->      because the memo caches are mutable dicts carried BY REFERENCE and a rebuild re-spends the
->      manifest's ~35 API reads. The same test file must ALSO gain a canned tarball downloader on
->      `make_context` and a `default_gh_downloader` patch in `_patch_runner` — a fleet row reads
->      whole TREES, so a fixture answering only `run_gh` leaves it skipping. It also needs
->      `fleet_conformance.main()` to inject `download_gh=default_gh_downloader` EXPLICITLY: a
->      dataclass default binds once at class creation and no test can replace it.
->    - **pair 2** — `test_contract_rows.py` Red → `_contract_rows.py` Green, registering
->      `cross-repo-public-api-declared` with the `role-key-spellings` row as the exact precedent.
->    **The fixture change belongs in PAIR 1's test file**, which is why the first attempt had to be
->    thrown away: it was written after pair 1 was already committed, and the Red-recorded file is
->    byte-identity-bound. Reap the worktree and start from current master.
+>    **✅ NOTHING OF THIS THREAD'S IS OPEN, re-verified at this wrap-up.** Every PR it opened is
+>    MERGED (adding **#929, #930, #933, #934**, plus livespec-runtime **#398**), every worktree of
+>    its own is REAPED, and no branch of its own remains. **The prior revision's warning about an
+>    open `5cai-register-public-api-row` worktree is RETIRED — that branch was abandoned on stale
+>    master, reaped, and rebuilt from scratch as `feat/5cai-register-row`.** FOREIGN worktrees
+>    exist under `~/.worktrees/livespec-dev-tooling/`; **ENUMERATE with `git worktree list` rather
+>    than trusting any count, including this sentence's absence of one**, and reap NONE.
 >
 >    **▶️ COLD-START ORIENTATION — the items this thread still owns, all FILED, none started.**
 >    Nothing is mid-flight, verified at wrap-up 2026-07-30 (second wrap-up of the day): every
@@ -538,7 +566,7 @@ records the lane-scoped shape instead.
 >    | ~~`5cai`~~ | ~~the CENTRAL-vantage conformance row~~ | **✅ ALL THREE SLICES LANDED — #919, #921, #924. The row is BUILT and deliberately UNREGISTERED** |
 >    | ~~`wdn7`~~ | ~~dev-tooling's 9 undeclared `checks/*.py::main`~~ | **✅ CLOSED — #929. Count 0 → 9 → 0, measured at each end** |
 >    | ~~`nkkv`~~ | ~~livespec-runtime's 11, cross-repo~~ | **✅ CLOSED — livespec-runtime #398. Its armed count 24 → 27; the +3 are `vojo`** |
->    | **REGISTER** | the row into `OBLIGATION_ROWS` | **needs the roster wiring FIRST — see the ▶️ note in step 6; work staged, not landed** |
+>    | ~~REGISTER~~ | ~~the row into `OBLIGATION_ROWS`~~ | **✅ DONE — #934. Registered, and VERIFIED EVALUATED on master CI via `blind_rows: 0`** |
 >    | **`0yfo`** → `995m` | decompose `config.py`, then flip the `@generated` predicate | only via 6f's known-gap statement |
 >
 >    **Three NEW items were filed by this work. `vzwa` IS an arming blocker; the other two are
@@ -578,7 +606,9 @@ records the lane-scoped shape instead.
 >    | ~~`q5lb` landed~~ | ~~2~~ | ~~2~~ |
 >    | **today, `vzwa` landed** | **0** | **0** — they AGREE AT ZERO |
 >
->    **THE COUNT IS NO LONGER A GATE. `5cai` AND THE `995m` STATEMENT ARE.** Every row above was
+>    **THE COUNT IS NO LONGER A GATE.** ~~`5cai` AND THE `995m` STATEMENT ARE.~~ **SUPERSEDED —
+>    `5cai` IS REGISTERED AND GATING (#934). THE `995m` KNOWN-GAP STATEMENT IS THE ONLY REMAINING
+>    ARMING GATE.** Every row above was
 >    measured at both ends, never projected — including the `9sl0` row, which is a RETRACTION.
 >
 >    **The first three rows are kept rather than deleted because the `9sl0` row is a RETRACTION**
