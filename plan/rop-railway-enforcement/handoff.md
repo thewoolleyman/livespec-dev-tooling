@@ -158,8 +158,90 @@ records the lane-scoped shape instead.
 >    are different claims.
 >
 >    **⛔⛔⛔ ARMING IS BLOCKED. `livespec-dev-tooling-qndn` (P0) IS THE FIRST GATE, AND IT WAS
->    FOUND BY MEASURING BEFORE COMMITTING. THE NEXT ACTION IS THE TRIAGE OF 75 FUNCTIONS —
+>    FOUND BY MEASURING BEFORE COMMITTING. ~~THE NEXT ACTION IS THE TRIAGE OF 75 FUNCTIONS~~ —
 >    AUTHORIZED STANDING WORK, NOT A NEW DECISION.**
+>
+>    **✅✅ THE TRIAGE IS DONE — `plan/rop-railway-enforcement/qndn-75-triage.md`. READ THAT
+>    FILE BEFORE PLANNING ANYTHING; it carries all 75 by name with the evidence that convicted
+>    each.** Every one has a disposition: **4 CHECK-FIX + 38 CONVERT + 4 DECLARE + 1 COUPLED +
+>    23 TYPE-SLICE + 5 OPEN = 75.** Conviction was attributed by RE-RUNNING the shipped
+>    `calls_of` per call node (nested calls stripped), never hand-simulated — the constraint
+>    this file imposes two paragraphs below. **THE NEXT ACTION IS THE REMEDIATION HALF, in the
+>    order §7 of that file gives: CHECK-FIX first, then the 4 DECLAREs, then CONVERT with
+>    `read_pin_text` first.**
+>
+>    **🔴 AND THE RESULT THAT OUTRANKS THE COUNT: FOUR OF THE 75 ARE THE CHECK BEING WRONG,
+>    AND THEY ARE THE EXACT MIRROR OF THE SKIP.** The `_`-FILE skip is non-conformance with the
+>    ratified rule in the RELAXING direction; these four are non-conformance in the TIGHTENING
+>    direction, by the same standard — so the commit that drops a too-wide relaxation must not
+>    carry a too-wide conviction. **`memoized_snapshot` IS ALREADY ON THE RAILWAY**
+>    (`SnapshotResult = IOResult[TreeSnapshot, SnapshotUnavailable]`); `_is_railway_compliant`
+>    matches the annotation's TERMINAL NAME and **a type ALIAS defeats that match**. The other
+>    three are `io.StringIO` (an IN-MEMORY buffer) and `Path(raw)` (a value CONSTRUCTION) read
+>    as I/O boundaries because `io` and `pathlib` sit in `_IO_MODULES` at MODULE granularity.
+>    **Arming without these fixes reports violations against conformant code** — the false-
+>    positive risk the charter names by name. **⛔ It is 4 of 75, each isolated by measurement;
+>    70 STAND. A fifth member needs the same evidence, not a resemblance** — and
+>    `preflight_credential` is deliberately NOT in the class though it looks like it, because a
+>    bare call to an injected parameter is DOCUMENTED doubt and doubt disqualifies BY DESIGN.
+>
+>    **▶️ AND THE SKELETON'S "35 TRANSITIVE" SPLITS 24 + 11.** Eleven are convicted by clause
+>    (e) ALONE — clean body, clean callees, `X | None` — which is precisely the population
+>    member 2's `total_absence_returns` key exists to sort, and FOUR of them are declarations
+>    rather than code. Folding them into "transitive" hid that.
+>
+>    **🔴 TWO FINDINGS THE TRIAGE ITSELF PRODUCED, filed, and the first is this epic's own
+>    subject in the fleet outcome type.** **`RowSkip` CARRIES TWO MEANINGS AND THE TWO LANES
+>    READ IT OPPOSITE WAYS** — central (`_lanes.py:173`) reads "not evaluable" and feeds
+>    **`blind_rows`**, which reds master; local (`local_reconcile.py:94`) reads "not applicable"
+>    and logs `info`. The central lane ALREADY has a correct spelling for inapplicability
+>    (`RowPass` + the excluded-note prefix) and two rows do not use it. **That is
+>    `pure_trees = []` in the type both engines share, and `blind_rows` is the number `5cai`'s
+>    health was just declared to rest on.** Second: **the justfile `check:` parser exists FOUR
+>    times**, and the copies say they keep agreement by copying — the `livespec-i04f` shape.
+>
+>    **▶️ DROPPING THE SKIP CREATES A DECLARATION OBLIGATION — do not let it sink.**
+>    `resolve_owner` and `discover_fixtures` are absent from `cross_repo_public_api` on the
+>    stated ground that "declaring them would assert a scope this check does not actually
+>    apply". **The moment the skip drops that ground EXPIRES**, and both entries are owed in
+>    the same change. **AND RUN THE DECLARATION DETECTORS PER NEW ENTRY AS YOU AUTHOR IT** —
+>    `ueni` makes `stale_declarations` / `rejected_declarations` structurally unreachable in
+>    this repo (they sit behind `main()`'s `pure_trees` gate), so member 2 bound 1's REJECTING
+>    gate first becomes reachable **in the arming commit itself** — the one commit that must
+>    not go red.
+>
+>    **🔴🔴 THE THIRD AXIS WAS RUN WITH THE SHIPPED `5cai` ORACLE, NOT GREPPED — AND IT
+>    CONTRADICTED THIS REPO'S OWN `pyproject.toml`. THE RECORD WAS RIGHT AND THE ROW IS
+>    BLIND.** Same denominator as the pre-registration run: 9 roster / **9 READ** / 0
+>    unavailable / 0 unparsed / **58 edges**. Of the 75 it finds **ONE**:
+>    `fleet/_context.py::resolve_owner` ← beads-fabro's `.claude-plugin/hooks/codex_yolo_gate.py`
+>    (the `dx8l` hook). It finds **ZERO** for `discover_fixtures` — yet reading the nine
+>    tarballs the oracle had already fetched shows **all four siblings genuinely consume it**,
+>    each via `from livespec_dev_tooling.testing import cli_e2e` then
+>    `cli_e2e.discover_fixtures(...)`. **MECHANISM, at `_public_api_graph.py:263` —
+>    `if name not in functions[defining]: continue`.** `discover_fixtures` is IMPORTED into
+>    `cli_e2e.py` and re-exported, not DEFINED there, so the correctly-resolved reach is
+>    **SILENTLY DROPPED** and never re-resolved to `_cli_e2e_discovery.py`; no edge reaches
+>    EITHER file. `test_workflow_full_round_trip`, which IS defined in `cli_e2e.py`, is seen
+>    from all four — which isolates the re-export as the cause.
+>    **⛔ GATE: this blocks `5cai`'s OWN completeness claim, NOT arming.** Its
+>    `error_findings: 0` is quotable only over consumptions the oracle can see. **And it
+>    retro-scopes the `wdn7`/`nkkv` TWENTY** — that denominator silently excluded every
+>    re-exported consumption fleet-wide. The drop is a bare `continue` with no record, unlike
+>    `unparsed`, which this same graph deliberately carries in-band.
+>
+>    **🔴 AND `RowSkip` CARRIES TWO MEANINGS IN CODE THAT IS REGISTERED AND GATING TODAY.**
+>    Central (`_lanes.py:173`) reads it "not evaluable" and feeds **`blind_rows`**, which reds
+>    master with no lever or opt-out; local (`local_reconcile.py:94`) reads it "not applicable"
+>    and logs `info`. `assert_tenant_connection_consistency` — registered as
+>    `beads-tenant-connection-consistency` — returns it for two INAPPLICABILITIES
+>    (`_rows_beads.py:68`, `:73`). **If the beads-backed population among applicable members
+>    ever reaches zero, that row goes blind and fails every central run fleet-wide for a
+>    condition that is not a failure.** `blind_rows: 0` today is contingent on one applicable
+>    member still evaluating. **⛔ GATE: NONE — and that is the point. Do NOT couple this to
+>    the 23-function TYPE-SLICE** (an earlier draft did; supervisor brief 53 corrected it, and
+>    the correction is accepted). The targeted fix needs no new type:
+>    `RowPass(note=_EXCLUDED_NOTE_PREFIX + reason)`, which `_lanes.py:188` already renders.
 >
 >    **THE TWO NUMBERS DO NOT AGREE, AND THE WHOLE DIFFERENCE IS ONE LINE.** Measured on master
 >    `7f2abfd` with the shipped analyses over the shipped `resolve_check_universe()` — universe
@@ -219,10 +301,17 @@ records the lane-scoped shape instead.
 >
 >    **▶️ THE TRIAGE SKELETON — mechanical, on `7f2abfd`. NONE OF IT IS A DISPOSITION.**
 >
+>    **⛔ CORRECTED BY MEASUREMENT: THE "35 TRANSITIVE" BELOW IS 24 + 11, AND THE 35 IS THE
+>    NUMBER A COLD START WOULD OTHERWISE INHERIT.** Eleven of it are convicted by clause (e)
+>    ALONE — clean body, clean callees, `X | None`, no I/O anywhere in the reachable graph —
+>    which is precisely the population v179 member 2's `total_absence_returns` key exists to
+>    sort, and FOUR of them are DECLARATIONS rather than code. Folding them into "transitive"
+>    hid that. Read the corrected split in `qndn-75-triage.md` §2.
+>
 >    | by signature shape | n |   | by conviction clause | n |
 >    |---|---|---|---|---|
 >    | `X \| None` | **15** |   | **LOCAL** (a/b/c — own body raises, tries, reaches I/O) | **40** |
->    | `raise` / `try` | **6** |   | **TRANSITIVE** (d — CLEAN BODY, a callee reaches I/O) | **35** |
+>    | `raise` / `try` | **6** |   | ~~TRANSITIVE (d)~~ → **24 TRANSITIVE + 11 CLAUSE-(e)-ONLY** | ~~35~~ |
 >    | supervisor-shaped | **0** |   | | |
 >    | total-looking signature | **54** |   | | |
 >

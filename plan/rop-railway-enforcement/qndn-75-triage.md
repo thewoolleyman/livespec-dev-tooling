@@ -70,19 +70,73 @@ that four of them are declarations rather than code.
    these helpers are imported BY entry points** (`cross_repo/ci_yaml_canonical_reconcile.py`
    consumes `_ci_matrix_parse`). Every converted module gets the preamble; no bare
    `from returns… import` anywhere.
-3. **Does any SIBLING import this symbol?** — **TWO of the 75 do, and this repo already
-   knows which.** `pyproject.toml`'s own comment names them:
-   `fleet/_context.py::resolve_owner` (beads-fabro's `codex_yolo_gate.py` hook) and
-   `testing/_cli_e2e_discovery.py::discover_fixtures` (four siblings, via a `cli_e2e`
-   re-export). **Both are `dx8l`-shaped: consumer wiring lands FIRST, dual-shape, in the
-   consuming repo.**
+3. **Does any SIBLING import this symbol?** — **RUN WITH THE SHIPPED `5cai` ORACLE against
+   the LIVE fleet, not grepped** (supervisor brief 52 constraint 3; a bare-name grep is
+   measured wrong on this thread). Same denominator the pre-registration run published:
+
+   | | |
+   |---|---|
+   | roster members | 9 |
+   | members **READ** | **9** |
+   | members unavailable | **0** |
+   | files unparsed | **0** |
+   | cross-member edges examined | **58** |
+   | **of the 75, edges found** | **1** |
+
+   **`fleet/_context.py::resolve_owner` ← `livespec-orchestrator-beads-fabro`'s
+   `.claude-plugin/hooks/codex_yolo_gate.py`.** Uniquely resolved. That is the `dx8l`
+   consumer, in a HOOK, which is the worst blast-radius shape this fleet has. **Consumer
+   wiring lands FIRST, dual-shape, in beads-fabro, before the conversion lands here.**
+
+   **🔴🔴 AND THE ORACLE CONTRADICTED THIS REPO'S OWN `pyproject.toml`, SO I CHECKED WHICH
+   ONE WAS WRONG. IT WAS THE ORACLE.** The comment claims
+   `testing/_cli_e2e_discovery.py::discover_fixtures` is *"reached by four siblings as
+   `cli_e2e.discover_fixtures` through a re-export"*. The oracle emits **ZERO edges** for it.
+   Resolved by reading the nine member tarballs the oracle had already fetched: **all four
+   siblings genuinely reference `discover_fixtures`** — `livespec-driver-claude`,
+   `livespec-driver-codex`, `livespec-orchestrator-beads-fabro` and
+   `livespec-orchestrator-git-jsonl`, each in `tests/e2e-cli/`, each via
+   `from livespec_dev_tooling.testing import cli_e2e` then `cli_e2e.discover_fixtures(...)`.
+   **The record is TRUE and the row is BLIND.**
+
+   **THE MECHANISM, at `_public_api_graph.py:263` — `if name not in functions[defining]:
+   continue`.** `functions[cli_e2e.py]` holds the functions **DEFINED** in `cli_e2e.py`;
+   `discover_fixtures` is **IMPORTED** there and re-exported through `__all__`. So the
+   attribute reach resolves to `cli_e2e.py` correctly and is then **SILENTLY DROPPED** — and
+   it is never re-resolved through the re-export to `_cli_e2e_discovery.py`, so **no edge is
+   emitted to EITHER file.** The same file's `test_workflow_full_round_trip`, which IS defined
+   in `cli_e2e.py`, is seen from all four — which is what proves attribute reaches work and
+   isolates the re-export as the cause.
+
+   **⛔ THE GATE THIS BLOCKS — written here because a finding without its gate outlives the
+   epic.** It blocks **`5cai`'s own claim**: that `cross_repo_public_api` completeness is
+   MECHANICALLY VERIFIED fleet-wide. That row's `error_findings: 0` is quotable only over
+   consumptions the oracle can SEE, and a re-exported one is invisible — while this repo
+   re-exports a name four siblings consume, today. It does **NOT** block arming: the
+   repo-local check convicts `discover_fixtures` on its own once the skip drops. **And it
+   retro-scopes the `wdn7`/`nkkv` twenty**: that denominator silently excluded every
+   re-exported consumption fleet-wide, so "20" was 20-of-what-could-be-seen. **The drop is
+   `continue` with no record** — unlike `unparsed`, which this graph deliberately carries
+   in-band precisely so an unread file cannot be mistaken for a clean one.
 
    **▶️ AND DROPPING THE SKIP CREATES A DECLARATION OBLIGATION THIS FILE MUST NOT LET SINK.**
-   Those two are deliberately absent from `cross_repo_public_api` today, on the stated ground
-   that *"declaring them would assert a scope this check does not actually apply"*. **The
-   moment the skip drops, the scope DOES apply and that ground expires.** Both entries become
-   owed in the same change. A third omission (`config.py::iter_first_party_py_files`) stays
-   owed to `995m`, which is a different hole.
+   `resolve_owner` and `discover_fixtures` are deliberately absent from
+   `cross_repo_public_api` today, on the stated ground that *"declaring them would assert a
+   scope this check does not actually apply"*. **The moment the skip drops, the scope DOES
+   apply and that ground expires.** Both entries become owed in the same change. A third
+   omission (`config.py::iter_first_party_py_files`) stays owed to `995m`, a different hole.
+
+   **⛔ AND EVERY NEW DECLARATION MUST BE RUN THROUGH ITS OWN DETECTOR AS IT IS AUTHORED**
+   (supervisor brief 52 constraint 1), because `ueni` makes the gate that would catch a bad
+   one UNREACHABLE until the arming commit itself: `main()` calls
+   `role_absence_exit_code(role=config.pure_trees)` FIRST, and this repo declares
+   `pure_trees = { not_applicable = … }`, so `stale_declarations` and `rejected_declarations`
+   are both structurally unreached here. **The 0 stale / 0 rejected in §1 measures the CURRENT
+   five declarations, not any added.** The DECLARE class below is exactly where new
+   `total_absence_returns` entries get authored, and **member 2 bound 1 REJECTS rather than
+   skips** — so its gate becomes reachable for the first time in the one commit that must not
+   go red, since lefthook then blocks the fix. Import `rejected_declarations` /
+   `stale_declarations` and run them per new entry, the same way the count was measured.
 
 ## 4. THE DISPOSITIONS
 
@@ -175,6 +229,31 @@ deferring it.
 so. If that is the right answer it is a `livespec` propose-change, argued in the open —
 the epic's own founding rule, *"if an exemption is right, ratify it; do not let it persist
 as an unenforced clause."*
+
+**⛔⛔ AND THE CONFLATION FIX IS *DECOUPLED* FROM THE 23 — an earlier revision of this file
+coupled them and that was WRONG (supervisor brief 53, and the correction is accepted).**
+Writing "the conflation is the strongest argument for taking the type slice" attached a LIVE
+defect in a currently-gating row to the largest, least-settled block in the triage — the one
+§7 says needs its decision taken before any of it is written. **That is `qndn`'s own shape
+exactly: a true finding, correctly written, tied to a gate that may not fire for a long time,
+outliving the epic built around it.** The two are now separate items with separate gates.
+
+**AND THE CONFLATION IS LIVE IN REGISTERED CODE, which is stronger than "latent".**
+`assert_tenant_connection_consistency` is registered in `OBLIGATION_ROWS` as
+`beads-tenant-connection-consistency` and returns `RowSkip` at `_rows_beads.py:68` ("carries
+no dolt.* connection keys") and `:73` ("carries no impl-plugin connection block") — **both
+INAPPLICABILITIES, on the CENTRAL lane, where a skip counts toward blind.** `_lanes.py`
+states the consequence and leaves no way out: *"There is no lever, env var, exemption list,
+or opt-out: a lane that owns a row it could not read exits non-zero, always."* **So if the
+beads-backed population among applicable members ever reaches zero, that row goes blind and
+fails every central run fleet-wide for a condition that is not a failure at all.**
+`blind_rows: 0` today is contingent on at least one applicable member still evaluating.
+
+**THE TARGETED FIX NEEDS NO NEW TYPE and is already in the lane:**
+`RowPass(note=_EXCLUDED_NOTE_PREFIX + reason)`, which `_lanes.py:188` already renders as
+"fleet obligation excluded with reason". Three call sites — `_rows_beads.py:68`, `:73`, and
+`_rows_local_beads.py`'s `_SKIP_NO_BEADS`, benign on the local lane today and the same wrong
+spelling, which stops being benign the moment that row gains a central twin.
 
 ### 4d. THE DUPLICATION FINDING — the justfile `check:` parser exists FOUR times
 
@@ -312,15 +391,62 @@ conviction, the callee chain for a TRANSITIVE one, or `clause (e) only`.
 - **It does not drop the skip and does not arm.** Dropping it before remediation turns
   `just check` RED at 75 and lefthook then blocks the very commit that fixes it — THE
   ORDERING TRAP, and `qndn` names it in the place `8o8e` originally did.
-- **It does not settle the 5 `OPEN` rows.** Each is a real design choice with an argument
-  both ways, and three of them (`is_docs_only_change`, `scenario_tier_violations`,
-  `find_ruff_backstop_gaps`) turn on ONE question: *is a deliberate fail-closed collapse of
-  an inhabited failure a violation of the rule, or a sanctioned design?* **Note the
-  direction differs**: the first two fail CLOSED; `find_ruff_backstop_gaps` fails **OPEN** —
-  an unreadable `pyproject.toml` yields "no gaps" in a backstop check — which is likely a
-  bug in its own right and not merely a triage question.
+- **It does not settle 4 of the 5 `OPEN` rows.** `is_docs_only_change` and
+  `scenario_tier_violations` turn on ONE question — *is a deliberate fail-closed collapse of
+  an inhabited failure a violation of the rule, or a sanctioned design?* — and one ruling
+  covers both. `preflight_credential` poses the narrow bare-call-to-a-parameter question in
+  §4b. `cross_member_consumption` needs its own docstring's absence-is-part-of-the-value
+  argument read first.
+- **It DOES settle the fifth, and it is not a triage question at all.**
+  **`find_ruff_backstop_gaps` fails OPEN, and that makes it a bug rather than a disposition**
+  (supervisor brief 53). `_explicit_ruff_lint_select_configured` reads `pyproject.toml`
+  uncaught; an unreadable one returns `False`, so the function returns `[]` — **NO GAPS** —
+  from a check whose entire job is to find gaps in the ruff BLE001 backstop. The other two
+  OPEN rows fail CLOSED, which is the safe direction; this one fails toward silence.
+  **⛔ GATE: none — it blocks no gate, which is exactly why it must be filed rather than
+  carried in a triage table.** A fail-open in a backstop check is a defect on its own
+  timetable and should not wait on the railway question that surfaced it.
 - **It does not narrow an `__all__`, adjust the universe, or add a declaration to make 75
   become 0.** The count after this triage is 75, disposed as 4 + 38 + 4 + 1 + 23 + 5.
+
+### 6a. ⛔ EVERY FINDING IN THIS FILE CARRIES THE GATE IT BLOCKS
+
+Required by supervisor brief 52, for the reason `qndn` itself demonstrated: it sat correctly
+written in `handoff.md` for days as an OBSERVATION and was never re-asked as a PRECONDITION
+of the gate it invalidated. **A finding with no gate named beside it outlives the epic built
+to close it.**
+
+| finding | filed as | GATE it blocks |
+|---|---|---|
+| the `_`-prefixed FILE skip is wider than v178 clause 0 | `qndn` | **ARMING.** The first gate. |
+| CHECK-FIX ×4 — alias blindness, `io.StringIO`, `Path()` | **`8o8e.4`** (P1) | **ARMING.** Arming with them outstanding reports violations against conformant code, in the arming commit itself. |
+| `RowSkip` conflation, live in a registered central row | **`8o8e.2`** (P1) | **NO ARMING GATE — and that is the point.** It reds every central run fleet-wide the moment the beads-backed population reaches zero. Fix it on its own timetable; do NOT couple it to the 23. |
+| `5cai` re-export blind spot | **`8o8e.3`** (P1) | **`5cai`'s own completeness claim**, not arming. Its `error_findings: 0` cannot see a re-exported consumption, and this repo has one four siblings reach. |
+| `find_ruff_backstop_gaps` fails OPEN | **`8o8e.5`** (P2) | **NO GATE.** A backstop check that reports "no gaps" when it cannot read the config. |
+| justfile `check:` parser duplicated 4× | **`8o8e.6`** (P2) | **NO GATE.** It makes the CONVERT work larger and inconsistent if half the copies convert; it stops nothing. |
+| declaration gates unreachable behind the `pure_trees` gate | `ueni` (P1) | **ARMING, indirectly.** Bound 1 REJECTS, and its gate first becomes reachable in the arming commit — the one commit that must not go red. |
+
+**Three of these seven block NOTHING, and each is filed rather than carried here for exactly
+that reason: a defect that gates nothing has no queue pushing it forward.**
+
+### 6b. ⛔ THE ARMING COMMIT MUST CARRY A DISPOSITION DENOMINATOR
+
+Supervisor brief 52 constraint 2, and it is the `5cai` discipline applied to this gate. `5cai`
+made its zero quotable by publishing its denominator — 9 members, 9 READ, 0 skipped, 0
+unparsed, 58 edges. **After remediation, "0 offenders" and "0 because the remainder was
+declared" are indistinguishable, and that indistinguishability is this epic's entire
+subject.** So the arming commit states, of the 75:
+
+| | |
+|---|---|
+| CONVERTED (code moved to the railway) | |
+| RESTRUCTURED (the I/O left the function) | |
+| DECLARED under v179 member 2 | |
+| exempt by COMPUTED member 1 after the change | |
+| measurement ARTIFACTS (the CHECK-FIX class) | |
+
+**A reader must be able to tell how much of the zero was bought by code and how much by
+declaration.** A bare zero was never evidence — that is why this thread exists.
 
 ## 7. SUGGESTED ORDER FOR THE REMEDIATION HALF
 
@@ -336,7 +462,13 @@ conviction, the callee chain for a TRANSITIVE one, or `clause (e) only`.
    after its consumers are wired dual-shape.
 5. **TYPE-SLICE (23)** — the largest single block, and the one that needs its decision taken
    before any of it is written.
-6. **Then** drop the skip, re-measure at BOTH ends, and arm — with the `995m` known-gap
-   statement in the arming commit's own text.
+6. **Then** drop the skip, re-measure at BOTH ends, and arm — carrying the `995m` known-gap
+   statement AND the §6b disposition denominator in the arming commit's own text.
+
+**⛔ AND TWO ITEMS ON THIS LIST ARE DELIBERATELY *NOT* ON IT.** The `RowSkip` conflation and
+the `5cai` re-export blind spot are **not** steps 1–6 and must not be sequenced behind them.
+Neither gates arming; both are live in registered, currently-gating code. **Coupling a live
+defect to a long queue is how `qndn` survived as an observation for days** — the whole reason
+§6a exists.
 
 **Item boundaries in this list are places to REPORT, not to WAIT.**
