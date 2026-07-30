@@ -62,10 +62,18 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
-from returns.unsafe import unsafe_perform_io
+# `returns` is VENDORED, not installed, so this module must put `_vendor/` on
+# the path ITSELF. It is a `python -m` ENTRY POINT in the reusable bump-pin
+# workflow, where nothing imports before it — a bare import worked in every
+# test and killed the fan-out for seven of eight members.
+_VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
 
-from livespec_dev_tooling.canonical_checks import world_gate_check_slugs
-from livespec_dev_tooling.checks._ci_matrix_parse import (
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
+
+from livespec_dev_tooling.canonical_checks import world_gate_check_slugs  # noqa: E402
+from livespec_dev_tooling.checks._ci_matrix_parse import (  # noqa: E402
     extract_check_recipe_body,
     extract_targets_array_tokens,
     parse_ci_jobs,
