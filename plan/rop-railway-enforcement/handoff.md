@@ -16,6 +16,76 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 
 ---
 
+## 🔴🔴 THIS THREAD BROKE THE FLEET'S RELEASE FAN-OUT FOR SEVEN HOURS, AND EVERY GREEN LIGHT STAYED GREEN
+
+**2026-07-30. First-class finding, given its own heading because a merged PR body is not a
+work queue and this is the epic's own subject arriving inside the epic's own remediation.**
+
+**WHAT HAPPENED.** `vzwa`'s conversion commit `89296e0` added a BARE
+`from returns.unsafe import unsafe_perform_io` to
+`cross_repo/ci_yaml_canonical_reconcile.py` — no `_VENDOR_DIR` preamble. `returns` is
+VENDORED, not installed, so a bare import resolves only if some EARLIER import in the same
+process already put `_vendor/` on `sys.path`. That module is a `python -m` **ENTRY POINT** in
+the reusable bump-pin workflow, where nothing runs first. Every consumer's pin bump died on
+`ModuleNotFoundError: No module named 'returns'`. **SEVEN of eight members sat at `v1.8.4`
+while this repo released through `v1.12.0`.** Fixed by **PR #930** (`e9c2f5e`, released
+`v1.12.1`), which fixes the CLASS: a test sweeps the whole first-party tree by `rglob`, and
+it caught a second latent instance (`checks/_ci_matrix_parse.py`).
+
+**⛔ THE PART THAT MATTERS MORE THAN THE BUG: dev-tooling's OWN CI WAS GREEN THE ENTIRE TIME,
+and so was every member's.** A green signal that means nothing is the defect this thread
+exists to close, and this thread shipped one. `just check` passed 64/64 on the commit that
+broke the fleet, because the failing environment — being the process entry point — is the one
+environment no unit test exercises. **A test suite has always imported something else first.**
+
+**IT IS THE THIRD AXIS, EXACTLY** (`zu85` / `dx8l`): *"CAN this module import `returns` at
+all, in EVERY environment it executes in?"* This file already records that question as binding
+on every remaining conversion. It was not asked of this one. **A perfect answer to the railway
+question does not answer it** — and being right about the failure semantics is what made the
+change feel finished.
+
+**✅ AND A CLAIM I MADE IS RETRACTED, because it changes the recovery.** I wrote in `#930`'s
+commit and PR body that the breakage was **SELF-LOCKING** — that a member running the reusable
+workflow from its own stale pin could never receive the fix. **That is FALSE.** The reusable
+workflow's `Checkout livespec-dev-tooling support modules` step carries **NO `ref:`**, so it
+takes dev-tooling's **DEFAULT BRANCH**. The failing code was master's, and the fix was live to
+the next dispatch with no per-member unlock. The recovery was a fresh dispatch, not a rescue.
+**That no-`ref:` is its own standing hazard and the real lesson:** a workflow pinned at a tag
+executes **UNPINNED** support modules, so one master-only regression breaks every member's
+fan-out instantly — which is exactly what happened.
+
+**✅ REPAIRED AT THE CONSUMED END, per `dx8l` doctrine — a pin moving on the forge, not a
+green run.** A re-run is refused by the workflow itself ("a rerun always builds the original
+event SHA"); the sanctioned recovery is a fresh `sibling-released` dispatch, which the error
+message prescribes. Measured after dispatching:
+
+| member | pin |
+|---|---|
+| `livespec`, `livespec-driver-claude`, `livespec-driver-codex`, `livespec-orchestrator-git-jsonl`, `livespec-console-beads-fabro` | **v1.12.1** |
+| `livespec-runtime` | **v1.12.0** (bumped from the earlier dispatch; PR #399 merged) |
+| `livespec-orchestrator-beads-fabro`, `livespec-overseer` | bump PRs **#1186** / **#409** OPEN, **zero failing checks**, merging under their own CI |
+
+**🔴 AND THE LOUDER FINDING — `livespec-dev-tooling-0j3i` (P0). WHY NOTHING TOLD US.**
+MEASURED by RUNNING the three pin-currency rows against all nine live members, not inferred.
+**The rows FIRED. Every time. On every stale member.** `uses-pin-currency` reported the exact
+file and the exact stale ref (`…reusable-bump-pin-from-dispatch.yml current v1.8.4 latest
+release v1.12.1`) continuously. **All three are registered via `_warning_committed_file_row`,
+so every finding is `severity=warning`** — it fails no run and gates no PR. **The detection was
+never the gap; a correct, continuously-firing signal reached nobody for seven hours.** That is
+`2j2l`'s class one turn out: `2j2l` is a row that CANNOT SEE a bad state, this is a row that
+sees it perfectly and cannot make anyone care. **AND SEPARATELY, NO ROW COVERS THE PIN THAT
+DECIDED ANYTHING:** the three specs cover `.livespec.jsonc` `compat.pinned`, workflow `uses:`
+refs, and fabro image tags — **zero hits for `pyproject`**, so
+`[tool.uv.sources] livespec-dev-tooling tag`, the pin that governs which dev-tooling a member
+actually RUNS, is measured by nothing. `dev-tooling-pin` asserts that pin EXISTS, never that it
+is CURRENT. **The two pins moved in lockstep only because the bump rewrites both — precisely
+when the fan-out breaks, that correlation is not guaranteed, and only the uncovered one
+decides what runs.** Do not "fix" this by making the rows errors everywhere: they warn because
+a sibling's stall should not red an unrelated repo's PRs, which is a real reason. `0j3i`
+records the lane-scoped shape instead.
+
+---
+
 ## ▶️ START HERE — where the work actually is
 
 > **COLD START, IN ORDER.** This file is all a fresh session inherits.
@@ -64,9 +134,30 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >    **#905** (the conversion). Arming now waits on `5cai` and the `995m` known-gap statement,
 >    and on NOTHING in the count.
 >
->    **✅✅ ALL THREE `5cai` SLICES ARE LANDED AND ON MASTER. THE ROW EXISTS, IS TESTED, AND IS
->    DELIBERATELY NOT REGISTERED. THE NEXT ACTION IS THE REMEDIATION — `wdn7` THEN `nkkv` —
->    NOT THE ROW.** Merged: the tarball primitive (`c24e8d4`, v1.10.0), the oracle (`df04359`
+>    **✅✅✅ `wdn7` AND `nkkv` ARE BOTH CLOSED. THE TWENTY ARE ZERO, MEASURED WITH ITS
+>    DENOMINATOR: nine members read from their master tarballs, 0 skipped, 0 unparsed, 58 edges
+>    examined, ALL NINE PASS. THE NEXT ACTION IS THE REGISTRATION.** `wdn7` = dev-tooling's nine
+>    (#929, `91e3bec`): declared, and each file earned a REASONED `supervisor_entry_files` entry,
+>    taking the ratified-rule count **0 → 9 → 0** measured at each end. `nkkv` = livespec-runtime's
+>    eleven (that repo's #398, `67bc22d`): declared, raising ITS armed count **24 → 27**, +3 and
+>    zero removed — `parse_cross_repo_manifest`, `lane_of`, `is_item_ready`, filed as
+>    **`vojo`**, NOT converted (they are `dx8l`-shaped, consumer wiring first).
+>
+>    **▶️ REGISTRATION IS NOT THE SIX-LINE FOLLOW-UP THIS FILE PROMISED, AND THE REASON IS A
+>    SECOND WIRING HOLE.** `FleetContext.members` carries the fleet roster and its own docstring
+>    says the central engine populates it "once the manifest resolves". **NOTHING DOES.** The
+>    context is a FROZEN dataclass built in `main()` BEFORE the manifest is fetched, and there is
+>    no `dataclasses.replace` anywhere in the package — so the field has held its `()` default for
+>    every run either engine has ever made. No row needed the roster until this one, so an
+>    unpopulated field broke nothing and READ AS WIRED. **It would not have under-enforced
+>    quietly** — an empty roster makes the row skip for every member, and a row blind for every
+>    applicable member is already an error here — so registering it as-is would have failed every
+>    run forever. The join belongs in `run_member_rows`, the one function holding BOTH the context
+>    and the manifest. Work is staged, not landed; see the wrap-up below.
+>
+>    **(superseded) ALL THREE `5cai` SLICES ARE LANDED AND ON MASTER. THE ROW EXISTS, IS TESTED,
+>    AND IS DELIBERATELY NOT REGISTERED. THE NEXT ACTION IS THE REMEDIATION — `wdn7` THEN `nkkv`
+>    — NOT THE ROW.** Merged: the tarball primitive (`c24e8d4`, v1.10.0), the oracle (`df04359`
 >    + `846c97c`, v1.11.0), the oracle correction (`56379a3`) and the row itself (`e20c3ab`),
 >    with the measured record at `plan/rop-railway-enforcement/5cai-fleet-measurement.md`
 >    (`eeffe60`). **READ THAT FILE BEFORE PLANNING ANYTHING** — it carries both offender lists.
@@ -407,6 +498,27 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >    dropped 1. **Flat-layout members are where v178 bites hardest — which is dev-tooling's own
 >    shape.** Six repos remain unmeasured.
 >
+>    **⚠️ ONE WORKTREE OF THIS THREAD'S IS OPEN, WHICH IS A DEPARTURE FROM EVERY PRIOR WRAP-UP.**
+>    `~/.worktrees/livespec-dev-tooling/5cai-register-public-api-row`, branch
+>    `feat/5cai-register-public-api-row`, PUSHED to no PR. It holds the registration work,
+>    ABANDONED MID-REBUILD when the fan-out P0 took priority, and it is **based on a stale master
+>    and must be rebuilt, not resumed.** Its full diff against its fork point is the only thing
+>    worth keeping. Two Red→Green pairs are needed and the ORDER is load-bearing — wiring FIRST,
+>    registration SECOND, because registering onto an unwired roster makes every run fail:
+>    - **pair 1** — `test_fleet_conformance.py` Red → `_lanes.py` Green. The roster join
+>      (`ctx = replace(ctx, members=tuple(manifest.members))`); `replace` NOT a fresh construction,
+>      because the memo caches are mutable dicts carried BY REFERENCE and a rebuild re-spends the
+>      manifest's ~35 API reads. The same test file must ALSO gain a canned tarball downloader on
+>      `make_context` and a `default_gh_downloader` patch in `_patch_runner` — a fleet row reads
+>      whole TREES, so a fixture answering only `run_gh` leaves it skipping. It also needs
+>      `fleet_conformance.main()` to inject `download_gh=default_gh_downloader` EXPLICITLY: a
+>      dataclass default binds once at class creation and no test can replace it.
+>    - **pair 2** — `test_contract_rows.py` Red → `_contract_rows.py` Green, registering
+>      `cross-repo-public-api-declared` with the `role-key-spellings` row as the exact precedent.
+>    **The fixture change belongs in PAIR 1's test file**, which is why the first attempt had to be
+>    thrown away: it was written after pair 1 was already committed, and the Red-recorded file is
+>    byte-identity-bound. Reap the worktree and start from current master.
+>
 >    **▶️ COLD-START ORIENTATION — the items this thread still owns, all FILED, none started.**
 >    Nothing is mid-flight, verified at wrap-up 2026-07-30 (second wrap-up of the day): every
 >    PR this thread opened is MERGED (#867, #870, #874, #880, #883, #886, #890, #891, #892,
@@ -424,8 +536,9 @@ cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh --
 >    | ~~`q5lb`~~ | ~~v179 member 2, the `total_absence_returns` key~~ | **✅ CLOSED — #891, #892, #895** |
 >    | ~~`vzwa`~~ | ~~the 2 genuine violations~~ | **✅ CLOSED — livespec #1847 + dev-tooling PR. The count is ZERO** |
 >    | ~~`5cai`~~ | ~~the CENTRAL-vantage conformance row~~ | **✅ ALL THREE SLICES LANDED — #919, #921, #924. The row is BUILT and deliberately UNREGISTERED** |
->    | **`wdn7`** | dev-tooling's 9 undeclared `checks/*.py::main` | **YES — registration cannot land until this clears** |
->    | **`nkkv`** | livespec-runtime's 11, cross-repo | **YES — else the fleet sweep and fan-out preflight break** |
+>    | ~~`wdn7`~~ | ~~dev-tooling's 9 undeclared `checks/*.py::main`~~ | **✅ CLOSED — #929. Count 0 → 9 → 0, measured at each end** |
+>    | ~~`nkkv`~~ | ~~livespec-runtime's 11, cross-repo~~ | **✅ CLOSED — livespec-runtime #398. Its armed count 24 → 27; the +3 are `vojo`** |
+>    | **REGISTER** | the row into `OBLIGATION_ROWS` | **needs the roster wiring FIRST — see the ▶️ note in step 6; work staged, not landed** |
 >    | **`0yfo`** → `995m` | decompose `config.py`, then flip the `@generated` predicate | only via 6f's known-gap statement |
 >
 >    **Three NEW items were filed by this work. `vzwa` IS an arming blocker; the other two are
