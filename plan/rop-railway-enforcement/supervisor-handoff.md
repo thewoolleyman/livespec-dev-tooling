@@ -426,6 +426,32 @@ their PRs land. Measured on this one drive: **seven** foreign at its start, **si
 hour later. A supervisor who inherits a number will act on a stale one; a supervisor who
 runs `git worktree list` never can. Reap NONE of them regardless.
 
+**`mmqe` IS ANSWERED BY MEASUREMENT — do not re-litigate it from stories.** The
+installation pool was sampled across a window spanning TWO releases (v1.10.0, v1.11.0):
+**peak 532 of 5000 — 10.6%. It never approached exhaustion.** So the 403 reading
+"API rate limit exceeded for installation 131208965" was NOT primary-pool exhaustion; the
+surviving explanation is a **SECONDARY (burst/concurrency) limit**, which is a different
+mechanism with a different remedy. Full table in the worker's `handoff.md`. **This also
+sharpens why `5cai` had to be tarball-first, for a reason neither of us originally had:**
+a naive ~653-call run would not have exhausted the hourly pool (~13%), but it is exactly
+the CONCURRENCY BURST that trips a secondary limit. The arithmetic argument was right for
+the wrong reason.
+
+**Where slice 3 stands.** The row is BUILT and deliberately UNREGISTERED. Its
+pre-registration run against the live fleet found **9 undeclared in `livespec-dev-tooling`
++ 11 in `livespec-runtime` = 20**, both lists recorded BY NAME in `handoff.md`. Registering
+before remediating fails the registration PR's OWN CI (dev-tooling's own row) and breaks
+the scheduled sweep plus the release fan-out preflight fleet-wide (the sibling's). Sequence
+is REMEDIATE-THEN-FLIP under v034 carve-out 1, severity NOT lowered.
+
+**The open question that decides the collision:** are those 9 `checks/*.py::main` consumed
+as SYMBOL IMPORTS (v178 clause 1/2) or PROCESS ENTRY POINTS (clause 3)? If clause 3, the
+count going 0 → 9 is the already-known `main()`-exemption-scoped-to-a-LOCATION spec defect
+finally reaching code, not nine new violations. **⛔ AND THE STANDING REFUSAL: never
+under-declare `cross_repo_public_api` to keep the count at zero** — that is `pure_trees = []`
+in a new costume, `5cai` would correctly convict this repo for it, and if the honest
+resolution leaves the count non-zero then ARMING WAITS.
+
 **Live record:** `plan/rop-railway-enforcement/handoff.md` (the worker owns it) and the
 ledger, which is authoritative over both files. Re-derive before acting.
 
@@ -565,6 +591,19 @@ Carried forward because they are role-level rather than track-level:
   re-arm a watcher whose wake condition is already satisfied** — a push-keyed watcher
   reused after the push lands fires instantly, forever.
 
+- **I PRODUCED THREE SUCCESSIVE STORIES ABOUT A QUANTITY NOBODY HAD MEASURED, AND ALL THREE
+  WERE ABOUT THE WRONG QUANTITY.** On `mmqe` I proposed a fan-out-drains-the-budget
+  mechanism, retracted it on a discriminator that did not discriminate (the fan-out's own
+  commits run BEFORE any drain, so their green refutes nothing), then un-retracted it when a
+  second instance appeared. The worker's measurement then showed the pool **peaked at 532 of
+  5000 — 10.6%**, so hourly volume was never the constraint and every one of my three
+  positions was reasoning about a limit that was never approached. **When a question needs a
+  number, get the number; successive stories are not convergence.** Note the shape: each
+  flip felt like honest updating because new evidence had arrived, and a supervisor who
+  updates on every sample without a stable measurement is noise, not signal. The one useful
+  thing I did here was eventually to stop and say UNRESOLVED — which I should have said at
+  the start, since the measurement was always cheap and always available.
+
 - **I CORRECTED A STALE COUNT BY INVENTING A LARGER ONE.** Replacing the HALT-first
   section's "five foreign worktrees", I wrote "EIGHT or more" — from an eyeballed list
   whose first line is the PRIMARY checkout, so I had miscounted, and the true figures
@@ -575,6 +614,27 @@ Carried forward because they are role-level rather than track-level:
   replaced". The durable fix was not a better number but REMOVING the number: a quantity
   that moves in both directions must be enumerated, never quoted. **When a stale figure
   needs correcting, first ask whether the figure should exist at all.**
+
+- **I BUILT THREE IDLE-DETECTORS AND ALL THREE REPORTED CONFIDENTLY WRONG ANSWERS.** The
+  charter's stock pane-watcher and two successors: (1) PANE-ONLY called a session running
+  `git commit --amend` for 7m28s "STUCK", so I interrupted and wiped two briefs from its
+  queue — and told the worker its Monitor had stalled it, which was false and which the
+  worker then accepted as "my error"; (2) PROCESS-TREE-ONLY called a *thinking* session idle,
+  because thinking spawns no child shell; (3) COMBINED matched a spinner reading `12m 59s`
+  but not `1h 8m 4s`, so any turn crossing one hour read as idle. **This is the epic's own
+  defect class — machinery reporting confidently while unable to see what it claims to
+  measure — and I built it three times in an afternoon while auditing someone else for it.**
+  The design rule I should have started from: **the failure directions are ASYMMETRIC.** A
+  false IDLE is destructive (it interrupts and discards); a false BUSY is merely a delay. So
+  every ambiguity must resolve toward BUSY, which means a deliberately WIDE busy test, not a
+  precise one. Precision was the wrong goal.
+
+- **A SUPERVISOR ERROR PROPAGATES INTO THE WORKER'S RECORD, NOT JUST ITS ACTIONS.** Told
+  wrongly that its Monitor had parked the session, the worker killed a perfectly good bounded
+  Monitor and wrote "my error" — accepting a fault that was mine. Retracting it took a whole
+  brief. **On a thread whose subject is authoritative statements contradicted by measurement,
+  check your claim BEFORE you send it**, because the worker will act on it faster than you can
+  verify it. `ps --ppid <pane_pid>` would have cost one second.
 
 - **A DUPLICATED PARAGRAPH IS THE PROSE-TWIN DEFECT WITH THE SERIAL NUMBERS FILED OFF.**
   Editing this very section, I left two copies of the retired-figures paragraph. Two
