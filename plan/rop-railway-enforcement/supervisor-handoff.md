@@ -346,6 +346,56 @@ Repeat these in every instruction sent to the supervised session:
   local tree installed nothing.
 - Never kill the acting overseer daemon (tmux `livespec-overseer:1.1`).
 
+## LIVE SUPERVISORY STATE — read this before driving anything
+
+**This section is the only place your resume state survives.** The supervisor's
+`tmp/overseer/.../.supervisor-state` marker is uncommitted and HAS vanished mid-session
+once; treat it as a cache, never as the record.
+
+**Anchor:** `livespec-dev-tooling-8o8e` is OPEN. `8o8e.1` is CLOSED (its precondition
+was discharged with per-repo evidence; v1.0.0 released and consumed fleet-wide).
+The plan is unarchived, so this is an OPEN OBLIGATION — Drive, Ask, or Finish, never
+`STAND BY`.
+
+**Authority (maintainer, 2026-07-29):** FULL AUTONOMY — "the proposed change, the
+revise, the grooming, the implementation, and everything autonomously", escalating only
+"absolutely, truly blocking" questions. Not repo-scoped: this supervisor extended it to
+the `livespec` CORE spec tree and that extension produced v177/v178/v179 correctly.
+Previously human-gated items (`5ror`, `clkf`, `kmdn`, `m50u`, `qv3k`, `nauzq6`) are
+supervisor-authorized. **Do not re-ask any of it.**
+
+**Where step 6 stands.** dev-tooling's remediation is COMPLETE. Ratified and landed:
+`v036` (`cross_repo_public_api` key), `v177` (supervisor_entry_files as exemption
+member 4), `v178` (public API means CONSUMED ACROSS A BOUNDARY, fleet-wide),
+`v179` (no-expected-failure-mode: member 1 COMPUTED, member 2 declared).
+Implementations landed: `721o`, `rvw3`, `q5lb`. Released through **v1.8.0**.
+
+**THE ONLY THING BETWEEN HERE AND ARMING IS `5cai`, AND IT IS BINDING.** It is the
+central-vantage fleet consumption conformance row that VERIFIES `721o`'s declaration
+against the real fleet graph. Without it a repo could declare an empty consumed-surface
+and every public function would fall out of scope silently with the check green —
+`pure_trees = []` wearing a new name, at the end of the epic that removed it. If `5cai`
+proves larger than expected, ARMING WAITS. Do not accept "file it as a follow-up".
+
+**The arming gate is NOT "zero".** It is: the check's raw count and the ratified-rule
+count AGREE, and both are stated in the arming commit. As of PR #898 they agree at 2.
+If they ever disagree, THE SIMULATION WAS WRONG and that discrepancy outranks the
+arming. Arming runs the check over ~146 files for the first time in this epic's
+history; a surprise there is a FINDING, not something to smooth.
+
+**`995m` is an accepted KNOWN GAP, recorded, not silent.** `config.py` excludes itself
+from every check universe because `is_generated` matches its own `@generated` prose.
+Either it lands before arming, or the arming commit carries the known-gap statement.
+Silence is not an option.
+
+**The `223` / `282` fan-out figures are RETIRED.** They predate v178/v179 and were
+measured under a definition of "public" that no longer exists. v178 both REMOVES and
+ADDS, so sibling counts are unknown in BOTH directions. Re-measure per repo; never
+quote the old numbers.
+
+**Live record:** `plan/rop-railway-enforcement/handoff.md` (the worker owns it) and the
+ledger, which is authoritative over both files. Re-derive before acting.
+
 ## Corrections
 
 Corrections to THIS supervisor role's own behavior, recorded so successors do
@@ -392,3 +442,58 @@ Carried forward because they are role-level rather than track-level:
   invocation, or run it yourself first.
 - **Reflexively delegating an instruction addressed to the supervisor.** Read who
   the instruction names.
+
+### First-hand, 2026-07-29/30 — supervisor errors from the step-6 drive
+
+- **Propagated a number without asking what it counted.** Told the worker to "keep
+  converting the 43 convertible offenders"; the convertible class was 4. This thread
+  has retracted 43, 245, 40-of-46, "exactly 6", "class C is empty" and "exposure is
+  zero" — every one caught by RE-DERIVING rather than inheriting, and one of them was
+  the supervisor's own repetition.
+
+- **Offered a weaker guard than the worker found.** Asked how erosion would be
+  prevented and named "a declaration plus re-verification" as acceptable. The worker
+  showed that is strictly worse and made member 1 COMPUTED — it stores no claim, so
+  there is nothing to go stale. Do not let a declaration be accepted where a
+  recomputation is possible.
+
+- **Generalized a constraint from one repo's shape. Twice.** "Consumers use `python -m`,
+  not imports" (measured: 29 symbol imports fleet-wide, one of which broke a sibling)
+  and "a name imported only by tests is not public" (would have acquitted
+  `testing/cli_e2e.py`, consumed from four siblings' test trees). Both corrected by the
+  worker's measurement. A supervisor constraint asserted about the fleet must be
+  measured across the fleet.
+
+- **Ruled on a 4-offender blocker while a 30-offender one had no path at all.** Spent a
+  full brief on `zu85` before the worker's table showed the critical path was elsewhere.
+  Ask which item is on the critical path before ruling on the one in front of you.
+
+- **Searched the wrong repository before crediting a worker's finding.** Swept
+  `livespec/SPECIFICATION` for a rule that lived in `livespec-dev-tooling/SPECIFICATION`
+  and nearly reported the finding as unfounded. Locate the claim's own citation before
+  contradicting it.
+
+- **A paste that lands is not a message that runs.** Twice a brief sat QUEUED with the
+  pane idle — the charter's "idle plus queued input means STUCK". After pasting, VERIFY
+  EXECUTION STARTED (a spinner), not merely that the text arrived; flush with a bare
+  Enter if it did not.
+
+- **A worker's transient API error looks exactly like a clean stop.** A 529 ended a
+  turn mid-measurement; the pane showed a prompt and nothing else. It will NOT
+  self-resume. Read the pane tail for the cause before concluding the worker finished,
+  and nudge it to resume rather than re-briefing from scratch.
+
+- **Do not let the worker wait for permission on authorized work.** It ended a pass with
+  "say the word and I'll start `rvw3`" — authorized two briefs earlier. An item boundary
+  is a place to REPORT, not to WAIT; each such stop costs a full turn.
+
+### Verification lessons worth keeping at role level
+
+- Verify every worker claim on the FORGE, not from its report. Doing so caught PRs
+  merged-vs-open, a spec version cut on a branch but not on master, and a check that
+  had NOT landed ahead of its spec.
+- When a count RISES between passes, demand the basis before accepting it. That
+  question is what surfaced the v178 exposure claim being false.
+- A ratified statement contradicted by measurement is this thread's signature defect —
+  it has now appeared in a plan handoff, two config headers, a ratified spec, a check's
+  own remediation text, and a dependency-graph edge. Expect it; look for it.
