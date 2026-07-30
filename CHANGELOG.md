@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.8.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.8.1...v1.8.2) (2026-07-30)
+
+
+### Bug Fixes
+
+* pin supported fabro gh version ([d1c4800](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d1c480022b4bba0711e98e1675a2669429959f3e))
+
 ## [1.8.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.8.0...v1.8.1) (2026-07-30)
 
 
