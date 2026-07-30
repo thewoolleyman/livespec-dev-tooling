@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol, cast
 
+from livespec_dev_tooling.fleet._public_api_graph import FleetConsumption
 from livespec_dev_tooling.fleet._read_failure import (
     ReadFailure,
     classify_gh_failure,
@@ -203,7 +204,16 @@ class FleetContext:
     # Defaults False so every other construction site keeps warning behavior.
     filter_consuming_preflight: bool = False
     download_gh: GhDownloader = default_gh_downloader
+    # The manifest roster, populated by the central engine once the manifest
+    # resolves. A FLEET-vantage row is called once per MEMBER but must answer a
+    # question about every member at once ("does any sibling consume this?"),
+    # and the row protocol hands it one member. Defaulting to EMPTY is the
+    # fail-closed spelling: a construction site that does not populate it makes
+    # such a row SKIP naming the roster, and a row that skips for every
+    # applicable member is BLIND, which this repo already treats as an error.
+    members: tuple[FleetMember, ...] = ()
     snapshot_cache: dict[str, SnapshotResult] = field(default_factory=dict)
+    consumption_cache: dict[str, FleetConsumption] = field(default_factory=dict)
     tree_cache: dict[str, TreeState] = field(default_factory=dict)
     installed_cache: dict[str, frozenset[str] | None] = field(default_factory=dict)
     marker_cache: dict[str, bool] = field(default_factory=dict)
