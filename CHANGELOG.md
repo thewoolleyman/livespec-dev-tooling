@@ -58,6 +58,18 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.12.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.11.0...v1.12.0) (2026-07-30)
+
+
+### Features
+
+* **fleet:** the central row that checks a declared surface against reality ([e20c3ab](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e20c3abb553eb471a72ddae40e090b83339e7d40))
+
+
+### Bug Fixes
+
+* **fleet:** a member that satisfies an import itself crosses no boundary ([56379a3](https://github.com/thewoolleyman/livespec-dev-tooling/commit/56379a3bd0a5e94517dfab7c708feeff3465efbd))
+
 ## [1.11.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.10.0...v1.11.0) (2026-07-30)
 
 
