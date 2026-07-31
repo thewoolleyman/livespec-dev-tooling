@@ -387,6 +387,58 @@ membership' means"*. **A normative parsing rule in four places is what produced
 two copies to `Result` and leaving four is worse than either converting all or deduplicating
 first.
 
+### 4e. ✅ THE TABLE, CHECKED AGAINST ITSELF — every `X | None`, one rule, no split verdicts
+
+Run because the `named_plugin_connection` / `connection_block` contradiction (4d-bis) was
+found by carefully reading FOUR functions while the table holds ~70 dispositions from a
+SINGLE pass, and because the discriminator that resolved those four was only made explicit
+AFTER the table was written. **An inconsistency between two entries in the same module is
+evidence the table was never cross-checked — not evidence that was the only pair.** This is
+"read every function the classification convicted", raised one level to the classification.
+
+**Population: 13** — the 15 `X | None` of the original skeleton, less the 2 now DECLARED.
+
+| function | distinct MEANINGS on the `None` | whose failure do callers report | verdict |
+|---|---|---|---|
+| `_ci_matrix_parse::extract_check_recipe_body` | **1** — no `check:` recipe | **their own**: `check_recipe_not_found`, "cannot verify" | CONVERT |
+| `_tool_backed_surfaces::extract_check_recipe_body` | **1** — same | same | CONVERT |
+| `_ci_matrix_parse::extract_targets_array_tokens` | **2** — no array; array unterminated | — | CONVERT |
+| `_tool_backed_surfaces::extract_targets_array_tokens` | **2** — same | — | CONVERT |
+| `_connection::parse_document` | **2** — unparseable; root not an object | — | CONVERT |
+| `_connection::impl_plugin_name` | **4** | — | CONVERT |
+| `_connection::named_plugin_connection` | **6+** | — | CONVERT |
+| `_connection::connection_block` | **3** | — | CONVERT |
+| `_context::resolve_owner` | **3** (ONE syntactic site; `_origin_remote_match` collapses them upstream) | — | CONVERT |
+| `_context::resolve_repo_name` | **3** — same | — | CONVERT |
+| `_rows_github::member_matrix_targets` | **2** — unreadable; empty | — | CONVERT |
+| `_rows_pin_currency::open_bump_prs_for` | **1** — the PR list is UNREADABLE | a READ FAILED — its own docstring says so | CONVERT |
+| `_rows_pin_currency::persisting_bump_pr_number` | **2** — no qualifying PR; `open_prs` unknown | — | COUPLED |
+| *(declared)* `_role_key_gate::role_absence_exit_code` | **1** — no gate fired | none — pure control flow | DECLARE |
+| *(declared)* `_no_except_outside_io_markers::sanctioned_marker_flavor` | **1** — no marker present | **the SCANNED SOURCE's** | DECLARE |
+
+**✅ NO VERDICT IS WRONG. No two entries hold opposite verdicts on the same grounds.** The
+`_connection` family is now uniformly CONVERT, which is what 4d-bis repaired.
+
+**🔴 BUT THE SWEEP FOUND THE RULE I RECORDED IS INCOMPLETE, AND THAT IS ITS REAL RESULT.**
+`pyproject.toml`'s comment above `total_absence_returns` states the discriminator as
+condition-counting alone, citing `tag_version_component`'s "exactly one". **Two entries above
+collapse EXACTLY ONE condition and are correctly CONVERT** — `extract_check_recipe_body` and
+`open_bump_prs_for`. A future author applying the recorded rule literally could declare
+either. Counting is necessary and NOT sufficient.
+
+**THE COMPLETE RULE, both halves, now in `pyproject.toml` where an author meets it:**
+
+1. **Count distinct MEANINGS — not syntactic `return None` sites, and FOLLOW any callee that
+   itself collapses.** `resolve_owner` has ONE `return` expression and THREE meanings, because
+   `_origin_remote_match` merges them one level down. **More than one → CONVERT**, because no
+   caller can tell them apart and at least one is normally a failure.
+2. **If exactly one, ask WHOSE failure the callers report.** "I cannot verify this"
+   (`check_recipe_not_found`) → the FUNCTION failed → CONVERT. "The thing I inspected is
+   non-conformant", or pure control flow → the function ANSWERED → DECLARE.
+
+**Part 2 is the half that was missing, and it is the half that decides every one-condition
+case** — which is the only population `total_absence_returns` can ever admit.
+
 ## 5. THE TABLE — all 75
 
 Evidence columns are MEASURED. `convicted by` is the isolated disqualifying call for a LOCAL
