@@ -311,8 +311,11 @@ records the lane-scoped shape instead.
 >       `__all__`, **which pyright honours for `reportUnusedFunction`** (probed BOTH ways: a
 >       listed private function is clean, an unlisted one errors — the private-name route is
 >       otherwise blocked by pyright, and that is why the first attempt reached for public
->       names). **This is the mirror of the untracked-module trap: that one HID functions from
->       the instrument, this one ADDS them. Both read as a count change caused by the code.**
+>       names). **THE RULE IS NOW TWO-SIDED AND BELONGS IN EXACTLY THESE WORDS: A RESTRUCTURE CAN
+>       MAKE OFFENDERS VANISH *OR* APPEAR WITHOUT A SINGLE FUNCTION CHANGING BEHAVIOR, SO
+>       RE-MEASURE ACROSS EVERY MOVE, IN BOTH DIRECTIONS.** The untracked-module trap HID
+>       functions from the instrument and read as a false −3; this one ADDS them and reads as a
+>       false +2. Both look exactly like a count change caused by the code.
 >    2. **A BARE SIBLING IMPORT CREATES A SECOND CLASS OBJECT.** The failure type imported bare
 >       (`from _primary_checkout_unreadable import …`, the sys.path spelling the other siblings
 >       use) yields a different class under `python3 <path>` invocation than under the package
@@ -328,6 +331,53 @@ records the lane-scoped shape instead.
 >    module is now under even the **200** SOFT ceiling, where the parent had 3 lines of headroom
 >    before. Note the narration module is a deliberate reading of "the arms compute, the parent
 >    narrates": with four arms feeding it, the parent was no longer ONE place for the vocabulary.
+>
+>    **✅✅ THE BLAST-RADIUS QUESTION IS CLOSED AT ZERO, MEASURED BEFORE THE RELEASE CUT — AND THE
+>    INSTRUMENT THE BRIEF NAMED CANNOT SEE THE POPULATION.** Supervisor brief 72 asked whether any
+>    member holds a hook or pack file whose BYTES differ from canonical while its DECODED text
+>    matches — exactly the set that passed before #992 and fails after. Unlike everything else in
+>    this chain, these two checks are ARMED in all nine repos, so the question was right to ask.
+>
+>    **⛔ FIRST, THE CORRECTION, because it will be reached for again: the `5cai` tarball route
+>    CANNOT ANSWER IT.** Neither population is repository content. The pack is **gitignored** —
+>    `.gitignore` says "installed … at bootstrap (never tracked)" and carries the four
+>    `/dev-tooling/*` entries — and the hooks live in **`.git/hooks/`**, which is never in the
+>    tree. A snapshot of a member's tree contains ZERO of the files in question. **A tarball read
+>    would have returned "no offending files" and that answer would have been vacuous** — the
+>    `_scan`/`pure_trees` shape again: an instrument reporting clean because it is looking
+>    somewhere the subject cannot be.
+>
+>    **▶️ WHAT A SNAPSHOT *CAN* DECIDE, and it is the load-bearing half.** The only route by which
+>    a member could acquire a CRLF pack or hook is git checkout (`.gitattributes eol=`/
+>    `core.autocrlf`) — which requires the file to be TRACKED. Measured over all nine members'
+>    trees (9/9 read, 7 981 paths):
+>
+>    | measured | result |
+>    |---|---|
+>    | members tracking ANY `dev-tooling/*` pack file | **0 of 9** |
+>    | members carrying a vendored hook-source copy | **0 of 9** |
+>    | members with a `.gitattributes` | **1** (`livespec-orchestrator-git-jsonl`) |
+>
+>    That one file is `*.jsonl merge=union` — **no `eol=`, no `text=`, and it does not name these
+>    paths.** So no member can receive either artifact through checkout at all.
+>
+>    **▶️ AND THE REAL ARTIFACTS, on this host: 15 installed files compared across 8 checkouts and
+>    1 shared hooks dir — `newly-failing = 0`, and in fact 15/15 byte-identical.** The sole writer
+>    is the from-package installer's `Path.write_text(body, encoding="utf-8")`, which translates
+>    `\n` to `os.linesep` — `\n` on Linux. The fleet's hosts and CI are Linux, so installer
+>    output IS the canonical bytes.
+>
+>    **⛔ THE INSTRUMENT WAS POSITIVE-CONTROLLED BEFORE THE ZERO WAS REPORTED** — canonical → not
+>    counted, CRLF-converted → **counted**, genuinely drifted → not counted (it failed before too,
+>    so it is not newly-failing). A zero from a comparison that cannot flag a CRLF file would have
+>    been worth nothing.
+>
+>    **▶️ CONCLUSION: NO REMEDIATE-THEN-FLIP IS NEEDED and the release may cut.** CI cannot hit it
+>    either — a fresh clone plus `just bootstrap` reinstalls from the package every run. The only
+>    residual is a developer's local checkout written by a non-Linux host, which `just bootstrap`
+>    heals and which the check now REPORTS instead of silently passing. **Denominator stated so
+>    this is never re-litigated: 9/9 member trees read, 15 live installed files compared, 1
+>    `.gitattributes` read in full.**
 >
 >    **⚠️ `_inspect_hook` and `_find_vendored_hook_copies` are NOT CONVICTED by the check** —
 >    private names, so v178 clause 0 disqualifies them — **and were converted anyway.** The
