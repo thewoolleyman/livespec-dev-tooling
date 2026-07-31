@@ -178,13 +178,57 @@ that four of them are declarations rather than code.
 | class | n | what it means |
 |---|---|---|
 | **CHECK-FIX** | ~~4~~ **3** | the machinery convicts conformant code — fix the check, not the function |
-| **CONVERT** | **38** | an inhabited failure track modelled off-railway |
-| **DECLARE** | **4** | a legitimate ABSENCE — v179 member 2 `total_absence_returns` |
+| **CONVERT** | ~~38~~ **40** | an inhabited failure track modelled off-railway |
+| **DECLARE** | ~~4~~ **2** | a legitimate ABSENCE — v179 member 2 `total_absence_returns` |
 | **COUPLED** | **1** | becomes a DECLARE once the function it reads converts; not before |
 | **TYPE-SLICE** | **23** | the fleet `RowOutcome` family — ONE type-level decision, not 23 conversions |
 | **OPEN** | ~~5~~ **6** | a genuine design choice this triage surfaces rather than settles |
 
-**3 + 38 + 4 + 1 + 23 + 6 = 75, exactly.**
+**3 + 40 + 2 + 1 + 23 + 6 = 75, exactly.**
+
+### ⛔⛔ 4d-BIS — DECLARE WAS 4 AND IS **2**, AND THE CALLERS' READING FOUND AN INCONSISTENCY INSIDE MY OWN TABLE
+
+**Why DECLARE got a reading the other classes did not.** CONVERT, CHECK-FIX and TYPE-SLICE
+are recoverable — get one wrong and you do unnecessary work, or a check stays wrong and the
+next measurement catches it. **DECLARE is not symmetric with those.** A wrong entry writes a
+ratified exemption into `pyproject.toml` that removes a function from the rule's scope
+permanently, in the one direction this epic has spent its life removing: a value that means
+"stop looking here".
+
+**AND THE MECHANISM CANNOT CATCH IT.** `_declared_absence_returns._split` produces exactly two
+rejections — UNRESOLVED and NOT_ABSENCE_SHAPED. **Neither asks whether the `None` is really an
+absence.** The reason string is parsed for PRESENCE, never for truth. So a clean
+`rejected_declarations` run is the kind of green this thread exists to distrust: it proves the
+annotation is `X | None` and the function exists, and nothing about the judgement. It was run
+per entry anyway (0 rejected, 0 stale) because it catches a mis-typed or stale entry cheaply —
+**but it is not cited as evidence the dispositions are right.**
+
+**THE DISCRIMINATOR, and it is the one that decided all four: HOW MANY DISTINCT CONDITIONS
+COLLAPSE ONTO THE ONE `None`.** `tag_version_component`, the ratified precedent, collapses
+exactly one. A `None` covering an absent key AND a malformed value carries a failure alongside
+the absence, and no caller can tell them apart.
+
+| candidate | conditions on `None` | callers' reading | verdict |
+|---|---|---|---|
+| `_role_key_gate::role_absence_exit_code` | **1** — the role is not declared-absent | all five: `if gate_exit is not None: return gate_exit`. Pure control flow. The failure/violation channel is the INT (1 undeclared, 0 declared-absent), never the `None` | **DECLARE** |
+| `_no_except_outside_io_markers::sanctioned_marker_flavor` | **1** — the span holds no marker comment; no error path (`_clause_colon_line` floors via `min(..., default=…)`) | caller appends an offense — but about the SCANNED SOURCE, not about its own inability | **DECLARE** |
+| `_connection::impl_plugin_name` | **4** — `implementation` absent OR not an object; `plugin` absent OR not a string | `_rows_baseline` turns it into `_UNREACHABLE` → a **RowFinding**; its docstring says "which link BROKE". `_rows_local_jsonc` → a warning **RowFinding** | **CONVERT** |
+| `_connection::named_plugin_connection` | **6+** — inherits all four, plus block absent/not-an-object, plus connection absent/not-an-object | same two row callers, both reporting | **CONVERT** |
+
+**🔴 AND THE READING CAUGHT AN INCONSISTENCY IN THIS FILE, which is the triage working on
+itself.** `connection_block` was already disposed **CONVERT** here on exactly this ground —
+"THREE meanings in one sentinel". `named_plugin_connection` has the same shape and this table
+gave it **DECLARE**. Two functions in the same module, one rule, opposite verdicts. The
+caller reading is what exposed it.
+
+**⛔ AND THE LITERAL FORM OF THE CALLER TEST WOULD GET `sanctioned_marker_flavor` BACKWARDS.**
+"If any caller reports a violation on the `None`, it is a failure track" convicts it — its
+caller does append an offense. But that offense is the CHECK'S OWN VERDICT about the code being
+scanned ("this broad handler carries no marker"), not a report that the function could not
+answer. Contrast `extract_check_recipe_body`, which earned CONVERT here: its callers emit
+`check_recipe_not_found` and say they **CANNOT VERIFY** — a caller reporting its own inability.
+**The test is whose failure is being reported, not whether a finding appears.** Converting
+`sanctioned_marker_flavor` would put the MAJORITY answer on the failure track.
 
 ### ⛔⛔ 4a-BIS — CHECK-FIX WAS 4 AND IS **3**. THE CORRECTION IS MINE, IT WAS CAUGHT BY THE FIX'S OWN MEASUREMENT, AND THE METHOD FLAW BEHIND IT MATTERS MORE THAN THE COUNT.
 
