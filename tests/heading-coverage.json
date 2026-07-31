@@ -334,5 +334,26 @@
     "heading": "## Scenario: an unarmed-until payload naming a closed work item is a conformance failure",
     "test": "TODO",
     "reason": "Ratified with the scenario in the role-key-declared-absent-spellings revision; the behavior is DELIBERATELY UNIMPLEMENTED, so no test of ANY tier exists and the integration-tier (`tests.consumer`) requirement is acknowledged as unmet. The verifier must resolve work-item identifiers ACROSS trackers, and no credential class in any current vantage can: the central fleet vantage holds a GitHub credential and reaches no ledger, while the local vantage holds ONE tenant's credential and live declarations cite two. A same-tenant resolver would report green while failing to resolve half the live declarations, which is the silent-consent shape this revision removes. Replace TODO once that vantage decision is made."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a stale pin whose bump PR never opened escalates once the release ages past the settle window",
+    "test": "TODO",
+    "reason": "Awaits the integration-tier test landing with the escalation-predicate implementation (the never-fired staleness class); scenarios.md headings require an integration-tier-or-above test node id."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a stale pin inside the settle window with no bump PR stays a warning",
+    "test": "TODO",
+    "reason": "Awaits the integration-tier test landing with the settle-window implementation; scenarios.md headings require an integration-tier-or-above test node id."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an unparseable pin file is a finding, never a passing row",
+    "test": "TODO",
+    "reason": "Awaits the integration-tier test landing with the can't-parse carrier conversion (the read_pin_text walker family); scenarios.md headings require an integration-tier-or-above test node id."
   }
 ]
