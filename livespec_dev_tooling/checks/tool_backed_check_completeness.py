@@ -85,6 +85,13 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
+from returns.io import IOFailure  # noqa: E402  — vendor-path-aware.
+from returns.result import Failure, Result, Success  # noqa: E402  — vendor-path-aware.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware.
+
+from livespec_dev_tooling.checks._check_aggregate_failures import (  # noqa: E402
+    TargetsArrayUnterminated,
+)
 
 # Justfile + CI-matrix parsers extracted to a private sibling module (the
 # LLOC-reduction split mirroring `_ci_matrix_parse`); the parent keeps the
@@ -240,14 +247,14 @@ def _evaluate(
     ]
 
 
-def main() -> int:
-    parser = _build_parser()
-    args = parser.parse_args()
-    tool_backed_from: str | None = args.tool_backed_from
-    log = _configure_logger()
-    cwd = Path.cwd()
-    tool_backed = _load_tool_backed_slugs(tool_backed_from=tool_backed_from, cwd=cwd)
+def _justfile_targets(*, cwd: Path, log: structlog.stdlib.BoundLogger) -> Result[list[str], int]:
+    """The `just check` aggregate's wired slugs, or the exit code its absence earns.
 
+    Split out of `main()` along with `_ci_matrix_targets` to keep it at the
+    six-return / thirty-statement caps: the conversion added a branch at each
+    of the three seams, which is the structural cost every conversion in this
+    epic pays somewhere.
+    """
     justfile_path = cwd / _JUSTFILE_NAME
     if not justfile_path.is_file():
         _emit_absence(
@@ -256,29 +263,39 @@ def main() -> int:
             message=f"justfile not found at {justfile_path}",
             path=str(justfile_path),
         )
-        return _EXIT_VIOLATIONS
+        return Failure(_EXIT_VIOLATIONS)
     recipe_body = extract_check_recipe_body(justfile_text=justfile_path.read_text(encoding="utf-8"))
-    if recipe_body is None:
+    if isinstance(recipe_body, Failure):
         _emit_absence(
             log=log,
             failure_mode="check_recipe_not_found",
             message="justfile has no `check:` recipe — cannot verify tool-backed wiring",
             path=str(justfile_path),
         )
-        return _EXIT_VIOLATIONS
-    justfile_targets = extract_targets_array_tokens(recipe_body=recipe_body)
-    if justfile_targets is None:
+        return Failure(_EXIT_VIOLATIONS)
+    targets = extract_targets_array_tokens(recipe_body=recipe_body.unwrap())
+    if isinstance(targets, Failure):
+        unterminated = isinstance(targets.failure(), TargetsArrayUnterminated)
         _emit_absence(
             log=log,
-            failure_mode="targets_array_not_found",
+            failure_mode=(
+                "targets_array_unterminated" if unterminated else "targets_array_not_found"
+            ),
             message=(
-                "`check:` recipe does not declare a `targets=(...)` array — "
+                "`check:` recipe opens a `targets=(...)` array and never closes it — "
+                "cannot verify tool-backed wiring"
+                if unterminated
+                else "`check:` recipe does not declare a `targets=(...)` array — "
                 "cannot verify tool-backed wiring"
             ),
             path=str(justfile_path),
         )
-        return _EXIT_VIOLATIONS
+        return Failure(_EXIT_VIOLATIONS)
+    return Success(targets.unwrap())
 
+
+def _ci_matrix_targets(*, cwd: Path, log: structlog.stdlib.BoundLogger) -> Result[set[str], int]:
+    """The slugs CI's matrices run, or the exit code the read failure earns."""
     workflows_dir = cwd / _WORKFLOWS_DIR
     if not workflows_dir.is_dir():
         _emit_absence(
@@ -290,8 +307,43 @@ def main() -> int:
             ),
             path=str(workflows_dir),
         )
-        return _EXIT_VIOLATIONS
-    ci_targets = collect_ci_matrix_targets(workflows_dir=workflows_dir)
+        return Failure(_EXIT_VIOLATIONS)
+    collected = collect_ci_matrix_targets(workflows_dir=workflows_dir)
+    if isinstance(collected, IOFailure):
+        # A workflow file the glob LISTED and whose bytes will not decode. It
+        # must not read as "that file contributes no matrix targets": this
+        # check asserts CI RUNS what the justfile WIRES, so a silently skipped
+        # workflow makes a slug that IS run look unrun and manufactures a gap.
+        unreadable = collected.failure()._inner_value  # noqa: SLF001  — IOResult failure unwrap.
+        _emit_absence(
+            log=log,
+            failure_mode="workflow_file_unreadable",
+            message=(
+                "a `.github/workflows` file could not be read — cannot verify tool-backed "
+                f"wiring ({unreadable.detail})"
+            ),
+            path=unreadable.path,
+        )
+        return Failure(_EXIT_VIOLATIONS)
+    return Success(unsafe_perform_io(collected.unwrap()))
+
+
+def main() -> int:
+    parser = _build_parser()
+    args = parser.parse_args()
+    tool_backed_from: str | None = args.tool_backed_from
+    log = _configure_logger()
+    cwd = Path.cwd()
+    tool_backed = _load_tool_backed_slugs(tool_backed_from=tool_backed_from, cwd=cwd)
+
+    wired = _justfile_targets(cwd=cwd, log=log)
+    if isinstance(wired, Failure):
+        return wired.failure()
+    justfile_targets = wired.unwrap()
+    run_in_ci = _ci_matrix_targets(cwd=cwd, log=log)
+    if isinstance(run_in_ci, Failure):
+        return run_in_ci.failure()
+    ci_targets = run_in_ci.unwrap()
 
     presences = _evaluate(
         tool_backed=tool_backed,

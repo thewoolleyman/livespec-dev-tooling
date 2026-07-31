@@ -43,6 +43,7 @@ __all__: list[str] = [
     "TargetsArrayAbsent",
     "TargetsArrayFailure",
     "TargetsArrayUnterminated",
+    "WorkflowFileUnreadable",
 ]
 
 
@@ -101,3 +102,20 @@ class CanonicalOverrideUnparseable:
 
 
 CanonicalOverrideFailure = CanonicalOverrideUnreadable | CanonicalOverrideUnparseable
+
+
+@dataclass(frozen=True, kw_only=True)
+class WorkflowFileUnreadable:
+    """A workflow file the walk FOUND and could not read the BYTES of.
+
+    An ABSENT or EMPTY `.github/workflows` directory is an ANSWER, not this —
+    the ratified missing-file tolerance the pin-walker family established. Only
+    failing to obtain bytes from a file the glob just listed is a failure.
+    Before the conversion an unreadable workflow raised out of the check;
+    reading it as "that file contributes no matrix targets" would have been
+    worse, since the parent asserts CI RUNS what the justfile wires and a
+    silently-skipped workflow makes a wired slug look unrun.
+    """
+
+    path: str
+    detail: str

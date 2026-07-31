@@ -255,8 +255,12 @@ def test_unclosed_targets_array_fails(*, tmp_path: Path) -> None:
     result = _run_check(cwd=tmp_path, extra_argv=["--tool-backed-from", "tool-backed.json"])
     assert result.returncode == 4
     findings = _parse_findings(stderr=result.stderr)
-    absence = [f for f in findings if f.get("failure_mode") == "targets_array_not_found"]
-    assert len(absence) == 1
+    # ⛔ THIS ASSERTION USED TO PIN THE DEFECT: an array that IS present and
+    # merely unclosed was reported as `targets_array_not_found`, because both
+    # conditions shared one `None` return.
+    unterminated = [f for f in findings if f.get("failure_mode") == "targets_array_unterminated"]
+    assert len(unterminated) == 1
+    assert [f for f in findings if f.get("failure_mode") == "targets_array_not_found"] == []
 
 
 def test_missing_workflows_dir_fails(*, tmp_path: Path) -> None:
