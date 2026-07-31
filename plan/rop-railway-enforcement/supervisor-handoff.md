@@ -923,6 +923,52 @@ because the scanner iterates nothing, the other a sweep that reads 0 items becau
 iterates nothing. Same defect, different layers, both reporting SUCCESS. The worker's operational
 form is the one to keep — ***if the behavior regressed right now, would this assertion fire?***
 
+### 🔬🔬 First-hand, 2026-08-01 — I DID IT AGAIN, ONE LAYER UP: I NAMED AN INSTRUMENT THAT CANNOT SEE THE POPULATION
+
+**Same family, new failure mode, and this one is the more dangerous of the two.** Two byte-identity
+fixes (`c907a6c`, `23bf3d8`) tightened checks that are LIVE in all nine consumers, unlike every
+other unit in the chain. I correctly flagged the fan-out risk and correctly refused to assert an
+answer — then **named the wrong instrument for it**: "you already have the cheap instrument — the
+`5cai` tarball route, ~9 API reads."
+
+**It cannot see the population.** The worktree pack is GITIGNORED and the hooks live in
+`.git/hooks/`. A tarball snapshot of a git tree contains neither. It would have returned
+**"none affected", vacuously** — and I would have banked that zero as a cleared blast radius.
+
+The worker caught it and answered the real question anyway, correctly: what a snapshot CAN decide
+(0/9 members track a pack file or hook copy; the fleet's one `.gitattributes` is
+`*.jsonl merge=union`) **plus 15/15 live installed files compared byte-for-byte, positive-controlled
+FIRST**. Zero, honestly obtained, with its denominator — by a route I did not propose.
+
+**⛔ THE RULE, AND IT IS A STRICTLY WIDER ONE THAN (a)–(d):** those four could not produce a
+NEGATIVE. This one could not SEE THE POPULATION AT ALL — a distinction that matters, because a
+positive control would NOT have caught it. Feed my sweep a known-present string and it fails
+loudly; feed a tarball snapshot a repo whose hooks are mangled and it truthfully reports that the
+tracked tree is clean. **The instrument was working. It was pointed at the wrong universe.**
+So the check is not only *"can this produce a negative?"* but **"is the thing I am looking for
+inside what this instrument can observe?"** — asked BEFORE naming the tool, not after reading its
+output.
+
+**AND THE AGGRAVATION IS THE POINT: I committed the epic's own founding defect — a check that
+inspects a smaller universe than the one it claims to cover — in a brief DEMANDING a blast-radius
+measurement, in the session where I had already committed a sibling of it and written it into
+this file.** `995m` is "a gate whose arming precondition was verified against a universe with a
+hole in it"; `qndn` is a scan blind to 42% of its files. I proposed a third instance and called it
+the cheap instrument.
+
+**Two smaller corrections from the same brief, both mine:** I wrote "the release has not cut yet"
+— it cut at `8c6b98f` while the measurement ran, so the timing claim was stale on arrival; a
+supervisor timing claim about a live pipeline expires in minutes and should be stated as
+"verify before relying on it". And I framed the tarball route as something the worker "already
+has", which is exactly the inherited-tool reflex this file warns about in the numbers: **a tool
+this charter hands the worker is an input to verify, like a count.**
+
+**✅ WHAT WORKED, AND IT IS THE SAME MECHANISM AS EVERY OTHER TIME:** the brief said "I am asking
+it rather than asserting an answer" and closed with "if your verification contradicts anything
+here, YOURS WINS". The question was right; only the tool was wrong, and the worker replaced the
+tool rather than the question. **Ask the question, name the tool as a suggestion, and let the
+worker choose the instrument** — it can see the file layout and I cannot.
+
 ### Verification lessons worth keeping at role level
 
 - Verify every worker claim on the FORGE, not from its report. Doing so caught PRs
