@@ -36,20 +36,41 @@ filters records to a single source; omit it to emit every discovered
 pin. `--json` is the default (and currently only) output mode and is
 accepted for forward-compat with any future text mode.
 
-Tolerance, and its ONE limit:
+Tolerance, and its TWO limits — FOUR inputs, and the middle two are the
+ones that used to be conflated:
 
-- Missing pin files yield no records (no error).
-- An unrecognized pin format on a file we DID find but cannot parse
-  yields one record with `pin_format: "unrecognized"` and the file
-  path for human inspection.
-- A file the walk FOUND and could not READ is NOT tolerated. It is the
-  third input, distinct from both of the above, and the only one
-  `SPECIFICATION/contracts.md` §"Pin autodiscovery rules" does not
-  make normative tolerance for. It lands on `discover`'s failure track
-  naming the file. Before livespec-dev-tooling-9sl0 it propagated as an
-  uncaught `OSError` / `UnicodeDecodeError` out of a function whose
-  contract is tolerance — which in the central fleet sweep killed the
-  whole nine-member run partway through one member's walk.
+- ABSENT — a pin file the walk did not find yields no records and no
+  error. `SPECIFICATION/contracts.md` §"Pin autodiscovery rules" makes
+  normative tolerance for this, and it is unchanged.
+- UNRECOGNIZED — a pin FORMAT the walk does not recognize yields no
+  record plus a human-visible annotation naming the file. Also ratified
+  tolerance, also unchanged. Note what this is NOT about: it concerns a
+  format outside the walk's inventory, never a known format's file that
+  happens to be malformed.
+- UNPARSEABLE — a file PRESENT at a path a KNOWN format claims, whose
+  contents the walk cannot parse. NOT tolerated, and per contracts.md
+  explicitly NOT an unrecognized format: it "MUST NOT be reported as
+  one", and it "MUST NOT be carried as an in-band record in the walk's
+  normal record stream". It lands on `discover`'s failure track as a
+  `PinFileUnparseable` naming the file. Until livespec-dev-tooling-2j2l
+  it was an in-band record with `pin_format: "unrecognized"`, which
+  `fleet/_rows_pin_currency._records_for` then dropped through its
+  `pin_format` filter — so an unparseable pin file rendered as a PASSING
+  fleet row, indistinguishable from a member carrying no pin at all. A
+  record is the one carrier a record-filtering consumer discards without
+  ever making a decision about it, which is why the type is the carrier
+  now.
+- UNREADABLE — a file the walk FOUND and whose BYTES it could not
+  obtain. Also not tolerated; lands on the failure track as a
+  `PinFileUnreadable`. Kept DISTINCT from unparseable because the two
+  earn different renderings at the consuming row (§"Pin-currency
+  severity policy"): a can't-read may be environmental and transient, so
+  the row SKIPS it; a can't-parse is a definitive, reproducible property
+  of the member's committed bytes, so the row reports a FINDING. Before
+  livespec-dev-tooling-9sl0 this propagated as an uncaught `OSError` /
+  `UnicodeDecodeError` out of a function whose contract is tolerance —
+  which in the central fleet sweep killed the whole nine-member run
+  partway through one member's walk.
 
 Output discipline mirrors the check modules: structured stderr via
 structlog when diagnostics are emitted; the result JSON array is
