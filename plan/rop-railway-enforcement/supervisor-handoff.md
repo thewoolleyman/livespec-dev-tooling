@@ -418,14 +418,34 @@ work — not a new decision.** Triage the 75 per function the way the original 5
 drop the skip, THEN arm. Do NOT arm carrying the skip (a skip blinding 42% of the universe
 is the declared-empty escape this charter forbids, and nothing ratifies it). Do NOT drop the
 skip before the triage (75 reds this repo's own gate and lefthook blocks the fixing commit —
-the ordering trap where `8o8e` first named it). Triage skeleton, measured: **15 `X | None`,
-6 raise/try, 54 total-looking; 40 local vs 35 transitive.** Start with the 15 — that class
-splits into member-2 declarations versus genuine conversions and cheaply bounds how much of
-the 75 is DECLARATION rather than CODE. **RUN the clause-(d) fixpoint on the 35; never
-simulate it** — hand judgement has been wrong 1-of-6 then 2-of-4, both times toward
-exemption. **`qndn` is NOT `995m`'s predicate** — measured, and it does not shrink the job;
-keep them separate, because folding 65 undecided files into an accepted one-file carve-out
-would launder them through a ratification they never received.
+the ordering trap where `8o8e` first named it). **`qndn` is NOT `995m`'s predicate** —
+measured, and it does not shrink the job; keep them separate, because folding 65 undecided
+files into an accepted one-file carve-out would launder them through a ratification they
+never received.
+
+**✅ THE TRIAGE HALF IS DISCHARGED (2026-07-31, PR #941 → `6b050a7`).** All 75 disposed per
+function at `plan/rop-railway-enforcement/qndn-75-triage.md`, conviction attributed by
+RE-RUNNING the shipped analysis per call node rather than hand-read: **4 CHECK-FIX + 38
+CONVERT + 4 DECLARE + 1 COUPLED + 23 TYPE-SLICE + 5 OPEN = 75.** What REMAINS of `qndn` is
+the remediation half, in that order, then drop the skip, then arm.
+
+**⚠️ AND THE SKELETON ABOVE WAS WRONG IN A WAY WORTH KEEPING.** This charter told the worker
+"40 local vs 35 transitive". The measured split is **40 LOCAL / 24 TRANSITIVE / 11 CLAUSE-(e)
+ONLY** — the 35 was two populations fused. The 11 have NO I/O anywhere in their reachable
+graph and are convicted purely by an `X | None` signature, which is exactly the population
+member 2's `total_absence_returns` key exists to sort; fusing them hides that four of them are
+DECLARATIONS rather than code. **A supervisor-supplied skeleton is an input to verify like any
+other** — this one was inherited from `qndn`'s own description and propagated unchecked.
+
+**⛔ TWO CLASSES IN THE TRIAGE ARE NOT THE COUNT BEING TALKED DOWN, and a successor will read
+them that way.** CHECK-FIX (4) is the check convicting CONFORMANT code — `memoized_snapshot`
+is already `IOResult` behind a type ALIAS that `_is_railway_compliant`'s terminal-name match
+cannot see; `io.StringIO` is an in-memory buffer and `Path(raw)` a value construction, both
+read as I/O boundaries by a MODULE-granular `_IO_MODULES`. That is non-conformance in the
+TIGHTENING direction, the exact mirror of the skip, and PR #748's lesson run backwards. It is
+bounded at 4, each naming the isolated disqualifying call; **a fifth member requires the same
+evidence, not a resemblance.** TYPE-SLICE (23) is ONE type-level decision on `RowOutcome`
+spanning both engines, not 23 conversions.
 
 **THE OLD ZERO IS NOT RETRACTED.** It was honestly measured against a universe with a hole
 in it — which is `995m`'s own "a gate whose arming precondition was verified against a
@@ -486,6 +506,28 @@ so v178 makes 24 test-builder helpers "public API"; its 80 is 33 over genuinely-
 code, and a fan-out planned from the raw number budgets conversion work for test
 builders), `k76y` (the `5cai` request-budget design finding above).
 
+**Filed by the 2026-07-31 triage drive, each carrying the GATE it blocks — which is now the
+required form.** `8o8e.2` (P1 — `RowSkip` carries TWO meanings and the two lanes read it
+OPPOSITE ways: central feeds `blind_rows` and reds master, local logs a benign "not
+applicable"; **live in a REGISTERED central row**, gate: none, but it reds every central run
+fleet-wide once the beads-backed population hits zero). `8o8e.3` (P1 — the `5cai` oracle
+dropped a RE-EXPORTED consumption entirely; **FIXED and CLOSED**, PR #942, edges 58 → 63,
+third axis over the 75 went 1 → 2; gate: the `dx8l` precondition on the CONVERT class, NOT
+under-declaration — see Corrections). `8o8e.4` (P1 — the check cannot see through a type
+ALIAS to `IOResult`; **gate: ARMING**). `8o8e.5` (P2 — `find_ruff_backstop_gaps` fails
+OPEN, so an unreadable `pyproject.toml` makes a backstop check report no gaps). `8o8e.6`
+(P2 — the justfile `check:` recipe parser exists FOUR times and the copies keep agreement
+by COPYING, the `i04f` shape).
+
+**⛔ `8o8e.2` MUST NOT BE FOLDED INTO THE TYPE-SLICE (23), and the first draft did exactly
+that.** The triage originally offered the `RowSkip` conflation as "the strongest argument for
+taking the type slice rather than deferring it" — which attaches a LIVE defect in a currently
+gating row to the largest, least-settled block on the board, one the triage itself says needs
+its decision taken before any of it is written. That is `qndn`'s own shape recurring. The
+targeted fix needs no new type: `RowPass(note=_EXCLUDED_NOTE_PREFIX + reason)` already exists
+in the same lane and `_lanes.py` already renders it as "excluded with reason". **Decoupled;
+keep it decoupled.**
+
 **The `223` / `282` fan-out figures are RETIRED.** They predate v178/v179 and were
 measured under a definition of "public" that no longer exists. v178 both REMOVES and
 ADDS, so sibling counts are unknown in BOTH directions — `oip9` is the first MEASURED
@@ -510,17 +552,24 @@ a naive ~653-call run would not have exhausted the hourly pool (~13%), but it is
 the CONCURRENCY BURST that trips a secondary limit. The arithmetic argument was right for
 the wrong reason.
 
-**Where slice 3 stands.** The row is BUILT and deliberately UNREGISTERED. Its
-pre-registration run against the live fleet found **9 undeclared in `livespec-dev-tooling`
-+ 11 in `livespec-runtime` = 20**, both lists recorded BY NAME in `handoff.md`. Registering
-before remediating fails the registration PR's OWN CI (dev-tooling's own row) and breaks
-the scheduled sweep plus the release fan-out preflight fleet-wide (the sibling's). Sequence
-is REMEDIATE-THEN-FLIP under v034 carve-out 1, severity NOT lowered.
+**(superseded) Where slice 3 stands.** The row was BUILT and deliberately UNREGISTERED; its
+pre-registration run found **9 undeclared in `livespec-dev-tooling` + 11 in `livespec-runtime`
+= 20**. **BOTH ARE NOW REMEDIATED AND THE ROW IS REGISTERED** (`wdn7` #929, `nkkv`
+livespec-runtime #398, registration #934). The sequence held: REMEDIATE-THEN-FLIP under v034
+carve-out 1, severity never lowered.
 
-**The open question that decides the collision:** are those 9 `checks/*.py::main` consumed
-as SYMBOL IMPORTS (v178 clause 1/2) or PROCESS ENTRY POINTS (clause 3)? If clause 3, the
-count going 0 → 9 is the already-known `main()`-exemption-scoped-to-a-LOCATION spec defect
-finally reaching code, not nine new violations. **⛔ AND THE STANDING REFUSAL: never
+**⚠️ AND THE 20 WAS RE-TESTED RATHER THAN ASSUMED.** When `8o8e.3` found the oracle blind to
+re-exports, the obvious inference was that the 20 had been an undercount and `wdn7`/`nkkv`
+were closed on a bad number. **MEASURED: it does not rise. The 20 stands and both items stand
+closed.** Recorded because the inference was mine, it was plausible, and it was wrong — see
+Corrections.
+
+**(answered, no longer open) Were those 9 `checks/*.py::main` SYMBOL IMPORTS or PROCESS ENTRY
+POINTS?** **Clause-2 symbol imports — established by READING both consumers**, which do
+`from livespec_dev_tooling.checks import (...)` and assert `main() == 0` IN-PROCESS.
+beads-fabro's file also carries a `python -m` STRING assertion about the justfile, which is
+not an invocation. So this was NOT the `main()`-exemption-scoped-to-a-LOCATION spec defect
+and must not be filed as it. **⛔ AND THE STANDING REFUSAL SURVIVES THE ANSWER: never
 under-declare `cross_repo_public_api` to keep the count at zero** — that is `pure_trees = []`
 in a new costume, `5cai` would correctly convict this repo for it, and if the honest
 resolution leaves the count non-zero then ARMING WAITS.
@@ -713,6 +762,59 @@ Carried forward because they are role-level rather than track-level:
   Editing this very section, I left two copies of the retired-figures paragraph. Two
   copies of a normative statement is exactly what produced `livespec-i04f`. Caught by
   grepping my own edit; do that before committing prose to a file this long.
+
+### First-hand, 2026-07-31 — supervisor errors from the `qndn` triage drive
+
+- **🔴 I GOT THE RIGHT ANSWER THROUGH A FALSE MECHANISM, AND THAT IS WORSE THAN BEING WRONG.**
+  The worker found `5cai`'s fleet oracle blind to a RE-EXPORTED consumption and filed it with
+  the gate "`5cai`'s completeness claim, NOT arming". I overruled that gate — correctly, as it
+  turned out — but the argument I gave was that the blind spot lets UNDER-DECLARATION through:
+  `discover_fixtures` and `resolve_owner` genuinely consumed, undeclared, `5cai` reporting
+  PASS. **The inputs were all real and the causal claim was false.** `_undeclared` excludes any
+  name in `repo_local_public_names`, and to be re-exported at all a name must be imported
+  across a module boundary INSIDE its own repo — v178 clause 1 — so **every re-exported name is
+  repo-locally public BY CONSTRUCTION, in every repo.** `5cai`'s PASS was correct, not blind.
+  The worker refuted it by MEASURING (`_undeclared` returns `()` before and after the fix), and
+  supplied the better reason: the blind spot broke the **third axis** over the CONVERT class,
+  answering 1 of 75 where the truth is 2, so a conversion taken on that answer ships a signature
+  change to four siblings with no dual-shape wiring — `dx8l` exactly.
+  **Why this is the dangerous shape rather than the lucky one:** a wrong conclusion gets caught
+  by the next measurement, but a RIGHT conclusion resting on a wrong mechanism is never re-tested
+  — and "`5cai` cannot catch under-declaration" would have entered the record as load-bearing,
+  false, in a thread whose entire subject is exactly that. **When you overrule a gate, the
+  MECHANISM you cite is part of the ruling, not decoration; state it as a claim to verify and
+  say which command would refute it.**
+
+- **AND THE PROXIMATE CAUSE WAS ONE UNREAD FUNCTION.** I read `_edges_for`, saw the edge get
+  dropped, and reasoned FORWARD to what that must mean for `_undeclared` — without reading
+  `_undeclared`. Its line 192 (`and (...) not in local`) would have refuted me in one second and
+  was one command away. This charter already carries "prefer one forge read to one paragraph of
+  reasoning" from the previous drive; **I re-committed it in the very brief whose subject was a
+  confident claim contradicted by measurement.** Reading the function that PRODUCES a value is
+  not reading the function that CONSUMES it, and the consumer is where the consequence lives.
+
+- **I PROPAGATED A TRIAGE SKELETON WITHOUT ASKING WHAT IT COUNTED.** This charter told the
+  worker "40 local vs 35 transitive", inherited from `qndn`'s own description. Measured, the 35
+  is **24 transitive + 11 clause-(e)-only** — two populations fused, and the 11 are precisely the
+  ones member 2's `total_absence_returns` key exists to sort. This is the same defect this file
+  already records as "propagated a number without asking what it counted" (the 43-that-was-4),
+  committed again by the same role, at the same kind of boundary. **A count this charter hands
+  the worker is an INPUT TO VERIFY, exactly like an analysis.**
+
+- **✅ WHAT WORKED, AND IT IS CHEAP ENOUGH TO REPEAT EVERY TIME.** Three forge reads before
+  briefing earned their keep: `public_api_result_typed.py:310` confirmed the `_`-FILE skip is
+  real and still inside a `pure_trees`-scoped loop; `_contract_rows.py:191` confirmed `5cai` is
+  genuinely registered, so the gate really had moved; and reading `main()`'s ordering confirmed
+  `ueni` from shipped code, which produced the one brief item that was both novel and correct —
+  that the declaration gates become reachable FOR THE FIRST TIME in the arming commit itself.
+  **Every supervisor contribution that survived this drive came from reading shipped code;
+  every one that was retracted came from reasoning about code I had not read.**
+
+- **AND THE INSTRUCTION THAT MADE THE REFUTATION POSSIBLE IS THE ONE TO KEEP.** Every brief
+  ended with "if your verification contradicts mine, YOURS WINS — say so plainly". The worker
+  used it, and it converted a supervisor error into a measured result inside one turn instead of
+  into a false paragraph in the record. **Say it in every brief; it is not politeness, it is the
+  mechanism.**
 
 ### Verification lessons worth keeping at role level
 
