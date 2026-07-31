@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.13.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.13.3...v1.13.4) (2026-07-31)
+
+
+### Bug Fixes
+
+* **cross-repo:** put the pin-walker family on the railway and kill the unrecognized sentinel ([96fc2a3](https://github.com/thewoolleyman/livespec-dev-tooling/commit/96fc2a3ee78dc90e922f1c0eb289131cdae9ee1e))
+
 ## [1.13.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.13.2...v1.13.3) (2026-07-31)
 
 
