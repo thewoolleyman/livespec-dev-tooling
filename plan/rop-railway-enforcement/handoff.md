@@ -105,6 +105,11 @@ records the lane-scoped shape instead.
 >    (`8o8e.3`, the re-export blind spot), **#946** (`8o8e.4`, CHECK-FIX), **#949** (DECLARE),
 >    **#950** (the table self-consistency sweep). **CLOSED:** `8o8e.3`, `8o8e.4`. **OPEN and
 >    deliberately OFF the arming queue:** `8o8e.2` (P1), `8o8e.5` (P2), `8o8e.6` (P2).
+>
+>    **AND THE 2026-07-31 CONVERT SESSION: PR #952, MERGED — master `c35ea9e` + `87fd400`.**
+>    Two Red→Green pairs, both carrying both trailer sets (verified on the forge AFTER a fetch,
+>    post-rebase). Offenders **70 → 61**. Nothing of it is open; its worktree is removed and its
+>    branch deleted.
 >    **Version note:** the `v1.0.0` figures in steps 3–4 are the HISTORICAL `8o8e.1` discharge
 >    evidence. dev-tooling has released well past it since; **do not read any step below as
 >    current pin state — re-derive the pin from the forge if you need it.**
@@ -172,10 +177,19 @@ records the lane-scoped shape instead.
 >    `plan/rop-railway-enforcement/qndn-75-triage.md`. READ THAT FILE BEFORE PLANNING
 >    ANYTHING; it carries all 75 by name with the evidence that convicted each.**
 >
->    **▶️▶️ COLD START, THE ONLY THING YOU NEED FROM THIS BLOCK: the NEXT ACTION is
->    `_primary_checkout_git_probes` (6 functions) then `_red_green_replay_trailers` (3), as
->    ONE Red→Green pair each. ⛔ NOT the pin walkers — `read_pin_text`'s family is BLOCKED,
->    see the ⛔ block below.** Everything else here is the record of how that was established.
+>    **▶️▶️ COLD START, THE ONLY THING YOU NEED FROM THIS BLOCK: the NEXT ACTION is the
+>    BATCHED `2j2l` + `xhbp` + `vt61` RATIFICATION, via propose-change → revise as
+>    OPERATIONS. Then the seven pin walkers as ONE family.** ~~the git probes then the RGR
+>    trailers~~ — **✅ BOTH LANDED, PR #952, master `c35ea9e` + `87fd400`.**
+>
+>    **⛔ SUPERVISOR BRIEF 58 MOVED THE RATIFICATION FROM THE TAIL TO NEXT, and the reason is
+>    arithmetic rather than preference:** when one walker looked blocked it could sit at the
+>    end; now that `2j2l` gates **SEVEN of the 40 CONVERT** — nearly a fifth of the remaining
+>    conversion work — deferring it piles those seven against the end of the epic, and a batch
+>    that large arriving last is where sequencing mistakes get made under pressure. The brief
+>    also RETRACTS its own brief-57 instruction ("do the seven other walkers first,
+>    `read_pin_text` leading"): it had inherited §7's ordering and passed it on without asking
+>    what the sentinel's footprint actually was.
 >
 >    **THE DENOMINATOR, and quote it with its composition or not at all** (supervisor brief 52
 >    constraint 2 — after remediation "0 offenders" and "0 because the remainder was declared"
@@ -184,16 +198,82 @@ records the lane-scoped shape instead.
 >    | class | n | landed? |
 >    |---|---|---|
 >    | CHECK-FIX | **3** | ✅ **#946** — the machinery convicted conformant code |
->    | CONVERT | **40** | ⏳ none yet |
+>    | CONVERT | **40** | 🟡 **9 of 40 landed (#952)**; 8 BLOCKED on `2j2l`; **31 remain** |
 >    | DECLARE | **2** | ✅ **#949** |
 >    | COUPLED | **1** | ⏳ follows `open_bump_prs_for` |
 >    | TYPE-SLICE | **23** | ⏳ the `RowOutcome` family, ONE decision |
 >    | OPEN | **6** | ⏳ not settled by the triage |
 >
->    **3 + 40 + 2 + 1 + 23 + 6 = 75. Offenders measured 75 → 70. ONLY TWO OF 75 ARE BOUGHT BY
->    DECLARATION**, and both carry a callers' reading. DECLARE went 4 → 2 UNDER READING —
->    moving AWAY from exemption, the direction this thread's negative results have historically
->    erred toward.
+>    **3 + 40 + 2 + 1 + 23 + 6 = 75. Offenders measured 75 → 70 → 64 → 61, re-derived at BOTH
+>    ENDS of each unit and never inherited. ONLY TWO OF 75 ARE BOUGHT BY DECLARATION**, and both
+>    carry a callers' reading. DECLARE went 4 → 2 UNDER READING — moving AWAY from exemption,
+>    the direction this thread's negative results have historically erred toward.
+>
+>    **✅ CONVERT UNITS 1 AND 2, LANDED 2026-07-31 (PR #952). 70 → 61, and NOTHING ELSE MOVED.**
+>    Universe 155 · `_`-FILES 65 · v178 public 182 → 183 · member-1 exempt 404 → 408 · member-2
+>    3 · DISJOINT · `supervisor_entry_files` 33 · **0 stale / 0 rejected**. No declaration was
+>    added and no `__all__` narrowed: the count fell because nine functions converted.
+>
+>    - **`_primary_checkout_git_probes` (6) → 70 → 64.** The four `bool` probes returned False
+>      both for "git says no" and "git never answered", and `is_git_repo_at_all` is THE
+>      discriminator between "not a repo" (skip, exit 0) and a bare-flag regression — so a
+>      broken environment routed to SKIP. `git_common_dir` / `work_tree_root` used `check=True`
+>      with docstrings ADVERTISING the raise. The parent gained `git_probe_failed` (exit 4, NOT
+>      the skip) carrying probe + argv + cwd.
+>    - **`_red_green_replay_trailers` (3) → 64 → 61.** `head_red_awaiting_green` picks WHICH LEG
+>      of the commit ritual runs; a failed read produced empty stdout → "no Red trailer" → the
+>      SUITE-GREEN leg → `TDD-Suite-Green-*` stamped onto what may be a Green amend. **A
+>      fail-WRONG, not a fail-closed** — the sharpest instance in the epic so far.
+>
+>    **▶️ THE RULE THE TWO UNITS ESTABLISH FOR THE REMAINING 31, and it is the substance rather
+>    than the type change: AN INVOCATION THAT COMPLETES AND ANSWERS IS A SUCCESS WHATEVER IT
+>    ANSWERS.** `git rev-parse --git-dir` exiting non-zero means "not a repository"; `git config
+>    --get <key>` exiting 1 means the key is UNSET; an absent trailer is empty. All ANSWERS. Only
+>    the command failing to answer AT ALL is a `Failure`. Deciding that per call site is most of
+>    the work in each conversion; the type change is the cheap part.
+>
+>    **🔴🔴 AND THE ONE THAT NEARLY SHIPPED A REGRESSION — A TIGHTENING THAT WOULD HAVE REFUSED
+>    A NEW REPO'S FIRST COMMIT.** `git log -1` exits **128** in a repository with **no commits**.
+>    Reading every non-zero exit as a failure — the obvious conversion — would make the
+>    commit-msg hook REFUSE the first commit of any fresh member repo, because `just bootstrap`
+>    installs these hooks BEFORE that commit exists. `head_red_awaiting_green` therefore resolves
+>    HEAD first (`git rev-parse --verify --quiet HEAD`; exit **1** = unborn = an ANSWER) and the
+>    case is pinned by the FIRST test in the mirror file as a guard against re-tightening.
+>    **Generalize it: every remaining conversion must ask which non-zero exits are ANSWERS before
+>    deciding which are failures. "Convert" is not "treat every non-zero as a Failure", and this
+>    thread's negative results have historically erred toward over-exemption — this is the same
+>    error running the OTHER way, and it is just as available.**
+>
+>    **⚠️ FOUR MECHANICAL COSTS THE TWO UNITS PAID, all cheap to re-pay and all certain to recur
+>    across the remaining 31 — re-derive none of them.**
+>
+>    1. **⛔ `git commit --amend -F <file>` DESTROYS THE `TDD-Red-*` TRAILERS.** The message file
+>       REPLACES the whole message, the hook then adds only Green trailers, and the commit lands
+>       with a Green-without-Red shape that `_commit_violates` rejects — `just check` was green
+>       at the time, because HEAD when it ran was still the Red commit. **Use `--amend --no-edit`
+>       at Green and write the FINAL body at the RED commit.** I hit this on unit 1 and redid the
+>       pair rather than hand-patching trailers back in: the evidence would all have been
+>       genuine, and the commit would still have read as a pair that was never verified as one.
+>    2. **PLR0911 CAPS A FUNCTION AT SIX RETURNS, and every converted call site adds one.**
+>       `main()` in both callers had to split (`_inspect_work_tree` / `_inspect_installed_state`;
+>       `_dispatch_impl_staged`). Budget one function split per ~3 conversions in a single
+>       caller, and prefer `.map()` over `if isinstance(...)` where the transform is TOTAL — it
+>       adds no branch and no coverage obligation.
+>    3. **GREEN-LEG TESTS GO IN A `*_edges.py` SIBLING AND MUST CALL `main()` IN-PROCESS.**
+>       `check-tests-no-subprocess-spawn` fails a NEW file that spawns Python;
+>       `subprocess_spawn_allowlist` is explicitly a list to migrate AWAY from, so a new file
+>       must not join it. `monkeypatch.chdir` + `monkeypatch.setenv` + `capsys` + `rc = main()`.
+>    4. **RED MODE TAKES EXACTLY ONE STAGED TEST FILE**, so a unit touching several modules is
+>       still ONE pair: the mirror test is the Red file, and every other test file lands at the
+>       Green amend.
+>
+>    **⚠️ AND ONE FIXTURE FACT, found by measuring rather than assuming: a `git` shim with an
+>    unresolvable interpreter does NOT raise if a real git sits later on `PATH`.** `execve` fails
+>    with `ENOENT` and `subprocess`'s own PATH search reads that as "not here" and CONTINUES. The
+>    shim dir must be the WHOLE PATH. The first version of that fixture appended
+>    `os.environ["PATH"]`, the check ran to completion against the real git, and the test would
+>    have passed while proving nothing — a green that means nothing, inside the epic that exists
+>    to remove them.
 >
 >    **⛔⛔ TWO CORRECTIONS TO THIS THREAD'S OWN TRIAGE, BOTH FOUND BY MEASURING AFTER SHIPPING,
 >    AND THE SECOND CHANGES HOW YOU MUST READ §2 OF THE TRIAGE FILE.**
@@ -884,10 +964,10 @@ records the lane-scoped shape instead.
 >    | ~~`wdn7`~~ | ~~dev-tooling's 9 undeclared `checks/*.py::main`~~ | **✅ CLOSED — #929. Count 0 → 9 → 0, measured at each end** |
 >    | ~~`nkkv`~~ | ~~livespec-runtime's 11, cross-repo~~ | **✅ CLOSED — livespec-runtime #398. Its armed count 24 → 27; the +3 are `vojo`** |
 >    | ~~REGISTER~~ | ~~the row into `OBLIGATION_ROWS`~~ | **✅ DONE — #934. Registered, and VERIFIED EVALUATED on master CI via `blind_rows: 0`** |
->    | **`qndn`** | **the 75 — ✅ TRIAGED (`qndn-75-triage.md`); CHECK-FIX + DECLARE LANDED; CONVERT next, then drop the `_`-FILE skip, then arm** | **YES — THE FIRST GATE. Start at the git-probe family, NOT the pin walkers.** |
+>    | **`qndn`** | **the 75 — ✅ TRIAGED (`qndn-75-triage.md`); CHECK-FIX + DECLARE + 9 of 40 CONVERT LANDED (70 → 61); 31 CONVERT remain, then drop the `_`-FILE skip, then arm** | **YES — THE FIRST GATE. Next step is the `2j2l` ratification, THEN the seven walkers.** |
 >    | `8o8e.2` | `RowSkip` two meanings, LIVE in a registered central row | **NO — and that is the point. Off the queue; fix on its own timetable.** |
 >    | `8o8e.5` / `8o8e.6` | `find_ruff_backstop_gaps` fails OPEN · the justfile parser exists 4× | **NO.** Off the queue. |
->    | `2j2l` + `xhbp` + `vt61` | the pin-currency severity policy | **NOT arming — but it BLOCKS 8 of the 40 CONVERT.** |
+>    | `2j2l` + `xhbp` + `vt61` | the pin-currency severity policy | **▶️ THE NEXT ACTION (brief 58). NOT arming — but it BLOCKS 8 of the 40 CONVERT, which is why it moved off the tail.** |
 >    | **`0yfo`** → `995m` | decompose `config.py`, then flip the `@generated` predicate | the SECOND gate — via 6f's known-gap statement |
 >
 >    **Three NEW items were filed by this work. `vzwa` IS an arming blocker; the other two are
