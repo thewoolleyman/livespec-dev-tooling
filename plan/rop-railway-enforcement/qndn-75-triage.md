@@ -74,14 +74,18 @@ that four of them are declarations rather than code.
    the LIVE fleet, not grepped** (supervisor brief 52 constraint 3; a bare-name grep is
    measured wrong on this thread). Same denominator the pre-registration run published:
 
-   | | |
+   **⚠️ THE TABLE BELOW IS THE *PRE-FIX* RUN AND IS KEPT ONLY BECAUSE ITS ANSWER WAS WRONG.**
+   The current answer is the one further down (63 edges, 2 of the 75). It is retained rather
+   than overwritten because "the oracle said 1" is the evidence for why `8o8e.3` exists.
+
+   | PRE-FIX (superseded) | |
    |---|---|
    | roster members | 9 |
    | members **READ** | **9** |
    | members unavailable | **0** |
    | files unparsed | **0** |
-   | cross-member edges examined | **58** |
-   | **of the 75, edges found** | **1** |
+   | cross-member edges examined | ~~58~~ |
+   | **of the 75, edges found** | ~~**1**~~ |
 
    **`fleet/_context.py::resolve_owner` ← `livespec-orchestrator-beads-fabro`'s
    `.claude-plugin/hooks/codex_yolo_gate.py`.** Uniquely resolved. That is the `dx8l`
@@ -108,16 +112,47 @@ that four of them are declarations rather than code.
    in `cli_e2e.py`, is seen from all four — which is what proves attribute reaches work and
    isolates the re-export as the cause.
 
-   **⛔ THE GATE THIS BLOCKS — written here because a finding without its gate outlives the
-   epic.** It blocks **`5cai`'s own claim**: that `cross_repo_public_api` completeness is
-   MECHANICALLY VERIFIED fleet-wide. That row's `error_findings: 0` is quotable only over
-   consumptions the oracle can SEE, and a re-exported one is invisible — while this repo
-   re-exports a name four siblings consume, today. It does **NOT** block arming: the
-   repo-local check convicts `discover_fixtures` on its own once the skip drops. **And it
-   retro-scopes the `wdn7`/`nkkv` twenty**: that denominator silently excluded every
-   re-exported consumption fleet-wide, so "20" was 20-of-what-could-be-seen. **The drop is
-   `continue` with no record** — unlike `unparsed`, which this graph deliberately carries
-   in-band precisely so an unread file cannot be mistaken for a clean one.
+   **✅ FIXED, AND THE FIX IS MEASURED — `8o8e.3`, `_public_api_graph._through_reexports`.**
+   A reach landing on a facade is now re-resolved to the module that DEFINES the name,
+   bounded by a visited set so a re-export cycle terminates. Re-run against the live fleet
+   over the SAME denominator (9 roster / **9 READ** / 0 unavailable / 0 unparsed):
+   **cross-member edges 58 → 63**, and the third axis over the 75 goes **1 → 2**:
+
+   | of the 75, consumed by a sibling | consumers |
+   |---|---|
+   | `fleet/_context.py::resolve_owner` | beads-fabro's `codex_yolo_gate.py` hook |
+   | `testing/_cli_e2e_discovery.py::discover_fixtures` | **all four** — both Drivers, both orchestrators |
+
+   **⛔⛔ AND TWO CLAIMS ARE RETRACTED — BOTH MINE, BOTH BY MEASUREMENT RATHER THAN ARGUMENT.**
+
+   **RETRACTION 1: "it blocks `5cai`'s own completeness claim" — FALSE.** Measured: the row's
+   `_undeclared` returns **`()` for every member, before AND after the fix — 0 findings
+   fleet-wide either way.** The reason is CLAUSE 3, which exempts a name the repo-local check
+   already scopes. And the exemption is not a coincidence here, it is **structural**: to be
+   re-exported at all, a name must be imported across a module boundary INSIDE its own repo,
+   which is v178 clause 1 — so **every re-exported name is repo-locally public by
+   construction**, and clause 3 exempts it in every case, not just this one. `5cai` reporting
+   PASS on this repo was CORRECT, not blind.
+
+   **RETRACTION 2: "it retro-scopes the `wdn7`/`nkkv` twenty" — FALSE, and this one was
+   PREDICTED then MEASURED rather than merely withdrawn.** The prediction followed from
+   Retraction 1's structural argument; the re-run confirms it. **The twenty does not rise.
+   `wdn7` and `nkkv` stand as measured and as closed.**
+
+   **▶️ SO WHAT DOES THE BLIND SPOT ACTUALLY COST? THE THIRD AXIS — and it nearly cost it in
+   this very session.** Supervisor brief 52 mandates answering *"does any sibling import this
+   symbol?"* with THIS ORACLE rather than a grep. Pre-fix it answered **1 of 75** and silently
+   omitted `discover_fixtures`'s FOUR sibling consumers. **Converting `discover_fixtures` on
+   that answer would have shipped a signature change to four repos with no dual-shape wiring —
+   `dx8l` exactly, the failure this row was built to prevent.** Only this repo's own
+   `pyproject.toml` comment caught it. **That is the gate: not under-declaration, but the
+   dx8l precondition on the CONVERT class.** It is on the arming critical path for that reason
+   and no other.
+
+   **AND THE DROP WAS A BARE `continue` WITH NO RECORD** — unlike `unparsed`, which this same
+   graph deliberately carries in-band so an unread file cannot be mistaken for a clean one. A
+   resolved-then-discarded reach had no such carrier, which is why the blind spot was
+   invisible for as long as it was.
 
    **▶️ AND DROPPING THE SKIP CREATES A DECLARATION OBLIGATION THIS FILE MUST NOT LET SINK.**
    `resolve_owner` and `discover_fixtures` are deliberately absent from
@@ -421,7 +456,7 @@ to close it.**
 | the `_`-prefixed FILE skip is wider than v178 clause 0 | `qndn` | **ARMING.** The first gate. |
 | CHECK-FIX ×4 — alias blindness, `io.StringIO`, `Path()` | **`8o8e.4`** (P1) | **ARMING.** Arming with them outstanding reports violations against conformant code, in the arming commit itself. |
 | `RowSkip` conflation, live in a registered central row | **`8o8e.2`** (P1) | **NO ARMING GATE — and that is the point.** It reds every central run fleet-wide the moment the beads-backed population reaches zero. Fix it on its own timetable; do NOT couple it to the 23. |
-| `5cai` re-export blind spot | **`8o8e.3`** (P1) | **`5cai`'s own completeness claim**, not arming. Its `error_findings: 0` cannot see a re-exported consumption, and this repo has one four siblings reach. |
+| `5cai` re-export blind spot | **`8o8e.3`** (P1) · **FIXED** | **ARMING — via the THIRD AXIS, not via under-declaration.** Measured: `_undeclared` is `()` fleet-wide before AND after, because clause 3 structurally exempts every re-exported name. What it broke was the dx8l precondition — the oracle answered 1-of-75 while missing four sibling consumers of `discover_fixtures`. |
 | `find_ruff_backstop_gaps` fails OPEN | **`8o8e.5`** (P2) | **NO GATE.** A backstop check that reports "no gaps" when it cannot read the config. |
 | justfile `check:` parser duplicated 4× | **`8o8e.6`** (P2) | **NO GATE.** It makes the CONVERT work larger and inconsistent if half the copies convert; it stops nothing. |
 | declaration gates unreachable behind the `pure_trees` gate | `ueni` (P1) | **ARMING, indirectly.** Bound 1 REJECTS, and its gate first becomes reachable in the arming commit — the one commit that must not go red. |
