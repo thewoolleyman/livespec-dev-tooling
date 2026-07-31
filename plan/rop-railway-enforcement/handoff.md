@@ -109,7 +109,15 @@ records the lane-scoped shape instead.
 >    **AND THE 2026-07-31 CONVERT SESSION: PR #952, MERGED — master `c35ea9e` + `87fd400`.**
 >    Two Red→Green pairs, both carrying both trailer sets (verified on the forge AFTER a fetch,
 >    post-rebase). Offenders **70 → 61**. Nothing of it is open; its worktree is removed and its
->    branch deleted.
+>    branch deleted. Recorded in **#955** (`cb81910`).
+>
+>    **AND THE 2026-07-31 `2j2l` INVESTIGATION SESSION — NOTHING OF IT IS IN CODE.** Verified at
+>    its wrap-up: `git worktree list` shows only the primary plus **five FOREIGN worktrees**
+>    (`cap-test-parallelism`, `ci-concurrency-group`, `docs/archive-fleet-plan-lifecycle-thread`,
+>    `fix-except-check-breadth-aware`, `fix/generated-block-comment-syntax`) — **REAP NONE OF
+>    THEM**, and enumerate rather than trusting that list. The only OPEN PR in this repo is
+>    **#285**, which is FOREIGN. No background job is running. Its entire output is the
+>    investigation block in §"START HERE" — a reading and a measurement, no code.
 >    **Version note:** the `v1.0.0` figures in steps 3–4 are the HISTORICAL `8o8e.1` discharge
 >    evidence. dev-tooling has released well past it since; **do not read any step below as
 >    current pin state — re-derive the pin from the forge if you need it.**
@@ -177,10 +185,107 @@ records the lane-scoped shape instead.
 >    `plan/rop-railway-enforcement/qndn-75-triage.md`. READ THAT FILE BEFORE PLANNING
 >    ANYTHING; it carries all 75 by name with the evidence that convicted each.**
 >
->    **▶️▶️ COLD START, THE ONLY THING YOU NEED FROM THIS BLOCK: the NEXT ACTION is the
->    BATCHED `2j2l` + `xhbp` + `vt61` RATIFICATION, via propose-change → revise as
->    OPERATIONS. Then the seven pin walkers as ONE family.** ~~the git probes then the RGR
->    trailers~~ — **✅ BOTH LANDED, PR #952, master `c35ea9e` + `87fd400`.**
+>    **▶️▶️ COLD START, THE ONLY THING YOU NEED FROM THIS BLOCK: the NEXT ACTION is
+>    ⚠️ REMEDIATION OF A LIVE, UNREPAIRED FAN-OUT FAILURE — fire a fresh `sibling-released`
+>    dispatch for `livespec` v0.21.1 — and THEN the batched `2j2l` + `xhbp` + `vt61`
+>    ratification, whose content is ALREADY WRITTEN BELOW and is NOT what its titles say.
+>    Then the seven pin walkers as ONE family.** ~~the git probes then the RGR trailers~~ —
+>    **✅ BOTH LANDED, PR #952, master `c35ea9e` + `87fd400`.**
+>
+>    ---
+>
+>    ## 🔴🔴 THE 2j2l INVESTIGATION IS DONE AND IT INVERTS THE ITEM. READ THIS WHOLE BLOCK BEFORE FILING ANYTHING.
+>
+>    **Measured 2026-07-31 on master `cb81910` by READING THE CODE AND RUNNING THE LIVE FLEET
+>    SWEEP, not from the items' own text. TWO OF `0j3i`'s CLAIMS ARE FALSE, and supervisor
+>    brief 59 repeated one of them — so the items and the brief must both be read against the
+>    code before any of it is quoted.**
+>
+>    **RETRACTION 1 — "all three rows are registered via `_warning_committed_file_row`, so
+>    every finding is `severity=warning`" is FALSE.** `_warning_committed_file_row`
+>    (`fleet/_contract_rows.py:87`) and `_manual_committed_file_row` (`:97`) are
+>    BEHAVIOURALLY IDENTICAL — neither sets severity; they differ only in the hint string and
+>    `applies_to`. Severity comes entirely from each row's own `RowFinding(severity=...)`, and
+>    `_rows_pin_currency._pin_currency_outcome` DOES escalate:
+>    `severity="error" if ctx.filter_consuming_preflight else "warning"`. **The lane-scoped
+>    escalation `vt61` recommends and brief 59 endorses ALREADY EXISTS, is wired, and matches
+>    the ratified text.** ⚠️ The helper's NAME asserts a property it does not implement — this
+>    epic's own subject, inside the fleet contract table. Worth its own item.
+>
+>    **RETRACTION 2 — "NO row covers `[tool.uv.sources] livespec-dev-tooling tag`;
+>    `dev-tooling-pin` asserts that pin EXISTS, never that it is CURRENT" is FALSE.**
+>    `assert_dev_tooling_pin` → `_freshness_outcome` (`fleet/_rows_files.py:177`) compares the
+>    pin to the latest release and escalates on a persisting gap identically to the three
+>    currency rows. **The deciding pin IS covered for currency.** The narrower half `0j3i`
+>    also stated is TRUE and is what misled it — zero hits for `pyproject` in
+>    `_rows_pin_currency.py` — because the coverage lives in `_rows_files.py`. The ratified
+>    §"Pin-currency severity policy" already names it as one of FOUR evaluated formats.
+>
+>    **▶️▶️ SO THE HOLE IS THE ESCALATION *PREDICATE*, NOT THE SEVERITY — and this is what the
+>    propose-change must say.** All four rows escalate only on
+>    `persisting_bump_pr_number(...) is not None` — **stale AND a bump PR for the latest
+>    release is ALREADY OPEN** ("the mechanism fired and could not land"). Measured in the
+>    workflow: the module that broke the 2026-07-30 fan-out runs at
+>    `.github/actions/bump-pin-rewrite/action.yml:364`; **`Open auto-merge PR` is at line 463,
+>    four steps later.** A failure there means **NO PR IS EVER OPENED** — so the outage's state
+>    was *stale with NO open bump PR*, which the ratified policy classifies as **"normal
+>    operation — the minutes-long window between a release and its bump PR merging."**
+>
+>    **Nothing could have stopped, and NOT because the severity was mis-set: the condition
+>    never entered the escalating class at all.** The predicate has no TIME and no
+>    RELEASE-DISTANCE component, and it names only the "fired and failed" failure mode while
+>    the outage was "NEVER FIRED" — the worse of the two, and the two are exhaustive given
+>    staleness. **A propose-change that only makes a can't-PARSE a finding (2j2l's title) would
+>    leave this untouched**, which is exactly brief 59's warning arriving with a mechanism.
+>
+>    **⛔⛔ AND IT IS LIVE RIGHT NOW — THE 2026-07-30 OUTAGE'S UNREPAIRED TAIL. MEASURED, NOT
+>    INFERRED.** PR #930 fixed the class and the prior session re-dispatched — **but only for
+>    the DEV-TOOLING release fan-out. The `livespec` v0.21.1 fan-out was never re-fired.**
+>
+>    | measured 2026-07-31T06:30Z | |
+>    |---|---|
+>    | `livespec` v0.21.1 published | 2026-07-30T14:04:25Z (~16h earlier) |
+>    | its fan-out to `livespec-runtime` | run **`30550180299`** → **`ModuleNotFoundError: No module named 'returns'`** |
+>    | bump PR opened | **NONE**, in any member |
+>    | `.livespec.jsonc` `compat.pinned` today | still **v0.21.0** in **8 of 9** members |
+>    | what the row does | reports it **correctly and continuously**, at `warning` |
+>    | what the sweep exits | **`passed`**, `blind_rows: 0` |
+>
+>    `livespec` has published NO release since, so nothing supersedes it. The walker was run
+>    against a fetched `livespec-runtime` `.livespec.jsonc` and DOES emit
+>    `source_repo: "livespec"` for both compat records, and the bump action DOES rewrite
+>    `livespec_jsonc_compat_pinned` (`action.yml:147/162) — **so a fresh dispatch WILL fix it.**
+>
+>    **⛔ THEREFORE, REMEDIATE-THEN-FLIP, AND THE MEASUREMENT IS ALREADY DONE (brief 59 item 3):
+>    if escalation is ratified on "stale with no bump PR past a settle window", EIGHT OF NINE
+>    MEMBERS GO RED TODAY** — from an unrepaired incident, not a policy defect. **Re-dispatch
+>    FIRST, flip SECOND** (v034 carve-out 1). Do NOT file the propose-change's escalation half
+>    without re-running the live sweep afterwards.
+>
+>    **▶️ AND THE DATA A SETTLE-WINDOW PREDICATE NEEDS IS ALREADY FETCHED AND DISCARDED.**
+>    `_rows_pin_currency._latest_release_tag` calls
+>    `ctx.api_object(path="repos/<owner>/<repo>/releases/latest")` and reads ONLY `tag_name`;
+>    the same payload carries **`published_at`** (verified against the live API). So a
+>    release-age component needs NO new API call and stays stateless — the release's own
+>    publish time, not a local clock. **That is the `unrecognized`-sentinel shape again: the
+>    value is in hand and thrown away.**
+>
+>    **THE RECOMMENDED PROPOSE-CHANGE CONTENT, so it is not re-derived:** (a) a can't-PARSE is
+>    a FINDING, not silence — `contracts.md:525` already says an unrecognized format produces
+>    no record plus an ANNOTATION, so the spec's own carrier never created the fail-open, which
+>    discharges `xhbp`; and (b) **the escalation predicate must partition staleness
+>    EXHAUSTIVELY** — a stale pin either has an open bump PR for the latest release (fired,
+>    could not land — escalates today) or has none (**never fired**, which is currently read as
+>    normal operation and is the worse case). Scope (b) by RELEASE AGE from `published_at`, and
+>    keep the EXISTING lane scoping (`ctx.filter_consuming_preflight`) rather than inventing
+>    one. **⛔ Do NOT make the rows errors everywhere** — a sibling's stall must not red an
+>    unrelated repo's PRs — and **⛔ do NOT add a severity lever or opt-out key** (`vt61`'s
+>    named third option; every dodge this sweep found was an emptiness that meant yes).
+>
+>    **NOTHING OF THIS INVESTIGATION IS COMMITTED IN CODE — it is a reading and a measurement
+>    only. No worktree, no branch, no PR is open for it.**
+>
+>    ---
 >
 >    **⛔ SUPERVISOR BRIEF 58 MOVED THE RATIFICATION FROM THE TAIL TO NEXT, and the reason is
 >    arithmetic rather than preference:** when one walker looked blocked it could sit at the
@@ -243,6 +348,26 @@ records the lane-scoped shape instead.
 >    deciding which are failures. "Convert" is not "treat every non-zero as a Failure", and this
 >    thread's negative results have historically erred toward over-exemption — this is the same
 >    error running the OTHER way, and it is just as available.**
+>
+>    **▶️ SAY THE DIRECTION EXPLICITLY, because a reader who has absorbed "we always err toward
+>    exemption" will not be looking for it (supervisor brief 59): THIS IS THE FIRST TIME THIS
+>    THREAD'S ERROR HAS RUN IN THE TIGHTENING DIRECTION.** Every prior instance — the 1-of-6, the
+>    2-of-4, the hand-simulated fixpoint, the `_`-FILE skip itself — ran toward EXEMPTION. This
+>    one ran the other way and was equally available.
+>
+>    **▶️▶️ AND IT IS THE EXACT MIRROR OF THE `DECLARE` QUESTION, WHICH MAKES IT CHEAP TO ASK 31
+>    MORE TIMES. Run every remaining candidate through the PAIR:**
+>
+>    | class | the question | the artifact |
+>    |---|---|---|
+>    | **DECLARE** | is this `None` an **ABSENCE** or a **FAILURE**? | an `X \| None` return |
+>    | **CONVERT** | is this non-zero exit / empty result an **ANSWER** or a **FAILURE**? | an exit code, an empty string, an empty list |
+>
+>    **Same question, opposite artifact.** The `_UNSET_KEY_RESOLVES_TO` constant in
+>    `_primary_checkout_git_probes` was that instinct already: the literal was NAMED precisely
+>    because `False` was ALSO what a failed read used to return, and naming it is what kept the
+>    two apart. Reach for that spelling whenever a converted function has a literal that means
+>    two things.
 >
 >    **⚠️ FOUR MECHANICAL COSTS THE TWO UNITS PAID, all cheap to re-pay and all certain to recur
 >    across the remaining 31 — re-derive none of them.**
@@ -967,7 +1092,7 @@ records the lane-scoped shape instead.
 >    | **`qndn`** | **the 75 — ✅ TRIAGED (`qndn-75-triage.md`); CHECK-FIX + DECLARE + 9 of 40 CONVERT LANDED (70 → 61); 31 CONVERT remain, then drop the `_`-FILE skip, then arm** | **YES — THE FIRST GATE. Next step is the `2j2l` ratification, THEN the seven walkers.** |
 >    | `8o8e.2` | `RowSkip` two meanings, LIVE in a registered central row | **NO — and that is the point. Off the queue; fix on its own timetable.** |
 >    | `8o8e.5` / `8o8e.6` | `find_ruff_backstop_gaps` fails OPEN · the justfile parser exists 4× | **NO.** Off the queue. |
->    | `2j2l` + `xhbp` + `vt61` | the pin-currency severity policy | **▶️ THE NEXT ACTION (brief 58). NOT arming — but it BLOCKS 8 of the 40 CONVERT, which is why it moved off the tail.** |
+>    | `2j2l` + `xhbp` + `vt61` | the pin-currency severity policy — ⛔ **INVESTIGATED; TWO OF `0j3i`'s CLAIMS RETRACTED; the hole is the escalation PREDICATE, not the severity** | **▶️ NEXT, but REMEDIATE FIRST: re-dispatch `livespec` v0.21.1 (live unrepaired fan-out, 8/9 members stale). Read the START-HERE investigation block before filing.** |
 >    | **`0yfo`** → `995m` | decompose `config.py`, then flip the `@generated` predicate | the SECOND gate — via 6f's known-gap statement |
 >
 >    **Three NEW items were filed by this work. `vzwa` IS an arming blocker; the other two are
