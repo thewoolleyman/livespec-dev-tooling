@@ -210,6 +210,13 @@ records the lane-scoped shape instead.
 >    re-verified on MERGED master. `2j2l` and `xhbp` are CLOSED.** Read the block below before
 >    the next conversion: it carries three things the family cost that WILL recur.
 >
+>    **⛔ WORK THE REMAINING CONVERT UNITS AS A CHAIN AND REPORT AT THE END OF THE CLASS, NOT PER
+>    UNIT** — each unit still gets its own PR, its own Red→Green pairs and its own re-measure, but
+>    a FINISHED UNIT IS NOT A REPORT TRIGGER; only a surprise is (a count moving the wrong way, a
+>    disposition changing on reading, an unexpected sibling consumer, a `dx8l`-shaped function
+>    needing consumer wiring elsewhere first, or context exhaustion — in which case say the number
+>    and `/clear` rather than stopping).
+>
 >    ---
 >
 >    ## ✅ THE PIN-WALKER FAMILY LANDED — AND IT COST THREE THINGS WORTH MORE THAN THE 8
