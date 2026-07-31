@@ -79,9 +79,19 @@ def distinct_source_pins(*, records: list[dict[str, str]]) -> list[tuple[str, st
     Sorted so the caller's iteration order — and therefore the workflow log and
     any resulting PR set — is deterministic rather than dependent on walk order.
 
-    Records missing either field are SKIPPED rather than raising: the walk is
-    contract-bound to tolerate unrecognized formats, so a malformed record must
-    not abort the freshness scan for every other pin.
+    Records missing either field are SKIPPED rather than raising. The reason
+    is now DEFENCE-IN-DEPTH rather than a contract obligation, and the
+    difference is worth stating because the old justification has expired:
+    this guard used to be required, because the walk emitted a half-populated
+    `pin_format: "unrecognized"` record — empty `source_repo` and
+    `current_value` — for any file it could not parse. Since
+    livespec-dev-tooling-2j2l that record no longer exists; an unparseable
+    file leaves on the failure track instead, so `discover` cannot hand this
+    function a record with either field blank. The skip is retained because
+    this function takes a plain `list[dict[str, str]]` and does not know its
+    caller — the CLI's JSON output is a public surface others may re-feed —
+    and a malformed record from some other producer must still not abort the
+    freshness scan for every other pin.
     """
     pairs = {
         (record["source_repo"], record["current_value"])
