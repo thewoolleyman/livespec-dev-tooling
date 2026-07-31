@@ -425,9 +425,38 @@ never received.
 
 **✅ THE TRIAGE HALF IS DISCHARGED (2026-07-31, PR #941 → `6b050a7`).** All 75 disposed per
 function at `plan/rop-railway-enforcement/qndn-75-triage.md`, conviction attributed by
-RE-RUNNING the shipped analysis per call node rather than hand-read: **4 CHECK-FIX + 38
-CONVERT + 4 DECLARE + 1 COUPLED + 23 TYPE-SLICE + 5 OPEN = 75.** What REMAINS of `qndn` is
-the remediation half, in that order, then drop the skip, then arm.
+RE-RUNNING the shipped analysis per call node rather than hand-read. What REMAINS of `qndn` is
+the remediation half, then drop the skip, then arm.
+
+**▶️ REMEDIATION PROGRESS — re-derive before quoting, this ages in hours.** The dispositions
+have MOVED TWICE under reading, both times correcting the triage that produced them, and the
+current set is **3 CHECK-FIX + 40 CONVERT + 2 DECLARE + 1 COUPLED + 23 TYPE-SLICE + 6 OPEN =
+75**. CHECK-FIX went 4 → 3 (`extract_created_worktree_paths` was DOUBLY convicted, so the
+triage classifier's output is a partition of FIRST-FOUND basis, never of all bases — §2 must
+not be re-derived from as if exhaustive). DECLARE went 4 → 2 (the callers' reading convicted
+`impl_plugin_name` and `named_plugin_connection`). Landed: CHECK-FIX (#946), DECLARE (#949),
+CONVERT units 1–2 — the six git probes and three RGR trailer readers (#952). **Offenders
+DROPPING the skip: 75 → 72 → 70 → 64 → 61; offenders CARRYING it have stayed 0 throughout.**
+**Only TWO of 75 are bought by DECLARATION**, which is the number the arming commit's
+denominator exists to let a reader see.
+
+**✅ AND THE PIN-WALKER FAMILY IS UNBLOCKED — v039 IS RATIFIED (#958, `29c7e2b`).** The
+batched `2j2l`+`xhbp`+`vt61` ratification landed, and the remediate-then-flip precondition was
+discharged FIRST: the live fleet was measured, the `livespec` v0.21.1 fan-out was found dead
+with 8 of 9 members stale sixteen hours on, seven dispatches were run and seven bump PRs merged
+to get `compat.pinned` v0.21.1 into 8 of 8 BEFORE the flip. `ve7w` (P1) came out of it —
+`livespec`'s own `compat.pinned` is structurally unbumpable because the publisher is excluded
+from its own fan-out.
+
+**⛔ AND THE RATIFICATION INVERTED ITS OWN ITEM, which is why `0j3i` must not be quoted as
+filed.** TWO of its claims are FALSE and this charter repeated one of them (see Corrections):
+the rows are NOT pinned to warning severity — `_pin_currency_outcome` already escalates,
+lane-scoped — and the deciding `pyproject` pin IS covered, by `assert_dev_tooling_pin` in
+`_rows_files.py`. **The real hole is the escalation PREDICATE:** all four rows escalate only on
+"stale AND a bump PR for the latest release is ALREADY OPEN", so the outage's actual state —
+stale with NO bump PR, because the module that breaks the fan-out runs four steps before the
+PR is opened — was classified as normal operation. **The predicate names only the "fired and
+failed" mode while the real failure was "never fired", the worse of the two.**
 
 **⚠️ AND THE SKELETON ABOVE WAS WRONG IN A WAY WORTH KEEPING.** This charter told the worker
 "40 local vs 35 transitive". The measured split is **40 LOCAL / 24 TRANSITIVE / 11 CLAUSE-(e)
@@ -815,6 +844,52 @@ Carried forward because they are role-level rather than track-level:
   used it, and it converted a supervisor error into a measured result inside one turn instead of
   into a false paragraph in the record. **Say it in every brief; it is not politeness, it is the
   mechanism.**
+
+### 🔴🔴 First-hand, 2026-07-31 — THE SAME ERROR THREE TIMES IN ONE SESSION, so it is a pattern and gets a binding rule
+
+**All three are one error: I asserted a mechanism ABOUT CODE that I had not read, when reading it
+was one command away.** Recorded together rather than as three bullets, because the third only
+became legible as a class once the first two were on the page — and a successor who meets them
+scattered will read three slips instead of one habit.
+
+| # | what I asserted | what the code said | how it was caught |
+|---|---|---|---|
+| 1 | the `5cai` re-export blind spot lets UNDER-DECLARATION through | `_undeclared` excludes any name in `repo_local_public_names`, and a re-exported name is repo-locally public BY CONSTRUCTION (v178 clause 1) — so it cannot | the worker MEASURED `_undeclared` before and after the fix: `()` both times |
+| 2 | convert `read_pin_text` first; `walk_livespec_jsonc` is the one blocked walker | the `unrecognized` sentinel is emitted at THREE sites, and `read_pin_text` is the shared reader for all seven — the whole family is blocked | the worker measured the sentinel's footprint |
+| 3 | the pin-currency rows are registered at `severity=warning` and gate nothing; and NO row covers the `pyproject` pin | `_warning_committed_file_row` sets NO severity — it is `_manual_committed_file_row` with a hardcoded hint. Severity comes from each row's own `RowFinding`, and `_pin_currency_outcome` ALREADY escalates, lane-scoped. `assert_dev_tooling_pin` ALREADY covers the deciding pin | the worker read both rows |
+
+**#3 is the worst of the three and the most instructive.** I did not invent it — I copied it from
+`0j3i`'s own title and description and restated it IN BOLD as the load-bearing half of a brief.
+This file already says **"a status is a claim like any other — read the commit, the file, the
+`history/vNNN/` directory."** I had been applying that to STATUS FIELDS while treating ledger
+DESCRIPTIONS as fact. They are the same kind of artifact and this thread has retracted more
+descriptions than statuses.
+
+**⛔ THE BINDING RULE, because a third apology is worth nothing:** **do not restate a ledger
+item's MECHANISM claim in a brief without reading the code it describes, and name what you read.**
+A brief that asserts a mechanism without naming its source is unverified input and the worker
+should be told to treat it as such. Every one of these three cost the worker part of a turn to
+refute; the reads would have cost one command each.
+
+**AND THE SHAPE THAT MAKES IT DANGEROUS: TWICE THE CONCLUSION SURVIVED AND THE MECHANISM DID
+NOT.** Brief 54 (`8o8e.3` is an arming gate) and brief 59 (the ratification must say what STOPS)
+were both directionally RIGHT for reasons that were FALSE. A wrong conclusion is caught by the
+next measurement; **a right conclusion resting on a wrong mechanism is never re-tested by anyone
+downstream**, and it enters the record as load-bearing. On a thread whose entire subject is
+authoritative statements contradicted by measurement, being accidentally right is not a
+mitigation — it is the failure mode with its tell removed.
+
+**✅ WHAT CONTAINED ALL THREE was structural, not diligence:** every brief closed with "if your
+verification contradicts mine, YOURS WINS — say so plainly", and the worker used it all three
+times. That sentence is the only reason none of this reached the record. It is not politeness.
+
+**AND ONE PLACE I WAS RIGHT TO OVERRULE, for balance:** the worker measured a reproducible
+`/livespec:revise` Claude Driver binding defect (core resolved via `entries[0]` of
+`installed_plugins.json` — whichever project installed FIRST) and declined to file it as "outside
+this thread's scope", leaving it in a pane. Scope is not the test: this ledger already carries
+`oip9` (livespec-overseer), `vojo` and `nkkv` (livespec-runtime). **A measured defect with no
+durable record is this thread's signature defect in its purest form**, and the plan-persistence
+hook fired on that very turn saying so.
 
 ### Verification lessons worth keeping at role level
 
