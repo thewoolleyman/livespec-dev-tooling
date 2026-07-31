@@ -70,9 +70,13 @@ _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
+from returns.result import Failure  # noqa: E402  — vendor-path-aware.
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 from livespec_dev_tooling.canonical_checks import world_gate_check_slugs  # noqa: E402
+from livespec_dev_tooling.checks._check_aggregate_failures import (  # noqa: E402
+    TargetsArrayUnterminated,
+)
 from livespec_dev_tooling.checks._ci_matrix_parse import (  # noqa: E402
     extract_check_recipe_body,
     extract_targets_array_tokens,
@@ -109,6 +113,13 @@ _SKIP_NOTICES: dict[str, str] = {
     ),
     "no_targets_array": (
         "check: recipe has no targets=(...) array; skipping canonical CI matrix reconcile"
+    ),
+    # Reachable only since the railway conversion. This condition used to
+    # arrive as `no_targets_array` and told the operator to add an array that
+    # is already there.
+    "unterminated_targets_array": (
+        "check: recipe opens a targets=(...) array and never closes it; "
+        "skipping canonical CI matrix reconcile"
     ),
 }
 
@@ -163,12 +174,14 @@ def _justfile_targets(*, justfile_text: str) -> list[str] | str:
     if _AGGREGATE_SLUG not in justfile_text:
         return "no_aggregate"
     recipe_body = extract_check_recipe_body(justfile_text=justfile_text)
-    if recipe_body is None:
+    if isinstance(recipe_body, Failure):
         return "no_check_recipe"
-    targets = extract_targets_array_tokens(recipe_body=recipe_body)
-    if targets is None:
+    targets = extract_targets_array_tokens(recipe_body=recipe_body.unwrap())
+    if isinstance(targets, Failure):
+        if isinstance(targets.failure(), TargetsArrayUnterminated):
+            return "unterminated_targets_array"
         return "no_targets_array"
-    return targets
+    return targets.unwrap()
 
 
 def _ci_covered_slugs(*, ci_yaml_text: str, canonical_set: set[str]) -> set[str]:

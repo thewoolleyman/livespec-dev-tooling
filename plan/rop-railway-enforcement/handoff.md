@@ -210,6 +210,17 @@ records the lane-scoped shape instead.
 >    re-verified on MERGED master. `2j2l` and `xhbp` are CLOSED.** Read the block below before
 >    the next conversion: it carries three things the family cost that WILL recur.
 >
+>    **⛔ OPEN HALF OF A SPLIT UNIT — `_tool_backed_surfaces.py`'s THREE.** `_ci_matrix_parse.py`'s
+>    three landed converted; `_tool_backed_surfaces.py` carries DELIBERATELY DUPLICATED copies of
+>    two of those same recipe parsers (permitted under the bounded-duplication convention — they
+>    are mechanical extractors with no spec citation) and is **NOT yet converted**. So master
+>    currently holds two copies of one parser with DIFFERENT shapes. **That is a unit-size split,
+>    NOT drift, and NOT an invitation to deduplicate** — dedup is `8o8e.6` and off this chain. The
+>    triage's "convert together or deduplicate first" is about giving them the same DISPOSITION,
+>    which they have. Convert the three (`extract_check_recipe_body`,
+>    `extract_targets_array_tokens`, `collect_ci_matrix_targets`) against the SAME failure types,
+>    already shared at `checks/_check_aggregate_failures.py`.
+>
 >    **⛔ WORK THE REMAINING CONVERT UNITS AS A CHAIN AND REPORT AT THE END OF THE CLASS, NOT PER
 >    UNIT** — each unit still gets its own PR, its own Red→Green pairs and its own re-measure, but
 >    a FINISHED UNIT IS NOT A REPORT TRIGGER; only a surprise is (a count moving the wrong way, a
