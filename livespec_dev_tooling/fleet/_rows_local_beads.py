@@ -24,7 +24,8 @@ checkout, so the rows stay hermetically testable with a canned-response runner.
 from __future__ import annotations
 
 from livespec_dev_tooling.fleet._context import RowFinding, RowOutcome, RowPass, RowSkip
-from livespec_dev_tooling.fleet._local_context import LocalContext
+from livespec_dev_tooling.fleet._invocation_failure import InvocationNotPerformed
+from livespec_dev_tooling.fleet._local_context import LocalContext, command_answer
 
 __all__: list[str] = [
     "DOLT_SERVER_HOST",
@@ -46,6 +47,25 @@ _PREREQ_DOC = 'AGENTS.md §"Beads runtime prerequisites"'
 _SKIP_NO_BEADS = "no .beads tenant directory (not a beads-backed repo)"
 
 
+def _unprobed(*, failure: InvocationNotPerformed) -> RowFinding:
+    """The finding for a prerequisite whose PROBE never ran.
+
+    Distinct from every unmet-prerequisite finding below, and deliberately
+    so: those carry a guided TODO telling the operator how to satisfy the
+    prerequisite, which is wrong advice when nothing was measured. The
+    prerequisite may well be satisfied — the probe simply never asked.
+    Kept at `warning` severity like its siblings, because an unrunnable
+    probe is the same out-of-band human seam, not an unmet obligation.
+    """
+    return RowFinding(
+        severity="warning",
+        message=(
+            f"beads prerequisite left UNPROBED (nothing was measured, so the "
+            f"prerequisite is neither met nor unmet): {failure.reason}"
+        ),
+    )
+
+
 def _beads_applicable(*, ctx: LocalContext) -> bool:
     """True when the checkout carries a `.beads/` tenant directory."""
     return (ctx.checkout / ".beads").is_dir()
@@ -55,16 +75,20 @@ def reconcile_beads_bd_binary(*, ctx: LocalContext) -> RowOutcome:
     """Probe the explicit bd override, or fall back to executable `bd` on PATH."""
     if not _beads_applicable(ctx=ctx):
         return RowSkip(reason=_SKIP_NO_BEADS)
-    probe = ctx.exec(
-        args=[
-            "bash",
-            "-c",
-            'if test -n "${LIVESPEC_BD_PATH:-}"; then '
-            'test -x "$LIVESPEC_BD_PATH"; '
-            'else bd_path="$(command -v bd 2>/dev/null)" && '
-            'test -n "$bd_path" && test -x "$bd_path"; fi',
-        ]
+    probe = command_answer(
+        outcome=ctx.exec(
+            args=[
+                "bash",
+                "-c",
+                'if test -n "${LIVESPEC_BD_PATH:-}"; then '
+                'test -x "$LIVESPEC_BD_PATH"; '
+                'else bd_path="$(command -v bd 2>/dev/null)" && '
+                'test -n "$bd_path" && test -x "$bd_path"; fi',
+            ]
+        )
     )
+    if isinstance(probe, InvocationNotPerformed):
+        return _unprobed(failure=probe)
     if probe.returncode == 0:
         return RowPass(note="bd binary present and executable via LIVESPEC_BD_PATH or PATH")
     return RowFinding(
@@ -81,15 +105,19 @@ def reconcile_beads_dolt_server(*, ctx: LocalContext) -> RowOutcome:
     """Probe that the Dolt sql-server is reachable over TCP `127.0.0.1:3307`."""
     if not _beads_applicable(ctx=ctx):
         return RowSkip(reason=_SKIP_NO_BEADS)
-    probe = ctx.exec(
-        args=[
-            "timeout",
-            "2",
-            "bash",
-            "-c",
-            f"exec 3<>/dev/tcp/{DOLT_SERVER_HOST}/{DOLT_SERVER_PORT}",
-        ]
+    probe = command_answer(
+        outcome=ctx.exec(
+            args=[
+                "timeout",
+                "2",
+                "bash",
+                "-c",
+                f"exec 3<>/dev/tcp/{DOLT_SERVER_HOST}/{DOLT_SERVER_PORT}",
+            ]
+        )
     )
+    if isinstance(probe, InvocationNotPerformed):
+        return _unprobed(failure=probe)
     if probe.returncode == 0:
         return RowPass(note=f"Dolt sql-server reachable at {DOLT_SERVER_HOST}:{DOLT_SERVER_PORT}")
     return RowFinding(
@@ -106,7 +134,11 @@ def reconcile_beads_tenant_secret(*, ctx: LocalContext) -> RowOutcome:
     """Probe-ONLY that `BEADS_DOLT_PASSWORD` is present (value never read or echoed)."""
     if not _beads_applicable(ctx=ctx):
         return RowSkip(reason=_SKIP_NO_BEADS)
-    probe = ctx.exec(args=["bash", "-c", 'test -n "${BEADS_DOLT_PASSWORD:-}"'])
+    probe = command_answer(
+        outcome=ctx.exec(args=["bash", "-c", 'test -n "${BEADS_DOLT_PASSWORD:-}"'])
+    )
+    if isinstance(probe, InvocationNotPerformed):
+        return _unprobed(failure=probe)
     if probe.returncode == 0:
         return RowPass(note="BEADS_DOLT_PASSWORD present (probe-only; value never read)")
     return RowFinding(
@@ -123,7 +155,11 @@ def reconcile_beads_config_committed(*, ctx: LocalContext) -> RowOutcome:
     """Probe that `.beads/config.yaml` (the committed tenant pointer) is tracked."""
     if not _beads_applicable(ctx=ctx):
         return RowSkip(reason=_SKIP_NO_BEADS)
-    probe = ctx.exec(args=["git", "ls-files", "--error-unmatch", ".beads/config.yaml"])
+    probe = command_answer(
+        outcome=ctx.exec(args=["git", "ls-files", "--error-unmatch", ".beads/config.yaml"])
+    )
+    if isinstance(probe, InvocationNotPerformed):
+        return _unprobed(failure=probe)
     if probe.returncode == 0:
         return RowPass(note=".beads/config.yaml is committed")
     return RowFinding(

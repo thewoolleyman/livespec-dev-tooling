@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from returns.io import IOSuccess
 
 from livespec_dev_tooling.fleet import local_reconcile
 from livespec_dev_tooling.fleet._context import RowFinding, RowPass
@@ -19,7 +20,11 @@ from livespec_dev_tooling.fleet._contract_local_rows import (
     LOCAL_OBLIGATION_ROWS,
     LocalObligationRow,
 )
-from livespec_dev_tooling.fleet._local_context import CommandResult, LocalContext
+from livespec_dev_tooling.fleet._local_context import (
+    CommandOutcome,
+    CommandResult,
+    LocalContext,
+)
 from livespec_dev_tooling.install_worktree_pack import (
     CANONICAL_BRANCH_PROTECTION_BODY,
     CANONICAL_BRANCH_PROTECTION_JUST_BODY,
@@ -91,10 +96,10 @@ def _worktree_pack_row() -> LocalObligationRow:
 def _ctx(*, checkout: Path, recorded: list[list[str]], returncode: int = 0) -> LocalContext:
     """A LocalContext whose runner records argv and reports `returncode`."""
 
-    def run(*, args: list[str], cwd: Path | None = None) -> CommandResult:
+    def run(*, args: list[str], cwd: Path | None = None) -> CommandOutcome:
         _ = cwd
         recorded.append(args)
-        return CommandResult(returncode=returncode, stdout="", stderr="")
+        return IOSuccess(CommandResult(returncode=returncode, stdout="", stderr=""))
 
     return LocalContext(checkout=checkout, home=checkout / "home", run=run)
 
@@ -185,13 +190,13 @@ def test_worktree_pack_reconcile_targets_the_invoked_worktree_not_the_primary(
     invoked.mkdir()
     recorded: list[tuple[list[str], Path | None]] = []
 
-    def run(*, args: list[str], cwd: Path | None = None) -> CommandResult:
+    def run(*, args: list[str], cwd: Path | None = None) -> CommandOutcome:
         recorded.append((args, cwd))
         if args[:3] == ["git", "rev-parse", "--git-common-dir"]:
-            return CommandResult(returncode=0, stdout=f"{primary}/.git\n", stderr="")
+            return IOSuccess(CommandResult(returncode=0, stdout=f"{primary}/.git\n", stderr=""))
         if args[:3] == ["git", "rev-parse", "--show-toplevel"]:
-            return CommandResult(returncode=0, stdout=f"{invoked}\n", stderr="")
-        return CommandResult(returncode=0, stdout="", stderr="")
+            return IOSuccess(CommandResult(returncode=0, stdout=f"{invoked}\n", stderr=""))
+        return IOSuccess(CommandResult(returncode=0, stdout="", stderr=""))
 
     monkeypatch.setattr(local_reconcile, "default_command_runner", run)
     monkeypatch.setattr(sys, "argv", ["local_reconcile", "--checkout", str(invoked)])
