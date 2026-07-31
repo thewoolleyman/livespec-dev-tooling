@@ -223,8 +223,32 @@ cross_repo_public_api = [
 # reason naming why the `None` is an absence, and both the structural `X | None`
 # gate (bound 1) and the staleness detector (bound 3) HARD-FAIL in
 # `public_api_result_typed`.
+#
+# ⛔ THE MECHANISM CANNOT CHECK THE JUDGEMENT, AND A CLEAN RUN IS NOT VALIDATION.
+# `_declared_absence_returns._split` produces exactly two rejections: UNRESOLVED
+# (the name is not a top-level function there) and NOT_ABSENCE_SHAPED (the
+# annotation is not `X | None`). NEITHER ASKS WHETHER THE `None` IS REALLY AN
+# ABSENCE. The reason is parsed for PRESENCE, never for truth. So "0 rejected"
+# proves the annotation and the function exist and nothing more — `m50u`'s
+# "a blessed payload nobody checks is a comment with better syntax
+# highlighting", arriving in the declarations rather than the code.
+#
+# THE ONLY CHECK ACTUALLY AVAILABLE IS THE CALLERS' READING, and it is what
+# `tag_version_component` was established on: does EVERY caller treat the `None`
+# as an ordinary answer it acts on, rather than as a failure it reports or
+# propagates? Each reason below carries that reading. Two further candidates
+# were read and REJECTED for this key — see `_connection.py` in
+# `plan/rop-railway-enforcement/qndn-75-triage.md`.
+#
+# THE DISCRIMINATOR THAT DECIDED ALL FOUR CANDIDATES: how many distinct
+# conditions collapse onto the ONE `None`. `tag_version_component` collapses
+# exactly one (the tag has no version component). A `None` covering an absent
+# key AND a malformed value is carrying a failure alongside the absence, and no
+# caller can tell them apart — which is a conversion, not a declaration.
 total_absence_returns = [
     { file = "livespec_dev_tooling/cross_repo/fabro_image_pin_rewrite.py", function = "tag_version_component", reason = "absence, not failure: a docker tag legitimately HAS no version component, so `None` is an ordinary answer every caller acts on. Converting it would force each caller to unwrap a Failure for a non-failure. Established four separate times across the rop-railway-enforcement thread: it sat in that triage's STRONGEST convert class (a hand-rolled `X | None` failure track) and was still not a conversion, which is what produced the standing rule to read every function a classification convicted." },
+    { file = "livespec_dev_tooling/checks/_role_key_gate.py", function = "role_absence_exit_code", reason = "absence of a GATE DECISION, not a failure. CALLERS READ (all five: check_mutation, newtype_domain_primitives, no_shadow_ledger_body_identical, pbt_coverage_pure_modules, public_api_result_typed) — every one is `gate_exit = role_absence_exit_code(...)` then `if gate_exit is not None: return gate_exit`, so `None` is pure control flow meaning 'no gate fired, carry on'. ONE condition collapses onto it: `role_absence(role=role)` is None, i.e. the role is not declared-absent. The failure and violation channels are the INT, not the None — an undeclared key returns 1 and a declared-absent role returns 0, both loud. A Result here would put 'carry on' on the failure track, which is the common path." },
+    { file = "livespec_dev_tooling/checks/_no_except_outside_io_markers.py", function = "sanctioned_marker_flavor", reason = "absence of a MARKER, not a failure to look for one. ONE condition collapses onto it: the clause-line span holds no sanctioned marker comment. There is no error path — `_clause_colon_line` floors to the node's own line via `min(..., default=...)` rather than failing, so a malformed parse still yields an answer. CALLERS READ (no_except_outside_io.py:222 and :251): `None` makes the caller append an offense — but that offense is a finding ABOUT THE SCANNED SOURCE (this broad handler carries no marker), which is the check's own verdict, NOT a report that this function could not do its job. ⛔ THE DISTINCTION IS LOAD-BEARING and a literal reading of 'any caller reports a violation on the None' would get it backwards: contrast `extract_check_recipe_body`, whose callers emit `check_recipe_not_found` and say they CANNOT VERIFY — that is a caller reporting its own inability, and it earned CONVERT. Converting this one would put the MAJORITY answer (most handlers are unmarked) on the failure track." },
 ]
 # CLI/supervisor entry files whose `main()` / `_write` helpers own
 # legitimate stdout/stderr contracts — the surface `no_write_direct`
