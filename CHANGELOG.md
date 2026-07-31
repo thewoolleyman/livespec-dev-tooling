@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.13.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.13.1...v1.13.2) (2026-07-31)
+
+
+### Bug Fixes
+
+* **checks:** clause (c) convicts io.StringIO and Path() construction as I/O ([f6eeb91](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f6eeb91e014f8bc9f2eaa1055d3e09b8a11ea9de))
+* **checks:** the railway check cannot see through a type ALIAS to IOResult ([7382d9c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7382d9caa19d96b397a76cf413d65df3a86ab08f))
+
 ## [1.13.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.13.0...v1.13.1) (2026-07-31)
 
 
