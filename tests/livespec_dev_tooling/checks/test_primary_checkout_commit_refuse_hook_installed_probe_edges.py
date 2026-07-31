@@ -1,4 +1,4 @@
-"""Green-leg edges for `primary_checkout_commit_refuse_hook_installed` — git-probe arms.
+"""Green-leg edges for `primary_checkout_commit_refuse_hook_installed` — unanswered inputs.
 
 A `*_edges.py` sibling of `test_primary_checkout_commit_refuse_hook_installed.py`
 per the repo's Green-leg convention: the Red-recorded test file of a
@@ -19,6 +19,23 @@ Each arm below drives ONE probe's failure and asserts the CHECK's disposition;
 the probe-level success/failure split has its own mirror-paired test in
 `test_primary_checkout_git_probes.py`.
 
+The last five arms carry the same question from the git probes to the FILE
+reads, where it convicted both remaining arms.
+
+Two are the worktree-pack arm's, which had the defect one layer over: an unread
+`.livespec.jsonc` resolved to the `ungoverned` policy, an ungoverned tree needs
+no pack, and the check exited 0 having read nothing. Their unit-level split
+lives in `tests/livespec_dev_tooling/test_install_worktree_pack.py`; what these
+pin is that the parent narrates it as its OWN failure mode, never as pack drift.
+
+Three are the HOOK arm's, and that one matters more — the pack is optional per
+repo, these three hooks are the check's reason to exist. `inspect_hook`
+compared DECODED text under a docstring promising "STRICT BYTE-IDENTITY", so a
+CRLF-converted hook decoded back to canonical and PASSED, and an undecodable
+one raised out of `main()` rather than reporting the mismatch that was always
+available. The arm was found by the extraction the conversion forced, not by
+anything that suspected it.
+
 `main()` is called IN-PROCESS (`monkeypatch.chdir` + `capsys`) rather than
 spawned, per `check-tests-no-subprocess-spawn` — the paired file predates that
 rule and sits on the migrate-away-from allowlist, which a new file must not
@@ -37,6 +54,11 @@ from pathlib import Path
 import pytest
 
 from livespec_dev_tooling.checks.primary_checkout_commit_refuse_hook_installed import main
+from livespec_dev_tooling.install_commit_refuse_hooks import CANONICAL_HOOK_BODY
+from livespec_dev_tooling.install_worktree_pack import (
+    CANONICAL_BRANCH_PROTECTION_JUST_BODY,
+    CANONICAL_WORKTREE_LIB_BODY,
+)
 
 __all__: list[str] = []
 
@@ -271,3 +293,203 @@ def test_fails_when_the_sandbox_exempt_probe_cannot_read_config(
         monkeypatch=monkeypatch, capsys=capsys, cwd=project_root, path_override=bin_dir
     )
     _assert_probe_failure(rc=rc, stderr=stderr, probe="sandbox_exempt_is_true")
+
+
+def _make_read_fail(*, monkeypatch: pytest.MonkeyPatch, target: Path) -> None:
+    """Make exactly `target`'s byte read raise `OSError`; leave every other read real.
+
+    ⛔ NOT `chmod 000`: this suite runs as root, where a mode-based fixture is
+    a lie — the read succeeds anyway and the assertion never fires. Scoped to
+    ONE path so every other read in the run, including the hook byte-identity
+    arm's, still answers normally; that is what makes the asserted failure mode
+    attributable to this file rather than incidental.
+    """
+    real_read_bytes = Path.read_bytes
+
+    def _read_bytes(self: Path) -> bytes:
+        if self == target:
+            raise OSError(5, "synthetic read failure")
+        return real_read_bytes(self)
+
+    monkeypatch.setattr(Path, "read_bytes", _read_bytes)
+
+
+def _assert_pack_read_failure(*, rc: int, stderr: str, path: Path) -> None:
+    """The run FAILED, named the file, and did NOT call it pack drift.
+
+    The negative assertion is the load-bearing one. Reporting an unread file as
+    `worktree_pack_body_mismatch` would hand the operator `just bootstrap` — a
+    remedy for a fault this run never observed — which is the articulate wrong
+    answer this epic exists to remove.
+    """
+    assert rc == _FAIL_EXIT, f"expected the fail exit; got {rc}"
+    assert '"failure_mode": "worktree_pack_unreadable"' in stderr, stderr
+    assert f'"path": "{path}"' in stderr, stderr
+    assert "synthetic read failure" in stderr, stderr
+    assert "worktree_pack_body_mismatch" not in stderr, stderr
+    assert "worktree_pack_not_imported" not in stderr, stderr
+
+
+def test_fails_when_the_livespec_config_cannot_be_read(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """🔴 The fail-open this arm closes: an unread config used to mean "ungoverned".
+
+    `_read_pack_policy` resolved an unreadable `.livespec.jsonc` to
+    `ungoverned`, an ungoverned tree needs no pack, and the check returned
+    exit 0 — a governed repo told its pack requirement did not apply, on the
+    evidence of a file nothing read. Exit 0 here would be the whole defect.
+    """
+    project_root = _repo_at(tmp_path=tmp_path)
+    config = project_root / ".livespec.jsonc"
+    _ = config.write_text('{"template": "livespec"}\n', encoding="utf-8")
+    _make_read_fail(monkeypatch=monkeypatch, target=config)
+
+    rc, stderr = _run_check(
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        cwd=project_root,
+        path_override=os.environ["PATH"],
+    )
+    _assert_pack_read_failure(rc=rc, stderr=stderr, path=config)
+
+
+def test_fails_when_an_installed_pack_file_cannot_be_read(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An unread pack file is not a DRIFTED pack file, and it VOIDS the partial verdict.
+
+    The byte-identity arm decides drift from the bytes it reads. With no bytes
+    there is no verdict to report, and the one it used to reach — raising
+    `UnicodeDecodeError`, or for an I/O error propagating out of `main()` —
+    was a traceback rather than a finding.
+
+    ⛔ The fixture is ordered deliberately. `branch-protection.just` is
+    installed canonical and IS read successfully, `branch-protection.sh` is
+    absent and so is collected as `worktree_pack_file_missing`, and only then
+    does `worktree-lib.sh` fail to read. The check must report NEITHER
+    collected finding: an arm that could not finish its scan has no partial
+    answer to publish, and a `worktree_pack_file_missing` emitted here would
+    be a real-looking finding from an incomplete pass. The successful read
+    also exercises the fixture's passthrough, so the patch is proven to be
+    scoped to one path rather than failing everything.
+    """
+    project_root = _repo_at(tmp_path=tmp_path)
+    pack_dir = project_root / "dev-tooling"
+    pack_dir.mkdir()
+    _ = (pack_dir / "branch-protection.just").write_text(
+        CANONICAL_BRANCH_PROTECTION_JUST_BODY, encoding="utf-8"
+    )
+    installed = pack_dir / "worktree-lib.sh"
+    _ = installed.write_text(CANONICAL_WORKTREE_LIB_BODY, encoding="utf-8")
+    _make_read_fail(monkeypatch=monkeypatch, target=installed)
+
+    rc, stderr = _run_check(
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        cwd=project_root,
+        path_override=os.environ["PATH"],
+    )
+    _assert_pack_read_failure(rc=rc, stderr=stderr, path=installed)
+    assert "worktree_pack_file_missing" not in stderr, stderr
+
+
+def _install_hooks(*, repo_root: Path, bodies: dict[str, bytes]) -> Path:
+    """Write the three commit-refuse hooks, overriding named ones with raw bytes."""
+    hooks_dir = repo_root / ".git" / "hooks"
+    hooks_dir.mkdir(parents=True, exist_ok=True)
+    for hook_name in ("pre-commit", "pre-push", "commit-msg"):
+        hook = hooks_dir / hook_name
+        _ = hook.write_bytes(bodies.get(hook_name, CANONICAL_HOOK_BODY.encode("utf-8")))
+        hook.chmod(0o755)
+    return hooks_dir
+
+
+def test_fails_when_a_hook_is_crlf_converted(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """🔴 The MANDATORY arm's own fail-open: bytes differ and the check passed.
+
+    The parent's docstring states the contract as "STRICT BYTE-IDENTITY
+    (zs22.7.9.5)" and "Any deviation — a hook that is missing, non-executable,
+    or whose bytes differ from the canonical body ... — is a FAIL".
+    `inspect_hook` compared DECODED TEXT, and `Path.read_text` performs
+    universal-newline translation, so a CRLF-converted hook decoded back to
+    the canonical string and the arm returned `(True, "")` — exit 0 on a hook
+    whose bytes on disk are not the ones the installer wrote.
+
+    This is the same defect as the worktree-pack arm's, on the arm that
+    matters more: the pack is optional per repo, these three hooks are the
+    check's reason to exist.
+    """
+    project_root = _repo_at(tmp_path=tmp_path)
+    _ = _install_hooks(
+        repo_root=project_root,
+        bodies={"pre-push": CANONICAL_HOOK_BODY.replace("\n", "\r\n").encode("utf-8")},
+    )
+
+    rc, stderr = _run_check(
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        cwd=project_root,
+        path_override=os.environ["PATH"],
+    )
+
+    assert rc == _FAIL_EXIT, f"expected the fail exit; got {rc}"
+    assert '"failure_mode": "body_mismatch"' in stderr, stderr
+    assert '"hook": "pre-push"' in stderr, stderr
+
+
+def test_fails_when_a_hook_is_not_valid_utf8(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Bytes that do not decode are DEFINITIVELY not the canonical body.
+
+    `CANONICAL_HOOK_BODY` is UTF-8 by construction, so an undecodable hook
+    cannot equal it — there was never anything indeterminate here. Decoding
+    first meant `UnicodeDecodeError` propagated out of `main()` as a traceback
+    instead of the `body_mismatch` that was always available.
+    """
+    project_root = _repo_at(tmp_path=tmp_path)
+    _ = _install_hooks(
+        repo_root=project_root, bodies={"commit-msg": b"#!/bin/sh\n\xff\xfe\x00 not utf-8\n"}
+    )
+
+    rc, stderr = _run_check(
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        cwd=project_root,
+        path_override=os.environ["PATH"],
+    )
+
+    assert rc == _FAIL_EXIT, f"expected the fail exit; got {rc}"
+    assert '"failure_mode": "body_mismatch"' in stderr, stderr
+    assert '"hook": "commit-msg"' in stderr, stderr
+
+
+def test_fails_when_a_hook_cannot_be_read(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An unread hook is not a MISSING hook and not a drifted one.
+
+    The two remaining hooks are canonical, so a partial verdict would report
+    the check clean on them and say nothing about the third. `hook_unreadable`
+    is a distinct mode precisely so the operator is not told to reinstall a
+    hook whose bytes this run never saw.
+    """
+    project_root = _repo_at(tmp_path=tmp_path)
+    hooks_dir = _install_hooks(repo_root=project_root, bodies={})
+    _make_read_fail(monkeypatch=monkeypatch, target=hooks_dir / "pre-commit")
+
+    rc, stderr = _run_check(
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        cwd=project_root,
+        path_override=os.environ["PATH"],
+    )
+
+    assert rc == _FAIL_EXIT, f"expected the fail exit; got {rc}"
+    assert '"failure_mode": "hook_unreadable"' in stderr, stderr
+    assert f'"path": "{hooks_dir / "pre-commit"}"' in stderr, stderr
+    assert '"failure_mode": "missing"' not in stderr, stderr
+    assert '"failure_mode": "body_mismatch"' not in stderr, stderr

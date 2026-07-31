@@ -20,12 +20,16 @@ setup.
 
 from __future__ import annotations
 
+import errno
 import os
 import subprocess
 from pathlib import Path
 
 import pytest
+from returns.io import IOFailure, IOSuccess
+from returns.unsafe import unsafe_perform_io
 
+from livespec_dev_tooling.checks._primary_checkout_unreadable import CheckInputUnreadable
 from livespec_dev_tooling.checks._primary_checkout_worktree_pack import (
     inspect_worktree_pack,
 )
@@ -73,6 +77,44 @@ def _scrub_git_env(*, monkeypatch: pytest.MonkeyPatch) -> None:
     """Remove every GIT_* passthrough var from the process environment."""
     for var in _GIT_ENV_VARS:
         monkeypatch.delenv(var, raising=False)
+
+
+def _pack_failures(*, repo_root: Path) -> list[tuple[str, str]]:
+    """The arm's VIOLATIONS, asserting first that it answered at all.
+
+    Every caller below is asking "what does the arm say about this pack",
+    which is a question the arm can only answer when every read succeeded.
+    Unwrapping through this helper means a read failure can never be read as
+    "no violations" by a test — it fails the assertion here instead, naming
+    the path.
+    """
+    inspected = inspect_worktree_pack(repo_root=repo_root)
+    assert isinstance(inspected, IOSuccess), f"arm did not answer: {inspected}"
+    return unsafe_perform_io(inspected.unwrap())
+
+
+def _make_read_fail(*, monkeypatch: pytest.MonkeyPatch, target: Path, detail: str) -> None:
+    """Make exactly `target`'s byte read raise `OSError`; leave every other read real.
+
+    ⛔ NOT `chmod 000`. This suite runs as ROOT, where a mode-based fixture is
+    a lie — every read still succeeds, the assertion never fires, and the test
+    passes proving nothing. Patching the read itself is the only instrument
+    here that can actually produce the negative.
+
+    The condition is not hypothetical for real operators even though it is
+    unconstructible for this suite: the fleet's checks run as a non-root user
+    in CI and in Fabro sandboxes, where `EACCES` is ordinary, and a pack file
+    replaced between the `is_file()` probe and the read is reachable whenever
+    `just bootstrap` runs concurrently.
+    """
+    real_read_bytes = Path.read_bytes
+
+    def _read_bytes(self: Path) -> bytes:
+        if self == target:
+            raise OSError(errno.EIO, detail)
+        return real_read_bytes(self)
+
+    monkeypatch.setattr(Path, "read_bytes", _read_bytes)
 
 
 def _run_git(*, args: list[str], cwd: Path) -> None:
@@ -202,7 +244,7 @@ def test_worktree_create_provisions_pack_from_primary(
         assert installed.is_file(), f"{name} not provisioned into created worktree"
         assert installed.read_text(encoding="utf-8") == body
 
-    assert inspect_worktree_pack(repo_root=worktree) == []
+    assert _pack_failures(repo_root=worktree) == []
     branch_check = subprocess.run(
         ["./dev-tooling/branch-protection.sh", "check"],
         cwd=str(worktree),
@@ -431,15 +473,16 @@ def test_inspect_treats_unparseable_config_as_ungoverned(
     ⛔ RENAMED from `..._unreadable_...` for the same reason as the installer
     test above: the fixture writes INVALID JSON. A document this run read and
     could not parse is a definitive fact and correctly stays on the success
-    track; a document this run could not READ is not, and no fixture here
-    produced one.
+    track; a document this run could not READ is not. Genuine unreadability is
+    covered by `test_inspect_reports_an_unreadable_config_as_a_failure`, the
+    only test here whose fixture makes a read fail.
     """
     _scrub_git_env(monkeypatch=monkeypatch)
     primary = tmp_path / "project"
     _init_repo(repo=primary)
     _ = (primary / ".livespec.jsonc").write_text("{ broken [", encoding="utf-8")
 
-    assert inspect_worktree_pack(repo_root=primary) == []
+    assert _pack_failures(repo_root=primary) == []
 
 
 def test_inspect_rejects_an_unknown_pack_policy_value(
@@ -457,7 +500,7 @@ def test_inspect_rejects_an_unknown_pack_policy_value(
         '{\n  "worktree_discipline": {"pack": "optionl"}\n}\n', encoding="utf-8"
     )
 
-    failures = inspect_worktree_pack(repo_root=primary)
+    failures = _pack_failures(repo_root=primary)
     assert [mode for _name, mode in failures] == ["worktree_discipline_malformed"]
 
 
@@ -494,7 +537,7 @@ def test_inspect_reports_no_failure_for_a_canonical_governed_pack(
     _init_repo(repo=primary)
     _ = _install_governed_pack(repo_root=primary)
 
-    assert inspect_worktree_pack(repo_root=primary) == []
+    assert _pack_failures(repo_root=primary) == []
 
 
 def test_inspect_reports_body_mismatch_for_a_crlf_converted_pack_file(
@@ -517,7 +560,7 @@ def test_inspect_reports_body_mismatch_for_a_crlf_converted_pack_file(
         CANONICAL_WORKTREE_LIB_BODY.replace("\n", "\r\n").encode("utf-8")
     )
 
-    failures = inspect_worktree_pack(repo_root=primary)
+    failures = _pack_failures(repo_root=primary)
     assert failures == [("worktree-lib.sh", "worktree_pack_body_mismatch")]
 
 
@@ -539,7 +582,7 @@ def test_inspect_reports_body_mismatch_for_a_pack_file_that_is_not_utf8(
     pack_dir = _install_governed_pack(repo_root=primary)
     _ = (pack_dir / "branch-protection.sh").write_bytes(b"#!/usr/bin/env bash\n\xff\xfe\x00drift\n")
 
-    failures = inspect_worktree_pack(repo_root=primary)
+    failures = _pack_failures(repo_root=primary)
     assert failures == [("branch-protection.sh", "worktree_pack_body_mismatch")]
 
 
@@ -565,5 +608,95 @@ def test_inspect_reports_not_imported_for_a_justfile_that_is_not_utf8(
     _ = _install_governed_pack(repo_root=primary)
     _ = (primary / "justfile").write_bytes(b"\xff\xfeimport? 'dev-tooling/worktree.just'\n")
 
-    failures = inspect_worktree_pack(repo_root=primary)
+    failures = _pack_failures(repo_root=primary)
     assert failures == [("branch-protection.just", "worktree_pack_not_imported")]
+
+
+def test_inspect_reports_an_unreadable_pack_file_as_a_failure(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A pack file this run could not READ is not a pack file that DRIFTED.
+
+    The distinction PR #988 drew for the Driver profiles, in the one place
+    here where it genuinely applies. Every other condition this arm meets is
+    definitive — absent, present-and-different, present-and-undecodable — and
+    stays on the success track as a violation. Only a read that did not happen
+    leaves it, because only that says nothing about the pack.
+    """
+    _scrub_git_env(monkeypatch=monkeypatch)
+    primary = tmp_path / "project"
+    _init_repo(repo=primary)
+    pack_dir = _install_governed_pack(repo_root=primary)
+    _make_read_fail(
+        monkeypatch=monkeypatch, target=pack_dir / "worktree.just", detail="pack read refused"
+    )
+
+    inspected = inspect_worktree_pack(repo_root=primary)
+
+    assert isinstance(inspected, IOFailure)
+    failed = unsafe_perform_io(inspected.failure())
+    assert failed == CheckInputUnreadable(
+        path=str(pack_dir / "worktree.just"),
+        detail=f"[Errno {errno.EIO}] pack read refused",
+    )
+
+
+def test_inspect_reports_an_unreadable_config_as_a_failure(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """🔴 The fail-open: an unread `.livespec.jsonc` used to mean "UNGOVERNED".
+
+    `_read_pack_policy` fused three conditions into that one word — the config
+    ABSENT (definitive: not a governed repo), present-and-unparseable
+    (definitive: the document is broken, and deliberately deferred to the
+    config-integrity check), and the read never happening (definitive about
+    nothing). The third rode the first two onto the success track, and since
+    an ungoverned tree needs no pack, the arm returned NO violations: a repo
+    whose config could not be read was told its pack requirement did not
+    apply. That is precisely the fail-open zs22 A2 exists to close, re-entered
+    through the config read.
+    """
+    _scrub_git_env(monkeypatch=monkeypatch)
+    primary = tmp_path / "project"
+    _init_repo(repo=primary)
+    _ = (primary / ".livespec.jsonc").write_text('{"template": "livespec"}\n', encoding="utf-8")
+    _make_read_fail(
+        monkeypatch=monkeypatch, target=primary / ".livespec.jsonc", detail="config read refused"
+    )
+
+    inspected = inspect_worktree_pack(repo_root=primary)
+
+    assert isinstance(inspected, IOFailure)
+    failed = unsafe_perform_io(inspected.failure())
+    assert failed == CheckInputUnreadable(
+        path=str(primary / ".livespec.jsonc"),
+        detail=f"[Errno {errno.EIO}] config read refused",
+    )
+
+
+def test_inspect_reports_an_unreadable_justfile_as_a_failure(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unread justfile is not a justfile missing its `import?` lines.
+
+    The discoverability arm's own fail-open twin: reporting
+    `worktree_pack_not_imported` here would tell the operator to add import
+    lines that may already be present, on the evidence of a read that never
+    happened.
+    """
+    _scrub_git_env(monkeypatch=monkeypatch)
+    primary = tmp_path / "project"
+    _init_repo(repo=primary)
+    _ = _install_governed_pack(repo_root=primary)
+    _make_read_fail(
+        monkeypatch=monkeypatch, target=primary / "justfile", detail="justfile read refused"
+    )
+
+    inspected = inspect_worktree_pack(repo_root=primary)
+
+    assert isinstance(inspected, IOFailure)
+    failed = unsafe_perform_io(inspected.failure())
+    assert failed == CheckInputUnreadable(
+        path=str(primary / "justfile"),
+        detail=f"[Errno {errno.EIO}] justfile read refused",
+    )
