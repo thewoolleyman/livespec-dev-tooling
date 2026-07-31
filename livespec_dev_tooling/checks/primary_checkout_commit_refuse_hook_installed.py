@@ -77,7 +77,18 @@ Exit codes:
   Skipped is `0` so the check is a no-op in those environments rather
   than a false positive. There is deliberately NO "hooks absent → skip"
   branch: absence is a FAIL, not a skip (that would re-open the
-  fail-open hole this check closes).
+  fail-open hole this check closes). ⛔ AND "git is unavailable" means
+  `shutil.which` finds no git AT ALL — a git that IS on PATH and does
+  not answer is `git_probe_failed` below, not a skip. Those two used to
+  be the same exit until the probes went on the railway
+  (livespec-dev-tooling-qndn).
+- `4` — fail. A git probe did not answer (`failure_mode`
+  `git_probe_failed`): `git` on PATH but unexecutable, a `rev-parse`
+  exiting non-zero against the caller's own precondition, an unreadable
+  config. The narration carries the probe name, the exact argv and the
+  cwd so the operator can rerun it. Every state this check reports rests
+  on those probes, so an unanswered one is a verdict the check cannot
+  compute — and it must not be spelled the same as "nothing to check".
 - `4` — fail. Any of the three hooks is missing, non-executable, or
   byte-different from `CANONICAL_HOOK_BODY`; OR a vendored hook-source
   copy exists outside the carve-outs; OR an installed worktree-pack
@@ -123,8 +134,11 @@ import structlog  # noqa: E402  — vendor-path-aware import after sys.path inse
 
 # Sibling `_*` git-probe module (fleet-check-coverage LLOC split). The leading
 # underscore marks it a private helper rather than a check entry point; imported
-# after the `_SCRIPT_DIR` sys.path insert above.
+# after the `_SCRIPT_DIR` sys.path insert above. Every probe returns `IOResult`
+# since livespec-dev-tooling-qndn, so this module owns the decision each
+# unanswered probe used to make silently.
 from _primary_checkout_git_probes import (  # noqa: E402  — sibling private import
+    GitProbeFailed,
     core_bare_is_true,
     git_common_dir,
     is_git_repo_at_all,
@@ -142,6 +156,8 @@ from _primary_checkout_worktree_pack import (  # noqa: E402  — sibling private
     pack_failure_hint,
     pack_failure_path,
 )
+from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 # The canonical body is the SINGLE source of truth, shipped as a module
 # constant in the installer so it travels in the wheel. The check imports
@@ -180,6 +196,9 @@ _VENDORED_COPY_CARVE_OUT_PARTS: frozenset[str] = frozenset({"templates", ".git"}
 # `vendored_copy_present` mode).
 _CORE_BARE_FAILURE_MODE = "core_bare_set"
 _VENDORED_COPY_FAILURE_MODE = "vendored_copy_present"
+# A git probe that did not ANSWER — distinct from every mode above, which are
+# all things the check successfully OBSERVED.
+_GIT_PROBE_FAILURE_MODE = "git_probe_failed"
 
 _HOOK_REMEDY = (
     "run `just install-commit-refuse-hooks` (the from-package installer "
@@ -192,6 +211,14 @@ _VENDORED_COPY_REMEDY = (
     "body is the `CANONICAL_HOOK_BODY` package constant installed via "
     "`just install-commit-refuse-hooks` — a repo-tracked shell copy can "
     "drift from it"
+)
+_GIT_PROBE_REMEDY = (
+    "a git probe this check depends on did not answer; rerun the reported "
+    "`argv` from the reported `cwd` to see git's own diagnostic. Every "
+    "verdict below rests on those probes, so an unanswered one is a result "
+    "the check cannot compute — it is reported rather than collapsed onto "
+    "`not a git repository`, which is a SKIP and would be a pass this run "
+    "never earned"
 )
 
 
@@ -307,6 +334,97 @@ def _emit_failures(
         )
 
 
+def _narrate_probe_failure(*, log: structlog.stdlib.BoundLogger, failed: GitProbeFailed) -> int:
+    """Report an unanswered git probe as a finding and FAIL — never skip.
+
+    ⛔ Deliberately not exit 0. "`git` is unavailable" is a documented skip and
+    this is the other thing: git present and not answering. Before the
+    conversion the two were the same value — `is_git_repo_at_all` returned a
+    bare `False` either way — so a broken environment took the skip path and
+    the run went green having verified nothing.
+    """
+    log.error(
+        "primary-checkout-commit-refuse-hook-installed: git probe failed",
+        check_id=_CHECK_ID,
+        status="fail",
+        hook="",
+        failure_mode=_GIT_PROBE_FAILURE_MODE,
+        hooks_dir="",
+        hint=_GIT_PROBE_REMEDY,
+        path="",
+        line=0,
+        probe=failed.probe,
+        argv=failed.argv,
+        probe_cwd=failed.cwd,
+        detail=failed.detail,
+    )
+    return _FAIL_EXIT
+
+
+def _inspect_work_tree(*, log: structlog.stdlib.BoundLogger, cwd: Path) -> int:
+    """The work-tree gate, then the three byte-identity arms.
+
+    One of three functions the conversion split `main` into, at the seams it
+    created: `main` gates on "is this a git repo we should check at all",
+    THIS gates on "is it a work tree", and `_inspect_installed_state` runs the
+    arms. Each probe now carries a failure arm of its own, and each arm is a
+    `return`, so the split is what keeps every function inside the
+    six-return lint budget rather than an aesthetic preference.
+    """
+    inside = is_inside_work_tree(cwd=cwd)
+    if isinstance(inside, IOFailure):
+        return _narrate_probe_failure(log=log, failed=unsafe_perform_io(inside.failure()))
+    if not unsafe_perform_io(inside.unwrap()):
+        log.info(
+            "cwd is not inside a git working tree; skipping check",
+            check_id=_CHECK_ID,
+            cwd=str(cwd),
+        )
+        return 0
+    return _inspect_installed_state(log=log, cwd=cwd)
+
+
+def _inspect_installed_state(*, log: structlog.stdlib.BoundLogger, cwd: Path) -> int:
+    """The three byte-identity arms, against a resolved common dir and root."""
+    common = git_common_dir(cwd=cwd)
+    if isinstance(common, IOFailure):
+        return _narrate_probe_failure(log=log, failed=unsafe_perform_io(common.failure()))
+    root = work_tree_root(cwd=cwd)
+    if isinstance(root, IOFailure):
+        return _narrate_probe_failure(log=log, failed=unsafe_perform_io(root.failure()))
+    # The pack-presence arm honours the DECLARED sandbox exemption, read here
+    # (not inside the sibling) so every git probe stays in one module. A fresh
+    # sandbox clone cannot carry the gitignored pack; the byte-identity arms
+    # still fire there.
+    exempt = sandbox_exempt_is_true(cwd=cwd)
+    if isinstance(exempt, IOFailure):
+        return _narrate_probe_failure(log=log, failed=unsafe_perform_io(exempt.failure()))
+    hooks_dir = unsafe_perform_io(common.unwrap()) / "hooks"
+    repo_root = unsafe_perform_io(root.unwrap())
+    hook_failures: list[tuple[str, str]] = []
+    for hook_name in _HOOK_NAMES:
+        hook_path = hooks_dir / hook_name
+        ok, failure_mode = _inspect_hook(hook_path=hook_path)
+        if not ok:
+            hook_failures.append((hook_name, failure_mode))
+    vendored_copies = _find_vendored_hook_copies(repo_root=repo_root)
+    pack_failures = inspect_worktree_pack(
+        repo_root=repo_root,
+        sandbox_exempt=unsafe_perform_io(exempt.unwrap()),
+    )
+    if not hook_failures and not vendored_copies and not pack_failures:
+        return 0
+    _emit_failures(
+        log=log,
+        hooks_dir=hooks_dir,
+        repo_root=repo_root,
+        hook_failures=hook_failures,
+        vendored_copies=vendored_copies,
+        pack_failures=pack_failures,
+    )
+    return _FAIL_EXIT
+
+
 def main() -> int:
     log = _configure_logger()
     cwd = Path.cwd()
@@ -317,14 +435,20 @@ def main() -> int:
             hint="install git or invoke from a shell that exposes git on PATH",
         )
         return 0
-    if not is_git_repo_at_all(cwd=cwd):
+    is_repo = is_git_repo_at_all(cwd=cwd)
+    if isinstance(is_repo, IOFailure):
+        return _narrate_probe_failure(log=log, failed=unsafe_perform_io(is_repo.failure()))
+    if not unsafe_perform_io(is_repo.unwrap()):
         log.info(
             "cwd is not a git repository; skipping check",
             check_id=_CHECK_ID,
             cwd=str(cwd),
         )
         return 0
-    if core_bare_is_true(cwd=cwd):
+    bare = core_bare_is_true(cwd=cwd)
+    if isinstance(bare, IOFailure):
+        return _narrate_probe_failure(log=log, failed=unsafe_perform_io(bare.failure()))
+    if unsafe_perform_io(bare.unwrap()):
         log.error(
             "primary-checkout-commit-refuse-hook-installed: hook failure",
             check_id=_CHECK_ID,
@@ -343,42 +467,7 @@ def main() -> int:
             line=0,
         )
         return _FAIL_EXIT
-    if not is_inside_work_tree(cwd=cwd):
-        log.info(
-            "cwd is not inside a git working tree; skipping check",
-            check_id=_CHECK_ID,
-            cwd=str(cwd),
-        )
-        return 0
-    common_dir = git_common_dir(cwd=cwd)
-    hooks_dir = common_dir / "hooks"
-    hook_failures: list[tuple[str, str]] = []
-    for hook_name in _HOOK_NAMES:
-        hook_path = hooks_dir / hook_name
-        ok, failure_mode = _inspect_hook(hook_path=hook_path)
-        if not ok:
-            hook_failures.append((hook_name, failure_mode))
-    repo_root = work_tree_root(cwd=cwd)
-    vendored_copies = _find_vendored_hook_copies(repo_root=repo_root)
-    # The pack-presence arm honours the DECLARED sandbox exemption, read here
-    # (not inside the sibling) so every git probe stays in one module. A fresh
-    # sandbox clone cannot carry the gitignored pack; the byte-identity arms
-    # still fire there.
-    pack_failures = inspect_worktree_pack(
-        repo_root=repo_root,
-        sandbox_exempt=sandbox_exempt_is_true(cwd=cwd),
-    )
-    if not hook_failures and not vendored_copies and not pack_failures:
-        return 0
-    _emit_failures(
-        log=log,
-        hooks_dir=hooks_dir,
-        repo_root=repo_root,
-        hook_failures=hook_failures,
-        vendored_copies=vendored_copies,
-        pack_failures=pack_failures,
-    )
-    return _FAIL_EXIT
+    return _inspect_work_tree(log=log, cwd=cwd)
 
 
 if __name__ == "__main__":
