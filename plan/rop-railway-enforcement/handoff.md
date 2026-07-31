@@ -93,11 +93,18 @@ records the lane-scoped shape instead.
 > 1. Re-derive live state — everything below ages in minutes:
 >    `cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh -- bd show livespec-dev-tooling-8o8e`
 >    (the EPIC — `8o8e.1` is CLOSED and is a record, not a work item)
-> 2. **NOTHING IS MID-FLIGHT.** No worktree of this thread's is open in ANY of the six repos
->    it has touched (`livespec-dev-tooling`, `livespec`, both Drivers, both orchestrators), no
->    PR of its own is unmerged, and no background job is running. There is no half-finished
->    edit and no un-amended Red commit to find. Several FOREIGN worktrees exist in those repos;
->    **reap none of them.**
+> 2. **NOTHING IS MID-FLIGHT — re-verified at the 2026-07-31 session wrap-up.** No worktree of
+>    this thread's is open in ANY of the six repos it has touched (`livespec-dev-tooling`,
+>    `livespec`, both Drivers, both orchestrators), no PR of its own is unmerged, and no
+>    background job is running. There is no half-finished edit and no un-amended Red commit to
+>    find. Several FOREIGN worktrees exist in those repos; **reap none of them, and ENUMERATE
+>    with `git worktree list` rather than trusting any count — including this sentence's
+>    absence of one.**
+>
+>    **THE SEVEN PRs THAT SESSION LANDED, all merged:** **#941** (the triage record), **#942**
+>    (`8o8e.3`, the re-export blind spot), **#946** (`8o8e.4`, CHECK-FIX), **#949** (DECLARE),
+>    **#950** (the table self-consistency sweep). **CLOSED:** `8o8e.3`, `8o8e.4`. **OPEN and
+>    deliberately OFF the arming queue:** `8o8e.2` (P1), `8o8e.5` (P2), `8o8e.6` (P2).
 >    **Version note:** the `v1.0.0` figures in steps 3–4 are the HISTORICAL `8o8e.1` discharge
 >    evidence. dev-tooling has released well past it since; **do not read any step below as
 >    current pin state — re-derive the pin from the forge if you need it.**
@@ -161,17 +168,106 @@ records the lane-scoped shape instead.
 >    FOUND BY MEASURING BEFORE COMMITTING. ~~THE NEXT ACTION IS THE TRIAGE OF 75 FUNCTIONS~~ —
 >    AUTHORIZED STANDING WORK, NOT A NEW DECISION.**
 >
->    **✅✅ THE TRIAGE IS DONE — `plan/rop-railway-enforcement/qndn-75-triage.md`. READ THAT
->    FILE BEFORE PLANNING ANYTHING; it carries all 75 by name with the evidence that convicted
->    each.** Every one has a disposition: **4 CHECK-FIX + 38 CONVERT + 4 DECLARE + 1 COUPLED +
->    23 TYPE-SLICE + 5 OPEN = 75.** Conviction was attributed by RE-RUNNING the shipped
->    `calls_of` per call node (nested calls stripped), never hand-simulated — the constraint
->    this file imposes two paragraphs below. **THE NEXT ACTION IS THE REMEDIATION HALF, in the
->    order §7 of that file gives: CHECK-FIX first, then the 4 DECLAREs, then CONVERT with
->    `read_pin_text` first.**
+>    **✅✅ THE TRIAGE IS DONE AND THREE REMEDIATION STEPS HAVE LANDED —
+>    `plan/rop-railway-enforcement/qndn-75-triage.md`. READ THAT FILE BEFORE PLANNING
+>    ANYTHING; it carries all 75 by name with the evidence that convicted each.**
+>
+>    **▶️▶️ COLD START, THE ONLY THING YOU NEED FROM THIS BLOCK: the NEXT ACTION is
+>    `_primary_checkout_git_probes` (6 functions) then `_red_green_replay_trailers` (3), as
+>    ONE Red→Green pair each. ⛔ NOT the pin walkers — `read_pin_text`'s family is BLOCKED,
+>    see the ⛔ block below.** Everything else here is the record of how that was established.
+>
+>    **THE DENOMINATOR, and quote it with its composition or not at all** (supervisor brief 52
+>    constraint 2 — after remediation "0 offenders" and "0 because the remainder was declared"
+>    are indistinguishable, and that indistinguishability is this epic's subject):
+>
+>    | class | n | landed? |
+>    |---|---|---|
+>    | CHECK-FIX | **3** | ✅ **#946** — the machinery convicted conformant code |
+>    | CONVERT | **40** | ⏳ none yet |
+>    | DECLARE | **2** | ✅ **#949** |
+>    | COUPLED | **1** | ⏳ follows `open_bump_prs_for` |
+>    | TYPE-SLICE | **23** | ⏳ the `RowOutcome` family, ONE decision |
+>    | OPEN | **6** | ⏳ not settled by the triage |
+>
+>    **3 + 40 + 2 + 1 + 23 + 6 = 75. Offenders measured 75 → 70. ONLY TWO OF 75 ARE BOUGHT BY
+>    DECLARATION**, and both carry a callers' reading. DECLARE went 4 → 2 UNDER READING —
+>    moving AWAY from exemption, the direction this thread's negative results have historically
+>    erred toward.
+>
+>    **⛔⛔ TWO CORRECTIONS TO THIS THREAD'S OWN TRIAGE, BOTH FOUND BY MEASURING AFTER SHIPPING,
+>    AND THE SECOND CHANGES HOW YOU MUST READ §2 OF THE TRIAGE FILE.**
+>
+>    **(1) CHECK-FIX WAS 4 AND IS 3.** After #946 the repo went 75 → 72, not 71.
+>    `extract_created_worktree_paths` did NOT drop and never would have: verified on UNMODIFIED
+>    master it was **DOUBLY CONVICTED** — the `Path(raw)` false positive AND clause (d), since
+>    both its callees carry a `try`. **THE METHOD FLAW MATTERS MORE THAN THE COUNT: the triage
+>    classifier assigns ONE conviction basis per function — it tests LOCAL first and STOPS — so
+>    §2's LOCAL / TRANSITIVE / CLAUSE-(e) split is a partition of FIRST-FOUND basis, NOT of all
+>    bases.** Never re-derive anything from §2 that assumes a function has only one. That
+>    function is now OPEN.
+>
+>    **(2) DECLARE WAS 4 AND IS 2, and the reading caught a contradiction INSIDE the table.**
+>    `impl_plugin_name` (4 conditions on its `None`) and `named_plugin_connection` (6+) were
+>    read and moved to CONVERT; both row callers turn the `None` into a `RowFinding` and
+>    `_rows_baseline`'s docstring says "which link BROKE". **`connection_block` had ALREADY been
+>    disposed CONVERT on exactly that ground while `named_plugin_connection`, same module and
+>    same shape, had DECLARE.**
+>
+>    **▶️ THE RULE FOR `total_absence_returns`, BOTH HALVES — counting alone is NOT sufficient
+>    and an earlier revision of `pyproject.toml` said it was.** (1) Count distinct MEANINGS, not
+>    syntactic `return None` sites, and FOLLOW a callee that itself collapses — `resolve_owner`
+>    has ONE return expression and THREE meanings. More than one → CONVERT. (2) If exactly one,
+>    ask **WHOSE failure the callers report**: "I cannot verify this" → the FUNCTION failed →
+>    CONVERT; "the thing I INSPECTED is non-conformant", or pure control flow → DECLARE.
+>    **Part 2 decides every one-condition case**, which is the only population that key admits.
+>    Both halves are now in `pyproject.toml` above the key. The whole `X | None` population was
+>    swept against this and NO verdict is wrong (**#950**).
+>
+>    **⛔ AND A CLEAN `rejected_declarations` RUN IS NOT VALIDATION.**
+>    `_declared_absence_returns._split` yields only UNRESOLVED and NOT_ABSENCE_SHAPED; neither
+>    asks whether the `None` is really an absence, and the reason is parsed for PRESENCE, never
+>    truth. Run it per new entry anyway — `ueni` makes it unreachable in this repo until the
+>    arming commit — but never cite "0 rejected" as evidence a disposition is right.
+>
+>    **⛔⛔⛔ DO NOT START CONVERT WITH `read_pin_text`. THE WHOLE PIN-WALKER FAMILY IS BLOCKED
+>    ON `2j2l`, AND AN EARLIER PLAN — INCLUDING A SUPERVISOR BRIEF — SAID TO START THERE.**
+>    Measured on master `302abd6`, not inferred:
+>
+>    - **The `unrecognized` sentinel is emitted at THREE sites, all three single-file walkers**
+>      (`_pin_single_file_formats.py:80` `walk_livespec_jsonc`, `:192` `walk_pyproject_toml`,
+>      `:216` `walk_vendor_jsonc`). The brief assumed ONE entangled walker; it is three of the
+>      seven in `pin_autodiscovery._WALKS`.
+>    - **`read_pin_text` is THE shared reader for all seven**, so converting it forces all seven
+>      to adapt. **The family cannot be split**: a split leaves `discover` composing TWO return
+>      shapes over ONE `_WALKS` table — converted walkers returning `IOResult`, unconverted ones
+>      still raising into its `except OSError` arm. `discover` was itself converted (`9sl0`
+>      conversion 3) precisely to stop a partial walk being indistinguishable from a complete
+>      one; two composition paths for one table would reopen that.
+>    - **⛔ AND THE FORBIDDEN SHORTCUT, named so it cannot return as a clever tidy:** converting
+>      a single-file walker to `IOResult` while leaving `_rows_pin_currency._records_for`'s
+>      silent drop of the `unrecognized` record intact is **MOVING the sentinel, not removing
+>      it** — which `vzwa` refused by name.
+>
+>    **THE UNIT, when `2j2l` is answered:** `read_pin_text` + 7 walkers + `discover`'s
+>    composition + relocating `PinFileUnreadable` (it lives in `pin_autodiscovery.py`, which
+>    imports the walkers, so they cannot name it without a cycle — move it to
+>    `_pin_directory_scan_formats.py` and re-export). **8 of the 40 CONVERT.**
+>
+>    **▶️ THE RECOMMENDATION ALREADY MADE, so nobody re-derives it:** batch `2j2l` + `xhbp` +
+>    `vt61` into ONE propose-change (`vt61` already records that `2j2l` and `0j3i` are one
+>    question twice). Content: **a can't-PARSE is a FINDING, LANE-SCOPED** — error in the lane
+>    that owns the pin, warning elsewhere, which is `0j3i`'s recorded shape and preserves the
+>    reason the rows warn. That also discharges `xhbp`, since `contracts.md:525` ALREADY says an
+>    unrecognized format produces NO RECORD plus an annotation — the spec's own carrier never
+>    created the fail-open. **The supervisor ruled this is NOT a maintainer valve and NOT to be
+>    stalled on** (brief 57): the charter's "a severity lever is out of bounds" clause forbids a
+>    lever used to WEAKEN, and making a can't-PARSE stop reading as PASS is STRENGTHENING a
+>    fail-open — squarely inside standing authority. File and ratify through
+>    propose-change → revise as OPERATIONS.
 >
 >    **🔴 AND THE RESULT THAT OUTRANKS THE COUNT: FOUR OF THE 75 ARE THE CHECK BEING WRONG,
->    AND THEY ARE THE EXACT MIRROR OF THE SKIP.** The `_`-FILE skip is non-conformance with the
+>    AND THEY ARE THE EXACT MIRROR OF THE SKIP.** (Read as THREE — see correction (1) above.) The `_`-FILE skip is non-conformance with the
 >    ratified rule in the RELAXING direction; these four are non-conformance in the TIGHTENING
 >    direction, by the same standard — so the commit that drops a too-wide relaxation must not
 >    carry a too-wide conviction. **`memoized_snapshot` IS ALREADY ON THE RAILWAY**
@@ -788,7 +884,10 @@ records the lane-scoped shape instead.
 >    | ~~`wdn7`~~ | ~~dev-tooling's 9 undeclared `checks/*.py::main`~~ | **✅ CLOSED — #929. Count 0 → 9 → 0, measured at each end** |
 >    | ~~`nkkv`~~ | ~~livespec-runtime's 11, cross-repo~~ | **✅ CLOSED — livespec-runtime #398. Its armed count 24 → 27; the +3 are `vojo`** |
 >    | ~~REGISTER~~ | ~~the row into `OBLIGATION_ROWS`~~ | **✅ DONE — #934. Registered, and VERIFIED EVALUATED on master CI via `blind_rows: 0`** |
->    | **`qndn`** | **the 75 — triage, then drop the `_`-FILE skip, then arm** | **YES — THE FIRST GATE. Start here.** |
+>    | **`qndn`** | **the 75 — ✅ TRIAGED (`qndn-75-triage.md`); CHECK-FIX + DECLARE LANDED; CONVERT next, then drop the `_`-FILE skip, then arm** | **YES — THE FIRST GATE. Start at the git-probe family, NOT the pin walkers.** |
+>    | `8o8e.2` | `RowSkip` two meanings, LIVE in a registered central row | **NO — and that is the point. Off the queue; fix on its own timetable.** |
+>    | `8o8e.5` / `8o8e.6` | `find_ruff_backstop_gaps` fails OPEN · the justfile parser exists 4× | **NO.** Off the queue. |
+>    | `2j2l` + `xhbp` + `vt61` | the pin-currency severity policy | **NOT arming — but it BLOCKS 8 of the 40 CONVERT.** |
 >    | **`0yfo`** → `995m` | decompose `config.py`, then flip the `@generated` predicate | the SECOND gate — via 6f's known-gap statement |
 >
 >    **Three NEW items were filed by this work. `vzwa` IS an arming blocker; the other two are
