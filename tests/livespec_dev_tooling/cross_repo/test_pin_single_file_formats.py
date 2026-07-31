@@ -5,7 +5,7 @@ The single-file pin formats — `.livespec.jsonc` `compat.pinned`,
 well-known file at the repo root. This mirror file exercises each format
 individually, the source-repo filter, the hyphen-to-underscore
 normalization for `.vendor.jsonc` matching, the missing-file tolerance,
-and the unrecognized-format tolerance. The walks are driven through the
+and the can't-PARSE failure track. The walks are driven through the
 public `_walk()` entry point (the same outside-in
 surface these tests used before the decomposition).
 
@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from returns.io import IOFailure
 from returns.unsafe import unsafe_perform_io
 
 from livespec_dev_tooling.cross_repo import pin_autodiscovery
@@ -96,13 +97,22 @@ def test_discover_livespec_jsonc_skips_compat_missing_required_fields(*, tmp_pat
     assert result == []
 
 
-def test_discover_livespec_jsonc_unrecognized_when_malformed(*, tmp_path: Path) -> None:
-    """A `.livespec.jsonc` that fails to parse yields an `unrecognized` record."""
+def test_discover_livespec_jsonc_unparseable_fails_the_walk(*, tmp_path: Path) -> None:
+    """A `.livespec.jsonc` that fails to parse lands on the FAILURE track.
+
+    It used to yield an in-band record with `pin_format="unrecognized"`,
+    which `_rows_pin_currency._records_for` then dropped through its
+    `pin_format` filter — turning an unparseable pin file into a PASSING
+    fleet row (livespec-dev-tooling-2j2l). Spec v039 §"Pin autodiscovery
+    rules" now forbids that carrier by name.
+    """
     (tmp_path / ".livespec.jsonc").write_text("not-valid-json{", encoding="utf-8")
-    result = _walk(root=tmp_path, source_repo=None)
-    assert len(result) == 1
-    assert result[0]["pin_format"] == "unrecognized"
-    assert result[0]["file_path"] == ".livespec.jsonc"
+    walked = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    assert isinstance(walked, IOFailure)
+    failure = unsafe_perform_io(walked.failure())
+    assert isinstance(failure, pin_autodiscovery.PinFileUnparseable)
+    assert failure.file_path == ".livespec.jsonc"
+    assert failure.pin_walk == "walk_livespec_jsonc"
 
 
 def test_discover_livespec_jsonc_non_dict_top_level_yields_nothing(*, tmp_path: Path) -> None:
@@ -190,16 +200,25 @@ def test_discover_pyproject_uv_sources_absent_section(*, tmp_path: Path) -> None
     assert result == []
 
 
-def test_discover_pyproject_uv_sources_empty_block_unrecognized(*, tmp_path: Path) -> None:
-    """A `[tool.uv.sources]` section with zero entries yields an `unrecognized` record."""
+def test_discover_pyproject_uv_sources_empty_block_fails_the_walk(*, tmp_path: Path) -> None:
+    """A `[tool.uv.sources]` section with zero entries is UNPARSEABLE, not empty.
+
+    The distinction is deliberate: an ABSENT `[tool.uv.sources]` section is
+    an ANSWER (this consumer declares no git-sourced dependencies, handled
+    by the sibling test), while a section that EXISTS and yields no entry
+    is a parse failure — that block exists solely to hold pins, so failing
+    to read one out of it means the file is not shaped as the format
+    requires.
+    """
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "consumer"\n\n[tool.uv.sources]\n\n[tool.ruff]\nline-length = 100\n',
         encoding="utf-8",
     )
-    result = _walk(root=tmp_path, source_repo=None)
-    assert len(result) == 1
-    assert result[0]["pin_format"] == "unrecognized"
-    assert result[0]["file_path"] == "pyproject.toml"
+    walked = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    assert isinstance(walked, IOFailure)
+    failure = unsafe_perform_io(walked.failure())
+    assert isinstance(failure, pin_autodiscovery.PinFileUnparseable)
+    assert failure.file_path == "pyproject.toml"
 
 
 # ---------------------------------------------------------------------------
@@ -252,13 +271,15 @@ def test_discover_vendor_jsonc_skips_entries_with_missing_fields(*, tmp_path: Pa
     assert result == []
 
 
-def test_discover_vendor_jsonc_unrecognized_when_malformed(*, tmp_path: Path) -> None:
-    """A `.vendor.jsonc` that fails to parse yields an `unrecognized` record."""
+def test_discover_vendor_jsonc_unparseable_fails_the_walk(*, tmp_path: Path) -> None:
+    """A `.vendor.jsonc` that fails to parse lands on the FAILURE track."""
     (tmp_path / ".vendor.jsonc").write_text("not-valid-json", encoding="utf-8")
-    result = _walk(root=tmp_path, source_repo=None)
-    assert len(result) == 1
-    assert result[0]["pin_format"] == "unrecognized"
-    assert result[0]["file_path"] == ".vendor.jsonc"
+    walked = pin_autodiscovery.discover(root=tmp_path, source_repo=None)
+    assert isinstance(walked, IOFailure)
+    failure = unsafe_perform_io(walked.failure())
+    assert isinstance(failure, pin_autodiscovery.PinFileUnparseable)
+    assert failure.file_path == ".vendor.jsonc"
+    assert failure.pin_walk == "walk_vendor_jsonc"
 
 
 def test_discover_vendor_jsonc_libraries_not_a_list_yields_nothing(*, tmp_path: Path) -> None:
