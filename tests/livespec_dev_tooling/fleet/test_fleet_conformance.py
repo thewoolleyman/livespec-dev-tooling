@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from _protection_fixtures import aligned_merge_settings_payload, aligned_protection_payload
-from returns.io import IOFailure
+from returns.io import IOFailure, IOSuccess
 from returns.result import Failure
 
 from livespec_dev_tooling.config import REQUIRED_ROLE_KEYS, UNION_ROLE_KEYS, Config
@@ -38,7 +38,7 @@ from livespec_dev_tooling.fleet._contract_rows import (
     CENTRAL_VANTAGE,
     REPO_CLASSES,
 )
-from livespec_dev_tooling.fleet._snapshot import DownloadOutcome
+from livespec_dev_tooling.fleet._snapshot import DownloadOutcome, DownloadResult
 from livespec_dev_tooling.fleet.fleet_conformance import (
     central_run_vantages,
     fetch_manifest,
@@ -205,9 +205,9 @@ def _empty_member_archive(*, repo: str) -> bytes:
 def make_downloader() -> GhDownloader:
     """A downloader serving every requested member a bare, valid archive."""
 
-    def download(*, args: list[str], dest: Path) -> DownloadOutcome:
+    def download(*, args: list[str], dest: Path) -> DownloadResult:
         _ = dest.write_bytes(_empty_member_archive(repo=args[1].split("/")[2]))
-        return DownloadOutcome(returncode=0, stderr="")
+        return IOSuccess(DownloadOutcome(returncode=0, stderr=""))
 
     return download
 

@@ -40,7 +40,7 @@ from livespec_dev_tooling.fleet._snapshot import (
 if TYPE_CHECKING:
     import pytest
 
-    from livespec_dev_tooling.fleet._snapshot import GhDownloader
+    from livespec_dev_tooling.fleet._snapshot import DownloadResult, GhDownloader
 
 __all__: list[str] = []
 
@@ -72,12 +72,15 @@ def make_downloader(
 ) -> GhDownloader:
     """A `GhDownloader` that copies `archive` to the requested destination."""
 
-    def download(*, args: list[str], dest: Path) -> DownloadOutcome:
+    def download(*, args: list[str], dest: Path) -> DownloadResult:
         if calls is not None:
             calls.append(list(args))
         if archive is not None:
             _ = shutil.copyfile(archive, dest)
-        return DownloadOutcome(returncode=returncode, stderr=stderr)
+        # A canned downloader always RAN, whatever it returned, so every
+        # response this fake gives is a success carrying its exit code.
+        # Invocation-did-not-happen is a separate fake, below.
+        return IOSuccess(DownloadOutcome(returncode=returncode, stderr=stderr))
 
     return download
 
@@ -129,16 +132,25 @@ def context_for(*, download: GhDownloader, default_branch: str) -> FleetContext:
     return FleetContext(owner="acme", run_gh=run, download_gh=download)
 
 
-def test_default_downloader_without_gh_yields_a_synthetic_failure(
+def test_default_downloader_without_gh_yields_a_failure_value(
     *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """CORRECTED, not updated: this test used to PIN the fabricated sentinel.
+
+    It asserted `outcome.returncode == 127` — the value the seam made up
+    for "gh is not installed", which a real `gh` can also return. The
+    suite was defending the collapse, so the honest conversion read as a
+    regression against it. The failure track carries the distinction now;
+    the exhaustive assertions live in the mirror file.
+    """
+
     def fake_which(_name: str) -> str | None:
         return None
 
     monkeypatch.setattr(shutil, "which", fake_which)
-    outcome = default_gh_downloader(args=["api", "x"], dest=tmp_path / "out.tar.gz")
-    assert outcome.returncode == 127
-    assert "gh CLI not on PATH" in outcome.stderr
+    result = default_gh_downloader(args=["api", "x"], dest=tmp_path / "out.tar.gz")
+    assert isinstance(result, IOFailure)
+    assert "gh CLI not on PATH" in unsafe_perform_io(result.failure()).detail
 
 
 def test_default_downloader_streams_bytes_to_the_destination(
@@ -164,7 +176,7 @@ def test_default_downloader_streams_bytes_to_the_destination(
     outcome = default_gh_downloader(args=["api", "repos/acme/widget/tarball/master"], dest=dest)
     assert seen["cmd"] == ["gh", "api", "repos/acme/widget/tarball/master"]
     assert dest.read_bytes() == b"\x1f\x8bpayload"
-    assert outcome == DownloadOutcome(returncode=0, stderr="warned\n")
+    assert unsafe_perform_io(outcome.unwrap()) == DownloadOutcome(returncode=0, stderr="warned\n")
 
 
 def test_snapshot_strips_the_single_archive_root_component(*, tmp_path: Path) -> None:
