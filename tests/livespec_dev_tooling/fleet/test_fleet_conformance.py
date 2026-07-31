@@ -17,6 +17,7 @@ import tarfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
+from _gh_railway import lift_gh
 from _protection_fixtures import aligned_merge_settings_payload, aligned_protection_payload
 from returns.io import IOFailure, IOSuccess
 from returns.result import Failure
@@ -27,6 +28,7 @@ from livespec_dev_tooling.fleet._context import (
     FleetContext,
     FleetMember,
     GhDownloader,
+    GhOutcome,
     GhResult,
     GhRunner,
     RowOutcome,
@@ -180,7 +182,7 @@ def make_runner(*, table: dict[tuple[str, ...], GhResult]) -> GhRunner:
             return _PROBE_OK
         return table.get(key, GhResult(returncode=1, stdout="", stderr="no canned"))
 
-    return run
+    return lift_gh(run)
 
 
 def _empty_member_archive(*, repo: str) -> bytes:
@@ -616,7 +618,7 @@ def test_local_central_run_reports_app_installation_out_of_vantage() -> None:
     calls: list[tuple[str, ...]] = []
     inner = make_runner(table=_two_member_table())
 
-    def recording(*, args: list[str], stdin: str | None = None) -> GhResult:
+    def recording(*, args: list[str], stdin: str | None = None) -> GhOutcome:
         calls.append(tuple(args))
         return inner(args=args, stdin=stdin)
 
@@ -668,7 +670,7 @@ def test_central_lane_never_spends_an_api_read_on_an_admin_row() -> None:
     table = _two_member_table(blind_app_installation=False)
     inner = make_runner(table=table)
 
-    def recording(*, args: list[str], stdin: str | None = None) -> GhResult:
+    def recording(*, args: list[str], stdin: str | None = None) -> GhOutcome:
         calls.append(tuple(args))
         return inner(args=args, stdin=stdin)
 
@@ -920,7 +922,7 @@ def test_main_defers_the_adopter_leg_out_of_vantage_without_reading_adopters(
     )
     inner = make_runner(table=table)
 
-    def recording(*, args: list[str], stdin: str | None = None) -> GhResult:
+    def recording(*, args: list[str], stdin: str | None = None) -> GhOutcome:
         calls.append(tuple(args))
         return inner(args=args, stdin=stdin)
 
@@ -1096,10 +1098,12 @@ def test_main_transient_credential_rejection_recovers(*, monkeypatch: pytest.Mon
     inner = make_runner(table=_green_table())
     rejected: list[int] = [0]
 
-    def flaky(*, args: list[str], stdin: str | None = None) -> GhResult:
+    def flaky(*, args: list[str], stdin: str | None = None) -> GhOutcome:
         if tuple(args) == _PROBE_KEY and rejected[0] == 0:
             rejected[0] += 1
-            return GhResult(returncode=1, stdout="", stderr="gh: bad credentials (HTTP 401)")
+            return IOSuccess(
+                GhResult(returncode=1, stdout="", stderr="gh: bad credentials (HTTP 401)")
+            )
         return inner(args=args, stdin=stdin)
 
     monkeypatch.setattr(fleet_conformance, "default_gh_runner", flaky)

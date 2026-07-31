@@ -11,6 +11,8 @@ import base64
 import json
 from typing import TYPE_CHECKING
 
+from _gh_railway import lift_gh
+
 from livespec_dev_tooling.fleet._context import (
     FleetContext,
     FleetMember,
@@ -138,7 +140,7 @@ def make_context(
         return table.get(key, GhResult(returncode=1, stdout="", stderr="no canned"))
 
     runner: GhRunner = run
-    return FleetContext(owner="acme", run_gh=runner)
+    return FleetContext(owner="acme", run_gh=lift_gh(runner))
 
 
 def ok(*, payload: object) -> GhResult:

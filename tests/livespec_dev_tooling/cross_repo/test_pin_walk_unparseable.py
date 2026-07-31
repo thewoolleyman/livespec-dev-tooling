@@ -50,6 +50,7 @@ from livespec_dev_tooling.fleet import _rows_pin_currency
 from livespec_dev_tooling.fleet._context import (
     FleetContext,
     FleetMember,
+    GhOutcome,
     GhResult,
     GhRunner,
     RowPass,
@@ -86,7 +87,13 @@ def _context() -> FleetContext:
         return table.get(tuple(args), GhResult(returncode=1, stdout="", stderr="no canned"))
 
     runner: GhRunner = run
-    return FleetContext(owner="acme", run_gh=runner)
+
+    def lifted(*, args: list[str], stdin: str | None = None) -> GhOutcome:
+        # Lifted inline: `_gh_railway` sits in the FLEET test directory,
+        # which only that package's conftest puts on `sys.path`.
+        return IOSuccess(runner(args=args, stdin=stdin))
+
+    return FleetContext(owner="acme", run_gh=lifted)
 
 
 def test_walk_does_not_return_unparseable_file_as_a_success(tmp_path: Path) -> None:

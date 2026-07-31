@@ -28,6 +28,7 @@ _VENDOR_DIR = Path(role_keys.__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
+from _gh_railway import lift_gh  # noqa: E402  — sibling helper, after the sys.path insert.
 from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
 __all__: list[str] = []
@@ -65,7 +66,7 @@ def make_context(*, table: dict[tuple[str, ...], GhResult]) -> FleetContext:
         return table.get(tuple(args), GhResult(returncode=1, stdout="", stderr="no canned"))
 
     runner: GhRunner = run
-    return FleetContext(owner="acme", run_gh=runner)
+    return FleetContext(owner="acme", run_gh=lift_gh(runner))
 
 
 def tree_table(*, paths: list[str], truncated: bool = False) -> dict[tuple[str, ...], GhResult]:

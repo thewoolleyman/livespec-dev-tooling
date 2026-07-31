@@ -28,7 +28,9 @@ from livespec_dev_tooling.fleet._context import (
     RowOutcome,
     RowPass,
     RowSkip,
+    gh_answer,
 )
+from livespec_dev_tooling.fleet._invocation_failure import InvocationNotPerformed
 from livespec_dev_tooling.fleet._rows_files import CI_WORKFLOW
 
 __all__: list[str] = [
@@ -176,6 +178,22 @@ def _protection_problems(
     return problems
 
 
+def _protection_payload(*, stdout: str) -> dict[str, object] | None:
+    """The protection payload as an object map, or None when it is neither.
+
+    Extracted to keep `assert_branch_protection` under the six-return cap the
+    conversion's new failure arm pushed it past. The two unusable shapes —
+    unparseable bytes and a parsed non-object — collapse to one answer because
+    the row responds to both identically: it skips, since neither is evidence
+    about the member's protection.
+    """
+    try:
+        payload = cast("object", json.loads(stdout))
+    except json.JSONDecodeError:
+        return None
+    return cast("dict[str, object]", payload) if isinstance(payload, dict) else None
+
+
 def assert_branch_protection(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:
     """Canonical-ref branch protection present AND aligned.
 
@@ -195,20 +213,21 @@ def assert_branch_protection(*, ctx: FleetContext, member: FleetMember) -> RowOu
     leg, because requiring it gates the whole matrix through its `needs:`.
     """
     ref = ctx.canonical_ref(repo=member.repo)
-    result = ctx.api(path=f"repos/{ctx.owner}/{member.repo}/branches/{ref}/protection")
+    result = gh_answer(
+        outcome=ctx.api(path=f"repos/{ctx.owner}/{member.repo}/branches/{ref}/protection")
+    )
+    if isinstance(result, InvocationNotPerformed):
+        # Not "needs admin scope": that diagnostic guesses at the TOKEN,
+        # and no token was ever presented.
+        return RowSkip(reason=f"{member.repo}: {result.reason}")
     if result.returncode != 0:
         if _NOT_PROTECTED_MARKER in f"{result.stdout}\n{result.stderr}":
             return RowFinding(message=f"{member.repo}: {ref} has no branch protection")
         return RowSkip(reason=f"{member.repo}: branch protection unreadable (needs admin scope)")
-    try:
-        payload = cast("object", json.loads(result.stdout))
-    except json.JSONDecodeError:
-        return RowSkip(reason=f"{member.repo}: branch protection payload unparseable")
-    if not isinstance(payload, dict):
-        return RowSkip(reason=f"{member.repo}: branch protection payload shape unexpected")
-    problems = _protection_problems(
-        ctx=ctx, member=member, payload=cast("dict[str, object]", payload)
-    )
+    payload = _protection_payload(stdout=result.stdout)
+    if payload is None:
+        return RowSkip(reason=f"{member.repo}: branch protection payload unparseable or unexpected")
+    problems = _protection_problems(ctx=ctx, member=member, payload=payload)
     if problems:
         return RowFinding(message=f"{member.repo}: {'; '.join(problems)}")
     return RowPass()

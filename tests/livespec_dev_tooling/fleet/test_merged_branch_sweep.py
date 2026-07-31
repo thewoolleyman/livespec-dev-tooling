@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 import pytest
+from _gh_railway import lift_gh
 
 from livespec_dev_tooling.fleet._context import FleetContext, GhResult, GhRunner
 from livespec_dev_tooling.fleet.merged_branch_sweep import (
@@ -62,7 +63,7 @@ def raw(*, text: str) -> GhResult:
 
 
 def make_context(*, runner: GhRunner) -> FleetContext:
-    return FleetContext(owner="acme", run_gh=runner)
+    return FleetContext(owner="acme", run_gh=lift_gh(runner))
 
 
 def prs_args(*, branch: str) -> tuple[str, ...]:
@@ -376,4 +377,4 @@ def _runner_returning(*, stdout: str) -> GhRunner:
     def run(*, args: list[str], stdin: str | None = None) -> GhResult:  # noqa: ARG001
         return GhResult(returncode=0, stdout=stdout, stderr="")
 
-    return run
+    return lift_gh(run)

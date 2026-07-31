@@ -19,6 +19,8 @@ and "can't-read is not absent" semantics are bit-identical.
 
 from __future__ import annotations
 
+from _gh_railway import lift_gh
+
 from livespec_dev_tooling.fleet._context import (
     FleetContext,
     GhResult,
@@ -34,7 +36,7 @@ def _always(*, result: GhResult) -> GhRunner:
     def run(*, args: list[str], stdin: str | None = None) -> GhResult:  # noqa: ARG001
         return result
 
-    return run
+    return lift_gh(run)
 
 
 def _ctx(*, result: GhResult) -> FleetContext:

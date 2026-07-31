@@ -23,6 +23,7 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from _gh_railway import lift_gh
 from returns.io import IOFailure, IOSuccess
 from returns.unsafe import unsafe_perform_io
 
@@ -129,7 +130,7 @@ def context_for(*, download: GhDownloader, default_branch: str) -> FleetContext:
             returncode=0, stdout=json.dumps({"default_branch": default_branch}), stderr=""
         )
 
-    return FleetContext(owner="acme", run_gh=run, download_gh=download)
+    return FleetContext(owner="acme", run_gh=lift_gh(run), download_gh=download)
 
 
 def test_default_downloader_without_gh_yields_a_failure_value(

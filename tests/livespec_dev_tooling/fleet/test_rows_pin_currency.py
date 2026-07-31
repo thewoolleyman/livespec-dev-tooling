@@ -7,6 +7,8 @@ import json
 from pathlib import Path
 from typing import Protocol, cast
 
+from _gh_railway import lift_gh
+
 from livespec_dev_tooling.fleet._context import (
     FleetContext,
     FleetMember,
@@ -73,7 +75,7 @@ def _context(*, files: dict[str, str], latest: dict[tuple[str, ...], str]) -> Fl
         return table.get(tuple(args), GhResult(returncode=1, stdout="", stderr="no canned"))
 
     runner: GhRunner = run
-    return FleetContext(owner="acme", run_gh=runner)
+    return FleetContext(owner="acme", run_gh=lift_gh(runner))
 
 
 def _assert_row_finding(*, outcome: object, pin_format: str, current: str, latest: str) -> None:

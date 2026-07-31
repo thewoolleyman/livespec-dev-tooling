@@ -11,6 +11,8 @@ import json
 import textwrap
 from typing import TYPE_CHECKING
 
+from _gh_railway import lift_gh
+
 from livespec_dev_tooling.fleet import _rows_github
 from livespec_dev_tooling.fleet._context import (
     FleetContext,
@@ -109,7 +111,7 @@ def make_context(*, table: dict[tuple[str, ...], GhResult]) -> FleetContext:
         return table.get(tuple(args), GhResult(returncode=1, stdout="", stderr="no canned"))
 
     runner: GhRunner = run
-    return FleetContext(owner="acme", run_gh=runner)
+    return FleetContext(owner="acme", run_gh=lift_gh(runner))
 
 
 def ok(*, payload: object) -> GhResult:

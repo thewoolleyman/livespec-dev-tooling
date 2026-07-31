@@ -13,32 +13,58 @@ CLI (the fleet precedent for GitHub reads — see
 from __future__ import annotations
 
 import json
-import re
-import shutil
-import subprocess
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol, cast
+from typing import cast
 
-from livespec_dev_tooling.fleet._public_api_graph import FleetConsumption
-from livespec_dev_tooling.fleet._read_failure import (
+# `returns` is VENDORED, not installed, so a bare import resolves only if
+# some EARLIER import in the same process already put `_vendor/` on
+# `sys.path` — the latent form of the bare import that broke the fleet's
+# release fan-out for seven hours (`vzwa`'s `89296e0`). This module reached
+# `returns` purely through the `_snapshot` import below, whose own preamble
+# ran first. The preamble is declared HERE regardless of which sibling
+# currently owns the `returns` import, because this module is the fleet
+# package's front door and the hazard is an ordering dependency no reader
+# can see, not a property of any one import line.
+_VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
+
+from livespec_dev_tooling.fleet._gh_runner import (  # noqa: E402
+    GhOutcome,
+    GhResult,
+    GhRunner,
+    default_gh_runner,
+    gh_answer,
+)
+from livespec_dev_tooling.fleet._invocation_failure import (  # noqa: E402
+    InvocationNotPerformed,
+)
+from livespec_dev_tooling.fleet._origin_remote import (  # noqa: E402
+    resolve_owner,
+    resolve_repo_name,
+)
+from livespec_dev_tooling.fleet._public_api_graph import FleetConsumption  # noqa: E402
+from livespec_dev_tooling.fleet._read_failure import (  # noqa: E402
     ReadFailure,
     classify_gh_failure,
     sanitize_detail,
 )
-from livespec_dev_tooling.fleet._snapshot import (
+from livespec_dev_tooling.fleet._snapshot import (  # noqa: E402
     GhDownloader,
     SnapshotResult,
     default_gh_downloader,
     memoized_snapshot,
 )
-from livespec_dev_tooling.fleet._tree_state import TreeState, parse_tree_payload
+from livespec_dev_tooling.fleet._tree_state import TreeState, parse_tree_payload  # noqa: E402
 
 __all__: list[str] = [
     "Adopter",
     "FleetContext",
     "FleetMember",
     "GhDownloader",
+    "GhOutcome",
     "GhResult",
     "GhRunner",
     "ReadFailure",
@@ -50,23 +76,10 @@ __all__: list[str] = [
     "TreeState",
     "default_gh_downloader",
     "default_gh_runner",
+    "gh_answer",
     "resolve_owner",
+    "resolve_repo_name",
 ]
-
-
-@dataclass(frozen=True, kw_only=True)
-class GhResult:
-    """Outcome of one `gh` invocation (exit code + captured streams)."""
-
-    returncode: int
-    stdout: str
-    stderr: str
-
-
-class GhRunner(Protocol):
-    """Callable seam for `gh` invocations; `args` excludes the leading `gh`."""
-
-    def __call__(self, *, args: list[str], stdin: str | None = None) -> GhResult: ...
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -111,13 +124,6 @@ class RowSkip:
 RowOutcome = RowPass | RowFinding | RowSkip
 
 
-# Matches the two canonical github.com remote URL forms emitted by
-# `git remote get-url origin`, mirroring the sibling
-# `branch_protection_alignment` resolver: the owner identifier comes
-# from the local remote rather than a hardcoded constant.
-_REMOTE_URL_PATTERN = re.compile(
-    r"^(?:https?://github\.com/|git@github\.com:)([^/]+)/([^/]+?)(?:\.git)?/?$"
-)
 # Fallback ref when a repo's default branch cannot be resolved. The single
 # source of truth for a repo's canonical ref is `FleetContext.canonical_ref`,
 # resolved and memoized PER REPO: `file_text` and `tree` BOTH route through it
@@ -129,62 +135,6 @@ _REMOTE_URL_PATTERN = re.compile(
 # row; memoizing the FALLBACK too keeps the two reads together even when the
 # lookup fails mid-run.
 _CANONICAL_REF = "master"
-
-
-def default_gh_runner(*, args: list[str], stdin: str | None = None) -> GhResult:
-    """Run `gh <args>`; a missing `gh` binary yields a synthetic failure result."""
-    if shutil.which("gh") is None:
-        return GhResult(returncode=127, stdout="", stderr="gh CLI not on PATH")
-    completed = subprocess.run(
-        ["gh", *args],
-        capture_output=True,
-        text=True,
-        check=False,
-        input=stdin,
-    )
-    return GhResult(
-        returncode=completed.returncode,
-        stdout=completed.stdout,
-        stderr=completed.stderr,
-    )
-
-
-def _origin_remote_match(*, cwd: Path | None = None) -> re.Match[str] | None:
-    """Match `git remote get-url origin` against the owner/repo pattern, or None.
-
-    One parse shared by `resolve_owner` and `resolve_repo_name`: the two answers
-    come from the same remote URL, and a second copy of the pattern-and-subprocess
-    dance would be a rule with two copies, which drifts.
-    """
-    completed = subprocess.run(
-        ["git", "remote", "get-url", "origin"],
-        capture_output=True,
-        text=True,
-        check=False,
-        cwd=None if cwd is None else str(cwd),
-    )
-    if completed.returncode != 0:
-        return None
-    return _REMOTE_URL_PATTERN.match(completed.stdout.strip())
-
-
-def resolve_owner(*, cwd: Path | None = None) -> str | None:
-    """Resolve the GitHub owner from `git remote get-url origin`, or None."""
-    match = _origin_remote_match(cwd=cwd)
-    return None if match is None else match.group(1)
-
-
-def resolve_repo_name(*, cwd: Path | None = None) -> str | None:
-    """Resolve the repository's short name from `git remote get-url origin`, or None.
-
-    This is the "which member am I RUNNING AS" derivation. It is DERIVED rather
-    than configured on purpose: a config key naming the running repo would be a
-    second source of truth that can drift from the checkout it describes, and the
-    remote already knows the answer. `.git` suffix and trailing slash are stripped
-    by the shared pattern, so a member's name matches the manifest entry directly.
-    """
-    match = _origin_remote_match(cwd=cwd)
-    return None if match is None else match.group(2)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -224,12 +174,30 @@ class FleetContext:
     # collapsing every failure to "unavailable".
     read_failures: list[ReadFailure] = field(default_factory=list)
 
-    def api(self, *, path: str, method: str = "GET", body: str | None = None) -> GhResult:
+    def api(self, *, path: str, method: str = "GET", body: str | None = None) -> GhOutcome:
         """Issue one `gh api` call; non-GET methods stream `body` via stdin."""
         args = ["api", path]
         if method != "GET":
             args.extend(["--method", method, "--input", "-"])
         return self.run_gh(args=args, stdin=body)
+
+    def record_not_performed(
+        self, *, operation: str, path: str, failure: InvocationNotPerformed
+    ) -> None:
+        """Preserve a `gh` that never ran, kept apart from a `gh` that answered.
+
+        `returncode=0` beside a `kind` naming the cause, matching
+        `_snapshot`'s spelling for the same condition: there is no exit code
+        to report when nothing ran, and reusing the fabricated 127 here would
+        put the sentinel back one layer up.
+        """
+        self.record_read_failure(
+            operation=operation,
+            path=path,
+            returncode=0,
+            kind=failure.kind,
+            detail=failure.reason,
+        )
 
     def record_read_failure(
         self, *, operation: str, path: str, returncode: int, kind: str, detail: str
@@ -254,7 +222,13 @@ class FleetContext:
         "never reached the API" and "the API answered with nonsense" call for
         different responses.
         """
-        result = self.api(path=path)
+        result = gh_answer(outcome=self.api(path=path))
+        if isinstance(result, InvocationNotPerformed):
+            # This used to reach `classify_gh_failure(stderr=...)` carrying
+            # the seam's own invented string, so a `gh` that never ran was
+            # recorded as one that had spoken and been understood.
+            self.record_not_performed(operation=operation, path=path, failure=result)
+            return None
         if result.returncode != 0:
             self.record_read_failure(
                 operation=operation,
@@ -306,14 +280,21 @@ class FleetContext:
         pin, so a guard that reads a file and then the tree never resolves the
         two against divergent branches. None on failure.
         """
-        result = self.run_gh(
-            args=[
-                "api",
-                f"repos/{self.owner}/{repo}/contents/{path}?ref={self.canonical_ref(repo=repo)}",
-                "-H",
-                "Accept: application/vnd.github.raw",
-            ]
+        result = gh_answer(
+            outcome=self.run_gh(
+                args=[
+                    "api",
+                    f"repos/{self.owner}/{repo}/contents/{path}?ref={self.canonical_ref(repo=repo)}",
+                    "-H",
+                    "Accept: application/vnd.github.raw",
+                ]
+            )
         )
+        if isinstance(result, InvocationNotPerformed):
+            # A file this run never managed to ASK about is not an absent
+            # file, and the genuine-absence guard downstream reads this.
+            self.record_not_performed(operation="contents", path=f"{repo}:{path}", failure=result)
+            return None
         if result.returncode != 0:
             self.record_read_failure(
                 operation="contents",

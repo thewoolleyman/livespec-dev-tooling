@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 
+from _gh_railway import lift_gh
+
 from livespec_dev_tooling.fleet._context import (
     FleetContext,
     FleetMember,
@@ -51,7 +53,7 @@ def _context(*, table: dict[tuple[str, ...], GhResult]) -> FleetContext:
     # vacuously — proving nothing about the conjunction's guard conditions.
     # Exercising the escalating context is what keeps them falsifiable; the
     # per-PR context is covered by test_rows_pin_currency_context_scope.py.
-    return FleetContext(owner="acme", run_gh=runner, filter_consuming_preflight=True)
+    return FleetContext(owner="acme", run_gh=lift_gh(runner), filter_consuming_preflight=True)
 
 
 def _pin_table(*, open_prs_payload: object) -> dict[tuple[str, ...], GhResult]:

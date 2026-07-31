@@ -23,11 +23,14 @@ from typing import cast
 from livespec_dev_tooling.fleet._context import (
     FleetContext,
     FleetMember,
+    GhOutcome,
     RowFinding,
     RowOutcome,
     RowPass,
     RowSkip,
+    gh_answer,
 )
+from livespec_dev_tooling.fleet._invocation_failure import InvocationNotPerformed
 from livespec_dev_tooling.fleet._rows_files import (
     BUMP_PIN_WORKFLOW,
     PIN_FRESHNESS_WORKFLOW,
@@ -175,6 +178,20 @@ def _secret_value_from_env(*, destination_name: str) -> str | None:
     return None
 
 
+def _gh_failed(*, outcome: GhOutcome, note: str) -> RowFinding | None:
+    """The finding for a `gh` that never ran or ran and exited non-zero, else None.
+
+    `note` describes the OPERATION that did not take effect, which is the
+    right diagnostic only for a `gh` that ran and refused. A `gh` that never
+    ran gets the seam's own reason instead: "applying the topic failed" is a
+    claim about the member, and nothing was asked of the member at all.
+    """
+    answer = gh_answer(outcome=outcome)
+    if isinstance(answer, InvocationNotPerformed):
+        return RowFinding(message=answer.reason)
+    return None if answer.returncode == 0 else RowFinding(message=note)
+
+
 def reconcile_secret_names(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:
     """Push APP_ID + APP_PRIVATE_KEY from env via `gh secret set` (stdin only).
 
@@ -196,12 +213,15 @@ def reconcile_secret_names(*, ctx: FleetContext, member: FleetMember) -> RowOutc
                 )
             )
         value = _rewrap_pem(value=value)
-        result = ctx.run_gh(
-            args=["secret", "set", name, "--repo", f"{ctx.owner}/{member.repo}"],
-            stdin=value,
+        failure = _gh_failed(
+            outcome=ctx.run_gh(
+                args=["secret", "set", name, "--repo", f"{ctx.owner}/{member.repo}"],
+                stdin=value,
+            ),
+            note=f"{member.repo}: gh secret set {name} failed",
         )
-        if result.returncode != 0:
-            return RowFinding(message=f"{member.repo}: gh secret set {name} failed")
+        if failure is not None:
+            return failure
     return RowPass(note="secrets pushed from env (values via stdin, never logged)")
 
 
@@ -217,9 +237,12 @@ def reconcile_topic(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:
     if SIBLING_TOPIC in names:
         return RowPass(note="topic already present")
     body = json.dumps({"names": [*names, SIBLING_TOPIC]})
-    result = ctx.api(path=f"repos/{ctx.owner}/{member.repo}/topics", method="PUT", body=body)
-    if result.returncode != 0:
-        return RowFinding(message=f"{member.repo}: applying {SIBLING_TOPIC} topic failed")
+    failure = _gh_failed(
+        outcome=ctx.api(path=f"repos/{ctx.owner}/{member.repo}/topics", method="PUT", body=body),
+        note=f"{member.repo}: applying {SIBLING_TOPIC} topic failed",
+    )
+    if failure is not None:
+        return failure
     return RowPass(note=f"applied {SIBLING_TOPIC} topic")
 
 
@@ -249,16 +272,19 @@ def reconcile_branch_protection(*, ctx: FleetContext, member: FleetMember) -> Ro
             "restrictions": None,
         }
     )
-    result = ctx.api(
-        path=(
-            f"repos/{ctx.owner}/{member.repo}/branches/"
-            f"{ctx.canonical_ref(repo=member.repo)}/protection"
+    failure = _gh_failed(
+        outcome=ctx.api(
+            path=(
+                f"repos/{ctx.owner}/{member.repo}/branches/"
+                f"{ctx.canonical_ref(repo=member.repo)}/protection"
+            ),
+            method="PUT",
+            body=body,
         ),
-        method="PUT",
-        body=body,
+        note=f"{member.repo}: setting branch protection failed",
     )
-    if result.returncode != 0:
-        return RowFinding(message=f"{member.repo}: setting branch protection failed")
+    if failure is not None:
+        return failure
     return RowPass(note="branch protection set (strict=off + enforce_admins + ci matrix checks)")
 
 
@@ -271,17 +297,24 @@ def reconcile_merge_settings(*, ctx: FleetContext, member: FleetMember) -> RowOu
     re-PATCHing an already-rebase-only repo changes nothing.
     """
     body = json.dumps(dict(REQUIRED_MERGE_SETTINGS))
-    result = ctx.api(path=f"repos/{ctx.owner}/{member.repo}", method="PATCH", body=body)
-    if result.returncode != 0:
-        return RowFinding(message=f"{member.repo}: setting merge settings failed")
+    failure = _gh_failed(
+        outcome=ctx.api(path=f"repos/{ctx.owner}/{member.repo}", method="PATCH", body=body),
+        note=f"{member.repo}: setting merge settings failed",
+    )
+    if failure is not None:
+        return failure
     return RowPass(note="merge settings set (rebase-only + auto-merge)")
 
 
 def reconcile_delete_branch_on_merge(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:
     """Enable automatic deletion of merged PR head branches for the member repo."""
     body = json.dumps({"delete_branch_on_merge": True})
-    result = ctx.api(path=f"repos/{ctx.owner}/{member.repo}", method="PATCH", body=body)
-    if result.returncode != 0:
+    answer = gh_answer(
+        outcome=ctx.api(path=f"repos/{ctx.owner}/{member.repo}", method="PATCH", body=body)
+    )
+    if isinstance(answer, InvocationNotPerformed):
+        return RowFinding(message=answer.reason)
+    if answer.returncode != 0:
         command = (
             f"gh api repos/{ctx.owner}/{member.repo} --method PATCH "
             "--input - <<< '{\"delete_branch_on_merge\":true}'"
@@ -315,8 +348,12 @@ def _open_shim_pr(*, ctx: FleetContext, member: FleetMember, missing: list[str])
     if not isinstance(sha, str):
         return RowFinding(message=f"{member.repo}: cannot resolve {base_ref} sha for shim PR")
     ref_body = json.dumps({"ref": f"refs/heads/{SHIM_BRANCH}", "sha": sha})
-    if ctx.api(path=f"{repo_path}/git/refs", method="POST", body=ref_body).returncode != 0:
-        return RowFinding(message=f"{member.repo}: creating shim branch failed")
+    branch_failure = _gh_failed(
+        outcome=ctx.api(path=f"{repo_path}/git/refs", method="POST", body=ref_body),
+        note=f"{member.repo}: creating shim branch failed",
+    )
+    if branch_failure is not None:
+        return branch_failure
     for path in missing:
         content = shim_content(path=path, ctx=ctx, member=member)
         put_body = json.dumps(
@@ -326,9 +363,12 @@ def _open_shim_pr(*, ctx: FleetContext, member: FleetMember, missing: list[str])
                 "branch": SHIM_BRANCH,
             }
         )
-        put = ctx.api(path=f"{repo_path}/contents/{path}", method="PUT", body=put_body)
-        if put.returncode != 0:
-            return RowFinding(message=f"{member.repo}: adding {path} to shim branch failed")
+        put_failure = _gh_failed(
+            outcome=ctx.api(path=f"{repo_path}/contents/{path}", method="PUT", body=put_body),
+            note=f"{member.repo}: adding {path} to shim branch failed",
+        )
+        if put_failure is not None:
+            return put_failure
     pr_body = json.dumps(
         {
             "title": "chore(fleet): add missing pin-and-bump shim workflows",
@@ -341,9 +381,12 @@ def _open_shim_pr(*, ctx: FleetContext, member: FleetMember, missing: list[str])
             ),
         }
     )
-    created = ctx.api(path=f"{repo_path}/pulls", method="POST", body=pr_body)
-    if created.returncode != 0:
-        return RowFinding(message=f"{member.repo}: opening shim PR failed")
+    created_failure = _gh_failed(
+        outcome=ctx.api(path=f"{repo_path}/pulls", method="POST", body=pr_body),
+        note=f"{member.repo}: opening shim PR failed",
+    )
+    if created_failure is not None:
+        return created_failure
     return RowPass(note=f"opened shim PR for {', '.join(missing)} (pending merge)")
 
 
@@ -364,7 +407,13 @@ def reconcile_shim_workflows(*, ctx: FleetContext, member: FleetMember) -> RowOu
         return RowPass(note="all shim workflows present")
     if not ctx.once(key=f"shim-pr:{member.repo}"):
         return RowPass(note="shim PR already handled in this run")
-    branch_probe = ctx.api(path=f"repos/{ctx.owner}/{member.repo}/git/ref/heads/{SHIM_BRANCH}")
+    branch_probe = gh_answer(
+        outcome=ctx.api(path=f"repos/{ctx.owner}/{member.repo}/git/ref/heads/{SHIM_BRANCH}")
+    )
+    if isinstance(branch_probe, InvocationNotPerformed):
+        # NOT a missing branch. Reading it as one would send this run on
+        # to CREATE a shim branch whose existence it never established.
+        return RowSkip(reason=f"{member.repo}: {branch_probe.reason}")
     if branch_probe.returncode == 0:
         return RowPass(note=f"shim branch {SHIM_BRANCH} already exists (PR pending merge)")
     return _open_shim_pr(ctx=ctx, member=member, missing=missing)
