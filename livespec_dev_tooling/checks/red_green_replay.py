@@ -78,8 +78,11 @@ from _red_green_replay_modes import (  # noqa: E402  — sibling private import
     _handle_suite_green_mode,
 )
 from _red_green_replay_trailers import (  # noqa: E402  — sibling private import
+    _narrate_git_failure,
     head_red_awaiting_green,
 )
+from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 from livespec_dev_tooling.config import (  # noqa: E402
     Config,
@@ -323,6 +326,41 @@ def _validate_range() -> int:
     return 1
 
 
+def _dispatch_impl_staged(
+    *,
+    msg_path: Path,
+    log: structlog.stdlib.BoundLogger,
+    impl_paths: list[str],
+    staged_paths: list[str],
+) -> int:
+    """Route branches 4 and 5 on the HEAD state — or refuse if HEAD is unreadable.
+
+    Split from `main` by the `qndn` conversion: `head_red_awaiting_green` now
+    carries a failure arm, and that arm is a `return`, which took `main` past
+    the six-return lint budget. The seam is a real one — this is the only
+    routing decision in the ritual that depends on reading git.
+
+    ⛔ A failed read must NOT fall through to the suite-green leg. That is
+    exactly what the pre-conversion code did: a non-zero git exit produced
+    empty stdout, which reads as "no Red trailers", which lands here as branch
+    5 and stamps `TDD-Suite-Green-*` onto what may well be a Green amend. A
+    fail-WRONG, not a fail-closed.
+    """
+    awaiting = head_red_awaiting_green()
+    if isinstance(awaiting, IOFailure):
+        return _narrate_git_failure(log=log, failed=unsafe_perform_io(awaiting.failure()))
+    if unsafe_perform_io(awaiting.unwrap()):
+        # Branch 4 — a genuine amend-in-progress (Red WITHOUT Green at
+        # HEAD), prefix-agnostic. Red-trailer PRESENCE alone is not
+        # enough: a completed Red+Green commit at HEAD also carries
+        # Red trailers (work-item livespec-dev-tooling-xn0).
+        return _handle_green_mode(msg_path=msg_path, log=log, impl_paths=impl_paths)
+    # Branch 5 — product impl `.py` without a Red awaiting its Green
+    # (refactor / behavior-preserving chore / any prefix / fresh
+    # commits atop completed history): green-verified.
+    return _handle_suite_green_mode(msg_path=msg_path, log=log, staged_paths=staged_paths)
+
+
 def main() -> int:
     if len(sys.argv) <= 1:
         # No msg-path argv: the canonical-aggregate / `just check` /
@@ -350,16 +388,9 @@ def main() -> int:
         # Branch 3, other prefixes — a passing test-only cleanup is
         # green-verified.
         return _handle_suite_green_mode(msg_path=msg_path, log=log, staged_paths=staged_paths)
-    if head_red_awaiting_green():
-        # Branch 4 — a genuine amend-in-progress (Red WITHOUT Green at
-        # HEAD), prefix-agnostic. Red-trailer PRESENCE alone is not
-        # enough: a completed Red+Green commit at HEAD also carries
-        # Red trailers (work-item livespec-dev-tooling-xn0).
-        return _handle_green_mode(msg_path=msg_path, log=log, impl_paths=impl_paths)
-    # Branch 5 — product impl `.py` without a Red awaiting its Green
-    # (refactor / behavior-preserving chore / any prefix / fresh
-    # commits atop completed history): green-verified.
-    return _handle_suite_green_mode(msg_path=msg_path, log=log, staged_paths=staged_paths)
+    return _dispatch_impl_staged(
+        msg_path=msg_path, log=log, impl_paths=impl_paths, staged_paths=staged_paths
+    )
 
 
 if __name__ == "__main__":
