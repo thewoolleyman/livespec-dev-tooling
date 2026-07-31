@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.13.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.13.0...v1.13.1) (2026-07-31)
+
+
+### Bug Fixes
+
+* **fleet:** the public-API graph drops a RE-EXPORTED consumption entirely ([e5ef2b4](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e5ef2b425095204ea977ecaf0c8ed2294f285750))
+
 ## [1.13.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.12.1...v1.13.0) (2026-07-30)
 
 
