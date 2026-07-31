@@ -260,6 +260,32 @@ records the lane-scoped shape instead.
 >      remove them.** Ask of every new fixture: *if the behavior regressed right now, would this
 >      assertion fire?*
 >
+>    **🔺🔺 THE GENERAL FORM, AND IT IS A CLASS WITH FOUR MEMBERS RATHER THAN AN ANECDOTE —
+>    STATE IT ONCE AND APPLY IT TO EVERY INSTRUMENT THIS THREAD BUILDS:**
+>
+>    > **AN INSTRUMENT THAT CANNOT PRODUCE A NEGATIVE RESULT HAS NOT PRODUCED A POSITIVE ONE.**
+>
+>    Four instances, all in THIS epic, all reporting CLEAN while reading nothing:
+>
+>    | instrument | why it could not fail |
+>    |---|---|
+>    | `chmod 000` fixture | every read succeeds when the suite runs as **root** |
+>    | `PATH`-shim fixture (CONVERT units 1–2) | shim dir was **appended** to `PATH`, so real `git` answered |
+>    | `_scan` / `main()` offender harness | `pure_trees` is `not_applicable` → **iterates zero files** |
+>    | supervisor's ledger sweep (brief 62) | `for id in $ids` in **zsh** does not word-split → **one** bogus iteration, 0 bytes read, "clean across 94 items" |
+>
+>    **⛔ AND THE CATCH WAS A POSITIVE CONTROL IN EVERY SINGLE CASE — NEVER REVIEW, NEVER
+>    READING THE CODE AGAIN.** Each was found by asserting the instrument could detect a
+>    condition KNOWN to be present (a term known ubiquitous in the corpus; a count known
+>    non-zero; a behavior known broken) and watching it report nothing. **Review cannot catch
+>    this class**, because the instrument's code reads correctly — the defect is in what it was
+>    pointed at, not what it does. **So: before trusting any negative result, feed the
+>    instrument something it MUST flag.** One command, every time.
+>
+>    The operational form for a fixture stays as above — *if the behavior regressed right now,
+>    would this assertion fire?* — and it is the same question asked of a measurement harness as
+>    *would this count move if the thing I am counting appeared?*
+>
 >    **▶️ THE ANSWER-vs-FAILURE CALLS THIS FAMILY MADE, since the same question recurs 23 more
 >    times.** An absent file, an absent directory, an empty `glob`, a parsed document that is not
 >    an object, a `.vendor.jsonc` with no `libraries` array, and a Dockerfile with no `ARG` line
