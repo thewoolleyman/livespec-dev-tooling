@@ -177,14 +177,43 @@ that four of them are declarations rather than code.
 
 | class | n | what it means |
 |---|---|---|
-| **CHECK-FIX** | **4** | the machinery convicts conformant code — fix the check, not the function |
+| **CHECK-FIX** | ~~4~~ **3** | the machinery convicts conformant code — fix the check, not the function |
 | **CONVERT** | **38** | an inhabited failure track modelled off-railway |
 | **DECLARE** | **4** | a legitimate ABSENCE — v179 member 2 `total_absence_returns` |
 | **COUPLED** | **1** | becomes a DECLARE once the function it reads converts; not before |
 | **TYPE-SLICE** | **23** | the fleet `RowOutcome` family — ONE type-level decision, not 23 conversions |
-| **OPEN** | **5** | a genuine design choice this triage surfaces rather than settles |
+| **OPEN** | ~~5~~ **6** | a genuine design choice this triage surfaces rather than settles |
 
-**4 + 38 + 4 + 1 + 23 + 5 = 75, exactly.**
+**3 + 38 + 4 + 1 + 23 + 6 = 75, exactly.**
+
+### ⛔⛔ 4a-BIS — CHECK-FIX WAS 4 AND IS **3**. THE CORRECTION IS MINE, IT WAS CAUGHT BY THE FIX'S OWN MEASUREMENT, AND THE METHOD FLAW BEHIND IT MATTERS MORE THAN THE COUNT.
+
+The CHECK-FIX changes landed and the repo went **75 → 72**, not 75 → 71. Three dropped —
+`memoized_snapshot`, `comment_lines`, `statement_colons`. **`extract_created_worktree_paths`
+DID NOT**, and it never would have.
+
+**WHY: IT WAS DOUBLY CONVICTED ALL ALONG.** Verified on unmodified master — `local_io=True`
+(the `Path(raw)` false positive) **AND** both its callees carry a `try`
+(`_transcript_line_segments` catches `json.JSONDecodeError`,
+`_created_worktree_targets_from_segment` catches `ValueError` from `shlex.split`). Removing
+the local basis leaves clause (d) standing.
+
+**THE METHOD FLAW, AND IT IS THIS THREAD'S SIGNATURE DEFECT IN MY OWN TOOL.** The triage
+classifier assigns **ONE** conviction basis per function — it tests LOCAL first and stops —
+and §2's table reports that one basis as though it were exhaustive. **It is not.** A function
+carrying both a local and a transitive disqualifier appears in §2 as purely LOCAL, and any
+disposition reasoning "remove the local basis and it is acquitted" is unsound for it.
+
+**BOUNDED, and the bound was measured rather than asserted.** It changes a disposition only
+where the argument depended on removing the local basis — the CHECK-FIX class, 4 functions,
+of which 3 did drop. **No CONVERT disposition moves**: those functions are convicted either
+way and the conversion is owed regardless. **⚠️ But §2's LOCAL/TRANSITIVE/CLAUSE-(e) split is
+a partition of FIRST-FOUND basis, not of all bases — do not read it as exhaustive, and do not
+re-derive anything from it that depends on a function having only one.**
+
+`extract_created_worktree_paths` moves to **OPEN**, alongside `is_docs_only_change` and
+`scenario_tier_violations`, and it is the same question: two callees deliberately collapse a
+parse failure onto a safe value (`[line]`, `[]`). One ruling covers all three.
 
 ### 4a. ⛔ THE CHECK-FIX CLASS IS FIDELITY, NOT A DISCOUNT — and it is the MIRROR of the skip
 
@@ -210,9 +239,12 @@ was fidelity; so is refusing to convict what the spec's own clause (c) does not 
 the supervisor charter names that risk by name — and this one would do it in the arming
 commit itself.
 
-**⛔ AND THE LIMIT, so this class cannot grow by argument.** It is 4 of 75. Each names the
-exact call, isolated by re-running the shipped analysis with nested calls stripped. A fifth
-member requires the same evidence, not a resemblance.
+**⛔ AND THE LIMIT, so this class cannot grow by argument.** ~~It is 4 of 75.~~ **It is 3 —
+see 4a-bis, which is a correction to this section made by measuring the fix rather than by
+re-reading it.** Each names the exact call, isolated by re-running the shipped analysis with
+nested calls stripped. A further member requires the same evidence, not a resemblance —
+**and it must also be checked for a SECOND conviction basis**, which is precisely what the
+fourth member turned out to have.
 
 ### 4b. ⚠️ `preflight_credential` IS *NOT* IN THAT CLASS, and the distinction is load-bearing
 
