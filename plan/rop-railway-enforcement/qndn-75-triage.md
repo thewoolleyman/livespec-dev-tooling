@@ -453,7 +453,24 @@ conviction, the callee chain for a TRANSITIVE one, or `clause (e) only`.
 | 3 | `checks/_no_except_outside_io_markers.py:106` | `statement_colons` | `tuple[tuple[int, int], ...]` | `['io.StringIO']` | Same `io.StringIO` conviction as `comment_lines`; same re-examination owed. |
 | 4 | `fleet/_snapshot.py:290` | `memoized_snapshot` | `SnapshotResult` | `['record']` | ALREADY on the railway: `SnapshotResult = IOResult[TreeSnapshot, SnapshotUnavailable]` (_snapshot.py:148). `_is_railway_compliant` matches the annotation's TERMINAL NAME, which a type ALIAS defeats. Not a violation; the check cannot see through an alias. |
 
-### CONVERT — 38
+### CONVERT — ~~38~~ **40** (see 4d-BIS)
+
+**✅ ROWS 4-9 AND 11-13 HAVE LANDED — PR #952, master `c35ea9e` + `87fd400`.** The six
+`_primary_checkout_git_probes` and the three `_red_green_replay_trailers` readers.
+Offenders **70 → 64 → 61**, re-derived at both ends of each unit. **31 CONVERT remain**, of
+which 8 (rows 17-24, the pin walkers) are BLOCKED on `2j2l` — now the NEXT action per
+supervisor brief 58, not a tail item, because 8 of 40 arriving last is where sequencing
+mistakes get made.
+
+**▶️ THE RULE THOSE NINE ESTABLISH, and it is where the work in each conversion actually is:
+AN INVOCATION THAT COMPLETES AND ANSWERS IS A SUCCESS WHATEVER IT ANSWERS.** `git rev-parse
+--git-dir` exiting non-zero means "not a repository"; `git config --get` exiting 1 means the
+key is UNSET; an absent trailer is empty. All ANSWERS. **⛔ And "convert" is NOT "treat every
+non-zero as a Failure": `git log -1` exits 128 on an UNBORN HEAD, and reading that as a
+failure would have made the commit-msg hook refuse the first commit of every fresh member
+repo.** Ask which non-zero exits are answers BEFORE deciding which are failures — this
+thread has erred toward over-exemption before, and this is the same error running the other
+way.
 
 | # | file:line | function | returns | convicted by | why |
 |---|---|---|---|---|---|
@@ -613,12 +630,27 @@ declaration.** A bare zero was never evidence — that is why this thread exists
 
 ## 7. SUGGESTED ORDER FOR THE REMEDIATION HALF
 
+**⛔ STEPS 1-3 BELOW ARE THE ORIGINAL ORDER AND STEP 3 IS RETRACTED. The live order is
+supervisor brief 58's**, kept here rather than overwritten because the retraction is the
+finding: *"do the seven other walkers first, `read_pin_text` leading"* was inherited from
+this list and passed on without asking what the `unrecognized` sentinel's footprint actually
+was. It is emitted at THREE sites, and `read_pin_text` is the shared reader for all seven, so
+the family cannot be split at all.
+
+> **LIVE ORDER:** ✅ CHECK-FIX (#946) → ✅ DECLARE (#949) → ✅ the git probes + the RGR
+> trailers (#952, 9 of 40) → **`2j2l`+`xhbp`+`vt61` ratification** → the seven pin walkers as
+> ONE family with `discover` adapting once → the rest of CONVERT → the two `dx8l`-shaped ones
+> after consumer wiring lands in the consuming repos → TYPE-SLICE (23) → drop the skip,
+> re-measure at both ends, arm.
+
 1. **CHECK-FIX (4)** — first, because arming with them outstanding reports violations against
    conformant code, and because the alias fix is a one-line predicate with a fixture.
 2. **DECLARE (4)** — cheapest real movement; each needs a written reason under member 2's
    bound 2, and bound 1 REJECTS a non-`X | None` entry rather than skipping it.
-3. **CONVERT, `read_pin_text` FIRST** — the 8 pin walkers all route through it, and
-   `pin_autodiscovery.discover` is ALREADY `IOResult`, so the railway exists one level up.
+3. ~~**CONVERT, `read_pin_text` FIRST** — the 8 pin walkers all route through it, and
+   `pin_autodiscovery.discover` is ALREADY `IOResult`, so the railway exists one level up.~~
+   **RETRACTED — the family is BLOCKED on `2j2l` and cannot be split. Start CONVERT at the
+   self-contained families instead (done: the git probes, the RGR trailers).**
 4. **CONVERT the two `dx8l`-shaped ones LAST within their families** — `resolve_owner` /
    `resolve_repo_name` (convert as ONE pair; clause (d) couples them, so a split PR measures
    no movement — the `vzwa` arithmetic) and `discover_fixtures` / `discover_skills`, each
