@@ -249,12 +249,51 @@ records the lane-scoped shape instead.
 >    tracked (`git add -N` suffices).** That is the second way this harness can report progress
 >    by reading less; `pure_trees`/`_scan` was the first.
 >
+>    **✅ THE TWO DRIVER PROFILES LANDED — PR #988, master `49498ac`. Offenders 40 → 37**,
+>    re-derived at both ends on merged master with the new module STAGED.
+>
+>    **🔺 AND THE STANDING QUESTION FOUND A THIRD SURFACE OF `6ge` THERE, which is why that
+>    question is now worth more than the conversions it was written for.** Both profiles wrapped
+>    every manifest read in `except (OSError, ValueError)` and returned the exception AS A
+>    VIOLATION STRING — so "this Driver's plugin.json is MALFORMED" (definitive, an author must
+>    fix it) and "this run could not READ plugin.json" (says nothing about the Driver, may not
+>    reproduce) reached the operator as the same sentence and the same exit code. v039 already
+>    ratified that split for pin currency; these two were the same shape with the arms fused.
+>
+>    **⛔ THE SPLIT CANNOT BE SPELLED "CATCH OSError", AND THE CONVERSE IS THE LOAD-BEARING
+>    HALF.** `FileNotFoundError` IS an `OSError`, and an ABSENT manifest is definitive — the
+>    Driver genuinely does not ship one. Sweeping absence onto the failure track with its
+>    siblings would convert a real violation into a silent non-answer, LOOSENING the check while
+>    appearing to sharpen it. Absence and malformation stay violations; only present-but-
+>    unreadable leaves the success track. Whichever remaining unit meets a bare `except OSError`,
+>    ask which of its members are DEFINITIVE before moving any of them.
+>
+>    **🔴🔴 INSTANCE SIX OF THE SUITE PINNING THE DEFECT, AND IT IS THE SHARPEST FORM SO FAR:
+>    FIVE TESTS NAMED `*_unreadable`, AND NOT ONE EVER MADE A FILE UNREADABLE.** Every one wrote
+>    `{ not json` — which is INVALID — and asserted the FUSED `unreadable/invalid` string, which
+>    accepted either. The test NAME, its own FIXTURE and its ASSERTION disagreed with each other,
+>    and the fusion is precisely what kept that invisible. **Consequence: the check shipped with
+>    ZERO coverage of a genuinely unreadable file, which is why the collapse survived to be found
+>    by a conversion rather than by its own suite.** All five CORRECTED.
+>    **The generalisation, and it is stronger than "expect a pinned defect": WHEN A DIAGNOSTIC
+>    FUSES TWO CONDITIONS, THE SUITE CANNOT TELL YOU WHICH ONE IT COVERS — so a fused message is
+>    itself evidence that one of the two is UNTESTED. Read the fixture, not the test name.**
+>
 >    **▶️▶️ COLD START, THE ONLY THING YOU NEED FROM THIS BLOCK: the NEXT ACTION is
->    ▶️ THE REMAINING **10** CONVERT, of which **5 ARE UNBLOCKED**: the two Driver profiles
->    (`_plugin_structure_claude.py`'s two + `_plugin_structure_codex.py`'s one, which share
->    `fenced_invocation_violations` and must move in LOCKSTEP), `open_bump_prs_for`,
->    `member_matrix_targets`, `inspect_worktree_pack`. None is Protocol-assigned — each was
->    checked. Then the `dx8l`-blocked pairs, then TYPE-SLICE.**
+>    ▶️ THE REMAINING **7** CONVERT, of which **3 ARE UNBLOCKED** — each a single function, none
+>    Protocol-assigned, each checked:
+>    `fleet/_rows_pin_currency.py::open_bump_prs_for` (which then makes `persisting_bump_pr_number`
+>    the COUPLED row's DECLARE — do NOT declare it before), `fleet/_rows_github.py::
+>    member_matrix_targets`, and `checks/_primary_checkout_worktree_pack.py::inspect_worktree_pack`.
+>    Then the `dx8l`-blocked pairs — consumer wiring lands FIRST, in the consuming repo — then
+>    TYPE-SLICE.**
+>
+>    **🔎 A LEAD ON `inspect_worktree_pack`, measured not guessed: it reads pack files with an
+>    UNGUARDED `read_text`, so an unreadable pack file raises out of the check, and its
+>    `_read_pack_policy` sibling collapses to `_PACK_POLICY_MALFORMED`. That is the SAME fused
+>    shape #988 just split, arriving a third time.** Check whether malformed and unreadable are
+>    distinguishable there before converting; if they are not, the unit is the split, not the
+>    signature.
 >    ~~THE REMAINING 23~~ —
 >    **THREE CHAIN UNITS LANDED 2026-07-31: #969 (`fleet/_connection.py`, 4), #972
 >    (`checks/_ci_matrix_parse.py`, 3), #973 (`checks/_tool_backed_surfaces.py`, 3).**
@@ -275,11 +314,14 @@ records the lane-scoped shape instead.
 >
 >    **📏📏 SUPERSEDED — CURRENT BASELINE, measured on MERGED master `60938fd` (2026-07-31)
 >    with `_find_offenders` over `resolve_check_universe()`, both ends, never inherited:
->    universe **160** · offenders DROPPING the `_`-prefixed-FILE skip **40**.** The trio took it
->    43 → 42 → 41 → 40; universe 157 → 160 is the four new leaf modules
+>    universe **160** · offenders DROPPING the `_`-prefixed-FILE skip **40**.**
+>    **📏 SUPERSEDED AGAIN — master `49498ac` (PR #988): universe **161** · offenders **37**.**
+>    The trio took it 43 → 42 → 41 → 40; the Driver profiles took it 40 → 37. Universe 157 → 161
+>    is the five new leaf modules
 >    (`_invocation_failure`, `_gh_runner`, `_origin_remote`, plus seam 1's). **The 40 still
 >    ACCOUNT EXACTLY: 10 CONVERT (5 unblocked + 4 `dx8l`-blocked + 1 coupled) + 6 OPEN + 1
->    COUPLED + 23 TYPE-SLICE.**
+>    COUPLED + 23 TYPE-SLICE.** At 37 the CONVERT column is **7** (3 unblocked + 4
+>    `dx8l`-blocked); the other columns are untouched.
 >    ⛔ **MEASURE WITH NEW FILES TRACKED** — see the trap recorded in §"START HERE"; an untracked
 >    new module silently REMOVES its functions from the universe and reads as progress.
 >
