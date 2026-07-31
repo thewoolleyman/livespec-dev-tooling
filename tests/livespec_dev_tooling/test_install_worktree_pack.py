@@ -372,13 +372,18 @@ def test_canonical_branch_protection_body_carries_distinctive_markers() -> None:
     assert CANONICAL_BRANCH_PROTECTION_BODY.endswith("\n")
 
 
-def test_main_leaves_unreadable_livespec_jsonc_untouched(
+def test_main_leaves_unparseable_livespec_jsonc_untouched(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Garbled JSONC is the config-integrity tooling's problem, not the installer's.
 
     The installer must neither crash nor "repair" a file it cannot parse —
     splicing into a broken document could corrupt it further.
+
+    ⛔ RENAMED from `..._unreadable_...`. The fixture below writes INVALID
+    JSON, which is a file this run read perfectly and could not PARSE — a
+    definitive fact about the document. It never made a file unreadable, so
+    the old name described a condition no test here exercised.
     """
     _scrub_git_env(monkeypatch=monkeypatch)
     primary = tmp_path / "project"
@@ -414,7 +419,7 @@ def test_main_declines_to_splice_when_no_anchor_line(
     assert config.read_text(encoding="utf-8") == one_liner
 
 
-def test_inspect_treats_unreadable_config_as_ungoverned(
+def test_inspect_treats_unparseable_config_as_ungoverned(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An unparseable `.livespec.jsonc` must not turn the pack arm into a FAIL.
@@ -422,6 +427,12 @@ def test_inspect_treats_unreadable_config_as_ungoverned(
     Failing here would double-report one broken file: the config-integrity
     check already owns that diagnosis, and a second voice adds noise, not
     signal.
+
+    ⛔ RENAMED from `..._unreadable_...` for the same reason as the installer
+    test above: the fixture writes INVALID JSON. A document this run read and
+    could not parse is a definitive fact and correctly stays on the success
+    track; a document this run could not READ is not, and no fixture here
+    produced one.
     """
     _scrub_git_env(monkeypatch=monkeypatch)
     primary = tmp_path / "project"
@@ -448,3 +459,111 @@ def test_inspect_rejects_an_unknown_pack_policy_value(
 
     failures = inspect_worktree_pack(repo_root=primary)
     assert [mode for _name, mode in failures] == ["worktree_discipline_malformed"]
+
+
+def _install_governed_pack(*, repo_root: Path) -> Path:
+    """Give `repo_root` a governed config, a canonical pack and both imports.
+
+    The baseline every byte-identity test below perturbs by exactly one file,
+    so a reported failure can only be the perturbation.
+    """
+    _ = (repo_root / ".livespec.jsonc").write_text('{"template": "livespec"}\n', encoding="utf-8")
+    _ = (repo_root / "justfile").write_text(
+        "import? 'dev-tooling/branch-protection.just'\nimport? 'dev-tooling/worktree.just'\n",
+        encoding="utf-8",
+    )
+    pack_dir = repo_root / "dev-tooling"
+    pack_dir.mkdir(exist_ok=True)
+    for name, body in _PACK_EXPECTED:
+        _ = (pack_dir / name).write_text(body, encoding="utf-8")
+    return pack_dir
+
+
+def test_inspect_reports_no_failure_for_a_canonical_governed_pack(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The baseline the three perturbation tests below are measured against.
+
+    Without it a perturbation test proves nothing: an assertion that some
+    failure is reported would also pass if the fixture were broken in an
+    unrelated way. This pins that the unperturbed fixture is CLEAN, so each
+    perturbation below is the only thing that can have caused its finding.
+    """
+    _scrub_git_env(monkeypatch=monkeypatch)
+    primary = tmp_path / "project"
+    _init_repo(repo=primary)
+    _ = _install_governed_pack(repo_root=primary)
+
+    assert inspect_worktree_pack(repo_root=primary) == []
+
+
+def test_inspect_reports_body_mismatch_for_a_crlf_converted_pack_file(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A pack file whose BYTES differ only in line endings is still drift.
+
+    🔴 The fail-open this test exists to close. The arm's contract is stated as
+    "a present file whose bytes differ", but it compared DECODED TEXT via
+    `Path.read_text`, which performs universal-newline translation — so a
+    CRLF-converted pack file decoded back to the canonical string and the
+    check reported the pack CLEAN. The bytes on disk are not the bytes the
+    installer wrote, and the operator was told they were.
+    """
+    _scrub_git_env(monkeypatch=monkeypatch)
+    primary = tmp_path / "project"
+    _init_repo(repo=primary)
+    pack_dir = _install_governed_pack(repo_root=primary)
+    _ = (pack_dir / "worktree-lib.sh").write_bytes(
+        CANONICAL_WORKTREE_LIB_BODY.replace("\n", "\r\n").encode("utf-8")
+    )
+
+    failures = inspect_worktree_pack(repo_root=primary)
+    assert failures == [("worktree-lib.sh", "worktree_pack_body_mismatch")]
+
+
+def test_inspect_reports_body_mismatch_for_a_pack_file_that_is_not_utf8(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A pack file that is not valid UTF-8 is DEFINITIVELY not the canonical body.
+
+    The canonical bodies are UTF-8 by construction, so bytes that do not
+    decode cannot equal them — there is nothing indeterminate here. The arm
+    nonetheless decoded before comparing, so this raised `UnicodeDecodeError`
+    straight out of the check: a crash where a definitive finding was
+    available. Invalid UTF-8 is used rather than `chmod 000` because this
+    suite runs as root, where a mode-based fixture cannot fail.
+    """
+    _scrub_git_env(monkeypatch=monkeypatch)
+    primary = tmp_path / "project"
+    _init_repo(repo=primary)
+    pack_dir = _install_governed_pack(repo_root=primary)
+    _ = (pack_dir / "branch-protection.sh").write_bytes(b"#!/usr/bin/env bash\n\xff\xfe\x00drift\n")
+
+    failures = inspect_worktree_pack(repo_root=primary)
+    assert failures == [("branch-protection.sh", "worktree_pack_body_mismatch")]
+
+
+def test_inspect_reports_not_imported_for_a_justfile_that_is_not_utf8(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An undecodable justfile is still ANSWERABLE, one import line at a time.
+
+    The import lines are pure ASCII, so whether a byte sequence contains them
+    is answerable without decoding the whole file. The arm decoded first and
+    raised `UnicodeDecodeError` out of the check instead.
+
+    ⛔ The fixture is deliberately not merely undecodable: it still CARRIES
+    the `worktree.just` import and omits the `branch-protection.just` one, so
+    the arm must report exactly ONE fragment. That is what makes this a real
+    instrument — the cheap fix (catch the decode error and treat the justfile
+    as empty) would report BOTH and fail here, while the honest fix searches
+    the bytes and discriminates.
+    """
+    _scrub_git_env(monkeypatch=monkeypatch)
+    primary = tmp_path / "project"
+    _init_repo(repo=primary)
+    _ = _install_governed_pack(repo_root=primary)
+    _ = (primary / "justfile").write_bytes(b"\xff\xfeimport? 'dev-tooling/worktree.just'\n")
+
+    failures = inspect_worktree_pack(repo_root=primary)
+    assert failures == [("branch-protection.just", "worktree_pack_not_imported")]

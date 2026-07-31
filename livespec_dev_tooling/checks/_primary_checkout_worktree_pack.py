@@ -206,13 +206,20 @@ def _inspect_pack_imports(*, repo_root: Path) -> list[tuple[str, str]]:
 
     A missing justfile fails both fragments — the pack is equally unreachable
     either way.
+
+    The justfile is searched as BYTES, never decoded. Both `import?` lines are
+    pure ASCII, so "does this file contain this line" is answerable without
+    interpreting the rest of the file — and an undecodable justfile used to
+    raise `UnicodeDecodeError` straight out of the check rather than answer a
+    question it could answer. A justfile `just` itself cannot read is exactly
+    the state this arm exists to report.
     """
     justfile_path = repo_root / _JUSTFILE_NAME
-    text = justfile_path.read_text(encoding="utf-8") if justfile_path.is_file() else ""
+    raw = justfile_path.read_bytes() if justfile_path.is_file() else b""
     return [
         (name, _WORKTREE_PACK_NOT_IMPORTED_FAILURE_MODE)
         for name, import_line in _WORKTREE_PACK_IMPORT_LINES
-        if import_line not in text
+        if import_line.encode("utf-8") not in raw
     ]
 
 
@@ -262,6 +269,16 @@ def inspect_worktree_pack(
     or is an exempt sandbox. Exempting drift too would retire the very
     detection this arm exists for.
 
+    ⛔ AND THEY COMPARE BYTES, which they previously only claimed to do. The
+    comparison read DECODED TEXT, and `Path.read_text` performs
+    universal-newline translation — so a CRLF-converted pack file decoded back
+    to the canonical string and this arm reported the pack CLEAN while the
+    bytes on disk differed from the ones the installer wrote. That is this
+    arm's own central assertion failing open. The decode was also the only
+    reason an undecodable pack file raised out of the check: the canonical
+    bodies are UTF-8 by construction, so bytes that do not decode cannot equal
+    them, and a `worktree_pack_body_mismatch` was always available.
+
     Returns the failures sorted by file name for deterministic narration.
     """
     policy = _read_pack_policy(repo_root=repo_root)
@@ -279,7 +296,7 @@ def inspect_worktree_pack(
         if not script_path.is_file():
             failures.append((name, _WORKTREE_PACK_MISSING_FAILURE_MODE))
             continue
-        if script_path.read_text(encoding="utf-8") != canonical_body:
+        if script_path.read_bytes() != canonical_body.encode("utf-8"):
             failures.append((name, _WORKTREE_PACK_BODY_MISMATCH_FAILURE_MODE))
     failures.extend(_inspect_pack_imports(repo_root=repo_root))
     return sorted(failures)
