@@ -186,11 +186,94 @@ records the lane-scoped shape instead.
 >    ANYTHING; it carries all 75 by name with the evidence that convicted each.**
 >
 >    **▶️▶️ COLD START, THE ONLY THING YOU NEED FROM THIS BLOCK: the NEXT ACTION is
->    ⚠️ REMEDIATION OF A LIVE, UNREPAIRED FAN-OUT FAILURE — fire a fresh `sibling-released`
->    dispatch for `livespec` v0.21.1 — and THEN the batched `2j2l` + `xhbp` + `vt61`
->    ratification, whose content is ALREADY WRITTEN BELOW and is NOT what its titles say.
->    Then the seven pin walkers as ONE family.** ~~the git probes then the RGR trailers~~ —
->    **✅ BOTH LANDED, PR #952, master `c35ea9e` + `87fd400`.**
+>    ▶️ THE SEVEN PIN WALKERS AS ONE FAMILY — `read_pin_text` + 7 walkers + `discover`'s
+>    composition + relocating `PinFileUnreadable`, 8 of the 40 CONVERT, NOW UNBLOCKED.**
+>    ~~fire a fresh `sibling-released` dispatch for `livespec` v0.21.1~~ · ~~THEN the batched
+>    `2j2l` + `xhbp` + `vt61` ratification~~ — **✅ BOTH LANDED 2026-07-31; see the block
+>    immediately below.** ~~the git probes then the RGR trailers~~ — **✅ BOTH LANDED, PR #952,
+>    master `c35ea9e` + `87fd400`.**
+>
+>    ---
+>
+>    ## ✅✅ THE FAN-OUT IS REPAIRED AND v039 IS RATIFIED — AND THE ORDERING PAID FOR ITSELF WITH A FINDING
+>
+>    **2026-07-31. Both halves landed in one session. Every number below was measured on the
+>    forge or by running the shipped sweep, never inherited.**
+>
+>    **✅ REMEDIATION FIRST, exactly as `v034` carve-out 1 required.** A fresh
+>    `sibling-released` dispatch for `livespec` v0.21.1 was fired at all SEVEN stale siblings
+>    (the form the reusable workflow's own rerun-refusal error message prescribes:
+>    `gh api repos/<owner>/<member>/dispatches -f event_type=sibling-released -f
+>    'client_payload[source_repo]=livespec' …`). All seven runs succeeded, all seven bump PRs
+>    opened (dev-tooling **#957**, driver-claude **#355**, driver-codex **#335**, beads-fabro
+>    **#1193**, git-jsonl **#476**, overseer **#431**, runtime **#405**), and **ALL SEVEN
+>    MERGED under their own CI**. Re-measured after: **`compat.pinned` is `v0.21.1` in 8 of 8
+>    siblings.** The 2026-07-30 outage has no remaining tail.
+>
+>    **✅ THEN THE RATIFICATION — `v039`, PR #958, master `40b65f3` + `29c7e2b`.** Filed and
+>    ratified as ONE PR (the #854 pattern: a `file` commit then a `ratify` commit). Disposition
+>    was **`modify`**, not accept — see below. `2j2l`, `xhbp` and `vt61` are answered by it.
+>
+>    **WHAT v039 ACTUALLY SAYS, since the titles still mislead.** It changes NO severity: the
+>    lane scoping (`ctx.filter_consuming_preflight`) already existed and is kept verbatim. It
+>    partitions staleness EXHAUSTIVELY — *fired-and-could-not-land* (open bump PR, escalates at
+>    ANY age, unchanged) and **NEVER-FIRED** (no bump PR, escalates once the release ages past a
+>    **two-hour settle window**, read from `published_at` on the `releases/latest` payload both
+>    readers already fetch for `tag_name`, so no new API call and no local clock). And it
+>    separates a can't-**RECOGNIZE** (ratified tolerance, kept) from a can't-**PARSE** of a
+>    known-format file, which must be a distinct typed outcome a consumer cannot silently drop.
+>    **No lever, no env var, no opt-out key** — the settle window is a ratified CONSTANT
+>    precisely so it cannot become the opt-out by another name.
+>
+>    **⚠️ IT WAS A `modify`, AND THE REASON GENERALIZES TO EVERY FUTURE PROPOSE-CHANGE IN THIS
+>    THREAD.** The proposal targeted `contracts.md` alone while introducing observable behavior,
+>    which the revise prose's **Behavior-implies-Gherkin split makes MALFORMED**. Three
+>    `scenarios.md` entries were co-edited in atomically (never-fired past the window,
+>    never-fired INSIDE it, can't-parse), each naming the evaluating CONTEXT so the lane scoping
+>    is ASSERTED rather than implied, plus three paired `tests/heading-coverage.json` entries at
+>    `test: TODO` with tier-acknowledging reasons (the `scenarios.md` integration-tier rule).
+>    **`contracts.md` adds/renames/removes no H2, so it needed no coverage co-edit** — the
+>    registry tracks H2 headings only. Budget this co-edit into every behavioral proposal.
+>
+>    **🔺 AND THE INTENT-PRESERVATION CHECK PRODUCED THE STRONGEST ARGUMENT IN THE CHANGE, so do
+>    not skip it as ceremony.** Running it surfaced that **`livespec-dh9r` — the design record
+>    this section's escalation comes FROM — was itself an incident measured with "open bump PRs
+>    fleet-wide: 0"**, which is precisely the state its own escalation cannot see. The record
+>    that motivated the persisting-gap rule was an instance the rule could not detect. That went
+>    into the ratified text as the supporting evidence, and it is better evidence than anything
+>    the proposal reasoned its way to.
+>
+>    **🔴 THE FINDING THE ORDERING BOUGHT — `livespec-dev-tooling-ve7w` (P1), FILED, NOT STARTED.**
+>    The live sweep re-run after remediation (`members: 9`, **`blind_rows: 0`**, exit **passed**)
+>    shows **ONE** member that newly escalates under v039 — **not the eight this file warned
+>    about**, because the re-dispatch removed the incident first. It is **`livespec` ITSELF**:
+>    its own `.livespec.jsonc` `compat.pinned` sits at **`v0.20.2`** against latest **`v0.21.1`**
+>    — TWO releases stale — with **ZERO open bump PRs in livespec**, verified on the forge.
+>
+>    **AND IT CANNOT SELF-HEAL, WHICH IS WHY IT IS P1 RATHER THAN A STALE PIN.** The fan-out
+>    EXCLUDES the publishing repo from its own dispatch matrix by ratified contract, and livespec
+>    publishes every livespec release — so no `sibling-released` dispatch ever reaches it and the
+>    rewrite path never runs against its own file. `reusable-pin-freshness.yml` is the ratified
+>    safety net for exactly this class and has not opened a PR across at least two releases;
+>    **whether the shim is unwired in livespec or the walk skips a self-referential pin is
+>    UNDIAGNOSED — measure it, do not assume which.** ⛔ Do NOT "fix" it by hand-editing the pin:
+>    that repairs one release and leaves the mechanism broken. **This is the NEVER-FIRED class in
+>    its purest and most permanent form, found by the predicate the same session ratified it.**
+>
+>    **Two other live rows, both correctly classified and NEITHER a v039 consequence:**
+>    `livespec-driver-codex` carries a dev-tooling `v1.13.2 → v1.13.3` **persisting gap with open
+>    bump PR #334** across `dev-tooling-pin` / `uses-pin-currency` / `fabro-pin-currency` — that
+>    is the FIRED class, already escalating under the PRE-v039 rule, untouched by this change.
+>
+>    **⏭️ WHAT v039 DOES NOT DO: the CODE. Nothing is flipped.** The predicate, the settle
+>    window, and the can't-parse carrier are ratified text only. The flip lands with the walker
+>    family below — and the remediate-then-flip precondition is now DISCHARGED, so the next
+>    session may implement without re-running the fan-out. **Re-run the live sweep at both ends
+>    of that unit anyway**, per this thread's standing never-inherit-a-count rule.
+>
+>    **NOTHING OF THIS SESSION IS OPEN.** PR #958 merged, worktree reaped, branch deleted,
+>    primary checkout clean on master `29c7e2b`. The five FOREIGN worktrees persist — **REAP
+>    NONE, and ENUMERATE with `git worktree list` rather than trusting this sentence.**
 >
 >    ---
 >
@@ -238,9 +321,16 @@ records the lane-scoped shape instead.
 >    staleness. **A propose-change that only makes a can't-PARSE a finding (2j2l's title) would
 >    leave this untouched**, which is exactly brief 59's warning arriving with a mechanism.
 >
->    **⛔⛔ AND IT IS LIVE RIGHT NOW — THE 2026-07-30 OUTAGE'S UNREPAIRED TAIL. MEASURED, NOT
->    INFERRED.** PR #930 fixed the class and the prior session re-dispatched — **but only for
->    the DEV-TOOLING release fan-out. The `livespec` v0.21.1 fan-out was never re-fired.**
+>    **✅✅ RESOLVED 2026-07-31 — THIS TABLE IS A HISTORICAL RECORD, NOT LIVE STATE. DO NOT ACT
+>    ON IT.** The `livespec` v0.21.1 fan-out was re-dispatched to all seven stale siblings, all
+>    seven bump PRs merged, and **`compat.pinned` is `v0.21.1` in 8 of 8** — re-measured on the
+>    forge. The rows below are kept because they are the evidence that convicted the predicate,
+>    and deleting them would delete the reasoning behind v039. **Every "today" in them is
+>    2026-07-31T06:30Z.**
+>
+>    **⛔⛔ AS MEASURED THEN — THE 2026-07-30 OUTAGE'S UNREPAIRED TAIL.** PR #930 fixed the class
+>    and the prior session re-dispatched — **but only for the DEV-TOOLING release fan-out. The
+>    `livespec` v0.21.1 fan-out was never re-fired.**
 >
 >    | measured 2026-07-31T06:30Z | |
 >    |---|---|
@@ -262,6 +352,12 @@ records the lane-scoped shape instead.
 >    FIRST, flip SECOND** (v034 carve-out 1). Do NOT file the propose-change's escalation half
 >    without re-running the live sweep afterwards.
 >
+>    **✅ DONE, AND THE ORDERING WAS WORTH ITS COST — the post-remediation sweep found ONE
+>    escalating member, not eight, and the one is REAL: `ve7w`, livespec's own structurally
+>    unbumpable self-pin. Had the flip gone first, that finding would have been indistinguishable
+>    from seven repair-pending siblings and almost certainly lost. THE PRECONDITION IS
+>    DISCHARGED; the next session implements without re-dispatching.**
+>
 >    **▶️ AND THE DATA A SETTLE-WINDOW PREDICATE NEEDS IS ALREADY FETCHED AND DISCARDED.**
 >    `_rows_pin_currency._latest_release_tag` calls
 >    `ctx.api_object(path="repos/<owner>/<repo>/releases/latest")` and reads ONLY `tag_name`;
@@ -282,8 +378,10 @@ records the lane-scoped shape instead.
 >    unrelated repo's PRs — and **⛔ do NOT add a severity lever or opt-out key** (`vt61`'s
 >    named third option; every dodge this sweep found was an emptiness that meant yes).
 >
->    **NOTHING OF THIS INVESTIGATION IS COMMITTED IN CODE — it is a reading and a measurement
->    only. No worktree, no branch, no PR is open for it.**
+>    **~~NOTHING OF THIS INVESTIGATION IS COMMITTED IN CODE~~ — SUPERSEDED. Its RECOMMENDED
+>    CONTENT above was filed and ratified verbatim in substance as `v039` (PR #958), and the
+>    remediation it demanded is complete. What remains uncommitted is the CODE: no walker is
+>    converted, no predicate is flipped, no settle window is implemented.**
 >
 >    ---
 >
@@ -303,7 +401,7 @@ records the lane-scoped shape instead.
 >    | class | n | landed? |
 >    |---|---|---|
 >    | CHECK-FIX | **3** | ✅ **#946** — the machinery convicted conformant code |
->    | CONVERT | **40** | 🟡 **9 of 40 landed (#952)**; 8 BLOCKED on `2j2l`; **31 remain** |
+>    | CONVERT | **40** | 🟡 **9 of 40 landed (#952)**; ~~8 BLOCKED on `2j2l`~~ **UNBLOCKED — v039 ratified (#958); the walker family is the NEXT unit**; **31 remain** |
 >    | DECLARE | **2** | ✅ **#949** |
 >    | COUPLED | **1** | ⏳ follows `open_bump_prs_for` |
 >    | TYPE-SLICE | **23** | ⏳ the `RowOutcome` family, ONE decision |
@@ -435,8 +533,16 @@ records the lane-scoped shape instead.
 >    truth. Run it per new entry anyway — `ueni` makes it unreachable in this repo until the
 >    arming commit — but never cite "0 rejected" as evidence a disposition is right.
 >
->    **⛔⛔⛔ DO NOT START CONVERT WITH `read_pin_text`. THE WHOLE PIN-WALKER FAMILY IS BLOCKED
->    ON `2j2l`, AND AN EARLIER PLAN — INCLUDING A SUPERVISOR BRIEF — SAID TO START THERE.**
+>    **✅ UNBLOCKED 2026-07-31 — `2j2l` IS ANSWERED BY `v039` (PR #958), SO THE PIN-WALKER FAMILY
+>    IS NOW THE NEXT UNIT. Everything below still governs HOW to do it; only the "blocked" verdict
+>    is retired.** v039 ratifies the semantics the conversion must realize: a can't-PARSE is a
+>    distinct typed outcome a consumer cannot silently drop, and a pin-currency row may not pass
+>    on a format it did not evaluate. ⛔ **The forbidden shortcut below is now MORE live, not
+>    less** — with the semantics ratified, moving the sentinel would be non-conformance with
+>    ratified text rather than merely a tidy that misses the point.
+>
+>    **~~⛔⛔⛔ DO NOT START CONVERT WITH `read_pin_text`. THE WHOLE PIN-WALKER FAMILY IS BLOCKED
+>    ON `2j2l`~~, AND AN EARLIER PLAN — INCLUDING A SUPERVISOR BRIEF — SAID TO START THERE.**
 >    Measured on master `302abd6`, not inferred:
 >
 >    - **The `unrecognized` sentinel is emitted at THREE sites, all three single-file walkers**
@@ -458,6 +564,11 @@ records the lane-scoped shape instead.
 >    composition + relocating `PinFileUnreadable` (it lives in `pin_autodiscovery.py`, which
 >    imports the walkers, so they cannot name it without a cycle — move it to
 >    `_pin_directory_scan_formats.py` and re-export). **8 of the 40 CONVERT.**
+>
+>    **✅ EXECUTED — this recommendation is now HISTORY, ratified as `v039` (PR #958). Kept
+>    because the ratified text tracks it closely and a reader diffing the two will understand
+>    both faster; the one substantive change is that v039 ALSO partitions staleness
+>    exhaustively, which this paragraph did not yet know to ask for.**
 >
 >    **▶️ THE RECOMMENDATION ALREADY MADE, so nobody re-derives it:** batch `2j2l` + `xhbp` +
 >    `vt61` into ONE propose-change (`vt61` already records that `2j2l` and `0j3i` are one
@@ -1092,7 +1203,8 @@ records the lane-scoped shape instead.
 >    | **`qndn`** | **the 75 — ✅ TRIAGED (`qndn-75-triage.md`); CHECK-FIX + DECLARE + 9 of 40 CONVERT LANDED (70 → 61); 31 CONVERT remain, then drop the `_`-FILE skip, then arm** | **YES — THE FIRST GATE. Next step is the `2j2l` ratification, THEN the seven walkers.** |
 >    | `8o8e.2` | `RowSkip` two meanings, LIVE in a registered central row | **NO — and that is the point. Off the queue; fix on its own timetable.** |
 >    | `8o8e.5` / `8o8e.6` | `find_ruff_backstop_gaps` fails OPEN · the justfile parser exists 4× | **NO.** Off the queue. |
->    | `2j2l` + `xhbp` + `vt61` | the pin-currency severity policy — ⛔ **INVESTIGATED; TWO OF `0j3i`'s CLAIMS RETRACTED; the hole is the escalation PREDICATE, not the severity** | **▶️ NEXT, but REMEDIATE FIRST: re-dispatch `livespec` v0.21.1 (live unrepaired fan-out, 8/9 members stale). Read the START-HERE investigation block before filing.** |
+>    | ~~`2j2l` + `xhbp` + `vt61`~~ | ~~the pin-currency severity policy~~ | **✅ RATIFIED AS v039 — PR #958. The fan-out was re-dispatched FIRST (8/8 at v0.21.1). Code NOT flipped; that is the walker family.** |
+>    | **`ve7w`** | **livespec's OWN `compat.pinned` is STRUCTURALLY unbumpable — the publisher is excluded from its own fan-out; 2 releases stale, zero bump PRs ever** | **NO — filed 2026-07-31 by the post-remediation sweep. The one member v039 newly escalates.** |
 >    | **`0yfo`** → `995m` | decompose `config.py`, then flip the `@generated` predicate | the SECOND gate — via 6f's known-gap statement |
 >
 >    **Three NEW items were filed by this work. `vzwa` IS an arming blocker; the other two are
