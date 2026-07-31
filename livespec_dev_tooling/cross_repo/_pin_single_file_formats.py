@@ -35,8 +35,14 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import jsoncomment  # noqa: E402  — vendor-path-aware import after sys.path insert.
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
+from returns.io import IOFailure, IOResult, IOSuccess  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 from livespec_dev_tooling.cross_repo._pin_directory_scan_formats import (  # noqa: E402
+    PinFileUnparseable,
+    PinWalkFailure,
+    PinWalkResult,
+    failed_read,
     read_pin_text,
     record,
 )
@@ -55,7 +61,29 @@ _VENDOR_JSONC = ".vendor.jsonc"
 _PIN_FORMAT_LIVESPEC = "livespec_jsonc_compat_pinned"
 _PIN_FORMAT_UV_SOURCES = "pyproject_toml_uv_sources"
 _PIN_FORMAT_VENDOR = "vendor_jsonc"
-_PIN_FORMAT_UNRECOGNIZED = "unrecognized"
+# There is deliberately NO `_PIN_FORMAT_UNRECOGNIZED`. A file the walk read
+# and could not parse leaves on the FAILURE track as a `PinFileUnparseable`,
+# never as a record with a sentinel `pin_format`. The sentinel record was
+# livespec-dev-tooling-2j2l: `_rows_pin_currency._records_for` filters records
+# by `pin_format` equality, `"unrecognized"` matched no spec, and the record
+# was silently dropped — turning an unparseable pin file into a PASSING row.
+# Re-introducing it here would recreate that fail-open, and per
+# `SPECIFICATION/contracts.md` §"Pin autodiscovery rules" a can't-parse "MUST
+# NOT be carried as an in-band record in the walk's normal record stream".
+
+
+def _unparseable(
+    *, pin_walk: str, file_path: str, detail: str, log: structlog.stdlib.BoundLogger
+) -> PinWalkResult:
+    """Log the unparseable file and put it on the walk's failure track.
+
+    The `log.warning` is retained from the sentinel-record era so the
+    operator-facing trace does not regress, but it is no longer the ONLY
+    carrier — that was the defect. The failure-track value is what the row
+    reads.
+    """
+    log.warning("unparseable pin file", pin_walk=pin_walk, file_path=file_path, detail=detail)
+    return IOFailure(PinFileUnparseable(pin_walk=pin_walk, file_path=file_path, detail=detail))
 
 
 def _normalize_for_vendor_match(*, name: str) -> str:
@@ -65,32 +93,33 @@ def _normalize_for_vendor_match(*, name: str) -> str:
 
 def walk_livespec_jsonc(
     *, root: Path, source_repo_filter: str | None, log: structlog.stdlib.BoundLogger
-) -> list[dict[str, str]]:
+) -> IOResult[list[dict[str, str]], PinWalkFailure]:
     path = root / _LIVESPEC_JSONC
+    # An ABSENT file is an ANSWER — the ratified missing-file tolerance.
     if not path.is_file():
-        return []
+        return IOSuccess([])
     rel_path = _LIVESPEC_JSONC
-    text = read_pin_text(path=path)
+    read = read_pin_text(path=path, pin_walk="walk_livespec_jsonc")
+    if isinstance(read, IOFailure):
+        return failed_read(result=read)
     try:
-        parsed = jsoncomment.loads(text)
-    except (ValueError, json.JSONDecodeError):
-        log.warning("unrecognized .livespec.jsonc — failed to parse", file_path=rel_path)
-        return [
-            record(
-                pin_format=_PIN_FORMAT_UNRECOGNIZED,
-                file_path=rel_path,
-                pin_key="",
-                current_value="",
-                source_repo="",
-            )
-        ]
+        parsed = jsoncomment.loads(unsafe_perform_io(read.unwrap()))
+    except (ValueError, json.JSONDecodeError) as undecodable:
+        return _unparseable(
+            pin_walk="walk_livespec_jsonc",
+            file_path=rel_path,
+            detail=str(undecodable),
+            log=log,
+        )
+    # A document that PARSES but is not an object is well-formed JSON that
+    # simply carries no `compat` blocks — an answer, not a parse failure.
     if not isinstance(parsed, dict):
-        return []
+        return IOSuccess([])
     # The `compat.pinned` field always pins the consumer to a livespec
     # release tag — the source repo is fixed at the literal "livespec".
     source_repo = "livespec"
     if source_repo_filter is not None and source_repo_filter != source_repo:
-        return []
+        return IOSuccess([])
     out: list[dict[str, str]] = []
     # The `cast` is the single typed parse boundary: the parsed `.livespec.jsonc`
     # document is `Any`; casting to `dict[str, object]` (after the `isinstance`
@@ -119,7 +148,7 @@ def walk_livespec_jsonc(
                 source_repo=source_repo,
             )
         )
-    return out
+    return IOSuccess(out)
 
 
 _UV_SOURCES_HEADER_RE = re.compile(r"^\s*\[tool\.uv\.sources\]\s*$", re.MULTILINE)
@@ -150,15 +179,21 @@ def _source_repo_from_git_url(*, url: str) -> str:
 
 def walk_pyproject_toml(
     *, root: Path, source_repo_filter: str | None, log: structlog.stdlib.BoundLogger
-) -> list[dict[str, str]]:
+) -> IOResult[list[dict[str, str]], PinWalkFailure]:
     path = root / _PYPROJECT_TOML
     if not path.is_file():
-        return []
+        return IOSuccess([])
     rel_path = _PYPROJECT_TOML
-    text = read_pin_text(path=path)
-    block = _extract_uv_sources_block(text=text)
+    read = read_pin_text(path=path, pin_walk="walk_pyproject_toml")
+    if isinstance(read, IOFailure):
+        return failed_read(result=read)
+    block = _extract_uv_sources_block(text=unsafe_perform_io(read.unwrap()))
+    # NO `[tool.uv.sources]` section at all is an ANSWER — this consumer
+    # declares no git-sourced dependencies. Contrast the block EXISTING and
+    # yielding no entry, handled below: that block exists solely to hold
+    # pins, so failing to read one out of it is a parse failure.
     if block is None:
-        return []
+        return IOSuccess([])
     out: list[dict[str, str]] = []
     saw_any_entry = False
     for match in _UV_SOURCES_ENTRY_RE.finditer(block):
@@ -183,43 +218,34 @@ def walk_pyproject_toml(
             )
         )
     if not saw_any_entry:
-        log.warning(
-            "unrecognized [tool.uv.sources] block — no entries matched expected shape",
+        return _unparseable(
+            pin_walk="walk_pyproject_toml",
             file_path=rel_path,
+            detail="[tool.uv.sources] block present but no entry matched the expected shape",
+            log=log,
         )
-        return [
-            record(
-                pin_format=_PIN_FORMAT_UNRECOGNIZED,
-                file_path=rel_path,
-                pin_key="",
-                current_value="",
-                source_repo="",
-            )
-        ]
-    return out
+    return IOSuccess(out)
 
 
 def walk_vendor_jsonc(
     *, root: Path, source_repo_filter: str | None, log: structlog.stdlib.BoundLogger
-) -> list[dict[str, str]]:
+) -> IOResult[list[dict[str, str]], PinWalkFailure]:
     path = root / _VENDOR_JSONC
     if not path.is_file():
-        return []
+        return IOSuccess([])
     rel_path = _VENDOR_JSONC
-    text = read_pin_text(path=path)
+    read = read_pin_text(path=path, pin_walk="walk_vendor_jsonc")
+    if isinstance(read, IOFailure):
+        return failed_read(result=read)
     try:
-        parsed = jsoncomment.loads(text)
-    except (ValueError, json.JSONDecodeError):
-        log.warning("unrecognized .vendor.jsonc — failed to parse", file_path=rel_path)
-        return [
-            record(
-                pin_format=_PIN_FORMAT_UNRECOGNIZED,
-                file_path=rel_path,
-                pin_key="",
-                current_value="",
-                source_repo="",
-            )
-        ]
+        parsed = jsoncomment.loads(unsafe_perform_io(read.unwrap()))
+    except (ValueError, json.JSONDecodeError) as undecodable:
+        return _unparseable(
+            pin_walk="walk_vendor_jsonc",
+            file_path=rel_path,
+            detail=str(undecodable),
+            log=log,
+        )
     # The `cast` is the single typed parse boundary: the parsed `.vendor.jsonc`
     # document is `Any`; casting to `dict[str, object]` (under the `isinstance`
     # guard) types `.get("libraries")` so the iteration below narrows from
@@ -227,8 +253,10 @@ def walk_vendor_jsonc(
     # `# pyright: ignore` markers with a real typed boundary.
     config = cast("dict[str, object]", parsed) if isinstance(parsed, dict) else None
     libraries = config.get("libraries") if config is not None else None
+    # A `.vendor.jsonc` that parses but carries no `libraries` array is an
+    # ANSWER — a well-formed manifest vendoring nothing.
     if not isinstance(libraries, list):
-        return []
+        return IOSuccess([])
     filter_normalized = (
         _normalize_for_vendor_match(name=source_repo_filter)
         if source_repo_filter is not None
@@ -260,4 +288,4 @@ def walk_vendor_jsonc(
                 source_repo=name,
             )
         )
-    return out
+    return IOSuccess(out)

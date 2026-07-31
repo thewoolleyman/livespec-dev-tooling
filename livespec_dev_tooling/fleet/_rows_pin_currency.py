@@ -28,7 +28,7 @@ from livespec_dev_tooling.cross_repo.bump_pr_supersession import (  # noqa: E402
     parse_open_bump_prs,
 )
 from livespec_dev_tooling.cross_repo.pin_autodiscovery import (  # noqa: E402
-    PinFileUnreadable,
+    PinWalkFailure,
     discover,
 )
 from livespec_dev_tooling.cross_repo.pin_staleness import denotes_same_release  # noqa: E402
@@ -38,7 +38,9 @@ from livespec_dev_tooling.fleet._context import (  # noqa: E402
     RowFinding,
     RowOutcome,
     RowPass,
-    RowSkip,
+)
+from livespec_dev_tooling.fleet._pin_walk_failure import (  # noqa: E402
+    walk_failure_outcome,
 )
 
 __all__: list[str] = [
@@ -263,7 +265,7 @@ def _finding_message(
 
 def _records_for(
     *, ctx: FleetContext, member: FleetMember, spec: PinCurrencySpec
-) -> IOResult[tuple[PinRecord, ...], PinFileUnreadable]:
+) -> IOResult[tuple[PinRecord, ...], PinWalkFailure]:
     candidate_paths = _candidate_paths_for(tree_paths=ctx.tree(repo=member.repo).paths, spec=spec)
     with tempfile.TemporaryDirectory() as tmpdir:
         root = Path(tmpdir)
@@ -280,18 +282,11 @@ def _pin_currency_outcome(
 ) -> RowOutcome:
     walked = _records_for(ctx=ctx, member=member, spec=spec)
     if isinstance(walked, IOFailure):
-        # A can't-read SKIPS rather than passing or failing — §"Pin-currency
-        # severity policy": "a can't-read is not a violation". The skip is not
-        # free: if every applicable member skips, the row is BLIND, which this
-        # repo already treats as error severity. Before the conversion this
-        # input reached no decision at all — the raise propagated and killed
-        # the whole sweep partway through.
-        unreadable = unsafe_perform_io(walked.failure())
-        return RowSkip(
-            reason=(
-                f"{spec.pin_format} pins unreadable in {member.repo}: "
-                f"{unreadable.file_path} ({unreadable.detail})"
-            )
+        return walk_failure_outcome(
+            ctx=ctx,
+            member=member,
+            pin_format=spec.pin_format,
+            failure=unsafe_perform_io(walked.failure()),
         )
     # `unsafe_perform_io` and not `.unwrap()` alone: `IOResult.unwrap()` yields
     # an `IO[T]`, and `for record in IO(())` raises here rather than silently

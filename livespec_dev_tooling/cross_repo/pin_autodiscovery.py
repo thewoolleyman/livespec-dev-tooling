@@ -61,7 +61,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
@@ -73,6 +72,9 @@ from returns.io import IOFailure, IOResult, IOSuccess  # noqa: E402  — vendor-
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 from livespec_dev_tooling.cross_repo._pin_directory_scan_formats import (  # noqa: E402
+    PinFileUnparseable,
+    PinFileUnreadable,
+    PinWalkFailure,
     walk_codex_acp_docker_arg,
     walk_fabro_workflow_docker,
     walk_github_workflow_container_image,
@@ -102,28 +104,14 @@ _WALKS = (
 )
 
 
-@dataclass(frozen=True, kw_only=True)
-class PinFileUnreadable:
-    """The walk FOUND a pin file and could not read its bytes.
-
-    The one input `SPECIFICATION/contracts.md` §"Pin autodiscovery rules"
-    does not make normative tolerance for. It is deliberately kept apart
-    from the two it DOES: a missing file (no records) and an unrecognized
-    format (an in-band `unrecognized` record). Those two are ratified
-    tolerances and stay exactly as they are; this one is a failure.
-
-    `file_path` names the file rather than leaving the operator to guess.
-    The reader is typically walking a materialized copy of ANOTHER repo's
-    tree — the central fleet sweep writes member files into a temp
-    directory before walking them — so "a pin file could not be read"
-    without the path is a diagnostic they cannot act on. `pin_walk` names
-    the walker for the same reason, since one repo can carry files of
-    several formats.
-    """
-
-    pin_walk: str
-    file_path: str
-    detail: str
+# `PinFileUnreadable` and `PinFileUnparseable` are DEFINED in
+# `_pin_directory_scan_formats` (beside `read_pin_text`, which constructs the
+# first) and RE-EXPORTED here. They cannot live in this module: it imports the
+# walkers, so a walker naming a type defined here would close an import cycle.
+# The re-export keeps `from ...pin_autodiscovery import PinFileUnreadable`
+# resolving for existing consumers — `fleet/_rows_pin_currency.py` imports it
+# from here.
+__all__ += ["PinFileUnparseable", "PinFileUnreadable", "PinWalkFailure"]
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -175,8 +163,8 @@ def _configure_logger() -> structlog.stdlib.BoundLogger:
 
 def discover(
     *, root: Path, source_repo: str | None
-) -> IOResult[list[dict[str, str]], PinFileUnreadable]:
-    """Walk `root` for pin records, or name the file that could not be read.
+) -> IOResult[list[dict[str, str]], PinWalkFailure]:
+    """Walk `root` for pin records, or name the file the walk could not use.
 
     Importable for embedded use (e.g., from a future Python-driven
     workflow); equivalent to invoking the CLI with `--root=<root>` and
@@ -187,34 +175,28 @@ def discover(
     seam between them and the disk. That is what livespec v179 member 1
     clause (d) — the callee fixpoint — sees, and it is the honest type.
 
-    The catch is NARROW on purpose (`OSError` / `UnicodeDecodeError`, the
-    two an unreadable file actually produces) and the walk STOPS at the
-    first one. A partial record list would be worse than a failure: it is
-    shaped exactly like a complete walk of a repo that happens to carry
+    NO `try` here any more. Each walker returns its own `IOResult`, so the
+    railway sits at the seam that actually touches the disk rather than one
+    level up — and a walker that bypassed the shared reader can no longer
+    fail quietly into a weaker root-named diagnostic, because there is no
+    catch to land in.
+
+    The walk STOPS at the first failure, and that is unchanged for BOTH
+    failure arms. A partial record list would be worse than a failure: it
+    is shaped exactly like a complete walk of a repo that happens to carry
     fewer pins, so a caller filtering it by pin format cannot tell the two
-    apart — the shape livespec-dev-tooling-2j2l records one level down.
+    apart. That argument applied to an unreadable file before
+    livespec-dev-tooling-9sl0 and applies identically to an UNPARSEABLE one
+    now — which is livespec-dev-tooling-2j2l, previously one level down and
+    now closed here.
     """
     log = _configure_logger()
     records: list[dict[str, str]] = []
     for walk in _WALKS:
-        try:
-            records.extend(walk(root=root, source_repo_filter=source_repo, log=log))
-        except OSError as unreadable:
-            # ONE arm, because `_pin_directory_scan_formats.read_pin_text` —
-            # the single reader every walker uses — converts the decode
-            # flavor into an `OSError` carrying the path. Catching
-            # `UnicodeDecodeError` here as well would look more thorough and
-            # be strictly worse: it has no `filename`, so that arm could only
-            # ever name the walk ROOT, and a walker that bypassed the shared
-            # reader would then fail QUIETLY into the weaker diagnostic
-            # instead of loudly.
-            return IOFailure(
-                PinFileUnreadable(
-                    pin_walk=walk.__name__,
-                    file_path=str(unreadable.filename),
-                    detail=str(unreadable),
-                )
-            )
+        walked = walk(root=root, source_repo_filter=source_repo, log=log)
+        if isinstance(walked, IOFailure):
+            return walked
+        records.extend(unsafe_perform_io(walked.unwrap()))
     return IOSuccess(records)
 
 
@@ -229,12 +211,19 @@ def main() -> int:
         # every consumer of this stdout treats "no records" as "nothing to
         # bump" — so a single unreadable file would silently skip a
         # consumer in a release fan-out.
-        unreadable = unsafe_perform_io(walked.failure())
+        failure = unsafe_perform_io(walked.failure())
+        # Name WHICH failure: an operator's next action differs. A can't-read
+        # may be environmental and worth retrying; a can't-parse is a
+        # definitive property of the committed bytes and needs an edit.
         _configure_logger().error(
-            "pin autodiscovery could not read a pin file",
-            pin_walk=unreadable.pin_walk,
-            file_path=unreadable.file_path,
-            detail=unreadable.detail,
+            (
+                "pin autodiscovery could not PARSE a pin file"
+                if isinstance(failure, PinFileUnparseable)
+                else "pin autodiscovery could not READ a pin file"
+            ),
+            pin_walk=failure.pin_walk,
+            file_path=failure.file_path,
+            detail=failure.detail,
         )
         return 1
     # `unsafe_perform_io` is NOT ceremony: `IOResult.unwrap()` returns an
