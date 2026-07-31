@@ -141,13 +141,57 @@ def _annotation_head_name(*, annotation: ast.expr) -> str:
     return head.rsplit(".", maxsplit=1)[-1]
 
 
-def _is_railway_compliant(*, func: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+def _railway_aliases(*, tree: ast.Module) -> frozenset[str]:
+    """MODULE-LEVEL names assigned a `Result[...]` / `IOResult[...]` type alias.
+
+    A type alias defeats a terminal-name match, and this repo has one:
+    `fleet/_snapshot.py` declares `SnapshotResult = IOResult[TreeSnapshot,
+    SnapshotUnavailable]` and annotates `memoized_snapshot -> SnapshotResult`,
+    so the check convicted a function ALREADY on the railway.
+
+    ⛔ SCOPED TO `tree.body`, NOT `ast.walk`, and that is the bound rather than
+    an implementation detail. An assignment inside a function body is a local
+    binding that no annotation elsewhere in the file resolves through; reading
+    those would let any function exempt itself by naming a local. It also
+    resolves only aliases to the RAILWAY — an alias to a plain container stays
+    an offender, because the point is to read what the annotation ACTUALLY
+    names, not to accept every alias.
+
+    Both `X = Result[...]` and the bare `X = Result` spelling are read, since
+    they are the same declaration to a reader and differing on syntax would be
+    a rule with two answers.
+
+    ⚠️ A PEP 695 `type X = Result[...]` statement is NOT read, and the omission
+    is deliberate rather than an oversight: `ast.TypeAlias` does not exist
+    before Python 3.12 and this suite runs on 3.10, so naming it would be an
+    `AttributeError` at parse time in every consumer. Add it when the floor
+    moves — the fleet-wide floor, not this repo's.
+    """
+    aliases: set[str] = set()
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            targets = [t.id for t in node.targets if isinstance(t, ast.Name)]
+            value = node.value
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            targets = [node.target.id]
+            value = node.value
+        else:
+            continue
+        if value is not None and _annotation_head_name(annotation=value) in _RESULT_NAMES:
+            aliases.update(targets)
+    return frozenset(aliases)
+
+
+def _is_railway_compliant(
+    *, func: ast.FunctionDef | ast.AsyncFunctionDef, railway_aliases: frozenset[str] = frozenset()
+) -> bool:
     for decorator in func.decorator_list:
         if _decorator_terminal_name(decorator=decorator) in _RAILWAY_LIFTING_DECORATORS:
             return True
     if func.returns is None:
         return False
-    return _annotation_head_name(annotation=func.returns) in _RESULT_NAMES
+    head = _annotation_head_name(annotation=func.returns)
+    return head in _RESULT_NAMES or head in railway_aliases
 
 
 def _returns_named(*, func: ast.FunctionDef | ast.AsyncFunctionDef, name: str) -> bool:
@@ -253,6 +297,7 @@ def _find_offenders(
     public function" in as many revisions.
     """
     tree = ast.parse(source)
+    railway_aliases = _railway_aliases(tree=tree)
     out: list[tuple[int, str]] = []
     for node in tree.body:
         if (
@@ -260,7 +305,7 @@ def _find_offenders(
             and node.name in public_names
             and node.name not in no_expected_failure_mode
             and _is_public_name(name=node.name)
-            and not _is_railway_compliant(func=node)
+            and not _is_railway_compliant(func=node, railway_aliases=railway_aliases)
             and not _is_exempt_supervisor(
                 func=node,
                 rel_path=rel_path,
