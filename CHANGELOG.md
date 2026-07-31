@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.13.11](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.13.10...v1.13.11) (2026-07-31)
+
+
+### Bug Fixes
+
+* **primary-checkout:** a hook whose BYTES differ passed the byte-identity check ([23bf3d8](https://github.com/thewoolleyman/livespec-dev-tooling/commit/23bf3d881a936419cfd8ca5a6152c5758a13640d))
+* **worktree-pack:** a pack file whose BYTES differ was reported as byte-identical ([c907a6c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c907a6cca0e43d4f05a15df5dd897ebabb3c22b9))
+
 ## [1.13.10](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.13.9...v1.13.10) (2026-07-31)
 
 
