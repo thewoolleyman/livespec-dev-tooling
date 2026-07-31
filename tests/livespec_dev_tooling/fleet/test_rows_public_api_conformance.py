@@ -16,6 +16,8 @@ import tarfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from returns.io import IOSuccess
+
 from livespec_dev_tooling.fleet._context import (
     FleetContext,
     FleetMember,
@@ -27,7 +29,7 @@ from livespec_dev_tooling.fleet._context import (
 from livespec_dev_tooling.fleet._rows_public_api_conformance import (
     assert_cross_repo_public_api_declared,
 )
-from livespec_dev_tooling.fleet._snapshot import DownloadOutcome
+from livespec_dev_tooling.fleet._snapshot import DownloadOutcome, DownloadResult
 
 if TYPE_CHECKING:
     pass
@@ -70,12 +72,14 @@ def make_context(
             else GhResult(returncode=1, stdout="", stderr="HTTP 404")
         )
 
-    def download(*, args: list[str], dest: Path) -> DownloadOutcome:
+    def download(*, args: list[str], dest: Path) -> DownloadResult:
         repo = args[1].split("/")[2]
         if repo in unreachable:
-            return DownloadOutcome(returncode=1, stderr="HTTP 403: Resource not accessible")
+            return IOSuccess(
+                DownloadOutcome(returncode=1, stderr="HTTP 403: Resource not accessible")
+            )
         _ = dest.write_bytes(archive_bytes(repo=repo, files=trees[repo]))
-        return DownloadOutcome(returncode=0, stderr="")
+        return IOSuccess(DownloadOutcome(returncode=0, stderr=""))
 
     return FleetContext(
         owner="acme",
@@ -261,11 +265,11 @@ def test_the_fleet_graph_is_built_once_per_run_not_once_per_member() -> None:
         del stdin, args
         return GhResult(returncode=0, stdout=json.dumps({"default_branch": "master"}), stderr="")
 
-    def download(*, args: list[str], dest: Path) -> DownloadOutcome:
+    def download(*, args: list[str], dest: Path) -> DownloadResult:
         repo = args[1].split("/")[2]
         downloads.append(repo)
         _ = dest.write_bytes(archive_bytes(repo=repo, files=trees[repo]))
-        return DownloadOutcome(returncode=0, stderr="")
+        return IOSuccess(DownloadOutcome(returncode=0, stderr=""))
 
     ctx = FleetContext(
         owner="acme",

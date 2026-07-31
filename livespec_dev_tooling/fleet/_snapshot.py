@@ -43,6 +43,12 @@ if str(_VENDOR_DIR) not in sys.path:
 from returns.io import IOFailure, IOResult, IOSuccess  # noqa: E402  — vendor-path-aware import.
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
+from livespec_dev_tooling.fleet._invocation_failure import (  # noqa: E402
+    BINARY_ABSENT,
+    DESTINATION_UNWRITABLE,
+    SPAWN_FAILED,
+    InvocationNotPerformed,
+)
 from livespec_dev_tooling.fleet._read_failure import (  # noqa: E402
     classify_gh_failure,
     sanitize_detail,
@@ -50,6 +56,7 @@ from livespec_dev_tooling.fleet._read_failure import (  # noqa: E402
 
 __all__: list[str] = [
     "DownloadOutcome",
+    "DownloadResult",
     "GhDownloader",
     "ReadFailureRecorder",
     "SnapshotResult",
@@ -83,10 +90,18 @@ class DownloadOutcome:
     stderr: str
 
 
-class GhDownloader(Protocol):
-    """Callable seam for a `gh` read whose stdout is BINARY and lands at `dest`."""
+DownloadResult = IOResult[DownloadOutcome, InvocationNotPerformed]
 
-    def __call__(self, *, args: list[str], dest: Path) -> DownloadOutcome: ...
+
+class GhDownloader(Protocol):
+    """Callable seam for a `gh` read whose stdout is BINARY and lands at `dest`.
+
+    The failure track carries ONLY "the invocation did not happen". A
+    `gh` that RAN is a success carrying its exit code as data, however
+    that code reads — the seam does not adjudicate what GitHub said.
+    """
+
+    def __call__(self, *, args: list[str], dest: Path) -> DownloadResult: ...
 
 
 class ReadFailureRecorder(Protocol):
@@ -148,21 +163,46 @@ class TreeSnapshot:
 SnapshotResult = IOResult[TreeSnapshot, SnapshotUnavailable]
 
 
-def default_gh_downloader(*, args: list[str], dest: Path) -> DownloadOutcome:
-    """Run `gh <args>` streaming stdout BYTES to `dest`; a missing `gh` fails.
+def default_gh_downloader(*, args: list[str], dest: Path) -> DownloadResult:
+    """Run `gh <args>` streaming stdout BYTES to `dest`; a missing `gh` FAILS.
 
     Separate from `default_gh_runner` because the payload is BINARY. Capturing
     a gzip stream as text decodes it through a locale codec and hands back a
     corrupted archive that fails later, at extraction, with a diagnostic
     naming the wrong thing.
+
+    This used to answer an absent `gh` with `DownloadOutcome(returncode=127)`
+    — a fabricated code a real `gh` can also return, so "never ran" and "ran
+    and exited 127" were the same value. It is a failure-track value now, and
+    a completed invocation is a success whatever its exit code.
     """
+    argv = ("gh", *args)
     if shutil.which("gh") is None:
-        return DownloadOutcome(returncode=127, stderr="gh CLI not on PATH")
-    with dest.open("wb") as sink:
-        completed = subprocess.run(["gh", *args], stdout=sink, stderr=subprocess.PIPE, check=False)
-    return DownloadOutcome(
-        returncode=completed.returncode,
-        stderr=completed.stderr.decode("utf-8", errors="replace"),
+        return IOFailure(
+            InvocationNotPerformed(argv=argv, kind=BINARY_ABSENT, detail="gh CLI not on PATH")
+        )
+    # Opened in its OWN try, and before the spawn, because `dest.open` and
+    # `subprocess.run` both raise `OSError` — folding them into one arm would
+    # spell "the disk is unwritable" and "gh could not start" the same way,
+    # which is the collapse this conversion exists to remove.
+    try:
+        sink = dest.open("wb")
+    except OSError as unwritable:
+        return IOFailure(
+            InvocationNotPerformed(argv=argv, kind=DESTINATION_UNWRITABLE, detail=str(unwritable))
+        )
+    try:
+        with sink:
+            completed = subprocess.run(list(argv), stdout=sink, stderr=subprocess.PIPE, check=False)
+    except OSError as unspawnable:
+        return IOFailure(
+            InvocationNotPerformed(argv=argv, kind=SPAWN_FAILED, detail=str(unspawnable))
+        )
+    return IOSuccess(
+        DownloadOutcome(
+            returncode=completed.returncode,
+            stderr=completed.stderr.decode("utf-8", errors="replace"),
+        )
     )
 
 
@@ -245,7 +285,22 @@ def fetch_snapshot(*, download: GhDownloader, owner: str, repo: str, ref: str) -
     archive = workspace / _ARCHIVE_NAME
     root = workspace / _TREE_DIRNAME
     root.mkdir()
-    outcome = download(args=["api", f"repos/{owner}/{repo}/tarball/{ref}"], dest=archive)
+    downloaded = download(args=["api", f"repos/{owner}/{repo}/tarball/{ref}"], dest=archive)
+    if isinstance(downloaded, IOFailure):
+        # The invocation never happened, so there is no exit code to report.
+        # `returncode=0` beside a `kind` that names the cause is the existing
+        # spelling for the two non-transport failures below, and reusing it
+        # keeps "gh said no" (a real code) apart from "gh never ran".
+        not_performed = unsafe_perform_io(downloaded.failure())
+        return _unavailable(
+            handle=handle,
+            repo=repo,
+            ref=ref,
+            returncode=0,
+            kind=not_performed.kind,
+            detail=not_performed.reason,
+        )
+    outcome = unsafe_perform_io(downloaded.unwrap())
     if outcome.returncode != 0:
         return _unavailable(
             handle=handle,
