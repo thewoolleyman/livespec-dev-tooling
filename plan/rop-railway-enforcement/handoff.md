@@ -205,8 +205,86 @@ records the lane-scoped shape instead.
 >    ANYTHING; it carries all 75 by name with the evidence that convicted each.**
 >
 >    **▶️▶️ COLD START, THE ONLY THING YOU NEED FROM THIS BLOCK: the NEXT ACTION is
->    ▶️ THE SEVEN PIN WALKERS AS ONE FAMILY — `read_pin_text` + 7 walkers + `discover`'s
->    composition + relocating `PinFileUnreadable`, 8 of the 40 CONVERT, NOW UNBLOCKED.**
+>    ▶️ THE REMAINING **23** CONVERT — the walker family is DONE.** ~~THE SEVEN PIN WALKERS AS
+>    ONE FAMILY~~ — **✅ LANDED 2026-07-31, PR #962, master `96fc2a3`. Offenders 61 → 53,
+>    re-verified on MERGED master. `2j2l` and `xhbp` are CLOSED.** Read the block below before
+>    the next conversion: it carries three things the family cost that WILL recur.
+>
+>    ---
+>
+>    ## ✅ THE PIN-WALKER FAMILY LANDED — AND IT COST THREE THINGS WORTH MORE THAN THE 8
+>
+>    **PR #962, master `96fc2a3`, ONE Red→Green pair carrying both trailer sets (verified on the
+>    FORGE after a fetch). Full suite 2271 passed. `2j2l` + `xhbp` CLOSED with evidence.**
+>
+>    **THE MEASUREMENT: 61 → 53**, exactly the eight family functions, nothing else moved.
+>    Re-verified on MERGED master: universe **156** (was 155 — the +1 is the new
+>    `fleet/_pin_walk_failure.py` sibling), offenders **53**. Measured at both ends with
+>    `_find_offenders`, never through `main()`.
+>
+>    **1. 🔴 AN IMPORTED TYPE ALIAS IS NOT A SAFE ANNOTATION, AND ONLY THE COUNT TELLS YOU.**
+>    Three of the eight did NOT drop on the first measurement (61 → 56, not 53). The three
+>    single-file walkers were annotated with `PinWalkResult` **imported** from the sibling
+>    module; the four directory-scan walkers used the SAME alias **defined locally** and dropped
+>    fine. `_is_railway_compliant` matches the annotation's TERMINAL NAME and **cannot resolve an
+>    alias across a module boundary**. This is the `memoized_snapshot` CHECK-FIX class the triage
+>    already records, arriving in the RELAXING direction — the code was conformant and the check
+>    said otherwise. ⛔ **For the remaining 23: annotate with the explicit `IOResult[...]` at any
+>    cross-module boundary, and NEVER accept a conversion as done without re-running the count.**
+>    A partially-credited conversion looks exactly like a finished one in the diff.
+>
+>    **2. ⛔ TWO HOOK FAILURES ARE STRUCTURAL AND WILL RECUR — budget them, do not route around.**
+>    `check-file-lloc`: `_rows_pin_currency.py` hit **265 against the 250 HARD ceiling** because
+>    the conversion added a renderer. Fixed by extracting `fleet/_pin_walk_failure.py`, the same
+>    private-sibling split as `_ci_matrix_parse`. **Budget one module split per conversion that
+>    adds a branch to an already-large file** — this is the LLOC analogue of the PLR0911
+>    six-return cap units 1–2 paid. `check-per-file-coverage`: five uncovered lines, ALL of them
+>    the new failure short-circuits. **Every converted call site adds a line no existing test
+>    reaches**; the Green-leg `*_edges.py` sibling is not optional.
+>
+>    **3. 🔴🔴 A COVERAGE TRAP THAT WOULD HAVE PASSED WHILE PROVING NOTHING — TWICE OVER.**
+>    Both halves are the epic's own subject in the test suite, and both were found by measuring
+>    rather than by reasoning:
+>
+>    - **`walk_github_workflow_container_image`'s failure branch is UNREACHABLE through
+>      `discover`.** `discover` stops at the FIRST failure, and TWO walkers read the same
+>      `.github/workflows/*.yml` — so an unreadable workflow file ALWAYS fails at
+>      `walk_github_workflow_uses` first. A test driving the composed entry point would look
+>      thorough and leave that line uncovered forever. **Exercise each walker at its OWN seam
+>      when the composed caller short-circuits.**
+>    - **A `chmod 000` fixture is a LIE when the suite runs as root** — every read succeeds, the
+>      assertion never fires, the test passes proving nothing. Used **invalid UTF-8 bytes**
+>      instead, which fail identically for every user. This is the SAME shape as the `PATH`-shim
+>      fixture recorded under CONVERT units 1–2, and as the `_scan` measurement trap: **a
+>      fixture that cannot fail is a green that means nothing, inside the epic that exists to
+>      remove them.** Ask of every new fixture: *if the behavior regressed right now, would this
+>      assertion fire?*
+>
+>    **▶️ THE ANSWER-vs-FAILURE CALLS THIS FAMILY MADE, since the same question recurs 23 more
+>    times.** An absent file, an absent directory, an empty `glob`, a parsed document that is not
+>    an object, a `.vendor.jsonc` with no `libraries` array, and a Dockerfile with no `ARG` line
+>    are all **ANSWERS** — the ratified missing-file tolerance, unchanged. Only failing to obtain
+>    bytes, and failing to parse bytes we HAVE, are failures. **The one non-obvious call: a
+>    `[tool.uv.sources]` block that EXISTS and yields no entry IS unparseable**, because that
+>    block exists solely to hold pins — contrast the codex-acp Dockerfile, whose shape is not
+>    this format's to adjudicate. That asymmetry is the reusable test: *does this container exist
+>    SOLELY to hold the thing I could not find?*
+>
+>    **⚠️ ONE HONEST GAP IN THE COMMIT.** The body was written at RED per the ritual and amended
+>    `--no-edit` to preserve the trailers, so it PREDATES the LLOC split and the edges file. Both
+>    are described in PR #962's body instead. The commit is correct about the behavior and
+>    incomplete about the mechanics; redoing the pair to fold them in would have cost more than
+>    the accuracy gained. **Budget the split and the edges file INTO the Red-time body next
+>    time** — they are now predictable rather than surprising.
+>
+>    **⏭️ WHAT THIS DID NOT CLOSE: `0j3i`.** Its escalation predicate and `published_at` plumbing
+>    live at the ROW layer and never depended on the walkers — the negative result brief 61
+>    accepted. It is still open and still owes code.
+>
+>    ---
+>
+>    **~~▶️ THE SEVEN PIN WALKERS AS ONE FAMILY~~ — `read_pin_text` + 7 walkers + `discover`'s
+>    composition + relocating `PinFileUnreadable`, 8 of the 40 CONVERT. ✅ DONE (#962).**
 >    ~~fire a fresh `sibling-released` dispatch for `livespec` v0.21.1~~ · ~~THEN the batched
 >    `2j2l` + `xhbp` + `vt61` ratification~~ — **✅ BOTH LANDED 2026-07-31; see the block
 >    immediately below.** ~~the git probes then the RGR trailers~~ — **✅ BOTH LANDED, PR #952,
@@ -470,7 +548,7 @@ records the lane-scoped shape instead.
 >    | class | n | landed? |
 >    |---|---|---|
 >    | CHECK-FIX | **3** | ✅ **#946** — the machinery convicted conformant code |
->    | CONVERT | **40** | 🟡 **9 of 40 landed (#952)**; ~~8 BLOCKED on `2j2l`~~ **UNBLOCKED — v039 ratified (#958); the walker family is the NEXT unit**; **31 remain** |
+>    | CONVERT | **40** | 🟡 **17 of 40 landed** — 9 (#952) + the 8-walker family (#962); **23 remain** |
 >    | DECLARE | **2** | ✅ **#949** |
 >    | COUPLED | **1** | ⏳ follows `open_bump_prs_for` |
 >    | TYPE-SLICE | **23** | ⏳ the `RowOutcome` family, ONE decision |
@@ -1269,7 +1347,7 @@ records the lane-scoped shape instead.
 >    | ~~`wdn7`~~ | ~~dev-tooling's 9 undeclared `checks/*.py::main`~~ | **✅ CLOSED — #929. Count 0 → 9 → 0, measured at each end** |
 >    | ~~`nkkv`~~ | ~~livespec-runtime's 11, cross-repo~~ | **✅ CLOSED — livespec-runtime #398. Its armed count 24 → 27; the +3 are `vojo`** |
 >    | ~~REGISTER~~ | ~~the row into `OBLIGATION_ROWS`~~ | **✅ DONE — #934. Registered, and VERIFIED EVALUATED on master CI via `blind_rows: 0`** |
->    | **`qndn`** | **the 75 — ✅ TRIAGED (`qndn-75-triage.md`); CHECK-FIX + DECLARE + 9 of 40 CONVERT LANDED (70 → 61); 31 CONVERT remain, then drop the `_`-FILE skip, then arm** | **YES — THE FIRST GATE. Next step is the `2j2l` ratification, THEN the seven walkers.** |
+>    | **`qndn`** | **the 75 — ✅ TRIAGED (`qndn-75-triage.md`); CHECK-FIX + DECLARE + 17 of 40 CONVERT LANDED (70 → 61 → 53); 23 CONVERT remain, then drop the `_`-FILE skip, then arm** | **YES — THE FIRST GATE. Next step is the remaining 23 CONVERT.** |
 >    | `8o8e.2` | `RowSkip` two meanings, LIVE in a registered central row | **NO — and that is the point. Off the queue; fix on its own timetable.** |
 >    | `8o8e.5` / `8o8e.6` | `find_ruff_backstop_gaps` fails OPEN · the justfile parser exists 4× | **NO.** Off the queue. |
 >    | ~~`2j2l` + `xhbp` + `vt61`~~ | ~~the pin-currency severity policy~~ | **✅ RATIFIED AS v039 — PR #958. The fan-out was re-dispatched FIRST (8/8 at v0.21.1). Code NOT flipped; that is the walker family.** |
