@@ -33,15 +33,38 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from pathlib import Path
 
-from livespec_dev_tooling.driver_checks._plugin_structure_claude import (
+# `returns` is VENDORED, not installed; a bare import would resolve only
+# when some earlier import in the process happened to run first.
+_VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
+
+from returns.io import IOFailure, IOResult, IOSuccess  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
+
+from livespec_dev_tooling.driver_checks._plugin_structure_claude import (  # noqa: E402
     EXPECTED_SKILLS,
     FRONTMATTER_NAME_RE,
+    collect_violations,
     fenced_invocation_violations,
+    read_profile_text,
+)
+from livespec_dev_tooling.driver_checks._profile_read_failure import (  # noqa: E402
+    ProfileUnreadable,
 )
 
 __all__: list[str] = ["codex_profile_violations"]
+
+
+# RE-DECLARED rather than imported from the claude module: the offender
+# check matches an annotation's TERMINAL NAME and cannot resolve an alias
+# across a module boundary, so an imported alias would leave this module's
+# conversion only partially credited.
+ProfileViolations = IOResult[list[str], ProfileUnreadable]
+_CodexCatalog = IOResult[tuple[list[str], str | None], ProfileUnreadable]
 
 
 # --- codex-only constants ---
@@ -65,7 +88,7 @@ def _frontmatter_block(*, text: str) -> str | None:
     return None
 
 
-def _codex_marketplace_violations(*, root: Path) -> tuple[list[str], str | None]:
+def _codex_marketplace_violations(*, root: Path) -> _CodexCatalog:
     """Validate the repo-root marketplace catalog.
 
     Returns (violations, plugin_description) — the catalog's plugin
@@ -74,10 +97,16 @@ def _codex_marketplace_violations(*, root: Path) -> tuple[list[str], str | None]
     """
     marketplace_path = root / ".agents" / "plugins" / "marketplace.json"
     out: list[str] = []
+    text = read_profile_text(path=marketplace_path, root=root)
+    if isinstance(text, IOFailure):
+        return text
+    body = unsafe_perform_io(text.unwrap())
+    if body is None:
+        return IOSuccess(([".agents/plugins/marketplace.json absent"], None))
     try:
-        marketplace = json.loads(marketplace_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
-        return [f".agents/plugins/marketplace.json unreadable/invalid: {exc}"], None
+        marketplace = json.loads(body)
+    except ValueError as invalid:
+        return IOSuccess(([f".agents/plugins/marketplace.json invalid: {invalid}"], None))
     if marketplace.get("name") != "livespec-driver-codex":
         out.append(
             "marketplace.json name MUST be 'livespec-driver-codex'; "
@@ -86,7 +115,7 @@ def _codex_marketplace_violations(*, root: Path) -> tuple[list[str], str | None]
     entries = marketplace.get("plugins", [])
     if len(entries) != 1:
         out.append(f"marketplace.json MUST list exactly one plugin; got {len(entries)}")
-        return out, None
+        return IOSuccess((out, None))
     entry = entries[0]
     if entry.get("name") != "livespec":
         out.append(f"marketplace plugin entry name MUST be 'livespec'; got {entry.get('name')!r}")
@@ -96,17 +125,25 @@ def _codex_marketplace_violations(*, root: Path) -> tuple[list[str], str | None]
             "marketplace plugin entry source MUST be "
             f"{expected_source!r}; got {entry.get('source')!r}"
         )
-    return out, entry.get("description")
+    return IOSuccess((out, entry.get("description")))
 
 
-def _codex_manifest_violations(*, root: Path, marketplace_description: str | None) -> list[str]:
+def _codex_manifest_violations(
+    *, root: Path, marketplace_description: str | None
+) -> ProfileViolations:
     """Validate the Codex plugin manifest (source of truth for description)."""
     manifest_path = root / "livespec" / ".codex-plugin" / "plugin.json"
     out: list[str] = []
+    text = read_profile_text(path=manifest_path, root=root)
+    if isinstance(text, IOFailure):
+        return text
+    body = unsafe_perform_io(text.unwrap())
+    if body is None:
+        return IOSuccess(["livespec/.codex-plugin/plugin.json absent"])
     try:
-        plugin = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
-        return [f"livespec/.codex-plugin/plugin.json unreadable/invalid: {exc}"]
+        plugin = json.loads(body)
+    except ValueError as invalid:
+        return IOSuccess([f"livespec/.codex-plugin/plugin.json invalid: {invalid}"])
     if plugin.get("name") != "livespec":
         out.append(f"plugin.json name MUST be 'livespec'; got {plugin.get('name')!r}")
     if not plugin.get("version"):
@@ -120,14 +157,14 @@ def _codex_manifest_violations(*, root: Path, marketplace_description: str | Non
             "marketplace plugin description MUST duplicate plugin.json's verbatim "
             "(plugin.json is the source of truth)"
         )
-    return out
+    return IOSuccess(out)
 
 
-def _codex_skill_set_violations(*, root: Path) -> list[str]:
+def _codex_skill_set_violations(*, root: Path) -> ProfileViolations:
     skills_dir = root / "livespec" / "skills"
     out: list[str] = []
     if not skills_dir.is_dir():
-        return [f"missing skills directory: {skills_dir.relative_to(root)}/"]
+        return IOSuccess([f"missing skills directory: {skills_dir.relative_to(root)}/"])
     found = {p.name for p in skills_dir.iterdir() if p.is_dir()}
     for missing in sorted(EXPECTED_SKILLS - found):
         out.append(f"missing skill directory: skills/{missing}/")
@@ -135,33 +172,57 @@ def _codex_skill_set_violations(*, root: Path) -> list[str]:
         out.append(f"unexpected skill directory: skills/{extra}/")
     for name in sorted(EXPECTED_SKILLS & found):
         skill_md = skills_dir / name / "SKILL.md"
-        if not skill_md.is_file():
+        # No `is_file()` pre-check: `read_profile_text` already distinguishes
+        # absent (None) from present-but-unreadable, and a separate stat would
+        # both duplicate that answer and make the failure arm unreachable by
+        # construction. A DIRECTORY named SKILL.md is unreadable, not missing.
+        read = read_profile_text(path=skill_md, root=root)
+        if isinstance(read, IOFailure):
+            return read
+        text = unsafe_perform_io(read.unwrap())
+        if text is None:
             out.append(f"missing skills/{name}/SKILL.md")
             continue
-        text = skill_md.read_text(encoding="utf-8")
         frontmatter = _frontmatter_block(text=text)
         if frontmatter is None:
             out.append(f"skills/{name}/SKILL.md MUST open with a `---`-fenced frontmatter block")
             continue
-        name_match = FRONTMATTER_NAME_RE.search(frontmatter)
-        if name_match is None or name_match.group(1) != name:
-            got = None if name_match is None else name_match.group(1)
-            out.append(f"skills/{name}/SKILL.md frontmatter name MUST be {name!r}; got {got!r}")
-        desc_match = _FRONTMATTER_DESCRIPTION_RE.search(frontmatter)
-        if desc_match is None or not desc_match.group(1).strip():
-            out.append(f"skills/{name}/SKILL.md frontmatter description MUST be non-empty")
-        if "allowed-tools" in frontmatter:
-            out.append(
-                f"skills/{name}/SKILL.md frontmatter MUST NOT carry an 'allowed-tools' key "
-                "(Codex skills have no allowed-tools surface)"
-            )
+        out.extend(_frontmatter_violations(frontmatter=frontmatter, name=name))
+    return IOSuccess(out)
+
+
+def _frontmatter_violations(*, frontmatter: str, name: str) -> list[str]:
+    """One skill's frontmatter invariants.
+
+    Extracted to keep `_codex_skill_set_violations` under the complexity cap
+    the conversion's new failure arm pushed it past.
+    """
+    out: list[str] = []
+    name_match = FRONTMATTER_NAME_RE.search(frontmatter)
+    if name_match is None or name_match.group(1) != name:
+        got = None if name_match is None else name_match.group(1)
+        out.append(f"skills/{name}/SKILL.md frontmatter name MUST be {name!r}; got {got!r}")
+    desc_match = _FRONTMATTER_DESCRIPTION_RE.search(frontmatter)
+    if desc_match is None or not desc_match.group(1).strip():
+        out.append(f"skills/{name}/SKILL.md frontmatter description MUST be non-empty")
+    if "allowed-tools" in frontmatter:
+        out.append(
+            f"skills/{name}/SKILL.md frontmatter MUST NOT carry an 'allowed-tools' key "
+            "(Codex skills have no allowed-tools surface)"
+        )
     return out
 
 
-def _codex_binding_body_violations(*, skill_md: Path, root: Path) -> list[str]:
+def _codex_binding_body_violations(*, skill_md: Path, root: Path) -> ProfileViolations:
     """Validate Codex-binding body markers (resolution snippet + bans)."""
     out: list[str] = []
-    text = skill_md.read_text(encoding="utf-8")
+    read = read_profile_text(path=skill_md, root=root)
+    if isinstance(read, IOFailure):
+        return read
+    body_text = unsafe_perform_io(read.unwrap())
+    if body_text is None:
+        return IOSuccess([f"{skill_md.name}: absent"])
+    text = body_text
     frontmatter = _frontmatter_block(text=text)
     body = text
     if frontmatter is not None:
@@ -189,20 +250,27 @@ def _codex_binding_body_violations(*, skill_md: Path, root: Path) -> list[str]:
         out.append(f"{where}: body MUST NOT contain the phrase 'Claude Code Driver'")
     if "livespec-driver-claude" in body:
         out.append(f"{where}: body MUST NOT reference the sibling repo 'livespec-driver-claude'")
-    return out
+    return IOSuccess(out)
 
 
-def _codex_hook_bundle_violations(*, root: Path) -> list[str]:
+def _codex_hook_bundle_violations(*, root: Path) -> ProfileViolations:
     hooks_json = root / "livespec" / "hooks" / "hooks.json"
     guard_script = root / "livespec" / "hooks" / "livespec_footgun_guard.py"
     out: list[str] = []
     if not guard_script.is_file():
         out.append("missing livespec/hooks/livespec_footgun_guard.py")
+    read = read_profile_text(path=hooks_json, root=root)
+    if isinstance(read, IOFailure):
+        return read
+    body = unsafe_perform_io(read.unwrap())
+    if body is None:
+        out.append("livespec/hooks/hooks.json absent")
+        return IOSuccess(out)
     try:
-        hooks = json.loads(hooks_json.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
-        out.append(f"livespec/hooks/hooks.json unreadable/invalid: {exc}")
-        return out
+        hooks = json.loads(body)
+    except ValueError as invalid:
+        out.append(f"livespec/hooks/hooks.json invalid: {invalid}")
+        return IOSuccess(out)
     if "description" in hooks:
         out.append(
             "hooks.json MUST NOT carry a top-level 'description' key "
@@ -212,7 +280,7 @@ def _codex_hook_bundle_violations(*, root: Path) -> list[str]:
     bash_entries = [e for e in pre_tool_use if e.get("matcher") == "Bash"]
     if not bash_entries:
         out.append("hooks.json MUST register a PreToolUse entry with matcher 'Bash'")
-        return out
+        return IOSuccess(out)
     guard_referenced = any(
         "livespec_footgun_guard.py" in inner.get("command", "")
         for entry in bash_entries
@@ -220,18 +288,31 @@ def _codex_hook_bundle_violations(*, root: Path) -> list[str]:
     )
     if not guard_referenced:
         out.append("hooks.json PreToolUse/Bash entry MUST reference 'livespec_footgun_guard.py'")
-    return out
+    return IOSuccess(out)
 
 
-def codex_profile_violations(*, root: Path) -> list[str]:
+def codex_profile_violations(*, root: Path) -> ProfileViolations:
     skills_dir = root / "livespec" / "skills"
-    violations, marketplace_description = _codex_marketplace_violations(root=root)
-    violations.extend(
-        _codex_manifest_violations(root=root, marketplace_description=marketplace_description)
+    # The catalog read comes FIRST and alone, because it yields the
+    # description the manifest check compares against; an unreadable catalog
+    # therefore has to short-circuit before that comparison is attempted.
+    catalog = _codex_marketplace_violations(root=root)
+    if isinstance(catalog, IOFailure):
+        return catalog
+    catalog_violations, marketplace_description = unsafe_perform_io(catalog.unwrap())
+    return collect_violations(
+        parts=[
+            IOSuccess(catalog_violations),
+            _codex_manifest_violations(root=root, marketplace_description=marketplace_description),
+            _codex_skill_set_violations(root=root),
+            *(
+                part
+                for skill_md in sorted(skills_dir.glob("*/SKILL.md"))
+                for part in (
+                    _codex_binding_body_violations(skill_md=skill_md, root=root),
+                    fenced_invocation_violations(skill_md=skill_md, root=root),
+                )
+            ),
+            _codex_hook_bundle_violations(root=root),
+        ]
     )
-    violations.extend(_codex_skill_set_violations(root=root))
-    for skill_md in sorted(skills_dir.glob("*/SKILL.md")):
-        violations.extend(_codex_binding_body_violations(skill_md=skill_md, root=root))
-        violations.extend(fenced_invocation_violations(skill_md=skill_md, root=root))
-    violations.extend(_codex_hook_bundle_violations(root=root))
-    return violations

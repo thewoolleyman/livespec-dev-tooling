@@ -21,6 +21,7 @@ import json
 import shutil
 from pathlib import Path
 
+from returns.unsafe import unsafe_perform_io
 from test_plugin_structure import _make_claude_tree, _w
 
 from livespec_dev_tooling.driver_checks import _plugin_structure_claude
@@ -37,8 +38,19 @@ def _joined(*, violations: list[str]) -> str:
     return "\n".join(violations)
 
 
+# ⛔ CORRECTED, NOT UPDATED. Five tests in this suite were named
+# `*_unreadable` and every one of them wrote `{ not json` — which is
+# INVALID, not unreadable. Not one ever exercised a file that could not be
+# READ. The fused `unreadable/invalid` diagnostic made the misnomer
+# invisible, and the absence of any real unreadable-file coverage is
+# precisely why the collapse survived. They assert INVALID now, and say so
+# in their names; the unreadable condition is covered for the first time in
+# `test_plugin_structure_unreadable.py`.
+
+
 def _claude_violations(*, root: Path) -> list[str]:
-    return _plugin_structure_claude.claude_profile_violations(root=root)
+    """The violation list, unwrapped — these trees are all READABLE."""
+    return unsafe_perform_io(_plugin_structure_claude.claude_profile_violations(root=root).unwrap())
 
 
 def test_claude_profile_valid_passes(*, tmp_path: Path) -> None:
@@ -75,18 +87,16 @@ def test_claude_fenced_invocation_all_branches(*, tmp_path: Path) -> None:
     assert "MUST use $LIVESPEC_CORE_ROOT" in text
 
 
-def test_claude_manifest_plugin_unreadable(*, tmp_path: Path) -> None:
+def test_claude_manifest_plugin_invalid(*, tmp_path: Path) -> None:
     _make_claude_tree(root=tmp_path)
     _w(path=tmp_path / ".claude-plugin" / "plugin.json", content="{ not json")
-    assert any("plugin.json unreadable/invalid" in v for v in _claude_violations(root=tmp_path))
+    assert any("plugin.json invalid" in v for v in _claude_violations(root=tmp_path))
 
 
-def test_claude_manifest_marketplace_unreadable(*, tmp_path: Path) -> None:
+def test_claude_manifest_marketplace_invalid(*, tmp_path: Path) -> None:
     _make_claude_tree(root=tmp_path)
     _w(path=tmp_path / ".claude-plugin" / "marketplace.json", content="{ not json")
-    assert any(
-        "marketplace.json unreadable/invalid" in v for v in _claude_violations(root=tmp_path)
-    )
+    assert any("marketplace.json invalid" in v for v in _claude_violations(root=tmp_path))
 
 
 def test_claude_manifest_plugin_name_wrong(*, tmp_path: Path) -> None:

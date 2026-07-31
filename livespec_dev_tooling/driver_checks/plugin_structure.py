@@ -47,6 +47,8 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
+from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 from livespec_dev_tooling.driver_checks._plugin_structure_claude import (  # noqa: E402
     claude_profile_violations,
@@ -63,6 +65,13 @@ __all__: list[str] = [
 
 _CHECK_ID = "plugin_structure"
 _FAIL_EXIT = 1
+# A THIRD answer for a third condition. The check used to have only
+# "violation" or "clean" to report, so a run that could not READ the
+# bundle had to pick one of them — and "clean" is the one it would reach
+# now that unreadability has left the violation list. A distinct code
+# keeps a run that measured NOTHING from being counted as a run that
+# measured everything and found nothing.
+_UNREADABLE_EXIT = 2
 
 _PROFILE_CLAUDE = "claude"
 _PROFILE_CODEX = "codex"
@@ -97,7 +106,10 @@ def run_check(*, root: Path, log: structlog.stdlib.BoundLogger) -> int:
     """Detect the profile, run its invariants, emit violations; return exit code.
 
     Returns 0 on a clean pass or a self-skip (no plugin manifest);
-    `_FAIL_EXIT` when the detected profile reports one or more violations.
+    `_FAIL_EXIT` when the detected profile reports one or more violations;
+    `_UNREADABLE_EXIT` when a file the profile had to inspect could not be
+    READ, which is not a statement about the bundle and must not be
+    reported as one.
     """
     profile = detect_profile(root=root)
     if profile is None:
@@ -107,10 +119,22 @@ def run_check(*, root: Path, log: structlog.stdlib.BoundLogger) -> int:
             root=str(root),
         )
         return 0
-    if profile == _PROFILE_CLAUDE:
-        violations = claude_profile_violations(root=root)
-    else:
-        violations = codex_profile_violations(root=root)
+    outcome = (
+        claude_profile_violations(root=root)
+        if profile == _PROFILE_CLAUDE
+        else codex_profile_violations(root=root)
+    )
+    if isinstance(outcome, IOFailure):
+        unreadable = unsafe_perform_io(outcome.failure())
+        log.error(
+            "plugin-structure: bundle could not be read (NOT a violation)",
+            check_id=_CHECK_ID,
+            profile=profile,
+            path=unreadable.path,
+            detail=unreadable.detail,
+        )
+        return _UNREADABLE_EXIT
+    violations = unsafe_perform_io(outcome.unwrap())
     for violation in violations:
         log.error(
             "plugin-structure violation",
