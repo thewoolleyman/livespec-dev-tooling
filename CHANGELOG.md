@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.13.5](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.13.4...v1.13.5) (2026-07-31)
+
+
+### Bug Fixes
+
+* **fleet:** a connection lookup's None covered six conditions, and one of them wrote a duplicate key ([8a4888e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8a4888e86f0e208fb55021942358144819176db1))
+
 ## [1.13.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.13.3...v1.13.4) (2026-07-31)
 
 
