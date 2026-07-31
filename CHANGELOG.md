@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.13.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.13.2...v1.13.3) (2026-07-31)
+
+
+### Bug Fixes
+
+* **checks:** put the six primary-checkout git probes on the IOResult railway ([c35ea9e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c35ea9e0d702c7a51c169c01ce8210f416e5cbf6))
+* **checks:** put the three Red-Green-Replay HEAD readers on the IOResult railway ([87fd400](https://github.com/thewoolleyman/livespec-dev-tooling/commit/87fd400dae07f537df9a200d54b2f4dc44c42971))
+
 ## [1.13.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.13.1...v1.13.2) (2026-07-31)
 
 
