@@ -252,6 +252,90 @@ records the lane-scoped shape instead.
 >    **✅ THE TWO DRIVER PROFILES LANDED — PR #988, master `49498ac`. Offenders 40 → 37**,
 >    re-derived at both ends on merged master with the new module STAGED.
 >
+>    **✅ `inspect_worktree_pack` LANDED — PR #992, master `23bf3d8`. Offenders 37 → 36**,
+>    universe 161 → 164 (three new leaf modules), re-derived at both ends on merged master
+>    with the new modules STAGED. Two Red→Green pairs, both trailer sets, verified on the FORGE.
+>
+>    **🔺🔺 THE LEAD WAS RIGHT THAT THE UNIT IS THE SPLIT — AND THE SPLIT RUNS THE OPPOSITE WAY
+>    FROM #988's, WHICH IS WHY IT WAS SILENT INSTEAD OF LOUD.** In #988, "unreadable" was fused
+>    with "malformed" on the VIOLATION side: a non-answer narrated as a definitive fault. Here
+>    `_read_pack_policy` fused it with **ABSENT**, on the PASS side — config absent (definitive),
+>    present-and-unparseable (definitive), and the read never happening (definitive about
+>    nothing) all became `_PACK_POLICY_UNGOVERNED`. An ungoverned tree needs no pack, so the arm
+>    returned NO violations and the check exited 0: **a governed repo whose config could not be
+>    read was told its pack requirement did not apply** — the exact fail-open zs22 A2 exists to
+>    close, re-entered through the config read. **Generalise the pair: a fused sentinel can land
+>    on either track, and the pass-side fusion is the one no suite will ever show you.**
+>
+>    **🔴🔴 AND THE FINDING WORTH MORE THAN THE CONVERSION, WHICH NOTHING SUSPECTED: THE
+>    MANDATORY HOOK ARM PASSED A HOOK WHOSE BYTES DIFFER.** The parent's docstring states the
+>    contract as *"STRICT BYTE-IDENTITY (zs22.7.9.5)"* and *"Any deviation — a hook … whose bytes
+>    differ from the canonical body — is a FAIL"*. `inspect_hook` compared **DECODED TEXT**, and
+>    `Path.read_text` performs universal-newline translation, so a CRLF-converted `pre-push`
+>    decoded back to the canonical string and the check returned **exit 0**. The Red leg says it
+>    in one line: `expected the fail exit; got 0`. The pack arm had the same defect; the pack is
+>    OPTIONAL per repo, the three hooks are the check's reason to exist.
+>
+>    **⛔ HOW IT WAS FOUND, because the mechanism is reusable and nothing else would have: the
+>    conversion broke `check-file-lloc` (247 → 285 against the 250 hard ceiling), the LLOC split
+>    forced two functions out of the parent, and the extraction put them in front of the standing
+>    question. NOBODY SUSPECTED THAT ARM.** A structural gate the chain had already learned to
+>    "budget for" turned out to be the instrument. **When a conversion forces you to move code,
+>    read the moved code against the epic's question rather than relocating it.**
+>
+>    **▶️ THE CONVERSE, ASKED PER CONDITION, AND IT SHRANK THE FAILURE TRACK TO ONE INHABITANT:**
+>    hook absent / non-executable, hook bytes differ (incl. CRLF and non-UTF-8), config absent,
+>    config unparseable, `worktree_discipline` garbled, pack bytes differ, justfile missing an
+>    `import?` — **ALL DEFINITIVE, all stay on the SUCCESS track.** Only "the read did not
+>    happen" leaves it. **Three of the four conditions that LOOK unreadable are definitively
+>    answerable, and making them so is what shrank the failure track — the fix was to STOP
+>    DECODING, not to widen a `try`.** The canonical bodies are UTF-8 by construction, so bytes
+>    that do not decode CANNOT equal them; the `import?` lines are ASCII, so containment is
+>    answerable without decoding anything. Spelling it "catch `OSError`" would have swept
+>    `FileNotFoundError` — an absent hook IS the violation, an absent config IS what makes a
+>    directory ungoverned — into a silent non-answer. **The `is_file()` probe is what keeps
+>    absence off the failure track; do not remove it in a later conversion.**
+>
+>    **🔴 INSTANCE SEVEN OF THE SUITE PINNING THE DEFECT, found by applying instance six's own
+>    rule:** two tests named `*_unreadable_*` (`test_main_leaves_unreadable_livespec_jsonc_
+>    untouched`, `test_inspect_treats_unreadable_config_as_ungoverned`), and **neither fixture
+>    ever made a file unreadable** — both wrote invalid JSON, and one's own docstring said
+>    "unparseable". Both RENAMED; genuine unreadability now has its own coverage. **The rule
+>    keeps paying: read the FIXTURE, never the test name.**
+>
+>    **⛔⛔ TWO DEAD ENDS THAT WOULD EACH HAVE REPORTED WORK THIS CHANGE DID NOT DO — both caught
+>    by MEASURING, and the first is a NEW member of the measurement-trap family:**
+>    1. **A MOVE CAN MANUFACTURE OFFENDERS.** Giving the extracted siblings' functions PUBLIC
+>       names measured **38**, not 36 — five unconverted functions enrolled in the railway
+>       universe *by relocation alone*. The names stay `_`-prefixed and are re-exported through
+>       `__all__`, **which pyright honours for `reportUnusedFunction`** (probed BOTH ways: a
+>       listed private function is clean, an unlisted one errors — the private-name route is
+>       otherwise blocked by pyright, and that is why the first attempt reached for public
+>       names). **This is the mirror of the untracked-module trap: that one HID functions from
+>       the instrument, this one ADDS them. Both read as a count change caused by the code.**
+>    2. **A BARE SIBLING IMPORT CREATES A SECOND CLASS OBJECT.** The failure type imported bare
+>       (`from _primary_checkout_unreadable import …`, the sys.path spelling the other siblings
+>       use) yields a different class under `python3 <path>` invocation than under the package
+>       path, so a failure raised in an arm did NOT compare equal to one the parent matched.
+>       Found by the unit tests' equality assertions failing. **`CheckInputUnreadable` is
+>       imported ABSOLUTELY where the other sibling imports are bare — any future shared TYPE
+>       across these siblings must be too.**
+>
+>    **▶️ LLOC, EXACTLY AS THE CHAIN PREDICTS FOR A CONVERSION ADDING A BRANCH TO A LARGE FILE —
+>    but budget THREE splits, not one:** `_primary_checkout_unreadable.py` (the shared failure
+>    type), `_primary_checkout_hook_files.py` (the two moved arms), and
+>    `_primary_checkout_narration.py` (every finding the check can emit, in one place). Every
+>    module is now under even the **200** SOFT ceiling, where the parent had 3 lines of headroom
+>    before. Note the narration module is a deliberate reading of "the arms compute, the parent
+>    narrates": with four arms feeding it, the parent was no longer ONE place for the vocabulary.
+>
+>    **⚠️ `_inspect_hook` and `_find_vendored_hook_copies` are NOT CONVICTED by the check** —
+>    private names, so v178 clause 0 disqualifies them — **and were converted anyway.** The
+>    fail-open is real whether or not the count can see it, and `find_vendored_hook_copies`'
+>    empty list from a `rglob` that raised part-way is a silent pass on an arm whose whole job is
+>    to find a file that should not be there. **Do not read the 36 as "one function's worth of
+>    work"; three functions moved onto the railway and only one of them counts.**
+>
 >    **🔺 AND THE STANDING QUESTION FOUND A THIRD SURFACE OF `6ge` THERE, which is why that
 >    question is now worth more than the conversions it was written for.** Both profiles wrapped
 >    every manifest read in `except (OSError, ValueError)` and returned the exception AS A
@@ -280,14 +364,18 @@ records the lane-scoped shape instead.
 >    itself evidence that one of the two is UNTESTED. Read the fixture, not the test name.**
 >
 >    **▶️▶️ COLD START, THE ONLY THING YOU NEED FROM THIS BLOCK: the NEXT ACTION is
->    ▶️ THE REMAINING **7** CONVERT, of which **3 ARE UNBLOCKED** — each a single function, none
+>    ▶️ THE REMAINING **6** CONVERT, of which **2 ARE UNBLOCKED** — each a single function, none
 >    Protocol-assigned, each checked:
 >    `fleet/_rows_pin_currency.py::open_bump_prs_for` (which then makes `persisting_bump_pr_number`
->    the COUPLED row's DECLARE — do NOT declare it before), `fleet/_rows_github.py::
->    member_matrix_targets`, and `checks/_primary_checkout_worktree_pack.py::inspect_worktree_pack`.
+>    the COUPLED row's DECLARE — do NOT declare it before) and `fleet/_rows_github.py::
+>    member_matrix_targets`. ~~`checks/_primary_checkout_worktree_pack.py::inspect_worktree_pack`~~
+>    **LANDED, PR #992 — see the block above; it cost three LLOC splits and found a fail-open in
+>    the MANDATORY hook arm that nothing suspected.**
 >    Then the `dx8l`-blocked pairs — consumer wiring lands FIRST, in the consuming repo — then
 >    TYPE-SLICE.**
 >
+>    **✅ DISCHARGED BY PR #992 — the lead was RIGHT and the answer was the split; the block above
+>    records what it cost and what else it convicted. Kept for its reasoning, not as an open item.**
 >    **🔎 A LEAD ON `inspect_worktree_pack`, measured not guessed: it reads pack files with an
 >    UNGUARDED `read_text`, so an unreadable pack file raises out of the check, and its
 >    `_read_pack_policy` sibling collapses to `_PACK_POLICY_MALFORMED`. That is the SAME fused
@@ -316,6 +404,12 @@ records the lane-scoped shape instead.
 >    with `_find_offenders` over `resolve_check_universe()`, both ends, never inherited:
 >    universe **160** · offenders DROPPING the `_`-prefixed-FILE skip **40**.**
 >    **📏 SUPERSEDED AGAIN — master `49498ac` (PR #988): universe **161** · offenders **37**.**
+>    **📏📏 CURRENT — MERGED master `23bf3d8` (PR #992): universe **164** · offenders **36**.**
+>    Re-derived on merged master with the three new modules STAGED. The +3 universe is
+>    `_primary_checkout_unreadable`, `_primary_checkout_hook_files` and
+>    `_primary_checkout_narration`; all three add ZERO offenders, which is the point — see the
+>    move-manufactures-offenders trap above. **At 36 the CONVERT column is 6** (2 unblocked +
+>    4 `dx8l`-blocked); the other columns are untouched.
 >    The trio took it 43 → 42 → 41 → 40; the Driver profiles took it 40 → 37. Universe 157 → 161
 >    is the five new leaf modules
 >    (`_invocation_failure`, `_gh_runner`, `_origin_remote`, plus seam 1's). **The 40 still
