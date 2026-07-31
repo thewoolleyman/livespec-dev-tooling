@@ -623,8 +623,16 @@ def test_targets_array_missing_reports_absence(*, tmp_path: Path) -> None:
     assert len(absence) == 1, f"expected one targets_array_not_found finding; got {absence!r}"
 
 
-def test_unclosed_targets_array_reports_absence(*, tmp_path: Path) -> None:
-    """`targets=(...)` never closed → targets_array_not_found finding."""
+def test_unclosed_targets_array_reports_being_unterminated(*, tmp_path: Path) -> None:
+    """`targets=(...)` never closed → targets_array_unterminated finding.
+
+    ⛔ THIS TEST USED TO PIN THE DEFECT. It asserted `targets_array_not_found`
+    for an array that IS found and merely unclosed, because both conditions
+    shared one `None` return — so the suite was holding the wrong diagnostic
+    in place rather than being silent about it. The railway conversion
+    (livespec-dev-tooling-qndn) split the two, and this is the corrected
+    expectation.
+    """
     _ = _write_canonical_json(cwd=tmp_path, slugs=["check-alpha"])
     _ = _write_justfile(
         cwd=tmp_path,
@@ -643,8 +651,10 @@ def test_unclosed_targets_array_reports_absence(*, tmp_path: Path) -> None:
     result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
     assert result.returncode == 0
     findings = _parse_findings(stderr=result.stderr)
-    absence = [f for f in findings if f.get("failure_mode") == "targets_array_not_found"]
-    assert len(absence) == 1
+    unterminated = [f for f in findings if f.get("failure_mode") == "targets_array_unterminated"]
+    assert len(unterminated) == 1
+    # And it is NOT reported as the absent-array condition it used to be.
+    assert [f for f in findings if f.get("failure_mode") == "targets_array_not_found"] == []
 
 
 def test_recipe_body_stops_at_next_recipe_header(*, tmp_path: Path) -> None:

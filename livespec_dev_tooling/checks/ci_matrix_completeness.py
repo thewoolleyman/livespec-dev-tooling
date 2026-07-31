@@ -70,9 +70,15 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
+from returns.io import IOFailure  # noqa: E402  — vendor-path-aware.
+from returns.result import Failure  # noqa: E402  — vendor-path-aware.
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware.
 
 from livespec_dev_tooling.canonical_checks import world_gate_check_slugs  # noqa: E402
+from livespec_dev_tooling.checks._check_aggregate_failures import (  # noqa: E402
+    TargetsArrayFailure,
+    TargetsArrayUnterminated,
+)
 from livespec_dev_tooling.checks._ci_matrix_parse import (  # noqa: E402
     CiJob,
     extract_check_recipe_body,
@@ -224,7 +230,7 @@ def _collect_findings(
             _absence(mode="justfile_not_found", message="justfile not found", path=justfile_path)
         ]
     recipe_body = extract_check_recipe_body(justfile_text=justfile_path.read_text(encoding="utf-8"))
-    if recipe_body is None:
+    if isinstance(recipe_body, Failure):
         return [
             _absence(
                 mode="check_recipe_not_found",
@@ -232,15 +238,10 @@ def _collect_findings(
                 path=justfile_path,
             )
         ]
-    justfile_targets = extract_targets_array_tokens(recipe_body=recipe_body)
-    if justfile_targets is None:
-        return [
-            _absence(
-                mode="targets_array_not_found",
-                message="`check:` recipe declares no `targets=(...)` array",
-                path=justfile_path,
-            )
-        ]
+    targets = extract_targets_array_tokens(recipe_body=recipe_body.unwrap())
+    if isinstance(targets, Failure):
+        return [_targets_absence(failure=targets.failure(), path=justfile_path)]
+    justfile_targets = targets.unwrap()
     ci_yml_path = cwd / _CI_YML_PATH
     if not ci_yml_path.is_file():
         return [
@@ -262,6 +263,26 @@ def _collect_findings(
 def _absence(*, mode: str, message: str, path: Path) -> _Finding:
     """Build a graceful-absence precondition finding."""
     return _finding(mode=mode, message=message, path=str(path))
+
+
+def _targets_absence(*, failure: TargetsArrayFailure, path: Path) -> _Finding:
+    """Render the targets-array failure, which has TWO arms and used to have one.
+
+    An UNTERMINATED array was reported as `targets_array_not_found` — the
+    operator was sent to add an array that is already there, missing only its
+    closing paren.
+    """
+    if isinstance(failure, TargetsArrayUnterminated):
+        return _absence(
+            mode="targets_array_unterminated",
+            message="`check:` recipe opens a `targets=(...)` array and never closes it",
+            path=path,
+        )
+    return _absence(
+        mode="targets_array_not_found",
+        message="`check:` recipe declares no `targets=(...)` array",
+        path=path,
+    )
 
 
 def _report(*, log: structlog.stdlib.BoundLogger, findings: list[_Finding]) -> int:
@@ -287,7 +308,23 @@ def main() -> int:
     canonical_from: str | None = args.canonical_from
     log = _configure_logger()
     cwd = Path.cwd()
-    canonical = load_canonical(canonical_from=canonical_from, cwd=cwd)
+    loaded = load_canonical(canonical_from=canonical_from, cwd=cwd)
+    if isinstance(loaded, IOFailure):
+        # NOT lever-scoped, unlike every finding below. A `--canonical-from`
+        # the check cannot read or parse is a broken INVOCATION, not a gap in
+        # the repo being checked, so the severity lever that decides whether
+        # gaps fail has no bearing on it. It raised before this conversion —
+        # this only replaces the traceback with a diagnostic.
+        failure = loaded.failure()._inner_value  # noqa: SLF001  — IOResult failure unwrap.
+        log.error(
+            "canonical-slug override could not be loaded",
+            check_id=_CHECK_ID,
+            failure_mode="canonical_override_unusable",
+            path=failure.path,
+            detail=failure.detail,
+        )
+        return _EXIT_VIOLATIONS
+    canonical = unsafe_perform_io(loaded.unwrap())
     # `unsafe_perform_io(...unwrap())` is FAIL-CLOSED and deliberate.
     # `world_gate_check_slugs` is `IOResult` since `livespec-dev-tooling-vzwa`,
     # and its failure means the installed `checks/` package is unreadable — a

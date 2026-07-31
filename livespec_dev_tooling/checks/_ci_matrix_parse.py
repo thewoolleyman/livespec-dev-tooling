@@ -69,9 +69,20 @@ _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
+from returns.io import IOFailure, IOResult, IOSuccess  # noqa: E402  — vendor-path-aware.
+from returns.result import Failure, Result, Success  # noqa: E402  — vendor-path-aware.
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 from livespec_dev_tooling.canonical_checks import canonical_check_slugs  # noqa: E402
+from livespec_dev_tooling.checks._check_aggregate_failures import (  # noqa: E402
+    CanonicalOverrideFailure,
+    CanonicalOverrideUnparseable,
+    CanonicalOverrideUnreadable,
+    CheckRecipeAbsent,
+    TargetsArrayAbsent,
+    TargetsArrayFailure,
+    TargetsArrayUnterminated,
+)
 
 # Names in `__all__` mark this private sibling's public surface to its two
 # importers — `ci_matrix_completeness.py` (the gate) and
@@ -150,8 +161,25 @@ class CiJob:
     gating: bool
 
 
-def load_canonical(*, canonical_from: str | None, cwd: Path) -> tuple[str, ...]:
-    """Resolve the canonical-slug tuple from an override file or live discovery."""
+def load_canonical(
+    *, canonical_from: str | None, cwd: Path
+) -> IOResult[tuple[str, ...], CanonicalOverrideFailure]:
+    """Resolve the canonical-slug tuple from an override file or live discovery.
+
+    Both reads of the override file used to be UNGUARDED, so a missing or
+    malformed `--canonical-from` raised `FileNotFoundError` / `JSONDecodeError`
+    out of a check. Unreadable and unparseable stay apart on the pin walkers'
+    ground: a can't-read may be environmental and may not reproduce, a
+    can't-parse is a definitive property of the file's committed bytes.
+
+    ⛔ THE EMPTY TUPLE IS STILL AN ANSWER AND IS DELIBERATELY UNCHANGED. A
+    readable, parseable override whose `slugs` is not a list answers
+    `IOSuccess(())`, exactly as before. That tuple is load-bearing, and it is
+    also what a legitimately-empty `slugs: []` yields — two SUCCESS-track
+    meanings that are a real second question and not this conversion's to
+    settle. What the conversion removes is a READ failure being spelled the
+    same way as either of them.
+    """
     if canonical_from is None:
         # `unsafe_perform_io(...unwrap())` is FAIL-CLOSED and deliberate.
         # `canonical_check_slugs` is `IOResult` since `livespec-dev-tooling-vzwa`,
@@ -163,46 +191,64 @@ def load_canonical(*, canonical_from: str | None, cwd: Path) -> tuple[str, ...]:
         # for a malformed override, and an empty canonical set is read downstream as
         # "no canonical checks" and PASSES — the exact fail-open vzwa removed. The
         # two must stay distinguishable.
-        return unsafe_perform_io(canonical_check_slugs().unwrap())
-    parsed = json.loads((cwd / canonical_from).resolve().read_text(encoding="utf-8"))
+        return IOSuccess(unsafe_perform_io(canonical_check_slugs().unwrap()))
+    path = (cwd / canonical_from).resolve()
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as unreadable:
+        return IOFailure(CanonicalOverrideUnreadable(path=str(path), detail=str(unreadable)))
+    try:
+        parsed = cast("object", json.loads(text))
+    except ValueError as undecodable:
+        return IOFailure(CanonicalOverrideUnparseable(path=str(path), detail=str(undecodable)))
     override = cast("_SlugOverride", parsed) if isinstance(parsed, dict) else None
     slug_field: list[object] | None = override.get("slugs") if override is not None else None
     if not isinstance(slug_field, list):
-        return ()
-    return tuple(s for s in slug_field if isinstance(s, str))
+        return IOSuccess(())
+    return IOSuccess(tuple(s for s in slug_field if isinstance(s, str)))
 
 
-def extract_check_recipe_body(*, justfile_text: str) -> str | None:
-    """Return the text body of the `check:` recipe, or None when absent."""
+def extract_check_recipe_body(*, justfile_text: str) -> Result[str, CheckRecipeAbsent]:
+    """The text body of the bare `check:` recipe.
+
+    An absent recipe is a FAILURE rather than an answer because every caller
+    reports it as its OWN inability — `check_recipe_not_found`, "cannot
+    verify" — which is §4d-BIS's caller test for CONVERT over DECLARE.
+    """
     header_match = _CHECK_RECIPE_HEADER.search(justfile_text)
     if header_match is None:
-        return None
+        return Failure(CheckRecipeAbsent())
     body_lines: list[str] = []
     for raw in justfile_text[header_match.end() :].splitlines():
         if raw and not raw.startswith((" ", "\t")) and ":" in raw:
             break
         body_lines.append(raw)
-    return "\n".join(body_lines)
+    return Success("\n".join(body_lines))
 
 
-def extract_targets_array_tokens(*, recipe_body: str) -> list[str] | None:
-    """Return the `check-*` slugs inside `targets=(...)`, or None when absent."""
+def extract_targets_array_tokens(*, recipe_body: str) -> Result[list[str], TargetsArrayFailure]:
+    """The `check-*` slugs inside `targets=(...)`.
+
+    TWO failure types, and the split is the defect this conversion fixes. An
+    absent array and an UNTERMINATED one returned the same `None`, and every
+    caller reported only the absent case — so a recipe whose array is merely
+    unclosed sent the operator to add an array already present. The `closed`
+    flag the old body needed disappears with the collapse.
+    """
     start_match = _TARGETS_ARRAY_START.search(recipe_body)
     if start_match is None:
-        return None
+        return Failure(TargetsArrayAbsent())
     collected: list[str] = []
-    closed = False
     for raw in recipe_body[start_match.end() :].splitlines():
         if _TARGETS_ARRAY_END.match(raw):
-            closed = True
-            break
+            return Success(collected)
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
         token = line.split("#", 1)[0].strip()
         if token.startswith(_CHECK_PREFIX):
             collected.append(token)
-    return collected if closed else None
+    return Failure(TargetsArrayUnterminated())
 
 
 def _parse_matrix_targets(*, body_lines: list[str]) -> set[str]:
