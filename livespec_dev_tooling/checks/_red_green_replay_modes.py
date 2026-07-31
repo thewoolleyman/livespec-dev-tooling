@@ -21,6 +21,12 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:  # pragma: no cover
     import structlog.stdlib
 
+# The vendored `returns` resolves through this module's OWN preamble rather
+# than through whichever importer happened to run first — the state the
+# module that broke the 2026-07-30 release fan-out was in.
+_VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
 # Make the script's own directory importable so the sibling `_*` trailer-I/O
 # module resolves when this module is loaded standalone (the importlib test
 # path) as well as via the parent supervisor's own sys.path insert.
@@ -29,10 +35,13 @@ if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
 from _red_green_replay_trailers import (  # noqa: E402  — sibling private import
+    _narrate_git_failure,
     current_head_sha,
     head_trailer_value,
     write_trailers,
 )
+from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 # These symbols form this private sibling module's public surface to
 # its sole importer, `red_green_replay.py` (the parent supervisor imports
@@ -219,8 +228,19 @@ def _handle_green_mode(
         check_id="red-green-replay-green-mode-candidate",
         impl_paths=impl_paths,
     )
-    recorded_test = head_trailer_value(key="TDD-Red-Test")
-    recorded_checksum = head_trailer_value(key="TDD-Red-Test-File-Checksum")
+    # Both reads are on the `IOResult` railway (livespec-dev-tooling-qndn) and
+    # a failed one REFUSES the amend. The empty string these used to return on
+    # a failed git is what `Path.cwd() / recorded_test` would then resolve to —
+    # the repo root — and the checksum comparison below would report a
+    # mismatch, blaming the AUTHOR for an environment fault.
+    recorded = head_trailer_value(key="TDD-Red-Test")
+    if isinstance(recorded, IOFailure):
+        return _narrate_git_failure(log=log, failed=unsafe_perform_io(recorded.failure()))
+    checksum = head_trailer_value(key="TDD-Red-Test-File-Checksum")
+    if isinstance(checksum, IOFailure):
+        return _narrate_git_failure(log=log, failed=unsafe_perform_io(checksum.failure()))
+    recorded_test = unsafe_perform_io(recorded.unwrap())
+    recorded_checksum = unsafe_perform_io(checksum.unwrap())
     green_test_path = Path.cwd() / recorded_test
     green_test_bytes = green_test_path.read_bytes()
     green_test_checksum = f"sha256:{hashlib.sha256(green_test_bytes).hexdigest()}"
@@ -260,7 +280,12 @@ def _handle_green_mode(
         )
         return 1
     green_verified_at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    green_parent_reflog = current_head_sha()
+    # An unread SHA used to be recorded as an empty `TDD-Green-Parent-Reflog`
+    # — a failure written into the commit AS EVIDENCE. Refuse instead.
+    parent = current_head_sha()
+    if isinstance(parent, IOFailure):
+        return _narrate_git_failure(log=log, failed=unsafe_perform_io(parent.failure()))
+    green_parent_reflog = unsafe_perform_io(parent.unwrap())
     write_trailers(
         msg_path=msg_path,
         trailers=(
