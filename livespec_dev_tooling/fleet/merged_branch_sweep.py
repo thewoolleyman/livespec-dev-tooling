@@ -22,8 +22,10 @@ from livespec_dev_tooling.fleet._context import (
     FleetContext,
     GhResult,
     default_gh_runner,
+    gh_answer,
     resolve_owner,
 )
+from livespec_dev_tooling.fleet._invocation_failure import InvocationNotPerformed
 from livespec_dev_tooling.fleet.contract import Manifest, parse_manifest
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
@@ -238,14 +240,20 @@ def _delete_sweepable(
     deleted: list[SweepableBranch] = []
     for branch in branches:
         path = f"repos/{ctx.owner}/{repo}/git/refs/heads/{quote(branch.branch, safe='/')}"
-        result = ctx.api(path=path, method="DELETE", body="{}")
-        if result.returncode == 0:  # pragma: no branch
+        result = gh_answer(outcome=ctx.api(path=path, method="DELETE", body="{}"))
+        # A branch is recorded as deleted only when a `gh` that RAN said so.
+        # `isinstance` first because an invocation that never happened has no
+        # exit code, and defaulting it to "deleted" would report a sweep that
+        # never touched the remote.
+        if not isinstance(result, InvocationNotPerformed) and result.returncode == 0:
             deleted.append(branch)
     return deleted
 
 
 def _api_pages(*, ctx: FleetContext, repo: str, path: str) -> _ApiPayload:
-    result = ctx.run_gh(args=["api", "--paginate", "--jq", ".[]", path])
+    result = gh_answer(outcome=ctx.run_gh(args=["api", "--paginate", "--jq", ".[]", path]))
+    if isinstance(result, InvocationNotPerformed):
+        return _ApiFailure(repo=repo, path=path, stderr=result.reason)
     if result.returncode != 0:
         return _ApiFailure(repo=repo, path=path, stderr=_stderr_text(result=result))
     decoder = json.JSONDecoder()

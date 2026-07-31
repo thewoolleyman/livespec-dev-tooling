@@ -15,6 +15,7 @@ import subprocess
 import sys
 from typing import TYPE_CHECKING
 
+from _gh_railway import lift_gh
 from _protection_fixtures import aligned_merge_settings_payload, aligned_protection_payload
 
 from livespec_dev_tooling.fleet import wire_fleet_member
@@ -123,7 +124,7 @@ def make_runner(*, table: dict[tuple[str, ...], GhResult]) -> GhRunner:
         del stdin
         return table.get(tuple(args), GhResult(returncode=1, stdout="", stderr="no canned"))
 
-    return run
+    return lift_gh(run)
 
 
 def make_context(*, table: dict[tuple[str, ...], GhResult]) -> FleetContext:

@@ -12,6 +12,10 @@ import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from _gh_railway import lift_gh
+from returns.io import IOFailure
+from returns.unsafe import unsafe_perform_io
+
 from livespec_dev_tooling.fleet._context import (
     FleetContext,
     GhResult,
@@ -41,7 +45,7 @@ def make_runner(
             calls.append((key, stdin))
         return table.get(key, GhResult(returncode=1, stdout="", stderr="no canned response"))
 
-    return run
+    return lift_gh(run)
 
 
 def make_context(
@@ -72,16 +76,25 @@ _TREE_ARGS: tuple[str, ...] = ("api", "repos/acme/widget/git/trees/master?recurs
 _REPO_ARGS: tuple[str, ...] = ("api", "repos/acme/widget")
 
 
-def test_default_runner_without_gh_yields_synthetic_failure(
-    *, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_default_runner_without_gh_is_a_failure_value(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    """CORRECTED, not updated.
+
+    This asserted `result.returncode == 127` and was NAMED
+    `..._yields_synthetic_failure`, so the fabricated sentinel was written
+    into the suite as expected behavior in the NAME as well as the
+    assertion — the third time across these three seams. A test name is a
+    claim like any other.
+
+    Scoped to the SHAPE (the seam does not answer with a success-shaped
+    record); the kind and argv are asserted once, in
+    `test_context_invocation_railway.py`, rather than in two places.
+    """
+
     def fake_which(_name: str) -> str | None:
         return None
 
     monkeypatch.setattr(shutil, "which", fake_which)
-    result = default_gh_runner(args=["api", "rate_limit"])
-    assert result.returncode == 127
-    assert "gh CLI not on PATH" in result.stderr
+    assert isinstance(default_gh_runner(args=["api", "rate_limit"]), IOFailure)
 
 
 def test_default_runner_invokes_gh_with_stdin(*, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -98,7 +111,7 @@ def test_default_runner_invokes_gh_with_stdin(*, monkeypatch: pytest.MonkeyPatch
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     result = default_gh_runner(args=["secret", "set", "X"], stdin="value")
-    assert result == GhResult(returncode=0, stdout="ok", stderr="")
+    assert unsafe_perform_io(result.unwrap()) == GhResult(returncode=0, stdout="ok", stderr="")
     assert seen["cmd"] == ["gh", "secret", "set", "X"]
     assert seen["input"] == "value"
 
@@ -153,9 +166,9 @@ def test_api_get_and_mutating_methods_shape_args() -> None:
         ),
     }
     ctx = make_context(table=table, calls=calls)
-    assert ctx.api(path="rate_limit").returncode == 0
+    assert unsafe_perform_io(ctx.api(path="rate_limit").unwrap()).returncode == 0
     put = ctx.api(path="repos/acme/widget/topics", method="PUT", body='{"names": []}')
-    assert put.returncode == 0
+    assert unsafe_perform_io(put.unwrap()).returncode == 0
     assert calls[0] == (("api", "rate_limit"), None)
     assert calls[1][1] == '{"names": []}'
 

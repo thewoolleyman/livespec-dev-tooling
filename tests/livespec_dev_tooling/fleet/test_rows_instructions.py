@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import json
 
+from _gh_railway import lift_gh
+
 from livespec_dev_tooling.fleet._context import (
     FleetContext,
     FleetMember,
@@ -69,7 +71,7 @@ def make_context(*, table: dict[tuple[str, ...], GhResult]) -> FleetContext:
         return table.get(tuple(args), GhResult(returncode=1, stdout="", stderr="no canned"))
 
     runner: GhRunner = run
-    return FleetContext(owner="acme", run_gh=runner)
+    return FleetContext(owner="acme", run_gh=lift_gh(runner))
 
 
 def _ok(*, stdout: str) -> GhResult:

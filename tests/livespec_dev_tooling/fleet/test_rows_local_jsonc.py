@@ -21,6 +21,7 @@ import textwrap
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from _gh_railway import lift_gh
 from returns.result import Success
 
 from livespec_dev_tooling.fleet._connection import named_plugin_connection, parse_document
@@ -184,7 +185,7 @@ def _fleet_ctx(*, jsonc_text: str, beads_text: str) -> FleetContext:
         return table.get(tuple(args), GhResult(returncode=1, stdout="", stderr="no canned"))
 
     runner: GhRunner = run
-    return FleetContext(owner="acme", run_gh=runner)
+    return FleetContext(owner="acme", run_gh=lift_gh(runner))
 
 
 def test_absent_config_is_warning(*, tmp_path: Path) -> None:

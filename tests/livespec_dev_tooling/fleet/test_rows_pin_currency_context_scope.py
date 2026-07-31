@@ -43,6 +43,8 @@ import json
 from pathlib import Path
 from typing import Protocol, cast
 
+from _gh_railway import lift_gh
+
 from livespec_dev_tooling.fleet._context import (
     FleetContext,
     FleetMember,
@@ -131,7 +133,7 @@ def _context(*, filter_consuming_preflight: bool) -> FleetContext:
     runner: GhRunner = run
     return FleetContext(
         owner="acme",
-        run_gh=runner,
+        run_gh=lift_gh(runner),
         filter_consuming_preflight=filter_consuming_preflight,
     )
 

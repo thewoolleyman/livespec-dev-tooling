@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
+from _gh_railway import lift_gh
 from returns.io import IOFailure
 
 from livespec_dev_tooling.cross_repo.pin_autodiscovery import PinFileUnreadable
@@ -58,7 +59,7 @@ def _context() -> FleetContext:
         return table.get(tuple(args), GhResult(returncode=1, stdout="", stderr="no canned"))
 
     runner: GhRunner = run
-    return FleetContext(owner="acme", run_gh=runner)
+    return FleetContext(owner="acme", run_gh=lift_gh(runner))
 
 
 def test_an_unreadable_pin_file_skips_the_row_and_names_the_file(

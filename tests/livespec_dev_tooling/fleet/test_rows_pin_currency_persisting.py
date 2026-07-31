@@ -17,6 +17,8 @@ import json
 from pathlib import Path
 from typing import Protocol, cast
 
+from _gh_railway import lift_gh
+
 from livespec_dev_tooling.fleet._context import (
     FleetContext,
     FleetMember,
@@ -100,7 +102,7 @@ def _context(
     # conditions (no open PR, an older tag, another source, an unreadable PR
     # list). Exercising the escalating context is what keeps them falsifiable;
     # the per-PR context is covered by test_rows_pin_currency_context_scope.py.
-    return FleetContext(owner="acme", run_gh=runner, filter_consuming_preflight=True)
+    return FleetContext(owner="acme", run_gh=lift_gh(runner), filter_consuming_preflight=True)
 
 
 def _stale_compat_files() -> dict[str, str]:

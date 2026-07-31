@@ -16,6 +16,7 @@ import tarfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from _gh_railway import lift_gh
 from returns.io import IOSuccess
 
 from livespec_dev_tooling.fleet._context import (
@@ -83,7 +84,7 @@ def make_context(
 
     return FleetContext(
         owner="acme",
-        run_gh=run,
+        run_gh=lift_gh(run),
         download_gh=download,
         members=tuple(FleetMember(repo=repo, repo_class="library") for repo in trees),
     )
@@ -273,7 +274,7 @@ def test_the_fleet_graph_is_built_once_per_run_not_once_per_member() -> None:
 
     ctx = FleetContext(
         owner="acme",
-        run_gh=run,
+        run_gh=lift_gh(run),
         download_gh=download,
         members=tuple(FleetMember(repo=repo, repo_class="library") for repo in trees),
     )

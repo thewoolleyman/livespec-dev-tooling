@@ -20,7 +20,7 @@ from livespec_dev_tooling.fleet._adopter_lane import (
     POSTURE_EXCLUDED_EVENT,
     run_adopter_rows,
 )
-from livespec_dev_tooling.fleet._context import FleetContext, GhResult
+from livespec_dev_tooling.fleet._context import FleetContext, GhOutcome, GhResult
 from livespec_dev_tooling.fleet.contract import Manifest, parse_manifest
 
 __all__: list[str] = []
@@ -72,7 +72,7 @@ def _recording_context(
     """A canned-response context whose runner records every gh invocation."""
     inner = make_runner(table=table)
 
-    def recording(*, args: list[str], stdin: str | None = None) -> GhResult:
+    def recording(*, args: list[str], stdin: str | None = None) -> GhOutcome:
         calls.append(tuple(args))
         return inner(args=args, stdin=stdin)
 

@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import test_ensure_plugins as red_plugin_tests
+from _gh_railway import lift_gh
 
 from livespec_dev_tooling.fleet import ensure_plugins
 from livespec_dev_tooling.fleet._context import (
@@ -65,7 +66,7 @@ def make_context(*, table: dict[tuple[str, ...], GhResult]) -> FleetContext:
         return table.get(tuple(args), GhResult(returncode=1, stdout="", stderr="no canned"))
 
     runner: GhRunner = run
-    return FleetContext(owner="acme", run_gh=runner)
+    return FleetContext(owner="acme", run_gh=lift_gh(runner))
 
 
 def tree_table(

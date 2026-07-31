@@ -16,6 +16,8 @@ rows to error is a deliberate anti-vacuous-green ruling.
 
 from __future__ import annotations
 
+from _gh_railway import lift_gh
+
 from livespec_dev_tooling.fleet._context import FleetContext, GhResult, GhRunner
 from livespec_dev_tooling.fleet._credential_preflight import preflight_credential
 
@@ -33,7 +35,7 @@ def _scripted(*, results: list[GhResult], calls: list[int]) -> GhRunner:
         calls[0] += 1
         return results[index]
 
-    return run
+    return lift_gh(run)
 
 
 def _sleeps() -> tuple[list[float], object]:
