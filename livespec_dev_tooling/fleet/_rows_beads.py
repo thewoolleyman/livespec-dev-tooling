@@ -24,7 +24,16 @@ neither row reaches across a module for a `_`-prefixed helper.
 
 from __future__ import annotations
 
-from livespec_dev_tooling.fleet._connection import (
+import sys
+from pathlib import Path
+
+_VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
+
+from returns.result import Failure, Result, Success  # noqa: E402  — vendor-path-aware import.
+
+from livespec_dev_tooling.fleet._connection import (  # noqa: E402
     BEADS_CONFIG_PATH,
     CONNECTION_FIELD_PAIRS,
     LIVESPEC_JSONC_PATH,
@@ -32,7 +41,7 @@ from livespec_dev_tooling.fleet._connection import (
     mismatched_keys,
     parse_beads_config,
 )
-from livespec_dev_tooling.fleet._context import (
+from livespec_dev_tooling.fleet._context import (  # noqa: E402
     FleetContext,
     FleetMember,
     RowFinding,
@@ -47,6 +56,45 @@ __all__: list[str] = [
     "LIVESPEC_JSONC_PATH",
     "assert_tenant_connection_consistency",
 ]
+
+
+def _member_connection(
+    *, member: FleetMember, jsonc_text: str
+) -> Result[dict[str, object], RowSkip]:
+    """The member's connection block, or the skip its defect or absence earns.
+
+    Split out to keep `assert_tenant_connection_consistency` at the
+    six-return cap: the conversion added a branch, which is the structural
+    cost every conversion in this epic pays somewhere.
+
+    SEVERITY IS UNCHANGED — an unusable document was a skip before the
+    conversion and stays one. Only the REASON changes, from "carries no
+    impl-plugin connection block" (a statement about the member's config
+    that the row never verified) to one naming the defect. v039's ratified
+    "a can't-PARSE is NEVER a pass" is scoped to pin-currency rows
+    (`contracts.md` §"Pin-currency severity policy"); generalizing it to
+    this row is a ratification, not a conversion.
+    """
+    block = connection_block(text=jsonc_text)
+    if isinstance(block, Failure):
+        return Failure(
+            RowSkip(
+                reason=(
+                    f"{member.repo}: {LIVESPEC_JSONC_PATH} is not a usable JSONC object map "
+                    f"({block.failure().detail})"
+                )
+            )
+        )
+    connection = block.unwrap()
+    if connection is None:
+        return Failure(
+            RowSkip(
+                reason=(
+                    f"{member.repo}: {LIVESPEC_JSONC_PATH} carries no impl-plugin connection block"
+                )
+            )
+        )
+    return Success(connection)
 
 
 def assert_tenant_connection_consistency(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:
@@ -68,12 +116,10 @@ def assert_tenant_connection_consistency(*, ctx: FleetContext, member: FleetMemb
         return RowSkip(
             reason=f"{member.repo}: {BEADS_CONFIG_PATH} carries no dolt.* connection keys"
         )
-    connection = connection_block(text=jsonc_text)
-    if connection is None:
-        return RowSkip(
-            reason=f"{member.repo}: {LIVESPEC_JSONC_PATH} carries no impl-plugin connection block"
-        )
-    mismatched = mismatched_keys(beads=beads, connection=connection)
+    resolved = _member_connection(member=member, jsonc_text=jsonc_text)
+    if isinstance(resolved, Failure):
+        return resolved.failure()
+    mismatched = mismatched_keys(beads=beads, connection=resolved.unwrap())
     if mismatched:
         return RowFinding(
             message=(

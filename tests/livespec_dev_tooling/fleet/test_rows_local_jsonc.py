@@ -21,6 +21,8 @@ import textwrap
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from returns.result import Success
+
 from livespec_dev_tooling.fleet._connection import named_plugin_connection, parse_document
 from livespec_dev_tooling.fleet._context import (
     FleetContext,
@@ -252,16 +254,18 @@ def test_connection_absent_is_machine_filled(
     assert "// hermetic test config" in written
     # The written bytes re-parse cleanly as JSONC.
     document = parse_document(text=written)
-    assert document is not None
+    assert isinstance(document, Success)
     # The five connection keys carry the `.beads/config.yaml` values (port a number).
-    connection = named_plugin_connection(document=document)
-    assert connection == {
-        "server_host": "127.0.0.1",
-        "server_port": 3307,
-        "server_user": "widget",
-        "database": "widget",
-        "prefix": "widget",
-    }
+    connection = named_plugin_connection(document=document.unwrap())
+    assert connection == Success(
+        {
+            "server_host": "127.0.0.1",
+            "server_port": 3307,
+            "server_user": "widget",
+            "database": "widget",
+            "prefix": "widget",
+        }
+    )
     # And the central consistency assert passes on the written result.
     member = FleetMember(repo="widget", repo_class="impl-plugin")
     ctx = _fleet_ctx(jsonc_text=written, beads_text=_BEADS_FULL)
@@ -280,11 +284,13 @@ def test_fill_renders_only_beads_keys_present(
 
     written = (checkout / ".livespec.jsonc").read_text(encoding="utf-8")
     document = parse_document(text=written)
-    assert document is not None
-    connection = named_plugin_connection(document=document)
-    assert connection is not None
+    assert isinstance(document, Success)
+    connection = named_plugin_connection(document=document.unwrap())
+    assert isinstance(connection, Success)
+    filled = connection.unwrap()
+    assert filled is not None
     # `dolt.prefix` was absent from the beads config, so it is NOT fabricated.
-    assert set(connection) == {"server_host", "server_port", "server_user", "database"}
+    assert set(filled) == {"server_host", "server_port", "server_user", "database"}
 
 
 def test_impl_block_unlocatable_no_implementation_is_warning(*, tmp_path: Path) -> None:

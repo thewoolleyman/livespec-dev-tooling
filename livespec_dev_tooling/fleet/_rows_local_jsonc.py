@@ -9,8 +9,8 @@ walks one row's worth of semantics, in order:
    operator to author a `harnesses`-bearing config. The `harnesses`
    statuses are a human-judgment seam the verb NEVER fabricates.
 2. The file is unparseable as JSONC, or its root is not a JSON object →
-   a WARNING-severity "fix by hand" finding (the verb never auto-edits a
-   broken config).
+   a WARNING-severity "fix by hand" finding NAMING which of the two it
+   was (the verb never auto-edits a broken config).
 3. No non-empty top-level `harnesses` object → a WARNING-severity
    finding guiding the operator to author `harnesses` (human-judgment
    seam).
@@ -20,10 +20,15 @@ walks one row's worth of semantics, in order:
 5. `.beads/config.yaml` present but carries none of the five `dolt.*`
    connection keys → PASS (config complete; no connection to fill).
 6. beads-backed and the impl-plugin `connection` block is ABSENT →
-   machine-fill it from `.beads/config.yaml` and PASS. When the
-   impl-plugin block cannot be located for the targeted insertion
-   (`implementation.plugin` missing/not a string, or its block key not
-   found in the raw text) → a WARNING-severity "author by hand" finding.
+   machine-fill it from `.beads/config.yaml` and PASS. Three separately
+   worded WARNING-severity "author by hand" findings stand in front of
+   that fill, one per way it can be unsafe: the `implementation.plugin`
+   link is broken, the block it names is not usable (including a
+   `connection` that is PRESENT and not an object), or the block key has
+   no line-anchor in the raw text. Those three shared one sentinel before
+   the railway conversion, and the middle one was a fail-WRONG: a
+   malformed `connection` read as an absence, so the fill wrote a SECOND
+   `connection` key into the block.
 7. The `connection` block is PRESENT but one or more of the five fields
    disagree with `.beads/config.yaml` → a WARNING-severity drift finding
    (never auto-edit a possibly-customized existing block; the central
@@ -44,10 +49,17 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from pathlib import Path
 from typing import cast
 
-from livespec_dev_tooling.fleet._connection import (
+_VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
+
+from returns.result import Failure  # noqa: E402  — vendor-path-aware import.
+
+from livespec_dev_tooling.fleet._connection import (  # noqa: E402
     BEADS_CONFIG_PATH,
     CONNECTION_FIELD_PAIRS,
     LIVESPEC_JSONC_PATH,
@@ -57,8 +69,12 @@ from livespec_dev_tooling.fleet._connection import (
     parse_beads_config,
     parse_document,
 )
-from livespec_dev_tooling.fleet._context import RowFinding, RowOutcome, RowPass
-from livespec_dev_tooling.fleet._local_context import LocalContext
+from livespec_dev_tooling.fleet._context import (  # noqa: E402
+    RowFinding,
+    RowOutcome,
+    RowPass,
+)
+from livespec_dev_tooling.fleet._local_context import LocalContext  # noqa: E402
 
 __all__: list[str] = ["reconcile_livespec_jsonc_complete"]
 
@@ -83,22 +99,23 @@ def _render_value(*, value: str) -> str:
     return json.dumps(value)
 
 
-def _fill_connection(
-    *, text: str, document: dict[str, object], beads: dict[str, str]
-) -> str | None:
+def _fill_connection(*, text: str, plugin: str, beads: dict[str, str]) -> str | None:
     """Insert a `connection` block into the impl-plugin block, returning new text or None.
 
-    None when the impl-plugin block cannot be located for the targeted
-    raw-text insertion: `implementation.plugin` missing/not a string, or
-    its block key not found by the line-anchored regex. The regex anchors
-    on line-start + indentation + the block key + `: {`, so it cannot
-    match a `//`-comment line. The inserted `connection` object becomes
-    the block's FIRST member, indented one level deeper than the block
-    key, with only the fields `.beads/config.yaml` actually carries.
+    None when the ALREADY-RESOLVED block key is not found by the
+    line-anchored regex — ONE condition, down from two. The caller resolves
+    `implementation.plugin` on the railway now and passes the name in, so
+    an unresolvable link never reaches here and is never spelled the same
+    way as a raw-text miss. The regex anchors on line-start + indentation +
+    the block key + `: {`, so it cannot match a `//`-comment line. The
+    anchor is LINE-START, not brace adjacency — `\\s*` spans newlines, so a
+    block key and its `{` on separate lines still match; what misses is a
+    block key with anything else before it on its line, which is what a
+    compact one-line config produces. The inserted `connection` object
+    becomes the block's FIRST
+    member, indented one level deeper than the block key, with only the
+    fields `.beads/config.yaml` actually carries.
     """
-    plugin = impl_plugin_name(document=document)
-    if plugin is None:
-        return None
     pattern = re.compile(r'^(?P<indent>[ \t]*)"' + re.escape(plugin) + r'"\s*:\s*\{', re.MULTILINE)
     match = pattern.search(text)
     if match is None:
@@ -135,15 +152,16 @@ def reconcile_livespec_jsonc_complete(*, ctx: LocalContext) -> RowOutcome:
             ),
         )
     text = jsonc_path.read_text(encoding="utf-8")
-    document = parse_document(text=text)
-    if document is None:
+    parsed = parse_document(text=text)
+    if isinstance(parsed, Failure):
         return RowFinding(
             severity="warning",
             message=(
-                ".livespec.jsonc is unparseable as JSONC or its root is not a JSON object: fix it "
-                "by hand (the verb never auto-edits a broken config)"
+                f".livespec.jsonc does not yield a JSON object map ({parsed.failure().detail}): "
+                "fix it by hand (the verb never auto-edits a broken config)"
             ),
         )
+    document = parsed.unwrap()
     if not _has_harnesses(document=document):
         return RowFinding(
             severity="warning",
@@ -173,16 +191,34 @@ def _reconcile_connection(
     auto-edited: it passes when all five fields agree and warns (deferring
     to the central consistency row) when one or more disagree.
     """
-    connection = named_plugin_connection(document=document)
+    plugin = impl_plugin_name(document=document)
+    if isinstance(plugin, Failure):
+        return RowFinding(
+            severity="warning",
+            message=(
+                f".livespec.jsonc impl-plugin link is broken ({plugin.failure().detail}), so the "
+                "block to insert a connection into cannot be identified: author the connection "
+                "block by hand"
+            ),
+        )
+    found = named_plugin_connection(document=document)
+    if isinstance(found, Failure):
+        return RowFinding(
+            severity="warning",
+            message=(
+                f".livespec.jsonc impl-plugin block is not usable ({found.failure().detail}): "
+                "author the connection block by hand"
+            ),
+        )
+    connection = found.unwrap()
     if connection is None:
-        filled = _fill_connection(text=text, document=document, beads=beads)
+        filled = _fill_connection(text=text, plugin=plugin.unwrap(), beads=beads)
         if filled is None:
             return RowFinding(
                 severity="warning",
                 message=(
-                    ".livespec.jsonc impl-plugin block could not be located for connection "
-                    "insertion (implementation.plugin missing/not a string, or its block key not "
-                    "found in the raw text): author the connection block by hand"
+                    ".livespec.jsonc impl-plugin block key was not found in the raw text, so the "
+                    "connection insertion has no anchor: author the connection block by hand"
                 ),
             )
         _ = jsonc_path.write_text(filled, encoding="utf-8")

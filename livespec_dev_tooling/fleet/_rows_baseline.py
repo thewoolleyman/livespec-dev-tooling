@@ -62,6 +62,7 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import jsoncomment  # noqa: E402  — vendor-path-aware import after sys.path insert.
+from returns.result import Failure  # noqa: E402  — vendor-path-aware import.
 
 __all__: list[str] = [
     "ACCEPTANCE_MODES",
@@ -96,9 +97,9 @@ def _declared_acceptance_mode(*, document: dict[str, object]) -> object:
     because `None` is not a legal declared value.
     """
     plugin = impl_plugin_name(document=document)
-    if plugin is None:
+    if isinstance(plugin, Failure):
         return _UNREACHABLE
-    block = document.get(plugin)
+    block = document.get(plugin.unwrap())
     if not isinstance(block, dict):
         return _UNREACHABLE
     dispatcher = cast("dict[str, object]", block).get("dispatcher")
