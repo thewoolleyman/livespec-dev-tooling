@@ -89,6 +89,16 @@ Exit codes:
   cwd so the operator can rerun it. Every state this check reports rests
   on those probes, so an unanswered one is a verdict the check cannot
   compute — and it must not be spelled the same as "nothing to check".
+- `4` — fail. A file the worktree-pack arm depends on could not be READ
+  (`failure_mode` `worktree_pack_unreadable`): the `.livespec.jsonc`, an
+  installed pack file, or the root justfile. The narration carries the
+  `path` and the OS `detail`. ⛔ Deliberately its OWN mode rather than
+  `worktree_pack_body_mismatch`: the byte-identity arm decides drift from
+  the bytes it reads, and with no bytes there is no verdict about the pack
+  to report. Reporting one would send the operator to re-install a pack
+  whose state this run never observed. Before the pack arm went on the
+  railway an unread `.livespec.jsonc` resolved to the `ungoverned` policy —
+  and an ungoverned tree needs no pack, so the check exited `0`.
 - `4` — fail. Any of the three hooks is missing, non-executable, or
   byte-different from `CANONICAL_HOOK_BODY`; OR a vendored hook-source
   copy exists outside the carve-outs; OR an installed worktree-pack
@@ -116,7 +126,6 @@ Output discipline: structlog JSON to stderr; no `print`, no
 
 from __future__ import annotations
 
-import os
 import shutil
 import sys
 from pathlib import Path
@@ -138,7 +147,6 @@ import structlog  # noqa: E402  — vendor-path-aware import after sys.path inse
 # since livespec-dev-tooling-qndn, so this module owns the decision each
 # unanswered probe used to make silently.
 from _primary_checkout_git_probes import (  # noqa: E402  — sibling private import
-    GitProbeFailed,
     core_bare_is_true,
     git_common_dir,
     is_git_repo_at_all,
@@ -147,81 +155,56 @@ from _primary_checkout_git_probes import (  # noqa: E402  — sibling private im
     work_tree_root,
 )
 
+# Sibling `_*` hook-file module — the hook byte-identity and vendored-copy
+# arms, extracted when putting this check's file reads on the railway pushed
+# the file back over its 250-LLOC hard ceiling. The extraction is also what
+# surfaced that `inspect_hook` compared decoded TEXT under a docstring
+# promising byte-identity; both are converted rather than merely moved.
+from _primary_checkout_hook_files import (  # noqa: E402  — sibling private import
+    _find_vendored_hook_copies,
+    _inspect_hook,
+)
+
 # Sibling `_*` worktree-pack module — the third arm, split out when this file
-# crossed its 250-LLOC hard ceiling, exactly as `_primary_checkout_git_probes`
+# first crossed its hard ceiling, exactly as `_primary_checkout_git_probes`
 # was. It owns the config-policy read, the byte-identity comparison, and the
 # discoverability assertion; this module owns the narration.
+from _primary_checkout_narration import (  # noqa: E402  — sibling private import
+    _CHECK_ID,
+    _CORE_BARE_FAILURE_MODE,
+    _FAIL_EXIT,
+    _HOOK_READ_FAILURE_MODE,
+    _PACK_READ_FAILURE_MODE,
+    _emit_failures,
+    _narrate_probe_failure,
+    _narrate_unreadable_input,
+)
 from _primary_checkout_worktree_pack import (  # noqa: E402  — sibling private import
     inspect_worktree_pack,
-    pack_failure_hint,
-    pack_failure_path,
 )
-from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
+from returns.io import IOFailure, IOResult, IOSuccess  # noqa: E402  — vendor-path-aware.
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
-# The canonical body is the SINGLE source of truth, shipped as a module
-# constant in the installer so it travels in the wheel. The check imports
-# it (rather than carrying a second copy) so byte-identity is verified
-# against the exact bytes the installer writes — there is no drift seam.
-from livespec_dev_tooling.install_commit_refuse_hooks import (  # noqa: E402
-    CANONICAL_HOOK_BODY,
+# The one condition none of this check's arms can decide, in its own sibling so
+# neither arm has to import the other for it. ABSOLUTE where the arm imports
+# are bare: a bare import would create a second class object and the parent's
+# matches would silently stop lining up with the arms' failures.
+from livespec_dev_tooling.checks._primary_checkout_unreadable import (  # noqa: E402
+    CheckInputUnreadable,
 )
 
 __all__: list[str] = []
 
 
-_CHECK_ID = "primary_checkout_commit_refuse_hook_installed"
-_FAIL_EXIT = 4
-
 # All three hooks the from-package installer writes; each MUST be present
 # and byte-identical to CANONICAL_HOOK_BODY.
 _HOOK_NAMES: tuple[str, ...] = ("pre-commit", "pre-push", "commit-msg")
 
-# No-vendored-copy arm: a shell copy of the hook source under either of
-# these names is a drift seam (the package constant is the single source).
-_VENDORED_COPY_NAMES: tuple[str, ...] = (
-    "git-hook-wrapper.sh",
-    "livespec-commit-refuse-hook.sh",
-)
-
-# Path components carved out of the no-vendored-copy scan. `templates/` is
-# the template-source domain (zs22.7.9.3 ships a hook copy there as a
-# template artifact, not an installed/vendored copy); `.git/` is git's own
-# internal tree (the installed hooks live there under their own names).
-_VENDORED_COPY_CARVE_OUT_PARTS: frozenset[str] = frozenset({"templates", ".git"})
 
 # Failure-mode value for the legacy bare-flag regression — emitted on the
 # dedicated `core.bare = true` fail branch (distinct from the per-hook
 # `missing` / `not_executable` / `body_mismatch` modes and the
 # `vendored_copy_present` mode).
-_CORE_BARE_FAILURE_MODE = "core_bare_set"
-_VENDORED_COPY_FAILURE_MODE = "vendored_copy_present"
-# A git probe that did not ANSWER — distinct from every mode above, which are
-# all things the check successfully OBSERVED.
-_GIT_PROBE_FAILURE_MODE = "git_probe_failed"
-
-_HOOK_REMEDY = (
-    "run `just install-commit-refuse-hooks` (the from-package installer "
-    "that writes the single canonical body byte-for-byte to "
-    "`.git/hooks/pre-commit`, `.git/hooks/pre-push`, and "
-    "`.git/hooks/commit-msg`)"
-)
-_VENDORED_COPY_REMEDY = (
-    "delete the vendored hook-source copy; the single source of the hook "
-    "body is the `CANONICAL_HOOK_BODY` package constant installed via "
-    "`just install-commit-refuse-hooks` — a repo-tracked shell copy can "
-    "drift from it"
-)
-_GIT_PROBE_REMEDY = (
-    "a git probe this check depends on did not answer; rerun the reported "
-    "`argv` from the reported `cwd` to see git's own diagnostic. Every "
-    "verdict below rests on those probes, so an unanswered one is a result "
-    "the check cannot compute — it is reported rather than collapsed onto "
-    "`not a git repository`, which is a SKIP and would be a pass this run "
-    "never earned"
-)
-
-
 def _configure_logger() -> structlog.stdlib.BoundLogger:
     structlog.configure(
         processors=[
@@ -232,133 +215,6 @@ def _configure_logger() -> structlog.stdlib.BoundLogger:
         logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
     )
     return structlog.get_logger(_CHECK_ID)
-
-
-def _inspect_hook(
-    *,
-    hook_path: Path,
-) -> tuple[bool, str]:
-    """Return `(ok, failure_mode)` for a single hook path.
-
-    `ok` is True only when the hook exists as a regular file, is
-    executable by the current user, and its body is BYTE-IDENTICAL to
-    `CANONICAL_HOOK_BODY`. `failure_mode` is one of:
-
-    - `"missing"` — the hook file is absent or is not a regular file.
-    - `"not_executable"` — the hook exists but the executable bit is
-      unset for the current user (`os.access(path, os.X_OK)`).
-    - `"body_mismatch"` — the hook is executable but its bytes differ
-      from `CANONICAL_HOOK_BODY` (covers the empty-file case and any
-      body that would have passed the retired loose fingerprint).
-    - `""` (empty string) — the hook is correct; paired with `ok=True`.
-    """
-    if not hook_path.is_file():
-        return False, "missing"
-    if not os.access(hook_path, os.X_OK):
-        return False, "not_executable"
-    body = hook_path.read_text(encoding="utf-8")
-    if body != CANONICAL_HOOK_BODY:
-        return False, "body_mismatch"
-    return True, ""
-
-
-def _find_vendored_hook_copies(*, repo_root: Path) -> list[Path]:
-    """Return every vendored hook-source copy under `repo_root`, sorted.
-
-    Scans the work-tree root for files named `git-hook-wrapper.sh` or
-    `livespec-commit-refuse-hook.sh`, EXCLUDING any path with a component
-    under the `templates/` or `.git/` carve-outs. A match outside the
-    carve-outs is a drift seam (a second source of the hook body) and a
-    FAIL. Returns an empty list when no offending copy exists.
-    """
-    found: list[Path] = []
-    for name in _VENDORED_COPY_NAMES:
-        for candidate in repo_root.rglob(name):
-            relative_parts = candidate.relative_to(repo_root).parts
-            if any(part in _VENDORED_COPY_CARVE_OUT_PARTS for part in relative_parts):
-                continue
-            found.append(candidate)
-    return sorted(found)
-
-
-def _emit_failures(
-    *,
-    log: structlog.stdlib.BoundLogger,
-    hooks_dir: Path,
-    repo_root: Path,
-    hook_failures: list[tuple[str, str]],
-    vendored_copies: list[Path],
-    pack_failures: list[tuple[str, str]],
-) -> None:
-    """Emit one structured `fail` finding per detected violation.
-
-    Extracted from `main` so each of the three arms (hook byte-identity,
-    no-vendored-copy, worktree-pack drift) narrates independently while
-    keeping `main`'s cyclomatic complexity within the lint budget.
-    """
-    for hook_name, failure_mode in hook_failures:
-        log.error(
-            "primary-checkout-commit-refuse-hook-installed: hook failure",
-            check_id=_CHECK_ID,
-            status="fail",
-            hook=hook_name,
-            failure_mode=failure_mode,
-            hooks_dir=str(hooks_dir),
-            hint=_HOOK_REMEDY,
-            path="",
-            line=0,
-        )
-    for copy_path in vendored_copies:
-        log.error(
-            "primary-checkout-commit-refuse-hook-installed: vendored hook copy present",
-            check_id=_CHECK_ID,
-            status="fail",
-            hook="",
-            failure_mode=_VENDORED_COPY_FAILURE_MODE,
-            hooks_dir=str(hooks_dir),
-            hint=_VENDORED_COPY_REMEDY,
-            path=str(copy_path),
-            line=0,
-        )
-    for script_name, failure_mode in pack_failures:
-        log.error(
-            "primary-checkout-commit-refuse-hook-installed: worktree-pack drift",
-            check_id=_CHECK_ID,
-            status="fail",
-            hook="",
-            failure_mode=failure_mode,
-            hooks_dir=str(hooks_dir),
-            hint=pack_failure_hint(failure_mode=failure_mode),
-            path=str(pack_failure_path(repo_root=repo_root, script_name=script_name)),
-            line=0,
-        )
-
-
-def _narrate_probe_failure(*, log: structlog.stdlib.BoundLogger, failed: GitProbeFailed) -> int:
-    """Report an unanswered git probe as a finding and FAIL — never skip.
-
-    ⛔ Deliberately not exit 0. "`git` is unavailable" is a documented skip and
-    this is the other thing: git present and not answering. Before the
-    conversion the two were the same value — `is_git_repo_at_all` returned a
-    bare `False` either way — so a broken environment took the skip path and
-    the run went green having verified nothing.
-    """
-    log.error(
-        "primary-checkout-commit-refuse-hook-installed: git probe failed",
-        check_id=_CHECK_ID,
-        status="fail",
-        hook="",
-        failure_mode=_GIT_PROBE_FAILURE_MODE,
-        hooks_dir="",
-        hint=_GIT_PROBE_REMEDY,
-        path="",
-        line=0,
-        probe=failed.probe,
-        argv=failed.argv,
-        probe_cwd=failed.cwd,
-        detail=failed.detail,
-    )
-    return _FAIL_EXIT
 
 
 def _inspect_work_tree(*, log: structlog.stdlib.BoundLogger, cwd: Path) -> int:
@@ -399,19 +255,72 @@ def _inspect_installed_state(*, log: structlog.stdlib.BoundLogger, cwd: Path) ->
     exempt = sandbox_exempt_is_true(cwd=cwd)
     if isinstance(exempt, IOFailure):
         return _narrate_probe_failure(log=log, failed=unsafe_perform_io(exempt.failure()))
-    hooks_dir = unsafe_perform_io(common.unwrap()) / "hooks"
-    repo_root = unsafe_perform_io(root.unwrap())
-    hook_failures: list[tuple[str, str]] = []
-    for hook_name in _HOOK_NAMES:
-        hook_path = hooks_dir / hook_name
-        ok, failure_mode = _inspect_hook(hook_path=hook_path)
-        if not ok:
-            hook_failures.append((hook_name, failure_mode))
-    vendored_copies = _find_vendored_hook_copies(repo_root=repo_root)
-    pack_failures = inspect_worktree_pack(
-        repo_root=repo_root,
+    return _inspect_arms(
+        log=log,
+        hooks_dir=unsafe_perform_io(common.unwrap()) / "hooks",
+        repo_root=unsafe_perform_io(root.unwrap()),
         sandbox_exempt=unsafe_perform_io(exempt.unwrap()),
     )
+
+
+def _collect_hook_failures(
+    *, hooks_dir: Path
+) -> IOResult[list[tuple[str, str]], CheckInputUnreadable]:
+    """Every hook that is missing, non-executable or byte-different, or the unread one.
+
+    Stops at the FIRST unreadable hook rather than collecting around it: a
+    partial hook verdict is not a smaller verdict, it is an unsound one, and
+    the two remaining hooks would be reported as if all three had been checked.
+    """
+    failures: list[tuple[str, str]] = []
+    for hook_name in _HOOK_NAMES:
+        inspected = _inspect_hook(hook_path=hooks_dir / hook_name)
+        if isinstance(inspected, IOFailure):
+            return inspected
+        ok, failure_mode = unsafe_perform_io(inspected.unwrap())
+        if not ok:
+            failures.append((hook_name, failure_mode))
+    return IOSuccess(failures)
+
+
+def _inspect_arms(
+    *,
+    log: structlog.stdlib.BoundLogger,
+    hooks_dir: Path,
+    repo_root: Path,
+    sandbox_exempt: bool,
+) -> int:
+    """The three byte-identity arms, each of which may now decline to answer.
+
+    Split from `_inspect_installed_state` at the seam the conversion created:
+    that function owns the git probes, this one owns the file reads. Each arm
+    is a `return`, and keeping them in one function would put both groups past
+    the six-return lint budget.
+    """
+    hooks = _collect_hook_failures(hooks_dir=hooks_dir)
+    if isinstance(hooks, IOFailure):
+        return _narrate_unreadable_input(
+            log=log,
+            failed=unsafe_perform_io(hooks.failure()),
+            failure_mode=_HOOK_READ_FAILURE_MODE,
+        )
+    copies = _find_vendored_hook_copies(repo_root=repo_root)
+    if isinstance(copies, IOFailure):
+        return _narrate_unreadable_input(
+            log=log,
+            failed=unsafe_perform_io(copies.failure()),
+            failure_mode=_HOOK_READ_FAILURE_MODE,
+        )
+    inspected = inspect_worktree_pack(repo_root=repo_root, sandbox_exempt=sandbox_exempt)
+    if isinstance(inspected, IOFailure):
+        return _narrate_unreadable_input(
+            log=log,
+            failed=unsafe_perform_io(inspected.failure()),
+            failure_mode=_PACK_READ_FAILURE_MODE,
+        )
+    hook_failures = unsafe_perform_io(hooks.unwrap())
+    vendored_copies = unsafe_perform_io(copies.unwrap())
+    pack_failures = unsafe_perform_io(inspected.unwrap())
     if not hook_failures and not vendored_copies and not pack_failures:
         return 0
     _emit_failures(
