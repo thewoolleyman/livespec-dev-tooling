@@ -19,6 +19,7 @@ import json
 import shutil
 from pathlib import Path
 
+from returns.unsafe import unsafe_perform_io
 from test_plugin_structure import _make_codex_tree, _w
 
 from livespec_dev_tooling.driver_checks import _plugin_structure_codex
@@ -30,8 +31,19 @@ def _joined(*, violations: list[str]) -> str:
     return "\n".join(violations)
 
 
+# ⛔ CORRECTED, NOT UPDATED. Five tests in this suite were named
+# `*_unreadable` and every one of them wrote `{ not json` — which is
+# INVALID, not unreadable. Not one ever exercised a file that could not be
+# READ. The fused `unreadable/invalid` diagnostic made the misnomer
+# invisible, and the absence of any real unreadable-file coverage is
+# precisely why the collapse survived. They assert INVALID now, and say so
+# in their names; the unreadable condition is covered for the first time in
+# `test_plugin_structure_unreadable.py`.
+
+
 def _codex_violations(*, root: Path) -> list[str]:
-    return _plugin_structure_codex.codex_profile_violations(root=root)
+    """The violation list, unwrapped — these trees are all READABLE."""
+    return unsafe_perform_io(_plugin_structure_codex.codex_profile_violations(root=root).unwrap())
 
 
 def test_codex_profile_valid_passes(*, tmp_path: Path) -> None:
@@ -40,12 +52,11 @@ def test_codex_profile_valid_passes(*, tmp_path: Path) -> None:
     assert _codex_violations(root=tmp_path) == []
 
 
-def test_codex_marketplace_unreadable(*, tmp_path: Path) -> None:
+def test_codex_marketplace_invalid(*, tmp_path: Path) -> None:
     _make_codex_tree(root=tmp_path)
     _w(path=tmp_path / ".agents" / "plugins" / "marketplace.json", content="{ not json")
     assert any(
-        ".agents/plugins/marketplace.json unreadable/invalid" in v
-        for v in _codex_violations(root=tmp_path)
+        ".agents/plugins/marketplace.json invalid" in v for v in _codex_violations(root=tmp_path)
     )
 
 
@@ -101,12 +112,11 @@ def test_codex_marketplace_entry_name_and_source_wrong(*, tmp_path: Path) -> Non
     assert "marketplace plugin entry source MUST be" in text
 
 
-def test_codex_manifest_unreadable(*, tmp_path: Path) -> None:
+def test_codex_manifest_invalid(*, tmp_path: Path) -> None:
     _make_codex_tree(root=tmp_path)
     _w(path=tmp_path / "livespec" / ".codex-plugin" / "plugin.json", content="{ not json")
     assert any(
-        "livespec/.codex-plugin/plugin.json unreadable/invalid" in v
-        for v in _codex_violations(root=tmp_path)
+        "livespec/.codex-plugin/plugin.json invalid" in v for v in _codex_violations(root=tmp_path)
     )
 
 
@@ -242,13 +252,13 @@ def test_codex_binding_body_indented_closing_fence(*, tmp_path: Path) -> None:
     assert not any("core-resolution invocation" in v for v in _codex_violations(root=tmp_path))
 
 
-def test_codex_hook_bundle_guard_missing_and_unreadable(*, tmp_path: Path) -> None:
+def test_codex_hook_bundle_guard_missing_and_invalid(*, tmp_path: Path) -> None:
     _make_codex_tree(root=tmp_path)
     (tmp_path / "livespec" / "hooks" / "livespec_footgun_guard.py").unlink()
     _w(path=tmp_path / "livespec" / "hooks" / "hooks.json", content="{ not json")
     text = _joined(violations=_codex_violations(root=tmp_path))
     assert "missing livespec/hooks/livespec_footgun_guard.py" in text
-    assert "livespec/hooks/hooks.json unreadable/invalid" in text
+    assert "livespec/hooks/hooks.json invalid" in text
 
 
 def test_codex_hook_bundle_top_level_description(*, tmp_path: Path) -> None:

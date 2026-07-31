@@ -87,7 +87,7 @@ that four of them are declarations rather than code.
    | cross-member edges examined | ~~58~~ |
    | **of the 75, edges found** | ~~**1**~~ |
 
-   **`fleet/_context.py::resolve_owner` ← `livespec-orchestrator-beads-fabro`'s
+   **`fleet/_origin_remote.py::resolve_owner` ← `livespec-orchestrator-beads-fabro`'s
    `.claude-plugin/hooks/codex_yolo_gate.py`.** Uniquely resolved. That is the `dx8l`
    consumer, in a HOOK, which is the worst blast-radius shape this fleet has. **Consumer
    wiring lands FIRST, dual-shape, in beads-fabro, before the conversion lands here.**
@@ -120,7 +120,7 @@ that four of them are declarations rather than code.
 
    | of the 75, consumed by a sibling | consumers |
    |---|---|
-   | `fleet/_context.py::resolve_owner` | beads-fabro's `codex_yolo_gate.py` hook |
+   | `fleet/_origin_remote.py::resolve_owner` | beads-fabro's `codex_yolo_gate.py` hook |
    | `testing/_cli_e2e_discovery.py::discover_fixtures` | **all four** — both Drivers, both orchestrators |
 
    **⛔⛔ AND TWO CLAIMS ARE RETRACTED — BOTH MINE, BOTH BY MEASUREMENT RATHER THAN ARGUMENT.**
