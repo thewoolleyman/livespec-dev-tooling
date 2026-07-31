@@ -240,11 +240,32 @@ cross_repo_public_api = [
 # were read and REJECTED for this key — see `_connection.py` in
 # `plan/rop-railway-enforcement/qndn-75-triage.md`.
 #
-# THE DISCRIMINATOR THAT DECIDED ALL FOUR CANDIDATES: how many distinct
-# conditions collapse onto the ONE `None`. `tag_version_component` collapses
-# exactly one (the tag has no version component). A `None` covering an absent
-# key AND a malformed value is carrying a failure alongside the absence, and no
-# caller can tell them apart — which is a conversion, not a declaration.
+# THE RULE HAS TWO HALVES AND COUNTING ALONE IS NOT SUFFICIENT. An earlier
+# revision of this comment stated only the first half; a sweep of every
+# `X | None` in the triage then found TWO functions that satisfy it and are
+# still conversions, so a future author applying the counting rule literally
+# could declare one of them. Both halves, in order:
+#
+#  1. COUNT DISTINCT MEANINGS — not syntactic `return None` sites, and FOLLOW
+#     any callee that itself collapses. `fleet/_context.py::resolve_owner` has
+#     ONE return expression and THREE meanings (no origin remote, `git remote
+#     get-url` failing, a non-github remote), because `_origin_remote_match`
+#     merges them one level down. MORE THAN ONE -> CONVERT: no caller can tell
+#     them apart, and at least one is normally a failure.
+#
+#  2. IF EXACTLY ONE, ASK WHOSE FAILURE THE CALLERS REPORT. A caller saying
+#     "I cannot verify this" is reporting the FUNCTION's failure -> CONVERT.
+#     `checks/_ci_matrix_parse.py::extract_check_recipe_body` collapses exactly
+#     ONE condition (the justfile has no `check:` recipe) and is a CONVERSION,
+#     because every caller emits `check_recipe_not_found` and says it cannot
+#     verify. So does `fleet/_rows_pin_currency.py::open_bump_prs_for`, whose
+#     single condition IS a read failure. A caller instead saying "the thing I
+#     INSPECTED is non-conformant", or using the `None` as pure control flow,
+#     is a caller acting on an answer -> DECLARE.
+#
+# PART 2 DECIDES EVERY ONE-CONDITION CASE, which is the only population this
+# key can ever admit. `tag_version_component` passes both: one condition (the
+# tag has no version component), and no caller reports anything on it.
 total_absence_returns = [
     { file = "livespec_dev_tooling/cross_repo/fabro_image_pin_rewrite.py", function = "tag_version_component", reason = "absence, not failure: a docker tag legitimately HAS no version component, so `None` is an ordinary answer every caller acts on. Converting it would force each caller to unwrap a Failure for a non-failure. Established four separate times across the rop-railway-enforcement thread: it sat in that triage's STRONGEST convert class (a hand-rolled `X | None` failure track) and was still not a conversion, which is what produced the standing rule to read every function a classification convicted." },
     { file = "livespec_dev_tooling/checks/_role_key_gate.py", function = "role_absence_exit_code", reason = "absence of a GATE DECISION, not a failure. CALLERS READ (all five: check_mutation, newtype_domain_primitives, no_shadow_ledger_body_identical, pbt_coverage_pure_modules, public_api_result_typed) — every one is `gate_exit = role_absence_exit_code(...)` then `if gate_exit is not None: return gate_exit`, so `None` is pure control flow meaning 'no gate fired, carry on'. ONE condition collapses onto it: `role_absence(role=role)` is None, i.e. the role is not declared-absent. The failure and violation channels are the INT, not the None — an undeclared key returns 1 and a declared-absent role returns 0, both loud. A Result here would put 'carry on' on the failure track, which is the common path." },
