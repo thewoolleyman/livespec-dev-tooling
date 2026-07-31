@@ -199,19 +199,46 @@ def _public_functions(*, tree: ast.Module) -> frozenset[str]:
     return frozenset(name for name in top_level_functions(tree=tree) if not name.startswith("_"))
 
 
+@dataclass(frozen=True, kw_only=True)
+class _DefiningFacts:
+    """What the defining side of the fleet contributes to edge resolution.
+
+    `reexports` is the half `functions` alone cannot answer: a name a file
+    IMPORTS from another first-party module and re-exports is not among that
+    file's own definitions, so a reach resolved to the facade would be dropped
+    without it.
+    """
+
+    index: dict[str, frozenset[Path]]
+    functions: dict[Path, frozenset[str]]
+    reexports: dict[Path, dict[str, str]]
+
+
 def _defining_index(
     *, members: Mapping[str, MemberSources], unparsed: list[UnparsedSource]
-) -> tuple[dict[str, frozenset[Path]], dict[Path, frozenset[str]]]:
-    """The fleet-wide suffix index and the public functions each defining file holds."""
+) -> _DefiningFacts:
+    """The fleet-wide suffix index, each defining file's functions, and its re-exports."""
     texts: dict[Path, str] = {}
     functions: dict[Path, frozenset[str]] = {}
+    trees_by_file: dict[Path, ast.Module] = {}
     for member, sources in members.items():
         trees = _parsed(member=member, sources=sources.defining, into=unparsed)
         for rel, tree in trees.items():
             qualified = _qualified(member=member, rel=rel)
             texts[qualified] = sources.defining[rel]
             functions[qualified] = _public_functions(tree=tree)
-    return suffix_index(sources=texts), functions
+            trees_by_file[qualified] = tree
+    index = suffix_index(sources=texts)
+    reexports = {
+        qualified: {
+            name: dotted
+            for dotted, name in name_imports(
+                tree=tree, current=module_name(rel=qualified), index=index
+            )
+        }
+        for qualified, tree in trees_by_file.items()
+    }
+    return _DefiningFacts(index=index, functions=functions, reexports=reexports)
 
 
 def cross_member_consumption(*, members: Mapping[str, MemberSources]) -> ConsumptionGraph:
@@ -222,46 +249,96 @@ def cross_member_consumption(*, members: Mapping[str, MemberSources]) -> Consump
     checkout, and recomputing them here would put one rule in two places.
     """
     unparsed: list[UnparsedSource] = []
-    index, functions = _defining_index(members=members, unparsed=unparsed)
+    facts = _defining_index(members=members, unparsed=unparsed)
     edges: list[ConsumptionEdge] = []
     for member, sources in members.items():
         trees = _parsed(member=member, sources=sources.consuming, into=unparsed)
         for rel, tree in trees.items():
             current = module_name(rel=_qualified(member=member, rel=rel))
-            aliases = module_aliases(tree=tree, current=current, index=index)
-            reached = name_imports(tree=tree, current=current, index=index) | attribute_reaches(
-                tree=tree, aliases=aliases, index=index
-            )
-            edges.extend(
-                _edges_for(
-                    member=member, rel=rel, reached=reached, index=index, functions=functions
-                )
-            )
+            aliases = module_aliases(tree=tree, current=current, index=facts.index)
+            reached = name_imports(
+                tree=tree, current=current, index=facts.index
+            ) | attribute_reaches(tree=tree, aliases=aliases, index=facts.index)
+            edges.extend(_edges_for(member=member, rel=rel, reached=reached, facts=facts))
     return ConsumptionGraph(edges=tuple(sorted(edges, key=_edge_order)), unparsed=tuple(unparsed))
 
 
+def _through_reexports(
+    *, start: Path, name: str, facts: _DefiningFacts
+) -> tuple[frozenset[Path], bool]:
+    """Files DEFINING `name`, reached from `start` by following re-exports.
+
+    A facade that re-exports a name defines nothing itself, so a reach that
+    lands on it must be re-resolved to the module the name comes FROM.
+    MEASURED: without this, four siblings' consumption of
+    `_cli_e2e_discovery.discover_fixtures` through `cli_e2e` produced NO edge
+    at all — not against the facade, not against the definer — because
+    `_edges_for` dropped the reach the moment the facade did not define it.
+
+    The walk is BOUNDED BY A VISITED SET rather than by a hop limit: a
+    re-export cycle is a real shape (two modules importing each other's names)
+    and an arbitrary depth cap would silently stop resolving a legitimate
+    chain. It returns whether every hop resolved to exactly ONE candidate, so
+    an ambiguity introduced by the re-export is reported the same way an
+    ambiguity in the original reach is — `uniquely_resolved` must not become
+    optimistic just because the answer took an extra hop.
+    """
+    defining: set[Path] = set()
+    unique = True
+    seen: set[Path] = set()
+    frontier = [start]
+    while frontier:
+        current = frontier.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+        if name in facts.functions.get(current, frozenset()):
+            defining.add(current)
+            continue
+        dotted = facts.reexports.get(current, {}).get(name)
+        if dotted is None:
+            continue
+        candidates = facts.index.get(dotted, frozenset())
+        unique = unique and len(candidates) == 1
+        frontier.extend(candidates)
+    return frozenset(defining), unique
+
+
 def _edges_for(
-    *,
-    member: str,
-    rel: Path,
-    reached: set[tuple[str, str]],
-    index: Mapping[str, frozenset[Path]],
-    functions: Mapping[Path, frozenset[str]],
+    *, member: str, rel: Path, reached: set[tuple[str, str]], facts: _DefiningFacts
 ) -> list[ConsumptionEdge]:
     """The cross-member edges one consuming file's reaches produce."""
     found: list[ConsumptionEdge] = []
     for dotted, name in reached:
-        candidates = index[dotted]
+        candidates = facts.index[dotted]
         if any(candidate.parts[0] == member for candidate in candidates):
             # The consuming member defines this module ITSELF, so Python
             # resolves the import to its own copy and nothing crosses a
             # boundary. Measured: without this, one byte-identical installed
             # hook produced 14 false findings across 7 members, because a
             # bare-name import satisfied locally matched every member's copy.
+            # ⛔ APPLIED BEFORE the re-export walk, deliberately: a hop that
+            # re-resolved elsewhere must not smuggle the consumer's own copy
+            # back in as a cross-member edge.
             continue
-        for defining in candidates:
-            if name not in functions[defining]:
-                continue
+        defining_files: set[Path] = set()
+        hops_unique = True
+        for candidate in candidates:
+            reached_defining, candidate_unique = _through_reexports(
+                start=candidate, name=name, facts=facts
+            )
+            defining_files |= reached_defining
+            hops_unique = hops_unique and candidate_unique
+        if any(defining.parts[0] == member for defining in defining_files):
+            # The re-export led back into the CONSUMING member, which the
+            # pre-hop guard could not see because the FACADE belongs to the
+            # sibling alone. Python satisfies the name from the consumer's own
+            # copy, so nothing crosses a boundary — and the test is `any`, not
+            # a per-file skip: emitting the sibling's copy while skipping the
+            # consumer's would fail a member for a file it never opens, which
+            # is the 14-false-findings shape the pre-hop guard exists to stop.
+            continue
+        for defining in sorted(defining_files):
             found.append(
                 ConsumptionEdge(
                     defining_member=defining.parts[0],
@@ -269,7 +346,7 @@ def _edges_for(
                     function=name,
                     consuming_member=member,
                     consuming_file=rel,
-                    uniquely_resolved=len(candidates) == 1,
+                    uniquely_resolved=len(candidates) == 1 and hops_unique,
                 )
             )
     return found

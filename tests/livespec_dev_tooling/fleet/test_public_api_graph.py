@@ -302,3 +302,102 @@ def test_edges_are_ordered_so_a_rows_output_does_not_churn() -> None:
         "pkg/alpha.py",
         "pkg/zeta.py",
     ]
+
+
+_DISCOVERY = "livespec_dev_tooling/testing/_cli_e2e_discovery.py"
+_DISCOVERY_SOURCE = """
+def discover_fixtures(*, fixtures_root: str) -> str:
+    return fixtures_root
+"""
+_FACADE = "livespec_dev_tooling/testing/cli_e2e.py"
+_FACADE_SOURCE = """
+from livespec_dev_tooling.testing._cli_e2e_discovery import discover_fixtures
+
+__all__: list[str] = ["discover_fixtures", "run_round_trip"]
+
+
+def run_round_trip(*, root: str) -> str:
+    return root
+"""
+_E2E = "tests/e2e-cli/test_cli_e2e.py"
+_E2E_SOURCE = """
+from livespec_dev_tooling.testing import cli_e2e
+
+fixtures = cli_e2e.discover_fixtures(fixtures_root="x")
+"""
+
+
+def test_a_reexported_function_is_an_edge_against_the_module_that_defines_it() -> None:
+    """The measured blind spot: a re-export made a real consumption vanish.
+
+    Four siblings reach `_cli_e2e_discovery.discover_fixtures` as
+    `cli_e2e.discover_fixtures`, and the graph emitted NO edge — the reach
+    resolved to `cli_e2e.py`, the name was not DEFINED there, and it was
+    dropped with no second resolution to the module that does define it. The
+    `run_round_trip` reach in the same fixture is the discriminator: it IS
+    defined in the facade, so it was always seen, and a graph that still only
+    reports that one has not been fixed.
+    """
+    graph = cross_member_consumption(
+        members={
+            "livespec-dev-tooling": sources(
+                defining={_DISCOVERY: _DISCOVERY_SOURCE, _FACADE: _FACADE_SOURCE},
+                consuming={_DISCOVERY: _DISCOVERY_SOURCE, _FACADE: _FACADE_SOURCE},
+            ),
+            "livespec-driver-codex": sources(
+                defining={},
+                consuming={_E2E: _E2E_SOURCE + "\nround_trip = cli_e2e.run_round_trip(root='r')\n"},
+            ),
+        }
+    )
+    assert graph.unparsed == ()
+    assert [
+        (edge.defining_file.as_posix(), edge.function, edge.uniquely_resolved)
+        for edge in graph.edges
+    ] == [
+        (_DISCOVERY, "discover_fixtures", True),
+        (_FACADE, "run_round_trip", True),
+    ]
+
+
+def test_a_reexport_the_consuming_member_satisfies_itself_still_crosses_no_boundary() -> None:
+    """Following a re-export must not defeat the local-copy guard.
+
+    The guard that stops an installed foreign copy producing a false edge is
+    applied to the reach's FIRST resolution. A hop that re-resolves elsewhere
+    must not smuggle the consumer's own copy back in as a cross-member edge.
+    """
+    graph = cross_member_consumption(
+        members={
+            "livespec-dev-tooling": sources(
+                defining={_DISCOVERY: _DISCOVERY_SOURCE, _FACADE: _FACADE_SOURCE},
+                consuming={_DISCOVERY: _DISCOVERY_SOURCE, _FACADE: _FACADE_SOURCE},
+            ),
+            "livespec-driver-codex": sources(
+                defining={_DISCOVERY: _DISCOVERY_SOURCE, _FACADE: _FACADE_SOURCE},
+                consuming={_E2E: _E2E_SOURCE},
+            ),
+        }
+    )
+    assert graph.edges == ()
+
+
+def test_a_reexport_cycle_terminates_and_emits_nothing() -> None:
+    """Two facades re-exporting each other, and neither defines the name.
+
+    A naive follow-the-re-export walk recurses forever here. It must
+    terminate, and it must not invent an edge against a module that only
+    forwards the name.
+    """
+    left = "from pkg.right import spin\n"
+    right = "from pkg.left import spin\n"
+    graph = cross_member_consumption(
+        members={
+            "zulu": sources(
+                defining={"pkg/left.py": left, "pkg/right.py": right},
+                consuming={"pkg/left.py": left, "pkg/right.py": right},
+            ),
+            "beta": sources(defining={}, consuming={"app.py": "from pkg.left import spin\n"}),
+        }
+    )
+    assert graph.edges == ()
