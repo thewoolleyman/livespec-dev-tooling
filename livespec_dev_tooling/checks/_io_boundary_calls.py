@@ -82,6 +82,31 @@ _IO_MODULES: frozenset[str] = frozenset(
 # Builtins that ARE an I/O boundary. Every other builtin is a pure operation.
 _IO_BUILTINS: frozenset[str] = frozenset({"input", "open", "print"})
 
+# Members of an `_IO_MODULES` module that touch NOTHING. `_IO_MODULES` decides
+# at MODULE granularity, which is right for `subprocess` and `socket` and wrong
+# for these: `io.StringIO` is an in-memory buffer and `Path(...)` is a value
+# construction. MEASURED — the three they wrongly convicted are
+# `_no_except_outside_io_markers.comment_lines`, `.statement_colons` (whose only
+# "I/O" is tokenizing a string already in hand) and
+# `_subagent_stop_guard_transcript.extract_created_worktree_paths` (string in,
+# list of Path out).
+#
+# ⛔ MATCHED EXACTLY, NEVER AS A PREFIX, and that is what keeps this from being
+# a hole. `Path.cwd()` reads the process working directory and resolves to
+# `pathlib.cwd` here, which is absent from this set and stays disqualified;
+# `Path(x).read_text()` is caught by the unresolved-receiver verb set one step
+# later. A member added here must be pure on EVERY receiver, not merely usually.
+_PURE_IO_MODULE_MEMBERS: frozenset[str] = frozenset(
+    {
+        "io.BytesIO",
+        "io.StringIO",
+        "pathlib.PurePath",
+        "pathlib.PurePosixPath",
+        "pathlib.PureWindowsPath",
+        "pathlib.Path",
+    }
+)
+
 # Verbs that decide an attribute call whose RECEIVER cannot be resolved. Every
 # member is unambiguously a filesystem, process or socket operation on any
 # plausible receiver. Deliberately ABSENT: `get`, `run`, `send`, `post`,
@@ -248,9 +273,12 @@ def _name_call(
         return CallOutcome(edges=frozenset(), disqualifies=True)
     bound = facts.import_roots.get(name)
     if bound is not None:
+        # `from pathlib import Path` binds the MEMBER, so the dotted target is
+        # the module it came from plus the bound name itself.
         return CallOutcome(
             edges=frozenset(),
-            disqualifies=_module_is_io(dotted=bound),
+            disqualifies=_module_is_io(dotted=bound)
+            and f"{bound}.{name}" not in _PURE_IO_MODULE_MEMBERS,
         )
     if name in facts.classes or name in _BUILTIN_NAMES:
         return CallOutcome(edges=frozenset(), disqualifies=False)
@@ -281,9 +309,16 @@ def _attribute_call(
     root = _root_name(node=target.value)
     bound = facts.import_roots.get(root) if root is not None else None
     if bound is not None:
+        # Rebuild the dotted target with the RESOLVED root substituted for the
+        # local one, so `import io as _io` reaches the same answer as `import
+        # io`. A deeper receiver (`os.path.join`) keeps its middle segments and
+        # simply misses the pure set, which is the safe direction.
+        rendered = ast.unparse(target.value)
+        middle = rendered.split(".", maxsplit=1)[1] if "." in rendered else ""
+        dotted = ".".join(part for part in (bound, middle, target.attr) if part)
         return CallOutcome(
             edges=frozenset(),
-            disqualifies=_module_is_io(dotted=bound),
+            disqualifies=_module_is_io(dotted=bound) and dotted not in _PURE_IO_MODULE_MEMBERS,
         )
     # The receiver resolves to nothing — see the module docstring for why the
     # verb decides here, and why that is the one non-conservative step.
