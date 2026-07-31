@@ -39,9 +39,11 @@ from typing import cast
 
 from livespec_dev_tooling.fleet._context import RowPass, RowSkip
 from livespec_dev_tooling.fleet._contract_local_rows import LOCAL_OBLIGATION_ROWS
+from livespec_dev_tooling.fleet._invocation_failure import InvocationNotPerformed
 from livespec_dev_tooling.fleet._local_context import (
     CommandRunner,
     LocalContext,
+    command_answer,
     default_command_runner,
 )
 
@@ -54,17 +56,26 @@ import structlog  # noqa: E402  — vendor-path-aware import after sys.path inse
 __all__: list[str] = []
 
 
-def _resolve_checkout_root(*, target: Path, run: CommandRunner) -> Path | None:
-    """Resolve the primary checkout root for `target`, or None when not a checkout.
+def _resolve_checkout_root(
+    *, target: Path, run: CommandRunner
+) -> Path | InvocationNotPerformed | None:
+    """The primary checkout root for `target`; None when `git` says it is not one.
 
     Uses `git rev-parse --git-common-dir` so the resolution is
     worktree-safe: from a linked worktree the common dir is the
     primary's shared `.git`, whose parent is the primary checkout root.
+
+    THREE answers rather than two, because the caller's diagnostic differs
+    for each. `git` that never ran is not evidence that `target` is not a
+    checkout — `main()` used to print "target is not a git checkout" and
+    advise passing `--checkout` for a host that simply has no `git`.
     """
-    result = run(args=["git", "rev-parse", "--git-common-dir"], cwd=target)
-    if result.returncode != 0:
+    answer = command_answer(outcome=run(args=["git", "rev-parse", "--git-common-dir"], cwd=target))
+    if isinstance(answer, InvocationNotPerformed):
+        return answer
+    if answer.returncode != 0:
         return None
-    common = Path(result.stdout.strip())
+    common = Path(answer.stdout.strip())
     if not common.is_absolute():
         common = (target / common).resolve()
     return common.parent
@@ -121,20 +132,28 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _resolve_invoked_worktree(*, target: Path, run: CommandRunner) -> Path:
-    """The work-tree root `target` sits in.
+def _resolve_invoked_worktree(*, target: Path, run: CommandRunner) -> Path | None:
+    """The work-tree root `target` sits in, or None when `git` did not run.
 
     Distinct from `_resolve_checkout_root`: that returns the PRIMARY root via
     `--git-common-dir`, which is what shared obligations need. This returns the
     root of the worktree actually invoked, which per-worktree artifacts need.
 
-    No failure branch: the sole caller resolves the checkout root FIRST and
-    bails when that fails, so by the time this runs `target` is known to be a
-    git checkout and `--show-toplevel` cannot fail. A dead error path here
-    would be untestable by construction.
+    The None arm is UNREACHABLE THROUGH `main()` and is still real code: the
+    sole caller resolves the checkout root FIRST and bails when that fails, so
+    by the time this runs `git` is known invocable. It is therefore exercised
+    at its OWN seam rather than through the composed caller — the same shape as
+    `walk_github_workflow_container_image`, whose failure branch a
+    short-circuiting caller left uncovered forever while looking thorough.
+
+    None rather than a fabricated path: `LocalContext.worktree` already
+    documents None as falling back to `checkout`, so this reuses the existing
+    spelling for "unknown" instead of inventing a second one.
     """
-    result = run(args=["git", "rev-parse", "--show-toplevel"], cwd=target)
-    return Path(result.stdout.strip())
+    answer = command_answer(outcome=run(args=["git", "rev-parse", "--show-toplevel"], cwd=target))
+    if isinstance(answer, InvocationNotPerformed):
+        return None
+    return Path(answer.stdout.strip())
 
 
 def main() -> int:
@@ -151,6 +170,13 @@ def main() -> int:
     raw_target = cast("str | None", args.checkout)
     target = Path(raw_target) if raw_target is not None else Path.cwd()
     root = _resolve_checkout_root(target=target, run=default_command_runner)
+    if isinstance(root, InvocationNotPerformed):
+        log.error(
+            "git could not be invoked, so the target was never inspected",
+            target=str(target),
+            reason=root.reason,
+        )
+        return 1
     if root is None:
         log.error(
             "target is not a git checkout",

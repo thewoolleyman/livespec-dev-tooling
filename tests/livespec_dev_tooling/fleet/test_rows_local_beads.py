@@ -11,8 +11,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from returns.io import IOSuccess
+
 from livespec_dev_tooling.fleet._context import RowFinding, RowPass, RowSkip
-from livespec_dev_tooling.fleet._local_context import CommandResult, LocalContext
+from livespec_dev_tooling.fleet._local_context import (
+    CommandOutcome,
+    CommandResult,
+    LocalContext,
+)
 from livespec_dev_tooling.fleet._rows_local_beads import (
     DOLT_SERVER_HOST,
     DOLT_SERVER_PORT,
@@ -53,9 +59,9 @@ def _ctx(
     """A `LocalContext` over a canned runner keyed on the full args tuple (default OK)."""
     lookup = table or {}
 
-    def run(*, args: list[str], cwd: Path | None = None) -> CommandResult:
+    def run(*, args: list[str], cwd: Path | None = None) -> CommandOutcome:
         del cwd
-        return lookup.get(tuple(args), _OK)
+        return IOSuccess(lookup.get(tuple(args), _OK))
 
     return LocalContext(checkout=checkout, home=checkout / "home", run=run)
 

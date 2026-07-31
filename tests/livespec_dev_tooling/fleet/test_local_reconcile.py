@@ -15,10 +15,16 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from returns.io import IOSuccess
+
 from livespec_dev_tooling.fleet import local_reconcile
 from livespec_dev_tooling.fleet._context import RowFinding, RowOutcome
 from livespec_dev_tooling.fleet._contract_local_rows import LocalObligationRow
-from livespec_dev_tooling.fleet._local_context import CommandResult, LocalContext
+from livespec_dev_tooling.fleet._local_context import (
+    CommandOutcome,
+    CommandResult,
+    LocalContext,
+)
 from livespec_dev_tooling.fleet.local_reconcile import _resolve_checkout_root, reconcile_checkout
 
 if TYPE_CHECKING:
@@ -38,9 +44,9 @@ def _runner(*, table: dict[tuple[str, ...], CommandResult] | None = None):
     lookup = table or {}
     default = CommandResult(returncode=0, stdout="", stderr="")
 
-    def run(*, args: list[str], cwd: Path | None = None) -> CommandResult:
+    def run(*, args: list[str], cwd: Path | None = None) -> CommandOutcome:
         del cwd
-        return lookup.get(tuple(args), default)
+        return IOSuccess(lookup.get(tuple(args), default))
 
     return run
 
