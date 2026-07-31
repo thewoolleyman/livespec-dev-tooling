@@ -204,10 +204,57 @@ records the lane-scoped shape instead.
 >    `plan/rop-railway-enforcement/qndn-75-triage.md`. READ THAT FILE BEFORE PLANNING
 >    ANYTHING; it carries all 75 by name with the evidence that convicted each.**
 >
+>    **✅✅ THE `default_*` PROTOCOL SLICE IS DONE — ALL THREE SEAMS LANDED 2026-07-31.**
+>    **#978 (`99a232e`, `GhDownloader`), #981 (`20dc67c`, `CommandRunner`), #984 (`60938fd`,
+>    `GhRunner`).** Offenders **43 → 42 → 41 → 40**, each end re-derived on merged master.
+>    All three seams now share ONE failure type, `fleet/_invocation_failure.py`
+>    (`InvocationNotPerformed`, kinds `binary_absent` / `spawn_failed` /
+>    `destination_unwritable`).
+>
+>    **🔑 THE RULING THAT MADE THE SLICE CHEAP, and it should govern every remaining seam:
+>    `returncode` STAYS DATA ON THE SUCCESS TRACK.** An invocation that COMPLETED and ANSWERED
+>    is `IOSuccess` whatever it answered — a `gh` that ran and exited 4 is a success carrying 4.
+>    ONLY "the invocation did not happen" is a failure. That is what made ~40 canned fakes
+>    mechanical rather than semantic: every existing fake answers as a program that RAN, so all
+>    of them lift onto the success track unchanged.
+>
+>    **🔴🔴 THE FINDING WORTH MORE THAN THE THREE CONVERSIONS: THE SENTINEL NEVER STAYED IN THE
+>    SEAM, AND DOWNSTREAM IT DID NOT FAIL LOUDLY — IT PRODUCED CONFIDENT, WRONG SENTENCES.**
+>    The fabricated `returncode=127` was read by consumers as an ANSWER, and each one laundered
+>    "the program is not installed" into a verdict ABOUT THE MEMBER:
+>
+>    | consumer | what an absent binary reported |
+>    |---|---|
+>    | `reconcile_claude_plugins` / `reconcile_codex_plugins` | SKIP: "member declares no plugin surface" — **a fabricated CLEAN result** |
+>    | `assert_git_notes_refspec`, `assert_worktree_root_trust` | the refspec / trusted path **ABSENT** from config never read |
+>    | `assert_branch_protection` | "branch protection unreadable (**needs admin scope**)" — a diagnosis of a token never presented |
+>    | `reconcile_delete_branch_on_merge` | a remediation telling the operator to re-run with **Administration permission** |
+>    | `reconcile_shim_workflows` | "no such shim branch" → **goes on to CREATE one** it never established was missing |
+>    | `api_object` / `file_text` | cause recorded via `classify_gh_failure(stderr=…)` — **reading a transport diagnostic out of a string the seam itself invented** |
+>    | `local_reconcile.main` | "target is not a git checkout; pass `--checkout`" for a host with no `git` |
+>
+>    **The general form, and it generalises past this epic: A COLLAPSED SENTINEL DOES NOT
+>    PRODUCE AN ERROR, IT PRODUCES AN ARTICULATE WRONG ANSWER.** Every one of those is a
+>    grammatical, specific, actionable sentence about a member that was never contacted. Ask of
+>    every remaining conversion not "does this crash?" but *"what does this CLAIM when the thing
+>    it measures never happened?"*
+>
+>    **⛔ THE MEASUREMENT TRAP THAT ALMOST BANKED A FALSE −3, and it is a NEW member of the
+>    "instrument that cannot produce a negative" family.** Seam 3's first measurement read
+>    universe 158 · offenders **38** — a three-offender improvement. It was FALSE. The two new
+>    modules were still UNTRACKED, and `resolve_check_universe()` derives from `git ls-files`,
+>    so `default_gh_runner`, `resolve_owner` and `resolve_repo_name` had not been converted —
+>    **they had become INVISIBLE to the instrument.** Tracked, the true figure is universe 160 ·
+>    offenders 40. **A conversion that MOVES or ADDS a file must be measured with the file
+>    tracked (`git add -N` suffices).** That is the second way this harness can report progress
+>    by reading less; `pure_trees`/`_scan` was the first.
+>
 >    **▶️▶️ COLD START, THE ONLY THING YOU NEED FROM THIS BLOCK: the NEXT ACTION is
->    ▶️ THE REMAINING **13** CONVERT, of which ~~**9 ARE UNBLOCKED**~~ **6 ARE UNBLOCKED —
->    the `default_*` trio came OFF the list 2026-07-31, re-dispositioned as a PROTOCOL SLICE
->    needing the same ruling as the 23. Read the trio block below before planning the chain.**
+>    ▶️ THE REMAINING **10** CONVERT, of which **5 ARE UNBLOCKED**: the two Driver profiles
+>    (`_plugin_structure_claude.py`'s two + `_plugin_structure_codex.py`'s one, which share
+>    `fenced_invocation_violations` and must move in LOCKSTEP), `open_bump_prs_for`,
+>    `member_matrix_targets`, `inspect_worktree_pack`. None is Protocol-assigned — each was
+>    checked. Then the `dx8l`-blocked pairs, then TYPE-SLICE.**
 >    ~~THE REMAINING 23~~ —
 >    **THREE CHAIN UNITS LANDED 2026-07-31: #969 (`fleet/_connection.py`, 4), #972
 >    (`checks/_ci_matrix_parse.py`, 3), #973 (`checks/_tool_backed_surfaces.py`, 3).**
@@ -226,12 +273,33 @@ records the lane-scoped shape instead.
 >    table is evidence the table is still describing the code, and this thread has twice found a
 >    table that was not.
 >
+>    **📏📏 SUPERSEDED — CURRENT BASELINE, measured on MERGED master `60938fd` (2026-07-31)
+>    with `_find_offenders` over `resolve_check_universe()`, both ends, never inherited:
+>    universe **160** · offenders DROPPING the `_`-prefixed-FILE skip **40**.** The trio took it
+>    43 → 42 → 41 → 40; universe 157 → 160 is the four new leaf modules
+>    (`_invocation_failure`, `_gh_runner`, `_origin_remote`, plus seam 1's). **The 40 still
+>    ACCOUNT EXACTLY: 10 CONVERT (5 unblocked + 4 `dx8l`-blocked + 1 coupled) + 6 OPEN + 1
+>    COUPLED + 23 TYPE-SLICE.**
+>    ⛔ **MEASURE WITH NEW FILES TRACKED** — see the trap recorded in §"START HERE"; an untracked
+>    new module silently REMOVES its functions from the universe and reads as progress.
+>
 >    **THE 4 CONVERT THAT ARE NOT UNBLOCKED**, and they are the `dx8l`-shaped TWO PAIRS the
->    triage's §7 step 4 names: `fleet/_context.py::resolve_owner` + `resolve_repo_name` (convert as
->    ONE pair — clause (d) couples them, so a split PR measures no movement) after beads-fabro's
->    `codex_yolo_gate.py` hook is wired dual-shape; and `testing/_cli_e2e_discovery.py::
->    discover_fixtures` + `discover_skills` after FOUR siblings are wired. Consumer wiring lands
->    FIRST, in the consuming repo.
+>    triage's §7 step 4 names: ~~`fleet/_context.py::resolve_owner`~~ **`fleet/_origin_remote.py::
+>    resolve_owner`** + `resolve_repo_name` (convert as ONE pair — clause (d) couples them, so a
+>    split PR measures no movement) after beads-fabro's `codex_yolo_gate.py` hook is wired
+>    dual-shape; and `testing/_cli_e2e_discovery.py::discover_fixtures` + `discover_skills` after
+>    FOUR siblings are wired. Consumer wiring lands FIRST, in the consuming repo.
+>
+>    **⚠️ THE PAIR MOVED FILE IN #984 AND `qndn-75-triage.md` §7 STILL NAMES `_context.py`.**
+>    Seam 3 pushed `_context.py` to 276 against the 250-LLOC HARD ceiling, forcing TWO splits:
+>    `fleet/_gh_runner.py` (the seam) and `fleet/_origin_remote.py` (this pair). Both are
+>    re-exported from `_context`, so no consumer import changed — but **the triage's path is now
+>    stale, which is this thread's own signature defect, so it is flagged here rather than left
+>    for the next reader to trip over.** The move HELPS that unit: those two are the last
+>    `subprocess` caller in the fleet package not behind an injected seam, so they are now a
+>    clean single-file conversion. **And they carry a live second defect: their `subprocess.run`
+>    is UNGUARDED — an absent `git` raises `FileNotFoundError` straight out of `resolve_owner`.**
+>    Deliberately NOT fixed in #984: it belongs to the blocked pair's own unit.
 >
 >    **THE 9 UNBLOCKED, grouped as the units they should be worked in** (each grouping is a
 >    lockstep or coupling the triage states, not a preference): the `default_*` runner/downloader
