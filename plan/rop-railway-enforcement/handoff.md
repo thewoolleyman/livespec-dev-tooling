@@ -177,6 +177,25 @@ records the lane-scoped shape instead.
 >    not** — and this file is long enough that "I read it" and "I read it against this question"
 >    are different claims.
 >
+>    **🔺🔺 AND THE THIRD VARIANT, FOUND 2026-07-31 AND WORSE THAN BOTH: A FALSE CLAIM THAT
+>    CARRIES AN INSTRUCTION. CLOSING THE ITEM DOES NOT DISARM IT.** The three variants now
+>    stand as: (1) a FALSE record someone might quote; (2) a TRUE record nobody re-read against
+>    the current question (above); (3) **a false record that DIRECTS the next reader to ACT.**
+>
+>    The instance: `0j3i` claimed "no row covers the `pyproject` dependency pin" — FALSE
+>    (`assert_dev_tooling_pin` → `_freshness_outcome` covers it for currency). `vt61` then
+>    propagated that claim **with an action attached**: *"That is a fourth `PinCurrencySpec`, and
+>    it is independent of this ruling; do not let one close the other."* So the false statement
+>    was not inert — **it recruited the next reader into BUILDING A DUPLICATE ROW over an
+>    already-covered surface**, and the "do not let one close the other" clause was specifically
+>    engineered to survive the other item being resolved.
+>
+>    **THE STANDING RULE THIS PRODUCES, and it is sharper than the one we had: WHEN YOU RETRACT
+>    A CLAIM, DO NOT ONLY GREP FOR THE CLAIM — GREP FOR INSTRUCTIONS DERIVED FROM IT.** Including
+>    in items you are about to CLOSE: `vt61` was closed as discharged by v039 the same hour, and
+>    a closed item with a live instruction in it still gets read. Both retractions were written
+>    into its body BEFORE the close for exactly that reason. **A close is not a disarm.**
+>
 >    **⛔⛔⛔ ARMING IS BLOCKED. `livespec-dev-tooling-qndn` (P0) IS THE FIRST GATE, AND IT WAS
 >    FOUND BY MEASURING BEFORE COMMITTING. ~~THE NEXT ACTION IS THE TRIAGE OF 75 FUNCTIONS~~ —
 >    AUTHORIZED STANDING WORK, NOT A NEW DECISION.**
@@ -192,6 +211,56 @@ records the lane-scoped shape instead.
 >    `2j2l` + `xhbp` + `vt61` ratification~~ — **✅ BOTH LANDED 2026-07-31; see the block
 >    immediately below.** ~~the git probes then the RGR trailers~~ — **✅ BOTH LANDED, PR #952,
 >    master `c35ea9e` + `87fd400`.**
+>
+>    **⛔⛔⛔ READ THIS BEFORE MEASURING ANYTHING. THE OBVIOUS HARNESS REPORTS `0` AND READS AS
+>    SUCCESS — AND IT WOULD CONVICT YOU OF THIS EPIC'S OWN FOUNDING DEFECT WHILE YOU REMEDIATE
+>    IT.** `pure_trees` in this repo is `{ not_applicable = "flat-layout library has no
+>    pure-module subtree" }`. So `role_trees()` returns **EMPTY**, `_scan` iterates **ZERO
+>    FILES**, and **`main()` reports `0` offenders REGARDLESS OF WHAT THE CODE SAYS.** That is
+>    not a passing check — **THAT IS THE UNARMED STATE, `8o8e`'s founding condition, and it is
+>    lying in wait for the person doing `8o8e`'s own remediation.** A remediation harness built
+>    on `_scan` or on `main()` will report `0` before your change and `0` after it, and you will
+>    read that as "nothing broke".
+>
+>    **✅ THE ARMED MEASUREMENT — iterate `resolve_check_universe()`'s 155 files and call
+>    `_find_offenders` PER FILE, never through `_scan` and never through `main()`.** Supply
+>    `public` / `no_expected_failure_mode` exactly as `_scan` builds them
+>    (`repo_local_public_names | declared_public_names`, then
+>    `functions_without_expected_failure_mode | declared_absence_names`), and toggle
+>    `rel_path.name.startswith("_")` to get both variants. **RE-MEASURE AT BOTH ENDS OF EVERY
+>    CONVERSION with that harness** — the standing never-inherit-a-count rule is unchanged, but
+>    the instrument it names is not `main()`.
+>
+>    **📏 BASELINE, measured on master `26a6b05` with the shipped analyses, NOT inherited:
+>    universe **155** · offenders CARRYING the `_`-prefixed-FILE skip **0** · offenders DROPPING
+>    it **61** · **all EIGHT family functions confirmed present in the 61** (triage rows 17–24).
+>    ▶️ TARGET AFTER THIS UNIT: **53**.**
+>
+>    **⛔ THE FAMILY IS ATOMIC — IT IS ONE UNIT, NOT SEVEN, AND THE TRIAGE'S "do this one FIRST"
+>    MEANS FIRST *WITHIN* IT.** Converting `read_pin_text` breaks **all seven callers
+>    simultaneously**, so there is no partial landing and no intermediate green. Do NOT begin it
+>    on thin context: an atomic change across two modules plus the row layer, begun and
+>    abandoned, is how a dirty worktree or an un-amended Red commit happens, and this thread has
+>    paid for both. Stopping clean BEFORE starting is the correct answer; stopping halfway is
+>    not.
+>
+>    **▶️ THE SETTLED DESIGN IS ON `livespec-dev-tooling-2j2l`, NOT RESTATED HERE — read it
+>    before writing any code.** It carries, with the reasoning: the `pin_walk` parameter on
+>    `read_pin_text` and why the `.alt(replace(...))` alternative is worse; **TWO DISCRIMINATED
+>    failure types** (`PinFileUnreadable` → `RowSkip`, `PinFileUnparseable` → `RowFinding`) —
+>    **a single failure type CANNOT express v039's two bullets**, which is the whole `2j2l`/`xhbp`
+>    fix; the three `unrecognized` emit sites and `_records_for`'s silent drop dying TOGETHER;
+>    `discover` aborting on either failure on its existing partial-walk rationale; the
+>    relocate-and-re-export that avoids the import cycle; and the ANSWER-vs-FAILURE call for this
+>    family (`is_file` / `is_dir` / an empty `glob` are all **ANSWERS**, not failures).
+>
+>    **📌 AND A NEW ITEM THIS THREAD OWNS BUT DOES NOT GATE ON: `livespec-dev-tooling-e01t`
+>    (P1).** All EIGHT `SKILL.md` bindings in `livespec-driver-claude` resolve livespec core via
+>    `entries[0]` of `installed_plugins.json` — *whichever project on the host installed core
+>    first* — instead of the entry whose `projectPath` matches. **Its gate: it blocks NOTHING on
+>    the arming path and breaks EVERY `/livespec:revise` and `/livespec:propose-change` from this
+>    repo, so the gate is THE NEXT SPEC RATIFICATION THIS THREAD NEEDS** — already paid by hand
+>    once, to land v039.
 >
 >    ---
 >
