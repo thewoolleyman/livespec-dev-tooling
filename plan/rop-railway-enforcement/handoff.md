@@ -205,10 +205,53 @@ records the lane-scoped shape instead.
 >    ANYTHING; it carries all 75 by name with the evidence that convicted each.**
 >
 >    **▶️▶️ COLD START, THE ONLY THING YOU NEED FROM THIS BLOCK: the NEXT ACTION is
->    ▶️ THE REMAINING **23** CONVERT — the walker family is DONE.** ~~THE SEVEN PIN WALKERS AS
->    ONE FAMILY~~ — **✅ LANDED 2026-07-31, PR #962, master `96fc2a3`. Offenders 61 → 53,
->    re-verified on MERGED master. `2j2l` and `xhbp` are CLOSED.** Read the block below before
->    the next conversion: it carries three things the family cost that WILL recur.
+>    ▶️ THE REMAINING **13** CONVERT, of which **9 ARE UNBLOCKED**.** ~~THE REMAINING 23~~ —
+>    **THREE CHAIN UNITS LANDED 2026-07-31: #969 (`fleet/_connection.py`, 4), #972
+>    (`checks/_ci_matrix_parse.py`, 3), #973 (`checks/_tool_backed_surfaces.py`, 3).**
+>    ~~THE SEVEN PIN WALKERS AS ONE FAMILY~~ — ✅ LANDED, PR #962. `2j2l` and `xhbp` are CLOSED.
+>    Read the pin-walker block below before the next conversion: it carries three things that
+>    family cost that WILL recur, and all three DID recur across the last three units.
+>
+>    **📏 BASELINE FOR THE NEXT UNIT, measured on MERGED master `297e610` with `_find_offenders`
+>    over `resolve_check_universe()` — NOT through `main()`, and NOT inherited: universe **157**
+>    · offenders CARRYING the `_`-prefixed-FILE skip **0** · offenders DROPPING it **43**.**
+>    The chain moved 53 → 49 → 46 → 43, each end re-derived on merged master.
+>    ⛔ **RE-DERIVE IT ANYWAY.** This line is a record of a measurement, not a substitute for one.
+>
+>    **THE 4 CONVERT THAT ARE NOT UNBLOCKED**, and they are the `dx8l`-shaped TWO PAIRS the
+>    triage's §7 step 4 names: `fleet/_context.py::resolve_owner` + `resolve_repo_name` (convert as
+>    ONE pair — clause (d) couples them, so a split PR measures no movement) after beads-fabro's
+>    `codex_yolo_gate.py` hook is wired dual-shape; and `testing/_cli_e2e_discovery.py::
+>    discover_fixtures` + `discover_skills` after FOUR siblings are wired. Consumer wiring lands
+>    FIRST, in the consuming repo.
+>
+>    **THE 9 UNBLOCKED, grouped as the units they should be worked in** (each grouping is a
+>    lockstep or coupling the triage states, not a preference): the `default_*` runner/downloader
+>    trio `fleet/_context.py::default_gh_runner` + `fleet/_local_context.py::default_command_runner`
+>    + `fleet/_snapshot.py::default_gh_downloader` (rows 30/33/36 — deliberately parallel, and
+>    DRIFT is the risk); the two Driver profiles `driver_checks/_plugin_structure_claude.py`'s two
+>    + `_plugin_structure_codex.py`'s one, which share `fenced_invocation_violations` and must move
+>    in lockstep (rows 25-27); `fleet/_rows_pin_currency.py::open_bump_prs_for` (row 35), which
+>    then makes `persisting_bump_pr_number` the COUPLED row's DECLARE — do not declare it before;
+>    `fleet/_rows_github.py::member_matrix_targets` (row 34); and
+>    `checks/_primary_checkout_worktree_pack.py::inspect_worktree_pack` (row 10).
+>
+>    **▶️ THE THREE COSTS THAT RECURRED IN ALL THREE UNITS — budget them INTO the Red-time body:**
+>    (1) a LINT CAP break in the caller — PLR0911's six returns twice, and PLR0915's thirty
+>    statements once — fixed by extracting a helper, never by routing around; (2) an LLOC split
+>    (`checks/_check_aggregate_failures.py` was born this way); (3) at least one branch NO existing
+>    test reaches, so the Green-leg `*_edges.py` sibling is not optional. **And a fourth, new:
+>    `check-tests-no-subprocess-spawn` rejects a spawning edges test — drive `main()` IN-PROCESS
+>    with `monkeypatch.chdir` + `monkeypatch.setattr("sys.argv", ...)` + `capsys`.**
+>
+>    **🔴🔴 AND THE ONE THAT IS NOT MECHANICAL: TWICE, THE SUITE WAS PINNING THE DEFECT.**
+>    `test_unclosed_targets_array_reports_absence` and
+>    `test_extract_targets_array_tokens_unclosed_array_returns_none` both ASSERTED the wrong
+>    diagnostic — an array that is present and merely unclosed, reported as absent. A collapsed
+>    sentinel does not only lose information; it gets WRITTEN INTO THE TESTS as the expected
+>    behavior, so the suite defends it. **Expect at least one test per unit to need CORRECTING
+>    rather than updating, and read a failing legacy assertion as a possible FINDING before
+>    treating it as churn.**
 >
 >    **✅ THE SPLIT UNIT IS CLOSED — both parser copies are converted and AGREE.**
 >    `_ci_matrix_parse.py`'s three (#972) and `_tool_backed_surfaces.py`'s three both fail with the
