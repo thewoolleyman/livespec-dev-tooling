@@ -25,7 +25,26 @@ array AND in at least one CI matrix.
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
+
+# `returns` is VENDORED, not installed, so this module puts `_vendor/` on the
+# path ITSELF rather than relying on its importer having done so — a property
+# of the callers, not of this file.
+_VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
+
+from returns.io import IOFailure, IOResult, IOSuccess  # noqa: E402  — vendor-path-aware.
+from returns.result import Failure, Result, Success  # noqa: E402  — vendor-path-aware.
+
+from livespec_dev_tooling.checks._check_aggregate_failures import (  # noqa: E402
+    CheckRecipeAbsent,
+    TargetsArrayAbsent,
+    TargetsArrayFailure,
+    TargetsArrayUnterminated,
+    WorkflowFileUnreadable,
+)
 
 # Names in `__all__` mark this private sibling's public surface to its sole
 # importer, `tool_backed_check_completeness.py`, so pyright's per-file analysis
@@ -50,15 +69,21 @@ _MATRIX_TARGET_KEY = re.compile(r"^\s*target:\s*$")
 _MATRIX_TARGET_LINE = re.compile(r"^\s*-\s*([\w-]+)\s*$")
 
 
-def extract_check_recipe_body(*, justfile_text: str) -> str | None:
-    """Return the text body of the `check:` recipe, or None when absent.
+def extract_check_recipe_body(*, justfile_text: str) -> Result[str, CheckRecipeAbsent]:
+    """The text body of the `check:` recipe.
 
     A just recipe body extends from the recipe header to the next
     recipe header (a non-indented line ending in `:`) or to EOF.
+
+    The DELIBERATE DUPLICATE of `_ci_matrix_parse`'s reader — permitted under
+    the bounded parser-duplication convention stated in that module's
+    docstring, because this is a mechanical extractor carrying no spec
+    citation. It fails with the SAME shared type, so the two copies agree
+    about what a failure IS even while their bodies stay independent.
     """
     header_match = _CHECK_RECIPE_HEADER.search(justfile_text)
     if header_match is None:
-        return None
+        return Failure(CheckRecipeAbsent())
     body_start = header_match.end()
     lines = justfile_text[body_start:].splitlines()
     body_lines: list[str] = []
@@ -66,36 +91,37 @@ def extract_check_recipe_body(*, justfile_text: str) -> str | None:
         if raw and not raw.startswith((" ", "\t")) and ":" in raw:
             break
         body_lines.append(raw)
-    return "\n".join(body_lines)
+    return Success("\n".join(body_lines))
 
 
-def extract_targets_array_tokens(*, recipe_body: str) -> list[str] | None:
-    """Return the `check-*` slugs inside `targets=(...)`, or None when absent.
+def extract_targets_array_tokens(*, recipe_body: str) -> Result[list[str], TargetsArrayFailure]:
+    """The `check-*` slugs inside `targets=(...)`.
 
     Blank lines, full-line comments, inline trailing comments, and any
     token that does not start with `check-` are dropped — matching
     aggregate_completeness's filtering so the two checks agree on what
     counts as a literal targets-array slug.
+
+    TWO failure types, the same split `_ci_matrix_parse`'s twin took: an
+    absent array and an UNTERMINATED one shared one `None`, and the caller
+    reported only the absent case, so an unclosed array sent the operator to
+    add an array already present.
     """
     start_match = _TARGETS_ARRAY_START.search(recipe_body)
     if start_match is None:
-        return None
+        return Failure(TargetsArrayAbsent())
     after_start = recipe_body[start_match.end() :]
     collected: list[str] = []
-    closed = False
     for raw in after_start.splitlines():
         if _TARGETS_ARRAY_END.match(raw):
-            closed = True
-            break
+            return Success(collected)
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
         token = line.split("#", 1)[0].strip()
         if token.startswith("check-"):
             collected.append(token)
-    if not closed:
-        return None
-    return collected
+    return Failure(TargetsArrayUnterminated())
 
 
 def _parse_ci_matrix_targets(*, source: str) -> set[str]:
@@ -130,11 +156,28 @@ def _parse_ci_matrix_targets(*, source: str) -> set[str]:
     return targets
 
 
-def collect_ci_matrix_targets(*, workflows_dir: Path) -> set[str]:
-    """Union the `matrix.target` slugs across every workflow file in the dir."""
+def collect_ci_matrix_targets(
+    *,
+    workflows_dir: Path,
+) -> IOResult[set[str], WorkflowFileUnreadable]:
+    """Union the `matrix.target` slugs across every workflow file in the dir.
+
+    An ABSENT or EMPTY directory ANSWERS with an empty set — the ratified
+    missing-file tolerance. Only failing to obtain bytes from a file the glob
+    just listed is a failure, and it is a failure rather than a skipped
+    contribution ON PURPOSE: the parent asserts CI RUNS what the justfile
+    WIRES, so a silently skipped workflow makes a slug that IS run look unrun
+    and manufactures a gap. `read_text` was unguarded before this, so an
+    undecodable workflow raised out of the check.
+
+    The two globs are unioned before the walk rather than walked separately;
+    the result is a set union, so ordering carries no meaning.
+    """
     targets: set[str] = set()
-    for path in sorted(workflows_dir.glob("*.yml")):
-        targets |= _parse_ci_matrix_targets(source=path.read_text(encoding="utf-8"))
-    for path in sorted(workflows_dir.glob("*.yaml")):
-        targets |= _parse_ci_matrix_targets(source=path.read_text(encoding="utf-8"))
-    return targets
+    for path in sorted([*workflows_dir.glob("*.yml"), *workflows_dir.glob("*.yaml")]):
+        try:
+            source = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as unreadable:
+            return IOFailure(WorkflowFileUnreadable(path=str(path), detail=str(unreadable)))
+        targets |= _parse_ci_matrix_targets(source=source)
+    return IOSuccess(targets)

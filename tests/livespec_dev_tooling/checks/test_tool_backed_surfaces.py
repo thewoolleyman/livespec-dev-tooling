@@ -12,6 +12,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from returns.io import IOSuccess
+from returns.result import Failure, Success
+
+from livespec_dev_tooling.checks._check_aggregate_failures import (
+    CheckRecipeAbsent,
+    TargetsArrayAbsent,
+    TargetsArrayUnterminated,
+)
 from livespec_dev_tooling.checks._tool_backed_surfaces import (
     collect_ci_matrix_targets,
     extract_check_recipe_body,
@@ -24,35 +32,43 @@ __all__: list[str] = []
 def test_extract_check_recipe_body_returns_body_until_next_recipe() -> None:
     """The `check:` recipe body extends to the next recipe header, not beyond."""
     justfile = "check:\n    targets=(\n        check-lint\n    )\n\nother:\n    echo hi\n"
-    body = extract_check_recipe_body(justfile_text=justfile)
-    assert body is not None
+    result = extract_check_recipe_body(justfile_text=justfile)
+    assert isinstance(result, Success)
+    body = result.unwrap()
     assert "targets=(" in body
     assert "check-lint" in body
     # The `other:` recipe header terminates the body — its command is excluded.
     assert "echo hi" not in body
 
 
-def test_extract_check_recipe_body_absent_recipe_returns_none() -> None:
-    """A justfile with no `check:` recipe yields None (parent emits the finding)."""
-    assert extract_check_recipe_body(justfile_text="build:\n    echo build\n") is None
+def test_extract_check_recipe_body_absent_recipe_fails() -> None:
+    """A justfile with no `check:` recipe fails (parent emits the finding)."""
+    assert extract_check_recipe_body(justfile_text="build:\n    echo build\n") == Failure(
+        CheckRecipeAbsent()
+    )
 
 
 def test_extract_targets_array_tokens_filters_to_check_slugs() -> None:
     """Only `check-`-prefixed tokens survive; comments and blanks are dropped."""
     body = "    targets=(\n        check-lint\n        # a comment\n\n        check-types # inline\n    )\n"
-    tokens = extract_targets_array_tokens(recipe_body=body)
-    assert tokens == ["check-lint", "check-types"]
+    assert extract_targets_array_tokens(recipe_body=body) == Success(["check-lint", "check-types"])
 
 
-def test_extract_targets_array_tokens_unclosed_array_returns_none() -> None:
-    """An unclosed `targets=(...)` array yields None (parent emits the finding)."""
+def test_extract_targets_array_tokens_unclosed_array_is_unterminated() -> None:
+    """An unclosed `targets=(...)` array fails AS UNTERMINATED, not as absent.
+
+    It used to share `None` with the absent case, so the parent reported the
+    array as missing when it is present and merely unclosed.
+    """
     body = "    targets=(\n        check-lint\n"
-    assert extract_targets_array_tokens(recipe_body=body) is None
+    assert extract_targets_array_tokens(recipe_body=body) == Failure(TargetsArrayUnterminated())
 
 
-def test_extract_targets_array_tokens_absent_array_returns_none() -> None:
-    """A recipe body with no `targets=(...)` yields None."""
-    assert extract_targets_array_tokens(recipe_body="    echo no-array\n") is None
+def test_extract_targets_array_tokens_absent_array_fails() -> None:
+    """A recipe body with no `targets=(...)` fails as ABSENT."""
+    assert extract_targets_array_tokens(recipe_body="    echo no-array\n") == Failure(
+        TargetsArrayAbsent()
+    )
 
 
 def test_collect_ci_matrix_targets_unions_yml_and_yaml(*, tmp_path: Path) -> None:
@@ -69,8 +85,6 @@ def test_collect_ci_matrix_targets_unions_yml_and_yaml(*, tmp_path: Path) -> Non
         "          - check-format\n",
         encoding="utf-8",
     )
-    assert collect_ci_matrix_targets(workflows_dir=workflows) == {
-        "check-lint",
-        "check-types",
-        "check-format",
-    }
+    assert collect_ci_matrix_targets(workflows_dir=workflows) == IOSuccess(
+        {"check-lint", "check-types", "check-format"}
+    )
