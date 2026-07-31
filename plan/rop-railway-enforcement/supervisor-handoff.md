@@ -891,6 +891,38 @@ this thread's scope", leaving it in a pane. Scope is not the test: this ledger a
 durable record is this thread's signature defect in its purest form**, and the plan-persistence
 hook fired on that very turn saying so.
 
+### 🔬 First-hand, 2026-07-31 — I BUILT A CHECK THAT SCANNED ZERO ITEMS AND REPORTED CLEAN
+
+**In the session whose entire subject is checks that scan zero files and report green.** Closing a
+gap the worker had flagged — "I grepped `0j3i` and `vt61`, but not every item that ever cited
+them" — I swept the ledger for descendants of two retracted claims and reported **"no descendants
+across 94 items"**. It had read NOTHING. This shell is **zsh**, where `$ids` does not word-split,
+so `for id in $ids` iterated ONCE on a bogus multi-line id while `echo "$ids" | wc -l` printed the
+reassuring 94. Zero bytes read, zero matches found, clean result, confident report.
+
+**WHAT CAUGHT IT WAS A POSITIVE CONTROL, NOT REVIEW.** I re-ran asserting the corpus contained a
+term I knew was ubiquitous; it answered `items read=1, chars=0, matches=0`. I then rebuilt on
+`bd export` and re-proved the corpus — **302 items, 2,198,492 bytes, 302 containing "livespec"** —
+before trusting a single negative. The real answer was that the worker's grep HAD been sufficient,
+but that answer was only worth anything the second time.
+
+**⛔ THE BINDING RULE, and it is the same one the worker derived from fixtures:** **an instrument
+that cannot produce a negative result has not produced a positive one.** Never report a negative
+finding from an instrument you have not proven non-empty. The family now has FOUR members across
+this session, three of them the worker's and one mine:
+
+| # | instrument | why it could not fail |
+|---|---|---|
+| a | a `chmod 000` fixture | the suite runs as ROOT, so every read succeeds and the assertion never fires |
+| b | a `PATH`-shim fixture | it APPENDED to `PATH`, so the real `git` answered and the check ran to completion |
+| c | the `_scan` measurement harness | `pure_trees` is `not_applicable`, so it iterates zero files and `main()` reports 0 offenders whatever the code says |
+| d | **this supervisor's ledger sweep** | zsh does not word-split, so the loop ran once over a bogus id |
+
+**(c) and (d) are the pair worth holding together**: one is a harness that reads 0 offenders
+because the scanner iterates nothing, the other a sweep that reads 0 items because the loop
+iterates nothing. Same defect, different layers, both reporting SUCCESS. The worker's operational
+form is the one to keep — ***if the behavior regressed right now, would this assertion fire?***
+
 ### Verification lessons worth keeping at role level
 
 - Verify every worker claim on the FORGE, not from its report. Doing so caught PRs
