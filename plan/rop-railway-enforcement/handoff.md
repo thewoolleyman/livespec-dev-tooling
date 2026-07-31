@@ -205,7 +205,10 @@ records the lane-scoped shape instead.
 >    ANYTHING; it carries all 75 by name with the evidence that convicted each.**
 >
 >    **▶️▶️ COLD START, THE ONLY THING YOU NEED FROM THIS BLOCK: the NEXT ACTION is
->    ▶️ THE REMAINING **13** CONVERT, of which **9 ARE UNBLOCKED**.** ~~THE REMAINING 23~~ —
+>    ▶️ THE REMAINING **13** CONVERT, of which ~~**9 ARE UNBLOCKED**~~ **6 ARE UNBLOCKED —
+>    the `default_*` trio came OFF the list 2026-07-31, re-dispositioned as a PROTOCOL SLICE
+>    needing the same ruling as the 23. Read the trio block below before planning the chain.**
+>    ~~THE REMAINING 23~~ —
 >    **THREE CHAIN UNITS LANDED 2026-07-31: #969 (`fleet/_connection.py`, 4), #972
 >    (`checks/_ci_matrix_parse.py`, 3), #973 (`checks/_tool_backed_surfaces.py`, 3).**
 >    ~~THE SEVEN PIN WALKERS AS ONE FAMILY~~ — ✅ LANDED, PR #962. `2j2l` and `xhbp` are CLOSED.
@@ -217,6 +220,11 @@ records the lane-scoped shape instead.
 >    · offenders CARRYING the `_`-prefixed-FILE skip **0** · offenders DROPPING it **43**.**
 >    The chain moved 53 → 49 → 46 → 43, each end re-derived on merged master.
 >    ⛔ **RE-DERIVE IT ANYWAY.** This line is a record of a measurement, not a substitute for one.
+>    **✅ RE-DERIVED INDEPENDENTLY on master `47e5f9b` (2026-07-31): universe 157 · carrying 0 ·
+>    dropping 43 — unchanged. The 43 ACCOUNT EXACTLY: 13 CONVERT + 6 OPEN + 1 COUPLED + 23
+>    TYPE-SLICE**, which is worth stating because an offender count that matches its disposition
+>    table is evidence the table is still describing the code, and this thread has twice found a
+>    table that was not.
 >
 >    **THE 4 CONVERT THAT ARE NOT UNBLOCKED**, and they are the `dx8l`-shaped TWO PAIRS the
 >    triage's §7 step 4 names: `fleet/_context.py::resolve_owner` + `resolve_repo_name` (convert as
@@ -235,6 +243,99 @@ records the lane-scoped shape instead.
 >    then makes `persisting_bump_pr_number` the COUPLED row's DECLARE — do not declare it before;
 >    `fleet/_rows_github.py::member_matrix_targets` (row 34); and
 >    `checks/_primary_checkout_worktree_pack.py::inspect_worktree_pack` (row 10).
+>
+>    ---
+>
+>    ## 🔴🔴 THE `default_*` TRIO IS NOT A CONVERT UNIT — IT IS A PROTOCOL SLICE, AND IT IS BIGGER THAN THE ONE WE ALREADY CALL A TYPE-SLICE
+>
+>    **Measured 2026-07-31 on master `47e5f9b`. PROVEN with pyright, not reasoned — see the
+>    positive control below. The 6 OTHER unblocked CONVERT are unaffected; only rows 30/33/36
+>    are re-dispositioned.**
+>
+>    **▶️ THE CLAIM.** Rows 30/33/36 (`default_gh_runner`, `default_command_runner`,
+>    `default_gh_downloader`) are the DEFAULT IMPLEMENTATIONS assigned to three injected-seam
+>    Protocols — `GhRunner` (`_context.py:66`), `CommandRunner` (`_local_context.py:48`),
+>    `GhDownloader` (`_snapshot.py:86`). **Converting the function forces the Protocol, and the
+>    Protocol forces every implementation and every consumer.** There is no honest small version:
+>    the only alternative is an adapter at the construction sites that unwraps and re-collapses
+>    the failure onto a synthetic `GhResult`, which is the two-meanings sentinel this epic exists
+>    to remove.
+>
+>    **✅ THE POSITIVE CONTROL, because a claim about a type system must be produced by the type
+>    system.** Annotating `default_gh_runner` ALONE as
+>    `IOResult[GhResult, str]` — Protocol untouched, nothing else edited — and running
+>    `uv run pyright` yields exactly four errors, one per construction site, all the same:
+>
+>    ```
+>    Argument of type "(*, args: list[str], stdin: str | None = None) -> IOResult[GhResult, str]"
+>    cannot be assigned to parameter "run_gh" of type "GhRunner" in function "__init__"
+>    ```
+>
+>    at `fleet_conformance.py:422`, `fleet_conformance_admin.py:220`,
+>    `merged_branch_sweep.py:302`, `wire_fleet_member.py:168`. **The probe was reverted; nothing
+>    of it is committed.** ⛔ Note the first attempt at this probe proved NOTHING — it reported
+>    "Type is partially unknown" because `IOResult` was undefined in that module, which is a
+>    DIFFERENT error that would have fired whatever the Protocol said. **The instrument had to be
+>    made able to produce the right negative before its positive meant anything** — the same class
+>    as the `chmod 000` fixture and the `_scan` harness, hit again while measuring.
+>
+>    **📏 THE SIZE, MEASURED — and the shape is the OPPOSITE of the `RowOutcome` slice:**
+>
+>    | seam | product return sites | TEST return sites |
+>    |---|---|---|
+>    | `GhResult` | 3 | **47** |
+>    | `CommandResult` | 6 | **12** |
+>    | `DownloadOutcome` | 2 | **4** |
+>    | **total** | **11** | **63** |
+>
+>    **74 return sites, of which 63 are IN TESTS. 31 test files construct a seam value; only 6
+>    product modules reference the seam types at all; 4 construction sites are pyright-forced.**
+>
+>    **🔺 THE REUSABLE FINDING, and it is worth more than the re-disposition: A SEAM DESIGNED FOR
+>    HERMETIC TESTABILITY CONCENTRATES ITS CONVERSION COST WHERE THE OFFENDER COUNT CANNOT SEE
+>    IT.** The check counts PRODUCT offenders — 3 here — and the product surface really is small
+>    (11 return sites, 6 modules). The work is ~6× that, and all of it sits in the test suite,
+>    because `fleet/CLAUDE.md`'s own design mandate ("All GitHub access flows through the injected
+>    `GhRunner` seam so tests run hermetically") means EVERY row test builds a canned `GhResult`.
+>    **A conviction count is not a work estimate, and for an injected seam it under-reads by the
+>    ratio of fakes to implementations.** Ask of every remaining unit: *is the convicted function
+>    assigned to a Protocol?* — if yes, the unit is the Protocol, not the function.
+>
+>    **⛔ WHY THE TRIAGE UNDER-SIZED IT, stated plainly because the mechanism will recur.** §5's
+>    table counts CONVICTED FUNCTIONS. `TYPE-SLICE` was separated out because 23 functions
+>    visibly shared one hand-rolled sum type; these three share a Protocol INSTEAD OF a return
+>    type, so they read as three unrelated single-function rows. **The distinguishing question is
+>    not "do these share a type" but "does converting one force a signature nothing in the table
+>    names".**
+>
+>    **▶️ THE DISPOSITION I RECOMMEND, NOT TAKEN — it needs the same ruling the 23 do.** Either
+>    (a) CONVERT the three Protocols as ONE slice (74 return sites, 31 test files, 4 construction
+>    sites) — which is genuinely valuable, because today an `OSError` from `subprocess.run` has no
+>    `try` anywhere in the chain and CRASHES the whole nine-member sweep partway through a
+>    member; or (b) rule that a DEFAULT IMPLEMENTATION OF AN INJECTED SEAM is exempt on the same
+>    reasoning §4b raises for `preflight_credential` (the module's own docstring says an injected
+>    seam is not a boundary). **⛔ (b) is NOT free and I do not lean on it:** these three call
+>    `subprocess.run` DIRECTLY rather than through a parameter, so they are the boundary itself,
+>    which is exactly what makes them different from `preflight_credential`'s injected `sleep`.
+>    **Decide it WITH the `RowOutcome` ruling, since both turn on the same question — how far a
+>    conversion is allowed to propagate through a shared signature — and taking them separately is
+>    how the two get inconsistent answers.**
+>
+>    **▶️ CHAIN CONSEQUENCE: the trio is OFF the unblocked list until that ruling. The unblocked
+>    CONVERT is therefore 6, not 9** — the two Driver profiles (rows 25-27, 3 functions),
+>    `open_bump_prs_for` (35), `member_matrix_targets` (34), `inspect_worktree_pack` (10). Each
+>    was checked for the Protocol question above and NONE is assigned to one.
+>
+>    **⚠️ AND ONE HAZARD FOUND WHILE PROBING, unrelated to the disposition but live:
+>    `fleet/_context.py` HAS NO `_VENDOR_DIR` PREAMBLE.** It reaches `returns` only because its
+>    line-28 import of `_snapshot` runs that module's preamble first. That is the exact latent
+>    shape of `vzwa`'s `89296e0` — the bare `returns` import that broke the fleet's release
+>    fan-out for seven hours. It is currently HARMLESS (`_context.py` imports nothing from
+>    `returns` today) and PR #930's `rglob` sweep covers actual bare imports — but **any
+>    conversion that adds a `returns` import to `_context.py` must add the preamble in the same
+>    edit**, and the ordering dependency will not announce itself.
+>
+>    ---
 >
 >    **▶️ THE THREE COSTS THAT RECURRED IN ALL THREE UNITS — budget them INTO the Red-time body:**
 >    (1) a LINT CAP break in the caller — PLR0911's six returns twice, and PLR0915's thirty
@@ -635,6 +736,41 @@ records the lane-scoped shape instead.
 >    | COUPLED | **1** | ⏳ follows `open_bump_prs_for` |
 >    | TYPE-SLICE | **23** | ⏳ the `RowOutcome` family, ONE decision |
 >    | OPEN | **6** | ⏳ not settled by the triage |
+>
+>    **⛔⛔ "23" IS THE COUNT OF CONVICTED FUNCTIONS AND IT UNDERSTATES THE CHANGE ROUGHLY
+>    THREEFOLD. MEASURED on master — supervisor brief 67, folded in here so it stops depending
+>    on anyone's context:**
+>
+>    | quantity | measured |
+>    |---|---|
+>    | functions returning `-> RowOutcome` | **65** |
+>    | product files referencing `RowOutcome`/`RowSkip` | **25** |
+>    | test files touching it | **17** |
+>    | `isinstance` consumption sites | **14**, across BOTH engines |
+>
+>    Consumption spans `_lanes.py` (central, 3), `local_reconcile.py` (local, 3),
+>    `_adopter_lane.py` (2), `wire_fleet_member.py` (4), `_rows_claude_plugin.py` (2). **The
+>    change touches 65 return sites because the Protocol is SHARED** — `_contract_model.RowFn`
+>    and `_contract_local_rows` type row tables BOTH engines walk, and the ~42 rows member 1
+>    EXEMPTS return the SAME type. **Converting only the convicted 23 leaves ONE Protocol with
+>    TWO return shapes**, which is worse than either end state.
+>
+>    **⚖️ AND THE FORK IS GENUINELY TWO-SIDED — do not foreclose it by default.** Either
+>    (a) CONVERT to `Result[RowVerdict, RowUnevaluable]` — 65 returns, 14 consumption sites, both
+>    engines, and it fixes `8o8e.2`'s two-meanings defect BY CONSTRUCTION; or (b) RATIFY
+>    `RowOutcome` as a sanctioned railway spelling through `/livespec:propose-change`. **(b) is
+>    NOT the forbidden move** — an unratified assertion in a docstring or a config key would be,
+>    but `8o8e`'s founding text contemplates exactly this fork: *"is the remedy conversion, or is
+>    it a narrower, honestly-stated exemption ratified through /livespec:propose-change? … if an
+>    exemption is right, ratify it; do not let it persist as an unenforced clause."* It is not a
+>    severity lever, not a per-repo opt-in, and not a declared-empty escape, so the softening
+>    prohibition does not reach it; the honest argument for it is that `RowOutcome` DOES flow
+>    expected failure modes as failure-track VALUES — it simply is not spelled `Result`.
+>    **⛔ Under (b), `8o8e.2` becomes MANDATORY rather than incidental**, because nothing else
+>    would then fix the two-meanings defect. **Decide it with the measurement in front of you,
+>    and decide it TOGETHER with the `default_*` Protocol slice** — both turn on how far a
+>    conversion may propagate through a shared signature, and taking them separately is how the
+>    two get inconsistent answers.
 >
 >    **3 + 40 + 2 + 1 + 23 + 6 = 75. Offenders measured 75 → 70 → 64 → 61, re-derived at BOTH
 >    ENDS of each unit and never inherited. ONLY TWO OF 75 ARE BOUGHT BY DECLARATION**, and both
