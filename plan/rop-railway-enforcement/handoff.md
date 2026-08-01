@@ -88,6 +88,84 @@ records the lane-scoped shape instead.
 
 ---
 
+## ⛔⛔ 2026-08-01 — **v182**: THIS THREAD'S OWN CORRECTION WAS PENDING FOR TWO REVISE PASSES, AND THE PREMISE THAT BLOCKED IT WAS FALSE
+
+**Consumed as `livespec` **v182** — PR #1871. The `v178` "exposure: ZERO" paragraph
+is OUT of the ratified text; the measured THREE, `fetch_manifest`'s network reach,
+and the both-directions consequence are IN it.**
+
+### 🔴🔴 THE CORRECTION THAT MATTERS MOST IS TO THIS FILE, NOT TO THE SPEC
+
+**This handoff stated, as fact:** *"a revise consumes one decision PER FILE — so
+revising means adjudicating both. They are not this thread's to judge."*
+**THAT IS FALSE, AND IT COST TWO PASSES.**
+
+`_write_and_move_per_decision` iterates the **DECISIONS SUPPLIED**, not the
+directory. A revise consumes exactly the topics named and leaves every other
+pending file untouched. **Established by READING the implementation, then verified
+EMPIRICALLY THREE TIMES** — the v181 pass named one topic and left three files
+pending (checked in the worktree AND on merged master); the v182 pass named one
+and left two.
+
+**So the overreach this thread was carefully avoiding WAS NEVER ON OFFER**, and a
+true finding it had filed itself sat `filed-as-wrong` for two passes because
+nobody re-tested the belief that turned it away.
+
+**▶️ THE FOURTH VARIANT OF THIS THREAD'S SIGNATURE DEFECT, and it is a NEW one:**
+
+| # | shape |
+|---|---|
+| 1 | a FALSE record someone might quote |
+| 2 | a TRUE record nobody re-read against the current question |
+| 3 | a false record carrying an INSTRUCTION that recruits the next reader |
+| **4** | **a TRUE record whose remedy was blocked by a FALSE BELIEF ABOUT THE TOOL** |
+
+Variant 4 is the hardest to see, because the finding is filed, correct, and
+visibly pending — everything looks healthy except that the door someone tried
+twice was never actually locked. **The generalisation: when a finding stays open
+because an ACTION is believed impossible, re-test the impossibility, not the
+finding.** A belief about tooling ages exactly like a count does.
+
+**⚠️ AND A SECOND ERROR OF MINE, corrected by supervisor brief 75 rather than by
+me:** I classified all THREE pending proposals in that repo as FOREIGN without
+checking authorship. One was OURS (`v178-tightening-half-exposure-was-not-zero.md`,
+PR #1834). **A document's own FRONT MATTER is the cheap discriminator, and this
+file names #1834 explicitly.** ⛔ Note `author:` ALONE does not settle it —
+`github-app-request-budget.md` also carries `author: claude-opus-5` and is
+genuinely other work's. **The discriminator is front matter READ TOGETHER WITH
+this handoff's own record of what it filed.**
+
+### ▶️ WHY IT WAS LOAD-BEARING, so it is not re-read as tidiness
+
+The false paragraph told a planner the tightening half's exposure is ZERO and that
+the clause is *"a guard against future gaming, not a correction of present state"*.
+**Every fan-out estimate for the remaining governed repos assumed the criterion
+only REMOVES functions from scope. It also ADDS them** — `oip9` is the measured
+counterexample, a sibling that comes out HIGHER — and this thread has already
+retired 223/282 for exactly that reason. A correction sitting pending across
+multiple passes also stops reading as pending and starts reading as declined.
+
+**The ratified replacement records the figure as WRONG WHEN WRITTEN rather than
+superseded, because the reason generalizes to every clause ratified ahead of its
+mechanization: A CLAUSE'S EXPOSURE CANNOT BE MEASURED BEFORE THE CLAUSE IS
+MECHANIZED.** What was measured in its place was what the OLD `__all__`-membership
+proxy could see — precisely the set the tightening half exists to look past.
+
+**⛔ THE CLAUSE ITSELF IS UNCHANGED AND WAS RIGHT.** Only the blast-radius
+paragraph was wrong, and the ratified text now says so explicitly: a reader taking
+the correction as evidence against the clause has taken it backwards, since the
+clause found a real unrailed network-reaching public function on its first run.
+
+### 📌 STILL PENDING IN `livespec`, AND NOT OURS TO JUDGE
+
+`github-app-request-budget.md` (`claude-opus-5`, 2026-07-28) and
+`owned-heading-coverage-todos.md` (`claude-fable-5`, 2026-07-04). **Verified
+untouched after BOTH the v181 and v182 passes.** Either their owners revise, or a
+maintainer rules — but note the reason is now correctly stated as *not ours to
+adjudicate*, NOT as *revise forces us to*.
+
+---
+
 ## ✅✅ 2026-08-01 — `e01t` IS CLOSED AND `RowOutcome` IS RATIFIED AS **v181**. THE RESOLVER NO LONGER BLOCKS THE SPEC LANE.
 
 **Both landed and were verified on the FORGE after a fetch, never inferred from a
@@ -2374,11 +2452,18 @@ module a conversion teaches to import `returns`; two of the four touched here la
 >    RATIFIED TEXT** and stays there until a `livespec` revise pass consumes it. Do NOT cite
 >    the correction as ratified, and do NOT quote v178's "exposure: ZERO" as authority in the
 >    meantime — it is filed-as-wrong, not yet fixed.
->    **Whoever runs that revise inherits a decision this thread declined**: that repo's
+>    **⛔ RETRACTED 2026-08-01 — THE PREMISE BELOW IS FALSE AND IT BLOCKED THIS THREAD'S OWN
+>    CORRECTION FOR TWO REVISE PASSES.** A revise consumes ONLY the topics named in its
+>    `decisions` payload (`_write_and_move_per_decision` iterates decisions, not the
+>    directory) — verified empirically three times. Revising does NOT mean adjudicating
+>    anyone else's pending change. Our own correction was consumed as **v182** (PR #1871);
+>    the two genuinely-foreign ones remain pending and untouched. The paragraph is struck
+>    rather than deleted because the FALSE BELIEF is the finding.
+>    ~~**Whoever runs that revise inherits a decision this thread declined**: that repo's
 >    `proposed_changes/` also held TWO pending changes from other work
 >    (`github-app-request-budget.md`, `owned-heading-coverage-todos.md`), and a revise consumes
 >    one decision PER FILE — so revising means adjudicating both. They are not this thread's to
->    judge. Either their owners revise, or a maintainer rules. It requires the
+>    judge.~~ Either their owners revise, or a maintainer rules. It requires the
 >    ratified text to carry the measured number, the named functions, the network-reaching
 >    detail, and the both-directions consequence — and to record the figure as WRONG WHEN
 >    WRITTEN rather than superseded, because **a clause's exposure cannot be measured before
