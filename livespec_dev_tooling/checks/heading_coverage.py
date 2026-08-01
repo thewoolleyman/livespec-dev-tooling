@@ -43,6 +43,17 @@ The check fails on four directions:
    Otherwise the distinct diagnostic
    `scenario heading mapped to unit-tier test` fires.
 
+   Since `livespec-dev-tooling-8o8e.9` the resolver returns an
+   `IOResult`, so this direction has a THIRD outcome beside compliant
+   and violating: UNRESOLVED. A mapped test file that exists and
+   cannot be read, or does not parse, used to arrive here as the
+   violation above — a unit-tier verdict about a test the check never
+   read. It now fires
+   `scenario tier direction UNRESOLVED — this is not a tier verdict`
+   and still exits non-zero. An ABSENT test file remains the ordinary
+   violation: there is no test, so there is no marker, and that is a
+   verdict the read produced.
+
 The allowlist of integration-tier node-id prefixes is read per
 consumer repo from the `[tool.livespec_dev_tooling]` block's
 `scenario_tiers` array in the consuming repo's root `pyproject.toml`
@@ -91,6 +102,8 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
+from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 # Direction-4 scenario integration-tier resolution (the allowlist-prefix and
 # AST-marker logic) extracted to a private sibling module — the LLOC-reduction
@@ -224,10 +237,31 @@ def main() -> int:
         entries=coverage_entries
     )
     tiers = load_scenario_tiers(repo_root=cwd) or DEFAULT_SCENARIO_TIERS
-    tier_violations = scenario_tier_violations(repo_root=cwd, entries=coverage_entries, tiers=tiers)
+    tier_scan = scenario_tier_violations(repo_root=cwd, entries=coverage_entries, tiers=tiers)
+    tier_violations: list[dict[str, object]] = []
+    if isinstance(tier_scan, IOFailure):
+        # Reported HERE rather than folded into the violation loop below,
+        # because it is not a violation: the check could not decide the
+        # direction at all. Exiting 0 on it would be the vacuous pass this
+        # conversion exists to remove.
+        unresolvable = unsafe_perform_io(tier_scan.failure())
+        log.error(
+            "scenario tier direction UNRESOLVED — this is not a tier verdict",
+            check_id="heading-coverage-scenario-tier-unresolved",
+            reason=unresolvable.reason,
+            detail=unresolvable.detail,
+        )
+    else:
+        tier_violations = unsafe_perform_io(tier_scan.unwrap())
     uncovered = sorted(spec_set - registry_set)
     orphan = sorted(registry_set - spec_set)
-    if not uncovered and not orphan and not todo_missing_reason and not tier_violations:
+    if (
+        not uncovered
+        and not orphan
+        and not todo_missing_reason
+        and not tier_violations
+        and not isinstance(tier_scan, IOFailure)
+    ):
         return 0
     for spec_root, spec_file, heading in uncovered:
         log.error(
