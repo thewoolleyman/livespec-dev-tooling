@@ -9,33 +9,174 @@
 > METHOD and for the reasoning behind past rulings, never for "what is true
 > now".**
 >
-> ### ▶️▶️▶️ RESUME HERE: **NOTHING IS MID-FLIGHT. THE NEXT UNIT IS `run_adopter_rows`.**
+> ### ▶️▶️▶️ RESUME HERE: **`run_adopter_rows` IS RULED — DO NOT CONVERT. ALL THREE REMAINING ROWS ARE ONE SPEC QUESTION.**
 >
-> **No open PR of this thread's, no worktree of this thread's, no background
-> job.** The wrap-up session landed SIX merged PRs and closed one filed defect;
-> every one was verified on the FORGE after a fetch, and every worktree it made
-> is reaped. FIVE FOREIGN worktrees exist in dev-tooling and PR **#285** is
-> open — **NEITHER IS THIS THREAD'S. REAP NONE, TOUCH NEITHER.** Enumerate with
-> `git worktree list` rather than trusting any count here.
+> **NOTHING IS MID-FLIGHT** — no open PR of this thread's, no worktree of this
+> thread's, no background job. FIVE FOREIGN worktrees exist in dev-tooling —
+> **REAP NONE.** Enumerate with `git worktree list` rather than trusting any
+> count here.
 >
-> **`8o8e.9` went 29 → 25 across that session**, in five units:
-> `is_docs_only_change` (#1031), `scenario_tier_violations` (#1035), the `dno1`
-> stop-guard fix (#1039, which bought NO count — see the retraction below),
-> `persisting_bump_pr_number` DECLARED (#1043), `preflight_credential` (#1045).
-> **Three P1s were filed along the way** — `rav3`, `dno1` (now CLOSED), and the
-> clause-(e) blind spot recorded in the `preflight_credential` entry — and
-> **two claims of mine were RETRACTED IN WRITING** rather than left standing.
+> **`8o8e.9` IS STILL 25, AND THAT IS THE CORRECT OUTCOME OF THIS SESSION, NOT A
+> STALL.** The unit was a RULING, and the read inverted the expected answer for
+> the EIGHTH unit running. `run_adopter_rows` was listed "convert — take this one
+> first"; reading it says **do not convert**, and the reason generalizes to the
+> other two.
 >
-> **▶️ GO STRAIGHT TO §"EXACT NEXT ACTION". The next unit is `run_adopter_rows`,
-> and TWO TRAPS on it are already written out there** — the triage's own "why"
-> cell for that row is `RowOutcome` boilerplate that would wrongly send you to
-> `3744`, and its failure channel is already an in-band COUNT (`blind_rows`), so
-> it poses the absence-is-part-of-the-value question a unit early. Third axis is
-> discharged for it. Do NOT start with `cross_member_consumption` (LAST — it is
-> `5cai`'s own oracle) or `extract_created_worktree_paths` (blocked on a spec
-> question).
+> **▶️ THE ONE THING TO CARRY FORWARD: the three remaining unblocked rows are not
+> three units. They are ONE spec question, and it is now fully evidenced.** All
+> three are **population-sweep functions whose failure channel is deliberately
+> in-band, because a `Result` short-circuit would destroy the denominator** —
+> which is this thread's own "quote no zero without its denominator" rule
+> implemented in a type. See §"THE POPULATION-SWEEP RULING" immediately below.
 >
-> ### ✅🔴 FIXED THIS SESSION, AND ITS RAILWAY HALF IS RETRACTED: **THE SUB-AGENT STOP GUARD LOST A WORKTREE PATH TO A SINGLE APOSTROPHE — `dno1`, CLOSED**
+> **📋 ONE P1 FILED: `livespec-dev-tooling-izbq`** — member 1 clause (d) cannot
+> see the `ObligationRow` table dispatch, so it EXEMPTS `run_member_rows`, the
+> biggest I/O driver in the package and `run_adopter_rows`' structural twin.
+> **Measured: 25 → 26 with the table edges resolved.** Third of its class,
+> alongside `3744` (too strict) and the clause-(e) blind spot (too relaxed).
+>
+> **✅ ONE PR MERGED: the `_adopter_lane` docstring was FALSE and is corrected**
+> (suite-green leg, 3 `TDD-Suite-Green-*` trailers). It claimed blind was
+> "warning severity, never the exit code — the b02 signal, same as member rows".
+> **Both halves were swapped**: the exit-code effect is what MATCHES member rows,
+> the log severity is what DIFFERS. A SHIPPED TEST already asserted the opposite
+> of the docstring.
+>
+> ### ⚖️ THE POPULATION-SWEEP RULING — **`run_adopter_rows` IS NOT A CONVERSION, AND NEITHER ARE THE OTHER TWO**
+>
+> **THE RULING: DO NOT CONVERT.** `AdopterRowsResult.blind_rows` is a considered
+> in-band design — one addend in a SHARED TALLY PROTOCOL — not a hand-rolled
+> failure track. Five findings, each measured rather than argued:
+>
+> 1. **⛔ ITS CONVICTION IS TRANSITIVE AND ITS TWIN ESCAPES.** `run_adopter_rows`
+>    is convicted by member 1 clause **(d)** alone — nothing local. Its only
+>    disqualifying edge is `assert_claude_plugin_currency`. Meanwhile
+>    **`run_member_rows` returns the IDENTICAL tally shape** (`MemberRowsResult`:
+>    same `error_findings` / `blind_rows` / `out_of_vantage_rows`), drives EVERY
+>    row over EVERY member, and member 1 rules it has **NO expected failure
+>    mode** — because it dispatches through `row.assert_member(...)`, which the
+>    call graph cannot resolve. **Filed as `izbq`; measured 25 → 26.**
+> 2. **THE DECLARATION ROUTE IS CLOSED — MEASURED WITH BOTH CONTROLS.** A member-2
+>    entry over `run_adopter_rows` comes back
+>    `RejectedDeclaration(... NOT_ABSENCE_SHAPED)`. Negative control: the 4
+>    shipped declarations return `()`. Positive control: re-declaring an accepted
+>    entry returns `()`. Same wall `extract_created_worktree_paths` hit — member 2
+>    is `X | None`-scoped and `AdopterRowsResult` is not that shape.
+> 3. **✅ THE CLAUSE-(e) TRAP DOES NOT APPLY — CHECKED, NOT ASSUMED.** Per the
+>    `preflight_credential` rule, I read the RETURN TYPE's FIELDS for a nested
+>    `X | None` hand-rolled failure track. `AdopterRowsResult` is four `int`s and
+>    a `tuple[str, ...]`; `MemberRowsResult` is three `int`s and a tuple. **No
+>    nested optional in either.** So this is not a false acquittal by that test.
+> 4. **A `Result` CANNOT EXPRESS A CENSUS.** The function's contract is
+>    "1 of 3 adopters was unreadable, here are the other 2's findings, and here
+>    are the posture exclusions". Short-circuiting on the first unreadable adopter
+>    **destroys the very population the exit-code arithmetic consumes** — the
+>    "an instrument that cannot SEE the population has not measured it" failure,
+>    committed in the type system. A non-short-circuiting `Result` is strictly
+>    worse: the success track would STILL carry `blind_rows`, so the same fact
+>    would have two encodings and the caller would still read the int.
+> 5. **PARTIAL BLINDNESS IS DELIBERATELY UNCOUNTED, AND IT IS THE FLEET RULE, NOT
+>    THIS FUNCTION'S COLLAPSE.** `if skip_reasons and not evaluated` means 9 of 10
+>    unreadable adopters plus 1 answer reports `blind_rows=0`. That looked like
+>    the collapse — **it is `_lanes._report_blind_rows`' identical `if
+>    evaluated: continue` rule**, documented there in as many words ("applied to
+>    at least one member and answered for none of them"). The leg mirrors a
+>    ratified protocol rather than hand-rolling one. Whether the protocol itself
+>    should count partial blindness is a real question, but it is NOT a railway
+>    question and NOT specific to this row.
+>
+> **⛔ THE STEELMAN FOR CONVERTING, AND WHY IT LOSES — record it, because it is
+> genuinely strong.** A `Result` would FORCE the caller to handle blindness
+> instead of remembering to write `+ adopters.blind_rows`; forgetting that addend
+> would silently stop blindness gating, which is exactly the `rav3` / `8o8e.5`
+> vacuous-pass class. **That hazard is real but it is a DIFFERENT defect with a
+> different fix** — a combined tally type both sweeps return, so the sum is
+> structural rather than remembered. Converting one sweep and not its exempt twin
+> would DESYNCHRONIZE the shared protocol, and the check cannot even see the
+> asymmetry.
+>
+> ### 🧩 AND IT GENERALIZES — THE THREE REMAINING ROWS ARE ONE QUESTION
+>
+> | row | in-band failure channel | argued where |
+> |---|---|---|
+> | `run_adopter_rows` | `AdopterRowsResult.blind_rows` | module docstring + `_lanes` twin |
+> | `cross_member_consumption` | `ConsumptionGraph.unparsed` | `FleetConsumption` docstring |
+> | `extract_created_worktree_paths` | none — no inhabited failure track at all | the `dno1` retraction |
+> | *(concealed)* `run_member_rows` | `MemberRowsResult.blind_rows` | `MemberRowsResult` docstring |
+>
+> **`cross_member_consumption` WAS READ THIS SESSION (classification only, not a
+> conversion — it stays LAST).** `ConsumptionGraph` is literally *"Every
+> cross-member consumption, **plus what could not be measured**"*, and
+> `FleetConsumption` argues the principle outright: *"`unavailable` is part of
+> the value rather than a side channel: a member whose tree or config could not be
+> read contributed NOTHING to the graph, and a consumer that cannot tell that
+> member from a clean one would report the fleet as conformant on the strength of
+> not having looked."* **That is the same design as `blind_rows`, stated by a
+> different author in a different module** — which is what makes it a PATTERN
+> rather than one function's taste.
+>
+> **▶️ SO THE SPEC QUESTION, STATED ONCE, IS:** does the Result-return rule reach a
+> **population-sweep function** — one whose return value is a CENSUS over many
+> subjects, and whose "could not read" is carried in-band precisely so the census
+> survives? The three exits mirror the `extract_created_worktree_paths` set:
+> ratify a sanctioned in-band spelling (the `3744` shape, at a POPULATION boundary
+> rather than a rendering one), widen member 2 beyond `X | None`, or accept
+> wrappers that destroy the denominator. **This is a livespec CORE question — do
+> not settle it inside a conversion commit.**
+>
+> ### 🔬 THE TABLE-DISPATCH BLIND SPOT — the harness, so it is not re-derived
+>
+> Build `_local_analysis` over `resolve_check_universe()`. Resolve the table:
+> collect every `ast.keyword` whose `arg` is in `{assert_member, reconcile,
+> reconcile_local, assert_local}` and whose value is an `ast.Name` (**the binding
+> is a NAME REFERENCE, not a call — that is half the severance**). Collect every
+> function containing an `ast.Call` on an `ast.Attribute` with one of those
+> attrs (**the invocation, unresolvable — the other half**). Add edges from each
+> dispatcher to every bound row function, re-run `_propagate`, re-derive the
+> offender list, and **diff the LISTS**.
+>
+> **Measured on `cf98122`: 47 bound / 4 dispatchers / `run_member_rows` has 4
+> edges of which 0 are row functions / 108 `_rows_*.py` functions defined, 65
+> reached, and exactly ONE public `assert_*` row function reached by anybody
+> (`assert_claude_plugin_currency`, only from `run_adopter_rows`). Offenders
+> 25 → 26. ADDED = 1, REMOVED = 0.** ⚠️ **The REMOVED zero is structural, not
+> blind** — adding edges to a least-fixpoint disqualification is MONOTONE, so it
+> can only convict more. The ADDED non-zero is what makes the run credible.
+>
+> ### ✅🔴 FIXED THIS SESSION: **THE `_adopter_lane` DOCSTRING WAS FALSE, AND A SHIPPED TEST ALREADY SAID SO**
+>
+> It read: blind is *"warning severity, never the exit code — the b02 signal,
+> same as member rows"*. **Both halves were swapped.**
+>
+> - **"never the exit code" is FALSE.** Both supervisors compute
+>   `result.blind_rows + adopters.blind_rows` and `if errors or blind_rows:
+>   return 4`, with NO intervening conditional.
+> - **"same as member rows" is FALSE about severity** — this leg logs
+>   `BLIND_ROW_EVENT` at `warning`, `_lanes._report_blind_rows` at `error`. So an
+>   identically-fatal outcome is recorded one level QUIETER here. Named in the
+>   docstring rather than changed: an observable log severity is a contract
+>   operators scan on, not a docstring repair.
+> - **What IS the same as member rows is the thing it denied** — blind fails the
+>   run. `MemberRowsResult`'s own docstring: *"`error_findings` and `blind_rows`
+>   BOTH fail the run"*.
+>
+> **⛔ AND THE EVIDENCE WAS ALREADY IN THE SUITE, WHICH IS THE LESSON.**
+> `test_admin_lane_fails_when_a_released_adopter_is_unreadable` asserts
+> `main() == 4` and its docstring states the true rule verbatim: *"blind is error
+> severity and moves the exit to the finding code, never a vacuous pass."* **A
+> passing test and the module docstring had contradicted each other for as long
+> as both existed, and nothing could see it.** The recorded rule was "a test can
+> pin a DEFECT as firmly as a contract"; this is its complement — **the test held
+> the TRUTH while the prose drifted, so when prose and a green test disagree, the
+> test is the survivor and the prose is the artifact.**
+>
+> **▶️ IT NEARLY INVERTED THIS RULING.** Taken at face value the docstring argues
+> `blind_rows` is inert bookkeeping — which would have made the in-band count look
+> like a hand-rolled failure track with nothing acting on it, i.e. a clean
+> CONVERT. **The disposition turned on disbelieving the docstring and reading the
+> two supervisors' arithmetic instead.**
+>
+> ### ✅🔴 FIXED IN THE PRIOR SESSION, AND ITS RAILWAY HALF IS RETRACTED: **THE SUB-AGENT STOP GUARD LOST A WORKTREE PATH TO A SINGLE APOSTROPHE — `dno1`, CLOSED**
 >
 > **PR #1039 → `91a9f66`** (5 Red + 2 Green, counted by hand; verified on the
 > FORGE after a fetch, the merged tree grepped for the fallback itself).
@@ -244,12 +385,15 @@
 > ### 📏 BASELINE — re-derive at BOTH ENDS of every unit, never inherit
 >
 > **universe 168 · offenders DROPPING the `_`-prefixed-FILE skip 25 · offenders
-> CARRYING it 0** — re-derived on MERGED master at `c8c2e23`, not inherited from
+> CARRYING it 0** — re-derived on MERGED master at `cf98122`, not inherited from
 > a worktree. (34 → 32 at pair A, → 30 at pair B, → 29 at the ruff backstop, →
 > 28 at the docs-only carve-out, → 27 at the scenarios.md tier resolution, → 26 at
-> the `persisting_bump_pr_number` DECLARATION, → 25 at the credential preflight;
-> each
-> step's before/after LISTS differed by exactly its own functions.) Measure
+> the `persisting_bump_pr_number` DECLARATION, → 25 at the credential preflight,
+> **→ 25 at the `run_adopter_rows` RULING, which was correctly a no-op on the
+> count**; each
+> step's before/after LISTS differed by exactly its own functions.) ⚠️ **`izbq`
+> means this 25 is an UNDERSTATEMENT of the arming cost: with the table-dispatch
+> edges resolved it is 26.** Measure
 > with `_find_offenders` over `resolve_check_universe()`, **never** through
 > `main()` or `_scan` (this repo declares `pure_trees = { not_applicable = … }`,
 > so `main()` iterates ZERO files and reports 0 offenders regardless of the code
@@ -311,11 +455,27 @@
 >   **The 30's disposition split is now 2 declarations + 26 code**, against the
 >   "29 code / 1 declaration candidate" the arming commit's denominator was
 >   drafted from — update it there.
-> - **📋 FILED ACROSS THE LAST TWO SESSIONS:** `zv78` (P1, the half-pair gate
+> - **⚖️ `8o8e.9` OFFENDER 6 — `run_adopter_rows` RULED: DO NOT CONVERT.** No PR
+>   for the row itself (a ruling, not a change); **25 → 25**, correctly. The
+>   ruling and its five measurements are in §"THE POPULATION-SWEEP RULING", and it
+>   generalizes to `cross_member_consumption` and the concealed twin
+>   `run_member_rows`.
+> - **✅ AND ITS DOCSTRING DEFECT IS FIXED** — the `_adopter_lane` module docstring
+>   claimed blind never moves the exit code, which is false in both lanes and was
+>   already contradicted by a shipped passing test. Suite-green leg, **3
+>   `TDD-Suite-Green-*` trailers**, count re-measured 25 at both ends.
+> - **📋 FILED ACROSS THE LAST THREE SESSIONS:** `zv78` (P1, the half-pair gate
 >   defect), `3744` (P1, the check-vs-ratified-clause defect, BLOCKING 22 of
 >   `8o8e.9`), `rav3` (P1, the incremental coverage gate passing VACUOUSLY on a
->   failed `git diff`), and `dno1` (P1, the sub-agent stop guard losing a
->   worktree path to an apostrophe — the block at the top).
+>   failed `git diff`), `dno1` (P1, the sub-agent stop guard losing a
+>   worktree path to an apostrophe — CLOSED), and **`izbq` (P1, member 1 clause
+>   (d) blind to `ObligationRow` table dispatch — conceals `run_member_rows`,
+>   measured 25 → 26)**.
+> - **🧩 THE THREE MACHINERY-FIDELITY DEFECTS NOW FORM A SET, and they belong in
+>   ONE conformance pass:** `3744` (too STRICT — refuses a ratified on-railway
+>   spelling), the clause-(e) blind spot (too RELAXED — exempts a hand-rolled
+>   failure track nested a field deep), `izbq` (too RELAXED — cannot see a
+>   call-graph edge, exempting the package's biggest I/O driver).
 > - **📋 EIGHT PER-REPO ARMING CHILDREN FILED** — `8o8e.7`–`.14`, fleet total
 >   **455 over a universe of 719** (§"THE ARMING BLAST RADIUS"). ⚠️ dev-tooling's
 >   `.9` row reads 30; it is **25** now — re-derive, never quote.
@@ -335,13 +495,24 @@
 > ratified discriminated union in a `Result` double-encodes the same outcome and
 > would be unwound when the clause is mechanized.
 >
-> **▶️ THE 3 THAT ARE UNBLOCKED, in the order to take them:**
+> **⛔⛔ THE "3 UNBLOCKED" LINE ABOVE IS SUPERSEDED — THERE ARE NOW ZERO
+> UNBLOCKED CONVERSIONS. ALL THREE ARE HELD ON THE SAME SPEC QUESTION**
+> (§"THE POPULATION-SWEEP RULING" at the top). The table below records each row's
+> RULING, not a work queue:
 >
-> | file | function | today | disposition |
+> | file | function | today | RULING |
 > |---|---|---|---|
-> | `fleet/_adopter_lane.py:121` | `run_adopter_rows` | `AdopterRowsResult` | convert — **take this one first** |
-> | `fleet/_public_api_graph.py:244` | `cross_member_consumption` | `ConsumptionGraph` | read its own docstring FIRST |
-> | `agent_hooks/_subagent_stop_guard_transcript.py:62` | `extract_created_worktree_paths` | `list[Path]` | **⛔ BLOCKED ON A SPEC QUESTION** — see the retraction at the top |
+> | `fleet/_adopter_lane.py:121` | `run_adopter_rows` | `AdopterRowsResult` | **⛔ DO NOT CONVERT — RULED 2026-08-02.** In-band `blind_rows` is a shared tally protocol; declaration route measured CLOSED |
+> | `fleet/_public_api_graph.py:244` | `cross_member_consumption` | `ConsumptionGraph` | **⛔ SAME CLASS** — `unparsed` in-band, argued in `FleetConsumption`'s docstring. Classified, not converted |
+> | `agent_hooks/_subagent_stop_guard_transcript.py:62` | `extract_created_worktree_paths` | `list[Path]` | **⛔ BLOCKED** — no inhabited failure track, no declaration route |
+> | *(concealed by `izbq`)* `fleet/_lanes.py:139` | `run_member_rows` | `MemberRowsResult` | **⛔ THE TWIN** — exempt only because table dispatch severs the call graph |
+>
+> **▶️ SO THE NEXT ACTION IS NOT A CONVERSION.** It is to put the
+> population-sweep question to livespec CORE, alongside `3744` — both are "the
+> check does not implement a sanctioned spelling", one at a RENDERING boundary
+> and one at a POPULATION boundary. **22 of the 25 were already held on `3744`;
+> the remaining 3 are now held on its sibling. `8o8e.9` is blocked in full, and
+> that is a finding rather than a stall.**
 >
 > **✅ `persisting_bump_pr_number` IS DONE — DECLARED, not converted** (#1043 →
 > `c3d4186`, **27 → 26**). It was the ONE remaining row member 2 could accept,
@@ -454,6 +625,25 @@
 >   (`PreflightOutcome.cause`) is invisible to it. Before treating any
 >   conviction as a false positive, read the RETURN TYPE's fields — the
 >   machinery's doubt may be the only thing holding a real offender in scope.
+> - **WHEN PROSE AND A GREEN TEST DISAGREE, THE TEST IS THE SURVIVOR.** The
+>   `_adopter_lane` module docstring said blind never moves the exit code while
+>   `test_admin_lane_fails_when_a_released_adopter_is_unreadable` asserted
+>   `main() == 4` — a contradiction that stood for as long as both existed,
+>   because nothing checks prose against behavior. Taken at face value the
+>   docstring would have INVERTED this session's ruling. Read the arithmetic the
+>   claim is about, not the claim.
+> - **CHECK WHETHER THE CONVICTED FUNCTION HAS AN EXEMPT TWIN.** `run_adopter_rows`
+>   is convicted and `run_member_rows` — same return shape, same role, strictly
+>   more I/O — is exempt, purely because one calls its callee by NAME and the
+>   other through a TABLE. A disposition that would desynchronize a shared
+>   protocol is the wrong disposition. ⚠️ **But an escaping twin is NOT an
+>   acquittal** (the `preflight_credential` lesson): rule on the merits, then note
+>   that the same ruling is owed to the twin.
+> - **A `Result` CANNOT EXPRESS A CENSUS.** For a function whose return value is a
+>   population tally, a failure track short-circuits away the denominator — the
+>   thread's own "cannot SEE the population" failure, committed in the type
+>   system. Three functions here carry "could not read" in-band for exactly that
+>   reason, argued independently by different authors in different modules.
 > - **A DECLARATION IS A READING OF THE CURRENT CALL GRAPH, NOT A PROPERTY.**
 >   `persisting_bump_pr_number`'s `None` had TWO meanings until the pin-walker
 >   lifted `open_bump_prs_for`'s read failure onto its own track; declaring it
