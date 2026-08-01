@@ -345,12 +345,16 @@ def _credential_usable(*, ctx: FleetContext, log: structlog.stdlib.BoundLogger) 
     and so `main` stays under the return-count ceiling.
     """
     preflight = preflight_credential(ctx=ctx)
-    if preflight.usable:
+    if not isinstance(preflight, Failure):
         return True
+    unusable = preflight.failure()
     log.error(
         "github credential unusable — no obligation row can see anything",
-        attempts=preflight.attempts,
-        cause=None if preflight.cause is None else preflight.cause.as_dict(),
+        # WHICH shape of unusable, straight off the failure track: a classified
+        # rejection and a probe that answered with nothing want different
+        # operator responses, and both were `usable=False` before. Rendered by
+        # the failure type so this lane and the admin lane cannot drift.
+        **unusable.as_log_fields(),
         hint=(
             "the credential was probed and rejected; this is one cause, not N "
             "blind rows. Fix the credential — do NOT demote blind rows"
