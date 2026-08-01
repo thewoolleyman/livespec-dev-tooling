@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 from typing import cast
 
+from livespec_dev_tooling.config import assert_never
 from livespec_dev_tooling.fleet._context import (
     FleetContext,
     FleetMember,
@@ -173,9 +174,23 @@ def assert_claude_plugin_currency(*, ctx: FleetContext, member: FleetMember) -> 
 def _claude_plugin_currency_outcome(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:
     """The undemoted row outcome: settings hook or successor, then wrapper."""
     presence = _claude_settings_presence_outcome(ctx=ctx, member=member)
-    if not isinstance(presence, RowPass):
-        return presence
+    match presence:
+        case RowPass():
+            pass
+        case RowFinding() | RowSkip():
+            return presence
+        case _:
+            assert_never(presence)
     settings = _settings_currency_outcome(ctx=ctx, member=member)
-    if isinstance(settings, RowSkip) and settings.reason == _WRAPPER_VERIFICATION_REQUIRED:
-        return _justfile_currency_outcome(ctx=ctx, member=member)
-    return settings
+    match settings:
+        # ⛔ A GUARD, not `case RowSkip(reason=_WRAPPER_VERIFICATION_REQUIRED)`.
+        # A bare name in a pattern is a CAPTURE, not a value comparison, so
+        # that spelling would bind the constant's name to the reason and match
+        # EVERY skip — silently routing every unreadable settings read to the
+        # justfile fallback.
+        case RowSkip() if settings.reason == _WRAPPER_VERIFICATION_REQUIRED:
+            return _justfile_currency_outcome(ctx=ctx, member=member)
+        case RowPass() | RowFinding() | RowSkip():
+            return settings
+        case _:
+            assert_never(settings)

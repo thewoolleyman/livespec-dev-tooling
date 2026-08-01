@@ -42,6 +42,7 @@ import sys
 from pathlib import Path
 from typing import cast
 
+from livespec_dev_tooling.config import assert_never
 from livespec_dev_tooling.fleet._context import (
     FleetContext,
     FleetMember,
@@ -81,15 +82,21 @@ def _reconcile_row(
         )
         return 1
     fixed = row.reconcile(ctx=ctx, member=member)
-    if isinstance(fixed, RowPass):
-        log.info(
-            "row reconciled",
-            row=row.row_id,
-            member=member.repo,
-            note=fixed.note,
-        )
-        return 0
-    detail = fixed.message if isinstance(fixed, RowFinding) else fixed.reason
+    match fixed:
+        case RowPass():
+            log.info(
+                "row reconciled",
+                row=row.row_id,
+                member=member.repo,
+                note=fixed.note,
+            )
+            return 0
+        case RowFinding():
+            detail = fixed.message
+        case RowSkip():
+            detail = fixed.reason
+        case _:
+            assert_never(fixed)
     log.error(
         "reconcile did not resolve the row",
         row=row.row_id,
@@ -106,23 +113,27 @@ def reconcile_member(
     unresolved = 0
     for row in rows_for(repo_class=member.repo_class):
         outcome = row.assert_member(ctx=ctx, member=member)
-        if isinstance(outcome, RowSkip):
-            log.info(
-                "row not evaluable; nothing reconciled",
-                row=row.row_id,
-                member=member.repo,
-                reason=outcome.reason,
-            )
-        elif isinstance(outcome, RowFinding):
-            if outcome.severity == "warning":
+        match outcome:
+            case RowSkip():
+                log.info(
+                    "row not evaluable; nothing reconciled",
+                    row=row.row_id,
+                    member=member.repo,
+                    reason=outcome.reason,
+                )
+            case RowPass():
+                pass
+            case RowFinding() if outcome.severity == "warning":
                 log.warning(
                     "row warning (not a wiring concern)",
                     row=row.row_id,
                     member=member.repo,
                     detail=outcome.message,
                 )
-            else:
+            case RowFinding():
                 unresolved += _reconcile_row(ctx=ctx, member=member, row=row, log=log)
+            case _:
+                assert_never(outcome)
     return unresolved
 
 
