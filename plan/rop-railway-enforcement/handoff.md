@@ -124,6 +124,17 @@
 >    | `prompt.md` / `expected_files.txt` `read_text` | **FAILURE** | UNCAUGHT today, so it raises out of a function annotated `dict`. This is the clause (a) conviction. |
 >    | `_read_plugin_prefix`: manifest absent / unreadable / unparseable / no `name` | **ALL FOUR FAILURES** | `plugin_install_dirs` is a caller-DECLARED tuple of installed plugin roots; a dir in it without a readable manifest is a BROKEN INSTALL, not "not a plugin". |
 >
+>    **✅ THE RISK IN THAT LAST ROW WAS MEASURED, NOT WAVED THROUGH** — it is the
+>    only one of the four that CHANGES behavior for a currently-passing caller,
+>    and `test_discover_skills_skips_plugin_with_missing_manifest` exists, so
+>    somebody once thought skipping was right. **Every one of the four siblings
+>    passes exactly ONE dir, and each is a real plugin root carrying a
+>    `plugin.json`:** driver-claude `(_PLUGIN_SOURCE,)` and `(plugin_dir,)`,
+>    driver-codex `(shim,)`, beads-fabro and git-jsonl `(_PLUGIN_DIR,)`. So no
+>    live caller relies on the skip, and turning it into a failure breaks nothing
+>    — which is exactly what makes the silent drop safe to remove rather than
+>    merely wrong.
+>
 >    **🔴 AND THE VACUITY LIVES IN `discover_skills`, NOT `discover_fixtures` —
 >    the triage row implies otherwise and it is worth correcting.**
 >    `assert_coverage` computes `discovered - fixtured - exempt`. An empty
