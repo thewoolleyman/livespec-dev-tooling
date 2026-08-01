@@ -20,8 +20,16 @@ from pathlib import Path
 
 import pytest
 
+from livespec_dev_tooling.checks import _no_except_outside_io_ruff as _ruff_probe
 from livespec_dev_tooling.checks import no_except_outside_io as _check
 from livespec_dev_tooling.checks._no_except_outside_io_ruff import find_ruff_backstop_gaps
+
+_VENDOR_DIR = Path(_ruff_probe.__file__).resolve().parent.parent / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
+
+from returns.io import IOSuccess  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 __all__: list[str] = []
 
@@ -87,14 +95,16 @@ def test_ruff_backstop_noops_without_pyproject(*, tmp_path: Path) -> None:
     assert (tmp_path / "pyproject.toml").is_file()
     (tmp_path / "pyproject.toml").unlink()
 
-    assert (
-        find_ruff_backstop_gaps(
-            repo_root=tmp_path,
-            scan_roots=(Path("pkg"),),
-            inspected_files=(Path("pkg/mod.py"),),
-        )
-        == []
+    # On the IOResult railway since 8o8e.5: an absent pyproject is an ANSWER,
+    # so this asserts on the UNWRAPPED value. Reading `== []` off the container
+    # would pass for a `Failure` too, which is the shape that defect had.
+    outcome = find_ruff_backstop_gaps(
+        repo_root=tmp_path,
+        scan_roots=(Path("pkg"),),
+        inspected_files=(Path("pkg/mod.py"),),
     )
+    assert isinstance(outcome, IOSuccess), f"expected a probed answer; got {outcome!r}"
+    assert unsafe_perform_io(outcome.unwrap()) == []
 
 
 def test_no_except_outside_io_accepts_narrow_catch_in_pure_layer(*, tmp_path: Path) -> None:
