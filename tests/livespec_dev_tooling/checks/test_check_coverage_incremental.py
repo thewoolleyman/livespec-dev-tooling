@@ -45,6 +45,8 @@ import types
 from pathlib import Path
 
 import pytest
+import structlog
+from structlog.testing import capture_logs
 
 from livespec_dev_tooling.config import MirrorPairing
 
@@ -445,6 +447,7 @@ def test_derive_paths_from_git_surfaces_changed_impl(*, tmp_path: Path) -> None:
     derived = module._derive_paths_from_git(  # noqa: SLF001
         source_tree_prefixes=("livespec_dev_tooling/",),
         cwd=tmp_path,
+        log=structlog.get_logger("test"),
     )
     assert derived == [
         Path("livespec_dev_tooling/checks/derived_mod.py")
@@ -576,6 +579,7 @@ def test_derive_paths_from_git_excludes_deleted_impl(*, tmp_path: Path) -> None:
     derived = module._derive_paths_from_git(  # noqa: SLF001
         source_tree_prefixes=("livespec_dev_tooling/",),
         cwd=tmp_path,
+        log=structlog.get_logger("test"),
     )
     assert derived == [], f"a deleted impl must be excluded from the derived set; got {derived!r}"
 
@@ -616,11 +620,51 @@ def test_derive_paths_from_git_excludes_docs_only_change(*, tmp_path: Path) -> N
     derived = module._derive_paths_from_git(  # noqa: SLF001
         source_tree_prefixes=("livespec_dev_tooling/",),
         cwd=tmp_path,
+        log=structlog.get_logger("test"),
     )
 
     assert (
         derived == []
     ), f"a docstring-and-comment-only change must not be gated as a changed impl; got {derived!r}"
+
+
+def test_derive_paths_from_git_reports_an_undecidable_carveout(*, tmp_path: Path) -> None:
+    """An undecidable comparison keeps the path gated AND is reported as itself.
+
+    The fail-closed DIRECTION is unchanged — an unparseable revision cannot
+    be proven docs-only, so the path stays in the gated set exactly as
+    before. What changed is that the shared rule now returns WHY on the
+    failure track, so this gate names "the comparison could not be made"
+    instead of restating it as "this is a real source change" (the collapse
+    `livespec-dev-tooling-8o8e.9` converts).
+    """
+    _init_tmp_repo(tmp_path=tmp_path, with_mirror_pairing=True)
+    impl = tmp_path / "livespec_dev_tooling" / "checks" / "undecidable_mod.py"
+    impl.parent.mkdir(parents=True, exist_ok=True)
+    impl.write_text("from __future__ import annotations\n\n__all__ = ['v']\n\nv = 1\n", "utf-8")
+    _git_in(tmp_path=tmp_path, args=("add", "-A"))
+    _git_in(tmp_path=tmp_path, args=("commit", "-qm", "baseline impl"))
+    _git_in(tmp_path=tmp_path, args=("update-ref", "refs/remotes/origin/master", "HEAD"))
+
+    impl.write_text("def v( -> int:\n", encoding="utf-8")
+    _git_in(tmp_path=tmp_path, args=("add", "-A"))
+    _git_in(tmp_path=tmp_path, args=("commit", "-qm", "does not parse"))
+
+    module = _load_check_module()
+    with capture_logs() as captured:
+        derived = module._derive_paths_from_git(  # noqa: SLF001
+            source_tree_prefixes=("livespec_dev_tooling/",),
+            cwd=tmp_path,
+            log=structlog.get_logger("test"),
+        )
+
+    assert derived == [
+        Path("livespec_dev_tooling/checks/undecidable_mod.py")
+    ], f"an undecidable comparison must keep the path gated; got {derived!r}"
+    reasons = [entry.get("reason") for entry in captured]
+    assert "revision-unparseable" in reasons, (
+        "the undecidable outcome must reach the operator as itself; " f"captured {captured!r}"
+    )
 
 
 def test_resolve_mirror_test_paths_skips_vendored_impl_paths() -> None:
