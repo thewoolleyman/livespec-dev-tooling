@@ -44,10 +44,24 @@
 > | `livespec` | `95697d07` | clean |
 >
 > **NOTHING OF THIS THREAD IS MID-FLIGHT** except the docs PR carrying this very
-> edit. Both #1205 and #1014 are MERGED and verified on the forge after a fetch;
-> their worktrees are reaped. FOREIGN worktrees exist in every repo — **REAP
-> NONE**, and ENUMERATE with `git worktree list` rather than trusting this
-> sentence.
+> edit. Pair A (#1205, #1014) and **ALL FOUR of pair B's sibling wirings** are
+> MERGED and verified on the forge after a fetch; every worktree of this thread's
+> is reaped. FOREIGN worktrees exist in every repo — **REAP NONE**, and ENUMERATE
+> with `git worktree list` rather than trusting this sentence.
+>
+> | pair B consumer wiring | PR | merged |
+> |---|---|---|
+> | `livespec-orchestrator-git-jsonl` | **#488** | `39616a9` |
+> | `livespec-orchestrator-beads-fabro` | **#1208** | `bc26f70` |
+> | `livespec-driver-claude` | **#370** | `0cf4ca7` |
+> | `livespec-driver-codex` (3 sites) | **#348** | `d150626` |
+>
+> Each verified on the forge by grepping the MERGED tree for the `.map()` wiring
+> AND for absence of the `value_or` trap — not by reading a green PR page.
+> ⚠️ The first attempt at that verification printed `0 / 0 / 0` because zsh ate
+> `$sha:tests/...` as a `:t` parameter modifier. **The zeros were VACUOUS**, and
+> quoting `"${sha}:${f}"` gave `1 / 0 / 3`. That is the fifth vacuous zero this
+> thread has caught, and the second from shell quoting.
 >
 > ```bash
 > /usr/local/bin/with-livespec-env.sh -- bd show livespec-dev-tooling-8o8e
@@ -80,19 +94,43 @@
 > - **✅ ITEM 3, PAIR A — CONVERSION MERGED.** dev-tooling **#1014** →
 >   **`cb2d86a`**. Both resolvers on `IOResult[str, OriginRemoteUnresolved]`, the
 >   unguarded `subprocess.run` fixed as the `git-not-run` arm, **34 → 32**, both
->   trailer sets present. **PAIR B IS THE ONLY REMAINING `dx8l`-BLOCKED WORK.**
+>   trailer sets present.
+> - **✅ ITEM 3, PAIR B — ALL FOUR CONSUMER WIRINGS MERGED** (table above). Each
+>   took the SUITE-GREEN leg (`chore(test):`), which is the doctrine for
+>   behaviour-preserving test wiring — `red_green_replay`'s own rule 3: tests-only
+>   staged with a `feat:`/`fix:` subject takes the Red leg, "any other prefix is a
+>   test-only cleanup and takes the green-verified leg". **DO NOT fabricate a Red
+>   for the remaining wiring work.**
+> - **▶️ WHAT REMAINS OF ITEM 3: the pair B CONVERSION ITSELF, now UNBLOCKED.**
 >
-> ### ▶️▶️ EXACT NEXT ACTION — PAIR B, and nothing is owed ahead of it
+> ### ▶️▶️ EXACT NEXT ACTION — THE PAIR B CONVERSION. The `dx8l` block is DISCHARGED.
 >
-> 1. **PAIR B — `testing/_cli_e2e_discovery.py::discover_fixtures` +
->    `discover_skills`.** **FOUR siblings must be wired dual-shape FIRST**, each in
->    its own repo, through its own green gates: `livespec-driver-claude`,
->    `livespec-driver-codex`, `livespec-orchestrator-beads-fabro`,
->    `livespec-orchestrator-git-jsonl` — each reaches it as
->    `cli_e2e.discover_fixtures(...)` from `tests/e2e-cli/`. **RE-RUN THE ORACLE
->    RATHER THAN TRUSTING THIS LIST** (harness in §"THE THIRD AXIS"); it was
->    re-derived 2026-08-01 at 9 roster / 9 READ / 0 unavailable / 0 unparsed / **63
->    edges**, and `discover_skills` has NO sibling consumer.
+> 1. **CONVERT `testing/_cli_e2e_discovery.py::discover_fixtures` +
+>    `discover_skills` as ONE pair.** All four consumers now tolerate both shapes,
+>    so the pin may move in either direction. **RE-RUN THE ORACLE RATHER THAN
+>    TRUSTING THAT** (harness in §"THE THIRD AXIS") — the wirings were authored
+>    against a measurement, and so should the conversion be.
+>    **The internal consumer is `cli_e2e.py:318-321`**, where
+>    `test_workflow_full_round_trip` calls BOTH and feeds `assert_coverage`; it
+>    converts in the same change.
+>
+>    **⚖️ THE ANSWER-vs-FAILURE CALL, ESTABLISHED BY READING — this is the axis
+>    hand judgement has been wrong on, so it is written down rather than left:**
+>
+>    | site | verdict | why |
+>    |---|---|---|
+>    | `fixtures_root` ABSENT | **ANSWER** (`{}`) | the pin-walker ruling: `is_file`/`is_dir`/empty glob are answers. And the gate still catches it — `discovered` is non-empty, so `discovered - fixtured` is non-empty and it FAILS. |
+>    | `fixtures_root` unreadable (perms) | **FAILURE** | today `is_dir()` FUSES this with absent. `iterdir()` splits them for free: `FileNotFoundError` is the answer, any other `OSError` is the failure. **Do not carry the fusion forward** — it is the `_rows_beads` shape and it is cheap to close here. |
+>    | `prompt.md` / `expected_files.txt` `read_text` | **FAILURE** | UNCAUGHT today, so it raises out of a function annotated `dict`. This is the clause (a) conviction. |
+>    | `_read_plugin_prefix`: manifest absent / unreadable / unparseable / no `name` | **ALL FOUR FAILURES** | `plugin_install_dirs` is a caller-DECLARED tuple of installed plugin roots; a dir in it without a readable manifest is a BROKEN INSTALL, not "not a plugin". |
+>
+>    **🔴 AND THE VACUITY LIVES IN `discover_skills`, NOT `discover_fixtures` —
+>    the triage row implies otherwise and it is worth correcting.**
+>    `assert_coverage` computes `discovered - fixtured - exempt`. An empty
+>    `fixtured` alone FAILS the gate (correctly). It is `discover_skills`'
+>    `if prefix is None: continue` — a SILENT DROP of a whole plugin — that empties
+>    `discovered`, and `set() - anything` is empty, so the **fail-closed
+>    time-bomb gate reports SATISFIED**. That is the conversion's real prize.
 > 2. **THEN, and only then:** re-measure at both ends → drop the `_`-prefixed-FILE
 >    skip → **ARM**, carrying the disposition denominator and the `995m` known-gap
 >    statement in the commit's own text. **The dropped skip creates a DECLARATION
@@ -127,7 +165,16 @@
 > in each of the four repos, through its own green gates.**
 >
 > `discover_skills` has NO sibling consumer (the oracle, re-derived), so it moves
-> with `discover_fixtures` for clause (d) rather than for a consumer's sake.
+> with `discover_fixtures` for clause (d) rather than for a consumer's sake — but
+> it is the half carrying the vacuity, so it is not the junior partner.
+>
+> **📐 THE WIRING SHAPE ALL FOUR SIBLINGS NOW CARRY, so the conversion knows what
+> it may return:** a local `_discovered_fixtures` that returns the bare `dict`
+> unchanged, and otherwise captures the success track with `.map()`, asserting
+> loudly if nothing was captured. It tolerates `dict`, `Result` AND `IOResult`,
+> so **the conversion is free to choose either container.** Each sibling pins all
+> three success shapes plus both failure tracks against REAL containers, and each
+> was positive-controlled by re-introducing the `value_or` trap.
 >
 > ### ⛔ THE STANDING QUESTION — it has inverted the expected fix in six units running
 >
