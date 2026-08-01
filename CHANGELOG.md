@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.13.21](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.13.20...v1.13.21) (2026-08-01)
+
+
+### Bug Fixes
+
+* **fleet:** put the credential preflight on the Result railway ([1c6ab06](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1c6ab06216bb1c63b238262d6d4bb9ab2b22a457))
+
 ## [1.13.20](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.13.19...v1.13.20) (2026-08-01)
 
 
