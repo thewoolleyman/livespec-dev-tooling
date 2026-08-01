@@ -32,6 +32,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from livespec_dev_tooling.fleet._origin_remote import OriginRemoteUnresolved
+
 if TYPE_CHECKING:
     import structlog.stdlib
 
@@ -41,6 +43,9 @@ if TYPE_CHECKING:
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
+
+from returns.io import IOFailure, IOResult  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 __all__: list[str] = ["RunTallies", "member_ci_exit_code", "own_failing_rows"]
 
@@ -80,32 +85,45 @@ def member_ci_exit_code(
     *,
     manifest: Manifest,
     member_verdicts: tuple[MemberVerdict, ...],
-    running_as: str | None,
+    running_as: IOResult[str, OriginRemoteUnresolved],
     tallies: RunTallies,
     log: structlog.stdlib.BoundLogger,
 ) -> int:
     """The exit status a member's own CI leg deserves: 0, 1 (precondition), or 4.
 
-    `running_as` is the caller's already-resolved answer to "which member am I", so
-    the resolution stays monkeypatchable at the CLI module and this function stays a
-    pure decision over values.
+    `running_as` is the caller's already-ATTEMPTED answer to "which member am
+    I", so the resolution stays monkeypatchable at the CLI module and this
+    function stays a pure decision over values — an `IOResult` IS a value, and
+    nothing here performs I/O.
+
+    ⛔ IT CARRIES THE FAILURE, NOT `str | None`, AND THAT IS THE POINT. This
+    function already owns one precondition exit (an unregistered repo), so the
+    unresolvable-repo exit belongs beside it rather than as a second `return`
+    in the CLI's `main()`. Taking the container instead of a pre-collapsed
+    `str | None` is what lets the diagnostic name WHICH of three causes it hit:
+    the branch this replaces could only say "the origin remote is not a
+    github.com URL", which was one guess out of three and wrong both times
+    `git` did not run at all or the remote was simply absent.
     """
-    if running_as is None:
+    if isinstance(running_as, IOFailure):
+        unresolved = unsafe_perform_io(running_as.failure())
         log.error(
             "member-ci run cannot resolve which member it is running as",
+            reason=unresolved.reason,
+            detail=unresolved.detail,
             hint=(
-                "the origin remote is not a github.com URL; run inside a member "
-                "checkout, or omit --member-ci to run the fleet-level sweep"
+                "run inside a member checkout, or omit --member-ci to run the " "fleet-level sweep"
             ),
         )
         return 1
-    if running_as not in manifest.member_names():
+    member = unsafe_perform_io(running_as.unwrap())
+    if member not in manifest.member_names():
         # Not a quiet pass: scoping the exit to "this repo's findings" when this repo
         # has no manifest entry would scope it to NOTHING and report success while
         # enforcing nothing.
         log.error(
             "member-ci run is not a fleet manifest member",
-            running_as=running_as,
+            running_as=member,
             hint=(
                 "register it in livespec .livespec-fleet-manifest.jsonc, or omit "
                 "--member-ci: an unregistered repo has no findings of its own to "
@@ -113,11 +131,11 @@ def member_ci_exit_code(
             ),
         )
         return 1
-    owned = own_failing_rows(member_verdicts=member_verdicts, running_as=running_as)
+    owned = own_failing_rows(member_verdicts=member_verdicts, running_as=member)
     if owned or tallies.blind_rows:
         log.error(
             "fleet conformance FAILED for this member",
-            member=running_as,
+            member=member,
             own_failing_rows=list(owned),
             error_findings=tallies.errors,
             blind_rows=tallies.blind_rows,
@@ -126,7 +144,7 @@ def member_ci_exit_code(
         return 4
     log.info(
         "fleet conformance passed for this member",
-        member=running_as,
+        member=member,
         own_failing_rows=[],
         error_findings=tallies.errors,
         blind_rows=tallies.blind_rows,

@@ -17,13 +17,15 @@ from typing import TYPE_CHECKING
 
 from _gh_railway import lift_gh
 from _protection_fixtures import aligned_merge_settings_payload, aligned_protection_payload
+from returns.io import IOFailure
 
-from livespec_dev_tooling.fleet import wire_fleet_member
+from livespec_dev_tooling.fleet import _cli_owner, wire_fleet_member
 from livespec_dev_tooling.fleet._context import (
     FleetContext,
     FleetMember,
     GhResult,
     GhRunner,
+    OriginRemoteUnresolved,
     RowFinding,
     RowOutcome,
     RowSkip,
@@ -250,11 +252,11 @@ def test_main_owner_unresolvable_is_precondition_failure(
 ) -> None:
     monkeypatch.setattr(sys, "argv", ["wire-fleet-member", "--repo", "widget"])
 
-    def no_owner(*, cwd: object = None) -> str | None:
-        del cwd
-        return None
+    def no_owner(*, argument: str | None = None, cwd: object = None) -> object:
+        del argument, cwd
+        return IOFailure(OriginRemoteUnresolved(reason="no-origin-remote", detail="exit 128"))
 
-    monkeypatch.setattr(wire_fleet_member, "resolve_owner", no_owner)
+    monkeypatch.setattr(_cli_owner, "owner_or_origin", no_owner)
     assert wire_fleet_member.main() == 1
 
 

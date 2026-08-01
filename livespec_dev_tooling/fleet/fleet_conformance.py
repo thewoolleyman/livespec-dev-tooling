@@ -111,11 +111,11 @@ from pathlib import Path
 from typing import cast
 
 from livespec_dev_tooling.fleet._adopter_lane import run_adopter_rows
+from livespec_dev_tooling.fleet._cli_owner import reported_owner
 from livespec_dev_tooling.fleet._context import (
     FleetContext,
     default_gh_downloader,
     default_gh_runner,
-    resolve_owner,
     resolve_repo_name,
 )
 from livespec_dev_tooling.fleet._contract_rows import CENTRAL_APP_VANTAGE, CENTRAL_VANTAGE
@@ -138,7 +138,9 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
+from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
 from returns.result import Failure, Result, Success  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 __all__: list[str] = []
 
@@ -405,13 +407,10 @@ def main() -> int:
             ),
         )
         return 0
-    owner = cast("str | None", args.owner) or resolve_owner()
-    if owner is None:
-        log.error(
-            "owner unresolvable: no --owner and origin remote is not github.com",
-            hint="pass --owner or run inside a github.com clone",
-        )
+    resolved = reported_owner(argument=cast("str | None", args.owner), log=log)
+    if isinstance(resolved, IOFailure):
         return 1
+    owner = unsafe_perform_io(resolved.unwrap())
     # Emitting per-member verdicts IS the fan-out preflight context: the
     # livespec-f73t dispatch-matrix filter consumes those verdicts, so an
     # exit-4 finding excludes the offending member loudly instead of halting
@@ -454,14 +453,13 @@ def main() -> int:
     blind_rows = result.blind_rows + adopters.blind_rows
     out_of_vantage_rows = result.out_of_vantage_rows + adopters.out_of_vantage_rows
     if args.member_ci:
-        # Scope the EXIT ONLY. Every member's violation is already logged at error
-        # severity above and stays in the summary, so this run still reports fleet
-        # state; it simply no longer decides THIS repo's status. `resolve_repo_name`
-        # is called here rather than inside the helper so the resolution stays
-        # patchable at this module and the helper stays a pure decision over values.
         return member_ci_exit_code(
             manifest=manifest,
             member_verdicts=result.member_verdicts,
+            # The CONTAINER, not a pre-collapsed `str | None`: the callee owns
+            # both precondition exits and names WHICH read failed. Resolved here
+            # rather than inside it so the resolution stays patchable at this
+            # module and it stays a pure decision over values.
             running_as=resolve_repo_name(),
             tallies=RunTallies(
                 errors=errors,

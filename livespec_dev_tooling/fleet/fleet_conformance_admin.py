@@ -100,7 +100,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from livespec_dev_tooling.fleet._adopter_lane import ADOPTER_CURRENCY_ROW_ID, run_adopter_rows
-from livespec_dev_tooling.fleet._context import FleetContext, default_gh_runner, resolve_owner
+from livespec_dev_tooling.fleet._cli_owner import reported_owner
+from livespec_dev_tooling.fleet._context import FleetContext, default_gh_runner
 from livespec_dev_tooling.fleet._contract_rows import ADMIN_VANTAGE, OBLIGATION_ROWS
 from livespec_dev_tooling.fleet._credential_preflight import preflight_credential
 from livespec_dev_tooling.fleet._lanes import (
@@ -124,7 +125,9 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
+from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
 from returns.result import Failure  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 __all__: list[str] = []
 
@@ -210,13 +213,10 @@ def main() -> int:
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or ""
     if holds_app_class_credential(token=token):
         return _dispatch_class_out_of_vantage(log=log)
-    owner = cast("str | None", args.owner) or resolve_owner()
-    if owner is None:
-        log.error(
-            "owner unresolvable: no --owner and origin remote is not github.com",
-            hint="pass --owner or run inside a github.com clone",
-        )
+    resolved = reported_owner(argument=cast("str | None", args.owner), log=log)
+    if isinstance(resolved, IOFailure):
         return 1
+    owner = unsafe_perform_io(resolved.unwrap())
     ctx = FleetContext(owner=owner, run_gh=default_gh_runner)
     # ONE deliberate credential verdict, before any row runs. Without it a
     # single transient rejection surfaces as N blind rows and reds master on a

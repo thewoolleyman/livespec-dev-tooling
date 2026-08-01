@@ -32,6 +32,7 @@ import json
 import sys
 from typing import TYPE_CHECKING
 
+from returns.io import IOFailure
 from test_fleet_conformance import (
     _MANIFEST_ARGS,  # pyright: ignore[reportPrivateUsage]
     _two_member_table,  # pyright: ignore[reportPrivateUsage]
@@ -40,8 +41,8 @@ from test_fleet_conformance import (
     raw,
 )
 
-from livespec_dev_tooling.fleet import fleet_conformance_admin
-from livespec_dev_tooling.fleet._context import GhResult
+from livespec_dev_tooling.fleet import _cli_owner, fleet_conformance_admin
+from livespec_dev_tooling.fleet._context import GhResult, OriginRemoteUnresolved
 
 if TYPE_CHECKING:
     import pytest
@@ -256,7 +257,13 @@ def test_admin_lane_fails_loud_when_the_owner_is_unresolvable(
     monkeypatch.setattr(sys, "argv", ["fleet-conformance-admin"])
     monkeypatch.delenv("GH_TOKEN", raising=False)
     monkeypatch.delenv("GITHUB_TOKEN", raising=False)
-    monkeypatch.setattr(fleet_conformance_admin, "resolve_owner", lambda: None)
+    monkeypatch.setattr(
+        _cli_owner,
+        "owner_or_origin",
+        lambda **_kwargs: IOFailure(
+            OriginRemoteUnresolved(reason="no-origin-remote", detail="exit 128: fatal")
+        ),
+    )
 
     assert fleet_conformance_admin.main() == 1
 
