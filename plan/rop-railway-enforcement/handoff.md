@@ -88,6 +88,163 @@ records the lane-scoped shape instead.
 
 ---
 
+## ✅✅ 2026-08-01 — `e01t` IS CLOSED AND `RowOutcome` IS RATIFIED AS **v181**. THE RESOLVER NO LONGER BLOCKS THE SPEC LANE.
+
+**Both landed and were verified on the FORGE after a fetch, never inferred from a
+green PR page. Supervisor brief 74 items 1 and 2 are DONE; item 3 is untouched.**
+
+| unit | PR | merged master | state |
+|---|---|---|---|
+| `e01t` — the `entries[0]` core resolver | `livespec-driver-claude` **#366** | **`d11fccd`** | ledger item CLOSED |
+| `RowOutcome` ratification | `livespec` **#1870** | **`4bb6119`** | spec **v181** |
+
+**📏 BASELINE RE-DERIVED FIRST, and it AGREES with brief 74: universe **167** ·
+offenders DROPPING the `_`-prefixed-FILE skip **34** · offenders CARRYING it
+**0**.** Measured with `_find_offenders` over `resolve_check_universe()`, never
+through `main()`. The 34 include the four `dx8l`-blocked as
+`_origin_remote.py` ×2 and `_cli_e2e_discovery.py` ×2 — item 3's unit, visible in
+the count.
+
+### ✅ `e01t` — ALL FOUR OWED ITEMS DISCHARGED, and the fix was an EXTRACTION
+
+Ratified driver-claude **v006**; the resolver is ONE Driver-owned bundle script
+(`.claude-plugin/lib/resolve_core_root.py`) that all eight bindings call.
+`git grep entries[0]` over `.claude-plugin/` on merged master returns **ZERO**.
+18 unit tests, 100% line+branch.
+
+**▶️ THE MECHANICAL PROOF THE COPY-FAMILY WAS REAL, and it is reusable:** before
+the change, all eight resolution sections normalised (op-name substituted out) to
+**ONE hash**; after, they are byte-identical because the per-operation text is
+gone. *Hash the normalised section across N copies* settles "is this really a
+copy-family?" in one command, without reading eight files.
+
+**⛔ A CORRECTION TO `e01t`'s OWN TEXT, and it makes the argument SHARPER rather
+than weaker.** The item stated `verify.py`'s `expected_build_id` is *"THIS
+project's pinned marketplace build"*. **FALSE** — `_expected_build_id` returns the
+HEAD of the Claude marketplace CLONE, host-wide and project-independent. The
+dead-end conclusion survives, for a better reason: the remedy fails not because
+the record is already current, but because `claude plugin update --scope project`
+WRITES the record for THIS project while a positional reader KEEPS READING
+ANOTHER project's. **Remedy and reader operate on different records, so the loop
+cannot terminate.** projectPath selection is what makes them the same record —
+that is the real argument, and it came from reading the resolver rather than
+trusting the item.
+
+**▶️ EVIDENCE, both directions, on the live 13-record registry:** `entries[0]` →
+`livespec-runtime` @ `ba62d8fdd609` → core wrapper exits **78**; projectPath-matched
+→ `livespec-dev-tooling` @ `7a53085b93fb` → exits **0**. Post-merge dogfood of the
+MERGED resolver from dev-tooling: rc 0, and `revise.py` runs. From a root with no
+record: rc 1, names the mismatch, lists the nine roots that DO hold records, never
+falls through.
+
+### 🔴🔴 FINDING 1 — THE RGR GATE WAS STRUCTURALLY BLIND TO THE NEW TREE, AND IT REPORTED GREEN
+
+**The first Green amend landed carrying `TDD-Red-*` trailers and NO `TDD-Green-*`
+trailers while `check-red-green-replay` exited 0.** `_classify_staged` buckets a
+staged `.py` as IMPL only when it starts with a declared `source_tree_prefixes`
+entry. A shipped product tree that is not declared is therefore invisible: the
+Green leg never dispatches, the ritual silently does not apply — and
+`check-commit-pairs-source-and-test` stops requiring a co-staged test on the SAME
+predicate. **Two gates, one undeclared prefix, both green over a tree neither can
+see.**
+
+**⛔ IT WAS CAUGHT BY READING THE TRAILERS, NOT THE EXIT CODE** — the standing
+"a check's NAME is not the evidence" rule paying out on the RGR gate itself. The
+pair was redone after declaring the tree; merged `99bfac0` carries both sets.
+
+**▶️ THE STANDING RULE THIS ADDS: adding a first-party `.py` TREE is a
+CONFIGURATION change, not just a code change.** Enrol it in every allowlist that
+governs it, and verify by making a gate FAIL, not by watching it pass. For this
+repo family that meant SEVEN declarations for one module — `source_tree_prefixes`,
+`source_trees`, `mirror_pairings`, `supervisor_entry_files`, coverage `source`,
+coverage `include`, pyright `include`. **Coverage `source`/`include` and pyright
+`include` are explicit ALLOWLISTS: a module outside them is measured by nothing and
+reads as covered.**
+
+### 🔴🔴 FINDING 2 — A DIRECTORY *NAME* SILENTLY SELECTS WHICH CONTRACT A REPO IS HELD TO. FILED AS `livespec-dev-tooling-fas6` (P1)
+
+`skill_invocation_paths.py:203` — `driver_mode = not (plugin_root / "scripts").is_dir()`.
+**A bare directory-presence test, no config key, no diagnostic**, chooses between
+two MUTUALLY CONTRADICTORY contracts: the plugin-ships-scripts model demands
+`${CLAUDE_PLUGIN_ROOT}` for wrapper invocations; the runtime-resolving Driver model
+demands `$LIVESPEC_CORE_ROOT` and FORBIDS `${CLAUDE_PLUGIN_ROOT}` — which
+driver-claude's own ratified contract and `check_plugin_structure` independently
+enforce.
+
+**Naming the resolver's directory `scripts/` reclassified the Driver and turned
+every UNCHANGED `$LIVESPEC_CORE_ROOT` wrapper line into a violation** — a state
+where NO set of bindings satisfies both checks. Measured, not predicted; the
+baseline was established on a clean `origin/master` worktree FIRST, which is what
+proved the four failures were mine rather than pre-existing.
+
+**⛔ WORKED AROUND, NOT FIXED:** the resolver ships at `lib/`, and the ratified
+driver-claude text PINS the name so a later editor cannot tidy it back. **The
+fleet-wide trap stays armed for the next Driver that ships any script.**
+
+**▶️ AND IT IS A NEW MEMBER OF THE CLASS, distinct from every prior one:** the
+`_`-prefixed FILE skip, `pure_trees = []`, and the tarball that cannot see
+`.git/hooks/` are instruments that cannot SEE part of their population. **This one
+sees the population perfectly and applies the WRONG RULE to it**, selected by a
+directory name nothing documents at the point of use.
+
+### ✅ v181 — THE RATIFICATION, AND BOTH CONDITIONS ARE IN THE TEXT
+
+Ratified into `livespec` `non-functional-requirements.md` §"ROP composition".
+**NOT a fifth exemption member** — the section's set stays EXHAUSTIVE; condition 1
+TIGHTENS the leaf. The principle: **convert where the failure ORIGINATES and is
+currently unrepresentable; ratify the type that RENDERS it at the boundary.**
+
+The three binding conditions: (1) the failure originates elsewhere and is
+represented there — a function calling a side-effecting primitive DIRECTLY is the
+boundary and MUST convert; (2) **every consumption site matches EXHAUSTIVELY**
+via `match` … `case _: assert_never(<subject>)`, and an `if isinstance` chain is
+explicitly NOT sanctioned even where exhaustive today; (3) **no variant carries
+two meanings.**
+
+**▶️ CONDITION 2's MEASUREMENT, taken BEFORE ruling and quoted with its
+composition:** 14 consumption sites, EVERY one an independent `if isinstance`
+chain — `_lanes.py` 3, `local_reconcile.py` 3, `wire_fleet_member.py` 4,
+`_rows_claude_plugin.py` 2, `_adopter_lane.py` 2 — **0** `match` statements over
+the union, **0** occurrences of `assert_never` in the whole package. ⚠️ The first
+attempt at that sweep printed `0` for two of the three figures because zsh
+rejected an unquoted `--include=*.py`; **the zeros were VACUOUS and a positive
+control caught them.** That is the fourth vacuous zero this thread has caught.
+
+**⛔⛔ WHAT v181 NOW OWES THIS REPO — READ BEFORE ITEM 3.** The ratified text binds
+`livespec-dev-tooling` immediately, and dev-tooling does NOT satisfy it today:
+
+1. **The 14 `isinstance` sites MUST become `match` … `assert_never`.** Until then
+   `RowOutcome` fails condition 2 and, by the ratified text's own words, "the
+   functions returning it MUST convert" — i.e. the 65-return conversion this
+   ratification exists to avoid. **This is now the cheapest item on the board and
+   it protects the ruling.** No new machinery: `check-assert-never-exhaustiveness`
+   is already armed and already in the aggregate.
+2. **`8o8e.2` is a PRECONDITION, not a cleanup** — condition 3. The fix needs no
+   new type: `RowPass(note=_EXCLUDED_NOTE_PREFIX + reason)`, which `_lanes.py:188`
+   already renders.
+3. The `default_*` trio is **already converted** (#978/#981/#984) and v181 records
+   WHY it went the other way — do not re-litigate it.
+
+### ▶️ EXACT NEXT ACTION — ITEM 3, AND THE TWO ITEMS v181 JUST MADE URGENT
+
+**Sequence I recommend, and the reason is that (1) protects a ruling already
+merged:** the 14-site `match` conversion → `8o8e.2` → item 3's four
+`dx8l`-blocked (`_origin_remote.py::resolve_owner` + `resolve_repo_name` as ONE
+pair after beads-fabro's `codex_yolo_gate.py` is wired dual-shape;
+`_cli_e2e_discovery.py::discover_fixtures` + `discover_skills` after FOUR siblings).
+**Consumer wiring lands FIRST, in the consuming repo.** Those two also carry a live
+second defect: their `subprocess.run` is UNGUARDED, so an absent `git` raises
+`FileNotFoundError` straight out of `resolve_owner`.
+
+### 📌 CARRIED FORWARD, unchanged and still not fixed
+
+`_rows_beads.py:110`/`:113`'s unreadable-or-absent fusion (belongs with `8o8e.2`);
+`open_bump_prs_for`'s missing pagination; `parse_open_bump_prs`' silent per-item
+drop; and the NEGATIVE result on `reconcile_shim_workflows` (loud, not silent —
+recorded so it is not re-derived).
+
+---
+
 ## ✅ THE 2026-08-01 CONVERT PAIR — 36 → 34, AND BOTH UNITS FOUND MORE THAN THEY CONVERTED
 
 **Both re-derived at BOTH ends on MERGED master with `_find_offenders` over
