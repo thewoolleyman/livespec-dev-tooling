@@ -71,6 +71,8 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
+from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 from livespec_dev_tooling.checks._no_except_outside_io_markers import (  # noqa: E402
     BOUNDARY_FLAVOR,
@@ -80,6 +82,7 @@ from livespec_dev_tooling.checks._no_except_outside_io_markers import (  # noqa:
     statement_colons,
 )
 from livespec_dev_tooling.checks._no_except_outside_io_ruff import (  # noqa: E402
+    RuffProbeUnavailable,
     find_ruff_backstop_gaps,
 )
 from livespec_dev_tooling.config import (  # noqa: E402
@@ -307,11 +310,23 @@ def main() -> int:
         files_inspected=len(inspected_files),
         offenses=len(offenders),
     )
-    backstop_gaps = find_ruff_backstop_gaps(
+    probed = find_ruff_backstop_gaps(
         repo_root=root,
         scan_roots=(Path(),),
         inspected_files=tuple(inspected_files),
     )
+    # UNPROBED IS NOT UNGAPPED, and the two are kept apart all the way to the
+    # exit code. `find_ruff_backstop_gaps` used to answer an empty list when it
+    # could not read `pyproject.toml`, which read here as "the backstop is
+    # present and there are no gaps" — livespec-dev-tooling-8o8e.5. `None` is an
+    # ABSENCE (no probe failure occurred), not a collapsed failure: the failure
+    # itself is the value bound to it.
+    unprobed: RuffProbeUnavailable | None = None
+    backstop_gaps: list[tuple[Path, str]] = []
+    if isinstance(probed, IOFailure):
+        unprobed = unsafe_perform_io(probed.failure())
+    else:
+        backstop_gaps = unsafe_perform_io(probed.unwrap())
     # BOTH failure kinds are reported in the SAME run. An earlier form returned
     # on the first backstop gap, before this offender loop — so a repo carrying
     # a gap had its real broad catches computed, counted in the info line above,
@@ -320,11 +335,18 @@ def main() -> int:
     # invisible to the error stream a reviewer and a CI log actually read. A
     # fleet census concluded "zero genuine broad catches" on exactly that basis;
     # there were seven, every one behind a gap.
+    if unprobed is not None:
+        log.error(
+            "ruff BLE001 backstop could not be PROBED — it is UNVERIFIED, not absent",
+            check_id="no_except_outside_io",
+            reason=unprobed.reason,
+            detail=unprobed.detail,
+        )
     for path, gap_reason in backstop_gaps:
         log.error(gap_reason, file=str(path))
     for path, lineno, reason in offenders:
         log.error(reason, file=str(path), line=lineno)
-    return 1 if (backstop_gaps or offenders) else 0
+    return 1 if (unprobed is not None or backstop_gaps or offenders) else 0
 
 
 if __name__ == "__main__":
