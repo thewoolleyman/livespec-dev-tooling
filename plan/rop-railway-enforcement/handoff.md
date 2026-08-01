@@ -2,11 +2,38 @@
 
 > ## ▶️▶️▶️ COLD START — READ THIS BLOCK FIRST, THEN §"EXACT NEXT ACTION" BELOW IT
 >
-> **Rewritten 2026-08-01 (fifth session that day). This block is the
-> CURRENT-STATE header. The older `## ▶️ START HERE` section further down is a
-> HISTORICAL record: its live-state claims are dated 2026-07-31 and are
-> SUPERSEDED by this block. Read it for METHOD and for the reasoning behind past
-> rulings, never for "what is true now".**
+> **Rewritten 2026-08-01, extended through the session that wrapped up
+> 2026-08-02. This block is the CURRENT-STATE header. The older
+> `## ▶️ START HERE` section further down is a HISTORICAL record: its live-state
+> claims are dated 2026-07-31 and are SUPERSEDED by this block. Read it for
+> METHOD and for the reasoning behind past rulings, never for "what is true
+> now".**
+>
+> ### ▶️▶️▶️ RESUME HERE: **NOTHING IS MID-FLIGHT. THE NEXT UNIT IS `run_adopter_rows`.**
+>
+> **No open PR of this thread's, no worktree of this thread's, no background
+> job.** The wrap-up session landed SIX merged PRs and closed one filed defect;
+> every one was verified on the FORGE after a fetch, and every worktree it made
+> is reaped. FIVE FOREIGN worktrees exist in dev-tooling and PR **#285** is
+> open — **NEITHER IS THIS THREAD'S. REAP NONE, TOUCH NEITHER.** Enumerate with
+> `git worktree list` rather than trusting any count here.
+>
+> **`8o8e.9` went 29 → 25 across that session**, in five units:
+> `is_docs_only_change` (#1031), `scenario_tier_violations` (#1035), the `dno1`
+> stop-guard fix (#1039, which bought NO count — see the retraction below),
+> `persisting_bump_pr_number` DECLARED (#1043), `preflight_credential` (#1045).
+> **Three P1s were filed along the way** — `rav3`, `dno1` (now CLOSED), and the
+> clause-(e) blind spot recorded in the `preflight_credential` entry — and
+> **two claims of mine were RETRACTED IN WRITING** rather than left standing.
+>
+> **▶️ GO STRAIGHT TO §"EXACT NEXT ACTION". The next unit is `run_adopter_rows`,
+> and TWO TRAPS on it are already written out there** — the triage's own "why"
+> cell for that row is `RowOutcome` boilerplate that would wrongly send you to
+> `3744`, and its failure channel is already an in-band COUNT (`blind_rows`), so
+> it poses the absence-is-part-of-the-value question a unit early. Third axis is
+> discharged for it. Do NOT start with `cross_member_consumption` (LAST — it is
+> `5cai`'s own oracle) or `extract_created_worktree_paths` (blocked on a spec
+> question).
 >
 > ### ✅🔴 FIXED THIS SESSION, AND ITS RAILWAY HALF IS RETRACTED: **THE SUB-AGENT STOP GUARD LOST A WORKTREE PATH TO A SINGLE APOSTROPHE — `dno1`, CLOSED**
 >
@@ -193,15 +220,19 @@
 >
 > | repo | master at wrap-up | working tree |
 > |---|---|---|
-> | `livespec-dev-tooling` | **`1c6ab06`** | clean (one untracked `install-livespec-pr-bot.png`, NOT this thread's — leave it) |
+> | `livespec-dev-tooling` | **`c8c2e23`** | clean (one untracked `install-livespec-pr-bot.png`, NOT this thread's — leave it) |
 > | `livespec-orchestrator-beads-fabro` | `bc26f70` | clean |
 > | `livespec-driver-claude` | `0cf4ca7` | clean |
 > | `livespec-driver-codex` | `d150626` | clean |
 > | `livespec-orchestrator-git-jsonl` | `39616a9` | clean |
 > | `livespec` | `95697d07` | clean |
 >
+> ⚠️ **THE FIVE SIBLING ROWS ABOVE WERE LAST DERIVED ON 2026-08-01 AND WERE NOT
+> TOUCHED SINCE — re-derive them, do not quote them.** Only the dev-tooling row
+> is current.
+>
 > **NOTHING OF THIS THREAD IS MID-FLIGHT — no open PR, no worktree, no background
-> job.** Twelve PRs merged across five repos, every one verified on the FORGE
+> job.** Eighteen PRs merged across five repos, every one verified on the FORGE
 > after a fetch. Every worktree of this thread's is reaped. FIVE FOREIGN
 > worktrees exist in dev-tooling (and more in the siblings) — **REAP NONE**, and
 > ENUMERATE with `git worktree list` rather than trusting any count here.
@@ -213,7 +244,7 @@
 > ### 📏 BASELINE — re-derive at BOTH ENDS of every unit, never inherit
 >
 > **universe 168 · offenders DROPPING the `_`-prefixed-FILE skip 25 · offenders
-> CARRYING it 0** — re-derived on MERGED master at `1c6ab06`, not inherited from
+> CARRYING it 0** — re-derived on MERGED master at `c8c2e23`, not inherited from
 > a worktree. (34 → 32 at pair A, → 30 at pair B, → 29 at the ruff backstop, →
 > 28 at the docs-only carve-out, → 27 at the scenarios.md tier resolution, → 26 at
 > the `persisting_bump_pr_number` DECLARATION, → 25 at the credential preflight;
@@ -329,17 +360,33 @@
 > exits are named in the retraction block above, and the choice is a livespec
 > CORE spec question. **Do not open it as a conversion.**
 >
-> **START WITH `preflight_credential`, and its question is NARROW and already
-> written down** (triage §4b): it is convicted SOLELY by `sleep(...)`, a bare
-> call to an INJECTED PARAMETER (`sleep: Sleeper = time.sleep`). That is not the
-> CHECK-FIX class — a bare-name call is DOCUMENTED doubt in
-> `_no_expected_failure_mode` and doubt disqualifies BY DESIGN, in the
-> conservative direction, so filing it as machinery would convert a deliberate
-> conservatism into a bug report. **The question to answer is: is a bare call to
-> a PARAMETER resolvable (an injected seam, which the same module already says is
-> NOT a boundary) or doubtful?** Read `_no_expected_failure_mode`'s own
-> "AN INJECTED SEAM IS NOT A BOUNDARY" paragraph before ruling — it may already
-> decide this.
+> **▶️ START WITH `run_adopter_rows`, AND READ IT BEFORE CONVERTING — TWO TRAPS
+> ARE ALREADY VISIBLE FROM THE OUTSIDE.**
+>
+> 1. **⛔ `qndn-75-triage.md`'s "why" CELL FOR THIS ROW IS THE `RowOutcome`
+>    BOILERPLATE, AND IT IS WRONG HERE.** It says "Returns `RowOutcome` … one
+>    type-level decision spanning both engines", which would put the row among
+>    the 22 HELD on `3744`. **It is not.** `run_adopter_rows` returns
+>    `AdopterRowsResult`, a TALLY dataclass; the `RowOutcome` in its cell belongs
+>    to the CALLEE the conviction is transitive through
+>    (`assert_claude_plugin_currency`). The measured unblocked list has always
+>    carried it, and the 22 held are exactly the `assert_*` / `reconcile_*` rows
+>    in `_rows_*.py`. Do not let that cell send you to `3744`.
+> 2. **ITS FAILURE CHANNEL IS ALREADY A COUNT, WHICH IS THE THING TO RULE ON.**
+>    `AdopterRowsResult` carries `blind_rows` — "the owning lane could read NO
+>    released adopter" — beside `error_findings`, `evaluated`, and
+>    `posture_excluded`. So "could not read" is ALREADY separated from "read and
+>    found nothing", in-band, deliberately, and the lane's exit logic acts on
+>    it. **That makes it the `cross_member_consumption` question a unit early:
+>    is the in-band absence a considered design, or a hand-rolled failure track?**
+>    Read `_adopter_lane`'s own docstring and the two consuming lanes' exit
+>    arithmetic before ruling, exactly as the `preflight_credential` unit read
+>    the RETURN TYPE's FIELDS rather than trusting its conviction basis.
+>
+> ⚠️ **AND CHECK THE RETURN TYPE'S FIELDS FOR A NESTED `X | None` EITHER WAY** —
+> clause (e) is top-level only, so member 1 can exempt a hand-rolled failure
+> track nested a field deep. That is what the `preflight_credential` unit found,
+> and it is now the standing rule in §"METHOD THAT KEEPS PAYING".
 >
 > **⚠️ `cross_member_consumption` IS THE ONE TO TAKE LAST.** It is `5cai`'s
 > oracle — this thread's own load-bearing instrument, the one every third-axis
