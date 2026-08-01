@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.13.15](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.13.14...v1.13.15) (2026-08-01)
+
+
+### Bug Fixes
+
+* **fleet:** put the origin-remote resolvers on the IOResult railway ([cb2d86a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/cb2d86a0f75d424accdad82cdb6df825c4ba2258))
+
 ## [1.13.14](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.13.13...v1.13.14) (2026-08-01)
 
 
