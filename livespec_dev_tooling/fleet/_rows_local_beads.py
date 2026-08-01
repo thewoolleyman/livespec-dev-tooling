@@ -23,7 +23,12 @@ checkout, so the rows stay hermetically testable with a canned-response runner.
 
 from __future__ import annotations
 
-from livespec_dev_tooling.fleet._context import RowFinding, RowOutcome, RowPass, RowSkip
+from livespec_dev_tooling.fleet._context import (
+    RowFinding,
+    RowOutcome,
+    RowPass,
+    row_excluded,
+)
 from livespec_dev_tooling.fleet._invocation_failure import InvocationNotPerformed
 from livespec_dev_tooling.fleet._local_context import LocalContext, command_answer
 
@@ -44,7 +49,7 @@ DOLT_SERVER_HOST = "127.0.0.1"
 DOLT_SERVER_PORT = 3307
 
 _PREREQ_DOC = 'AGENTS.md §"Beads runtime prerequisites"'
-_SKIP_NO_BEADS = "no .beads tenant directory (not a beads-backed repo)"
+_EXCLUDED_NO_BEADS = "no .beads tenant directory (not a beads-backed repo)"
 
 
 def _unprobed(*, failure: InvocationNotPerformed) -> RowFinding:
@@ -74,7 +79,7 @@ def _beads_applicable(*, ctx: LocalContext) -> bool:
 def reconcile_beads_bd_binary(*, ctx: LocalContext) -> RowOutcome:
     """Probe the explicit bd override, or fall back to executable `bd` on PATH."""
     if not _beads_applicable(ctx=ctx):
-        return RowSkip(reason=_SKIP_NO_BEADS)
+        return row_excluded(reason=_EXCLUDED_NO_BEADS)
     probe = command_answer(
         outcome=ctx.exec(
             args=[
@@ -104,7 +109,7 @@ def reconcile_beads_bd_binary(*, ctx: LocalContext) -> RowOutcome:
 def reconcile_beads_dolt_server(*, ctx: LocalContext) -> RowOutcome:
     """Probe that the Dolt sql-server is reachable over TCP `127.0.0.1:3307`."""
     if not _beads_applicable(ctx=ctx):
-        return RowSkip(reason=_SKIP_NO_BEADS)
+        return row_excluded(reason=_EXCLUDED_NO_BEADS)
     probe = command_answer(
         outcome=ctx.exec(
             args=[
@@ -133,7 +138,7 @@ def reconcile_beads_dolt_server(*, ctx: LocalContext) -> RowOutcome:
 def reconcile_beads_tenant_secret(*, ctx: LocalContext) -> RowOutcome:
     """Probe-ONLY that `BEADS_DOLT_PASSWORD` is present (value never read or echoed)."""
     if not _beads_applicable(ctx=ctx):
-        return RowSkip(reason=_SKIP_NO_BEADS)
+        return row_excluded(reason=_EXCLUDED_NO_BEADS)
     probe = command_answer(
         outcome=ctx.exec(args=["bash", "-c", 'test -n "${BEADS_DOLT_PASSWORD:-}"'])
     )
@@ -154,7 +159,7 @@ def reconcile_beads_tenant_secret(*, ctx: LocalContext) -> RowOutcome:
 def reconcile_beads_config_committed(*, ctx: LocalContext) -> RowOutcome:
     """Probe that `.beads/config.yaml` (the committed tenant pointer) is tracked."""
     if not _beads_applicable(ctx=ctx):
-        return RowSkip(reason=_SKIP_NO_BEADS)
+        return row_excluded(reason=_EXCLUDED_NO_BEADS)
     probe = command_answer(
         outcome=ctx.exec(args=["git", "ls-files", "--error-unmatch", ".beads/config.yaml"])
     )
@@ -174,7 +179,7 @@ def reconcile_beads_config_committed(*, ctx: LocalContext) -> RowOutcome:
 def reconcile_beads_metadata_present(*, ctx: LocalContext) -> RowOutcome:
     """Probe that `.beads/metadata.json` (regenerable, gitignored) is present."""
     if not _beads_applicable(ctx=ctx):
-        return RowSkip(reason=_SKIP_NO_BEADS)
+        return row_excluded(reason=_EXCLUDED_NO_BEADS)
     if (ctx.checkout / ".beads" / "metadata.json").is_file():
         return RowPass(note=".beads/metadata.json present")
     return RowFinding(

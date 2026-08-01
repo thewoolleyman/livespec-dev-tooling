@@ -16,6 +16,7 @@ import textwrap
 from _gh_railway import lift_gh
 
 from livespec_dev_tooling.fleet._context import (
+    EXCLUDED_NOTE_PREFIX,
     FleetContext,
     FleetMember,
     GhResult,
@@ -175,7 +176,8 @@ def test_missing_livespec_jsonc_skips() -> None:
     assert isinstance(outcome, RowSkip)
 
 
-def test_missing_connection_block_skips() -> None:
+def test_missing_connection_block_is_excluded() -> None:
+    """Read, and definitively carries no connection block: INAPPLICABLE."""
     ctx = make_context(
         table={
             _BEADS_ARGS: _ok(text=_beads_config()),
@@ -183,10 +185,12 @@ def test_missing_connection_block_skips() -> None:
         }
     )
     outcome = assert_tenant_connection_consistency(ctx=ctx, member=_MEMBER)
-    assert isinstance(outcome, RowSkip)
+    assert isinstance(outcome, RowPass)
+    assert outcome.note.startswith(EXCLUDED_NOTE_PREFIX)
 
 
-def test_beads_config_without_dolt_keys_skips() -> None:
+def test_beads_config_without_dolt_keys_is_excluded() -> None:
+    """Read, and names no dolt.* connection keys: not beads-backed, so INAPPLICABLE."""
     ctx = make_context(
         table={
             _BEADS_ARGS: _ok(text="# Beads Configuration File\ndolt.mode: server\n"),
@@ -194,7 +198,8 @@ def test_beads_config_without_dolt_keys_skips() -> None:
         }
     )
     outcome = assert_tenant_connection_consistency(ctx=ctx, member=_MEMBER)
-    assert isinstance(outcome, RowSkip)
+    assert isinstance(outcome, RowPass)
+    assert outcome.note.startswith(EXCLUDED_NOTE_PREFIX)
 
 
 def test_unparseable_livespec_jsonc_skips() -> None:

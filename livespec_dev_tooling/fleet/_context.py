@@ -60,6 +60,7 @@ from livespec_dev_tooling.fleet._snapshot import (  # noqa: E402
 from livespec_dev_tooling.fleet._tree_state import TreeState, parse_tree_payload  # noqa: E402
 
 __all__: list[str] = [
+    "EXCLUDED_NOTE_PREFIX",
     "Adopter",
     "FleetContext",
     "FleetMember",
@@ -79,6 +80,7 @@ __all__: list[str] = [
     "gh_answer",
     "resolve_owner",
     "resolve_repo_name",
+    "row_excluded",
 ]
 
 
@@ -122,6 +124,27 @@ class RowSkip:
 
 
 RowOutcome = RowPass | RowFinding | RowSkip
+
+# The note prefix that marks a RowPass as INAPPLICABLE rather than satisfied.
+# It lives here, beside the union, rather than privately in `_lanes.py`: a row
+# module cannot import `_lanes` (that is an import cycle through
+# `_contract_rows`), and both engines must render the same value the same way.
+EXCLUDED_NOTE_PREFIX = "excluded-with-reason: "
+
+
+def row_excluded(*, reason: str) -> RowPass:
+    """The row does not APPLY to this member — a definitive non-obligation.
+
+    ⛔ NOT `RowSkip`. `RowSkip` means the row could not be EVALUATED, and the
+    central lane feeds every one of them into `blind_rows`, which fails the run
+    with no lever and no opt-out. Spelling inapplicability as a skip therefore
+    reds master fleet-wide the moment the applicable population reaches zero —
+    for a condition that is not a failure at all.
+
+    A constructor rather than a bare prefix so the correct spelling is a NAME
+    both engines share, not a string concatenation each call site re-derives.
+    """
+    return RowPass(note=f"{EXCLUDED_NOTE_PREFIX}{reason}")
 
 
 # Fallback ref when a repo's default branch cannot be resolved. The single

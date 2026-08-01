@@ -13,7 +13,7 @@ from pathlib import Path
 
 from returns.io import IOSuccess
 
-from livespec_dev_tooling.fleet._context import RowFinding, RowPass, RowSkip
+from livespec_dev_tooling.fleet._context import EXCLUDED_NOTE_PREFIX, RowFinding, RowPass
 from livespec_dev_tooling.fleet._local_context import (
     CommandOutcome,
     CommandResult,
@@ -76,8 +76,11 @@ def test_dolt_server_constants_force_tcp() -> None:
     assert (DOLT_SERVER_HOST, DOLT_SERVER_PORT) == ("127.0.0.1", 3307)
 
 
-def test_bd_binary_skips_without_beads(*, tmp_path: Path) -> None:
-    assert isinstance(reconcile_beads_bd_binary(ctx=_ctx(checkout=tmp_path)), RowSkip)
+def test_bd_binary_is_excluded_without_beads(*, tmp_path: Path) -> None:
+    """Not a beads-backed repo is INAPPLICABLE, not unevaluable."""
+    outcome = reconcile_beads_bd_binary(ctx=_ctx(checkout=tmp_path))
+    assert isinstance(outcome, RowPass)
+    assert outcome.note.startswith(EXCLUDED_NOTE_PREFIX)
 
 
 def test_bd_binary_passes_when_present(*, tmp_path: Path) -> None:
@@ -94,8 +97,11 @@ def test_bd_binary_absent_is_warning_finding(*, tmp_path: Path) -> None:
     assert "`bd` on PATH" in outcome.message
 
 
-def test_dolt_server_skips_without_beads(*, tmp_path: Path) -> None:
-    assert isinstance(reconcile_beads_dolt_server(ctx=_ctx(checkout=tmp_path)), RowSkip)
+def test_dolt_server_is_excluded_without_beads(*, tmp_path: Path) -> None:
+    """Not a beads-backed repo is INAPPLICABLE, not unevaluable."""
+    outcome = reconcile_beads_dolt_server(ctx=_ctx(checkout=tmp_path))
+    assert isinstance(outcome, RowPass)
+    assert outcome.note.startswith(EXCLUDED_NOTE_PREFIX)
 
 
 def test_dolt_server_passes_when_reachable(*, tmp_path: Path) -> None:
@@ -111,8 +117,11 @@ def test_dolt_server_unreachable_is_warning_finding(*, tmp_path: Path) -> None:
     assert "3307" in outcome.message
 
 
-def test_tenant_secret_skips_without_beads(*, tmp_path: Path) -> None:
-    assert isinstance(reconcile_beads_tenant_secret(ctx=_ctx(checkout=tmp_path)), RowSkip)
+def test_tenant_secret_is_excluded_without_beads(*, tmp_path: Path) -> None:
+    """Not a beads-backed repo is INAPPLICABLE, not unevaluable."""
+    outcome = reconcile_beads_tenant_secret(ctx=_ctx(checkout=tmp_path))
+    assert isinstance(outcome, RowPass)
+    assert outcome.note.startswith(EXCLUDED_NOTE_PREFIX)
 
 
 def test_tenant_secret_passes_when_present(*, tmp_path: Path) -> None:
@@ -128,8 +137,11 @@ def test_tenant_secret_absent_is_warning_finding(*, tmp_path: Path) -> None:
     assert "BEADS_DOLT_PASSWORD" in outcome.message
 
 
-def test_config_committed_skips_without_beads(*, tmp_path: Path) -> None:
-    assert isinstance(reconcile_beads_config_committed(ctx=_ctx(checkout=tmp_path)), RowSkip)
+def test_config_committed_is_excluded_without_beads(*, tmp_path: Path) -> None:
+    """Not a beads-backed repo is INAPPLICABLE, not unevaluable."""
+    outcome = reconcile_beads_config_committed(ctx=_ctx(checkout=tmp_path))
+    assert isinstance(outcome, RowPass)
+    assert outcome.note.startswith(EXCLUDED_NOTE_PREFIX)
 
 
 def test_config_committed_passes_when_tracked(*, tmp_path: Path) -> None:
@@ -145,8 +157,11 @@ def test_config_committed_untracked_is_warning_finding(*, tmp_path: Path) -> Non
     assert ".beads/config.yaml" in outcome.message
 
 
-def test_metadata_skips_without_beads(*, tmp_path: Path) -> None:
-    assert isinstance(reconcile_beads_metadata_present(ctx=_ctx(checkout=tmp_path)), RowSkip)
+def test_metadata_is_excluded_without_beads(*, tmp_path: Path) -> None:
+    """Not a beads-backed repo is INAPPLICABLE, not unevaluable."""
+    outcome = reconcile_beads_metadata_present(ctx=_ctx(checkout=tmp_path))
+    assert isinstance(outcome, RowPass)
+    assert outcome.note.startswith(EXCLUDED_NOTE_PREFIX)
 
 
 def test_metadata_passes_when_present(*, tmp_path: Path) -> None:
