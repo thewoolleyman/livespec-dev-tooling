@@ -29,8 +29,21 @@ Three adopter outcome categories, extending the `_lanes` split:
   are error-severity with no warning demotion path on this leg
   (maintainer decision 2026-07-20: adopter findings fail loud).
 - **Blind** — every released adopter was unreadable in the lane that
-  OWNS the leg (warning severity, never the exit code — the b02
-  signal, same as member rows).
+  OWNS the leg. `blind_rows` is 1 only when NO released adopter
+  answered: a run that read even one treats the remainder as ordinary
+  skips, the same rule `_lanes._report_blind_rows` applies to a member
+  row ("applied to at least one member and answered for none of them").
+  ⛔ IT MOVES THE EXIT CODE, and an earlier revision of this docstring
+  said the opposite. Both supervisors sum this count with the member
+  sweep's (`result.blind_rows + adopters.blind_rows`) and fail the run
+  on the total; `test_admin_lane_fails_when_a_released_adopter_is_unreadable`
+  pins that at exit 4. The b02 signal is the SAME as member rows here —
+  blind fails rather than passing vacuously. ⚠️ What actually diverges
+  from member rows is the LOG record: this leg emits `BLIND_ROW_EVENT`
+  at warning severity while `_lanes` emits it at error, so an
+  identically-fatal outcome is recorded one level quieter here. The two
+  halves of the retracted claim were swapped — the exit-code effect is
+  what matches, the severity is what differs.
 - **Posture-excluded** — a declared non-`released` posture, honored by
   never reading the repo at all (the spec's "never 'helpfully'
   updated"). Reported at info severity as its own labeled category,
