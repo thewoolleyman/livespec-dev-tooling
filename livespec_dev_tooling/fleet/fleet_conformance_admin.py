@@ -224,11 +224,14 @@ def main() -> int:
     # a genuinely unavailable credential still fails here, loudly, naming one
     # cause instead of N downstream symptoms.
     preflight = preflight_credential(ctx=ctx)
-    if not preflight.usable:
+    if isinstance(preflight, Failure):
+        unusable = preflight.failure()
         log.error(
             "github credential unusable — no obligation row can see anything",
-            attempts=preflight.attempts,
-            cause=None if preflight.cause is None else preflight.cause.as_dict(),
+            # Rendered by the failure type — see the sibling site in
+            # `fleet_conformance`; both lanes must report the same fields or
+            # they diagnose the same credential differently.
+            **unusable.as_log_fields(),
             hint=(
                 "the credential was probed and rejected; this is one cause, not N "
                 "blind rows. Fix the credential — do NOT demote blind rows"

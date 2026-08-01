@@ -17,6 +17,7 @@ rows to error is a deliberate anti-vacuous-green ruling.
 from __future__ import annotations
 
 from _gh_railway import lift_gh
+from returns.result import Failure, Success
 
 from livespec_dev_tooling.fleet._context import FleetContext, GhResult, GhRunner
 from livespec_dev_tooling.fleet._credential_preflight import preflight_credential
@@ -57,7 +58,10 @@ def test_a_transient_rejection_recovers_without_operator_intervention() -> None:
 
     outcome = preflight_credential(ctx=ctx, sleep=fake_sleep)
 
-    assert outcome.usable, f"a token accepted on retry must be usable; got {outcome!r}"
+    assert isinstance(
+        outcome, Success
+    ), f"a token accepted on retry must be usable; got {outcome!r}"
+    assert outcome.unwrap() == 2, "the success value IS the attempt count that got through"
     assert calls[0] == 2, f"expected one retry, got {calls[0]} attempts"
     assert recorded, "a retry must back off rather than hammer the API"
 
@@ -70,9 +74,11 @@ def test_a_persistently_unavailable_credential_still_fails() -> None:
 
     outcome = preflight_credential(ctx=ctx, sleep=fake_sleep)
 
-    assert not outcome.usable, "a persistently rejected credential must not be reported usable"
-    assert outcome.cause is not None, "the failure must name a cause, not just fail"
-    assert outcome.cause.kind == "forbidden", f"got {outcome.cause.kind!r}"
+    assert isinstance(outcome, Failure), "a persistently rejected credential must not be usable"
+    unusable = outcome.failure()
+    assert unusable.reason == "rejected", f"got {unusable.reason!r}"
+    assert unusable.cause is not None, "the failure must name a cause, not just fail"
+    assert unusable.cause.kind == "forbidden", f"got {unusable.cause.kind!r}"
 
 
 def test_retries_are_bounded() -> None:
@@ -101,7 +107,8 @@ def test_a_not_found_is_not_retried() -> None:
 
     outcome = preflight_credential(ctx=ctx, sleep=fake_sleep)
 
-    assert not outcome.usable
+    assert isinstance(outcome, Failure)
+    assert outcome.failure().reason == "rejected", "a classified 404 is a REJECTED credential"
     assert calls[0] == 1, f"a non-retryable cause must not be retried; got {calls[0]} attempts"
 
 
@@ -113,6 +120,34 @@ def test_a_usable_credential_probes_once_and_does_not_sleep() -> None:
 
     outcome = preflight_credential(ctx=ctx, sleep=fake_sleep)
 
-    assert outcome.usable
+    assert isinstance(outcome, Success)
+    assert outcome.unwrap() == 1, "one attempt, and the count reaches the caller"
     assert calls[0] == 1, f"the happy path must probe once; got {calls[0]}"
     assert recorded == [], "the happy path must not sleep"
+
+
+def test_a_json_null_body_is_unclassified_rather_than_a_rejection() -> None:
+    """A 200 whose body parses to `null` is neither usable nor a nameable rejection.
+
+    `api_object` records a cause on every FAILING call, so `cause is None`
+    looks unreachable — until a 200 carrying a JSON `null` parses to `None`
+    with nothing recorded. Before the conversion this was
+    `PreflightOutcome(usable=False, cause=None)`, identical in shape to a
+    classified rejection and separated only by a `cause is None` ternary that
+    BOTH callers had to spell out. It is now its own `reason`, so the operator
+    is told the probe answered with nothing rather than that the credential was
+    refused.
+    """
+    calls = [0]
+    _, fake_sleep = _sleeps()
+    null_body = GhResult(returncode=0, stdout="null", stderr="")
+    ctx = FleetContext(owner="thewoolleyman", run_gh=_scripted(results=[null_body], calls=calls))
+
+    outcome = preflight_credential(ctx=ctx, sleep=fake_sleep)
+
+    assert isinstance(outcome, Failure)
+    unusable = outcome.failure()
+    assert unusable.reason == "unclassified", f"got {unusable.reason!r}"
+    assert unusable.cause is None, "there is no cause to name — that IS the reason"
+    assert unusable.as_log_fields()["cause"] is None, "the shared renderer must not invent one"
+    assert calls[0] == 1, f"an unclassifiable answer must not be retried; got {calls[0]}"
