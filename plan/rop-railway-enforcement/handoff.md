@@ -2,13 +2,48 @@
 
 > ## ▶️▶️▶️ COLD START — READ THIS BLOCK FIRST, THEN §"EXACT NEXT ACTION" BELOW IT
 >
-> **Rewritten 2026-08-01 (third session that day). This block is the
+> **Rewritten 2026-08-01 (fourth session that day). This block is the
 > CURRENT-STATE header. The older `## ▶️ START HERE` section further down is a
 > HISTORICAL record: its live-state claims are dated 2026-07-31 and are
 > SUPERSEDED by this block. Read it for METHOD and for the reasoning behind past
 > rulings, never for "what is true now".**
 >
-> ### 🔴🔴 THE FINDING OF THIS SESSION: THE GREEN AMEND EXITED 0 AND SILENTLY DESTROYED THE RED HALF OF THE PAIR
+> ### 🔴🔴 THE FINDING OF THIS SESSION: **22 OF THE 30 MAY ALREADY BE CONFORMANT — THE CHECK DOES NOT IMPLEMENT ITS OWN RATIFIED CLAUSE**
+>
+> **FILED AS `livespec-dev-tooling-3744` (P1), and it BLOCKS 22 of `8o8e.9`'s 30.**
+> Starting the conversion and reading the list first is what caught it: **22 of the
+> 30 return `RowOutcome`**, the closed discriminated union THIS EPIC ratified as
+> livespec **v181**. livespec §"ROP composition" ratifies **A SANCTIONED
+> ALTERNATIVE SPELLING AT A RENDERING BOUNDARY**, verbatim: *"A union meeting all
+> three [conditions] is **ON the railway for the purposes of the Result-return
+> rule**."* **`check-public-api-result-typed` DOES NOT IMPLEMENT THAT CLAUSE AT
+> ALL** — `_is_railway_compliant` accepts only a `Result`/`IOResult` terminal name
+> or a `safe`/`impure_safe` decorator.
+>
+> **Conditions 2 and 3 were discharged BY THIS EPIC** (v181 conditions 2/3 = PRs
+> #1007 / #1008) and were RE-VERIFIED live, not inherited: **0 `isinstance` sites
+> over the union, 45 `assert_never` sites, `check-assert-never-exhaustiveness`
+> green, `row_excluded()` shipped.** Condition 1 is UNMECHANIZED.
+>
+> **⛔ NO SPLIT IS QUOTED, AND THE REFUSAL IS THE SPEC'S OWN RULE.** A probe of
+> mine produced "16 covered / 6 convert". It is NOT a measurement: it was WRONG on
+> its first run (it read `(ctx.checkout / ".beads").is_dir()` as a seam call
+> because the expression starts with `ctx.`), and the spec forbids the figure
+> outright — *"A CLAUSE'S EXPOSURE CANNOT BE MEASURED BEFORE THE CLAUSE IS
+> MECHANIZED, and a figure offered in its place is a prediction wearing a
+> measurement's clothes."*
+>
+> **THIS IS THE EXACT MIRROR OF THE `_`-PREFIXED-FILE SKIP** — that one enforces
+> something WIDER than v178 clause 0 (relaxing); this enforces something NARROWER
+> than the ratified clause (strict). Same class, and they belong in the same
+> conformance pass.
+>
+> **✅ IT DOES NOT DEFLATE THE FLEET-WIDE 455 — measured before it could become an
+> alarm.** Sibling offenders are dominated by plain scalars, not unions (overseer
+> `bool` 32 / `str | None` 22; beads-fabro `int` 30 / `str | None` 12). Only this
+> repo has a `RowOutcome`-shaped fleet package.
+>
+> ### 🔴 THE PRIOR SESSION'S FINDING, STILL LIVE: THE GREEN AMEND EXITED 0 AND SILENTLY DESTROYED THE RED HALF OF THE PAIR
 >
 > `git commit --amend -F <file>` **REPLACES THE ENTIRE MESSAGE.** The Green amend
 > was authored with a fresh `-F` body, so the five `TDD-Red-*` trailers the Red
@@ -42,7 +77,7 @@
 >
 > | repo | master at wrap-up | working tree |
 > |---|---|---|
-> | `livespec-dev-tooling` | **`459baa7`** | clean (one untracked `install-livespec-pr-bot.png`, NOT this thread's — leave it) |
+> | `livespec-dev-tooling` | **`5cbda23`** | clean (one untracked `install-livespec-pr-bot.png`, NOT this thread's — leave it) |
 > | `livespec-orchestrator-beads-fabro` | `bc26f70` | clean |
 > | `livespec-driver-claude` | `0cf4ca7` | clean |
 > | `livespec-driver-codex` | `d150626` | clean |
@@ -61,10 +96,10 @@
 >
 > ### 📏 BASELINE — re-derive at BOTH ENDS of every unit, never inherit
 >
-> **universe 168 · offenders DROPPING the `_`-prefixed-FILE skip 30 · offenders
-> CARRYING it 0** — re-derived on MERGED master at `459baa7`, not inherited from
-> a worktree. (It was 32 before pair B; the two that left are exactly
-> `discover_skills` and `discover_fixtures`, and NOTHING else moved.) Measure
+> **universe 168 · offenders DROPPING the `_`-prefixed-FILE skip 29 · offenders
+> CARRYING it 0** — re-derived on MERGED master at `5cbda23`, not inherited from
+> a worktree. (34 → 32 at pair A, → 30 at pair B, → 29 at the ruff backstop; each
+> step's before/after LISTS differed by exactly its own functions.) Measure
 > with `_find_offenders` over `resolve_check_universe()`, **never** through
 > `main()` or `_scan` (this repo declares `pure_trees = { not_applicable = … }`,
 > so `main()` iterates ZERO files and reports 0 offenders regardless of the code
@@ -88,60 +123,80 @@
 >   driver-codex #348 → `d150626`) **AND the conversion itself**, dev-tooling
 >   **#1022 → `459baa7`**: both walks on `IOResult[..., DiscoveryUnreadable]`,
 >   **32 → 30**, both trailer sets present on the merged commit.
-> - **▶️ ITEM 3 IS DONE. WHAT REMAINS IS THE ARMING ITSELF.**
+> - **✅ `8o8e.5` CLOSED — the ruff BLE001 backstop is on the railway.** #1027 →
+>   **`5cbda23`**, **30 → 29**. The filed defect was the MILDEST of FOUR fused
+>   outcomes; see §"THE RUFF BACKSTOP" below.
+> - **📋 FILED THIS SESSION:** `zv78` (P1, the half-pair gate defect) and `3744`
+>   (P1, the check-vs-ratified-clause defect, BLOCKING 22 of `8o8e.9`).
+> - **📋 EIGHT PER-REPO ARMING CHILDREN FILED** — `8o8e.7`–`.14`, fleet total
+>   **455 over a universe of 719** (§"THE ARMING BLAST RADIUS").
+> - **▶️ ITEM 3 IS DONE. WHAT REMAINS IS `8o8e.9` (7 unblocked + 22 held), THEN
+>   THE ARMING ITSELF.**
 >
-> ### ▶️▶️ EXACT NEXT ACTION — ARMING IS AN EPIC; SEQUENCE IT BEFORE COMMITTING
+> ### ▶️▶️ EXACT NEXT ACTION — DRIVE THE 7 REMAINING UNBLOCKED OFFENDERS OF `8o8e.9`
 >
-> **⛔ THE ANSWER TO "IS ARMING A COMMIT OR AN EPIC" IS: AN EPIC, AND IT IS
-> MEASURED.** Fleet-wide cost **455 offenders over a universe of 719**, all nine
-> members measured with the shipped criterion against their masters
-> (§"THE ARMING BLAST RADIUS"). Eight per-repo children are FILED — `8o8e.7`
-> overseer **190**, `.8` beads-fabro **172**, `.9` dev-tooling **30**, `.10`
-> runtime **27**, `.11` git-jsonl **18**, `.12` livespec **15**, `.13`
-> driver-codex **2**, `.14` driver-claude **1**.
+> **SUPERVISOR RULING (brief 78), STANDING: convert dev-tooling's offenders NOW.**
+> It is not contingent on the maintainer's fan-out answer, because **all three
+> fleet options require dev-tooling to reach ZERO first** — arming reds this repo
+> (`ARMED main() EXIT CODE = 1`) and lefthook then blocks the fix. The charter says
+> it in as many words: *"DO NOT ARM until dev-tooling measures ZERO."*
 >
-> **AND THE FIRST BLOCKER IS THIS REPO ITSELF.** The armed check was RUN:
-> `ARMED main() EXIT CODE = 1` at 30 offenders. Arming reds livespec-dev-tooling's
-> own `just check`, and lefthook then blocks the fixing commit. So the sequence is
-> NOT "file the children, then arm":
+> **⛔ 22 OF THE 29 ARE HELD ON `livespec-dev-tooling-3744`** (the `RowOutcome`
+> rendering-boundary finding at the top of this block). **DO NOT CONVERT THEM** —
+> wrapping a ratified discriminated union in a `Result` double-encodes the same
+> outcome and would be unwound when the clause is mechanized.
 >
-> 1. **`8o8e.9` — this repo's own 30 — LANDS FIRST**, or
-> 2. the arming ships with a **per-repo phase-in** (`unarmed_until` is the
->    existing union precedent for "applies here and is switched off, with a reason
->    and a tracking id").
+> **▶️ THE 7 THAT ARE UNBLOCKED, and they are the whole of the next unit:**
 >
-> **Choosing between those two is a MAINTAINER decision and is deliberately not
-> made here.** Disposition of the 30: **29 must CONVERT, 1 is even a declaration
-> candidate** (`fleet/_bump_pr_list.py:139 persisting_bump_pr_number -> int | None`,
-> and only a CANDIDATE — member 2 needs the read that decides absence-vs-failure).
-> Arming's price is conversion work, not paperwork.
+> | file | function | today |
+> |---|---|---|
+> | `agent_hooks/_subagent_stop_guard_transcript.py:52` | `extract_created_worktree_paths` | `list[Path]` |
+> | `checks/_docs_only_change.py:70` | `is_docs_only_change` | `bool` |
+> | `checks/_heading_coverage_tier_resolution.py:192` | `scenario_tier_violations` | `list[dict[str, object]]` |
+> | `fleet/_adopter_lane.py:121` | `run_adopter_rows` | `AdopterRowsResult` |
+> | `fleet/_bump_pr_list.py:139` | `persisting_bump_pr_number` | `int \| None` |
+> | `fleet/_credential_preflight.py:79` | `preflight_credential` | `PreflightOutcome` |
+> | `fleet/_public_api_graph.py:244` | `cross_member_consumption` | `ConsumptionGraph` |
 >
-> ### ▶️ WHEN THE ARMING COMMIT IS FINALLY WRITTEN, it must carry in its own text
+> **START WITH `is_docs_only_change`** — its `bool` fuses THREE meanings, one of
+> which is "I could not tell": a revision git cannot produce, an unparseable
+> version, and a genuine source change all return `False`. Its own docstring calls
+> that "fail closed", but the caller cannot tell a verdict from a non-read. Same
+> shape as the ruff backstop, which was the last unit.
+>
+> **`persisting_bump_pr_number` is the ONE declaration candidate** (`int | None`,
+> v179 member 2) — and a CANDIDATE only. READ it before declaring: this thread's
+> record is that the read inverts the expected answer
+> (`tag_version_component` sat in the STRONGEST convert class and was still not a
+> conversion). Everything else in the 7 must convert.
+>
+> **THE THIRD AXIS IS ALREADY DISCHARGED FOR ALL 7** — the shipped oracle, re-run
+> on 9 roster / 9 read / 0 unavailable / 0 unparsed / **63 edges**, finds **ZERO**
+> cross-repo consumers for every one of these names. That zero is credible because
+> the SAME run returns non-zero for `discover_fixtures` (4), `canonical_check_slugs`
+> (5) and `main` (12). Re-run it anyway if masters have moved.
+>
+> ### ▶️ AND WHEN THE ARMING COMMIT IS FINALLY WRITTEN, it must carry in its own text
 >
 > 1. **DROP `if py_file.name.startswith("_"): continue`** at
->    `public_api_result_typed.py::_scan`. **This is FIDELITY, NOT A TIGHTENING** —
->    v178 clause 0 disqualifies a `_`-prefixed **NAME**, never a **FILE**, so the
->    check has been enforcing something WIDER than its ratified rule, which is
->    non-conformance in the RELAXING direction. If "should we tighten?" comes up,
->    refuse the question in those words.
+>    `public_api_result_typed.py::_scan`. **FIDELITY, NOT A TIGHTENING** — v178
+>    clause 0 disqualifies a `_`-prefixed **NAME**, never a **FILE**. If "should we
+>    tighten?" comes up, refuse the question in those words.
 > 2. **THE DECLARATION OBLIGATION, IN THE SAME CHANGE.** `resolve_owner` and
->    `discover_fixtures` are absent from `cross_repo_public_api` on the stated
->    ground that "declaring them would assert a scope this check does not
->    actually apply". **The moment the skip drops, that ground EXPIRES.**
->    ⚠️ **AND THE COMMENT NAMING THEM IS STALE ON A PATH:** it says
->    `fleet/_context.py`'s `resolve_owner`, but pair A MOVED it to
+>    `discover_fixtures` are absent from `cross_repo_public_api` on a ground that
+>    EXPIRES the moment the skip drops. ⚠️ The comment naming them is STALE ON A
+>    PATH: it says `fleet/_context.py`'s `resolve_owner`; pair A moved it to
 >    `fleet/_origin_remote.py`. Read the tree, not the comment.
-> 3. **THE DISPOSITION DENOMINATOR WITH ITS COMPOSITION** (29 code / 1 declaration
->    candidate) and **the `995m` KNOWN-GAP STATEMENT**: `config.py` excludes itself
->    from every check universe via `is_generated`, so arming does not cover it.
-> 4. **BOTH NUMBERS RE-MEASURED AT BOTH ENDS** with `_find_offenders` over
->    `resolve_check_universe()`, never `main()`.
+> 3. **THE DISPOSITION DENOMINATOR WITH ITS COMPOSITION** (of the original 30:
+>    29 code / 1 declaration candidate) and **the `995m` KNOWN GAP** — `config.py`
+>    excludes itself from every check universe via `is_generated`, so arming does
+>    not cover it.
+> 4. **BOTH NUMBERS RE-MEASURED AT BOTH ENDS**, never through `main()`.
 >
-> **✅ ONE PRECONDITION IS ALREADY DISCHARGED, and it was the risky one.** `ueni`
-> makes `stale_declarations` / `rejected_declarations` structurally unreachable
-> here (both sit behind `main()`'s `pure_trees` gate), so they first become
-> reachable IN the arming commit. The armed run proves they are **green today —
-> 0 stale, 0 rejected** — so that commit does not have to discover them.
+> **✅ ONE ARMING PRECONDITION IS ALREADY DISCHARGED, and it was the risky one.**
+> `ueni` makes `stale_declarations` / `rejected_declarations` structurally
+> unreachable here, so they first become reachable IN the arming commit. The armed
+> run proves them **green today — 0 stale, 0 rejected.**
 >
 > ### ⛔ THE STANDING QUESTION — it has inverted the expected fix in seven units running
 >
@@ -192,7 +247,19 @@
 >   deep** — on `IOResult` it yields an `IO[...]` that compares unequal to every
 >   payload.
 > - **BUDGET A `*_edges.py` SIBLING INTO EVERY CONVERSION.** The Red file is
->   checksum-bound, so any Green-leg branch no existing test reaches needs one.
+>   checksum-bound, so any Green-leg branch no existing test reaches needs one —
+>   and that now includes **the Red file's OWN marker helpers**, whose
+>   non-matching branches run at the Red moment and are dead lines at Green.
+> - **A FIXTURE THAT BREAKS THE WRONG THING PASSES FOR THE WRONG REASON.**
+>   Stripping `PATH` to kill a `ruff` probe also killed the check's `git ls-files`
+>   universe walk, so the test greened on "no first-party Python to check". When a
+>   fixture disables something, verify it disabled THAT thing — read the captured
+>   output, not the exit code.
+> - **A SELF-DELETING PATH SHIM** reaches a SECOND-invocation failure arm that a
+>   never-had-it PATH cannot: answer the first call, then `/bin/rm -f "$0"`.
+> - **READ THE LIST BEFORE CONVERTING IT.** `8o8e.9` looked like 30 conversions;
+>   reading the return annotations found 22 `RowOutcome` and a ratified clause the
+>   check does not implement (`3744`). The triage was the finding.
 >
 > ### 🧰 FOUR DURABLE FACTS PAIR B ESTABLISHED — they bind every remaining conversion
 >
@@ -384,6 +451,55 @@ a sibling's stall should not red an unrelated repo's PRs, which is a real reason
 records the lane-scoped shape instead.
 
 ---
+
+---
+
+## ✅ THE RUFF BACKSTOP — **30 → 29**, AND THE FILED DEFECT WAS THE MILDEST OF FOUR
+
+**`8o8e.5` CLOSED. #1027 → `5cbda23`, verified on the FORGE after a fetch;
+merged commit carries 5 Red + 2 Green trailers, COUNTED BY HAND per `zv78`.**
+
+`8o8e.5` filed "an unreadable `pyproject.toml` makes the BLE001 backstop check
+report no gaps". Reading the module found FOUR fused outcomes in one
+`list[tuple[Path, str]]`, and the filed one is the mildest:
+
+| outcome | before | after |
+|---|---|---|
+| `pyproject.toml` unreadable (**filed**) | reported as "no gaps" | `pyproject-not-read` |
+| `ruff` absent from PATH | raised `FileNotFoundError` out of a function typed `list` | `ruff-not-run` |
+| `ruff --show-files` failing | **`returncode` NEVER READ** | `ruff-show-files-failed` |
+| `ruff --show-settings` failing | fused with "BLE001 is off" | `ruff-show-settings-failed` |
+
+**THE THIRD IS THE ONE WORTH PAUSING ON, and it does NOT go quiet.** A failed
+enumeration yields empty stdout, so `ruff_files` is empty, so EVERY inspected
+file is reported as excluded from Ruff — a gap manufactured for every file in
+the repo, blaming Ruff's exclusion rules for a Ruff that never ran.
+
+**AN ABSENT `pyproject.toml` REMAINS AN ANSWER** — no pyproject means no
+explicit Ruff `select`, so there is no backstop to be absent from.
+
+`main()` keeps its BOTH-KINDS-IN-ONE-RUN contract: an unprobed backstop is
+reported ALONGSIDE the offenders already computed, never instead of them.
+
+### ⚠️ TWO FIXTURE FALSE-STARTS, both caught by tests FAILING rather than passing
+
+- A `ruff` shim whose `rm` was not on the PATH the test had set, so the
+  self-deleting shim never deleted itself and the second probe succeeded.
+- A `main()` test whose stripped PATH broke `git ls-files` — the check's own
+  universe walk — instead of the ruff probe. **It would have passed for the
+  wrong reason**: "no first-party Python to check", exit 0. Fixed with a PATH
+  carrying `git` but NOT `ruff`.
+
+### 🧰 WHAT THIS UNIT ADDS TO THE STANDING TECHNIQUE
+
+- **A SELF-DELETING PATH SHIM** reaches a second-invocation failure arm that a
+  never-had-it PATH cannot: the first probe answers, then `/bin/rm -f "$0"`.
+- **The `*_edges.py` sibling was needed AGAIN**, and for a NEW third reason
+  beyond impl branches: **the Red file's own marker helpers**. Helpers that
+  return "not-a-failure: …" markers run only at the RED moment and are DEAD
+  LINES at Green — and `check-per-file-coverage` counts TEST files. Cover them
+  from the edges file (import them by adding the test dir to `sys.path`; the
+  `checks/` package has no conftest doing it, unlike `testing/`).
 
 ---
 
