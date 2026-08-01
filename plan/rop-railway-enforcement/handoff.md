@@ -8,7 +8,50 @@
 > SUPERSEDED by this block. Read it for METHOD and for the reasoning behind past
 > rulings, never for "what is true now".**
 >
-> ### 🔴🔴 THE LOUDEST FINDING OF THIS SESSION: **THE SUB-AGENT STOP GUARD LOSES A WORKTREE PATH TO A SINGLE APOSTROPHE — `livespec-dev-tooling-dno1` (P1)**
+> ### ✅🔴 FIXED THIS SESSION, AND ITS RAILWAY HALF IS RETRACTED: **THE SUB-AGENT STOP GUARD LOST A WORKTREE PATH TO A SINGLE APOSTROPHE — `dno1`, CLOSED**
+>
+> **PR #1039 → `91a9f66`** (5 Red + 2 Green, counted by hand; verified on the
+> FORGE after a fetch, the merged tree grepped for the fallback itself).
+> `_tokenize` now degrades to a whitespace split instead of discarding the
+> segment. **The degradation cannot MANUFACTURE a path**: `_worktree_add_target`
+> validates its candidate against the worktree-path regex, which forbids
+> whitespace inside a path, so a mis-split candidate is refused exactly as
+> before — pinned by its own test.
+>
+> **⛔⛔ AND A SECOND PASSING TEST WAS HOLDING THE DEFECT IN PLACE — TWO UNITS
+> RUNNING.** `test_gather_worktrees_ignores_unparseable_shell_segment` wrote
+> exactly this shape (`-b 'unterminated <worktree>`) and asserted `[]`, so "the
+> guard sees nothing when `shlex` cannot tokenize" read as the CONTRACT. Renamed
+> `..._recovers_an_unparseable_shell_segment` and inverted. **The rule is now
+> confirmed twice: when a change makes an existing test fail, read its NAME and
+> docstring before repairing it — it may be the defect's last line of defence.**
+>
+> **⛔ THE DISPOSITION CLAIM THIS BLOCK PREVIOUSLY CARRIED IS WRONG AND IS
+> WITHDRAWN.** It said the fix buys a `total_absence_returns` DECLARATION. It
+> does not, and the mechanism says so plainly once READ rather than inferred:
+>
+> - **member 2 is `X | None`-SCOPED.** `_declared_absence_returns`' bound 1
+>   accepts an entry only if `returns_x_or_none` holds for the function. A
+>   declaration over a `list[Path]` return is REJECTED as `NOT_ABSENCE_SHAPED`
+>   and HARD-FAILS the check — it does not merely fail to exempt.
+> - **member 1 clause (b) is "no `try` statement"**, propagated to callees by
+>   clause (d). `_tokenize` still has one, so the function stays convicted.
+>
+> **MEASURED, not argued: 27 → 27**, the only change in the offender LIST being
+> the line number `_subagent_stop_guard_transcript.py:52 → :62`. **The fix was
+> worth shipping on its own timetable and bought no count.**
+>
+> **▶️ WHAT THAT LEAVES OPEN, and it is a genuine question rather than a task.**
+> The function now has NO inhabited failure track — string in, `list[Path]` out,
+> no I/O, both parse fallbacks total — yet clause (b) convicts it syntactically
+> and no declaration route exists. Converting it would create the uninhabited
+> failure track v179 member 1's own text warns about ("dead unwraps hide the
+> live ones"). **The three exits are: eliminate the `try`s (not obviously
+> possible for `json.loads` / `shlex.split`), ratify a member-2 widening beyond
+> `X | None`, or accept the wrapper.** That is a livespec CORE spec question,
+> not an implementation choice — do not settle it inside a conversion commit.
+>
+> #### The finding as originally recorded, kept for its measurement
 >
 > Found by READING offender 3 rather than converting it, and MEASURED end to end.
 > `_subagent_stop_guard_transcript::_created_worktree_targets_from_segment`
@@ -29,18 +72,13 @@
 > apostrophe, so this is the COMMON path for any narrated worktree creation —
 > in the guard that exists to stop orphaned worktrees accumulating.
 >
-> **⛔ AND IT INVERTS THAT ROW'S DISPOSITION, exactly as this thread keeps
-> predicting.** Do NOT route the `ValueError` to a failure track: it is the
-> ORDINARY case for prose, so the function would fail on nearly every
-> transcript. Make the fallback SEE the segment instead (retry with a plain
-> whitespace split — the worktree-path regex already forbids whitespace inside
-> a path). The sibling's `json.JSONDecodeError -> [line]` fallback is already
-> correct in that style and loses nothing. With BOTH `try` arms total, the
-> function has **no inhabited failure track** — string in, `list[Path]` out, no
-> I/O — which is v179 member 2's shape: a `total_absence_returns`
-> **DECLARATION**, not a conversion. Wrapping it in a `Result` whose failure
-> track nothing can reach is the `holds_app_class_credential` error the triage
-> names by name. **So the 7 hold TWO declaration candidates, not one.**
+> **⛔ AND IT INVERTED THAT ROW'S DISPOSITION** — do NOT route the `ValueError`
+> to a failure track: it is the ORDINARY case for prose, so the function would
+> fail on nearly every transcript. The fallback must SEE the segment instead.
+> The sibling's `json.JSONDecodeError -> [line]` fallback was already correct in
+> that style. ⚠️ The paragraph that followed here concluded "so it becomes a
+> `total_absence_returns` DECLARATION" — **that conclusion is WITHDRAWN above**;
+> member 2 is `X | None`-scoped and clause (b) is syntactic.
 >
 > ### 🔴 ALSO THIS SESSION: **`just check` PASSED 64/64 ON A TREE CI THEN FAILED — A FIXTURE'S HERMETICITY WAS CONDITIONAL ON THE ENVIRONMENT IT NEUTRALIZES**
 >
@@ -155,7 +193,7 @@
 >
 > | repo | master at wrap-up | working tree |
 > |---|---|---|
-> | `livespec-dev-tooling` | **`d6aafa0`** | clean (one untracked `install-livespec-pr-bot.png`, NOT this thread's — leave it) |
+> | `livespec-dev-tooling` | **`91a9f66`** | clean (one untracked `install-livespec-pr-bot.png`, NOT this thread's — leave it) |
 > | `livespec-orchestrator-beads-fabro` | `bc26f70` | clean |
 > | `livespec-driver-claude` | `0cf4ca7` | clean |
 > | `livespec-driver-codex` | `d150626` | clean |
@@ -175,7 +213,7 @@
 > ### 📏 BASELINE — re-derive at BOTH ENDS of every unit, never inherit
 >
 > **universe 168 · offenders DROPPING the `_`-prefixed-FILE skip 27 · offenders
-> CARRYING it 0** — re-derived on MERGED master at `d6aafa0`, not inherited from
+> CARRYING it 0** — re-derived on MERGED master at `91a9f66`, not inherited from
 > a worktree. (34 → 32 at pair A, → 30 at pair B, → 29 at the ruff backstop, →
 > 28 at the docs-only carve-out, → 27 at the scenarios.md tier resolution; each
 > step's before/after LISTS differed by exactly its own functions.) Measure
@@ -241,17 +279,22 @@
 >
 > | file | function | today | disposition |
 > |---|---|---|---|
-> | `agent_hooks/_subagent_stop_guard_transcript.py:52` | `extract_created_worktree_paths` | `list[Path]` | **FIX `dno1` FIRST, THEN DECLARE** — read, not guessed |
-> | `fleet/_bump_pr_list.py:139` | `persisting_bump_pr_number` | `int \| None` | declaration CANDIDATE |
+> | `fleet/_bump_pr_list.py:139` | `persisting_bump_pr_number` | `int \| None` | declaration CANDIDATE — **take this one first** |
 > | `fleet/_credential_preflight.py:79` | `preflight_credential` | `PreflightOutcome` | see triage §4b — a bare call to a PARAMETER |
 > | `fleet/_adopter_lane.py:121` | `run_adopter_rows` | `AdopterRowsResult` | convert |
 > | `fleet/_public_api_graph.py:244` | `cross_member_consumption` | `ConsumptionGraph` | read its own docstring FIRST |
+> | `agent_hooks/_subagent_stop_guard_transcript.py:62` | `extract_created_worktree_paths` | `list[Path]` | **⛔ BLOCKED ON A SPEC QUESTION** — see the retraction at the top |
 >
-> **START WITH `extract_created_worktree_paths` — BUT ITS UNIT IS `dno1`, NOT A
-> CONVERSION.** The apostrophe finding at the top of this block IS its triage,
-> already done: fix the `shlex` fallback so it SEES the segment, and both `try`
-> arms become total, leaving no inhabited failure track and a
-> `total_absence_returns` DECLARATION rather than a `Result`.
+> **`extract_created_worktree_paths` IS LAST AND IS NOT A UNIT OF WORK.** Its
+> defect half is CLOSED (`dno1`, `91a9f66`); its railway half has **no
+> disposition available** — no declaration route (member 2 is `X | None`-scoped)
+> and no honest conversion (the failure track would be uninhabited). The three
+> exits are named in the retraction block above, and the choice is a livespec
+> CORE spec question. **Do not open it as a conversion.**
+>
+> **START WITH `persisting_bump_pr_number`** — it is the one row whose shape
+> (`int | None`) member 2 can actually accept, so it is the only remaining
+> declaration that could hold. READ it before declaring.
 >
 > **⚠️ `cross_member_consumption` IS THE ONE TO TAKE LAST.** It is `5cai`'s
 > oracle — this thread's own load-bearing instrument, the one every third-axis
