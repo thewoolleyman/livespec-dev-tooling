@@ -15,13 +15,26 @@ from __future__ import annotations
 
 import json
 import os
+import sys
+from pathlib import Path
 from typing import cast
 
-from livespec_dev_tooling.checks._ci_job_names import (
+_VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
+
+from returns.io import IOFailure, IOResult  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
+
+from livespec_dev_tooling.checks._ci_job_names import (  # noqa: E402
     parse_ci_matrix,
     parse_top_level_jobs,
 )
-from livespec_dev_tooling.fleet._context import (
+from livespec_dev_tooling.fleet._ci_workflow_source import (  # noqa: E402
+    CiWorkflowUnread,
+    ci_workflow_text,
+)
+from livespec_dev_tooling.fleet._context import (  # noqa: E402
     FleetContext,
     FleetMember,
     RowFinding,
@@ -30,8 +43,9 @@ from livespec_dev_tooling.fleet._context import (
     RowSkip,
     gh_answer,
 )
-from livespec_dev_tooling.fleet._invocation_failure import InvocationNotPerformed
-from livespec_dev_tooling.fleet._rows_files import CI_WORKFLOW
+from livespec_dev_tooling.fleet._invocation_failure import (  # noqa: E402
+    InvocationNotPerformed,
+)
 
 __all__: list[str] = [
     "REQUIRED_MERGE_SETTINGS",
@@ -78,16 +92,24 @@ REQUIRED_MERGE_SETTINGS: dict[str, bool] = {
 _NOT_PROTECTED_MARKER = "Branch not protected"
 
 
-def member_matrix_targets(*, ctx: FleetContext, member: FleetMember) -> set[str] | None:
-    """The member's ci.yml `matrix.target` set, or None when unreadable/empty."""
-    text = ctx.file_text(repo=member.repo, path=CI_WORKFLOW)
-    if text is None:
-        return None
-    targets = parse_ci_matrix(source=text)
-    return targets or None
+def member_matrix_targets(
+    *, ctx: FleetContext, member: FleetMember
+) -> IOResult[set[str], CiWorkflowUnread]:
+    """The member's ci.yml `matrix.target` legs — EMPTY when it declares none.
+
+    An empty set is an ANSWER: the file was obtained (or definitively does
+    not exist) and declares no matrix legs. It used to be spelled `None`,
+    the same value an unreadable ci.yml produced, so a caller could not
+    tell "this member has no matrix" from "this run never read it".
+    """
+    return ci_workflow_text(ctx=ctx, member=member).map(
+        lambda text: set() if text is None else parse_ci_matrix(source=text)
+    )
 
 
-def member_ci_check_names(*, ctx: FleetContext, member: FleetMember) -> set[str] | None:
+def member_ci_check_names(
+    *, ctx: FleetContext, member: FleetMember
+) -> IOResult[set[str], CiWorkflowUnread]:
     """Every ci.yml name a required status check may legitimately match.
 
     The union of the member's `matrix.target` legs and its top-level job
@@ -97,15 +119,19 @@ def member_ci_check_names(*, ctx: FleetContext, member: FleetMember) -> set[str]
     all-green gate job, which is NOT a matrix leg — so a matrix-only view
     reports the mandated configuration as a phantom check.
 
-    None when ci.yml is unreadable or names nothing, so the caller skips
-    the comparison rather than reporting every required check missing
-    (can't-read is not absent).
+    🔴 THIS FUNCTION IS NOT IN THE RAILWAY CHECK'S COUNT, and was converted
+    anyway. Its only consumer lives in this same module, so it crosses no
+    boundary the consumption graph can see and `_find_offenders` never
+    convicted it — while its TWIN `member_matrix_targets`, identical in
+    shape, is convicted because `_reconcile` imports it. The count is a
+    conviction tally, not a defect tally, and this one carried the worse
+    defect of the pair.
     """
-    text = ctx.file_text(repo=member.repo, path=CI_WORKFLOW)
-    if text is None:
-        return None
-    names = parse_ci_matrix(source=text) | parse_top_level_jobs(source=text)
-    return names or None
+    return ci_workflow_text(ctx=ctx, member=member).map(
+        lambda text: set()
+        if text is None
+        else parse_ci_matrix(source=text) | parse_top_level_jobs(source=text)
+    )
 
 
 def assert_secret_names(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:
@@ -146,8 +172,18 @@ def assert_app_installation(*, ctx: FleetContext, member: FleetMember) -> RowOut
 
 def _protection_problems(
     *, ctx: FleetContext, member: FleetMember, payload: dict[str, object]
-) -> list[str]:
-    """Misalignment messages for an existing branch protection payload."""
+) -> tuple[list[str], str | None]:
+    """Misalignment messages, plus why the phantom-check comparison did not run.
+
+    The second element is the whole point of this signature. The phantom
+    comparison needs the member's ci.yml names; when this run could not
+    obtain them the comparison DOES NOT HAPPEN, and returning problems
+    alone made that indistinguishable from "the comparison ran and found
+    nothing wrong". `assert_branch_protection` then returned `RowPass` —
+    a member whose required checks can never report, and whose every merge
+    would therefore deadlock, was certified ALIGNED because a read failed.
+    A can't-read SKIPS; it does not pass (livespec-dev-tooling-6ge).
+    """
     problems: list[str] = []
     enforce = payload.get("enforce_admins")
     if not (isinstance(enforce, dict) and cast("dict[str, object]", enforce).get("enabled")):
@@ -155,7 +191,7 @@ def _protection_problems(
     checks = payload.get("required_status_checks")
     if not isinstance(checks, dict):
         problems.append("required_status_checks is absent")
-        return problems
+        return problems, None
     checks_map = cast("dict[str, object]", checks)
     if checks_map.get("strict"):
         problems.append(
@@ -170,12 +206,17 @@ def _protection_problems(
     )
     if not contexts:
         problems.append("required-check set is empty")
-        return problems
-    ci_names = member_ci_check_names(ctx=ctx, member=member)
-    if ci_names is not None:
-        for name in sorted(contexts - ci_names):
-            problems.append(f"required check {name} matches no ci.yml matrix leg or top-level job")
-    return problems
+        return problems, None
+    names = member_ci_check_names(ctx=ctx, member=member)
+    if isinstance(names, IOFailure):
+        return problems, unsafe_perform_io(names.failure()).detail
+    # An EMPTY name set is now compared rather than skipped. A member whose
+    # ci.yml names nothing while branch protection requires checks has a
+    # phantom for every one of them — the definitive form of exactly what
+    # this loop looks for, and previously the case that produced a pass.
+    for name in sorted(contexts - unsafe_perform_io(names.unwrap())):
+        problems.append(f"required check {name} matches no ci.yml matrix leg or top-level job")
+    return problems, None
 
 
 def _protection_payload(*, stdout: str) -> dict[str, object] | None:
@@ -227,9 +268,28 @@ def assert_branch_protection(*, ctx: FleetContext, member: FleetMember) -> RowOu
     payload = _protection_payload(stdout=result.stdout)
     if payload is None:
         return RowSkip(reason=f"{member.repo}: branch protection payload unparseable or unexpected")
-    problems = _protection_problems(ctx=ctx, member=member, payload=payload)
+    problems, unverified = _protection_problems(ctx=ctx, member=member, payload=payload)
+    return _protection_verdict(member=member, problems=problems, unverified=unverified)
+
+
+def _protection_verdict(
+    *, member: FleetMember, problems: list[str], unverified: str | None
+) -> RowOutcome:
+    """Turn the two halves of the alignment reading into one outcome.
+
+    Extracted to keep `assert_branch_protection` under the six-return cap
+    the new skip arm pushed it past — never by routing around the cap.
+
+    ORDER IS LOAD-BEARING. Definitive problems are reported whatever else
+    could not be checked: withholding a real misalignment because a SECOND
+    read failed would trade one silence for another. Only when there is
+    nothing definitive to say does the unverified comparison decide, and
+    then it SKIPS rather than passing.
+    """
     if problems:
         return RowFinding(message=f"{member.repo}: {'; '.join(problems)}")
+    if unverified is not None:
+        return RowSkip(reason=f"{member.repo}: required-check alignment unverified ({unverified})")
     return RowPass()
 
 

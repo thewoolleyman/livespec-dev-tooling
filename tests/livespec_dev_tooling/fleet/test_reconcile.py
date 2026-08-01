@@ -23,18 +23,21 @@ from livespec_dev_tooling.fleet._context import (
     RowSkip,
 )
 from livespec_dev_tooling.fleet._reconcile import (
-    SHIM_BRANCH,
     _rewrap_pem,
     reconcile_branch_protection,
     reconcile_delete_branch_on_merge,
     reconcile_merge_settings,
     reconcile_secret_names,
-    reconcile_shim_workflows,
     reconcile_topic,
+)
+from livespec_dev_tooling.fleet._reconcile_shims import (
+    SHIM_BRANCH,
+    reconcile_shim_workflows,
     shim_content,
 )
 from livespec_dev_tooling.fleet._rows_files import (
     BUMP_PIN_WORKFLOW,
+    CI_WORKFLOW,
     PIN_FRESHNESS_WORKFLOW,
     RELEASE_DISPATCH_WORKFLOW,
 )
@@ -121,6 +124,14 @@ _TREE_ARGS_MAIN: tuple[str, ...] = ("api", "repos/acme/widget/git/trees/main?rec
 _MAIN_REF: tuple[str, ...] = ("api", "repos/acme/widget/git/ref/heads/main")
 
 _CI_YML = "jobs:\n  check:\n    strategy:\n      matrix:\n        target:\n          - check-lint\n"
+# The member tree carrying ci.yml. Required now that the row separates a
+# ci.yml that is ABSENT from one this run failed to READ: without it the
+# reconcile skips instead of deriving the matrix.
+_CI_TREE = GhResult(
+    returncode=0,
+    stdout=json.dumps({"tree": [{"path": CI_WORKFLOW, "mode": "100644"}], "truncated": False}),
+    stderr="",
+)
 
 
 def _put_args(*, path: str) -> tuple[str, ...]:
@@ -316,6 +327,7 @@ def test_reconcile_protection_sets_strict_off_admins_and_matrix() -> None:
     # buries the Red-Green-Replay trailers.
     calls: list[tuple[tuple[str, ...], str | None]] = []
     table = {
+        _TREE_ARGS: _CI_TREE,
         _CI_ARGS: GhResult(returncode=0, stdout=_CI_YML, stderr=""),
         _PROTECTION_PUT: ok(payload={}),
     }
@@ -332,13 +344,27 @@ def test_reconcile_protection_sets_strict_off_admins_and_matrix() -> None:
 
 
 def test_reconcile_protection_without_matrix_is_finding() -> None:
-    outcome = reconcile_branch_protection(ctx=make_context(table={}, calls=[]), member=_MEMBER)
+    """WITHOUT A MATRIX, which the old empty table did not actually arrange.
+
+    An empty canned table made every read fail, so this asserted the
+    finding for a ci.yml that was never READ — the fused case. The row now
+    separates them, and the fixture has to say which one it means: a
+    readable ci.yml that declares no matrix targets.
+    """
+    table = {
+        _TREE_ARGS: _CI_TREE,
+        _CI_ARGS: GhResult(returncode=0, stdout="name: CI\n", stderr=""),
+    }
+
+    outcome = reconcile_branch_protection(ctx=make_context(table=table, calls=[]), member=_MEMBER)
+
     assert isinstance(outcome, RowFinding)
     assert "manually" in outcome.message
+    assert "declares no matrix targets" in outcome.message
 
 
 def test_reconcile_protection_failed_put_is_finding() -> None:
-    table = {_CI_ARGS: GhResult(returncode=0, stdout=_CI_YML, stderr="")}
+    table = {_TREE_ARGS: _CI_TREE, _CI_ARGS: GhResult(returncode=0, stdout=_CI_YML, stderr="")}
     outcome = reconcile_branch_protection(ctx=make_context(table=table, calls=[]), member=_MEMBER)
     assert isinstance(outcome, RowFinding)
 
@@ -356,6 +382,7 @@ def test_reconcile_protection_puts_to_resolved_default_branch() -> None:
     calls: list[tuple[tuple[str, ...], str | None]] = []
     table = {
         _REPO_GET: ok(payload={"default_branch": "main"}),
+        _TREE_ARGS_MAIN: _CI_TREE,
         _CI_ARGS_MAIN: GhResult(returncode=0, stdout=_CI_YML, stderr=""),
         _PROTECTION_PUT_MAIN: ok(payload={}),
     }
