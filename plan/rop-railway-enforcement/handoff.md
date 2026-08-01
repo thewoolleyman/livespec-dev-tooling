@@ -90,11 +90,33 @@
 >   **32 → 30**, both trailer sets present on the merged commit.
 > - **▶️ ITEM 3 IS DONE. WHAT REMAINS IS THE ARMING ITSELF.**
 >
-> ### ▶️▶️ EXACT NEXT ACTION — DROP THE `_`-PREFIXED-**FILE** SKIP, THEN ARM
+> ### ▶️▶️ EXACT NEXT ACTION — ARMING IS AN EPIC; SEQUENCE IT BEFORE COMMITTING
 >
-> Both conversions that reach through the skip have landed, so the ordering trap
-> is discharged and this is the last step. It is ONE change and it carries THREE
-> obligations that must not sink:
+> **⛔ THE ANSWER TO "IS ARMING A COMMIT OR AN EPIC" IS: AN EPIC, AND IT IS
+> MEASURED.** Fleet-wide cost **455 offenders over a universe of 719**, all nine
+> members measured with the shipped criterion against their masters
+> (§"THE ARMING BLAST RADIUS"). Eight per-repo children are FILED — `8o8e.7`
+> overseer **190**, `.8` beads-fabro **172**, `.9` dev-tooling **30**, `.10`
+> runtime **27**, `.11` git-jsonl **18**, `.12` livespec **15**, `.13`
+> driver-codex **2**, `.14` driver-claude **1**.
+>
+> **AND THE FIRST BLOCKER IS THIS REPO ITSELF.** The armed check was RUN:
+> `ARMED main() EXIT CODE = 1` at 30 offenders. Arming reds livespec-dev-tooling's
+> own `just check`, and lefthook then blocks the fixing commit. So the sequence is
+> NOT "file the children, then arm":
+>
+> 1. **`8o8e.9` — this repo's own 30 — LANDS FIRST**, or
+> 2. the arming ships with a **per-repo phase-in** (`unarmed_until` is the
+>    existing union precedent for "applies here and is switched off, with a reason
+>    and a tracking id").
+>
+> **Choosing between those two is a MAINTAINER decision and is deliberately not
+> made here.** Disposition of the 30: **29 must CONVERT, 1 is even a declaration
+> candidate** (`fleet/_bump_pr_list.py:139 persisting_bump_pr_number -> int | None`,
+> and only a CANDIDATE — member 2 needs the read that decides absence-vs-failure).
+> Arming's price is conversion work, not paperwork.
+>
+> ### ▶️ WHEN THE ARMING COMMIT IS FINALLY WRITTEN, it must carry in its own text
 >
 > 1. **DROP `if py_file.name.startswith("_"): continue`** at
 >    `public_api_result_typed.py::_scan`. **This is FIDELITY, NOT A TIGHTENING** —
@@ -106,23 +128,20 @@
 >    `discover_fixtures` are absent from `cross_repo_public_api` on the stated
 >    ground that "declaring them would assert a scope this check does not
 >    actually apply". **The moment the skip drops, that ground EXPIRES.**
->    ⚠️ **AND THE COMMENT NAMING THEM IS NOW STALE ON A PATH:** it says
+>    ⚠️ **AND THE COMMENT NAMING THEM IS STALE ON A PATH:** it says
 >    `fleet/_context.py`'s `resolve_owner`, but pair A MOVED it to
 >    `fleet/_origin_remote.py`. Read the tree, not the comment.
->    **RUN THE DECLARATION DETECTORS PER NEW ENTRY AS YOU AUTHOR IT** — `ueni`
->    makes `stale_declarations` / `rejected_declarations` structurally unreachable
->    here (both sit behind `main()`'s `pure_trees` gate), so member 2 bound 1's
->    REJECTING gate first becomes reachable **in the arming commit itself** — the
->    one commit that must not go red.
-> 3. **CARRY THE DISPOSITION DENOMINATOR AND THE `995m` KNOWN GAP** in the
->    commit's own text.
+> 3. **THE DISPOSITION DENOMINATOR WITH ITS COMPOSITION** (29 code / 1 declaration
+>    candidate) and **the `995m` KNOWN-GAP STATEMENT**: `config.py` excludes itself
+>    from every check universe via `is_generated`, so arming does not cover it.
+> 4. **BOTH NUMBERS RE-MEASURED AT BOTH ENDS** with `_find_offenders` over
+>    `resolve_check_universe()`, never `main()`.
 >
-> **⛔ THE 30 REMAINING OFFENDERS ARE THE COST OF ARMING, AND THEY ARE NOT ALL
-> CONVERSIONS.** Re-triage them against the v179 member-1/member-2 split before
-> assuming each needs code: the last triage found FOUR of its "transitive" class
-> were `total_absence_returns` DECLARATIONS rather than conversions. Do not
-> inherit the old triage — `no_expected_failure_mode_pairs` moved 440 → 443 with
-> pair B alone.
+> **✅ ONE PRECONDITION IS ALREADY DISCHARGED, and it was the risky one.** `ueni`
+> makes `stale_declarations` / `rejected_declarations` structurally unreachable
+> here (both sit behind `main()`'s `pure_trees` gate), so they first become
+> reachable IN the arming commit. The armed run proves they are **green today —
+> 0 stale, 0 rejected** — so that commit does not have to discover them.
 >
 > ### ⛔ THE STANDING QUESTION — it has inverted the expected fix in seven units running
 >
@@ -140,7 +159,13 @@
 > - **One that cannot SEE the population has not measured it.** Quote no zero
 >   without its denominator. **Six** vacuous zeros have been caught this way,
 >   three of them mine — most recently a before/after diff whose two sides were
->   generated from the SAME tree.
+>   generated from the SAME tree. **The sharpest statement of the principle this
+>   thread has produced: "ADDED is empty — credible only because REMOVED isn't."**
+>   A zero is trustworthy exactly when the SAME instrument produced a non-zero
+>   where one was expected; standing alone it is indistinguishable from a blind
+>   instrument. Applied again at fleet scale: `livespec-console-beads-fabro`
+>   measuring 0 over a universe of 0 is quotable only because the same harness
+>   returned non-zero for the other eight members.
 > - **Verify the TRAILERS, not the exit code**, and count BOTH sets. `--amend -F`
 >   replaces the whole message and silently drops the Red half; the hook still
 >   exits 0. Recovery is `git reset --soft <red-sha>` then an amend whose body
@@ -359,6 +384,106 @@ a sibling's stall should not red an unrelated repo's PRs, which is a real reason
 records the lane-scoped shape instead.
 
 ---
+
+---
+
+## 📏 THE ARMING BLAST RADIUS, MEASURED ACROSS ALL NINE MEMBERS — **455 over a universe of 719**
+
+**2026-08-01, supervisor brief 77. Measured with livespec-dev-tooling master `0e3db34`'s
+SHIPPED criterion — `_find_offenders` over `resolve_check_universe()`, never `main()` and
+never `_scan` — against each member's master, freshly cloned. NOT inherited from any
+recorded figure.**
+
+**THE HARNESS WAS POSITIVE-CONTROLLED BEFORE ANY NUMBER WAS TRUSTED:** run against
+livespec-dev-tooling it reproduces that repo's independently-known **30 / 168**. A
+cross-repo harness that cannot reproduce a known answer has not measured the unknown ones.
+
+| member | master | universe | **ARMED** | if the FILE skip were kept | vendors `returns` |
+|---|---|---:|---:|---:|---|
+| `livespec-overseer` | `45bb0fe` | 140 | **190** | 86 | **NO** |
+| `livespec-orchestrator-beads-fabro` | `805320f` | 186 | **172** | 17 | yes (3 modules) |
+| `livespec-dev-tooling` | `0e3db34` | 168 | **30** | 0 | yes |
+| `livespec-runtime` | `5108a2d` | 31 | **27** | 27 | **NO** |
+| `livespec-orchestrator-git-jsonl` | `c1d0142` | 49 | **18** | 12 | yes (21) |
+| `livespec` | `91935f4` | 131 | **15** | 7 | yes (115) |
+| `livespec-driver-codex` | `8e2e321` | 7 | **2** | 0 | **NO** (product) |
+| `livespec-driver-claude` | `c6e3f84` | 7 | **1** | 0 | yes (2) |
+| `livespec-console-beads-fabro` | `bf8ebef` | **0** | **0** | 0 | n/a — zero-Python |
+| **TOTAL** | | **719** | **455** | 149 | |
+
+**`livespec-console-beads-fabro` measuring 0 over a universe of 0 is the SANCTIONED
+exemption behaving correctly, not a hole** — and it is quotable precisely because the same
+harness returned non-zero for the other eight.
+
+### ⛔ THE RECORDED FIGURES WERE STALE IN BOTH DIRECTIONS, AND ONE BY 3.6×
+
+The figures carried in this thread (beads-fabro 17, overseer 53, livespec 6) match neither
+column consistently. beads-fabro's 17 equals its skip-CARRYING number exactly; overseer's
+53 matches nothing (it measures **86** carrying, **190** armed); livespec's 6 is now 7 / 15.
+**`oip9`'s standing proof that a sibling can come out HIGHER is confirmed at scale:
+overseer went 53 → 190.** Do not quote the old numbers again.
+
+### ⛔ THREE MEMBERS CANNOT BE REMEDIATED AT ALL UNTIL `returns` IS VENDORED
+
+`livespec-overseer` (190) and `livespec-runtime` (27) have **no `_vendor/returns` and ZERO
+first-party modules importing it** — **217 of the 455**, nearly half the fleet-wide cost,
+sits behind a vendoring step that has not happened. Vendoring is the FIRST slice of those
+two children, not a footnote.
+
+**⚠️ AND A FALSE ALARM I RAN DOWN RATHER THAN REPORTED.** `livespec-driver-codex` shows a
+first-party `returns` import with no `_vendor/` of its own — the exact shape of the bug
+that broke the fleet's release fan-out for seven hours. **It is NOT that bug.** The single
+importer is `tests/e2e-cli/test_cli_e2e.py` — a TEST file, and the pair-B consumer wiring
+at that — which resolves `returns` through **dev-tooling's** `_vendor` via
+`cli_e2e.__file__`. Deliberate and correct. Read the callee, not the name.
+
+### 🔴🔴 ARMING REDS **THIS** REPO TOO, AND THAT IS MEASURED — `ARMED main() EXIT CODE = 1`
+
+The armed check was RUN, not reasoned about: `role_absence_exit_code` neutralized,
+`_scan` re-pointed at `resolve_check_universe()` with the FILE skip dropped, then the
+**shipped `main()`** invoked. It logs 30 offenders and **exits 1**.
+
+So the arming commit turns livespec-dev-tooling's OWN `just check` red, and lefthook then
+blocks the very commit that would fix it. **THAT IS THE ORDERING TRAP `8o8e` NAMED AT THE
+OUTSET, NOW CARRYING A NUMBER.** Arming is therefore not "file the children, then commit":
+either `8o8e.9`'s 30 land FIRST, or the arming needs a per-repo phase-in — the
+`unarmed_until` union variant is the existing precedent for "applies here and is switched
+off, with a reason and a tracking id". **Which of the two is a MAINTAINER decision and is
+deliberately not made here.**
+
+### ✅ TWO RESULTS THAT DE-RISK THE ARMING COMMIT
+
+- **The DECLARATION DETECTORS PASS: 0 stale, 0 rejected.** `stale_declarations` and
+  `rejected_declarations` sit behind the `pure_trees` role gate and have **NEVER executed
+  in this repo** — `ueni`. They first become reachable in the arming commit itself, the
+  one commit that must not go red. The same armed run proves they are green today, so
+  that commit does not have to discover them.
+- **Every member's `pyproject.toml` still PARSES under current dev-tooling** — all nine
+  measurements returned a config, so the next pin bump brings no `ConfigParseError`.
+
+### 📐 DISPOSITION OF THIS REPO'S 30 — the cost is conversion, not paperwork
+
+| class | count |
+|---|---|
+| must CONVERT | **29** |
+| `X \| None` — a candidate v179 member-2 DECLARATION | **1** |
+
+The single candidate is `fleet/_bump_pr_list.py:139 persisting_bump_pr_number -> int | None`,
+and it is a CANDIDATE only — member 2 needs the READ that decides absence-vs-failure, and
+this thread's record is that the read has inverted the expected answer repeatedly
+(`tag_version_component` sat in the STRONGEST convert class and was still not a
+conversion). **Almost none of this is buyable with declarations**, which matches the
+original sizing (2 of the first 75) and is the honest framing: arming's price is
+conversion work.
+
+### 📋 FILED, so none of this depends on a document scheduled for archival
+
+Eight per-repo children under `8o8e` — `.7` overseer 190, `.8` beads-fabro 172, `.9`
+dev-tooling 30, `.10` runtime 27, `.11` git-jsonl 18, `.12` livespec 15, `.13`
+driver-codex 2, `.14` driver-claude 1 — each carrying its denominator, its vendoring
+prerequisite, its re-derivation recipe, and the note that the recorded figure is stale.
+⚠️ `bd link <epic> <task>` is REFUSED ("epics can only block other epics"); the
+parent-child relation carries the gate instead, and each child states it in prose.
 
 ---
 
