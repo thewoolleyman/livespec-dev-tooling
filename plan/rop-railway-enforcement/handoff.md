@@ -193,7 +193,7 @@
 >
 > | repo | master at wrap-up | working tree |
 > |---|---|---|
-> | `livespec-dev-tooling` | **`c3d4186`** | clean (one untracked `install-livespec-pr-bot.png`, NOT this thread's — leave it) |
+> | `livespec-dev-tooling` | **`1c6ab06`** | clean (one untracked `install-livespec-pr-bot.png`, NOT this thread's — leave it) |
 > | `livespec-orchestrator-beads-fabro` | `bc26f70` | clean |
 > | `livespec-driver-claude` | `0cf4ca7` | clean |
 > | `livespec-driver-codex` | `d150626` | clean |
@@ -212,11 +212,12 @@
 >
 > ### 📏 BASELINE — re-derive at BOTH ENDS of every unit, never inherit
 >
-> **universe 168 · offenders DROPPING the `_`-prefixed-FILE skip 26 · offenders
-> CARRYING it 0** — re-derived on MERGED master at `c3d4186`, not inherited from
+> **universe 168 · offenders DROPPING the `_`-prefixed-FILE skip 25 · offenders
+> CARRYING it 0** — re-derived on MERGED master at `1c6ab06`, not inherited from
 > a worktree. (34 → 32 at pair A, → 30 at pair B, → 29 at the ruff backstop, →
 > 28 at the docs-only carve-out, → 27 at the scenarios.md tier resolution, → 26 at
-> the `persisting_bump_pr_number` DECLARATION; each
+> the `persisting_bump_pr_number` DECLARATION, → 25 at the credential preflight;
+> each
 > step's before/after LISTS differed by exactly its own functions.) Measure
 > with `_find_offenders` over `resolve_check_universe()`, **never** through
 > `main()` or `_scan` (this repo declares `pure_trees = { not_applicable = … }`,
@@ -255,6 +256,23 @@
 > - **✅ `8o8e.9` OFFENDER 3 — `dno1` FIXED, railway half BLOCKED.** #1039 →
 >   **`91a9f66`**, **27 → 27** (the fix bought no count, and the declaration
 >   claim it was expected to buy is RETRACTED — see the top of this block).
+> - **✅ `8o8e.9` OFFENDER 5 — the credential preflight is on the railway.**
+>   #1045 → **`1c6ab06`** (5 Red + 2 Green, counted by hand), **26 → 25**.
+>   ⛔ **AND IT SETTLES TRIAGE §4b: ACQUITTING THE `sleep` DOUBT WOULD HAVE BEEN
+>   A FALSE ACQUITTAL.** The check convicted `preflight_credential` on ONE
+>   basis — a bare call to `sleep`, an INJECTED PARAMETER — which looks like the
+>   CHECK-FIX class, since the same module rules an injected seam is not a
+>   boundary. But the old `PreflightOutcome(usable: bool, cause: ReadFailure |
+>   None, ...)` is a HAND-ROLLED failure track, and **member 1's clause (e)
+>   recognises `X | None` only as the function's OWN return annotation — it
+>   cannot see one nested a field deep inside a returned dataclass.** Resolving
+>   the doubt away would have made a genuine offender member-1 EXEMPT. **The
+>   conservative doubt was the only thing holding it in scope**, which argues
+>   for KEEPING the bare-call-to-a-parameter conservatism rather than filing it
+>   as machinery. ⚠️ That blind spot is the mirror of `3744` and is NOT
+>   otherwise recorded: `3744` is a ratified ON-railway spelling the check
+>   refuses; this is a hand-rolled OFF-railway spelling its exemption path
+>   could wave through.
 > - **✅ `8o8e.9` OFFENDER 4 — `persisting_bump_pr_number` DECLARED, not
 >   converted.** #1043 → **`c3d4186`**, **27 → 26**. Both bounds VERIFIED, not
 >   assumed: `rejected_declarations` returns `()` over the whole universe with
@@ -269,11 +287,11 @@
 >   worktree path to an apostrophe — the block at the top).
 > - **📋 EIGHT PER-REPO ARMING CHILDREN FILED** — `8o8e.7`–`.14`, fleet total
 >   **455 over a universe of 719** (§"THE ARMING BLAST RADIUS"). ⚠️ dev-tooling's
->   `.9` row reads 30; it is **26** now — re-derive, never quote.
-> - **▶️ ITEM 3 IS DONE. WHAT REMAINS IS `8o8e.9` (4 unblocked + 22 held), THEN
+>   `.9` row reads 30; it is **25** now — re-derive, never quote.
+> - **▶️ ITEM 3 IS DONE. WHAT REMAINS IS `8o8e.9` (3 unblocked + 22 held), THEN
 >   THE ARMING ITSELF.**
 >
-> ### ▶️▶️ EXACT NEXT ACTION — DRIVE THE 4 REMAINING UNBLOCKED OFFENDERS OF `8o8e.9`
+> ### ▶️▶️ EXACT NEXT ACTION — DRIVE THE 3 REMAINING UNBLOCKED OFFENDERS OF `8o8e.9`
 >
 > **SUPERVISOR RULING (brief 78), STANDING: convert dev-tooling's offenders NOW.**
 > It is not contingent on the maintainer's fan-out answer, because **all three
@@ -281,17 +299,16 @@
 > (`ARMED main() EXIT CODE = 1`) and lefthook then blocks the fix. The charter says
 > it in as many words: *"DO NOT ARM until dev-tooling measures ZERO."*
 >
-> **⛔ 22 OF THE 26 ARE HELD ON `livespec-dev-tooling-3744`** (the `RowOutcome`
+> **⛔ 22 OF THE 25 ARE HELD ON `livespec-dev-tooling-3744`** (the `RowOutcome`
 > rendering-boundary finding above). **DO NOT CONVERT THEM** — wrapping a
 > ratified discriminated union in a `Result` double-encodes the same outcome and
 > would be unwound when the clause is mechanized.
 >
-> **▶️ THE 4 THAT ARE UNBLOCKED, in the order to take them:**
+> **▶️ THE 3 THAT ARE UNBLOCKED, in the order to take them:**
 >
 > | file | function | today | disposition |
 > |---|---|---|---|
-> | `fleet/_credential_preflight.py:79` | `preflight_credential` | `PreflightOutcome` | see triage §4b — a bare call to a PARAMETER; **take this one first** |
-> | `fleet/_adopter_lane.py:121` | `run_adopter_rows` | `AdopterRowsResult` | convert |
+> | `fleet/_adopter_lane.py:121` | `run_adopter_rows` | `AdopterRowsResult` | convert — **take this one first** |
 > | `fleet/_public_api_graph.py:244` | `cross_member_consumption` | `ConsumptionGraph` | read its own docstring FIRST |
 > | `agent_hooks/_subagent_stop_guard_transcript.py:62` | `extract_created_worktree_paths` | `list[Path]` | **⛔ BLOCKED ON A SPEC QUESTION** — see the retraction at the top |
 >
@@ -338,7 +355,7 @@
 > conversion) — and `extract_created_worktree_paths` above is the THIRD unit in
 > a row where the read moved the row.
 >
-> **THE THIRD AXIS IS ALREADY DISCHARGED FOR ALL 4** — the shipped oracle, re-run
+> **THE THIRD AXIS IS ALREADY DISCHARGED FOR ALL 3** — the shipped oracle, re-run
 > **2026-08-01 (fifth session)** on 9 roster / 9 read / 0 unavailable / 0 unparsed
 > / **63 edges**, finds **ZERO** cross-repo consumers for every one of these
 > names. That zero is credible because the SAME run returns non-zero for
@@ -385,6 +402,11 @@
 >   cannot — this session's fixture scrubbed `GIT_*` by scanning `os.environ`,
 >   so its own body ran only under lefthook. When a fixture neutralizes an
 >   environment, run it once with that environment ABSENT.
+> - **CLAUSE (e) IS TOP-LEVEL ONLY, SO MEMBER 1 CAN EXEMPT A HAND-ROLLED
+>   FAILURE TRACK.** An `X | None` nested a field deep in a returned dataclass
+>   (`PreflightOutcome.cause`) is invisible to it. Before treating any
+>   conviction as a false positive, read the RETURN TYPE's fields — the
+>   machinery's doubt may be the only thing holding a real offender in scope.
 > - **A DECLARATION IS A READING OF THE CURRENT CALL GRAPH, NOT A PROPERTY.**
 >   `persisting_bump_pr_number`'s `None` had TWO meanings until the pin-walker
 >   lifted `open_bump_prs_for`'s read failure onto its own track; declaring it
