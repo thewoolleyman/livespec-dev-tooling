@@ -2,24 +2,52 @@
 
 > ## ▶️▶️▶️ COLD START — READ THIS BLOCK FIRST, THEN §"EXACT NEXT ACTION" BELOW IT
 >
-> **Written 2026-08-01 at a session wrap-up. This block is the CURRENT-STATE
-> header. The older `## ▶️ START HERE` section further down is a HISTORICAL
-> record: its live-state claims are dated 2026-07-31 and are SUPERSEDED by this
-> block. Read it for METHOD and for the reasoning behind past rulings, never for
-> "what is true now".**
+> **Rewritten 2026-08-01 (second session that day). This block is the
+> CURRENT-STATE header. The older `## ▶️ START HERE` section further down is a
+> HISTORICAL record: its live-state claims are dated 2026-07-31 and are
+> SUPERSEDED by this block. Read it for METHOD and for the reasoning behind past
+> rulings, never for "what is true now".**
+>
+> ### 🔴🔴 THE FINDING OF THIS SESSION, and it is a NEW variant: A REFACTOR *MEANT TO HELP* MANUFACTURED THREE OFFENDERS, AND ONLY THE COUNT CAUGHT IT
+>
+> Converting `resolve_owner` blew two 250-LLOC ceilings, so the fix was to
+> extract the four copies of the CLI precondition into `fleet/_cli_owner.py`.
+> That helper's first draft returned **`str | None`** — *"the owner, or `None`
+> meaning already-reported"* — which is **THE EXACT SENTINEL THE CONVERSION HAD
+> JUST REMOVED, RE-INTRODUCED ONE LAYER FURTHER OUT.** The far-end measurement
+> reported **35 where 32 was expected**. Nothing else would have caught it: every
+> test passed, lint passed, pyright passed, and the extraction was genuinely good
+> for every other reason.
+>
+> **▶️ THE GENERAL FORM, and it belongs beside the mechanical-conversion rule:
+> AN EXTRACTION THAT COLLAPSES A DISCRIMINATED FAILURE FOR ITS CALLER'S
+> CONVENIENCE IS THIS EPIC'S FOUNDING DEFECT WEARING A REFACTOR'S CLOTHES.** The
+> fix was to make both helpers **TAPS** — narrate the failure track, hand the
+> container through untouched. **RE-MEASURE AFTER THE CLEANUP, NOT ONLY AFTER THE
+> CONVERSION**; the cleanup is where this enters.
+>
+> **⛔ AND A CORRECTION OF MINE, recorded because the method rule it violates is
+> already in this file.** I reported `merged_branch_sweep.py:312`'s
+> `if manifest is None` as a live dead guard against a `Result`. **FALSE.** That
+> module defines its OWN `fetch_manifest` at line 96 returning `Manifest | None`;
+> it does not import the railed one. I matched the NAME instead of reading the
+> CALLEE — the exact trap §"read the callee, do not match the name" names. What
+> IS true and worth carrying: **two public `fetch_manifest` functions exist in
+> one package with DIFFERENT return shapes**, which is why that rule is needed.
 >
 > ### STATE, as left (RE-DERIVE — this ages in minutes)
 >
 > | repo | master | working tree |
 > |---|---|---|
-> | `livespec-dev-tooling` | `ffabf22` | clean (one untracked `install-livespec-pr-bot.png`, not this thread's) |
-> | `livespec-driver-claude` | `d11fccd` | clean |
+> | `livespec-dev-tooling` | **`cb2d86a`** (#1014 merged) | clean (one untracked `install-livespec-pr-bot.png`, not this thread's) |
+> | `livespec-orchestrator-beads-fabro` | **`12830ee`** (#1205 merged) | clean |
 > | `livespec` | `95697d07` | clean |
 >
-> **NOTHING OF THIS THREAD IS MID-FLIGHT.** No open PR of its own, no worktree of
-> its own, no background job. **ELEVEN FOREIGN worktrees exist across the three
-> repos (5 / 3 / 3) — REAP NONE, and ENUMERATE with `git worktree list` rather
-> than trusting this sentence.**
+> **NOTHING OF THIS THREAD IS MID-FLIGHT** except the docs PR carrying this very
+> edit. Both #1205 and #1014 are MERGED and verified on the forge after a fetch;
+> their worktrees are reaped. FOREIGN worktrees exist in every repo — **REAP
+> NONE**, and ENUMERATE with `git worktree list` rather than trusting this
+> sentence.
 >
 > ```bash
 > /usr/local/bin/with-livespec-env.sh -- bd show livespec-dev-tooling-8o8e
@@ -27,49 +55,55 @@
 >
 > ### 📏 BASELINE — re-derive at BOTH ENDS of every unit, never inherit
 >
-> **universe 167 · offenders DROPPING the `_`-prefixed-FILE skip 34 · offenders
-> CARRYING it 0.** Measure with `_find_offenders` over `resolve_check_universe()`,
-> **never** through `main()` or `_scan` (this repo declares
-> `pure_trees = { not_applicable = … }`, so `main()` iterates ZERO files and
-> reports 0 offenders regardless of the code — the UNARMED state, lying in wait
-> for anyone measuring this epic's own remediation). Stage new modules first: an
-> untracked module silently leaves the universe and reads as progress.
+> **universe 168 · offenders DROPPING the `_`-prefixed-FILE skip 32 · offenders
+> CARRYING it 0** — re-derived on MERGED master `cb2d86a`, not inherited from the
+> worktree. (It was 167 / 34 before; the +1 universe is
+> `fleet/_cli_owner.py`, which adds ZERO offenders — that is the point, see the
+> manufactured-offender finding above.) Measure with `_find_offenders` over
+> `resolve_check_universe()`, **never** through `main()` or `_scan` (this repo
+> declares `pure_trees = { not_applicable = … }`, so `main()` iterates ZERO files
+> and reports 0 offenders regardless of the code — the UNARMED state, lying in
+> wait for anyone measuring this epic's own remediation). Stage new modules first:
+> an untracked module silently leaves the universe and reads as progress. A
+> ready-made harness is written out in §"THE ARMED MEASUREMENT".
 >
 > ### ✅ WHAT IS DONE (all verified on the FORGE after a fetch)
 >
-> - **`e01t` CLOSED** — driver-claude #366 → `d11fccd`. The `entries[0]` core
->   resolver is gone; all eight bindings call one Driver-owned
->   `.claude-plugin/lib/resolve_core_root.py`. `/livespec:revise` and
->   `/livespec:propose-change` work from this repo again.
+> - **`e01t` CLOSED** — driver-claude #366 → `d11fccd`.
 > - **`RowOutcome` RATIFIED as livespec v181** — #1870 → `4bb6119`.
-> - **BOTH v181 CONDITIONS DISCHARGED** — #1007 (`41022eb`) exhaustive
->   `match`/`assert_never` at all 14 consumption sites; #1008 (`680fdc1`) =
->   **`8o8e.2` CLOSED**, inapplicability is now an excluded pass, not a skip.
-> - **v182** — #1871 → `95697d07`. This thread's own `v178` "exposure: ZERO"
->   correction, pending since #1834, is consumed; the false paragraph is OUT of
->   the ratified text.
+> - **BOTH v181 CONDITIONS DISCHARGED** — #1007 (`41022eb`); #1008 (`680fdc1`) =
+>   **`8o8e.2` CLOSED**.
+> - **v182** — #1871 → `95697d07`. The false "exposure: ZERO" paragraph is OUT.
+> - **✅ ITEM 3, PAIR A — CONSUMER WIRING MERGED.** beads-fabro **#1205** →
+>   **`12830ee`**: `codex_yolo_gate.py` tolerates BOTH `resolve_owner` shapes, so
+>   the dev-tooling pin may move in either direction including a REVERT.
+> - **✅ ITEM 3, PAIR A — CONVERSION MERGED.** dev-tooling **#1014** →
+>   **`cb2d86a`**. Both resolvers on `IOResult[str, OriginRemoteUnresolved]`, the
+>   unguarded `subprocess.run` fixed as the `git-not-run` arm, **34 → 32**, both
+>   trailer sets present. **PAIR B IS THE ONLY REMAINING `dx8l`-BLOCKED WORK.**
 >
-> ### ▶️▶️ EXACT NEXT ACTION — ITEM 3, and NOTHING is owed ahead of it
+> ### ▶️▶️ EXACT NEXT ACTION — PAIR B, and nothing is owed ahead of it
 >
-> **The four `dx8l`-blocked CONVERT. CONSUMER WIRING LANDS FIRST, IN THE
-> CONSUMING REPO — that is the whole point of `dx8l`, so the pin can move in
-> either direction including a REVERT.**
+> 1. **PAIR B — `testing/_cli_e2e_discovery.py::discover_fixtures` +
+>    `discover_skills`.** **FOUR siblings must be wired dual-shape FIRST**, each in
+>    its own repo, through its own green gates: `livespec-driver-claude`,
+>    `livespec-driver-codex`, `livespec-orchestrator-beads-fabro`,
+>    `livespec-orchestrator-git-jsonl` — each reaches it as
+>    `cli_e2e.discover_fixtures(...)` from `tests/e2e-cli/`. **RE-RUN THE ORACLE
+>    RATHER THAN TRUSTING THIS LIST** (harness in §"THE THIRD AXIS"); it was
+>    re-derived 2026-08-01 at 9 roster / 9 READ / 0 unavailable / 0 unparsed / **63
+>    edges**, and `discover_skills` has NO sibling consumer.
+> 2. **THEN, and only then:** re-measure at both ends → drop the `_`-prefixed-FILE
+>    skip → **ARM**, carrying the disposition denominator and the `995m` known-gap
+>    statement in the commit's own text. **The dropped skip creates a DECLARATION
+>    OBLIGATION in the same change** — `resolve_owner` and `discover_fixtures` are
+>    absent from `cross_repo_public_api` on a ground that expires the moment the
+>    skip drops.
 >
-> 1. `fleet/_origin_remote.py::resolve_owner` **+** `resolve_repo_name` as **ONE
->    pair** — clause (d) couples them, so a split PR measures **no movement** and
->    reads as a failed conversion. Blocked on
->    `livespec-orchestrator-beads-fabro`'s `.claude-plugin/hooks/codex_yolo_gate.py`
->    being wired **dual-shape** first.
-> 2. `testing/_cli_e2e_discovery.py::discover_fixtures` **+** `discover_skills`,
->    after **FOUR** siblings are wired.
->
-> **⚠️ BOTH PAIRS CARRY A LIVE SECOND DEFECT:** their `subprocess.run` is
-> UNGUARDED, so an absent `git` raises `FileNotFoundError` straight out of
-> `resolve_owner`. It belongs to this unit and was deliberately not fixed in #984.
->
-> **THEN, and only then:** re-measure at both ends → drop the `_`-prefixed-FILE
-> skip → **ARM**, carrying the disposition denominator and the `995m` known-gap
-> statement in the commit's own text.
+> **⚠️ PAIR B's SECOND DEFECT, same shape as pair A's:** `_read_plugin_prefix`
+> skips a plugin dir whose manifest is unreadable, so a broken install reads as
+> "that plugin ships no skills"; and an unreadable fixtures root yields `{}` —
+> "no fixtures" — which is a **PASS**.
 >
 > ### ⛔ THE STANDING QUESTION — it has inverted the expected fix in six units running
 >
@@ -105,6 +139,54 @@
 > - **A mechanical conversion is where subtle bugs enter**, because the wrong
 >   shape looks equivalent: `case Cls(reason=CONST)` is a CAPTURE, not a value
 >   comparison, and matches EVERYTHING.
+> - **AN EXTRACTION CAN MANUFACTURE OFFENDERS.** A helper returning `str | None`
+>   to spare its callers an unwrap re-introduces the sentinel one layer out.
+>   RE-MEASURE AFTER THE CLEANUP, not only after the conversion.
+> - **`.map()` is the shape-agnostic unwrap for dual-shape consumer wiring**, and
+>   `value_or` is NOT: on `Result` it yields the bare value, on `IOResult` it
+>   yields an `IO[...]` that compares unequal to every string. Copying a sibling's
+>   `Result` wiring onto an `IOResult` reproduces the bug it fixed, one deeper.
+> - **BUDGET A `*_edges.py` SIBLING INTO EVERY CONVERSION.** The Red file is
+>   checksum-bound, so any Green-leg branch no existing test reaches needs one —
+>   discovering this at the amend costs a rebuild. Verify byte-identity with
+>   `sha256sum` against the recorded `TDD-Red-Test-File-Checksum` before amending;
+>   `ruff check --fix` over `tests/` can silently rewrite it.
+>
+> ### 🔬 THE ARMED MEASUREMENT — the harness, written out so it is not re-derived
+>
+> Iterate `resolve_check_universe()` and call `_find_offenders` PER FILE, building
+> `public` / `no_expected_failure_mode` exactly as `_scan` does. Toggle
+> `rel.name.startswith("_")` for the two variants. **Never `main()`, never
+> `_scan`.**
+>
+> ```python
+> root, universe = resolve_check_universe()
+> config = load_config(repo_root=root)
+> sources = {rel: (root / rel).read_text(encoding="utf-8") for rel in universe}
+> public = repo_local_public_names(sources=sources) | declared_public_names(
+>     declared=config.cross_repo_public_api, sources=sources)
+> total = functions_without_expected_failure_mode(sources=sources, io_trees=config.io_trees)
+> total |= declared_absence_names(declared=config.total_absence_returns, sources=sources)
+> for rel in universe:
+>     for lineno, name in _find_offenders(
+>         source=sources[rel], rel_path=rel, commands_trees=config.commands_trees,
+>         public_names=frozenset(n for p, n in public if p == rel),
+>         no_expected_failure_mode=frozenset(n for p, n in total if p == rel),
+>         supervisor_entry_files=config.supervisor_entry_files):
+>         ...  # DROPPING = all of them; CARRYING = only those with not rel.name.startswith("_")
+> ```
+>
+> ### 🔬 THE THIRD AXIS — run the ORACLE, never a grep (supervisor brief 52)
+>
+> Build a `FleetContext` with the real seams, fetch + parse the manifest, rebuild
+> the context WITH `members=manifest.members` (an empty roster makes the row SKIP,
+> which is the fail-closed spelling and reads as "no consumers"), then
+> `fleet_consumption(ctx=ctx)` from `_rows_public_api_conformance` and filter
+> `state.graph.edges` by `edge.function`. **Quote the denominator with the
+> answer** — `len(ctx.members)` / `len(state.sources)` / `state.unavailable` /
+> `len(state.graph.unparsed)` / `len(state.graph.edges)` — because a bare zero and
+> "zero because I read nothing" are indistinguishable. Needs
+> `/usr/local/bin/with-livespec-env.sh` for the credential.
 >
 > ### 🛡️ STANDING SAFETY
 >
@@ -208,6 +290,81 @@ a sibling's stall should not red an unrelated repo's PRs, which is a real reason
 records the lane-scoped shape instead.
 
 ---
+
+---
+
+## ✅ ITEM 3 PAIR A — **34 → 32**, AND THE UNIT'S BEST FINDING CAME FROM ITS OWN CLEANUP
+
+**beads-fabro #1205 → `12830ee` (consumer wiring) · dev-tooling #1014 →
+`cb2d86a` (the conversion). BOTH MERGED and verified on the forge after a fetch,
+never inferred from a green PR page.** Both ends re-derived with
+`_find_offenders` over `resolve_check_universe()`, new modules STAGED, and the
+far end re-derived AGAIN on merged master.
+
+### 🔴🔴 THE FINDING: A REFACTOR MEANT TO HELP MANUFACTURED THREE OFFENDERS
+
+Converting the pair blew TWO 250-LLOC hard ceilings at once (`fleet_conformance`
+248 → 279, `merged_branch_sweep` 246 → 253), because a 3-line precondition became
+a 12-line one in FOUR modules. The fix was to extract those four copies into
+`fleet/_cli_owner.py` — good for an independent reason (`livespec-i04f`: four
+copies of one rule that keep agreement by copying).
+
+**That helper's first draft returned `str | None`** — *"the owner, or `None`
+meaning already-reported"*. **THAT IS THE EXACT SENTINEL THE CONVERSION HAD JUST
+REMOVED, RE-INTRODUCED ONE LAYER FURTHER OUT.** The far-end measurement said
+**35 where 32 was expected**: three offenders manufactured by the cleanup
+(`resolved_owner`, `owner_or_stderr`, and a relocated `member_ci_exit_for_checkout`
+whose move from a `_`-prefixed name into a public one put it in scope).
+
+**⛔ NOTHING ELSE WOULD HAVE CAUGHT IT.** Every test passed, `ruff` passed,
+`pyright` passed at 0 errors, coverage was 100%, and the extraction was genuinely
+the right call. Only the offender count knew.
+
+**▶️ THE RULE, beside the mechanical-conversion one: AN EXTRACTION THAT COLLAPSES
+A DISCRIMINATED FAILURE FOR ITS CALLER'S CONVENIENCE IS THIS EPIC'S FOUNDING
+DEFECT WEARING A REFACTOR'S CLOTHES.** Both helpers became **TAPS** — narrate the
+failure track, return the container untouched. **RE-MEASURE AFTER THE CLEANUP,
+not only after the conversion.**
+
+The same reading fixed the third: `member_ci_exit_code` now takes the
+**container** rather than a pre-collapsed `str | None`, so the unresolvable-repo
+exit sits beside the unregistered-repo exit it already owned — and the CLI's
+`main()` needs no second `return`, which is what had tripped `PLR0911` (7 > 6).
+
+### 🔑 `.map()` IS THE DUAL-SHAPE UNWRAP; `value_or` IS A TRAP ONE CONTAINER DEEP
+
+beads-fabro's hook already carried a dual-shape wiring for `parse_manifest`
+(`Result`), duck-typed on `hasattr(parsed, "value_or")`. **Copying that idiom for
+`resolve_owner` reproduces the bug it fixed.** `Result.value_or(None)` yields the
+bare value; `IOResult.value_or(None)` yields an **`IO[str]`**, which compares
+unequal to every owner string — so `owner != manifest.owner` is silently True,
+every fleet member derives `fleet_listed: false`, and the refresh **WRITES** that
+verdict. **Quieter than the bug it mirrors and worse for it:** the `parse_manifest`
+version at least RAISED. `.map()` is used instead — public API on every `returns`
+container, success-track only, no import of the railway library into a hook that
+must degrade to a no-op without dev-tooling.
+
+**Positive control run both ways:** re-introducing `value_or` fails the new test
+naming `<IOResult: <Success: thewoolleyman>>`; `.map()` passes.
+
+### ▶️ WHAT THE CONVERSION ACTUALLY BOUGHT
+
+THREE fused failures became named: `no-origin-remote`, `not-github-remote`, and
+`git-not-run`. **The third was not a `None` at all** — the `subprocess.run` was
+UNGUARDED, so an absent `git` raised `FileNotFoundError` out of a function
+annotated `str | None`. Every caller's diagnostic said *"the origin remote is not
+a github.com URL"*, which was right one in three.
+
+### ⚠️ COSTS THAT RECURRED, AND ONE NEW SPELLING
+
+`PLR0911` (7 > 6) and the two LLOC ceilings — all PAID by extraction, never
+routed around; both files now sit BELOW their pre-change LLOC. **`check-per-file-coverage`
+counts TEST files** bit twice more: `owner_or_stderr`'s only production caller is
+`# pragma: no cover`, so it needed direct tests; and **a fake asserting "git is
+never consulted" by RAISING leaves its own body unexecuted** — dead lines. One
+recording instrument proving both directions fixes it. **NEW:** `ruff check --fix`
+over `tests/` can rewrite the checksum-bound Red file — verify `sha256sum` against
+`TDD-Red-Test-File-Checksum` before every amend.
 
 ---
 
