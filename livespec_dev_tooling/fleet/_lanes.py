@@ -37,7 +37,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from livespec_dev_tooling.config import assert_never
-from livespec_dev_tooling.fleet._context import RowFinding, RowPass, RowSkip
+from livespec_dev_tooling.fleet._context import (
+    EXCLUDED_NOTE_PREFIX,
+    RowFinding,
+    RowPass,
+    RowSkip,
+)
 from livespec_dev_tooling.fleet._contract_rows import (
     ADMIN_VANTAGE,
     CENTRAL_APP_VANTAGE,
@@ -71,7 +76,6 @@ __all__: list[str] = [
 
 BLIND_ROW_EVENT = "obligation row enforced NOTHING this run (skipped for every applicable member)"
 OUT_OF_VANTAGE_EVENT = "obligation row is outside this lane's vantage (another lane owns it)"
-_EXCLUDED_NOTE_PREFIX = "excluded-with-reason: "
 
 # The invocation context that OWNS each vantage. An out-of-vantage report is
 # only actionable if it names where the row does get enforced, so this map is
@@ -248,12 +252,12 @@ def _fold_member_outcome(
             return 0
         case RowPass():
             tallies.evaluated[row.row_id] = tallies.evaluated.get(row.row_id, 0) + 1
-            if outcome.note.startswith(_EXCLUDED_NOTE_PREFIX):
+            if outcome.note.startswith(EXCLUDED_NOTE_PREFIX):
                 log.info(
                     "fleet obligation excluded with reason",
                     row=row.row_id,
                     member=member_repo,
-                    reason=outcome.note.removeprefix(_EXCLUDED_NOTE_PREFIX),
+                    reason=outcome.note.removeprefix(EXCLUDED_NOTE_PREFIX),
                 )
             return 0
         case RowFinding():

@@ -38,7 +38,13 @@ from pathlib import Path
 from typing import cast
 
 from livespec_dev_tooling.config import assert_never
-from livespec_dev_tooling.fleet._context import RowFinding, RowPass, RowSkip
+from livespec_dev_tooling.fleet._context import (
+    EXCLUDED_NOTE_PREFIX,
+    RowFinding,
+    RowOutcome,
+    RowPass,
+    RowSkip,
+)
 from livespec_dev_tooling.fleet._contract_local_rows import LOCAL_OBLIGATION_ROWS
 from livespec_dev_tooling.fleet._invocation_failure import InvocationNotPerformed
 from livespec_dev_tooling.fleet._local_context import (
@@ -82,6 +88,72 @@ def _resolve_checkout_root(
     return common.parent
 
 
+def _already_settled(
+    *, outcome: RowOutcome, row_id: str, log: structlog.stdlib.BoundLogger
+) -> bool:
+    """True when the assert leg settled the row and no reconcile is owed.
+
+    An EXCLUDED pass (the row does not apply here) and a satisfied pass both
+    settle it; a finding or a can't-read do not. Split out with its reconcile
+    sibling when the excluded-note arms pushed `reconcile_checkout` past
+    PLR0912's branch cap — the cap was paid, never routed around.
+    """
+    match outcome:
+        case RowPass() if outcome.note.startswith(EXCLUDED_NOTE_PREFIX):
+            log.info(
+                "row not applicable",
+                row=row_id,
+                reason=outcome.note.removeprefix(EXCLUDED_NOTE_PREFIX),
+            )
+            return True
+        case RowPass():
+            log.info("row already satisfied", row=row_id, note=outcome.note)
+            return True
+        case RowFinding() | RowSkip():
+            return False
+        case _:
+            assert_never(outcome)
+
+
+def _log_reconcile_outcome(
+    *, fixed: RowOutcome, row_id: str, log: structlog.stdlib.BoundLogger
+) -> int:
+    """Narrate one reconcile result; return its contribution to `unresolved`.
+
+    ⛔ The excluded-pass arm comes FIRST and is a GUARD, not a bare pattern: a
+    bare name in a `case` is a capture, not a comparison. An excluded pass must
+    read "not applicable" rather than "row reconciled", because the local lane
+    would otherwise claim it FIXED a row that never applied — the same two
+    meanings this change removes, arriving in the narration instead of the type.
+    """
+    match fixed:
+        case RowPass() if fixed.note.startswith(EXCLUDED_NOTE_PREFIX):
+            log.info(
+                "row not applicable",
+                row=row_id,
+                reason=fixed.note.removeprefix(EXCLUDED_NOTE_PREFIX),
+            )
+            return 0
+        case RowPass():
+            log.info("row reconciled", row=row_id, note=fixed.note)
+            return 0
+        case RowSkip():
+            log.info("row not evaluable", row=row_id, reason=fixed.reason)
+            return 0
+        case RowFinding() if fixed.severity == "warning":
+            log.warning(
+                "row needs out-of-band action (detect-and-guide)",
+                row=row_id,
+                hint=fixed.message,
+            )
+            return 0
+        case RowFinding():
+            log.error("row did not reconcile", row=row_id, detail=fixed.message)
+            return 1
+        case _:
+            assert_never(fixed)
+
+
 def reconcile_checkout(*, ctx: LocalContext, log: structlog.stdlib.BoundLogger) -> int:
     """Assert-then-reconcile every local first-touch row; return the unresolved count.
 
@@ -95,33 +167,13 @@ def reconcile_checkout(*, ctx: LocalContext, log: structlog.stdlib.BoundLogger) 
     """
     unresolved = 0
     for row in LOCAL_OBLIGATION_ROWS:
-        if row.assert_local is not None:
-            outcome = row.assert_local(ctx=ctx)
-            match outcome:
-                case RowPass():
-                    log.info("row already satisfied", row=row.row_id, note=outcome.note)
-                    continue
-                case RowFinding() | RowSkip():
-                    pass
-                case _:
-                    assert_never(outcome)
-        fixed = row.reconcile_local(ctx=ctx)
-        match fixed:
-            case RowPass():
-                log.info("row reconciled", row=row.row_id, note=fixed.note)
-            case RowSkip():
-                log.info("row not applicable", row=row.row_id, reason=fixed.reason)
-            case RowFinding() if fixed.severity == "warning":
-                log.warning(
-                    "row needs out-of-band action (detect-and-guide)",
-                    row=row.row_id,
-                    hint=fixed.message,
-                )
-            case RowFinding():
-                unresolved += 1
-                log.error("row did not reconcile", row=row.row_id, detail=fixed.message)
-            case _:
-                assert_never(fixed)
+        if row.assert_local is not None and _already_settled(
+            outcome=row.assert_local(ctx=ctx), row_id=row.row_id, log=log
+        ):
+            continue
+        unresolved += _log_reconcile_outcome(
+            fixed=row.reconcile_local(ctx=ctx), row_id=row.row_id, log=log
+        )
     return unresolved
 
 

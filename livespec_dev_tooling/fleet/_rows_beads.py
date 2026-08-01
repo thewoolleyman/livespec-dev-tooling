@@ -48,6 +48,7 @@ from livespec_dev_tooling.fleet._context import (  # noqa: E402
     RowOutcome,
     RowPass,
     RowSkip,
+    row_excluded,
 )
 
 __all__: list[str] = [
@@ -60,8 +61,15 @@ __all__: list[str] = [
 
 def _member_connection(
     *, member: FleetMember, jsonc_text: str
-) -> Result[dict[str, object], RowSkip]:
-    """The member's connection block, or the skip its defect or absence earns.
+) -> Result[dict[str, object], RowOutcome]:
+    """The member's connection block, or the outcome its defect or absence earns.
+
+    ⛔ The failure track is `RowOutcome`, not `RowSkip`, and the widening is
+    the POINT rather than a concession: the two non-success answers here are
+    NOT the same kind. A document that will not PARSE is a can't-read and stays
+    a skip; a document that parses and definitively carries no connection block
+    is INAPPLICABLE and is an excluded pass. Annotating this `RowSkip` is what
+    let the two be written as one thing.
 
     Split out to keep `assert_tenant_connection_consistency` at the
     six-return cap: the conversion added a branch, which is the structural
@@ -87,8 +95,10 @@ def _member_connection(
         )
     connection = block.unwrap()
     if connection is None:
+        # INAPPLICABLE, not unevaluable: the document was READ and definitively
+        # carries no connection block, so this member has no obligation here.
         return Failure(
-            RowSkip(
+            row_excluded(
                 reason=(
                     f"{member.repo}: {LIVESPEC_JSONC_PATH} carries no impl-plugin connection block"
                 )
@@ -100,10 +110,14 @@ def _member_connection(
 def assert_tenant_connection_consistency(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:
     """The member's `.beads/config.yaml` and `.livespec.jsonc` connection agree.
 
-    Skips a member lacking either file, lacking a `.livespec.jsonc`
-    connection block, or whose `.beads/config.yaml` carries none of the
-    `dolt.*` connection keys (not beads-backed / can't-read is not
-    absent). Findings name every mismatched key.
+    TWO OUTCOMES FOR TWO DIFFERENT THINGS, and conflating them is what
+    livespec-dev-tooling-8o8e.2 fixed. SKIPS only when a source could not be
+    READ — an unreadable `.beads/config.yaml` or `.livespec.jsonc`, or a
+    document that will not parse — which is what feeds `blind_rows`. EXCLUDES
+    (a pass carrying the excluded-with-reason note) when the sources were read
+    and the row simply does not APPLY: no `dolt.*` connection keys, so the
+    member is not beads-backed, or no impl-plugin connection block. Findings
+    name every mismatched key.
     """
     beads_text = ctx.file_text(repo=member.repo, path=BEADS_CONFIG_PATH)
     if beads_text is None:
@@ -113,7 +127,11 @@ def assert_tenant_connection_consistency(*, ctx: FleetContext, member: FleetMemb
         return RowSkip(reason=f"{member.repo}: {LIVESPEC_JSONC_PATH} unreadable or absent")
     beads = parse_beads_config(text=beads_text)
     if not any(beads_key in beads for beads_key, _ in CONNECTION_FIELD_PAIRS):
-        return RowSkip(
+        # INAPPLICABLE: the config was READ and names no dolt.* keys, so this
+        # member is not beads-backed and owes this row nothing. A RowSkip here
+        # would feed blind_rows and red master fleet-wide the moment the
+        # beads-backed population reaches zero.
+        return row_excluded(
             reason=f"{member.repo}: {BEADS_CONFIG_PATH} carries no dolt.* connection keys"
         )
     resolved = _member_connection(member=member, jsonc_text=jsonc_text)
