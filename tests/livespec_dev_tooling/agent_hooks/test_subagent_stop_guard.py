@@ -542,14 +542,29 @@ def test_gather_worktrees_accepts_created_path_after_option_separator(tmp_path: 
     assert _gather_worktrees(hook_input={"transcript_path": str(transcript)}) == [worktree]
 
 
-def test_gather_worktrees_ignores_unparseable_shell_segment(tmp_path: Path) -> None:
+def test_gather_worktrees_recovers_an_unparseable_shell_segment(tmp_path: Path) -> None:
+    """An unbalanced quote must not hide a worktree — `livespec-dev-tooling-dno1`.
+
+    ⛔ THIS TEST PINNED THE DEFECT. It was
+    `test_gather_worktrees_ignores_unparseable_shell_segment` and asserted `[]`,
+    so "the guard sees nothing when `shlex` cannot tokenize the segment" read as
+    the CONTRACT rather than as the bug. `shlex.split` raises on ANY unbalanced
+    quote — in prose, any apostrophe — so the discard was the common path for a
+    narrated worktree creation, in the guard whose whole job is to stop
+    worktrees being left unreaped.
+
+    `_tokenize` now degrades to a whitespace split instead of discarding, so the
+    `git worktree add -b <branch> <path>` here is still seen. The degradation
+    cannot manufacture a path: the candidate is validated against the
+    worktree-path regex, which forbids whitespace inside a path.
+    """
     worktree = _make_pushed_repo(tmp_path=tmp_path)
     transcript = tmp_path / "transcript.jsonl"
     _ = transcript.write_text(
         f"git worktree add -b 'unterminated {worktree}\n",
         encoding="utf-8",
     )
-    assert _gather_worktrees(hook_input={"transcript_path": str(transcript)}) == []
+    assert _gather_worktrees(hook_input={"transcript_path": str(transcript)}) == [worktree]
 
 
 def test_gather_worktrees_ignores_json_without_string_segments(tmp_path: Path) -> None:

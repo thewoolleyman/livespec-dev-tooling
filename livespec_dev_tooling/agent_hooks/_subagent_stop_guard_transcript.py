@@ -10,6 +10,16 @@ and imports nothing from its parent — `subagent_stop_guard.py`
 imports `extract_created_worktree_paths` (its sole public entry) via
 the normal package path.
 
+BOTH PARSE FALLBACKS ARE TOTAL, and that is a load-bearing property
+rather than a style: whatever this module cannot parse STRUCTURALLY,
+it keeps scanning as text. `_transcript_line_segments` falls back to
+`[line]` when `json.loads` fails, and `_tokenize` falls back to a
+whitespace split when `shlex.split` does. A fallback that discarded
+the segment instead would make the guard report "this sub-agent
+created no worktree" from a parse that failed — which is exactly the
+defect `livespec-dev-tooling-dno1` filed, and it fired on any
+apostrophe.
+
 The leading underscore in the filename marks this as a private
 helper module; its behavior is exercised through the public hook and
 its own mirror-paired test.
@@ -88,11 +98,37 @@ def _json_string_values(*, value: object) -> list[str]:
     return []
 
 
-def _created_worktree_targets_from_segment(*, segment: str) -> list[Path]:
+def _tokenize(*, segment: str) -> list[str]:
+    """Shell-tokenize `segment`, DEGRADING to a whitespace split rather than to nothing.
+
+    ⛔ `shlex.split` raises `ValueError: No closing quotation` on ANY unbalanced
+    quote — which in ordinary prose means ANY APOSTROPHE. The previous
+    `except ValueError: return []` dropped the whole segment, so a
+    `git worktree add -b <branch> <path>` narrated in the same breath as
+    "it's done" became INVISIBLE to the guard, and `subagent_stop_guard` read
+    the empty list as "this sub-agent created no worktree"
+    (`livespec-dev-tooling-dno1`). Agent prose almost always contains an
+    apostrophe, so that was the common path rather than an edge case.
+
+    The fallback is DEGRADED, not wrong, and the degradation cannot
+    manufacture a path. It loses quote grouping, so a target containing
+    whitespace would tokenize apart — but `_worktree_add_target` validates its
+    candidate against `_WORKTREE_PATH_RE`, which forbids whitespace inside a
+    path, so a mis-split candidate is REJECTED exactly as it is today. The
+    fallback can only ever recover a genuinely worktree-shaped path.
+
+    This mirrors `_transcript_line_segments`, whose `json.JSONDecodeError`
+    fallback to `[line]` is already total in the same way: when the structured
+    parse fails, keep scanning the bytes rather than discarding them.
+    """
     try:
-        tokens = shlex.split(segment)
+        return shlex.split(segment)
     except ValueError:
-        return []
+        return segment.split()
+
+
+def _created_worktree_targets_from_segment(*, segment: str) -> list[Path]:
+    tokens = _tokenize(segment=segment)
     targets: list[Path] = []
     for index, word in enumerate(tokens):
         if word != "git":

@@ -12,6 +12,7 @@ the module boundary — the worktree-path regex and the public
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from livespec_dev_tooling.agent_hooks._subagent_stop_guard_transcript import (
@@ -69,4 +70,56 @@ def test_extract_created_worktree_paths_from_git_worktree_add_command() -> None:
 def test_extract_created_worktree_paths_none_without_branch_flag() -> None:
     """A `git worktree add` with no `-b`/`-B` branch flag creates no tracked target."""
     text = "git worktree add /home/ubuntu/.worktrees/somerepo/some-branch\n"
+    assert extract_created_worktree_paths(transcript_text=text) == []
+
+
+_CREATED = Path("/home/ubuntu/.worktrees/somerepo/some-branch")
+_ADD_COMMAND = f"git worktree add -b some-branch {_CREATED}"
+
+
+def test_an_apostrophe_does_not_hide_the_created_worktree() -> None:
+    """`livespec-dev-tooling-dno1` — a single apostrophe used to blind the guard.
+
+    `shlex.split` raises `ValueError: No closing quotation` on ANY unbalanced
+    quote, and the old fallback returned `[]`, discarding the whole segment.
+    `subagent_stop_guard` reads an empty list as "this sub-agent created no
+    worktree", so a worktree narrated in ordinary prose — which almost always
+    contains an apostrophe — was left unreaped with the guard reporting
+    nothing.
+
+    The pair below IS the measurement: the two inputs differ only by the
+    prefix, so the recovered path is credible exactly because the
+    apostrophe-free control returns the same path.
+    """
+    control = extract_created_worktree_paths(transcript_text=_ADD_COMMAND)
+    prosaic = extract_created_worktree_paths(transcript_text=f"it's done: {_ADD_COMMAND}")
+
+    assert control == [_CREATED], f"the control must find the path; got {control!r}"
+    assert prosaic == [_CREATED], f"an apostrophe must not hide a created worktree; got {prosaic!r}"
+
+
+def test_an_apostrophe_does_not_hide_the_created_worktree_inside_jsonl() -> None:
+    """The same, through the JSONL transcript shape the hook actually reads.
+
+    The segment reaching `_tokenize` is a JSON string VALUE rather than the raw
+    line, so this pins that the recovery survives the `json.loads` path as well
+    as the raw-line one — the two arms `_transcript_line_segments` chooses
+    between.
+    """
+    line = json.dumps({"type": "assistant", "text": f"it's done: {_ADD_COMMAND}"})
+
+    assert extract_created_worktree_paths(transcript_text=line) == [_CREATED]
+
+
+def test_a_quoted_target_containing_whitespace_is_still_refused() -> None:
+    """The degraded fallback cannot MANUFACTURE a path, only recover a real one.
+
+    A whitespace split loses quote grouping, so a target with a space in it
+    tokenizes apart. `_worktree_add_target` validates its candidate against the
+    worktree-path regex, which forbids whitespace inside a path, so the
+    mis-split candidate is refused rather than reported — the same answer the
+    discard-everything fallback gave, and the reason the degradation is safe.
+    """
+    text = "it's here: git worktree add -b b '/home/ubuntu/.worktrees/repo/two words'"
+
     assert extract_created_worktree_paths(transcript_text=text) == []
