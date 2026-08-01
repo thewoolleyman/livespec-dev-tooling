@@ -2,13 +2,49 @@
 
 > ## ▶️▶️▶️ COLD START — READ THIS BLOCK FIRST, THEN §"EXACT NEXT ACTION" BELOW IT
 >
-> **Rewritten 2026-08-01 (fourth session that day). This block is the
+> **Rewritten 2026-08-01 (fifth session that day). This block is the
 > CURRENT-STATE header. The older `## ▶️ START HERE` section further down is a
 > HISTORICAL record: its live-state claims are dated 2026-07-31 and are
 > SUPERSEDED by this block. Read it for METHOD and for the reasoning behind past
 > rulings, never for "what is true now".**
 >
-> ### 🔴🔴 THE FINDING OF THIS SESSION: **22 OF THE 30 MAY ALREADY BE CONFORMANT — THE CHECK DOES NOT IMPLEMENT ITS OWN RATIFIED CLAUSE**
+> ### 🔴🔴 THE FINDING OF THIS SESSION: **`just check` PASSED 64/64 ON A TREE CI THEN FAILED — A FIXTURE'S HERMETICITY WAS CONDITIONAL ON THE ENVIRONMENT IT NEUTRALIZES**
+>
+> The `is_docs_only_change` conversion (below) went out with a Red test file
+> whose autouse fixture scrubbed `GIT_*` by **SCANNING `os.environ`**:
+> `for name in [k for k in os.environ if k.startswith("GIT_")]`. That loop body
+> executes only when the suite HAPPENED to inherit one. **Under lefthook it did;
+> in CI it did not**, so `check-per-file-coverage` — which counts TEST files at
+> the same 100% bar — failed the PR at **97.87%, one line**, on a tree whose
+> local `just check` had passed **64/64**.
+>
+> **THE SHAPE IS THE EPIC'S OWN: a fixture that exists to neutralize a hook
+> environment was reachable ONLY FROM that hook environment.** The local green
+> was not wrong about the code; it was produced by an instrument that could not
+> reach the line. It is the "make it fail once" rule applied to the ENVIRONMENT
+> rather than to the assertion, and this thread had not yet stated that version.
+>
+> **THE FIX AND ITS COMMIT SHAPE.** Scrub a **FIXED tuple** of the eight vars
+> git sets when invoking a hook (the spelling
+> `test_commit_pairs_source_and_test._GIT_ENV_PASSTHROUGH_VARS` already uses), so
+> the body runs unconditionally; re-verified with all eight unset. Because the
+> Red file is **checksum-bound**, this could not be an amend: it took a SEPARATE
+> tests-only `chore(tests):` commit, which the Red-Green-Replay decision tree
+> case 3 routes to the suite-green leg. **Budget that second commit** — a
+> coverage miss discovered in CI on a checksum-bound Red file is not amendable.
+>
+> **📋 ALSO FILED: `livespec-dev-tooling-rav3` (P1).**
+> `check_coverage_incremental::_derive_paths_from_git` takes `.stdout` off its
+> `git diff --name-only --diff-filter=d origin/master...HEAD` and **NEVER READS
+> THE RETURNCODE**. Any failure — an absent `origin/master` in a shallow clone
+> is the live one — yields empty stdout, so the changed set is empty, so
+> `main()` logs *"no changed impl .py paths derived from git diff; nothing to
+> gate"* and **returns 0**. The incremental per-file 100% gate passes VACUOUSLY.
+> Same class as `8o8e.5`'s third fused outcome. **Found by reading the CALLER,
+> not the callee, and `check-public-api-result-typed` can never see it** — the
+> name is `_`-prefixed, so v178 clause 0 disqualifies it.
+>
+> ### 🔴 THE PRIOR SESSION'S FINDING, STILL LIVE: **22 OF THE 30 MAY ALREADY BE CONFORMANT — THE CHECK DOES NOT IMPLEMENT ITS OWN RATIFIED CLAUSE**
 >
 > **FILED AS `livespec-dev-tooling-3744` (P1), and it BLOCKS 22 of `8o8e.9`'s 30.**
 > Starting the conversion and reading the list first is what caught it: **22 of the
@@ -43,7 +79,7 @@
 > `bool` 32 / `str | None` 22; beads-fabro `int` 30 / `str | None` 12). Only this
 > repo has a `RowOutcome`-shaped fleet package.
 >
-> ### 🔴 THE PRIOR SESSION'S FINDING, STILL LIVE: THE GREEN AMEND EXITED 0 AND SILENTLY DESTROYED THE RED HALF OF THE PAIR
+> ### 🔴 AN EARLIER FINDING, STILL LIVE: THE GREEN AMEND EXITED 0 AND SILENTLY DESTROYED THE RED HALF OF THE PAIR
 >
 > `git commit --amend -F <file>` **REPLACES THE ENTIRE MESSAGE.** The Green amend
 > was authored with a fresh `-F` body, so the five `TDD-Red-*` trailers the Red
@@ -65,6 +101,14 @@
 > that **carries the Red trailer block verbatim in its body**. The hook appends
 > Green; it does not re-derive Red. Final commit: **5 Red + 2 Green**.
 >
+> **✅ AND THE CHEAPER PREVENTION, PROVEN THIS SESSION: `git commit --amend
+> --no-edit`.** It keeps the Red body byte-for-byte and lets the hook append
+> Green, so the trap never arms. Authoring the FULL commit message at the RED
+> commit is what makes `--no-edit` usable — which means the measurement, the
+> third-axis denominators and the ruling all have to be in hand BEFORE the Red,
+> not composed at the amend. This session's pair came out `5 Red + 2 Green`
+> first try, counted by hand.
+>
 > **⛔ AND A NEAR-MISS OF MINE, recorded because it is the sixth vacuous zero.**
 > To prove the conversion manufactured no offenders I diffed a before-list
 > against an after-list — and generated **BOTH from the same worktree**. The
@@ -77,7 +121,7 @@
 >
 > | repo | master at wrap-up | working tree |
 > |---|---|---|
-> | `livespec-dev-tooling` | **`5cbda23`** | clean (one untracked `install-livespec-pr-bot.png`, NOT this thread's — leave it) |
+> | `livespec-dev-tooling` | **`3742fc8`** | clean (one untracked `install-livespec-pr-bot.png`, NOT this thread's — leave it) |
 > | `livespec-orchestrator-beads-fabro` | `bc26f70` | clean |
 > | `livespec-driver-claude` | `0cf4ca7` | clean |
 > | `livespec-driver-codex` | `d150626` | clean |
@@ -85,7 +129,7 @@
 > | `livespec` | `95697d07` | clean |
 >
 > **NOTHING OF THIS THREAD IS MID-FLIGHT — no open PR, no worktree, no background
-> job.** Eleven PRs merged across five repos, every one verified on the FORGE
+> job.** Twelve PRs merged across five repos, every one verified on the FORGE
 > after a fetch. Every worktree of this thread's is reaped. FIVE FOREIGN
 > worktrees exist in dev-tooling (and more in the siblings) — **REAP NONE**, and
 > ENUMERATE with `git worktree list` rather than trusting any count here.
@@ -96,10 +140,11 @@
 >
 > ### 📏 BASELINE — re-derive at BOTH ENDS of every unit, never inherit
 >
-> **universe 168 · offenders DROPPING the `_`-prefixed-FILE skip 29 · offenders
-> CARRYING it 0** — re-derived on MERGED master at `5cbda23`, not inherited from
-> a worktree. (34 → 32 at pair A, → 30 at pair B, → 29 at the ruff backstop; each
-> step's before/after LISTS differed by exactly its own functions.) Measure
+> **universe 168 · offenders DROPPING the `_`-prefixed-FILE skip 28 · offenders
+> CARRYING it 0** — re-derived on MERGED master at `3742fc8`, not inherited from
+> a worktree. (34 → 32 at pair A, → 30 at pair B, → 29 at the ruff backstop, →
+> 28 at the docs-only carve-out; each step's before/after LISTS differed by
+> exactly its own functions.) Measure
 > with `_find_offenders` over `resolve_check_universe()`, **never** through
 > `main()` or `_scan` (this repo declares `pure_trees = { not_applicable = … }`,
 > so `main()` iterates ZERO files and reports 0 offenders regardless of the code
@@ -126,14 +171,21 @@
 > - **✅ `8o8e.5` CLOSED — the ruff BLE001 backstop is on the railway.** #1027 →
 >   **`5cbda23`**, **30 → 29**. The filed defect was the MILDEST of FOUR fused
 >   outcomes; see §"THE RUFF BACKSTOP" below.
-> - **📋 FILED THIS SESSION:** `zv78` (P1, the half-pair gate defect) and `3744`
->   (P1, the check-vs-ratified-clause defect, BLOCKING 22 of `8o8e.9`).
+> - **✅ `8o8e.9` OFFENDER 1 OF 7 — the docs-only carve-out rule is on the
+>   railway.** #1031 → **`4005540`** (5 Red + 2 Green, counted by hand) and
+>   **`3742fc8`** (the tests-only follow-up), **29 → 28**. See §"THE DOCS-ONLY
+>   CARVE-OUT" below for the ruling, which also binds `scenario_tier_violations`.
+> - **📋 FILED ACROSS THE LAST TWO SESSIONS:** `zv78` (P1, the half-pair gate
+>   defect), `3744` (P1, the check-vs-ratified-clause defect, BLOCKING 22 of
+>   `8o8e.9`), and `rav3` (P1, the incremental coverage gate passing VACUOUSLY on
+>   a failed `git diff`).
 > - **📋 EIGHT PER-REPO ARMING CHILDREN FILED** — `8o8e.7`–`.14`, fleet total
->   **455 over a universe of 719** (§"THE ARMING BLAST RADIUS").
-> - **▶️ ITEM 3 IS DONE. WHAT REMAINS IS `8o8e.9` (7 unblocked + 22 held), THEN
+>   **455 over a universe of 719** (§"THE ARMING BLAST RADIUS"). ⚠️ dev-tooling's
+>   `.9` row reads 30; it is **28** now — re-derive, never quote.
+> - **▶️ ITEM 3 IS DONE. WHAT REMAINS IS `8o8e.9` (6 unblocked + 22 held), THEN
 >   THE ARMING ITSELF.**
 >
-> ### ▶️▶️ EXACT NEXT ACTION — DRIVE THE 7 REMAINING UNBLOCKED OFFENDERS OF `8o8e.9`
+> ### ▶️▶️ EXACT NEXT ACTION — DRIVE THE 6 REMAINING UNBLOCKED OFFENDERS OF `8o8e.9`
 >
 > **SUPERVISOR RULING (brief 78), STANDING: convert dev-tooling's offenders NOW.**
 > It is not contingent on the maintainer's fan-out answer, because **all three
@@ -141,28 +193,31 @@
 > (`ARMED main() EXIT CODE = 1`) and lefthook then blocks the fix. The charter says
 > it in as many words: *"DO NOT ARM until dev-tooling measures ZERO."*
 >
-> **⛔ 22 OF THE 29 ARE HELD ON `livespec-dev-tooling-3744`** (the `RowOutcome`
+> **⛔ 22 OF THE 28 ARE HELD ON `livespec-dev-tooling-3744`** (the `RowOutcome`
 > rendering-boundary finding at the top of this block). **DO NOT CONVERT THEM** —
 > wrapping a ratified discriminated union in a `Result` double-encodes the same
 > outcome and would be unwound when the clause is mechanized.
 >
-> **▶️ THE 7 THAT ARE UNBLOCKED, and they are the whole of the next unit:**
+> **▶️ THE 6 THAT ARE UNBLOCKED, and they are the whole of the next unit:**
 >
 > | file | function | today |
 > |---|---|---|
-> | `agent_hooks/_subagent_stop_guard_transcript.py:52` | `extract_created_worktree_paths` | `list[Path]` |
-> | `checks/_docs_only_change.py:70` | `is_docs_only_change` | `bool` |
 > | `checks/_heading_coverage_tier_resolution.py:192` | `scenario_tier_violations` | `list[dict[str, object]]` |
+> | `agent_hooks/_subagent_stop_guard_transcript.py:52` | `extract_created_worktree_paths` | `list[Path]` |
 > | `fleet/_adopter_lane.py:121` | `run_adopter_rows` | `AdopterRowsResult` |
 > | `fleet/_bump_pr_list.py:139` | `persisting_bump_pr_number` | `int \| None` |
 > | `fleet/_credential_preflight.py:79` | `preflight_credential` | `PreflightOutcome` |
 > | `fleet/_public_api_graph.py:244` | `cross_member_consumption` | `ConsumptionGraph` |
 >
-> **START WITH `is_docs_only_change`** — its `bool` fuses THREE meanings, one of
-> which is "I could not tell": a revision git cannot produce, an unparseable
-> version, and a genuine source change all return `False`. Its own docstring calls
-> that "fail closed", but the caller cannot tell a verdict from a non-read. Same
-> shape as the ruff backstop, which was the last unit.
+> **START WITH `scenario_tier_violations`, AND ITS RULING IS ALREADY MADE.**
+> `qndn-75-triage.md` pairs it with `is_docs_only_change` under ONE question —
+> *is a deliberate fail-closed collapse of an inhabited failure a violation or a
+> sanctioned design?* — and this session answered it: **a violation.** Its
+> `_node_id_resolves_with_marker` catches `(OSError, SyntaxError)` and returns
+> `False` "so the prefix path governs", which fuses "this test carries no marker"
+> with "I could not read the test file". Apply the SAME split the carve-out took:
+> **the file being ABSENT is an answer** (a node id naming no file resolves to no
+> marker), while an unreadable or unparseable file is UNDECIDABLE.
 >
 > **`persisting_bump_pr_number` is the ONE declaration candidate** (`int | None`,
 > v179 member 2) — and a CANDIDATE only. READ it before declaring: this thread's
@@ -170,11 +225,12 @@
 > (`tag_version_component` sat in the STRONGEST convert class and was still not a
 > conversion). Everything else in the 7 must convert.
 >
-> **THE THIRD AXIS IS ALREADY DISCHARGED FOR ALL 7** — the shipped oracle, re-run
-> on 9 roster / 9 read / 0 unavailable / 0 unparsed / **63 edges**, finds **ZERO**
-> cross-repo consumers for every one of these names. That zero is credible because
-> the SAME run returns non-zero for `discover_fixtures` (4), `canonical_check_slugs`
-> (5) and `main` (12). Re-run it anyway if masters have moved.
+> **THE THIRD AXIS IS ALREADY DISCHARGED FOR ALL 6** — the shipped oracle, re-run
+> **2026-08-01 (fifth session)** on 9 roster / 9 read / 0 unavailable / 0 unparsed
+> / **63 edges**, finds **ZERO** cross-repo consumers for every one of these
+> names. That zero is credible because the SAME run returns non-zero for
+> `discover_fixtures` (4), `canonical_check_slugs` (5) and `main` (12). Re-run it
+> anyway if masters have moved.
 >
 > ### ▶️ AND WHEN THE ARMING COMMIT IS FINALLY WRITTEN, it must carry in its own text
 >
@@ -211,6 +267,17 @@
 >
 > - **An instrument that cannot produce a NEGATIVE result has not produced a
 >   positive one.** Before trusting any green, make it fail once, deliberately.
+> - **AND THE ENVIRONMENT IS PART OF THE INSTRUMENT.** A local `just check`
+>   64/64 can be a FALSE GREEN because the local environment reaches lines CI
+>   cannot — this session's fixture scrubbed `GIT_*` by scanning `os.environ`,
+>   so its own body ran only under lefthook. When a fixture neutralizes an
+>   environment, run it once with that environment ABSENT.
+> - **A REVISION / FILE / KEY THAT IS ABSENT IS AN ANSWER; ONE THAT CANNOT BE
+>   READ IS A FAILURE.** Third unit running where this is the whole ruling
+>   (pair B's fixtures root, the git probes' unset key, the carve-out's missing
+>   blob). Absence answered by a read that HAPPENED is a verdict — routing it to
+>   the failure track makes "undecidable" the ordinary case and the diagnostics
+>   WORSE.
 > - **One that cannot SEE the population has not measured it.** Quote no zero
 >   without its denominator. **Six** vacuous zeros have been caught this way,
 >   three of them mine — most recently a before/after diff whose two sides were
@@ -451,6 +518,71 @@ a sibling's stall should not red an unrelated repo's PRs, which is a real reason
 records the lane-scoped shape instead.
 
 ---
+
+---
+
+## ✅ THE DOCS-ONLY CARVE-OUT — **29 → 28**, AND THE RULING BINDS THE NEXT UNIT TOO
+
+**`8o8e.9` offender 1 of 7. PR #1031 → `4005540` (5 Red + 2 Green, COUNTED by
+hand) and `3742fc8` (the tests-only follow-up), verified on the FORGE after a
+fetch: the merged tree was grepped for the new signature AND for the absence of
+`_git_blob`, never inferred from a green PR page.**
+
+`checks/_docs_only_change.py::is_docs_only_change` returned a `bool` whose
+docstring called the collapse "fail closed". Fail-closed is the safe DIRECTION,
+not an answer — and one of its three arms did not fail closed at all:
+
+| outcome | before | after |
+|---|---|---|
+| `git` absent from PATH / `cwd` not a directory | **raised `OSError` out of a function annotated `bool`** | `git-not-run` |
+| not a repository, corrupt object store | reported as a real source change | `repository-unreadable` |
+| either revision does not parse | reported as a real source change | `revision-unparseable` |
+| the revision does not contain the path | `False` | **`False` — unchanged, and it is an ANSWER** |
+
+### ⚖️ THE RULING, and `qndn`'s triage says one ruling covers both rows
+
+*Is a deliberate fail-closed collapse of an INHABITED failure track a violation
+or a sanctioned design?* **A violation** — §"ROP composition" declares its
+exemption set exhaustive (`i04f`), and a design intent stated in a docstring is
+not a ratified exemption. So it binds `scenario_tier_violations`, the next unit.
+
+**BUT THE COLLAPSE IS NOT THE WHOLE SET, AND THIS IS THE PART THAT WAS NOT
+OBVIOUS FROM THE TRIAGE.** A revision that does not CONTAIN the path is an
+ANSWER: `git` was asked whether a blob exists, it looked, and there is none — a
+new file, a deletion, a rename. That read HAPPENED. It is also the COMMON case
+at commit time, so routing it to the failure track would have made "undecidable"
+the ordinary outcome of adding a file and made the diagnostics worse, not
+better. Discriminated with **one extra `git` call on the cold path only**:
+`git show` first (hot path, one call), and on failure
+`git rev-parse --verify --quiet <spec>` — **exit 1 means "does not resolve",
+and ONLY that**; every other non-zero (128, and exit 0 with a corrupt blob) is
+`repository-unreadable`, one branch covering both because they are the same
+fact: git could not produce the blob AND could not confirm it is absent.
+
+**WHAT WAS DELIBERATELY *NOT* DISCRIMINATED:** "the ref is bogus" from "the path
+is absent from a good ref" — both are `rev-parse` exit 1. `git` gives one answer
+to one question, and which refs a caller has a right to expect is the CALLER's
+precondition to assert. That refusal is what surfaced `rav3` one frame out.
+
+### 🧰 WHAT THIS UNIT ADDS TO THE STANDING TECHNIQUE
+
+- **`git commit --amend --no-edit` DISARMS THE `zv78` TRAP ENTIRELY** — it keeps
+  the Red body byte-for-byte, so the hook appends Green rather than replacing
+  five trailers. The precondition is that the FULL message (measurement,
+  denominators, ruling) is authored at the RED commit.
+- **`IOSuccess(False)` TRIPS `FBT003`.** Name the constant, the way
+  `_primary_checkout_git_probes._UNSET_KEY_RESOLVES_TO` does — and the name is
+  free documentation of WHY the answer is False.
+- **ONE `try` AROUND BOTH `git` CALLS beats one per call.** Two catch sites give
+  the second one an arm only a `git` vanishing mid-function could reach — an
+  unreachable branch against a 100% bar. One `try` makes it one covered line.
+- **A DIRECTORY-AS-`cwd` VIOLATION IS THE HERMETIC `OSError`.** Passing a FILE
+  as `cwd` raises `NotADirectoryError` with no monkeypatching at all — cheaper
+  than the PATH-stripping spelling and reaches the same arm.
+- **`check-coverage-incremental --paths <a `_`-prefixed module>` DEMANDS a
+  mirror test the repo does not require.** It resolves `_foo.py` →
+  `test_foo.py` and errors if that exact file is absent, even though the real
+  gate exempts it. Do not read that error as a gate failure; run `just check`.
 
 ---
 
