@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.13.13](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.13.12...v1.13.13) (2026-08-01)
+
+
+### Bug Fixes
+
+* **fleet:** an unread ci.yml certified a member's phantom required checks as aligned ([e5a5766](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e5a5766d050d6f575f9d9b78d953a3a9f49a9e39))
+
 ## [1.13.12](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.13.11...v1.13.12) (2026-08-01)
 
 
