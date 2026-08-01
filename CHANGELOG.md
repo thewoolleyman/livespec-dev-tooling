@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.13.12](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.13.11...v1.13.12) (2026-08-01)
+
+
+### Bug Fixes
+
+* **pin-currency:** a stale pin whose PR list never answered claimed the never-fired class ([5ca77da](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5ca77da893aab9abf59ab42d48e8784498c1b717))
+
 ## [1.13.11](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.13.10...v1.13.11) (2026-07-31)
 
 
