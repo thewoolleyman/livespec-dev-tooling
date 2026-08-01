@@ -8,7 +8,41 @@
 > SUPERSEDED by this block. Read it for METHOD and for the reasoning behind past
 > rulings, never for "what is true now".**
 >
-> ### 🔴🔴 THE FINDING OF THIS SESSION: **`just check` PASSED 64/64 ON A TREE CI THEN FAILED — A FIXTURE'S HERMETICITY WAS CONDITIONAL ON THE ENVIRONMENT IT NEUTRALIZES**
+> ### 🔴🔴 THE LOUDEST FINDING OF THIS SESSION: **THE SUB-AGENT STOP GUARD LOSES A WORKTREE PATH TO A SINGLE APOSTROPHE — `livespec-dev-tooling-dno1` (P1)**
+>
+> Found by READING offender 3 rather than converting it, and MEASURED end to end.
+> `_subagent_stop_guard_transcript::_created_worktree_targets_from_segment`
+> tokenizes each transcript segment with `shlex.split` and swallows the failure
+> (`except ValueError: return []`). **`shlex.split` raises on any unbalanced
+> quote — which in prose means any apostrophe** — so a
+> `git worktree add -b <branch> <path>` in the SAME segment vanishes:
+>
+> ```
+> clean               raw  -> [PosixPath('/home/ubuntu/.worktrees/repo/feat')]
+> with an apostrophe  raw  -> []          # the ONLY difference is "it's done: "
+> ```
+>
+> Both forms measured, raw and JSONL-wrapped; the empty result is credible
+> because the same call returns the path without the apostrophe. **Something
+> ACTS on it**: `subagent_stop_guard` reads the empty list as "this sub-agent
+> created no worktree" and lets it stop. Agent prose almost always contains an
+> apostrophe, so this is the COMMON path for any narrated worktree creation —
+> in the guard that exists to stop orphaned worktrees accumulating.
+>
+> **⛔ AND IT INVERTS THAT ROW'S DISPOSITION, exactly as this thread keeps
+> predicting.** Do NOT route the `ValueError` to a failure track: it is the
+> ORDINARY case for prose, so the function would fail on nearly every
+> transcript. Make the fallback SEE the segment instead (retry with a plain
+> whitespace split — the worktree-path regex already forbids whitespace inside
+> a path). The sibling's `json.JSONDecodeError -> [line]` fallback is already
+> correct in that style and loses nothing. With BOTH `try` arms total, the
+> function has **no inhabited failure track** — string in, `list[Path]` out, no
+> I/O — which is v179 member 2's shape: a `total_absence_returns`
+> **DECLARATION**, not a conversion. Wrapping it in a `Result` whose failure
+> track nothing can reach is the `holds_app_class_credential` error the triage
+> names by name. **So the 7 hold TWO declaration candidates, not one.**
+>
+> ### 🔴 ALSO THIS SESSION: **`just check` PASSED 64/64 ON A TREE CI THEN FAILED — A FIXTURE'S HERMETICITY WAS CONDITIONAL ON THE ENVIRONMENT IT NEUTRALIZES**
 >
 > The `is_docs_only_change` conversion (below) went out with a Red test file
 > whose autouse fixture scrubbed `GIT_*` by **SCANNING `os.environ`**:
@@ -121,7 +155,7 @@
 >
 > | repo | master at wrap-up | working tree |
 > |---|---|---|
-> | `livespec-dev-tooling` | **`3742fc8`** | clean (one untracked `install-livespec-pr-bot.png`, NOT this thread's — leave it) |
+> | `livespec-dev-tooling` | **`d6aafa0`** | clean (one untracked `install-livespec-pr-bot.png`, NOT this thread's — leave it) |
 > | `livespec-orchestrator-beads-fabro` | `bc26f70` | clean |
 > | `livespec-driver-claude` | `0cf4ca7` | clean |
 > | `livespec-driver-codex` | `d150626` | clean |
@@ -140,11 +174,11 @@
 >
 > ### 📏 BASELINE — re-derive at BOTH ENDS of every unit, never inherit
 >
-> **universe 168 · offenders DROPPING the `_`-prefixed-FILE skip 28 · offenders
-> CARRYING it 0** — re-derived on MERGED master at `3742fc8`, not inherited from
+> **universe 168 · offenders DROPPING the `_`-prefixed-FILE skip 27 · offenders
+> CARRYING it 0** — re-derived on MERGED master at `d6aafa0`, not inherited from
 > a worktree. (34 → 32 at pair A, → 30 at pair B, → 29 at the ruff backstop, →
-> 28 at the docs-only carve-out; each step's before/after LISTS differed by
-> exactly its own functions.) Measure
+> 28 at the docs-only carve-out, → 27 at the scenarios.md tier resolution; each
+> step's before/after LISTS differed by exactly its own functions.) Measure
 > with `_find_offenders` over `resolve_check_universe()`, **never** through
 > `main()` or `_scan` (this repo declares `pure_trees = { not_applicable = … }`,
 > so `main()` iterates ZERO files and reports 0 offenders regardless of the code
@@ -175,17 +209,22 @@
 >   railway.** #1031 → **`4005540`** (5 Red + 2 Green, counted by hand) and
 >   **`3742fc8`** (the tests-only follow-up), **29 → 28**. See §"THE DOCS-ONLY
 >   CARVE-OUT" below for the ruling, which also binds `scenario_tier_violations`.
+> - **✅ `8o8e.9` OFFENDER 2 OF 7 — the scenarios.md tier resolution is on the
+>   railway.** #1035 → **`d6aafa0`** (5 Red + 2 Green, counted by hand), **28 →
+>   27**. See §"THE SCENARIOS.MD TIER RESOLUTION" below — the collapse was
+>   PINNED BY A PASSING TEST.
 > - **📋 FILED ACROSS THE LAST TWO SESSIONS:** `zv78` (P1, the half-pair gate
 >   defect), `3744` (P1, the check-vs-ratified-clause defect, BLOCKING 22 of
->   `8o8e.9`), and `rav3` (P1, the incremental coverage gate passing VACUOUSLY on
->   a failed `git diff`).
+>   `8o8e.9`), `rav3` (P1, the incremental coverage gate passing VACUOUSLY on a
+>   failed `git diff`), and `dno1` (P1, the sub-agent stop guard losing a
+>   worktree path to an apostrophe — the block at the top).
 > - **📋 EIGHT PER-REPO ARMING CHILDREN FILED** — `8o8e.7`–`.14`, fleet total
 >   **455 over a universe of 719** (§"THE ARMING BLAST RADIUS"). ⚠️ dev-tooling's
->   `.9` row reads 30; it is **28** now — re-derive, never quote.
-> - **▶️ ITEM 3 IS DONE. WHAT REMAINS IS `8o8e.9` (6 unblocked + 22 held), THEN
+>   `.9` row reads 30; it is **27** now — re-derive, never quote.
+> - **▶️ ITEM 3 IS DONE. WHAT REMAINS IS `8o8e.9` (5 unblocked + 22 held), THEN
 >   THE ARMING ITSELF.**
 >
-> ### ▶️▶️ EXACT NEXT ACTION — DRIVE THE 6 REMAINING UNBLOCKED OFFENDERS OF `8o8e.9`
+> ### ▶️▶️ EXACT NEXT ACTION — DRIVE THE 5 REMAINING UNBLOCKED OFFENDERS OF `8o8e.9`
 >
 > **SUPERVISOR RULING (brief 78), STANDING: convert dev-tooling's offenders NOW.**
 > It is not contingent on the maintainer's fan-out answer, because **all three
@@ -193,39 +232,42 @@
 > (`ARMED main() EXIT CODE = 1`) and lefthook then blocks the fix. The charter says
 > it in as many words: *"DO NOT ARM until dev-tooling measures ZERO."*
 >
-> **⛔ 22 OF THE 28 ARE HELD ON `livespec-dev-tooling-3744`** (the `RowOutcome`
-> rendering-boundary finding at the top of this block). **DO NOT CONVERT THEM** —
-> wrapping a ratified discriminated union in a `Result` double-encodes the same
-> outcome and would be unwound when the clause is mechanized.
+> **⛔ 22 OF THE 27 ARE HELD ON `livespec-dev-tooling-3744`** (the `RowOutcome`
+> rendering-boundary finding above). **DO NOT CONVERT THEM** — wrapping a
+> ratified discriminated union in a `Result` double-encodes the same outcome and
+> would be unwound when the clause is mechanized.
 >
-> **▶️ THE 6 THAT ARE UNBLOCKED, and they are the whole of the next unit:**
+> **▶️ THE 5 THAT ARE UNBLOCKED, in the order to take them:**
 >
-> | file | function | today |
-> |---|---|---|
-> | `checks/_heading_coverage_tier_resolution.py:192` | `scenario_tier_violations` | `list[dict[str, object]]` |
-> | `agent_hooks/_subagent_stop_guard_transcript.py:52` | `extract_created_worktree_paths` | `list[Path]` |
-> | `fleet/_adopter_lane.py:121` | `run_adopter_rows` | `AdopterRowsResult` |
-> | `fleet/_bump_pr_list.py:139` | `persisting_bump_pr_number` | `int \| None` |
-> | `fleet/_credential_preflight.py:79` | `preflight_credential` | `PreflightOutcome` |
-> | `fleet/_public_api_graph.py:244` | `cross_member_consumption` | `ConsumptionGraph` |
+> | file | function | today | disposition |
+> |---|---|---|---|
+> | `agent_hooks/_subagent_stop_guard_transcript.py:52` | `extract_created_worktree_paths` | `list[Path]` | **FIX `dno1` FIRST, THEN DECLARE** — read, not guessed |
+> | `fleet/_bump_pr_list.py:139` | `persisting_bump_pr_number` | `int \| None` | declaration CANDIDATE |
+> | `fleet/_credential_preflight.py:79` | `preflight_credential` | `PreflightOutcome` | see triage §4b — a bare call to a PARAMETER |
+> | `fleet/_adopter_lane.py:121` | `run_adopter_rows` | `AdopterRowsResult` | convert |
+> | `fleet/_public_api_graph.py:244` | `cross_member_consumption` | `ConsumptionGraph` | read its own docstring FIRST |
 >
-> **START WITH `scenario_tier_violations`, AND ITS RULING IS ALREADY MADE.**
-> `qndn-75-triage.md` pairs it with `is_docs_only_change` under ONE question —
-> *is a deliberate fail-closed collapse of an inhabited failure a violation or a
-> sanctioned design?* — and this session answered it: **a violation.** Its
-> `_node_id_resolves_with_marker` catches `(OSError, SyntaxError)` and returns
-> `False` "so the prefix path governs", which fuses "this test carries no marker"
-> with "I could not read the test file". Apply the SAME split the carve-out took:
-> **the file being ABSENT is an answer** (a node id naming no file resolves to no
-> marker), while an unreadable or unparseable file is UNDECIDABLE.
+> **START WITH `extract_created_worktree_paths` — BUT ITS UNIT IS `dno1`, NOT A
+> CONVERSION.** The apostrophe finding at the top of this block IS its triage,
+> already done: fix the `shlex` fallback so it SEES the segment, and both `try`
+> arms become total, leaving no inhabited failure track and a
+> `total_absence_returns` DECLARATION rather than a `Result`.
 >
-> **`persisting_bump_pr_number` is the ONE declaration candidate** (`int | None`,
+> **⚠️ `cross_member_consumption` IS THE ONE TO TAKE LAST.** It is `5cai`'s
+> oracle — this thread's own load-bearing instrument, the one every third-axis
+> zero is quoted from — and it carries unparsed sources IN-BAND
+> (`ConsumptionGraph.unparsed`) as a deliberate "the absence is part of the
+> value" design argued in its own docstring. Read that argument before ruling;
+> converting could put one decision in two places.
+>
+> **`persisting_bump_pr_number` is a declaration candidate** (`int | None`,
 > v179 member 2) — and a CANDIDATE only. READ it before declaring: this thread's
 > record is that the read inverts the expected answer
 > (`tag_version_component` sat in the STRONGEST convert class and was still not a
-> conversion). Everything else in the 7 must convert.
+> conversion) — and `extract_created_worktree_paths` above is the THIRD unit in
+> a row where the read moved the row.
 >
-> **THE THIRD AXIS IS ALREADY DISCHARGED FOR ALL 6** — the shipped oracle, re-run
+> **THE THIRD AXIS IS ALREADY DISCHARGED FOR ALL 5** — the shipped oracle, re-run
 > **2026-08-01 (fifth session)** on 9 roster / 9 read / 0 unavailable / 0 unparsed
 > / **63 edges**, finds **ZERO** cross-repo consumers for every one of these
 > names. That zero is credible because the SAME run returns non-zero for
@@ -272,6 +314,12 @@
 >   cannot — this session's fixture scrubbed `GIT_*` by scanning `os.environ`,
 >   so its own body ran only under lefthook. When a fixture neutralizes an
 >   environment, run it once with that environment ABSENT.
+> - **A TEST CAN PIN A DEFECT AS FIRMLY AS IT PINS A CONTRACT.** When a
+>   conversion makes an EXISTING test fail, read that test's docstring before
+>   fixing it — `test_scenario_tier_unparseable_test_file_fires` said "parse
+>   error swallowed → unit-tier fires" and was holding the collapse in place.
+>   Replace it asserting BOTH directions: the new diagnostic appears AND the old
+>   verdict is gone.
 > - **A REVISION / FILE / KEY THAT IS ABSENT IS AN ANSWER; ONE THAT CANNOT BE
 >   READ IS A FAILURE.** Third unit running where this is the whole ruling
 >   (pair B's fixtures root, the git probes' unset key, the carve-out's missing
@@ -518,6 +566,68 @@ a sibling's stall should not red an unrelated repo's PRs, which is a real reason
 records the lane-scoped shape instead.
 
 ---
+
+---
+
+## ✅ THE SCENARIOS.MD TIER RESOLUTION — **28 → 27**, AND THE COLLAPSE WAS PINNED BY A PASSING TEST
+
+**`8o8e.9` offender 2 of 7. PR #1035 → `d6aafa0` (5 Red + 2 Green, COUNTED by
+hand), verified on the FORGE after a fetch — the merged tree grepped for both
+new signatures AND for the ABSENCE of the `candidate.is_file()` pre-check.**
+
+`scenario_tier_violations` returned `list[dict[str, object]]`, and
+`_node_id_resolves_with_marker` caught `(OSError, SyntaxError)` and returned
+`False`, documented as *"no marker found so the prefix path governs"*.
+
+| outcome | before | after |
+|---|---|---|
+| mapped test file exists and cannot be READ | reported as a unit-tier test | `test-file-unreadable` |
+| mapped test file does not PARSE | reported as a unit-tier test | `test-file-unparseable` |
+| mapped test file is ABSENT | violation | **violation — unchanged, and it is an ANSWER** |
+| node id has no dot | violation | **violation — unchanged, resolved with NO I/O** |
+
+### 🔴🔴 THE FINDING: A PASSING TEST HELD THE COLLAPSE IN PLACE
+
+`test_scenario_tier_unparseable_test_file_fires` asserted
+`scenario heading mapped to unit-tier test` for an unparseable file, and its own
+docstring said why — *"parse error swallowed → unit-tier fires"*, with a comment
+spelling out *"it treats the unparseable file as 'no marker found'"*. **The fused
+behavior was not merely implicit; it was LOCKED IN by a test that read as
+correct, and it is the reason the conversion showed up as a test FAILURE rather
+than as a silent behavior change.**
+
+**▶️ THE GENERAL FORM, and it belongs beside "a mechanical conversion is where
+subtle bugs enter": A TEST CAN PIN A DEFECT AS FIRMLY AS IT PINS A CONTRACT.**
+When a conversion makes an existing test fail, read the test's DOCSTRING before
+"fixing" it — it may be confessing. The replacement asserts BOTH directions (the
+new diagnostic appears AND the tier verdict is gone), because "the new
+diagnostic appears" is only half the claim.
+
+**AND ITS TWIN SURVIVED UNCHANGED, which is what makes the ruling legible.**
+`test_scenario_tier_node_id_missing_file_fires` asserted the SAME diagnostic and
+still passes: an absent file is an ANSWER. The two sat side by side asserting
+one thing and now sit side by side on opposite tracks — the split, stated as two
+tests rather than as prose.
+
+### 🧰 WHAT THIS UNIT ADDS
+
+- **`is_file()` THEN `read_text()` WAS HERE TOO** — a fourth site after pair B's
+  three. One `try` splits absent (`FileNotFoundError` → ANSWER) from unreadable
+  (any other `OSError` → FAILURE) and deletes the TOCTOU arm no test could
+  reach. **The split is what lets absence STAY the answer**, which is why the
+  pre-check had to go rather than merely be reordered.
+- **`NotADirectoryError` IS THE SECOND HERMETIC UNREADABILITY SPELLING.** A FILE
+  where a package directory belongs, beside the `IsADirectoryError` spelling for
+  a directory where a file belongs. Both are `OSError`s that are NOT
+  `FileNotFoundError`, and both need no monkeypatching under a root-running
+  suite.
+- **`ValueError` RIDES WITH `SyntaxError` ON `ast.parse`** — an embedded NUL
+  raises the former, and catching only the latter lets it escape a function
+  annotated `IOResult`. Same pairing the docs-only carve-out used.
+- **THE FALSE-GREEN CHECK IS NOW PART OF THE UNIT.** Before pushing, per-file
+  coverage was re-run with every `GIT_*` var stripped (`env -u GIT_EDITOR ...`)
+  — the exact condition that reddened the previous unit in CI after a local
+  64/64. 100% both ways.
 
 ---
 
