@@ -30,18 +30,65 @@ compliant when one of the following holds:
 the parent `main()` owns every structured diagnostic. `DEFAULT_SCENARIO_TIERS`
 is the documented allowlist default the parent falls back to when a consumer
 repo declares no `[tool.livespec_dev_tooling].scenario_tiers` array.
+
+## ON THE `IOResult` RAILWAY — `livespec-dev-tooling-8o8e.9`
+
+`_node_id_resolves_with_marker` reads the mapped test file DIRECTLY rather
+than through an injected seam, so this module is the I/O boundary and
+`IOResult` rather than `Result` is the honest container (the same reading that
+put `_docs_only_change` and `_primary_checkout_git_probes` there).
+
+WHAT THE OLD `list[dict[str, object]]` COULD NOT SAY. The resolver caught
+`(OSError, SyntaxError)` and returned `False` — documented as "no marker found
+so the prefix path governs" — which fused **"this test carries no
+integration-tier marker"** with **"I could not read the file to find out"**.
+The entry then fell through to the violation list, and the parent reported
+*"scenario heading mapped to unit-tier test"*: a definitive verdict about a
+test the check never read. `qndn-75-triage.md` pairs this row with
+`is_docs_only_change` under ONE question — *is a deliberate fail-closed
+collapse of an inhabited failure track a violation, or a sanctioned design?* —
+and the answer is a violation: §"ROP composition" declares its exemption set
+exhaustive, and an intent stated in a docstring is not a ratified exemption.
+
+WHAT IS AND IS NOT A FAILURE HERE, and it is the same split the carve-out took.
+**A NODE ID THAT NAMES NO FILE IS AN ANSWER.** The read HAPPENED and there is
+no such module, so there is no marker — `False` is a verdict rather than a
+placeholder, and the entry is correctly a direction-4 violation. Likewise a
+node id with no dot at all: it resolves to no module by inspection, with no I/O
+involved. A FAILURE is a file that EXISTS and cannot be turned into a tree: an
+`OSError` that is not `FileNotFoundError`, or a source that does not parse.
+
+That split also removed an `is_file()`-then-`read_text()` pre-check pair, which
+fused absent with unreadable AND left a TOCTOU second arm no test could reach.
+One `try` splits them on `FileNotFoundError` for free.
 """
 
 from __future__ import annotations
 
 import ast
+import sys
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
+
+# Carried rather than inherited from an importer: without it the vendored
+# `returns` resolves only because some module up the import chain happens to
+# carry the preamble, which is a property of the caller rather than of this
+# file. The module that broke the fleet's release fan-out for seven hours on
+# 2026-07-30 was in exactly that state until it became a process entry point.
+_VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
+
+from returns.io import IOFailure, IOResult, IOSuccess  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 # Names in `__all__` mark this private sibling's public surface to its sole
 # importer, `heading_coverage.py`, so pyright's per-file analysis does not flag
 # them unused across the package boundary.
 __all__: list[str] = [
     "DEFAULT_SCENARIO_TIERS",
+    "TierUnresolvable",
     "scenario_tier_violations",
 ]
 
@@ -79,6 +126,35 @@ _INTEGRATION_TIER_MARKERS: frozenset[str] = frozenset({"integration", "e2e", "co
 # A resolvable dotted node id needs at least a module component and a function
 # component (`module.func`); `pytest.mark.<name>` likewise needs `mark.<name>`.
 _MIN_DOTTED_PARTS = 2
+
+# The two ANSWERS the resolver gives without reading a tree, named rather than
+# written inline because `flake8-boolean-trap` (FBT003) refuses a bare boolean
+# literal at a call site — the spelling
+# `_primary_checkout_git_probes._UNSET_KEY_RESOLVES_TO` uses — and because each
+# name carries the RULING that makes it an answer rather than a placeholder.
+_UNDOTTED_NODE_ID_RESOLVES_TO_NO_MODULE: bool = False
+_ABSENT_TEST_FILE_CARRIES_NO_MARKER: bool = False
+
+
+@dataclass(frozen=True, kw_only=True)
+class TierUnresolvable:
+    """A mapped test EXISTS and could not be read, so its tier is UNKNOWN.
+
+    ⛔ "COULD NOT RESOLVE THE TIER" IS NOT "THE TIER IS UNIT", and keeping them
+    apart is the whole point: the old shape reported the second when it meant
+    the first, so a test file the check could not open was reported to its
+    author as a scenarios.md heading mapped to a unit-tier test.
+
+    `reason` is the discriminator a caller branches on; `detail` is the
+    operator-facing evidence, and the two are deliberately separate so a
+    diagnostic can name the cause without the caller parsing prose. The two
+    want different responses: `test-file-unreadable` is a broken checkout (a
+    directory where a module belongs, a permission or I/O error), while
+    `test-file-unparseable` is a test file that does not compile.
+    """
+
+    reason: Literal["test-file-unreadable", "test-file-unparseable"]
+    detail: str
 
 
 def _node_id_has_allowlisted_prefix(*, test_id: str, tiers: tuple[str, ...]) -> bool:
@@ -167,32 +243,67 @@ def _function_has_integration_marker(*, tree: ast.Module, func_name: str) -> boo
     return False
 
 
-def _node_id_resolves_with_marker(*, repo_root: Path, test_id: str) -> bool:
+def _node_id_resolves_with_marker(
+    *, repo_root: Path, test_id: str
+) -> IOResult[bool, TierUnresolvable]:
     """Resolve a dotted node id to a file + function and AST-scan for the marker.
 
     `tests.e2e.test_happy_path.test_happy_path_minimal` →
-    `tests/e2e/test_happy_path.py`, function `test_happy_path_minimal`. If the
-    node id cannot be resolved to a file/function (no dot, missing file, parse
-    error), returns `False` ("no marker found") so the prefix path governs.
+    `tests/e2e/test_happy_path.py`, function `test_happy_path_minimal`.
+
+    TWO of the old `False` returns are ANSWERS and stay on the success track: a
+    node id with no dot resolves to no module by inspection, and a node id
+    whose module file is ABSENT has no marker because there is no test. Both
+    are verdicts a completed read produced, so the prefix path governs exactly
+    as it did.
+
+    The other two are FAILURES. The catch is NARROW and ENUMERATED: an `OSError`
+    that is not `FileNotFoundError` (a directory where a module belongs, a
+    permission or I/O error), and a source that does not parse. `ValueError`
+    rides with `SyntaxError` because `ast.parse` raises it for an embedded NUL.
+    A bug raised inside `_function_has_integration_marker` still propagates.
     """
     split = _split_node_id(test_id=test_id)
     if split is None:
-        return False
+        return IOSuccess(_UNDOTTED_NODE_ID_RESOLVES_TO_NO_MODULE)
     module_parts, func_name = split
     candidate = repo_root / Path(*module_parts).with_suffix(".py")
-    if not candidate.is_file():
-        return False
+    # ONE `try` rather than `is_file()` then `read_text()`: the pre-check pair
+    # fused absent with unreadable AND left a TOCTOU second arm no test could
+    # reach. Splitting on `FileNotFoundError` separates them for free and makes
+    # every arm here naturally reachable without monkeypatching.
     try:
-        tree = ast.parse(candidate.read_text(encoding="utf-8"))
-    except (OSError, SyntaxError):
-        return False
-    return _function_has_integration_marker(tree=tree, func_name=func_name)
+        source = candidate.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return IOSuccess(_ABSENT_TEST_FILE_CARRIES_NO_MARKER)
+    except OSError as unreadable:
+        return IOFailure(
+            TierUnresolvable(
+                reason="test-file-unreadable", detail=f"{test_id} -> {candidate}: {unreadable}"
+            )
+        )
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError) as unparseable:
+        return IOFailure(
+            TierUnresolvable(
+                reason="test-file-unparseable", detail=f"{test_id} -> {candidate}: {unparseable}"
+            )
+        )
+    return IOSuccess(_function_has_integration_marker(tree=tree, func_name=func_name))
 
 
 def scenario_tier_violations(
     *, repo_root: Path, entries: list[dict[str, object]], tiers: tuple[str, ...]
-) -> list[dict[str, object]]:
-    """Registry entries for `scenarios.md` mapped to a unit-tier test (direction 4)."""
+) -> IOResult[list[dict[str, object]], TierUnresolvable]:
+    """Registry entries for `scenarios.md` mapped to a unit-tier test (direction 4).
+
+    ⛔ AN EMPTY LIST NOW MEANS "RESOLVED, AND NO ENTRY IS UNIT-TIER" — nothing
+    else. A single entry the resolver could not decide takes the whole scan to
+    the failure track rather than letting a partial verdict be read as a
+    complete one; the parent's other three directions are computed
+    independently and still report in the same run.
+    """
     out: list[dict[str, object]] = []
     for entry in entries:
         if entry.get("spec_file") != _SCENARIOS_FILE:
@@ -213,7 +324,10 @@ def scenario_tier_violations(
             continue
         if _node_id_has_allowlisted_prefix(test_id=test_id, tiers=tiers):
             continue
-        if _node_id_resolves_with_marker(repo_root=repo_root, test_id=test_id):
+        resolved = _node_id_resolves_with_marker(repo_root=repo_root, test_id=test_id)
+        if isinstance(resolved, IOFailure):
+            return resolved
+        if unsafe_perform_io(resolved.unwrap()):
             continue
         out.append(entry)
-    return out
+    return IOSuccess(out)

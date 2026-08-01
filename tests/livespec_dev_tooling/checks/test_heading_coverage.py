@@ -23,6 +23,14 @@ documented default), by a static `pytest.mark.integration`/stronger
 marker, or (for a TODO) by a `reason` that acknowledges the tier
 requirement. Otherwise the distinct diagnostic `scenario heading
 mapped to unit-tier test` fires.
+
+Since `livespec-dev-tooling-8o8e.9` the direction has a THIRD outcome:
+UNRESOLVED, when the mapped test file exists and cannot be read or does
+not parse. An ABSENT file stays the ordinary violation — there is no
+test, so there is no marker — and the two sit side by side here as
+`test_scenario_tier_node_id_missing_file_fires` and
+`test_scenario_tier_unparseable_test_file_is_unresolved`, which
+asserted the SAME diagnostic until the resolver went on the railway.
 """
 
 from __future__ import annotations
@@ -755,7 +763,13 @@ def test_scenario_tier_node_id_without_dot_fires(*, tmp_path: Path) -> None:
 
 
 def test_scenario_tier_node_id_missing_file_fires(*, tmp_path: Path) -> None:
-    """A non-allowlisted node id whose file does NOT exist → unit-tier fires (no crash)."""
+    """A non-allowlisted node id whose file does NOT exist → unit-tier fires (no crash).
+
+    The ANSWER half of the pair `livespec-dev-tooling-8o8e.9` split: there is no
+    test, so there is no marker, and the tier verdict is one the read produced.
+    Contrast `test_scenario_tier_unparseable_test_file_is_unresolved` below,
+    which asserted this SAME diagnostic until the resolver went on the railway.
+    """
     _write_spec_file(
         tmp_path=tmp_path, rel_path="SPECIFICATION/scenarios.md", body=_scenarios_body()
     )
@@ -776,13 +790,24 @@ def test_scenario_tier_node_id_missing_file_fires(*, tmp_path: Path) -> None:
     assert "scenario heading mapped to unit-tier test" in combined
 
 
-def test_scenario_tier_unparseable_test_file_fires(*, tmp_path: Path) -> None:
-    """A node-id file with invalid Python → parse error swallowed → unit-tier fires."""
+def test_scenario_tier_unparseable_test_file_is_unresolved(*, tmp_path: Path) -> None:
+    """A node-id file with invalid Python is UNRESOLVED, never a unit-tier verdict.
+
+    ⛔ THIS TEST PINNED THE COLLAPSE. Until `livespec-dev-tooling-8o8e.9` it
+    asserted `scenario heading mapped to unit-tier test` and its own docstring
+    said why — "parse error swallowed → unit-tier fires" — so the fused
+    behavior was not merely implicit, it was LOCKED IN by a passing test that
+    read as correct. A test can pin a defect as firmly as it pins a contract.
+
+    The exit code is unchanged (non-zero); what changed is what the author is
+    told. Both directions are asserted, because "the new diagnostic appears" is
+    only half the claim — the tier verdict must be GONE.
+    """
     _write_spec_file(
         tmp_path=tmp_path, rel_path="SPECIFICATION/scenarios.md", body=_scenarios_body()
     )
-    # Syntactically invalid module: the AST scan must NOT crash; it treats the
-    # unparseable file as "no marker found" so the check fires direction 4.
+    # Syntactically invalid module: the AST scan must NOT crash, and must not
+    # answer either — it cannot tell whether the file carries a tier marker.
     _write_file(
         tmp_path=tmp_path,
         rel_path="tests/behavior/test_broken.py",
@@ -802,7 +827,15 @@ def test_scenario_tier_unparseable_test_file_fires(*, tmp_path: Path) -> None:
     result = _run_check(cwd=tmp_path)
     assert result.returncode != 0
     combined = result.stdout + result.stderr
-    assert "scenario heading mapped to unit-tier test" in combined
+    assert (
+        "heading-coverage-scenario-tier-unresolved" in combined
+    ), f"an unparseable mapped test must be reported as unresolved; got {combined!r}"
+    assert (
+        "test-file-unparseable" in combined
+    ), f"the diagnostic must name WHICH read failed; got {combined!r}"
+    assert (
+        "scenario heading mapped to unit-tier test" not in combined
+    ), f"a non-read must not be reported as a tier verdict; got {combined!r}"
 
 
 def test_scenario_tier_compliant_via_annotated_module_pytestmark(*, tmp_path: Path) -> None:

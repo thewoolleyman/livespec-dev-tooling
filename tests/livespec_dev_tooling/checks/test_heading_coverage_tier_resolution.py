@@ -7,11 +7,19 @@ coverage lives in `test_heading_coverage.py` (exercised outside-in through the
 parent check's subprocess contract); THIS file unit-tests `scenario_tier_violations`
 directly, pinning the public surface and each compliance path at the module
 boundary.
+
+The UNRESOLVABLE outcomes — a mapped test file that exists and cannot be read,
+or does not parse — live in the `_railway.py` sibling, whose bytes are pinned
+by the Red commit that landed them (`livespec-dev-tooling-8o8e.9`). Every case
+in THIS file resolves by construction.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
+
+from returns.io import IOSuccess
+from returns.unsafe import unsafe_perform_io
 
 from livespec_dev_tooling.checks._heading_coverage_tier_resolution import (
     DEFAULT_SCENARIO_TIERS,
@@ -19,6 +27,21 @@ from livespec_dev_tooling.checks._heading_coverage_tier_resolution import (
 )
 
 __all__: list[str] = []
+
+
+def _violations(*, repo_root: Path, entries: list[dict[str, object]]) -> list[dict[str, object]]:
+    """The direction-4 violations, unwrapped off the railway.
+
+    The `IOSuccess` assertion is not ceremony: it makes this file's standing
+    assumption — that every case here is RESOLVABLE — a checked one, so a
+    future edit that accidentally makes a fixture unreadable fails naming the
+    track rather than raising out of an unwrap.
+    """
+    scanned = scenario_tier_violations(
+        repo_root=repo_root, entries=entries, tiers=DEFAULT_SCENARIO_TIERS
+    )
+    assert isinstance(scanned, IOSuccess), f"expected a resolvable scan; got {scanned!r}"
+    return unsafe_perform_io(scanned.unwrap())
 
 
 def test_default_scenario_tiers_surface() -> None:
@@ -36,10 +59,7 @@ def test_allowlisted_prefix_node_id_is_compliant(*, tmp_path: Path) -> None:
     entries: list[dict[str, object]] = [
         {"spec_file": "scenarios.md", "test": "tests.integration.test_flow.test_observable"}
     ]
-    assert (
-        scenario_tier_violations(repo_root=tmp_path, entries=entries, tiers=DEFAULT_SCENARIO_TIERS)
-        == []
-    )
+    assert _violations(repo_root=tmp_path, entries=entries) == []
 
 
 def test_unit_tier_node_id_fires(*, tmp_path: Path) -> None:
@@ -47,10 +67,7 @@ def test_unit_tier_node_id_fires(*, tmp_path: Path) -> None:
     entries: list[dict[str, object]] = [
         {"spec_file": "scenarios.md", "test": "tests.unit.test_pure.test_thing"}
     ]
-    violations = scenario_tier_violations(
-        repo_root=tmp_path, entries=entries, tiers=DEFAULT_SCENARIO_TIERS
-    )
-    assert violations == entries
+    assert _violations(repo_root=tmp_path, entries=entries) == entries
 
 
 def test_todo_with_tier_acknowledging_reason_is_compliant(*, tmp_path: Path) -> None:
@@ -58,10 +75,7 @@ def test_todo_with_tier_acknowledging_reason_is_compliant(*, tmp_path: Path) -> 
     entries: list[dict[str, object]] = [
         {"spec_file": "scenarios.md", "test": "TODO", "reason": "pending integration-tier test"}
     ]
-    assert (
-        scenario_tier_violations(repo_root=tmp_path, entries=entries, tiers=DEFAULT_SCENARIO_TIERS)
-        == []
-    )
+    assert _violations(repo_root=tmp_path, entries=entries) == []
 
 
 def test_todo_without_tier_acknowledgment_fires(*, tmp_path: Path) -> None:
@@ -69,10 +83,7 @@ def test_todo_without_tier_acknowledgment_fires(*, tmp_path: Path) -> None:
     entries: list[dict[str, object]] = [
         {"spec_file": "scenarios.md", "test": "TODO", "reason": "will write later"}
     ]
-    violations = scenario_tier_violations(
-        repo_root=tmp_path, entries=entries, tiers=DEFAULT_SCENARIO_TIERS
-    )
-    assert violations == entries
+    assert _violations(repo_root=tmp_path, entries=entries) == entries
 
 
 def test_non_scenarios_file_never_fires(*, tmp_path: Path) -> None:
@@ -80,10 +91,7 @@ def test_non_scenarios_file_never_fires(*, tmp_path: Path) -> None:
     entries: list[dict[str, object]] = [
         {"spec_file": "spec.md", "test": "tests.unit.test_pure.test_thing"}
     ]
-    assert (
-        scenario_tier_violations(repo_root=tmp_path, entries=entries, tiers=DEFAULT_SCENARIO_TIERS)
-        == []
-    )
+    assert _violations(repo_root=tmp_path, entries=entries) == []
 
 
 def test_integration_marker_resolved_via_ast_is_compliant(*, tmp_path: Path) -> None:
@@ -97,16 +105,10 @@ def test_integration_marker_resolved_via_ast_is_compliant(*, tmp_path: Path) -> 
     entries: list[dict[str, object]] = [
         {"spec_file": "scenarios.md", "test": "tests.custom.test_flow.test_observable"}
     ]
-    assert (
-        scenario_tier_violations(repo_root=tmp_path, entries=entries, tiers=DEFAULT_SCENARIO_TIERS)
-        == []
-    )
+    assert _violations(repo_root=tmp_path, entries=entries) == []
 
 
 def test_non_string_test_field_is_skipped(*, tmp_path: Path) -> None:
     """A malformed entry whose `test` is not a string is skipped, not a violation."""
     entries: list[dict[str, object]] = [{"spec_file": "scenarios.md", "test": 123}]
-    assert (
-        scenario_tier_violations(repo_root=tmp_path, entries=entries, tiers=DEFAULT_SCENARIO_TIERS)
-        == []
-    )
+    assert _violations(repo_root=tmp_path, entries=entries) == []
