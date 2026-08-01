@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.13.19](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.13.18...v1.13.19) (2026-08-01)
+
+
+### Bug Fixes
+
+* **checks:** put the scenarios.md tier resolution on the IOResult railway ([d6aafa0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d6aafa0e0fe68384e8df982bf653b3f30f43a783))
+
 ## [1.13.18](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.13.17...v1.13.18) (2026-08-01)
 
 
