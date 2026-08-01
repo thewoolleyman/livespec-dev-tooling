@@ -29,6 +29,7 @@ _LATEST_DEV_TOOLING_ARGS: tuple[str, ...] = (
     "repos/acme/livespec-dev-tooling/releases/latest",
 )
 _LATEST_DRIVER_ARGS: tuple[str, ...] = ("api", "repos/acme/livespec-driver-codex/releases/latest")
+_OPEN_PRS_ARGS: tuple[str, ...] = ("api", "repos/acme/widget/pulls?state=open&per_page=100")
 
 
 class PinCurrencyRow(Protocol):
@@ -64,6 +65,14 @@ def _context(*, files: dict[str, str], latest: dict[tuple[str, ...], str]) -> Fl
     }
     table = {
         _TREE_ARGS: GhResult(returncode=0, stdout=json.dumps(tree_payload), stderr=""),
+        # A READABLE, EMPTY open-PR list, canned deliberately. Leaving it
+        # uncanned made the shared `run` fake answer returncode=1, so every
+        # stale assertion below reached its warning through an UNREADABLE PR
+        # list — the branch these tests are not about. The rows now report
+        # that branch differently (the class is UNDETERMINED rather than
+        # never-fired), so an uncanned entry would quietly move all three
+        # onto a diagnostic none of them names.
+        _OPEN_PRS_ARGS: GhResult(returncode=0, stdout=json.dumps([]), stderr=""),
     }
     for path, text in files.items():
         table[_raw_args(path=path)] = GhResult(returncode=0, stdout=text, stderr="")

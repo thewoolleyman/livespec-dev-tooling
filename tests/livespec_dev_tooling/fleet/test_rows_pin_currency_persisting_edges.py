@@ -10,7 +10,10 @@ from __future__ import annotations
 import json
 
 from _gh_railway import lift_gh
+from returns.io import IOFailure, IOSuccess
+from returns.unsafe import unsafe_perform_io
 
+from livespec_dev_tooling.fleet._bump_pr_list import open_bump_prs_for
 from livespec_dev_tooling.fleet._context import (
     FleetContext,
     FleetMember,
@@ -19,7 +22,6 @@ from livespec_dev_tooling.fleet._context import (
     RowFinding,
 )
 from livespec_dev_tooling.fleet._rows_files import assert_dev_tooling_pin
-from livespec_dev_tooling.fleet._rows_pin_currency import open_bump_prs_for
 
 __all__: list[str] = []
 
@@ -102,7 +104,14 @@ def test_dev_tooling_pin_stale_without_matching_pr_stays_warning() -> None:
     assert outcome.severity == "warning"
 
 
-def test_open_bump_prs_for_non_list_payload_yields_no_records() -> None:
+def test_open_bump_prs_for_non_list_payload_is_a_failure_not_an_empty_list() -> None:
+    """A parsed-but-not-a-list payload is a NON-ANSWER, and used to be zero PRs.
+
+    Renamed from `..._yields_no_records`, which asserted `== []` — the
+    fused reading. `gh` exits 0 here, so nothing upstream records a read
+    failure; if this is not distinguished at the seam it is not
+    distinguishable anywhere.
+    """
     ctx = _context(
         table={
             _OPEN_PRS_ARGS: GhResult(
@@ -111,7 +120,24 @@ def test_open_bump_prs_for_non_list_payload_yields_no_records() -> None:
         }
     )
 
-    assert open_bump_prs_for(ctx=ctx, member=_MEMBER) == []
+    outcome = open_bump_prs_for(ctx=ctx, member=_MEMBER)
+
+    assert isinstance(outcome, IOFailure)
+    failure = unsafe_perform_io(outcome.failure())
+    assert failure.repo == "widget"
+    assert "not a list of pull requests" in failure.detail
+
+
+def test_open_bump_prs_for_unanswered_read_is_a_failure_naming_the_member() -> None:
+    """The other failure arm, which DOES leave a trace on `ctx.read_failures`."""
+    ctx = _context(table={_OPEN_PRS_ARGS: GhResult(returncode=1, stdout="", stderr="boom")})
+
+    outcome = open_bump_prs_for(ctx=ctx, member=_MEMBER)
+
+    assert isinstance(outcome, IOFailure)
+    failure = unsafe_perform_io(outcome.failure())
+    assert failure.repo == "widget"
+    assert "did not answer" in failure.detail
 
 
 def test_open_bump_prs_for_skips_unusable_items_and_keeps_valid_rest_items() -> None:
@@ -133,7 +159,8 @@ def test_open_bump_prs_for_skips_unusable_items_and_keeps_valid_rest_items() -> 
         table={_OPEN_PRS_ARGS: GhResult(returncode=0, stdout=json.dumps(payload), stderr="")}
     )
 
-    prs = open_bump_prs_for(ctx=ctx, member=_MEMBER)
+    outcome = open_bump_prs_for(ctx=ctx, member=_MEMBER)
 
-    assert prs is not None
+    assert isinstance(outcome, IOSuccess)
+    prs = unsafe_perform_io(outcome.unwrap())
     assert [pr.number for pr in prs] == [7]
