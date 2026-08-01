@@ -18,7 +18,6 @@ assumed.
 
 from __future__ import annotations
 
-import os
 import subprocess
 from typing import TYPE_CHECKING
 
@@ -60,6 +59,24 @@ def answer() -> int:
 
 _UNPARSEABLE = "def answer( -> int:\n"
 
+# The vars git sets when it invokes a hook, mirroring
+# `test_commit_pairs_source_and_test._GIT_ENV_PASSTHROUGH_VARS`. A FIXED tuple
+# rather than a scan of `os.environ` for `GIT_*`: the scan's loop body executed
+# only when the suite HAPPENED to inherit one, so it ran under lefthook and
+# never in CI. A hermeticity fixture whose body is conditional on the very
+# environment it exists to neutralize is not hermetic — and per-file coverage
+# is what noticed, because it counts test files at the same 100% bar.
+_GIT_HOOK_ENV_VARS: tuple[str, ...] = (
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_COMMON_DIR",
+    "GIT_NAMESPACE",
+    "GIT_LITERAL_PATHSPECS",
+    "GIT_PREFIX",
+)
+
 
 def _git(*, cwd: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
     """Run `git` hermetically: no global config, no ambient `GIT_*` inheritance."""
@@ -77,7 +94,7 @@ def _git(*, cwd: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
 
 @pytest.fixture(autouse=True)
 def _no_ambient_git_env(*, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Drop every inherited `GIT_*` var for the duration of each test.
+    """Drop every inherited hook-set `GIT_*` var for the duration of each test.
 
     The module under test deliberately does NOT scrub them — reading
     `GIT_INDEX_FILE` is how the commit-time caller sees the index of the
@@ -86,7 +103,7 @@ def _no_ambient_git_env(*, monkeypatch: pytest.MonkeyPatch) -> None:
     "not a repository" at the hook's repository instead, and the
     `repository-unreadable` test would pass for the wrong reason.
     """
-    for name in [key for key in os.environ if key.startswith("GIT_")]:
+    for name in _GIT_HOOK_ENV_VARS:
         monkeypatch.delenv(name, raising=False)
 
 
