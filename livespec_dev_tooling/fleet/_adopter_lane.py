@@ -43,7 +43,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from livespec_dev_tooling.fleet._context import FleetMember, RowFinding, RowSkip
+from livespec_dev_tooling.config import assert_never
+from livespec_dev_tooling.fleet._context import FleetMember, RowFinding, RowPass, RowSkip
 from livespec_dev_tooling.fleet._contract_rows import ADMIN_VANTAGE, CENTRAL_VANTAGE
 from livespec_dev_tooling.fleet._lanes import (
     BLIND_ROW_EVENT,
@@ -164,25 +165,29 @@ def run_adopter_rows(
     skip_reasons: list[str] = []
     for adopter in released:
         outcome = assert_claude_plugin_currency(ctx=ctx, member=_currency_member(adopter=adopter))
-        if isinstance(outcome, RowSkip):
-            skip_reasons.append(outcome.reason.removeprefix(f"{adopter.repo}: "))
-            log.info(
-                "fleet obligation not evaluable (can't-read is not absent)",
-                row=ADOPTER_CURRENCY_ROW_ID,
-                member=adopter.repo,
-                reason=outcome.reason,
-            )
-            continue
-        evaluated += 1
-        if isinstance(outcome, RowFinding):
-            errors += 1
-            log.error(
-                "fleet obligation violated",
-                row=ADOPTER_CURRENCY_ROW_ID,
-                member=adopter.repo,
-                detail=outcome.message,
-                hint=_ADOPTER_CURRENCY_HINT,
-            )
+        match outcome:
+            case RowSkip():
+                skip_reasons.append(outcome.reason.removeprefix(f"{adopter.repo}: "))
+                log.info(
+                    "fleet obligation not evaluable (can't-read is not absent)",
+                    row=ADOPTER_CURRENCY_ROW_ID,
+                    member=adopter.repo,
+                    reason=outcome.reason,
+                )
+            case RowPass():
+                evaluated += 1
+            case RowFinding():
+                evaluated += 1
+                errors += 1
+                log.error(
+                    "fleet obligation violated",
+                    row=ADOPTER_CURRENCY_ROW_ID,
+                    member=adopter.repo,
+                    detail=outcome.message,
+                    hint=_ADOPTER_CURRENCY_HINT,
+                )
+            case _:
+                assert_never(outcome)
     blind = 0
     if skip_reasons and not evaluated:
         blind = 1

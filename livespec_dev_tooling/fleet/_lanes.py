@@ -36,6 +36,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from livespec_dev_tooling.config import assert_never
 from livespec_dev_tooling.fleet._context import RowFinding, RowPass, RowSkip
 from livespec_dev_tooling.fleet._contract_rows import (
     ADMIN_VANTAGE,
@@ -47,7 +48,8 @@ from livespec_dev_tooling.fleet._contract_rows import (
 if TYPE_CHECKING:
     import structlog.stdlib
 
-    from livespec_dev_tooling.fleet._context import FleetContext
+    from livespec_dev_tooling.fleet._context import FleetContext, RowOutcome
+    from livespec_dev_tooling.fleet._contract_model import ObligationRow
     from livespec_dev_tooling.fleet.contract import Manifest
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
@@ -169,47 +171,17 @@ def run_member_rows(
                 key = (row.row_id, row.vantage)
                 out_of_vantage[key] = out_of_vantage.get(key, 0) + 1
                 continue
-            outcome = row.assert_member(ctx=ctx, member=member)
-            if isinstance(outcome, RowSkip):
-                # Row functions prefix their reason with the member repo; the
-                # blind-row warning reports the underlying CAUSES, and the
-                # member is already implied by "every applicable member".
-                skips.setdefault(row.row_id, []).append(
-                    outcome.reason.removeprefix(f"{member.repo}: ")
-                )
-                log.info(
-                    "fleet obligation not evaluable (can't-read is not absent)",
-                    row=row.row_id,
-                    member=member.repo,
-                    reason=outcome.reason,
-                )
-                continue
-            evaluated[row.row_id] = evaluated.get(row.row_id, 0) + 1
-            if isinstance(outcome, RowPass) and outcome.note.startswith(_EXCLUDED_NOTE_PREFIX):
-                log.info(
-                    "fleet obligation excluded with reason",
-                    row=row.row_id,
-                    member=member.repo,
-                    reason=outcome.note.removeprefix(_EXCLUDED_NOTE_PREFIX),
-                )
-            if isinstance(outcome, RowFinding):
-                if outcome.severity == "warning":
-                    log.warning(
-                        "fleet obligation warning",
-                        row=row.row_id,
-                        member=member.repo,
-                        detail=outcome.message,
-                    )
-                else:
-                    errors += 1
-                    failing_rows_by_member[member.repo].append(row.row_id)
-                    log.error(
-                        "fleet obligation violated",
-                        row=row.row_id,
-                        member=member.repo,
-                        detail=outcome.message,
-                        hint=row.manual_hint or "run wire-fleet-member to reconcile",
-                    )
+            errors += _fold_member_outcome(
+                outcome=row.assert_member(ctx=ctx, member=member),
+                row=row,
+                member_repo=member.repo,
+                tallies=_LaneTallies(
+                    evaluated=evaluated,
+                    skips=skips,
+                    failing_rows=failing_rows_by_member[member.repo],
+                ),
+                log=log,
+            )
     return MemberRowsResult(
         error_findings=errors,
         blind_rows=_report_blind_rows(evaluated=evaluated, skips=skips, log=log),
@@ -219,6 +191,92 @@ def run_member_rows(
             for member, failing_rows in failing_rows_by_member.items()
         ),
     )
+
+
+@dataclass(frozen=True, kw_only=True)
+class _LaneTallies:
+    """The three mutable accumulators one member-row fold writes into.
+
+    Bundled because passing them individually pushed `_fold_member_outcome`
+    past PLR0913's six-argument cap. The containers are mutated in place;
+    `frozen` binds the dataclass fields, not the dicts and list they name.
+    """
+
+    evaluated: dict[str, int]
+    skips: dict[str, list[str]]
+    failing_rows: list[str]
+
+
+def _fold_member_outcome(
+    *,
+    outcome: RowOutcome,
+    row: ObligationRow,
+    member_repo: str,
+    tallies: _LaneTallies,
+    log: structlog.stdlib.BoundLogger,
+) -> int:
+    """Fold ONE row outcome into the lane's tallies; return the error delta.
+
+    Extracted when the exhaustive `match` pushed `run_member_rows` past
+    PLR0915's thirty-statement cap — the cap was paid rather than routed
+    around, and the extraction earns its keep: this is now the ONE place the
+    central lane discriminates a `RowOutcome`, so the union's three meanings
+    are read in a single function instead of three chained `isinstance`
+    tests spread through a nested loop.
+
+    ⛔ The `case _: assert_never(outcome)` terminator is the POINT, not
+    ceremony. `RowOutcome` is a closed union, and a fourth variant added
+    later must not fall silently through a consumer — which is exactly what
+    an `isinstance` chain would let it do, because
+    `check-assert-never-exhaustiveness` polices `match` statements and
+    cannot see a chain at all.
+    """
+    match outcome:
+        case RowSkip():
+            # Row functions prefix their reason with the member repo; the
+            # blind-row warning reports the underlying CAUSES, and the
+            # member is already implied by "every applicable member".
+            tallies.skips.setdefault(row.row_id, []).append(
+                outcome.reason.removeprefix(f"{member_repo}: ")
+            )
+            log.info(
+                "fleet obligation not evaluable (can't-read is not absent)",
+                row=row.row_id,
+                member=member_repo,
+                reason=outcome.reason,
+            )
+            return 0
+        case RowPass():
+            tallies.evaluated[row.row_id] = tallies.evaluated.get(row.row_id, 0) + 1
+            if outcome.note.startswith(_EXCLUDED_NOTE_PREFIX):
+                log.info(
+                    "fleet obligation excluded with reason",
+                    row=row.row_id,
+                    member=member_repo,
+                    reason=outcome.note.removeprefix(_EXCLUDED_NOTE_PREFIX),
+                )
+            return 0
+        case RowFinding():
+            tallies.evaluated[row.row_id] = tallies.evaluated.get(row.row_id, 0) + 1
+            if outcome.severity == "warning":
+                log.warning(
+                    "fleet obligation warning",
+                    row=row.row_id,
+                    member=member_repo,
+                    detail=outcome.message,
+                )
+                return 0
+            tallies.failing_rows.append(row.row_id)
+            log.error(
+                "fleet obligation violated",
+                row=row.row_id,
+                member=member_repo,
+                detail=outcome.message,
+                hint=row.manual_hint or "run wire-fleet-member to reconcile",
+            )
+            return 1
+        case _:
+            assert_never(outcome)
 
 
 def _report_blind_rows(

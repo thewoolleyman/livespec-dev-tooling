@@ -37,7 +37,8 @@ import sys
 from pathlib import Path
 from typing import cast
 
-from livespec_dev_tooling.fleet._context import RowPass, RowSkip
+from livespec_dev_tooling.config import assert_never
+from livespec_dev_tooling.fleet._context import RowFinding, RowPass, RowSkip
 from livespec_dev_tooling.fleet._contract_local_rows import LOCAL_OBLIGATION_ROWS
 from livespec_dev_tooling.fleet._invocation_failure import InvocationNotPerformed
 from livespec_dev_tooling.fleet._local_context import (
@@ -96,23 +97,31 @@ def reconcile_checkout(*, ctx: LocalContext, log: structlog.stdlib.BoundLogger) 
     for row in LOCAL_OBLIGATION_ROWS:
         if row.assert_local is not None:
             outcome = row.assert_local(ctx=ctx)
-            if isinstance(outcome, RowPass):
-                log.info("row already satisfied", row=row.row_id, note=outcome.note)
-                continue
+            match outcome:
+                case RowPass():
+                    log.info("row already satisfied", row=row.row_id, note=outcome.note)
+                    continue
+                case RowFinding() | RowSkip():
+                    pass
+                case _:
+                    assert_never(outcome)
         fixed = row.reconcile_local(ctx=ctx)
-        if isinstance(fixed, RowPass):
-            log.info("row reconciled", row=row.row_id, note=fixed.note)
-        elif isinstance(fixed, RowSkip):
-            log.info("row not applicable", row=row.row_id, reason=fixed.reason)
-        elif fixed.severity == "warning":
-            log.warning(
-                "row needs out-of-band action (detect-and-guide)",
-                row=row.row_id,
-                hint=fixed.message,
-            )
-        else:
-            unresolved += 1
-            log.error("row did not reconcile", row=row.row_id, detail=fixed.message)
+        match fixed:
+            case RowPass():
+                log.info("row reconciled", row=row.row_id, note=fixed.note)
+            case RowSkip():
+                log.info("row not applicable", row=row.row_id, reason=fixed.reason)
+            case RowFinding() if fixed.severity == "warning":
+                log.warning(
+                    "row needs out-of-band action (detect-and-guide)",
+                    row=row.row_id,
+                    hint=fixed.message,
+                )
+            case RowFinding():
+                unresolved += 1
+                log.error("row did not reconcile", row=row.row_id, detail=fixed.message)
+            case _:
+                assert_never(fixed)
     return unresolved
 
 
