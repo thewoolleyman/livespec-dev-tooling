@@ -634,11 +634,13 @@ def test_commit_pairs_carveout_rejects_real_source_change(*, tmp_path: Path) -> 
 def test_commit_pairs_carveout_fails_closed_on_staged_deletion(*, tmp_path: Path) -> None:
     """A staged deletion of a source file falls back to the pairing requirement.
 
-    A deletion has no staged (index, stage-0) blob, so `_git_blob(":<path>")`
-    fails and `_is_docs_only_change` returns False (fail closed). Fixture: the
-    source file committed to HEAD, then `git rm`'d (staging the deletion) with
-    no `tests/` co-stage. The check rejects with exit 1 rather than treating a
-    removed file as a docs-only edit.
+    A deletion has no staged (index, stage-0) blob, and `git` SAYS SO — so
+    since `livespec-dev-tooling-8o8e.9` put the rule on the railway this is
+    an ANSWER (`IOSuccess(False)`) rather than an undecidable read: no
+    comment-only edit can relate a revision holding the file to one that
+    does not. Fixture: the source file committed to HEAD, then `git rm`'d
+    (staging the deletion) with no `tests/` co-stage. The check rejects with
+    exit 1 rather than treating a removed file as a docs-only edit.
     """
     _init_repo_with_committed_source(tmp_path=tmp_path, body=_CARVEOUT_HEAD_SOURCE)
     _git(cwd=tmp_path, args=["rm", "-q", _CARVEOUT_SOURCE_REL])
@@ -655,10 +657,12 @@ def test_commit_pairs_carveout_fails_closed_on_staged_deletion(*, tmp_path: Path
 def test_commit_pairs_carveout_fails_closed_when_staged_unparseable(*, tmp_path: Path) -> None:
     """A staged version that does not parse falls back to the pairing requirement.
 
-    `_dump_without_docstrings` returns None when `ast.parse` raises, so
-    `_is_docs_only_change` returns False (fail closed). Fixture: a valid source
-    file in HEAD re-staged with syntactically broken Python and no `tests/`
-    co-stage. The check rejects with exit 1.
+    The fail-closed DIRECTION is unchanged, and the author is now told WHY.
+    Before `livespec-dev-tooling-8o8e.9` put the rule on the railway, a
+    staged file that does not compile reached them only as "source change
+    staged without paired test change" — a verdict about their commit,
+    stated from a comparison that never ran. Fixture: a valid source file in
+    HEAD re-staged with syntactically broken Python and no `tests/` co-stage.
     """
     source = _init_repo_with_committed_source(tmp_path=tmp_path, body=_CARVEOUT_HEAD_SOURCE)
     source.write_text("def broken( this is not valid python\n", encoding="utf-8")
@@ -671,16 +675,20 @@ def test_commit_pairs_carveout_fails_closed_when_staged_unparseable(*, tmp_path:
         f"got returncode={result.returncode} "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
+    assert "revision-unparseable" in result.stderr, (
+        f"the undecidable outcome must be reported as itself rather than as a "
+        f"source change; stderr={result.stderr!r}"
+    )
 
 
 def test_commit_pairs_carveout_fails_closed_when_head_unparseable(*, tmp_path: Path) -> None:
     """A HEAD version that does not parse falls back to the pairing requirement.
 
-    Mirror of the staged-unparseable case for the HEAD side: `_is_docs_only_change`
-    parses the HEAD blob first and returns False (fail closed) when it does not
-    parse, before it even reads the staged blob. Fixture: syntactically broken
-    Python committed to HEAD, re-staged with a valid version and no `tests/`
-    co-stage. The check rejects with exit 1.
+    Mirror of the staged-unparseable case for the HEAD side: the shared rule
+    reads and parses the HEAD blob first, so it lands on the failure track
+    with `revision-unparseable` naming the HEAD spec before it reads the
+    staged blob at all. Fixture: syntactically broken Python committed to
+    HEAD, re-staged with a valid version and no `tests/` co-stage.
     """
     source = _init_repo_with_committed_source(
         tmp_path=tmp_path, body="def broken( this is not valid python\n"
@@ -694,6 +702,9 @@ def test_commit_pairs_carveout_fails_closed_when_head_unparseable(*, tmp_path: P
         f"an unparseable HEAD version should fail closed (exit non-zero); "
         f"got returncode={result.returncode} "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    assert f"HEAD:{_CARVEOUT_SOURCE_REL}" in result.stderr, (
+        f"the diagnostic must name WHICH revision failed to parse; " f"stderr={result.stderr!r}"
     )
 
 

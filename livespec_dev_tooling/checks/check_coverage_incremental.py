@@ -68,6 +68,8 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
+from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 from livespec_dev_tooling.checks._docs_only_change import (  # noqa: E402
     is_docs_only_change,
@@ -274,7 +276,38 @@ def _changed_py_impl_paths(
     return out
 
 
-def _derive_paths_from_git(*, source_tree_prefixes: tuple[str, ...], cwd: Path) -> list[Path]:
+def _keeps_gate_armed(*, path: Path, cwd: Path, log: structlog.stdlib.BoundLogger) -> bool:
+    """Whether `path` stays in the gated set — i.e. it is NOT a proven docs-only edit.
+
+    An UNDECIDABLE comparison keeps the path gated, so the fail-closed
+    DIRECTION is unchanged, and is reported as itself. Before the shared
+    rule went on the railway an absent `origin/master`, an unreadable
+    checkout, and a file that does not parse all arrived here as "this is
+    a real source change" and were gated for coverage on that stated
+    ground — a verdict about the diff, manufactured from a read that
+    never produced one.
+    """
+    decided = is_docs_only_change(
+        before=f"origin/master:{path.as_posix()}",
+        after=f"HEAD:{path.as_posix()}",
+        cwd=cwd,
+    )
+    if isinstance(decided, IOFailure):
+        undecidable = unsafe_perform_io(decided.failure())
+        log.error(
+            "docs-only carve-out undecidable; the path stays in the gated set",
+            check_id="check_coverage_incremental",
+            path=path.as_posix(),
+            reason=undecidable.reason,
+            detail=undecidable.detail,
+        )
+        return True
+    return not unsafe_perform_io(decided.unwrap())
+
+
+def _derive_paths_from_git(
+    *, source_tree_prefixes: tuple[str, ...], cwd: Path, log: structlog.stdlib.BoundLogger
+) -> list[Path]:
     """Derive the changed impl-`.py` set from `git diff origin/master...HEAD`.
 
     Runs the diff in `cwd` (the repo root) and filters the result via
@@ -303,15 +336,7 @@ def _derive_paths_from_git(*, source_tree_prefixes: tuple[str, ...], cwd: Path) 
     # gating a docs-only edit makes it unpushable rather than merely strict.
     # The same rule waives the sibling `commit_pairs_source_and_test` pairing
     # requirement; both read it from one place so they cannot disagree.
-    return [
-        path
-        for path in changed
-        if not is_docs_only_change(
-            before=f"origin/master:{path.as_posix()}",
-            after=f"HEAD:{path.as_posix()}",
-            cwd=cwd,
-        )
-    ]
+    return [path for path in changed if _keeps_gate_armed(path=path, cwd=cwd, log=log)]
 
 
 def _configure_logger() -> structlog.stdlib.BoundLogger:
@@ -351,7 +376,9 @@ def main() -> int:
     derived = not impl_paths
     if derived:
         impl_paths = _derive_paths_from_git(
-            source_tree_prefixes=role_prefixes(role=config.source_tree_prefixes), cwd=cwd
+            source_tree_prefixes=role_prefixes(role=config.source_tree_prefixes),
+            cwd=cwd,
+            log=log,
         )
         if not impl_paths:
             log.info(

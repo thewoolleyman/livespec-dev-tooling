@@ -72,6 +72,16 @@ When several source files are staged, the carve-out applies only if
 EVERY one is docs-only; a single real change re-arms the
 requirement for the whole commit.
 
+Since `livespec-dev-tooling-8o8e.9` the shared rule returns an
+`IOResult`, which splits that list in two. A new file, a deletion
+and a rename are ANSWERS — `git` was asked for the blob and said
+there is none — while an unparseable revision, an unreadable
+checkout, and a `git` that will not run are UNDECIDABLE and arrive
+on the failure track. The direction is identical either way (the
+carve-out never applies), but an undecidable outcome is now logged
+as itself instead of reaching the author as "you changed source
+without a paired test".
+
 Subsequent cycles will add the rest of the closed carve-out set
 (refactor: prefix, ## Type: refactor / config, deletion-only
 commits, config-only filenames like pyproject.toml / justfile /
@@ -96,6 +106,8 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
+from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 from livespec_dev_tooling.checks._docs_only_change import (  # noqa: E402
     is_docs_only_change,
@@ -158,14 +170,33 @@ def _head_has_unpaired_red_trailers(*, cwd: Path) -> bool:
     return has_red and not has_green
 
 
-def _is_docs_only_change(*, path: str, cwd: Path) -> bool:
+def _is_docs_only_change(*, path: str, cwd: Path, log: structlog.stdlib.BoundLogger) -> bool:
     """Whether a staged source path differs from HEAD only in comments/docstrings.
 
     Delegates to the shared rule so this gate and
     `check_coverage_incremental` cannot drift into disagreeing about the
     same edit. The staged (index) revision is spelled `:<path>`.
+
+    An UNDECIDABLE comparison keeps the gate armed — the fail-closed
+    DIRECTION is unchanged — but is now reported as itself. Before the
+    rule went on the railway a `git` that could not read the checkout,
+    and a staged file that does not parse, both reached the author as
+    "source change staged without paired test change": a definitive
+    verdict about their commit, manufactured from a read that never
+    produced one.
     """
-    return is_docs_only_change(before=f"HEAD:{path}", after=f":{path}", cwd=cwd)
+    decided = is_docs_only_change(before=f"HEAD:{path}", after=f":{path}", cwd=cwd)
+    if isinstance(decided, IOFailure):
+        undecidable = unsafe_perform_io(decided.failure())
+        log.error(
+            "docs-only carve-out undecidable; the pairing requirement applies unchanged",
+            check_id="commit-pairs-source-and-test-docs-only-undecidable",
+            source=path,
+            reason=undecidable.reason,
+            detail=undecidable.detail,
+        )
+        return False
+    return unsafe_perform_io(decided.unwrap())
 
 
 def main() -> int:
@@ -235,7 +266,9 @@ def main() -> int:
     test_changes = [path for path in staged if path.startswith(config.tests_tree_prefix)]
 
     if source_changes and not test_changes:
-        unpaired = [path for path in source_changes if not _is_docs_only_change(path=path, cwd=cwd)]
+        unpaired = [
+            path for path in source_changes if not _is_docs_only_change(path=path, cwd=cwd, log=log)
+        ]
         if unpaired:
             for source_path in unpaired:
                 log.error(
