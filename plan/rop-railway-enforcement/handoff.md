@@ -193,7 +193,7 @@
 >
 > | repo | master at wrap-up | working tree |
 > |---|---|---|
-> | `livespec-dev-tooling` | **`91a9f66`** | clean (one untracked `install-livespec-pr-bot.png`, NOT this thread's — leave it) |
+> | `livespec-dev-tooling` | **`c3d4186`** | clean (one untracked `install-livespec-pr-bot.png`, NOT this thread's — leave it) |
 > | `livespec-orchestrator-beads-fabro` | `bc26f70` | clean |
 > | `livespec-driver-claude` | `0cf4ca7` | clean |
 > | `livespec-driver-codex` | `d150626` | clean |
@@ -212,10 +212,11 @@
 >
 > ### 📏 BASELINE — re-derive at BOTH ENDS of every unit, never inherit
 >
-> **universe 168 · offenders DROPPING the `_`-prefixed-FILE skip 27 · offenders
-> CARRYING it 0** — re-derived on MERGED master at `91a9f66`, not inherited from
+> **universe 168 · offenders DROPPING the `_`-prefixed-FILE skip 26 · offenders
+> CARRYING it 0** — re-derived on MERGED master at `c3d4186`, not inherited from
 > a worktree. (34 → 32 at pair A, → 30 at pair B, → 29 at the ruff backstop, →
-> 28 at the docs-only carve-out, → 27 at the scenarios.md tier resolution; each
+> 28 at the docs-only carve-out, → 27 at the scenarios.md tier resolution, → 26 at
+> the `persisting_bump_pr_number` DECLARATION; each
 > step's before/after LISTS differed by exactly its own functions.) Measure
 > with `_find_offenders` over `resolve_check_universe()`, **never** through
 > `main()` or `_scan` (this repo declares `pure_trees = { not_applicable = … }`,
@@ -251,6 +252,16 @@
 >   railway.** #1035 → **`d6aafa0`** (5 Red + 2 Green, counted by hand), **28 →
 >   27**. See §"THE SCENARIOS.MD TIER RESOLUTION" below — the collapse was
 >   PINNED BY A PASSING TEST.
+> - **✅ `8o8e.9` OFFENDER 3 — `dno1` FIXED, railway half BLOCKED.** #1039 →
+>   **`91a9f66`**, **27 → 27** (the fix bought no count, and the declaration
+>   claim it was expected to buy is RETRACTED — see the top of this block).
+> - **✅ `8o8e.9` OFFENDER 4 — `persisting_bump_pr_number` DECLARED, not
+>   converted.** #1043 → **`c3d4186`**, **27 → 26**. Both bounds VERIFIED, not
+>   assumed: `rejected_declarations` returns `()` over the whole universe with
+>   the entry in place, and a rejected entry exempts nothing and hard-fails.
+>   **The 30's disposition split is now 2 declarations + 26 code**, against the
+>   "29 code / 1 declaration candidate" the arming commit's denominator was
+>   drafted from — update it there.
 > - **📋 FILED ACROSS THE LAST TWO SESSIONS:** `zv78` (P1, the half-pair gate
 >   defect), `3744` (P1, the check-vs-ratified-clause defect, BLOCKING 22 of
 >   `8o8e.9`), `rav3` (P1, the incremental coverage gate passing VACUOUSLY on a
@@ -258,11 +269,11 @@
 >   worktree path to an apostrophe — the block at the top).
 > - **📋 EIGHT PER-REPO ARMING CHILDREN FILED** — `8o8e.7`–`.14`, fleet total
 >   **455 over a universe of 719** (§"THE ARMING BLAST RADIUS"). ⚠️ dev-tooling's
->   `.9` row reads 30; it is **27** now — re-derive, never quote.
-> - **▶️ ITEM 3 IS DONE. WHAT REMAINS IS `8o8e.9` (5 unblocked + 22 held), THEN
+>   `.9` row reads 30; it is **26** now — re-derive, never quote.
+> - **▶️ ITEM 3 IS DONE. WHAT REMAINS IS `8o8e.9` (4 unblocked + 22 held), THEN
 >   THE ARMING ITSELF.**
 >
-> ### ▶️▶️ EXACT NEXT ACTION — DRIVE THE 5 REMAINING UNBLOCKED OFFENDERS OF `8o8e.9`
+> ### ▶️▶️ EXACT NEXT ACTION — DRIVE THE 4 REMAINING UNBLOCKED OFFENDERS OF `8o8e.9`
 >
 > **SUPERVISOR RULING (brief 78), STANDING: convert dev-tooling's offenders NOW.**
 > It is not contingent on the maintainer's fan-out answer, because **all three
@@ -270,20 +281,29 @@
 > (`ARMED main() EXIT CODE = 1`) and lefthook then blocks the fix. The charter says
 > it in as many words: *"DO NOT ARM until dev-tooling measures ZERO."*
 >
-> **⛔ 22 OF THE 27 ARE HELD ON `livespec-dev-tooling-3744`** (the `RowOutcome`
+> **⛔ 22 OF THE 26 ARE HELD ON `livespec-dev-tooling-3744`** (the `RowOutcome`
 > rendering-boundary finding above). **DO NOT CONVERT THEM** — wrapping a
 > ratified discriminated union in a `Result` double-encodes the same outcome and
 > would be unwound when the clause is mechanized.
 >
-> **▶️ THE 5 THAT ARE UNBLOCKED, in the order to take them:**
+> **▶️ THE 4 THAT ARE UNBLOCKED, in the order to take them:**
 >
 > | file | function | today | disposition |
 > |---|---|---|---|
-> | `fleet/_bump_pr_list.py:139` | `persisting_bump_pr_number` | `int \| None` | declaration CANDIDATE — **take this one first** |
-> | `fleet/_credential_preflight.py:79` | `preflight_credential` | `PreflightOutcome` | see triage §4b — a bare call to a PARAMETER |
+> | `fleet/_credential_preflight.py:79` | `preflight_credential` | `PreflightOutcome` | see triage §4b — a bare call to a PARAMETER; **take this one first** |
 > | `fleet/_adopter_lane.py:121` | `run_adopter_rows` | `AdopterRowsResult` | convert |
 > | `fleet/_public_api_graph.py:244` | `cross_member_consumption` | `ConsumptionGraph` | read its own docstring FIRST |
 > | `agent_hooks/_subagent_stop_guard_transcript.py:62` | `extract_created_worktree_paths` | `list[Path]` | **⛔ BLOCKED ON A SPEC QUESTION** — see the retraction at the top |
+>
+> **✅ `persisting_bump_pr_number` IS DONE — DECLARED, not converted** (#1043 →
+> `c3d4186`, **27 → 26**). It was the ONE remaining row member 2 could accept,
+> and both halves of the key's own rule held: ONE meaning, and both callers use
+> the `None` as control flow to emit the ORDINARY stale-pin finding while a
+> SEPARATE "I cannot verify" channel (`bump_pr_class_undecidable_clause`, on the
+> railway) already exists one level up. **⛔ AND IT WOULD HAVE BEEN WRONG A FEW
+> UNITS AGO** — before the pin-walker lifted `open_bump_prs_for`'s read failure,
+> this `None` carried an INHERITED second meaning. A declaration is a reading of
+> the CURRENT call graph, not a permanent property.
 >
 > **`extract_created_worktree_paths` IS LAST AND IS NOT A UNIT OF WORK.** Its
 > defect half is CLOSED (`dno1`, `91a9f66`); its railway half has **no
@@ -292,9 +312,17 @@
 > exits are named in the retraction block above, and the choice is a livespec
 > CORE spec question. **Do not open it as a conversion.**
 >
-> **START WITH `persisting_bump_pr_number`** — it is the one row whose shape
-> (`int | None`) member 2 can actually accept, so it is the only remaining
-> declaration that could hold. READ it before declaring.
+> **START WITH `preflight_credential`, and its question is NARROW and already
+> written down** (triage §4b): it is convicted SOLELY by `sleep(...)`, a bare
+> call to an INJECTED PARAMETER (`sleep: Sleeper = time.sleep`). That is not the
+> CHECK-FIX class — a bare-name call is DOCUMENTED doubt in
+> `_no_expected_failure_mode` and doubt disqualifies BY DESIGN, in the
+> conservative direction, so filing it as machinery would convert a deliberate
+> conservatism into a bug report. **The question to answer is: is a bare call to
+> a PARAMETER resolvable (an injected seam, which the same module already says is
+> NOT a boundary) or doubtful?** Read `_no_expected_failure_mode`'s own
+> "AN INJECTED SEAM IS NOT A BOUNDARY" paragraph before ruling — it may already
+> decide this.
 >
 > **⚠️ `cross_member_consumption` IS THE ONE TO TAKE LAST.** It is `5cai`'s
 > oracle — this thread's own load-bearing instrument, the one every third-axis
@@ -310,7 +338,7 @@
 > conversion) — and `extract_created_worktree_paths` above is the THIRD unit in
 > a row where the read moved the row.
 >
-> **THE THIRD AXIS IS ALREADY DISCHARGED FOR ALL 5** — the shipped oracle, re-run
+> **THE THIRD AXIS IS ALREADY DISCHARGED FOR ALL 4** — the shipped oracle, re-run
 > **2026-08-01 (fifth session)** on 9 roster / 9 read / 0 unavailable / 0 unparsed
 > / **63 edges**, finds **ZERO** cross-repo consumers for every one of these
 > names. That zero is credible because the SAME run returns non-zero for
@@ -357,6 +385,13 @@
 >   cannot — this session's fixture scrubbed `GIT_*` by scanning `os.environ`,
 >   so its own body ran only under lefthook. When a fixture neutralizes an
 >   environment, run it once with that environment ABSENT.
+> - **A DECLARATION IS A READING OF THE CURRENT CALL GRAPH, NOT A PROPERTY.**
+>   `persisting_bump_pr_number`'s `None` had TWO meanings until the pin-walker
+>   lifted `open_bump_prs_for`'s read failure onto its own track; declaring it
+>   before that would have been wrong. Re-count the meanings at the moment you
+>   declare, following every callee — and verify with `rejected_declarations`
+>   rather than with the offender count, because a rejected entry exempts
+>   NOTHING and hard-fails.
 > - **A TEST CAN PIN A DEFECT AS FIRMLY AS IT PINS A CONTRACT.** When a
 >   conversion makes an EXISTING test fail, read that test's docstring before
 >   fixing it — `test_scenario_tier_unparseable_test_file_fires` said "parse
