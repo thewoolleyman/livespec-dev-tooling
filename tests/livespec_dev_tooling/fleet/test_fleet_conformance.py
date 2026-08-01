@@ -23,7 +23,7 @@ from returns.io import IOFailure, IOSuccess
 from returns.result import Failure
 
 from livespec_dev_tooling.config import REQUIRED_ROLE_KEYS, UNION_ROLE_KEYS, Config
-from livespec_dev_tooling.fleet import _lanes, fleet_conformance
+from livespec_dev_tooling.fleet import _cli_owner, _lanes, fleet_conformance
 from livespec_dev_tooling.fleet._context import (
     FleetContext,
     FleetMember,
@@ -31,6 +31,7 @@ from livespec_dev_tooling.fleet._context import (
     GhOutcome,
     GhResult,
     GhRunner,
+    OriginRemoteUnresolved,
     RowOutcome,
     RowPass,
 )
@@ -759,11 +760,13 @@ def test_main_owner_unresolvable_is_precondition_failure(
     monkeypatch.setenv("LIVESPEC_RUN_FLEET_CONFORMANCE", "true")
     monkeypatch.setattr(sys, "argv", ["fleet-conformance"])
 
-    def no_owner(*, cwd: object = None) -> str | None:
-        del cwd
-        return None
+    def no_owner(*, argument: str | None = None, cwd: object = None) -> object:
+        del argument, cwd
+        return IOFailure(OriginRemoteUnresolved(reason="git-not-run", detail="git absent"))
 
-    monkeypatch.setattr(fleet_conformance, "resolve_owner", no_owner)
+    # Patched one layer DOWN so the real `resolved_owner` runs and emits the
+    # three-way diagnostic; patching it directly would skip the code under test.
+    monkeypatch.setattr(_cli_owner, "owner_or_origin", no_owner)
     assert fleet_conformance.main() == 1
 
 
@@ -993,10 +996,14 @@ def test_member_ci_exit_is_scoped_to_the_running_member(*, monkeypatch: pytest.M
     monkeypatch.setattr(sys, "argv", ["fleet-conformance", "--owner", "acme", "--member-ci"])
     _patch_runner(monkeypatch=monkeypatch, table=_unwired_member_table())
 
-    monkeypatch.setattr(fleet_conformance, "resolve_repo_name", lambda **_kwargs: "widget")
+    monkeypatch.setattr(
+        fleet_conformance, "resolve_repo_name", lambda **_kwargs: IOSuccess("widget")
+    )
     assert fleet_conformance.main() == 0, "an unwired OTHER member must not fail this repo's CI"
 
-    monkeypatch.setattr(fleet_conformance, "resolve_repo_name", lambda **_kwargs: "gadget")
+    monkeypatch.setattr(
+        fleet_conformance, "resolve_repo_name", lambda **_kwargs: IOSuccess("gadget")
+    )
     assert fleet_conformance.main() != 0, "a member owning the violation MUST fail its own CI"
 
 
@@ -1011,7 +1018,9 @@ def test_member_ci_still_reports_other_members_findings(*, monkeypatch: pytest.M
     monkeypatch.setenv("LIVESPEC_RUN_FLEET_CONFORMANCE", "true")
     monkeypatch.setattr(sys, "argv", ["fleet-conformance", "--owner", "acme", "--member-ci"])
     _patch_runner(monkeypatch=monkeypatch, table=_unwired_member_table())
-    monkeypatch.setattr(fleet_conformance, "resolve_repo_name", lambda **_kwargs: "widget")
+    monkeypatch.setattr(
+        fleet_conformance, "resolve_repo_name", lambda **_kwargs: IOSuccess("widget")
+    )
 
     recorder = RecordingLog()
     monkeypatch.setattr(fleet_conformance.structlog, "get_logger", lambda *_a, **_k: recorder)
@@ -1041,7 +1050,9 @@ def test_fleet_view_is_the_default_so_a_forgotten_flag_fails_safe(
     monkeypatch.setenv("LIVESPEC_RUN_FLEET_CONFORMANCE", "true")
     monkeypatch.setattr(sys, "argv", ["fleet-conformance", "--owner", "acme"])
     _patch_runner(monkeypatch=monkeypatch, table=_unwired_member_table())
-    monkeypatch.setattr(fleet_conformance, "resolve_repo_name", lambda **_kwargs: "widget")
+    monkeypatch.setattr(
+        fleet_conformance, "resolve_repo_name", lambda **_kwargs: IOSuccess("widget")
+    )
 
     assert fleet_conformance.main() != 0, "the default must remain fleet-wide and strict"
 
@@ -1059,10 +1070,18 @@ def test_member_ci_fails_loudly_when_the_running_repo_is_not_in_the_manifest(
     monkeypatch.setattr(sys, "argv", ["fleet-conformance", "--owner", "acme", "--member-ci"])
     _patch_runner(monkeypatch=monkeypatch, table=_unwired_member_table())
 
-    monkeypatch.setattr(fleet_conformance, "resolve_repo_name", lambda **_kwargs: "not-a-member")
+    monkeypatch.setattr(
+        fleet_conformance, "resolve_repo_name", lambda **_kwargs: IOSuccess("not-a-member")
+    )
     assert fleet_conformance.main() == 1
 
-    monkeypatch.setattr(fleet_conformance, "resolve_repo_name", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        fleet_conformance,
+        "resolve_repo_name",
+        lambda **_kwargs: IOFailure(
+            OriginRemoteUnresolved(reason="not-github-remote", detail="git@gitlab.com:acme/x")
+        ),
+    )
     assert fleet_conformance.main() == 1
 
 

@@ -125,7 +125,7 @@ def test_resolve_owner_parses_https_remote(*, monkeypatch: pytest.MonkeyPatch) -
         )
 
     monkeypatch.setattr(subprocess, "run", fake_run)
-    assert resolve_owner() == "acme"
+    assert unsafe_perform_io(resolve_owner().unwrap()) == "acme"
 
 
 def test_resolve_owner_with_cwd_and_ssh_remote(*, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -136,25 +136,53 @@ def test_resolve_owner_with_cwd_and_ssh_remote(*, monkeypatch: pytest.MonkeyPatc
         )
 
     monkeypatch.setattr(subprocess, "run", fake_run)
-    assert resolve_owner(cwd=Path("/somewhere")) == "acme"
+    assert unsafe_perform_io(resolve_owner(cwd=Path("/somewhere")).unwrap()) == "acme"
 
 
-def test_resolve_owner_handles_git_failure(*, monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake_run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        return subprocess.CompletedProcess(args=cmd, returncode=128, stdout="", stderr="fatal")
+def test_resolve_owner_names_which_of_three_failures_it_hit(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The whole point of the conversion: THREE causes stop being one `None`.
 
-    monkeypatch.setattr(subprocess, "run", fake_run)
-    assert resolve_owner() is None
+    Before, `git remote get-url origin` exiting non-zero, a non-github remote,
+    and `git` being absent from PATH altogether were indistinguishable at every
+    call site — and the fourth was not even a `None`, it was an uncaught
+    `FileNotFoundError` out of a function annotated `str | None`. A caller could
+    tell an operator "the origin remote is not a github.com URL" while the real
+    cause was that `git` never ran.
 
+    ⛔ THE `git-not-run` ARM IS THE LOAD-BEARING ONE, and it is a behavior change
+    rather than a re-spelling: `subprocess.run` was UNGUARDED, so an absent `git`
+    RAISED straight out of a function whose annotation promised `None`.
+    """
+    for stdout, returncode, expected in (
+        ("", 128, "no-origin-remote"),
+        ("https://gitlab.com/acme/widget\n", 0, "not-github-remote"),
+    ):
 
-def test_resolve_owner_rejects_non_github_remote(*, monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake_run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        return subprocess.CompletedProcess(
-            args=cmd, returncode=0, stdout="https://gitlab.com/acme/widget\n", stderr=""
-        )
+        def fake_run(
+            cmd: list[str],
+            *,
+            _out: str = stdout,
+            _rc: int = returncode,
+            **_kwargs: object,
+        ) -> subprocess.CompletedProcess[str]:
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=_rc, stdout=_out, stderr="fatal"
+            )
 
-    monkeypatch.setattr(subprocess, "run", fake_run)
-    assert resolve_owner() is None
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        resolved = resolve_owner()
+        assert isinstance(resolved, IOFailure)
+        assert unsafe_perform_io(resolved.failure()).reason == expected
+
+    def git_absent(_cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        raise FileNotFoundError(2, "No such file or directory: 'git'")
+
+    monkeypatch.setattr(subprocess, "run", git_absent)
+    absent = resolve_owner()
+    assert isinstance(absent, IOFailure)
+    assert unsafe_perform_io(absent.failure()).reason == "git-not-run"
 
 
 def test_api_get_and_mutating_methods_shape_args() -> None:
@@ -365,24 +393,32 @@ def test_resolve_repo_name_parses_both_remote_forms(*, monkeypatch: pytest.Monke
             return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=_remote, stderr="")
 
         monkeypatch.setattr(subprocess, "run", fake_run)
-        assert resolve_repo_name() == expected
+        assert unsafe_perform_io(resolve_repo_name().unwrap()) == expected
 
 
-def test_resolve_repo_name_is_none_when_git_fails_or_remote_is_not_github(
+def test_resolve_repo_name_fails_with_the_same_three_reasons_as_resolve_owner(
     *, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Unresolvable is None, never a guess.
+    """Unresolvable names its cause, never a guess and never a bare sentinel.
 
-    The member-CI caller turns this None into a loud precondition failure rather than
-    a pass, because scoping an exit to an unidentifiable repo would scope it to
-    nothing and enforce nothing while reporting success.
+    The member-CI caller turns an unresolved name into a loud precondition failure
+    rather than a pass, because scoping an exit to an unidentifiable repo would
+    scope it to nothing and enforce nothing while reporting success. It can now say
+    WHICH of the three causes it hit — its old hint asserted "the origin remote is
+    not a github.com URL" for all three, which was right one time in three.
+
+    The pair is converted TOGETHER because they share `_origin_remote_match`:
+    converting one alone would leave the same three failures fused in the other,
+    and the check would measure no movement.
     """
 
     def git_fails(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(args=cmd, returncode=128, stdout="", stderr="fatal")
 
     monkeypatch.setattr(subprocess, "run", git_fails)
-    assert resolve_repo_name() is None
+    failed = resolve_repo_name()
+    assert isinstance(failed, IOFailure)
+    assert unsafe_perform_io(failed.failure()).reason == "no-origin-remote"
 
     def not_github(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(
@@ -390,4 +426,6 @@ def test_resolve_repo_name_is_none_when_git_fails_or_remote_is_not_github(
         )
 
     monkeypatch.setattr(subprocess, "run", not_github)
-    assert resolve_repo_name() is None
+    foreign = resolve_repo_name()
+    assert isinstance(foreign, IOFailure)
+    assert unsafe_perform_io(foreign.failure()).reason == "not-github-remote"

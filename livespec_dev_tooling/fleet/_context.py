@@ -42,6 +42,8 @@ from livespec_dev_tooling.fleet._invocation_failure import (  # noqa: E402
     InvocationNotPerformed,
 )
 from livespec_dev_tooling.fleet._origin_remote import (  # noqa: E402
+    OriginRemoteUnresolved,
+    owner_or_origin,
     resolve_owner,
     resolve_repo_name,
 )
@@ -68,6 +70,7 @@ __all__: list[str] = [
     "GhOutcome",
     "GhResult",
     "GhRunner",
+    "OriginRemoteUnresolved",
     "ReadFailure",
     "RowFinding",
     "RowOutcome",
@@ -78,6 +81,7 @@ __all__: list[str] = [
     "default_gh_downloader",
     "default_gh_runner",
     "gh_answer",
+    "owner_or_origin",
     "resolve_owner",
     "resolve_repo_name",
     "row_excluded",

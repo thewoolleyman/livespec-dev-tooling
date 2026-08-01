@@ -43,6 +43,7 @@ from pathlib import Path
 from typing import cast
 
 from livespec_dev_tooling.config import assert_never
+from livespec_dev_tooling.fleet._cli_owner import reported_owner
 from livespec_dev_tooling.fleet._context import (
     FleetContext,
     FleetMember,
@@ -50,7 +51,6 @@ from livespec_dev_tooling.fleet._context import (
     RowPass,
     RowSkip,
     default_gh_runner,
-    resolve_owner,
 )
 from livespec_dev_tooling.fleet._contract_rows import ObligationRow, rows_for
 from livespec_dev_tooling.fleet.fleet_conformance import fetch_manifest
@@ -60,7 +60,9 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
+from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
 from returns.result import Failure  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 __all__: list[str] = []
 
@@ -169,13 +171,10 @@ def main() -> int:
     )
     log = structlog.get_logger("wire_fleet_member")
     args = _build_parser().parse_args()
-    owner = cast("str | None", args.owner) or resolve_owner()
-    if owner is None:
-        log.error(
-            "owner unresolvable: no --owner and origin remote is not github.com",
-            hint="pass --owner or run inside a github.com clone",
-        )
+    resolved = reported_owner(argument=cast("str | None", args.owner), log=log)
+    if isinstance(resolved, IOFailure):
         return 1
+    owner = unsafe_perform_io(resolved.unwrap())
     ctx = FleetContext(owner=owner, run_gh=default_gh_runner)
     fetched = fetch_manifest(ctx=ctx)
     if isinstance(fetched, Failure):
