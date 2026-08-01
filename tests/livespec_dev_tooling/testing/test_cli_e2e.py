@@ -56,7 +56,9 @@ _VENDOR_DIR = Path(cli_e2e.__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
+from returns.io import IOFailure, IOSuccess  # noqa: E402  — vendor-path-aware import.
 from returns.result import Failure, Success  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 # The canonical entry point is named `test_workflow_full_round_trip` (fixed by
 # the contract's consumer import path). Importing that bare `test_*` name into
@@ -165,7 +167,7 @@ def test_self_test_single_skill_plugin_round_trip(*, tmp_path: Path) -> None:
         plugin_install_dirs=(_FIXTURE_PLUGIN_ROOT,),
         fixtures_root=_FIXTURE_PLUGIN_ROOT / "e2e-cli-fixtures",
     )
-    fixtures = discover_fixtures(fixtures_root=config.fixtures_root)
+    fixtures = unsafe_perform_io(discover_fixtures(fixtures_root=config.fixtures_root).unwrap())
     prompt = fixtures["hello"].prompt
     runner = _FakeCliRunner(creates={prompt: ("hello-output.txt",)})
     result = run_full_round_trip(
@@ -301,6 +303,22 @@ def test_select_runner_mock_without_injected_is_a_failure(
 # ---------------------------------------------------------------------------
 
 
+def _drove(
+    *, config: HarnessConfig, runner: _FakeCliRunner, home: Path, project_root: Path
+) -> cli_e2e.WorkflowResult:
+    """`run_workflow`'s success VALUE, asserted to be on the success track first.
+
+    `run_workflow` is on the `IOResult` railway since the `8o8e` pair-B
+    conversion. Reading `.passed` straight off the CONTAINER would be the
+    `frozenset(IOResult.unwrap())` bug this repo already shipped once —
+    `.unwrap()` on an `IOResult` yields an `IO[...]`, not the payload — so the
+    unwrap is spelled out rather than left implicit.
+    """
+    outcome = run_workflow(config=config, runner=runner, home=home, project_root=project_root)
+    assert isinstance(outcome, IOSuccess), f"run_workflow landed on the failure track: {outcome!r}"
+    return unsafe_perform_io(outcome.unwrap())
+
+
 def _two_skill_config(*, plugin: Path, fixtures_root: Path) -> HarnessConfig:
     return HarnessConfig(
         impl_plugin_id="impl",
@@ -316,7 +334,7 @@ def test_run_workflow_drives_each_fixtured_skill(*, tmp_path: Path) -> None:
     fixtures_root = tmp_path / "fixtures"
     _make_fixture(root=fixtures_root, skill="seed", prompt="/seed", expected=("out.md",))
     runner = _FakeCliRunner(creates={"/seed": ("out.md",)})
-    result = run_workflow(
+    result = _drove(
         config=_two_skill_config(plugin=plugin, fixtures_root=fixtures_root),
         runner=runner,
         home=tmp_path / "home",
@@ -332,7 +350,7 @@ def test_run_workflow_records_missing_expected_file_as_failure(*, tmp_path: Path
     fixtures_root = tmp_path / "fixtures"
     _make_fixture(root=fixtures_root, skill="seed", prompt="/seed", expected=("never.md",))
     runner = _FakeCliRunner(creates={})  # creates nothing → expected file missing
-    result = run_workflow(
+    result = _drove(
         config=_two_skill_config(plugin=plugin, fixtures_root=fixtures_root),
         runner=runner,
         home=tmp_path / "home",
@@ -347,7 +365,7 @@ def test_run_workflow_records_nonzero_exit_as_failure(*, tmp_path: Path) -> None
     fixtures_root = tmp_path / "fixtures"
     _make_fixture(root=fixtures_root, skill="seed", prompt="/seed", expected=None)
     runner = _FakeCliRunner(creates={}, exit_code=1)
-    result = run_workflow(
+    result = _drove(
         config=_two_skill_config(plugin=plugin, fixtures_root=fixtures_root),
         runner=runner,
         home=tmp_path / "home",
@@ -437,7 +455,7 @@ def test_run_workflow_skips_exempt_skill(*, tmp_path: Path) -> None:
         exempt_skills=frozenset({"legacy"}),
     )
     runner = _FakeCliRunner(creates={})
-    result = run_workflow(
+    result = _drove(
         config=config,
         runner=runner,
         home=tmp_path / "home",
@@ -459,6 +477,35 @@ def test_run_workflow_raises_coverage_gate_before_running_steps(*, tmp_path: Pat
             project_root=tmp_path / "proj",
         )
     assert runner.turns == []  # fail-closed BEFORE any skill turn ran
+
+
+def test_run_workflow_reports_an_unreadable_fixtures_tree_instead_of_gating_on_it(
+    *, tmp_path: Path
+) -> None:
+    """A fixtures tree that could not be READ is a value, not an input to the gate.
+
+    ⛔ THE ORDER IS THE POINT, and it is the second of `run_workflow`'s two
+    failure-track returns. The plugin walk SUCCEEDS here, so a version that
+    checked only the skills read would sail on and hand the gate an empty
+    fixture set — which is precisely a verdict manufactured from a read that
+    never happened. Both discovery reads are checked BEFORE `assert_coverage`,
+    and `runner.turns` proves nothing was driven.
+    """
+    plugin = _make_plugin(root=tmp_path / "p", name="livespec", skills={"seed": True})
+    fixtures_root = tmp_path / "fixtures-is-a-file"
+    _ = fixtures_root.write_text("not a directory", encoding="utf-8")
+    runner = _FakeCliRunner(creates={})
+
+    outcome = run_workflow(
+        config=_two_skill_config(plugin=plugin, fixtures_root=fixtures_root),
+        runner=runner,
+        home=tmp_path / "home",
+        project_root=tmp_path / "proj",
+    )
+
+    assert isinstance(outcome, IOFailure)
+    assert unsafe_perform_io(outcome.failure()).reason == "fixtures-root-not-listed"
+    assert runner.turns == []
 
 
 # ---------------------------------------------------------------------------
@@ -489,7 +536,7 @@ def test_workflow_result_passed_true_when_no_steps(*, tmp_path: Path) -> None:
     fixtures_root = tmp_path / "fixtures"
     fixtures_root.mkdir()
     runner = _FakeCliRunner(creates={})
-    result = run_workflow(
+    result = _drove(
         config=_two_skill_config(plugin=plugin, fixtures_root=fixtures_root),
         runner=runner,
         home=tmp_path / "home",

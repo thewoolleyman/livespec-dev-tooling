@@ -67,9 +67,12 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
+from returns.io import IOFailure, IOResult, IOSuccess  # noqa: E402  — vendor-path-aware.
 from returns.result import Failure, Result, Success  # noqa: E402  — vendor-path-aware.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware.
 
 from livespec_dev_tooling.testing._cli_e2e_discovery import (  # noqa: E402
+    DiscoveryUnreadable,
     FixturedSkill,
     discover_fixtures,
     discover_skills,
@@ -84,6 +87,7 @@ __all__: list[str] = [
     "CliResult",
     "CliRunner",
     "CoverageGateError",
+    "DiscoveryUnreadable",
     "FixturedSkill",
     "HarnessConfig",
     "HarnessSelectionError",
@@ -290,7 +294,7 @@ def run_workflow(
     runner: CliRunner,
     home: Path,
     project_root: Path,
-) -> WorkflowResult:
+) -> IOResult[WorkflowResult, DiscoveryUnreadable]:
     """Step orchestrator — the full discovery → gate → per-skill drive loop.
 
     1. Writes the tmp-`HOME` settings.json (and optionally runs the install
@@ -303,6 +307,23 @@ def run_workflow(
 
     `home` and `project_root` are the tmp dirs the consumer's pytest fixture
     provides (`HOME` and the foreign project the slash commands run against).
+
+    ON THE RAILWAY because BOTH discovery components now are: a plugin root or
+    fixtures tree that could not be READ is carried through as a value. It
+    would be this epic's founding defect to unwrap them here for the caller's
+    convenience — an extraction that collapses a discriminated failure is the
+    same bug wearing a refactor's clothes.
+
+    ⛔ THE GATE STILL RAISES, and that stays deliberate. A missing fixture is a
+    gap in the SUITE, not an outcome of the run; only the reads that can fail to
+    HAPPEN became failure-track values. Note the ORDER: both discovery reads are
+    checked BEFORE the gate, because a gate fed by an unread tree is exactly the
+    vacuous pass this conversion exists to remove.
+
+    Each `unsafe_perform_io` sits directly under its own failure-track return,
+    so nothing is collapsed — the escape is bounded to this module, which is
+    already the one boundary that hands a `Result` back to consumers.
+    `_cli_e2e_discovery` never leaves the track at all.
     """
     _write_settings(home=home, config=config)
     session_id: str | None = None
@@ -315,9 +336,14 @@ def run_workflow(
         )
         session_id = install.session_id
 
-    discovered_map = discover_skills(plugin_install_dirs=config.plugin_install_dirs)
-    discovered = _flatten_discovered(discovered=discovered_map)
-    fixtures = discover_fixtures(fixtures_root=config.fixtures_root)
+    walked = discover_skills(plugin_install_dirs=config.plugin_install_dirs)
+    if isinstance(walked, IOFailure):
+        return walked
+    loaded = discover_fixtures(fixtures_root=config.fixtures_root)
+    if isinstance(loaded, IOFailure):
+        return loaded
+    discovered = _flatten_discovered(discovered=unsafe_perform_io(walked.unwrap()))
+    fixtures = unsafe_perform_io(loaded.unwrap())
     fixtured = tuple(sorted(fixtures))
 
     assert_coverage(
@@ -350,10 +376,12 @@ def run_workflow(
             )
         )
 
-    return WorkflowResult(
-        discovered_skills=discovered,
-        fixtured_skills=fixtured,
-        steps=tuple(steps),
+    return IOSuccess(
+        WorkflowResult(
+            discovered_skills=discovered,
+            fixtured_skills=fixtured,
+            steps=tuple(steps),
+        )
     )
 
 
@@ -385,7 +413,7 @@ def test_workflow_full_round_trip(
     home: Path,
     project_root: Path,
     injected_runner: CliRunner | None = None,
-) -> Result[WorkflowResult, WorkflowFailedError]:
+) -> Result[WorkflowResult, WorkflowFailedError | DiscoveryUnreadable]:
     """The importable pytest entry point consumers wire into their collection.
 
     A consumer imports this as
@@ -407,17 +435,30 @@ def test_workflow_full_round_trip(
 
     The coverage gate still raises `CoverageGateError` (fail-closed): a missing
     fixture is a gap in the suite itself, not an outcome of the run.
+
+    THE FAILURE TRACK WIDENED WITH PAIR B and the container did NOT, deliberately.
+    An unreadable plugin root or fixtures tree now arrives here as a value rather
+    than as a raised `OSError`, so it joins `WorkflowFailedError` on the failure
+    track. The CONTAINER stays `Result`: all four sibling wrappers call
+    `.unwrap()` on what this returns, and `IOResult.unwrap()` yields an
+    `IO[WorkflowResult]` — a wrapper reaching the caller in place of its payload,
+    which is the exact bug this repo already shipped once as
+    `frozenset(IOResult.unwrap())`. This is the ONE boundary that steps off the
+    IO track, which is where `unsafe_perform_io` belongs.
     """
     # `.unwrap()` re-raises on the failure track, preserving this entry point's
     # existing fail-closed contract: a wiring error still surfaces as a test
     # failure rather than a silently-skipped run.
     runner = select_runner(injected_runner=injected_runner).unwrap()
-    result = run_workflow(
+    outcome = run_workflow(
         config=config,
         runner=runner,
         home=home,
         project_root=project_root,
     )
+    if isinstance(outcome, IOFailure):
+        return Failure(unsafe_perform_io(outcome.failure()))
+    result = unsafe_perform_io(outcome.unwrap())
     if not result.passed:
         return Failure(
             WorkflowFailedError(
