@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.13.17](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.13.16...v1.13.17) (2026-08-01)
+
+
+### Bug Fixes
+
+* **checks:** put the ruff BLE001 backstop probe on the IOResult railway ([5cbda23](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5cbda239fa23380d660b5b6133e8ecf58ee2a70e))
+
 ## [1.13.16](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.13.15...v1.13.16) (2026-08-01)
 
 
