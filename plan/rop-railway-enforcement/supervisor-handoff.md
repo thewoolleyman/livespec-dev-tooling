@@ -374,6 +374,51 @@ Repeat these in every instruction sent to the supervised session:
 `tmp/overseer/.../.supervisor-state` marker is uncommitted and HAS vanished mid-session
 once; treat it as a cache, never as the record.
 
+### 🟢 CURRENT POSITION — 2026-08-01. EVERYTHING BELOW THIS SUBSECTION IS OLDER. Re-derive before quoting.
+
+**Read this block first and the ledger second; the paragraphs after it are kept for their
+REASONING and are stale on their numbers.** (Ordering fix borrowed from the worker, which hit
+the same defect in `handoff.md` the same day: a START-HERE block sinks below newer sections and
+keeps asserting old state to whoever reads top-down.)
+
+**THE COUNT IS 34, universe 167, carrying the `_`-FILE skip 0.** `qndn`'s triage half is
+discharged and its remediation is most of the way through. Dispositions have moved THREE times
+under reading, every time by measurement: CHECK-FIX 4→3, DECLARE 4→2, and the `default_*` trio
+resolving to one shared failure type rather than three.
+
+**THE ARMING PATH THAT REMAINS, in order:** the four `dx8l`-blocked CONVERT — consumer wiring
+lands FIRST in `livespec-orchestrator-beads-fabro` (`codex_yolo_gate.py`) and four siblings —
+then re-measure at BOTH ends, then drop the `_`-prefixed-FILE skip in
+`public_api_result_typed._scan`, then ARM, carrying the disposition denominator and the `995m`
+known-gap statement in the commit's own text.
+
+**✅ THE TYPE-SLICE IS RULED AND RATIFIED — livespec v181.** The question the earlier sections
+treat as open is CLOSED: **ratify `RowOutcome`, convert at the LEAF.** One principle —
+*convert where the I/O happens and there is nowhere to put "this did not happen"; the row type
+is a RENDERING at the boundary* — which sends the `default_*` trio to CONVERT and `RowOutcome`
+to RATIFY. That it decides two forks OPPOSITE ways from one rule is what makes it a principle.
+Framed as WIDENING what counts as on-the-railway, never as a fifth exemption, because
+§"ROP composition" declares its exemption set exhaustive (that is `i04f`'s fix).
+
+**AND BOTH BINDING CONDITIONS ARE DISCHARGED, which is the part a successor must not assume.**
+v181 ratified with conditions IN the text: (2) every `RowOutcome` consumption site discriminates
+by exhaustive `match`/`assert_never`, and (3) `8o8e.2` mandatory. Landed `41022eb` and `680fdc1`,
+verified: `assert_never` present across all five modules, ZERO residual `isinstance`-on-variant
+chains package-wide. **This mattered because for a few hours the repo had ratified a rule it did
+not itself satisfy** — `8o8e`'s founding condition, re-created by `8o8e`'s own fix. Condition 2
+was not ceremony: converting the chains surfaced a live fall-through producing `RowPass(note='')`,
+positive-controlled by reintroducing the bug.
+
+**✅ ALSO CLOSED SINCE:** `e01t` (the eight-copy Claude Driver `entries[0]` core resolver — spec
+half ratified in driver-claude, impl half extracted ONCE and wired across all eight), and
+**livespec v182**, which finally consumed THIS THREAD's own v178 "exposure: ZERO is FALSE"
+correction, pending since #1834. **Do not quote v178's exposure paragraph; v182 supersedes it.**
+
+**⛔ STILL OPEN, off the arming path:** `0j3i` (escalation predicate + `published_at` plumbing),
+`ve7w`, `9hpu`, `fas6`, `8o8e.5`, `8o8e.6`, the `ensure_plugins` `CommandResult`/`CommandRunner`
+collision, `_rows_beads.py`'s unreadable-or-absent skips, `open_bump_prs_for`'s missing
+pagination, and `parse_open_bump_prs`' silent per-item drop.
+
 **Anchor:** `livespec-dev-tooling-8o8e` is OPEN. `8o8e.1` is CLOSED (its precondition
 was discharged with per-repo evidence; v1.0.0 released and consumed fleet-wide).
 The plan is unarchived, so this is an OPEN OBLIGATION — Drive, Ask, or Finish, never
