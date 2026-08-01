@@ -1,5 +1,128 @@
 # rop-railway-enforcement — arm the check that was never armed, then remediate six repos
 
+> ## ▶️▶️▶️ COLD START — READ THIS BLOCK FIRST, THEN §"EXACT NEXT ACTION" BELOW IT
+>
+> **Written 2026-08-01 at a session wrap-up. This block is the CURRENT-STATE
+> header. The older `## ▶️ START HERE` section further down is a HISTORICAL
+> record: its live-state claims are dated 2026-07-31 and are SUPERSEDED by this
+> block. Read it for METHOD and for the reasoning behind past rulings, never for
+> "what is true now".**
+>
+> ### STATE, as left (RE-DERIVE — this ages in minutes)
+>
+> | repo | master | working tree |
+> |---|---|---|
+> | `livespec-dev-tooling` | `ffabf22` | clean (one untracked `install-livespec-pr-bot.png`, not this thread's) |
+> | `livespec-driver-claude` | `d11fccd` | clean |
+> | `livespec` | `95697d07` | clean |
+>
+> **NOTHING OF THIS THREAD IS MID-FLIGHT.** No open PR of its own, no worktree of
+> its own, no background job. **ELEVEN FOREIGN worktrees exist across the three
+> repos (5 / 3 / 3) — REAP NONE, and ENUMERATE with `git worktree list` rather
+> than trusting this sentence.**
+>
+> ```bash
+> /usr/local/bin/with-livespec-env.sh -- bd show livespec-dev-tooling-8o8e
+> ```
+>
+> ### 📏 BASELINE — re-derive at BOTH ENDS of every unit, never inherit
+>
+> **universe 167 · offenders DROPPING the `_`-prefixed-FILE skip 34 · offenders
+> CARRYING it 0.** Measure with `_find_offenders` over `resolve_check_universe()`,
+> **never** through `main()` or `_scan` (this repo declares
+> `pure_trees = { not_applicable = … }`, so `main()` iterates ZERO files and
+> reports 0 offenders regardless of the code — the UNARMED state, lying in wait
+> for anyone measuring this epic's own remediation). Stage new modules first: an
+> untracked module silently leaves the universe and reads as progress.
+>
+> ### ✅ WHAT IS DONE (all verified on the FORGE after a fetch)
+>
+> - **`e01t` CLOSED** — driver-claude #366 → `d11fccd`. The `entries[0]` core
+>   resolver is gone; all eight bindings call one Driver-owned
+>   `.claude-plugin/lib/resolve_core_root.py`. `/livespec:revise` and
+>   `/livespec:propose-change` work from this repo again.
+> - **`RowOutcome` RATIFIED as livespec v181** — #1870 → `4bb6119`.
+> - **BOTH v181 CONDITIONS DISCHARGED** — #1007 (`41022eb`) exhaustive
+>   `match`/`assert_never` at all 14 consumption sites; #1008 (`680fdc1`) =
+>   **`8o8e.2` CLOSED**, inapplicability is now an excluded pass, not a skip.
+> - **v182** — #1871 → `95697d07`. This thread's own `v178` "exposure: ZERO"
+>   correction, pending since #1834, is consumed; the false paragraph is OUT of
+>   the ratified text.
+>
+> ### ▶️▶️ EXACT NEXT ACTION — ITEM 3, and NOTHING is owed ahead of it
+>
+> **The four `dx8l`-blocked CONVERT. CONSUMER WIRING LANDS FIRST, IN THE
+> CONSUMING REPO — that is the whole point of `dx8l`, so the pin can move in
+> either direction including a REVERT.**
+>
+> 1. `fleet/_origin_remote.py::resolve_owner` **+** `resolve_repo_name` as **ONE
+>    pair** — clause (d) couples them, so a split PR measures **no movement** and
+>    reads as a failed conversion. Blocked on
+>    `livespec-orchestrator-beads-fabro`'s `.claude-plugin/hooks/codex_yolo_gate.py`
+>    being wired **dual-shape** first.
+> 2. `testing/_cli_e2e_discovery.py::discover_fixtures` **+** `discover_skills`,
+>    after **FOUR** siblings are wired.
+>
+> **⚠️ BOTH PAIRS CARRY A LIVE SECOND DEFECT:** their `subprocess.run` is
+> UNGUARDED, so an absent `git` raises `FileNotFoundError` straight out of
+> `resolve_owner`. It belongs to this unit and was deliberately not fixed in #984.
+>
+> **THEN, and only then:** re-measure at both ends → drop the `_`-prefixed-FILE
+> skip → **ARM**, carrying the disposition denominator and the `995m` known-gap
+> statement in the commit's own text.
+>
+> ### ⛔ THE STANDING QUESTION — it has inverted the expected fix in six units running
+>
+> Not *"does this crash?"* but **"what does this CLAIM when the thing it measures
+> never happened — and does anything ACT on the claim?"** A collapsed sentinel
+> does not produce an error; it produces an ARTICULATE WRONG ANSWER.
+>
+> ### 🧭 METHOD THAT KEEPS PAYING — the short list
+>
+> - **An instrument that cannot produce a NEGATIVE result has not produced a
+>   positive one.** Before trusting any green, make it fail once, deliberately.
+>   (Two sessions running this caught a real defect: the exhaustiveness check had
+>   ZERO sites to police, and the capture-vs-guard bug.)
+> - **One that cannot SEE the population has not measured it.** Quote no zero
+>   without its denominator. Four vacuous zeros have been caught this way,
+>   including two of mine — most recently an unquoted `--include=*.py` under zsh.
+> - **When something is believed IMPOSSIBLE, re-test the impossibility, not the
+>   finding.** A true correction sat unconsumed for two revise passes because this
+>   file asserted, falsely, that a revise must adjudicate every pending proposal.
+>   It consumes only the topics named in `decisions` — verified three times.
+> - **Verify the TRAILERS, not the exit code.** A Green amend once landed with Red
+>   trailers and NO Green trailers while `check-red-green-replay` exited 0.
+> - **Read a document's front matter TOGETHER with this file's record of what it
+>   filed** before deciding whose it is. `author:` alone does not discriminate.
+> - **Adding a first-party `.py` TREE is a CONFIGURATION change** — declare it in
+>   every allowlist that governs it (`source_tree_prefixes`, `source_trees`,
+>   `mirror_pairings`, `supervisor_entry_files`, coverage `source`+`include`,
+>   pyright `include`), or gates report green over a tree they cannot see.
+> - **`check-per-file-coverage` counts TEST files** at the same 100% bar: a fake
+>   carrying methods the subject never calls is dead lines.
+> - **`ruff format` BEFORE the Red commit** — reformatting a Red-recorded test
+>   file afterwards breaks its checksum and forces a fresh Red.
+> - **A mechanical conversion is where subtle bugs enter**, because the wrong
+>   shape looks equivalent: `case Cls(reason=CONST)` is a CAPTURE, not a value
+>   comparison, and matches EVERYTHING.
+>
+> ### 🛡️ STANDING SAFETY
+>
+> Never `--no-verify`; halt and report on hook failure, **reading the LOG** — a
+> check's NAME is not the evidence. `git worktree list` before acting; reap NONE
+> of the foreign worktrees. worktree → PR → rebase-merge under
+> `~/.worktrees/<repo>/<branch>`, never the primary checkout;
+> `just install-worktree-pack` before the first commit; stage EXPLICITLY.
+> Red-Green-Replay exactly — **RED MODE TAKES EXACTLY ONE STAGED TEST FILE**;
+> author a FRESH Red rather than amend a checksummed test file; a
+> behaviour-preserving refactor takes the SUITE-GREEN leg (`chore:` subject), not
+> a fabricated Red. **Auto-merge races a follow-up commit — verify the merge
+> commit contains what you think it does.** Verify on the FORGE after a fetch,
+> and pass **`--repo`** to every `gh` call when two repos are in play (`gh pr view
+> <n>` resolves against the CWD's repo — that silently reported another repo's PR
+> as mine).
+
+
 **Ledger anchor:** epic `livespec-dev-tooling-8o8e`
 
 **Thread:** `plan/rop-railway-enforcement/` in **livespec-dev-tooling**
@@ -632,7 +755,7 @@ module a conversion teaches to import `returns`; two of the four touched here la
 
 ---
 
-## ▶️ START HERE — where the work actually is
+## 🗄️ (HISTORICAL — state claims dated 2026-07-31, SUPERSEDED by the COLD START header at the top of this file; read for METHOD, not for what is true now) START HERE — where the work actually is
 
 > **COLD START, IN ORDER.** This file is all a fresh session inherits.
 >
