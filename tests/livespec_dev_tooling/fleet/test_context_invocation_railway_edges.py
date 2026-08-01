@@ -31,8 +31,8 @@ from livespec_dev_tooling.fleet._invocation_failure import (
 from livespec_dev_tooling.fleet._reconcile import (
     reconcile_delete_branch_on_merge,
     reconcile_merge_settings,
-    reconcile_shim_workflows,
 )
+from livespec_dev_tooling.fleet._reconcile_shims import reconcile_shim_workflows
 from livespec_dev_tooling.fleet._rows_github import assert_branch_protection
 from livespec_dev_tooling.fleet._tree_state import TreeState
 from livespec_dev_tooling.fleet.merged_branch_sweep import (

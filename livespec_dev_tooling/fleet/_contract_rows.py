@@ -33,7 +33,7 @@ from livespec_dev_tooling.fleet._contract_model import (
     ObligationRow,
     RowFn,
 )
-from livespec_dev_tooling.fleet._reconcile import reconcile_shim_workflows
+from livespec_dev_tooling.fleet._reconcile_shims import reconcile_shim_workflows
 from livespec_dev_tooling.fleet._rows_baseline import (
     assert_acceptance_mode_declared,
     assert_baseline_harnesses,

@@ -12,6 +12,8 @@ import textwrap
 from typing import TYPE_CHECKING
 
 from _gh_railway import lift_gh
+from returns.io import IOFailure, IOSuccess
+from returns.unsafe import unsafe_perform_io
 
 from livespec_dev_tooling.fleet import _rows_github
 from livespec_dev_tooling.fleet._context import (
@@ -44,6 +46,8 @@ _MEMBER = FleetMember(repo="widget", repo_class="library")
 _SECRETS_ARGS: tuple[str, ...] = ("api", "repos/acme/widget/actions/secrets")
 _INSTALL_ARGS: tuple[str, ...] = ("api", "installation/repositories?per_page=100")
 _PROTECTION_ARGS: tuple[str, ...] = ("api", "repos/acme/widget/branches/master/protection")
+_TREE_ARGS: tuple[str, ...] = ("api", "repos/acme/widget/git/trees/master?recursive=1")
+_CI_WORKFLOW_PATH = ".github/workflows/ci.yml"
 _REPO_ARGS: tuple[str, ...] = ("api", "repos/acme/widget")
 _TOPICS_ARGS: tuple[str, ...] = ("api", "repos/acme/widget/topics")
 _CI_ARGS: tuple[str, ...] = (
@@ -55,6 +59,7 @@ _CI_ARGS: tuple[str, ...] = (
 # The same two reads addressed at a `main`-default member's canonical ref,
 # for the rows that must resolve the ref rather than assume `master`.
 _MAIN_PROTECTION_ARGS: tuple[str, ...] = ("api", "repos/acme/widget/branches/main/protection")
+_MAIN_TREE_ARGS: tuple[str, ...] = ("api", "repos/acme/widget/git/trees/main?recursive=1")
 _MAIN_CI_ARGS: tuple[str, ...] = (
     "api",
     "repos/acme/widget/contents/.github/workflows/ci.yml?ref=main",
@@ -129,16 +134,46 @@ def test_parse_ci_matrix_ignores_lines_outside_matrix() -> None:
 
 
 def test_member_matrix_targets_reads_ci_yml() -> None:
-    ctx = make_context(table={_CI_ARGS: GhResult(returncode=0, stdout=_CI_YML, stderr="")})
-    assert member_matrix_targets(ctx=ctx, member=_MEMBER) == {"check-lint", "check-types"}
-
-
-def test_member_matrix_targets_none_when_unreadable_or_empty() -> None:
-    assert member_matrix_targets(ctx=make_context(table={}), member=_MEMBER) is None
-    empty_ctx = make_context(
-        table={_CI_ARGS: GhResult(returncode=0, stdout="name: CI\n", stderr="")}
+    ctx = make_context(
+        table={
+            _TREE_ARGS: _tree(),
+            _CI_ARGS: GhResult(returncode=0, stdout=_CI_YML, stderr=""),
+        }
     )
-    assert member_matrix_targets(ctx=empty_ctx, member=_MEMBER) is None
+
+    outcome = member_matrix_targets(ctx=ctx, member=_MEMBER)
+
+    assert isinstance(outcome, IOSuccess)
+    assert unsafe_perform_io(outcome.unwrap()) == {"check-lint", "check-types"}
+
+
+def test_member_matrix_targets_separates_unread_from_declares_none() -> None:
+    """Renamed from `..._none_when_unreadable_or_empty`, which named the fusion.
+
+    The old name is the clearest statement of the defect available: one
+    return value for a read that failed and for a file that answered.
+    """
+    unread = member_matrix_targets(ctx=make_context(table={_TREE_ARGS: _tree()}), member=_MEMBER)
+    assert isinstance(unread, IOFailure)
+    assert _CI_WORKFLOW_PATH in unsafe_perform_io(unread.failure()).detail
+
+    declares_none = member_matrix_targets(
+        ctx=make_context(
+            table={
+                _TREE_ARGS: _tree(),
+                _CI_ARGS: GhResult(returncode=0, stdout="name: CI\n", stderr=""),
+            }
+        ),
+        member=_MEMBER,
+    )
+    assert isinstance(declares_none, IOSuccess)
+    assert unsafe_perform_io(declares_none.unwrap()) == set()
+
+    absent = member_matrix_targets(
+        ctx=make_context(table={_TREE_ARGS: _tree(has_ci=False)}), member=_MEMBER
+    )
+    assert isinstance(absent, IOSuccess)
+    assert unsafe_perform_io(absent.unwrap()) == set()
 
 
 def test_secret_names_all_present_passes() -> None:
@@ -196,8 +231,21 @@ def _protection_payload(
     }
 
 
-def _protection_ctx(*, payload: object, ci_text: str | None = _CI_YML) -> FleetContext:
-    table = {_PROTECTION_ARGS: ok(payload=payload)}
+def _tree(*, has_ci: bool = True) -> GhResult:
+    """The member tree, which is what separates an ABSENT ci.yml from an UNREAD one.
+
+    `ctx.file_text` returns None for both, so the row cannot tell them
+    apart from the contents read alone; every fixture here must therefore
+    say which one it means.
+    """
+    paths = [{"path": _CI_WORKFLOW_PATH, "mode": "100644"}] if has_ci else []
+    return ok(payload={"tree": paths, "truncated": False})
+
+
+def _protection_ctx(
+    *, payload: object, ci_text: str | None = _CI_YML, ci_in_tree: bool = True
+) -> FleetContext:
+    table = {_PROTECTION_ARGS: ok(payload=payload), _TREE_ARGS: _tree(has_ci=ci_in_tree)}
     if ci_text is not None:
         table[_CI_ARGS] = GhResult(returncode=0, stdout=ci_text, stderr="")
     return make_context(table=table)
@@ -245,6 +293,7 @@ def test_branch_protection_read_at_the_members_canonical_ref() -> None:
     table = {
         _REPO_ARGS: ok(payload={"default_branch": "main"}),
         _MAIN_PROTECTION_ARGS: ok(payload=_protection_payload()),
+        _MAIN_TREE_ARGS: _tree(),
         _MAIN_CI_ARGS: GhResult(returncode=0, stdout=_CI_YML, stderr=""),
     }
     assert assert_branch_protection(ctx=make_context(table=table), member=_MEMBER) == RowPass()
@@ -348,8 +397,33 @@ def test_branch_protection_phantom_flagged_alongside_recognized_gate_job() -> No
 
 
 def test_branch_protection_alignment_skipped_when_ci_unreadable() -> None:
+    """The NAME was already right; the assertion said `RowPass()`.
+
+    Nothing about this test needed discovering — it stated the correct
+    behaviour in its own name and then pinned the opposite. A phantom
+    required check deadlocks every merge on the member, and this input
+    certified the member as aligned.
+    """
     ctx = _protection_ctx(payload=_protection_payload(contexts=["check-anything"]), ci_text=None)
-    assert assert_branch_protection(ctx=ctx, member=_MEMBER) == RowPass()
+
+    outcome = assert_branch_protection(ctx=ctx, member=_MEMBER)
+
+    assert isinstance(outcome, RowSkip)
+    assert "alignment unverified" in outcome.reason
+
+
+def test_branch_protection_flags_phantoms_when_ci_yml_is_definitively_absent() -> None:
+    """A member with no ci.yml at all: every required check is a phantom."""
+    ctx = _protection_ctx(
+        payload=_protection_payload(contexts=["check-anything"]),
+        ci_text=None,
+        ci_in_tree=False,
+    )
+
+    outcome = assert_branch_protection(ctx=ctx, member=_MEMBER)
+
+    assert isinstance(outcome, RowFinding)
+    assert "check-anything" in outcome.message
 
 
 def _merge_payload(**overrides: object) -> dict[str, object]:
