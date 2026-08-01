@@ -103,7 +103,31 @@
 > **⚠️ PAIR B's SECOND DEFECT, same shape as pair A's:** `_read_plugin_prefix`
 > skips a plugin dir whose manifest is unreadable, so a broken install reads as
 > "that plugin ships no skills"; and an unreadable fixtures root yields `{}` —
-> "no fixtures" — which is a **PASS**.
+> "no fixtures" — which `assert_coverage` then passes VACUOUSLY. That is the
+> standing question exactly, and it is the reason pair B is a conversion.
+>
+> **📏 PAIR B's BLAST RADIUS, READ rather than inferred (2026-08-01). SIX call
+> sites, and the doctrine's own step — READ EACH CONSUMPTION SITE'S GUARD, because
+> finding the import is not finding the guard:**
+>
+> | repo | sites |
+> |---|---|
+> | `livespec-driver-codex` | `tests/e2e-cli/test_cli_e2e.py` **:223, :242, :334** |
+> | `livespec-driver-claude` | `tests/e2e-cli/test_cli_e2e.py:177` |
+> | `livespec-orchestrator-beads-fabro` | `tests/e2e-cli/test_cli_e2e_round_trip.py:188` |
+> | `livespec-orchestrator-git-jsonl` | `tests/e2e-cli/test_cli_e2e_round_trip.py:180` |
+>
+> **⛔ AND THE RISK RUNS THE OPPOSITE WAY FROM PAIR A — SAY SO, because the
+> instinct will be to assume the same failure mode.** `resolve_owner`'s consumer
+> had a `None` guard that SILENTLY STOPPED GUARDING. These six have **NO GUARD AT
+> ALL**: every one goes straight to `fixtures.values()` / `fixtures.keys()`, so a
+> `Result` there raises `AttributeError` and each repo's e2e gate breaks LOUDLY on
+> the next pin bump. Loud is better than stale, but it is still four red masters,
+> so the `dx8l` ordering binds identically — **consumer wiring FIRST, dual-shape,
+> in each of the four repos, through its own green gates.**
+>
+> `discover_skills` has NO sibling consumer (the oracle, re-derived), so it moves
+> with `discover_fixtures` for clause (d) rather than for a consumer's sake.
 >
 > ### ⛔ THE STANDING QUESTION — it has inverted the expected fix in six units running
 >
