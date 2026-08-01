@@ -2,44 +2,47 @@
 
 > ## ▶️▶️▶️ COLD START — READ THIS BLOCK FIRST, THEN §"EXACT NEXT ACTION" BELOW IT
 >
-> **Rewritten 2026-08-01 (second session that day). This block is the
+> **Rewritten 2026-08-01 (third session that day). This block is the
 > CURRENT-STATE header. The older `## ▶️ START HERE` section further down is a
 > HISTORICAL record: its live-state claims are dated 2026-07-31 and are
 > SUPERSEDED by this block. Read it for METHOD and for the reasoning behind past
 > rulings, never for "what is true now".**
 >
-> ### 🔴🔴 THE FINDING OF THIS SESSION, and it is a NEW variant: A REFACTOR *MEANT TO HELP* MANUFACTURED THREE OFFENDERS, AND ONLY THE COUNT CAUGHT IT
+> ### 🔴🔴 THE FINDING OF THIS SESSION: THE GREEN AMEND EXITED 0 AND SILENTLY DESTROYED THE RED HALF OF THE PAIR
 >
-> Converting `resolve_owner` blew two 250-LLOC ceilings, so the fix was to
-> extract the four copies of the CLI precondition into `fleet/_cli_owner.py`.
-> That helper's first draft returned **`str | None`** — *"the owner, or `None`
-> meaning already-reported"* — which is **THE EXACT SENTINEL THE CONVERSION HAD
-> JUST REMOVED, RE-INTRODUCED ONE LAYER FURTHER OUT.** The far-end measurement
-> reported **35 where 32 was expected**. Nothing else would have caught it: every
-> test passed, lint passed, pyright passed, and the extraction was genuinely good
-> for every other reason.
+> `git commit --amend -F <file>` **REPLACES THE ENTIRE MESSAGE.** The Green amend
+> was authored with a fresh `-F` body, so the five `TDD-Red-*` trailers the Red
+> commit had earned were **DELETED**. The hook logged
+> `green-mode-candidate: HEAD~0 carries Red trailers + impl staged`, appended its
+> two `TDD-Green-*` trailers, and **EXITED 0**. The resulting commit carried
+> `Red: 0  Green: 2` — a half-pair that looks finished from the exit code.
 >
-> **▶️ THE GENERAL FORM, and it belongs beside the mechanical-conversion rule:
-> AN EXTRACTION THAT COLLAPSES A DISCRIMINATED FAILURE FOR ITS CALLER'S
-> CONVENIENCE IS THIS EPIC'S FOUNDING DEFECT WEARING A REFACTOR'S CLOTHES.** The
-> fix was to make both helpers **TAPS** — narrate the failure track, hand the
-> container through untouched. **RE-MEASURE AFTER THE CLEANUP, NOT ONLY AFTER THE
-> CONVERSION**; the cleanup is where this enters.
+> **▶️ THE RULE IS ALREADY IN THIS FILE — "Verify the TRAILERS, not the exit
+> code" — AND IT PAID AGAIN IN A NEW SPELLING.** The recorded instance was Red
+> trailers with no Green; this is the exact mirror, and the same one-line check
+> catches both: `git log --format='%B' -1 | grep -c '^TDD-Red-'` beside the
+> `TDD-Green-` count. A follow-up `just check-red-green-replay` also convicts it
+> (`red-green-replay-range-missing-trailers`), so a POST-COMMIT run of that one
+> check is the cheap backstop.
 >
-> **⛔ AND A CORRECTION OF MINE, recorded because the method rule it violates is
-> already in this file.** I reported `merged_branch_sweep.py:312`'s
-> `if manifest is None` as a live dead guard against a `Result`. **FALSE.** That
-> module defines its OWN `fetch_manifest` at line 96 returning `Manifest | None`;
-> it does not import the railed one. I matched the NAME instead of reading the
-> CALLEE — the exact trap §"read the callee, do not match the name" names. What
-> IS true and worth carrying: **two public `fetch_manifest` functions exist in
-> one package with DIFFERENT return shapes**, which is why that rule is needed.
+> **THE FIX, and it is not obvious:** `git reset --soft <red-sha>` (HEAD returns
+> to the Red commit, the Green tree stays staged), then amend with a message
+> that **carries the Red trailer block verbatim in its body**. The hook appends
+> Green; it does not re-derive Red. Final commit: **5 Red + 2 Green**.
+>
+> **⛔ AND A NEAR-MISS OF MINE, recorded because it is the sixth vacuous zero.**
+> To prove the conversion manufactured no offenders I diffed a before-list
+> against an after-list — and generated **BOTH from the same worktree**. The
+> "ADDED" column was empty and meant NOTHING. Fixed by generating `before` from
+> the primary checkout at master and `after` from the worktree, and by quoting
+> the two denominators (32 / 30) beside the diff so an empty ADDED is only
+> credible next to a non-empty REMOVED.
 >
 > ### STATE, as left (RE-DERIVE — this ages in minutes)
 >
 > | repo | master at wrap-up | working tree |
 > |---|---|---|
-> | `livespec-dev-tooling` | **`58200ef`** | clean (one untracked `install-livespec-pr-bot.png`, NOT this thread's — leave it) |
+> | `livespec-dev-tooling` | **`459baa7`** | clean (one untracked `install-livespec-pr-bot.png`, NOT this thread's — leave it) |
 > | `livespec-orchestrator-beads-fabro` | `bc26f70` | clean |
 > | `livespec-driver-claude` | `0cf4ca7` | clean |
 > | `livespec-driver-codex` | `d150626` | clean |
@@ -47,25 +50,10 @@
 > | `livespec` | `95697d07` | clean |
 >
 > **NOTHING OF THIS THREAD IS MID-FLIGHT — no open PR, no worktree, no background
-> job.** Ten PRs merged across five repos, every one verified on the FORGE after a
-> fetch: pair A (#1205, #1014, and #1207 the `dx8l` proof) and **ALL FOUR of pair
-> B's sibling wirings**. Every worktree of this thread's is reaped. FOREIGN
-> worktrees exist in all five repos (5 / 3 / 2 / 6 / 1 at wrap-up) — **REAP
-> NONE**, and ENUMERATE with `git worktree list` rather than trusting this count.
->
-> | pair B consumer wiring | PR | merged |
-> |---|---|---|
-> | `livespec-orchestrator-git-jsonl` | **#488** | `39616a9` |
-> | `livespec-orchestrator-beads-fabro` | **#1208** | `bc26f70` |
-> | `livespec-driver-claude` | **#370** | `0cf4ca7` |
-> | `livespec-driver-codex` (3 sites) | **#348** | `d150626` |
->
-> Each verified on the forge by grepping the MERGED tree for the `.map()` wiring
-> AND for absence of the `value_or` trap — not by reading a green PR page.
-> ⚠️ The first attempt at that verification printed `0 / 0 / 0` because zsh ate
-> `$sha:tests/...` as a `:t` parameter modifier. **The zeros were VACUOUS**, and
-> quoting `"${sha}:${f}"` gave `1 / 0 / 3`. That is the fifth vacuous zero this
-> thread has caught, and the second from shell quoting.
+> job.** Eleven PRs merged across five repos, every one verified on the FORGE
+> after a fetch. Every worktree of this thread's is reaped. FIVE FOREIGN
+> worktrees exist in dev-tooling (and more in the siblings) — **REAP NONE**, and
+> ENUMERATE with `git worktree list` rather than trusting any count here.
 >
 > ```bash
 > /usr/local/bin/with-livespec-env.sh -- bd show livespec-dev-tooling-8o8e
@@ -73,17 +61,17 @@
 >
 > ### 📏 BASELINE — re-derive at BOTH ENDS of every unit, never inherit
 >
-> **universe 168 · offenders DROPPING the `_`-prefixed-FILE skip 32 · offenders
-> CARRYING it 0** — re-derived on MERGED master TWICE (at `cb2d86a`, and again at
-> `1a508fb` after the four sibling wirings landed), not inherited from a worktree. (It was 167 / 34 before; the +1 universe is
-> `fleet/_cli_owner.py`, which adds ZERO offenders — that is the point, see the
-> manufactured-offender finding above.) Measure with `_find_offenders` over
-> `resolve_check_universe()`, **never** through `main()` or `_scan` (this repo
-> declares `pure_trees = { not_applicable = … }`, so `main()` iterates ZERO files
-> and reports 0 offenders regardless of the code — the UNARMED state, lying in
-> wait for anyone measuring this epic's own remediation). Stage new modules first:
-> an untracked module silently leaves the universe and reads as progress. A
-> ready-made harness is written out in §"THE ARMED MEASUREMENT".
+> **universe 168 · offenders DROPPING the `_`-prefixed-FILE skip 30 · offenders
+> CARRYING it 0** — re-derived on MERGED master at `459baa7`, not inherited from
+> a worktree. (It was 32 before pair B; the two that left are exactly
+> `discover_skills` and `discover_fixtures`, and NOTHING else moved.) Measure
+> with `_find_offenders` over `resolve_check_universe()`, **never** through
+> `main()` or `_scan` (this repo declares `pure_trees = { not_applicable = … }`,
+> so `main()` iterates ZERO files and reports 0 offenders regardless of the code
+> — the UNARMED state, lying in wait for anyone measuring this epic's own
+> remediation). Stage new modules first: an untracked module silently leaves the
+> universe and reads as progress. A ready-made harness is written out in
+> §"THE ARMED MEASUREMENT".
 >
 > ### ✅ WHAT IS DONE (all verified on the FORGE after a fetch)
 >
@@ -92,157 +80,129 @@
 > - **BOTH v181 CONDITIONS DISCHARGED** — #1007 (`41022eb`); #1008 (`680fdc1`) =
 >   **`8o8e.2` CLOSED**.
 > - **v182** — #1871 → `95697d07`. The false "exposure: ZERO" paragraph is OUT.
-> - **✅ ITEM 3, PAIR A — CONSUMER WIRING MERGED.** beads-fabro **#1205** →
->   **`12830ee`**: `codex_yolo_gate.py` tolerates BOTH `resolve_owner` shapes, so
->   the dev-tooling pin may move in either direction including a REVERT.
-> - **✅ ITEM 3, PAIR A — CONVERSION MERGED.** dev-tooling **#1014** →
->   **`cb2d86a`**. Both resolvers on `IOResult[str, OriginRemoteUnresolved]`, the
->   unguarded `subprocess.run` fixed as the `git-not-run` arm, **34 → 32**, both
->   trailer sets present.
-> - **✅ ITEM 3, PAIR B — ALL FOUR CONSUMER WIRINGS MERGED** (table above). Each
->   took the SUITE-GREEN leg (`chore(test):`), which is the doctrine for
->   behaviour-preserving test wiring — `red_green_replay`'s own rule 3: tests-only
->   staged with a `feat:`/`fix:` subject takes the Red leg, "any other prefix is a
->   test-only cleanup and takes the green-verified leg". **DO NOT fabricate a Red
->   for the remaining wiring work.**
-> - **▶️ WHAT REMAINS OF ITEM 3: the pair B CONVERSION ITSELF, now UNBLOCKED.**
+> - **✅ ITEM 3, PAIR A — COMPLETE.** beads-fabro **#1205** → `12830ee` (consumer
+>   wiring) and dev-tooling **#1014** → `cb2d86a` (the conversion). Both
+>   resolvers on `IOResult[str, OriginRemoteUnresolved]`, **34 → 32**.
+> - **✅ ITEM 3, PAIR B — COMPLETE.** All four consumer wirings (git-jsonl #488 →
+>   `39616a9`, beads-fabro #1208 → `bc26f70`, driver-claude #370 → `0cf4ca7`,
+>   driver-codex #348 → `d150626`) **AND the conversion itself**, dev-tooling
+>   **#1022 → `459baa7`**: both walks on `IOResult[..., DiscoveryUnreadable]`,
+>   **32 → 30**, both trailer sets present on the merged commit.
+> - **▶️ ITEM 3 IS DONE. WHAT REMAINS IS THE ARMING ITSELF.**
 >
-> ### ▶️▶️ EXACT NEXT ACTION — THE PAIR B CONVERSION. The `dx8l` block is DISCHARGED.
+> ### ▶️▶️ EXACT NEXT ACTION — DROP THE `_`-PREFIXED-**FILE** SKIP, THEN ARM
 >
-> 1. **CONVERT `testing/_cli_e2e_discovery.py::discover_fixtures` +
->    `discover_skills` as ONE pair.** All four consumers now tolerate both shapes,
->    so the pin may move in either direction. **RE-RUN THE ORACLE RATHER THAN
->    TRUSTING THAT** (harness in §"THE THIRD AXIS") — the wirings were authored
->    against a measurement, and so should the conversion be.
->    **The internal consumer is `cli_e2e.py:318-321`**, where
->    `test_workflow_full_round_trip` calls BOTH and feeds `assert_coverage`; it
->    converts in the same change.
+> Both conversions that reach through the skip have landed, so the ordering trap
+> is discharged and this is the last step. It is ONE change and it carries THREE
+> obligations that must not sink:
 >
->    **⚖️ THE ANSWER-vs-FAILURE CALL, ESTABLISHED BY READING — this is the axis
->    hand judgement has been wrong on, so it is written down rather than left:**
+> 1. **DROP `if py_file.name.startswith("_"): continue`** at
+>    `public_api_result_typed.py::_scan`. **This is FIDELITY, NOT A TIGHTENING** —
+>    v178 clause 0 disqualifies a `_`-prefixed **NAME**, never a **FILE**, so the
+>    check has been enforcing something WIDER than its ratified rule, which is
+>    non-conformance in the RELAXING direction. If "should we tighten?" comes up,
+>    refuse the question in those words.
+> 2. **THE DECLARATION OBLIGATION, IN THE SAME CHANGE.** `resolve_owner` and
+>    `discover_fixtures` are absent from `cross_repo_public_api` on the stated
+>    ground that "declaring them would assert a scope this check does not
+>    actually apply". **The moment the skip drops, that ground EXPIRES.**
+>    ⚠️ **AND THE COMMENT NAMING THEM IS NOW STALE ON A PATH:** it says
+>    `fleet/_context.py`'s `resolve_owner`, but pair A MOVED it to
+>    `fleet/_origin_remote.py`. Read the tree, not the comment.
+>    **RUN THE DECLARATION DETECTORS PER NEW ENTRY AS YOU AUTHOR IT** — `ueni`
+>    makes `stale_declarations` / `rejected_declarations` structurally unreachable
+>    here (both sit behind `main()`'s `pure_trees` gate), so member 2 bound 1's
+>    REJECTING gate first becomes reachable **in the arming commit itself** — the
+>    one commit that must not go red.
+> 3. **CARRY THE DISPOSITION DENOMINATOR AND THE `995m` KNOWN GAP** in the
+>    commit's own text.
 >
->    | site | verdict | why |
->    |---|---|---|
->    | `fixtures_root` ABSENT | **ANSWER** (`{}`) | the pin-walker ruling: `is_file`/`is_dir`/empty glob are answers. And the gate still catches it — `discovered` is non-empty, so `discovered - fixtured` is non-empty and it FAILS. |
->    | `fixtures_root` unreadable (perms) | **FAILURE** | today `is_dir()` FUSES this with absent. `iterdir()` splits them for free: `FileNotFoundError` is the answer, any other `OSError` is the failure. **Do not carry the fusion forward** — it is the `_rows_beads` shape and it is cheap to close here. |
->    | `prompt.md` / `expected_files.txt` `read_text` | **FAILURE** | UNCAUGHT today, so it raises out of a function annotated `dict`. This is the clause (a) conviction. |
->    | `_read_plugin_prefix`: manifest absent / unreadable / unparseable / no `name` | **ALL FOUR FAILURES** | `plugin_install_dirs` is a caller-DECLARED tuple of installed plugin roots; a dir in it without a readable manifest is a BROKEN INSTALL, not "not a plugin". |
+> **⛔ THE 30 REMAINING OFFENDERS ARE THE COST OF ARMING, AND THEY ARE NOT ALL
+> CONVERSIONS.** Re-triage them against the v179 member-1/member-2 split before
+> assuming each needs code: the last triage found FOUR of its "transitive" class
+> were `total_absence_returns` DECLARATIONS rather than conversions. Do not
+> inherit the old triage — `no_expected_failure_mode_pairs` moved 440 → 443 with
+> pair B alone.
 >
->    **✅ THE RISK IN THAT LAST ROW WAS MEASURED, NOT WAVED THROUGH** — it is the
->    only one of the four that CHANGES behavior for a currently-passing caller,
->    and `test_discover_skills_skips_plugin_with_missing_manifest` exists, so
->    somebody once thought skipping was right. **Every one of the four siblings
->    passes exactly ONE dir, and each is a real plugin root carrying a
->    `plugin.json`:** driver-claude `(_PLUGIN_SOURCE,)` and `(plugin_dir,)`,
->    driver-codex `(shim,)`, beads-fabro and git-jsonl `(_PLUGIN_DIR,)`. So no
->    live caller relies on the skip, and turning it into a failure breaks nothing
->    — which is exactly what makes the silent drop safe to remove rather than
->    merely wrong.
->
->    **🔴 AND THE VACUITY LIVES IN `discover_skills`, NOT `discover_fixtures` —
->    the triage row implies otherwise and it is worth correcting.**
->    `assert_coverage` computes `discovered - fixtured - exempt`. An empty
->    `fixtured` alone FAILS the gate (correctly). It is `discover_skills`'
->    `if prefix is None: continue` — a SILENT DROP of a whole plugin — that empties
->    `discovered`, and `set() - anything` is empty, so the **fail-closed
->    time-bomb gate reports SATISFIED**. That is the conversion's real prize.
-> 2. **THEN, and only then:** re-measure at both ends → drop the `_`-prefixed-FILE
->    skip → **ARM**, carrying the disposition denominator and the `995m` known-gap
->    statement in the commit's own text. **The dropped skip creates a DECLARATION
->    OBLIGATION in the same change** — `resolve_owner` and `discover_fixtures` are
->    absent from `cross_repo_public_api` on a ground that expires the moment the
->    skip drops.
->
-> **⚠️ PAIR B's SECOND DEFECT, same shape as pair A's:** `_read_plugin_prefix`
-> skips a plugin dir whose manifest is unreadable, so a broken install reads as
-> "that plugin ships no skills". ⛔ An earlier draft of this paragraph added "and
-> an unreadable fixtures root yields `{}`, which `assert_coverage` then passes
-> vacuously" — **that half is WRONG and is corrected in the ruling above**: an
-> empty fixture set alone FAILS the gate. Only the `discover_skills` drop empties
-> `discovered`, and `set() - anything` is empty. Kept here as a correction rather
-> than deleted, because the wrong version is the intuitive one and the next
-> reader will re-derive it.
->
-> **📏 PAIR B's BLAST RADIUS, READ rather than inferred (2026-08-01). SIX call
-> sites — ALL SIX NOW WIRED (the four PRs in the state table above). Kept because
-> the conversion must still land against this exact list, and because it records
-> the doctrine's own step — READ EACH CONSUMPTION SITE'S GUARD, since finding the
-> import is not finding the guard:**
->
-> | repo | sites |
-> |---|---|
-> | `livespec-driver-codex` | `tests/e2e-cli/test_cli_e2e.py` **:223, :242, :334** |
-> | `livespec-driver-claude` | `tests/e2e-cli/test_cli_e2e.py:177` |
-> | `livespec-orchestrator-beads-fabro` | `tests/e2e-cli/test_cli_e2e_round_trip.py:188` |
-> | `livespec-orchestrator-git-jsonl` | `tests/e2e-cli/test_cli_e2e_round_trip.py:180` |
->
-> **⛔ AND THE RISK RUNS THE OPPOSITE WAY FROM PAIR A — SAY SO, because the
-> instinct will be to assume the same failure mode.** `resolve_owner`'s consumer
-> had a `None` guard that SILENTLY STOPPED GUARDING. These six have **NO GUARD AT
-> ALL**: every one goes straight to `fixtures.values()` / `fixtures.keys()`, so a
-> `Result` there raises `AttributeError` and each repo's e2e gate breaks LOUDLY on
-> the next pin bump. Loud is better than stale, but it is still four red masters,
-> so the `dx8l` ordering binds identically — **consumer wiring FIRST, dual-shape,
-> in each of the four repos, through its own green gates.**
->
-> `discover_skills` has NO sibling consumer (the oracle, re-derived), so it moves
-> with `discover_fixtures` for clause (d) rather than for a consumer's sake — but
-> it is the half carrying the vacuity, so it is not the junior partner.
->
-> **📐 THE WIRING SHAPE ALL FOUR SIBLINGS NOW CARRY, so the conversion knows what
-> it may return:** a local `_discovered_fixtures` that returns the bare `dict`
-> unchanged, and otherwise captures the success track with `.map()`, asserting
-> loudly if nothing was captured. It tolerates `dict`, `Result` AND `IOResult`,
-> so **the conversion is free to choose either container.** Each sibling pins all
-> three success shapes plus both failure tracks against REAL containers, and each
-> was positive-controlled by re-introducing the `value_or` trap.
->
-> ### ⛔ THE STANDING QUESTION — it has inverted the expected fix in six units running
+> ### ⛔ THE STANDING QUESTION — it has inverted the expected fix in seven units running
 >
 > Not *"does this crash?"* but **"what does this CLAIM when the thing it measures
 > never happened — and does anything ACT on the claim?"** A collapsed sentinel
-> does not produce an error; it produces an ARTICULATE WRONG ANSWER.
+> does not produce an error; it produces an ARTICULATE WRONG ANSWER. Pair B's
+> Red output is the cleanest specimen this thread has produced:
+> `Success: WorkflowResult(discovered_skills=(), fixtured_skills=('seed',),
+> steps=())` — a PASSING round trip that ran ZERO steps over a broken install.
 >
 > ### 🧭 METHOD THAT KEEPS PAYING — the short list
 >
 > - **An instrument that cannot produce a NEGATIVE result has not produced a
 >   positive one.** Before trusting any green, make it fail once, deliberately.
->   (Two sessions running this caught a real defect: the exhaustiveness check had
->   ZERO sites to police, and the capture-vs-guard bug.)
 > - **One that cannot SEE the population has not measured it.** Quote no zero
->   without its denominator. Four vacuous zeros have been caught this way,
->   including two of mine — most recently an unquoted `--include=*.py` under zsh.
+>   without its denominator. **Six** vacuous zeros have been caught this way,
+>   three of them mine — most recently a before/after diff whose two sides were
+>   generated from the SAME tree.
+> - **Verify the TRAILERS, not the exit code**, and count BOTH sets. `--amend -F`
+>   replaces the whole message and silently drops the Red half; the hook still
+>   exits 0. Recovery is `git reset --soft <red-sha>` then an amend whose body
+>   carries the Red trailer block verbatim.
 > - **When something is believed IMPOSSIBLE, re-test the impossibility, not the
->   finding.** A true correction sat unconsumed for two revise passes because this
->   file asserted, falsely, that a revise must adjudicate every pending proposal.
->   It consumes only the topics named in `decisions` — verified three times.
-> - **Verify the TRAILERS, not the exit code.** A Green amend once landed with Red
->   trailers and NO Green trailers while `check-red-green-replay` exited 0.
-> - **Read a document's front matter TOGETHER with this file's record of what it
->   filed** before deciding whose it is. `author:` alone does not discriminate.
+>   finding.**
+> - **Read the CALLEE, do not match the NAME.** Two public `fetch_manifest`
+>   functions exist in one package with DIFFERENT return shapes
+>   (`fleet_conformance.py` returns `Result`, `merged_branch_sweep.py` returns
+>   `Manifest | None`), and `resolve_owner` has MOVED files since the pyproject
+>   comment naming it was written.
 > - **Adding a first-party `.py` TREE is a CONFIGURATION change** — declare it in
->   every allowlist that governs it (`source_tree_prefixes`, `source_trees`,
->   `mirror_pairings`, `supervisor_entry_files`, coverage `source`+`include`,
->   pyright `include`), or gates report green over a tree they cannot see.
-> - **`check-per-file-coverage` counts TEST files** at the same 100% bar: a fake
->   carrying methods the subject never calls is dead lines.
-> - **`ruff format` BEFORE the Red commit** — reformatting a Red-recorded test
->   file afterwards breaks its checksum and forces a fresh Red.
+>   every allowlist that governs it, or gates report green over a tree they
+>   cannot see.
+> - **`check-per-file-coverage` counts TEST files** at the same 100% bar.
+> - **`ruff format` BEFORE the Red commit**, and verify `sha256sum` against the
+>   recorded `TDD-Red-Test-File-Checksum` before every amend.
 > - **A mechanical conversion is where subtle bugs enter**, because the wrong
 >   shape looks equivalent: `case Cls(reason=CONST)` is a CAPTURE, not a value
 >   comparison, and matches EVERYTHING.
-> - **AN EXTRACTION CAN MANUFACTURE OFFENDERS.** A helper returning `str | None`
->   to spare its callers an unwrap re-introduces the sentinel one layer out.
->   RE-MEASURE AFTER THE CLEANUP, not only after the conversion.
-> - **`.map()` is the shape-agnostic unwrap for dual-shape consumer wiring**, and
->   `value_or` is NOT: on `Result` it yields the bare value, on `IOResult` it
->   yields an `IO[...]` that compares unequal to every string. Copying a sibling's
->   `Result` wiring onto an `IOResult` reproduces the bug it fixed, one deeper.
+> - **AN EXTRACTION CAN MANUFACTURE OFFENDERS.** RE-MEASURE AFTER THE CLEANUP,
+>   not only after the conversion, and diff the LISTS rather than the counts.
+> - **`.map()` is the shape-agnostic unwrap; `value_or` is a TRAP one container
+>   deep** — on `IOResult` it yields an `IO[...]` that compares unequal to every
+>   payload.
 > - **BUDGET A `*_edges.py` SIBLING INTO EVERY CONVERSION.** The Red file is
->   checksum-bound, so any Green-leg branch no existing test reaches needs one —
->   discovering this at the amend costs a rebuild. Verify byte-identity with
->   `sha256sum` against the recorded `TDD-Red-Test-File-Checksum` before amending;
->   `ruff check --fix` over `tests/` can silently rewrite it.
+>   checksum-bound, so any Green-leg branch no existing test reaches needs one.
+>
+> ### 🧰 FOUR DURABLE FACTS PAIR B ESTABLISHED — they bind every remaining conversion
+>
+> - **`.bind` AND `Fold.collect` ARE UNUSABLE HERE.** Both resolve through the
+>   vendored `KindN` machinery, which pyright strict reports as
+>   `reportUnknownMemberType` / partially-unknown, cascading into every
+>   downstream `.map`. **No module in this package calls either** — that absence
+>   is evidence, not oversight. Compose with `.map` plus an explicit
+>   `isinstance(x, IOFailure)` return (the `fleet_conformance.py` spelling).
+> - **`chmod 000` PROVES NOTHING — THIS SUITE RUNS AS ROOT.** Spell unreadability
+>   as a DIRECTORY where a file is expected (`IsADirectoryError`) or a FILE where
+>   a directory is expected (`NotADirectoryError`). ⚠️ Both are `OSError`s that
+>   are **NOT** `FileNotFoundError`, which matters because `FileNotFoundError` is
+>   the ANSWER arm wherever absent-is-legitimate.
+> - **ONE `try` BEATS `is_file()` THEN `read_text()`.** The pre-check pair fuses
+>   absent with unreadable AND leaves a TOCTOU second arm no test can reach; one
+>   `try` splits them on `FileNotFoundError` for free and makes every arm
+>   naturally reachable. Pair B removed three such pairs.
+> - **PICK THE CONTAINER BY READING THE CONSUMERS, NOT BY TASTE.**
+>   `test_workflow_full_round_trip` KEPT `Result` and only widened its failure
+>   track, because all four siblings call `.unwrap()` on it and
+>   `IOResult.unwrap()` yields an `IO[WorkflowResult]`. And **ONE failure type
+>   with N named reasons** (the `OriginRemoteUnresolved` shape) beats two types
+>   whenever they would meet at a `bind`: two force either a widening seam or an
+>   `unsafe_perform_io` escape mid-composition.
+>
+> ### ⚖️ LLOC: PAIR B PAID IT THE OPPOSITE WAY FROM PAIR A — worth knowing before the next one
+>
+> `cli_e2e.py` reached **249 against a 250 hard ceiling** on the first draft.
+> Pair A paid its two ceilings by EXTRACTING; pair B paid by **DELETING two
+> extractions** (a `_DriveInputs` parameter object and a `_drive_steps` helper)
+> that only existed to serve a nested `.map`/`bind` continuation. Flattening to
+> explicit `isinstance` returns took it to **228**. When a conversion's
+> extractions exist to serve the COMBINATOR rather than the reader, dropping the
+> combinator is the cheaper payment.
 >
 > ### 🔬 THE ARMED MEASUREMENT — the harness, written out so it is not re-derived
 >
@@ -270,15 +230,29 @@
 >
 > ### 🔬 THE THIRD AXIS — run the ORACLE, never a grep (supervisor brief 52)
 >
-> Build a `FleetContext` with the real seams, fetch + parse the manifest, rebuild
-> the context WITH `members=manifest.members` (an empty roster makes the row SKIP,
-> which is the fail-closed spelling and reads as "no consumers"), then
-> `fleet_consumption(ctx=ctx)` from `_rows_public_api_conformance` and filter
-> `state.graph.edges` by `edge.function`. **Quote the denominator with the
-> answer** — `len(ctx.members)` / `len(state.sources)` / `state.unavailable` /
-> `len(state.graph.unparsed)` / `len(state.graph.edges)` — because a bare zero and
-> "zero because I read nothing" are indistinguishable. Needs
-> `/usr/local/bin/with-livespec-env.sh` for the credential.
+> Build a `FleetContext` with the real seams, fetch + parse the manifest **with
+> `fetch_manifest` from `fleet/fleet_conformance.py`** (NOT `merged_branch_sweep`'s
+> same-named function, which returns `Manifest | None`), rebuild the context WITH
+> `members=manifest.members` (an empty roster makes the row SKIP, which is the
+> fail-closed spelling and reads as "no consumers"), then `fleet_consumption(ctx=ctx)`
+> from `_rows_public_api_conformance` and filter `state.graph.edges` by
+> `edge.function`. **Quote the denominator with the answer** —
+> `len(ctx.members)` / `len(state.sources)` / `state.unavailable` /
+> `len(state.graph.unparsed)` / `len(state.graph.edges)`. Needs
+> `/usr/local/bin/with-livespec-env.sh` for the credential, and the script needs
+> its OWN `_vendor` preamble (a bare `from returns...` fails outright).
+>
+> **✅ THE RE-EXPORT BLIND SPOT IS GONE — re-measured 2026-08-01, not assumed.**
+> This file previously recorded that the oracle found **ZERO** consumers for
+> `discover_fixtures` because `_public_api_graph.py:263`'s
+> `if name not in functions[defining]: continue` silently dropped every
+> re-exported reach. **It now resolves them.** Same denominators, edges **58 →
+> 63**: `discover_fixtures` ← all FOUR siblings, correctly attributed to
+> `testing/_cli_e2e_discovery.py`, and `discover_skills` ← **ZERO** (confirming
+> it moves for clause (d), not for a consumer's sake). **⛔ THE GATE THAT DROP
+> PLACED ON `5cai`'S OWN COMPLETENESS CLAIM SHOULD BE RE-READ AGAINST THIS** —
+> and the `wdn7`/`nkkv` TWENTY may no longer be retro-scoped. Verify before
+> quoting either; this paragraph records a measurement, not a closure.
 >
 > ### 🛡️ STANDING SAFETY
 >
@@ -290,11 +264,14 @@
 > Red-Green-Replay exactly — **RED MODE TAKES EXACTLY ONE STAGED TEST FILE**;
 > author a FRESH Red rather than amend a checksummed test file; a
 > behaviour-preserving refactor takes the SUITE-GREEN leg (`chore:` subject), not
-> a fabricated Red. **Auto-merge races a follow-up commit — verify the merge
-> commit contains what you think it does.** Verify on the FORGE after a fetch,
-> and pass **`--repo`** to every `gh` call when two repos are in play (`gh pr view
-> <n>` resolves against the CWD's repo — that silently reported another repo's PR
-> as mine).
+> a fabricated Red; and **count both trailer sets after every amend**.
+> **Auto-merge races a follow-up commit — verify the merge commit contains what
+> you think it does.** Verify on the FORGE after a fetch, and pass **`--repo`**
+> to every `gh` call when two repos are in play (`gh pr view <n>` resolves
+> against the CWD's repo — that silently reported another repo's PR as mine).
+> **Backgrounding a gate command (`just check*`, `git commit`, `git push`,
+> `gh pr …`) is DENIED by a PreToolUse hook** — run them foreground with a raised
+> timeout.
 
 
 **Ledger anchor:** epic `livespec-dev-tooling-8o8e`
@@ -382,6 +359,120 @@ a sibling's stall should not red an unrelated repo's PRs, which is a real reason
 records the lane-scoped shape instead.
 
 ---
+
+---
+
+## ✅ ITEM 3 PAIR B — **32 → 30**, AND THE COMMIT HOOK EXITED 0 ON A HALF-PAIR
+
+**dev-tooling #1022 → `459baa7`, MERGED and verified on the forge after a
+fetch** — the merged tree grepped for the conversion AND for absence of the
+`value_or` trap, never inferred from a green PR page. (The one `value_or` hit
+in the merged tree is the ⛔ warning in `_captured`'s docstring; READ before
+reporting, per this file's own read-the-callee rule.) Both ends re-derived with
+`_find_offenders` over `resolve_check_universe()`; the far end re-derived AGAIN
+on merged master.
+
+### 🔴🔴 THE FINDING: `--amend -F` DELETED THE RED TRAILERS AND THE HOOK STILL PASSED
+
+The Green amend was authored with a fresh `-F` body. **`git commit --amend -F`
+replaces the ENTIRE message**, so the five `TDD-Red-*` trailers the Red commit
+had earned were destroyed. The hook read them off `HEAD~0` (logging
+`green-mode-candidate: HEAD~0 carries Red trailers + impl staged`), appended its
+two `TDD-Green-*` trailers to MY body, and **exited 0**. Result: `Red: 0
+Green: 2`.
+
+**⛔ NOTHING IN THE COMMIT FLOW OBJECTS.** `just check` had passed minutes
+earlier — legitimately, because at pre-commit time HEAD was still the Red
+commit, which touches no product `.py` and is therefore outside
+`check-red-green-replay`'s range predicate entirely. The half-pair only becomes
+visible AFTER the message is final.
+
+**THE DETECTION and THE FIX, both cheap:**
+
+```bash
+git log --format='%B' -1 | grep -c '^TDD-Red-'    # must be 5
+git log --format='%B' -1 | grep -c '^TDD-Green-'  # must be 2
+just check-red-green-replay                        # post-commit backstop
+git reset --soft <red-sha>                         # recovery: HEAD back to Red,
+                                                   # Green tree still staged
+```
+
+then amend with a body that **carries the Red trailer block verbatim** — the
+hook appends Green, it does not re-derive Red.
+
+### 🔴 THE DEFECT ITSELF, and the intuitive reading is BACKWARDS
+
+`discover_skills` dropped an unreadable plugin root (`if prefix is None:
+continue`). That emptied `discovered`, and `assert_coverage` computes
+`discovered - fixtured - exempt`, so `set() - anything` is empty and the
+**FAIL-CLOSED gate reported SATISFIED**. The Red output is the specimen:
+
+```
+Success: WorkflowResult(discovered_skills=(), fixtured_skills=('seed',), steps=())
+```
+
+A PASSING round trip that ran ZERO steps. **An empty FIXTURE set alone never had
+this problem** — `discovered` stays non-empty, so the difference is non-empty
+and the gate fires correctly. Only the SKILLS drop empties the minuend.
+`discover_fixtures`' own defect is different in kind: an UNCAUGHT `read_text`
+raising an `OSError` out of a function annotated `dict` (clause (a)).
+
+### ⚖️ THE ANSWER-vs-FAILURE RULINGS, AND THE ONE THAT WAS MEASURED
+
+Absent fixtures root / `skills/` → **ANSWER**. Either one present-but-unlistable
+→ **FAILURE**. `prompt.md` unreadable → **FAILURE**; `expected_files.txt` absent
+→ ANSWER, unreadable → FAILURE. Every `plugin.json` outcome short of a usable
+`name` → **FAILURE**.
+
+**That last ruling is the only one that convicts a currently-passing caller, so
+it was MEASURED rather than argued:** all four consuming siblings pass exactly
+ONE directory, each a real plugin root carrying a `plugin.json`. No live caller
+relied on the skip — which is what made removing it safe rather than merely
+correct.
+
+### 🧰 FOUR DURABLE FACTS FOR EVERY REMAINING CONVERSION
+
+1. **`.bind` and `Fold.collect` are unusable under this repo's pyright strict**
+   — the vendored `KindN` machinery types as partially-unknown and cascades into
+   every downstream `.map`. **No module in the package calls either**, and that
+   absence is evidence. Use `.map` + explicit `isinstance(x, IOFailure)` returns.
+2. **`chmod 000` proves nothing — the suite runs as ROOT.** Spell unreadability
+   as a DIRECTORY where a file is expected or a FILE where a directory is
+   expected. Both are `OSError`s that are NOT `FileNotFoundError` — which is the
+   whole point, since `FileNotFoundError` is the ANSWER arm at three sites here.
+3. **One `try` beats `is_file()` then `read_text()`.** The pre-check fuses
+   absent with unreadable AND leaves a TOCTOU arm no test can reach. Pair B
+   removed three such pairs, and every one of the nine failure reasons is now
+   naturally reachable — no monkeypatching, no injection.
+4. **Pick the container by reading the CONSUMERS.**
+   `test_workflow_full_round_trip` kept `Result` and widened only its failure
+   track, because all four siblings `.unwrap()` it and `IOResult.unwrap()`
+   yields an `IO[WorkflowResult]` — the `frozenset(IOResult.unwrap())` bug this
+   repo already shipped once. And ONE failure type with nine named reasons (the
+   `OriginRemoteUnresolved` shape) beat two types, which would have met at
+   `run_workflow`'s `bind` as incompatible tracks.
+
+### ⚠️ COSTS, AND LLOC WAS PAID THE OPPOSITE WAY FROM PAIR A
+
+`cli_e2e.py` hit **249 against a 250 hard ceiling** on the first draft. Pair A
+paid its ceilings by EXTRACTING; pair B paid by **DELETING two extractions** — a
+`_DriveInputs` parameter object and a `_drive_steps` helper that existed only to
+serve a nested continuation. Flattening to explicit `isinstance` returns gave
+**228**. When extractions serve the COMBINATOR rather than the reader, dropping
+the combinator is the cheaper payment.
+
+`check-per-file-coverage` bit again, exactly as budgeted: `run_workflow`'s
+SECOND failure-track return had no test. The Red file is checksum-bound, so it
+went into the mirror-paired `test_cli_e2e.py` instead — and it earned its keep,
+because it pins the ORDER (both discovery reads are checked BEFORE the gate).
+
+### ⛔ AND A NEAR-MISS OF MINE — THE SIXTH VACUOUS ZERO
+
+To prove no offenders were manufactured I diffed a before-list against an
+after-list and generated **both from the same worktree**. The "ADDED" column was
+empty and meant nothing. Corrected by generating `before` from the primary
+checkout at master, and by quoting both denominators (32 / 30) beside the diff,
+so an empty ADDED is only credible next to a non-empty REMOVED.
 
 ---
 
