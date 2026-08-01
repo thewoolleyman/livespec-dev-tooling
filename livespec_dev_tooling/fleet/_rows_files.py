@@ -16,6 +16,11 @@ import sys
 from pathlib import Path
 from typing import cast
 
+from livespec_dev_tooling.fleet._bump_pr_list import (
+    bump_pr_class_undecidable_clause,
+    open_bump_prs_for,
+    persisting_bump_pr_number,
+)
 from livespec_dev_tooling.fleet._context import (
     FleetContext,
     FleetMember,
@@ -24,16 +29,14 @@ from livespec_dev_tooling.fleet._context import (
     RowPass,
     RowSkip,
 )
-from livespec_dev_tooling.fleet._rows_pin_currency import (
-    open_bump_prs_for,
-    persisting_bump_pr_number,
-)
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import tomli  # noqa: E402  — vendor-path-aware import after sys.path insert.
+from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 __all__: list[str] = [
     "BUMP_PIN_WORKFLOW",
@@ -184,34 +187,55 @@ def _freshness_outcome(*, ctx: FleetContext, member: FleetMember, tag: str) -> R
     is the PERSISTING gap — stale AND the bump PR that would fix it is
     already open, i.e. the mechanism fired and could not land — which is
     an error finding. An unreadable PR list never escalates (the
-    livespec-dev-tooling-6ge principle).
+    livespec-dev-tooling-6ge principle) — and no longer claims the
+    never-fired class either: it says the class is undetermined.
     """
     latest = _latest_dev_tooling_tag(ctx=ctx)
     if latest is None:
         return RowPass(note="pin present; freshness unverified (latest release unreadable)")
-    if tag != latest:
-        number = persisting_bump_pr_number(
-            open_prs=open_bump_prs_for(ctx=ctx, member=member),
-            source_repo="livespec-dev-tooling",
-            latest=latest,
-        )
-        if number is not None:
-            return RowFinding(
-                message=(
-                    f"{member.repo}: dev-tooling pin {tag} persisting gap (stale, latest "
-                    f"release {latest}, open bump PR #{number} unable to land)"
-                ),
-                # Context-scoped exactly as the pin-currency rows are: error
-                # only in the filter-consuming fan-out preflight, warning in
-                # per-PR CI. Both persisting-gap sites must move together or
-                # the promotion is half-armed.
-                severity="error" if ctx.filter_consuming_preflight else "warning",
-            )
+    if tag == latest:
+        return RowPass()
+    return _stale_dev_tooling_pin_outcome(ctx=ctx, member=member, tag=tag, latest=latest)
+
+
+def _stale_dev_tooling_pin_outcome(
+    *, ctx: FleetContext, member: FleetMember, tag: str, latest: str
+) -> RowOutcome:
+    """Which staleness class the stale dev-tooling pin falls in, or that it is undetermined.
+
+    The mirror of `_rows_pin_currency._staleness_class_outcome`, and the
+    two must keep agreeing: the shared clause renderer is what stops the
+    "both persisting-gap sites must move together" comment above from
+    being a hope.
+    """
+    stale_summary = f"{member.repo}: dev-tooling pin {tag} is stale (latest release {latest})"
+    open_prs = open_bump_prs_for(ctx=ctx, member=member)
+    if isinstance(open_prs, IOFailure):
         return RowFinding(
-            message=f"{member.repo}: dev-tooling pin {tag} is stale (latest release {latest})",
+            message=(
+                f"{stale_summary} — "
+                f"{bump_pr_class_undecidable_clause(failure=unsafe_perform_io(open_prs.failure()))}"
+            ),
             severity="warning",
         )
-    return RowPass()
+    number = persisting_bump_pr_number(
+        open_prs=unsafe_perform_io(open_prs.unwrap()),
+        source_repo="livespec-dev-tooling",
+        latest=latest,
+    )
+    if number is not None:
+        return RowFinding(
+            message=(
+                f"{member.repo}: dev-tooling pin {tag} persisting gap (stale, latest "
+                f"release {latest}, open bump PR #{number} unable to land)"
+            ),
+            # Context-scoped exactly as the pin-currency rows are: error
+            # only in the filter-consuming fan-out preflight, warning in
+            # per-PR CI. Both persisting-gap sites must move together or
+            # the promotion is half-armed.
+            severity="error" if ctx.filter_consuming_preflight else "warning",
+        )
+    return RowFinding(message=stale_summary, severity="warning")
 
 
 def _lock_outcome(*, ctx: FleetContext, member: FleetMember, tag: str) -> RowFinding | None:

@@ -23,15 +23,16 @@ if str(_VENDOR_DIR) not in sys.path:
 from returns.io import IOFailure, IOResult  # noqa: E402  — vendor-path-aware import.
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
-from livespec_dev_tooling.cross_repo.bump_pr_supersession import (  # noqa: E402
-    OpenBumpPullRequest,
-    parse_open_bump_prs,
-)
 from livespec_dev_tooling.cross_repo.pin_autodiscovery import (  # noqa: E402
     PinWalkFailure,
     discover,
 )
 from livespec_dev_tooling.cross_repo.pin_staleness import denotes_same_release  # noqa: E402
+from livespec_dev_tooling.fleet._bump_pr_list import (  # noqa: E402
+    bump_pr_class_undecidable_clause,
+    open_bump_prs_for,
+    persisting_bump_pr_number,
+)
 from livespec_dev_tooling.fleet._context import (  # noqa: E402
     FleetContext,
     FleetMember,
@@ -47,8 +48,6 @@ __all__: list[str] = [
     "assert_fabro_sandbox_image_pin_currency",
     "assert_github_workflow_uses_pin_currency",
     "assert_livespec_compat_pin_currency",
-    "open_bump_prs_for",
-    "persisting_bump_pr_number",
 ]
 
 
@@ -179,70 +178,6 @@ def _stale_pins(
     return tuple(stale)
 
 
-def open_bump_prs_for(
-    *, ctx: FleetContext, member: FleetMember
-) -> list[OpenBumpPullRequest] | None:
-    """The member's open bump PRs; None when the PR list is unreadable.
-
-    A can't-read never escalates a finding (the livespec-dev-tooling-6ge
-    principle): the caller treats None exactly like "no bump PR found"
-    and stays at warning severity.
-    """
-    payload = ctx.api_object(path=f"repos/{ctx.owner}/{member.repo}/pulls?state=open&per_page=100")
-    if payload is None:
-        return None
-    return parse_open_bump_prs(payload=_normalized_rest_prs(payload=payload), consumer=member.repo)
-
-
-def _normalized_rest_prs(*, payload: object) -> object:
-    """Adapt REST `pulls` items to the `gh pr list --json` shape the parser reads.
-
-    The parser consumes `headRefName`; the REST endpoint nests the same
-    value at `head.ref`. Without this mapping every REST item is
-    silently skipped and the persisting-gap conjunction can never fire —
-    a vacuous non-implementation.
-    """
-    if not isinstance(payload, list):
-        return payload
-    normalized: list[object] = []
-    for item in cast("list[object]", payload):
-        if not isinstance(item, dict):
-            normalized.append(item)
-            continue
-        entry = dict(cast("dict[str, object]", item))
-        head = entry.get("head")
-        if "headRefName" not in entry and isinstance(head, dict):
-            ref = cast("dict[str, object]", head).get("ref")
-            if isinstance(ref, str):
-                entry["headRefName"] = ref
-        normalized.append(entry)
-    return normalized
-
-
-def persisting_bump_pr_number(
-    *,
-    open_prs: list[OpenBumpPullRequest] | None,
-    source_repo: str,
-    latest: str,
-) -> int | None:
-    """The open bump PR that would fix this stale pin, if one exists.
-
-    A stale pin WITH an open bump PR targeting the latest release is a
-    PERSISTING gap — the self-heal mechanism already fired and could not
-    land — which is the conjunction `livespec-dh9r` escalates to error.
-    An open bump PR for an older tag or another source does not qualify:
-    it does not prove the mechanism fired for the CURRENT release.
-    """
-    if open_prs is None:
-        return None
-    for pr in open_prs:
-        if pr.key.source_repo == source_repo and denotes_same_release(
-            pinned_tag=pr.key.target_version, release_tag=latest
-        ):
-            return pr.number
-    return None
-
-
 def _stale_pin_summary(*, pin: StalePin) -> str:
     return " ".join(
         (
@@ -298,11 +233,34 @@ def _pin_currency_outcome(
         return RowPass(note="pin records present; freshness unverified (latest release unreadable)")
     if not stale:
         return RowPass()
+    return _staleness_class_outcome(ctx=ctx, member=member, spec=spec, stale=stale)
+
+
+def _staleness_class_outcome(
+    *, ctx: FleetContext, member: FleetMember, spec: PinCurrencySpec, stale: tuple[StalePin, ...]
+) -> RowOutcome:
+    """Which of the ratified staleness classes applies — or that this run cannot say.
+
+    The contract calls the two-class partition EXHAUSTIVE "because a bump
+    PR for the latest release either is open or is not". That holds of the
+    world; a RUN that could not read the PR list has established neither
+    class, and the third branch below is the only honest thing it can
+    emit. Severity is unchanged (warning) — a can't-read never escalates.
+    """
     open_prs = open_bump_prs_for(ctx=ctx, member=member)
+    if isinstance(open_prs, IOFailure):
+        return RowFinding(
+            message=(
+                f"{_finding_message(member=member, spec=spec, stale=stale)} — "
+                f"{bump_pr_class_undecidable_clause(failure=unsafe_perform_io(open_prs.failure()))}"
+            ),
+            severity="warning",
+        )
+    listed = unsafe_perform_io(open_prs.unwrap())
     persisting: list[tuple[StalePin, int]] = []
     for pin in stale:
         number = persisting_bump_pr_number(
-            open_prs=open_prs, source_repo=pin.record.source_repo, latest=pin.latest
+            open_prs=listed, source_repo=pin.record.source_repo, latest=pin.latest
         )
         if number is not None:
             persisting.append((pin, number))

@@ -147,6 +147,12 @@ def test_stale_without_open_bump_pr_stays_warning() -> None:
 
     assert isinstance(outcome, RowFinding)
     assert outcome.severity == "warning"
+    # This test and `test_unreadable_pr_list_never_escalates` used to assert
+    # the SAME thing over fixtures differing in exactly what they are named
+    # for — an identical pair proves the code treats both inputs alike and
+    # cannot see the fusion that made it. The list was READ here, so the
+    # never-fired class IS established and must not be hedged.
+    assert "UNDETERMINED" not in outcome.message
 
 
 def test_stale_with_open_bump_pr_for_an_older_tag_stays_warning() -> None:
@@ -177,7 +183,14 @@ def test_stale_with_open_bump_pr_for_another_source_stays_warning() -> None:
     assert outcome.severity == "warning"
 
 
-def test_unreadable_pr_list_never_escalates() -> None:
+def test_unreadable_pr_list_never_escalates_and_claims_neither_class() -> None:
+    """Warning severity is HALF the claim; the other half is what it says.
+
+    The severity assertion alone was identical to
+    `test_stale_without_open_bump_pr_stays_warning`'s, so the pair could
+    not distinguish "no bump PR" from "no answer" — which is precisely
+    what the code was doing.
+    """
     module = _module()
     ctx = _context(
         files=_stale_compat_files(),
@@ -189,3 +202,4 @@ def test_unreadable_pr_list_never_escalates() -> None:
 
     assert isinstance(outcome, RowFinding)
     assert outcome.severity == "warning"
+    assert "UNDETERMINED" in outcome.message
