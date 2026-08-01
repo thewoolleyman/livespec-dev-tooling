@@ -86,6 +86,199 @@ records the lane-scoped shape instead.
 
 ---
 
+---
+
+## ✅ THE 2026-08-01 CONVERT PAIR — 36 → 34, AND BOTH UNITS FOUND MORE THAN THEY CONVERTED
+
+**Both re-derived at BOTH ends on MERGED master with `_find_offenders` over
+`resolve_check_universe()`, never through `main()`, new modules STAGED.**
+**PR #998 (`5ca77da`): 36 → 35, universe 164 → 165. PR #1001 (`e5a5766`): 35 → 34,
+universe 165 → 167.** One Red→Green pair each, both trailer sets, verified on the FORGE
+after a fetch. **The unblocked CONVERT column is now EMPTY.**
+
+### 🔴 #998 — a stale pin whose PR list never answered CLAIMED the never-fired class
+
+`open_bump_prs_for` returned `list[...] | None`; both persisting-gap sites passed that `None`
+into `persisting_bump_pr_number`, which returns `None` for it exactly as for "no bump PR
+qualifies". The row then emitted the ordinary stale finding — **which `contracts.md`
+§"Pin-currency severity policy" defines as the NEVER-FIRED class.** That section calls its
+two-class partition EXHAUSTIVE *"because a bump PR for the latest release either is open or is
+not"* and requires the diagnostic to name *"WHICH of the two classes applies"*. **The partition
+is exhaustive over the WORLD and not over a RUN**, and the row named a class it had not
+established. That framing is reusable: a ratified partition can be complete and still be
+unestablishable by a given execution.
+
+**⛔ THE FUSION FALLS ON BOTH SIDES, AT DIFFERENT TIMES — a NEW member of the direction rule.**
+Today it is PASS-side: a member possibly in the escalating persisting class stays at warning and
+is NOT excluded from the fan-out. **The moment `0j3i` implements v039's never-fired arm, the
+SAME fused value routes an unreadable list to ERROR past the settle window** — escalating a
+class the run never established, against the same section's *"a can't-READ never escalates"*.
+**A fusion can be latent in one direction and ARMED in the other by work already queued**, so
+"which side does this fall on" must be asked of the ROADMAP as well as the code.
+
+**A SECOND CONDITION THAT WAS NEVER SPELLED `None` ANYWHERE:** a payload that PARSES and is not
+a list. The `pulls` body exists solely to BE the list of open PRs, so GitHub's error shape there
+is a non-answer; `parse_open_bump_prs` folded it to `[]` — correct for a parser whose contract
+is "skip unrelated PRs", a fail-open one layer up where `[]` means the mechanism never fired.
+**`gh` exits 0 on that path, so nothing upstream recorded a read failure at all.** The shared
+parser is untouched; the shape check moved into the converting function.
+
+**Severity is UNCHANGED and that is the point** — `6ge` is about SEVERITY, not representation.
+The row also does not SKIP: staleness WAS evaluated, and skipping would discard a definitive
+finding and feed `blind_rows` (`8o8e.2`) for a transient read.
+
+### 🔴🔴 #1001 — an UNREAD ci.yml CERTIFIED a member's phantom required checks as ALIGNED
+
+`member_matrix_targets` and its twin `member_ci_check_names` returned `set[str] | None` over
+THREE states: ci.yml absent, unreadable, and read-but-naming-nothing. `_protection_problems`
+did `if ci_names is not None:` before diffing required checks against ci.yml names, so a `None`
+**skipped the comparison** and `assert_branch_protection` returned **`RowPass()`**. A member
+whose required check matches no ci.yml job — *"a phantom that can never report and would
+deadlock every merge"*, the row's own words — was certified ALIGNED because a read failed.
+
+**⛔ MEASURED WITH A POSITIVE CONTROL FIRST, never reasoned.** Same protection payload requiring
+`ghost`:
+
+| ci.yml state | outcome BEFORE |
+|---|---|
+| READABLE, does not name `ghost` | `RowFinding` — the instrument CAN flag it |
+| **UNREADABLE** | **`RowPass`** |
+| **READ, names nothing** | **`RowPass`** |
+
+**The third row is not a can't-read at all** — it is the DEFINITIVE form of the defect the row
+exists to catch, and it was the quietest.
+
+**🔺 THE TWIN IS NOT IN THE CHECK'S COUNT AND CARRIED THE WORSE DEFECT.**
+`member_ci_check_names`' only consumer lives in its own module, so it crosses no boundary the
+consumption graph can see and `_find_offenders` never convicted it; `member_matrix_targets`,
+IDENTICAL in shape, is convicted only because `_reconcile` imports it. **A conviction tally is
+not a defect tally** — this is `_inspect_hook`'s shape (#992) arriving through a different
+mechanism: not a `_`-prefixed NAME, but a consumer that never crosses a module boundary.
+Converting one and leaving the other would have dropped the count while leaving the fusion.
+
+**⛔ ABSENCE IS NOT UNREADABILITY AND `ctx.file_text` CANNOT TELL THEM APART** — both are
+`None`. Folding both onto the failure track would sweep a real, reportable state into "I could
+not tell", the recorded `catch OSError` mistake. **The member's own TREE separates them**,
+exactly as `_rows_files._tree_path_outcome` already decides the same question for every other
+committed-file row: absent from a readable, untruncated tree is DEFINITIVE (empty name set, so
+every required check is correctly a phantom); a TRUNCATED tree cannot prove absence and stays a
+failure; only present-in-tree-but-contents-unread is the can't-read, which now SKIPS.
+
+**▶️ BLAST RADIUS MEASURED BEFORE TIGHTENING, and unlike brief 72's question the population IS
+visible to the instrument — ci.yml is TRACKED content.** All **9/9** manifest members read, **0**
+unreadable, smallest name set **15**. **No member newly fails.** Positive control (an empty
+source must count as empty) ran first — and **the sweep's FIRST attempt reported `0 of 0`,
+because it read `members` from a manifest whose key is `fleet`.** The denominator is printed for
+exactly that reason; the `_scan` shape is one typo away at all times.
+
+### 🔴🔴 TWO NEW MEMBERS OF THE SUITE-PINS-THE-DEFECT CLASS, AND NEITHER IS CAUGHT BY "READ THE FIXTURE, NOT THE TEST NAME"
+
+**INSTANCE EIGHT — TWO TESTS WHOSE ASSERTIONS COINCIDE.**
+`test_unreadable_pr_list_never_escalates` had an HONEST fixture (the PR-list call genuinely went
+unanswered) but its only assertion was `severity == "warning"` — **byte-identical to its
+neighbour `test_stale_without_open_bump_pr_stays_warning`'s.** Two tests whose ASSERTIONS
+coincide, over fixtures differing in exactly the thing they are named for, **prove the code
+treats both inputs alike; they cannot see the fusion that makes it do so.**
+▶️ **THE RULE: compare a test's assertion against its SIBLING'S. An assertion that is a strict
+subset of another test's, over a different fixture, pins nothing about what makes the fixture
+different.** "Read the fixture" catches a name that lies; this needs "read the pair".
+
+**INSTANCE NINE — THE NAME IS RIGHT AND THE ASSERTION IS WRONG, WHICH IS THE INVERSE OF SIX AND
+SEVEN.** `test_branch_protection_alignment_skipped_when_ci_unreadable` — **the name says
+SKIPPED** — asserted `== RowPass()`. `RowPass` and `RowSkip` are different types, so this is a
+plain contradiction, not an equality subtlety. **The test had already written down the correct
+contract and then enforced its violation**, which is evidence the fail-open was never a
+considered decision. It was also the only test in its neighbourhood with NO docstring, while
+every sibling carried a spec citation.
+`test_reconcile_protection_without_matrix_is_finding` was the same shape one layer down: its
+"without matrix" was an EMPTY canned table, so every read failed and it asserted the finding for
+a ci.yml that was never READ.
+
+**▶️ AND THE POSITIVE-CONTROL RULE NOW APPLIES TO THE TESTS THEMSELVES.** Both new test files
+carry an input that must produce NEITHER new outcome (a readable-and-empty PR list; a readable
+ci.yml naming the check). Without it, an unconditional clause or an unconditional skip would
+satisfy every other assertion in the file.
+
+### ⚖️ THE TYPE-SLICE RULING — **(b) RATIFY `RowOutcome`, AND CONVERT AT THE LEAF.** ONE principle answers BOTH forks
+
+**Decided WITH the `default_*` Protocol slice, as required, because taking them separately is how
+they get inconsistent answers. The principle: CONVERT WHERE THE FAILURE ORIGINATES AND IS
+CURRENTLY UNREPRESENTABLE; RATIFY THE TYPE THAT RENDERS IT AT THE BOUNDARY.**
+
+**▶️ THE EVIDENCE IS THIS SESSION'S TWO UNITS, and it was produced rather than argued.** Both
+defects lived at the LEAF (`open_bump_prs_for`, `member_matrix_targets` / `member_ci_check_names`)
+— functions that DO the IO and had nowhere to put "this did not happen". Both fixes put a
+`Result` exactly there and then **RENDERED it into `RowOutcome` at the row boundary**. At no
+point did the row layer's three-way outcome fail to express the answer: #998 needed a distinct
+MESSAGE at unchanged severity, #1001 needed `RowSkip` instead of `RowPass`. **`RowOutcome` was
+sufficient both times, and the railway was necessary both times — one layer down.** That is the
+architecture the requirement asks for, not a gap in it.
+
+**▶️ WHY THIS IS NOT THE FORBIDDEN MOVE.** `8o8e`'s founding text contemplates exactly this fork
+(*"is the remedy conversion, or is it a narrower, honestly-stated exemption ratified through
+/livespec:propose-change?"*). `RowOutcome` is a closed discriminated union with `RowSkip`
+INHABITED and load-bearing; it DOES flow expected failure modes as failure-track values, it is
+simply not spelled `Result`. It is not a severity lever, not a per-repo opt-in, not a
+declared-empty escape.
+
+**▶️ AND WHY `default_*` GOES THE OTHER WAY UNDER THE SAME PRINCIPLE — CONVERT.** Those three
+call `subprocess.run` DIRECTLY rather than through an injected parameter, so they ARE the
+boundary, which is what distinguishes them from `preflight_credential`'s injected `sleep`. An
+`OSError` there has NO `try` anywhere in the chain and CRASHES the whole nine-member sweep
+partway through a member. That is a failure that ORIGINATES there and is unrepresentable there
+— the leaf case exactly. **Same principle, opposite answers, which is the test that it is a
+principle and not a preference.**
+
+**⛔ THE PRICE, STATED PLAINLY AND NOT DEFERRED: `8o8e.2` BECOMES MANDATORY.** Under ratification
+nothing else fixes `RowSkip`'s two meanings — central (`_lanes.py:173`) reads "not evaluable"
+and feeds `blind_rows`, which reds master; local (`local_reconcile.py:94`) reads "not
+applicable" and logs info. **AND THE AMBIGUITY IS ACTIVELY ACCUMULATING: #1001 ADDED a `RowSkip`
+meaning "not evaluable" to a central row.** That was checked as safe (`blind_rows` reds only a
+row evaluable on NO applicable member) but it is the second meaning growing while the item sits
+open. The targeted fix needs no new type — `RowPass(note=_EXCLUDED_NOTE_PREFIX + reason)`, which
+`_lanes.py:188` already renders — and it is now a PRECONDITION of this ruling rather than an
+incidental cleanup.
+
+**⛔ AND A CONDITION THE RATIFICATION MUST CARRY, found while ruling:** the 14 `isinstance`
+consumption sites do NOT exhaustively match `RowOutcome`, so today the type does not FORCE a
+consumer to answer the Skip question — which is how the two lanes came to read it oppositely.
+`Result`'s advantage was never the spelling; it was that `unwrap()` is unavoidable. **Ratifying
+`RowOutcome` without requiring exhaustive matching at consumption sites keeps the one property
+that let `8o8e.2` happen.** Say so in the proposed change.
+
+**⛔ NOT FILED — the ratification is a `/livespec:propose-change` + `/livespec:revise`, and
+`livespec-dev-tooling-e01t` (the `entries[0]` resolver) breaks both from this repo. Per supervisor
+brief 73 the resolver is to be FIXED FIRST rather than hand-paid a third time.** The ruling above
+is the input to that change, not a substitute for it.
+
+### 📌 CARRIED FORWARD, FOUND WHILE WORKING AND NOT FIXED
+
+- **`_rows_beads.py:110` and `:113` spell `RowSkip(reason="… unreadable or absent")`** — the SAME
+  absent/unreadable fusion #1001 just split, in the row family `8o8e.2` already names. Not
+  touched here; it belongs with `8o8e.2`.
+- **`open_bump_prs_for` reads `per_page=100` with NO pagination.** A member with more than 100
+  open PRs silently loses the bump PR from the window, which reads as "the mechanism never
+  fired". Not in this unit's conviction and not fixed.
+- **`parse_open_bump_prs` drops a malformed ITEM silently** (no `headRefName`, non-string
+  `head.ref`), so a real bump PR whose branch could not be read reads as absent — the same shape
+  one level down, in a parser SHARED with the workflow glue. A separate unit.
+- **`reconcile_shim_workflows`' branch probe fuses 404 with 403/5xx** — READ against the standing
+  question during #1001's forced split, and left alone deliberately: the subsequent create is
+  refused by GitHub and surfaced by `_gh_failed`, so it is LOUD, not silent. **Recorded as a
+  NEGATIVE result so it is not re-derived.**
+
+### ▶️ MECHANICS, EVERY ONE PREDICTED BY THE CHAIN — the three costs recurred AGAIN
+
+`_rows_pin_currency.py` stood at **247 against the 250 hard ceiling** → `_bump_pr_list.py`.
+`_reconcile.py` broke it at **264** → `_reconcile_shims.py`. `assert_branch_protection` broke
+**PLR0911 at 7 returns** → extracted `_protection_verdict`, never routed around.
+`check-per-file-coverage` found the **truncated-tree branch no test reached**.
+**AND THE `vzwa` CLASS WAS LIVE TWICE: `_rows_github.py` and `_reconcile.py` had NO `_VENDOR_DIR`
+preamble and now import `returns`** — both got one in the same edit. Check the preamble on EVERY
+module a conversion teaches to import `returns`; two of the four touched here lacked it.
+
+---
+
 ## ▶️ START HERE — where the work actually is
 
 > **COLD START, IN ORDER.** This file is all a fresh session inherits.
@@ -414,15 +607,16 @@ records the lane-scoped shape instead.
 >    itself evidence that one of the two is UNTESTED. Read the fixture, not the test name.**
 >
 >    **▶️▶️ COLD START, THE ONLY THING YOU NEED FROM THIS BLOCK: the NEXT ACTION is
->    ▶️ THE REMAINING **6** CONVERT, of which **2 ARE UNBLOCKED** — each a single function, none
->    Protocol-assigned, each checked:
->    `fleet/_rows_pin_currency.py::open_bump_prs_for` (which then makes `persisting_bump_pr_number`
->    the COUPLED row's DECLARE — do NOT declare it before) and `fleet/_rows_github.py::
->    member_matrix_targets`. ~~`checks/_primary_checkout_worktree_pack.py::inspect_worktree_pack`~~
->    **LANDED, PR #992 — see the block above; it cost three LLOC splits and found a fail-open in
->    the MANDATORY hook arm that nothing suspected.**
->    Then the `dx8l`-blocked pairs — consumer wiring lands FIRST, in the consuming repo — then
->    TYPE-SLICE.**
+>    ▶️ THE `dx8l`-BLOCKED PAIRS — CONSUMER WIRING LANDS FIRST, IN THE CONSUMING REPO.**
+>    ~~`fleet/_rows_pin_currency.py::open_bump_prs_for`~~ **LANDED, PR #998.**
+>    ~~`fleet/_rows_github.py::member_matrix_targets`~~ **LANDED, PR #1001.**
+>    ~~`checks/_primary_checkout_worktree_pack.py::inspect_worktree_pack`~~ **LANDED, PR #992.**
+>    **The unblocked CONVERT column is now EMPTY.** Both 2026-08-01 units are recorded in the
+>    section §"THE 2026-08-01 CONVERT PAIR" below; read it before the next unit, because BOTH
+>    found a defect larger than the conversion and BOTH found a new member of the
+>    suite-pins-the-defect class. **`persisting_bump_pr_number`'s DECLARE is now UNBLOCKED and
+>    NOT TAKEN** — its inherited failure is gone, which was the stated precondition.
+>    Then TYPE-SLICE, whose ruling is now RECORDED below rather than open.
 >
 >    **✅ DISCHARGED BY PR #992 — the lead was RIGHT and the answer was the split; the block above
 >    records what it cost and what else it convicted. Kept for its reasoning, not as an open item.**
