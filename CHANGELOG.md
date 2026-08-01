@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.13.20](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.13.19...v1.13.20) (2026-08-01)
+
+
+### Bug Fixes
+
+* **agent_hooks:** an apostrophe no longer hides a created worktree ([91a9f66](https://github.com/thewoolleyman/livespec-dev-tooling/commit/91a9f661a21cf455f0e3c7ff5378a5a1eeebac6a))
+
 ## [1.13.19](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.13.18...v1.13.19) (2026-08-01)
 
 
