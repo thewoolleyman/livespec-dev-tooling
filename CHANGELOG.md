@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.13.14](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.13.13...v1.13.14) (2026-08-01)
+
+
+### Bug Fixes
+
+* **fleet:** RowSkip means NOT EVALUABLE; inapplicability is an excluded pass ([680fdc1](https://github.com/thewoolleyman/livespec-dev-tooling/commit/680fdc1a5c8325fe1c809686b1714bb6d76533d3))
+
 ## [1.13.13](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.13.12...v1.13.13) (2026-08-01)
 
 
