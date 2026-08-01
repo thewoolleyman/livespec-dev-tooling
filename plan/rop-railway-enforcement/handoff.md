@@ -37,17 +37,21 @@
 >
 > ### STATE, as left (RE-DERIVE — this ages in minutes)
 >
-> | repo | master | working tree |
+> | repo | master at wrap-up | working tree |
 > |---|---|---|
-> | `livespec-dev-tooling` | **`cb2d86a`** (#1014 merged) | clean (one untracked `install-livespec-pr-bot.png`, not this thread's) |
-> | `livespec-orchestrator-beads-fabro` | **`12830ee`** (#1205 merged) | clean |
+> | `livespec-dev-tooling` | **`58200ef`** | clean (one untracked `install-livespec-pr-bot.png`, NOT this thread's — leave it) |
+> | `livespec-orchestrator-beads-fabro` | `bc26f70` | clean |
+> | `livespec-driver-claude` | `0cf4ca7` | clean |
+> | `livespec-driver-codex` | `d150626` | clean |
+> | `livespec-orchestrator-git-jsonl` | `39616a9` | clean |
 > | `livespec` | `95697d07` | clean |
 >
-> **NOTHING OF THIS THREAD IS MID-FLIGHT** except the docs PR carrying this very
-> edit. Pair A (#1205, #1014) and **ALL FOUR of pair B's sibling wirings** are
-> MERGED and verified on the forge after a fetch; every worktree of this thread's
-> is reaped. FOREIGN worktrees exist in every repo — **REAP NONE**, and ENUMERATE
-> with `git worktree list` rather than trusting this sentence.
+> **NOTHING OF THIS THREAD IS MID-FLIGHT — no open PR, no worktree, no background
+> job.** Ten PRs merged across five repos, every one verified on the FORGE after a
+> fetch: pair A (#1205, #1014, and #1207 the `dx8l` proof) and **ALL FOUR of pair
+> B's sibling wirings**. Every worktree of this thread's is reaped. FOREIGN
+> worktrees exist in all five repos (5 / 3 / 2 / 6 / 1 at wrap-up) — **REAP
+> NONE**, and ENUMERATE with `git worktree list` rather than trusting this count.
 >
 > | pair B consumer wiring | PR | merged |
 > |---|---|---|
@@ -70,8 +74,8 @@
 > ### 📏 BASELINE — re-derive at BOTH ENDS of every unit, never inherit
 >
 > **universe 168 · offenders DROPPING the `_`-prefixed-FILE skip 32 · offenders
-> CARRYING it 0** — re-derived on MERGED master `cb2d86a`, not inherited from the
-> worktree. (It was 167 / 34 before; the +1 universe is
+> CARRYING it 0** — re-derived on MERGED master TWICE (at `cb2d86a`, and again at
+> `1a508fb` after the four sibling wirings landed), not inherited from a worktree. (It was 167 / 34 before; the +1 universe is
 > `fleet/_cli_owner.py`, which adds ZERO offenders — that is the point, see the
 > manufactured-offender finding above.) Measure with `_find_offenders` over
 > `resolve_check_universe()`, **never** through `main()` or `_scan` (this repo
@@ -151,13 +155,19 @@
 >
 > **⚠️ PAIR B's SECOND DEFECT, same shape as pair A's:** `_read_plugin_prefix`
 > skips a plugin dir whose manifest is unreadable, so a broken install reads as
-> "that plugin ships no skills"; and an unreadable fixtures root yields `{}` —
-> "no fixtures" — which `assert_coverage` then passes VACUOUSLY. That is the
-> standing question exactly, and it is the reason pair B is a conversion.
+> "that plugin ships no skills". ⛔ An earlier draft of this paragraph added "and
+> an unreadable fixtures root yields `{}`, which `assert_coverage` then passes
+> vacuously" — **that half is WRONG and is corrected in the ruling above**: an
+> empty fixture set alone FAILS the gate. Only the `discover_skills` drop empties
+> `discovered`, and `set() - anything` is empty. Kept here as a correction rather
+> than deleted, because the wrong version is the intuitive one and the next
+> reader will re-derive it.
 >
 > **📏 PAIR B's BLAST RADIUS, READ rather than inferred (2026-08-01). SIX call
-> sites, and the doctrine's own step — READ EACH CONSUMPTION SITE'S GUARD, because
-> finding the import is not finding the guard:**
+> sites — ALL SIX NOW WIRED (the four PRs in the state table above). Kept because
+> the conversion must still land against this exact list, and because it records
+> the doctrine's own step — READ EACH CONSUMPTION SITE'S GUARD, since finding the
+> import is not finding the guard:**
 >
 > | repo | sites |
 > |---|---|
