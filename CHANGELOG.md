@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.13.18](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.13.17...v1.13.18) (2026-08-01)
+
+
+### Bug Fixes
+
+* **checks:** put the docs-only carve-out rule on the IOResult railway ([4005540](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4005540a02307fde878c166ca43d8ab82f119625))
+
 ## [1.13.17](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.13.16...v1.13.17) (2026-08-01)
 
 
