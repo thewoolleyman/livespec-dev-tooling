@@ -88,6 +88,124 @@ records the lane-scoped shape instead.
 
 ---
 
+## ✅✅ 2026-08-01 — **BOTH v181 CONDITIONS ARE DISCHARGED.** THIS REPO NOW SATISFIES THE RULE IT AUTHORED
+
+**PR #1007 (`41022eb`) condition 2 · PR #1008 (`680fdc1`) condition 3 =
+`8o8e.2`, CLOSED. Both verified on the FORGE after a fetch.** Offenders
+unchanged at **34**, universe **167** — neither is a conversion, and re-measuring
+proved it rather than assuming it.
+
+**⛔ WHY THESE WENT BEFORE ITEM 3, and it is not tidiness:** v181 ratified a rule
+with binding conditions, and dev-tooling did not meet it. That is `8o8e`'s
+founding condition — a requirement that "reads as enforced and is not" —
+reproduced by this epic's own fix, three days after the pattern was named. It is
+also the ORDERING TRAP in a new spelling: arming while non-conformant with a
+clause we just ratified, where lefthook would then block the fixing commit.
+
+### ✅ CONDITION 2 — the 14 sites, and the check that could not see them
+
+All 14 `if isinstance` chains became `match` … `case _: assert_never(...)` across
+`_lanes.py`, `local_reconcile.py`, `_adopter_lane.py`, `_rows_claude_plugin.py`,
+`wire_fleet_member.py`. **0 isinstance sites remain over `RowOutcome`**;
+`assert_never` now appears in all five (it appeared **ZERO** times in the whole
+fleet package before).
+
+**▶️ PROVEN, NOT ASSERTED — and this is the reusable part.** A green from a check
+that cannot fail proves nothing, so the instrument was positive-controlled:
+deleting ONE terminator makes `check-assert-never-exhaustiveness` FAIL naming the
+exact file and line; restoring it passes. **Before the conversion that armed,
+fleet-wired check had NOTHING to police in those five modules and reported green
+forever.** Ask it of every check you newly bring a population under: *make it
+fail once.*
+
+**🔴 AND IT CAUGHT A REAL BUG, worth more than the refactor.
+`case RowSkip(reason=_WRAPPER_VERIFICATION_REQUIRED)` IS NOT A VALUE
+COMPARISON.** A bare name in a match pattern is a **CAPTURE** — it binds the
+constant's name to the reason and matches EVERY skip. MEASURED by reintroducing
+it: an unreadable `.claude/settings.json` then falls through to the justfile
+probe and returns `RowPass(note='')` where `RowSkip` is correct — **a definitive
+verdict manufactured from a read that never happened**, this epic's exact
+subject, introduced BY its own remediation. It is a guard now, named in a comment
+where the next author meets it, and pinned by a test.
+
+**▶️ THE GENERAL FORM: A MECHANICAL CONVERSION IS EXACTLY WHERE THIS CLASS OF
+ERROR ENTERS, because the wrong shape looks equivalent to the right one.** An
+`if x.reason == C` and a `case Cls(reason=C)` read as the same test and are not.
+
+### ✅ CONDITION 3 — `8o8e.2`, and it was LIVE in registered code
+
+`beads-tenant-connection-consistency` is REGISTERED and returned `RowSkip` for
+two INAPPLICABILITIES, so the moment the beads-backed population reached zero
+that row would go blind and red master fleet-wide for a non-failure.
+`blind_rows: 0` was CONTINGENT, in the number this epic had already called
+load-bearing.
+
+Fixed with no new type: `EXCLUDED_NOTE_PREFIX` moved to `_context.py` with a
+`row_excluded()` CONSTRUCTOR — a row module cannot import `_lanes` (cycle), and a
+named constructor makes the right spelling hard to get wrong where concatenation
+at each site is not.
+
+**THREE THINGS `8o8e.2` DID NOT ANTICIPATE:**
+1. **The LOCAL lane had to learn to render it.** Converting the local sites alone
+   turns "row not applicable" into "row already satisfied" — right about the
+   TYPE, wrong about the MEMBER. The same two meanings, moved into the narration.
+2. **The type checker caught the honest consequence.** `_member_connection` was
+   `Result[dict, RowSkip]`; the failure track now carries two KINDS, so it widens
+   to `RowOutcome`. **That annotation was part of what let the two be written as
+   one thing.**
+3. **SEVEN tests pinned the defect, not two** — two central plus five local
+   `*_skips_without_beads`, all asserting the wrong outcome BY NAME. All
+   CORRECTED, names included: *a test whose name says "skips" for an inapplicable
+   member is the same conflation one layer out.*
+
+**⛔ THE POSITIVE CONTROL IS THE LOAD-BEARING TEST IN BOTH UNITS.** A genuine
+can't-read STAYS a `RowSkip`. Without that assertion an implementation turning
+EVERY skip into a pass satisfies every other test while destroying the blind-row
+signal — **trading a fail-closed defect for a fail-open one and calling it a
+fix.** Narrowing what a variant MEANS must not empty it.
+
+### ▶️ MECHANICS — the three costs recurred AGAIN, and one is new
+
+`PLR0915` (32>30) → `_fold_member_outcome`; `PLR0913` (7>6) on that extraction →
+`_LaneTallies`; `PLR0912`/`C901` (12>10, 11>10) → `_already_settled` +
+`_log_reconcile_outcome`. Every cap PAID, never routed around, and each
+extraction earned its keep as the ONE place a lane discriminates an outcome.
+
+**⚠️ AND A NEW ONE WORTH BUDGETING: `check-per-file-coverage` COUNTS TEST FILES,
+and it bit TWICE in one session.** A `_CapturingLog` with `warning`/`error`
+methods the subject never calls is dead lines; a hand-written row-function stub
+the code under test never invokes is dead lines. **Use a REAL collaborator, and
+give a fake only the methods the subject actually calls.** Also: the Red file is
+checksum-bound, so a Green-leg branch no existing test reaches needs a SEPARATE
+`*_edges.py` sibling — budget it in rather than discovering it at the amend.
+
+**⚠️ FORMAT BEFORE THE RED COMMIT.** `ruff format` rewriting a Red-recorded test
+file afterwards breaks the byte-identity check and forces a fresh Red. Run
+`just check-format` BEFORE staging the Red leg.
+
+### 📌 CARRIED FORWARD
+
+`_rows_beads.py`'s two `"unreadable or absent"` reasons are STILL a fused
+absent/unreadable sentinel — the shape #1001 split at the row layer, needing the
+member's TREE to separate them (`ctx.file_text` returns `None` for both).
+Untouched deliberately; out of scope for the two-meanings fix. Plus the
+previously-carried `open_bump_prs_for` pagination, `parse_open_bump_prs`' silent
+per-item drop, and the NEGATIVE result on `reconcile_shim_workflows`.
+
+### ▶️ EXACT NEXT ACTION — ITEM 3, now unblocked and with nothing owed ahead of it
+
+The four `dx8l`-blocked CONVERT: `_origin_remote.py::resolve_owner` +
+`resolve_repo_name` as ONE pair (clause (d) couples them; a split PR measures no
+movement) after beads-fabro's `codex_yolo_gate.py` is wired dual-shape; and
+`_cli_e2e_discovery.py::discover_fixtures` + `discover_skills` after FOUR
+siblings. **Consumer wiring lands FIRST, in the consuming repo.** Both carry a
+live second defect: their `subprocess.run` is UNGUARDED, so an absent `git`
+raises `FileNotFoundError` straight out of `resolve_owner`. Then re-measure at
+both ends, drop the `_`-prefixed-FILE skip, and ARM — carrying the disposition
+denominator and the `995m` known-gap statement in the commit's own text.
+
+---
+
 ## ⛔⛔ 2026-08-01 — **v182**: THIS THREAD'S OWN CORRECTION WAS PENDING FOR TWO REVISE PASSES, AND THE PREMISE THAT BLOCKED IT WAS FALSE
 
 **Consumed as `livespec` **v182** — PR #1871. The `v178` "exposure: ZERO" paragraph
