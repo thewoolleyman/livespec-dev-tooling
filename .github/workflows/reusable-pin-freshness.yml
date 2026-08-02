@@ -88,23 +88,23 @@ jobs:
     steps:
       - name: Mint App token (read-only for scan)
         id: app-token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ secrets.APP_ID }}
+          client-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
 
       - name: Checkout consumer repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Checkout livespec-dev-tooling support modules
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: thewoolleyman/livespec-dev-tooling
           path: .livespec-dev-tooling
           fetch-depth: 1
 
       - name: Install pinned binaries via mise
-        uses: jdx/mise-action@v2
+        uses: jdx/mise-action@v4
 
       - name: Install Python deps via uv
         run: uv sync --all-groups
@@ -302,26 +302,26 @@ jobs:
     steps:
       - name: Mint App token
         id: app-token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ secrets.APP_ID }}
+          client-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
 
       - name: Checkout consumer repo with App token
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           token: ${{ steps.app-token.outputs.token }}
           fetch-depth: 0
 
       - name: Checkout livespec-dev-tooling support modules
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: thewoolleyman/livespec-dev-tooling
           path: .livespec-dev-tooling
           fetch-depth: 1
 
       - name: Install pinned binaries via mise
-        uses: jdx/mise-action@v2
+        uses: jdx/mise-action@v4
 
       - name: Install Python deps via uv
         run: uv sync --all-groups
@@ -396,9 +396,9 @@ jobs:
       - name: Mint orchestrator-scoped App token (codex-acp gate dispatch)
         id: orch-app-token
         if: ${{ matrix.target.source_repo == 'zed-industries/codex-acp' && steps.bump.outputs.changed == 'true' }}
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ secrets.APP_ID }}
+          client-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
           repositories: livespec-orchestrator-beads-fabro

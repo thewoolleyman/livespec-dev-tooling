@@ -46,10 +46,10 @@ jobs:
         check: ${{ fromJSON(inputs.checks) }}
     steps:
       - name: Checkout consumer repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Checkout livespec-dev-tooling Actions
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: thewoolleyman/livespec-dev-tooling
           ref: ${{ inputs.ref }}
