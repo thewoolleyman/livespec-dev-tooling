@@ -330,24 +330,54 @@ daemon's idle nudge — so the one condition most needing attention is the one
 that mutes the only other watcher.**
 
 **USE LIVE-ONLY MARKERS.** A running turn shows an ellipsis followed by a
-parenthesised duration, or a running command line, or the interrupt hint. A
-finished turn says "…ed for" with NO ellipsis and no parenthesis. Positive-
-controlled in BOTH directions against a real busy pane and a real idle pane:
+parenthesised duration, or the interrupt hint. A finished turn says "…ed for"
+with NO ellipsis and no parenthesis. Positive-controlled in BOTH directions
+against a real busy pane and a real idle pane:
 
 ```sh
 busy=0
-printf '%s\n' "$tail12" | grep -qE 'esc to interrupt|…[[:space:]]*\(|⎿[[:space:]]+\$' && busy=1
+printf '%s\n' "$tail12" | grep -qE 'esc to interrupt|…[[:space:]]*\(' && busy=1
 kids=$(ps -o args= --ppid "$pane_pid" 2>/dev/null | grep -cv 'playwright-mcp')
 [ "${kids:-0}" -gt 0 ] && busy=1
 ```
 
+**⚠️ A COMMAND LINE (`⎿  $ …`) IS NOT A LIVE MARKER — the first corrected
+version of this snippet included it and was STILL WRONG.** The transcript keeps
+finished command lines in the scrollback, so an IDLE pane whose last turn ran a
+command matches it and the IDLE branch goes unreachable AGAIN, just on a
+narrower trigger. Measured: on an idle pane carrying a completed `⎿  $ …` line,
+the version with it returns BUSY and the version without returns IDLE, while
+both agree on every genuinely-live pane. **Running commands are already covered
+by the child-process probe; the scrollback marker adds only false busy.**
+
 **AND PROVE IT BOTH WAYS BEFORE ARMING IT.** Capture a known-BUSY pane and a
 known-IDLE pane to files and run the test against each; it must return BUSY for
-one and IDLE for the other. **An idle-detector that cannot return IDLE has not
-detected anything** — which is this epic's own rule, and the supervisor broke it
-in the instrument built to supervise the epic. Keep the ceiling SHORT (~20 min,
-`seq 1 60`): a wedged watcher then costs twenty minutes instead of an hour, and
-the ceiling message should say VERIFY THE BUSY TEST rather than "re-arm".
+one and IDLE for the other. **Add a third sample — an IDLE pane whose scrollback
+holds a completed command** — because that is the one that survived the first
+correction. **An idle-detector that cannot return IDLE has not detected
+anything** — this epic's own rule, broken by the supervisor in the instrument
+built to supervise the epic, and then broken again in the fix. Keep the ceiling
+SHORT (~20 min, `seq 1 60`): a wedged watcher then costs twenty minutes instead
+of an hour, and the ceiling message should say VERIFY THE BUSY TEST rather than
+"re-arm".
+
+**⛔⛔ NEVER PATTERN-KILL A WATCHER. KILL BY PID, AND LOOK FIRST.** Two measured
+hazards, one of them a near-miss on shared infrastructure:
+
+- **`pkill -f '<loop string>'` SELF-MATCHES.** Issuing `pkill -f 'seq 1 60'` in
+  the same command that arms a `seq 1 60` loop kills the new watcher at birth —
+  observed, exit 144. The wait-shell's own argv contains the search string. This
+  file's global guidance already warns about the `pgrep -f` form; the `pkill`
+  form is the same defect with teeth.
+- **A GENERIC PATTERN MATCHES OTHER OWNERS' PROCESSES.** `pgrep -af 'sleep 20'`
+  on this host returned processes belonging to
+  `/usr/local/lib/ci-runner/gate-runner-supervisor.sh` — **fleet CI
+  infrastructure** — and to ANOTHER Claude session's watcher, identifiable by a
+  different `CODEX_COMPANION_SESSION_ID`. A blind `pkill -f 'sleep 20'` would
+  have killed both. **Inspect with `ps -eo pid,ppid,etime,args` and read the
+  PARENT before killing anything**, then kill the specific PID you armed. The
+  charter's "never touch another session's worktrees" has an exact analogue in
+  process space, and the blast radius here is larger.
 
 **A cross-repo fan-out is not a short wait.** Step 5 of the sequence is the
 fleet-visible moment: on release, `bump-pin` fans the new dev-tooling to every
