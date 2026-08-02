@@ -50,6 +50,20 @@ operator reads the finding and not the source:
 - **v037 BOUND 4** — the `total_absence_returns` count per repo AND fleet-wide.
   It is the only bound of v179 member 2 that no repo-local check can supply,
   because no checkout can see the other eight.
+- **v183 BOUND 4** — the `single_meaning_variants` union count per repo AND
+  fleet-wide, WITH the number of functions each declaration relieves beside
+  it. The ratified bullet requires both: one union reads as negligible while
+  relieving nineteen.
+
+⛔ **AND ONE HALF OF v183 BOUND 4 IS NOT IMPLEMENTED HERE, STATED RATHER THAN
+LEFT TO BE DISCOVERED.** v183 also requires this row to FAIL when a governed
+SIBLING consumes a declared union non-exhaustively — the split-enforcement
+half that guards the one residual the carrier's design admits, since
+`checks/_declarable_unions` limb (d) computes condition 2 over the LOCAL
+vantage only. Until that lands, a sibling's non-exhaustive consumption of a
+declared union is unguarded fleet-wide. **The gate it blocks: arming the
+fleet-wide condition-2 guarantee** — a repo-local green does NOT mean every
+consumer discriminates exhaustively.
 """
 
 from __future__ import annotations
@@ -67,6 +81,9 @@ from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-awar
 
 from livespec_dev_tooling.checks._public_api_consumption import (  # noqa: E402
     repo_local_public_names,
+)
+from livespec_dev_tooling.checks._single_meaning_variants import (  # noqa: E402
+    declared_variant_names,
 )
 from livespec_dev_tooling.config import ConfigParseError, load_config  # noqa: E402
 from livespec_dev_tooling.fleet._context import (  # noqa: E402
@@ -167,6 +184,55 @@ def _absence_note(*, state: FleetConsumption, repo: str) -> str:
     return f"total_absence_returns declared: {here} here, {fleet} fleet-wide"
 
 
+def _declared_unions(*, config: Config) -> int:
+    """How many distinct UNIONS a config declares, not how many variant entries.
+
+    The key carries one entry per VARIANT, so counting entries would report a
+    three-variant union as three declarations and inflate every figure bound 4
+    exists to keep honest.
+    """
+    return len({(entry.file, entry.union) for entry in config.single_meaning_variants})
+
+
+def _variants_note(*, state: FleetConsumption, repo: str) -> str:
+    """v183 bound 4: declared unions here and fleet-wide, WITH the relief beside them.
+
+    ⛔ BOTH NUMBERS OR NEITHER. The ratified bullet: "One union reads as
+    negligible while relieving nineteen, and a count quoted without that
+    denominator understates the carve-out by the ratio between them."
+
+    ⚠️ THE RELIEF FIGURE IS THE RELIEF SET, and it is stated rather than left to
+    be inferred: it counts every function whose declared-union return the key
+    puts outside the rule, which is a SUPERSET of the functions the rule would
+    otherwise have convicted (some were already exempt under v179 member 1).
+    Measured on this repo at the declaration's landing: 64 relieved, of which 19
+    were live offenders. Overstating is the safe direction for a bound written
+    to prevent understatement, but the two figures are not the same number.
+    """
+    config = state.configs[repo]
+    here = _declared_unions(config=config)
+    fleet = sum(_declared_unions(config=member) for member in state.configs.values())
+    relieved = 0
+    if config.single_meaning_variants:
+        unparsed = {item.file for item in state.graph.unparsed if item.member == repo}
+        parseable = {
+            rel: text for rel, text in state.sources[repo].defining.items() if rel not in unparsed
+        }
+        relieved = len(
+            declared_variant_names(
+                declared=config.single_meaning_variants,
+                sources=parseable,
+                io_trees=config.io_trees,
+            )
+        )
+    unions = "union" if here == 1 else "unions"
+    functions = "function" if relieved == 1 else "functions"
+    return (
+        f"single_meaning_variants declared: {here} {unions} here, {fleet} fleet-wide, "
+        f"relieving {relieved} {functions} here"
+    )
+
+
 def _unparsed_note(*, state: FleetConsumption, repo: str) -> str:
     """Name the member's files the oracle could not read, or say none."""
     unreadable = sorted(
@@ -220,7 +286,8 @@ def assert_cross_repo_public_api_declared(*, ctx: FleetContext, member: FleetMem
     if member.repo not in state.sources:
         return RowSkip(reason=f"{member.repo}: not present in this run's fleet roster")
     absence = _absence_note(state=state, repo=member.repo)
-    context = f"{absence}.{_unparsed_note(state=state, repo=member.repo)}"
+    variants = _variants_note(state=state, repo=member.repo)
+    context = f"{absence}. {variants}.{_unparsed_note(state=state, repo=member.repo)}"
     undeclared = _undeclared(state=state, repo=member.repo)
     if not undeclared:
         return RowPass(note=f"{context} {_BLIND_SPOT}")

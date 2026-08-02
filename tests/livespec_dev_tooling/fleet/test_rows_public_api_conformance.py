@@ -188,6 +188,72 @@ def test_bound_four_counts_this_repo_and_the_fleet_separately() -> None:
     assert "total_absence_returns declared: 0 here, 1 fleet-wide" in outcome.note
 
 
+_UNION_SOURCE = (
+    "from dataclasses import dataclass\n"
+    "\n"
+    "\n"
+    "@dataclass(frozen=True, kw_only=True)\n"
+    "class Ok:\n"
+    "    note: str = ''\n"
+    "\n"
+    "\n"
+    "@dataclass(frozen=True, kw_only=True)\n"
+    "class Bad:\n"
+    "    message: str\n"
+    "\n"
+    "\n"
+    "Outcome = Ok | Bad\n"
+    "\n"
+    "\n"
+    "def render(*, flag: bool) -> Outcome:\n"
+    "    return Ok() if flag else Bad(message='no')\n"
+)
+_VARIANTS_DECLARED = (
+    "[tool.livespec_dev_tooling]\n"
+    "single_meaning_variants = [\n"
+    '  { file = "pkg/contract.py", union = "Outcome", variant = "Ok", meaning = "it holds" },\n'
+    '  { file = "pkg/contract.py", union = "Outcome", variant = "Bad", meaning = "it does not" },\n'
+    "]\n"
+)
+
+
+def test_v183_bound_four_reports_declared_unions_and_the_functions_they_relieve() -> None:
+    """v183 BOUND 4 — the count is meaningless without the relief beside it.
+
+    The ratified text says why in terms: "One union reads as negligible while
+    relieving nineteen, and a count quoted without that denominator understates
+    the carve-out by the ratio between them." So the row reports BOTH, and this
+    test asserts both numbers rather than the union count alone.
+
+    It is the only bound of v183 no repo-local check can supply, because no
+    checkout can see the other eight.
+    """
+    outcome = outcome_for(
+        trees={
+            "lib": {"pkg/contract.py": _UNION_SOURCE, "pyproject.toml": _VARIANTS_DECLARED},
+            "app": {"app/a.py": "X = 1\n"},
+        },
+        repo="lib",
+    )
+    assert isinstance(outcome, RowPass)
+    assert "single_meaning_variants declared: 1 union here, 1 fleet-wide" in outcome.note
+    assert "relieving 1 function here" in outcome.note
+
+
+def test_v183_bound_four_counts_a_siblings_declaration_in_the_fleet_total() -> None:
+    """The fleet total spans members, which is the whole reason the bound is central."""
+    outcome = outcome_for(
+        trees={
+            "lib": {"pkg/contract.py": _LIBRARY_SOURCE},
+            "app": {"pkg/contract.py": _UNION_SOURCE, "pyproject.toml": _VARIANTS_DECLARED},
+        },
+        repo="lib",
+    )
+    assert isinstance(outcome, RowPass)
+    assert "single_meaning_variants declared: 0 unions here, 1 fleet-wide" in outcome.note
+    assert "relieving 0 functions here" in outcome.note
+
+
 def test_an_unreadable_member_skips_naming_the_cause_rather_than_passing() -> None:
     """A can't-read is not an absence; a member measured as empty would PASS."""
     outcome = outcome_for(
