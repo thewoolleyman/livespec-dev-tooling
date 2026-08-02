@@ -573,7 +573,7 @@ The coordination surface MUST authenticate via a GitHub App installation token, 
 - `metadata: read` — to read repository metadata for sibling discovery.
 - `statuses: write` — to post the codex-acp factory-gate commit-status callback (context `codex-acp-golden-master`) onto the codex-acp bump PR's head commit in this repository (see §"codex-acp factory gate"). The orchestrator's gate workflow mints a `livespec-dev-tooling`-scoped installation token to post it.
 
-The token is minted at runtime via `actions/create-github-app-token@v1` with the App's `APP_ID` and `APP_PRIVATE_KEY` secrets passed via `secrets: inherit` from each consumer shim. The App's private key has no calendar expiration, so token expiry does NOT silently break the surface.
+The token is minted at runtime via `actions/create-github-app-token@v3` with the App's `APP_ID` and `APP_PRIVATE_KEY` secrets passed via `secrets: inherit` from each consumer shim. The App's private key has no calendar expiration, so token expiry does NOT silently break the surface.
 
 The rationale for App-token over `GITHUB_TOKEN` mirrors the existing `auto-enable-merge.yml` and bump-pin shim workflow choices in livespec: pushes authored by `GITHUB_TOKEN` do not trigger downstream CI workflows (GitHub's workflow-recursion ceiling), which would leave bump PRs permanently `BLOCKED` with no CI re-runs against the updated head SHA.
 

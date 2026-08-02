@@ -8,7 +8,7 @@
 #   and the hyphen-to-underscore normalization for `.vendor.jsonc`
 #   matching), §"PR commit-message convention" (`chore(deps): bump
 #   <source_repo> pin to <tag>`), §"GitHub App auth model"
-#   (App-token via `actions/create-github-app-token@v1`), and
+#   (App-token via `actions/create-github-app-token@v3`), and
 #   §"Fallback to known-good pin" (no force-push past failing checks).
 #
 # Dispatch model: invoked by each sibling's own

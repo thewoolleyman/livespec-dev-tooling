@@ -6,7 +6,7 @@
 #   (gh search by `livespec-sibling` topic), §"`repository_dispatch`
 #   payload contract" (event_type + client_payload shape), §"GitHub
 #   App auth model" (App-token over GITHUB_TOKEN, three required
-#   permissions, `actions/create-github-app-token@v1`), and
+#   permissions, `actions/create-github-app-token@v3`), and
 #   §"Soft-fail semantics" (404 from any sibling does NOT fail the
 #   dispatch loop).
 #
@@ -55,7 +55,7 @@
 # Secrets (inherited via `secrets: inherit` from the consumer shim):
 #   APP_ID — GitHub App's numeric ID (org/user-level secret).
 #   APP_PRIVATE_KEY — GitHub App's private key PEM. Tokens minted via
-#     `actions/create-github-app-token@v1` carry the App's three
+#     `actions/create-github-app-token@v3` carry the App's three
 #     required permissions (`contents: write`, `pull-requests: write`,
 #     `metadata: read`) per the spec §"GitHub App auth model".
 #
