@@ -38,7 +38,7 @@
 #
 # Secrets cannot be passed to composite Actions directly; the App token
 # and App slug arrive as inputs from the calling reusable workflow,
-# which has already minted both via `actions/create-github-app-token@v1`
+# which has already minted both via `actions/create-github-app-token@v3`
 # at a job-scope step.
 #
 # Inputs:
@@ -60,7 +60,7 @@
 #     dispatch path; "periodic safety-net scan caught a stale pin" for
 #     the freshness path).
 #   app_token (required) — minted GitHub App installation token from
-#     the caller's `actions/create-github-app-token@v1` step. Used for
+#     the caller's `actions/create-github-app-token@v3` step. Used for
 #     both git commit/push auth and `gh pr create`/`gh pr merge`.
 #   app_slug (required) — the App's slug from the same mint step. Used
 #     for the git committer identity (`<slug>[bot]`).
@@ -85,7 +85,7 @@ inputs:
     description: Markdown body for the bump PR.
     required: true
   app_token:
-    description: Minted GitHub App installation token (from the caller's `actions/create-github-app-token@v1` step).
+    description: Minted GitHub App installation token (from the caller's `actions/create-github-app-token@v3` step).
     required: true
   app_slug:
     description: GitHub App slug (from the same mint step) — used for the git committer identity.
