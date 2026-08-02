@@ -15,6 +15,15 @@ was being written, and both are recorded as such rather than as coverage:
 - `test_a_callee_that_reaches_io_disqualifies_its_caller` — clause (d) is the
   whole reason this member is computed rather than declared, and a body-only
   implementation passes every other test in this file.
+
+livespec **v186** narrowed what clause (b) COUNTS: a DISCHARGING NARROW `try`
+is not an expected failure mode. Four limbs, ALL required, each pinned below by
+a test that fails without it — `test_a_finally_disqualifies_...` (i),
+`test_a_broad_handler_...` / `test_a_bare_except_...` (ii),
+`test_a_handler_that_records_and_continues_...` (iii),
+`test_a_raise_inside_a_discharging_try_...` (iv). The limb-(iii) test is the
+one that matters most: it is `_parsed`'s shape, and a rule that relieved it
+would relieve everything wearing a narrow `except`.
 """
 
 from __future__ import annotations
@@ -52,9 +61,121 @@ def test_a_raise_disqualifies() -> None:
 
 
 def test_a_try_disqualifies() -> None:
-    """Clause (b). A `try` is a seam handling an expected failure."""
+    """Clause (b). A `try` is a seam handling an expected failure.
+
+    This fixture has NO handler and a `finally`, so v186 leaves it convicted on
+    limbs (i) twice over — it is the shape the clause always meant.
+    """
     source = "def f(*, n: int) -> int:\n    try:\n        return n\n    finally:\n        pass\n"
     assert (_A, "f") not in _exempt(sources={_A: source})
+
+
+def test_a_discharging_narrow_try_does_not_disqualify() -> None:
+    """v186. The failure originates inside the statement and is ANSWERED inside it.
+
+    A narrow handler that returns converts the caught failure into a defined
+    value for that input class, so nothing expected escapes and a `Result` over
+    the function would carry the UNINHABITED failure track member 1's own
+    rationale exists to prevent.
+    """
+    source = "def f(*, s: str) -> int:\n    try:\n        return int(s)\n    except ValueError:\n        return 0\n"
+    assert (_A, "f") in _exempt(sources={_A: source})
+
+
+def test_a_narrow_tuple_handler_discharges() -> None:
+    """Limb (ii) reads EVERY named type, so an enumerated tuple is still narrow."""
+    source = (
+        "def f(*, s: str) -> int:\n    try:\n        return int(s)\n"
+        "    except (ValueError, TypeError):\n        return 0\n"
+    )
+    assert (_A, "f") in _exempt(sources={_A: source})
+
+
+def test_a_broad_handler_disqualifies_however_it_discharges() -> None:
+    """Limb (ii), and it is the limb that cost nothing and buys the guardrail.
+
+    `except Exception: return 0` returns a defined value for an UNKNOWN input
+    class — a broad handler cannot tell the expected failure it means to catch
+    from the bug it does not. Ratifying without this limb would have exempted,
+    by the rule's own terms, the population ruff `BLE` exists to convict.
+    """
+    source = "def f(*, s: str) -> int:\n    try:\n        return int(s)\n    except Exception:\n        return 0\n"
+    assert (_A, "f") not in _exempt(sources={_A: source})
+
+
+def test_a_bare_except_disqualifies() -> None:
+    """Limb (ii)'s other spelling: a bare `except:` names no type at all."""
+    source = (
+        "def f(*, s: str) -> int:\n    try:\n        return int(s)\n    except:\n        return 0\n"
+    )
+    assert (_A, "f") not in _exempt(sources={_A: source})
+
+
+def test_a_handler_that_records_and_continues_disqualifies() -> None:
+    """Limb (iii), and this is the test that proves the rule DISCRIMINATES.
+
+    `_parsed` in `fleet/_public_api_graph.py` is exactly this shape — a narrow
+    `except SyntaxError` that APPENDS the failure to an out-parameter and keeps
+    looping. That is an in-band CENSUS, a real design question about the
+    VALUE's shape, and it is not a place where nothing escaped. A version of
+    v186 that relieved it too would have been a softening with good manners.
+    """
+    source = (
+        "def f(*, items: list[str], into: list[str]) -> list[int]:\n"
+        "    out: list[int] = []\n"
+        "    for item in items:\n"
+        "        try:\n            out.append(int(item))\n"
+        "        except ValueError:\n            into.append(item)\n"
+        "    return out\n"
+    )
+    assert (_A, "f") not in _exempt(sources={_A: source})
+
+
+def test_a_finally_disqualifies_even_with_a_narrow_handler() -> None:
+    """Limb (i). A `finally` runs on every path, discharged or not."""
+    source = (
+        "def f(*, s: str) -> int:\n    try:\n        return int(s)\n"
+        "    except ValueError:\n        return 0\n    finally:\n        pass\n"
+    )
+    assert (_A, "f") not in _exempt(sources={_A: source})
+
+
+def test_a_raise_inside_a_discharging_try_disqualifies() -> None:
+    """Limb (iv).
+
+    ⚠️ Recorded rather than left implicit: this limb is REDUNDANT against
+    clause (a), which already refuses a `raise` anywhere in the function body.
+    It is implemented because v186 ratifies four limbs and an implementation
+    deciding three is not conforming — and because clause (a) is free to change
+    without this statement-scoped guarantee changing with it.
+    """
+    source = (
+        "def f(*, s: str) -> int:\n    try:\n        return int(s)\n"
+        "    except ValueError:\n        raise\n"
+    )
+    assert (_A, "f") not in _exempt(sources={_A: source})
+
+
+def test_a_discharging_narrow_try_stops_propagating_to_its_callers() -> None:
+    """v186's clause (d) half, and it is the LARGER half of the correction.
+
+    Measured across the governed fleet: 4 of the 8 relieved functions contain
+    no `try` at all and are relieved ONLY because a callee's stopped
+    propagating — `extract_created_worktree_paths`, `run_adopter_rows`,
+    `classify`, `check_tmux_segment`. An implementation that relieved the
+    try-carrying function alone would fix half the population and look
+    complete.
+    """
+    sources = {
+        _A: (
+            "import json\n\n\n"
+            "def parse(*, text: str) -> object:\n    try:\n        return json.loads(text)\n"
+            "    except ValueError:\n        return {}\n"
+        ),
+        _B: "from pkg.a import parse\n\n\ndef caller(*, text: str) -> bool:\n    return parse(text=text) is not None\n",
+    }
+    exempt = _exempt(sources=sources)
+    assert (_A, "parse") in exempt and (_B, "caller") in exempt
 
 
 def test_an_io_module_call_disqualifies() -> None:
