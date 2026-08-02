@@ -362,6 +362,50 @@
 >    sibling consumes a declared union exhaustively.
 > 5. **Unit A's four verbs convict ZERO fleet-wide** — measured per-tree, both directions
 >    controlled. The armed check's reach is not what the verb-set addition implies.
+> 6. **✅ THE ARMED CHECK ACTUALLY RUNS IN CI EVERYWHERE — MEASURED, NOT ASSUMED.**
+>    `check-public-api-result-typed` is CANONICAL and CI-covered in all EIGHT
+>    code-carrying repos. ⚠️ `livespec-console-beads-fabro` wires it in NEITHER its
+>    aggregate nor CI — the sanctioned ZERO-PYTHON exemption, universe 0, not a hole.
+>    **⛔ BUT 17 REPO-LOCAL SLUGS ACROSS 6 REPOS ARE CI-INVISIBLE** (`8o8e.18`), so the
+>    arming sentence must be scoped to THIS check rather than to "the aggregate".
+>
+> ### ✅✅ THE ARMING CLAIM IS MEASURED AND IT SURVIVES — **brief 97's blocking question, answered NO**
+>
+> **THE QUESTION:** if a check can sit in a repo's `just check` and be absent from that
+> repo's CI matrix — with `ci_matrix_completeness` unable to see it for repo-local slugs
+> — then arming might not establish what it claims, and this epic's founding defect
+> (a check that reports without scanning) would be reproduced at the moment of its fix.
+>
+> **▶️ IT IS NOT. Measured across ALL NINE with the SHIPPED parser
+> (`checks/_ci_matrix_parse`) and the SHIPPED canonical + world-gate registries, so the
+> audit cannot drift from what the meta-check itself sees:**
+>
+> | | result |
+> |---|---|
+> | `check-public-api-result-typed` in aggregate AND in CI | **8 of 8 code-carrying repos** |
+> | …CI-invisible anywhere | **NONE** |
+> | canonical aggregate slugs missing from CI, unexplained | **ZERO, in all nine** |
+> | canonical slugs missing from CI by DESIGN | the 3 WORLD-GATE slugs, uniformly |
+> | **repo-local slugs in `just check`, never run in CI** | **17, across 6 repos** |
+>
+> **SO THE ARMING SENTENCE IS WRITABLE — FOR THIS CHECK.** "The railway is mechanically
+> enforced fleet-wide" survives, because the slug that enforces it is canonical and CI-run
+> in every governed repo carrying Python. **It is NOT writable about the aggregate as a
+> whole**, and the arming commit must not imply that it is.
+>
+> ⛔ **THE THREE WORLD-GATE SLUGS ARE A DOCUMENTED CARVE-OUT, NOT A GAP** —
+> `check-branch-protection-alignment`, `check-master-ci-green`,
+> `check-plan-thread-epic-parity` verify the WORLD a change lands on rather than the
+> change, and enforce at pre-push under an admin-scoped token
+> (`canonical_checks._WORLD_GATE_CHECK_SLUGS`). Do not report them as findings.
+>
+> **⛔ AND TWO OF MY OWN EARLIER STATEMENTS ARE CORRECTED BY THIS RUN.** I recorded that
+> overseer's CI-absent slugs "are all non-canonical, which is why the green meta-check is
+> consistent" — **3 of the 6 are canonical and WORLD-GATE.** The conclusion held; the
+> reason was wrong. And my first count said **4**, not 6, because it was a REGEX over
+> `ci.yml` — **a slug named only in a COMMENT read as covered.** The shipped parser counts
+> matrix targets plus `just <slug>` run lines. **Third instance in three days of a
+> hand-rolled second implementation losing to the shipped one.**
 >
 > ### ▶️▶️ EXACT NEXT ACTION — **THE PER-REPO FAN-OUT. UNIT C IS DONE AND NOTHING BLOCKS IT.**
 >
