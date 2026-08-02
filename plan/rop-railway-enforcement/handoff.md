@@ -1,20 +1,19 @@
 # rop-railway-enforcement — arm the check that was never armed, then remediate six repos
 
-> ## ✅✅ dev-tooling IS REMEDIATED — **offenders 3, ALL RULED, ZERO CONVERSIONS OWED**
+> ## ✅✅ UNIT C IS MEASURED — **FLEET 432 RAW / 338 DISTINCT, AND UNIT A MOVED THE FLEET BY ZERO**
 >
 > ### 🔻 COLD START — FIRST FIVE MINUTES, DO THESE
 >
 > **NOTHING IS MID-FLIGHT except the commit that carries this text.** No background
-> job, no sub-agent, no unpushed Red. Four PRs landed and were reaped: **#1081**
-> (unit B), **#1082**, **#1086** (the predicate seam), **#1087**. Master at
-> wrap-up: **`99f88bf`** — re-fetch, it moves hourly.
+> job, no sub-agent, no unpushed Red. Master at wrap-up: **`3a7426b`** — re-fetch, it
+> moves hourly.
 >
-> 1. **REAP EXACTLY ONE WORKTREE: `~/.worktrees/livespec-dev-tooling/wrapup-rop-railway-enforcement`**
->    (branch `wrapup-rop-railway-enforcement`), once its PR **#1090** shows MERGED.
->    It was doc-only with auto-merge ARMED and 0 failures, so it lands unattended.
->    **If this block is what you are reading, that PR MERGED** — this text only
->    reaches master through it. Then
->    `git -C /data/projects/livespec-dev-tooling merge --ff-only origin/master`.
+> 1. **REAP EXACTLY ONE WORKTREE: `~/.worktrees/livespec-dev-tooling/unit-c-fleet-remeasure`**
+>    (branch `unit-c-fleet-remeasure`), once its PR shows MERGED —
+>    `gh pr list --repo thewoolleyman/livespec-dev-tooling --head unit-c-fleet-remeasure --state all`.
+>    Doc-only with auto-merge ARMED, so it lands unattended. **If this block is what
+>    you are reading, that PR MERGED** — this text only reaches master through it.
+>    Then `git -C /data/projects/livespec-dev-tooling merge --ff-only origin/master`.
 > 2. **REAP NOTHING ELSE.** Every other worktree belongs to a PEER lane. Enumerate
 >    with `git worktree list`; never quote a count from this file.
 > 3. `git status --short --branch` — expect clean on `master` (one untracked
@@ -31,7 +30,8 @@
 > dies with `sqlite3.OperationalError: unable to open database file`, an xdist
 > `INTERNALERROR`, or a bogus "coverage NN < 100" → check **`df -i /tmp`** (NOT
 > `df -h`). Reclaim ONLY stale regenerable caches; **never** `/tmp/claude-1000/*`
-> and **never** anything dated today.
+> and **never** anything dated today. ⚠️ Nine shallow clones cost ~8.5k inodes, which
+> is affordable; a full-depth `livespec` clone is not, and there is no reason to take one.
 >
 > ⚠️ **AND A `check-fleet-conformance` RED IS PROBABLY NOT YOUR DIFF** (brief 92):
 > read the log and confirm `"kind": "rate_limited"` before diagnosing. Two runs at
@@ -41,10 +41,147 @@
 >
 > | | |
 > |---|---|
+> | **fleet, re-measured 2026-08-02** | **432 RAW** · 429 less dev-tooling's ruled 3 · **338 DISTINCT sibling conversion sites** |
 > | dev-tooling offenders | **3** (universe 171) — `extract_created_worktree_paths`, `run_adopter_rows`, `cross_member_consumption` |
 > | their disposition | **ALL RULED. NOT conversions.** Nothing left to convert here. |
+> | largest child | overseer **194 raw = 103 sites + 91 ENFORCED byte-identical mirror copies** |
+> | unit A's fleet-wide effect | **ZERO offenders in every member.** Measured, both directions controlled. |
 > | livespec spec | v183 carrier · v184 criterion · v185 retraction — all RATIFIED |
-> | dev-tooling master | `99f88bf` at wrap-up |
+> | dev-tooling master | `3a7426b` at wrap-up |
+>
+> ### 📏 UNIT C — EVERY MEMBER FRESHLY CLONED AT MASTER, ONE CRITERION, ONE DENOMINATOR
+>
+> **livespec-dev-tooling `e1b3a30`'s SHIPPED criterion** — `_find_offenders` over
+> `resolve_check_universe()`, never `main()` and never `_scan`, `_`-prefixed FILE skip
+> DROPPED. (`3a7426b` is doc-only over `e1b3a30`; zero `.py` differ, so the two name
+> the same criterion.)
+>
+> | member | master | universe | ARMED | was | Δ |
+> |---|---|---:|---:|---:|---:|
+> | `livespec-overseer` | `ac200de` | 140 | **194** | 190 | **+4** |
+> | `livespec-orchestrator-beads-fabro` | `72c040f` | 186 | **172** | 172 | 0 |
+> | `livespec-runtime` | `165b8cc` | 31 | **27** | 27 | 0 |
+> | `livespec-orchestrator-git-jsonl` | `02cec38` | 49 | **18** | 18 | 0 |
+> | `livespec` | `77dd866` | 131 | **15** | 15 | 0 |
+> | `livespec-dev-tooling` | `3a7426b` | 171 | **3** | 30 | **−27** |
+> | `livespec-driver-codex` | `c611672` | 7 | **2** | 2 | 0 |
+> | `livespec-driver-claude` | `1cc3680` | 7 | **1** | 1 | 0 |
+> | `livespec-console-beads-fabro` | `a011aab` | 0 | **0** | 0 | 0 |
+> | **TOTAL** | | **722** | **432** | 455 | **−23** |
+>
+> **✅ THE GUARD RAIL HELD AND IT WAS CHECKED, NOT ASSUMED. NO SIBLING WENT DOWN.**
+> Unit A was TIGHTENING-only, so a DECREASE anywhere would have been a finding. Every
+> sibling is FLAT except overseer, which went UP **on its own new code** — ADDED 4 /
+> REMOVED 0, decomposed by `(path, name)` against a measurement of `45bb0fe` taken with
+> TODAY's criterion, so the criterion is held fixed and only the tree moves. The two
+> additions are `unindexed_codex_rows` and `map_unindexed_codex_sessions`, each landing
+> in both mirror trees. **The whole −23 net is overseer +4 and dev-tooling −27: outside
+> dev-tooling the fleet did not move at all.**
+>
+> ### ⛔⛔ THE FINDING — **UNIT A'S FOUR VERBS CONVICT ZERO FUNCTIONS ANYWHERE IN THE FLEET**
+>
+> Each member's tree measured TWICE: shipped verb set, then the set with `open`,
+> `owner`, `readlink`, `truncate` REMOVED. **ADDED 0 / REMOVED 0 in all eight
+> code-carrying members.**
+>
+> **▶️ AND THE PATCH WAS POSITIVE-CONTROLLED IN BOTH DIRECTIONS BEFORE THE ZERO WAS
+> BELIEVED** — this file's own category (f), an instrument that works perfectly and
+> observes the wrong universe, is exactly what a fleet-wide zero looks like:
+>
+> ```
+> verb set EMPTIED   overseer 194→184 · beads-fabro 172→165 · livespec 15→10 · runtime 27→26
+> verb set WIDENED   overseer 194→202 · beads-fabro 172→202 · livespec 15→17 · runtime 27→28
+> ```
+>
+> dev-tooling emptied is 3→3 and widened is 3→**34**, which is the same proof from the
+> other side: its remaining 3 do not depend on the verb set at all.
+>
+> **▶️ SO "the four verbs are LATENT here; their value is FLEET-WIDE" IS CORRECTED BY
+> MEASUREMENT — they are latent EVERYWHERE.** Their value is PROSPECTIVE: they convict
+> code not yet written. **Unit A moved the fleet by 0.** That is a legitimate outcome
+> for a tightening-only change and it is NOT a reason to withdraw it — but the older
+> wording claims coverage it did not buy, and the arming denominator must not repeat it.
+>
+> ### ⛔⛔ THE BIGGEST CHILD IS 47% SMALLER THAN ITS HEADLINE — **overseer's 194 is 103 SITES**
+>
+> `.claude-plugin/overseer/*.py` is a byte-identical MIRROR of the top-level
+> `overseer/*.py`, and the identity is **MECHANICALLY ENFORCED**:
+> `just check-codex-plugin-runnable-launcher` runs `cmp -s` over all 44 mirrored files
+> and fails on any difference. Measured rather than assumed — all 44 compare IDENTICAL,
+> and **every one of the 91 mirrored offenders has a twin**: the split is exactly
+> `overseer/` **103** + `.claude-plugin/overseer/` **91**.
+>
+> **▶️ CONVERT THE 103 AND RE-SYNC; THE 91 CONVERT FOR FREE**, because the check
+> FORBIDS them from differing. Sizing that child at 194 double-counts by 47%.
+>
+> ⚠️ **NO OTHER MEMBER HAS THIS SHAPE** — all seven siblings were checked for the same
+> duplicate-basename pattern and every one returned 0. Do not go hunting for a mirror
+> elsewhere on the strength of this finding.
+>
+> **⛔ AND IT REORDERS THE FAN-OUT.** Brief 79's ASCENDING-size rule was written over
+> RAW counts. Sized by DISTINCT sites the order changes at the top:
+> driver-claude 1 · driver-codex 2 · livespec 15 · git-jsonl 18 · runtime 27 ·
+> **overseer 103** · beads-fabro 172. The repo the plan calls "the largest" is now the
+> SECOND largest, and it is the one with a template already paid for it.
+>
+> ### 🔬 THE HARNESS WAS POSITIVE-CONTROLLED ON TWO INDEPENDENTLY-KNOWN ANSWERS
+>
+> livespec-dev-tooling reproduces its known **171 / 3** (and names the same three ruled
+> functions), and **livespec-overseer at `45bb0fe` reproduces its RECORDED 140 / 190 /
+> 86 exactly** — the second control on a figure this harness did not produce, which is
+> the one that makes the other eight numbers quotable.
+>
+> ⚠️ **ONE RESIDUAL ON THE VERB SET, so no figure above is unconditional.** `resolve`
+> and `expanduser` sit in the shipped set BY DEFAULT — on neither `h0g9`'s OUT list nor
+> v184's needs-a-ruling list, with no determination and no evidence recorded, while the
+> other four each got one. v184 requires each determination recorded WITH its evidence.
+> **If a later ruling removes either, every figure here moves DOWN and must be
+> re-derived.** This is a gap in the RECORD, not an instruction to remove them.
+>
+> ### 🔬 TWO CHEAP PROCESS FINDINGS FOR THE FAN-OUT, which will clone these repos again
+>
+> 1. **`cd` INTO A FRESH CLONE ABORTS THE COMMAND UNDER `mise`.** A clone's untrusted
+>    `.mise.toml` makes the shell's `chpwd` hook fail, and the compound command dies
+>    with exit 128 *before* the work runs — while a prior identical-looking invocation
+>    succeeded. Wrap as `bash -c "cd <clone> && …"`, or the failure reads as a defect
+>    in the measurement rather than in the shell.
+> 2. **`bd` RESOLVES ITS DATABASE FROM THE CWD.** Driving `bd update` from a scratchpad
+>    directory fails with "no beads database found" for all eight children at once —
+>    harmless because nothing partially applied, but pass
+>    `bd -C /data/projects/livespec-dev-tooling` and it cannot happen.
+>
+> ### ▶️▶️ EXACT NEXT ACTION — **THE PER-REPO FAN-OUT. UNIT C IS DONE AND NOTHING BLOCKS IT.**
+>
+> **⛔ dev-tooling IS DONE CONVERTING** — 3 offenders, all RULED. Re-deriving them is a
+> 30-second confirmation, not a unit.
+>
+> 1. **START AT `livespec-driver-claude` — 1 function, `bool`.** It is the cheapest
+>    place to prove the per-repo drill end to end before spending the drill on a 103- or
+>    172-function repo. ⚠️ `w25v`: it vendors at the REPO ROOT (`_vendor/`), not at
+>    `.claude-plugin/scripts/_vendor/`, and `vendor_update` hardcodes the latter — **the
+>    blessed path cannot serve this repo.** Read each repo's layout with `git ls-files`,
+>    never `find` (`find` matches the INSTALLED dev-tooling dependency under `.venv/` in
+>    every repo, including the ones that vendor nothing).
+> 2. **THEN ASCENDING BY DISTINCT SITES** — driver-codex 2 · livespec 15 · git-jsonl 18
+>    · runtime 27 · overseer 103 · beads-fabro 172. **STRUCTURAL TRIAGE FIRST IN EACH**:
+>    the per-child ledger entries now carry each repo's return-type histogram, so the
+>    seam-shaped clusters are visible before a single conversion is written. `dx8l`
+>    consumer wiring lands BEFORE any signature moves.
+> 3. **▶️ AND dev-tooling HAS ALREADY PAID THE TEMPLATE.** Both `LocalContext` seams —
+>    `file_text` (READ) and `dir_present`/`file_present` (PREDICATE) — are the shape a
+>    sibling with the same absence needs, and BOTH carry the same trap: **a seam named
+>    after the primitive it wraps changes NOTHING**, because the receiver is a parameter
+>    and only the VERB is left. That is now a mutation-proven assertion in
+>    `test_io_boundary_failable_verbs.py`, generic over every public `LocalContext`
+>    method — **port the assertion with the seam.**
+> 4. **ARMING** — the denominator statement MUST name the `995m` known gap AND the
+>    `get`/`run`/`group` failability gap (§"AN ARMING-TIME KNOWN GAP"), and it should
+>    now ALSO state that unit A's four verbs convict zero fleet-wide. Arming is a FLEET
+>    decision under brief 79 (remediate-everything-THEN-arm), so it follows the fan-out.
+> 5. **Bound 4's FAIL half** — INFRASTRUCTURE-BLOCKED, not unfinished (brief 93 keeps
+>    those distinct). It needs the installation to stop returning `kind: rate_limited`.
+>
+> ---
 >
 > ### ✅✅ UNIT B WAS BUILT AND MEASURED — **PR #1081, 24 → 5, ADDED 0 / REMOVED 19**
 >
@@ -274,7 +411,11 @@
 > **EXPECTED: 5 → 3.** Re-derive at both ends on two genuinely different trees;
 > below 3 is a finding.
 >
-> ### ▶️▶️ EXACT NEXT ACTION — **UNIT C, THE FLEET RE-MEASURE. IT IS UNBLOCKED AND IT IS OWED.**
+> ### ▶️▶️ (DISCHARGED 2026-08-02 — unit C is MEASURED; see the header block. Kept for its guard rails, which HELD.) EXACT NEXT ACTION — **UNIT C, THE FLEET RE-MEASURE.**
+>
+> ⚠️ **ITS PREDICTION WAS PARTLY WRONG AND THE MISS IS THE VALUABLE PART.** "A sibling
+> whose count moves on THIS pass moved for unit A's verbs OR for its own commits" —
+> only the second disjunct ever fired. Unit A's verbs moved **nothing, anywhere**.
 >
 > **⛔ dev-tooling IS DONE CONVERTING. Do not go looking for more here** — the 3
 > remaining are RULED, and re-deriving them is a 30-second confirmation, not a unit.
