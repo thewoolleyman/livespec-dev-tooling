@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.14.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.14.2...v1.14.3) (2026-08-02)
+
+
+### Bug Fixes
+
+* **checks:** mechanize v186 — a discharging narrow try is not a failure mode ([8ce991a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8ce991a722df6b19d5aa153aec6616ee8b296ad9))
+
 ## [1.14.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.14.1...v1.14.2) (2026-08-02)
 
 
