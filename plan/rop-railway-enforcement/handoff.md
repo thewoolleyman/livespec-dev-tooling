@@ -948,6 +948,76 @@
 >
 > ---
 
+> ## ✅✅ THE TRY-ROOT WIDENING IS MEASURED — **THE SPEC QUESTION IS REAL, AND THE BLAST RADIUS IS 8**
+>
+> **BOTH READINGS WERE STATED BEFORE THE RUN** (brief 103), so neither could be
+> rationalised after: *relieves `classify`* ⇒ the question is real and file-able;
+> *relieves nothing* ⇒ a FOURTH root nobody enumerated, a finding about the ENUMERATION
+> rather than about the rule.
+>
+> **▶️ IT RELIEVES `classify`. The question is REAL.** `classify` was verified down to ONE
+> root against merged master first, so rule (i)'s precondition held and the number means
+> something.
+>
+> | repo | before | after | relieved |
+> |---|---:|---:|---|
+> | `livespec-orchestrator-beads-fabro` | 172 | **169** | `parse_json`, `parse_float`, `parse_iso_datetime` |
+> | `livespec-dev-tooling` | 3 | **1** | `extract_created_worktree_paths` +1 |
+> | `livespec-orchestrator-git-jsonl` | 18 | **17** | `loads_json_optional` |
+> | `livespec-driver-codex` | 2 | **1** | `check_tmux_segment` |
+> | `livespec-driver-claude` | 1 | **0** | `classify` |
+> | `livespec-overseer` · `livespec` · `livespec-runtime` | — | unchanged | — |
+> | **fleet** | **411** | **403** | **−8** |
+>
+> ### ✅ THE RELIEVED SET IS SEMANTICALLY UNIFORM, WHICH IS THE STRONGEST EVIDENCE THE FRAMING IS RIGHT
+>
+> `parse_json` · `parse_float` · `parse_iso_datetime` · `loads_json_optional` · `classify`
+> · `check_tmux_segment` · `extract_created_worktree_paths`. **Every one is a PARSE-OR-
+> CLASSIFY function that catches a parse error and returns a DEFINED VALUE for that input
+> class.** Not one is a filesystem, process or network call. A relaxing change that
+> relieved a mixed bag would be the declared-empty escape wearing a new name; this one
+> relieves a single coherent shape, **8 of 411 (2%)**, and touches overseer and livespec
+> not at all.
+>
+> **✅ AND dev-tooling's OWN 3 → 1 IS A CONFIRMATION, NOT A SURPRISE.**
+> `extract_created_worktree_paths` is one of the three this thread RULED BY HAND as "not a
+> conversion". **The widening independently reaches the same verdict** — the mechanical
+> rule agreeing with a hand ruling is the best available evidence that the framing matches
+> the intent.
+>
+> ### ⛔ ONE INTERACTION THAT MUST NOT BE MISREAD — **RELIEF DOES NOT CLOSE `8o8e.19`**
+>
+> `check_tmux_segment` is on the relieved list. **Its dead `Failure` arm is a SEPARATE
+> defect and survives the relief untouched** — `_check_segment_result` still returns
+> `Success(...)` unconditionally and the `isinstance(result, Failure)` branch is still
+> unreachable. If the widening ratifies, that function leaves the offender list while the
+> decorative railway stays. **Do not let the count movement be read as closure.**
+>
+> ### ▶️ NEXT: FILE IT, under brief 98's framing
+>
+> Narrow to *"a discharging `try/except` inside a function whose totality is otherwise
+> proven should not PROPAGATE under clause (d)"* — a WIDENING of what the computed member
+> 1 recognises, **never a fifth exemption**: §"ROP composition" declares its exemption set
+> EXHAUSTIVE, and framing decides ratifiability. Carry this table as the blast radius.
+>
+> ### 🏷️ SCOPE TAGS ON EVERY FINDING SO FAR (brief 103) — the seam inventory for overseer's 103 and beads-fabro's 172
+>
+> **275 of the remaining 411 sit in two untouched repos.** The small repos' real product is
+> this list, so each finding carries its scope:
+>
+> | finding | scope | evidence |
+> |---|---|---|
+> | pure `os.path` members | **FLEET-GENERAL** | one allowlist, 21 closed |
+> | the `Try` widening | **FLEET-GENERAL** | 8 across 5 repos, one coherent shape |
+> | `LocalContext` READ + PREDICATE seams | **FLEET-GENERAL** | template; port the naming assertion with it |
+> | "the rail exists and stops at the public boundary" | **FLEET-GENERAL** | driver-codex ×2; expect it wherever a `_x_result()` private exists |
+> | a decorative rail with an uninhabited failure track | **FLEET-GENERAL** | `8o8e.19`; grep for `return Success(` as a whole body |
+> | `_result.py` stdlib shim (shipped hooks cannot import `returns`) | **REPO-SPECIFIC** | driver-claude, driver-codex — installer ships no venv |
+> | the enforced byte-identical mirror | **REPO-SPECIFIC** | overseer only; six others measured 0 |
+> | bare `import os.path` unresolved receiver | **FLEET-GENERAL but LATENT** | 0 first-party sites |
+>
+> ---
+>
 > ## ✅✅ THE PURE-`os.path` MEMBERS ARE LANDED — **FLEET 432 → 411, PREDICTED −21, LANDED −21**
 >
 > Measured on two genuinely different trees (primary checkout at master vs. the
