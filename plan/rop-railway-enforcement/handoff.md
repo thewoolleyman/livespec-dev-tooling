@@ -230,15 +230,84 @@
 > list and never mentions codex). **CI would not catch a divergent mirror.** The gate
 > holds only for pushes that run the hooks.
 >
-> ⚠️ **NO OTHER MEMBER HAS THIS SHAPE** — all seven siblings were checked for the same
-> duplicate-basename pattern and every one returned 0. Do not go hunting for a mirror
-> elsewhere on the strength of this finding.
+> ### ✅ THE MIRROR AUDIT — **RUN ACROSS ALL SEVEN, AND SIX OF SEVEN ARE A MEASURED ZERO** (brief 96)
 >
-> **⛔ AND IT REORDERS THE FAN-OUT.** Brief 79's ASCENDING-size rule was written over
-> RAW counts. Sized by DISTINCT sites the order changes at the top:
+> The first pass asked only whether an offender's `(basename, name)` appeared twice. That
+> is a PROXY. Brief 96 asked the direct question — **byte-identical file pairs, over the
+> SAME universe the offender count is taken over** — and it was re-run per repo on fresh
+> clones, with the offender count re-derived in the SAME pass so the two share a tree:
+>
+> | member | master | armed | duplicate offender FUNCTIONS | distinct sites |
+> |---|---|---:|---:|---:|
+> | `livespec-overseer` | `4c99ca4` | 194 | **91** | **103** |
+> | `livespec-orchestrator-beads-fabro` | `a7b04f9` | 172 | **0** | 172 |
+> | `livespec-runtime` | `165b8cc` | 27 | **0** | 27 |
+> | `livespec-orchestrator-git-jsonl` | `bf22da4` | 18 | **0** | 18 |
+> | `livespec` | `85f2cca` | 15 | **0** | 15 |
+> | `livespec-driver-codex` | `c611672` | 2 | **0** | 2 |
+> | `livespec-driver-claude` | `1cc3680` | 1 | **0** | 1 |
+> | `livespec-dev-tooling` | `5e6eb74` | 3 | **0** | 3 |
+>
+> **✅ AND FIVE OF THE EIGHT REPOS HAD MOVED SINCE UNIT C — EVERY ARMED COUNT CAME BACK
+> IDENTICAL.** That is a free stability check nobody asked for: 432 re-derived on eight
+> different trees two hours later.
+>
+> ⚠️ **THE ONLY OTHER BYTE-IDENTICAL `.py` PAIRS IN THE FLEET ARE EMPTY
+> `_vendor/returns/**/__init__.py` FILES** — measured, size 0, and NONE of them touches a
+> universe. They inflate nothing. overseer is the only repo whose duplicates are inside
+> the universe (44 file pairs, all 44 in it).
+>
+> ### 🔬 AND MY OWN AUDIT SHIPPED A UNITS ERROR THAT ONLY A SECOND INSTRUMENT CAUGHT
+>
+> The first version of that audit computed `distinct = armed − offender_extra_copies`
+> where `offender_extra_copies` counted duplicate **FILES** (27) while `armed` counts
+> **FUNCTIONS** (194) — **it reported overseer at 167 distinct sites.** Nothing in the run
+> was red; the number was simply wrong by a unit conversion.
+>
+> **▶️ IT SURFACED ONLY BECAUSE AN INDEPENDENTLY-DERIVED 103 ALREADY EXISTED TO DISAGREE
+> WITH IT.** A single instrument would have shipped 167 with the same confidence.
+> **When a number has a unit, name the unit in the field name** — `duplicate_offender_
+> functions`, not `extra_copies` — and re-derive by a second route before quoting.
+>
+> **⛔ AND IT REORDERS THE FAN-OUT — NOW ON AN AUDITED BASIS.** Brief 79's ASCENDING-size
+> rule was written over RAW counts. Sized by DISTINCT sites:
 > driver-claude 1 · driver-codex 2 · livespec 15 · git-jsonl 18 · runtime 27 ·
 > **overseer 103** · beads-fabro 172. The repo the plan calls "the largest" is now the
-> SECOND largest, and it is the one with a template already paid for it.
+> SECOND largest, and it is the one with a template already paid for it. **Every other
+> count in that ordering is now a MEASURED raw-equals-distinct, not an unaudited raw.**
+>
+> ### ⛔⛔ AND THE MIRROR GATE CANNOT GATE THE PATH THAT MATTERS — **`8o8e.18`, WITH A RULING**
+>
+> Asking this charter's third question of the local-only finding: **CAN IT STOP ANYTHING?**
+> Measured — no. overseer's CI runs `just ${{ matrix.target }}` over an EXPLICIT matrix and
+> there is **no wholesale `just check` job anywhere in the workflow**, so a mirror
+> divergence reaches master with CI fully green via any path that skips local hooks: a web
+> edit, a bot commit, release automation (**`version.json` is one of the mirrored
+> artifacts**), `--no-verify`.
+>
+> **▶️ AND IT IS SYSTEMIC, NOT AN OVERSEER OVERSIGHT.**
+> `checks/ci_matrix_completeness.py` limb (a) scopes itself to **CANONICAL** slugs, so a
+> repo-local slug is outside it BY CONSTRUCTION. Cross-validated: overseer sets
+> `LIVESPEC_FAIL_IF_CI_MATRIX_GAPS_EXIST: "true"` and runs the meta-check in its matrix,
+> and master is green — consistent only if the 4 CI-absent aggregate slugs
+> (`check-plan-thread-epic-parity`, `check-plugin-manifest-lockstep`,
+> `check-codex-plugin-runnable-launcher`, `check-codex-skill-picker`) are all
+> non-canonical. **The check's own docstring names the harm** — *"a contributor sees the
+> aggregate green locally while CI silently skips the check"* — and then scopes past it.
+>
+> **✅ THE RULING: THE FAN-OUT PROCEEDS, IT DOES NOT WAIT.** The base is measured green;
+> the fan-out's own PRs run pre-push and are therefore gated at the moment that matters;
+> the atomic unit is a file pair in ONE commit so there is no legitimate half-synced
+> window; and waiting on a CI-wiring change in another repo would be deferral, which
+> brief 79 forbids.
+>
+> **⛔ WHAT CHANGES INSTEAD: EVERY overseer CONVERSION PR VERIFIES THE PAIR EXPLICITLY** —
+> `cmp` the two files or run the recipe — rather than relying on a gate that is not on the
+> merge path. **Verification at the UNIT, because escalation is missing at the PATH.**
+> The durable fix is 2–3 matrix lines in overseer (⚠️ `check-codex-skill-picker` STAYS
+> OUT; its exclusion is reasoned and recorded). The bigger question — whether limb (a)
+> should cover repo-local members with declared exclusions — is a CORE spec question and
+> is deliberately left to the maintainer.
 >
 > ### 🔬 THE HARNESS WAS POSITIVE-CONTROLLED ON TWO INDEPENDENTLY-KNOWN ANSWERS
 >
@@ -301,7 +370,8 @@
 >
 > 1. **START AT `livespec-driver-claude` — 1 function, `bool`.** It is the cheapest
 >    place to prove the per-repo drill end to end before spending the drill on a 103- or
->    172-function repo. ⚠️ `w25v`: it vendors at the REPO ROOT (`_vendor/`), not at
+>    172-function repo. ✅ **ITS COUNT IS NOW AUDITED, NOT RAW** — 1 distinct site, zero
+>    mirrored copies, measured on `1cc3680`. ⚠️ `w25v`: it vendors at the REPO ROOT (`_vendor/`), not at
 >    `.claude-plugin/scripts/_vendor/`, and `vendor_update` hardcodes the latter — **the
 >    blessed path cannot serve this repo.** Read each repo's layout with `git ls-files`,
 >    never `find` (`find` matches the INSTALLED dev-tooling dependency under `.venv/` in
