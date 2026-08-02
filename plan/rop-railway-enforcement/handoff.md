@@ -1,6 +1,139 @@
 # rop-railway-enforcement — arm the check that was never armed, then remediate six repos
 
-> ## 🔻🔻 COLD START — **START HERE. THE ORDER IS DECIDED AND THE FIRST UNIT IS FULLY SPECIFIED: `livespec-runtime`'s `hygiene_scan_context.py` SEAM, YIELD 9 OF 27.**
+> ## 🔻🔻 COLD START — **START HERE. `runtime` IS BLOCKED ON A FILED SPEC QUESTION. THE NEXT UNIT IS `beads-fabro`'s `_dispatcher_cost.py` SEAM, YIELD 5 — AND IT IS NOT `_jsonc.py`.**
+>
+> ### 🔻 FIRST FIVE MINUTES
+>
+> **NOTHING IS MID-FLIGHT.** No background job, no sub-agent, no unpushed Red, no open PR
+> of this thread's. dev-tooling master at wrap-up: **`6deca80`** or later — re-fetch.
+>
+> 1. ✅ **NOTHING OF MINE TO REAP.** Both this session's worktrees
+>    (`fix-vendor-update-destination`, `docs-handoff-vendoring-blocker`) were reaped
+>    before stopping. `git -C /data/projects/livespec-dev-tooling merge --ff-only
+>    origin/master` is all that is owed and may be a no-op.
+> 2. **REAP NOTHING ELSE.** Every other worktree belongs to a PEER lane. Enumerate with
+>    `git worktree list`; never quote a count from this file.
+> 3. `git status --short --branch` — clean on `master`; one untracked
+>    `install-livespec-pr-bot.png` is pre-existing and NOT this thread's. ⚠️ A modified
+>    `uv.lock` is REGENERATED noise: `git checkout -- uv.lock` before any `merge
+>    --ff-only`, which REFUSES while the tree is dirty.
+> 4. ⚠️ **A FRESH WORKTREE'S FIRST `.py` COMMIT FAILS
+>    `check-primary-checkout-commit-refuse-hook-installed`** with `worktree_pack_absent`.
+>    Fix, in the worktree: `mise exec -- just install-worktree-pack`. **NOT your diff.**
+> 5. ⚠️ **BEFORE PUSHING ANY RED→GREEN PAIR:** `git log -1 --format=%B | grep -c
+>    '^TDD-Red-'` must be **5** and `'^TDD-Green-'` must be **2**. **`--amend --no-edit`
+>    is the SAFE amend spelling and it was used twice this session; `--amend -m` / `-F`
+>    destroys the Red trailers and the hook still exits 0** (`zv78`, READY/P1).
+> 6. ⚠️ **A `check-fleet-conformance` RED IS PROBABLY THE APP'S RATE LIMIT, NOT YOUR
+>    DIFF.** `gh run view <id> --log-failed | grep -o '"kind": "[a-z_]*"'` →
+>    `rate_limited` ⇒ re-run after the hourly window. **`gh api rate_limit` from your own
+>    session reads HEALTHY while CI is blocked — different bucket.** Log on **`mmqe`**.
+> 7. ⚠️ **`/tmp` INODE PRESSURE RECURS** (`8o8e.16`): check `df -i /tmp`, NOT `df -h`.
+>    Reclaim ONLY stale regenerable caches; **never** `/tmp/claude-1000/*`, never today's.
+> 8. **⛔ READ THE LEDGER CHILDREN `8o8e.7`–`.13` BEFORE BUDGETING ANY MEMBER.**
+>    `.8` and `.10` were re-derived 2026-08-02 and now rank by YIELD; the rest still rank
+>    by REACH and are wrong in the same way `.8` was.
+>
+> ### ⛔⛔ THE PREVIOUS COLD START SAID "NOTHING BLOCKS IT" ABOUT `runtime`. IT WAS FALSE, AND ITS OWN LEDGER CHILD ALREADY SAID SO
+>
+> The header below named `livespec-runtime`'s `hygiene_scan_context.py` seam as the next
+> action with **"NOTHING BLOCKS IT"**. Measured on a fresh clone at `ebc73e9`:
+> `git ls-files` shows **no `_vendor/` tree at all**, no `returns` in `dependencies`, and
+> **ZERO** first-party importers. The rule requires a terminal `Result`/`IOResult`
+> annotation or a `@safe`/`@impure_safe` decorator — every one of which comes from
+> `returns`.
+>
+> **`8o8e.10` HAS SAID "Vendoring is the FIRST slice of this child, not a footnote" SINCE
+> IT WAS FILED, and it was re-verified the SAME DAY the header claimed otherwise.** This
+> is the second consecutive session in which this file's START-HERE block asserted state
+> that was not true — the first was corrected in `6b6a970`. **The header is narrative and
+> the children are the artifact; when they disagree, the child wins.**
+>
+> ### 🔴🔴 AND THE FIX IS NOT "VENDOR IT" — `runtime` IS A LIBRARY THAT IS ITSELF VENDORED. FILED AS `4ihw` (P1)
+>
+> `livespec-runtime` is consumed TWO ways at once: as an installed wheel (uv git source),
+> AND source-copied whole into three consumers at
+> `.claude-plugin/scripts/_vendor/livespec_runtime/` (33 files each, re-synced by the
+> release fan-out's `just vendor-update livespec_runtime`).
+>
+> Only `livespec_runtime/_vendor/returns/` serves both paths — a root-level `_vendor/` is
+> not in the wheel. But because the package is itself vendored, that creates the fleet's
+> **FIRST nested `_vendor`-inside-`_vendor`**: ~115 files duplicated into three consumers
+> that **already vendor `returns` at their own root**, two copies on one `sys.path`,
+> pinned by two different manifests. **That is the class that broke the release fan-out
+> for seven hours on 2026-07-30.**
+>
+> **▶️ AND THE REPO ALREADY ANSWERS THIS, THE OTHER WAY.** `typing_extensions` has the
+> IDENTICAL dual-consumption problem and is resolved as: a real `dependencies` entry
+> (serves the installed path) + a **BARE** import with no vendor preamble (resolves
+> against the CONSUMER's `_vendor/`) + vendored by each consumer at its own root.
+> **Verified: the `livespec_runtime` copy inside `livespec` carries ZERO nested `_vendor`
+> files, and all three source-copying consumers already vendor `returns`.**
+>
+> ⛔ **DO NOT CONVERT `runtime` UNTIL `4ihw` RATIFIES.** The standing "wait for the
+> ruling" constraint has already paid for itself once: `8o8e.14` was CLOSED AT ZERO
+> because v186 made the work UNNECESSARY rather than merely unblocking it.
+>
+> ### ▶️▶️▶️ EXACT NEXT ACTION — **`beads-fabro`'s `commands/_dispatcher_cost.py`, YIELD 5. IT VENDORS `returns` ALREADY.**
+>
+> **⛔ AND IT IS NOT `_jsonc.py`, WHICH THIS FILE HAS POINTED AT TWICE.** Re-derived at
+> `beads-fabro` master `73f225d` with the rebuilt probe, control-checked on
+> dev-tooling's 171/1 first:
+>
+> | seam | fan-in | **YIELD** |
+> |---|---:|---:|
+> | `commands/_dispatcher_cost.py` | 7 | **5** |
+> | `commands/_jsonc.py` | **54** | 4 |
+> | `spec_reader.py` | 10 | 4 |
+> | `commands/_beads_client_argv.py` | 4 | 4 |
+> | `commands/_dispatcher_run_status.py` | 4 | 4 |
+> | `commands/_config.py` | 29 | **0** |
+>
+> **THE FAN-IN/YIELD INVERSION IS INSIDE ONE REPO, AND IT COSTS 3×.** Top FIVE seams by
+> fan-in relieve **7**; top five by YIELD relieve **21**. Two modules reaching FOUR each
+> yield as much as the module beneath 54.
+>
+> **THE RITUAL:** clone at master; **measure BEFORE** per §"THE ARMED MEASUREMENT";
+> convert (product `.py` ⇒ Red-Green-Replay, Red unpushed until measured, impl UNMODIFIED
+> on disk at Red); **measure AFTER on a genuinely DIFFERENT tree and report ADDED and
+> REMOVED separately, never the net**; update `8o8e.8` with an AS-OF.
+>
+> ### ✅ WHAT LANDED THIS SESSION
+>
+> - **`w25v` CLOSED — PR #1127 → `6deca80`.** `vendor_update` hardcoded
+>   `.claude-plugin/scripts/_vendor/`, one of **three** layouts the fleet uses, so the
+>   blessed path was wrong in **two of the five** repos carrying a tree — including the
+>   one that ships it — and it **created the wrong directory and exited 0**. Now resolved
+>   from `git ls-files`, refusing both the zero and the ambiguous case.
+>   **⛔ READING THE INDEX RATHER THAN THE FILESYSTEM IS LOAD-BEARING:** every repo's
+>   `.venv` carries the installed dependency's own `_vendor/`, so a filesystem walk
+>   answers YES in repos that vendor nothing. Pinned by a test.
+> - **`8o8e.8` and `8o8e.10` re-derived and restated as YIELD**, with `.8`'s false
+>   heading ("THE FLEET'S SINGLE HIGHEST-LEVERAGE SEAM IS IN THIS REPO") retired.
+> - **`4ihw`** (P1, the spec question) and **`p9ot`** (ship the yield probe) filed.
+>
+> ### ✅ AN INDEPENDENT CROSS-CHECK OF THE COST MODEL, AND A CORRECTION TO MY OWN PROBE
+>
+> **16 of `beads-fabro`'s 168 offenders have an EMPTY root set — exactly its recorded
+> DECLARATION-candidate count.** Two instruments not built from each other agree: a
+> function with no root beneath it is convicted ONLY by clause (e), which IS the
+> declaration candidate's definition.
+>
+> ⚠️ **SO THE PROBE'S "EMPTY ROOT SET ⇒ masked zero risk" LABEL IS WRONG** — it is the
+> declaration class, and calling it a measurement hazard sends a reader hunting for an
+> instrument defect instead of reading the 16 for absence-vs-failure. Carried on `p9ot`.
+>
+> ### 🔧 THE YIELD PROBE — REBUILT FROM PROSE, AND THE NAMING BAR WAS MET
+>
+> Stated plainly because it is evidence, not an excuse: the previous session's prose
+> naming was precise enough that a cold rebuild reproduced the **SAME NUMBERS** —
+> `hygiene_scan_context.py` 13/9, `providers/github.py` 6/3, `_jsonc.py` 54/4,
+> `_config.py` 29/0, dev-tooling's control 171/1. Same-number is the bar and it cleared.
+> **It is still the third rebuild, which is why `p9ot` exists.**
+>
+> ---
+>
+> ## 🗄️ (SUPERSEDED AS THE HEADER 2026-08-02 at session end — its EXACT NEXT ACTION is BLOCKED on `4ihw`, and its "NOTHING BLOCKS IT" was false when written. Kept for the fleet table, the five rules, and the probe description.) COLD START — **`livespec-runtime`'s `hygiene_scan_context.py` SEAM, YIELD 9 OF 27.**
 >
 > ### 🔻 FIRST FIVE MINUTES
 >
