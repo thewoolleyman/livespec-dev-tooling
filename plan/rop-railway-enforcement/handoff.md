@@ -211,20 +211,66 @@
 > (`github-app-request-budget`, `owned-heading-coverage-todos`); neither was ever
 > a candidate.
 >
-> ### ▶️▶️▶️ RESUME HERE: **BOTH IMPLEMENTATIONS ARE NOW OWED, AND NEITHER IS BLOCKED.**
+> ### ✅ UNIT A IS LANDED — **PR #1074 → `e51b37f`**, and the OUT half never existed
 >
-> Nothing of this thread is mid-flight — no open PR, no worktree, no background
-> job. The supervisor has wrapped up; nothing waits on them.
+> **TIGHTENING-ONLY.** Adds `open`, `readlink`, `owner`, `truncate` to
+> `_UNRESOLVED_RECEIVER_IO_VERBS`; **removes NOTHING.** 5 Red + 2 Green on one
+> commit, counted by hand. Verified on the FORGE: the four present, `group`
+> absent.
 >
-> **UNIT A — `h0g9`: correct the verb set in BOTH directions in ONE change.** The
-> ratified v184 text refuses the one-directional implementation BY NAME: a
-> conforming implementation *"MUST NOT satisfy this rule by removing total
-> predicates from a list while leaving that list otherwise unchanged."*
-> **OUT:** `is_file` / `is_dir` / `exists` and siblings that swallow `OSError`.
-> **IN:** `open`, `readlink`, `chown`, `truncate`, `owner`, `group`, `is_mount`,
-> `is_block_device`, directory walks. ⚠️ `samefile` / `glob` / `iterdir` / `rglob`
-> need INDIVIDUAL rulings against the interpreter; unresolved ambiguity resolves
-> **FAILABLE so doubt TIGHTENS**; record each determination WITH its evidence.
+> **MEASURED ON TWO GENUINELY DIFFERENT TREES: 24 → 24. ADDED 0, REMOVED 0.**
+> The four verbs are **LATENT here, not live** — dev-tooling exposure is ZERO;
+> their value is fleet-wide. ✅ **The ADDED=0 is credible because the SAME
+> instrument returned ADDED=10 minutes earlier** for the rejected variant. Re-derived
+> on merged master: **universe 168 / offenders 24.**
+>
+> ### ⛔⛔ THE `group` CATCH — READ THIS BEFORE TOUCHING THE VERB SET AGAIN
+>
+> The first pair added **five** verbs and measured **24 → 34**. Every one of the
+> 10 additions was a `match.group(...)` site. **`group` IS FAILABLE**
+> (`Path.group()` raises `FileNotFoundError`) **and is STILL REFUSED**, because:
+>
+> **▶️ FAILABILITY IS NECESSARY AND NOT SUFFICIENT.** With the receiver
+> unresolved only the VERB is left, so the name must ALSO be unambiguously an I/O
+> surface. `re.Match.group()` is a pure string operation that dominates the name.
+> Dropping `group` alone returned 34 → 24; the other four add ZERO.
+>
+> **This is CONFORMANT WITH the module's existing documented design, not an
+> exception to it** — the docstring already records that a terminal-name match
+> *"once flagged ten total functions in this repo as touching I/O and only three
+> were real"*, which is exactly why `get` and `run` are refused. **`group` is that
+> defect's THIRD instance and it mis-flagged exactly ten again.** Pinned by
+> `test_group_is_refused_despite_being_failable`.
+>
+> ✅ **AND THE MECHANISM THAT SAVED IT — KEEP DOING THIS.** The Red was
+> **UNPUSHED**, so a wrong pair cost a `git reset --hard` instead of a landed
+> defect. **Leave every Red unpushed until the pair is MEASURED, not merely
+> green.** An unpushed Red is recoverable; a pushed Red-only commit is the `zv78`
+> shape that exits 0 and looks finished. The distinction is the PUSH.
+>
+> ### ⛔ AN ARMING-TIME KNOWN GAP — RECORD IT IN THE ARMING COMMIT, DO NOT REDISCOVER IT AT THE GATE
+>
+> **`get`, `run` and `group` are FAILABLE under ratified v184/v185 and are
+> DELIBERATELY ABSENT from the verb set**, because the instrument cannot tell
+> `Path.group()` from `re.Match.group()` on an unresolved receiver. So for three
+> names the armed check does NOT enforce failability in full.
+>
+> ⚠️ **THIS IS NOT A `qndn`, AND THE DIFFERENCE MATTERS SO NOBODY INFLATES IT.**
+> `qndn` was an UNDOCUMENTED skip hiding 42% of the universe. This is a
+> DOCUMENTED choice — the docstring's own heading is *"THE ONE PLACE THIS IS NOT
+> CONSERVATIVE, STATED RATHER THAN HIDDEN"* — and it is now pinned by a
+> regression test. **Different magnitude entirely, and NO ACTION IS OWED TODAY.**
+>
+> **▶️ THE GATE IS ARMING, NOT UNIT B.** The arming commit's denominator
+> statement MUST NAME these three alongside the `995m` known gap. This thread's
+> standing rule: *either it lands before arming, or the arming commit carries the
+> known-gap statement; silence is not an option.* A reader of the armed check
+> would otherwise believe it enforces failability in full.
+>
+> ### ▶️▶️▶️ RESUME HERE: **UNIT B — THE CONDITION-3 CARRIER. IT IS THE NEXT UNIT AND IT IS UNBLOCKED.**
+>
+> Nothing of this thread is mid-flight — no open PR, no worktree of this thread's,
+> no background job. Every foreign worktree is untouched.
 >
 > **UNIT B — the condition-3 carrier's implementation.** New role key
 > `single_meaning_variants`, ONE ENTRY PER VARIANT (`file`, `union`, `variant`,
@@ -242,14 +288,20 @@
 > silently leaves the universe and reads as progress.
 >
 > **▶️ EXPECTED MOVEMENT, and re-derive it at BOTH ends rather than trusting this:**
-> unit B should take the 19 out; unit A should take the 2 out AND may ADD offenders
-> through its tightening half — **check BOTH directions**. dev-tooling's floor is
-> the 3 RULED rows, which are not conversions.
+> unit B should take **19** out, leaving **5**. ⛔ **THE 2 TOTAL-PREDICATE ROWS ARE
+> NO LONGER RELIEVED BY UNIT A — v185 REFUTED THAT.** `reconcile_beads_dir_perms`
+> and `reconcile_beads_metadata_present` call `is_dir()` / `is_file()` directly,
+> a `PermissionError` genuinely originates there, and they are **ORDINARY
+> CONVERSIONS now owed**. dev-tooling's floor is therefore **3 RULED rows + those
+> 2 conversions = 5**, not 3.
 >
-> **UNIT C — the fleet re-measure, which is owed the moment unit A lands.** The
-> **455 is PROVISIONAL** and so is every child `.7`–`.14` (each already caveated).
-> Re-measure with the corrected set, same harness, same denominator, then RESTATE
-> all eight.
+> **UNIT C — the fleet re-measure, owed now that unit A has landed (`e51b37f`).**
+> The **455 is PROVISIONAL** and so is every child `.7`–`.14` (each carries the
+> corrected caveat). Re-measure with the corrected set, same harness, same
+> denominator, then RESTATE all eight. ⛔ **EXPECT UP OR FLAT ONLY** — the change
+> was tightening-only, so **any DECREASE is a finding, not a rounding.** ⚠️ In
+> dev-tooling the four verbs moved nothing (24 → 24); a sibling may differ, which
+> is the whole reason the re-measure is owed rather than inferred.
 >
 > **PARALLEL TRACK — the sibling triage, blocked by none of this.** Continue in
 > ASCENDING size with structural triage FIRST. Already paid: `8o8e.15`.
@@ -259,7 +311,7 @@
 > | count | disposition |
 > |---|---|
 > | **19** | `RowOutcome`, condition 1 HOLDS — **unblocked by v183**, needs unit B |
-> | **2** | `RowOutcome`, condition 1 FAILS (total predicates) — **unblocked by v184**, needs unit A |
+> | **2** | `RowOutcome`, condition 1 FAILS — ⛔ **ORDINARY CONVERSIONS NOW OWED.** v185 refuted the total-predicate premise, so unit A does NOT relieve them |
 > | **3** | population-sweep + `extract_created_worktree_paths` — RULED, NOT conversions |
 >
 > ### ▶️ (previous) **`3744` IS NO LONGER ONE BLOCKER — 4 OF THE 22 ARE ACTIONABLE NOW, AND 2 OF THEM ARE A LIVE CRASH.**
