@@ -269,8 +269,41 @@
 >
 > ### ▶️▶️▶️ RESUME HERE: **UNIT B — THE CONDITION-3 CARRIER. IT IS THE NEXT UNIT AND IT IS UNBLOCKED.**
 >
-> Nothing of this thread is mid-flight — no open PR, no worktree of this thread's,
-> no background job. Every foreign worktree is untouched.
+> #### 🔻 SESSION WRAP-UP 2026-08-02 — FIRST FIVE MINUTES, DO THESE
+>
+> **NO background job, NO sub-agent, NO unpushed Red.** Nothing is half-done.
+>
+> 1. **`git worktree list`. Reap ONLY
+>    `~/.worktrees/livespec-dev-tooling/unit-a-landed`** (branch
+>    `docs/unit-a-landed-arming-gap`) once its PR **#1077** shows MERGED. It was
+>    62 pass / 0 fail with `ci-green` still aggregating and auto-merge ARMED, so
+>    it lands unattended. **If this block is what you are reading, that PR
+>    MERGED** — this text only reaches master through it. Then
+>    `git -C /data/projects/livespec-dev-tooling merge --ff-only origin/master`.
+> 2. **REAP NOTHING ELSE.** Every other worktree in dev-tooling and livespec is a
+>    peer lane's, including an active `fix/canonical-slug-consumer-migration` in
+>    livespec and the shell-quality lane's. Enumerate; never quote a count.
+> 3. **Re-derive before trusting any number here.** Baseline on merged master at
+>    the time of writing: **universe 168 / offenders 24.**
+>
+> ⚠️ **`/tmp` INODE PRESSURE RECURS AND IT WILL LIE TO YOU** (`8o8e.16`). If a run
+> dies with `sqlite3.OperationalError: unable to open database file`, xdist
+> `INTERNALERROR`, or a bogus "coverage NN < 100", check **`df -i /tmp`** (NOT
+> `df -h` — space is not the constraint). Reclaim ONLY stale regenerable caches;
+> **never** `/tmp/claude-1000/*` (other sessions) and **never** anything dated
+> today. 408k inodes were reclaimed this way; the leak itself is unfixed.
+>
+> #### THE STATE, in one place
+>
+> | | |
+> |---|---|
+> | dev-tooling master | `395128c` at wrap-up; **re-fetch, it moves hourly** |
+> | livespec master | `1d54cddb` (v185) |
+> | dev-tooling offenders | **24** (universe 168) |
+> | spec | v183 carrier · v184 criterion · v185 the retraction — **all RATIFIED** |
+> | pending proposals in livespec | 2, both FOREIGN — leave them |
+>
+> Nothing of this thread is mid-flight beyond item 1 above.
 >
 > **UNIT B — the condition-3 carrier's implementation.** New role key
 > `single_meaning_variants`, ONE ENTRY PER VARIANT (`file`, `union`, `variant`,
@@ -281,6 +314,32 @@
 > the code each run. **NOT in `REQUIRED_ROLE_KEYS`. RELAXING-ONLY** — carry
 > `_declared_absence_returns.py`'s polarity warning, not
 > `cross_repo_public_api`'s tightening-only comfort.
+>
+> ⛔⛔ **THE RECOMPUTE IS THE ONLY THING SEPARATING THIS KEY FROM THIS EPIC'S
+> FOUNDING DEFECT.** `single_meaning_variants` is RELAXING-ONLY — the exact shape
+> this thread spent days removing (`pure_trees = []`, the declared-empty escape).
+> What makes it legitimate rather than a re-creation of that defect is ONLY that
+> the gate re-derives from source every run and stores nothing that is trusted.
+> **If you find yourself storing a declaration that is TRUSTED rather than
+> RE-DERIVED, that IS the defect — stop and say so.**
+>
+> ### ⛔ UNIT B's EXPECTED MOVEMENT — THE POLARITY IS THE **OPPOSITE** OF UNIT A's
+>
+> Unit A was TIGHTENING-only, so a DECREASE was the finding. **Unit B is
+> RELAXING-only, so the rule INVERTS — and BOTH halves are findings:**
+>
+> **PREDICTED: 24 → 5** (the 19 relieved; 2 conversions + 3 ruled remain).
+>
+> - ⛔ **Any INCREASE is a finding** — a relaxing change cannot add offenders.
+> - ⛔ **RELIEVING MORE THAN 19 IS ALSO A FINDING, NOT A BONUS.** That is the
+>   direction this charter forbids: a relaxing key that relieves more than the
+>   ENUMERATED variants is a declared-empty escape wearing a new name. **If the
+>   count lands BELOW 5, STOP** and find out what got relieved that should not
+>   have been.
+>
+> Re-derive at BOTH ends on two genuinely different trees, and **use the
+> ADDED/REMOVED decomposition rather than the net** — on unit A the net hid
+> nothing only because the ADDITIONS were read one by one.
 >
 > ⛔ **BOTH ARE PRODUCT `.py`, SO RED-GREEN-REPLAY APPLIES** — and the new modules
 > need the new-module STUB technique so Red fails on a genuine assertion rather
@@ -302,6 +361,20 @@
 > was tightening-only, so **any DECREASE is a finding, not a rounding.** ⚠️ In
 > dev-tooling the four verbs moved nothing (24 → 24); a sibling may differ, which
 > is the whole reason the re-measure is owed rather than inferred.
+>
+> ### ▶️ THE 2 CONVERSIONS ARE UNBLOCKED **TODAY** — DO NOT LET THEM WAIT FOR A RE-MEASURE TO REDISCOVER THEM
+>
+> `reconcile_beads_dir_perms` (`fleet/_rows_local.py`) and
+> `reconcile_beads_metadata_present` (`fleet/_rows_local_beads.py`) are held on
+> **NOTHING**. v185 refuted the premise that unit A would relieve them; they call
+> `is_dir()` / `is_file()` DIRECTLY, a `PermissionError` genuinely originates
+> there, and they are **ORDINARY CONVERSIONS, actionable now.**
+>
+> **▶️ TAKE THEM WHENEVER UNIT B IS WAITING ON CI RATHER THAN IDLING.** They are
+> the natural filler for a CI gap: small, independent, and each is its own
+> Red-Green-Replay pair. ⚠️ They are `RowOutcome`-returning rows, so a conversion
+> must not double-encode — read the v183 carrier first and decide whether the row
+> converts or the union declaration covers it.
 >
 > **PARALLEL TRACK — the sibling triage, blocked by none of this.** Continue in
 > ASCENDING size with structural triage FIRST. Already paid: `8o8e.15`.
