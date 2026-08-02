@@ -11,14 +11,18 @@
 >
 > ### ▶️▶️▶️ RESUME HERE: **`3744` IS NO LONGER ONE BLOCKER — 4 OF THE 22 ARE ACTIONABLE NOW, AND 2 OF THEM ARE A LIVE CRASH.**
 >
-> **THE NEXT UNIT IS `assert_worktree_pack` OR `reconcile_livespec_jsonc_complete`**
-> — see §"CONDITION 1 IS MECHANIZABLE" below. Both are among the 4, both CRASH
-> today (`livespec-dev-tooling-a6et`, P1), and the remediation is small:
-> condition 1 "TIGHTENS the obligation at the leaf", so **lift the read into a
-> railway-typed helper and let the row RENDER the outcome. The row's own
-> `RowOutcome` annotation may stay** — this is NOT a table-wide `LocalRowFn`
-> change. ⚠️ **Verify that before starting**; it is the assumption the small
-> scope rests on.
+> **THE NEXT UNIT IS A `file_text` SEAM ON `LocalContext`, AND IT FIXES ALL 4 AT
+> ONCE.** See §"WHY ALL 4 ARE LOCAL ROWS" below — the root cause is structural,
+> not four separate oversights. Condition 1 "TIGHTENS the obligation at the leaf",
+> so the read moves to the seam and each row RENDERS the outcome; **the rows' own
+> `RowOutcome` annotations may stay, so this is NOT a table-wide `LocalRowFn`
+> change.**
+>
+> ⚠️ **MIRROR THE SEAM, NOT ITS SIGNATURE.** `FleetContext.file_text` returns
+> `str | None`, which FUSES absent with unreadable — that fusion is why the
+> central side needs `_absent_or_unreadable` to take a SECOND read (the member
+> tree) to disambiguate. A new local seam should be railway-typed from the start
+> rather than inheriting that and then needing its own disambiguator.
 >
 > **⛔ THE OTHER 2 OF THE 4 ARE NOT CONVERSIONS** — their only direct primitives
 > are TOTAL predicates, so converting would build an uninhabited failure track.
@@ -123,6 +127,33 @@
 > it returns True for a directory**, which is why only the jsonc row takes the
 > `IsADirectoryError` arm. The pre-check pair does not fail the way it looks like
 > it fails — probe it, do not reason about it.
+>
+> ### 🧩 WHY ALL 4 ARE LOCAL ROWS — **`LocalContext` HAS NO FILE-READ SEAM, AND THAT IS THE WHOLE CAUSE**
+>
+> The 4 are not four independent oversights. **Measured on the two context types:**
+>
+> | context | seams |
+> |---|---|
+> | `FleetContext` (central rows) | `api`, `api_object`, `canonical_ref`, **`file_text`**, `tree`, `member_tree_snapshot`, `installed_repos`, … |
+> | `LocalContext` (local rows) | `exec`, `exec_in_worktree` — **a COMMAND seam and nothing else** |
+>
+> **So a central row that needs a file reads it through `ctx.file_text` and passes
+> condition 1 for free. A local row that needs a file has NOTHING to read it
+> through, so it calls `Path.read_text()` / `is_file()` / `exists()` directly —
+> which is precisely what condition 1 refuses, and precisely where `a6et`'s crash
+> lives.**
+>
+> ✅ **The split is seam-vs-direct, NOT local-vs-central — and the local rows
+> themselves prove it.** Four local rows in `_rows_local_beads.py`
+> (`reconcile_beads_bd_binary`, `_dolt_server`, `_tenant_secret`,
+> `_config_committed`) sit in the PASSING 18, because they reach their state
+> through `ctx.exec(...)`. The rows that fail are exactly the ones that wanted a
+> FILE and had no seam for it. That is what makes the missing seam the cause
+> rather than a coincidence of module names.
+>
+> **▶️ SO ONE SEAM CLOSES ALL 4**, and it is the same shape the central side
+> already shipped — which is also the argument that it is a restoration of an
+> existing design rather than a new abstraction.
 >
 > ### ⛔ THE OTHER 2 EXPOSE A TENSION IN THE RATIFIED TEXT — a CORE question, recorded nowhere else
 >
@@ -780,6 +811,12 @@
 >   `read_text()` that raises, so the swallow is credible. A function whose only
 >   direct primitive is one of these is a syntactic I/O boundary with NOTHING to
 >   flow, and converting it builds the uninhabited failure track member 1 forbids.
+> - **WHEN N FUNCTIONS FAIL THE SAME CLAUSE, LOOK FOR THE MISSING SEAM BEFORE
+>   WRITING N FIXES.** All 4 condition-1 failures trace to ONE absence —
+>   `LocalContext` has a command seam and no file-read seam, while `FleetContext`
+>   has `file_text`. The sibling local rows that DO pass (they use `ctx.exec`) are
+>   what prove it is the missing seam rather than the module. **Compare the
+>   context objects, not the offending functions.**
 > - **A DECLARATION IS A READING OF THE CURRENT CALL GRAPH, NOT A PROPERTY.**
 >   `persisting_bump_pr_number`'s `None` had TWO meanings until the pin-walker
 >   lifted `open_bump_prs_for`'s read failure onto its own track; declaring it
