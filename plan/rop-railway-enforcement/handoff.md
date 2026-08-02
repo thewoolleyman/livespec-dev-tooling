@@ -1,6 +1,114 @@
 # rop-railway-enforcement — arm the check that was never armed, then remediate six repos
 
-> ## 🔻🔻 COLD START — **START HERE. `runtime` IS BLOCKED ON A FILED SPEC QUESTION. THE NEXT UNIT IS `beads-fabro`'s `_dispatcher_cost.py` SEAM, YIELD 5 — AND IT IS NOT `_jsonc.py`.**
+> ## 🔻🔻 COLD START — **START HERE. THE CONVERSION UNIT WAS STOPPED BY ITS OWN "MEASURE BEFORE" LEG, AND THE TWO THINGS IT FOUND BOTH OUTRANK IT.**
+>
+> ### 🔻 FIRST FIVE MINUTES
+>
+> **NOTHING IS MID-FLIGHT.** No background job, no sub-agent, no unpushed Red, no open PR
+> of this thread's. dev-tooling master at wrap-up: **`9603eb4`** or later — re-fetch.
+> Steps 1–8 of the block below are UNCHANGED and still current; read them there.
+>
+> ### ⛔⛔ THE HEADLINE — **NOTHING WAS CONVERTED, AND THAT IS THE UNIT'S RESULT, NOT ITS FAILURE**
+>
+> The unit was `beads-fabro`'s `commands/_dispatcher_cost.py`, YIELD 5. BEFORE measured
+> clean at **universe 186 / offenders 168** (`73f225d`, control 171/1 run first). Then
+> READING the seam's two roots showed **the conversion would have been WRONG**:
+>
+> - **`_resolve_cap` CANNOT FAIL.** Every path returns a `float`; it discharges the parse
+>   failure into the committed default, which is the module's stated contract. A `Result`
+>   there is the **UNINHABITED failure track v179 exists to prevent**, "whose dead unwraps
+>   hide the live ones". It is disqualified by clause (c) — it calls into the declared
+>   `effects/` io_tree — **not** because anything beneath it can fail.
+> - **`_total_usd_micros_for -> int | None`** is absence-shaped (`observable=False` is a
+>   designed state feeding the fail-closed gate). ⚠️ Recorded as a CANDIDATE shape, not a
+>   ruling: it is `_`-prefixed, so it is a ROOT rather than a public offender, and member 2
+>   declares PUBLIC names. **The absence-vs-failure read has inverted the expected answer
+>   repeatedly in this thread.**
+>
+> **Same shape as `8o8e.14`, which closed at ZERO because the work turned out unnecessary
+> rather than merely unblocked.**
+>
+> ### ▶️▶️▶️ EXACT NEXT ACTION — **`55ec` (P1): SPLIT `beads-fabro`'s `effects/` TREE. IT IS ~3× THE BEST CONVERSION SEAM AND IT IS PAID IN A DECLARATION.**
+>
+> `effects/` is declared an `io_tree`. **Removing it moves 168 → 154: REMOVED 14 / ADDED 0.**
+> And `effects/_attempt.py` performs **NO I/O AT ALL** — `json.loads`, `float()`,
+> `datetime.fromisoformat`, each a textbook v186 discharging-narrow-`try`. Its own
+> docstring calls it a "narrow expected-exception capture boundary" — an EXPECTED-ERROR
+> boundary, **which is not the same concept as an I/O boundary.**
+>
+> ⛔ **DO NOT SIMPLY DROP THE DECLARATION — THAT IS THE RELAXING DIRECTION.** The tree is
+> MIXED: `effects/_beads_client_shell.py` is genuine subprocess I/O and MUST stay declared.
+> Un-declaring the tree to collect the 14 trades a false conviction for a false acquittal,
+> which is strictly worse. **The repair is a SPLIT.**
+>
+> ⚠️ **AND 14 IS THE CEILING OF THE SPLIT'S VALUE, NOT ITS VALUE.** How the 14 divide
+> between callers reaching `_attempt.py` (relieved) and `_beads_client_shell.py`
+> (correctly convicted) is **NOT YET MEASURED** and must be before it is scheduled.
+>
+> ### 🔴🔴 AND A FAIL-OPEN HOLE IN THE CHECK ITSELF — **`8sc1` (P1). THE FLEET'S 321 IS A FLOOR.**
+>
+> **Clause (d) is blind across re-export shims.** `_name_call` takes the `dotted is not
+> None` branch for any imported name and derives edges from `_first_party_edges`; when the
+> import routes through a re-export, no edge is produced — and that branch **never falls
+> through to the "doubt disqualifies" arm**, which is only reached for a name that was not
+> imported at all. So a caller reaching a DISQUALIFIED function through a shim is not
+> convicted through it.
+>
+> **HAND-VERIFIED:** `_dispatcher_engine.py::_blocked_outcome` calls `parse_run_status`
+> imported from `commands._dispatcher_plan` — a 277-line **aggregator that does not define
+> it** (it lives in `_dispatcher_run_status.py`). The callee is disqualified; the caller is
+> not.
+>
+> | repo | blind sites | **would FLIP** |
+> |---|---:|---:|
+> | `beads-fabro` `73f225d` | 181 | **3** |
+> | `livespec-dev-tooling` `6deca80` | 7 | **0** |
+> | `livespec-runtime` `ebc73e9` | 0 | **0** |
+>
+> ⛔ **ALL THREE ARE `_`-PREFIXED, SO CLOSING THE HOLE CAN ONLY ADD** — they propagate to
+> public callers. **This is `oip9`'s "a sibling can come out HIGHER" and it means 321 is a
+> FLOOR. Do not quote it as the arming cost until this closes.**
+> **`fleet/_public_api_graph.py` received this exact fix (edges 58 → 63);
+> `_no_expected_failure_mode` did not.**
+>
+> ### ⚠️ I MISLABELLED THE SAME PROBE TWICE IN ONE DAY, AND THE SECOND WAS WRONG BY 44×
+>
+> First: "EMPTY ROOT SET ⇒ masked zero risk" — it is the DECLARATION class. Second: the
+> re-export sweep reported **132** "LIVE HOLE" sites; the honest figure is **3**. Most
+> blind sites route through `effects/`, an io_tree, so clause (c) convicts the caller
+> anyway — via a different clause. **The decisive filter is: callee disqualified AND not
+> rescued by an io_tree AND the caller currently clean.**
+>
+> **📜 A LABEL IS AN ASSERTION AND IT NEEDS THE SAME AUDIT AS A NUMBER.** Both mislabels
+> pointed a reader at a defect that did not exist. File beside the five rules.
+>
+> ### 📜 THREE CORRECTIONS TO THE SUPERVISOR, RECORDED BECAUSE A RIGHT ANSWER ON A WRONG MECHANISM IS NEVER RE-TESTED
+>
+> - **`p9ot` (ship the probe) was declined using the supervisor's OWN argument.** Brief ~95
+>   ruled *delete the copy, name the operation* for the harness snippet; brief 109 ruled
+>   *ship the probe*, which is carrying a second copy of a shipped analysis. Same question,
+>   opposite answers. The bar — "a cold session reproduces the SAME NUMBER" — was **MET**
+>   (13/9, 6/3, 54/4, 29/0, control 171/1, all from prose alone). **So the first slice of
+>   `p9ot` is an EXTRACTION of `_scan`'s exempt-set construction, never a second copy.**
+> - **THE NEVER-HAND-VENDOR RULING WAS RIGHT ON A WRONG MECHANISM.** It was argued from
+>   drift. **The actual authority is ratified: livespec `constraints.md` §"Vendoring
+>   procedure" makes initial vendoring a one-time MANUAL step.** The record must carry the
+>   ratified reason — the drift argument would have entered as load-bearing and false.
+> - **THE REACH FALLACY WAS COMMITTED ONE BRIEF BEFORE (v) NAMED IT** — *"`_jsonc.py`
+>   beneath 54 IS THE LARGEST SINGLE LEVER THIS EPIC HAS FOUND"*, in the same brief that
+>   warned a seam beneath 54 call sites might be 54 conversions in disguise. **Quote the 3×
+>   inversion wherever (v) is stated: top five by fan-in relieve 7; top five by YIELD
+>   relieve 21.**
+>
+> ### 🧪 AND THE INSTRUMENT WORK THAT MADE THE ABOVE TRUSTWORTHY
+>
+> **THE INDEPENDENT CROSS-CHECK:** 16 of `beads-fabro`'s 168 offenders have an EMPTY root
+> set — **exactly its recorded declaration-candidate count.** Two instruments built for
+> different purposes agreeing on one number is worth more than either run twice.
+>
+> ---
+>
+> ## 🗄️ (SUPERSEDED AS THE HEADER 2026-08-03 — its next action was OPENED and stopped by its own measure-BEFORE leg; see above. Its FIRST FIVE MINUTES steps 1–8 are CURRENT and are the ones to follow.) COLD START — **`runtime` IS BLOCKED ON A FILED SPEC QUESTION.**
 >
 > ### 🔻 FIRST FIVE MINUTES
 >
