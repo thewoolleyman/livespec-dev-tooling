@@ -317,6 +317,38 @@ footer only in the pane TAIL** — a bare `"Enter to select"` substring test
 false-positives when the worker is editing a file that contains this very
 watcher snippet, which was measured happening.
 
+**⛔⛔ AND IF YOU ADD A BUSY-MARKER REGEX, IT MUST NOT MATCH THE COMPLETED-TURN
+SUMMARY — THIS EXACT MISTAKE STALLED THE THREAD FOR AN HOUR ON 2026-08-02.** An
+IDLE Claude pane PERMANENTLY displays its last turn's summary, e.g.
+`✻ Worked for 14m 56s`. A "wide" busy test of the shape
+`grep -qE '[0-9]+[hms] |tokens|Running|Doing|…'` MATCHES THAT — `14m ` satisfies
+`[0-9]+[hms] `. The IDLE branch then becomes UNREACHABLE: every poll says busy,
+the loop runs to its ceiling, reports "STILL BUSY — re-arm", and a supervisor
+re-arms it forever while both sessions sit motionless. **The session also keeps
+signalling `shell` to the overseer daemon, which makes it INELIGIBLE for the
+daemon's idle nudge — so the one condition most needing attention is the one
+that mutes the only other watcher.**
+
+**USE LIVE-ONLY MARKERS.** A running turn shows an ellipsis followed by a
+parenthesised duration, or a running command line, or the interrupt hint. A
+finished turn says "…ed for" with NO ellipsis and no parenthesis. Positive-
+controlled in BOTH directions against a real busy pane and a real idle pane:
+
+```sh
+busy=0
+printf '%s\n' "$tail12" | grep -qE 'esc to interrupt|…[[:space:]]*\(|⎿[[:space:]]+\$' && busy=1
+kids=$(ps -o args= --ppid "$pane_pid" 2>/dev/null | grep -cv 'playwright-mcp')
+[ "${kids:-0}" -gt 0 ] && busy=1
+```
+
+**AND PROVE IT BOTH WAYS BEFORE ARMING IT.** Capture a known-BUSY pane and a
+known-IDLE pane to files and run the test against each; it must return BUSY for
+one and IDLE for the other. **An idle-detector that cannot return IDLE has not
+detected anything** — which is this epic's own rule, and the supervisor broke it
+in the instrument built to supervise the epic. Keep the ceiling SHORT (~20 min,
+`seq 1 60`): a wedged watcher then costs twenty minutes instead of an hour, and
+the ceiling message should say VERIFY THE BUSY TEST rather than "re-arm".
+
 **A cross-repo fan-out is not a short wait.** Step 5 of the sequence is the
 fleet-visible moment: on release, `bump-pin` fans the new dev-tooling to every
 sibling and all five go red on their next pin bump. That is the intended
@@ -1013,6 +1045,55 @@ it rather than asserting an answer" and closed with "if your verification contra
 here, YOURS WINS". The question was right; only the tool was wrong, and the worker replaced the
 tool rather than the question. **Ask the question, name the tool as a suggestion, and let the
 worker choose the instrument** — it can see the file layout and I cannot.
+
+### 🔴🔴🔴 First-hand, 2026-08-02 — I BUILT AN IDLE-DETECTOR THAT COULD NOT RETURN IDLE, AND IT STALLED BOTH SESSIONS FOR AN HOUR
+
+**The single most expensive supervisor defect of this thread, and it is the epic's own
+subject committed in the instrument built to supervise the epic.**
+
+I armed a background watcher whose busy test was
+`grep -qE '[0-9]+[hms] |tokens|esc to interrupt|Running|Doing|…|monitor'`. An IDLE Claude
+pane permanently displays its completed-turn summary — the worker's read
+`✻ Worked for 14m 56s` — and **`14m ` matches `[0-9]+[hms] `**. So `busy=1` on every
+20-second poll, **the IDLE branch was unreachable**, the loop ran its full ~57-minute
+ceiling, printed "STILL BUSY — re-arm rather than assume finished", and I re-armed another
+one and slept. The worker had stopped cleanly with its next unit fully specified and sat
+motionless the entire time.
+
+**⛔ AND THE SIGNALLING MADE IT SELF-SEALING.** A live `Bash(run_in_background)` makes the
+session report `shell` to the overseer daemon, which by contract treats a busy signal as
+"unsafe to keystroke into" and therefore INELIGIBLE for its idle nudge. So the wedged
+watcher suppressed the only external rescue. **The daemon caught it; I did not.** It also
+could not have caught it sooner without violating its own contract, which is correct
+design — the actor who can declare a stall is the session, via `blocked:`, and I never did.
+
+**THE RULE I BROKE IS THE ONE I HAD BEEN ENFORCING ON THE WORKER ALL SESSION.** *An
+instrument that cannot produce a negative result has not produced a positive one.* My
+watcher could not produce IDLE. That is now the fifth member of that family and the second
+one of mine, after the ledger sweep that iterated once. **Authorship of a rule confers no
+immunity from it** — the worker independently proved the same thing hours earlier, making a
+verb-set measurement error "minutes after writing the rule against it".
+
+**HOW IT PASSED MY OWN REVIEW, which is the part worth carrying.** This file already
+records that a PREVIOUS supervisor built three broken idle-detectors, and that the failure
+directions are ASYMMETRIC — a false IDLE interrupts and destroys, a false BUSY merely
+delays — so "resolve every ambiguity toward BUSY, which means a deliberately WIDE busy
+test". **I applied that guidance correctly and it produced a test that is ALWAYS busy.**
+The guidance was incomplete, not wrong: a busy test can be wide only while it still
+EXCLUDES the idle state. Widening past that point does not bias toward safety, it deletes
+the detector. **The corrected guidance and a positive-controlled test are now in
+§"Never end a turn without an armed re-entry"; a successor who copies the snippet gets a
+working one.**
+
+**THE PROCEDURE, and it costs one command:** capture a known-BUSY pane and a known-IDLE
+pane to files, run the busy test against BOTH, and require BUSY for one and IDLE for the
+other before arming. I did that only AFTER the daemon told me, and it reproduced the bug
+instantly. **A detector is a check; check it the way this epic checks checks.**
+
+**AND SHORTEN THE CEILING.** Mine was ~57 minutes, so one wedge cost an hour. Twenty
+minutes (`seq 1 60`) bounds the damage, and the ceiling message must say VERIFY THE BUSY
+TEST rather than "re-arm" — the old wording actively instructed the next iteration to
+repeat the defect.
 
 ### Verification lessons worth keeping at role level
 
