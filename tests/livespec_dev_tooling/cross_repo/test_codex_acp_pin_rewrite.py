@@ -1,6 +1,6 @@
 """Behavioral tests for `codex_acp_pin_rewrite` — bare-value Dockerfile ARG rewrite.
 
-Per `SPECIFICATION/contracts.md` §"Pin autodiscovery rules", the codex-acp pin is
+Per `SPECIFICATION/contracts.md` section "Pin autodiscovery rules", the codex-acp pin is
 the `ARG CODEX_ACP_VERSION=<version>` line in
 `docker/fabro-sandbox/agent/Dockerfile`, carrying the bare npm semver (no `v`
 prefix) of the `@zed-industries/codex-acp` adapter. Unlike the fabro image tag

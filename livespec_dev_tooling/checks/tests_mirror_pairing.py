@@ -1,6 +1,6 @@
 """tests_mirror_pairing — every covered `.py` has a paired test (v033 D1).
 
-Per `SPECIFICATION/spec.md` §"Testing approach" (post-v006), every
+Per `SPECIFICATION/spec.md` section "Testing approach" (post-v006), every
 `.py` file under `.claude-plugin/scripts/livespec/**`,
 `.claude-plugin/scripts/bin/**`, and `<repo-root>/dev-tooling/
 checks/**` MUST have a paired test file at the mirror path under

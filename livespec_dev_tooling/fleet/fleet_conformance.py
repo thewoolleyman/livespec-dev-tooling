@@ -1,6 +1,6 @@
 """fleet_conformance — central assert mode of the fleet-membership contract.
 
-Per livespec v108 §"Fleet membership contract": fetches the fleet
+Per livespec v108 section "Fleet membership contract": fetches the fleet
 manifest from livespec master at run time, asserts every member's
 per-class obligations from a central vantage point (the piece
 repo-local CI cannot provide — a repo missing wiring never fails
@@ -12,7 +12,7 @@ Execution contexts: the dev-tooling `just check` aggregate (always
 wired), its per-PR CI job, the scheduled fleet workflow, and the
 release fan-out preflight (`reusable-release-dispatch.yml`) — a
 per-member FILTER there, blocking only on structural failure, per
-contracts.md §"`reusable-release-dispatch.yml`".
+contracts.md section "`reusable-release-dispatch.yml`".
 
 Exit ATTRIBUTION splits those contexts in two, and the split is a
 declared mode rather than an inferred one. All three automated legs run

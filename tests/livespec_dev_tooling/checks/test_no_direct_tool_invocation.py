@@ -1,6 +1,6 @@
 """Outside-in test for `dev-tooling/checks/no_direct_tool_invocation.py` — `lefthook.yml` + CI only call `just <target>`.
 
-Per `python-skill-script-style-requirements.md` §"Canonical
+Per `python-skill-script-style-requirements.md` section "Canonical
 target list" (the `check-no-direct-tool-invocation` row),
 `lefthook.yml` and `.github/workflows/*.yml` only invoke
 `just <target>` — no direct calls to `uv run`, `pytest`,

@@ -1,6 +1,6 @@
 """Outside-in test for `dev-tooling/checks/no_todo_registry.py` — `tests/heading-coverage.json` no TODO entries.
 
-Per `python-skill-script-style-requirements.md` §"Canonical
+Per `python-skill-script-style-requirements.md` section "Canonical
 target list" (the `check-no-todo-registry` row), no entry in
 `tests/heading-coverage.json` may have `test: "TODO"`.
 

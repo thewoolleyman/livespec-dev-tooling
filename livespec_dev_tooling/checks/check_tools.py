@@ -1,6 +1,6 @@
 """check_tools — pinned tools installed at pinned versions.
 
-Per `python-skill-script-style-requirements.md` §"Canonical
+Per `python-skill-script-style-requirements.md` section "Canonical
 target list" (the `check-tools` row), every pinned tool is
 installed at the pinned version. The check covers:
 

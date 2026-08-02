@@ -1,6 +1,6 @@
 """Outside-in test for `dev-tooling/checks/supervisor_discipline.py` — `sys.exit`/`SystemExit` confined to `bin/`.
 
-Per `python-skill-script-style-requirements.md` §"Canonical
+Per `python-skill-script-style-requirements.md` section "Canonical
 target list" (the `check-supervisor-discipline` row), `sys.exit
 (...)` calls and `raise SystemExit(...)` statements are
 permitted only in `.claude-plugin/scripts/bin/*.py` (including

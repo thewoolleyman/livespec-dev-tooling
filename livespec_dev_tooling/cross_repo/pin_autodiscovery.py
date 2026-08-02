@@ -1,6 +1,6 @@
 """pin_autodiscovery — walk a consumer repo and emit pin records as JSON.
 
-Per `SPECIFICATION/contracts.md` §"Pin autodiscovery rules", the walk
+Per `SPECIFICATION/contracts.md` section "Pin autodiscovery rules", the walk
 inspects the consumer repository for every supported pin format and
 yields a normalized record per discovered pin. The walk covers six
 formats, split across two cohesive helper modules:
@@ -19,7 +19,7 @@ formats, split across two cohesive helper modules:
   (`ARG CODEX_ACP_VERSION=<version>` in
   `docker/fabro-sandbox/agent/Dockerfile`), whose EXTERNAL npm source
   (`zed-industries/codex-acp`) means no fleet fan-out rewrites it and a
-  bump is factory-gated (§"codex-acp factory gate"). The shared `record`
+  bump is factory-gated (section "codex-acp factory gate"). The shared `record`
   normalizer lives there too.
 
 `.copier-answers.yml` `_commit` is deliberately NOT a pin format: it
@@ -40,7 +40,7 @@ Tolerance, and its TWO limits — FOUR inputs, and the middle two are the
 ones that used to be conflated:
 
 - ABSENT — a pin file the walk did not find yields no records and no
-  error. `SPECIFICATION/contracts.md` §"Pin autodiscovery rules" makes
+  error. `SPECIFICATION/contracts.md` section "Pin autodiscovery rules" makes
   normative tolerance for this, and it is unchanged.
 - UNRECOGNIZED — a pin FORMAT the walk does not recognize yields no
   record plus a human-visible annotation naming the file. Also ratified
@@ -63,7 +63,7 @@ ones that used to be conflated:
 - UNREADABLE — a file the walk FOUND and whose BYTES it could not
   obtain. Also not tolerated; lands on the failure track as a
   `PinFileUnreadable`. Kept DISTINCT from unparseable because the two
-  earn different renderings at the consuming row (§"Pin-currency
+  earn different renderings at the consuming row (section "Pin-currency
   severity policy"): a can't-read may be environmental and transient, so
   the row SKIPS it; a can't-parse is a definitive, reproducible property
   of the member's committed bytes, so the row reports a FINDING. Before

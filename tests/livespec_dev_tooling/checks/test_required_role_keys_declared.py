@@ -68,7 +68,7 @@ def _all_required_empty_block() -> str:
     `livespec-dev-tooling-8o8e.1` made them different: a bare `[]` / `""` on a
     UNION key is now a hard load error, while for every CLEAN key it remains
     legitimate — emptiness there removes exemptions rather than files
-    (`SPECIFICATION` v033 §"Clean role keys retain `[]`"). Spelling both halves
+    (`SPECIFICATION` v033 section "Clean role keys retain `[]`"). Spelling both halves
     alike would make this fixture unloadable AND teach the wrong rule.
     """
     lines = ["[tool.livespec_dev_tooling]"]

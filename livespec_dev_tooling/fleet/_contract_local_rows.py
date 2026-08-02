@@ -1,7 +1,7 @@
 """The LOCAL-vantage first-touch obligation table for the fleet contract.
 
 These rows run from the LOCAL vantage only (per
-`livespec/SPECIFICATION/non-functional-requirements.md` §"Governed-repo
+`livespec/SPECIFICATION/non-functional-requirements.md` section "Governed-repo
 lifecycle"): the governed-repo verb walks `LOCAL_OBLIGATION_ROWS`
 reconciling each checkout-local prerequisite (toolchain install,
 dependency sync, hook installation, plugin registration, beads-runtime
@@ -67,7 +67,7 @@ class LocalObligationRow:
 
     These rows run from the LOCAL vantage only (per
     `livespec/SPECIFICATION/non-functional-requirements.md`
-    §"Governed-repo lifecycle"); the central rows (`OBLIGATION_ROWS`) run
+    section "Governed-repo lifecycle"); the central rows (`OBLIGATION_ROWS`) run
     against the manifest from the GitHub vantage, and no row needs both.
     """
 

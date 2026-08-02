@@ -1,6 +1,6 @@
 """Outside-in test for `livespec_dev_tooling/checks/all_declared.py` — `__all__` declaration discipline.
 
-Per `python-skill-script-style-requirements.md` §"Canonical
+Per `python-skill-script-style-requirements.md` section "Canonical
 target list" (the `check-all-declared` row), every livespec
 module MUST declare a module-top `__all__: list[str]` (typed
 annotation, list literal). Every name in `__all__` must also be

@@ -1,7 +1,7 @@
 """no_direct_destructive_cli — agent-facing trees must wrap destructive-default CLIs.
 
 Per `livespec/SPECIFICATION/non-functional-requirements.md`
-§"Destructive-default CLI wrapping" (li-1f5 item 5, preservation
+section "Destructive-default CLI wrapping" (li-1f5 item 5, preservation
 split): destructive-default external CLIs — those whose default
 behavior writes, commits, deletes, or otherwise mutates persistent
 state without explicit opt-in — MUST be invoked through project-local

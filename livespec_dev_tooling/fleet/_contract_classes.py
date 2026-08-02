@@ -29,7 +29,7 @@ ALL_CLASSES: frozenset[str] = frozenset(REPO_CLASSES)
 # two RECEIVING shims (bump-pin-from-dispatch + pin-freshness) that keep
 # that pin fresh — but it ships NO release-dispatch PRODUCER shim, because
 # it produces no consumable release for a downstream repo to pin
-# (livespec-dev-tooling contracts.md §"Bump-pin policy"; livespec-oq9w
+# (livespec-dev-tooling contracts.md section "Bump-pin policy"; livespec-oq9w
 # Option B).
 #
 # `PIN_WEB_CLASSES` is therefore specifically the set carrying the

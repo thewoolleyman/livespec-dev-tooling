@@ -1,6 +1,6 @@
 """no_lloc_soft_warnings — 201-250 LLOC soft-band scan with a severity lever.
 
-Per `SPECIFICATION/constraints.md` §"File LLOC ceiling" (post-v008),
+Per `SPECIFICATION/constraints.md` section "File LLOC ceiling" (post-v008),
 this is the soft-band analog of `check-no-todo-registry`: it flags any
 first-party `.py` file in the 201-250 LLOC soft band, forcing refactor
 work before a release.

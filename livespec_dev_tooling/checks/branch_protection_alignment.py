@@ -12,7 +12,7 @@ nonexistent `master`; livespec-dev-tooling-17o):
    A repo whose default branch is wide open lets PRs auto-merge before
    CI finishes and lets a red PR land; the merge-gate invariant
    requires required-check branch protection to be enabled. See
-   `livespec/SPECIFICATION/non-functional-requirements.md` §"CI as a
+   `livespec/SPECIFICATION/non-functional-requirements.md` section "CI as a
    merge gate (branch protection)".
 
 2. ALIGNMENT gate (only when protection exists). A `strict`-off
@@ -154,7 +154,7 @@ class _RequiredContexts:
 
     `contexts` is the required-checks list; `strict` is the
     require-branches-up-to-date flag, which MUST be OFF per livespec
-    NFR §"CI as a merge gate (branch protection)".
+    NFR section "CI as a merge gate (branch protection)".
     """
 
     contexts: frozenset[str]

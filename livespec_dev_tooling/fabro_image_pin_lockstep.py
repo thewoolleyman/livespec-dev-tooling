@@ -31,7 +31,7 @@ has an EXTERNAL npm source (`@zed-industries/codex-acp`) and IS
 autodiscovered and bumpable — the pin-autodiscovery walk emits it
 (pin_format `codex_acp_docker_arg`) and the pin-freshness surface opens a
 bump PR on any npm `latest` difference under a live Codex-provider factory
-gate (see `SPECIFICATION/contracts.md` §"codex-acp factory gate"). That
+gate (see `SPECIFICATION/contracts.md` section "codex-acp factory gate"). That
 external source is verified cross-repo by the factory gate, NOT by this
 in-repo lockstep check, so `CODEX_ACP_VERSION` still carries no
 `.mise.toml` / `.python-version` lockstep obligation here. No image layer

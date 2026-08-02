@@ -7,7 +7,7 @@ leading underscore marks it a private sibling: it is neither a canonical
 check slug nor a mirror-paired module.
 
 WHAT THIS MODULE EXISTS TO STOP BEING SAYABLE. `SPECIFICATION/contracts.md`
-§"Pin-currency severity policy" partitions a STALE pin into exactly two
+section "Pin-currency severity policy" partitions a STALE pin into exactly two
 classes and calls the partition EXHAUSTIVE, "because a bump PR for the
 latest release either is open or is not". That is true of the WORLD and
 false of a RUN: a run that could not read the PR list has established
@@ -68,7 +68,7 @@ def open_bump_prs_for(
     """The member's open bump PRs, or the reason this run could not list them.
 
     The failure track is NOT an escalation. Per
-    `SPECIFICATION/contracts.md` §"Pin-currency severity policy", "a
+    `SPECIFICATION/contracts.md` section "Pin-currency severity policy", "a
     can't-READ never escalates" (livespec-dev-tooling-6ge) — both callers
     fold this onto the SAME warning severity a plain stale pin carries.
     The `6ge` principle is about SEVERITY, not representation: preserving

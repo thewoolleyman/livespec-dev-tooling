@@ -223,7 +223,7 @@ def test_control_plane_tool_class_is_pin_consuming_unlike_console() -> None:
     # `control-plane-tool` is the second Control-Plane class: a member that
     # ships an operator TOOL rather than the cockpit APPLICATION `console`
     # carries, a PEER of `console` and never a component of it (livespec
-    # non-functional-requirements.md §"Fleet membership contract", ratified
+    # non-functional-requirements.md section "Fleet membership contract", ratified
     # v171). The distinguishing property — and the whole reason `console`
     # could not simply be reused — is that this class IS a pin-and-bump
     # consumer: its ruff / pyright-strict / coverage / Result-railway gates

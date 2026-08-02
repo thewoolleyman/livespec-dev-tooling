@@ -1,7 +1,7 @@
 """no_stale_revise_branches — refuse new revise passes while a stale spec branch exists.
 
-Per `SPECIFICATION/contracts.md` §"`no_stale_revise_branches` check"
-(a revise-workflow check, per §"Shared check inventory"), this check
+Per `SPECIFICATION/contracts.md` section "`no_stale_revise_branches` check"
+(a revise-workflow check, per section "Shared check inventory"), this check
 enumerates local `refs/heads/spec/*` branches and fails when any such
 branch is ahead of the canonical branch by one or more commits.
 
@@ -12,7 +12,7 @@ canonical-set derivation auto-excludes it; it is NOT a member of the
 per-commit `just check` aggregate and NOT subject to the
 wiring-completeness invariant.
 
-Algorithm (per the contracts §"`no_stale_revise_branches` check"):
+Algorithm (per the contracts section "`no_stale_revise_branches` check"):
 
 1. Resolve the canonical branch name. Priority:
    a. `.livespec.jsonc`'s `livespec-orchestrator-git-jsonl.canonical_branch`
@@ -47,7 +47,7 @@ Output discipline: structlog JSON to stderr; no `print`, no
 at module import time so the check works equally well via
 `python -m` and via direct script invocation.
 
-Per `SPECIFICATION/contracts.md` §"Consumer configuration schema",
+Per `SPECIFICATION/contracts.md` section "Consumer configuration schema",
 the canonical-branch input is a project-wide invariant carve-out
 (read directly from `.livespec.jsonc`, NOT from the
 `[tool.livespec_dev_tooling]` role-key inventory).

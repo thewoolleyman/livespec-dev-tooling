@@ -1,6 +1,6 @@
 """Outside-in test for `livespec_dev_tooling/checks/assert_never_exhaustiveness.py`.
 
-Per `python-skill-script-style-requirements.md` §"Canonical
+Per `python-skill-script-style-requirements.md` section "Canonical
 target list" (the `check-assert-never-exhaustiveness` row),
 every `match` statement in `livespec/**` MUST terminate with
 `case _: assert_never(<subject>)`. Conservative scope: every

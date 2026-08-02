@@ -40,7 +40,7 @@ def walk_failure_outcome(
 ) -> RowOutcome:
     """Render the walk's two failure arms, which do NOT render the same way.
 
-    Per `SPECIFICATION/contracts.md` §"Pin-currency severity policy" (v039):
+    Per `SPECIFICATION/contracts.md` section "Pin-currency severity policy" (v039):
 
     - A can't-READ SKIPS rather than passing or failing — "a can't-read is
       not a violation" (livespec-dev-tooling-6ge). It may be environmental

@@ -1,6 +1,6 @@
 """codex_acp_pin_rewrite — bare-value rewrite of the codex-acp Dockerfile ARG pin.
 
-Per `SPECIFICATION/contracts.md` §"Pin autodiscovery rules", the codex-acp pin
+Per `SPECIFICATION/contracts.md` section "Pin autodiscovery rules", the codex-acp pin
 is the `ARG CODEX_ACP_VERSION=<version>` line in
 `docker/fabro-sandbox/agent/Dockerfile`, carrying the bare npm semver (no `v`
 prefix) of the `@zed-industries/codex-acp` adapter baked into the fabro-sandbox
@@ -11,7 +11,7 @@ is a plain bare value, so the rewrite replaces the whole value on the anchored
 This is the codex-acp sibling of `fabro_image_pin_rewrite`: the composite
 Action's `codex_acp_docker_arg` case dispatches this module's `main()` instead
 of an inline heredoc, so the rewrite carries typed, unit-tested behavioral
-coverage. The bump is factory-gated per §"codex-acp factory gate".
+coverage. The bump is factory-gated per section "codex-acp factory gate".
 
 Output discipline mirrors the sibling `fabro_image_pin_rewrite` entry point: the
 pure `rewrite_arg_in_text` core does no I/O, and `main()` owns the env read +

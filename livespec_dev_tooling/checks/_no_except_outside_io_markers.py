@@ -24,7 +24,7 @@ __all__: list[str] = [
 ]
 
 # The closed set of BLE001 suppression reasons, quoted from
-# `livespec/SPECIFICATION/non-functional-requirements.md` §"Linter rule set".
+# `livespec/SPECIFICATION/non-functional-requirements.md` section "Linter rule set".
 # Any other reason wording marks a violation rather than an escape, so a
 # conforming comment must BE the directive plus one sanctioned wording —
 # equality, not containment: text before, around, or after a wording

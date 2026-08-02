@@ -1,6 +1,6 @@
 """Outside-in test for `dev-tooling/checks/rop_pipeline_shape.py` — `@rop_pipeline` class shape.
 
-Per `python-skill-script-style-requirements.md` §"Canonical
+Per `python-skill-script-style-requirements.md` section "Canonical
 target list" (the `check-rop-pipeline-shape` row), every class
 decorated with `@rop_pipeline` carries exactly one public
 method (the entry point); other methods are `_`-prefixed;

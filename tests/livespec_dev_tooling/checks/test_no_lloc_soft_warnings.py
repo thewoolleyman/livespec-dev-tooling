@@ -1,6 +1,6 @@
 """Outside-in test for `dev-tooling/checks/no_lloc_soft_warnings.py` — 201-250 LLOC soft-band severity lever.
 
-Per `SPECIFICATION/constraints.md` §"File LLOC ceiling" (post-v008):
+Per `SPECIFICATION/constraints.md` section "File LLOC ceiling" (post-v008):
 files in the 201-250 LLOC soft band are flagged. Files at or below
 200 LLOC pass; files above 250 LLOC are NOT this check's concern
 (the per-commit `file_lloc.py` hard-fails them).

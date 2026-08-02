@@ -1,6 +1,6 @@
 """_no_expected_failure_mode — livespec v179 member 1, computed not declared.
 
-`livespec` v179 (`non-functional-requirements.md` §"ROP composition") scopes the
+`livespec` v179 (`non-functional-requirements.md` section "ROP composition") scopes the
 Result-return rule to a public function that HAS an expected failure mode. A
 function with none has nothing to flow, and a `Result` over it carries an
 UNINHABITED failure track whose dead unwraps hide the live ones.

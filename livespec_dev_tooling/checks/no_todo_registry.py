@@ -1,6 +1,6 @@
 """no_todo_registry — `tests/heading-coverage.json` rejects any `test: "TODO"` entry.
 
-Per `python-skill-script-style-requirements.md` §"Canonical
+Per `python-skill-script-style-requirements.md` section "Canonical
 target list" (the `check-no-todo-registry` row), no entry in
 `tests/heading-coverage.json` may have `test: "TODO"`.
 

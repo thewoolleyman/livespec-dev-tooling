@@ -4,7 +4,7 @@ The defect these pin down (work-item `livespec-dev-tooling-p73`): the freshness
 workflow collapsed every record for a source to ONE representative
 (`.[0].current_value`), so a source whose FIRST record was fresh never produced a
 bump PR even when its other records were stale. `SPECIFICATION/contracts.md`
-§"Reusable workflow inventory" already requires a bump PR per
+section "Reusable workflow inventory" already requires a bump PR per
 `(source_repo, current_pin, latest_tag)` triple, so the contract was right and
 the implementation was not.
 """

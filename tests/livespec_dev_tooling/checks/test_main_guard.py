@@ -1,6 +1,6 @@
 """Outside-in test for `dev-tooling/checks/main_guard.py` — bans `__main__` guard inside livespec/**.
 
-Per `python-skill-script-style-requirements.md` §"Canonical
+Per `python-skill-script-style-requirements.md` section "Canonical
 target list" (the `check-main-guard` row), no `if __name__ ==
 "__main__":` block may appear inside any `.py` file under
 `.claude-plugin/scripts/livespec/**`. Such a guard is the

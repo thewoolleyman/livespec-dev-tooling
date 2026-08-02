@@ -1,6 +1,6 @@
 """vendor_update — re-vendor an upstream-sourced library into `_vendor/`.
 
-Per the governed project's `SPECIFICATION/constraints.md` §"Vendoring
+Per the governed project's `SPECIFICATION/constraints.md` section "Vendoring
 procedure": re-vendoring of upstream-sourced libs MUST go through `just
 vendor-update <lib>` — the only blessed mutation path. The recipe fetches
 the upstream ref recorded in `.vendor.jsonc`, copies the library's source

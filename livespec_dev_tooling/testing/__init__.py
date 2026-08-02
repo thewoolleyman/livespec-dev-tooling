@@ -1,6 +1,6 @@
 """CLI end-to-end test harness — the single canonical implementation.
 
-Per `livespec/SPECIFICATION/contracts.md` §"CLI end-to-end harness contract"
+Per `livespec/SPECIFICATION/contracts.md` section "CLI end-to-end harness contract"
 (requirement 6), the top-of-pyramid, user-surface end-to-end harness — driver,
 structural skill discovery, per-skill fixtures loader, time-bomb coverage gate,
 and step orchestrator — ships from `livespec-dev-tooling` and is consumed by

@@ -510,7 +510,7 @@ def test_feat_with_tests_only_staged_emits_red_mode_candidate(
     """A feat: subject with tests-only staged is a Red-mode candidate.
 
     Cycle 178 drives the test/impl classification step. Per Plan
-    §"Per-commit Red→Green replay discipline (v034 D2-D3)", Red mode
+    section "Per-commit Red→Green replay discipline (v034 D2-D3)", Red mode
     is triggered when the staged tree carries test files but no
     implementation files. This test pins the True branch of
     "tests_paths AND NOT impl_paths" — staging a single file under
@@ -746,7 +746,7 @@ def test_feat_with_failing_test_staged_emits_red_pytest_result(
     """A feat: subject with a single failing staged test file pins a valid Red moment.
 
     Cycle 180 invokes pytest on the staged test file. Per Plan
-    §"Per-commit Red→Green replay discipline (v034 D2-D3)", a Red
+    section "Per-commit Red→Green replay discipline (v034 D2-D3)", a Red
     moment requires the staged test to fail (non-zero pytest exit
     code). This test stages a `tests/test_failing.py` whose body
     asserts a falsy expression, then invokes the hook; the hook
@@ -1347,7 +1347,7 @@ def test_classify_staged_recognizes_sibling_library_impl_paths() -> None:
     """`_classify_staged` buckets sibling-library impl paths correctly.
 
     Per the cross-repo coordination contract in
-    `livespec/SPECIFICATION/contracts.md` §"Cross-repo coordination —
+    `livespec/SPECIFICATION/contracts.md` section "Cross-repo coordination —
     pin-and-bump", the dev-tooling repo's RGR check is consumed by
     every livespec-governed sibling repo: livespec-runtime,
     livespec-orchestrator-git-jsonl, livespec-dev-tooling itself, and

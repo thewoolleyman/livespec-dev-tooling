@@ -138,7 +138,7 @@ def _checks_payload(*, contexts: list[object], strict: bool = False) -> str:
     `{"strict": <bool>, "contexts": [<str>, ...]}` — NOT the bare
     contexts list the older `/contexts` sub-endpoint returned. `strict`
     defaults to False because the strict-off merge-gate rule (livespec
-    NFR §"CI as a merge gate (branch protection)") makes strict-off the
+    NFR section "CI as a merge gate (branch protection)") makes strict-off the
     only aligned state.
     """
     return json.dumps({"strict": strict, "contexts": contexts})
@@ -357,7 +357,7 @@ def test_required_missing_from_ci_yml_fails(*, tmp_path: Path) -> None:
     """Required check absent from ci.yml matrix → exit 4 (check failed).
 
     Exit 4 is the documented "check failed (structured findings on
-    stderr)" code (SPECIFICATION/contracts.md §"Exit-code table"),
+    stderr)" code (SPECIFICATION/contracts.md section "Exit-code table"),
     shared with the new protection-absent fail branch and with the
     sibling CI-alignment checks (`no_stale_revise_branches`,
     `primary_checkout_commit_refuse_hook_installed`).
@@ -401,7 +401,7 @@ def test_strict_enabled_fails(*, tmp_path: Path) -> None:
     """Protection present with required_status_checks.strict TRUE → exit 4.
 
     Strict (require-branches-up-to-date) MUST be OFF per livespec
-    NFR §"CI as a merge gate (branch protection)": strict makes GitHub
+    NFR section "CI as a merge gate (branch protection)": strict makes GitHub
     keep a behind PR current by merging master into its branch,
     injecting a `Merge branch 'master'` commit that violates
     required_linear_history and buries the Red-Green-Replay TDD

@@ -1,6 +1,6 @@
 """heading_coverage — every spec-tree-root NLSpec heading has a coverage entry.
 
-Per `SPECIFICATION/constraints.md` §"Heading taxonomy" (post-v004),
+Per `SPECIFICATION/constraints.md` section "Heading taxonomy" (post-v004),
 the registry at `tests/heading-coverage.json` maps `(spec_root,
 spec_file, heading)` triples to pytest test identifiers. The check
 walks ONLY the template-declared NLSpec files at each spec-tree
@@ -22,7 +22,7 @@ The check fails on four directions:
    entry whose `spec_file` is `scenarios.md`, the mapped `test`
    node id MUST resolve to a test at the integration tier or above
    (never a unit-tier test), per `SPECIFICATION/constraints.md`
-   §"Heading taxonomy". A scenario describes user-observable
+   section "Heading taxonomy". A scenario describes user-observable
    behavior, which a unit test does not exercise. This direction
    applies ONLY to `scenarios.md`; headings in `spec.md`,
    `contracts.md`, and `constraints.md` MAY be exercised by

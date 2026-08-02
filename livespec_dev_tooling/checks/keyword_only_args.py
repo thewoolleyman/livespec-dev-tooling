@@ -1,6 +1,6 @@
 """keyword_only_args — `*`-separator on every `def` in `livespec/**`.
 
-Per `python-skill-script-style-requirements.md` §"Canonical
+Per `python-skill-script-style-requirements.md` section "Canonical
 target list" (the `check-keyword-only-args` row), every `def`
 in `.claude-plugin/scripts/livespec/**` MUST use `*` as the
 first separator (every parameter keyword-only). Exempts:

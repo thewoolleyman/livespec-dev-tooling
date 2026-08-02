@@ -1,6 +1,6 @@
 """Outside-in test for `livespec_dev_tooling/checks/file_lloc.py` — per-file LLOC policy.
 
-Per `SPECIFICATION/constraints.md` §"File LLOC ceiling" (post-v005):
+Per `SPECIFICATION/constraints.md` section "File LLOC ceiling" (post-v005):
 files at 201-250 LLOC pass with a structured warning (SOFT ceiling);
 files above 250 LLOC fail (HARD ceiling). LLOC excludes blank lines,
 comment-only lines, and module/class/function docstrings.

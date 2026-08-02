@@ -109,7 +109,7 @@ _BASELINE_CHECK_SLUGS: tuple[str, ...] = (
 # The `world-gate` set: canonical checks that verify the WORLD the change
 # lands on (master CI state, master branch-protection config, or ledger-state
 # parity read from the beads ledger) rather than the CHANGE in a pull request.
-# Per `livespec/.ai/ci-gate-discipline.md` §"verify the CHANGE vs verify the
+# Per `livespec/.ai/ci-gate-discipline.md` section "verify the CHANGE vs verify the
 # WORLD", these gates enforce at PRE-PUSH under the maintainer's admin-scoped
 # credentials — where they can actually read master's state or the ledger — and
 # are deliberately NOT required to run in per-PR CI. The category is thus not

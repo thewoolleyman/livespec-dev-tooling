@@ -1,11 +1,11 @@
 """An UNPARSEABLE pin file is a FINDING, never a passing row.
 
 `livespec-dev-tooling-2j2l`, closed by this module's subject. Ratified as
-spec v039 — `SPECIFICATION/contracts.md` §"Pin autodiscovery rules": a
+spec v039 — `SPECIFICATION/contracts.md` section "Pin autodiscovery rules": a
 known-format file the walk cannot PARSE "MUST be surfaced as a DISTINCT,
 typed outcome that a consumer CANNOT silently drop" and "MUST NOT be
 carried as an in-band record in the walk's normal record stream"; and
-§"Pin-currency severity policy": "A can't-PARSE is NOT a can't-read, and
+section "Pin-currency severity policy": "A can't-PARSE is NOT a can't-read, and
 is NEVER a pass."
 
 THE DEFECT THIS PINS, because it is the reason the assertions below look

@@ -257,7 +257,7 @@ def _read_installed_registry() -> str | None:  # pragma: no cover
 def main() -> int:  # pragma: no cover
     """CLI entry point for `python -m livespec_dev_tooling.fleet.ensure_plugins`.
 
-    Exit codes follow `SPECIFICATION/contracts.md` §"Exit-code table": `3` when
+    Exit codes follow `SPECIFICATION/contracts.md` section "Exit-code table": `3` when
     the committed settings file cannot support provisioning (a precondition the
     project state does not meet), `4` when provisioning ran but verification
     found the records absent or bound to another project.

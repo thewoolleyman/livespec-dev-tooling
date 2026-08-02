@@ -8,7 +8,7 @@ through an injected seam. So `IOResult` rather than `Result`, and the
 `unsafe_perform_io` discipline at every call site.
 
 WHICH failure goes on the railway is the design decision the item flagged,
-and the ratified contract decides it. `SPECIFICATION/contracts.md` §"Pin
+and the ratified contract decides it. `SPECIFICATION/contracts.md` section "Pin
 autodiscovery rules" line 525 makes TWO tolerances normative — a MISSING file
 yields no records, and an UNRECOGNIZED format is tolerated — so neither may
 become a failure-track value without a spec change. It says nothing about a

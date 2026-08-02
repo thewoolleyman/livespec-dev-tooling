@@ -12,7 +12,7 @@ through `test_ci_matrix_completeness`).
 
 This module owns direction 4 of `heading_coverage` — "a `scenarios.md` heading
 must map to an integration-tier-or-above test, never a unit-tier one" per
-`SPECIFICATION/constraints.md` §"Heading taxonomy". A `scenarios.md` entry is
+`SPECIFICATION/constraints.md` section "Heading taxonomy". A `scenarios.md` entry is
 compliant when one of the following holds:
 
   - `test == "TODO"` and its (non-empty) `reason` explicitly acknowledges the
@@ -47,7 +47,7 @@ The entry then fell through to the violation list, and the parent reported
 test the check never read. `qndn-75-triage.md` pairs this row with
 `is_docs_only_change` under ONE question — *is a deliberate fail-closed
 collapse of an inhabited failure track a violation, or a sanctioned design?* —
-and the answer is a violation: §"ROP composition" declares its exemption set
+and the answer is a violation: section "ROP composition" declares its exemption set
 exhaustive, and an intent stated in a docstring is not a ratified exemption.
 
 WHAT IS AND IS NOT A FAILURE HERE, and it is the same split the carve-out took.

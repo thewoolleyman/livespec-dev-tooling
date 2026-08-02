@@ -1,6 +1,6 @@
 """Tests for dev-tooling/checks/check_mutation.py.
 
-Per SPECIFICATION/constraints.md §"Enforcement suite — Release-gate targets":
+Per SPECIFICATION/constraints.md section "Enforcement suite — Release-gate targets":
 check_mutation runs mutmut against livespec/parse/ + validate/ and compares
 the kill rate against the .mutmut-baseline.json ratchet (capped at 80%).
 First-run mode: when baseline shows total=0 (placeholder), the check runs

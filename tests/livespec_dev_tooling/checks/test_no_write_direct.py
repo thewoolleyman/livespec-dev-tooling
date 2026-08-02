@@ -1,6 +1,6 @@
 """Outside-in test for `dev-tooling/checks/no_write_direct.py` — bans `sys.stdout.write`/`sys.stderr.write`.
 
-Per `python-skill-script-style-requirements.md` §"Canonical
+Per `python-skill-script-style-requirements.md` section "Canonical
 target list" (the `check-no-write-direct` row), `sys.stdout.
 write(...)` and `sys.stderr.write(...)` calls are banned in
 `.claude-plugin/scripts/livespec/**`, `.claude-plugin/scripts/

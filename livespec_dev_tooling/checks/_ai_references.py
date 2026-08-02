@@ -15,7 +15,7 @@ concrete path like `` `.ai/agent-disciplines.md` `` is. The negative
 lookbehind rejects a `.ai` that is the tail of a larger token (e.g.
 `foo.ai/x.md`).
 
-Per `livespec/SPECIFICATION/contracts.md` §"Fleet agent-instruction
+Per `livespec/SPECIFICATION/contracts.md` section "Fleet agent-instruction
 core": every `.ai/<topic>.md` path an `AGENTS.md` references MUST
 resolve to an existing file, at every directory level that declares one.
 """

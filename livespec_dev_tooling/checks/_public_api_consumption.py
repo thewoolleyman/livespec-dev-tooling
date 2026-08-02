@@ -1,6 +1,6 @@
 """_public_api_consumption — which top-level functions are CONSUMED ACROSS A BOUNDARY.
 
-`livespec` v178 (`non-functional-requirements.md` §"ROP composition") replaced
+`livespec` v178 (`non-functional-requirements.md` section "ROP composition") replaced
 `__all__` membership as the definition of public API for the Result-return
 rule. A top-level function is PUBLIC API when, and only when, it is CONSUMED
 ACROSS A BOUNDARY, measured FLEET-WIDE, in four forms: (1) product import, (2)
@@ -135,7 +135,7 @@ def declared_public_names(
 
     v178 measures consumption FLEET-WIDE, and forms 2 and 4 — plus form 1's
     sibling half — are invisible from inside one checkout. This is the declared
-    stand-in, and it is TIGHTENING-ONLY (SPECIFICATION v036 §"Role keys"): the
+    stand-in, and it is TIGHTENING-ONLY (SPECIFICATION v036 section "Role keys"): the
     caller UNIONS it with the repo-local set, so an absent declaration removes
     nothing.
     """

@@ -1,6 +1,6 @@
 """The central (GitHub-vantage) obligation table for the fleet contract.
 
-ONE definition consumed by BOTH modes (livespec v108 §"Fleet
+ONE definition consumed by BOTH modes (livespec v108 section "Fleet
 membership contract": "assert mode is CI; reconcile mode is wiring"):
 `fleet_conformance` walks `OBLIGATION_ROWS` calling each row's
 `assert_member`; `wire_fleet_member` walks the SAME rows calling

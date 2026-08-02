@@ -143,7 +143,7 @@ def test_accepts_declared_empty_io_trees(
     the retirement of the ambiguous empty spelling does not reach it: emptiness
     here removes an EXEMPTION rather than a scan universe, which makes the
     consuming check stricter rather than blinder (SPECIFICATION v033
-    §"Clean role keys retain `[]`").
+    section "Clean role keys retain `[]`").
     """
     code, output = _run(tmp_path=tmp_path, io_trees="", monkeypatch=monkeypatch, capsys=capsys)
 

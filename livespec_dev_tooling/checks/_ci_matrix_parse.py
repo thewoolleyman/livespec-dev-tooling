@@ -37,7 +37,7 @@ therefore bounded:
 - The mechanical marker for "rule-encoding": a parser whose docstring
   or comments cite a livespec SPECIFICATION section (the house
   citation style, e.g. `Per
-  livespec/SPECIFICATION/non-functional-requirements.md §"CI as a
+  livespec/SPECIFICATION/non-functional-requirements.md section "CI as a
   merge gate (branch protection)"`) is by definition rule-encoding
   and MUST be shared, never duplicated per check.
 

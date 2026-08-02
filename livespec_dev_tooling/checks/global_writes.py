@@ -1,6 +1,6 @@
 """global_writes — bans `global`/`nonlocal` statements in `livespec/**`.
 
-Per `python-skill-script-style-requirements.md` §"Canonical
+Per `python-skill-script-style-requirements.md` section "Canonical
 target list" (the `check-global-writes` row), no module-level
 mutable state writes from functions are permitted in
 `livespec/**`. The `global` keyword is the canonical

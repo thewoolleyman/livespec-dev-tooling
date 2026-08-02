@@ -8,14 +8,14 @@ a source to ONE representative:
       '[.[] | select(.source_repo == $s)] | .[0].current_value')
 
 That is wrong whenever a source is pinned at DIFFERENT values in different
-places. `SPECIFICATION/contracts.md` §"Reusable workflow inventory" requires a
+places. `SPECIFICATION/contracts.md` section "Reusable workflow inventory" requires a
 bump PR per `(source_repo, current_pin, latest_tag)` triple — per PIN, not per
 source — so a fresh representative silently suppressed the whole source, and the
 freshness workflow (the safety net for missed dispatches) went blind exactly
 where drift is most likely to hide.
 
 The multi-pin shape is not hypothetical: since the fabro-sandbox image pin gained
-its `.github/workflows/*.yml` surface (§"Pin autodiscovery rules"), one consumer
+its `.github/workflows/*.yml` surface (section "Pin autodiscovery rules"), one consumer
 routinely carries the SAME `pin_key` at several values — a fresh Fabro
 `workflow.toml` pin alongside stale per-job `container:` image pins.
 

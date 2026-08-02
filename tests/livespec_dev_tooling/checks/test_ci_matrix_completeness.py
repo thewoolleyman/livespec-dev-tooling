@@ -236,7 +236,7 @@ def test_world_gate_aggregate_slug_absent_from_ci_is_not_flagged(*, tmp_path: Pa
     verify master/world state — not the PR change — enforce at pre-push under the
     maintainer's admin-scoped `gh` token, and are deliberately excluded from the
     CI-mirror requirement (`canonical_checks.world_gate_check_slugs`; see
-    `livespec/.ai/ci-gate-discipline.md` §"verify the CHANGE vs verify the WORLD").
+    `livespec/.ai/ci-gate-discipline.md` section "verify the CHANGE vs verify the WORLD").
     They stay canonical and stay wired in the `just check` aggregate — only
     assertion (a)'s "must run in CI" requirement drops them.
 

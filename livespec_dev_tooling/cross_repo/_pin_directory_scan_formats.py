@@ -2,7 +2,7 @@
 
 Extracted verbatim from `pin_autodiscovery` (cohesive seam: the pin
 formats that scan a DIRECTORY of files rather than reading a single
-well-known file). Per `SPECIFICATION/contracts.md` §"Pin autodiscovery
+well-known file). Per `SPECIFICATION/contracts.md` section "Pin autodiscovery
 rules", the directory-scan formats are:
 
 - `.github/workflows/*.yml` / `*.yaml` `uses:` ref — every line of the
@@ -26,7 +26,7 @@ reads one well-known file rather than scanning a directory):
   in `docker/fabro-sandbox/agent/Dockerfile`. Unlike every other format
   its source is EXTERNAL to the fleet (the npm package
   `zed-industries/codex-acp`), so no fleet release fan-out ever rewrites
-  it and it is factory-gated on bump (§"codex-acp factory gate").
+  it and it is factory-gated on bump (section "codex-acp factory gate").
 
 The shared `record` normalizer lives here (imported by
 `_pin_single_file_formats`) — every discovered pin, single-file or
@@ -71,7 +71,7 @@ class PinFileUnreadable:
     A transport failure — absent permissions, a vanished file, bytes that
     are not UTF-8. It is not attributable to the member's committed
     content and may not reproduce on the next run, which is why
-    `SPECIFICATION/contracts.md` §"Pin-currency severity policy" keeps it
+    `SPECIFICATION/contracts.md` section "Pin-currency severity policy" keeps it
     at the row's lower severity: "a can't-read is not a violation"
     (livespec-dev-tooling-6ge). The consuming row renders it as a SKIP.
 
@@ -97,7 +97,7 @@ class PinFileUnparseable:
     than taxonomic. A can't-parse is a DEFINITIVE, REPRODUCIBLE property
     of the member's committed bytes: it will fail identically on every
     future run until someone edits the file. `SPECIFICATION/contracts.md`
-    §"Pin-currency severity policy" therefore requires the consuming row
+    section "Pin-currency severity policy" therefore requires the consuming row
     to render it as a FINDING — never a pass, and never the skip a
     can't-read earns.
 
@@ -230,7 +230,7 @@ def walk_github_workflow_uses(
     workflows_dir = root / ".github" / "workflows"
     # An ABSENT directory is an ANSWER, not a failure: a consumer with no
     # `.github/workflows/` simply carries no pins of this format, which
-    # §"Pin autodiscovery rules" makes normative tolerance for. The same
+    # section "Pin autodiscovery rules" makes normative tolerance for. The same
     # reading applies to a `glob` yielding nothing below.
     if not workflows_dir.is_dir():
         return IOSuccess([])

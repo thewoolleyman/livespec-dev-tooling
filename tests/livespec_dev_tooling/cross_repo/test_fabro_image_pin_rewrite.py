@@ -1,6 +1,6 @@
 """Behavioral tests for `fabro_image_pin_rewrite` — prefix-preserving docker-pin rewrite.
 
-Per `SPECIFICATION/contracts.md` §"Pin autodiscovery rules", the fabro-sandbox
+Per `SPECIFICATION/contracts.md` section "Pin autodiscovery rules", the fabro-sandbox
 image pin is `docker = "ghcr.io/thewoolleyman/livespec-fabro-sandbox:<tag>"`.
 Since the layer split (livespec-3lev.4) that `<tag>` carries a `<layer>-` prefix
 (`python-v<X.Y.Z>` / `python-rust-v<X.Y.Z>`) over the bare release version, so a

@@ -103,7 +103,7 @@ def test_discover_livespec_jsonc_unparseable_fails_the_walk(*, tmp_path: Path) -
     It used to yield an in-band record with `pin_format="unrecognized"`,
     which `_rows_pin_currency._records_for` then dropped through its
     `pin_format` filter — turning an unparseable pin file into a PASSING
-    fleet row (livespec-dev-tooling-2j2l). Spec v039 §"Pin autodiscovery
+    fleet row (livespec-dev-tooling-2j2l). Spec v039 section "Pin autodiscovery
     rules" now forbids that carrier by name.
     """
     (tmp_path / ".livespec.jsonc").write_text("not-valid-json{", encoding="utf-8")

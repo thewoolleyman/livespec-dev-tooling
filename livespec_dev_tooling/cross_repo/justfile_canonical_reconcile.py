@@ -2,7 +2,7 @@
 
 Extracted (per the guard-fix below) from the embedded Python heredoc in
 `.github/actions/bump-pin-rewrite/action.yml`'s "Reconcile canonical check
-wiring" step. Per `SPECIFICATION/contracts.md` §"Cross-repo coordination
+wiring" step. Per `SPECIFICATION/contracts.md` section "Cross-repo coordination
 automation surface", when a bumped livespec-dev-tooling release adds a new
 module under `livespec_dev_tooling/checks/`, the live canonical-check slug set
 grows; a consumer that already runs `check-aggregate-completeness` MUST adopt

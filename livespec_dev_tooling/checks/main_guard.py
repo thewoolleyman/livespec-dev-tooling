@@ -1,6 +1,6 @@
 """main_guard — bans `if __name__ == "__main__":` inside plugin-packaging trees.
 
-Per `python-skill-script-style-requirements.md` §"Canonical
+Per `python-skill-script-style-requirements.md` section "Canonical
 target list" (the `check-main-guard` row), no `.py` file under
 a `.claude-plugin/scripts/` plugin-packaging tree may contain an
 `if __name__ == "__main__":` guard at any nesting level. A

@@ -1,7 +1,7 @@
 """Fixture test for the `bump-pin-rewrite` composite Action invocation surface.
 
-Per `SPECIFICATION/contracts.md` §"Composite Actions wire contract"
-and §"Cross-repo coordination automation surface", the
+Per `SPECIFICATION/contracts.md` section "Composite Actions wire contract"
+and section "Cross-repo coordination automation surface", the
 `.github/actions/bump-pin-rewrite/action.yml` composite Action is the
 shared pin-rewrite + commit + auto-merge-PR-open body for both
 `reusable-bump-pin-from-dispatch.yml` and `reusable-pin-freshness.yml`.
@@ -58,7 +58,7 @@ _REQUIRED_ACTION_INPUTS = (
 _COMPOSITE_USES_PATH = "./.livespec-dev-tooling/.github/actions/bump-pin-rewrite"
 
 # Three of the `pin_format` case-arm values the rewrite step dispatches
-# on, per SPECIFICATION/contracts.md §"Pin autodiscovery rules" — this
+# on, per SPECIFICATION/contracts.md section "Pin autodiscovery rules" — this
 # regression guard checks they were extracted out of the reusable
 # workflows into the composite Action.
 _PIN_FORMAT_CASE_ARMS = (
@@ -937,7 +937,7 @@ def _stale_sha_guard_step_body(*, text: str) -> str:
 def test_stale_sha_guard_step_exists_in_bump_dispatch_workflow() -> None:
     """The Stale-SHA rerun guard step exists in reusable-bump-pin-from-dispatch.yml.
 
-    Per SPECIFICATION/contracts.md §"Retry semantics (rerun vs fresh
+    Per SPECIFICATION/contracts.md section "Retry semantics (rerun vs fresh
     dispatch)": the workflow SHALL detect invalid reruns and fail fast.
     """
     text = _read(path=_BUMP_WORKFLOW_PATH)
@@ -994,7 +994,7 @@ def test_stale_sha_guard_compares_event_pinned_sha() -> None:
 def test_stale_sha_guard_embeds_fresh_dispatch_command() -> None:
     """The guard's error message embeds the exact fresh-dispatch command.
 
-    Per SPECIFICATION/contracts.md §"Retry semantics": the actionable
+    Per SPECIFICATION/contracts.md section "Retry semantics": the actionable
     error MUST include event_type=sibling-released and all three
     client_payload fields so the operator can copy-paste the correct
     fresh-dispatch command.
@@ -1016,7 +1016,7 @@ def test_stale_sha_guard_embeds_fresh_dispatch_command() -> None:
 def test_stale_sha_guard_precedes_pin_autodiscovery() -> None:
     """The stale-SHA guard step appears before the Run pin-autodiscovery step.
 
-    Per SPECIFICATION/contracts.md §"Retry semantics": fail fast — the
+    Per SPECIFICATION/contracts.md section "Retry semantics": fail fast — the
     guard MUST refuse before any substantive work so the rerun exits
     immediately without running autodiscovery, uv-sync, or pin-rewrites.
     """

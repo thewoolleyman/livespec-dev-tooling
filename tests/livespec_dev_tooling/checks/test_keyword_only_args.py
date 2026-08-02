@@ -1,6 +1,6 @@
 """Outside-in test for `livespec_dev_tooling/checks/keyword_only_args.py` — `*`-separator on every `def`.
 
-Per `python-skill-script-style-requirements.md` §"Canonical
+Per `python-skill-script-style-requirements.md` section "Canonical
 target list" (the `check-keyword-only-args` row), every `def` in
 `livespec/**` uses `*` as the first separator (all parameters
 keyword-only). Exempts Python-mandated dunder signatures, a

@@ -1,6 +1,6 @@
 """Outside-in tests for `testing/_cli_e2e_discovery.py`.
 
-Per `livespec/SPECIFICATION/contracts.md` §"CLI end-to-end harness contract",
+Per `livespec/SPECIFICATION/contracts.md` section "CLI end-to-end harness contract",
 the structural skill-discovery (`discover_skills`) and per-skill fixtures
 loader (`discover_fixtures`) components walk the on-disk tree as the source of
 truth. These tests cover the discovery edge branches (unparsable manifest,

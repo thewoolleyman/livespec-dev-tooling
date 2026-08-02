@@ -1,6 +1,6 @@
 """no_direct_tool_invocation — `lefthook.yml` + CI YAML files only invoke `just <target>`.
 
-Per `python-skill-script-style-requirements.md` §"Canonical
+Per `python-skill-script-style-requirements.md` section "Canonical
 target list" (the `check-no-direct-tool-invocation` row),
 `lefthook.yml` and `.github/workflows/*.yml` may invoke only
 `just <target>` commands. Direct calls to `uv run`, `pytest`,

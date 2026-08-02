@@ -1,6 +1,6 @@
 """rop_pipeline_shape — `@rop_pipeline` classes have exactly one public method.
 
-Per `python-skill-script-style-requirements.md` §"Canonical
+Per `python-skill-script-style-requirements.md` section "Canonical
 target list" (the `check-rop-pipeline-shape` row), every class
 in `livespec/**` decorated with `@rop_pipeline` carries
 exactly one public (non-underscore-prefixed) method (the

@@ -1,7 +1,7 @@
 """Outside-in test for `livespec_dev_tooling/workflow_checks/no_stale_revise_branches.py`.
 
-Per `SPECIFICATION/contracts.md` §"`no_stale_revise_branches` check"
-(a revise-workflow check, per §"Shared check inventory"), the check
+Per `SPECIFICATION/contracts.md` section "`no_stale_revise_branches` check"
+(a revise-workflow check, per section "Shared check inventory"), the check
 enumerates local `refs/heads/spec/*` branches and fails when any such
 branch is ahead of the canonical branch. It is invoked by the
 `/livespec:revise` pre-step and always fails hard (exit 4) on any stale
@@ -262,7 +262,7 @@ def test_abandoned_prefix_is_not_enumerated(*, tmp_path: Path) -> None:
 
 
 def test_help_flag_exits_zero(*, tmp_path: Path) -> None:
-    """`--help` exits 0 with usage text on stdout (per contracts.md §"CLI surface")."""
+    """`--help` exits 0 with usage text on stdout (per contracts.md section "CLI surface")."""
     result = _run_check(cwd=tmp_path, extra_argv=["--help"])
     assert result.returncode == 0
     assert "no-stale-revise-branches" in result.stdout or "usage" in result.stdout.lower()

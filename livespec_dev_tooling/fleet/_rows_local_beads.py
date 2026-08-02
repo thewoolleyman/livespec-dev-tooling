@@ -4,7 +4,7 @@ The beads ledger backend has host-level and checkout-level prerequisites that
 `just bootstrap` (and the local first-touch reconcile it delegates to)
 deliberately does NOT provision — the `bd` query binary, a reachable Dolt
 `sql-server`, the injected tenant secret, and the committed `.beads/` pointer
-files (per `livespec/AGENTS.md` §"Beads runtime prerequisites"). These rows make
+files (per `livespec/AGENTS.md` section "Beads runtime prerequisites"). These rows make
 the verb DETECT-AND-GUIDE them: each PROBES one prerequisite and, when unmet,
 emits a WARNING-severity finding carrying a copy-pasteable guided TODO — surfaced
 to the operator, never machine-faked, and (because the verb's reconcile loop

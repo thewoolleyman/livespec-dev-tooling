@@ -2,7 +2,7 @@
 
 The generalized successor to `just bootstrap`'s local first-touch steps
 (per `livespec/SPECIFICATION/non-functional-requirements.md`
-§"Governed-repo lifecycle"): runs the idempotent local setup an arbitrary
+section "Governed-repo lifecycle"): runs the idempotent local setup an arbitrary
 governed checkout needs — toolchain install, dependency sync, the
 commit-refuse hooks, the git notes refspec, the worktree-root mise-trust
 entry, the beads tenant-dir hardening, and project-scoped plugin +

@@ -7,7 +7,7 @@ to `Result`).
 
 WHAT COUNTS AS PUBLIC IS NO LONGER `__all__` MEMBERSHIP.
 Ratified livespec v178 (`non-functional-requirements.md`
-§"ROP composition") makes a top-level function public only
+section "ROP composition") makes a top-level function public only
 when it is CONSUMED ACROSS A BOUNDARY, measured FLEET-WIDE.
 `checks/_public_api_consumption` computes the forms a
 repo-local vantage can see; the consumer DECLARES the rest in
@@ -73,7 +73,7 @@ passes if EITHER:
   `impure_safe` (call form or bare).
 
 The exemption set is the EXHAUSTIVE four-member set ratified in
-livespec v177 (`non-functional-requirements.md` §"ROP
+livespec v177 (`non-functional-requirements.md` section "ROP
 composition"), and all four ARE wired in: `main() -> int` under
 `commands_trees` or at `doctor/run_static.py`; `build_parser()
 -> ArgumentParser` under `commands_trees`; any function

@@ -1,6 +1,6 @@
 """Outside-in test for `dev-tooling/checks/tests_mirror_pairing.py` — v033 D1 mirror-pairing enforcement.
 
-Per `SPECIFICATION/spec.md` §"Testing approach" (post-v006), every
+Per `SPECIFICATION/spec.md` section "Testing approach" (post-v006), every
 covered `.py` file MUST have a paired test file at the mirror path
 EXCEPT (a) private-helper modules (filename starts with `_`, NOT
 `__init__.py`); (b) boilerplate `__init__.py` files (only docstring +

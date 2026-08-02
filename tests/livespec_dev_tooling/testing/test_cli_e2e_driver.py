@@ -1,6 +1,6 @@
 """Outside-in tests for `testing/_cli_e2e_driver.py` — the `claude -p` runner seam.
 
-Per `livespec/SPECIFICATION/contracts.md` §"CLI end-to-end harness contract",
+Per `livespec/SPECIFICATION/contracts.md` section "CLI end-to-end harness contract",
 the Driver component (`RealCliRunner`, `CliRunner`, `CliResult`) shells out to
 the real `claude` CLI binary; it is the one injectable, non-deterministic seam.
 These tests exercise `RealCliRunner.run`'s argv shape (fresh session vs.

@@ -10,7 +10,7 @@ Two properties are pinned here and they pull in opposite directions, which is
 why they live in one module: `[]` / `""` must be REJECTED on the five UNION
 keys, and must remain LEGITIMATE on the five CLEAN keys. A blanket rejection
 would be a spec violation now that the carve-out is ratified
-(v033 §"Clean role keys retain `[]`"), and it would be wrong in exactly the
+(v033 section "Clean role keys retain `[]`"), and it would be wrong in exactly the
 half of cases nobody would think to test.
 """
 

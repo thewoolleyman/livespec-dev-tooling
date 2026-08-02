@@ -1,6 +1,6 @@
 """The unresolved-receiver verb set must carry every failable I/O primitive.
 
-livespec **v184** §"ROP composition" §"What counts as an I/O boundary" makes
+livespec **v184** section "ROP composition" section "What counts as an I/O boundary" makes
 FAILABILITY the criterion. `_UNRESOLVED_RECEIVER_IO_VERBS` decides every call
 whose receiver resolves to nothing, so a failable I/O primitive missing from it
 is a boundary the check structurally cannot see.

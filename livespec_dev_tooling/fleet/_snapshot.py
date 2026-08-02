@@ -231,7 +231,7 @@ def _extract_regular_files(*, archive: Path, destination: Path) -> int:
     destination. `tarfile.extractall(filter="data")` is the stdlib spelling of
     the same guard, deliberately not used: it arrived in a 3.10 PATCH release
     and this repo's floor is 3.10 as a MINOR (`SPECIFICATION/constraints.md`
-    §"Runtime"), so depending on it would narrow the floor silently.
+    section "Runtime"), so depending on it would narrow the floor silently.
     """
     extracted = 0
     with tarfile.open(archive, mode="r:gz") as bundle:

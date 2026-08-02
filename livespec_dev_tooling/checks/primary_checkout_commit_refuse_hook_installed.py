@@ -1,10 +1,10 @@
 """primary_checkout_commit_refuse_hook_installed — verify commit-refuse hook at primary.
 
 Universal mechanical check ported from livespec's doctor-static
-phase. Per `livespec/SPECIFICATION/contracts.md` §"Doctor
-cross-boundary invariants" → §"`primary-checkout-commit-refuse-hook-installed`"
+phase. Per `livespec/SPECIFICATION/contracts.md` section "Doctor
+cross-boundary invariants" → section "`primary-checkout-commit-refuse-hook-installed`"
 and `livespec/SPECIFICATION/non-functional-requirements.md`
-§"Primary-checkout commit-refuse hook", every livespec-governed
+section "Primary-checkout commit-refuse hook", every livespec-governed
 primary checkout MUST install `.git/hooks/pre-commit`,
 `.git/hooks/pre-push`, AND `.git/hooks/commit-msg` hooks whose body
 refuses to run when invoked at the primary checkout. The hook is a
@@ -63,7 +63,7 @@ that the hook mechanism does not.
 Inputs are project-agnostic: the check reads the three hooks under the
 current working directory's git common dir and scans the work-tree
 root (`git rev-parse --show-toplevel`). No `[tool.livespec_dev_tooling]`
-role keys are consumed (per the sibling spec's §"Shared check
+role keys are consumed (per the sibling spec's section "Shared check
 inventory" partition criterion — this check is layout-independent).
 
 Exit codes:
@@ -117,7 +117,7 @@ Exit codes:
   superseded): a bare repo is a git repo that is NOT a work tree, so
   the work-tree skip below would silently pass it. This realizes the
   MAY in `livespec/SPECIFICATION/contracts.md`
-  §"`primary-checkout-commit-refuse-hook-installed`". The corrective
+  section "`primary-checkout-commit-refuse-hook-installed`". The corrective
   action is to unset the flag and repopulate the working tree.
 
 Output discipline: structlog JSON to stderr; no `print`, no
