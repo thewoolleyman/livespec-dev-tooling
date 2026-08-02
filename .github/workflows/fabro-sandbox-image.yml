@@ -18,7 +18,7 @@
 # IDENTICAL toolchain layers to the Fabro sandbox — one image chain, no
 # separate slim CI image and therefore no CI-vs-sandbox drift. The single
 # docker/fabro-sandbox/agent/Dockerfile is built TWICE, once atop each of
-# python and python-rust, via its value-less PARENT_IMAGE build-arg.
+# python and python-rust, overriding its local-default PARENT_IMAGE build arg.
 #
 # Each layer is a separately-published image whose `FROM` pins the exact
 # DIGEST of the layer just built (hermetic — never a floating tag). Three

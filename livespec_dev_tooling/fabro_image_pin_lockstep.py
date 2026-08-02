@@ -93,6 +93,11 @@ _GH_APT_SOURCE = (
 )
 _GH_PACKAGE_PIN = "gh=${GH_VERSION}"
 _GH_MISE_PIN = "gh@${GH_VERSION}"
+_CHAIN_DEFAULT_ARGS = (
+    ("BASE_IMAGE", "livespec-fabro-sandbox:base-dev"),
+    ("PYTHON_IMAGE", "livespec-fabro-sandbox:python-dev"),
+    ("PARENT_IMAGE", "livespec-fabro-sandbox:python-dev"),
+)
 
 
 def _discover_layer_dockerfiles(*, cwd: Path) -> list[Path]:
@@ -144,6 +149,12 @@ def _lockstep_issues(
 ) -> list[str]:
     """Compare the image-baked pins against the repo pins; return drift findings."""
     issues: list[str] = []
+    for arg_name, expected in _CHAIN_DEFAULT_ARGS:
+        actual = dockerfile_args.get(arg_name)
+        if actual != expected:
+            issues.append(
+                f"{arg_name}: local FROM-chain default is {actual!r}; expected {expected!r}"
+            )
     for arg_name, tool_name in _MISE_LOCKSTEP_ARGS:
         image_value = dockerfile_args.get(arg_name)
         repo_value = mise_tools.get(tool_name)

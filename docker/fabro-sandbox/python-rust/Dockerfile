@@ -7,9 +7,9 @@
 # not a Rust-only image.
 #
 # PYTHON_IMAGE is passed by the build pipeline as the exact python image
-# reference just built (digest-pinned; hermetic chain). Value-less `ARG`
-# so it is invisible to check-fabro-image-pin-lockstep; a local build
-# must pass `--build-arg PYTHON_IMAGE=...`.
+# reference just built (digest-pinned; hermetic chain). Its default is the
+# documented local-development tag, which keeps standalone Dockerfile
+# validation valid; CI always overrides it with the exact python digest.
 #
 # RUST_VERSION has NO repo-side pin source in livespec-dev-tooling (this
 # is not a Rust repo), so it carries NO lockstep obligation here — it
@@ -27,7 +27,7 @@
 #
 # Published as ghcr.io/<owner>/livespec-fabro-sandbox with immutable
 # python-rust-sha-<short> / python-rust-v<X.Y.Z> tags.
-ARG PYTHON_IMAGE
+ARG PYTHON_IMAGE=livespec-fabro-sandbox:python-dev
 FROM ${PYTHON_IMAGE}
 
 ARG RUST_VERSION=1.92.0
