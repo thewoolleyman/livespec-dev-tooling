@@ -109,10 +109,48 @@ _PURE_IO_MODULE_MEMBERS: frozenset[str] = frozenset(
 
 # Verbs that decide an attribute call whose RECEIVER cannot be resolved. Every
 # member is unambiguously a filesystem, process or socket operation on any
-# plausible receiver. Deliberately ABSENT: `get`, `run`, `send`, `post`,
-# `close`, `poll` — each is at least as often a mapping lookup or an injected
-# seam in this codebase as it is I/O, and a name match on them is the exact
-# defect that mis-flagged ten total functions.
+# plausible receiver.
+#
+# MEMBERSHIP NEEDS BOTH HALVES, AND THE SECOND IS WHAT THIS SET ADDS. livespec
+# v184 §"ROP composition" §"What counts as an I/O boundary" makes FAILABILITY the
+# criterion — a boundary is a primitive at which a failure can ORIGINATE — and
+# every member below was driven with adverse input on CPython 3.10.16, the
+# fleet's `requires-python` FLOOR, and raises for at least one. But failability
+# is NECESSARY AND NOT SUFFICIENT here: with the receiver unresolved only the
+# VERB is left, so the name must also be unambiguously an I/O surface.
+#
+# Deliberately ABSENT: `get`, `run`, `send`, `post`, `close`, `poll` — each is at
+# least as often a mapping lookup or an injected seam in this codebase as it is
+# I/O, and a name match on them is the exact defect that mis-flagged ten total
+# functions.
+#
+# ⛔ AND `group` IS ABSENT FOR THAT SAME REASON DESPITE BEING FAILABLE — the
+# third instance of that defect, measured. `Path.group()` raises
+# `FileNotFoundError`, so it passes the failability half; `re.Match.group()` is a
+# pure string operation that dominates the name here. Adding it moved this repo
+# 24 -> 34 offenders and ALL TEN additions were `match.group(...)` sites, while
+# `open` / `readlink` / `owner` / `truncate` together added ZERO. Pinned by
+# `test_group_is_refused_despite_being_failable`.
+#
+# ⛔ ABSENT BY MEASURED DETERMINATION, not oversight — v184 requires the
+# determination recorded WITH its evidence. `chown`, `walk`, `listdir` and
+# `scandir` have NO `Path` method on the floor (`Path.walk` is 3.12+), so they
+# are only ever reached as `os.<verb>(...)`, whose receiver RESOLVES through the
+# import binding and is already caught by `_IO_MODULES`. Listing them would be
+# inert.
+#
+# ⚠️ `truncate`'s RECEIVER IS A FILE OBJECT, NOT A PATH. `Path.truncate` does not
+# exist on any supported version, so a reader checking `dir(Path)` would conclude
+# the verb is inert and drop it. `handle.truncate()` is the live shape, and a
+# handle held in a parameter is exactly the unresolved receiver this set governs.
+#
+# ⛔ THE FILESYSTEM PREDICATES ARE NOT TOTAL AND MUST NOT BE REMOVED. An earlier
+# reading held that `exists` / `is_file` / `is_dir` "cannot fail" and belonged
+# out; that premise is REFUTED and was retracted in livespec v185. `pathlib`
+# swallows only `(ENOENT, ENOTDIR, EBADF, ELOOP)` and re-raises everything else,
+# so each RAISES `PermissionError` on a path under an unreadable directory. Total
+# with respect to four errnos is strictly weaker than total. Pinned by
+# `test_the_filesystem_predicates_are_not_removed`.
 _UNRESOLVED_RECEIVER_IO_VERBS: frozenset[str] = frozenset(
     {
         "accept",
@@ -132,11 +170,14 @@ _UNRESOLVED_RECEIVER_IO_VERBS: frozenset[str] = frozenset(
         "listen",
         "lstat",
         "mkdir",
+        "open",
+        "owner",
         "read",
         "read_bytes",
         "read_text",
         "readline",
         "readlines",
+        "readlink",
         "recv",
         "rename",
         "replace",
@@ -148,6 +189,7 @@ _UNRESOLVED_RECEIVER_IO_VERBS: frozenset[str] = frozenset(
         "stat",
         "symlink_to",
         "touch",
+        "truncate",
         "unlink",
         "urlopen",
         "write",
