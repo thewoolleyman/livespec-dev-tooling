@@ -47,6 +47,7 @@ from pathlib import Path
 
 from livespec_dev_tooling.checks._import_resolution import suffix_index
 from livespec_dev_tooling.checks._io_boundary_calls import ModuleFacts, calls_of
+from livespec_dev_tooling.fleet._local_context import LocalContext
 
 __all__: list[str] = []
 
@@ -128,3 +129,46 @@ def test_the_filesystem_predicates_are_not_removed() -> None:
     assert _disqualifies_on_unresolved_receiver(verb="exists")
     assert _disqualifies_on_unresolved_receiver(verb="is_file")
     assert _disqualifies_on_unresolved_receiver(verb="is_dir")
+
+
+def test_the_injected_seam_names_never_collide_with_this_set() -> None:
+    """⛔ THE NAMING TRAP, CLOSED MECHANICALLY RATHER THAN IN PROSE.
+
+    A row reaches a `LocalContext` seam through `ctx`, a PARAMETER, so the
+    receiver resolves to NOTHING and this set alone decides. A seam named after
+    the primitive it wraps therefore leaves every caller convicted exactly as
+    before — **the fix looks done while changing nothing.** Measured twice: for
+    `read_text` when the file seam was built, and again for `is_dir`/`is_file`
+    when the predicate seam was.
+
+    ⛔ THIS ASSERTION LIVES HERE, BESIDE THE SET, ON PURPOSE. It was first
+    written as prose in a commit message, and a true record nobody re-reads is
+    this thread's own signature defect — a finding filed as an observation
+    outlives the epic built to close it. An editor renaming a seam, or widening
+    this set, now fails a test instead of silently reproducing the trap.
+
+    It asserts BOTH directions: no seam name is decided by the set, AND the
+    primitives they wrap still are. Without the second half the test would still
+    pass if the set were emptied.
+
+    ⚠️ It probes through this file's own `_disqualifies_on_unresolved_receiver`
+    helper rather than importing the set: the helper asks the SHIPPED analysis
+    the question a row's call actually asks, so it cannot drift from the set the
+    way a second reader of the same constant would.
+    """
+    seam_names = [
+        name
+        for name in dir(LocalContext)
+        if not name.startswith("_") and callable(getattr(LocalContext, name, None))
+    ]
+    collisions = sorted(
+        name for name in seam_names if _disqualifies_on_unresolved_receiver(verb=name)
+    )
+    assert not collisions, (
+        f"a LocalContext seam is named after an I/O verb this set decides on, so every "
+        f"caller stays convicted and the seam buys nothing: {collisions}"
+    )
+    assert all(
+        _disqualifies_on_unresolved_receiver(verb=verb)
+        for verb in ("read_text", "is_dir", "is_file", "exists")
+    )
