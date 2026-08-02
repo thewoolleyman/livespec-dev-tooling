@@ -1,6 +1,188 @@
 # rop-railway-enforcement — arm the check that was never armed, then remediate six repos
 
-> ## 🔻🔻 COLD START — **FLEET 411. THE NEXT ACTION IS FILING ONE SPEC PROPOSAL, AND IT IS FULLY PREPARED.**
+> ## 🔻🔻 COLD START — **v186 IS RATIFIED. THE RULE IS LAW AND NOTHING COMPUTES IT YET — MECHANIZE IT.**
+>
+> ### 🔻 FIRST FIVE MINUTES
+>
+> **NOTHING IS MID-FLIGHT except the commit that carries this text.** No background job,
+> no sub-agent, no unpushed Red, no open PR of this thread's. dev-tooling master at
+> wrap-up: **`a06abe0`**; `livespec` master: **`c39c1801`** — re-fetch both, they move hourly.
+>
+> 1. **REAP EXACTLY ONE WORKTREE:
+>    `~/.worktrees/livespec-dev-tooling/docs-handoff-v186-ratified`** once its PR shows
+>    MERGED — `gh pr list --repo thewoolleyman/livespec-dev-tooling --head
+>    docs/handoff-v186-ratified --state all`. Doc-only, auto-merge ARMED, lands
+>    unattended. **If this block is what you are reading, that PR MERGED.** Then
+>    `git -C /data/projects/livespec-dev-tooling merge --ff-only origin/master`.
+> 2. **REAP NOTHING ELSE.** Every other worktree belongs to a PEER lane — this session
+>    saw eight in dev-tooling and four in `livespec`, none of them ours. Enumerate with
+>    `git worktree list`; never quote a count from this file.
+> 3. `git status --short --branch` — expect clean on `master`; one untracked
+>    `install-livespec-pr-bot.png` is pre-existing and NOT this thread's. ⚠️ A modified
+>    `uv.lock` is REGENERATED noise: `git checkout -- uv.lock` before any `merge
+>    --ff-only`, which REFUSES while the tree is dirty.
+> 4. **Re-derive before trusting any number here.** Harness: §"THE ARMED MEASUREMENT" —
+>    `_scan` plus exactly TWO deltas, never `main()` (this repo declares `pure_trees =
+>    not_applicable`, so `main()` iterates ZERO files and reports 0). This session
+>    re-derived **universe 171 / offenders 3** on `7ffec46` and the harness named the same
+>    three functions, so the control is fresh.
+>
+> ⚠️ **`/tmp` INODE PRESSURE RECURS AND IT WILL LIE TO YOU** (`8o8e.16`). A run that dies
+> with `sqlite3.OperationalError: unable to open database file`, an xdist `INTERNALERROR`,
+> or a bogus "coverage NN < 100" → check **`df -i /tmp`** (NOT `df -h`). Reclaim ONLY
+> stale regenerable caches; **never** `/tmp/claude-1000/*`, **never** anything dated today.
+>
+> ⚠️ **A `check-fleet-conformance` RED IS PROBABLY NOT YOUR DIFF** (brief 92): read the
+> log and confirm `"kind": "rate_limited"` before diagnosing.
+>
+> ### 📋 THE STATE, in one place
+>
+> | | |
+> |---|---|
+> | **livespec spec** | **v186 RATIFIED** (`c39c1801`) — clause (b) no longer counts a DISCHARGING NARROW `try`. v183 carrier · v184 criterion · v185 retraction all still ratified. **Nothing of this thread is pending in `livespec`.** |
+> | **fleet, ratified-rule basis** | **411 today · 403 once v186 is MECHANIZED.** The 403 is a PREDICTION until the implementation lands and the fleet is re-measured. |
+> | per repo (pre-mechanization) | dev-tooling **3** · driver-claude **1** · driver-codex **2** · livespec **15** · git-jsonl **18** · runtime **27** · overseer **173** (= 82 sites + 91 mirrors) · beads-fabro **172** · console **0** |
+> | dev-tooling's 3 | `extract_created_worktree_paths` · `run_adopter_rows` · `cross_member_consumption` — all RULED; **v186 relieves the first two and REFUSES the third** |
+> | still pending in `livespec` | `github-app-request-budget`, `owned-heading-coverage-todos` — **FOREIGN, not ours to judge.** Selective consumption verified three ways. |
+>
+> ### ▶️▶️▶️ EXACT NEXT ACTION — **MECHANIZE v186 IN `_no_expected_failure_mode.py`. IT IS THIS THREAD'S OWN SUBJECT UNTIL IT LANDS.**
+>
+> **A ratified rule that nothing computes is an authoritative statement nothing
+> re-derives — `8o8e.17`, and it is now sitting in this thread's own spec.** Until the
+> implementation lands, v186 relieves ZERO functions anywhere: `_local_analysis` still
+> disqualifies on `isinstance(inner, ast.Raise | ast.Try)` for ANY `Try`.
+>
+> **THE CHANGE, and it is one predicate.** In
+> `livespec_dev_tooling/checks/_no_expected_failure_mode.py`, `_local_analysis` currently
+> reads every `ast.Try` in `ast.walk(node)` as disqualifying. It must skip a `Try` meeting
+> ALL FOUR ratified limbs: (i) ≥1 handler and NO `finalbody`; (ii) EVERY handler names
+> specific types — bare, `Exception`, `BaseException` disqualify; (iii) EVERY handler body
+> ENDS IN a `return`; (iv) NO `raise` anywhere inside the statement. **Doubt about a limb
+> DISQUALIFIES** — v186 preserves the conservative direction verbatim.
+>
+> ⛔ **PRODUCT `.py` ⇒ RED-GREEN-REPLAY, and the impl must be UNMODIFIED on disk at Red.**
+> ⛔ **AND THE PREDICATE MUST BE MEASURED, NOT ASSUMED, AFTER IT LANDS:** re-run the armed
+> measurement and expect **dev-tooling 3 → 1**, relieving `extract_created_worktree_paths`
+> and `run_adopter_rows` and KEEPING `cross_member_consumption`. A run that relieves the
+> third means limb (iii) was implemented wrong.
+>
+> **▶️ THE WORKING PREDICATE ALREADY EXISTS — this session ran it and it reproduced every
+> recorded figure.** Rebuild from §"THE THREE PROBES"; the shape is `_is_discharging(node,
+> narrow=True)` over `node.handlers`, `node.finalbody`, each handler's terminal `ast.Return`,
+> each handler's type names, and `any(isinstance(i, ast.Raise) for i in ast.walk(node))`.
+>
+> ### ▶️ THEN, IN ORDER, AND NOTHING BLOCKS ANY OF IT
+>
+> 1. **Fleet re-measure** on the mechanized criterion. 411 → 403 is a PREDICTION; a part
+>    and a total from different days do not add, so re-measure all nine.
+> 2. **NO CONVERSION IS OWED for `livespec-driver-claude`'s `classify` or
+>    `livespec-driver-codex`'s `check_tmux_segment`.** v186 relieves both. The old cold
+>    start's "DO NOT CONVERT UNTIL IT RATIFIES" is DISCHARGED — and it discharged by
+>    making the conversions UNNECESSARY, not by authorizing them.
+> 3. **`livespec` (15) and `git-jsonl` (18), structural triage FIRST, each finding
+>    SCOPE-TAGGED.** ⛔ **275 of the remaining 411 sit in `overseer` and `beads-fabro`,
+>    both untouched** — the small repos' real product is the SEAM INVENTORY, not their own
+>    counts. Running list in §"SCOPE TAGS".
+> 4. **FILE THE CLAUSE (e) `Any` RESIDUAL** (below). It is named in the ratified text as
+>    unguarded; it needs its own measured proposal, not a rider.
+>
+> ### ✅✅ WHAT LANDED THIS SESSION — **PR #1902 (filed) → PR #1903 (ratified as v186)**
+>
+> **THE RULE, as ratified:** clause (b) now reads *"no `try` statement OTHER THAN a
+> DISCHARGING NARROW `try`, as defined below"*, with the four limbs above, plus four
+> blocks: the definition; the correction-not-a-fifth-exemption framing; the clause (d)
+> propagation consequence; and a WHAT-THIS-DOES-NOT-DO block carrying the residual.
+>
+> **⛔ IT LANDED AS A *CORRECTION TO THE CRITERION*, NEVER A FIFTH EXEMPTION** — the
+> §"ROP composition" exemption set is still declared EXHAUSTIVE and still has four
+> members. That framing is what made it ratifiable, exactly as it did for v184; the
+> thread had learned that twice before and it held a third time.
+>
+> **✅ THE INTENT-PRESERVATION GATE WAS CHECKED AND DOES NOT FIRE — recorded as an
+> explicit negative rather than a silence, so nobody re-runs the analysis.** The candidate
+> conflict is clause (b) vs member 1's own uninhabited-track rationale, neither carrying a
+> design record — the v184 shape. **It is NOT that shape.** Clause (b) is a LIMB OF MEMBER
+> 1'S OWN TEST, not an independent ratified statement, and the ratified text already
+> declares its analysis CONSERVATIVE IN THE DISQUALIFYING DIRECTION — so a limb
+> over-approximating its own purpose is the SANCTIONED failure direction, not a
+> contradiction. What that rule governs is DOUBT, and a discharging narrow `try` is
+> decidable from the AST. **The brief-84 precedent was therefore NOT invoked and MUST NOT
+> be cited as if it had been.**
+>
+> ### 🔬 RE-DERIVED BEFORE FILING — the control, the identity control, and the hazard arm
+>
+> On `livespec-dev-tooling` master `7ffec46`, harness = `_scan` + the two deltas, probe
+> feeding rewritten source **ONLY** to `functions_without_expected_failure_mode` while
+> `_find_offenders` runs on **ORIGINAL** sources:
+>
+> ```
+> CONTROL   shipped criterion       universe 171   offenders 3   the three known names
+> IDENTITY  identity rewrite        universe 171   offenders 3   moves NOTHING
+> NARROW    four-limb discharge     universe 171   offenders 1   relieves 2
+> LOOSE     limb (ii) removed       universe 171   offenders 1   relieves the SAME 2
+> NO-NONE   limb (iii) + no bare None  universe 171   offenders 2   costs `run_adopter_rows`
+> ```
+>
+> **Every recorded figure reproduced.** The identity control at 3 → 3 is what makes the
+> 3 → 1 quotable — the earlier contaminated probe (global `Path.read_text` patch) read
+> 3 → 21, an INCREASE a relaxing change cannot produce.
+>
+> **▶️ THE NO-NONE ARM IS A PRICED FORK THAT WAS DELIBERATELY NOT TAKEN, recorded so it is
+> not re-litigated blind.** Refusing a handler that returns a bare `None` would cost
+> `run_adopter_rows` here and `loads_json_optional` fleet-wide. It was rejected because
+> the ratified design ALREADY answers it: clause (d) propagates (a)–(d) and NOT (e)
+> precisely because an `X | None` callee does not infect a caller that handles the `None`.
+> Re-adding the guard at the propagation boundary would contradict that.
+>
+> ### 🔑 FOUR FINDINGS FROM THE PREPARATION, none of them in the old record
+>
+> 1. **ALL THREE of dev-tooling's offenders are convicted through clause (d) ALONE —
+>    nothing local.** The root enumerator says so: `extract_created_worktree_paths` ←
+>    `_tokenize` + `_transcript_line_segments`; `run_adopter_rows` ← `_settings_payload`;
+>    `cross_member_consumption` ← `_parsed`. **Every root is a `Try`, and not one is an
+>    I/O call.** A reader who assumes this repo's remainder is an I/O problem is wrong.
+> 2. **THE CORRECTION SPLITS 4/4, AND A RULE WRITTEN AS ONLY ONE HALF RELIEVES HALF THE
+>    POPULATION.** `parse_json`, `parse_float`, `parse_iso_datetime`, `loads_json_optional`
+>    CONTAIN the `try` (local clause (b)); `extract_created_worktree_paths`,
+>    `run_adopter_rows`, `classify`, `check_tmux_segment` contain NO `try` at all and are
+>    relieved only because a callee's stopped propagating. ⚠️ **The previous cold start's
+>    one-sentence framing — "should not PROPAGATE under clause (d)" — under-covers by
+>    half**; it was corrected in the filed text, which changes clause (b) and lets (d)
+>    follow.
+> 3. **`_parsed` IS THE REFUSAL THAT PROVES THE RULE DISCRIMINATES.** Its handler is
+>    narrow (`except SyntaxError`) but it APPENDS to an out-parameter and continues the
+>    loop instead of returning, so limb (iii) refuses it and `cross_member_consumption`
+>    stays convicted. **The mechanical rule reproduces TWO of this repo's three hand
+>    rulings and REFUSES the third** — a stronger claim than the old record's "reproduces
+>    the hand ruling", and the refusal is the more informative half.
+> 4. **🕳️ THE CLAUSE (e) `Any` HOLE, MEASURED AND NOW NAMED IN THE RATIFIED TEXT.**
+>    `returns_x_or_none` reads the ANNOTATION, so `-> Any` defeats it:
+>    `git-jsonl`'s `loads_json_optional(*, text: str) -> Any` returns `None` on a caught
+>    `json.JSONDecodeError` — the hand-rolled failure track clause (e) exists to refuse —
+>    and clause (e) never sees it. **Clause (b) MASKS it today; v186 unmasks it.** It is a
+>    clause (e) SPELLING defect, not a v186 defect, and it is owed its own measured
+>    proposal. ⛔ Its exposure MUST NOT be quoted before it is mechanized.
+>
+> ### ⛔ TWO THINGS v186 DOES **NOT** DO — do not let a moving count read as closure
+>
+> - **`8o8e.19` SURVIVES UNTOUCHED.** `check_tmux_segment` leaves the offender list while
+>   `_check_segment_result` still returns `Success(...)` unconditionally and the
+>   `isinstance(result, Failure)` branch is still unreachable. **A count that MOVES
+>   without FIXING is this epic's founding defect seen from the other end.**
+> - **IT RELIEVES NOTHING IN `overseer` OR `livespec`** — 188 of the fleet's 411. The two
+>   biggest remainders are exactly where no spec question helps.
+>
+> ### 📌 ONE PEER-LANE CORRECTION OWED, and it is not mine to make
+>
+> `supervisor-handoff.md`'s fleet-position table (added by `a06abe0`, a PEER lane) records
+> the 411 → 403 step as **"the Try widening, measured (not yet ratified)"**. **It IS
+> ratified now — `livespec` v186, `c39c1801`.** Recorded here rather than edited there,
+> because that file belongs to the supervisor lane; a supervisor reading either file
+> should now read 403 as PREDICTED-ON-A-RATIFIED-RULE and still MECHANIZATION-BLOCKED.
+>
+> ---
+>
+> ## 🗄️ (SUPERSEDED AS THE HEADER 2026-08-02 — the proposal it was prepared for is FILED and RATIFIED as v186. Read it for the measurement and the probe designs, NOT for what to do next.) COLD START — **FLEET 411. THE NEXT ACTION IS FILING ONE SPEC PROPOSAL, AND IT IS FULLY PREPARED.**
 >
 > ### 🔻 FIRST FIVE MINUTES
 >
