@@ -4,9 +4,29 @@ Per the governed project's `SPECIFICATION/constraints.md` §"Vendoring
 procedure": re-vendoring of upstream-sourced libs MUST go through `just
 vendor-update <lib>` — the only blessed mutation path. The recipe fetches
 the upstream ref recorded in `.vendor.jsonc`, copies the library's source
-tree under `.claude-plugin/scripts/_vendor/<lib>/`, preserves `LICENSE`
-(when upstream ships one), and updates the entry's `vendored_at`
-timestamp.
+tree under the repo's own `_vendor/<lib>/`, preserves `LICENSE` (when
+upstream ships one), and updates the entry's `vendored_at` timestamp.
+
+## THE DESTINATION IS RESOLVED, NOT ASSUMED (`livespec-dev-tooling-w25v`)
+
+The destination was once the literal `.claude-plugin/scripts/_vendor/`,
+and that is one of THREE layouts the fleet actually uses: three
+orchestrator/plugin repos vendor there, `livespec-driver-claude` vendors
+at the repo ROOT, and this package vendors at
+`livespec_dev_tooling/_vendor/`. So the blessed path was wrong in two of
+the five repos carrying a vendored tree — including the one that SHIPS
+it, which is why this repo's own three libs were placed by hand. It did
+not fail: it created the wrong directory and exited 0, which is the
+failure mode a "blessed only path" exists to prevent.
+
+`_tracked_vendor_roots` reads the git index instead. A repo with NO
+tracked `_vendor/` is REFUSED rather than given one: establishing a
+first vendored tree is the one-time MANUAL procedure the same spec
+section defines, and inventing a location for it here would be this
+tool guessing a layout it just stopped guessing.
+
+Note this is the same shape as the epic it was found under: machinery
+correct for consumers and wrong or inert in the repo that owns it.
 
 This is a maintainer-only mutating tool, invoked via `just vendor-update
 <lib>` (NOT part of `just check`). Shim entries (`shim: true` in
@@ -19,7 +39,7 @@ fleet's release→bump-pin automation can re-vendor in every consumer
 repo: each governed project invokes `python -m
 livespec_dev_tooling.vendor_update <lib>` from its own root, and the
 manifest + vendor-destination paths resolve against the caller's `cwd`,
-i.e. that consumer's `.vendor.jsonc` and `.claude-plugin/scripts/_vendor/`
+i.e. that consumer's `.vendor.jsonc` and its own resolved `_vendor/`
 tree).
 
 Output discipline: per spec, `print` (T20) and `sys.stderr.write`
@@ -33,6 +53,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as _dt
+import os
 import shutil
 import subprocess
 import sys
@@ -53,6 +74,78 @@ __all__: list[str] = []
 _MANIFEST_FILENAME = ".vendor.jsonc"
 _LICENSE_FILENAMES = ("LICENSE", "LICENSE.txt", "LICENSE.md", "COPYING")
 _EXIT_PRECONDITION = 3
+_VENDOR_MARKER = "_vendor"
+
+
+def _tracked_vendor_roots(*, cwd: Path) -> list[Path]:
+    """Every distinct tracked directory named `_vendor`, repo-root-relative.
+
+    Reads the git INDEX, never the filesystem, and that is load-bearing
+    rather than stylistic: every governed repo's `.venv` contains
+    `site-packages/livespec_dev_tooling/_vendor/`, the INSTALLED
+    dependency's own vendored tree. A filesystem walk therefore answers
+    YES in repos that vendor nothing at all, which would point this tool
+    at a directory inside a virtualenv.
+
+    Returns the roots SORTED so the ambiguity diagnostic is stable (a
+    LIST rather than a tuple: pyright cannot narrow a variadic tuple's
+    length across two separate guards, so `roots[0]` under a `tuple[Path,
+    ...]` reads as possibly-empty). A
+    `git ls-files` that FAILS yields empty stdout and therefore no roots,
+    which the caller refuses — an unreadable index resolves to nothing
+    rather than to a guess, so the fail-closed direction needs no
+    separate returncode arm.
+    """
+    # Every GIT_* var is stripped from the child env for the reason
+    # `config.iter_first_party_py_files` documents: a parent git hook can
+    # inject GIT_DIR/GIT_WORK_TREE, which would override `cwd` and list a
+    # DIFFERENT repo's index — here, that would vendor into another repo.
+    git_env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    completed = subprocess.run(
+        ["git", "ls-files"],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=str(cwd),
+        env=git_env,
+    )
+    roots: set[Path] = set()
+    for line in completed.stdout.splitlines():
+        parts = Path(line).parts
+        if _VENDOR_MARKER in parts:
+            roots.add(Path(*parts[: parts.index(_VENDOR_MARKER) + 1]))
+    return sorted(roots)
+
+
+def _resolve_vendor_dest(*, cwd: Path, lib_name: str, log: structlog.stdlib.BoundLogger) -> Path:
+    """This repo's `_vendor/<lib>` destination, or exit 3 having said why.
+
+    Refusing on BOTH the zero case and the many case is the whole point:
+    the behaviour this replaces resolved every repo to one hardcoded
+    layout and exited 0, so a repo it had no business writing to got a
+    directory anyway. `SystemExit(_EXIT_PRECONDITION)` follows the
+    precondition idiom `_copy_package_tree` and `_rewrite_vendored_at`
+    already use in this module.
+    """
+    roots = _tracked_vendor_roots(cwd=cwd)
+    if not roots:
+        message_unvendored = (
+            "no tracked `_vendor/` tree in this repo, so the re-vendor destination "
+            "cannot be resolved; establishing a FIRST vendored tree is the one-time "
+            "MANUAL procedure (livespec SPECIFICATION/constraints.md 'Vendoring "
+            "procedure'), and this tool re-vendors an existing one"
+        )
+        log.error(message_unvendored, lib_name=lib_name)
+        raise SystemExit(_EXIT_PRECONDITION)
+    if len(roots) > 1:
+        listed = ", ".join(root.as_posix() for root in roots)
+        message_ambiguous = (
+            "more than one tracked `_vendor/` tree; the re-vendor destination is "
+            f"ambiguous and this tool refuses rather than guess a layout: {listed}"
+        )
+        log.error(message_ambiguous, lib_name=lib_name)
+        raise SystemExit(_EXIT_PRECONDITION)
+    return cwd / roots[0] / lib_name
 
 
 def _find_entry(*, libraries: list[dict[str, Any]], lib_name: str) -> dict[str, Any] | None:
@@ -185,7 +278,7 @@ def _vendor_update(*, lib_name: str, log: structlog.stdlib.BoundLogger) -> int:
         return _EXIT_PRECONDITION
     upstream_url = cast(str, entry["upstream_url"])
     upstream_ref = cast(str, entry["upstream_ref"])
-    vendor_dest = cwd / ".claude-plugin" / "scripts" / "_vendor" / lib_name
+    vendor_dest = _resolve_vendor_dest(cwd=cwd, lib_name=lib_name, log=log)
     with tempfile.TemporaryDirectory(prefix="livespec-vendor-") as tmp_str:
         clone_root = Path(tmp_str) / "clone"
         _shallow_clone(
