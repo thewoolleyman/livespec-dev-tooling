@@ -58,6 +58,15 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.14.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.14.0...v1.14.1) (2026-08-02)
+
+
+### Bug Fixes
+
+* **fleet:** give LocalContext a railway-typed PREDICATE seam ([4cd7cd0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4cd7cd0ed73e2368dfa680016df7066b822b9885))
+* **fleet:** probe the beads directory through the predicate seam ([59e429c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/59e429c17461dbe01ea351b7368237306885bd65))
+* **fleet:** route every beads probe through the predicate seam ([2b30f4e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2b30f4eb0e124a142c6d3295c0d273d960225dc1))
+
 ## [1.14.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.13.24...v1.14.0) (2026-08-02)
 
 
