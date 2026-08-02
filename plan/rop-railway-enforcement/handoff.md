@@ -1,5 +1,135 @@
 # rop-railway-enforcement — arm the check that was never armed, then remediate six repos
 
+> ## ✅✅ UNIT B IS BUILT AND MEASURED — **PR #1081, 24 → 5, ADDED 0 / REMOVED 19**
+>
+> **Written 2026-08-02, and it SUPERSEDES the "RESUME HERE: UNIT B" block below.**
+> Everything below this block stays true for METHOD; its "unit B is the next
+> unit" framing is discharged.
+>
+> ### 📏 THE MEASUREMENT, decomposed rather than read as a net
+>
+> Two genuinely different trees — primary checkout at `master` vs. the worktree —
+> `_find_offenders` over `resolve_check_universe()`, never through `main()`:
+>
+> | | before | after |
+> |---|---|---|
+> | universe | 168 | **171** (3 new modules, STAGED before measuring) |
+> | offenders | **24** | **5** |
+> | ADDED | — | **0** |
+> | REMOVED | — | **19** |
+>
+> **PREDICTED 24 → 5. LANDED 24 → 5.** Both guard rails held: an INCREASE would
+> have been a finding, and landing BELOW 5 would have been a finding. The 19 are
+> exactly the `RowOutcome` rows over which condition 1 holds — the same 19 the
+> ratified design record cites, re-derived rather than inherited.
+>
+> **✅ NON-VACUITY IS PROVED ON THE REAL TREE, NOT ONLY ON A FIXTURE.** The same
+> instrument REFUSES `reconcile_beads_dir_perms` and
+> `reconcile_beads_metadata_present`, which call `is_dir()` / `is_file()`
+> DIRECTLY. They remain **ORDINARY CONVERSIONS OWED** — still the cheapest
+> unblocked work in this repo, and still held on nothing.
+>
+> **✅ AND THE 3 NEW MODULES ADDED ZERO OFFENDERS.** Every `str | None` internal
+> is kept `_`-prefixed on purpose, so the gate's own implementation does not
+> enlarge the population it measures. A public `union_rejection() -> str | None`
+> would have been +1 under clause (e) — caught in design, not in measurement.
+>
+> ### ⛔⛔ THE ONE JUDGMENT THE MAINTAINER SHOULD RE-READ — **`RowPass` CARRIES A SUB-CASE**
+>
+> Bound 2 exists because "writing one meaning per variant is precisely the
+> exercise that surfaces a variant carrying two." **Running it surfaced one, and
+> it is written into the declaration entry rather than smoothed over.**
+>
+> `RowPass` means "this member does not VIOLATE the row" — and a sub-case,
+> "the row does not APPLY", told apart by a DISTINCT VALUE (a note carrying
+> `EXCLUDED_NOTE_PREFIX`, constructed only via `row_excluded()`).
+>
+> **▶️ WHY I RULED IT DECLARABLE:** v183 sanctions distinct VALUES in terms
+> ("MUST be distinct variants or distinct values") and forbids only a variant
+> "disambiguated by which lane is reading it". That is not the case here, and the
+> codebase states why at the constant's own definition — it lives beside the
+> union rather than privately in `_lanes.py` **precisely so both engines render
+> the same value the same way**. Inapplicability and UNEVALUABILITY are
+> separately distinct: the latter is `RowSkip`, and `row_excluded`'s docstring
+> refuses to spell inapplicability as a skip for a stated reason. The codebase had
+> already made the distinction condition 3 demands.
+>
+> ⚠️ **THE RESIDUAL, so nobody has to re-derive it:** `RowPass`'s own docstring
+> says "satisfies", `row_excluded`'s says "does not APPLY", and
+> `wire_fleet_member.py` / `_adopter_lane.py` read the variant without consulting
+> the prefix at all. **Withdrawing the three TOML lines re-convicts all 19 at the
+> next run** — the decision is cheap to reverse, which is why it was made rather
+> than deferred.
+>
+> ### ⛔ A KNOWN GAP WITH ITS GATE WRITTEN NEXT TO IT — **v183 BOUND 4's FAIL HALF**
+>
+> Bound 4 has two halves. The **COUNT half is implemented** (declared unions per
+> repo and fleet-wide, WITH the functions relieved beside them — the ratified
+> bullet requires both, since "one union reads as negligible while relieving
+> nineteen"). The **FAIL half is NOT**: the central row must ALSO fail when a
+> governed SIBLING consumes a declared union non-exhaustively, because
+> `_declarable_unions` limb (d) computes condition 2 over the LOCAL vantage only.
+>
+> **▶️ THE GATE IT BLOCKS: arming the fleet-wide condition-2 guarantee.** A
+> repo-local green does NOT mean every consumer discriminates exhaustively. It is
+> stated in `_rows_public_api_conformance.py`'s own docstring, not only here.
+>
+> ⚠️ **AND IT COULD NOT HAVE BEEN VERIFIED THIS SESSION ANYWAY** — brief 92:
+> `check-fleet-conformance` is `kind: rate_limited` fleet-wide, so no measurement
+> over the same denominator was possible. Shipping an unverified fleet-GATING
+> change would have been a REMEDIATE-THEN-FLIP violation (v034 carve-out 1).
+>
+> ⚠️ **ONE MORE FIGURE THAT MUST NOT BE MISQUOTED:** the row reports the relief
+> SET (**64** here), which is a SUPERSET of the live offenders removed (**19**) —
+> some of the 64 were already exempt under member 1. Stated in the function's own
+> docstring. Overstating is the safe direction for a bound written to prevent
+> understatement, **but the two are not the same number.**
+>
+> ### ✅ THE UNPUSHED-RED RULE PAID TWICE MORE — KEEP DOING THIS
+>
+> Two Reds were RESET and rebuilt rather than pushed:
+>
+> 1. **The detector's Red**, once 100% coverage showed the test file needed two
+>    more cases. The test bytes must be byte-identical across a pair, so the only
+>    conforming fix was to redo the Red.
+> 2. **⛔ THE WIRING'S RED, AND THIS ONE IS THE LESSON.** Its condition-1 negative
+>    control constructed only ONE variant, so **limb (c) rejected the whole
+>    declaration and the test passed for the wrong reason** — proving nothing
+>    about condition 1, which was the entire point of that test. **A NEGATIVE
+>    CONTROL MUST BREAK EXACTLY ONE THING.** Caught by reading the failure output,
+>    not by the exit code.
+>
+> Both cost a `git reset` instead of a landed defect.
+>
+> ### 📋 WHAT UNIT B SHIPPED
+>
+> | commit | what |
+> |---|---|
+> | `691f5c3` | `SingleMeaningVariant` + loader (bound 2) — NOT in `REQUIRED_ROLE_KEYS` |
+> | `0048933` | `_declarable_unions` (bounds 1+3), `_union_consumption` (condition 2), `_single_meaning_variants` (relief) |
+> | `e4ab527` | wired into `public_api_result_typed`, both ends |
+> | `a8b1c19` | the `RowOutcome` declaration itself, 3 variants |
+> | `f8a1e31` | v183 bound 4's COUNT half on the central row |
+>
+> **THE THREE-MODULE SPLIT WAS FORCED BY LLOC AND IS BETTER FOR IT** — one module
+> hit 263 (hard ceiling 250). The seam is the same one `_io_boundary_calls` /
+> `_no_expected_failure_mode` already draw: what a SITE does, what may be
+> DECLARED, what a declaration RELIEVES.
+>
+> ### ▶️▶️ EXACT NEXT ACTION
+>
+> 1. **Land #1081.** If it reds on `check-fleet-conformance`, read the log and
+>    confirm `kind: rate_limited` (brief 92) before diagnosing the diff.
+> 2. **THE 2 CONVERSIONS ARE STILL OWED AND STILL UNBLOCKED** —
+>    `reconcile_beads_dir_perms` and `reconcile_beads_metadata_present`. They are
+>    now 2 of only 5 remaining, so they are the whole of dev-tooling's actionable
+>    remainder besides the 3 RULED rows.
+> 3. **UNIT C — the fleet re-measure**, owed since unit A landed. ⛔ EXPECT UP OR
+>    FLAT ONLY there; any DECREASE is a finding.
+> 4. **Bound 4's FAIL half**, once the installation is no longer rate-limited.
+>
+> ---
+
 > ## ▶️▶️▶️ COLD START — READ THIS BLOCK FIRST, THEN §"EXACT NEXT ACTION" BELOW IT
 >
 > **Rewritten 2026-08-01, extended through the session that wrapped up
