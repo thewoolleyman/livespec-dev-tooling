@@ -70,25 +70,117 @@
 > roster, enumerate it; if the roster IS the whole population, say so WITH the
 > denominator rather than assuming it.
 >
-> ### ▶️▶️▶️ RESUME HERE: **THE NEXT UNIT IS CONDITION 3'S DECLARATION CARRIER — the last piece of brief 79 item 1**
+> ### ✅ CONDITION 3'S DECLARATION CARRIER IS DESIGNED AND FILED — **livespec #1886 → `14cef8b0`**
 >
-> **DESIGN IT ONCE, CENTRALLY, BEFORE SEVEN REPOS EACH INVENT ONE.** Four copies of
-> a normative rule is `i04f`, cited three times in three days. Condition 3 ("no
-> variant carries two meanings") is SEMANTIC and cannot be mechanized — the spec's
-> own precedent settles the shape, since whether a `None` models a FAILURE or a
-> legitimate ABSENCE is *"a semantic question no AST can answer"*, which is exactly
-> why member 2 is a DECLARED relief with a STRUCTURAL GATE. So condition 3 needs a
-> declaration carrier on the member-2 template, and **the gate is the hard part**:
-> member 2's gate is `returns_x_or_none`, a syntactic property recomputed every
-> run, and the analogue here must bound WHICH unions are declarable rather than
-> letting a consumer declare any union conformant.
+> `SPECIFICATION/proposed_changes/condition-3-declaration-carrier.md`, verified on
+> the FORGE after a fetch, with the two genuinely foreign proposals untouched.
+> **FILED, NOT RATIFIED**, and the implementation half is untouched. Brief 79 item
+> 1 is now discharged in both halves: `h0g9`'s question filed as #1884 →
+> `4756d52a`, this one as #1886 → `14cef8b0`.
 >
-> **⛔ 18 of the 21 remaining `RowOutcome` offenders are blocked on it**, and every
-> sibling repo will meet it.
+> **▶️ THE GATE, WHICH WAS THE WHOLE DIFFICULTY, AND IT NEEDED NO NEW MECHANISM.**
+> Conditions 1 and 2 are exactly the mechanizable part, **so they BECOME the gate
+> and stay COMPUTED; only condition 3 is ever declared.**
+>
+> - **Condition 2 is per-UNION and computed → a LIMB OF THE GATE.** A union whose
+>   consumption drifts to an `isinstance` chain **stops being declarable**; the
+>   declaration is REJECTED rather than carrying it forward.
+> - **Condition 1 is per-FUNCTION and computed → NO declaration reaches it.** The
+>   ratified text already forbids using this clause to avoid converting a leaf.
+>
+> **✅ THE GATE IS NON-VACUOUS, AND THE SAME INSTRUMENT PROVES IT BOTH WAYS.** With
+> a declaration over `RowOutcome` in place **19 of the 21 are relieved and 2 are
+> NOT** — the two total-predicate rows, which call a filesystem primitive directly.
+> A gate that could only relieve would be indistinguishable from a blind one.
+>
+> **⛔ THE CARRIER IS PER-UNION, AND THAT IS MEASURED RATHER THAN PREFERRED.** All
+> 21 offenders return the **SAME** union. A per-function key would hold ONE claim
+> in 19 places and let those places disagree — `i04f` in config form.
+>
+> **THE FOUR BOUNDS, on member 2's template.** (1) a structural gate that
+> RECOMPUTES and stores no claim — module-level closed alias, every operand a
+> first-party type, every variant CONSTRUCTED (a decorative failure variant buys
+> nothing), condition 2 computed to hold; (2) a written meaning **PER VARIANT, not
+> per union** — condition 3 is a claim about every variant, and writing one meaning
+> each is the exercise that surfaces a variant carrying two; (3) staleness that
+> hard-fails **and covers the VARIANT SET**, so adding a variant BREAKS the
+> declaration rather than silently inheriting it; (4) counted in BOTH denominators
+> — declared unions *and* the functions each relieves, because one union reads as
+> negligible while relieving nineteen. **RELAXING-ONLY; absence is the STRICT end;
+> NOT a required role key.**
+>
+> ⚠️ **BOUND 3 IS THE ONE PLACE THE DESIGN GOES BEYOND THE TEMPLATE, and the
+> supervisor's "the gate must RECOMPUTE rather than store a claim" constraint is
+> satisfied on its own terms.** The GATE (bound 1) is wholly computed — nothing
+> about declarability is stored. Bound 3 enumerates the variants to store the
+> **SCOPE** of an irreducibly-semantic claim, never the claim, and diffs that scope
+> against the code every run. Member 2 has no analogue only because `X | None` has
+> a FIXED variant set — there is nothing to enumerate. Here there is, and without
+> it a variant added later acquires a guarantee nobody made about it.
+>
+> ### 🔴🔴 AND A PREMISE IN THE BRIEF IS CORRECTED BY MEASUREMENT — **"every sibling repo will meet it" is FALSE**
+>
+> **THE FLEET'S CLOSED-UNION INVENTORY, measured over all EIGHT repos' first-party
+> universes** (pure AST over module-level union aliases — this figure is
+> verb-set-INDEPENDENT, so `h0g9` does not move it):
+>
+> | repo | closed first-party unions | in an offender list |
+> |---|---|---|
+> | `livespec-dev-tooling` | 4 | **`RowOutcome` — 21 functions** |
+> | `livespec-runtime` | 2 | **`DependsOnEntry` — 1 function** |
+> | `livespec-driver-claude` | 2 | 0 |
+> | `livespec` | 0 | 0 |
+> | `livespec-orchestrator-git-jsonl` | 0 | 0 |
+> | `livespec-driver-codex` | 0 | 0 |
+> | **`livespec-overseer`** | **0** | 0 |
+> | **`livespec-orchestrator-beads-fabro`** | **0** | 0 |
+>
+> **⛔ THE TWO LARGEST REPOS — overseer 190 and beads-fabro 172, together 362 of
+> the fleet 455 — HAVE ZERO MODULE-LEVEL UNION ALIASES AT ALL.** The carrier
+> relieves NOTHING there. Their offenders are plain scalars (`bool` 32 / `int` 30 /
+> `str | None`), which are ORDINARY CONVERSIONS or member-2 declarations, **not
+> condition-3 blocked.**
+>
+> **▶️ SO THE RE-SCOPING, WHICH CHANGES THE PLAN'S SHAPE:** the condition-3 carrier
+> unblocks **19 of dev-tooling's 24 and 1 of runtime's 27, and nothing else in the
+> fleet.** It is still correctly designed ONCE and centrally — `DependsOnEntry` in
+> a SECOND repo is exactly the case that vindicates that — but it is **NOT** the
+> fleet-wide gate the brief took it for, and the seven-repo fan-out is **not**
+> waiting on it. ⚠️ The offender-intersection column is provisional on the
+> defective verb set (`h0g9`); the union INVENTORY column is not.
+>
+> **✅ AND THE BLOCKED COUNT IS 19, NOT 18.** The 18 was correct pre-seam
+> (22 `RowOutcome` − 4 condition-1 fails). The `LocalContext` seam took
+> `assert_worktree_pack` out of the offender list entirely AND moved
+> `reconcile_livespec_jsonc_complete` from FAIL to HOLD: **21 − 2 = 19.**
+> Re-derived, not inherited.
 >
 > **✅ CORE QUESTION 1 IS FILED** (livespec #1884 → `4756d52a`) but **NOT RATIFIED**
 > — see below. Its implementation half stays open on `h0g9` and must be done in
 > BOTH directions.
+>
+> ### ▶️▶️▶️ RESUME HERE: **BOTH CORE QUESTIONS ARE FILED. THE NEXT UNIT IS DEV-TOOLING'S REMAINING 24.**
+>
+> Nothing of this thread is mid-flight beyond the two OPEN proposals (#1884,
+> #1886), which are the maintainer's to ratify and not this thread's to drive.
+> Neither carrier may be IMPLEMENTED before its `/livespec:revise` pass — filing is
+> not ratification, and this thread has recorded that in as many words.
+>
+> **THE 24, WITH EVERY ONE'S DISPOSITION NOW KNOWN:**
+>
+> | count | disposition |
+> |---|---|
+> | **19** | `RowOutcome`, condition 1 HOLDS — held on **#1886** ratification |
+> | **2** | `RowOutcome`, condition 1 FAILS (total predicates) — held on **#1884** |
+> | **3** | population-sweep + `extract_created_worktree_paths` — RULED, not conversions |
+>
+> **⛔ SO THERE ARE ZERO UNBLOCKED CONVERSIONS IN DEV-TOOLING RIGHT NOW**, and that
+> is a measured statement rather than a stall: every one of the 24 has a recorded
+> disposition, and 21 of them are held on a spec pass this thread has already
+> filed. **Do not open any of them as a conversion.** The next actionable work is
+> the SIBLING triage (ascending size, structural triage first) — which the
+> re-scoping above shows is NOT waiting on either proposal — and then the fleet
+> re-measure on the corrected verb set.
 >
 > ### ▶️ (previous) **`3744` IS NO LONGER ONE BLOCKER — 4 OF THE 22 ARE ACTIONABLE NOW, AND 2 OF THEM ARE A LIVE CRASH.**
 >
