@@ -33,12 +33,11 @@
 #
 # PARENT_IMAGE is passed by the build pipeline as the exact python or
 # python-rust image reference just built (digest-pinned, not a floating
-# tag, so the chain is hermetic). It carries NO default: a value-less
-# `ARG` is invisible to `check-fabro-image-pin-lockstep` (which only
-# parses `ARG NAME=value`), and a local `docker build` must pass
-# `--build-arg PARENT_IMAGE=...`. The name is generic rather than
-# `PYTHON_IMAGE` / `PYTHON_RUST_IMAGE` because this one file is built
-# atop two different parents.
+# tag, so the CI chain is hermetic). Its default is the documented python
+# local-development tag, which keeps standalone Dockerfile validation valid;
+# CI always overrides it with the exact python or python-rust digest. The name
+# is generic rather than `PYTHON_IMAGE` / `PYTHON_RUST_IMAGE` because this one
+# file is built atop two different parents.
 #
 # Build (context = REPO ROOT; the adjacent Dockerfile.dockerignore
 # excludes everything — this layer COPYs nothing):
@@ -49,7 +48,7 @@
 # Published as ghcr.io/<owner>/livespec-fabro-sandbox with immutable
 # python-agent-sha-<short> / python-agent-v<X.Y.Z> and
 # python-rust-agent-sha-<short> / python-rust-agent-v<X.Y.Z> tags.
-ARG PARENT_IMAGE
+ARG PARENT_IMAGE=livespec-fabro-sandbox:python-dev
 FROM ${PARENT_IMAGE}
 
 # ---------------------------------------------------------------

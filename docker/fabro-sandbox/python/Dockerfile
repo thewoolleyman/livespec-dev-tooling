@@ -4,10 +4,10 @@
 # the Python-only consumers pull (e.g. livespec-orchestrator-beads-fabro).
 #
 # BASE_IMAGE is passed by the build pipeline as the exact base image
-# reference just built (digest-pinned, not a floating tag, so the chain
-# is hermetic). It carries NO default: a value-less `ARG` is invisible to
-# `check-fabro-image-pin-lockstep` (which only parses `ARG NAME=value`),
-# and a local `docker build` must pass `--build-arg BASE_IMAGE=...`.
+# reference just built (digest-pinned, not a floating tag, so the CI chain
+# is hermetic). Its default is the documented local-development tag, which
+# keeps standalone Dockerfile validation valid; CI always overrides it with
+# the exact digest produced by the preceding layer.
 #
 # NO uv package-cache pre-warm: the previous single-image pre-warm read
 # THIS repo's own lockfile (not each consumer's) and its `paths:` trigger
@@ -23,7 +23,7 @@
 #
 # Published as ghcr.io/<owner>/livespec-fabro-sandbox with immutable
 # python-sha-<short> / python-v<X.Y.Z> tags.
-ARG BASE_IMAGE
+ARG BASE_IMAGE=livespec-fabro-sandbox:base-dev
 FROM ${BASE_IMAGE}
 
 # ---------------------------------------------------------------

@@ -32,9 +32,8 @@ _LAYER_DIR = Path("docker") / "fabro-sandbox"
 # Layer fixture set — the obligated ARG pins are SPLIT across layers
 # exactly as the real image splits them (JUST/LEFTHOOK in base, UV/PYTHON
 # in python). Each layer body carries non-ARG lines (comment, FROM, RUN)
-# and a value-less `ARG BASE_IMAGE`/`ARG PYTHON_IMAGE` (the FROM-chain
-# arg — deliberately NOT matched by the `ARG NAME=value` parser), plus a
-# deliberately un-obligated extra (`NODE_VERSION`, `RUST_VERSION`) with no
+# and safe local-development defaults for the three FROM-chain ARGs, plus
+# deliberately un-obligated extras (`NODE_VERSION`, `RUST_VERSION`) with no
 # repo-side pin source, so both parser arms are exercised.
 _LOCKSTEP_BASE_DOCKERFILE = (
     "# base layer fixture\n"
@@ -58,7 +57,7 @@ _LOCKSTEP_BASE_DOCKERFILE = (
 )
 _LOCKSTEP_PYTHON_DOCKERFILE = (
     "# python layer fixture\n"
-    "ARG BASE_IMAGE\n"
+    "ARG BASE_IMAGE=livespec-fabro-sandbox:base-dev\n"
     "FROM ${BASE_IMAGE}\n"
     "ARG UV_VERSION=0.5.20\n"
     "ARG PYTHON_VERSION=3.10.16\n"
@@ -66,11 +65,17 @@ _LOCKSTEP_PYTHON_DOCKERFILE = (
 )
 _LOCKSTEP_PYTHON_RUST_DOCKERFILE = (
     "# python-rust layer fixture\n"
-    "ARG PYTHON_IMAGE\n"
+    "ARG PYTHON_IMAGE=livespec-fabro-sandbox:python-dev\n"
     "FROM ${PYTHON_IMAGE}\n"
     "ARG RUST_VERSION=1.92.0\n"
 )
+_LOCKSTEP_AGENT_DOCKERFILE = (
+    "# agent layer fixture\n"
+    "ARG PARENT_IMAGE=livespec-fabro-sandbox:python-dev\n"
+    "FROM ${PARENT_IMAGE}\n"
+)
 _LOCKSTEP_LAYERS = {
+    "agent": _LOCKSTEP_AGENT_DOCKERFILE,
     "base": _LOCKSTEP_BASE_DOCKERFILE,
     "python": _LOCKSTEP_PYTHON_DOCKERFILE,
     "python-rust": _LOCKSTEP_PYTHON_RUST_DOCKERFILE,
@@ -138,6 +143,32 @@ def test_accepts_image_pins_in_lockstep(*, tmp_path: Path) -> None:
 
     assert result.returncode == 0, (
         f"lockstep fixture should pass; got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_rejects_drifted_from_chain_default(*, tmp_path: Path) -> None:
+    """A FROM-chain ARG must retain its safe local-development default."""
+    drifted_agent = _LOCKSTEP_AGENT_DOCKERFILE.replace(
+        "ARG PARENT_IMAGE=livespec-fabro-sandbox:python-dev",
+        "ARG PARENT_IMAGE=wrong:latest",
+    )
+    _write_fixture(
+        root=tmp_path,
+        layers={**_LOCKSTEP_LAYERS, "agent": drifted_agent},
+        mise_toml=_LOCKSTEP_MISE_TOML,
+        python_version=_LOCKSTEP_PYTHON_VERSION,
+    )
+
+    result = _run_check(cwd=tmp_path)
+
+    assert result.returncode != 0, (
+        f"FROM-chain default drift should fail; got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    combined = result.stdout + result.stderr
+    assert "PARENT_IMAGE" in combined and "wrong:latest" in combined, (
+        f"diagnostic should name the drifted FROM-chain ARG and value; "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
 
