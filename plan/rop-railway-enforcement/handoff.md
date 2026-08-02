@@ -1,6 +1,153 @@
 # rop-railway-enforcement — arm the check that was never armed, then remediate six repos
 
-> ## 🔻🔻 COLD START — **THE ORDER IS DECIDED: `runtime` FIRST. FAN-IN 54 YIELDS 4; FAN-IN 13 YIELDS 9.**
+> ## 🔻🔻 COLD START — **START HERE. THE ORDER IS DECIDED AND THE FIRST UNIT IS FULLY SPECIFIED: `livespec-runtime`'s `hygiene_scan_context.py` SEAM, YIELD 9 OF 27.**
+>
+> ### 🔻 FIRST FIVE MINUTES
+>
+> **NOTHING IS MID-FLIGHT except the commit that carries this text.** No background job, no
+> sub-agent, no unpushed Red, no open PR of this thread's. dev-tooling master at wrap-up:
+> **`e1e9d8c`** — re-fetch, it moves hourly.
+>
+> 1. **REAP EXACTLY ONE WORKTREE:
+>    `~/.worktrees/livespec-dev-tooling/wrapup-rop-railway-enforcement`** once its PR shows
+>    MERGED — `gh pr list --repo thewoolleyman/livespec-dev-tooling --head
+>    wrapup-rop-railway-enforcement --state all`. Doc-only, auto-merge ARMED, lands
+>    unattended. **If this block is what you are reading, that PR MERGED.** Then
+>    `git -C /data/projects/livespec-dev-tooling merge --ff-only origin/master`.
+> 2. **REAP NOTHING ELSE.** Every other worktree belongs to a PEER lane. Enumerate with
+>    `git worktree list`; never quote a count from this file.
+> 3. `git status --short --branch` — expect clean on `master`; one untracked
+>    `install-livespec-pr-bot.png` is pre-existing and NOT this thread's. ⚠️ A modified
+>    `uv.lock` is REGENERATED noise: `git checkout -- uv.lock` before any `merge --ff-only`,
+>    which REFUSES while the tree is dirty.
+> 4. ⚠️ **A FRESH WORKTREE'S FIRST `.py` COMMIT FAILS
+>    `check-primary-checkout-commit-refuse-hook-installed`** with `worktree_pack_absent`,
+>    because `dev-tooling/` is gitignored and unmaterialized. Fix, one command in the
+>    worktree: `mise exec -- just install-worktree-pack`. **It is NOT your diff.**
+> 5. ⚠️ **BEFORE PUSHING ANY RED→GREEN PAIR:** `git log -1 --format=%B | grep -c
+>    '^TDD-Red-'` must be **5** and `'^TDD-Green-'` must be **2**. `zv78` is READY/P1 and has
+>    fired TWICE — **any `--amend -m` / `-F` at Green destroys the Red trailers and the hook
+>    still exits 0.** Recovery: the Red commit's SHA is in `TDD-Green-Parent-Reflog`.
+> 6. ⚠️ **A `check-fleet-conformance` RED IS PROBABLY THE APP'S RATE LIMIT, NOT YOUR DIFF.**
+>    `gh run view <id> --log-failed | grep -o '"kind": "[a-z_]*"'` → `rate_limited` ⇒ re-run
+>    after the hourly window rolls. **`gh api rate_limit` from your own session reads HEALTHY
+>    while CI is blocked — different bucket.** Log the occurrence on **`mmqe`**.
+> 7. ⚠️ **`/tmp` INODE PRESSURE RECURS** (`8o8e.16`): check `df -i /tmp`, NOT `df -h`. Nine
+>    shallow clones cost ~8.5k inodes. Reclaim ONLY stale regenerable caches; **never**
+>    `/tmp/claude-1000/*`, **never** anything dated today.
+> 8. **⛔ READ THE LEDGER CHILDREN `8o8e.7`–`.13` BEFORE BUDGETING ANY MEMBER.** They are the
+>    authoritative per-repo artifact and each carries current raw/distinct, the four-way cost
+>    model, ranked seams and an AS-OF. **`8o8e.14` is CLOSED at 0.** This file is narrative;
+>    the children are what a planner opens.
+>
+> ### ▶️▶️▶️ EXACT NEXT ACTION — **CONVERT `livespec-runtime`'s `hygiene_scan_context.py` SEAM. NOTHING BLOCKS IT.**
+>
+> **THE TARGET:** `livespec_runtime/hygiene_scan_context.py::git` and `::run_command` — two
+> roots, **TRUE YIELD 9 of runtime's 27 (33%)**, the highest-yield seam in the fleet by
+> share. Then `cross_repo/providers/github.py` (yield 3) in the same member.
+>
+> **WHY THIS MEMBER AND NOT THE BIGGER ONES — the two rationales COINCIDE here, so nothing
+> is traded away.** `livespec-runtime` is BOTH the smallest untouched member (27) AND
+> carries the highest-yield seam. Ascending order and seam-first order name the same member.
+>
+> **THE RITUAL, in order:**
+> 1. Clone runtime at master (`git clone --depth 1`); do NOT touch peer checkouts.
+> 2. **Measure BEFORE**, per §"THE ARMED MEASUREMENT" — `_scan` + the two deltas.
+> 3. Convert the seam. Product `.py` ⇒ **Red-Green-Replay**, Red unpushed until the pair is
+>    measured, impl UNMODIFIED on disk at Red.
+> 4. **Measure AFTER on a genuinely DIFFERENT tree**, and report **ADDED and REMOVED
+>    separately — never the net.** ⛔ **Expect REMOVED 9, ADDED 0.** A REMOVED below 9 means
+>    a root was missed; ADDED above 0 means the conversion introduced one.
+> 5. Update `8o8e.10` with the new figures and an AS-OF.
+>
+> ### 📋 THE DECIDED ORDER, and the reason it must not be re-derived from fan-in
+>
+> 1. **`livespec-runtime` (27)** — `hygiene_scan_context.py` (yield 9), then `github.py` (3).
+> 2. **`livespec-overseer` (92 distinct / 173 raw)** — `claude_sessions.py` (yield **12**,
+>    the best ABSOLUTE lever in the fleet), then `streams.py` / `signals.py` (2 each), tail.
+> 3. **`livespec-orchestrator-beads-fabro` (168)** — LAST, and **⛔ do NOT open it with
+>    `commands/_jsonc.py`**: fan-in 54, **yield 4**. Its 168 is overwhelmingly tail.
+> 4. Then the small remainders: `livespec` (15), `git-jsonl` (17), `driver-codex` (1).
+>    `livespec-dev-tooling`'s last 1 is RULED — **nothing owed there**.
+>
+> ⛔ **ANYONE RANKING BY FAN-IN OPENS WITH `_jsonc.py` AND GETS 4.** The order rests on
+> YIELD, which is rule (v) below.
+>
+> ### 🔧 THE YIELD PROBE, NAMED SO IT CAN BE REBUILT — **the scripts are GONE** (scratchpad, not durable)
+>
+> Everything below was measured with throwaway scripts in a session scratchpad that does not
+> survive a restart. **Rebuild from these descriptions; do not trust a figure you have not
+> re-derived.**
+>
+> - **ROOT SET per offender.** Build `_local_analysis` + `_propagate` from the SHIPPED
+>   `checks/_no_expected_failure_mode`, then from each offender walk `analysis.edges`,
+>   collecting every key that is in `analysis.disqualified` OR absent from `edges`
+>   (an unseen callee is itself a root). ⛔ **A fixpoint has no single cause — collect ALL
+>   roots or the measurement that follows is a masked zero (rule (i)).**
+> - **YIELD of a candidate module** = the count of offenders whose **ENTIRE** root set lies
+>   inside it. **NOT the count that reach it** — that is fan-in, and the two differ by 13×
+>   on `_jsonc.py`.
+> - **MIRROR DEDUP** before counting anything in `overseer`: group universe files by content
+>   `sha256`; an offender in a byte-identical file is counted once per `(basename, function)`.
+> - **CONTROL:** run any harness against `livespec-dev-tooling` first and confirm it
+>   reproduces **universe 171 / offenders 1** and names `cross_member_consumption`.
+>
+> ### 📏 THE FLEET, as of this wrap-up — **402 RAW / 321 DISTINCT**
+>
+> | member | RAW | DIST | decl | misdecl | local | prop |
+> |---|---:|---:|---:|---:|---:|---:|
+> | `livespec-overseer` | 173 | **92** | 16 | 13 | 33 | 30 |
+> | `beads-fabro` | 168 | 168 | 16 | 25 | 66 | 61 |
+> | `livespec-runtime` | 27 | 27 | 0 | 1 | 12 | 14 |
+> | `git-jsonl` | 17 | 17 | 2 | 3 | 7 | 5 |
+> | `livespec` | 15 | 15 | 5 | 0 | 5 | 5 |
+> | `driver-codex` · `dev-tooling` | 1 · 1 | 1 · 1 | 0 | 0 | 0 | 1 · 1 |
+> | `driver-claude` · `console` | 0 | 0 | — | — | — | — |
+> | **FLEET** | **402** | **321** | **39** | **42** | **123** | **117** |
+>
+> **402 = 173+168+27+17+15+1+1. 321 = 402 − 81** (overseer's mirror surplus; every other
+> member measured 0). ⛔ **Say WHICH you are quoting.** Member SHAs are in each ledger child;
+> they move hourly and a part and a total from different days do not add.
+>
+> **THE FOUR UNITS ARE NOT INTERCHANGEABLE:** a **DECLARATION candidate** is `X | None` with
+> NO root (nothing beneath it can fail, so the `None` cannot be a failure — member 2 applies,
+> no code change); a **MIS-DECLARATION RISK** is `X | None` WITH a root (member 2's gate is
+> purely STRUCTURAL and would admit it, but it is a conversion); the rest are conversions.
+>
+> ### 📜 THE FIVE FIRST-CLASS RULES — the durable half
+>
+> - **(i) THE MASKED ZERO.** A blast-radius measurement is valid only when the fix being
+>   measured is the LAST REMAINING ROOT.
+> - **(ii) THE SHIPPED-IMPLEMENTATION RULE.** A hand-rolled second implementation of a
+>   shipped analysis loses, every time, and loses quietly.
+> - **(iii) THE EXPIRING CONTROL.** A control convicted by a rule that later relaxes is a
+>   control with an expiry date nobody wrote down. **A control that asserts FAILURE announces
+>   its own expiry; one that asserts SUCCESS dies silently.** Convict the fixture through the
+>   property the relief PRESUPPOSES — not through something orthogonal, which is what made
+>   the v183 control fragile.
+> - **(iv) A RATIO HIDES A HEAVY HEAD BEHIND A LONG TAIL.** `beads-fabro`'s roots/offenders
+>   is 1.45 while its top root reaches 54.
+> - **(v) FAN-IN IS REACH; YIELD IS BLAST RADIUS.** A seam's value is the offenders whose
+>   ENTIRE root set it contains. **This supersedes (iv)'s remedy** — "quote the top-N reach"
+>   is still a summary statistic that does not answer what repairing the seam relieves.
+>
+> ### 📌 CARRIED FORWARD — open, unblocked, and none of it blocks the next action
+>
+> - **The clause (e) `Any` hole** — `-> Any` defeats the `X | None` refusal; `git-jsonl`'s
+>   `loads_json_optional` is the one live instance, ceiling 18 fleet-wide. Named in the
+>   ratified v186 text as an unguarded residual. **Owed its own measured proposal; do not
+>   bundle it.** ⛔ Its exposure MUST NOT be quoted before it is mechanized.
+> - **`8o8e.19`** — `check_tmux_segment` left the offender list under v186 while
+>   `_check_segment_result` still returns `Success(...)` unconditionally and its `Failure`
+>   arm is unreachable. **A count that MOVES without FIXING.**
+> - **`zv78`** READY/P1, **`mmqe`** accruing rate-limit occurrences (1 verified, 2 reported).
+> - **The hoistable-root class** — a call to a LOCALLY-BOUND name (nested `def`, or a lambda
+>   assigned and called) disqualifies; the repair is a HOIST, not a conversion. Real but
+>   small: **4 roots of 373**. An explanation, not a repricing lever.
+>
+> ---
+>
+> ## 🗄️ (SUPERSEDED AS THE HEADER 2026-08-02 at session end — its FIRST FIVE MINUTES names a worktree already reaped. Kept for the yield table's derivation and the corrections to briefs 106–108.) COLD START — **THE ORDER IS DECIDED: `runtime` FIRST.**
 >
 > ### 🔻 FIRST FIVE MINUTES
 >
