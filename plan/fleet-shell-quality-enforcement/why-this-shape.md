@@ -157,6 +157,32 @@ Whether this belongs in this thread or beside it is an open question. It is
 recorded here because it is the same shape — a fleet convention with no
 mechanical enforcement — and because it was found by the same question.
 
+## Relationship to the livespec thread — DECIDED 2026-08-02
+
+A sibling thread was opened hours after this one, at maintainer direction:
+`livespec` `plan/fleet-shell-discipline/`, epic **`livespec-hhu5pn`**. It carries
+the same triggering defect plus two requirements that post-date this thread —
+forbid interpolated bash in `justfile` recipes, and make set-option discipline
+appropriate per script rather than blanket.
+
+**The maintainer decided the split, and NEITHER thread closes:**
+
+| thread | owns |
+|---|---|
+| `livespec` (`livespec-hhu5pn`) | **the convention and its enforcement design** — what the rule IS, which set-options suit which script, how a deliberate deviation is declared so a gate can tell it from an accident |
+| **this one** (`livespec-dev-tooling`, `42t4az`) | **building and shipping the check** — shellcheck adoption, the severity floor or baseline, the module itself, and its arrival in every consumer by pin bump |
+
+**Why.** `livespec` already fixed the triggering defect once (`bc5c9bce`,
+2026-07-01) and **it never propagated** to the five repos sharing the shape. A
+convention living only in the reference repo's code does not travel; a check that
+ships by pin does. This repo is the only one that can reach the whole fleet that
+way, which is what it owns here.
+
+**The cost:** two live threads on one subject drift unless the boundary is
+written into both. It is written into both and onto both epics. If a piece of
+work does not obviously belong to "what the rule is" or "how the rule ships",
+raise it rather than filing it in whichever thread is closer to hand.
+
 ## Related records, cited read-only
 
 - `livespec-overseer` `overseer-jdo` — the flaky aggregate. Its acceptance bar
