@@ -498,11 +498,20 @@
 > | `expanduser` | reads `HOME` and the passwd database — **ENVIRONMENT access** |
 > | `exists`/`isfile`/`isdir` | touch the filesystem; do not raise |
 >
+> ✅ **CONFIRMED BY THE SUPERVISOR IN BRIEF 100, WHO RE-RAN IT AND RETRACTED.**
 > ⚠️ **CORRECTING BRIEF 99 ON ONE MEASURED DETAIL:** it records that we "both measured"
 > `expanduser` raising `RuntimeError`. **`os.path.expanduser("~nosuchuser")` does NOT
 > raise on the 3.10.16 floor — it returns the path unchanged.** The `RuntimeError`
 > measurement was **`pathlib.Path.expanduser`**, a DIFFERENT function with the same name.
-> The exclusion still stands, for environment access rather than for raising.
+> The exclusion still stands **on the ground that actually holds on the floor: it reads
+> `HOME` and the passwd database — ENVIRONMENT access — not that it raises.**
+>
+> ⛔ **AND THE SHAPE OF THAT SLIP IS THIS THREAD'S OWN CENTRAL FINDING, COMMITTED WHILE
+> WRITING ABOUT IT.** A measurement of `pathlib.Path.expanduser` was asserted about
+> `os.path.expanduser` — **THE NAME IS NOT THE FUNCTION**, which is `h0g9`'s finding and
+> the `group` / `re.Match.group` catch, in a brief about a set that matches on
+> MODULE-QUALIFIED names precisely because bare names are ambiguous. **Quote the
+> module-qualified name of anything you measured, always.**
 >
 > ---
 >
@@ -939,6 +948,68 @@
 >
 > ---
 
+> ## 📜📜 TWO FIRST-CLASS RULES, PROMOTED OUT OF NARRATIVE (brief 100)
+>
+> **Both existed only as paragraphs inside a retraction, which is exactly what
+> `8o8e.17` was filed about: a pattern with N instances that lives in prose is not a
+> rule.** They are stated here as rules, with their instances, so the next reader gets
+> the rule rather than the story.
+>
+> ### 🕳️ (i) THE MASKED-ZERO — **A BLAST-RADIUS MEASUREMENT IS ONLY VALID WHEN THE FIX BEING MEASURED IS THE LAST REMAINING ROOT**
+>
+> > Otherwise **ZERO IS UNINFORMATIVE IN BOTH DIRECTIONS.** It means either *"this fix is
+> > unnecessary"* or *"this fix is necessary but insufficient"*, and **nothing in the
+> > number tells you which.**
+>
+> **▶️ ENUMERATE THE ROOTS FIRST, THEN MEASURE.** For a fixpoint that means running the
+> shipped analysis and listing EVERY disqualification root reachable from the target — not
+> reading the code and naming one.
+>
+> **⛔ THIS IS A NEW MEMBER OF THE BLIND-INSTRUMENT FAMILY AND THE SUBTLEST ONE YET.** The
+> earlier members are enumerated in `supervisor-handoff.md`: (a)–(d) could not produce a
+> negative · (e) could not see the population · (f) wrong runtime · (g) the control broke
+> more than one thing · (h) the arithmetic mixed units. **Every one of those is caught by
+> asking "could this fail?" — and (i) PASSES that test.** The measurement is well-formed,
+> it runs, it CAN produce a negative, and its zero is ambiguous BY CONSTRUCTION. **No
+> control catches it, because the instrument is working perfectly.**
+>
+> ⚠️ **AND IT BIT IN THE SAFE-LOOKING DIRECTION — WHICH IS WHY IT SURVIVED A RETRACTION.**
+> It argued for doing LESS work (*"the premise is refuted, no spec change is owed"*), and
+> nobody audits the direction that removes work. A masked zero that argued for MORE work
+> would have been challenged immediately.
+>
+> **THE INSTANCE, measured:** `classify` has THREE disqualification roots. The `Try`
+> widening alone measured **0 relieved**; the pure-`os.path` members alone measured **0
+> relieved**; BOTH together made it exempt. Either fix measured alone reads as refuted.
+>
+> ### 🔁 THE SHIPPED-IMPLEMENTATION RULE — **A HAND-ROLLED SECOND IMPLEMENTATION OF A SHIPPED ANALYSIS LOSES, EVERY TIME, AND LOSES QUIETLY**
+>
+> > **If the repo already ships code that answers your question, CALL IT.** If you must
+> > write a probe, **state in the probe why the shipped one could not be used** — and the
+> > only good reason is that the question is about a DIFFERENT rule than the one shipped.
+>
+> **FIVE INSTANCES, all in this thread, all silent failures rather than errors:**
+>
+> | # | the hand-rolled thing | what it got wrong |
+> |---|---|---|
+> | 1 | an AST probe for "106 live sites" | over-counted; the shipped analysis disagreed |
+> | 2 | a hand-rolled ledger sweep | wrong population |
+> | 3 | a regex over `ci.yml` | **counted a slug named only in a COMMENT as covered** — said 4 where the shipped parser says 6 |
+> | 4 | subtracting duplicate FILES from convicted FUNCTIONS | reported overseer at 167 distinct sites instead of 103 — a units error, family member (h) |
+> | 5 | reading a `try/except` and concluding the clause chain | named ONE of THREE roots; the shipped `_local_analysis` names all three in one call |
+>
+> **⛔ NOTE WHAT UNITES THEM: none of them ERRORED.** Each returned a plausible number.
+> The only thing that caught 1, 3, 4 and 5 was a SECOND route to the same answer
+> disagreeing — which is why *"re-derive by a second route before quoting"* is not
+> optional politeness.
+>
+> ✅ **THE POSITIVE FORM, which this thread has also proved twice:** the CI-gap audit ran
+> through the shipped `_ci_matrix_parse` and the shipped canonical/world-gate registries,
+> so the auditor and the audited SHARE an implementation and cannot drift; and the mirror
+> audit re-derived the offender count in the SAME pass, so the two numbers share a tree.
+>
+> ---
+>
 > ## 📜 STANDING DOCTRINE AND RULINGS — the durable half, still binding
 >
 > **⚠️ THIS IS NO LONGER THE CURRENT-STATE HEADER; the block at the TOP of this
