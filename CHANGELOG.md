@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.14.5](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.14.4...v1.14.5) (2026-08-02)
+
+
+### Bug Fixes
+
+* **docker:** default chain image args ([98cbd83](https://github.com/thewoolleyman/livespec-dev-tooling/commit/98cbd83101fc0c939636aa6b04f30343b68f2b7a))
+
 ## [1.14.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.14.3...v1.14.4) (2026-08-02)
 
 
