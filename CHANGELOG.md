@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.14.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.14.3...v1.14.4) (2026-08-02)
+
+
+### Bug Fixes
+
+* **ci:** document the Node 24 runner floor ([6b7daae](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6b7daaefc66e8b6ac866ad50f2ad50d40270dde7))
+
 ## [1.14.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.14.2...v1.14.3) (2026-08-02)
 
 
