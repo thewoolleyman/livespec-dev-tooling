@@ -9,6 +9,42 @@
 > METHOD and for the reasoning behind past rulings, never for "what is true
 > now".**
 >
+> ### ⛔⛔ SUPERVISOR BRIEF 79 — MAINTAINER RULING: **FIX ALL 455 ACROSS THE FLEET AND ADOPTERS, THEN ARM**
+>
+> **No per-repo phase-in, no `unarmed_until` deferral, no "arm dev-tooling and
+> re-authorize the rest."** The supervisor's three staged options are WITHDRAWN —
+> all three baked in DEFERRAL, and remediate-everything-then-arm is strictly more
+> conformant with this epic's doctrine: no per-repo opt-in, and no sibling ever
+> goes red. **At 455 across seven repos, redness is not a forcing function; it is
+> a self-inflicted outage.**
+>
+> **THE SEQUENCE, now ONE epic rather than an arming plus a fan-out:**
+> 1. Settle the two CORE spec questions (total-predicate tension → **`h0g9` has a
+>    proposed resolution, below**; condition 3's declaration carrier).
+> 2. Build the `LocalContext` file-read seam — closes 4 here, template for every
+>    sibling with the same absence.
+> 3. Finish `8o8e.9`.
+> 4. Per repo in ASCENDING size, **structural triage FIRST**: driver-claude 1,
+>    driver-codex 2, livespec 15, git-jsonl 18, runtime 27, beads-fabro 172,
+>    overseer 190. `dx8l` consumer wiring lands BEFORE any signature moves.
+> 5. Re-measure the whole fleet, same harness, same denominator.
+> 6. THEN arm, carrying the disposition denominator and the `995m` known gap.
+>
+> **⛔ THE EIGHT PER-REPO CHILDREN ARE RAW CHECK OUTPUT, NOT CONVERSION COUNTS.**
+> overseer 190/140 and beads-fabro 172/186 are exactly the shape where ONE
+> missing seam explains a large cluster. **Triage structurally before converting
+> anything**, and report how much of each count is seam-shaped.
+>
+> **▶️ HARD PREREQUISITE: `livespec-overseer` and `livespec-runtime` have NO
+> `_vendor/returns` and zero first-party importers — 217 of the 455 cannot be
+> converted at all until those two vendor it.** Sequence vendoring first in each.
+> ⚠️ `w25v` (P2): `vendor_update` hardcodes `.claude-plugin/scripts/_vendor/`, so
+> the blessed path may not target every layout — CHECK before assuming.
+>
+> **ADOPTERS ARE IN SCOPE.** If any repo consumes livespec outside the nine-member
+> roster, enumerate it; if the roster IS the whole population, say so WITH the
+> denominator rather than assuming it.
+>
 > ### ▶️▶️▶️ RESUME HERE: **`3744` IS NO LONGER ONE BLOCKER — 4 OF THE 22 ARE ACTIONABLE NOW, AND 2 OF THEM ARE A LIVE CRASH.**
 >
 > **THE NEXT UNIT IS A `file_text` SEAM ON `LocalContext`, AND IT FIXES ALL 4 AT
@@ -23,6 +59,33 @@
 > central side needs `_absent_or_unreadable` to take a SECOND read (the member
 > tree) to disambiguate. A new local seam should be railway-typed from the start
 > rather than inheriting that and then needing its own disambiguator.
+>
+> ### ⛔⛔ AND THE SEAM'S **NAME** IS LOAD-BEARING — `read_text` SILENTLY DEFEATS THE ENTIRE FIX
+>
+> **DO NOT NAME THE SEAM `read_text`.** `ctx` is a PARAMETER, so the receiver is
+> unresolved and only the VERB is left — and `read_text` is IN
+> `_UNRESOLVED_RECEIVER_IO_VERBS`. The row would keep calling an "I/O verb", stay
+> a condition-1 boundary, and **the fix would look done while changing nothing.**
+>
+> **MEASURED, all four spellings, same row body:**
+>
+> ```
+> TODAY (direct primitive)      -> STILL AN I/O BOUNDARY   # control
+> seam named ctx.read_text(...) -> STILL AN I/O BOUNDARY   # <-- the trap
+> seam named ctx.file_text(...) -> not a boundary, condition 1 HOLDS
+> seam named ctx.read_file_text -> not a boundary, condition 1 HOLDS
+> ```
+>
+> **SO `file_text` IS THE RIGHT NAME FOR A MECHANICAL REASON, NOT A STYLISTIC
+> ONE** — and that is WHY the central rows pass condition 1 for free. Any name
+> outside the verb set works; matching `FleetContext` is what makes it a
+> restoration. ⚠️ **This binds every sibling repo's seam too** — the brief makes
+> this the fleet-wide template, and a sibling that names its seam after the
+> primitive it wraps gets a green diff and zero movement.
+>
+> ⚠️ **AND VERIFY THE MOVEMENT, DO NOT ASSUME IT:** re-derive the offender list
+> before and after, from genuinely different trees, and confirm the 4 leave the
+> condition-1-FAIL set. A seam that compiles is not a seam that moved the count.
 >
 > **⛔ THE OTHER 2 OF THE 4 ARE NOT CONVERSIONS** — their only direct primitives
 > are TOTAL predicates, so converting would build an uninhabited failure track.
@@ -154,6 +217,39 @@
 > **▶️ SO ONE SEAM CLOSES ALL 4**, and it is the same shape the central side
 > already shipped — which is also the argument that it is a restoration of an
 > existing design rather than a new abstraction.
+>
+> ### ▶️ CORE QUESTION 1 HAS A PROPOSED RESOLUTION — **`h0g9`, and it fixes the criterion rather than weakening condition 1**
+>
+> The total-predicate tension is NOT a contradiction between condition 1 and
+> member 1. It is a defect in `_UNRESOLVED_RECEIVER_IO_VERBS`, which is a list of
+> **NAMES** when what both clauses turn on is **"can this primitive FAIL?"**
+> Measured, the set errs in BOTH directions:
+>
+> | direction | measured |
+> |---|---|
+> | **too STRICT** | `is_file` / `is_dir` / `exists` are IN the set but SWALLOW `OSError` and return `False` — they convict with nothing to flow |
+> | **too RELAXED** | `open`, `readlink`, `chown`, `truncate`, `owner`, `group`, `is_mount`, `is_block_device` genuinely RAISE and are ABSENT — `Path.open()` is the commonest file read in Python |
+>
+> **▶️ ONE PRINCIPLE FIXES BOTH: partition primitives by whether they RAISE, not
+> by whether they are named.** Total predicates come OUT (so a function whose only
+> direct primitive is one is simply not a boundary — the honest answer, not an
+> exemption); raising primitives go IN. Mechanical, recomputed every run, stores
+> no claim, and it removes the contradiction WITHOUT relaxing condition 1.
+> ⚠️ `samefile`, `glob`, `iterdir`, `rglob` need individual rulings against the
+> interpreter — some raise, some return empty.
+>
+> **✅ THE RELAXED HALF'S EXPOSURE IS LATENT, NOT LIVE — 0 functions in
+> dev-tooling.** Both functions containing an unresolved-receiver `.open()` are
+> already convicted by another call.
+>
+> **⛔ AND A PROBE OF MINE REPORTED "106 LIVE SITES" AND WAS WORTHLESS.** It
+> hand-rolled an AST scan and counted `re.Match.group()` (64) and `ast.walk()`
+> (39) — neither a filesystem primitive, both resolved correctly by `calls_of`
+> through their import bindings. Re-measured with `calls_of` ITSELF: **2 latent,
+> 0 live.** **THIRD TIME ON THIS EPIC A HAND-ROLLED PROBE ERRED WHERE THE SHIPPED
+> ANALYSIS WAS RIGHT** — and this one was mine, written minutes after I recorded
+> the rule against exactly it. ⚠️ The denominator is dev-tooling ALONE; at 455
+> across seven repos the relaxed half may be live elsewhere.
 >
 > ### ⛔ THE OTHER 2 EXPOSE A TENSION IN THE RATIFIED TEXT — a CORE question, recorded nowhere else
 >
@@ -817,6 +913,18 @@
 >   has `file_text`. The sibling local rows that DO pass (they use `ctx.exec`) are
 >   what prove it is the missing seam rather than the module. **Compare the
 >   context objects, not the offending functions.**
+> - **⛔ AND NAME THE SEAM OUTSIDE THE I/O VERB SET.** A seam named after the
+>   primitive it wraps (`ctx.read_text`) is STILL read as I/O, because the
+>   receiver is a parameter and only the verb is left. Measured across four
+>   spellings: `read_text` keeps the row convicted, `file_text` clears it. **The
+>   fix would look done while changing nothing.** Verify by re-deriving the
+>   offender list from two genuinely different trees, never by reading the diff.
+> - **USE THE SHIPPED ANALYSIS, NOT A HAND-ROLLED SCAN — I BROKE THIS RULE
+>   MINUTES AFTER WRITING IT.** My verb-set probe reported "106 live sites"; 64
+>   were `re.Match.group()` and 39 were `ast.walk()`, and `calls_of` resolves both
+>   correctly. Re-measured properly: 2 latent, 0 live. Three probe errors on this
+>   epic now, all in the same shape — **if a number looks alarming, re-derive it
+>   through the shipped predicate before reporting it.**
 > - **A DECLARATION IS A READING OF THE CURRENT CALL GRAPH, NOT A PROPERTY.**
 >   `persisting_bump_pr_number`'s `None` had TWO meanings until the pin-walker
 >   lifted `open_bump_prs_for`'s read failure onto its own track; declaring it
