@@ -6,14 +6,16 @@
 >
 > **NOTHING IS MID-FLIGHT except the commit that carries this text.** No background job, no
 > sub-agent, no unpushed Red, no open PR of this thread's. dev-tooling master at wrap-up:
-> **`e1e9d8c`** — re-fetch, it moves hourly.
+> **`86a7f2a`** or later — re-fetch, it moves hourly.
 >
-> 1. **REAP EXACTLY ONE WORKTREE:
->    `~/.worktrees/livespec-dev-tooling/wrapup-rop-railway-enforcement`** once its PR shows
->    MERGED — `gh pr list --repo thewoolleyman/livespec-dev-tooling --head
->    wrapup-rop-railway-enforcement --state all`. Doc-only, auto-merge ARMED, lands
->    unattended. **If this block is what you are reading, that PR MERGED.** Then
->    `git -C /data/projects/livespec-dev-tooling merge --ff-only origin/master`.
+> 1. ✅ **THERE IS NOTHING OF MINE TO REAP — the previous session reaped its own worktrees
+>    before stopping and verified `git worktree list` held none of them.** Both wrap-up PRs
+>    (#1122, #1123) merged; `git -C /data/projects/livespec-dev-tooling merge --ff-only
+>    origin/master` is all that is owed, and it may already be a no-op.
+>    ⚠️ **This step USED to say "reap `wrapup-rop-railway-enforcement`" and that was false
+>    by the time it landed** — the branch was already gone. Corrected in place rather than
+>    left, because a START-HERE block whose FIRST instruction asserts state that is not
+>    true is this file's own recorded defect, and the next reader pays for it first.
 > 2. **REAP NOTHING ELSE.** Every other worktree belongs to a PEER lane. Enumerate with
 >    `git worktree list`; never quote a count from this file.
 > 3. `git status --short --branch` — expect clean on `master`; one untracked
