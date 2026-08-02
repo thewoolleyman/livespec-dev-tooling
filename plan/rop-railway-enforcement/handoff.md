@@ -1,6 +1,52 @@
 # rop-railway-enforcement — arm the check that was never armed, then remediate six repos
 
-> ## ✅✅ UNIT B IS BUILT AND MEASURED — **PR #1081, 24 → 5, ADDED 0 / REMOVED 19**
+> ## ✅✅ dev-tooling IS REMEDIATED — **offenders 3, ALL RULED, ZERO CONVERSIONS OWED**
+>
+> ### 🔻 COLD START — FIRST FIVE MINUTES, DO THESE
+>
+> **NOTHING IS MID-FLIGHT except the commit that carries this text.** No background
+> job, no sub-agent, no unpushed Red. Four PRs landed and were reaped: **#1081**
+> (unit B), **#1082**, **#1086** (the predicate seam), **#1087**. Master at
+> wrap-up: **`99f88bf`** — re-fetch, it moves hourly.
+>
+> 1. **REAP EXACTLY ONE WORKTREE: `~/.worktrees/livespec-dev-tooling/wrapup-rop-railway-enforcement`**
+>    (branch `wrapup-rop-railway-enforcement`), once its PR **#1090** shows MERGED.
+>    It was doc-only with auto-merge ARMED and 0 failures, so it lands unattended.
+>    **If this block is what you are reading, that PR MERGED** — this text only
+>    reaches master through it. Then
+>    `git -C /data/projects/livespec-dev-tooling merge --ff-only origin/master`.
+> 2. **REAP NOTHING ELSE.** Every other worktree belongs to a PEER lane. Enumerate
+>    with `git worktree list`; never quote a count from this file.
+> 3. `git status --short --branch` — expect clean on `master` (one untracked
+>    `install-livespec-pr-bot.png` is pre-existing and NOT this thread's).
+>    ⚠️ A modified `uv.lock` is REGENERATED noise, not a change: `git checkout --
+>    uv.lock` before any `merge --ff-only`, which REFUSES while the tree is dirty.
+> 4. **Re-derive before trusting any number here.** On merged master at wrap-up:
+>    **universe 171 / offenders 3.** The harness is written out in §"THE ARMED
+>    MEASUREMENT" — `_find_offenders` over `resolve_check_universe()`, NEVER through
+>    `main()` (this repo declares `pure_trees = { not_applicable = … }`, so `main()`
+>    iterates ZERO files and reports 0 regardless of the code).
+>
+> ⚠️ **`/tmp` INODE PRESSURE RECURS AND IT WILL LIE TO YOU** (`8o8e.16`). A run that
+> dies with `sqlite3.OperationalError: unable to open database file`, an xdist
+> `INTERNALERROR`, or a bogus "coverage NN < 100" → check **`df -i /tmp`** (NOT
+> `df -h`). Reclaim ONLY stale regenerable caches; **never** `/tmp/claude-1000/*`
+> and **never** anything dated today.
+>
+> ⚠️ **AND A `check-fleet-conformance` RED IS PROBABLY NOT YOUR DIFF** (brief 92):
+> read the log and confirm `"kind": "rate_limited"` before diagnosing. Two runs at
+> the same SHA with different verdicts is a FLAKE signature, not a defect one.
+>
+> ### 📋 THE STATE, in one place
+>
+> | | |
+> |---|---|
+> | dev-tooling offenders | **3** (universe 171) — `extract_created_worktree_paths`, `run_adopter_rows`, `cross_member_consumption` |
+> | their disposition | **ALL RULED. NOT conversions.** Nothing left to convert here. |
+> | livespec spec | v183 carrier · v184 criterion · v185 retraction — all RATIFIED |
+> | dev-tooling master | `99f88bf` at wrap-up |
+>
+> ### ✅✅ UNIT B WAS BUILT AND MEASURED — **PR #1081, 24 → 5, ADDED 0 / REMOVED 19**
 >
 > **Written 2026-08-02, and it SUPERSEDES the "RESUME HERE: UNIT B" block below.**
 > Everything below this block stays true for METHOD; its "unit B is the next
@@ -228,28 +274,61 @@
 > **EXPECTED: 5 → 3.** Re-derive at both ends on two genuinely different trees;
 > below 3 is a finding.
 >
-> ### ▶️▶️ EXACT NEXT ACTION
+> ### ▶️▶️ EXACT NEXT ACTION — **UNIT C, THE FLEET RE-MEASURE. IT IS UNBLOCKED AND IT IS OWED.**
 >
-> 1. **Land #1086** (the predicate seam). If it reds on `check-fleet-conformance`,
->    read the log and confirm `kind: rate_limited` (brief 92) before diagnosing
->    the diff. #1081 and #1082 are MERGED.
-> 2. **⛔ dev-tooling HAS NOTHING LEFT TO CONVERT.** offenders 3, all RULED. The
->    next unit for THIS repo is ARMING, carrying the disposition denominator, the
->    `995m` known gap, and the `get`/`run`/`group` arming known-gap.
-> 3. **UNIT C — the fleet re-measure**, owed since unit A landed. ⛔ EXPECT UP OR
->    FLAT ONLY there; any DECREASE is a finding.
-> 4. **Bound 4's FAIL half**, once the installation is no longer rate-limited.
+> **⛔ dev-tooling IS DONE CONVERTING. Do not go looking for more here** — the 3
+> remaining are RULED, and re-deriving them is a 30-second confirmation, not a unit.
+>
+> **1. UNIT C — re-measure the whole fleet, same harness, same denominator.** Owed
+> since unit A landed (`e51b37f`) and never taken. The **455 is PROVISIONAL** and so
+> is every child `.7`–`.14`; re-measure with the corrected verb set, then RESTATE all
+> eight.
+> - ⛔ **EXPECT UP OR FLAT ONLY** for unit A's four verbs — that change was
+>   TIGHTENING-only, so any DECREASE is a finding, not a rounding.
+> - ⚠️ **UNIT B AND THE SEAM MOVED ONLY dev-tooling** — the `single_meaning_variants`
+>   key is RELAXING-only and NO sibling declares it, and the `LocalContext` seams are
+>   dev-tooling-local. A sibling whose count moves on THIS pass moved for unit A's
+>   verbs or for its own commits, never for unit B. Do not attribute it to unit B.
+> - The fleet union INVENTORY (measured, verb-set-INDEPENDENT) is below: the carrier
+>   relieves **nothing** outside dev-tooling and runtime's one `DependsOnEntry`.
+>
+> **2. THEN the per-repo triage, ASCENDING size, STRUCTURAL TRIAGE FIRST** —
+> driver-claude 1, driver-codex 2, livespec 15, git-jsonl 18, runtime 27,
+> beads-fabro 172, overseer 190. ⛔ Those are RAW CHECK OUTPUT, not conversion
+> counts; report how much of each is seam-shaped BEFORE converting anything. The
+> `dx8l` consumer wiring lands BEFORE any signature moves, and the vendoring
+> prerequisite is THREE repos with TWO layouts (`w25v`) — read each repo's layout.
+>
+> **▶️ AND dev-tooling HAS ALREADY PAID THE TEMPLATE FOR THEM.** Both `LocalContext`
+> seams — `file_text` (READ) and `dir_present`/`file_present` (PREDICATE) — are the
+> shape a sibling with the same absence needs, and BOTH carry the same trap:
+> **a seam named after the primitive it wraps changes NOTHING**, because the receiver
+> is a parameter and only the VERB is left. That is now a mutation-proven assertion
+> in `test_io_boundary_failable_verbs.py`, generic over every public `LocalContext`
+> method — **port the assertion with the seam.**
+>
+> **3. ARMING dev-tooling** — the denominator statement MUST name the `995m` known
+> gap AND the `get`/`run`/`group` failability gap (§"AN ARMING-TIME KNOWN GAP").
+> ⚠️ Arming is a FLEET decision under brief 79 (remediate-everything-THEN-arm), so
+> it follows unit C and the fan-out rather than preceding them.
+>
+> **4. Bound 4's FAIL half** — INFRASTRUCTURE-BLOCKED, not unfinished (brief 93
+> keeps those distinct). It needs the installation to stop returning
+> `kind: rate_limited`. Only then is it yours to clear.
 >
 > ---
 
-> ## ▶️▶️▶️ COLD START — READ THIS BLOCK FIRST, THEN §"EXACT NEXT ACTION" BELOW IT
+> ## 📜 STANDING DOCTRINE AND RULINGS — the durable half, still binding
 >
-> **Rewritten 2026-08-01, extended through the session that wrapped up
-> 2026-08-02. This block is the CURRENT-STATE header. The older
-> `## ▶️ START HERE` section further down is a HISTORICAL record: its live-state
-> claims are dated 2026-07-31 and are SUPERSEDED by this block. Read it for
-> METHOD and for the reasoning behind past rulings, never for "what is true
-> now".**
+> **⚠️ THIS IS NO LONGER THE CURRENT-STATE HEADER; the block at the TOP of this
+> file is.** Everything below here is binding as DOCTRINE — brief 79's
+> remediate-then-arm ruling, the measured fleet inventory, the ratified spec
+> revisions, the `group` catch, the arming known-gap — but its "next unit" and
+> live-state claims are dated and SUPERSEDED. Read it for what is RULED and for
+> the reasoning behind past decisions, never for "what to do now".
+>
+> The older `## ▶️ START HERE` section further down is older still: its live-state
+> claims are dated 2026-07-31. Same rule applies, one layer deeper.
 >
 > ### ⛔⛔ SUPERVISOR BRIEF 79 — MAINTAINER RULING: **FIX ALL 455 ACROSS THE FLEET AND ADOPTERS, THEN ARM**
 >
@@ -509,9 +588,15 @@
 > known-gap statement; silence is not an option.* A reader of the armed check
 > would otherwise believe it enforces failability in full.
 >
-> ### ▶️▶️▶️ RESUME HERE: **UNIT B — THE CONDITION-3 CARRIER. IT IS THE NEXT UNIT AND IT IS UNBLOCKED.**
+> ### ⛔ (SUPERSEDED — UNIT B IS BUILT AND MERGED, #1081) RESUME HERE: UNIT B
 >
-> #### 🔻 SESSION WRAP-UP 2026-08-02 — FIRST FIVE MINUTES, DO THESE
+> **Everything from here to the end of this sub-block is HISTORICAL.** Its
+> first-five-minutes list names PRs that merged and worktrees that were reaped;
+> following it will send you looking for state that no longer exists. The LIVE
+> cold start is the block at the TOP of this file. Read this for the DESIGN
+> reasoning behind unit B, never for "what to do now".
+>
+> #### 🔻 (historical) SESSION WRAP-UP 2026-08-02 — FIRST FIVE MINUTES
 >
 > **NO background job, NO sub-agent, NO unpushed Red.** Nothing is half-done.
 >
