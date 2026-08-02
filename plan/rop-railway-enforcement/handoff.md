@@ -993,6 +993,63 @@
 > unreachable. If the widening ratifies, that function leaves the offender list while the
 > decorative railway stays. **Do not let the count movement be read as closure.**
 >
+> ### ✅✅ BRIEF 104'S HAZARD IS MEASURED AND IT COSTS NOTHING — **ZERO OF THE 8 CATCH BROADLY**
+>
+> **THE HAZARD, and it was real:** the probe's discharge predicate accepted ANY handler,
+> so `except Exception: return None` would have discharged. **The spec binds ruff `BLE`,
+> and a rule reading "a `try/except` that returns a defined value does not propagate"
+> exempts, by its own terms, exactly the population BLE exists to convict** — quietly,
+> because a blind except returning a default IS "a defined value for that input class"
+> under a loose reading.
+>
+> **MEASURED, LOOSE vs NARROW on the same trees** (NARROW refuses a bare `except:`,
+> `except Exception` and `except BaseException`):
+>
+> | repo | relieved ONLY by the loose predicate (i.e. by a BLIND except) | broad discharging `try` nodes present |
+> |---|---:|---:|
+> | `livespec-dev-tooling` | **0** | 6 |
+> | `livespec-orchestrator-beads-fabro` | **0** | 4 |
+> | `driver-codex` · `git-jsonl` · `overseer` · `livespec` · `runtime` | **0** each | 2 each |
+> | `livespec-driver-claude` | **0** | 0 |
+>
+> **▶️ SO THE RULE CAN BE WRITTEN NARROW AT NO COST, AND MUST BE.** All 8 reliefs come
+> from handlers naming SPECIFIC exception types. ⚠️ **The hazard is not hypothetical —
+> ~20 broad discharging constructs exist across the fleet** — they simply relieve nothing
+> today. Writing the rule narrow forecloses the BLE-swallowing failure mode for free;
+> writing it loose would buy nothing and cost the guardrail.
+>
+> ### 🔬🔬 AND ONE OF THE TWO PROBES WAS CONTAMINATED — THE CONTROL IS WHAT TOLD THEM APART
+>
+> `narrow_probe` patched `Path.read_text` GLOBALLY, so `_find_offenders` saw
+> `ast.unparse`d text too. **Its absolute counts are meaningless: dev-tooling read
+> `shipped=3, loose=20` — an INCREASE, which a relaxing change cannot produce.**
+>
+> **▶️ THE IDENTITY-TRANSFORM CONTROL SETTLED BOTH DESIGNS IN TWO RUNS:**
+>
+> ```
+> read_text patched globally, IDENTITY transform   dev-tooling 3 -> 21   CONTAMINATED
+> transformed text to the EXEMPT SET only          dev-tooling 3 ->  3   CLEAN
+> ```
+>
+> **✅ SO BRIEF 103's NUMBERS STAND** — `widened_probe` feeds transformed text only to
+> `functions_without_expected_failure_mode` (pure AST, blind to comments) and runs
+> `_find_offenders` on ORIGINAL sources. **And `narrow_probe`'s narrow-vs-loose DIFFERENCE
+> is still valid**, because both arms carry identical contamination — the difference is
+> the answer, the absolutes are not.
+>
+> ⛔ **THE RULE: WHEN A PROBE REWRITES SOURCE, RUN IT ONCE WITH AN IDENTITY REWRITE
+> FIRST.** Any movement is pure contamination and it is measurable in one run. An
+> `ast.unparse` round-trip is NOT semantically neutral to this check — it strips comments,
+> and parts of this analysis read them.
+>
+> ### ⛔ AND A COUNT MOVING IS NOT A DEFECT CLOSING — the inverse of this epic's founding defect
+>
+> `check_tmux_segment` leaves the offender list under this widening while its dead
+> `Failure` arm survives untouched (`8o8e.19`). **The founding defect was a check that
+> REPORTS without SCANNING; this is a count that MOVES without FIXING. They are the same
+> mistake seen from opposite ends**, and both are invisible to anyone reading only the
+> number.
+>
 > ### ▶️ NEXT: FILE IT, under brief 98's framing
 >
 > **LEAD WITH THE SHAPE, NOT THE COUNT** (brief 104): *"every relieved function is a
