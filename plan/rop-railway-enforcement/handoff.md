@@ -995,11 +995,46 @@
 >    segment). NOT added: that form appears in **ZERO** first-party files across all eight
 >    code-carrying repos while `import os` appears in **141**. Seven inert entries would
 >    enlarge a set that reads as coverage while covering nothing. Test-pinned.
-> 2. **Bare `import os.path` leaves the receiver UNRESOLVED**, so `os.path.realpath(...)`
->    under that form escapes conviction entirely and only the verb set catches anything.
->    **That is a pre-existing RELAXATION this change neither creates nor closes**, and it
->    is live in exactly 1 file fleet-wide (in `livespec`). Recorded so it is not
->    rediscovered as new.
+> 2. **Bare `import os.path` leaves the receiver UNRESOLVED**, so under that form only
+>    the VERB set catches anything. ⛔ **THIS IS THE FALSE-NEGATIVE ONE AND IT IS
+>    ASYMMETRIC TO GAP 1** — a failure to RELIEVE costs a visible false positive; a
+>    failure to CONVICT costs a hole. So it is measured with a denominator rather than
+>    noted, per the `qndn` precedent.
+>
+> **📏 EXPOSURE: ZERO FIRST-PARTY FILES, FLEET-WIDE.** Every bare `import os.path` in the
+> fleet is in `_vendor/structlog/tracebacks.py` (livespec and dev-tooling) — VENDORED
+> third-party code, and verified excluded: dev-tooling's 171-file universe contains **0**
+> `_vendor` entries. ⚠️ **CORRECTING MY OWN EARLIER FIGURE:** I reported "1 file in
+> livespec", which counted TRACKED files including `_vendor`. Universe-scoped it is
+> **zero**. Quote the universe, not `git ls-files`.
+>
+> **✅ AND THE CHANGE LEFT THE HOLE EXACTLY AS FOUND — MEASURED, not assumed**, old
+> criterion vs new on identical fixtures:
+>
+> | member | `import os` old → new | bare `import os.path` old → new |
+> |---|---|---|
+> | `realpath` | True → True | **False → False** |
+> | `abspath` | True → True | **False → False** |
+> | `getsize` | True → True | **False → False** |
+> | `exists` | True → True | **True → True** |
+> | `normpath` | True → **False** ← the intended change | False → False |
+>
+> **The bare-import column is IDENTICAL in every row.** Structurally it must be: under
+> that form the receiver never resolves, so `_PURE_IO_MODULE_MEMBERS` is never consulted
+> — but the claim is a measurement, because *"we didn't make it worse"* is the softest
+> sentence in this epic's vocabulary.
+>
+> **▶️ THE HOLE'S EXACT SHAPE, so a later reader does not overstate it:** under bare
+> `import os.path`, `exists` IS still convicted — it falls to the unresolved-receiver
+> VERB branch and `exists` is in that set. What escapes is precisely **the failable
+> `os.path` members that are NOT in the verb set**: `realpath`, `abspath`, `getsize`,
+> `relpath`, `isfile`, `isdir` (the set carries `is_file`/`is_dir`, not the `os.path`
+> spellings).
+>
+> **⛔ SO IT IS A LATENT NOTE, NOT AN ARMING DENOMINATOR LINE.** Zero exposure means it
+> does not belong beside `995m`, the `get`/`run`/`group` trio, or 432/338 — those are
+> live. **RE-CHECK TRIGGER:** the first first-party file to adopt bare `import os.path`
+> makes it live, and the check that finds it is one `git grep` over the universe.
 >
 > ---
 >
