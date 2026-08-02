@@ -407,6 +407,75 @@
 > matrix targets plus `just <slug>` run lines. **Third instance in three days of a
 > hand-rolled second implementation losing to the shipped one.**
 >
+> ### ⛔⛔ THE FIRST TWO REPOS ARE TRIAGED, AND **NEITHER IS THE CONVERSION THE COUNT IMPLIED**
+>
+> Brief 97 asked for the per-repo RITUAL on the two smallest. **Structural triage first
+> paid on the very first repo, which is the whole argument for the rule.**
+>
+> **THE RITUAL, established here and repeated five more times:** measure the base ·
+> triage STRUCTURALLY (why is each offender convicted — read the clause chain, do not
+> infer it) · check what the repo's own tests PIN · only then convert · re-measure at
+> both ends · record with basis.
+>
+> #### `livespec-driver-claude` (1) — **NOT A CONVERSION. IT IS THE `h0g9`/v185 FAMILY.**
+>
+> `classify(*, command, depth) -> bool` in `.claude-plugin/hooks/_tmux_hazard.py` is
+> convicted because `_segment_is_hazard` holds a `try/except ValueError` around
+> `shlex.split` → the `Raise | Try` clause disqualifies it → **clause (d)'s fixpoint
+> propagates to `classify`** → member 1 does not exempt → a public `bool` return convicts.
+>
+> **⛔ BUT `classify` IS TOTAL AND ITS TOTALITY IS TEST-PINNED IN BOTH DIRECTIONS** —
+> `test_tmux_hazard.py` runs `X1 "tmux kill-server '"` (unbalanced quote, hazard) → MUST
+> DENY and `F29 "echo 'unterminated"` (unbalanced quote, benign) → MUST ALLOW, both
+> THROUGH `classify`. So:
+>
+> - unparseable → `Failure` → deny **BREAKS F29**, a semantic change to a security hook's
+>   tested false-positive behavior;
+> - a `Result` whose failure track is never constructed is **UNINHABITED**, which member
+>   1's rationale forbids and v183 bound 1 refuses by name;
+> - moving the fallback to the caller changes `classify`'s own pinned contract.
+>
+> **▶️ SURFACED, NOT SELF-RESOLVED.** Whether the rule intends to convict a function that
+> handles its only internal failure IN-BAND by design, with tests pinning both
+> directions, is a CORE spec question — the same tension v184 settled for total predicates
+> at an I/O boundary, arriving here through clause (d) instead of condition 1.
+>
+> ⚠️ **AND `w25v` IS INCOMPLETE FOR THIS REPO.** driver-claude vendors at the repo ROOT,
+> but the SHIPPED hooks **cannot use it**: the installer copies only `.claude-plugin/`
+> with no venv, so a module-scope `from returns…` raises `ModuleNotFoundError` BEFORE
+> `main()` can fail open. They import a stdlib-only shim,
+> `.claude-plugin/hooks/_result.py`. **Any conversion here uses `_result`, never
+> `returns`.**
+>
+> #### `livespec-driver-codex` (2) — **BOTH ARE "THE RAIL EXISTS AND STOPS AT THE PUBLIC BOUNDARY"**
+>
+> | offender | private rail | public wrapper |
+> |---|---|---|
+> | `_footgun_primary_checkout.py:91 is_primary_checkout` | `_is_primary_checkout_result -> Result[bool, Exception]` | collapses `Failure -> False` |
+> | `_footgun_tmux.py:288 check_tmux_segment` | `_check_segment_result -> Result[tuple[bool, str], Exception]` | collapses `Failure -> (True, …)` |
+>
+> **The railway is already there; the public function throws it away one line later.** The
+> fix is to STOP COLLAPSING, which is smaller than writing a rail from scratch. **Name the
+> pattern — the fan-out will meet it again.**
+>
+> **🔴 AND ONE OF THE TWO RAILS IS DECORATIVE — `_check_segment_result` CAN NEVER FAIL:**
+> its whole body is `return Success(_command_is_hazard(...))`, and `_command_is_hazard`
+> returns `tuple[bool, str]`. **The failure track is UNINHABITED, so
+> `check_tmux_segment`'s `isinstance(result, Failure)` branch is DEAD CODE.**
+>
+> ⚠️ **NOT A LIVE SECURITY HOLE — do not inflate it.** The fail-closed policy is
+> implemented IN-BAND at `_footgun_tmux.py:256/261/276` and IS exercised
+> (`test_footgun_tmux.py:185/212`). What is dead is the OUTER handler, not the policy.
+> **What it IS: this epic's founding shape in miniature** — a `Result` that reads as
+> railway compliance and carries nothing, in product code, inside a security hook, in a
+> repo this epic is about to certify. ⛔ **A conversion that only re-types
+> `check_tmux_segment` while leaving the track uninhabited would move the count and change
+> nothing.** Decide INHABIT-or-DELETE before writing the Red.
+>
+> **✅ AND `8o8e.15` IS THE SAME FIX AS `is_primary_checkout`'s** — that rail IS inhabited,
+> and the collapsed `False` is also CACHED, so the failure track is unreachable after the
+> first call.
+>
 > ### ▶️▶️ EXACT NEXT ACTION — **THE PER-REPO FAN-OUT. UNIT C IS DONE AND NOTHING BLOCKS IT.**
 >
 > **⛔ dev-tooling IS DONE CONVERTING** — 3 offenders, all RULED. Re-deriving them is a
