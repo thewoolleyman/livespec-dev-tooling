@@ -1,8 +1,142 @@
 # rop-railway-enforcement — arm the check that was never armed, then remediate six repos
 
-> ## ✅✅ UNIT C IS MEASURED — **FLEET 432 RAW / 338 DISTINCT, AND UNIT A MOVED THE FLEET BY ZERO**
+> ## 🔻🔻 COLD START — **FLEET 411. THE NEXT ACTION IS FILING ONE SPEC PROPOSAL, AND IT IS FULLY PREPARED.**
 >
-> ### 🔻 COLD START — FIRST FIVE MINUTES, DO THESE
+> ### 🔻 FIRST FIVE MINUTES
+>
+> **NOTHING IS MID-FLIGHT except the commit that carries this text.** No background job,
+> no sub-agent, no unpushed Red, no open PR of this thread's. Master at wrap-up:
+> **`e461b3d`** — re-fetch, it moves hourly.
+>
+> 1. **REAP EXACTLY ONE WORKTREE:
+>    `~/.worktrees/livespec-dev-tooling/wrapup-rop-railway-enforcement`** once its PR
+>    shows MERGED — `gh pr list --repo thewoolleyman/livespec-dev-tooling --head
+>    wrapup-rop-railway-enforcement --state all`. Doc-only, auto-merge ARMED, lands
+>    unattended. **If this block is what you are reading, that PR MERGED.** Then
+>    `git -C /data/projects/livespec-dev-tooling merge --ff-only origin/master`.
+> 2. **REAP NOTHING ELSE.** Every other worktree belongs to a PEER lane. Enumerate with
+>    `git worktree list`; never quote a count from this file.
+> 3. `git status --short --branch` — expect clean on `master`; one untracked
+>    `install-livespec-pr-bot.png` is pre-existing and NOT this thread's. ⚠️ A modified
+>    `uv.lock` is REGENERATED noise: `git checkout -- uv.lock` before any `merge
+>    --ff-only`, which REFUSES while the tree is dirty.
+> 4. **Re-derive before trusting any number here.** On merged master at wrap-up:
+>    **dev-tooling universe 171 / offenders 3**; **fleet 411**. Harness: §"THE ARMED
+>    MEASUREMENT" — `_scan` plus exactly TWO deltas, never `main()` (this repo declares
+>    `pure_trees = not_applicable`, so `main()` iterates ZERO files and reports 0).
+>
+> ⚠️ **THE PROBE SCRIPTS FROM THE PREVIOUS SESSION ARE GONE** — they lived in a scratchpad
+> that does not survive a restart. Everything needed to rebuild them is in §"THE ARMED
+> MEASUREMENT" and in the block below; **rebuild from those, and run the identity control
+> before trusting any rewriting probe.**
+>
+> ⚠️ **`/tmp` INODE PRESSURE RECURS AND IT WILL LIE TO YOU** (`8o8e.16`). A run that dies
+> with `sqlite3.OperationalError: unable to open database file`, an xdist `INTERNALERROR`,
+> or a bogus "coverage NN < 100" → check **`df -i /tmp`** (NOT `df -h`). Reclaim ONLY
+> stale regenerable caches; **never** `/tmp/claude-1000/*`, **never** anything dated
+> today. Nine shallow clones cost ~8.5k inodes.
+>
+> ⚠️ **A `check-fleet-conformance` RED IS PROBABLY NOT YOUR DIFF** (brief 92): read the
+> log and confirm `"kind": "rate_limited"` before diagnosing.
+>
+> ### 📋 THE STATE, in one place
+>
+> | | |
+> |---|---|
+> | **fleet** | **411** raw · **408** less dev-tooling's 3 RULED · **317** less overseer's 91 enforced mirror copies |
+> | per repo | dev-tooling **3** · driver-claude **1** · driver-codex **2** · livespec **15** · git-jsonl **18** · runtime **27** · overseer **173** (= 82 sites + 91 mirrors) · beads-fabro **172** · console **0** |
+> | dev-tooling's 3 | `extract_created_worktree_paths` · `run_adopter_rows` · `cross_member_consumption` — **ALL RULED, none a conversion** |
+> | dev-tooling master | `e461b3d` at wrap-up |
+> | livespec spec | v183 carrier · v184 criterion · v185 retraction — all RATIFIED. **Nothing of this thread is pending there.** |
+>
+> ### ▶️▶️▶️ EXACT NEXT ACTION — **FILE THE `Try`-WIDENING PROPOSAL IN `livespec`. EVERYTHING IT NEEDS IS BELOW.**
+>
+> **It is not blocked, not waiting on anyone, and the measurement that justifies it is
+> already taken.** Run `/livespec:propose-change` against the livespec spec, then
+> `/livespec:revise` — both under standing authority (brief 98). ⛔ **DO NOT CONVERT
+> `livespec-driver-claude` OR `check_tmux_segment` UNTIL IT RATIFIES** — converting first
+> implements an unratified rule, the same constraint that governed `h0g9`.
+>
+> **THE RULE TO PROPOSE, in one sentence:** *a discharging `try/except` — **NARROW
+> handlers only**, naming specific exception types — inside a function whose totality is
+> otherwise proven should **not PROPAGATE** under v179 member 1's clause (d).*
+>
+> **⛔ FRAME IT AS A WIDENING OF WHAT COUNTS AS ON-THE-RAILWAY, NEVER AS A FIFTH
+> EXEMPTION.** §"ROP composition" declares its exemption set EXHAUSTIVE; framing decides
+> ratifiability, and this thread has learned that twice.
+>
+> **▶️ LEAD WITH THE SHAPE, NOT THE COUNT.** *"Relieves 8"* is a convenience argument and
+> this thread rejects those. The principle is: **every relieved function is a
+> PARSE-OR-CLASSIFY function that catches a parse error and returns a defined value for
+> that input class** — `parse_json`, `parse_float`, `parse_iso_datetime`,
+> `loads_json_optional`, `classify`, `check_tmux_segment`,
+> `extract_created_worktree_paths` — **and `overseer` and `livespec` are relieved not at
+> all.** A coherent semantic class rather than a scattering is what separates a WIDENING
+> from a SOFTENING, and that distinction decided v181.
+>
+> **▶️ DO NOT BURY THE HAND-RULING AGREEMENT — it is the only argument about whether the
+> rule is RIGHT rather than what it DOES.** `extract_created_worktree_paths` was ruled BY
+> HAND as not-a-conversion by this thread, earlier and independently, for its own reasons.
+> **The mechanical rule reproduces that judgment without being told.**
+>
+> **THE MEASURED BLAST RADIUS, to carry into the proposal:**
+>
+> | repo | before | after |
+> |---|---:|---:|
+> | `livespec-orchestrator-beads-fabro` | 172 | 169 |
+> | `livespec-dev-tooling` | 3 | 1 |
+> | `livespec-orchestrator-git-jsonl` | 18 | 17 |
+> | `livespec-driver-codex` | 2 | 1 |
+> | `livespec-driver-claude` | 1 | **0** |
+> | `overseer` · `livespec` · `runtime` | — | unchanged |
+> | **fleet** | **411** | **403** |
+>
+> **⛔ AND THE NARROW REQUIREMENT IS LOAD-BEARING, MEASURED, AND FREE.** A rule saying
+> merely "a `try/except` that returns a defined value does not propagate" exempts by its
+> own terms exactly the population ruff `BLE` exists to convict. Measured loose-vs-narrow
+> on every repo: **ZERO reliefs anywhere come from a blind except; all 8 name specific
+> types.** ~20 broad discharging constructs DO exist fleet-wide and relieve nothing only
+> by accident of where they sit. Write it narrow: it costs nothing and forecloses the
+> BLE-swallowing failure mode.
+>
+> **⚠️ IF `/livespec:revise` HITS THE INTENT-PRESERVATION GATE** (resolving a conflict
+> between two ratified statements with no cited design record), **APPLY THE BRIEF-84
+> PRECEDENT — do not re-escalate.** Acknowledge the contradiction EXPLICITLY in the
+> revision record rather than manufacturing a citation, and keep the provenance paragraph
+> for the NEW intent SEPARATE from the acknowledgment about the OLD.
+>
+> ### 🔧 THE THREE PROBES, NAMED SO THEY CAN BE REBUILT (the scripts are gone)
+>
+> 1. **ROOT ENUMERATOR** — build `_local_analysis(trees, modules, index, io_trees)` and
+>    `_propagate` from `checks/_no_expected_failure_mode`, then walk `analysis.edges` from
+>    the target, collecting every key in `analysis.disqualified`. For each, split the
+>    cause: `Raise`/`Try` in the body vs `calls_of(...).disqualifies`. ⛔ **A fixpoint has
+>    no single cause — enumerate ALL roots or the measurement that follows is a masked
+>    zero (rule (i)).**
+> 2. **WIDENING PROBE** — an `ast.NodeTransformer` that replaces a DISCHARGING `Try` with
+>    `node.body + node.orelse + every handler body` (keeping all call edges), then feeds
+>    the unparsed text **ONLY** to `functions_without_expected_failure_mode`, running
+>    `_find_offenders` on the **ORIGINAL** sources. DISCHARGING = ≥1 handler, no
+>    `finalbody`, every handler ends in `return`, no `raise` inside, and every handler
+>    names specific types (not `Exception`/`BaseException`/bare).
+> 3. ⛔ **THE IDENTITY CONTROL, AND IT IS NOT OPTIONAL.** Run probe 2's design with an
+>    IDENTITY rewrite first: it must move **NOTHING** (measured: dev-tooling 3 → 3).
+>    Patching `Path.read_text` GLOBALLY instead moves dev-tooling **3 → 21** with no
+>    widening at all — `ast.unparse` strips comments and parts of this analysis read them.
+>
+> ### ▶️ THEN, AND NOTHING BLOCKS IT
+>
+> **`livespec` (15) and `git-jsonl` (18), structural triage FIRST, each finding SCOPE-
+> TAGGED.** ⛔ **275 of the remaining 411 sit in `overseer` and `beads-fabro`, both
+> untouched** — so the small repos' real product is the SEAM INVENTORY, not their own
+> counts. The running list is in §"SCOPE TAGS". Then the two blocked small repos once the
+> spec ratifies, then the two big ones, then ARMING with the denominator list.
+>
+> ---
+>
+> ## ✅✅ (superseded as the header; kept for its measurement) UNIT C — **FLEET 432 RAW / 338 DISTINCT, AND UNIT A MOVED THE FLEET BY ZERO**
+>
+> ### 🗄️ (HISTORICAL — DO NOT ACT ON THIS LIST. The live cold start is the block at the TOP of this file; `unit-c-fleet-remeasure` was reaped long ago.) COLD START, as it stood at unit C
 >
 > **NOTHING IS MID-FLIGHT except the commit that carries this text.** No background
 > job, no sub-agent, no unpushed Red. Master at wrap-up: **`3a7426b`** — re-fetch, it
