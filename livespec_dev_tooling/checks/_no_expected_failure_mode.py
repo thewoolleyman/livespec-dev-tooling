@@ -9,7 +9,7 @@ Member 1 decides that MECHANICALLY. A public function has no expected failure
 mode when a purely syntactic analysis shows ALL of:
 
 - (a) no `raise` statement;
-- (b) no `try` statement;
+- (b) no `try` statement OTHER THAN a DISCHARGING NARROW `try` (livespec v186);
 - (c) no call to an I/O boundary — a module under the consumer's declared
   `io_trees`, or the filesystem / process / network / environment surface;
 - (d) every FIRST-PARTY function it calls also satisfies (a)-(d), computed as a
@@ -30,6 +30,33 @@ caller that handles the `None`. Propagating (e) would disqualify
 `denotes_same_release` for calling `tag_version_component`, whose `None` is a
 declared legitimate absence (member 2). Reading "(a)-(d)" as "(a)-(e)" is the
 easiest way to implement this clause wrong.
+
+## CLAUSE (b) COUNTS A DISCHARGING NARROW `try` AS NOTHING (livespec v186)
+
+A `try` whose handlers name SPECIFIC exception types and every one of which
+ENDS IN A `return` converts the caught failure into a defined value for that
+input class: the failure originates inside the statement and is answered
+inside it, so nothing expected escapes. Four limbs, ALL required — at least
+one handler and no `finally`; every handler narrow; every handler body ending
+in a `return`; no `raise` inside. **Doubt about a limb DISQUALIFIES.**
+
+⛔ **LIMB (ii) IS THE ONE THAT MUST NOT BE RELAXED.** `except Exception:
+return 0` returns a defined value for an UNKNOWN input class — a broad handler
+cannot tell the expected failure it means to catch from the bug it does not.
+Measured before v186 was ratified: ZERO functions in the governed fleet are
+relieved by a broad handler, so the limb costs nothing and forecloses the
+`BLE`-swallowing failure mode.
+
+⛔ **LIMB (iii) IS WHAT MAKES THIS DISCRIMINATE RATHER THAN RELIEVE.** A narrow
+handler that RECORDS the failure and continues — `_parsed`'s
+`except SyntaxError: into.append(...)` in `fleet/_public_api_graph.py` — is an
+in-band CENSUS, and this analysis still convicts it and its callers. The rule
+relieves 8 functions fleet-wide and refuses that one; a rule that took it too
+would be a softening with good manners.
+
+**AND THE PROPAGATION HALF IS THE LARGER ONE.** Because clause (d) propagates
+(a)-(d), a callee whose only disqualifier was such a `try` stops disqualifying
+its callers. Measured: 4 of the 8 relieved functions contain no `try` at all.
 
 ## CLAUSE (c) IS NOT A TERMINAL-NAME MATCH, AND THIS REPO PAID TO LEARN IT
 
@@ -73,6 +100,10 @@ if TYPE_CHECKING:
 
 __all__: list[str] = ["functions_without_expected_failure_mode", "returns_x_or_none"]
 
+# Limb (ii): the two named breadths a handler MUST NOT catch. A bare `except:`
+# names nothing at all and is refused by the empty-name test, not by this set.
+_BROAD_EXCEPTION_NAMES = frozenset({"Exception", "BaseException"})
+
 
 @dataclass(frozen=True, kw_only=True)
 class _LocalAnalysis:
@@ -107,6 +138,56 @@ def returns_x_or_none(*, func: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     return "None" in parts or rendered.startswith(("Optional[", "typing.Optional["))
 
 
+def _handler_is_narrow(*, handler: ast.ExceptHandler) -> bool:
+    """Limb (ii): does this handler name SPECIFIC exception types?
+
+    A bare `except:` carries no `type` at all; `except Exception` and
+    `except BaseException` carry one this analysis refuses. A tuple is read
+    per-operand, because a single broad member makes the whole handler broad.
+    The TERMINAL name is compared, so `builtins.Exception` is caught too.
+    """
+    if handler.type is None:
+        return False
+    operands = handler.type.elts if isinstance(handler.type, ast.Tuple) else [handler.type]
+    names = {ast.unparse(operand).rsplit(".", maxsplit=1)[-1] for operand in operands}
+    return not names & _BROAD_EXCEPTION_NAMES
+
+
+def _is_discharging_narrow(*, node: ast.Try) -> bool:
+    """livespec v186's four limbs, ALL required, decided syntactically.
+
+    Limb (iv) — no `raise` inside — is REDUNDANT against clause (a), which
+    already refuses a `raise` anywhere in the enclosing function body. It is
+    implemented anyway because v186 ratifies four limbs and an implementation
+    deciding three is not conforming, and because this limb is scoped to the
+    STATEMENT while clause (a) is scoped to the function.
+    """
+    if not node.handlers or node.finalbody:
+        return False
+    if any(isinstance(inner, ast.Raise) for inner in ast.walk(node)):
+        return False
+    return all(
+        isinstance(handler.body[-1], ast.Return) and _handler_is_narrow(handler=handler)
+        for handler in node.handlers
+    )
+
+
+def _clauses_a_and_b_disqualify(*, func: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    """Clauses (a) and (b) read together over the whole function body.
+
+    They share one walk because they answer the same question — is there a
+    place in this body where an expected failure originates or escapes — and
+    because reading (b) without (a) would let a `raise` inside a handler pass
+    for a discharge.
+    """
+    for inner in ast.walk(func):
+        if isinstance(inner, ast.Raise):
+            return True
+        if isinstance(inner, ast.Try) and not _is_discharging_narrow(node=inner):
+            return True
+    return False
+
+
 def _local_analysis(
     *,
     trees: Mapping[Path, ast.Module],
@@ -123,7 +204,7 @@ def _local_analysis(
             if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
                 continue
             key = (rel, node.name)
-            if any(isinstance(inner, ast.Raise | ast.Try) for inner in ast.walk(node)):
+            if _clauses_a_and_b_disqualify(func=node):
                 disqualified.add(key)
             if returns_x_or_none(func=node):
                 x_or_none.add(key)

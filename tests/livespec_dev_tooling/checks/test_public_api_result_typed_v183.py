@@ -40,9 +40,18 @@ _PARSE_TREE = ".claude-plugin/scripts/livespec/parse"
 _COMMANDS_TREE = ".claude-plugin/scripts/livespec/commands"
 
 # A closed union rendered at a boundary. `render` is disqualified by member 1
-# clause (b) — it carries a `try` — so it is an offender WITHOUT a declaration,
-# which is what makes the relief measurable rather than assumed. It calls NO
-# side-effecting primitive directly, so condition 1 HOLDS over it.
+# clause (b), so it is an offender WITHOUT a declaration, which is what makes
+# the relief measurable rather than assumed. It calls NO side-effecting
+# primitive directly, so condition 1 HOLDS over it.
+#
+# ⚠️ ITS `try` RECORDS AND CONTINUES, AND THAT IS LOAD-BEARING RATHER THAN
+# INCIDENTAL. An earlier draft used `except ValueError: return Bad(...)`, which
+# livespec v186 later made a DISCHARGING NARROW `try` — member 1 then exempted
+# `render` on its own and the control below went green while proving nothing
+# about the declaration. A control convicted by a rule that later relaxes is a
+# control with an expiry date nobody wrote down. This body is convicted by
+# v186's limb (iii) — the handler appends and keeps looping — which is the one
+# shape the correction deliberately refuses.
 _UNION_PUBLIC = (
     "from __future__ import annotations\n"
     "\n"
@@ -65,10 +74,14 @@ _UNION_PUBLIC = (
     "\n"
     "\n"
     "def render(*, raw: str) -> Outcome:\n"
-    "    try:\n"
-    "        return Ok(note=str(int(raw)))\n"
-    "    except ValueError:\n"
-    "        return Bad(message=raw)\n"
+    "    bad: list[str] = []\n"
+    "    notes: list[str] = []\n"
+    "    for part in raw.split(','):\n"
+    "        try:\n"
+    "            notes.append(str(int(part)))\n"
+    "        except ValueError:\n"
+    "            bad.append(part)\n"
+    "    return Bad(message=','.join(bad)) if bad else Ok(note=','.join(notes))\n"
 )
 # The SAME union, returned by a function that calls a filesystem primitive
 # DIRECTLY. Condition 1 fails over it, so no declaration may relieve it.
@@ -81,10 +94,14 @@ _BOUNDARY_PUBLIC = _UNION_PUBLIC.replace(
     '__all__: list[str] = ["render"]', '__all__: list[str] = ["reads"]'
 ).replace(
     "def render(*, raw: str) -> Outcome:\n"
-    "    try:\n"
-    "        return Ok(note=str(int(raw)))\n"
-    "    except ValueError:\n"
-    "        return Bad(message=raw)\n",
+    "    bad: list[str] = []\n"
+    "    notes: list[str] = []\n"
+    "    for part in raw.split(','):\n"
+    "        try:\n"
+    "            notes.append(str(int(part)))\n"
+    "        except ValueError:\n"
+    "            bad.append(part)\n"
+    "    return Bad(message=','.join(bad)) if bad else Ok(note=','.join(notes))\n",
     "def reads(*, path) -> Outcome:\n"
     "    text = path.read_text(encoding='utf-8')\n"
     "    return Ok(note=text) if text else Bad(message='empty')\n",
