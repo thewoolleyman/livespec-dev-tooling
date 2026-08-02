@@ -96,6 +96,22 @@ _IO_BUILTINS: frozenset[str] = frozenset({"input", "open", "print"})
 # `pathlib.cwd` here, which is absent from this set and stays disqualified;
 # `Path(x).read_text()` is caught by the unresolved-receiver verb set one step
 # later. A member added here must be pure on EVERY receiver, not merely usually.
+#
+# ⛔ THE SPELLING IS THE TRAP, AND IT IS MUTATION-PROVEN. Entries are matched
+# against the dotted form rebuilt from the IMPORT BINDING below, never against
+# the runtime module. `os.path` IS `posixpath` at runtime, and entries spelled
+# `posixpath.<member>` are INERT: measured, they moved `livespec-overseer`
+# 194 -> 194 while the `os.path.` spelling moved it 194 -> 173. Do not "tidy"
+# these to the runtime identity — `test_a_lexical_os_path_member_is_not_an_io_
+# boundary` reds if you do.
+#
+# ⚠️ AND ONE IMPORT FORM IS A MEASURED, DELIBERATE GAP. `from os import path`
+# binds `path -> os`, so the rendered form is `os.<member>` with NO middle
+# segment and misses this set; closing it needs a second entry per member. Those
+# are NOT added because that form appears in ZERO first-party files across all
+# eight code-carrying repos, while `import os` appears in 141. Seven inert
+# entries would enlarge a set that reads as coverage while covering nothing.
+# Pinned by `test_the_from_os_import_path_spelling_is_a_measured_gap_not_a_hole`.
 _PURE_IO_MODULE_MEMBERS: frozenset[str] = frozenset(
     {
         "io.BytesIO",
@@ -104,6 +120,41 @@ _PURE_IO_MODULE_MEMBERS: frozenset[str] = frozenset(
         "pathlib.PurePosixPath",
         "pathlib.PureWindowsPath",
         "pathlib.Path",
+        # `os.path`'s LEXICAL half — string in, string out, touching nothing.
+        # Each was driven with adverse input on CPython 3.10.16, the fleet's
+        # `requires-python` FLOOR, over the empty string, `/`, `//`, `..`, `.`,
+        # an embedded NUL, a lone surrogate, a 4096-character path, a backslash
+        # and `~nosuchuser`. NONE raised.
+        #
+        # ⛔ THE BAR HERE IS PURITY, NOT MERELY NON-FAILABILITY, AND THAT
+        # DISTINCTION IS WHAT KEEPS THIS SET FROM WIDENING WRONGLY. Measured on
+        # the same floor, `os.path.exists`, `.isfile` and `.isdir` do not raise
+        # either — they swallow `OSError` — but they READ THE FILESYSTEM, so
+        # their answer depends on the world. That is the in-band conflation the
+        # railway exists to remove. Cannot-fail is NECESSARY AND NOT SUFFICIENT.
+        #
+        # DELIBERATELY ABSENT, each with the reason it is absent:
+        #   `realpath`   raises `ValueError` on an embedded NUL; resolves links.
+        #   `relpath`    raises `ValueError` on the empty string.
+        #   `getsize`    raises `FileNotFoundError`.
+        #   `abspath`    does NOT raise on any adverse input above — it is out
+        #                because it calls `os.getcwd()`, so it READS PROCESS
+        #                STATE and can fail when the cwd is unlinked. It looks
+        #                purer than these seven; that is why the reason is here.
+        #   `expanduser` does NOT raise on `~nosuchuser` on the floor — it
+        #                returns the path unchanged. It is out for reading
+        #                `HOME` and the passwd database: ENVIRONMENT access.
+        #                ⚠️ `pathlib.Path.expanduser` DOES raise `RuntimeError`.
+        #                That is a DIFFERENT function sharing a name, and
+        #                importing its result here would be this module's own
+        #                defect one line down: the NAME IS NOT THE FUNCTION.
+        "os.path.basename",
+        "os.path.dirname",
+        "os.path.isabs",
+        "os.path.join",
+        "os.path.normpath",
+        "os.path.split",
+        "os.path.splitext",
     }
 )
 
