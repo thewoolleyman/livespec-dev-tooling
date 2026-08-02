@@ -6,8 +6,13 @@ Routed here by maintainer decision 2026-08-02 under the fleet's
 route-by-owning-component principle. Opened from the `livespec-overseer`
 `supervisor-prompt-quality` track, which found the triggering defect.
 
+**Ledger anchor:** epic **`livespec-dev-tooling-42t4az`** (this repo's tenant) —
+the thread's status anchor. This thread is active if and only if that epic is
+open, and archives to `plan/archive/fleet-shell-quality-enforcement/` when it
+closes.
+
 **Status is not stored here.** Read it from the ledger
-(`list-work-items` / `next`). Every id below is cited read-only.
+(`list-work-items` / `next`). Every id in this file is cited read-only.
 
 ## What triggered this
 
