@@ -407,7 +407,61 @@
 > matrix targets plus `just <slug>` run lines. **Third instance in three days of a
 > hand-rolled second implementation losing to the shipped one.**
 >
-> ### ⛔⛔ THE FIRST TWO REPOS ARE TRIAGED, AND **NEITHER IS THE CONVERSION THE COUNT IMPLIED**
+> ### 🔴🔴 RETRACTED SAME DAY — **THE driver-claude TRIAGE BELOW IS WRONG, AND THE SPEC QUESTION IT RAISED DOES NOT EXIST**
+>
+> **`classify` IS NOT TOTAL. There is no CORE spec question, and no propose-change is
+> owed.** Caught by MEASURING THE BLAST RADIUS OF THE SPEC CHANGE BEFORE FILING IT — the
+> proposed widening relieved `classify` **not at all** (0 in driver-claude; 0 in 5 of 7
+> repos). **A fix that does not fix the case it was written for is a refuted premise.**
+>
+> **WHAT THE SHIPPED ANALYSIS SAYS, run rather than hand-simulated:**
+>
+> ```
+> classify                  locally disqualified: False   after clause (d): True
+>   -> _segment_is_hazard   local_dis=True   Try=True   calls_disqualify=False
+> _label_is_hazardous       Try=False        calls_disqualify=TRUE   <- I NEVER LOOKED
+> _socket_is_hazardous      Try=False        calls_disqualify=TRUE   <- I NEVER LOOKED
+> ```
+>
+> **I NAMED ONE LINK AND IMPLIED IT WAS THE ONLY ONE.** Removing the `Try` cause leaves
+> `classify` convicted through the other two. ⛔ **THIS FILE'S OWN RULE — "NEVER
+> HAND-SIMULATE A FIXPOINT, RUN IT" — EXISTS BECAUSE OF TWO EARLIER MISSES. THIS IS THE
+> THIRD, AND I MADE IT INSIDE THE TRIAGE THAT WAS SUPPOSED TO PREVENT ONE.** The rule is
+> not "run it when it looks hard"; it is run it, always. Reading a `try/except` and
+> concluding is hand-simulation wearing a citation.
+>
+> ### ✅✅ AND THE REAL CAUSE IS BETTER NEWS — **`os.path.normpath` IS CONVICTED AS AN I/O BOUNDARY**
+>
+> Both disqualifying calls are `os.path.normpath(...)`. `os` is in `_IO_MODULES`, which
+> decides at MODULE granularity. **`normpath` is pure string manipulation that cannot
+> fail — and the code under test says so in terms:** *"LEXICAL normalization only …
+> without touching the filesystem, which a PreToolUse hook must never do."*
+>
+> **▶️ SO IT IS AN APPLICATION OF ALREADY-RATIFIED RULE THROUGH AN ALREADY-SHIPPED
+> MECHANISM.** v184/v185 make failability the criterion — a boundary is a primitive at
+> which a failure can ORIGINATE, one that cannot fail is not one — and dev-tooling already
+> ships `_PURE_IO_MODULE_MEMBERS`, an EXACT-match carve-out for members of an `_IO_MODULES`
+> module that touch nothing (`io.StringIO`, `pathlib.Path`, …), with the bar stated at its
+> own definition: *"A member added here must be pure on EVERY receiver, not merely
+> usually."*
+>
+> **THE NEXT UNIT IS THEREFORE A dev-tooling CHANGE, NOT A SPEC CHANGE** — add the pure
+> `os.path` string members (`normpath`, `basename`, `dirname`, `join`, `split`, `splitext`,
+> `isabs`). ⛔ **NOT `realpath` / `abspath` / `expanduser` / `exists` / `isfile` /
+> `isdir`**: those touch the filesystem or the environment and genuinely fail.
+>
+> ⛔ **RELAXING-ONLY, so unit B's polarity binds:** any INCREASE is a finding; relieving
+> MORE than the enumerated members is a finding, not a bonus. Measure both ends on two
+> genuinely different trees with ADDED/REMOVED decomposed. **This is unit A's shape on the
+> MODULE arm instead of the unresolved-receiver arm.**
+>
+> ⚠️ **WHAT SURVIVES FROM THE RETRACTED TRIAGE:** the `_result.py` shim fact — driver-claude's
+> SHIPPED hooks cannot import `returns` at all, so `w25v` is incomplete for that repo. That
+> was READ, not inferred, and it still binds.
+>
+> ---
+>
+> ### ⛔⛔ (RETRACTED IN PART — see above) THE FIRST TWO REPOS ARE TRIAGED
 >
 > Brief 97 asked for the per-repo RITUAL on the two smallest. **Structural triage first
 > paid on the very first repo, which is the whole argument for the rule.**
