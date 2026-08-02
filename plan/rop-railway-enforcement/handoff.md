@@ -85,6 +85,39 @@
 > tree) to disambiguate. A new local seam should be railway-typed from the start
 > rather than inheriting that and then needing its own disambiguator.
 >
+> ### ✅ THE SEAM IS BUILT — `LocalContext.file_text`, 5 Red + 2 Green, and it MOVED THE COUNT
+>
+> **MEASURED FROM TWO GENUINELY DIFFERENT TREES** (primary checkout at master
+> vs. the worktree), never from the diff:
+>
+> | | before | after |
+> |---|---|---|
+> | offenders | 25 | **24** |
+> | returning `RowOutcome` | 22 | 21 |
+> | **condition-1 FAILS** | **4** | **2** |
+>
+> **`assert_worktree_pack` LEFT THE OFFENDER LIST ENTIRELY** — with its reads on
+> the seam it has no `raise`, no `try`, no direct primitive and no disqualified
+> callee, so member 1 now computes it as having NO expected failure mode. The
+> remaining 2 condition-1 failures are exactly the two TOTAL-PREDICATE rows
+> waiting on `h0g9`.
+>
+> **⛔ THE MEASUREMENT CAUGHT AN INCOMPLETE CONVERSION MID-UNIT.** After the first
+> pass `reconcile_livespec_jsonc_complete` was STILL a condition-1 boundary: the
+> row reads TWO files, and I had converted only the first. The second
+> (`.beads/config.yaml`, behind the identical `exists()`-then-`read_text()` pair)
+> was the same live crash. **Two instances of the same anti-pattern in ONE
+> function — grep the whole function for primitives, not just the one the crash
+> report names.**
+>
+> ⚠️ **AND ONE THING THE SEAM DOES NOT CLOSE:** `_reconcile_connection` still
+> calls `jsonc_path.write_text(...)` directly, and `write_text` is in the verb
+> set. A WRITE seam is the follow-on; this unit is the READ seam. Under a
+> PROPAGATED reading of condition 1 the row would stay convicted through that
+> callee — **my condition-1 mechanization is the LOCAL (direct-primitive)
+> reading**, which the ratified "calls a primitive DIRECTLY" sentence supports
+> but does not settle. State the reading whenever quoting the split.
+>
 > ### ⛔⛔ AND THE SEAM'S **NAME** IS LOAD-BEARING — `read_text` SILENTLY DEFEATS THE ENTIRE FIX
 >
 > **DO NOT NAME THE SEAM `read_text`.** `ctx` is a PARAMETER, so the receiver is
