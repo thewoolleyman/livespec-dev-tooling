@@ -33,6 +33,7 @@ from livespec_dev_tooling.config import (
     GitToplevelError,
     MirrorPairing,
     NotApplicable,
+    SingleMeaningVariant,
     SupersededBy,
     TotalAbsenceReturn,
     filter_first_party_py,
@@ -513,6 +514,114 @@ def test_total_absence_returns_entry_missing_function_raises(*, tmp_path: Path) 
         ),
     )
     with pytest.raises(ConfigParseError, match="needs string `file`"):
+        _ = load_config(repo_root=tmp_path)
+
+
+def test_single_meaning_variants_parses_entries(*, tmp_path: Path) -> None:
+    """A well-formed `single_meaning_variants` array parses to typed entries.
+
+    SPECIFICATION v038 §"Role keys": the carrier `livespec` v183 names for
+    condition 3 of the rendering-boundary clause. ONE ENTRY PER VARIANT, each
+    naming the defining file, the union, the variant, and the ONE thing that
+    variant means.
+    """
+    _write_pyproject(
+        repo_root=tmp_path,
+        body=(
+            "[tool.livespec_dev_tooling]\n"
+            "single_meaning_variants = [\n"
+            '  { file = "pkg/a.py", union = "Outcome", variant = "Ok",'
+            ' meaning = "the obligation holds" },\n'
+            '  { file = "pkg/a.py", union = "Outcome", variant = "Bad",'
+            ' meaning = "the obligation is violated" },\n'
+            "]\n"
+        ),
+    )
+    resolved = load_config(repo_root=tmp_path)
+    assert resolved.single_meaning_variants == (
+        SingleMeaningVariant(
+            file=Path("pkg/a.py"),
+            union="Outcome",
+            variant="Ok",
+            meaning="the obligation holds",
+        ),
+        SingleMeaningVariant(
+            file=Path("pkg/a.py"),
+            union="Outcome",
+            variant="Bad",
+            meaning="the obligation is violated",
+        ),
+    )
+
+
+def test_single_meaning_variants_absent_key_parses_empty(*, tmp_path: Path) -> None:
+    """An undeclared `single_meaning_variants` parses to an EMPTY declaration.
+
+    v183 states it in terms: the key is NOT required, "absence is legal and
+    leaves every union-returning function convicted". Empty is the STRICT end —
+    the opposite polarity from the union role keys, where empty was the
+    ambiguous, blinding value.
+    """
+    _write_pyproject(repo_root=tmp_path, body="[tool.livespec_dev_tooling]\n")
+    assert load_config(repo_root=tmp_path).single_meaning_variants == ()
+    assert "single_meaning_variants" not in REQUIRED_ROLE_KEYS
+
+
+def test_single_meaning_variants_blank_meaning_raises(*, tmp_path: Path) -> None:
+    """A whitespace-only `meaning` is rejected — v183 bound 2, a schema rule.
+
+    Bound 2 is the bound "that does the work a reviewer can act on": writing one
+    meaning per variant is the exercise that surfaces a variant carrying two. A
+    blank meaning runs no such exercise, so the loader MUST reject it.
+    """
+    _write_pyproject(
+        repo_root=tmp_path,
+        body=(
+            "[tool.livespec_dev_tooling]\n"
+            'single_meaning_variants = [{ file = "pkg/a.py", union = "Outcome",'
+            ' variant = "Ok", meaning = "  " }]\n'
+        ),
+    )
+    with pytest.raises(ConfigParseError, match="needs a non-empty `meaning`"):
+        _ = load_config(repo_root=tmp_path)
+
+
+def test_single_meaning_variants_non_array_raises(*, tmp_path: Path) -> None:
+    """A scalar `single_meaning_variants` raises, naming the key."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body='[tool.livespec_dev_tooling]\nsingle_meaning_variants = "nope"\n',
+    )
+    with pytest.raises(ConfigParseError, match="`single_meaning_variants` must be an array"):
+        _ = load_config(repo_root=tmp_path)
+
+
+def test_single_meaning_variants_entry_missing_variant_raises(*, tmp_path: Path) -> None:
+    """An entry missing `variant` raises — the per-variant carrier's own shape gate.
+
+    The entry schema is NOT the `{file, function, reason}` shape its two sibling
+    keys share: condition 3 quantifies over a union's VARIANTS, so the carrier
+    names a union and a variant rather than a function.
+    """
+    _write_pyproject(
+        repo_root=tmp_path,
+        body=(
+            "[tool.livespec_dev_tooling]\n"
+            'single_meaning_variants = [{ file = "pkg/a.py", union = "Outcome",'
+            ' meaning = "why" }]\n'
+        ),
+    )
+    with pytest.raises(ConfigParseError, match="needs string `file` \\+ `union` \\+ `variant`"):
+        _ = load_config(repo_root=tmp_path)
+
+
+def test_single_meaning_variants_entry_not_a_table_raises(*, tmp_path: Path) -> None:
+    """A non-table entry raises, naming the key."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body='[tool.livespec_dev_tooling]\nsingle_meaning_variants = ["nope"]\n',
+    )
+    with pytest.raises(ConfigParseError, match="each `single_meaning_variants` entry must be"):
         _ = load_config(repo_root=tmp_path)
 
 

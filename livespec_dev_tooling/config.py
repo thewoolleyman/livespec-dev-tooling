@@ -80,6 +80,7 @@ __all__: list[str] = [
     "PrefixRole",
     "RoleAbsence",
     "ScalarRole",
+    "SingleMeaningVariant",
     "SupersededBy",
     "TotalAbsenceReturn",
     "TreeRole",
@@ -465,6 +466,42 @@ class TotalAbsenceReturn:
 
 
 @dataclass(frozen=True, kw_only=True)
+class SingleMeaningVariant:
+    """One VARIANT of a union this repo declares single-meaning, per v183 condition 3.
+
+    `livespec` v183 sanctions a closed discriminated union as an alternative
+    railway spelling AT A RENDERING BOUNDARY when three conditions hold.
+    Conditions 1 and 2 are decided mechanically and recomputed every run;
+    condition 3 — no variant carries two meanings — is SEMANTIC and no static
+    analysis can decide it, so the consumer declares it and a structural gate
+    bounds what may be declared.
+
+    ⛔ THE CARRIER IS PER-UNION, AND THE ENTRY IS PER-VARIANT. Condition 3
+    quantifies over a union's variants and its consumers, both properties of the
+    TYPE, so a per-FUNCTION carrier would hold one claim in many places and
+    permit those places to disagree. `union` is therefore the key that groups
+    entries, and one entry per `variant` is what bound 2 requires.
+
+    ⛔ THIS KEY IS RELAXING-ONLY, and the tightening-only argument that bounds
+    `CrossRepoPublicApi` is NOT available to it and MUST NOT be claimed for it.
+    What bounds it is the STRUCTURAL GATE (v183 bound 1), which the check
+    RECOMPUTES from source every run and which stores no claim:
+    `checks/_single_meaning_variants` owns it.
+
+    `meaning` is bound 2 and is REQUIRED per variant rather than per union: a
+    single reason attached to the union is a claim whose subject is narrower
+    than the property it asserts. It is the bound a reviewer can act on —
+    writing one meaning each is precisely the exercise that surfaces a variant
+    carrying two.
+    """
+
+    file: Path
+    union: str
+    variant: str
+    meaning: str
+
+
+@dataclass(frozen=True, kw_only=True)
 class MirrorPairing:
     """One source-tree to test-tree mirror, consumed by check_coverage_incremental."""
 
@@ -499,6 +536,7 @@ class Config:
     mirror_pairings: tuple[MirrorPairing, ...] = ()
     cross_repo_public_api: tuple[CrossRepoPublicApi, ...] = ()
     total_absence_returns: tuple[TotalAbsenceReturn, ...] = ()
+    single_meaning_variants: tuple[SingleMeaningVariant, ...] = ()
     # The five union-typed role keys. The baseline default IS a distinct
     # `Undeclared` variant, adopted by maintainer ruling in Phase 4 — see that
     # class's docstring for why the earlier design (defaulting to the legacy
@@ -743,6 +781,52 @@ def _parse_total_absence_returns(*, value: object) -> tuple[TotalAbsenceReturn, 
             value=value, key="total_absence_returns"
         )
     )
+
+
+def _parse_single_meaning_variants(*, value: object) -> tuple[SingleMeaningVariant, ...]:
+    """Parse the declared single-meaning variants (SPECIFICATION v038, RELAXING-ONLY).
+
+    ⛔ A DELIBERATELY DIFFERENT ENTRY SHAPE from its two sibling keys, which
+    share `{file, function, reason}`. Condition 3 quantifies over a union's
+    VARIANTS, so this carrier names a union and a variant; reusing the shared
+    parser would have forced the union into the `function` slot and the meaning
+    into `reason`, making the per-variant bound unreadable at the call site.
+
+    ⛔ AND THE LOADER ENFORCES BOUND 2 ONLY. Bound 1 (the structural gate) and
+    bound 3 (the variant-set staleness detector) both need the SOURCE of the
+    declared file, and this loader parses TOML with no access to a source
+    universe — the same placement decision `_parse_total_absence_returns`
+    records. They are ONE detector in `checks/_single_meaning_variants`, and
+    both HARD-FAIL there. A reader who takes a successful parse as evidence the
+    declaration is valid has read one bound of three.
+    """
+    if not isinstance(value, list):
+        msg = "`single_meaning_variants` must be an array of {file, union, variant, meaning} tables"
+        raise ConfigParseError(msg)
+    entries = cast("list[object]", value)
+    out: list[SingleMeaningVariant] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            msg = "each `single_meaning_variants` entry must be a table"
+            raise ConfigParseError(msg)
+        table = cast("dict[str, Any]", entry)
+        file = table.get("file")
+        union = table.get("union")
+        variant = table.get("variant")
+        meaning = table.get("meaning")
+        if not isinstance(file, str) or not isinstance(union, str) or not isinstance(variant, str):
+            msg = "each `single_meaning_variants` entry needs string `file` + `union` + `variant`"
+            raise ConfigParseError(msg)
+        if not isinstance(meaning, str) or not meaning.strip():
+            msg = (
+                f"`single_meaning_variants` entry `{file}:{union}.{variant}` "
+                "needs a non-empty `meaning`"
+            )
+            raise ConfigParseError(msg)
+        out.append(
+            SingleMeaningVariant(file=Path(file), union=union, variant=variant, meaning=meaning)
+        )
+    return tuple(out)
 
 
 def _parse_pyproject(*, repo_root: Path) -> dict[str, Any] | None:
@@ -1022,6 +1106,10 @@ def load_config(*, repo_root: Path) -> Config:
         overrides["total_absence_returns"] = _parse_total_absence_returns(
             value=table["total_absence_returns"]
         )
+    if "single_meaning_variants" in table:
+        overrides["single_meaning_variants"] = _parse_single_meaning_variants(
+            value=table["single_meaning_variants"]
+        )
     return Config(
         declared_keys=frozenset(table),
         source_trees=overrides.get("source_trees", baseline.source_trees),
@@ -1042,6 +1130,9 @@ def load_config(*, repo_root: Path) -> Config:
         ),
         total_absence_returns=overrides.get(
             "total_absence_returns", baseline.total_absence_returns
+        ),
+        single_meaning_variants=overrides.get(
+            "single_meaning_variants", baseline.single_meaning_variants
         ),
         neutral_hook_body_path=overrides.get(
             "neutral_hook_body_path", baseline.neutral_hook_body_path
