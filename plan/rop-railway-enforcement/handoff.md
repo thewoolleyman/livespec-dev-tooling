@@ -1,6 +1,167 @@
 # rop-railway-enforcement — arm the check that was never armed, then remediate six repos
 
-> ## 🔻🔻 COLD START — **v186 IS MECHANIZED AND THE FLEET IS 403, MEASURED. NEXT IS `livespec` 15 AND `git-jsonl` 17.**
+> ## 🔻🔻 COLD START — **FLEET 402 RAW / 321 DISTINCT. THE SMALL REPOS ARE TRIAGED AND THERE IS NO HIGH-LEVERAGE SEAM.**
+>
+> ### 🔻 FIRST FIVE MINUTES
+>
+> **NOTHING IS MID-FLIGHT except the commit that carries this text.** dev-tooling master
+> at wrap-up: **`cac23bf`**; `livespec`: **`d8cef80`**. Re-fetch both.
+>
+> 1. **REAP EXACTLY ONE WORKTREE:
+>    `~/.worktrees/livespec-dev-tooling/docs-handoff-triage-small-repos`** once its PR
+>    shows MERGED. Doc-only, auto-merge ARMED. Then `merge --ff-only origin/master`.
+> 2. **REAP NOTHING ELSE.** Every other worktree is a PEER lane's.
+> 3. ⚠️ A fresh worktree's FIRST `.py` commit fails
+>    `check-primary-checkout-commit-refuse-hook-installed` (`worktree_pack_absent`). Fix:
+>    `mise exec -- just install-worktree-pack`. NOT your diff.
+> 4. ⚠️ **BEFORE PUSHING ANY RED→GREEN PAIR:** `git log -1 --format=%B | grep -c
+>    '^TDD-Red-'` must be 5 and `'^TDD-Green-'` must be 2. **`zv78` is now READY, P1, and
+>    has been HIT TWICE** — the hook exits 0 on a half-pair and will not tell you.
+>
+> ### 📋 THE STATE — **every figure below re-derived at the SHA named, none carried**
+>
+> | member | sha | RAW | mirror surplus | DISTINCT |
+> |---|---|---:|---:|---:|
+> | `livespec-overseer` | `d122493` | 173 | **81** | **92** |
+> | `livespec-orchestrator-beads-fabro` | `4e3e883` | 168 | 0 | 168 |
+> | `livespec-runtime` | `726f168` | 27 | 0 | 27 |
+> | `livespec-orchestrator-git-jsonl` | `e7eb1ac` | 17 | 0 | 17 |
+> | `livespec` | `d8cef80` | 15 | 0 | 15 |
+> | `livespec-driver-codex` | `73ca4eb` | 1 | 0 | 1 |
+> | `livespec-dev-tooling` | `cac23bf` | 1 | 0 | 1 |
+> | `livespec-driver-claude` · `console` | | 0 | 0 | 0 |
+> | **FLEET** | | **402** | **81** | **321** |
+>
+> **402 = 173+168+27+17+15+1+1+0+0. 321 = 402 − 81.** Both re-added here.
+>
+> ### ⛔⛔ A NUMBER I SHIPPED WAS RAW AND UNLABELLED — brief 106 caught it, and the fix found a WORSE one
+>
+> I wrote *"342 of the remaining 403 sit in the two untouched repos"*. **It was RAW.**
+> Today those two are **341 raw / 260 distinct**. Quote the distinct figure to the
+> fan-out: the mirrored copies convert with their pairs, not as separate units.
+>
+> **⛔ AND THE CARRIED DECOMPOSITION OF overseer WAS WRONG — this is the `8o8e.17` shape
+> again, inside this file.** The header table read *"overseer 173 (= 82 sites + 91
+> mirrors)"*. **Measured at `d122493`: 92 sites + 81 mirrors.** The `91` was carried from
+> the 194-raw era and never re-derived when overseer fell to 173; the `82` was then
+> BACK-DERIVED as 173 − 91. It summed correctly and was wrong in both parts — **a total
+> that re-adds is not the same as a total that re-measures.**
+>
+> **DERIVED TWO INDEPENDENT WAYS, which is why 92/81 is quotable:** (a) 44 byte-identical
+> file groups cover 88 of the 140 universe files; 162 offender rows sit in them, so
+> 162/2 + 11 unmirrored = 92; (b) 81 `(basename, function)` keys appear in BOTH top-level
+> trees, so 173 − 81 = 92. **And "six other members measured 0 mirrors" was RE-DERIVED,
+> not carried — every non-overseer member's surplus is 0.**
+>
+> ### ▶️▶️▶️ EXACT NEXT ACTION — **`overseer` (92 distinct) or `beads-fabro` (168), because the small repos are DONE being triaged**
+>
+> **⛔ AND THE TRIAGE'S HEADLINE IS A NEGATIVE RESULT: THERE IS NO HIGH-LEVERAGE SEAM IN
+> EITHER SMALL REPO.**
+>
+> | repo | offenders | distinct roots | max fan-in | roots per offender |
+> |---|---:|---:|---:|---:|
+> | `livespec` | 15 | **24** | 3 | 1.6 |
+> | `git-jsonl` | 17 | **21** | 4 | 1.2 |
+>
+> **The plan assumed the small repos' product would be a SEAM INVENTORY whose leverage
+> carried into the big repos. The inventory exists; the leverage does not.** These are
+> long-tail remainders — roughly one root per offender — so the fan-out cost here is
+> PER-FUNCTION, not per-seam. Say that plainly before anyone budgets `overseer` on a
+> seam-leverage assumption.
+>
+> ### 🏷️ THE SEAM INVENTORY, ranked, with scope tags
+>
+> | fan-in | root | repo | cause | scope |
+> |---:|---|---|---|---|
+> | **4** | `io/_jsonc.py::loads` | git-jsonl | `raise`+`try` | **FLEET-GENERAL** — the only `try`-caused root in either repo |
+> | **3** | `io/streams.py::_write_stream` | livespec | io | **FLEET-GENERAL** — the write boundary; expect one wherever a repo emits |
+> | 3 | `commands/_cross_repo.py::parse_entry` | git-jsonl | io | FLEET-GENERAL — manifest parse boundary |
+> | 2 ×4 | `dev-tooling/claude_plugin_registry.py` helpers | livespec | io | **REPO-SPECIFIC** (checked, see below) |
+> | 2 ×3 | `migration/merge_evidence_git.py` `_git_ok` / `_id_grep_candidates` / `_introducing_sha` | git-jsonl | io | REPO-SPECIFIC — a one-off migration tree |
+> | 2 | `spec_reader.py::_read_spec_directory` | git-jsonl | io | FLEET-GENERAL — every Orchestrator has a Spec Reader |
+> | 2 | `_wiring_completeness_host.py::_raw_path_resolve` | livespec | io | FLEET-GENERAL |
+>
+> ### 📐 THE STRUCTURAL SPLIT, and the two repos do NOT look alike
+>
+> | | `livespec` 15 | `git-jsonl` 17 |
+> |---|---:|---:|
+> | clause (e) `X \| None` | **5** | 5 |
+> | LOCAL (own body reaches a root) | 5 | 7 |
+> | PROPAGATED-only (clean body, convicted through a callee) | 5 | 5 |
+>
+> **⛔ AND THE CAUSE MIX IS THE FINDING, because it inverts this repo's own experience.**
+> **EVERY root in `livespec` is an I/O call — not one `raise`, not one `try`.** In
+> `livespec-dev-tooling`, every root was a `Try` and not one was I/O. **A reader who
+> generalises dev-tooling's remainder to the fleet will plan the wrong work.** git-jsonl
+> is mixed, with `_jsonc.py::loads` its single `try`-caused root.
+>
+> **▶️ 5 of `livespec`'s 15 have NO ROOT AT ALL** — pure clause (e) `X | None`. Those are
+> member-2 (`total_absence_returns`) candidates and each needs a READ to decide
+> absence-vs-failure; no amount of I/O seam work touches them.
+>
+> **✅ A CHECKED NEGATIVE, because the directory name says otherwise.** `livespec` carries
+> a tracked `dev-tooling/` tree contributing 3 offenders and 4 of its top roots. It is
+> **NOT** installed copies of `livespec-dev-tooling` modules — no file of that name exists
+> upstream, compared by content. Those are `livespec`'s own to fix. ⚠️ Filed against
+> `fas6`'s lesson: a directory NAME silently suggested a contract that does not apply.
+>
+> ### 📜 PROMOTED TO A FIRST-CLASS RULE (brief 106) — file beside (i) and the shipped-implementation rule
+>
+> ### 🕳️ (iii) **A CONTROL CONVICTED BY A RULE THAT LATER RELAXES IS A CONTROL WITH AN EXPIRY DATE NOBODY WROTE DOWN**
+>
+> v186 relaxed clause (b); a v183 control convicted through clause (b) went vacuous the
+> same day. **The founding defect of this epic — an authoritative statement nothing
+> re-derives — arriving through RULE EVOLUTION rather than through a bad scan.**
+>
+> **⛔ AND THE ASYMMETRY IS THE OPERATIONAL HALF:** it failed LOUDLY only because it
+> asserts `exit_code != 0`. **A control that asserts FAILURE announces its own expiry; a
+> control that asserts SUCCESS dies silently.**
+>
+> **⚠️ CORRECTING MY OWN EARLIER WORDING, which was backwards.** The previous cold start
+> said such a fixture "MUST be convicted by something ORTHOGONAL to X". **Orthogonality is
+> exactly what made v183's control fragile** — its relief was scoped to unions while its
+> conviction came from an unrelated clause free to move on its own. **The rule is: convict
+> the fixture through the property the relief PRESUPPOSES.** v183's relief exists for
+> functions whose real failure is rendered as a union, so the fixture must genuinely HAVE
+> a failure — which is what the record-and-continue repair gives it. Member 2's control is
+> the model: its fixture is an `X | None` convicted by clause (e), the very clause member 2
+> relieves, so the pairing cannot silently break.
+>
+> ### ✅ THE SWEEP BRIEF 106 ASKED FOR — **15 relief-dependent PASS assertions, 11 paired, 0 currently exposed**
+>
+> Question: how many fixtures assert a PASS where the point was to prove a rule CONVICTS?
+>
+> - **15** pass-asserting tests rest on a DECLARED relief (a role key written into
+>   `pyproject.toml`). **11** are paired with a conviction assertion in the same file.
+> - **4** are unpaired — all in `test_config_driven_checks.py` — and **all four read as
+>   safe**: three assert specific stderr CONTENT only the declaration can produce
+>   (`"superseded_by"`, the reason string, `"SUPERSEDED"`), and the fourth rests on an
+>   orthogonal check's conviction route. **A content assertion is what saves a
+>   pass-asserting test; a bare `returncode == 0` is what does not.**
+> - ⛔ **AN EARLIER PASS OF THIS SWEEP REPORTED "16 EXPOSED" AND IT WAS AN ARTEFACT.** A
+>   regex over assertion text missed conviction tests written in other spellings. **It is
+>   recorded because a sweep whose instrument is a regex over prose is the grep-instead-of-
+>   read habit with a bigger blast radius**; the quotable figure came from parsing.
+>
+> **▶️ THE CARRY-FORWARD:** if the clause (e) `Any` amendment ever WIDENS clause (e),
+> **`test_an_undeclared_absence_return_is_still_reported` is the first thing to check** —
+> its control is convicted by exactly the clause that amendment moves.
+>
+> ### 📌 `zv78` UPDATED — retitled, READY, and the priority argument is IN THE ITEM
+>
+> Retitled to the general path (`any amend-with-a-new-message`), status BACKLOG → **READY**
+> at P1, with the second occurrence (#1111, `--amend -m`), the recovery route
+> (`TDD-Green-Parent-Reflog` carries the pre-amend SHA), and the two-line verification.
+>
+> ⚠️ **ONE CORRECTION TO BRIEF 106, because it sends a reader looking for a gap that is not
+> there.** The brief says the item "under-describes its own trigger: it is not one flag".
+> **The BODY already named both spellings** — *"`--amend -F` and `--amend -m` are the
+> dangerous spellings"*. It was the **TITLE** that named only `-F`. Retitled; body was
+> already right.
+>
+> ---
+>
+> ## 🗄️ (SUPERSEDED AS THE HEADER 2026-08-02 — the small-repo triage it names is DONE; its 403 is superseded by 402 measured at newer SHAs.) COLD START — **v186 IS MECHANIZED AND THE FLEET IS 403, MEASURED.**
 >
 > ### 🔻 FIRST FIVE MINUTES
 >
