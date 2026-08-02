@@ -830,7 +830,14 @@ check-pbt-coverage-pure-modules:
 # amend), so no ambient env-var read is needed here.
 check-per-file-coverage:
     #!/usr/bin/env bash
-    set -uo pipefail
+    # -e (errexit) is load-bearing: without it a non-zero pytest exit is
+    # swallowed by the trailing per_file_coverage command, so the recipe's
+    # status becomes the coverage check's and a RED suite reports GREEN.
+    # This target is its own CI matrix job AND a required status check, so
+    # the masked green reached branch protection and the Dispatcher's
+    # "latest master is green" pre-flight, not just local runs.
+    # Matches livespec core's identical fix (bc5c9bce, 2026-07-01).
+    set -euo pipefail
     uv run pytest -n {{test_nprocs}} --cov --cov-branch --cov-config=pyproject.toml --cov-report=term-missing
     uv run python -m livespec_dev_tooling.checks.per_file_coverage
 
