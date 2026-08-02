@@ -78,6 +78,68 @@
 > in both mirror trees. **The whole −23 net is overseer +4 and dev-tooling −27: outside
 > dev-tooling the fleet did not move at all.**
 >
+> **▶️ AND dev-tooling's OWN DROP IS NOT A VIOLATION OF THAT RULE — stated explicitly so
+> a later reader does not think it was.** "Any DECREASE is a finding" scoped the effect of
+> the VERB-SET correction, which is tightening-only and can therefore only ADD.
+> dev-tooling's drop is **REMEDIATION** — unit B's 19 plus the predicate seam's 2 — which
+> is a different cause and a legitimate direction. **The rule still binds on every OTHER
+> repo, none of which has been remediated, and none of which went down.**
+>
+> ### 🧮 THE HEADLINE **455** NEVER RECONCILED WITH ITS OWN PARTS — AND THE BASIS IS FOUND, NOT GUESSED
+>
+> Brief 94 re-added the enumeration at `supervisor-handoff.md` lines 476–478 and got
+> **449**, six short of the 455 headline, and correctly refused to guess which was right.
+> **It is answerable by re-derivation, and the answer is possibility 2 on that list: ONE
+> PART WAS REVISED WITHOUT RE-ADDING THE TOTAL.**
+>
+> ```
+> handoff §"ARMING BLAST RADIUS" table   190+172+ 30 +27+18+15+2+1+0 = 455   ✅ internally consistent
+> supervisor-handoff lines 476-478       190+172+ 24 +27+18+15+2+1     = 449   ← dev-tooling revised
+> the difference                                    30 − 24           =   6
+> unit C, this measurement               194+172+  3 +27+18+15+2+1+0 = 432
+> ```
+>
+> **⛔ AND ONE CORRECTION TO THE BRIEF, because it changes where the defect sits.** The
+> 455 and the table it was published in NEVER disagreed — that table sums to 455 exactly,
+> and its universe column sums to 719 exactly. The disagreement was INTRODUCED LATER, when
+> dev-tooling's part moved **30 → 24** (the file-read seam plus the item-3 conversions,
+> `0e3db34` → `e51b37f`) and the enumeration was updated while the headline was not.
+> **Neither 30 nor 24 was ever a wrong measurement; they are the same repo on two
+> different days.** ⚠️ The enumeration also attributes its 24 to children `.7`–`.14`,
+> but child `.9` carried **30** at that moment — so the 24 came from the live figure, not
+> from the child it cites.
+>
+> ### 📐 THE BASIS, so the total and the parts can never silently disagree again
+>
+> **THE FLEET TOTAL IS THE SUM OF THE NINE MEMBERS' ARMED COUNTS AND NOTHING ELSE.**
+>
+> - **ARMED** = `_find_offenders` called PER FILE over `resolve_check_universe()`, with
+>   the `_`-prefixed **FILE** skip DROPPED. `_`-prefixed **NAMES** are still disqualified
+>   (v178 clause 0). Never `main()`, never `_scan`.
+> - **UNIVERSE** = `resolve_check_universe()`'s git-derived first-party `.py` set —
+>   `git ls-files`, `_vendor/` and tests and `templates/` and `conftest.py` excluded.
+>   Tracked files only; an untracked module is NOT in the universe.
+> - **MEMBERS** = the nine-member roster. `livespec-console-beads-fabro` contributes
+>   **0 over a universe of 0** — the sanctioned zero-Python exemption behaving correctly,
+>   quotable precisely because the same harness returned non-zero for the other eight.
+> - **AS OF** = each member's master SHA in the table above, measured with
+>   livespec-dev-tooling `e1b3a30`'s criterion. **A part and a total from different days
+>   do not add.**
+>
+> **432 = 194+172+3+27+18+15+2+1+0. 722 = 140+186+171+31+49+131+7+7+0.** Both re-added
+> here rather than carried. ⚠️ **432 is RAW.** The quotable derivatives, each with its
+> own subtraction stated: **429** = 432 less dev-tooling's 3 RULED non-conversions;
+> **338** = 429 less overseer's 91 enforced mirror copies. Say WHICH one you are quoting.
+>
+> ### 🕳️ AND THE LESSON IS NOT "THE NUMBER WAS WRONG" — file it beside `8o8e.16`
+>
+> **A TOTAL NOBODY RE-ADDS IS NOT A MEASUREMENT.** Nobody re-derived 455 because it was
+> already "measured", so a revised part could disagree with it indefinitely without
+> anything going red. **That is this thread's own subject one level up and in prose** —
+> the same shape as the green check that scanned zero files: an authoritative statement
+> that nothing re-computes. Filed as `8o8e.17`. **Every total in this thread now ships
+> with the arithmetic that produces it, so revising a part visibly breaks the sum.**
+>
 > ### ⛔⛔ THE FINDING — **UNIT A'S FOUR VERBS CONVICT ZERO FUNCTIONS ANYWHERE IN THE FLEET**
 >
 > Each member's tree measured TWICE: shipped verb set, then the set with `open`,
@@ -101,6 +163,31 @@
 > code not yet written. **Unit A moved the fleet by 0.** That is a legitimate outcome
 > for a tightening-only change and it is NOT a reason to withdraw it — but the older
 > wording claims coverage it did not buy, and the arming denominator must not repeat it.
+>
+> ### ⛔⛔ THE +4 IS **NOT** THE VERB SET — CORRECTING BRIEF 94, WHICH READ IT AS THE CONTROL
+>
+> Brief 94 records *"the verb-set tightening moved EXACTLY ONE repo, upward:
+> livespec-overseer +4 … the +4 is the positive control that proves the corrected set can
+> convict."* **The measurement refutes the attribution.** overseer's CURRENT tree measured
+> with the four verbs and without them gives the SAME 194 — ADDED 0 / REMOVED 0 — and
+> overseer at `45bb0fe` measured with TODAY's criterion gives **exactly 190**. If the
+> verbs were responsible, that second number would have been 194. **The +4 is overseer's
+> OWN NEW CODE**, and the verb set is flat there as it is everywhere.
+>
+> **▶️ AND THE DISTINCTION IS LOAD-BEARING, NOT PEDANTIC.** A finding treated as a
+> control is a control nobody ran. **THE ACTUAL CONTROLS ARE THESE THREE, and a reader
+> meeting "7 of 8 unchanged" should be pointed at them rather than at the +4:**
+>
+> 1. overseer at `45bb0fe` reproduces its RECORDED **140 / 190 / 86** — a figure this
+>    harness did not produce;
+> 2. dev-tooling reproduces its known **171 / 3** and names the same three ruled functions;
+> 3. the verb set moves counts in **BOTH** directions on every tree tested — emptied moves
+>    them DOWN, widened moves them UP.
+>
+> **⛔ THE FLAT RESULT IS THE REPORTABLE OUTCOME, and it must not be rescued by
+> reattributing an unrelated +4 to it.** A tightening that convicts nothing today is a
+> legitimate result; a tightening credited with someone else's four functions is the
+> manufactured confidence this epic exists to remove.
 >
 > ### ⛔⛔ THE BIGGEST CHILD IS 47% SMALLER THAN ITS HEADLINE — **overseer's 194 is 103 SITES**
 >
