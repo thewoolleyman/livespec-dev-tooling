@@ -995,8 +995,22 @@
 >
 > ### ▶️ NEXT: FILE IT, under brief 98's framing
 >
-> Narrow to *"a discharging `try/except` inside a function whose totality is otherwise
-> proven should not PROPAGATE under clause (d)"* — a WIDENING of what the computed member
+> **LEAD WITH THE SHAPE, NOT THE COUNT** (brief 104): *"every relieved function is a
+> PARSE-OR-CLASSIFY function that catches a parse error and returns a defined value for
+> that input class, and overseer and livespec are relieved not at all"* is a PRINCIPLE; a
+> coherent semantic class rather than a scattering is what separates a WIDENING from a
+> SOFTENING, and that distinction decided v181. **"Relieves 8" is a convenience argument
+> and this thread rejects those.**
+>
+> **AND DO NOT BURY THE HAND-RULING AGREEMENT — it is evidence no other argument can
+> offer.** `extract_created_worktree_paths` was ruled BY HAND as not-a-conversion by this
+> thread, independently and earlier, for its own reasons. **The mechanical rule reproduces
+> that judgment without being told.** Every other argument is about what the rule DOES;
+> this one is about whether it is RIGHT.
+>
+> Narrow to *"a discharging `try/except` — NARROW handlers only, naming specific exception
+> types — inside a function whose totality is otherwise proven should not PROPAGATE under
+> clause (d)"* — a WIDENING of what the computed member
 > 1 recognises, **never a fifth exemption**: §"ROP composition" declares its exemption set
 > EXHAUSTIVE, and framing decides ratifiability. Carry this table as the blast radius.
 >
