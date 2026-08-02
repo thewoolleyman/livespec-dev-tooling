@@ -27,7 +27,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 # `returns` is VENDORED, not installed, so a bare import resolves only if
 # some EARLIER import in the same process already put `_vendor/` on
@@ -40,6 +40,9 @@ if str(_VENDOR_DIR) not in sys.path:
 
 from returns.io import IOFailure, IOResult, IOSuccess  # noqa: E402  — vendor-path-aware import.
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 from livespec_dev_tooling.fleet._invocation_failure import (  # noqa: E402
     BINARY_ABSENT,
@@ -56,6 +59,7 @@ __all__: list[str] = [
     "FileNotRead",
     "FileTextOutcome",
     "LocalContext",
+    "PathKindOutcome",
     "command_answer",
     "default_command_runner",
 ]
@@ -107,6 +111,7 @@ class FileNotRead:
 
 
 FileTextOutcome = IOResult[str | None, FileNotRead]
+PathKindOutcome = IOResult[bool, FileNotRead]
 
 
 class CommandRunner(Protocol):
@@ -241,6 +246,57 @@ class LocalContext:
             return IOFailure(FileNotRead(path=path, kind=FILE_UNDECODABLE, detail=str(undecodable)))
         except OSError as unreadable:
             return IOFailure(FileNotRead(path=path, kind=FILE_UNREADABLE, detail=str(unreadable)))
+
+    def dir_present(self, *, path: Path) -> PathKindOutcome:
+        """Is `path` a directory? ABSENT is an ANSWER, UNSTATTABLE is a FAILURE.
+
+        The PREDICATE counterpart of `file_text`, and the seam whose absence
+        made every local row that wanted to probe a path call `Path.is_dir()` /
+        `Path.is_file()` directly — a side-effecting primitive called DIRECTLY
+        rather than through an injected seam, which is what livespec's
+        rendering-boundary condition 1 refuses.
+
+        ⛔ IT IS NOT A CONVENIENCE WRAPPER: THE PRIMITIVE RAISES. `pathlib`
+        ignores only `(ENOENT, ENOTDIR, EBADF, ELOOP)`, so `EACCES` propagates
+        and an unreadable parent takes an UNCAUGHT `PermissionError` straight
+        out of the row and aborts the whole reconcile. That is the `a6et` shape
+        again, and this fleet manufactures the condition itself:
+        `reconcile_beads_dir_perms` chmods `.beads` to `700`, so a process
+        running as a non-owner then raises on everything inside it.
+
+        ⛔ NAMED `dir_present` FOR A MECHANICAL REASON, NOT A STYLISTIC ONE.
+        A caller reaches this through `ctx`, a PARAMETER, so the receiver
+        resolves to nothing and `_no_expected_failure_mode` has only the VERB
+        left to judge — and `is_dir`, `is_file` and `exists` are ALL in
+        `_UNRESOLVED_RECEIVER_IO_VERBS`. A seam named after the primitive it
+        wraps would leave every caller convicted exactly as before, so the fix
+        would LOOK done while changing nothing. Pinned by
+        `test_the_seam_names_are_outside_the_unresolved_receiver_verb_set`.
+
+        ONE `try` AROUND THE PRIMITIVE, and the arm is `OSError` alone: unlike
+        the read seam there is no `UnicodeDecodeError` sibling here, because
+        nothing is decoded. `ENOTDIR` and `ENOENT` never reach the arm — the
+        primitive answers `False` for both — which is why absence stays an
+        ANSWER without this seam having to classify it.
+        """
+        return self._stat_answer(path=path, is_kind=path.is_dir)
+
+    def file_present(self, *, path: Path) -> PathKindOutcome:
+        """Is `path` a regular file? Same three-way split as `dir_present`."""
+        return self._stat_answer(path=path, is_kind=path.is_file)
+
+    @staticmethod
+    def _stat_answer(*, path: Path, is_kind: Callable[[], bool]) -> PathKindOutcome:
+        """Lift one `pathlib` predicate onto the railway, shared by both seams.
+
+        Shared rather than duplicated because the two differ ONLY in which
+        primitive they ask; duplicating the `try` is how one of them would later
+        acquire a second `except` arm the other lacks.
+        """
+        try:
+            return IOSuccess(is_kind())
+        except OSError as unstattable:
+            return IOFailure(FileNotRead(path=path, kind=FILE_UNREADABLE, detail=str(unstattable)))
 
     def exec(self, *, args: list[str]) -> CommandOutcome:
         """Run a command with the target checkout as the working directory."""
