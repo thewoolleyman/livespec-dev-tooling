@@ -619,10 +619,67 @@ file-read seam closed 2 of 4 condition-1 failures from ONE absence, with the res
 EXPLAINED rather than absorbed.
 
 **SUPERVISOR STATE AT THIS EDIT:** the only artifact is the PR carrying this update, from
-worktree `~/.worktrees/livespec-dev-tooling/supervisor-seam-position`, reaped on merge. The
-worker session has RESTARTED TWICE; both times it had landed and reaped cleanly first, so
-nothing was lost either time. **Enumerate foreign worktrees, never quote a count** — this
-file's own retracted-number lesson.
+worktree `~/.worktrees/livespec-dev-tooling/supervisor-403-position`, reaped on merge. The
+worker session has now RESTARTED THREE TIMES; every time it had landed, persisted and reaped
+cleanly first, so nothing was lost on any of them. **Enumerate foreign worktrees, never quote
+a count** — this file's own retracted-number lesson.
+
+**⛔ AND THE RESTARTS TEACH ONE THING A SUCCESSOR MUST ACT ON: A BRIEF IS EPHEMERAL, THE
+HANDOFF IS NOT.** Everything a supervisor sends lives in the worker's PANE, and a pane dies
+with the session. Brief 104 carried a load-bearing constraint — the ruff-`BLE` hazard, below —
+and it survived the third restart only because the worker happened to measure and persist it
+before stopping. That is not a mechanism. **If a brief carries a constraint that must outlive
+the turn, say so and require it in the handoff**; otherwise a restart silently drops it and
+neither side notices, because the supervisor remembers sending it and the worker has no
+record of receiving it. Verified for this thread: the four framing requirements below are all
+present in `handoff.md`, so the current position is safe.
+
+### ▶️ FLEET POSITION: 455 (unreconciled) → 432 → 411 → 403, every step with its basis
+
+| step | what moved it | PR / SHA |
+|---|---|---|
+| 455 → 432 | unit C re-measure, restating all eight children | #1092 `58ee48a` |
+| 432 → 411 | `_PURE_IO_MODULE_MEMBERS` gains `os.path`'s lexical members | #1101 |
+| 411 → 403 | the Try widening, measured (not yet ratified) | `6c0c9da` |
+
+**Per repo, audited for mirrors:** dev-tooling 1 · driver-claude 0 (relieved) · driver-codex 2
+· livespec 15 · git-jsonl 18 · runtime 27 · overseer **103 distinct** (194 raw, 91 byte-identical
+mirrors) · beads-fabro 172. **432 RAW vs 338 DISTINCT — carry both, and say which is which.**
+
+**⛔ 275 OF THE REMAINING ~403 SIT IN OVERSEER AND BEADS-FABRO, NEITHER TOUCHED.** The
+ascending order is right, but the small repos' real product is the SEAM INVENTORY, not their
+own counts: one `LocalContext` seam closed 2, one `os.path` allowlist closed 21 fleet-wide.
+Every triage finding now carries a **repo-specific / fleet-general** scope tag so overseer's
+103 arrives with a list to check against rather than a fresh start.
+
+### ▶️ THE OPEN SPEC PROPOSAL — fully prepared, not yet filed
+
+The Try widening. **File it as a WIDENING of what counts as on-the-railway, NEVER as a fifth
+exemption** — §"ROP composition" declares its exemption set exhaustive, and that framing
+decided v181.
+
+- **Lead with the SHAPE, not the count.** Every one of the 8 relieved is a parse-or-classify
+  function that catches a parse error and returns a defined value for that input class
+  (`parse_json`, `parse_float`, `parse_iso_datetime`); overseer and livespec relieve at ZERO.
+  A coherent semantic class rather than a scattering is what separates widening from softening.
+- **The strongest evidence is the HAND-RULING AGREEMENT.** `extract_created_worktree_paths`
+  was ruled by hand as not-a-conversion by this thread, independently and earlier, and the
+  mechanical rule reproduces that judgment unprompted. Every other argument is about what the
+  rule DOES; this one is about whether it is RIGHT.
+- **⛔ THE `BLE` HAZARD, RAISED BY THE SUPERVISOR AND MEASURED CLEAN.** "A discharging
+  try/except should not disqualify" must not relieve a function whose except is BLIND, or the
+  rule exempts by its own terms exactly the population ruff `BLE` exists to convict — under a
+  loose reading `except Exception: return None` IS "a defined value for that input class".
+  **MEASURED: ZERO of the 8 catch broadly, so the narrow rule costs nothing** (`ee317b5`; one
+  probe was contaminated and caught). Write the rule NARROW — naming specific exception types
+  — and say in terms what happens to `except Exception`.
+- If the revise hits the intent-preservation gate, **apply the brief-84 precedent rather than
+  re-escalating**: acknowledge the contradiction explicitly, do not manufacture a citation,
+  and keep the new-intent provenance paragraph separate from the old-intent acknowledgment.
+
+**A COUNT MOVING IS NOT A DEFECT CLOSING.** `check_tmux_segment` is on the relieved list and
+`8o8e.19` stays open — its `Failure` arm is still dead code. That sentence is the inverse of
+this epic's founding defect, and the two are the same mistake seen from opposite ends.
 
 **✅✅ dev-tooling IS AT ITS FLOOR: 24 → 5 → 3, and the 3 are RULED rows, not conversions.**
 Two units landed since the block above was written, both hitting their predicted movement
@@ -1427,6 +1484,49 @@ lives, and say what replaced it.**
   every number an input to verify. The worker used it inside one sentence. That is now the
   Nth consecutive drive where that clause converted a supervisor error into a measured result
   instead of a false paragraph in the record. **Put it in every brief.**
+
+### 🔭 First-hand, 2026-08-02 (unit C → Try-widening drive) — I READ A NARROW ARTIFACT AS A WIDE CLAIM, THREE TIMES IN THREE FORMS
+
+**One root cause, three surfaces, all mine, all in a single stretch.** Recorded together
+because a successor meeting them apart will read three slips instead of one habit.
+
+| # | the narrow artifact | the wide claim I made | what refuted it |
+|---|---|---|---|
+| 1 | a **per-turn** hook warning ("*this turn* produced a planning artifact but no file-persisting call") | "the findings are not persisted" — made the urgent lead of a brief | the worker had persisted them in EARLIER turns; one `git show origin/master:… \| grep` would have shown it |
+| 2 | a **single link** in a fixpoint ("a `try/except` in `_segment_is_hazard` disqualifies it") | a whole ruling, with framing advice and a lifecycle path, built on it | three roots, not one — and the fix for one root measures zero while another survives |
+| 3 | one **phrasing** (the table's column headers as rendered in the worker's pane) | "the 3-root table is not persisted" — one keystroke from being sent | the persisted prose says the same thing in different words |
+
+**⛔ THE RULE: AN ARTIFACT'S SCOPE IS PART OF WHAT IT SAYS.** A hook speaks about a turn; a
+named link speaks about itself, not about a fixpoint; a grep speaks about a query, not about a
+corpus. **A negative grep is evidence about the QUERY until it is evidence about the CORPUS** —
+which is this file's "an instrument that cannot produce a negative has not produced a positive"
+turned inside out: an instrument that DID produce a negative has not thereby produced a fact.
+And note this is the same move as reading `check-fleet-conformance`'s job NAME as its failure
+CAUSE. **Before acting on any signal, ask what it is scoped to observe.**
+
+- **🔴 AND A FOURTH, WHICH IS THE EPIC'S OWN SUBJECT COMMITTED BY ME.** I told the worker
+  `os.path.expanduser` raises `RuntimeError`. Measured: **`os.path.expanduser` returns the
+  string unchanged; `pathlib.Path.expanduser` raises.** I had measured the PATHLIB one in
+  brief 85 and asserted the result about the OS.PATH one — a different function that happens
+  to share a name — inside a brief about a set that matches on MODULE-QUALIFIED names, on a
+  thread whose central finding (`h0g9`, and `group` vs `re.Match.group`) is that **the name is
+  not the function.** Carrying a measurement forward without carrying its RECEIVER is the same
+  defect the check itself exists to catch.
+
+- **✅ AND ONE PLACE BEING WRONG STILL HELPED, which is worth understanding rather than
+  celebrating.** I predicted the `os.path` allowlist entry might silently fail to match and
+  named `posixpath` as the mechanism. The real mechanism was the MIDDLE-SEGMENT COLLAPSE
+  (`from os import path` binds `{'path': 'os'}` → `os.normpath`). My hypothesis was wrong and
+  the hazard was real. **What made the wrong guess useful was that the instruction was "PROVE
+  IT", not "check for X"** — had I said "check it isn't `posixpath`", the worker would have
+  checked exactly that, found nothing, and shipped. **Name the hazard, demand a proof, and let
+  the worker find the mechanism.**
+
+- **✅ WHAT I CONTRIBUTED THAT SURVIVED, and the pattern is identical every time:** the
+  seam-naming assertion, the `BLE` hazard, the over-relief guard, the two-reading pre-commitment
+  before the Try measurement, and the deletion-over-pinning call. **Every one was a QUESTION
+  with a stated failure mode, and not one was an answer.** Every retracted contribution of mine
+  in this file was an answer.
 
 ### 🧩 First-hand, 2026-08-02 (unit B / seam drive) — I KEEP ASSERTING FROM GREPS INSTEAD OF READS, AND A NEW BLIND-INSTRUMENT MEMBER
 
