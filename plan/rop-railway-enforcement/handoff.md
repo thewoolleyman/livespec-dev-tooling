@@ -948,6 +948,61 @@
 >
 > ---
 
+> ## ✅✅ THE PURE-`os.path` MEMBERS ARE LANDED — **FLEET 432 → 411, PREDICTED −21, LANDED −21**
+>
+> Measured on two genuinely different trees (primary checkout at master vs. the
+> worktree), ADDED/REMOVED decomposed, `_find_offenders` over
+> `resolve_check_universe()`:
+>
+> | member | before | after |
+> |---|---:|---:|
+> | `livespec-overseer` | 194 | **173** |
+> | every other member | — | **unchanged** |
+> | **fleet** | **432** | **411** |
+>
+> **ADDED 0 / REMOVED 21.** ⛔ **AND THE RELAXING-ONLY GUARD RAIL WAS CHECKED, NOT
+> ARGUED: all 21 relieved functions reach one of the SEVEN ENUMERATED members through
+> the call graph — 21 of 21, zero unexplained.** ⚠️ A DIRECT-call check found only 8 of
+> 21 and looked like a violation; **clause (d) propagates, so the transitive question is
+> the only correct one.** Do not re-derive that alarm.
+>
+> **✅ AND `classify` STAYING CONVICTED IS THE CORRECT ANSWER, NOT A FAILURE** — the
+> `Try` root remains, and this fix closed 2 of its 3 roots. Under rule (i) that zero is
+> exactly what a fix for a non-final root must produce.
+>
+> ### 🔴 THE FIXTURE'S IMPORT FORM NEARLY MADE THE RED PASS FOR THE WRONG REASON
+>
+> The first draft wrote `import os.path` in the probe source. **Measured: under bare
+> `import os.path` the local root `os` is NOT in `import_roots`, the receiver does not
+> resolve at all, and the call falls through to the unresolved-receiver VERB branch** —
+> so the seven "pure" assertions PASSED before the fix existed, while the BOUND
+> assertions failed. The Red was inverted and would have proved nothing.
+>
+> **▶️ CAUGHT BY RUNNING THE TEST BEFORE COMMITTING THE RED, which is the whole reason
+> the Red stays unpushed until the pair is MEASURED.** The four import forms differ, and
+> this is now measured rather than assumed:
+>
+> ```
+> import os              import_roots {'os': 'os'}         -> os.path.normpath   RESOLVES
+> import os.path as p    import_roots {'p': 'os.path'}     -> os.path.normpath   RESOLVES
+> from os import path    import_roots {'path': 'os'}       -> os.normpath        DIFFERENT SPELLING
+> import os.path         import_roots {'os.path': …}       -> receiver UNRESOLVED
+> ```
+>
+> ### ⛔ TWO GAPS THIS FIX DOES NOT CLOSE, BOTH MEASURED AND BOTH DELIBERATE
+>
+> 1. **`from os import path` needs a SECOND entry per member** (`os.<member>`, no middle
+>    segment). NOT added: that form appears in **ZERO** first-party files across all eight
+>    code-carrying repos while `import os` appears in **141**. Seven inert entries would
+>    enlarge a set that reads as coverage while covering nothing. Test-pinned.
+> 2. **Bare `import os.path` leaves the receiver UNRESOLVED**, so `os.path.realpath(...)`
+>    under that form escapes conviction entirely and only the verb set catches anything.
+>    **That is a pre-existing RELAXATION this change neither creates nor closes**, and it
+>    is live in exactly 1 file fleet-wide (in `livespec`). Recorded so it is not
+>    rediscovered as new.
+>
+> ---
+>
 > ## 📜📜 TWO FIRST-CLASS RULES, PROMOTED OUT OF NARRATIVE (brief 100)
 >
 > **Both existed only as paragraphs inside a retraction, which is exactly what
