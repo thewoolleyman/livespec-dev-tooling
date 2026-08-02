@@ -23,6 +23,7 @@ __all__: list[str] = []
 
 _A = Path("pkg/a.py")
 _B = Path("pkg/b.py")
+_SHIM = Path("pkg/facade.py")
 
 
 def _exempt(*, sources: dict[Path, str]) -> frozenset[tuple[Path, str]]:
@@ -79,3 +80,76 @@ def test_a_call_target_that_is_neither_a_name_nor_an_attribute_disqualifies() ->
     """
     source = "def f(*, factory: object) -> int:\n    return factory()()\n"
     assert (_A, "f") not in _exempt(sources={_A: source})
+
+
+def test_a_call_through_a_reexport_shim_still_reaches_the_definer() -> None:
+    """A facade that re-exports a name defines nothing, so the reach must re-resolve.
+
+    ⛔ THIS IS THE FAIL-OPEN DIRECTION, WHICH THE RATIFIED DESIGN FORECLOSES
+    EVERYWHERE ELSE. `_name_call` takes the `dotted is not None` branch for ANY
+    imported name and derives edges from `_first_party_edges`; when the import
+    routes through a shim, the shim defines nothing, so NO edge was produced —
+    and that branch never falls through to the "doubt disqualifies" arm, which
+    is only reached for a name that was not imported at all. The caller was
+    therefore ACQUITTED by a resolution failure.
+
+    MEASURED in `livespec-orchestrator-beads-fabro`: three functions reaching
+    disqualified callees through `commands/_dispatcher_plan.py` — a 277-line
+    aggregator that re-exports `parse_run_status` from `_dispatcher_run_status`
+    — escaped conviction. All three are `_`-prefixed, so closing this can only
+    ADD offenders as their public callers convict through them.
+
+    `fleet/_public_api_graph.py` carries this exact fix already
+    (`_through_reexports`, worth 5 consumption edges when it landed); this
+    module is the second copy that did not get it — the `i04f` shape.
+    """
+    sources = {
+        _A: "def leaf(*, name: str) -> str:\n    return open(name).name\n",
+        _SHIM: "from pkg.a import leaf\n\n__all__: list[str] = ['leaf']\n",
+        _B: "from pkg.facade import leaf\n\n\ndef outer() -> str:\n    return leaf(name='x')\n",
+    }
+    # `leaf` is disqualified by clause (c) via the `open` builtin, so `outer`
+    # must be disqualified THROUGH it by clause (d)'s fixpoint.
+    assert (_A, "leaf") not in _exempt(sources=sources)
+    assert (_B, "outer") not in _exempt(sources=sources)
+
+
+def test_a_reexport_chain_resolves_through_more_than_one_hop() -> None:
+    """caller -> facade -> aggregator -> definer, which is the real fleet shape.
+
+    `livespec-orchestrator-beads-fabro` reaches `parse_float` as
+    `commands/* -> effects/__init__.py -> effects/_attempt.py`, and a
+    single-hop fix would leave every deeper chain still laundering its reach.
+    """
+    mid = Path("pkg/mid.py")
+    sources = {
+        _A: "def leaf(*, name: str) -> str:\n    return open(name).name\n",
+        mid: "from pkg.a import leaf\n\n__all__: list[str] = ['leaf']\n",
+        _SHIM: "from pkg.mid import leaf\n\n__all__: list[str] = ['leaf']\n",
+        _B: "from pkg.facade import leaf\n\n\ndef outer() -> str:\n    return leaf(name='x')\n",
+    }
+    assert (_B, "outer") not in _exempt(sources=sources)
+
+
+def test_a_self_referential_reexport_terminates() -> None:
+    """A module importing a name from ITSELF must not spin the walk.
+
+    A re-export cycle is a REAL shape, so the walk is bounded by a VISITED SET
+    rather than a hop limit — for the reason
+    `_public_api_graph._through_reexports` records: an arbitrary depth cap
+    would silently stop resolving a legitimate chain, which is the fail-open
+    direction wearing a safety measure's clothing.
+
+    ⚠️ THIS TEST PASSES BOTH BEFORE AND AFTER THE FIX, AND THAT IS THE POINT —
+    it is a guard on the NEW code, not a demonstration of the defect. Without
+    the visited set it does not fail, it HANGS. The reach resolves to nothing
+    because no module defines the name, which is the same answer the analysis
+    gave before the walk existed: the walk must not turn an unresolvable name
+    into an infinite loop.
+    """
+    loop = Path("pkg/loop.py")
+    sources = {
+        loop: "from pkg.loop import leaf\n\n__all__: list[str] = ['leaf']\n",
+        _B: "from pkg.loop import leaf\n\n\ndef outer() -> str:\n    return leaf(name='x')\n",
+    }
+    assert (_B, "outer") in _exempt(sources=sources)
