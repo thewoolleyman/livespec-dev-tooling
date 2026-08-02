@@ -618,19 +618,55 @@ same clause, look for the missing seam before writing N fixes.* Proven — the `
 file-read seam closed 2 of 4 condition-1 failures from ONE absence, with the residue
 EXPLAINED rather than absorbed.
 
-**SUPERVISOR STATE AT THIS EDIT:** the only artifact is the PR carrying this correction,
-from worktree `~/.worktrees/livespec-dev-tooling/supervisor-drive-corrections`, reaped on
-merge. The worker is mid-flight on **unit B** under brief 91. **Enumerate foreign worktrees,
-never quote a count** — this file's own retracted-number lesson.
+**SUPERVISOR STATE AT THIS EDIT:** the only artifact is the PR carrying this update, from
+worktree `~/.worktrees/livespec-dev-tooling/supervisor-seam-position`, reaped on merge. The
+worker session has RESTARTED TWICE; both times it had landed and reaped cleanly first, so
+nothing was lost either time. **Enumerate foreign worktrees, never quote a count** — this
+file's own retracted-number lesson.
 
-**▶️ UNIT B's EXPECTED MOVEMENT, and its polarity is the OPPOSITE of unit A's — brief 91.**
-Unit A was tightening-only, so any DECREASE was a finding. Unit B is **RELAXING-ONLY**, so
-the rule inverts and BOTH halves bind: predicted **24 → 5** in dev-tooling; any **INCREASE**
-is a finding because a relaxing change cannot add offenders; and **relieving MORE than the 19
-is ALSO a finding, not a bonus** — a relaxing key that relieves more than its enumerated
-variants is the declared-empty escape wearing a new name. If the count lands below 5, STOP
-and find out what got relieved that should not have been. Decompose ADDED/REMOVED rather
-than reading the net.
+**✅✅ dev-tooling IS AT ITS FLOOR: 24 → 5 → 3, and the 3 are RULED rows, not conversions.**
+Two units landed since the block above was written, both hitting their predicted movement
+exactly:
+
+| unit | PR → SHA | movement | polarity check |
+|---|---|---|---|
+| **B** — `single_meaning_variants` carrier | #1081 → `2fe61c9` | **24 → 5**, ADDED 0 / REMOVED 19 | relaxing-only; no increase AND no over-relief |
+| **seam** — railway-typed `LocalContext` predicates | #1086 → `e9ab0f6` | **5 → 3**, a live crash closed | the 2 were never conversions |
+
+**⛔ THE OVER-RELIEF GUARD IS THE ONE THAT MATTERED, and it held.** Unit B is relaxing-only,
+so an INCREASE was impossible and proving its absence was cheap. The real test was the other
+half: **it removed exactly the enumerated 19, not 20.** A relaxing key that relieves more
+than its declared variants is `pure_trees = []` wearing a new name, and that is the failure
+this whole carrier design exists to make impossible. **Keep asking BOTH halves of a relaxing
+change; the interesting one is never the direction everybody checks.**
+
+**⚠️ AND "ORDINARY CONVERSIONS OWED" WAS MY PHRASE AND IT UNDER-DESCRIBED THE FIX** — see
+Corrections. The last 2 were not conversions at all: they are `ObligationRow` table entries
+and the table dispatches on `RowOutcome`, so converting the return type was never available.
+The fix was a **predicate seam** mirroring the `file_text` READ seam, after which `RowSkip`
+carries the unreadable case — that variant's RATIFIED meaning, removing an in-band
+conflation where unreadable currently reads AS absent.
+
+**🔺 AND THE FINDING THAT OUTRANKS THE COUNT: THE FLEET MANUFACTURES THE CRASH ITSELF.**
+`is_dir()`/`is_file()` raise `PermissionError` under an unreadable parent and neither row
+caught it. `reconcile_beads_dir_perms` chmods `.beads` to 700 — **so the hardening row
+creates the exact state under which its sibling crashes.** Not a latent edge case: a crash
+this fleet arranges for itself, probed on the 3.10 floor rather than reasoned about.
+
+**✅ THE SEAM-NAMING TRAP IS CLOSED MECHANICALLY, which is the durable part.** A seam named
+`is_dir`/`is_file` would sit in `_UNRESOLVED_RECEIVER_IO_VERBS` (43 entries after unit A), so
+condition 1 would still fail and **the fix would look done while changing nothing.** The
+seams are named `dir_present`/`file_present`, and `e9ab0f6` pins the bound BESIDE the verb
+set with `assert "dir_present" not in _UNRESOLVED_RECEIVER_IO_VERBS`, mutation-proved by
+renaming it back. **A rename now reds a test instead of silently un-fixing the rows** — prose
+converted into a gate, which is the only form this thread has found that survives.
+
+**▶️ WHAT REMAINS, and none of it is dev-tooling's own code:** unit C, the fleet re-measure
+on the corrected verb set restating all eight children `.7`–`.14` (**UP or FLAT only — the
+455 is a known UNDER-count, so any DECREASE is a finding**), then the seven siblings in
+ASCENDING size with structural triage FIRST in each, then whole-fleet re-measure, then ARM —
+carrying the disposition denominator, the `995m` known gap, AND the `get`/`run`/`group`
+failable-but-absent trio.
 
 **⛔ AND THE ONE PROPERTY THAT MAKES `single_meaning_variants` LEGITIMATE AT ALL IS THE
 RECOMPUTE.** A relaxing-only key is precisely the shape this thread spent days removing
@@ -1391,6 +1427,36 @@ lives, and say what replaced it.**
   every number an input to verify. The worker used it inside one sentence. That is now the
   Nth consecutive drive where that clause converted a supervisor error into a measured result
   instead of a false paragraph in the record. **Put it in every brief.**
+
+### 🧩 First-hand, 2026-08-02 (unit B / seam drive) — I KEEP ASSERTING FROM GREPS INSTEAD OF READS, AND A NEW BLIND-INSTRUMENT MEMBER
+
+- **🔴 "That test file already imports the verb set" — it does not, and I got that from
+  `grep -l`.** Briefing the seam-naming fix, I told the worker to add the assertion to
+  `test_io_boundary_failable_verbs.py` because it "ALREADY imports the set". It does not: it
+  probes through its own `_disqualifies_on_unresolved_receiver` helper. My evidence was a
+  `grep -l` hit on the IDENTIFIER, which proves the string appears somewhere and nothing
+  else. The worker read the file, corrected me, and placed the assertion better — **beside
+  the verb set itself**, in the file that OWNS it. **This file already carries the binding
+  rule "do not restate a mechanism claim without reading the code it describes, and name
+  what you read"; a grep is not a read, and `grep -l` is the weakest form of one** — it
+  discards even the line that would have shown me the helper.
+- **✅ AND THE WORKER DID THE THING I SHOULD HAVE ASKED FOR: IT MUTATION-PROVED MY
+  ASSERTION.** Its note — *"a green assertion proves nothing on this thread"* — then it
+  renamed `dir_present` → `is_dir` and confirmed the assertion REDS. I proposed the gate and
+  would have accepted it green. **A gate you add is a check, and this epic's whole subject is
+  checks nobody proved could fail.**
+- **▶️ A NEW MEMBER OF THE BLIND-INSTRUMENT FAMILY, and it is the worker's, not mine — (g)
+  A NEGATIVE CONTROL MUST BREAK EXACTLY ONE THING.** Its wiring Red constructed only one
+  variant, so limb (c) rejected the declaration and **the test passed for the wrong reason**.
+  The family now reads: (a)–(d) could not produce a NEGATIVE; (e) could not SEE THE
+  POPULATION; (f) ran on the WRONG RUNTIME (mine); **(g) the control broke MORE THAN ONE
+  THING, so the assertion fired on a cause other than the one under test.** A positive
+  control cannot catch (g) — it passes either way. **The operational form: when your Red
+  fails, confirm it fails for the reason you intended, not merely that it fails.**
+- **✅ THE UNPUSHED-RED RULE HAS NOW PAID FOR ITSELF THREE TIMES** — a five-verb pair that
+  added ten false offenders, a Red whose control broke the wrong thing, and a coverage-shaped
+  reset. Each cost a reset instead of a landed defect. **The distinction is the PUSH, not the
+  commit; a pushed Red-only commit exits 0 and nothing reopens it.** Treat this as standing.
 
 ### 🧯 First-hand, 2026-08-02 (unit A drive) — TWO MORE OF MINE, AND THE ONE READ THAT PAID FOR THE WHOLE DRIVE
 
