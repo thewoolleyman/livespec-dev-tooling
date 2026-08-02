@@ -28,7 +28,7 @@ runs:
   using: composite
   steps:
     - name: Install pinned binaries via mise
-      uses: jdx/mise-action@v2
+      uses: jdx/mise-action@v4
 
     - name: Install Python dev deps via uv
       shell: bash

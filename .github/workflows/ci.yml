@@ -68,7 +68,7 @@ jobs:
       py_changed: ${{ steps.detect.outputs.py_changed }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           # Need the base ref reachable for the PR diff below.
           fetch-depth: 0
@@ -191,7 +191,7 @@ jobs:
 
       - name: Checkout
         if: needs.setup.outputs.py_changed == 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       # Hosted routing keeps the baked container but checks out as runner uid
       # 1001 while steps run git as ROOT → "dubious ownership" (exit 128). Trust
@@ -243,21 +243,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Mint App installation token (fleet-wide reads)
         id: app-token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ secrets.APP_ID }}
+          client-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
 
       - name: Install pinned binaries via mise
-        uses: jdx/mise-action@v2
+        uses: jdx/mise-action@v4
 
       - name: Restore uv download cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/uv
           key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
@@ -387,7 +387,7 @@ jobs:
             runner: '["self-hosted","local-ci"]'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           # Full history for ALL matrix entries: the
           # check-red-green-replay range validation enumerates
@@ -489,7 +489,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Export CI run telemetry to Honeycomb (closed-loop verified)
         env:
