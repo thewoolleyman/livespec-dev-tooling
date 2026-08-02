@@ -1,6 +1,159 @@
 # rop-railway-enforcement — arm the check that was never armed, then remediate six repos
 
-> ## 🔻🔻 COLD START — **v186 IS RATIFIED. THE RULE IS LAW AND NOTHING COMPUTES IT YET — MECHANIZE IT.**
+> ## 🔻🔻 COLD START — **v186 IS MECHANIZED AND THE FLEET IS 403, MEASURED. NEXT IS `livespec` 15 AND `git-jsonl` 17.**
+>
+> ### 🔻 FIRST FIVE MINUTES
+>
+> **NOTHING IS MID-FLIGHT except the commit that carries this text.** No background job,
+> no sub-agent, no unpushed Red, no open PR of this thread's. dev-tooling master at
+> wrap-up: **`8ce991a`**; `livespec` master: **`c39c1801`** — re-fetch both.
+>
+> 1. **REAP EXACTLY ONE WORKTREE:
+>    `~/.worktrees/livespec-dev-tooling/docs-handoff-v186-mechanized`** once its PR shows
+>    MERGED — `gh pr list --repo thewoolleyman/livespec-dev-tooling --head
+>    docs/handoff-v186-mechanized --state all`. Doc-only, auto-merge ARMED. **If this
+>    block is what you are reading, that PR MERGED.** Then `git -C
+>    /data/projects/livespec-dev-tooling merge --ff-only origin/master`.
+> 2. **REAP NOTHING ELSE.** Every other worktree belongs to a PEER lane.
+> 3. `git status --short --branch` — clean on `master`; untracked
+>    `install-livespec-pr-bot.png` is pre-existing and NOT this thread's. ⚠️ A modified
+>    `uv.lock` is REGENERATED noise: `git checkout -- uv.lock` before any `merge --ff-only`.
+> 4. ⚠️ **A FRESH WORKTREE FAILS `check-primary-checkout-commit-refuse-hook-installed`
+>    ON ITS FIRST `.py` COMMIT** — `worktree_pack_absent`, because `dev-tooling/` is
+>    gitignored and not materialized. Fix: `mise exec -- just install-worktree-pack` in
+>    the worktree. It is NOT your diff and it costs one command.
+> 5. **Re-derive before trusting any number.** The two deltas in §"THE ARMED MEASUREMENT"
+>    still apply; on merged master the ARMED measurement now reads **universe 171 /
+>    offenders 1** because the criterion itself moved.
+>
+> ⚠️ **`/tmp` INODE PRESSURE RECURS** (`8o8e.16`): check `df -i /tmp`, NOT `df -h`. Nine
+> shallow clones cost ~8.5k inodes; this session took eight and removed them.
+>
+> ### 📋 THE STATE, in one place
+>
+> | | |
+> |---|---|
+> | **livespec spec** | **v186 RATIFIED** (`c39c1801`) and **MECHANIZED** (`8ce991a`). Nothing of this thread is pending in `livespec`. |
+> | **fleet** | **403**, MEASURED on all nine at stated SHAs — no longer a prediction |
+> | per repo | dev-tooling **1** · driver-claude **0** · driver-codex **1** · livespec **15** · git-jsonl **17** · runtime **27** · overseer **173** · beads-fabro **169** · console **0** |
+> | dev-tooling's remaining 1 | `cross_member_consumption` — RULED, in-band census, **not a conversion** |
+> | still pending in `livespec` | `github-app-request-budget`, `owned-heading-coverage-todos` — FOREIGN |
+>
+> ### ▶️▶️▶️ EXACT NEXT ACTION — **`livespec` (15) AND `git-jsonl` (17), STRUCTURAL TRIAGE FIRST, EACH FINDING SCOPE-TAGGED**
+>
+> ⛔ **342 of the remaining 403 sit in `overseer` (173) and `beads-fabro` (169), both
+> untouched** — so the small repos' real product is the SEAM INVENTORY, not their own
+> counts. The running list is §"SCOPE TAGS". Then the two big ones, then ARMING with the
+> denominator list.
+>
+> **▶️ AND ONE SPEC ITEM IS OWED, UNBLOCKED, AND SIZED:** file the **clause (e) `Any`
+> hole** as its own measured proposal (sizing below). Do NOT bundle it into anything.
+>
+> ### ✅✅ WHAT LANDED — **PR #1111, `8ce991a`. THE RULE NOW COMPUTES.**
+>
+> `_is_discharging_narrow` decides v186's four limbs syntactically and
+> `_clauses_a_and_b_disqualify` reads clauses (a) and (b) over one walk. It stores no
+> claim: widen a handler, drop a `return`, add a `finally`, and the rule re-arms at that
+> commit.
+>
+> ### 📏 BOTH ENDS MEASURED — TWO INSTRUMENTS, TWO TREES, **ADDED AND REMOVED NEVER NETTED**
+>
+> | member | sha | armed | v186 | ADDED | REMOVED |
+> |---|---|---:|---:|---:|---:|
+> | `livespec` | `c39c180` | 15 | 15 | 0 | 0 |
+> | `livespec-driver-claude` | `b9e8deb` | 1 | **0** | 0 | 1 |
+> | `livespec-driver-codex` | `3a67a65` | 2 | 1 | 0 | 1 |
+> | `livespec-orchestrator-beads-fabro` | `0637f04` | 172 | 169 | 0 | 3 |
+> | `livespec-orchestrator-git-jsonl` | `7fa5d36` | 18 | 17 | 0 | 1 |
+> | `livespec-overseer` | `aa923de` | 173 | 173 | 0 | 0 |
+> | `livespec-runtime` | `ffd81c4` | 27 | 27 | 0 | 0 |
+> | `livespec-console-beads-fabro` | `76f8016` | 0 | 0 | 0 | 0 |
+> | `livespec-dev-tooling` | `8f1aa7d` | 3 | **1** | 0 | 2 |
+> | **fleet** | | **411** | **403** | **0** | **8** |
+>
+> **411 = 15+1+2+172+18+173+27+0+3. 403 = 15+0+1+169+17+173+27+0+1.** Both re-added here.
+>
+> **✅ THE MECHANIZED CRITERION AND THE AST-REWRITING PROBE AGREE ON ALL NINE**, and the
+> probe applied ON TOP of the mechanized criterion moves NOTHING (idempotent). Two
+> independent instruments, agreeing member by member, is why 403 is quotable.
+>
+> ### ⛔⛔ CORRECTING BRIEF 105 — **THE CHANGE HAS ONE SIGN, NOT TWO. `loads_json_optional` IS INSIDE THE −8.**
+>
+> Brief 105 asked for the prediction to be decomposed because *"the widening REMOVES
+> offenders (the measured −8), and the unmask ADDS them (git-jsonl's
+> `loads_json_optional`, and any sibling of it nobody has counted)"*. **The direction is
+> inverted, and it matters.** `loads_json_optional` does not become an offender under the
+> unmask — it is one of the eight that LEAVE. It is git-jsonl's whole 18 → 17.
+>
+> **THE MECHANISM: v186 ONLY ENLARGES MEMBER 1'S EXEMPT SET**, so `_find_offenders` skips
+> strictly more and the count can only fall. **Measured rather than argued: ADDED is 0 in
+> every one of the nine members.** There is no second sign, so no masked zero can be
+> manufactured here — and the ADDED/REMOVED decomposition was still worth running,
+> because ADDED > 0 anywhere would have been an implementation defect.
+>
+> **▶️ THE HOLE IS A QUALITY TERM, NOT A COUNT TERM.** It does not change the number; it
+> changes whether one of the eight removals SHOULD have happened. That is the honest
+> shape of the finding and it is why it needs its own proposal rather than a rider.
+>
+> ### 📐 THE `Any` HOLE, SIZED — **579 → 18 → 1**, and the ceiling is the number to carry
+>
+> | | count | what it is |
+> |---|---:|---|
+> | blind population | **579** | first-party top-level functions clause (e) structurally cannot see — `-> Any` or NO return annotation. 556 of them are `overseer`, all unannotated, `-> Any` zero. |
+> | blind **AND** currently an offender | **18** | the STANDING EXPOSURE CEILING — every one of these slips out if it ever gains a discharging narrow `try` |
+> | blind **AND** relieved by v186 today | **1** | `git-jsonl`'s `loads_json_optional(*, text: str) -> Any`, the only live instance |
+>
+> **▶️ SO IT PROCEEDS AS ONE UNIT, and that judgement is now measured rather than
+> asserted.** One live instance and a ceiling of 18 is small. ⛔ **Quote the 18, not the
+> 579** — the 579 is dominated by private helpers no rule reaches.
+>
+> ### 🔴🔴 THE FINDING — **v186 MADE A v183 CONTROL VACUOUS, AND ONLY ITS POLARITY SAVED IT**
+>
+> `test_an_undeclared_union_return_is_still_reported` convicted its fixture through clause
+> (b) counting a bare `try` — its own comment said so in as many words. Under v186 member
+> 1 exempted that fixture ON ITS OWN, so the control went green **while proving nothing
+> about the declaration it exists to control**.
+>
+> **▶️ IT FAILED LOUDLY ONLY BECAUSE IT ASSERTS `exit_code != 0`.** A control written the
+> other way round — asserting a PASS — would have kept passing and said nothing. The
+> fixture now RECORDS-AND-CONTINUES, so it is convicted by the one limb v186 deliberately
+> refuses, which is a reason no future relaxation of clause (b) can take away.
+>
+> ⛔ **THE DURABLE RULE, and it generalizes past this repo: A CONTROL CONVICTED BY A RULE
+> THAT LATER RELAXES IS A CONTROL WITH AN EXPIRY DATE NOBODY WROTE DOWN.** When a fixture
+> exists to prove that relief X is what relieves, it MUST be convicted by something
+> ORTHOGONAL to X — otherwise a later widening silently converts the control into a
+> tautology. File beside `8o8e.17`.
+>
+> **✅ AND THE SWEEP FOR SILENT SIBLINGS WAS RUN, because a control that starts passing
+> for the wrong reason never fails.** Every test fixture in the repo was PARSED (not
+> grepped) and checked for the newly-exempt shape: **5 hits — 3 are this unit's own new
+> tests, 2 are in `test_no_except_outside_io.py`, which does not consult this module**
+> (verified by enumerating every importer of `_no_expected_failure_mode`, not by
+> assuming).
+>
+> ### 🔴 AND THE HALF-PAIR TRAILER DEFECT RECURRED — I HIT IT MYSELF
+>
+> `git commit --amend -m "…"` at Green **DELETED the `TDD-Red-*` trailers** and the hook
+> exited 0 on the half-pair — the defect recorded at §"ITEM 3 PAIR B", reproduced exactly.
+> Recovered by reading the Red trailers back out of the pre-amend commit (its SHA is in
+> `TDD-Green-Parent-Reflog`) and re-amending with `-F`. **The final commit carries 5 Red +
+> 2 Green trailers; check with `git log -1 --format=%B | grep -c '^TDD-Red-'` before
+> pushing, because the hook will not.**
+>
+> ### 🧰 TWO INSTRUMENT MOVES, NAMED SO THEY ARE REUSED (brief 105 asked for the names)
+>
+> 1. **THE IDENTITY CONTROL** — run the probe once with an IDENTITY rewrite; it must move
+>    NOTHING. It proves the instrument responds to the CHANGE rather than to being re-run,
+>    which no positive control does. It caught a contaminated probe that read 3 → 21.
+> 2. **A NEGATIVE CONTROL ON THE RULE ITSELF** — `_parsed`, the narrow handler that
+>    RECORDS AND CONTINUES, must stay convicted. It demonstrates the rule DISCRIMINATES
+>    rather than relieving everything wearing a narrow `except`. **A rule that relieved
+>    `_parsed` too would have been a softening with good manners.**
+>
+> ---
+>
+> ## 🗄️ (SUPERSEDED AS THE HEADER 2026-08-02 — v186 is MECHANIZED; the action this block names is DONE. Kept for the four preparation findings and the probe designs.) COLD START — **v186 IS RATIFIED. THE RULE IS LAW AND NOTHING COMPUTES IT YET — MECHANIZE IT.**
 >
 > ### 🔻 FIRST FIVE MINUTES
 >
