@@ -32,6 +32,23 @@ is DECLARED per function in `total_absence_returns` and gated by
 sets are disjoint by construction — clause (e) refuses every
 `X | None`, the only shape member 2 admits.
 
+livespec v183 ADDS A THIRD SET, and it is NOT a third member of
+v179 nor a fifth member of the exemption set above, which remains
+EXHAUSTIVE. A CLOSED DISCRIMINATED UNION whose non-success
+variants are inhabited and load-bearing ALREADY HAS the property
+the Result-return rule secures, and satisfies it AT A RENDERING
+BOUNDARY. Conditions 1 and 2 are COMPUTED and become the gate;
+condition 3 is SEMANTIC and is DECLARED per variant in
+`single_meaning_variants`, gated by `checks/_declarable_unions`.
+
+⛔ THAT KEY IS RELAXING-ONLY, and a rejected entry HARD-FAILS this
+check rather than being dropped. Condition 1 is NOT reachable by
+any declaration: a function returning a declared union that calls
+a side-effecting primitive DIRECTLY stays convicted. That
+subtraction is what makes the gate able to REFUSE as well as
+relieve — a gate that could only relieve would be
+indistinguishable from a blind one.
+
 ⛔ BOTH DECLARATION KEYS' STALENESS GATES SIT BEHIND THE
 `pure_trees` ROLE-ABSENCE GATE, so a repo whose `pure_trees` is
 `not_applicable` or `unarmed_until` never reaches them and its
@@ -106,6 +123,10 @@ from livespec_dev_tooling.checks._public_api_consumption import (  # noqa: E402
 from livespec_dev_tooling.checks._role_key_gate import (  # noqa: E402
     ensure_declared_paths_contain_python,
     role_absence_exit_code,
+)
+from livespec_dev_tooling.checks._single_meaning_variants import (  # noqa: E402
+    declared_variant_names,
+    rejected_variant_declarations,
 )
 from livespec_dev_tooling.config import (  # noqa: E402
     iter_py_files,
@@ -349,6 +370,17 @@ def _scan(
     # entry that FAILS bound 1 or bound 3 contributes nothing here; it fails the
     # check outright in `main()`.
     total |= declared_absence_names(declared=config.total_absence_returns, sources=sources)
+    # livespec v183's SANCTIONED ALTERNATIVE SPELLING at a rendering boundary,
+    # DECLARED per variant in `single_meaning_variants` and gated by
+    # `checks/_declarable_unions`. It joins the same exempt set, but it is NOT a
+    # third member of v179: nothing is exempted from the railway here — a
+    # declared union already HAS the property the rule secures, and condition 1
+    # TIGHTENS the obligation at the leaf rather than relaxing it. A function
+    # returning a declared union that calls a primitive DIRECTLY is subtracted
+    # inside `declared_variant_names` and stays convicted.
+    total |= declared_variant_names(
+        declared=config.single_meaning_variants, sources=sources, io_trees=config.io_trees
+    )
     offenders: list[tuple[Path, int, str]] = []
     for tree_rel in pure_trees:
         for py_file in iter_py_files(root=cwd / tree_rel):
@@ -365,6 +397,53 @@ def _scan(
             ):
                 offenders.append((rel_path, lineno, name))
     return offenders
+
+
+def _report_bad_declarations(
+    *, config: Config, sources: Mapping[Path, str], log: structlog.stdlib.BoundLogger
+) -> bool:
+    """Report every mis-declaration across the THREE declaration keys; True if any.
+
+    All three hard-fail and none is a warning, so they are reported together
+    rather than short-circuiting at the first: an operator fixing a declaration
+    should see every entry that is wrong, not the first key that happens to be.
+
+    ⚠️ THIS RUNS BEHIND THE `pure_trees` ROLE-ABSENCE GATE, so a repo whose
+    `pure_trees` is `not_applicable` never reaches it and its declarations are
+    UNVERIFIED locally until the check is armed there. An artifact of the gate
+    ORDER rather than of the detectors, stated in the module docstring too.
+    """
+    bad = False
+    for entry in stale_declarations(declared=config.cross_repo_public_api, sources=sources):
+        bad = True
+        log.error(
+            "declared cross_repo_public_api entry no longer resolves to a public function",
+            file=str(entry.file),
+            function=entry.function,
+            reason=entry.reason,
+        )
+    for item in rejected_declarations(declared=config.total_absence_returns, sources=sources):
+        bad = True
+        log.error(
+            "declared total_absence_returns entry is not a legitimate-absence declaration",
+            file=str(item.entry.file),
+            function=item.entry.function,
+            rejection=item.rejection,
+            reason=item.entry.reason,
+        )
+    for refused in rejected_variant_declarations(
+        declared=config.single_meaning_variants, sources=sources
+    ):
+        bad = True
+        log.error(
+            "declared single_meaning_variants entry is not over a declarable union",
+            file=str(refused.entry.file),
+            union=refused.entry.union,
+            variant=refused.entry.variant,
+            rejection=refused.rejection,
+            meaning=refused.entry.meaning,
+        )
+    return bad
 
 
 def main() -> int:
@@ -399,26 +478,7 @@ def main() -> int:
         return 1
     root, universe = resolve_check_universe()
     sources = {rel: (root / rel).read_text(encoding="utf-8") for rel in universe}
-    stale = stale_declarations(declared=config.cross_repo_public_api, sources=sources)
-    if stale:
-        for entry in stale:
-            log.error(
-                "declared cross_repo_public_api entry no longer resolves to a public function",
-                file=str(entry.file),
-                function=entry.function,
-                reason=entry.reason,
-            )
-        return 1
-    rejected = rejected_declarations(declared=config.total_absence_returns, sources=sources)
-    if rejected:
-        for item in rejected:
-            log.error(
-                "declared total_absence_returns entry is not a legitimate-absence declaration",
-                file=str(item.entry.file),
-                function=item.entry.function,
-                rejection=item.rejection,
-                reason=item.entry.reason,
-            )
+    if _report_bad_declarations(config=config, sources=sources, log=log):
         return 1
     offenders = _scan(cwd=cwd, pure_trees=pure_trees, config=config, sources=sources)
     if offenders:
