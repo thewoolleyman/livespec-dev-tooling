@@ -3,8 +3,17 @@
 `vendor_update` is the maintainer-only re-vendoring tool: invoked as
 `python -m livespec_dev_tooling.vendor_update <lib>`, it reads the
 governed project's `.vendor.jsonc`, shallow-clones the upstream ref,
-copies the package tree under `.claude-plugin/scripts/_vendor/<lib>/`,
+copies the package tree under the repo's OWN `_vendor/<lib>/` tree,
 preserves/copies `LICENSE`, and stamps the entry's `vendored_at`.
+
+The destination is RESOLVED from the git index rather than hardcoded
+(work-item `livespec-dev-tooling-w25v`): the fleet uses three distinct
+vendor layouts — `.claude-plugin/scripts/_vendor/` (livespec,
+beads-fabro, git-jsonl), `<package>/_vendor/` (livespec-dev-tooling
+itself), and `_vendor/` at the repo root (livespec-driver-claude) — so
+a hardcoded plugin-layout path silently wrote a fresh wrong-place tree
+in two of the five repos that carry one, including the repo that SHIPS
+this tool.
 
 It was RELOCATED from livespec-core's `dev-tooling/vendor_update.py`
 into this installed package (work-item livespec-9ixg) so the fleet's
@@ -90,11 +99,22 @@ def _manifest_text(
     )
 
 
+_PLUGIN_VENDOR_ROOT = ".claude-plugin/scripts/_vendor"
+_PACKAGE_VENDOR_ROOT = "livespec_dev_tooling/_vendor"
+_ROOT_VENDOR_ROOT = "_vendor"
+
+# The default tracked listing: one pre-existing vendored lib under the plugin
+# layout, which is what the majority of the fleet carries. Tests that exercise
+# a DIFFERENT layout, an ambiguous repo, or an unvendored one pass their own.
+_DEFAULT_TRACKED: tuple[str, ...] = (f"{_PLUGIN_VENDOR_ROOT}/otherlib/__init__.py",)
+
+
 def _write_fake_git(
     *,
     bin_dir: Path,
     make_package_dir: bool = True,
     upstream_license: bool = True,
+    tracked: tuple[str, ...] = _DEFAULT_TRACKED,
 ) -> None:
     """Write an executable fake `git` shim that materializes a clone tree.
 
@@ -102,8 +122,21 @@ def _write_fake_git(
     `make_package_dir`, a `<dest>/<lib>/` package tree (a top-level
     module file, a sub-package dir, and a `__pycache__` dir the copy
     must skip). When `upstream_license`, it also writes `<dest>/LICENSE`.
-    Any non-`clone` git subcommand exits 0.
+
+    On `git ls-files` it prints `tracked` verbatim — the repo's INDEX,
+    which is what destination resolution reads. Passing the listing
+    explicitly (rather than walking the tmp tree) is what lets a test
+    put a `_vendor/` directory on disk that the index does NOT carry,
+    the false positive a filesystem walk would take.
+
+    Any other git subcommand exits 0.
     """
+    tracked_block = (
+        "if [ \"$1\" = 'ls-files' ]; then\n"
+        + "".join(f'  echo "{entry}"\n' for entry in tracked)
+        + "  exit 0\n"
+        "fi\n"
+    )
     package_block = (
         f'  mkdir -p "$DEST/{_LIB}/subpkg"\n'
         f'  mkdir -p "$DEST/{_LIB}/__pycache__"\n'
@@ -127,6 +160,7 @@ def _write_fake_git(
         f"{license_block}"
         "  exit 0\n"
         "fi\n"
+        f"{tracked_block}"
         "exit 0\n",
         encoding="utf-8",
     )
@@ -152,8 +186,8 @@ def _run_module(
     )
 
 
-def _vendor_dest(*, root: Path, lib: str = _LIB) -> Path:
-    return root / ".claude-plugin" / "scripts" / "_vendor" / lib
+def _vendor_dest(*, root: Path, lib: str = _LIB, vendor_root: str = _PLUGIN_VENDOR_ROOT) -> Path:
+    return root / vendor_root / lib
 
 
 # ---------------------------------------------------------------------------
@@ -209,6 +243,118 @@ def test_happy_path_overwrites_existing_vendor_dest(*, tmp_path: Path) -> None:
     assert result.returncode == 0, f"stderr={result.stderr!r}"
     assert not (dest / "stale.txt").exists(), "stale pre-existing file must be gone"
     assert (dest / "__init__.py").exists()
+
+
+# ---------------------------------------------------------------------------
+# Destination resolution (`livespec-dev-tooling-w25v`) — the layout is READ
+# from the git index, never assumed. Three layouts exist in the fleet and a
+# hardcoded one is wrong in two of the five repos that carry a vendor tree.
+# ---------------------------------------------------------------------------
+
+
+def test_resolves_package_layout_vendor_root(*, tmp_path: Path) -> None:
+    """`<package>/_vendor/` — the layout of the repo that SHIPS this tool.
+
+    livespec-dev-tooling is a plain library with no `.claude-plugin/` tree;
+    its vendored libs live at `livespec_dev_tooling/_vendor/`. Under the
+    hardcoded destination the blessed path could not re-vendor in its own
+    home, which is how `w25v` was found.
+    """
+    (tmp_path / ".vendor.jsonc").write_text(_manifest_text(), encoding="utf-8")
+    bin_dir = tmp_path / "fakebin"
+    _write_fake_git(bin_dir=bin_dir, tracked=(f"{_PACKAGE_VENDOR_ROOT}/tomli/__init__.py",))
+
+    result = _run_module(cwd=tmp_path, bin_dir=bin_dir)
+    assert result.returncode == 0, f"stderr={result.stderr!r}"
+
+    dest = _vendor_dest(root=tmp_path, vendor_root=_PACKAGE_VENDOR_ROOT)
+    assert (dest / "__init__.py").read_text(encoding="utf-8") == "x = 1\n"
+    assert not _vendor_dest(
+        root=tmp_path
+    ).exists(), "the plugin-layout path must not be created in a package-layout repo"
+
+
+def test_resolves_repo_root_vendor_layout(*, tmp_path: Path) -> None:
+    """`_vendor/` at the repo ROOT — livespec-driver-claude's layout.
+
+    The named counterexample that proves one re-vendor invocation does not
+    fit the fleet: three repos vendor under `.claude-plugin/scripts/`, this
+    one does not.
+    """
+    (tmp_path / ".vendor.jsonc").write_text(_manifest_text(), encoding="utf-8")
+    bin_dir = tmp_path / "fakebin"
+    _write_fake_git(bin_dir=bin_dir, tracked=(f"{_ROOT_VENDOR_ROOT}/returns/__init__.py",))
+
+    result = _run_module(cwd=tmp_path, bin_dir=bin_dir)
+    assert result.returncode == 0, f"stderr={result.stderr!r}"
+
+    dest = _vendor_dest(root=tmp_path, vendor_root=_ROOT_VENDOR_ROOT)
+    assert (dest / "__init__.py").read_text(encoding="utf-8") == "x = 1\n"
+    assert not _vendor_dest(root=tmp_path).exists()
+
+
+def test_no_tracked_vendor_tree_exits_3(*, tmp_path: Path) -> None:
+    """A repo with NO vendored tree → exit 3, not a fresh wrong-place tree.
+
+    This is the fail-loud arm, and it is the one that matters most: the old
+    behaviour created `.claude-plugin/scripts/_vendor/<lib>/` and exited 0,
+    so a repo that had never vendored anything acquired a tree in a location
+    nothing imports from. Establishing a FIRST tree is the one-time manual
+    procedure (livespec `SPECIFICATION/constraints.md` §"Vendoring
+    procedure"); this tool re-vendors an existing one.
+    """
+    (tmp_path / ".vendor.jsonc").write_text(_manifest_text(), encoding="utf-8")
+    bin_dir = tmp_path / "fakebin"
+    _write_fake_git(bin_dir=bin_dir, tracked=("livespec_runtime/hygiene_scan.py",))
+
+    result = _run_module(cwd=tmp_path, bin_dir=bin_dir)
+    assert result.returncode == _EXIT_PRECONDITION, f"stderr={result.stderr!r}"
+    assert "no tracked `_vendor/` tree" in result.stderr
+    assert not _vendor_dest(root=tmp_path).exists(), "must not create a wrong-place tree"
+
+
+def test_ambiguous_vendor_trees_exit_3(*, tmp_path: Path) -> None:
+    """Two tracked `_vendor/` trees → exit 3 naming both, rather than picking one."""
+    (tmp_path / ".vendor.jsonc").write_text(_manifest_text(), encoding="utf-8")
+    bin_dir = tmp_path / "fakebin"
+    _write_fake_git(
+        bin_dir=bin_dir,
+        tracked=(
+            f"{_PLUGIN_VENDOR_ROOT}/otherlib/__init__.py",
+            f"{_PACKAGE_VENDOR_ROOT}/tomli/__init__.py",
+        ),
+    )
+
+    result = _run_module(cwd=tmp_path, bin_dir=bin_dir)
+    assert result.returncode == _EXIT_PRECONDITION, f"stderr={result.stderr!r}"
+    assert "more than one tracked `_vendor/` tree" in result.stderr
+    assert _PLUGIN_VENDOR_ROOT in result.stderr and _PACKAGE_VENDOR_ROOT in result.stderr
+
+
+def test_untracked_vendor_tree_on_disk_is_ignored(*, tmp_path: Path) -> None:
+    """An on-disk `_vendor/` the index does not carry is NOT a destination.
+
+    Every governed repo's virtualenv contains
+    `.venv/lib/python3.10/site-packages/livespec_dev_tooling/_vendor/` — the
+    INSTALLED dependency — so a filesystem walk answers YES in repos that
+    vendor nothing. That false positive is recorded in this thread as having
+    briefly produced a wrong conclusion about which repos vendor. Resolution
+    reads `git ls-files`, so the untracked copy is invisible and the repo is
+    correctly reported as unvendored.
+    """
+    (tmp_path / ".vendor.jsonc").write_text(_manifest_text(), encoding="utf-8")
+    installed = tmp_path / ".venv/lib/python3.10/site-packages/livespec_dev_tooling/_vendor/returns"
+    installed.mkdir(parents=True)
+    (installed / "__init__.py").write_text("vendored-by-the-dependency\n", encoding="utf-8")
+    bin_dir = tmp_path / "fakebin"
+    _write_fake_git(bin_dir=bin_dir, tracked=("livespec_runtime/hygiene_scan.py",))
+
+    result = _run_module(cwd=tmp_path, bin_dir=bin_dir)
+    assert result.returncode == _EXIT_PRECONDITION, f"stderr={result.stderr!r}"
+    assert "no tracked `_vendor/` tree" in result.stderr
+    assert (installed / "__init__.py").read_text(encoding="utf-8") == (
+        "vendored-by-the-dependency\n"
+    ), "the installed dependency's vendor tree must never be written to"
 
 
 # ---------------------------------------------------------------------------
