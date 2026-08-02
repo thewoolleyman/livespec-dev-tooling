@@ -26,9 +26,34 @@ source and the verb merely runs it in the target checkout.
 
 from __future__ import annotations
 
-from livespec_dev_tooling.fleet._context import RowFinding, RowOutcome, RowPass, RowSkip
-from livespec_dev_tooling.fleet._invocation_failure import InvocationNotPerformed
-from livespec_dev_tooling.fleet._local_context import LocalContext, command_answer
+import sys
+from pathlib import Path
+
+# `returns` is VENDORED, not installed, so a bare import resolves only if some
+# EARLIER import in the same process already put `_vendor/` on `sys.path`.
+# Relying on that ordering is what broke the fleet's release fan-out for seven
+# hours (`vzwa`'s `89296e0`), and `test_vendor_update` enforces this preamble on
+# every `returns`-importing module for exactly that reason.
+_VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
+
+from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
+
+from livespec_dev_tooling.fleet._context import (  # noqa: E402
+    RowFinding,
+    RowOutcome,
+    RowPass,
+    RowSkip,
+)
+from livespec_dev_tooling.fleet._invocation_failure import (  # noqa: E402
+    InvocationNotPerformed,
+)
+from livespec_dev_tooling.fleet._local_context import (  # noqa: E402
+    LocalContext,
+    command_answer,
+)
 
 __all__: list[str] = [
     "NOTES_REFSPEC",
@@ -112,9 +137,14 @@ def assert_worktree_pack(*, ctx: LocalContext) -> RowOutcome:
     """
     pack_dir = ctx.invoked_worktree / _WORKTREE_PACK_DIR_NAME
     for name, body in _worktree_pack_files():
-        path = pack_dir / name
-        installed = path.read_text(encoding="utf-8") if path.is_file() else None
-        if installed != body:
+        outcome = ctx.file_text(path=pack_dir / name)
+        if isinstance(outcome, IOFailure):
+            # can't-read is not absent: a pack file present but undecodable
+            # used to raise `UnicodeDecodeError` straight out of this row and
+            # abort the whole reconcile (livespec-dev-tooling-a6et).
+            not_read = unsafe_perform_io(outcome.failure())
+            return RowSkip(reason=f"worktree pack file unreadable: {name} ({not_read.kind})")
+        if unsafe_perform_io(outcome.unwrap()) != body:
             return RowFinding(message=f"worktree pack file absent or drifted: {name}")
     return RowPass(note="worktree pack installed")
 
