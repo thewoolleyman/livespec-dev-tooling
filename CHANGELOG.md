@@ -58,6 +58,16 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.14.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.13.24...v1.14.0) (2026-08-02)
+
+
+### Features
+
+* **checks:** consult the v183 condition-3 carrier in public_api_result_typed ([68a099a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/68a099acb0b1003ecca82582e523ae502e2e6839))
+* **checks:** recompute v183's structural gate for single_meaning_variants ([6df97c4](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6df97c43345c9fe399b7ff59126dfc4d46ef2d7c))
+* **config:** carry livespec v183 condition 3 in a single_meaning_variants key ([a5d99e9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a5d99e9eaf9a1c79e93deaa04bdfbf021edfd02c))
+* **fleet:** report v183 bound 4 — declared unions AND the functions relieved ([2fe61c9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2fe61c909d41cc7f0ff555c7a4c0b4e26cfc86e2))
+
 ## [1.13.24](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.13.23...v1.13.24) (2026-08-02)
 
 
