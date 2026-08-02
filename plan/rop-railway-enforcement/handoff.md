@@ -407,7 +407,106 @@
 > matrix targets plus `just <slug>` run lines. **Third instance in three days of a
 > hand-rolled second implementation losing to the shipped one.**
 >
-> ### 🔴🔴 RETRACTED SAME DAY — **THE driver-claude TRIAGE BELOW IS WRONG, AND THE SPEC QUESTION IT RAISED DOES NOT EXIST**
+> ### ⛔⛔⛔ THE RETRACTION BELOW IS ITSELF OVER-CORRECTED — **`classify` HAS THREE ROOTS AND NEEDS BOTH FIXES**
+>
+> **ENUMERATED with the shipped analysis, all roots at once rather than one link:**
+>
+> ```
+> disqualification roots reachable from classify (3):
+>    _label_is_hazardous    CALL   (os.path.normpath)   <- closed by the pure-members fix
+>    _socket_is_hazardous   CALL   (os.path.normpath)   <- closed by the pure-members fix
+>    _segment_is_hazard     Try                          <- NOT closed by it
+> ```
+>
+> **▶️ AND MEASURED, not reasoned about — `classify` becomes member-1 exempt ONLY WITH BOTH:**
+>
+> | | exempt? |
+> |---|---|
+> | shipped | **False** |
+> | pure `os.path` members only | **False** |
+> | the `Try` widening only | **False** |
+> | **BOTH** | **TRUE** |
+>
+> ### 🔬🔬 SO THE RETRACTION'S OWN REASONING CARRIED THE SAME DEFECT, ONE LEVEL UP
+>
+> The retraction argued: *"the widening relieved `classify` not at all, therefore the
+> premise is refuted."* **That inference is invalid.** A fix for ONE root of a fixpoint
+> **measures ZERO while the other roots mask it.** The widening's zero was never evidence
+> against the widening.
+>
+> **⛔ THE DURABLE RULE — A BLAST-RADIUS MEASUREMENT IS ONLY VALID WHEN THE FIX BEING
+> MEASURED IS THE LAST REMAINING ROOT.** Otherwise zero is uninformative in BOTH
+> directions, and reading it as refutation is the single-cause error wearing the clothes of
+> a measurement. This thread now has the error at three altitudes in one day: naming one
+> link in a triage, ruling on that link (the supervisor's own, recorded in brief 99), and
+> reading a masked zero as a refutation.
+>
+> **▶️ WHAT IS ACTUALLY TRUE, restated cleanly:**
+>
+> 1. **The pure `os.path` members fix is OWED AND UNBLOCKED.** It is unit A's shape on the
+>    MODULE arm, extends a SHIPPED mechanism, needs no spec change.
+> 2. **The `Try`-root question is STILL LIVE** — brief 98's spec path was not wrong, only
+>    unmeasurable while masked. ⛔ **Re-ask it AFTER the pure fix lands**, when it becomes
+>    `classify`'s LAST root and its blast radius is finally measurable.
+>
+> ### ✅ THE SPELLING IS MUTATION-PROVEN IN BOTH DIRECTIONS — brief 99's trap, closed
+>
+> The set matches EXACTLY on the dotted form the resolver rebuilds **from the IMPORT
+> BINDING**, so runtime identity never appears:
+>
+> ```
+> posixpath.*  entries ->  overseer 194 -> 194   INERT (the trap, confirmed live)
+> os.path.*    entries ->  overseer 194 -> 173   the correct spelling
+> ```
+>
+> **⛔ PIN THE `os.path.` SPELLING WITH A TEST** so a later reader cannot "tidy" it to
+> `posixpath.` — that edit would be silently inert.
+>
+> ### 📏 THE BLAST RADIUS, MEASURED BEFORE WRITING A LINE — **21, ALL IN ONE REPO**
+>
+> | member | shipped | with the 7 entries |
+> |---|---:|---:|
+> | `livespec-overseer` | 194 | **173** (−21) |
+> | every other member | — | **unchanged** |
+>
+> ⛔ **RELAXING-ONLY, so unit B's polarity binds:** any INCREASE is a finding, and relief
+> beyond what the seven ENUMERATED members justify is a finding, not a bonus. **Verify a
+> sample of the 21 traces to a pure `os.path` call** before accepting the number.
+>
+> ### 🧪 THE SEVEN, DRIVEN WITH ADVERSE INPUT ON THE 3.10.16 FLOOR
+>
+> `normpath` · `basename` · `dirname` · `join` · `split` · `splitext` · `isabs` — **none
+> raised** on 12 adverse inputs (empty, `//`, `..`, embedded NUL, lone surrogate, 4096
+> chars, `~nosuchuser`, …).
+>
+> **⛔ AND THE BAR FOR THIS SET IS PURITY, NOT MERELY NON-FAILABILITY — state it in the
+> diff or the next reader will widen it wrongly.** Measured on the same floor:
+> `os.path.exists`, `isfile` and `isdir` **do not raise either** — they swallow `OSError` —
+> **but they READ THE FILESYSTEM**, so their answer depends on the world. That is the
+> in-band conflation `RowSkip` exists to remove. **Cannot-fail is necessary and NOT
+> sufficient here; the set's own name is `_PURE_IO_MODULE_MEMBERS` — members that touch
+> NOTHING.**
+>
+> **THE EXCLUSIONS, each with the reason it is excluded — put these IN THE DIFF:**
+>
+> | excluded | reason, measured |
+> |---|---|
+> | `relpath` | RAISES `ValueError` on `""` |
+> | `realpath` | RAISES `ValueError` on an embedded NUL, and resolves symlinks |
+> | `getsize` | RAISES `FileNotFoundError` / `ValueError` |
+> | `abspath` | **did NOT raise on any adverse input** — excluded because it calls `os.getcwd()`, so it READS PROCESS STATE and can fail when the cwd is unlinked. ⛔ It looks purer than the seven; say why it is out or a later reader will "fix the inconsistency". |
+> | `expanduser` | reads `HOME` and the passwd database — **ENVIRONMENT access** |
+> | `exists`/`isfile`/`isdir` | touch the filesystem; do not raise |
+>
+> ⚠️ **CORRECTING BRIEF 99 ON ONE MEASURED DETAIL:** it records that we "both measured"
+> `expanduser` raising `RuntimeError`. **`os.path.expanduser("~nosuchuser")` does NOT
+> raise on the 3.10.16 floor — it returns the path unchanged.** The `RuntimeError`
+> measurement was **`pathlib.Path.expanduser`**, a DIFFERENT function with the same name.
+> The exclusion still stands, for environment access rather than for raising.
+>
+> ---
+>
+> ### 🔴🔴 (SUPERSEDED IN PART BY THE BLOCK ABOVE) RETRACTED SAME DAY — THE driver-claude TRIAGE BELOW NAMED ONE OF THREE ROOTS
 >
 > **`classify` IS NOT TOTAL. There is no CORE spec question, and no propose-change is
 > owed.** Caught by MEASURING THE BLAST RADIUS OF THE SPEC CHANGE BEFORE FILING IT — the
