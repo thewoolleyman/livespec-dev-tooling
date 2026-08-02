@@ -159,28 +159,108 @@
 > — see below. Its implementation half stays open on `h0g9` and must be done in
 > BOTH directions.
 >
-> ### ▶️▶️▶️ RESUME HERE: **BOTH CORE QUESTIONS ARE FILED. THE NEXT UNIT IS DEV-TOOLING'S REMAINING 24.**
+> ### ✅✅ 2026-08-02 — **BOTH CORE QUESTIONS ARE RATIFIED. v183 AND v184 ARE ON MASTER.**
 >
-> Nothing of this thread is mid-flight beyond the two OPEN proposals (#1884,
-> #1886), which are the maintainer's to ratify and not this thread's to drive.
-> Neither carrier may be IMPLEMENTED before its `/livespec:revise` pass — filing is
-> not ratification, and this thread has recorded that in as many words.
+> | rule | revision | PR → SHA |
+> |---|---|---|
+> | condition 3's declaration carrier | **v183** | #1887 → `b2ea0523` |
+> | the failability I/O-boundary criterion | **v184** | #1888 → `051ba069` |
 >
-> **THE 24, WITH EVERY ONE'S DISPOSITION NOW KNOWN:**
+> Both verified on the FORGE after a fetch. Both were **MODIFY**, not accept —
+> each needed a design-record citation the filing lacked. `/livespec:revise` was
+> run twice; the second pass's CLI exited **0** with `--post-step-doctor`.
+>
+> **⛔⛔ v184 NEARLY WAS NOT RATIFIABLE, AND THE REASON BINDS EVERY FUTURE PASS.**
+> The FIRST revise pass **refused** `total-predicate-io-boundary` and left it
+> pending. By its own text it resolves a CONFLICT between two ratified statements
+> (condition 1 convicts a total-predicate-only function; member 1's
+> uninhabited-track rationale forbids converting it), and `spec.md` §"Intent
+> preservation and design-record authority" says: *"If no design record is cited
+> or reachable for the conflicting statements, that absence is itself a finding
+> that MUST be surfaced to the maintainer together with the conflict. **The
+> conflict MUST NOT be self-resolved in either direction.**"*
+>
+> **ACCEPT self-resolves it — and would have done so BY THE AGENT THAT AUTHORED
+> THE PROPOSAL, the sharpest form of the drift that section exists to prevent.
+> REJECT self-resolves it the other way. PENDING resolves nothing and was the
+> only conforming disposition.** The gate was then discharged by the MAINTAINER
+> (brief 84), who ruled to acknowledge the contradiction rather than cite a record.
+>
+> **▶️ THE RULING'S REASONING, WHICH IS THE DURABLE PART:** no surviving record
+> establishes condition 1's or member 1's ORIGINAL intent, so citing one would
+> **manufacture provenance** for a decision nobody can reconstruct — an
+> authoritative statement not backed by the evidence it implies, which is this
+> epic's own defect class. **A true record of an unrecoverable intent is strictly
+> better than a false record of a recovered one.**
+>
+> ⚠️ **AND THE RATIFIED TEXT KEEPS TWO MOVES APART ON PURPOSE.** v184 carries a
+> provenance paragraph (the NEW failability intent, which IS held and written
+> down — same move as v183's) AND an acknowledgment paragraph stating in terms
+> that the provenance paragraph **MUST NOT** be read as having recovered the old
+> intent. Do not collapse them when quoting.
+>
+> **✅ A MEASUREMENT DISCREPANCY WAS RESOLVED AND NEITHER SIDE WAS WRONG.** Design-
+> record citations in `non-functional-requirements.md` measured **0 before v183**
+> and **1 after** — the single hit IS v183's own citation, scoped to the carrier.
+> Condition 1 and member 1 still cite nothing. **The trees differed, not the
+> readings.** Quote the tree a citation count was taken on.
+>
+> **✅ SELECTIVE CONSUMPTION VERIFIED THREE WAYS, TWICE** — the resulting tree, a
+> grep proving the unprocessed rule text was ABSENT, and byte-identity against the
+> `vNNN/` snapshot. Only the two genuinely foreign proposals remain pending
+> (`github-app-request-budget`, `owned-heading-coverage-todos`); neither was ever
+> a candidate.
+>
+> ### ▶️▶️▶️ RESUME HERE: **BOTH IMPLEMENTATIONS ARE NOW OWED, AND NEITHER IS BLOCKED.**
+>
+> Nothing of this thread is mid-flight — no open PR, no worktree, no background
+> job. The supervisor has wrapped up; nothing waits on them.
+>
+> **UNIT A — `h0g9`: correct the verb set in BOTH directions in ONE change.** The
+> ratified v184 text refuses the one-directional implementation BY NAME: a
+> conforming implementation *"MUST NOT satisfy this rule by removing total
+> predicates from a list while leaving that list otherwise unchanged."*
+> **OUT:** `is_file` / `is_dir` / `exists` and siblings that swallow `OSError`.
+> **IN:** `open`, `readlink`, `chown`, `truncate`, `owner`, `group`, `is_mount`,
+> `is_block_device`, directory walks. ⚠️ `samefile` / `glob` / `iterdir` / `rglob`
+> need INDIVIDUAL rulings against the interpreter; unresolved ambiguity resolves
+> **FAILABLE so doubt TIGHTENS**; record each determination WITH its evidence.
+>
+> **UNIT B — the condition-3 carrier's implementation.** New role key
+> `single_meaning_variants`, ONE ENTRY PER VARIANT (`file`, `union`, `variant`,
+> the variant's ONE meaning). Model on `_declared_absence_returns.py` /
+> `_public_api_consumption.py`; do NOT invent a third shape. **The gate RECOMPUTES
+> and stores no claim** — bound 1's four limbs are re-derived from source every
+> run; bound 3 enumerates variants to store the claim's SCOPE only, diffed against
+> the code each run. **NOT in `REQUIRED_ROLE_KEYS`. RELAXING-ONLY** — carry
+> `_declared_absence_returns.py`'s polarity warning, not
+> `cross_repo_public_api`'s tightening-only comfort.
+>
+> ⛔ **BOTH ARE PRODUCT `.py`, SO RED-GREEN-REPLAY APPLIES** — and the new modules
+> need the new-module STUB technique so Red fails on a genuine assertion rather
+> than an `ImportError`. Stage new modules BEFORE measuring: an untracked module
+> silently leaves the universe and reads as progress.
+>
+> **▶️ EXPECTED MOVEMENT, and re-derive it at BOTH ends rather than trusting this:**
+> unit B should take the 19 out; unit A should take the 2 out AND may ADD offenders
+> through its tightening half — **check BOTH directions**. dev-tooling's floor is
+> the 3 RULED rows, which are not conversions.
+>
+> **UNIT C — the fleet re-measure, which is owed the moment unit A lands.** The
+> **455 is PROVISIONAL** and so is every child `.7`–`.14` (each already caveated).
+> Re-measure with the corrected set, same harness, same denominator, then RESTATE
+> all eight.
+>
+> **PARALLEL TRACK — the sibling triage, blocked by none of this.** Continue in
+> ASCENDING size with structural triage FIRST. Already paid: `8o8e.15`.
+>
+> **📋 THE 24's DISPOSITIONS, now all unblocked or ruled:**
 >
 > | count | disposition |
 > |---|---|
-> | **19** | `RowOutcome`, condition 1 HOLDS — held on **#1886** ratification |
-> | **2** | `RowOutcome`, condition 1 FAILS (total predicates) — held on **#1884** |
-> | **3** | population-sweep + `extract_created_worktree_paths` — RULED, not conversions |
->
-> **⛔ SO THERE ARE ZERO UNBLOCKED CONVERSIONS IN DEV-TOOLING RIGHT NOW**, and that
-> is a measured statement rather than a stall: every one of the 24 has a recorded
-> disposition, and 21 of them are held on a spec pass this thread has already
-> filed. **Do not open any of them as a conversion.** The next actionable work is
-> the SIBLING triage (ascending size, structural triage first) — which the
-> re-scoping above shows is NOT waiting on either proposal — and then the fleet
-> re-measure on the corrected verb set.
+> | **19** | `RowOutcome`, condition 1 HOLDS — **unblocked by v183**, needs unit B |
+> | **2** | `RowOutcome`, condition 1 FAILS (total predicates) — **unblocked by v184**, needs unit A |
+> | **3** | population-sweep + `extract_created_worktree_paths` — RULED, NOT conversions |
 >
 > ### ▶️ (previous) **`3744` IS NO LONGER ONE BLOCKER — 4 OF THE 22 ARE ACTIONABLE NOW, AND 2 OF THEM ARE A LIVE CRASH.**
 >
