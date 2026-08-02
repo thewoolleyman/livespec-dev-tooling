@@ -70,7 +70,27 @@
 > roster, enumerate it; if the roster IS the whole population, say so WITH the
 > denominator rather than assuming it.
 >
-> ### ▶️▶️▶️ RESUME HERE: **`3744` IS NO LONGER ONE BLOCKER — 4 OF THE 22 ARE ACTIONABLE NOW, AND 2 OF THEM ARE A LIVE CRASH.**
+> ### ▶️▶️▶️ RESUME HERE: **THE NEXT UNIT IS CONDITION 3'S DECLARATION CARRIER — the last piece of brief 79 item 1**
+>
+> **DESIGN IT ONCE, CENTRALLY, BEFORE SEVEN REPOS EACH INVENT ONE.** Four copies of
+> a normative rule is `i04f`, cited three times in three days. Condition 3 ("no
+> variant carries two meanings") is SEMANTIC and cannot be mechanized — the spec's
+> own precedent settles the shape, since whether a `None` models a FAILURE or a
+> legitimate ABSENCE is *"a semantic question no AST can answer"*, which is exactly
+> why member 2 is a DECLARED relief with a STRUCTURAL GATE. So condition 3 needs a
+> declaration carrier on the member-2 template, and **the gate is the hard part**:
+> member 2's gate is `returns_x_or_none`, a syntactic property recomputed every
+> run, and the analogue here must bound WHICH unions are declarable rather than
+> letting a consumer declare any union conformant.
+>
+> **⛔ 18 of the 21 remaining `RowOutcome` offenders are blocked on it**, and every
+> sibling repo will meet it.
+>
+> **✅ CORE QUESTION 1 IS FILED** (livespec #1884 → `4756d52a`) but **NOT RATIFIED**
+> — see below. Its implementation half stays open on `h0g9` and must be done in
+> BOTH directions.
+>
+> ### ▶️ (previous) **`3744` IS NO LONGER ONE BLOCKER — 4 OF THE 22 ARE ACTIONABLE NOW, AND 2 OF THEM ARE A LIVE CRASH.**
 >
 > **THE NEXT UNIT IS A `file_text` SEAM ON `LocalContext`, AND IT FIXES ALL 4 AT
 > ONCE.** See §"WHY ALL 4 ARE LOCAL ROWS" below — the root cause is structural,
@@ -276,7 +296,41 @@
 > already shipped — which is also the argument that it is a restoration of an
 > existing design rather than a new abstraction.
 >
-> ### ▶️ CORE QUESTION 1 HAS A PROPOSED RESOLUTION — **`h0g9`, and it fixes the criterion rather than weakening condition 1**
+> ### ✅ CORE QUESTION 1 IS FILED AS A PROPOSE-CHANGE — **livespec #1884 → `4756d52a`**
+>
+> `SPECIFICATION/proposed_changes/total-predicate-io-boundary.md` is on livespec
+> master. **It is PROPOSED, not ratified** — a `/livespec:revise` pass accepts or
+> rejects it into §"ROP composition". The proposed rule is
+> **"What counts as an I/O boundary"**: every rule in the section that turns on
+> "performing I/O" or "calling a side-effecting primitive" means a primitive AT
+> WHICH A FAILURE CAN ORIGINATE, so a primitive that CANNOT fail is not one.
+>
+> **▶️ THE FRAMING IS THE PART MOST LIKELY TO BE ARGUED, so it is stated in the
+> text itself:** NOT a fifth member of the exemption set (declared EXHAUSTIVE),
+> NOT a widening of on-the-railway spellings — a **CORRECTION to the definition**,
+> moving in BOTH directions. Relaxing for total-predicate-only functions;
+> **TIGHTENING** for `open` / `readlink` / `chown` / `truncate` / directory walks.
+> **The tightening half is what makes it a fidelity fix rather than a relief**, and
+> a rule that only relaxed would deserve the scrutiny a relief gets.
+>
+> **EVERY CONDITION IS IN THE RATIFIED TEXT, NOT DEFERRED** — v181's conditions 2
+> and 3 were binding in the text and are both discharged, which is why that
+> ratification did not rot. This one binds: mechanical determination storing NO
+> claim, NO consumer declaration, per-verb determinations recorded WITH evidence,
+> unresolved ambiguity resolved as **FAILABLE so doubt TIGHTENS**, and an explicit
+> refusal of the one-directional implementation that drops total predicates from a
+> list and stops there.
+>
+> ⛔ **NO ENUMERATED VERB LIST IS PROPOSED AS SPEC TEXT.** A list is what failed in
+> both directions, and it would need re-ratifying every stdlib revision.
+>
+> ⛔ **FILING IS NOT RATIFICATION, AND THE IMPLEMENTATION HALF IS UNTOUCHED.**
+> `h0g9` stays OPEN. When it is implemented, `_UNRESOLVED_RECEIVER_IO_VERBS` must
+> be corrected in BOTH directions in the same change — dropping the total
+> predicates alone would be the one-directional implementation the rule's own text
+> refuses.
+>
+> ### ▶️ THE ORIGINAL FINDING — **`h0g9`, and it fixes the criterion rather than weakening condition 1**
 >
 > The total-predicate tension is NOT a contradiction between condition 1 and
 > member 1. It is a defect in `_UNRESOLVED_RECEIVER_IO_VERBS`, which is a list of
