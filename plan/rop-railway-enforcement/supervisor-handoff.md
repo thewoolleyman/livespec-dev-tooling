@@ -436,7 +436,73 @@ Repeat these in every instruction sent to the supervised session:
 `tmp/overseer/.../.supervisor-state` marker is uncommitted and HAS vanished mid-session
 once; treat it as a cache, never as the record.
 
-### 🟢 CURRENT POSITION — 2026-08-01. EVERYTHING BELOW THIS SUBSECTION IS OLDER. Re-derive before quoting.
+### 🟢🟢 CURRENT POSITION — 2026-08-02 WRAP-UP. READ THIS BLOCK FIRST; EVERYTHING BELOW IT IS OLDER.
+
+**Supervisor stopped here at low context for an overseer restart. Nothing of this
+supervisor's is mid-flight: no worktree, no branch, no open PR, no background watcher.**
+Re-derive every number from the ledger and the forge before quoting it.
+
+**SCOPE CHANGED — MAINTAINER RULING 2026-08-02: fix ALL violations across the whole fleet
+AND adopters, THEN arm.** No per-repo phase-in, no `unarmed_until` deferral, no separate
+re-authorization. The three staged options this supervisor offered were all withdrawn —
+each baked in deferral, when remediate-everything-then-arm is strictly more conformant with
+v034 carve-out 1 and leaves no sibling red. **The charter's older "fan-out follows arming"
+line was written when the number was 245 and is superseded.**
+
+**THE FLEET IS 455, MEASURED — AND PROVISIONAL.** Eight per-repo children `8o8e.7`–`.14`
+carry per-repo counts with denominators (`livespec-overseer` 190, beads-fabro 172,
+dev-tooling 24, runtime 27, git-jsonl 18, livespec 15, driver-codex 2, driver-claude 1).
+**All eight are caveated on `h0g9` and MUST NOT be worked as settled**: the verb set is
+wrong in BOTH directions — it convicts total predicates that cannot fail and acquits
+`open`, `readlink`, `chown`, `truncate` and directory walks that genuinely raise.
+
+**⛔ THE ONE HARD CONSTRAINT: `h0g9`'s IMPLEMENTATION MUST NOT LAND** until the
+total-predicate rule is ratified; landing it implements an unratified rule.
+
+**SPEC STATE:** livespec **v183** ratified condition 3's declaration carrier (#1887 →
+`b2ea0523`) — its implementation IS unblocked and must RECOMPUTE, storing no claim.
+**`total-predicate-io-boundary.md` remains PENDING** (#1884 → `4756d52`).
+
+**▶️ THE OPEN RULING, ALREADY ISSUED AS BRIEF 84 — a successor must not re-litigate it.**
+The revise is gated by the intent-preservation rule: resolving a conflict between two
+ratified statements requires a cited DESIGN RECORD, and none exists for condition 1 /
+member 1. **RULED: acknowledge the contradiction EXPLICITLY in the revision record's
+`## Decision and Rationale` under the operational-reach clause. Do NOT cite a design
+record.** Citing one would manufacture provenance for an intent nobody can reconstruct —
+this epic's own defect class. **Keep this distinct from the v183 MODIFY**, which added a
+citation for the proposal's OWN semantics: documenting new intent you hold is not
+asserting old intent you do not.
+
+**WHAT THE CARRIER DOES AND DOES NOT UNBLOCK, measured:** 19 of dev-tooling's 24 and 1 of
+runtime's 27 — **and nothing else.** `livespec-overseer` and beads-fabro, 362 of the 455,
+have ZERO module-level union aliases. **The seven-repo fan-out is NOT waiting on it.**
+
+**VENDORING IS TWO REPOS PLUS A SPEC QUESTION, not three.** `livespec-overseer` and
+`livespec-runtime` carry no committed `_vendor/returns`. `livespec-driver-codex` is NOT a
+vendoring task: its hooks already compose via a first-party `_result.py`, and importing the
+repo-root `_vendor.returns` raised `ModuleNotFoundError` at module scope BEFORE the
+fail-open `try/except` — the guard failed OPEN while looking wired. That is a CORE spec
+question. `w25v`: `vendor_update` hardcodes one layout and cannot serve `driver-claude` at
+repo root. Use `git ls-files`, never `find` — `find` matches the INSTALLED dependency.
+
+**SEQUENCE FROM HERE:** ratify total-predicate per the ruling → land the carrier
+implementation → `h0g9` (both directions in ONE change) → re-measure the fleet on the
+corrected verb set and restate all eight children → dev-tooling's remainder → the seven
+siblings in ASCENDING size, structural triage FIRST in each → whole-fleet re-measure →
+ARM, carrying the disposition denominator and the `995m` known-gap statement.
+
+**THE TRIAGE RULE THAT MAKES THE SIBLING NUMBERS TRACTABLE:** *when N functions fail the
+same clause, look for the missing seam before writing N fixes.* Proven — the `LocalContext`
+file-read seam closed 2 of 4 condition-1 failures from ONE absence, with the residue
+EXPLAINED rather than absorbed.
+
+**PEER LANE, by agreement, do not touch:** `plan/fleet-shell-quality-enforcement/` and its
+epic, landing PRs in this repo from the `supervisor-prompt-quality` supervisor. Its
+`check-per-file-coverage` `set -uo` → `set -euo` fix was cleared by measurement — this
+repo's suite is **2461 passed, 0 failures**, so it surfaces nothing here. Foreign worktrees
+in dev-tooling are now SEVEN; some are that lane's. **Enumerate, never quote, reap none.**
+
+### 🟢 (superseded) CURRENT POSITION — 2026-08-01. Older still. Re-derive before quoting.
 
 **Read this block first and the ledger second; the paragraphs after it are kept for their
 REASONING and are stale on their numbers.** (Ordering fix borrowed from the worker, which hit
