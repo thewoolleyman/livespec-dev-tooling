@@ -116,7 +116,76 @@
 > `_no_expected_failure_mode` already draw: what a SITE does, what may be
 > DECLARED, what a declaration RELIEVES.
 >
-> ### 🔴🔴 THE 2 REMAINING ROWS **CRASH**, AND THE FIX IS A SEAM — NOT A SIGNATURE CONVERSION
+> ### ✅✅ THE PREDICATE SEAM IS BUILT — **PR #1086, 5 → 3, AND dev-tooling HAS ZERO CONVERSIONS OWED**
+>
+> **This DISCHARGES the block immediately below, which is kept for its probe and
+> its reasoning.** Predicted 5 → 3; landed **5 → 3, ADDED 0 / REMOVED 2**,
+> measured from two genuinely different trees.
+>
+> **▶️ THE 3 THAT REMAIN ARE EXACTLY THE RULED ROWS** — `extract_created_worktree_paths`
+> (`list[Path]`), `run_adopter_rows` (`AdopterRowsResult`), `cross_member_consumption`
+> (`ConsumptionGraph`). **None is a conversion.** dev-tooling's remediation is
+> COMPLETE; what remains for this repo is ARMING, not converting.
+>
+> **✅ AND THE CRASH IS CLOSED, WHICH WAS THE POINT.** `RowSkip` renders the
+> unevaluable case — that variant's ratified meaning, contributing 0 to the local
+> lane's unresolved count, so no verb starts failing.
+>
+> ### ⛔ THE FIX WENT ONE LEVEL UP THE CALL CHAIN, AND THAT IS THE CARRY-FORWARD
+>
+> `_beads_applicable` called `Path.is_dir()` directly and **EVERY beads row calls
+> it first.** Converting only `reconcile_beads_metadata_present`'s own primitive —
+> the one the offender list named — would have **moved the count while leaving the
+> crash live in all five.** That is "the fix looks done while changing nothing"
+> arriving one level up the CALL CHAIN, and it is the same lesson the file-read
+> seam recorded one level down (*"grep the whole FUNCTION, not just the primitive
+> the crash report names"*). **Now: grep the whole CHAIN.**
+>
+> ### ✅ THE NAMING TRAP IS NOW A GATE, NOT PROSE — brief 93's addition, done
+>
+> `is_dir` / `is_file` / `exists` are all in `_UNRESOLVED_RECEIVER_IO_VERBS`, so a
+> seam named after the primitive it wraps leaves every caller convicted. The
+> assertion now lives BESIDE the verb set, is **MUTATION-PROVEN** (renaming
+> `dir_present` → `is_dir` reds it), is GENERIC over every public `LocalContext`
+> method so a later seam is covered without anyone remembering, and asserts BOTH
+> directions so emptying the set cannot make it vacuous.
+>
+> ⚠️ **CORRECTING BRIEF 93 ON ONE DETAIL:** `test_io_boundary_failable_verbs.py`
+> does NOT import `_UNRESOLVED_RECEIVER_IO_VERBS` — it probes via `calls_of`
+> through `_disqualifies_on_unresolved_receiver`. The assertion uses that route,
+> which is better: it asks the SHIPPED analysis the question a row's call actually
+> asks, so it cannot drift the way a second reader of the constant would.
+>
+> ### 🔬 FOUR PROCESS FINDINGS, each cheap to reuse
+>
+> 1. **A SHIPPED TEST CAUGHT A REAL DEFECT IN THE CHANGE.** The new `returns`
+>    import needed the vendor-path preamble every such module carries — the
+>    omission that broke the release fan-out for seven hours. Caught by
+>    `test_vendor_update`, not by review.
+> 2. **A ROW WITH TWO PROBES NEEDS TWO FAILURE TESTS.** An unstattable checkout
+>    fails the applicability GATE and returns, so the metadata probe's own failure
+>    arm is never reached that way — **it would have shipped untested while the
+>    file read 100% covered.** A seam double (a `LocalContext` subclass overriding
+>    one predicate) isolates it.
+> 3. **⛔ A RED MUST STAGE EXACTLY ONE TEST FILE.** `just check-pre-commit` enters
+>    Red mode only on `test_count == 1 && impl_count == 0`; otherwise the full
+>    aggregate runs and `check-per-file-coverage` fails on the deliberately-failing
+>    Red. Three test files in one Red is unlandable — split into one pair per test
+>    file. This cost several cycles to discover and is written down so it costs
+>    none next time.
+> 4. **AND EACH FAILING ASSERTION MUST BE TERMINAL IN ITS TEST.** A Red whose test
+>    continues past the failing assert leaves the following lines uncovered, and
+>    per-file coverage gates at 100 — so the Red is unlandable for a reason that
+>    has nothing to do with the defect. Split the facts into separate tests.
+>
+> ⚠️ **A TESTS-ONLY GREEN COMMIT IS LEGAL, under a non-`feat:`/`fix:` prefix.**
+> Hook rule 3: tests-only staged + pytest PASSES ⇒ `feat:`/`fix:` keeps the loud
+> `test-passed-at-red` reject, any other prefix takes the green-verified leg. That
+> is how a pure regression pin over existing behavior lands.
+>
+> ---
+>
+> ### 🔴🔴 (DISCHARGED by #1086 — kept for the probe and the reasoning) THE 2 REMAINING ROWS **CRASH**
 >
 > **PROBED, not reasoned about, on the 3.10 floor:**
 >
@@ -161,11 +230,12 @@
 >
 > ### ▶️▶️ EXACT NEXT ACTION
 >
-> 1. **Land #1081.** If it reds on `check-fleet-conformance`, read the log and
->    confirm `kind: rate_limited` (brief 92) before diagnosing the diff.
-> 2. **THE PREDICATE SEAM (the block immediately above).** It is the whole of
->    dev-tooling's actionable remainder besides the 3 RULED rows, and it closes a
->    live uncaught crash rather than only moving a count.
+> 1. **Land #1086** (the predicate seam). If it reds on `check-fleet-conformance`,
+>    read the log and confirm `kind: rate_limited` (brief 92) before diagnosing
+>    the diff. #1081 and #1082 are MERGED.
+> 2. **⛔ dev-tooling HAS NOTHING LEFT TO CONVERT.** offenders 3, all RULED. The
+>    next unit for THIS repo is ARMING, carrying the disposition denominator, the
+>    `995m` known gap, and the `get`/`run`/`group` arming known-gap.
 > 3. **UNIT C — the fleet re-measure**, owed since unit A landed. ⛔ EXPECT UP OR
 >    FLAT ONLY there; any DECREASE is a finding.
 > 4. **Bound 4's FAIL half**, once the installation is no longer rate-limited.
