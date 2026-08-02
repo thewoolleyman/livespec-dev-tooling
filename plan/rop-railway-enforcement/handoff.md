@@ -1,6 +1,129 @@
 # rop-railway-enforcement — arm the check that was never armed, then remediate six repos
 
-> ## 🔻🔻 COLD START — **FLEET 402 RAW / 321 DISTINCT. THE SMALL REPOS ARE TRIAGED AND THERE IS NO HIGH-LEVERAGE SEAM.**
+> ## 🔻🔻 COLD START — **THE FLEET HAS A COST MODEL: 321 DISTINCT = 39 DECLARATIONS + 282 CONVERSIONS, AND THE BIG REPOS DO HAVE SEAMS.**
+>
+> ### 🔻 FIRST FIVE MINUTES
+>
+> **NOTHING IS MID-FLIGHT except the commit that carries this text.** dev-tooling master
+> at wrap-up: **`6b7daae`**. Re-fetch; it moves hourly.
+>
+> 1. **REAP EXACTLY ONE WORKTREE:
+>    `~/.worktrees/livespec-dev-tooling/docs-handoff-cost-model`** once its PR shows
+>    MERGED. Doc-only, auto-merge ARMED. Then `merge --ff-only origin/master`.
+> 2. **REAP NOTHING ELSE.** Every other worktree is a PEER lane's.
+> 3. ⚠️ A fresh worktree's FIRST `.py` commit fails
+>    `check-primary-checkout-commit-refuse-hook-installed` (`worktree_pack_absent`). Fix:
+>    `mise exec -- just install-worktree-pack`. NOT your diff.
+> 4. ⚠️ **BEFORE PUSHING ANY RED→GREEN PAIR:** `git log -1 --format=%B | grep -c
+>    '^TDD-Red-'` must be 5, `'^TDD-Green-'` must be 2. `zv78` is READY/P1 and has fired
+>    TWICE; the hook exits 0 on a half-pair.
+> 5. **⛔ THE LEDGER CHILDREN ARE NOW THE AUTHORITATIVE PER-REPO ARTIFACT** — `8o8e.7`
+>    through `.14` each carry current raw/distinct, the four-way cost model, the seam
+>    ranking and an AS-OF. **Read the child, not this file, before budgeting a member.**
+>    `8o8e.14` (driver-claude) is **CLOSED at 0**.
+>
+> ### 📋 THE STATE — **the cost model, which is the first this epic has had**
+>
+> **321 DISTINCT are FOUR kinds of work and they are NOT interchangeable units:**
+>
+> | unit of work | fleet | what it is |
+> |---|---:|---|
+> | **DECLARATION candidate** | **39** | `X \| None` with NO disqualifying root anywhere. Nothing in or beneath it can fail, **so the `None` CANNOT be modelling a failure** — member 2 applies, no code change. |
+> | **MIS-DECLARATION RISK** | **42** | `X \| None` WITH a root. Member 2's gate is purely STRUCTURAL (it tests the annotation shape and NOTHING else), so these are admissible to it — but something beneath them CAN fail. **Declaring one is a mis-declaration. These are conversions.** |
+> | **CONVERSION, local** | **123** | own body reaches a root |
+> | **CONVERSION, propagated-only** | **117** | clean body, convicted through a callee — **the bucket seam repair relieves** |
+>
+> **321 = 39 + 42 + 123 + 117.** Per member:
+>
+> | member | sha | RAW | DIST | decl | misdecl | local | prop |
+> |---|---|---:|---:|---:|---:|---:|---:|
+> | `livespec-overseer` | `88267ea` | 173 | **92** | 16 | 13 | 33 | 30 |
+> | `livespec-orchestrator-beads-fabro` | `4e3e883` | 168 | 168 | 16 | 25 | 66 | 61 |
+> | `livespec-runtime` | `726f168` | 27 | 27 | 0 | 1 | 12 | 14 |
+> | `livespec-orchestrator-git-jsonl` | `f2b69b1` | 17 | 17 | 2 | 3 | 7 | 5 |
+> | `livespec` | `c559e22` | 15 | 15 | 5 | 0 | 5 | 5 |
+> | `livespec-driver-codex` | `723287b` | 1 | 1 | 0 | 0 | 0 | 1 |
+> | `livespec-dev-tooling` | `6b7daae` | 1 | 1 | 0 | 0 | 0 | 1 |
+> | `livespec-driver-claude` · `console` | | 0 | 0 | — | — | — | — |
+> | **FLEET** | | **402** | **321** | **39** | **42** | **123** | **117** |
+>
+> ### ⛔⛔ RETRACTING MY OWN GENERALISATION — **THE BIG REPOS DO HAVE SEAMS, AND I MEASURED THE TWO SMALLEST AND GENERALISED**
+>
+> I recorded *"there is NO high-leverage seam"* and brief 107 accepted it and built a
+> fleet cost model on it — *"the fan-out cost is PER-FUNCTION… ~260 per-function
+> conversions"*. **That is wrong, and it is wrong in the EXPENSIVE direction: it
+> over-prices the work.** Measured on the members I had not looked at:
+>
+> | member | distinct | roots | max fan-in | top-10 roots reach |
+> |---|---:|---:|---:|---|
+> | `livespec` | 15 | 24 | 3 | — (no leverage) |
+> | `git-jsonl` | 17 | 21 | 4 | — (no leverage) |
+> | `livespec-runtime` | 27 | 25 | **12** | **70%** |
+> | `livespec-overseer` | 92 | 57 | **13** | **47%** |
+> | `beads-fabro` | 168 | 244 | **54** | 33% |
+>
+> **`beads-fabro`'s `commands/_jsonc.py::parse` sits beneath 54 of 168 — one module, 32%
+> of the fleet's largest member.** `runtime`'s `hygiene_scan_context.py::git` reaches 12
+> of 27.
+>
+> **▶️ THE MECHANISM, and it is obvious in hindsight: SEAM LEVERAGE SCALES WITH REPO
+> SIZE.** A 15-function remainder has too few functions to share roots; a 168-function one
+> concentrates on a handful of I/O helpers. **My negative result was TRUE for the two
+> members it was taken on and FALSE as a fleet claim** — the same error brief 103 made
+> from the opposite direction, and I made it from a sample of two.
+>
+> ### 🕳️ (iv) PROMOTED — **A ROOTS-PER-OFFENDER RATIO HIDES A HEAVY HEAD BEHIND A LONG TAIL**
+>
+> **`beads-fabro`'s ratio is 1.45 — the same statistic that produced my negative result —
+> while its top root convicts 54.** A mean over a heavy-tailed distribution is not a
+> summary of it. ⛔ **Quote the fan-in DISTRIBUTION and the top-N REACH; never the ratio.**
+> File beside (i) masked-zero, (ii) shipped-implementation, (iii) expiring-control.
+>
+> ### 📐 THE DECLARATION SHARE DOES **NOT** HOLD — brief 107's question, answered
+>
+> `livespec`'s 5-of-15 (**33%**) is not representative: `overseer` is **17%** (16/92),
+> `beads-fabro` **10%** (16/168), `runtime` **0%**. **Fleet: 39 of 321 = 12%.**
+>
+> **▶️ AND WHY "NO ROOT" IS THE RIGHT CUT RATHER THAN A HEURISTIC** — checked against the
+> shipped gate, not assumed. `_declared_absence_returns` admits **any** `X | None`; it
+> tests the annotation shape and NOTHING else. So structural admissibility is not the
+> constraint — SEMANTICS is, and the maintainer owns it. **A `None` returned by a function
+> with no failure source anywhere beneath it cannot be modelling a failure**, which makes
+> the no-root subset the one where the declaration is defensible. The 42 with roots are
+> admissible to the gate and would be MIS-declarations.
+>
+> ### ▶️ THE ORDERING — **its original rationale is REVIVED AND INVERTED, so record the live state**
+>
+> Ascending order was justified by *"structural triage FIRST — find the seam before
+> writing N fixes"*. Brief 107 noted that with no seam leverage that rationale was gone
+> and the order survived on faster feedback and smaller blast radius. **The measurement
+> changes that again: the leverage is real and it is in the BIG members, so a
+> leverage-first reading now argues for starting with `beads-fabro`.**
+>
+> **THE RECOMMENDATION, with its basis, and the maintainer rules:** keep ASCENDING —
+> faster feedback per unit, smaller blast radius per PR, and the small members' cost is
+> per-function and therefore the most predictable to schedule — **but take
+> `beads-fabro`'s `commands/_jsonc.py` seam EARLY as a standalone unit.** A single seam
+> reaching 32% of the largest member should be de-risked before it is buried in a
+> 168-item queue, and it is the one action in the fleet whose leverage is measured rather
+> than hoped. ⛔ **Do not re-derive the ordering from the seam rationale alone — it now
+> points the other way, and someone will "optimise" it into starting with 168.**
+>
+> ### ✅ WHAT ELSE LANDED — the children are current and one is CLOSED
+>
+> All eight per-repo children carry current figures, the four-way cost model, the seam
+> ranking and an AS-OF. **`8o8e.14` (driver-claude) is CLOSED at 0** — v186 relieved
+> `classify` and **no conversion was ever written**. ⛔ Its lesson: the standing "DO NOT
+> CONVERT UNTIL IT RATIFIES" constraint did not merely UNBLOCK the work, it made the work
+> UNNECESSARY. **Waiting for the ruling saved it entirely.**
+>
+> ⛔ **AND `8o8e.13`'s 2 → 1 IS NOT `8o8e.19` CLOSING.** `check_tmux_segment` left the
+> offender list; `_check_segment_result` still returns `Success(...)` unconditionally and
+> its `Failure` branch is still unreachable.
+>
+> ---
+>
+> ## 🗄️ (SUPERSEDED AS THE HEADER 2026-08-02 — its "NO high-leverage seam" headline is TRUE for the two small members and RETRACTED as a fleet claim; see above.) COLD START — **FLEET 402 RAW / 321 DISTINCT. THE SMALL REPOS ARE TRIAGED.**
 >
 > ### 🔻 FIRST FIVE MINUTES
 >
