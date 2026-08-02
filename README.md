@@ -61,6 +61,10 @@ Or, for a single composite action:
     check-name: check-lint
 ```
 
+The published Actions and reusable workflows use the GitHub Actions Node.js 24
+runtime. Self-hosted consumers therefore need Actions Runner 2.327.1 or newer;
+GitHub-hosted runners already satisfy this requirement.
+
 (The composite Actions and reusable workflows are authored in Phase G.5.)
 
 ## CLI end-to-end test harness
