@@ -116,14 +116,56 @@
 > `_no_expected_failure_mode` already draw: what a SITE does, what may be
 > DECLARED, what a declaration RELIEVES.
 >
+> ### 🔴🔴 THE 2 REMAINING ROWS **CRASH**, AND THE FIX IS A SEAM — NOT A SIGNATURE CONVERSION
+>
+> **PROBED, not reasoned about, on the 3.10 floor:**
+>
+> ```
+> (checkout/".beads").is_dir()            under an unreadable parent -> RAISES PermissionError
+> (".beads"/"metadata.json").is_file()    likewise                   -> RAISES PermissionError
+> ```
+>
+> Neither row has an `except` anywhere, so this is UNCAUGHT — the same class as
+> `a6et`, found by the same method one unit later.
+>
+> **⛔ AND THE REACHABILITY IS NOT HYPOTHETICAL — THIS FLEET MANUFACTURES THE
+> CONDITION ITSELF.** `reconcile_beads_dir_perms` **chmods `.beads` to 700**. Any
+> process running as a user who is not the owner then takes the raise on
+> `.beads/metadata.json` — so the hardening row creates the exact state under
+> which its sibling row crashes. That is a shared-runner / mixed-uid scenario, not
+> a contrived one.
+>
+> **▶️ SO "ORDINARY CONVERSIONS" UNDER-DESCRIBES THE FIX, and this supersedes the
+> older wording below.** Converting the RETURN TYPE is not available: these are
+> `ObligationRow` table entries and the table dispatches on `RowOutcome`. The fix
+> is the **`LocalContext` PREDICATE SEAM** — the exact shape the `file_text` READ
+> seam already established, extended from reads to predicates:
+>
+> 1. Add a railway-typed predicate seam to `LocalContext` (it still has only
+>    `exec`, `exec_in_worktree`, `file_text`). ⛔ **NAME IT OUTSIDE
+>    `_UNRESOLVED_RECEIVER_IO_VERBS`** — a seam named `is_dir` / `is_file` leaves
+>    the row calling an "I/O verb", so condition 1 still fails and **the fix looks
+>    done while changing nothing**. That trap is measured and recorded for
+>    `read_text` below; it binds here identically.
+> 2. Each row then RENDERS the outcome, and the unreadable case becomes
+>    **`RowSkip`** — which is not a workaround but the variant's ratified meaning:
+>    *"the row could not be definitively evaluated (can't-read is not absent)"*.
+>    Today both rows silently read unreadable AS absent, which is the in-band
+>    conflation `RowSkip` exists to remove.
+> 3. Condition 1 then HOLDS over both, so **the v183 declaration covers them** and
+>    they leave the offender list. ⛔ **DO NOT double-encode** — once the seam
+>    lands they are declaration-covered, not conversions.
+>
+> **EXPECTED: 5 → 3.** Re-derive at both ends on two genuinely different trees;
+> below 3 is a finding.
+>
 > ### ▶️▶️ EXACT NEXT ACTION
 >
 > 1. **Land #1081.** If it reds on `check-fleet-conformance`, read the log and
 >    confirm `kind: rate_limited` (brief 92) before diagnosing the diff.
-> 2. **THE 2 CONVERSIONS ARE STILL OWED AND STILL UNBLOCKED** —
->    `reconcile_beads_dir_perms` and `reconcile_beads_metadata_present`. They are
->    now 2 of only 5 remaining, so they are the whole of dev-tooling's actionable
->    remainder besides the 3 RULED rows.
+> 2. **THE PREDICATE SEAM (the block immediately above).** It is the whole of
+>    dev-tooling's actionable remainder besides the 3 RULED rows, and it closes a
+>    live uncaught crash rather than only moving a count.
 > 3. **UNIT C — the fleet re-measure**, owed since unit A landed. ⛔ EXPECT UP OR
 >    FLAT ONLY there; any DECREASE is a finding.
 > 4. **Bound 4's FAIL half**, once the installation is no longer rate-limited.
