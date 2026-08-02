@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.13.24](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.13.23...v1.13.24) (2026-08-02)
+
+
+### Bug Fixes
+
+* **checks:** carry every failable I/O primitive in the unresolved-receiver set ([e51b37f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e51b37f2f4cd0c1241078a4ba2294e3e08af2a6d))
+
 ## [1.13.23](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.13.22...v1.13.23) (2026-08-02)
 
 
