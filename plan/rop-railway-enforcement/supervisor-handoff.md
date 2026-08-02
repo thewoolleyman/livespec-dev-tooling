@@ -517,17 +517,49 @@ re-measure → ARM, carrying the disposition denominator and the `995m` known-ga
 be STAGED before measuring — an untracked module silently leaves the universe and reads as
 progress.
 
-**🔬 SUPERVISOR MEASUREMENT FOR UNIT A — ⛔ TAKEN ON THE WRONG INTERPRETER; DO NOT QUOTE THE
-NUMBERS.** I probed v184's four open rulings against the shipped
-`checks/_io_boundary_calls.py:116` frozenset (39 entries, matching `h0g9`'s count) and got a
-2/2 split — `samefile`/`iterdir` raise and stay IN, `glob`/`rglob` return `[]` and come OUT.
-I positive-controlled it in BOTH directions and as **uid 1000, not root**, so unlike this
-thread's fixture (a) the permission case was genuinely exercised — **and it was still
-wrong**, because I ran it on **Python 3.13.7 when this package's floor is 3.10.16**. The
-worker caught that in its first sentence and is re-measuring on the floor. **Treat the split
-as PENDING and take the worker's numbers.** Untested residual either way: whether
-`glob`/`rglob` raise on a PATTERN rather than on a receiver — my inputs varied the receiver
-only.
+**✅ UNIT A IS LANDED AND SETTLED — PR #1074 → `e51b37f`, verified by reading
+`_io_boundary_calls.py` ON MASTER.** It adds `open`, `owner`, `readlink`, `truncate` and
+**removes nothing**; `group` is ABSENT. dev-tooling measured **universe 168 / offenders 24 →
+24, ADDED 0, REMOVED 0** on two genuinely different trees, so the four verbs are LATENT here
+and their value is fleet-wide.
+
+**⛔ AND THE DEFECT THAT ALMOST SHIPPED IS THE PART TO CARRY: `group` IS FAILABLE BUT IS NOT
+AN I/O SURFACE.** The first pair added FIVE verbs and moved 24 → 34 — **ADDED 10, all of them
+`match.group(...)`**. `Path.group()` does raise, so it passes the failability criterion; but
+with the receiver UNRESOLVED only the verb name is left, and `re.Match.group()` dominates
+that name in this repo. **Failability is NECESSARY, NOT SUFFICIENT.** This is the third
+instance of a defect the module's own docstring already records — a terminal-name match
+"once flagged ten total functions in this repo and only three were real", which is why `get`
+and `run` are refused — and it mis-flagged exactly ten again. The landed pair pins `group`'s
+refusal with a regression test so a later reader of only the failability half cannot re-add
+it.
+
+**▶️ THE ARMING KNOWN-GAP THIS CREATES, and it is owed at ARMING, not before.** `get`, `run`
+and `group` are FAILABLE under the ratified criterion and DELIBERATELY absent, because the
+instrument cannot tell `Path.group()` from `re.Match.group()` on an unresolved receiver.
+**⚠️ THIS IS NOT A `qndn` AND MUST NOT BE INFLATED INTO ONE:** `qndn` was an UNDOCUMENTED
+skip hiding 42% of the universe; this is a DOCUMENTED choice under the docstring's own
+heading *"THE ONE PLACE THIS IS NOT CONSERVATIVE, STATED RATHER THAN HIDDEN"*, now
+test-pinned. No action is owed today. What IS owed: **the arming commit's denominator must
+NAME the three alongside `995m`**, or a reader will believe the check enforces failability in
+full when for three names it deliberately does not.
+
+**⛔ AND dev-tooling's FLOOR IS 5, NOT 3 — the worker's correction, and it creates unblocked
+work.** v185 refuted the claim that unit A would relieve the two total-predicate rows:
+`reconcile_beads_dir_perms` and `reconcile_beads_metadata_present` call `is_dir()`/`is_file()`
+directly, a `PermissionError` genuinely originates there, and they are now **ordinary
+conversions owed, held on NOTHING**. The 24 decomposes as **19 held on unit B · 2 conversions
+owed · 3 ruled**.
+
+**(superseded, kept for the lesson) MY OWN VERB PROBE WAS TAKEN ON THE WRONG INTERPRETER.** I
+handed the worker a 2/2 split — `samefile`/`iterdir` IN, `glob`/`rglob` OUT — positive-
+controlled in both directions and run as **uid 1000, not root**, so the permission case that
+made fixture (a) blind was genuinely exercised. **It was still wrong: Python 3.13.7 against a
+3.10.16 floor.** Measured on the floor, `glob`/`rglob` are **IN** — they raise on a PATTERN
+(empty → `ValueError`, absolute → `NotImplementedError`), which was the exact residual I had
+flagged and not tested. **2 of my 4 were wrong and the OUT list is empty: nothing is total**,
+because `pathlib._IGNORED_ERROS = (ENOENT, ENOTDIR, EBADF, ELOOP)` omits `EACCES`, so every
+predicate re-raises `PermissionError`.
 
 **⛔ AND THE VERSION POINT IS SUBSTANTIVE, NOT BOOKKEEPING — though state it only as far as
 it is verified.** I do NOT have a read establishing which `pathlib` behaviors differ between
@@ -568,9 +600,27 @@ file-read seam closed 2 of 4 condition-1 failures from ONE absence, with the res
 EXPLAINED rather than absorbed.
 
 **SUPERVISOR STATE AT THIS EDIT:** the only artifact is the PR carrying this correction,
-from worktree `~/.worktrees/livespec-dev-tooling/supervisor-v184-discharged`, reaped on
-merge. The worker is mid-flight on unit A under brief 85. **Enumerate foreign worktrees,
+from worktree `~/.worktrees/livespec-dev-tooling/supervisor-drive-corrections`, reaped on
+merge. The worker is mid-flight on **unit B** under brief 91. **Enumerate foreign worktrees,
 never quote a count** — this file's own retracted-number lesson.
+
+**▶️ UNIT B's EXPECTED MOVEMENT, and its polarity is the OPPOSITE of unit A's — brief 91.**
+Unit A was tightening-only, so any DECREASE was a finding. Unit B is **RELAXING-ONLY**, so
+the rule inverts and BOTH halves bind: predicted **24 → 5** in dev-tooling; any **INCREASE**
+is a finding because a relaxing change cannot add offenders; and **relieving MORE than the 19
+is ALSO a finding, not a bonus** — a relaxing key that relieves more than its enumerated
+variants is the declared-empty escape wearing a new name. If the count lands below 5, STOP
+and find out what got relieved that should not have been. Decompose ADDED/REMOVED rather
+than reading the net.
+
+**⛔ AND THE ONE PROPERTY THAT MAKES `single_meaning_variants` LEGITIMATE AT ALL IS THE
+RECOMPUTE.** A relaxing-only key is precisely the shape this thread spent days removing
+(`pure_trees = []`). What separates it from that defect is that **the gate RECOMPUTES and
+stores no claim** — bound 1's limbs re-derived from source every run, bound 3 enumerating
+variants to store the claim's SCOPE only, diffed against the code each run. **If a
+declaration is ever TRUSTED rather than re-derived, that is the founding defect re-created
+by its own fix.** NOT in `REQUIRED_ROLE_KEYS`; relaxing-only; modelled on
+`_declared_absence_returns.py` / `_public_api_consumption.py` — do not invent a third shape.
 
 **PEER LANE, by agreement, do not touch:** `plan/fleet-shell-quality-enforcement/` and its
 epic, landing PRs in this repo from the `supervisor-prompt-quality` supervisor. Its
@@ -1322,6 +1372,67 @@ lives, and say what replaced it.**
   every number an input to verify. The worker used it inside one sentence. That is now the
   Nth consecutive drive where that clause converted a supervisor error into a measured result
   instead of a false paragraph in the record. **Put it in every brief.**
+
+### 🧯 First-hand, 2026-08-02 (unit A drive) — TWO MORE OF MINE, AND THE ONE READ THAT PAID FOR THE WHOLE DRIVE
+
+- **🔴 MY "SAFE TO DELETE" LIST WAS OVER-INCLUSIVE, AND THAT IS THE DESTRUCTIVE
+  DIRECTION.** Handing the worker a `/tmp` cleanup list during the inode outage, I marked
+  `livespec-shell-corpus.*` safe "by age" — having checked the ages of the other consumers
+  and never those. They were dated THAT DAY, and the shell-quality peer lane was actively
+  landing PRs in this repo. The worker refused them and was right. **Note the asymmetry,
+  which is the same one this file already records for idle-detectors: a wrong DELETE
+  destroys, a wrong KEEP merely delays.** A safe-list must therefore be under-inclusive by
+  construction, and every member needs its own evidence — "by age" is a claim about each
+  entry, not about the category. **And I asserted age for a group I had not aged.**
+
+- **🔴 I COMMITTED THE `pgrep -f` SELF-MATCH, THE ONE THIS FILE ALREADY WARNS ABOUT.**
+  Checking whether anything held the temp dirs open, I ran
+  `ps -eo pid,etime,args | grep -E 'pytest|covns'` and got hits — every one of them the
+  WORKER'S OWN sweep, whose argv contained `covns`. I nearly reported "tests are running"
+  from it. Caught before briefing only because the hits looked wrong, not because I checked.
+  **Matching on `args` searches the very command strings your search terms live in; match on
+  `comm`, or exclude the searching PID.** The worker, told the correction, avoided it by
+  checking `comm` — so the correction landed, but it should never have been mine to make.
+
+- **🔴 AND I BROKE MY OWN WATCHER THE SAME WAY, ONE LAYER DOWN.** The armed pane-watcher
+  matched its busy regex against the WHOLE 14-line capture instead of the tail, so a
+  scrollback line containing `…` followed by `(` pinned it BUSY and burned a full 20-minute
+  ceiling. **Proven directly on one live capture: whole-capture returned BUSY, tail-only
+  returned IDLE, same bytes.** This file's snippet was already correct — it scopes to
+  `$tail12` — and I widened it while copying. **A snippet this file provides has been
+  positive-controlled; a variation you make has not.** The ceiling doing its job is what
+  surfaced it: it cost 20 minutes rather than the hour the previous instance cost, which is
+  the entire argument for keeping the ceiling short.
+
+- **✅ AND THE ONE THING THAT PAID FOR THE DRIVE WAS A SINGLE LOG READ.** The worker
+  reported master red at another lane's commit — "every commit in this repo is blocked, for
+  every lane, until master is fixed" — and stood down. Its statement was TRUE
+  (`check-canonical-recipe-fidelity` did fail) and its inference was WRONG: reading the log
+  showed the failure was inside that job's `uv sync` SETUP step, a PyPI timeout on
+  `exceptiongroup==1.3.1` after 5 retries. Nothing to fix. I re-ran the failed jobs and
+  master went green, unblocking every lane. **A tell was available even without the log:
+  TWO runs at the same SHA, one success and one failure — that is a flake signature, not a
+  defect signature.** Cost: one `--log-failed` read.
+
+- **▶️ AND THAT MAKES THE SESSION'S REAL PATTERN VISIBLE, WHICH OUTRANKS ANY ONE ITEM.**
+  THREE reds in one session meant something other than what they named — `coverage 70 < 100`
+  meant the host was out of INODES; `check-canonical-recipe-fidelity` meant PyPI timed out;
+  and this epic's founding case is a GREEN that meant nothing was scanned. **A CI failure in
+  a setup step is reported under the check's name, so an infrastructure flake and a genuine
+  check failure are indistinguishable at the glance everyone acts on.** Filed into `8o8e.16`
+  as one item with the leak, on the worker's reasoning that the leak is the cause and the
+  reporting is what made it expensive. **The rule is this epic's own, mirrored: a check that
+  did not RUN is not a check that FAILED.**
+
+- **✅ WHAT WORKED, AND IT IS CHEAP ENOUGH TO MAKE STANDING: THE UNPUSHED-RED RULE.** Told
+  to start a Red-Green pair it feared it could not finish, the worker was given "if you run
+  low mid-pair, do NOT push the Red — leave it local and record the amend owed." It then
+  built a WRONG pair (five verbs, `group` among them, which added ten false offenders), and
+  because the Red was unpushed it reset and rebuilt correctly at zero cost. **A pushed
+  Red-only commit is the `zv78` shape: exits 0, looks complete, nothing reopens it.** The
+  rule converted a context-risk standoff into a recoverable state and then immediately paid
+  for itself against a defect nobody had predicted. **Keep it: leave a Red unpushed until
+  the pair is MEASURED, not merely until it is written.**
 
 ### Verification lessons worth keeping at role level
 
