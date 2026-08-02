@@ -1,6 +1,6 @@
 """Outside-in test for `dev-tooling/checks/vendor_manifest.py` — `.vendor.jsonc` schema validation.
 
-Per `python-skill-script-style-requirements.md` §"Canonical
+Per `python-skill-script-style-requirements.md` section "Canonical
 target list" (the `check-vendor-manifest` row), `.vendor.
 jsonc` is validated against a schema that forbids placeholder
 strings: every entry has a non-empty `upstream_url`, a

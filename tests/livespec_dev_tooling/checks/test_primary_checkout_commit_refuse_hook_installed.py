@@ -1,7 +1,7 @@
 """Outside-in test for `livespec_dev_tooling/checks/primary_checkout_commit_refuse_hook_installed.py`.
 
-Per `livespec/SPECIFICATION/contracts.md` §"Doctor cross-boundary
-invariants" → §"`primary-checkout-commit-refuse-hook-installed`": every
+Per `livespec/SPECIFICATION/contracts.md` section "Doctor cross-boundary
+invariants" → section "`primary-checkout-commit-refuse-hook-installed`": every
 livespec-governed primary checkout MUST install `.git/hooks/pre-commit`,
 `.git/hooks/pre-push`, AND `.git/hooks/commit-msg` hooks whose body is
 the canonical livespec commit-refuse body. As of zs22.7.9.5 the verifier

@@ -1,6 +1,6 @@
 """Outside-in test for `dev-tooling/checks/heading_coverage.py` — every spec-tree-root NLSpec heading has a coverage entry.
 
-Per `SPECIFICATION/constraints.md` §"Heading taxonomy" (post-v004),
+Per `SPECIFICATION/constraints.md` section "Heading taxonomy" (post-v004),
 the registry maps `(spec_root, spec_file, heading)` triples and the
 check walks ONLY the five template-declared NLSpec files at each
 spec-tree root (`spec.md`, `contracts.md`, `constraints.md`,
@@ -15,7 +15,7 @@ to a unit-tier test (the integration-tier sub-rule). Skip rule
 covered: `Scenario:` prefix.
 
 The scenario integration-tier sub-rule (per
-`SPECIFICATION/constraints.md` §"Heading taxonomy"): a registry entry
+`SPECIFICATION/constraints.md` section "Heading taxonomy"): a registry entry
 whose `spec_file` is `scenarios.md` MUST map to a test at the
 integration tier or above — satisfied by an allowlisted node-id
 prefix (read from `[tool.livespec_dev_tooling].scenario_tiers`, or a

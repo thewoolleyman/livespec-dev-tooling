@@ -1,6 +1,6 @@
 """private_calls — no cross-module `_`-prefixed function calls in `livespec/**`.
 
-Per `python-skill-script-style-requirements.md` §"Canonical
+Per `python-skill-script-style-requirements.md` section "Canonical
 target list" (the `check-private-calls` row), no cross-module
 calls to `_`-prefixed functions defined elsewhere are
 permitted in `livespec/**`. Within a single module, calling

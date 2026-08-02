@@ -40,6 +40,31 @@
     "claude": { "status": "exempt", "reason": "livespec-dev-tooling is an enforcement-suite library; it ships no command/skill surface to resolve from a harness" },
     "codex":  { "status": "exempt", "reason": "livespec-dev-tooling is an enforcement-suite library; it ships no command/skill surface to resolve from a harness" }
   },
+  // Allowlist for the upstream governance heading cited by SPECIFICATION/README.md.
+  "external_references": {
+    "livespec": [
+      "SPECIFICATION/contracts.md §\"Cross-repo coordination — pin-and-bump\"",
+      "SPECIFICATION/contracts.md §\"Doctor cross-boundary invariants\"",
+      "SPECIFICATION/contracts.md §\"Driver-shipped hooks\"",
+      "SPECIFICATION/contracts.md §\"Plugin versioning\"",
+      "SPECIFICATION/contracts.md §\"Shared code sync — livespec-dev-tooling\"",
+      "SPECIFICATION/contracts.md §\"Vendor manifest\"",
+      "SPECIFICATION/contracts.md §\"`primary-checkout-commit-refuse-hook-installed`\"",
+      "SPECIFICATION/non-functional-requirements.md §\"CI as a merge gate (branch protection)\"",
+      "SPECIFICATION/non-functional-requirements.md §\"Commit-refuse hook bootstrap procedure\"",
+      "SPECIFICATION/non-functional-requirements.md §\"Conformance Pattern\"",
+      "SPECIFICATION/non-functional-requirements.md §\"Fleet membership contract\"",
+      "SPECIFICATION/non-functional-requirements.md §\"Governed-repo lifecycle\"",
+      "SPECIFICATION/non-functional-requirements.md §\"Keyword-only Python\"",
+      "SPECIFICATION/non-functional-requirements.md §\"Primary-checkout commit-refuse hook\"",
+      "SPECIFICATION/non-functional-requirements.md §\"ROP composition\"",
+      "SPECIFICATION/non-functional-requirements.md §\"ROP discipline\"",
+      "SPECIFICATION/non-functional-requirements.md §\"Shared code sync — livespec-dev-tooling\"",
+      "SPECIFICATION/non-functional-requirements.md §\"Sibling spec ownership\"",
+      "SPECIFICATION/non-functional-requirements.md §\"Test-Driven Development discipline\"",
+      "SPECIFICATION/non-functional-requirements.md §\"Toolchain pins\""
+    ]
+  },
   "livespec-dev-tooling": {
     "compat": {
       // semver range and pinned tag against livespec-core. The pinned

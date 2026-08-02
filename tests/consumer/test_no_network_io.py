@@ -3,7 +3,7 @@
 Covers the `SPECIFICATION/scenarios.md` scenario "a check attempts
 forbidden network I/O" — the `no-network-io` gate that asserts every
 check stays within the local-filesystem + project-local-subprocess
-envelope (per `SPECIFICATION/constraints.md` §"No network I/O").
+envelope (per `SPECIFICATION/constraints.md` section "No network I/O").
 
 The scenario notes the gate is "sketch only — the gate may itself be
 tested by a sandboxed firewall fixture or by AST inspection." This test
@@ -38,7 +38,7 @@ _CHECKS_DIR = _REPO_ROOT / "livespec_dev_tooling" / "checks"
 # Top-level package names whose import implies network I/O (sockets,
 # HTTP(S) clients, mail/FTP/telnet, async network stacks). Reaching a
 # remote endpoint or opening a socket is forbidden in check modules per
-# `constraints.md` §"No network I/O".
+# `constraints.md` section "No network I/O".
 _FORBIDDEN_NETWORK_ROOTS: frozenset[str] = frozenset(
     {
         "socket",

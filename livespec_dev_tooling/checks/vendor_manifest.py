@@ -1,6 +1,6 @@
 """vendor_manifest — `.vendor.jsonc` placeholder + shim discipline.
 
-Per `python-skill-script-style-requirements.md` §"Canonical
+Per `python-skill-script-style-requirements.md` section "Canonical
 target list" (the `check-vendor-manifest` row), `.vendor.jsonc`
 is validated against the placeholder-and-shim invariants:
 

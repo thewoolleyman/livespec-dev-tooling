@@ -1,7 +1,7 @@
 """Committed-file obligation rows for the fleet-membership contract.
 
 Each row asserts one committed-file fact about a member's `master`
-tree from the central vantage point (livespec v108 §"Fleet membership
+tree from the central vantage point (livespec v108 section "Fleet membership
 contract", obligation type "committed files"): the CI workflow, the
 three pin-and-bump shim workflows, copier-answers for template-born
 classes, the dev-tooling pin, and the no-tracked-gitlinks row. Every

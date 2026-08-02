@@ -1,6 +1,6 @@
 """Outside-in test for `dev-tooling/checks/wrapper_shape.py` — `bin/*.py` 5-statement shebang-wrapper shape.
 
-Per `python-skill-script-style-requirements.md` §"Canonical
+Per `python-skill-script-style-requirements.md` section "Canonical
 target list" (the `check-wrapper-shape` row), every
 `.claude-plugin/scripts/bin/*.py` file (except
 `_bootstrap.py`) MUST conform to the 5-statement shebang-

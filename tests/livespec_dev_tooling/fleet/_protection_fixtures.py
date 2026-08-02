@@ -27,7 +27,7 @@ __all__: list[str] = [
 
 
 # The `strict` flag the aligned (green-path) branch-protection payload
-# carries. Per livespec NFR §"CI as a merge gate (branch protection)",
+# carries. Per livespec NFR section "CI as a merge gate (branch protection)",
 # strict (require-branches-up-to-date) MUST be OFF, so the aligned
 # payload carries strict-off — the state `assert_branch_protection`
 # now accepts.

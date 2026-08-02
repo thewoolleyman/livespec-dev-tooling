@@ -80,7 +80,7 @@ def _member_connection(
     impl-plugin connection block" (a statement about the member's config
     that the row never verified) to one naming the defect. v039's ratified
     "a can't-PARSE is NEVER a pass" is scoped to pin-currency rows
-    (`contracts.md` §"Pin-currency severity policy"); generalizing it to
+    (`contracts.md` section "Pin-currency severity policy"); generalizing it to
     this row is a ratification, not a conversion.
     """
     block = connection_block(text=jsonc_text)

@@ -1,6 +1,6 @@
 """all_declared — every livespec module declares `__all__` and lists only defined names.
 
-Per `python-skill-script-style-requirements.md` §"Canonical
+Per `python-skill-script-style-requirements.md` section "Canonical
 target list" (the `check-all-declared` row), every module
 under `.claude-plugin/scripts/livespec/**` MUST declare a
 module-top `__all__: list[str]` (typed annotation, list

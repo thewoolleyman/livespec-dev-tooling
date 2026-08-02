@@ -340,7 +340,7 @@ def test_default_canonical_source_is_live_package(*, tmp_path: Path) -> None:
 
 
 def test_help_flag_exits_zero(*, tmp_path: Path) -> None:
-    """`--help` exits 0 with usage text on stdout (per contracts.md §"CLI surface")."""
+    """`--help` exits 0 with usage text on stdout (per contracts.md section "CLI surface")."""
     result = _run_check(cwd=tmp_path, extra_argv=["--help"])
     assert result.returncode == 0
     combined = result.stdout.lower()

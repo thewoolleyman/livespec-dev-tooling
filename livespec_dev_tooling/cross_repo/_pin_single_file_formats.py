@@ -2,7 +2,7 @@
 
 Extracted verbatim from `pin_autodiscovery` (cohesive seam: the three pin
 formats that read a single well-known file at the repo root rather than
-scanning a directory). Per `SPECIFICATION/contracts.md` §"Pin
+scanning a directory). Per `SPECIFICATION/contracts.md` section "Pin
 autodiscovery rules", these three formats are:
 
 - `.livespec.jsonc` `compat.pinned` — every top-level key whose value
@@ -68,7 +68,7 @@ _PIN_FORMAT_VENDOR = "vendor_jsonc"
 # by `pin_format` equality, `"unrecognized"` matched no spec, and the record
 # was silently dropped — turning an unparseable pin file into a PASSING row.
 # Re-introducing it here would recreate that fail-open, and per
-# `SPECIFICATION/contracts.md` §"Pin autodiscovery rules" a can't-parse "MUST
+# `SPECIFICATION/contracts.md` section "Pin autodiscovery rules" a can't-parse "MUST
 # NOT be carried as an in-band record in the walk's normal record stream".
 
 

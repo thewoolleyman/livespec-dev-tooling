@@ -1,6 +1,6 @@
 """no_write_direct — bans `sys.{stdout,stderr}[.buffer].write` outside exemption surface.
 
-Per `python-skill-script-style-requirements.md` §"Canonical
+Per `python-skill-script-style-requirements.md` section "Canonical
 target list" (the `check-no-write-direct` row),
 `sys.stdout.write(...)` and `sys.stderr.write(...)` calls — plus
 their `sys.stdout.buffer.write(...)` / `sys.stderr.buffer.write(...)`

@@ -1,6 +1,6 @@
 """newtype_domain_primitives — canonical field names use `livespec/types.py` NewType.
 
-Per `python-skill-script-style-requirements.md` §"Canonical
+Per `python-skill-script-style-requirements.md` section "Canonical
 target list" (the `check-newtype-domain-primitives` row),
 walks `schemas/dataclasses/*.py` (cycle 171 minimum-viable
 scope) and verifies field annotations matching canonical
@@ -148,7 +148,7 @@ def main() -> int:
     # which bundles both: a non-directory would otherwise collapse into the
     # generic "resolves to no Python files" wording and lose the specific
     # diagnostic above. Keyed off the DECLARED PATHS, never off the count of
-    # files actually inspected, per `contracts.md` §"Role keys".
+    # files actually inspected, per `contracts.md` section "Role keys".
     if not ensure_declared_paths_contain_python(
         repo_root=cwd,
         key="dataclasses_tree",

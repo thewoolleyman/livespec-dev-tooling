@@ -1,6 +1,6 @@
 """assert_never_exhaustiveness — every `match` ends with `case _: assert_never(<subject>)`.
 
-Per `python-skill-script-style-requirements.md` §"Canonical
+Per `python-skill-script-style-requirements.md` section "Canonical
 target list" (the `check-assert-never-exhaustiveness` row),
 every `match` statement in `livespec/**` MUST terminate with
 a `case _: assert_never(<subject>)` arm where `<subject>` is

@@ -1,6 +1,6 @@
 """Outside-in test for the v178 public-API criterion in `public_api_result_typed`.
 
-`livespec` v178 (`non-functional-requirements.md` §"ROP composition") replaced
+`livespec` v178 (`non-functional-requirements.md` section "ROP composition") replaced
 `__all__` membership with CONSUMED ACROSS A BOUNDARY as the definition of public
 API for the Result-return rule. This file pins the criterion's OBSERVABLE
 behavior at the check's own entry point, in both directions:

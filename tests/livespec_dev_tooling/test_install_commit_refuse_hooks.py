@@ -8,7 +8,7 @@ linked worktree.
 
 The installed body is the STRUCTURAL, armed-on-install commit-refuse
 hook (per `livespec/SPECIFICATION/non-functional-requirements.md`
-§"Primary-checkout commit-refuse hook" and §"Worktree root and mise
+section "Primary-checkout commit-refuse hook" and section "Worktree root and mise
 trust"). It enforces a POSITIVE-LOCATION allow-list:
 
 - a PRIMARY checkout (git-dir == git-common-dir) refuses, UNLESS

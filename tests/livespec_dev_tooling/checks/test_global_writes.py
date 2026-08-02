@@ -1,6 +1,6 @@
 """Outside-in test for `livespec_dev_tooling/checks/global_writes.py` — no module-level mutable writes.
 
-Per `python-skill-script-style-requirements.md` §"Canonical
+Per `python-skill-script-style-requirements.md` section "Canonical
 target list" (the `check-global-writes` row), no module-level
 mutable state writes from functions are permitted in
 `livespec/**`. The `global` keyword (writing module state from a

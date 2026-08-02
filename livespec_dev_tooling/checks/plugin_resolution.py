@@ -2,7 +2,7 @@
 
 The Verifier slot of the Conformance Pattern's Cross-harness plugin-resolution
 concern (concern #2), per `livespec/SPECIFICATION/non-functional-requirements.md`
-§"Conformance Pattern". The Contract: a governed repo's documented
+section "Conformance Pattern". The Contract: a governed repo's documented
 command/skill surface MUST resolve *and run* from a fresh session of each
 *declared* harness; the Verifier "invokes a canonical command and asserts it
 resolves and returns, per declared harness, and rejects a raw-CLI fallback as
@@ -17,7 +17,7 @@ and NEVER substitutes a raw-CLI success for a command-surface success.
 The check reads the optional `harnesses` declaration from the repo's local
 `.livespec.jsonc` (a project-config concern, sibling to `template` /
 `spec_root` / `implementation` — NOT the source-tree-layout schema of
-`pyproject.toml` `[tool.livespec_dev_tooling]`, which §"Schema location"
+`pyproject.toml` `[tool.livespec_dev_tooling]`, which section "Schema location"
 confines to layout role keys). The declaration is an object keyed by harness
 name:
 

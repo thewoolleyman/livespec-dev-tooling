@@ -1,6 +1,6 @@
 """Outside-in test for `dev-tooling/checks/public_api_result_typed.py` — pure-layer public APIs are Result-typed.
 
-Per `python-skill-script-style-requirements.md` §"Canonical
+Per `python-skill-script-style-requirements.md` section "Canonical
 target list" (the `check-public-api-result-typed` row), every
 public function (per `__all__` declaration) in pure layers
 returns `Result` or `IOResult` per annotation OR carries a
@@ -474,7 +474,7 @@ def test_public_api_result_typed_exempts_main_int_under_commands() -> None:
 def test_public_api_result_typed_exempts_build_parser_under_commands() -> None:
     """`build_parser() -> ArgumentParser` in `commands/**.py` is exempt.
 
-    Named ONLY by §"Typechecker rule set"; §"ROP composition" says the
+    Named ONLY by section "Typechecker rule set"; section "ROP composition" says the
     rule "exempts only such supervisors" and omits it. That conflict is
     filed as livespec-i04f. Implemented per the §Typechecker superset.
     """
@@ -554,7 +554,7 @@ def test_public_api_result_typed_honors_a_declared_supervisor_entry_file() -> No
     """A file declared in `supervisor_entry_files` gets the supervisor exemption.
 
     Member 4 of the EXHAUSTIVE exemption set ratified in livespec v177
-    (`non-functional-requirements.md` §"ROP composition"). It admits the SAME
+    (`non-functional-requirements.md` section "ROP composition"). It admits the SAME
     category as the `commands/*.py` members — a supervisor at a deliberate
     side-effect boundary — through a per-file declaration rather than a
     directory glob, because a flat-layout consumer cannot satisfy a location

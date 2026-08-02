@@ -1,6 +1,6 @@
 """config — consumer source-tree layout loader for the shared checks.
 
-Per `SPECIFICATION/contracts.md` §"Consumer configuration schema",
+Per `SPECIFICATION/contracts.md` section "Consumer configuration schema",
 every shared check that depends on the consumer's source-tree layout
 reads its layout-dependent paths from a `[tool.livespec_dev_tooling]`
 block in the consuming repo's root `pyproject.toml`. This module is the
@@ -48,7 +48,7 @@ from pathlib import Path
 from typing import Any, NoReturn, cast
 
 # stdlib `tomllib` lands in 3.11; the repo floor is 3.10 (per
-# `SPECIFICATION/constraints.md` §"Runtime"), so fall back to the
+# `SPECIFICATION/constraints.md` section "Runtime"), so fall back to the
 # vendored `tomli`, which exposes an identical `loads(text) -> dict`. The
 # 3.11 `tomllib` branch is never taken under the 3.10 test run, so it is
 # coverage-exempt; the 3.10 `tomli` branch is the one CI exercises.
@@ -181,7 +181,7 @@ _LEDGER_ID_SPELLING = "unarmed_until"
 class ConfigParseError(Exception):
     """Raised on malformed TOML or a schema-violating value.
 
-    An IO-layer exception per `SPECIFICATION/contracts.md` §"Configuration
+    An IO-layer exception per `SPECIFICATION/contracts.md` section "Configuration
     loader" — each check's `main()` supervisor catches it and renders a
     structured diagnostic.
     """
@@ -414,7 +414,7 @@ class CrossRepoPublicApi:
     siblings reach and `public_api_result_typed` treats each entry as public
     regardless of `__all__` membership.
 
-    The key is TIGHTENING-ONLY (SPECIFICATION v036 §"Role keys"): it may only
+    The key is TIGHTENING-ONLY (SPECIFICATION v036 section "Role keys"): it may only
     ADD names to the rule's scope. The repo-local consumption forms are
     recomputed from the code on every run and are unaffected by it, so an
     absent or empty declaration cannot remove a single name from the check's
@@ -446,13 +446,13 @@ class TotalAbsenceReturn:
     them, so the tightening-only argument that bounds `cross_repo_public_api` is
     NOT available here and MUST NOT be carried across on the strength of the two
     being otherwise parallel. What bounds this key instead is the STRUCTURAL GATE
-    (SPECIFICATION v037 §"Role keys" bound 1): the set of declarable functions is
+    (SPECIFICATION v037 section "Role keys" bound 1): the set of declarable functions is
     a syntactic property of the code, recomputed every run, rather than the
     consumer's choice.
 
     **An empty declaration is the STRICT end of this key, not the relaxed one** —
     the opposite polarity from the five union role keys, where empty was the
-    ambiguous, blinding value. A reader arriving from §"Declared-absent spellings
+    ambiguous, blinding value. A reader arriving from section "Declared-absent spellings
     for the union role keys" carries the reverse intuition.
 
     `reason` is part of the parsed VALUE rather than a TOML comment, for the same
@@ -523,7 +523,7 @@ class Config:
     remove. For every other required key a bare `[]` remains legitimate,
     because those keys scope an exemption or a severity rather than a scan
     universe, so emptiness makes their consuming check stricter rather than
-    blinder (SPECIFICATION v033 §"Clean role keys retain `[]`").
+    blinder (SPECIFICATION v033 section "Clean role keys retain `[]`").
     """
 
     declared_keys: frozenset[str] = frozenset()
@@ -662,7 +662,7 @@ def _reject_legacy_empty(*, key: str) -> ConfigParseError:
 
     The CLEAN keys never reach here — they are plain tuples, and `[]` stays legitimate
     for them because emptiness there removes exemptions rather than files
-    (`SPECIFICATION` v033 §"Clean role keys retain `[]`").
+    (`SPECIFICATION` v033 section "Clean role keys retain `[]`").
     """
     return ConfigParseError(_spellings_hint(key=key))
 
@@ -880,7 +880,7 @@ def load_scenario_tiers(*, repo_root: Path) -> tuple[str, ...] | None:
     Reads `<repo_root>/pyproject.toml`'s `[tool.livespec_dev_tooling]` block,
     key `scenario_tiers` — a TOML array of node-id path prefixes that the
     `heading_coverage` check accepts as integration-tier-or-above for
-    `scenarios.md` headings (per `SPECIFICATION/constraints.md` §"Heading
+    `scenarios.md` headings (per `SPECIFICATION/constraints.md` section "Heading
     taxonomy"). Returns `None` when the whole block is absent OR the
     `scenario_tiers` key is omitted, so the calling check applies its own
     documented default. Raises `ConfigParseError` on a non-array value or a
@@ -955,7 +955,7 @@ def load_destructive_cli_allowlist(*, repo_root: Path) -> tuple[str, ...] | None
     that the `no_direct_destructive_cli` check exempts from its
     destructive-default CLI scan (per
     `livespec/SPECIFICATION/non-functional-requirements.md`
-    §"Destructive-default CLI wrapping"). Returns `None` when the whole
+    section "Destructive-default CLI wrapping"). Returns `None` when the whole
     block is absent OR the `destructive_cli_allowlist` key is omitted, so
     the calling check applies its documented default (empty — nothing
     exempt). Raises `ConfigParseError` on a non-array value or a non-string

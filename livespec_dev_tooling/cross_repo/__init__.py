@@ -1,6 +1,6 @@
 """Cross-repo coordination support modules.
 
-Per `SPECIFICATION/contracts.md` §"Cross-repo coordination automation
+Per `SPECIFICATION/contracts.md` section "Cross-repo coordination automation
 surface", this package hosts the support utilities consumed by the
 reusable workflows under `.github/workflows/reusable-release-dispatch.
 yml`, `.github/workflows/reusable-bump-pin-from-dispatch.yml`, and
@@ -12,7 +12,7 @@ posts, PR creation), and the modules in this package supply the pure
 filesystem-walk primitives those workflows shell out to.
 
 Unlike the `livespec_dev_tooling/checks/` package — which is
-constrained to be network-I/O-free per `constraints.md` §"No network
+constrained to be network-I/O-free per `constraints.md` section "No network
 I/O" — modules here are STILL network-I/O-free; the workflows that
 consume them are where any network I/O lives.
 """

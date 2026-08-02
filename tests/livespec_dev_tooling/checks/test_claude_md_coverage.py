@@ -1,6 +1,6 @@
 """Outside-in test for `dev-tooling/checks/claude_md_coverage.py` — every directory has CLAUDE.md.
 
-Per `python-skill-script-style-requirements.md` §"Canonical
+Per `python-skill-script-style-requirements.md` section "Canonical
 target list" (the `check-claude-md-coverage` row), every
 directory under `.claude-plugin/scripts/` (excluding the
 `_vendor/` subtree), `<repo-root>/tests/` (excluding the

@@ -2,7 +2,7 @@
 
 The ci.yml sibling of `justfile_canonical_reconcile`, dispatched from the
 `bump-pin-rewrite` composite Action's "Reconcile canonical CI matrix wiring"
-step. Per `SPECIFICATION/contracts.md` §"Cross-repo coordination automation
+step. Per `SPECIFICATION/contracts.md` section "Cross-repo coordination automation
 surface", when a bumped livespec-dev-tooling release adds a new module under
 `livespec_dev_tooling/checks/`, the live canonical-check slug set grows and the
 consumer's `justfile` `check:` aggregate adopts it (the justfile reconcile, run

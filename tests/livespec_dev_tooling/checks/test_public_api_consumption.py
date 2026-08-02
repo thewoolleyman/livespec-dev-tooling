@@ -1,6 +1,6 @@
 """Unit test for `checks/_public_api_consumption.py` — the v178 consumption oracle.
 
-`livespec` v178 (`non-functional-requirements.md` §"ROP composition") makes a
+`livespec` v178 (`non-functional-requirements.md` section "ROP composition") makes a
 top-level function PUBLIC API for the Result-return rule only when it is
 CONSUMED ACROSS A BOUNDARY. This module owns the two forms a REPO-LOCAL vantage
 can compute: a product import across a module boundary inside this repo, and a

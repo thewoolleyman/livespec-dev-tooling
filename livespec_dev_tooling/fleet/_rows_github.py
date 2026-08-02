@@ -1,10 +1,10 @@
 """GitHub-side state obligation rows for the fleet-membership contract.
 
-The obligation type "GitHub-side state" of livespec v108 §"Fleet
+The obligation type "GitHub-side state" of livespec v108 section "Fleet
 membership contract": Actions secret NAMES present (APP_ID +
 APP_PRIVATE_KEY — names only, never values), the GitHub App
 installation, branch protection present AND aligned (per livespec
-§"CI as a merge gate (branch protection)"), and the `livespec-sibling`
+section "CI as a merge gate (branch protection)"), and the `livespec-sibling`
 topic. Reads that need scopes a given token lacks (secrets list,
 branch protection under the App token; installation listing under a
 user PAT) yield skips, never false reds — the operator-local run and
@@ -71,10 +71,10 @@ REQUIRED_SECRET_NAMES = ("APP_ID", "APP_PRIVATE_KEY")
 SIBLING_TOPIC = "livespec-sibling"
 
 # Repo-level merge-strategy settings the fleet mandates per livespec
-# NFR §"Commit and merge discipline": `master` accepts only
+# NFR section "Commit and merge discipline": `master` accepts only
 # rebase-merge, so merge-commit and squash-merge are forbidden at the
 # GitHub repo-settings level. `allow_auto_merge` is enabled so
-# `gh pr merge --auto` (the fleet merge driver, per §"CI as a merge
+# `gh pr merge --auto` (the fleet merge driver, per section "CI as a merge
 # gate (branch protection)") is available. A freshly-scaffolded repo
 # defaults to GitHub's `allow_merge_commit: true`, so this is a real
 # obligation, not a no-op.
@@ -114,7 +114,7 @@ def member_ci_check_names(
 
     The union of the member's `matrix.target` legs and its top-level job
     ids / literal `name:` values, from ONE read of ci.yml. Both halves are
-    load-bearing: per livespec NFR §"CI as a merge gate (branch
+    load-bearing: per livespec NFR section "CI as a merge gate (branch
     protection)" the required-check set is exactly the single top-level
     all-green gate job, which is NOT a matrix leg — so a matrix-only view
     reports the mandated configuration as a phantom check.
@@ -246,7 +246,7 @@ def assert_branch_protection(*, ctx: FleetContext, member: FleetMember) -> RowOu
     Aligned means: `enforce_admins`, `strict` OFF, a non-empty
     required-check set, and every required check matched by a ci.yml
     matrix leg OR a top-level ci.yml job (the direction that blocks
-    merges when violated), per livespec §"CI as a merge gate (branch
+    merges when violated), per livespec section "CI as a merge gate (branch
     protection)". A required check matching NEITHER is a phantom that can
     never report and would deadlock every merge; a required TOP-LEVEL
     all-green gate job (the `ci-green` single-gate model the contract
@@ -296,7 +296,7 @@ def _protection_verdict(
 def assert_merge_settings(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:
     """Repo-level merge settings are rebase-only (+ auto-merge enabled).
 
-    Per livespec NFR §"Commit and merge discipline": `master` accepts
+    Per livespec NFR section "Commit and merge discipline": `master` accepts
     only rebase-merge (`allow_merge_commit` / `allow_squash_merge` OFF,
     `allow_rebase_merge` ON), with `allow_auto_merge` ON so the fleet's
     `gh pr merge --auto` driver works. A freshly-scaffolded repo

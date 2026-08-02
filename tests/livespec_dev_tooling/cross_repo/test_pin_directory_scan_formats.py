@@ -281,7 +281,7 @@ def test_discover_fabro_docker_source_repo_filter_no_match(*, tmp_path: Path) ->
 def test_discover_fabro_docker_multiple_lines_in_one_workflow_toml(*, tmp_path: Path) -> None:
     """Two docker lines in ONE `workflow.toml` emit one record each, not just the first.
 
-    Per `SPECIFICATION/contracts.md` §"Pin autodiscovery rules", the
+    Per `SPECIFICATION/contracts.md` section "Pin autodiscovery rules", the
     per-matching-line rule binds the WHOLE `fabro_sandbox_docker_image` format,
     not only its `.github/workflows/` surface — so the `workflow.toml` walk is
     find-ALL, removing the latent first-match-per-file assumption.
@@ -310,7 +310,7 @@ def test_discover_fabro_docker_multiple_lines_in_one_workflow_toml(*, tmp_path: 
 # The SAME `fabro_sandbox_docker_image` format, found at a SECOND location: a
 # cut-over consumer runs its CI jobs inside the baked sandbox image, so the
 # image reference is repeated per job under `container:`. Per
-# `SPECIFICATION/contracts.md` §"Pin autodiscovery rules" EVERY such line is
+# `SPECIFICATION/contracts.md` section "Pin autodiscovery rules" EVERY such line is
 # walked, yielding ONE RECORD PER MATCHING LINE across files AND within one
 # file — a walk that stopped at the first match per file would leave jobs 2..N
 # pinned to the stale tag.

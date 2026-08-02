@@ -10,7 +10,7 @@ That single definition is the point. The two surfaces previously carried
 independent line-walk copies, and the copies DRIFTED: the fleet copy knew
 only about `matrix.target` legs, so the single top-level aggregate gate job
 the contract mandates read as a phantom required check on every member.
-Per `livespec/SPECIFICATION/non-functional-requirements.md` §"CI as a merge
+Per `livespec/SPECIFICATION/non-functional-requirements.md` section "CI as a merge
 gate (branch protection)", a required check is legitimate when it matches a
 CI matrix leg OR a top-level CI job, and is flagged only when it matches
 NEITHER: "A required top-level all-green gate job (the `ci-green`

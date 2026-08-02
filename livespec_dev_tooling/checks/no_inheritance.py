@@ -1,6 +1,6 @@
 """no_inheritance — direct-parent allowlist for `class X(Y):` in `livespec/**`.
 
-Per `python-skill-script-style-requirements.md` §"Canonical
+Per `python-skill-script-style-requirements.md` section "Canonical
 target list" (the `check-no-inheritance` row), `class X(Y):`
 inside `.claude-plugin/scripts/livespec/**` is forbidden when
 `Y` is not in the closed direct-parent allowlist:
@@ -14,7 +14,7 @@ subclass. `LivespecError` itself remains an open extension
 point. `Generic` is allowlisted because `Generic[...]`
 parameterization is structural typing machinery, not
 implementation inheritance: the ratified flat-full-ROP railway
-(livespec non-functional-requirements v165 §"Shared content
+(livespec non-functional-requirements v165 section "Shared content
 provenance", landed in the Drivers by accepted items 7u7/96q)
 requires `Success(Generic[_T])`-shaped containers, and the 3.10
 fleet floor rules out the PEP 695 type-parameter syntax that

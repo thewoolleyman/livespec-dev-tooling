@@ -14,7 +14,7 @@ return the SAME `RowOutcome` values (`RowPass`/`RowFinding`/`RowSkip` from
 both vantages rather than forking a parallel one.
 
 Per `livespec/SPECIFICATION/non-functional-requirements.md`
-§"Governed-repo lifecycle": a reconcile row runs from exactly one
+section "Governed-repo lifecycle": a reconcile row runs from exactly one
 vantage and no row needs both. These rows are the LOCAL vantage; the
 central rows (secrets, branch protection, topic, shim PRs) stay in
 `wire_fleet_member`.

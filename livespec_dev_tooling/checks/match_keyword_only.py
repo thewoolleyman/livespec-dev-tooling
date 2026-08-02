@@ -1,6 +1,6 @@
 """match_keyword_only — keyword-pattern destructuring on livespec classes.
 
-Per `python-skill-script-style-requirements.md` §"Canonical
+Per `python-skill-script-style-requirements.md` section "Canonical
 target list" (the `check-match-keyword-only` row), every
 `match` statement's class pattern resolving to a livespec-
 authored class binds via keyword sub-patterns (`Foo(x=x)`),

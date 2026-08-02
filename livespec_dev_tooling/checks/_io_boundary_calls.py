@@ -163,7 +163,7 @@ _PURE_IO_MODULE_MEMBERS: frozenset[str] = frozenset(
 # plausible receiver.
 #
 # MEMBERSHIP NEEDS BOTH HALVES, AND THE SECOND IS WHAT THIS SET ADDS. livespec
-# v184 §"ROP composition" §"What counts as an I/O boundary" makes FAILABILITY the
+# v184 section "ROP composition" section "What counts as an I/O boundary" makes FAILABILITY the
 # criterion — a boundary is a primitive at which a failure can ORIGINATE — and
 # every member below was driven with adverse input on CPython 3.10.16, the
 # fleet's `requires-python` FLOOR, and raises for at least one. But failability

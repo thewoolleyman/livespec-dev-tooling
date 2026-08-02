@@ -1,6 +1,6 @@
 """Outside-in test for `cross_repo/pin_autodiscovery.py` — the discover orchestrator + CLI.
 
-Per `SPECIFICATION/contracts.md` §"Pin autodiscovery rules", the walk
+Per `SPECIFICATION/contracts.md` section "Pin autodiscovery rules", the walk
 inspects five pin formats and yields normalized records. The
 per-format walks now live in two cohesive helper modules
 (`_pin_single_file_formats`, `_pin_directory_scan_formats`) exercised by
@@ -360,7 +360,7 @@ def test_discover_codex_acp_source_repo_filter_match(*, tmp_path: Path) -> None:
 def test_discover_codex_acp_source_repo_filter_fleet_no_match(*, tmp_path: Path) -> None:
     """A fleet `--source-repo` NEVER matches the external-source codex-acp pin.
 
-    Per `SPECIFICATION/contracts.md` §"Pin autodiscovery rules": the codex-acp
+    Per `SPECIFICATION/contracts.md` section "Pin autodiscovery rules": the codex-acp
     pin's source is EXTERNAL to the fleet, so no fleet release fan-out may
     rewrite it — a `sibling-released` bump can never touch CODEX_ACP_VERSION.
     """

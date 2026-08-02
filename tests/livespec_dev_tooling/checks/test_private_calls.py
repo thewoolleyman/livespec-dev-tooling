@@ -1,6 +1,6 @@
 """Outside-in test for `livespec_dev_tooling/checks/private_calls.py` — no cross-module `_`-prefixed calls.
 
-Per `python-skill-script-style-requirements.md` §"Canonical
+Per `python-skill-script-style-requirements.md` section "Canonical
 target list" (the `check-private-calls` row), no cross-module
 calls to `_`-prefixed functions defined elsewhere are permitted
 in `livespec/**`. Within a single module, calling `_helper()` is

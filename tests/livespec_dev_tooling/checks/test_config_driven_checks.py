@@ -1,6 +1,6 @@
 """Config-driven behaviour of the shared checks (li-asybpo).
 
-Per `SPECIFICATION/contracts.md` §"Consumer configuration schema", a
+Per `SPECIFICATION/contracts.md` section "Consumer configuration schema", a
 shared check reads its layout-dependent source trees from the
 `[tool.livespec_dev_tooling]` block in the consumer's `pyproject.toml`
 rather than from hardcoded constants. This test pins two behaviours the
@@ -13,8 +13,8 @@ fallback) do not:
 2. **No-op on absent role key** — a layered-ROP check (e.g.
    `no_except_outside_io`) NO-OPS (exits 0, emits a structured `info`
    log) when its governing role key is omitted from a present block, the
-   flat-layout-consumer regime per §"Role keys". Proves the
-   self-application no-op documented in §"Per-consumer pyproject
+   flat-layout-consumer regime per section "Role keys". Proves the
+   self-application no-op documented in section "Per-consumer pyproject
    declarations" for livespec-dev-tooling.
 """
 

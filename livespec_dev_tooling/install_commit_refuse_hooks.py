@@ -14,7 +14,7 @@ the structural signature of a real primary checkout (a linked worktree's
 git-dir is `<common-dir>/worktrees/<name>`, which differs).
 
 POSITIVE-LOCATION mechanism (per `livespec/SPECIFICATION/
-non-functional-requirements.md` §"Worktree root and mise trust"): being a
+non-functional-requirements.md` section "Worktree root and mise trust"): being a
 linked worktree is NOT sufficient to proceed. The body additionally
 enforces an allow-list — a worktree under the repository's git dir
 (tooling-internal, e.g. beads' `.git/beads-worktrees/*`) or under
@@ -36,7 +36,7 @@ single declared opt-out is the `livespec.sandboxExempt=true` git config,
 read inside the hook body (the Exemption slot of the Conformance
 Pattern's concern #1 Worktree-discipline, per
 `livespec/SPECIFICATION/non-functional-requirements.md`
-§"Conformance Pattern").
+section "Conformance Pattern").
 
 The canonical body ships as the module-level `CANONICAL_HOOK_BODY`
 string constant in THIS module so it travels in the wheel: only the
@@ -86,7 +86,7 @@ __all__: list[str] = [
 # substrings the doctor invariant fingerprints — `# livespec
 # commit-refuse hook`, `git rev-parse --git-common-dir`, and `exit 1`
 # (per `livespec/SPECIFICATION/contracts.md`
-# §"`primary-checkout-commit-refuse-hook-installed`").
+# section "`primary-checkout-commit-refuse-hook-installed`").
 CANONICAL_HOOK_BODY = """#!/bin/sh
 # livespec commit-refuse hook — refuses commits/pushes at the primary checkout,
 # and delegates to mise-managed lefthook everywhere else.

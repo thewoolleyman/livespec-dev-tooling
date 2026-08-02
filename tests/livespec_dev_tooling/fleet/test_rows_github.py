@@ -87,7 +87,7 @@ _CI_YML = textwrap.dedent(
 # The SINGLE-GATE ci.yml shape the fleet actually runs: a matrix job whose
 # legs report under the templated `${{ matrix.target }}` name, plus a
 # TOP-LEVEL `ci-green` aggregate gate job that fans the matrix in through
-# `needs:`. Per livespec NFR §"CI as a merge gate (branch protection)" the
+# `needs:`. Per livespec NFR section "CI as a merge gate (branch protection)" the
 # required-check set is exactly that one gate job — which is NOT a matrix
 # leg, so a matrix-only view of ci.yml cannot see it.
 _CI_YML_SINGLE_GATE = textwrap.dedent(
@@ -326,7 +326,7 @@ def test_branch_protection_missing_required_status_checks_is_finding() -> None:
 
 def test_branch_protection_strict_enabled_is_finding() -> None:
     # Strict (require-branches-up-to-date) MUST be OFF per livespec NFR
-    # §"CI as a merge gate (branch protection)"; strict=True is the
+    # section "CI as a merge gate (branch protection)"; strict=True is the
     # misalignment the row now flags.
     ctx = _protection_ctx(payload=_protection_payload(strict=True))
     outcome = assert_branch_protection(ctx=ctx, member=_MEMBER)
@@ -363,7 +363,7 @@ def test_branch_protection_required_check_missing_from_matrix_is_finding() -> No
 def test_branch_protection_top_level_gate_job_is_not_flagged() -> None:
     """A required TOP-LEVEL `ci-green` gate job is a valid required check.
 
-    livespec NFR §"CI as a merge gate (branch protection)": "A required
+    livespec NFR section "CI as a merge gate (branch protection)": "A required
     top-level all-green gate job (the `ci-green` single-gate model) is a
     valid required check and is NOT flagged, even though it is not a matrix
     leg, because requiring it gates the whole matrix through its `needs:`."
@@ -440,7 +440,7 @@ def test_merge_settings_rebase_only_passes() -> None:
 
 def test_merge_settings_merge_commit_enabled_is_finding() -> None:
     # The freshly-scaffolded-repo default: GitHub leaves allow_merge_commit
-    # true, which violates the rebase-only rule (livespec NFR §"Commit and
+    # true, which violates the rebase-only rule (livespec NFR section "Commit and
     # merge discipline").
     ctx = make_context(table={_REPO_ARGS: ok(payload=_merge_payload(allow_merge_commit=True))})
     outcome = assert_merge_settings(ctx=ctx, member=_MEMBER)

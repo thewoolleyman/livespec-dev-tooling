@@ -300,7 +300,7 @@ def test_no_tracked_vendor_tree_exits_3(*, tmp_path: Path) -> None:
     behaviour created `.claude-plugin/scripts/_vendor/<lib>/` and exited 0,
     so a repo that had never vendored anything acquired a tree in a location
     nothing imports from. Establishing a FIRST tree is the one-time manual
-    procedure (livespec `SPECIFICATION/constraints.md` §"Vendoring
+    procedure (livespec `SPECIFICATION/constraints.md` section "Vendoring
     procedure"); this tool re-vendors an existing one.
     """
     (tmp_path / ".vendor.jsonc").write_text(_manifest_text(), encoding="utf-8")

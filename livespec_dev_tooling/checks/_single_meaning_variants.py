@@ -1,6 +1,6 @@
 """_single_meaning_variants — livespec v183, condition 3's DECLARED carrier.
 
-`livespec` v183 (`non-functional-requirements.md` §"ROP composition") sanctions a
+`livespec` v183 (`non-functional-requirements.md` section "ROP composition") sanctions a
 CLOSED DISCRIMINATED UNION as an alternative railway spelling AT A RENDERING
 BOUNDARY when three conditions hold. Conditions 1 and 2 are mechanizable, so they
 BECOME the gate and stay COMPUTED; condition 3 — no variant carries two meanings —

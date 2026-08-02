@@ -1,6 +1,6 @@
 """Unit test for `checks/_single_meaning_variants` — v183's two source-side bounds.
 
-SPECIFICATION v038 §"Role keys" attaches four bounds to `single_meaning_variants`.
+SPECIFICATION v038 section "Role keys" attaches four bounds to `single_meaning_variants`.
 Bound 2 (a written meaning per variant) is the LOADER's and is pinned in
 `test_config.py`; bound 4 (a fleet-wide count beside the functions each
 declaration relieves) is the central-vantage row's. The two that need the repo's

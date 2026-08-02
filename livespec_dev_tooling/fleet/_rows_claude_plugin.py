@@ -1,7 +1,7 @@
 """Claude-plugin session-start currency obligation row for the fleet contract.
 
 The `claude-plugin-currency` committed-file obligation (livespec v108
-§"Fleet membership contract"): a member's `.claude/settings.json`
+section "Fleet membership contract"): a member's `.claude/settings.json`
 SessionStart must wire `mise exec -- just ensure-plugins` and the
 justfile must carry the standard shared ensure-plugins wrapper, OR the
 settings must explicitly declare a documented `livespecPluginCurrencySuccessor`

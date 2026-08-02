@@ -2,8 +2,8 @@
 
 The Verifier slot of the Conformance Pattern's Cross-harness plugin-resolution
 concern (concern #2), per `livespec/SPECIFICATION/non-functional-requirements.md`
-§"Conformance Pattern" and `SPECIFICATION/contracts.md` §"Shared check
-inventory" → §"`plugin_resolution` check".
+section "Conformance Pattern" and `SPECIFICATION/contracts.md` section "Shared check
+inventory" → section "`plugin_resolution` check".
 
 These tests inject a deterministic fake `CliRunner` (the cli_e2e seam) and a
 stubbed `shutil.which`, so NO subprocess is ever spawned (the check is exempt

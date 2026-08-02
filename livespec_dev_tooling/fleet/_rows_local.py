@@ -3,7 +3,7 @@
 The generalized `just bootstrap` step set, modeled as local obligation
 rows so the assert/drift side gains the matching local checks for free
 (per `livespec/SPECIFICATION/non-functional-requirements.md`
-§"Governed-repo lifecycle"). Each function takes a `LocalContext` and
+section "Governed-repo lifecycle"). Each function takes a `LocalContext` and
 returns a `RowOutcome`, issuing every host mutation through the
 context's command seam so the rows stay hermetically testable.
 

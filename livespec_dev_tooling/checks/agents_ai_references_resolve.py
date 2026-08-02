@@ -1,6 +1,6 @@
 """agents_ai_references_resolve — every AGENTS.md `.ai/<topic>.md` reference resolves.
 
-Per `livespec/SPECIFICATION/contracts.md` §"Fleet agent-instruction
+Per `livespec/SPECIFICATION/contracts.md` section "Fleet agent-instruction
 core": every `.ai/<topic>.md` path an `AGENTS.md` references MUST
 resolve to an existing file, at every directory level that declares
 one. This repo-local check enforces that referential integrity over the

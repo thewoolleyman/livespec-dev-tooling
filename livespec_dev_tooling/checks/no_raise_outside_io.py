@@ -1,6 +1,6 @@
 """no_raise_outside_io — domain-error raises confined to `io/**` and `errors.py`.
 
-Per `python-skill-script-style-requirements.md` §"Canonical
+Per `python-skill-script-style-requirements.md` section "Canonical
 target list" (the `check-no-raise-outside-io` row), raising
 of `LivespecError` subclasses (domain errors) at runtime is
 restricted to `livespec/io/**` and `livespec/errors.py`.

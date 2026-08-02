@@ -46,7 +46,7 @@ _LOAD_CONFIG_MODULE = "livespec_dev_tooling.config"
 # groups: `REQUIRED_ROLE_KEYS` spans the UNION keys, where a bare `[]` / `""` is
 # the retired ambiguous spelling, AND the CLEAN keys, where it remains
 # legitimate because emptiness there removes exemptions rather than files
-# (SPECIFICATION v033 §"Clean role keys retain `[]`"). A blanket rewrite in
+# (SPECIFICATION v033 section "Clean role keys retain `[]`"). A blanket rewrite in
 # either direction would be a new defect.
 MISSING_KEYS_EVENT = (
     "required role keys missing -- declare the real value. For a UNION role key "
@@ -101,7 +101,7 @@ def layout_dependent_check_slugs() -> tuple[str, ...]:
 
     Railway-lifted because this walk IS the I/O boundary: it stats every
     canonical check module. `@impure_safe` is the sanctioned form here per
-    livespec §"ROP composition" — the raw exception is the payload and the
+    livespec section "ROP composition" — the raw exception is the payload and the
     whole body is the seam.
 
     Callers MUST fail closed. An empty slug set reads as "no layout-dependent

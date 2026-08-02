@@ -1,6 +1,6 @@
 """Outside-in test for `livespec_dev_tooling/checks/no_inheritance.py` — direct-parent allowlist.
 
-Per `python-skill-script-style-requirements.md` §"Canonical
+Per `python-skill-script-style-requirements.md` section "Canonical
 target list" (the `check-no-inheritance` row), `class X(Y):` is
 forbidden when `Y` is not in the direct-parent allowlist
 `{Exception, BaseException, LivespecError, Protocol, NamedTuple,
@@ -218,7 +218,7 @@ def test_no_inheritance_accepts_generic_parameterized_base(
 
     The accepted Driver railway adoption (livespec-driver-claude-7u7 /
     livespec-driver-codex-96q, per the ratified flat-full-ROP decision in
-    livespec non-functional-requirements v165 §"Shared content provenance")
+    livespec non-functional-requirements v165 section "Shared content provenance")
     lands `Success(Generic[_T])` / `Failure(Generic[_E])` containers, and the
     3.10 fleet floor rules out the PEP 695 type-parameter syntax that would
     remove the base entirely. `Generic[...]` parameterization is structural

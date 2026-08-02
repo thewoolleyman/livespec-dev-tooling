@@ -1,6 +1,6 @@
 """Outside-in test for `testing/cli_e2e.py` — the CLI e2e harness orchestrator.
 
-Per `livespec/SPECIFICATION/contracts.md` §"CLI end-to-end harness contract",
+Per `livespec/SPECIFICATION/contracts.md` section "CLI end-to-end harness contract",
 the harness ships five components — driver, structural skill discovery,
 per-skill fixtures loader, time-bomb coverage gate, step orchestrator — behind
 the importable `test_workflow_full_round_trip` entry point, with the `claude -p`

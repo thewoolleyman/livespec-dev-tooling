@@ -9,7 +9,7 @@ outside the Result-return rule.
 
 ## THIS MODULE OWNS BOUNDS 1 AND 3, AND THEY ARE ONE DETECTOR
 
-SPECIFICATION v037 §"Role keys" attaches four bounds to the key. Bound 2 (a
+SPECIFICATION v037 section "Role keys" attaches four bounds to the key. Bound 2 (a
 written reason) is the LOADER's, enforced at parse time. Bound 4 (a fleet-wide
 count) is the central-vantage row's. The two that need the repo's SOURCE are
 here, and they are deliberately computed together because they are the same

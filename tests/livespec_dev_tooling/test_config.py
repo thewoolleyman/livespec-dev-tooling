@@ -1,6 +1,6 @@
 """Unit test for `livespec_dev_tooling.config` — the consumer-layout loader.
 
-Per `SPECIFICATION/contracts.md` §"Consumer configuration schema", the
+Per `SPECIFICATION/contracts.md` section "Consumer configuration schema", the
 loader resolves the consumer's source-tree layout from the optional
 `[tool.livespec_dev_tooling]` block. Missing blocks and omitted keys keep
 the flat `Config()` defaults, while `declared_keys` records which keys
@@ -344,7 +344,7 @@ def test_mirror_pairings_entry_missing_keys_raises(*, tmp_path: Path) -> None:
 def test_cross_repo_public_api_parses_declared_entries(*, tmp_path: Path) -> None:
     """Each declared entry resolves to a `CrossRepoPublicApi` carrying its reason.
 
-    SPECIFICATION v036 §"Role keys": the consumer's declaration of the names
+    SPECIFICATION v036 section "Role keys": the consumer's declaration of the names
     OTHER governed repos consume, so `public_api_result_typed` can apply a
     FLEET-WIDE criterion from a repo-local vantage. The `reason` is part of
     the parsed value rather than a TOML comment, for the same reason
@@ -448,7 +448,7 @@ def test_cross_repo_public_api_blank_reason_raises(*, tmp_path: Path) -> None:
 def test_total_absence_returns_parses_entries(*, tmp_path: Path) -> None:
     """A well-formed `total_absence_returns` array parses to typed entries.
 
-    SPECIFICATION v037 §"Role keys": the carrier `livespec` v179 member 2 names
+    SPECIFICATION v037 section "Role keys": the carrier `livespec` v179 member 2 names
     for a public `X | None` whose `None` is a legitimate ABSENCE.
     """
     _write_pyproject(
@@ -520,7 +520,7 @@ def test_total_absence_returns_entry_missing_function_raises(*, tmp_path: Path) 
 def test_single_meaning_variants_parses_entries(*, tmp_path: Path) -> None:
     """A well-formed `single_meaning_variants` array parses to typed entries.
 
-    SPECIFICATION v038 §"Role keys": the carrier `livespec` v183 names for
+    SPECIFICATION v038 section "Role keys": the carrier `livespec` v183 names for
     condition 3 of the rendering-boundary clause. ONE ENTRY PER VARIANT, each
     naming the defining file, the union, the variant, and the ONE thing that
     variant means.

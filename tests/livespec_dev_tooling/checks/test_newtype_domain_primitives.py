@@ -1,6 +1,6 @@
 """Outside-in test for `dev-tooling/checks/newtype_domain_primitives.py` — canonical field names use NewTypes.
 
-Per `python-skill-script-style-requirements.md` §"Canonical
+Per `python-skill-script-style-requirements.md` section "Canonical
 target list" (the `check-newtype-domain-primitives` row),
 walks `schemas/dataclasses/*.py` and function signatures;
 verifies field annotations matching canonical field names
@@ -455,7 +455,7 @@ def test_newtype_domain_primitives_rejects_declared_tree_with_no_python(*, tmp_p
     """A declared tree resolving to zero `.py` files is a hard ERROR.
 
     An armed check inspecting nothing is a configuration defect,
-    not a pass. Per `contracts.md` §"Role keys" the error keys off
+    not a pass. Per `contracts.md` section "Role keys" the error keys off
     the DECLARED PATHS, never off the count of files actually
     inspected — so a real directory carrying no Python at all is
     the misdeclaration this catches.

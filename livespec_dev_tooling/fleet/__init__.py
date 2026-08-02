@@ -1,6 +1,6 @@
 """Fleet membership contract — central conformance check + reconcile mode.
 
-Per `livespec/SPECIFICATION/non-functional-requirements.md` §"Fleet
+Per `livespec/SPECIFICATION/non-functional-requirements.md` section "Fleet
 membership contract": a committed manifest in livespec core
 (`.livespec-fleet-manifest.jsonc` at that repo's root) enumerates every fleet
 repo and its repo class; this package carries the SHARED contract

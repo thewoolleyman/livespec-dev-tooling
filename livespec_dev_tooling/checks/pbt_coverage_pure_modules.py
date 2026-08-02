@@ -1,6 +1,6 @@
 """pbt_coverage_pure_modules — `@given`-decorated function in every pure-layer test module.
 
-Per `python-skill-script-style-requirements.md` §"Canonical
+Per `python-skill-script-style-requirements.md` section "Canonical
 target list" (the `check-pbt-coverage-pure-modules` row), each
 test module under `tests/livespec/parse/` and `tests/livespec/
 validate/` declares at least one `@given(...)`-decorated test

@@ -1,7 +1,7 @@
 """Outside-in test for `checks/no_direct_destructive_cli.py` — destructive-default CLI wrapping.
 
 Per `livespec/SPECIFICATION/non-functional-requirements.md`
-§"Destructive-default CLI wrapping" (li-1f5 item 5, preservation
+section "Destructive-default CLI wrapping" (li-1f5 item 5, preservation
 split): destructive-default external CLIs MUST be invoked through
 project-local scripted wrappers that pin safe flags; agent-facing
 prose MUST refer to the wrapper, not the underlying CLI. The shared

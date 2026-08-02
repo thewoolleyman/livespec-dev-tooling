@@ -321,7 +321,7 @@ def test_reconcile_topic_failed_put_is_finding() -> None:
 
 
 def test_reconcile_protection_sets_strict_off_admins_and_matrix() -> None:
-    # The reconciler MUST set strict OFF per livespec NFR §"CI as a merge
+    # The reconciler MUST set strict OFF per livespec NFR section "CI as a merge
     # gate (branch protection)": strict (require-branches-up-to-date)
     # injects a merge commit that violates required_linear_history and
     # buries the Red-Green-Replay trailers.
@@ -396,7 +396,7 @@ def test_reconcile_protection_puts_to_resolved_default_branch() -> None:
 
 def test_reconcile_merge_settings_patches_repo_rebase_only() -> None:
     # The reconciler PATCHes the repo object to rebase-only + auto-merge,
-    # per livespec NFR §"Commit and merge discipline": a freshly-
+    # per livespec NFR section "Commit and merge discipline": a freshly-
     # scaffolded repo defaults to allow_merge_commit=true, so future
     # repos must be flipped rebase-only without a manual gh api call.
     calls: list[tuple[tuple[str, ...], str | None]] = []

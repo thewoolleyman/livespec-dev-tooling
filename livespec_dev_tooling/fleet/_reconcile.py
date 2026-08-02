@@ -1,7 +1,7 @@
 """Reconcile logic for the fleet-membership contract (`wire-fleet-member`).
 
 The wiring side of the shared contract definition (livespec v108
-§"Fleet membership contract", "assert mode is CI; reconcile mode is
+section "Fleet membership contract", "assert mode is CI; reconcile mode is
 wiring"): push the required secret NAMES from the operator's
 1Password-wrapper-provided environment (values flow env→stdin, never
 argv / logs / outcomes), set branch protection derived from the
@@ -222,7 +222,7 @@ def reconcile_merge_settings(*, ctx: FleetContext, member: FleetMember) -> RowOu
     """Set repo-level merge settings to rebase-only (+ auto-merge enabled).
 
     PATCHes the repo object with the fleet-mandated merge-strategy
-    flags (livespec NFR §"Commit and merge discipline"): merge-commit
+    flags (livespec NFR section "Commit and merge discipline"): merge-commit
     and squash-merge OFF, rebase-merge ON, auto-merge ON. Idempotent —
     re-PATCHing an already-rebase-only repo changes nothing.
     """

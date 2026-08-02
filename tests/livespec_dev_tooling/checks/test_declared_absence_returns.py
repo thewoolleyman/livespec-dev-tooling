@@ -1,6 +1,6 @@
 """Unit test for `checks/_declared_absence_returns` — v179 member 2's two source bounds.
 
-SPECIFICATION v037 §"Role keys" attaches four bounds to `total_absence_returns`.
+SPECIFICATION v037 section "Role keys" attaches four bounds to `total_absence_returns`.
 Bound 2 (a written reason) is the loader's and is pinned in `test_config.py`;
 bound 4 (a fleet-wide count) is the central-vantage row's. The two that need the
 repo's SOURCE live in this module and are pinned here:

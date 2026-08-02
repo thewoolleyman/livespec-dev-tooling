@@ -1,6 +1,6 @@
 """A pin-currency row SKIPS when the walk cannot read the member's pin file.
 
-`SPECIFICATION/contracts.md` §"Pin-currency severity policy": "A can't-read
+`SPECIFICATION/contracts.md` section "Pin-currency severity policy": "A can't-read
 never escalates. An unreadable PR list, release list, or tree keeps the row at
 its lower severity or skips it (a can't-read is not a violation)."
 

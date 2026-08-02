@@ -1,7 +1,7 @@
 """no_except_outside_io — broad catches confined to marked supervisor boundaries.
 
 Per `livespec/SPECIFICATION/non-functional-requirements.md`
-§"Supervisor discipline": narrow at the seam; broad only at
+section "Supervisor discipline": narrow at the seam; broad only at
 the boundary; at most one boundary per process. A NARROW
 handler names specific exception types and is permitted
 anywhere — it is how a seam handles an expected failure. A

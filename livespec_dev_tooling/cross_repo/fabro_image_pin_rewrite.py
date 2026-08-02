@@ -3,7 +3,7 @@
 Extracted from the embedded Python heredoc in
 `.github/actions/bump-pin-rewrite/action.yml`'s "Rewrite matching pins to new
 tag" step (the `fabro_sandbox_docker_image` case). Per
-`SPECIFICATION/contracts.md` §"Pin autodiscovery rules", the fabro-sandbox image
+`SPECIFICATION/contracts.md` section "Pin autodiscovery rules", the fabro-sandbox image
 pin is `docker = "ghcr.io/thewoolleyman/livespec-fabro-sandbox:<tag>"` in a
 Fabro `workflow.toml`, and the SAME image reference under a GitHub Actions job's
 `container:` block (`image: ghcr.io/…:<tag>`) where a cut-over consumer runs its
@@ -152,7 +152,7 @@ def rewrite_pin_in_text(
     """Return (rewritten_text, match_count), or the refusal when `current_tag` is unrewritable.
 
     Matches EITHER surface of the one `fabro_sandbox_docker_image` format per
-    `SPECIFICATION/contracts.md` §"Pin autodiscovery rules" — the Fabro
+    `SPECIFICATION/contracts.md` section "Pin autodiscovery rules" — the Fabro
     `workflow.toml` line `docker = "<image_key>:<current_tag>"`, or the GitHub
     Actions job `container:` block's `image: <image_key>:<current_tag>` line
     (including its one-line `container: <image>` shorthand) — and rewrites the

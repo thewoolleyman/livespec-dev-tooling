@@ -1,6 +1,6 @@
 """A stale pin whose open-PR list did not answer names NEITHER staleness class.
 
-`SPECIFICATION/contracts.md` §"Pin-currency severity policy" partitions a
+`SPECIFICATION/contracts.md` section "Pin-currency severity policy" partitions a
 stale pin into FIRED-AND-COULD-NOT-LAND and NEVER-FIRED, calls the
 partition exhaustive "because a bump PR for the latest release either is
 open or is not", and requires the diagnostic to name "WHICH of the two

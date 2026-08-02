@@ -41,7 +41,7 @@ __all__: list[str] = [
 # `admin` — needs GitHub ADMIN scope on each member (the Actions-secrets
 # list and the branch-protection endpoints). The App token deliberately
 # lacks admin scope (least privilege, livespec
-# non-functional-requirements.md §"GitHub App auth model"), so these rows
+# non-functional-requirements.md section "GitHub App auth model"), so these rows
 # can only be answered by an operator's own admin `gh` credentials. They
 # are enforced in the world-gate lane at pre-push — see
 # `fleet_conformance_admin.py`.

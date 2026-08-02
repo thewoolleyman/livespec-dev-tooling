@@ -1,6 +1,6 @@
 """The posture-gated adopter currency leg of the fleet-conformance sweep.
 
-livespec `non-functional-requirements.md` §"Plugin currency and the
+livespec `non-functional-requirements.md` section "Plugin currency and the
 release train": "the fleet-conformance sweep iterates fleet members plus
 opt-in adopters, and does NOT hold to currency any repo whose `posture`
 is not `released`". This module is the manifest `adopters` array's

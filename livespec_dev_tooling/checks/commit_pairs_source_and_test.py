@@ -1,6 +1,6 @@
 """commit_pairs_source_and_test — every source-touching commit also touches tests/ (v033 D3).
 
-Per `python-skill-script-style-requirements.md` §"Canonical
+Per `python-skill-script-style-requirements.md` section "Canonical
 target list" (the `check-commit-pairs-source-and-test` row,
 added at v033) and the v033 D3 revision file, every commit
 modifying any `.claude-plugin/scripts/livespec/**`,

@@ -1,6 +1,6 @@
 """file_lloc — per-file LLOC two-tier policy (soft warn at 200, hard fail at 250).
 
-Per `SPECIFICATION/constraints.md` §"File LLOC ceiling" (post-v005),
+Per `SPECIFICATION/constraints.md` section "File LLOC ceiling" (post-v005),
 every first-party `.py` file SHOULD have at most 200 logical lines of
 code (LLOC) and MUST have at most 250 LLOC.
 

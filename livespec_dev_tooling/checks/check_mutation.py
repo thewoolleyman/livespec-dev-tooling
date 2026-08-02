@@ -1,6 +1,6 @@
 """check_mutation — mutation testing against livespec/parse/ + validate/, gated by a RUN/SKIP lever.
 
-Per SPECIFICATION/constraints.md §"Enforcement suite — Release-gate targets"
+Per SPECIFICATION/constraints.md section "Enforcement suite — Release-gate targets"
 and: runs mutmut against `.claude-plugin/scripts/
 livespec/parse/` and `.claude-plugin/scripts/livespec/validate/`, then
 compares the kill rate against `.mutmut-baseline.json` using a ratchet-
