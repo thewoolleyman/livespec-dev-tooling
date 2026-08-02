@@ -23,14 +23,35 @@ checkout, so the rows stay hermetically testable with a canned-response runner.
 
 from __future__ import annotations
 
-from livespec_dev_tooling.fleet._context import (
+import sys
+from pathlib import Path
+
+# `returns` is VENDORED, not installed, so a bare import resolves only if some
+# EARLIER import in the same process already put `_vendor/` on `sys.path`.
+# Relying on that ordering is what broke the fleet's release fan-out for seven
+# hours (`vzwa`'s `89296e0`), and `test_vendor_update` enforces this preamble on
+# every `returns`-importing module for exactly that reason.
+_VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
+
+from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
+
+from livespec_dev_tooling.fleet._context import (  # noqa: E402
     RowFinding,
     RowOutcome,
     RowPass,
+    RowSkip,
     row_excluded,
 )
-from livespec_dev_tooling.fleet._invocation_failure import InvocationNotPerformed
-from livespec_dev_tooling.fleet._local_context import LocalContext, command_answer
+from livespec_dev_tooling.fleet._invocation_failure import (  # noqa: E402
+    InvocationNotPerformed,
+)
+from livespec_dev_tooling.fleet._local_context import (  # noqa: E402
+    LocalContext,
+    command_answer,
+)
 
 __all__: list[str] = [
     "DOLT_SERVER_HOST",
@@ -71,15 +92,35 @@ def _unprobed(*, failure: InvocationNotPerformed) -> RowFinding:
     )
 
 
-def _beads_applicable(*, ctx: LocalContext) -> bool:
-    """True when the checkout carries a `.beads/` tenant directory."""
-    return (ctx.checkout / ".beads").is_dir()
+def _beads_gate(*, ctx: LocalContext) -> RowOutcome | None:
+    """The outcome that ENDS a beads row, or None when the row should proceed.
+
+    ⛔ EVERY BEADS ROW CALLS THIS FIRST, WHICH IS WHY IT IS THE SHARED CAUSE.
+    It used to be `(ctx.checkout / ".beads").is_dir()`, a primitive that RAISES:
+    `pathlib` ignores only `(ENOENT, ENOTDIR, EBADF, ELOOP)`, so `EACCES`
+    propagated out of whichever row asked and aborted the whole local reconcile.
+    Fixing only the row whose own primitive appeared in an offender list would
+    have moved the count and left the crash live in all five.
+
+    THREE OUTCOMES, and the middle one is the point: the directory is there
+    (proceed), it is genuinely absent (INAPPLICABLE — an excluded pass), or it
+    could not be evaluated (`RowSkip`, whose ratified meaning is exactly
+    "can't-read is not absent"). The old probe fused the last two.
+    """
+    applicable = ctx.dir_present(path=ctx.checkout / ".beads")
+    if isinstance(applicable, IOFailure):
+        not_read = unsafe_perform_io(applicable.failure())
+        return RowSkip(reason=f".beads applicability not evaluable ({not_read.kind})")
+    if not unsafe_perform_io(applicable.unwrap()):
+        return row_excluded(reason=_EXCLUDED_NO_BEADS)
+    return None
 
 
 def reconcile_beads_bd_binary(*, ctx: LocalContext) -> RowOutcome:
     """Probe the explicit bd override, or fall back to executable `bd` on PATH."""
-    if not _beads_applicable(ctx=ctx):
-        return row_excluded(reason=_EXCLUDED_NO_BEADS)
+    gate = _beads_gate(ctx=ctx)
+    if gate is not None:
+        return gate
     probe = command_answer(
         outcome=ctx.exec(
             args=[
@@ -108,8 +149,9 @@ def reconcile_beads_bd_binary(*, ctx: LocalContext) -> RowOutcome:
 
 def reconcile_beads_dolt_server(*, ctx: LocalContext) -> RowOutcome:
     """Probe that the Dolt sql-server is reachable over TCP `127.0.0.1:3307`."""
-    if not _beads_applicable(ctx=ctx):
-        return row_excluded(reason=_EXCLUDED_NO_BEADS)
+    gate = _beads_gate(ctx=ctx)
+    if gate is not None:
+        return gate
     probe = command_answer(
         outcome=ctx.exec(
             args=[
@@ -137,8 +179,9 @@ def reconcile_beads_dolt_server(*, ctx: LocalContext) -> RowOutcome:
 
 def reconcile_beads_tenant_secret(*, ctx: LocalContext) -> RowOutcome:
     """Probe-ONLY that `BEADS_DOLT_PASSWORD` is present (value never read or echoed)."""
-    if not _beads_applicable(ctx=ctx):
-        return row_excluded(reason=_EXCLUDED_NO_BEADS)
+    gate = _beads_gate(ctx=ctx)
+    if gate is not None:
+        return gate
     probe = command_answer(
         outcome=ctx.exec(args=["bash", "-c", 'test -n "${BEADS_DOLT_PASSWORD:-}"'])
     )
@@ -158,8 +201,9 @@ def reconcile_beads_tenant_secret(*, ctx: LocalContext) -> RowOutcome:
 
 def reconcile_beads_config_committed(*, ctx: LocalContext) -> RowOutcome:
     """Probe that `.beads/config.yaml` (the committed tenant pointer) is tracked."""
-    if not _beads_applicable(ctx=ctx):
-        return row_excluded(reason=_EXCLUDED_NO_BEADS)
+    gate = _beads_gate(ctx=ctx)
+    if gate is not None:
+        return gate
     probe = command_answer(
         outcome=ctx.exec(args=["git", "ls-files", "--error-unmatch", ".beads/config.yaml"])
     )
@@ -178,9 +222,14 @@ def reconcile_beads_config_committed(*, ctx: LocalContext) -> RowOutcome:
 
 def reconcile_beads_metadata_present(*, ctx: LocalContext) -> RowOutcome:
     """Probe that `.beads/metadata.json` (regenerable, gitignored) is present."""
-    if not _beads_applicable(ctx=ctx):
-        return row_excluded(reason=_EXCLUDED_NO_BEADS)
-    if (ctx.checkout / ".beads" / "metadata.json").is_file():
+    gate = _beads_gate(ctx=ctx)
+    if gate is not None:
+        return gate
+    present = ctx.file_present(path=ctx.checkout / ".beads" / "metadata.json")
+    if isinstance(present, IOFailure):
+        not_read = unsafe_perform_io(present.failure())
+        return RowSkip(reason=f".beads/metadata.json not evaluable ({not_read.kind})")
+    if unsafe_perform_io(present.unwrap()):
         return RowPass(note=".beads/metadata.json present")
     return RowFinding(
         severity="warning",
