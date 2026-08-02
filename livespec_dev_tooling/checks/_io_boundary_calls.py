@@ -38,6 +38,7 @@ from livespec_dev_tooling.checks._import_resolution import (
     name_imports,
     top_level_functions,
 )
+from livespec_dev_tooling.checks._reexport_resolution import first_party_edges
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -308,26 +309,6 @@ def _module_is_io(*, dotted: str) -> bool:
     return dotted.split(".", maxsplit=1)[0] in _IO_MODULES
 
 
-def _first_party_edges(
-    *,
-    dotted: str,
-    attr: str,
-    index: Mapping[str, frozenset[Path]],
-    modules: Mapping[Path, ModuleFacts],
-) -> frozenset[tuple[Path, str]]:
-    """Every first-party function `<dotted>.<attr>` could resolve to.
-
-    EVERY candidate of an ambiguous suffix is returned, so an ambiguous module
-    contributes MORE call edges rather than fewer — the fixpoint then has more
-    ways to disqualify the caller, never fewer.
-    """
-    return frozenset(
-        (defining, attr)
-        for defining in index.get(dotted, frozenset())
-        if attr in modules[defining].functions
-    )
-
-
 def _under_io_tree(
     *, dotted: str, index: Mapping[str, frozenset[Path]], io_trees: tuple[Path, ...]
 ) -> bool:
@@ -357,7 +338,7 @@ def _name_call(
     dotted = facts.imported_names.get(name)
     if dotted is not None:
         return CallOutcome(
-            edges=_first_party_edges(dotted=dotted, attr=name, index=index, modules=modules),
+            edges=first_party_edges(dotted=dotted, attr=name, index=index, modules=modules),
             disqualifies=_under_io_tree(dotted=dotted, index=index, io_trees=io_trees),
         )
     if name in facts.functions:
@@ -394,7 +375,7 @@ def _attribute_call(
     first_party = facts.aliases.get(ast.unparse(target.value))
     if first_party is not None and first_party in index:
         return CallOutcome(
-            edges=_first_party_edges(
+            edges=first_party_edges(
                 dotted=first_party, attr=target.attr, index=index, modules=modules
             ),
             disqualifies=_under_io_tree(dotted=first_party, index=index, io_trees=io_trees),
