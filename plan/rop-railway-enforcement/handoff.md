@@ -2026,6 +2026,15 @@
 > `rel.name.startswith("_")` for the two variants. **Never `main()`, never
 > `_scan`.**
 >
+> ⛔⛔ **THIS SNIPPET WENT STALE ONCE AND IT COST 15 OFFENDERS — the third line of
+> `total` is the one that gets forgotten.** Unit B added
+> `total |= declared_variant_names(...)` to `_scan`; the copy here did not follow.
+> **MEASURED, not reasoned about: dropping that one line reports dev-tooling at 18
+> instead of 3** on the same tree, so a reader re-deriving from the stale copy would
+> have concluded the recorded 3 was wrong. **A harness written down to avoid
+> re-derivation is a SECOND implementation of `_scan` and drifts like one — diff it
+> against `_scan` before trusting it, every time.**
+>
 > ```python
 > root, universe = resolve_check_universe()
 > config = load_config(repo_root=root)
@@ -2034,6 +2043,8 @@
 >     declared=config.cross_repo_public_api, sources=sources)
 > total = functions_without_expected_failure_mode(sources=sources, io_trees=config.io_trees)
 > total |= declared_absence_names(declared=config.total_absence_returns, sources=sources)
+> total |= declared_variant_names(          # v183's carrier — ADDED BY UNIT B, easy to omit
+>     declared=config.single_meaning_variants, sources=sources, io_trees=config.io_trees)
 > for rel in universe:
 >     for lineno, name in _find_offenders(
 >         source=sources[rel], rel_path=rel, commands_trees=config.commands_trees,
