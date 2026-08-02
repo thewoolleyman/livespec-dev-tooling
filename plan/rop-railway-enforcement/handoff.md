@@ -9,7 +9,24 @@
 > METHOD and for the reasoning behind past rulings, never for "what is true
 > now".**
 >
-> ### ▶️▶️▶️ RESUME HERE: **`run_adopter_rows` IS RULED — DO NOT CONVERT. ALL THREE REMAINING ROWS ARE ONE SPEC QUESTION.**
+> ### ▶️▶️▶️ RESUME HERE: **`3744` IS NO LONGER ONE BLOCKER — 4 OF THE 22 ARE ACTIONABLE NOW, AND 2 OF THEM ARE A LIVE CRASH.**
+>
+> **THE NEXT UNIT IS `assert_worktree_pack` OR `reconcile_livespec_jsonc_complete`**
+> — see §"CONDITION 1 IS MECHANIZABLE" below. Both are among the 4, both CRASH
+> today (`livespec-dev-tooling-a6et`, P1), and the remediation is small:
+> condition 1 "TIGHTENS the obligation at the leaf", so **lift the read into a
+> railway-typed helper and let the row RENDER the outcome. The row's own
+> `RowOutcome` annotation may stay** — this is NOT a table-wide `LocalRowFn`
+> change. ⚠️ **Verify that before starting**; it is the assumption the small
+> scope rests on.
+>
+> **⛔ THE OTHER 2 OF THE 4 ARE NOT CONVERSIONS** — their only direct primitives
+> are TOTAL predicates, so converting would build an uninhabited failure track.
+> That tension is a CORE question, written out below. Do not convert them.
+>
+> ---
+>
+> ### ▶️ (previous session's entry) **`run_adopter_rows` IS RULED — DO NOT CONVERT. ALL THREE REMAINING ROWS ARE ONE SPEC QUESTION.**
 >
 > **NOTHING IS MID-FLIGHT** — no open PR of this thread's, no worktree of this
 > thread's, no background job. FIVE FOREIGN worktrees exist in dev-tooling —
@@ -41,6 +58,96 @@
 > **Both halves were swapped**: the exit-code effect is what MATCHES member rows,
 > the log severity is what DIFFERS. A SHIPPED TEST already asserted the opposite
 > of the docstring.
+>
+> ### 🔬 CONDITION 1 IS MECHANIZABLE, AND IT SPLITS THE 22 — **4 MUST CONVERT, 18 PENDING**
+>
+> `3744` refused to quote a split, correctly, on the spec's own rule that a
+> clause's exposure cannot be measured before the clause is mechanized.
+> **Condition 1 is now mechanized and the figure is a MEASUREMENT.**
+>
+> **THE IDENTIFICATION THAT MAKES IT ONE.** Condition 1 verbatim: *"A function
+> that calls a side-effecting primitive DIRECTLY, rather than through an injected
+> seam, IS such a boundary."* **`_io_boundary_calls.calls_of(...).disqualifies`
+> IS that predicate** — it resolves the RECEIVER through an import binding and
+> already carves out the injected seam. Reuse it; do NOT fork a reader. That is
+> the discipline `returns_x_or_none` established between member 1 clause (e) and
+> member 2's gate.
+>
+> **⛔ AND REUSE IS NOT A STYLE PREFERENCE HERE — IT IS WHERE THE EARLIER HAND
+> PROBE ERRED.** That probe read `(ctx.checkout / ".beads").is_dir()` as a seam
+> call because the expression starts with `ctx.`. The shipped machinery resolves
+> it correctly as a filesystem primitive, and `reconcile_beads_dir_perms` comes
+> out a BOUNDARY — the STRICT direction, the one the probe got backwards.
+>
+> | | count |
+> |---|---|
+> | offenders returning `RowOutcome` | **22** |
+> | **FAIL condition 1 → MUST CONVERT regardless of conditions 2/3** | **4** |
+> | condition 1 HOLDS → pending conditions 2 + 3 | **18** |
+>
+> **✅ NEITHER OUTPUT CAN RELAX ANYTHING BY CONSTRUCTION** — a condition-1 FAIL is
+> a must-convert, and a condition-1 HOLD leaves the function convicted and merely
+> pending. Controls ran both ways: BOUNDARY for the two direct-`Path` rows,
+> NOT-boundary for `reconcile_worktree_pack` (`ctx.exec_in_worktree` seam),
+> `assert_claude_plugin_currency` (seam-only), `run_adopter_rows` (pure fold).
+>
+> **THE 4, each verified BY READING and not only by the instrument:**
+>
+> | function | direct primitives | inhabited failure? |
+> |---|---|---|
+> | `_rows_local.py:106 assert_worktree_pack` | `is_file()`, **`read_text()`** | **YES — CRASHES** |
+> | `_rows_local_jsonc.py:135 reconcile_livespec_jsonc_complete` | `exists()`, **`read_text()`** | **YES — CRASHES** |
+> | `_rows_local.py:224 reconcile_beads_dir_perms` | `is_dir()` only | **NO — total predicate** |
+> | `_rows_local_beads.py:179 reconcile_beads_metadata_present` | `is_file()` only | **NO — total predicate** |
+>
+> ### 🔴 THE TWO `read_text()` ROWS CRASH TODAY — `livespec-dev-tooling-a6et` (P1)
+>
+> Measured, each against a NEGATIVE CONTROL from the same probe:
+>
+> ```
+> assert_worktree_pack:  drifted text file -> RowFinding            # control
+>                        non-UTF-8 bytes   -> UNCAUGHT UnicodeDecodeError
+> jsonc row:             absent            -> RowFinding            # control
+>                        path is a DIR     -> UNCAUGHT IsADirectoryError
+> ```
+>
+> **⛔ TWO DIFFERENT EXCEPTION HIERARCHIES: `UnicodeDecodeError` is a
+> `ValueError`, `IsADirectoryError` is an `OSError`.** A fix spelled
+> `except OSError` catches one and MISSES the other. And there is no `except`
+> anywhere in either row, so the ruff BLE001 backstop cannot see them at all.
+>
+> **⛔ AND MY FIRST HYPOTHESIS WAS WRONG, WHICH IS WHY THE PROBE MATTERED.** I
+> expected `assert_worktree_pack` to crash on a DIRECTORY. It does not —
+> `is_file()` IS a real shield, returning False. The reachable failure is a
+> regular file whose BYTES are not UTF-8. **`exists()` is the weaker pre-check:
+> it returns True for a directory**, which is why only the jsonc row takes the
+> `IsADirectoryError` arm. The pre-check pair does not fail the way it looks like
+> it fails — probe it, do not reason about it.
+>
+> ### ⛔ THE OTHER 2 EXPOSE A TENSION IN THE RATIFIED TEXT — a CORE question, recorded nowhere else
+>
+> **MEASURED: `is_file()`, `is_dir()` and `exists()` all return `False` rather
+> than raising** when the parent is a file rather than a directory. The same
+> probe shows `read_text()` RAISING, so the swallow is credible rather than a
+> blind zero.
+>
+> So `reconcile_beads_dir_perms` and `reconcile_beads_metadata_present` are
+> condition-1 BOUNDARIES syntactically, yet converting them would build the
+> **UNINHABITED failure track v179 member 1's own rationale forbids.**
+> **Condition 1 ("calls a primitive directly") and the uninhabited-track
+> principle point OPPOSITE ways whenever a function's only direct primitive is a
+> TOTAL predicate.** Do not settle this inside a conversion commit.
+>
+> ### ⚠️ CONDITION 3 IS NOT SYNTACTICALLY MECHANIZABLE, SO THE 18 STAY BLOCKED
+>
+> "No variant carries two meanings" is semantic. The spec's own precedent settles
+> the shape: whether a `None` models a FAILURE or a legitimate ABSENCE is *"a
+> semantic question no AST can answer"*, which is exactly why member 2 is a
+> DECLARED relief with a structural gate. **So mechanizing this clause needs a
+> declaration carrier for condition 3, on the member-2 template.** Condition 2 is
+> PARTLY mechanizable — `check-assert-never-exhaustiveness` already polices the
+> `match` half; the gap the spec names (an `isinstance` chain it cannot see) is a
+> new, small analysis.
 >
 > ### ⚖️ THE POPULATION-SWEEP RULING — **`run_adopter_rows` IS NOT A CONVERSION, AND NEITHER ARE THE OTHER TWO**
 >
@@ -476,6 +583,13 @@
 >   spelling), the clause-(e) blind spot (too RELAXED — exempts a hand-rolled
 >   failure track nested a field deep), `izbq` (too RELAXED — cannot see a
 >   call-graph edge, exempting the package's biggest I/O driver).
+> - **🔬 CONDITION 1 OF `3744` MECHANIZED AND MEASURED — 22 → 4 must-convert + 18
+>   pending.** No PR; the measurement reuses the shipped clause (c) predicate. See
+>   §"CONDITION 1 IS MECHANIZABLE".
+> - **📋 `livespec-dev-tooling-a6et` (P1) FILED** — `local-reconcile` CRASHES on an
+>   unreadable pack file (`UnicodeDecodeError`) and on a `.livespec.jsonc` that is
+>   a directory (`IsADirectoryError`). Both are among the 4, both measured against
+>   a negative control, and the two live in DIFFERENT exception hierarchies.
 > - **📋 EIGHT PER-REPO ARMING CHILDREN FILED** — `8o8e.7`–`.14`, fleet total
 >   **455 over a universe of 719** (§"THE ARMING BLAST RADIUS"). ⚠️ dev-tooling's
 >   `.9` row reads 30; it is **25** now — re-derive, never quote.
@@ -507,12 +621,17 @@
 > | `agent_hooks/_subagent_stop_guard_transcript.py:62` | `extract_created_worktree_paths` | `list[Path]` | **⛔ BLOCKED** — no inhabited failure track, no declaration route |
 > | *(concealed by `izbq`)* `fleet/_lanes.py:139` | `run_member_rows` | `MemberRowsResult` | **⛔ THE TWIN** — exempt only because table dispatch severs the call graph |
 >
-> **▶️ SO THE NEXT ACTION IS NOT A CONVERSION.** It is to put the
-> population-sweep question to livespec CORE, alongside `3744` — both are "the
-> check does not implement a sanctioned spelling", one at a RENDERING boundary
-> and one at a POPULATION boundary. **22 of the 25 were already held on `3744`;
-> the remaining 3 are now held on its sibling. `8o8e.9` is blocked in full, and
-> that is a finding rather than a stall.**
+> **▶️ THE 3 ABOVE ARE NOT CONVERSIONS.** The population-sweep question goes to
+> livespec CORE alongside `3744` — both are "the check does not implement a
+> sanctioned spelling", one at a RENDERING boundary and one at a POPULATION
+> boundary.
+>
+> **⛔ BUT "`8o8e.9` IS BLOCKED IN FULL" IS NOW SUPERSEDED, and it was my own
+> claim.** Mechanizing condition 1 split the 22: **4 fail it and MUST convert on
+> the ratified text alone**, needing no spec answer. So the state is **4
+> actionable · 18 on a condition-3 declaration carrier · 3 on the population-sweep
+> question**. §"CONDITION 1 IS MECHANIZABLE" above has the measurement, and 2 of
+> the 4 are a live crash (`a6et`).
 >
 > **✅ `persisting_bump_pr_number` IS DONE — DECLARED, not converted** (#1043 →
 > `c3d4186`, **27 → 26**). It was the ONE remaining row member 2 could accept,
@@ -644,6 +763,23 @@
 >   thread's own "cannot SEE the population" failure, committed in the type
 >   system. Three functions here carry "could not read" in-band for exactly that
 >   reason, argued independently by different authors in different modules.
+> - **MECHANIZE ONE CONDITION AND THE BLOCKER MAY STOP BEING ONE.** `3744` read as
+>   22 undifferentiated blocked rows. Implementing only condition 1 — by REUSING
+>   the shipped predicate, ~40 lines of probe — made 4 of them actionable with no
+>   spec answer at all. **Before accepting a blocker, ask which of its conditions
+>   is already mechanizable**, and mechanize that one.
+> - **A PRE-CHECK PAIR DOES NOT FAIL THE WAY IT LOOKS LIKE IT FAILS.** `is_file()`
+>   IS a real shield against a directory (returns False); `exists()` is NOT (True
+>   for a directory). So the same-looking `is_X()`-then-`read_text()` pair takes
+>   DIFFERENT failure arms in different rows — `UnicodeDecodeError` in one,
+>   `IsADirectoryError` in the other, and those are `ValueError` vs `OSError`.
+>   Probe each one; do not reason about the pair generically. **My first
+>   hypothesis was wrong and the probe corrected it.**
+> - **A TOTAL PREDICATE IS NOT AN INHABITED FAILURE.** `is_file()` / `is_dir()` /
+>   `exists()` SWALLOW `OSError` and return `False` — measured beside a
+>   `read_text()` that raises, so the swallow is credible. A function whose only
+>   direct primitive is one of these is a syntactic I/O boundary with NOTHING to
+>   flow, and converting it builds the uninhabited failure track member 1 forbids.
 > - **A DECLARATION IS A READING OF THE CURRENT CALL GRAPH, NOT A PROPERTY.**
 >   `persisting_bump_pr_number`'s `None` had TWO meanings until the pin-walker
 >   lifted `open_bump_prs_for`'s read failure onto its own track; declaring it
