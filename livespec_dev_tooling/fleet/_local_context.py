@@ -48,13 +48,26 @@ from livespec_dev_tooling.fleet._invocation_failure import (  # noqa: E402
 )
 
 __all__: list[str] = [
+    "FILE_UNDECODABLE",
+    "FILE_UNREADABLE",
     "CommandOutcome",
     "CommandResult",
     "CommandRunner",
+    "FileNotRead",
+    "FileTextOutcome",
     "LocalContext",
     "command_answer",
     "default_command_runner",
 ]
+
+# The two ways a local file read fails, kept APART because they call for
+# different operator responses: undecodable is corrupt CONTENT, unreadable
+# is a PATH or permissions problem. One fused kind would put two meanings
+# in one variant, which the rendering-boundary clause's condition 3
+# refuses. Spelled as `InvocationNotPerformed.kind` is, rather than
+# inventing a second convention.
+FILE_UNREADABLE = "file_unreadable"
+FILE_UNDECODABLE = "file_undecodable"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -71,6 +84,29 @@ class CommandResult:
 # here was already named `CommandResult` before the conversion; renaming it
 # would churn thirty-odd canned fakes across the suite to buy nothing.
 CommandOutcome = IOResult[CommandResult, InvocationNotPerformed]
+
+
+@dataclass(frozen=True, kw_only=True)
+class FileNotRead:
+    """A local file that could not be READ — never one that is merely absent.
+
+    Absence is an ANSWER and travels the SUCCESS track as `None`; this type
+    carries only "the read did not produce text". Fusing the two is the
+    defect this seam exists to remove: an `is_file()`-then-`read_text()`
+    pre-check pair renders absent and unreadable identically while ALSO
+    leaving the read's own failure uncaught.
+
+    `path` is carried for the same reason `InvocationNotPerformed` carries
+    `argv` — "a file could not be read" names no file, and every consumer
+    of this track renders a reason a human has to act on.
+    """
+
+    path: Path
+    kind: str
+    detail: str
+
+
+FileTextOutcome = IOResult[str | None, FileNotRead]
 
 
 class CommandRunner(Protocol):
@@ -163,6 +199,48 @@ class LocalContext:
         `checkout`, so every existing row and caller is unaffected.
         """
         return self.worktree if self.worktree is not None else self.checkout
+
+    def file_text(self, *, path: Path) -> FileTextOutcome:
+        """Read `path` as UTF-8: ABSENT is an ANSWER, UNREADABLE is a FAILURE.
+
+        The local counterpart of `FleetContext.file_text`, and the seam
+        whose absence made every local row that wanted a file call
+        `Path.read_text()` directly — a side-effecting primitive called
+        DIRECTLY rather than through an injected seam, which is what
+        livespec's rendering-boundary condition 1 refuses.
+
+        ⛔ NAMED `file_text` FOR A MECHANICAL REASON, NOT A STYLISTIC ONE.
+        A caller reaches this through `ctx`, a PARAMETER, so the receiver
+        resolves to nothing and `_no_expected_failure_mode` has only the
+        VERB left to judge — and `read_text` is IN
+        `_UNRESOLVED_RECEIVER_IO_VERBS`. A seam named after the primitive
+        it wraps would leave every caller convicted exactly as before,
+        so the fix would LOOK done while changing nothing. Any name
+        outside that set works; matching `FleetContext` is what makes
+        this a restoration rather than an invention.
+
+        ⚠️ IT DELIBERATELY DOES NOT MIRROR `FleetContext.file_text`'s
+        `str | None` SIGNATURE. That shape fuses absent with unreadable,
+        which is why the central side needs `_absent_or_unreadable` to
+        take a SECOND read of the member tree to disambiguate. Here the
+        two are split at the source and no second read is needed.
+
+        ONE `try` RATHER THAN AN `is_file()` PRE-CHECK PAIR: the pair
+        fuses absent with unreadable, leaves a TOCTOU second arm no test
+        can reach, AND leaves the read's own failure uncaught. The order
+        of the arms is load-bearing — `FileNotFoundError` is an `OSError`
+        so it must precede the general arm, and `UnicodeDecodeError` is a
+        `ValueError` that the general `OSError` arm CANNOT catch. Both
+        crashes this seam fixes were in those two different hierarchies.
+        """
+        try:
+            return IOSuccess(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return IOSuccess(None)
+        except UnicodeDecodeError as undecodable:
+            return IOFailure(FileNotRead(path=path, kind=FILE_UNDECODABLE, detail=str(undecodable)))
+        except OSError as unreadable:
+            return IOFailure(FileNotRead(path=path, kind=FILE_UNREADABLE, detail=str(unreadable)))
 
     def exec(self, *, args: list[str]) -> CommandOutcome:
         """Run a command with the target checkout as the working directory."""

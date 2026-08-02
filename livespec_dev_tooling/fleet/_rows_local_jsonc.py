@@ -57,7 +57,9 @@ _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
+from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
 from returns.result import Failure  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 from livespec_dev_tooling.fleet._connection import (  # noqa: E402
     BEADS_CONFIG_PATH,
@@ -73,6 +75,7 @@ from livespec_dev_tooling.fleet._context import (  # noqa: E402
     RowFinding,
     RowOutcome,
     RowPass,
+    RowSkip,
 )
 from livespec_dev_tooling.fleet._local_context import LocalContext  # noqa: E402
 
@@ -142,7 +145,17 @@ def reconcile_livespec_jsonc_complete(*, ctx: LocalContext) -> RowOutcome:
     drifted → a warning that defers to the central consistency row).
     """
     jsonc_path = ctx.checkout / LIVESPEC_JSONC_PATH
-    if not jsonc_path.exists():
+    read = ctx.file_text(path=jsonc_path)
+    if isinstance(read, IOFailure):
+        # can't-read is not absent. The `exists()` pre-check this replaces
+        # returned True for a DIRECTORY, so the read below raised
+        # `IsADirectoryError` uncaught and aborted the whole reconcile
+        # partway through (livespec-dev-tooling-a6et).
+        return RowSkip(
+            reason=f".livespec.jsonc unreadable ({unsafe_perform_io(read.failure()).kind})"
+        )
+    text = unsafe_perform_io(read.unwrap())
+    if text is None:
         return RowFinding(
             severity="warning",
             message=(
@@ -151,7 +164,6 @@ def reconcile_livespec_jsonc_complete(*, ctx: LocalContext) -> RowOutcome:
                 "fabricates), plus the impl-plugin block the beads connection is filled into"
             ),
         )
-    text = jsonc_path.read_text(encoding="utf-8")
     parsed = parse_document(text=text)
     if isinstance(parsed, Failure):
         return RowFinding(
@@ -171,10 +183,33 @@ def reconcile_livespec_jsonc_complete(*, ctx: LocalContext) -> RowOutcome:
                 "plugin-resolution; a human-judgment seam the verb never fabricates)"
             ),
         )
-    beads_path = ctx.checkout / BEADS_CONFIG_PATH
-    if not beads_path.exists():
+    return _beads_stage(ctx=ctx, jsonc_path=jsonc_path, text=text, document=document)
+
+
+def _beads_stage(
+    *, ctx: LocalContext, jsonc_path: Path, text: str, document: dict[str, object]
+) -> RowOutcome:
+    """Resolve `.beads/config.yaml` and reconcile the connection from it.
+
+    Extracted when the second file read pushed
+    `reconcile_livespec_jsonc_complete` past PLR0911's six-return cap. The
+    cap was PAID rather than routed around, and the split earns its keep:
+    the caller now reads as "validate the document", this reads as "apply
+    the beads config", and the row's two file reads sit one per function
+    instead of two in one.
+    """
+    beads_read = ctx.file_text(path=ctx.checkout / BEADS_CONFIG_PATH)
+    if isinstance(beads_read, IOFailure):
+        # The SECOND instance of the same pre-check pair in this one row, and
+        # the same crash: `exists()` is True for a directory, so the read
+        # raised uncaught. Absent stays a PASS below; unreadable is a skip.
+        return RowSkip(
+            reason=f".beads/config.yaml unreadable ({unsafe_perform_io(beads_read.failure()).kind})"
+        )
+    beads_text = unsafe_perform_io(beads_read.unwrap())
+    if beads_text is None:
         return RowPass(note="config complete; not beads-backed")
-    beads = parse_beads_config(text=beads_path.read_text(encoding="utf-8"))
+    beads = parse_beads_config(text=beads_text)
     if not any(beads_key in beads for beads_key, _ in CONNECTION_FIELD_PAIRS):
         return RowPass(note="config complete; no dolt.* connection keys")
     return _reconcile_connection(jsonc_path=jsonc_path, text=text, document=document, beads=beads)
