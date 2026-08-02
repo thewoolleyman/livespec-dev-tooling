@@ -278,3 +278,44 @@ def test_outcome_union_members_are_distinct() -> None:
     # Guard that the row helpers return the shared RowOutcome vocabulary.
     outcomes: list[RowOutcome] = [RowPass(), RowFinding(message="m"), RowSkip(reason="r")]
     assert len({type(o).__name__ for o in outcomes}) == 3
+
+
+def test_beads_dir_perms_is_not_evaluable_rather_than_crashing(*, tmp_path: Path) -> None:
+    """⛔ THE CRASH, AS A TEST. Before the predicate seam this RAISED, uncaught.
+
+    `is_dir()` propagates `EACCES` (and here `ENAMETOOLONG`) because `pathlib`
+    ignores only `(ENOENT, ENOTDIR, EBADF, ELOOP)`. The row had no `except`
+    anywhere, so the exception left the row and aborted the whole local
+    reconcile — the `livespec-dev-tooling-a6et` shape, one unit later.
+
+    ⚠️ Spelled `ENAMETOOLONG` because this suite runs as ROOT. The production
+    case is `EACCES`, and THIS ROW MANUFACTURES IT: it chmods `.beads` to 700,
+    so any process running as a non-owner then raises on everything inside.
+    """
+    outcome = reconcile_beads_dir_perms(ctx=_ctx(checkout=tmp_path / ("x" * 300)))
+    assert isinstance(outcome, RowSkip), f"must skip, not raise; got {outcome!r}"
+
+
+def test_beads_dir_perms_says_unevaluable_rather_than_absent(*, tmp_path: Path) -> None:
+    """The REASON is the whole value of the skip, so it is asserted separately.
+
+    Both arms of this row are `RowSkip`, so a fix that collapsed them would pass
+    the crash test above while destroying the distinction the seam exists to
+    make. "I could not look" and "there is nothing here" are different facts and
+    an operator acts on them differently.
+    """
+    outcome = reconcile_beads_dir_perms(ctx=_ctx(checkout=tmp_path / ("x" * 300)))
+    assert "not evaluable" in getattr(outcome, "reason", "")
+
+
+def test_an_absent_beads_directory_still_skips_with_its_own_reason(*, tmp_path: Path) -> None:
+    """THE NEGATIVE CONTROL: absent stays an ANSWER and keeps its distinct reason.
+
+    Both arms are `RowSkip`, so a fix that collapsed them would still be green on
+    the crash test above while destroying the distinction the seam exists to
+    make. The REASON is what tells an operator "there is no .beads here" apart
+    from "I could not look".
+    """
+    outcome = reconcile_beads_dir_perms(ctx=_ctx(checkout=tmp_path))
+    assert isinstance(outcome, RowSkip)
+    assert outcome.reason == "no .beads tenant directory"

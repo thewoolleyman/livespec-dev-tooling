@@ -252,9 +252,20 @@ def reconcile_worktree_root_trust(*, ctx: LocalContext) -> RowOutcome:
 
 
 def reconcile_beads_dir_perms(*, ctx: LocalContext) -> RowOutcome:
-    """Harden the beads tenant-pointer directory to owner-only, when present."""
+    """Harden the beads tenant-pointer directory to owner-only, when present.
+
+    ⛔ THE PROBE GOES THROUGH THE SEAM BECAUSE `Path.is_dir()` RAISES. `pathlib`
+    ignores only `(ENOENT, ENOTDIR, EBADF, ELOOP)`, so `EACCES` propagates — and
+    THIS ROW MANUFACTURES THAT STATE: it chmods `.beads` to `700`, so a process
+    running as a non-owner then raises on everything inside. The raise used to
+    leave this row uncaught and abort the whole local reconcile.
+    """
     beads = ctx.checkout / ".beads"
-    if not beads.is_dir():
+    present = ctx.dir_present(path=beads)
+    if isinstance(present, IOFailure):
+        not_read = unsafe_perform_io(present.failure())
+        return RowSkip(reason=f".beads tenant directory not evaluable ({not_read.kind})")
+    if not unsafe_perform_io(present.unwrap()):
         return RowSkip(reason="no .beads tenant directory")
     failure = _failed(
         ctx=ctx, args=["chmod", "700", str(beads)], note="hardening .beads permissions failed"
