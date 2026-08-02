@@ -438,8 +438,13 @@ once; treat it as a cache, never as the record.
 
 ### 🟢🟢 CURRENT POSITION — 2026-08-02 WRAP-UP. READ THIS BLOCK FIRST; EVERYTHING BELOW IT IS OLDER.
 
-**Supervisor stopped here at low context for an overseer restart. Nothing of this
-supervisor's is mid-flight: no worktree, no branch, no open PR, no background watcher.**
+**⚠️ CORRECTED IN PLACE 2026-08-02 (later, by the next supervisor). Three statements in
+this block were TRUE WHEN WRITTEN AND ARE NOW FALSE** — the hard constraint, the spec
+state, and the open ruling. They are corrected below rather than stacked under a newer
+heading, because this file's own recorded lesson is that a START-HERE block which sinks
+beneath newer sections keeps asserting stale state to whoever reads top-down. **A charter
+that still names a discharged blocker will stop a successor from letting authorized work
+land** — which is this thread's signature defect pointed at its own supervisor.
 Re-derive every number from the ledger and the forge before quoting it.
 
 **SCOPE CHANGED — MAINTAINER RULING 2026-08-02: fix ALL violations across the whole fleet
@@ -456,22 +461,36 @@ dev-tooling 24, runtime 27, git-jsonl 18, livespec 15, driver-codex 2, driver-cl
 wrong in BOTH directions — it convicts total predicates that cannot fail and acquits
 `open`, `readlink`, `chown`, `truncate` and directory walks that genuinely raise.
 
-**⛔ THE ONE HARD CONSTRAINT: `h0g9`'s IMPLEMENTATION MUST NOT LAND** until the
-total-predicate rule is ratified; landing it implements an unratified rule.
+**✅ THE ONE HARD CONSTRAINT IS DISCHARGED — `h0g9`'s IMPLEMENTATION MAY NOW LAND.** It
+read "MUST NOT LAND until the total-predicate rule is ratified; landing it implements an
+unratified rule." The rule IS ratified. **Do not re-impose this constraint**, and do not
+read the sentence it replaced as still binding.
 
-**SPEC STATE:** livespec **v183** ratified condition 3's declaration carrier (#1887 →
-`b2ea0523`) — its implementation IS unblocked and must RECOMPUTE, storing no claim.
-**`total-predicate-io-boundary.md` remains PENDING** (#1884 → `4756d52`).
+**SPEC STATE — BOTH CORE QUESTIONS ARE RATIFIED.** livespec **v183** ratified condition
+3's declaration carrier (#1887 → `b2ea0523`) and **v184** ratified the failability
+I/O-boundary criterion (#1888 → `051ba069`). Verified on the FORGE independently of the
+worker's report: `SPECIFICATION/history/` ends at **v184**, and `proposed_changes/` holds
+only `github-app-request-budget.md` and `owned-heading-coverage-todos.md` — the two
+genuinely foreign proposals, neither ever a candidate. **`total-predicate-io-boundary.md`
+is CONSUMED, not pending**; the older "remains PENDING (#1884 → `4756d52`)" line is dead.
 
-**▶️ THE OPEN RULING, ALREADY ISSUED AS BRIEF 84 — a successor must not re-litigate it.**
-The revise is gated by the intent-preservation rule: resolving a conflict between two
-ratified statements requires a cited DESIGN RECORD, and none exists for condition 1 /
-member 1. **RULED: acknowledge the contradiction EXPLICITLY in the revision record's
-`## Decision and Rationale` under the operational-reach clause. Do NOT cite a design
-record.** Citing one would manufacture provenance for an intent nobody can reconstruct —
-this epic's own defect class. **Keep this distinct from the v183 MODIFY**, which added a
-citation for the proposal's OWN semantics: documenting new intent you hold is not
-asserting old intent you do not.
+**✅ THE BRIEF-84 RULING IS DISCHARGED AND CONSUMED INTO v184 — do not re-litigate it, and
+do not re-issue it.** It was carried out as given: the revision record names the two
+contradicting statements, records that no design record survives for either, and rests
+ratification on the maintainer's explicit acknowledgment rather than on a manufactured
+citation. **The durable reasoning, which outlives the ruling:** citing a record would
+manufacture provenance for an intent nobody can reconstruct — this epic's own defect class
+— and **a true record of an unrecoverable intent is strictly better than a false record of
+a recovered one.** ⚠️ **v184 keeps two moves APART on purpose** — a provenance paragraph
+for the NEW failability intent (which IS held and written down, the same move as v183's)
+plus an acknowledgment stating in terms that it **MUST NOT** be read as having recovered
+the OLD intent. Do not collapse them when quoting.
+
+**⚠️ AND A MEASUREMENT DISCREPANCY RESOLVED WITH NEITHER SIDE WRONG:** design-record
+citations in `non-functional-requirements.md` read **0 before v183** and **1 after**, and
+the single hit IS v183's own citation, scoped to the carrier. Condition 1 and member 1
+still cite nothing. **The trees differed, not the readings — quote the tree a citation
+count was taken on.**
 
 **WHAT THE CARRIER DOES AND DOES NOT UNBLOCK, measured:** 19 of dev-tooling's 24 and 1 of
 runtime's 27 — **and nothing else.** `livespec-overseer` and beads-fabro, 362 of the 455,
@@ -485,16 +504,73 @@ fail-open `try/except` — the guard failed OPEN while looking wired. That is a 
 question. `w25v`: `vendor_update` hardcodes one layout and cannot serve `driver-claude` at
 repo root. Use `git ls-files`, never `find` — `find` matches the INSTALLED dependency.
 
-**SEQUENCE FROM HERE:** ratify total-predicate per the ruling → land the carrier
-implementation → `h0g9` (both directions in ONE change) → re-measure the fleet on the
-corrected verb set and restate all eight children → dev-tooling's remainder → the seven
-siblings in ASCENDING size, structural triage FIRST in each → whole-fleet re-measure →
-ARM, carrying the disposition denominator and the `995m` known-gap statement.
+**SEQUENCE FROM HERE — the first step is now DONE, and nothing on this list is blocked.**
+~~ratify total-predicate~~ (v184, done) → **unit A `h0g9`** (both directions in ONE change;
+v184 refuses the one-directional implementation BY NAME) and **unit B** the carrier
+implementation (`single_meaning_variants`, one entry per variant, gate RECOMPUTES and
+stores no claim, NOT in `REQUIRED_ROLE_KEYS`, RELAXING-ONLY) → **unit C**, the fleet
+re-measure owed the moment A lands, restating all eight children → dev-tooling's remainder
+→ the seven siblings in ASCENDING size, structural triage FIRST in each → whole-fleet
+re-measure → ARM, carrying the disposition denominator and the `995m` known-gap statement.
+**The sibling triage is a PARALLEL track blocked by none of it.** A and B are product
+`.py`: Red-Green-Replay applies, with the new-module stub technique, and new modules must
+be STAGED before measuring — an untracked module silently leaves the universe and reads as
+progress.
+
+**🔬 SUPERVISOR MEASUREMENT FOR UNIT A — ⛔ TAKEN ON THE WRONG INTERPRETER; DO NOT QUOTE THE
+NUMBERS.** I probed v184's four open rulings against the shipped
+`checks/_io_boundary_calls.py:116` frozenset (39 entries, matching `h0g9`'s count) and got a
+2/2 split — `samefile`/`iterdir` raise and stay IN, `glob`/`rglob` return `[]` and come OUT.
+I positive-controlled it in BOTH directions and as **uid 1000, not root**, so unlike this
+thread's fixture (a) the permission case was genuinely exercised — **and it was still
+wrong**, because I ran it on **Python 3.13.7 when this package's floor is 3.10.16**. The
+worker caught that in its first sentence and is re-measuring on the floor. **Treat the split
+as PENDING and take the worker's numbers.** Untested residual either way: whether
+`glob`/`rglob` raise on a PATTERN rather than on a receiver — my inputs varied the receiver
+only.
+
+**⛔ AND THE VERSION POINT IS SUBSTANTIVE, NOT BOOKKEEPING — though state it only as far as
+it is verified.** I do NOT have a read establishing which `pathlib` behaviors differ between
+3.10 and 3.13, and I am not asserting one; `h0g9`'s determinations are what the check will
+enforce, the check runs on the FLOOR, and a probe on a different interpreter therefore
+cannot settle them either way. That is enough to disqualify my numbers without inventing a
+changelog I have not read. **Any future probe of this set must name the interpreter it ran
+on and match the package floor** — an instrument pointed at the wrong runtime is this file's
+category (f): it works perfectly and observes the wrong universe.
+
+**AND THE PART THAT SURVIVES REGARDLESS OF VERSION, because it is about the RECORD rather
+than about behavior:** `resolve` and `expanduser` are IN the shipped 39 and on NEITHER
+`h0g9`'s OUT list NOR v184's needs-a-ruling list, so as the lists stand they stay IN *by
+default*, with no determination and no evidence recorded, while the other four each get one.
+**This is NOT an instruction to remove them** — `resolve(strict=True)` raises and the set
+matches on NAME only, so it cannot see the argument, which is `h0g9`'s own finding one level
+down; under v184's "ambiguity resolves FAILABLE so doubt TIGHTENS" both plausibly stay IN.
+v184 requires each determination recorded WITH its evidence and refuses an implementation
+leaving the list "otherwise unchanged". **An OUT list incomplete in the same direction it is
+correcting is the shape this epic exists to close.**
+
+**⛔ AND THE PART THAT IS A CONFORMANCE RISK: `resolve` and `expanduser` are IN the shipped
+39 and on NEITHER `h0g9`'s OUT list NOR v184's needs-a-ruling list.** Measured:
+`resolve()` returns a path on a missing target and under a file (non-strict is the default
+since 3.6); `expanduser()` RAISES `RuntimeError` on `~nosuchuser` but answers on a plain
+path. **This is NOT an instruction to remove them** — `resolve(strict=True)` does raise and
+the set matches on NAME only, so it cannot see the argument, which is `h0g9`'s own finding
+one level down; under v184's "ambiguity resolves FAILABLE so doubt TIGHTENS" both plausibly
+stay IN. **The claim is about the RECORD:** as the lists stand, these two stay IN *by
+default*, with no determination and no evidence recorded, while the other four each get
+one. v184 requires each determination recorded WITH its evidence and refuses an
+implementation leaving the list "otherwise unchanged". **An OUT list incomplete in the same
+direction it is correcting is the shape this epic exists to close.**
 
 **THE TRIAGE RULE THAT MAKES THE SIBLING NUMBERS TRACTABLE:** *when N functions fail the
 same clause, look for the missing seam before writing N fixes.* Proven — the `LocalContext`
 file-read seam closed 2 of 4 condition-1 failures from ONE absence, with the residue
 EXPLAINED rather than absorbed.
+
+**SUPERVISOR STATE AT THIS EDIT:** the only artifact is the PR carrying this correction,
+from worktree `~/.worktrees/livespec-dev-tooling/supervisor-v184-discharged`, reaped on
+merge. The worker is mid-flight on unit A under brief 85. **Enumerate foreign worktrees,
+never quote a count** — this file's own retracted-number lesson.
 
 **PEER LANE, by agreement, do not touch:** `plan/fleet-shell-quality-enforcement/` and its
 epic, landing PRs in this repo from the `supervisor-prompt-quality` supervisor. Its
@@ -1190,6 +1266,62 @@ instantly. **A detector is a check; check it the way this epic checks checks.**
 minutes (`seq 1 60`) bounds the damage, and the ceiling message must say VERIFY THE BUSY
 TEST rather than "re-arm" — the old wording actively instructed the next iteration to
 repeat the defect.
+
+### 🕰️ First-hand, 2026-08-02 (later) — A DISCHARGED BLOCKER READS EXACTLY LIKE A LIVE ONE
+
+**Not an error I committed, recorded because I nearly inherited one and the next supervisor
+will meet the same shape.** This charter's top block carried three statements that were
+TRUE when written and FALSE by the time I read them: the total-predicate proposal "remains
+PENDING", the brief-84 ruling is "OPEN", and — the load-bearing one — **"⛔ THE ONE HARD
+CONSTRAINT: `h0g9`'s IMPLEMENTATION MUST NOT LAND"**. All three had been discharged by a
+ratification that landed while no supervisor was watching.
+
+**The hazard is asymmetric and that is why it deserves a rule.** A stale COUNT gets caught
+the next time someone measures. A stale BLOCKER is never caught by measurement at all,
+because it produces *inaction* — and inaction leaves no artifact to contradict. Enforced
+faithfully, it would have made me refuse the exact unit the maintainer's ratification had
+just unblocked, and the refusal would have looked like diligence. Every other entry in this
+section is a false statement that CAUSED something; this is a false statement whose whole
+effect is to PREVENT something.
+
+**⛔ THE RULE: re-verify a charter's own blocking constraints against the forge BEFORE
+enforcing them, as a precondition of driving — not after the worker pushes back.** It cost
+two `gh api` reads here (`history/` ends at v184; `proposed_changes/` holds only the two
+foreign proposals). This is the same move this file already demands for a worker's claims —
+*"verify every worker claim on the FORGE, not from its report"* — turned on the charter
+itself, which is the one document nobody was treating as an input to verify.
+
+**AND CORRECT IT IN PLACE, DO NOT STACK A NEWER BLOCK.** The obvious repair is another
+`### CURRENT POSITION` on top. That re-creates the defect this file already recorded from
+the worker's own `handoff.md`: a START-HERE block sinks below newer sections and keeps
+asserting old state to a top-down reader. **A superseded blocker must be edited where it
+lives, and say what replaced it.**
+
+- **🔴 AND I RAN A PROBE ON THE WRONG INTERPRETER — a NEW member of the blind-instrument
+  family, and the one a positive control cannot catch.** Briefing unit A, I measured v184's
+  four open verb rulings and handed the worker a 2/2 split. I did the things this file
+  demands: positive-controlled it in BOTH directions before trusting either answer, and ran
+  as **uid 1000 rather than root**, so the `chmod 000` case that made fixture (a) blind was
+  genuinely exercised. **It was still worthless, because I ran it on Python 3.13.7 and this
+  package's floor is 3.10.16.** The worker's FIRST sentence was that the floor differs and
+  the difference could move any answer — it re-probed before accepting a single number.
+  **This is category (f), not (a)–(d):** those instruments could not produce a NEGATIVE; this
+  one produced clean, controlled, reproducible results **about the wrong runtime**. A
+  positive control cannot catch it, because the control passes on the wrong interpreter too.
+  **So the pre-flight question is not only "can this produce a negative?" and "can it see the
+  population?" but "is it running where the enforced behavior runs?"** — for a probe of a
+  check, that means the package floor, not whatever `python3` resolves to in the
+  supervisor's shell.
+- **AND THE AGGRAVATION IS FAMILIAR:** this file already records me naming an instrument
+  that could not see the population, in a brief demanding a measurement. Here I built one
+  that saw a population — just not the one the check will run against. **The reflex to fix
+  is reaching for the interpreter/tool nearest to hand and not asking what the ENFORCED
+  environment is.**
+- **✅ WHAT CONTAINED IT WAS THE SAME SENTENCE AS EVERY OTHER TIME.** Brief 85 closed with
+  "if your verification contradicts anything above, YOURS WINS — say so plainly", and marked
+  every number an input to verify. The worker used it inside one sentence. That is now the
+  Nth consecutive drive where that clause converted a supervisor error into a measured result
+  instead of a false paragraph in the record. **Put it in every brief.**
 
 ### Verification lessons worth keeping at role level
 
