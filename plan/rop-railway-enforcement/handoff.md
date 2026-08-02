@@ -198,8 +198,37 @@
 > and **every one of the 91 mirrored offenders has a twin**: the split is exactly
 > `overseer/` **103** + `.claude-plugin/overseer/` **91**.
 >
-> **▶️ CONVERT THE 103 AND RE-SYNC; THE 91 CONVERT FOR FREE**, because the check
-> FORBIDS them from differing. Sizing that child at 194 double-counts by 47%.
+> **▶️ CONVERT THE 103 AND RE-SYNC.** Sizing that child at 194 double-counts by 47%.
+>
+> #### ⛔ AND "THE 91 CONVERT FOR FREE" IS CORRECTED BY EXPERIMENT — **RE-SYNC IS AN ACTION, NOT AN AUTOMATIC CONSEQUENCE**
+>
+> Brief 95 asked whether `cmp -s` makes the fix ATOMIC — whether overseer is 103
+> independent units or one coordinated all-copies-at-once change. **RUN, not reasoned
+> about**, on a fresh clone of overseer master `4c99ca4`:
+>
+> | run | tree | `just check-codex-plugin-runnable-launcher` |
+> |---|---|---|
+> | control | untouched | **exit 0** |
+> | treatment 1 | a function added to `overseer/codex_sessions.py` ONLY | **exit 1** |
+> | treatment 2 | the same edit copied to the mirror in the SAME change | **exit 0** |
+>
+> **▶️ SO THE ATOMIC UNIT IS THE FILE PAIR, NOT THE REPO — the coordination is
+> INTRA-COMMIT, and the 103 STAY INDEPENDENT.** Treatment 2 was green with the other
+> 102 offenders still unconverted, so a fan-out planned as 103 units does NOT break on
+> the first PR. **The required-key schema rule's shape does not apply here.**
+>
+> **⛔ BUT THE HAZARD BRIEF 95 SUSPECTED IS REAL, ONE LEVEL DOWN: converting the
+> original ALONE REDS THE GATE.** Every conversion touches TWO files. "The 91 convert
+> for free" means no separate DESIGN work, **not** that they update themselves — and
+> `cmp -s` is byte-level over the whole FILE, so re-syncing is copying the file, not
+> porting the function.
+>
+> ⚠️ **AND THE ENFORCEMENT IS LOCAL-ONLY, WHICH IS THE PART TO CARRY.**
+> `check-codex-plugin-runnable-launcher` is a member of overseer's `just check`
+> aggregate — so PRE-PUSH catches a one-sided conversion — but it is **NOT in the CI
+> matrix** (`.github/workflows/ci.yml` runs `just ${{ matrix.target }}` over an explicit
+> list and never mentions codex). **CI would not catch a divergent mirror.** The gate
+> holds only for pushes that run the hooks.
 >
 > ⚠️ **NO OTHER MEMBER HAS THIS SHAPE** — all seven siblings were checked for the same
 > duplicate-basename pattern and every one returned 0. Do not go hunting for a mirror
@@ -236,6 +265,34 @@
 >    directory fails with "no beads database found" for all eight children at once —
 >    harmless because nothing partially applied, but pass
 >    `bd -C /data/projects/livespec-dev-tooling` and it cannot happen.
+>
+> ### 🧾 THE ARMING DENOMINATOR — **THE RUNNING LIST, so it is not reassembled at the gate** (brief 95)
+>
+> The arming commit's denominator statement MUST carry every item below, each WITH its
+> basis inline rather than as a footnote. **A total without its basis is not a
+> measurement** (`8o8e.17`), and the arming commit is the one place that lesson is
+> most expensive to relearn.
+>
+> 1. **`995m`** — the `is_generated` skip. Long-standing known gap; state it.
+> 2. **`get` / `run` / `group`** — FAILABLE under ratified v184/v185 and DELIBERATELY
+>    ABSENT from `_UNRESOLVED_RECEIVER_IO_VERBS`, because the instrument cannot tell
+>    `Path.group()` from `re.Match.group()` on an unresolved receiver. **For three names
+>    the armed check does NOT enforce failability in full.** ⚠️ Not a `qndn` — that was
+>    an UNDOCUMENTED skip hiding 42% of the universe; this is documented under the
+>    module's own heading and test-pinned. Do not inflate it, do not omit it.
+> 3. **432 RAW vs 338 DISTINCT, and say which is which.** A reader planning against 432
+>    budgets **94 units of work that do not exist**; a reader auditing coverage against
+>    338 **under-counts what the check actually scans**. Both numbers are correct answers
+>    to different questions: **432** = what the armed check convicts; **429** = less
+>    dev-tooling's 3 RULED non-conversions; **338** = less overseer's 91
+>    mechanically-enforced mirror copies, which are re-syncs rather than conversions.
+> 4. **v183 bound 4's FAIL half** — **INFRASTRUCTURE-BLOCKED, not unfinished**, and the
+>    distinction must survive into the commit. It needs the installation to stop
+>    returning `kind: rate_limited`; `_declarable_unions` limb (d) computes condition 2
+>    over the LOCAL vantage only, so a repo-local green does NOT mean every governed
+>    sibling consumes a declared union exhaustively.
+> 5. **Unit A's four verbs convict ZERO fleet-wide** — measured per-tree, both directions
+>    controlled. The armed check's reach is not what the verb-set addition implies.
 >
 > ### ▶️▶️ EXACT NEXT ACTION — **THE PER-REPO FAN-OUT. UNIT C IS DONE AND NOTHING BLOCKS IT.**
 >
@@ -2019,40 +2076,47 @@
 > extractions exist to serve the COMBINATOR rather than the reader, dropping the
 > combinator is the cheaper payment.
 >
-> ### 🔬 THE ARMED MEASUREMENT — the harness, written out so it is not re-derived
+> ### 🔬 THE ARMED MEASUREMENT — **THE OPERATION, NOT A COPY OF IT** (brief 95's class fix)
 >
-> Iterate `resolve_check_universe()` and call `_find_offenders` PER FILE, building
-> `public` / `no_expected_failure_mode` exactly as `_scan` does. Toggle
-> `rel.name.startswith("_")` for the two variants. **Never `main()`, never
-> `_scan`.**
+> **⛔ THE CODE THAT USED TO BE HERE IS DELETED ON PURPOSE. DO NOT RESTORE IT.** This
+> section held a transcription of `_scan`'s universe computation "so it is not
+> re-derived". **It drifted, and the drift was measured: unit B added a third
+> `total |= …` line to the shipped `_scan`, the copy here did not follow, and running
+> the copy as written reported dev-tooling at 18 instead of 3.** A reader re-deriving
+> the record's own headline from the record's own harness would have concluded the
+> recorded 3 was wrong. **That is `i04f`'s and `8o8e.6`'s shape — agreement kept by
+> COPYING — now carrying a measured cost of 15 offenders.**
 >
-> ⛔⛔ **THIS SNIPPET WENT STALE ONCE AND IT COST 15 OFFENDERS — the third line of
-> `total` is the one that gets forgotten.** Unit B added
-> `total |= declared_variant_names(...)` to `_scan`; the copy here did not follow.
-> **MEASURED, not reasoned about: dropping that one line reports dev-tooling at 18
-> instead of 3** on the same tree, so a reader re-deriving from the stale copy would
-> have concluded the recorded 3 was wrong. **A harness written down to avoid
-> re-derivation is a SECOND implementation of `_scan` and drifts like one — diff it
-> against `_scan` before trusting it, every time.**
+> **▶️ PINNING THE COPY WITH A TEST WAS THE WEAKER FIX AND IT WAS NOT TAKEN.** A copy
+> that cannot drift is one that does not exist. What follows NAMES the operation; you
+> resolve it against the shipped code, which is the only thing that can be current.
 >
-> ```python
-> root, universe = resolve_check_universe()
-> config = load_config(repo_root=root)
-> sources = {rel: (root / rel).read_text(encoding="utf-8") for rel in universe}
-> public = repo_local_public_names(sources=sources) | declared_public_names(
->     declared=config.cross_repo_public_api, sources=sources)
-> total = functions_without_expected_failure_mode(sources=sources, io_trees=config.io_trees)
-> total |= declared_absence_names(declared=config.total_absence_returns, sources=sources)
-> total |= declared_variant_names(          # v183's carrier — ADDED BY UNIT B, easy to omit
->     declared=config.single_meaning_variants, sources=sources, io_trees=config.io_trees)
-> for rel in universe:
->     for lineno, name in _find_offenders(
->         source=sources[rel], rel_path=rel, commands_trees=config.commands_trees,
->         public_names=frozenset(n for p, n in public if p == rel),
->         no_expected_failure_mode=frozenset(n for p, n in total if p == rel),
->         supervisor_entry_files=config.supervisor_entry_files):
->         ...  # DROPPING = all of them; CARRYING = only those with not rel.name.startswith("_")
-> ```
+> **THE ARMED MEASUREMENT IS `_scan` (`checks/public_api_result_typed.py`) WITH EXACTLY
+> TWO DELTAS. READ THAT FUNCTION AND APPLY THEM — take its exempt-set construction
+> WHOLE, whatever it is on the day you read it, and do not enumerate its lines here.**
+>
+> 1. **UNIVERSE:** iterate `resolve_check_universe()`'s git-derived first-party set
+>    instead of `pure_trees`. Without this, dev-tooling measures **0** regardless of its
+>    code — it declares `pure_trees = { not_applicable = … }`, so `main()` and `_scan`
+>    iterate zero files.
+> 2. **FILE SKIP:** drop `_scan`'s `if py_file.name.startswith("_"): continue`. v178
+>    clause 0 disqualifies a `_`-prefixed **NAME**, never a **FILE**; carrying the skip
+>    is what the "if the FILE skip were kept" column measures, and arming must drop it.
+>
+> Everything else — `public`, the exempt-set unions, and every argument to
+> `_find_offenders` — comes from `_scan` UNCHANGED. **Never `main()`, never `_scan`
+> itself.**
+>
+> **✅ AND THE COPY DISAPPEARS FOR GOOD AT ARMING**, which is the real elimination: once
+> `public_api_result_typed` is armed, delta 1 and delta 2 ARE what the shipped `main()`
+> does, and the operation is "run the check". Until then it is two named deltas against
+> a function you read — never a transcription you trust.
+>
+> ⚠️ **THE CONTROL THAT MAKES ANY RE-DERIVATION QUOTABLE:** run it against
+> livespec-dev-tooling first and confirm it reproduces this repo's independently-known
+> figure, and confirm it names the same functions. A harness that cannot reproduce a
+> known answer has not measured the unknown ones — and this section's own history is why
+> that control is not optional.
 >
 > ### 🔬 THE THIRD AXIS — run the ORACLE, never a grep (supervisor brief 52)
 >
@@ -3854,7 +3918,11 @@ module a conversion teaches to import `returns`; two of the four touched here la
 >    `public` / `no_expected_failure_mode` exactly as `_scan` builds them
 >    (`repo_local_public_names | declared_public_names`, then
 >    `functions_without_expected_failure_mode | declared_absence_names`), and toggle
->    `rel_path.name.startswith("_")` to get both variants. **RE-MEASURE AT BOTH ENDS OF EVERY
+>    `rel_path.name.startswith("_")` to get both variants.
+>    ⛔ **THAT PARENTHESISED ENUMERATION IS AS-OF ITS DATE AND IS NOW INCOMPLETE — unit B
+>    added a third union to `_scan`. DO NOT FOLLOW IT.** It is kept as the record of what
+>    was run then. The live operation is the header section §"THE ARMED MEASUREMENT",
+>    which names two deltas against `_scan` and enumerates nothing. **RE-MEASURE AT BOTH ENDS OF EVERY
 >    CONVERSION with that harness** — the standing never-inherit-a-count rule is unchanged, but
 >    the instrument it names is not `main()`.
 >
