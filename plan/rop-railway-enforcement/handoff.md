@@ -35,11 +35,36 @@
 > missing seam explains a large cluster. **Triage structurally before converting
 > anything**, and report how much of each count is seam-shaped.
 >
-> **▶️ HARD PREREQUISITE: `livespec-overseer` and `livespec-runtime` have NO
-> `_vendor/returns` and zero first-party importers — 217 of the 455 cannot be
-> converted at all until those two vendor it.** Sequence vendoring first in each.
-> ⚠️ `w25v` (P2): `vendor_update` hardcodes `.claude-plugin/scripts/_vendor/`, so
-> the blessed path may not target every layout — CHECK before assuming.
+> **▶️ HARD PREREQUISITE — MEASURED 2026-08-02 via `git ls-files` (TRACKED files
+> only), and the brief's two-repo figure is CONFIRMED but INCOMPLETE:**
+>
+> | repo | committed `_vendor/returns` | first-party importers |
+> |---|---|---|
+> | `livespec-overseer` | **NO** | 0 |
+> | `livespec-runtime` | **NO** | 0 |
+> | **`livespec-driver-codex`** | **NO** | **1 — a TEST, via a runtime vendor-path insert** |
+> | `livespec-driver-claude` | YES — **`_vendor/` at the ROOT** | 2 |
+> | `livespec-orchestrator-beads-fabro` | YES — `.claude-plugin/scripts/_vendor/` | 3 |
+> | `livespec-orchestrator-git-jsonl` | YES — `.claude-plugin/scripts/_vendor/` | 21 |
+> | `livespec` | YES — `.claude-plugin/scripts/_vendor/` | 115 |
+>
+> **THE VENDORING BUCKET IS THREE REPOS, NOT TWO: 190 + 27 + 2 = 219, not 217.**
+> `driver-codex` has ZERO `_vendor` files of its own; its single `returns` import
+> is in `tests/e2e-cli/test_cli_e2e.py` and resolves through a runtime
+> vendor-path insert, so any PRODUCT conversion there needs vendoring first too.
+>
+> **⛔ AND `w25v` IS CONFIRMED WITH A NAMED COUNTEREXAMPLE AND A DENOMINATOR: 4
+> repos carry a committed vendor and they use TWO DISTINCT LAYOUTS** — three at
+> `.claude-plugin/scripts/_vendor/` and **`livespec-driver-claude` at `_vendor/`
+> in the repo ROOT**. `vendor_update` hardcodes the former, so **the blessed path
+> cannot serve `driver-claude`**. Do not assume one re-vendor invocation fits the
+> fleet; read each repo's layout first.
+>
+> ⚠️ **AND CHECK `git ls-files`, NOT `find`.** A `find` for `_vendor/returns`
+> matches `.venv/lib/python3.10/site-packages/livespec_dev_tooling/_vendor/returns`
+> — the INSTALLED dev-tooling dependency — in EVERY repo, including the two that
+> vendor nothing. That false positive briefly had me contradicting the brief's
+> correct claim. **The installed dependency is not a committed vendor.**
 >
 > **ADOPTERS ARE IN SCOPE.** If any repo consumes livespec outside the nine-member
 > roster, enumerate it; if the roster IS the whole population, say so WITH the
@@ -919,6 +944,12 @@
 >   spellings: `read_text` keeps the row convicted, `file_text` clears it. **The
 >   fix would look done while changing nothing.** Verify by re-deriving the
 >   offender list from two genuinely different trees, never by reading the diff.
+> - **A `find` FOR A VENDORED PACKAGE MATCHES THE INSTALLED DEPENDENCY.** Every
+>   repo's `.venv/.../livespec_dev_tooling/_vendor/returns` answers a naive
+>   `find`, including repos that vendor NOTHING — so the probe reports YES
+>   fleet-wide and the real gap vanishes. **Ask `git ls-files`**: a committed
+>   vendor is a TRACKED file. This false positive briefly had me contradicting a
+>   supervisor claim that was correct.
 > - **USE THE SHIPPED ANALYSIS, NOT A HAND-ROLLED SCAN — I BROKE THIS RULE
 >   MINUTES AFTER WRITING IT.** My verb-set probe reported "106 live sites"; 64
 >   were `re.Match.group()` and 39 were `ast.walk()`, and `calls_of` resolves both
