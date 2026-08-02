@@ -336,10 +336,29 @@ against a real busy pane and a real idle pane:
 
 ```sh
 busy=0
-printf '%s\n' "$tail12" | grep -qE 'esc to interrupt|…[[:space:]]*\(' && busy=1
+printf '%s\n' "$tail16" | grep -vE '^[[:space:]]*⎿' \
+  | grep -qE 'esc to interrupt|…[[:space:]]*\(' && busy=1
 kids=$(ps -o args= --ppid "$pane_pid" 2>/dev/null | grep -cv 'playwright-mcp')
 [ "${kids:-0}" -gt 0 ] && busy=1
 ```
+
+**⛔ THE WINDOW IS 16 LINES AND THE `⎿` EXCLUSION IS LOAD-BEARING — both were
+measured, and the earlier `tail12` is NOT safe.** When the pane renders a TODO
+block, the spinner is pushed roughly TEN lines above the prompt, and anything
+narrower reports IDLE on a working session. **Measured on one live capture: the
+spinner sat at line 97 of 107, `tail -8` returned IDLE and `tail -16` returned
+BUSY.** But widening alone re-admits the finished-command hazard below, because
+a completed `⎿  $ … (6m 50s · 4 lines)` line carries the very `… (` shape the
+test keys on — so the width and the exclusion only work as a PAIR. Dropping
+`^[[:space:]]*⎿` lines removes it, since a live spinner never starts with `⎿`.
+Positive-controlled on FOUR samples: a live pane with a TODO block (BUSY), a
+plain idle pane (IDLE), an idle pane whose scrollback holds a completed
+`⎿  $ … (` line (IDLE), and a live spinner with no TODO block (BUSY) — plus a
+control showing that WITHOUT the exclusion the third case flips to BUSY.
+
+**AND REQUIRE THREE consecutive quiet polls, not two.** A thinking turn spawns
+no child shell, so the process limb cannot see it and the pane limb is doing all
+the work; the extra poll is cheap insurance in the direction that matters.
 
 **⚠️ A COMMAND LINE (`⎿  $ …`) IS NOT A LIVE MARKER — the first corrected
 version of this snippet included it and was STILL WRONG.** The transcript keeps
@@ -1400,7 +1419,29 @@ lives, and say what replaced it.**
   ceiling. **Proven directly on one live capture: whole-capture returned BUSY, tail-only
   returned IDLE, same bytes.** This file's snippet was already correct — it scopes to
   `$tail12` — and I widened it while copying. **A snippet this file provides has been
-  positive-controlled; a variation you make has not.** The ceiling doing its job is what
+  positive-controlled; a variation you make has not.**
+
+- **🔴🔴 THEN I OVERCORRECTED THE OTHER WAY AND PRODUCED A FALSE *IDLE* — the destructive
+  direction, and the one this file says must never happen.** Having widened the window and
+  been burned, I narrowed it to `tail -8`. The restarted worker was THINKING on unit B's
+  baseline, which (a) spawns no child shell, so the process limb was blind by design, and
+  (b) renders a TODO block that pushes the spinner about TEN lines above the prompt — so the
+  pane limb was blind too. **Both limbs missed a working session and the watcher declared it
+  IDLE.** I had gone from too wide, to the file's correct `tail12`, to too narrow, in three
+  successive edits of the same four lines.
+  **Nothing was harmed only because I read the pane before acting on the wake** — had I
+  briefed or interrupted on that signal, I would have hit a live turn. This file's own rule
+  is that a false IDLE *interrupts and discards* while a false BUSY merely delays, so the
+  detector must resolve every ambiguity toward BUSY; I resolved this one toward IDLE while
+  trying to fix a false BUSY.
+  **⛔ THE DURABLE FIX IS IN THE SNIPPET ABOVE, and it is a PAIR, not a width:** 16 lines
+  *plus* dropping `^[[:space:]]*⎿` result lines. Width alone re-admits the finished-command
+  hazard; the exclusion alone still misses the TODO-displaced spinner. **Four samples and a
+  control, or it is not proven.** And the deeper lesson is about tuning: I treated the window
+  as a dial to turn after each failure, when each failure was actually naming a DIFFERENT
+  input class the test had never seen. **Stop tuning the threshold and go collect the sample
+  that broke it** — the fix only converged once I had a live capture with a TODO block and a
+  synthetic idle pane carrying a completed `⎿  $ … (` line in the same test run. The ceiling doing its job is what
   surfaced it: it cost 20 minutes rather than the hour the previous instance cost, which is
   the entire argument for keeping the ceiling short.
 
