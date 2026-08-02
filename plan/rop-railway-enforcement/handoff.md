@@ -1,6 +1,114 @@
 # rop-railway-enforcement — arm the check that was never armed, then remediate six repos
 
-> ## 🔻🔻 COLD START — **THE FLEET HAS A COST MODEL: 321 DISTINCT = 39 DECLARATIONS + 282 CONVERSIONS, AND THE BIG REPOS DO HAVE SEAMS.**
+> ## 🔻🔻 COLD START — **THE ORDER IS DECIDED: `runtime` FIRST. FAN-IN 54 YIELDS 4; FAN-IN 13 YIELDS 9.**
+>
+> ### 🔻 FIRST FIVE MINUTES
+>
+> **NOTHING IS MID-FLIGHT except the commit that carries this text.** dev-tooling master at
+> wrap-up: **`f8f9104`**. Re-fetch.
+>
+> 1. **REAP EXACTLY ONE WORKTREE:
+>    `~/.worktrees/livespec-dev-tooling/docs-handoff-seam-yield`** once its PR shows MERGED.
+>    Doc-only, auto-merge ARMED. Then `merge --ff-only origin/master`.
+> 2. **REAP NOTHING ELSE.** Every other worktree is a PEER lane's.
+> 3. ⚠️ A fresh worktree's FIRST `.py` commit fails
+>    `check-primary-checkout-commit-refuse-hook-installed`. Fix: `just install-worktree-pack`.
+> 4. ⚠️ **BEFORE PUSHING A RED→GREEN PAIR:** `grep -c '^TDD-Red-'` = 5, `'^TDD-Green-'` = 2.
+>    `zv78` is READY/P1 and has fired TWICE.
+> 5. ⚠️ **A `check-fleet-conformance` RED IS PROBABLY THE APP'S RATE LIMIT, NOT YOUR DIFF.**
+>    `gh run view <id> --log-failed | grep -o '"kind": "[a-z_]*"'` → `rate_limited` ⇒ re-run
+>    after the hourly window. **`gh api rate_limit` from your own session reads HEALTHY while
+>    CI is blocked — different bucket.** Occurrence log now accrues on **`mmqe`**.
+> 6. **⛔ READ THE LEDGER CHILDREN (`8o8e.7`–`.13`) BEFORE BUDGETING ANY MEMBER.** `8o8e.14`
+>    is CLOSED at 0.
+>
+> ### ⛔⛔ THE MEASUREMENT THAT DECIDED THE ORDER — **FAN-IN IS NOT YIELD, AND THE GAP IS 13×**
+>
+> Brief 108 asked, before committing to a seam-first order, whether `_jsonc.py` beneath 54
+> is ONE change or 54 wearing a seam's clothing. **It is neither: it is one change that
+> relieves FOUR.**
+>
+> | candidate seam | member | member size | fan-in | **TRUE YIELD** | yield % |
+> |---|---|---:|---:|---:|---:|
+> | `hygiene_scan_context.py` | runtime | 27 | 13 | **9** | **33%** |
+> | `claude_sessions.py` | overseer | 92 | 23 | **12** | 13% |
+> | `cross_repo/providers/github.py` | runtime | 27 | 6 | 3 | 11% |
+> | `commands/_jsonc.py` | beads-fabro | 168 | 54 | **4** | **2%** |
+> | `streams.py` | overseer | 92 | 13 | 2 | 2% |
+> | `signals.py` | overseer | 92 | 10 | 2 | 2% |
+> | `commands/_config.py` | beads-fabro | 168 | 29 | **0** | **0%** |
+>
+> **YIELD = the offenders whose ENTIRE root set is inside the candidate.** Only those are
+> relieved by repairing it; the rest keep at least one root elsewhere and do not move.
+> **`_config.py` has fan-in 29 and yield ZERO.**
+>
+> ### 🕳️ (v) PROMOTED — **FAN-IN IS REACH; YIELD IS BLAST RADIUS**, and it corrects rule (iv)
+>
+> **A seam's value is the count of offenders whose ENTIRE ROOT SET it contains — never the
+> count that reach it.** This is rule (i)'s masked-zero applied to the seam question: a
+> blast-radius measurement is valid only when the fix is the LAST remaining root.
+>
+> ⛔ **AND IT CORRECTS MY OWN RULE (iv), WHICH WAS INSUFFICIENT IN THE FAMILY IT NAMED.** I
+> wrote *"quote the fan-in DISTRIBUTION and the top-N REACH, never the ratio"* — **reach is
+> still a summary statistic that does not answer what repairing the seam relieves.** I
+> replaced one wrong summary with another. (iv) stands as far as it goes; (v) is the
+> question it should have asked.
+>
+> ### ▶️▶️▶️ THE ORDER — **DECIDED: ASCENDING, `runtime` FIRST, SEAMS-WITHIN-MEMBER. The two rationales COINCIDE.**
+>
+> Brief 108 offered *"all the ranked SEAMS first across every repo, then the tail"*, priced
+> at ~79. **Measured, those seams total 25, and the pricing error is the fan-in/yield gap.**
+>
+> **THE TENSION DISSOLVES ON MEASUREMENT RATHER THAN NEEDING A RULING:** `livespec-runtime`
+> is BOTH the smallest untouched member (27) AND carries the highest-yield seam by share
+> (9/27 = 33%). **Ascending order and seam-first order name the same member**, so nothing is
+> traded away.
+>
+> 1. **`livespec-runtime` (27)** — `hygiene_scan_context.py` FIRST (yield 9), then
+>    `providers/github.py` (yield 3). 12 of 27 from two seams, in the shape already proven
+>    twice, with the smallest blast radius available.
+> 2. **`livespec-overseer` (92 distinct)** — `claude_sessions.py` (yield **12**, the best
+>    ABSOLUTE lever in the fleet), then `streams.py` / `signals.py` (2 each), then the tail.
+> 3. **`beads-fabro` (168)** — LAST, and **do NOT open it with `_jsonc.py`**: fan-in 54,
+>    yield 4. Its 168 is overwhelmingly tail.
+>
+> ⛔ **AND THE SEAM-FIRST RATIONALE MUST NOT BE RE-DERIVED FROM FAN-IN.** Anyone ranking by
+> fan-in opens with `_jsonc.py` and gets 4.
+>
+> ### 🔬 WHY `_strip_line_comments` IS A ROOT AT ALL — a pure regex sub, and the cause is not I/O
+>
+> `commands/_jsonc.py` has no `raise`, no `try` and no I/O, yet `parse` and
+> `_strip_line_comments` are roots. **Isolated by probe: a CALL TO A LOCALLY-BOUND NAME
+> disqualifies** — a nested `def` called by name, or a lambda assigned to a name and
+> called. (A lambda merely PASSED as an argument does not.) That is the ratified
+> conservative direction working as specified — the module-level analysis never sees the
+> local binding, and doubt disqualifies.
+>
+> **▶️ THE REPAIR IS A HOIST, NOT A CONVERSION** — verified: moving the nested `def` to
+> module level makes both functions total, with no railway change at all.
+>
+> **⚠️ AND THE CLASS IS REAL BUT SMALL — 4 roots of 373 across the three big members**
+> (beads-fabro 2, overseer 2 which are a mirror pair, runtime 0). **It is an explanation,
+> not a repricing lever.** ⛔ A first pass of this measurement reported **0** and that was
+> an ARTEFACT: the probe deleted the nested `def` but left the CALL to it, so the callee
+> stayed unresolvable and nothing moved. **Recorded because a probe that removes a
+> definition and not its call reports a vacuous zero** — the same family as the identity
+> control's contamination, caught only by re-reading the probe rather than the result.
+>
+> ### 📌 CORRECTIONS TO BRIEF 108, both small and both worth stating
+>
+> - **`8o8e.18` IS NOT A RATE-LIMIT ITEM.** It is *"repo-local check slugs are CI-invisible
+>   by construction"*. Only **`mmqe`** covers the rate limit, and the occurrence log went
+>   there. ⚠️ `mmqe`'s subject is the MISDIAGNOSIS (a `rate_limited` read presenting as a
+>   permission gap); the BUDGET itself is `livespec`'s **pending, unratified** proposed
+>   change `github-app-request-budget.md`, and **no ledger id exists for it in this tenant**.
+> - **Only ONE occurrence is verified by me** (#1118, with its `"kind"` evidence). The #1080
+>   and #1070 occurrences are logged as **REPORTED, not measured** — I did not read those
+>   runs, and a log that silently mixes the two is this item's own defect one level up.
+>
+> ---
+>
+> ## 🗄️ (SUPERSEDED AS THE HEADER 2026-08-02 — its seam ranking is by FAN-IN, which rule (v) shows is not yield. Cost model below still stands.) COLD START — **THE FLEET HAS A COST MODEL: 321 DISTINCT.**
 >
 > ### 🔻 FIRST FIVE MINUTES
 >
