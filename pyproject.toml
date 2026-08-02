@@ -272,6 +272,34 @@ total_absence_returns = [
     { file = "livespec_dev_tooling/fleet/_bump_pr_list.py", function = "persisting_bump_pr_number", reason = "absence of a QUALIFYING OPEN BUMP PR, not a failure to look for one. PART 1 — ONE meaning, and the callee chain was followed: the single condition is `no PR in open_prs matches (source_repo, latest)`. `open_prs` is a plain `list`, never `None`, because `open_bump_prs_for`'s read failure was lifted onto its own `IOResult` track by the pin-walker conversion; before that lift this `None` DID carry an inherited second meaning, which is exactly why the count is stated here rather than assumed. The only callee, `denotes_same_release`, returns `bool` and its `False` is likewise an answer (its docstring rules that a pin with no version anchor reads STALE, fail-toward-visible), so nothing collapses one level down. PART 2 — BOTH callers act on the answer and neither reports this function's failure. `_rows_pin_currency._staleness_class_outcome` and `_rows_files._pin_outcome` each use `None` as pure control flow to emit the ORDINARY stale-pin finding (a verdict about the INSPECTED member), and each has a SEPARATE `I cannot verify` channel one level up — the `IOFailure` arm rendering `bump_pr_class_undecidable_clause`. That separation is the whole test: the cannot-verify report already exists and is not this `None`. It is also the MAJORITY answer (most stale pins have no open bump PR at all), so a `Result` here would put the common path on the failure track — the `sanctioned_marker_flavor` argument, reached independently." },
     { file = "livespec_dev_tooling/checks/_no_except_outside_io_markers.py", function = "sanctioned_marker_flavor", reason = "absence of a MARKER, not a failure to look for one. ONE condition collapses onto it: the clause-line span holds no sanctioned marker comment. There is no error path — `_clause_colon_line` floors to the node's own line via `min(..., default=...)` rather than failing, so a malformed parse still yields an answer. CALLERS READ (no_except_outside_io.py:222 and :251): `None` makes the caller append an offense — but that offense is a finding ABOUT THE SCANNED SOURCE (this broad handler carries no marker), which is the check's own verdict, NOT a report that this function could not do its job. ⛔ THE DISTINCTION IS LOAD-BEARING and a literal reading of 'any caller reports a violation on the None' would get it backwards: contrast `extract_check_recipe_body`, whose callers emit `check_recipe_not_found` and say they CANNOT VERIFY — that is a caller reporting its own inability, and it earned CONVERT. Converting this one would put the MAJORITY answer (most handlers are unmarked) on the failure track." },
 ]
+# livespec v183 condition 3 — the one thing each variant of a SANCTIONED
+# rendering-boundary union means. ONE ENTRY PER VARIANT, because condition 3 is
+# a claim about EVERY variant and a single reason attached to the union would be
+# a claim whose subject is narrower than the property it asserts.
+#
+# ⛔ WHAT THIS KEY IS NOT. It is not an exemption. Conditions 1 and 2 stay
+# COMPUTED and are re-derived from source on every run by
+# `checks/_declarable_unions`; nothing about declarability is stored here. This
+# key carries ONLY the semantic claim no AST can decide, and the enumeration of
+# variants below is the claim's SCOPE — diffed against `_context.py` every run,
+# so ADDING a variant BREAKS this declaration rather than inheriting it.
+#
+# ⛔ AND IT DOES NOT REACH CONDITION 1. Two rows returning `RowOutcome`
+# (`reconcile_beads_dir_perms`, `reconcile_beads_metadata_present`) call a
+# filesystem primitive DIRECTLY and stay convicted despite this declaration —
+# measured, not assumed. A declaration that could only relieve would be
+# indistinguishable from a blind one.
+#
+# ▶️ MAINTAINER: READ `RowPass`'s MEANING BELOW BEFORE TRUSTING THIS ENTRY. Bound
+# 2 exists to surface a variant carrying two meanings, and running the exercise
+# surfaced a real question about that variant. It is written out rather than
+# smoothed over, and withdrawing these three lines re-convicts all 19 relieved
+# functions at the next run.
+single_meaning_variants = [
+    { file = "livespec_dev_tooling/fleet/_context.py", union = "RowOutcome", variant = "RowPass", meaning = "this member does not VIOLATE this obligation row. ⚠️ THE ONE PLACE THIS DECLARATION IS ARGUABLE, STATED RATHER THAN HIDDEN: RowPass carries a sub-case — the row does not APPLY to this member — and the two are told apart by a DISTINCT VALUE, a note carrying `EXCLUDED_NOTE_PREFIX`, constructed only via `row_excluded()`. v183 condition 3 sanctions distinct VALUES in terms ('MUST be distinct variants or distinct values'), and what it forbids is a variant 'disambiguated by which lane is reading it'. That is NOT the case here and the codebase says why at the constant's definition: it lives beside the union rather than privately in `_lanes.py` precisely so BOTH engines render the same value the same way, and both readers (`_lanes.py`, `local_reconcile.py`) derive 'inapplicable' from the same shared constant. Inapplicability and UNEVALUABILITY are separately distinct — the latter is `RowSkip`, and `row_excluded`'s docstring refuses to spell inapplicability as a skip for a stated reason. The residual a reviewer should weigh: `RowPass`'s own docstring says 'satisfies', `row_excluded`'s says 'does not APPLY', and `wire_fleet_member.py` / `_adopter_lane.py` read the variant without consulting the prefix at all." },
+    { file = "livespec_dev_tooling/fleet/_context.py", union = "RowOutcome", variant = "RowFinding", meaning = "this member DEFINITIVELY violates this obligation row. One meaning across every consumer. The `severity` field is a distinct VALUE governing ESCALATION (whether the finding gates a run) and never the verdict: a `severity=\"warning\"` finding is still a violation, which is exactly the gap the pin-currency rows demonstrated when correct findings fired on every stale member and gated nothing." },
+    { file = "livespec_dev_tooling/fleet/_context.py", union = "RowOutcome", variant = "RowSkip", meaning = "this row could not be definitively EVALUATED for this member — can't-read is not absent. One meaning across every consumer, and it is deliberately NOT the carrier for inapplicability: `row_excluded()` returns a RowPass instead, because the central lane feeds every skip into `blind_rows`, which fails the run with no lever — so spelling inapplicability as a skip would red master fleet-wide for a condition that is not a failure at all." },
+]
 # CLI/supervisor entry files whose `main()` / `_write` helpers own
 # legitimate stdout/stderr contracts — the surface `no_write_direct`
 # (and `no_except_outside_io`) exempt. Each write here is a JSON payload,
