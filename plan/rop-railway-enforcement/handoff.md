@@ -1,6 +1,82 @@
 # rop-railway-enforcement — arm the check that was never armed, then remediate six repos
 
-> ## 🔻🔻 COLD START — **START HERE. THE CONVERSION UNIT WAS STOPPED BY ITS OWN "MEASURE BEFORE" LEG, AND THE TWO THINGS IT FOUND BOTH OUTRANK IT.**
+> ## 🔻🔻 COLD START — **START HERE. `55ec`'s DIVISION IS MEASURED: THE SAFE VALUE IS 10, NOT THE CEILING OF 14 — AND ONE OF THE 4 IS A CONFIRMED FALSE ACQUITTAL.**
+>
+> ### 🔻 FIRST FIVE MINUTES
+>
+> **NOTHING IS MID-FLIGHT.** No background job, no sub-agent, no unpushed Red, no open PR of
+> this thread's. dev-tooling master at wrap-up: **`b37be40`** or later — re-fetch. Steps 1–8
+> two blocks below are UNCHANGED and still current; read them there.
+>
+> ### ▶️▶️▶️ EXACT NEXT ACTION — **LAND `55ec`: SPLIT THE PURE PARSERS OUT OF `beads-fabro`'s `effects/` TREE. REMOVED 10 / ADDED 0, MEASURED.**
+>
+> Measured by PERFORMING the restructure in a throwaway clone and re-running the armed
+> measurement on a genuinely different tree — universe **186 → 187** (the new module is a
+> new tracked file), offenders **168 → 158**. **REMOVED 10 / ADDED 0**, never netted.
+>
+> | class | count | disposition |
+> |---|---:|---|
+> | reach ONLY `parse_float` / `parse_json` | **10** | RELIEVED — they take `text: str` and structurally cannot do I/O |
+> | reach `attempt` | **4** | **STAY CONVICTED** |
+>
+> **▶️ THE REPAIR IS A SPLIT *INSIDE* `_attempt.py`, NOT AROUND IT.** Move `parse_json`,
+> `parse_float`, `parse_iso_datetime` and their failure dataclasses to a module OUTSIDE the
+> io tree. **`attempt` STAYS declared**, with `_beads_client_shell.py`'s real subprocess I/O.
+>
+> ### 🔴 WHY THE OTHER 4 MUST NOT MOVE — A CONFIRMED FALSE ACQUITTAL, DEMONSTRATED NOT HYPOTHESISED
+>
+> `attempt(*, action: Callable[[], _Value], exceptions)` is a **GENERIC ESCAPE HATCH**: its
+> I/O-ness is decided by the CALLER-SUPPLIED action, which the analysis cannot see through.
+> It is not a pure boundary — it is whatever its caller passes.
+>
+> `_dispatcher_self_update.py::github_token_supplier` passes
+> `attempt(action=lambda: load_github_app_config(environ=os.environ), ...)`. **`os.environ`
+> is the environment surface, which clause (c) names explicitly as I/O.** Measured both
+> ways: dropping `effects/` wholesale flips it `disqualified=True → False` and **nothing
+> else convicts it.** Buying those 4 would trade a false conviction for a FALSE ACQUITTAL,
+> which is the strictly worse direction.
+>
+> ### 📜 (v) ARRIVED A THIRD TIME, AND THIS TIME THE SUMMARY STATISTIC WAS **MINE**
+>
+> I wrote "14 is the CEILING, not the value" and was right to — **the safe value is 10, so
+> my own ceiling overstated it by 40%.** A ceiling is a summary statistic; the division is
+> the distribution. First fan-in vs yield, then reach vs blast radius, now ceiling vs
+> division: **three different summary statistics, three different wrong orderings.**
+>
+> ### ⛔ A COST THE CEILING DID NOT SHOW — **THE RE-EXPORT SHIM DEFEATS THE MOVE**
+>
+> `_under_io_tree` resolves a dotted path to the **SHIM's** location, not the definition's.
+> So relocating `parse_float` relieves NOBODY while importers still read it through
+> `effects/__init__.py`. **`55ec` therefore costs 28 import-site rewrites, not one file
+> move.** ▶️ **Fixing `8sc1` FIRST would make `55ec` a genuine one-file move** — a
+> sequencing argument the 3-flip-site exposure alone does not supply.
+>
+> ### ⚖️ `8sc1` IS **3**, AND SAY "3" WHEREVER THIS FILE SAYS "FLOOR"
+>
+> Real, fail-open in a design that forecloses fail-open everywhere else, and **CHEAP** —
+> `fleet/_public_api_graph.py` already carries this exact fix, so it is a PORT, not new
+> work. **But 3 of 321 REORDERS NOTHING.** Do it when convenient, not ahead of the queue.
+> The qualitative framing ("clause (d) is fail-open", "321 is a FLOOR") reads as though it
+> should block the queue; the magnitude says it must not. **Quoting a qualitative claim
+> without its magnitude is this thread's most-repeated planning error.**
+>
+> ### ⚠️ TWO PROBE DEFECTS PAID FOR IN THIS MEASUREMENT, BOTH CAUGHT BY CHECKING RATHER THAN BY THE RESULT LOOKING WRONG
+>
+> - **A VACUOUS ZERO.** The first run created the new module UNTRACKED, so the git-index
+>   universe never saw it — callers relieved because the callee was INVISIBLE, not because
+>   it was pure. **Caught by the universe count failing to increment (186, not 187).**
+> - **AN INCOMPLETE REWRITE UNDERSTATED THE ANSWER BY 3.** The first pass handled
+>   parenthesised and single-name imports but not the single-line MULTI-name form
+>   (`from ...effects import FloatParseFailure, parse_float`) and reported REMOVED 7.
+>   **Caught by grepping for residual imports instead of trusting the diff.**
+>
+> 📜 **BOTH ARE THE SAME RULE: A TRANSFORMATION PROBE MUST ASSERT ITS OWN COMPLETENESS.**
+> "Remaining imports of the moved names: 0" and "universe incremented" are now part of the
+> measurement, not observations about it.
+>
+> ---
+>
+> ## 🗄️ (SUPERSEDED AS THE HEADER 2026-08-03 — its next action, measuring `55ec`'s division, is DONE and the answer is 10. Its FIRST FIVE MINUTES steps 1–8 are CURRENT.) COLD START — **THE CONVERSION UNIT WAS STOPPED BY ITS OWN "MEASURE BEFORE" LEG.**
 >
 > ### 🔻 FIRST FIVE MINUTES
 >
