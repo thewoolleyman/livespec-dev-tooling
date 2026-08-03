@@ -76,7 +76,7 @@ false PASS. Every consumer below is empty-guarded.
 1. **Worker session exists** — exact match only:
 
    ```sh
-   tmux list-sessions -F '#{session_name}' | grep -qx 'sandbox-image-tmux' \
+   tmux list-sessions -F '#{session_name}' | grep -Fqx 'sandbox-image-tmux' \
      || echo "HALT: expected session 'sandbox-image-tmux' does not exist"
    ```
 
@@ -116,8 +116,12 @@ false PASS. Every consumer below is empty-guarded.
 
    ```sh
    tmux list-sessions -F '#{session_name}' \
-     | grep -qx 'sandbox-image-tmux-supervisor' \
+     | grep -Fqx 'sandbox-image-tmux-supervisor' \
      || echo "HALT: expected 'sandbox-image-tmux-supervisor'"
+   supervisor_pane_pid=$(tmux display-message -p -t "$S" '#{pane_pid}')
+   [ -n "$supervisor_pane_pid" ] || { echo "HALT: supervisor pane pid empty"; echo "REMEDY: retarget with the trailing colon"; exit 1; }
+   [ "$supervisor_pane_pid" != "$pane_pid" ] || { echo "HALT: the supervisor target IS this pane"; echo "REMEDY: retarget"; exit 1; }
+   ps -o pid=,comm=,args= --ppid "$supervisor_pane_pid" --pid "$supervisor_pane_pid" -H
    ```
 
    A different seat name is a bootstrap condition — rename or proceed
@@ -292,7 +296,7 @@ Arm ONE per obligation and record which in `$supervisor_marker`.
 pane CHANGE, not by a status string:
 
 ```sh
-prev=""; stable=0
+prev="__OVERSEER_NO_CAPTURE_YET__"; stable=0
 for i in $(seq 1 180); do                    # ~60 min ceiling
   sleep 20
   pane=$(tmux capture-pane -p -t '=sandbox-image-tmux:')   # visible only
