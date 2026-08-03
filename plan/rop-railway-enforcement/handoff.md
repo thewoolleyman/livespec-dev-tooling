@@ -1,6 +1,45 @@
 # rop-railway-enforcement — arm the check that was never armed, then remediate six repos
 
-> ## 🔻🔻 COLD START — **START HERE. `4ihw`'s ANSWER IS FILED AND MERGED. RATIFICATION RUNS THROUGH A GATE THAT DID NOT EXIST WHEN THE LAST HEADER WAS WRITTEN.**
+> ## 🔻🔻 COLD START — **START HERE. `4ihw` IS RATIFIED AS v191 AND `8o8e.10` IS OPEN AT STEP 2.**
+>
+> ### ▶️▶️▶️ EXACT NEXT ACTION — **`8o8e.10` STEP 2, AND IT IS ATOMIC**
+>
+> ✅ **`4ihw` IS DONE.** `livespec` **v191** merged 09:26:34Z (PR #1951), verified on master
+> four ways. ✅ **`8o8e.10` STEP 1 IS DONE** — `returns>=0.25.0` declared in
+> `livespec-runtime` (PR #453 → `b52e3c3`), **zero `_vendor/` tree**, bare imports
+> smoke-verified. **NOTHING IS MID-FLIGHT AND NO WORKTREE OF MINE SURVIVES.**
+>
+> **▶️ STEP 2:** convert `hygiene_scan_context.py::run_command` (the `subprocess.run` leaf)
+> **TOGETHER WITH** `CommandRunner` / `CommandResult` in `hygiene_scan_types.py`.
+> ⛔ **THEY CANNOT BE SPLIT** — `CommandRunner = Callable[..., CommandResult]` is a
+> PROTOCOL, so changing the leaf's return type changes the protocol; splitting leaves the
+> tree untypecheckable mid-flight. **Then the 5 test files.**
+>
+> ### ⛔⛔ BUDGET IT BY THE MEASURED COST, NOT BY THE YIELD — **155 REFERENCES, 87% TESTS**
+>
+> | | refs | files |
+> |---|---:|---|
+> | **product** | **20** | `hygiene_scan_context` 7 · `_types` 5 · `_worktrees` 3 · `hygiene_scan` 3 · `_cli` 2 |
+> | **tests** | **135** | `..._edges` 36 · `..._detector` 36 · `..._default_branch` 26 · `test_hygiene_scan` 23 · `..._rebase_merge` 14 |
+>
+> 📜 **(v) A FOURTH TIME, ON A NEW AXIS: YIELD vs CONVERSION COST.** The three recorded
+> instances (fan-in vs yield, reach vs blast radius, ceiling vs division) all compared two
+> RELIEF measures. **This one compares a relief measure against an EFFORT measure.** Yield
+> correctly ranks WHICH seam to take and says nothing about WHAT IT COSTS.
+> ⛔ **`hygiene_scan_context.py` is BOTH the fleet's best seam by share (9 of 27 = 33%) AND
+> an expensive unit. DO NOT QUOTE THE 9 AS A BUDGET.**
+> ⚠️ **`quote_path` and `parse_worktrees` are PURE — do NOT sweep them in.**
+> ⚠️ Step 3 is 135 mechanical test rewrites — **assert completeness ("residual bare-`CommandResult`
+> runner fakes: 0"), never eyeball it.** Re-measure 27 → expected 18, **REMOVED/ADDED
+> separately, never netted.**
+>
+> ### 🔑 THE FLOOR IS `>=0.25.0` AND THE REASON IS NOT ARBITRARY
+>
+> **0.25.0 is the OLDEST copy vendored anywhere in the fleet** (`livespec` /
+> `livespec-dev-tooling` 0.25.0 · `git-jsonl` 0.26.0 · `beads-fabro` a commit-pin — `yteb`).
+> ⛔ **DO NOT RAISE IT TO WHAT `uv` RESOLVES** — it resolved **0.29.0** on the installed
+> path, but the SOURCE-COPIED path runs against whatever each consumer VENDORS. **The floor
+> tracks the oldest vendored copy, not the newest resolved one.**
 >
 > ### 🔻 FIRST FIVE MINUTES — **INLINED, NOT POINTED AT**
 >
