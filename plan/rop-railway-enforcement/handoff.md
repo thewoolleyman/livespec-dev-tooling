@@ -1,8 +1,49 @@
 # rop-railway-enforcement — arm the check that was never armed, then remediate six repos
 
-> ## 🔻🔻 COLD START — **START HERE. `beads-fabro` IS 166 → 155. ITS BIGGEST CLUSTER IS CONVERTED; THE REST IS TAIL.**
+> ## 🔻🔻 COLD START — **START HERE. ⚠️ ONE UNIT *IS* MID-FLIGHT, UNCOMMITTED, AND BLOCKED ON A GITHUB OUTAGE. READ THE NEXT BOX FIRST.**
 >
-> ### ▶️▶️▶️ EXACT NEXT ACTION — **KEEP GOING ON `beads-fabro` (155), PER-FUNCTION**
+> ### 🚧🚧 EXACT NEXT ACTION — **RESUME `~/.worktrees/livespec-orchestrator-beads-fabro/config-read-railway`, DO NOT RE-DERIVE IT**
+>
+> **Branch `fix/config-read-railway` (created, NOTHING COMMITTED). No PR. The work
+> is FINISHED and VERIFIED and could not be committed.** It is `8o8e.21`'s first
+> half — the same swallow PR #1277 fixed, in the OTHER reader of the same file:
+>
+> - `commands/_config.py`'s `_read_root_mapping` folded "file absent" / "does not
+>   parse" / "root is not an object" into `{}` (its own docstring said so). Split:
+>   absent stays `{}` on the SUCCESS track; the other two become a `ConfigUnreadable`
+>   failure. `resolve_fabro_sandbox_image` → `IOResult` (**155 → 154, ADDED 0**).
+> - **`resolve_store_config` keeps its exception contract** (55 call sites, none
+>   catch) and raises a NEW `LivespecConfigUnreadableError` instead of
+>   `ConnectionPrefixMissingError` — **the old behaviour was a TRUE refusal naming
+>   the WRONG cause**, sending an operator with a stray comma to look at a
+>   `connection.prefix` that was correct all along. Two tests pinned it BY NAME.
+> - **Verified before the block:** `just check-types` 0 errors · full unit +
+>   integration suite 1807 passed · `just check-coverage` **100% line+branch** ·
+>   `just check` all targets except the blocker below.
+>
+> **⛔ THE BLOCKER IS NOT THE DIFF.** `just check-master-ci-green` refuses every
+> commit in that repo while master's most recent CI run is red, and master is red
+> **only** because the `export-telemetry` job cannot reach GitHub's
+> `/actions/runs/<id>/jobs` API, which was returning **HTTP 502** for over half an
+> hour. On master HEAD **99 of 100 checks pass and `ci-green` itself is SUCCESS**;
+> the run's overall conclusion is `failure` solely from that one telemetry job, and
+> `master_ci_green` reads the RUN conclusion, not `ci-green`.
+> ▶️ **TO RESUME: re-run the failed jobs on the master run
+> (`gh run rerun <id> --failed`), confirm `just check-master-ci-green` passes, then
+> commit.** Re-running during the outage is wasted — check the API answers first.
+> 📜 **Worth a ledger item if it recurs: a green fleet gate held hostage by a
+> TELEMETRY job that has no bearing on whether the code is good.**
+>
+> **▶️ THE STATE ON DISK IS THE *RED* HALF OF THE PAIR — DO NOT `git checkout -- .`.**
+> `tests/livespec_orchestrator_beads_fabro/commands/test_config.py` is STAGED alone;
+> `errors.py` carries an UNSTAGED `LivespecConfigUnreadableError` **RED STUB** so Red
+> fails on real assertions rather than an ImportError. **The full GREEN change set is
+> saved at `/tmp/claude-1000/-data-projects-livespec-dev-tooling/f5ff746d-5cde-4b0b-b893-122858f2ed53/scratchpad/green2/`** (4 files, session-scoped and
+> NOT durable). Commit the Red with the message at that dir's `msg2.txt`, then restore green2, `git add -A`, `git commit --amend
+> --no-edit`. ⚠️ If that scratchpad is gone, the branch has nothing — redo from
+> `8o8e.21`, which carries the full design.
+>
+> ### ▶️ AFTER THAT — **KEEP GOING ON `beads-fabro`, PER-FUNCTION**
 >
 > Its ONE real cluster is gone: `commands/_dispatcher_policy_settings.py` was
 > **11 offenders in one file behind ONE seam**, and it is converted (PR #1277).
@@ -168,14 +209,17 @@
 >
 > ### 🔻 FIRST FIVE MINUTES — **INLINED, NOT POINTED AT** (copy them; never point)
 >
-> **NOTHING IS MID-FLIGHT.** No background job, no sub-agent, no unpushed Red.
+> ⚠️⚠️ **ONE UNIT IS MID-FLIGHT — see the 🚧 box at the very top before anything
+> else.** No background job and no sub-agent, but there IS an uncommitted Red
+> half on disk in a beads-fabro worktree, and `git checkout -- .` destroys it.
 >
-> 1. ⚠️ **REAP MY TWO WORKTREES ONCE THEIR PRs MERGE.**
->    `~/.worktrees/livespec-orchestrator-beads-fabro/policy-settings-railway`
->    (branch `fix/policy-settings-railway`, **PR #1277**, auto-merge REBASE armed)
->    and `~/.worktrees/livespec-dev-tooling/beads-fabro-166-to-155` (branch
->    `docs/beads-fabro-166-to-155`, the PR carrying THIS text). **If you are
->    reading this on master, the second one merged.**
+> 1. ⚠️ **DO NOT REAP
+>    `~/.worktrees/livespec-orchestrator-beads-fabro/config-read-railway`** (branch
+>    `fix/config-read-railway`) — that is the MID-FLIGHT unit, nothing committed.
+>    ✅ Both of the units that DID land are already reaped
+>    (`policy-settings-railway` → PR #1277, `beads-fabro-166-to-155` → PR #1194).
+>    `~/.worktrees/livespec-dev-tooling/config-read-railway-midflight` carries THIS
+>    text; reap it once its PR merges.
 > 2. **REAP NOTHING ELSE.** Every other worktree is a PEER lane. Enumerate with
 >    `git worktree list`; **never quote a count from this file.**
 > 3. `git status --short --branch` — clean on `master`; one untracked
