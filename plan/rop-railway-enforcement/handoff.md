@@ -24,10 +24,22 @@
 >    `uv.lock` is REGENERATED noise: `git checkout -- uv.lock` before any `merge --ff-only`,
 >    which REFUSES while the tree is dirty. **It also blocks `git worktree remove`** — that
 >    cost a forced removal in an earlier session.
-> 4. ⚠️ **A FRESH WORKTREE'S FIRST `.py` COMMIT FAILS
->    `check-primary-checkout-commit-refuse-hook-installed`** with `worktree_pack_absent`,
->    because `dev-tooling/` is gitignored and unmaterialized. Fix, in the worktree:
->    `mise exec -- just install-worktree-pack`. **It is NOT your diff.**
+> 4. ⚠️⚠️ **A FRESH WORKTREE FAILS `check-primary-checkout-commit-refuse-hook-installed`**
+>    with `worktree_pack_absent`, because `dev-tooling/` is gitignored and unmaterialized.
+>    Fix, in the worktree: `mise exec -- just install-worktree-pack`. **It is NOT your diff.**
+>    ⛔ **THIS BLOCK USED TO SAY "FIRST `.py` COMMIT". BOTH HALVES WERE WRONG, AND THE ERROR
+>    POINTED THE UNSAFE WAY** — it read as "docs-only changesets are exempt":
+>    - **NOT `.py`-ONLY.** Observed 2026-08-03 on a **docs-only spec commit** (the v191
+>      ratification, ZERO `.py` staged). **The Red-Green-Replay docs/spec/config exemption
+>      does NOT extend to this check.**
+>    - **NOT AT COMMIT — AT PUSH.** The commit SUCCEEDS. `git push` fails, because pre-push
+>      runs the full `just check` aggregate and this check sits inside it. **Budget ~5 min
+>      of `just check` before the failure even surfaces.**
+>    ⚠️ **IT IS PER-WORKTREE:** installing the pack in one worktree does NOT cover another.
+>    Run it in **every** fresh worktree, including single-file docs ones.
+>    ⚠️ `install-worktree-pack` also writes a `worktree_discipline` default into **tracked**
+>    `.livespec.jsonc`. **`git checkout -- .livespec.jsonc` afterwards** — the pack files are
+>    gitignored so the check still passes, and that write does not belong in an unrelated PR.
 > 5. ⚠️ **BEFORE PUSHING ANY RED→GREEN PAIR:** `git log -1 --format=%B | grep -c
 >    '^TDD-Red-'` must be **5** and `'^TDD-Green-'` must be **2**. **`--amend --no-edit` is
 >    the SAFE amend spelling**; **`--amend -m` / `-F` destroys the Red trailers and the hook
@@ -278,6 +290,46 @@
 > | — | **STALE** | a `NO BLOCKERS` arrived for **SUPERSEDED BYTES**. Discarded, not banked. |
 > | 4 | **BLOCKERS** | **B2** — the RECORD misquoted the bytes. Class (a) under the rule. Fixed. |
 > | 5 | **BLOCKERS** | **BYTES CLEAR on all 8 for the 3rd time.** **B3** — `rationale` still said "the one change" after the B2 fix updated `modifications`. Fixed. |
+> | 6 | ✅ **NO BLOCKERS** | Record confirmed. One non-blocking ledger-status flag, FILED not fixed — it did not cross the pre-committed line. |
+>
+> ### ✅ RATIFIED — **v191 CUT, PR #1951 OPENED**
+>
+> `SPECIFICATION/history/v191/` + the three-line clause change. Evidence bound:
+> `fable`/`fable`, both declarations boolean, `NO BLOCKERS`, digest `b744fa63…` over sha256
+> `feaf18a4…`. **EXACTLY ONE decision in the payload.**
+>
+> ⚠️ **AND THE CLEAN CROSS-LANE OUTCOME WAS LUCK, NOT DESIGN — SAY SO.** Two foreign
+> proposals (`self-hosted-ci-runner-host-requirements` `228eb94b` 08:15Z,
+> `spec-governance-revise-decision-mode` `ec5293f5` 08:40Z) were absent from this worktree's
+> BASELINE, so revise never saw them and could not have consumed them. **I did not arrange
+> that.** 📜 **A good outcome you cannot explain is not a controlled outcome.** The
+> mechanism that WOULD have controlled it is the one that matters: **exactly one decision in
+> `decisions[]`, never the delegation toggle.**
+>
+> ### ⛔⛔ `reject` DOES NOT DECLINE — **IT CONSUMES.** THE RULE IS *LEAVE OTHER LANES ALONE*
+>
+> `_revise_validation.py`'s own docstring: *"even rejected proposals MUST resolve to an
+> existing file because revise **moves them byte-identically into
+> `history/vNNN/proposed_changes/`** as part of the rejection audit trail."*
+> **So "rejecting" another lane's proposal REMOVES their pending work from the tree and
+> buries it in a version they did not cut.** An unprocessed proposal simply stays pending —
+> **that is the correct outcome.** `decisions` is `minItems: 1`, NOT "all pending".
+>
+> ### 🔴 `usi0` (P1) — **WHOLE-FILE `resulting_files[]` MAKES CONCURRENT LANES SILENTLY REVERT EACH OTHER**
+>
+> `self-hosted-ci-runner-host-requirements` targets **the same file** this cut just changed,
+> read from its own `### Target specification files`. `resulting_files[]` carries the **FULL
+> post-update file** and the wrapper WRITES it, so **whichever lane ratifies second against
+> pre-ratification bytes silently reverts the first.** No conflict is raised — the second
+> write is a complete, well-formed file simply missing the other clause.
+> ⛔ **AND NO GATE CAN CATCH IT:** `content_digest` is validated against the payload's OWN
+> `resulting_files[]`, so it is self-consistent BY CONSTRUCTION and structurally blind to
+> those bytes being stale relative to master. **The independent review is the only place it
+> can surface, and only if the reviewer diffs proposed bytes against CURRENT MASTER rather
+> than against the proposal.**
+> **▶️ ANY LANE RATIFYING AFTER v191 MUST RE-DERIVE `resulting_files[]` FROM POST-v191
+> MASTER.** This is the in-flight-drift the propose-change survey exists to prevent,
+> **arriving one layer down at REVISE time, where nothing surfaces it.**
 >
 > ### ⛔⛔ THE ESCALATION COUNTER FIRED AND ITS DIAGNOSIS DID **NOT** FIT — RECORDED BOTH WAYS
 >
@@ -451,10 +503,22 @@
 >    `uv.lock` is REGENERATED noise: `git checkout -- uv.lock` before any `merge --ff-only`,
 >    which REFUSES while the tree is dirty. **It also blocks `git worktree remove`** — that
 >    cost a forced removal this session.
-> 4. ⚠️ **A FRESH WORKTREE'S FIRST `.py` COMMIT FAILS
->    `check-primary-checkout-commit-refuse-hook-installed`** with `worktree_pack_absent`,
->    because `dev-tooling/` is gitignored and unmaterialized. Fix, in the worktree:
->    `mise exec -- just install-worktree-pack`. **It is NOT your diff.**
+> 4. ⚠️⚠️ **A FRESH WORKTREE FAILS `check-primary-checkout-commit-refuse-hook-installed`**
+>    with `worktree_pack_absent`, because `dev-tooling/` is gitignored and unmaterialized.
+>    Fix, in the worktree: `mise exec -- just install-worktree-pack`. **It is NOT your diff.**
+>    ⛔ **THIS BLOCK USED TO SAY "FIRST `.py` COMMIT". BOTH HALVES WERE WRONG, AND THE ERROR
+>    POINTED THE UNSAFE WAY** — it read as "docs-only changesets are exempt":
+>    - **NOT `.py`-ONLY.** Observed 2026-08-03 on a **docs-only spec commit** (the v191
+>      ratification, ZERO `.py` staged). **The Red-Green-Replay docs/spec/config exemption
+>      does NOT extend to this check.**
+>    - **NOT AT COMMIT — AT PUSH.** The commit SUCCEEDS. `git push` fails, because pre-push
+>      runs the full `just check` aggregate and this check sits inside it. **Budget ~5 min
+>      of `just check` before the failure even surfaces.**
+>    ⚠️ **IT IS PER-WORKTREE:** installing the pack in one worktree does NOT cover another.
+>    Run it in **every** fresh worktree, including single-file docs ones.
+>    ⚠️ `install-worktree-pack` also writes a `worktree_discipline` default into **tracked**
+>    `.livespec.jsonc`. **`git checkout -- .livespec.jsonc` afterwards** — the pack files are
+>    gitignored so the check still passes, and that write does not belong in an unrelated PR.
 > 5. ⚠️ **BEFORE PUSHING ANY RED→GREEN PAIR:** `git log -1 --format=%B | grep -c
 >    '^TDD-Red-'` must be **5** and `'^TDD-Green-'` must be **2**. **`--amend --no-edit` is
 >    the SAFE amend spelling** and was used for every pair this session; **`--amend -m` /
