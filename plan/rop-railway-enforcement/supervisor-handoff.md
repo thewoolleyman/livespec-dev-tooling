@@ -485,15 +485,36 @@ in master's `non-functional-requirements.md`.
 `livespec` PR **#1952** (`spec/ratify-self-hosted-ci-runner`, the `ci-runner-requirements`
 session) cut **v191 as well**. Auto-merge REBASE was armed on both — #1952 at 08:50:01Z **by
 `thewoolleyman` PERSONALLY (`is_bot: false`)**, #1951 at 08:50:16Z by `app/livespec-pr-bot`.
-**#1951 merged first; #1952 is now `DIRTY` / `mergeable: CONFLICTING`.**
-**It did NOT silently corrupt anything — it hit the predicted add/add on `history/v191/*` and
-stopped.** That is the property that made waiting correct rather than merely tolerable, and
-it is the single best argument for the merge-order rule over arguing precedence.
-**▶️ THE RE-CUT IS NOW THEIRS, and `usi0` is now pointed at OUR ratified clause:** if that
-lane reuses its pre-v191 `resulting_files[]`, its full-file write **silently reverts the v191
-clause with NO git conflict**, because the edit regions do not overlap. A courtesy notice
-was left on #1952; **whoever reads this next should re-verify the v191 clause is still
-present on master before assuming it survived their re-cut.**
+**#1951 merged first at 09:26:34Z; #1952 went `DIRTY` / `CONFLICTING`, re-cut, and MERGED AS
+**v192** at 09:58:06Z.** **It did NOT silently corrupt anything — it hit the predicted add/add
+on `history/v191/*` and stopped.** That is the property that made waiting correct rather than
+merely tolerable, and it is the single best argument for the merge-order rule over arguing
+precedence. **The whole collision cost one re-cut and zero lost content.**
+
+**✅ AND `usi0`'s HAZARD DID NOT FIRE — DISCHARGED BY MEASUREMENT 2026-08-03, NOT ASSUMED.**
+This block previously instructed a successor to "re-verify the v191 clause is still present
+before assuming it survived their re-cut". **That verification is DONE; the instruction is
+discharged and is removed rather than left standing** — a discharged task reads exactly like a
+live one, and this file's own rule is that such a statement produces inaction nothing later
+contradicts. What was measured on master AFTER v192 landed:
+- **BOTH HALVES of the v191 edit survive.** v191 did two things — ADDED the
+  `Railway dependency supply depends on how a repo's own code reaches its consumers` bullet,
+  AND REWORDED a fragment inside the preceding `ROP railway is fleet+adopter-wide` bullet
+  (`returns` is vendored under `_vendor/` → *"is supplied to that repo's first-party code per
+  the bullet below"*). **Both present.**
+- **⛔ AND THE CONTROL IS THE PART THAT MAKES THIS EVIDENCE:** the OLD pre-v191 wording is
+  **absent (0 matches)**. Grepping only for the NEW bullet would have passed even if a stale
+  splice had reverted the reworded fragment — **a two-part edit needs a two-part check, plus a
+  negative control for the half that was REPLACED rather than added.** Checking only what you
+  added cannot detect what was put back.
+- `history/v191/` holds our proposal + revision; `history/v192/` holds theirs. The peer lane
+  re-spliced from new master correctly, as its own original notice said it would.
+
+⚠️ **`usi0` STAYS OPEN AS A MECHANISM FINDING.** The instance was avoided; the hazard is
+general — a revise `resulting_files[]` entry replaces the ENTIRE file, so any stale full-file
+splice silently reverts a concurrent change with **no git conflict** when the edit regions do
+not overlap. **Nothing mechanical catches it**, which is why it was avoided here by two lanes
+warning each other rather than by a gate.
 
 - **THE RULING, and it needs no authority to adjudicate: MERGE ORDER DECIDES.** A version is
   an ORDINAL, not a semantic claim; v191 vs v192 changes no content. The lane that merges
