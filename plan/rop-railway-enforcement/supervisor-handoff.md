@@ -457,7 +457,162 @@ Repeat these in every instruction sent to the supervised session:
 `tmp/overseer/.../.supervisor-state` marker is uncommitted and HAS vanished mid-session
 once; treat it as a cache, never as the record.
 
-### 🟢🟢 CURRENT POSITION — 2026-08-02 WRAP-UP. READ THIS BLOCK FIRST; EVERYTHING BELOW IT IS OLDER.
+### 🟩🟩 CURRENT POSITION — 2026-08-03, THE 4ihw RATIFICATION DRIVE. THIS IS THE NEWEST BLOCK; EVERYTHING BELOW IT IS OLDER.
+
+**⛔ THE FILE NOW HAD *TWO* BLOCKS EACH CLAIMING TO BE READ-FIRST** — a "CURRENT POSITION …
+READ THIS BLOCK FIRST" and a "SUPERVISOR RESUME — READ THIS FIRST, IT IS THE NEWEST BLOCK
+IN THE FILE". Both are below, both demoted in place. **Two documents each asserting primacy
+is the prose-twin defect (`i04f`) applied to navigation**, and it is why this block says
+plainly: newest is at the TOP of this section, and every `### ` below is older than every
+`### ` above it. Re-derive every number from the ledger and the forge before quoting it.
+
+**▶️ WHERE THE THREAD IS: `4ihw`'s SPEC ANSWER IS CUT AS v191 AND ITS PR IS OPEN, NOT MERGED.**
+`livespec` PR **#1951** (`spec/vendored-library-railway-shape`) ratifies
+`railway-dependency-supply-for-a-source-copied-library` as **v191**. Verified on the forge:
+the diff is `history/v191/` (seven spec files + README) + that proposal and its
+`-revision.md` + the working `non-functional-requirements.md`. **Master history still ends
+at v190 until it merges — do not write "ratified" anywhere until you have re-read the forge
+and seen it.**
+
+**⚔️ AND THERE IS A LIVE CROSS-LANE COLLISION ON THE v191 ORDINAL. RE-READ BEFORE ACTING.**
+`livespec` PR **#1952** (`spec/ratify-self-hosted-ci-runner`, the `ci-runner-requirements`
+session) cuts **v191 as well**. Both were open and both BLOCKED on queued checks at the time
+of writing; **auto-merge REBASE is armed on BOTH** — #1952 at 08:50:01Z **by
+`thewoolleyman` PERSONALLY (`is_bot: false`)**, #1951 at 08:50:16Z by `app/livespec-pr-bot`.
+
+- **THE RULING, and it needs no authority to adjudicate: MERGE ORDER DECIDES.** A version is
+  an ORDINAL, not a semantic claim; v191 vs v192 changes no content. The lane that merges
+  SECOND re-cuts as v192. This is safe under either reading of who was authorized, which is
+  precisely why it was chosen over arguing precedence.
+- **⛔ RE-CUT, DO NOT HAND-RESOLVE.** Both branches add `history/v191/*` from a base with no
+  such directory, so the second merge is an **add/add conflict across all seven snapshot
+  files** and GitHub disables auto-merge on conflict. **The collision is SELF-DETECTING —
+  neither PR can silently corrupt the other**, and that property is what makes waiting
+  correct rather than merely tolerable. Hand-resolving fabricates a version directory no
+  revise produced.
+- **⚠️ A RE-CUT KILLS THE REVIEW EVIDENCE.** Fresh bytes → fresh digest → the `NO BLOCKERS`
+  evidence bound to `b744fa63…` is DEAD. Budget a further review pass; do NOT carry v191's
+  evidence onto a v192 cut. That is the staleness trap wearing a version number.
+- **⚠️ DO NOT OVER-APPLY `usi0` TO THE MERGE ITSELF.** Both PRs touch
+  `non-functional-requirements.md`, but a rebase replays the commit's DIFF, so
+  non-overlapping regions merge cleanly and BOTH changes survive — correct behaviour needing
+  no intervention. `usi0` is about RE-RUNNING revise with a stale full-file
+  `resulting_files[]`. Conflating them has you "fixing" a merge that is already right.
+
+**✅ THE REVIEW FLOOR IS REAL AND IT WORKED — THIS IS THE DRIVE'S DURABLE RESULT.** livespec
+**v190** (`spec.md:227`) makes an independent adversarial review by a separately spawned
+designated reviewer (the fleet designates **Fable**) an unconditional precondition of any
+revise accept/modify, verdict `NO BLOCKERS`. Six passes ran. **It produced NEGATIVES
+repeatedly, corrected itself twice, and rediscovered a filed ledger item (`y8o3`) it was
+never told about.** On a thread founded on a green check that scanned zero files, **an
+instrument demonstrated able to FAIL — and whose findings survived independent confirmation
+at the source — is the affirmative answer to the blind-instrument question.** Pass table,
+three blockers, and each fix's basis are persisted in the worker's `handoff.md`.
+
+**⛔ THE ESCALATION PREMISE THAT STARTED THIS DRIVE WAS FALSE, AND THE SHAPE RECURS.** The
+worker sat **3h13m** on an `AskUserQuestion` picker asking the maintainer to unblock
+ratification, on three grounds: no `spec_governance` block, no `ratification_reviewer_model`,
+no `bin/spec_governance.py`. **All three false on master.** `.livespec.jsonc` carries
+`"ratification_reviewer_model": "fable"` and a full `spec_governance/` package ships with
+tests — landed `13b7e341` at **06:05:16Z**, *2h37m AFTER v190 was cut at 03:28:09Z*. **Its
+read was TRUE WHEN TAKEN and went stale underneath it.** Confirmed from the shipped resolver
+rather than prose: `effective_ratification_review` returns the maintainer-input result for
+EXACTLY `blockers_present`, `reviewer_unavailable`, and `reviewer_model is None`.
+⚠️ **AND AN OPEN PICKER MUTES THE DAEMON'S IDLE NUDGE**, so the condition most needing
+attention is the one that suppresses the only other watcher. **Check for an open picker
+FIRST when a pane looks quiet.**
+
+**📋 THE RATIFICATION-EVIDENCE CONTRACT, read from
+`livespec/.claude-plugin/scripts/livespec/commands/_revise_ratification.py`** (`bin/revise.py`
+is a 10-line shim). Per accept/modify decision: `ratification_review` ∈
+{`manual-spawn`,`auto-spawn`}, plus `ratification_evidence` carrying ALL EIGHT of
+`reviewer_identity`, `reviewer_model`, `separate_reviewer`, `read_only`, `reviewed_at`,
+`verdict`, `proposal_stem`, `content_digest`.
+⚠️ **`reviewer_identity` MUST EQUAL `reviewer_model`** — literally `"fable"`, not a session
+id; the least guessable field in the set. `separate_reviewer`/`read_only` are tested with
+`is not True`, so the STRING `"true"` FAILS. `reviewed_at` must match
+`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$`. `verdict` is the literal `NO BLOCKERS`.
+
+**⛔ `k4km` (P1) — THE CONTRACT AND ITS OWN VALIDATOR SPECIFY DIFFERENT DIGESTS, ON THREE
+AXES. I verified BOTH SIDES myself.** `contracts.md` §"Ratification-review evidence" says the
+digest covers `LP(P) || LP(path_1) || LP(content_1) || …` with **`P` = the raw
+proposed-change bytes**, entries **path-sorted**, and `LP(x)` an **unsigned 64-bit
+big-endian** length prefix. Shipped `_canonical_ratification_digest` uses **resulting_files
+ONLY, LIST ORDER, ascii-decimal + `:`**. **No evidence can satisfy the contract's letter and
+pass the gate**, which hard-refuses on mismatch.
+- **RULING: conform to the VALIDATOR, file the drift, and SAY SO IN THE RECORD.** The strict
+  reading blocks every ratification fleet-wide with no action available to anyone —
+  including the revise that would fix it. **A rule that makes conformance impossible is a
+  deadlock, not a gate.** This is NOT softening: the validator runs in FULL and hard-refuses;
+  nothing is skipped or lowered.
+- **The ascii-decimal-plus-`:` prefix is INJECTIVE for the same reason the u64 prefix is**, so
+  the shipped scheme is **different, not unsound** — the reconciliation is a FREE choice
+  between two sound encodings. **Whoever converges them must say that explicitly**, or the
+  next reader manufactures a soundness rationale that never existed.
+- **⚠️ WHICH SIDE MOVES IS A MAINTAINER QUESTION AND IS THE RIPE VALVE THIS DRIVE OWES.** It
+  was deliberately NOT escalated mid-drive: a legitimate action proceeds under a stated
+  assumption, so it fails "genuinely blocking". Bring it as a PREPARED valve, not a
+  half-formed one.
+
+**📋 FINDINGS FILED THIS DRIVE, each with its GATE attached (the required form):** `usi0`
+(the cross-lane full-file revert), `k4km` (P1, digest drift), `jzoz` (P1), `vno1` (P2), plus
+notes on `y8o3` and `0n2a`.
+
+**⛔ AND ONE THE SUCCESSOR WILL MEET: `modifications` IS FAIL-OPEN.** `revise_input.schema.json`'s
+per-decision `required` array is EXACTLY `["proposal_topic","decision","rationale"]`;
+`modifications` is NOT in it despite its own description saying "Required when decision ==
+'modify'". `_revise_helpers.py` does `.get("modifications", "")` with **no guard**, and no
+doctor check references `## Modifications`. **Omit it on a `modify` and revise exits 0 having
+written a revision record with a PRESENT-BUT-EMPTY section** — which a presence check passes.
+Scope of that claim: schema + composer READ; doctor checks GREPPED, not each body read.
+
+**📌 STANDING WORKER-FACING RULINGS FROM THIS DRIVE, do not re-litigate:**
+- **An unresponsive-but-spawned reviewer is NOT `reviewer_unavailable`.** `RatificationContext`
+  has no timeout concept; the condition is about designation and spawn. **Treating latency as
+  unavailability is a severity lever wearing a clock.**
+- **Fix-and-re-review is NOT self-waiving.** The blocker clause binds ratifying DESPITE a
+  blocker; the spec supplies "a fresh conforming review of the reassembled final bytes
+  supersedes it without escalation". Three things WOULD make it self-waiving: patching the
+  existing evidence object, reusing a dead digest, or carrying forward the other dimensions'
+  clean findings from an earlier pass.
+- **`manual-spawn` is a WHO-INITIATES setting.** ⚠️ Stated precisely, because my first
+  version overstated it: the prose's DEFAULT is to prompt the maintainer, and "the driver MAY
+  spawn or ask" plus explicit authorization is what legitimises spawning. The resolver does
+  NOT gate on it.
+- **The author's own instrument never discharges an independent-review floor.** A residual
+  sweep is an excellent remedy and is not a substitute for a verdict.
+
+**🧭 THE TERMINATION PROBLEM, AND THE TRIGGER THAT REPLACED MINE.** Each fix invalidated the
+bytes that required the next pass — a fixpoint iteration with no exit condition. **But my
+framing "every fix invalidates the bytes" is FALSE as a universal**, and the worker refuted
+it: `_canonical_ratification_digest` covers `resulting_files[]` only, so `modifications`,
+`rationale` and the whole narrative sit OUTSIDE the digest. **A RECORD fix moves no bytes,
+changes no digest, and never re-enters the loop.** Two fix classes, different costs.
+- **THE STANDING TRIGGER IS THE WORKER'S, NOT MINE: *two consecutive findings IN THE RATIFIED
+  BYTES*.** Mine fired on record-hygiene defects it was never written to catch.
+- **📜 THE TRANSFERABLE HALF: when a counter's TRIGGER and its RATIONALE can come apart,
+  WRITE THE RATIONALE INTO THE TRIGGER.**
+- **✅ AND PRE-COMMITMENT IS WHAT MADE THE RULING HONEST.** The stopping rule was written
+  BEFORE the verdict arrived, so the category could not be chosen to fit the answer. **The
+  worker then held rather than self-ruling when its own trigger fired — that one turn of
+  delay is the only reason the rule still exists.** A trigger its holder may reinterpret when
+  it becomes inconvenient is not a trigger.
+
+**🔁 THE RECURRING DEFECT THE WORKER NAMED, and it outranks any single fix: FIX ONE INSTANCE,
+LEAVE THE SIBLING STALE.** B2 and B3 were the same defect twice, and a THIRD instance was
+found while fixing the second. **The remedy is a RESIDUAL SWEEP, not more care** — after every
+record edit, grep the whole payload for the phrase just corrected. **Care does not scale; a
+sweep does.**
+
+**✅ STEP 4 OF THE WORKER'S `FIRST FIVE MINUTES` IS CORRECTED (`2cb8f60`) AND WAS WRONG IN THE
+DANGEROUS DIRECTION.** It said `worktree_pack_absent` fires on a fresh worktree's first
+**`.py`** commit. It fired on a **docs-only spec commit with zero `.py` staged**, and it fires
+at **PUSH** via the `just check` aggregate, not at commit. It is **per-worktree** —
+`install-worktree-pack` in the dev-tooling worktree does nothing for a livespec one — and it
+**dirties tracked `.livespec.jsonc`**, which must be reverted out of a spec PR. Both copies
+were corrected: **one accurate copy beside one wrong copy is worse than either.**
+
+### 🗄️ (SUPERSEDED — this was the read-first block until 2026-08-03; the block above replaces it) CURRENT POSITION — 2026-08-02 WRAP-UP.
 
 **⚠️ CORRECTED IN PLACE 2026-08-02 (later, by the next supervisor). Three statements in
 this block were TRUE WHEN WRITTEN AND ARE NOW FALSE** — the hard constraint, the spec
@@ -620,7 +775,7 @@ same clause, look for the missing seam before writing N fixes.* Proven — the `
 file-read seam closed 2 of 4 condition-1 failures from ONE absence, with the residue
 EXPLAINED rather than absorbed.
 
-### ▶️▶️▶️ SUPERVISOR RESUME — READ THIS FIRST, IT IS THE NEWEST BLOCK IN THE FILE
+### 🗄️ (SUPERSEDED 2026-08-03 — it is NOT the newest block; the 2026-08-03 block at the top of this section is. Its "NOTHING MID-FLIGHT" claim describes the 2026-08-02 wrap-up, not today.) SUPERVISOR RESUME — 2026-08-02
 
 **NOTHING OF THIS SUPERVISOR'S IS MID-FLIGHT.** No worktree, no branch, no open PR, no
 background watcher — all monitors stopped at wrap-up. The worker session is FRESH (it
@@ -1727,6 +1882,57 @@ CAUSE. **Before acting on any signal, ask what it is scoped to observe.**
   rule converted a context-risk standoff into a recoverable state and then immediately paid
   for itself against a defect nobody had predicted. **Keep it: leave a Red unpushed until
   the pair is MEASURED, not merely until it is written.**
+
+### 🧾 First-hand, 2026-08-03 (the `4ihw` ratification drive) — SIX OF MINE, AND THE WORKER REFUTED ME TWICE ON THE EVIDENCE
+
+**The drive went well and every one of these is mine.** Recorded because the pattern across
+them is one thing: **I keep asserting from an ADJACENT signal instead of reading the field
+that actually answers the question.**
+
+| # | what I asserted | what the field said | how it surfaced |
+|---|---|---|---|
+| 1 | "auto-merge is armed, #1951 will merge itself" | I never read `autoMergeRequest`. I inferred it from an `Auto-enable merge` **workflow run** completing SUCCESS — evidence about the RUN, not about the PR | the worker read the field: `autoMergeRequest: none` at that moment |
+| 2 | `manual-spawn` "does not mean a human initiates" | `revise.md` says in terms "in `manual-spawn`, prompt the maintainer"; what legitimises spawning is the ADJACENT "the driver MAY spawn or ask" + explicit authorization | caught by me on a later read, corrected unprompted |
+| 3 | "every fix invalidates the bytes, so the loop cannot terminate" | FALSE as a universal — the digest covers `resulting_files[]` only, so a RECORD fix moves no bytes and never re-enters the loop | the worker refuted it with the composer source |
+| 4 | "I have no independent evidence of the maintainer-directed claim" | `thewoolleyman` (`is_bot: false`) had personally armed auto-merge on #1952 at 08:50:01Z | my own later read of `autoMergeRequest` |
+
+- **🔴 #1 IS THE WORST BECAUSE I WAS ACCIDENTALLY RIGHT.** Auto-merge *was* armed — by the bot,
+  fifteen seconds after the worker's read. **A right conclusion resting on a wrong mechanism
+  is never re-tested**, and this file already carries that lesson twice. The fix costs one
+  field: read `autoMergeRequest`, not `gh run list`.
+- **🔴 #4 IS THE ONE WITH TEETH.** I told the worker to treat another session's claim as
+  unverified, and it acted on that — including in a PR comment. **The evidence existed on the
+  forge and I had not looked for it.** Retracting took a whole brief. On a thread whose
+  subject is authoritative statements contradicted by measurement: **"I have no evidence" is
+  itself a claim about a search you may not have run.** Say which query you ran.
+- **🔴 AND I ARMED A WATCHER WITH `nohup … &` INSTEAD OF THE HARNESS RUNNER.** It would have
+  run its full ceiling and **notified nobody** — the "intention, not a mechanism" failure this
+  charter exists to prevent, committed inside the instrument built to prevent it. Caught
+  before it mattered. **Reaped by PID after inspecting the process, never by pattern** — a
+  generic `pkill -f 'sleep 20'` on this host matches fleet CI infrastructure and other
+  sessions' watchers.
+- **🔴 AND MY FIRST BUSY-TEST CONTROL DID NOT REPRODUCE THE HAZARD IT CLAIMED TO TEST.** The
+  synthetic "idle pane with a completed command" sample carried no literal `…` before the
+  `(`, so the `⎿`-exclusion made no difference and the control silently proved nothing. **A
+  control that cannot fail is the same defect as a check that cannot fail**, one layer down.
+  Rebuilt faithfully; the exclusion then demonstrably flipped BUSY→IDLE on the same bytes.
+  **The detector returned IDLE in production repeatedly, so it can produce both verdicts** —
+  which is more than three of this file's four predecessors managed.
+- **⚠️ ONE BLIND SPOT LEFT IN THE DETECTOR, STATED RATHER THAN HIDDEN:** a parent waiting on a
+  background SUBAGENT shows no spinner and spawns no child shell, so **both limbs read IDLE
+  while the session is genuinely working**. Consequence here was benign (messages queued
+  instead of interrupting), but a successor must not read IDLE as "safe to interrupt" when a
+  teammate agent is listed in the pane footer.
+- **✅ WHAT WORKED, AND IT IS THE SAME MECHANISM AS EVERY PREVIOUS DRIVE:** every brief closed
+  with "if your verification contradicts anything above, YOURS WINS — say so plainly." The
+  worker used it **twice**, both times correctly, and both times inside one turn. **That
+  sentence converted two supervisor errors into measured results instead of false paragraphs
+  in this file.** It is not politeness; it is the mechanism. Put it in every brief.
+- **✅ AND THE CONTRIBUTIONS THAT SURVIVED WERE, AGAIN, ALL QUESTIONS WITH A STATED FAILURE
+  MODE** — the reviewer-independence requirement, the three self-waiving traps, the
+  loop-termination pre-commitment, the foreign-proposal delegation-toggle warning, and "check
+  whether the record still claims coverage you removed". **Every retracted one was an ANSWER.**
+  This is now the fourth consecutive drive where that split holds exactly.
 
 ### Verification lessons worth keeping at role level
 
