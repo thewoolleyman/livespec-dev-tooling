@@ -3,9 +3,10 @@
 # Authority: SPECIFICATION/contracts.md §"Composite Actions wire contract".
 #
 # The Action mints a minimum/current-repository-scope probe token, polls
-# GET /rate_limit until the caller's REST core and GraphQL minima are available
-# within the configured wait bound, and only then mints a fresh final token with
-# exactly the caller-requested owner/repositories scope. Both token mints keep
+# GET /rate_limit until the caller's REST core and GraphQL minima are available,
+# mints a fresh final token with exactly the caller-requested
+# owner/repositories scope, and validates that final token before exposure.
+# Both stages share the configured aggregate wait bound. Both token mints keep
 # actions/create-github-app-token@v3's default end-of-job revocation.
 
 name: github-rate-budget-token
@@ -50,7 +51,7 @@ inputs:
 outputs:
   token:
     description: Fresh final installation token minted after the budget probe is healthy.
-    value: ${{ steps.final-token.outputs.token }}
+    value: ${{ steps.final-budget.outputs.token }}
 
 runs:
   using: composite
@@ -63,9 +64,10 @@ runs:
         private-key: ${{ inputs.private-key }}
 
     - name: Wait for installation rate budget
+      id: preflight-budget
       shell: bash
       env:
-        PROBE_TOKEN: ${{ steps.probe-token.outputs.token }}
+        RATE_BUDGET_TOKEN: ${{ steps.probe-token.outputs.token }}
         INPUT_MIN_CORE_REMAINING: ${{ inputs.min-core-remaining }}
         INPUT_MIN_GRAPHQL_REMAINING: ${{ inputs.min-graphql-remaining }}
         INPUT_CUSHION_SECONDS: ${{ inputs.cushion-seconds }}
@@ -81,3 +83,17 @@ runs:
         private-key: ${{ inputs.private-key }}
         owner: ${{ inputs.owner }}
         repositories: ${{ inputs.repositories }}
+
+    - name: Wait for final token rate budget
+      id: final-budget
+      shell: bash
+      env:
+        RATE_BUDGET_TOKEN: ${{ steps.final-token.outputs.token }}
+        INPUT_MIN_CORE_REMAINING: ${{ inputs.min-core-remaining }}
+        INPUT_MIN_GRAPHQL_REMAINING: ${{ inputs.min-graphql-remaining }}
+        INPUT_CUSHION_SECONDS: ${{ inputs.cushion-seconds }}
+        INPUT_MAX_WAIT_SECONDS: ${{ inputs.max-wait-seconds }}
+        INPUT_ALREADY_WAITED_SECONDS: ${{ steps.preflight-budget.outputs.slept-seconds }}
+        INPUT_EXPOSE_TOKEN_ON_SUCCESS: "true"
+        INPUT_JITTER_SEED: ${{ inputs.jitter-seed }}
+      run: node "${{ github.action_path }}/rate-budget-gate.js"

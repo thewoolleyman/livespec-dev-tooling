@@ -372,8 +372,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a healthy preflight but deficient final token is not exposed",
-    "test": "TODO",
-    "reason": "Awaits the consumer-tier regression that drives a healthy minimum-scope preflight followed by a deficient exact-scope final-token validation."
+    "test": "tests.consumer.test_github_rate_budget_token.test_helper_withholds_deficient_final_token_until_reprobe_is_healthy"
   },
   {
     "spec_root": "SPECIFICATION",
