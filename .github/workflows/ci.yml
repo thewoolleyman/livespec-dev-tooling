@@ -410,8 +410,20 @@ jobs:
       # materialized worktree pack (the pack is gitignored-and-installed, never
       # tracked), so the verifier's pack arm would fail on an untouched runner.
       # Installs from the SAME package source the check compares against.
+      #
+      # check-shell-quality IS ALSO LISTED, and without it that check was
+      # passing VACUOUSLY. `dev-tooling/*.just` is gitignored and the root
+      # justfile imports it optionally (`import? 'dev-tooling/worktree.just'`),
+      # so on an untouched runner the `worktree-*` recipes DO NOT EXIST and the
+      # scan had no subject — green for work it never did. Locally, where the
+      # pack must be installed (the check above REQUIRES it), the same commit
+      # went red, so `just check` could not pass in any bootstrapped checkout
+      # while CI reported success. Measured 2026-08-03; work-item
+      # livespec-dev-tooling-9ywf.
       - name: Install canonical worktree pack (satisfy invariant)
-        if: matrix.target == 'check-primary-checkout-commit-refuse-hook-installed'
+        if: >-
+          matrix.target == 'check-primary-checkout-commit-refuse-hook-installed'
+          || matrix.target == 'check-shell-quality'
         run: python3 -m livespec_dev_tooling.install_worktree_pack
 
       # Tools are baked into the image; `mise install` is a near-no-op. A fresh

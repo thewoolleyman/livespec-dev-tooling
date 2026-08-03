@@ -85,8 +85,28 @@ worktree_is_primary() {
 # worktree_primary_path: print the absolute path of the primary checkout.
 # The first `worktree ` entry from `git worktree list --porcelain` is always
 # the primary.
+#
+# THE AWK PROGRAM MUST NOT `exit`, and that is a fix rather than a style
+# preference. This was `awk '/^worktree /{print $2; exit}'`. The `exit` closes
+# the pipe after the first line; while git's whole output fits one stdio block
+# it has already finished writing and nothing notices, but past one block git
+# is still writing when the reader goes away, takes SIGPIPE and exits 141 —
+# and this file runs under `set -euo pipefail`, so `pipefail` promotes that to
+# the pipeline's status and `set -e` aborts the caller. Exit 141, stdout empty,
+# stderr empty, no string to search for.
+#
+# It scales with WORKTREE COUNT, so it arrives late and looks like flake.
+# Measured 2026-08-03 across five fleet repos, 20 trials each: 8-13 worktrees
+# never reproduced it; 24 (4181 bytes) failed 2/20; 106 (18480 bytes) failed
+# 18/20, and 40/40 in the real call path. The switch-on is 4096 bytes, the
+# stdio block size.
+#
+# It also took out `create` AND `reap` together — so the repo that accumulated
+# the worktrees lost the tool for removing them at the same moment, and had no
+# sanctioned way back down. Consuming the whole stream costs microseconds and
+# removes the failure mode outright.
 worktree_primary_path() {
-    git worktree list --porcelain | awk '/^worktree /{print $2; exit}'
+    git worktree list --porcelain | awk '/^worktree / && !seen { print $2; seen = 1 }'
 }
 
 # worktree_repo_name: print the repo name used in the worktree root
