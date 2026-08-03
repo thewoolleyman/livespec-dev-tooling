@@ -43,7 +43,6 @@ def _run_check(
     _git(cwd=cwd, args=["init", "-q"])
     _git(cwd=cwd, args=["add", "-A"])
     monkeypatch.chdir(cwd)
-    monkeypatch.setenv("LIVESPEC_SHELL_QUALITY_CHECK_JUSTFILE", "1")
     module = importlib.import_module("livespec_dev_tooling.checks.shell_quality")
     rc = module.main()
     captured = capsys.readouterr()
@@ -78,18 +77,55 @@ def test_documented_no_errexit_deviation_passes(
 ) -> None:
     _write(
         root=tmp_path,
-        rel="scripts/aggregate.sh",
+        rel="justfile",
         body="\n".join(
             [
-                "#!/usr/bin/env bash",
                 "# Deliberately omit errexit so every probe can run before summary.",
-                "set -uo pipefail",
-                "failures=0",
-                "false || failures=$((failures + 1))",
-                'printf "%s\\n" "${failures}"',
+                "check-all:",
+                "    #!/usr/bin/env bash",
+                "    set -uo pipefail",
+                "    failures=0",
+                "    false || failures=$((failures + 1))",
+                "    printf '%s\\n' \"${failures}\"",
                 "",
             ]
         ),
+    )
+    _write(
+        root=tmp_path,
+        rel="scripts/clean.sh",
+        body="#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s\\n' ok\n",
+    )
+
+    rc, stderr = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert rc == 0, stderr
+
+
+def test_multiline_errexit_recipe_passes(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _write(
+        root=tmp_path,
+        rel="justfile",
+        body="\n".join(
+            [
+                "build:",
+                "    #!/usr/bin/env bash",
+                "    set -euo pipefail",
+                "    python -m build",
+                "    python -m twine check dist/*",
+                "",
+            ]
+        ),
+    )
+    _write(
+        root=tmp_path,
+        rel="scripts/clean.sh",
+        body="#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s\\n' ok\n",
     )
 
     rc, stderr = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
