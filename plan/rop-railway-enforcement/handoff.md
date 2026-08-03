@@ -54,7 +54,7 @@
 > **Same family as the seven-hour fan-out break** — an import satisfied in the environment
 > the tests run in and not in the one the code ships to.
 >
-> ### ▶️▶️▶️ EXACT NEXT ACTION — **TAKE `4ihw` UNDER THE PRECEDENT, WITH ONE PRECONDITION**
+> ### ▶️▶️▶️ EXACT NEXT ACTION — **TAKE `4ihw` UNDER THE PRECEDENT. EXACTLY ONE PRECONDITION: `0n2a`.**
 >
 > `returns` as a real `pyproject.toml` `dependencies` entry (serves the INSTALLED path) +
 > **BARE** imports with no vendor preamble (resolve against each consumer's own `_vendor/`).
@@ -64,6 +64,53 @@
 > `returns` inherits the exact hole `typing_extensions` sits in. The only thing that makes
 > `returns` safer today is that all three consumers happen to vendor it — three independent
 > decisions, with nothing preventing the fourth consumer from omitting it.
+>
+> ### ✅ `hh4d` WAS CHECKED AS A SECOND PRECONDITION AND IT **DOES NOT APPLY** — and the check sharpened `hh4d` itself
+>
+> `hh4d` says vendoring a new library is uncommittable because `commit_pairs_source_and_test`
+> treats `_vendor/**.py` as authored source. Checked BEFORE opening the unit rather than at
+> the commit gate, which is where this thread has been bitten before.
+>
+> **It classifies by `path.startswith(source_tree_prefixes)`, so it fires exactly when the
+> vendor tree is NESTED INSIDE a declared prefix — not whenever a repo vendors:**
+>
+> | repo | `source_tree_prefixes` | vendor tree | fires? |
+> |---|---|---|---|
+> | `livespec-dev-tooling` | `livespec_dev_tooling/` | `livespec_dev_tooling/_vendor/` | **YES — nested** |
+> | `livespec` | `.claude-plugin/scripts/livespec/`, … | `.claude-plugin/scripts/_vendor/` | no — SIBLING |
+> | `beads-fabro` | `.../livespec_orchestrator_beads_fabro/`, … | `.claude-plugin/scripts/_vendor/` | no — sibling |
+> | `git-jsonl` | `{ superseded_by }` | `.claude-plugin/scripts/_vendor/` | no |
+> | `livespec-runtime` | `{ convention_not_adopted }` | (none) | no |
+>
+> **▶️ THE PLUGIN-LAYOUT REPOS ARE STRUCTURALLY IMMUNE** — their vendor tree is a SIBLING of
+> the package prefix, never inside it. That is also why the fan-out already re-vendors
+> `livespec_runtime` into all three consumers without tripping it.
+>
+> ⚠️ **AND IT CORRECTS `hh4d`'s OWN "IT WILL FIRE IN EACH OF THEM."** That prediction was
+> written before the layout survey (`w25v`) existed. **NOT a precondition for `4ihw`**, twice
+> over: the implementation vendors nothing, and no repo in its path nests.
+>
+> ### 📌 `yteb` FILED (P2) — **THE FLEET IS ON THREE RAILWAYS AND A MANIFEST ASSERTS IT IS ON ONE**
+>
+> ⚠️ **THE LIMIT FIRST, so nobody budgets a fleet-wide re-vendor:** the surface runtime needs
+> — `Result`, `Success`, `Failure`, `safe` — is **present in every copy**, read from each
+> vendored `result.py`. **No measured live incompatibility anywhere.** The exposure is future
+> surface divergence plus an untrue assertion.
+>
+> dev-tooling's `.vendor.jsonc` states its 0.25.0 *"matches the copy `livespec` vendors,
+> keeping one railway version across the fleet."* Measured: **`0.25.0` / `0.25.0` /
+> `e2cdeea:.claude-plugin/scripts/_vendor/returns` / `0.26.0`** — two upstream tags plus a
+> COMMIT-PIN naming another repo's commit AND a path inside that repo's vendor tree, i.e. a
+> **copy-of-a-copy** whose upstream version the manifest does not record at all.
+>
+> **`check-vendor-manifest` validates each entry's SHAPE and never compares refs ACROSS
+> repos**, so the claim could not have been caught by the machinery reading the file it sits
+> in. Smallest fix first: correct or delete the comment. The existing seam for a real check is
+> `cross_repo.pin_autodiscovery`, which already declares `.vendor.jsonc` `upstream_ref` as a
+> pin FORMAT carrying no currency obligation row.
+>
+> ⚠️ Ledger swept across **342 items (open + closed)** before filing; nothing pre-existing
+> carried it.
 >
 > ### 📋 THE QUEUE
 >
