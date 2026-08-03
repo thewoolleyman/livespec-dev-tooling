@@ -371,6 +371,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a healthy preflight but deficient final token is not exposed",
+    "test": "TODO",
+    "reason": "Awaits the consumer-tier regression that drives a healthy minimum-scope preflight followed by a deficient exact-scope final-token validation."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: an App budget probe cannot authenticate or reach GitHub",
     "test": "tests.consumer.test_github_rate_budget_token.test_helper_failure_taxonomy_is_bounded_and_distinct"
   },
