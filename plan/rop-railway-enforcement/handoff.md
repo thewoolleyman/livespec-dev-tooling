@@ -248,7 +248,29 @@
 > | 2 | NO BLOCKERS + flag | my own non-tightening gloss was itself inaccurate. Deleted. |
 > | 3 | NO BLOCKERS + flag | false contrast implying directly-consumed imports are PREFIXED. Fixed. |
 > | — | **STALE** | a `NO BLOCKERS` arrived for **SUPERSEDED BYTES**. Discarded, not banked. |
-> | 4 | *(pre-commitment written before this landed)* | |
+> | 4 | **BLOCKERS** | **B2** — the RECORD misquoted the bytes. Class (a) under the rule. Fixed. |
+>
+> ### 🔑🔑 B2's STRUCTURAL LESSON — **THE DIGEST PROTECTS THE BYTES AND NOTHING PROTECTS THE RECORD**
+>
+> I spent four passes checking the bytes were reviewed against the RIGHT bytes, and never
+> checked whether the RECORD described them accurately. It did not: `modifications` recorded
+> ONE edit while the bytes carried TWO, and quoted "the branch now reads …" without the
+> appended sentence.
+>
+> ⛔ **AND THE REVISION RECORD RATIFIES INTO `history/vNNN/` ALONGSIDE THE TEXT** — so a
+> false quotation there is a FALSE RATIFIED STATEMENT, class (a), even though no digest
+> covers it. **`_canonical_ratification_digest` iterates `decision["resulting_files"]` ONLY.**
+> `modifications`, `rationale`, and the whole narrative sit OUTSIDE it.
+>
+> **▶️ THE OPERATIONAL COROLLARY, AND IT CUTS BOTH WAYS:**
+> - **Fixing the record is FREE** — the bytes do not move, the digest does not change, and
+>   existing review evidence stays VALID. **A record fix never re-enters the review loop.**
+> - **Nothing mechanically checks the record is TRUE.** The evidence contract binds the
+>   bytes; the narrative describing them is unprotected. Same family as `jzoz`.
+>
+> 📜 **CHECK THE RECORD AGAINST THE BYTES BEFORE INVOKING REVISE.** Grep the payload for the
+> distinguishing phrases of every edit. B2 was found by exactly that: `"spelled BARE"` →
+> **0 matches** in a record that claimed to quote the sentence containing it.
 >
 > **THIS TABLE IS THE EVIDENCE**, and it is why it is persisted rather than narrated: that
 > the reviewer was NOT a blind instrument (it produced a negative, twice corrected itself,
