@@ -65,6 +65,16 @@
       "SPECIFICATION/non-functional-requirements.md §\"Toolchain pins\""
     ]
   },
+  // Planning/work-item-resolution registry. These targets are the repo slugs
+  // accepted by cross-tenant DependsOnEntry refs (`sibling_work_item`,
+  // `pull_request`, and `branch`).
+  "cross_repo_targets": {
+    "livespec": {
+      "github_url": "https://github.com/thewoolleyman/livespec",
+      "local_clone": "/data/projects/livespec",
+      "default_branch": "master"
+    }
+  },
   "livespec-dev-tooling": {
     "compat": {
       // semver range and pinned tag against livespec-core. The pinned
