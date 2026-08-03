@@ -466,19 +466,34 @@ is the prose-twin defect (`i04f`) applied to navigation**, and it is why this bl
 plainly: newest is at the TOP of this section, and every `### ` below is older than every
 `### ` above it. Re-derive every number from the ledger and the forge before quoting it.
 
-**▶️ WHERE THE THREAD IS: `4ihw`'s SPEC ANSWER IS CUT AS v191 AND ITS PR IS OPEN, NOT MERGED.**
-`livespec` PR **#1951** (`spec/vendored-library-railway-shape`) ratifies
-`railway-dependency-supply-for-a-source-copied-library` as **v191**. Verified on the forge:
-the diff is `history/v191/` (seven spec files + README) + that proposal and its
-`-revision.md` + the working `non-functional-requirements.md`. **Master history still ends
-at v190 until it merges — do not write "ratified" anywhere until you have re-read the forge
-and seen it.**
+**✅✅ WHERE THE THREAD IS: `4ihw`'s SPEC ANSWER IS RATIFIED AS v191 AND IT IS ON MASTER.**
+**CORRECTED IN PLACE 09:30Z.** This paragraph previously read "CUT AS v191 AND ITS PR IS
+OPEN, NOT MERGED … master history still ends at v190". **That was TRUE WHEN WRITTEN AND WAS
+FALSE THREE MINUTES LATER** — my own PR carrying it merged at 09:22:55Z, #1951 merged at
+09:26:34Z. Corrected here rather than stacked under a newer heading, per this file's own
+rule, because a read-first block asserting a stale state is the defect this thread exists to
+close.
 
-**⚔️ AND THERE IS A LIVE CROSS-LANE COLLISION ON THE v191 ORDINAL. RE-READ BEFORE ACTING.**
+`livespec` PR **#1951** (`spec/vendored-library-railway-shape`) **MERGED 2026-08-03T09:26:34Z.**
+Verified on the forge FOUR ways after the fact, never inferred from the merge action:
+`SPECIFICATION/history/` ends at **v191**; the proposal is **GONE from `proposed_changes/`**;
+`history/v191/proposed_changes/` holds it **and** its `-revision.md`; and the clause
+*"Railway dependency supply depends on how a repo's own code reaches its consumers"* is live
+in master's `non-functional-requirements.md`.
+
+**⚔️ THE CROSS-LANE v191 COLLISION RESOLVED — WE MERGED FIRST, AND THE SELF-DETECTION HELD.**
 `livespec` PR **#1952** (`spec/ratify-self-hosted-ci-runner`, the `ci-runner-requirements`
-session) cuts **v191 as well**. Both were open and both BLOCKED on queued checks at the time
-of writing; **auto-merge REBASE is armed on BOTH** — #1952 at 08:50:01Z **by
+session) cut **v191 as well**. Auto-merge REBASE was armed on both — #1952 at 08:50:01Z **by
 `thewoolleyman` PERSONALLY (`is_bot: false`)**, #1951 at 08:50:16Z by `app/livespec-pr-bot`.
+**#1951 merged first; #1952 is now `DIRTY` / `mergeable: CONFLICTING`.**
+**It did NOT silently corrupt anything — it hit the predicted add/add on `history/v191/*` and
+stopped.** That is the property that made waiting correct rather than merely tolerable, and
+it is the single best argument for the merge-order rule over arguing precedence.
+**▶️ THE RE-CUT IS NOW THEIRS, and `usi0` is now pointed at OUR ratified clause:** if that
+lane reuses its pre-v191 `resulting_files[]`, its full-file write **silently reverts the v191
+clause with NO git conflict**, because the edit regions do not overlap. A courtesy notice
+was left on #1952; **whoever reads this next should re-verify the v191 clause is still
+present on master before assuming it survived their re-cut.**
 
 - **THE RULING, and it needs no authority to adjudicate: MERGE ORDER DECIDES.** A version is
   an ORDINAL, not a semantic claim; v191 vs v192 changes no content. The lane that merges
@@ -498,6 +513,30 @@ of writing; **auto-merge REBASE is armed on BOTH** — #1952 at 08:50:01Z **by
   non-overlapping regions merge cleanly and BOTH changes survive — correct behaviour needing
   no intervention. `usi0` is about RE-RUNNING revise with a stale full-file
   `resulting_files[]`. Conflating them has you "fixing" a merge that is already right.
+
+**⛔ AND BOTH RATIFICATION PRs WENT RED ON PURE INFRASTRUCTURE — `8o8e.16`'s EXACT SHAPE, PROVEN
+FROM LOGS RATHER THAN INFERRED.** #1951 failed three checks
+(`check-aggregate-completeness`, `check-source-trees-scoped-to-consumer`,
+`check-no-todo-registry`) and #1952 failed five. **Every one of #1951's failed in a SETUP step,
+never in the check body:** two in "Install Python dev deps via uv" (`uv` fetching
+`livespec-runtime` / `livespec-dev-tooling` → **HTTP 503**) and one in **Checkout** (**503,
+then 502, then 503** across three retries). `ci-green` then failed downstream.
+- **📜 THE RULE, AND IT IS THIS EPIC'S OWN, MIRRORED: A CHECK THAT DID NOT RUN IS NOT A CHECK
+  THAT FAILED.** A setup-step failure is reported under the CHECK'S NAME, so an infrastructure
+  flake and a genuine check failure are indistinguishable at the glance everyone acts on.
+  **Remedy: `gh run rerun <id> --failed` after reading `--log-failed`.** All three went green
+  on rerun and auto-merge did the rest.
+- **⚠️ AND BOTH DIAGNOSES OFFERED BEFOREHAND WERE WRONG, WHICH IS THE PART TO CARRY.** I
+  hypothesised the new `history/v191/` tree entering scope; the worker hypothesised the release
+  gate (`LIVESPEC_FAIL_IF_HEADING_COVERAGE_TODOS_EXIST`, set only in the release workflows,
+  with a release genuinely in flight). **Both plausible, both false.** The worker's CONCLUSION
+  (transient infra) was right on the strength of local reproduction — the checks passed at the
+  exact bytes — while its named MECHANISM was not. **One `--log-failed` read settled in seconds
+  what two hypotheses could not.** Prefer one forge read to one paragraph of reasoning.
+- **⛔ A PR-WATCH WHOSE EXIT CONDITIONS OMIT `FAILURE` READS A RED PR AS "STILL WAITING".** The
+  worker's loop exited only on MERGED/CLOSED, so three red checks were invisible to it and the
+  PR looked queue-blocked for most of an hour. **Put FAILURE in the exit set** — this is the
+  non-terminating-loop lesson again, in a new instrument.
 
 **✅ THE REVIEW FLOOR IS REAL AND IT WORKED — THIS IS THE DRIVE'S DURABLE RESULT.** livespec
 **v190** (`spec.md:227`) makes an independent adversarial review by a separately spawned
