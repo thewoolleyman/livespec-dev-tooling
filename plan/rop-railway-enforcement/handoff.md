@@ -2,11 +2,51 @@
 
 > ## 🔻🔻 COLD START — **START HERE. `4ihw` IS MEASURED AND CONTAINED — TAKE IT. AND ITS OWN PRECEDENT HAS A HOLE, FILED AS `0n2a` (P1).**
 >
-> ### 🔻 FIRST FIVE MINUTES
+> ### 🔻 FIRST FIVE MINUTES — **INLINED, NOT POINTED AT**
+>
+> ⛔ **THIS BLOCK USED TO SAY "steps 1–8 N blocks below". THAT POINTER DRIFTED TWICE** as
+> new headers were prepended, and a START-HERE block whose instructions are reached by
+> counting blocks is this file's own recorded defect one level up. **The steps are inlined
+> here permanently. If you prepend a new header, COPY THEM, never point at them.**
 >
 > **NOTHING IS MID-FLIGHT.** No background job, no sub-agent, no unpushed Red, no open PR of
-> this thread's. dev-tooling master at wrap-up: **`6e0f665`** or later — re-fetch. Steps 1–8
-> six blocks below are UNCHANGED and still current; read them there.
+> this thread's. dev-tooling master at wrap-up: **`86a3283`** or later — re-fetch, it moves
+> hourly.
+>
+> 1. ✅ **THERE IS NOTHING OF MINE TO REAP.** The previous session reaped every worktree it
+>    created and verified `git worktree list` held none of them. `git -C
+>    /data/projects/livespec-dev-tooling merge --ff-only origin/master` is all that is owed,
+>    and it may already be a no-op.
+> 2. **REAP NOTHING ELSE.** Every other worktree belongs to a PEER lane. Enumerate with
+>    `git worktree list`; **never quote a count from this file.**
+> 3. `git status --short --branch` — expect clean on `master`; one untracked
+>    `install-livespec-pr-bot.png` is pre-existing and NOT this thread's. ⚠️ A modified
+>    `uv.lock` is REGENERATED noise: `git checkout -- uv.lock` before any `merge --ff-only`,
+>    which REFUSES while the tree is dirty. **It also blocks `git worktree remove`** — that
+>    cost a forced removal this session.
+> 4. ⚠️ **A FRESH WORKTREE'S FIRST `.py` COMMIT FAILS
+>    `check-primary-checkout-commit-refuse-hook-installed`** with `worktree_pack_absent`,
+>    because `dev-tooling/` is gitignored and unmaterialized. Fix, in the worktree:
+>    `mise exec -- just install-worktree-pack`. **It is NOT your diff.**
+> 5. ⚠️ **BEFORE PUSHING ANY RED→GREEN PAIR:** `git log -1 --format=%B | grep -c
+>    '^TDD-Red-'` must be **5** and `'^TDD-Green-'` must be **2**. **`--amend --no-edit` is
+>    the SAFE amend spelling** and was used for every pair this session; **`--amend -m` /
+>    `-F` destroys the Red trailers and the hook still exits 0** (`zv78`, READY/P1).
+>    ⚠️ A Green amend that FAILS its checks leaves the Red commit and its trailers intact —
+>    fix and re-amend, do not re-author.
+> 6. ⚠️ **A `check-fleet-conformance` RED IS PROBABLY THE APP'S RATE LIMIT, NOT YOUR DIFF.**
+>    `gh run view <id> --log-failed | grep -o '"kind": "[a-z_]*"'` → `rate_limited` ⇒ re-run
+>    after the hourly window rolls (`gh run rerun <id> --failed`). **`gh api rate_limit` from
+>    your own session is NOT a reliable discriminator** — both buckets were exhausted in the
+>    same window this session. Log the occurrence on **`mmqe`**, which now carries **two
+>    VERIFIED occurrences with run IDs**. Budget ~1h of wall clock if it fires twice.
+> 7. ⚠️ **`/tmp` INODE PRESSURE RECURS** (`8o8e.16`): check `df -i /tmp`, NOT `df -h`. Each
+>    shallow fleet clone costs ~1k inodes; **delete scratch clones when done**. Reclaim ONLY
+>    stale regenerable caches; **never** `/tmp/claude-1000/*`, never anything dated today.
+> 8. **⛔ READ THE LEDGER CHILDREN `8o8e.7`–`.13` BEFORE BUDGETING ANY MEMBER.** `.8` and
+>    `.10` were re-derived and rank by **YIELD**; the rest still rank by REACH and are wrong
+>    in the same way `.8` was. **`8o8e.14` is CLOSED at 0.** This file is narrative; the
+>    children are what a planner opens.
 >
 > ### ✅ `4ihw`'s FAN-OUT CONSEQUENCE — **CONTAINED. NOT A COORDINATED EPIC.**
 >
@@ -111,6 +151,29 @@
 >
 > ⚠️ Ledger swept across **342 items (open + closed)** before filing; nothing pre-existing
 > carried it.
+>
+> ### 🧾 WHAT THIS SESSION LANDED AND FILED — the roster, so nothing is re-derived
+>
+> **LANDED (merged):** `w25v` CLOSED (#1127 → `6deca80`, `vendor_update` destination resolved
+> from the git index) · `8sc1` CLOSED (#1139 → `4983487`, clause (d) re-export walk).
+> **Both were Red-Green-Replay pairs; both trailer sets verified 5/2 before push.**
+>
+> **FILED, all OPEN, none blocked on a human:**
+>
+> | id | P | subject |
+> |---|---|---|
+> | `4ihw` | 1 | the vendored-library `returns` question — **MEASURED CONTAINED, take it** |
+> | `0n2a` | 1 | dependency-CLOSURE gate — **`4ihw`'s only precondition** |
+> | `55ec` | 1 | split the pure parsers out of `effects/` — value **10**, 28 sites, RULED |
+> | `yteb` | 2 | `.vendor.jsonc` asserts one railway version; measured THREE |
+> | `y8o3` | 2 | driver-claude: 132 vendored files, NO `.vendor.jsonc` |
+> | `p9ot` | 2 | ship the yield probe (first slice an EXTRACTION) |
+>
+> **UPDATED:** `8o8e.8` / `8o8e.10` re-derived and restated as YIELD · `hh4d` scope sharpened
+> (nesting-dependent, NOT a `4ihw` precondition) · `mmqe` +2 VERIFIED occurrences.
+>
+> ⛔ **NOTHING IS BLOCKED ON A MAINTAINER.** `4ihw` was escalated and RULED (follow the
+> `typing_extensions` precedent — authorized standing work, not a new decision).
 >
 > ### 📋 THE QUEUE
 >
