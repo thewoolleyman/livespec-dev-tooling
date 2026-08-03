@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.18.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.18.1...v1.18.2) (2026-08-03)
+
+
+### Bug Fixes
+
+* **worktree-pack:** pass worktree recipe arguments positionally, not by interpolation ([867d57e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/867d57e6dd5d8ef6674a840f19bcef3a74645e65))
+
 ## [1.18.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.18.0...v1.18.1) (2026-08-03)
 
 
