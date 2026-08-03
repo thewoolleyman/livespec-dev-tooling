@@ -56,6 +56,44 @@
 > `8o8e.22` shape again (two mechanisms, each defensible, composition unowned) and it
 > belongs beside it, not as a footnote.
 >
+> ### ▶️▶️ THE `git-jsonl` UNIT IS ALREADY PICKED — **A SWALLOWING TWIN WHOSE OWN SIBLING WAS ALREADY CONVERTED**
+>
+> ⛔ **THIS FILE SAYS `git-jsonl`'s TWINS ARE "all gone" (the member table, twice). THAT
+> IS FALSE — MEASURED.** `grep -rn '^def .*_optional('` returns a LIVE one:
+>
+>     io/spec_next.py:70  def loads_json_optional(*, text: str) -> Any:
+>         try:    return json.loads(text)
+>         except json.JSONDecodeError:  return None
+>
+> 🔴 **AND ITS SIBLING TWELVE LINES BELOW IS ALREADY CONVERTED** —
+> `load_json_file_optional -> IOResult[Any, JsonFileUnreadable]`, carrying a docstring
+> that spells the split out: *"`None` on the success track when it is simply ABSENT …
+> a file that exists and will not read or parse is not."* **The `path` twin was fixed
+> and the `text` twin was left standing in the same file.**
+> 📜 **That is `FIX ONE INSTANCE, LEAVE THE SIBLING STALE` a THIRD time today — twice in
+> this file's own prose, once in shipped code.** The sweep remedy applies to code
+> exactly as it applies to prose: after converting a twin, grep the module for the
+> others.
+>
+> ⚠️ **AND THIS TWIN IS THE WORST SPELLING OF THE CLASS, BECAUSE THE SENTINEL IS A
+> LEGITIMATE VALUE.** Verified:
+>
+>     json.loads("null")            -> None      <- a VALID JSON document
+>     loads_json_optional(broken)   -> None      <- a PARSE FAILURE
+>
+> **The failure signal and a well-formed answer are the same object**, so no caller can
+> tell them apart even in principle. The sole consumer then widens the collapse:
+> `spec_next_bridge.py:117` does `payload = loads_json_optional(text=stdout)` then
+> `if not isinstance(payload, dict): return None` — so *"the spec-`next` subprocess
+> emitted malformed JSON"* and *"it answered fine with no candidates"* reach
+> `_adapt_top_candidate`'s caller identically. **`spec_next_bridge.py:264 spec_next` is
+> itself one of the 11.**
+>
+> ▶️ **THE PRESCRIBED FIX IS DELETION, NOT CONVERSION** — this file's own twin rule:
+> once the sibling returns a `Result`, the twin has no body left. Delete
+> `loads_json_optional`, let the one caller carry the failure, and `spec_next` gains a
+> failure track it can actually report.
+>
 > ### 🚧 THE `livespec` UNIT IS AUTHORED AND BLOCKED — **ITS RED IS PRESERVED BESIDE THIS FILE**
 >
 > **`plan/rop-railway-enforcement/livespec-config-railway-red.patch`** (committed, not a
@@ -539,7 +577,7 @@
 > | **`beads-fabro`** | 155 | **155** | ✅ 118 files | **← STILL NEXT.** Tail only now. |
 > | `livespec-overseer` | 213 | 112 | ⛔ **0** | **BLOCKED — `overseer-yc7`** |
 > | `livespec` | 20 | 20 | ✅ 118 | flat tail, biggest file 4 |
-> | `git-jsonl` | 11 | 11 | ✅ 117 | twins all gone; tail across 9 files |
+> | `git-jsonl` | 11 | 11 | ✅ 117 | ⛔ "twins all gone" is FALSE — `loads_json_optional` is live |
 > | `livespec-runtime` | 11 | 11 | ✅ declared | **local lane COMPLETE** |
 > | `dev-tooling` · `driver-codex` | 1 · 1 | 1 · 1 | ✅ · ⛔ | dt's 1 is RULED; codex BLOCKED |
 >
