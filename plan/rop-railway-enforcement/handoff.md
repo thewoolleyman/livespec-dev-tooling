@@ -1,6 +1,185 @@
 # rop-railway-enforcement — arm the check that was never armed, then remediate six repos
 
-> ## 🔻🔻 COLD START — **START HERE. `4ihw` IS MEASURED AND CONTAINED — TAKE IT. AND ITS OWN PRECEDENT HAS A HOLE, FILED AS `0n2a` (P1).**
+> ## 🔻🔻 COLD START — **START HERE. `4ihw`'s ANSWER IS FILED AND MERGED. RATIFICATION RUNS THROUGH A GATE THAT DID NOT EXIST WHEN THE LAST HEADER WAS WRITTEN.**
+>
+> ### 🔻 FIRST FIVE MINUTES — **INLINED, NOT POINTED AT**
+>
+> ⛔ **THIS BLOCK USED TO SAY "steps 1–8 N blocks below". THAT POINTER DRIFTED TWICE** as
+> new headers were prepended, and a START-HERE block whose instructions are reached by
+> counting blocks is this file's own recorded defect one level up. **The steps are inlined
+> here permanently. If you prepend a new header, COPY THEM, never point at them.**
+>
+> **NOTHING IS MID-FLIGHT.** No background job, no sub-agent, no unpushed Red, no open PR of
+> this thread's. dev-tooling master at wrap-up: **`db32737`** or later — re-fetch, it moves
+> hourly.
+>
+> 1. ✅ **THERE IS NOTHING OF MINE TO REAP.** The previous session reaped every worktree it
+>    created and verified `git worktree list` held none of them. `git -C
+>    /data/projects/livespec-dev-tooling merge --ff-only origin/master` is all that is owed,
+>    and it may already be a no-op.
+> 2. **REAP NOTHING ELSE.** Every other worktree belongs to a PEER lane. Enumerate with
+>    `git worktree list`; **never quote a count from this file.**
+> 3. `git status --short --branch` — expect clean on `master`; one untracked
+>    `install-livespec-pr-bot.png` is pre-existing and NOT this thread's. ⚠️ A modified
+>    `uv.lock` is REGENERATED noise: `git checkout -- uv.lock` before any `merge --ff-only`,
+>    which REFUSES while the tree is dirty. **It also blocks `git worktree remove`** — that
+>    cost a forced removal in an earlier session.
+> 4. ⚠️ **A FRESH WORKTREE'S FIRST `.py` COMMIT FAILS
+>    `check-primary-checkout-commit-refuse-hook-installed`** with `worktree_pack_absent`,
+>    because `dev-tooling/` is gitignored and unmaterialized. Fix, in the worktree:
+>    `mise exec -- just install-worktree-pack`. **It is NOT your diff.**
+> 5. ⚠️ **BEFORE PUSHING ANY RED→GREEN PAIR:** `git log -1 --format=%B | grep -c
+>    '^TDD-Red-'` must be **5** and `'^TDD-Green-'` must be **2**. **`--amend --no-edit` is
+>    the SAFE amend spelling**; **`--amend -m` / `-F` destroys the Red trailers and the hook
+>    still exits 0** (`zv78`, READY/P1).
+>    ⚠️ A Green amend that FAILS its checks leaves the Red commit and its trailers intact —
+>    fix and re-amend, do not re-author.
+> 6. ⚠️ **A `check-fleet-conformance` RED IS PROBABLY THE APP'S RATE LIMIT, NOT YOUR DIFF.**
+>    `gh run view <id> --log-failed | grep -o '"kind": "[a-z_]*"'` → `rate_limited` ⇒ re-run
+>    after the hourly window rolls (`gh run rerun <id> --failed`). **`gh api rate_limit` from
+>    your own session is NOT a reliable discriminator** — both buckets were exhausted in the
+>    same window once. Log the occurrence on **`mmqe`**, which carries **two VERIFIED
+>    occurrences with run IDs**. Budget ~1h of wall clock if it fires twice.
+> 7. ⚠️ **`/tmp` INODE PRESSURE RECURS** (`8o8e.16`): check `df -i /tmp`, NOT `df -h`. Each
+>    shallow fleet clone costs ~1k inodes; **delete scratch clones when done**. Reclaim ONLY
+>    stale regenerable caches; **never** `/tmp/claude-1000/*`, never anything dated today.
+> 8. **⛔ READ THE LEDGER CHILDREN `8o8e.7`–`.13` BEFORE BUDGETING ANY MEMBER.** `.8` and
+>    `.10` were re-derived and rank by **YIELD**; the rest still rank by REACH and are wrong
+>    in the same way `.8` was. **`8o8e.14` is CLOSED at 0.** This file is narrative; the
+>    children are what a planner opens.
+>
+> ### 🔑🔑 THE SPEC-SIDE RATIFICATION GATE — **READ THIS BEFORE ANY `/livespec:revise`, IN ANY REPO**
+>
+> `livespec` **v190** (cut 2026-08-03 03:28:09Z) added `spec.md` §"No ratification with zero
+> independent review": before `revise` applies an `accept`/`modify`, the proposal MUST get an
+> independent, read-only ADVERSARIAL review by a **separately spawned** designated reviewer,
+> verdict literal `NO BLOCKERS`. The eight required dimensions are named in that clause.
+>
+> ⛔⛔ **I ESCALATED THIS TO THE MAINTAINER AS A BLOCKER AND I WAS WRONG. THE THREE GROUNDS I
+> GAVE WERE ALL FALSE — RE-DERIVE, DO NOT INHERIT MY FIRST READ.** Verified on the FORGE:
+>
+> | I claimed | measured |
+> |---|---|
+> | no `spec_governance` block in `.livespec.jsonc` | **PRESENT** — `ratification_reviewer_model: "fable"` |
+> | no `bin/spec_governance.py` | **EXISTS** |
+> | ⇒ "unconfigured reviewer ⇒ maintainer input" | **antecedent FALSE; the clause does not fire** |
+>
+> **Both landed in `13b7e341` at 06:05:16Z — 2h37m AFTER v190 was cut.** My read was taken
+> before that and was TRUE WHEN TAKEN; it went stale under me. 📜 **THE LESSON IS THE
+> STANDING ONE: verify against the FORGE after a fetch, never a working tree that may
+> pre-date the thing you are reasoning about.**
+>
+> ⚠️ **AND `manual-spawn` IS NOT A MAINTAINER GATE.** `ratification_review` is unset ⇒ safe
+> default `manual-spawn`. `spec.md`: *"`manual-spawn` and `auto-spawn` control only who
+> initiates the required review; neither can remove it or accept blockers."* The revise prose
+> DOES default to asking the maintainer — **and its very next sentence, "the driver MAY spawn
+> or ask," is what makes a driver-initiated spawn legitimate.** Confirmed in SHIPPED code:
+> `spec_governance/effective.py::effective_ratification_review` returns maintainer-`_input`
+> for EXACTLY three conditions — `blockers_present`, `reviewer_unavailable`,
+> `ratification_reviewer_model is None`. ⚠️ Its fall-through still carries
+> `requires_input=True` ("independent review still awaits evidence") **which reads like a gate
+> and is not one** — the `no_blockers_evidence` branch ABOVE it clears it to
+> `requires_input=False` once evidence exists. **The one REAL escalation is a `fable` that
+> cannot be spawned — that IS `reviewer_unavailable`. Never substitute another model: a review
+> by an undesignated reviewer is evidence that looks conforming and is not.**
+>
+> ### 🧾 THE EVIDENCE CONTRACT — **READ FROM `commands/_revise_ratification.py`, NOT FROM PROSE**
+>
+> `bin/revise.py` is a shim; that module is the validator and it runs BEFORE any spec/history
+> write. Per `accept`/`modify` decision in the `--revise-json` payload:
+>
+> - `ratification_review` — `"manual-spawn"` or `"auto-spawn"`. Checked FIRST; anything else
+>   fails immediately.
+> - `ratification_evidence` — an object carrying ALL EIGHT of `reviewer_identity`,
+>   `reviewer_model`, `separate_reviewer`, `read_only`, `reviewed_at`, `verdict`,
+>   `proposal_stem`, `content_digest`.
+>
+> | field | rule |
+> |---|---|
+> | `reviewer_model` | MUST equal configured `spec_governance.ratification_reviewer_model` ⇒ `"fable"` |
+> | ⚠️ `reviewer_identity` | **MUST EQUAL `reviewer_model` — the literal same string `"fable"`.** NOT a session id, agent name, or subagent label. **The least guessable field in the set.** |
+> | `separate_reviewer`, `read_only` | BOOLEAN `true`. The test is `is not True`, so the STRING `"true"` FAILS. |
+> | `reviewed_at` | `^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$` — UTC, seconds, literal `Z`, no fraction, no offset |
+> | `verdict` | literal `NO BLOCKERS` |
+> | `proposal_stem` | MUST equal the decision's `proposal_topic` (the proposed-change filename stem) |
+> | `content_digest` | `^[0-9a-f]{64}$` AND equal to the canonical digest below |
+>
+> **THE DIGEST, EXACTLY** (`_canonical_ratification_digest`): iterate `resulting_files` IN
+> LIST ORDER; per dict entry feed ONE sha256 with
+> `ascii(str(len(path_utf8))) + b":" + path_utf8` then
+> `ascii(str(len(content_utf8))) + b":" + content_utf8`. Non-dict entries are SKIPPED; a
+> missing/non-list `resulting_files` yields the empty digest.
+> ⚠️ **`path` is SPEC-TARGET-RELATIVE** (`non-functional-requirements.md`, **NOT**
+> `SPECIFICATION/...`) — absolute paths and spec-root-prefixed paths are rejected with exit 2,
+> and the digest is over whatever string you put in the payload.
+>
+> ⛔ **THE STALENESS TRAP.** The digest covers the payload's `resulting_files[]`, so the
+> review must be of THOSE EXACT BYTES. **Anything that moves the spec bytes after the reviewer
+> read them — a reflow, a trailing newline, a doctor autofix — invalidates the evidence.** The
+> spec's own words for that state are "stale or malformed evidence", which ESCALATES rather
+> than self-waives. Re-review or re-digest; **never reconcile it by hand.**
+>
+> ### 🔬 HOW TO BRIEF THE REVIEWER, BECAUSE A BAD BRIEF BUILDS A BLIND INSTRUMENT
+>
+> A review whose brief is written by the AUTHOR of the thing under review can be an instrument
+> that cannot produce a NEGATIVE — this thread's own recorded family. Require:
+>
+> - **The reviewer READS THE BYTES ITSELF** — the proposal file and the exact
+>   `resulting_files[]` content, from the tree or the forge. **Never hand it your summary,
+>   your rationale, or your argument for why the change is correct.**
+> - **The eight dimensions passed VERBATIM** from `spec.md`: replacement-target fidelity,
+>   design-record fidelity, drift-sweep completeness, ratification mechanics, cross-repo
+>   consistency, claims that expire at ratification, negative assertions about sibling-owned
+>   surfaces, clause lockstep.
+> - **The reviewer told explicitly that a BLOCKER verdict is a legitimate and expected
+>   outcome**, not a failure to avoid.
+> - Before accepting `NO BLOCKERS`, apply the family's operational test: *if this proposal had
+>   a real defect in dimension X right now, would this review have surfaced it?*
+>
+> 📜 **AND WRITE TERMINAL-STATE WORDS ONLY FROM A POST-HOC VERIFIED READ.** A record drafted
+> DURING an in-flight operation is written in a tense the operation has not reached. This
+> header's own supersede marker said "ratified" while the review was still running and revise
+> had not been invoked — caught before commit. **"ratified" / "landed" / "closed" /
+> "released" go in only after the forge says so.** A status is a claim like any other, which
+> is this epic's entire subject.
+>
+> ### ▶️▶️▶️ EXACT NEXT ACTION
+>
+> **`4ihw`'s answer is FILED AND MERGED** — `livespec` PR **#1934 → `860f6d31`**,
+> `SPECIFICATION/proposed_changes/railway-dependency-supply-for-a-source-copied-library.md`,
+> authored through the dogfooded `/livespec:propose-change` surface (pre- and post-step doctor
+> static clean, CLI exit 0). It replaces the flat fragment ``dry-python/returns` is vendored
+> under `_vendor/`` with a two-shape supply rule + a closure obligation:
+>
+> | shape | how `returns` is supplied |
+> |---|---|
+> | **directly-consumed repo** (Python run from its own checkout) | vendored under its OWN `_vendor/` root — unchanged from today |
+> | **source-copied library** (`livespec-runtime`) | a real `pyproject.toml` `dependencies` entry + a **BARE** import; **MUST NOT** nest a `_vendor/` inside its own package |
+> | **closure** | the CONSUMING repo supplies the vendored library's declared third-party deps; an import satisfied only by the host interpreter's ambient environment is **NOT** satisfied |
+>
+> **Then `8o8e.10` unblocks** — `livespec-runtime`'s 27, whose yield-9 seam
+> (`hygiene_scan_context.py`, 33% of the 27) is the fleet's highest by share.
+> ⛔ **DO NOT CONVERT `livespec-runtime` BEFORE THE RATIFICATION LANDS.** A proposal is not a
+> ratification. `8o8e.14` was CLOSED AT ZERO precisely because waiting made the work
+> unnecessary rather than merely unblocking it.
+>
+> ### 📋 THE QUEUE
+>
+> 1. **`8o8e.10`** — gated on the ratification above.
+> 2. **`55ec`** — 28 sites, RULED, **needs no spec change and is unblocked right now**; take
+>    it if anything stalls the ratification. ⚠️ **28 mechanical rewrites is exactly the shape
+>    where a transformation probe must assert its own completeness** — "residual imports of the
+>    moved names: 0" and "universe incremented", asserted rather than eyeballed, or the
+>    twenty-eighth site is the one missed.
+> 3. **`p9ot`** — ship the yield probe; first slice an EXTRACTION, never a second copy.
+>
+> ### ✅ `0n2a` WAS THE STATED PRECONDITION AND IT IS DISCHARGED
+>
+> `4ihw`'s own recommendation required the dependency-CLOSURE gate be "landed or at least
+> filed" first. **`0n2a` is FILED (P1, open).** It is NOT what gates ratification; the v190
+> review floor is. Do not conflate them.
+
+> ## 🗄️ (SUPERSEDED AS THE HEADER 2026-08-03 — `4ihw` WAS TAKEN; its proposal is filed and merged, ratification pending independent review. Its FIRST FIVE MINUTES steps 1–8 are COPIED VERBATIM into the header above, per this block's own rule.) COLD START — **`4ihw` IS MEASURED AND CONTAINED — TAKE IT. AND ITS OWN PRECEDENT HAS A HOLE, FILED AS `0n2a` (P1).**
 >
 > ### 🔻 FIRST FIVE MINUTES — **INLINED, NOT POINTED AT**
 >
