@@ -37,15 +37,23 @@ checks/ package and decouples them from sibling-PR landings.
 from __future__ import annotations
 
 import json
+import os
+import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+from returns.unsafe import unsafe_perform_io
+
+from livespec_dev_tooling.canonical_checks import canonical_check_slugs
 
 __all__: list[str] = []
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _CHECK = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "aggregate_completeness.py"
+_CHECK_SCRIPT = _REPO_ROOT / "scripts" / "just" / "check.sh"
 
 
 def _run_check(
@@ -111,6 +119,97 @@ def _parse_findings(*, stderr: str) -> list[dict[str, object]]:
     them straight into dict findings.
     """
     return [json.loads(line) for line in stderr.splitlines() if line.strip().startswith("{")]
+
+
+def _legacy_core_v1_17_1_extract_check_slugs(*, justfile_text: str) -> tuple[str, ...] | None:
+    """Freeze livespec CORE's legacy justfile reader at its v1.17.1 tooling pin."""
+    check_recipe = re.compile(r"^check\s*:\s*$")
+    targets_opener = re.compile(r"^\s*targets\s*=\s*\(\s*$")
+    targets_closer = re.compile(r"^\s*\)\s*(?:#.*)?$")
+    target_slug = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9_-]*)\s*(?:#.*)?$")
+    in_check_recipe = False
+    in_targets_array = False
+    collected: list[str] = []
+    for line in justfile_text.splitlines():
+        if check_recipe.match(line):
+            in_check_recipe = True
+            continue
+        if not in_check_recipe:
+            continue
+        if not in_targets_array:
+            if targets_opener.match(line):
+                in_targets_array = True
+            continue
+        if targets_closer.match(line):
+            return tuple(collected)
+        stripped = line.strip()
+        if stripped == "" or stripped.startswith("#"):
+            continue
+        slug_match = target_slug.match(line)
+        if slug_match is not None:
+            collected.append(slug_match.group(1))
+    return tuple(collected) if in_targets_array else None
+
+
+def _normalized_real_target_inventory() -> tuple[str, ...]:
+    """Return the production inventory using the check script's normalization rule."""
+    targets: list[str] = []
+    for raw in (_REPO_ROOT / "check-targets.txt").read_text(encoding="utf-8").splitlines():
+        token = raw.split("#", 1)[0].strip()
+        if token.startswith("check-"):
+            targets.append(token)
+    return tuple(targets)
+
+
+def test_real_check_recipe_is_legacy_readable_exact_inventory_mirror() -> None:
+    """CORE's v1.17.1 reader sees the exact authoritative 65-target inventory."""
+    justfile_text = (_REPO_ROOT / "justfile").read_text(encoding="utf-8")
+
+    wired = _legacy_core_v1_17_1_extract_check_slugs(justfile_text=justfile_text)
+
+    assert wired == _normalized_real_target_inventory()
+    assert wired is not None and len(wired) == 65
+    canonical = unsafe_perform_io(canonical_check_slugs().unwrap())
+    assert not set(canonical).difference(wired)
+    assert _legacy_core_v1_17_1_extract_check_slugs(justfile_text="default:\n    true\n") is None
+    assert _legacy_core_v1_17_1_extract_check_slugs(
+        justfile_text=(
+            "check:\n    targets=(\n        # tolerated\n\n        ! invalid\n        check-alpha\n"
+        )
+    ) == ("check-alpha",)
+
+
+def test_check_script_rejects_mirror_drift_before_dispatch(*, tmp_path: Path) -> None:
+    """A stale literal mirror fails closed before sync or aggregate dispatch."""
+    script = tmp_path / "scripts" / "just" / "check.sh"
+    script.parent.mkdir(parents=True)
+    _ = shutil.copy2(_CHECK_SCRIPT, script)
+    _ = (tmp_path / "check-targets.txt").write_text("check-alpha\n", encoding="utf-8")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    uv_marker = tmp_path / "uv-called"
+    fake_uv = bin_dir / "uv"
+    _ = fake_uv.write_text(
+        '#!/usr/bin/env bash\nset -euo pipefail\nprintf called > "${UV_MARKER}"\n',
+        encoding="utf-8",
+    )
+    fake_uv.chmod(0o755)
+    result = subprocess.run(
+        ["bash", str(script), "check-beta"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+        env={
+            **os.environ,
+            "PATH": f"{bin_dir}:{os.environ['PATH']}",
+            "UV_MARKER": str(uv_marker),
+        },
+    )
+
+    assert result.returncode == 1
+    assert "literal check target mirror drift" in result.stderr
+    assert not uv_marker.exists(), "mirror drift must fail before uv sync or dispatch"
 
 
 def test_full_match_passes(*, tmp_path: Path) -> None:
