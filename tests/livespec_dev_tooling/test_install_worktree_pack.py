@@ -700,3 +700,72 @@ def test_inspect_reports_an_unreadable_justfile_as_a_failure(
         path=str(primary / "justfile"),
         detail=f"[Errno {errno.EIO}] justfile read refused",
     )
+
+
+# A `git` stand-in whose `worktree list --porcelain` output is far larger than
+# one pipe buffer, so a reader that quits after the first line CANNOT have been
+# handed the whole stream already.
+#
+# `exec` is load-bearing. It makes awk REPLACE this shell, so the stub's exit
+# status IS awk's — which is how the real `git` reports its own SIGPIPE death.
+# A stub that printed from the shell and then `exit 0`ed would swallow the very
+# signal under test and the test would pass against the defect.
+_FAKE_GIT_LARGE_WORKTREE_LISTING = """#!/usr/bin/env bash
+if [ "${1:-}" != "worktree" ] || [ "${2:-}" != "list" ]; then
+    echo "unexpected git invocation: $*" >&2
+    exit 2
+fi
+exec awk 'BEGIN {
+    printf "worktree /primary/checkout\\nHEAD 0\\nbranch refs/heads/master\\n\\n"
+    for (i = 1; i <= 4000; i++) {
+        printf "worktree /w/b-%d\\nHEAD 0\\nbranch refs/heads/b-%d\\n\\n", i, i
+    }
+}'
+"""
+
+
+def test_worktree_primary_path_survives_a_listing_larger_than_one_pipe_buffer(
+    tmp_path: Path,
+) -> None:
+    """`worktree_primary_path` must not die of SIGPIPE on a long worktree list.
+
+    It read the primary checkout as `git worktree list --porcelain | awk
+    '/^worktree /{print $2; exit}'`. The `exit` closes the pipe after the FIRST
+    line; while git's whole output fits one stdio block it has already finished
+    writing and nothing notices, but past one block git is still writing when
+    the reader goes away, takes SIGPIPE and exits 141 — and the pack runs under
+    `set -euo pipefail`, so `pipefail` promotes that to the pipeline's status
+    and `set -e` aborts. Exit 141, stdout empty, stderr empty.
+
+    THE SIZE IS THE WHOLE POINT, which is why this stub emits ~4000 entries
+    rather than a handful. The defect is a RACE at small sizes: measured
+    2026-08-03, a repo with 8-13 worktrees never reproduced it, one with 24
+    (4181 bytes) failed 2 times in 20, and one with 106 (18480 bytes) failed 18
+    in 20. A fixture sized near the boundary would be a flaky test of a real
+    defect — the worst of both. Far past one buffer it is deterministic: the
+    writer physically cannot have finished.
+
+    Guards the fix rather than the spelling: any implementation that reads the
+    listing without abandoning the writer mid-stream passes.
+    """
+    lib = tmp_path / "worktree-lib.sh"
+    _ = lib.write_text(CANONICAL_WORKTREE_LIB_BODY, encoding="utf-8")
+    fake_bin = tmp_path / "fakebin"
+    fake_bin.mkdir()
+    fake_git = fake_bin / "git"
+    _ = fake_git.write_text(_FAKE_GIT_LARGE_WORKTREE_LISTING, encoding="utf-8")
+    fake_git.chmod(0o755)
+
+    completed = subprocess.run(
+        ["bash", "-c", f'set -euo pipefail; . "{lib}"; worktree_primary_path'],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**os.environ, "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}"},
+    )
+
+    assert completed.returncode == 0, (
+        f"worktree_primary_path exited {completed.returncode} "
+        f"(141 = SIGPIPE, the defect); stderr={completed.stderr!r}"
+    )
+    assert completed.stdout.strip() == "/primary/checkout"
