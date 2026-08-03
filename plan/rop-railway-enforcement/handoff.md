@@ -1,6 +1,73 @@
 # rop-railway-enforcement — arm the check that was never armed, then remediate six repos
 
-> ## 🔻🔻 COLD START — **START HERE. ⚠️ ONE UNIT IS MID-FLIGHT AND UNCOMMITTED. ⛔ ITS BLOCK DOES *NOT* SELF-CLEAR — DO NOT WAIT FOR IT. GO TO `livespec` (20), AND THE UNIT IS ALREADY PICKED: the `spec_governance` `str | T` SEAM (5 offenders, one consumer, live data-destroying defect) — see 🔥🔥 below.**
+> ## 🔻🔻 COLD START — **START HERE. ⛔⛔ TWO LANES ARE NOW BLOCKED (`beads-fabro` AND `livespec`). ▶️ THE OPEN LANE IS `git-jsonl` (11), AND IT IS VERIFIED OPEN — `just check` 65/65 ON CLEAN MASTER, RUN 2026-08-03.**
+>
+> ### ⛔⛔ `livespec` WENT FROM "OPEN LANE" TO "BLOCKED" **DURING THIS SESSION**, AND MASTER CI STAYED GREEN THE WHOLE TIME
+>
+> **`check-master-ci-green` exits 0 on `livespec`. A `.py` commit STILL cannot be made.**
+> `check-doctor-static` is in the pre-commit `check` aggregate and it FAILS on clean
+> master, no diff of mine involved — re-run it on the untouched primary checkout to see
+> it:
+>
+>     doctor-wiring-completeness-cross-repo -> FAIL
+>     "1 (sibling, missing-canonical-slug) drift pair(s): livespec-dev-tooling→:no-check-recipe"
+>
+> ⚠️ **`:no-check-recipe` IS A SENTINEL, NOT A SLUG — it does not mean "the sibling has
+> no check recipe". It means CORE'S READER COULD NOT PARSE THE SHAPE.**
+> `_wiring_completeness_cross_repo_helpers.extract_check_slugs_from_justfile` looks for
+> a `targets=(` array INSIDE the sibling's `check:` recipe and returns `None` when it
+> is absent.
+>
+> 🔴 **THE CAUSE IS A PEER LANE'S LANDED WORK, AND IT LANDED TODAY.** dev-tooling
+> commit **`20a43f8` "fix(checks): enforce thin justfile shell surfaces"** (2026-08-03)
+> moved the `check:` body out to `scripts/just/check.sh`, where the target list is now
+> read from **`check-targets.txt`**. dev-tooling's `check:` recipe is two lines. **CORE's
+> reader still expects the inline array, so it fails closed — correctly — and freezes
+> `.py` commits in a THIRD repo.**
+> ⛔ **THAT IS `fleet-shell-quality-enforcement`, THE SAME PEER LANE YOU STAND DOWN ON.**
+> Do not "fix" their justfile back.
+>
+> ✅ **AND A PEER IS ALREADY ON THE CORE-SIDE REPAIR — DO NOT DUPLICATE IT.**
+> `~/.worktrees/livespec/fix/wiring-check-target-inventory` carries UNCOMMITTED work in
+> `_wiring_completeness_resolve.py`, `wiring_completeness_cross_repo.py` and a new
+> `_wiring_completeness_source.py` — the branch name is literally the fix (read the
+> target INVENTORY, not the justfile array). **Enumerate before assuming it is still
+> there; do not touch it either way.**
+>
+> 📜 **THIS IS `8o8e.22`'S CLASS, THIRD INSTANCE, AND THE PATTERN IS NOW WORTH STATING
+> AS A RULE: A FLEET-WIDE REFACTOR IS A CROSS-REPO API CHANGE WHEN ANY SIBLING READS
+> THE SHAPE IT CHANGES.** A justfile looks repo-private. It is not: CORE parses it.
+> Each member the shell-quality lane converts trips this check for that sibling, one at
+> a time. **`git-jsonl` still carries the inline `targets=(` (7 hits) — which is
+> precisely why it is still readable, and why it is the open lane.**
+>
+> ### 🔬 THE SAME CHECK, TWO MEMBERS, OPPOSITE DISPOSITIONS — **FAIL-CLOSED HERE, SKIP THERE**
+>
+> Measured the same hour, same check id:
+>
+>     livespec    doctor-wiring-completeness-cross-repo -> FAIL     (blocks commits)
+>     git-jsonl   doctor-wiring-completeness-cross-repo -> SKIPPED  ("livespec_dev_tooling
+>                                                                    is not importable")
+>
+> ⚠️ **The member that CAN import the criterion is refused; the member that cannot is
+> waved through.** Neither disposition is wrong alone — importability genuinely gates
+> the slug set — **but the composition means cross-repo wiring completeness is enforced
+> exactly where the tooling happens to be installed, and nowhere else.** That is the
+> `8o8e.22` shape again (two mechanisms, each defensible, composition unowned) and it
+> belongs beside it, not as a footnote.
+>
+> ### 🚧 THE `livespec` UNIT IS AUTHORED AND BLOCKED — **ITS RED IS PRESERVED BESIDE THIS FILE**
+>
+> **`plan/rop-railway-enforcement/livespec-config-railway-red.patch`** (committed, not a
+> `/tmp` path — same discipline as `8o8e21-green.patch`). Branch
+> `fix/spec-governance-config-railway`, worktree
+> `~/.worktrees/livespec/fix-spec-governance-config-railway`, **nothing committed** —
+> the Red was refused by `check-doctor-static`, NOT by the TDD hook.
+> ▶️ **Verified before the block: the Red fails on 7 genuine ASSERTIONS** (not an
+> ImportError), and the proof-carrying one fails on the DATA LOSS itself because its
+> preservation assertion is deliberately ordered before its return-type assertion.
+> ▶️ **When the peer's wiring fix lands, re-apply and continue at the Green half** — the
+> impl conversion described in 🔥🔥 below is NOT yet written.
 >
 > ### ▶️▶️▶️ EXACT NEXT ACTION — **RUN THIS ONE COMMAND FIRST; IT DECIDES WHICH LANE IS OPEN**
 >
@@ -68,9 +135,10 @@
 > **Re-measured 2026-08-03 with the controlled harness** (dev-tooling reproduces its
 > known **1** and names `cross_member_consumption`):
 >
->     livespec           universe=144  distinct=20   <- LARGEST UNBLOCKED LANE, take this
->     git-jsonl          universe=49   distinct=11
->     livespec-runtime   universe=31   distinct=11
+>     livespec           universe=144  distinct=20   <- ⛔ BLOCKED (local gate), see top
+>     git-jsonl          universe=49   distinct=11   <- ▶️ TAKE THIS: check 65/65 verified
+>     livespec-runtime   universe=31   distinct=11   <- local lane COMPLETE (8 cross-repo
+>                                                       + 3 entry points), not real supply
 >
 > ⛔⛔ **TWO BRIEFS HAVE NOW POINTED AT "livespec-runtime's 27" (16, and again 18's
 > item 4). THE FIGURE IS STALE BOTH TIMES. IT IS 11 — RE-MEASURED 2026-08-03, NOT
@@ -93,10 +161,21 @@
 > **8** are the cross-repo-bound set `0aru` coordinates. **Taking it would be taking a
 > finished lane whose residue is gated on a spec ruling and a multi-repo rollout —
 > neither of which is per-function conversion work.**
-> ▶️ **So the open lane is `livespec` (20), then `git-jsonl` (11)** — re-measured the
-> same session at `universe=144 raw=20 distinct=20` and `universe=49 raw=11
-> distinct=11`. Both repos' masters are green (`check-master-ci-green` exit 0 on
-> `livespec`, run directly) and neither is gated.
+> ⛔ **THIS PARAGRAPH USED TO SAY "the open lane is `livespec` (20) … neither is
+> gated". THE SECOND HALF IS RETRACTED — `livespec` IS GATED.** Both counts stand
+> (re-measured the same session: `universe=144 raw=20 distinct=20` and `universe=49
+> raw=11 distinct=11`), and both masters ARE green. **But `livespec` cannot take a `.py`
+> commit — see the ⛔⛔ box at the top.**
+> ▶️ **So the open lane is `git-jsonl` (11), VERIFIED by running the aggregate rather
+> than by inferring it from a green master: `just check` → "All 65 targets passed".**
+>
+> 📜 **AND THE RETRACTION IS THE POINT: I WROTE "neither is gated" EARLIER IN THIS SAME
+> SESSION, FROM `check-master-ci-green` EXIT 0.** That inference is exactly the one the
+> standing-safety line already forbids — *"`just check` green does NOT mean a commit
+> will land"* — and I made it anyway, in the file that records it. ▶️ **THE ONLY HONEST
+> PROBE FOR "CAN THIS LANE TAKE A COMMIT" IS TO RUN THE LOCAL AGGREGATE ON A CLEAN TREE.
+> Master CI is a different signal in a different place, and this thread has now been
+> bitten by that gap in three repos.**
 >
 > 📜 **THE PATTERN WORTH NAMING: A STALE COUNT SURVIVES BECAUSE IT IS QUOTED, NOT
 > MEASURED.** "27" has now been re-sent by a supervisor twice AFTER this file recorded
@@ -148,6 +227,27 @@
 > an exotic malformed-input case: **livespec's OWN `.livespec.jsonc` is comment-heavy**,
 > and `beads-fabro`'s carries a comment warning that its `set-config` path mangles the
 > block (`bd-ib-lmi5`) — **the same class, already observed in a second member.**
+>
+> 🔴🔴 **AND IT IS A RATIFIED-MUST VIOLATION, NOT A DESIGN PREFERENCE — WHICH SETTLES
+> THE FIX DIRECTION WITHOUT A RULING.** `SPECIFICATION/contracts.md:374`, on master,
+> unchanged by the in-flight Increment 2 diff:
+>
+>     "MUST atomically replace only the selected config or front-matter value while
+>      PRESERVING UNRELATED JSONC KEYS/COMMENTS and Markdown body bytes"
+>
+> ▶️ **So this is a CONFORMANCE defect: the implementation contradicts an already-ratified
+> clause, and no escalation is needed to know which side is wrong.** ⚠️ Note the two
+> halves have DIFFERENT ratified obligations and the repo got the other one right —
+> `contracts.md` separately requires the RESOLVER to treat "malformed JSONC" as a safe
+> default without raising, which `parse_config_text` implements correctly. **Read/write
+> asymmetry in the CODE mirrored an asymmetry in the SPEC; only the write half missed.**
+>
+> ⚠️ **A SECOND, SMALLER VIOLATION SURVIVES THE FIX ABOVE AND IS NOT IN THIS UNIT:**
+> `_render_block` re-renders the block through `json.dumps`, so **comments INSIDE the
+> `spec_governance` block are dropped even on a fully successful edit.** Parsing with
+> `jsonc.loads` stops the key destruction but cannot restore a comment the parser
+> discarded. Preserving those needs a surgical single-key text edit rather than a
+> block re-render. **File it; do not silently widen this unit into it.**
 >
 > ✅ **AND THE READ HALF GETS IT RIGHT ON THE IDENTICAL FILE** — `config.py:
 > parse_config_text` parses via `jsonc.loads` (comment-stripping, `Result`-returning)
@@ -494,10 +594,13 @@
 >
 > ### 📋 THE QUEUE
 >
-> 1. ⛔ **`beads-fabro` (155) — BLOCKED, NOT NEXT** (`8o8e.22`; re-verified exit 1).
->    **`livespec` (20) IS THE OPEN LANE**, and its first unit is the `spec_governance`
->    `str | T` seam above — 5 offenders, one consumer, plus the confirmed live
->    `.livespec.jsonc` destruction. Run the READ-vs-WRITE grep on every new member.
+> 1. ▶️ **`git-jsonl` (11) — THE ONLY VERIFIED-OPEN LANE.** `just check` 65/65 on clean
+>    master. ⛔ `beads-fabro` (155) BLOCKED (`8o8e.22`, re-verified exit 1); ⛔ `livespec`
+>    (20) BLOCKED (`doctor-wiring-completeness-cross-repo`, peer fix in flight) with its
+>    Red authored and preserved as `livespec-config-railway-red.patch`.
+>    **Run the READ-vs-WRITE grep on every new member — it is what found `livespec`'s.**
+>    ⚠️ **And run the local `check` aggregate on a CLEAN tree before adopting any lane;
+>    a green master does not mean a commit will land.**
 > 2. **`overseer-yc7` (P1)** — the spec ruling that unblocks 113 distinct (36%).
 > 3. **`jecv` (P1)** — ratify ONE denominator basis; three records disagree, **and
 >    it now has a FOURTH axis: the criterion VERSION each member pins.**

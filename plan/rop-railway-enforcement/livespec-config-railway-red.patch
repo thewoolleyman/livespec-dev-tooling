@@ -1,0 +1,162 @@
+diff --git a/tests/livespec/spec_governance/test_config_edit.py b/tests/livespec/spec_governance/test_config_edit.py
+index 17949412..e5675323 100644
+--- a/tests/livespec/spec_governance/test_config_edit.py
++++ b/tests/livespec/spec_governance/test_config_edit.py
+@@ -5,7 +5,10 @@ from __future__ import annotations
+ import json
+ from pathlib import Path
+ 
++from livespec.errors import ValidationError
+ from livespec.spec_governance.config_edit import write_config_map_entry, write_config_value
++from returns.io import IOFailure, IOSuccess
++from returns.unsafe import unsafe_perform_io
+ 
+ __all__: list[str] = []
+ 
+@@ -14,9 +17,9 @@ def test_config_edit_handles_malformed_existing_blocks(*, tmp_path: Path) -> Non
+     config_path = tmp_path / ".livespec.jsonc"
+     config_path.write_text('{"spec_governance": [}', encoding="utf-8")
+ 
+-    assert isinstance(
+-        write_config_value(project_root=tmp_path, key="critique_mode", value="batch"), str
+-    )
++    outcome = write_config_value(project_root=tmp_path, key="critique_mode", value="batch")
++    assert isinstance(outcome, IOFailure)
++    assert isinstance(unsafe_perform_io(outcome.failure()), ValidationError)
+ 
+ 
+ def test_config_edit_handles_unterminated_and_comma_existing_blocks(*, tmp_path: Path) -> None:
+@@ -26,13 +29,16 @@ def test_config_edit_handles_unterminated_and_comma_existing_blocks(*, tmp_path:
+         encoding="utf-8",
+     )
+     assert isinstance(
+-        write_config_value(project_root=tmp_path, key="critique_mode", value="batch"), str
++        write_config_value(project_root=tmp_path, key="critique_mode", value="batch"),
++        IOFailure,
+     )
+ 
+     config_path.write_text('{"spec_governance": {"x": true,}}', encoding="utf-8")
+     assert isinstance(
+-        write_config_value(project_root=tmp_path, key="critique_mode", value="batch"), Path
++        write_config_value(project_root=tmp_path, key="critique_mode", value="batch"),
++        IOFailure,
+     )
++    assert config_path.read_text(encoding="utf-8") == '{"spec_governance": {"x": true,}}'
+ 
+     config_path.write_text(
+         '{"spec_governance": {"critique_mode": "batch"}, "template": "x"}',
+@@ -40,7 +46,7 @@ def test_config_edit_handles_unterminated_and_comma_existing_blocks(*, tmp_path:
+     )
+     assert isinstance(
+         write_config_value(project_root=tmp_path, key="propose_change_mode", value="batch"),
+-        Path,
++        IOSuccess,
+     )
+     updated = config_path.read_text(encoding="utf-8")
+     assert '"template": "x"' in updated
+@@ -53,6 +59,57 @@ def test_config_edit_handles_unterminated_and_comma_existing_blocks(*, tmp_path:
+     }
+ 
+ 
++def test_config_edit_preserves_sibling_keys_in_a_commented_block(*, tmp_path: Path) -> None:
++    """A `//` comment in the block MUST NOT cost the block its other keys.
++
++    `SPECIFICATION/contracts.md` requires the control CLI to "atomically
++    replace only the selected config or front-matter value while preserving
++    unrelated JSONC keys/comments". A comment is the whole reason the file is
++    `.jsonc`, and the write half used to parse the block with raw `json.loads`
++    — so a commented block raised `JSONDecodeError`, was swallowed to `{}`, and
++    every sibling key was overwritten by the one key being written, while the
++    call returned the SUCCESS spelling.
++    """
++    config_path = tmp_path / ".livespec.jsonc"
++    config_path.write_text(
++        "{\n"
++        '  "spec_governance": {\n'
++        "    // maintainer direction: batch mode is deliberate\n"
++        '    "propose_change_mode": "batch",\n'
++        '    "ratification_review": "auto-spawn"\n'
++        "  }\n"
++        "}\n",
++        encoding="utf-8",
++    )
++
++    outcome = write_config_value(
++        project_root=tmp_path, key="in_flight_alignment", value="default-align"
++    )
++
++    # The PRESERVATION assertion comes first deliberately: it is the one that
++    # carries the proof. Asserting the return type first would let this test go
++    # red for the type change alone and never exercise the data loss.
++    assert json.loads(config_path.read_text(encoding="utf-8")) == {
++        "spec_governance": {
++            "propose_change_mode": "batch",
++            "ratification_review": "auto-spawn",
++            "in_flight_alignment": "default-align",
++        },
++    }
++    assert isinstance(outcome, IOSuccess)
++
++
++def test_config_edit_refuses_a_block_that_is_not_an_object(*, tmp_path: Path) -> None:
++    """A parseable block of the WRONG SHAPE is a failure, not an empty default."""
++    config_path = tmp_path / ".livespec.jsonc"
++    config_path.write_text('{"spec_governance": ["not", "an", "object"]}', encoding="utf-8")
++
++    outcome = write_config_value(project_root=tmp_path, key="critique_mode", value="batch")
++
++    assert isinstance(outcome, IOFailure)
++    assert isinstance(unsafe_perform_io(outcome.failure()), ValidationError)
++
++
+ def test_config_edit_renders_nested_maps_without_extra_commas(*, tmp_path: Path) -> None:
+     config_path = tmp_path / ".livespec.jsonc"
+     config_path.write_text('{"template": "x"}', encoding="utf-8")
+@@ -64,7 +121,7 @@ def test_config_edit_renders_nested_maps_without_extra_commas(*, tmp_path: Path)
+             entry_key="doctor-static-x",
+             value="defer",
+         ),
+-        Path,
++        IOSuccess,
+     )
+ 
+     updated = config_path.read_text(encoding="utf-8")
+@@ -84,22 +141,26 @@ def test_config_edit_insertion_variants(*, tmp_path: Path) -> None:
+     config_path = tmp_path / ".livespec.jsonc"
+     config_path.write_text("{", encoding="utf-8")
+     assert isinstance(
+-        write_config_value(project_root=tmp_path, key="critique_mode", value="batch"), Path
++        write_config_value(project_root=tmp_path, key="critique_mode", value="batch"),
++        IOSuccess,
+     )
+ 
+     config_path.write_text("{   ", encoding="utf-8")
+     assert isinstance(
+-        write_config_value(project_root=tmp_path, key="critique_mode", value="batch"), Path
++        write_config_value(project_root=tmp_path, key="critique_mode", value="batch"),
++        IOSuccess,
+     )
+ 
+     config_path.write_text("{\n", encoding="utf-8")
+     assert isinstance(
+-        write_config_value(project_root=tmp_path, key="critique_mode", value="batch"), Path
++        write_config_value(project_root=tmp_path, key="critique_mode", value="batch"),
++        IOSuccess,
+     )
+ 
+     config_path.write_text("// leading comment\n{", encoding="utf-8")
+     assert isinstance(
+-        write_config_value(project_root=tmp_path, key="critique_mode", value="batch"), Path
++        write_config_value(project_root=tmp_path, key="critique_mode", value="batch"),
++        IOSuccess,
+     )
+ 
+ 
+@@ -111,5 +172,6 @@ def test_config_edit_matching_brace_handles_escaped_quotes(*, tmp_path: Path) ->
+     )
+ 
+     assert isinstance(
+-        write_config_value(project_root=tmp_path, key="critique_mode", value="batch"), Path
++        write_config_value(project_root=tmp_path, key="critique_mode", value="batch"),
++        IOSuccess,
+     )
