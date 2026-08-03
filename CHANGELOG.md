@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.18.5](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.18.4...v1.18.5) (2026-08-03)
+
+
+### Bug Fixes
+
+* **fleet:** retry a rate-limited gh invocation at the seam, bounded ([ab72840](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ab7284093e913034ce4729ca08d2592dfe1804f3))
+
 ## [1.18.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.18.3...v1.18.4) (2026-08-03)
 
 
