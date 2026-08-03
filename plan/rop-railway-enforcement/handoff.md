@@ -1,6 +1,86 @@
 # rop-railway-enforcement — arm the check that was never armed, then remediate six repos
 
-> ## 🔻🔻 COLD START — **START HERE. `55ec`'s DIVISION IS MEASURED: THE SAFE VALUE IS 10, NOT THE CEILING OF 14 — AND ONE OF THE 4 IS A CONFIRMED FALSE ACQUITTAL.**
+> ## 🔻🔻 COLD START — **START HERE. `8sc1` IS LANDED AND CLOSED. THE NEXT UNIT IS `55ec`, VALUE 10, AND IT STILL COSTS 28 IMPORT REWRITES — I RETRACT MY OWN CLAIM THAT IT WOULD NOT.**
+>
+> ### 🔻 FIRST FIVE MINUTES
+>
+> **NOTHING IS MID-FLIGHT.** No background job, no sub-agent, no unpushed Red, no open PR of
+> this thread's. dev-tooling master at wrap-up: **`4983487`** or later — re-fetch. Steps 1–8
+> four blocks below are UNCHANGED and still current; read them there.
+>
+> ### ✅ `8sc1` LANDED — PR #1139 → **`4983487`**, and it is CLOSED
+>
+> Clause (d) was blind across re-export shims: `_first_party_edges` matched only on
+> `attr in modules[defining].functions`, so a reach landing on a facade produced NO edge —
+> and `_name_call`'s `dotted is not None` branch never falls through to its
+> doubt-disqualifies arm. A caller reaching a DISQUALIFIED callee through a shim was
+> **acquitted by a resolution failure.** Ported `_public_api_graph._through_reexports` into
+> a new `checks/_reexport_resolution.py`, bounded by a VISITED SET.
+>
+> **✅ VERIFIED BY THE PROPERTY THE RELIEF PRESUPPOSES, NOT BY A COUNT:** `_blocked_outcome`
+> / `_view_pr` / `_merged_pr_view` all flip `False → True`; the fixpoint gains 4 (469 → 473).
+>
+> ### ⛔⛔ AND IT MOVES **ZERO** OFFENDERS — SO MY "321 IS A FLOOR" CAVEAT WAS WORTH NOTHING
+>
+> `beads-fabro` 168 → **168**, dev-tooling 1 → **1**, runtime 27 → **27**. **ADDED 0 /
+> REMOVED 0.** All four newly-convicted functions are `_`-prefixed and their public callers
+> were already disqualified by other paths.
+>
+> 📜 **A CAVEAT THAT CANNOT BE WRONG IS NOT THEREBY USEFUL.** I wrote that the fleet's 321
+> was a FLOOR and must not be quoted as the arming cost until this closed. The floor and the
+> actual are the SAME NUMBER. Directionally right, quantitatively empty — the same defect as
+> quoting a qualitative hazard without its magnitude, one level up.
+> ⚠️ **DENOMINATOR:** three members measured. `overseer` (92), `livespec` (15), `git-jsonl`
+> (17), `driver-codex` (1) are **NOT** measured, though beads-fabro carried 181 of the ~188
+> blind sites found.
+>
+> ### ▶️▶️▶️ EXACT NEXT ACTION — **`55ec`: SPLIT THE PURE PARSERS OUT OF `effects/`. VALUE 10, RE-DERIVED POST-`8sc1`.**
+>
+> | | before `8sc1` | after `8sc1` |
+> |---|---:|---:|
+> | CEILING (drop `effects/` entirely) | 14 | **10** |
+> | SAFE VALUE (split; `attempt` stays declared) | 10 | **10** |
+> | of which FALSE ACQUITTALS | **4** | **0** |
+>
+> **✅ CEILING AND VALUE HAVE CONVERGED, AND THAT IS `8sc1` DOING ITS JOB.** The four
+> `attempt`-reaching callers left the relieved set entirely: their edges now resolve through
+> the shim to `_attempt.py::attempt`, which is itself disqualified (it calls `action()` — a
+> parameter, an unresolvable callee). **They are convicted by the CALL GRAPH rather than by
+> the tree declaration.** Verified on the decisive case: `github_token_supplier` stays
+> `disqualified=True` with `effects/` dropped, where before it flipped to `False`.
+>
+> ### ⛔⛔ I RETRACT MY OWN CLAIM: **`8sc1` DID NOT MAKE `55ec` A ONE-FILE MOVE**
+>
+> I recorded — and brief 113 sequenced on — *"fixing `8sc1` first would make `55ec` a genuine
+> one-file move."* **MEASURED AND FALSE.** Simulated exactly that: move the parsers to
+> `parsing.py`, leave `effects/__init__.py` re-exporting them from there, rewrite ZERO import
+> sites → `universe 186 → 187, offenders 168 → 168, REMOVED 0 / ADDED 0`.
+>
+> **`8sc1` fixed `_first_party_edges` (clause (d) EDGES). It never touched `_under_io_tree`
+> (clause (c)), which still resolves a dotted path to the SHIM's location** — and the shim is
+> inside the io tree. **THE 28 IMPORT-SITE REWRITES ARE STILL OWED.**
+>
+> **▶️ THE SEQUENCING WAS STILL RIGHT, FOR A DIFFERENT REASON THAN THE ONE GIVEN:** `8sc1`
+> did not reduce `55ec`'s COST, it removed its RISK — 4 false acquittals to 0. Right
+> conclusion, wrong mechanism, and this time the wrong mechanism was **mine**. Recorded so
+> nobody re-tests the cost claim by trusting it.
+>
+> ⚠️ **A LARGER QUESTION IS NOW VISIBLE AND IS NOT RULED:** should `_under_io_tree` ALSO
+> resolve through re-exports, so a tree declaration follows the DEFINITION rather than the
+> import path? That is **not** a resolution fix like `8sc1` — it can RELAX clause (c), so it
+> is spec-shaped. **Do not fold it into `55ec`.**
+>
+> ### 📋 THE QUEUE AFTER `55ec`
+>
+> 1. **`4ihw`'s fan-out measurement** — three consumers, 33 files each. Contained ⇒ take it
+>    under the `typing_extensions` precedent (authorized standing work, not a new decision);
+>    coordinated ⇒ sequence it as a required-key-schema-shaped epic.
+> 2. **`p9ot`** — ship the yield probe, first slice an EXTRACTION of `_scan`'s exempt-set
+>    construction, never a second copy.
+>
+> ---
+>
+> ## 🗄️ (SUPERSEDED AS THE HEADER 2026-08-03 — `8sc1` is CLOSED and `55ec`'s figures are re-derived above; this block's 14/10 predate the fix. Its FIRST FIVE MINUTES steps 1–8 are CURRENT.) COLD START — **`55ec`'s DIVISION IS MEASURED: 10, NOT 14.**
 >
 > ### 🔻 FIRST FIVE MINUTES
 >
