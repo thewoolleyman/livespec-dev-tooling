@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.15.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.14.6...v1.15.0) (2026-08-03)
+
+
+### Features
+
+* classify justfile Bash recipe evidence ([8f071bc](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8f071bcb20c224ae82170b3c926754cb34e16510))
+
 ## [1.14.6](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.14.5...v1.14.6) (2026-08-02)
 
 
