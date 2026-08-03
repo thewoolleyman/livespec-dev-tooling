@@ -77,6 +77,12 @@ def _write_canonical_json(*, cwd: Path, slugs: list[str]) -> Path:
     return path
 
 
+def _write_target_inventory(*, cwd: Path, targets: list[str]) -> Path:
+    path = cwd / "check-targets.txt"
+    _ = path.write_text("\n".join(targets) + "\n", encoding="utf-8")
+    return path
+
+
 def _justfile_with_targets(*, targets: list[str]) -> str:
     """Render a minimal `justfile` whose `check:` recipe wires `targets`."""
     indented = "\n".join(f"        {t}" for t in targets)
@@ -116,6 +122,22 @@ def test_full_match_passes(*, tmp_path: Path) -> None:
     assert (
         result.returncode == 0
     ), f"expected exit 0 on full match; got {result.returncode}, stderr={result.stderr!r}"
+
+
+def test_target_inventory_supplies_check_aggregate_passes(*, tmp_path: Path) -> None:
+    """`check-targets.txt` is the aggregate inventory when present."""
+    slugs = ["check-alpha", "check-beta"]
+    _ = _write_canonical_json(cwd=tmp_path, slugs=slugs)
+    _ = _write_justfile(cwd=tmp_path, body="check:\n    scripts/just/check.sh\n")
+    _ = _write_target_inventory(
+        cwd=tmp_path,
+        targets=["# canonical", "bootstrap", "check-alpha  # inline", "", "check-beta"],
+    )
+    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    assert result.returncode == 0, (
+        f"expected exit 0 when check-targets.txt supplies the canonical block; "
+        f"stderr={result.stderr!r}"
+    )
 
 
 def test_missing_canonical_slug_fails(*, tmp_path: Path) -> None:

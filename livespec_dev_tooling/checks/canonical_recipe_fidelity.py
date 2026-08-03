@@ -250,14 +250,34 @@ def _extract_recipe_body(*, justfile_text: str, slug: str) -> str | None:
     return "\n".join(body_lines)
 
 
-def _classify_slug(*, justfile_text: str, slug: str) -> _Violation | None:
+def _recipe_and_wrapper_text(*, cwd: Path, body: str) -> str:
+    """Return recipe body plus a same-repo tracked script wrapper body when present.
+
+    Canonical recipes may now be thin `justfile` entries that call a tracked
+    script, but the anti-fork invariant is unchanged: the surface must still
+    invoke the pinned shared Python module. Inspecting the wrapper body preserves
+    that invariant without requiring multi-command Bash in the recipe itself.
+    """
+    stripped_lines = [line.strip() for line in body.splitlines() if line.strip()]
+    if len(stripped_lines) != 1:
+        return body
+    command = stripped_lines[0].removeprefix("@")
+    first_word = command.split(maxsplit=1)[0]
+    script_path = cwd / first_word
+    if not script_path.is_file():
+        return body
+    return body + "\n" + script_path.read_text(encoding="utf-8")
+
+
+def _classify_slug(*, cwd: Path, justfile_text: str, slug: str) -> _Violation | None:
     """Return a `_Violation` when the slug's recipe is missing or repointed, else None."""
     module = _slug_to_module(slug=slug)
     body = _extract_recipe_body(justfile_text=justfile_text, slug=slug)
     if body is None:
         return _Violation(slug=slug, failure_mode="canonical_recipe_missing", module=module)
     expected = _SHARED_MODULE_STEM + module
-    if expected not in body:
+    searchable = _recipe_and_wrapper_text(cwd=cwd, body=body)
+    if expected not in searchable:
         return _Violation(
             slug=slug,
             failure_mode="recipe_not_pinned_to_shared_module",
@@ -266,7 +286,7 @@ def _classify_slug(*, justfile_text: str, slug: str) -> _Violation | None:
     return None
 
 
-def _recipe_carries_override_flag(*, justfile_text: str, slug: str) -> bool:
+def _recipe_carries_override_flag(*, cwd: Path, justfile_text: str, slug: str) -> bool:
     """Return True when the slug's recipe exists and its body carries `--canonical-from`.
 
     The override-flag scan is deliberately INDEPENDENT of the (attacker-
@@ -277,7 +297,7 @@ def _recipe_carries_override_flag(*, justfile_text: str, slug: str) -> bool:
     empty.
     """
     body = _extract_recipe_body(justfile_text=justfile_text, slug=slug)
-    return body is not None and _CANONICAL_FROM_FLAG in body
+    return body is not None and _CANONICAL_FROM_FLAG in _recipe_and_wrapper_text(cwd=cwd, body=body)
 
 
 def _emit_missing(*, log: structlog.stdlib.BoundLogger, violation: _Violation) -> None:
@@ -361,7 +381,7 @@ def main() -> int:
     override_slugs = {
         slug
         for slug in scan_slugs
-        if _recipe_carries_override_flag(justfile_text=justfile_text, slug=slug)
+        if _recipe_carries_override_flag(cwd=cwd, justfile_text=justfile_text, slug=slug)
     }
     violations: list[_Violation] = [
         _Violation(
@@ -375,7 +395,7 @@ def main() -> int:
     for slug in loaded.slugs:
         if slug in override_slugs:
             continue
-        fidelity = _classify_slug(justfile_text=justfile_text, slug=slug)
+        fidelity = _classify_slug(cwd=cwd, justfile_text=justfile_text, slug=slug)
         if fidelity is not None:
             violations.append(fidelity)
     if not violations:

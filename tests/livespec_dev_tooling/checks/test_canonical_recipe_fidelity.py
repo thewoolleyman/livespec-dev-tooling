@@ -97,6 +97,14 @@ def _write_justfile(*, cwd: Path, body: str) -> Path:
     return path
 
 
+def _write_script(*, cwd: Path, name: str, body: str) -> Path:
+    path = cwd / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _ = path.write_text(body, encoding="utf-8")
+    path.chmod(0o755)
+    return path
+
+
 def _write_canonical_json(*, cwd: Path, slugs: list[object]) -> Path:
     path = cwd / "canonical.json"
     _ = path.write_text(json.dumps({"slugs": slugs}), encoding="utf-8")
@@ -174,6 +182,95 @@ def test_repointed_bash_fork_recipe_fails(
     assert (
         repointed[0].get("expected_invocation")
         == "python -m livespec_dev_tooling.checks.wrapper_shape"
+    )
+
+
+def test_tracked_script_wrapper_invoking_shared_module_passes(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A one-line recipe may call a tracked script that invokes the pinned module."""
+    slugs = ["check-alpha"]
+    _ = _write_canonical_json(cwd=tmp_path, slugs=list(slugs))
+    _ = _write_script(
+        cwd=tmp_path,
+        name="scripts/just/check-alpha.sh",
+        body=(
+            "#!/usr/bin/env bash\n"
+            "set -euo pipefail\n"
+            "uv run python -m livespec_dev_tooling.checks.alpha\n"
+        ),
+    )
+    _ = _write_justfile(
+        cwd=tmp_path,
+        body=_justfile_with_recipes(recipes=["check-alpha:\n    scripts/just/check-alpha.sh\n"]),
+    )
+    result = _run_check(
+        cwd=tmp_path,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        extra_argv=["--canonical-from", "canonical.json"],
+    )
+    assert result.returncode == 0, (
+        f"expected exit 0 for a tracked script wrapper that invokes the shared module; "
+        f"stderr={result.stderr!r}"
+    )
+
+
+def test_tracked_script_wrapper_without_shared_module_fails(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A script wrapper is still a violation when it omits the pinned module."""
+    slugs = ["check-alpha"]
+    _ = _write_canonical_json(cwd=tmp_path, slugs=list(slugs))
+    _ = _write_script(
+        cwd=tmp_path,
+        name="scripts/just/check-alpha.sh",
+        body="#!/usr/bin/env bash\nset -euo pipefail\nbash dev-tooling/checks/alpha-fork.sh\n",
+    )
+    _ = _write_justfile(
+        cwd=tmp_path,
+        body=_justfile_with_recipes(recipes=["check-alpha:\n    scripts/just/check-alpha.sh\n"]),
+    )
+    result = _run_check(
+        cwd=tmp_path,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        extra_argv=["--canonical-from", "canonical.json"],
+    )
+    assert result.returncode == 1, (
+        f"expected exit 1 for a script wrapper that omits the shared module; "
+        f"stderr={result.stderr!r}"
+    )
+    findings = _parse_findings(stderr=result.stderr)
+    assert [
+        f
+        for f in findings
+        if f.get("failure_mode") == "recipe_not_pinned_to_shared_module"
+        and f.get("slug") == "check-alpha"
+    ]
+
+
+def test_multiline_recipe_invoking_shared_module_still_passes(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The fidelity check still accepts a body that directly names the shared module."""
+    slugs = ["check-alpha"]
+    _ = _write_canonical_json(cwd=tmp_path, slugs=list(slugs))
+    recipe = (
+        "check-alpha:\n"
+        "    echo setup\n"
+        "    uv run python -m livespec_dev_tooling.checks.alpha\n"
+    )
+    _ = _write_justfile(cwd=tmp_path, body=_justfile_with_recipes(recipes=[recipe]))
+    result = _run_check(
+        cwd=tmp_path,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        extra_argv=["--canonical-from", "canonical.json"],
+    )
+    assert result.returncode == 0, (
+        f"expected exit 0 when the recipe body directly invokes the shared module; "
+        f"stderr={result.stderr!r}"
     )
 
 

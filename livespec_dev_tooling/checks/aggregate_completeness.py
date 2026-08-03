@@ -85,6 +85,7 @@ __all__: list[str] = []
 
 
 _JUSTFILE_NAME = "justfile"
+_TARGET_INVENTORY_NAME = "check-targets.txt"
 _CHECK_PREFIX = "check-"
 _EXIT_VIOLATIONS = 4
 
@@ -254,6 +255,13 @@ def _filter_to_check_slugs(*, raw_lines: list[str]) -> list[str]:
     return out
 
 
+def _inventory_targets(*, cwd: Path) -> list[str] | None:
+    path = cwd / _TARGET_INVENTORY_NAME
+    if not path.is_file():
+        return None
+    return _filter_to_check_slugs(raw_lines=path.read_text(encoding="utf-8").splitlines())
+
+
 @dataclass(frozen=True, kw_only=True)
 class _ComparisonResult:
     """Outcome of the canonical-subset comparison against the wired targets."""
@@ -367,28 +375,30 @@ def main() -> int:
         )
         return _EXIT_VIOLATIONS
     justfile_text = justfile_path.read_text(encoding="utf-8")
-    recipe_body = _extract_check_recipe_body(justfile_text=justfile_text)
-    if recipe_body is None:
-        _emit_absence(
-            log=log,
-            failure_mode="check_recipe_not_found",
-            message="justfile has no `check:` recipe — cannot verify canonical aggregate",
-            path=str(justfile_path),
-        )
-        return _EXIT_VIOLATIONS
-    raw_targets = _extract_targets_array_lines(recipe_body=recipe_body)
-    if raw_targets is None:
-        _emit_absence(
-            log=log,
-            failure_mode="targets_array_not_found",
-            message=(
-                "`check:` recipe does not declare a `targets=(...)` array — "
-                "cannot verify canonical aggregate"
-            ),
-            path=str(justfile_path),
-        )
-        return _EXIT_VIOLATIONS
-    wired = _filter_to_check_slugs(raw_lines=raw_targets)
+    wired = _inventory_targets(cwd=cwd)
+    if wired is None:
+        recipe_body = _extract_check_recipe_body(justfile_text=justfile_text)
+        if recipe_body is None:
+            _emit_absence(
+                log=log,
+                failure_mode="check_recipe_not_found",
+                message="justfile has no `check:` recipe — cannot verify canonical aggregate",
+                path=str(justfile_path),
+            )
+            return _EXIT_VIOLATIONS
+        raw_targets = _extract_targets_array_lines(recipe_body=recipe_body)
+        if raw_targets is None:
+            _emit_absence(
+                log=log,
+                failure_mode="targets_array_not_found",
+                message=(
+                    "`check:` recipe does not declare a `targets=(...)` array — "
+                    "cannot verify canonical aggregate"
+                ),
+                path=str(justfile_path),
+            )
+            return _EXIT_VIOLATIONS
+        wired = _filter_to_check_slugs(raw_lines=raw_targets)
     result = _compare_canonical_subset(canonical=loaded.slugs, wired=wired)
     if not result.missing and not result.out_of_order:
         return 0

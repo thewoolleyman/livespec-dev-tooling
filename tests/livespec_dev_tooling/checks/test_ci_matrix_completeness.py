@@ -113,6 +113,12 @@ def _write_justfile(*, cwd: Path, body: str) -> Path:
     return path
 
 
+def _write_target_inventory(*, cwd: Path, targets: list[str]) -> Path:
+    path = cwd / "check-targets.txt"
+    _ = path.write_text("\n".join(targets) + "\n", encoding="utf-8")
+    return path
+
+
 def _matrix_job(*, key: str, targets: list[str], needs: str | None = None) -> str:
     """A per-target matrix job running `just ${{ matrix.target }}`."""
     bullets = "\n".join(f"          - {t}" for t in targets)
@@ -204,6 +210,25 @@ def test_fully_wired_repo_passes(*, tmp_path: Path) -> None:
     assert (
         result.returncode == 0
     ), f"expected exit 0 for a fully-wired repo; got {result.returncode}, stderr={result.stderr!r}"
+
+
+def test_target_inventory_supplies_aggregate_for_ci_scan(*, tmp_path: Path) -> None:
+    """`check-targets.txt` supplies the aggregate target list for CI coverage."""
+    slugs = ["check-alpha", "check-beta"]
+    _ = _write_canonical_json(cwd=tmp_path, slugs=slugs)
+    _ = _write_justfile(cwd=tmp_path, body="check:\n    scripts/just/check.sh\n")
+    _ = _write_target_inventory(cwd=tmp_path, targets=["check-alpha", "fmt", "check-beta"])
+    _ = _write_ci_yml(
+        cwd=tmp_path,
+        jobs=[
+            _matrix_job(key="check", targets=slugs, needs="setup"),
+            _ci_green_job(needs="[check]"),
+        ],
+    )
+    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    assert (
+        result.returncode == 0
+    ), f"expected exit 0 when inventory targets are covered by CI; stderr={result.stderr!r}"
 
 
 def test_ci_matrix_omits_aggregate_slug_reports_finding_a(*, tmp_path: Path) -> None:

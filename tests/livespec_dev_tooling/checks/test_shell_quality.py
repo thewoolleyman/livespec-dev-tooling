@@ -102,7 +102,7 @@ def test_documented_no_errexit_deviation_passes(
     assert rc == 0, stderr
 
 
-def test_multiline_errexit_recipe_passes(
+def test_multiline_errexit_recipe_fails(
     *,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -130,7 +130,9 @@ def test_multiline_errexit_recipe_passes(
 
     rc, stderr = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
-    assert rc == 0, stderr
+    assert rc == 1, stderr
+    assert '"reason": "nonconforming-just-recipe"' in stderr
+    assert '"recipe": "build"' in stderr
 
 
 def test_accidental_masked_coverage_omission_fails(
@@ -194,3 +196,65 @@ def test_just_interpolation_in_recipe_body_fails(
     assert rc == 1, stderr
     assert '"reason": "just-interpolation"' in stderr
     assert '"recipe": "run"' in stderr
+
+
+def test_parameterized_recipe_without_per_recipe_positional_arguments_fails(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _write(
+        root=tmp_path,
+        rel="justfile",
+        body="\n".join(
+            [
+                "set positional-arguments",
+                "",
+                "run *args:",
+                '    scripts/run.sh "$@"',
+                "",
+            ]
+        ),
+    )
+    _write(
+        root=tmp_path,
+        rel="scripts/run.sh",
+        body="#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s\\n' \"$@\"\n",
+    )
+
+    rc, stderr = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert rc == 1, stderr
+    assert '"reason": "global-positional-arguments"' in stderr
+    assert '"reason": "missing-per-recipe-positional-arguments"' in stderr
+    assert '"recipe": "run"' in stderr
+
+
+def test_thin_parameterized_recipe_with_per_recipe_positional_arguments_passes(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _write(
+        root=tmp_path,
+        rel="justfile",
+        body="\n".join(
+            [
+                "[positional-arguments]",
+                "run *args:",
+                '    scripts/run.sh "$@"',
+                "",
+            ]
+        ),
+    )
+    _write(
+        root=tmp_path,
+        rel="scripts/run.sh",
+        body="#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s\\n' \"$@\"\n",
+    )
+
+    rc, stderr = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert rc == 0, stderr
