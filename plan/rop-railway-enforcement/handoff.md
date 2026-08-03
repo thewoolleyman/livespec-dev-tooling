@@ -1,116 +1,66 @@
 # rop-railway-enforcement — arm the check that was never armed, then remediate six repos
 
-> ## 🔻🔻 COLD START — **START HERE. ⛔⛔ YOUR FIRST JOB IS NOT THE ROP LANE. A CRITICAL-PATH BLOCKER WAS HANDED TO THIS THREAD AND ITS FIX IS AUTHORED BUT UNCOMMITTED.**
+> ## 🔻🔻 COLD START — **START HERE. ⚠️ THE CRITICAL-PATH FIX LANDED BUT DID *NOT* CLOSE THE BLOCKER. `check-fleet-conformance` STILL FAILS INTERMITTENTLY.**
 >
-> ### ▶️▶️▶️ EXACT NEXT ACTION — **LAND THE `check-fleet-conformance` RATE-SHAPING FIX**
+> ### ⚠️⚠️ `check-fleet-conformance` IS IMPROVED, **NOT REPAIRED — AND I OVERCLAIMED IT**
 >
-> **`7caozh` is approved/ready and its dispatcher correctly refuses the red master.
-> `jtrjzk` plus EIGHT fleet rollouts are downstream.** The thing making master red is
-> `check-fleet-conformance`, and the request-side fix is **written, Red-verified, and
-> NOT COMMITTED.**
+> PR **#1218** (`ab728409`) added bounded per-invocation retry and **its own
+> `check-fleet-conformance` job reported SUCCESS**, which I recorded as a fix.
+> ⛔ **THAT WAS ONE SAMPLE AND THE NEXT RUN CONTRADICTED IT:** PR **#1222**, whose base
+> ALREADY CONTAINS the fix, failed `check-fleet-conformance` with `"kind":
+> "rate_limited"` ×2. **The retry reduces the failure rate; it does not eliminate it.**
 >
-> **▶️ RECOVER IT — the patch is COMMITTED BESIDE THIS FILE:**
+> 📜 **THE METHOD ERROR, NAMED SO IT IS NOT REPEATED: a single green run is not evidence
+> of a fix for an INTERMITTENT failure.** Four models were falsified in this same item by
+> the mirror-image mistake (one red treated as proof of a cause); I then took one green
+> as proof of a remedy. **The acceptance bar for an intermittent gate is a RATE over
+> several runs, not one observation.**
 >
-> ```bash
-> W="$HOME/.worktrees/livespec-dev-tooling/gh-runner-rate-shaping"
-> # that worktree may still exist with the work in it — check FIRST:
-> git -C /data/projects/livespec-dev-tooling worktree list | grep gh-runner-rate-shaping
-> # if it is gone, recreate from the committed patch:
-> mise exec -- git -C /data/projects/livespec-dev-tooling worktree add -b fix/gh-runner-rate-shaping "$W" master
-> cd "$W" && git apply plan/rop-railway-enforcement/gh-runner-rate-shaping.patch
-> ```
+> 🔬 **WHY IT IS INSUFFICIENT:** the retry is per INVOCATION (5 attempts, ~14s); the
+> limiter trips for the TRAVERSAL. Once tripped, every subsequent invocation starts
+> throttled, burns its own budget, and the pass still ends blind — **only slower.**
+> ⚠️ **So the fix also made a throttled run take longer to fail**; do not naively raise
+> `_MAX_ATTEMPTS`, which multiplies that across every row.
+> ▶️ **WHAT IT ACTUALLY NEEDS (in `mmqe`):** honour `Retry-After` instead of guessing;
+> pace at the TRAVERSAL level (shared bucket / circuit breaker) rather than per call;
+> and cut the request count (cache installation metadata, batch tree reads).
 >
-> ⚠️ **THE RED WAS NEVER COMMITTED — the commit was interrupted, not rejected.** Re-run
-> the ritual from the recovered tree (below). Nothing is half-committed; the branch
-> `fix/gh-runner-rate-shaping` has NO commits of mine.
+> ✅ Still true and worth keeping: `fleet-shell-quality-enforcement` was notified
+> (PR #1220), and the fix does not break the check — a landed PR can still pass.
 >
-> ### 🔧 THE FIX, AND WHY IT IS SHAPED THIS WAY
+> **What landed:** `fleet/_gh_runner.py::default_gh_runner` retries a COMPLETED `gh`
+> whose stderr classifies as `rate_limited` / `server_error` — bounded to 5 attempts,
+> growing backoff, ~14s max added wait — reusing this repo's own `classify_gh_failure`
+> and the `_credential_preflight` backoff shape, at the seam every fleet row already
+> flows through. `not_found` / `forbidden` stay ANSWERS; the failure track ("did not
+> happen") is not retried.
 >
-> **Seam:** `livespec_dev_tooling/fleet/_gh_runner.py::default_gh_runner`. The
-> `fleet/CLAUDE.md` states *"All GitHub access flows through the injected `GhRunner`
-> seam"* — so ONE change covers every row, and tests stay hermetic because they inject
-> fakes.
+> ### ⚠️ `mmqe` STAYS OPEN — **the OUTAGE half is fixed, the REPORTING half is not**
 >
-> **The change:** on a COMPLETED invocation whose stderr classifies as retryable, wait
-> and retry, bounded. ⛔ Do NOT retry the failure track (it means "did not happen" —
-> nothing to wait for) and do NOT retry a 404 (an ANSWER; retrying burns budget on a
-> settled question).
+> A `rate_limited` read still renders identically to a permission gap, and **burst
+> throttling identically to pool exhaustion — which have OPPOSITE remedies** (slow down
+> vs. wait). ⛔ **Retry now HIDES that symptom, which makes the reporting defect harder
+> to notice, not easier.** ▶️ **The cheap fix: record `core.remaining` at failure time in
+> the finding** — a 403 alongside `remaining≈5000` is burst throttling unambiguously.
+> **One field settles what four falsified models could not.**
+> 📜 **Those four models, so nobody re-derives them:** pool exhaustion (falsified by a
+> fresh token showing 5000) → wait for the window (the pool was never the constraint) →
+> wait for a green master (master WAS green) → fleet concurrency (a QUIET period still
+> failed). **Every one blamed something OUTSIDE the check; the cause was its own
+> traversal.** The tell: the LONGER pass went BLINDER (`blind_rows` 2 in CI vs 12
+> direct), so `blind_rows` is a PROGRESS MARKER, not a finding count.
 >
-> ✅ **REUSE, DO NOT INVENT — this repo already answers this exact shape:**
+> ### 📜 A RITUAL RULE I GOT WRONG — **READ THIS BEFORE YOUR NEXT RED**
 >
->     fleet/_read_failure.py::classify_gh_failure   -> "rate_limited" | "forbidden" |
->                                                      "not_found" | "server_error"
->     fleet/_credential_preflight.py                -> the bounded-backoff loop,
->       _RETRYABLE_KINDS / _MAX_ATTEMPTS=3 / _BACKOFF_SECONDS=(2.0, 4.0) / Sleeper
+> ⛔ **The stub technique applies ONLY to a genuinely NEW module.** For an EXISTING
+> implementation file the rule is absolute: **it must be UNMODIFIED on disk at Red.** I
+> modified `_gh_runner.py` on disk as an "unstaged stub" and had to be corrected.
+> ▶️ **The fix is to shape the TEST so it fails without touching the impl** — here, by
+> patching the `time.sleep` seam rather than passing an injected `sleep=` parameter. That
+> also turned out to be the better design: `default_gh_runner` implements the `GhRunner`
+> Protocol, and widening its signature would have widened the Protocol every consumer is
+> typed against. **The ritual constraint improved the design rather than fighting it.**
 >
-> **`preflight_credential` already classifies-then-retries. That answer was never applied
-> to the MEMBER TRAVERSAL, which is where the sweep actually spends its requests.** The
-> unit applies it at the seam every row already flows through.
-> ⚠️ **`Sleeper` must be defined LOCALLY in `_gh_runner.py`** — importing it from
-> `_credential_preflight` is a CYCLE (`_credential_preflight` → `_context` →
-> `_gh_runner`). `_read_failure` imports stdlib only, so importing THAT is safe.
->
-> **▶️ THE RITUAL (product `.py`, so it is mandatory):**
-> 1. **Red:** stage `tests/livespec_dev_tooling/fleet/test_gh_runner_rate_shaping.py`
->    ALONE. The **stub** is the `sleep: Sleeper = time.sleep` parameter added to
->    `default_gh_runner` and IGNORED (`_ = sleep`) — on disk, UNSTAGED. Verified: **2
->    failed, 2 passed**, failing on `assert 1 < 1` / *"must retry, and must be bounded"*
->    — genuine assertions, not a `TypeError`.
-> 2. **Green amend:** replace the stub with the real retry loop; `git commit --amend
->    --no-edit`; count trailers (**5 × `TDD-Red-`, 2 × `TDD-Green-`**).
->
-> ### ✅✅ THE CHICKEN-AND-EGG IS NOT REAL — **THE FIX VALIDATES ITSELF**
->
-> `check-fleet-conformance` blocks dev-tooling PRs, and the fix IS a dev-tooling PR.
-> **But PR CI runs the BRANCH's code**, so the fix's own `check-fleet-conformance` job
-> runs the FIXED traversal. ▶️ **Do not go looking for a bypass; there is nothing to
-> bypass.** ⛔ And never `--no-verify` — here most of all, since the blocked gate is
-> exactly what it would skip.
->
-> ### 📣 AFTER IT MERGES — **NOTIFY `fleet-shell-quality-enforcement`** (explicitly requested)
->
-> ### 🔬 THE DIAGNOSIS, BECAUSE FOUR MODELS WERE FALSIFIED GETTING HERE
->
-> ⛔ **Do not re-derive this; every version below was WRONG and cost attempts.** Full
-> record in **`mmqe`** (the owner item — ⛔ **DO NOT open a duplicate**, twice requested):
->
-> | model | falsified by |
-> |---|---|
-> | the App's hourly pool is exhausted | a freshly minted token showed `core.remaining=5000` |
-> | wait for the window to reset | the pool was never the constraint |
-> | wait for a verified green master run | master WAS green; the check still tripped |
-> | fleet concurrency from other actors | a QUIET period + fresh token still exit 4 |
->
-> ✅ **WHAT SURVIVED:** the check's OWN sequential pass trips a SECONDARY limiter
-> mid-traversal. The tell is that **the longer pass went blinder** — `blind_rows` **2**
-> in CI vs **12** in a direct all-nine-repo traversal. So `blind_rows` is a PROGRESS
-> MARKER (how far it got before tripping), not a finding count.
-> ⚠️ **The gate red-lights with `own_failing_rows=[]` and `error_findings=0` on a
-> DOCS-ONLY commit — it cannot look, and says so in a form indistinguishable from a real
-> finding.**
-> 📜 **The shape of my error, four times: I blamed something OUTSIDE the check.** Each
-> correction moved the cause inward. ⛔ **No operator-side action fixes this** — not
-> waiting, not a green master, not a fresh token, not a quieter moment. **Three CI
-> retries were spent from this thread (PR #1216) and all three failed identically.**
->
-> ### ⛔ BLAST RADIUS IS NARROWER THAN IT LOOKS — **RECORD-KEEPING, NOT WORK**
->
->     dev-tooling  PR checks: ["check-fleet-conformance", "check-fleet-marketplace-relative-sources"]
->     git-jsonl    PR checks: ["check-fleet-marketplace-relative-sources"]   <- NO fleet-conformance
->
-> **`check-fleet-conformance` is wired into `livespec-dev-tooling` ONLY.** That is why
-> git-jsonl PRs **#532/#533 merged** while dev-tooling **#1216** could not.
-> ▶️ **So the ROP conversion lane stays OPEN even while this is broken.** File findings
-> to the LEDGER (authoritative over both documents, no CI) and batch the `plan/` prose.
-> ⛔ Do not infer from a green git-jsonl PR that the gate recovered — different repo,
-> different check set.
->
-> ### 🚧 ONE OTHER PR IS OPEN AND BLOCKED — **`#1216`, doc-only**
->
-> The `git-jsonl` disposition triage. **Nothing is lost if it never merges** — its
-> content is in `8o8e.27` / `8o8e.28`. ▶️ Re-run its checks once the fix lands.
->
-
 > ### 📊 THE ROP LANE ITSELF — **STATE AFTER THE BLOCKER IS CLEARED**
 >
 > | member | distinct | status |
@@ -199,7 +149,8 @@
 >
 > ### 📋 QUEUE
 >
-> 1. ▶️ **The rate-shaping fix (above) — CRITICAL PATH, do it first.**
+> 1. ✅ **The rate-shaping fix — DONE** (PR #1218 `ab728409`, self-gated). ⚠️ `mmqe` stays
+>    OPEN for its reporting half; see the COLD START.
 > 2. `git-jsonl` (8) — `backfill_file` next.
 > 3. **`8o8e.28`** — arming blocker: a conviction with NO conforming remedy.
 > 4. **`8o8e.27`** — a retired invariant load-bearing in 3 repos.
