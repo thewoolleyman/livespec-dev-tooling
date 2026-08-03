@@ -1,6 +1,85 @@
 # rop-railway-enforcement — arm the check that was never armed, then remediate six repos
 
-> ## 🔻🔻 COLD START — **START HERE. `8sc1` IS LANDED AND CLOSED. THE NEXT UNIT IS `55ec`, VALUE 10, AND IT STILL COSTS 28 IMPORT REWRITES — I RETRACT MY OWN CLAIM THAT IT WOULD NOT.**
+> ## 🔻🔻 COLD START — **START HERE. `_under_io_tree` IS RULED: SHIM-LOCATION STAYS. `55ec` IS 28 REWRITES AND THAT IS CORRECT. IT IS THE NEXT UNIT, VALUE 10.**
+>
+> ### 🔻 FIRST FIVE MINUTES
+>
+> **NOTHING IS MID-FLIGHT.** No background job, no sub-agent, no unpushed Red, no open PR of
+> this thread's. dev-tooling master at wrap-up: **`0c2c0f6`** or later — re-fetch. Steps 1–8
+> five blocks below are UNCHANGED and still current; read them there.
+>
+> ### ⚖️⚖️ THE RULING — **`_under_io_tree` KEEPS SHIM-LOCATION SEMANTICS**
+>
+> The parked question — *should a tree declaration follow the DEFINITION rather than the
+> shim location?* — determined `55ec`'s cost by a factor of 28, so it was settled before
+> spending them.
+>
+> | question | answer |
+> |---|---:|
+> | **A.** call sites relieved TODAY by following definitions (3 members) | **0** |
+> | **B.** control — same probe against the SIMULATED `55ec` state | **35** |
+> | **C.** of those 35, definer performs REAL I/O | **0** |
+>
+> ⛔ **A ZERO OVER A SHAPE THAT DOES NOT EXIST YET IS UNINTERPRETABLE**, which is why B is
+> reported beside it: no module inside an io tree currently re-exports a definition living
+> outside it, and the probe demonstrably SEES that shape once it is created. The change
+> relaxes nothing that exists — its entire effect would be to enable a one-file `55ec`.
+>
+> ### 🔑 AND THE TWO RESOLVERS SHOULD **NOT** MATCH — THEY RESOLVE DIFFERENT KINDS OF THING
+>
+> The tempting argument is consistency: clause (d) resolves through shims after `8sc1`, so
+> clause (c)'s tree limb should too. **It fails on POLARITY, and the polarity is the point.**
+>
+> - **Clause (d)'s walk resolves an ANALYSIS**, which should find the truth about what code
+>   runs. Resolving to the shim was a resolution FAILURE; the fix TIGHTENED.
+> - **`_under_io_tree` resolves a DECLARATION**, which should mean what it says. Following
+>   definitions RELAXES, by making a maintainer's declaration follow code movement it never
+>   sanctioned.
+>
+> `_under_io_tree`'s own docstring settles it: *"a declared boundary that happens to hold
+> total helpers stops being a boundary, which is the whole point of declaring it."*
+> **Following definitions would make the declaration EVADABLE BY REFACTORING** — move a body
+> out of the tree, keep re-exporting it, and the declaration silently stops covering that
+> name while the config and the tree's `__all__` both still say it does. ⚠️ **The evasion
+> would be INVISIBLE: nothing a human reads changes, only what the resolver concludes.**
+>
+> 📜 **SO "TWO SIBLING RESOLVERS DISAGREE" IS NOT AUTOMATICALLY THE `i04f` DEFECT.** `i04f`
+> is one analysis copied twice with only one repaired. This is two DIFFERENT questions —
+> what does the code do, versus what did the maintainer declare — that merely look alike.
+> **Check the polarity before treating a disagreement as a duplication.**
+>
+> ### ▶️▶️▶️ EXACT NEXT ACTION — **`55ec`, AT 28 SITES, WHICH IS THE SUBSTANCE AND NOT THE OVERHEAD**
+>
+> Move `parse_json` / `parse_float` / `parse_iso_datetime` + their failure dataclasses out of
+> `effects/`; **`attempt` STAYS declared** with `_beads_client_shell.py`; **and stop
+> re-exporting the parsers from `effects/` — rewrite the 28 import sites.** If the parsers
+> move out but `effects/` keeps advertising them, the interface still calls them effect
+> boundaries when they are not; **the rewrites are what makes the interface match reality.**
+> A one-file variant would buy the count movement and leave the lie in place.
+>
+> **Value 10 / ADDED 0**, re-derived post-`8sc1`, false acquittals **0**. Re-measure with the
+> completeness assertions — universe incremented, residual imports of moved names 0 — not the
+> raw count.
+>
+> ### 📋 THE QUEUE AFTER `55ec`
+>
+> 1. **`4ihw`'s fan-out measurement** — three consumers, 33 files each. Contained ⇒ take it
+>    under the `typing_extensions` precedent (authorized standing work); coordinated ⇒
+>    sequence it as a required-key-schema-shaped epic.
+> 2. **`p9ot`** — ship the yield probe; first slice an EXTRACTION of `_scan`'s exempt-set
+>    construction, never a second copy.
+>
+> ### 📜 THE PROCESS RULE THIS ROUND ADDED, AND IT IS THE ONE THAT CAUGHT MY OWN FALSE CLAIM
+>
+> **ATTACH A RE-DERIVATION TO EVERY SEQUENCING DECISION BUILT ON SOMEONE ELSE'S MECHANISM.**
+> Brief 113 sequenced `8sc1` first on my claim that it made `55ec` a one-file move — false —
+> but the SAME brief ordered `55ec`'s 10 re-derived once `8sc1` landed. That instruction
+> produced the simulation that caught the false claim. **The premise was wrong and the
+> attached re-derivation was right**, and it converts a recurring error into a caught one.
+>
+> ---
+>
+> ## 🗄️ (SUPERSEDED AS THE HEADER 2026-08-03 — the `_under_io_tree` question it parked is now RULED above. Its FIRST FIVE MINUTES steps 1–8 are CURRENT.) COLD START — **`8sc1` IS LANDED AND CLOSED.**
 >
 > ### 🔻 FIRST FIVE MINUTES
 >
