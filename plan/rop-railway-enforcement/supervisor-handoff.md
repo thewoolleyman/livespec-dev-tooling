@@ -620,11 +620,50 @@ same clause, look for the missing seam before writing N fixes.* Proven — the `
 file-read seam closed 2 of 4 condition-1 failures from ONE absence, with the residue
 EXPLAINED rather than absorbed.
 
-**SUPERVISOR STATE AT THIS EDIT:** the only artifact is the PR carrying this update, from
-worktree `~/.worktrees/livespec-dev-tooling/supervisor-403-position`, reaped on merge. The
-worker session has now RESTARTED THREE TIMES; every time it had landed, persisted and reaped
-cleanly first, so nothing was lost on any of them. **Enumerate foreign worktrees, never quote
-a count** — this file's own retracted-number lesson.
+### ▶️▶️▶️ SUPERVISOR RESUME — READ THIS FIRST, IT IS THE NEWEST BLOCK IN THE FILE
+
+**NOTHING OF THIS SUPERVISOR'S IS MID-FLIGHT.** No worktree, no branch, no open PR, no
+background watcher — all monitors stopped at wrap-up. The worker session is FRESH (it
+restarted a FIFTH time, cleanly, after wrap-up commit `c583277`) and was handed
+`read handoff.md and follow it`. **Re-derive every number below from the ledger and the
+forge before quoting it; master moves hourly.**
+
+**THE WORKER'S QUEUE, already specified in its own handoff and needing nothing from me:**
+`4ihw` implementation (gated on `0n2a`) → `55ec` (28 sites, RULED) → `p9ot`.
+
+**WHAT LANDED SINCE THE LAST SUPERVISOR UPDATE (#1108 → `d13e88d`, at fleet 403):**
+
+| unit | result | where |
+|---|---|---|
+| **`8sc1`** clause (d) resolves through re-export shims | ceiling+value CONVERGED 14→10 / 10→10; **false acquittals 4 → 0** | #1139 → `4983487` |
+| **`_under_io_tree` ruling** | the two resolvers must NOT match — **ANALYSIS follows the definition, DECLARATION must not** | on master |
+| **`4ihw` fan-out measured** | **CONTAINED, not a coordinated epic**; `hh4d` does NOT gate it | `86a3283` |
+| filed | `55ec` (P1, 28 sites), `0n2a` (P1), `yteb` (P2), `p9ot` (P2) | ledger |
+
+**⛔ THE RULING A SUCCESSOR MUST NOT RE-OPEN — `_under_io_tree` STAYS SHIM-SCOPED.** Clause
+(d) resolves an ANALYSIS ("what code actually runs"), so resolving to the shim was a failure
+and `8sc1` correctly tightened it. `_under_io_tree` resolves a DECLARATION ("what a maintainer
+promised"), so following definitions would RELAX it by making a declaration track code
+movement nobody sanctioned. **Same mechanism, opposite correctness criteria — one is a
+finding, the other a promise.** This is why `55ec` is genuinely 28 rewrites and not a one-file
+move, and the rewrites are the SUBSTANCE: if the parsers move out while `effects/` keeps
+advertising them, the interface still calls them effects.
+
+**⛔ AND THE TEST FOR FUTURE `i04f` CLAIMS, because I invoked it wrongly here:** `i04f` is ONE
+analysis copied twice with only one copy repaired. Two resolvers sharing a mechanism while
+answering DIFFERENT questions is not `i04f`. **Ask whether they answer the same question, not
+whether they share code shape.**
+
+**⚠️ WORKER-FACING RULE THAT KEEPS PAYING:** *take my HAZARDS seriously and my PARTICULARS as
+unverified.* Stated in brief 113 and confirmed four times since — the caveat is right and the
+named mechanism is usually wrong. And its operational half: **attach a RE-DERIVATION to every
+sequencing decision built on someone else's mechanism claim.** That instruction, not my
+premise, is what caught the false "8sc1 makes 55ec a one-file move" claim.
+
+**SUPERVISOR STATE (historical, from the 403 update):** the worker session had then RESTARTED
+THREE TIMES; every time it had landed, persisted and reaped cleanly first, so nothing was lost
+on any of them. **Enumerate foreign worktrees, never quote a count** — this file's own
+retracted-number lesson.
 
 **⛔ AND THE RESTARTS TEACH ONE THING A SUCCESSOR MUST ACT ON: A BRIEF IS EPHEMERAL, THE
 HANDOFF IS NOT.** Everything a supervisor sends lives in the worker's PANE, and a pane dies
@@ -1486,6 +1525,52 @@ lives, and say what replaced it.**
   every number an input to verify. The worker used it inside one sentence. That is now the
   Nth consecutive drive where that clause converted a supervisor error into a measured result
   instead of a false paragraph in the record. **Put it in every brief.**
+
+### 🧪 First-hand, 2026-08-03 (8sc1 → 4ihw drive) — I BUILT FOUR DETECTORS AND THE FIRST THREE COULD NOT DO THEIR JOB
+
+**Every version was wrong in a way the previous one could not reveal.** Recorded as a sequence
+because the sequence is the lesson, not any single defect.
+
+| version | why it could not work | how it surfaced |
+|---|---|---|
+| whole-capture busy test | scrollback `… (` pinned it BUSY forever | burned a full ceiling |
+| `tail -8` | a TODO block pushes the spinner ~10 lines up ⇒ **false IDLE** | worker was thinking, children=0 |
+| pane-hash "frozen screen" | the spinner's timer ticks every second, so the pane is NEVER byte-identical ⇒ **inert** | never fired once |
+| child-age only | flagged a legitimate poll loop as a wedge | inspected: `sleep 60` descendant only 53s old |
+
+**⛔ THE WORKING FORM, and it took all four to find:** busy = `tail -16` MINUS `^⎿` lines, OR a
+live non-playwright child; WEDGE = an old child whose YOUNGEST DESCENDANT is also stale (a live
+poll recycles its sleeps, a hung command's descendants age with it); and **input guards that
+ABORT rather than conclude.**
+
+- **🔴 AND (j) IS A NEW BLIND-INSTRUMENT MEMBER, MINE: THE INSTRUMENT WHOSE INPUT ACQUISITION
+  FAILED AND ANSWERED ANYWAY.** I wrote `-t "=rop-railway-enforcement"` — the exact form needs
+  the TRAILING COLON, `=name:`, for a pane target. tmux refused it, `pane_pid` came back empty,
+  `ps --ppid ""` found nothing, the capture was empty, and my detector reported **IDLE** while
+  the worker was BUSY with two children. Every other family member could at least observe
+  something; **this one observed NOTHING and returned a definite answer — and it failed toward
+  IDLE, the destructive direction.** The fix is a guard that refuses a verdict, not a better
+  heuristic.
+- **🔴 AND I READ A STALE LOCAL REF AS FACT.** I fetched `origin master`, then queried a branch
+  ref that fetch never updated, and reported "the branch has not moved in an hour" — it had
+  been pushed with a complete pair. This file's own standing clause is *verify against the
+  FORGE after a fetch, never a possibly-stale working tree*, broken while auditing someone
+  else's instrument.
+- **🔴 AND I NEARLY OVER-PRIORITIZED `8sc1` ON A FRAMING.** I read "the fleet's 321 is a FLOOR"
+  and started drafting a ruling that it must precede all conversion work. The measured exposure
+  was **3**. **Reacting to a QUALITATIVE framing without its MAGNITUDE** — caught only because
+  the number was one command away and I looked. Say the number wherever the word FLOOR appears.
+- **✅ WHAT SURVIVED, AND THE PATTERN IS NOW UNAMBIGUOUS:** the `BLE` narrowing (measured clean,
+  zero of 8 broad), the two-reading pre-commitment before the Try measurement, "check the
+  polarity, don't assume the resolvers should match" (which produced the correct
+  `_under_io_tree` ruling while my `i04f` argument beside it was wrong), and "settle the
+  question before spending 28 rewrites". **Every one was a QUESTION WITH A STATED FAILURE MODE.
+  Every retracted contribution was an ANSWER.**
+- **✅ AND THE WORKER TESTED A PRECEDENT I HANDED IT AS AUTHORITY.** I ruled "take the
+  `typing_extensions` precedent — precedent is stronger ground than a fresh judgment." It
+  checked the precedent's HEALTH first and found a closure hole (`0n2a`), which would otherwise
+  have propagated into `returns` with my ruling stamped on top. **A precedent is an input to
+  verify like any other; that was the correct response to my ruling rather than deference.**
 
 ### 🔭 First-hand, 2026-08-02 (unit C → Try-widening drive) — I READ A NARROW ARTIFACT AS A WIDE CLAIM, THREE TIMES IN THREE FORMS
 
