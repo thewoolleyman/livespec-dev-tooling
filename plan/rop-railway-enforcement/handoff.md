@@ -240,6 +240,34 @@
 > THE MAINTAINER with the pass table.** That pattern means the proposal's SCOPE is wrong,
 > not its wording, and scope is a maintainer question.
 >
+> ### ✅ THE PRE-COMMITMENT WORKED — **THE METHOD RESULT, AND THE ONE SENTENCE TO KEEP**
+>
+> The rule was written down, THEN a finding arrived (B2), THEN it was classified (a) and
+> fixed. 📜 **The pre-commitment did its job: I did not get to choose the category after
+> seeing the answer.** That is the whole technique, and it is the only one on this thread
+> that has never had to be retracted.
+>
+> ### ⛔ AN ARGUMENT I MADE AND WITHDREW — **"IDENTICAL BYTES ⇒ IDENTICAL FINDINGS" IS FALSE**
+>
+> I proposed scoping a re-review narrowly because a full pass over UNCHANGED bytes "would
+> produce identical findings by construction." **FALSE, and my own pass table refutes it:
+> four passes over NEAR-IDENTICAL text produced FOUR DIFFERENT FINDINGS.** An LLM reviewer
+> is not a deterministic function of its input; a second pass over the same bytes can
+> surface what the first missed. **That is not a theoretical concession — it is the
+> mechanism that found everything on this drive.**
+>
+> ⚠️ **THE CONCLUSION MAY STILL HAVE BEEN DEFENSIBLE; THE ARGUMENT WAS A RATIONALISATION.**
+> Recorded because the failure mode is subtle: a true-sounding efficiency claim that
+> licenses skipping the very step that has been producing the findings.
+>
+> 📜 **AND THE SECOND REASON TO REFUSE THE NARROW SCOPE IS B2's OWN CLASS ONE LEVEL UP.**
+> The evidence object carries ONE `verdict` and ONE `reviewed_at`; **it cannot express a
+> composite.** A record-scoped `NO BLOCKERS` filed there unqualified would assert a clean
+> eight-dimension pass THAT NEVER HAPPENED — fixing a record-accuracy defect by a route
+> that manufactures another one, in the same artifact, the same day. **If a composite is
+> unavoidable, DISCLOSE it in the revision record, which can carry what the evidence object
+> cannot.**
+>
 > ### 📊 THE PASS TABLE — **THE DURABLE PRODUCT OF THIS DRIVE**
 >
 > | pass | verdict | what it produced |
