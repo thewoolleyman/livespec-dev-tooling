@@ -328,6 +328,42 @@
 > Budget a fresh review pass. **This is the staleness trap already caught once today,
 > arriving wearing a VERSION NUMBER.**
 >
+> ### 📋 THE v192 CONTINGENCY — **WRITTEN BEFORE IT WAS NEEDED, SO LOSING THE RACE COSTS ZERO THINKING**
+>
+> Prepared while #1951's checks were still running, deliberately NOT executed. **If #1952
+> merges first, run this; do not re-derive it under the pressure of a lost race.**
+>
+> 1. **Refresh and rebase.** `git -C /data/projects/livespec fetch origin` → in the worktree,
+>    `git rebase origin/master`. ⛔ **EXPECT an add/add conflict on all seven
+>    `SPECIFICATION/history/v191/*` files. DO NOT HAND-RESOLVE IT** — hand-resolving
+>    fabricates a version directory **no `revise` produced**. **`git rebase --abort`, then
+>    reset the branch to the new master and re-cut from scratch.**
+> 2. **RE-SPLICE, never reuse.** Re-apply the two-line clause edit to
+>    `non-functional-requirements.md` **read fresh from the NEW master** — which now contains
+>    #1952's `## Contracts` subsection. ⛔ **Reusing the old `resulting_files[]` content
+>    SILENTLY REVERTS their change and git raises NO conflict**, because the edit regions do
+>    not overlap. **That is `usi0`.**
+> 3. **Rebuild the payload.** `build_revise_payload.py` re-reads the file at run time, so it
+>    picks up the new bytes automatically — **but the `proposal_topic` stem and the one-decision
+>    shape must stay exactly as they are.** Still **EXACTLY ONE decision**; still never the
+>    delegation toggle.
+> 4. ⚠️⚠️ **THE EVIDENCE IS DEAD — THIS IS THE STEP THAT WILL BE SKIPPED.** New bytes ⇒ new
+>    `content_digest` ⇒ the `NO BLOCKERS` verdict bound to **`b744fa63…` NO LONGER APPLIES**.
+>    **A FRESH REVIEW PASS IS OWED** over the new bytes before revise is invoked.
+>    ⛔ **Recomputing the digest while keeping the old verdict is the SELF-WAIVING route** —
+>    it would validate, and it is fabrication.
+> 5. **Then** re-run revise (it will cut `v192`), commit, push, PR.
+>
+> ### 🔌 A RED THAT IS **INFRASTRUCTURE, NOT THE DIFF** — A SECOND SPECIES OF STEP 6
+>
+> `check-aggregate-completeness` failed on #1951 with
+> `Failed to download and build livespec-runtime … failed to fetch commit … URL returned
+> error: 503` — a transient git/network 503 during `uv` dependency resolution.
+> **NOT the diff.** Step 6 already names the App rate-limit species; **this is a second one,
+> and the tell is the same: read the LOG before believing a red.**
+> ⚠️ **`gh run rerun <id> --failed` REFUSES with "This workflow is already running" while ANY
+> job in that workflow is still pending** — wait for the workflow to finish, THEN re-run.
+>
 > ### ✅ THE COLLISION IS SELF-DETECTING — **WHICH IS WHY WAITING IS CORRECT, NOT MERELY TOLERABLE**
 >
 > Both branches add `SPECIFICATION/history/v191/*` from a common base carrying no such
