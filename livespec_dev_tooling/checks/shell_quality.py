@@ -16,7 +16,6 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402
-from returns.result import Failure  # noqa: E402
 
 from livespec_dev_tooling.shellcheck import (  # noqa: E402
     ShellFinding,
@@ -77,10 +76,7 @@ def _has_errexit(*, line: str) -> bool:
 
 
 def _shellcheck_findings(*, repo_root: Path) -> list[_Finding]:
-    result = run_shellcheck(repo_root=repo_root)
-    if isinstance(result, Failure):
-        return []
-    shell_findings = result.unwrap()
+    shell_findings = run_shellcheck(repo_root=repo_root).unwrap()
     findings: list[_Finding] = []
     for item in shell_findings:
         findings.extend(_finding_for_shellcheck_severity(item=item))

@@ -8,6 +8,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from returns.primitives.exceptions import UnwrapFailedError
 
 from livespec_dev_tooling.install_worktree_pack import CANONICAL_WORKTREE_JUST_BODY
 
@@ -317,6 +318,8 @@ def test_bootstrapped_canonical_worktree_pack_fragment_passes(
         rel="dev-tooling/worktree-lib.sh",
         body="#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s\\n' \"$@\"\n",
     )
+    _git(cwd=tmp_path, args=["init", "-q"])
+    _git(cwd=tmp_path, args=["add", "-A"])
 
     module = importlib.import_module("livespec_dev_tooling.checks.shell_quality")
     assert hasattr(module, "findings_for_repo")
@@ -325,3 +328,14 @@ def test_bootstrapped_canonical_worktree_pack_fragment_passes(
     rc, stderr = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert rc == 0, stderr
+
+
+def test_empty_shell_corpus_fails_closed(*, tmp_path: Path) -> None:
+    _write(root=tmp_path, rel="README.md", body="no tracked shell files\n")
+    _git(cwd=tmp_path, args=["init", "-q"])
+    _git(cwd=tmp_path, args=["add", "-A"])
+
+    module = importlib.import_module("livespec_dev_tooling.checks.shell_quality")
+
+    with pytest.raises(UnwrapFailedError):
+        module.findings_for_repo(repo_root=tmp_path)
