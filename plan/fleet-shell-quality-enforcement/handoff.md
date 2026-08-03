@@ -1,9 +1,47 @@
 # Fleet shell quality enforcement — restart handoff
 
-Updated: 2026-08-03 during supervised wind-down.
+Updated: 2026-08-03 after the producer compatibility bridge merged.
 
 **Ledger anchor:** epic livespec-dev-tooling-42t4az (closed as
 `no-longer-applicable`; the approved replacement graph is recorded below).
+
+## Current producer bridge and reconciliation state
+
+The dev-tooling shell migration item `livespec-dev-tooling-mrsofu` is
+implemented on current master, but remains active only because the installed
+reconciler's canonical-branch lookup selected its historical PR 1179 merge
+(`20a43f85`) instead of the later correction bridge. That historical tree
+correctly fails the current shell-quality janitor and must not be accepted.
+
+The bounded correction bridge merged as PR 1212 / `e102fb43` after its full
+65-target local gate, commit and push hooks, and forge run `30856885992` all
+passed. It makes the bare `check:` recipe expose all 65 normalized
+`check-targets.txt` entries in a legacy-readable literal array, compares the
+literal and authoritative inventories exactly before dispatch, fails closed on
+drift, and carries regression coverage for both drift and the legacy livespec
+CORE reader. Dev-tooling primary was fast-forwarded and its owned bridge
+worktree and local branch were removed; the unrelated
+`install-livespec-pr-bot.png` remains preserved.
+
+This handoff update is intentionally being published on the canonical branch
+`feat/livespec-dev-tooling-mrsofu`. After that doc-only PR rebase-merges with a
+green matrix, run the normal non-force `reconcile-merged` command again. The
+canonical branch will then resolve to a current-master merge containing PR
+1212, allowing the unchanged fresh janitor to validate the real final tree and
+close `mrsofu`. Do not force-close it and do not accept against PR 1179.
+
+The exact `spec-side-autonomy` worker was notified after PR 1212 merged and
+dev-tooling primary fast-forwarded, so it may resume its exclusive prepared
+livespec-core Red→Green parser compatibility fix. Keep PR 1954 held and
+untouched. Notify `12-hetzner-ci-critical-path-overseer` only after that core
+compatibility PR merges.
+
+Release v1.18.4 is not rollout acceptance: its generated consumer PRs prove
+canonical dispatch propagation but fail before corpus analysis because the
+consumer `.mise.toml` files do not receive `shellcheck = "0.11.0"`. Auto-merge
+is disabled on the six still-open v1.18.4 bumps; Console PR 627 merged early as
+`44704bd6` and is partial adoption only. Keep `jtrjzk` pending until the
+corrected release projects the pin and a real consumer rehearsal is green.
 
 ## Mandate
 
