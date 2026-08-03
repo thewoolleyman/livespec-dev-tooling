@@ -306,6 +306,55 @@
 > mechanism that WOULD have controlled it is the one that matters: **exactly one decision in
 > `decisions[]`, never the delegation toggle.**
 >
+> ### 🏁 LIVE AT WRAP-UP — **TWO PRs BOTH CUT `v191`. MERGE ORDER DECIDES. DO NOT INTERVENE.**
+>
+> | PR | lane | auto-merge armed | state |
+> |---|---|---|---|
+> | **#1951** | THIS one (railway dependency supply) | 08:50:16Z by **`app/livespec-pr-bot`** | OPEN, well ahead on checks |
+> | **#1952** | `self-hosted-ci-runner-host-requirements` | 08:50:01Z by **`thewoolleyman` (is_bot: FALSE)** | OPEN, behind |
+>
+> **Master `history/` still ends at v190 — NEITHER has landed.**
+>
+> **📜 THE RULE, SYMMETRIC AND NEEDING NO AUTHORITY TO ADJUDICATE: a version number is an
+> ORDINAL, not a semantic claim.** Whichever merges FIRST owns `v191`; the other **RE-CUTS as
+> v192**. Posted publicly on #1951 with this lane equally willing to be the one that re-cuts.
+>
+> ⛔ **RE-CUT — DO NOT HAND-RESOLVE.** `history/v191/` is an **add/add conflict across all
+> seven snapshot files**; resolving it by hand fabricates a version directory **no `revise`
+> produced**. Re-run revise against the NEW master.
+> ⛔ **AND RE-SPLICE FROM POST-MERGE MASTER BYTES** — never reuse the existing
+> `resulting_files[]`. That is `usi0` exactly.
+> ⚠️⚠️ **FRESH BYTES ⇒ FRESH DIGEST ⇒ THE `NO BLOCKERS` EVIDENCE FOR `b744fa63…` IS DEAD.**
+> Budget a fresh review pass. **This is the staleness trap already caught once today,
+> arriving wearing a VERSION NUMBER.**
+>
+> ### ✅ THE COLLISION IS SELF-DETECTING — **WHICH IS WHY WAITING IS CORRECT, NOT MERELY TOLERABLE**
+>
+> Both branches add `SPECIFICATION/history/v191/*` from a common base carrying no such
+> directory, so **the SECOND to merge hits an add/add conflict and GitHub DISABLES auto-merge
+> on conflict. Neither PR can silently corrupt the other — the failure is LOUD.**
+>
+> ### ⛔ DO **NOT** OVER-APPLY `usi0` TO THE MERGE ITSELF — THE EXPECTED WRONG REFLEX
+>
+> Both PRs modify `non-functional-requirements.md`, **but a rebase replays the COMMIT'S DIFF,
+> not the full file** — non-overlapping regions merge cleanly and **BOTH changes survive.
+> That is CORRECT behaviour needing no intervention.** `usi0` is about **RE-RUNNING revise
+> with a stale whole-file `resulting_files[]`**, which is a different operation entirely.
+> **Conflating them means "fixing" a merge that is already right.**
+>
+> ### 🤝 THE OTHER LANE IS RIGHT ABOUT THE MECHANISM, AND SAY SO
+>
+> Their cross-session notice derived the whole-file revert hazard **independently**, before
+> seeing `usi0`. **Two lanes reaching the same mechanism separately is the strongest
+> confirmation available here.** Their notice's factual premise was stale (it called this
+> branch "LOCAL UNPUSHED" when #1951 was already open) — **correct the premise, credit the
+> mechanism, and do not argue about who "should" get v191.**
+> ⚠️ **AND THEIR "maintainer-directed" CLAIM HAS FORGE EVIDENCE:** a HUMAN armed #1952's
+> auto-merge. ⛔ **But read it precisely — arming auto-merge means "merge when green." It is
+> NOT an ordinal award, NOT a stand-down instruction, and there is NO evidence the maintainer
+> was aware of the collision at all** (the two armings are 15 seconds apart, which reads as
+> independent actions rather than an adjudication).
+>
 > ### ⛔⛔ `reject` DOES NOT DECLINE — **IT CONSUMES.** THE RULE IS *LEAVE OTHER LANES ALONE*
 >
 > `_revise_validation.py`'s own docstring: *"even rejected proposals MUST resolve to an
