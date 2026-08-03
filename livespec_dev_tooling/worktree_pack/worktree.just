@@ -18,11 +18,21 @@
 # justfile runs with the repository root as the working directory, so that
 # relative path resolves; the core carries all the logic, the recipes stay
 # logic-free.
+#
+# ARGUMENTS RIDE `[positional-arguments]` + `"$@"`, NEVER `{{...}}`. `just`
+# interpolation splices a parameter into the recipe text BEFORE the shell sees
+# it, so a value containing whitespace or a shell metacharacter re-parses as
+# extra words; `"$@"` passes each argument through as one word. That is also
+# what `check-shell-quality` enforces on every recipe in the importing repo's
+# resolved justfile — and this file's recipes are part of that resolution, so a
+# `{{...}}` here turned every consumer's own justfile red the moment the pack
+# was installed.
 
 # Branch a fresh isolated worktree from the default branch under
 # ~/.worktrees/<repo>/<branch> and hydrate it (ecosystem profile).
+[positional-arguments]
 worktree-create branch base_ref="":
-    ./dev-tooling/worktree-lib.sh create {{branch}} {{base_ref}}
+    ./dev-tooling/worktree-lib.sh create "$@"
 
 # Run the ecosystem-profile hydrate hook in the current worktree.
 worktree-hydrate:
@@ -30,10 +40,12 @@ worktree-hydrate:
 
 # Rebase the current worktree branch onto the latest base, then report the
 # next landing step (the core never auto-pushes).
+[positional-arguments]
 worktree-land base_ref="":
-    ./dev-tooling/worktree-lib.sh land {{base_ref}}
+    ./dev-tooling/worktree-lib.sh land "$@"
 
 # Report (dry-run) or remove (--execute) stale/orphaned worktrees. Pass
 # extra args through, e.g. `just worktree-reap --execute`.
+[positional-arguments]
 worktree-reap *args:
-    ./dev-tooling/worktree-lib.sh reap {{args}}
+    ./dev-tooling/worktree-lib.sh reap "$@"
