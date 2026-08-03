@@ -1,6 +1,6 @@
 # rop-railway-enforcement — arm the check that was never armed, then remediate six repos
 
-> ## 🔻🔻 COLD START — **START HERE. ⚠️ ONE UNIT IS MID-FLIGHT AND UNCOMMITTED. ⛔ ITS BLOCK DOES *NOT* SELF-CLEAR — DO NOT WAIT FOR IT. GO TO `livespec` (20).**
+> ## 🔻🔻 COLD START — **START HERE. ⚠️ ONE UNIT IS MID-FLIGHT AND UNCOMMITTED. ⛔ ITS BLOCK DOES *NOT* SELF-CLEAR — DO NOT WAIT FOR IT. GO TO `livespec` (20), AND THE UNIT IS ALREADY PICKED: the `spec_governance` `str | T` SEAM (5 offenders, one consumer, live data-destroying defect) — see 🔥🔥 below.**
 >
 > ### ▶️▶️▶️ EXACT NEXT ACTION — **RUN THIS ONE COMMAND FIRST; IT DECIDES WHICH LANE IS OPEN**
 >
@@ -72,14 +72,99 @@
 >     git-jsonl          universe=49   distinct=11
 >     livespec-runtime   universe=31   distinct=11
 >
-> ⛔⛔ **A BRIEF POINTED ME AT "livespec-runtime's 27" AND THAT FIGURE IS ONE SESSION
-> STALE.** It is **11**, and `8o8e.10` records its LOCAL LANE AS COMPLETE — all 11
-> residual are cross-repo-bound (8, see `0aru`) or process entry points (3, needing a
-> v177 ruling). **Taking it would be taking a finished lane.** ⚠️ Re-derive that
-> characterisation before acting on it; the COUNT is measured, the disposition is
-> inherited from `8o8e.10`.
-> ▶️ **So the open lane is `livespec` (20), then `git-jsonl` (11).** Both repos'
-> masters are green and neither is gated.
+> ⛔⛔ **TWO BRIEFS HAVE NOW POINTED AT "livespec-runtime's 27" (16, and again 18's
+> item 4). THE FIGURE IS STALE BOTH TIMES. IT IS 11 — RE-MEASURED 2026-08-03, NOT
+> INHERITED.** The armed harness, controlled against dev-tooling's known 1 in the same
+> session, reports `universe=31 raw=11 distinct=11` and NAMES all eleven:
+>
+>     cross_repo/resolve.py:57 resolve_ref          work_items/lifecycle.py:89  lane_of
+>     cross_repo/types.py:174  parse_depends_on_entry   …:127  is_item_ready
+>     cross_repo/types.py:211  parse_cross_repo_manifest
+>     github_auth/config.py:46 load_github_app_config
+>     github_auth/credential_helper.py:86 run     <- entry point
+>     hygiene_scan.py:42       scan_hygiene
+>     hygiene_scan_cli.py:23   main               <- entry point
+>     hygiene_scan_cli.py:60   run                <- entry point
+>     hygiene_scan_worktrees.py:61 detect_stale_worktrees
+>
+> ✅ **THE NAMED SET CONFIRMS `8o8e.10`'S DISPOSITION RATHER THAN INHERITING IT:** the
+> **3 process entry points** are visible in the list (`hygiene_scan_cli.py`'s `main`
+> and `run`, `credential_helper.py`'s `run`) and need a v177 ruling; the remaining
+> **8** are the cross-repo-bound set `0aru` coordinates. **Taking it would be taking a
+> finished lane whose residue is gated on a spec ruling and a multi-repo rollout —
+> neither of which is per-function conversion work.**
+> ▶️ **So the open lane is `livespec` (20), then `git-jsonl` (11)** — re-measured the
+> same session at `universe=144 raw=20 distinct=20` and `universe=49 raw=11
+> distinct=11`. Both repos' masters are green (`check-master-ci-green` exit 0 on
+> `livespec`, run directly) and neither is gated.
+>
+> 📜 **THE PATTERN WORTH NAMING: A STALE COUNT SURVIVES BECAUSE IT IS QUOTED, NOT
+> MEASURED.** "27" has now been re-sent by a supervisor twice AFTER this file recorded
+> it as stale, because a figure in a brief reads as current. ⛔ **Never act on a
+> per-member count from any brief OR from this file — re-run the armed harness; it is
+> one command and it is the only thing that is current.**
+>
+> ### 🔥🔥 THE `livespec` LANE HAS A SEAM AFTER ALL — **5 OF ITS 20 BEHIND ONE BOUNDARY, AND THE TARGET TYPE ALREADY EXISTS**
+>
+> ⛔ **THIS FILE SAID `livespec` WAS A "flat tail, biggest file 4". THAT IS TRUE BY
+> FILE AND MISLEADING BY SEAM.** The per-FILE histogram hides it because the cluster
+> spans FIVE FILES in one package, all converging on ONE call site:
+>
+>     spec_governance/editing.py:49       apply_action            -> str | EditResult
+>     spec_governance/config_edit.py:17   write_config_value      -> Path | str
+>     spec_governance/config_edit.py:36   write_config_map_entry  -> Path | str
+>     spec_governance/proposal_edit.py:12 write_proposal_override -> Path | str
+>     spec_governance/journal.py:48       append_journal_event    -> str | JournalAppend
+>
+> **All five hand-roll the SAME union: success is a real value, failure is a BARE
+> STRING.** And `commands/spec_governance.py` — their only consumer — already returns
+> `IOResult[EditResult, LivespecError]` and converts by hand at lines 94 and 112:
+> `if isinstance(result, str): return IOResult.from_failure(UsageError(result))`.
+> ▶️ **So this is not a conversion that must invent a boundary; it is a hand-rolled
+> railway being replaced by the real one, with the destination type already written in
+> the repo.** That is `_dispatcher_policy_settings`'s shape (11 behind one seam) at
+> smaller scale — **25% of the member's lane in one unit.**
+>
+> 📜 **THE LESSON ABOUT THE INSTRUMENT, WHICH IS THE REUSABLE PART: "biggest file N" IS
+> THE WRONG SORT.** Sort the offender list by the CONSUMER they converge on, not by the
+> file they live in. A `str | T` union is a seam wearing five files' clothing.
+>
+> ### 🔴🔴 AND IT IS LIVE, NOT LATENT — **A COMMENT IN `.livespec.jsonc` DESTROYS THE BLOCK AND REPORTS SUCCESS**
+>
+> ⚠️ **REPRODUCED, NOT REASONED.** `config_edit.py:_extract_block` parses the
+> `spec_governance` block with **raw `json.loads`** and swallows `JSONDecodeError` into
+> `{}` (lines 73-77). The caller then sees "no existing block", renders the ONE key
+> being written, and `_replace_existing_block` **overwrites the whole span.** Measured
+> on a file carrying four deliberate settings plus one `//` comment:
+>
+>     BEFORE  propose_change_mode=batch  critique_mode=batch
+>             ratification_review=auto-spawn  doctor_dispositions={...}
+>     CALL    write_config_value(key="in_flight_alignment", value="default-align")
+>     RETURN  PosixPath('.livespec.jsonc')      <- the SUCCESS spelling
+>     AFTER   { "spec_governance": { "in_flight_alignment": "default-align" } }
+>     READ    every other setting reverted to its SAFE DEFAULT
+>
+> ⛔ **THE TRIGGER IS A COMMENT — THE ENTIRE REASON THE FILE IS `.jsonc`.** This is not
+> an exotic malformed-input case: **livespec's OWN `.livespec.jsonc` is comment-heavy**,
+> and `beads-fabro`'s carries a comment warning that its `set-config` path mangles the
+> block (`bd-ib-lmi5`) — **the same class, already observed in a second member.**
+>
+> ✅ **AND THE READ HALF GETS IT RIGHT ON THE IDENTICAL FILE** — `config.py:
+> parse_config_text` parses via `jsonc.loads` (comment-stripping, `Result`-returning)
+> and reports `diagnostics: []` with all four settings honoured. **One artifact, two
+> halves, opposite answers, and the correct answer is already written in the same
+> package.** ▶️ **That is grep ③ (READ vs WRITE ON ONE ARTIFACT) paying out on the first
+> member it was run against — and it beat both older greps, which came back EMPTY here
+> (① only a vendored hit; ② only `_currency` `None`-returns).**
+>
+> ▶️ **THE FIX HAS TWO PARTS AND BOTH ARE REQUIRED:** (a) the write half must parse the
+> way the read half does (`jsonc.loads`), or every commented file becomes a refusal;
+> (b) the four situations `_extract_block` folds into `{}` must split — **block ABSENT
+> is an ANSWER on the success track; DOES-NOT-PARSE and WRONG-SHAPE are FAILURES.**
+> ⛔ Part (a) alone silently keeps the swallow; part (b) alone turns every legitimate
+> commented config into a hard refusal. **The blessed wording already exists in the
+> fleet — beads-fabro's `_drive_config`: *"Cannot write config until `.livespec.jsonc`
+> parses: `<detail>`"*.**
 >
 > ### 🚧🚧 THE MID-FLIGHT UNIT — **RESUME `~/.worktrees/livespec-orchestrator-beads-fabro/config-read-railway`, DO NOT RE-DERIVE IT**
 >
@@ -130,6 +215,17 @@
 > is exempt at both.** That is why this file's own doc PRs kept landing while the
 > `.py` unit could not even be committed.
 >
+> ⛔ **SUPERVISOR BRIEF 18 STATED THIS MORE NARROWLY — *"pushes, not commits — you can
+> author, you cannot push"* — AND THAT IS WRONG IN THE RELAXING DIRECTION.** Re-derived
+> from beads-fabro's own config rather than from either record: `lefthook.yml`
+> pre-commit runs `02-check-pre-commit` → `just check-pre-commit`, which delegates to
+> the exempt `check-pre-commit-doc-only` **only when ZERO `.py` are staged**
+> (`justfile:1196`); otherwise it runs the `check` aggregate, and `justfile:365` puts
+> `check-master-ci-green` inside it. **The direct evidence is this thread's own
+> mid-flight unit: finished, verified green, and it COULD NOT BE COMMITTED.**
+> ⚠️ Believing the narrower version costs a session: you author the whole change set,
+> then discover at commit — not at push — that it cannot land.
+>
 > ⛔⛔ **`55ec` IS THEREFORE BLOCKED TOO — and three ARCHIVED blocks below still say
 > "unblocked right now".** They were true when written and are false now; the current
 > queue line says only "unchanged", which is too quiet. **`55ec` is 28 `.py` import-site
@@ -175,14 +271,37 @@
 > push.** ⛔ `beads-fabro`'s own tests pin the here-string shape CORE no longer has, so
 > "re-copy from CORE" fails that repo's suite: the drift is INCOMPATIBLE, not just stale.
 >
-> ✅ **IT SELF-CLEARS on any new push to master.** ⛔ Do not manufacture one, and
-> **do not spend another `gh run rerun`** — `run_attempt` is 7 and each attempt
-> enlarges the payload that is failing.
+> ⛔ **RETRACTED — THIS LINE USED TO READ "✅ IT SELF-CLEARS on any new push to
+> master." IT DOES NOT SELF-CLEAR.** It clears only on a fresh master push, and the
+> forge route that would produce one is ALSO shut (all three open PRs are red on
+> their own runs), **so no mechanism clears it on its own.** See the COLD START and
+> the ⛔⛔ forge-escape box at the top, which this line now agrees with.
+> ⛔ Do not manufacture a push, and **do not spend another `gh run rerun`** —
+> `run_attempt` is 7 and each attempt enlarges the payload that is failing.
+>
+> 📜 **HOW THIS LINE SURVIVED ITS OWN RETRACTION, AND WHY THAT IS THE HEADLINE.**
+> The retraction commit (`ef65ac6`) corrected the COLD START at lines 3 and 12-13 and
+> **left this sibling standing, with a ✅ on it.** For one commit's life the file
+> asserted both readings, and the stale one was the one wearing a checkmark. **That is
+> `FIX ONE INSTANCE, LEAVE THE SIBLING STALE` — B2/B3's shape — recurring inside the
+> very file that records the remedy for it.** ▶️ **THE REMEDY IS MECHANICAL, NOT MORE
+> CARE: after correcting a claim, grep the WHOLE file for its phrase** (`grep -n -i
+> 'self.clear'` → 3 hits, of which this was the disagreeing one) **and confirm every
+> remaining occurrence agrees.** Care does not scale; a sweep does. Caught by
+> supervisor brief 19 reading master, not by the session that wrote the retraction.
 > 📜 **PROVENANCE, AGAINST MYSELF:** the run's FIRST failure was a `mise`/shellcheck
 > download; `export-telemetry` began failing only after my first re-run, and I burned
 > four re-runs on a "GitHub is down" story before running the one-line page-size trial
 > that falsified it. **The workstation got 502s on that URL too, which is exactly what
 > made the outage story fit. A failure you can reproduce locally is not an outage.**
+> 📜 **AND ONE MORE RE-RUN CAME FROM THE SUPERVISOR, WHO RECORDED IT AGAINST
+> THEMSELVES (brief 19):** attempt 7 was theirs, spent diagnosing before reading
+> `run_attempt`. ⚠️ **Because re-running GROWS the failing payload, that attempt did
+> not merely waste a cycle — it ENLARGED the thing that is failing.** ▶️ **The
+> operational rule this yields is sharper than "don't re-run": on a
+> self-amplifying failure, DIAGNOSIS ITSELF IS A MUTATION. Read `run_attempt` and the
+> payload trend BEFORE reproducing.** Both halves of this thread reached for a re-run
+> as a free probe; it is not free here.
 >
 > **▶️ THE WORKTREE HOLDS THE FINISHED *GREEN* STATE, UNSTAGED. DO NOT `git checkout -- .`.**
 > All four changed files are applied in the working tree of
@@ -375,7 +494,10 @@
 >
 > ### 📋 THE QUEUE
 >
-> 1. **`beads-fabro` (155)** — next, per-function. Run the READ-vs-WRITE grep first.
+> 1. ⛔ **`beads-fabro` (155) — BLOCKED, NOT NEXT** (`8o8e.22`; re-verified exit 1).
+>    **`livespec` (20) IS THE OPEN LANE**, and its first unit is the `spec_governance`
+>    `str | T` seam above — 5 offenders, one consumer, plus the confirmed live
+>    `.livespec.jsonc` destruction. Run the READ-vs-WRITE grep on every new member.
 > 2. **`overseer-yc7` (P1)** — the spec ruling that unblocks 113 distinct (36%).
 > 3. **`jecv` (P1)** — ratify ONE denominator basis; three records disagree, **and
 >    it now has a FOURTH axis: the criterion VERSION each member pins.**
