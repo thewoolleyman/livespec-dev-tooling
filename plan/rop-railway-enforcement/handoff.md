@@ -56,6 +56,52 @@
 > `8o8e.22` shape again (two mechanisms, each defensible, composition unowned) and it
 > belongs beside it, not as a footnote.
 >
+> ### 📋 THE REMAINING **8** ARE TRIAGED BY DISPOSITION — **DO NOT OPEN THEM AS "CONVERT NEXT"**
+>
+> Every one was read against its governing clause, not just its shape. **Three of the
+> eight must NOT be converted, and one of those cannot legitimately be anything.**
+>
+> | offender | disposition |
+> |---|---|
+> | `migration/merge_evidence_backfill_core.py:42 backfill_file` | ▶️ **CONVERT — best next unit.** Its docstring already says it *"Raises the store's EXPECTED errors (`MalformedRecordLineError`, `SchemaViolationError`)"* — a named, expected failure track spelled as exceptions, which is exactly what a `Result` replaces. |
+> | `acceptance.py:40 run_acceptance` | ▶️ CONVERT. Does real I/O (`read_text`, writes a generated program); a missing `spec.md` or unwritable workspace currently escapes as a bare raise. |
+> | `migration/merge_evidence_git.py:10 discover_merge_sha` | ⚠️ READ FIRST. `-> str | None`; `None` may be a legitimate "no evidence found" ANSWER rather than a swallow — check whether the git calls inside swallow. |
+> | `commands/attention_impl.py:19 impl_next` | ⛔ **DECLARE, do not convert.** `-> ImplNextOutput | None` where `None` means "nothing ready" — a legitimate absence, and the shape v179 member 2 admits. Add to `total_absence_returns`. |
+> | `commands/next.py:111 rank_candidates` | ⚠️ Probably DECLARE-adjacent: an empty list is the documented "no candidates" answer (`none` is signalled by an empty list, per its own docstring). Read before touching. |
+> | `commands/_cross_repo.py:54 load_manifest` | ⛔ Already disciplined — `.value_or(...)` at each site WITH the policy stated. Its defect is the false JUSTIFICATION, filed as **`8o8e.27`**, not the behaviour. |
+> | `commands/_cross_repo.py:132 is_item_ready` | ⚠️ Predicate over already-loaded data; its conservative "unparseable ⇒ blocking" is deliberate. Read before converting. |
+> | `checks/work_item_merge_evidence.py:155 resolve_canonical_branch` | ⛔⛔ **NEITHER CONVERTIBLE NOR DECLARABLE — see `8o8e.28`.** |
+>
+> ### ⛔⛔ `8o8e.28` — **A CONVICTION WITH NO CONFORMING REMEDY, AND IT IS AN ARMING BLOCKER**
+>
+> `resolve_canonical_branch -> str` resolves config → `git symbolic-ref` → `"master"`.
+> ⛔ **It cannot be CONVERTED:** git-jsonl's own `SPECIFICATION/contracts.md` ratifies
+> *"Hard-coded fallback when symbolic-ref resolution fails: `\"master\"`"* — putting that
+> case on a failure track contradicts a ratified clause.
+> ⛔ **It cannot be DECLARED:** `total_absence_returns` admits ONLY `X | None`
+> (`NOT_ABSENCE_SHAPED`), and a rejected entry HARD-FAILS the check — so declaring it
+> is worse than leaving it.
+>
+> 📐 **THE GAP: v179 has no member for a function that is TOTAL BY RATIFIED CONTRACT,
+> whose totality comes from a SPECIFIED FALLBACK over a fallible call, and whose return
+> type is therefore a bare `X`.** Member 1 is computed and sees the fallible call;
+> member 2 is gated to `X | None`; v177's four are supervisors/entry points; v183 needs
+> a closed union. **None fits.**
+> ▶️ **So arming this member turns it red with no conforming fix available. That belongs
+> beside `jecv` in the arming sequence, and the same test should be run against the
+> other members BEFORE arming — this is unlikely to be the only one.**
+>
+> ### 🔬 AND THE INSTRUMENT LESSON, WHICH IS THE PART THAT TRANSFERS
+>
+> `resolve_canonical_branch` is **grep ②'s exact signature** — `"master"` is a real
+> branch name real repos really have, so *"could not determine the branch"* and *"the
+> branch is master"* are the same value. **I was one commit from converting it.**
+> 📜 **The difference between a fabricated answer and a ratified default is NOT VISIBLE
+> IN THE CODE. It is visible only in the governing clause.** ▶️ **So the grep produces
+> CANDIDATES, never convictions: read the spec for each hit before writing a test.**
+> That is the same lesson `*_optional` taught about suffixes, now proven on a second,
+> unrelated shape — and this time the spec said the opposite of what the code implied.
+>
 > ### ✅✅ SECOND UNIT LANDED — **`git-jsonl` 10 → 8, REMOVED 2 / ADDED 0** (PR #533)
 >
 > `spec_reader.py`'s pair. **`read_current_specification` had NO failure path at all:**
