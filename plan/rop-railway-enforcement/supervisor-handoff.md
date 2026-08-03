@@ -26,7 +26,7 @@ back to another session, do not proceed read-only.
 1. Supervised session exists:
 
 ```bash
-tmux has-session -t "rop-railway-enforcement"
+tmux has-session -t '=rop-railway-enforcement:'
 ```
 
 2. The supervised session is really a live agent session — its pane process tree
@@ -35,7 +35,7 @@ is a FAILURE. Runtime identity comes from exact live process evidence, NEVER
 from a session name; a leftover session named like an agent proves nothing.
 
 ```bash
-pane_pid=$(tmux display-message -p -t "rop-railway-enforcement" '#{pane_pid}')
+pane_pid=$(tmux display-message -p -t '=rop-railway-enforcement:' '#{pane_pid}')
 ps -o pid=,comm=,args= --ppid "$pane_pid" --pid "$pane_pid" -H
 # PASS only if a live `claude` or `codex` process appears in that tree.
 # A lone shell (zsh/bash) with no agent child is a HALT.
@@ -46,7 +46,7 @@ Report which driver was found.
 3. Supervisor session exists:
 
 ```bash
-tmux has-session -t "rop-railway-enforcement-supervisor"
+tmux has-session -t '=rop-railway-enforcement-supervisor:'
 ```
 
 4. The plan thread exists INSIDE the target repo — absolute path, because
@@ -61,8 +61,9 @@ test -d "/data/projects/livespec-dev-tooling/plan/rop-railway-enforcement"
 first — a symlinked path that merely LOOKS contained is a HALT:
 
 ```bash
-pane_cwd=$(tmux display-message -p -t "rop-railway-enforcement" '#{pane_current_path}')
-case "$(readlink -f "$pane_cwd")" in
+pane_cwd=$(tmux display-message -p -t '=rop-railway-enforcement:' '#{pane_current_path}')
+[ -n "$pane_cwd" ] || { echo "HALT: empty pane cwd"; echo "REMEDY: re-check the exact target before resolving its path"; exit 1; }
+case "$(readlink -f -- "$pane_cwd")" in
   /data/projects/livespec-dev-tooling|/data/projects/livespec-dev-tooling/*) echo "PASS: $pane_cwd" ;;
   *) echo "HALT: pane cwd $pane_cwd is outside the target repo" ;;
 esac
@@ -155,7 +156,7 @@ called it out by name.
 Inspect read-only — last 40 lines of the worker pane:
 
 ```sh
-tmux capture-pane -p -t rop-railway-enforcement -S -40
+tmux capture-pane -p -t '=rop-railway-enforcement:' -S -40
 ```
 
 `-S -40` starts 40 lines back in history. Do NOT pipe to `tail -N` — `-N` is a
@@ -164,9 +165,9 @@ placeholder and `tail` rejects it.
 Short instruction — send the text, VERIFY, then send Enter SEPARATELY:
 
 ```sh
-tmux send-keys -t rop-railway-enforcement -- '<one line>'
-tmux capture-pane -p -t rop-railway-enforcement -S -10   # confirm it landed
-tmux send-keys -t rop-railway-enforcement Enter          # only after verifying
+tmux send-keys -t '=rop-railway-enforcement:' -- '<one line>'
+tmux capture-pane -p -t '=rop-railway-enforcement:' -S -10   # confirm it landed
+tmux send-keys -t '=rop-railway-enforcement:' Enter          # only after verifying
 ```
 
 Do NOT use the one-shot `… -- '<line>' Enter` form. Measured against a live
@@ -178,9 +179,9 @@ Longer text — load from a file, paste, VERIFY, then Enter as a separate step:
 
 ```sh
 tmux load-buffer -b sup /tmp/msg.txt
-tmux paste-buffer -b sup -t rop-railway-enforcement
-tmux capture-pane -p -t rop-railway-enforcement -S -20   # confirm it landed
-tmux send-keys -t rop-railway-enforcement Enter          # only after verifying
+tmux paste-buffer -b sup -t '=rop-railway-enforcement:'
+tmux capture-pane -p -t '=rop-railway-enforcement:' -S -20   # confirm it landed
+tmux send-keys -t '=rop-railway-enforcement:' Enter          # only after verifying
 ```
 
 Idle plus queued input means STUCK, not idle. Never name a variable `TMUX`, and
@@ -297,10 +298,11 @@ background pane watcher is the primary mechanism, a long `ScheduleWakeup` (1200s
 only a backstop:
 
 ```sh
-prev=""; stable=0
+prev="__OVERSEER_NO_CAPTURE_YET__"; stable=0
 for i in $(seq 1 180); do            # ~60 min ceiling, then give up loudly
   sleep 20
-  pane=$(tmux capture-pane -p -t rop-railway-enforcement -S -40)
+  pane=$(tmux capture-pane -p -t '=rop-railway-enforcement:')   # visible only
+  [ -z "$pane" ] && { echo "WAKE: pane unreadable — session may be gone"; exit 0; }
   case "$(printf '%s\n' "$pane" | tail -6)" in
     *"Enter to select · ↑/↓ to navigate"*) echo "WAKE: picker open"; exit 0 ;;
   esac
