@@ -21,42 +21,89 @@
 >   integration suite 1807 passed · `just check-coverage` **100% line+branch** ·
 >   `just check` all targets except the blocker below.
 >
-> **⛔ THE BLOCKER IS NOT THE DIFF — it is `8o8e.22`, and re-running CANNOT clear it.**
-> `just check-master-ci-green` refuses every commit in that repo while master's most
-> recent CI run is red. On master HEAD **99 of 100 checks pass and `ci-green` itself
-> is SUCCESS**; the run conclusion is red from ONE job, `export-telemetry` — which
-> **`ci.yml:697` itself calls *"push-only, not a gate"*** and deliberately leaves out
-> of `ci-green`. `master_ci_green` reads the RUN conclusion, not `ci-green`.
+> **⛔ THE BLOCKER IS `8o8e.22`, AND IT IS TWO GATES READING DIFFERENT SIGNALS.**
+> Measured independently on beads-fabro master run `30833567128` / `b9c8904b`:
 >
-> ⛔⛔ **"GITHUB IS DOWN" WAS WRONG AND IS RETRACTED. IT IS `per_page=100` ON ONE RUN.**
-> Measured 3 trials each, deterministic, same run and same moment:
+>     branch protection required_status_checks.contexts -> ["ci-green"]  (exactly one)
+>     ci-green          -> success   <- the ONLY context the FORGE requires
+>     export-telemetry  -> failure   <- deliberately outside ci-green's needs
+>     RUN conclusion    -> failure   <- what check-master-ci-green reads
+>     run_attempt       -> 7
 >
->     runs/30833567128/jobs?per_page=100  -> 502, 3 of 3
->     runs/30833567128/jobs?per_page=30   -> 200, total_count 94, 3 of 3
->     a DIFFERENT run, per_page=100       -> 200, 94
+> **GitHub branch protection is SATISFIED while the local gate FAILS. A PR can merge
+> onto this master; a local `.py` commit cannot be made on it.** Neither component is
+> wrong alone — **the COMPOSITION is unowned.**
 >
-> `.github/scripts/export-ci-telemetry.sh:38` calls `gh run view --json ...,jobs`,
-> and the `jobs` field makes `gh` fetch that endpoint **at its own hardcoded
-> `per_page=100`**; `set -euo pipefail` turns the 502 into exit 1.
-> ⛔ **So every `gh run rerun` re-issues the identical broken request — I burned four
-> of them on the outage story.** ⚠️ **The workstation got 502s on that URL TOO, which
-> is what made the outage story fit; it was the same broken request, not a shared
-> outage. A failure you can reproduce locally is not thereby an outage.**
+> ⚠️ **AND REDDENING MASTER IS THAT JOB'S DOCUMENTED PURPOSE, so "make it stop" is the
+> FORBIDDEN direction.** `ci.yml` ~658: *"a broken pipeline can't die silently (it
+> reddens master CI and fires the existing failure notification)."* The *"push-only,
+> not a gate"* phrase at ~698 means only "absent from `ci-green`'s `needs:`" — I
+> previously leaned on it as if the job had leaked into a gate by accident. It had not.
 >
-> ✅ **IT SELF-CLEARS: any new push to master makes a new run with far fewer job
-> records and the gate goes green.** `ci.yml` triggers only on `pull_request` and
-> `push: [master]` — no `workflow_dispatch` — so nothing local forces it.
-> ⛔ **Do NOT manufacture a master push (e.g. firing `bump-pin-from-dispatch`) to
-> clear a gate**, and ⛔ **do not "fix" it by pointing `master_ci_green` at
-> `ci-green`** — that lives in dev-tooling where commits are NOT blocked, which makes
-> it the one fix I could have landed and therefore the one to be most careful with.
-> Its docstring: *"deliberately NO env lever … never to bypass the gate."* It may be
-> the right answer, but it is a RULING, and it needs the prior check that every job
-> which SHOULD gate is inside `ci-green`. **All four dispositions are on `8o8e.22`.**
-> 📜 **AND THE PROVENANCE, RECORDED AGAINST MYSELF:** the run's FIRST failure was a
-> `mise`/shellcheck download, not the telemetry job. `export-telemetry` began failing
-> only AFTER my first re-run, so **my own re-runs are a candidate cause of the state
-> I then spent an hour diagnosing.**
+> ### ⚠️ THE GATING SCOPE — **NEITHER "every commit" NOR "pushes only"**
+>
+> `justfile:365` puts `check-master-ci-green` in the `check:` aggregate.
+> `lefthook` **pre-commit** → `check-pre-commit`, whose Red-mode, Green-amend AND
+> default branches all invoke `just … check`; **pre-push** → `check-pre-push` → the
+> same aggregate. ✅ **But zero staged `.py` routes to `check-pre-commit-doc-only`,
+> whose eight targets do NOT include the gate.**
+> ▶️ **So: any commit STAGING `.py`, and any push CARRYING `.py`, are blocked; doc-only
+> is exempt at both.** That is why this file's own doc PRs kept landing while the
+> `.py` unit could not even be committed.
+>
+> ⛔⛔ **`55ec` IS THEREFORE BLOCKED TOO — and three ARCHIVED blocks below still say
+> "unblocked right now".** They were true when written and are false now; the current
+> queue line says only "unchanged", which is too quiet. **`55ec` is 28 `.py` import-site
+> rewrites: it cannot be committed, let alone pushed, until `8o8e.22` clears.**
+>
+> ### ⛔⛔ THE GATE REPAIR **ESCALATES TO THE MAINTAINER — I DID NOT TAKE IT**
+>
+> Pointing `check-master-ci-green` at `ci-green` instead of the run conclusion
+> **provably narrows what it refuses beyond this case**: `ci-green`'s `needs:` omits
+> `setup` and every job added later but not listed, so a `setup` failure would stop
+> reddening the local gate. The module's own docstring forecloses it — *"deliberately
+> NO env lever, flag, or severity knob … never to bypass the gate"* — and records a
+> prior fail-soft that *"exited 0 while master was genuinely red — the precise
+> silent-red-master hole it exists to close."*
+> ⚠️ **It may still be RIGHT** (reading the signal the forge actually requires is
+> fidelity, not convenience) **but it is a RULING, and it is the one repair I could
+> have landed** — it lives in dev-tooling, where commits are not blocked. **Prerequisite
+> before adopting: establish that every job which SHOULD gate is inside `ci-green`.**
+>
+> ### 🔴 THE CLASS FIX IS `8o8e.23` — **ONE SCRIPT, EIGHT REPOS, FOUR VERSIONS**
+>
+> `.github/scripts/export-ci-telemetry.sh` is called *"a byte-for-byte copy of the
+> livespec CORE reference"* by every consumer's `ci.yml`. **Measured by md5: FALSE in
+> six of eight.** CORE + overseer share one version; dev-tooling, git-jsonl, runtime
+> and driver-claude a second; beads-fabro a third; driver-codex a fourth.
+> ⛔ **CORE already fixed a growth failure here and it never fanned out** — its comment
+> names *"the failure that turned master red once the job count grew"* (E2BIG on argv)
+> and stages the payload in a temp file; six repos still build it as a shell variable.
+> ⛔ **And the live wedge is unfixed in ALL EIGHT, CORE included** — every copy calls
+> `gh run view --json …,jobs`, which makes `gh` fetch that endpoint at its own
+> hardcoded `per_page=100`. Measured, 3 trials each:
+>
+>     runs/30833567128/jobs?per_page=100            -> 502, 3 of 3
+>     runs/30833567128/jobs?per_page=30             -> 200, total_count 94, 3 of 3
+>     runs/30833567128/attempts/1/jobs?per_page=100 -> 200
+>     a DIFFERENT run, per_page=100                 -> 200
+>
+> ⚠️ **The `attempts/1` row identifies the mechanism**: a SUBSET of the same jobs
+> serves fine at 100; the aggregate over seven attempts does not. **It is payload
+> size, and re-running GROWS it — the failure is self-amplifying.**
+> 📜 **So the class is not "a telemetry job can redden master". It is a reddening no
+> re-run can clear, that re-running makes WORSE, whose only remedy is an unrelated
+> push.** ⛔ `beads-fabro`'s own tests pin the here-string shape CORE no longer has, so
+> "re-copy from CORE" fails that repo's suite: the drift is INCOMPATIBLE, not just stale.
+>
+> ✅ **IT SELF-CLEARS on any new push to master.** ⛔ Do not manufacture one, and
+> **do not spend another `gh run rerun`** — `run_attempt` is 7 and each attempt
+> enlarges the payload that is failing.
+> 📜 **PROVENANCE, AGAINST MYSELF:** the run's FIRST failure was a `mise`/shellcheck
+> download; `export-telemetry` began failing only after my first re-run, and I burned
+> four re-runs on a "GitHub is down" story before running the one-line page-size trial
+> that falsified it. **The workstation got 502s on that URL too, which is exactly what
+> made the outage story fit. A failure you can reproduce locally is not an outage.**
 >
 > **▶️ THE STATE ON DISK IS THE *RED* HALF OF THE PAIR — DO NOT `git checkout -- .`.**
 > `tests/livespec_orchestrator_beads_fabro/commands/test_config.py` is STAGED alone;
@@ -227,11 +274,19 @@
 > 3. **`jecv` (P1)** — ratify ONE denominator basis; three records disagree, **and
 >    it now has a FOURTH axis: the criterion VERSION each member pins.**
 > 4. **`8o8e.20` (P1)** — the LLOC release gate with no setter, above.
-> 5. **`8o8e.22` (P1)** — the telemetry job that reddens a run `ci-green` passed,
->    blocking every commit in `beads-fabro`. Four dispositions, one of them a ruling.
+> 5. **`8o8e.22` (P1)** — **ESCALATED.** Branch protection and the local gate read
+>    different signals; the repair NARROWS a gate, so it is the maintainer's.
+> 6. **`8o8e.23` (P1)** — one telemetry script, eight repos, FOUR versions, a
+>    never-fanned-out CORE fix, and the live wedge unfixed in all eight.
+> 7. **`55ec` (P1)** — 28 `.py` import-site rewrites, MEASURED **REMOVED 10 / ADDED 0**
+>    (its body's "NOT YET MEASURED" paragraph is now discharged). ⛔ **BLOCKED by
+>    `8o8e.22`: `.py` cannot be committed in that repo.** Do not start it expecting
+>    to push it.
 > 5. **`0aru` (P1)** — the coordinated multi-repo rollout, now EIGHT functions.
 > 6. **`xx1y` (P1)** — re-sync `livespec-runtime`'s venv on any new dependency, or
->    the fleet's git credential helper breaks. **`55ec`**, **`p9ot`** unchanged.
+>    the fleet's git credential helper breaks. **`p9ot`** unchanged; **`55ec` is now
+>    BLOCKED — see the queue entry below, and ignore the archived "unblocked right
+>    now" lines further down this file.**
 >
 > ### 🔻 FIRST FIVE MINUTES — **INLINED, NOT POINTED AT** (copy them; never point)
 >
