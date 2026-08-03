@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.18.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.18.3...v1.18.4) (2026-08-03)
+
+
+### Bug Fixes
+
+* **shell-quality:** keep empty corpus fail closed ([cddb989](https://github.com/thewoolleyman/livespec-dev-tooling/commit/cddb989ea8d60de6dee1888fae75253654263e88))
+* **worktree-pack:** cover bootstrapped shell-quality pack ([9feeef5](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9feeef5f272134165530d322fb0551938a31382c))
+
 ## [1.18.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.18.2...v1.18.3) (2026-08-03)
 
 
