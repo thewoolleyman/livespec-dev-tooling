@@ -38,7 +38,7 @@ import pytest
 from returns.io import IOFailure, IOSuccess
 from returns.unsafe import unsafe_perform_io
 
-from livespec_dev_tooling.checks._io_boundary_calls import _UNRESOLVED_RECEIVER_IO_VERBS
+from livespec_dev_tooling.checks._io_boundary_verbs import _UNRESOLVED_RECEIVER_IO_VERBS
 from livespec_dev_tooling.fleet._local_context import (
     FILE_UNREADABLE,
     FileNotRead,
