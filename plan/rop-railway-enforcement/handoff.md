@@ -1,6 +1,224 @@
 # rop-railway-enforcement — arm the check that was never armed, then remediate six repos
 
-> ## 🔻🔻 COLD START — **START HERE. NOTHING IS MID-FLIGHT. NEXT MEMBER IS `beads-fabro` (166).**
+> ## 🔻🔻 COLD START — **START HERE. `beads-fabro` IS 166 → 155. ITS BIGGEST CLUSTER IS CONVERTED; THE REST IS TAIL.**
+>
+> ### ▶️▶️▶️ EXACT NEXT ACTION — **KEEP GOING ON `beads-fabro` (155), PER-FUNCTION**
+>
+> Its ONE real cluster is gone: `commands/_dispatcher_policy_settings.py` was
+> **11 offenders in one file behind ONE seam**, and it is converted (PR #1277).
+> ⚠️ **Nothing else in the repo is shaped like that.** Re-measure and read the
+> per-file histogram before picking; after #1277 the largest remaining file is
+> `_dispatcher_run_checks.py` at **6**, then `_orchestrator_shared.py` and
+> `_dispatcher_run_status.py` at **5**. It is a flat tail from there.
+>
+> ### 🔍 THE TWO GREPS, RUN ON `beads-fabro` — **BOTH CAME BACK EMPTY, AND THE SECOND ONE IS WHY**
+>
+> **① THE SWALLOWING TWIN — ZERO here.** `grep -rn '^def .*_optional('` returns
+> three `_human_optional` (a `value: object -> str` RENDERER, not a twin) and
+> `_optional_str` / `_optional_int` (PRIVATE dict-getters over an already-parsed
+> record — genuine absences with nothing that can fail). 📜 **The prior header's
+> own warning held: the suffix does not tell you the disposition.** In `git-jsonl`
+> four of four were swallows; here five of five are not.
+>
+> **② THE FABRICATED ANSWER — ZERO PRODUCER-SIDE, AND THE GREP POINTS AT THE WRONG END HERE.**
+> `commands/_dispatcher_io.py` looks like `git-jsonl`'s `run_capture` and is NOT:
+> a timed-out command becomes **124**, an absent executable **127**, each with the
+> reason in `stderr`, and the module docstring states the mapping. The producer
+> keeps the reason. **⛔ But `grep -rn 'exit_code ==\|exit_code !=' ` over the whole
+> package returns ONLY `== 0` / `!= 0` — every one of ~20 consumers collapses to
+> zero/non-zero.** So 124, 127 and the `GithubTokenEnvRunner`'s `1` (a token mint
+> that never spawned anything) are equally indistinguishable *in practice*, and
+> the careful producer-side mapping is consumed by nobody.
+> 📜 **The lesson is about the INSTRUMENT: grep ② finds producers that invent an
+> answer, and this repo's defect is consumers that discard a real one. A repo whose
+> producers are already careful will read CLEAN under that grep while losing exactly
+> as much information.** ▶️ **Run the consumer-side grep too.**
+>
+> ### 🔎 A THIRD GREP, AND IT IS THE ONE THAT FOUND THIS SESSION'S DEFECT — **READ vs WRITE ON ONE ARTIFACT**
+>
+> **Find both halves of a config/store and compare their disposition of the SAME
+> failure.** `_drive_config` refuses to write with *"Cannot write config until
+> .livespec.jsonc parses: `<detail>`"*; `_dispatcher_policy_settings`, reading the
+> same file, turned a parse failure into the setting's safe DEFAULT. **One artifact,
+> two halves, opposite answers — and the correct answer was already written in the
+> repo.** 📜 That asymmetry is cheap to grep for (`grep -rln '<config-filename>'`,
+> then read each hit for what it does on failure) and it dominates both greps above:
+> it finds the swallow AND hands you the blessed fix in the same repo's own voice.
+>
+> ### ✅ WHAT LANDED — **PR #1277, 166 → 155, REMOVED 11 / ADDED 0**
+>
+> `_dispatcher_policy_settings`'s eleven public functions now return
+> `IOResult[T, PolicySettingUnreadable]`. **The four situations it collapsed into
+> one default are now two and two:** file absent and block/key absent stay ANSWERS
+> on the success track carrying the documented default; **a file that does not
+> parse and a value the setting cannot accept are failures.** The fail-open POLICY
+> is unchanged — every call site lands on the same default — but it is spelled
+> `.value_or(...)` where discarding the reason is visible.
+>
+> ⚠️ **AND IT WAS LIVE, NOT LATENT.** This repo's own `.livespec.jsonc` moves
+> `auto_approve_ready: true` and `acceptance_mode: "ai-only"` OFF their safe
+> defaults under an explicit maintainer direction, **and that same file carries a
+> comment warning that `drive --action set-config` round-trips it through
+> `json.dumps` and mangles the block while reporting green (`bd-ib-lmi5`).** A file
+> that stops parsing is an ANTICIPATED event there, and it silently reverted the
+> Dispatcher to human-gated admission and acceptance with nothing said anywhere.
+>
+> ✅ **The delivered set matched the pre-registered SET member-for-member** (all 11
+> from that one file), not merely its count. Universe 186 unchanged.
+>
+> ### 🔴 A DOCUMENTED CI GATE THAT NO CI ARMS — **`LIVESPEC_FAIL_IF_LLOC_SOFT_WARNINGS_EXIST` HAS NO SETTER ANYWHERE**
+>
+> `checks/no_lloc_soft_warnings.py`'s own docstring says *"(CI sets it to `true`
+> for the release context)"*. **Grepped across `beads-fabro` AND
+> `livespec-dev-tooling` — every workflow, every justfile, every check module —
+> the ONLY hits are the docstring, a justfile comment, and the `_FAIL_ENV_VAR`
+> constant itself. Nothing sets it.** So the 201–250 LLOC soft band is enforced by
+> nothing in any repo, while the module asserts CI enforces it at release.
+> ⚠️ **This is `qndn`'s shape INVERTED and it is the more dangerous spelling.**
+> `qndn` was an UNDOCUMENTED skip; this is a DOCUMENTED enforcement that does not
+> exist, so a reader who checks the record is *more* wrong than one who does not.
+> Filed as **`8o8e.20`**. ⛔ **Do not "fix" it by setting the lever** — nine files
+> in `beads-fabro` alone are already in the band and would go red at once; the
+> question is whether the claim or the gate is wrong, and that is a ruling.
+>
+> ### ⚠️⚠️ THE TRAP FIRED AGAIN, AND THE GUARD IS NOW SIX PLACES — **`IOResult.value_or` ≠ `Result.value_or`**
+>
+>     Result.value_or(None)    -> {'a': 1}        the value, BARE
+>     IOResult.value_or(None)  -> <IO: {'a': 1}>  an IO WRAPPER
+>
+> Every one of #1277's six call sites and both test helpers wrap it in
+> `unsafe_perform_io` **and each carries a comment saying why**, because the failure
+> mode is silent: the comparison is against an `IO` wrapper, it is False for every
+> input, and **`pyright` is CLEAN**. ⛔ Two of those six compare a policy STRING to
+> `"auto"`/`"manual"` — without the unwrap, `plan_admissions` holds EVERY item and
+> `can_approve_item` is False for EVERY item, with no error anywhere.
+> 📜 **The prior header recorded the gap as REACH, not knowledge. Writing the
+> reason at each site rather than once in a doc is the reach fix.**
+>
+> ### 📊 EVERY MEMBER — **carried forward from 2026-08-03; only `beads-fabro` moved**
+>
+> | member | RAW | DISTINCT | vendors `returns` | note |
+> |---|---:|---:|---|---|
+> | **`beads-fabro`** | 155 | **155** | ✅ 118 files | **← STILL NEXT.** Tail only now. |
+> | `livespec-overseer` | 213 | 112 | ⛔ **0** | **BLOCKED — `overseer-yc7`** |
+> | `livespec` | 20 | 20 | ✅ 118 | flat tail, biggest file 4 |
+> | `git-jsonl` | 11 | 11 | ✅ 117 | twins all gone; tail across 9 files |
+> | `livespec-runtime` | 11 | 11 | ✅ declared | **local lane COMPLETE** |
+> | `dev-tooling` · `driver-codex` | 1 · 1 | 1 · 1 | ✅ · ⛔ | dt's 1 is RULED; codex BLOCKED |
+>
+> ⛔ **DO NOT ADD THESE UP AND COMPARE TO ANY RECORDED TOTAL — see `jecv`.** Three
+> records carry three different fleet figures on incompatible universe bases
+> (432/338, 402/321, 429/328).
+>
+> ### 🔬 THE HARNESS CONTROL PASSED, AND THE CONTROL IS THE ONLY REASON THESE FIGURES ARE QUOTABLE
+>
+> Rebuilt from §"THE ARMED MEASUREMENT" (delta 1 by monkeypatching `iter_py_files`
+> to yield `resolve_check_universe()`; delta 2 by a PATH SHIM whose `.name` cannot
+> start with `_`; `_scan` run WHOLE). **Against `livespec-dev-tooling` it reported
+> `universe=176 raw=1 distinct=1` and NAMED `fleet/_public_api_graph.py:244:
+> cross_member_consumption`** — the known answer and the known function, including
+> the one that lives in an `_`-prefixed FILE. ⚠️ **Universe is 176 now, not the
+> recorded 171** — dev-tooling grew; the OFFENDER count is the control, never the
+> universe.
+>
+> ### 🔴🔴 A FOURTH AXIS ON `jecv`, AND IT IS THE ONE THAT DECIDES WHEN ARMING IS SAFE — **THE CRITERION HAS A VERSION**
+>
+> **The SAME tree, measured by the SAME harness script, gives 155 or 157 depending
+> on which installed `livespec_dev_tooling` the interpreter resolves.** Not a
+> universe-basis difference — the universe is 186 either way:
+>
+> | interpreter | criterion | `beads-fabro` |
+> |---|---|---:|
+> | `/data/projects/livespec-dev-tooling/.venv/bin/python` | dev-tooling WORKING COPY | **155** |
+> | `/data/projects/livespec-orchestrator-beads-fabro/.venv/bin/python` | its PIN, **v1.16.0** | **157** |
+>
+> ⚠️ **I hit this by accident and it nearly went into the record as a real
+> regression.** A `cd <repo> && ./.venv/bin/python …` resolved `./.venv` against the
+> repo I had just `cd`'d into rather than dev-tooling, and the run reported **two
+> ADDED offenders on a tree I had just measured as ADDED 0.** ▶️ **Always spell the
+> harness interpreter ABSOLUTELY as dev-tooling's**; `./.venv/bin/python` in a
+> chained command is a different criterion wearing the same name.
+>
+> **✅ THE DELTA IS FULLY EXPLAINED AND IT IS ALREADY-LANDED WORK:** exactly
+> `_dispatcher_host_only.py`'s `is_host_only_item` + `declares_workflow_scope_refusal`,
+> both convicted through `_text_declares_workflow_edit`'s `text.replace("\`", "")`.
+> **That is PR #1187 — the `replace`-verb false positive this file already records as
+> "beads-fabro 168 → 166".** dev-tooling master carries the fix; beads-fabro's pin
+> does not.
+>
+> ⛔⛔ **SO THE ARMING SEQUENCE HAS A PREREQUISITE NOBODY HAS WRITTEN DOWN. When the
+> check is ARMED, each repo runs ITS OWN PINNED dev-tooling** — so beads-fabro would
+> go red on **157**, not on the 155 in this record, and every other member's armed
+> number is likewise its own pin's answer rather than any figure here. **Brief 79's
+> step 5 ("re-measure the whole fleet, same harness, same denominator") is not
+> sufficient: it must also be the same CRITERION VERSION, which means a fleet-wide
+> pin bump lands BEFORE the re-measure, not after.** Every per-member figure in this
+> file is on dev-tooling's working copy. **Fold this into `jecv` as its fourth axis.**
+>
+> ### 📋 THE QUEUE
+>
+> 1. **`beads-fabro` (155)** — next, per-function. Run the READ-vs-WRITE grep first.
+> 2. **`overseer-yc7` (P1)** — the spec ruling that unblocks 113 distinct (36%).
+> 3. **`jecv` (P1)** — ratify ONE denominator basis; three records disagree, **and
+>    it now has a FOURTH axis: the criterion VERSION each member pins.**
+> 4. **`8o8e.20` (P1)** — the LLOC release gate with no setter, above.
+> 5. **`0aru` (P1)** — the coordinated multi-repo rollout, now EIGHT functions.
+> 6. **`xx1y` (P1)** — re-sync `livespec-runtime`'s venv on any new dependency, or
+>    the fleet's git credential helper breaks. **`55ec`**, **`p9ot`** unchanged.
+>
+> ### 🔻 FIRST FIVE MINUTES — **INLINED, NOT POINTED AT** (copy them; never point)
+>
+> **NOTHING IS MID-FLIGHT.** No background job, no sub-agent, no unpushed Red.
+>
+> 1. ⚠️ **REAP MY TWO WORKTREES ONCE THEIR PRs MERGE.**
+>    `~/.worktrees/livespec-orchestrator-beads-fabro/policy-settings-railway`
+>    (branch `fix/policy-settings-railway`, **PR #1277**, auto-merge REBASE armed)
+>    and `~/.worktrees/livespec-dev-tooling/beads-fabro-166-to-155` (branch
+>    `docs/beads-fabro-166-to-155`, the PR carrying THIS text). **If you are
+>    reading this on master, the second one merged.**
+> 2. **REAP NOTHING ELSE.** Every other worktree is a PEER lane. Enumerate with
+>    `git worktree list`; **never quote a count from this file.**
+> 3. `git status --short --branch` — clean on `master`; one untracked
+>    `install-livespec-pr-bot.png` is pre-existing. ⚠️ A modified `uv.lock` is
+>    REGENERATED noise: `git checkout -- uv.lock` before any `merge --ff-only`, which
+>    REFUSES while dirty. **It also blocks `git worktree remove`.**
+> 4. ⚠️ **RUN `mise exec -- just install-worktree-pack` IN EVERY FRESH WORKTREE**, then
+>    `git checkout -- .livespec.jsonc uv.lock` (it dirties both). Without it
+>    `check-primary-checkout-commit-refuse-hook-installed` fails `worktree_pack_absent`
+>    — **not your diff**, not `.py`-only, and it fails **AT PUSH**, not at commit.
+> 5. ⚠️ **BEFORE PUSHING ANY RED→GREEN PAIR:** `git log -1 --format=%B | grep -c
+>    '^TDD-Red-'` must be **5**, `'^TDD-Green-'` must be **2**. **`--amend --no-edit`
+>    is the SAFE spelling**; `--amend -m`/`-F` destroys the Red trailers and the hook
+>    still exits 0 (`zv78`).
+>    ✅ **A NEW test file MAY be staged at Green** — only the RECORDED Red file must be
+>    byte-identical.
+>    ✅ **STUB TECHNIQUE, used again for #1277:** the Red staged the FULL converted
+>    test file alone while the on-disk impl carried ONLY the new
+>    `PolicySettingUnreadable` dataclass, unstaged. **29 failures, and the ones that
+>    carry the proof are real ASSERTIONS** — `isinstance(outcome, IOFailure)` against
+>    a bare `int` — rather than the ImportError a missing type would have given.
+>    **⛔ Save the whole green change set to a scratch dir FIRST**
+>    (`git checkout -- .` is how you get back to the Red state, and it is destructive).
+> 6. ⚠️ **A `check-fleet-conformance` RED IS PROBABLY THE APP'S RATE LIMIT.**
+>    `gh run view <id> --log-failed | grep -o '"kind": "[a-z_]*"'` → `rate_limited`.
+>    Log occurrences on **`mmqe`**.
+> 7. ⚠️ **NEVER RUN AN AD-HOC `pytest --cov`** — it writes statement-coverage data that
+>    then collides with the repo's branch-coverage recipe (*"Can't combine statement
+>    coverage data with branch data"*). `rm -f .coverage` and re-run the recipe.
+>    ⚠️ `/tmp` inode pressure recurs (`8o8e.16`): `df -i /tmp`, not `df -h`.
+> 8. ⚠️ **THE ARMED HARNESS IS NOT DURABLE — REBUILD IT** from §"THE ARMED MEASUREMENT".
+>    Delta 1 by monkeypatching `iter_py_files`; delta 2 by handing `_scan` a PATH SHIM
+>    whose `.name` cannot start with `_`. **`_scan` runs WHOLE — never transcribe its
+>    exempt-set construction** (`i04f`/`8o8e.6` drift). **Control it against
+>    dev-tooling's known 1 FIRST, and check it names `cross_member_consumption`.**
+>    ⛔ **RUN IT WITH `/data/projects/livespec-dev-tooling/.venv/bin/python`, SPELLED
+>    IN FULL.** A relative `./.venv/bin/python` after a `cd` picks up the target
+>    repo's PINNED dev-tooling and silently measures a different criterion — see the
+>    fourth-axis section above, where it fabricated two ADDED offenders.
+> 9. **⛔ READ THE LEDGER CHILDREN `8o8e.7`–`.13`** — `.8` was rewritten 2026-08-03
+>    with this session's figures; `.7`, `.10`, `.11` carry the blockers.
+
+> ## 🗄️ (SUPERSEDED AS THE HEADER 2026-08-03 — `beads-fabro` went 166 → 155 after this was written; its FIRST FIVE MINUTES are copied verbatim into the header above, per this block's own rule.) COLD START — **NOTHING IS MID-FLIGHT. NEXT MEMBER IS `beads-fabro` (166).**
 >
 > ### ▶️▶️▶️ EXACT NEXT ACTION — **`livespec-orchestrator-beads-fabro`, AND CHECK SUPPLY FIRST**
 >
