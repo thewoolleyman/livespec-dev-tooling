@@ -1,6 +1,6 @@
 # rop-railway-enforcement — arm the check that was never armed, then remediate six repos
 
-> ## 🔻🔻 COLD START — **START HERE. ⛔⛔ TWO LANES ARE BLOCKED (`beads-fabro`, `livespec`). ▶️ THE OPEN LANE IS `git-jsonl`, NOW AT **10** (11 → 10 landed via PR #532). NOTHING IS MID-FLIGHT OF MINE EXCEPT THE PRESERVED `livespec` RED.**
+> ## 🔻🔻 COLD START — **START HERE. ⛔⛔ TWO LANES ARE BLOCKED (`beads-fabro`, `livespec`). ▶️ THE OPEN LANE IS `git-jsonl`, NOW AT **8** (11 → 10 via #532, 10 → 8 via #533). NOTHING IS MID-FLIGHT OF MINE EXCEPT THE PRESERVED `livespec` RED.**
 >
 > ### ⛔⛔ `livespec` WENT FROM "OPEN LANE" TO "BLOCKED" **DURING THIS SESSION**, AND MASTER CI STAYED GREEN THE WHOLE TIME
 >
@@ -55,6 +55,80 @@
 > exactly where the tooling happens to be installed, and nowhere else.** That is the
 > `8o8e.22` shape again (two mechanisms, each defensible, composition unowned) and it
 > belongs beside it, not as a footnote.
+>
+> ### ✅✅ SECOND UNIT LANDED — **`git-jsonl` 10 → 8, REMOVED 2 / ADDED 0** (PR #533)
+>
+> `spec_reader.py`'s pair. **`read_current_specification` had NO failure path at all:**
+> `_read_spec_directory` rglobs a directory that is not there, yields nothing, and the
+> caller gets `SpecSnapshot(version=0, files={})` — byte-identical to a spec root that
+> EXISTS and is empty. ⚠️ **The sibling in the same file already refused**
+> (`read_specification_history` rejects a missing version dir). **One adapter, two
+> required capabilities, opposite dispositions on the same absence.**
+>
+> 🔴 **AND IT FAILED IN THE REASSURING DIRECTION, WHICH IS WHY NOTHING SURFACED IT.**
+> Measured end-to-end through `detect_impl_gaps`:
+>
+>     rules from a real spec tree    -> 1
+>     rules from an absent spec root -> 0
+>
+> **A mistyped `--spec-target` printed `{"gap_ids": []}` and EXITED 0 — a clean bill of
+> health for a specification that is not there.** The same CLI already exited with a
+> precondition error for a missing *history* version, so one command gave the two
+> absences opposite exit codes. ▶️ **When a collapse produces the ANSWER EVERYONE WANTS,
+> no one reports it as a bug. Prefer the greps that ask "what does absence return" over
+> the ones that ask "what does failure return".**
+>
+> ### 🔧 TWO GATES TAUGHT ME SOMETHING ON THAT UNIT — **worth copying, not just noting**
+>
+> - **`check-types` flagged HKT erosion on the `.bind` chains.** This repo's
+>   `_prune_history_railway.py` carries a file-level pyright pragma, and its own comment
+>   scopes it: it is justified where *"roughly half of all lines are bind targets"*, and
+>   names *"per-call cast or refactor to named typed functions"* as the canonical fix
+>   FIRST. I had **three** bind sites, so I restructured to explicit early returns
+>   instead of copying the pragma. ⛔ **Copying a pragma because a sibling file has one
+>   is how enforcement erodes** — read the comment that grants it.
+> - **`check-coverage` found an UNREACHABLE BRANCH, not a missing test.**
+>   `_files_changed_since` re-read the live spec that `detect_rules` had already read
+>   successfully, so its failure branch could never fire. **The right fix was passing the
+>   snapshot in — deleting a redundant filesystem walk AND the dead branch.** ▶️ A
+>   coverage miss on a NEW failure branch is a question, not a chore: *can this fire at
+>   all?* Writing a test for it would have pinned unreachable code forever.
+>
+> ⚠️ **AND I BROKE RED/GREEN BYTE-IDENTITY MID-UNIT AND CAUGHT IT.** I appended the two
+> new failure-track tests to the Red-recorded file. **A NEW test file MAY be staged at
+> Green; the RECORDED one may not move.** Restored with `git checkout HEAD -- <file>`,
+> put the new tests in `test_spec_reader_diff_failures.py`, and re-verified the checksum
+> against the trailer after EVERY `ruff format` pass. **`ruff format` is the silent
+> breaker here — it reformats on a schedule you did not choose.**
+>
+> ### 🔴🔴 `8o8e.27` — **FOUR SITES IN THREE REPOS DELEGATE TO AN INVARIANT RETIRED AT v103**
+>
+> Found by asking the one question that makes a documented degradation testable:
+> **"the gate you delegate to — does it exist?"**
+> `commands/_cross_repo.py::load_manifest` justifies collapsing a malformed config by
+> naming *"the spec-side doctor's `cross-repo-targets-wellformedness` invariant"*.
+>
+>     LIVE spec (all six SPECIFICATION/*.md)  -> 0 hits
+>     registered doctor check ids (all 22)    -> no such id
+>     ratified history                        -> PRESENT v072…v102, ABSENT v103…v149
+>
+> **It was ratified at v072 and RETIRED at v103 (2026-06-10). The citations were TRUE
+> when written.** Four of them are still load-bearing:
+> `livespec/.../_wiring_completeness_cross_repo_helpers.py:110` and `:153`,
+> `git-jsonl/.../_cross_repo.py:61`, and `beads-fabro/.../_cross_repo.py:56` (the same
+> sentence, copied).
+>
+> ⚠️ **THIS IS `8o8e.20`'S CLASS AND STRICTLY WORSE.** `8o8e.20` is a documented gate
+> nothing arms; this is a documented gate that was DELETED. **And a careful reader who
+> greps `history/` finds "evidence" it exists** — the record actively rewards the check
+> that should have caught it.
+> ⛔ **DO NOT make the four sites hard-fail.** The fail-open behaviour may still be
+> right on its own merits; **what is indefensible is the JUSTIFICATION, not necessarily
+> the behaviour.** Three options, maintainer's ruling, all in `8o8e.27`.
+> ▶️ **THE TRANSFERABLE SWEEP: a retired spec invariant is an API removal for every
+> comment that cites it.** A mechanical check — every `` `<name>-invariant` `` citation
+> in first-party prose must resolve to a live clause or a registered check id — would
+> have caught this at v103, two months ago.
 >
 > ### ✅✅ THAT UNIT IS LANDED — **`git-jsonl` 11 → 10, REMOVED 1 / ADDED 0, universe 49** (PR #532)
 >
@@ -229,7 +303,7 @@
 > known **1** and names `cross_member_consumption`):
 >
 >     livespec           universe=144  distinct=20   <- ⛔ BLOCKED (local gate), see top
->     git-jsonl          universe=49   distinct=10   <- ▶️ OPEN LANE (was 11; #532 landed 1)
+>     git-jsonl          universe=49   distinct=8    <- ▶️ OPEN LANE (11 → 10 → 8)
 >     livespec-runtime   universe=31   distinct=11   <- local lane COMPLETE (8 cross-repo
 >                                                       + 3 entry points), not real supply
 >
@@ -259,7 +333,7 @@
 > (re-measured the same session: `universe=144 raw=20 distinct=20` and `universe=49
 > raw=11 distinct=11`), and both masters ARE green. **But `livespec` cannot take a `.py`
 > commit — see the ⛔⛔ box at the top.**
-> ▶️ **So the open lane is `git-jsonl` — now **10**, VERIFIED by running the aggregate
+> ▶️ **So the open lane is `git-jsonl` — now **8**, VERIFIED by running the aggregate
 > rather than by inferring it from a green master: `just check` → "All 65 targets
 > passed".**
 >
@@ -633,7 +707,7 @@
 > | **`beads-fabro`** | 155 | **155** | ✅ 118 files | **← STILL NEXT.** Tail only now. |
 > | `livespec-overseer` | 213 | 112 | ⛔ **0** | **BLOCKED — `overseer-yc7`** |
 > | `livespec` | 20 | 20 | ✅ 118 | flat tail, biggest file 4 |
-> | `git-jsonl` | 10 | 10 | ✅ 117 | twin DELETED (#532). ⛔ clause (e) hole UNPOPULATED, not closed |
+> | `git-jsonl` | 8 | 8 | ✅ 117 | #532 twin + #533 spec_reader pair. ⛔ clause (e) hole still open |
 > | `livespec-runtime` | 11 | 11 | ✅ declared | **local lane COMPLETE** |
 > | `dev-tooling` · `driver-codex` | 1 · 1 | 1 · 1 | ✅ · ⛔ | dt's 1 is RULED; codex BLOCKED |
 >
@@ -688,7 +762,7 @@
 >
 > ### 📋 THE QUEUE
 >
-> 1. ▶️ **`git-jsonl` (10) — THE ONLY VERIFIED-OPEN LANE.** `just check` 65/65 on clean
+> 1. ▶️ **`git-jsonl` (8) — THE ONLY VERIFIED-OPEN LANE.** `just check` 65/65 on clean
 >    master. ⛔ `beads-fabro` (155) BLOCKED (`8o8e.22`, re-verified exit 1); ⛔ `livespec`
 >    (20) BLOCKED (`doctor-wiring-completeness-cross-repo`, peer fix in flight) with its
 >    Red authored and preserved as `livespec-config-railway-red.patch`.
