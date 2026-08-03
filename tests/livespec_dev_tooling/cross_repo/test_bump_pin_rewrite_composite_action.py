@@ -551,6 +551,8 @@ _RELOCK_PIN_FORMAT = "pyproject_toml_uv_sources"
 # `--refresh-package` defeats a stale uv git-ref cache that would otherwise
 # re-resolve the just-pushed tag to the previously-cached ref.
 _RELOCK_REFRESH_FLAG = "--refresh-package"
+_TOOL_PIN_STEP_NAME = "Reconcile canonical tool pins"
+_SHELLCHECK_PIN = 'shellcheck = "0.11.0"'
 
 
 def _relock_step_body(*, text: str) -> str:
@@ -621,6 +623,57 @@ def test_relock_step_resyncs_the_consumer_venv_after_relocking() -> None:
     assert (
         lock_pos != -1 and lock_pos < sync_pos
     ), "the re-sync must follow `uv lock`, not precede it"
+
+
+def _tool_pin_step_body(*, text: str) -> str:
+    """Return the body of the canonical tool-pin projection step."""
+    match = re.search(
+        r"^    - name: Reconcile canonical tool pins\b.*?(?=^    - name: |\Z)",
+        text,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert match, f"composite Action missing the {_TOOL_PIN_STEP_NAME!r} step"
+    return match.group(0)
+
+
+def test_tool_pin_step_projects_shellcheck_pin_before_canonical_reconcile() -> None:
+    """The Action projects the released ShellCheck mise pin before wiring the new check.
+
+    The v1.18.4 fanout wired `check-shell-quality` into consumers, but left their
+    `.mise.toml` without `shellcheck = "0.11.0"`. Those PRs then failed before
+    corpus analysis because `run_shellcheck` reached version verification with
+    no binary. The bump commit must project the tool pin in the same pre-commit
+    fanout path as canonical justfile/CI wiring.
+    """
+    text = _read(path=_ACTION_PATH)
+    body = _tool_pin_step_body(text=text)
+    assert ".mise.toml" in body, "the tool-pin step must edit the consumer .mise.toml"
+    assert _SHELLCHECK_PIN in body, (
+        "the tool-pin step must project the exact released ShellCheck pin " f"{_SHELLCHECK_PIN!r}"
+    )
+    assert re.search(r"^        uv run python - <<'PY'$", body, re.MULTILINE), (
+        "the tool-pin edit must use a structured parser/script rather than a "
+        "blind sed replacement"
+    )
+    tool_pin_pos = text.find(_TOOL_PIN_STEP_NAME)
+    check_reconcile_pos = text.find("- name: Reconcile canonical check wiring")
+    assert tool_pin_pos != -1 and check_reconcile_pos != -1, "composite Action step shape changed"
+    assert tool_pin_pos < check_reconcile_pos, (
+        "the ShellCheck mise pin must be projected before canonical check wiring "
+        "can add check-shell-quality to the consumer aggregate"
+    )
+
+
+def test_tool_pin_step_fails_closed_when_mise_toml_is_absent() -> None:
+    """Consumers adopting check-shell-quality need a mise tool table to receive pins."""
+    body = _tool_pin_step_body(text=_read(path=_ACTION_PATH))
+    assert (
+        '[[ ! -f "$mise_file" ]]' in body
+    ), "the tool-pin step must explicitly test for a missing consumer .mise.toml"
+    assert "::error::consumer .mise.toml not found" in body, (
+        "missing .mise.toml must be a hard error, not a silent skip that opens "
+        "a guaranteed-red bump PR"
+    )
 
 
 # ---------------------------------------------------------------------------
