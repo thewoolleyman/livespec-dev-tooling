@@ -1,6 +1,6 @@
 # rop-railway-enforcement — arm the check that was never armed, then remediate six repos
 
-> ## 🔻🔻 COLD START — **START HERE. ⚠️ ONE UNIT *IS* MID-FLIGHT, UNCOMMITTED, AND BLOCKED ON A GITHUB OUTAGE. READ THE NEXT BOX FIRST.**
+> ## 🔻🔻 COLD START — **START HERE. ⚠️ ONE UNIT *IS* MID-FLIGHT AND UNCOMMITTED, BLOCKED BY `8o8e.22` — WHICH SELF-CLEARS. READ THE NEXT BOX FIRST.**
 >
 > ### 🚧🚧 EXACT NEXT ACTION — **RESUME `~/.worktrees/livespec-orchestrator-beads-fabro/config-read-railway`, DO NOT RE-DERIVE IT**
 >
@@ -21,18 +21,42 @@
 >   integration suite 1807 passed · `just check-coverage` **100% line+branch** ·
 >   `just check` all targets except the blocker below.
 >
-> **⛔ THE BLOCKER IS NOT THE DIFF.** `just check-master-ci-green` refuses every
-> commit in that repo while master's most recent CI run is red, and master is red
-> **only** because the `export-telemetry` job cannot reach GitHub's
-> `/actions/runs/<id>/jobs` API, which was returning **HTTP 502** for over half an
-> hour. On master HEAD **99 of 100 checks pass and `ci-green` itself is SUCCESS**;
-> the run's overall conclusion is `failure` solely from that one telemetry job, and
-> `master_ci_green` reads the RUN conclusion, not `ci-green`.
-> ▶️ **TO RESUME: re-run the failed jobs on the master run
-> (`gh run rerun <id> --failed`), confirm `just check-master-ci-green` passes, then
-> commit.** Re-running during the outage is wasted — check the API answers first.
-> 📜 **Worth a ledger item if it recurs: a green fleet gate held hostage by a
-> TELEMETRY job that has no bearing on whether the code is good.**
+> **⛔ THE BLOCKER IS NOT THE DIFF — it is `8o8e.22`, and re-running CANNOT clear it.**
+> `just check-master-ci-green` refuses every commit in that repo while master's most
+> recent CI run is red. On master HEAD **99 of 100 checks pass and `ci-green` itself
+> is SUCCESS**; the run conclusion is red from ONE job, `export-telemetry` — which
+> **`ci.yml:697` itself calls *"push-only, not a gate"*** and deliberately leaves out
+> of `ci-green`. `master_ci_green` reads the RUN conclusion, not `ci-green`.
+>
+> ⛔⛔ **"GITHUB IS DOWN" WAS WRONG AND IS RETRACTED. IT IS `per_page=100` ON ONE RUN.**
+> Measured 3 trials each, deterministic, same run and same moment:
+>
+>     runs/30833567128/jobs?per_page=100  -> 502, 3 of 3
+>     runs/30833567128/jobs?per_page=30   -> 200, total_count 94, 3 of 3
+>     a DIFFERENT run, per_page=100       -> 200, 94
+>
+> `.github/scripts/export-ci-telemetry.sh:38` calls `gh run view --json ...,jobs`,
+> and the `jobs` field makes `gh` fetch that endpoint **at its own hardcoded
+> `per_page=100`**; `set -euo pipefail` turns the 502 into exit 1.
+> ⛔ **So every `gh run rerun` re-issues the identical broken request — I burned four
+> of them on the outage story.** ⚠️ **The workstation got 502s on that URL TOO, which
+> is what made the outage story fit; it was the same broken request, not a shared
+> outage. A failure you can reproduce locally is not thereby an outage.**
+>
+> ✅ **IT SELF-CLEARS: any new push to master makes a new run with far fewer job
+> records and the gate goes green.** `ci.yml` triggers only on `pull_request` and
+> `push: [master]` — no `workflow_dispatch` — so nothing local forces it.
+> ⛔ **Do NOT manufacture a master push (e.g. firing `bump-pin-from-dispatch`) to
+> clear a gate**, and ⛔ **do not "fix" it by pointing `master_ci_green` at
+> `ci-green`** — that lives in dev-tooling where commits are NOT blocked, which makes
+> it the one fix I could have landed and therefore the one to be most careful with.
+> Its docstring: *"deliberately NO env lever … never to bypass the gate."* It may be
+> the right answer, but it is a RULING, and it needs the prior check that every job
+> which SHOULD gate is inside `ci-green`. **All four dispositions are on `8o8e.22`.**
+> 📜 **AND THE PROVENANCE, RECORDED AGAINST MYSELF:** the run's FIRST failure was a
+> `mise`/shellcheck download, not the telemetry job. `export-telemetry` began failing
+> only AFTER my first re-run, so **my own re-runs are a candidate cause of the state
+> I then spent an hour diagnosing.**
 >
 > **▶️ THE STATE ON DISK IS THE *RED* HALF OF THE PAIR — DO NOT `git checkout -- .`.**
 > `tests/livespec_orchestrator_beads_fabro/commands/test_config.py` is STAGED alone;
@@ -203,6 +227,8 @@
 > 3. **`jecv` (P1)** — ratify ONE denominator basis; three records disagree, **and
 >    it now has a FOURTH axis: the criterion VERSION each member pins.**
 > 4. **`8o8e.20` (P1)** — the LLOC release gate with no setter, above.
+> 5. **`8o8e.22` (P1)** — the telemetry job that reddens a run `ci-green` passed,
+>    blocking every commit in `beads-fabro`. Four dispositions, one of them a ruling.
 > 5. **`0aru` (P1)** — the coordinated multi-repo rollout, now EIGHT functions.
 > 6. **`xx1y` (P1)** — re-sync `livespec-runtime`'s venv on any new dependency, or
 >    the fleet's git credential helper breaks. **`55ec`**, **`p9ot`** unchanged.
