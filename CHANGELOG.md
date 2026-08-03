@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.15.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.15.0...v1.15.1) (2026-08-03)
+
+
+### Bug Fixes
+
+* **checks:** resolve clause (d) call edges through re-export shims ([4983487](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4983487c1a37bfa759c6a3db5a5ece93d61ab068))
+
 ## [1.15.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.14.6...v1.15.0) (2026-08-03)
 
 
