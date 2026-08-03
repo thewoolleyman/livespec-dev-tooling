@@ -93,6 +93,12 @@ def _write_justfile(*, cwd: Path, body: str) -> Path:
     return path
 
 
+def _write_target_inventory(*, cwd: Path, targets: list[str]) -> Path:
+    path = cwd / "check-targets.txt"
+    _ = path.write_text("\n".join(targets) + "\n", encoding="utf-8")
+    return path
+
+
 def _write_ci_workflow(*, cwd: Path, matrix_targets: list[str], name: str = "ci.yml") -> Path:
     """Write a minimal CI workflow whose `matrix.target` lists `matrix_targets`."""
     workflows = cwd / ".github" / "workflows"
@@ -131,6 +137,23 @@ def test_all_present_on_both_surfaces_passes(*, tmp_path: Path) -> None:
     assert (
         result.returncode == 0
     ), f"expected exit 0 when all present on both surfaces; got {result.returncode}, stderr={result.stderr!r}"
+
+
+def test_target_inventory_supplies_tool_backed_justfile_surface(*, tmp_path: Path) -> None:
+    """`check-targets.txt` supplies the justfile-side tool-backed surface."""
+    slugs = ["check-lint", "check-format"]
+    _ = _write_tool_backed_json(cwd=tmp_path, slugs=slugs)
+    _ = _write_justfile(cwd=tmp_path, body="check:\n    scripts/just/check.sh\n")
+    _ = _write_target_inventory(
+        cwd=tmp_path,
+        targets=["# canonical", "check-lint", "bootstrap", "check-format"],
+    )
+    _ = _write_ci_workflow(cwd=tmp_path, matrix_targets=slugs)
+    result = _run_check(cwd=tmp_path, extra_argv=["--tool-backed-from", "tool-backed.json"])
+    assert result.returncode == 0, (
+        f"expected exit 0 when inventory supplies the tool-backed justfile surface; "
+        f"stderr={result.stderr!r}"
+    )
 
 
 def test_missing_from_justfile_fails(*, tmp_path: Path) -> None:

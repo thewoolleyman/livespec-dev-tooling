@@ -53,6 +53,10 @@ def _write_justfile(*, root: Path, targets: tuple[str, ...]) -> None:
     )
 
 
+def _write_target_inventory(*, root: Path, targets: tuple[str, ...]) -> None:
+    _ = (root / "check-targets.txt").write_text("\n".join(targets) + "\n", encoding="utf-8")
+
+
 # The two role keys whose TOML spelling is a scalar rather than an array. Named
 # explicitly rather than inferred from `Config.__dataclass_fields__` defaults:
 # the union (livespec-dev-tooling-8o8e.1) made every default a declared-absent
@@ -94,6 +98,28 @@ def test_layout_dependent_wiring_missing_one_role_key_fails(
     assert rc == 1
     assert any(record.get("missing_keys") == [missing_key] for record in records)
     assert any("declare the real value" in str(record.get("event")) for record in records)
+
+
+def test_target_inventory_supplies_layout_dependent_wiring(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _ = (tmp_path / "justfile").write_text("check:\n    scripts/just/check.sh\n", encoding="utf-8")
+    _write_target_inventory(
+        root=tmp_path,
+        targets=("# canonical", "fmt", "check-no-inheritance"),
+    )
+    missing_key = sorted(REQUIRED_ROLE_KEYS)[0]
+    pyproject = _all_required_empty_block().replace(f"{missing_key} = []\n", "")
+    _ = (tmp_path / "pyproject.toml").write_text(pyproject, encoding="utf-8")
+
+    rc, records = _run_check(root=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert rc == 1
+    assert any(record.get("missing_keys") == [missing_key] for record in records)
+    assert any(
+        record.get("wired_layout_dependent_checks") == ["check-no-inheritance"]
+        for record in records
+    )
 
 
 def test_declared_empty_required_role_keys_pass(

@@ -34,6 +34,7 @@ __all__: list[str] = [
 
 _CHECK_ID = "required_role_keys_declared"
 _JUSTFILE_NAME = "justfile"
+_TARGET_INVENTORY_NAME = "check-targets.txt"
 _CHECK_PREFIX = "check-"
 _CHECKS_PACKAGE_DIR = Path(__file__).resolve().parent
 _CHECK_RECIPE_HEADER = re.compile(r"^check:\s*$", re.MULTILINE)
@@ -168,6 +169,18 @@ def _wired_check_slugs(*, justfile_text: str) -> tuple[str, ...]:
     return tuple(slugs)
 
 
+def _inventory_check_slugs(*, repo_root: Path) -> tuple[str, ...] | None:
+    path = repo_root / _TARGET_INVENTORY_NAME
+    if not path.is_file():
+        return None
+    slugs: list[str] = []
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        token = raw.split("#", 1)[0].strip()
+        if token.startswith(_CHECK_PREFIX):
+            slugs.append(token)
+    return tuple(slugs)
+
+
 def classify_role_key_declarations(
     *, justfile_text: str, declared_keys: frozenset[str], layout_dependent: frozenset[str]
 ) -> RoleKeyDeclarationStatus:
@@ -227,8 +240,14 @@ def _status_for_repo(*, repo_root: Path) -> RoleKeyDeclarationStatus:
     # the check goes green. That mistake was made here and caught by
     # `test_layout_dependent_wiring_missing_one_role_key_fails`.
     walked = unsafe_perform_io(layout_dependent_check_slugs().unwrap())
+    inventory = _inventory_check_slugs(repo_root=repo_root)
+    justfile_text = (
+        "\n".join(("check:", "    targets=(", *(f"        {slug}" for slug in inventory), "    )"))
+        if inventory is not None
+        else justfile.read_text(encoding="utf-8")
+    )
     return classify_role_key_declarations(
-        justfile_text=justfile.read_text(encoding="utf-8"),
+        justfile_text=justfile_text,
         declared_keys=config.declared_keys,
         layout_dependent=frozenset(walked),
     )

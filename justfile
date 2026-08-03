@@ -43,14 +43,12 @@ export test_nprocs := if env_var_or_default("LIVESPEC_CI_LANE", "local") == "hos
 # any orthogonal legs a staged unit test cannot affect (livespec's
 # e2e-mock / prompts / doctor-static — dev-tooling has none, so it is
 # the coverage floor here; the win lands cross-repo via the pin bump).
-# Work-item livespec-dev-tooling-7us.6; research item #4. The `check:`
-# `targets=(...)` array is the SINGLE source of truth — the scope
-# module receives it and the staged path, computes the skip set, and
-# FAILS FAST (the caller then runs the full aggregate) rather than ever
-# emitting an empty Red selection.
+# Work-item livespec-dev-tooling-7us.6; research item #4. The tracked
+# `check-targets.txt` inventory is the SINGLE source of truth — the
+# script passes it and the staged path to the scope module, which
+# computes the skip set and FAILS FAST (the caller then runs the full
+# aggregate) rather than ever emitting an empty Red selection.
 export red_staged := ""
-
-set positional-arguments
 
 # Default to listing targets when no recipe is invoked.
 default:
@@ -140,21 +138,7 @@ ensure-plugins:
 # is an optional dogfooding runtime; bootstrap skips this target when the CLI is
 # absent but fails on real install errors when Codex is present.
 ensure-codex-plugins:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    if ! command -v codex >/dev/null 2>&1; then
-        echo "codex CLI not found; skipping host-wide Codex plugin install." >&2
-        exit 0
-    fi
-    codex plugin marketplace add thewoolleyman/livespec --ref release
-    codex plugin marketplace add thewoolleyman/livespec-driver-codex --ref release
-    codex plugin marketplace add thewoolleyman/livespec-orchestrator-beads-fabro --ref release
-    codex plugin marketplace upgrade livespec
-    codex plugin marketplace upgrade livespec-driver-codex
-    codex plugin marketplace upgrade livespec-orchestrator-beads-fabro
-    codex plugin add livespec@livespec
-    codex plugin add livespec@livespec-driver-codex
-    codex plugin add livespec-orchestrator-beads-fabro@livespec-orchestrator-beads-fabro
+    scripts/just/ensure-codex-plugins.sh
 
 # ---------------------------------------------------------------
 # Aggregate check — wires EVERY canonical check slug emitted by
@@ -168,188 +152,20 @@ ensure-codex-plugins:
 # ---------------------------------------------------------------
 
 check:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    # `skip` is a just VARIABLE (declared at the top of this justfile,
-    # default empty): a space-separated list of target names to omit from
-    # this run (epic li-cvaudit, cvredmd). The Red-mode pre-commit invokes
-    # `just red_staged="<test>" check`, which derives the Red-mode skip
-    # set from the staged-path class (red_leg_scope) and unions it into
-    # `skip` so coverage (and any orthogonal legs) are not gated at the
-    # Red commit (they are verified at the Green amend) — a self-contained
-    # just variable that replaces the prior ambient
-    # `LIVESPEC_PRECOMMIT_RED_MODE` env var. The recipe header stays the
-    # bare `check:` the wiring-completeness checks parse for. Pre-push and
-    # CI invoke `just check` with no `skip`, so the full aggregate stays
-    # the safety net.
-    # Sync the environment ONCE per aggregate pass, then run every
-    # target with UV_NO_SYNC=1 so the ~44 per-target `uv run`
-    # invocations skip their redundant per-invocation re-sync
-    # (work-item livespec-dev-tooling-ool). The single up-front sync
-    # keeps the freshness guarantee — a stale lockfile/venv still
-    # fails here, loudly, before any target runs. This also caps the
-    # cost of a corrupted-venv re-sync loop (e.g. an orphaned
-    # dist-info missing its RECORD file, which a sync can never
-    # uninstall and therefore retries on EVERY invocation) at one
-    # sync attempt per pass instead of one per target, and shrinks
-    # the concurrent-sync race window that produces that corruption
-    # in the first place. Standalone `just check-<x>` invocations
-    # keep uv's default sync-on-run behavior; CI's per-target matrix
-    # jobs each sync their own fresh runner and are unaffected.
-    if ! uv sync --all-groups; then
-        echo "ERROR: up-front 'uv sync --all-groups' failed; aborting the check aggregate" >&2
-        exit 1
-    fi
-    export UV_NO_SYNC=1
-    targets=(
-        check-agents-ai-references-resolve
-        check-aggregate-completeness
-        check-all-declared
-        check-assert-never-exhaustiveness
-        check-branch-protection-alignment
-        check-canonical-recipe-fidelity
-        check-check-coverage-incremental
-        check-check-mutation
-        check-check-tools
-        check-ci-matrix-completeness
-        check-claude-md-coverage
-        check-comment-line-anchors
-        check-commit-pairs-source-and-test
-        check-file-lloc
-        check-fleet-marketplace-relative-sources
-        check-global-writes
-        check-handoff-dispatch-routing
-        check-heading-coverage
-        check-hook-trees-not-io-exempt
-        check-keyword-only-args
-        check-local-memory-drift-audit
-        check-main-guard
-        check-master-ci-green
-        check-match-keyword-only
-        check-newtype-domain-primitives
-        check-no-direct-destructive-cli
-        check-no-direct-tool-invocation
-        check-no-except-outside-io
-        check-no-fmt-directives
-        check-no-inheritance
-        check-no-lloc-soft-warnings
-        check-no-raise-outside-io
-        check-no-shadow-ledger-body-identical
-        check-no-shadow-ledger-body-typechecks
-        check-no-todo-registry
-        check-no-write-direct
-        check-partition-completeness
-        check-pbt-coverage-pure-modules
-        check-per-file-coverage
-        check-plan-thread-anchor-declared
-        check-plan-thread-epic-parity
-        check-plugin-resolution
-        check-primary-checkout-commit-refuse-hook-installed
-        check-private-calls
-        check-public-api-result-typed
-        check-red-green-replay
-        check-required-role-keys-declared
-        check-rop-pipeline-shape
-        check-self-hosted-routing
-        check-shell-quality
-        check-skill-invocation-paths
-        check-source-trees-scoped-to-consumer
-        check-supervisor-discipline
-        check-tests-mirror-pairing
-        check-tests-no-subprocess-spawn
-        check-tool-backed-check-completeness
-        check-vendor-manifest
-        check-wrapper-shape
-        # ---- Repo-private block (extends after the canonical block) ----
-        # Per the wiring-completeness invariant, repo-private extras MAY
-        # follow the canonical block in any order. These are the four
-        # tool-backed checks (ruff lint, ruff format, pyright types,
-        # aggregate coverage) — helper recipes, NOT canonical slugs (not
-        # under livespec_dev_tooling/checks/), so check-aggregate-
-        # completeness does not enforce them. They are wired here as
-        # LITERAL members so the local `just check` aggregate gives full
-        # lint / format / types / coverage feedback and matches the CI
-        # check-python matrix; the check-tool-backed-check-completeness
-        # meta-check (canonical block above) enforces that both-surfaces
-        # wiring (epic li-pyright-gate, work-item li-pyright-gate-wi3,
-        # LITERAL-membership design). check-coverage gates the aggregate
-        # `fail_under = 100` by running its OWN clean `pytest --cov`
-        # (COVERAGE_FILE unset), measuring IDENTICALLY to the CI standalone
-        # check-coverage job — a deliberate duplicate suite run (see the
-        # recipe header below) chosen so the local gate can never
-        # green-light coverage that CI will fail.
-        check-lint
-        check-format
-        check-types
-        check-coverage
-        # Central fleet-membership conformance check (livespec v108
-        # §"Fleet membership contract") — repo-private extra, NOT a
-        # canonical slug (it lives under livespec_dev_tooling/fleet/,
-        # not checks/: it asserts the WHOLE fleet from one vantage
-        # point, so siblings do not each wire it). Always wired here;
-        # the module self-manages its RUN/SKIP lever (see the recipe).
-        check-fleet-conformance
-        # ADMIN-vantage world-gate lane of the SAME contract — repo-private
-        # extra for the same reason as the line above. It runs the two rows
-        # (secret-names, branch-protection) that need admin scope, which no
-        # App-token context can read, under the operator's own gh
-        # credentials at pre-push. Deliberately absent from the CI matrix
-        # (it would always-skip there), exactly like check-master-ci-green
-        # and check-branch-protection-alignment. CI is NOT the only
-        # deliberately-non-admin context that reaches this aggregate: a
-        # Fabro dispatch sandbox's commit hooks reach it too, holding only
-        # the `ghs_`-class App installation token (admin scope withheld by
-        # the livespec v045 capability boundary) — under that credential
-        # class the lane classifies itself OUT-OF-VANTAGE (owned by the
-        # operator's pre-push) and passes at zero API reads, while a
-        # user-class credential lacking admin scope still fails blind at
-        # exit 4. See the recipe comment.
-        check-fleet-conformance-admin
-        # Fabro sandbox image pin-lockstep gate — repo-private extra,
-        # NOT a canonical slug (the module lives at
-        # livespec_dev_tooling/fabro_image_pin_lockstep.py, not under
-        # checks/: this repo OWNS the fleet Fabro sandbox image at
-        # docker/fabro-sandbox/Dockerfile, so siblings have nothing
-        # to wire). See the recipe comment below.
-        check-fabro-image-pin-lockstep
-    )
-    # Red-mode scope reduction (work-item livespec-dev-tooling-7us.6):
-    # when `red_staged` names the single staged test path at a Red
-    # commit, derive the additional skip set from the staged-path CLASS
-    # against the SAME `targets` array (its single source of truth) and
-    # union it into `skip`. The module FAILS FAST (exit 1) rather than
-    # ever emitting an empty Red selection; on failure we abort here so
-    # the Red gate is never silently empty (it surfaces loudly and the
-    # author re-runs the full aggregate). Pre-push / CI pass no
-    # `red_staged`, so the full aggregate is unaffected.
-    effective_skip="${skip}"
-    if [[ -n "${red_staged}" ]]; then
-        red_skip=$(uv run python -m livespec_dev_tooling.red_leg_scope \
-            --staged "${red_staged}" --targets "${targets[@]}") || {
-            echo "ERROR: red_leg_scope fail-fast; the Red selection would be empty — run the full aggregate instead" >&2
-            exit 1
-        }
-        effective_skip="${skip} ${red_skip}"
-    fi
-    uv run python -m livespec_dev_tooling.parallel_check_dispatcher --skip "${effective_skip}" -- "${targets[@]}" || exit 1
-    # The advisory green token records a FULL green pass only. A partial
-    # run (explicit `skip` OR a Red-mode `red_staged` scope reduction)
-    # must NOT write it, or pre-push would skip the full aggregate on a
-    # tree that never had one.
-    if [[ -z "${skip}" && -z "${red_staged}" ]]; then uv run python -m livespec_dev_tooling.green_token write || true; fi
+    scripts/just/check.sh
 
 # ---------------------------------------------------------------
 # Tool-backed checks. NOT canonical-aggregate slugs (not in
 # canonical_checks.py's discovery set — they live as helper recipes,
 # not under livespec_dev_tooling/checks/), so check-aggregate-
 # completeness does not enforce them. They ARE literal members of the
-# `check:` aggregate's `targets=(...)` array (repo-private block) AND
-# of the CI check-python matrix; the check-tool-backed-check-
-# completeness meta-check enforces that both-surfaces wiring (epic
-# li-pyright-gate, work-item li-pyright-gate-wi3, LITERAL-membership
-# design). check-lint / check-format are cheap ruff passes; the
-# coverage gate is consolidated onto the SINGLE pytest run that
-# check-per-file-coverage already performs (see check-coverage below).
+# tracked `check-targets.txt` inventory (repo-private block) AND of the
+# CI check-python matrix; the check-tool-backed-check-completeness
+# meta-check enforces that both-surfaces wiring (epic li-pyright-gate,
+# work-item li-pyright-gate-wi3, LITERAL-membership design). check-lint
+# / check-format are cheap ruff passes; the coverage gate is
+# consolidated onto the SINGLE pytest run that check-per-file-coverage
+# already performs (see check-coverage below).
 # ---------------------------------------------------------------
 
 check-lint:
@@ -369,32 +185,20 @@ check-types:
 # a sub-2s ruff/pyright failure surfaces immediately instead of after
 # `just check`'s slow pytest+coverage tail. This is a developer/agent
 # convenience like the helper recipes above; it is deliberately NOT a
-# member of the `check:` aggregate `targets=(...)` array, NOT a
+# member of the tracked check-target inventory, NOT a
 # canonical slug (no livespec_dev_tooling/checks/ module), and NOT in
 # the CI matrix. The authoritative full gate remains `just check`
 # (still run at pre-push and in CI) — `check-static` is a fast
 # pre-flight, never a replacement for it.
 check-static:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    uv run ruff format --check .
-    uv run ruff check .
-    uv run pyright
+    scripts/just/check-static.sh
 
 # Factory-boundary helper: fail if the current branch changes GitHub workflow
 # files. This is intentionally outside the canonical aggregate; factory janitor
 # lanes invoke it before `check` so implementation branches never publish
 # `.github/workflows/` edits.
 check-no-workflow-edits:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    base=$(git merge-base HEAD origin/master 2>/dev/null || git merge-base HEAD master)
-    if git diff --quiet --name-only "$base"...HEAD -- .github/workflows; then
-        exit 0
-    fi
-    echo "ERROR: factory branches must not modify .github/workflows/ files" >&2
-    git diff --name-only "$base"...HEAD -- .github/workflows >&2
-    exit 1
+    scripts/just/check-no-workflow-edits.sh
 
 # `changed-files` — print the changed `.py` set this branch touches,
 # repo-root-relative, one path per line, sorted + de-duplicated
@@ -406,18 +210,11 @@ check-no-workflow-edits:
 #   - `git diff --cached --name-only --diff-filter=AM` — added/modified
 #     `.py` currently staged but not yet committed.
 # This is the exact set `check-changed` consumes for its scoped gate.
-# Helper recipe (like `check-static`): NOT a member of the `check:`
-# aggregate `targets=(...)` array, NOT a canonical slug, NOT in the CI
+# Helper recipe (like `check-static`): NOT a member of the tracked
+# check-target inventory, NOT a canonical slug, NOT in the CI
 # matrix.
 changed-files:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    # `grep` exits 1 on zero matches; an empty changed set is normal (a
-    # clean branch), so swallow that into exit 0 via `|| true` — the
-    # consuming `check-changed` treats empty as "nothing to gate".
-    { git diff --name-only origin/master...HEAD;
-      git diff --cached --name-only --diff-filter=AM; } \
-        | { grep -E '\.py$' || true; } | sort -u
+    scripts/just/changed-files.sh
 
 # `check-changed` — modified-files INNER-LOOP gate for fast scoped
 # feedback during iteration (work-item livespec-dev-tooling-7us.9). Feeds
@@ -434,21 +231,10 @@ changed-files:
 # AUTHORITATIVE gate remains `just check`, which runs the FULL suite + the
 # full AST scans + the aggregate 100% coverage gate at pre-push and in CI.
 # Like `check-static`, this is a developer/agent convenience: NOT a member
-# of the `check:` aggregate `targets=(...)` array, NOT a canonical slug,
+# of the tracked check-target inventory, NOT a canonical slug,
 # and NOT in the CI matrix.
 check-changed:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    mapfile -t changed < <(just changed-files)
-    if [[ "${#changed[@]}" -eq 0 ]]; then
-        echo ":: check-changed: no changed .py vs origin/master (and none staged); nothing to gate"
-        echo ":: the authoritative full gate remains 'just check' (run at pre-push + CI)"
-        exit 0
-    fi
-    echo ":: check-changed: scoping the test subset + per-file coverage gate to ${#changed[@]} changed .py:"
-    printf '   %s\n' "${changed[@]}"
-    echo ":: INNER-LOOP ONLY — 'just check' runs the FULL suite/AST scans at pre-push + CI"
-    just check-check-coverage-incremental --paths "${changed[@]}"
+    scripts/just/check-changed.sh
 
 # Aggregate (total) coverage gate at `fail_under = 100` (pyproject.toml
 # [tool.coverage.report]). This recipe ALWAYS runs its own clean
@@ -498,6 +284,7 @@ check-changed:
 # twin is operator-invoked, NOT CI:
 #   with-livespec-env.sh -- env PATH="$HOME/.local/bin:$PATH" uv run python -m \
 #       livespec_dev_tooling.fleet.wire_fleet_member --repo <member>
+[positional-arguments]
 check-fleet-conformance *args:
     uv run python -m livespec_dev_tooling.fleet.fleet_conformance "$@"
 
@@ -510,6 +297,7 @@ check-fleet-conformance *args:
 # verdict entry exit 1 and keep the preflight job red. Invoked by
 # reusable-release-dispatch.yml's fleet-preflight job; not part of the
 # `check:` aggregate (it is a workflow helper, not a repo gate).
+[positional-arguments]
 filter-dispatch-matrix *args:
     uv run python -m livespec_dev_tooling.fleet.dispatch_matrix_filter "$@"
 
@@ -594,18 +382,7 @@ check-fabro-image-pin-lockstep:
     uv run python -m livespec_dev_tooling.fabro_image_pin_lockstep
 
 check-coverage:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    # Always measure the `fail_under = 100` aggregate gate the SAME way CI's
-    # standalone check-coverage job does: a clean `pytest --cov` with
-    # COVERAGE_FILE UNSET (`env -u`). In the `just check` aggregate the
-    # parallel dispatcher exports COVERAGE_FILE for this target's namespace;
-    # `env -u COVERAGE_FILE` strips it so the suite runs exactly as the CI
-    # standalone runner does. See the header comment above for why reusing
-    # check-per-file-coverage's exported-namespace data measured LENIENTLY
-    # (it green-lit self-referential lines that CI's clean run then failed).
-    echo ":: check-coverage: clean standalone suite (COVERAGE_FILE unset) — strict, matches CI"
-    env -u COVERAGE_FILE uv run pytest -n "${test_nprocs}" --cov --cov-branch --cov-config=pyproject.toml --cov-report=term-missing
+    scripts/just/check-coverage.sh
 
 # ---------------------------------------------------------------
 # Canonical aggregate recipes — one per canonical slug emitted by
@@ -617,8 +394,8 @@ check-coverage:
 check-agents-ai-references-resolve:
     uv run python -m livespec_dev_tooling.checks.agents_ai_references_resolve
 
-# Wiring-completeness gate — verifies the targets=(...) array in this
-# very justfile carries every canonical slug in alphabetical order
+# Wiring-completeness gate — verifies the tracked check-target inventory
+# carries every canonical slug in alphabetical order
 # (epic li-univck Phase 1.3, work-item li-aggchk). Self-bootstrapping:
 # wiring this slug forces wiring every other canonical slug.
 check-aggregate-completeness:
@@ -663,6 +440,7 @@ check-canonical-recipe-fidelity:
 # per-file-coverage run. The former hand-pinned serialization edge
 # (check-check-coverage-incremental -> check-per-file-coverage, 7us.6)
 # is RETIRED; this gate runs fully concurrently.
+[positional-arguments]
 check-check-coverage-incremental *args:
     uv run python -m livespec_dev_tooling.checks.check_coverage_incremental "$@"
 
@@ -832,17 +610,7 @@ check-pbt-coverage-pure-modules:
 # via the `check skip=...` argument (coverage is verified at the Green
 # amend), so no ambient env-var read is needed here.
 check-per-file-coverage:
-    #!/usr/bin/env bash
-    # -e (errexit) is load-bearing: without it a non-zero pytest exit is
-    # swallowed by the trailing per_file_coverage command, so the recipe's
-    # status becomes the coverage check's and a RED suite reports GREEN.
-    # This target is its own CI matrix job AND a required status check, so
-    # the masked green reached branch protection and the Dispatcher's
-    # "latest master is green" pre-flight, not just local runs.
-    # Matches livespec core's identical fix (bc5c9bce, 2026-07-01).
-    set -euo pipefail
-    uv run pytest -n "${test_nprocs}" --cov --cov-branch --cov-config=pyproject.toml --cov-report=term-missing
-    uv run python -m livespec_dev_tooling.checks.per_file_coverage
+    scripts/just/check-per-file-coverage.sh
 
 # Plan-lifecycle enforcement — static half: every active plan/*/handoff.md
 # declares a concrete `**Ledger anchor:**` epic id (credential-free, runs
@@ -905,6 +673,7 @@ check-public-api-result-typed:
 # regardless of prefix (work-item livespec-dev-tooling-eld + the
 # 2026-06-11 green-verified correction; the load-bearing branch-level
 # gate).
+[positional-arguments]
 check-red-green-replay *args:
     uv run python -m livespec_dev_tooling.checks.red_green_replay "$@"
 
@@ -960,7 +729,7 @@ check-tests-no-subprocess-spawn:
 # Tool-backed-check completeness meta-check (epic li-pyright-gate,
 # work-item li-pyright-gate-wi3). Asserts each tool-backed check
 # (check-lint / check-format / check-types / check-coverage) is a
-# LITERAL member of BOTH this justfile's `check:` targets=(...) array
+# LITERAL member of BOTH this repo's tracked check-target inventory
 # AND the CI check-python matrix. Self-passes because the targets
 # array + CI matrix wire all four literally.
 check-tool-backed-check-completeness:
@@ -983,74 +752,18 @@ check-wrapper-shape:
 # ---------------------------------------------------------------
 
 check-pre-commit:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    # Empty-commit guard (work-item livespec-dev-tooling-74q): an empty
-    # commit cannot change repo state, so repo-state gates yield zero
-    # information about it. `git commit --allow-empty` (e.g. machine
-    # checkpoint commits) passes immediately. Deliberately unfiltered
-    # (no --diff-filter): a deletion-only commit is NOT empty and still
-    # flows through the classification below.
-    if [[ -z "$(git diff --cached --name-only)" ]]; then
-        echo ":: empty commit detected (nothing staged at all): repo-state gates have nothing to gate; exit 0"
-        exit 0
-    fi
-    staged=$(git diff --cached --name-only --diff-filter=AM)
-    py_staged=$(echo "$staged" | grep -E '\.py$' || true)
-    test_staged=$(echo "$staged" | grep -E '^tests/.*\.py$' || true)
-    impl_staged=$(echo "$staged" | grep -E '^livespec_dev_tooling/.*\.py$' || true)
-    test_count=0
-    impl_count=0
-    [[ -n "$test_staged" ]] && test_count=$(echo "$test_staged" | wc -l)
-    [[ -n "$impl_staged" ]] && impl_count=$(echo "$impl_staged" | wc -l)
-    if [[ -z "$py_staged" ]]; then
-        echo ":: doc-only mode detected (zero .py files staged): running just check-pre-commit-doc-only"
-        echo ":: pre-push + CI keep the full aggregate as the load-bearing safety net"
-        just check-pre-commit-doc-only
-        exit $?
-    fi
-    if [[ "$test_count" -eq 1 ]] && [[ "$impl_count" -eq 0 ]]; then
-        echo ":: Red-mode shape detected: $test_staged"
-        echo ":: scoping the Red gate by staged-path class (red_leg_scope): coverage gates skip"
-        echo ":: (verified at the Green amend) + any orthogonal legs a staged unit test cannot affect"
-        just red_staged="$test_staged" check
-        exit $?
-    fi
-    # Green-amend shape needs no special-casing: the no-arg
-    # `check-red-green-replay` aggregate variant validates the commit
-    # RANGE origin/master..HEAD (work-item livespec-dev-tooling-eld),
-    # and during a Green amend HEAD is the in-progress Red commit —
-    # which touches tests-only .py and therefore carries no trailer
-    # obligation. The full aggregate runs as-is.
-    just check
+    scripts/just/check-pre-commit.sh
 
 # When zero `.py` files are staged, `check-pre-commit` delegates here.
 # Pre-push delegates here via `check-pre-push` for zero-py changesets.
 check-pre-commit-doc-only:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    echo ":: doc-only subset (no repo-metadata checks wired yet)"
-    exit 0
+    scripts/just/check-pre-commit-doc-only.sh
 
 # Skip the Python-code check subset when the pushed commits contain
 # zero `.py` changes. Falls back to `origin/master` when no upstream
 # branch is configured locally.
 check-pre-push:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    upstream=$(git rev-parse --abbrev-ref --symbolic-full-name @{upstream} 2>/dev/null || echo "origin/master")
-    changeset=$(git diff --name-only "${upstream}..HEAD")
-    py_changed=$(echo "$changeset" | grep -E '\.py$' || true)
-    if [[ -z "$py_changed" ]]; then
-        echo ":: doc-only push detected (zero .py changes vs ${upstream}): running check-pre-commit-doc-only"
-        just check-pre-commit-doc-only
-        exit $?
-    fi
-    if uv run python -m livespec_dev_tooling.green_token check 2>&1; then
-        echo ":: pre-push: green token matched — tree byte-identical to last green check; skipping full aggregate (CI is authoritative)"
-        exit 0
-    fi
-    just check
+    scripts/just/check-pre-push.sh
 
 # Change-aware aggregate for agent dispatch (work-item livespec-dev-tooling-ool).
 # Compares the branch against origin/master, detects the change class, and routes
@@ -1062,23 +775,7 @@ check-pre-push:
 # safety net. Agents SHOULD call `just check-scoped` instead of `just check` so
 # that trivial changesets (e.g. a stray-gitlink deletion) pay only the doc-only cost.
 check-scoped:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    upstream="origin/master"
-    changeset=$(git diff --name-only "${upstream}...HEAD")
-    if [[ -z "$changeset" ]]; then
-        echo ":: check-scoped: no changes vs ${upstream}; nothing to gate"
-        exit 0
-    fi
-    py_changed=$(echo "$changeset" | grep -E '\.py$' || true)
-    if [[ -z "$py_changed" ]]; then
-        echo ":: check-scoped: no .py changes vs ${upstream} (change class: doc/config/deletion)"
-        echo ":: running fast doc-only subset; CI runs the full matrix as the load-bearing gate"
-        just check-pre-commit-doc-only
-        exit $?
-    fi
-    echo ":: check-scoped: .py changes detected vs ${upstream}: running full check aggregate"
-    just check
+    scripts/just/check-scoped.sh
 
 # ---------------------------------------------------------------
 # Pre-commit auxiliary gates.
@@ -1087,19 +784,11 @@ check-scoped:
 # Ruff fix + format on staged .py files BEFORE the rest of the
 # pre-commit gate runs. Non-blocking — unfixable issues fall through
 # to the check-lint / check-format targets that the `just check`
-# aggregate's `targets=(...)` array wires as literal members
+# aggregate's tracked check-target inventory wires as literal members
 # (repo-private block; epic li-pyright-gate, work-item
 # li-pyright-gate-wi3). Re-stages post-autofix bytes.
 lint-autofix-staged:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    staged=$(git diff --cached --name-only --diff-filter=AM | grep -E '\.py$' || true)
-    if [[ -z "$staged" ]]; then
-        exit 0
-    fi
-    echo "$staged" | xargs uv run ruff check --fix --exit-zero
-    echo "$staged" | xargs uv run ruff format
-    echo "$staged" | xargs git add
+    scripts/just/lint-autofix-staged.sh
 
 # ---------------------------------------------------------------
 # Mutating targets (opt-in; not run in CI).
@@ -1126,5 +815,6 @@ lint-fix:
 # shim fires and the trailers get written; pass `--no-mise` for a
 # hook-less repo. Opt-in mutating target — NOT part of the `check:`
 # aggregate.
+[positional-arguments]
 tdd-commit *args:
     uv run python -m livespec_dev_tooling.tdd_commit "$@"

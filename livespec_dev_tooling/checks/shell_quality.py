@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import json
+import shutil
+import subprocess
 import sys
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TypedDict, cast
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -13,11 +17,6 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402
 
-from livespec_dev_tooling.checks._justfile_bash_recipes import (  # noqa: E402
-    RecipeEvidence,
-    ShellRecipe,
-    classify_justfile_bash_recipes,
-)
 from livespec_dev_tooling.shellcheck import (  # noqa: E402
     ShellFinding,
     run_shellcheck,
@@ -28,6 +27,25 @@ __all__: list[str] = []
 _CHECK_ID = "shell-quality"
 _EXIT_VIOLATIONS = 1
 _SET_WORD_COUNT = 2
+_INTERPOLATION_SENTINEL = "__JUST_INTERPOLATION__"
+
+
+class _JustSettings(TypedDict, total=False):
+    positional_arguments: bool
+
+
+class _JustRecipe(TypedDict, total=False):
+    attributes: list[str]
+    body: list[list[object]]
+    doc: str | None
+    name: str
+    parameters: list[object]
+    shebang: bool
+
+
+class _JustDump(TypedDict, total=False):
+    recipes: dict[str, _JustRecipe]
+    settings: _JustSettings
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -86,74 +104,138 @@ def _from_shellcheck(*, item: ShellFinding) -> _Finding:
     )
 
 
-def _recipe_findings(*, repo_root: Path) -> list[_Finding]:
-    justfile = repo_root / "justfile"
-    if not justfile.is_file():
-        return []
-    classification = classify_justfile_bash_recipes(
-        justfile_text=justfile.read_text(encoding="utf-8")
+def _flatten_body_line(*, parts: object) -> tuple[str, bool]:
+    fragments = cast(list[object], parts)
+    text = ""
+    interpolated = False
+    for part in fragments:
+        if isinstance(part, str):
+            text += part
+        else:
+            interpolated = True
+            text += _INTERPOLATION_SENTINEL
+    return text.strip(), interpolated
+
+
+def _just_dump(*, repo_root: Path) -> _JustDump | None:
+    if not (repo_root / "justfile").is_file():
+        return None
+    just_binary = cast(str, shutil.which("just"))
+    completed = subprocess.run(
+        [just_binary, "--dump", "--dump-format", "json"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
     )
+    parsed = json.loads(completed.stdout)
+    return cast(_JustDump, parsed if isinstance(parsed, Mapping) else {})
+
+
+def _recipe_findings(*, repo_root: Path) -> list[_Finding]:
+    payload = _just_dump(repo_root=repo_root)
+    if payload is None:
+        return []
     findings: list[_Finding] = []
-    for recipe in classification.recipes:
+    settings = payload.get("settings", {})
+    if settings.get("positional_arguments", False):
+        findings.append(
+            _Finding(reason="global-positional-arguments", path=Path("justfile"), line=1)
+        )
+    for recipe in payload.get("recipes", {}).values():
         findings.extend(_findings_for_recipe(recipe=recipe))
     return findings
 
 
-def _findings_for_recipe(*, recipe: ShellRecipe) -> list[_Finding]:
+def _findings_for_recipe(*, recipe: _JustRecipe) -> list[_Finding]:
     findings: list[_Finding] = []
-    interpolation_line = _interpolation_line(recipe=recipe)
-    if interpolation_line is not None:
+    name = recipe.get("name", "")
+    body = recipe.get("body", [])
+    lines = [_flatten_body_line(parts=line) for line in body]
+    if any(flag for _, flag in lines):
         findings.append(
             _Finding(
                 reason="just-interpolation",
                 path=Path("justfile"),
-                line=interpolation_line,
-                recipe=recipe.name,
+                line=1,
+                recipe=name,
             )
         )
-    set_line = _first_set_line(recipe=recipe)
-    if set_line is not None and _recipe_needs_errexit_rationale(recipe=recipe, set_line=set_line):
+    if _missing_per_recipe_positional_arguments(recipe=recipe):
+        findings.append(
+            _Finding(
+                reason="missing-per-recipe-positional-arguments",
+                path=Path("justfile"),
+                line=1,
+                recipe=name,
+            )
+        )
+    if _missing_errexit_rationale(recipe=recipe, lines=lines):
         findings.append(
             _Finding(
                 reason="missing-errexit-rationale",
                 path=Path("justfile"),
-                line=set_line.line,
-                recipe=recipe.name,
+                line=1,
+                recipe=name,
+            )
+        )
+    if _nonconforming_recipe(recipe=recipe, lines=lines):
+        findings.append(
+            _Finding(
+                reason="nonconforming-just-recipe",
+                path=Path("justfile"),
+                line=1,
+                recipe=name,
             )
         )
     return findings
 
 
-def _interpolation_line(*, recipe: ShellRecipe) -> int | None:
-    for item in recipe.evidence:
-        if "{{" in item.text or "}}" in item.text:
-            return item.line
-    return None
+def _missing_per_recipe_positional_arguments(*, recipe: _JustRecipe) -> bool:
+    return bool(recipe.get("parameters", [])) and "positional-arguments" not in recipe.get(
+        "attributes", []
+    )
 
 
-def _first_set_line(*, recipe: ShellRecipe) -> RecipeEvidence | None:
-    for item in recipe.evidence:
-        if item.kind == "shell_option" and item.text.startswith("set "):
-            return item
-    return None
+def _missing_errexit_rationale(*, recipe: _JustRecipe, lines: list[tuple[str, bool]]) -> bool:
+    commands = [line for line, _ in lines if _executable_line(line=line)]
+    set_lines = [line for line in commands if line.startswith("set ")]
+    return bool(
+        recipe.get("shebang", False)
+        and set_lines
+        and not _has_errexit(line=set_lines[0])
+        and not _mentions_errexit(text=recipe.get("doc") or "")
+    )
 
 
-def _recipe_needs_errexit_rationale(*, recipe: ShellRecipe, set_line: RecipeEvidence) -> bool:
+def _nonconforming_recipe(*, recipe: _JustRecipe, lines: list[tuple[str, bool]]) -> bool:
+    if _documented_no_errexit_deviation(recipe=recipe, lines=lines):
+        return False
+    commands = [line for line, _ in lines if _executable_line(line=line)]
     return (
-        recipe.shape == "shebang"
-        and not _has_errexit(line=set_line.text)
-        and not _has_errexit_rationale(recipe=recipe, set_line=set_line)
+        bool(recipe.get("shebang", False))
+        or len(commands) > 1
+        or any(_has_forbidden_shell_syntax(line=line) for line in commands)
     )
 
 
-def _has_errexit_rationale(*, recipe: ShellRecipe, set_line: RecipeEvidence) -> bool:
-    candidates = list(recipe.documentation)
-    candidates.extend(
-        item.text.removeprefix("#").strip()
-        for item in recipe.evidence
-        if item.kind == "comment" and item.line < set_line.line
+def _documented_no_errexit_deviation(*, recipe: _JustRecipe, lines: list[tuple[str, bool]]) -> bool:
+    commands = [line for line, _ in lines if _executable_line(line=line)]
+    set_lines = [line for line in commands if line.startswith("set ")]
+    return bool(
+        recipe.get("shebang", False)
+        and set_lines
+        and not _has_errexit(line=set_lines[0])
+        and _mentions_errexit(text=recipe.get("doc") or "")
     )
-    return any(_mentions_errexit(text=item) for item in candidates)
+
+
+def _executable_line(*, line: str) -> bool:
+    return bool(line) and not line.startswith("#")
+
+
+def _has_forbidden_shell_syntax(*, line: str) -> bool:
+    return any(token in line for token in ("$(", "`", "|", ">", "<", "&&", "||", ";"))
 
 
 def _mentions_errexit(*, text: str) -> bool:

@@ -106,6 +106,7 @@ __all__: list[str] = []
 
 
 _JUSTFILE_NAME = "justfile"
+_TARGET_INVENTORY_NAME = "check-targets.txt"
 _WORKFLOWS_DIR = Path(".github") / "workflows"
 _EXIT_VIOLATIONS = 4
 
@@ -247,6 +248,18 @@ def _evaluate(
     ]
 
 
+def _inventory_targets(*, cwd: Path) -> list[str] | None:
+    path = cwd / _TARGET_INVENTORY_NAME
+    if not path.is_file():
+        return None
+    targets: list[str] = []
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        token = raw.split("#", 1)[0].strip()
+        if token.startswith("check-"):
+            targets.append(token)
+    return targets
+
+
 def _justfile_targets(*, cwd: Path, log: structlog.stdlib.BoundLogger) -> Result[list[str], int]:
     """The `just check` aggregate's wired slugs, or the exit code its absence earns.
 
@@ -264,6 +277,9 @@ def _justfile_targets(*, cwd: Path, log: structlog.stdlib.BoundLogger) -> Result
             path=str(justfile_path),
         )
         return Failure(_EXIT_VIOLATIONS)
+    inventory = _inventory_targets(cwd=cwd)
+    if inventory is not None:
+        return Success(inventory)
     recipe_body = extract_check_recipe_body(justfile_text=justfile_path.read_text(encoding="utf-8"))
     if isinstance(recipe_body, Failure):
         _emit_absence(

@@ -91,6 +91,7 @@ __all__: list[str] = []
 
 
 _JUSTFILE_NAME = "justfile"
+_TARGET_INVENTORY_NAME = "check-targets.txt"
 _CI_YML_PATH = Path(".github") / "workflows" / "ci.yml"
 _CI_GREEN_JOB = "ci-green"
 _FAIL_ENV_VAR = "LIVESPEC_FAIL_IF_CI_MATRIX_GAPS_EXIST"
@@ -229,19 +230,25 @@ def _collect_findings(
         return [
             _absence(mode="justfile_not_found", message="justfile not found", path=justfile_path)
         ]
-    recipe_body = extract_check_recipe_body(justfile_text=justfile_path.read_text(encoding="utf-8"))
-    if isinstance(recipe_body, Failure):
-        return [
-            _absence(
-                mode="check_recipe_not_found",
-                message="justfile has no `check:` recipe",
-                path=justfile_path,
-            )
-        ]
-    targets = extract_targets_array_tokens(recipe_body=recipe_body.unwrap())
-    if isinstance(targets, Failure):
-        return [_targets_absence(failure=targets.failure(), path=justfile_path)]
-    justfile_targets = targets.unwrap()
+    inventory_targets = _inventory_targets(cwd=cwd)
+    if inventory_targets is None:
+        recipe_body = extract_check_recipe_body(
+            justfile_text=justfile_path.read_text(encoding="utf-8")
+        )
+        if isinstance(recipe_body, Failure):
+            return [
+                _absence(
+                    mode="check_recipe_not_found",
+                    message="justfile has no `check:` recipe",
+                    path=justfile_path,
+                )
+            ]
+        targets = extract_targets_array_tokens(recipe_body=recipe_body.unwrap())
+        if isinstance(targets, Failure):
+            return [_targets_absence(failure=targets.failure(), path=justfile_path)]
+        justfile_targets = targets.unwrap()
+    else:
+        justfile_targets = inventory_targets
     ci_yml_path = cwd / _CI_YML_PATH
     if not ci_yml_path.is_file():
         return [
@@ -258,6 +265,18 @@ def _collect_findings(
         justfile_targets=justfile_targets,
         jobs=jobs,
     )
+
+
+def _inventory_targets(*, cwd: Path) -> list[str] | None:
+    path = cwd / _TARGET_INVENTORY_NAME
+    if not path.is_file():
+        return None
+    targets: list[str] = []
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        token = raw.split("#", 1)[0].strip()
+        if token.startswith("check-"):
+            targets.append(token)
+    return targets
 
 
 def _absence(*, mode: str, message: str, path: Path) -> _Finding:
