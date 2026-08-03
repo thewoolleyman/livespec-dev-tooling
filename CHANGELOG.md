@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.18.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.18.2...v1.18.3) (2026-08-03)
+
+
+### Bug Fixes
+
+* **checks:** read `replace` by arity so pure string calls stop counting as I/O ([66bf5ae](https://github.com/thewoolleyman/livespec-dev-tooling/commit/66bf5aea211ac246bd4357b860ef88b09e5276fe))
+
 ## [1.18.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.18.1...v1.18.2) (2026-08-03)
 
 
