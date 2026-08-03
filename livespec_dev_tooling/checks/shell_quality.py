@@ -16,6 +16,7 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402
+from returns.result import Failure  # noqa: E402
 
 from livespec_dev_tooling.shellcheck import (  # noqa: E402
     ShellFinding,
@@ -76,9 +77,12 @@ def _has_errexit(*, line: str) -> bool:
 
 
 def _shellcheck_findings(*, repo_root: Path) -> list[_Finding]:
-    result = run_shellcheck(repo_root=repo_root).unwrap()
+    result = run_shellcheck(repo_root=repo_root)
+    if isinstance(result, Failure):
+        return []
+    shell_findings = result.unwrap()
     findings: list[_Finding] = []
-    for item in result:
+    for item in shell_findings:
         findings.extend(_finding_for_shellcheck_severity(item=item))
     return findings
 
@@ -144,6 +148,12 @@ def _recipe_findings(*, repo_root: Path) -> list[_Finding]:
         )
     for recipe in payload.get("recipes", {}).values():
         findings.extend(_findings_for_recipe(recipe=recipe))
+    return findings
+
+
+def findings_for_repo(*, repo_root: Path) -> list[_Finding]:
+    findings = _shellcheck_findings(repo_root=repo_root)
+    findings.extend(_recipe_findings(repo_root=repo_root))
     return findings
 
 
@@ -260,8 +270,7 @@ def _emit_findings(*, log: structlog.stdlib.BoundLogger, findings: Sequence[_Fin
 def main() -> int:
     log = _configure_logger()
     repo_root = Path.cwd()
-    findings = _shellcheck_findings(repo_root=repo_root)
-    findings.extend(_recipe_findings(repo_root=repo_root))
+    findings = findings_for_repo(repo_root=repo_root)
     exit_codes = {
         False: lambda: 0,
         True: lambda: _EXIT_VIOLATIONS,
