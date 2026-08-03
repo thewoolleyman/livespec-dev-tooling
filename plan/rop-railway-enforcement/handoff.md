@@ -1,6 +1,6 @@
 # rop-railway-enforcement — arm the check that was never armed, then remediate six repos
 
-> ## 🔻🔻 COLD START — **START HERE. ⛔⛔ TWO LANES ARE NOW BLOCKED (`beads-fabro` AND `livespec`). ▶️ THE OPEN LANE IS `git-jsonl` (11), AND IT IS VERIFIED OPEN — `just check` 65/65 ON CLEAN MASTER, RUN 2026-08-03.**
+> ## 🔻🔻 COLD START — **START HERE. ⛔⛔ TWO LANES ARE BLOCKED (`beads-fabro`, `livespec`). ▶️ THE OPEN LANE IS `git-jsonl`, NOW AT **10** (11 → 10 landed via PR #532). NOTHING IS MID-FLIGHT OF MINE EXCEPT THE PRESERVED `livespec` RED.**
 >
 > ### ⛔⛔ `livespec` WENT FROM "OPEN LANE" TO "BLOCKED" **DURING THIS SESSION**, AND MASTER CI STAYED GREEN THE WHOLE TIME
 >
@@ -56,7 +56,62 @@
 > `8o8e.22` shape again (two mechanisms, each defensible, composition unowned) and it
 > belongs beside it, not as a footnote.
 >
-> ### ▶️▶️ THE `git-jsonl` UNIT IS ALREADY PICKED — **A SWALLOWING TWIN WHOSE OWN SIBLING WAS ALREADY CONVERTED**
+> ### ✅✅ THAT UNIT IS LANDED — **`git-jsonl` 11 → 10, REMOVED 1 / ADDED 0, universe 49** (PR #532)
+>
+> `loads_json_optional` is DELETED, not converted. The removed offender matched the
+> pre-registration BY NAME (`spec_next_bridge.py:264 spec_next`), not merely by count.
+> Suite 399 passed · `just check` 65/65 · trailers 5 Red / 2 Green · Red test file
+> byte-identical across the pair (checksum verified against the recorded trailer AFTER
+> a `ruff format` pass — that autofix is exactly what silently breaks the pair).
+>
+> **What the conversion bought, concretely:** `spec_next` now returns
+> `IOResult[SpecNextOutput | None, JsoncParseError]`, so *"CORE emitted garbage"* and
+> *"CORE answered fine, nothing queued"* are finally two values. ⚠️ **The fail-open
+> POLICY did not move and could not** — `compose_needs_attention(spec_next:
+> SpecNextOutput | None)` is the VENDORED `livespec_runtime`'s signature, so the failure
+> still lands on the same `None`. It now lands at a visible `.value_or(None)` with a
+> comment, and a test pins that the policy is unchanged. **Scope was ONE failure:** a
+> non-zero exit and an unspawnable command stay ANSWERS, by this package's own
+> documented `run_capture` doctrine. **Widening those would have been my ruling, not
+> the repo's.**
+>
+> ⛔ **AND THE CLAUSE (e) HOLE IS NOT CLOSED — ONLY UNPOPULATED.** The criterion still
+> reads the ANNOTATION, so the next `-> Any` function with a hand-rolled
+> `except: return None` is invisible in exactly the same way. `8o8e.11` records the
+> amendment as still owed. **Deleting the only known instance of a blind spot is not
+> fixing the blind spot**, and a count that now reads clean is precisely what will
+> hide the next one.
+>
+> ### 🔴🔴 THE SWEEP RULE HAD THE WRONG SCOPE — **DOCUMENTS *AND* THE LEDGER, AND THE LEDGER OUTRANKS THE DOCUMENTS**
+>
+> **I corrected "twins all gone" in `handoff.md` in two places and shipped it, while
+> `8o8e.11` — the record this charter declares AUTHORITATIVE OVER BOTH DOCUMENTS —
+> still asserted it.** For two PRs the outranking record carried the disproved claim.
+> Caught by supervisor brief 20, not by my sweep.
+> 📜 **That is the remedy failing at its own boundary: a document-scoped sweep cannot
+> catch a ledger-scoped twin. Same defect, wearing the remedy's clothes.**
+>
+> ▶️ **THE RULE, RESTATED:** after any retraction, grep **the documents AND the ledger**
+> — and correct the ledger FIRST, because it outranks. Applied here rather than merely
+> stated: `bd list --json` over all **50** items, matching on the claim's phrasings,
+> returned exactly **1** carrier (`8o8e.11`), now corrected with a close-gate attached.
+>
+> ### 🔬 AND THE DEEPER ONE — **A COUNT CANNOT AUDIT A CLASS CLAIM**
+>
+> `8o8e.11` said *"no swallowing twins remain"* while, ~110 lines above, **the same item
+> recorded the surviving twin** — as *"the fleet's ONLY KNOWN CLAUSE (e) HOLE INSTANCE"*,
+> relieved by livespec **v186** because clause (e) reads the annotation and `Any`
+> defeats it.
+> ⛔ **RELIEVED ≠ CONVERTED, and the completion claim conflated them.** The offender
+> COUNT was correct throughout — the twin is legitimately absent from it, because the
+> check cannot see it. **"No swallowing twins remain" is a claim about the TREE, and
+> nothing in the measurement pipeline checks the tree.** A relief and a conversion are
+> identical in the number and opposite in the code.
+> ▶️ **So: never let a measured count discharge a class claim. The count answers "how
+> many does the criterion convict"; a class claim answers "what is in the tree". Only a
+> grep answers the second, and this file's own greps are that instrument.**
+>
+> ### ▶️▶️ HOW THAT UNIT WAS PICKED — **A SWALLOWING TWIN WHOSE OWN SIBLING WAS ALREADY CONVERTED**
 >
 > ⛔ **THIS FILE SAYS `git-jsonl`'s TWINS ARE "all gone" (the member table, twice). THAT
 > IS FALSE — MEASURED.** `grep -rn '^def .*_optional('` returns a LIVE one:
@@ -174,7 +229,7 @@
 > known **1** and names `cross_member_consumption`):
 >
 >     livespec           universe=144  distinct=20   <- ⛔ BLOCKED (local gate), see top
->     git-jsonl          universe=49   distinct=11   <- ▶️ TAKE THIS: check 65/65 verified
+>     git-jsonl          universe=49   distinct=10   <- ▶️ OPEN LANE (was 11; #532 landed 1)
 >     livespec-runtime   universe=31   distinct=11   <- local lane COMPLETE (8 cross-repo
 >                                                       + 3 entry points), not real supply
 >
@@ -204,8 +259,9 @@
 > (re-measured the same session: `universe=144 raw=20 distinct=20` and `universe=49
 > raw=11 distinct=11`), and both masters ARE green. **But `livespec` cannot take a `.py`
 > commit — see the ⛔⛔ box at the top.**
-> ▶️ **So the open lane is `git-jsonl` (11), VERIFIED by running the aggregate rather
-> than by inferring it from a green master: `just check` → "All 65 targets passed".**
+> ▶️ **So the open lane is `git-jsonl` — now **10**, VERIFIED by running the aggregate
+> rather than by inferring it from a green master: `just check` → "All 65 targets
+> passed".**
 >
 > 📜 **AND THE RETRACTION IS THE POINT: I WROTE "neither is gated" EARLIER IN THIS SAME
 > SESSION, FROM `check-master-ci-green` EXIT 0.** That inference is exactly the one the
@@ -577,7 +633,7 @@
 > | **`beads-fabro`** | 155 | **155** | ✅ 118 files | **← STILL NEXT.** Tail only now. |
 > | `livespec-overseer` | 213 | 112 | ⛔ **0** | **BLOCKED — `overseer-yc7`** |
 > | `livespec` | 20 | 20 | ✅ 118 | flat tail, biggest file 4 |
-> | `git-jsonl` | 11 | 11 | ✅ 117 | ⛔ "twins all gone" is FALSE — `loads_json_optional` is live |
+> | `git-jsonl` | 10 | 10 | ✅ 117 | twin DELETED (#532). ⛔ clause (e) hole UNPOPULATED, not closed |
 > | `livespec-runtime` | 11 | 11 | ✅ declared | **local lane COMPLETE** |
 > | `dev-tooling` · `driver-codex` | 1 · 1 | 1 · 1 | ✅ · ⛔ | dt's 1 is RULED; codex BLOCKED |
 >
@@ -632,7 +688,7 @@
 >
 > ### 📋 THE QUEUE
 >
-> 1. ▶️ **`git-jsonl` (11) — THE ONLY VERIFIED-OPEN LANE.** `just check` 65/65 on clean
+> 1. ▶️ **`git-jsonl` (10) — THE ONLY VERIFIED-OPEN LANE.** `just check` 65/65 on clean
 >    master. ⛔ `beads-fabro` (155) BLOCKED (`8o8e.22`, re-verified exit 1); ⛔ `livespec`
 >    (20) BLOCKED (`doctor-wiring-completeness-cross-repo`, peer fix in flight) with its
 >    Red authored and preserved as `livespec-config-railway-red.patch`.
@@ -702,6 +758,21 @@
 > 6. ⚠️ **A `check-fleet-conformance` RED IS PROBABLY THE APP'S RATE LIMIT.**
 >    `gh run view <id> --log-failed | grep -o '"kind": "[a-z_]*"'` → `rate_limited`.
 >    Log occurrences on **`mmqe`**.
+> 6b. ⛔ **A PR-WAIT LOOP MUST EXIT ON `FAILURE` AND `CLOSED`, NOT ONLY ON `MERGED`.**
+>    I wrote `until [ "$(gh pr view N --json state --jq .state)" = "MERGED" ]; do sleep
+>    30; done`. **It has no failure exit** — a red or closed PR spins it to the timeout
+>    while looking like patience. It cost nothing only because that PR merged. This file
+>    already records the same non-terminating shape against a prior PR watch, so it is
+>    the SECOND instance. ▶️ Put every terminal state in the exit set:
+>
+>        until case "$(gh pr view N --repo R --json state --jq .state)" in
+>              MERGED|CLOSED) false;; *) true;; esac
+>        do sleep 30; done
+>
+>    …or read `statusCheckRollup` and break on any non-success conclusion.
+>    ⚠️ **Backgrounding it is DENIED by the PreToolUse hook (`gh pr` is a gate command)
+>    — it runs FOREGROUND with a raised timeout**, which is exactly what makes a
+>    non-terminating loop expensive rather than merely untidy.
 > 7. ⚠️ **NEVER RUN AN AD-HOC `pytest --cov`** — it writes statement-coverage data that
 >    then collides with the repo's branch-coverage recipe (*"Can't combine statement
 >    coverage data with branch data"*). `rm -f .coverage` and re-run the recipe.
