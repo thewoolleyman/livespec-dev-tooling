@@ -1,6 +1,6 @@
 # rop-railway-enforcement — arm the check that was never armed, then remediate six repos
 
-> ## 🔻🔻 COLD START — **START HERE. ⚠️ ONE UNIT *IS* MID-FLIGHT AND UNCOMMITTED, BLOCKED BY `8o8e.22` — WHICH SELF-CLEARS. READ THE NEXT BOX FIRST.**
+> ## 🔻🔻 COLD START — **START HERE. ⚠️ ONE UNIT IS MID-FLIGHT AND UNCOMMITTED. ⛔ ITS BLOCK DOES *NOT* SELF-CLEAR — DO NOT WAIT FOR IT. GO TO `livespec` (20).**
 >
 > ### ▶️▶️▶️ EXACT NEXT ACTION — **RUN THIS ONE COMMAND FIRST; IT DECIDES WHICH LANE IS OPEN**
 >
@@ -9,9 +9,16 @@
 >   && mise exec -- just check-master-ci-green
 > ```
 >
-> - **EXIT 0 → `8o8e.22` HAS SELF-CLEARED.** A new master run superseded the wedged
->   one. ▶️ **Go straight to the 🚧 box below and land the mid-flight unit**, then
->   keep converting `beads-fabro` per-function.
+> ⛔⛔ **AN EARLIER REVISION OF THIS FILE SAID THE BLOCK "SELF-CLEARS". THAT IS
+> RETRACTED.** It self-clears only on a fresh push to master, and the forge route
+> that would produce one is ALSO shut (next box) — so there is no mechanism that
+> clears it on its own. **Confirmed still wedged at 2026-08-03T19:32Z, ~1h after it
+> began, with the escape verified shut.** ▶️ **Run the command anyway — it is one
+> second and it is the only honest way to know — but expect EXIT 1 and plan for it.**
+>
+> - **EXIT 0 → it cleared after all** (someone else landed a master push). ▶️ **Go
+>   straight to the 🚧 box below and land the mid-flight unit**, then keep converting
+>   `beads-fabro` per-function.
 > - **EXIT 1 → STILL WEDGED. ⛔ DO NOT TOUCH `.py` IN `beads-fabro`** — you cannot
 >   commit it, so you would build an un-landable pile. ⛔ **DO NOT re-run CI**
 >   (`run_attempt` was already 7 and each attempt ENLARGES the failing payload), ⛔
