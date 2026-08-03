@@ -25,7 +25,7 @@
 # the prior ambient `LIVESPEC_PRECOMMIT_RED_MODE` env var with no env var
 # and no spec change. Pre-push and CI invoke `just check` with no `skip`,
 # so the full aggregate stays the safety net.
-skip := ""
+export skip := ""
 
 # pytest-xdist worker count, lane-aware (plan/fabro-ci-image-factoring cont.5).
 # GitHub-hosted CI (LIVESPEC_CI_LANE=hosted, set from CI_RUNNER_LABELS in
@@ -34,7 +34,7 @@ skip := ""
 # 25% of cores (min 1) so a shared host is never oversubscribed. Tune per host
 # by exporting LIVESPEC_TEST_PARALLELISM (a dedicated box can set it to `auto`
 # or a high N); local dev may export it to speed a laptop run.
-test_nprocs := if env_var_or_default("LIVESPEC_CI_LANE", "local") == "hosted" { "auto" } else { env_var_or_default("LIVESPEC_TEST_PARALLELISM", `c=$(nproc 2>/dev/null || echo 4); n=$(( c / 4 )); [ "$n" -ge 1 ] || n=1; echo "$n"`) }
+export test_nprocs := if env_var_or_default("LIVESPEC_CI_LANE", "local") == "hosted" { "auto" } else { env_var_or_default("LIVESPEC_TEST_PARALLELISM", `c=$(nproc 2>/dev/null || echo 4); n=$(( c / 4 )); [ "$n" -ge 1 ] || n=1; echo "$n"`) }
 
 # `red_staged` — the single staged test path at a Red commit (empty
 # otherwise). When non-empty, `check:` derives the Red-mode skip set
@@ -48,7 +48,9 @@ test_nprocs := if env_var_or_default("LIVESPEC_CI_LANE", "local") == "hosted" { 
 # module receives it and the staged path, computes the skip set, and
 # FAILS FAST (the caller then runs the full aggregate) rather than ever
 # emitting an empty Red selection.
-red_staged := ""
+export red_staged := ""
+
+set positional-arguments
 
 # Default to listing targets when no recipe is invoked.
 default:
@@ -167,7 +169,7 @@ ensure-codex-plugins:
 
 check:
     #!/usr/bin/env bash
-    set -uo pipefail
+    set -euo pipefail
     # `skip` is a just VARIABLE (declared at the top of this justfile,
     # default empty): a space-separated list of target names to omit from
     # this run (epic li-cvaudit, cvredmd). The Red-mode pre-commit invokes
@@ -320,21 +322,21 @@ check:
     # the Red gate is never silently empty (it surfaces loudly and the
     # author re-runs the full aggregate). Pre-push / CI pass no
     # `red_staged`, so the full aggregate is unaffected.
-    effective_skip="{{skip}}"
-    if [[ -n "{{red_staged}}" ]]; then
+    effective_skip="${skip}"
+    if [[ -n "${red_staged}" ]]; then
         red_skip=$(uv run python -m livespec_dev_tooling.red_leg_scope \
-            --staged {{red_staged}} --targets "${targets[@]}") || {
+            --staged "${red_staged}" --targets "${targets[@]}") || {
             echo "ERROR: red_leg_scope fail-fast; the Red selection would be empty — run the full aggregate instead" >&2
             exit 1
         }
-        effective_skip="{{skip}} ${red_skip}"
+        effective_skip="${skip} ${red_skip}"
     fi
     uv run python -m livespec_dev_tooling.parallel_check_dispatcher --skip "${effective_skip}" -- "${targets[@]}" || exit 1
     # The advisory green token records a FULL green pass only. A partial
     # run (explicit `skip` OR a Red-mode `red_staged` scope reduction)
     # must NOT write it, or pre-push would skip the full aggregate on a
     # tree that never had one.
-    if [[ -z "{{skip}}" && -z "{{red_staged}}" ]]; then uv run python -m livespec_dev_tooling.green_token write || true; fi
+    if [[ -z "${skip}" && -z "${red_staged}" ]]; then uv run python -m livespec_dev_tooling.green_token write || true; fi
 
 # ---------------------------------------------------------------
 # Tool-backed checks. NOT canonical-aggregate slugs (not in
@@ -409,7 +411,7 @@ check-no-workflow-edits:
 # matrix.
 changed-files:
     #!/usr/bin/env bash
-    set -uo pipefail
+    set -euo pipefail
     # `grep` exits 1 on zero matches; an empty changed set is normal (a
     # clean branch), so swallow that into exit 0 via `|| true` — the
     # consuming `check-changed` treats empty as "nothing to gate".
@@ -436,7 +438,7 @@ changed-files:
 # and NOT in the CI matrix.
 check-changed:
     #!/usr/bin/env bash
-    set -uo pipefail
+    set -euo pipefail
     mapfile -t changed < <(just changed-files)
     if [[ "${#changed[@]}" -eq 0 ]]; then
         echo ":: check-changed: no changed .py vs origin/master (and none staged); nothing to gate"
@@ -497,7 +499,7 @@ check-changed:
 #   with-livespec-env.sh -- env PATH="$HOME/.local/bin:$PATH" uv run python -m \
 #       livespec_dev_tooling.fleet.wire_fleet_member --repo <member>
 check-fleet-conformance *args:
-    uv run python -m livespec_dev_tooling.fleet.fleet_conformance {{args}}
+    uv run python -m livespec_dev_tooling.fleet.fleet_conformance "$@"
 
 # Release-dispatch sibling-matrix filter (livespec-f73t Slice 2b):
 # partitions the discovered sibling set by the per-member verdict
@@ -509,7 +511,7 @@ check-fleet-conformance *args:
 # reusable-release-dispatch.yml's fleet-preflight job; not part of the
 # `check:` aggregate (it is a workflow helper, not a repo gate).
 filter-dispatch-matrix *args:
-    uv run python -m livespec_dev_tooling.fleet.dispatch_matrix_filter {{args}}
+    uv run python -m livespec_dev_tooling.fleet.dispatch_matrix_filter "$@"
 
 # ADMIN-vantage (world-gate) lane of the same fleet-membership contract.
 # Two obligation rows — `secret-names` and `branch-protection` — need
@@ -593,7 +595,7 @@ check-fabro-image-pin-lockstep:
 
 check-coverage:
     #!/usr/bin/env bash
-    set -uo pipefail
+    set -euo pipefail
     # Always measure the `fail_under = 100` aggregate gate the SAME way CI's
     # standalone check-coverage job does: a clean `pytest --cov` with
     # COVERAGE_FILE UNSET (`env -u`). In the `just check` aggregate the
@@ -603,7 +605,7 @@ check-coverage:
     # check-per-file-coverage's exported-namespace data measured LENIENTLY
     # (it green-lit self-referential lines that CI's clean run then failed).
     echo ":: check-coverage: clean standalone suite (COVERAGE_FILE unset) — strict, matches CI"
-    env -u COVERAGE_FILE uv run pytest -n {{test_nprocs}} --cov --cov-branch --cov-config=pyproject.toml --cov-report=term-missing
+    env -u COVERAGE_FILE uv run pytest -n "${test_nprocs}" --cov --cov-branch --cov-config=pyproject.toml --cov-report=term-missing
 
 # ---------------------------------------------------------------
 # Canonical aggregate recipes — one per canonical slug emitted by
@@ -662,7 +664,7 @@ check-canonical-recipe-fidelity:
 # (check-check-coverage-incremental -> check-per-file-coverage, 7us.6)
 # is RETIRED; this gate runs fully concurrently.
 check-check-coverage-incremental *args:
-    uv run python -m livespec_dev_tooling.checks.check_coverage_incremental {{args}}
+    uv run python -m livespec_dev_tooling.checks.check_coverage_incremental "$@"
 
 # Always invoked plainly; the module self-manages its RUN/SKIP lever
 # (epic li-cvaudit, cvtodo). `LIVESPEC_RUN_MUTATION` unset → the check
@@ -839,7 +841,7 @@ check-per-file-coverage:
     # "latest master is green" pre-flight, not just local runs.
     # Matches livespec core's identical fix (bc5c9bce, 2026-07-01).
     set -euo pipefail
-    uv run pytest -n {{test_nprocs}} --cov --cov-branch --cov-config=pyproject.toml --cov-report=term-missing
+    uv run pytest -n "${test_nprocs}" --cov --cov-branch --cov-config=pyproject.toml --cov-report=term-missing
     uv run python -m livespec_dev_tooling.checks.per_file_coverage
 
 # Plan-lifecycle enforcement — static half: every active plan/*/handoff.md
@@ -904,7 +906,7 @@ check-public-api-result-typed:
 # 2026-06-11 green-verified correction; the load-bearing branch-level
 # gate).
 check-red-green-replay *args:
-    uv run python -m livespec_dev_tooling.checks.red_green_replay {{args}}
+    uv run python -m livespec_dev_tooling.checks.red_green_replay "$@"
 
 check-required-role-keys-declared:
     uv run python -m livespec_dev_tooling.checks.required_role_keys_declared
@@ -982,7 +984,7 @@ check-wrapper-shape:
 
 check-pre-commit:
     #!/usr/bin/env bash
-    set -uo pipefail
+    set -euo pipefail
     # Empty-commit guard (work-item livespec-dev-tooling-74q): an empty
     # commit cannot change repo state, so repo-state gates yield zero
     # information about it. `git commit --allow-empty` (e.g. machine
@@ -1026,7 +1028,7 @@ check-pre-commit:
 # Pre-push delegates here via `check-pre-push` for zero-py changesets.
 check-pre-commit-doc-only:
     #!/usr/bin/env bash
-    set -uo pipefail
+    set -euo pipefail
     echo ":: doc-only subset (no repo-metadata checks wired yet)"
     exit 0
 
@@ -1035,7 +1037,7 @@ check-pre-commit-doc-only:
 # branch is configured locally.
 check-pre-push:
     #!/usr/bin/env bash
-    set -uo pipefail
+    set -euo pipefail
     upstream=$(git rev-parse --abbrev-ref --symbolic-full-name @{upstream} 2>/dev/null || echo "origin/master")
     changeset=$(git diff --name-only "${upstream}..HEAD")
     py_changed=$(echo "$changeset" | grep -E '\.py$' || true)
@@ -1061,7 +1063,7 @@ check-pre-push:
 # that trivial changesets (e.g. a stray-gitlink deletion) pay only the doc-only cost.
 check-scoped:
     #!/usr/bin/env bash
-    set -uo pipefail
+    set -euo pipefail
     upstream="origin/master"
     changeset=$(git diff --name-only "${upstream}...HEAD")
     if [[ -z "$changeset" ]]; then
@@ -1090,7 +1092,7 @@ check-scoped:
 # li-pyright-gate-wi3). Re-stages post-autofix bytes.
 lint-autofix-staged:
     #!/usr/bin/env bash
-    set -uo pipefail
+    set -euo pipefail
     staged=$(git diff --cached --name-only --diff-filter=AM | grep -E '\.py$' || true)
     if [[ -z "$staged" ]]; then
         exit 0
@@ -1125,4 +1127,4 @@ lint-fix:
 # hook-less repo. Opt-in mutating target — NOT part of the `check:`
 # aggregate.
 tdd-commit *args:
-    uv run python -m livespec_dev_tooling.tdd_commit {{args}}
+    uv run python -m livespec_dev_tooling.tdd_commit "$@"
