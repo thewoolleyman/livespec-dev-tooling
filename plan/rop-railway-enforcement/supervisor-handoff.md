@@ -614,6 +614,58 @@ pass the gate**, which hard-refuses on mismatch.
   assumption, so it fails "genuinely blocking". Bring it as a PREPARED valve, not a
   half-formed one.
 
+### ⛔⛔ POST-RATIFICATION: `55ec` IS BLOCKED TWICE AND ONE BLOCK IS A PEER LANE'S — SUPERVISORY RULINGS
+
+**The MEASUREMENTS live in the worker's `handoff.md`, not here — read them there rather than
+trusting a second copy.** This block carries only what is SUPERVISORY: the rulings and my own
+corrections. Two documents each restating one measurement is the prose-twin defect (`i04f`).
+
+**▶️ THE RULING — STAND DOWN ON BLOCK 2 ONLY, AND REDIRECT.** beads-fabro cannot accept work:
+its master CI is red (`8o8e.22`, ours) so local pushes are gated, AND every open bump PR is red
+on **`check-shell-quality`** with genuine `justfile` policy violations, so the forge-merge escape
+is shut too. **`check-shell-quality` is the `fleet-shell-quality-enforcement` epic — the PEER
+LANE this charter names by agreement.** Do not fix those violations, do not comment on their
+PRs. **Stand down on that ACTION only, never on the thread** — that is this file's own no-idle
+procedure, and it resolves here to: **beads-fabro is the ONLY blocked repo** (verified:
+`livespec-runtime`, `livespec-orchestrator-git-jsonl` and `livespec-overseer` master CI all
+`success`), so the fleet remediation is not stalled — **only its beads-fabro share is.** Take
+`8o8e.10` (livespec-runtime's 27) or `livespec`'s 20; **do not schedule `55ec`.**
+
+**⛔ AND THE GATE BOUNDARY, STATED BEFORE A FIX EXISTS RATHER THAN AFTER.** `8o8e.22`'s repair
+touches a GATE. Making `export-telemetry` stop reddening master is the FORBIDDEN direction —
+`ci.yml` states loudness is its purpose, and silencing it restores the silent death it was built
+to prevent. **If any fix NARROWS what `check-master-ci-green` refuses in a case other than this
+one, that is WEAKENING a check and it ESCALATES** — the module's own docstring records a prior
+fail-soft path that "reopened the hole". Making the gate read the ACTUAL required-check signal
+would be FIDELITY (the PR #748 shape) and proceeds.
+
+**🔴 TWO CORRECTIONS AGAINST MYSELF FROM THIS STRETCH:**
+- **I RE-RAN A DETERMINISTICALLY-FAILING CI RUN AND MADE IT WORSE.** I spent
+  `gh run rerun --failed` on `30833567128` without first reading `run_attempt` — it was **7**,
+  six re-runs preceded mine, and the item ALREADY recorded the failure as deterministic. Worse
+  than a wasted cycle: the worker established the failure is **payload-size-driven and
+  self-amplifying — each attempt ENLARGES the failing payload.** I marginally worsened the block
+  I was diagnosing. **The counter was one API call away, before the action.**
+- **I GAVE THE RIGHT SEQUENCING FOR THE WRONG REASON.** I ruled "`8o8e.22` before `55ec`
+  because `55ec` cannot land until beads-fabro pushes work" — the ordering holds, the reason was
+  false: **fixing `8o8e.22` does NOT unblock `55ec`**, because block 2 remains and is not ours.
+  Corrected in the next brief. **A right conclusion resting on a wrong mechanism is never
+  re-tested** — this file's own most-repeated lesson, committed again.
+
+**📜 AND THE RECURRING DEFECT SHOWED UP IN THE RETRACTION ITSELF.** The worker retracted an
+"IT SELF-CLEARS" claim by correcting the file's TOP and **leaving the sibling at line 178
+intact, carrying a ✅**. That is `FIX ONE INSTANCE, LEAVE THE SIBLING STALE` recurring inside
+the very file that records the remedy. **The remedy is the worker's own and it is mechanical:
+after any retraction, grep the WHOLE document for the retracted phrase and confirm every
+remaining occurrence agrees.** Care does not scale; a sweep does.
+
+**✅ AND THE EPHEMERAL-BRIEF RULE DISCHARGED PROPERLY, WHICH IS WHY THIS COST NOTHING.** The
+worker restarted a SIXTH time and two briefs died with the pane — but it had **already persisted
+their substance to `handoff.md` before stopping**, so nothing was lost and the re-brief was
+insurance rather than rescue. Its committed `8o8e21-green.patch` beside the handoff — replacing
+an earlier pointer at a session-scoped `/tmp` path — is the same instinct applied to
+work-in-flight. **Require the handoff, never trust the pane.**
+
 **📋 FINDINGS FILED THIS DRIVE, each with its GATE attached (the required form):** `usi0`
 (the cross-lane full-file revert), `k4km` (P1, digest drift), `jzoz` (P1), `vno1` (P2), plus
 notes on `y8o3` and `0n2a`.
