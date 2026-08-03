@@ -117,11 +117,11 @@ jobs:
   check-python:
     name: ${{ matrix.target }}
     needs: setup
-    # Local self-hosted runner in the baked sandbox image (fallback: set the
-    # CI_RUNNER_LABELS repo variable to '["ubuntu-latest"]'). The container is
-    # the SAME tag the Fabro sandbox runs — that sameness collapses the
-    # green-in-CI / red-in-sandbox drift this epic exists to remove.
-    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["self-hosted","local-ci"]') }}
+    # Hosted runner carrying the baked sandbox image as its job container. The
+    # SAME tag runs in Fabro, preserving the green-in-CI / red-in-sandbox drift
+    # protection without occupying the shared factory host. The hosted fallback
+    # is deliberate: deleting the repo variable must not reactivate local CI.
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
       image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.15.0
     env:
@@ -135,12 +135,10 @@ jobs:
       MISE_DATA_DIR: /root/.local/share/mise
       # A missing shim must fail fast, never busy-loop on auto-install.
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
-      # Defense-in-depth against GitHub's anonymous REST limit (60/hr PER IP):
-      # the self-hosted matrix shares ONE host IP, so authenticate any residual
-      # GitHub-API call with the per-run, auto-revoked, read-scoped Actions token
-      # (github.token — NOT a Kind-2 secret) to stay under the ~1000/hr
-      # authenticated cap. MISE_DATA_DIR already makes mise call nothing; this is
-      # the belt-and-suspenders so the shared IP can never hit the anon wall.
+      # Authenticate any residual GitHub-API call with the per-run,
+      # auto-revoked, read-scoped Actions token (github.token — NOT a Kind-2
+      # secret). MISE_DATA_DIR already makes mise call nothing; this is
+      # defense-in-depth against anonymous API limits.
       GITHUB_TOKEN: ${{ github.token }}
       GH_TOKEN: ${{ github.token }}
     strategy:
@@ -312,11 +310,9 @@ jobs:
   # master pushes the range is empty.
   check-metadata:
     name: ${{ matrix.target }}
-    # Self-hosted in the baked image, same rationale as check-python above.
-    # `matrix.runner` (set ONLY by the sentinel include entry below) overrides
-    # the lane for that one target; every other target follows the
-    # CI_RUNNER_LABELS variable exactly as before.
-    runs-on: ${{ fromJSON(matrix.runner || vars.CI_RUNNER_LABELS || '["self-hosted","local-ci"]') }}
+    # Hosted in the baked image, same rationale as check-python above. Every
+    # target follows CI_RUNNER_LABELS, with a hosted fail-safe default.
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
       image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.15.0
     env:
@@ -370,21 +366,6 @@ jobs:
           - check-skill-invocation-paths
           - check-source-trees-scoped-to-consumer
           - check-vendor-manifest
-        # THE LOCAL-LANE SENTINEL (maintainer-decided 2026-07-24, amending the
-        # 2026-07-19 local-runner deferral narrowly; design record:
-        # livespec plan/fabro-ci-image-factoring/handoff.md §"Permanent
-        # single-job local lane"). Exactly ONE tiny, always-run,
-        # credential-free target is pinned to the co-located runner fleet so
-        # the local lane is exercised on every CI run and cannot rot
-        # unnoticed. check-self-hosted-routing is that target on purpose: it
-        # is the security guard that keeps forbidden triggers away from
-        # `local-ci` jobs, so the lane continuously proves the very check
-        # that keeps the lane safe, and it fails CLOSED (pending/red blocks
-        # merge) if the runner fleet dies. Do NOT add further targets here
-        # without a maintainer decision — one job is the designed load.
-        include:
-          - target: check-self-hosted-routing
-            runner: '["self-hosted","local-ci"]'
     steps:
       - name: Checkout
         uses: actions/checkout@v5
