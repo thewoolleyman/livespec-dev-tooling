@@ -143,6 +143,67 @@
 > "released" go in only after the forge says so.** A status is a claim like any other, which
 > is this epic's entire subject.
 >
+> ### ⚖️⚖️ WHEN THE REVIEW COMES BACK RED — **THE RULINGS, SO THE NEXT SESSION DOES NOT RE-LITIGATE THEM**
+>
+> **① A SLOW REVIEWER IS NOT `reviewer_unavailable`.** Mine went silent through three
+> check-ins. `RatificationContext` in `effective.py` carries exactly three fields —
+> `blockers_present`, `reviewer_unavailable`, `no_blockers_evidence` — and **there is NO
+> timeout concept anywhere in the resolver.** Unavailability is about the DESIGNATION and
+> the SPAWN; a reviewer that spawned is available. ⛔ **Converting slowness into
+> unavailability would manufacture an escalation out of a wait, and would hand any future
+> session a route past any review that took too long — a severity lever wearing a clock.**
+> While it is silent, self-waive it into NEITHER verdict.
+>
+> **② FIX-AND-RE-REVIEW IS SANCTIONED AND IS NOT SELF-WAIVING.** *"MUST NOT be
+> self-waived"* binds RATIFYING DESPITE a blocker; it does not bind fixing the proposal so
+> the blocker no longer applies. The spec supplies the route in terms: *"a fresh conforming
+> review of the reassembled final bytes supersedes it without escalation."* So: fix →
+> REASSEMBLE → FRESH review of the NEW bytes → recompute digest → ratify. **No maintainer
+> input is owed on that route.**
+>
+> ⛔ **THREE THINGS TURN IT BACK INTO SELF-WAIVING. Each is a real escalation:**
+> 1. **Patching the EXISTING evidence object** instead of obtaining a new review — the old
+>    verdict was about bytes that no longer exist.
+> 2. **Reusing the old `content_digest`.** It dies the instant the bytes move.
+> 3. **Carrying forward the reviewer's clean findings on the OTHER dimensions.** The fresh
+>    review covers all EIGHT again. **A partial re-review is a review with a hole in it,
+>    which is this epic's subject.**
+>
+> **③ DECLINING TO ADD A TIGHTENING IS NOT THE FORBIDDEN SOFTENING.** That charter clause
+> binds severity levers, per-repo opt-ins, and declared-empty escapes against EXISTING
+> checks. A rule that convicts a repo on a dimension **nobody measured** burns the
+> rollout's credibility on a false positive. **But WRITE THE GATE NEXT TO THE FINDING:** say
+> in the record what the ratification deliberately does NOT adjudicate and which item owns
+> it. 📜 **A finding filed as an observation with no gate attached outlives the epic built
+> to close it** — the sharpest variant of this thread's defect.
+> ⚠️ **AND CHECK THE INVERSE:** after dropping a clause, confirm the record does not STILL
+> claim the coverage just removed. Here it did not — the proposal never mentioned the
+> Drivers at all, **which IS the survey gap the blocker exposed.**
+>
+> **④ A PRE-REGISTERED TEST IS NOT DISCHARGED BY A DIFFERENT FINDING.** I held a
+> cross-check back from the reviewer (`git-jsonl` vendors `livespec_runtime` with **zero**
+> `typing_extensions`) and pre-committed: a `NO BLOCKERS` that never mentions it is a tell
+> that dimension 5 was shallow. **The reviewer returned a blocker about a DIFFERENT repo.
+> That does not answer the test.** A reviewer that finds one real thing is not thereby
+> shown to have found all of them. **Carry the SAME pre-registration onto every re-review,
+> and if a clean verdict still never mentions it, say so in the record rather than silently
+> banking it.**
+>
+> **⑤ 📜 A CLAUSE'S BLAST RADIUS IS THE SET IT *NAMES*, NOT THE SET THAT MOTIVATED IT.**
+> The proposal measured `livespec-runtime` and the three source-copying consumers with
+> precision, then wrote a clause binding *"the `livespec-driver-*` Drivers"* **by name**
+> without measuring either. That is exactly where the blocker landed.
+>
+> ### ✅ AND THE BLIND-INSTRUMENT FAMILY GOT ITS FIRST AFFIRMATIVE ANSWER ON THIS THREAD
+>
+> **The reviewer PRODUCED A NEGATIVE, and the negative SURVIVED INDEPENDENT CONFIRMATION
+> AT THE SOURCE** — `livespec-driver-claude` `16dfe50`, **117** tracked `_vendor/returns/`
+> files, `.vendor.jsonc` **absent from the whole tree**, re-derived on the forge before
+> anything was acted on. It also **rediscovered a filed item (`y8o3`) it was never told
+> about.** On a thread whose founding defect is a green check that scanned zero files, an
+> instrument demonstrated able to fail — and whose finding was confirmed against the tree
+> rather than taken on its word — is the durable result, whatever else lands.
+>
 > ### ▶️▶️▶️ EXACT NEXT ACTION
 >
 > **`4ihw`'s answer is FILED AND MERGED** — `livespec` PR **#1934 → `860f6d31`**,
