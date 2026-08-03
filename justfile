@@ -151,8 +151,81 @@ ensure-codex-plugins:
 # with the failure list if any target failed.
 # ---------------------------------------------------------------
 
+# Deliberately omit errexit here: scripts/just/check.sh owns fail-closed mirror
+# validation and the aggregate's continue-on-failure behavior. The literal array
+# is a compatibility bridge for livespec CORE readers pinned to v1.17.1; the
+# script compares it byte-for-entry with check-targets.txt before dispatch.
 check:
-    scripts/just/check.sh
+    #!/usr/bin/env bash
+    set -uo pipefail
+    targets=(
+        check-agents-ai-references-resolve
+        check-aggregate-completeness
+        check-all-declared
+        check-assert-never-exhaustiveness
+        check-branch-protection-alignment
+        check-canonical-recipe-fidelity
+        check-check-coverage-incremental
+        check-check-mutation
+        check-check-tools
+        check-ci-matrix-completeness
+        check-claude-md-coverage
+        check-comment-line-anchors
+        check-commit-pairs-source-and-test
+        check-file-lloc
+        check-fleet-marketplace-relative-sources
+        check-global-writes
+        check-handoff-dispatch-routing
+        check-heading-coverage
+        check-hook-trees-not-io-exempt
+        check-keyword-only-args
+        check-local-memory-drift-audit
+        check-main-guard
+        check-master-ci-green
+        check-match-keyword-only
+        check-newtype-domain-primitives
+        check-no-direct-destructive-cli
+        check-no-direct-tool-invocation
+        check-no-except-outside-io
+        check-no-fmt-directives
+        check-no-inheritance
+        check-no-lloc-soft-warnings
+        check-no-raise-outside-io
+        check-no-shadow-ledger-body-identical
+        check-no-shadow-ledger-body-typechecks
+        check-no-todo-registry
+        check-no-write-direct
+        check-partition-completeness
+        check-pbt-coverage-pure-modules
+        check-per-file-coverage
+        check-plan-thread-anchor-declared
+        check-plan-thread-epic-parity
+        check-plugin-resolution
+        check-primary-checkout-commit-refuse-hook-installed
+        check-private-calls
+        check-public-api-result-typed
+        check-red-green-replay
+        check-required-role-keys-declared
+        check-rop-pipeline-shape
+        check-self-hosted-routing
+        check-shell-quality
+        check-skill-invocation-paths
+        check-source-trees-scoped-to-consumer
+        check-supervisor-discipline
+        check-tests-mirror-pairing
+        check-tests-no-subprocess-spawn
+        check-tool-backed-check-completeness
+        check-vendor-manifest
+        check-wrapper-shape
+        check-lint
+        check-format
+        check-types
+        check-coverage
+        check-fleet-conformance
+        check-fleet-conformance-admin
+        check-fabro-image-pin-lockstep
+    )
+    scripts/just/check.sh "${targets[@]}"
 
 # ---------------------------------------------------------------
 # Tool-backed checks. NOT canonical-aggregate slugs (not in
