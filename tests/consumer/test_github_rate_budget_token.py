@@ -273,6 +273,59 @@ def test_helper_failure_taxonomy_is_bounded_and_distinct() -> None:
     }
 
 
+def test_helper_fails_closed_when_zero_wait_reprobe_stays_deficient() -> None:
+    """A zero-second wait must not spin forever when quota stays deficient."""
+    script = f"""
+      (async () => {{
+      const gate = require({json.dumps(str(_HELPER))});
+      const sleeps = [];
+      let probes = 0;
+      const env = {{
+        INPUT_MIN_CORE_REMAINING: '500',
+        INPUT_MIN_GRAPHQL_REMAINING: '1',
+        INPUT_CUSHION_SECONDS: '0',
+        INPUT_MAX_WAIT_SECONDS: '1',
+        INPUT_JITTER_SEED: 'zero-jitter-39',
+        PROBE_TOKEN: 'probe-token'
+      }};
+      try {{
+        await gate.runGate({{
+          env,
+          nowSeconds: () => 1000,
+          sleepSeconds: async (seconds) => sleeps.push(seconds),
+          fetchImpl: async () => {{
+            probes += 1;
+            return {{
+              ok: true,
+              status: 200,
+              json: async () => ({{
+                resources: {{
+                  core: {{ remaining: 100, reset: 1000 }},
+                  graphql: {{ remaining: 1, reset: 1000 }}
+                }}
+              }})
+            }};
+          }},
+          log: () => {{}}
+        }});
+        console.log(JSON.stringify({{ error: 'ok', sleeps, probes }}));
+      }} catch (error) {{
+        console.log(JSON.stringify({{ error: error.message, sleeps, probes }}));
+      }}
+      }})().catch((error) => {{
+        console.error(error.message);
+        process.exit(1);
+      }});
+    """
+    payload = _json_stdout(result=_run_node(script=script))
+
+    assert payload == {
+        "error": "rate-budget-not-restored",
+        "sleeps": [0],
+        "probes": 2,
+    }
+
+
 def test_helper_jitter_is_deterministic_sha256_modulo_31() -> None:
     """The jitter function is deterministic and bounded to [0, 30]."""
     script = f"""

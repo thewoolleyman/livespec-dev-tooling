@@ -136,6 +136,7 @@ async function runGate(options = {}) {
   }
 
   let sleptSeconds = 0;
+  let reprobedAfterZeroWait = false;
   while (true) {
     const payload = await fetchRateLimit(config, fetchImpl, sleepSeconds);
     const deficient = deficientResources(payload, config);
@@ -145,12 +146,17 @@ async function runGate(options = {}) {
     }
     const waitSeconds = waitSecondsFor(deficient, config, nowSeconds());
     const remainingWait = config.maxWaitSeconds - sleptSeconds;
-    if (remainingWait <= 0 || waitSeconds > remainingWait) {
+    if (
+      remainingWait <= 0 ||
+      waitSeconds > remainingWait ||
+      (waitSeconds === 0 && reprobedAfterZeroWait)
+    ) {
       throw new Error(NOT_RESTORED);
     }
     log(`rate budget deficient; sleeping ${waitSeconds}s before re-probe`);
     await sleepSeconds(waitSeconds);
     sleptSeconds += waitSeconds;
+    reprobedAfterZeroWait = waitSeconds === 0;
   }
 }
 
