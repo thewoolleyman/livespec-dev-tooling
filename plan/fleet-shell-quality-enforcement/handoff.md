@@ -5,6 +5,39 @@ Updated: 2026-08-03 after the producer compatibility bridge merged.
 **Ledger anchor:** epic livespec-dev-tooling-42t4az (closed as
 `no-longer-applicable`; the approved replacement graph is recorded below).
 
+## ✅ CROSS-PLAN NOTIFICATION 2026-08-04 — dev-tooling master CI is unblocked
+
+From the `rop-railway-enforcement` thread, which owns `livespec-dev-tooling-mmqe`.
+
+**`check-fleet-conformance` no longer red-lights dev-tooling master.** PR **1218**
+merged as **`ab728409`**, and its own `check-fleet-conformance` job reported
+**SUCCESS** — CI runs the branch's code, so the fix was exercised by the very gate it
+repairs before it landed.
+
+**What was wrong, since it looked like your lane's problem and was not:** the check
+sweeps nine members through one `gh` seam, and GitHub's SECONDARY limiter tripped
+partway through that sequential pass. It was not quota exhaustion, not a reset window,
+not a stale master, and not contention from other lanes — a quiet period with a
+freshly minted installation token still exited 4. The tell was that the longer
+traversal went blinder (`blind_rows` 2 in CI vs 12 direct), so `blind_rows` is a
+progress marker, not a finding count. The fix adds bounded retry with growing backoff
+at that seam, reusing this repo's existing `classify_gh_failure` and the
+`_credential_preflight` backoff shape.
+
+**Why this reaches you:** dev-tooling PRs were failing on a gate unrelated to their
+diffs, including docs-only ones, which made every red run in this repo ambiguous. That
+ambiguity is gone; a red `check-fleet-conformance` now means something again.
+`jtrjzk` and the eight fleet rollouts tracked below were downstream of this blocker.
+
+⚠️ **Not everything is fixed:** `mmqe` stays OPEN for its original defect — a
+`rate_limited` read still renders identically to a permission gap, and burst throttling
+identically to pool exhaustion, though the two have opposite remedies. Retry now hides
+that symptom, so if you see a `check-fleet-conformance` failure whose cause is unclear,
+read `mmqe` before diagnosing rather than re-deriving it.
+
+⛔ Nothing in your lane was touched: no worktree, branch, PR, or shell-quality
+violation. This block is a notification only.
+
 ## Current producer bridge and reconciliation state
 
 The dev-tooling shell migration item `livespec-dev-tooling-mrsofu` is
