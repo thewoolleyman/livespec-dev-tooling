@@ -1,5 +1,66 @@
 # rop-railway-enforcement — arm the check that was never armed, then remediate six repos
 
+> ## ⛔⛔⛔ **THE QUEUE'S NEXT MEMBER IS BLOCKED, AND SO IS 36% OF THE FLEET. CHECK SUPPLY BEFORE TAKING ANY MEMBER.**
+>
+> ### ▶️▶️▶️ EXACT NEXT ACTION — **`livespec-orchestrator-beads-fabro` (166), NOT `livespec-overseer`**
+>
+> **`livespec-overseer` CANNOT EXPRESS `IOResult` AT ALL.** Measured in a fresh
+> worktree: `uv run python -c 'import returns'` → **ModuleNotFoundError**;
+> `git ls-files | grep -c '_vendor/'` → **0**; no first-party module imports it. And
+> it is DELIBERATE, in that repo's own `pyproject.toml`:
+>
+> > *"ZERO runtime dependencies, deliberately. The supervisor is stdlib-only … Keep
+> > this list empty; a new runtime dependency is a design decision, not a detail."*
+>
+> **There is no install step to supply one either** — `.claude-plugin/bin/overseerd`
+> execs the HOST's bare `python3` with `PYTHONPATH=$PLUGIN_ROOT`. ⛔ **So v191's
+> source-copied shape cannot apply: the consumer is an arbitrary host's interpreter
+> and supplies nothing.** Filed as **`overseer-yc7`** (P1, overseer tenant).
+>
+> ### 📊 THE SUPPLY PREREQUISITE, MEASURED FOR EVERY MEMBER — **DO THIS FIRST, ALWAYS**
+>
+> | member | vendors `returns` | distinct | can write `IOResult`? |
+> |---|---:|---:|---|
+> | **`beads-fabro`** | **118 files** | **166** | ✅ **← take this** |
+> | `livespec` | 118 | 20 | ✅ |
+> | `git-jsonl` | 117 | 17 | ✅ |
+> | `dev-tooling` | 118 | 1 | ✅ (its 1 is RULED) |
+> | **`livespec-overseer`** | **0** | **112** | ⛔ **NO** |
+> | **`livespec-driver-codex`** | **0** | **1** | ⛔ **NO** |
+>
+> **THE TWO BLOCKED MEMBERS ARE ONE CLASS, NOT TWO ACCIDENTS** — both are
+> host-installed plugin bundles stating a stdlib-only policy (driver-codex: *"the
+> plugin bundle carries no third-party runtime Python … end users install nothing"*).
+> **113 of 317 distinct offenders — 36% of the fleet — sit behind ONE spec ruling.**
+> If that ruling exempts the class, the real arming cost is **~204 distinct, not
+> ~317**, and any schedule built on the larger figure is wrong by more than a third.
+> ⛔ **Do not resolve it by vendoring**: overseer's own comment says the property is
+> *why it could be relocated at all*.
+>
+> ### 📜 THE PATTERN HAS NOW FIRED TWICE RUNNING — **THE RULE IS: CHECK SUPPLY, THEN NAME A MEMBER**
+>
+> `8o8e.10` already records it once: *"THE VENDORING PREREQUISITE IS STILL LIVE, AND A
+> HANDOFF HEADER SAID IT WAS NOT"* — a header named `livespec-runtime`'s seam as next
+> with **"NOTHING BLOCKS IT"** while that repo did not vendor `returns`. **This file's
+> queue then named `livespec-overseer` as next in exactly the same way.**
+> 📜 **Twice is a pattern: the supply prerequisite is the real blocker more often than
+> the conversion is, and it is invisible in every offender count and every yield
+> ranking.** Run the two-command check above BEFORE naming any member as next.
+>
+> ### 🗂️ THE `livespec-overseer` GROUNDWORK IS DONE AND IS NOT ACTIONABLE — **DON'T RE-DERIVE IT**
+>
+> All of it is on `8o8e.7`, valid, and unusable until `overseer-yc7` is ruled:
+> **213 RAW / 112 DISTINCT** at `814c7a7`; every edit is a **DOUBLE edit** (57-group
+> hand-maintained byte mirror, `cmp -s`-enforced, no sync recipe); the `_`-prefixed
+> FILE skip is **decisive** here (81 vs 213) and was inert in `livespec-runtime`; and
+> the `proc_*` `X | None` conflation has a **per-caller** ruling — harmless at
+> `read_live_sessions` (a discovery surface whose contract is already fail-soft),
+> **consequential at `has_active_subshell`**, where "couldn't read the process tree"
+> becomes a positive claim of "no background work" that the supervisor acts on.
+> 📜 **That ruling nearly went the other way: the first two callers I read both argued
+> for deprioritising the fleet's recorded top lever, and the third reversed it.
+> Reading two consumers of a five-function seam is not a survey.**
+
 > ## ⛔⛔ READ BEFORE QUOTING ANY FLEET NUMBER — **THE DENOMINATOR HAS THREE VALUES AND NO RATIFIED BASIS. `jecv` (P1).**
 >
 > **Three durable records, three answers for the same quantity, no two sharing a
@@ -254,8 +315,9 @@
 >
 > ### 📋 THE QUEUE
 >
-> 1. **`livespec-overseer` (213)** — `claude_sessions.py`, yield 12. Measure its
->    cross-repo surface FIRST.
+> 1. ⛔ **`livespec-overseer` (213) IS BLOCKED — `overseer-yc7`.** It cannot import
+>    `returns` at all, by design. **Take `beads-fabro` (166) instead**; see the
+>    supply table at the top of this file.
 > 2. **`0aru` (P1)** — now EIGHT functions; the whole of `8o8e.10`'s remainder.
 > 3. **`l5pw` (P1)** — sweep the REST of the verb set; only `replace` was checked.
 > 4. **`55ec`** — 28 sites, RULED, unblocked. **`p9ot`** — the yield probe.
