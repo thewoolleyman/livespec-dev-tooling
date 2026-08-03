@@ -79,7 +79,18 @@ def test_public_action_declares_scope_preserving_two_token_contract() -> None:
     assert "skip-token-revoke" not in text
     assert "owner: ${{ inputs.owner }}" in text
     assert "repositories: ${{ inputs.repositories }}" in text
-    assert "rate-budget-gate.js" in text
+    assert text.count("rate-budget-gate.js") == 2
+    assert "RATE_BUDGET_TOKEN: ${{ steps.final-token.outputs.token }}" in text
+    assert (
+        "INPUT_ALREADY_WAITED_SECONDS: " "${{ steps.preflight-budget.outputs.slept-seconds }}"
+    ) in text
+    assert 'INPUT_EXPOSE_TOKEN_ON_SUCCESS: "true"' in text
+    assert "value: ${{ steps.final-budget.outputs.token }}" in text
+    assert "value: ${{ steps.final-token.outputs.token }}" not in text
+    assert "id: final-budget" in text
+    assert text.index("id: final-token") < text.index(
+        "RATE_BUDGET_TOKEN: ${{ steps.final-token.outputs.token }}"
+    )
 
 
 def test_helper_reports_healthy_probe_without_waiting_or_minting() -> None:
@@ -191,6 +202,176 @@ def test_helper_waits_to_later_deficient_reset_plus_cushion_and_jitter() -> None
         "jitter": payload["jitter"],
     }
     assert 0 <= payload["jitter"] <= 30
+
+
+def test_helper_withholds_deficient_final_token_until_reprobe_is_healthy() -> None:
+    """A healthy preflight is not enough to expose a deficient final token."""
+    script = f"""
+      (async () => {{
+      const gate = require({json.dumps(str(_HELPER))});
+      const events = [];
+      const finalPayloads = [
+        {{
+          resources: {{
+            core: {{ remaining: 100, reset: 1120 }},
+            graphql: {{ remaining: 250, reset: 1000 }}
+          }}
+        }},
+        {{
+          resources: {{
+            core: {{ remaining: 600, reset: 1200 }},
+            graphql: {{ remaining: 250, reset: 1200 }}
+          }}
+        }}
+      ];
+      const baseEnv = {{
+        INPUT_MIN_CORE_REMAINING: '500',
+        INPUT_MIN_GRAPHQL_REMAINING: '200',
+        INPUT_CUSHION_SECONDS: '30',
+        INPUT_MAX_WAIT_SECONDS: '3900',
+        INPUT_JITTER_SEED: 'final-seed',
+        GITHUB_API_URL: 'https://example.test/api'
+      }};
+      const preflight = await gate.runGate({{
+        env: {{ ...baseEnv, RATE_BUDGET_TOKEN: 'probe-token' }},
+        nowSeconds: () => 1000,
+        sleepSeconds: async (seconds) => events.push(['sleep', seconds]),
+        fetchImpl: async (url, options) => {{
+          events.push(['fetch', options.headers.authorization]);
+          return {{
+            ok: true,
+            status: 200,
+            json: async () => ({{
+              resources: {{
+                core: {{ remaining: 900, reset: 1010 }},
+                graphql: {{ remaining: 250, reset: 1020 }}
+              }}
+            }})
+          }};
+        }},
+        log: () => {{}}
+      }});
+      events.push(['preflight-healthy', preflight.sleptSeconds]);
+      const final = await gate.runGate({{
+        env: {{
+          ...baseEnv,
+          RATE_BUDGET_TOKEN: 'final-token',
+          INPUT_ALREADY_WAITED_SECONDS: String(preflight.sleptSeconds)
+        }},
+        nowSeconds: () => 1000,
+        sleepSeconds: async (seconds) => events.push(['sleep', seconds]),
+        fetchImpl: async (url, options) => {{
+          events.push(['fetch', options.headers.authorization]);
+          const payload = finalPayloads.shift();
+          return {{ ok: true, status: 200, json: async () => payload }};
+        }},
+        log: () => {{}}
+      }});
+      events.push(['exposed', 'final-token', final.sleptSeconds]);
+      console.log(JSON.stringify({{
+        events,
+        jitter: gate.deterministicJitterSeconds('final-seed')
+      }}));
+      }})().catch((error) => {{
+        console.error(error.message);
+        process.exit(1);
+      }});
+    """
+    payload = _json_stdout(result=_run_node(script=script))
+
+    expected_sleep = 120 + 30 + payload["jitter"]
+    assert payload == {
+        "events": [
+            ["fetch", "Bearer probe-token"],
+            ["preflight-healthy", 0],
+            ["fetch", "Bearer final-token"],
+            ["sleep", expected_sleep],
+            ["fetch", "Bearer final-token"],
+            ["exposed", "final-token", expected_sleep],
+        ],
+        "jitter": payload["jitter"],
+    }
+    assert 0 <= payload["jitter"] <= 30
+
+
+def test_helper_does_not_expose_final_token_when_final_budget_stays_deficient() -> None:
+    """A deficient final token that exhausts the wait bound is never exposed."""
+    script = f"""
+      (async () => {{
+      const gate = require({json.dumps(str(_HELPER))});
+      const events = [];
+      const baseEnv = {{
+        INPUT_MIN_CORE_REMAINING: '500',
+        INPUT_MIN_GRAPHQL_REMAINING: '200',
+        INPUT_CUSHION_SECONDS: '30',
+        INPUT_MAX_WAIT_SECONDS: '10',
+        INPUT_JITTER_SEED: 'final-failure-seed',
+        GITHUB_API_URL: 'https://example.test/api'
+      }};
+      const preflight = await gate.runGate({{
+        env: {{ ...baseEnv, RATE_BUDGET_TOKEN: 'probe-token' }},
+        nowSeconds: () => 1000,
+        sleepSeconds: async (seconds) => events.push(['sleep', seconds]),
+        fetchImpl: async (url, options) => {{
+          events.push(['fetch', options.headers.authorization]);
+          return {{
+            ok: true,
+            status: 200,
+            json: async () => ({{
+              resources: {{
+                core: {{ remaining: 900, reset: 1010 }},
+                graphql: {{ remaining: 250, reset: 1020 }}
+              }}
+            }})
+          }};
+        }},
+        log: () => {{}}
+      }});
+      events.push(['preflight-healthy', preflight.sleptSeconds]);
+      try {{
+        await gate.runGate({{
+          env: {{
+            ...baseEnv,
+            RATE_BUDGET_TOKEN: 'final-token',
+            INPUT_ALREADY_WAITED_SECONDS: String(preflight.sleptSeconds)
+          }},
+          nowSeconds: () => 1000,
+          sleepSeconds: async (seconds) => events.push(['sleep', seconds]),
+          fetchImpl: async (url, options) => {{
+            events.push(['fetch', options.headers.authorization]);
+            return {{
+              ok: true,
+              status: 200,
+              json: async () => ({{
+                resources: {{
+                  core: {{ remaining: 100, reset: 1120 }},
+                  graphql: {{ remaining: 250, reset: 1000 }}
+                }}
+              }})
+            }};
+          }},
+          log: () => {{}}
+        }});
+        events.push(['exposed', 'final-token']);
+      }} catch (error) {{
+        events.push(['error', error.message]);
+      }}
+      console.log(JSON.stringify({{ events }}));
+      }})().catch((error) => {{
+        console.error(error.message);
+        process.exit(1);
+      }});
+    """
+    payload = _json_stdout(result=_run_node(script=script))
+
+    assert payload == {
+        "events": [
+            ["fetch", "Bearer probe-token"],
+            ["preflight-healthy", 0],
+            ["fetch", "Bearer final-token"],
+            ["error", "rate-budget-not-restored"],
+        ]
+    }
 
 
 def test_helper_failure_taxonomy_is_bounded_and_distinct() -> None:

@@ -1,6 +1,7 @@
 "use strict";
 
 const crypto = require("crypto");
+const fs = require("fs");
 
 const INVALID_INPUT = "rate-budget-invalid-input";
 const MALFORMED = "rate-budget-malformed";
@@ -40,17 +41,21 @@ function parseInputs(env) {
   const maxWaitSeconds = parseNonNegativeInteger(
     inputValue(env, "INPUT_MAX_WAIT_SECONDS", "3900"),
   );
+  const alreadyWaitedSeconds = parseNonNegativeInteger(
+    inputValue(env, "INPUT_ALREADY_WAITED_SECONDS", "0"),
+  );
   if (minCoreRemaining === 0 || minGraphqlRemaining === 0) {
     throw new Error(INVALID_INPUT);
   }
   const seed = env.INPUT_JITTER_SEED || env.GITHUB_SHA || "";
   return {
     apiUrl: (env.GITHUB_API_URL || "https://api.github.com").replace(/\/+$/, ""),
-    probeToken: env.PROBE_TOKEN || "",
+    token: env.RATE_BUDGET_TOKEN || env.PROBE_TOKEN || "",
     minCoreRemaining,
     minGraphqlRemaining,
     cushionSeconds,
     maxWaitSeconds,
+    alreadyWaitedSeconds,
     jitterSeconds: deterministicJitterSeconds(seed),
   };
 }
@@ -94,7 +99,7 @@ async function fetchRateLimit(config, fetchImpl, sleepSeconds) {
         method: "GET",
         headers: {
           accept: "application/vnd.github+json",
-          authorization: `Bearer ${config.probeToken}`,
+          authorization: `Bearer ${config.token}`,
           "x-github-api-version": "2022-11-28",
         },
       });
@@ -131,11 +136,11 @@ async function runGate(options = {}) {
     options.nowSeconds || (() => Math.floor(Date.now() / 1000));
   const log = options.log || ((message) => console.log(message));
   const config = parseInputs(env);
-  if (!config.probeToken) {
+  if (!config.token) {
     throw new Error(PROBE_UNUSABLE);
   }
 
-  let sleptSeconds = 0;
+  let sleptSeconds = config.alreadyWaitedSeconds;
   let reprobedAfterZeroWait = false;
   while (true) {
     const payload = await fetchRateLimit(config, fetchImpl, sleepSeconds);
@@ -160,9 +165,26 @@ async function runGate(options = {}) {
   }
 }
 
+function writeOutput(env, name, value) {
+  if (!env.GITHUB_OUTPUT) {
+    return;
+  }
+  fs.appendFileSync(env.GITHUB_OUTPUT, `${name}=${value}\n`, {
+    encoding: "utf-8",
+  });
+}
+
 async function main() {
   try {
-    await runGate();
+    const result = await runGate();
+    writeOutput(process.env, "slept-seconds", String(result.sleptSeconds));
+    if (process.env.INPUT_EXPOSE_TOKEN_ON_SUCCESS === "true") {
+      writeOutput(
+        process.env,
+        "token",
+        process.env.RATE_BUDGET_TOKEN || process.env.PROBE_TOKEN || "",
+      );
+    }
   } catch (error) {
     const marker = String(error.message || error).split(":")[0];
     console.error(`::error::${marker}`);
