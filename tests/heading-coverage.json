@@ -360,35 +360,30 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a deficient App installation budget waits for the later reset",
-    "test": "TODO",
-    "reason": "Awaits the integration-tier test landing with the GitHub App rate-budget token gate; scenarios.md headings require an integration-tier-or-above test node id."
+    "test": "tests.consumer.test_github_rate_budget_token.test_helper_waits_to_later_deficient_reset_plus_cushion_and_jitter"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a healthy App installation budget yields a fresh exactly-scoped token",
-    "test": "TODO",
-    "reason": "Awaits the integration-tier test landing with the GitHub App rate-budget token gate; scenarios.md headings require an integration-tier-or-above test node id."
+    "test": "tests.consumer.test_github_rate_budget_token.test_public_action_declares_scope_preserving_two_token_contract"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an App budget probe cannot authenticate or reach GitHub",
-    "test": "TODO",
-    "reason": "Awaits the integration-tier test landing with the GitHub App rate-budget token gate; scenarios.md headings require an integration-tier-or-above test node id."
+    "test": "tests.consumer.test_github_rate_budget_token.test_helper_failure_taxonomy_is_bounded_and_distinct"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an App budget probe returns a malformed rate-limit payload",
-    "test": "TODO",
-    "reason": "Awaits the integration-tier test landing with the GitHub App rate-budget token gate; scenarios.md headings require an integration-tier-or-above test node id."
+    "test": "tests.consumer.test_github_rate_budget_token.test_helper_failure_taxonomy_is_bounded_and_distinct"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an App installation budget does not recover inside the wait bound",
-    "test": "TODO",
-    "reason": "Awaits the integration-tier test landing with the GitHub App rate-budget token gate; scenarios.md headings require an integration-tier-or-above test node id."
+    "test": "tests.consumer.test_github_rate_budget_token.test_helper_failure_taxonomy_is_bounded_and_distinct"
   }
 ]

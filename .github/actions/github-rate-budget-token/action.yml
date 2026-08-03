@@ -1,0 +1,83 @@
+# github-rate-budget-token composite Action — gates App tokens on rate budget.
+#
+# Authority: SPECIFICATION/contracts.md §"Composite Actions wire contract".
+#
+# The Action mints a minimum/current-repository-scope probe token, polls
+# GET /rate_limit until the caller's REST core and GraphQL minima are available
+# within the configured wait bound, and only then mints a fresh final token with
+# exactly the caller-requested owner/repositories scope. Both token mints keep
+# actions/create-github-app-token@v3's default end-of-job revocation.
+
+name: github-rate-budget-token
+description: Mint a GitHub App token only after the installation has caller-required REST and GraphQL rate budget.
+
+inputs:
+  client-id:
+    description: GitHub App client ID passed to actions/create-github-app-token.
+    required: true
+  private-key:
+    description: GitHub App private key PEM passed to actions/create-github-app-token.
+    required: true
+  owner:
+    description: Optional owner scope for the final token; empty preserves create-github-app-token's default current-repository scope.
+    required: false
+    default: ""
+  repositories:
+    description: Optional repositories scope for the final token; empty preserves create-github-app-token's default current-repository scope.
+    required: false
+    default: ""
+  min-core-remaining:
+    description: Minimum REST core remaining budget required before final token mint.
+    required: false
+    default: "500"
+  min-graphql-remaining:
+    description: Minimum GraphQL remaining budget required before final token mint.
+    required: false
+    default: "1"
+  cushion-seconds:
+    description: Seconds added after the later deficient reset before re-probing.
+    required: false
+    default: "30"
+  max-wait-seconds:
+    description: Maximum aggregate rate-budget wait time before failing closed.
+    required: false
+    default: "3900"
+  jitter-seed:
+    description: Seed for deterministic jitter; empty resolves to GITHUB_SHA.
+    required: false
+    default: ""
+
+outputs:
+  token:
+    description: Fresh final installation token minted after the budget probe is healthy.
+    value: ${{ steps.final-token.outputs.token }}
+
+runs:
+  using: composite
+  steps:
+    - name: Mint minimum-scope probe token
+      id: probe-token
+      uses: actions/create-github-app-token@v3
+      with:
+        client-id: ${{ inputs.client-id }}
+        private-key: ${{ inputs.private-key }}
+
+    - name: Wait for installation rate budget
+      shell: bash
+      env:
+        PROBE_TOKEN: ${{ steps.probe-token.outputs.token }}
+        INPUT_MIN_CORE_REMAINING: ${{ inputs.min-core-remaining }}
+        INPUT_MIN_GRAPHQL_REMAINING: ${{ inputs.min-graphql-remaining }}
+        INPUT_CUSHION_SECONDS: ${{ inputs.cushion-seconds }}
+        INPUT_MAX_WAIT_SECONDS: ${{ inputs.max-wait-seconds }}
+        INPUT_JITTER_SEED: ${{ inputs.jitter-seed }}
+      run: node "${{ github.action_path }}/rate-budget-gate.js"
+
+    - name: Mint final scoped token
+      id: final-token
+      uses: actions/create-github-app-token@v3
+      with:
+        client-id: ${{ inputs.client-id }}
+        private-key: ${{ inputs.private-key }}
+        owner: ${{ inputs.owner }}
+        repositories: ${{ inputs.repositories }}
