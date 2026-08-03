@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.16.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.15.1...v1.16.0) (2026-08-03)
+
+
+### Features
+
+* add GitHub App rate budget gate ([c792eb5](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c792eb51693db72284431189f7c9770960582f38))
+
 ## [1.15.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.15.0...v1.15.1) (2026-08-03)
 
 
