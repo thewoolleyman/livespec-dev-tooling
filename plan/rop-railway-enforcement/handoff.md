@@ -1,6 +1,144 @@
 # rop-railway-enforcement — arm the check that was never armed, then remediate six repos
 
-> ## ⛔⛔⛔ **THE QUEUE'S NEXT MEMBER IS BLOCKED, AND SO IS 36% OF THE FLEET. CHECK SUPPLY BEFORE TAKING ANY MEMBER.**
+> ## 🔻🔻 COLD START — **START HERE. NOTHING IS MID-FLIGHT. NEXT MEMBER IS `beads-fabro` (166).**
+>
+> ### ▶️▶️▶️ EXACT NEXT ACTION — **`livespec-orchestrator-beads-fabro`, AND CHECK SUPPLY FIRST**
+>
+> Two members finished their cheap work this session: **`livespec-runtime` 27 → 11**
+> (local lane COMPLETE — all 11 residual are cross-repo-bound or entry points) and
+> **`git-jsonl` 17 → 11** (all `*_optional` swallowing twins gone). ⛔ **`overseer` is
+> BLOCKED** — it cannot import `returns` at all, by design (`overseer-yc7`).
+>
+> **▶️ SO TAKE `beads-fabro` (166 distinct, vendors `returns`, no mirror).**
+> ⚠️ **It has NO high-yield seam** — this file already records *"do NOT open it with
+> `commands/_jsonc.py`: fan-in 54, yield 4. Its 168 is overwhelmingly tail."* Expect
+> per-function work, and **open with the two greps below rather than with a seam.**
+>
+> ### 🔍 TWO GREPS THAT FOUND REAL DEFECTS THIS SESSION — **RUN BOTH ON ANY NEW MEMBER**
+>
+> **① THE SWALLOWING TWIN.** `def X_optional(...): try: return X(...) except <Named>: return None`
+> — a swallow with a naming convention. It converts to NOTHING: once the sibling
+> returns a `Result`, the twin has no body left, so **DELETE it** and let each caller
+> write `.value_or(...)` where the choice to discard the reason is visible.
+> Found 4 in `git-jsonl` (PRs #525, #527). **Sweep: `grep -rn '^def .*_optional('`.**
+> ⚠️ **The suffix does NOT tell you the disposition** — some are genuine legitimate
+> absences (declare), some are swallows (delete). Read each.
+>
+> **② THE FABRICATED ANSWER.** `except (OSError, SubprocessError): return <well-formed result>`.
+> `git-jsonl`'s `run_capture` returned `ProcessResult(stdout="", returncode=1)` for a
+> command that never spawned — **`1` is a real exit code real commands really return**,
+> so a missing binary was indistinguishable from a command that ran and failed. This is
+> `livespec-runtime`'s `run_command` defect (PR #454) in a second repo.
+> **Sweep: `grep -rn -B3 'except.*OSError' | grep -A3 'return '`.**
+>
+> ### ⚠️⚠️ THE TRAP THAT WILL BITE THE NEXT CONVERSION — **`IOResult.value_or` ≠ `Result.value_or`**
+>
+>     Result.value_or(None)    -> {'a': 1}        the value, BARE
+>     IOResult.value_or(None)  -> <IO: {'a': 1}>  an IO WRAPPER
+>
+> I walked into this. `parsed = load_json_file_optional(path=...).value_or(None)` made
+> `parsed` an `IO[...]`, so `isinstance(parsed, dict)` was False for EVERY input and a
+> generator silently yielded nothing. ⛔ **`pyright` was CLEAN; the symptom was an empty
+> result, not an error.** Two beside-tests caught it. **Always `unsafe_perform_io(...)`
+> around an `IOResult` `.value_or`.**
+> ✅ **Swept the whole fleet afterwards: NO live instance exists.** And the fleet already
+> had prior art in `beads-fabro`'s `codex_yolo_gate.py:184` and `git-jsonl`'s
+> `test_cli_e2e_round_trip.py:174`. 📜 **The gap was not knowledge, it was REACH — the
+> warning lived only in the two files that had already been bitten.**
+>
+> ### 📊 EVERY MEMBER, MEASURED THIS SESSION — **RAW / DISTINCT, and the SUPPLY column**
+>
+> | member | RAW | DISTINCT | vendors `returns` | note |
+> |---|---:|---:|---|---|
+> | **`beads-fabro`** | 166 | **166** | ✅ 118 files | **← NEXT.** No seam; tail. |
+> | `livespec-overseer` | 213 | 112 | ⛔ **0** | **BLOCKED — `overseer-yc7`** |
+> | `livespec` | 20 | 20 | ✅ 118 | flat tail, biggest file 4 |
+> | `git-jsonl` | 11 | 11 | ✅ 117 | twins all gone; tail across 9 files |
+> | `livespec-runtime` | 11 | 11 | ✅ declared | **local lane COMPLETE** |
+> | `dev-tooling` · `driver-codex` | 1 · 1 | 1 · 1 | ✅ · ⛔ | dt's 1 is RULED; codex BLOCKED |
+>
+> ⛔ **DO NOT ADD THESE UP AND COMPARE TO ANY RECORDED TOTAL — see `jecv`.** Three
+> records carry three different fleet figures on incompatible universe bases
+> (432/338, 402/321, 429/328). Every number above is internally consistent with the
+> others from 2026-08-03 **and with nothing else.**
+>
+> ### 🔻 FIRST FIVE MINUTES — **INLINED, NOT POINTED AT** (copy them; never point)
+>
+> **NOTHING IS MID-FLIGHT.** No background job, no sub-agent, no unpushed Red, no open
+> PR of this thread's. 7 PRs merged this session, every worktree reaped, every repo
+> verified clean on `master`.
+>
+> 1. ✅ **NOTHING OF MINE TO REAP.** `git -C /data/projects/livespec-dev-tooling merge
+>    --ff-only origin/master` is all that is owed.
+> 2. **REAP NOTHING ELSE.** Every other worktree is a PEER lane. Enumerate with
+>    `git worktree list`; **never quote a count from this file.**
+> 3. `git status --short --branch` — clean on `master`; one untracked
+>    `install-livespec-pr-bot.png` is pre-existing. ⚠️ A modified `uv.lock` is
+>    REGENERATED noise: `git checkout -- uv.lock` before any `merge --ff-only`, which
+>    REFUSES while dirty. **It also blocks `git worktree remove`.**
+> 4. ⚠️ **RUN `mise exec -- just install-worktree-pack` IN EVERY FRESH WORKTREE**, then
+>    `git checkout -- .livespec.jsonc uv.lock` (it dirties both). Without it
+>    `check-primary-checkout-commit-refuse-hook-installed` fails `worktree_pack_absent`
+>    — **not your diff**, not `.py`-only, and it fails **AT PUSH**, not at commit.
+> 5. ⚠️ **BEFORE PUSHING ANY RED→GREEN PAIR:** `git log -1 --format=%B | grep -c
+>    '^TDD-Red-'` must be **5**, `'^TDD-Green-'` must be **2**. **`--amend --no-edit`
+>    is the SAFE spelling**; `--amend -m`/`-F` destroys the Red trailers and the hook
+>    still exits 0 (`zv78`).
+>    ✅ **A NEW test file MAY be staged at Green** — only the RECORDED Red file must be
+>    byte-identical. Used six times this session to cover new failure branches.
+>    ✅ **STUB TECHNIQUE, used four times:** when the Red needs a type that does not
+>    exist yet, add it as a minimal dataclass ON DISK BUT UNSTAGED, so the Red fails on
+>    a real ASSERTION rather than an ImportError.
+> 6. ⚠️ **A `check-fleet-conformance` RED IS PROBABLY THE APP'S RATE LIMIT.**
+>    `gh run view <id> --log-failed | grep -o '"kind": "[a-z_]*"'` → `rate_limited`.
+>    Log occurrences on **`mmqe`**.
+> 7. ⚠️ **NEVER RUN AN AD-HOC `pytest --cov`** — it writes statement-coverage data that
+>    then collides with the repo's branch-coverage recipe (*"Can't combine statement
+>    coverage data with branch data"*). `rm -f .coverage` and re-run the recipe.
+>    ⚠️ `/tmp` inode pressure recurs (`8o8e.16`): `df -i /tmp`, not `df -h`.
+> 8. ⚠️ **THE ARMED HARNESS IS NOT DURABLE — REBUILD IT** from §"THE ARMED MEASUREMENT".
+>    Delta 1 by monkeypatching `iter_py_files`; delta 2 by handing `_scan` a PATH SHIM
+>    whose `.name` cannot start with `_`. **`_scan` runs WHOLE — never transcribe its
+>    exempt-set construction** (`i04f`/`8o8e.6` drift). ⛔ **Its control FAILED FIRST
+>    for me** (reported 0 against dev-tooling's known 1, because delta 2 was missing and
+>    `cross_member_consumption` lives in an `_`-prefixed FILE). **That failure is the
+>    only reason any figure here is quotable.**
+> 9. **⛔ READ THE LEDGER CHILDREN `8o8e.7`–`.13`** — `.7`, `.10`, `.11` were rewritten
+>    2026-08-03 and carry the current figures, the per-member SHAs and the blockers.
+>
+> ### 📋 THE QUEUE
+>
+> 1. **`beads-fabro` (166)** — next. Run both greps above before picking anything.
+> 2. **`overseer-yc7` (P1)** — the spec ruling that unblocks 113 distinct (36%).
+> 3. **`jecv` (P1)** — ratify ONE denominator basis; three records disagree.
+> 4. **`0aru` (P1)** — the coordinated multi-repo rollout, now EIGHT functions.
+> 5. **`xx1y` (P1)** — re-sync `livespec-runtime`'s venv on any new dependency, or the
+>    fleet's git credential helper breaks. **`55ec`**, **`p9ot`** unchanged.
+>
+> ### ✅ WHAT LANDED THIS SESSION — 7 PRs, all merged, CI green
+>
+> `livespec-runtime` **#454** (27→18) · **#456** (18→14) · **#460** (13→11).
+> `git-jsonl` **#525** (17→15) · **#527** (15→11).
+> `dev-tooling` **#1187** — the `replace`-verb false positive (runtime 14→13,
+> beads-fabro 168→166); **#1184** — the worktree-pack contradiction that refused
+> EVERY local product commit while CI stayed green.
+> **ADDED was 0 at every step**, and the delivered set matched the pre-registered SET
+> (not just its count) on all but the first, where the total matched by a coincidence
+> of two offsetting membership differences — **recorded, because that is exactly what
+> comparing counts alone hides.**
+>
+> ### 🔴 AND ONE REGRESSION I CAUSED AND FIXED — **READ `xx1y` BEFORE ADDING A DEPENDENCY**
+>
+> Landing the mint railway broke `git push` in **every fleet repo**. Each clone's
+> credential helper is backed by `livespec-runtime`'s EDITABLE venv, which predated the
+> `returns` declaration, so the new bare import raised `ModuleNotFoundError` inside the
+> helper. Git reports it as **`fatal: could not read Username`** — an auth message for
+> an import failure. **Fix: `cd /data/projects/livespec-runtime && uv sync`.**
+> 📜 My closure survey had verified the three repos that **vendor** the library and
+> passed; this consumer **installs** it. **Enumerate consumption PATHS, not consumer
+> REPOS.**
+
+> ## 🗄️ (SUPERSEDED AS THE HEADER 2026-08-03 — `git-jsonl` went 17 → 11 after this was written; its FIRST FIVE MINUTES are copied verbatim into the header above, per this block's own rule.) **THE QUEUE'S NEXT MEMBER IS BLOCKED, AND SO IS 36% OF THE FLEET.**
 >
 > ### ▶️▶️▶️ EXACT NEXT ACTION — **`livespec-orchestrator-beads-fabro` (166), NOT `livespec-overseer`**
 >
