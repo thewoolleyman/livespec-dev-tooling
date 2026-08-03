@@ -1,867 +1,212 @@
 # rop-railway-enforcement — arm the check that was never armed, then remediate six repos
 
-> ## 🔻🔻 COLD START — **START HERE. ⛔⛔ TWO LANES ARE BLOCKED (`beads-fabro`, `livespec`). ▶️ THE OPEN LANE IS `git-jsonl`, NOW AT **8** (11 → 10 via #532, 10 → 8 via #533). NOTHING IS MID-FLIGHT OF MINE EXCEPT THE PRESERVED `livespec` RED.**
+> ## 🔻🔻 COLD START — **START HERE. ⛔⛔ YOUR FIRST JOB IS NOT THE ROP LANE. A CRITICAL-PATH BLOCKER WAS HANDED TO THIS THREAD AND ITS FIX IS AUTHORED BUT UNCOMMITTED.**
 >
-> ### ⛔⛔ `livespec` WENT FROM "OPEN LANE" TO "BLOCKED" **DURING THIS SESSION**, AND MASTER CI STAYED GREEN THE WHOLE TIME
+> ### ▶️▶️▶️ EXACT NEXT ACTION — **LAND THE `check-fleet-conformance` RATE-SHAPING FIX**
 >
-> **`check-master-ci-green` exits 0 on `livespec`. A `.py` commit STILL cannot be made.**
-> `check-doctor-static` is in the pre-commit `check` aggregate and it FAILS on clean
-> master, no diff of mine involved — re-run it on the untouched primary checkout to see
-> it:
+> **`7caozh` is approved/ready and its dispatcher correctly refuses the red master.
+> `jtrjzk` plus EIGHT fleet rollouts are downstream.** The thing making master red is
+> `check-fleet-conformance`, and the request-side fix is **written, Red-verified, and
+> NOT COMMITTED.**
 >
->     doctor-wiring-completeness-cross-repo -> FAIL
->     "1 (sibling, missing-canonical-slug) drift pair(s): livespec-dev-tooling→:no-check-recipe"
->
-> ⚠️ **`:no-check-recipe` IS A SENTINEL, NOT A SLUG — it does not mean "the sibling has
-> no check recipe". It means CORE'S READER COULD NOT PARSE THE SHAPE.**
-> `_wiring_completeness_cross_repo_helpers.extract_check_slugs_from_justfile` looks for
-> a `targets=(` array INSIDE the sibling's `check:` recipe and returns `None` when it
-> is absent.
->
-> 🔴 **THE CAUSE IS A PEER LANE'S LANDED WORK, AND IT LANDED TODAY.** dev-tooling
-> commit **`20a43f8` "fix(checks): enforce thin justfile shell surfaces"** (2026-08-03)
-> moved the `check:` body out to `scripts/just/check.sh`, where the target list is now
-> read from **`check-targets.txt`**. dev-tooling's `check:` recipe is two lines. **CORE's
-> reader still expects the inline array, so it fails closed — correctly — and freezes
-> `.py` commits in a THIRD repo.**
-> ⛔ **THAT IS `fleet-shell-quality-enforcement`, THE SAME PEER LANE YOU STAND DOWN ON.**
-> Do not "fix" their justfile back.
->
-> ✅ **AND A PEER IS ALREADY ON THE CORE-SIDE REPAIR — DO NOT DUPLICATE IT.**
-> `~/.worktrees/livespec/fix/wiring-check-target-inventory` carries UNCOMMITTED work in
-> `_wiring_completeness_resolve.py`, `wiring_completeness_cross_repo.py` and a new
-> `_wiring_completeness_source.py` — the branch name is literally the fix (read the
-> target INVENTORY, not the justfile array). **Enumerate before assuming it is still
-> there; do not touch it either way.**
->
-> 📜 **THIS IS `8o8e.22`'S CLASS, THIRD INSTANCE, AND THE PATTERN IS NOW WORTH STATING
-> AS A RULE: A FLEET-WIDE REFACTOR IS A CROSS-REPO API CHANGE WHEN ANY SIBLING READS
-> THE SHAPE IT CHANGES.** A justfile looks repo-private. It is not: CORE parses it.
-> Each member the shell-quality lane converts trips this check for that sibling, one at
-> a time. **`git-jsonl` still carries the inline `targets=(` (7 hits) — which is
-> precisely why it is still readable, and why it is the open lane.**
->
-> ### 🔬 THE SAME CHECK, TWO MEMBERS, OPPOSITE DISPOSITIONS — **FAIL-CLOSED HERE, SKIP THERE**
->
-> Measured the same hour, same check id:
->
->     livespec    doctor-wiring-completeness-cross-repo -> FAIL     (blocks commits)
->     git-jsonl   doctor-wiring-completeness-cross-repo -> SKIPPED  ("livespec_dev_tooling
->                                                                    is not importable")
->
-> ⚠️ **The member that CAN import the criterion is refused; the member that cannot is
-> waved through.** Neither disposition is wrong alone — importability genuinely gates
-> the slug set — **but the composition means cross-repo wiring completeness is enforced
-> exactly where the tooling happens to be installed, and nowhere else.** That is the
-> `8o8e.22` shape again (two mechanisms, each defensible, composition unowned) and it
-> belongs beside it, not as a footnote.
->
-> ### ✅✅ SECOND UNIT LANDED — **`git-jsonl` 10 → 8, REMOVED 2 / ADDED 0** (PR #533)
->
-> `spec_reader.py`'s pair. **`read_current_specification` had NO failure path at all:**
-> `_read_spec_directory` rglobs a directory that is not there, yields nothing, and the
-> caller gets `SpecSnapshot(version=0, files={})` — byte-identical to a spec root that
-> EXISTS and is empty. ⚠️ **The sibling in the same file already refused**
-> (`read_specification_history` rejects a missing version dir). **One adapter, two
-> required capabilities, opposite dispositions on the same absence.**
->
-> 🔴 **AND IT FAILED IN THE REASSURING DIRECTION, WHICH IS WHY NOTHING SURFACED IT.**
-> Measured end-to-end through `detect_impl_gaps`:
->
->     rules from a real spec tree    -> 1
->     rules from an absent spec root -> 0
->
-> **A mistyped `--spec-target` printed `{"gap_ids": []}` and EXITED 0 — a clean bill of
-> health for a specification that is not there.** The same CLI already exited with a
-> precondition error for a missing *history* version, so one command gave the two
-> absences opposite exit codes. ▶️ **When a collapse produces the ANSWER EVERYONE WANTS,
-> no one reports it as a bug. Prefer the greps that ask "what does absence return" over
-> the ones that ask "what does failure return".**
->
-> ### 🔧 TWO GATES TAUGHT ME SOMETHING ON THAT UNIT — **worth copying, not just noting**
->
-> - **`check-types` flagged HKT erosion on the `.bind` chains.** This repo's
->   `_prune_history_railway.py` carries a file-level pyright pragma, and its own comment
->   scopes it: it is justified where *"roughly half of all lines are bind targets"*, and
->   names *"per-call cast or refactor to named typed functions"* as the canonical fix
->   FIRST. I had **three** bind sites, so I restructured to explicit early returns
->   instead of copying the pragma. ⛔ **Copying a pragma because a sibling file has one
->   is how enforcement erodes** — read the comment that grants it.
-> - **`check-coverage` found an UNREACHABLE BRANCH, not a missing test.**
->   `_files_changed_since` re-read the live spec that `detect_rules` had already read
->   successfully, so its failure branch could never fire. **The right fix was passing the
->   snapshot in — deleting a redundant filesystem walk AND the dead branch.** ▶️ A
->   coverage miss on a NEW failure branch is a question, not a chore: *can this fire at
->   all?* Writing a test for it would have pinned unreachable code forever.
->
-> ⚠️ **AND I BROKE RED/GREEN BYTE-IDENTITY MID-UNIT AND CAUGHT IT.** I appended the two
-> new failure-track tests to the Red-recorded file. **A NEW test file MAY be staged at
-> Green; the RECORDED one may not move.** Restored with `git checkout HEAD -- <file>`,
-> put the new tests in `test_spec_reader_diff_failures.py`, and re-verified the checksum
-> against the trailer after EVERY `ruff format` pass. **`ruff format` is the silent
-> breaker here — it reformats on a schedule you did not choose.**
->
-> ### 🔴🔴 `8o8e.27` — **FOUR SITES IN THREE REPOS DELEGATE TO AN INVARIANT RETIRED AT v103**
->
-> Found by asking the one question that makes a documented degradation testable:
-> **"the gate you delegate to — does it exist?"**
-> `commands/_cross_repo.py::load_manifest` justifies collapsing a malformed config by
-> naming *"the spec-side doctor's `cross-repo-targets-wellformedness` invariant"*.
->
->     LIVE spec (all six SPECIFICATION/*.md)  -> 0 hits
->     registered doctor check ids (all 22)    -> no such id
->     ratified history                        -> PRESENT v072…v102, ABSENT v103…v149
->
-> **It was ratified at v072 and RETIRED at v103 (2026-06-10). The citations were TRUE
-> when written.** Four of them are still load-bearing:
-> `livespec/.../_wiring_completeness_cross_repo_helpers.py:110` and `:153`,
-> `git-jsonl/.../_cross_repo.py:61`, and `beads-fabro/.../_cross_repo.py:56` (the same
-> sentence, copied).
->
-> ⚠️ **THIS IS `8o8e.20`'S CLASS AND STRICTLY WORSE.** `8o8e.20` is a documented gate
-> nothing arms; this is a documented gate that was DELETED. **And a careful reader who
-> greps `history/` finds "evidence" it exists** — the record actively rewards the check
-> that should have caught it.
-> ⛔ **DO NOT make the four sites hard-fail.** The fail-open behaviour may still be
-> right on its own merits; **what is indefensible is the JUSTIFICATION, not necessarily
-> the behaviour.** Three options, maintainer's ruling, all in `8o8e.27`.
-> ▶️ **THE TRANSFERABLE SWEEP: a retired spec invariant is an API removal for every
-> comment that cites it.** A mechanical check — every `` `<name>-invariant` `` citation
-> in first-party prose must resolve to a live clause or a registered check id — would
-> have caught this at v103, two months ago.
->
-> ### ✅✅ THAT UNIT IS LANDED — **`git-jsonl` 11 → 10, REMOVED 1 / ADDED 0, universe 49** (PR #532)
->
-> `loads_json_optional` is DELETED, not converted. The removed offender matched the
-> pre-registration BY NAME (`spec_next_bridge.py:264 spec_next`), not merely by count.
-> Suite 399 passed · `just check` 65/65 · trailers 5 Red / 2 Green · Red test file
-> byte-identical across the pair (checksum verified against the recorded trailer AFTER
-> a `ruff format` pass — that autofix is exactly what silently breaks the pair).
->
-> **What the conversion bought, concretely:** `spec_next` now returns
-> `IOResult[SpecNextOutput | None, JsoncParseError]`, so *"CORE emitted garbage"* and
-> *"CORE answered fine, nothing queued"* are finally two values. ⚠️ **The fail-open
-> POLICY did not move and could not** — `compose_needs_attention(spec_next:
-> SpecNextOutput | None)` is the VENDORED `livespec_runtime`'s signature, so the failure
-> still lands on the same `None`. It now lands at a visible `.value_or(None)` with a
-> comment, and a test pins that the policy is unchanged. **Scope was ONE failure:** a
-> non-zero exit and an unspawnable command stay ANSWERS, by this package's own
-> documented `run_capture` doctrine. **Widening those would have been my ruling, not
-> the repo's.**
->
-> ⛔ **AND THE CLAUSE (e) HOLE IS NOT CLOSED — ONLY UNPOPULATED.** The criterion still
-> reads the ANNOTATION, so the next `-> Any` function with a hand-rolled
-> `except: return None` is invisible in exactly the same way. `8o8e.11` records the
-> amendment as still owed. **Deleting the only known instance of a blind spot is not
-> fixing the blind spot**, and a count that now reads clean is precisely what will
-> hide the next one.
->
-> ### 🔴🔴 THE SWEEP RULE HAD THE WRONG SCOPE — **DOCUMENTS *AND* THE LEDGER, AND THE LEDGER OUTRANKS THE DOCUMENTS**
->
-> **I corrected "twins all gone" in `handoff.md` in two places and shipped it, while
-> `8o8e.11` — the record this charter declares AUTHORITATIVE OVER BOTH DOCUMENTS —
-> still asserted it.** For two PRs the outranking record carried the disproved claim.
-> Caught by supervisor brief 20, not by my sweep.
-> 📜 **That is the remedy failing at its own boundary: a document-scoped sweep cannot
-> catch a ledger-scoped twin. Same defect, wearing the remedy's clothes.**
->
-> ▶️ **THE RULE, RESTATED:** after any retraction, grep **the documents AND the ledger**
-> — and correct the ledger FIRST, because it outranks. Applied here rather than merely
-> stated: `bd list --json` over all **50** items, matching on the claim's phrasings,
-> returned exactly **1** carrier (`8o8e.11`), now corrected with a close-gate attached.
->
-> ### 🔬 AND THE DEEPER ONE — **A COUNT CANNOT AUDIT A CLASS CLAIM**
->
-> `8o8e.11` said *"no swallowing twins remain"* while, ~110 lines above, **the same item
-> recorded the surviving twin** — as *"the fleet's ONLY KNOWN CLAUSE (e) HOLE INSTANCE"*,
-> relieved by livespec **v186** because clause (e) reads the annotation and `Any`
-> defeats it.
-> ⛔ **RELIEVED ≠ CONVERTED, and the completion claim conflated them.** The offender
-> COUNT was correct throughout — the twin is legitimately absent from it, because the
-> check cannot see it. **"No swallowing twins remain" is a claim about the TREE, and
-> nothing in the measurement pipeline checks the tree.** A relief and a conversion are
-> identical in the number and opposite in the code.
-> ▶️ **So: never let a measured count discharge a class claim. The count answers "how
-> many does the criterion convict"; a class claim answers "what is in the tree". Only a
-> grep answers the second, and this file's own greps are that instrument.**
->
-> ### ▶️▶️ HOW THAT UNIT WAS PICKED — **A SWALLOWING TWIN WHOSE OWN SIBLING WAS ALREADY CONVERTED**
->
-> ⛔ **THIS FILE SAYS `git-jsonl`'s TWINS ARE "all gone" (the member table, twice). THAT
-> IS FALSE — MEASURED.** `grep -rn '^def .*_optional('` returns a LIVE one:
->
->     io/spec_next.py:70  def loads_json_optional(*, text: str) -> Any:
->         try:    return json.loads(text)
->         except json.JSONDecodeError:  return None
->
-> 🔴 **AND ITS SIBLING TWELVE LINES BELOW IS ALREADY CONVERTED** —
-> `load_json_file_optional -> IOResult[Any, JsonFileUnreadable]`, carrying a docstring
-> that spells the split out: *"`None` on the success track when it is simply ABSENT …
-> a file that exists and will not read or parse is not."* **The `path` twin was fixed
-> and the `text` twin was left standing in the same file.**
-> 📜 **That is `FIX ONE INSTANCE, LEAVE THE SIBLING STALE` a THIRD time today — twice in
-> this file's own prose, once in shipped code.** The sweep remedy applies to code
-> exactly as it applies to prose: after converting a twin, grep the module for the
-> others.
->
-> ⚠️ **AND THIS TWIN IS THE WORST SPELLING OF THE CLASS, BECAUSE THE SENTINEL IS A
-> LEGITIMATE VALUE.** Verified:
->
->     json.loads("null")            -> None      <- a VALID JSON document
->     loads_json_optional(broken)   -> None      <- a PARSE FAILURE
->
-> **The failure signal and a well-formed answer are the same object**, so no caller can
-> tell them apart even in principle. The sole consumer then widens the collapse:
-> `spec_next_bridge.py:117` does `payload = loads_json_optional(text=stdout)` then
-> `if not isinstance(payload, dict): return None` — so *"the spec-`next` subprocess
-> emitted malformed JSON"* and *"it answered fine with no candidates"* reach
-> `_adapt_top_candidate`'s caller identically. **`spec_next_bridge.py:264 spec_next` is
-> itself one of the 11.**
->
-> ▶️ **THE PRESCRIBED FIX IS DELETION, NOT CONVERSION** — this file's own twin rule:
-> once the sibling returns a `Result`, the twin has no body left. Delete
-> `loads_json_optional`, let the one caller carry the failure, and `spec_next` gains a
-> failure track it can actually report.
->
-> ### 🚧 THE `livespec` UNIT IS AUTHORED AND BLOCKED — **ITS RED IS PRESERVED BESIDE THIS FILE**
->
-> **`plan/rop-railway-enforcement/livespec-config-railway-red.patch`** (committed, not a
-> `/tmp` path — same discipline as `8o8e21-green.patch`). Branch
-> `fix/spec-governance-config-railway`, worktree
-> `~/.worktrees/livespec/fix-spec-governance-config-railway`, **nothing committed** —
-> the Red was refused by `check-doctor-static`, NOT by the TDD hook.
-> ▶️ **Verified before the block: the Red fails on 7 genuine ASSERTIONS** (not an
-> ImportError), and the proof-carrying one fails on the DATA LOSS itself because its
-> preservation assertion is deliberately ordered before its return-type assertion.
-> ▶️ **When the peer's wiring fix lands, re-apply and continue at the Green half** — the
-> impl conversion described in 🔥🔥 below is NOT yet written.
->
-> ### ▶️▶️▶️ EXACT NEXT ACTION — **RUN THIS ONE COMMAND FIRST; IT DECIDES WHICH LANE IS OPEN**
+> **▶️ RECOVER IT — the patch is COMMITTED BESIDE THIS FILE:**
 >
 > ```bash
-> cd "$HOME/.worktrees/livespec-orchestrator-beads-fabro/config-read-railway" \
->   && mise exec -- just check-master-ci-green
+> W="$HOME/.worktrees/livespec-dev-tooling/gh-runner-rate-shaping"
+> # that worktree may still exist with the work in it — check FIRST:
+> git -C /data/projects/livespec-dev-tooling worktree list | grep gh-runner-rate-shaping
+> # if it is gone, recreate from the committed patch:
+> mise exec -- git -C /data/projects/livespec-dev-tooling worktree add -b fix/gh-runner-rate-shaping "$W" master
+> cd "$W" && git apply plan/rop-railway-enforcement/gh-runner-rate-shaping.patch
 > ```
 >
-> ⛔⛔ **AN EARLIER REVISION OF THIS FILE SAID THE BLOCK "SELF-CLEARS". THAT IS
-> RETRACTED.** It self-clears only on a fresh push to master, and the forge route
-> that would produce one is ALSO shut (next box) — so there is no mechanism that
-> clears it on its own. **Confirmed still wedged at 2026-08-03T19:32Z, ~1h after it
-> began, with the escape verified shut.** ▶️ **Run the command anyway — it is one
-> second and it is the only honest way to know — but expect EXIT 1 and plan for it.**
->
-> - **EXIT 0 → it cleared after all** (someone else landed a master push). ▶️ **Go
->   straight to the 🚧 box below and land the mid-flight unit**, then keep converting
->   `beads-fabro` per-function.
-> - **EXIT 1 → STILL WEDGED. ⛔ DO NOT TOUCH `.py` IN `beads-fabro`** — you cannot
->   commit it, so you would build an un-landable pile. ⛔ **DO NOT re-run CI**
->   (`run_attempt` was already 7 and each attempt ENLARGES the failing payload), ⛔
->   **do not manufacture a master push**, and ⛔ **do not "fix" `check-master-ci-green`
->   — that is ESCALATED to the maintainer and the reasoning is below.**
->   ▶️ **GO TO `livespec` (20).** See the next box for why that, and not the other
->   candidates.
->
-> ### ⛔⛔ AND THE FORGE-SIDE ESCAPE IS ALSO SHUT — **`beads-fabro` IS BLOCKED TWICE**
->
-> Branch protection requires exactly `["ci-green"]` and `ci-green` IS green on
-> master, so merging a PR would normally still produce the fresh master run that
-> clears the wedge. **It cannot: all three open PRs are red on their own runs.**
-> Measured PER PR, not generalised from one:
->
-> | PR | failing | cause |
-> |---|---|---|
-> | **#1274** | `check-shell-quality` → `ci-green` | ⛔ PEER LANE |
-> | **#1276** | `check-shell-quality` → `ci-green` | ⛔ PEER LANE |
-> | **#1275** | `check-types` + both coverage checks | **`8o8e.24`** — NOT shell-quality |
->
-> ⛔ **STAND DOWN ON `check-shell-quality` — it is the `fleet-shell-quality-enforcement`
-> peer lane, by agreement.** Do not fix the violations, do not comment on #1274/#1276,
-> do not "help". ⚠️ **The convictions are GENUINE** (`just-interpolation`,
-> `missing-per-recipe-positional-arguments`, `nonconforming-just-recipe`,
-> `missing-errexit-rationale`, across `acceptance-live`, `bootstrap`, `changed-files`,
-> `check`, `check-bd-guard`, `check-changed` …) — which is exactly why they are that
-> lane's to clear and not ours to shortcut.
->
-> ⚠️ **#1275 IS A DIFFERENT CAUSE, and I verified it rather than inheriting it.** Nine
-> `awaits_scope_override` type errors: `beads-fabro` carries the VENDORED
-> `livespec_runtime` (field PRESENT) **and** the pinned `v0.13.1` (field ABSENT), so
-> `sys.path` order decides the type's fields and the bump flips which copy resolves.
-> **Master is green only because `_vendor` is inserted first.** Filed as **`8o8e.24`**.
-> ⛔ Also hands-off: `awaits_scope_override` is another peer lane's live subject
-> (`pc-awaits-scope-override`).
->
-> 📜 **AND THE SEQUENCING REASON WAS WRONG — CORRECTED.** Fixing `8o8e.22` does **not**
-> unblock `55ec`; block 2 survives it and is on a timeline we do not control. **Fix
-> `8o8e.22` on its own merits** — a mechanism converting any telemetry failure into a
-> repo-wide push freeze is worth fixing regardless — **and treat `55ec` as gated on a
-> peer lane.** Both blocks are now written into `55ec`'s ledger body so no planner
-> schedules 28 rewrites into a repo that cannot accept them.
->
-> ### ✅ THE FLEET IS NOT STALLED — ONLY ITS `beads-fabro` SHARE IS
->
-> **Re-measured 2026-08-03 with the controlled harness** (dev-tooling reproduces its
-> known **1** and names `cross_member_consumption`):
->
->     livespec           universe=144  distinct=20   <- ⛔ BLOCKED (local gate), see top
->     git-jsonl          universe=49   distinct=8    <- ▶️ OPEN LANE (11 → 10 → 8)
->     livespec-runtime   universe=31   distinct=11   <- local lane COMPLETE (8 cross-repo
->                                                       + 3 entry points), not real supply
->
-> ⛔⛔ **TWO BRIEFS HAVE NOW POINTED AT "livespec-runtime's 27" (16, and again 18's
-> item 4). THE FIGURE IS STALE BOTH TIMES. IT IS 11 — RE-MEASURED 2026-08-03, NOT
-> INHERITED.** The armed harness, controlled against dev-tooling's known 1 in the same
-> session, reports `universe=31 raw=11 distinct=11` and NAMES all eleven:
->
->     cross_repo/resolve.py:57 resolve_ref          work_items/lifecycle.py:89  lane_of
->     cross_repo/types.py:174  parse_depends_on_entry   …:127  is_item_ready
->     cross_repo/types.py:211  parse_cross_repo_manifest
->     github_auth/config.py:46 load_github_app_config
->     github_auth/credential_helper.py:86 run     <- entry point
->     hygiene_scan.py:42       scan_hygiene
->     hygiene_scan_cli.py:23   main               <- entry point
->     hygiene_scan_cli.py:60   run                <- entry point
->     hygiene_scan_worktrees.py:61 detect_stale_worktrees
->
-> ✅ **THE NAMED SET CONFIRMS `8o8e.10`'S DISPOSITION RATHER THAN INHERITING IT:** the
-> **3 process entry points** are visible in the list (`hygiene_scan_cli.py`'s `main`
-> and `run`, `credential_helper.py`'s `run`) and need a v177 ruling; the remaining
-> **8** are the cross-repo-bound set `0aru` coordinates. **Taking it would be taking a
-> finished lane whose residue is gated on a spec ruling and a multi-repo rollout —
-> neither of which is per-function conversion work.**
-> ⛔ **THIS PARAGRAPH USED TO SAY "the open lane is `livespec` (20) … neither is
-> gated". THE SECOND HALF IS RETRACTED — `livespec` IS GATED.** Both counts stand
-> (re-measured the same session: `universe=144 raw=20 distinct=20` and `universe=49
-> raw=11 distinct=11`), and both masters ARE green. **But `livespec` cannot take a `.py`
-> commit — see the ⛔⛔ box at the top.**
-> ▶️ **So the open lane is `git-jsonl` — now **8**, VERIFIED by running the aggregate
-> rather than by inferring it from a green master: `just check` → "All 65 targets
-> passed".**
->
-> 📜 **AND THE RETRACTION IS THE POINT: I WROTE "neither is gated" EARLIER IN THIS SAME
-> SESSION, FROM `check-master-ci-green` EXIT 0.** That inference is exactly the one the
-> standing-safety line already forbids — *"`just check` green does NOT mean a commit
-> will land"* — and I made it anyway, in the file that records it. ▶️ **THE ONLY HONEST
-> PROBE FOR "CAN THIS LANE TAKE A COMMIT" IS TO RUN THE LOCAL AGGREGATE ON A CLEAN TREE.
-> Master CI is a different signal in a different place, and this thread has now been
-> bitten by that gap in three repos.**
->
-> 📜 **THE PATTERN WORTH NAMING: A STALE COUNT SURVIVES BECAUSE IT IS QUOTED, NOT
-> MEASURED.** "27" has now been re-sent by a supervisor twice AFTER this file recorded
-> it as stale, because a figure in a brief reads as current. ⛔ **Never act on a
-> per-member count from any brief OR from this file — re-run the armed harness; it is
-> one command and it is the only thing that is current.**
->
-> ### 🔥🔥 THE `livespec` LANE HAS A SEAM AFTER ALL — **5 OF ITS 20 BEHIND ONE BOUNDARY, AND THE TARGET TYPE ALREADY EXISTS**
->
-> ⛔ **THIS FILE SAID `livespec` WAS A "flat tail, biggest file 4". THAT IS TRUE BY
-> FILE AND MISLEADING BY SEAM.** The per-FILE histogram hides it because the cluster
-> spans FIVE FILES in one package, all converging on ONE call site:
->
->     spec_governance/editing.py:49       apply_action            -> str | EditResult
->     spec_governance/config_edit.py:17   write_config_value      -> Path | str
->     spec_governance/config_edit.py:36   write_config_map_entry  -> Path | str
->     spec_governance/proposal_edit.py:12 write_proposal_override -> Path | str
->     spec_governance/journal.py:48       append_journal_event    -> str | JournalAppend
->
-> **All five hand-roll the SAME union: success is a real value, failure is a BARE
-> STRING.** And `commands/spec_governance.py` — their only consumer — already returns
-> `IOResult[EditResult, LivespecError]` and converts by hand at lines 94 and 112:
-> `if isinstance(result, str): return IOResult.from_failure(UsageError(result))`.
-> ▶️ **So this is not a conversion that must invent a boundary; it is a hand-rolled
-> railway being replaced by the real one, with the destination type already written in
-> the repo.** That is `_dispatcher_policy_settings`'s shape (11 behind one seam) at
-> smaller scale — **25% of the member's lane in one unit.**
->
-> 📜 **THE LESSON ABOUT THE INSTRUMENT, WHICH IS THE REUSABLE PART: "biggest file N" IS
-> THE WRONG SORT.** Sort the offender list by the CONSUMER they converge on, not by the
-> file they live in. A `str | T` union is a seam wearing five files' clothing.
->
-> ### 🔴🔴 AND IT IS LIVE, NOT LATENT — **A COMMENT IN `.livespec.jsonc` DESTROYS THE BLOCK AND REPORTS SUCCESS**
->
-> ⚠️ **REPRODUCED, NOT REASONED.** `config_edit.py:_extract_block` parses the
-> `spec_governance` block with **raw `json.loads`** and swallows `JSONDecodeError` into
-> `{}` (lines 73-77). The caller then sees "no existing block", renders the ONE key
-> being written, and `_replace_existing_block` **overwrites the whole span.** Measured
-> on a file carrying four deliberate settings plus one `//` comment:
->
->     BEFORE  propose_change_mode=batch  critique_mode=batch
->             ratification_review=auto-spawn  doctor_dispositions={...}
->     CALL    write_config_value(key="in_flight_alignment", value="default-align")
->     RETURN  PosixPath('.livespec.jsonc')      <- the SUCCESS spelling
->     AFTER   { "spec_governance": { "in_flight_alignment": "default-align" } }
->     READ    every other setting reverted to its SAFE DEFAULT
->
-> ⛔ **THE TRIGGER IS A COMMENT — THE ENTIRE REASON THE FILE IS `.jsonc`.** This is not
-> an exotic malformed-input case: **livespec's OWN `.livespec.jsonc` is comment-heavy**,
-> and `beads-fabro`'s carries a comment warning that its `set-config` path mangles the
-> block (`bd-ib-lmi5`) — **the same class, already observed in a second member.**
->
-> 🔴🔴 **AND IT IS A RATIFIED-MUST VIOLATION, NOT A DESIGN PREFERENCE — WHICH SETTLES
-> THE FIX DIRECTION WITHOUT A RULING.** `SPECIFICATION/contracts.md:374`, on master,
-> unchanged by the in-flight Increment 2 diff:
->
->     "MUST atomically replace only the selected config or front-matter value while
->      PRESERVING UNRELATED JSONC KEYS/COMMENTS and Markdown body bytes"
->
-> ▶️ **So this is a CONFORMANCE defect: the implementation contradicts an already-ratified
-> clause, and no escalation is needed to know which side is wrong.** ⚠️ Note the two
-> halves have DIFFERENT ratified obligations and the repo got the other one right —
-> `contracts.md` separately requires the RESOLVER to treat "malformed JSONC" as a safe
-> default without raising, which `parse_config_text` implements correctly. **Read/write
-> asymmetry in the CODE mirrored an asymmetry in the SPEC; only the write half missed.**
->
-> ⚠️ **A SECOND, SMALLER VIOLATION SURVIVES THE FIX ABOVE AND IS NOT IN THIS UNIT:**
-> `_render_block` re-renders the block through `json.dumps`, so **comments INSIDE the
-> `spec_governance` block are dropped even on a fully successful edit.** Parsing with
-> `jsonc.loads` stops the key destruction but cannot restore a comment the parser
-> discarded. Preserving those needs a surgical single-key text edit rather than a
-> block re-render. **File it; do not silently widen this unit into it.**
->
-> ✅ **AND THE READ HALF GETS IT RIGHT ON THE IDENTICAL FILE** — `config.py:
-> parse_config_text` parses via `jsonc.loads` (comment-stripping, `Result`-returning)
-> and reports `diagnostics: []` with all four settings honoured. **One artifact, two
-> halves, opposite answers, and the correct answer is already written in the same
-> package.** ▶️ **That is grep ③ (READ vs WRITE ON ONE ARTIFACT) paying out on the first
-> member it was run against — and it beat both older greps, which came back EMPTY here
-> (① only a vendored hit; ② only `_currency` `None`-returns).**
->
-> ▶️ **THE FIX HAS TWO PARTS AND BOTH ARE REQUIRED:** (a) the write half must parse the
-> way the read half does (`jsonc.loads`), or every commented file becomes a refusal;
-> (b) the four situations `_extract_block` folds into `{}` must split — **block ABSENT
-> is an ANSWER on the success track; DOES-NOT-PARSE and WRONG-SHAPE are FAILURES.**
-> ⛔ Part (a) alone silently keeps the swallow; part (b) alone turns every legitimate
-> commented config into a hard refusal. **The blessed wording already exists in the
-> fleet — beads-fabro's `_drive_config`: *"Cannot write config until `.livespec.jsonc`
-> parses: `<detail>`"*.**
->
-> ### 🚧🚧 THE MID-FLIGHT UNIT — **RESUME `~/.worktrees/livespec-orchestrator-beads-fabro/config-read-railway`, DO NOT RE-DERIVE IT**
->
-> **Branch `fix/config-read-railway` (created, NOTHING COMMITTED). No PR. The work
-> is FINISHED and VERIFIED and could not be committed.** It is `8o8e.21`'s first
-> half — the same swallow PR #1277 fixed, in the OTHER reader of the same file:
->
-> - `commands/_config.py`'s `_read_root_mapping` folded "file absent" / "does not
->   parse" / "root is not an object" into `{}` (its own docstring said so). Split:
->   absent stays `{}` on the SUCCESS track; the other two become a `ConfigUnreadable`
->   failure. `resolve_fabro_sandbox_image` → `IOResult` (**155 → 154, ADDED 0**).
-> - **`resolve_store_config` keeps its exception contract** (55 call sites, none
->   catch) and raises a NEW `LivespecConfigUnreadableError` instead of
->   `ConnectionPrefixMissingError` — **the old behaviour was a TRUE refusal naming
->   the WRONG cause**, sending an operator with a stray comma to look at a
->   `connection.prefix` that was correct all along. Two tests pinned it BY NAME.
-> - **Verified before the block:** `just check-types` 0 errors · full unit +
->   integration suite 1807 passed · `just check-coverage` **100% line+branch** ·
->   `just check` all targets except the blocker below.
->
-> **⛔ THE BLOCKER IS `8o8e.22`, AND IT IS TWO GATES READING DIFFERENT SIGNALS.**
-> Measured independently on beads-fabro master run `30833567128` / `b9c8904b`:
->
->     branch protection required_status_checks.contexts -> ["ci-green"]  (exactly one)
->     ci-green          -> success   <- the ONLY context the FORGE requires
->     export-telemetry  -> failure   <- deliberately outside ci-green's needs
->     RUN conclusion    -> failure   <- what check-master-ci-green reads
->     run_attempt       -> 7
->
-> **GitHub branch protection is SATISFIED while the local gate FAILS. A PR can merge
-> onto this master; a local `.py` commit cannot be made on it.** Neither component is
-> wrong alone — **the COMPOSITION is unowned.**
->
-> ⚠️ **AND REDDENING MASTER IS THAT JOB'S DOCUMENTED PURPOSE, so "make it stop" is the
-> FORBIDDEN direction.** `ci.yml` ~658: *"a broken pipeline can't die silently (it
-> reddens master CI and fires the existing failure notification)."* The *"push-only,
-> not a gate"* phrase at ~698 means only "absent from `ci-green`'s `needs:`" — I
-> previously leaned on it as if the job had leaked into a gate by accident. It had not.
->
-> ### ⚠️ THE GATING SCOPE — **NEITHER "every commit" NOR "pushes only"**
->
-> `justfile:365` puts `check-master-ci-green` in the `check:` aggregate.
-> `lefthook` **pre-commit** → `check-pre-commit`, whose Red-mode, Green-amend AND
-> default branches all invoke `just … check`; **pre-push** → `check-pre-push` → the
-> same aggregate. ✅ **But zero staged `.py` routes to `check-pre-commit-doc-only`,
-> whose eight targets do NOT include the gate.**
-> ▶️ **So: any commit STAGING `.py`, and any push CARRYING `.py`, are blocked; doc-only
-> is exempt at both.** That is why this file's own doc PRs kept landing while the
-> `.py` unit could not even be committed.
->
-> ⛔ **SUPERVISOR BRIEF 18 STATED THIS MORE NARROWLY — *"pushes, not commits — you can
-> author, you cannot push"* — AND THAT IS WRONG IN THE RELAXING DIRECTION.** Re-derived
-> from beads-fabro's own config rather than from either record: `lefthook.yml`
-> pre-commit runs `02-check-pre-commit` → `just check-pre-commit`, which delegates to
-> the exempt `check-pre-commit-doc-only` **only when ZERO `.py` are staged**
-> (`justfile:1196`); otherwise it runs the `check` aggregate, and `justfile:365` puts
-> `check-master-ci-green` inside it. **The direct evidence is this thread's own
-> mid-flight unit: finished, verified green, and it COULD NOT BE COMMITTED.**
-> ⚠️ Believing the narrower version costs a session: you author the whole change set,
-> then discover at commit — not at push — that it cannot land.
->
-> ⛔⛔ **`55ec` IS THEREFORE BLOCKED TOO — and three ARCHIVED blocks below still say
-> "unblocked right now".** They were true when written and are false now; the current
-> queue line says only "unchanged", which is too quiet. **`55ec` is 28 `.py` import-site
-> rewrites: it cannot be committed, let alone pushed, until `8o8e.22` clears.**
->
-> ### ⛔⛔ THE GATE REPAIR **ESCALATES TO THE MAINTAINER — I DID NOT TAKE IT**
->
-> Pointing `check-master-ci-green` at `ci-green` instead of the run conclusion
-> **provably narrows what it refuses beyond this case**: `ci-green`'s `needs:` omits
-> `setup` and every job added later but not listed, so a `setup` failure would stop
-> reddening the local gate. The module's own docstring forecloses it — *"deliberately
-> NO env lever, flag, or severity knob … never to bypass the gate"* — and records a
-> prior fail-soft that *"exited 0 while master was genuinely red — the precise
-> silent-red-master hole it exists to close."*
-> ⚠️ **It may still be RIGHT** (reading the signal the forge actually requires is
-> fidelity, not convenience) **but it is a RULING, and it is the one repair I could
-> have landed** — it lives in dev-tooling, where commits are not blocked. **Prerequisite
-> before adopting: establish that every job which SHOULD gate is inside `ci-green`.**
->
-> ### 🔴 THE CLASS FIX IS `8o8e.23` — **ONE SCRIPT, EIGHT REPOS, FOUR VERSIONS**
->
-> `.github/scripts/export-ci-telemetry.sh` is called *"a byte-for-byte copy of the
-> livespec CORE reference"* by every consumer's `ci.yml`. **Measured by md5: FALSE in
-> six of eight.** CORE + overseer share one version; dev-tooling, git-jsonl, runtime
-> and driver-claude a second; beads-fabro a third; driver-codex a fourth.
-> ⛔ **CORE already fixed a growth failure here and it never fanned out** — its comment
-> names *"the failure that turned master red once the job count grew"* (E2BIG on argv)
-> and stages the payload in a temp file; six repos still build it as a shell variable.
-> ⛔ **And the live wedge is unfixed in ALL EIGHT, CORE included** — every copy calls
-> `gh run view --json …,jobs`, which makes `gh` fetch that endpoint at its own
-> hardcoded `per_page=100`. Measured, 3 trials each:
->
->     runs/30833567128/jobs?per_page=100            -> 502, 3 of 3
->     runs/30833567128/jobs?per_page=30             -> 200, total_count 94, 3 of 3
->     runs/30833567128/attempts/1/jobs?per_page=100 -> 200
->     a DIFFERENT run, per_page=100                 -> 200
->
-> ⚠️ **The `attempts/1` row identifies the mechanism**: a SUBSET of the same jobs
-> serves fine at 100; the aggregate over seven attempts does not. **It is payload
-> size, and re-running GROWS it — the failure is self-amplifying.**
-> 📜 **So the class is not "a telemetry job can redden master". It is a reddening no
-> re-run can clear, that re-running makes WORSE, whose only remedy is an unrelated
-> push.** ⛔ `beads-fabro`'s own tests pin the here-string shape CORE no longer has, so
-> "re-copy from CORE" fails that repo's suite: the drift is INCOMPATIBLE, not just stale.
->
-> ⛔ **RETRACTED — THIS LINE USED TO READ "✅ IT SELF-CLEARS on any new push to
-> master." IT DOES NOT SELF-CLEAR.** It clears only on a fresh master push, and the
-> forge route that would produce one is ALSO shut (all three open PRs are red on
-> their own runs), **so no mechanism clears it on its own.** See the COLD START and
-> the ⛔⛔ forge-escape box at the top, which this line now agrees with.
-> ⛔ Do not manufacture a push, and **do not spend another `gh run rerun`** —
-> `run_attempt` is 7 and each attempt enlarges the payload that is failing.
->
-> 📜 **HOW THIS LINE SURVIVED ITS OWN RETRACTION, AND WHY THAT IS THE HEADLINE.**
-> The retraction commit (`ef65ac6`) corrected the COLD START at lines 3 and 12-13 and
-> **left this sibling standing, with a ✅ on it.** For one commit's life the file
-> asserted both readings, and the stale one was the one wearing a checkmark. **That is
-> `FIX ONE INSTANCE, LEAVE THE SIBLING STALE` — B2/B3's shape — recurring inside the
-> very file that records the remedy for it.** ▶️ **THE REMEDY IS MECHANICAL, NOT MORE
-> CARE: after correcting a claim, grep the WHOLE file for its phrase** (`grep -n -i
-> 'self.clear'` → 3 hits, of which this was the disagreeing one) **and confirm every
-> remaining occurrence agrees.** Care does not scale; a sweep does. Caught by
-> supervisor brief 19 reading master, not by the session that wrote the retraction.
-> 📜 **PROVENANCE, AGAINST MYSELF:** the run's FIRST failure was a `mise`/shellcheck
-> download; `export-telemetry` began failing only after my first re-run, and I burned
-> four re-runs on a "GitHub is down" story before running the one-line page-size trial
-> that falsified it. **The workstation got 502s on that URL too, which is exactly what
-> made the outage story fit. A failure you can reproduce locally is not an outage.**
-> 📜 **AND ONE MORE RE-RUN CAME FROM THE SUPERVISOR, WHO RECORDED IT AGAINST
-> THEMSELVES (brief 19):** attempt 7 was theirs, spent diagnosing before reading
-> `run_attempt`. ⚠️ **Because re-running GROWS the failing payload, that attempt did
-> not merely waste a cycle — it ENLARGED the thing that is failing.** ▶️ **The
-> operational rule this yields is sharper than "don't re-run": on a
-> self-amplifying failure, DIAGNOSIS ITSELF IS A MUTATION. Read `run_attempt` and the
-> payload trend BEFORE reproducing.** Both halves of this thread reached for a re-run
-> as a free probe; it is not free here.
->
-> **▶️ THE WORKTREE HOLDS THE FINISHED *GREEN* STATE, UNSTAGED. DO NOT `git checkout -- .`.**
-> All four changed files are applied in the working tree of
-> `~/.worktrees/livespec-orchestrator-beads-fabro/config-read-railway`, nothing staged,
-> nothing committed. **A byte-identical backup is COMMITTED beside this file as
-> `plan/rop-railway-enforcement/8o8e21-green.patch`** — so the work survives even if
-> that worktree is reaped. Recover with
-> `git apply plan/rop-railway-enforcement/8o8e21-green.patch` from a clean
-> beads-fabro tree at or after `5b4813a`. ⛔ **No scratchpad is referenced anywhere:
-> the earlier revision of this box pointed at a session-scoped `/tmp` directory that
-> does not survive a restart. That was the bug in the handoff, and this is its fix.**
->
-> **▶️ THE RED→GREEN RITUAL, FROM THAT GREEN STATE (product `.py` — the ritual is
-> mandatory), once `8o8e.22` has cleared:**
->
-> 1. `git diff > /tmp/green.patch` (your own scratch — the committed copy is the
->    durable one), then `git checkout -- .` to get back to master's tree.
-> 2. Re-apply ONLY the Red half: `git checkout` the green
->    `tests/livespec_orchestrator_beads_fabro/commands/test_config.py` out of the
->    patch and **stage it ALONE**; then hand-add the `LivespecConfigUnreadableError`
->    **stub** to `errors.py` ON DISK BUT UNSTAGED (a 4-line dataclass-style
->    `Exception` with `__init__(self, *, detail: str)` setting `self.detail`, plus its
->    `__all__` entry) so Red fails on real ASSERTIONS rather than an ImportError.
->    ⚠️ The two renamed tests (`..._names_the_parse_failure_not_a_missing_prefix`,
->    `..._names_the_shape_not_a_missing_prefix`) are the ones that carry the proof:
->    against master's impl they get `ConnectionPrefixMissingError` where they expect
->    the new type, which is a genuine behavioural failure.
-> 3. Commit Red with a `fix(config):` subject (the full message is reproduced in
->    `8o8e.21`'s ledger body — copy it from there, not from memory).
-> 4. `git apply /tmp/green.patch`, `git add -A`, `git commit --amend --no-edit`.
-> 5. **Count the trailers before pushing: 5 × `TDD-Red-`, 2 × `TDD-Green-`.**
->
-> ⚠️ **RE-VERIFY BEFORE OPENING THE PR** — the tree will be older than the
-> measurements: `just check-types`, the unit + integration suites, `just
-> check-coverage`, and the armed measurement (expect **155 → 154, ADDED 0**, the one
-> removal being `_config.py:resolve_fabro_sandbox_image`).
->
-> ### ▶️ AFTER THAT — **KEEP GOING ON `beads-fabro`, PER-FUNCTION**
->
-> Its ONE real cluster is gone: `commands/_dispatcher_policy_settings.py` was
-> **11 offenders in one file behind ONE seam**, and it is converted (PR #1277).
-> ⚠️ **Nothing else in the repo is shaped like that.** Re-measure and read the
-> per-file histogram before picking; after #1277 the largest remaining file is
-> `_dispatcher_run_checks.py` at **6**, then `_orchestrator_shared.py` and
-> `_dispatcher_run_status.py` at **5**. It is a flat tail from there.
->
-> ### 🔍 THE TWO GREPS, RUN ON `beads-fabro` — **BOTH CAME BACK EMPTY, AND THE SECOND ONE IS WHY**
->
-> **① THE SWALLOWING TWIN — ZERO here.** `grep -rn '^def .*_optional('` returns
-> three `_human_optional` (a `value: object -> str` RENDERER, not a twin) and
-> `_optional_str` / `_optional_int` (PRIVATE dict-getters over an already-parsed
-> record — genuine absences with nothing that can fail). 📜 **The prior header's
-> own warning held: the suffix does not tell you the disposition.** In `git-jsonl`
-> four of four were swallows; here five of five are not.
->
-> **② THE FABRICATED ANSWER — ZERO PRODUCER-SIDE, AND THE GREP POINTS AT THE WRONG END HERE.**
-> `commands/_dispatcher_io.py` looks like `git-jsonl`'s `run_capture` and is NOT:
-> a timed-out command becomes **124**, an absent executable **127**, each with the
-> reason in `stderr`, and the module docstring states the mapping. The producer
-> keeps the reason. **⛔ But `grep -rn 'exit_code ==\|exit_code !=' ` over the whole
-> package returns ONLY `== 0` / `!= 0` — every one of ~20 consumers collapses to
-> zero/non-zero.** So 124, 127 and the `GithubTokenEnvRunner`'s `1` (a token mint
-> that never spawned anything) are equally indistinguishable *in practice*, and
-> the careful producer-side mapping is consumed by nobody.
-> 📜 **The lesson is about the INSTRUMENT: grep ② finds producers that invent an
-> answer, and this repo's defect is consumers that discard a real one. A repo whose
-> producers are already careful will read CLEAN under that grep while losing exactly
-> as much information.** ▶️ **Run the consumer-side grep too.**
->
-> ### 🔎 A THIRD GREP, AND IT IS THE ONE THAT FOUND THIS SESSION'S DEFECT — **READ vs WRITE ON ONE ARTIFACT**
->
-> **Find both halves of a config/store and compare their disposition of the SAME
-> failure.** `_drive_config` refuses to write with *"Cannot write config until
-> .livespec.jsonc parses: `<detail>`"*; `_dispatcher_policy_settings`, reading the
-> same file, turned a parse failure into the setting's safe DEFAULT. **One artifact,
-> two halves, opposite answers — and the correct answer was already written in the
-> repo.** 📜 That asymmetry is cheap to grep for (`grep -rln '<config-filename>'`,
-> then read each hit for what it does on failure) and it dominates both greps above:
-> it finds the swallow AND hands you the blessed fix in the same repo's own voice.
->
-> ### ✅ WHAT LANDED — **PR #1277, 166 → 155, REMOVED 11 / ADDED 0**
->
-> `_dispatcher_policy_settings`'s eleven public functions now return
-> `IOResult[T, PolicySettingUnreadable]`. **The four situations it collapsed into
-> one default are now two and two:** file absent and block/key absent stay ANSWERS
-> on the success track carrying the documented default; **a file that does not
-> parse and a value the setting cannot accept are failures.** The fail-open POLICY
-> is unchanged — every call site lands on the same default — but it is spelled
-> `.value_or(...)` where discarding the reason is visible.
->
-> ⚠️ **AND IT WAS LIVE, NOT LATENT.** This repo's own `.livespec.jsonc` moves
-> `auto_approve_ready: true` and `acceptance_mode: "ai-only"` OFF their safe
-> defaults under an explicit maintainer direction, **and that same file carries a
-> comment warning that `drive --action set-config` round-trips it through
-> `json.dumps` and mangles the block while reporting green (`bd-ib-lmi5`).** A file
-> that stops parsing is an ANTICIPATED event there, and it silently reverted the
-> Dispatcher to human-gated admission and acceptance with nothing said anywhere.
->
-> ✅ **The delivered set matched the pre-registered SET member-for-member** (all 11
-> from that one file), not merely its count. Universe 186 unchanged.
->
-> ### 🔴 A DOCUMENTED CI GATE THAT NO CI ARMS — **`LIVESPEC_FAIL_IF_LLOC_SOFT_WARNINGS_EXIST` HAS NO SETTER ANYWHERE**
->
-> `checks/no_lloc_soft_warnings.py`'s own docstring says *"(CI sets it to `true`
-> for the release context)"*. **Grepped across `beads-fabro` AND
-> `livespec-dev-tooling` — every workflow, every justfile, every check module —
-> the ONLY hits are the docstring, a justfile comment, and the `_FAIL_ENV_VAR`
-> constant itself. Nothing sets it.** So the 201–250 LLOC soft band is enforced by
-> nothing in any repo, while the module asserts CI enforces it at release.
-> ⚠️ **This is `qndn`'s shape INVERTED and it is the more dangerous spelling.**
-> `qndn` was an UNDOCUMENTED skip; this is a DOCUMENTED enforcement that does not
-> exist, so a reader who checks the record is *more* wrong than one who does not.
-> Filed as **`8o8e.20`**. ⛔ **Do not "fix" it by setting the lever** — nine files
-> in `beads-fabro` alone are already in the band and would go red at once; the
-> question is whether the claim or the gate is wrong, and that is a ruling.
->
-> ### ⚠️⚠️ THE TRAP FIRED AGAIN, AND THE GUARD IS NOW SIX PLACES — **`IOResult.value_or` ≠ `Result.value_or`**
->
->     Result.value_or(None)    -> {'a': 1}        the value, BARE
->     IOResult.value_or(None)  -> <IO: {'a': 1}>  an IO WRAPPER
->
-> Every one of #1277's six call sites and both test helpers wrap it in
-> `unsafe_perform_io` **and each carries a comment saying why**, because the failure
-> mode is silent: the comparison is against an `IO` wrapper, it is False for every
-> input, and **`pyright` is CLEAN**. ⛔ Two of those six compare a policy STRING to
-> `"auto"`/`"manual"` — without the unwrap, `plan_admissions` holds EVERY item and
-> `can_approve_item` is False for EVERY item, with no error anywhere.
-> 📜 **The prior header recorded the gap as REACH, not knowledge. Writing the
-> reason at each site rather than once in a doc is the reach fix.**
->
-> ### 📊 EVERY MEMBER — **carried forward from 2026-08-03; only `beads-fabro` moved**
->
-> | member | RAW | DISTINCT | vendors `returns` | note |
-> |---|---:|---:|---|---|
-> | **`beads-fabro`** | 155 | **155** | ✅ 118 files | **← STILL NEXT.** Tail only now. |
-> | `livespec-overseer` | 213 | 112 | ⛔ **0** | **BLOCKED — `overseer-yc7`** |
-> | `livespec` | 20 | 20 | ✅ 118 | flat tail, biggest file 4 |
-> | `git-jsonl` | 8 | 8 | ✅ 117 | #532 twin + #533 spec_reader pair. ⛔ clause (e) hole still open |
-> | `livespec-runtime` | 11 | 11 | ✅ declared | **local lane COMPLETE** |
-> | `dev-tooling` · `driver-codex` | 1 · 1 | 1 · 1 | ✅ · ⛔ | dt's 1 is RULED; codex BLOCKED |
->
-> ⛔ **DO NOT ADD THESE UP AND COMPARE TO ANY RECORDED TOTAL — see `jecv`.** Three
-> records carry three different fleet figures on incompatible universe bases
-> (432/338, 402/321, 429/328).
->
-> ### 🔬 THE HARNESS CONTROL PASSED, AND THE CONTROL IS THE ONLY REASON THESE FIGURES ARE QUOTABLE
->
-> Rebuilt from §"THE ARMED MEASUREMENT" (delta 1 by monkeypatching `iter_py_files`
-> to yield `resolve_check_universe()`; delta 2 by a PATH SHIM whose `.name` cannot
-> start with `_`; `_scan` run WHOLE). **Against `livespec-dev-tooling` it reported
-> `universe=176 raw=1 distinct=1` and NAMED `fleet/_public_api_graph.py:244:
-> cross_member_consumption`** — the known answer and the known function, including
-> the one that lives in an `_`-prefixed FILE. ⚠️ **Universe is 176 now, not the
-> recorded 171** — dev-tooling grew; the OFFENDER count is the control, never the
-> universe.
->
-> ### 🔴🔴 A FOURTH AXIS ON `jecv`, AND IT IS THE ONE THAT DECIDES WHEN ARMING IS SAFE — **THE CRITERION HAS A VERSION**
->
-> **The SAME tree, measured by the SAME harness script, gives 155 or 157 depending
-> on which installed `livespec_dev_tooling` the interpreter resolves.** Not a
-> universe-basis difference — the universe is 186 either way:
->
-> | interpreter | criterion | `beads-fabro` |
-> |---|---|---:|
-> | `/data/projects/livespec-dev-tooling/.venv/bin/python` | dev-tooling WORKING COPY | **155** |
-> | `/data/projects/livespec-orchestrator-beads-fabro/.venv/bin/python` | its PIN, **v1.16.0** | **157** |
->
-> ⚠️ **I hit this by accident and it nearly went into the record as a real
-> regression.** A `cd <repo> && ./.venv/bin/python …` resolved `./.venv` against the
-> repo I had just `cd`'d into rather than dev-tooling, and the run reported **two
-> ADDED offenders on a tree I had just measured as ADDED 0.** ▶️ **Always spell the
-> harness interpreter ABSOLUTELY as dev-tooling's**; `./.venv/bin/python` in a
-> chained command is a different criterion wearing the same name.
->
-> **✅ THE DELTA IS FULLY EXPLAINED AND IT IS ALREADY-LANDED WORK:** exactly
-> `_dispatcher_host_only.py`'s `is_host_only_item` + `declares_workflow_scope_refusal`,
-> both convicted through `_text_declares_workflow_edit`'s `text.replace("\`", "")`.
-> **That is PR #1187 — the `replace`-verb false positive this file already records as
-> "beads-fabro 168 → 166".** dev-tooling master carries the fix; beads-fabro's pin
-> does not.
->
-> ⛔⛔ **SO THE ARMING SEQUENCE HAS A PREREQUISITE NOBODY HAS WRITTEN DOWN. When the
-> check is ARMED, each repo runs ITS OWN PINNED dev-tooling** — so beads-fabro would
-> go red on **157**, not on the 155 in this record, and every other member's armed
-> number is likewise its own pin's answer rather than any figure here. **Brief 79's
-> step 5 ("re-measure the whole fleet, same harness, same denominator") is not
-> sufficient: it must also be the same CRITERION VERSION, which means a fleet-wide
-> pin bump lands BEFORE the re-measure, not after.** Every per-member figure in this
-> file is on dev-tooling's working copy. **Fold this into `jecv` as its fourth axis.**
->
-> ### 📋 THE QUEUE
->
-> 1. ▶️ **`git-jsonl` (8) — THE ONLY VERIFIED-OPEN LANE.** `just check` 65/65 on clean
->    master. ⛔ `beads-fabro` (155) BLOCKED (`8o8e.22`, re-verified exit 1); ⛔ `livespec`
->    (20) BLOCKED (`doctor-wiring-completeness-cross-repo`, peer fix in flight) with its
->    Red authored and preserved as `livespec-config-railway-red.patch`.
->    **Run the READ-vs-WRITE grep on every new member — it is what found `livespec`'s.**
->    ⚠️ **And run the local `check` aggregate on a CLEAN tree before adopting any lane;
->    a green master does not mean a commit will land.**
-> 2. **`overseer-yc7` (P1)** — the spec ruling that unblocks 113 distinct (36%).
-> 3. **`jecv` (P1)** — ratify ONE denominator basis; three records disagree, **and
->    it now has a FOURTH axis: the criterion VERSION each member pins.**
-> 4. **`8o8e.20` (P1)** — the LLOC release gate with no setter, above.
-> 5. **`8o8e.22` (P1)** — **ESCALATED.** Branch protection and the local gate read
->    different signals; the repair NARROWS a gate, so it is the maintainer's.
-> 6. **`8o8e.23` (P1)** — one telemetry script, eight repos, FOUR versions, a
->    never-fanned-out CORE fix, and the live wedge unfixed in all eight.
-> 6b. **`8o8e.24` (P1)** — `beads-fabro` holds TWO `livespec_runtime` copies at
->    different field sets; `sys.path` order decides which is real, and **no check in
->    the fleet compares a vendored library against its pinned release.**
-> 7. **`55ec` (P1)** — 28 `.py` import-site rewrites, MEASURED **REMOVED 10 / ADDED 0**
->    (its body's "NOT YET MEASURED" paragraph is discharged). ⛔⛔ **BLOCKED TWICE** —
->    `8o8e.22` locally AND a peer lane's red PRs on the forge. **`8o8e.22` does NOT
->    unblock it.** Do not schedule it; both blocks are in its ledger body.
-> 5. **`0aru` (P1)** — the coordinated multi-repo rollout, now EIGHT functions.
-> 6. **`xx1y` (P1)** — re-sync `livespec-runtime`'s venv on any new dependency, or
->    the fleet's git credential helper breaks. **`p9ot`** unchanged; **`55ec` is now
->    BLOCKED — see the queue entry below, and ignore the archived "unblocked right
->    now" lines further down this file.**
->
-> ### 🔻 FIRST FIVE MINUTES — **INLINED, NOT POINTED AT** (copy them; never point)
->
-> ⚠️⚠️ **ONE UNIT IS MID-FLIGHT — see the 🚧 box at the very top before anything
-> else.** ✅ **NO background job, NO sub-agent, NO subprocess** — all stopped at
-> wrap-up. But there IS an uncommitted GREEN change set on disk in a beads-fabro
-> worktree, and `git checkout -- .` destroys it. **Its committed backup is
-> `plan/rop-railway-enforcement/8o8e21-green.patch`, beside this file.**
->
-> 1. ⚠️ **DO NOT REAP
->    `~/.worktrees/livespec-orchestrator-beads-fabro/config-read-railway`** (branch
->    `fix/config-read-railway`) — that is the MID-FLIGHT unit, nothing committed.
->    ✅ Every worktree of mine that DID land is already reaped
->    (`policy-settings-railway` → PR #1277; `beads-fabro-166-to-155` → #1194;
->    `config-read-railway-midflight` → #1196; `telemetry-gate-diagnosis` → #1198).
->    `~/.worktrees/livespec-dev-tooling/gate-composition-finding` carries THIS text
->    (PR **#1200**); **if you are reading this on master, it merged — reap it.**
-> 2. **REAP NOTHING ELSE.** Every other worktree is a PEER lane. Enumerate with
->    `git worktree list`; **never quote a count from this file.**
-> 3. `git status --short --branch` — clean on `master`; one untracked
->    `install-livespec-pr-bot.png` is pre-existing. ⚠️ A modified `uv.lock` is
->    REGENERATED noise: `git checkout -- uv.lock` before any `merge --ff-only`, which
->    REFUSES while dirty. **It also blocks `git worktree remove`.**
-> 4. ⚠️ **RUN `mise exec -- just install-worktree-pack` IN EVERY FRESH WORKTREE**, then
->    `git checkout -- .livespec.jsonc uv.lock` (it dirties both). Without it
->    `check-primary-checkout-commit-refuse-hook-installed` fails `worktree_pack_absent`
->    — **not your diff**, not `.py`-only, and it fails **AT PUSH**, not at commit.
-> 5. ⚠️ **BEFORE PUSHING ANY RED→GREEN PAIR:** `git log -1 --format=%B | grep -c
->    '^TDD-Red-'` must be **5**, `'^TDD-Green-'` must be **2**. **`--amend --no-edit`
->    is the SAFE spelling**; `--amend -m`/`-F` destroys the Red trailers and the hook
->    still exits 0 (`zv78`).
->    ✅ **A NEW test file MAY be staged at Green** — only the RECORDED Red file must be
->    byte-identical.
->    ✅ **STUB TECHNIQUE, used again for #1277:** the Red staged the FULL converted
->    test file alone while the on-disk impl carried ONLY the new
->    `PolicySettingUnreadable` dataclass, unstaged. **29 failures, and the ones that
->    carry the proof are real ASSERTIONS** — `isinstance(outcome, IOFailure)` against
->    a bare `int` — rather than the ImportError a missing type would have given.
->    **⛔ Save the whole green change set to a scratch dir FIRST**
->    (`git checkout -- .` is how you get back to the Red state, and it is destructive).
-> 6. ⚠️ **A `check-fleet-conformance` RED IS PROBABLY THE APP'S RATE LIMIT.**
->    `gh run view <id> --log-failed | grep -o '"kind": "[a-z_]*"'` → `rate_limited`.
->    Log occurrences on **`mmqe`**.
-> 6b. ⛔ **A PR-WAIT LOOP MUST EXIT ON `FAILURE` AND `CLOSED`, NOT ONLY ON `MERGED`.**
->    I wrote `until [ "$(gh pr view N --json state --jq .state)" = "MERGED" ]; do sleep
->    30; done`. **It has no failure exit** — a red or closed PR spins it to the timeout
->    while looking like patience. It cost nothing only because that PR merged. This file
->    already records the same non-terminating shape against a prior PR watch, so it is
->    the SECOND instance. ▶️ Put every terminal state in the exit set:
->
->        until case "$(gh pr view N --repo R --json state --jq .state)" in
->              MERGED|CLOSED) false;; *) true;; esac
->        do sleep 30; done
->
->    …or read `statusCheckRollup` and break on any non-success conclusion.
->    ⚠️ **Backgrounding it is DENIED by the PreToolUse hook (`gh pr` is a gate command)
->    — it runs FOREGROUND with a raised timeout**, which is exactly what makes a
->    non-terminating loop expensive rather than merely untidy.
-> 7. ⚠️ **NEVER RUN AN AD-HOC `pytest --cov`** — it writes statement-coverage data that
->    then collides with the repo's branch-coverage recipe (*"Can't combine statement
->    coverage data with branch data"*). `rm -f .coverage` and re-run the recipe.
->    ⚠️ `/tmp` inode pressure recurs (`8o8e.16`): `df -i /tmp`, not `df -h`.
-> 8. ⚠️ **THE ARMED HARNESS IS NOT DURABLE — REBUILD IT** from §"THE ARMED MEASUREMENT".
->    Delta 1 by monkeypatching `iter_py_files`; delta 2 by handing `_scan` a PATH SHIM
->    whose `.name` cannot start with `_`. **`_scan` runs WHOLE — never transcribe its
->    exempt-set construction** (`i04f`/`8o8e.6` drift). **Control it against
->    dev-tooling's known 1 FIRST, and check it names `cross_member_consumption`.**
->    ⛔ **RUN IT WITH `/data/projects/livespec-dev-tooling/.venv/bin/python`, SPELLED
->    IN FULL.** A relative `./.venv/bin/python` after a `cd` picks up the target
->    repo's PINNED dev-tooling and silently measures a different criterion — see the
->    fourth-axis section above, where it fabricated two ADDED offenders.
-> 9. **⛔ READ THE LEDGER CHILDREN `8o8e.7`–`.13`** — `.8` was rewritten 2026-08-03
->    with this session's figures; `.7`, `.10`, `.11` carry the blockers.
+> ⚠️ **THE RED WAS NEVER COMMITTED — the commit was interrupted, not rejected.** Re-run
+> the ritual from the recovered tree (below). Nothing is half-committed; the branch
+> `fix/gh-runner-rate-shaping` has NO commits of mine.
+>
+> ### 🔧 THE FIX, AND WHY IT IS SHAPED THIS WAY
+>
+> **Seam:** `livespec_dev_tooling/fleet/_gh_runner.py::default_gh_runner`. The
+> `fleet/CLAUDE.md` states *"All GitHub access flows through the injected `GhRunner`
+> seam"* — so ONE change covers every row, and tests stay hermetic because they inject
+> fakes.
+>
+> **The change:** on a COMPLETED invocation whose stderr classifies as retryable, wait
+> and retry, bounded. ⛔ Do NOT retry the failure track (it means "did not happen" —
+> nothing to wait for) and do NOT retry a 404 (an ANSWER; retrying burns budget on a
+> settled question).
+>
+> ✅ **REUSE, DO NOT INVENT — this repo already answers this exact shape:**
+>
+>     fleet/_read_failure.py::classify_gh_failure   -> "rate_limited" | "forbidden" |
+>                                                      "not_found" | "server_error"
+>     fleet/_credential_preflight.py                -> the bounded-backoff loop,
+>       _RETRYABLE_KINDS / _MAX_ATTEMPTS=3 / _BACKOFF_SECONDS=(2.0, 4.0) / Sleeper
+>
+> **`preflight_credential` already classifies-then-retries. That answer was never applied
+> to the MEMBER TRAVERSAL, which is where the sweep actually spends its requests.** The
+> unit applies it at the seam every row already flows through.
+> ⚠️ **`Sleeper` must be defined LOCALLY in `_gh_runner.py`** — importing it from
+> `_credential_preflight` is a CYCLE (`_credential_preflight` → `_context` →
+> `_gh_runner`). `_read_failure` imports stdlib only, so importing THAT is safe.
+>
+> **▶️ THE RITUAL (product `.py`, so it is mandatory):**
+> 1. **Red:** stage `tests/livespec_dev_tooling/fleet/test_gh_runner_rate_shaping.py`
+>    ALONE. The **stub** is the `sleep: Sleeper = time.sleep` parameter added to
+>    `default_gh_runner` and IGNORED (`_ = sleep`) — on disk, UNSTAGED. Verified: **2
+>    failed, 2 passed**, failing on `assert 1 < 1` / *"must retry, and must be bounded"*
+>    — genuine assertions, not a `TypeError`.
+> 2. **Green amend:** replace the stub with the real retry loop; `git commit --amend
+>    --no-edit`; count trailers (**5 × `TDD-Red-`, 2 × `TDD-Green-`**).
+>
+> ### ✅✅ THE CHICKEN-AND-EGG IS NOT REAL — **THE FIX VALIDATES ITSELF**
+>
+> `check-fleet-conformance` blocks dev-tooling PRs, and the fix IS a dev-tooling PR.
+> **But PR CI runs the BRANCH's code**, so the fix's own `check-fleet-conformance` job
+> runs the FIXED traversal. ▶️ **Do not go looking for a bypass; there is nothing to
+> bypass.** ⛔ And never `--no-verify` — here most of all, since the blocked gate is
+> exactly what it would skip.
+>
+> ### 📣 AFTER IT MERGES — **NOTIFY `fleet-shell-quality-enforcement`** (explicitly requested)
+>
+> ### 🔬 THE DIAGNOSIS, BECAUSE FOUR MODELS WERE FALSIFIED GETTING HERE
+>
+> ⛔ **Do not re-derive this; every version below was WRONG and cost attempts.** Full
+> record in **`mmqe`** (the owner item — ⛔ **DO NOT open a duplicate**, twice requested):
+>
+> | model | falsified by |
+> |---|---|
+> | the App's hourly pool is exhausted | a freshly minted token showed `core.remaining=5000` |
+> | wait for the window to reset | the pool was never the constraint |
+> | wait for a verified green master run | master WAS green; the check still tripped |
+> | fleet concurrency from other actors | a QUIET period + fresh token still exit 4 |
+>
+> ✅ **WHAT SURVIVED:** the check's OWN sequential pass trips a SECONDARY limiter
+> mid-traversal. The tell is that **the longer pass went blinder** — `blind_rows` **2**
+> in CI vs **12** in a direct all-nine-repo traversal. So `blind_rows` is a PROGRESS
+> MARKER (how far it got before tripping), not a finding count.
+> ⚠️ **The gate red-lights with `own_failing_rows=[]` and `error_findings=0` on a
+> DOCS-ONLY commit — it cannot look, and says so in a form indistinguishable from a real
+> finding.**
+> 📜 **The shape of my error, four times: I blamed something OUTSIDE the check.** Each
+> correction moved the cause inward. ⛔ **No operator-side action fixes this** — not
+> waiting, not a green master, not a fresh token, not a quieter moment. **Three CI
+> retries were spent from this thread (PR #1216) and all three failed identically.**
+>
+> ### ⛔ BLAST RADIUS IS NARROWER THAN IT LOOKS — **RECORD-KEEPING, NOT WORK**
+>
+>     dev-tooling  PR checks: ["check-fleet-conformance", "check-fleet-marketplace-relative-sources"]
+>     git-jsonl    PR checks: ["check-fleet-marketplace-relative-sources"]   <- NO fleet-conformance
+>
+> **`check-fleet-conformance` is wired into `livespec-dev-tooling` ONLY.** That is why
+> git-jsonl PRs **#532/#533 merged** while dev-tooling **#1216** could not.
+> ▶️ **So the ROP conversion lane stays OPEN even while this is broken.** File findings
+> to the LEDGER (authoritative over both documents, no CI) and batch the `plan/` prose.
+> ⛔ Do not infer from a green git-jsonl PR that the gate recovered — different repo,
+> different check set.
+>
+> ### 🚧 ONE OTHER PR IS OPEN AND BLOCKED — **`#1216`, doc-only**
+>
+> The `git-jsonl` disposition triage. **Nothing is lost if it never merges** — its
+> content is in `8o8e.27` / `8o8e.28`. ▶️ Re-run its checks once the fix lands.
+>
+
+> ### 📊 THE ROP LANE ITSELF — **STATE AFTER THE BLOCKER IS CLEARED**
+>
+> | member | distinct | status |
+> |---|---:|---|
+> | `git-jsonl` | **8** | ▶️ **THE ONLY VERIFIED-OPEN LANE** (11→10 #532, 10→8 #533) |
+> | `beads-fabro` | 155 | ⛔ BLOCKED — `8o8e.22`, master CI red; commits AND pushes staging `.py` |
+> | `livespec` | 20 | ⛔ BLOCKED — `doctor-wiring-completeness-cross-repo` fails on clean master |
+> | `livespec-overseer` | 112 | ⛔ BLOCKED — `overseer-yc7` (cannot import `returns`) |
+> | `livespec-runtime` | 11 | local lane COMPLETE — 8 cross-repo-bound + 3 entry points |
+> | `dev-tooling` · `driver-codex` | 1 · 1 | dt's 1 is RULED; codex BLOCKED |
+>
+> ⛔ **NEVER quote a per-member count from this file — RE-MEASURE.** ⛔ Do not add these
+> up (`jecv`: three records, three incompatible bases). ⚠️ Each member's ARMED number is
+> its OWN PINNED dev-tooling's answer, not this file's — a fleet-wide pin bump must land
+> BEFORE any re-measure (`jecv`'s fourth axis).
+>
+> ### 🔬 THE ARMED MEASUREMENT — **REBUILD IT; IT IS NOT DURABLE**
+>
+> `_scan` from `checks/public_api_result_typed.py` with EXACTLY TWO DELTAS, read fresh
+> (never transcribed): **(1)** iterate `resolve_check_universe()`'s git-derived set
+> instead of `pure_trees` — monkeypatch `iter_py_files`; **(2)** drop `_scan`'s
+> `if py_file.name.startswith("_"): continue` — hand it a PATH SHIM whose `.name` cannot
+> start with `_`. Take its exempt-set construction WHOLE.
+> ⛔ **RUN IT AS `/data/projects/livespec-dev-tooling/.venv/bin/python`, SPELLED IN
+> FULL** — a relative `./.venv/bin/python` after a `cd` measures a DIFFERENT criterion
+> version and has fabricated offenders.
+> ✅ **CONTROL FIRST against dev-tooling: expect `universe=176 raw=1 distinct=1` naming
+> `fleet/_public_api_graph.py:244 cross_member_consumption`.** A harness that cannot
+> reproduce a known answer has not measured the unknown ones.
+>
+> ### 📋 `git-jsonl`'s REMAINING 8 ARE TRIAGED — **THREE MUST NOT BE CONVERTED**
+>
+> | offender | disposition |
+> |---|---|
+> | `migration/merge_evidence_backfill_core.py:42 backfill_file` | ▶️ **CONVERT — next unit.** Docstring already names the expected errors it RAISES; `@impure_safe(exceptions=(StoreFileMissingError, MalformedRecordLineError, SchemaViolationError, OSError))` is the minimal conversion (verified: the scoped form works in the vendored `returns` and lets bugs propagate). Its one consumer is `merge_evidence_backfill.py:97`'s try/except naming exactly those. ⚠️ It also RE-RAISES an `IOFailure` from `append_work_item` — the railway being undone at a call site. |
+> | `acceptance.py:40 run_acceptance` | ▶️ CONVERT. Real I/O; a missing `spec.md` escapes as a bare raise. |
+> | `migration/merge_evidence_git.py:10 discover_merge_sha` | ⚠️ READ FIRST — `None` may be a legitimate "no evidence" ANSWER. |
+> | `commands/attention_impl.py:19 impl_next` | ⛔ **DECLARE, not convert** — `X | None` legitimate absence; `total_absence_returns`. |
+> | `commands/next.py:111 rank_candidates` | ⚠️ empty list is the documented "no candidates" answer. |
+> | `commands/_cross_repo.py:54 load_manifest` | ⛔ Already disciplined; its defect is the false JUSTIFICATION (`8o8e.27`). |
+> | `commands/_cross_repo.py:132 is_item_ready` | ⚠️ conservative "unparseable ⇒ blocking" is deliberate. |
+> | `checks/work_item_merge_evidence.py:155 resolve_canonical_branch` | ⛔⛔ **NEITHER convertible NOR declarable — `8o8e.28`, an ARMING BLOCKER.** |
+>
+> 📜 **THE INSTRUMENT LESSON THAT COST THE MOST: `resolve_canonical_branch` has grep ②'s
+> EXACT fabricated-answer signature** (`"master"` is a real branch name real repos really
+> have) **and is a RATIFIED default** — git-jsonl's `contracts.md` says *"Hard-coded
+> fallback when symbolic-ref resolution fails: `master`"*. **I was one commit from
+> converting it.** ▶️ **The greps produce CANDIDATES, never convictions: read the
+> governing clause for every hit before writing a test.**
+>
+> ### 🚧 A `livespec` UNIT IS AUTHORED AND BLOCKED — **RED PRESERVED BESIDE THIS FILE**
+>
+> `plan/rop-railway-enforcement/livespec-config-railway-red.patch`, branch
+> `fix/spec-governance-config-railway`, worktree
+> `~/.worktrees/livespec/fix-spec-governance-config-railway` — **nothing committed; the
+> Red was refused by `check-doctor-static`, NOT the TDD hook.** The impl half is NOT
+> written. 5 offenders behind one seam; the write half destroys a commented
+> `.livespec.jsonc` and returns the SUCCESS spelling, violating a ratified MUST
+> (`contracts.md:374`). Resume when the peer's `fix/wiring-check-target-inventory` lands.
+>
+> ### 🔻 FIRST FIVE MINUTES
+>
+> 1. ⚠️ **DO NOT REAP** `~/.worktrees/livespec/fix-spec-governance-config-railway` (the
+>    preserved Red) or `~/.worktrees/livespec-dev-tooling/gh-runner-rate-shaping` (the
+>    critical-path fix). **REAP NOTHING ELSE — 13+ worktrees exist and the rest are PEER
+>    LANES.** `git worktree list` first; never quote a count from this file.
+> 2. `git status --short --branch` — clean on `master`; untracked
+>    `install-livespec-pr-bot.png` is pre-existing. ⚠️ A modified `uv.lock` is REGENERATED
+>    noise: `git checkout -- uv.lock` before any `merge --ff-only` (which REFUSES while
+>    dirty, and also blocks `git worktree remove`).
+> 3. ⚠️ **`mise exec -- just install-worktree-pack` IN EVERY FRESH WORKTREE**, then
+>    `git checkout -- .livespec.jsonc uv.lock`. Without it
+>    `check-primary-checkout-commit-refuse-hook-installed` fails AT PUSH.
+> 4. ⚠️ **BEFORE PUSHING ANY RED→GREEN PAIR:** `git log -1 --format=%B | grep -c
+>    '^TDD-Red-'` must be **5**, `'^TDD-Green-'` must be **2**. `--amend --no-edit` is the
+>    SAFE spelling. ✅ A NEW test file MAY be staged at Green; the RECORDED Red file must
+>    be BYTE-IDENTICAL. ⛔ **`ruff format` is the silent breaker** — re-verify the
+>    checksum against the trailer after EVERY format pass.
+> 5. ⛔ **A PR-WAIT LOOP MUST EXIT ON `MERGED|CLOSED` AND ON ANY FAILING CHECK**, not only
+>    on MERGED. Backgrounding `gh pr` / `just check*` / `git commit|push` is DENIED by a
+>    PreToolUse hook — run them FOREGROUND with a raised timeout.
+> 6. ⚠️ **NEVER an ad-hoc `pytest --cov`** (it collides with the branch-coverage recipe;
+>    `rm -f .coverage`). `/tmp` inode pressure recurs: `df -i`, not `df -h`.
+> 7. ⛔ **STAND DOWN on `check-shell-quality` / `fleet-shell-quality-enforcement` and on
+>    `awaits_scope_override` / `pc-awaits-scope-override`** — peer lanes, by agreement.
+>
+> ### 📋 QUEUE
+>
+> 1. ▶️ **The rate-shaping fix (above) — CRITICAL PATH, do it first.**
+> 2. `git-jsonl` (8) — `backfill_file` next.
+> 3. **`8o8e.28`** — arming blocker: a conviction with NO conforming remedy.
+> 4. **`8o8e.27`** — a retired invariant load-bearing in 3 repos.
+> 5. `overseer-yc7` (P1) · `jecv` (P1, four axes) · `8o8e.20` · `8o8e.22` (ESCALATED) ·
+>    `8o8e.23` · `8o8e.24` · `55ec` (⛔ BLOCKED TWICE — do not schedule) · `0aru` · `xx1y`.
+> 6. **⛔ READ THE LEDGER CHILDREN `8o8e.7`–`.13` and `.25`–`.28`** before acting.
+>
 
 > ## 🗄️ (SUPERSEDED AS THE HEADER 2026-08-03 — `beads-fabro` went 166 → 155 after this was written; its FIRST FIVE MINUTES are copied verbatim into the header above, per this block's own rule.) COLD START — **NOTHING IS MID-FLIGHT. NEXT MEMBER IS `beads-fabro` (166).**
 >
