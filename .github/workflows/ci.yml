@@ -365,6 +365,7 @@ jobs:
           - check-plan-thread-anchor-declared
           - check-plugin-resolution
           - check-self-hosted-routing
+          - check-shell-quality
           - check-skill-invocation-paths
           - check-source-trees-scoped-to-consumer
           - check-vendor-manifest
