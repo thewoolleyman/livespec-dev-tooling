@@ -54,12 +54,17 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
-      - name: Mint App installation token
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Wait for App installation rate budget and mint token
         id: app-token
-        uses: actions/create-github-app-token@v3
+        uses: ./.github/actions/github-rate-budget-token
         with:
           client-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          min-core-remaining: "500"
+          min-graphql-remaining: "200"
 
       - name: Run release-please
         uses: googleapis/release-please-action@v5
