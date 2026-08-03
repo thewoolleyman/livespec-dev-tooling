@@ -457,7 +457,43 @@ Repeat these in every instruction sent to the supervised session:
 `tmp/overseer/.../.supervisor-state` marker is uncommitted and HAS vanished mid-session
 once; treat it as a cache, never as the record.
 
-### 🟩🟩 CURRENT POSITION — 2026-08-03, THE 4ihw RATIFICATION DRIVE. THIS IS THE NEWEST BLOCK; EVERYTHING BELOW IT IS OLDER.
+### ▶️▶️▶️ SUPERVISOR RESUME — 2026-08-03 ~19:50Z. **READ THIS FIRST. IT IS THE NEWEST BLOCK IN THE FILE.**
+
+**NOTHING OF MINE IS MID-FLIGHT.** No worktree of mine outlives this note, no background
+watcher (stopped by PID), no open question. **One PR of mine may still be in flight:
+`livespec-dev-tooling` **#1204**, docs-only, auto-merge REBASE armed, 0 failing checks —
+it carries the block below. If it has merged, this file already contains it; if it has not,
+check it before assuming anything here is on master.**
+
+**⚠️ RE-DERIVE EVERY NUMBER AND EVERY PR STATE FROM THE FORGE BEFORE QUOTING IT.** This file
+went stale inside three minutes once today. **And check for an OPEN PICKER in the worker pane
+FIRST** when it looks quiet — an open `AskUserQuestion` mutes the daemon's idle nudge, and that
+cost this thread 3h13m at the start of this drive.
+
+**THE WORKER IS ALIVE AND WORKING — do NOT treat it as stopped.** It restarted a SIXTH time
+mid-drive and was at ~85% context, landing brief-18/19 corrections as PR **#1205**. Every
+restart so far has persisted and reaped cleanly first; nothing has been lost to one.
+
+**▶️ WHAT TO DRIVE NEXT, in order:**
+1. **`8o8e.10` (livespec-runtime's 27) or `livespec`'s 20.** Both repos are GREEN. This is the
+   work the v191 ratification exists to unblock.
+2. **⛔ DO NOT SCHEDULE `55ec`.** beads-fabro is blocked TWICE — see the block below. One of the
+   two blocks is a PEER LANE's and is not ours to touch.
+3. **`8o8e.22`** on its own merits (a mechanism that converts any telemetry failure into a
+   repo-wide push freeze), **NOT as the key to `55ec`** — it does not unblock it.
+
+**🔺 THE ONE RIPE MAINTAINER VALVE THIS DRIVE OWES — `k4km` (P1), fully prepared, not yet asked.**
+`contracts.md` §"Ratification-review evidence" and the shipped `_canonical_ratification_digest`
+specify DIFFERENT digests on three axes (proposal bytes in/out, path-sorted vs list order,
+u64-BE vs ascii-decimal prefixes). **No evidence can satisfy both**, and the gate hard-refuses on
+mismatch. I ruled: **conform to the VALIDATOR, file the drift, disclose it in the record** —
+because a reading that blocks every ratification fleet-wide, including the revise that would fix
+it, is a deadlock rather than a gate. **That is NOT softening: the validator runs in full.**
+⚠️ **WHICH SIDE MOVES IS THE MAINTAINER'S CALL and it is a FREE choice between two SOUND
+encodings** — ascii-decimal-plus-`:` is injective for the same reason the u64 prefix is. **Ask it
+as a prepared valve with that framing; do not re-derive it and do not let it sit unasked.**
+
+### 🟩🟩 CURRENT POSITION — 2026-08-03, THE 4ihw RATIFICATION DRIVE. (Superseded as read-first by the RESUME block above; still current on substance.)
 
 **⛔ THE FILE NOW HAD *TWO* BLOCKS EACH CLAIMING TO BE READ-FIRST** — a "CURRENT POSITION …
 READ THIS BLOCK FIRST" and a "SUPERVISOR RESUME — READ THIS FIRST, IT IS THE NEWEST BLOCK
