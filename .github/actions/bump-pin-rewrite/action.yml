@@ -273,6 +273,65 @@ runs:
         # the committed pin says the new one.
         uv sync --all-groups
 
+    - name: Reconcile canonical tool pins
+      shell: bash
+      run: |
+        set -euo pipefail
+        # `check-shell-quality` is a canonical dev-tooling check, but its
+        # ShellCheck binary is a mise-managed NON-Python tool. When a release
+        # fanout wires that check into a consumer, the same bump commit must
+        # also project the canonical binary pin. Otherwise the PR fails before
+        # corpus analysis because `run_shellcheck` reaches version verification
+        # with no shellcheck binary installed (the v1.18.4 fanout hold).
+        mise_file=".mise.toml"
+        if [[ ! -f "$mise_file" ]]; then
+          echo "::error::consumer .mise.toml not found; cannot project shellcheck = \"0.11.0\" for check-shell-quality"
+          exit 1
+        fi
+        uv run python - <<'PY'
+        from __future__ import annotations
+
+        import re
+        import sys
+        from pathlib import Path
+
+        path = Path(".mise.toml")
+        text = path.read_text(encoding="utf-8")
+        desired_line = 'shellcheck = "0.11.0"'
+        lines = text.splitlines(keepends=True)
+        tools_header_index = next(
+            (index for index, line in enumerate(lines) if line.strip() == "[tools]"),
+            None,
+        )
+        if tools_header_index is None:
+            print("::error::.mise.toml missing [tools] table; cannot project shellcheck pin", file=sys.stderr)
+            raise SystemExit(1)
+
+        next_section_index = next(
+            (
+                index
+                for index, line in enumerate(lines[tools_header_index + 1 :], start=tools_header_index + 1)
+                if line.lstrip().startswith("[")
+            ),
+            len(lines),
+        )
+        shellcheck_re = re.compile(r"^(\s*)shellcheck\s*=.*?(\s*(?:#.*)?)\n?$")
+        for index in range(tools_header_index + 1, next_section_index):
+            match = shellcheck_re.match(lines[index])
+            if match is not None:
+                newline = "\n" if lines[index].endswith("\n") else ""
+                lines[index] = f"{match.group(1)}{desired_line}{match.group(2)}{newline}"
+                path.write_text("".join(lines), encoding="utf-8")
+                raise SystemExit(0)
+
+        insertion = f"{desired_line}\n"
+        if next_section_index > tools_header_index + 1 and lines[next_section_index - 1].strip() == "":
+            lines.insert(next_section_index - 1, insertion)
+        else:
+            lines.insert(next_section_index, insertion)
+        path.write_text("".join(lines), encoding="utf-8")
+        PY
+
     - name: Reconcile canonical check wiring
       shell: bash
       run: |
