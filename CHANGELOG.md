@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.17.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.16.1...v1.17.0) (2026-08-03)
+
+
+### Features
+
+* **spec:** require final-token budget validation ([391e8c2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/391e8c253696da9d645ae3346c4d7f8fb397c2ae))
+
 ## [1.16.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.16.0...v1.16.1) (2026-08-03)
 
 
