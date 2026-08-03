@@ -194,6 +194,76 @@
 > precision, then wrote a clause binding *"the `livespec-driver-*` Drivers"* **by name**
 > without measuring either. That is exactly where the blocker landed.
 >
+> ### ⛔⛔ THE REVIEW LOOP HAS NO EXIT CONDITION BY CONSTRUCTION — **PRE-COMMIT THE STOPPING RULE**
+>
+> **THE SHAPE:** every pass produces a finding → every fix changes the bytes → every byte
+> change kills the evidence and requires a fresh FULL pass. **A fixpoint iteration with no
+> proof of convergence and no ceiling.** 📜 This file already carries the lesson one level
+> up — *"a valid probe is not a terminating loop; give it an iteration ceiling that reports
+> rather than hangs."* **Both probes here are valid. The loop still has no exit.**
+>
+> ⛔ **AND THE DECISIVE FACT: PASSES 2 AND 3 BOTH RETURNED `NO BLOCKERS`. RATIFICATION WAS
+> AVAILABLE AT BOTH.** The spec's bar is a `NO BLOCKERS` verdict over the exact bytes plus a
+> matching digest — **that is the WHOLE gate.** A non-blocking FLAG is not a blocker:
+> `RatificationContext` models `blockers_present` as a BOOLEAN and carries **no "flag"
+> state at all.** Choosing to improve the text instead was defensible twice. **A third time
+> is not diligence, it is a loop.**
+>
+> ### 📜 THE RULE, PRE-COMMITTED BEFORE PASS 4's VERDICT WAS SEEN
+>
+> Written down BEFORE the answer arrived, so the rule could not be chosen to fit it. **This
+> two-reading pre-commitment is the one technique on this thread that has never been
+> retracted.**
+>
+> **RATIFY on `NO BLOCKERS` unless the flag names one of:**
+>
+> | class | test |
+> |---|---|
+> | **(a) FALSE** | a statement in the ratified bytes that is untrue |
+> | **(b) UNMEASURED BINDING** | a clause binding a repo nobody measured — **the B1 class** |
+> | **(c) INDUCED VIOLATION** | text that would cause a conforming repo to take a specific ACTION violating another ratified clause |
+>
+> ⚠️ **(c) IS BOUNDED HARD AND ON PURPOSE:** the flag MUST name the specific wrong action
+> AND the ratified clause it would violate. **If it cannot name both, it is not (c).**
+> Without that bound, (c) degenerates into "could mislead someone", which is unbounded and
+> is how the loop restarts. (c) is what distinguished the pass-3 bare-import fix — a reader
+> would have WRITTEN A PREFIXED IMPORT — from the two soft flags, which decide nothing.
+>
+> **EVERYTHING ELSE — phrasing that could read better, a contrast that could be sharpened, a
+> term a future sweep might miss — IS FILED AS A FOLLOW-UP PROPOSAL AGAINST THE RATIFIED
+> TEXT, NOT FIXED IN FLIGHT.** 📜 **A spec improved in-flight forever never ratifies, and an
+> unratified proposal protects nobody.**
+>
+> ⛔ **THE RULE BOUNDS THE COMMON CASE AND NOT THE WORST ONE, WHICH IS ITS KNOWN LIMIT.** If
+> a pass lands in (a)/(b)/(c) the rule says fix-and-re-review — **re-entering the loop.** So:
+> **two CONSECUTIVE substantive findings after three clean-ish passes ⇒ STOP AND ESCALATE TO
+> THE MAINTAINER with the pass table.** That pattern means the proposal's SCOPE is wrong,
+> not its wording, and scope is a maintainer question.
+>
+> ### 📊 THE PASS TABLE — **THE DURABLE PRODUCT OF THIS DRIVE**
+>
+> | pass | verdict | what it produced |
+> |---|---|---|
+> | 1 | **BLOCKERS** | **B1** — a procedural citation bound both `livespec-driver-*` repos, neither measured. Dropped. |
+> | 2 | NO BLOCKERS + flag | my own non-tightening gloss was itself inaccurate. Deleted. |
+> | 3 | NO BLOCKERS + flag | false contrast implying directly-consumed imports are PREFIXED. Fixed. |
+> | — | **STALE** | a `NO BLOCKERS` arrived for **SUPERSEDED BYTES**. Discarded, not banked. |
+> | 4 | *(pre-commitment written before this landed)* | |
+>
+> **THIS TABLE IS THE EVIDENCE**, and it is why it is persisted rather than narrated: that
+> the reviewer was NOT a blind instrument (it produced a negative, twice corrected itself,
+> and once corrected its OWN prior claim after reading hook source), that three fixes each
+> traced to a finding CONFIRMED AT THE SOURCE, and that a stale verdict was caught.
+>
+> ### 🔴 THE STALE-VERDICT CATCH — **SHA, NOT TIMING**
+>
+> A `NO BLOCKERS` arrived reporting file sha256 `0cc3ba18…`; the live bytes were
+> `feaf18a4…`. **Caught by COMPARING THE SHA, not by reasoning about when the message was
+> sent.** ⛔ **THE SEDUCTIVE REPAIR WOULD HAVE BEEN TO KEEP THE VERDICT AND RECOMPUTE THE
+> DIGEST AGAINST THE NEW BYTES** — which is the self-waiving route in its purest form, and
+> the evidence would have VALIDATED. **Always compare the reviewed bytes' hash to the live
+> bytes' hash before using any verdict.**
+>
 > ### ✅ AND THE BLIND-INSTRUMENT FAMILY GOT ITS FIRST AFFIRMATIVE ANSWER ON THIS THREAD
 >
 > **The reviewer PRODUCED A NEGATIVE, and the negative SURVIVED INDEPENDENT CONFIRMATION
