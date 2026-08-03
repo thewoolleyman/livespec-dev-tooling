@@ -36,7 +36,8 @@ set -euo pipefail
 REPOS="thewoolleyman/livespec"
 SLOTS_PER_REPO=1
 LABELS_CSV="self-hosted,local-ci"
-WORK_FOLDER="/home/ci-runner/_work"
+# Parsed for CLI compatibility with deployed units; per-slot runner dirs own actual work paths.
+export WORK_FOLDER="/home/ci-runner/_work"
 MINT="/usr/local/lib/ci-runner/mint-jitconfig.sh"
 
 while [ $# -gt 0 ]; do

@@ -21,6 +21,8 @@
 set -euo pipefail
 
 RUNNER_USER=ci-runner
+# shellcheck disable=SC2034
+# Informational uid target retained for operator comparisons; useradd assigns.
 RUNNER_UID_HINT=1001            # informational; useradd assigns
 RUNNER_HOME=/home/${RUNNER_USER}
 RUNNER_DIR=${RUNNER_HOME}/actions-runner

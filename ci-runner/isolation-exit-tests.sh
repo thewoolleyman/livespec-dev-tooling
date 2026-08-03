@@ -8,7 +8,7 @@
 set -uo pipefail
 RU=ci-runner
 XDG=/run/user/$(id -u "$RU" 2>/dev/null || echo 1001)
-POD=(sudo -n -u "$RU" env HOME=/home/$RU XDG_RUNTIME_DIR="$XDG" podman)
+POD=(sudo -n -u "$RU" env HOME="/home/$RU" XDG_RUNTIME_DIR="$XDG" podman)
 # The image under test is DERIVED from this repo's own ci.yml container pin, not
 # hardcoded. That pin is auto-reconciled to every release by the
 # `self-reconcile-pins` job in fabro-sandbox-image.yml (livespec-dev-tooling-5r3),
