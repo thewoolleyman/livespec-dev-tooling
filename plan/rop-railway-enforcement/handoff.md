@@ -17,10 +17,62 @@
 >   (`run_attempt` was already 7 and each attempt ENLARGES the failing payload), ⛔
 >   **do not manufacture a master push**, and ⛔ **do not "fix" `check-master-ci-green`
 >   — that is ESCALATED to the maintainer and the reasoning is below.**
->   ▶️ **Open lanes while wedged:** `8o8e.23` (the fleet telemetry-script fan-out —
->   `.sh`, and beads-fabro's doc-only path DOES accept it); `livespec`'s 20 or
->   `git-jsonl`'s 11 (different repos, not gated); or `jecv` / `overseer-yc7`
->   groundwork. **`55ec` is BLOCKED — it is 28 `.py` rewrites.**
+>   ▶️ **GO TO `livespec` (20).** See the next box for why that, and not the other
+>   candidates.
+>
+> ### ⛔⛔ AND THE FORGE-SIDE ESCAPE IS ALSO SHUT — **`beads-fabro` IS BLOCKED TWICE**
+>
+> Branch protection requires exactly `["ci-green"]` and `ci-green` IS green on
+> master, so merging a PR would normally still produce the fresh master run that
+> clears the wedge. **It cannot: all three open PRs are red on their own runs.**
+> Measured PER PR, not generalised from one:
+>
+> | PR | failing | cause |
+> |---|---|---|
+> | **#1274** | `check-shell-quality` → `ci-green` | ⛔ PEER LANE |
+> | **#1276** | `check-shell-quality` → `ci-green` | ⛔ PEER LANE |
+> | **#1275** | `check-types` + both coverage checks | **`8o8e.24`** — NOT shell-quality |
+>
+> ⛔ **STAND DOWN ON `check-shell-quality` — it is the `fleet-shell-quality-enforcement`
+> peer lane, by agreement.** Do not fix the violations, do not comment on #1274/#1276,
+> do not "help". ⚠️ **The convictions are GENUINE** (`just-interpolation`,
+> `missing-per-recipe-positional-arguments`, `nonconforming-just-recipe`,
+> `missing-errexit-rationale`, across `acceptance-live`, `bootstrap`, `changed-files`,
+> `check`, `check-bd-guard`, `check-changed` …) — which is exactly why they are that
+> lane's to clear and not ours to shortcut.
+>
+> ⚠️ **#1275 IS A DIFFERENT CAUSE, and I verified it rather than inheriting it.** Nine
+> `awaits_scope_override` type errors: `beads-fabro` carries the VENDORED
+> `livespec_runtime` (field PRESENT) **and** the pinned `v0.13.1` (field ABSENT), so
+> `sys.path` order decides the type's fields and the bump flips which copy resolves.
+> **Master is green only because `_vendor` is inserted first.** Filed as **`8o8e.24`**.
+> ⛔ Also hands-off: `awaits_scope_override` is another peer lane's live subject
+> (`pc-awaits-scope-override`).
+>
+> 📜 **AND THE SEQUENCING REASON WAS WRONG — CORRECTED.** Fixing `8o8e.22` does **not**
+> unblock `55ec`; block 2 survives it and is on a timeline we do not control. **Fix
+> `8o8e.22` on its own merits** — a mechanism converting any telemetry failure into a
+> repo-wide push freeze is worth fixing regardless — **and treat `55ec` as gated on a
+> peer lane.** Both blocks are now written into `55ec`'s ledger body so no planner
+> schedules 28 rewrites into a repo that cannot accept them.
+>
+> ### ✅ THE FLEET IS NOT STALLED — ONLY ITS `beads-fabro` SHARE IS
+>
+> **Re-measured 2026-08-03 with the controlled harness** (dev-tooling reproduces its
+> known **1** and names `cross_member_consumption`):
+>
+>     livespec           universe=144  distinct=20   <- LARGEST UNBLOCKED LANE, take this
+>     git-jsonl          universe=49   distinct=11
+>     livespec-runtime   universe=31   distinct=11
+>
+> ⛔⛔ **A BRIEF POINTED ME AT "livespec-runtime's 27" AND THAT FIGURE IS ONE SESSION
+> STALE.** It is **11**, and `8o8e.10` records its LOCAL LANE AS COMPLETE — all 11
+> residual are cross-repo-bound (8, see `0aru`) or process entry points (3, needing a
+> v177 ruling). **Taking it would be taking a finished lane.** ⚠️ Re-derive that
+> characterisation before acting on it; the COUNT is measured, the disposition is
+> inherited from `8o8e.10`.
+> ▶️ **So the open lane is `livespec` (20), then `git-jsonl` (11).** Both repos'
+> masters are green and neither is gated.
 >
 > ### 🚧🚧 THE MID-FLIGHT UNIT — **RESUME `~/.worktrees/livespec-orchestrator-beads-fabro/config-read-railway`, DO NOT RE-DERIVE IT**
 >
@@ -325,10 +377,13 @@
 >    different signals; the repair NARROWS a gate, so it is the maintainer's.
 > 6. **`8o8e.23` (P1)** — one telemetry script, eight repos, FOUR versions, a
 >    never-fanned-out CORE fix, and the live wedge unfixed in all eight.
+> 6b. **`8o8e.24` (P1)** — `beads-fabro` holds TWO `livespec_runtime` copies at
+>    different field sets; `sys.path` order decides which is real, and **no check in
+>    the fleet compares a vendored library against its pinned release.**
 > 7. **`55ec` (P1)** — 28 `.py` import-site rewrites, MEASURED **REMOVED 10 / ADDED 0**
->    (its body's "NOT YET MEASURED" paragraph is now discharged). ⛔ **BLOCKED by
->    `8o8e.22`: `.py` cannot be committed in that repo.** Do not start it expecting
->    to push it.
+>    (its body's "NOT YET MEASURED" paragraph is discharged). ⛔⛔ **BLOCKED TWICE** —
+>    `8o8e.22` locally AND a peer lane's red PRs on the forge. **`8o8e.22` does NOT
+>    unblock it.** Do not schedule it; both blocks are in its ledger body.
 > 5. **`0aru` (P1)** — the coordinated multi-repo rollout, now EIGHT functions.
 > 6. **`xx1y` (P1)** — re-sync `livespec-runtime`'s venv on any new dependency, or
 >    the fleet's git credential helper breaks. **`p9ot`** unchanged; **`55ec` is now
