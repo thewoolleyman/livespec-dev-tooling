@@ -299,6 +299,42 @@
 > rationale can come apart, WRITE THE RATIONALE INTO THE TRIGGER next time** — e.g. "two
 > consecutive findings IN THE RATIFIED BYTES", which would not have fired here.
 >
+> ### ⚖️ THE RULINGS — **ADOPT THESE; THEY ARE SETTLED, NOT OPEN**
+>
+> **① THE RATIONALE GOVERNS THE LETTER — AND THE STANDING TRIGGER IS NOW:**
+> **"two consecutive findings IN THE RATIFIED BYTES."** Record-hygiene defects do not fire
+> it. 📜 **AND THE REASON THE RULING IS WORTH ANYTHING IS THAT IT WAS ASKED FOR RATHER THAN
+> SELF-GRANTED: a trigger its holder may reinterpret when it becomes inconvenient is not a
+> trigger.** Holding cost one turn and preserved the instrument. **Generalisation: when a
+> counter's trigger and its rationale can come apart, WRITE THE RATIONALE INTO THE TRIGGER.**
+>
+> **② A CLEAN VERDICT CANNOT BE MANUFACTURED, AND THE AUTHOR'S OWN CHECK NEVER SUBSTITUTES.**
+> Pass 5 returned **BLOCKERS**; `_verdict_error` compares the LITERAL string `NO BLOCKERS`.
+> So the only routes were a fresh clean verdict or **writing `NO BLOCKERS` for a pass that
+> returned blockers — which is FABRICATION, not a shortcut.** ⛔ **AND THE RESIDUAL SWEEP
+> CANNOT DISCHARGE IT: the sweep is the AUTHOR'S instrument, and the independent-review floor
+> exists precisely because an author's self-check does not satisfy it.** *"I checked my own
+> work more systematically"* is the one thing that floor is built to refuse.
+> **▶️ NEW TRIGGER:** if a pass finds another record defect **DESPITE the sweep having run
+> over the final payload**, that is a finding about **THE SWEEP**, not about care — **STOP
+> AND ESCALATE**, do not fix-and-re-review.
+>
+> **③ PROCEED ON THE GATE-CONFORMANT DIGEST — AND SAY SO IN THE RECORD.** The strict reading
+> of `k4km` is refuted by its own consequence: it blocks every ratification fleet-wide **with
+> no action available to any actor, including the revise that would fix the contract.**
+> 📜 **A rule that makes conformance IMPOSSIBLE is not a gate, it is a DEADLOCK, and a
+> deadlock cannot be what a ratified contract means.**
+> ⛔ **THIS IS NOT SOFTENING:** the shipped validator runs in FULL and hard-refuses on
+> mismatch; conforming to it exactly skips nothing, lowers no severity, declares no escape.
+> **The contract text and the enforcing code disagree; conform to THE ONE THAT ENFORCES and
+> FILE the disagreement.**
+> ⛔ **THE CONDITION IS NOT OPTIONAL — DISCLOSE IT IN THE RECORD.** Omitting it makes the
+> record implicitly assert a contract conformance it does not have, **which is B2 and B3's
+> exact defect class at the CONTRACT level, in the same artifact, the same day.**
+> ⚠️ **AND KEEP THE FLEET-WIDE CLAIM OUT OF THE RECORD** — *"every evidence digest in the
+> fleet since v190 is not the contract's digest"* belongs in `k4km`. **A revision record
+> ranging over other repos' evidence overclaims its own scope.**
+>
 > ### 🔁 THE ACTUAL RECURRING DEFECT — **FIX ONE INSTANCE, LEAVE THE SIBLING STALE**
 >
 > B2 and B3 are the SAME defect twice. While fixing B3 I found a **THIRD** instance myself —
