@@ -1,6 +1,144 @@
 # rop-railway-enforcement — arm the check that was never armed, then remediate six repos
 
-> ## 🔻🔻 COLD START — **START HERE. `4ihw` IS RATIFIED AS v191 AND `8o8e.10` IS OPEN AT STEP 2.**
+> ## 🔻🔻 COLD START — **START HERE. `8o8e.10`'s SEAM IS LANDED (27 → 18). THE NEXT SEAM IS `github.py`.**
+>
+> ### ▶️▶️▶️ EXACT NEXT ACTION — **`cross_repo/providers/github.py` IN `livespec-runtime`, YIELD 3**
+>
+> ✅ **THE `hygiene_scan_context.py` SEAM IS MERGED** — `livespec-runtime` **`cce15a8`**
+> (PR #454, auto-released as **0.14.0**), verified on the forge: both trailer sets intact
+> (Red 5 / Green 2), 12 files, and the armed measurement re-run on POST-MERGE MASTER reads
+> **18**. **NOTHING IS MID-FLIGHT AND NO WORKTREE OF MINE SURVIVES.**
+>
+> **▶️ NEXT:** `livespec_runtime/cross_repo/providers/github.py` — 3 of the residual 18
+> (`query_pull_request_state`, `branch_exists_on_remote`, `branch_merged_into_default`).
+>
+> ### ⛔⛔ FOUR OF THE 18 ARE CROSS-REPO-BOUND — **DO NOT BUDGET THEM AS LOCAL CONVERSIONS**
+>
+> 📜 **A NEW FINDING THIS FILE DID NOT CARRY, AND IT BOUNDS EVERY REMAINING HYGIENE SEAM.**
+> `livespec_runtime` is SOURCE-COPIED into three siblings, and its hygiene surface is
+> consumed ACROSS that boundary. Measured with `git ls-files`, never inferred:
+>
+> | consumer | call site | function |
+> |---|---|---|
+> | `livespec`, `livespec-overseer` | `dev-tooling/reap_stale_worktrees.py` | `detect_stale_worktrees` |
+> | `beads-fabro`, `git-jsonl` | `commands/needs_attention.py` | `scan_hygiene` |
+>
+> So `scan_hygiene`, `detect_stale_worktrees`, `hygiene_scan_cli::main` and `::run` — **4 of
+> the 18** — need a COORDINATED multi-repo rollout. **FILED AS `0aru` (P1), blocked on
+> `8o8e.10`.** The railway TERMINATES at the first two with `unwrap()`, which reproduces the
+> PRE-EXISTING behaviour exactly (an unspawnable command already raised
+> `FileNotFoundError` out of every caller), so the landed change is behaviour-preserving at
+> the public boundary — **nothing swallowed, no failure turned into an empty list.**
+>
+> ### ⛔⛔ THE PRE-REGISTERED 9 WAS HIT ON COUNT AND MISSED ON MEMBERSHIP — **SAY IT BOTH WAYS**
+>
+> **REMOVED 9 / ADDED 0, 27 → 18** — the pre-registered expectation exactly. ⛔ **AND THE
+> AGREEMENT IS A COINCIDENCE OF TWO OFFSETTING DIFFERENCES, NOT A CONFIRMATION.** The
+> pre-registered set named `detect_stale_worktrees` and did NOT name `stale_pr_findings`;
+> the delivered set is the REVERSE — `stale_pr_findings` fell out (it consumes the runner
+> DIRECTLY, so propagating cost less than terminating) and `detect_stale_worktrees` was
+> deliberately held (cross-repo, above).
+> 📜 **THE GENERALISATION, AND IT EXTENDS THIS FILE'S OWN "NEVER NET IT" RULE ONE LEVEL:
+> a pre-registration is tested against the SET, not the TOTAL. A matching total over a
+> differing set is precisely what netting hides**, and comparing counts alone would have
+> reported a clean hit while both differences went unrecorded.
+>
+> ### 🔬 THE CONTROL FAILED FIRST — **WHICH IS THE ONLY REASON THE FIGURES ARE QUOTABLE**
+>
+> The first harness reported livespec-dev-tooling at **0** against its known **1**. Cause:
+> **delta 2 was not implemented**, and `cross_member_consumption` lives in
+> `fleet/_public_api_graph.py` — an `_`-prefixed **FILE**. With delta 2 applied the control
+> reproduces **1** and names the right function at the right file.
+> ⚠️ **Universe read 175 vs the recorded 171** — files added since; the OFFENDER count and
+> identity both reproduce, and that is what the control tests. **Do not treat a moved
+> universe as a failed control, and do not treat a matching universe as a passed one.**
+>
+> **▶️ HOW THE TWO DELTAS WERE APPLIED WITHOUT TRANSCRIBING `_scan`** (the recorded `i04f` /
+> `8o8e.6` drift shape): delta 1 by monkeypatching `iter_py_files`; delta 2 by handing
+> `_scan` a PATH SHIM whose `.name` cannot start with `_`. `_scan` runs WHOLE, so its
+> exempt-set construction is whatever the shipped code says on the day it is run. The
+> harness is at `scratchpad/armed_measure.py` — **rebuild it from this description; it is
+> not durable.**
+>
+> ### 📜 A COMPLETENESS ASSERTION THAT WAS BLIND, CAUGHT BY THE LINTER
+>
+> The test-side sweep asserted `"CommandUnavailable" in src` to prove the import landed.
+> **It passed on all five files while the import was missing from every one** — the
+> ANNOTATION the previous step had just inserted contained the string. `ruff` caught it
+> (F821 ×10).
+> 📜 **AN ASSERTION OVER A STRING THAT THE STEP BEING CHECKED ITSELF WRITES CANNOT FAIL.**
+> Re-asserted against the parsed IMPORT STATEMENT and it held. **This is the file's own
+> blind-instrument family, arriving in the very sweep written to prevent eyeballing.**
+>
+> ### ✅ THE v191 CLOSURE OBLIGATION IS DISCHARGED — BY EXECUTION, NOT INFERENCE
+>
+> This change is what FIRST put a `returns` import into the source-copied tree. All three
+> tracked source-copiers vendor `returns` as a SIBLING under the same `_vendor/` root, and a
+> **bare** `from returns.io import IOResult` was **executed** and verified to resolve from
+> each: `livespec` 0.25.0 · `beads-fabro` commit-pin · `git-jsonl` 0.26.0.
+> ⚠️ **`livespec-overseer` does NOT vendor `livespec_runtime`** in its tracked tree — the
+> grep hit was a janitor worktree's provisioned `.livespec-core`. **Re-measure before
+> binding it to anything.**
+>
+> ### 🔬 THE 100% GATE FORCED THE FAILURE TRACK TO BE PROVEN — **THE REAL YIELD**
+>
+> `run_command` carried `# pragma: no cover`: the ONE function in the subsystem whose
+> failure mode had never been exercised. The repo's per-file 100% gate REFUSED the 17 new
+> propagation branches until each was driven, so 16 tests now assert an unspawnable command
+> comes back out NAMING the command at every reader path. **An absorption anywhere on that
+> path now fails a test instead of silently shrinking the scan's output.**
+>
+> ### 🔻 FIRST FIVE MINUTES — **INLINED, NOT POINTED AT** (copied verbatim per the rule below)
+>
+> **NOTHING IS MID-FLIGHT.** No background job, no sub-agent, no unpushed Red, no open PR of
+> this thread's. `livespec-runtime` master at wrap-up: **`0b2e48a`**; dev-tooling master
+> moves hourly — re-fetch.
+>
+> 1. ✅ **THERE IS NOTHING OF MINE TO REAP.** Every worktree this session created was
+>    removed and `git worktree list` verified to hold none of them. `git -C
+>    /data/projects/livespec-dev-tooling merge --ff-only origin/master` is all that is owed.
+> 2. **REAP NOTHING ELSE.** Every other worktree belongs to a PEER lane. Enumerate with
+>    `git worktree list`; **never quote a count from this file.**
+> 3. `git status --short --branch` — expect clean on `master`; one untracked
+>    `install-livespec-pr-bot.png` is pre-existing and NOT this thread's. ⚠️ A modified
+>    `uv.lock` is REGENERATED noise: `git checkout -- uv.lock` before any `merge --ff-only`,
+>    which REFUSES while the tree is dirty. **It also blocks `git worktree remove`.**
+> 4. ⚠️⚠️ **A FRESH WORKTREE FAILS `check-primary-checkout-commit-refuse-hook-installed`**
+>    with `worktree_pack_absent`, because `dev-tooling/` is gitignored and unmaterialized.
+>    Fix, in the worktree: `mise exec -- just install-worktree-pack`. **It is NOT your diff.**
+>    ⛔ **NOT `.py`-ONLY** (observed on a docs-only spec commit) and **NOT AT COMMIT — AT
+>    PUSH**, because pre-push runs the full `just check` aggregate. **It is PER-WORKTREE.**
+>    ⚠️ `install-worktree-pack` also writes a `worktree_discipline` default into **tracked**
+>    `.livespec.jsonc` — **`git checkout -- .livespec.jsonc` afterwards.**
+> 5. ⚠️ **BEFORE PUSHING ANY RED→GREEN PAIR:** `git log -1 --format=%B | grep -c
+>    '^TDD-Red-'` must be **5** and `'^TDD-Green-'` must be **2**. **`--amend --no-edit` is
+>    the SAFE amend spelling**; **`--amend -m` / `-F` destroys the Red trailers and the hook
+>    still exits 0** (`zv78`, READY/P1).
+>    ⚠️ **A NEW test file MAY be staged at Green** — only the RECORDED Red test file must be
+>    byte-identical. That is how the 17 propagation branches got their coverage without
+>    re-authoring the Red. **Verified this session, not assumed.**
+> 6. ⚠️ **A `check-fleet-conformance` RED IS PROBABLY THE APP'S RATE LIMIT, NOT YOUR DIFF.**
+>    `gh run view <id> --log-failed | grep -o '"kind": "[a-z_]*"'` → `rate_limited` ⇒ re-run
+>    after the hourly window rolls. **`gh api rate_limit` from your own session is NOT a
+>    reliable discriminator.** Log occurrences on **`mmqe`**.
+> 7. ⚠️ **`/tmp` INODE PRESSURE RECURS** (`8o8e.16`): check `df -i /tmp`, NOT `df -h`.
+>    ⚠️ **AND NEVER RUN AN AD-HOC `pytest --cov`** — it writes a statement-coverage
+>    `.coverage` that then collides with the repo's branch-coverage recipe
+>    (*"Can't combine statement coverage data with branch data"*). `rm -f .coverage` and
+>    re-run `just check-per-file-coverage`. **Cost this session: two confused check runs.**
+> 8. **⛔ READ THE LEDGER CHILDREN `8o8e.7`–`.13` BEFORE BUDGETING ANY MEMBER.** `.8`, `.10`
+>    rank by **YIELD**; the rest still rank by REACH and are wrong the same way `.8` was.
+>    **`8o8e.14` is CLOSED at 0.** This file is narrative; the children are what a planner
+>    opens.
+>
+> ### 📋 THE QUEUE
+>
+> 1. **`8o8e.10` cont.** — `cross_repo/providers/github.py` (yield 3), then the tail.
+> 2. **`0aru` (P1, NEW)** — the coordinated cross-repo rollout for the 4 bound functions.
+> 3. **`55ec`** — 28 sites, RULED, needs no spec change, unblocked right now.
+> 4. **`p9ot`** — ship the yield probe; first slice an EXTRACTION, never a second copy.
+
+> ## 🗄️ (SUPERSEDED AS THE HEADER 2026-08-03 — `8o8e.10`'s SEAM LANDED as `cce15a8`; its FIRST FIVE MINUTES are COPIED VERBATIM into the header above, per this block's own rule.) COLD START — **`4ihw` IS RATIFIED AS v191 AND `8o8e.10` IS OPEN AT STEP 2.**
 >
 > ### ▶️▶️▶️ EXACT NEXT ACTION — **`8o8e.10` STEP 2, AND IT IS ATOMIC**
 >
