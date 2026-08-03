@@ -1,6 +1,176 @@
 # rop-railway-enforcement — arm the check that was never armed, then remediate six repos
 
-> ## 🔻🔻 COLD START — **START HERE. `8o8e.10`'s SEAM IS LANDED (27 → 18). THE NEXT SEAM IS `github.py`.**
+> ## 🔻🔻 COLD START — **START HERE. `livespec-runtime` IS 27 → 11 AND ITS LOCAL LANE IS COMPLETE. THE NEXT MEMBER IS `livespec-overseer`.**
+>
+> ### ▶️▶️▶️ EXACT NEXT ACTION — **⛔ NOT ANOTHER `livespec-runtime` SEAM. THERE ISN'T ONE.**
+>
+> Three seams landed and **every one of the residual 11 is CROSS-REPO-BOUND (8) or a
+> PROCESS ENTRY POINT (3)**. Measured with `git ls-files` over all seven siblings
+> INCLUDING their test trees, vendored copies excluded. **`8o8e.10` cannot be driven
+> to zero from inside that repo.** Its remainder is `0aru` (now EIGHT functions, not
+> two) plus a v177 ruling on the three entry points.
+>
+> **▶️ TAKE `livespec-overseer` (213)**, per the decided order — `claude_sessions.py`,
+> yield **12**, the best absolute lever in the fleet. ⛔ **AND MEASURE ITS CROSS-REPO
+> SURFACE FIRST**; see the fifth column below.
+>
+> ### 📊 WHAT LANDED THIS SESSION — `livespec-runtime` **27 → 11**, ADDED 0 EVERY TIME
+>
+> | # | seam | → | PR |
+> |---|---|---:|---|
+> | 1 | `hygiene_scan_context.py` leaf + `CommandRunner` protocol | **18** | rt#454 |
+> | 2 | `cross_repo/providers/github.py` + `retry.py`'s `T \| None` | **14** | rt#456 |
+> | 3 | the `replace`-verb false positive (dev-tooling) | **13** | dt#1187 |
+> | 4 | `github_auth` mint railway | **11** | rt#460 |
+>
+> ### 🔑🔑 THE FINDING THAT SHOULD CHANGE HOW EVERY REMAINING MEMBER IS SIZED
+>
+> 📜 **A PER-REPO OFFENDER COUNT IS NOT A WORK ESTIMATE.** It silently mixes work a
+> repo can do ALONE with work that requires every consumer to move AT ONCE. The
+> four-way cost model (`decl`/`misdecl`/`local`/`prop`) cannot express that
+> difference — it classifies the CONVERSION, never the SURFACE.
+>
+> **▶️ ADD A FIFTH COLUMN, `cross-repo-bound`, BEFORE SIZING ANYTHING.**
+> `livespec-runtime` reads as "11 to go" and is really **0 local, 8 coordinated,
+> 3 awaiting a ruling**. The big members distort most, because they publish most:
+>
+> | offender | consumer files |
+> |---|---:|
+> | `work_items/lifecycle.py::is_item_ready` | **12** |
+> | `work_items/lifecycle.py::lane_of` | **7** |
+> | `cross_repo/resolve.py::resolve_ref` | **5** |
+> | `cross_repo/types.py::parse_*` (two) | **4** each |
+> | `scan_hygiene` · `detect_stale_worktrees` · `load_github_app_config` | 2 each |
+>
+> ⚠️ **AND THE EIGHT ARE NOT ONE PROBLEM.** `resolve_ref` already terminates into
+> `RefStatus.UNKNOWN` — the domain's own name for "could not determine" — so it may
+> need NO signature change. `is_item_ready` returns a bare `bool` to twelve call
+> sites and is the real heavyweight. **Rank by consumer count AND by whether the
+> domain already models the failure.**
+>
+> ### ⛔ DO NOT CONVERT A PROCESS ENTRY POINT
+>
+> `hygiene_scan_cli::main`, `::run` and `credential_helper::run` wire `sys.argv` and
+> `os.environ` and return `int`. **Nothing consumes the value — the process EXIT CODE
+> is the channel.** They are convicted by a CONFIG GAP, not a code defect: v177
+> exempts `main() -> int` under `commands_trees` and this repo declares none.
+> ⚠️ **But declaring one is not obviously right either** — these are CLI adapters
+> scattered in the package root, and `run()` is not `main()` so it would stay
+> convicted regardless. **This needs a ruling recorded WITH its evidence, not a
+> conversion.**
+>
+> ### 🔬 A MEASURED FALSE POSITIVE IN THE CRITERION ITSELF — FOURTH OF ITS FAMILY
+>
+> `_UNRESOLVED_RECEIVER_IO_VERBS` carried `replace` for `Path.replace()`. On an
+> unresolved receiver that verb is ALSO `str.replace(old, new)` and
+> `datetime.replace(**fields)`, both pure — so clause (c) convicted **3 total
+> functions fleet-wide** of touching a filesystem they never touch.
+> 📜 **The module's own docstring already names this family** (`get` refused, `run`
+> refused, `group` refused after a measured 24→34). ⛔ **The `group` remedy — just
+> drop the verb — was NOT available**: genuine `Path.replace` on an unresolved
+> receiver exists in `livespec` and `beads-fabro`, so dropping it would stop
+> detecting three real atomic renames. **ARITY separates them** (`Path.replace` takes
+> ONE positional; `str.replace` two or three; `datetime.replace` keywords), every
+> possible rename stays convicted, and starred args keep the conservative answer.
+> **`livespec-runtime` 14→13, `beads-fabro` 168→166, 0 gained anywhere.**
+> ⚠️ **ONLY ONE MEMBER OF THE VERB SET WAS SWEPT.** `open`, `read`, `write`,
+> `truncate`, `resolve`, `expanduser` are unchecked against non-Path receivers —
+> `l5pw` carries that residual and MUST NOT be closed as though the set were clean.
+>
+> ### ⛔⛔ THE REPO COULD NOT ACCEPT A LOCAL PRODUCT COMMIT AT ALL — FIXED, dt#1184
+>
+> `check-shell-quality` refuses `{{...}}` in every recipe of the RESOLVED justfile.
+> The canonical worktree pack shipped three such recipes, `justfile:65` `import?`s
+> the pack, and `check-primary-checkout-commit-refuse-hook-installed` requires that
+> file BYTE-FOR-BYTE. **Installing the pack the mutation protocol mandates made the
+> aggregate red; not installing it made the hook check red.**
+> 📜 **AND CI COULD NOT HAVE CAUGHT IT — `dev-tooling/worktree.just` IS GITIGNORED**,
+> so on a runner the optional import resolves to nothing and master stayed green.
+> Only docs-only changesets, which skip the aggregate, had been landing. **This is
+> the mirror image of this thread's founding defect: that one is a check that scanned
+> zero files and reported green; this one is green in CI precisely because the file
+> it would convict is INVISIBLE there.**
+> ⚠️ **EVERY EXISTING WORKTREE MUST RE-RUN `just install-worktree-pack`** — the
+> canonical bytes moved, so an un-refreshed pack now reports a byte mismatch.
+>
+> ### 📜 A COMPLETENESS ASSERTION THAT COULD NOT FAIL — CAUGHT BY RUFF, NOT BY ME
+>
+> A test-side sweep asserted `"CommandUnavailable" in src` to prove an import landed.
+> **It passed on all five files while the import was missing from every one** — the
+> ANNOTATION the previous step had just written contained the string. `ruff` caught
+> it (F821 ×10). Re-asserted against the parsed IMPORT STATEMENT and it held.
+> 📜 **AN ASSERTION OVER A STRING THAT THE STEP UNDER CHECK ITSELF WRITES CANNOT
+> FAIL.** This is the blind-instrument family arriving inside the very sweep written
+> to prevent eyeballing.
+>
+> ### 📜 A PRE-REGISTRATION IS TESTED AGAINST THE SET, NEVER THE TOTAL
+>
+> Seam 1 hit the pre-registered **9** exactly — and its MEMBERSHIP differed in two
+> offsetting directions (`stale_pr_findings` came out, `detect_stale_worktrees` was
+> deliberately held). **Comparing counts alone would have reported a clean hit and
+> hidden both.** Seams 2–4 matched on set as well as count, checked explicitly each
+> time. ⛔ **This extends the file's own "never net it" rule one level: a matching
+> TOTAL over a DIFFERING SET is exactly what netting hides.**
+>
+> ### 🔬 THE ARMED HARNESS — REBUILT, AND ITS CONTROL FAILED FIRST
+>
+> `scratchpad/armed_measure.py` (not durable — rebuild from §"THE ARMED MEASUREMENT").
+> Delta 1 by monkeypatching `iter_py_files`; delta 2 by handing `_scan` a PATH SHIM
+> whose `.name` cannot start with `_`. **`_scan` runs WHOLE, so its exempt-set
+> construction is never transcribed** — that is the recorded `i04f`/`8o8e.6` drift.
+> ⚠️ **THE CONTROL REPORTED 0 AGAINST A KNOWN 1 ON THE FIRST TRY**, because delta 2
+> was unimplemented and `cross_member_consumption` lives in an `_`-prefixed FILE.
+> **That failure is the only reason any figure here is quotable.** Universe read 175
+> vs the recorded 171 — files added since; **the offender count and identity are what
+> the control tests, not the universe.**
+>
+> ### 🔻 FIRST FIVE MINUTES — **INLINED, NOT POINTED AT** (copy them, never point)
+>
+> **NOTHING IS MID-FLIGHT.** No background job, no sub-agent, no unpushed Red, no
+> open PR of this thread's. `livespec-runtime` master **`9b4c518`**; dev-tooling
+> moves hourly — re-fetch.
+>
+> 1. ✅ **NOTHING OF MINE TO REAP.** Every worktree this session created was removed
+>    and `git worktree list` verified to hold none. `git -C
+>    /data/projects/livespec-dev-tooling merge --ff-only origin/master` is all owed.
+> 2. **REAP NOTHING ELSE.** Every other worktree belongs to a PEER lane. Enumerate
+>    with `git worktree list`; **never quote a count from this file.**
+> 3. `git status --short --branch` — expect clean on `master`; one untracked
+>    `install-livespec-pr-bot.png` is pre-existing. ⚠️ A modified `uv.lock` is
+>    REGENERATED noise: `git checkout -- uv.lock` before any `merge --ff-only`, which
+>    REFUSES while the tree is dirty. **It also blocks `git worktree remove`.**
+> 4. ⚠️⚠️ **RUN `mise exec -- just install-worktree-pack` IN EVERY FRESH WORKTREE.**
+>    Without it `check-primary-checkout-commit-refuse-hook-installed` fails
+>    `worktree_pack_absent`; **it is NOT your diff**, it is NOT `.py`-only, and it
+>    fails AT PUSH (pre-push runs the full aggregate), not at commit.
+>    ⚠️ It also writes a `worktree_discipline` default into **tracked**
+>    `.livespec.jsonc` — **`git checkout -- .livespec.jsonc` afterwards.**
+> 5. ⚠️ **BEFORE PUSHING ANY RED→GREEN PAIR:** `git log -1 --format=%B | grep -c
+>    '^TDD-Red-'` must be **5** and `'^TDD-Green-'` must be **2**.
+>    **`--amend --no-edit` is the SAFE spelling**; `--amend -m`/`-F` destroys the Red
+>    trailers and the hook still exits 0 (`zv78`).
+>    ✅ **A NEW test file MAY be staged at Green** — only the RECORDED Red file must
+>    be byte-identical. Used four times this session for coverage of new branches.
+> 6. ⚠️ **A `check-fleet-conformance` RED IS PROBABLY THE APP'S RATE LIMIT.**
+>    `gh run view <id> --log-failed | grep -o '"kind": "[a-z_]*"'` → `rate_limited`.
+>    Log occurrences on **`mmqe`**.
+> 7. ⚠️ **`/tmp` INODE PRESSURE RECURS** (`8o8e.16`): `df -i /tmp`, NOT `df -h`.
+>    ⚠️ **NEVER RUN AN AD-HOC `pytest --cov`** — it writes a statement-coverage
+>    `.coverage` that collides with the repo's branch-coverage recipe (*"Can't
+>    combine statement coverage data with branch data"*). `rm -f .coverage` and
+>    re-run `just check-per-file-coverage`.
+> 8. **⛔ READ THE LEDGER CHILDREN `8o8e.7`–`.13` BEFORE BUDGETING ANY MEMBER**, and
+>    read them for the FIFTH COLUMN above, which none of them carries yet.
+>
+> ### 📋 THE QUEUE
+>
+> 1. **`livespec-overseer` (213)** — `claude_sessions.py`, yield 12. Measure its
+>    cross-repo surface FIRST.
+> 2. **`0aru` (P1)** — now EIGHT functions; the whole of `8o8e.10`'s remainder.
+> 3. **`l5pw` (P1)** — sweep the REST of the verb set; only `replace` was checked.
+> 4. **`55ec`** — 28 sites, RULED, unblocked. **`p9ot`** — the yield probe.
+
+> ## 🗄️ (SUPERSEDED AS THE HEADER 2026-08-03 — three more seams landed; `livespec-runtime` is 27 → 11 and its LOCAL lane is complete. FIRST FIVE MINUTES copied verbatim into the header above, per this block's own rule.) COLD START — **`8o8e.10`'s SEAM IS LANDED (27 → 18). THE NEXT SEAM IS `github.py`.**
 >
 > ### ▶️▶️▶️ EXACT NEXT ACTION — **`cross_repo/providers/github.py` IN `livespec-runtime`, YIELD 3**
 >
