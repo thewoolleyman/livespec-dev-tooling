@@ -249,6 +249,7 @@ check:
         check-required-role-keys-declared
         check-rop-pipeline-shape
         check-self-hosted-routing
+        check-shell-quality
         check-skill-invocation-paths
         check-source-trees-scoped-to-consumer
         check-supervisor-discipline
@@ -924,6 +925,9 @@ check-rop-pipeline-shape:
 # every repo with no local-ci job.
 check-self-hosted-routing:
     uv run python -m livespec_dev_tooling.checks.self_hosted_routing
+
+check-shell-quality:
+    uv run python -m livespec_dev_tooling.checks.shell_quality
 
 check-skill-invocation-paths:
     uv run python -m livespec_dev_tooling.checks.skill_invocation_paths
