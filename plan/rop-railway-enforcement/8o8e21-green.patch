@@ -1,0 +1,396 @@
+diff --git a/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_config.py b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_config.py
+index 1074e16..20accbb 100644
+--- a/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_config.py
++++ b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_config.py
+@@ -61,14 +61,22 @@ from __future__ import annotations
+ 
+ import os
+ import shutil
++from dataclasses import dataclass
+ from pathlib import Path
+ from typing import Any, cast
+ 
++from returns.io import IOFailure, IOResult, IOSuccess
++from returns.unsafe import unsafe_perform_io
++
+ from livespec_orchestrator_beads_fabro.commands import _jsonc
+-from livespec_orchestrator_beads_fabro.errors import ConnectionPrefixMissingError
++from livespec_orchestrator_beads_fabro.errors import (
++    ConnectionPrefixMissingError,
++    LivespecConfigUnreadableError,
++)
+ from livespec_orchestrator_beads_fabro.types import StoreConfig
+ 
+ __all__: list[str] = [
++    "ConfigUnreadable",
+     "resolve_credential_wrapper",
+     "resolve_fabro_bin",
+     "resolve_fabro_sandbox_image",
+@@ -94,6 +102,19 @@ _ENV_FABRO_SANDBOX_IMAGE = "LIVESPEC_FABRO_SANDBOX_IMAGE"
+ _TRUTHY = frozenset({"1", "true", "yes", "on"})
+ 
+ 
++@dataclass(frozen=True, kw_only=True)
++class ConfigUnreadable:
++    """`.livespec.jsonc` EXISTS but cannot be read as a configuration object.
++
++    Deliberately NOT inhabited by "the file is absent" or "the block is not
++    there". An unconfigured repo has documented defaults and those defaults are
++    the ANSWER; a file that will not parse, or whose root is not an object, is
++    the operator's configuration being wrong, and that is a different claim.
++    """
++
++    detail: str
++
++
+ def resolve_store_config(
+     *,
+     cwd: Path,
+@@ -106,7 +127,16 @@ def resolve_store_config(
+     substrate (no JSONL path overrides exist).
+     """
+     _ = work_items_arg
+-    block = _read_connection_block(cwd=cwd)
++    read = _read_connection_block(cwd=cwd)
++    if isinstance(read, IOFailure):
++        # ⛔ WITHOUT THIS the next line reads an EMPTY block and `_require_prefix`
++        # raises `ConnectionPrefixMissingError` — a true refusal naming the wrong
++        # cause. An operator with a stray comma was told their `connection.prefix`
++        # was missing. This function's contract is exception-based rather than
++        # railway (55 call sites, none of which catch), so the seam's reason is
++        # turned into a TRUTHFUL exception here rather than a Result.
++        raise LivespecConfigUnreadableError(detail=unsafe_perform_io(read.failure()).detail)
++    block = unsafe_perform_io(read.unwrap())
+     tenant = _str_or(value=block.get("tenant"), default=_DEFAULT_TENANT)
+     prefix = _require_prefix(block=block)
+     database = _str_or(value=block.get("database"), default=tenant)
+@@ -141,14 +171,23 @@ def resolve_fabro_bin(*, cwd: Path) -> str:
+     env_value = os.environ.get(_ENV_FABRO_BIN)
+     if env_value is not None and env_value != "":
+         return env_value
+-    block = _read_dispatcher_block(cwd=cwd)
+-    configured = _str_or(value=block.get("fabro_bin"), default="")
+-    if configured != "":
+-        return configured
+-    return _default_fabro_bin()
++    # ⚠️ THE ONLY READER LEFT OFF THE RAILWAY, AND THE REASON IS RECORDED RATHER
++    # THAN HIDDEN. Its recovery value is its OWN last precedence leg, the probed
++    # `_default_fabro_bin()` — so a caller writing `.value_or(...)` would need
++    # that probe, and pyright REFUSES the cross-module private import
++    # (`reportPrivateUsage`) while making it public would add a new offender
++    # returning a bare `str`. The honest destination is the preflight-error
++    # channel `_dispatcher_run_checks._fabro_preflight_error` already owns, which
++    # is a flow change rather than a signature change. Tracked as `8o8e.21`;
++    # until then the fold stays HERE, next to the probe it needs.
++    return unsafe_perform_io(
++        _read_dispatcher_block(cwd=cwd)
++        .map(lambda block: _configured_fabro_bin(block=block))
++        .value_or(_default_fabro_bin())
++    )
+ 
+ 
+-def resolve_fabro_sandbox_image(*, cwd: Path) -> str | None:
++def resolve_fabro_sandbox_image(*, cwd: Path) -> IOResult[str | None, ConfigUnreadable]:
+     """Resolve the optional Fabro sandbox image override (env > config > unset).
+ 
+     A non-empty `LIVESPEC_FABRO_SANDBOX_IMAGE` env value wins outright; else
+@@ -158,12 +197,8 @@ def resolve_fabro_sandbox_image(*, cwd: Path) -> str | None:
+     """
+     env_value = os.environ.get(_ENV_FABRO_SANDBOX_IMAGE)
+     if env_value is not None and env_value != "":
+-        return env_value
+-    block = _read_dispatcher_block(cwd=cwd)
+-    configured = _str_or(value=block.get("fabro_sandbox_image"), default="")
+-    if configured != "":
+-        return configured
+-    return None
++        return IOSuccess(env_value)
++    return _read_dispatcher_block(cwd=cwd).map(lambda block: _configured_sandbox_image(block=block))
+ 
+ 
+ def resolve_credential_wrapper(*, cwd: Path) -> list[str]:
+@@ -175,48 +210,64 @@ def resolve_credential_wrapper(*, cwd: Path) -> list[str]:
+     tenant-secret-injecting wrapper; a `[]` result means the recipe skips
+     fail-soft (it cannot read the tenant without the wrapper).
+     """
+-    root = _read_root_mapping(cwd=cwd)
++    # ⚠️ THE FAIL-OPEN HERE IS UNCHANGED AND IS NOT YET HONEST: an UNREADABLE
++    # config still reads as "no wrapper configured", which turns the pre-push
++    # gate off. Its only consumer is an inline `python -c` in the justfile that
++    # already discards stderr and falls back to an empty array, so splitting the
++    # two is a shell-side change rather than a Python one. Tracked as `8o8e.21`.
++    root = unsafe_perform_io(_read_root_mapping(cwd=cwd).value_or({}))
+     raw = root.get(_CREDENTIAL_WRAPPER_KEY)
+     if not isinstance(raw, list):
+         return []
+     return [str(token) for token in cast("list[Any]", raw)]
+ 
+ 
+-def _read_root_mapping(*, cwd: Path) -> dict[str, Any]:
+-    """Parse `.livespec.jsonc` to its root object, or {} for any off-happy-path shape."""
++def _read_root_mapping(*, cwd: Path) -> IOResult[dict[str, Any], ConfigUnreadable]:
++    """`.livespec.jsonc`'s root object; `{}` on the SUCCESS track when absent.
++
++    An absent config file is an ANSWER — this repo runs on documented defaults
++    without one — so it rides the success track as an empty mapping. A file
++    that will not parse, and a root that is not an object, are failures: the
++    file is there and says something the loader cannot use.
++    """
+     config_path = cwd / _LIVESPEC_CONFIG
+     if not config_path.is_file():
+-        return {}
++        return IOSuccess({})
+     raw_text = config_path.read_text(encoding="utf-8")
+     parsed = _jsonc.parse(text=raw_text)
+     if isinstance(parsed, _jsonc.JsoncFailure):
+-        return {}
++        return IOFailure(
++            ConfigUnreadable(detail=f"{_LIVESPEC_CONFIG} does not parse: {parsed.detail}")
++        )
+     if not isinstance(parsed, dict):
+-        return {}
+-    return cast("dict[str, Any]", parsed)
++        return IOFailure(ConfigUnreadable(detail=f"{_LIVESPEC_CONFIG} root is not an object"))
++    return IOSuccess(cast("dict[str, Any]", parsed))
+ 
+ 
+-def _read_connection_block(*, cwd: Path) -> dict[str, Any]:
++def _read_connection_block(*, cwd: Path) -> IOResult[dict[str, Any], ConfigUnreadable]:
+     """Read the `livespec-orchestrator-beads-fabro.connection` block, or {} when absent."""
+     return _read_plugin_sub_block(cwd=cwd, key=_CONNECTION_KEY)
+ 
+ 
+-def _read_dispatcher_block(*, cwd: Path) -> dict[str, Any]:
++def _read_dispatcher_block(*, cwd: Path) -> IOResult[dict[str, Any], ConfigUnreadable]:
+     """Read the `livespec-orchestrator-beads-fabro.dispatcher` block, or {} when absent."""
+     return _read_plugin_sub_block(cwd=cwd, key=_DISPATCHER_KEY)
+ 
+ 
+-def _read_plugin_sub_block(*, cwd: Path, key: str) -> dict[str, Any]:
++def _read_plugin_sub_block(*, cwd: Path, key: str) -> IOResult[dict[str, Any], ConfigUnreadable]:
+     """Read a named sub-block of the `livespec-orchestrator-beads-fabro` block.
+ 
+-    Returns `{}` for every off-happy-path shape (absent config file, malformed
+-    JSONC, non-object root, non-dict plugin block, non-dict / absent sub-block)
+-    so each caller applies its own defaults. Shared by the connection and
+-    dispatcher readers so the JSONC -> plugin-block -> sub-block traversal is
++    An ABSENT plugin block or sub-block yields `{}` on the success track, so
++    each caller applies its own defaults; an UNREADABLE file propagates the
++    failure from `_read_root_mapping`. Shared by the connection and dispatcher
++    readers so the JSONC -> plugin-block -> sub-block traversal is
+     single-sourced rather than duplicated per sub-block.
+     """
+-    parsed_dict = _read_root_mapping(cwd=cwd)
+-    plugin_block_raw = parsed_dict.get(_PLUGIN_BLOCK)
++    return _read_root_mapping(cwd=cwd).map(lambda root: _sub_block(root=root, key=key))
++
++
++def _sub_block(*, root: dict[str, Any], key: str) -> dict[str, Any]:
++    plugin_block_raw = root.get(_PLUGIN_BLOCK)
+     if not isinstance(plugin_block_raw, dict):
+         return {}
+     plugin_block = cast("dict[str, Any]", plugin_block_raw)
+@@ -226,6 +277,20 @@ def _read_plugin_sub_block(*, cwd: Path, key: str) -> dict[str, Any]:
+     return cast("dict[str, Any]", sub_block_raw)
+ 
+ 
++def _configured_fabro_bin(*, block: dict[str, Any]) -> str:
++    configured = _str_or(value=block.get("fabro_bin"), default="")
++    if configured != "":
++        return configured
++    return _default_fabro_bin()
++
++
++def _configured_sandbox_image(*, block: dict[str, Any]) -> str | None:
++    configured = _str_or(value=block.get("fabro_sandbox_image"), default="")
++    if configured != "":
++        return configured
++    return None
++
++
+ def _require_prefix(*, block: dict[str, Any]) -> str:
+     """Return the explicit `connection.prefix`, or raise if unset/empty.
+ 
+diff --git a/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_credentials.py b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_credentials.py
+index d09f00c..91d2b09 100644
+--- a/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_credentials.py
++++ b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_credentials.py
+@@ -9,6 +9,7 @@ from pathlib import Path
+ from typing import cast
+ 
+ from livespec_runtime.github_auth.errors import GithubAppAuthError
++from returns.unsafe import unsafe_perform_io
+ 
+ from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
+ from livespec_orchestrator_beads_fabro.commands._config import resolve_fabro_sandbox_image
+@@ -205,7 +206,10 @@ def materialize_overlay(
+         siblings=siblings,
+         otel_env=otel_env,
+         codex_auth_snapshot=codex_snapshot,
+-        fabro_sandbox_image=resolve_fabro_sandbox_image(cwd=repo),
++        # An unreadable `.livespec.jsonc` falls back to "no image override",
++        # visibly and here rather than inside the reader. `unsafe_perform_io`
++        # is required: `IOResult.value_or` returns `IO[value]`, not the value.
++        fabro_sandbox_image=unsafe_perform_io(resolve_fabro_sandbox_image(cwd=repo).value_or(None)),
+     )
+     if rendered is None:
+         return (
+diff --git a/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/errors.py b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/errors.py
+index 3406afa..9ee3a86 100644
+--- a/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/errors.py
++++ b/.claude-plugin/scripts/livespec_orchestrator_beads_fabro/errors.py
+@@ -26,6 +26,7 @@ __all__: list[str] = [
+     "GroomDraftError",
+     "GroomExitRefusedError",
+     "GroomTargetNotBacklogError",
++    "LivespecConfigUnreadableError",
+     "MalformedRecordLineError",
+     "SchemaViolationError",
+     "SpecVersionNotFoundError",
+@@ -202,6 +203,33 @@ class ConnectionPrefixMissingError(Exception):
+         super().__init__(_CONNECTION_PREFIX_MISSING_MESSAGE)
+ 
+ 
++_CONFIG_UNREADABLE_MESSAGE_TEMPLATE = (
++    "`.livespec.jsonc` could not be read as a configuration object: {detail}. "
++    "Fix the file; the loader will not fall back to defaults for a config that "
++    "is present and wrong."
++)
++
++
++class LivespecConfigUnreadableError(Exception):
++    """`.livespec.jsonc` EXISTS but does not parse, or its root is not an object.
++
++    EXPECTED: the operator's configuration is wrong — a stray comma, a
++    truncated write, a non-object root. It is DISTINCT from the file being
++    ABSENT, which is an answer the loader serves from documented defaults.
++
++    ⛔ IT EXISTS BECAUSE THE ABSENCE OF IT WAS A LIE. Every reader used to fold
++    an unparseable file into an empty block, so `resolve_store_config` reached
++    `_require_prefix` with nothing in hand and raised
++    `ConnectionPrefixMissingError` — a true refusal naming the wrong cause,
++    sending an operator to look at a `connection.prefix` that was sitting there
++    correctly all along.
++    """
++
++    def __init__(self, *, detail: str) -> None:
++        super().__init__(_CONFIG_UNREADABLE_MESSAGE_TEMPLATE.format(detail=detail))
++        self.detail = detail
++
++
+ _CREDENTIAL_MISSING_MESSAGE_TEMPLATE = (
+     "required secret env var {variable} is absent; run under your project's "
+     "configured credential_wrapper (e.g. with-<project>-env.sh -- ...)."
+diff --git a/tests/livespec_orchestrator_beads_fabro/commands/test_config.py b/tests/livespec_orchestrator_beads_fabro/commands/test_config.py
+index 23e3cfd..32cbeb5 100644
+--- a/tests/livespec_orchestrator_beads_fabro/commands/test_config.py
++++ b/tests/livespec_orchestrator_beads_fabro/commands/test_config.py
+@@ -16,6 +16,7 @@ import json
+ from dataclasses import fields
+ from inspect import signature
+ from pathlib import Path
++from typing import TypeVar
+ 
+ import pytest
+ from livespec_orchestrator_beads_fabro.commands import _config, _dispatcher_overlay
+@@ -24,8 +25,26 @@ from livespec_orchestrator_beads_fabro.commands._config import (
+     resolve_fabro_bin,
+     resolve_store_config,
+ )
+-from livespec_orchestrator_beads_fabro.errors import ConnectionPrefixMissingError
++from livespec_orchestrator_beads_fabro.errors import (
++    ConnectionPrefixMissingError,
++    LivespecConfigUnreadableError,
++)
+ from livespec_orchestrator_beads_fabro.types import StoreConfig
++from returns.io import IOResult
++from returns.unsafe import unsafe_perform_io
++
++_Value = TypeVar("_Value")
++
++
++def _read(outcome: IOResult[_Value, object]) -> _Value:
++    """The value out of a config read that SUCCEEDED.
++
++    ⚠️ `unsafe_perform_io` is mandatory rather than decorative: `IOResult.unwrap`
++    yields `IO[value]`, not the value, so a bare `.unwrap()` compares an `IO`
++    wrapper against the expected string and is false for every input.
++    """
++    return unsafe_perform_io(outcome.unwrap())
++
+ 
+ _CONFIG_NAME = ".livespec.jsonc"
+ 
+@@ -273,27 +292,39 @@ def test_empty_socket_string_reads_as_none(
+     assert config.socket is None
+ 
+ 
+-def test_malformed_jsonc_yields_no_prefix_and_raises(
++def test_malformed_jsonc_names_the_parse_failure_not_a_missing_prefix(
+     tmp_path: Path,
+     monkeypatch: pytest.MonkeyPatch,
+ ) -> None:
+-    """Malformed JSONC falls back to an empty block, which has no prefix → raises."""
++    """A file that will not parse refuses by NAMING that, not the prefix.
++
++    It used to raise `ConnectionPrefixMissingError` — a true refusal naming the
++    wrong cause, sending an operator to look at a `connection.prefix` that was
++    sitting there correctly all along.
++    """
+     monkeypatch.delenv("LIVESPEC_BEADS_FAKE", raising=False)
+     _write_config(cwd=tmp_path, body="{ this is not valid json ")
+-    with pytest.raises(ConnectionPrefixMissingError):
++
++    with pytest.raises(LivespecConfigUnreadableError) as raised:
+         _ = resolve_store_config(cwd=tmp_path, work_items_arg=None)
+ 
++    assert "does not parse" in raised.value.detail
++    assert not isinstance(raised.value, ConnectionPrefixMissingError)
++
+ 
+-def test_non_object_root_yields_no_prefix_and_raises(
++def test_non_object_root_names_the_shape_not_a_missing_prefix(
+     tmp_path: Path,
+     monkeypatch: pytest.MonkeyPatch,
+ ) -> None:
+-    """A non-object JSON root falls back to an empty block → no prefix → raises."""
++    """A non-object JSON root refuses by naming the root, not the prefix."""
+     monkeypatch.delenv("LIVESPEC_BEADS_FAKE", raising=False)
+     _write_config(cwd=tmp_path, body="[1, 2, 3]")
+-    with pytest.raises(ConnectionPrefixMissingError):
++
++    with pytest.raises(LivespecConfigUnreadableError) as raised:
+         _ = resolve_store_config(cwd=tmp_path, work_items_arg=None)
+ 
++    assert "root is not an object" in raised.value.detail
++
+ 
+ def test_non_dict_plugin_block_yields_no_prefix_and_raises(
+     tmp_path: Path,
+@@ -553,7 +584,7 @@ def test_resolve_fabro_sandbox_image_uses_dispatcher_config_key(
+             }
+         ),
+     )
+-    assert _config.resolve_fabro_sandbox_image(cwd=tmp_path) == configured
++    assert _read(_config.resolve_fabro_sandbox_image(cwd=tmp_path)) == configured
+ 
+ 
+ def test_env_fabro_sandbox_image_beats_config(
+@@ -574,7 +605,7 @@ def test_env_fabro_sandbox_image_beats_config(
+             }
+         ),
+     )
+-    assert _config.resolve_fabro_sandbox_image(cwd=tmp_path) == env_value
++    assert _read(_config.resolve_fabro_sandbox_image(cwd=tmp_path)) == env_value
+ 
+ 
+ def test_resolve_fabro_sandbox_image_unset_is_noop(
+@@ -583,7 +614,7 @@ def test_resolve_fabro_sandbox_image_unset_is_noop(
+ ) -> None:
+     """No env or config value yields None, leaving the committed workflow unchanged."""
+     monkeypatch.delenv("LIVESPEC_FABRO_SANDBOX_IMAGE", raising=False)
+-    assert _config.resolve_fabro_sandbox_image(cwd=tmp_path) is None
++    assert _read(_config.resolve_fabro_sandbox_image(cwd=tmp_path)) is None
+ 
+ 
+ def test_resolve_credential_wrapper_reads_top_level_list(
