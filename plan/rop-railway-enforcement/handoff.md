@@ -1,5 +1,66 @@
 # rop-railway-enforcement — arm the check that was never armed, then remediate six repos
 
+> ## ⛔⛔ READ BEFORE QUOTING ANY FLEET NUMBER — **THE DENOMINATOR HAS THREE VALUES AND NO RATIFIED BASIS. `jecv` (P1).**
+>
+> **Three durable records, three answers for the same quantity, no two sharing a
+> universe basis:**
+>
+> | record | fleet RAW | fleet DISTINCT | overseer universe |
+> |---|---:|---:|---:|
+> | epic `8o8e`'s table (2026-08-02) | **432** | **338** | **140** |
+> | **this file's fleet table, §"THE FLEET, as of this wrap-up"** | **402** | **321** | — |
+> | re-derived 2026-08-03, today's shipped criterion | **429** | **328** | **172** |
+>
+> **None is obviously wrong.** The epic's basis line excludes tests; the 2026-08-03
+> pass runs `resolve_check_universe()` UNMODIFIED, which is what the shipped `main()`
+> uses. ⚠️ **And beside-tests do not reconcile them:** `livespec-overseer` keeps tests
+> BESIDE the code (`overseer/test_*.py`), which a `tests/`-DIRECTORY exclusion never
+> removes — 57 of its 172 universe files are beside-tests, and 172 − 57 = **115**,
+> not 140. **The gap is not one rule.**
+>
+> ### 📜 IT ALREADY PRODUCED A FALSE HEADLINE, AND THE HEADLINE WAS THE ATTRACTIVE KIND
+>
+> Comparing the 2026-08-03 per-member figures against this file's own table yields:
+> *"the fleet ADDED 45 offenders while this epic REMOVED 18 — new off-railway code is
+> landing 2.5× faster than seams are repaired."* **A strong, quotable argument for
+> arming sooner. It is an artifact of the unreconciled basis and is WITHDRAWN.**
+> 📜 **This file's rule already covered it — *"a part and a total from different days
+> do not add"* — and it applies just as much to a WHOLE measured on a different
+> BASIS. ⛔ A wrong number is cheap; a wrong number that flatters a decision you were
+> already inclined to make is not.**
+>
+> **▶️ UNTIL `jecv` LANDS: quote no fleet delta in either direction.** Every
+> per-member figure taken on 2026-08-03 is internally consistent with the others from
+> that day and with nothing else. The live question is narrow — **are beside-tests in
+> the arming universe?** — and the answer should follow the SHIPPED code, with the
+> record corrected to match, because `i04f`/`8o8e.6` is what happens when a
+> written-down basis and the running code disagree and the record wins.
+>
+> ### 🪞 GROUNDWORK DONE ON `livespec-overseer` — **READ BEFORE OPENING IT**
+>
+> - **213 RAW / 112 DISTINCT over universe 172 at master `814c7a7`** (today's
+>   criterion; NOT reconciled with the epic's 194/140 — see above).
+> - ⚠️ **EVERY EDIT IS A DOUBLE EDIT.** `.claude-plugin/overseer/*.py` is a
+>   byte-for-byte hand-maintained copy of `overseer/`'s top-level non-test files —
+>   **57 duplicate groups, no sync recipe** — enforced by
+>   `check-codex-plugin-runnable-launcher` running `cmp -s` per file. A one-sided edit
+>   fails that check rather than diverging silently, which is the good outcome, but it
+>   is invisible in every offender count.
+> - ⚠️ **THE `_`-PREFIXED FILE SKIP IS DECISIVE HERE AND WAS INERT IN `livespec-runtime`.**
+>   Keeping it reports **81** instead of 213 (90 of 172 files are `_`-prefixed). In
+>   `livespec-runtime` both columns read 27, so anyone generalising from that member
+>   will badly under-count this one.
+> - 🔑 **THE SEAM'S `X | None` IS A CONFLATION, NOT A DECLARATION CANDIDATE.**
+>   `_claude_sessions_proc.py`'s `proc_ppid`/`proc_starttime`/`proc_comm`/`proc_cmdline`
+>   return `X | None` and `proc_children` returns `[] on error`; each `None` means BOTH
+>   "the process is gone" (a real answer the caller reads as *not live*) AND "the read
+>   failed" (EACCES, a malformed `stat`), under one `except OSError: return None`.
+>   ⛔ **Declaring these in `total_absence_returns` would ratify the conflation.** The
+>   honest split is `IOSuccess(None)` = gone · `IOFailure(ProcUnreadable)` = could not
+>   tell — **a SEMANTIC change requiring an errno ruling, not a retype.** And the
+>   readers are INJECTED SEAMS (`_seams.py`), so the protocol moves with them, exactly
+>   as `CommandRunner` did.
+
 > ## 🔻🔻 COLD START — **START HERE. `livespec-runtime` IS 27 → 11 AND ITS LOCAL LANE IS COMPLETE. THE NEXT MEMBER IS `livespec-overseer`.**
 >
 > ### ▶️▶️▶️ EXACT NEXT ACTION — **⛔ NOT ANOTHER `livespec-runtime` SEAM. THERE ISN'T ONE.**
@@ -1718,6 +1779,10 @@
 >   reproduces **universe 171 / offenders 1** and names `cross_member_consumption`.
 >
 > ### 📏 THE FLEET, as of this wrap-up — **402 RAW / 321 DISTINCT**
+>
+> ⛔⛔ **THIS TABLE IS ONE OF THE THREE CONFLICTING RECORDS — see the block at the
+> TOP of this file and `jecv`. The epic carries 432/338 for the same period and a
+> 2026-08-03 re-derivation reads 429/328. DO NOT QUOTE A DELTA AGAINST IT.**
 >
 > | member | RAW | DIST | decl | misdecl | local | prop |
 > |---|---:|---:|---:|---:|---:|---:|
