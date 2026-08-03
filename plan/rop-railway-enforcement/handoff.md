@@ -277,6 +277,37 @@
 > | 3 | NO BLOCKERS + flag | false contrast implying directly-consumed imports are PREFIXED. Fixed. |
 > | — | **STALE** | a `NO BLOCKERS` arrived for **SUPERSEDED BYTES**. Discarded, not banked. |
 > | 4 | **BLOCKERS** | **B2** — the RECORD misquoted the bytes. Class (a) under the rule. Fixed. |
+> | 5 | **BLOCKERS** | **BYTES CLEAR on all 8 for the 3rd time.** **B3** — `rationale` still said "the one change" after the B2 fix updated `modifications`. Fixed. |
+>
+> ### ⛔⛔ THE ESCALATION COUNTER FIRED AND ITS DIAGNOSIS DID **NOT** FIT — RECORDED BOTH WAYS
+>
+> Passes 4 and 5 are two CONSECUTIVE substantive findings, so the pre-committed rule said
+> **STOP AND ESCALATE.** ⚠️ **BUT THE RULE'S STATED RATIONALE — "the proposal's SCOPE is
+> wrong, not its wording" — IS FALSE HERE**, and the independent reviewer reached the same
+> conclusion without being told mine:
+>
+> - **THE BYTES SURVIVED A FULL EIGHT-DIMENSION PASS THREE TIMES WITH NO FINDING.**
+> - **EVERY defect since B1 was in the RECORD's self-description**, and **each was
+>   INTRODUCED BY THE IMMEDIATELY PRECEDING FIX.**
+> - **Each was strictly SMALLER:** missing modification + false quotation (B2) → one stale
+>   word in a trailer (B3). **A converging series, characteristic of hand-maintained prose.**
+>
+> 📜 **SO THE COUNTER WAS RIGHT AND ITS ATTACHED DIAGNOSIS WAS WRONG — AND I DID NOT GET TO
+> DECIDE THAT ABOUT MY OWN RULE.** Escalated with the table and the diagnosis rather than
+> self-ruling; deciding after seeing the answer that one's own rule does not apply is
+> precisely what the pre-commitment exists to prevent. **If a counter's trigger and its
+> rationale can come apart, WRITE THE RATIONALE INTO THE TRIGGER next time** — e.g. "two
+> consecutive findings IN THE RATIFIED BYTES", which would not have fired here.
+>
+> ### 🔁 THE ACTUAL RECURRING DEFECT — **FIX ONE INSTANCE, LEAVE THE SIBLING STALE**
+>
+> B2 and B3 are the SAME defect twice. While fixing B3 I found a **THIRD** instance myself —
+> `"SCOPE OF BOTH MODIFICATIONS. They touch only the directly-consumed SENTENCE"`, the exact
+> imprecision just corrected in the opening line. **It would have been B4.**
+>
+> **▶️ THE FIX IS A RESIDUAL SWEEP, NOT MORE CARE.** After every record edit, grep the WHOLE
+> payload for the phrase just corrected and for the claim just changed — `"the one change"` →
+> 0, `"directly-consumed sentence"` → 0. **Care does not scale; a sweep does.**
 >
 > ### 🔑🔑 B2's STRUCTURAL LESSON — **THE DIGEST PROTECTS THE BYTES AND NOTHING PROTECTS THE RECORD**
 >
