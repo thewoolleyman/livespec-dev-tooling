@@ -2,7 +2,27 @@
 
 > ## 🔻🔻 COLD START — **START HERE. ⚠️ ONE UNIT *IS* MID-FLIGHT AND UNCOMMITTED, BLOCKED BY `8o8e.22` — WHICH SELF-CLEARS. READ THE NEXT BOX FIRST.**
 >
-> ### 🚧🚧 EXACT NEXT ACTION — **RESUME `~/.worktrees/livespec-orchestrator-beads-fabro/config-read-railway`, DO NOT RE-DERIVE IT**
+> ### ▶️▶️▶️ EXACT NEXT ACTION — **RUN THIS ONE COMMAND FIRST; IT DECIDES WHICH LANE IS OPEN**
+>
+> ```bash
+> cd "$HOME/.worktrees/livespec-orchestrator-beads-fabro/config-read-railway" \
+>   && mise exec -- just check-master-ci-green
+> ```
+>
+> - **EXIT 0 → `8o8e.22` HAS SELF-CLEARED.** A new master run superseded the wedged
+>   one. ▶️ **Go straight to the 🚧 box below and land the mid-flight unit**, then
+>   keep converting `beads-fabro` per-function.
+> - **EXIT 1 → STILL WEDGED. ⛔ DO NOT TOUCH `.py` IN `beads-fabro`** — you cannot
+>   commit it, so you would build an un-landable pile. ⛔ **DO NOT re-run CI**
+>   (`run_attempt` was already 7 and each attempt ENLARGES the failing payload), ⛔
+>   **do not manufacture a master push**, and ⛔ **do not "fix" `check-master-ci-green`
+>   — that is ESCALATED to the maintainer and the reasoning is below.**
+>   ▶️ **Open lanes while wedged:** `8o8e.23` (the fleet telemetry-script fan-out —
+>   `.sh`, and beads-fabro's doc-only path DOES accept it); `livespec`'s 20 or
+>   `git-jsonl`'s 11 (different repos, not gated); or `jecv` / `overseer-yc7`
+>   groundwork. **`55ec` is BLOCKED — it is 28 `.py` rewrites.**
+>
+> ### 🚧🚧 THE MID-FLIGHT UNIT — **RESUME `~/.worktrees/livespec-orchestrator-beads-fabro/config-read-railway`, DO NOT RE-DERIVE IT**
 >
 > **Branch `fix/config-read-railway` (created, NOTHING COMMITTED). No PR. The work
 > is FINISHED and VERIFIED and could not be committed.** It is `8o8e.21`'s first
@@ -105,14 +125,41 @@
 > that falsified it. **The workstation got 502s on that URL too, which is exactly what
 > made the outage story fit. A failure you can reproduce locally is not an outage.**
 >
-> **▶️ THE STATE ON DISK IS THE *RED* HALF OF THE PAIR — DO NOT `git checkout -- .`.**
-> `tests/livespec_orchestrator_beads_fabro/commands/test_config.py` is STAGED alone;
-> `errors.py` carries an UNSTAGED `LivespecConfigUnreadableError` **RED STUB** so Red
-> fails on real assertions rather than an ImportError. **The full GREEN change set is
-> saved at `/tmp/claude-1000/-data-projects-livespec-dev-tooling/f5ff746d-5cde-4b0b-b893-122858f2ed53/scratchpad/green2/`** (4 files, session-scoped and
-> NOT durable). Commit the Red with the message at that dir's `msg2.txt`, then restore green2, `git add -A`, `git commit --amend
-> --no-edit`. ⚠️ If that scratchpad is gone, the branch has nothing — redo from
-> `8o8e.21`, which carries the full design.
+> **▶️ THE WORKTREE HOLDS THE FINISHED *GREEN* STATE, UNSTAGED. DO NOT `git checkout -- .`.**
+> All four changed files are applied in the working tree of
+> `~/.worktrees/livespec-orchestrator-beads-fabro/config-read-railway`, nothing staged,
+> nothing committed. **A byte-identical backup is COMMITTED beside this file as
+> `plan/rop-railway-enforcement/8o8e21-green.patch`** — so the work survives even if
+> that worktree is reaped. Recover with
+> `git apply plan/rop-railway-enforcement/8o8e21-green.patch` from a clean
+> beads-fabro tree at or after `5b4813a`. ⛔ **No scratchpad is referenced anywhere:
+> the earlier revision of this box pointed at a session-scoped `/tmp` directory that
+> does not survive a restart. That was the bug in the handoff, and this is its fix.**
+>
+> **▶️ THE RED→GREEN RITUAL, FROM THAT GREEN STATE (product `.py` — the ritual is
+> mandatory), once `8o8e.22` has cleared:**
+>
+> 1. `git diff > /tmp/green.patch` (your own scratch — the committed copy is the
+>    durable one), then `git checkout -- .` to get back to master's tree.
+> 2. Re-apply ONLY the Red half: `git checkout` the green
+>    `tests/livespec_orchestrator_beads_fabro/commands/test_config.py` out of the
+>    patch and **stage it ALONE**; then hand-add the `LivespecConfigUnreadableError`
+>    **stub** to `errors.py` ON DISK BUT UNSTAGED (a 4-line dataclass-style
+>    `Exception` with `__init__(self, *, detail: str)` setting `self.detail`, plus its
+>    `__all__` entry) so Red fails on real ASSERTIONS rather than an ImportError.
+>    ⚠️ The two renamed tests (`..._names_the_parse_failure_not_a_missing_prefix`,
+>    `..._names_the_shape_not_a_missing_prefix`) are the ones that carry the proof:
+>    against master's impl they get `ConnectionPrefixMissingError` where they expect
+>    the new type, which is a genuine behavioural failure.
+> 3. Commit Red with a `fix(config):` subject (the full message is reproduced in
+>    `8o8e.21`'s ledger body — copy it from there, not from memory).
+> 4. `git apply /tmp/green.patch`, `git add -A`, `git commit --amend --no-edit`.
+> 5. **Count the trailers before pushing: 5 × `TDD-Red-`, 2 × `TDD-Green-`.**
+>
+> ⚠️ **RE-VERIFY BEFORE OPENING THE PR** — the tree will be older than the
+> measurements: `just check-types`, the unit + integration suites, `just
+> check-coverage`, and the armed measurement (expect **155 → 154, ADDED 0**, the one
+> removal being `_config.py:resolve_fabro_sandbox_image`).
 >
 > ### ▶️ AFTER THAT — **KEEP GOING ON `beads-fabro`, PER-FUNCTION**
 >
@@ -291,16 +338,19 @@
 > ### 🔻 FIRST FIVE MINUTES — **INLINED, NOT POINTED AT** (copy them; never point)
 >
 > ⚠️⚠️ **ONE UNIT IS MID-FLIGHT — see the 🚧 box at the very top before anything
-> else.** No background job and no sub-agent, but there IS an uncommitted Red
-> half on disk in a beads-fabro worktree, and `git checkout -- .` destroys it.
+> else.** ✅ **NO background job, NO sub-agent, NO subprocess** — all stopped at
+> wrap-up. But there IS an uncommitted GREEN change set on disk in a beads-fabro
+> worktree, and `git checkout -- .` destroys it. **Its committed backup is
+> `plan/rop-railway-enforcement/8o8e21-green.patch`, beside this file.**
 >
 > 1. ⚠️ **DO NOT REAP
 >    `~/.worktrees/livespec-orchestrator-beads-fabro/config-read-railway`** (branch
 >    `fix/config-read-railway`) — that is the MID-FLIGHT unit, nothing committed.
->    ✅ Both of the units that DID land are already reaped
->    (`policy-settings-railway` → PR #1277, `beads-fabro-166-to-155` → PR #1194).
->    `~/.worktrees/livespec-dev-tooling/config-read-railway-midflight` carries THIS
->    text; reap it once its PR merges.
+>    ✅ Every worktree of mine that DID land is already reaped
+>    (`policy-settings-railway` → PR #1277; `beads-fabro-166-to-155` → #1194;
+>    `config-read-railway-midflight` → #1196; `telemetry-gate-diagnosis` → #1198).
+>    `~/.worktrees/livespec-dev-tooling/gate-composition-finding` carries THIS text
+>    (PR **#1200**); **if you are reading this on master, it merged — reap it.**
 > 2. **REAP NOTHING ELSE.** Every other worktree is a PEER lane. Enumerate with
 >    `git worktree list`; **never quote a count from this file.**
 > 3. `git status --short --branch` — clean on `master`; one untracked
