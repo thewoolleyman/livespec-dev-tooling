@@ -93,6 +93,35 @@
 > ⚠️ **EVERY EXISTING WORKTREE MUST RE-RUN `just install-worktree-pack`** — the
 > canonical bytes moved, so an un-refreshed pack now reports a byte mismatch.
 >
+> ### 🔴🔴 IT BROKE `git push` IN EVERY FLEET REPO — **AND THE ERROR MESSAGE LIES. `xx1y` (P1)**
+>
+> Landing the mint railway broke pushes fleet-wide within minutes. The symptom:
+>
+>     fatal: could not read Username for 'https://github.com': No such device or address
+>
+> ⛔ **THAT IS NOT AN AUTH FAILURE AND CHASING IT AS ONE WASTES THE SESSION.** Every
+> fleet clone's LOCAL git config resets the helper list to one shim
+> (`~/.local/bin/livespec-agent-github-credential-helper`) which execs
+> `/data/projects/livespec-runtime/.venv/bin/livespec-github-credential-helper` — an
+> EDITABLE install of the primary checkout. That venv predated the `returns>=0.25.0`
+> declaration, so the new bare `from returns.io import ...` raised
+> `ModuleNotFoundError` INSIDE the credential helper.
+>
+> **▶️ FIX: `cd /data/projects/livespec-runtime && uv sync`.** Verified: helper
+> imports, push succeeds.
+>
+> 📜 **AND THE SURVEY THAT MISSED IT WAS INCOMPLETE IN A WAY IT COULD NOT REVEAL.**
+> Before landing the first `returns` import into the source-copied tree I verified
+> the v191 closure obligation by EXECUTING a bare import from each of the three
+> repos that **vendor** `livespec_runtime` — all three passed. **I enumerated repos
+> that VENDOR the library; this consumer INSTALLS it.** The closure obligation has at
+> least three shapes and only one is vendored: (1) `_vendor/` source copy, (2) an
+> editable/installed **console script**, (3) host wiring pointing at (2) from outside
+> any repo. **A grep over sibling trees is structurally blind to (2) and (3).**
+> ⛔ **ENUMERATE CONSUMPTION PATHS, NOT CONSUMER REPOS**, and re-sync that venv as
+> part of landing any new `livespec_runtime` dependency. **CI cannot catch it — the
+> breakage lives in a host venv, not in any repo.**
+>
 > ### 📜 A COMPLETENESS ASSERTION THAT COULD NOT FAIL — CAUGHT BY RUFF, NOT BY ME
 >
 > A test-side sweep asserted `"CommandUnavailable" in src` to prove an import landed.
