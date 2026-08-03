@@ -58,6 +58,18 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.18.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.17.1...v1.18.0) (2026-08-03)
+
+
+### Features
+
+* **checks:** encode shell quality policy ([406540c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/406540ce39799572bf9d402f910f436521249399))
+
+
+### Bug Fixes
+
+* **checks:** enforce shell quality recipes ([df92e0b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/df92e0bbac9442960e76996f56b0be258aab823e))
+
 ## [1.17.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.17.0...v1.17.1) (2026-08-03)
 
 
