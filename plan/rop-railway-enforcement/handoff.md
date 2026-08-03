@@ -1,6 +1,91 @@
 # rop-railway-enforcement — arm the check that was never armed, then remediate six repos
 
-> ## 🔻🔻 COLD START — **START HERE. `_under_io_tree` IS RULED: SHIM-LOCATION STAYS. `55ec` IS 28 REWRITES AND THAT IS CORRECT. IT IS THE NEXT UNIT, VALUE 10.**
+> ## 🔻🔻 COLD START — **START HERE. `4ihw` IS MEASURED AND CONTAINED — TAKE IT. AND ITS OWN PRECEDENT HAS A HOLE, FILED AS `0n2a` (P1).**
+>
+> ### 🔻 FIRST FIVE MINUTES
+>
+> **NOTHING IS MID-FLIGHT.** No background job, no sub-agent, no unpushed Red, no open PR of
+> this thread's. dev-tooling master at wrap-up: **`6e0f665`** or later — re-fetch. Steps 1–8
+> six blocks below are UNCHANGED and still current; read them there.
+>
+> ### ✅ `4ihw`'s FAN-OUT CONSEQUENCE — **CONTAINED. NOT A COORDINATED EPIC.**
+>
+> Measured on fresh clones: `livespec` `ddd0a31`, `beads-fabro` `cd4987c`, `git-jsonl`
+> `b100e7e`.
+>
+> 1. **THE FAN-OUT HANDLES THE RE-SYNC AUTOMATICALLY.** All three consumers carry a
+>    `livespec_runtime` entry in `.vendor.jsonc` at `v0.13.1` (33 files each), so the
+>    bump-pin workflow re-vendors them. **No consumer needs a change to accept this.**
+> 2. **ALL THREE ALREADY VENDOR `returns`**, and the surface runtime needs — `Result`,
+>    `Success`, `Failure`, `safe` — is present in every copy, checked by reading each
+>    vendored `result.py`.
+> 3. **ALL THREE IMPORT `hygiene_scan_context`** (livespec 4 sites, git-jsonl 4,
+>    beads-fabro via other modules), so the blast radius is real, not dead vendored code.
+>
+> ### ⛔ AND THE FLEET DOES **NOT** HAVE "ONE RAILWAY VERSION" — THE RECORD CLAIMS IT DOES
+>
+> dev-tooling's own `.vendor.jsonc` says its 0.25.0 *"matches the copy `livespec` vendors,
+> keeping one railway version across the fleet"*. **Measured: THREE distinct provenances.**
+>
+> | consumer | vendored `returns` ref |
+> |---|---|
+> | `livespec` | `0.25.0` |
+> | `beads-fabro` | `e2cdeea:.claude-plugin/scripts/_vendor/returns` (a COMMIT-PIN from another repo's vendor path) |
+> | `git-jsonl` | `0.26.0` |
+>
+> Runtime's code must be compatible with all three. The specific surface is safe; the
+> **claim** of a single version is not.
+>
+> ### 🔴🔴 THE PRECEDENT `4ihw` RESTS ON HAS A HOLE — **`0n2a` (P1)**
+>
+> `typing_extensions` is the pattern `4ihw` proposes to copy. Checking its health first
+> found: **`git-jsonl` imports `livespec_runtime.cross_repo.types` (9 sites) whose vendored
+> copy does `from typing_extensions import assert_never`, and vendors ZERO
+> `typing_extensions`, declaring it nowhere.** It resolves ONLY because this host's system
+> Python (3.13.7) ships it at `/usr/lib/python3/dist-packages/`.
+>
+> ⚠️ **STATED PRECISELY: latent and HOST-DEPENDENT, not a confirmed live break.** Its two
+> siblings vendor it explicitly (livespec 2 files, beads-fabro 1), so git-jsonl is an
+> outlier rather than a convention.
+>
+> 📜 **THE SYSTEMIC FINDING: VENDORING SOURCE-ONLY MAKES DEPENDENCIES THE CONSUMER'S JOB,
+> AND NOTHING ENFORCES CLOSURE.** `check-vendor-manifest` validates entry SHAPE, never that
+> a vendored library's own imports resolve against the consumer's `_vendor/` + stdlib.
+> **Same family as the seven-hour fan-out break** — an import satisfied in the environment
+> the tests run in and not in the one the code ships to.
+>
+> ### ▶️▶️▶️ EXACT NEXT ACTION — **TAKE `4ihw` UNDER THE PRECEDENT, WITH ONE PRECONDITION**
+>
+> `returns` as a real `pyproject.toml` `dependencies` entry (serves the INSTALLED path) +
+> **BARE** imports with no vendor preamble (resolve against each consumer's own `_vendor/`).
+> Authorized standing work — following an established in-repo precedent, not a new decision.
+>
+> ⛔ **PRECONDITION: land or at least file the dependency-CLOSURE gate (`0n2a`) first**, or
+> `returns` inherits the exact hole `typing_extensions` sits in. The only thing that makes
+> `returns` safer today is that all three consumers happen to vendor it — three independent
+> decisions, with nothing preventing the fourth consumer from omitting it.
+>
+> ### 📋 THE QUEUE
+>
+> 1. **`4ihw`** (above) → unblocks `livespec-runtime`'s 27, including the fleet's
+>    highest-yield seam by share (`hygiene_scan_context.py`, 9 of 27).
+> 2. **`55ec`** — 28 sites, RULED. ⚠️ **28 mechanical rewrites is exactly the shape where a
+>    transformation probe must assert its own completeness** — "residual imports of the moved
+>    names: 0" and "universe incremented", asserted rather than eyeballed, or the
+>    twenty-eighth site is the one missed and the re-measure reports an unattributable number.
+> 3. **`p9ot`** — ship the yield probe; first slice an EXTRACTION, never a second copy.
+>
+> ### 📜 THE TEST FOR AN `i04f` CLAIM, ADDED BECAUSE IT WAS INVOKED WRONGLY
+>
+> **`i04f` is ONE analysis copied twice with only one copy repaired. Two resolvers that
+> share a mechanism but answer DIFFERENT QUESTIONS are not `i04f`.** The test is whether
+> they answer the same question, never whether they share code shape — clause (d)'s walk
+> answers *what code runs* (a FINDING, must follow definitions) while `_under_io_tree`
+> answers *what did the maintainer declare* (a PROMISE, must not).
+>
+> ---
+>
+> ## 🗄️ (SUPERSEDED AS THE HEADER 2026-08-03 — `4ihw` is now MEASURED; this block's queue put it after `55ec`. Its FIRST FIVE MINUTES steps 1–8 are CURRENT.) COLD START — **`_under_io_tree` IS RULED: SHIM-LOCATION STAYS.**
 >
 > ### 🔻 FIRST FIVE MINUTES
 >
