@@ -189,6 +189,24 @@ class FleetContext:
     # such a row SKIP naming the roster, and a row that skips for every
     # applicable member is BLIND, which this repo already treats as an error.
     members: tuple[FleetMember, ...] = ()
+    # The LOCAL vantage, and the guardrail that keeps it sound. `local_repo` is
+    # the member this run is executing INSIDE — derived from the origin remote,
+    # never configured — and `local_root` is that checkout's git toplevel. When
+    # both are set, and ONLY for the member whose name matches, the consumption
+    # graph reads that member's tree from disk instead of downloading its
+    # canonical ref.
+    #
+    # ⛔ SELF ONLY. Every SIBLING keeps its forge ref, and that asymmetry is
+    # what makes the row mean anything: the CONSUMPTION half of the verdict
+    # comes from other members' trees, so a PR cannot manufacture "no sibling
+    # consumes this". It can change only what it declares and what it defines,
+    # which is exactly the state that lands on master. Generalize the local read
+    # to siblings and the consumption side becomes forgeable.
+    #
+    # BOTH default to None, which is the fail-closed spelling: a construction
+    # site that does not opt in keeps the forge vantage unchanged.
+    local_repo: str | None = None
+    local_root: Path | None = None
     snapshot_cache: dict[str, SnapshotResult] = field(default_factory=dict)
     consumption_cache: dict[str, FleetConsumption] = field(default_factory=dict)
     tree_cache: dict[str, TreeState] = field(default_factory=dict)

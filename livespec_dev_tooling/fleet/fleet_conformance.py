@@ -103,7 +103,6 @@ no `print`, no `sys.stderr.write`.
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
 import sys
@@ -112,6 +111,7 @@ from typing import cast
 
 from livespec_dev_tooling.fleet._adopter_lane import run_adopter_rows
 from livespec_dev_tooling.fleet._cli_owner import reported_owner
+from livespec_dev_tooling.fleet._cli_parser import build_parser
 from livespec_dev_tooling.fleet._context import (
     FleetContext,
     default_gh_downloader,
@@ -125,6 +125,7 @@ from livespec_dev_tooling.fleet._lanes import (
     configure_lane_logging,
     run_member_rows,
 )
+from livespec_dev_tooling.fleet._local_vantage import local_vantage
 from livespec_dev_tooling.fleet._member_ci_exit import RunTallies, member_ci_exit_code
 from livespec_dev_tooling.fleet._rows_github import SIBLING_TOPIC
 from livespec_dev_tooling.fleet.contract import (
@@ -304,40 +305,6 @@ def run_discovery_sweep(
     return errors
 
 
-def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="fleet-conformance",
-        description=(
-            "Central fleet-membership conformance check (livespec v108 "
-            '§"Fleet membership contract").'
-        ),
-    )
-    _ = parser.add_argument(
-        "--owner",
-        default=None,
-        help="GitHub owner override; defaults to the origin remote's owner.",
-    )
-    _ = parser.add_argument(
-        "--emit-member-verdicts",
-        type=Path,
-        default=None,
-        help="Write per-member conformance verdicts as JSON to this path.",
-    )
-    _ = parser.add_argument(
-        "--member-ci",
-        action="store_true",
-        help=(
-            "Declare this run as a MEMBER's own CI leg: every member is still "
-            "evaluated and reported, but only the running member's violations "
-            "affect the exit status. Omit it for the fleet-level legs (the "
-            "scheduled sweep, the release fan-out preflight), which fail on ANY "
-            "member. Not a severity lever: no obligation is relaxed and no row "
-            "stops being evaluated."
-        ),
-    )
-    return parser
-
-
 def _credential_usable(*, ctx: FleetContext, log: structlog.stdlib.BoundLogger) -> bool:
     """One deliberate credential verdict, reported as a single cause.
 
@@ -400,7 +367,7 @@ def _resolve_root_facts(
 def main() -> int:
     configure_lane_logging()
     log = structlog.get_logger("fleet_conformance")
-    args = _build_parser().parse_args()
+    args = build_parser().parse_args()
     if not os.environ.get(_RUN_ENV_VAR):
         log.info(
             "fleet-conformance skipped (run lever unset)",
@@ -420,9 +387,20 @@ def main() -> int:
     # exit-4 finding excludes the offending member loudly instead of halting
     # propagation. Deriving the context from this existing flag keeps the
     # persisting-gap severity scoped without a lever, env var, or exemption.
+    # Resolved ONCE and reused by the local vantage below and by the member-CI
+    # exit code further down, so the run cannot disagree with itself about which
+    # member it is.
+    running_as = resolve_repo_name()
+    local_repo, local_root = local_vantage(running_as=running_as, log=log)
     ctx = FleetContext(
         owner=owner,
         run_gh=default_gh_runner,
+        # The LOCAL vantage for the self member ONLY. Without it the public-api
+        # row grades this repo from its remote default branch, so a PR is judged
+        # on a tree it has not changed and its own remedy is invisible to the
+        # check demanding it.
+        local_repo=local_repo,
+        local_root=local_root,
         # Injected EXPLICITLY rather than left to the dataclass default, for
         # the same reason `run_gh` is: a FLEET-vantage row reads whole member
         # TREES through this seam, and a dataclass field default binds once at
@@ -461,10 +439,10 @@ def main() -> int:
             manifest=manifest,
             member_verdicts=result.member_verdicts,
             # The CONTAINER, not a pre-collapsed `str | None`: the callee owns
-            # both precondition exits and names WHICH read failed. Resolved here
-            # rather than inside it so the resolution stays patchable at this
-            # module and it stays a pure decision over values.
-            running_as=resolve_repo_name(),
+            # both precondition exits and names WHICH read failed. Resolved once
+            # at the top of this function so the resolution stays patchable at
+            # this module and it stays a pure decision over values.
+            running_as=running_as,
             tallies=RunTallies(
                 errors=errors,
                 blind_rows=blind_rows,
