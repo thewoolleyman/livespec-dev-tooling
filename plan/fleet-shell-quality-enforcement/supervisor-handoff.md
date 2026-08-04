@@ -83,7 +83,70 @@ The richest running record is
 `tmp/overseer/fleet-shell-quality-enforcement/worker-status.log` (~200 lines) and
 the obligation record `.supervisor-state`. Both are on disk, NOT in git.
 
-### THE ONE THING THAT MATTERS FIRST: the repo is MERGE-FROZEN, by my artifact
+### Superseding measurements — 2026-08-04T10:30Z
+
+Taken by the restarted supervisor on a cold open. Where these disagree with the
+10:15Z record below, these win; the older text is kept as evidence, not as
+instruction.
+
+- **THE FREEZE IS LIFTED. The section immediately below is HISTORY, not a task.**
+  Both legs landed while this supervisor was measuring: `livespec-driver-codex`
+  PR 390 (the narrow revert) merged at 10:20:38Z, and `livespec-dev-tooling`
+  PR 1248 merged at 10:25:01Z. Master `2aa4187` carries the declaration and has
+  since advanced past `d4d4030` (`release 1.18.8`), which is itself the proof
+  that merges flow again.
+- **LEG 3 NO LONGER NEEDS DECLARATIONS, and that instruction below is WRONG.**
+  PR 1248 already added BOTH keys — `cross_repo_public_api` gains
+  `shell_quality.py::main`, and `supervisor_entry_files` gains the same path.
+  Verified by reading both hunks, not by trusting the note: the guard was read
+  before declaring (the consumer binds `rc = shell_quality.main()` and asserts
+  the int, so there is no `is None` site for the Result hazard), and the
+  whole-file `no_write_direct` cost is stated rather than hidden. It matches the
+  nine peers exactly. **A second edit to that key would be the duplicate-remedy
+  hazard, not diligence.**
+- **LEG 3 WAS EXECUTED BY THE MONITOR LANE, NOT BY US — DO NOT DUPLICATE IT.**
+  `livespec-driver-codex` commit `52ee48d` on worktree/branch
+  `reland-shell-quality-gate-consumer-test` restores the test byte-identical
+  (sha256 `0952b672643c137c288053f5bbb2d94e555d1a80cb12b24174502a61cf432bc8`,
+  confirmed against `7382f1f`) and carries real `TDD-Suite-Green-*` trailers, so
+  its hooks ran and the full suite passed. It is authored by a DIFFERENT Claude
+  session. At 10:29Z it was still unpushed with no PR. **It is that session's
+  branch; the standing rule against touching another session's worktrees applies.
+  Re-measure it before acting, and coordinate rather than seize.**
+- The ritual question that leg raised, resolved from installed code so nobody
+  re-derives it: a test-only re-land does NOT need a Red. `_red_green_replay_modes.py`
+  carries a SUITE-GREEN leg admitting "a passing test-only cleanup" by running the
+  FULL suite, exit 0 only. And `commit_pairs_source_and_test` is ONE-DIRECTIONAL —
+  it requires tests when SOURCE changes, so a test-only commit passes it trivially.
+- **PR 1249 — this handoff's own PR — was stuck in the documented STALE-CHECK
+  TRAP and this supervisor cleared it.** It sat OPEN with auto-merge armed, 65
+  checks, ZERO pending, failing only `check-fleet-conformance` and `ci-green` —
+  both pure freeze artifacts. With nothing pending, CI would never re-run and
+  auto-merge would never fire, exactly as git-jsonl PR 540 sat until rebased. The
+  remedy is a REBASE onto post-1248 master, which is a real base change rather
+  than a forbidden unchanged rerun. Any other PR parked during the freeze is
+  likely in the same trap — check `pending == 0` before assuming it will land.
+- **The provenance block's pinned `generator_ref` is GONE — detected now, not
+  hard-coded.** It HALTed this cold open, would have HALTed the next one, and the
+  ref churned a THIRD time mid-session (`0.27.1` → `0.27.6` → `0.29.0`, ten
+  minutes apart) with the digest identical at every step. The digest is still the
+  only identity and still HALTs on mismatch, verified with negative controls. See
+  the Generator provenance section; do not re-pin it.
+- Re-measured 10:24Z: `42t4az.1` CLOSED, `.2` backlog, `.3` open P1, `.4` open
+  P2, closeout `qgw7gb` pending-approval, epic `42t4az` backlog. Rollouts —
+  `bd-ib-35qhta` active with run `01KZ6125R9X62VMGXBNYSXGYNV` genuinely RUNNING
+  (confirmed via safe `fabro ps`, and the worker is attached to it),
+  `livespec-runtime-ohlb4f` active with NO live run (its run
+  `01KZ5W1JTRDHQNN50GNG31M4QB` reads succeeded — the stale claim is REAL, not
+  dispatch latency), `livespec-akg7k5` and `overseer-cdhdlv` pending-approval.
+- **Do NOT release `ohlb4f`'s stale claim to `ready` yet.** Releasing it while
+  the runtime route is undecided makes it eligible for another session's
+  `next`-ranked autonomous pickup, straight back into the same deadlock. That is
+  the identical dispatch-interlock reasoning this thread ratified for the P0.
+- Three Fabro runs are live host-wide and one is ours, so a second tenant
+  dispatch stays off the table until `bd-ib-35qhta` clears.
+
+### THE ONE THING THAT MATTERED FIRST, NOW DISCHARGED: the repo was MERGE-FROZEN, by my artifact
 
 `livespec-dev-tooling` is merge-frozen at `a4a6646`. Nothing merges — not
 `42t4az.3`, not `42t4az.4`, not the closeout, not this handoff's own PR, not any
@@ -264,36 +327,77 @@ emitted from the installed Codex plugin root actually read by the generator:
 
 ```sh
 generator_plugin='livespec-overseer'
-generator_ref='0.27.1'
-generator_version='0.27.1'
 generator_prose_md5='eaebe06065b3efa0053d6ea5932d52c0'
 cache_root="$HOME/.codex/plugins/cache/$generator_plugin/$generator_plugin"
-generator_prose="$cache_root/$generator_ref/prose/supervise-plan.md"
+# The ref is DETECTED, never hard-coded — the same rule this charter already
+# applies to the `bd` credential wrapper, and for the same reason. This host
+# republishes the plugin often and its cache keeps only the newest ref: the
+# recorded companion went 0.15.0 -> 0.27.1 -> 0.27.6 -> 0.29.0, twice HALTing a
+# cold-open supervisor, while `prose/supervise-plan.md` digested to the SAME
+# value throughout. A pinned ref therefore fails on the calendar rather than on
+# the artifact, and a check that cries wolf every cold open teaches supervisors
+# to wave it through. The DIGEST remains the sole identity and still HALTs on a
+# real mismatch, so this removes a false positive without weakening the gate.
 if [ ! -d "$cache_root" ]; then
   printf '%s\n' "UNVERIFIED: no plugin cache at $cache_root, so this is not a host that generates charters and provenance cannot be checked here. Recorded generator: $generator_prose_md5"
-elif [ ! -f "$generator_prose" ]; then
-  echo "HALT: the cache at $cache_root no longer holds ref $generator_ref, so the generator that emitted this charter has been replaced"
-  echo "REMEDY: regenerate this charter with supervise-plan, or re-point generator_ref at the installed ref and re-stamp generator_prose_md5 from it"
-  exit 1
 else
-  installed=$(md5sum "$generator_prose")
-  digest_rc=$?
-  [ "$digest_rc" -eq 0 ] \
-    || { echo "HALT: cannot digest the installed generator prose at $generator_prose"; echo "REMEDY: fix read access before trusting anything this charter says about its own currency"; exit 1; }
-  installed_md5=${installed%% *}
-  [ "$installed_md5" = "$generator_prose_md5" ] \
-    || { echo "HALT: this charter was emitted by generator $generator_prose_md5 but the installed generator is $installed_md5"; echo "REMEDY: regenerate this charter before driving, or re-stamp generator_prose_md5 deliberately after reading what changed between the two"; exit 1; }
-  printf '%s\n' "PASS: charter provenance matches the installed generator ($installed_md5)"
+  matched=''
+  found=''
+  for candidate in "$cache_root"/*/prose/supervise-plan.md; do
+    [ -f "$candidate" ] || continue
+    found="$found $candidate"
+    candidate_md5=$(md5sum "$candidate" 2>/dev/null | cut -d' ' -f1)
+    [ -n "$candidate_md5" ] \
+      || { echo "HALT: cannot digest the installed generator prose at $candidate"; echo "REMEDY: fix read access before trusting anything this charter says about its own currency"; exit 1; }
+    if [ "$candidate_md5" = "$generator_prose_md5" ]; then
+      matched="$candidate"
+      break
+    fi
+  done
+  if [ -z "$found" ]; then
+    echo "HALT: the cache at $cache_root holds NO prose/supervise-plan.md at any ref, so the generator that emitted this charter is gone"
+    echo "REMEDY: regenerate this charter with supervise-plan, or reinstall the generator plugin before driving"
+    exit 1
+  fi
+  if [ -z "$matched" ]; then
+    echo "HALT: this charter was emitted by generator $generator_prose_md5 but NO installed ref digests to that value"
+    for candidate in $found; do printf '  installed: %s\n' "$(md5sum "$candidate")"; done
+    echo "REMEDY: regenerate this charter before driving, or re-stamp generator_prose_md5 deliberately after reading what changed between the two"
+    exit 1
+  fi
+  printf '%s\n' "PASS: charter provenance matches the installed generator ($generator_prose_md5) at $matched"
 fi
 ```
 
 A missing cache root means provenance is UNVERIFIED on a non-generating host
-and execution may continue. An existing cache root whose recorded ref has
-disappeared means the generator was replaced and is a HALT.
+and execution may continue. A cache root that holds NO `supervise-plan.md` at
+any ref means the generator is gone and is a HALT. A cache root whose installed
+prose digests to something other than the recorded value means the generator was
+genuinely REPLACED and is a HALT.
 
-Re-stamped 2026-08-04T02:40Z, digest deliberately untouched. The recorded ref
-`0.15.0` had disappeared from the cache and the block HALTed a cold-open
-supervisor. The only installed ref is now `0.27.1`, and its
+**2026-08-04T10:31Z — the pinned `generator_ref` was REMOVED, and this is a
+strengthening rather than a re-stamp.** The pin had to be re-stamped twice in one
+morning, and the third churn happened DURING this session: the installed ref went
+`0.15.0` → `0.27.1` → `0.27.6` → `0.29.0`, the last two roughly ten minutes
+apart, while `prose/supervise-plan.md` digested to
+`eaebe06065b3efa0053d6ea5932d52c0` at every single one. So the pin was failing on
+the calendar, never on the artifact, and each false HALT stopped a cold-open
+supervisor on a charter that was in fact authentic. A gate that cries wolf on
+every cold open does not stay respected; it gets waved through, and then it
+protects nothing on the day it is right.
+
+The ref is therefore DETECTED across whatever refs the cache holds, and the
+DIGEST — which never moved — remains the sole identity. **This does not weaken
+the check, and that was verified with controls rather than asserted:** with the
+recorded digest altered the block still HALTs `rc=1` and prints what it actually
+found; with the cache root emptied of prose it HALTs `rc=1`; with no cache root
+it reports UNVERIFIED `rc=0`; and on this host it PASSes naming the detected ref.
+The mismatch path is the one that matters, and it still fires. Had the digest
+ever differed, the correct action would still have been to regenerate.
+
+Earlier re-stamp, retained as evidence: 2026-08-04T02:40Z, digest deliberately
+untouched. The recorded ref `0.15.0` had disappeared from the cache and the block
+HALTed a cold-open supervisor. The only installed ref was then `0.27.1`, and its
 `prose/supervise-plan.md` digests to `eaebe06065b3efa0053d6ea5932d52c0` — byte
 for byte the recorded `generator_prose_md5`. The generator prose was therefore
 NOT replaced; only the human-readable version companions moved, so the two
