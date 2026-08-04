@@ -533,6 +533,14 @@ class Config:
     supervisor_entry_files: tuple[Path, ...] = ()
     covered_trees: tuple[Path, ...] = ()
     tests_tree_prefix: str = "tests/"
+    # ADDITIONAL self-hosted runner labels whose jobs `self_hosted_routing`
+    # guards, on top of the `local-ci` label that check carries as its own
+    # built-in default. Additive rather than replacing, because that check is a
+    # security guard: declaring a repo's new dedicated label must never be able
+    # to REMOVE coverage of a label it already guarded. Undeclared is the
+    # ordinary case — a repo with no self-hosted capacity declares nothing and
+    # the check stays a no-op there.
+    gating_self_hosted_labels: tuple[str, ...] = ()
     mirror_pairings: tuple[MirrorPairing, ...] = ()
     cross_repo_public_api: tuple[CrossRepoPublicApi, ...] = ()
     total_absence_returns: tuple[TotalAbsenceReturn, ...] = ()
@@ -1096,6 +1104,10 @@ def load_config(*, repo_root: Path) -> Config:
         overrides["tests_tree_prefix"] = _as_str(
             value=table["tests_tree_prefix"], key="tests_tree_prefix"
         )
+    if "gating_self_hosted_labels" in table:
+        overrides["gating_self_hosted_labels"] = _as_str_tuple(
+            value=table["gating_self_hosted_labels"], key="gating_self_hosted_labels"
+        )
     if "mirror_pairings" in table:
         overrides["mirror_pairings"] = _parse_mirror_pairings(value=table["mirror_pairings"])
     if "cross_repo_public_api" in table:
@@ -1123,6 +1135,9 @@ def load_config(*, repo_root: Path) -> Config:
         covered_trees=overrides.get("covered_trees", baseline.covered_trees),
         source_tree_prefixes=overrides.get("source_tree_prefixes", baseline.source_tree_prefixes),
         tests_tree_prefix=overrides.get("tests_tree_prefix", baseline.tests_tree_prefix),
+        gating_self_hosted_labels=overrides.get(
+            "gating_self_hosted_labels", baseline.gating_self_hosted_labels
+        ),
         target_dirs=overrides.get("target_dirs", baseline.target_dirs),
         mirror_pairings=overrides.get("mirror_pairings", baseline.mirror_pairings),
         cross_repo_public_api=overrides.get(
