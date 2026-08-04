@@ -42,7 +42,7 @@ _LOCKSTEP_BASE_DOCKERFILE = (
     "ARG JUST_VERSION=1.36.0\n"
     "ARG LEFTHOOK_VERSION=1.13.6\n"
     "ARG NODE_VERSION=26.3.0\n"
-    "ARG GH_VERSION=2.96.0\n"
+    "ARG GH_VERSION=2.97.0\n"
     "RUN mkdir -p -m 755 /etc/apt/keyrings \\\n"
     "    && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \\\n"
     "        -o /etc/apt/keyrings/githubcli-archive-keyring.gpg \\\n"
@@ -272,7 +272,7 @@ def test_rejects_python_version_mismatch(*, tmp_path: Path) -> None:
 def test_rejects_unsupported_gh_version(*, tmp_path: Path) -> None:
     """An image-baked GitHub CLI version drifting from the supported pin fails."""
     base_with_old_gh = _LOCKSTEP_BASE_DOCKERFILE.replace(
-        "ARG GH_VERSION=2.96.0",
+        "ARG GH_VERSION=2.97.0",
         "ARG GH_VERSION=2.46.0",
     )
     _write_fixture(
@@ -289,7 +289,7 @@ def test_rejects_unsupported_gh_version(*, tmp_path: Path) -> None:
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
     combined = result.stdout + result.stderr
-    assert "GH_VERSION" in combined and "2.46.0" in combined and "2.96.0" in combined, (
+    assert "GH_VERSION" in combined and "2.46.0" in combined and "2.97.0" in combined, (
         f"diagnostic should carry the gh ARG name plus both versions; "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )

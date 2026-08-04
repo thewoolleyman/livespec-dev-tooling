@@ -66,7 +66,7 @@ ARG MISE_VERSION=v2026.2.7
 ARG JUST_VERSION=1.36.0
 ARG LEFTHOOK_VERSION=1.13.6
 ARG NODE_VERSION=26.3.0
-ARG GH_VERSION=2.96.0
+ARG GH_VERSION=2.97.0
 
 # libatomic1 — node's binary dynamically links libatomic.so.1. Full
 # buildpack-deps shipped it as a side effect of its gcc stack; `-scm`
