@@ -83,61 +83,73 @@ generator:
 
 ```sh
 generator_plugin='livespec-overseer'
-generator_ref='2a97b88744bd'
-generator_version='0.27.0'
 generator_prose_md5='eaebe06065b3efa0053d6ea5932d52c0'
 cache_root="$HOME/.claude/plugins/cache/$generator_plugin/$generator_plugin"
-generator_prose="$cache_root/$generator_ref/prose/supervise-plan.md"
 if [ ! -d "$cache_root" ]; then
   printf '%s\n' "UNVERIFIED: no plugin cache at $cache_root, so this is not a host that generates charters and provenance cannot be checked here. Recorded generator: $generator_prose_md5"
-elif [ ! -f "$generator_prose" ]; then
-  echo "HALT: the cache at $cache_root no longer holds ref $generator_ref, so the generator that emitted this charter has been replaced"
-  echo "REMEDY: regenerate this charter with supervise-plan, or re-point generator_ref at the installed ref and re-stamp generator_prose_md5 from it"
-  exit 1
 else
-  installed=$(md5sum "$generator_prose")
-  digest_rc=$?
-  [ "$digest_rc" -eq 0 ] \
-    || { echo "HALT: cannot digest the installed generator prose at $generator_prose"; echo "REMEDY: fix read access before trusting anything this charter says about its own currency"; exit 1; }
-  installed_md5=${installed%% *}
-  [ "$installed_md5" = "$generator_prose_md5" ] \
-    || { echo "HALT: this charter was emitted by generator $generator_prose_md5 but the installed generator is $installed_md5"; echo "REMEDY: regenerate this charter before driving, or re-stamp generator_prose_md5 deliberately after reading what changed between the two"; exit 1; }
-  printf '%s\n' "PASS: charter provenance matches the installed generator ($installed_md5)"
+  # The ref is DETECTED, never pinned. Any installed ref whose prose digests to
+  # the recorded value proves this charter's generator is still installed; which
+  # directory holds it is not the identity and must not be able to fail the check.
+  match=''
+  for candidate in "$cache_root"/*/prose/supervise-plan.md; do
+    [ -f "$candidate" ] || continue
+    installed=$(md5sum "$candidate")
+    digest_rc=$?
+    [ "$digest_rc" -eq 0 ] \
+      || { echo "HALT: cannot digest an installed generator prose at $candidate"; echo "REMEDY: fix read access before trusting anything this charter says about its own currency"; exit 1; }
+    installed_md5=${installed%% *}
+    if [ "$installed_md5" = "$generator_prose_md5" ]; then match="$candidate"; break; fi
+  done
+  if [ -z "$match" ]; then
+    echo "HALT: no installed ref under $cache_root carries generator prose digesting to $generator_prose_md5, so the generator that emitted this charter is GONE"
+    echo "REMEDY: regenerate this charter with supervise-plan, or re-stamp generator_prose_md5 deliberately after reading what changed between the two"
+    exit 1
+  fi
+  printf '%s\n' "PASS: charter provenance matches an installed generator ($generator_prose_md5) at $match"
 fi
 ```
 
 A missing cache root means provenance is UNVERIFIED on a non-generating host
-and execution may continue. An existing cache root whose recorded ref has
-disappeared means the generator was replaced and is a HALT.
+and execution may continue. A cache root that holds NO ref digesting to the
+recorded value means the generator was replaced, and that is the HALT.
 
-⚠️ **Recorded at generation time: the ref is NOT the identity, and this host
-proves why — at a scale that is worth stating exactly.** Measured 2026-08-04
-against `~/.claude/plugins/cache/livespec-overseer/livespec-overseer/`:
-**37 installed refs carry a `prose/supervise-plan.md`, and 26 of them —
-spanning 23 distinct plugin versions from `0.16.0` through `0.27.5` — digest
-identically to `eaebe06065b3efa0053d6ea5932d52c0`.** Twenty-six refs and
-twenty-three versions report twenty-six generators where the prose says there
-is **one**.
+⛔ **THE REF USED TO BE PINNED HERE, AND THE PIN WAS THE DEFECT.** Adopted from
+the `fleet-shell-quality-enforcement` supervisor's verified fix (`96227b5`),
+which measured its own pinned ref churning `0.27.1` → `0.27.6` → `0.29.0` in
+**ten minutes** while `prose/supervise-plan.md` digested identically at every
+step. **The pin failed on the calendar and never on the artifact.** A charter
+whose whole purpose is to be readable cold cannot carry a check that HALTs
+because a cache directory was garbage-collected.
 
-✅ **And the digest is not a constant, which is the positive control this claim
-needs.** The other eleven refs carry three DIFFERENT digests:
+Measured on this host at 11:50Z: **42 installed refs carry the prose and 31 of
+them digest identically** — up from 26 of 37 four hours earlier, five new refs
+in one morning, every one byte-identical. The pinned ref survived only by luck.
+
+✅ **The digest is not a constant, which is the positive control the claim above
+needs.** Eleven of those refs carry three DIFFERENT digests:
 `2283862cf32b60b2e82c02164c9b3b83` (nine refs, `0.12.2`–`0.13.3`),
 `30b59fcf0ea5f3cf78402129826b1ffa` (`0.14.0`), and
 `9ca18d56772dcf8fcdc2cf78ed8108a8` (`0.15.0`). The identity therefore
-DISCRIMINATES — it moved three times when the prose actually changed, and held
-across twenty-six refs when it did not. A digest that could only ever report
-one value would be the same defect as a check that cannot fail.
+DISCRIMINATES — it moved three times when the prose actually changed, and has
+held across every ref since. A digest that could only ever report one value
+would be the same defect as a check that cannot fail.
 
-⛔ **`generator_ref` here is a companion that does NOT name the root this
-session read, and that discrepancy is recorded rather than hidden.** The Claude
-Code session that emitted this charter resolved its skill base directory to
-`070ec63059c0` (`0.25.0`) and read the prose from there; the stamp was
-afterwards re-pointed at `2a97b88744bd` (`0.27.0`). Both roots hold
-byte-identical prose, so the digest — the actual identity — is unaffected and
-the block still verifies what it claims to verify. See Corrections C1. If a
-future cold open HALTs because `2a97b88744bd` has been evicted, the documented
-re-stamp path applies: re-point `generator_ref` at an installed ref, and
-re-stamp `generator_prose_md5` from it only after reading what changed.
+⚠️ **DO NOT RE-STAMP THE COUNTS ABOVE AS THEY DRIFT.** They were `26 of 37` at
+07:20Z and `31 of 42` at 11:50Z on the same host, same morning. **The counts are
+evidence for a claim, not state to maintain** — the durable facts are the RATIO
+(one digest across the overwhelming majority) and the DISCRIMINATION (three
+other digests exist). A successor who "corrects" these numbers every session has
+turned a recorded measurement into a chore, which is how this charter grew a
+pinned ref in the first place.
+
+📜 **THE ORIGINAL DEFECT, kept because the reasoning still teaches.** This block
+once pinned `generator_ref='070ec63059c0'`, then was re-pointed to
+`2a97b88744bd` while the emitting session had actually read `070ec63059c0` — and
+the prose was edited to assert it had read `2a97b88744bd`, which was false. See
+Corrections C1. **Detecting the ref dissolves that whole class**: there is no
+longer a companion field that can disagree with reality, be re-stamped to agree
+with itself, or evict out from under a cold reader.
 
 ## Thread-specific Valves
 
