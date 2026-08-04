@@ -124,19 +124,44 @@ _BLIND_SPOT = (
 )
 
 
+def _local_root_for(*, ctx: FleetContext, repo: str) -> Path | None:
+    """`repo`'s LOCAL checkout root, or None when `repo` is not the self member.
+
+    THE GUARDRAIL, in one place and by exact name equality. The local vantage
+    applies to the member this run is executing inside and to NOTHING else.
+
+    The asymmetry is what keeps the row meaningful rather than merely passable.
+    A verdict here is a JOIN of two independently-sourced halves: the
+    CONSUMPTION edges come from other members' trees, and only the DECLARATION
+    and the member's own sources come from this one. Reading the self member
+    locally lets a PR be graded on what it actually changed; reading a SIBLING
+    locally would let it decide who consumes it, which is the one thing it must
+    never get to say.
+    """
+    if ctx.local_root is None or repo != ctx.local_repo:
+        return None
+    return ctx.local_root
+
+
 def _build(*, ctx: FleetContext) -> FleetConsumption:
-    """Read every roster member's tree and compute the fleet consumption graph."""
+    """Read every roster member's tree and compute the fleet consumption graph.
+
+    The self member is read from disk when a local vantage is bound; every
+    sibling is downloaded at its canonical ref. See `_local_root_for`.
+    """
     sources: dict[str, MemberSources] = {}
     configs: dict[str, Config] = {}
     unavailable: dict[str, str] = {}
     for member in ctx.members:
-        snapshot = ctx.member_tree_snapshot(repo=member.repo)
-        if isinstance(snapshot, IOFailure):
-            unavailable[member.repo] = (
-                f"tree unreadable ({unsafe_perform_io(snapshot.failure()).kind})"
-            )
-            continue
-        root = unsafe_perform_io(snapshot.unwrap()).root
+        root = _local_root_for(ctx=ctx, repo=member.repo)
+        if root is None:
+            snapshot = ctx.member_tree_snapshot(repo=member.repo)
+            if isinstance(snapshot, IOFailure):
+                unavailable[member.repo] = (
+                    f"tree unreadable ({unsafe_perform_io(snapshot.failure()).kind})"
+                )
+                continue
+            root = unsafe_perform_io(snapshot.unwrap()).root
         try:
             config = load_config(repo_root=root)
         except ConfigParseError as invalid:

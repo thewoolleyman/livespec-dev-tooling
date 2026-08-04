@@ -13,6 +13,7 @@ from __future__ import annotations
 import io
 import json
 import tarfile
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -368,3 +369,135 @@ def test_a_member_whose_source_is_not_utf8_skips_naming_the_file() -> None:
     assert isinstance(outcome, RowSkip)
     assert "sources unreadable" in outcome.reason
     assert "contract.py" in outcome.reason
+
+
+_DECLARATION = (
+    "[tool.livespec_dev_tooling]\n"
+    'cross_repo_public_api = [{ file = "pkg/contract.py", function = "parse_manifest", '
+    'reason = "consumed by app" }]\n'
+)
+_DECLARATION_REMOVED = "[tool.livespec_dev_tooling]\n"
+
+
+def _checkout(*, root: Path, files: dict[str, str]) -> Path:
+    """Materialize a real on-disk checkout, the shape a local vantage reads."""
+    for name, text in files.items():
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        _ = path.write_text(text, encoding="utf-8")
+    return root
+
+
+def _local_outcome(
+    *,
+    trees: dict[str, dict[str, str | bytes]],
+    repo: str,
+    local_repo: str,
+    local_root: Path,
+) -> RowPass | RowFinding | RowSkip:
+    """Run the row with a local vantage bound to `local_repo` only."""
+    ctx = replace(make_context(trees=trees), local_repo=local_repo, local_root=local_root)
+    return assert_cross_repo_public_api_declared(
+        ctx=ctx, member=FleetMember(repo=repo, repo_class="library")
+    )
+
+
+def test_the_self_member_is_read_from_the_local_checkout_not_the_forge(*, tmp_path: Path) -> None:
+    """A PR that REMOVES a still-needed declaration must be convicted.
+
+    This is the case the forge vantage cannot see and the whole reason the row
+    moves. The forge tarball CARRIES the declaration; the local checkout has had
+    it removed, which is exactly what a PR deleting the entry looks like. Read
+    from the forge the row passes, because it is grading a tree the PR has not
+    changed. Read from the local checkout it convicts.
+
+    So this is STRICTLY STRICTER, not a loosening dressed as a fix: it catches a
+    removal the previous vantage let through.
+
+    ⛔ IT IS ALSO THE SELF-ONLY GUARDRAIL, which is why it is one test and not
+    two. The consumption edge comes from `app`, and `app` exists ONLY in the
+    forge trees — there is no local copy of it. An implementation that read the
+    local root for EVERY member would find no consumer at all, no edge, and pass.
+    Convicting here is only possible when the self member is local and the
+    sibling is not.
+    """
+    local = _checkout(
+        root=tmp_path,
+        files={"pkg/contract.py": _LIBRARY_SOURCE, "pyproject.toml": _DECLARATION_REMOVED},
+    )
+
+    outcome = _local_outcome(
+        trees={
+            "lib": {"pkg/contract.py": _LIBRARY_SOURCE, "pyproject.toml": _DECLARATION},
+            "app": {"app/use.py": _CONSUMER_SOURCE},
+        },
+        repo="lib",
+        local_repo="lib",
+        local_root=local,
+    )
+
+    assert isinstance(outcome, RowFinding), (
+        f"the self member must be graded from its LOCAL checkout, where the "
+        f"declaration was removed; got {outcome!r}"
+    )
+    assert "pkg/contract.py::parse_manifest <- app:app/use.py" in outcome.message
+
+
+def test_the_local_self_member_passes_when_its_own_tree_conforms(*, tmp_path: Path) -> None:
+    """The other direction: the local checkout is authoritative when it CONFORMS.
+
+    Here the forge tarball is the one missing the declaration and the local
+    checkout carries it — a PR that ADDS the entry. A row that convicted here
+    would be reading the forge and would make the deadlock permanent, since the
+    remedy could never be seen by the check demanding it.
+    """
+    local = _checkout(
+        root=tmp_path,
+        files={"pkg/contract.py": _LIBRARY_SOURCE, "pyproject.toml": _DECLARATION},
+    )
+
+    outcome = _local_outcome(
+        trees={
+            "lib": {"pkg/contract.py": _LIBRARY_SOURCE, "pyproject.toml": _DECLARATION_REMOVED},
+            "app": {"app/use.py": _CONSUMER_SOURCE},
+        },
+        repo="lib",
+        local_repo="lib",
+        local_root=local,
+    )
+
+    assert isinstance(
+        outcome, RowPass
+    ), f"the local checkout conforms, so the row must pass on it; got {outcome!r}"
+
+
+def test_a_sibling_is_never_read_from_the_local_checkout(*, tmp_path: Path) -> None:
+    """ONLY the self member reads locally; every sibling keeps its forge ref.
+
+    The local vantage is bound to `app`, and the row is evaluated for `lib`.
+    `lib` is a SIBLING of the running repo here, so it must still be read from
+    the forge — where it defines `parse_manifest` and declares nothing.
+
+    If a sibling were read locally, `lib` would be graded against `app`'s
+    checkout, which contains no `pkg/contract.py` at all: no defining file, no
+    edge, and a vacuous pass. Generalizing the local read is what makes the
+    consumption side forgeable, and this is the test that fails when someone
+    does.
+    """
+    local = _checkout(root=tmp_path, files={"app/use.py": _CONSUMER_SOURCE})
+
+    outcome = _local_outcome(
+        trees={
+            "lib": {"pkg/contract.py": _LIBRARY_SOURCE},
+            "app": {"app/use.py": _CONSUMER_SOURCE},
+        },
+        repo="lib",
+        local_repo="app",
+        local_root=local,
+    )
+
+    assert isinstance(outcome, RowFinding), (
+        f"a sibling must still be read from the forge, where it defines the "
+        f"consumed function; got {outcome!r}"
+    )
+    assert "pkg/contract.py::parse_manifest <- app:app/use.py" in outcome.message
