@@ -1,6 +1,437 @@
 # rop-railway-enforcement — arm the check that was never armed, then remediate six repos
 
-> ## 🔻🔻 COLD START — **START HERE. ✅ NOTHING OF MINE IS MID-FLIGHT. ▶️ YOUR NEXT UNIT IS `git-jsonl`'s `backfill_file` (the lane is OPEN). ⚠️ First read the `check-fleet-conformance` box: two fixes landed, it is NOT declared fixed, and it is the thing most likely to interrupt you.**
+> ## 🔻🔻 COLD START — **START HERE. ✅ NOTHING OF MINE IS MID-FLIGHT. ▶️ YOUR NEXT UNIT IS `git-jsonl`'s `discover_merge_sha` — ⚠️ READ-FIRST, it may be a legitimate absence (the lane is OPEN, **8 → 7 → 6**). ⚠️ First read the `check-fleet-conformance` box: the post-#1224 evidence CHANGED, the REMEDY CLASS changed with it, and I REPRODUCED THE FAILURE WITH MY OWN DOCS PR.**
+>
+> ### 🔴🔴🔴 I REPRODUCED IT MYSELF, WITH A DOCS-ONLY PR — **AND THAT IS THE FINDING**
+>
+> ⛔ **I claimed, when opening PR #1233, that "its budget gate will wait rather than
+> burn." THAT WAS WRONG, and the maintainer caught it.** The gate is a **BUDGET** gate,
+> not an **INTER-RUN MUTEX**. It waits only when the pool is ALREADY low; it does
+> nothing whatever about a concurrent consumer. **So opening any dev-tooling PR while a
+> fleet sweep is in flight recreates the contention regardless of the gate.** My
+> docs-only handoff PR did exactly that, within 15 minutes of my writing the
+> disposition that predicted it.
+>
+> **TWO INSTANCES NOW, AND THE SIGNATURE REPLICATES ALMOST EXACTLY:**
+>
+> | | **#1232** job `91867922191` | **#1233** job `91870373267` (mine, DOCS-ONLY) |
+> |---|---|---|
+> | gate passed | `01:38:48Z` | `01:54:44Z` (took **2s** — pool healthy) |
+> | sweep started | `01:38:52Z` | `01:54:52Z` |
+> | 1st refusal `repo_metadata` | `01:39:56Z` (**+68s**) | `01:55:56Z` (**+72s**) |
+> | 2nd refusal `contents` | `01:41:24Z` (**+88s**) | `01:57:25Z` (**+89s**) |
+>
+> 🔑 **~70s from gate-pass to first refusal; ~88s between the two refusals. Twice.**
+> This is no longer an inference — it is a REPRODUCED measurement with a stable
+> signature. ⛔ **And the 2-second gate on #1233 proves the pool was healthy at
+> `01:54:44Z` and gone by `01:55:56Z` — ≥500 core spent in 72 seconds by something
+> that was NOT this job, which had made no fleet calls yet.**
+>
+> ### ⏱️ THE CONTENTION WINDOW IS ~27 MINUTES, NOT SECONDS — **THE NUMBER THAT SIZES THE REMEDY**
+>
+> PR **#1230**'s `check-fleet-conformance` ran **`27m32s` and PASSED.** Mine started
+> inside that window and died in `2m50s`. ▶️ **One fleet sweep occupies the
+> installation for roughly HALF AN HOUR.** So the serialization constraint is not a
+> few seconds of jitter — **a second dev-tooling PR opened inside a ~27-minute window
+> loses.** ✅ Once #1230 finished, the installation was free again.
+>
+> ### 🔴 AND `check-fleet-conformance` HAS NO PATH FILTER — **A DOCS PR PAYS A FULL FLEET SWEEP**
+>
+> Measured from `.github/workflows/ci.yml` by parsing the job blocks:
+>
+>     setup                    if=NONE  needs=NONE
+>     check-python             if=NONE  needs=[setup]      <- consults py_changed in its STEPS
+>     check-fleet-conformance  if=NONE  needs=NONE         <- CANNOT consult it at all
+>     check-metadata           if=NONE  needs=NONE
+>     ci-green                 if=always()  needs=[check-python, check-fleet-conformance, check-metadata]
+>
+> ⛔ **`check-fleet-conformance` neither carries an `if:` nor `needs: setup`, so it
+> cannot read `setup.outputs.py_changed` even in principle.** `check-python` DOES
+> `needs: setup` and gates its steps on `py_changed`. ▶️ **That asymmetry is why a
+> `plan/**.md`-only PR — mine — started a full fleet sweep and contended.**
+> ⚠️ **NOT a one-liner:** `ci-green` `needs:` it, so skipping must not fail the
+> aggregate. Recorded, NOT implemented; the owner chain is `mmqe`/rop.
+>
+> ### 🔴🔴 `check-fleet-conformance` — **#1224 IS PROVEN INSUFFICIENT, AND THE NEW FAILURE IS A DIFFERENT CLASS**
+>
+> ⛔ **DO NOT read this as "#1224 regressed."** It did the thing it targeted. What
+> changed is that a SECOND, DISJOINT cause is now MEASURED, and no amount of the
+> thing #1224 does can pay it.
+>
+> **THE ARTIFACT** — dev-tooling PR **#1232** (`fix/jtrjzk-release-tag-tool-pin-v3`),
+> run `30869349064`, job `91867922191`. Read from the JOB LOG, not from the report:
+>
+> | operation | kind | at |
+> |---|---|---|
+> | `repo_metadata` | `rate_limited` HTTP 403 | **01:39:56Z** |
+> | `contents` — the PacedGhRunner retry | `rate_limited` HTTP 403 | **01:41:24Z** |
+>
+> 🔑 **88 SECONDS APART — LONGER THAN #1224's 62s CROSS-CALL SCHEDULE.** The pacing
+> RAN, outlasted its own cooldown, and the refusal still stood. ⛔ **So the premise
+> #1218 and #1224 SHARE — that a wait of the right length clears the condition — is
+> FALSIFIED for this failure. Lengthening the schedule is not the fix; no length is.**
+>
+> **WHY**, and it is in the 403 body itself: *"API rate limit exceeded for
+> installation ID 131208965."* That is the installation's **PRIMARY HOURLY POOL,
+> exhausted** — not the secondary/burst limiter #1218 and #1224 were built against.
+> Burst throttling is paid with spacing; pool exhaustion is paid ONLY by consuming
+> less or by waiting out the hour. 📜 **Opposite remedies, identical 403 — this is
+> exactly `mmqe`'s defect, now with a MEASURED instance instead of a hypothetical.**
+>
+> ⚠️ **AND THE RUN'S OWN PREFLIGHT SAW A HEALTHY POOL 71 SECONDS EARLIER.** The job
+> log shows the gate ran with `min-core-remaining: 500` at **01:38:45Z** and let the
+> job proceed; the pool was gone by 01:39:56Z. **A pool cannot fall from ≥500 to 0 in
+> 71s on one run's own traffic.** ▶️ **That makes this CROSS-RUN CONTENTION:** PR
+> **#1230**'s `fleet-conformance` was concurrently in progress on the SAME
+> installation.
+>
+> ### 🔑🔑 THE MECHANISM, AND IT IS A SEQUENCING GAP IN A GATE THAT ALREADY EXISTS
+>
+> ⛔ **DO NOT propose building a rate-budget preflight. ONE IS ALREADY BUILT AND
+> WIRED** — `.github/actions/github-rate-budget-token` (the P0; authority is
+> `contracts.md` §"Composite Actions wire contract"). It mints a probe token, polls
+> `GET /rate_limit` until `core ≥ min-core-remaining` and `graphql ≥ 1`, then mints
+> and validates the final scoped token. `check-fleet-conformance` calls it with
+> `min-core-remaining: "500"`, `max-wait-seconds: 3900`. **It works. It is not the
+> defect.**
+>
+> ▶️ **THE DEFECT IS WHERE IT SITS IN THE STEP LIST.** Timeline from job
+> `91867922191`, read from the log:
+>
+> | at | what |
+> |---|---|
+> | `01:38:45Z` | budget gate runs, `min-core-remaining: 500` |
+> | `01:38:48Z` | gate PASSES, final token minted — **the pool was healthy here** |
+> | `01:38:52Z` | `uv sync` begins (`Creating virtual environment at: .venv`) |
+> | `01:39:56Z` | **first fleet API call — `repo_metadata` REFUSED, 403** |
+>
+> 🔑 **68 SECONDS OF DEPENDENCY INSTALL SEPARATE THE GATE FROM THE WORK IT GATES,
+> AND THE GATE HOLDS NO RESERVATION.** A budget probe is a POINT-IN-TIME reading;
+> nothing reserves the 500 it just observed. Any concurrent consumer on the same
+> installation can spend it during `uv sync`, and the job then walks into a pool the
+> gate certified as healthy a minute earlier. **That is why the run had a working
+> preflight AND still died of exhaustion — the two facts only look contradictory
+> until the ordering is read.**
+>
+> ▶️ **THE REMEDY THIS POINTS AT IS SMALL AND IS NOT A NEW MECHANISM:** re-probe (or
+> move the gate) so it sits IMMEDIATELY BEFORE `just check-fleet-conformance`, after
+> `uv sync`, rather than before it. ⛔ **NOT IMPLEMENTED HERE — recorded only.** The
+> owner chain is `mmqe`/rop; this is an assessment, and the maintainer asked for the
+> disposition rather than the fix. **Do not open this as a fresh work item — it is
+> evidence attached to the existing owner.**
+>
+> ⚠️ **ONE CONTRIBUTOR IS SUSPECTED AND NOT ESTABLISHED — do not record it as fact.**
+> The shell-quality worker pane was running `gh pr checks 1230 --watch --interval 10`
+> through the App credential wrapper (~6 calls/min, sustained). Whether that spends
+> the INSTALLATION pool or the maintainer's USER pool depends on whether
+> `with-livespec-env.sh` projects an installation token into `GH_TOKEN`.
+> ▶️ **One command settles it:** `with-livespec-env.sh -- gh api rate_limit --jq
+> .resources.core` against the BARE `gh api rate_limit`. **Two different `remaining`
+> figures ⇒ the wrapper is on the installation pool and every wrapped `--watch` is
+> spending it.** ✅ Measured this session: a BARE `gh api rate_limit` read
+> `remaining: 4995/5000`, so the maintainer's own token was nowhere near exhausted —
+> **the exhaustion is on the APP INSTALLATION, a different credential.** That is why
+> local `gh` work kept working while CI died.
+>
+> ### ⚖️ THE DISPOSITION, EXACTLY
+>
+> 1. ⛔ **This run is NOT counted against #1224's acceptance bar** — different cause.
+>    ▶️ **The bar must now be computed over a PARTITIONED failure set** (burst-throttled
+>    vs pool-exhausted), because pooling the two makes the rate meaningless in BOTH
+>    directions: burst fixes look worse than they are, and pool exhaustion looks like
+>    a pacing regression.
+> 2. ⛔ **DO NOT RERUN `30869349064` UNCHANGED.** A rerun against an exhausted
+>    installation fails BY CONSTRUCTION and deepens the exhaustion for every other
+>    member. The retries already burned proving intermittency were spent on the OTHER
+>    cause; none of that budget transfers here.
+> 3. ✅ **PR #1232 IS NOT IMPLICATED.** Every other completed check on that run was
+>    green; the tag-matched ShellCheck pin has nothing to do with this.
+> 4. 📌 **`mmqe` STAYS OPEN AND ITS SCOPE IS SHARPENED, NOT WIDENED.** Recording
+>    `core.remaining` at failure time is no longer a diagnosis convenience — **it is
+>    the field that decides WHICH remedy applies, so it now gates the acceptance-rate
+>    computation itself.** `remaining≈0` ⇒ pool exhaustion (this run);
+>    `remaining≈5000` ⇒ burst (what #1218/#1224 addressed). ⚠️ The emitted `kind` is
+>    `rate_limited` for BOTH spellings, so the structured record still collapses them
+>    even though the 403 PROSE distinguishes them — the reporting half is untouched.
+> 5. 🚫 **NO COMPATIBILITY OR RELEASE ACTION falls out of this** — no dev-tooling
+>    release, no pin bump. ✅ Signalled to `=fleet-shell-quality-enforcement:` on
+>    2026-08-04 (tmux session target; HALT-first preconditions verified live first).
+> 6. ⛔ **`ci-concurrency-group` DOES NOT COVER THIS** and must not be mistaken for
+>    the remedy. It auto-cancels SUPERSEDED SAME-BRANCH runs; #1230 and #1232 are
+>    DIFFERENT PRs, so nothing supersedes anything and both legitimately want the
+>    installation at once. **The missing control is cross-RUN, not cross-push.**
+>
+> ### 🔁 `check-fleet-conformance` — THE TWO REQUEST-SIDE FIXES, unchanged in status
+>
+> | PR | what it added | verdict |
+> |---|---|---|
+> | **#1218** `ab728409` | bounded per-call retry (5 attempts, 14s) | ⛔ **insufficient** — called fixed on ONE green run, and that was wrong |
+> | **#1224** | `PacedGhRunner`: 62s schedule + cooldown carried ACROSS calls | ⚠️ correct for BURST; **does not touch pool exhaustion** |
+>
+> ⛔ **DO NOT DECLARE THIS FIXED ON A GREEN RUN.** That is the exact error #1218
+> taught: **one green run is not proof of a fix for an INTERMITTENT failure.** ⚠️ The
+> visible history also FLATTERS it — master run `30863453159` (`d1e994ca`) was re-run
+> to clear a `check-master-ci-green` block, so a run that genuinely failed post-#1218
+> now lists as success. **`gh run list` will overstate health; read `mmqe` before
+> computing any rate.**
+>
+> 🔬 **WHY #1218 WAS INSUFFICIENT, since it is the reusable part:** its retry was
+> PER CALL; the limiter's subject is the SEQUENCE. Measured — `repo_metadata` refused
+> at 23:58:23Z, `contents` still refused at **23:58:39Z**, a different operation 16s
+> later. So once any row is throttled every later row starts throttled and burns its
+> own budget rediscovering it. **That made a throttled run slower without making it
+> greener** — a regression the fix introduced while helping. No per-call schedule
+> length fixes it; only state that outlives the call. **And now: no schedule at all
+> fixes the pool-exhaustion half.**
+>
+> ### 📐 THE REPO REFUSED MY FIRST SHAPE, AND WAS RIGHT
+>
+> I first held the cooldown in module state. **`check-global-writes` rejected it:**
+> *"state flows down via parameters, up via return values, never through scoped
+> mutation."* ⚠️ **A module-level mutable CONTAINER would have passed the checker while
+> breaking the rule it enforces — I did not take that route.** `GhRunner` is a Protocol
+> over `__call__`, so an INSTANCE satisfies it, all four `FleetContext(run_gh=...)`
+> sites are unchanged, and the tests became order-independent BY CONSTRUCTION instead
+> of by a reset hook. 📜 **The ratified rule produced a better design than the one I
+> brought to it — and I had to re-author the Red, because my first Red encoded the
+> forbidden shape.**
+>
+> ### 📜 A RITUAL RULE I GOT WRONG — **READ THIS BEFORE YOUR NEXT RED**
+>
+> ⛔ **The stub technique applies ONLY to a genuinely NEW module.** For an EXISTING
+> implementation file the rule is absolute: **it must be UNMODIFIED on disk at Red.** I
+> modified `_gh_runner.py` on disk as an "unstaged stub" and had to be corrected.
+> ▶️ **The fix is to shape the TEST so it fails without touching the impl** — here, by
+> patching the `time.sleep` seam rather than passing an injected `sleep=` parameter. That
+> also turned out to be the better design: `default_gh_runner` implements the `GhRunner`
+> Protocol, and widening its signature would have widened the Protocol every consumer is
+> typed against. **The ritual constraint improved the design rather than fighting it.**
+>
+> ✅ **A SECOND SPELLING OF THE SAME LESSON, PAID FOR ON `backfill_file` 2026-08-04 —
+> and it is CHEAPER than the sleep-seam one.** The impl existed, so no stub was
+> allowed. ▶️ **Shape the Red as `assert isinstance(result, IOSuccess)` on the HAPPY
+> PATH.** An unconverted function returns its bare value, so that is a GENUINE
+> ASSERTION FAILURE with the impl untouched — not an `ImportError`, not an escaping
+> exception. 📜 **Every railway conversion has this Red available for free. Use it:
+> it proves the railway is absent rather than proving the module is unimportable.**
+>
+> ### ⚖️⚖️ SUPERVISOR BRIEF 21 — **VERIFIED 1–5, BOTH INFERENCES SURVIVED, BOTH FILED**
+>
+> The brief's headline — *"the check scans ZERO files in all nine repos today"* —
+> **is TRUE, and it is the `8o8e` epic's own stated premise, still undischarged.**
+> Re-measured independently 2026-08-04; **do not take these from this file.**
+>
+> | repo | exit | lines | `role_key_spelling` | level |
+> |---|---|---|---|---|
+> | `livespec-dev-tooling` | 0 | 1 | `not_applicable` | info |
+> | `livespec-runtime` | 0 | 1 | `not_applicable` | info |
+> | `livespec-driver-claude` | 0 | 1 | `not_applicable` | info |
+> | `livespec-driver-codex` | 0 | 1 | `not_applicable` | info |
+> | `livespec` | 0 | 1 | `unarmed_until` `livespec-mutreal.1` | **warning** |
+> | `livespec-overseer` | 0 | 1 | `unarmed_until` `livespec-mutreal.1` | **warning** |
+> | `git-jsonl` | 0 | 1 | `unarmed_until` `livespec-mutreal.1` | **warning** |
+> | `beads-fabro` | 0 | 1 | `unarmed_until` `bd-ib-6qb2mc` | **warning** |
+> | `livespec-console-beads-fabro` | **1** | 1 | **UNDECLARED** | **error** |
+>
+> ✅ **ONE CORRECTION TO THE BRIEF, and it is the only one.** Item 3 recorded
+> `livespec-console-beads-fabro` as *"zero Python and the sole sanctioned exemption."*
+> **It is NEITHER.** It carries one tracked `.py` (`dev-tooling/coverage-gate.py`), it
+> declares NO `pure_trees` at all, and the check **EXITS 1** at level `error` demanding
+> a declaration. Everything else in items 1–5 reproduced exactly, including
+> `livespec-mutreal.1` = P2 backlog (2026-07-19) under epic `livespec-mutreal` (P2,
+> 2026-07-01, *mutation testing* — unrelated to ROP), and `bd-ib-6qb2mc` = P2 blocked,
+> human-gated, and itself the identical defect one role key over.
+>
+> **INFERENCE A SURVIVED — AND IS STRONGER THAN THE BRIEF PUT IT. Filed
+> `livespec-dev-tooling-8o8e.30` (P1).** The brief called it a scope mismatch; the
+> ratified text makes it an INVERSION. `non-functional-requirements.md:114` binds
+> *"Every livespec-governed repo carrying **any first-party Python** — the
+> `livespec-driver-*` Drivers and `livespec-dev-tooling` **included**"*, states there
+> is **NO "thin repo" exemption**, and names the **SOLE** exemption as *"a governed
+> repo with ZERO first-party Python (e.g. a Rust component such as the operator
+> console)."* 🔑 **So the four repos the rule NAMES as bound are the four that pass
+> silently at `info`, and the one repo whose CATEGORY the rule exempts is the ONLY one
+> that fails.** Armed measurement confirms real offenders sit in three of those four:
+> `dev-tooling` 1/176, `livespec-runtime` **11**/31, `driver-codex` 1/7,
+> `driver-claude` 0/7.
+>
+> **INFERENCE B SURVIVED. Filed `livespec-dev-tooling-8o8e.31` (P1).** The arming
+> children's own universe figures ARE `resolve_check_universe()` sizes — `.10`=31,
+> `.11`=49, `.13`=7 match today's measurement exactly. **And the `pure_trees` scan
+> universe is empty in all nine, so no recorded figure could have come from it.**
+>
+> ⛔⛔ **THE TRAP `8o8e.31` EXISTS TO PREVENT — READ BEFORE "CORRECTING" ANY COUNT.**
+> Do NOT re-measure these against the `pure_trees` basis to make them honest. **That
+> yields ZERO in all nine and reads as total remediation of a rule never enforced
+> once.** Given `8o8e.30`, the git-derived basis is the one that MATCHES the ratified
+> rule. 📜 **The measurements are right and the GATE is wrong.** What is owed is a fix
+> to the gate and a LABEL on every count naming its criterion.
+>
+> ⚠️ **`jecv` DOES NOT COVER THIS.** `jecv` is three records disagreeing with each
+> OTHER; `8o8e.31` is the recorded basis disagreeing with the **SHIPPED** basis. Fourth
+> axis, different defect.
+>
+> ### 📊 THE ROP LANE ITSELF — **STATE AFTER THE BLOCKER IS CLEARED**
+>
+> | member | distinct | status |
+> |---|---:|---|
+> | `git-jsonl` | **6** | ▶️ **THE ONLY VERIFIED-OPEN LANE** (11→10 #532, 10→8 #533, **8→7 #537, 7→6 #538**) |
+> | `beads-fabro` | 155 | ⛔ BLOCKED — `8o8e.22`, master CI red; commits AND pushes staging `.py` |
+> | `livespec` | 20 | ⛔ BLOCKED — `doctor-wiring-completeness-cross-repo` fails on clean master |
+> | `livespec-overseer` | 112 | ⛔ BLOCKED — `overseer-yc7` (cannot import `returns`) |
+> | `livespec-runtime` | 11 | local lane COMPLETE — 8 cross-repo-bound + 3 entry points |
+> | `dev-tooling` · `driver-codex` | 1 · 1 | dt's 1 is RULED; codex BLOCKED |
+>
+> ⛔ **NEVER quote a per-member count from this file — RE-MEASURE.** ⛔ Do not add these
+> up (`jecv`: three records, three incompatible bases). ⚠️ Each member's ARMED number is
+> its OWN PINNED dev-tooling's answer, not this file's — a fleet-wide pin bump must land
+> BEFORE any re-measure (`jecv`'s fourth axis). ⚠️ **git-jsonl is pinned at dev-tooling
+> `v1.17.1`; the 7 above was measured with the LATEST criterion from
+> `/data/projects/livespec-dev-tooling`, per the recipe below. Those are not guaranteed
+> to be the same number — the recipe is what this file standardizes on, not the pin.**
+>
+> ### 🔬 THE ARMED MEASUREMENT — **REBUILD IT; IT IS NOT DURABLE**
+>
+> `_scan` from `checks/public_api_result_typed.py` with EXACTLY TWO DELTAS, read fresh
+> (never transcribed): **(1)** iterate `resolve_check_universe()`'s git-derived set
+> instead of `pure_trees` — monkeypatch `iter_py_files`; **(2)** drop `_scan`'s
+> `if py_file.name.startswith("_"): continue` — hand it a PATH SHIM whose `.name` cannot
+> start with `_`. Take its exempt-set construction WHOLE.
+> ⛔ **RUN IT AS `/data/projects/livespec-dev-tooling/.venv/bin/python`, SPELLED IN
+> FULL** — a relative `./.venv/bin/python` after a `cd` measures a DIFFERENT criterion
+> version and has fabricated offenders. ▶️ Set
+> `PYTHONPATH=/data/projects/livespec-dev-tooling` and run with the TARGET repo as cwd.
+> ✅ **CONTROL FIRST against dev-tooling: expect `universe=176 raw=1 distinct=1` naming
+> `livespec_dev_tooling/fleet/_public_api_graph.py:244 cross_member_consumption`.** A
+> harness that cannot reproduce a known answer has not measured the unknown ones.
+> ✅ Reproduced EXACTLY on 2026-08-04; git-jsonl then read `universe=49 raw=8 distinct=8`
+> before the unit and `raw=7 distinct=7` after, **with the same 7 names — ADDED 0.**
+>
+> ### 📋 `git-jsonl`'s REMAINING 6 ARE TRIAGED — **THREE MUST NOT BE CONVERTED**
+>
+> | offender | disposition |
+> |---|---|
+> | `migration/merge_evidence_git.py:10 discover_merge_sha` | ▶️ **NEXT UNIT, BUT ⚠️ READ FIRST — `None` may be a legitimate "no evidence" ANSWER**, in which case it DECLARES (`total_absence_returns`) rather than converts. ⛔ It is the phase-1/phase-2 evidence resolver behind `backfill_file`, and `backfill_file`'s own orphan-finding path READS a `None` from it as the "orphan" answer — **that is a strong signal for DECLARE.** Read the callee and the governing clause before writing any test. |
+> | `commands/attention_impl.py:19 impl_next` | ⛔ **DECLARE, not convert** — `X \| None` legitimate absence; `total_absence_returns`. |
+> | `commands/next.py:111 rank_candidates` | ⚠️ empty list is the documented "no candidates" answer. |
+> | `commands/_cross_repo.py:54 load_manifest` | ⛔ Already disciplined; its defect is the false JUSTIFICATION (`8o8e.27`). |
+> | `commands/_cross_repo.py:132 is_item_ready` | ⚠️ conservative "unparseable ⇒ blocking" is deliberate. |
+> | `checks/work_item_merge_evidence.py:155 resolve_canonical_branch` | ⛔⛔ **NEITHER convertible NOR declarable — `8o8e.28`, an ARMING BLOCKER.** |
+>
+> ✅ **DONE 2026-08-04 (2 of 2) — `acceptance.py:40 run_acceptance`, PR #538, MERGED.**
+> `@impure_safe(exceptions=(OSError,))`; both consumers are TESTS and both unwrap at
+> the boundary. **7 → 6, ADDED 0.** ⚠️ `acceptance/test_git_jsonl_golden_master.py`
+> sits in NEITHER RGR bucket (not under `tests/`, not under an impl prefix), so it was
+> safely staged at GREEN alongside the impl. ⚠️ **It also has its OWN isort grouping** —
+> `ruff` there sorts `livespec_orchestrator_git_jsonl` BEFORE `returns`, the opposite of
+> the package tree. Run `ruff check --fix` on `acceptance/` rather than hand-ordering.
+> ⛔ `IndexError` (empty `spec.md`) and `KeyError` (`namespace["greet"]`) were kept OUT
+> of the tuple: fixture bugs, not outcomes of the harness.
+>
+> ✅ **DONE 2026-08-04 (1 of 2) — `migration/merge_evidence_backfill_core.py:42 backfill_file`,
+> PR #537, merged `564e105`.** `@impure_safe(exceptions=(StoreFileMissingError,
+> MalformedRecordLineError, SchemaViolationError, OSError))`; the consumer's two-arm
+> `try/except` became one failure-track discrimination in a `_failure_message` helper.
+> ⚠️ **A COST TO EXPECT ON EVERY SUCH CONVERSION:** inlining the discrimination pushed
+> `main` from 30 to **31 statements and tripped `PLR0915` (ceiling 30)**. The extraction
+> is not optional tidying — **budget one private render helper per converted consumer.**
+> ⚠️ Its CI failed once on a `uv` PyPI timeout fetching `click==8.4.0` — infrastructure,
+> unrelated, re-run cleanly. **That is a DIFFERENT failure from the installation-pool
+> one above; do not conflate them when computing any rate.**
+>
+> 📜 **THE INSTRUMENT LESSON THAT COST THE MOST: `resolve_canonical_branch` has grep ②'s
+> EXACT fabricated-answer signature** (`"master"` is a real branch name real repos really
+> have) **and is a RATIFIED default** — git-jsonl's `contracts.md` says *"Hard-coded
+> fallback when symbolic-ref resolution fails: `master`"*. **I was one commit from
+> converting it.** ▶️ **The greps produce CANDIDATES, never convictions: read the
+> governing clause for every hit before writing a test.**
+>
+> ### 🗂️ TWO PRESERVED PATCHES SIT BESIDE THIS FILE — **BOTH STILL LIVE, NEITHER IS APPLIED**
+>
+>     8o8e21-green.patch                 beads-fabro `8o8e.21`'s FINISHED, VERIFIED green
+>                                        half (155 -> 154, ADDED 0). ⛔ Blocked by
+>                                        `8o8e.22`: that repo refuses `.py` commits while
+>                                        its master CI is red. Apply from a clean
+>                                        beads-fabro tree at/after `5b4813a`, then run
+>                                        the Red→Green ritual in `8o8e.21`'s ledger body.
+>     livespec-config-railway-red.patch  the `livespec` unit below — RED ONLY, impl NOT
+>                                        written.
+>
+> ⚠️ **A third patch (`gh-runner-rate-shaping.patch`) was DELETED once its content
+> merged.** Do the same when one of these lands: **a stale patch beside live ones invites
+> a future session to re-apply work that is already in.**
+>
+> ### 🚧 A `livespec` UNIT IS AUTHORED AND BLOCKED — **RED PRESERVED BESIDE THIS FILE**
+>
+> `plan/rop-railway-enforcement/livespec-config-railway-red.patch`, branch
+> `fix/spec-governance-config-railway`, worktree
+> `~/.worktrees/livespec/fix-spec-governance-config-railway` — **nothing committed; the
+> Red was refused by `check-doctor-static`, NOT the TDD hook.** The impl half is NOT
+> written. 5 offenders behind one seam; the write half destroys a commented
+> `.livespec.jsonc` and returns the SUCCESS spelling, violating a ratified MUST
+> (`contracts.md:374`). Resume when the peer's `fix/wiring-check-target-inventory` lands.
+>
+> ### 🔻 FIRST FIVE MINUTES
+>
+> 1. ⚠️ **DO NOT REAP** `~/.worktrees/livespec/fix-spec-governance-config-railway` — the
+>    preserved `livespec` Red, and **the ONLY worktree of mine still alive.** Everything
+>    else of mine is reaped and merged. **REAP NOTHING ELSE — 13+ worktrees exist and the rest are PEER
+>    LANES.** `git worktree list` first; never quote a count from this file.
+> 2. `git status --short --branch` — clean on `master`; untracked
+>    `install-livespec-pr-bot.png` is pre-existing. ⚠️ A modified `uv.lock` is REGENERATED
+>    noise: `git checkout -- uv.lock` before any `merge --ff-only` (which REFUSES while
+>    dirty, and also blocks `git worktree remove`). ⚠️ A modified
+>    `plan/fleet-shell-quality-enforcement/handoff.md` is the PEER lane's live edit —
+>    **leave it alone.**
+> 3. ⚠️ **`mise exec -- just install-worktree-pack` IN EVERY FRESH WORKTREE**, then
+>    `git checkout -- .livespec.jsonc uv.lock`. Without it
+>    `check-primary-checkout-commit-refuse-hook-installed` fails AT PUSH.
+> 4. ⚠️ **BEFORE PUSHING ANY RED→GREEN PAIR:** `git log -1 --format=%B | grep -c
+>    '^TDD-Red-'` must be **5**, `'^TDD-Green-'` must be **2**. `--amend --no-edit` is the
+>    SAFE spelling. ✅ A NEW test file MAY be staged at Green; the RECORDED Red file must
+>    be BYTE-IDENTICAL. ⛔ **`ruff format` is the silent breaker** — re-verify the
+>    checksum against the trailer after EVERY format pass. ▶️ **Cheapest guard: run
+>    `ruff format` on the test file BEFORE the Red commit, then `sha256sum` it against
+>    `TDD-Red-Test-File-Checksum` before the Green amend.**
+> 5. ⛔ **A PR-WAIT LOOP MUST EXIT ON `MERGED|CLOSED` AND ON ANY FAILING CHECK**, not only
+>    on MERGED. Backgrounding `gh pr` / `just check*` / `git commit|push` is DENIED by a
+>    PreToolUse hook — run them FOREGROUND with a raised timeout.
+> 6. ⚠️ **NEVER an ad-hoc `pytest --cov`** (it collides with the branch-coverage recipe;
+>    `rm -f .coverage`). `/tmp` inode pressure recurs: `df -i`, not `df -h`.
+> 7. ⛔ **STAND DOWN on `check-shell-quality` / `fleet-shell-quality-enforcement` and on
+>    `awaits_scope_override` / `pc-awaits-scope-override`** — peer lanes, by agreement.
+>    ⚠️ The 2026-08-04 rate notice was an explicitly-authorized EXCEPTION to that stand
+>    down, not a precedent: the maintainer asked for it by name.
+>
+> ### 📋 QUEUE
+>
+> 0. ⛔⛔ **BEFORE OPENING ANY dev-tooling PR: check that no `check-fleet-conformance`
+>    is in flight.** `gh pr checks <n>` on the open PRs, or `gh run list --workflow
+>    ci.yml --status in_progress`. **A sweep owns the installation for ~27 MINUTES**,
+>    and a PR opened inside that window loses — **including a docs-only one, because
+>    the job has no path filter.** This is the cheapest control available today and it
+>    costs one read.
+> 1. ⚠️ **`check-fleet-conformance` — read the disposition box above BEFORE touching it.**
+>    Nothing to do unless it fails again; if it does, **partition first** (pool
+>    exhaustion vs burst) and **do not spend a CI retry** on the pool-exhaustion class.
+> 1b. ▶️ **NEXT ACTUAL UNIT: `git-jsonl`'s `discover_merge_sha`** — ⚠️ READ-FIRST; it
+>    may DECLARE rather than convert. See the triage table.
+> 2. `git-jsonl` (6) — `discover_merge_sha` next.
+> 3. 🆕 **`8o8e.30`** (P1) — the gate/rule scope INVERSION. **This is the epic's
+>    founding defect with a name.** ⛔ `8o8e` cannot close while the check convicts
+>    nothing in any of the nine repos.
+> 4. 🆕 **`8o8e.31`** (P1) — every `.7`–`.13` count is on the non-shipped criterion.
+>    ⛔ **No arming child may close as "remediated" on those counts**, and ⛔ do NOT
+>    "correct" them to the `pure_trees` basis (that reads as victory over a rule never
+>    enforced — see the trap note above).
+> 5. **`8o8e.28`** — arming blocker: a conviction with NO conforming remedy.
+> 6. **`8o8e.27`** — a retired invariant load-bearing in 3 repos.
+> 7. `overseer-yc7` (P1) · `jecv` (P1, four axes) · `8o8e.20` · `8o8e.22` (ESCALATED) ·
+>    `8o8e.23` · `8o8e.24` · `55ec` (⛔ BLOCKED TWICE — do not schedule) · `0aru` · `xx1y`.
+> 8. **⛔ READ THE LEDGER CHILDREN `8o8e.7`–`.13` and `.25`–`.31`** before acting.
+>
+
+> ## 🗄️ (SUPERSEDED AS THE HEADER 2026-08-04 — `backfill_file` LANDED (8 → 7) and the `check-fleet-conformance` diagnosis CHANGED; its FIRST FIVE MINUTES are copied verbatim into the header above, per that block's own rule.) COLD START — **START HERE. ✅ NOTHING OF MINE IS MID-FLIGHT. ▶️ YOUR NEXT UNIT IS `git-jsonl`'s `backfill_file` (the lane is OPEN). ⚠️ First read the `check-fleet-conformance` box: two fixes landed, it is NOT declared fixed, and it is the thing most likely to interrupt you.**
 >
 > ### 🔁 `check-fleet-conformance` — **TWO REQUEST-SIDE FIXES LANDED; NOT DECLARED FIXED**
 >
