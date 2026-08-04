@@ -1,7 +1,7 @@
 # Fleet shell quality enforcement — restart handoff
 
-Updated: 2026-08-04 during supervised wind-down after the maintainer routed P0
-`livespec-dev-tooling-42t4az.1` into this owner chain.
+Updated: 2026-08-04 after two P0 drive actions stopped before admission and the
+dispatcher normalized `livespec-dev-tooling-42t4az.1` to lifecycle backlog.
 
 **Ledger anchor:** epic livespec-dev-tooling-42t4az
 
@@ -36,27 +36,51 @@ Hard rules:
 - Every tracked mutation follows worktree → hook-valid commit/push → PR → all
   checks → rebase merge → primary refresh → worktree/local-branch cleanup.
 
-## Restart priority — P0 `livespec-dev-tooling-42t4az.1`
+## Restart blocker — P0 `livespec-dev-tooling-42t4az.1`
 
 Read
 `tmp/overseer/fleet-shell-quality-enforcement/INBOX-from-livespec-spec-side-autonomy.md`
-in full before acting. The original epic was reopened and this new P0 child is
-the fleet blocker. Current supervisor reproduction: passing
+in full before acting. The original epic was reopened and this P0 child is the
+fleet blocker. Passing
 `shellcheck_bin='shellcheck-intentionally-absent-for-p0-repro'` to
-`run_shellcheck(...)` crashes with `TypeError` because a resolved `None` reaches
-`subprocess.run`, instead of returning an explicit actionable failing
-`Result`/check outcome.
+`run_shellcheck(...)` was freshly reproduced on master as `TypeError: expected
+str, bytes or os.PathLike object, not NoneType`; a resolved `None` reaches
+`subprocess.run` instead of an explicit actionable failing `Result`/check
+outcome. Do not revert livespec PR 1179; livespec is already unblocked.
 
-Do not revert livespec PR 1179; livespec is already unblocked. Re-measure
-`42t4az.1` with the credential wrapper and perform the complete collision
-preflight across ledger claim, safe `fabro ps --all --json`, fetched forge
-branch/PR state, local/remote branches, and worktrees. If and only if it is
-open/ready/unassigned and no surviving owner exists, issue exactly ONE normal
-installed-drive action `impl:livespec-dev-tooling-42t4az.1`, attach, and monitor
-that durable run through PR, acceptance, merge, reconciliation, and cleanup.
-Do not resume a terminal run or create a second run. The fix must make the
-missing binary an explicit actionable failure; it may not weaken, skip, or add
-an escape hatch to the check.
+Two specifically authorized installed-drive invocations both stopped before
+Fabro admission:
+
+1. At 02:16Z, drive exited 3 on master-CI preflight. Exact master run
+   `30870621857` at `e9bdfe23` failed only because PyPI timed out downloading
+   `packaging==26.2` after all five uv retries. No CI rerun was issued. The next
+   master `15738e15` was green on run `30871363109`.
+2. After a fresh supervisor authorization and a clean collision preflight,
+   dispatch waited for then-current master `8cdfebb6` run `30871628988` to
+   complete SUCCESS. The one fresh drive still exited 3 before admission. Its
+   journal first warned that installed Dispatcher 0.50.1 trails master, then
+   authoritatively normalized Beads-native `open` to lifecycle `backlog` with
+   reason `beads-native intake default` (including `42t4az.1`).
+
+Fresh post-attempt evidence: `42t4az.1` is `backlog`, unassigned; safe
+`fabro ps --all --json` has no matching goal; no claim, branch, implementation
+PR, worktree, or run exists. No run ID can be recorded because neither action
+admitted one. Do not invoke `impl:livespec-dev-tooling-42t4az.1` again while it
+is backlog and do not force its ledger status.
+
+The installed 0.50.1 groom contract was read in full. It accepts backlog but is
+read-only until maintainer approval, files replacement slice IDs, and closes
+the original as regroomed-out. That is not silently equivalent to promoting
+this already-narrow same-ID P0. A maintainer must choose one of these sanctioned
+routes before mutation: approve a concrete replacement cut under `groom`, or
+provide the documented same-ID lifecycle-routing operation. Do not create a
+duplicate via capture and do not invent a status rewrite. Once direction
+arrives, re-fetch/re-measure ledger, safe runs, forge, branches, PRs, and
+worktrees before acting.
+
+The eventual implementation must make the missing binary an explicit,
+actionable failure. It may not weaken, skip, or add an escape hatch to the
+check.
 
 When `42t4az.1` lands, append the required one-line landed notification to
 `/data/projects/livespec/tmp/overseer/spec-side-autonomy/worker-status.log` and
@@ -67,11 +91,10 @@ the P0.
 
 ## Exact current state — do this first
 
-Dev-tooling primary was refreshed by the normal dispatcher and measured at
-`bbcd3501079b876e13b6266df0c41c18069f6336`, equal to fetched
-`origin/master`, with only `install-livespec-pr-bot.png` untracked. Exact master
-CI run `30866413953` is green. Re-fetch and remeasure rather than trusting this
-snapshot.
+Dev-tooling primary was measured at `8cdfebb6e9fa3104bf430f8c20bfbe8cc272033e`,
+equal to fetched `origin/master`, with only `install-livespec-pr-bot.png`
+untracked. Exact master CI run `30871628988` completed SUCCESS, including fleet
+conformance. Re-fetch and remeasure rather than trusting this snapshot.
 
 `livespec-dev-tooling-jtrjzk` is ACTIVE, assigned to Fabro, after its human
 acceptance was rejected to rework. Do not accept it yet. Its acceptance still
@@ -207,6 +230,8 @@ branches.
 ## Workspace ownership
 
 Do not touch the supervisor-owned jtrjzk worktree/branch above.
+No P0 worktree, branch, PR, claim, or Fabro run exists; do not fabricate one
+until the lifecycle blocker above is resolved.
 All other worktrees shown by `git worktree list` may belong to other sessions;
 do not clean them merely because a hygiene scan calls them stale. The
 `audit_sibling_groom` sub-agent was stopped during this wind-down. No durable
