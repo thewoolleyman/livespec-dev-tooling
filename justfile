@@ -200,6 +200,7 @@ check:
         check-per-file-coverage
         check-plan-thread-anchor-declared
         check-plan-thread-epic-parity
+        check-plan-thread-no-tombstone
         check-plugin-resolution
         check-primary-checkout-commit-refuse-hook-installed
         check-private-calls
@@ -697,6 +698,11 @@ check-plan-thread-anchor-declared:
 # self-gates a credential-less `just check`.
 check-plan-thread-epic-parity:
     uv run python -m livespec_dev_tooling.checks.plan_thread_epic_parity
+
+# Plan-lifecycle tombstone ban: a topic must not exist at BOTH
+# plan/<topic>/ and plan/archive/<topic>/.
+check-plan-thread-no-tombstone:
+    uv run python -m livespec_dev_tooling.checks.plan_thread_no_tombstone
 
 # Cross-harness plugin-resolution Verifier (Conformance-Pattern concern
 # #2, per livespec/SPECIFICATION/non-functional-requirements.md

@@ -40,6 +40,7 @@ check-pbt-coverage-pure-modules
 check-per-file-coverage
 check-plan-thread-anchor-declared
 check-plan-thread-epic-parity
+check-plan-thread-no-tombstone
 check-plugin-resolution
 check-primary-checkout-commit-refuse-hook-installed
 check-private-calls
