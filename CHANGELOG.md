@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.19.5](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.19.4...v1.19.5) (2026-08-04)
+
+
+### Bug Fixes
+
+* cover shellcheck pin gate behavior ([ac5defd](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ac5defd15efdd764f71ff67984792fde89aad527))
+* fail closed on ungated shellcheck pin ([5800b1f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5800b1f82bfd4a762c6b76d614e2de6277bd5618))
+
 ## [1.19.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.19.3...v1.19.4) (2026-08-04)
 
 
