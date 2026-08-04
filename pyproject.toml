@@ -314,6 +314,7 @@ single_meaning_variants = [
 #   - cross_repo/fabro_image_pin_rewrite.py  main() → in-place fabro docker pin rewrite; `::error::` on miss
 #   - cross_repo/codex_acp_pin_rewrite.py  main() → in-place codex-acp Dockerfile ARG rewrite; `::error::` on miss
 #   - cross_repo/pin_rewrite.py  main() → in-place legacy regex pin rewrites; `::error::` on miss
+#   - cross_repo/tool_pin_projection.py  main() → released-tag ShellCheck projection; `::error::` on refusal
 #   - cross_repo/bump_pr_supersession.py  main() → JSON close plan for superseded bump PRs to stdout
 #   - agent_hooks/pretooluse_background_guard.py  main() → sole fail-open hook boundary
 #   - agent_hooks/subagent_stop_guard.py          main() → sole fail-open hook boundary
@@ -334,6 +335,7 @@ supervisor_entry_files = [
     "livespec_dev_tooling/cross_repo/fabro_image_pin_rewrite.py",
     "livespec_dev_tooling/cross_repo/justfile_canonical_reconcile.py",
     "livespec_dev_tooling/cross_repo/pin_rewrite.py",
+    "livespec_dev_tooling/cross_repo/tool_pin_projection.py",
     "livespec_dev_tooling/cross_repo/pin_staleness.py",
     "livespec_dev_tooling/cross_repo/pin_autodiscovery.py",
     "livespec_dev_tooling/cross_repo/bump_pr_supersession.py",
