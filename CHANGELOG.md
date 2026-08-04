@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.19.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.19.0...v1.19.1) (2026-08-04)
+
+
+### Bug Fixes
+
+* derive plan epic parity tenant prefix ([e81cde7](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e81cde7f090ea73f5d07093fa8a546e917cf7ebe))
+
 ## [1.19.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.18.9...v1.19.0) (2026-08-04)
 
 
