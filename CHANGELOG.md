@@ -58,6 +58,15 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.18.7](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.18.6...v1.18.7) (2026-08-04)
+
+
+### Bug Fixes
+
+* **actions:** project tag-matched ShellCheck pin ([8088022](https://github.com/thewoolleyman/livespec-dev-tooling/commit/808802220ed47ce4ff8a463742d2821a53df4182))
+* emit missing shellcheck quality finding ([25735f0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/25735f04db98136106b8cf8ad4fa6bbce9aab33a))
+* report missing shellcheck as domain failure ([b422da4](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b422da443c44d86f45689233db7aa3ffbb4f4402))
+
 ## [1.18.6](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.18.5...v1.18.6) (2026-08-04)
 
 
