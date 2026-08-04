@@ -100,12 +100,42 @@ weaken or skip a check" boundary. It also un-shadows the declaration staleness g
 which the module's own docstring notes sit *behind* the `pure_trees` gate and are
 therefore unverified in all nine repos today.
 
-## ⛔ Sequencing is not optional — the ordering trap
+## ✅ The ordering trap — MEASURED, AND IT DOES NOT FIRE
 
-`livespec-dev-tooling` runs this check on **itself** (`justfile:206`, `:730`). Arming it
-turns its own `just check` red, and `lefthook` then blocks the very commit that would
-fix it. **Remediating dev-tooling is a PRECONDITION of arming, not a follow-up.** Then
-per-repo remediate → arm. One coordinated cross-repo fan-out, not eight independent PRs.
+`livespec-dev-tooling` runs this check on **itself** (`justfile:206`, `:730`), so arming it
+would turn its own `just check` red and `lefthook` would then block the very commit that
+fixes it. That is why remediating this repo is a PRECONDITION, not a follow-up.
+
+**But it costs nothing here.** Simulating the decoupled scan against master (read-only,
+`_scan` replicated with `resolve_check_universe()` as the walked set):
+
+| basis | offenders |
+|---|---:|
+| universe size | **177 files** |
+| WITH the `_`-prefixed FILE skip (**shipped `_scan`**, line 387) | **0** |
+| WITHOUT the `_`-file skip (the epic's per-repo measurement basis) | **1** |
+
+The single offender is `livespec_dev_tooling/fleet/_public_api_graph.py:244
+cross_member_consumption`. **So dev-tooling is already clean under shipped semantics and
+`8zv3.2` collapses to a verification step.**
+
+⚠️ **THAT IS CONDITIONAL AND THE CONDITION IS THE POINT: it holds only while the
+`_`-prefixed FILE skip stays.** Do not let the decoupling silently drop it — dropping it is
+a separate, independently-argued change that re-introduces this offender and a much wider
+fleet blind spot the ROP handoff already records as *wider than the ratified rule* (v178
+clause 0 disqualifies `_`-prefixed NAMES, not FILES).
+
+⚠️ **AND EVERY PER-REPO NUMBER NOW HAS TWO BASES** — shipped semantics vs the epic's
+measurement basis differ on the `_`-file skip as well as the universe. dev-tooling is **0**
+on one and **1** on the other. **Say which basis you mean, every time**; `8o8e.17` exists
+because a part and a total from different bases were added.
+
+✅ Independently corroborated: the rop worker measured this repo at universe 176 / raw 1,
+naming the same function. Two derivations, same offender.
+
+Per-repo remediate → arm still governs the FLEET fan-out (`8zv3.4`) — one coordinated
+cross-repo effort, not eight independent PRs. **The decoupling is small; its consequence
+is not.**
 
 ## ⚠️ A remedy that cannot fail is not a remedy
 
@@ -144,12 +174,43 @@ answer came back ONE, which is a result rather than a miss.
 - **`plan/mutation-testing-keystone`** — the `livespec-mutreal.1` blocker, temporarily
   housed in this repo. Independent of this thread after the decoupling.
 
-## Open questions for whoever picks this up
+## Open questions — TWO OF THREE ARE NOW ANSWERED
 
-1. Does the ROP check need **any** role gate after decoupling, or does it simply always
-   scan the first-party universe? If it needs one, that is a new role key and therefore a
-   required-key schema change — a cross-repo epic with harden-first discipline.
-2. Do the other six consumers each genuinely need `pure_trees`, or is more than one of
-   them a scope mismatch too? **The class question is the valuable one.**
-3. `check-shell-quality` and `check-doctor-static` currently freeze two of the nine repos.
-   Arming anything fleet-wide needs those clear first.
+1. ✅ **ANSWERED: NO role gate is needed.** Of the **twenty** checks consuming
+   `resolve_check_universe()`, **exactly one is role-gated — this check itself.** The other
+   nineteen scan the first-party universe ungated. **So decoupling does not invent a
+   pattern; it makes the outlier conform.** There is therefore **no new required key and no
+   cross-repo schema epic** — the largest planned risk, retired.
+
+   The spec's sole exemption (ZERO first-party Python) needs no expression: an empty
+   universe is a documented legitimate "nothing to check", so `livespec-console-beads-fabro`
+   passes with nothing declared.
+
+   ⛔ **DO NOT "HELPFULLY" ADD A REPLACEMENT GATE.** A new declared key to express the
+   zero-Python exemption would reintroduce the exact hazard this epic closes — a
+   declaration whose emptiness means "skip me", indistinguishable from "genuinely no code".
+   `resolve_check_universe()` already separates those: it OWNS root resolution (every
+   `GIT_*` var stripped) and raises `GitToplevelError` / `GitLsFilesError` rather than
+   returning a spuriously-empty walk. **Adding a gate back trades a fail-closed primitive
+   for a fail-open declaration.**
+
+2. ✅ **ANSWERED by the classification above: exactly one consumer is mismatched.**
+   `check_mutation` and `pbt_coverage_pure_modules` genuinely need the key;
+   `partition_completeness` and `source_trees_scoped_to_consumer` use it structurally
+   without being scoped by it. **The class question was still worth asking — asking it is
+   what proved the other four correct rather than assumed.**
+
+3. ⬜ **STILL OPEN.** `check-shell-quality` and `check-doctor-static` currently freeze two
+   of the nine repos (`livespec-orchestrator-beads-fabro`, `livespec`). Arming anything
+   fleet-wide needs those clear first. **Verify landability per repo before pushing** —
+   runner minutes are a first-class constraint.
+
+4. ⬜ **NEW, and it is the one this thread should NOT decide alone.** The `_`-prefixed FILE
+   skip is recorded as wider than the ratified rule and is what keeps dev-tooling at 0.
+   Whether to drop it is a **separate decision with its own blast radius** — do not fold it
+   into the decoupling.
+
+> ⚠️ **Every answer above is the supervisor's read-only analysis, recorded with its
+> reproduction command. None has been independently verified. Re-derive before relying on
+> it** — this thread's own rule, and the epic exists because a number nobody re-derived was
+> believed for days.
