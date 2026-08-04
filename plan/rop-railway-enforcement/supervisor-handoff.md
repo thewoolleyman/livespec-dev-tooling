@@ -543,9 +543,13 @@ without churn. What moved, and where:
 **`8zv3` BLOCKS `8o8e` — the dependency is WIRED IN THE LEDGER**, not merely asserted here.
 
 **📜 THE FINDING THAT DROVE THE SPLIT: the ROP check was blocked by KEY-SHARING, not by
-anything about ROP.** `pure_trees` is consumed by SEVEN checks. It asks *"has this repo carved
-its pure-module subtree?"* — load-bearing for mutation testing and PBT coverage, and a **SCOPE
-MISMATCH** for a rule that binds first-party public API. Full measurements live in `8zv3` and
+anything about ROP.** `pure_trees` has **FIVE real code consumers** (corrected 2026-08-04 from
+"seven" — that figure came from a filename grep that counted prose mentions; re-derived by AST).
+It asks *"has this repo carved its pure-module subtree?"* — load-bearing for mutation testing and
+PBT coverage, and a **SCOPE MISMATCH** for `public_api_result_typed`, whose rule binds ANY
+first-party Python (`non-functional-requirements.md:114`, sole exemption ZERO first-party
+Python). **It is the ONLY mismatched consumer**, so the fix is a one-consumer edit. Full
+measurements live in `8zv3` and
 its thread; they are NOT duplicated here, because two documents restating one measurement is
 the prose-twin defect (`i04f`).
 
