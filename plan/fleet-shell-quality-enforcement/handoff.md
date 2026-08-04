@@ -1,6 +1,7 @@
 # Fleet shell quality enforcement — restart handoff
 
-Updated: 2026-08-04 after the `jtrjzk` release rework commit hook failed.
+Updated: 2026-08-04 during supervised wind-down after the maintainer routed P0
+`livespec-dev-tooling-42t4az.1` into this owner chain.
 
 **Ledger anchor:** epic livespec-dev-tooling-42t4az
 
@@ -35,6 +36,35 @@ Hard rules:
 - Every tracked mutation follows worktree → hook-valid commit/push → PR → all
   checks → rebase merge → primary refresh → worktree/local-branch cleanup.
 
+## Restart priority — P0 `livespec-dev-tooling-42t4az.1`
+
+Read
+`tmp/overseer/fleet-shell-quality-enforcement/INBOX-from-livespec-spec-side-autonomy.md`
+in full before acting. The original epic was reopened and this new P0 child is
+the fleet blocker. Current supervisor reproduction: passing
+`shellcheck_bin='shellcheck-intentionally-absent-for-p0-repro'` to
+`run_shellcheck(...)` crashes with `TypeError` because a resolved `None` reaches
+`subprocess.run`, instead of returning an explicit actionable failing
+`Result`/check outcome.
+
+Do not revert livespec PR 1179; livespec is already unblocked. Re-measure
+`42t4az.1` with the credential wrapper and perform the complete collision
+preflight across ledger claim, safe `fabro ps --all --json`, fetched forge
+branch/PR state, local/remote branches, and worktrees. If and only if it is
+open/ready/unassigned and no surviving owner exists, issue exactly ONE normal
+installed-drive action `impl:livespec-dev-tooling-42t4az.1`, attach, and monitor
+that durable run through PR, acceptance, merge, reconciliation, and cleanup.
+Do not resume a terminal run or create a second run. The fix must make the
+missing binary an explicit actionable failure; it may not weaken, skip, or add
+an escape hatch to the check.
+
+When `42t4az.1` lands, append the required one-line landed notification to
+`/data/projects/livespec/tmp/overseer/spec-side-autonomy/worker-status.log` and
+record the exact run/PR/merge/closure state in this track's worker log. Child
+`42t4az.2` is separate later work: retire the temporary 65-target legacy mirror
+only after every pinned consumer reads `check-targets.txt`; do not fold it into
+the P0.
+
 ## Exact current state — do this first
 
 Dev-tooling primary was refreshed by the normal dispatcher and measured at
@@ -60,17 +90,19 @@ release-please contract explicitly excludes from version bumps. Therefore the
 latest published release remains v1.18.5 and PR 1223 is implementation evidence,
 not release/fanout acceptance evidence.
 
-## Preserved rework after hook failure
+## Supervisor-owned `jtrjzk` correction — do not touch
 
-The owned worktree is:
+The supervisor now exclusively owns this independent correction and its hook
+was running at wind-down. Do not touch either this worktree or branch:
 
 `/home/ubuntu/.worktrees/livespec-dev-tooling/feat/livespec-dev-tooling-jtrjzk`
 
-Branch: `feat/livespec-dev-tooling-jtrjzk`. Its remote branch was deleted after
-PR 1223 merged. No process had this worktree as cwd at the last safe check.
+Branch: `fix/jtrjzk-release-tag-tool-pin-v3`. The worktree path retains the
+earlier factory name. Re-measure its resulting forge/ledger state only after
+the supervisor-owned correction settles; never edit, commit, clean, or remove
+it.
 
-The worktree deliberately remains with exactly two staged, uncommitted,
-factory-generated files:
+At the ownership transfer it contained two staged factory-generated files:
 
 - `.github/actions/bump-pin-rewrite/action.yml`
 - `tests/livespec_dev_tooling/cross_repo/test_bump_pin_rewrite_composite_action.py`
@@ -98,38 +130,14 @@ test and its implementation were already present on disk. No commit was
 created, nothing was pushed, and no retry/amend/bypass occurred. The failure is
 recorded in `worker-status.log` at `2026-08-04T01:00:00Z`.
 
-### Next safe action
-
-Do not repeat the unchanged commit. Preserve the exact staged factory bytes and
-perform the repository's honest Red→Green single-commit ritual:
-
-1. Re-read `AGENTS.md` Red-Green-Replay rules and verify the two-file staged
-   state is unchanged.
-2. Preserve the exact factory-generated action bytes temporarily during this
-   operation. Restore only the action implementation to the PR-1223/HEAD form
-   on disk and in the index while leaving the new test staged/on disk.
-3. Run the focused test and confirm a genuine assertion failure proving the
-   tag-matched/source-gated behavior is absent. If it does not fail genuinely,
-   stop and diagnose; do not manufacture a red.
-4. Commit the test-only Red with
-   `fix(actions): project tag-matched ShellCheck pin` using `mise exec -- git`.
-   The hook must write `TDD-Red-*` trailers.
-5. Restore the exact preserved factory implementation bytes with the approved
-   patch writer, stage only the action implementation, and amend through
-   `mise exec -- git commit --amend`. The unchanged test must pass and the hook
-   must add `TDD-Green-*` trailers.
-6. Fetch. Rebase the resulting single commit onto current `origin/master`, run
-   the focused tests, shell-quality, and full `just check`, then push the same
-   branch through hooks. Open a follow-up PR, arm rebase auto-merge, wait for
-   every required check, merge, refresh primary, and run/record the fresh
-   janitor. Halt on any hook failure.
-
-This is same-item recovery of factory-generated bytes, not new hand-authored
-implementation and not a duplicate Fabro run.
+The prior unchanged commit attempt failed Red-Green-Replay with
+`test-passed-at-red`; no commit was created. That failure and the intended
+honest Red→Green recovery remain useful evidence, but execution now belongs to
+the supervisor. Do not create another `jtrjzk` Fabro run.
 
 ## Release and fanout gate after the follow-up merge
 
-The `fix(actions):` merge should cause release-please to open/update its release
+The supervisor-owned `fix(actions):` merge should cause release-please to open/update its release
 PR. Follow the normal release PR/check/rebase-merge path. Verify the exact new
 tag is from green master, its declared version matches, and it contains both PR
 1223 plus the tag-derived correction.
@@ -160,8 +168,9 @@ the corrected release supersede artifacts normally. Do not create duplicates.
 
 Completed/closed:
 
-- original epic `livespec-dev-tooling-42t4az` (`no-longer-applicable`) and its
-  approved 15-slice replacement graph;
+- the original approved 15-slice replacement graph (the parent epic
+  `livespec-dev-tooling-42t4az` has since been reopened for P0 child `.1` and
+  later child `.2`);
 - spec convention `livespec-hhu5pn` and core compatibility PR 1963 at
   `cb793f9a9d3b932f27a79107a0ab5c7f4cd9b22a`;
 - foundations `ya7emy` PR 1136 / `bcf3e209`, `uzwqm6` PR 1134 / `8f071bcb`;
@@ -197,7 +206,7 @@ branches.
 
 ## Workspace ownership
 
-Preserve the jtrjzk worktree above until its staged recovery is safely shipped.
+Do not touch the supervisor-owned jtrjzk worktree/branch above.
 All other worktrees shown by `git worktree list` may belong to other sessions;
 do not clean them merely because a hygiene scan calls them stale. The
 `audit_sibling_groom` sub-agent was stopped during this wind-down. No durable
