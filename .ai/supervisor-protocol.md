@@ -265,3 +265,34 @@ the forge after a fetch, never a possibly stale working tree.
 Corrections to this supervisor role's own behavior belong here. Regeneration
 MUST preserve this section byte-for-byte, including spelling, punctuation, code
 formatting, blank lines, and ordering. Do not use it only to log worker errors.
+
+### Read every cold-open input, not just the supervisor-side ones
+
+A supervisor read the shared protocol, its thread binder, and the obligation
+marker, then drove for hours without opening the worker's own
+`plan/<topic>/handoff.md`. That file carried the thread's HARD RULES — a banned
+tool invocation, a required credential wrapper, a never-unchanged-rerun rule —
+and every one of them was invisible. The supervisor then issued an instruction
+that violated one, and the WORKER had to correct it.
+
+The generalizable defect is not the violation. It is that **a binder describing
+itself as self-sufficient is self-sufficient about SUPERVISION, not about the
+thread's operational rules.** Those live on the worker's side. A supervisor who
+reads only the supervisor-side files will confidently direct a worker to break
+rules it is bound by, and will sound authoritative doing it.
+
+So: when a binder's restart state enumerates cold-open inputs, read ALL of them
+before driving, and treat the worker's handoff as the authority on how work in
+that thread must be performed. Verify the count — if the binder names four
+inputs, four is the number, and three is a silent partial read that no gate will
+catch. Nothing reports this failure; it surfaces only when a worker pushes back,
+which requires the worker to be willing to contradict the supervisor.
+
+Corollary, from the same incident: an instruction can be correct and still be
+DANGEROUSLY AMBIGUOUS. The supervisor wrote "land the matrix job outside the
+factory" meaning the factory RUN; the plausible other reading was "on master",
+which would have invoked a recipe that did not exist there and turned that
+tenant's master red — trading one blocker for a worse one. The worker tested the
+instruction against its failure mode instead of executing it literally, and was
+right to. Supervisors should write the failure mode into the instruction; workers
+should test instructions rather than obey them.
