@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.19.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.19.1...v1.19.2) (2026-08-04)
+
+
+### Bug Fixes
+
+* degrade when claude binary is absent ([4edf171](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4edf171d13dd3dfbef530a99f5308783b83d6797))
+
 ## [1.19.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.19.0...v1.19.1) (2026-08-04)
 
 
