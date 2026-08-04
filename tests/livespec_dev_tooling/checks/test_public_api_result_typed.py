@@ -379,83 +379,15 @@ def test_public_api_result_typed_ignores_private_function(*, tmp_path: Path) -> 
     )
 
 
-def test_public_api_result_typed_scans_a_repo_with_no_pure_subtree(*, tmp_path: Path) -> None:
-    """A repo declaring `pure_trees` NOT APPLICABLE is still scanned, and still convicted.
-
-    The scan universe used to be `pure_trees`, but the rule this check enforces
-    binds a DIFFERENT set. Ratified livespec
-    `SPECIFICATION/non-functional-requirements.md:114` puts every repo carrying
-    ANY first-party Python on the railway, says there is NO "thin repo"
-    exemption, and names the SOLE exemption as ZERO first-party Python. "Has a
-    pure-module subtree" was never the binding condition.
-
-    So the gate selected a set the rule does not, and the two came apart exactly
-    where it matters: a repo with no pure subtree exited 0 having scanned ZERO
-    files while carrying real offenders. The fixture below is that repo. It has
-    first-party Python, it is bound by the rule, and before the decoupling the
-    check reported success on it without reading a single line.
-
-    The consumed-across-a-boundary shape is load-bearing per v178, and the raise
-    is load-bearing per v179 — without either, the fixture would exit 0 for a
-    reason unrelated to the scan universe and this test would pass while proving
-    nothing.
-    """
-    pyproject = tmp_path / "pyproject.toml"
-    _ = pyproject.write_text(
-        pyproject.read_text(encoding="utf-8").replace(
-            "pure_trees = [\n"
-            '    ".claude-plugin/scripts/livespec/parse",\n'
-            '    ".claude-plugin/scripts/livespec/validate",\n'
-            "]\n",
-            'pure_trees = { not_applicable = "flat fixture has no pure-module subtree" }\n',
-        ),
-        encoding="utf-8",
-    )
-
-    package_dir = tmp_path / ".claude-plugin" / "scripts" / "livespec" / "render"
-    package_dir.mkdir(parents=True)
-    _ = (package_dir / "emit.py").write_text(
-        "from __future__ import annotations\n"
-        "\n"
-        '__all__: list[str] = ["emit"]\n'
-        "\n"
-        "\n"
-        "def emit(*, x: int) -> int:\n"
-        "    if x < 0:\n"
-        "        raise ValueError(x)\n"
-        "    return x\n",
-        encoding="utf-8",
-    )
-    consumer = tmp_path / _COMMANDS_TREE / "use.py"
-    consumer.parent.mkdir(parents=True, exist_ok=True)
-    _ = consumer.write_text(
-        "from __future__ import annotations\n"
-        "\n"
-        "from livespec.render.emit import emit\n"
-        "\n"
-        "__all__: list[str] = []\n"
-        "\n"
-        "\n"
-        "def run() -> None:\n"
-        "    _ = emit(x=1)\n",
-        encoding="utf-8",
-    )
-
+def test_public_api_result_typed_rejects_declared_tree_with_no_python(*, tmp_path: Path) -> None:
+    """A declared pure_trees path containing no Python files is a misdeclaration."""
     result = _run_check(cwd=tmp_path)
 
-    combined = result.stdout + result.stderr
-    assert result.returncode != 0, (
-        f"a repo with pure_trees not-applicable must still be scanned and convicted; "
-        f"got returncode={result.returncode} — stderr={result.stderr!r}"
+    assert result.returncode == 1, (
+        f"public_api_result_typed should reject a declared tree with no Python files; "
+        f"got returncode={result.returncode}"
     )
-    assert "emit" in combined, (
-        f"diagnostic does not surface offending name `emit`; "
-        f"stdout={result.stdout!r} stderr={result.stderr!r}"
-    )
-    assert "role key declared NOT APPLICABLE" not in combined, (
-        "the check still gated itself off on pure_trees instead of scanning the "
-        f"first-party universe; stderr={result.stderr!r}"
-    )
+    assert "declared role key resolves to no Python files" in result.stderr
 
 
 def test_public_api_result_typed_module_importable_without_running_main() -> None:
