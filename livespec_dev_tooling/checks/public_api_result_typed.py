@@ -49,18 +49,31 @@ subtraction is what makes the gate able to REFUSE as well as
 relieve — a gate that could only relieve would be
 indistinguishable from a blind one.
 
-⛔ BOTH DECLARATION KEYS' STALENESS GATES SIT BEHIND THE
-`pure_trees` ROLE-ABSENCE GATE, so a repo whose `pure_trees` is
-`not_applicable` or `unarmed_until` never reaches them and its
-declarations are UNVERIFIED locally until the check is armed
-there. That is an artifact of the gate ORDER, not of the
-detectors, and it is stated here rather than left to be
-discovered.
+✅ BOTH DECLARATION KEYS' STALENESS GATES NOW RUN EVERYWHERE.
+They used to sit behind a `pure_trees` role-absence gate, so a
+repo declaring that key `not_applicable` or `unarmed_until`
+never reached them and its declarations went UNVERIFIED. Removing
+the gate un-shadows them; that ordering artifact is gone.
 
-The scan universe is still `pure_trees`-scoped; the
-CONSUMPTION universe is the git-derived first-party set from
-`resolve_check_universe()`, because a consumer of a pure-layer
-function generally lives outside the pure layer.
+ONE UNIVERSE, NOT TWO. The scan universe and the consumption
+universe are both the git-derived first-party set from
+`resolve_check_universe()`. They were previously different sets —
+scan was `pure_trees`-scoped — and that is precisely what broke:
+the rule this check enforces binds every repo carrying ANY
+first-party Python (ratified livespec
+`SPECIFICATION/non-functional-requirements.md:114`, which states
+there is NO "thin repo" exemption and names the SOLE exemption as
+ZERO first-party Python), while `pure_trees` selects "has a
+pure-module subtree". A repo with no pure subtree therefore
+exited 0 having scanned ZERO files while still being bound.
+
+No role gate replaces it, deliberately. An empty universe is
+already a legitimate "nothing to check", and
+`resolve_check_universe()` FAILS CLOSED — it owns root
+resolution and raises rather than returning a spuriously-empty
+walk. A new declared key would reintroduce the same hazard this
+removal closes: a declaration whose emptiness means "skip me",
+indistinguishable from "genuinely no code".
 
 For each `.py` in scope, parse via `ast` and inspect each
 top-level FunctionDef the criterion calls public. A function
@@ -120,19 +133,13 @@ from livespec_dev_tooling.checks._public_api_consumption import (  # noqa: E402
     repo_local_public_names,
     stale_declarations,
 )
-from livespec_dev_tooling.checks._role_key_gate import (  # noqa: E402
-    ensure_declared_paths_contain_python,
-    role_absence_exit_code,
-)
 from livespec_dev_tooling.checks._single_meaning_variants import (  # noqa: E402
     declared_variant_names,
     rejected_variant_declarations,
 )
 from livespec_dev_tooling.config import (  # noqa: E402
-    iter_py_files,
     load_config,
     resolve_check_universe,
-    role_trees,
 )
 
 if TYPE_CHECKING:
@@ -340,19 +347,22 @@ def _find_offenders(
 
 def _scan(
     *,
-    cwd: Path,
-    pure_trees: tuple[Path, ...],
     config: Config,
     sources: Mapping[Path, str],
 ) -> list[tuple[Path, int, str]]:
-    """Offenders across the scanned trees, given the repo's consumption universe.
+    """Offenders across the first-party universe.
 
-    Two universes meet here and they are NOT the same set. The SCANNED universe
-    is `pure_trees`; the CONSUMPTION universe is `sources`, the git-derived
-    first-party set. A consumer of a pure-layer function generally lives
-    outside the pure layer, so deriving consumption from the scanned trees
-    alone would miss most of it — and missing consumption is the RELAXING
-    direction.
+    ONE universe. `sources` is the git-derived first-party set, and it is both
+    what gets SCANNED and what consumption is derived from. These used to be
+    two different sets — scanning was `pure_trees`-scoped while consumption was
+    already this set — so a repo with no pure-module subtree was never scanned
+    at all despite being bound by the rule.
+
+    Reading bodies from `sources` rather than from disk also removes a latent
+    root disagreement: `sources` is keyed relative to the git toplevel that
+    `resolve_check_universe()` resolved, whereas the old walk joined its paths
+    onto `Path.cwd()`. Those coincide only when the check is invoked from the
+    repo root.
     """
     public = repo_local_public_names(sources=sources) | declared_public_names(
         declared=config.cross_repo_public_api, sources=sources
@@ -382,20 +392,22 @@ def _scan(
         declared=config.single_meaning_variants, sources=sources, io_trees=config.io_trees
     )
     offenders: list[tuple[Path, int, str]] = []
-    for tree_rel in pure_trees:
-        for py_file in iter_py_files(root=cwd / tree_rel):
-            if py_file.name.startswith("_"):
-                continue
-            rel_path = py_file.relative_to(cwd)
-            for lineno, name in _find_offenders(
-                source=py_file.read_text(encoding="utf-8"),
-                rel_path=rel_path,
-                commands_trees=config.commands_trees,
-                public_names=frozenset(n for p, n in public if p == rel_path),
-                no_expected_failure_mode=frozenset(n for p, n in total if p == rel_path),
-                supervisor_entry_files=config.supervisor_entry_files,
-            ):
-                offenders.append((rel_path, lineno, name))
+    # The `_`-prefixed FILE skip is carried over UNCHANGED. Widening or removing
+    # it is a separate, independently-argued decision with its own blast radius,
+    # and bundling it into the universe change would have made this diff's effect
+    # impossible to attribute.
+    for rel_path in sorted(sources):
+        if rel_path.name.startswith("_"):
+            continue
+        for lineno, name in _find_offenders(
+            source=sources[rel_path],
+            rel_path=rel_path,
+            commands_trees=config.commands_trees,
+            public_names=frozenset(n for p, n in public if p == rel_path),
+            no_expected_failure_mode=frozenset(n for p, n in total if p == rel_path),
+            supervisor_entry_files=config.supervisor_entry_files,
+        ):
+            offenders.append((rel_path, lineno, name))
     return offenders
 
 
@@ -458,29 +470,18 @@ def main() -> int:
     log = structlog.get_logger("public_api_result_typed")
     cwd = Path.cwd()
     config = load_config(repo_root=cwd)
-    gate_exit = role_absence_exit_code(
-        config=config,
-        role=config.pure_trees,
-        key="pure_trees",
-        log=log,
-        check_id="public_api_result_typed",
-    )
-    if gate_exit is not None:
-        return gate_exit
-    pure_trees = role_trees(role=config.pure_trees)
-    if not ensure_declared_paths_contain_python(
-        repo_root=cwd,
-        key="pure_trees",
-        paths=pure_trees,
-        log=log,
-        check_id="public_api_result_typed",
-    ):
-        return 1
+    # No role gate. This check is bound by first-party Python, which is exactly
+    # what `resolve_check_universe()` returns, so gating on any declared key
+    # would select a set the rule does not. `role_absence_exit_code` on
+    # `pure_trees` used to sit here and made every repo without a pure-module
+    # subtree exit 0 without reading a file. The `pure_trees` `.py`-presence
+    # validation went with it; `check_mutation` and `pbt_coverage_pure_modules`
+    # still assert it, and they are the checks the key actually scopes.
     root, universe = resolve_check_universe()
     sources = {rel: (root / rel).read_text(encoding="utf-8") for rel in universe}
     if _report_bad_declarations(config=config, sources=sources, log=log):
         return 1
-    offenders = _scan(cwd=cwd, pure_trees=pure_trees, config=config, sources=sources)
+    offenders = _scan(config=config, sources=sources)
     if offenders:
         for path, lineno, name in offenders:
             log.error(

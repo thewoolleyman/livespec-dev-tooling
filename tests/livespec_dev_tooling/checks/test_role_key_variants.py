@@ -49,7 +49,7 @@ import structlog
 from livespec_dev_tooling.checks import (
     _role_key_gate,
     claude_md_coverage,
-    public_api_result_typed,
+    pbt_coverage_pure_modules,
 )
 from livespec_dev_tooling.config import Config, ConfigParseError, load_config
 
@@ -134,7 +134,7 @@ def test_not_applicable_variant_parses_and_carries_its_reason(
     )
     monkeypatch.chdir(tmp_path)
 
-    code = public_api_result_typed.main()
+    code = pbt_coverage_pure_modules.main()
 
     captured = capsys.readouterr()
     assert code == 0, (
@@ -166,7 +166,7 @@ def test_unarmed_until_variant_is_warn_and_names_its_ledger_id(
     _write_config(tmp_path=tmp_path, body='pure_trees = { unarmed_until = "livespec-mutreal.1" }\n')
     monkeypatch.chdir(tmp_path)
 
-    code = public_api_result_typed.main()
+    code = pbt_coverage_pure_modules.main()
 
     captured = capsys.readouterr()
     assert code == 0, (
