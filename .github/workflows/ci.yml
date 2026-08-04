@@ -363,6 +363,7 @@ jobs:
           - check-no-todo-registry
           - check-hook-trees-not-io-exempt
           - check-plan-thread-anchor-declared
+          - check-plan-thread-no-tombstone
           - check-plugin-resolution
           - check-self-hosted-routing
           - check-shell-quality
