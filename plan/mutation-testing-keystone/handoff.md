@@ -1,8 +1,11 @@
 # mutation-testing-keystone
 
-> **Ledger epic:** `livespec-mutreal` (P2) with keystone `livespec-mutreal.1` (P2),
-> both in the **`livespec`** repo's ledger — NOT this repo's. The ledger is
-> authoritative over this file.
+> **Ledger anchor:** epic `livespec-mutreal` (P2), with keystone `livespec-mutreal.1`
+> (P2) — both in the **`livespec`** repo's ledger, NOT this repo's. The anchor is
+> deliberately CROSS-TENANT; `check-plan-thread-epic-parity` parity-checks only
+> same-tenant `livespec-dev-tooling-*` ids and ignores cross-tenant refs by design
+> (decisions 41/44/45), so this thread is anchor-declared without falsely claiming a
+> local epic. The ledger is authoritative over this file.
 >
 > ```bash
 > /usr/local/bin/with-livespec-env.sh -- bd -C /data/projects/livespec show livespec-mutreal.1

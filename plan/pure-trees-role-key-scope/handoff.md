@@ -1,6 +1,6 @@
 # pure-trees-role-key-scope
 
-> **Ledger epic:** `livespec-dev-tooling-8zv3` (P1). The ledger is authoritative
+> **Ledger anchor:** epic `livespec-dev-tooling-8zv3` (P1). The ledger is authoritative
 > over this file. Re-derive every number and every repo state before quoting it.
 >
 > ```bash
