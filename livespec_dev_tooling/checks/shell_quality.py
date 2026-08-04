@@ -16,8 +16,10 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402
+from returns.pipeline import is_successful  # noqa: E402
 
 from livespec_dev_tooling.shellcheck import (  # noqa: E402
+    ShellCheckUnavailable,
     ShellFinding,
     run_shellcheck,
 )
@@ -54,6 +56,9 @@ class _Finding:
     path: Path
     line: int
     recipe: str | None = None
+    binary_name: str | None = None
+    required_version: str | None = None
+    remedy: str | None = None
     code: str | None = None
     severity: str | None = None
 
@@ -76,11 +81,29 @@ def _has_errexit(*, line: str) -> bool:
 
 
 def _shellcheck_findings(*, repo_root: Path) -> list[_Finding]:
-    shell_findings = run_shellcheck(repo_root=repo_root).unwrap()
+    run_result = run_shellcheck(repo_root=repo_root)
+    if not is_successful(run_result):
+        failure = run_result.failure()
+        if isinstance(failure, ShellCheckUnavailable):
+            return [_finding_for_shellcheck_unavailable(repo_root=repo_root, failure=failure)]
+    shell_findings = run_result.unwrap()
     findings: list[_Finding] = []
     for item in shell_findings:
         findings.extend(_finding_for_shellcheck_severity(item=item))
     return findings
+
+
+def _finding_for_shellcheck_unavailable(
+    *, repo_root: Path, failure: ShellCheckUnavailable
+) -> _Finding:
+    return _Finding(
+        reason="shellcheck-unavailable",
+        path=repo_root,
+        line=1,
+        binary_name=failure.binary_name,
+        required_version=failure.required_version,
+        remedy=failure.remedy,
+    )
 
 
 def _finding_for_shellcheck_severity(*, item: ShellFinding) -> list[_Finding]:
@@ -258,6 +281,9 @@ def _emit_findings(*, log: structlog.stdlib.BoundLogger, findings: Sequence[_Fin
             path=str(finding.path),
             line=finding.line,
             recipe=finding.recipe,
+            binary_name=finding.binary_name,
+            required_version=finding.required_version,
+            remedy=finding.remedy,
             code=finding.code,
             severity=finding.severity,
         )

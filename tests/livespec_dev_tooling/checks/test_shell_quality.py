@@ -9,8 +9,10 @@ from pathlib import Path
 
 import pytest
 from returns.primitives.exceptions import UnwrapFailedError
+from returns.result import Failure
 
 from livespec_dev_tooling.install_worktree_pack import CANONICAL_WORKTREE_JUST_BODY
+from livespec_dev_tooling.shellcheck import ShellCheckUnavailable
 
 __all__: list[str] = []
 
@@ -339,3 +341,41 @@ def test_empty_shell_corpus_fails_closed(*, tmp_path: Path) -> None:
 
     with pytest.raises(UnwrapFailedError):
         module.findings_for_repo(repo_root=tmp_path)
+
+
+def test_missing_shellcheck_binary_hard_fails_with_actionable_remedy(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _write(
+        root=tmp_path,
+        rel="scripts/clean.sh",
+        body="#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s\\n' ok\n",
+    )
+    module = importlib.import_module("livespec_dev_tooling.checks.shell_quality")
+    unavailable = ShellCheckUnavailable(
+        binary_name="shellcheck",
+        required_version="0.11.0",
+        remedy=(
+            "install ShellCheck 0.11.0 and expose it on PATH, for example with "
+            "`mise install shellcheck@0.11.0` from the consumer repo"
+        ),
+    )
+    monkeypatch.setattr(
+        module,
+        "run_shellcheck",
+        lambda *, repo_root: Failure(unavailable) if repo_root else Failure(unavailable),
+    )
+
+    try:
+        rc, stderr = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+    except UnwrapFailedError as exc:  # pragma: no cover
+        pytest.fail(f"expected a shell-quality finding, got unwrap failure: {exc}")
+
+    assert rc == 1, stderr
+    assert '"reason": "shellcheck-unavailable"' in stderr
+    assert '"binary_name": "shellcheck"' in stderr
+    assert '"required_version": "0.11.0"' in stderr
+    assert "`mise install shellcheck@0.11.0` from the consumer repo" in stderr
