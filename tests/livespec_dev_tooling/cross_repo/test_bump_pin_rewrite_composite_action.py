@@ -552,7 +552,9 @@ _RELOCK_PIN_FORMAT = "pyproject_toml_uv_sources"
 # re-resolve the just-pushed tag to the previously-cached ref.
 _RELOCK_REFRESH_FLAG = "--refresh-package"
 _TOOL_PIN_STEP_NAME = "Reconcile canonical tool pins"
-_SHELLCHECK_PIN = 'shellcheck = "0.11.0"'
+_TOOL_PIN_SOURCE_REPO_GATE = "if: ${{ inputs.source_repo == 'livespec-dev-tooling' }}"
+_RELEASE_TAG_REF = "refs/tags/${TAG}"
+_TOOL_PIN_MODULE = "livespec_dev_tooling.cross_repo.tool_pin_projection"
 
 
 def _relock_step_body(*, text: str) -> str:
@@ -637,7 +639,7 @@ def _tool_pin_step_body(*, text: str) -> str:
 
 
 def test_tool_pin_step_projects_shellcheck_pin_before_canonical_reconcile() -> None:
-    """The Action projects the released ShellCheck mise pin before wiring the new check.
+    """The Action projects tag-matched tool data before wiring the new check.
 
     The v1.18.4 fanout wired `check-shell-quality` into consumers, but left their
     `.mise.toml` without `shellcheck = "0.11.0"`. Those PRs then failed before
@@ -648,13 +650,17 @@ def test_tool_pin_step_projects_shellcheck_pin_before_canonical_reconcile() -> N
     text = _read(path=_ACTION_PATH)
     body = _tool_pin_step_body(text=text)
     assert ".mise.toml" in body, "the tool-pin step must edit the consumer .mise.toml"
-    assert _SHELLCHECK_PIN in body, (
-        "the tool-pin step must project the exact released ShellCheck pin " f"{_SHELLCHECK_PIN!r}"
-    )
-    assert re.search(r"^        uv run python - <<'PY'$", body, re.MULTILINE), (
-        "the tool-pin edit must use a structured parser/script rather than a "
-        "blind sed replacement"
-    )
+    assert (
+        _TOOL_PIN_SOURCE_REPO_GATE in body
+    ), "bumps for arbitrary source repos must not mutate consumer tool pins"
+    assert "TAG: ${{ inputs.tag }}" in body
+    assert (
+        _RELEASE_TAG_REF in body
+    ), "pin data must come from the source release, not a newer support checkout"
+    assert "git -C .livespec-dev-tooling show FETCH_HEAD:.mise.toml" in body
+    assert (
+        _TOOL_PIN_MODULE in body
+    ), "the composite must delegate projection to the typed/tested module"
     tool_pin_pos = text.find(_TOOL_PIN_STEP_NAME)
     check_reconcile_pos = text.find("- name: Reconcile canonical check wiring")
     assert tool_pin_pos != -1 and check_reconcile_pos != -1, "composite Action step shape changed"
