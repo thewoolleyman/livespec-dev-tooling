@@ -151,10 +151,13 @@ ensure-codex-plugins:
 # with the failure list if any target failed.
 # ---------------------------------------------------------------
 
-# Deliberately omit errexit here: scripts/just/check.sh owns fail-closed mirror
-# validation and the aggregate's continue-on-failure behavior. The literal array
-# is a compatibility bridge for livespec CORE readers pinned to v1.17.1; the
-# script compares it byte-for-entry with check-targets.txt before dispatch.
+# scripts/just/check.sh owns fail-closed mirror validation and the aggregate's
+# continue-on-failure behavior. The literal array is a compatibility bridge for
+# livespec CORE readers pinned to v1.17.1; the script compares it byte-for-entry
+# with check-targets.txt before dispatch.
+#
+# Every target must run and the complete failure set be reported rather than
+# stopping at the first failing member, so errexit is deliberately omitted.
 check:
     #!/usr/bin/env bash
     set -uo pipefail

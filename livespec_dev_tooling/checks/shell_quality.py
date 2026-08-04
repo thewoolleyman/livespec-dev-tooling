@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -30,6 +31,9 @@ _CHECK_ID = "shell-quality"
 _EXIT_VIOLATIONS = 1
 _SET_WORD_COUNT = 2
 _INTERPOLATION_SENTINEL = "__JUST_INTERPOLATION__"
+# `set -e` is matched with boundaries so it cannot fire from inside an
+# ordinary hyphenated word; a bare "-e" substring previously could.
+_ERREXIT_RATIONALE_PATTERN = re.compile(r"errexit|(?<![\w-])set\s+-e(?![\w-])")
 
 
 class _JustSettings(TypedDict, total=False):
@@ -268,8 +272,20 @@ def _has_forbidden_shell_syntax(*, line: str) -> bool:
 
 
 def _mentions_errexit(*, text: str) -> bool:
-    normalized = text.lower()
-    return "errexit" in normalized or "-e" in normalized
+    """Does this doc actually STATE an errexit rationale?
+
+    The exemption a deviating recipe earns here is the only thing standing
+    between a deliberate omission and an accidental one, so the test must not
+    be satisfiable by prose that never mentions errexit at all. A bare
+    ``"-e" in text`` was: it matches the two characters inside any ordinary
+    hyphenated word (``byte-for-entry``, ``pre-existing``), which silently
+    granted the exemption to recipes carrying no rationale whatsoever.
+
+    Accepted spellings are the literal word ``errexit`` and the flag form
+    ``set -e``, the latter matched with boundaries so it cannot fire from the
+    middle of a hyphenated word.
+    """
+    return bool(_ERREXIT_RATIONALE_PATTERN.search(text.lower()))
 
 
 def _emit_findings(*, log: structlog.stdlib.BoundLogger, findings: Sequence[_Finding]) -> None:

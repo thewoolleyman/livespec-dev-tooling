@@ -188,6 +188,49 @@ def test_accidental_masked_coverage_omission_fails(
     assert '"recipe": "check-per-file-coverage"' in stderr
 
 
+def test_incidental_hyphen_e_in_doc_does_not_buy_the_deviation_exemption(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """An ordinary hyphenated word must not exempt an undocumented deviation.
+
+    The documented-deviation exemption is what lets a recipe omit errexit
+    deliberately. It must be earned by DOCUMENTING the rationale — never by a
+    doc that merely happens to contain the two characters ``-e`` inside an
+    unrelated hyphenated word. The doc below gives no errexit rationale at
+    all; ``byte-for-entry`` is the only thing in it resembling ``-e``.
+    """
+    _write(
+        root=tmp_path,
+        rel="justfile",
+        body="\n".join(
+            [
+                "# The script compares it byte-for-entry with check-targets.txt "
+                "before dispatch.",
+                "check:",
+                "    #!/usr/bin/env bash",
+                "    set -uo pipefail",
+                "    echo one",
+                "    echo two",
+                "",
+            ]
+        ),
+    )
+    _write(
+        root=tmp_path,
+        rel="scripts/clean.sh",
+        body="#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s\\n' ok\n",
+    )
+
+    rc, stderr = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert rc == 1, stderr
+    assert '"reason": "missing-errexit-rationale"' in stderr
+    assert '"recipe": "check"' in stderr
+
+
 def test_just_interpolation_in_recipe_body_fails(
     *,
     tmp_path: Path,
