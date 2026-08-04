@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.18.6](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.18.5...v1.18.6) (2026-08-04)
+
+
+### Bug Fixes
+
+* **fleet:** pace the gh seam across the sweep, owned by the runner object ([da4add6](https://github.com/thewoolleyman/livespec-dev-tooling/commit/da4add6c3ad5b9944f04f548e8d051fea9cc751c))
+
 ## [1.18.5](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.18.4...v1.18.5) (2026-08-03)
 
 
