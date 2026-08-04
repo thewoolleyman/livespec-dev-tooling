@@ -234,7 +234,10 @@ def planned_commands(*, settings_text: str) -> tuple[tuple[str, ...], ...]:
 
 def subprocess_runner(*, args: tuple[str, ...]) -> CommandResult:
     """Run one Claude CLI command."""
-    completed = subprocess.run(list(args), check=False)
+    try:
+        completed = subprocess.run(list(args), check=False)
+    except OSError:
+        return CommandResult(returncode=127)
     return CommandResult(returncode=completed.returncode)
 
 
