@@ -34,10 +34,25 @@ from __future__ import annotations
 import re
 
 __all__: list[str] = [
+    "fail_open_reason",
+    "repo_variable_fallback",
     "runs_on_values",
     "strip_yaml_comments",
     "workflow_triggers",
 ]
+
+# The two fail-open verdicts, as the reason strings `fail_open_reason` returns
+# and the parent reports verbatim.
+_FALLBACK_NAMES_SELF_HOSTED = "fallback names self-hosted capacity"
+_FALLBACK_UNRESOLVABLE = "fallback literal is unresolvable"
+
+_VARS_REFERENCE = "vars."
+_OR_OPERATOR = "||"
+_EXPRESSION_CLOSE = "}}"
+_CALL_CLOSE = ")"
+_QUOTE_CHARS = "\"'"
+# A quoted literal needs at least an opening and a closing quote.
+_MIN_QUOTED_LENGTH = 2
 
 
 # `runs-on:` at any indent; the value is the inline remainder (may be empty for
@@ -155,6 +170,86 @@ def _parse_block_triggers(*, lines: list[str], start: int) -> frozenset[str]:
         if indent == child_indent:
             triggers.add(match.group("key"))
     return frozenset(triggers)
+
+
+def _trim_expression_tail(*, text: str) -> str:
+    """Strip an expression's trailing `}}` and `)` delimiters, and surrounding space.
+
+    Peeled repeatedly rather than once, because the two canonical shapes nest
+    differently: `${{ vars.X || 'a' }}` closes with `}}` alone, while
+    `${{ fromJSON(vars.X || '[...]') }}` closes the call before the
+    expression. Each iteration removes at least one character, so the loop
+    terminates on every input, including one that is nothing but delimiters.
+    """
+    trimmed = text.strip()
+    while True:
+        if trimmed.endswith(_EXPRESSION_CLOSE):
+            trimmed = trimmed[: -len(_EXPRESSION_CLOSE)].strip()
+            continue
+        if trimmed.endswith(_CALL_CLOSE):
+            trimmed = trimmed[: -len(_CALL_CLOSE)].strip()
+            continue
+        return trimmed
+
+
+def _strip_matching_quotes(*, text: str) -> str:
+    """Remove ONE matching pair of surrounding quotes, if `text` carries one."""
+    if len(text) >= _MIN_QUOTED_LENGTH and text[0] == text[-1] and text[0] in _QUOTE_CHARS:
+        return text[1:-1]
+    return text
+
+
+def repo_variable_fallback(*, value: str) -> str | None:
+    """Return the fallback literal of a `vars.<NAME> || <fallback>` runs-on value.
+
+    THREE outcomes, and every input reaches one of them — this function is
+    TOTAL over `str` and raises for no input:
+
+    * `None` — the value offers no repo-variable fallback at all (it carries no
+      `vars.` reference, or no `||` operator). The ordinary literal `runs-on`.
+    * `""` — a fallback was offered and nothing resolvable follows the
+      operator. The caller reports this rather than passing it silently.
+    * a non-empty string — the fallback literal, with the expression's trailing
+      delimiters and one matching pair of surrounding quotes removed.
+
+    The LAST `||` alternative is the one returned: in `a || b || c` the value
+    used when every earlier term is empty is `c`, and that is the value a
+    deleted repo variable actually routes to.
+
+    Deliberately NOT a regex with a required quote after the operator. That
+    shape is what made an earlier implementation crash: an UNQUOTED fallback
+    matched nothing, a `cast()` stood in for the runtime check, and reading a
+    group off the absent match raised `AttributeError` — a security check
+    failing open by dying. Splitting on the operator has no such failure mode.
+    """
+    if _VARS_REFERENCE not in value or _OR_OPERATOR not in value:
+        return None
+    _, _, remainder = value.rpartition(_OR_OPERATOR)
+    return _strip_matching_quotes(text=_trim_expression_tail(text=remainder))
+
+
+def fail_open_reason(*, value: str, self_hosted_labels: frozenset[str]) -> str | None:
+    """Return why `value` routes fail-OPEN, or `None` when it does not.
+
+    A `runs-on` whose repo-variable fallback names self-hosted capacity sends
+    the merge gate to a runner that may not exist the moment the variable is
+    deleted or emptied; the fallback must name hosted capacity instead. A
+    value that offers no fallback is not this check's business and returns
+    `None`, which keeps the rule a genuine no-op in every repo that routes
+    `runs-on` literally.
+
+    Total over arbitrary text, like `repo_variable_fallback` beneath it: the
+    caller that interprets a total parser must be total too, or the crash
+    simply moves one frame up.
+    """
+    fallback = repo_variable_fallback(value=value)
+    if fallback is None:
+        return None
+    if not fallback:
+        return _FALLBACK_UNRESOLVABLE
+    if any(label in fallback for label in self_hosted_labels):
+        return _FALLBACK_NAMES_SELF_HOSTED
+    return None
 
 
 def workflow_triggers(*, stripped: str) -> frozenset[str]:
