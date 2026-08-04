@@ -4,8 +4,8 @@ The ledger-state PARITY half of plan-lifecycle enforcement. For each ACTIVE plan
 handoff (`plan/*/handoff.md`, excluding `plan/archive/`), reads the ledger status
 of its `**Ledger anchor:**` epic and FAILS when an active thread points at a
 `done`/`closed` epic — the exact drift that leaves a completed plan thread
-un-archived. Only same-tenant `livespec-dev-tooling-*` ids are parity-checked;
-cross-tenant prose refs (e.g. `livespec-…`) are ignored (decisions 41/44/45).
+un-archived. Only ids under the checked repo's tenant prefix are parity-checked;
+cross-tenant prose refs (e.g. `livespec-...`) are ignored (decisions 41/44/45).
 
 ARMED-ONLY: self-skips (structured info, exit 0) UNLESS BOTH the RUN lever
 `LIVESPEC_RUN_PLAN_EPIC_PARITY` is truthy AND the beads credential
@@ -38,6 +38,7 @@ _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
+import jsoncomment  # noqa: E402  — vendor-path-aware import after sys.path insert.
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
 __all__: list[str] = []
@@ -46,12 +47,12 @@ __all__: list[str] = []
 _PLAN_DIR_NAME = "plan"
 _ARCHIVE_DIR_NAME = "archive"
 _HANDOFF_GLOB = "*/handoff.md"
+_LIVESPEC_CONFIG = ".livespec.jsonc"
 _RUN_LEVER = "LIVESPEC_RUN_PLAN_EPIC_PARITY"
 _CRED_ENV = "BEADS_DOLT_PASSWORD"
 _CLOSED_STATUSES = frozenset({"closed", "done"})
 
 _ANCHOR_RE = re.compile(r"\*\*Ledger anchor:\*\*\s*(?:epic\s*)?`?([^`\n)]*?)`?(?:\s|$|\))")
-_TENANT_ID_RE = re.compile(r"^livespec-dev-tooling-[a-z0-9]+$")
 
 _REMEDIATION = (
     "the plan thread is complete — archive it with "
@@ -75,13 +76,31 @@ def _active_handoffs(*, plan_dir: Path) -> list[Path]:
     )
 
 
-def _same_tenant_anchor(*, text: str) -> str | None:
-    """Return the handoff's same-tenant `livespec-dev-tooling-*` anchor id, else None."""
+def _tenant_id_re(*, tenant_prefix: str) -> re.Pattern[str]:
+    """Return the same-tenant work-item id matcher for `tenant_prefix`."""
+    return re.compile(rf"^{re.escape(tenant_prefix)}-[a-z0-9]+$")
+
+
+def _store_prefix(*, cwd: Path) -> str:
+    """Return the repo store prefix from `.livespec.jsonc`'s connection block."""
+    parsed = cast(
+        "dict[str, object]",
+        jsoncomment.loads((cwd / _LIVESPEC_CONFIG).read_text(encoding="utf-8")),
+    )
+    implementation = cast("dict[str, object]", parsed["implementation"])
+    plugin = cast("str", implementation["plugin"])
+    block = cast("dict[str, object]", parsed[plugin])
+    connection = cast("dict[str, object]", block["connection"])
+    return cast("str", connection["prefix"])
+
+
+def _same_tenant_anchor(*, text: str, tenant_id_re: re.Pattern[str]) -> str | None:
+    """Return the handoff's same-tenant anchor id, else None."""
     match = _ANCHOR_RE.search(text)
     if match is None:
         return None
     token = match.group(1).strip().strip("`").strip()
-    return token if _TENANT_ID_RE.match(token) is not None else None
+    return token if tenant_id_re.match(token) is not None else None
 
 
 def _parse_status(*, text: str) -> str | None:
@@ -143,7 +162,11 @@ def main(*, status_reader: StatusReader | None = None) -> int:
         return 0
     offenders: list[tuple[Path, str, str]] = []
     for path in _active_handoffs(plan_dir=plan_dir):
-        anchor = _same_tenant_anchor(text=path.read_text(encoding="utf-8"))
+        tenant_id_re = _tenant_id_re(tenant_prefix=_store_prefix(cwd=cwd))
+        anchor = _same_tenant_anchor(
+            text=path.read_text(encoding="utf-8"),
+            tenant_id_re=tenant_id_re,
+        )
         if anchor is None:
             continue
         status = reader(epic_id=anchor, repo=cwd)
