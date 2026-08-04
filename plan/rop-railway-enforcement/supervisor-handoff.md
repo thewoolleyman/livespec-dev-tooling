@@ -457,7 +457,84 @@ Repeat these in every instruction sent to the supervised session:
 `tmp/overseer/.../.supervisor-state` marker is uncommitted and HAS vanished mid-session
 once; treat it as a cache, never as the record.
 
-### ▶️▶️▶️ SUPERVISOR RESUME — 2026-08-03 ~19:50Z. **READ THIS FIRST. IT IS THE NEWEST BLOCK IN THE FILE.**
+### ▶️▶️▶️ SUPERVISOR RESUME — 2026-08-04 ~01:35Z. **READ THIS FIRST. IT IS THE NEWEST BLOCK IN THE FILE.**
+
+**✅✅ THE OWED VALVE IS ASKED AND ANSWERED — `k4km` IS RULED. The debt the previous block
+recorded is DISCHARGED, and it is removed as a live instruction rather than left standing**, per
+this file's own rule that a discharged task reads exactly like a live one.
+
+**MAINTAINER RULING: AMEND THE CONTRACT.** `contracts.md:382` moves to match the shipped
+`_canonical_ratification_digest` — `resulting_files[]` only, LIST ORDER, ascii-decimal + `:`
+prefixes. **The validator does NOT change.** Recorded in full on ledger `k4km`; do not re-derive
+it and do not re-escalate it.
+- **⚠️ THE RATIONALE MUST TRAVEL WITH IT: both encodings are SOUND, so this was a FREE CHOICE,
+  not a correctness fix.** ascii-decimal+`:` is injective for exactly the reason u64-BE is — `:`
+  is not a digit, so the length field self-delimits. **Nobody may later record that the shipped
+  scheme "was more correct."** It was not; it was already shipped and already depended upon.
+- **THE STRUCTURAL FACT THAT DECIDED IT, verified at the call site rather than argued:**
+  `_digest_error` receives ONLY `decision`, `evidence`, `reviewer_model` — **`P` (raw proposal
+  bytes) is NOT REACHABLE there.** The contract's `LP(P)` term would force a filesystem read into
+  a currently-pure validator, on the very file revise is concurrently consuming.
+- **⛔ THE CLASS SURVIVES AND IS FILED AS `8o8e.29` (P1, open).** Nothing mechanically compares a
+  `contracts.md`-stated encoding against the function that ships it, so the next divergence
+  presents identically and silently. The maintainer was offered the converge-on-one-source option
+  and chose the instance fix on cost, **with the residual disclosed at decision time.** Do not
+  close `k4km` as though the class were addressed.
+
+**⛔ THE PREVIOUS BLOCK'S DRIVE ORDER IS STALE — RE-DERIVED FROM THE LEDGER, DO NOT FOLLOW IT.**
+It said "drive `8o8e.10` (livespec-runtime's **27**) or `livespec`'s **20**". Live ledger:
+`8o8e.10` is **11**, marked **LOCAL LANE COMPLETE** — all 11 residual are cross-repo-bound (8,
+see `0aru`) or process entry points (3, needing a v177 ruling). `livespec` is `8o8e.12` at **15**,
+not 20. **Taking `8o8e.10` would be taking a finished lane.** The worker caught this before I
+did and its correction is accepted; that block went stale in under two hours, which is this
+file's own most-repeated hazard committed by the block that warns about it.
+
+**🟢 THE WORKER IS ALIVE, ON THE RIGHT LANE, AND OBEYING THE RITUAL — do NOT treat it as stopped.**
+It is in `~/.worktrees/livespec-orchestrator-git-jsonl/fix-backfill-file-io-railway` converting
+`backfill_file` to the IO railway, observed mid-**Red** commit staging the test ALONE. **It
+restarted a SEVENTH time mid-drive** (pane pid 2972946 → 1121300, context 75% → 87% left);
+every restart so far has persisted its substance to `handoff.md` first and lost nothing.
+
+**▶️ WHAT TO DRIVE NEXT, in order:**
+1. **The `k4km` contract amendment in `livespec`** — now unblocked by the ruling above. Spec-side
+   revise; it must itself ratify under the CURRENT (validator) digest, which works because the
+   validator is what ships.
+2. **The git-jsonl lane (`8o8e.11`)** — the worker is on it; `loads_json_optional` deletion is
+   prescribed and still owed if it took `backfill_file` first.
+3. **`8o8e.29`** (the drift class) or **`8o8e.22`** on its own merits.
+4. **⛔ STILL DO NOT SCHEDULE `55ec`.** Both blocks below remain; one is the peer lane's.
+
+**🔴 A FINDING HANDED TO THE WORKER AS INPUT TO VERIFY, not yet confirmed by it: THE SWEEP
+STOPPED AT THE DOCUMENT BOUNDARY.** The worker corrected `handoff.md` in two places when it
+disproved "git-jsonl's `*_optional` twins are ALL GONE" — but ledger `8o8e.11`'s DESCRIPTION
+still asserts it, and **this charter declares the LEDGER AUTHORITATIVE OVER BOTH DOCUMENTS.** I
+re-derived the underlying fact independently on `livespec-orchestrator-git-jsonl` origin/master:
+`io/spec_next.py:70 loads_json_optional` is LIVE and `:78 load_json_file_optional -> IOResult`
+is its converted sibling. **So the one record that outranks the prose still carries the refuted
+claim — FIX ONE INSTANCE, LEAVE THE SIBLING STALE, fourth instance today, this time in the
+authoritative record.** 📜 **The remedy generalises: after any retraction, grep the DOCUMENTS
+AND THE LEDGER. A sweep with the wrong scope is the same defect wearing the remedy's clothes.**
+**GATE ATTACHED:** `8o8e.11` cannot close while its own description says a twin class is gone and
+a member of that class is live in the tree it describes.
+
+**🧪 THE BUSY-TEST IS VALIDATED — REUSE IT, DO NOT REINVENT IT.** Positive-controlled on FOUR
+samples in BOTH directions before arming: a live worker pane (BUSY), two idle panes (IDLE), and a
+constructed idle pane carrying a completed `⎿  $ …command… (6m 50s · 4 lines)` line (IDLE **with**
+the `^[[:space:]]*⎿` exclusion, **BUSY without it** — so the exclusion is PROVEN load-bearing,
+not assumed). ⚠️ **My first attempt at that third control was WRONG and passed vacuously**: I
+injected a line with no literal `…` before the paren, so it never exercised the hazard and
+"proved" an inert exclusion. **A control that cannot fail proves nothing — the epic's own rule,
+met while building the instrument that supervises the epic.**
+⚠️ **The ceiling message fired once and was CORRECT to fire:** I verified BOTH limbs against the
+live pane rather than re-arming blindly, and the worker was genuinely busy for the full 20
+minutes. **That is what the ceiling is for.**
+
+**MID-FLIGHT AT THIS WRITING:** this PR (docs-only), and one watcher I armed
+(**pid 1191027**, ~20 min self-terminating ceiling). **Kill it BY PID and look first —
+NEVER pattern-kill**; `pgrep`/`pkill -f` self-matches, and a generic pattern on this host
+matches fleet CI infrastructure and other sessions' watchers. No open question, no other worktree.
+
+### SUPERVISOR RESUME — 2026-08-03 ~19:50Z. **SUPERSEDED by the block above.** Sound on the `k4km` framing (now RULED — see above); **STALE on the drive order and on the `8o8e.10`/`livespec` counts.**
 
 **NOTHING OF MINE IS MID-FLIGHT.** No worktree of mine outlives this note, no background
 watcher (stopped by PID), no open question. **One PR of mine may still be in flight:
@@ -475,14 +552,19 @@ mid-drive and was at ~85% context, landing brief-18/19 corrections as PR **#1205
 restart so far has persisted and reaped cleanly first; nothing has been lost to one.
 
 **▶️ WHAT TO DRIVE NEXT, in order:**
-1. **`8o8e.10` (livespec-runtime's 27) or `livespec`'s 20.** Both repos are GREEN. This is the
-   work the v191 ratification exists to unblock.
+1. **⛔ [STALE — DO NOT FOLLOW] `8o8e.10` (livespec-runtime's 27) or `livespec`'s 20.** Both repos
+   were GREEN and this was the work the v191 ratification exists to unblock — **but the COUNTS
+   ARE WRONG: `8o8e.10` is 11 and marked LOCAL LANE COMPLETE, `livespec` is `8o8e.12` at 15.**
+   Taking `8o8e.10` would be taking a finished lane. See the newest block at the top.
 2. **⛔ DO NOT SCHEDULE `55ec`.** beads-fabro is blocked TWICE — see the block below. One of the
    two blocks is a PEER LANE's and is not ours to touch.
 3. **`8o8e.22`** on its own merits (a mechanism that converts any telemetry failure into a
    repo-wide push freeze), **NOT as the key to `55ec`** — it does not unblock it.
 
-**🔺 THE ONE RIPE MAINTAINER VALVE THIS DRIVE OWES — `k4km` (P1), fully prepared, not yet asked.**
+**✅ DISCHARGED 2026-08-04 — `k4km` WAS ASKED AND IS RULED: AMEND THE CONTRACT (see the newest
+block at the top of this section). The instruction below is HISTORY, not a live debt.**
+
+**🔺 [HISTORICAL] THE ONE RIPE MAINTAINER VALVE THIS DRIVE OWED — `k4km` (P1), fully prepared, then unasked.**
 `contracts.md` §"Ratification-review evidence" and the shipped `_canonical_ratification_digest`
 specify DIFFERENT digests on three axes (proposal bytes in/out, path-sorted vs list order,
 u64-BE vs ascii-decimal prefixes). **No evidence can satisfy both**, and the gate hard-refuses on
@@ -492,6 +574,8 @@ it, is a deadlock rather than a gate. **That is NOT softening: the validator run
 ⚠️ **WHICH SIDE MOVES IS THE MAINTAINER'S CALL and it is a FREE choice between two SOUND
 encodings** — ascii-decimal-plus-`:` is injective for the same reason the u64 prefix is. **Ask it
 as a prepared valve with that framing; do not re-derive it and do not let it sit unasked.**
+**✅ [DISCHARGED 2026-08-04 — this was done. Asked with exactly that framing and RULED: amend the
+contract. Do not ask it again.]**
 
 ### 🟩🟩 CURRENT POSITION — 2026-08-03, THE 4ihw RATIFICATION DRIVE. (Superseded as read-first by the RESUME block above; still current on substance.)
 
@@ -645,10 +729,11 @@ pass the gate**, which hard-refuses on mismatch.
   the shipped scheme is **different, not unsound** — the reconciliation is a FREE choice
   between two sound encodings. **Whoever converges them must say that explicitly**, or the
   next reader manufactures a soundness rationale that never existed.
-- **⚠️ WHICH SIDE MOVES IS A MAINTAINER QUESTION AND IS THE RIPE VALVE THIS DRIVE OWES.** It
-  was deliberately NOT escalated mid-drive: a legitimate action proceeds under a stated
-  assumption, so it fails "genuinely blocking". Bring it as a PREPARED valve, not a
-  half-formed one.
+- **✅ [DISCHARGED 2026-08-04] WHICH SIDE MOVES WAS A MAINTAINER QUESTION AND IT HAS BEEN
+  ANSWERED: AMEND THE CONTRACT; the validator does not change.** It was correctly withheld
+  mid-drive — a legitimate action proceeded under a stated assumption, so it failed "genuinely
+  blocking" — then brought as a PREPARED valve and ruled. **The residual drift CLASS is filed as
+  `8o8e.29`.** Nothing here is owed; see the newest block at the top of this section.
 
 ### ⛔⛔ POST-RATIFICATION: `55ec` IS BLOCKED TWICE AND ONE BLOCK IS A PEER LANE'S — SUPERVISORY RULINGS
 
@@ -665,7 +750,9 @@ PRs. **Stand down on that ACTION only, never on the thread** — that is this fi
 procedure, and it resolves here to: **beads-fabro is the ONLY blocked repo** (verified:
 `livespec-runtime`, `livespec-orchestrator-git-jsonl` and `livespec-overseer` master CI all
 `success`), so the fleet remediation is not stalled — **only its beads-fabro share is.** Take
-`8o8e.10` (livespec-runtime's 27) or `livespec`'s 20; **do not schedule `55ec`.**
+~~`8o8e.10` (livespec-runtime's 27) or `livespec`'s 20~~ — **those COUNTS ARE STALE (11 and 15
+respectively, and `8o8e.10` is LOCAL LANE COMPLETE); take the drive order in the newest block at
+the top of this section instead.** The standing part still holds: **do not schedule `55ec`.**
 
 **⛔ AND THE GATE BOUNDARY, STATED BEFORE A FIX EXISTS RATHER THAN AFTER.** `8o8e.22`'s repair
 touches a GATE. Making `export-telemetry` stop reddening master is the FORBIDDEN direction —
