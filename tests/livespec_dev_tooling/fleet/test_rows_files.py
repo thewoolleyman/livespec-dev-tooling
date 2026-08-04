@@ -290,6 +290,11 @@ def test_ensure_plugins_subprocess_runner_reports_command_status() -> None:
     )
 
 
+def test_ensure_plugins_subprocess_runner_reports_missing_binary() -> None:
+    result = ensure_plugins.subprocess_runner(args=("definitely-missing-livespec-claude-binary",))
+    assert result.returncode != 0
+
+
 # --- uv.lock <-> pin lockstep leg (livespec-glv6) -------------------------
 
 _UVLOCK_ARGS: tuple[str, ...] = (
