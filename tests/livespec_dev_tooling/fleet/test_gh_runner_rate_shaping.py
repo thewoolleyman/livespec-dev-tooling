@@ -83,6 +83,11 @@ def slept(monkeypatch: pytest.MonkeyPatch) -> _RecordingSleep:
 @pytest.fixture(autouse=True)
 def _gh_on_path(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(_gh_runner.shutil, "which", lambda _name: "/usr/bin/gh")
+    # ⚠️ `default_gh_runner` is now ONE process-wide instance, so the nine members
+    # of a sweep can share a cooldown. That is the point in production and a leak
+    # in tests: whichever test trips a throttle first would pace every test after
+    # it. Reset per test — monkeypatch restores it afterwards.
+    monkeypatch.setattr(default_gh_runner, "_throttle_lifted_at", 0.0)
 
 
 def test_a_rate_limited_invocation_is_retried_and_can_succeed(
