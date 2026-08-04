@@ -72,244 +72,147 @@ Complete placeholder declaration for the two-layer charter:
 - Illustrative placeholders occur only in prose or the obligation-schema YAML,
   never as unresolved generation-time values in fenced shell commands.
 
-## Live restart state — 2026-08-04T10:15Z
+## Live restart state — 2026-08-04T15:10Z
 
-This section is the authoritative handoff from the outgoing supervisor. Re-read
-the shared protocol, this whole file, `handoff.md`, the maintainer inbox, and the
-runtime worker log before acting. Re-measure all external state; timestamps and
-CI status below are evidence, not permission to assume they remain current.
+This section is the authoritative handoff from the outgoing supervisor and has
+been rewritten to current reality; earlier restart-state text was deleted rather
+than layered, because stale layers in THIS file have twice sent a supervisor down
+a dead path. Re-read the shared protocol, this whole file, the worker's
+`handoff.md`, and the runtime worker log before acting. **Re-measure everything.**
+Timestamps below are evidence, not permission — three separate times this session
+something changed between two of my own measurements.
 
-The richest running record is
-`tmp/overseer/fleet-shell-quality-enforcement/worker-status.log` (~200 lines) and
-the obligation record `.supervisor-state`. Both are on disk, NOT in git.
+The richer running record is
+`tmp/overseer/fleet-shell-quality-enforcement/worker-status.log` (~270 lines) and
+the obligation record `.supervisor-state` in the same directory. Both are on disk,
+NOT in git, so they survive a restart but not a machine loss.
 
-### Superseding measurements — 2026-08-04T10:30Z
+### THE ONE THING THAT MATTERS FIRST: your worker is CLAUDE, and it is healthy
 
-Taken by the restarted supervisor on a cold open. Where these disagree with the
-10:15Z record below, these win; the older text is kept as evidence, not as
-instruction.
+A maintainer-directed runtime switch replaced the Codex worker with `claude` in
+the SAME tmux session and repo cwd, so overseer per-session tracking continuity
+holds. **The Codex exit was deliberate, not a crash.** Do not "recover" it, and do
+not let an owner/release chain respawn a Codex worker over the Claude one. The
+HALT-first precondition accepts a live `claude` OR `codex` driver, so a green
+precondition proves NOTHING about which runtime is present — read the process tree.
 
-- **THE FREEZE IS LIFTED. The section immediately below is HISTORY, not a task.**
-  Both legs landed while this supervisor was measuring: `livespec-driver-codex`
-  PR 390 (the narrow revert) merged at 10:20:38Z, and `livespec-dev-tooling`
-  PR 1248 merged at 10:25:01Z. Master `2aa4187` carries the declaration and has
-  since advanced past `d4d4030` (`release 1.18.8`), which is itself the proof
-  that merges flow again.
-- **LEG 3 NO LONGER NEEDS DECLARATIONS, and that instruction below is WRONG.**
-  PR 1248 already added BOTH keys — `cross_repo_public_api` gains
-  `shell_quality.py::main`, and `supervisor_entry_files` gains the same path.
-  Verified by reading both hunks, not by trusting the note: the guard was read
-  before declaring (the consumer binds `rc = shell_quality.main()` and asserts
-  the int, so there is no `is None` site for the Result hazard), and the
-  whole-file `no_write_direct` cost is stated rather than hidden. It matches the
-  nine peers exactly. **A second edit to that key would be the duplicate-remedy
-  hazard, not diligence.**
-- **LEG 3 WAS EXECUTED BY THE MONITOR LANE, NOT BY US — DO NOT DUPLICATE IT.**
-  `livespec-driver-codex` commit `52ee48d` on worktree/branch
-  `reland-shell-quality-gate-consumer-test` restores the test byte-identical
-  (sha256 `0952b672643c137c288053f5bbb2d94e555d1a80cb12b24174502a61cf432bc8`,
-  confirmed against `7382f1f`) and carries real `TDD-Suite-Green-*` trailers, so
-  its hooks ran and the full suite passed. It is authored by a DIFFERENT Claude
-  session. At 10:29Z it was still unpushed with no PR. **It is that session's
-  branch; the standing rule against touching another session's worktrees applies.
-  Re-measure it before acting, and coordinate rather than seize.**
-- The ritual question that leg raised, resolved from installed code so nobody
-  re-derives it: a test-only re-land does NOT need a Red. `_red_green_replay_modes.py`
-  carries a SUITE-GREEN leg admitting "a passing test-only cleanup" by running the
-  FULL suite, exit 0 only. And `commit_pairs_source_and_test` is ONE-DIRECTIONAL —
-  it requires tests when SOURCE changes, so a test-only commit passes it trivially.
-- **PR 1249 — this handoff's own PR — was stuck in the documented STALE-CHECK
-  TRAP and this supervisor cleared it.** It sat OPEN with auto-merge armed, 65
-  checks, ZERO pending, failing only `check-fleet-conformance` and `ci-green` —
-  both pure freeze artifacts. With nothing pending, CI would never re-run and
-  auto-merge would never fire, exactly as git-jsonl PR 540 sat until rebased. The
-  remedy is a REBASE onto post-1248 master, which is a real base change rather
-  than a forbidden unchanged rerun. Any other PR parked during the freeze is
-  likely in the same trap — check `pending == 0` before assuming it will land.
-- **The provenance block's pinned `generator_ref` is GONE — detected now, not
-  hard-coded.** It HALTed this cold open, would have HALTed the next one, and the
-  ref churned a THIRD time mid-session (`0.27.1` → `0.27.6` → `0.29.0`, ten
-  minutes apart) with the digest identical at every step. The digest is still the
-  only identity and still HALTs on mismatch, verified with negative controls. See
-  the Generator provenance section; do not re-pin it.
-- Re-measured 10:24Z: `42t4az.1` CLOSED, `.2` backlog, `.3` open P1, `.4` open
-  P2, closeout `qgw7gb` pending-approval, epic `42t4az` backlog. Rollouts —
-  `bd-ib-35qhta` active with run `01KZ6125R9X62VMGXBNYSXGYNV` genuinely RUNNING
-  (confirmed via safe `fabro ps`, and the worker is attached to it),
-  `livespec-runtime-ohlb4f` active with NO live run (its run
-  `01KZ5W1JTRDHQNN50GNG31M4QB` reads succeeded — the stale claim is REAL, not
-  dispatch latency), `livespec-akg7k5` and `overseer-cdhdlv` pending-approval.
-- **Do NOT release `ohlb4f`'s stale claim to `ready` yet.** Releasing it while
-  the runtime route is undecided makes it eligible for another session's
-  `next`-ranked autonomous pickup, straight back into the same deadlock. That is
-  the identical dispatch-interlock reasoning this thread ratified for the P0.
-- Three Fabro runs are live host-wide and one is ours, so a second tenant
-  dispatch stays off the table until `bd-ib-35qhta` clears.
-
-### THE ONE THING THAT MATTERED FIRST, NOW DISCHARGED: the repo was MERGE-FROZEN, by my artifact
-
-`livespec-dev-tooling` is merge-frozen at `a4a6646`. Nothing merges — not
-`42t4az.3`, not `42t4az.4`, not the closeout, not this handoff's own PR, not any
-other lane.
-
-Cause, and it is this thread's own: the driver-codex rollout (`bedeju`) landed
-`tests/test_shell_quality_gate.py` consuming
-`livespec_dev_tooling/checks/shell_quality.py::main` WITHOUT the
-`cross_repo_public_api` + `supervisor_entry_files` declarations its nine peers
-carry. Fleet row `cross-repo-public-api-declared` therefore fails for member
-`livespec-dev-tooling`, and because that row evaluates the SELF member at
-`canonical_ref` (master, always), pure-trees PR 1248 — which carries the
-declaration — cannot clear itself. Verified red: run `30895922985` on `456a793`.
-The required ordering was declaration-before-consumer.
-
-Agreed route (a-NARROW), maintainer-routed through the monitor:
-
-1. A normal worktree PR in `livespec-driver-codex` reverting ONLY
-   `tests/test_shell_quality_gate.py` — NOT all of `7382f1f7`, because a full
-   revert would un-migrate recipes and could turn driver-codex red. driver-codex
-   master is green, so no server-side trick is needed. **I released this leg to
-   the monitor at 10:12Z** rather than hold a fleet freeze against my own
-   wind-down; assume it is done or in flight, and RE-MEASURE.
-2. pure-trees merges PR 1248 once the row clears.
-3. **RE-LAND THE CONSUMER TEST, WITH ITS DECLARATIONS. THIS LEG IS OURS AND IS
-   THE FIRST PRIORITY OF THE NEXT SESSION.** Add `cross_repo_public_api` and
-   `supervisor_entry_files` declarations alongside the test, matching the nine
-   peers, so declaration lands before or with the consumer.
-4. Their `rjyc` P0 — make the row evaluate self from the tree under test — is the
-   durable fix. Do NOT rush it as the unblock.
-
-Route (b), an administrative merge, is FORBIDDEN by `.ai/ci-gate-discipline.md`.
+The worker is driving well and does not need rescuing. At 15:05Z it was at 77%
+context, had answered both of its blocking questions, and was working the
+`42t4az` children. See "How to inspect and drive" for the steering mechanics —
+in particular that steering QUEUES to the next turn boundary and does NOT preempt
+a long turn.
 
 ### Where the epic actually stands
 
-Measured 2026-08-04T10:05Z. Re-measure before acting.
+Measured 15:06Z. Re-measure before acting on any of it.
 
-- **P0 `livespec-dev-tooling-42t4az.1`: CLOSED.** The missing-shellcheck
-  `TypeError` is fixed and VERIFIED on master with live controls — corpus 32
-  files so the path is reachable, a real shellcheck run returns `Success` so the
-  probe discriminates, and the absent-binary probe now returns a typed
-  `ShellCheckUnavailable` naming the tool, version `0.11.0`, and a remedy. The
-  check is NOT skipped or weakened: its test asserts `rc == 1`.
-- **`livespec-dev-tooling-jtrjzk`: CLOSED.**
-- **v1.18.7 IS the corrected release**, confirmed by strict commit containment
-  (not changelog text): tag `41420425` contains both `25735f0` (the P0) and
-  `808802220ed4` (PR 1232), with a reversed-ancestry control proving the test
-  discriminates. `.mise.toml` at the tag pins `shellcheck = "0.11.0"`.
-- **Rollouts: 4 of 8 CLOSED** — `livespec-driver-claude-gtqrzu`,
-  `livespec-driver-codex-bedeju`, `bd-gj-uworva`,
-  `livespec-console-beads-fabro-6yii4r`.
-- **`bd-ib-35qhta` (beads-fabro): ACTIVE**, run `01KZ6125R9X62VMGXBNYSXGYNV`
-  was running at 10:05Z. Its admission followed my `bd-ib-xhcqbc` metadata
-  repair.
-- **`livespec-runtime-ohlb4f`: ACTIVE with a STALE CLAIM** — see below.
-- **`livespec-akg7k5` and `overseer-cdhdlv`: pending-approval.** NOTE:
-  `approve:<id>` REFUSES on these ("requires an effective-manual
-  pending-approval item") because they are `admission:auto` — their
-  pending-approval is transient and the DISPATCHER admits them. Do not waste a
-  call on approve; drive `impl:` directly.
-- Epic children: `.2` backlog (retire the legacy 65-target mirror, ONLY once
-  every pinned consumer reads `check-targets.txt` at the version it pins);
-  `.3` open P1 and `.4` open P2, both filed by me from verified root causes;
-  closeout `qgw7gb` pending-approval; epic `42t4az` still backlog.
+- **P0 `42t4az.1`, `jtrjzk`: CLOSED.** v1.18.7 was the corrected release.
+- **Rollouts: 6 of 8 CLOSED** — driver-claude, driver-codex, bd-gj-uworva,
+  console-6yii4r, `overseer-cdhdlv` (PR 686 at `9825253d`, merge CI green,
+  ledger closed, primary refreshed), and runtime's implementation.
+- **`livespec-akg7k5`: the last live rollout, and it is a HOLD, not a stall.**
+  Its durable run `01KZ6GBEPR5QMAXMQD3W9X3VYK` was `cancelled` while HEALTHY —
+  implement had succeeded — and the worker could not attribute the cancel (no
+  fabro CLI cancel logged, no watchdog entry, and the engine's zero-event
+  watchdog is a 2h timer against 37m elapsed). The item is `active`/`fabro` with
+  the claim DELIBERATELY held.
+- **`livespec-runtime-ohlb4f`: rollout DONE, ledger not closeable.** PR 467
+  merged at `25d300f9` carrying the recipe→`.sh` migration, the aggregate slug
+  and its ci.yml matrix job. `reconcile-merged` then exited red at
+  `janitor-post-merge` on ONE target, `check-master-ci-green` — an unrelated red
+  master, NOT our rollout. The dispatcher's diagnostic checkout
+  `~/.worktrees/livespec-runtime/janitor-reconcile-livespec-runtime-ohlb4f` is
+  retained ON PURPOSE; do not delete it, force-close the ledger, or redispatch.
+- **Epic children**: `.2` backlog (retire the legacy mirror ONLY once every
+  pinned consumer reads `check-targets.txt` at the version it pins); `.3` open P1
+  and `.4` open P2. Closeout `qgw7gb` pending-approval; epic `42t4az` backlog.
+- **New this session**: `bd-ib-zp3u7y` filed — the pre-branch stranded-dispatch
+  visibility defect, with a live reproduction. It explicitly states the fix must
+  NOT merely widen the payload tuple.
 
-### Runtime is stuck in a genuine deadlock — and I made it worse, then reverted
+### The two blockers, and neither is ours to fix
 
-`livespec-runtime-ohlb4f` reads `active`/`fabro` with NO live run. That is a
-STALE CLAIM: release it by hand before any second drive. ACTIVE is never
-evidence of a run.
+1. **Three fleet masters are red on `check-public-api-result-typed`**, and the
+   owning ROP chain `livespec-dev-tooling-8o8e` reads backlog/UNASSIGNED. This is
+   what blocks `ohlb4f` reconcile and makes `qgw7gb`'s "green master in all nine
+   tenants" unsatisfiable today, for non-shell reasons. Ruling chosen and already
+   acted on: **escalate, do not absorb.** The measured three-tenant blast radius
+   is recorded as a comment on `8o8e`, including the single-commit arming control
+   (runtime `25d300f9` SUCCESS → `54abd7c7` FAILURE, where the only content is a
+   pin bump). Do NOT convert other tenants' APIs; that is another chain's lane.
+   DO keep it escalated — an unassigned chain blocking three tenants should not
+   go quiet.
+2. **The `akg7k5` re-drive gate is PARTIALLY open.** The foreign livespec run has
+   cleared and the blind-spot defect is filed. The zero-collision preflight was
+   CLEAN at 15:04Z: no `feat/livespec-akg7k5` on the forge, no implementation PR,
+   no worktree, no local branch, lock pid dead/auto-reclaimable. **One condition
+   remains:** livespec master advanced to `fba470bc` with CI run `30922077153`
+   QUEUED, and the dispatcher refuses to dispatch onto a red master
+   (`bd-ib-wefw`). Because the guarded `move:livespec-akg7k5:ready` must land with
+   NO gap before the drive, releasing the claim before master is green risks
+   leaving the item ready/unassigned and next-rankable while the drive is refused.
+   **Order: let livespec master CI settle GREEN, then move + drive as ONE
+   uninterrupted sequence.** Never release the claim earlier.
 
-The two PRs are individually unmergeable:
+### My own in-flight work — ONE PR, and it carries this handoff
 
-- **PR 466** (release-generated pin, App-authored, workflows-granted) carries
-  `.mise.toml`, the `ci.yml` matrix job, the aggregate entry and the recipe —
-  but fails `check-shell-quality` because recipes are not migrated yet.
-- **PR 467** (factory) migrates recipes AND bumps the pin AND wires locally, but
-  the FACTORY DISPATCH CREDENTIAL DELIBERATELY LACKS THE WORKFLOWS GRANT (a
-  documented boundary, same as `7caozh`), so it cannot add the `ci.yml` job.
+`livespec-dev-tooling` PR **1268**, branch `docs/steering-lands-at-turn-boundary`,
+worktree `~/.worktrees/livespec-dev-tooling/steering-correction`. Auto-merge
+armed. It carries BOTH the steering-mechanics correction and this rewritten
+restart state — deliberately one branch, because a second branch would have
+conflicted on this same file. If it has merged, remove that worktree and branch.
+If it is open with **zero pending** and red, that is this repo's signature
+stale-check trap: REBASE it, never issue an unchanged rerun.
 
-**MY ERROR, CORRECTED — READ THIS BEFORE RETRYING.** I reconciled PR 467 to
-migration-only (commit `63076b6`, removing the `check-targets.txt` entry, the
-`.github/scripts/check.sh` aggregate entry, and the justfile recipe), reasoning
-from git-jsonl where that scope worked. It made things WORSE: 1 failure became
-2 (`check-aggregate-completeness` and `check-canonical-recipe-fidelity`). The
-structural difference I had missed is that **git-jsonl's migration PR 541 did
-NOT bump the pin, while runtime's PR 467 DOES** — so on PR 467
-`check-shell-quality` is already canonical, and the aggregate MUST list it. I
-reverted at `7dfb0d4` and the branch is back to the factory's own output with
-its single original failure. Do not repeat that removal.
+### Hazards this session actually hit — do not re-learn them
 
-The real deadlock: PR 467 cannot be green while it carries the pin without the
-`ci.yml` job, and PR 466 cannot be green until recipes are migrated. Plausible
-routes, none yet chosen: strip the PIN (not the wiring) from 467 so it is truly
-migration-only like git-jsonl's 541; or have the workflows-granted App carry
-everything in one PR. **THE DURABLE INVARIANT, which any route must respect:
-the aggregate slug and its CI matrix job MUST land in the same commit.**
-
-### The proven rollout sequence, and the step everyone forgets
-
-Worked twice, driver-claude and git-jsonl: migration PR merges FIRST, then the
-pin PR is **REBASED onto the migrated master**. That rebase is REQUIRED, not
-cosmetic — without it the pin PR sits on STALE pre-migration check results with
-ZERO pending, so CI never re-runs and auto-merge never fires. git-jsonl's PR 540
-sat exactly like that until I rebased it; it then went green and merged.
-
-### Two source defects I filed, both with verified root causes
-
-- **`42t4az.3` (P1)** — the fanout ships the ShellCheck pin to console-class
-  consumers WITHOUT the `check-shell-quality` wiring. Root cause: a SILENT SKIP
-  GATED ON A SENTINEL in `.github/actions/bump-pin-rewrite/action.yml`, which
-  bails out with only a `::notice::` when the consumer justfile lacks the literal
-  `check-aggregate-completeness`. Correlation across seven repos was EXACT:
-  console `sentinel=0` and it alone merged its pin ungated; the other six carry
-  4–5. CONFIRMED STILL LIVE at 09:20Z: console's repo was repaired by hand, but
-  its sentinel is still 0, so console will silently skip EVERY future canonical
-  check slug. Adding the sentinel to console as a one-off is NOT the remedy —
-  the projection must declare and test which consumer classes it owns.
-- **`42t4az.4` (P2)** — `livespec_dev_tooling/worktree_pack/worktree.just` is
-  shipped by this repo, lands in consumers as `dev-tooling/worktree.just`, and is
-  GITIGNORED, so it exists in every working copy and no CI checkout. The released
-  checker reports 6 findings on it locally and none in CI on the same commit.
-  Control: the identical local invocation against `livespec-dev-tooling` itself
-  reports 0, matching its green CI, because it has no installed fragment.
-
-### Hazards this session actually hit — do not re-learn these
-
+- **I shipped a DUPLICATE remedy.** I diagnosed the fabro sandbox image failure
+  and authored the whole fix through a Red/Green ritual, only to find PR 1257 had
+  already merged the byte-identical change. I HAD checked for competing PRs first
+  — the point is that the check has a SHELF LIFE. Re-check IMMEDIATELY BEFORE
+  PUSHING whenever the gap is more than a few minutes.
+- **A zero-notice cross-lane write.** I wrote to `dolt-server` before notifying
+  its lane, and only posted a retrospective claim notice after the monitor
+  flagged it. Claim FIRST, then write.
+- **The stale-check trap is this repo's signature failure.** A PR parked while
+  something else blocked sits with zero pending and stale reds; CI never re-runs
+  and auto-merge never fires. Check `pending == 0` before assuming it will land.
+- **v1.18.8 was DEAD ON ARRIVAL fleet-wide** — its sandbox images never published
+  because the image producer failed on a `gh` apt pin upstream deleted. Such PRs
+  fail at Docker pull with `manifest unknown` and ZERO check output. Never triage
+  those reds as product findings. Fixed and superseded by the v1.18.9+ wave.
+- **A pinned version can fail on the calendar rather than on the artifact.** Both
+  the `gh` apt pin and this charter's own `generator_ref` aged out while the thing
+  they pinned was unchanged. See Generator provenance for how that was resolved
+  WITHOUT weakening the check.
+- **`git checkout --ours/--theirs` during a rebase is inverted** from intuition:
+  `--ours` is the branch you are rebasing ONTO. Getting it backwards on the
+  runtime bump PR would have reverted the migration.
+- **A fresh worktree fails `check-primary-checkout-commit-refuse-hook-installed`**
+  with `worktree_pack_absent`, because the `dev-tooling/` pack is gitignored. The
+  remedy is `just bootstrap` in that worktree — a fix, not a bypass.
 - **`bd update --set-metadata k=v` stores the value as a STRING**, silently
-  turning a list into JSON text. The success tick does NOT mean the shape is
-  right — check the TYPE. Recover with `bd update --metadata @file.json`.
-- **`reject:<id>` alone is not a valid action.** It is `reject:<id>:rework` or
-  `:regroom`, and it only operates from `acceptance` state, not
-  `pending-approval`. `:regroom` performs a `git revert` of the merge SHA — never
-  use it where a revert is forbidden.
-- **gh REST `core` and GraphQL are separate budgets.** I exhausted REST (0/5000)
-  with `gh run view --log-failed` and `gh run list` while GraphQL still had 4815.
-  Prefer `git ls-remote` (no budget at all), then GraphQL `gh pr view/list
-  --json`, and reserve REST for job logs. `fabro ps` costs no GitHub budget.
-- **A zero-run reading right after a dispatch is LATENCY, not a phantom.** Wait
-  before concluding; I nearly misjudged `ohlb4f` that way.
-- **zsh does not word-split unquoted `$var`.** A file list passed that way became
-  one pathspec and made a diff test vacuously empty — the positive control is the
-  only reason it was caught.
+  turning a list into JSON text. The success tick does not mean the shape is
+  right. Recover with `bd update --metadata @file.json`.
+- **Tool-budget order**: `git ls-remote` costs no GitHub budget; GraphQL
+  (`gh pr view/list --json`) is plentiful; reserve REST (`gh run view/list`) for
+  when a job log is genuinely needed. `fabro ps` costs no GitHub budget. Bare
+  `fabro` is not on PATH — use `/home/ubuntu/.local/bin/fabro` under the wrapper.
 
 ### Repo/worktree hygiene
 
-Primary was clean at measurement: equal to `origin/master`, only the user's
+Primary measured clean and equal to `origin/master` apart from the user's
 untracked `install-livespec-pr-bot.png` (sha256
-`a3e2d35997c60459df71fd16d608c71560eeea16d0aee11422db7eecba204fe5`), preserved
-byte-for-byte. I restored a stray `uv.lock` version bump that was a local `uv`
-artifact, not an intended change.
+`a3e2d35997c60459df71fd16d608c71560eeea16d0aee11422db7eecba204fe5`) — preserve it
+byte-for-byte. `just bootstrap` leaves a stray `uv.lock` version bump; it is a
+local `uv` artifact, not an intended change, so restore it.
 
-Worktrees I own and did NOT clean, because their work is unfinished:
+⛔ **If `plan/fleet-shell-quality-enforcement/handoff.md` reads modified in the
+primary, that is the WORKER writing its own handoff. Do NOT discard it.**
 
-- `~/.worktrees/livespec-runtime/ohlb4f-reconcile` on branch
-  `feat/livespec-runtime-ohlb4f` — the runtime factory branch, now reverted to
-  the factory baseline at `7dfb0d4`. Remove it once runtime's route is decided.
-- `~/.worktrees/livespec-dev-tooling/wrapup-fleet-shell-quality-enforcement-supervisor`
-  — this handoff's own wrap-up worktree, if its PR has not merged under the
-  freeze.
-
-All this thread's earlier dev-tooling worktrees were cleaned. Preserve unrelated
-worktrees belonging to other sessions.
+The only worktree I own is the PR 1268 one named above. Every other dev-tooling
+worktree in this thread was cleaned. Preserve unrelated worktrees belonging to
+other sessions, and never touch another session's branches.
 
 ### Security follow-up
 
@@ -318,6 +221,7 @@ connector secret values. Never repeat them. Before final closeout, tell the
 maintainer to rotate the Claude/Codex provider credentials and Cloudflare
 connector tokens, update the Claude 1Password Environment, and redact the
 affected transcript.
+
 
 ## Generator provenance
 
