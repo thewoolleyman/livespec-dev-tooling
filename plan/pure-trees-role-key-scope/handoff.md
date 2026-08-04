@@ -205,10 +205,51 @@ answer came back ONE, which is a result rather than a miss.
    fleet-wide needs those clear first. **Verify landability per repo before pushing** —
    runner minutes are a first-class constraint.
 
-4. ⬜ **NEW, and it is the one this thread should NOT decide alone.** The `_`-prefixed FILE
-   skip is recorded as wider than the ratified rule and is what keeps dev-tooling at 0.
-   Whether to drop it is a **separate decision with its own blast radius** — do not fold it
-   into the decoupling.
+4. ⬜ **NOW MEASURED AND FILED AS `8zv3.5` — it is 64% of the entire remediation.** The
+   `_`-prefixed FILE skip is recorded as wider than the ratified rule (v178 clause 0
+   disqualifies `_`-prefixed NAMES, not FILES) and is what keeps dev-tooling at 0.
+   **`8zv3.5` BLOCKS `8zv3.4`**: the fan-out cannot be costed until it is settled.
+
+## 📏 Fleet numbers — measured 2026-08-04, read-only, both bases
+
+| repo | universe | **WITH** `_`-skip (shipped) | **WITHOUT** (epic basis) | skip's radius |
+|---|---:|---:|---:|---:|
+| `livespec-overseer` | 214 | **115** | **249** | **134** |
+| `livespec-orchestrator-beads-fabro` | 186 | **17** | **157** | **140** |
+| `livespec` | 145 | 12 | 20 | 8 |
+| `livespec-runtime` | 31 | 12 | 12 | 0 |
+| `livespec-orchestrator-git-jsonl` | 49 | 4 | 6 | 2 |
+| `livespec-dev-tooling` | 177 | 0 | 1 | 1 |
+| `livespec-driver-codex` | 7 | 0 | 1 | 1 |
+| `livespec-driver-claude` | 7 | 0 | 0 | 0 |
+| **TOTAL** | | **160** | **446** | **286** |
+
+`160 = 115+17+12+12+4+0+0+0`. `446 = 249+157+20+12+6+1+1+0`. Arithmetic shipped with the
+total, per `8o8e.17`.
+
+⛔ **THE EPIC'S COST IS DOMINATED BY A DECISION THAT IS NOT PART OF IT.** Decouple with the
+skip retained → the armed check convicts **~160**. Drop the skip too → **~446**. Budget,
+sequencing and blast radius all move **~2.8x** on that one question. `8zv3.3` proceeds under
+the **stated assumption that the skip is retained**.
+
+✅ **The no-skip column corroborates independent measurements**: `livespec` **20** matches the
+rop worker's harness-controlled 20 exactly; `livespec-dev-tooling` **1** matches its raw 1 on
+the same function; `beads-fabro` **157** matches `8o8e.8`'s own-pin figure. **So every
+recorded `8o8e.7`–`.13` figure is the NO-SKIP basis.**
+
+⚠️⚠️ **THESE ARE NOT THE ARMED NUMBERS.** The repos are on **different dev-tooling pins** —
+six at **1.17.1**, two at **1.18.7** — so each was evaluated by its own pinned criterion.
+Operationally honest (it is what each CI would do today), but six different-versioned criteria
+in one table, and **once the decoupling releases and `bump-pin` fans out, every repo is
+re-evaluated by the NEW criterion. Re-measure per repo after the pin lands.** That pin spread
+is also the fleet's known pin-currency defect showing up again: rows that fire correctly on
+every stale member and gate nothing.
+
+⚠️ Trees move fast — `livespec-overseer` measured universe **214** against `8o8e.7`'s recorded
+**172**. **Quote the SHA.** Measured at: dev-tooling `3a9ed20`, livespec `d2501bc9`, overseer
+`3bdb29a`, beads-fabro `f792496d`, git-jsonl `07a450c`, driver-codex `37472ae`;
+`livespec-runtime` and `livespec-driver-claude` one commit behind master, both missing commits
+verified to touch **zero** `.py`.
 
 > ⚠️ **Every answer above is the supervisor's read-only analysis, recorded with its
 > reproduction command. None has been independently verified. Re-derive before relying on
