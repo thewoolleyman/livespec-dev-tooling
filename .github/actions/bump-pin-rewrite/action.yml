@@ -387,6 +387,45 @@ runs:
         canonical_json=$(uv run python -m livespec_dev_tooling.canonical_checks --json)
         CANONICAL_JSON="$canonical_json" uv run --project .livespec-dev-tooling python -m livespec_dev_tooling.cross_repo.ci_yaml_canonical_reconcile
 
+    - name: Assert ShellCheck pin is gated
+      if: ${{ inputs.source_repo == 'livespec-dev-tooling' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        # Contract declaration for the ShellCheck rollout: any consumer that
+        # receives the released ShellCheck tool pin from livespec-dev-tooling
+        # must also carry the check-shell-quality gate in the same bump commit.
+        # Sentinel-less consumers used to skip both canonical reconcile steps
+        # with notices and still commit the pin; this invariant fails closed
+        # after reconcile has had its chance to wire the check.
+        if ! grep -qE '^shellcheck[[:space:]]*=' .mise.toml; then
+          echo "::notice::no ShellCheck pin present after tool-pin projection; skipping check-shell-quality invariant"
+          exit 0
+        fi
+        missing=()
+        if [[ ! -f justfile ]]; then
+          missing+=("justfile")
+        else
+          if ! grep -qE '^[[:space:]]*check-shell-quality[[:space:]]*$' justfile; then
+            missing+=("justfile aggregate target check-shell-quality")
+          fi
+          if ! grep -qE '^check-shell-quality([[:space:]][^:]*)?:' justfile; then
+            missing+=("check-shell-quality recipe")
+          fi
+        fi
+        if [[ ! -f .github/workflows/ci.yml ]]; then
+          missing+=(".github/workflows/ci.yml")
+        elif ! grep -q 'check-shell-quality' .github/workflows/ci.yml; then
+          missing+=("CI check-shell-quality job or matrix target")
+        fi
+        if ((${#missing[@]})); then
+          printf '::error::ShellCheck pin is present but check-shell-quality is not fully wired; missing:'
+          printf ' %s;' "${missing[@]}"
+          printf '\n'
+          exit 1
+        fi
+        echo "::notice::ShellCheck pin is gated by check-shell-quality"
+
     - name: Re-stamp canonical-slugs projection
       shell: bash
       run: |

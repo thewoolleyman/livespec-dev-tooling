@@ -705,6 +705,8 @@ _RECONCILE_MODULE = "livespec_dev_tooling.cross_repo.justfile_canonical_reconcil
 # grows the aggregate must grow CI's matrix in the same commit.
 _CI_MATRIX_STEP_NAME = "Reconcile canonical CI matrix wiring"
 _CI_MATRIX_MODULE = "livespec_dev_tooling.cross_repo.ci_yaml_canonical_reconcile"
+_SHELL_QUALITY_ASSERT_STEP_NAME = "Assert ShellCheck pin is gated"
+_SHELL_QUALITY_SLUG = "check-shell-quality"
 # The TOOL runs from the master support checkout (a consumer's pinned release
 # predates the reconcile module); the canonical DATA must NOT. `.livespec-dev-tooling`
 # is this repo at MASTER — ahead of every consumer pin — so resolving the
@@ -734,6 +736,17 @@ def _ci_matrix_step_body(*, text: str) -> str:
         re.MULTILINE | re.DOTALL,
     )
     assert match, f"composite Action missing the {_CI_MATRIX_STEP_NAME!r} step"
+    return match.group(0)
+
+
+def _shell_quality_assert_step_body(*, text: str) -> str:
+    """Return the body of the ShellCheck-pin gating assertion step."""
+    match = re.search(
+        r"^    - name: Assert ShellCheck pin is gated\b.*?(?=^    - name: |\Z)",
+        text,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert match, f"composite Action missing the {_SHELL_QUALITY_ASSERT_STEP_NAME!r} step"
     return match.group(0)
 
 
@@ -830,6 +843,41 @@ def test_ci_matrix_reconcile_step_runs_after_the_justfile_reconcile_before_commi
         "the CI matrix reconcile MUST follow the justfile reconcile (whose newly-wired "
         "aggregate slugs it mirrors into CI) and precede `Commit + push bump branch` "
         "(so the reconciled ci.yml is committed with the pin bump)"
+    )
+
+
+def test_shellcheck_pin_requires_check_shell_quality_wiring_before_commit() -> None:
+    """A ShellCheck pin must never be committed without its enforcing check wiring.
+
+    Regression for livespec-dev-tooling-42t4az.3: sentinel-less consumers received
+    the released `shellcheck` mise pin while both canonical reconcile steps skipped
+    with notices, so the bump PR merged ungated. The action must fail closed after
+    reconcile when the pin is present but the justfile aggregate, justfile recipe,
+    or CI matrix/job does not carry `check-shell-quality`.
+    """
+    text = _read(path=_ACTION_PATH)
+    body = _shell_quality_assert_step_body(text=text)
+    assert _TOOL_PIN_SOURCE_REPO_GATE in body, (
+        "only livespec-dev-tooling bumps project the ShellCheck tool pin, so only "
+        "that source path must enforce the pin-with-wiring invariant"
+    )
+    assert "shellcheck" in body, "the invariant must key off the projected ShellCheck pin"
+    assert "missing+=(" in body, "the invariant must accumulate every missing wiring surface"
+    assert body.count(_SHELL_QUALITY_SLUG) >= 3, (
+        "the invariant must require check-shell-quality in the justfile aggregate, "
+        "as a recipe, and in CI"
+    )
+    assert "::error::ShellCheck pin is present but check-shell-quality is not fully wired" in body
+    assert "::notice::consumer does not carry check-aggregate-completeness" not in body, (
+        "the regression was a sentinel-missing skip; this assertion must not repeat "
+        "that notice-only gate"
+    )
+    ci_matrix_pos = text.find(_CI_MATRIX_STEP_NAME)
+    assert_pos = text.find(_SHELL_QUALITY_ASSERT_STEP_NAME)
+    commit_pos = text.find("- name: Commit + push bump branch")
+    assert ci_matrix_pos < assert_pos < commit_pos, (
+        "the ShellCheck invariant must run after canonical reconcile has had a chance "
+        "to wire the check, and before the bump commit can capture an ungated pin"
     )
 
 
