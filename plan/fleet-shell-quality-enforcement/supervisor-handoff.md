@@ -428,6 +428,37 @@ digest differed, the correct action would still have been to regenerate.
 The shared protocol owns the role-level rules. These commands substitute this
 thread's ledger and tmux bindings so they run as written.
 
+### The worker pane runs CLAUDE, not Codex — steering mechanics changed
+
+Maintainer-directed runtime switch, 2026-08-04. The Codex TUI in session
+`fleet-shell-quality-enforcement` was quit deliberately after it published its
+restart handoff, and `claude` was launched in the SAME session name and repo cwd
+so overseer tracking continuity holds (it detects runtime per session).
+
+**The Codex exit is NOT a crash.** Do not report it as one, do not "recover" the
+pane, and do not let the overseer owner/release chain respawn a Codex worker over
+the Claude one. The HALT-first precondition above already passes either way — it
+accepts a live `claude` OR `codex` driver — so a green precondition is not
+evidence about which runtime is present. Read the process tree if you need to
+know.
+
+What changes for driving, and it removes two hazards this thread lost real time
+to:
+
+- **Steering lands MID-TURN with a plain `Enter`.** There is no Tab-queue and no
+  turn-boundary starvation, so an instruction no longer sits unread until the
+  worker finishes. The Codex-era failure mode where text waited in a
+  "Queued follow-up inputs" block — which drove stale state into `handoff.md`
+  through PR 1236 — cannot happen the same way. **Verify consumption anyway.**
+- **Long pastes are safe.** The Codex hazard where a pasted buffer rendered as
+  several collapsed `[Pasted Content NNNN chars]` placeholders, and where reading
+  that counter as truncation led to a C-c/C-u/BSpace "repair" that CHEWED THREE
+  CHARACTERS off the real text, does not apply to a Claude pane.
+
+What does NOT change: still send the text, VERIFY it landed with a capture, and
+send `Enter` separately. Verify-then-Enter is cheap and catches a mistargeted
+pane, which is a hazard of the tmux target, not of the runtime.
+
 ```sh
 ledger_anchor='livespec-dev-tooling-42t4az'
 # The ledger is a per-repo tenant database, so `bd` needs the fleet credential
