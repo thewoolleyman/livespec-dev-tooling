@@ -457,7 +457,58 @@ Repeat these in every instruction sent to the supervised session:
 `tmp/overseer/.../.supervisor-state` marker is uncommitted and HAS vanished mid-session
 once; treat it as a cache, never as the record.
 
-### ▶️▶️▶️ SUPERVISOR RESUME — 2026-08-04 ~01:35Z. **READ THIS FIRST. IT IS THE NEWEST BLOCK IN THE FILE.**
+### ⛔⛔⛔ TRACK ON HOLD — 2026-08-04 ~02:25Z. **READ THIS FIRST. IT IS THE NEWEST BLOCK IN THE FILE.**
+
+**MAINTAINER DECISION: THIS TRACK IS ON HOLD.** It was burning tokens and GitHub runner
+minutes the fleet is short on. **THE HOLD IS ABOUT COST, NOT CORRECTNESS** — nothing in this
+file is retracted on the merits. The worker was instructed via brief 22, complied, and landed
+its own hold record at the top of the sibling `handoff.md` (master `8cdfebb`).
+
+**⛔ DO NOT RESUME BY PICKING UP A CONVERSION CHILD.** The conversions are currently enforced
+by NOTHING — the check scans zero files in all nine repos — so a converted function can
+regress silently. **There is no ratchet.** Resume through `8zv3` (below) or resume knowing that.
+
+**⛔ RUNNER MINUTES ARE NOW A FIRST-CLASS CONSTRAINT.** Two of the nine repos cannot land a PR
+at all: `livespec` fails `check-doctor-static` on every open PR (`8o8e.26`) and
+`livespec-orchestrator-beads-fabro` fails `check-shell-quality` (the peer lane). **Opening a
+PR into either is a doomed spend — verify landability before pushing anywhere.**
+
+#### 🧩 THE RESTRUCTURE — this epic was carrying THREE tangled concerns and now carries ONE
+
+The maintainer asked for this track to become small, cohesive, decoupled and achievable
+without churn. What moved, and where:
+
+| concern | now owned by | plan thread |
+|---|---|---|
+| `pure_trees` role-key scope + the ROP check's decoupling from it + per-repo carve status | **`livespec-dev-tooling-8zv3`** (P1 epic, NEW) | `plan/pure-trees-role-key-scope/` |
+| `livespec-mutreal.1` — the mutation-testing keystone | `livespec-mutreal` (P2, **`livespec`** ledger) | `plan/mutation-testing-keystone/` ⚠️ housed here only because `livespec` is frozen; MOVE IT when that clears |
+| the ROP conversions themselves + per-repo arming | **stays here** (`8o8e`, ~303 distinct / ~404 raw) | this thread |
+
+**`8zv3` BLOCKS `8o8e` — the dependency is WIRED IN THE LEDGER**, not merely asserted here.
+
+**📜 THE FINDING THAT DROVE THE SPLIT: the ROP check was blocked by KEY-SHARING, not by
+anything about ROP.** `pure_trees` is consumed by SEVEN checks. It asks *"has this repo carved
+its pure-module subtree?"* — load-bearing for mutation testing and PBT coverage, and a **SCOPE
+MISMATCH** for a rule that binds first-party public API. Full measurements live in `8zv3` and
+its thread; they are NOT duplicated here, because two documents restating one measurement is
+the prose-twin defect (`i04f`).
+
+**⚠️ AND THE COROLLARY THAT MATTERS MOST: `livespec-mutreal.1` and `bd-ib-6qb2mc` ARE NO LONGER
+THIS EPIC'S CRITICAL PATH.** `8zv3` removes the dependency at the other end rather than waiting
+for either. **Do NOT re-prioritise or escalate either item on ROP's account** — that would
+manufacture urgency from a coupling about to be deleted. Both were annotated in their OWN repos'
+ledgers saying exactly that.
+
+**✅ WHAT WAS DONE WITHOUT SPENDING RUNNER MINUTES:** the `8zv3` epic, the `8zv3 blocks 8o8e`
+dependency, the hold note on `8o8e`, and cross-repo context notes on `livespec-mutreal.1`
+(livespec ledger) and `bd-ib-6qb2mc` (beads-fabro ledger) are all **ledger writes, which cost no
+CI**. That is the pattern to reuse while minutes are scarce: **put the durable record in the
+ledger, and batch the prose into one PR.**
+
+**NOTHING OF MINE IS MID-FLIGHT** beyond the PR carrying this block. My watcher was stopped BY
+PID (never pattern-killed). PR #1231 merged. The worker is idle-by-instruction, not stalled.
+
+### SUPERVISOR RESUME — 2026-08-04 ~01:35Z. **SUPERSEDED by the hold block above.** Its `k4km` ruling and its findings stand; its "WHAT TO DRIVE NEXT" list is VOID under the hold.
 
 **✅✅ THE OWED VALVE IS ASKED AND ANSWERED — `k4km` IS RULED. The debt the previous block
 recorded is DISCHARGED, and it is removed as a live instruction rather than left standing**, per
@@ -495,7 +546,7 @@ It is in `~/.worktrees/livespec-orchestrator-git-jsonl/fix-backfill-file-io-rail
 restarted a SEVENTH time mid-drive** (pane pid 2972946 → 1121300, context 75% → 87% left);
 every restart so far has persisted its substance to `handoff.md` first and lost nothing.
 
-**▶️ WHAT TO DRIVE NEXT, in order:**
+**▶️ [VOID UNDER THE 2026-08-04 HOLD — DO NOT FOLLOW] WHAT TO DRIVE NEXT, in order:**
 1. **The `k4km` contract amendment in `livespec`** — now unblocked by the ruling above. Spec-side
    revise; it must itself ratify under the CURRENT (validator) digest, which works because the
    validator is what ships.
@@ -551,7 +602,7 @@ cost this thread 3h13m at the start of this drive.
 mid-drive and was at ~85% context, landing brief-18/19 corrections as PR **#1205**. Every
 restart so far has persisted and reaped cleanly first; nothing has been lost to one.
 
-**▶️ WHAT TO DRIVE NEXT, in order:**
+**▶️ [VOID UNDER THE 2026-08-04 HOLD — DO NOT FOLLOW] WHAT TO DRIVE NEXT, in order:**
 1. **⛔ [STALE — DO NOT FOLLOW] `8o8e.10` (livespec-runtime's 27) or `livespec`'s 20.** Both repos
    were GREEN and this was the work the v191 ratification exists to unblock — **but the COUNTS
    ARE WRONG: `8o8e.10` is 11 and marked LOCAL LANE COMPLETE, `livespec` is `8o8e.12` at 15.**
