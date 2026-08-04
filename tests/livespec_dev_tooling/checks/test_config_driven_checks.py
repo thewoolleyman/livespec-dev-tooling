@@ -243,13 +243,6 @@ def test_no_raise_outside_io_runs_without_io_trees(*, tmp_path: Path) -> None:
 # `check-required-role-keys-declared` owns enforcing its declaration.
 
 
-def test_public_api_result_typed_noops_without_pure_trees(*, tmp_path: Path) -> None:
-    """`public_api_result_typed` fails when `pure_trees` is undeclared."""
-    _assert_errors_on_undeclared_role_key(
-        slug="public_api_result_typed", role="pure_trees", tmp_path=tmp_path
-    )
-
-
 def test_newtype_domain_primitives_noops_without_dataclasses_tree(*, tmp_path: Path) -> None:
     """`newtype_domain_primitives` fails when `dataclasses_tree` is undeclared."""
     _assert_errors_on_undeclared_role_key(
@@ -286,12 +279,6 @@ def test_declared_absent_role_keys_are_sanctioned_opt_outs(*, tmp_path: Path) ->
     must still get a clean no-op, not a failure.
     """
     cases = (
-        (
-            "public_api_result_typed",
-            "pure_trees",
-            'pure_trees = { not_applicable = "consumer has no pure tree" }\n',
-            None,
-        ),
         (
             "pbt_coverage_pure_modules",
             "pure_trees",
@@ -540,7 +527,7 @@ def test_superseded_by_declaration_is_announced_by_name(*, tmp_path: Path) -> No
             'pure_trees = { superseded_by = "git-derived universe via resolve_check_universe" }\n'
         ),
     )
-    result = _run_check(slug="public_api_result_typed", cwd=tmp_path)
+    result = _run_check(slug="pbt_coverage_pure_modules", cwd=tmp_path)
 
     assert result.returncode == 0, (
         f"a `superseded_by` declaration must pass; "
@@ -565,7 +552,7 @@ def test_convention_not_adopted_declaration_is_announced_by_name(*, tmp_path: Pa
             'pure_trees = { convention_not_adopted = "pure-layer split not adopted here" }\n'
         ),
     )
-    result = _run_check(slug="public_api_result_typed", cwd=tmp_path)
+    result = _run_check(slug="pbt_coverage_pure_modules", cwd=tmp_path)
 
     assert result.returncode == 0, (
         f"a `convention_not_adopted` declaration must pass; "
