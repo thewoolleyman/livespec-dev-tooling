@@ -6,6 +6,7 @@ import os
 import subprocess
 from pathlib import Path
 
+import pytest
 from returns.pipeline import is_successful
 
 from livespec_dev_tooling.shellcheck import (
@@ -131,3 +132,39 @@ def test_empty_shell_corpus_fails_explicitly(*, tmp_path: Path) -> None:
     failure = result.failure()
     assert isinstance(failure, ShellCorpusEmpty)
     assert failure.repo_root == tmp_path
+
+
+def test_missing_shellcheck_binary_fails_with_actionable_domain_error(
+    *,
+    tmp_path: Path,
+) -> None:
+    _init_repo(repo_root=tmp_path)
+    script = tmp_path / "scripts" / "clean.sh"
+    script.parent.mkdir()
+    _ = script.write_text(
+        "#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s\\n' ok\n",
+        encoding="utf-8",
+    )
+    _track_all(repo_root=tmp_path)
+
+    try:
+        result = run_shellcheck(
+            repo_root=tmp_path,
+            shellcheck_bin="definitely-not-shellcheck",
+        )
+    except TypeError as exc:  # pragma: no cover
+        pytest.fail(  # pragma: no cover
+            f"expected an actionable shellcheck failure, got TypeError: {exc}"
+        )
+
+    shellcheck_module = pytest.importorskip("livespec_dev_tooling.shellcheck")
+    shellcheck_unavailable = shellcheck_module.ShellCheckUnavailable
+    assert not is_successful(result)
+    failure = result.failure()
+    assert isinstance(failure, shellcheck_unavailable)
+    assert failure.binary_name == "definitely-not-shellcheck"
+    assert failure.required_version == "0.11.0"
+    assert failure.remedy == (
+        "install ShellCheck 0.11.0 and expose it on PATH, for example with "
+        "`mise install shellcheck@0.11.0` from the consumer repo"
+    )

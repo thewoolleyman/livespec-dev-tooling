@@ -24,6 +24,7 @@ if str(_VENDOR_DIR) not in sys.path:
 from returns.result import Failure, Result, Success  # noqa: E402
 
 __all__: list[str] = [
+    "ShellCheckUnavailable",
     "ShellCorpusEmpty",
     "ShellFinding",
     "discover_tracked_shell_files",
@@ -46,8 +47,15 @@ class ShellCorpusEmpty:
     repo_root: Path
 
 
+@dataclass(frozen=True, kw_only=True)
+class ShellCheckUnavailable:
+    binary_name: str
+    required_version: str
+    remedy: str
+
+
 ShellDiscoveryResult: TypeAlias = Result[tuple[Path, ...], None]
-ShellCheckRunFailure: TypeAlias = ShellCorpusEmpty
+ShellCheckRunFailure: TypeAlias = ShellCorpusEmpty | ShellCheckUnavailable
 ShellCheckRunResult: TypeAlias = Result[tuple[ShellFinding, ...], ShellCheckRunFailure]
 
 
@@ -68,8 +76,15 @@ def discover_tracked_shell_files(*, repo_root: Path) -> ShellDiscoveryResult:
     return Success(_decode_git_paths(stdout=completed.stdout))
 
 
-def _shellcheck_binary(*, shellcheck_bin: str) -> str:
-    return cast(str, shutil.which(shellcheck_bin))
+def _shellcheck_unavailable(*, shellcheck_bin: str) -> ShellCheckUnavailable:
+    return ShellCheckUnavailable(
+        binary_name=shellcheck_bin,
+        required_version=_SHELLCHECK_VERSION,
+        remedy=(
+            "install ShellCheck 0.11.0 and expose it on PATH, for example with "
+            "`mise install shellcheck@0.11.0` from the consumer repo"
+        ),
+    )
 
 
 def _verify_shellcheck_version(*, binary: str) -> None:
@@ -104,7 +119,9 @@ def run_shellcheck(*, repo_root: Path, shellcheck_bin: str = "shellcheck") -> Sh
     shell_files = discover_tracked_shell_files(repo_root=repo_root).unwrap()
     if not shell_files:
         return Failure(ShellCorpusEmpty(repo_root=repo_root))
-    binary = _shellcheck_binary(shellcheck_bin=shellcheck_bin)
+    binary = shutil.which(shellcheck_bin)
+    if binary is None:
+        return Failure(_shellcheck_unavailable(shellcheck_bin=shellcheck_bin))
     _verify_shellcheck_version(binary=binary)
     # S603: argv uses resolved ShellCheck, literal flags, and git-tracked paths.
     completed = subprocess.run(  # noqa: S603
