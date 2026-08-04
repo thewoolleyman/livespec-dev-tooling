@@ -112,23 +112,61 @@ Fresh wrapped ledger measurement at wind-down gave six closed rollouts:
 - Console `livespec-console-beads-fabro-6yii4r`: PR 635, merge `305b59ee`;
 - Overseer `overseer-cdhdlv`: PR 686, merge `9825253d`.
 
-The two non-closed rollouts are Livespec and Runtime above. Closeout
-`livespec-dev-tooling-qgw7gb` remains `pending-approval` and must not close
-until all eight rollout ledgers are closed with merge evidence. Its acceptance
-requires a fresh fetched measurement across all nine repositories, including:
+Seven of eight rollouts are now closed with merge evidence; Livespec
+`livespec-akg7k5` closed at PR 2018, merge `18eeedc4`, after a normal
+`reconcile-merged` exited green. **Runtime `livespec-runtime-ohlb4f` is the only
+one still open.** Closeout `livespec-dev-tooling-qgw7gb` remains
+`pending-approval` and must not close until all eight rollout ledgers are closed
+with merge evidence.
 
-- failing ShellCheck and accidental-omission controls that prove the gate is
-  armed before accepting empty findings;
-- a known-clean control and documented-deviation classification;
+**The ledger is authoritative for acceptance; this file is not.** An earlier
+revision of this section stated the acceptance as a single list that mixed the
+ledger's real criteria with extras this thread adopted, and one of those extras
+— "green fetched-master CI in all nine tenants" — was never in the
+maintainer-approved acceptance at all. That phrase is what made an unrelated
+red master read as a thread-wide closeout blocker. It has been removed. The
+maintainer ruled on 2026-08-04 to correct this file DOWN to the ledger rather
+than raise the ledger up to this file; the ledger acceptance text is unchanged.
+
+The ledger acceptance, verbatim from `metadata.acceptance_criteria`, requires:
+
+- a failing ShellCheck control and the documented-versus-accidental recipe
+  controls pass BEFORE the empty findings are accepted;
+- all nine fetched master refs carry zero warning-or-higher findings and zero
+  ratified-convention violations;
+- every rollout item closed with merge evidence;
+- the plan archived by merged PR, with the primary checkout clean.
+
+Note that clause 2 is about FINDINGS measured on fetched refs. It says nothing
+about any tenant's CI conclusion.
+
+This thread additionally holds itself to the following. **These are
+thread-added rigor, NOT acceptance criteria** — do not gate the closeout on
+them and do not let a reader mistake them for the ledger's requirements:
+
+- a known-clean control alongside the failing one, so the gate is shown not to
+  convict everything;
 - tracked `.sh` files and Bash recipes embedded in justfiles across the full
   corpus;
-- zero warning-or-higher findings and zero ratified-convention violations;
-- exact final tooling/ShellCheck pins and green fetched-master CI in all nine
-  tenants.
+- exact final tooling/ShellCheck pins recorded per tenant.
 
-Do not absorb the unrelated Beads `check-public-api-result-typed` red-master
-repair into this shell plan; its ROP owner chain must restore that master before
-final fleet certification.
+**REMOVING THE CI CLAUSE DOES NOT OPEN CLOSEOUT.** Anyone skimming this section
+must not read the correction as a green light. Closeout is still blocked, by a
+different clause of the ledger's own acceptance: "every rollout item is closed
+with merge evidence" is unsatisfied because `livespec-runtime-ohlb4f` remains
+`status=active` (re-measured 2026-08-04T15:48Z) and cannot close while the
+Runtime tenant's master is red — its `reconcile-merged` fails on
+`check-master-ci-green`, and Runtime `eb3d0cf3` rolled up FAILURE on
+`check-public-api-result-typed` as of 15:40Z.
+
+Do not absorb the unrelated `check-public-api-result-typed` red-master repair
+into this shell plan; its ROP owner chain (`livespec-dev-tooling-8o8e` and its
+per-tenant children) must restore those masters. Note the coupling precisely,
+because it changed with this correction: the ROP red blocks this plan ONLY
+through Runtime's rollout item being unable to close — NOT because CI-greenness
+is an acceptance criterion, which it never was. The measured blast radius is
+three tenants (beads-fabro, git-jsonl, Runtime) and is recorded on the `8o8e`
+epic.
 
 ## v1.18.9 release/fanout evidence
 
