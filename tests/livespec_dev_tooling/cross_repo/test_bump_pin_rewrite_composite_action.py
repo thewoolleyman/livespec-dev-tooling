@@ -706,6 +706,7 @@ _RECONCILE_MODULE = "livespec_dev_tooling.cross_repo.justfile_canonical_reconcil
 _CI_MATRIX_STEP_NAME = "Reconcile canonical CI matrix wiring"
 _CI_MATRIX_MODULE = "livespec_dev_tooling.cross_repo.ci_yaml_canonical_reconcile"
 _SHELL_QUALITY_ASSERT_STEP_NAME = "Assert ShellCheck pin is gated"
+_SHELL_QUALITY_GATE_MODULE = "livespec_dev_tooling.cross_repo.shellcheck_pin_gate"
 _SHELL_QUALITY_SLUG = "check-shell-quality"
 # The TOOL runs from the master support checkout (a consumer's pinned release
 # predates the reconcile module); the canonical DATA must NOT. `.livespec-dev-tooling`
@@ -861,13 +862,10 @@ def test_shellcheck_pin_requires_check_shell_quality_wiring_before_commit() -> N
         "only livespec-dev-tooling bumps project the ShellCheck tool pin, so only "
         "that source path must enforce the pin-with-wiring invariant"
     )
-    assert "shellcheck" in body, "the invariant must key off the projected ShellCheck pin"
-    assert "missing+=(" in body, "the invariant must accumulate every missing wiring surface"
-    assert body.count(_SHELL_QUALITY_SLUG) >= 3, (
-        "the invariant must require check-shell-quality in the justfile aggregate, "
-        "as a recipe, and in CI"
+    assert f"python -m {_SHELL_QUALITY_GATE_MODULE}" in body, (
+        "the invariant must dispatch the behavioral ShellCheck gate module, not "
+        "an inline shell guard with only structural coverage"
     )
-    assert "::error::ShellCheck pin is present but check-shell-quality is not fully wired" in body
     assert "::notice::consumer does not carry check-aggregate-completeness" not in body, (
         "the regression was a sentinel-missing skip; this assertion must not repeat "
         "that notice-only gate"
