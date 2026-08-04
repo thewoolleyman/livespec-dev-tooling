@@ -1,6 +1,6 @@
 # rop-railway-enforcement — arm the check that was never armed, then remediate six repos
 
-> ## 🔻🔻 COLD START — **START HERE. ⚠️ THE CRITICAL-PATH FIX LANDED BUT DID *NOT* CLOSE THE BLOCKER. `check-fleet-conformance` STILL FAILS INTERMITTENTLY.**
+> ## 🔻🔻 COLD START — **START HERE. ✅ NOTHING OF MINE IS MID-FLIGHT. ▶️ YOUR NEXT UNIT IS `git-jsonl`'s `backfill_file` (the lane is OPEN). ⚠️ First read the `check-fleet-conformance` box: two fixes landed, it is NOT declared fixed, and it is the thing most likely to interrupt you.**
 >
 > ### 🔁 `check-fleet-conformance` — **TWO REQUEST-SIDE FIXES LANDED; NOT DECLARED FIXED**
 >
@@ -105,6 +105,21 @@
 > converting it.** ▶️ **The greps produce CANDIDATES, never convictions: read the
 > governing clause for every hit before writing a test.**
 >
+> ### 🗂️ TWO PRESERVED PATCHES SIT BESIDE THIS FILE — **BOTH STILL LIVE, NEITHER IS APPLIED**
+>
+>     8o8e21-green.patch                 beads-fabro `8o8e.21`'s FINISHED, VERIFIED green
+>                                        half (155 -> 154, ADDED 0). ⛔ Blocked by
+>                                        `8o8e.22`: that repo refuses `.py` commits while
+>                                        its master CI is red. Apply from a clean
+>                                        beads-fabro tree at/after `5b4813a`, then run
+>                                        the Red→Green ritual in `8o8e.21`'s ledger body.
+>     livespec-config-railway-red.patch  the `livespec` unit below — RED ONLY, impl NOT
+>                                        written.
+>
+> ⚠️ **A third patch (`gh-runner-rate-shaping.patch`) was DELETED once its content
+> merged.** Do the same when one of these lands: **a stale patch beside live ones invites
+> a future session to re-apply work that is already in.**
+>
 > ### 🚧 A `livespec` UNIT IS AUTHORED AND BLOCKED — **RED PRESERVED BESIDE THIS FILE**
 >
 > `plan/rop-railway-enforcement/livespec-config-railway-red.patch`, branch
@@ -117,9 +132,9 @@
 >
 > ### 🔻 FIRST FIVE MINUTES
 >
-> 1. ⚠️ **DO NOT REAP** `~/.worktrees/livespec/fix-spec-governance-config-railway` (the
->    preserved Red) or `~/.worktrees/livespec-dev-tooling/gh-runner-rate-shaping` (the
->    critical-path fix). **REAP NOTHING ELSE — 13+ worktrees exist and the rest are PEER
+> 1. ⚠️ **DO NOT REAP** `~/.worktrees/livespec/fix-spec-governance-config-railway` — the
+>    preserved `livespec` Red, and **the ONLY worktree of mine still alive.** Everything
+>    else of mine is reaped and merged. **REAP NOTHING ELSE — 13+ worktrees exist and the rest are PEER
 >    LANES.** `git worktree list` first; never quote a count from this file.
 > 2. `git status --short --branch` — clean on `master`; untracked
 >    `install-livespec-pr-bot.png` is pre-existing. ⚠️ A modified `uv.lock` is REGENERATED
@@ -143,8 +158,11 @@
 >
 > ### 📋 QUEUE
 >
-> 1. ✅ **The rate-shaping fix — DONE** (PR #1218 `ab728409`, self-gated). ⚠️ `mmqe` stays
->    OPEN for its reporting half; see the COLD START.
+> 1. ⚠️ **`check-fleet-conformance` — TWO fixes landed (#1218, #1224), NOT declared
+>    fixed.** Nothing to do unless it fails again; if it does, read the COLD START
+>    before diagnosing and **do not spend a CI retry** — it is intermittent, and three
+>    were already burned proving that. `mmqe` stays OPEN for its reporting half.
+> 1b. ▶️ **NEXT ACTUAL UNIT: `git-jsonl`'s `backfill_file`** — see the triage table.
 > 2. `git-jsonl` (8) — `backfill_file` next.
 > 3. **`8o8e.28`** — arming blocker: a conviction with NO conforming remedy.
 > 4. **`8o8e.27`** — a retired invariant load-bearing in 3 repos.
