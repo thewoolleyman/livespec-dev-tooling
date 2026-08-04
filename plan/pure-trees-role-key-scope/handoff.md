@@ -14,9 +14,16 @@
 
 ## The one-sentence problem
 
-`pure_trees` is a **shared role key consumed by seven checks**, and because the ROP
-railway check gates on it, that check inherits the carve-status of a subtree it does
-not need — leaving it scanning **zero files in all nine repos**.
+`pure_trees` is a **shared role key with FIVE real code consumers**, and
+`public_api_result_typed` is the ONE whose rule binds a different scope than the key
+selects — so it gates itself off and scans **zero files in all nine repos**.
+
+> ⛔ **CORRECTED 2026-08-04: FIVE, NOT SEVEN.** The original "seven" came from
+> `grep -rln pure_trees` — a FILENAME-level grep that counts any file *mentioning* the
+> string, docstrings and comments included. Re-derived with an AST pass counting only real
+> code references. **A proxy for consumption was reported as consumption**, which is the
+> same shape as a check reporting on files it never inspects — committed by this thread's
+> own author. **Re-derive from the AST, not from a grep.**
 
 ## What is measured, and what is inferred
 
@@ -40,10 +47,27 @@ All nine `pure_trees` declarations, read from each repo's `pyproject.toml`:
 | `unarmed_until = "bd-ib-6qb2mc"` | `livespec-orchestrator-beads-fabro` |
 | zero first-party Python | `livespec-console-beads-fabro` — the sole sanctioned exemption |
 
-**The seven consumers** (`grep -rln pure_trees livespec_dev_tooling/`): `check_mutation`,
-`pbt_coverage_pure_modules`, `public_api_result_typed`, `partition_completeness`,
-`source_trees_scoped_to_consumer`, `_import_resolution`, `_single_meaning_variants`,
-plus `fleet/_rows_public_api_conformance`.
+**THE CLASSIFICATION IS DONE** (`8zv3.1`, first deliverable, read-only). AST code-refs =
+`config.pure_trees` attribute reads plus the literal `"pure_trees"` key:
+
+| consumer | code-refs | verdict |
+|---|---:|---|
+| `check_mutation` | 4 | **GENUINE NEED** — mutates pure logic (`parse/`+`validate/`). Gates off legitimately. |
+| `pbt_coverage_pure_modules` | 4 | **GENUINE NEED** — its subject IS pure-layer test modules. |
+| `public_api_result_typed` | 4 | **⛔ SCOPE MISMATCH** — the only one. |
+| `partition_completeness` | 2 | **NOT A SCOPE GATE** — enumerates `pure_trees` as one partition member among roles. |
+| `source_trees_scoped_to_consumer` | 2 | **NOT A SCOPE GATE** — validates every role path exists. |
+| `_import_resolution` | **0** | **NOT A CONSUMER** — prose only |
+| `_single_meaning_variants` | **0** | **NOT A CONSUMER** — prose only (uses `pure_trees = []` as an analogy) |
+| `fleet/_rows_public_api_conformance` | **0** | **NOT A CONSUMER** — prose only |
+
+▶️ **THIS MATERIALLY DE-RISKS THE CHANGE: it is a ONE-CONSUMER edit, not a seven-check
+refactor.** `check_mutation` and `pbt_coverage_pure_modules` **MUST KEEP** gating on
+`pure_trees` — that is what the key is FOR, and changing them would be the real softening.
+
+⚠️ **The class question was still worth asking even though the answer was "one"** — asking it
+is what proved the other four correct rather than assumed. A class sweep returning one
+instance is a RESULT, not a miss.
 
 **INFERRED — attack this first, it is the load-bearing claim.** `pure_trees` asks
 *"has this repo carved its pure-module subtree?"*, which is genuinely load-bearing for
@@ -110,8 +134,8 @@ repo can accept work again.
 *"`pure_trees` is empty, so `check-pbt-coverage-pure-modules` scans ZERO files"* is exactly
 *"the ROP check scans zero files in all nine repos"*, one key apart. **A role key that
 resolves to nothing silently disarms whatever consumes it.** That shared shape is why this
-thread treats `pure_trees` as a CLASS problem across its seven consumers rather than
-patching one.
+thread asked the CLASS question across every real consumer rather than patching one — and the
+answer came back ONE, which is a result rather than a miss.
 
 ## Relationship to other threads
 
