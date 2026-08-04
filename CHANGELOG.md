@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.19.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.19.3...v1.19.4) (2026-08-04)
+
+
+### Bug Fixes
+
+* require a real errexit rationale for the deviation exemption ([1969bc8](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1969bc85f08546ddca2771b532f74fdfdf579800))
+
 ## [1.19.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.19.2...v1.19.3) (2026-08-04)
 
 
