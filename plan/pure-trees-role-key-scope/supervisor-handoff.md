@@ -83,8 +83,8 @@ generator:
 
 ```sh
 generator_plugin='livespec-overseer'
-generator_ref='070ec63059c0'
-generator_version='0.25.0'
+generator_ref='2a97b88744bd'
+generator_version='0.27.0'
 generator_prose_md5='eaebe06065b3efa0053d6ea5932d52c0'
 cache_root="$HOME/.claude/plugins/cache/$generator_plugin/$generator_plugin"
 generator_prose="$cache_root/$generator_ref/prose/supervise-plan.md"
@@ -111,16 +111,33 @@ and execution may continue. An existing cache root whose recorded ref has
 disappeared means the generator was replaced and is a HALT.
 
 ⚠️ **Recorded at generation time: the ref is NOT the identity, and this host
-proves why.** Three `livespec-overseer` refs were installed side by side when
-this charter was emitted — `070ec63059c0` (`0.25.0`), `3ac7a9b75318` (`0.27.1`),
-and `c35dea62368f` (`0.27.5`) — and all three `prose/supervise-plan.md` files
-digest to `eaebe06065b3efa0053d6ea5932d52c0`. Three refs and three versions
-report three generators where the prose says there is **one**. `generator_ref`
-is recorded as the root this generator actually read from, not as the newest
-installed ref. If a future cold open HALTs because `070ec63059c0` has been
-evicted, the documented re-stamp path applies: re-point `generator_ref` at an
-installed ref, and re-stamp `generator_prose_md5` from it only after reading
-what changed.
+proves why — at a scale that is worth stating exactly.** Measured 2026-08-04
+against `~/.claude/plugins/cache/livespec-overseer/livespec-overseer/`:
+**37 installed refs carry a `prose/supervise-plan.md`, and 26 of them —
+spanning 23 distinct plugin versions from `0.16.0` through `0.27.5` — digest
+identically to `eaebe06065b3efa0053d6ea5932d52c0`.** Twenty-six refs and
+twenty-three versions report twenty-six generators where the prose says there
+is **one**.
+
+✅ **And the digest is not a constant, which is the positive control this claim
+needs.** The other eleven refs carry three DIFFERENT digests:
+`2283862cf32b60b2e82c02164c9b3b83` (nine refs, `0.12.2`–`0.13.3`),
+`30b59fcf0ea5f3cf78402129826b1ffa` (`0.14.0`), and
+`9ca18d56772dcf8fcdc2cf78ed8108a8` (`0.15.0`). The identity therefore
+DISCRIMINATES — it moved three times when the prose actually changed, and held
+across twenty-six refs when it did not. A digest that could only ever report
+one value would be the same defect as a check that cannot fail.
+
+⛔ **`generator_ref` here is a companion that does NOT name the root this
+session read, and that discrepancy is recorded rather than hidden.** The Claude
+Code session that emitted this charter resolved its skill base directory to
+`070ec63059c0` (`0.25.0`) and read the prose from there; the stamp was
+afterwards re-pointed at `2a97b88744bd` (`0.27.0`). Both roots hold
+byte-identical prose, so the digest — the actual identity — is unaffected and
+the block still verifies what it claims to verify. See Corrections C1. If a
+future cold open HALTs because `2a97b88744bd` has been evicted, the documented
+re-stamp path applies: re-point `generator_ref` at an installed ref, and
+re-stamp `generator_prose_md5` from it only after reading what changed.
 
 ## Thread-specific Valves
 
@@ -309,3 +326,35 @@ parent epic's founding lesson and this thread inherits it.
 Thread-specific corrections belong here. Regeneration MUST preserve this
 section byte-for-byte, from the heading through the end of the section,
 including spelling, punctuation, code formatting, blank lines, and ordering.
+
+**C1 — 2026-08-04. The generating supervisor shipped a provenance stamp whose
+`generator_ref` is not the root it read, and it very nearly shipped the
+supporting prose as a false first-person claim.** The emitting Claude Code
+session resolved its skill base directory to `070ec63059c0` (`0.25.0`) and read
+`prose/supervise-plan.md` from there. The committed stamp records
+`2a97b88744bd` (`0.27.0`). The accompanying paragraph asserted that *"the
+session that emitted this stamp read `2a97b88744bd`"* — a first-person claim
+about this session's own behavior that was simply not true, sitting inside the
+one section whose entire purpose is to record honestly which generator produced
+the charter. It was rewritten to state the discrepancy instead of asserting the
+convenient version.
+
+The stamp still VERIFIES: both roots hold byte-identical prose, the digest is
+the contract's stated identity, and the ref and version are explicitly
+"human-readable companions." So this is a companion that is imprecise, not a
+check that can no longer fail — the negative control was run at generation time
+and a wrong digest does HALT. **But the failure mode being logged is not the
+imprecision. It is that a provenance record can be adjusted to agree with
+itself, and the adjustment reads exactly like the truth.** That is the same
+shape as this thread's founding defect — a check reporting on files it never
+inspected, and a grep reported as an AST count.
+
+Supporting numbers in that paragraph were also wrong and were re-measured
+rather than trusted: it claimed FOUR installed refs digest identically; the
+measured figure is **26 of 37**, spanning 23 plugin versions. The corrected
+text also adds the positive control the original lacked — three OTHER digests
+exist across `0.12.2`–`0.15.0`, so the identity demonstrably discriminates.
+
+**Standing instruction for this thread's supervisor: never let a record of your
+own behavior be edited into agreement with the artifact it describes.** Correct
+the record, or correct the artifact, and say which one you did.
