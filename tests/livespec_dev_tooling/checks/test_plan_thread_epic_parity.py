@@ -91,6 +91,21 @@ def _write_handoff(*, root: Path, thread: str, body: str) -> Path:
     return handoff
 
 
+def _write_livespec_config(*, root: Path, prefix: str = "livespec-dev-tooling") -> None:
+    """Create a minimal `.livespec.jsonc` carrying the store prefix."""
+    (root / ".livespec.jsonc").write_text(
+        (
+            "{\n"
+            '  "implementation": { "plugin": "livespec-orchestrator-beads-fabro" },\n'
+            '  "livespec-orchestrator-beads-fabro": {\n'
+            '    "connection": { "prefix": "' + prefix + '" }\n'
+            "  }\n"
+            "}\n"
+        ),
+        encoding="utf-8",
+    )
+
+
 def _anchor_body(epic_id: str) -> str:
     return f"# H\n\n**Ledger anchor:** epic `{epic_id}`\n"
 
@@ -132,6 +147,7 @@ def test_armed_closed_epic_fails(
 ) -> None:
     """Armed: an active thread pointing at a closed epic fails and names the epic."""
     _arm(monkeypatch)
+    _write_livespec_config(root=tmp_path)
     _write_handoff(root=tmp_path, thread="drift", body=_anchor_body("livespec-dev-tooling-l2sm"))
     result = _run(
         cwd=tmp_path,
@@ -146,11 +162,49 @@ def test_armed_closed_epic_fails(
     assert '"level": "error"' in combined
 
 
+def test_armed_closed_epic_uses_repo_tenant_prefix(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Armed: same-tenant anchors derive from the repo store prefix, not this package."""
+    _arm(monkeypatch)
+    _write_livespec_config(root=tmp_path, prefix="overseer")
+    _write_handoff(root=tmp_path, thread="drift", body=_anchor_body("overseer-l2sm"))
+    result = _run(
+        cwd=tmp_path,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        statuses={"overseer-l2sm": "done"},
+    )
+    assert result.returncode == 1, f"active→done tenant epic should fail; stderr={result.stderr!r}"
+    assert "overseer-l2sm" in (result.stdout + result.stderr)
+
+
+def test_armed_cross_tenant_anchor_ignored_under_derived_prefix(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Armed: an anchor outside the repo-derived tenant prefix is still ignored."""
+    _arm(monkeypatch)
+    _write_livespec_config(root=tmp_path, prefix="overseer")
+    _write_handoff(
+        root=tmp_path,
+        thread="xt",
+        body=_anchor_body("livespec-dev-tooling-l2sm"),
+    )
+    result = _run(
+        cwd=tmp_path,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        statuses={"livespec-dev-tooling-l2sm": "closed"},
+    )
+    assert result.returncode == 0, f"cross-tenant anchor must be ignored; stderr={result.stderr!r}"
+
+
 def test_armed_open_epic_passes(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Armed: an active thread pointing at an OPEN epic passes."""
     _arm(monkeypatch)
+    _write_livespec_config(root=tmp_path)
     _write_handoff(root=tmp_path, thread="ok", body=_anchor_body("livespec-dev-tooling-scsj5e"))
     result = _run(
         cwd=tmp_path,
@@ -166,6 +220,7 @@ def test_armed_cross_tenant_anchor_ignored(
 ) -> None:
     """Armed: a cross-tenant (non `livespec-dev-tooling-*`) anchor is ignored."""
     _arm(monkeypatch)
+    _write_livespec_config(root=tmp_path)
     _write_handoff(root=tmp_path, thread="xt", body=_anchor_body("livespec-35s3zo"))
     result = _run(
         cwd=tmp_path,
@@ -181,6 +236,7 @@ def test_armed_handoff_without_anchor_ignored(
 ) -> None:
     """Armed: an active handoff with no `**Ledger anchor:**` line is skipped, not failed."""
     _arm(monkeypatch)
+    _write_livespec_config(root=tmp_path)
     _write_handoff(root=tmp_path, thread="anchorless", body="# H\n\nNo anchor here.\n")
     result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys, statuses={})
     assert result.returncode == 0, f"anchor-less handoff must be skipped; stderr={result.stderr!r}"
