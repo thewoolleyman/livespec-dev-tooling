@@ -1,264 +1,201 @@
-# Fleet shell quality enforcement — restart handoff
+# Fleet shell quality enforcement — Claude restart handoff
 
-Updated: 2026-08-04 after the supervisor identified and verified the guarded
-same-ID operator valve required after native-status normalization.
+Updated: 2026-08-04T14:08Z for the maintainer-directed runtime switch.
 
 **Ledger anchor:** epic livespec-dev-tooling-42t4az
 
-## Mandate and hard safety
+## Mandate and hard rules
 
-The maintainer authorized this plan through implementation, release, all eight
-fleet rollouts, closeout, archive, and cleanup. Continue autonomously while
-legitimate work remains. Ordinary implementation uses the currently installed
-`livespec-orchestrator-beads-fabro:drive` / Fabro path; do not create duplicate
-items or runs.
+The maintainer authorized autonomous completion through implementation, release,
+all eight fleet rollouts, follow-up defects, closeout, archive, and cleanup.
+Continue while legitimate work remains; do not ask about obvious choices.
 
-Before acting, re-read repository `AGENTS.md`, this file, and the installed
-orchestrator operation contract being used. Read each tenant's `AGENTS.md`
-before touching it. Append every milestone, gate, PR, merge, and terminal
-outcome to:
+At cold open, read the repository `AGENTS.md`, this file, the full-lifecycle
+directive under `tmp/overseer/fleet-shell-quality-enforcement/`, and the current
+installed orchestrator contract before using it. The installed orchestrator at
+wind-down is 0.50.2 under:
 
-`tmp/overseer/fleet-shell-quality-enforcement/worker-status.log`
+`/home/ubuntu/.codex/plugins/cache/livespec-orchestrator-beads-fabro/livespec-orchestrator-beads-fabro/0.50.2`
 
-Hard rules:
+Append every milestone, gate, PR, merge, and terminal outcome to
+`tmp/overseer/fleet-shell-quality-enforcement/worker-status.log`.
 
-- Never use `fabro inspect`; safe run state is `fabro ps --all --json` only.
-- Never use `--no-verify` or another skip lever. Halt and report on hook
+- Never use `fabro inspect`; use filtered `fabro ps --all --json` only.
+- Never pass `--no-verify` or another skip lever. Halt and record any hook
   failure.
-- Use the credential wrapper for ledgers/Fabro:
-  `/data/projects/1password-env-wrapper/with-livespec-env.sh -- ...`.
-- Installed orchestrator at wind-down is 0.50.1 under
-  `/home/ubuntu/.codex/plugins/cache/livespec-orchestrator-beads-fabro/livespec-orchestrator-beads-fabro/0.50.1`.
-- Fetch before forge claims. Never touch another session's worktree/branch.
-- Never kill the acting Overseer daemon or runtime-owned MCP processes.
-- Preserve the primary checkout's unrelated untracked
-  `install-livespec-pr-bot.png`.
-- Every tracked mutation follows worktree → hook-valid commit/push → PR → all
-  checks → rebase merge → primary refresh → worktree/local-branch cleanup.
+- Use `/data/projects/1password-env-wrapper/with-livespec-env.sh -- ...` for
+  ledgers and credentialed operations.
+- Fetch before forge claims. Verify exact fetched refs and exact CI runs.
+- Never rerun failed CI unchanged.
+- Never touch another session's worktree or branch, kill the acting Overseer
+  daemon, or kill runtime-owned MCP processes.
+- Preserve `/data/projects/livespec-dev-tooling/install-livespec-pr-bot.png`.
+- Every tracked mutation follows worktree -> hook-valid commit/push -> PR -> all
+  required checks -> rebase merge -> primary refresh -> owned cleanup.
+- Do not cancel, remove, reopen, or duplicate durable Fabro runs merely because
+  an attached wrapper exits or a run is old.
 
-## Restart priority — P0 `livespec-dev-tooling-42t4az.1`
+## Immediate resume order
 
-Read
-`tmp/overseer/fleet-shell-quality-enforcement/INBOX-from-livespec-spec-side-autonomy.md`
-in full before acting. The original epic was reopened and this P0 child is the
-fleet blocker. Passing
-`shellcheck_bin='shellcheck-intentionally-absent-for-p0-repro'` to
-`run_shellcheck(...)` was freshly reproduced on master as `TypeError: expected
-str, bytes or os.PathLike object, not NoneType`; a resolved `None` reaches
-`subprocess.run` instead of an explicit actionable failing `Result`/check
-outcome. Do not revert livespec PR 1179; livespec is already unblocked.
+### 1. Finish the single Livespec rollout run
 
-Two specifically authorized installed-drive invocations both stopped before
-Fabro admission:
+`livespec-akg7k5` is `active`, assigned to Fabro. The prior failed claim was
+released with the guarded same-ID `move:...:ready` valve only after the old run
+was terminal and collision-free. Exactly one changed-evidence implementation
+drive then admitted durable run:
 
-1. At 02:16Z, drive exited 3 on master-CI preflight. Exact master run
-   `30870621857` at `e9bdfe23` failed only because PyPI timed out downloading
-   `packaging==26.2` after all five uv retries. No CI rerun was issued. The next
-   master `15738e15` was green on run `30871363109`.
-2. After a fresh supervisor authorization and a clean collision preflight,
-   dispatch waited for then-current master `8cdfebb6` run `30871628988` to
-   complete SUCCESS. The one fresh drive still exited 3 before admission. Its
-   journal first warned that installed Dispatcher 0.50.1 trails master, then
-   authoritatively normalized Beads-native `open` to lifecycle `backlog` with
-   reason `beads-native intake default` (including `42t4az.1`).
+`01KZ6GBEPR5QMAXMQD3W9X3VYK`
 
-Fresh post-attempt evidence: `42t4az.1` is `backlog`, unassigned; safe
-`fabro ps --all --json` has no matching goal; no claim, branch, implementation
-PR, worktree, or run exists. No run ID can be recorded because neither action
-admitted one. Do not invoke `impl:livespec-dev-tooling-42t4az.1` again while it
-is backlog and do not force its ledger status.
+At 14:08Z safe ps still reported it `running`. The attached dispatcher wrapper
+was quiet; a fetched forge check found no `feat/livespec-akg7k5` branch or PR yet.
+Do not issue another drive or terminal-run resume. Remeasure safe ps, the wrapped
+ledger, fetched branch/PR state, and the live dispatch lock, then attach or use
+the documented needs-attention path as the evidence permits. Monitor through
+required checks, rebase merge, normal reconciliation, primary refresh, and
+owned cleanup.
 
-The maintainer already authorized autonomous completion of all phases and made
-this item P0. The supervisor has therefore ruled that neither regroom nor a
-replacement cut is appropriate for this already-triaged narrow bug. Installed
-0.50.1 drive code exposes the guarded operator valve
-`move:<id>:backlog|ready|blocked`; its implementation allows `ready` as a
-target, writes through the normal in-place status seam, clears the assignee,
-and deliberately cannot target `pending-approval`, `acceptance`, or `done`.
+Generated Livespec v1.19.0 PR 2006 was open on `cc11fab3` before this run and
+failed at the pre-migration shell boundary. Do not unchanged-rerun or merge it
+over the migration. After the migration lands, remeasure and let the normal
+generated owner chain rebase or supersede it.
 
-On restart, execute this exact bounded sequence:
+### 2. Diagnose and finish Runtime reconciliation without redispatch
 
-1. Re-read current `AGENTS.md`, this handoff, and the installed drive contract.
-   Fetch and verify the current master SHA and its exact master CI are green.
-   Re-measure `42t4az.1` through the credential wrapper, safe
-   `fabro ps --all --json`, fetched forge/branches/PRs, and worktrees. Continue
-   only if it remains `backlog`, unassigned, with zero matching run, claim,
-   implementation branch, implementation PR, or worktree. Keep supervisor-owned
-   PR 1232 and its branch/worktree untouched.
-2. Execute exactly one installed-drive valve action
-   `move:livespec-dev-tooling-42t4az.1:ready` through the credential wrapper.
-   This is the sanctioned same-ID route, not a force rewrite. Verify the same
-   ID reads back `ready` and unassigned. Do not groom, capture a duplicate, or
-   create a replacement slice.
-3. Reconfirm safe all-run state has no matching goal, then execute exactly one
-   normal installed-drive action `impl:livespec-dev-tooling-42t4az.1`. Attach,
-   record the admitted durable run ID, and monitor it through PR, all required
-   checks, rebase merge, ledger reconciliation/acceptance, primary refresh, and
-   owned worktree/branch cleanup. Never issue a second implementation drive if
-   a run or owner appears.
+Runtime durable run `01KZ5W1JTRDHQNN50GNG31M4QB` is
+`succeeded/completed`. Its rollout PR 467 merged at
+`25d300f95aa0f5ccca3b74108a16ed0ecd687175` with a fully green matrix. The
+generated v1.18.9 adoption PR 469 also merged at
+`54abd7c7190d3853787b1c1905a300467b7e2e0e`; the Runtime primary was clean and
+equal to fetched `origin/master` at that SHA.
 
-If current master is not green or any collision appears, do not invoke the
-corresponding action; preserve the artifact and diagnose through the normal
-non-secret surfaces. Do not rerun failed CI unchanged.
+The ledger item `livespec-runtime-ohlb4f` remains `active`, assigned to Fabro.
+No live dispatch lock, matching branch, or implementation worktree remained.
+A normal 0.50.2 `dispatcher.py reconcile-merged` was therefore executed once.
+It found PR 467 correctly but exited red at `janitor-post-merge`: fresh `just
+check` failed with recipe line 132 after reaching the final check sequence. The
+dispatcher retained its diagnostic checkout exactly as intended:
 
-The eventual implementation must make the missing binary an explicit,
-actionable failure. It may not weaken, skip, or add an escape hatch to the
-check.
+`/home/ubuntu/.worktrees/livespec-runtime/janitor-reconcile-livespec-runtime-ohlb4f`
 
-When `42t4az.1` lands, append the required one-line landed notification to
-`/data/projects/livespec/tmp/overseer/spec-side-autonomy/worker-status.log` and
-record the exact run/PR/merge/closure state in this track's worker log. Child
-`42t4az.2` is separate later work: retire the temporary 65-target legacy mirror
-only after every pinned consumer reads `check-targets.txt`; do not fold it into
-the P0.
+This is the next Runtime evidence surface. Diagnose the exact failing target in
+that retained checkout under Runtime `AGENTS.md`; do not force-close the ledger,
+redispatch the implementation, or delete the checkout before the failure is
+understood. Fix an unrelated red-master defect only through its owning item and
+normal PR path. Once the fresh janitor is green, rerun only the documented
+normal `reconcile-merged` recovery and verify the ledger closes with PR/SHA
+audit.
 
-## Exact current state — do this first
+### 3. Preserve the completed Overseer boundary
 
-Dev-tooling primary was refreshed to fetched `origin/master`
-`ba41f414cdbd0bf9056b57339d6668b36a9fed04` after handoff PR 1236 completed
-with zero failed or pending checks. The primary also contains an unrelated
-modified `plan/fleet-shell-quality-enforcement/supervisor-handoff.md` plus
-untracked `install-livespec-pr-bot.png`; both belong to other work and must be
-preserved. Re-fetch and verify the exact current master CI rather than trusting
-this snapshot.
+The guarded published-branch recovery for `overseer-cdhdlv` is fully complete:
 
-`livespec-dev-tooling-jtrjzk` is ACTIVE, assigned to Fabro, after its human
-acceptance was rejected to rework. Do not accept it yet. Its acceptance still
-requires a release from green master, an exact published version, corrected
-fanout, and a genuinely green fresh consumer rehearsal.
+- failed durable run `01KZ6B08GMZQX0FSDYXD24X4MF` remains preserved;
+- recovery PR 686 rebase-merged at
+  `9825253dba82f4ba277dfef4ba823c6f90649d35`;
+- exact merge CI run `30915418292` completed success;
+- normal reconciliation closed the ledger with post-merge janitor green;
+- Overseer primary was refreshed clean to fetched `origin/master`
+  `ca08aa85bd1ffdd12b5db045919292b2ff89e38b`;
+- only the owned `recover-overseer-cdhdlv` worktree/local branch were removed.
 
-Fabro run `01KZ4Z28SZMQ575VA61V01N8FQ` succeeded/completed. It produced PR
-1223, hook-validated head `c5460970a4109039cd63244528c9675faa07f316`, which
-rebase-merged at `bbcd3501079b876e13b6266df0c41c18069f6336` after a full green
-matrix. The dispatcher's fresh post-merge janitor passed. PR 1223 added
-fail-closed `.mise.toml` projection of `shellcheck = "0.11.0"` before canonical
-check wiring and regression coverage.
+Do not reopen or redispatch it.
 
-PR 1223's authored subject was `chore(actions):`, which the repository's
-release-please contract explicitly excludes from version bumps. Therefore the
-latest published release remains v1.18.5 and PR 1223 is implementation evidence,
-not release/fanout acceptance evidence.
+## Rollout ledger and closeout gate
 
-## Supervisor-owned `jtrjzk` correction — do not touch
+Fresh wrapped ledger measurement at wind-down gave six closed rollouts:
 
-The supervisor now exclusively owns this independent correction and its hook
-was running at wind-down. Do not touch either this worktree or branch:
+- driver-claude `livespec-driver-claude-gtqrzu`: PR 410, merge `0f0e348e`;
+- driver-codex `livespec-driver-codex-bedeju`: PR 388, merge `e3077796`;
+- beads-fabro `bd-ib-35qhta`: PR 1290, merge `ad09ca85`;
+- git-jsonl `bd-gj-uworva`: closed after the independently verified
+  revert/fix/reapply sequence ending at `753f673f`;
+- Console `livespec-console-beads-fabro-6yii4r`: PR 635, merge `305b59ee`;
+- Overseer `overseer-cdhdlv`: PR 686, merge `9825253d`.
 
-`/home/ubuntu/.worktrees/livespec-dev-tooling/feat/livespec-dev-tooling-jtrjzk`
+The two non-closed rollouts are Livespec and Runtime above. Closeout
+`livespec-dev-tooling-qgw7gb` remains `pending-approval` and must not close
+until all eight rollout ledgers are closed with merge evidence. Its acceptance
+requires a fresh fetched measurement across all nine repositories, including:
 
-Branch: `fix/jtrjzk-release-tag-tool-pin-v3`. The worktree path retains the
-earlier factory name. Re-measure its resulting forge/ledger state only after
-the supervisor-owned correction settles; never edit, commit, clean, or remove
-it.
+- failing ShellCheck and accidental-omission controls that prove the gate is
+  armed before accepting empty findings;
+- a known-clean control and documented-deviation classification;
+- tracked `.sh` files and Bash recipes embedded in justfiles across the full
+  corpus;
+- zero warning-or-higher findings and zero ratified-convention violations;
+- exact final tooling/ShellCheck pins and green fetched-master CI in all nine
+  tenants.
 
-At the ownership transfer it contained two staged factory-generated files:
+Do not absorb the unrelated Beads `check-public-api-result-typed` red-master
+repair into this shell plan; its ROP owner chain must restore that master before
+final fleet certification.
 
-- `.github/actions/bump-pin-rewrite/action.yml`
-- `tests/livespec_dev_tooling/cross_repo/test_bump_pin_rewrite_composite_action.py`
+## v1.18.9 release/fanout evidence
 
-Do not discard or overwrite those bytes. They were created during the original
-Fabro dispatch after PR publication and are the bounded acceptance correction:
+The corrected producer tag `v1.18.9` is
+`c8fb4797710a806f051c098272d72892d8647249`. Exact-tag sandbox-image runs
+`30910011529` and `30910032373` both succeeded.
 
-- scope tool-pin projection to `source_repo == livespec-dev-tooling`;
-- fetch the exact release tag in `.livespec-dev-tooling`;
-- derive the ShellCheck semver from that tag's `.mise.toml` rather than
-  hard-coding support-checkout HEAD;
-- fail closed when the released pin is absent/invalid;
-- test the source-repo guard and exact-tag data source.
+Six generated v1.18.9 bump PRs merged with substantive checks green:
 
-Focused evidence before the failed commit:
+- driver-claude #414 (`49e1d79f`)
+- driver-codex #393 (`d4c42aea`)
+- beads-fabro #1294 (`c0233847`)
+- git-jsonl #547 (`f7bcbe79`)
+- Runtime #469 (`54abd7c7`)
+- Console #637 (`c5d34d0`)
 
-- composite-action tests: 35 passed;
-- `just check-shell-quality`: green;
-- pre-commit scoped aggregate: 62 passed, 0 failed, 3 intentionally skipped.
+Livespec #2002 and Overseer #683 reached the intended pre-migration shell red
+and were superseded by newer generated waves; do not rerun or merge those stale
+artifacts unchanged. Overseer migration is now merged; Livespec migration is
+the active run above.
 
-The attempted commit subject was the required release-bearing
-`fix(actions): project tag-matched ShellCheck pin`. The commit-msg
-Red-Green-Replay hook rejected it with `test-passed-at-red` because both the new
-test and its implementation were already present on disk. No commit was
-created, nothing was pushed, and no retry/amend/bypass occurred. The failure is
-recorded in `worker-status.log` at `2026-08-04T01:00:00Z`.
+The earlier v1.18.8 wave is held evidence, not retry fodder. Supersede rather
+than unchanged-rerun these artifacts: driver-claude #405, driver-codex #384,
+beads-fabro #1279, git-jsonl #531, Runtime #463, Overseer #633, and Livespec
+#1957/#1959. Console #627 merged early at `44704bd6`; do not reflexively revert
+it, because later corrected adoption supersedes it normally.
 
-The prior unchanged commit attempt failed Red-Green-Replay with
-`test-passed-at-red`; no commit was created. That failure and the intended
-honest Red→Green recovery remain useful evidence, but execution now belongs to
-the supervisor. Do not create another `jtrjzk` Fabro run.
+## Recorded orchestrator engine defect
 
-## Release and fanout gate after the follow-up merge
+Overseer run `01KZ6B08GMZQX0FSDYXD24X4MF` earned an approve transition after
+independent review reported NO BLOCKERS, but the human menu exposed only retry,
+re-implement, and abandon. Later retries ended `failed/workflow_error` even
+though the published branch was recoverable. The exact run ID and journal
+stages (`ledger-approve -> auto-disposition -> ledger-admit -> dispatch-id ->
+fabro-run -> fabro-inspect -> calibration -> review-gate-telemetry`) were added
+as a comment to existing orchestrator defect `bd-ib-hote`; no duplicate item
+was filed. The words `fabro-inspect` here are a recorded journal stage, not
+authorization to call `fabro inspect`.
 
-The supervisor-owned `fix(actions):` merge should cause release-please to open/update its release
-PR. Follow the normal release PR/check/rebase-merge path. Verify the exact new
-tag is from green master, its declared version matches, and it contains both PR
-1223 plus the tag-derived correction.
+## Reopened epic children after the rollouts
 
-Then measure release fanout. At least one real consumer must demonstrate in the
-same generated bump:
+Fresh wrapped measurement at 14:03Z:
 
-- `.mise.toml` contains `shellcheck = "0.11.0"` from the exact release tag;
-- canonical justfile/check-target/CI wiring is present;
-- `check-shell-quality` reaches corpus analysis and passes;
-- all required checks and `ci-green` pass.
+- parent `livespec-dev-tooling-42t4az`: `backlog`, unassigned;
+- `.1`: closed by PR 1241 with post-merge janitor green;
+- `.2`: `backlog`, unassigned — retire the temporary 65-target literal mirror
+  only after every pinned consumer demonstrably reads `check-targets.txt`;
+- `.3`: `backlog`, unassigned — fix console-class fanout so ShellCheck pin,
+  canonical wiring, and the aggregate/matrix sentinels travel together. Console
+  showed the source defect: a one-off consumer edit is not the remedy;
+- `.4`: `backlog`, unassigned — reconcile the shipped worktree pack with the
+  shell policy so fresh-worktree and CI verdicts cannot diverge.
 
-Do not accept `jtrjzk` merely because dispatch and propagation occurred. Record
-the release tag, fanout run, consumer PR/head, projected files, and green checks
-in its ledger, then use installed drive exactly
-`accept:livespec-dev-tooling-jtrjzk`. Re-read it CLOSED before admitting
-rollouts.
+These are real follow-up items, not permission to fold them into another run.
+Remeasure and use normal capture/groom/guarded-move/drive contracts as their
+current lifecycle states require. Keep the plan live until the children and
+`qgw7gb` acceptance are all complete; then archive it through a final tracked
+worktree/PR/rebase-merge and clean only this track's artifacts.
 
-Held pre-correction artifacts must not be unchanged-rerun or merged. The
-v1.18.4 hold includes driver-claude #405, driver-codex #384, beads-fabro #1279,
-git-jsonl #531, runtime #463, overseer #633; Console #627 merged early at
-`44704bd6` and is only partial adoption. Livespec #1957/#1959 were also held.
-v1.18.5 generated later PRs (including livespec #1965, driver-claude #406,
-driver-codex #385, Console #629, Overseer #646); remeasure every tenant and let
-the corrected release supersede artifacts normally. Do not create duplicates.
+## Workspace ownership at switch
 
-## Completed chain and remaining graph
+Dev-tooling primary was clean on fetched `origin/master`
+`ebf417638cf8fcd087184c9695b37d1b14a11b2c` except the preserved untracked PNG
+(sha256 `a3e2d35997c60459df71fd16d608c71560eeea16d0aee11422db7eecba204fe5`).
 
-Completed/closed:
-
-- the original approved 15-slice replacement graph (the parent epic
-  `livespec-dev-tooling-42t4az` has since been reopened for P0 child `.1` and
-  later child `.2`);
-- spec convention `livespec-hhu5pn` and core compatibility PR 1963 at
-  `cb793f9a9d3b932f27a79107a0ab5c7f4cd9b22a`;
-- foundations `ya7emy` PR 1136 / `bcf3e209`, `uzwqm6` PR 1134 / `8f071bcb`;
-- dev-tooling chain through `mvvr3f`, `mrsofu`, and attended-host `7caozh`;
-- Runtime prerequisite/recovery chain (`oxryre`, `6bnjkd`);
-- Console prerequisite chain (`nikuux`, `jxqiqg`, `k3rnpw`);
-- Overseer prerequisite chain (`bgs`, `gkv5z7`);
-- all other tenant manifest prerequisites recorded in prior ledger audits.
-
-The eight rollout items blocked only on corrected/closed `jtrjzk` are:
-
-- livespec `livespec-akg7k5`
-- driver-claude `livespec-driver-claude-gtqrzu`
-- driver-codex `livespec-driver-codex-bedeju`
-- beads-fabro `bd-ib-35qhta`
-- git-jsonl `bd-gj-uworva`
-- runtime `livespec-runtime-ohlb4f`
-- console `livespec-console-beads-fabro-6yii4r`
-- overseer `overseer-cdhdlv`
-
-Remeasure each tenant's ledger, fetched forge state, existing corrected bump PR,
-worktrees, branches, and safe Fabro runs before dispatch/adoption. Use normal
-drive actions and tenant-specific AGENTS instructions. The fleet definition
-covers tracked `.sh` files and Bash recipes embedded in justfiles, preserves
-documented deviations, rejects accidental omissions, requires positive empty
-and failing controls, and measures the full corpus.
-
-Closeout `livespec-dev-tooling-qgw7gb` depends on all eight rollouts. Only after
-all eight are closed: run fresh full-fleet measurement, verify final pins and
-master CI in all nine tenants, complete `qgw7gb`, archive the plan through the
-normal plan/worktree/PR path, and clean only this track's remaining worktrees and
-branches.
-
-## Workspace ownership
-
-Do not touch the supervisor-owned jtrjzk worktree/branch above.
-No P0 worktree, branch, implementation PR, claim, or Fabro run existed at
-wind-down; the restarted owner must remeasure before using the authorized valve.
-All other worktrees shown by `git worktree list` may belong to other sessions;
-do not clean them merely because a hygiene scan calls them stale. The
-`audit_sibling_groom` sub-agent was stopped during this wind-down. No durable
-Fabro run was cancelled or removed.
+The Runtime janitor checkout named above was created by this track's normal
+reconciler and is intentionally retained. Every other unfamiliar worktree or
+branch belongs to another session unless positively proven otherwise. No
+sub-agent is active. Do not kill or remove durable Fabro runs during the runtime
+switch.
