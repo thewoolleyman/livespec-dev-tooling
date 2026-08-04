@@ -214,6 +214,15 @@ cross_repo_public_api = [
     { file = "livespec_dev_tooling/checks/no_lloc_soft_warnings.py", function = "main", reason = "cross-repo test import: livespec-orchestrator-beads-fabro's tests/test_phase1_mechanical_coverage.py asserts `main() == 0` in-process" },
     { file = "livespec_dev_tooling/checks/no_write_direct.py", function = "main", reason = "cross-repo test import: livespec-orchestrator-beads-fabro's tests/test_phase1_mechanical_coverage.py asserts `main() == 0` in-process" },
     { file = "livespec_dev_tooling/checks/private_calls.py", function = "main", reason = "cross-repo test import: livespec-orchestrator-beads-fabro's tests/test_phase1_mechanical_coverage.py asserts `main() == 0` in-process" },
+    # Arrived with the SHELL-QUALITY ROLLOUT, not with this repo: livespec-driver-codex
+    # commit 7382f1f7 landed the consumer 2026-08-04T07:55:04Z, 24 minutes after this
+    # repo's last green fleet-conformance run, so the gap opened in the fleet rather
+    # than in any one PR. GUARD READ BEFORE DECLARING, which is what the oracle's hint
+    # actually asks for: the consumer binds `rc = shell_quality.main()` and asserts on
+    # the INT exit code. There is NO `if x is None` guard, so the hint's standing hazard
+    # — a None-check silently becoming permanently False against a Result — does not
+    # apply at this site. A future reader must not have to re-derive that.
+    { file = "livespec_dev_tooling/checks/shell_quality.py", function = "main", reason = "cross-repo test import: livespec-driver-codex's tests/test_shell_quality_gate.py binds `rc = shell_quality.main()` in-process and asserts on the int exit code; no `is None` guard at the consumption site" },
     { file = "livespec_dev_tooling/checks/wrapper_shape.py", function = "main", reason = "cross-repo test import: livespec-orchestrator-beads-fabro's tests/test_phase1_mechanical_coverage.py imports the submodule and asserts `main() == 0` in-process; the `python -m` string assertion in the same file is ABOUT the justfile, not an invocation" },
 ]
 # livespec v179 member 2 / SPECIFICATION v037: public `X | None` returns whose
@@ -478,6 +487,29 @@ supervisor_entry_files = [
     "livespec_dev_tooling/checks/no_write_direct.py",
     # `just check-private-calls`. Consumed by beads-fabro's Phase-1 suite.
     "livespec_dev_tooling/checks/private_calls.py",
+    # `just check-shell-quality`. Consumed by livespec-driver-codex's
+    # tests/test_shell_quality_gate.py, which binds `rc = shell_quality.main()`
+    # in-process and asserts on the int exit code.
+    #
+    # OMITTED BY THE SHELL-QUALITY ROLLOUT, not by this repo. Of the nine check
+    # modules a sibling repo consumes, NINE were already declared here and this
+    # was the only one missing — the same rollout omitted its
+    # `cross_repo_public_api` entry too, and declaring that is what made this
+    # `main` public and surfaced the gap.
+    #
+    # The conviction it clears is `main() -> int`, ratified member 4 of the
+    # EXHAUSTIVE four-member exemption set in livespec v177 §"ROP composition",
+    # bounded to supervisor ENTRY POINTS. This applies that existing
+    # classification; it does not invent one.
+    #
+    # ⚠️ THE HONEST COST, measured 2026-08-04 and NOT removed by the above: the
+    # `no_write_direct` grant this entry also carries is WHOLE-FILE and
+    # PERMANENT. `shell_quality.py` contains zero direct writes today — no
+    # `print`, no `.write` — so that grant is unused NOW. A `print()` added to
+    # this file LATER goes unflagged forever. It grants nothing today and a real
+    # blind spot tomorrow. The nine peers carry the identical cost, which makes
+    # this consistent rather than harmless.
+    "livespec_dev_tooling/checks/shell_quality.py",
     # `just check-wrapper-shape`. Consumed by beads-fabro's Phase-1 suite,
     # which asserts `main() == 0` in-process AND separately asserts the
     # justfile still names the shared module — a fork-regression guard.
