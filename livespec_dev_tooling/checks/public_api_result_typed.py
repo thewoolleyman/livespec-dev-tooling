@@ -420,10 +420,12 @@ def _report_bad_declarations(
     rather than short-circuiting at the first: an operator fixing a declaration
     should see every entry that is wrong, not the first key that happens to be.
 
-    ⚠️ THIS RUNS BEHIND THE `pure_trees` ROLE-ABSENCE GATE, so a repo whose
-    `pure_trees` is `not_applicable` never reaches it and its declarations are
-    UNVERIFIED locally until the check is armed there. An artifact of the gate
-    ORDER rather than of the detectors, stated in the module docstring too.
+    ✅ THIS NOW RUNS IN EVERY REPO. It used to sit behind the `pure_trees`
+    role-absence gate, so a repo declaring that key `not_applicable` or
+    `unarmed_until` never reached it and its declarations went UNVERIFIED
+    locally. Removing that gate un-shadowed these detectors, which was one of
+    the decoupling's stated benefits rather than a side effect — see the module
+    docstring, which records the same change.
     """
     bad = False
     for entry in stale_declarations(declared=config.cross_repo_public_api, sources=sources):
