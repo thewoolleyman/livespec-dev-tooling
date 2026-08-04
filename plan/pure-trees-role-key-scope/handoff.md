@@ -69,11 +69,20 @@ refactor.** `check_mutation` and `pbt_coverage_pure_modules` **MUST KEEP** gatin
 is what proved the other four correct rather than assumed. A class sweep returning one
 instance is a RESULT, not a miss.
 
-**INFERRED — attack this first, it is the load-bearing claim.** `pure_trees` asks
+✅ **CONFIRMED FROM RATIFIED TEXT — no longer an inference.** `pure_trees` asks
 *"has this repo carved its pure-module subtree?"*, which is genuinely load-bearing for
-mutation testing and PBT coverage. The ROP railway rule binds **first-party public
-API** — a different set. If that is right, the ROP check's gate key does not match its
-rule's scope, and the fix is to stop gating on `pure_trees` at all.
+mutation testing and PBT coverage. The ROP railway rule binds a **different set**, and
+that is now read rather than argued: `livespec`
+`SPECIFICATION/non-functional-requirements.md:114` (verified at SHA
+`ac502374689222c1b607db3964fbbb7598a390fd`) binds the railway to **every repo carrying
+ANY first-party Python**, states there is **NO "thin repo" exemption**, and names the
+**SOLE exemption** as **ZERO first-party Python**. So the check's gate key did not match
+its rule's scope, and the fix was to stop gating on `pure_trees` at all.
+
+⚠️ This paragraph previously read *"INFERRED — attack this first"*. It was independently
+re-derived by the worker rather than carried forward, which is what discharged it. A
+discharged "attack this first" reads exactly like a live one, so it is corrected here
+rather than left to be re-investigated a third time.
 
 ## ⛔ The two consequences that make this urgent rather than tidy
 
@@ -144,6 +153,24 @@ Whatever lands must be positive-controlled: after the change, show the check
 matching that repo's independently-measured figure. **Exit status 0 is not evidence** —
 that is the parent epic's founding lesson, and this thread inherits it.
 
+✅ **DISCHARGED 2026-08-04 on `livespec-runtime`** (`pure_trees = not_applicable`, so it
+previously scanned ZERO files), shipped semantics with the `_`-file skip RETAINED:
+
+| | exit | files scanned | offenders |
+|---|---:|---:|---:|
+| **before** (`master`) | 0 | **0** | 0 — `role_key_spelling=not_applicable` |
+| **after** | 1 | **26** of universe 31 | **11** |
+
+And the negative half, on `livespec-dev-tooling` itself: exit **0**, scanning **93** of
+universe 177 — up from 0. **So the check can now both convict and pass**, which is what
+makes the pass meaningful; a check that could only ever return one verdict is the defect,
+not the remedy.
+
+⚠️ **11, not the 12 in the fleet table — and the delta is real, not a measurement error.**
+`livespec-runtime` HEAD `9b4c518` *"feat(github-auth): put the App mint on the IOResult
+railway"* remediated one offender between the two measurements. **Quote the SHA**, exactly
+as this thread already warns.
+
 ## What this thread does NOT do
 
 It does **not** drive `livespec-mutreal.1` or `bd-ib-6qb2mc`. Those remain valid for the
@@ -176,11 +203,18 @@ answer came back ONE, which is a result rather than a miss.
 
 ## Open questions — TWO OF THREE ARE NOW ANSWERED
 
-1. ✅ **ANSWERED: NO role gate is needed.** Of the **twenty** checks consuming
-   `resolve_check_universe()`, **exactly one is role-gated — this check itself.** The other
-   nineteen scan the first-party universe ungated. **So decoupling does not invent a
-   pattern; it makes the outlier conform.** There is therefore **no new required key and no
+1. ✅ **ANSWERED: NO role gate is needed.** Of the **19** checks consuming
+   `resolve_check_universe()`, **exactly one was role-gated — this check itself.** The other
+   **18** scan the first-party universe ungated. **So decoupling did not invent a
+   pattern; it made the outlier conform.** There is therefore **no new required key and no
    cross-repo schema epic** — the largest planned risk, retired.
+
+   ⛔ **This said "twenty" / "nineteen" until 2026-08-04.** The AST census is **19 call
+   sites across 19 distinct files**; the supervisor's inherited figure was a supporting
+   number that rode along unverified *because the verdict it supported was right*. A right
+   conclusion does not launder a wrong premise. Re-derive with an AST pass, not a grep:
+   `git grep -l resolve_check_universe` reports **22** files, because it counts the
+   definition site and importers that never call it.
 
    The spec's sole exemption (ZERO first-party Python) needs no expression: an empty
    universe is a documented legitimate "nothing to check", so `livespec-console-beads-fabro`
