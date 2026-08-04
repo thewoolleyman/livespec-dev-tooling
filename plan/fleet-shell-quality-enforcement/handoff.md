@@ -1,7 +1,7 @@
 # Fleet shell quality enforcement — restart handoff
 
-Updated: 2026-08-04 after two P0 drive actions stopped before admission and the
-dispatcher normalized `livespec-dev-tooling-42t4az.1` to lifecycle backlog.
+Updated: 2026-08-04 after the supervisor identified and verified the guarded
+same-ID operator valve required after native-status normalization.
 
 **Ledger anchor:** epic livespec-dev-tooling-42t4az
 
@@ -36,7 +36,7 @@ Hard rules:
 - Every tracked mutation follows worktree → hook-valid commit/push → PR → all
   checks → rebase merge → primary refresh → worktree/local-branch cleanup.
 
-## Restart blocker — P0 `livespec-dev-tooling-42t4az.1`
+## Restart priority — P0 `livespec-dev-tooling-42t4az.1`
 
 Read
 `tmp/overseer/fleet-shell-quality-enforcement/INBOX-from-livespec-spec-side-autonomy.md`
@@ -68,15 +68,38 @@ PR, worktree, or run exists. No run ID can be recorded because neither action
 admitted one. Do not invoke `impl:livespec-dev-tooling-42t4az.1` again while it
 is backlog and do not force its ledger status.
 
-The installed 0.50.1 groom contract was read in full. It accepts backlog but is
-read-only until maintainer approval, files replacement slice IDs, and closes
-the original as regroomed-out. That is not silently equivalent to promoting
-this already-narrow same-ID P0. A maintainer must choose one of these sanctioned
-routes before mutation: approve a concrete replacement cut under `groom`, or
-provide the documented same-ID lifecycle-routing operation. Do not create a
-duplicate via capture and do not invent a status rewrite. Once direction
-arrives, re-fetch/re-measure ledger, safe runs, forge, branches, PRs, and
-worktrees before acting.
+The maintainer already authorized autonomous completion of all phases and made
+this item P0. The supervisor has therefore ruled that neither regroom nor a
+replacement cut is appropriate for this already-triaged narrow bug. Installed
+0.50.1 drive code exposes the guarded operator valve
+`move:<id>:backlog|ready|blocked`; its implementation allows `ready` as a
+target, writes through the normal in-place status seam, clears the assignee,
+and deliberately cannot target `pending-approval`, `acceptance`, or `done`.
+
+On restart, execute this exact bounded sequence:
+
+1. Re-read current `AGENTS.md`, this handoff, and the installed drive contract.
+   Fetch and verify the current master SHA and its exact master CI are green.
+   Re-measure `42t4az.1` through the credential wrapper, safe
+   `fabro ps --all --json`, fetched forge/branches/PRs, and worktrees. Continue
+   only if it remains `backlog`, unassigned, with zero matching run, claim,
+   implementation branch, implementation PR, or worktree. Keep supervisor-owned
+   PR 1232 and its branch/worktree untouched.
+2. Execute exactly one installed-drive valve action
+   `move:livespec-dev-tooling-42t4az.1:ready` through the credential wrapper.
+   This is the sanctioned same-ID route, not a force rewrite. Verify the same
+   ID reads back `ready` and unassigned. Do not groom, capture a duplicate, or
+   create a replacement slice.
+3. Reconfirm safe all-run state has no matching goal, then execute exactly one
+   normal installed-drive action `impl:livespec-dev-tooling-42t4az.1`. Attach,
+   record the admitted durable run ID, and monitor it through PR, all required
+   checks, rebase merge, ledger reconciliation/acceptance, primary refresh, and
+   owned worktree/branch cleanup. Never issue a second implementation drive if
+   a run or owner appears.
+
+If current master is not green or any collision appears, do not invoke the
+corresponding action; preserve the artifact and diagnose through the normal
+non-secret surfaces. Do not rerun failed CI unchanged.
 
 The eventual implementation must make the missing binary an explicit,
 actionable failure. It may not weaken, skip, or add an escape hatch to the
@@ -91,10 +114,13 @@ the P0.
 
 ## Exact current state — do this first
 
-Dev-tooling primary was measured at `8cdfebb6e9fa3104bf430f8c20bfbe8cc272033e`,
-equal to fetched `origin/master`, with only `install-livespec-pr-bot.png`
-untracked. Exact master CI run `30871628988` completed SUCCESS, including fleet
-conformance. Re-fetch and remeasure rather than trusting this snapshot.
+Dev-tooling primary was refreshed to fetched `origin/master`
+`ba41f414cdbd0bf9056b57339d6668b36a9fed04` after handoff PR 1236 completed
+with zero failed or pending checks. The primary also contains an unrelated
+modified `plan/fleet-shell-quality-enforcement/supervisor-handoff.md` plus
+untracked `install-livespec-pr-bot.png`; both belong to other work and must be
+preserved. Re-fetch and verify the exact current master CI rather than trusting
+this snapshot.
 
 `livespec-dev-tooling-jtrjzk` is ACTIVE, assigned to Fabro, after its human
 acceptance was rejected to rework. Do not accept it yet. Its acceptance still
@@ -230,8 +256,8 @@ branches.
 ## Workspace ownership
 
 Do not touch the supervisor-owned jtrjzk worktree/branch above.
-No P0 worktree, branch, PR, claim, or Fabro run exists; do not fabricate one
-until the lifecycle blocker above is resolved.
+No P0 worktree, branch, implementation PR, claim, or Fabro run existed at
+wind-down; the restarted owner must remeasure before using the authorized valve.
 All other worktrees shown by `git worktree list` may belong to other sessions;
 do not clean them merely because a hygiene scan calls them stale. The
 `audit_sibling_groom` sub-agent was stopped during this wind-down. No durable
