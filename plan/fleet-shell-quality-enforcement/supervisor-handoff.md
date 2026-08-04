@@ -445,11 +445,22 @@ know.
 What changes for driving, and it removes two hazards this thread lost real time
 to:
 
-- **Steering lands MID-TURN with a plain `Enter`.** There is no Tab-queue and no
-  turn-boundary starvation, so an instruction no longer sits unread until the
-  worker finishes. The Codex-era failure mode where text waited in a
-  "Queued follow-up inputs" block — which drove stale state into `handoff.md`
-  through PR 1236 — cannot happen the same way. **Verify consumption anyway.**
+- **Steering QUEUES on a plain `Enter` and is delivered at the next turn
+  boundary — it does NOT preempt a running turn.** ⛔ An earlier revision of this
+  very section claimed it "lands MID-TURN"; that was wrong, and it is corrected
+  here from observation rather than left to mislead. What was actually measured:
+  submitting while the worker was mid-turn showed
+  `Press up to edit queued messages`, the queue did NOT clear while the busy
+  indicator was up, and it cleared only once the turn ended — after which the
+  worker read the message and acted on it.
+  So the good half of the claim holds: there is no Tab dance and **no
+  starvation** — the message is reliably delivered and acted on, unlike the
+  Codex-era "Queued follow-up inputs" block that drove stale state into
+  `handoff.md` through PR 1236. The bad half does not: **an urgent correction
+  will NOT interrupt a long-running turn.** If you must stop the worker mid-turn,
+  that is `Esc`, not `Enter`. Budget for the wait when a turn is 20+ minutes.
+  **Verify consumption either way** — an empty composer alone is not proof the
+  message was read; look for the worker acting on it.
 - **Long pastes are safe.** The Codex hazard where a pasted buffer rendered as
   several collapsed `[Pasted Content NNNN chars]` placeholders, and where reading
   that counter as truncation led to a C-c/C-u/BSpace "repair" that CHEWED THREE
