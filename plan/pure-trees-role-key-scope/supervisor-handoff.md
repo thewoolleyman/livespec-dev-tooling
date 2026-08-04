@@ -151,6 +151,107 @@ Corrections C1. **Detecting the ref dissolves that whole class**: there is no
 longer a companion field that can disagree with reality, be re-stamped to agree
 with itself, or evict out from under a cold reader.
 
+## Live restart state — 2026-08-04T12:45Z
+
+**This section is the authoritative handoff. Re-measure everything below before
+acting on it; timestamps and CI states are evidence, not permission to assume
+they are still true.** The ledger is authoritative over this file.
+
+### ✅ THE THREAD'S CORE DELIVERABLE IS DONE AND MERGED
+
+`8zv3.1`, `8zv3.2`, `8zv3.3` are all **CLOSED**. The decoupling shipped as
+`46c5dab` (PR #1248) and is on master. **Do not re-open, re-derive, or re-litigate
+it.** The mandatory positive control was discharged in both directions on one
+stated basis (shipped semantics, `_`-file skip RETAINED): it CONVICTS on
+`livespec-runtime` `@9b4c518` — exit 1, 26 of universe 31 scanned, **11
+offenders**, up from exit 0 / ZERO files — and still PASSES on
+`livespec-dev-tooling` (exit 0, 93 of universe 177 scanned, up from 0).
+
+⚠️ **Verify the check by AST, never by grep.** The shipped module has **ZERO**
+code references to `pure_trees`; a raw grep reports **8**, all prose in
+docstrings explaining the history. A grep here says the decoupling failed.
+
+### ▶️ WHAT IS ACTUALLY OPEN, in priority order
+
+1. **`livespec-dev-tooling-niyl` — P0, and it blocks the whole fan-out.**
+   `docker/fabro-sandbox/base/Dockerfile:69` pins `gh=2.96.0`, which upstream
+   dropped, so `fabro-sandbox-image.yml` fails. That workflow is the **only**
+   producer of the `python-v<X.Y.Z>` tags and triggers on `release`; its run for
+   tag **v1.18.8 FAILED** (`30900774835`). **`python-v1.18.8` was never
+   published**, so every consumer bumping to it dies at `Docker pull failed` —
+   measured on `livespec-orchestrator-beads-fabro` PR #1291, **39 of 41 checks**,
+   identical on two unrelated jobs, zero check output in either.
+   Fix needs `Dockerfile:69` **and** `checks/fabro_image_pin_lockstep.py:86`
+   (`_SUPPORTED_GH_VERSION`), the latter product `.py` needing its own Red-Green
+   pair. **Not started. Not claimed by any lane. Raise it with the maintainer
+   before taking it — it is infra, outside this thread's charter.**
+2. **`livespec-dev-tooling-rjyc` — P0**, the durable fix for the merge deadlock.
+   The row evaluates the repo under test from its REMOTE default branch, so a PR
+   can never clear it. Reviewed and de-risked: the objection ("a PR asserts its
+   own conformance") does NOT bite, because the verdict is a JOIN — consumption
+   EDGES come from SIBLING trees and are unfakeable; only the declaration and own
+   sources come from self. ⛔ **GUARDRAIL, not optional: ONLY the self member may
+   read locally.** Blast radius is one call site
+   (`_rows_public_api_conformance.py:133`). **Land it deliberately; it was
+   explicitly NOT rushed in as the unblock.**
+3. **`8zv3.5` — P1, still gates `8zv3.4`.** The `_`-prefixed FILE skip is worth
+   **286 of 446** fleet offenders (64%). Budget and blast radius move ~2.8x on
+   this one decision. Nothing has been decided.
+4. **`8zv3.4` — P1, blocked by both `8zv3.5` and `niyl`.** ⚠️ **Any per-repo
+   offender count taken against v1.18.8 right now is measuring NOTHING** — the
+   checks never execute, they fail at image pull.
+5. `livespec-dev-tooling-tkzf` (P2) — `check-fleet-conformance-admin` runs in
+   PRE-COMMIT, so an external adopter repo's state can block every commit here.
+   It fired for ~40 min and cleared itself with no action.
+6. `livespec-dev-tooling-9s2j` (P2) — the row reports NOTHING when a consumed
+   function is DELETED; the edge vanishes rather than convicting. Orthogonal to
+   `rjyc`; do not fold them together.
+
+### 🔄 IN FLIGHT AT RESTART — worker session, verify first
+
+The worker holds worktree `~/.worktrees/livespec-dev-tooling/docs-unshadow-stale-gate-prose`
+with **two commits complete and clean but UNPUBLISHED** at 12:45Z: `6f89f84`
+(corrects the now-false `public_api_result_typed` docstring claiming the check
+still runs behind the `pure_trees` gate) and `80a20e8` (a
+`SPECIFICATION/proposed_changes/` entry for the `contracts.md` drift at lines
+227 and 354, whose "four such entries" is now **three**, measured). It was told
+to rebase onto `8f14af3`, push, PR, merge, and clean up. **Re-measure whether
+that landed; do not assume either way.**
+
+### 🤝 CROSS-LANE — fully discharged, do not re-open
+
+The repo was merge-frozen this morning. `livespec-driver-codex` `7382f1f7`
+landed a consumer of `shell_quality.py::main` 24 minutes after this repo's last
+green run, without the `cross_repo_public_api` / `supervisor_entry_files`
+declarations its nine peers carry. Resolved through the ratified
+`livespec/.ai/ci-gate-discipline.md` path — **"NEVER add escape gates; revert
+and re-land"** — as driver-codex #390 (narrow revert, one file) → dev-tooling
+#1248 (declarations) → driver-codex #392 (re-land byte-identical, blob
+`391c822e`) → `livespec-driver-codex-4uc` closed. **No gate weakened, none
+bypassed.** The `fleet-shell-quality-enforcement` monitor owns that lane and
+executed its legs; it has withdrawn its "latent ROP debt fleet-wide" hypothesis
+after verifying the Docker-pull refutation end-to-end.
+
+⛔ **An administrative merge is FORBIDDEN by that doctrine.** A prior supervisor
+offered it to the maintainer as one of three routes without having found the
+file — it lives in `livespec`, not here. Do not re-offer it.
+
+### 📜 WHAT THIS THREAD KEEPS RE-LEARNING, in one place
+
+Every defect this session found — and every one it committed — was the same
+shape: **a measurement reported over the wrong population, or a check that
+verifies something other than what it governs.** Seven consumers from a grep vs
+five from an AST. Twenty `resolve_check_universe()` callers vs nineteen. Four
+plugin refs from a sample vs 31 of 42 from a census. A demonstration repo chosen
+without checking which BASIS its offender count was on. A severity rated by one
+repo's merge gate for a fleet-wide artifact producer. A red check read as a
+finding when it was a failed image pull.
+
+**Corollaries that earned their place:** exit status is not evidence — and
+neither is a FAILURE status, until you have read why. An empty result is not a
+finding until the query is proven able to produce a positive. A right conclusion
+does not launder a wrong premise.
+
 ## Thread-specific Valves
 
 - **The `_`-prefixed FILE skip must not ride along inside the decoupling.**
@@ -370,3 +471,46 @@ exist across `0.12.2`–`0.15.0`, so the identity demonstrably discriminates.
 **Standing instruction for this thread's supervisor: never let a record of your
 own behavior be edited into agreement with the artifact it describes.** Correct
 the record, or correct the artifact, and say which one you did.
+
+**C2 — 2026-08-04. The supervisor was wrong five times in one session, and the
+worker or a peer lane caught every one. That ratio is the finding.**
+
+1. **Nineteen, not twenty.** Carried a filed `resolve_check_universe()` caller
+   count forward without re-deriving it. The worker measured 19. Re-ran it: 19.
+2. **`livespec-driver-codex` was an invalid positive control.** Named it as a
+   demonstration repo off its ledger-recorded 1 offender WITHOUT CHECKING WHICH
+   BASIS that 1 was on. On the retained-skip basis it convicts **zero** — a
+   control that cannot succeed, offered while enforcing the very two-bases valve
+   that exists to prevent it.
+3. **Accused the worker of a sample-as-census error and was itself measuring the
+   wrong population.** Tested "all 9 siblings carry both keys" against all 58
+   entry-point-shaped check modules instead of the 9 that are actually consumed
+   cross-repo, where the pairing is exceptionless. Nearly reversed a correct
+   ruling.
+4. **Rated `niyl` P2 on a repo-local blast radius.** Justified it as "does not
+   gate `ci-green`" — true for this repo's merge, and the wrong question for an
+   artifact producer the whole fleet pulls. It is the v1.18.8 fan-out blocker.
+   Re-prioritised P0.
+5. **Offered the maintainer an administrative merge** as one of three legitimate
+   routes, when `livespec/.ai/ci-gate-discipline.md` had already forbidden it.
+
+⛔ **AND THREE PROCESS FAILURES WORTH MORE THAN THE ANALYTICAL ONES**, because
+they are what a successor will repeat:
+
+- **A re-entry that only looked armed.** Launched a watcher with a bare `&` in a
+  foreground call, writing to `/dev/null` — unable to ever notify. Then
+  `pkill -f "watcher.sh"` matched its own command line and killed the shell.
+- **An obligation record that asserted the edit, not the outcome.** A marker
+  rewrite dropped two open obligations without writing them to `closed`; a later
+  one wrote unparseable YAML while the script printed `PASS`, because it asserted
+  the substitution applied rather than that the artifact still parses. **Validate
+  the artifact, not the action.**
+- **A `git status`-clean primary is not a refreshed one.** A `uv.lock`
+  modification this supervisor had told the worker to PRESERVE later blocked the
+  fast-forward. Preserving it was right while it was inert; it stopped being
+  inert, and the instruction was reversed explicitly rather than quietly.
+
+**The standing instruction:** this thread's supervisor is wrong often enough
+that the worker contradicting it is the SYSTEM WORKING, not friction. When that
+happens, re-run the exact command with a positive control before defending
+anything.
