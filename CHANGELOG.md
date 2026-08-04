@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.19.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.18.9...v1.19.0) (2026-08-04)
+
+
+### Features
+
+* ban plan thread tombstones ([2fadd5f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2fadd5f4536258db6dfee2dea6d4ce6bc6becd95))
+
 ## [1.18.9](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.18.8...v1.18.9) (2026-08-04)
 
 
