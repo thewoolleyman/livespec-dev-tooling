@@ -36,6 +36,7 @@ __all__: list[str] = [
     "GhOutcome",
     "GhResult",
     "GhRunner",
+    "PacedGhRunner",
     "default_gh_runner",
     "gh_answer",
 ]
@@ -85,11 +86,26 @@ def gh_answer(*, outcome: GhOutcome) -> GhResult | InvocationNotPerformed:
 # it retries only the two that mean "ask again later". `forbidden` and
 # `not_found` are ANSWERS — retrying them spends the very budget that is scarce.
 _RETRYABLE_KINDS = frozenset({"rate_limited", "server_error"})
-# Total added wait is bounded at 14s per invocation. Growth is required, not
-# cosmetic: a tight retry loop re-trips the same secondary limiter and is
-# indistinguishable from not retrying.
-_BACKOFF_SECONDS: tuple[float, ...] = (1.0, 2.0, 4.0, 7.0)
-_MAX_ATTEMPTS = 5
+# ⛔ SIZED FROM A MEASUREMENT, NOT A GUESS. The first schedule totalled 14s and
+# was NOT enough: on PR #1222's job 91851854289 a `repo_metadata` read was
+# refused at 23:58:23Z and a `contents` read was STILL refused at 23:58:39Z —
+# 16 seconds later, across a different operation. A bound shorter than the one
+# persistence actually observed is knowably short. Growth is required rather
+# than cosmetic: a tight loop re-trips the same secondary limiter.
+_BACKOFF_SECONDS: tuple[float, ...] = (2.0, 5.0, 10.0, 20.0, 25.0)
+_MAX_ATTEMPTS = 6
+
+# The ONE kind that is a statement about the SEQUENCE rather than about a single
+# request. A `server_error` is GitHub failing to answer one question; it earns a
+# per-call retry but must NOT pause the sweep, because nothing about it says the
+# next row would be refused.
+_PACING_KIND = "rate_limited"
+
+# ⛔ INVARIANT: >= the longest single backoff. The cooldown is armed before a
+# sleep, so a longer backoff would outlive it and the next row would start
+# unpaced at exactly the moment the limiter was most active. Derived rather than
+# hand-set so a future schedule change cannot silently break it.
+_THROTTLE_COOLDOWN_SECONDS = max(20.0, *_BACKOFF_SECONDS)
 
 
 def _invoke_once(*, argv: tuple[str, ...], stdin: str | None) -> GhOutcome:
@@ -117,47 +133,69 @@ def _invoke_once(*, argv: tuple[str, ...], stdin: str | None) -> GhOutcome:
     )
 
 
-def default_gh_runner(*, args: list[str], stdin: str | None = None) -> GhOutcome:
-    """Run `gh <args>`, retrying a retryable rejection; a `gh` that never ran FAILS.
+class PacedGhRunner:
+    """A `GhRunner` that carries one sweep's throttle state across its calls.
 
-    This used to answer an absent `gh` with `GhResult(returncode=127)` — a
-    fabricated code a real `gh` can also return, so "never ran" and "ran
-    and exited 127" were the same value. It is a failure-track value now,
-    and a completed invocation is a success whatever its exit code.
+    ⛔ WHY AN OBJECT AND NOT A MODULE-LEVEL COOLDOWN. `check-global-writes` bans
+    `global`/`nonlocal` outright — "state flows down via parameters, up via
+    return values, never through scoped mutation" — and hiding the same state in
+    a module-level mutable container would satisfy the checker while breaking
+    the rule it enforces. `GhRunner` is a Protocol over `__call__`, so an
+    instance satisfies it and every `FleetContext(run_gh=...)` call site is
+    unchanged.
 
-    ⚠️ RETRY LIVES HERE BECAUSE THE SWEEP'S REQUESTS DO. Every fleet row reads
-    GitHub through this one seam, and GitHub's SECONDARY limiter trips PARTWAY
-    THROUGH the nine-member pass — measured 2026-08-03, a quiet period and a
-    freshly minted installation token still failed, and the LONGER traversal
-    went blinder. A per-row remedy would have to be written nine times and
-    would still miss whichever row was added next.
-
-    ⛔ THE SEAM STILL DOES NOT ADJUDICATE WHAT GITHUB SAID. A retryable kind is
-    not an answer about the resource — it is "ask again later" — so waiting on
-    it is transport, not judgement. `not_found` and `forbidden` remain ANSWERS
-    and ride straight back on the success track with their exit code intact,
-    exactly as before.
-
-    The wait is `time.sleep` rather than an injected parameter: this function
-    implements `GhRunner`, and widening its signature would widen the Protocol
-    every consumer is typed against. Tests patch `time.sleep`.
+    ⚠️ WHY CROSS-CALL STATE IS THE POINT. Per-call retry cannot fix the measured
+    failure at ANY schedule length: `contents` was thrown at GitHub 16s after
+    `repo_metadata` had already been refused, and was refused in turn, because
+    nothing carried the first refusal forward. The limiter's subject is the
+    SEQUENCE.
     """
-    argv = ("gh", *args)
-    if shutil.which("gh") is None:
-        return IOFailure(
-            InvocationNotPerformed(argv=argv, kind=BINARY_ABSENT, detail="gh CLI not on PATH")
-        )
-    attempt = 0
-    while True:
-        outcome = _invoke_once(argv=argv, stdin=stdin)
-        attempt += 1
-        if isinstance(outcome, IOFailure):
-            # "Did not happen" — there is nothing to wait for, and a spawn
-            # failure will not fix itself in four seconds.
-            return outcome
-        result = unsafe_perform_io(outcome.unwrap())
-        if result.returncode == 0 or attempt >= _MAX_ATTEMPTS:
-            return outcome
-        if classify_gh_failure(stderr=result.stderr) not in _RETRYABLE_KINDS:
-            return outcome
-        time.sleep(_BACKOFF_SECONDS[min(attempt - 1, len(_BACKOFF_SECONDS) - 1)])
+
+    def __init__(self) -> None:
+        self._throttle_lifted_at: float = 0.0
+
+    def _arm_cooldown(self) -> None:
+        self._throttle_lifted_at = time.monotonic() + _THROTTLE_COOLDOWN_SECONDS
+
+    def _wait_out_active_cooldown(self) -> None:
+        remaining = self._throttle_lifted_at - time.monotonic()
+        if remaining > 0:
+            time.sleep(remaining)
+
+    def __call__(self, *, args: list[str], stdin: str | None = None) -> GhOutcome:
+        """Run `gh <args>`, pacing the sweep and retrying a retryable rejection."""
+        argv = ("gh", *args)
+        if shutil.which("gh") is None:
+            return IOFailure(
+                InvocationNotPerformed(argv=argv, kind=BINARY_ABSENT, detail="gh CLI not on PATH")
+            )
+        self._wait_out_active_cooldown()
+        attempt = 0
+        while True:
+            outcome = _invoke_once(argv=argv, stdin=stdin)
+            attempt += 1
+            if isinstance(outcome, IOFailure):
+                # "Did not happen" — there is nothing to wait for, and a spawn
+                # failure will not fix itself in twenty seconds.
+                return outcome
+            result = unsafe_perform_io(outcome.unwrap())
+            if result.returncode == 0:
+                return outcome
+            kind = classify_gh_failure(stderr=result.stderr)
+            if kind not in _RETRYABLE_KINDS:
+                return outcome
+            # Armed BEFORE the budget check, deliberately: being rate-limited is
+            # a fact about the sweep whether or not THIS call has attempts left.
+            # Arming only on the retrying path would let the last refusal go
+            # unrecorded, and the next row would start unpaced at exactly the
+            # moment the limiter was most active.
+            if kind == _PACING_KIND:
+                self._arm_cooldown()
+            if attempt >= _MAX_ATTEMPTS:
+                return outcome
+            time.sleep(_BACKOFF_SECONDS[min(attempt - 1, len(_BACKOFF_SECONDS) - 1)])
+
+
+# The seam every `FleetContext` injects. ONE instance per process, so the nine
+# members of a sweep share the cooldown one of them discovers.
+default_gh_runner = PacedGhRunner()
