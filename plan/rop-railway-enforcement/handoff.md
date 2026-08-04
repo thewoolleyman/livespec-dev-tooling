@@ -2,53 +2,47 @@
 
 > ## 🔻🔻 COLD START — **START HERE. ⚠️ THE CRITICAL-PATH FIX LANDED BUT DID *NOT* CLOSE THE BLOCKER. `check-fleet-conformance` STILL FAILS INTERMITTENTLY.**
 >
-> ### ⚠️⚠️ `check-fleet-conformance` IS IMPROVED, **NOT REPAIRED — AND I OVERCLAIMED IT**
+> ### 🔁 `check-fleet-conformance` — **TWO REQUEST-SIDE FIXES LANDED; NOT DECLARED FIXED**
 >
-> PR **#1218** (`ab728409`) added bounded per-invocation retry and **its own
-> `check-fleet-conformance` job reported SUCCESS**, which I recorded as a fix.
-> ⛔ **THAT WAS ONE SAMPLE AND THE NEXT RUN CONTRADICTED IT:** PR **#1222**, whose base
-> ALREADY CONTAINS the fix, failed `check-fleet-conformance` with `"kind":
-> "rate_limited"` ×2. **The retry reduces the failure rate; it does not eliminate it.**
+> | PR | what it added | verdict |
+> |---|---|---|
+> | **#1218** `ab728409` | bounded per-call retry (5 attempts, 14s) | ⛔ **insufficient** — I called it fixed on ONE green run and was wrong |
+> | **#1224** | `PacedGhRunner`: 62s schedule + cooldown carried ACROSS calls | ✅ self-gate SUCCESS, **1** post-fix master run |
 >
-> 📜 **THE METHOD ERROR, NAMED SO IT IS NOT REPEATED: a single green run is not evidence
-> of a fix for an INTERMITTENT failure.** Four models were falsified in this same item by
-> the mirror-image mistake (one red treated as proof of a cause); I then took one green
-> as proof of a remedy. **The acceptance bar for an intermittent gate is a RATE over
-> several runs, not one observation.**
+> ⛔ **DO NOT DECLARE THIS FIXED ON THE NEXT GREEN RUN EITHER.** That is the exact error
+> #1218 taught: **one green run is not proof of a fix for an INTERMITTENT failure.**
+> ▶️ **The acceptance bar is a RATE over ~10 natural master runs.** ⚠️ And the visible
+> history flatters it — I re-ran master run `30863453159` (`d1e994ca`) to clear a
+> `check-master-ci-green` block, so a run that genuinely failed post-#1218 now lists as
+> success. **`gh run list` will overstate health; read `mmqe` before computing a rate.**
 >
-> 🔬 **WHY IT IS INSUFFICIENT:** the retry is per INVOCATION (5 attempts, ~14s); the
-> limiter trips for the TRAVERSAL. Once tripped, every subsequent invocation starts
-> throttled, burns its own budget, and the pass still ends blind — **only slower.**
-> ⚠️ **So the fix also made a throttled run take longer to fail**; do not naively raise
-> `_MAX_ATTEMPTS`, which multiplies that across every row.
-> ▶️ **WHAT IT ACTUALLY NEEDS (in `mmqe`):** honour `Retry-After` instead of guessing;
-> pace at the TRAVERSAL level (shared bucket / circuit breaker) rather than per call;
-> and cut the request count (cache installation metadata, batch tree reads).
+> 🔬 **WHY #1218 WAS INSUFFICIENT, since it is the reusable part:** its retry was
+> PER CALL; the limiter's subject is the SEQUENCE. Measured — `repo_metadata` refused
+> at 23:58:23Z, `contents` still refused at **23:58:39Z**, a different operation 16s
+> later. So once any row is throttled every later row starts throttled and burns its
+> own budget rediscovering it. **That made a throttled run slower without making it
+> greener** — a regression the fix introduced while helping. No per-call schedule
+> length fixes it; only state that outlives the call.
 >
-> ✅ Still true and worth keeping: `fleet-shell-quality-enforcement` was notified
-> (PR #1220), and the fix does not break the check — a landed PR can still pass.
+> ### 📐 THE REPO REFUSED MY FIRST SHAPE, AND WAS RIGHT
 >
-> **What landed:** `fleet/_gh_runner.py::default_gh_runner` retries a COMPLETED `gh`
-> whose stderr classifies as `rate_limited` / `server_error` — bounded to 5 attempts,
-> growing backoff, ~14s max added wait — reusing this repo's own `classify_gh_failure`
-> and the `_credential_preflight` backoff shape, at the seam every fleet row already
-> flows through. `not_found` / `forbidden` stay ANSWERS; the failure track ("did not
-> happen") is not retried.
+> I first held the cooldown in module state. **`check-global-writes` rejected it:**
+> *"state flows down via parameters, up via return values, never through scoped
+> mutation."* ⚠️ **A module-level mutable CONTAINER would have passed the checker while
+> breaking the rule it enforces — I did not take that route.** `GhRunner` is a Protocol
+> over `__call__`, so an INSTANCE satisfies it, all four `FleetContext(run_gh=...)`
+> sites are unchanged, and the tests became order-independent BY CONSTRUCTION instead
+> of by a reset hook. 📜 **The ratified rule produced a better design than the one I
+> brought to it — and I had to re-author the Red, because my first Red encoded the
+> forbidden shape.**
 >
-> ### ⚠️ `mmqe` STAYS OPEN — **the OUTAGE half is fixed, the REPORTING half is not**
+> ### ⚠️ `mmqe` STAYS OPEN — **the REPORTING half is untouched by BOTH fixes**
 >
-> A `rate_limited` read still renders identically to a permission gap, and **burst
-> throttling identically to pool exhaustion — which have OPPOSITE remedies** (slow down
-> vs. wait). ⛔ **Retry now HIDES that symptom, which makes the reporting defect harder
-> to notice, not easier.** ▶️ **The cheap fix: record `core.remaining` at failure time in
-> the finding** — a 403 alongside `remaining≈5000` is burst throttling unambiguously.
-> **One field settles what four falsified models could not.**
-> 📜 **Those four models, so nobody re-derives them:** pool exhaustion (falsified by a
-> fresh token showing 5000) → wait for the window (the pool was never the constraint) →
-> wait for a green master (master WAS green) → fleet concurrency (a QUIET period still
-> failed). **Every one blamed something OUTSIDE the check; the cause was its own
-> traversal.** The tell: the LONGER pass went BLINDER (`blind_rows` 2 in CI vs 12
-> direct), so `blind_rows` is a PROGRESS MARKER, not a finding count.
+> A `rate_limited` read still renders identically to a permission gap, and burst
+> throttling identically to pool exhaustion — **opposite remedies, identical 403.**
+> ⛔ **Retry now HIDES that symptom, so the defect is harder to notice, not easier.**
+> ▶️ **One field settles it: record `core.remaining` at failure time.** A 403 alongside
+> `remaining≈5000` is burst throttling unambiguously.
 >
 > ### 📜 A RITUAL RULE I GOT WRONG — **READ THIS BEFORE YOUR NEXT RED**
 >
