@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.19.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.19.2...v1.19.3) (2026-08-04)
+
+
+### Bug Fixes
+
+* **checks:** guard consumer-declared self-hosted labels and fail-open routing ([70ec288](https://github.com/thewoolleyman/livespec-dev-tooling/commit/70ec2887f1bf058833c1016100eb0bf0bd794440))
+
 ## [1.19.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.19.1...v1.19.2) (2026-08-04)
 
 
