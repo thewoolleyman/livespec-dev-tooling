@@ -1,5 +1,65 @@
 # rop-railway-enforcement — arm the check that was never armed, then remediate six repos
 
+> # ⛔⛔⛔ THIS TRACK IS **ON HOLD** AS OF 2026-08-04 — MAINTAINER DECISION (supervisor brief 22)
+>
+> ## ⛔ DO NOT RESUME FROM THE COLD START BELOW WITHOUT THE MAINTAINER LIFTING THIS HOLD.
+>
+> **THE HOLD IS ABOUT COST, NOT CORRECTNESS.** The track was burning tokens and GitHub
+> runner minutes the fleet is short on. ⚠️ **Nothing below is retracted, wrong, or
+> superseded on the merits** — the work stopped because it was expensive, not because
+> it was misguided. Read the COLD START for METHOD freely; do not act on its QUEUE.
+>
+> ### 🔻 STATE AT THE MOMENT OF THE HOLD — **NOTHING WAS MID-FLIGHT**
+>
+> ✅ **No open PR of mine, no unpushed commit, no background job, no sub-agent, no
+> unmerged Red.** The hold arrived AFTER the last unit and the last handoff write had
+> both merged, so it interrupted nothing. Everything below landed cleanly:
+>
+> | what | where | state |
+> |---|---|---|
+> | `backfill_file` → IO railway | git-jsonl PR **#537** | ✅ MERGED `564e105` |
+> | `run_acceptance` → IO railway | git-jsonl PR **#538** | ✅ MERGED `13d8e68` |
+> | rate disposition + brief-21 findings | dev-tooling PR **#1233** | ✅ MERGED |
+> | this hold record | dev-tooling — the ONE commit brief 22 allows | ← you are reading it |
+>
+> **`git-jsonl` finished this session at 8 → 7 → 6 distinct offenders, ADDED 0 at each
+> step.** ⚠️ **RE-MEASURE before believing that 6** — it is this file's number, not the
+> repo's pinned criterion's.
+>
+> ### 🗑️ WORKTREES — **ONE OF MINE SURVIVES DELIBERATELY**
+>
+> ✅ Every worktree I created this session is reaped (`fix-backfill-file-io-railway`,
+> `fix-run-acceptance-io-railway`, `docs-rop-handoff-rate-disposition`), and every
+> branch deleted. ⛔ **`~/.worktrees/livespec/fix-spec-governance-config-railway` is
+> NOT reaped and MUST NOT BE** — it holds the preserved, uncommitted `livespec` Red
+> described further down. Reaping it destroys authored work. ⛔ **Every other worktree
+> on this host is a PEER LANE. Touch none of them.**
+>
+> ### ⚠️ TWO LEDGER ITEMS WERE FILED **BEFORE** THE HOLD ARRIVED — the maintainer should dispose of them
+>
+> Brief 21 asked me to verify the `pure_trees`/scan-universe claims and said **"you own
+> the filing."** I verified them and filed two children. **Brief 22 then superseded that
+> request and said do not file — but the filing had already happened.** Stating it
+> plainly rather than quietly leaving them:
+>
+> - **`livespec-dev-tooling-8o8e.30`** (P1, open) — the check gates its SCAN on
+>   `pure_trees` while `non-functional-requirements.md:114` binds ANY first-party
+>   Python.
+> - **`livespec-dev-tooling-8o8e.31`** (P1, open) — every `.7`–`.13` count is measured
+>   over `resolve_check_universe()`, not the universe the shipped check scans.
+>
+> ▶️ **They are the maintainer's to keep, retitle, fold into the restructured plans, or
+> close.** I did not act on them beyond filing, opened no PR to fix either, and the
+> full evidence for both is in the COLD START's brief-21 section below. **The
+> restructuring supersedes my ownership of these claims.**
+>
+> ### 📌 WHAT AN OPERATOR RESUMING THIS SHOULD KNOW FIRST
+>
+> The maintainer is **restructuring this track into smaller decoupled plans** and is
+> carrying the brief-21 claims personally. ⛔ **Do not re-derive them, do not re-file
+> them, and do not treat the QUEUE below as live.** If you are here to resume work, the
+> first question is for the maintainer, not for this file.
+
 > ## 🔻🔻 COLD START — **START HERE. ✅ NOTHING OF MINE IS MID-FLIGHT. ▶️ YOUR NEXT UNIT IS `git-jsonl`'s `discover_merge_sha` — ⚠️ READ-FIRST, it may be a legitimate absence (the lane is OPEN, **8 → 7 → 6**). ⚠️ First read the `check-fleet-conformance` box: the post-#1224 evidence CHANGED, the REMEDY CLASS changed with it, and I REPRODUCED THE FAILURE WITH MY OWN DOCS PR.**
 >
 > ### 🔴🔴🔴 I REPRODUCED IT MYSELF, WITH A DOCS-ONLY PR — **AND THAT IS THE FINDING**
