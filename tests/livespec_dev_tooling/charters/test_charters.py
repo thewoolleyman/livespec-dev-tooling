@@ -1,0 +1,395 @@
+"""Tests for the importable charter-defect detector surface."""
+
+from __future__ import annotations
+
+import importlib
+from pathlib import Path
+from typing import Protocol, cast
+
+from returns.unsafe import unsafe_perform_io
+
+from livespec_dev_tooling.canonical_checks import canonical_check_slugs
+
+EXPECTED_CANONICAL_SLUGS: tuple[str, ...] = (
+    "check-agents-ai-references-resolve",
+    "check-aggregate-completeness",
+    "check-all-declared",
+    "check-assert-never-exhaustiveness",
+    "check-branch-protection-alignment",
+    "check-canonical-recipe-fidelity",
+    "check-check-coverage-incremental",
+    "check-check-mutation",
+    "check-check-tools",
+    "check-ci-matrix-completeness",
+    "check-claude-md-coverage",
+    "check-comment-line-anchors",
+    "check-commit-pairs-source-and-test",
+    "check-file-lloc",
+    "check-fleet-marketplace-relative-sources",
+    "check-global-writes",
+    "check-handoff-dispatch-routing",
+    "check-heading-coverage",
+    "check-hook-trees-not-io-exempt",
+    "check-keyword-only-args",
+    "check-local-memory-drift-audit",
+    "check-main-guard",
+    "check-master-ci-green",
+    "check-match-keyword-only",
+    "check-newtype-domain-primitives",
+    "check-no-direct-destructive-cli",
+    "check-no-direct-tool-invocation",
+    "check-no-except-outside-io",
+    "check-no-fmt-directives",
+    "check-no-inheritance",
+    "check-no-lloc-soft-warnings",
+    "check-no-raise-outside-io",
+    "check-no-shadow-ledger-body-identical",
+    "check-no-shadow-ledger-body-typechecks",
+    "check-no-todo-registry",
+    "check-no-write-direct",
+    "check-partition-completeness",
+    "check-pbt-coverage-pure-modules",
+    "check-per-file-coverage",
+    "check-plan-thread-anchor-declared",
+    "check-plan-thread-epic-parity",
+    "check-plan-thread-no-tombstone",
+    "check-plugin-resolution",
+    "check-primary-checkout-commit-refuse-hook-installed",
+    "check-private-calls",
+    "check-public-api-result-typed",
+    "check-red-green-replay",
+    "check-required-role-keys-declared",
+    "check-rop-pipeline-shape",
+    "check-self-hosted-routing",
+    "check-shell-quality",
+    "check-skill-invocation-paths",
+    "check-source-trees-scoped-to-consumer",
+    "check-supervisor-discipline",
+    "check-tests-mirror-pairing",
+    "check-tests-no-subprocess-spawn",
+    "check-tool-backed-check-completeness",
+    "check-vendor-manifest",
+    "check-wrapper-shape",
+)
+
+
+class Detector(Protocol):
+    def __call__(self, *, text: str) -> list[str]: ...
+
+
+class CharterModule(Protocol):
+    CHARTER_GLOBS: tuple[str, ...]
+    DETECTORS: tuple[tuple[str, Detector], ...]
+
+    def defects_in(self, *, text: str) -> list[str]: ...
+
+    def charters_in(self, *, root: Path) -> list[Path]: ...
+
+
+def _charters_module() -> CharterModule:
+    module_path = Path("livespec_dev_tooling") / "charters" / "__init__.py"
+    assert module_path.is_file()
+    return cast("CharterModule", importlib.import_module("livespec_dev_tooling.charters"))
+
+
+def _defects_in(*, text: str) -> list[str]:
+    return _charters_module().defects_in(text=text)
+
+
+def _fenced(*, body: str) -> str:
+    return "```sh\n" + body + "\n```"
+
+
+def test_charters_package_does_not_extend_canonical_check_slugs() -> None:
+    assert (Path("livespec_dev_tooling") / "checks" / "charters.py").exists() is False
+    assert unsafe_perform_io(canonical_check_slugs().unwrap()) == EXPECTED_CANONICAL_SLUGS
+
+
+def test_public_surface_exports_detectors_globs_and_entry_points() -> None:
+    module = _charters_module()
+    assert module.CHARTER_GLOBS == (
+        ".ai/supervisor-protocol.md",
+        "plan/*/supervisor-handoff.md",
+        "plan/archive/*/supervisor-handoff.md",
+    )
+    assert [name for name, _detector in module.DETECTORS] == [
+        "a-bare-tmux-target",
+        "b-unguarded-path-resolution",
+        "c-history-fed-capture",
+        "d-empty-prev-watcher-init",
+        "e-supervisor-trusted-by-name",
+        "f-regex-session-existence-test",
+        "g-bash-pipestatus-under-zsh",
+        "h-wrapper-less-ledger-read",
+        "i-fixed-cap-marker-read",
+        "j-unguarded-marker-binding",
+        "k-local-time-labelled-utc",
+        "l-busy-test-matches-idle-pane",
+    ]
+    assert callable(module.defects_in)
+    assert callable(module.charters_in)
+
+
+def test_charters_in_uses_the_parameterized_root_and_declared_globs(tmp_path: Path) -> None:
+    module = _charters_module()
+    protocol = tmp_path / ".ai" / "supervisor-protocol.md"
+    active = tmp_path / "plan" / "active" / "supervisor-handoff.md"
+    archived = tmp_path / "plan" / "archive" / "done" / "supervisor-handoff.md"
+    nested = tmp_path / "plan" / "archive" / "done" / "nested" / "supervisor-handoff.md"
+    for path in (protocol, active, archived, nested):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("charter\n", encoding="utf-8")
+
+    assert [
+        path.relative_to(tmp_path).as_posix() for path in module.charters_in(root=tmp_path)
+    ] == [
+        ".ai/supervisor-protocol.md",
+        "plan/active/supervisor-handoff.md",
+        "plan/archive/done/supervisor-handoff.md",
+    ]
+
+
+def test_detectors_read_fenced_code_only_and_ignore_commented_defects() -> None:
+    prose = """
+Describe `tmux send-keys -t my-session`, `readlink -f "$pane_cwd"`, prev="",
+`tmux capture-pane -p -S -40 | grep -qE select`, and `${PIPESTATUS[0]}` in prose.
+The bare ledger hazard is `bd show "$ledger_anchor" --json`.
+"""
+    comments = _fenced(
+        body=(
+            "# tmux send-keys -t my-session -- 'do not do this'\n"
+            '# readlink -f "$pane_cwd"\n'
+            '# prev=""\n'
+            "# pane=$(tmux capture-pane -p -t my-session -S -40)\n"
+            '# bd show "$ledger_anchor" --json\n'
+            "# date -u -r \"$f\" '+%FT%TZ'"
+        )
+    )
+    assert _defects_in(text=prose) == []
+    assert _defects_in(text=comments) == []
+
+
+def test_detector_a_flags_only_bare_tmux_targets() -> None:
+    bad = _fenced(body="tmux send-keys -t my-session -- 'echo hi'")
+    good = _fenced(
+        body=(
+            "WORKER_TARGET='=my-session:'   # trailing colon REQUIRED\n"
+            "tmux has-session -t '=my-session:'\n"
+            "tmux send-keys -t \"$WORKER_TARGET\" -- 'echo hi'\n"
+            'tmux capture-pane -p -t "${WORKER_TARGET}"'
+        )
+    )
+    assert _defects_in(text=bad) == [
+        "a-bare-tmux-target: tmux send-keys -t my-session -- 'echo hi'"
+    ]
+    assert _defects_in(text=good) == []
+
+
+def test_detector_b_flags_path_resolution_without_a_nonempty_guard() -> None:
+    unguarded = _fenced(
+        body=(
+            "pane_cwd=$(tmux display-message -p -t '=my-session:' '#{pane_current_path}')\n"
+            'case "$(realpath -- "$pane_cwd")" in /data/projects/demo) ;; esac'
+        )
+    )
+    guarded = _fenced(
+        body=(
+            "pane_cwd=$(tmux display-message -p -t '=my-session:' '#{pane_current_path}')\n"
+            '[ -n "$pane_cwd" ] || { echo "HALT"; exit 1; }\n'
+            'case "$(readlink -f -- "$pane_cwd")" in /data/projects/demo) ;; esac'
+        )
+    )
+    assert [defect for defect in _defects_in(text=unguarded) if defect.startswith("b-")] == [
+        "b-unguarded-path-resolution: "
+        'case "$(realpath -- "$pane_cwd")" in /data/projects/demo) ;; esac'
+    ]
+    assert [defect for defect in _defects_in(text=guarded) if defect.startswith("b-")] == []
+
+
+def test_detector_c_flags_history_fed_capture_but_not_bounded_inspection() -> None:
+    bound = _fenced(body="pane=$(tmux capture-pane -p -t '=my-session:' -S -40)")
+    inspection = _fenced(
+        body=(
+            "tmux capture-pane -p -t '=my-session:' -S -40\n"
+            "pane=$(tmux capture-pane -p -t '=my-session:')"
+        )
+    )
+    assert [defect for defect in _defects_in(text=bound) if defect.startswith("c-")] == [
+        "c-history-fed-capture: pane=$(tmux capture-pane -p -t '=my-session:' -S -40)"
+    ]
+    assert [defect for defect in _defects_in(text=inspection) if defect.startswith("c-")] == []
+
+
+def test_detector_d_keeps_literal_and_property_empty_seed_rules() -> None:
+    watcher = (
+        "{seed}\n"
+        "for i in $(seq 1 180); do\n"
+        "  pane=$(tmux capture-pane -p -t '=demo:')\n"
+        '  if [ "$pane" = "{var}" ]; then stable=$((stable+1)); else stable=0; {var}="$pane"; fi\n'
+        "done"
+    )
+    previous = _fenced(body=watcher.format(seed='previous=""; stable=0', var="$previous"))
+    sentinel = _fenced(
+        body=watcher.format(seed='previous="__NO_CAPTURE_YET__"; stable=0', var="$previous")
+    )
+    assert [defect for defect in _defects_in(text=previous) if defect.startswith("d-")] == [
+        'd-empty-prev-watcher-init: previous=""; stable=0'
+    ]
+    assert [
+        defect
+        for defect in _defects_in(text=_fenced(body='prev=""; stable=0'))
+        if defect.startswith("d-")
+    ] == ['d-empty-prev-watcher-init: prev=""; stable=0']
+    assert [defect for defect in _defects_in(text=sentinel) if defect.startswith("d-")] == []
+
+
+def test_detectors_e_and_f_discriminate_supervisor_existence_from_liveness() -> None:
+    existence = _fenced(
+        body="tmux list-sessions -F '#{session_name}' | grep -Fqx 'demo-supervisor'"
+    )
+    regex = _fenced(body="tmux list-sessions -F '#{session_name}' | grep -qx 'demo-supervisor'")
+    proof = _fenced(
+        body=(
+            "WORKER_TARGET='=demo:'\n"
+            "SUPERVISOR_TARGET='=demo-supervisor:'\n"
+            'tmux has-session -t "$SUPERVISOR_TARGET"\n'
+            "supervisor_pane_pid=$(tmux display-message -p -t \"$SUPERVISOR_TARGET\" '#{pane_pid}')\n"
+            '[ -n "$supervisor_pane_pid" ] || { echo "HALT"; exit 1; }\n'
+            '[ "$supervisor_pane_pid" != "$pane_pid" ] || { echo "HALT"; exit 1; }\n'
+            'ps -o pid=,comm=,args= --ppid "$supervisor_pane_pid" --pid "$supervisor_pane_pid" -H'
+        )
+    )
+    assert [defect for defect in _defects_in(text=existence) if defect.startswith("e-")] == [
+        "e-supervisor-trusted-by-name: supervisor existence checked but liveness never proven"
+    ]
+    assert [defect for defect in _defects_in(text=regex) if defect.startswith("f-")] == [
+        "f-regex-session-existence-test: "
+        "tmux list-sessions -F '#{session_name}' | grep -qx 'demo-supervisor'"
+    ]
+    assert _defects_in(text=proof) == []
+
+
+def test_detector_g_flags_bash_pipestatus_under_zsh() -> None:
+    bad = _fenced(body='just check | tail -5; echo "EXIT=${PIPESTATUS[0]}"')
+    good = _fenced(body='just check | tail -5; echo "EXIT=$pipestatus[1]"')
+    assert [defect for defect in _defects_in(text=bad) if defect.startswith("g-")] == [
+        'g-bash-pipestatus-under-zsh: just check | tail -5; echo "EXIT=${PIPESTATUS[0]}"'
+    ]
+    assert [defect for defect in _defects_in(text=good) if defect.startswith("g-")] == []
+
+
+def test_detector_h_accepts_wrapper_properties_and_line_continuations() -> None:
+    bare = _fenced(body='bd show "$ledger_anchor" --json')
+    dangling_bare = _fenced(body='bd show "$ledger_anchor" --json \\')
+    direct = _fenced(body="/usr/local/bin/with-homelab-env.sh -- bd show homelab-123 --json")
+    variable = _fenced(
+        body=(
+            'wrapper="with-livespec-env.sh"\n'
+            'if command -v "$wrapper" >/dev/null 2>&1; then\n'
+            '  "$wrapper" -- bd show "$1" --json\n'
+            "fi"
+        )
+    )
+    continued = _fenced(
+        body="with-livespec-env.sh -- \\\n  bd show livespec-dev-tooling-8sc1 --json"
+    )
+    fallback = _fenced(
+        body=(
+            "if command -v with-livespec-env.sh >/dev/null 2>&1; then\n"
+            '  with-livespec-env.sh -- bd show "$1" --json\n'
+            "else\n"
+            '  bd show "$1" --json\n'
+            "fi"
+        )
+    )
+    assert [defect for defect in _defects_in(text=bare) if defect.startswith("h-")] == [
+        'h-wrapper-less-ledger-read: bd show "$ledger_anchor" --json'
+    ]
+    assert [defect for defect in _defects_in(text=dangling_bare) if defect.startswith("h-")] == [
+        'h-wrapper-less-ledger-read: bd show "$ledger_anchor" --json \\'
+    ]
+    assert [defect for defect in _defects_in(text=direct) if defect.startswith("h-")] == []
+    assert [defect for defect in _defects_in(text=variable) if defect.startswith("h-")] == []
+    assert [defect for defect in _defects_in(text=continued) if defect.startswith("h-")] == []
+    assert [defect for defect in _defects_in(text=fallback) if defect.startswith("h-")] == []
+
+
+def test_detectors_i_and_j_discriminate_marker_reads() -> None:
+    cap = _fenced(body='test ! -f "$supervisor_marker" || sed -n "1,220p" "$supervisor_marker"')
+    announced = _fenced(
+        body=(
+            '[ -n "${supervisor_marker:-}" ] || { echo "HALT: unset"; exit 1; }\n'
+            'sed -n "1,160p" "$supervisor_marker"\n'
+            "printf 'TRUNCATED: lines 161 onward NOT SHOWN\\n'"
+        )
+    )
+    unguarded = _fenced(body='test ! -f "$supervisor_marker" || cat "$supervisor_marker"')
+    guarded = _fenced(
+        body=(
+            '[ -n "${supervisor_marker:-}" ] || { echo "HALT: unset"; exit 1; }\n'
+            'test ! -f "$supervisor_marker" || cat "$supervisor_marker"'
+        )
+    )
+    assert [defect for defect in _defects_in(text=cap) if defect.startswith("i-")] != []
+    assert [defect for defect in _defects_in(text=announced) if defect.startswith("i-")] == []
+    assert [defect for defect in _defects_in(text=unguarded) if defect.startswith("j-")] != []
+    assert [defect for defect in _defects_in(text=guarded) if defect.startswith("j-")] == []
+
+
+def test_detector_k_flags_file_mtime_labelled_utc_only() -> None:
+    bad = _fenced(
+        body=(
+            "a=$(date -r \"$f\" -u '+%FT%TZ')\n"
+            "b=$(date -ur \"$f\" '+%FT%TZ')\n"
+            "c=$(date --utc --reference=\"$f\" '+%FT%TZ')\n"
+            "d=$(date -r \"$f\" '+%Y-%m-%dT%H:%M:%SZ')"
+        )
+    )
+    good = _fenced(
+        body=(
+            'mtime_epoch=$(stat -c %Y "$supervisor_marker")\n'
+            "worker_state_at=$(date -u -d @\"$mtime_epoch\" '+%Y-%m-%dT%H:%M:%SZ')\n"
+            "printf 'marker last written: %s\\n' \"$(date -r \"$supervisor_marker\" '+%H:%M %Z')\""
+        )
+    )
+    assert len([defect for defect in _defects_in(text=bad) if defect.startswith("k-")]) == 4
+    assert [defect for defect in _defects_in(text=good) if defect.startswith("k-")] == []
+
+
+def test_detector_l_separates_historical_and_corrected_busy_tests() -> None:
+    historical = _fenced(
+        body=(
+            "pane=$(tmux capture-pane -p -t '=w:' -S -40)\n"
+            "busy=0\n"
+            "printf '%s\\n' \"$pane\" | tail -6 \\\n"
+            "  | grep -qE '[0-9]+[hms] |tokens|esc to interrupt|Running|Doing|monitor' && busy=1"
+        )
+    )
+    corrected = _fenced(
+        body=(
+            "busy=0\n"
+            "printf '%s\\n' \"$tail16\" | grep -vE '^[[:space:]]*>' \\\n"
+            "  | grep -qE 'esc to interrupt|Running command' && busy=1\n"
+            "kids=$(ps -o args= --ppid \"$pane_pid\" 2>/dev/null | grep -cv 'playwright-mcp')\n"
+            '[ "${kids:-0}" -gt 0 ] && busy=1'
+        )
+    )
+    assert [defect for defect in _defects_in(text=historical) if defect.startswith("l-")] != []
+    assert [defect for defect in _defects_in(text=corrected) if defect.startswith("l-")] == []
+
+
+def test_detector_l_models_shell_regex_edges() -> None:
+    bre_hit = _fenced(body="busy=0\nprintf '%s' \"$p\" | grep -q 'nosuchmarker\\|tokens' && busy=1")
+    bre_miss = _fenced(
+        body="busy=0\nprintf '%s' \"$p\" | grep -q 'nosuchmarker|alsomissing' && busy=1"
+    )
+    broken = _fenced(body="busy=0\nprintf '%s' \"$p\" | grep -qE '[unclosed' && busy=1")
+    inverted_only = _fenced(body="busy=0\nprintf '%s' \"$p\" | grep -vE 'Worked for' && busy=1")
+    control_operator = _fenced(body="busy=0\nprintf '%s' \"$p\" | grep -qE 'tokens' || busy=1")
+    assert [defect for defect in _defects_in(text=bre_hit) if defect.startswith("l-")] != []
+    assert [defect for defect in _defects_in(text=bre_miss) if defect.startswith("l-")] == []
+    assert [defect for defect in _defects_in(text=broken) if defect.startswith("l-")] == []
+    assert [defect for defect in _defects_in(text=inverted_only) if defect.startswith("l-")] == []
+    assert [
+        defect for defect in _defects_in(text=control_operator) if defect.startswith("l-")
+    ] != []
