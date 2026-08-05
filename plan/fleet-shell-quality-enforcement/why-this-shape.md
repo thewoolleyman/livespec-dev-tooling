@@ -97,6 +97,34 @@ covers the surface which actually failed must extract recipes and neutralise
 interpolation before linting — or assert the preamble structurally without a
 full parse.
 
+## Worktree pack scope decision — 2026-08-05
+
+Work item `livespec-dev-tooling-42t4az.4` resolved the recurring local-vs-CI
+disagreement caused by `dev-tooling/worktree.just` being installed and
+gitignored in consumers: the shipped worktree pack is **in scope** for
+`check-shell-quality`. It does not carry a hidden or path-based exemption.
+
+The canonical package source
+`livespec_dev_tooling/worktree_pack/worktree.just` must therefore satisfy the
+same justfile policy as the importing consumer justfile. Its parameterized
+recipes use per-recipe `[positional-arguments]` and forward with `"$@"`; they
+must not use `{{...}}` interpolation. The fragment's own header records this
+contract because the installed copy is byte-verified against the package source
+and is normally absent from CI checkouts.
+
+The positive control pair lives in
+`tests/livespec_dev_tooling/checks/test_shell_quality.py`:
+
+| control | expected verdict |
+|---|---|
+| `test_bootstrapped_legacy_worktree_pack_fragment_fails` imports a legacy copy with `{{...}}` interpolation and no per-recipe positional-argument attributes | fails with three `just-interpolation` findings and three `missing-per-recipe-positional-arguments` findings |
+| `test_bootstrapped_canonical_worktree_pack_fragment_passes` imports `CANONICAL_WORKTREE_JUST_BODY` from the package source | passes with no findings |
+
+That pair proves both sides of the decision: an installed, gitignored pack
+fragment is examined through the resolved `just --dump` surface, and the
+currently shipped fragment conforms rather than relying on CI not seeing the
+installed copy.
+
 ## The preamble idea, and its known limits
 
 The maintainer's proposal is a shared boilerplate that every shell script
