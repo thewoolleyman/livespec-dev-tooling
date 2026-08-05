@@ -56,6 +56,10 @@ only when their topic is active:
 - Read `.ai/fleet-and-secrets.md` before changing fleet coordination workflows,
   maintainer signaling, GitHub App automation, or 1Password-backed secret
   projection.
+- Read `.ai/gate-runtime-vs-harness-patience.md` before running `just check`,
+  committing product `.py`, or diagnosing a gate command that produced no
+  output — the commit aggregate can outlast the harness's 20-minute tool-call
+  ceiling, and a kill with no verdict is NOT a hook refusal.
 
 ## Repository mutation protocol
 
@@ -120,6 +124,22 @@ test, the impl, and both trailer sets.
    passing), and records `TDD-Green-*` trailers. The test file bytes MUST be
    byte-identical across the Red→Green pair; to change the test, author a fresh
    Red commit.
+
+### Both legs run the full aggregate — run them DETACHED
+
+Either leg can outlast the harness's 20-minute tool-call ceiling, and when it
+does the kill produces NO verdict and looks exactly like a hook refusal. Dispatch
+gate commands through the detached runner instead of a bare foreground call:
+
+```bash
+run_id=$(mise exec -- just gate-start -- mise exec -- git commit --amend --no-edit)
+mise exec -- just gate-wait "$run_id"     # background THIS; killing it is harmless
+```
+
+`gate-wait` exits with the gate's own exit code, or **75** for
+`DIED_WITHOUT_VERDICT` — the state that says the gate did not finish, which is
+neither a pass nor a refusal. Never infer a verdict from silence. Read
+`.ai/gate-runtime-vs-harness-patience.md` before diagnosing a quiet gate.
 
 ### New-module stub technique (avoiding false reds)
 
