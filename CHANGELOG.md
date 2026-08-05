@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.20.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.19.9...v1.20.0) (2026-08-05)
+
+
+### Features
+
+* expose importable charter-defect detectors ([61048d7](https://github.com/thewoolleyman/livespec-dev-tooling/commit/61048d7731ee24fd5235b608eeb826841e6831a2))
+
 ## [1.19.9](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.19.8...v1.19.9) (2026-08-05)
 
 
