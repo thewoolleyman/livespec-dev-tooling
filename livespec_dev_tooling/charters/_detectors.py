@@ -54,20 +54,23 @@ DATE_SHORT_BUNDLE = re.compile(r"\A-([A-Za-z]+)")
 DATE_FILE_LONG = re.compile(r"\A--reference(?:=|\Z)")
 DATE_UTC_LONG = re.compile(r"\A--(?:utc|universal)\Z")
 DATE_UTC_LABEL = re.compile(r"(?<!%)Z|UTC")
+RULE = "\u2500"
 IDLE_PANE_RENDER = "\n".join(
     (
         "  main is clean and matches origin/main; the worktree and both refs are gone.",
-        "  >  $ git worktree list --porcelain | head -40 (6m 50s - 4 lines)",
+        "  \u23bf  $ git worktree list --porcelain | head -40 (6m 50s \u00b7 4 lines)",
         "",
-        "- Worked for 24m 01s ---------------------------------------------------",
+        f"{RULE} Worked for 24m 01s {RULE * 67}",
         "",
-        "* Worked for 14m 56s",
+        "\u273b Worked for 14m 56s",
         "",
-        "recap: the thread is fully complete; nothing remains.",
+        "\u203b recap: the thread is fully complete; nothing remains.",
         "                       new task? /clear to save 625.9k tokens",
-        "-----------------------------------------------------------------------",
-        "> ",
-        "  Opus 5 (1M context) | /data/projects/livespec-overseer | master",
+        f"{RULE * 32} 06-resilience-acceptance {RULE * 2}",
+        "\u276f ",
+        RULE * 61,
+        "  Opus 5 (1M context) | /data/projects/livespec-overseer | master | Ctx: 49% left",
+        "  \u23f5\u23f5 bypass permissions on (shift+tab to cycle) \u00b7 \u2190 for agents",
     )
 )
 

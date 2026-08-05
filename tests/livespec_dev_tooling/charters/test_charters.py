@@ -393,3 +393,10 @@ def test_detector_l_models_shell_regex_edges() -> None:
     assert [
         defect for defect in _defects_in(text=control_operator) if defect.startswith("l-")
     ] != []
+
+
+def test_detector_l_preserves_the_unicode_idle_pane_exemplar() -> None:
+    glyphs = rb"\u276f|\u2500|\u273b|\u23bf|\u00b7".decode("unicode_escape")
+    glyph_test = _fenced(body=f"busy=0\nprintf '%s' \"$p\" | grep -qE '{glyphs}' && busy=1")
+
+    assert [defect for defect in _defects_in(text=glyph_test) if defect.startswith("l-")] != []
