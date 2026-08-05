@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.20.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.20.0...v1.20.1) (2026-08-05)
+
+
+### Bug Fixes
+
+* **fleet:** grade the self member from its local checkout ([6072318](https://github.com/thewoolleyman/livespec-dev-tooling/commit/607231840e09c125e6b869ab5d008f60907738d2))
+
 ## [1.20.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.19.9...v1.20.0) (2026-08-05)
 
 
