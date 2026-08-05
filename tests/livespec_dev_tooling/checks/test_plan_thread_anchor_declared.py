@@ -100,6 +100,78 @@ def test_mid_line_anchor_passes(
     assert result.returncode == 0, f"mid-line anchor should pass; stderr={result.stderr!r}"
 
 
+def test_bold_wrapped_anchor_passes(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A concrete id passes when markdown bold wraps the backticked token."""
+    _opt_in(root=tmp_path)
+    _write_handoff(
+        root=tmp_path,
+        thread="bold-anchor",
+        body="# H\n\n**Ledger anchor:** epic **`overseer-7zhfdr`**\n",
+    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 0, f"bold-wrapped anchor should pass; stderr={result.stderr!r}"
+
+
+def test_comma_followed_anchor_passes(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A concrete id passes when ordinary prose follows it after a comma."""
+    _opt_in(root=tmp_path)
+    _write_handoff(
+        root=tmp_path,
+        thread="comma-anchor",
+        body="# H\n\n**Ledger anchor:** epic `overseer-7zhfdr`, carried from intake.\n",
+    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 0, f"comma-followed anchor should pass; stderr={result.stderr!r}"
+
+
+def test_period_followed_anchor_passes(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A concrete id passes when ordinary prose ends the sentence with a period."""
+    _opt_in(root=tmp_path)
+    _write_handoff(
+        root=tmp_path,
+        thread="period-anchor",
+        body="# H\n\n**Ledger anchor:** epic `overseer-7zhfdr`.\n",
+    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 0, f"period-followed anchor should pass; stderr={result.stderr!r}"
+
+
+def test_semicolon_followed_anchor_passes(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A concrete id passes when ordinary prose continues after a semicolon."""
+    _opt_in(root=tmp_path)
+    _write_handoff(
+        root=tmp_path,
+        thread="semicolon-anchor",
+        body="# H\n\n**Ledger anchor:** epic `overseer-7zhfdr`; follow-up work remains.\n",
+    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert (
+        result.returncode == 0
+    ), f"semicolon-followed anchor should pass; stderr={result.stderr!r}"
+
+
+def test_bold_anchor_without_epic_word_passes(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A concrete id passes when bold-wrapped and not prefixed by the word `epic`."""
+    _opt_in(root=tmp_path)
+    _write_handoff(
+        root=tmp_path,
+        thread="bold-no-epic",
+        body="# H\n\n**Ledger anchor:** **`overseer-7zhfdr`**\n",
+    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 0, f"bold anchor without epic should pass; stderr={result.stderr!r}"
+
+
 def test_missing_anchor_fails(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -111,6 +183,21 @@ def test_missing_anchor_fails(
     combined = result.stdout + result.stderr
     assert "plan/no-anchor/handoff.md" in combined
     assert '"level": "error"' in combined
+
+
+def test_epic_anchor_label_fails_with_ledger_remediation(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`**Epic anchor:**` is a label deviation; remediation names the required label."""
+    _opt_in(root=tmp_path)
+    _write_handoff(
+        root=tmp_path,
+        thread="epic-label",
+        body="# H\n\n**Epic anchor:** epic `overseer-7zhfdr`\n",
+    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 1, f"Epic anchor label should fail; stderr={result.stderr!r}"
+    assert "use `**Ledger anchor:**`, not `**Epic anchor:**`" in result.stderr
 
 
 def test_angle_placeholder_fails(
