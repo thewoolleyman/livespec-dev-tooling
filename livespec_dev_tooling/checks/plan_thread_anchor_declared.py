@@ -50,16 +50,22 @@ _CONFIG_KEY = "plan_lifecycle_anchor"
 
 # The anchor may sit mid-line after a `·` separator, so the whole file is searched
 # for the FIRST `**Ledger anchor:**` occurrence. The captured token is the epic id
-# (optionally after the word `epic`, optionally backtick-wrapped).
-_ANCHOR_RE = re.compile(r"\*\*Ledger anchor:\*\*\s*(?:epic\s*)?`?([^`\n)]*?)`?(?:\s|$|\))")
-# A concrete same- or cross-tenant id: lowercase, hyphenated, ends in an alnum run.
-_CONCRETE_RE = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$")
-_PLACEHOLDER_WORDS = frozenset({"", "epic", "tbd", "todo", "tktk", "xxx"})
+# (optionally after the word `epic`, optionally backtick- or bold-wrapped).
+_ANCHOR_RE = re.compile(
+    r"\*\*Ledger anchor:\*\*\s*"
+    r"(?:epic\s*)?"
+    r"(?:\*\*)?"
+    r"`?([a-z][a-z0-9]*(?:-[a-z0-9]+)+)`?"
+    r"(?:\*\*)?"
+    r"(?=[\s),.;]|$)"
+)
 
 _REMEDIATION = (
     "add a concrete `**Ledger anchor:**` line naming this thread's ledger epic "
     "(e.g. `**Ledger anchor:** epic <tenant>-<id>`); a missing, empty, or "
-    "placeholder anchor leaves the plan thread untraceable to its ledger record."
+    "placeholder anchor leaves the plan thread untraceable to its ledger record. "
+    "use `**Ledger anchor:**`, not `**Epic anchor:**`; `**Epic anchor:**` is a "
+    "repo-side label deviation, not an accepted alias."
 )
 
 
@@ -75,12 +81,7 @@ def _declared_anchor(*, text: str) -> str | None:
     match = _ANCHOR_RE.search(text)
     if match is None:
         return None
-    token = match.group(1).strip().strip("`").strip()
-    if "<" in token or ">" in token or token.lower() in _PLACEHOLDER_WORDS:
-        return None
-    if _CONCRETE_RE.match(token) is None:
-        return None
-    return token
+    return match.group(1)
 
 
 def main() -> int:
