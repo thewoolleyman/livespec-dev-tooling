@@ -1,0 +1,121 @@
+# Gate runtime vs harness patience
+
+Read this before running `just check`, committing product `.py`, or
+diagnosing a gate command that "did nothing".
+
+## The failure this closes
+
+`.claude/settings.json` commits `BASH_MAX_TIMEOUT_MS=1200000` — a hard
+20-minute ceiling on a single Bash tool call. The commit aggregate
+(`scripts/just/check-pre-commit.sh` → `just check` → the ~44-target
+`parallel_check_dispatcher`) measures **593s and 1043s on an unloaded
+host** and **exceeds 1200s under sustained fleet load**.
+
+When it exceeds the ceiling the harness kills the tool call and the
+agent receives **no exit code, no hook output and no verdict**. Under
+sustained load this repo therefore became *uncommittable for product
+`.py`* — and it failed **silently**.
+
+**The silent kill is the worse half.** A kill with no verdict looks
+exactly like a hook refusal. Both present as "the commit did not
+happen, and here is no useful output". Telling them apart used to
+require going and checking by hand whether any check target had
+actually run. Three amend attempts were lost to that ambiguity in one
+session before anyone realised no hook had ever refused.
+
+Those two states demand **opposite** responses:
+
+| what happened | what it means | what to do |
+|---|---|---|
+| the gate **refused** | a real verdict — a check failed | fix the cause; never retry blind |
+| the gate **did not finish** | no verdict exists | re-run it; conclude nothing |
+
+Reading a kill as a refusal sends you hunting a defect that does not
+exist. Reading a refusal as a kill sends you retrying a commit the gate
+has already rejected. Neither may be guessed.
+
+## The mechanism: `scripts/gate-run.sh`
+
+Gate **runtime** is decoupled from harness **patience**. The gate runs
+in its own detached session that outlives the tool call; a separate,
+cheap, restartable waiter reports the verdict when it lands.
+
+```bash
+# 1. launch — returns in well under a second, so run it FOREGROUND
+run_id=$(mise exec -- just gate-start -- mise exec -- git commit --amend --no-edit)
+
+# 2. wait — hand THIS to run_in_background: true
+mise exec -- just gate-wait "$run_id"
+
+# other verbs
+mise exec -- just gate-status [run_id]   # one-shot verdict, never blocks
+mise exec -- just gate-list              # recorded runs + derived state
+```
+
+`gate-wait` is the thing you background, not the gate. Killing the
+waiter does not touch the gate — re-issue `gate-wait` and you get the
+same verdict. That is what makes the harness ceiling irrelevant instead
+of merely larger.
+
+### What this does NOT change
+
+**Nothing is weakened.** The same command runs, with the same hooks,
+over the same targets, and every verdict is still honored — the gate's
+own exit code IS the verdict and the runner only transports it. What
+changed is how long the harness is willing to wait, not what runs or
+what a failure means.
+
+In particular a run that does not finish can **never** read as a pass.
+
+## How "did not finish" reports itself
+
+The run directory under `tmp/gate-runs/<run-id>/` is written by the
+gate's own process, not by the agent, and it is the evidence:
+
+| file | written when | what it proves |
+|---|---|---|
+| `started_at` | before the gate starts | a run was launched |
+| `pid` | by the child, as its first act | the gate has a live process |
+| `output.log` | streamed during the run | these targets ran |
+| `exit_code` | **only** on real completion | a verdict exists |
+
+`exit_code` present is the single marker of a verdict. Every terminal
+state derives from those four files with no ambiguity left:
+
+| condition | state | meaning |
+|---|---|---|
+| `exit_code == 0` | `PASSED` | ran to completion, passed |
+| `exit_code` 1–127 | `FAILED` | **a real verdict** — honor it |
+| `exit_code` ≥ 128 | `DIED_WITHOUT_VERDICT` | killed by signal; a signal death is not a check verdict |
+| no `exit_code`, pid alive | `RUNNING` | no verdict yet |
+| no `exit_code`, pid dead | `DIED_WITHOUT_VERDICT` | killed before it could decide |
+
+`DIED_WITHOUT_VERDICT` exits **75** (`EX_TEMPFAIL`) — distinct from both
+0 and the gate's own failure codes, so it can be neither mistaken for a
+pass by an exit-status check nor mistaken for a refusal.
+
+`gate-status` also reports **how many check targets completed**, parsed
+from the dispatcher's `::: just <target> [ok|FAILED, wall: Ns]` lines.
+That is the mechanical answer to *"did any target actually run"* — the
+question that previously had to be reconstructed by hand each time.
+
+## Working rule
+
+**Exit status is not evidence, and neither is silence.** Before
+concluding anything from a gate, name which of the five states you are
+in. If you cannot, you do not have a result yet — you have an
+unfinished run.
+
+`tmp/` is gitignored: run records are host-local evidence and are never
+committed.
+
+## What was deliberately NOT done
+
+- **Not raising `BASH_MAX_TIMEOUT_MS`.** It may be harness-enforced
+  regardless, and a larger ceiling is still a ceiling — it postpones the
+  same silent kill rather than removing it.
+- **Not scoping the aggregate to changed targets.** That narrows what
+  runs. It is a real idea and it needs its own argument on its own
+  merits; it is not a fix for a timeout.
+- **Not waiting for quiet windows.** Load is other lanes' behavior, not
+  a property this repo controls.
