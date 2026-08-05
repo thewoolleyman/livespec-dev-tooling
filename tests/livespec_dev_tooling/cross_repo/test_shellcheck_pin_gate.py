@@ -142,6 +142,90 @@ targets=(
     assert captured.out == "::notice::ShellCheck pin is gated by check-shell-quality\n"
 
 
+def test_target_list_file_layout_counts_as_wired(tmp_path: Path, monkeypatch, capsys) -> None:
+    """A repo whose aggregate reads its targets from a data file is WIRED.
+
+    The third layout in the fleet, and the one that shows why enumerating
+    script paths one at a time is the wrong shape: `livespec-driver-codex`
+    delegates to `dev-tooling/check-aggregate.sh`, which itself contains NO
+    target names — it reads them line-by-line from a tracked
+    `check-targets.txt`. Searching the delegating script would still have
+    reported this repo unwired.
+    """
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".mise.toml").write_text('[tools]\nshellcheck = "0.11.0"\n', encoding="utf-8")
+    (tmp_path / "justfile").write_text(
+        """check:
+    bash dev-tooling/check-aggregate.sh
+
+check-shell-quality:
+    uv run python -m livespec_dev_tooling.checks.shell_quality
+""",
+        encoding="utf-8",
+    )
+    (tmp_path / "check-targets.txt").write_text(
+        "check-lint\ncheck-shell-quality\ncheck-format\n", encoding="utf-8"
+    )
+    workflow = tmp_path / ".github" / "workflows" / "ci.yml"
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text(
+        """jobs:
+  checks:
+    strategy:
+      matrix:
+        target:
+          - check-shell-quality
+""",
+        encoding="utf-8",
+    )
+
+    result = shellcheck_pin_gate.main()
+
+    captured = capsys.readouterr()
+    assert result == 0, (
+        f"a target-list-file aggregate is fully wired and must pass; got {result} "
+        f"with output {captured.out!r}"
+    )
+    assert captured.out == "::notice::ShellCheck pin is gated by check-shell-quality\n"
+
+
+def test_missing_aggregate_names_every_location_searched(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    """The failure must name where it looked, so a FOURTH layout fails legibly.
+
+    The original defect was silent in the worst way: a fully-wired repo was
+    told a justfile target was 'missing', with no hint that other spellings
+    exist. A repo adopting a layout none of these three cover should be able
+    to see immediately that the gate simply never looked there.
+    """
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".mise.toml").write_text('[tools]\nshellcheck = "0.11.0"\n', encoding="utf-8")
+    (tmp_path / "justfile").write_text(
+        """check:
+    bash some/novel/aggregate.sh
+
+check-shell-quality:
+    uv run python -m livespec_dev_tooling.checks.shell_quality
+""",
+        encoding="utf-8",
+    )
+    workflow = tmp_path / ".github" / "workflows" / "ci.yml"
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text(
+        "jobs:\n  checks:\n    steps:\n      - run: check-shell-quality\n", encoding="utf-8"
+    )
+
+    result = shellcheck_pin_gate.main()
+
+    captured = capsys.readouterr()
+    assert result == 1
+    for location in ("justfile", ".github/scripts/check.sh", "check-targets.txt"):
+        assert (
+            location in captured.out
+        ), f"the diagnostic must name {location} as a searched location; got {captured.out!r}"
+
+
 def test_consumer_without_shellcheck_pin_is_out_of_scope(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
