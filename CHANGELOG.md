@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.19.7](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.19.6...v1.19.7) (2026-08-05)
+
+
+### Bug Fixes
+
+* **cross-repo:** recognise every fleet aggregate layout in the ShellCheck pin gate ([9263274](https://github.com/thewoolleyman/livespec-dev-tooling/commit/926327449e98353390002bfca543deddb345be7a))
+* **cross-repo:** treat a delegated-script aggregate as wired in the ShellCheck pin gate ([0af74ad](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0af74ad672103d6f4a495d77de7f30bfbab7893d))
+
 ## [1.19.6](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.19.5...v1.19.6) (2026-08-04)
 
 
