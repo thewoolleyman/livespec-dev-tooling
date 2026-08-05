@@ -121,6 +121,50 @@ def test_should_deny_denies_backgrounded_gate_command() -> None:
     assert _should_deny(tool_name="Bash", tool_input=tool_input) == "just check"
 
 
+def test_should_deny_allows_the_sanctioned_detached_gate_runner() -> None:
+    """Backgrounding `scripts/gate-run.sh` is the SUPPORTED way to run a long gate.
+
+    The commit aggregate can outlast the harness's 20-minute tool-call
+    ceiling, and a bare foreground re-issue then dies with no verdict.
+    The detached runner keeps the gate in its own session and records a
+    durable verdict, so its waiter is safe to background: killing the
+    waiter loses nothing and it can simply be re-issued. Denying the
+    runner would leave NO way to run a gate that outlasts the ceiling.
+    """
+    start: dict[str, object] = {
+        "command": "scripts/gate-run.sh start -- mise exec -- git commit --amend --no-edit",
+        "run_in_background": True,
+    }
+    assert _should_deny(tool_name="Bash", tool_input=start) is None
+
+    waiter: dict[str, object] = {
+        "command": "mise exec -- just gate-wait 20260805T051456Z-4055481",
+        "run_in_background": True,
+    }
+    assert _should_deny(tool_name="Bash", tool_input=waiter) is None
+
+
+def test_should_deny_does_not_let_naming_the_runner_launder_a_bare_gate() -> None:
+    """The command must BE a runner invocation, not merely mention one.
+
+    A bare backgrounded gate keeps its original hazard — the tool output
+    is the only record, so a killed task leaves no verdict behind. That
+    deny must not be escapable by putting the runner's name in a commit
+    message or a comment.
+    """
+    in_message: dict[str, object] = {
+        "command": "mise exec -- git commit -m 'feat(gate): add scripts/gate-run.sh'",
+        "run_in_background": True,
+    }
+    assert _should_deny(tool_name="Bash", tool_input=in_message) == "git commit"
+
+    in_comment: dict[str, object] = {
+        "command": "just check  # supersedes gate-run.sh",
+        "run_in_background": True,
+    }
+    assert _should_deny(tool_name="Bash", tool_input=in_comment) == "just check"
+
+
 # ---------------------------------------------------------------------------
 # main() — in-process hook-protocol behavior
 # ---------------------------------------------------------------------------
@@ -201,7 +245,11 @@ def test_script_denies_then_allows_end_to_end() -> None:
     )
     assert denied.returncode == 2
     assert "DENIED" in denied.stderr
-    assert "FOREGROUND" in denied.stderr
+    # The deny must ROUTE the caller, not just refuse. It names the
+    # detached runner rather than telling them to re-issue foreground —
+    # that advice is what walks into the silent kill under load.
+    assert "gate-start" in denied.stderr
+    assert "DIED_WITHOUT_VERDICT" in denied.stderr
 
     allow_payload = json.dumps(
         {
