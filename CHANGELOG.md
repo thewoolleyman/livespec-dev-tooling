@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.19.8](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.19.7...v1.19.8) (2026-08-05)
+
+
+### Bug Fixes
+
+* **gate:** point the background-guard deny at the detached runner ([b2e08c2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b2e08c20858fe632b509d1bf1442c154208e3ed7))
+
 ## [1.19.7](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.19.6...v1.19.7) (2026-08-05)
 
 
