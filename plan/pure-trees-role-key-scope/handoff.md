@@ -38,24 +38,27 @@ real and confirmed from ratified text (below). What failed was arming a widened 
 across nine repos in one step. **Re-landing behind adoption is `livespec-dev-tooling-irtt`
 and it is OPEN.** Do not re-land by simply reapplying `46c5dab`.
 
-## 🔥 LIVE HAZARD — a pending spec proposal now describes reverted behavior
+## ✅ CLOSED HAZARD — the stale spec proposal was WITHDRAWN
 
-`SPECIFICATION/proposed_changes/pure-trees-scan-universe-decoupled.md` is **still pending on
-master** (verify: `git ls-tree -r --name-only origin/master -- SPECIFICATION/proposed_changes/`).
+`SPECIFICATION/proposed_changes/pure-trees-scan-universe-decoupled.md` was **deleted** by
+this commit, on a maintainer ruling of **WITHDRAW**. Verify it is gone:
+`git ls-tree -r --name-only origin/master -- SPECIFICATION/proposed_changes/`.
 
-It states that `public_api_result_typed` no longer consumes `pure_trees` and that the
-default-run no-op count is three. **Both were true when filed and are FALSE after the
-revert.** A `/livespec:revise` pass would ratify a false statement into ratified
+It stated that `public_api_result_typed` no longer consumes `pure_trees` and that the
+default-run no-op count is three. **Both were true when filed and were FALSE after
+`f424711`.** A `/livespec:revise` pass would have ratified a false statement into ratified
 `contracts.md` — the exact defect class this whole thread exists to close, arriving through
 the spec lifecycle instead of through code.
 
-**Do one of these before any revise pass, and say which:**
-1. **Withdraw it** — delete the file with a commit explaining the revert superseded it; or
-2. **Rewrite it to describe `irtt`'s re-land** (gate retained until a repo adopts), so the
-   spec change lands with the behavior rather than ahead of it.
+**The proposal was not WRONG about the rule; it was STALE about the behavior.** The scope
+mismatch it argues from is still real and still confirmed from ratified text (see "Still
+true, still measured" below). Only its factual claims about shipped behavior died with the
+revert.
 
-Recommendation: **(1) withdraw**, because the correct spec text depends on `irtt`'s
-adoption design, which is not settled.
+⚠️ **`livespec-dev-tooling-irtt` files its own proposal — do not resurrect this one.** The
+re-land must be described against what actually ships, when it ships (gate retained until a
+repo adopts), not reconstructed from reverted behavior. The reasoning is preserved in `irtt`
+and in this thread; nothing was lost in the deletion.
 
 ## PARKED WORK — livespec-dev-tooling-rjyc (P0), fully staged, resume verbatim
 
