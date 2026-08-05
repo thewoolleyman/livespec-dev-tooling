@@ -7,285 +7,189 @@
 > cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh -- bd show livespec-dev-tooling-8zv3
 > ```
 >
-> **Created 2026-08-04** by splitting the `pure_trees` concern out of
-> `plan/rop-railway-enforcement`, which was carrying three tangled concerns and is
-> now ON HOLD. This thread exists so the ROP track can become small, cohesive and
-> achievable without churn.
+> **Rewritten 2026-08-05 at session wrap.** Everything below is measured, with the
+> command that measured it. Where a claim is inherited rather than re-derived, it says so.
 
-## The one-sentence problem
+## ⛔ READ THIS FIRST — THE DECOUPLING SHIPPED AND WAS THEN REVERTED
 
-`pure_trees` is a **shared role key with FIVE real code consumers**, and
-`public_api_result_typed` is the ONE whose rule binds a different scope than the key
-selects — so it gates itself off and scans **zero files in all nine repos**.
+`8zv3.3` landed as `46c5dab` ("scan the first-party universe, not pure_trees") and was
+**fully reverted** by `f424711` ("restore the pure_trees gate on public_api_result_typed").
 
-> ⛔ **CORRECTED 2026-08-04: FIVE, NOT SEVEN.** The original "seven" came from
-> `grep -rln pure_trees` — a FILENAME-level grep that counts any file *mentioning* the
-> string, docstrings and comments included. Re-derived with an AST pass counting only real
-> code references. **A proxy for consumption was reported as consumption**, which is the
-> same shape as a check reporting on files it never inspects — committed by this thread's
-> own author. **Re-derive from the AST, not from a grep.**
-
-## What is measured, and what is inferred
-
-**MEASURED 2026-08-04** (re-run these; do not trust the transcription):
-
-| repo | shipped-check result |
-|---|---|
-| `livespec-dev-tooling` | exit 0, ZERO files scanned, `role_key_spelling=not_applicable` |
-| `livespec` (ledger: 15 offenders) | exit 0, ZERO files scanned, `unarmed_until=livespec-mutreal.1`, level **warning** |
+**Verified 2026-08-05 against `origin/master` = `42c7439`:**
 
 ```bash
-cd /data/projects/livespec && mise exec -- uv run python -m livespec_dev_tooling.checks.public_api_result_typed; echo "EXIT=$?"
+git show origin/master:livespec_dev_tooling/checks/public_api_result_typed.py | grep -n 'role_absence_exit_code\|pure_trees'
+git merge-base --is-ancestor f424711 origin/master && echo "revert IS on master"
 ```
 
-All nine `pure_trees` declarations, read from each repo's `pyproject.toml`:
+The gate is back: `role_absence_exit_code` at :125, `_scan(pure_trees=...)` at :344/:385.
+The docstring fix that shipped alongside it was reverted too.
 
-| spelling | repos |
+**WHY, from the revert's own message — this is the load-bearing part.** Removing the gate
+made the check scan repos whose public API it had never once read. That is
+**enforcement-before-adoption**, and it turned **FIVE** fleet repos' master CI red:
+`livespec`, `livespec-runtime`, `livespec-orchestrator-git-jsonl`,
+`livespec-orchestrator-beads-fabro`, `livespec-overseer`. `livespec/.ai/ci-gate-discipline.md`
+names that as revert-worthy and answers it with **revert-and-reland** — never a lever, env
+var, carve-out, or severity demotion (`li-4x3a45` is the recorded wontfix on exactly that).
+
+⚠️ **The analysis in this thread was not wrong; the SEQUENCING was.** The scope mismatch is
+real and confirmed from ratified text (below). What failed was arming a widened criterion
+across nine repos in one step. **Re-landing behind adoption is `livespec-dev-tooling-irtt`
+and it is OPEN.** Do not re-land by simply reapplying `46c5dab`.
+
+## 🔥 LIVE HAZARD — a pending spec proposal now describes reverted behavior
+
+`SPECIFICATION/proposed_changes/pure-trees-scan-universe-decoupled.md` is **still pending on
+master** (verify: `git ls-tree -r --name-only origin/master -- SPECIFICATION/proposed_changes/`).
+
+It states that `public_api_result_typed` no longer consumes `pure_trees` and that the
+default-run no-op count is three. **Both were true when filed and are FALSE after the
+revert.** A `/livespec:revise` pass would ratify a false statement into ratified
+`contracts.md` — the exact defect class this whole thread exists to close, arriving through
+the spec lifecycle instead of through code.
+
+**Do one of these before any revise pass, and say which:**
+1. **Withdraw it** — delete the file with a commit explaining the revert superseded it; or
+2. **Rewrite it to describe `irtt`'s re-land** (gate retained until a repo adopts), so the
+   spec change lands with the behavior rather than ahead of it.
+
+Recommendation: **(1) withdraw**, because the correct spec text depends on `irtt`'s
+adoption design, which is not settled.
+
+## PARKED WORK — livespec-dev-tooling-rjyc (P0), fully staged, resume verbatim
+
+The durable fix for the fleet-conformance deadlock. **Implementation is COMPLETE and both
+positive controls are DISCHARGED.** Only the Green commit is outstanding.
+
+```text
+worktree : ~/.worktrees/livespec-dev-tooling/fix-rjyc-self-member-local-vantage
+branch   : fix/rjyc-self-member-local-vantage
+HEAD     : 9224f2e  (Red commit, five TDD-Red-* trailers)
+staged   : livespec_dev_tooling/fleet/_context.py
+           livespec_dev_tooling/fleet/_rows_public_api_conformance.py
+           livespec_dev_tooling/fleet/fleet_conformance.py
+state    : leg-4 amend-in-progress (Red trailers at HEAD + impl staged)
+resume   : cd <worktree> && mise exec -- git commit --amend --no-edit
+```
+
+⛔ **DO NOT unstage, reset, rebase, or clean this worktree.** The staged tree IS the work.
+
+**What it does.** `_rows_public_api_conformance.py:133` was the sole `member_tree_snapshot`
+call site, and it read EVERY member — including the repo under test — from the forge at its
+canonical ref. So a PR could never be graded on its own contents, and `ci-green` gating on
+that row made the repo unable to merge the fix for a finding the row itself raised. The self
+member now reads its local checkout; every sibling keeps its forge ref.
+
+⛔ **THE ACCEPTANCE CRITERION IS THE GUARDRAIL: self-only.** `_local_root_for()` enforces it
+by exact name equality. The verdict is a JOIN — consumption edges come from OTHER members'
+trees (unforgeable by the PR), only the declaration and own sources come from this one.
+**Generalize local-read to siblings and the row stops meaning anything.** Any implementation
+that does not enforce self-only is the wrong fix.
+
+**Both controls discharged in production** (unit tests bypass `main()` and cannot prove the
+wiring is bound):
+
+| control | setup | result |
+|---|---|---|
+| convicts | removed `shell_quality::main` declaration from the LOCAL tree only; master still carried it | **EXIT=4**, named the function — forge-read would have PASSED |
+| passes | restored byte-identical | **EXIT=0**, "fleet conformance passed", 9 members, 0 blind rows |
+
+⚠️ **The sweep sits behind lever `LIVESPEC_RUN_FLEET_CONFORMANCE`.** My first control run
+returned EXIT=0 with the lever unset — it skipped entirely. **A control that cannot fail is
+not a control.** Always confirm the row actually RAN.
+
+### Why it is parked, and the condition for resuming
+
+Three amend attempts were killed at the 1200s tool ceiling. **No hook ever refused — no
+verdict was ever produced.** Measured cause: 18 cores against load 50–66 sustained for over
+an hour (trace `50.2 → 51.9 → 62.7 → 49.05 → 60.69 → 64.44 → 66.49`), from other lanes.
+The same aggregate runs in 593s and 1043s unloaded.
+
+**Resume only when load is quiet across SEVERAL samples** — a single sub-threshold reading
+is a trough, not a recovery. That mistake was made once already in this thread.
+
+## Completed and merged
+
+| PR | what |
 |---|---|
-| `not_applicable` | `livespec-dev-tooling`, `livespec-runtime`, `livespec-driver-claude`, `livespec-driver-codex` |
-| `unarmed_until = "livespec-mutreal.1"` | `livespec`, `livespec-overseer`, `livespec-orchestrator-git-jsonl` |
-| `unarmed_until = "bd-ib-6qb2mc"` | `livespec-orchestrator-beads-fabro` |
-| zero first-party Python | `livespec-console-beads-fabro` — the sole sanctioned exemption |
+| dev-tooling **#1248** | `8zv3.3` decoupling + the cross-lane `shell_quality` declaration — **since reverted by `f424711`** |
+| dev-tooling **#1258** | docstring un-shadow + the spec proposal — **docstring half also reverted; the proposal survives and is the hazard above** |
+| runtime **#476** | pin bump to `v1.19.6`, unbreaking `livespec-runtime` master CI. 64 checks green. Runtime master now `120be92` |
 
-**THE CLASSIFICATION IS DONE** (`8zv3.1`, first deliverable, read-only). AST code-refs =
-`config.pure_trees` attribute reads plus the literal `"pure_trees"` key:
+**#476 verification, re-derived independently before pushing** (all four reproduced): on a
+CONSTANT tree, `v1.19.3` → exit 1 with 11 offenders / `v1.19.6` → exit 0 `not_applicable`;
+`f424711` is an ancestor of `v1.19.6` and not of `v1.19.3`; GHCR `python-v1.19.6` → 200 with
+a known-present control at 200 and a fabricated control at 404; lock shas are the real tag
+commits.
 
-| consumer | code-refs | verdict |
-|---|---:|---|
-| `check_mutation` | 4 | **GENUINE NEED** — mutates pure logic (`parse/`+`validate/`). Gates off legitimately. |
-| `pbt_coverage_pure_modules` | 4 | **GENUINE NEED** — its subject IS pure-layer test modules. |
-| `public_api_result_typed` | 4 | **⛔ SCOPE MISMATCH** — the only one. |
-| `partition_completeness` | 2 | **NOT A SCOPE GATE** — enumerates `pure_trees` as one partition member among roles. |
-| `source_trees_scoped_to_consumer` | 2 | **NOT A SCOPE GATE** — validates every role path exists. |
-| `_import_resolution` | **0** | **NOT A CONSUMER** — prose only |
-| `_single_meaning_variants` | **0** | **NOT A CONSUMER** — prose only (uses `pure_trees = []` as an analogy) |
-| `fleet/_rows_public_api_conformance` | **0** | **NOT A CONSUMER** — prose only |
+⚠️ **Runtime green means UNENFORCED, not verified.** `pure_trees` is `not_applicable` there,
+so the check convicts nobody. The 11 offenders are still in that code.
 
-▶️ **THIS MATERIALLY DE-RISKS THE CHANGE: it is a ONE-CONSUMER edit, not a seven-check
-refactor.** `check_mutation` and `pbt_coverage_pure_modules` **MUST KEEP** gating on
-`pure_trees` — that is what the key is FOR, and changing them would be the real softening.
+## Structural findings — filed elsewhere, do not re-derive
 
-⚠️ **The class question was still worth asking even though the answer was "one"** — asking it
-is what proved the other four correct rather than assumed. A class sweep returning one
-instance is a RESULT, not a miss.
+- **`livespec-dev-tooling-rjyc`** — the vantage fix above. P0, parked, ready to resume.
+- **`livespec-dev-tooling-irtt`** — arm `public_api_result_typed` behind adoption. **This is
+  the re-land path for `8zv3.3`.** OPEN.
+- **`livespec-dev-tooling-tkzf`** — `check-fleet-conformance-admin` reads adopter repos in
+  OTHER organisations from a pre-commit hook; failure mode is "nobody here can commit, for a
+  reason nobody here can fix". Cleared itself once.
+- **`livespec-dev-tooling-9s2j`** — the row reports nothing when a consumed function is
+  DELETED. Pre-existing, orthogonal, lives in `_public_api_graph` edge resolution, NOT in
+  tree source. **Deliberately excluded from rjyc.**
+- **`livespec-dev-tooling-niyl`** — gh apt pin. Fixed by `e12b4c9`.
+- **Gate-vs-harness ceiling (surfaced, maintainer-facing, not filed by me).**
+  `.claude/settings.json` commits `BASH_MAX_TIMEOUT_MS=1200000`; the pretooluse guard forbids
+  backgrounding a gate command; the aggregate measures 593s/1043s unloaded and >1200s under
+  load. So under sustained fleet load **this repo is uncommittable for product `.py`**, and it
+  presents as a silent kill with **no verdict** — indistinguishable from a hook refusal unless
+  you check whether any target actually ran. Same family as `tkzf`.
 
-✅ **CONFIRMED FROM RATIFIED TEXT — no longer an inference.** `pure_trees` asks
-*"has this repo carved its pure-module subtree?"*, which is genuinely load-bearing for
-mutation testing and PBT coverage. The ROP railway rule binds a **different set**, and
-that is now read rather than argued: `livespec`
-`SPECIFICATION/non-functional-requirements.md:114` (verified at SHA
-`ac502374689222c1b607db3964fbbb7598a390fd`) binds the railway to **every repo carrying
-ANY first-party Python**, states there is **NO "thin repo" exemption**, and names the
-**SOLE exemption** as **ZERO first-party Python**. So the check's gate key did not match
-its rule's scope, and the fix was to stop gating on `pure_trees` at all.
+## Still true, still measured — the analysis the revert did NOT invalidate
 
-⚠️ This paragraph previously read *"INFERRED — attack this first"*. It was independently
-re-derived by the worker rather than carried forward, which is what discharged it. A
-discharged "attack this first" reads exactly like a live one, so it is corrected here
-rather than left to be re-investigated a third time.
+**The premise, confirmed from ratified text** (not inferred): `livespec`
+`SPECIFICATION/non-functional-requirements.md:114`, verified at SHA
+`ac502374689222c1b607db3964fbbb7598a390fd`, binds the ROP railway to **every repo carrying
+ANY first-party Python**, states there is **NO "thin repo" exemption**, and names the **SOLE
+exemption** as **ZERO first-party Python**. `pure_trees` selects "has a pure-module subtree" —
+never the binding condition. **The scope mismatch is real.**
 
-## ⛔ The two consequences that make this urgent rather than tidy
+**The consumer classification (AST, not grep).** Five real code consumers:
+`check_mutation` (4 refs, GENUINE NEED), `pbt_coverage_pure_modules` (4, GENUINE NEED),
+`public_api_result_typed` (4, the ONLY scope mismatch), `partition_completeness` (2, not a
+scope gate), `source_trees_scoped_to_consumer` (2, not a scope gate).
+`_import_resolution`, `_single_meaning_variants` and `fleet/_rows_public_api_conformance`
+have **ZERO** code refs — prose only. An earlier "seven" came from `grep -rln`, which counts
+files that merely mention the string. **Re-derive from the AST, not from a grep.**
 
-1. **Four repos are structurally unconvictable.** The `not_applicable` repos have no
-   pure subtree at all, so while the scan universe stays `pure_trees`-scoped the check
-   can never convict there — yet the ledger records real offenders in exactly those
-   repos (`livespec-dev-tooling` 1, `livespec-runtime` 11, `livespec-driver-codex` 1).
-2. **The measurement basis diverges from the enforcement basis.** Every per-repo count
-   on `8o8e.7`–`8o8e.13` is taken with `_find_offenders` over `resolve_check_universe()`.
-   The shipped check's SCAN universe is `pure_trees`. **Today's remediation numbers
-   measure a criterion that never runs.**
+**Of the checks consuming `resolve_check_universe()`, exactly ONE was role-gated** — this
+check itself. Measured **19** call sites across 19 files, not twenty; `git grep -l` reports
+22 because it counts the definition site and non-calling importers.
 
-## The proposed change
+⛔ **DO NOT add a replacement role key** when re-landing. An empty universe is already a
+legitimate "nothing to check" and `resolve_check_universe()` fails closed. A new declared key
+would reintroduce the hazard: a declaration whose emptiness means "skip me",
+indistinguishable from "genuinely no code".
 
-`checks/public_api_result_typed.py::main()`:
+## Do NOT touch
 
-- drop the `pure_trees` role-absence gate (`role_absence_exit_code`, ~461-469)
-- drop the `pure_trees` resolution and `ensure_declared_paths_contain_python` (~470-478)
-- have `_scan` walk `universe` from `resolve_check_universe()` — already called at ~479
+- **`8zv3.4`** fleet fan-out — blocked by `8zv3.5`.
+- **`8zv3.5`** the `_`-prefixed FILE skip — worth **286 of 446** fleet offenders (64%); a
+  separate, independently-argued decision. Surfaced to the maintainer as a prepared valve.
+- **shell-quality wiring** — `fleet-shell-quality-enforcement` peer lane owns it. It is what
+  breaks `livespec-runtime`'s `bump-pin` at step 11.
+- **`plan/rop-railway-enforcement`** — ON HOLD.
 
-**This is FIDELITY, not softening.** It makes the check strictly stricter: four
-structurally-unconvictable repos become scanned. It does not hit the "never remove,
-weaken or skip a check" boundary. It also un-shadows the declaration staleness gates,
-which the module's own docstring notes sit *behind* the `pure_trees` gate and are
-therefore unverified in all nine repos today.
+## Working rules this thread earned the hard way
 
-## ✅ The ordering trap — MEASURED, AND IT DOES NOT FIRE
-
-`livespec-dev-tooling` runs this check on **itself** (`justfile:206`, `:730`), so arming it
-would turn its own `just check` red and `lefthook` would then block the very commit that
-fixes it. That is why remediating this repo is a PRECONDITION, not a follow-up.
-
-**But it costs nothing here.** Simulating the decoupled scan against master (read-only,
-`_scan` replicated with `resolve_check_universe()` as the walked set):
-
-| basis | offenders |
-|---|---:|
-| universe size | **177 files** |
-| WITH the `_`-prefixed FILE skip (**shipped `_scan`**, line 387) | **0** |
-| WITHOUT the `_`-file skip (the epic's per-repo measurement basis) | **1** |
-
-The single offender is `livespec_dev_tooling/fleet/_public_api_graph.py:244
-cross_member_consumption`. **So dev-tooling is already clean under shipped semantics and
-`8zv3.2` collapses to a verification step.**
-
-⚠️ **THAT IS CONDITIONAL AND THE CONDITION IS THE POINT: it holds only while the
-`_`-prefixed FILE skip stays.** Do not let the decoupling silently drop it — dropping it is
-a separate, independently-argued change that re-introduces this offender and a much wider
-fleet blind spot the ROP handoff already records as *wider than the ratified rule* (v178
-clause 0 disqualifies `_`-prefixed NAMES, not FILES).
-
-⚠️ **AND EVERY PER-REPO NUMBER NOW HAS TWO BASES** — shipped semantics vs the epic's
-measurement basis differ on the `_`-file skip as well as the universe. dev-tooling is **0**
-on one and **1** on the other. **Say which basis you mean, every time**; `8o8e.17` exists
-because a part and a total from different bases were added.
-
-✅ Independently corroborated: the rop worker measured this repo at universe 176 / raw 1,
-naming the same function. Two derivations, same offender.
-
-Per-repo remediate → arm still governs the FLEET fan-out (`8zv3.4`) — one coordinated
-cross-repo effort, not eight independent PRs. **The decoupling is small; its consequence
-is not.**
-
-## ⚠️ A remedy that cannot fail is not a remedy
-
-Whatever lands must be positive-controlled: after the change, show the check
-**CONVICTING** on a repo where it previously scanned zero files, and show the count
-matching that repo's independently-measured figure. **Exit status 0 is not evidence** —
-that is the parent epic's founding lesson, and this thread inherits it.
-
-✅ **DISCHARGED 2026-08-04 on `livespec-runtime`** (`pure_trees = not_applicable`, so it
-previously scanned ZERO files), shipped semantics with the `_`-file skip RETAINED:
-
-| | exit | files scanned | offenders |
-|---|---:|---:|---:|
-| **before** (`master`) | 0 | **0** | 0 — `role_key_spelling=not_applicable` |
-| **after** | 1 | **26** of universe 31 | **11** |
-
-And the negative half, on `livespec-dev-tooling` itself: exit **0**, scanning **93** of
-universe 177 — up from 0. **So the check can now both convict and pass**, which is what
-makes the pass meaningful; a check that could only ever return one verdict is the defect,
-not the remedy.
-
-⚠️ **11, not the 12 in the fleet table — and the delta is real, not a measurement error.**
-`livespec-runtime` HEAD `9b4c518` *"feat(github-auth): put the App mint on the IOResult
-railway"* remediated one offender between the two measurements. **Quote the SHA**, exactly
-as this thread already warns.
-
-## What this thread does NOT do
-
-It does **not** drive `livespec-mutreal.1` or `bd-ib-6qb2mc`. Those remain valid for the
-checks that genuinely need a pure-layer carve. This thread **removes the ROP check's
-dependency on them**; it does not resolve them. Do not re-prioritise either item on this
-thread's account — that would manufacture urgency from a coupling about to be deleted.
-
-## Per-repo carve status — tracked here, owned elsewhere
-
-`bd-ib-6qb2mc` (`livespec-orchestrator-beads-fabro`, P2, **human-gated**) is tracked as a
-dependency of this thread rather than given its own plan thread, because **that repo
-cannot currently land any PR**: open PRs fail `check-shell-quality` (the
-`fleet-shell-quality-enforcement` peer lane) and master CI is red per `8o8e.22`. Opening a
-doomed PR there would burn scarce runner minutes. Create a local thread there when the
-repo can accept work again.
-
-📜 **Worth recording: `bd-ib-6qb2mc` is the same defect class as the epic it was blocking.**
-*"`pure_trees` is empty, so `check-pbt-coverage-pure-modules` scans ZERO files"* is exactly
-*"the ROP check scans zero files in all nine repos"*, one key apart. **A role key that
-resolves to nothing silently disarms whatever consumes it.** That shared shape is why this
-thread asked the CLASS question across every real consumer rather than patching one — and the
-answer came back ONE, which is a result rather than a miss.
-
-## Relationship to other threads
-
-- **`plan/rop-railway-enforcement`** — ON HOLD. `8zv3` **blocks** `8o8e` (dependency wired
-  in the ledger). The ROP track resumes once the scan universe is decoupled.
-- **`plan/mutation-testing-keystone`** — the `livespec-mutreal.1` blocker, temporarily
-  housed in this repo. Independent of this thread after the decoupling.
-
-## Open questions — TWO OF THREE ARE NOW ANSWERED
-
-1. ✅ **ANSWERED: NO role gate is needed.** Of the **19** checks consuming
-   `resolve_check_universe()`, **exactly one was role-gated — this check itself.** The other
-   **18** scan the first-party universe ungated. **So decoupling did not invent a
-   pattern; it made the outlier conform.** There is therefore **no new required key and no
-   cross-repo schema epic** — the largest planned risk, retired.
-
-   ⛔ **This said "twenty" / "nineteen" until 2026-08-04.** The AST census is **19 call
-   sites across 19 distinct files**; the supervisor's inherited figure was a supporting
-   number that rode along unverified *because the verdict it supported was right*. A right
-   conclusion does not launder a wrong premise. Re-derive with an AST pass, not a grep:
-   `git grep -l resolve_check_universe` reports **22** files, because it counts the
-   definition site and importers that never call it.
-
-   The spec's sole exemption (ZERO first-party Python) needs no expression: an empty
-   universe is a documented legitimate "nothing to check", so `livespec-console-beads-fabro`
-   passes with nothing declared.
-
-   ⛔ **DO NOT "HELPFULLY" ADD A REPLACEMENT GATE.** A new declared key to express the
-   zero-Python exemption would reintroduce the exact hazard this epic closes — a
-   declaration whose emptiness means "skip me", indistinguishable from "genuinely no code".
-   `resolve_check_universe()` already separates those: it OWNS root resolution (every
-   `GIT_*` var stripped) and raises `GitToplevelError` / `GitLsFilesError` rather than
-   returning a spuriously-empty walk. **Adding a gate back trades a fail-closed primitive
-   for a fail-open declaration.**
-
-2. ✅ **ANSWERED by the classification above: exactly one consumer is mismatched.**
-   `check_mutation` and `pbt_coverage_pure_modules` genuinely need the key;
-   `partition_completeness` and `source_trees_scoped_to_consumer` use it structurally
-   without being scoped by it. **The class question was still worth asking — asking it is
-   what proved the other four correct rather than assumed.**
-
-3. ⬜ **STILL OPEN.** `check-shell-quality` and `check-doctor-static` currently freeze two
-   of the nine repos (`livespec-orchestrator-beads-fabro`, `livespec`). Arming anything
-   fleet-wide needs those clear first. **Verify landability per repo before pushing** —
-   runner minutes are a first-class constraint.
-
-4. ⬜ **NOW MEASURED AND FILED AS `8zv3.5` — it is 64% of the entire remediation.** The
-   `_`-prefixed FILE skip is recorded as wider than the ratified rule (v178 clause 0
-   disqualifies `_`-prefixed NAMES, not FILES) and is what keeps dev-tooling at 0.
-   **`8zv3.5` BLOCKS `8zv3.4`**: the fan-out cannot be costed until it is settled.
-
-## 📏 Fleet numbers — measured 2026-08-04, read-only, both bases
-
-| repo | universe | **WITH** `_`-skip (shipped) | **WITHOUT** (epic basis) | skip's radius |
-|---|---:|---:|---:|---:|
-| `livespec-overseer` | 214 | **115** | **249** | **134** |
-| `livespec-orchestrator-beads-fabro` | 186 | **17** | **157** | **140** |
-| `livespec` | 145 | 12 | 20 | 8 |
-| `livespec-runtime` | 31 | 12 | 12 | 0 |
-| `livespec-orchestrator-git-jsonl` | 49 | 4 | 6 | 2 |
-| `livespec-dev-tooling` | 177 | 0 | 1 | 1 |
-| `livespec-driver-codex` | 7 | 0 | 1 | 1 |
-| `livespec-driver-claude` | 7 | 0 | 0 | 0 |
-| **TOTAL** | | **160** | **446** | **286** |
-
-`160 = 115+17+12+12+4+0+0+0`. `446 = 249+157+20+12+6+1+1+0`. Arithmetic shipped with the
-total, per `8o8e.17`.
-
-⛔ **THE EPIC'S COST IS DOMINATED BY A DECISION THAT IS NOT PART OF IT.** Decouple with the
-skip retained → the armed check convicts **~160**. Drop the skip too → **~446**. Budget,
-sequencing and blast radius all move **~2.8x** on that one question. `8zv3.3` proceeds under
-the **stated assumption that the skip is retained**.
-
-✅ **The no-skip column corroborates independent measurements**: `livespec` **20** matches the
-rop worker's harness-controlled 20 exactly; `livespec-dev-tooling` **1** matches its raw 1 on
-the same function; `beads-fabro` **157** matches `8o8e.8`'s own-pin figure. **So every
-recorded `8o8e.7`–`.13` figure is the NO-SKIP basis.**
-
-⚠️⚠️ **THESE ARE NOT THE ARMED NUMBERS.** The repos are on **different dev-tooling pins** —
-six at **1.17.1**, two at **1.18.7** — so each was evaluated by its own pinned criterion.
-Operationally honest (it is what each CI would do today), but six different-versioned criteria
-in one table, and **once the decoupling releases and `bump-pin` fans out, every repo is
-re-evaluated by the NEW criterion. Re-measure per repo after the pin lands.** That pin spread
-is also the fleet's known pin-currency defect showing up again: rows that fire correctly on
-every stale member and gate nothing.
-
-⚠️ Trees move fast — `livespec-overseer` measured universe **214** against `8o8e.7`'s recorded
-**172**. **Quote the SHA.** Measured at: dev-tooling `3a9ed20`, livespec `d2501bc9`, overseer
-`3bdb29a`, beads-fabro `f792496d`, git-jsonl `07a450c`, driver-codex `37472ae`;
-`livespec-runtime` and `livespec-driver-claude` one commit behind master, both missing commits
-verified to touch **zero** `.py`.
-
-> ⚠️ **Every answer above is the supervisor's read-only analysis, recorded with its
-> reproduction command. None has been independently verified. Re-derive before relying on
-> it** — this thread's own rule, and the epic exists because a number nobody re-derived was
-> believed for days.
+1. **Exit status is not evidence.** Confirm the check actually ran. Levers, skipped sweeps
+   and killed processes all exit 0 or look like failures without being either.
+2. **Run a positive control before believing an absence.** Four separate false-ABSENT probe
+   results were recorded in one day (wrong package name, 403 scope, 1000-item truncation,
+   missing OCI Accept header).
+3. **Say which basis every number is on** — shipped semantics vs the epic's measurement basis
+   differ on the `_`-file skip, and dev-tooling is 0 on one and 1 on the other.
+4. **Quote the SHA.** Trees move within the hour; two supervisor-quoted head shas were
+   already stale when handed over.
+5. **A right conclusion does not launder a wrong premise.** Flag the supporting number even
+   when the verdict survives.
