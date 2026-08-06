@@ -7,22 +7,30 @@
 > cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh -- bd show livespec-dev-tooling-8zv3
 > ```
 >
-> **Rewritten 2026-08-05 at session wrap.** Everything below is measured, with the
-> command that measured it. Where a claim is inherited rather than re-derived, it says so.
+> **Rewritten 2026-08-06.** Everything below is measured, with the command that measured it.
+> Where a claim is inherited rather than re-derived, it says so.
+>
+> **State in one line:** the withdrawal, both halves of the gate ruling, and `rjyc` have all
+> MERGED. Nothing in this thread is parked. The open item is `livespec-dev-tooling-irtt`,
+> whose adoption bill is measured per repo below and is **188**, and whose next step is a
+> SEQUENCING decision for the maintainer — not implementation.
 
 ## ⛔ READ THIS FIRST — THE DECOUPLING SHIPPED AND WAS THEN REVERTED
 
 `8zv3.3` landed as `46c5dab` ("scan the first-party universe, not pure_trees") and was
 **fully reverted** by `f424711` ("restore the pure_trees gate on public_api_result_typed").
 
-**Verified 2026-08-05 against `origin/master` = `42c7439`:**
+**Re-verified 2026-08-06 against `origin/master` = `622167a`** — still true, the gate
+remains restored:
 
 ```bash
 git show origin/master:livespec_dev_tooling/checks/public_api_result_typed.py | grep -n 'role_absence_exit_code\|pure_trees'
 git merge-base --is-ancestor f424711 origin/master && echo "revert IS on master"
 ```
 
-The gate is back: `role_absence_exit_code` at :125, `_scan(pure_trees=...)` at :344/:385.
+The gate is back, at the CURRENT line numbers (they drift — re-grep rather than trusting
+these): `role_absence_exit_code` imported at :125 and called at :461, `_scan(...)` called at
+:483 still taking `pure_trees`, and `for tree_rel in pure_trees` at :385 inside `_scan`.
 The docstring fix that shipped alongside it was reverted too.
 
 **WHY, from the revert's own message — this is the load-bearing part.** Removing the gate
@@ -60,23 +68,40 @@ re-land must be described against what actually ships, when it ships (gate retai
 repo adopts), not reconstructed from reverted behavior. The reasoning is preserved in `irtt`
 and in this thread; nothing was lost in the deletion.
 
-## PARKED WORK — livespec-dev-tooling-rjyc (P0), fully staged, resume verbatim
+## ✅ CLOSED — livespec-dev-tooling-rjyc (P0) MERGED as dev-tooling #1309
 
-The durable fix for the fleet-conformance deadlock. **Implementation is COMPLETE and both
-positive controls are DISCHARGED.** Only the Green commit is outstanding.
+**The fleet-conformance deadlock is closed.** A PR can now be graded on its own contents.
+Verified on `origin/master` by reading the code, not a report: `fleet/_local_vantage.py` and
+`fleet/_cli_parser.py` present, `_local_root_for` gating on exact name equality with a single
+call site, and the member loop falling through to `member_tree_snapshot` at the canonical ref
+for every non-self member.
+
+⛔ **The acceptance criterion that must survive any future edit: SELF-ONLY.** What makes it
+sound is not the equality test alone — it is that `local_repo` is **derived from the origin
+remote, never configured**, and that `local_vantage` **fails closed to the forge vantage for
+the WHOLE roster** in both unresolvable branches, explicitly refusing to fall back to a
+directory name. That is why "a PR cannot declare itself to be a sibling" is true, and it is
+the answer to the "a PR asserts its own conformance" objection rather than a restatement of
+it. Generalize the local read to siblings and the consumption half becomes forgeable.
+
+**Landing it also forced a mechanical extraction**, recorded here because the reason recurs:
+`fleet_conformance.py` was at **247 LLOC against a 250 hard ceiling before rjyc** — three
+lines of headroom — and rjyc adds 30. There is no arrangement in which 30 fits into 3.
+`_local_vantage` (rjyc's own) and `_build_parser` moved out verbatim; 277 → **220**.
+Extracting only `_local_vantage` was measured at **253 — still over**, so the split ordering
+fails outright rather than merely being tight. The class-level condition is
+`livespec-dev-tooling-e5nz`.
+
+### The historical entry (superseded — kept for the reasoning only)
+
+The durable fix for the fleet-conformance deadlock. Both positive controls were discharged
+in production BEFORE the park, and they are restated in #1309 rather than re-run.
 
 ```text
-worktree : ~/.worktrees/livespec-dev-tooling/fix-rjyc-self-member-local-vantage
-branch   : fix/rjyc-self-member-local-vantage
-HEAD     : 9224f2e  (Red commit, five TDD-Red-* trailers)
-staged   : livespec_dev_tooling/fleet/_context.py
-           livespec_dev_tooling/fleet/_rows_public_api_conformance.py
-           livespec_dev_tooling/fleet/fleet_conformance.py
-state    : leg-4 amend-in-progress (Red trailers at HEAD + impl staged)
-resume   : cd <worktree> && mise exec -- git commit --amend --no-edit
+STALE — the worktree fix-rjyc-self-member-local-vantage is REMOVED and the branch DELETED.
+The work landed as dev-tooling #1309 (commit 1b126e8, rebased onto the measured head).
+Nothing here needs resuming. Left in place only so the shape of the parked state is legible.
 ```
-
-⛔ **DO NOT unstage, reset, rebase, or clean this worktree.** The staged tree IS the work.
 
 **What it does.** `_rows_public_api_conformance.py:133` was the sole `member_tree_snapshot`
 call site, and it read EVERY member — including the repo under test — from the forge at its
@@ -102,15 +127,24 @@ wiring is bound):
 returned EXIT=0 with the lever unset — it skipped entirely. **A control that cannot fail is
 not a control.** Always confirm the row actually RAN.
 
-### Why it is parked, and the condition for resuming
+### Why it was parked — and why the remedy was WRONG
 
-Three amend attempts were killed at the 1200s tool ceiling. **No hook ever refused — no
-verdict was ever produced.** Measured cause: 18 cores against load 50–66 sustained for over
-an hour (trace `50.2 → 51.9 → 62.7 → 49.05 → 60.69 → 64.44 → 66.49`), from other lanes.
-The same aggregate runs in 593s and 1043s unloaded.
+Three amend attempts were killed at the 1200s tool ceiling with **no hook ever refusing and
+no verdict ever produced.** The diagnosis was right; the remedy — *wait for a quiet window* —
+was wrong, and the numbers say so decisively.
 
-**Resume only when load is quiet across SEVERAL samples** — a single sub-threshold reading
-is a trough, not a recovery. That mistake was made once already in this thread.
+Once the ceiling was removed (see below), the SAME amend was measured at:
+
+| run | wall | outcome |
+|---|---|---|
+| amend (failing) | **25m17s** | FAILED, 2 targets named |
+| amend (passing) | **53m38s** | PASSED, 66/66 |
+| push | **41m51s** | PASSED |
+
+⛔ **Every one exceeded 1200s. rjyc was never "slow under load" — it was UNLANDABLE, and no
+quiet window would ever have landed it.** A remedy that waits for load to drop cannot fix a
+job whose *successful* path is 2.5× the ceiling. Both the worker and the supervisor held the
+wait-for-quiet theory; the measurement is what killed it.
 
 ## Completed and merged
 
@@ -119,6 +153,10 @@ is a trough, not a recovery. That mistake was made once already in this thread.
 | dev-tooling **#1248** | `8zv3.3` decoupling + the cross-lane `shell_quality` declaration — **since reverted by `f424711`** |
 | dev-tooling **#1258** | docstring un-shadow + the spec proposal — **docstring half also reverted; the proposal survives and is the hazard above** |
 | runtime **#476** | pin bump to `v1.19.6`, unbreaking `livespec-runtime` master CI. 64 checks green. Runtime master now `120be92` |
+| dev-tooling **#1293** | **withdrew** the stale spec proposal — the live hazard above |
+| dev-tooling **#1295** | `scripts/gate-run.sh` — detached gate runs with durable verdicts |
+| dev-tooling **#1300** | background-guard routes to the runner instead of into the silent kill |
+| dev-tooling **#1309** | **`rjyc`** — self-member local vantage + the forced LLOC extraction |
 
 **#476 verification, re-derived independently before pushing** (all four reproduced): on a
 CONSTANT tree, `v1.19.3` → exit 1 with 11 offenders / `v1.19.6` → exit 0 `not_applicable`;
@@ -131,7 +169,16 @@ so the check convicts nobody. The 11 offenders are still in that code.
 
 ## Structural findings — filed elsewhere, do not re-derive
 
-- **`livespec-dev-tooling-rjyc`** — the vantage fix above. P0, parked, ready to resume.
+- **`livespec-dev-tooling-rjyc`** — the vantage fix above. **CLOSED**, merged as #1309.
+- **`livespec-dev-tooling-e5nz`** (P1) — the LLOC ceiling **CLASS**: files sitting just under
+  a hard ceiling silently block the next change to them, whatever it is. #1309 fixed the
+  INSTANCE (`fleet_conformance.py`), not the class. **Must not be closed by re-measuring that
+  one file.**
+- **`livespec-dev-tooling-6q5o`** (P2) — `gate-run.sh`'s "zero targets completed" note is
+  true-but-misleading on the PUSH path, because lefthook buffers command output until the
+  command finishes. It cannot distinguish "nothing ran" from "output is buffered". Two
+  separate readers were misled by it within an hour. `DIED_WITHOUT_VERDICT` is unaffected —
+  it keys on `exit_code` presence and process liveness, never on target counts.
 - **`livespec-dev-tooling-irtt`** — arm `public_api_result_typed` behind adoption. **This is
   the re-land path for `8zv3.3`.** OPEN.
 - **`livespec-dev-tooling-tkzf`** — `check-fleet-conformance-admin` reads adopter repos in
@@ -141,12 +188,78 @@ so the check convicts nobody. The 11 offenders are still in that code.
   DELETED. Pre-existing, orthogonal, lives in `_public_api_graph` edge resolution, NOT in
   tree source. **Deliberately excluded from rjyc.**
 - **`livespec-dev-tooling-niyl`** — gh apt pin. Fixed by `e12b4c9`.
-- **Gate-vs-harness ceiling (surfaced, maintainer-facing, not filed by me).**
-  `.claude/settings.json` commits `BASH_MAX_TIMEOUT_MS=1200000`; the pretooluse guard forbids
-  backgrounding a gate command; the aggregate measures 593s/1043s unloaded and >1200s under
-  load. So under sustained fleet load **this repo is uncommittable for product `.py`**, and it
-  presents as a silent kill with **no verdict** — indistinguishable from a hook refusal unless
-  you check whether any target actually ran. Same family as `tkzf`.
+- **Gate-vs-harness ceiling — ✅ RESOLVED by #1295 + #1300.** `.claude/settings.json` still
+  commits `BASH_MAX_TIMEOUT_MS=1200000` and that was deliberately NOT raised (a larger ceiling
+  is still a ceiling). Instead gate RUNTIME is decoupled from harness PATIENCE: the gate runs
+  in its own detached `setsid` session via `scripts/gate-run.sh`, and a cheap RESTARTABLE
+  waiter reports the verdict. **Nothing was weakened** — same command, same hooks, same
+  targets; the gate's own exit code IS the verdict and the runner only transports it.
+  The silent kill is closed structurally: `exit_code` present is the sole marker that a
+  verdict exists, and `DIED_WITHOUT_VERDICT` exits **75** — distinct from 0 and from every
+  gate failure code, so it can read as neither a pass nor a refusal.
+  Read `.ai/gate-runtime-vs-harness-patience.md` before diagnosing any quiet gate.
+
+## irtt adoption bill — MEASURED 2026-08-06, one basis, per repo
+
+⛔ **BASIS: `_`-prefixed FILE SKIP RETAINED.** The maintainer ruled `8zv3.5`
+**KEEP-AND-RATIFY**, so this is now THE enforcement basis, not one of two. **Do not report a
+no-skip column** — printing both is what produced the two-bases addition error in `8o8e.17`.
+
+Simulated READ-ONLY: each member's `origin/master` exported into an isolated tree, scanned
+with the decoupled shape (git-derived first-party universe minus `_`-prefixed files) using
+that repo's own config. No pin bumped, no check armed, no CI spent.
+
+| repo | sha | universe | scanned | offenders | current gate |
+|---|---|---:|---:|---:|---|
+| `livespec-driver-claude` | `39ecf54` | 9 | 7 | **0** | NotApplicable |
+| `livespec-driver-codex` | `8796fc1` | 7 | 3 | **0** | NotApplicable |
+| `livespec-console-beads-fabro` | `706050b` | 1 | 1 | **0** | **Undeclared** |
+| `livespec-dev-tooling` | `6072318` | 185 | 96 | 2 | NotApplicable |
+| `livespec-orchestrator-git-jsonl` | `1dc175d` | 49 | 37 | 4 | UnarmedUntil |
+| `livespec-runtime` | `ed5529f` | 31 | 26 | 11 | NotApplicable |
+| `livespec` | `cead37c` | 150 | 108 | 13 | UnarmedUntil |
+| `livespec-orchestrator-beads-fabro` | `41a4343` | 186 | 48 | 17 | UnarmedUntil |
+| `livespec-overseer` | `1d191b1` | 244 | 148 | **141** | UnarmedUntil |
+| **TOTAL** | | **862** | **474** | **188** | |
+
+⚠️ **The bill is 188, not 160.** Every earlier per-repo number is stale — the epic's own table
+evaluated each repo against ITS OWN pinned criterion (six at `1.17.1`, two at `1.18.7`) at
+different SHAs, and six different-versioned criteria are not cross-comparable.
+
+**Positive control discharged.** Six of nine convict with `file:line:function`.
+`livespec-runtime` reproduces **exactly 11** and the function identities match the `irtt`
+ledger's independently-recorded list verbatim — so the harness reproduces a known number AND
+the exact identities, not merely "it returned something".
+
+**No zero-over-zero.** Zero repos scan zero files; every `0` above is a genuine clean over a
+non-empty scanned set, not the founding defect. Smallest scanned set is `console` at 1.
+
+**All nine are currently unenforced** (NotApplicable / UnarmedUntil / Undeclared). The check
+convicts NOBODY anywhere today. "Green means unenforced" is exact, not rhetorical.
+
+### What the distribution says about sequencing
+
+- **Three zero-bill repos exist** and can be armed at zero remediation cost — but they are the
+  three SMALLEST universes, together **11 of 474 scanned files (2.3%)**. As "prove the check
+  in production" that is real; as "a regression guard for the rest" it guards eleven files.
+  Do not oversell it.
+- **`livespec-overseer` alone is 141 of 188 — 75%.** The entire rest of the fleet is **47**.
+- So the strong shape is: arm the three free ones, then the five cheap ones (dev-tooling 2,
+  git-jsonl 4, runtime 11, livespec 13, beads-fabro 17 = **47**), putting **EIGHT of nine
+  repos under real enforcement for 47 conversions rather than 188**, and leaving `overseer` as
+  a single-repo program scoped on its own merits instead of blocking the other eight.
+
+🔥 **THE BILL GROWS WHILE UNENFORCED — measured, not asserted.** `dev-tooling` was 93 scanned
+with **ZERO** offenders on 2026-08-04. On 2026-08-06 it is 96 scanned with **TWO**, both
+arriving in `61048d7` *"feat: expose importable charter-defect detectors"* — in the
+enforcement-suite repo itself. **Any per-repo number has a shelf life: re-measure at arm
+time, do not carry this table forward as current.**
+
+⚠️ **Anomaly, flagged not filed:** `livespec-console-beads-fabro` declares `pure_trees`
+**Undeclared**, not `NotApplicable`. Per `config.py` an undeclared required role key makes
+role-gated checks HARD-ERROR naming the key rather than no-op, so console is in a different
+state from the other eight. Its whole first-party universe is one file
+(`dev-tooling/coverage-gate.py`).
 
 ## Still true, still measured — the analysis the revert did NOT invalidate
 
@@ -177,8 +290,10 @@ indistinguishable from "genuinely no code".
 ## Do NOT touch
 
 - **`8zv3.4`** fleet fan-out — blocked by `8zv3.5`.
-- **`8zv3.5`** the `_`-prefixed FILE skip — worth **286 of 446** fleet offenders (64%); a
-  separate, independently-argued decision. Surfaced to the maintainer as a prepared valve.
+- **`8zv3.5`** the `_`-prefixed FILE skip — **RULED: KEEP-AND-RATIFY.** The skip stays and
+  is ratified explicitly, so the retained-skip basis is now THE enforcement basis. The
+  ratification is a separate spec change and it belongs to the supervisor, NOT to an
+  implementation lane. Do not touch the skip in any diff.
 - **shell-quality wiring** — `fleet-shell-quality-enforcement` peer lane owns it. It is what
   breaks `livespec-runtime`'s `bump-pin` at step 11.
 - **`plan/rop-railway-enforcement`** — ON HOLD.
@@ -195,4 +310,20 @@ indistinguishable from "genuinely no code".
 4. **Quote the SHA.** Trees move within the hour; two supervisor-quoted head shas were
    already stale when handed over.
 5. **A right conclusion does not launder a wrong premise.** Flag the supporting number even
-   when the verdict survives.
+   when the verdict survives. Produced twice more this session, once inside a ruling
+   (an INFERRED line count of 249 where the MEASURED value was 253 — over the ceiling, not
+   under it) and once in a survey (three offenders quoted from the tail of an output whose
+   real count was eleven).
+6. **A stale artifact is not current state — check its own claim against `date -u`.** A
+   usage-limit modal was obeyed for ~14 hours after its stated reset had passed; a spec
+   proposal described behavior that had been reverted; a handoff described work that had
+   merged. Same defect class, three surfaces. It is the class this thread exists to close,
+   and the thread kept re-committing it.
+7. **An instrument that cannot distinguish two states will eventually assert the wrong one.**
+   `gate-run.sh`'s per-target evidence goes dark on the push path, and its accurate note
+   ("zero targets completed") reads as "nothing is running". Prefer a signal that keys on
+   something structural — `DIED_WITHOUT_VERDICT` keys on `exit_code` presence and process
+   liveness, which is why it stayed correct where the progress evidence did not.
+8. **Waiting is not a remedy for a job that cannot fit.** rjyc was parked for a quiet window;
+   its PASSING run measured 53m38s against a 1200s ceiling. No window would have been quiet
+   enough. Measure the successful path before choosing to wait for one.
