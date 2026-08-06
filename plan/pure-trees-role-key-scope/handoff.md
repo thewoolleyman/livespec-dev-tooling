@@ -646,17 +646,33 @@ since until then the check genuinely does read those test modules as public API.
   Contrast the repos that CANNOT be armed cheaply: `overseer` 186 commits / 148 files and
   `dev-tooling` 177 / 83 over the same window. **Churn concentrates where the bill does**,
   which is an argument for arming the cheap ones early rather than a reason to dismiss them.
-- **`livespec-overseer` alone is 141 of 188 reported — 75%** (and **76 of 123 distinct —
-  62%**). The entire rest of the fleet is **47** on both bases, since only `overseer`
-  duplicates.
-- So the strong shape is: arm the three free ones, then the five cheap ones — dev-tooling 2,
-  git-jsonl 4, runtime **11 at pass-1 / 13 at pass-2**, livespec 13, beads-fabro 17 =
-  **47 → 49** — putting **EIGHT of nine repos under real enforcement for ~50 conversions
-  rather than ~190**, and leaving `overseer` as a single-repo program scoped on its own
-  merits instead of blocking the other eight.
+- **`livespec-overseer` alone is 141 of 188 reported — 75% at PASS-1** (and **76 of 123
+  distinct — 62% at pass-1**); **141 of 190 — 74%, and 76 of 125 — 61%, at PASS-3**. The entire
+  rest of the fleet is **47 at pass-1 / 49 at pass-3** on both bases, since only `overseer`
+  duplicates. The share barely moves; the totals do.
+- So the strong shape is: arm the **TWO free-by-pin ones**, then the five cheap ones —
+  dev-tooling 2, git-jsonl 4, runtime **11 at pass-1 / 13 at pass-2 / 13 at pass-3**,
+  livespec 13, beads-fabro 17 = **47 → 49 → 49** — putting **SEVEN of nine repos under real
+  enforcement for ~50 conversions rather than ~190**, and leaving `overseer` as a single-repo
+  program scoped on its own merits instead of blocking the rest.
 
-  ⚠️ The cheap-five total MOVED between the two passes. Quote it with its pass and its heads,
-  never bare — that is working rule 3 applied to this thread's own output.
+  ⛔ **SEVEN, not eight — and this is the second number the console finding moves.** The old
+  text said EIGHT of nine, counting `console` among the repos the re-land reaches. It does not
+  reach it: `console` is unwired, so the pin arms `driver-claude`, `driver-codex`,
+  `dev-tooling`, `git-jsonl`, `runtime`, `livespec`, `beads-fabro` — **seven**. `console` is an
+  eighth only after a member-side wiring change that no dev-tooling release performs. The
+  conversion cost (~50) is unaffected, because `console`'s bill is 0 either way; what changes
+  is how many repos the re-land actually arms.
+
+  ⛔ **This bullet used to read "arm the three free ones" and that was wrong** — see the
+  free-by-pin correction above. `console` is the third zero-bill repo but it is **not** armed
+  by the pin; it is a separate member-side wiring task, and it is NOT part of the "eight of
+  nine" that the re-land reaches. Counting it as a third free arm is what made one move look
+  like three.
+
+  ⚠️ The cheap-five total MOVED between passes (47 → 49, then flat at pass-3). Quote it with
+  its pass and its heads, never bare — that is working rule 3 applied to this thread's own
+  output.
 - ⛔ **A PREREQUISITE SITS OUTSIDE THIS DISTRIBUTION AND OUTRANKS IT: `zi29`.** `idlx` names it
   a prerequisite, and it is not a cost question — on a zero-`.py` PR the check job reports
   SUCCESS while every real step skips, so a REQUIRED context certifies nothing. That is the
