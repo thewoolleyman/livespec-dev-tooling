@@ -622,6 +622,49 @@ a number **26% below** what this lane measures. Whichever way it resolves, resol
 that child is dispatched — and note that the two bases can only converge after `yj09` lands,
 since until then the check genuinely does read those test modules as public API.
 
+### 🔁 EFFORT BUCKETS RE-DERIVED BY AST EVIDENCE — `idlx` asked for this explicitly
+
+`idlx` records "HEURISTIC BUCKETS over the 101, **to be re-derived rather than trusted**:
+~19 parse/load/resolve … ~18 CLI/entrypoint … 64 needing per-function judgement". Re-derived
+here over the **125 distinct at pass-3 heads**, classified by **AST evidence rather than by
+name** — the name-keyed approach already over-counted once in this thread:
+
+| bucket | evidence used (first match wins) | n | share |
+|---|---|---:|---:|
+| **entrypoint** | the function is invoked inside its own file's `if __name__ == "__main__":` guard | **17** | 14% |
+| **raises** | the body contains an explicit `raise` | **7** | 6% |
+| **total-bool** | annotated `-> bool`, no `raise`, no I/O-looking call | **4** | 3% |
+| **judgement** | everything else | **97** | 78% |
+
+Per repo: `dev-tooling` 0/0/0/2 · `git-jsonl` 0/0/0/4 · `runtime` 1/2/1/9 · `livespec` 2/0/0/11 ·
+`beads-fabro` 7/2/0/8 · `overseer` 7/3/3/63. **Cheap five (49): 10 entrypoint, 4 raises,
+1 total-bool, 34 judgement.**
+
+**✅ Cross-validates `idlx` from an independent method.** `idlx` estimated **~18** CLI/entrypoint
+by name; this measures **17** by `__main__`-guard evidence over a *larger* set. Two methods, two
+days apart, landing one apart.
+
+**⛔ 17 of 125 are module ENTRY POINTS, and ALL 17 are undeclared in `supervisor_entry_files`**
+(16 `main`, 1 `run`) — concentrated in `beads-fabro` 7 and `overseer` 7. The check has a
+declared exemption for exactly this shape, so these are **candidate CONFIG-GAP fixes rather than
+Result conversions**. `idlx` reaches the same read from a sample (`hygiene_scan_cli.py:23 main`).
+
+⚠️ **"Candidate" is load-bearing — do NOT bank 17 free wins.** Whether a given `main` *ought* to
+be declared is a judgement: `supervisor_entry_files` is for supervisor entry points specifically,
+and a plugin hook's `main` may not qualify. What is measured is the SHAPE, not the entitlement.
+
+⚠️ **`raises` = 7 is a LOWER BOUND on genuine violations, not the count of them.** It only finds
+functions that raise EXPLICITLY. A function signalling failure by returning `None`, `-1` or an
+empty result is a genuine violation too and lands in `judgement`. **The 97 is not "97 hard
+conversions"** — it is "97 the evidence available here cannot settle", which is why my
+`judgement` bucket is larger than `idlx`'s 64: stricter thresholds, not a different population.
+
+**Validated before being believed** (working rule 2), by reading source rather than trusting the
+labels: `beads-fabro` `.claude-plugin/hooks/codex_yolo_gate.py:199 main` really is called from
+`if __name__ == "__main__": raise SystemExit(main())`; `spec_reader.py:57
+read_specification_history` really does `raise SpecVersionNotFoundError` when the version
+directory is absent — a textbook expected external failure sitting off the railway.
+
 ### What the distribution says about sequencing
 
 - ⛔ **THE THREE ZERO-BILL REPOS ARE NOT THE SAME KIND OF FREE — measured 2026-08-06, and this
