@@ -14,10 +14,11 @@
 > MERGED. Nothing in this thread is parked — see **NEXT SESSION — START HERE** immediately
 > below for what to do. The open item is **`livespec-dev-tooling-idlx`** (EPIC, P1, READY —
 > **NOT `irtt`, which is CLOSED**; see the correction directly below), whose adoption bill is
-> measured per repo below — **188 REPORTED / 123 DISTINCT at pass-1 heads, 190 reported at
-> pass-2 four hours later** (the reported/distinct gap is `overseer`'s byte-identical shipped
-> mirror) — and whose next step is a SEQUENCING decision for the maintainer, not
-> implementation.
+> measured per repo below — **188 reported / 123 distinct at pass-1 heads, 190 at pass-2 four
+> hours later, and 190 REPORTED / 125 DISTINCT at pass-3 current heads** (the reported/distinct
+> gap is `overseer`'s byte-identical shipped mirror, and it is the ONLY member where the two
+> differ) — and whose next step is a SEQUENCING decision for the maintainer, not
+> implementation. **Quote pass-3's 190/125 with its heads; the bare 123 is superseded.**
 
 ## ⛔ CORRECTION 2026-08-06 — `irtt` IS CLOSED; THE RE-LAND IS `idlx`
 
@@ -673,6 +674,41 @@ harder.
 ⚠️ **Still do not read a RATE off this.** It is one repo in one unusually high-churn window
 (the foreman work). What it establishes is that the effect is **not small** — an order of
 magnitude beyond the `+2`s — in exactly the repo where the bill already concentrates.
+
+⛔ **AND IT HAS ALREADY PLATEAUED — recorded because it undercuts the paragraph above.** A
+PASS-3 over all nine at current heads (below) finds `overseer` **unchanged at 141 / 76** even
+though its head moved `1d191b1` → `b42d7db`. So the `+74%` is a BURST, not a trend, and anyone
+quoting it as a run-rate — including a later revision of this file — would be over-claiming
+from the same three-day window it was measured in.
+
+### PASS-3 — all nine at current heads, 2026-08-06 (harness validated, controls first)
+
+| repo | sha | universe | scanned | reported | distinct | vs pass-1 |
+|---|---|---:|---:|---:|---:|---|
+| `livespec-driver-claude` | `dab39c0` | 9 | 7 | **0** | 0 | 0 |
+| `livespec-driver-codex` | `61be068` | 7 | 3 | **0** | 0 | 0 |
+| `livespec-console-beads-fabro` | `706050b` | 1 | 1 | **0** | 0 | 0 |
+| `livespec-dev-tooling` | `c8fadd4` | 186 | 96 | 2 | 2 | 0 |
+| `livespec-orchestrator-git-jsonl` | `42bffbd` | 49 | 37 | 4 | 4 | 0 |
+| `livespec-runtime` | `12dc3e0` | 37 | 32 | **13** | 13 | **+2** |
+| `livespec` | `8855018c` | 151 | 108 | 13 | 13 | 0 |
+| `livespec-orchestrator-beads-fabro` | `6ae82dc3` | 186 | 48 | 17 | 17 | 0 |
+| `livespec-overseer` | `b42d7db` | 244 | 148 | 141 | **76** | 0 |
+| **TOTAL** | | | | **190** | **125** | **+2** |
+
+**What pass-3 adds beyond a refresh:**
+
+- **It confirms pass-2's 190 independently, at DIFFERENT heads.** Two measurements, different
+  SHAs, same total — the 190 is not a one-off reading.
+- **It supplies the DISTINCT figure pass-2 never had: 125** (pass-1 was 123; the `+2` is
+  runtime's). Use 125 with these heads, never the bare 123.
+- **The `+2` is still runtime's and only runtime's**; every other repo is flat since pass-1.
+- **The three zero-bill repos are STILL zero** — that property has now survived three passes.
+- **The cheap five is 49 at these heads** (2 + 4 + 13 + 13 + 17), matching the `47 → 49`
+  recorded from pass-2. **`overseer` is 141 of 190 reported (74%) and 76 of 125 distinct (61%).**
+- **`overseer` is the ONLY repo with a duplicate mirror or test-file hits** — 11 test-file hits
+  and 65 duplicate pairs, every other member 0 and 0. Its `reported ≠ distinct` is unique in the
+  fleet, which is why it is the only row where the two bases can disagree at all.
 
 ⚠️ **Do not read a RATE off two points.** What is established is direction and mechanism: new
 public API lands un-Result-typed because **nothing anywhere is checking** — the gate is off in
