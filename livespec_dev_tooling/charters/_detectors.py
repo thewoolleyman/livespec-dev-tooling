@@ -29,9 +29,6 @@ PATH_RESOLVE = re.compile(r"readlink\s+-f|\brealpath\b")
 NONEMPTY_GUARD = re.compile(r"(?:test\s+-n|\[\s+-n|\[\[\s+-n|-z\s)")
 CAPTURE_S_BOUND = re.compile(r"=\s*\$\(\s*[^)]*capture-pane[^)]*-S\s+-\d+")
 CAPTURE_S_PIPED = re.compile(r"capture-pane[^\n|]*-S\s+-\d+[^\n]*\|[^\n]*grep")
-PREV_EMPTY = re.compile(r"""prev=(?:''|""|\s*$)""", re.MULTILINE)
-STABILITY_CMP = re.compile(r'\[\s*"\$(\w+)"\s*=\s*"\$(\w+)"\s*\]')
-EMPTY_SEED = re.compile(r"""^\s*(\w+)=(?:""|''|)\s*(?:;|$)""", re.MULTILINE)
 SUPERVISOR_CHECK = re.compile(r"SUPERVISOR_TARGET=|grep\s+-\S+\s+'[^']*-supervisor'")
 SUPERVISOR_PROOF_PS = '--ppid "$supervisor_pane_pid"'
 SUPERVISOR_PROOF_GUARD = '[ -n "$supervisor_pane_pid" ]'
@@ -78,7 +75,6 @@ __all__: list[str] = [
     "bare_targets",
     "bash_pipestatus_in_zsh_fleet",
     "busy_test_matches_idle_pane",
-    "empty_prev_watcher_init",
     "fixed_cap_marker_read",
     "history_fed_capture",
     "local_time_labelled_utc",
@@ -139,30 +135,6 @@ def history_fed_capture(*, text: str) -> list[str]:
         if not is_comment(line=line)
         and (CAPTURE_S_BOUND.search(line) or CAPTURE_S_PIPED.search(line))
     ]
-
-
-def empty_seeded_comparison_lines(*, block: str) -> list[str]:
-    """Lines seeding empty a var that a stability comparison then reads."""
-    compared: set[str] = set()
-    for match in STABILITY_CMP.finditer(block):
-        compared.update(match.groups())
-    found: list[str] = []
-    for line in block.splitlines():
-        seed = EMPTY_SEED.search(line)
-        if seed is not None and seed.group(1) in compared:
-            found.append(line.strip())
-    return found
-
-
-def empty_prev_watcher_init(*, text: str) -> list[str]:
-    """Watcher seeded with `prev=""`, which an absent session's capture equals."""
-    found: list[str] = []
-    for block in code_blocks(text=text):
-        for line in block.splitlines():
-            if not is_comment(line=line) and PREV_EMPTY.search(line):
-                found.append(line.strip())
-        found.extend(empty_seeded_comparison_lines(block=block))
-    return list(dict.fromkeys(found))
 
 
 def bash_pipestatus_in_zsh_fleet(*, text: str) -> list[str]:
