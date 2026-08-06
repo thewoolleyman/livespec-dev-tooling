@@ -304,6 +304,49 @@ Stated honestly: for seven of nine that pass is **VACUOUS** — they declare not
 detectors have nothing to reject. Only `dev-tooling` (21 declarations) and `runtime` (11) have
 real ones, and both are clean.
 
+### ⛔ HOW ARMING ACTUALLY WORKS — measured, and it is NOT what "arm a repo" suggests
+
+Before any staged-arming plan is written, three mechanism facts. All measured, none inferred.
+
+**1. The check is ALREADY WIRED AND RUNNING in 8 of 9 members.** It is in their `justfile`
+and their `.github/workflows/ci.yml` today. It does not convict because it no-ops on the
+`pure_trees` role-absence gate — which lives in **dev-tooling's code**, not in the member.
+The sole exception is `livespec-console-beads-fabro`, which does not wire it at all (and that,
+not an oversight, is why its `pure_trees` is `Undeclared` rather than `NotApplicable`).
+
+⛔ **So "arm repo X" is NOT a per-repo wiring change.** There is nothing to switch on in the
+member. Every wired member is already paying to run a check that is gated off.
+
+**2. The arming lever is THE PIN.** Removing the gate is one change in dev-tooling; a member
+becomes armed the moment it bumps to a dev-tooling version carrying it. That is exactly how
+the original breakage happened — the release fan-out auto-bumped consumer pins, so the widened
+criterion arrived in repos that had never adopted it.
+
+**3. A per-member pin-HOLD mechanism ALREADY EXISTS.**
+`livespec_dev_tooling/fleet/dispatch_matrix_filter.py` filters the release-dispatch sibling
+matrix by per-member conformance verdicts: a non-conformant member is **EXCLUDED from the
+matrix rather than dispatched-and-failed**, every exclusion is named, and it is fail-closed
+with no lever, no warn-only mode and no bypass. Staged arming therefore does **not** require
+inventing a hold mechanism — one is already in production.
+
+⚠️ **BUT IT DOES NOT KEY ON THIS CRITERION, and that gap is the real design question.** The
+filter keys on fleet-conformance rows, and the existing public-API row
+(`_rows_public_api_conformance`, registered as `cross-repo-public-api-declared`) asserts
+**declaration-versus-consumption** — whether a member's `cross_repo_public_api` omits a name a
+sibling imports. It says nothing about Result-typing. So a Result-typing offence does **not**
+currently make a member non-conformant and would **not** hold it out of the fan-out.
+
+**What that means for the recommendation:** "arm the zero-bill repos now, hold the rest" is
+mechanically reachable with machinery that already exists and is already fail-closed — but
+only if something makes an unprepared member non-conformant, and today nothing does. Whether
+that is a new registered row, a pin-posture declaration, or staged pin bumps is an `irtt`
+DESIGN decision and is deliberately **not** settled here.
+
+⛔ Note the constraint it must satisfy: this thread already ruled that re-landing must **NOT**
+add a replacement role key, because a declaration whose emptiness means "skip me" is
+indistinguishable from "genuinely no code" — the founding defect. Any staged-arming mechanism
+has to hold repos back **without** reintroducing that.
+
 ### What the distribution says about sequencing
 
 - **Three zero-bill repos exist** and can be armed at zero remediation cost — but they are the
