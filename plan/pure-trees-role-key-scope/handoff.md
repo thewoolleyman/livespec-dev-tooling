@@ -155,6 +155,54 @@ recipe is in this file precisely so that is cheap.
 If a supervisor dispatch is already waiting when you start, **follow that instead of this
 paragraph** — it is newer than this file.
 
+## 📋 FOR THE SEQUENCING RULING — the whole decision brief, on one screen
+
+This file is **1300+ lines**. The ruling should not require reading them. Everything below is
+measured and each line names the section carrying the evidence.
+
+**The bill.** 190 reported / **125 distinct** at pass-3 current heads. `overseer` is 141 of 190
+(74%) and 76 of 125 (61%); the whole rest of the fleet is 49. *(→ PASS-3 table.)*
+
+**Six findings that bear on the ORDER, none of which the ledger currently reflects:**
+
+1. ⛔ **`zi29` is a PREREQUISITE, not a cost item.** On a zero-`.py` PR the check job reports
+   SUCCESS while every real step skips — the mechanism by which five masters sat red while PRs
+   kept merging. Arming ANY repo ahead of it lets the next breakage hide identically, including
+   the zero-bill ones. **Free on remediation ≠ safe to arm.** *(→ sequencing section.)*
+2. ⛔ **The re-land reaches SEVEN of nine repos, not eight.** `console` wires the check nowhere,
+   so no dev-tooling release arms it; it needs a member-side change. *(→ free-by-pin table.)*
+3. ⛔ **`runtime` should be LAST of the cheap five, not second.** `idlx` orders smallest-first
+   "so the triage pattern is set on cheap surfaces"; `runtime` is 76% unreachable-by-declaration
+   AND 100% vendored into 2–4 repos. Two independent measures, same verdict — the ordering
+   defeats its own stated purpose. *(→ ordering + vendoring sections.)*
+4. ✅ **`overseer-bjrm` is both bigger and smaller than the ledger says.** The ledger scopes it
+   at **56**; it measures **65** on that same basis (growth, not disagreement). But **27 of its
+   76 are `X | None`-shaped**, so ~34 are declaration-eligible and **42 are hard conversions** —
+   "76 conversions" overstates it. *(→ per-repo eligibility.)*
+5. 🔑 **57% of the bill (71 of 125) can be reached by NO declaration key** — conversion is its
+   only sanctioned disposition. Per-repo spread runs 38% (`livespec`) to 100% (`dev-tooling`).
+   The "config gap" framing cannot shrink this program much. *(→ declaration-key section.)*
+6. ⛔ **The 17 entry points are NOT cheap wins.** Declaring one grants **FOUR exemptions at
+   once** per ratified `contracts.md:225` — a carve-out, which the re-land constraint forbids.
+   *(→ four-exemptions note.)*
+
+**One question someone must ANSWER, not measure, before `runtime` is opened:** `lane_of` and
+`is_item_ready` are flagged; `idlx` says Result-typing them would be WRONG; and **no declaration
+key can reach them** (`total_absence_returns` hard-rejects non-`X | None` shapes). The ledger,
+the vocabulary and the check disagree. That is semantic and it is not this lane's call.
+*(→ the withdrawn-recommendation correction.)*
+
+**Two standing conditions the ruling should not assume away:**
+
+- **The bill GROWS while unenforced** — three independent observations, `overseer` +60 raw in
+  under three days before plateauing. Any frozen number has a shelf life; re-measure at arm time.
+- **Vendored copies and `overseer`'s mirror are in sync by DISCIPLINE, not by a gate.**
+  `check-vendor-manifest` validates metadata only and exits 0 when the manifest is absent.
+
+⛔ **What this lane did NOT decide, deliberately:** the order itself, whether any declaration is
+granted, and how repos are held back without reintroducing a "declaration whose emptiness means
+skip me". Those are the maintainer's.
+
 ### ⚠️ Re-measure before quoting ANY number below
 
 The bill moved **twice inside one session** (`dev-tooling` 0 → 2, `livespec-runtime` 11 → 13),
