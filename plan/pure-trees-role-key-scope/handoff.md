@@ -361,7 +361,31 @@ has to hold repos back **without** reintroducing that.
   repos under real enforcement for 47 conversions rather than 188**, and leaving `overseer` as
   a single-repo program scoped on its own merits instead of blocking the other eight.
 
-🔥 **THE BILL GROWS WHILE UNENFORCED — measured, not asserted.** `dev-tooling` was 93 scanned
+### 🔥 THE BILL GROWS WHILE UNENFORCED — now TWO independent observations
+
+A second full measurement pass was run at fresh forge heads ~4.5h after the first, same basis,
+to test this claim rather than leave it resting on one data point. **Eight of nine heads had
+moved.** Result:
+
+| repo | pass 1 | pass 2 | delta |
+|---|---:|---:|---|
+| `livespec-runtime` | 11 | **13** | **+2** |
+| every other member | — | unchanged | 0 |
+| **fleet reported** | **188** | **190** | **+2** |
+
+Nothing was ever REMOVED — zero offenders disappeared in either repo. The two observations are
+independent, in DIFFERENT repos, and both arrived through ordinary feature work:
+
+- `livespec-dev-tooling` 0 → 2: `charters/charters.py`, added 2026-08-05 23:10Z
+- `livespec-runtime` 11 → 13: `github_budget_client_support.py::header_value` and
+  `::mapping_option`, added by `c77f2d7` *"feat: mitigate github request budget pressure"*
+  2026-08-06 01:21Z
+
+⚠️ **Do not read a RATE off two points.** What is established is direction and mechanism: new
+public API lands un-Result-typed because **nothing anywhere is checking** — the gate is off in
+all nine members. The bill tracks the rate at which public API is written.
+
+🔥 **Original single observation, kept:** `dev-tooling` was 93 scanned
 with **ZERO** offenders on 2026-08-04. On 2026-08-06 it is 96 scanned with **TWO**, both
 arriving in `61048d7` *"feat: expose importable charter-defect detectors"* — in the
 enforcement-suite repo itself. **Any per-repo number has a shelf life: re-measure at arm
