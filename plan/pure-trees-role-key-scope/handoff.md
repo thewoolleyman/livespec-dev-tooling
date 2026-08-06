@@ -103,6 +103,40 @@ report has been filed; filing it again is harmless but redundant.** What it adde
   when the manifest is absent. 740 vendored files are in sync by discipline, not by a gate.
 - **The blast-radius "overwhelmingly small, local edits" conclusion is WITHDRAWN** (#1336). The
   caller COUNTS stand; reading them as a cost statement did not.
+- ⛔ **Declaring the 17 entry points would buy FOUR exemptions each, not one** (#1338) — the
+  ratified spec's own words. That is a carve-out, which the re-land constraint forbids.
+- ⛔ **`total_absence_returns` CANNOT take `lane_of`/`is_item_ready`** (#1339) — bound 1 gates it
+  to `X | None` and hard-REJECTS other shapes. An earlier recommendation of mine to use it there
+  is WITHDRAWN. No declaration key reaches a total non-`Optional` public function at all.
+- 🔑 **57% of the bill (71 of 125) is reachable by NO declaration key** (#1340) — conversion is
+  its only sanctioned disposition. Syntax-only measurement; the most trustworthy number here.
+
+### ⚖️ WHICH OF THIS LANE'S NUMBERS TO TRUST — read this before quoting any of them
+
+This lane corrected itself repeatedly, and the corrections were not evenly distributed. They
+concentrated in one KIND of claim. Sorted by how much weight each will bear:
+
+**✅ Strong — a control was discharged, or it is pure syntax:**
+- The per-repo bills (pass-1/2/3) — the harness reproduced `runtime`'s 11 BY IDENTITY and
+  `overseer`'s 141/76/65 exactly.
+- **71 of 125 reachable by no declaration key** — return-annotation shape only.
+- The vendoring measurement — content hashes, verified byte-identical across four repos.
+- `entrypoint` 17 — `__main__`-guard evidence, and it independently matched `idlx`'s ~18.
+- Every quotation from ratified `contracts.md` — re-read at source, not recalled.
+
+**⚠️ Weak — absence-based, and it mis-filed a known counterexample:**
+- `pure-total` 38 and `total-bool` 4. `parse_cross_repo_manifest` was filed here while its own
+  docstring said it raises. Treat as "looks total", never as "has no failure mode".
+
+**⛔ Wrong, and recorded rather than deleted — every one was an INFERENCE I had not measured:**
+- the `overseer` `+20` blamed on basis (it was 11 basis + 9 growth)
+- `check-vendor-manifest` assumed to enforce parity (it validates metadata only)
+- the 17 entry points read as cheap (they are four-way carve-outs)
+- `total_absence_returns` proposed for `lane_of` (structurally rejected)
+- "eight of nine repos armed" (seven — `console` is unwired)
+
+**The pattern is exact and worth inheriting: every wrong item was reasoned to; every strong item
+was measured or read at source. When this lane guessed, it was wrong about 5 times out of 5.**
 
 ⛔ **What is NOT done, and is the actual open question:** the maintainer has still not ruled on
 sequencing. Nothing above changes that — it makes the ruling better-informed, not unnecessary.
