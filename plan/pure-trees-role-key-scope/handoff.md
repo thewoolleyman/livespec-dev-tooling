@@ -891,6 +891,44 @@ and, by the ledger's own reading, things that **should not be converted at all**
 strong argument for disposing of them via a `total_absence_returns` DECLARATION rather than a
 conversion — and it is a decision worth taking BEFORE anyone opens `runtime`, not during.
 
+⛔ **CORRECTION 2026-08-06 — THAT RECOMMENDATION IS STRUCTURALLY IMPOSSIBLE AND IS WITHDRAWN.**
+I checked my own recommendation against the ratified text and it does not survive.
+
+- **Measured signatures**: `lane_of -> Lane`, `is_item_ready -> bool`. Neither is `X | None`.
+- **Ratified `SPECIFICATION/contracts.md:247`, bound 1 of FOUR**: `total_absence_returns`
+  "reaches ONLY functions whose return annotation is of the form `X | None`", and an entry
+  "naming a function of any other shape MUST be REJECTED with a hard failure naming that entry,
+  neither silently ignored nor accepted, so the key is not a general-purpose escape hatch."
+
+So declaring these two would not exempt them — it would **hard-fail the check**, naming my own
+entry. The key is gated precisely against the use I proposed for it.
+
+**Nor does any other declaration key reach them:**
+
+| key | why it cannot take `lane_of` / `is_item_ready` |
+|---|---|
+| `total_absence_returns` | bound 1: `X \| None` only; these are `Lane` and `bool` — **hard reject** |
+| `single_meaning_variants` | relieves functions returning a **declared union**; these return neither |
+| `supervisor_entry_files` | they are not entry points — and it would buy four exemptions (above) |
+
+⛔ **SO THERE IS NO SANCTIONED DECLARATION FOR A TOTAL, NON-`Optional` PUBLIC FUNCTION. The only
+disposition the vocabulary offers is CONVERSION** — which is exactly what `idlx` says would be
+WRONG for these two.
+
+**And the check has already ruled against them on its own terms.** It computes
+`functions_without_expected_failure_mode` and exempts that set without any declaration; these
+two are flagged, so they are **not** in it. ⚠️ Read the implementation before over-reading that:
+per `_no_expected_failure_mode.py` a function is disqualified by a local (a)/(b)/(c) condition
+**or by an unresolvable callee, or by any disqualified first-party callee** — so exclusion can
+reflect analysis conservatism rather than a genuine failure mode. It is not proof they fail.
+
+✅ **What this leaves for the ruling — a genuine contradiction, not a cost question.** The
+ledger says converting these is wrong; the enforcement vocabulary offers no way to say so; and
+the check's own exemption did not fire. **Resolving that is a SEMANTIC decision someone must
+take**, and it is exactly the kind of thing that surfaces mid-conversion and stalls a repo if
+it is not taken first. Whether the right answer is a new bound, a spec amendment, or simply
+"convert them anyway" is **not** this lane's call.
+
 ⚠️ Stated as a recommendation, not a ruling: whether they are genuinely total is a semantic
 judgement this lane did not make. What is measured is that converting them is maximally
 expensive and that the ledger already doubts they should be converted.
