@@ -192,6 +192,15 @@ key can reach them** (`total_absence_returns` hard-rejects non-`X | None` shapes
 the vocabulary and the check disagree. That is semantic and it is not this lane's call.
 *(→ the withdrawn-recommendation correction.)*
 
+> ⛔ **AND IT IS NOT FILED ANYWHERE. Nobody is handling it.** Checked the ledger on
+> 2026-08-06: **no item mentions `total_absence_returns` at all**, so this question has no home
+> outside this file. It is deliberately unfiled — this lane's instruction is report-and-await,
+> and filing into the shared tenant ahead of a ruling is a mutation nobody asked for. **It
+> warrants a `livespec-dev-tooling` item** (the check and all three declaration keys are owned
+> here), and the finding itself is durable — this handoff is committed to `master`, so
+> archiving the thread will not lose it. Stated explicitly because "surely someone filed
+> that" is exactly the assumption that lets a known defect sit for months.
+
 **Two standing conditions the ruling should not assume away:**
 
 - **The bill GROWS while unenforced** — three independent observations, `overseer` +60 raw in
