@@ -791,6 +791,53 @@ inflate the bill. `_vendor` is excluded from every first-party universe, so the 
 are never scanned and never counted (see the closed hazard above). This is entirely a
 COORDINATION cost, not a counting one.
 
+### ⛔ `idlx`'s SMALLEST-FIRST ORDERING PUTS THE MOST COORDINATION-HEAVY REPO SECOND
+
+`idlx` orders its adoption children **"smallest-first so the triage pattern is set on cheap
+surfaces before the expensive one"**: `git-jsonl` 4 → **`runtime` 11** → `livespec` 13 →
+`beads-fabro` 17 → `overseer` 56.
+
+**Measured, that ordering defeats its own stated purpose.** `runtime` sits second, and it is the
+ONE repo where every offender is a coordinated multi-repo re-vendor. Ranking by *count* ranks it
+cheap; ranking by *what a conversion costs* ranks it last of the five.
+
+| repo | bill | vendored out | import-edge declared | coordination |
+|---|---:|---|---|---|
+| `dev-tooling` | 2 | none | 21 declared, 0 flagged | **local** |
+| `git-jsonl` | 4 | none | none | **local** |
+| `livespec` | 13 | none | none | **local** |
+| `beads-fabro` | 17 | none (1 basename-only) | none | **local** |
+| `runtime` | 13 | ⛔ **13 of 13** | 3 of 13 | ⛔ **2–4 repos per change** |
+
+**Suggested reordering, if the stated purpose is to be served:** `dev-tooling` (2) →
+`git-jsonl` (4) → `livespec` (13) → `beads-fabro` (17) → **`runtime` (13) LAST of the five**.
+Same repos, same total, but the pattern gets set on genuinely local surfaces first.
+
+#### The three functions carrying BOTH blast-radius channels
+
+Only **3 of runtime's 13** are declared `cross_repo_public_api` — i.e. visible to the
+`cross-repo-public-api-declared` row. **All three are ALSO vendored into three repos**, so they
+carry both channels at once:
+
+- `cross_repo/types.py::parse_cross_repo_manifest`
+- `work_items/lifecycle.py::lane_of`
+- `work_items/lifecycle.py::is_item_ready`
+
+⛔ **The other 10 of 13 are vendored but NOT declared — invisible to the declaration graph.**
+That quantifies the blind spot: the fleet's own cross-repo instrument sees **3 of 13** of
+runtime's coordination exposure.
+
+🔥 **And two of those three are `lane_of` and `is_item_ready` — the exact functions `idlx`
+names as pure total classifiers where Result-typing would be WRONG.** They are simultaneously
+the most expensive things to convert in the cheap five (4 copies + a declared import edge each)
+and, by the ledger's own reading, things that **should not be converted at all**. That is a
+strong argument for disposing of them via a `total_absence_returns` DECLARATION rather than a
+conversion — and it is a decision worth taking BEFORE anyone opens `runtime`, not during.
+
+⚠️ Stated as a recommendation, not a ruling: whether they are genuinely total is a semantic
+judgement this lane did not make. What is measured is that converting them is maximally
+expensive and that the ledger already doubts they should be converted.
+
 ### What the distribution says about sequencing
 
 - ⛔ **THE THREE ZERO-BILL REPOS ARE NOT THE SAME KIND OF FREE — measured 2026-08-06, and this
