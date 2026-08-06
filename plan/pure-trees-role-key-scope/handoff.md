@@ -12,8 +12,9 @@
 >
 > **State in one line:** the withdrawal, both halves of the gate ruling, and `rjyc` have all
 > MERGED. Nothing in this thread is parked. The open item is `livespec-dev-tooling-irtt`,
-> whose adoption bill is measured per repo below and is **188**, and whose next step is a
-> SEQUENCING decision for the maintainer — not implementation.
+> whose adoption bill is measured per repo below — **188 REPORTED, 123 DISTINCT** (the gap is
+> `overseer`'s byte-identical shipped mirror) — and whose next step is a SEQUENCING decision
+> for the maintainer, not implementation.
 
 ## ⛔ READ THIS FIRST — THE DECOUPLING SHIPPED AND WAS THEN REVERTED
 
@@ -201,6 +202,9 @@ so the check convicts nobody. The 11 offenders are still in that code.
 
 ## irtt adoption bill — MEASURED 2026-08-06, one basis, per repo
 
+**Headline: 188 reported / 123 distinct.** Both are true and they answer different questions;
+the difference is explained below and it matters for scoping.
+
 ⛔ **BASIS: `_`-prefixed FILE SKIP RETAINED.** The maintainer ruled `8zv3.5`
 **KEEP-AND-RATIFY**, so this is now THE enforcement basis, not one of two. **Do not report a
 no-skip column** — printing both is what produced the two-bases addition error in `8o8e.17`.
@@ -237,13 +241,78 @@ non-empty scanned set, not the founding defect. Smallest scanned set is `console
 **All nine are currently unenforced** (NotApplicable / UnarmedUntil / Undeclared). The check
 convicts NOBODY anywhere today. "Green means unenforced" is exact, not rhetorical.
 
+### ⛔ REPORTED 188, DISTINCT **123** — `overseer` ships a byte-identical mirror
+
+The 188 above is what the CHECK REPORTS. It is not the amount of work, because
+`livespec-overseer` carries `.claude-plugin/overseer/` as a **shipped mirror** of `overseer/`:
+**91 byte-identical file pairs, ZERO differing**.
+
+| | reported | distinct | duplicates |
+|---|---:|---:|---:|
+| `livespec-overseer` | 141 | **76** | 65 |
+| every other member | 47 | 47 | 0 |
+| **fleet** | **188** | **123** | **65** |
+
+Deduplicated by `(sha256(file content), line, function)`, so it does not depend on knowing any
+repo's mirror layout. Of `overseer`'s 141: **65 appear on BOTH sides, 0 are mirror-only, 11
+are main-tree-only.** Duplication exists in exactly one member; the other eight are 1:1.
+
+⚠️ **Both numbers are true and they answer different questions.** Arming `overseer` requires
+all **141** reported offences to clear — the check counts files, not identities. But the
+REMEDIATION SURFACE is **76** distinct functions, 65 of which are "fix in `overseer/`, then
+re-sync the mirror". **Do not scope the program at 141, and do not promise 76 will clear it
+without the sync.**
+
+❓ **Open, not established:** I found no wholesale byte-parity gate for that mirror — only
+`version.json` lockstep (`tests/test_release_please_version_lockstep.py`) and a
+runnable-launcher script check. The 91 pairs are identical TODAY, but whether re-syncing after
+a fix is one command or 65 hand-copies is **not something this measurement settled**, and a
+mirror held in sync by discipline rather than a gate can drift. That question belongs to the
+`livespec-overseer` lane, not here.
+
+### Cross-validated against the REAL shipped decoupled check
+
+The numbers are not from a reconstruction alone. `46c5dab` (the actual decoupling commit —
+gate genuinely absent, `role_absence_exit_code` surviving only in a comment) was exported and
+its REAL `public_api_result_typed` run against all nine member trees. **Eight of nine match
+exactly**: 0/0, 0/0, 0/0, 4/4, 11/11, 13/13, 17/17, 141/141. Its `_scan` is also line-for-line
+the shape reproduced here — `for rel_path in sorted(sources)`, skip `_`-prefixed names — and
+carries a comment stating the `_`-skip was **carried over UNCHANGED**, so the ruled basis is
+the basis it actually shipped with.
+
+⚠️ **The ninth is a real finding: `livespec-dev-tooling` is 2 under TODAY's detectors and 0
+under `46c5dab`'s, on the SAME tree.** Isolated by elimination rather than guessed — identical
+universe (185 both), identical `repo_local_public_names` in `charters.py`, identical
+`functions_without_expected_failure_mode`, identical `commands_trees` /
+`supervisor_entry_files` / `io_trees`. The delta is inside `_find_offenders`: **the CRITERION
+tightened.**
+
+⛔ **So the bill depends on WHICH dev-tooling version is armed, not only on the target repo's
+code.** Measure-then-remediate against a frozen number is unsound on TWO axes — repos accrue
+offenders while unenforced AND the criterion moves underneath the number. This argues FOR
+arming early and incrementally: an armed repo freezes its criterion at its own pin and becomes
+a regression guard, where a big-bang program chases a moving target on both.
+
+### Offender count is NOT the only failure path
+
+`main()` also fails on `_report_bad_declarations`, and **that runs BEHIND the gate**, so in
+every unarmed repo those declarations have never once been evaluated (the check's own
+docstring says so). Measured for all nine: **`would_fail_on_declarations` is False
+everywhere**, so arming the three zero-bill repos is genuinely free on BOTH paths.
+
+Stated honestly: for seven of nine that pass is **VACUOUS** — they declare nothing, so the
+detectors have nothing to reject. Only `dev-tooling` (21 declarations) and `runtime` (11) have
+real ones, and both are clean.
+
 ### What the distribution says about sequencing
 
 - **Three zero-bill repos exist** and can be armed at zero remediation cost — but they are the
   three SMALLEST universes, together **11 of 474 scanned files (2.3%)**. As "prove the check
   in production" that is real; as "a regression guard for the rest" it guards eleven files.
   Do not oversell it.
-- **`livespec-overseer` alone is 141 of 188 — 75%.** The entire rest of the fleet is **47**.
+- **`livespec-overseer` alone is 141 of 188 reported — 75%** (and **76 of 123 distinct —
+  62%**). The entire rest of the fleet is **47** on both bases, since only `overseer`
+  duplicates.
 - So the strong shape is: arm the three free ones, then the five cheap ones (dev-tooling 2,
   git-jsonl 4, runtime 11, livespec 13, beads-fabro 17 = **47**), putting **EIGHT of nine
   repos under real enforcement for 47 conversions rather than 188**, and leaving `overseer` as
