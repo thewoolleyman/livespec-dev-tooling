@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.20.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.20.1...v1.20.2) (2026-08-06)
+
+
+### Bug Fixes
+
+* stop detector (d) flagging a capture-free search accumulator ([23cf9ae](https://github.com/thewoolleyman/livespec-dev-tooling/commit/23cf9ae2f07866fd48270d443772f9afb1e80388))
+
 ## [1.20.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.20.0...v1.20.1) (2026-08-05)
 
 
