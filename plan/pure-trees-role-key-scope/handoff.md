@@ -349,10 +349,22 @@ has to hold repos back **without** reintroducing that.
 
 ### What the distribution says about sequencing
 
-- **Three zero-bill repos exist** and can be armed at zero remediation cost — but they are the
-  three SMALLEST universes, together **11 of 474 scanned files (2.3%)**. As "prove the check
-  in production" that is real; as "a regression guard for the rest" it guards eleven files.
-  Do not oversell it.
+- **Three zero-bill repos exist** and can be armed at zero remediation cost. They are the three
+  SMALLEST universes — together **11 of 474 scanned files (2.3%)** — and an earlier draft of
+  this section dismissed that as "nearly symbolic". ⛔ **THAT WAS WRONG, and the correction
+  matters**: measured over 14 days, **100% of their scanned surface changed** — 7/7, 3/3, 1/1.
+  Every file turned over inside two weeks. A guard on a surface with total recent churn is
+  where a regression would actually land; small ≠ inactive, and file COUNT was the wrong
+  proxy for guard value.
+- **And those eleven files are HOOKS.** `driver-claude`'s scanned set is entirely
+  `.claude-plugin/hooks/*` + `.claude/hooks/*`; `driver-codex`'s is entirely `livespec/hooks/*`.
+  That is the case `filter_first_party_py` calls out — "a Driver repo's hooks are its entire
+  first-party universe" — and it is agent-facing safety code, so arming it is worth more per
+  file than the 2.3% suggests.
+
+  Contrast the repos that CANNOT be armed cheaply: `overseer` 186 commits / 148 files and
+  `dev-tooling` 177 / 83 over the same window. **Churn concentrates where the bill does**,
+  which is an argument for arming the cheap ones early rather than a reason to dismiss them.
 - **`livespec-overseer` alone is 141 of 188 reported — 75%** (and **76 of 123 distinct —
   62%**). The entire rest of the fleet is **47** on both bases, since only `overseer`
   duplicates.
