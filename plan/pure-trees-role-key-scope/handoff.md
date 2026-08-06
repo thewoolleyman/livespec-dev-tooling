@@ -11,11 +11,76 @@
 > Where a claim is inherited rather than re-derived, it says so.
 >
 > **State in one line:** the withdrawal, both halves of the gate ruling, and `rjyc` have all
-> MERGED. Nothing in this thread is parked. The open item is `livespec-dev-tooling-irtt`,
+> MERGED. Nothing in this thread is parked — see **NEXT SESSION — START HERE** immediately
+> below for what to do. The open item is `livespec-dev-tooling-irtt`,
 > whose adoption bill is measured per repo below — **188 REPORTED / 123 DISTINCT at pass-1
 > heads, 190 reported at pass-2 four hours later** (the reported/distinct gap is
 > `overseer`'s byte-identical shipped mirror) — and whose next step is a SEQUENCING decision
 > for the maintainer, not implementation.
+
+## ▶️ NEXT SESSION — START HERE
+
+**Nothing in this thread is parked and nothing is half-done.** Every branch this thread opened
+is merged, every worktree it created is removed, and the primary is clean on `master`.
+
+⛔ **DO NOT START `irtt` REMEDIATION.** The maintainer has not ruled on sequencing. This lane's
+job was to MEASURE the decision, and the measurement is complete and recorded below.
+
+**First action: report on the milestone channel**
+(`tmp/overseer/pure-trees-role-key-scope/worker-status.log`) that measurement is complete and
+this lane is awaiting the sequencing ruling. Then wait for the supervisor's dispatch.
+
+**Owned by the SUPERVISOR, not by you — do not do these:**
+
+- putting the `irtt` sequencing decision to the maintainer
+- the `8zv3.5` keep-and-ratify spec change (the `_`-prefixed FILE skip)
+- ledger items `livespec-dev-tooling-e5nz` (the LLOC ceiling CLASS) and
+  `livespec-dev-tooling-6q5o` (the runner's push-path evidence gap)
+
+If a supervisor dispatch is already waiting when you start, **follow that instead of this
+paragraph** — it is newer than this file.
+
+### ⚠️ Re-measure before quoting ANY number below
+
+The bill moved **twice inside one session** (`dev-tooling` 0 → 2, `livespec-runtime` 11 → 13),
+and the CRITERION moved too. Every figure here is stamped with its pass and its SHAs for that
+reason. Quote nothing bare.
+
+### How to re-measure (the harness was scratch and is gone — rebuild is ~20 lines)
+
+Read-only, no pin bump, no CI. For each member: export `origin/master` into an isolated dir
+(`git archive origin/master | tar -x -C <dir>`, then `git init && git add -A` so `git ls-files`
+works), delete the exported `.mise.toml` (it is untrusted and shadows PATH), then from inside
+that dir run dev-tooling's venv python over:
+
+```python
+config = load_config(repo_root=Path.cwd())
+root, universe = resolve_check_universe()
+sources = {rel: (root / rel).read_text() for rel in universe}
+public = repo_local_public_names(sources=sources) | declared_public_names(
+    declared=config.cross_repo_public_api, sources=sources)
+total = functions_without_expected_failure_mode(sources=sources, io_trees=config.io_trees)
+total |= declared_absence_names(declared=config.total_absence_returns, sources=sources)
+total |= declared_variant_names(
+    declared=config.single_meaning_variants, sources=sources, io_trees=config.io_trees)
+# THE RULED BASIS: retain the `_`-prefixed FILE skip
+for rel in [r for r in universe if not r.name.startswith("_")]:
+    _find_offenders(source=sources[rel], rel_path=rel,
+        commands_trees=config.commands_trees,
+        public_names=frozenset(n for p, n in public if p == rel),
+        no_expected_failure_mode=frozenset(n for p, n in total if p == rel),
+        supervisor_entry_files=config.supervisor_entry_files)
+```
+
+All names import from `livespec_dev_tooling.checks.public_api_result_typed` and
+`livespec_dev_tooling.config`.
+
+⚠️ **Validate it before believing it.** The harness above was checked against the REAL shipped
+decoupled check by exporting `46c5dab` and running its own
+`python -m livespec_dev_tooling.checks.public_api_result_typed` with `PYTHONPATH` pointed at
+that export — **8 of 9 repos matched exactly**. Do that again rather than trusting a
+reconstruction. `livespec-runtime` reproducing exactly 11 offenders with the identities in the
+`irtt` ledger is the cheapest single positive control.
 
 ## ⛔ READ THIS FIRST — THE DECOUPLING SHIPPED AND WAS THEN REVERTED
 
