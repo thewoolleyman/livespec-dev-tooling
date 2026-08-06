@@ -12,19 +12,62 @@
 >
 > **State in one line:** the withdrawal, both halves of the gate ruling, and `rjyc` have all
 > MERGED. Nothing in this thread is parked — see **NEXT SESSION — START HERE** immediately
-> below for what to do. The open item is `livespec-dev-tooling-irtt`,
-> whose adoption bill is measured per repo below — **188 REPORTED / 123 DISTINCT at pass-1
-> heads, 190 reported at pass-2 four hours later** (the reported/distinct gap is
-> `overseer`'s byte-identical shipped mirror) — and whose next step is a SEQUENCING decision
-> for the maintainer, not implementation.
+> below for what to do. The open item is **`livespec-dev-tooling-idlx`** (EPIC, P1, READY —
+> **NOT `irtt`, which is CLOSED**; see the correction directly below), whose adoption bill is
+> measured per repo below — **188 REPORTED / 123 DISTINCT at pass-1 heads, 190 reported at
+> pass-2 four hours later** (the reported/distinct gap is `overseer`'s byte-identical shipped
+> mirror) — and whose next step is a SEQUENCING decision for the maintainer, not
+> implementation.
+
+## ⛔ CORRECTION 2026-08-06 — `irtt` IS CLOSED; THE RE-LAND IS `idlx`
+
+Earlier revisions of this file named `livespec-dev-tooling-irtt` as the open item in three
+places. **That is false and was false when written.** Re-derived from the ledger, which this
+file's own header names authoritative:
+
+- **`livespec-dev-tooling-irtt` — CLOSED.** It is the INCIDENT item (five masters turned red
+  by enforcement-before-adoption), and it closed on a two-half record: the revert shipped in
+  `v1.19.6`, all five repos are at or past that pin, and all five masters are green on FRESH
+  runs with run ids and headShas recorded. The close explicitly reads the per-repo STEP LIST
+  rather than trusting the job conclusion — because a py-gated job reports SUCCESS while
+  skipping (`livespec-dev-tooling-zi29`), which had misled that thread four times.
+- **`livespec-dev-tooling-idlx` — EPIC, P1, READY.** "Re-land the `public_api_result_typed`
+  un-gating behind adoption." **This is what owns the work**, and no earlier revision of this
+  file mentioned it at all.
+
+```bash
+cd /data/projects/livespec-dev-tooling && /usr/local/bin/with-livespec-env.sh -- bd show livespec-dev-tooling-idlx
+```
+
+**`idlx`'s decomposition — 7 children, 101 distinct functions on ITS basis:**
+
+| child | tenant | scope |
+|---|---|---|
+| `livespec-dev-tooling-yj09` | dev-tooling | stop the check reading co-located TEST modules as public API |
+| `livespec-dev-tooling-crl2` | dev-tooling | re-land `46c5dab` — **blocked-by BOTH `yj09` AND `zi29`** |
+| `bd-gj-vxa` | `livespec-orchestrator-git-jsonl` | 4 functions |
+| `livespec-runtime-cq8` | `livespec-runtime` | 11 functions |
+| `livespec-szto` | `livespec` | 13 functions |
+| `bd-ib-vcq9` | `livespec-orchestrator-beads-fabro` | 17 functions |
+| `overseer-bjrm` | `livespec-overseer` | 56 functions |
+
+⚠️ **The five adoption children are wired ONE WAY ONLY.** Beads refuses cross-tenant edges, so
+each carries `metadata.non_local_depends_on` pointing back at `idlx` and **nothing blocks
+mechanically**. "`crl2` must not land until all five are closed" is PROSE. Re-measure each id
+from ITS OWN repo checkout — `bd` resolves the tenant from the working directory.
+
+**This is working rule 6 committed inside the record written to prevent it — third surface.**
+A stale proposal, a stale handoff, and now a stale ledger reference in the handoff's own
+headline. Verify against `bd` before quoting any item's state, including from this file.
 
 ## ▶️ NEXT SESSION — START HERE
 
 **Nothing in this thread is parked and nothing is half-done.** Every branch this thread opened
 is merged, every worktree it created is removed, and the primary is clean on `master`.
 
-⛔ **DO NOT START `irtt` REMEDIATION.** The maintainer has not ruled on sequencing. This lane's
-job was to MEASURE the decision, and the measurement is complete and recorded below.
+⛔ **DO NOT START `idlx` REMEDIATION** (this was written as "`irtt` remediation"; same work,
+corrected id). The maintainer has not ruled on sequencing. This lane's job was to MEASURE the
+decision, and the measurement is complete and recorded below.
 
 **First action: report on the milestone channel**
 (`tmp/overseer/pure-trees-role-key-scope/worker-status.log`) that measurement is complete and
@@ -32,7 +75,7 @@ this lane is awaiting the sequencing ruling. Then wait for the supervisor's disp
 
 **Owned by the SUPERVISOR, not by you — do not do these:**
 
-- putting the `irtt` sequencing decision to the maintainer
+- putting the `idlx` sequencing decision to the maintainer
 - the `8zv3.5` keep-and-ratify spec change (the `_`-prefixed FILE skip)
 - ledger items `livespec-dev-tooling-e5nz` (the LLOC ceiling CLASS) and
   `livespec-dev-tooling-6q5o` (the runner's push-path evidence gap)
@@ -110,8 +153,10 @@ var, carve-out, or severity demotion (`li-4x3a45` is the recorded wontfix on exa
 
 ⚠️ **The analysis in this thread was not wrong; the SEQUENCING was.** The scope mismatch is
 real and confirmed from ratified text (below). What failed was arming a widened criterion
-across nine repos in one step. **Re-landing behind adoption is `livespec-dev-tooling-irtt`
-and it is OPEN.** Do not re-land by simply reapplying `46c5dab`.
+across nine repos in one step. **Re-landing behind adoption is `livespec-dev-tooling-idlx`
+(READY) and specifically its child `livespec-dev-tooling-crl2`, which is blocked-by `yj09` and
+`zi29`.** (This paragraph said "`irtt` and it is OPEN" — `irtt` is the closed INCIDENT item.)
+Do not re-land by simply reapplying `46c5dab`.
 
 ## ✅ CLOSED HAZARD — the stale spec proposal was WITHDRAWN
 
@@ -130,10 +175,12 @@ mismatch it argues from is still real and still confirmed from ratified text (se
 true, still measured" below). Only its factual claims about shipped behavior died with the
 revert.
 
-⚠️ **`livespec-dev-tooling-irtt` files its own proposal — do not resurrect this one.** The
+⚠️ **The re-land (`livespec-dev-tooling-crl2`, under `idlx`) files its own proposal — do not
+resurrect this one.** (Written as "`irtt` files its own proposal"; corrected id.) The
 re-land must be described against what actually ships, when it ships (gate retained until a
 repo adopts), not reconstructed from reverted behavior. The reasoning is preserved in `irtt`
-and in this thread; nothing was lost in the deletion.
+(closed items keep their notes), in `idlx`, and in this thread; nothing was lost in the
+deletion.
 
 ## ✅ CLOSED — livespec-dev-tooling-rjyc (P0) MERGED as dev-tooling #1309
 
@@ -246,8 +293,16 @@ so the check convicts nobody. The 11 offenders are still in that code.
   command finishes. It cannot distinguish "nothing ran" from "output is buffered". Two
   separate readers were misled by it within an hour. `DIED_WITHOUT_VERDICT` is unaffected —
   it keys on `exit_code` presence and process liveness, never on target counts.
-- **`livespec-dev-tooling-irtt`** — arm `public_api_result_typed` behind adoption. **This is
-  the re-land path for `8zv3.3`.** OPEN.
+- **`livespec-dev-tooling-irtt`** — the INCIDENT (five masters red from
+  enforcement-before-adoption). **CLOSED**, verified per-repo on fresh runs. It is NOT the
+  re-land and never was.
+- **`livespec-dev-tooling-idlx`** (P1, READY) — arm `public_api_result_typed` behind adoption.
+  **This is the re-land path for `8zv3.3`.** OPEN, 7 children (see the correction section at
+  the top). Its `crl2` child is blocked-by `yj09` and `zi29`.
+- **`livespec-dev-tooling-zi29`** (P1) — a py-gated check job reports SUCCESS while skipping
+  the check itself, so a REQUIRED context certifies nothing. **This is why five masters could
+  sit red while PRs kept merging**, and `idlx` names it a PREREQUISITE: re-arming ahead of it
+  would let the next breakage hide identically. Cross-repo, 6 of 10 repos.
 - **`livespec-dev-tooling-tkzf`** — `check-fleet-conformance-admin` reads adopter repos in
   OTHER organisations from a pre-commit hook; failure mode is "nobody here can commit, for a
   reason nobody here can fix". Cleared itself once.
@@ -266,7 +321,10 @@ so the check convicts nobody. The 11 offenders are still in that code.
   gate failure code, so it can read as neither a pass nor a refusal.
   Read `.ai/gate-runtime-vs-harness-patience.md` before diagnosing any quiet gate.
 
-## irtt adoption bill — MEASURED 2026-08-06, one basis, per repo
+## The adoption bill (`idlx`) — MEASURED 2026-08-06, one basis, per repo
+
+*(Titled "irtt adoption bill" in earlier revisions; the bill is `idlx`'s — see the correction
+at the top of this file.)*
 
 **Headline: 188 reported / 123 distinct at the pass-1 heads named in the table; 190 reported
 at pass-2 four hours later.** All three are true and they answer different questions — the
@@ -414,7 +472,7 @@ currently make a member non-conformant and would **not** hold it out of the fan-
 **What that means for the recommendation:** "arm the zero-bill repos now, hold the rest" is
 mechanically reachable with machinery that already exists and is already fail-closed — but
 only if something makes an unprepared member non-conformant, and today nothing does. Whether
-that is a new registered row, a pin-posture declaration, or staged pin bumps is an `irtt`
+that is a new registered row, a pin-posture declaration, or staged pin bumps is an `idlx`
 DESIGN decision and is deliberately **not** settled here.
 
 ⛔ Note the constraint it must satisfy: this thread already ruled that re-landing must **NOT**
@@ -453,6 +511,54 @@ Cross-repo consumption is a separate axis — it is what `cross_repo_public_api`
 what the `cross-repo-public-api-declared` row measures — so a function a SIBLING imports has
 blast radius this number does not capture.
 
+### 🔁 RECONCILED against `idlx`'s own decomposition — 4 of 5 agree exactly
+
+`idlx` was decomposed on **2026-08-04** and carries its OWN per-repo cut, totalling **101
+distinct functions**. This lane measured the bill independently on **2026-08-06**. Comparing
+them is arithmetic over two existing records — **no third measurement pass was run**:
+
+| repo | `idlx` (2026-08-04) | measured here (2026-08-06) | agrees? |
+|---|---:|---:|---|
+| `livespec-orchestrator-git-jsonl` | 4 | 4 | ✅ |
+| `livespec` | 13 | 13 | ✅ |
+| `livespec-orchestrator-beads-fabro` | 17 | 17 | ✅ |
+| `livespec-runtime` | 11 | 11 pass-1 / **13** pass-2 | ⚠️ +2 |
+| `livespec-overseer` | 56 | **76** distinct | ⛔ +20 |
+
+**Three exact agreements across two independent measurements, two days and two bases apart,
+are a positive control on BOTH** — neither number set is a reconstruction artifact.
+
+The two disagreements have KNOWN and DIFFERENT causes, and neither is a measurement error:
+
+- **`runtime` +2 — GROWTH, not disagreement.** `idlx`'s 11 matches this lane's pass-1 exactly.
+  The extra 2 arrived afterwards in `c77f2d7` *"feat: mitigate github request budget pressure"*.
+  The two records agree; the CODE moved between them. This is the growth-while-unenforced
+  finding showing up as a discrepancy between two honest counts.
+- **`overseer` +20 — THREE causes, not one, and they partly CANCEL.** An earlier draft of this
+  section attributed the whole 20 to "basis". That was too loose, and the arithmetic says so.
+  `idlx`'s overseer raw is **123** (derived: 168 fleet raw − 17 − 13 − 11 − 4, since BOTH of
+  its subtractions are overseer's — the 59 co-located test modules and the
+  `.claude-plugin/overseer/` mirror). Then:
+
+  | component | effect on the gap |
+  |---|---:|
+  | raw count: **141** here vs **123** in `idlx` (two days apart) | **+18** |
+  | 11 co-located TEST modules `idlx` subtracts and this basis does not | **+11** |
+  | duplicate pairs removed: **65** here vs **56** in `idlx` | **−9** |
+  | **net** | **+20** |
+
+  `76 − 56 = 20 = 18 + 11 − 9` — it reconciles exactly. Note the test-module subtraction is
+  precisely what `yj09` exists to make unnecessary, and that the dedup terms differ at all
+  means the two passes did not see the same mirror, so **the +18 is not purely growth**.
+  ⚠️ Only the `−9` and `+11` are basis; the `+18` is unexplained by basis alone and is the
+  piece to re-derive first if this child is scoped off either number.
+
+⛔ **THE +20 IS A LIVE SCOPING QUESTION FOR THE SEQUENCING RULING, NOT A BOOKKEEPING NOTE.**
+`overseer-bjrm` is the single most expensive adoption child, and it is scoped in the ledger at
+a number **26% below** what this lane measures. Whichever way it resolves, resolve it BEFORE
+that child is dispatched — and note that the two bases can only converge after `yj09` lands,
+since until then the check genuinely does read those test modules as public API.
+
 ### What the distribution says about sequencing
 
 - **Three zero-bill repos exist** and can be armed at zero remediation cost. They are the three
@@ -482,6 +588,13 @@ blast radius this number does not capture.
 
   ⚠️ The cheap-five total MOVED between the two passes. Quote it with its pass and its heads,
   never bare — that is working rule 3 applied to this thread's own output.
+- ⛔ **A PREREQUISITE SITS OUTSIDE THIS DISTRIBUTION AND OUTRANKS IT: `zi29`.** `idlx` names it
+  a prerequisite, and it is not a cost question — on a zero-`.py` PR the check job reports
+  SUCCESS while every real step skips, so a REQUIRED context certifies nothing. That is the
+  mechanism by which five masters sat red while PRs kept merging. **Arming ANY repo ahead of
+  `zi29` means the next breakage hides exactly the same way**, including the three
+  zero-remediation repos this section argues to arm first — those are free on REMEDIATION cost,
+  which is not the same as safe to arm. Cheapness does not clear the prerequisite.
 
 ### 🔥 THE BILL GROWS WHILE UNENFORCED — now TWO independent observations
 
