@@ -709,6 +709,15 @@ from the same three-day window it was measured in.
 - **`overseer` is the ONLY repo with a duplicate mirror or test-file hits** — 11 test-file hits
   and 65 duplicate pairs, every other member 0 and 0. Its `reported ≠ distinct` is unique in the
   fleet, which is why it is the only row where the two bases can disagree at all.
+- **The SECOND failure path was re-checked at these heads too, not assumed to have held.**
+  `_report_bad_declarations` runs BEHIND the gate, so it is unverified in every unarmed repo.
+  Re-measured over all nine: `would_fail_on_declarations` is **False everywhere**, and the
+  declaration counts reproduce the earlier record exactly — `dev-tooling` **21**
+  (14 `cross_repo_public_api` + 4 `total_absence_returns` + 3 `single_meaning_variants`) and
+  `runtime` **11**, with **0 stale and 0 rejected** in both. The other seven declare **nothing**,
+  so their pass on this path is **VACUOUS** — stated because "clean on both paths" reads much
+  stronger than "has nothing to be wrong about". **Arming the three zero-bill repos is still
+  free on BOTH paths at current heads.**
 
 ⚠️ **Do not read a RATE off two points.** What is established is direction and mechanism: new
 public API lands un-Result-typed because **nothing anywhere is checking** — the gate is off in
