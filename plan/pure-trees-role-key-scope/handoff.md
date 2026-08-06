@@ -684,6 +684,32 @@ Result conversions**. `idlx` reaches the same read from a sample (`hygiene_scan_
 be declared is a judgement: `supervisor_entry_files` is for supervisor entry points specifically,
 and a plugin hook's `main` may not qualify. What is measured is the SHAPE, not the entitlement.
 
+⛔ **AND THE RATIFIED SPEC MAKES THAT CAVEAT MUCH STRONGER THAN "it may not qualify".**
+`livespec-dev-tooling` `SPECIFICATION/contracts.md:225` (current ratified text, re-read
+2026-08-06) says `supervisor_entry_files` is consumed by **FOUR** checks —
+`no_except_outside_io`, `no_write_direct`, `public_api_result_typed`, `supervisor_discipline` —
+and states verbatim:
+
+> **Declaring one path here grants ALL FOUR exemptions at once**, and a consumer adding a file
+> to satisfy one check receives the other three **without deciding anything** … Each entry
+> SHOULD therefore carry a written reason, and a repo that has not declared a path gets nothing.
+
+Concretely, per that same clause: `no_write_direct` would exempt **the WHOLE FILE** from the
+direct-write ban (not merely its `main()`), and `supervisor_discipline` would exempt it from the
+`sys.exit` / `raise SystemExit` confinement rule.
+
+⛔ **SO DECLARING THE 17 TO CLEAR THIS CHECK WOULD SILENTLY BUY THREE UNRELATED EXEMPTIONS PER
+FILE.** That is not a config tidy-up; it is a blanket carve-out purchased to make one check
+green. **It is also exactly what this thread's own re-land constraint forbids** — no lever, no
+carve-out, no severity demotion (`li-4x3a45` is the recorded wontfix), and
+`livespec/.ai/ci-gate-discipline.md` names that class as revert-worthy.
+
+✅ **The honest restatement:** the 17 are **not 17 cheap wins and not 17 conversions either.**
+They are 17 decisions, each of which the ratified spec says SHOULD carry a written reason, and
+each of which grants four exemptions if taken. Whoever sequences this should price them as
+judgement calls with a blast radius, **not** as the cheapest bucket on the board — which is how
+a 14%-of-the-bill "config gap" naturally reads.
+
 ⚠️ **`raises` = 7 is a LOWER BOUND on genuine violations, not the count of them.** It only finds
 functions that raise EXPLICITLY. A function signalling failure by returning `None`, `-1` or an
 empty result is a genuine violation too and lands in `judgement`. **The 97 is not "97 hard
