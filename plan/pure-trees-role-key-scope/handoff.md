@@ -1002,6 +1002,34 @@ anti-carve-out rule both forbid — **at least 57% of the bill is still code con
 "config gap" framing cannot shrink this program much, and it should not be presented as though
 it might.
 
+#### Per repo — the fleet number hides a 38%-to-100% spread
+
+| repo | bill | entry | `X \| None` | union | ⛔ NO KEY | % unreachable |
+|---|---:|---:|---:|---:|---:|---:|
+| `livespec-dev-tooling` | 2 | 0 | 0 | 0 | **2** | **100%** |
+| `livespec-orchestrator-git-jsonl` | 4 | 0 | 2 | 0 | **2** | 50% |
+| `livespec-runtime` | 13 | 1 | 2 | 0 | **10** | **76%** |
+| `livespec` | 13 | 2 | 0 | 6 | **5** | **38%** |
+| `livespec-orchestrator-beads-fabro` | 17 | 7 | 0 | 0 | **10** | 58% |
+| `livespec-overseer` | 76 | 7 | 27 | 0 | **42** | 55% |
+
+**Three things this changes:**
+
+- ⛔ **`runtime` is worst on BOTH axes and that settles the ordering question.** It is 76%
+  unreachable-by-declaration (highest of the cheap five) AND 100% vendored. Two independent
+  measures, same verdict: **do it last, not second.**
+- ✅ **`overseer-bjrm` is meaningfully smaller than 76.** Its **27 `X | None`-shaped** functions
+  are the fleet's largest declarable group (27 of the 31 fleet-wide), so up to **34 of its 76**
+  are declaration-eligible and **42 are hard conversions**. Scoping that child at "76
+  conversions" overstates it — though 27 written reasons is not nothing, and each must survive
+  the hard-failing staleness detector.
+- **`livespec` is the cheapest per unit of bill** at 38% unreachable, carrying all six of the
+  fleet's union-shaped functions. If a repo is wanted to set the triage pattern on the widest
+  variety of dispositions, it is the one with the most kinds of them.
+
+⚠️ Same caveat as above, restated because a per-repo table invites planning directly off it:
+**eligible is not grantable.** These are ceilings per repo, not budgets.
+
 ### What the distribution says about sequencing
 
 - ⛔ **THE THREE ZERO-BILL REPOS ARE NOT THE SAME KIND OF FREE — measured 2026-08-06, and this
