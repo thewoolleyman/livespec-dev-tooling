@@ -220,6 +220,54 @@ def test_detector_c_flags_history_fed_capture_but_not_bounded_inspection() -> No
     assert [defect for defect in _defects_in(text=inspection) if defect.startswith("c-")] == []
 
 
+def test_detector_d_does_not_flag_a_capture_free_search_accumulator() -> None:
+    """An empty-seeded ACCUMULATOR compared for identity is not a watcher.
+
+    THE THREE-WAY CONTROL this repo's charter-gate rule demands, run against a
+    real charter rather than an invented one: `homelab`'s generator-provenance
+    block seeds `matched_ref=''`, sets it on a digest match, tests it with
+    `[ -z ... ]` to mean NOT-FOUND, and finally compares it for identity to
+    report which ref matched. No watcher, no capture, no stability semantics.
+
+    The property rule keyed on ANY `[ "$a" = "$b" ]`, so it read that identity
+    comparison as a stability comparison and flagged correct code — the FOURTH
+    false positive from this gate, all four flagging code already correct.
+
+    THE IMPLIED REMEDY IS WORSE THAN THE FINDING, which is why this is a test
+    and not a comment: the detector accepts a sentinel seed, so a session under
+    adoption pressure "fixes" the charter by seeding one — and that BREAKS it,
+    because the block's not-found test is an EMPTINESS test. A sentinel makes it
+    never fire, so a missing generator would silently report as found.
+
+    The discriminator is that a stability comparison reads a CAPTURE. The rule's
+    own subject is "the variable the stability comparison treats as the PREVIOUS
+    capture", so a comparison no capture feeds was never in scope.
+    """
+    accumulator = _fenced(
+        body=(
+            "matched_ref=''\n"
+            '[ "$installed_md5" = "$recorded_md5" ] && matched_ref="$generator_ref"\n'
+            'if [ -z "$matched_ref" ]; then echo none; fi\n'
+            'if [ "$matched_ref" = "$generator_ref" ]; then echo exact; fi'
+        )
+    )
+    watcher = _fenced(
+        body=(
+            "last_seen=''\n"
+            "for i in $(seq 1 180); do\n"
+            "  pane=$(tmux capture-pane -p -t '=demo:')\n"
+            '  if [ "$pane" = "$last_seen" ]; then stable=$((stable+1)); fi\n'
+            '  last_seen="$pane"\n'
+            "done"
+        )
+    )
+
+    assert [defect for defect in _defects_in(text=accumulator) if defect.startswith("d-")] == []
+    assert [defect for defect in _defects_in(text=watcher) if defect.startswith("d-")] == [
+        "d-empty-prev-watcher-init: last_seen=''"
+    ]
+
+
 def test_detector_d_keeps_literal_and_property_empty_seed_rules() -> None:
     watcher = (
         "{seed}\n"

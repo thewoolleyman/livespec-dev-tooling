@@ -14,7 +14,6 @@ from livespec_dev_tooling.charters._detectors import (
     bare_targets,
     bash_pipestatus_in_zsh_fleet,
     busy_test_matches_idle_pane,
-    empty_prev_watcher_init,
     fixed_cap_marker_read,
     history_fed_capture,
     local_time_labelled_utc,
@@ -24,6 +23,7 @@ from livespec_dev_tooling.charters._detectors import (
     unguarded_path_resolution,
     wrapper_less_ledger_read,
 )
+from livespec_dev_tooling.charters._seed_rules import empty_prev_watcher_init
 
 __all__: list[str] = [
     "CHARTER_GLOBS",
