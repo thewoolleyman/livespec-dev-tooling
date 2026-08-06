@@ -90,6 +90,19 @@ report has been filed; filing it again is harmless but redundant.** What it adde
 - **The second failure path was re-checked** — `would_fail_on_declarations` False fleet-wide.
 - **All nine declarations re-read at pass-3 heads** — still unenforced, nothing moved.
 - **Only SEVEN of nine repos are reachable by the pin**, because `console` is unwired.
+- **`idlx`'s effort buckets are RE-DERIVED** by AST evidence (#1332, #1333): entrypoint 17,
+  raises 7, raises-transitive 4, optional-return 17, total-bool 4, pure-total 38, judgement 38.
+  **17 of 125 are undeclared module entry points** — candidate config-gap fixes, not
+  conversions.
+- ⛔ **`runtime` is the LEAST cheap of the cheap five** (#1334, #1335): **all 13 of its
+  offenders sit in files vendored into 2–4 other repos**, verified byte-identical. `idlx`'s
+  smallest-first ordering puts it SECOND, which defeats that ordering's own stated purpose.
+- **Vendoring is a THIRD blast-radius channel** invisible to both existing measures; the
+  declared-import axis sees only **3 of runtime's 13**.
+- **`check-vendor-manifest` does NOT enforce content parity** — metadata only, and it exits 0
+  when the manifest is absent. 740 vendored files are in sync by discipline, not by a gate.
+- **The blast-radius "overwhelmingly small, local edits" conclusion is WITHDRAWN** (#1336). The
+  caller COUNTS stand; reading them as a cost statement did not.
 
 ⛔ **What is NOT done, and is the actual open question:** the maintainer has still not ruled on
 sequencing. Nothing above changes that — it makes the ruling better-informed, not unnecessary.
@@ -1140,3 +1153,17 @@ indistinguishable from "genuinely no code".
     to the `livespec-driver-claude` lane.** Recorded because the first two denials were routed
     around with `--body-file` WITHOUT understanding the cause, and a guard that trains
     workarounds instead of teaching its rule will keep collecting them.
+11. **A COUNT is not a COST.** The blast-radius table measured in-repo callers correctly and
+    was then read as "these are small local edits". It was not: 13 of those ≤2-caller functions
+    are vendored into 2–4 repos, so each is a coordinated multi-repo change. The number was
+    right and the inference from it was wrong. **Before treating any count as an effort
+    estimate, ask what the count is blind to** — here, every consumption channel that is not a
+    call.
+12. **ABSENCE evidence is far weaker than PRESENCE evidence, and it fails SILENTLY.** A
+    classifier that files things by what it CANNOT find will confidently mis-file anything
+    whose evidence lives one hop away. `parse_cross_repo_manifest` was classified "no failure
+    mode" while its own docstring said it raises — the `raise` was two calls down. A
+    presence-keyed bucket (`raises`, `optional-return`) can only be a LOWER bound and gets
+    safer as evidence improves; an absence-keyed bucket (`pure-total`) can only shrink and is
+    where the wrong answers hide. **Spend scepticism on the absence bucket, and sample it by
+    reading source before quoting it.**
