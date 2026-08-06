@@ -933,6 +933,41 @@ it is not taken first. Whether the right answer is a new bound, a spec amendment
 judgement this lane did not make. What is measured is that converting them is maximally
 expensive and that the ledger already doubts they should be converted.
 
+### 🔑 HOW MUCH OF THE BILL CAN A DECLARATION EVEN REACH? **57% CANNOT.**
+
+The `lane_of` correction above is not a two-function curiosity. Every declaration key is gated
+on the **RETURN-ANNOTATION SHAPE**, so eligibility is decidable by syntax alone. Measured over
+all 125 at pass-3 heads:
+
+| the only key that could reach it | fleet (125) | cheap five (49) |
+|---|---:|---:|
+| `supervisor_entry_files` (called under a `__main__` guard) | 17 | 10 |
+| `total_absence_returns` (`X \| None` / `Optional[X]`) | 31 | 4 |
+| `single_meaning_variants` (a union with no `None` limb) | 6 | 6 |
+| ⛔ **NO KEY REACHES IT** | **71 (57%)** | **29 (59%)** |
+
+Return-annotation shapes across the 125: **concrete 76, optional 31, union 6, unannotated 12.**
+
+⛔ **CONVERSION IS THE ONLY SANCTIONED DISPOSITION FOR 71 OF 125.** No declaration, no config
+change and no reason-string can retire them — the keys are gated against exactly that.
+
+✅ **AND THIS NUMBER IS METHODOLOGICALLY SOLID WHERE THE BUCKET TABLE IS NOT.** It uses **return
+annotation shape only** — no failure-mode inference, no absence evidence — so it is not exposed
+to the weakness recorded in working rule 12. Quote this one more confidently than `pure-total`.
+
+⚠️ **"Reachable" is NECESSARY, NOT SUFFICIENT — the 54 are a CEILING, not a plan.** Each key
+carries further bounds: `total_absence_returns` needs a written reason per entry plus a
+hard-failing staleness detector; `single_meaning_variants` subtracts any function calling a
+side-effecting primitive directly; `supervisor_entry_files` grants FOUR exemptions at once and
+this thread's own re-land constraint forbids buying carve-outs to make a check green. **The
+real declarable set is smaller than 54 — possibly much smaller.**
+
+**So the honest scoping statement for the ruling:** even in the maximally permissive world where
+every syntactically-eligible function were declared — a world the spec's bounds and this thread's
+anti-carve-out rule both forbid — **at least 57% of the bill is still code conversion.** The
+"config gap" framing cannot shrink this program much, and it should not be presented as though
+it might.
+
 ### What the distribution says about sequencing
 
 - ⛔ **THE THREE ZERO-BILL REPOS ARE NOT THE SAME KIND OF FREE — measured 2026-08-06, and this
