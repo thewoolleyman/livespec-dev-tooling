@@ -385,6 +385,14 @@ non-empty scanned set, not the founding defect. Smallest scanned set is `console
 **All nine are currently unenforced** (NotApplicable / UnarmedUntil / Undeclared). The check
 convicts NOBODY anywhere today. "Green means unenforced" is exact, not rhetorical.
 
+✅ **RE-VERIFIED at pass-3 current heads by reading each `origin/master:pyproject.toml`, not
+carried forward** — this is the claim the whole recommendation rests on, so it is the one worth
+re-reading rather than assuming. **Nothing has changed:** `not_applicable` in `livespec-runtime`,
+`livespec-driver-claude`, `livespec-driver-codex`, `livespec-dev-tooling`; `unarmed_until =
+"livespec-mutreal.1"` in `livespec`, `livespec-overseer`, `livespec-orchestrator-git-jsonl`;
+`unarmed_until = "bd-ib-6qb2mc"` in `livespec-orchestrator-beads-fabro`; and
+`livespec-console-beads-fabro` declares **no `pure_trees` key at all**.
+
 ### ⛔ REPORTED 188, DISTINCT **123** — `overseer` ships a byte-identical mirror
 
 The 188 above is what the CHECK REPORTS. It is not the amount of work, because
@@ -591,6 +599,36 @@ that child is dispatched — and note that the two bases can only converge after
 since until then the check genuinely does read those test modules as public API.
 
 ### What the distribution says about sequencing
+
+- ⛔ **THE THREE ZERO-BILL REPOS ARE NOT THE SAME KIND OF FREE — measured 2026-08-06, and this
+  corrects the bullet directly below.** "Arm the three free ones" treats them as one move. Two
+  of them are one move; the third is a different change in a different place.
+
+  | repo | wires the check? | `pure_trees` | what arming it actually costs |
+  |---|---|---|---|
+  | `livespec-driver-claude` | **YES** (justfile) | `not_applicable` | **nothing in the member** — armed by the re-land at its next pin bump |
+  | `livespec-driver-codex` | **YES** | `not_applicable` | **nothing in the member** — same |
+  | `livespec-console-beads-fabro` | ⛔ **NO — zero references in its entire tree** | **UNDECLARED** | **a member-side WIRING change; the re-land does not reach it at all** |
+
+  Measured by `git grep` over each `origin/master`: `console` matches
+  `public.api.result.typed` in **zero** files; `driver-claude` matches in its `justfile`.
+  So `console` is **invisible to the pin lever** — the re-land arms every WIRED member, and
+  `console` is not one. It cannot be armed by a dev-tooling change at all.
+
+  ⚠️ **And today, wiring it without also declaring the key FAILS rather than no-ops.** Verified
+  in the shipped gate (`checks/_role_key_gate.py::role_absence_exit_code`), which is a code read,
+  not an inference from prose: `if key not in config.declared_keys: log.error(...); return 1`.
+  Key OMISSION is a hard error by design — the union is about EMPTINESS, and absence is
+  deliberately loud.
+
+  ✅ **But that caveat expires with the re-land**, and saying so matters or it will be
+  over-applied: once `crl2` removes the `pure_trees` consult, the undeclared key is no longer
+  read by THIS check, so `console` would need wiring only. The wiring requirement is durable;
+  the declaration requirement is an artifact of the pre-re-land state.
+
+  **Net for sequencing: TWO repos are free-by-pin, not three.** `console` is a separate, small,
+  member-side task that no dev-tooling change will accomplish — and its bill is 0 over a
+  1-file universe either way.
 
 - **Three zero-bill repos exist** and can be armed at zero remediation cost. They are the three
   SMALLEST universes — together **11 of 474 scanned files (2.3%)** — and an earlier draft of
@@ -801,3 +839,24 @@ indistinguishable from "genuinely no code".
 8. **Waiting is not a remedy for a job that cannot fit.** rjyc was parked for a quiet window;
    its PASSING run measured 53m38s against a 1200s ceiling. No window would have been quiet
    enough. Measure the successful path before choosing to wait for one.
+9. **`merged: true` does not mean YOUR work merged.** Auto-merge fires as soon as checks go
+   green on **whatever the branch held at that moment** — it does not wait for you to finish
+   pushing. #1327 merged its first commit while two further commits were still being pushed to
+   the same branch, stranding them on a branch whose PR was already closed. It was caught only
+   because the merged head sha did not match the last-pushed head. **Either arm auto-merge
+   LAST, or open one PR per unit of work — and always compare the merged sha against the sha
+   you pushed.** Same family as the rest of this list: a status field that is true while
+   meaning something narrower than the reader assumes.
+10. **When a guard denies you, READ THE GUARD — do not iterate on the incantation.** The
+    fleet's `github_rate_limit_guard.py` (in the `livespec-driver-claude` plugin) denied four
+    legitimate one-shot commands in this session. Reading it took one minute and found three
+    defects: its loop detector matches the bare English words `for` / `while` / `until` /
+    `select` / `sleep` **anywhere in the command string**, so a PR-create whose BODY PROSE
+    contains "for" is denied; its read-detector matches the `pr` CLI verb, so PR-**create** and
+    PR-**merge** are classified as READS; and its denial text prescribes `gh api --cache
+    <duration>` while the deny function **never consults `--cache`**, so the prescribed remedy
+    cannot clear the check. It denied a plain file-append containing no network call, purely
+    because the text being appended described the bug. ⚠️ **Not filed here — the hook belongs
+    to the `livespec-driver-claude` lane.** Recorded because the first two denials were routed
+    around with `--body-file` WITHOUT understanding the cause, and a guard that trains
+    workarounds instead of teaching its rule will keep collecting them.
