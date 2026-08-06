@@ -665,6 +665,76 @@ labels: `beads-fabro` `.claude-plugin/hooks/codex_yolo_gate.py:199 main` really 
 read_specification_history` really does `raise SpecVersionNotFoundError` when the version
 directory is absent — a textbook expected external failure sitting off the railway.
 
+### 🔬 THE 97 `judgement` RESIDUE, SPLIT FURTHER — and where the method BREAKS
+
+The 97 above was "the evidence available cannot settle this". Two further passes settle 59 of
+it. **The totals reconcile exactly: 17 + 4 + 38 + 38 = 97**, so this REFINES the table above,
+it does not replace it.
+
+| bucket | evidence | fleet (125) | cheap five (49) |
+|---|---|---:|---:|
+| entrypoint | called under its own `__main__` guard | 17 | 10 |
+| raises | explicit `raise` in its own body | 7 | 4 |
+| **raises-transitive** | calls something IN THE SAME FILE that raises | **4** | **3** |
+| **optional-return** | annotated `X \| None` **and** returns `None` on some path | **17** | **2** |
+| total-bool | `-> bool`, no raise, no I/O | 4 | 1 |
+| **pure-total** | no raise, no I/O, no `None`-return, concrete return type | **38** | **16** |
+| judgement | still unsettled | **38** | **13** |
+
+**The honest split is PRESENCE vs ABSENCE evidence, and only one half is bankable:**
+
+- **45 of 125 rest on POSITIVE evidence** (entrypoint 17 + raises 7 + raises-transitive 4 +
+  optional-return 17). Each has something affirmatively present in the source.
+- **42 of 125 rest on ABSENCE** (pure-total 38 + total-bool 4) — "no failure mode I could
+  detect". ⛔ **Do NOT bank these as 'needs no conversion'**; see the counterexample below.
+- **38 remain genuinely unsettled.**
+
+#### ⛔ The absence-based buckets are UNSOUND under delegation — proven, then partly fixed
+
+Pass 2 classified `livespec-runtime` `types.py:211 parse_cross_repo_manifest` as **pure-total**
+while **its own docstring says "Raises `CrossRepoSchemaError`"**. The `raise` lives two hops
+down in `_require_field`; body-only AST analysis cannot see delegated failure.
+
+Pass 3 added a within-file transitive closure (a function raises if anything it calls in the
+same file raises). `parse_cross_repo_manifest` now classifies correctly — **but the fix moved
+only 4 of 41.** ⚠️ **Cross-FILE and cross-MODULE delegation remains invisible**, so `pure-total`
+is a floor on "looks total", never a finding that a function has no failure mode.
+
+⚠️ **This is the same trap as the name-keyed call counting**, in a new disguise: an absence is
+much weaker evidence than a presence, and absence-of-evidence classifiers fail silently. The
+`raises` family is a LOWER BOUND that can only grow; `pure-total` is the bucket that will
+shrink as evidence improves. **Spend scepticism on the second one.**
+
+#### ✅ But sampling the residue found something that CHANGES the cost model
+
+`livespec-runtime` `hygiene_scan.py:42 scan_hygiene` sits in `pure-total`, and reading it shows
+why the bucket is not simply noise. Its docstring states:
+
+> ⛔ THE RAILWAY TERMINATES HERE, AND THE SIGNATURE IS HELD ON PURPOSE. … consumed ACROSS REPOS
+> by source copy … Widening the return type to `IOResult` is a coordinated multi-repo change,
+> not a side effect of putting the leaf on the railway, so it is **filed rather than taken
+> here.** See `detect_stale_worktrees` for the sibling terminal.
+
+**Verified on the forge, not taken on the docstring's word:** `livespec-orchestrator-beads-fabro`
+and `livespec-orchestrator-git-jsonl` BOTH carry `_vendor/livespec_runtime/hygiene_scan.py`,
+`hygiene_scan_cli.py` and `hygiene_scan_worktrees.py` — **vendored source copies**.
+
+⛔ **VENDORING IS A THIRD BLAST-RADIUS CHANNEL, AND BOTH EXISTING MEASURES ARE BLIND TO IT.**
+The handoff's caller counts are IN-REPO only; the `cross-repo-public-api-declared` row measures
+IMPORT edges. **A vendored copy is neither** — it is not an import, so no declaration graph sees
+it. Converting `scan_hygiene` is a coordinated THREE-repo change that both instruments score as
+cheap and local.
+
+✅ **A hazard this raised and then CLOSED: the fleet total does NOT double-count vendored code.**
+`_vendor` is excluded from the first-party universe entirely (**0 of `beads-fabro`'s 186**), and
+a content-hash check across all six repos finds **zero** offenders appearing in more than one
+repo — fleet-wide distinct is 125, identical to the per-repo sum. Cross-repo duplication is a
+BLAST-RADIUS problem, not a counting problem.
+
+**And `lane_of` lands in `pure-total`** — the very function `idlx` independently names as a pure
+total classifier where Result-typing would be **WRONG**. Two methods agreeing on a specific
+function is worth more than either bucket total.
+
 ### What the distribution says about sequencing
 
 - ⛔ **THE THREE ZERO-BILL REPOS ARE NOT THE SAME KIND OF FREE — measured 2026-08-06, and this
