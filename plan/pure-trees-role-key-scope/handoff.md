@@ -118,6 +118,19 @@ for rel in [r for r in universe if not r.name.startswith("_")]:
 All names import from `livespec_dev_tooling.checks.public_api_result_typed` and
 `livespec_dev_tooling.config`.
 
+✅ **THE RECIPE WAS REBUILT FROM THIS FILE ALONE ON 2026-08-06 AND IT WORKS.** A later session
+reconstructed the harness using only the block above, and it reproduced BOTH recorded controls
+exactly: `livespec-runtime` @ `ed5529f` → universe 31 / scanned 26 / **11 offenders** with the
+identities matching `irtt`'s list verbatim, and `livespec-overseer` @ `1d191b1` → **244 / 148 /
+141 reported / 76 distinct / 65 duplicates**, matching the pass-1 table row for row. So the
+recipe is sufficient; you do not need the original scratch harness.
+
+⚠️ **Two additions that the recipe above does NOT tell you, learned rebuilding it:** import
+`resolve_check_universe` from `...checks.public_api_result_typed` (not from `config`), and note
+that `_find_offenders` returns `(line, name)` pairs — the useful outputs are (a) dedup by
+`(sha256(file_content), line, name)` for the distinct count and (b) a `"test" in filename`
+partition, which is what makes this lane's numbers comparable to `idlx`'s.
+
 ⚠️ **Validate it before believing it.** The harness above was checked against the REAL shipped
 decoupled check by exporting `46c5dab` and running its own
 `python -m livespec_dev_tooling.checks.public_api_result_typed` with `PYTHONPATH` pointed at
@@ -534,24 +547,41 @@ The two disagreements have KNOWN and DIFFERENT causes, and neither is a measurem
   The extra 2 arrived afterwards in `c77f2d7` *"feat: mitigate github request budget pressure"*.
   The two records agree; the CODE moved between them. This is the growth-while-unenforced
   finding showing up as a discrepancy between two honest counts.
-- **`overseer` +20 — THREE causes, not one, and they partly CANCEL.** An earlier draft of this
-  section attributed the whole 20 to "basis". That was too loose, and the arithmetic says so.
-  `idlx`'s overseer raw is **123** (derived: 168 fleet raw − 17 − 13 − 11 − 4, since BOTH of
-  its subtractions are overseer's — the 59 co-located test modules and the
-  `.claude-plugin/overseer/` mirror). Then:
+- **`overseer` +20 — RE-DERIVED BY MEASUREMENT (2026-08-06). It is 11 BASIS + 9 GROWTH, and
+  `idlx`'s numbers are on the SAME basis as this lane's, just at an earlier head.**
 
-  | component | effect on the gap |
-  |---|---:|
-  | raw count: **141** here vs **123** in `idlx` (two days apart) | **+18** |
-  | 11 co-located TEST modules `idlx` subtracts and this basis does not | **+11** |
-  | duplicate pairs removed: **65** here vs **56** in `idlx` | **−9** |
-  | **net** | **+20** |
+  ⛔ **Two earlier drafts of this bullet were wrong and are corrected here.** The first
+  attributed the whole 20 to "basis". The second decomposed it as
+  `+18 raw / +11 test / −9 dedup` and asserted "only the `+11` and `−9` are basis". The
+  arithmetic reconciled, but the ATTRIBUTION was wrong: the `−9` is **growth**, not basis.
+  Both drafts were guesses at a cause; this one is measured.
 
-  `76 − 56 = 20 = 18 + 11 − 9` — it reconciles exactly. Note the test-module subtraction is
-  precisely what `yj09` exists to make unnecessary, and that the dedup terms differ at all
-  means the two passes did not see the same mirror, so **the +18 is not purely growth**.
-  ⚠️ Only the `−9` and `+11` are basis; the `+18` is unexplained by basis alone and is the
-  piece to re-derive first if this child is scoped off either number.
+  `overseer`'s master was replayed at four heads with the rebuilt harness (recipe above,
+  positive control discharged — `livespec-runtime` @ `ed5529f` reproduced **exactly 11** with
+  identities matching `irtt` verbatim, and `overseer` @ `1d191b1` reproduced the pass-1 row
+  **244 / 148 / 141 / 76 / 65** exactly):
+
+  | head | date | raw | distinct non-test |
+  |---|---|---:|---:|
+  | `b3ae0dd` | 2026-08-03T18:12 | 81 | 35 |
+  | `baa60f8` | 2026-08-04T03:38 | 115 | 52 |
+  | **`idlx`'s stated figures** | **2026-08-04 (decomposed)** | **123** | **56** |
+  | `e1d257c` | 2026-08-04T22:48 | 137 | 63 |
+  | `1d191b1` | 2026-08-06 (pass-1) | 141 | 65 |
+
+  **`idlx`'s 123 and 56 both land inside a monotone trajectory on THIS basis**, between the
+  03:38 and 22:48 heads of the very day it was decomposed. Two independent figures landing in
+  the right interval on the right day is not a coincidence of bases — `idlx` measured the same
+  way, earlier. So the correct decomposition of `76 − 56 = 20` is:
+
+  | component | size | kind |
+  |---|---:|---|
+  | 11 co-located TEST modules `idlx` subtracts, this basis reports | **11** | **BASIS** — and it is exactly what `yj09` exists to make unnecessary |
+  | `overseer` growth from mid-08-04 to 08-06 (distinct non-test 56 → 65) | **9** | **GROWTH** |
+
+  ⚠️ **The comparable quantity is this lane's distinct-NON-TEST (65), not its distinct (76).**
+  `idlx`'s 56 was never comparable to 76. The test-file hit count is **constant at 11 across
+  all four heads**, which is what independently confirms it as a basis term rather than drift.
 
 ⛔ **THE +20 IS A LIVE SCOPING QUESTION FOR THE SEQUENCING RULING, NOT A BOOKKEEPING NOTE.**
 `overseer-bjrm` is the single most expensive adoption child, and it is scoped in the ledger at
@@ -596,7 +626,7 @@ since until then the check genuinely does read those test modules as public API.
   zero-remediation repos this section argues to arm first — those are free on REMEDIATION cost,
   which is not the same as safe to arm. Cheapness does not clear the prerequisite.
 
-### 🔥 THE BILL GROWS WHILE UNENFORCED — now TWO independent observations
+### 🔥 THE BILL GROWS WHILE UNENFORCED — now THREE independent observations
 
 A second full measurement pass was run at fresh forge heads ~4.5h after the first, same basis,
 to test this claim rather than leave it resting on one data point. **Eight of nine heads had
@@ -615,6 +645,34 @@ independent, in DIFFERENT repos, and both arrived through ordinary feature work:
 - `livespec-runtime` 11 → 13: `github_budget_client_support.py::header_value` and
   `::mapping_option`, added by `c77f2d7` *"feat: mitigate github request budget pressure"*
   2026-08-06 01:21Z
+
+### 🔥🔥 A THIRD OBSERVATION, AND IT DWARFS THE OTHER TWO — `overseer` +60 raw in <3 days
+
+The two `+2` observations above are not the scale of this effect. Replaying `overseer`'s own
+master at four heads (the same replay that settled the `+20` question, above):
+
+| head | date | universe | scanned | raw | distinct non-test |
+|---|---|---:|---:|---:|---:|
+| `b3ae0dd` | 2026-08-03T18:12 | 174 | 82 | **81** | **35** |
+| `baa60f8` | 2026-08-04T03:38 | 214 | 122 | 115 | 52 |
+| `e1d257c` | 2026-08-04T22:48 | 232 | 140 | 137 | 63 |
+| `1d191b1` | 2026-08-06 | 244 | 148 | **141** | **65** |
+
+**Raw +60 (81 → 141, +74%) and distinct non-test +30 (35 → 65, +86%) in under three days**, on
+**141 commits** in that window. Monotone at every step; **nothing was ever removed**. The
+scanned universe itself grew 82 → 148, so this is genuinely new first-party code arriving
+un-Result-typed, not a detector artifact.
+
+⛔ **THIS LANDS ON THE MOST EXPENSIVE ADOPTION CHILD.** `overseer-bjrm` is scoped in the ledger
+at 56. That number was accurate the day it was written and is **65 on its own basis** two days
+later. A remediation program scoped against any frozen `overseer` figure is chasing a target
+moving at roughly the rate the team writes code — which is the argument for arming EARLY (an
+armed repo freezes its criterion and becomes a regression guard) rather than for measuring
+harder.
+
+⚠️ **Still do not read a RATE off this.** It is one repo in one unusually high-churn window
+(the foreman work). What it establishes is that the effect is **not small** — an order of
+magnitude beyond the `+2`s — in exactly the repo where the bill already concentrates.
 
 ⚠️ **Do not read a RATE off two points.** What is established is direction and mechanism: new
 public API lands un-Result-typed because **nothing anywhere is checking** — the gate is off in
