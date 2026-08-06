@@ -74,6 +74,30 @@ decision, and the measurement is complete and recorded below.
 (`tmp/overseer/pure-trees-role-key-scope/worker-status.log`) that measurement is complete and
 this lane is awaiting the sequencing ruling. Then wait for the supervisor's dispatch.
 
+### ✅ ALREADY DONE ON 2026-08-06 — do NOT redo any of this
+
+A session ran after the block above was written and did the report, then kept measuring. **The
+report has been filed; filing it again is harmless but redundant.** What it added, all merged
+(dev-tooling #1326, #1327, #1328, #1329, #1330), so that none of it is repeated:
+
+- **`irtt` is CLOSED and `idlx` is the re-land** — the correction at the top of this file.
+- **The harness was REBUILT from the recipe in this file and both controls discharged.** You do
+  not need to re-derive whether the recipe works; it does. See the ✅ note in the recipe section
+  for the two things the recipe omits.
+- **The `overseer` `+20` question is SETTLED: 11 basis + 9 growth**, by a four-head replay. The
+  earlier "re-derive the `+18` first" instruction is DISCHARGED — do not chase it again.
+- **PASS-3 over all nine exists: 190 reported / 125 distinct.** Quote it with its heads.
+- **The second failure path was re-checked** — `would_fail_on_declarations` False fleet-wide.
+- **All nine declarations re-read at pass-3 heads** — still unenforced, nothing moved.
+- **Only SEVEN of nine repos are reachable by the pin**, because `console` is unwired.
+
+⛔ **What is NOT done, and is the actual open question:** the maintainer has still not ruled on
+sequencing. Nothing above changes that — it makes the ruling better-informed, not unnecessary.
+
+⚠️ **Everything measured here has a shelf life.** The bill moved twice inside one session and
+`overseer` moved +60 in three days before plateauing. **Re-measure at arm time.** The harness
+recipe is in this file precisely so that is cheap.
+
 **Owned by the SUPERVISOR, not by you — do not do these:**
 
 - putting the `idlx` sequencing decision to the maintainer
