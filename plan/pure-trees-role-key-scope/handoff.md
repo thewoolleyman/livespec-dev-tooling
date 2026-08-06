@@ -12,7 +12,8 @@
 >
 > **State in one line:** the withdrawal, both halves of the gate ruling, and `rjyc` have all
 > MERGED. Nothing in this thread is parked. The open item is `livespec-dev-tooling-irtt`,
-> whose adoption bill is measured per repo below — **188 REPORTED, 123 DISTINCT** (the gap is
+> whose adoption bill is measured per repo below — **188 REPORTED / 123 DISTINCT at pass-1
+> heads, 190 reported at pass-2 four hours later** (the reported/distinct gap is
 > `overseer`'s byte-identical shipped mirror) — and whose next step is a SEQUENCING decision
 > for the maintainer, not implementation.
 
@@ -202,8 +203,10 @@ so the check convicts nobody. The 11 offenders are still in that code.
 
 ## irtt adoption bill — MEASURED 2026-08-06, one basis, per repo
 
-**Headline: 188 reported / 123 distinct.** Both are true and they answer different questions;
-the difference is explained below and it matters for scoping.
+**Headline: 188 reported / 123 distinct at the pass-1 heads named in the table; 190 reported
+at pass-2 four hours later.** All three are true and they answer different questions — the
+reported/distinct gap is `overseer`'s mirror, and the 188→190 gap is four hours of ordinary
+feature work. Both are explained below, and BOTH matter for scoping.
 
 ⛔ **BASIS: `_`-prefixed FILE SKIP RETAINED.** The maintainer ruled `8zv3.5`
 **KEEP-AND-RATIFY**, so this is now THE enforcement basis, not one of two. **Do not report a
@@ -225,6 +228,10 @@ that repo's own config. No pin bumped, no check armed, no CI spent.
 | `livespec-orchestrator-beads-fabro` | `41a4343` | 186 | 48 | 17 | UnarmedUntil |
 | `livespec-overseer` | `1d191b1` | 244 | 148 | **141** | UnarmedUntil |
 | **TOTAL** | | **862** | **474** | **188** | |
+
+☝️ **This table is PASS-1, at the SHAs named in it.** A pass-2 four hours later measured
+**190** (`livespec-runtime` 11 → 13). The table is kept at pass-1 SHAs deliberately, because a
+row is only meaningful with the sha it was measured at — see the growth section below.
 
 ⚠️ **The bill is 188, not 160.** Every earlier per-repo number is stale — the epic's own table
 evaluated each repo against ITS OWN pinned criterion (six at `1.17.1`, two at `1.18.7`) at
@@ -252,6 +259,9 @@ The 188 above is what the CHECK REPORTS. It is not the amount of work, because
 | `livespec-overseer` | 141 | **76** | 65 |
 | every other member | 47 | 47 | 0 |
 | **fleet** | **188** | **123** | **65** |
+
+(Pass-1 basis, same heads as the table above. The duplication ratio is a property of
+`overseer`'s layout, not of a moment — it does not move with the bill.)
 
 Deduplicated by `(sha256(file content), line, function)`, so it does not depend on knowing any
 repo's mirror layout. Of `overseer`'s 141: **65 appear on BOTH sides, 0 are mirror-only, 11
@@ -399,10 +409,14 @@ blast radius this number does not capture.
 - **`livespec-overseer` alone is 141 of 188 reported — 75%** (and **76 of 123 distinct —
   62%**). The entire rest of the fleet is **47** on both bases, since only `overseer`
   duplicates.
-- So the strong shape is: arm the three free ones, then the five cheap ones (dev-tooling 2,
-  git-jsonl 4, runtime 11, livespec 13, beads-fabro 17 = **47**), putting **EIGHT of nine
-  repos under real enforcement for 47 conversions rather than 188**, and leaving `overseer` as
-  a single-repo program scoped on its own merits instead of blocking the other eight.
+- So the strong shape is: arm the three free ones, then the five cheap ones — dev-tooling 2,
+  git-jsonl 4, runtime **11 at pass-1 / 13 at pass-2**, livespec 13, beads-fabro 17 =
+  **47 → 49** — putting **EIGHT of nine repos under real enforcement for ~50 conversions
+  rather than ~190**, and leaving `overseer` as a single-repo program scoped on its own
+  merits instead of blocking the other eight.
+
+  ⚠️ The cheap-five total MOVED between the two passes. Quote it with its pass and its heads,
+  never bare — that is working rule 3 applied to this thread's own output.
 
 ### 🔥 THE BILL GROWS WHILE UNENFORCED — now TWO independent observations
 
