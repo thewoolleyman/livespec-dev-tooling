@@ -347,6 +347,37 @@ add a replacement role key, because a declaration whose emptiness means "skip me
 indistinguishable from "genuinely no code" — the founding defect. Any staged-arming mechanism
 has to hold repos back **without** reintroducing that.
 
+### How much WORK is a conversion? Blast radius of the cheap five
+
+"47 conversions" says nothing about effort — converting a return type cascades to callers. So
+the in-repo call-site count per offender was measured by AST across the five cheap repos
+(49 offenders at pass-2 heads):
+
+| in-repo call sites | offenders |
+|---|---:|
+| 0 (leaf) | 11 |
+| 1–2 | 32 |
+| 3–5 | 4 |
+| 6+ | **2** |
+
+**43 of 49 (88%) have two or fewer in-repo callers.** Exactly one genuine hot spot exists:
+`beads-fabro` `store.py::read_work_items` at **15**; the next is `livespec`
+`config_edit.py::write_config_value` at 6. So the cheap-five program is overwhelmingly
+small, local edits plus one function that needs real thought.
+
+⚠️ **A first attempt at this over-counted badly and is worth recording as a trap.** Counting
+calls by NAME across the universe put 13 offenders in the 6+ bucket, with five entries at
+"23 calls" — all of them `main`, because every check module defines one and the counter
+matched every `main(` in the repo. Import-aware counting (same-file calls, plus calls in files
+that actually `from <module> import <name>`) drops those to 1 apiece, which is correct: a
+module entry point called by its own `__main__` guard. **A name-keyed count over a repo full
+of conventional names inflates precisely the bucket you would make decisions on.**
+
+⚠️ **Limitation, stated rather than papered over:** this counts IN-REPO callers only.
+Cross-repo consumption is a separate axis — it is what `cross_repo_public_api` declares and
+what the `cross-repo-public-api-declared` row measures — so a function a SIBLING imports has
+blast radius this number does not capture.
+
 ### What the distribution says about sequencing
 
 - **Three zero-bill repos exist** and can be armed at zero remediation cost. They are the three
