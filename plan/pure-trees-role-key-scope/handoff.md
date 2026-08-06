@@ -735,6 +735,62 @@ BLAST-RADIUS problem, not a counting problem.
 total classifier where Result-typing would be **WRONG**. Two methods agreeing on a specific
 function is worth more than either bucket total.
 
+### 🔥🔥 MEASURED: ALL 13 OF `livespec-runtime`'S OFFENDERS ARE VENDORED INTO OTHER REPOS
+
+The vendoring channel above was found by sampling. Measured directly, it is not an edge case —
+**it is the whole of one cheap-five repo.**
+
+Method: hash every tracked `.py` under a `_vendor/` path in all nine repos (**740 files, 293
+distinct contents**), then match each flagged offender's file by CONTENT hash.
+
+| offender file (`livespec-runtime`) | functions | vendored into | copies |
+|---|---:|---|---:|
+| `cross_repo/types.py` | 2 | `livespec`, `beads-fabro`, `git-jsonl` | **4** |
+| `github_auth/config.py` | 1 | `livespec`, `beads-fabro`, `git-jsonl` | **4** |
+| `github_auth/credential_helper.py` | 1 | `livespec`, `beads-fabro`, `git-jsonl` | **4** |
+| `hygiene_scan_cli.py` | 2 | `livespec`, `beads-fabro`, `git-jsonl` | **4** |
+| `work_items/lifecycle.py` | 2 | `livespec`, `beads-fabro`, `git-jsonl` | **4** |
+| `cross_repo/resolve.py` | 1 | `livespec` | 2 |
+| `github_budget_client_support.py` | 2 | `livespec` | 2 |
+| `hygiene_scan.py` | 1 | `livespec` | 2 |
+| `hygiene_scan_worktrees.py` | 1 | `livespec` | 2 |
+| **TOTAL** | **13 of 13** | | |
+
+**Verified byte-identical, not merely same-named**: `work_items/lifecycle.py` hashes to
+`32e0b4ff…` in `livespec-runtime` AND in all three consumers' `_vendor/livespec_runtime/`.
+Four copies in lockstep today.
+
+⛔ **SO `runtime` IS THE LEAST CHEAP OF THE CHEAP FIVE, NOT THE MIDDLE OF IT.** It is 13 of the
+cheap five's 49 (**27%**), and **every single one** is a coordinated 2-to-4-repo re-vendor
+rather than a local edit. The blast-radius table that put 88% of conversions at ≤2 in-repo
+callers **cannot see this** — it counts in-repo callers, and these copies are not callers.
+
+⚠️ **Only `runtime` is affected.** Zero offenders in the other five billed repos sit in
+exactly-vendored files. There is exactly one weaker signal elsewhere:
+`beads-fabro` `store.py:102 read_work_items` (the 15-caller hot spot) shares a BASENAME with
+files in `livespec` and `git-jsonl` but **not** their content — so it is a parallel
+implementation, not a vendored copy. Reported as basename-only evidence, deliberately not
+counted with the 13.
+
+#### ⚠️ And nothing ENFORCES the lockstep — same class as the `overseer` mirror question
+
+All three consumers wire `check-vendor-manifest`, so it is tempting to conclude the copies are
+gated. **They are not.** Read the check
+(`livespec_dev_tooling/checks/vendor_manifest.py`): it validates `.vendor.jsonc` **METADATA
+ONLY** — that each entry has a non-empty `upstream_url` and `upstream_ref`, a parseable
+`vendored_at`, and a correct `shim` flag. It performs **no content comparison** (no `sha256`,
+no `hashlib`, no parity check anywhere in it) and it **exits 0 when the manifest is absent**.
+
+So the 740 vendored files are held in sync by DISCIPLINE, not by a gate — precisely the open
+question this thread already raised for `overseer`'s 91-pair mirror, now shown to be a
+**fleet-wide** property rather than one repo's layout quirk. A conversion that lands in
+`runtime` without re-vendoring will not be caught by `check-vendor-manifest`.
+
+**What this does NOT mean** — stated because the natural next inference is wrong: it does not
+inflate the bill. `_vendor` is excluded from every first-party universe, so the vendored copies
+are never scanned and never counted (see the closed hazard above). This is entirely a
+COORDINATION cost, not a counting one.
+
 ### What the distribution says about sequencing
 
 - ⛔ **THE THREE ZERO-BILL REPOS ARE NOT THE SAME KIND OF FREE — measured 2026-08-06, and this
@@ -800,6 +856,12 @@ function is worth more than either bucket total.
   eighth only after a member-side wiring change that no dev-tooling release performs. The
   conversion cost (~50) is unaffected, because `console`'s bill is 0 either way; what changes
   is how many repos the re-land actually arms.
+
+  ⛔ **AND "cheap" IS WRONG FOR `runtime`.** All 13 of its offenders sit in files vendored
+  into 2–4 other repos (measured above), so its share of the cheap five is coordinated
+  multi-repo work, not local edits. If the point of going cheap-first is to set the triage
+  pattern on easy surfaces, **`runtime` is the wrong repo to start with** — `dev-tooling` (2)
+  and `git-jsonl` (4) carry no vendoring at all.
 
   ⛔ **This bullet used to read "arm the three free ones" and that was wrong** — see the
   free-by-pin correction above. `console` is the third zero-bill repo but it is **not** armed
