@@ -541,8 +541,19 @@ the in-repo call-site count per offender was measured by AST across the five che
 
 **43 of 49 (88%) have two or fewer in-repo callers.** Exactly one genuine hot spot exists:
 `beads-fabro` `store.py::read_work_items` at **15**; the next is `livespec`
-`config_edit.py::write_config_value` at 6. So the cheap-five program is overwhelmingly
-small, local edits plus one function that needs real thought.
+`config_edit.py::write_config_value` at 6.
+
+⛔ **THIS PARAGRAPH USED TO CONCLUDE "so the cheap-five program is overwhelmingly small, local
+edits plus one function that needs real thought". THAT CONCLUSION IS FALSE and is withdrawn.**
+The COUNTS above are unchanged and still correct — what was wrong was reading them as a
+statement about EFFORT. Measured later in this file: **all 13 of `runtime`'s offenders live in
+files vendored into 2–4 other repos**, so 13 of the cheap five's 49 (**27%**) are coordinated
+multi-repo re-vendors that this table scores as ≤2-caller trivia. **A caller count is a
+statement about one repo; it was never a statement about cost.**
+
+The corrected reading: the cheap five is overwhelmingly small and local **in the four repos
+that carry no vendoring** (`dev-tooling` 2, `git-jsonl` 4, `livespec` 13, `beads-fabro` 17),
+plus `runtime`'s 13, which are not local at all.
 
 ⚠️ **A first attempt at this over-counted badly and is worth recording as a trap.** Counting
 calls by NAME across the universe put 13 offenders in the 6+ bucket, with five entries at
@@ -556,6 +567,13 @@ of conventional names inflates precisely the bucket you would make decisions on.
 Cross-repo consumption is a separate axis — it is what `cross_repo_public_api` declares and
 what the `cross-repo-public-api-declared` row measures — so a function a SIBLING imports has
 blast radius this number does not capture.
+
+⛔ **AND THAT LIMITATION WAS ITSELF UNDERSTATED — there are THREE channels, not two.** The
+paragraph above names in-repo callers and declared IMPORT edges. **Vendored source copies are a
+third**, and neither instrument sees them: a vendored copy is not a caller and not an import, so
+no declaration graph resolves it. Measured (below): of `runtime`'s 13 offenders, **3 are
+declared import edges and 10 are vendor-only** — so the declared-import axis, the one this note
+pointed at as the remedy, captures **3 of 13** of that repo's real exposure.
 
 ### 🔁 RECONCILED against `idlx`'s own decomposition — 4 of 5 agree exactly
 
