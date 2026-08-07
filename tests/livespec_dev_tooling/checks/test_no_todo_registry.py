@@ -210,6 +210,126 @@ def test_accepts_missing_coverage_file(
     ), f"missing coverage file should exit 0; got returncode={result.returncode}"
 
 
+_OWNED = (
+    '[{"heading": "## Foo", "spec_root": "/", "test": "TODO", ' '"work_item": "livespec-jvdvx4"}]'
+)
+_UNOWNED_EMPTY = '[{"heading": "## Foo", "spec_root": "/", "test": "TODO", "work_item": "   "}]'
+_UNOWNED_NON_STR = '[{"heading": "## Foo", "spec_root": "/", "test": "TODO", "work_item": 7}]'
+
+
+def _set_probe(*, monkeypatch: pytest.MonkeyPatch, verdict: bool | None) -> None:
+    """Replace the liveness seam with a SYNTHETIC probe.
+
+    Never contacts the real ledger: the seam is a module-level function and
+    this swaps it wholesale, so no tracker, socket, or `bd` invocation is
+    reachable from these tests.
+    """
+    monkeypatch.setattr(
+        _MODULE,
+        "_probe_work_item_liveness",
+        lambda *, work_item: verdict,  # noqa: ARG005
+    )
+
+
+def test_release_tier_passes_owned_entry_when_liveness_unverifiable(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Owned TODO + release lever + no reachable tracker → exit 0, UNVERIFIED diagnostic.
+
+    The ratified rule: "an owned live TODO does not block an unrelated
+    release." Absent a configured tracker, liveness is UNVERIFIED — which
+    must PASS, but must NOT be indistinguishable from a real check, so a
+    structured diagnostic naming liveness unverified is required.
+    """
+    _write_coverage(tmp_path=tmp_path, body=_OWNED)
+    result = _run_check(cwd=tmp_path, fail_var="true", monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 0, (
+        f"owned TODO must not fail the release tier; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+    combined = result.stdout + result.stderr
+    assert "liveness_unverified" in combined, (
+        f"an unreachable tracker must emit an UNVERIFIED diagnostic, never a silent pass; "
+        f"stderr={result.stderr!r}"
+    )
+
+
+def test_release_tier_fails_entry_with_whitespace_only_work_item(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A whitespace-only `work_item` is UNOWNED → release tier fails it."""
+    _write_coverage(tmp_path=tmp_path, body=_UNOWNED_EMPTY)
+    result = _run_check(cwd=tmp_path, fail_var="true", monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode != 0, (
+        f"whitespace-only work_item is unowned and must fail; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+
+
+def test_release_tier_fails_entry_with_non_string_work_item(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A non-string `work_item` is UNOWNED → release tier fails it."""
+    _write_coverage(tmp_path=tmp_path, body=_UNOWNED_NON_STR)
+    result = _run_check(cwd=tmp_path, fail_var="true", monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode != 0, (
+        f"non-string work_item is unowned and must fail; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+
+
+def test_release_tier_fails_owned_entry_whose_work_item_is_not_live(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Where liveness IS checkable, a closed/nonexistent `work_item` fails."""
+    _write_coverage(tmp_path=tmp_path, body=_OWNED)
+    _set_probe(monkeypatch=monkeypatch, verdict=False)
+    result = _run_check(cwd=tmp_path, fail_var="true", monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode != 0, (
+        f"a checkable-but-dead work_item must fail the release tier; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+    combined = result.stdout + result.stderr
+    assert (
+        '"level": "error"' in combined
+    ), f"a dead work_item should be error-level; stderr={result.stderr!r}"
+
+
+def test_release_tier_passes_owned_entry_whose_work_item_is_live(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Where liveness IS checkable and the `work_item` is live, the entry passes."""
+    _write_coverage(tmp_path=tmp_path, body=_OWNED)
+    _set_probe(monkeypatch=monkeypatch, verdict=True)
+    result = _run_check(cwd=tmp_path, fail_var="true", monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 0, (
+        f"an owned live TODO must not block a release; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+
+
+def test_per_commit_tier_unchanged_for_owned_entry(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """PER-COMMIT IS UNTOUCHED: an owned TODO still warns and exits 0.
+
+    Guards the property that makes this change landable — it is a strict
+    LOOSENING of the release tier only. The sibling per-commit tests above
+    cover the unowned case with the identical expectation, so together they
+    pin per-commit behaviour for BOTH ownership states.
+    """
+    _write_coverage(tmp_path=tmp_path, body=_OWNED)
+    result = _run_check(cwd=tmp_path, fail_var=None, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 0, (
+        f"per-commit tier must stay exit 0 for an owned TODO; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+    combined = result.stdout + result.stderr
+    assert (
+        '"level": "warning"' in combined
+    ), f"per-commit tier must still warn on a TODO entry; stderr={result.stderr!r}"
+
+
 def test_module_importable_without_running_main() -> None:
     """The check module imports cleanly without invoking main()."""
     module = _load_check_module()
