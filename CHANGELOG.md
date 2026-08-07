@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.20.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.20.2...v1.20.3) (2026-08-07)
+
+
+### Bug Fixes
+
+* **checks:** no_todo_registry release tier narrows to unowned entries ([dd5112e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/dd5112e3fe5d46334935553fa3c0a0c3df1481f3))
+
 ## [1.20.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.20.1...v1.20.2) (2026-08-06)
 
 
