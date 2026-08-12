@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.20.5](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.20.4...v1.20.5) (2026-08-12)
+
+
+### Bug Fixes
+
+* assert the converse — an archived thread may not name an open epic ([201cabb](https://github.com/thewoolleyman/livespec-dev-tooling/commit/201cabbdfb7f8626e4097093d3f7a2d315f0fad6))
+
 ## [1.20.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.20.3...v1.20.4) (2026-08-07)
 
 
