@@ -91,6 +91,15 @@ def _write_handoff(*, root: Path, thread: str, body: str) -> Path:
     return handoff
 
 
+def _write_archived_handoff(*, root: Path, thread: str, body: str) -> Path:
+    """Create `<root>/plan/archive/<thread>/handoff.md` with `body`."""
+    thread_dir = root / "plan" / "archive" / thread
+    thread_dir.mkdir(parents=True, exist_ok=True)
+    handoff = thread_dir / "handoff.md"
+    handoff.write_text(body, encoding="utf-8")
+    return handoff
+
+
 def _write_livespec_config(*, root: Path, prefix: str = "livespec-dev-tooling") -> None:
     """Create a minimal `.livespec.jsonc` carrying the store prefix."""
     (root / ".livespec.jsonc").write_text(
@@ -213,6 +222,30 @@ def test_armed_open_epic_passes(
         statuses={"livespec-dev-tooling-scsj5e": "backlog"},
     )
     assert result.returncode == 0, f"active→open epic should pass; stderr={result.stderr!r}"
+
+
+def test_armed_archived_open_epic_fails(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Armed: an archived thread pointing at an OPEN epic fails."""
+    _arm(monkeypatch)
+    _write_livespec_config(root=tmp_path)
+    _write_archived_handoff(
+        root=tmp_path,
+        thread="premature",
+        body=_anchor_body("livespec-dev-tooling-q3emww"),
+    )
+    result = _run(
+        cwd=tmp_path,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        statuses={"livespec-dev-tooling-q3emww": "backlog"},
+    )
+    assert result.returncode == 1, f"archived→open epic should fail; stderr={result.stderr!r}"
+    combined = result.stdout + result.stderr
+    assert "plan/archive/premature/handoff.md" in combined
+    assert "livespec-dev-tooling-q3emww" in combined
+    assert '"level": "error"' in combined
 
 
 def test_armed_cross_tenant_anchor_ignored(
