@@ -1,11 +1,17 @@
-"""plan_thread_epic_parity — active plan threads must not point at a done/closed epic.
+"""plan_thread_epic_parity — plan archive state must match ledger epic state.
 
-The ledger-state PARITY half of plan-lifecycle enforcement. For each ACTIVE plan
-handoff (`plan/*/handoff.md`, excluding `plan/archive/`), reads the ledger status
-of its `**Ledger anchor:**` epic and FAILS when an active thread points at a
-`done`/`closed` epic — the exact drift that leaves a completed plan thread
-un-archived. Only ids under the checked repo's tenant prefix are parity-checked;
-cross-tenant prose refs (e.g. `livespec-...`) are ignored (decisions 41/44/45).
+The ledger-state PARITY half of plan-lifecycle enforcement. It asserts both
+directions deliberately:
+
+* for each ACTIVE plan handoff (`plan/*/handoff.md`, excluding
+  `plan/archive/`), FAIL when the anchor epic is `done`/`closed` — the drift
+  that leaves a completed plan thread un-archived;
+* for each ARCHIVED plan handoff (`plan/archive/**/handoff.md`), FAIL when the
+  anchor epic is anything other than `done`/`closed` — the drift that archives
+  a thread while its owning epic is still in flight.
+
+Only ids under the checked repo's tenant prefix are parity-checked; cross-tenant
+prose refs (e.g. `livespec-...`) are ignored (decisions 41/44/45).
 
 ARMED-ONLY: self-skips (structured info, exit 0) UNLESS BOTH the RUN lever
 `LIVESPEC_RUN_PLAN_EPIC_PARITY` is truthy AND the beads credential
@@ -13,7 +19,11 @@ ARMED-ONLY: self-skips (structured info, exit 0) UNLESS BOTH the RUN lever
 `just check` in credential-less CI and in un-armed local runs — mirroring
 `check_mutation` (`LIVESPEC_RUN_MUTATION`) / `fleet_conformance`
 (`LIVESPEC_RUN_FLEET_CONFORMANCE`) for the RUN lever, and `master_ci_green` for
-the credential-absent skip. So it never self-gates a `just check`.
+the credential-absent skip. The archived-thread converse is also armed-only by
+explicit product decision, not by inheritance: it needs the same ledger status
+read as the active-thread assertion, and credential-less CI cannot distinguish
+an open epic from an unreadable ledger item. So it never self-gates a `just
+check`.
 
 The ledger read is an injected seam (`status_reader`) so tests exercise the armed
 path without a live ledger; the default reads `bd -C <cwd> show <id> --json`.
@@ -47,6 +57,7 @@ __all__: list[str] = []
 _PLAN_DIR_NAME = "plan"
 _ARCHIVE_DIR_NAME = "archive"
 _HANDOFF_GLOB = "*/handoff.md"
+_ARCHIVED_HANDOFF_GLOB = f"{_ARCHIVE_DIR_NAME}/**/handoff.md"
 _LIVESPEC_CONFIG = ".livespec.jsonc"
 _RUN_LEVER = "LIVESPEC_RUN_PLAN_EPIC_PARITY"
 _CRED_ENV = "BEADS_DOLT_PASSWORD"
@@ -60,6 +71,11 @@ _REMEDIATION = (
     "done/closed epic is the un-archived-thread drift this check prevents."
 )
 
+_ARCHIVED_REMEDIATION = (
+    "restore the thread to `plan/<topic>` until its ledger epic is done/closed; "
+    "an archived thread pointing at an open or unreadable epic is premature."
+)
+
 
 class StatusReader(Protocol):
     """Resolve a ledger epic id to its status string (or None when unresolvable)."""
@@ -69,11 +85,24 @@ class StatusReader(Protocol):
         ...
 
 
+class StatusPredicate(Protocol):
+    """Return True when a ledger status violates one side of parity."""
+
+    def __call__(self, *, status: str | None) -> bool:
+        """Return whether `status` is a parity violation."""
+        ...
+
+
 def _active_handoffs(*, plan_dir: Path) -> list[Path]:
     """Return active `plan/<topic>/handoff.md` paths, excluding `plan/archive/`."""
     return sorted(
         path for path in plan_dir.glob(_HANDOFF_GLOB) if path.parent.name != _ARCHIVE_DIR_NAME
     )
+
+
+def _archived_handoffs(*, plan_dir: Path) -> list[Path]:
+    """Return archived `plan/archive/**/handoff.md` paths."""
+    return sorted(plan_dir.glob(_ARCHIVED_HANDOFF_GLOB))
 
 
 def _tenant_id_re(*, tenant_prefix: str) -> re.Pattern[str]:
@@ -138,6 +167,49 @@ def _is_armed() -> bool:
     return bool(os.environ.get(_RUN_LEVER)) and bool(os.environ.get(_CRED_ENV))
 
 
+def _is_closed_status(*, status: str | None) -> bool:
+    """Return True when `status` is a ledger-closed state."""
+    return status in _CLOSED_STATUSES
+
+
+def _is_not_closed_status(*, status: str | None) -> bool:
+    """Return True when `status` is not a ledger-closed state."""
+    return status not in _CLOSED_STATUSES
+
+
+def _handoff_statuses(
+    *,
+    paths: list[Path],
+    tenant_id_re: re.Pattern[str],
+    reader: StatusReader,
+    repo: Path,
+) -> list[tuple[Path, str, str | None]]:
+    """Return same-tenant handoff anchor statuses for `paths`."""
+    statuses: list[tuple[Path, str, str | None]] = []
+    for path in paths:
+        anchor = _same_tenant_anchor(
+            text=path.read_text(encoding="utf-8"),
+            tenant_id_re=tenant_id_re,
+        )
+        if anchor is None:
+            continue
+        statuses.append((path, anchor, reader(epic_id=anchor, repo=repo)))
+    return statuses
+
+
+def _offenders(
+    *,
+    statuses: list[tuple[Path, str, str | None]],
+    violates: StatusPredicate,
+) -> list[tuple[Path, str, str]]:
+    """Return handoff statuses that violate a parity predicate."""
+    offenders: list[tuple[Path, str, str]] = []
+    for path, anchor, status in statuses:
+        if violates(status=status):
+            offenders.append((path, anchor, status or "unresolved"))
+    return offenders
+
+
 def main(*, status_reader: StatusReader | None = None) -> int:
     structlog.configure(
         processors=[
@@ -160,18 +232,24 @@ def main(*, status_reader: StatusReader | None = None) -> int:
     plan_dir = cwd / _PLAN_DIR_NAME
     if not plan_dir.is_dir():
         return 0
-    offenders: list[tuple[Path, str, str]] = []
-    for path in _active_handoffs(plan_dir=plan_dir):
-        tenant_id_re = _tenant_id_re(tenant_prefix=_store_prefix(cwd=cwd))
-        anchor = _same_tenant_anchor(
-            text=path.read_text(encoding="utf-8"),
-            tenant_id_re=tenant_id_re,
-        )
-        if anchor is None:
-            continue
-        status = reader(epic_id=anchor, repo=cwd)
-        if status in _CLOSED_STATUSES:
-            offenders.append((path, anchor, status))
+    tenant_id_re = _tenant_id_re(tenant_prefix=_store_prefix(cwd=cwd))
+    active_statuses = _handoff_statuses(
+        paths=_active_handoffs(plan_dir=plan_dir),
+        tenant_id_re=tenant_id_re,
+        reader=reader,
+        repo=cwd,
+    )
+    archived_statuses = _handoff_statuses(
+        paths=_archived_handoffs(plan_dir=plan_dir),
+        tenant_id_re=tenant_id_re,
+        reader=reader,
+        repo=cwd,
+    )
+    offenders = _offenders(statuses=active_statuses, violates=_is_closed_status)
+    archived_offenders = _offenders(
+        statuses=archived_statuses,
+        violates=_is_not_closed_status,
+    )
     for path, anchor, status in offenders:
         log.error(
             "active plan thread points at a done/closed ledger epic",
@@ -180,7 +258,15 @@ def main(*, status_reader: StatusReader | None = None) -> int:
             epic_status=status,
             remediation=_REMEDIATION,
         )
-    return 1 if offenders else 0
+    for path, anchor, status in archived_offenders:
+        log.error(
+            "archived plan thread points at an open or unreadable ledger epic",
+            file=str(path.relative_to(cwd)),
+            epic=anchor,
+            epic_status=status,
+            remediation=_ARCHIVED_REMEDIATION,
+        )
+    return 1 if offenders or archived_offenders else 0
 
 
 if __name__ == "__main__":
