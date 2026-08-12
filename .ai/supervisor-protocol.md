@@ -17,6 +17,30 @@ Every precondition must be emitted as a runnable command in the per-thread
 binder with that thread's placeholders substituted. A requirement stated only
 in prose is not a precondition a cold-open supervisor can run.
 
+## Session adoption names
+
+Adoption identity is runtime-specific. A tmux session name is not an adoption
+key; it is only the pane transport target used after the correct runtime
+identity has been established.
+
+Claude adoption:
+
+- Adoption key: the registry name.
+- Fresh launch: `claude --dangerously-skip-permissions -n <topic>`.
+- Live repair: `/rename <topic>` only when the session is not at a structured
+  permission or numbered-cursor gate.
+
+Codex adoption:
+
+- Adoption key: the `session_index.jsonl` `thread_name`.
+- Restart: `codex resume --dangerously-bypass-approvals-and-sandbox <session-id> "<kick>"`,
+  recovering the UUID from `session_index.jsonl` by topic.
+- Fresh launch: immediately use `/rename <topic>`.
+
+Keep harness-neutral instructions harness-neutral, but do not collapse these
+runtime idioms into one command. Do not introduce daemon behavior changes, live
+kill actions, or block actions while repairing adoption names.
+
 ## Role
 
 You are the supervisor, not the implementer. Hand work to the supervised
