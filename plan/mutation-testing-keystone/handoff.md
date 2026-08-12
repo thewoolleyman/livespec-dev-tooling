@@ -31,7 +31,7 @@ cd /data/projects/livespec && mise exec -- gh pr list --state open --limit 5 \
 ## Why this thread exists at all
 
 `livespec-mutreal` was a P2 epic with **one child**, both in `backlog`, the epic untouched
-since 2026-07-01 and the keystone since 2026-07-19 — and **no plan thread anywhere in the
+since 2026-07-01 and the keystone since 2026-07-19 — and **no plan anywhere in the
 fleet owned it**. Two of the three plan files that mention `mutreal` are **archived**; the
 only live one was `rop-railway-enforcement`'s handoff, which named it purely as a blocker.
 
