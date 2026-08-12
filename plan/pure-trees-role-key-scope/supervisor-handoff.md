@@ -292,7 +292,7 @@ does not launder a wrong premise.
   `8o8e.26`) and `livespec-orchestrator-beads-fabro` (`check-shell-quality`,
   the `fleet-shell-quality-enforcement` peer lane). Verify landability per repo
   before spending runner minutes on the `8zv3.4` fan-out.
-- **The plan thread is knowingly stale on one point and the ledger says so.**
+- **The plan is knowingly stale on one point and the ledger says so.**
   `handoff.md` still frames the scope-mismatch premise as *"INFERRED — attack
   this first"*. The ledger records it as CONFIRMED from ratified text
   (`livespec` `SPECIFICATION/non-functional-requirements.md:114`). A discharged
@@ -359,11 +359,11 @@ of). That is not a failure: the check proves a LIVE agent in the resolved pane,
 and a launch-time label is as weak an identity as a session name. Do not
 "correct" the label and do not treat the mismatch as a HALT.
 
-4. The plan thread exists inside the target repository:
+4. The plan exists inside the target repository:
 
 ```bash
 test -d "/data/projects/livespec-dev-tooling/plan/pure-trees-role-key-scope" \
-  || { echo "HALT: missing plan thread /data/projects/livespec-dev-tooling/plan/pure-trees-role-key-scope"; echo "REMEDY: create or choose the correct plan topic before supervising"; exit 1; }
+  || { echo "HALT: missing plan /data/projects/livespec-dev-tooling/plan/pure-trees-role-key-scope"; echo "REMEDY: create or choose the correct plan topic before supervising"; exit 1; }
 ```
 
 5. The worker pane cwd resolves inside the target repository:

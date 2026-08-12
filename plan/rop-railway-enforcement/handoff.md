@@ -11309,7 +11309,7 @@ closing `8o8e`. Full detail is on the `8o8e` epic.
 
 ## 🛑 CLOSURE PRECONDITION — read before planning anything else
 
-**Neither `8o8e` nor THIS PLAN THREAD may close until `8o8e.1` is fixed FLEET-WIDE and VERIFIED**
+**Neither `8o8e` nor THIS PLAN may close until `8o8e.1` is fixed FLEET-WIDE and VERIFIED**
 (maintainer-declared 2026-07-28). "Verified" means **per-repo evidence** that the ambiguous
 spelling is rejected and each repo declares the correct variant — **not** a green check in one
 repo. Eight Python-bearing repos, eight pieces of evidence.
@@ -11905,7 +11905,7 @@ repo that owns it**, and **an emptiness or absence that silently means consent**
    **Two things the distribution shows that the bare 19 hides.** The failures are CONCENTRATED —
    16 of 19 sit in three repos — so this is not a fleet-wide culture problem but three plan-heavy
    tenants. And `livespec-console-beads-fabro`, the ZERO-PYTHON member excluded from every
-   Python-based conformance row, carries **5 active plan threads, all failing**: the member the
+   Python-based conformance row, carries **5 active plans, all failing**: the member the
    fleet's checks are least able to see is not the member with the least going on.
 3. `file_lloc_hard_gate` — retired under `426a` for exactly this: "the omission read as
    conformance". Its retirement sequence is the migration template Phase 4 follows.

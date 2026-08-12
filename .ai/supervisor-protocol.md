@@ -8,7 +8,7 @@ Corrections log. This file supplies the common supervisor role contract.
 ## HALT-first preconditions
 
 Before driving a worker, verify the worker session, supervisor session, live
-agent drivers, plan-thread path, and worker cwd. Stop on the FIRST failure,
+agent drivers, plan path, and worker cwd. Stop on the FIRST failure,
 report the exact expected name, and act on the labelled `REMEDY:`. Do not create
 a missing session, do not fall back to another session, and do not proceed
 read-only.
@@ -51,7 +51,7 @@ contradicts yours, you are wrong.
 
 Filed status is a claim with a timestamp. Before carrying forward any item
 state, dependency state, acceptance status, or "already discharged" claim from
-a handoff, marker, or plan thread, re-measure it from the ledger and state the
+a handoff, marker, or plan, re-measure it from the ledger and state the
 measurement time. Each binder emits this command with its ledger anchor
 substituted:
 

@@ -99,7 +99,7 @@ Report which driver was found.
 tmux has-session -t '=rop-railway-enforcement-supervisor:'
 ```
 
-4. The plan thread exists INSIDE the target repo — absolute path, because
+4. The plan exists INSIDE the target repo — absolute path, because
 nothing in this charter establishes a working directory and a bare `plan/`
 check passes while pointed at the wrong repository:
 
@@ -534,7 +534,7 @@ PR into either is a doomed spend — verify landability before pushing anywhere.
 The maintainer asked for this track to become small, cohesive, decoupled and achievable
 without churn. What moved, and where:
 
-| concern | now owned by | plan thread |
+| concern | now owned by | plan |
 |---|---|---|
 | `pure_trees` role-key scope + the ROP check's decoupling from it + per-repo carve status | **`livespec-dev-tooling-8zv3`** (P1 epic, NEW) | `plan/pure-trees-role-key-scope/` |
 | `livespec-mutreal.1` — the mutation-testing keystone | `livespec-mutreal` (P2, **`livespec`** ledger) | `plan/mutation-testing-keystone/` ⚠️ housed here only because `livespec` is frozen; MOVE IT when that clears |
