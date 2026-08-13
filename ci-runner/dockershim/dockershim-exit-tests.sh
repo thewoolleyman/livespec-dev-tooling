@@ -136,5 +136,54 @@ printf '\n== T11: an uncontended prune does not stall ==\n'
 # fix would tax every single-job run.
 expect_runs "T11 network prune runs immediately when nothing holds the lock" network prune --force --filter label=x
 
+printf '\n== T12-T14: the scrubbed hook environment is repaired before podman sees it ==\n'
+# The container hooks hand the docker CLI the JOB CONTAINER's environment, so
+# HOME points inside the container and PATH / XDG_RUNTIME_DIR are absent. podman
+# derives real host paths from all three and dies without them (see the shim's
+# header). Assert the REAL DOCKER is reached with a usable environment, whatever
+# the shim was handed. Tested behaviorally — the fake records what it received.
+FAKE_ENV="$TMP/fake-docker-env"
+cat >"$FAKE_ENV" <<'EOF'
+#!/usr/bin/env bash
+{
+  printf 'HOME=%s\n' "${HOME-<unset>}"
+  printf 'PATH=%s\n' "${PATH-<unset>}"
+  printf 'XDG_RUNTIME_DIR=%s\n' "${XDG_RUNTIME_DIR-<unset>}"
+} >"$FAKE_DOCKER_ENV_LOG"
+exit 0
+EOF
+chmod +x "$FAKE_ENV"
+
+# A PATH deliberately missing the system directories, and the container's HOME.
+# XDG_RUNTIME_DIR is unset entirely. `ps` is chosen because it takes no lock, so
+# this measures the environment and nothing else. PATH cannot be emptied outright:
+# the shim's own `#!/usr/bin/env bash` needs to find bash.
+env -u XDG_RUNTIME_DIR \
+    HOME=/github/home \
+    PATH=/nonexistent-hook-path:/bin \
+    CI_RUNNER_REAL_DOCKER="$FAKE_ENV" \
+    CI_RUNNER_PODMAN_LOCK="$LOCKFILE" \
+    FAKE_DOCKER_ENV_LOG="$TMP/env.log" \
+    timeout 3 "$SHIM" ps --all >/dev/null 2>&1
+
+real_home="$(getent passwd "$(id -u)" | cut -d: -f6)"
+if grep -qx "HOME=$real_home" "$TMP/env.log"; then
+  ok "T12 the container's HOME is replaced with the invoking account's real home"
+else
+  bad "T12 HOME repaired (got: $(grep '^HOME=' "$TMP/env.log"))"
+fi
+
+if grep -q '^PATH=.*:/usr/bin' "$TMP/env.log"; then
+  ok "T13 the system directories podman needs are present on PATH"
+else
+  bad "T13 PATH repaired (got: $(grep '^PATH=' "$TMP/env.log"))"
+fi
+
+if grep -qx "XDG_RUNTIME_DIR=/run/user/$(id -u)" "$TMP/env.log"; then
+  ok "T14 an absent XDG_RUNTIME_DIR is defaulted to the per-user runtime dir"
+else
+  bad "T14 XDG_RUNTIME_DIR repaired (got: $(grep '^XDG_RUNTIME_DIR=' "$TMP/env.log"))"
+fi
+
 printf '\nresult: %s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
