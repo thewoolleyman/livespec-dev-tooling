@@ -68,6 +68,23 @@ done
 grep -rqE "^\s*${RUNNER_USER}\b" /etc/sudoers /etc/sudoers.d/ 2>/dev/null && { echo "FATAL: $RUNNER_USER has sudoers entry"; exit 1; }
 grep -q "^${RUNNER_USER}:" /etc/subuid || echo "WARN: no subuid range for $RUNNER_USER (useradd usually assigns)"
 loginctl enable-linger "$RUNNER_USER"
+# `enable-linger` RETURNS BEFORE the user manager is running, and step 4 below
+# talks to that manager's D-Bus socket. On a host where $RUNNER_USER is created
+# in the same run, provisioning therefore RACES the manager it is about to use
+# and dies with:
+#   Failed to connect to user scope bus via local transport: No such file or directory
+# Observed on a fresh Ubuntu 26.04 host 2026-08-13; a second run of this
+# idempotent script then succeeded, which is precisely what makes the race easy
+# to mistake for a transient and "fix" by re-running. Wait for the socket
+# instead, so a first run on a fresh host converges like every later one.
+RUNNER_UID=$(id -u "$RUNNER_USER")
+systemctl start "user@${RUNNER_UID}.service"
+for _ in $(seq 1 30); do
+  [ -S "/run/user/${RUNNER_UID}/bus" ] && break
+  sleep 1
+done
+[ -S "/run/user/${RUNNER_UID}/bus" ] \
+  || { echo "FATAL: user bus for $RUNNER_USER did not appear within 30s"; exit 1; }
 runuser -u "$RUNNER_USER" -- mkdir -p "${RUNNER_HOME}/.cache/uv" "${RUNNER_HOME}/.cargo/registry" "${RUNNER_HOME}/.config/containers"
 
 # ---------------------------------------------------------------------------
