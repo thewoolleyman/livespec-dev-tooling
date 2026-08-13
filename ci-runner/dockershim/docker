@@ -44,16 +44,116 @@
 # putting a multi-minute serial floor under a 60-job matrix.
 set -uo pipefail
 
+# THE CONTAINER HOOKS INVOKE US WITH A SCRUBBED ENVIRONMENT, and rootless podman
+# cannot run without the three variables they drop. The runner's hook layer hands
+# the docker CLI the JOB CONTAINER's environment rather than the runner account's,
+# so what arrives is (observed live 2026-08-13, by dumping `env` from this shim on
+# a `start` call) only HOME and DOCKER_HOST — HOME pointing INSIDE the container:
+#
+#   HOME=/github/home
+#   DOCKER_HOST=unix:///run/user/1001/podman/podman.sock
+#
+# Docker-the-CLI tolerates that. podman does not, because it derives real paths
+# from all three:
+#
+#   HOME             podman resolves its storage/config roots from $HOME, so the
+#                    container's /github/home (which does not exist on the host)
+#                    kills `docker create` before it does any work:
+#                      cannot resolve /github/home: lstat /github: no such file
+#                    That is the FIRST failure of a containerized job. What the
+#                    runner then surfaces is a downstream red herring — the next
+#                    step reads a null container and reports
+#                      TypeError: Cannot read properties of null (reading 'container')
+#                    so the visible error names the JS hook layer, not this.
+#   PATH             absent entirely; podman looks up its network helper on PATH:
+#                      setting up Pasta: could not find pasta ... in $PATH
+#   XDG_RUNTIME_DIR  absent; podman falls off the per-user runtime dir holding the
+#                    rootless socket and the lock state LOCK below is built from.
+#
+# Restore all three from the INVOKING ACCOUNT rather than trusting what was
+# inherited. This is the same docker-vs-podman compat seam the bare-`logout`
+# translation below occupies: the hooks are not wrong by docker's contract, so the
+# translation belongs here rather than in the hooks.
+#
+# Replaying a failing `docker create` BY HAND always succeeded, which is what made
+# this look like a payload or version problem — a hand shell simply has the real
+# environment. Bisect by environment, not by argv.
+HOME="$(getent passwd "$(id -u)" | cut -d: -f6)"
+export HOME
+# Append rather than replace: a PATH the hooks DID set stays authoritative, and
+# the system directories podman needs are guaranteed present either way.
+export PATH="${PATH:+$PATH:}/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+
 # Both overridable so dockershim-exit-tests.sh can drive the lock discipline
 # against a fake docker without a podman on the box. Defaults are the live paths.
 REAL_DOCKER="${CI_RUNNER_REAL_DOCKER:-/usr/bin/docker}"
 # ci-runner-owned tmpfs; flock creates the file if absent.
 LOCK="${CI_RUNNER_PODMAN_LOCK:-${XDG_RUNTIME_DIR:-/run/user/1001}/ci-runner-podman-db.lock}"
 
-sub="${1:-}"
-sub2="${2:-}"
+# THE SUBCOMMAND IS NOT ALWAYS $1. The container hooks invoke docker with GLOBAL
+# options before the subcommand — e.g.
+#   docker --config /…/_temp/.docker_<uuid> login -u … --password-stdin ghcr.io
+#   docker --config /…/_temp/.docker_<uuid> logout
+# so reading $1 as the subcommand yields "--config" and every lock decision below
+# is silently wrong for exactly the calls the hooks make. Scan past leading global
+# options instead, consuming the value of the ones that take one.
+_docker_subcommand() {
+  local skip_next=0
+  for arg in "$@"; do
+    if [ "$skip_next" = 1 ]; then skip_next=0; continue; fi
+    case "$arg" in
+      # Global options that take a separate value.
+      --config | --context | -c | --host | -H | --log-level | -l \
+      | --tlscacert | --tlscert | --tlskey)
+        skip_next=1
+        ;;
+      # Any other option (boolean, or --opt=value) carries no separate value.
+      -*) ;;
+      *) printf '%s\n' "$arg"; return 0 ;;
+    esac
+  done
+  printf '\n'
+}
 
-if [ "$sub" = "network" ] && [ "$sub2" = "prune" ]; then
+sub="$(_docker_subcommand "$@")"
+
+# Positional arguments AFTER the subcommand, used only to distinguish
+# `network prune` from other network verbs and to detect a bare `logout`.
+_docker_operands() {
+  local seen_sub=0 skip_next=0
+  for arg in "$@"; do
+    if [ "$skip_next" = 1 ]; then skip_next=0; continue; fi
+    case "$arg" in
+      --config | --context | -c | --host | -H | --log-level | -l \
+      | --tlscacert | --tlscert | --tlskey)
+        [ "$seen_sub" = 1 ] && printf '%s\n' "$arg"
+        skip_next=1
+        ;;
+      -*) ;;
+      *)
+        if [ "$seen_sub" = 1 ]; then printf '%s\n' "$arg"; else seen_sub=1; fi
+        ;;
+    esac
+  done
+}
+
+operand1="$(_docker_operands "$@" | head -1)"
+
+# DOCKER-VS-PODMAN COMPAT: a bare `logout`. Docker logs out of its default
+# registry when given none; podman REFUSES, and the container hooks always call
+# it bare during teardown:
+#   Error: no registries found in registries.conf, a registry must be provided
+# That exits 125 and reds the job AFTER its work has already passed — the network
+# was created, the ghcr.io login succeeded, and the image pulled. `--all` is the
+# faithful translation: log out of everything this job logged into. Observed
+# 2026-08-13 on a fresh host; it is the last thing standing between a correctly
+# provisioned host and a green containerized job.
+if [ "$sub" = "logout" ] && [ -z "$operand1" ]; then
+  exec "$REAL_DOCKER" "$@" --all
+fi
+
+if [ "$sub" = "network" ] && [ "$operand1" = "prune" ]; then
   exec /usr/bin/flock -x "$LOCK" "$REAL_DOCKER" "$@"
 fi
 
