@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.21.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.20.9...v1.21.0) (2026-08-13)
+
+
+### Features
+
+* **ci-runner:** support per-repo slot counts in the supervisor ([775728c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/775728c34857ec71dddb2ecdbc7363b8e82fb9c0))
+
 ## [1.20.9](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.20.8...v1.20.9) (2026-08-13)
 
 
