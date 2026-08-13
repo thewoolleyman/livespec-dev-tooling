@@ -8,7 +8,10 @@ directions deliberately:
   that leaves a completed plan thread un-archived;
 * for each ARCHIVED plan handoff (`plan/archive/**/handoff.md`), FAIL when the
   anchor epic is anything other than `done`/`closed` — the drift that archives
-  a thread while its owning epic is still in flight.
+  a thread while its owning epic is still in flight; and FAIL when the archived
+  anchor has same-tenant replacement descendants that are not completion-closed
+  — the drift that treats a procedural regroom-out/supersession closure as
+  finished work.
 
 Only ids under the checked repo's tenant prefix are parity-checked; cross-tenant
 prose refs (e.g. `livespec-...`) are ignored (decisions 41/44/45).
@@ -36,7 +39,6 @@ structlog (JSON to stderr); the vendored copy under
 
 from __future__ import annotations
 
-import json
 import os
 import re
 import subprocess
@@ -50,6 +52,13 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import jsoncomment  # noqa: E402  — vendor-path-aware import after sys.path insert.
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
+
+from livespec_dev_tooling.checks._plan_thread_ledger import (  # noqa: E402
+    ItemReader,
+    bd_items_reader,
+    descendant_offenders,
+    parse_status,
+)
 
 __all__: list[str] = []
 
@@ -74,6 +83,12 @@ _REMEDIATION = (
 _ARCHIVED_REMEDIATION = (
     "restore the thread to `plan/<topic>` until its ledger epic is done/closed; "
     "an archived thread pointing at an open or unreadable epic is premature."
+)
+
+_DESCENDANT_REMEDIATION = (
+    "restore the thread to `plan/<topic>` until every replacement descendant "
+    "that depends on its anchor epic is closed with a completion-shaped "
+    "resolution; a procedural anchor closure is not completion evidence."
 )
 
 
@@ -132,21 +147,9 @@ def _same_tenant_anchor(*, text: str, tenant_id_re: re.Pattern[str]) -> str | No
     return token if tenant_id_re.match(token) is not None else None
 
 
-def _parse_status(*, text: str) -> str | None:
-    """Extract the `status` field from `bd show --json` output, tolerating a preamble."""
-    starts = [pos for pos in (text.find("{"), text.find("[")) if pos >= 0]
-    if not starts:
-        return None
-    parsed = json.loads(text[min(starts) :])
-    if isinstance(parsed, list):
-        parsed_list = cast("list[object]", parsed)
-        record: object = parsed_list[0] if parsed_list else {}
-    else:
-        record = parsed
-    if not isinstance(record, dict):
-        return None
-    status = cast("dict[str, object]", record).get("status")
-    return status if isinstance(status, str) else None
+def _is_armed() -> bool:
+    """True iff the RUN lever is truthy AND the beads credential is present."""
+    return bool(os.environ.get(_RUN_LEVER)) and bool(os.environ.get(_CRED_ENV))
 
 
 def _bd_status_reader(*, epic_id: str, repo: Path) -> str | None:
@@ -159,12 +162,7 @@ def _bd_status_reader(*, epic_id: str, repo: Path) -> str | None:
     )
     if completed.returncode != 0:
         return None
-    return _parse_status(text=completed.stdout)
-
-
-def _is_armed() -> bool:
-    """True iff the RUN lever is truthy AND the beads credential is present."""
-    return bool(os.environ.get(_RUN_LEVER)) and bool(os.environ.get(_CRED_ENV))
+    return parse_status(text=completed.stdout)
 
 
 def _is_closed_status(*, status: str | None) -> bool:
@@ -210,7 +208,11 @@ def _offenders(
     return offenders
 
 
-def main(*, status_reader: StatusReader | None = None) -> int:
+def main(
+    *,
+    status_reader: StatusReader | None = None,
+    item_reader: ItemReader | None = None,
+) -> int:
     structlog.configure(
         processors=[
             structlog.processors.add_log_level,
@@ -228,6 +230,7 @@ def main(*, status_reader: StatusReader | None = None) -> int:
         )
         return 0
     reader: StatusReader = _bd_status_reader if status_reader is None else status_reader
+    read_items: ItemReader = bd_items_reader if item_reader is None else item_reader
     cwd = Path.cwd()
     plan_dir = cwd / _PLAN_DIR_NAME
     if not plan_dir.is_dir():
@@ -250,6 +253,12 @@ def main(*, status_reader: StatusReader | None = None) -> int:
         statuses=archived_statuses,
         violates=_is_not_closed_status,
     )
+    incomplete_descendants = descendant_offenders(
+        statuses=archived_statuses,
+        item_reader=read_items,
+        tenant_id_re=tenant_id_re,
+        repo=cwd,
+    )
     for path, anchor, status in offenders:
         log.error(
             "active plan thread points at a done/closed ledger epic",
@@ -266,7 +275,18 @@ def main(*, status_reader: StatusReader | None = None) -> int:
             epic_status=status,
             remediation=_ARCHIVED_REMEDIATION,
         )
-    return 1 if offenders or archived_offenders else 0
+    for path, anchor, descendant in incomplete_descendants:
+        log.error(
+            "archived plan thread anchor has an incomplete replacement descendant",
+            file=str(path.relative_to(cwd)),
+            epic=anchor,
+            descendant=descendant,
+            remediation=_DESCENDANT_REMEDIATION,
+        )
+    return 1 if offenders or archived_offenders or incomplete_descendants else 0
+
+
+_parse_status = parse_status
 
 
 if __name__ == "__main__":
