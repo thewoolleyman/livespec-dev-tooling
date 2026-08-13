@@ -299,4 +299,47 @@ case "$sub" in
     ;;
 esac
 
+# DOCKER-VS-PODMAN COMPAT: a masked upstream podman bug corrupts `exec` under
+# concurrency. libpod's SQLiteState.UpdateContainer (podman-container-tools/
+# podman, libpod/sqlite_state.go) only returns early when its container-state
+# row Scan fails with sql.ErrNoRows; any OTHER scan error (confirmed present
+# in podman main as of 2026-08-13, unfixed upstream) falls through and
+# unmarshals an EMPTY string, producing:
+#   Error: syncing container <id> state to update exec session <id>:
+#   unmarshalling container state JSON: readObjectStart: expect { or n,
+#   but found  , error found in #0 byte of ...
+# Observed live under this pool's concurrency (2/71 jobs in one self-hosted
+# run, 0/75 in the very next) — see plan/fleet-ci-runner-pool/handoff.md
+# (livespec repo) "Issue C". This is a transient scan failure inside podman,
+# not a real exec failure, so a bounded retry recovers it without masking a
+# genuine command failure: only THIS exact signature retries, everything
+# else forwards immediately on its first attempt.
+#
+# Deliberately UNLOCKED, unlike `create`/`network` above — see the header.
+# `exec` is the highest-volume, most latency-sensitive operation in the
+# whole shim (every job step runs one), so this wraps it in a bounded retry
+# rather than a lock: a lock here would serialize the very parallelism this
+# pool exists for, and would not even address this bug — the corrupting
+# read/write both happen INSIDE podman's own SQLite layer, a resource this
+# shim's flock has no visibility into.
+if [ "$sub" = "exec" ]; then
+  _errfile="$(mktemp "${TMPDIR:-/tmp}/ci-runner-dockershim-exec.XXXXXX")"
+  _attempt=1
+  while :; do
+    "$REAL_DOCKER" "$@" 2>"$_errfile"
+    _status=$?
+    [ "$_status" -eq 0 ] && break
+    if [ "$_attempt" -ge 3 ] \
+      || ! grep -q 'unmarshalling container.*state JSON' "$_errfile" \
+      || ! grep -q 'readObjectStart: expect { or n' "$_errfile"; then
+      break
+    fi
+    _attempt=$((_attempt + 1))
+    sleep 1
+  done
+  cat "$_errfile" >&2
+  rm -f "$_errfile"
+  exit "$_status"
+fi
+
 exec "$REAL_DOCKER" "$@"
