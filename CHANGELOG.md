@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.20.8](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.20.7...v1.20.8) (2026-08-13)
+
+
+### Bug Fixes
+
+* **ci-runner:** create missing bind sources, as dockerd would ([d712b7b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d712b7bcaf4ac7b2aefcb54d279dd6b9fcca11e0))
+* **ci-runner:** preserve the ORIGINAL HOME baked into a bare -e HOME at create ([e877c3e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e877c3e7210ae7ca6a7232c444ccc362399de881))
+
 ## [1.20.7](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.20.6...v1.20.7) (2026-08-13)
 
 
