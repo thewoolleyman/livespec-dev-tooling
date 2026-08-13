@@ -2,7 +2,7 @@
 # warm-ci-cache.sh — the TRUSTED write-back path for T10 cache-tiering
 # (livespec-dev-tooling-9mp).
 #
-# sanitize-hook.js mounts /home/ci-runner/cache/<reposlug>/{cargo,target,uv} into
+# sanitize-hook.js mounts /var/cache/ci-runner/<reposlug>/{cargo,target,uv} into
 # each job container READ-ONLY through a throwaway overlay, so a job container can
 # NEVER write the shared lower. Something trusted must therefore populate (and
 # refresh) those lowers. That is THIS script: it builds a repo checkout in the
@@ -31,7 +31,7 @@
 set -euo pipefail
 
 RUNNER_USER=ci-runner
-CACHE_ROOT=/home/${RUNNER_USER}/cache
+CACHE_ROOT=${CI_RUNNER_CACHE_ROOT:-/var/cache/ci-runner}
 IMAGE=ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-v0.48.2
 REPO="" CLONE="" RUST=0 WITH_TOOLS=0 WARM_CMD=""
 
