@@ -61,7 +61,7 @@ const BAD_OPTS = [
 // real fuse mount (assume success). Set ONLY by the isolation/unit tests; never
 // in production. CACHE_ROOT can be overridden for tests to a temp tree.
 const TEST_MODE = process.env.LIVESPEC_HOOK_TEST_MODE === '1';
-const CACHE_ROOT = process.env.LIVESPEC_HOOK_CACHE_ROOT || '/home/ci-runner/cache';
+const CACHE_ROOT = process.env.LIVESPEC_HOOK_CACHE_ROOT || '/var/cache/ci-runner';
 const OVERLAY_ROOT = path.join(CACHE_ROOT, '.overlay');
 // Each warm-cache subdir maps to a container mount target + the env var that
 // points the toolchain at it. Set the env EXPLICITLY (not via ~ expansion) —

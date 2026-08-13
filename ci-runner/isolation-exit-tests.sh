@@ -138,7 +138,7 @@ done
 [ "$bad" = 0 ] && pass "no self-hosted job reachable from a forbidden trigger" || fail "self-hosted job on forbidden trigger"
 
 echo "== T10: trust-tiered cache — a job cannot mutate the shared warm cache =="
-# sanitize-hook.js mounts /home/ci-runner/cache/<repo>/{cargo,target,uv} into a
+# sanitize-hook.js mounts /var/cache/ci-runner/<repo>/{cargo,target,uv} into a
 # job READ-ONLY via a throwaway overlay (upper per-job, discarded). Prove the
 # security invariant directly: a container writing THROUGH the injected mount
 # leaves the shared LOWER byte-for-byte unchanged, so a fork PR job physically
@@ -160,11 +160,12 @@ sudo -n -u "$RU" rm -rf "$T10D" 2>/dev/null || true
 # Defense-in-depth: the hook STRIPS a workflow-declared raw-cache mount so a fork
 # PR cannot bind the lower read-write itself (drives the installed hook via node).
 HOOK=${LIVESPEC_SANITIZE_HOOK:-/home/$RU/actions-runner/container-hooks/sanitize-hook.js}
+CACHE_ROOT=${LIVESPEC_HOOK_CACHE_ROOT:-/var/cache/ci-runner}
 NODE=$(command -v node || true)
 if [ -n "$NODE" ] && [ -f "$HOOK" ]; then
-  fp='{"command":"prepare_job","args":{"container":{"image":"x","userMountVolumes":[{"sourceVolumePath":"/home/ci-runner/cache/foo/cargo","targetVolumePath":"/evil","readOnly":false}],"environmentVariables":{}}}}'
+  fp="{\"command\":\"prepare_job\",\"args\":{\"container\":{\"image\":\"x\",\"userMountVolumes\":[{\"sourceVolumePath\":\"${CACHE_ROOT}/foo/cargo\",\"targetVolumePath\":\"/evil\",\"readOnly\":false}],\"environmentVariables\":{}}}}"
   out=$(printf '%s\n' "$fp" | LIVESPEC_HOOK_TEST_MODE=1 "$NODE" "$HOOK" 2>/dev/null || echo '{}')
-  echo "$out" | grep -q '/home/ci-runner/cache/foo/cargo' \
+  echo "$out" | grep -q "${CACHE_ROOT}/foo/cargo" \
     && fail "hook did not strip a forged raw-cache mount" \
     || pass "hook strips a forged raw-cache mount"
 else

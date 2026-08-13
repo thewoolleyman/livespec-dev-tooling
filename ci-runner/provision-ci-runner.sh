@@ -217,7 +217,7 @@ log "8. T10 cache-tiering — per-repo warm-cache lower dirs (livespec-dev-tooli
 #            that make the Rust matrix a 2x regression without a cache)
 # The CACHE_ROOT's mere existence is the kill switch — remove it and the hook is
 # a byte-for-byte no-op of the Phase-0 containment behaviour.
-CACHE_ROOT=${RUNNER_HOME}/cache
+CACHE_ROOT=${CI_RUNNER_CACHE_ROOT:-/var/cache/ci-runner}
 RUST_REPOSLUGS="${CI_RUNNER_RUST_REPOSLUGS:-thewoolleyman-livespec-console-beads-fabro}"
 runuser -u "$RUNNER_USER" -- bash -eu <<EOF
 mkdir -p "${CACHE_ROOT}/.overlay"
