@@ -153,12 +153,87 @@ if [ "$sub" = "logout" ] && [ -z "$operand1" ]; then
   exec "$REAL_DOCKER" "$@" --all
 fi
 
+# DOCKER-VS-PODMAN COMPAT: missing bind-mount SOURCE directories. Docker creates
+# a bind source that does not exist; podman refuses and exits 125:
+#   Error: statfs /home/ci-runner/runners/<slot>/_work/_actions: no such file or
+#   directory
+# The runner emits `_work/_actions`, `_work/_tool` and `_work/_temp/_github_*` as
+# system mounts BEFORE it has created them — on a fresh slot they appear first at
+# container-prepare time — so every containerized job on a slot that has not run
+# one before dies here. Observed live 2026-08-13 on slot 11, as the NEXT failure
+# after the scrubbed-environment fix above stopped masking it.
+#
+# Create them, which is exactly what dockerd would have done. Scoped narrowly:
+# only on `create`, only for absolute paths (a leading `/` is what distinguishes
+# a bind from a NAMED volume, which podman manages itself and which must not be
+# turned into a stray directory), and the container-side half of `SRC:DST` is
+# never touched. A path that already exists is left alone, so permissions and
+# ownership of a warm cache are never rewritten.
+if [ "$sub" = "create" ]; then
+  for _arg in "$@"; do
+    case "$_arg" in
+      -v=/*|--volume=/*) _spec="${_arg#*=}" ;;
+      /*:/*)             _spec="$_arg" ;;
+      *)                 continue ;;
+    esac
+    _src="${_spec%%:*}"
+    [ -n "$_src" ] && [ ! -e "$_src" ] && mkdir -p "$_src" 2>/dev/null
+  done
+fi
+
 if [ "$sub" = "network" ] && [ "$operand1" = "prune" ]; then
   exec /usr/bin/flock -x "$LOCK" "$REAL_DOCKER" "$@"
 fi
 
+# DOCKER-VS-PODMAN COMPAT: podman cannot tear down its own rootless network
+# helper from the API service, and reds an already-passed job for it:
+#   Error: cleaning up container <id>: removing container <id> network:
+#     * rootless netns: kill network process: permission denied
+#   exit 125
+# podman does the teardown from inside its rootless USER NAMESPACE while pasta
+# runs outside it (reparented to PID 1), and signalling across that boundary is
+# EPERM. It is NOT a plain permission problem — `kill -0` on that same pasta pid
+# from a ci-runner shell succeeds — and NOT a concurrency race: it reproduces
+# with ref-count 1 and a single container, and with this shim bypassed entirely.
+#
+# The container itself IS removed; only the helper cleanup fails. So the failure
+# is reported on work that already succeeded, exactly like the bare-`logout`
+# case above.
+#
+# Tolerate it, but NEVER blindly: swallow the failure only when the error is
+# THIS one AND every container named on the command line is genuinely gone. Any
+# other error, or a container still present, exits with podman's own status. The
+# original output is always reproduced on stderr, so nothing is hidden — only
+# the exit status is translated.
+if [ "$sub" = "rm" ]; then
+  _out="$(/usr/bin/flock -s "$LOCK" "$REAL_DOCKER" "$@" 2>&1)"
+  _status=$?
+  if [ "$_status" -eq 0 ]; then
+    [ -n "$_out" ] && printf '%s\n' "$_out"
+    exit 0
+  fi
+  printf '%s\n' "$_out" >&2
+  case "$_out" in
+    *"rootless netns"*"kill network process"*) ;;
+    *) exit "$_status" ;;
+  esac
+  _still_present=0
+  _operands="$(_docker_operands "$@")"
+  for _id in $_operands; do
+    if "$REAL_DOCKER" inspect "$_id" >/dev/null 2>&1; then
+      _still_present=1
+    fi
+  done
+  if [ "$_still_present" -eq 1 ]; then
+    printf 'dockershim: rootless-netns teardown failed AND a container survives; not tolerated\n' >&2
+    exit "$_status"
+  fi
+  printf 'dockershim: tolerated podman rootless-netns teardown failure (containers removed)\n' >&2
+  exit 0
+fi
+
 case "$sub" in
-  create | rm | network)
+  create | network)
     exec /usr/bin/flock -s "$LOCK" "$REAL_DOCKER" "$@"
     ;;
 esac
