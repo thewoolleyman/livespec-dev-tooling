@@ -40,6 +40,21 @@ IMG=${LIVESPEC_CI_RUNNER_IMAGE:-$_ISO_DERIVED}
 echo "== image under test: $IMG =="
 KIND2=(/var/lib/doltdb /data/projects/1password-env-wrapper/.env.local)
 WF=${1:-/data/projects/livespec/.github/workflows}   # workflows dir for static audit
+# Resolve before the chdir below, so a RELATIVE workflows argument still works.
+[ -d "$WF" ] && WF=$(cd "$WF" && pwd)
+
+# RUN FROM A NEUTRAL DIRECTORY. Most tests below drop privileges to $RU, and an
+# invoker's cwd is routinely unreadable by that account — a maintainer home is
+# mode 0750, so `sudo -u $RU podman ...` launched from it dies with
+#   cannot chdir to /home/<invoker>: Permission denied
+#   Error: setting up the process
+# before the container ever starts. The probes then capture EMPTY output, and
+# empty compares unequal to the expected value, so T7, T8, T10 and T11 all report
+# FAIL. Observed 2026-08-13: the identical host scored 5 fail from a home
+# directory and 0 fail from /tmp. That failure mode is worse than a crash — it
+# accuses a correctly contained host of breaching containment, and the natural
+# next move is to go "fix" containment that was never broken.
+cd / || exit 1
 P=0 F=0 S=0
 pass(){ echo "  PASS $1"; P=$((P+1)); }
 fail(){ echo "  FAIL $1"; F=$((F+1)); }
