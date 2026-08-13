@@ -78,12 +78,62 @@ set -uo pipefail
 # Replaying a failing `docker create` BY HAND always succeeded, which is what made
 # this look like a payload or version problem — a hand shell simply has the real
 # environment. Bisect by environment, not by argv.
+#
+# CAPTURE BEFORE OVERRIDING: `docker create` carries a BARE `-e HOME` (no
+# `=value`) — docker's "pass through MY OWN HOME into the container" convention —
+# and it is BAKED into the container's persistent env at create time, becoming
+# the default HOME for every later `exec` that does not specify its own. If we
+# export the repaired (real-host) HOME first and let that flag pick it up, the
+# container's baked HOME becomes the HOST account's home (e.g. /home/ci-runner)
+# instead of whatever the hooks intended (typically /github/home) — invisible
+# until a later exec step, inside that same container, does something HOME-
+# sensitive. Observed live 2026-08-13: `git config --global --add
+# safe.directory` failed with `could not lock config file
+# /home/ci-runner/.gitconfig: No such file or directory` — the HOST path,
+# leaked into a container session, on a path that does not exist there.
+# Preserve the ORIGINAL value so a bare `-e HOME` still bakes what it always
+# baked; only THIS shim's OWN process (talking to the podman socket) gets the
+# repaired one.
+_ORIGINAL_HOME="${HOME-}"
 HOME="$(getent passwd "$(id -u)" | cut -d: -f6)"
 export HOME
 # Append rather than replace: a PATH the hooks DID set stays authoritative, and
-# the system directories podman needs are guaranteed present either way.
+# the system directories podman needs are guaranteed present either way. Safe to
+# export unconditionally — unlike HOME, the real `create` argv never bare-passes
+# PATH or XDG_RUNTIME_DIR (verified against the live command 2026-08-13), so
+# there is no create-time bake-in path for either to leak into a container.
 export PATH="${PATH:+$PATH:}/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+
+# Rewrite a bare `-e HOME` / `--env HOME` (no `=value`) back to the ORIGINAL
+# HOME, so the container is baked with what the hooks intended rather than this
+# shim's own repaired HOME. Populates the global array REWRITTEN_ARGV; only
+# rewrites when the original HOME was actually set — an unset original leaves
+# the flag as-is, matching docker's own bare-passthrough behavior for an unset
+# variable. Bash array (not a printf/newline pipeline) so an argument
+# containing whitespace round-trips unchanged.
+_rewrite_home_passthrough() {
+  REWRITTEN_ARGV=()
+  local skip_next=0
+  for arg in "$@"; do
+    if [ "$skip_next" = 1 ]; then
+      skip_next=0
+      if [ "$arg" = "HOME" ] && [ -n "$_ORIGINAL_HOME" ]; then
+        REWRITTEN_ARGV+=("HOME=$_ORIGINAL_HOME")
+      else
+        REWRITTEN_ARGV+=("$arg")
+      fi
+      continue
+    fi
+    case "$arg" in
+      -e | --env)
+        skip_next=1
+        REWRITTEN_ARGV+=("$arg")
+        ;;
+      *) REWRITTEN_ARGV+=("$arg") ;;
+    esac
+  done
+}
 
 # Both overridable so dockershim-exit-tests.sh can drive the lock discipline
 # against a fake docker without a podman on the box. Defaults are the live paths.
@@ -117,6 +167,17 @@ _docker_subcommand() {
 }
 
 sub="$(_docker_subcommand "$@")"
+
+# Apply the HOME-passthrough rewrite ONLY for `create` — that is the ONE
+# subcommand whose real argv carries a bare `-e HOME`, confirmed by reading the
+# live command (2026-08-13); `start`, `exec`, `rm`, `network`, `login`, `pull`
+# never do. `set --` replaces the positional parameters so every dispatch below
+# — the lock-wrapped exec, the bind-source loop, the final passthrough — sees
+# the rewritten argv without each call site needing its own rewrite.
+if [ "$sub" = "create" ]; then
+  _rewrite_home_passthrough "$@"
+  set -- "${REWRITTEN_ARGV[@]}"
+fi
 
 # Positional arguments AFTER the subcommand, used only to distinguish
 # `network prune` from other network verbs and to detect a bare `logout`.
