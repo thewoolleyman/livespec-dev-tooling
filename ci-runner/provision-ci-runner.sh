@@ -60,15 +60,14 @@ export DEBIAN_FRONTEND=noninteractive
 # 2026-08-13 on a fresh Ubuntu 26.04 host with podman but no docker.
 apt-get install -y --no-install-recommends \
   podman podman-docker uidmap slirp4netns passt crun catatonit fuse-overlayfs aardvark-dns
-# podman-docker prints "Emulate Docker CLI using podman..." to STDOUT on every
-# invocation unless this marker file exists. That banner is not cosmetic here: the
-# container hooks parse docker's stdout to read back the container ID, so the extra
-# line corrupts the value they read and container creation fails with
-#   Error: The process '.../dockershim/docker' failed with exit code 125
-#   Executing the custom container implementation failed.
-# even though `docker create` itself SUCCEEDS when run by hand — which is what makes
-# it deceptive: every manual probe passes and only the hook path fails. The fix is
-# the one podman itself names in the banner text. Observed 2026-08-13.
+# podman-docker prints "Emulate Docker CLI using podman..." on every invocation
+# unless this marker file exists. Read /usr/bin/docker before assuming what that
+# breaks: the banner goes to STDERR, not stdout, so it does NOT corrupt the
+# container ID the hooks read back. This is therefore log hygiene — the line
+# otherwise appears in every job log at every docker call — and not a correctness
+# fix. It is cheap and podman names it itself, so it is done here; it is recorded
+# as hygiene so a later reader does not credit it with fixing a container failure
+# it never fixed.
 mkdir -p /etc/containers
 touch /etc/containers/nodocker
 # runtimes must NOT be setuid-root (newuidmap/newgidmap ARE, and that is allowed)
