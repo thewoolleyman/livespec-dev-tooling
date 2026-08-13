@@ -31,6 +31,13 @@
 #
 # Usage: ci-runner-supervisor.sh [--repos "<owner/repo ...>"] [--slots N]
 #                                [--labels a,b] [--work DIR] [--mint PATH]
+#
+# PER-REPO SLOT OVERRIDE: a --repos entry may carry an optional ":N" suffix
+# (e.g. "owner/repo-a:9 owner/repo-b:6 owner/repo-c") to run that repo with N
+# slots instead of the --slots default. A repo listed without a suffix still
+# uses --slots (or its default of 1). This lets one supervisor instance serve
+# multiple repos proportioned to their own CI matrix width, instead of every
+# repo getting the same flat slot count regardless of size.
 set -euo pipefail
 
 REPOS="thewoolleyman/livespec"
@@ -50,7 +57,21 @@ while [ $# -gt 0 ]; do
     *) echo "ci-runner-supervisor: unknown argument: $1" >&2; exit 2;;
   esac
 done
-printf 'ci-runner-supervisor: repos=[%s] slots=%s labels=%s\n' "$REPOS" "$SLOTS_PER_REPO" "$LABELS_CSV"
+# Resolve each --repos entry's ACTUAL slot count (its own ":N" suffix, or the
+# --slots default) up front, once, so the startup log line — the sole source
+# of truth per this script's own trap-5 discipline (never the unit file) —
+# shows what will really run rather than the raw, possibly-ambiguous input.
+resolved_repos=""
+for repo_spec in $REPOS; do
+  repo="${repo_spec%%:*}"
+  if [ "$repo_spec" = "$repo" ]; then
+    resolved_slots="$SLOTS_PER_REPO"
+  else
+    resolved_slots="${repo_spec##*:}"
+  fi
+  resolved_repos="${resolved_repos}${repo}:${resolved_slots} "
+done
+printf 'ci-runner-supervisor: repos=[%s] labels=%s\n' "${resolved_repos% }" "$LABELS_CSV"
 JIT_DIR=/run/ci-runner                 # tmpfs, ci-runner-readable one-shot handoff
 
 : "${GITHUB_APP_ID_CI_RUNNER:?}"; : "${GITHUB_APP_INSTALLATION_ID_CI_RUNNER:?}"
@@ -97,8 +118,14 @@ run_one() {
   rm -f "$jf"
 }
 
-for repo in $REPOS; do
-  for slot in $(seq 1 "$SLOTS_PER_REPO"); do
+for repo_spec in $REPOS; do
+  repo="${repo_spec%%:*}"
+  if [ "$repo_spec" = "$repo" ]; then
+    repo_slots="$SLOTS_PER_REPO"
+  else
+    repo_slots="${repo_spec##*:}"
+  fi
+  for slot in $(seq 1 "$repo_slots"); do
     ( while :; do run_one "$repo" "$slot" || sleep 10; done ) &
   done
 done
