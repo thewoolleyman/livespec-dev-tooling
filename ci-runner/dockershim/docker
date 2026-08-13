@@ -322,6 +322,15 @@ esac
 # pool exists for, and would not even address this bug — the corrupting
 # read/write both happen INSIDE podman's own SQLite layer, a resource this
 # shim's flock has no visibility into.
+#
+# Raised from 3 to 10 attempts when per-repo slot counts moved from a shared
+# ~50-concurrent ceiling to each repo's own full CI-matrix width (up to 96) —
+# per-run exec volume against the shared SQLite state scales with matrix
+# width times steps-per-job, not with slot count alone, so a wider matrix
+# means more independent chances to collide even though the collision rate
+# per exec call is unchanged. Still bounded and still scoped to the exact
+# error signature: a genuinely different exec failure still forwards on its
+# first attempt.
 if [ "$sub" = "exec" ]; then
   _errfile="$(mktemp "${TMPDIR:-/tmp}/ci-runner-dockershim-exec.XXXXXX")"
   _attempt=1
@@ -329,7 +338,7 @@ if [ "$sub" = "exec" ]; then
     "$REAL_DOCKER" "$@" 2>"$_errfile"
     _status=$?
     [ "$_status" -eq 0 ] && break
-    if [ "$_attempt" -ge 3 ] \
+    if [ "$_attempt" -ge 10 ] \
       || ! grep -q 'unmarshalling container.*state JSON' "$_errfile" \
       || ! grep -q 'readObjectStart: expect { or n' "$_errfile"; then
       break
