@@ -60,6 +60,17 @@ export DEBIAN_FRONTEND=noninteractive
 # 2026-08-13 on a fresh Ubuntu 26.04 host with podman but no docker.
 apt-get install -y --no-install-recommends \
   podman podman-docker uidmap slirp4netns passt crun catatonit fuse-overlayfs aardvark-dns
+# podman-docker prints "Emulate Docker CLI using podman..." to STDOUT on every
+# invocation unless this marker file exists. That banner is not cosmetic here: the
+# container hooks parse docker's stdout to read back the container ID, so the extra
+# line corrupts the value they read and container creation fails with
+#   Error: The process '.../dockershim/docker' failed with exit code 125
+#   Executing the custom container implementation failed.
+# even though `docker create` itself SUCCEEDS when run by hand — which is what makes
+# it deceptive: every manual probe passes and only the hook path fails. The fix is
+# the one podman itself names in the banner text. Observed 2026-08-13.
+mkdir -p /etc/containers
+touch /etc/containers/nodocker
 # runtimes must NOT be setuid-root (newuidmap/newgidmap ARE, and that is allowed)
 for rt in /usr/bin/crun /usr/sbin/runc /usr/bin/bwrap /usr/bin/podman; do
   [ -e "$rt" ] && [ -n "$(find "$rt" -perm -4000 2>/dev/null)" ] && { echo "FATAL: $rt is setuid-root"; exit 1; }
