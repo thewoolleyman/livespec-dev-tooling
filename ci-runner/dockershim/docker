@@ -50,10 +50,69 @@ REAL_DOCKER="${CI_RUNNER_REAL_DOCKER:-/usr/bin/docker}"
 # ci-runner-owned tmpfs; flock creates the file if absent.
 LOCK="${CI_RUNNER_PODMAN_LOCK:-${XDG_RUNTIME_DIR:-/run/user/1001}/ci-runner-podman-db.lock}"
 
-sub="${1:-}"
-sub2="${2:-}"
+# THE SUBCOMMAND IS NOT ALWAYS $1. The container hooks invoke docker with GLOBAL
+# options before the subcommand — e.g.
+#   docker --config /…/_temp/.docker_<uuid> login -u … --password-stdin ghcr.io
+#   docker --config /…/_temp/.docker_<uuid> logout
+# so reading $1 as the subcommand yields "--config" and every lock decision below
+# is silently wrong for exactly the calls the hooks make. Scan past leading global
+# options instead, consuming the value of the ones that take one.
+_docker_subcommand() {
+  local skip_next=0
+  for arg in "$@"; do
+    if [ "$skip_next" = 1 ]; then skip_next=0; continue; fi
+    case "$arg" in
+      # Global options that take a separate value.
+      --config | --context | -c | --host | -H | --log-level | -l \
+      | --tlscacert | --tlscert | --tlskey)
+        skip_next=1
+        ;;
+      # Any other option (boolean, or --opt=value) carries no separate value.
+      -*) ;;
+      *) printf '%s\n' "$arg"; return 0 ;;
+    esac
+  done
+  printf '\n'
+}
 
-if [ "$sub" = "network" ] && [ "$sub2" = "prune" ]; then
+sub="$(_docker_subcommand "$@")"
+
+# Positional arguments AFTER the subcommand, used only to distinguish
+# `network prune` from other network verbs and to detect a bare `logout`.
+_docker_operands() {
+  local seen_sub=0 skip_next=0
+  for arg in "$@"; do
+    if [ "$skip_next" = 1 ]; then skip_next=0; continue; fi
+    case "$arg" in
+      --config | --context | -c | --host | -H | --log-level | -l \
+      | --tlscacert | --tlscert | --tlskey)
+        [ "$seen_sub" = 1 ] && printf '%s\n' "$arg"
+        skip_next=1
+        ;;
+      -*) ;;
+      *)
+        if [ "$seen_sub" = 1 ]; then printf '%s\n' "$arg"; else seen_sub=1; fi
+        ;;
+    esac
+  done
+}
+
+operand1="$(_docker_operands "$@" | head -1)"
+
+# DOCKER-VS-PODMAN COMPAT: a bare `logout`. Docker logs out of its default
+# registry when given none; podman REFUSES, and the container hooks always call
+# it bare during teardown:
+#   Error: no registries found in registries.conf, a registry must be provided
+# That exits 125 and reds the job AFTER its work has already passed — the network
+# was created, the ghcr.io login succeeded, and the image pulled. `--all` is the
+# faithful translation: log out of everything this job logged into. Observed
+# 2026-08-13 on a fresh host; it is the last thing standing between a correctly
+# provisioned host and a green containerized job.
+if [ "$sub" = "logout" ] && [ -z "$operand1" ]; then
+  exec "$REAL_DOCKER" "$@" --all
+fi
+
+if [ "$sub" = "network" ] && [ "$operand1" = "prune" ]; then
   exec /usr/bin/flock -x "$LOCK" "$REAL_DOCKER" "$@"
 fi
 
