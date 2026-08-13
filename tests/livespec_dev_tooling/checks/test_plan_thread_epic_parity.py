@@ -22,12 +22,24 @@ __all__: list[str] = []
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _CHECK_PATH = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "plan_thread_epic_parity.py"
+_HELPER_PATH = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "_plan_thread_ledger.py"
 
 
 def _load_check_module() -> ModuleType:
     """Import the check module fresh from its file path (the tree the RGR hook inspects)."""
     spec = importlib.util.spec_from_file_location(
         "plan_thread_epic_parity_under_test", str(_CHECK_PATH)
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_helper_module() -> ModuleType:
+    """Import the ledger helper fresh from its file path."""
+    spec = importlib.util.spec_from_file_location(
+        "plan_thread_ledger_under_test", str(_HELPER_PATH)
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -113,6 +125,13 @@ def _write_livespec_config(*, root: Path, prefix: str = "livespec-dev-tooling") 
         ),
         encoding="utf-8",
     )
+
+
+def _write_exported_issues(*, root: Path, lines: list[str]) -> None:
+    """Create a local beads JSONL export for descendant-edge fixtures."""
+    beads_dir = root / ".beads"
+    beads_dir.mkdir(parents=True, exist_ok=True)
+    (beads_dir / "issues.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def _anchor_body(epic_id: str) -> str:
@@ -248,6 +267,43 @@ def test_armed_archived_open_epic_fails(
     assert '"level": "error"' in combined
 
 
+def test_armed_archived_regroomed_anchor_with_open_replacement_fails(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Armed: archived procedural anchor closure is invalid while replacements stay open."""
+    _arm(monkeypatch)
+    _write_livespec_config(root=tmp_path)
+    _write_archived_handoff(
+        root=tmp_path,
+        thread="regroomed",
+        body=_anchor_body("livespec-dev-tooling-5asgvm"),
+    )
+    _write_exported_issues(
+        root=tmp_path,
+        lines=[
+            (
+                '{"id":"livespec-dev-tooling-5asgvm","status":"done",'
+                '"resolution":"no-longer-applicable","depends_on":[]}'
+            ),
+            (
+                '{"id":"livespec-dev-tooling-slice","status":"ready",'
+                '"resolution":null,"depends_on":["livespec-dev-tooling-5asgvm"]}'
+            ),
+        ],
+    )
+    result = _run(
+        cwd=tmp_path,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        statuses={"livespec-dev-tooling-5asgvm": "done"},
+    )
+    assert result.returncode == 1, f"open replacement descendant should fail; {result.stderr!r}"
+    combined = result.stdout + result.stderr
+    assert "plan/archive/regroomed/handoff.md" in combined
+    assert "livespec-dev-tooling-5asgvm" in combined
+    assert "livespec-dev-tooling-slice" in combined
+
+
 def test_armed_cross_tenant_anchor_ignored(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -295,6 +351,112 @@ def test_parse_status_variants() -> None:
     assert parse(text='{"other": 1}') is None
     assert parse(text='{"status": 7}') is None
     assert parse(text="[42]") is None
+
+
+def test_ledger_helper_parses_records_and_dependency_shapes() -> None:
+    """The extracted helper reads issue records and both known dependency edge shapes."""
+    assert _HELPER_PATH.is_file(), "ledger helper module should exist"
+    helper = _load_helper_module()
+    assert helper.parse_records(text='noise\n{"data": [{"id": "a"}]}') == [{"id": "a"}]
+    assert helper.parse_records(text='{"id": "a"}') == [{"id": "a"}]
+    assert helper.parse_records(text='[{"id": "a"}, 7]') == [{"id": "a"}]
+    assert helper.parse_records(text="123") == []
+    assert helper.parse_records(text="[]") == []
+    assert helper.parse_records(text="no json") == []
+    assert helper.depends_on(record={"depends_on": ["anchor"]}, epic_id="anchor")
+    assert helper.depends_on(
+        record={"dependencies": [{"depends_on_id": "anchor"}]},
+        epic_id="anchor",
+    )
+    assert helper.depends_on(record={"dependencies": [{"id": "anchor"}]}, epic_id="anchor")
+    assert not helper.depends_on(record={"dependencies": [7]}, epic_id="anchor")
+    assert helper.record_id(record={"id": "desc"}) == "desc"
+    assert helper.record_id(record={"id": 7}) is None
+    assert helper.is_completion_closed(record={"status": "done", "resolution": "completed"})
+    assert not helper.is_completion_closed(record={"status": "ready", "resolution": None})
+
+
+def test_ledger_helper_item_reader_uses_export_then_bd(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The helper prefers local `.beads/issues.jsonl`, else parses `bd list --json`."""
+    assert _HELPER_PATH.is_file(), "ledger helper module should exist"
+    helper = _load_helper_module()
+    _write_exported_issues(root=tmp_path, lines=['{"id":"from-export"}'])
+    assert helper.bd_items_reader(repo=tmp_path) == [{"id": "from-export"}]
+    other_repo = tmp_path / "other"
+    other_repo.mkdir()
+    fake = SimpleNamespace(returncode=0, stdout='{"data":[{"id":"from-bd"}]}', stderr="")
+    monkeypatch.setattr(helper.subprocess, "run", lambda *_a, **_k: fake)
+    assert helper.bd_items_reader(repo=other_repo) == [{"id": "from-bd"}]
+    failed = SimpleNamespace(returncode=1, stdout="", stderr="boom")
+    monkeypatch.setattr(helper.subprocess, "run", lambda *_a, **_k: failed)
+    assert helper.bd_items_reader(repo=other_repo) == []
+
+
+def test_ledger_helper_status_reader_parses_bd_show(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The helper status reader parses `bd show --json` and returns None on failure."""
+    assert _HELPER_PATH.is_file(), "ledger helper module should exist"
+    helper = _load_helper_module()
+    fake = SimpleNamespace(returncode=0, stdout='{"status":"done"}', stderr="")
+    monkeypatch.setattr(helper.subprocess, "run", lambda *_a, **_k: fake)
+    assert helper.bd_status_reader(epic_id="livespec-dev-tooling-anchor", repo=tmp_path) == "done"
+    failed = SimpleNamespace(returncode=1, stdout="", stderr="boom")
+    monkeypatch.setattr(helper.subprocess, "run", lambda *_a, **_k: failed)
+    assert helper.bd_status_reader(epic_id="livespec-dev-tooling-anchor", repo=tmp_path) is None
+
+
+def test_ledger_helper_descendant_offenders_filters_completion_and_tenant(
+    *, tmp_path: Path
+) -> None:
+    """The helper reports only same-tenant descendants that are not completion-closed."""
+    assert _HELPER_PATH.is_file(), "ledger helper module should exist"
+    helper = _load_helper_module()
+    tenant_id_re = _MODULE._tenant_id_re(tenant_prefix="livespec-dev-tooling")  # noqa: SLF001
+
+    def _items(*, repo: Path) -> list[dict[str, object]]:
+        assert repo == tmp_path
+        return [
+            {
+                "id": "livespec-dev-tooling-open",
+                "status": "ready",
+                "resolution": None,
+                "depends_on": ["livespec-dev-tooling-anchor"],
+            },
+            {
+                "id": "livespec-dev-tooling-done",
+                "status": "done",
+                "resolution": "completed",
+                "depends_on": ["livespec-dev-tooling-anchor"],
+            },
+            {
+                "id": "other-open",
+                "status": "ready",
+                "resolution": None,
+                "depends_on": ["livespec-dev-tooling-anchor"],
+            },
+        ]
+
+    offenders = helper.descendant_offenders(
+        statuses=[(tmp_path / "handoff.md", "livespec-dev-tooling-anchor", "done")],
+        item_reader=_items,
+        tenant_id_re=tenant_id_re,
+        repo=tmp_path,
+    )
+    assert offenders == [
+        (tmp_path / "handoff.md", "livespec-dev-tooling-anchor", "livespec-dev-tooling-open")
+    ]
+    assert (
+        helper.descendant_offenders(
+            statuses=[(tmp_path / "handoff.md", "livespec-dev-tooling-anchor", "ready")],
+            item_reader=_items,
+            tenant_id_re=tenant_id_re,
+            repo=tmp_path,
+        )
+        == []
+    )
 
 
 def test_bd_status_reader_ok(*, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
