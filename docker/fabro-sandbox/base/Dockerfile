@@ -83,20 +83,51 @@ ARG GH_VERSION=2.97.0
 # package (1,160.0 kB installed on noble amd64) with no daemon, and keeps
 # CI-vs-sandbox parity for tmux-dependent verifiers without adding a compiler
 # or dev headers back to base.
+# ---------------------------------------------------------------
+# RETRY POLICY — every dependency fetch in this image RETRIES a transient CDN
+# failure instead of failing the build.
+#
+# Baking a tool moves its download out of CI and into THIS build, which
+# concentrates the risk rather than removing it: a half-delivered tarball now
+# fails an image publish instead of one job. Observed 2026-08-13, when a
+# shellcheck tarball arriving as "connection closed before message completed"
+# reddened master in two repos at once.
+#
+# Every fetcher here defaults to NO retries — curl, apt, and mise all ship with
+# zero — so each is set explicitly:
+#
+#   curl  --retry N already backs off EXPONENTIALLY (~1s, doubling, capped at 10
+#         minutes). Do NOT add --retry-delay: it REPLACES that backoff with a
+#         fixed sleep. --retry-all-errors is required because curl's default
+#         "transient error" set is timeouts and a few HTTP codes, which does NOT
+#         include a connection dropped mid-stream — precisely our failure.
+#   apt   Acquire::Retries defaults to 0.
+#   mise  http_retries defaults to 0, i.e. one attempt.
+#   uv    already understood this; UV_HTTP_RETRIES is set for `uv python install`
+#         in the python layer and for any in-sandbox `uv sync`.
+#
+# The two ENVs persist into every layer stacked on this one, so the python and
+# python-rust layers inherit them without repeating themselves.
+# ---------------------------------------------------------------
+ENV MISE_HTTP_RETRIES=5
+ENV UV_HTTP_RETRIES=5
+
 RUN mkdir -p -m 755 /etc/apt/keyrings \
-    && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+    && curl -fsSL --retry 5 --retry-all-errors --retry-connrefused \
+        https://cli.github.com/packages/githubcli-archive-keyring.gpg \
         -o /etc/apt/keyrings/githubcli-archive-keyring.gpg \
     && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
         > /etc/apt/sources.list.d/github-cli.list \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends libatomic1 tmux gh=${GH_VERSION} \
+    && apt-get -o Acquire::Retries=5 update \
+    && apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
+        libatomic1 tmux gh=${GH_VERSION} \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # The mise.run installer reads MISE_VERSION from the environment.
 ENV MISE_VERSION=${MISE_VERSION}
-RUN curl -fsSL https://mise.run | sh
+RUN curl -fsSL --retry 5 --retry-all-errors --retry-connrefused https://mise.run | sh
 ENV PATH=/root/.local/share/mise/shims:/root/.local/bin:$PATH
 
 RUN mise use -g just@${JUST_VERSION} lefthook@${LEFTHOOK_VERSION} \

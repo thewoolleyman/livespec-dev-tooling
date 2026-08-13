@@ -80,11 +80,15 @@ ARG CODEX_ACP_VERSION=0.16.0
 # bubblewrap — required by the codex-acp adapter. The chain's root
 # (buildpack-deps:noble-scm) is Debian/Ubuntu, so apt is correct; clean
 # the apt lists in the same layer to keep the image lean.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends bubblewrap \
+RUN apt-get -o Acquire::Retries=5 update \
+    && apt-get -o Acquire::Retries=5 install -y --no-install-recommends bubblewrap \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-RUN npm install -g @agentclientprotocol/claude-agent-acp@${CLAUDE_AGENT_ACP_VERSION}
+# npm retries by default, but only twice; raise it to match the other fetchers
+# here. npm applies its own exponential backoff between attempts.
+RUN npm install -g --fetch-retries=5 \
+        @agentclientprotocol/claude-agent-acp@${CLAUDE_AGENT_ACP_VERSION}
 
-RUN npm install -g @zed-industries/codex-acp@${CODEX_ACP_VERSION}
+RUN npm install -g --fetch-retries=5 \
+        @zed-industries/codex-acp@${CODEX_ACP_VERSION}
