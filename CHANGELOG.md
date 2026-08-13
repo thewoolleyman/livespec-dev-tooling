@@ -58,6 +58,16 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.20.6](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.20.5...v1.20.6) (2026-08-13)
+
+
+### Bug Fixes
+
+* **ci-runner:** copy run-helper.sh.template, not run-helper.sh, into instance dirs ([df8d45a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/df8d45ae4e34512519fd3b5c8ac0b2359a75c03b))
+* **ci-runner:** install podman-docker, without which every containerized job dies ([4319f8a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4319f8a2df793b36d5e7afdcd1924c461b44d93c))
+* **ci-runner:** repair the scrubbed environment the container hooks hand podman ([d67265c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d67265c6889771bdaaf5c18e206d7b6563dde679))
+* **ci-runner:** stop provisioning racing the user manager, and the exit suite failing on cwd ([d0dc8f7](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d0dc8f799fd4c0a49a6d5d54a62c4e39489b8b29))
+
 ## [1.20.5](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.20.4...v1.20.5) (2026-08-12)
 
 
