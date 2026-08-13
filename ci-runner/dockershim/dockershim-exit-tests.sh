@@ -226,6 +226,56 @@ else
   bad "T18 a named volume is NOT turned into a directory"
 fi
 
+printf '\n== T23-T25: a bare -e HOME at create bakes the ORIGINAL HOME, not the shim'\''s repaired one ==\n'
+# `docker create` carries `-e HOME` bare (no `=value`) in the real hook command.
+# The shim must NOT let its own repaired (real-host) HOME leak into what gets
+# baked into the container via that flag — only THIS shim's own process (talking
+# to the podman socket) should see the repaired value. A fake docker records its
+# argv; T23-T24 assert `-e HOME` was rewritten to an explicit value for `create`;
+# T25 asserts non-create subcommands are left untouched (no rewrite needed there
+# since the real argv for them never carries a bare `-e HOME`).
+: >"$TMP/argv.log"
+env CI_RUNNER_REAL_DOCKER="$FAKE" \
+    CI_RUNNER_PODMAN_LOCK="$LOCKFILE" \
+    FAKE_DOCKER_ARGV_LOG="$TMP/argv.log" \
+    HOME=/github/home \
+    timeout 3 "$SHIM" create --name c1 -e HOME -e CI=true image:tag >/dev/null 2>&1
+
+if grep -qx 'create --name c1 -e HOME=/github/home -e CI=true image:tag' "$TMP/argv.log"; then
+  ok "T23 a bare -e HOME at create is rewritten to the ORIGINAL HOME, not the shim's own"
+else
+  bad "T23 a bare -e HOME at create is rewritten to the ORIGINAL HOME, not the shim's own (got: $(cat "$TMP/argv.log"))"
+fi
+
+# An unset original HOME leaves the flag bare — nothing to preserve, and
+# rewriting to an empty value would itself be a new failure mode.
+: >"$TMP/argv.log"
+env -u HOME CI_RUNNER_REAL_DOCKER="$FAKE" \
+    CI_RUNNER_PODMAN_LOCK="$LOCKFILE" \
+    FAKE_DOCKER_ARGV_LOG="$TMP/argv.log" \
+    timeout 3 "$SHIM" create --name c2 -e HOME image:tag >/dev/null 2>&1
+
+if grep -qx 'create --name c2 -e HOME image:tag' "$TMP/argv.log"; then
+  ok "T24 an unset original HOME leaves the -e HOME flag bare rather than rewriting to empty"
+else
+  bad "T24 an unset original HOME leaves the -e HOME flag bare rather than rewriting to empty (got: $(cat "$TMP/argv.log"))"
+fi
+
+# Non-create subcommands never carry a bare -e HOME in the real hooks, and the
+# rewrite must not fire for them regardless.
+: >"$TMP/argv.log"
+env CI_RUNNER_REAL_DOCKER="$FAKE" \
+    CI_RUNNER_PODMAN_LOCK="$LOCKFILE" \
+    FAKE_DOCKER_ARGV_LOG="$TMP/argv.log" \
+    HOME=/github/home \
+    timeout 3 "$SHIM" exec c1 sh -c 'echo hi' >/dev/null 2>&1
+
+if grep -qx "exec c1 sh -c echo hi" "$TMP/argv.log"; then
+  ok "T25 exec argv is never rewritten (a bare -e HOME never appears there)"
+else
+  bad "T25 exec argv is never rewritten (got: $(cat "$TMP/argv.log"))"
+fi
+
 printf '\n== T19-T22: the rootless-netns teardown failure is tolerated, but ONLY it ==\n'
 # podman removes the container and then fails killing its own network helper,
 # exiting 125 on work that already succeeded. The shim translates that ONE error
