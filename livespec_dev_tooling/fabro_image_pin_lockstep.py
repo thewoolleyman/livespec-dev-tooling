@@ -8,14 +8,19 @@ The versions each layer bakes are declared as greppable `ARG NAME=value`
 lines, and the obligated ones MUST stay in lockstep with this repo's own
 pin sources:
 
-- `ARG UV_VERSION` / `ARG JUST_VERSION` / `ARG LEFTHOOK_VERSION`
-  ↔ the `.mise.toml` `[tools]` pins (`uv` / `just` / `lefthook`).
+- EVERY `.mise.toml` `[tools]` pin ↔ a same-named `ARG <TOOL>_VERSION`
+  that some layer must both declare AND install via `mise use -g`. The
+  obligation is DERIVED from the table, not listed here, so a newly
+  declared tool cannot slip through unbaked — an unbaked tool is
+  re-fetched over the network by every containerized job, which is how
+  a `shellcheck` CDN hiccup came to kill unrelated checks.
 - `ARG PYTHON_VERSION` ↔ `.python-version`.
 - `ARG GH_VERSION` ↔ the supported GitHub CLI pin required by the
   Fabro PR orchestration surface.
 
 These ARGs live in DIFFERENT layer files (`JUST_VERSION` /
-`LEFTHOOK_VERSION` in `base`; `UV_VERSION` / `PYTHON_VERSION` in `python`;
+`LEFTHOOK_VERSION` / `SHELLCHECK_VERSION` in `base`;
+`UV_VERSION` / `PYTHON_VERSION` in `python`;
 the two ACP adapter pins in `agent`), so the parser reads the ARG lines
 from the whole SET of layer Dockerfiles and merges them. Keep each ARG in
 exactly one layer — the merge means a duplicated ARG would NOT fail this
@@ -73,14 +78,21 @@ _ARG_LINE = re.compile(r"^ARG\s+([A-Z0-9_]+)=(\S+)\s*$")
 _TOOLS_TABLE_HEADER = re.compile(r"^\[tools\]\s*$")
 _TOOL_LINE = re.compile(r'^\s*([\w-]+)\s*=\s*"([^"]+)"\s*$')
 
-# Lockstep obligations: Dockerfile ARG name ↔ `.mise.toml` `[tools]`
-# pin name. PYTHON_VERSION is handled separately (its repo-side pin
-# source is `.python-version`, not the mise table).
-_MISE_LOCKSTEP_ARGS = (
-    ("UV_VERSION", "uv"),
-    ("JUST_VERSION", "just"),
-    ("LEFTHOOK_VERSION", "lefthook"),
-)
+# Lockstep obligations are DERIVED from the `.mise.toml` `[tools]` table
+# rather than listed here: every declared tool obligates a same-named ARG
+# pin (`<TOOL>_VERSION`) that the image must both carry and install. A
+# hardcoded list made a newly declared tool carry NO obligation, so it
+# silently stayed out of the image and became a per-job network fetch on
+# every containerized CI job — the state `shellcheck` reached. Deriving
+# the set means the check fails until the tool is genuinely baked.
+# PYTHON_VERSION is handled separately (its repo-side pin source is
+# `.python-version`, not the mise table).
+#
+# Derivation covers only the tools a repo DOES declare, so it cannot
+# notice one silently dropped from the table. `_REQUIRED_MISE_TOOLS` is
+# the complementary direction: the toolchain every fleet repo must keep
+# declared, checked independently of what the image happens to bake.
+_REQUIRED_MISE_TOOLS = ("just", "lefthook", "shellcheck", "uv")
 _PYTHON_LOCKSTEP_ARG = "PYTHON_VERSION"
 _GH_SUPPORTED_ARG = "GH_VERSION"
 _SUPPORTED_GH_VERSION = "2.97.0"
@@ -140,6 +152,58 @@ def _parse_mise_tools(*, source: str) -> dict[str, str]:
     return tools
 
 
+def _mise_lockstep_arg(*, tool_name: str) -> str:
+    """Derive a tool's obligated Dockerfile ARG name from its `[tools]` key.
+
+    The image names each baked tool pin `<TOOL>_VERSION`, upper-cased with
+    `-` folded to `_` so the name is a legal ARG identifier (`shellcheck`
+    -> `SHELLCHECK_VERSION`).
+    """
+    return tool_name.upper().replace("-", "_") + "_VERSION"
+
+
+def _mise_install_pin(*, tool_name: str, arg_name: str) -> str:
+    """The `mise use -g` fragment that proves the tool is baked, not just pinned."""
+    return tool_name + "@${" + arg_name + "}"
+
+
+def _mise_tool_issues(
+    *,
+    dockerfile_args: dict[str, str],
+    mise_tools: dict[str, str],
+    dockerfile_source: str,
+) -> list[str]:
+    """Check both mise-tool directions: required-and-declared, and declared-and-baked."""
+    issues: list[str] = []
+    for tool_name in _REQUIRED_MISE_TOOLS:
+        if tool_name not in mise_tools:
+            issues.append(f"{tool_name}: pin missing from {_MISE_PATH} [tools]")
+    for tool_name, repo_value in sorted(mise_tools.items()):
+        arg_name = _mise_lockstep_arg(tool_name=tool_name)
+        image_value = dockerfile_args.get(arg_name)
+        if image_value is None:
+            issues.append(
+                f"{arg_name}: obligated ARG pin missing from the {_LAYER_DIR} layers "
+                f"({_MISE_PATH} declares {tool_name}, so the image must bake it — "
+                f"an unbaked tool is re-fetched over the network by every job)"
+            )
+            continue
+        if image_value != repo_value:
+            issues.append(
+                f"{arg_name}: image bakes {image_value!r} but "
+                f"{_MISE_PATH} pins {tool_name} = {repo_value!r}"
+            )
+            continue
+        install_pin = _mise_install_pin(tool_name=tool_name, arg_name=arg_name)
+        if install_pin not in dockerfile_source:
+            issues.append(
+                f"{tool_name}: ARG {arg_name} is pinned but no layer installs it — "
+                f"the image must carry `mise use -g {install_pin}` so the tool is "
+                f"baked rather than fetched per job"
+            )
+    return issues
+
+
 def _lockstep_issues(
     *,
     dockerfile_args: dict[str, str],
@@ -155,20 +219,13 @@ def _lockstep_issues(
             issues.append(
                 f"{arg_name}: local FROM-chain default is {actual!r}; expected {expected!r}"
             )
-    for arg_name, tool_name in _MISE_LOCKSTEP_ARGS:
-        image_value = dockerfile_args.get(arg_name)
-        repo_value = mise_tools.get(tool_name)
-        if image_value is None:
-            issues.append(f"{arg_name}: obligated ARG pin missing from the {_LAYER_DIR} layers")
-            continue
-        if repo_value is None:
-            issues.append(f"{tool_name}: pin missing from {_MISE_PATH} [tools]")
-            continue
-        if image_value != repo_value:
-            issues.append(
-                f"{arg_name}: image bakes {image_value!r} but "
-                f"{_MISE_PATH} pins {tool_name} = {repo_value!r}"
-            )
+    issues.extend(
+        _mise_tool_issues(
+            dockerfile_args=dockerfile_args,
+            mise_tools=mise_tools,
+            dockerfile_source=dockerfile_source,
+        )
+    )
     image_python = dockerfile_args.get(_PYTHON_LOCKSTEP_ARG)
     if image_python is None:
         issues.append(

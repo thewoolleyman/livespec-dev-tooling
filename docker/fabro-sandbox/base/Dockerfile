@@ -53,8 +53,11 @@ FROM buildpack-deps:noble-scm
 # ---------------------------------------------------------------
 # Tool pins — ARG form so `just check-fabro-image-pin-lockstep` can
 # parse them mechanically across the layer Dockerfiles. JUST_VERSION /
-# LEFTHOOK_VERSION MUST match this repo's .mise.toml `[tools]` pins (the
-# check fails the build pipeline on drift). MISE_VERSION / NODE_VERSION
+# LEFTHOOK_VERSION / SHELLCHECK_VERSION MUST match this repo's .mise.toml
+# `[tools]` pins (the check fails the build pipeline on drift), and each
+# must ALSO be installed by the `mise use -g` below — an ARG alone pins a
+# version without baking the tool, leaving it to be re-fetched over the
+# network by every containerized job. MISE_VERSION / NODE_VERSION
 # have no repo-side pin source — they mirror the host toolchain and are
 # tracked only here. GH_VERSION is the supported GitHub CLI pin enforced
 # by the repo-private lockstep check. The ACP adapter pins
@@ -65,6 +68,7 @@ FROM buildpack-deps:noble-scm
 ARG MISE_VERSION=v2026.2.7
 ARG JUST_VERSION=1.36.0
 ARG LEFTHOOK_VERSION=1.13.6
+ARG SHELLCHECK_VERSION=0.11.0
 ARG NODE_VERSION=26.3.0
 ARG GH_VERSION=2.97.0
 
@@ -96,7 +100,7 @@ RUN curl -fsSL https://mise.run | sh
 ENV PATH=/root/.local/share/mise/shims:/root/.local/bin:$PATH
 
 RUN mise use -g just@${JUST_VERSION} lefthook@${LEFTHOOK_VERSION} \
-        node@${NODE_VERSION} \
+        shellcheck@${SHELLCHECK_VERSION} node@${NODE_VERSION} \
     && mise reshim
 
 # Neutral committer identity for in-sandbox commits (matches the host

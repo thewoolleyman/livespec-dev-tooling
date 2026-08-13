@@ -41,6 +41,7 @@ _LOCKSTEP_BASE_DOCKERFILE = (
     "ARG MISE_VERSION=v2026.2.7\n"
     "ARG JUST_VERSION=1.36.0\n"
     "ARG LEFTHOOK_VERSION=1.13.6\n"
+    "ARG SHELLCHECK_VERSION=0.11.0\n"
     "ARG NODE_VERSION=26.3.0\n"
     "ARG GH_VERSION=2.97.0\n"
     "RUN mkdir -p -m 755 /etc/apt/keyrings \\\n"
@@ -53,7 +54,8 @@ _LOCKSTEP_BASE_DOCKERFILE = (
     "        > /etc/apt/sources.list.d/github-cli.list \\\n"
     "    && apt-get update \\\n"
     "    && apt-get install -y --no-install-recommends gh=${GH_VERSION}\n"
-    "RUN mise use -g just@${JUST_VERSION}\n"
+    "RUN mise use -g just@${JUST_VERSION} lefthook@${LEFTHOOK_VERSION} \\\n"
+    "        shellcheck@${SHELLCHECK_VERSION} node@${NODE_VERSION}\n"
 )
 _LOCKSTEP_PYTHON_DOCKERFILE = (
     "# python layer fixture\n"
@@ -61,6 +63,8 @@ _LOCKSTEP_PYTHON_DOCKERFILE = (
     "FROM ${BASE_IMAGE}\n"
     "ARG UV_VERSION=0.5.20\n"
     "ARG PYTHON_VERSION=3.10.16\n"
+    "RUN mise use -g uv@${UV_VERSION} \\\n"
+    "    && mise reshim\n"
     "RUN uv python install ${PYTHON_VERSION}\n"
 )
 _LOCKSTEP_PYTHON_RUST_DOCKERFILE = (
@@ -95,6 +99,7 @@ _LOCKSTEP_MISE_TOML = (
     'uv       = "0.5.20"\n'
     'just     = "1.36.0"\n'
     'lefthook = "1.13.6"\n'
+    'shellcheck = "0.11.0"\n'
     "malformed line without equals\n"
 )
 
@@ -169,6 +174,66 @@ def test_rejects_drifted_from_chain_default(*, tmp_path: Path) -> None:
     combined = result.stdout + result.stderr
     assert "PARENT_IMAGE" in combined and "wrong:latest" in combined, (
         f"diagnostic should name the drifted FROM-chain ARG and value; "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_rejects_declared_tool_absent_from_the_image_args(*, tmp_path: Path) -> None:
+    """A `.mise.toml` tool with no baked ARG pin is drift, not an exemption.
+
+    The obligation is DERIVED from the `[tools]` table, so declaring a tool
+    without baking it fails rather than silently creating no obligation.
+    That silent-no-obligation gap is what let `shellcheck` reach every
+    containerized CI job as a per-job network fetch from the releases CDN.
+    """
+    unbaked = _LOCKSTEP_BASE_DOCKERFILE.replace("ARG SHELLCHECK_VERSION=0.11.0\n", "")
+    _write_fixture(
+        root=tmp_path,
+        layers={**_LOCKSTEP_LAYERS, "base": unbaked},
+        mise_toml=_LOCKSTEP_MISE_TOML,
+        python_version=_LOCKSTEP_PYTHON_VERSION,
+    )
+
+    result = _run_check(cwd=tmp_path)
+
+    assert result.returncode != 0, (
+        f"a declared-but-unbaked tool should fail; got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    combined = result.stdout + result.stderr
+    assert "SHELLCHECK_VERSION" in combined, (
+        f"diagnostic should name the unbaked tool's obligated ARG; "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_rejects_declared_tool_never_installed_by_mise(*, tmp_path: Path) -> None:
+    """An ARG pin alone does not bake the tool — it must be `mise use -g`-installed.
+
+    Without this direction a tool could carry a correct, in-lockstep ARG and
+    still be absent from the image, which is exactly the un-cached state the
+    ARG is meant to guarantee against.
+    """
+    declared_but_uninstalled = _LOCKSTEP_BASE_DOCKERFILE.replace(
+        " shellcheck@${SHELLCHECK_VERSION}", ""
+    )
+    _write_fixture(
+        root=tmp_path,
+        layers={**_LOCKSTEP_LAYERS, "base": declared_but_uninstalled},
+        mise_toml=_LOCKSTEP_MISE_TOML,
+        python_version=_LOCKSTEP_PYTHON_VERSION,
+    )
+
+    result = _run_check(cwd=tmp_path)
+
+    assert result.returncode != 0, (
+        f"a declared tool never installed by mise should fail; "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    combined = result.stdout + result.stderr
+    assert "shellcheck" in combined, (
+        f"diagnostic should name the uninstalled tool; "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
 
