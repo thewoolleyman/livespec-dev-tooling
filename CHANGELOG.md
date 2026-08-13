@@ -58,6 +58,16 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.20.9](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.20.8...v1.20.9) (2026-08-13)
+
+
+### Bug Fixes
+
+* **ci-runner:** retry the masked podman SQLite exec-state race ([4cdcc73](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4cdcc73d4995ec9d73591f9abf7a522cb82b9d85))
+* **ci:** bake every declared tool into the sandbox image ([c46ad38](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c46ad381316bf6beeedde8ac90d91932a25c5c5e))
+* **ci:** retry every dependency fetch in the sandbox image build ([6784850](https://github.com/thewoolleyman/livespec-dev-tooling/commit/678485038741b33a6074a22cf2265bbfb8f71f38))
+* **ci:** retry mise fetches from the GitHub releases CDN ([bb50c8b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/bb50c8bb80e391333cf42afaf5024ed2fa346238))
+
 ## [1.20.8](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.20.7...v1.20.8) (2026-08-13)
 
 
