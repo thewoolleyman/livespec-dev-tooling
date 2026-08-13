@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.21.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.21.0...v1.21.1) (2026-08-13)
+
+
+### Bug Fixes
+
+* **ci-runner:** raise dockershim exec retry from 3 to 10 attempts for podman SQLite race ([a283d7f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a283d7f0704fe58bf3941addc20645206c184186))
+
 ## [1.21.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.20.9...v1.21.0) (2026-08-13)
 
 
