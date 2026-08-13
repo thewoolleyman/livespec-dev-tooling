@@ -48,8 +48,18 @@ bwrap --ro-bind / / --unshare-user --uid 0 -- /usr/bin/true \
 # ---------------------------------------------------------------------------
 log "1. Install rootless stack (25.10-validated; reversible)"
 export DEBIAN_FRONTEND=noninteractive
+# podman-docker provides /usr/bin/docker as a thin podman wrapper — NO daemon and
+# NO docker group, so it adds nothing to the containment surface. It is REQUIRED,
+# not a convenience: the container hooks shell out to `docker` by name, and the
+# serialization shim installed in step 7 execs $CI_RUNNER_REAL_DOCKER, default
+# /usr/bin/docker. Without it, every containerized job dies in PrepareJobAsync with
+#   Error: Unable to locate executable file: docker
+# before a single step runs. This went unnoticed because the host this script was
+# authored against already carried a docker CLI from an unrelated daemon install,
+# so /usr/bin/docker existed for reasons provisioning never established. Observed
+# 2026-08-13 on a fresh Ubuntu 26.04 host with podman but no docker.
 apt-get install -y --no-install-recommends \
-  podman uidmap slirp4netns passt crun catatonit fuse-overlayfs aardvark-dns
+  podman podman-docker uidmap slirp4netns passt crun catatonit fuse-overlayfs aardvark-dns
 # runtimes must NOT be setuid-root (newuidmap/newgidmap ARE, and that is allowed)
 for rt in /usr/bin/crun /usr/sbin/runc /usr/bin/bwrap /usr/bin/podman; do
   [ -e "$rt" ] && [ -n "$(find "$rt" -perm -4000 2>/dev/null)" ] && { echo "FATAL: $rt is setuid-root"; exit 1; }
