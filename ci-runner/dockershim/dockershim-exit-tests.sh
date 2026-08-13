@@ -185,5 +185,109 @@ else
   bad "T14 XDG_RUNTIME_DIR repaired (got: $(grep '^XDG_RUNTIME_DIR=' "$TMP/env.log"))"
 fi
 
+printf '\n== T15-T18: missing bind SOURCES are created on create, as dockerd would ==\n'
+# podman exits 125 on a bind source that does not exist; docker creates it. The
+# runner emits _work/_actions and friends before creating them, so without this
+# every containerized job on a cold slot dies at "Initialize containers".
+bind_root="$TMP/binds"
+rm -rf "$bind_root"
+
+run_shim create \
+  -v="$bind_root/equals-form:/__w/_actions" \
+  -v "$bind_root/space-form:/__w/_tool" \
+  -v="$bind_root/with-mode:/github/home:ro" \
+  --entrypoint tail image:tag -f /dev/null >/dev/null
+
+if [ -d "$bind_root/equals-form" ]; then
+  ok "T15 a missing bind source in -v=SRC:DST form is created"
+else
+  bad "T15 a missing bind source in -v=SRC:DST form is created"
+fi
+
+if [ -d "$bind_root/space-form" ]; then
+  ok "T16 a missing bind source in '-v SRC:DST' form is created"
+else
+  bad "T16 a missing bind source in '-v SRC:DST' form is created"
+fi
+
+if [ -d "$bind_root/with-mode" ] && [ ! -e "$bind_root/with-mode:" ]; then
+  ok "T17 a :ro suffix is stripped rather than becoming part of the path"
+else
+  bad "T17 a :ro suffix is stripped rather than becoming part of the path"
+fi
+
+# A NAMED volume has no leading slash. podman manages those itself, and turning
+# one into a directory in the CWD would be a silent mess.
+: >"$TMP/argv.log"
+( cd "$TMP" && run_shim create -v=named-volume:/data --entrypoint tail image:tag >/dev/null )
+if [ ! -e "$TMP/named-volume" ]; then
+  ok "T18 a named volume is NOT turned into a directory"
+else
+  bad "T18 a named volume is NOT turned into a directory"
+fi
+
+printf '\n== T19-T22: the rootless-netns teardown failure is tolerated, but ONLY it ==\n'
+# podman removes the container and then fails killing its own network helper,
+# exiting 125 on work that already succeeded. The shim translates that ONE error
+# to success — and must not translate anything else, nor translate it when a
+# container actually survived. A fake docker stands in for podman: FAKE_RM_ERROR
+# picks the failure text, FAKE_INSPECT_EXIT decides whether the container is
+# still present.
+FAKE_RM="$TMP/fake-docker-rm"
+cat >"$FAKE_RM" <<'EOF'
+#!/usr/bin/env bash
+for a in "$@"; do
+  if [ "$a" = "inspect" ]; then exit "${FAKE_INSPECT_EXIT:-1}"; fi
+done
+printf '%s\n' "${FAKE_RM_ERROR:-}" >&2
+exit 125
+EOF
+chmod +x "$FAKE_RM"
+
+NETNS_ERR='Error: cleaning up container abc: removing container abc network: 1 error occurred:
+	* rootless netns: kill network process: permission denied'
+
+run_rm() {
+  env CI_RUNNER_REAL_DOCKER="$FAKE_RM" \
+      CI_RUNNER_PODMAN_LOCK="$LOCKFILE" \
+      FAKE_RM_ERROR="$1" \
+      FAKE_INSPECT_EXIT="$2" \
+      timeout 5 "$SHIM" rm --force abc >/dev/null 2>&1
+  printf '%s' "$?"
+}
+
+# Container gone (inspect fails) + the netns error -> tolerated.
+got="$(run_rm "$NETNS_ERR" 1)"
+if [ "$got" = "0" ]; then
+  ok "T19 the netns teardown failure is tolerated when the container is gone"
+else
+  bad "T19 the netns teardown failure is tolerated when the container is gone (exit $got)"
+fi
+
+# The SAME error, but the container survived (inspect succeeds) -> NOT tolerated.
+got="$(run_rm "$NETNS_ERR" 0)"
+if [ "$got" = "125" ]; then
+  ok "T20 it is NOT tolerated when a container survives the rm"
+else
+  bad "T20 it is NOT tolerated when a container survives the rm (exit $got)"
+fi
+
+# A different failure, container gone -> still NOT tolerated.
+got="$(run_rm "Error: container abc is in use by another container" 1)"
+if [ "$got" = "125" ]; then
+  ok "T21 an unrelated rm failure is never tolerated"
+else
+  bad "T21 an unrelated rm failure is never tolerated (exit $got)"
+fi
+
+# A successful rm still exits 0 and still passes argv through.
+: >"$TMP/argv.log"
+got="$(run_shim rm --force deadbeef)"
+if [ "$got" = "0" ] && grep -qx 'rm --force deadbeef' "$TMP/argv.log"; then
+  ok "T22 a successful rm still exits 0 with argv passed through unchanged"
+else
+  bad "T22 a successful rm still exits 0 with argv passed through unchanged (exit $got)"
+fi
+
 printf '\nresult: %s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
