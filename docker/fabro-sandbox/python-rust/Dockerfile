@@ -41,15 +41,16 @@ ARG RUST_VERSION=1.92.0
 # minimal set that restores linking — deliberately NOT the full
 # buildpack-deps dev-header library set, and deliberately NOT in `base`,
 # so only the Rust consumer pays for it.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends gcc libc6-dev \
+RUN apt-get -o Acquire::Retries=5 update \
+    && apt-get -o Acquire::Retries=5 install -y --no-install-recommends gcc libc6-dev \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # Bake the pinned Rust toolchain (mirrors the console's
 # rust-toolchain.toml: channel + clippy + rustfmt). The minimal profile
 # keeps the layer lean; rustup lands cargo/rustc under /root/.cargo.
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+RUN curl --proto '=https' --tlsv1.2 -sSf \
+        --retry 5 --retry-all-errors --retry-connrefused https://sh.rustup.rs \
     | sh -s -- -y --default-toolchain ${RUST_VERSION} --profile minimal \
         --component clippy,rustfmt
 ENV PATH=/root/.cargo/bin:$PATH
