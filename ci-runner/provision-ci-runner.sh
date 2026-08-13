@@ -149,7 +149,28 @@ for slug in ${REPOSLUGS}; do
       [ -d "\$inst/\$d" ] || cp -al "${RUNNER_DIR}/\$d" "\$inst/\$d"
     done
     # Per-instance: the launch scripts + env (so .runner/.credentials land HERE).
-    for f in run.sh run-helper.sh config.sh env.sh safe_sleep.sh .env; do
+    #
+    # run-helper.sh.TEMPLATE, not run-helper.sh. A freshly extracted runner
+    # tarball ships only the template; run.sh copies it to run-helper.sh at
+    # STARTUP and then execs it. Copying "run-helper.sh" therefore matches
+    # nothing on a fresh install, the \`|| true\` swallows the miss, and every
+    # instance dir is silently built without the file. The runner then dies at
+    # first start with:
+    #   cp: cannot stat '.../run-helper.sh.template': No such file or directory
+    #   ./run.sh: line 18: .../run-helper.sh: No such file or directory
+    # This stayed invisible on a host where run.sh had already been run once in
+    # the shared install, because that leaves a real run-helper.sh behind for the
+    # copy to find — so the bug only ever appears on a genuinely fresh host.
+    # Observed 2026-08-13 on Ubuntu 26.04.
+    for f in run.sh run-helper.sh.template config.sh env.sh .env; do
+      [ -e "${RUNNER_DIR}/\$f" ] \
+        || { echo "FATAL: required runner file missing: ${RUNNER_DIR}/\$f"; exit 1; }
+      cp -f "${RUNNER_DIR}/\$f" "\$inst/\$f"
+    done
+    # Genuinely optional: present in some runner releases and not others. These
+    # keep the tolerant form ON PURPOSE, so the strict loop above stays a real
+    # assertion rather than a list everything drifts into.
+    for f in run-helper.cmd.template safe_sleep.sh; do
       [ -e "${RUNNER_DIR}/\$f" ] && cp -f "${RUNNER_DIR}/\$f" "\$inst/\$f" || true
     done
   done
