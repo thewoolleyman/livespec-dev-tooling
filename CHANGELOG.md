@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.20.7](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.20.6...v1.20.7) (2026-08-13)
+
+
+### Bug Fixes
+
+* reject archived regroomed anchors with open descendants ([fe9921d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/fe9921dfe0165566a3045716d07c8f4fa5a4c332))
+
 ## [1.20.6](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.20.5...v1.20.6) (2026-08-13)
 
 
