@@ -39,8 +39,15 @@ name: CI
 # self-hosted lane the moved jobs' `uv sync` hits the runner's persistent
 # ~/.cache/uv (NOT actions/cache, which this cutover deleted from them), so
 # an unchanged lock installs from cache and never contacts PyPI at all.
+#
+# mise reaches the SAME class of CDN (GitHub releases) for its tool binaries
+# and fails identically — observed 2026-08-13 on `shellcheck`, which reddened
+# this repo's own master. mise's own default is `http_retries = 0` — one
+# attempt, no retry — so the lesson already learned for uv above had to be
+# spelled out again here.
 env:
   UV_HTTP_RETRIES: "5"
+  MISE_HTTP_RETRIES: "5"
   # Test-parallelism lane signal read by the justfile's `test_nprocs`
   # (plan/fabro-ci-image-factoring cont.5). RUNNER_ENVIRONMENT does NOT
   # propagate into container jobs, so derive the lane from the routing
