@@ -36,3 +36,32 @@ def test_operational_contract_documents_manual_override_and_non_migratable_jobs(
     assert "queued" in documentation
     assert "in-progress" in documentation
     assert "golden-master" in documentation
+
+
+def test_router_exposes_a_saturation_grace_window_defaulting_to_five_minutes() -> None:
+    workflow = _read(".github/workflows/reusable-ci-runner-router.yml")
+
+    assert "saturation-grace-seconds" in workflow
+    assert "default: 300" in workflow
+    assert "saturation-poll-interval-seconds" in workflow
+    assert "max-wait-seconds: ${{ inputs.saturation-grace-seconds }}" in workflow
+    assert "poll-interval-seconds: ${{ inputs.saturation-poll-interval-seconds }}" in workflow
+
+
+def test_router_only_grants_the_grace_window_to_the_first_probe() -> None:
+    """The existing 30s recovery hysteresis on the second probe is unchanged."""
+    workflow = _read(".github/workflows/reusable-ci-runner-router.yml")
+
+    assert workflow.count("max-wait-seconds: ${{") == 1
+    assert workflow.count("poll-interval-seconds: ${{") == 1
+
+
+def test_documentation_explains_the_outage_vs_saturation_distinction() -> None:
+    documentation = _read("docs/ci-runner-failover.md")
+
+    assert "saturation" in documentation.lower()
+    assert "saturated-timeout" in documentation
+    assert "no-online-matching-runner" in documentation
+    assert "300 seconds" in documentation or "5 minutes" in documentation
+    assert "homelab" in documentation
+    assert "Nix" in documentation
