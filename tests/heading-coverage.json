@@ -402,7 +402,7 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: JIT startup batch stays within the half-budget point burst",
+    "heading": "## Scenario: JIT startup batch immediately admits all permitted demand within the half-budget point burst",
     "test": "TODO",
     "reason": "Implementation follows in livespec-s43svm.5; an integration-tier controller proof is required for this scenario."
   },
