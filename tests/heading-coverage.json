@@ -391,5 +391,40 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an App installation budget does not recover inside the wait bound",
     "test": "tests.consumer.test_github_rate_budget_token.test_helper_failure_taxonomy_is_bounded_and_distinct"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## JIT runner supervisor GitHub request discipline",
+    "test": "TODO",
+    "reason": "New contributor-facing runner-supervisor request-control requirement; replace the transition TODO with its governed implementation test when the controller ships."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: JIT supervisor paces a startup runner burst",
+    "test": "TODO",
+    "reason": "Integration tier scenario coverage will be supplied with the supervisor implementation; this transition entry explicitly requires integration-tier evidence."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: JIT supervisor recovers from secondary limits without a retry storm",
+    "test": "TODO",
+    "reason": "Integration tier scenario coverage will be supplied with the supervisor implementation; this transition entry explicitly requires integration-tier evidence."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: JIT supervisor preserves cooldown across restart and malformed guidance",
+    "test": "TODO",
+    "reason": "Integration tier scenario coverage will be supplied with the supervisor implementation; this transition entry explicitly requires integration-tier evidence."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: JIT supervisor records a terminal exhausted retry budget",
+    "test": "TODO",
+    "reason": "Integration tier scenario coverage will be supplied with the supervisor implementation; this transition entry explicitly requires integration-tier evidence."
   }
 ]
