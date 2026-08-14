@@ -30,6 +30,12 @@
   "template": "livespec",
   "spec_root": "SPECIFICATION",
   "implementation": { "plugin": "livespec-orchestrator-beads-fabro" },
+  // ACTIVE spec_governance overrides. Only the keys this repo intentionally
+  // moves off their shipped defaults appear here; every other lever stays at
+  // the default documented in the reference block below.
+  "spec_governance": {
+    "propose_change_mode": "batch"
+  },
   // Optional — spec_governance: policy levers for livespec's spec-side
   // operations. The commented defaults below are derived from the shipped
   // spec-governance manifest; leaving this block commented arms nothing, so
