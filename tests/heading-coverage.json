@@ -391,5 +391,40 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an App installation budget does not recover inside the wait bound",
     "test": "tests.consumer.test_github_rate_budget_token.test_helper_failure_taxonomy_is_bounded_and_distinct"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: JIT replacement is immediate but installation-budgeted",
+    "test": "TODO",
+    "reason": "Implementation follows in livespec-s43svm.5; an integration-tier consumer proof is required for this scenario."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: JIT startup batch stays within the half-budget point burst",
+    "test": "TODO",
+    "reason": "Implementation follows in livespec-s43svm.5; an integration-tier controller proof is required for this scenario."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: JIT throttle opens one shared circuit",
+    "test": "TODO",
+    "reason": "Implementation follows in livespec-s43svm.5; an integration-tier controller proof is required for this scenario."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: JIT fleet capacity borrows fairly without exceeding 482 runners",
+    "test": "TODO",
+    "reason": "Implementation follows in livespec-s43svm.5; an integration-tier controller proof is required for this scenario."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: JIT circuit state survives restart without a reburst",
+    "test": "TODO",
+    "reason": "Implementation follows in livespec-s43svm.5; an integration-tier controller proof is required for this scenario."
   }
 ]
