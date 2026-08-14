@@ -10,7 +10,8 @@ Permanent home per design: **`livespec-dev-tooling`** (relocate).
 | File | Role | Install to |
 |---|---|---|
 | `mint-jitconfig.sh` | Mints a one-shot JIT config via the App (JWT → installation token → `generate-jitconfig`). Key from `APP_KEY` (file) or `APP_KEY_PEM` (env). **Verified: exits 0, mints a real ephemeral registration.** | `/usr/local/lib/ci-runner/` |
-| `ci-runner-supervisor.sh` | The loop: per (repo, slot) mint JIT → `systemctl start runner@<id>` → wait → relaunch. Repo list via `CI_RUNNER_REPOS`. | `/usr/local/lib/ci-runner/` |
+| `ci-runner-supervisor.sh` | The loop: per (repo, slot) mint JIT → `systemctl start runner@<id>` → wait (guarded by `wedge-guard.sh`) → relaunch. Repo list via `CI_RUNNER_REPOS`. | `/usr/local/lib/ci-runner/` |
+| `wedge-guard.sh` | Mid-job liveness backstop (livespec-s43svm.12): sourced by `ci-runner-supervisor.sh`'s wait loop, detects a unit wedged inside the dockershim binary past `CI_RUNNER_WEDGE_TIMEOUT_SECONDS` (default 900s) and force-stops it so the existing paced replenish loop re-mints it — never starts a replacement itself. See `wedge-guard-exit-tests.sh` for the fault-injection proof. | `/usr/local/lib/ci-runner/` |
 | `runner@.service` | Templated **ephemeral** runner unit; `User=ci-runner`; JIT staged via `LoadCredential` (root → ci-runner-only); runs one job then exits. | `/etc/systemd/system/` |
 | `run-jit-runner.sh` | `ExecStart` wrapper: reads the JIT credential, execs `run.sh --jitconfig`. | `/usr/local/lib/ci-runner/` |
 | `ci-runner-supervisor.service` | Hardened supervisor unit; `User=ci-sup`; App key injected ONLY here. | `/etc/systemd/system/` |
