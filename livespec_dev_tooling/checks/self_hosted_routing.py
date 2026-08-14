@@ -7,8 +7,8 @@ ONLY a repo's own `.github/workflows/*.yml` and `*.yaml`, this check asserts two
 independent properties per workflow file:
 
     1. REACHABILITY. If any job's `runs-on` references a GATING self-hosted
-       label, the workflow's `on:` trigger set MUST NOT contain any FORBIDDEN
-       trigger.
+       label, or calls the shared CI runner router that can emit one, the
+       workflow's `on:` trigger set MUST NOT contain any FORBIDDEN trigger.
     2. FAIL-CLOSED ROUTING. If a `runs-on` resolves through a repo variable
        with a fallback (`vars.X || <fallback>`), that fallback MUST NOT name
        self-hosted capacity — deleting or emptying the variable would
@@ -81,6 +81,7 @@ __all__: list[str] = []
 _WORKFLOWS_DIR = Path(".github") / "workflows"
 _WORKFLOW_GLOBS = ("*.yml", "*.yaml")
 _CHECK_ID = "self_hosted_routing"
+_CI_RUNNER_ROUTER_WORKFLOW = "reusable-ci-runner-router.yml"
 
 # The built-in gating label. A consumer's `gating_self_hosted_labels` adds to
 # this set rather than replacing it, so adopting a new dedicated label cannot
@@ -157,11 +158,24 @@ def _referenced_gating_labels(
     )
 
 
+def _references_ci_runner_router(*, stripped: str) -> bool:
+    """Return whether this workflow can delegate ordinary CI to the shared router.
+
+    The router's selected `runs-on` value is a job output, so it intentionally
+    contains no literal self-hosted label for this check's existing parser to
+    see. Treating the router call itself as a gating route preserves the
+    forbidden-trigger invariant across that indirection.
+    """
+    return _CI_RUNNER_ROUTER_WORKFLOW in stripped
+
+
 def _trigger_finding(
     *, path: Path, cwd: Path, stripped: str, values: list[str], gating_labels: frozenset[str]
 ) -> _TriggerFinding | None:
     """Return a finding when this workflow routes a forbidden trigger to a gating job."""
     referenced = _referenced_gating_labels(values=values, gating_labels=gating_labels)
+    if _references_ci_runner_router(stripped=stripped):
+        referenced = tuple(sorted((*referenced, "ci-runner-router")))
     if not referenced:
         return None
     forbidden = tuple(sorted(workflow_triggers(stripped=stripped) & _FORBIDDEN_TRIGGERS))

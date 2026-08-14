@@ -24,10 +24,9 @@
 #
 # The two check matrices run in the SAME baked image the Fabro sandbox uses,
 # on the local self-hosted runner — so "green in CI" and "green in sandbox"
-# are the same environment (livespec plan/fabro-ci-image-factoring). runs-on
-# resolves from the repo variable CI_RUNNER_LABELS, defaulting to the
-# self-hosted label; set it to '["ubuntu-latest"]' to reroute to GitHub-hosted
-# when the local host is down (the merge-gate fallback). setup,
+# are the same environment (livespec plan/fabro-ci-image-factoring). A hosted
+# preflight selects the local labels only after two healthy observations and
+# otherwise emits ubuntu-latest; see reusable-ci-runner-router.yml. setup,
 # check-fleet-conformance, export-telemetry and ci-green stay ubuntu-latest —
 # see each job for why.
 
@@ -48,14 +47,6 @@ name: CI
 env:
   UV_HTTP_RETRIES: "5"
   MISE_HTTP_RETRIES: "5"
-  # Test-parallelism lane signal read by the justfile's `test_nprocs`
-  # (plan/fabro-ci-image-factoring cont.5). RUNNER_ENVIRONMENT does NOT
-  # propagate into container jobs, so derive the lane from the routing
-  # variable here: GitHub-hosted (CI_RUNNER_LABELS flipped to an ubuntu
-  # label) → `hosted` → pytest -n auto; the self-hosted/local lane → `local`
-  # → -n 25%-of-cores (overridable per host via LIVESPEC_TEST_PARALLELISM).
-  LIVESPEC_CI_LANE: ${{ contains(vars.CI_RUNNER_LABELS, 'ubuntu') && 'hosted' || 'local' }}
-
 # merge_group is deliberately ABSENT: no merge queue is configured for this
 # repo (verified live — zero rulesets, required_merge_queue: null; branch
 # protection requires only ci-green). Keeping the vestigial trigger would be
@@ -68,6 +59,19 @@ on:
     branches: [master]
 
 jobs:
+  select-ci-runner:
+    # The selector itself is hosted. It is a reusable workflow from this exact
+    # revision, so this repository proves the shared router before fleet
+    # callers pin a released dev-tooling ref.
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/reusable-ci-runner-router.yml
+    with:
+      local-runner-labels: '["self-hosted","local-ci"]'
+      failover-mode: ${{ vars.CI_RUNNER_FAILOVER_MODE || 'auto' }}
+      trusted: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false }}
+
   setup:
     name: detect-py-changes
     runs-on: ubuntu-latest
@@ -123,15 +127,16 @@ jobs:
 
   check-python:
     name: ${{ matrix.target }}
-    needs: setup
-    # Hosted runner carrying the baked sandbox image as its job container. The
-    # SAME tag runs in Fabro, preserving the green-in-CI / red-in-sandbox drift
-    # protection without occupying the shared factory host. The hosted fallback
-    # is deliberate: deleting the repo variable must not reactivate local CI.
-    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    needs: [setup, select-ci-runner]
+    # The selector output is exactly one complete hosted or self-hosted label
+    # set. GitHub does not fall back when a self-hosted label set has no match.
+    runs-on: ${{ fromJSON(needs.select-ci-runner.outputs.runs_on) }}
     container:
       image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.21.1
     env:
+      # RUNNER_ENVIRONMENT does not propagate into container jobs. Keep the
+      # parallelism policy aligned with the selector output instead.
+      LIVESPEC_CI_LANE: ${{ needs.select-ci-runner.outputs.lane }}
       # The image installs the pinned tools under /root (build-time HOME), but
       # container-hooks run steps with a DIFFERENT HOME — so mise's default data
       # dir ($HOME/.local/share/mise) is empty and `mise install` would RE-fetch
@@ -319,12 +324,13 @@ jobs:
   # master pushes the range is empty.
   check-metadata:
     name: ${{ matrix.target }}
-    # Hosted in the baked image, same rationale as check-python above. Every
-    # target follows CI_RUNNER_LABELS, with a hosted fail-safe default.
-    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    needs: select-ci-runner
+    # The same single-lane selector protects every ordinary gating target.
+    runs-on: ${{ fromJSON(needs.select-ci-runner.outputs.runs_on) }}
     container:
       image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.21.1
     env:
+      LIVESPEC_CI_LANE: ${{ needs.select-ci-runner.outputs.lane }}
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
       GITHUB_TOKEN: ${{ github.token }}
