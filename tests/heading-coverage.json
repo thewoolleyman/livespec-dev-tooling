@@ -426,5 +426,12 @@
     "heading": "## Scenario: JIT circuit state survives restart without a reburst",
     "test": "TODO",
     "reason": "Implementation follows in livespec-s43svm.5; an integration-tier controller proof is required for this scenario."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Adaptive JIT runner admission budget",
+    "test": "TODO",
+    "reason": "Implementation follows in livespec-s43svm.5; a controller integration-tier proof is required for this NFR."
   }
 ]
