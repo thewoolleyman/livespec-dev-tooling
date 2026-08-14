@@ -10,6 +10,19 @@ inputs:
   runner-labels:
     description: JSON array of the required self-hosted runner labels.
     required: true
+  max-wait-seconds:
+    description: >-
+      Bounded seconds to poll through routine saturation (matching runners
+      online but all busy) before failing over to hosted. 0 (the default)
+      waits none, matching prior behavior; a true outage (zero online
+      matching runners) or an API error always fails over immediately
+      regardless of this value.
+    required: false
+    default: "0"
+  poll-interval-seconds:
+    description: Seconds between saturation polls while waiting for local capacity.
+    required: false
+    default: "15"
 
 outputs:
   healthy:
@@ -18,6 +31,12 @@ outputs:
   idle-matching:
     description: Number of idle matching runners in the bounded API sample.
     value: ${{ steps.probe.outputs.idle-matching }}
+  online-matching:
+    description: Number of online runners (regardless of busy) matching every required label.
+    value: ${{ steps.probe.outputs.online-matching }}
+  waited-seconds:
+    description: Seconds this probe waited through saturation before returning.
+    value: ${{ steps.probe.outputs.waited-seconds }}
   detail:
     description: Safe decision detail; never includes credentials or response bodies.
     value: ${{ steps.probe.outputs.detail }}
@@ -30,4 +49,6 @@ runs:
       env:
         CI_RUNNER_HEALTH_TOKEN: ${{ inputs.github-token }}
         CI_RUNNER_HEALTH_LABELS: ${{ inputs.runner-labels }}
+        CI_RUNNER_HEALTH_MAX_WAIT_SECONDS: ${{ inputs.max-wait-seconds }}
+        CI_RUNNER_HEALTH_POLL_INTERVAL_SECONDS: ${{ inputs.poll-interval-seconds }}
       run: python "$GITHUB_ACTION_PATH/runner_health.py"

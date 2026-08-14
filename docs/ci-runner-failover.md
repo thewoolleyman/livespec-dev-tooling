@@ -15,8 +15,49 @@ uses the read-only Actions runner API and selects local only after two bounded
 observations, separated by 30 seconds, each find an online, idle runner
 carrying every required label. An API error, no matching runner, or a recovery
 flap selects `ubuntu-latest` immediately. The job summary records the lane,
-safe reason, and both probe results; automatic mode makes at most two API list
-requests, a deliberate rate/cost cap.
+safe reason, and both probe results, including how long the first probe
+waited through saturation; automatic mode makes at most two API list requests
+plus one per saturation poll, a deliberate rate/cost cap.
+
+## Outage vs. saturation
+
+The first probe distinguishes two different kinds of "no idle runner right
+now," because they call for different responses:
+
+- **Outage** — zero runners online at all that carry the required labels
+  (`online_matching == 0`), or an API/parse error. This routes to hosted
+  **immediately**, with no waiting: the pool is unavailable, and waiting
+  cannot help.
+- **Saturation** — at least one matching runner is online, but every one of
+  them is currently busy (`online_matching > 0`, `idle_matching == 0`). This
+  is routine, expected fleet behavior, not an incident: the pool is healthy,
+  just fully booked. The probe polls on `saturation-poll-interval-seconds`
+  (default 15s) for up to `saturation-grace-seconds` — a `workflow_call`
+  input on the reusable router, **default 300 seconds (5 minutes)** — before
+  giving up. As soon as any poll observes an idle matching runner, the job
+  routes local immediately; it never waits out the rest of the window.
+
+The 5-minute default is deliberate, not arbitrary. Some repos in the fleet —
+`homelab` is the motivating example — have no warm build cache (e.g. no Nix
+binary cache) on GitHub-hosted runners. A cache-cold hosted job on such a repo
+can run an order of magnitude slower than a warmed local runner would. In
+that situation, queuing for a few minutes of local capacity to free up is
+cheaper, in both wall-clock time and hosted-runner spend, than failing over
+immediately. Callers that don't share this cache asymmetry can override
+`saturation-grace-seconds` down (including to `0`, which reproduces the
+pre-grace-window behavior of failing over the instant no runner is idle) via
+the `workflow_call` input.
+
+If the grace window elapses while still saturated, the job routes hosted with
+a `saturated-timeout` reason — distinct from the outage reasons
+(`no-online-matching-runner`, `runner-api-error`) — so the job summary and any
+downstream alerting can tell "the pool was down" apart from "the pool was
+just busy and stayed busy."
+
+The existing two-probe/30-second recovery hysteresis is unchanged and applies
+only once the first probe has already reported healthy (an idle runner was
+observed, whether on the first read or after waiting through saturation): the
+router still confirms that healthy state is stable before trusting it.
 
 `CI_RUNNER_FAILOVER_MODE` is the caller's operational override:
 

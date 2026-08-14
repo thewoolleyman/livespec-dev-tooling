@@ -166,14 +166,44 @@ def test_probe_rejects_an_unparseable_runner_list() -> None:
     assert result.detail == "runner-api-error"
 
 
-def test_probe_reports_unhealthy_when_no_matching_runner_is_idle() -> None:
+def test_probe_reports_outage_immediately_with_zero_online_matching_runners() -> None:
+    """Zero online matching runners is a true outage: fail hosted, no polling."""
     action = _load_action()
+    call_count = 0
+
+    def opener(**_: Any) -> dict[str, Any]:
+        nonlocal call_count
+        call_count += 1
+        return {
+            "runners": [
+                {
+                    "status": "offline",
+                    "busy": False,
+                    "labels": [{"name": "self-hosted"}, {"name": "local-ci"}],
+                }
+            ]
+        }
 
     result = action.probe(
         repository="acme/widget",
         token=_TEST_TOKEN,
         required_labels=frozenset({"self-hosted", "local-ci"}),
-        opener=lambda **_: {
+        opener=opener,
+        max_wait_seconds=300,
+    )
+
+    assert not result.healthy
+    assert result.online_matching == 0
+    assert result.waited_seconds == 0
+    assert call_count == 1
+    assert result.detail == "no-online-matching-runner"
+
+
+def test_probe_waits_through_saturation_and_recovers_within_the_grace_window() -> None:
+    """Online-but-busy is saturation, not outage: poll until idle, or window elapses."""
+    action = _load_action()
+    calls: list[dict[str, Any]] = [
+        {
             "runners": [
                 {
                     "status": "online",
@@ -182,10 +212,128 @@ def test_probe_reports_unhealthy_when_no_matching_runner_is_idle() -> None:
                 }
             ]
         },
+        {
+            "runners": [
+                {
+                    "status": "online",
+                    "busy": True,
+                    "labels": [{"name": "self-hosted"}, {"name": "local-ci"}],
+                }
+            ]
+        },
+        {
+            "runners": [
+                {
+                    "status": "online",
+                    "busy": False,
+                    "labels": [{"name": "self-hosted"}, {"name": "local-ci"}],
+                }
+            ]
+        },
+    ]
+    clock_seconds = [0.0]
+    sleeps: list[float] = []
+
+    def opener(**_: Any) -> dict[str, Any]:
+        return calls.pop(0)
+
+    def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+        clock_seconds[0] += seconds
+
+    result = action.probe(
+        repository="acme/widget",
+        token=_TEST_TOKEN,
+        required_labels=frozenset({"self-hosted", "local-ci"}),
+        opener=opener,
+        max_wait_seconds=300,
+        poll_interval_seconds=15,
+        sleep=fake_sleep,
+        clock=lambda: clock_seconds[0],
+    )
+
+    assert result.healthy
+    assert result.idle_matching == 1
+    assert result.online_matching == 1
+    assert result.detail == "idle-runner-observed"
+    assert result.waited_seconds == 30
+    assert sleeps == [15, 15]
+
+
+def test_probe_fails_hosted_with_saturated_timeout_when_window_fully_elapses() -> None:
+    action = _load_action()
+    clock_seconds = [0.0]
+
+    def opener(**_: Any) -> dict[str, Any]:
+        return {
+            "runners": [
+                {
+                    "status": "online",
+                    "busy": True,
+                    "labels": [{"name": "self-hosted"}, {"name": "local-ci"}],
+                }
+            ]
+        }
+
+    def fake_sleep(seconds: float) -> None:
+        clock_seconds[0] += seconds
+
+    result = action.probe(
+        repository="acme/widget",
+        token=_TEST_TOKEN,
+        required_labels=frozenset({"self-hosted", "local-ci"}),
+        opener=opener,
+        max_wait_seconds=40,
+        poll_interval_seconds=15,
+        sleep=fake_sleep,
+        clock=lambda: clock_seconds[0],
     )
 
     assert not result.healthy
-    assert result.detail == "no-idle-matching-runner"
+    assert result.online_matching == 1
+    assert result.detail == "saturated-timeout"
+    assert result.waited_seconds == 40
+
+
+def test_probe_fails_closed_to_hosted_on_an_api_error_mid_polling() -> None:
+    """An API error during a saturation poll must fail closed, same as outage."""
+    action = _load_action()
+    calls: list[Any] = [
+        {
+            "runners": [
+                {
+                    "status": "online",
+                    "busy": True,
+                    "labels": [{"name": "self-hosted"}, {"name": "local-ci"}],
+                }
+            ]
+        },
+        OSError("network unavailable"),
+    ]
+    clock_seconds = [0.0]
+
+    def opener(**_: Any) -> dict[str, Any]:
+        outcome = calls.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    def fake_sleep(seconds: float) -> None:
+        clock_seconds[0] += seconds
+
+    result = action.probe(
+        repository="acme/widget",
+        token=_TEST_TOKEN,
+        required_labels=frozenset({"self-hosted", "local-ci"}),
+        opener=opener,
+        max_wait_seconds=300,
+        poll_interval_seconds=15,
+        sleep=fake_sleep,
+        clock=lambda: clock_seconds[0],
+    )
+
+    assert not result.healthy
+    assert result.detail == "runner-api-error"
 
 
 def test_request_json_rejects_a_non_object_response(*, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -226,13 +374,18 @@ def test_main_writes_safe_output_for_healthy_and_invalid_inputs(
         action,
         "probe",
         lambda **_: action.ProbeResult(
-            healthy=True, idle_matching=2, detail="idle-runner-observed"
+            healthy=True,
+            idle_matching=2,
+            detail="idle-runner-observed",
+            online_matching=2,
+            waited_seconds=15,
         ),
     )
 
     assert action.main() == 0
     assert output.read_text(encoding="utf-8") == (
-        "healthy=true\nidle-matching=2\ndetail=idle-runner-observed\n"
+        "healthy=true\nidle-matching=2\nonline-matching=2\nwaited-seconds=15\n"
+        "detail=idle-runner-observed\n"
     )
 
     output.write_text("", encoding="utf-8")
@@ -240,5 +393,6 @@ def test_main_writes_safe_output_for_healthy_and_invalid_inputs(
 
     assert action.main() == 0
     assert output.read_text(encoding="utf-8") == (
-        "healthy=false\nidle-matching=0\ndetail=invalid-health-probe-input\n"
+        "healthy=false\nidle-matching=0\nonline-matching=0\nwaited-seconds=0\n"
+        "detail=invalid-health-probe-input\n"
     )
