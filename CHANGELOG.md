@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.23.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.22.0...v1.23.0) (2026-08-14)
+
+
+### Features
+
+* distinguish saturation from outage in CI runner failover probe ([d366476](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d366476065504795c402a213c71793989f375b93))
+
 ## [1.22.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.21.1...v1.22.0) (2026-08-14)
 
 
