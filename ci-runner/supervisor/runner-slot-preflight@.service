@@ -1,0 +1,14 @@
+# runner-slot-preflight@.service — root-owned precondition for one JIT slot.
+#
+# This is deliberately a one-shot unit without RemainAfterExit. Each supervisor
+# launch starts it anew, so it creates missing roots and re-verifies existing
+# ones before ANY GitHub POST can mint a single-use JIT registration.
+[Unit]
+Description=Prepare and verify CI runner slot %i before JIT minting
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/local/lib/ci-runner/prepare-runner-slot.sh %i
+ProtectSystem=true
+PrivateTmp=true

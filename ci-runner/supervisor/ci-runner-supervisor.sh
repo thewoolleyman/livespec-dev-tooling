@@ -46,6 +46,7 @@ LABELS_CSV="self-hosted,local-ci"
 # Parsed for CLI compatibility with deployed units; per-slot runner dirs own actual work paths.
 export WORK_FOLDER="/home/ci-runner/_work"
 MINT="/usr/local/lib/ci-runner/mint-jitconfig.sh"
+PREFLIGHT_UNIT_PREFIX="runner-slot-preflight"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -79,6 +80,40 @@ JIT_DIR=/run/ci-runner                 # tmpfs, ci-runner-readable one-shot hand
 
 # JSON array form of the labels for the JIT mint API.
 labels_json="$(printf '%s' "$LABELS_CSV" | jq -R 'split(",")')"
+
+# The preflight service runs as root because ci-sup intentionally cannot mutate
+# ci-runner's runner roots.  It materializes every configured stable slot from
+# the canonical install and verifies Runner.Listener resolves within that root.
+# Do it as one all-or-nothing pass BEFORE spawning slot loops: a missing root is
+# a local configuration breach, not a retryable GitHub failure.  In particular,
+# no call to $MINT (and thus no GitHub POST) is reachable until all slots pass.
+preflight_slots() {
+  local repo_spec repo repo_slots slot reposlug inst unit
+  for repo_spec in $REPOS; do
+    repo="${repo_spec%%:*}"
+    if [ "$repo_spec" = "$repo" ]; then
+      repo_slots="$SLOTS_PER_REPO"
+    else
+      repo_slots="${repo_spec##*:}"
+    fi
+    reposlug="${repo//\//-}"
+    for slot in $(seq 1 "$repo_slots"); do
+      inst="${reposlug}-${slot}"
+      unit="${PREFLIGHT_UNIT_PREFIX}@${inst}.service"
+      if ! systemctl start "$unit"; then
+        printf 'ci-runner-supervisor: slot preflight failed for %s; refusing to mint JIT configs\n' \
+          "$inst" >&2
+        return 1
+      fi
+    done
+  done
+}
+
+if ! preflight_slots; then
+  # RestartPreventExitStatus=75 makes a broken local runner installation an
+  # operator-visible terminal condition rather than a 10-second retry storm.
+  exit 75
+fi
 
 run_one() {
   local repo="$1" slot="$2" name jit unit jf reposlug inst work

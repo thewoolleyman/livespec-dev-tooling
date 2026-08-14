@@ -1,6 +1,10 @@
 // 49-ci-runner-supervisor.rules — the NARROW privilege bridge.
 // Allows the low-priv `ci-sup` supervisor user to start/stop/restart ONLY
-// runner@*.service instances (the ephemeral runner units, fixed User=ci-runner).
+// runner@*.service instances (the ephemeral runner units, fixed User=ci-runner)
+// and start runner-slot-preflight@*.service (the fixed root-owned pre-mint
+// materializer). The latter is deliberately a distinct, narrow unit family:
+// ci-sup may request preparation for a named stable slot, but receives no broad
+// root command or systemctl authority.
 // It grants NO other systemctl authority, NO broad sudo, NO docker socket — so
 // neither ci-sup nor ci-runner nor a job can escalate through this bridge.
 // Install at /etc/polkit-1/rules.d/49-ci-runner-supervisor.rules.
@@ -9,8 +13,10 @@ polkit.addRule(function(action, subject) {
         subject.user === "ci-sup") {
         var unit = action.lookup("unit") || "";
         var verb = action.lookup("verb") || "";
-        if (/^runner@.+\.service$/.test(unit) &&
-            (verb === "start" || verb === "stop" || verb === "restart")) {
+        if ((/^runner@.+\.service$/.test(unit) &&
+             (verb === "start" || verb === "stop" || verb === "restart")) ||
+            (/^runner-slot-preflight@[A-Za-z0-9][A-Za-z0-9._-]*\.service$/.test(unit) &&
+             verb === "start")) {
             return polkit.Result.YES;
         }
     }

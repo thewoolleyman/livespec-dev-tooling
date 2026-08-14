@@ -10,11 +10,12 @@ Permanent home per design: **`livespec-dev-tooling`** (relocate).
 | File | Role | Install to |
 |---|---|---|
 | `mint-jitconfig.sh` | Mints a one-shot JIT config via the App (JWT → installation token → `generate-jitconfig`). Key from `APP_KEY` (file) or `APP_KEY_PEM` (env). **Verified: exits 0, mints a real ephemeral registration.** | `/usr/local/lib/ci-runner/` |
+| `prepare-runner-slot.sh` + `runner-slot-preflight@.service` | Root-owned, one-shot preflight. Before any JIT POST, creates a missing stable slot from hard-linked canonical runner files and verifies the executable/root shape. | `/usr/local/lib/ci-runner/`, `/etc/systemd/system/` |
 | `ci-runner-supervisor.sh` | The loop: per (repo, slot) mint JIT → `systemctl start runner@<id>` → wait → relaunch. Repo list via `CI_RUNNER_REPOS`. | `/usr/local/lib/ci-runner/` |
 | `runner@.service` | Templated **ephemeral** runner unit; `User=ci-runner`; JIT staged via `LoadCredential` (root → ci-runner-only); runs one job then exits. | `/etc/systemd/system/` |
 | `run-jit-runner.sh` | `ExecStart` wrapper: reads the JIT credential, execs `run.sh --jitconfig`. | `/usr/local/lib/ci-runner/` |
 | `ci-runner-supervisor.service` | Hardened supervisor unit; `User=ci-sup`; App key injected ONLY here. | `/etc/systemd/system/` |
-| `49-ci-runner-supervisor.rules` | Narrow polkit bridge: `ci-sup` may start/stop **only** `runner@*.service`. Nothing else. | `/etc/polkit-1/rules.d/` |
+| `49-ci-runner-supervisor.rules` | Narrow polkit bridge: `ci-sup` may start/stop `runner@*.service` and start a validated `runner-slot-preflight@*.service`. Nothing else. | `/etc/polkit-1/rules.d/` |
 
 ## Credential model (verified)
 
@@ -39,3 +40,16 @@ Permanent home per design: **`livespec-dev-tooling`** (relocate).
 Then: create the `ci-sup` + confirm `ci-runner` users, install the files above,
 `systemctl enable --now ci-runner-supervisor.service`, and verify one ephemeral
 runner picks up a `runs-on: [self-hosted, local-ci]` job and auto-deregisters.
+
+## Pre-mint slot safety
+
+The supervisor first starts `runner-slot-preflight@<repo-slot>.service` for
+every requested slot. The root-owned one-shot creates a missing instance from
+the canonical runner using `cp -al`, rejects symlinked roots, and confirms its
+`Runner.Listener` is executable and hard-linked to the canonical root. Only if
+the complete pass succeeds can `mint-jitconfig.sh` POST to GitHub.
+
+If preflight fails, the supervisor exits `75`; its service declares that status
+as restart-preventing. Repair the canonical install or slot root, then start the
+supervisor explicitly. Do not treat this as a retryable GitHub failure: retrying
+cannot repair local disk state and must never consume more JIT registrations.
