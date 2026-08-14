@@ -40,6 +40,16 @@
 # repo getting the same flat slot count regardless of size.
 set -euo pipefail
 
+# wedge-guard.sh: mid-job liveness backstop (livespec-s43svm.12). A runner
+# that passes startup and gets assigned a job can still wedge INSIDE the
+# custom container-hook binary (Initialize/Stop containers hanging for
+# minutes under host-wide IO contention); without this, the wait loop below
+# has no notion of "stuck" and a wedged unit silently holds its slot forever
+# since systemd reports it ACTIVE the whole time. Sourced (not exec'd) so its
+# CI_RUNNER_WEDGE_* overrides and functions are visible to run_one below.
+# shellcheck source=./wedge-guard.sh
+. "$(cd "$(dirname "$0")" && pwd)/wedge-guard.sh"
+
 REPOS="thewoolleyman/livespec"
 SLOTS_PER_REPO=1
 LABELS_CSV="self-hosted,local-ci"
@@ -114,7 +124,17 @@ run_one() {
   ( umask 0177; printf '%s' "$jit" > "$jf" )
   unit="runner@${inst}.service"
   systemctl start "$unit"                 # polkit-granted for runner@*.service only
-  while systemctl is-active --quiet "$unit"; do sleep 5; done
+  # wedge-guard: on every poll, also check whether this unit is wedged inside
+  # the dockershim binary past the bounded threshold; if so, force-stop it
+  # here. `is-active` then goes false on the NEXT iteration (systemctl stop
+  # already completed synchronously) and the loop exits normally, so run_one
+  # returns as it always did -- the caller's existing `while :; do run_one
+  # ... || sleep 10; done` re-mints and restarts the slot at the normal paced
+  # rate. This function never starts a replacement itself.
+  while systemctl is-active --quiet "$unit"; do
+    wedge_guard_check_and_recycle "$unit" || true
+    sleep 5
+  done
   rm -f "$jf"
 }
 
