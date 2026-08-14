@@ -21,6 +21,24 @@ on:
         required: false
         default: 30
         type: number
+      saturation-grace-seconds:
+        description: >-
+          Bounded seconds the first probe polls through routine saturation
+          (matching local runners all online but busy) before failing over
+          to hosted. Defaults to 300 (5 minutes): on a repo without a warm
+          hosted build cache (e.g. homelab's uncached Nix store), a
+          cache-cold hosted job can run an order of magnitude slower than
+          waiting for local capacity to free up, so it is worth queuing.
+          A true outage (zero online matching runners) or an API error
+          always fails over immediately regardless of this value.
+        required: false
+        default: 300
+        type: number
+      saturation-poll-interval-seconds:
+        description: Seconds between saturation polls while waiting for local capacity.
+        required: false
+        default: 15
+        type: number
     outputs:
       runs_on:
         description: JSON accepted by a downstream job's fromJSON(runs-on) expression.
@@ -51,6 +69,8 @@ jobs:
         with:
           github-token: ${{ github.token }}
           runner-labels: ${{ inputs.local-runner-labels }}
+          max-wait-seconds: ${{ inputs.saturation-grace-seconds }}
+          poll-interval-seconds: ${{ inputs.saturation-poll-interval-seconds }}
 
       - name: Confirm recovery before returning to local capacity
         if: inputs.trusted && inputs.failover-mode == 'auto' && steps.first-probe.outputs.healthy == 'true'
@@ -71,6 +91,7 @@ jobs:
           TRUSTED: ${{ inputs.trusted }}
           FIRST_HEALTH: ${{ steps.first-probe.outputs.healthy }}
           FIRST_DETAIL: ${{ steps.first-probe.outputs.detail }}
+          FIRST_WAITED_SECONDS: ${{ steps.first-probe.outputs.waited-seconds }}
           SECOND_HEALTH: ${{ steps.second-probe.outputs.healthy }}
           SECOND_DETAIL: ${{ steps.second-probe.outputs.detail }}
         run: |
@@ -113,7 +134,7 @@ jobs:
           {
             echo '### CI runner routing'
             echo "- Decision: \`$lane\` (\`$reason\`)"
-            echo "- First bounded probe: \`${FIRST_HEALTH:-not-run}\` (${FIRST_DETAIL:-not-run})"
+            echo "- First bounded probe: \`${FIRST_HEALTH:-not-run}\` (${FIRST_DETAIL:-not-run}), waited ${FIRST_WAITED_SECONDS:-0}s through saturation"
             echo "- Second bounded probe: \`${SECOND_HEALTH:-not-run}\` (${SECOND_DETAIL:-not-run})"
-            echo '- API budget: at most two read-only runner-list requests per automatic run.'
+            echo '- API budget: at most two read-only runner-list requests per automatic run, plus one per saturation poll while waiting for local capacity.'
           } >> "$GITHUB_STEP_SUMMARY"
