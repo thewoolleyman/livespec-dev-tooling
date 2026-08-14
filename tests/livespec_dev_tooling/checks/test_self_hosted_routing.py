@@ -566,6 +566,38 @@ def test_hosted_fallback_on_forbidden_trigger_is_noop(
     assert rc == 0, f"a hosted fallback is never a finding; combined={combined!r}"
 
 
+def test_router_call_on_forbidden_trigger_fails_closed(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The hosted router remains a gating route, not an exemption from trigger safety.
+
+    Its output is deliberately dynamic, so a `runs-on`-only scan would miss a
+    `workflow_dispatch` caller and permit it to select local capacity.  The
+    router invocation itself must therefore carry the same forbidden-trigger
+    protection as a literal local-ci `runs-on` expression.
+    """
+    body = (
+        "name: unsafe-router\n"
+        "on:\n"
+        "  workflow_dispatch:\n"
+        "jobs:\n"
+        "  select-ci-runner:\n"
+        "    uses: thewoolleyman/livespec-dev-tooling/.github/workflows/"
+        "reusable-ci-runner-router.yml@v1\n"
+        "    with:\n"
+        '      local-runner-labels: \'["self-hosted","local-ci"]\'\n'
+        "      trusted: true\n"
+    )
+    _ = _write_workflow(tmp_path=tmp_path, name="unsafe-router.yml", body=body)
+
+    rc, combined = _run_main(tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert rc == 1
+    findings = _findings(combined=combined)
+    assert findings[0].get("workflow") == ".github/workflows/unsafe-router.yml"
+    assert "ci-runner-router" in str(findings[0].get("gating_labels"))
+
+
 def test_mixed_clean_and_bad_workflows_reports_only_the_bad(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -1,0 +1,33 @@
+name: CI runner health
+description: >-
+  Read the current repository's self-hosted runner inventory and report whether
+  an idle runner matches every requested label. API errors fail closed.
+
+inputs:
+  github-token:
+    description: Read-only token with Actions runner read permission.
+    required: true
+  runner-labels:
+    description: JSON array of the required self-hosted runner labels.
+    required: true
+
+outputs:
+  healthy:
+    description: Whether an idle matching runner was observed.
+    value: ${{ steps.probe.outputs.healthy }}
+  idle-matching:
+    description: Number of idle matching runners in the bounded API sample.
+    value: ${{ steps.probe.outputs.idle-matching }}
+  detail:
+    description: Safe decision detail; never includes credentials or response bodies.
+    value: ${{ steps.probe.outputs.detail }}
+
+runs:
+  using: composite
+  steps:
+    - id: probe
+      shell: bash
+      env:
+        CI_RUNNER_HEALTH_TOKEN: ${{ inputs.github-token }}
+        CI_RUNNER_HEALTH_LABELS: ${{ inputs.runner-labels }}
+      run: python "$GITHUB_ACTION_PATH/runner_health.py"
