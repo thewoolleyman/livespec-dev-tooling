@@ -43,6 +43,11 @@ RuntimeDirectoryMode=0700
 ExecStart=/usr/local/bin/with-github-ci-runners-env.sh -- /usr/local/lib/ci-runner/ci-runner-supervisor.sh --repos thewoolleyman/livespec --slots 18 --labels self-hosted,local-ci
 Restart=always
 RestartSec=10
+# Slot preflight exits 75 when the local canonical install or a stable runner
+# root is invalid. Retrying that breach would only repeat local filesystem work;
+# it must remain visibly failed until an operator repairs the host. Crucially the
+# supervisor has not made a GitHub request at that point.
+RestartPreventExitStatus=75
 # Hardening — the supervisor holds the most powerful secret, so lock down what can
 # be locked down. NoNewPrivileges is deliberately NOT set: the 1Password wrapper
 # self-escalates via `sudo -n` to systemd-creds-decrypt its service-account token,

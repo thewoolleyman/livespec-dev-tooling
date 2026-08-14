@@ -189,6 +189,23 @@ EOF
 printf 'provisioned %s instance dirs per repo-slug under %s\n' "$SLOTS" "$INSTANCES_ROOT"
 
 # ---------------------------------------------------------------------------
+log "6a. Install root-owned slot preflight (required before every JIT mint)"
+# The supervisor runs as ci-sup and deliberately has no write access to runner
+# roots. A narrow systemd one-shot creates/verifies each requested root as
+# ci-runner BEFORE the credential-bearing supervisor can issue any GitHub POST.
+# Do not replace this with a best-effort runner@ ExecStartPre: that executes only
+# after a single-use JIT registration has already been burned.
+install -o root -g root -m 0755 \
+  "$(dirname "$0")/supervisor/prepare-runner-slot.sh" /usr/local/lib/ci-runner/prepare-runner-slot.sh
+install -o root -g root -m 0644 \
+  "$(dirname "$0")/supervisor/runner-slot-preflight@.service" \
+  /etc/systemd/system/runner-slot-preflight@.service
+install -o root -g root -m 0644 \
+  "$(dirname "$0")/supervisor/49-ci-runner-supervisor.rules" \
+  /etc/polkit-1/rules.d/49-ci-runner-supervisor.rules
+systemctl daemon-reload
+
+# ---------------------------------------------------------------------------
 log "7. docker serialization shim (podman network-prune race — REQUIRED for >1 slot)"
 # Every slot shares ONE rootless podman. `podman network prune` walks the GLOBAL
 # container DB to find in-use networks (the label filter only narrows what it
