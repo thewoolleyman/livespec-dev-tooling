@@ -20,16 +20,43 @@ depends on and what "pass" means concretely.
    cluster and confirm the fields exist with the expected shape before
    applying `kueue/cluster-queue-*.yaml` for real.
 2. **Determine whether ARC's own controller needs
-   `admission_response.py`'s classification logic.** `README.md` "What
-   does NOT move to Kueue/ARC" flags this as unresolved. Provision a
-   throwaway GitHub App installation-token exhaustion scenario (or read
-   ARC's `gha-runner-scale-set-controller` source/logs for its GitHub
-   API client's retry/backoff behavior) and determine: does ARC already
-   handle 403/429/`Retry-After` correctly on its own, or does some gap
-   remain that the merged classifier
-   (`ci-runner/supervisor/admission_response.py`, PR #1414) could fill
-   if wired into a custom component? Record the finding either way —
-   this is a real open question, not a placeholder to skip.
+   `admission_response.py`'s classification logic.**
+   **PARTIALLY ANSWERED (2026-08-15, source-read leg — no live cluster
+   needed for this part):** ARC's modern `gha-runner-scale-set` path
+   calls into the [`actions/scaleset`](https://github.com/actions/scaleset)
+   Go client. Its two minting-relevant calls —
+   `getRunnerRegistrationToken` (`POST .../actions/runners/
+   registration-token`, the exact endpoint `.14`'s live install hit a
+   404 on) and `GenerateJitRunnerConfig` (`POST .../generatejitconfig`)
+   — both route through `commonClient.do`, which wraps
+   `hashicorp/go-retryablehttp` (`RetryMax=4`, `RetryWaitMax=30s`, no
+   custom `CheckRetry`). `go-retryablehttp`'s default policy retries
+   `429` (honoring a `Retry-After` header) and `5xx`, but explicitly
+   NOT a bare `403`. A custom `CheckRetry` that DOES add `401`/`403`
+   retry exists in `client.go`, but it is scoped ONLY to
+   `getActionsServiceAdminConnectionRequest` (the separate tenant-URL/
+   JWT exchange), not to either minting call. One layer up, the
+   controller-runtime reconcile loop
+   (`controllers/actions.github.com/options.go`) does eventually retry
+   via the default `workqueue.DefaultTypedControllerRateLimiter`
+   (per-item exponential backoff + a 10 QPS/100-bucket token bucket
+   across the whole controller) — but that is a generic K8s-controller-
+   pattern limiter, not GitHub-response-aware: it neither distinguishes
+   a genuine secondary-rate-limit `403` from a permanent error nor
+   honors `Retry-After`/reset-time guidance, and it throttles the
+   controller's own reconcile rate rather than coordinating against
+   GitHub's actual REST point budget. **Conclusion: this is a real,
+   confirmed gap** — `admission_response.py`'s classification logic is
+   NOT redundant with what ARC ships today. The actionable fix, if this
+   gap is ever observed live, is a custom `retryablehttp.CheckRetry`
+   wired via `scaleset.Client`'s own `WithRetryableHTTPClint`
+   constructor option (confirmed to exist for exactly this purpose),
+   not a fork or reimplementation. **STILL OPEN (needs a live
+   cluster):** this gap has not been OBSERVED live — `.14`'s actual
+   404 is a separate, permission-scope issue, unrelated to rate
+   limiting — so provisioning a throwaway installation-token
+   exhaustion scenario against the real cluster to confirm the gap
+   manifests as predicted remains a live-cluster validation step.
 3. **Prove the extended-resource patch survives a real kubelet
    restart.** Apply `node-extended-resource/patch-node-churn-capacity.sh`
    with a test capacity, confirm `kubectl get node -o

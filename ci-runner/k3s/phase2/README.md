@@ -160,16 +160,24 @@ Retry-After circuit breaker (same spec section, same
 `livespec-s43svm.5`) — governs calls to GitHub's REST API when MINTING
 runner registrations, which is a concern about ARC's OWN controller's
 GitHub API usage, not something Kueue (a purely Kubernetes-internal
-scheduler) has any visibility into. Whether ARC's `gha-runner-scale-set`
-listener already implements adequate GitHub rate-limit backoff
-internally, or would need `livespec-s43svm.5`'s already-merged
-`ci-runner/supervisor/admission_response.py` response classifier (PR
-[#1414](https://github.com/thewoolleyman/livespec-dev-tooling/pull/1414))
-wired into some custom component, is an OPEN QUESTION this design pass
-does not resolve — it requires reading ARC's actual controller
-behavior (ideally by observing it against a live installation, which
-this pass is explicitly not doing) rather than guessing. Flagged as
-`VALIDATION_CHECKLIST.md` item 2, not silently assumed either way.
+scheduler) has any visibility into.
+
+**Source-read finding (2026-08-15, no live cluster needed — see
+`VALIDATION_CHECKLIST.md` item 2 for the full trace): this is a real,
+confirmed gap, not redundant with what ARC ships.** ARC's
+[`actions/scaleset`](https://github.com/actions/scaleset) client wraps
+`hashicorp/go-retryablehttp` for its registration-token and JIT-config
+minting calls, retrying `429`/`5xx` but explicitly NOT a bare `403` —
+the one custom `401`/`403`-retry override in that library is scoped to
+a different call (the tenant-URL/JWT exchange), not either minting
+call. The controller-runtime reconcile loop's own generic workqueue
+rate limiter eventually retries a failed reconcile, but it is not
+GitHub-response-aware (no `Retry-After` honoring, no distinction
+between a genuine secondary-rate-limit `403` and a permanent error).
+**STILL OPEN:** whether this gap manifests in practice (vs. staying
+theoretical because GitHub simply never returns a bare `403` to this
+fleet's actual call volume) needs a live-cluster observation —
+`VALIDATION_CHECKLIST.md` item 2's remaining leg.
 
 ## Files
 
