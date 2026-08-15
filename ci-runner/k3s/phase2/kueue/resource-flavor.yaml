@@ -1,0 +1,22 @@
+# resource-flavor.yaml — the SINGLE ResourceFlavor every phase-2
+# per-repo ClusterQueue (kueue/cluster-queue-*.yaml) requests from.
+#
+# Keyed on ci-runner.io/churn-slot, an EXTENDED RESOURCE (see
+# ../node-extended-resource/) rather than cpu/memory. Per the migration
+# design record's own honest caveat (livespec repo
+# plan/fleet-ci-runner-pool/research/k3s-arc-kueue-migration.md, "Does
+# moving to Kubernetes make the epic's own load-balancing goal easier or
+# harder?"): the fleet's actual measured bottleneck is IOWAIT from
+# concurrent container churn (livespec-s43svm.11's evidence: 65-89%
+# iowait on the 72-core host during a contended run, not CPU or memory
+# pressure), and Kubernetes' default scheduler bin-packs on cpu/memory
+# requests only. Flavoring on the extended resource makes Kueue's
+# admission math track the REAL bottleneck instead of a proxy that would
+# let it admit far more concurrent runner pods than the host can absorb.
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: ResourceFlavor
+metadata:
+  name: churn-slot-flavor
+spec:
+  nodeLabels:
+    k3s-role: arc-runner-host  # matches provision-k3s.sh's --node-label; single-node today

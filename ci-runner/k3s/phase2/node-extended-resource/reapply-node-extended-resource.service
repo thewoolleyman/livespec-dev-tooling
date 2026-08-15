@@ -1,0 +1,35 @@
+# reapply-node-extended-resource.service — periodically re-apply the
+# ci-runner.io/churn-slot node-status patch (patch-node-churn-capacity.sh).
+#
+# WHY THIS EXISTS: a `kubectl patch node --subresource=status` extended
+# resource is NOT a device-plugin registration — kubelet does not own
+# or persist it, so a kubelet restart (k3s upgrade, node reboot, crash
+# recovery) can reset status.capacity to only what kubelet itself knows
+# about, silently dropping this resource until it is re-applied. This
+# timer-driven reconciliation is the pragmatic, homelab-scale answer
+# (matching this repo's own precedent for idempotent periodic
+# reconciliation — see ../../observability/ci-runner-cache-prune.timer)
+# rather than building a real device plugin for a single-node cluster.
+# See ../VALIDATION_CHECKLIST.md item 3 for confirming this actually
+# survives a real kubelet restart on the live host, and README.md
+# "Known caveat" for the tradeoff this accepts.
+#
+# CAPACITY VALUE: the argument below MUST be kept in lockstep with
+# whatever capacity was last intentionally set (see
+# patch-node-churn-capacity.sh's own header for the phase-2-provisional
+# vs. post-cutover-482 distinction) — this unit does not decide that
+# number, it only makes an ALREADY-DECIDED number durable across
+# restarts.
+[Unit]
+Description=Reapply the ci-runner.io/churn-slot node extended-resource patch
+After=k3s.service
+Requires=k3s.service
+
+[Service]
+Type=oneshot
+Environment=KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+# CAPACITY_PLACEHOLDER: replace with the currently-intended capacity
+# (see this file's own header comment) before installing this unit —
+# deliberately not defaulted, so an un-edited copy fails loudly instead
+# of silently reapplying the wrong number.
+ExecStart=/usr/local/lib/ci-runner-k3s/patch-node-churn-capacity.sh CAPACITY_PLACEHOLDER

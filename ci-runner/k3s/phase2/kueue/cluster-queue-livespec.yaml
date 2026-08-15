@@ -1,0 +1,50 @@
+# cluster-queue-livespec.yaml — ONE WORKED EXAMPLE of the per-repository
+# ClusterQueue pattern this design introduces. Every fleet repository
+# routed to local-ci gets its own ClusterQueue, named <repo>-cq, all
+# joined to the SAME cohort (fleetCohort below) so Kueue's Fair Sharing
+# (enable-fair-sharing.sh) borrows unused quota across them.
+#
+# nominalQuota derivation for THIS repo, livespec: the existing podman
+# supervisor's committed unit
+# (../../supervisor/ci-runner-supervisor.service) runs it at
+# `--slots 18` — this repository's MEASURED matrix width. Doubled per
+# SPECIFICATION/non-functional-requirements.md section "Adaptive JIT
+# runner admission budget" ("Each repository's logical ceiling MUST be
+# doubled to support two concurrent matrix pipelines"): 18 * 2 = 36.
+#
+# For every OTHER fleet repository, replace REPO_NAME, the nominalQuota
+# (that repo's own measured slot count, doubled), and the ClusterQueue/
+# LocalQueue names — see cluster-queue-EXAMPLE-repo.yaml for the
+# templated shape and README.md "Deriving a new repository's
+# ClusterQueue" for the exact steps. No generator script exists yet
+# (deliberately out of scope for this design pass — see
+# ../VALIDATION_CHECKLIST.md item 6).
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: ClusterQueue
+metadata:
+  name: livespec-cq
+spec:
+  cohort: fleet-ci-runner-pool
+  namespaceSelector: {}
+  fairSharing:
+    weight: 1  # equal weight across every repo's ClusterQueue — the spec states no per-repo priority
+  resourceGroups:
+    - coveredResources: ["ci-runner.io/churn-slot"]
+      flavors:
+        - name: churn-slot-flavor
+          resources:
+            - name: "ci-runner.io/churn-slot"
+              # This repo's DOUBLED logical ceiling (18 measured slots * 2).
+              # This is a LOGICAL ceiling, not a promise of physical capacity —
+              # see README.md "Why per-repo quotas summing above 482 is safe"
+              # for why the SUM of every repo's nominalQuota may legitimately
+              # exceed the 482 physical cap without ever admitting past it.
+              nominalQuota: 36
+---
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: LocalQueue
+metadata:
+  name: livespec-lq
+  namespace: arc-runners  # phase 1's shared namespace for every ARC release — see ../arc/values-livespec.yaml
+spec:
+  clusterQueue: livespec-cq

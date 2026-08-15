@@ -1,0 +1,50 @@
+# values-EXAMPLE-repo.yaml — TEMPLATE, not applied as-is. See
+# values-livespec.yaml for the fully-worked example and its comments;
+# copy this file to values-<repo>.yaml and replace every <PLACEHOLDER>:
+#   <REPO>             — the repo's short name
+#   <DOUBLED_CEILING>  — the SAME number as that repo's
+#                        ../kueue/cluster-queue-<repo>.yaml nominalQuota
+githubConfigUrl: "https://github.com/thewoolleyman/<REPO>"
+githubConfigSecret: arc-github-app-installation
+
+runnerScaleSetName: "<REPO>-local-ci-k3s"
+
+containerMode:
+  type: "kubernetes"
+  kubernetesModeWorkVolumeClaim:
+    accessModes: ["ReadWriteOnce"]
+    storageClassName: "local-path"
+    resources:
+      requests:
+        storage: 5Gi
+
+template:
+  metadata:
+    labels:
+      kueue.x-k8s.io/queue-name: <REPO>-lq
+  spec:
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+    containers:
+      - name: runner
+        image: ghcr.io/actions/actions-runner:latest
+        command: ["/home/runner/run.sh"]
+        env:
+          - name: ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER
+            value: "false"
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          capabilities:
+            drop: ["ALL"]
+        resources:
+          requests:
+            ci-runner.io/churn-slot: "1"
+          limits:
+            ci-runner.io/churn-slot: "1"
+
+minRunners: 0
+maxRunners: <DOUBLED_CEILING>

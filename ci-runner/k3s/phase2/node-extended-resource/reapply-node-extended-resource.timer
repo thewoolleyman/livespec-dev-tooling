@@ -1,0 +1,18 @@
+# reapply-node-extended-resource.timer — run the reapply service every
+# 5 minutes. The patch is a cheap, idempotent kubectl call (see
+# patch-node-churn-capacity.sh) — the interval trades a small amount of
+# redundant reconciliation for bounding how long the node could run
+# with the extended resource silently missing after a kubelet restart
+# (see reapply-node-extended-resource.service's header for why that can
+# happen). Frequent enough that a missed patch is caught well within a
+# single CI job's runtime; not so frequent that it noticeably adds load.
+[Unit]
+Description=Periodic ci-runner.io/churn-slot node extended-resource reapply (every 5 min)
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
