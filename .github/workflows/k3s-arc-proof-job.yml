@@ -1,0 +1,31 @@
+# proof-job.yml — the phase-1 "a host is proven by EXECUTING a job, not
+# by registering one" proof (livespec repo SPECIFICATION/
+# non-functional-requirements.md section "Self-hosted CI runner host
+# requirements"). Copy this file to .github/workflows/ in a repo with the
+# ARC scale set registered (or run it from THIS repo — it is deliberately
+# NOT wired into ci.yml or any `needs:` chain, so it can never gate a
+# merge) and dispatch it manually.
+#
+# manual dispatch only (workflow_dispatch, no push/pull_request trigger)
+# is the non-gating guarantee: this can never become a required status
+# check because nothing routes a PR event to it.
+name: k3s-arc-proof-job (phase 1, non-gating)
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  proof:
+    # host-unique label — proves THIS host specifically, per the
+    # host-requirements "a non-gating job addressed to the host-unique
+    # label satisfies both [registered AND proven]" clause.
+    runs-on: [self-hosted, poweredge-xubuntu-k3s]
+    steps:
+      - name: prove the path end-to-end
+        run: |
+          echo "k3s + ARC + Kueue phase 1 proof job"
+          echo "host: $(hostname)"
+          echo "kernel: $(uname -r)"
+          id
+          echo "this job proves the new path can execute a real job;"
+          echo "it routes zero traffic from any gating repository."
