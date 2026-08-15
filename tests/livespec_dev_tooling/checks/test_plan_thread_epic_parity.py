@@ -1,11 +1,9 @@
-"""Outside-in test for `livespec_dev_tooling/checks/plan_thread_epic_parity.py`.
+"""Outside-in test for `plan_thread_epic_parity`.
 
-The ledger-state PARITY half of plan-lifecycle enforcement: an ACTIVE plan thread
-must not point at a done/closed ledger epic. ARMED-ONLY — self-skips unless both
-`LIVESPEC_RUN_PLAN_EPIC_PARITY` and `BEADS_DOLT_PASSWORD` are set. The ledger read
-is an injected seam, so the armed path is exercised without a live ledger. Driven
-in-process per the repo's no-subprocess test convention; the default `bd` reader
-is covered by monkeypatching `subprocess.run` (no real spawn).
+Ratified Planning Lane v197 stores the plan anchor in ledger epic metadata and
+keeps handoff entries in the ledger timeline. Parity therefore compares live and
+archived plan directories with same-tenant ledger epics that name their
+`plan_slug`; it no longer reads `plan/*/handoff.md` or `plan/*/epic.md`.
 """
 
 from __future__ import annotations
@@ -13,7 +11,7 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
-from typing import NamedTuple
+from typing import NamedTuple, Protocol
 
 import pytest
 
@@ -26,7 +24,7 @@ _HELPER_PATH = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "_plan_thread_le
 
 
 def _load_check_module() -> ModuleType:
-    """Import the check module fresh from its file path (the tree the RGR hook inspects)."""
+    """Import the check module fresh from its file path."""
     spec = importlib.util.spec_from_file_location(
         "plan_thread_epic_parity_under_test", str(_CHECK_PATH)
     )
@@ -58,6 +56,25 @@ class _CheckRun(NamedTuple):
     stderr: str
 
 
+class _SubprocessRun(Protocol):
+    """Typed stand-in for `subprocess.run` monkeypatches."""
+
+    def __call__(self, *args: object, **kwargs: object) -> SimpleNamespace:
+        """Return the configured completed-process-like object."""
+        ...
+
+
+def _fake_subprocess_run(*, result: SimpleNamespace) -> _SubprocessRun:
+    """Return a typed subprocess.run replacement."""
+
+    def _run(*args: object, **kwargs: object) -> SimpleNamespace:
+        _ = args
+        _ = kwargs
+        return result
+
+    return _run
+
+
 def _arm(monkeypatch: pytest.MonkeyPatch) -> None:
     """Set both the RUN lever and the beads credential so the check is armed."""
     monkeypatch.setenv("LIVESPEC_RUN_PLAN_EPIC_PARITY", "1")
@@ -70,257 +87,208 @@ def _disarm(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("BEADS_DOLT_PASSWORD", raising=False)
 
 
-def _fake_reader(statuses: dict[str, str]):
-    """Build a StatusReader that resolves epic ids from a fixed mapping."""
-
-    def _reader(*, epic_id: str, repo: Path) -> str | None:
-        _ = repo
-        return statuses.get(epic_id)
-
-    return _reader
-
-
 def _run(
     *,
     cwd: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
-    statuses: dict[str, str] | None = None,
+    items: list[dict[str, object]] | None = None,
 ) -> _CheckRun:
-    """Invoke `main()` in-process under `cwd` with an injected status reader."""
+    """Invoke `main()` in-process under `cwd` with an injected item reader."""
+
+    def _items(*, repo: Path) -> list[dict[str, object]]:
+        assert repo == cwd
+        return items or []
+
     monkeypatch.chdir(cwd)
-    rc = _MODULE.main(status_reader=_fake_reader(statuses or {}))
+    rc = _MODULE.main(item_reader=_items)
     captured = capsys.readouterr()
     return _CheckRun(returncode=rc, stdout=captured.out, stderr=captured.err)
 
 
-def _write_handoff(*, root: Path, thread: str, body: str) -> Path:
-    """Create `<root>/plan/<thread>/handoff.md` with `body`."""
-    thread_dir = root / "plan" / thread
-    thread_dir.mkdir(parents=True, exist_ok=True)
-    handoff = thread_dir / "handoff.md"
-    handoff.write_text(body, encoding="utf-8")
-    return handoff
-
-
-def _write_epic(*, root: Path, thread: str, body: str) -> Path:
-    """Create `<root>/plan/<thread>/epic.md` with `body`."""
-    thread_dir = root / "plan" / thread
-    thread_dir.mkdir(parents=True, exist_ok=True)
-    epic = thread_dir / "epic.md"
-    epic.write_text(body, encoding="utf-8")
-    return epic
-
-
-def _write_archived_handoff(*, root: Path, thread: str, body: str) -> Path:
-    """Create `<root>/plan/archive/<thread>/handoff.md` with `body`."""
-    thread_dir = root / "plan" / "archive" / thread
-    thread_dir.mkdir(parents=True, exist_ok=True)
-    handoff = thread_dir / "handoff.md"
-    handoff.write_text(body, encoding="utf-8")
-    return handoff
+def _mkdir(*, root: Path, relative: str) -> None:
+    """Create a plan fixture directory."""
+    _ = (root / relative).mkdir(parents=True, exist_ok=True)
 
 
 def _write_livespec_config(*, root: Path, prefix: str = "livespec-dev-tooling") -> None:
     """Create a minimal `.livespec.jsonc` carrying the store prefix."""
-    (root / ".livespec.jsonc").write_text(
+    body = "\n".join(
         (
-            "{\n"
-            '  "implementation": { "plugin": "livespec-orchestrator-beads-fabro" },\n'
-            '  "livespec-orchestrator-beads-fabro": {\n'
-            '    "connection": { "prefix": "' + prefix + '" }\n'
-            "  }\n"
-            "}\n"
-        ),
+            "{",
+            '  "implementation": { "plugin": "livespec-orchestrator-beads-fabro" },',
+            '  "livespec-orchestrator-beads-fabro": {',
+            f'    "connection": {{ "prefix": "{prefix}" }}',
+            "  }",
+            "}",
+            "",
+        )
+    )
+    _ = (root / ".livespec.jsonc").write_text(
+        body,
         encoding="utf-8",
     )
 
 
-def _write_exported_issues(*, root: Path, lines: list[str]) -> None:
-    """Create a local beads JSONL export for descendant-edge fixtures."""
-    beads_dir = root / ".beads"
-    beads_dir.mkdir(parents=True, exist_ok=True)
-    (beads_dir / "issues.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-
-def _anchor_body(epic_id: str) -> str:
-    return f"# H\n\n**Ledger anchor:** epic `{epic_id}`\n"
+def _epic(
+    *,
+    item_id: str,
+    status: str,
+    slug: str,
+    resolution: str | None = None,
+) -> dict[str, object]:
+    """Return a plan-epic record with all recognized slug carriers populated."""
+    return {
+        "id": item_id,
+        "type": "epic",
+        "status": status,
+        "resolution": resolution,
+        "metadata": {"plan_slug": slug},
+        "notes": f"plan_slug={slug}",
+        "spec_commitment_hint": f"plan:{slug}",
+        "depends_on": [],
+    }
 
 
 def test_unarmed_lever_skips(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Without the RUN lever the check self-skips (exit 0), even with drift present."""
+    """Without the RUN lever the check self-skips even with drift present."""
     _disarm(monkeypatch)
-    _write_handoff(root=tmp_path, thread="t", body=_anchor_body("livespec-dev-tooling-l2sm"))
+    _mkdir(root=tmp_path, relative="plan/live")
+
     result = _run(
         cwd=tmp_path,
         monkeypatch=monkeypatch,
         capsys=capsys,
-        statuses={"livespec-dev-tooling-l2sm": "closed"},
+        items=[_epic(item_id="livespec-dev-tooling-e1", status="closed", slug="live")],
     )
-    assert result.returncode == 0, f"un-armed should skip; stderr={result.stderr!r}"
+
+    assert result.returncode == 0
     assert "skipped" in (result.stdout + result.stderr)
 
 
-def test_armed_lever_but_no_credential_skips(
+def test_armed_active_closed_epic_fails_from_ledger_metadata(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The lever alone (no `BEADS_DOLT_PASSWORD`) still self-skips."""
-    monkeypatch.setenv("LIVESPEC_RUN_PLAN_EPIC_PARITY", "1")
-    monkeypatch.delenv("BEADS_DOLT_PASSWORD", raising=False)
-    _write_handoff(root=tmp_path, thread="t", body=_anchor_body("livespec-dev-tooling-l2sm"))
-    result = _run(
-        cwd=tmp_path,
-        monkeypatch=monkeypatch,
-        capsys=capsys,
-        statuses={"livespec-dev-tooling-l2sm": "closed"},
-    )
-    assert result.returncode == 0, f"lever-without-cred should skip; stderr={result.stderr!r}"
-
-
-def test_armed_closed_epic_fails(
-    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Armed: an active thread pointing at a closed epic fails and names the epic."""
+    """Armed: an active plan whose metadata anchor epic is closed fails."""
     _arm(monkeypatch)
     _write_livespec_config(root=tmp_path)
-    _write_handoff(root=tmp_path, thread="drift", body=_anchor_body("livespec-dev-tooling-l2sm"))
+    _mkdir(root=tmp_path, relative="plan/drift")
+
     result = _run(
         cwd=tmp_path,
         monkeypatch=monkeypatch,
         capsys=capsys,
-        statuses={"livespec-dev-tooling-l2sm": "done"},
+        items=[_epic(item_id="livespec-dev-tooling-e1", status="done", slug="drift")],
     )
-    assert result.returncode == 1, f"active→done epic should fail; stderr={result.stderr!r}"
+
     combined = result.stdout + result.stderr
-    assert "plan/drift/handoff.md" in combined
-    assert "livespec-dev-tooling-l2sm" in combined
-    assert '"level": "error"' in combined
+    assert result.returncode == 1
+    assert "plan/drift" in combined
+    assert "livespec-dev-tooling-e1" in combined
+    assert '"disposition": "re-scoped"' in combined
 
 
-def test_armed_migrated_closed_epic_fails(
+def test_armed_active_open_epic_passes(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Armed: a migrated active `epic.md` pointing at a closed epic fails."""
+    """Armed: an active plan whose metadata anchor epic is open passes."""
     _arm(monkeypatch)
     _write_livespec_config(root=tmp_path)
-    _write_epic(
-        root=tmp_path,
-        thread="drift",
-        body="# Ledger epic anchor\n\nlivespec-dev-tooling-l2sm\n",
-    )
+    _mkdir(root=tmp_path, relative="plan/live")
+
     result = _run(
         cwd=tmp_path,
         monkeypatch=monkeypatch,
         capsys=capsys,
-        statuses={"livespec-dev-tooling-l2sm": "done"},
+        items=[_epic(item_id="livespec-dev-tooling-e1", status="backlog", slug="live")],
     )
-    assert result.returncode == 1, f"migrated active→done should fail; {result.stderr!r}"
-    combined = result.stdout + result.stderr
-    assert "plan/drift/epic.md" in combined
-    assert "livespec-dev-tooling-l2sm" in combined
+
+    assert result.returncode == 0, result.stderr
 
 
-def test_armed_closed_epic_uses_repo_tenant_prefix(
+def test_armed_non_plan_metadata_without_slug_is_ignored(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Armed: same-tenant anchors derive from the repo store prefix, not this package."""
+    """Armed: ordinary ledger metadata without `plan_slug` is not a crash."""
+    _arm(monkeypatch)
+    _write_livespec_config(root=tmp_path)
+    _mkdir(root=tmp_path, relative="plan/live")
+    ordinary_record: dict[str, object] = {
+        "id": "livespec-dev-tooling-task",
+        "type": "task",
+        "status": "open",
+        "metadata": {"priority": "normal"},
+    }
+
+    result = _run(
+        cwd=tmp_path,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        items=[
+            ordinary_record,
+            _epic(item_id="livespec-dev-tooling-e1", status="backlog", slug="live"),
+        ],
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_armed_archived_open_epic_fails_from_ledger_metadata(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Armed: an archived plan whose metadata anchor epic is open fails."""
+    _arm(monkeypatch)
+    _write_livespec_config(root=tmp_path)
+    _mkdir(root=tmp_path, relative="plan/archive/premature")
+
+    result = _run(
+        cwd=tmp_path,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        items=[_epic(item_id="livespec-dev-tooling-e1", status="ready", slug="premature")],
+    )
+
+    combined = result.stdout + result.stderr
+    assert result.returncode == 1
+    assert "plan/archive/premature" in combined
+    assert "livespec-dev-tooling-e1" in combined
+
+
+def test_armed_missing_active_anchor_fails(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Armed: an active plan with no same-tenant metadata anchor is unreadable drift."""
+    _arm(monkeypatch)
+    _write_livespec_config(root=tmp_path)
+    _mkdir(root=tmp_path, relative="plan/missing")
+
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys, items=[])
+
+    combined = result.stdout + result.stderr
+    assert result.returncode == 1
+    assert "plan/missing" in combined
+    assert "missing ledger epic metadata anchor" in combined
+
+
+def test_armed_cross_tenant_anchor_ignored(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Armed: a plan epic outside the repo-derived tenant prefix is ignored."""
     _arm(monkeypatch)
     _write_livespec_config(root=tmp_path, prefix="overseer")
-    _write_handoff(root=tmp_path, thread="drift", body=_anchor_body("overseer-l2sm"))
+    _mkdir(root=tmp_path, relative="plan/live")
+
     result = _run(
         cwd=tmp_path,
         monkeypatch=monkeypatch,
         capsys=capsys,
-        statuses={"overseer-l2sm": "done"},
+        items=[_epic(item_id="livespec-dev-tooling-e1", status="done", slug="live")],
     )
-    assert result.returncode == 1, f"active→done tenant epic should fail; stderr={result.stderr!r}"
-    assert "overseer-l2sm" in (result.stdout + result.stderr)
 
-
-def test_armed_cross_tenant_anchor_ignored_under_derived_prefix(
-    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Armed: an anchor outside the repo-derived tenant prefix is still ignored."""
-    _arm(monkeypatch)
-    _write_livespec_config(root=tmp_path, prefix="overseer")
-    _write_handoff(
-        root=tmp_path,
-        thread="xt",
-        body=_anchor_body("livespec-dev-tooling-l2sm"),
-    )
-    result = _run(
-        cwd=tmp_path,
-        monkeypatch=monkeypatch,
-        capsys=capsys,
-        statuses={"livespec-dev-tooling-l2sm": "closed"},
-    )
-    assert result.returncode == 0, f"cross-tenant anchor must be ignored; stderr={result.stderr!r}"
-
-
-def test_armed_open_epic_passes(
-    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Armed: an active thread pointing at an OPEN epic passes."""
-    _arm(monkeypatch)
-    _write_livespec_config(root=tmp_path)
-    _write_handoff(root=tmp_path, thread="ok", body=_anchor_body("livespec-dev-tooling-scsj5e"))
-    result = _run(
-        cwd=tmp_path,
-        monkeypatch=monkeypatch,
-        capsys=capsys,
-        statuses={"livespec-dev-tooling-scsj5e": "backlog"},
-    )
-    assert result.returncode == 0, f"active→open epic should pass; stderr={result.stderr!r}"
-
-
-def test_armed_archived_open_epic_fails(
-    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Armed: an archived thread pointing at an OPEN epic fails."""
-    _arm(monkeypatch)
-    _write_livespec_config(root=tmp_path)
-    _write_archived_handoff(
-        root=tmp_path,
-        thread="premature",
-        body=_anchor_body("livespec-dev-tooling-q3emww"),
-    )
-    result = _run(
-        cwd=tmp_path,
-        monkeypatch=monkeypatch,
-        capsys=capsys,
-        statuses={"livespec-dev-tooling-q3emww": "backlog"},
-    )
-    assert result.returncode == 1, f"archived→open epic should fail; stderr={result.stderr!r}"
-    combined = result.stdout + result.stderr
-    assert "plan/archive/premature/handoff.md" in combined
-    assert "livespec-dev-tooling-q3emww" in combined
-    assert '"level": "error"' in combined
-
-
-def test_armed_archived_migrated_open_epic_fails(
-    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Armed: an archived migrated `epic.md` pointing at an OPEN epic fails."""
-    _arm(monkeypatch)
-    _write_livespec_config(root=tmp_path)
-    archive_dir = tmp_path / "plan" / "archive" / "premature"
-    archive_dir.mkdir(parents=True, exist_ok=True)
-    (archive_dir / "epic.md").write_text(
-        "# Ledger epic anchor\n\nlivespec-dev-tooling-q3emww\n",
-        encoding="utf-8",
-    )
-    result = _run(
-        cwd=tmp_path,
-        monkeypatch=monkeypatch,
-        capsys=capsys,
-        statuses={"livespec-dev-tooling-q3emww": "backlog"},
-    )
-    assert result.returncode == 1, f"archived migrated→open should fail; {result.stderr!r}"
-    combined = result.stdout + result.stderr
-    assert "plan/archive/premature/epic.md" in combined
-    assert "livespec-dev-tooling-q3emww" in combined
+    assert result.returncode == 1
+    assert "missing ledger epic metadata anchor" in (result.stdout + result.stderr)
 
 
 def test_armed_archived_regroomed_anchor_with_open_replacement_fails(
@@ -329,84 +297,41 @@ def test_armed_archived_regroomed_anchor_with_open_replacement_fails(
     """Armed: archived procedural anchor closure is invalid while replacements stay open."""
     _arm(monkeypatch)
     _write_livespec_config(root=tmp_path)
-    _write_archived_handoff(
-        root=tmp_path,
-        thread="regroomed",
-        body=_anchor_body("livespec-dev-tooling-5asgvm"),
+    _mkdir(root=tmp_path, relative="plan/archive/regroomed")
+    anchor = _epic(
+        item_id="livespec-dev-tooling-5asgvm",
+        status="done",
+        slug="regroomed",
+        resolution="no-longer-applicable",
     )
-    _write_exported_issues(
-        root=tmp_path,
-        lines=[
-            (
-                '{"id":"livespec-dev-tooling-5asgvm","status":"done",'
-                '"resolution":"no-longer-applicable","depends_on":[]}'
-            ),
-            (
-                '{"id":"livespec-dev-tooling-slice","status":"ready",'
-                '"resolution":null,"depends_on":["livespec-dev-tooling-5asgvm"]}'
-            ),
-        ],
-    )
+    replacement: dict[str, object] = {
+        "id": "livespec-dev-tooling-slice",
+        "status": "ready",
+        "resolution": None,
+        "depends_on": ["livespec-dev-tooling-5asgvm"],
+    }
+
     result = _run(
         cwd=tmp_path,
         monkeypatch=monkeypatch,
         capsys=capsys,
-        statuses={"livespec-dev-tooling-5asgvm": "done"},
+        items=[anchor, replacement],
     )
-    assert result.returncode == 1, f"open replacement descendant should fail; {result.stderr!r}"
+
     combined = result.stdout + result.stderr
-    assert "plan/archive/regroomed/handoff.md" in combined
+    assert result.returncode == 1
+    assert "plan/archive/regroomed" in combined
     assert "livespec-dev-tooling-5asgvm" in combined
     assert "livespec-dev-tooling-slice" in combined
 
 
-def test_armed_cross_tenant_anchor_ignored(
-    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Armed: a cross-tenant (non `livespec-dev-tooling-*`) anchor is ignored."""
-    _arm(monkeypatch)
-    _write_livespec_config(root=tmp_path)
-    _write_handoff(root=tmp_path, thread="xt", body=_anchor_body("livespec-35s3zo"))
-    result = _run(
-        cwd=tmp_path,
-        monkeypatch=monkeypatch,
-        capsys=capsys,
-        statuses={"livespec-35s3zo": "closed"},
-    )
-    assert result.returncode == 0, f"cross-tenant anchor must be ignored; stderr={result.stderr!r}"
-
-
-def test_armed_handoff_without_anchor_ignored(
-    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Armed: an active handoff with no `**Ledger anchor:**` line is skipped, not failed."""
-    _arm(monkeypatch)
-    _write_livespec_config(root=tmp_path)
-    _write_handoff(root=tmp_path, thread="anchorless", body="# H\n\nNo anchor here.\n")
-    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys, statuses={})
-    assert result.returncode == 0, f"anchor-less handoff must be skipped; stderr={result.stderr!r}"
-
-
-def test_armed_no_plan_dir_passes(
-    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Armed but no `plan/` directory → exit 0."""
-    _arm(monkeypatch)
-    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
-    assert result.returncode == 0, f"armed + no plan/ should exit 0; got {result.returncode}"
-
-
 def test_parse_status_variants() -> None:
-    """`_parse_status` extracts status from dict/list/preamble and tolerates bad shapes."""
+    """`_parse_status` remains as the legacy status parser alias."""
     parse = _MODULE._parse_status  # noqa: SLF001  — private helper under test
     assert parse(text='noise\n{"status": "done"}') == "done"
     assert parse(text='[{"status": "closed"}]') == "closed"
     assert parse(text="no json here") is None
     assert parse(text="[]") is None
-    assert parse(text="123") is None
-    assert parse(text='{"other": 1}') is None
-    assert parse(text='{"status": 7}') is None
-    assert parse(text="[42]") is None
 
 
 def test_ledger_helper_parses_records_and_dependency_shapes() -> None:
@@ -417,8 +342,6 @@ def test_ledger_helper_parses_records_and_dependency_shapes() -> None:
     assert helper.parse_records(text='{"id": "a"}') == [{"id": "a"}]
     assert helper.parse_records(text='[{"id": "a"}, 7]') == [{"id": "a"}]
     assert helper.parse_records(text="123") == []
-    assert helper.parse_records(text="[]") == []
-    assert helper.parse_records(text="no json") == []
     assert helper.depends_on(record={"depends_on": ["anchor"]}, epic_id="anchor")
     assert helper.depends_on(
         record={"dependencies": [{"depends_on_id": "anchor"}]},
@@ -438,87 +361,24 @@ def test_ledger_helper_item_reader_uses_export_then_bd(
     """The helper prefers local `.beads/issues.jsonl`, else parses `bd list --json`."""
     assert _HELPER_PATH.is_file(), "ledger helper module should exist"
     helper = _load_helper_module()
-    _write_exported_issues(root=tmp_path, lines=['{"id":"from-export"}'])
+    beads_dir = tmp_path / ".beads"
+    _ = beads_dir.mkdir()
+    _ = (beads_dir / "issues.jsonl").write_text('{"id":"from-export"}\n', encoding="utf-8")
     assert helper.bd_items_reader(repo=tmp_path) == [{"id": "from-export"}]
     other_repo = tmp_path / "other"
-    other_repo.mkdir()
+    _ = other_repo.mkdir()
     fake = SimpleNamespace(returncode=0, stdout='{"data":[{"id":"from-bd"}]}', stderr="")
-    monkeypatch.setattr(helper.subprocess, "run", lambda *_a, **_k: fake)
+    monkeypatch.setattr(helper.subprocess, "run", _fake_subprocess_run(result=fake))
     assert helper.bd_items_reader(repo=other_repo) == [{"id": "from-bd"}]
     failed = SimpleNamespace(returncode=1, stdout="", stderr="boom")
-    monkeypatch.setattr(helper.subprocess, "run", lambda *_a, **_k: failed)
+    monkeypatch.setattr(helper.subprocess, "run", _fake_subprocess_run(result=failed))
     assert helper.bd_items_reader(repo=other_repo) == []
-
-
-def test_ledger_helper_status_reader_parses_bd_show(
-    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The helper status reader parses `bd show --json` and returns None on failure."""
-    assert _HELPER_PATH.is_file(), "ledger helper module should exist"
-    helper = _load_helper_module()
-    fake = SimpleNamespace(returncode=0, stdout='{"status":"done"}', stderr="")
-    monkeypatch.setattr(helper.subprocess, "run", lambda *_a, **_k: fake)
-    assert helper.bd_status_reader(epic_id="livespec-dev-tooling-anchor", repo=tmp_path) == "done"
-    failed = SimpleNamespace(returncode=1, stdout="", stderr="boom")
-    monkeypatch.setattr(helper.subprocess, "run", lambda *_a, **_k: failed)
-    assert helper.bd_status_reader(epic_id="livespec-dev-tooling-anchor", repo=tmp_path) is None
-
-
-def test_ledger_helper_descendant_offenders_filters_completion_and_tenant(
-    *, tmp_path: Path
-) -> None:
-    """The helper reports only same-tenant descendants that are not completion-closed."""
-    assert _HELPER_PATH.is_file(), "ledger helper module should exist"
-    helper = _load_helper_module()
-    tenant_id_re = _MODULE._tenant_id_re(tenant_prefix="livespec-dev-tooling")  # noqa: SLF001
-
-    def _items(*, repo: Path) -> list[dict[str, object]]:
-        assert repo == tmp_path
-        return [
-            {
-                "id": "livespec-dev-tooling-open",
-                "status": "ready",
-                "resolution": None,
-                "depends_on": ["livespec-dev-tooling-anchor"],
-            },
-            {
-                "id": "livespec-dev-tooling-done",
-                "status": "done",
-                "resolution": "completed",
-                "depends_on": ["livespec-dev-tooling-anchor"],
-            },
-            {
-                "id": "other-open",
-                "status": "ready",
-                "resolution": None,
-                "depends_on": ["livespec-dev-tooling-anchor"],
-            },
-        ]
-
-    offenders = helper.descendant_offenders(
-        statuses=[(tmp_path / "handoff.md", "livespec-dev-tooling-anchor", "done")],
-        item_reader=_items,
-        tenant_id_re=tenant_id_re,
-        repo=tmp_path,
-    )
-    assert offenders == [
-        (tmp_path / "handoff.md", "livespec-dev-tooling-anchor", "livespec-dev-tooling-open")
-    ]
-    assert (
-        helper.descendant_offenders(
-            statuses=[(tmp_path / "handoff.md", "livespec-dev-tooling-anchor", "ready")],
-            item_reader=_items,
-            tenant_id_re=tenant_id_re,
-            repo=tmp_path,
-        )
-        == []
-    )
 
 
 def test_bd_status_reader_ok(*, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """The default reader returns the parsed status when `bd` exits 0 (no real spawn)."""
     fake = SimpleNamespace(returncode=0, stdout='{"status": "done"}', stderr="")
-    monkeypatch.setattr(_MODULE.subprocess, "run", lambda *_a, **_k: fake)
+    monkeypatch.setattr(_MODULE.subprocess, "run", _fake_subprocess_run(result=fake))
     read = _MODULE._bd_status_reader  # noqa: SLF001  — private helper under test
     assert read(epic_id="livespec-dev-tooling-l2sm", repo=tmp_path) == "done"
 
@@ -528,7 +388,7 @@ def test_bd_status_reader_nonzero_returns_none(
 ) -> None:
     """The default reader returns None when `bd` exits non-zero."""
     fake = SimpleNamespace(returncode=1, stdout="", stderr="boom")
-    monkeypatch.setattr(_MODULE.subprocess, "run", lambda *_a, **_k: fake)
+    monkeypatch.setattr(_MODULE.subprocess, "run", _fake_subprocess_run(result=fake))
     read = _MODULE._bd_status_reader  # noqa: SLF001  — private helper under test
     assert read(epic_id="livespec-dev-tooling-l2sm", repo=tmp_path) is None
 

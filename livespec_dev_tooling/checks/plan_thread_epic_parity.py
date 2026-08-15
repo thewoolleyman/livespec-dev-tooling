@@ -1,41 +1,19 @@
 """plan_thread_epic_parity — plan archive state must match ledger epic state.
 
-The ledger-state PARITY half of plan-lifecycle enforcement. It asserts both
-directions deliberately:
+Disposition: RE-SCOPED against ratified Planning Lane v197 and the v059
+orchestrator realization.
 
-* for each ACTIVE plan document (`plan/*/handoff.md` legacy lane and
-  `plan/*/epic.md` migrated lane, excluding `plan/archive/`), FAIL when the
-  anchor epic is `done`/`closed` — the drift that leaves a completed plan thread
-  un-archived;
-* for each ARCHIVED plan document (`plan/archive/**/handoff.md` legacy lane and
-  `plan/archive/**/epic.md` migrated lane), FAIL when the anchor epic is anything
-  other than `done`/`closed` — the drift that archives a thread while its owning
-  epic is still in flight; and FAIL when the archived anchor has same-tenant
-  replacement descendants that are not completion-closed — the drift that treats
-  a procedural regroom-out/supersession closure as finished work.
+The old check read git `handoff.md` / `epic.md` anchor documents. Those carriers
+are retired: a plan is now anchored by ledger epic metadata (`plan_slug`), and
+handoff entries are ledger comments. The surviving invariant is the lifecycle
+binding: a direct `plan/<slug>/` directory is active iff its same-tenant plan
+epic is open, and a direct `plan/archive/<slug>/` directory is archived iff its
+same-tenant plan epic is done/closed. The archived-regroom converse also
+survives: a procedural anchor closure with incomplete same-tenant replacement
+descendants is not completion evidence.
 
-Only ids under the checked repo's tenant prefix are parity-checked; cross-tenant
-prose refs (e.g. `livespec-...`) are ignored (decisions 41/44/45).
-
-ARMED-ONLY: self-skips (structured info, exit 0) UNLESS BOTH the RUN lever
-`LIVESPEC_RUN_PLAN_EPIC_PARITY` is truthy AND the beads credential
-`BEADS_DOLT_PASSWORD` is present. This keeps the check out of the default blocking
-`just check` in credential-less CI and in un-armed local runs — mirroring
-`check_mutation` (`LIVESPEC_RUN_MUTATION`) / `fleet_conformance`
-(`LIVESPEC_RUN_FLEET_CONFORMANCE`) for the RUN lever, and `master_ci_green` for
-the credential-absent skip. The archived-thread converse is also armed-only by
-explicit product decision, not by inheritance: it needs the same ledger status
-read as the active-thread assertion, and credential-less CI cannot distinguish
-an open epic from an unreadable ledger item. So it never self-gates a `just
-check`.
-
-The ledger read is an injected seam (`status_reader`) so tests exercise the armed
-path without a live ledger; the default reads `bd -C <cwd> show <id> --json`.
-
-Output discipline: per spec, `print` (T20) and `sys.stderr.write`
-(`check-no-write-direct`) are banned in dev-tooling/**. Diagnostics flow through
-structlog (JSON to stderr); the vendored copy under
-`livespec_dev_tooling/_vendor/structlog` is added to `sys.path` at import time.
+ARMED-ONLY: self-skips unless `LIVESPEC_RUN_PLAN_EPIC_PARITY` is truthy and
+`BEADS_DOLT_PASSWORD` is present, because it reads ledger state.
 """
 
 from __future__ import annotations
@@ -59,6 +37,7 @@ from livespec_dev_tooling.checks._plan_thread_ledger import (  # noqa: E402
     bd_items_reader,
     descendant_offenders,
     parse_status,
+    record_id,
 )
 
 __all__: list[str] = []
@@ -66,115 +45,34 @@ __all__: list[str] = []
 
 _PLAN_DIR_NAME = "plan"
 _ARCHIVE_DIR_NAME = "archive"
-_HANDOFF_GLOB = "*/handoff.md"
-_EPIC_GLOB = "*/epic.md"
-_ARCHIVED_HANDOFF_GLOB = f"{_ARCHIVE_DIR_NAME}/**/handoff.md"
-_ARCHIVED_EPIC_GLOB = f"{_ARCHIVE_DIR_NAME}/**/epic.md"
 _LIVESPEC_CONFIG = ".livespec.jsonc"
 _RUN_LEVER = "LIVESPEC_RUN_PLAN_EPIC_PARITY"
 _CRED_ENV = "BEADS_DOLT_PASSWORD"
 _CLOSED_STATUSES = frozenset({"closed", "done"})
-
-_ANCHOR_RE = re.compile(r"\*\*Ledger anchor:\*\*\s*(?:epic\s*)?`?([^`\n)]*?)`?(?:\s|$|\))")
-_EPIC_ANCHOR_RE = re.compile(r"(?mi)^#\s+Ledger epic anchor\s*$\s*^`?([^`\n]+?)`?\s*$")
-
-_REMEDIATION = (
-    "the plan thread is complete — archive it with "
-    "`git mv plan/<topic> plan/archive/<topic>`; an active thread pointing at a "
-    "done/closed epic is the un-archived-thread drift this check prevents."
+_ACTIVE_REMEDIATION = (
+    "reopen the plan epic or archive the plan record whole; ratified Planning "
+    "Lane binds `plan/<slug>/` active state to an open ledger epic."
 )
-
 _ARCHIVED_REMEDIATION = (
-    "restore the thread to `plan/<topic>` until its ledger epic is done/closed; "
-    "an archived thread pointing at an open or unreadable epic is premature."
+    "move the plan record back to `plan/<slug>/` or close its epic through the "
+    "archive gates; archived records must point at done/closed plan epics."
 )
-
+_MISSING_REMEDIATION = (
+    "ensure exactly one same-tenant ledger epic carries metadata `plan_slug=<slug>`; "
+    "the plan anchor is ledger-held and is not a git handoff or epic document."
+)
 _DESCENDANT_REMEDIATION = (
-    "restore the thread to `plan/<topic>` until every replacement descendant "
-    "that depends on its anchor epic is closed with a completion-shaped "
-    "resolution; a procedural anchor closure is not completion evidence."
+    "restore the plan to `plan/<slug>/` until every replacement descendant that "
+    "depends on its anchor epic is closed with a completion-shaped resolution."
 )
 
 
 class StatusReader(Protocol):
-    """Resolve a ledger epic id to its status string (or None when unresolvable)."""
+    """Legacy status reader protocol retained for import compatibility."""
 
     def __call__(self, *, epic_id: str, repo: Path) -> str | None:
-        """Return the ledger status of `epic_id` under `repo`."""
+        """Return a ledger status for `epic_id`."""
         ...
-
-
-class StatusPredicate(Protocol):
-    """Return True when a ledger status violates one side of parity."""
-
-    def __call__(self, *, status: str | None) -> bool:
-        """Return whether `status` is a parity violation."""
-        ...
-
-
-def _active_handoffs(*, plan_dir: Path) -> list[Path]:
-    """Return active legacy `plan/<topic>/handoff.md` paths."""
-    return sorted(
-        path for path in plan_dir.glob(_HANDOFF_GLOB) if path.parent.name != _ARCHIVE_DIR_NAME
-    )
-
-
-def _active_epics(*, plan_dir: Path) -> list[Path]:
-    """Return active migrated `plan/<topic>/epic.md` paths."""
-    return sorted(
-        path for path in plan_dir.glob(_EPIC_GLOB) if path.parent.name != _ARCHIVE_DIR_NAME
-    )
-
-
-def _active_plan_documents(*, plan_dir: Path) -> list[Path]:
-    """Return active legacy and migrated plan-lane documents."""
-    return sorted([*_active_handoffs(plan_dir=plan_dir), *_active_epics(plan_dir=plan_dir)])
-
-
-def _archived_handoffs(*, plan_dir: Path) -> list[Path]:
-    """Return archived legacy `plan/archive/**/handoff.md` paths."""
-    return sorted(plan_dir.glob(_ARCHIVED_HANDOFF_GLOB))
-
-
-def _archived_epics(*, plan_dir: Path) -> list[Path]:
-    """Return archived migrated `plan/archive/**/epic.md` paths."""
-    return sorted(plan_dir.glob(_ARCHIVED_EPIC_GLOB))
-
-
-def _archived_plan_documents(*, plan_dir: Path) -> list[Path]:
-    """Return archived legacy and migrated plan-lane documents."""
-    return sorted([*_archived_handoffs(plan_dir=plan_dir), *_archived_epics(plan_dir=plan_dir)])
-
-
-def _tenant_id_re(*, tenant_prefix: str) -> re.Pattern[str]:
-    """Return the same-tenant work-item id matcher for `tenant_prefix`."""
-    return re.compile(rf"^{re.escape(tenant_prefix)}-[a-z0-9]+$")
-
-
-def _store_prefix(*, cwd: Path) -> str:
-    """Return the repo store prefix from `.livespec.jsonc`'s connection block."""
-    parsed = cast(
-        "dict[str, object]",
-        jsoncomment.loads((cwd / _LIVESPEC_CONFIG).read_text(encoding="utf-8")),
-    )
-    implementation = cast("dict[str, object]", parsed["implementation"])
-    plugin = cast("str", implementation["plugin"])
-    block = cast("dict[str, object]", parsed[plugin])
-    connection = cast("dict[str, object]", block["connection"])
-    return cast("str", connection["prefix"])
-
-
-def _same_tenant_anchor(*, text: str, tenant_id_re: re.Pattern[str]) -> str | None:
-    """Return the handoff's same-tenant anchor id, else None."""
-    match = _ANCHOR_RE.search(text)
-    if match is not None:
-        token = match.group(1).strip().strip("`").strip()
-        return token if tenant_id_re.match(token) is not None else None
-    epic_match = _EPIC_ANCHOR_RE.search(text)
-    if epic_match is None:
-        return None
-    token = epic_match.group(1).strip().strip("`").strip()
-    return token if tenant_id_re.match(token) is not None else None
 
 
 def _is_armed() -> bool:
@@ -195,47 +93,100 @@ def _bd_status_reader(*, epic_id: str, repo: Path) -> str | None:
     return parse_status(text=completed.stdout)
 
 
-def _is_closed_status(*, status: str | None) -> bool:
-    """Return True when `status` is a ledger-closed state."""
-    return status in _CLOSED_STATUSES
+def _store_prefix(*, cwd: Path) -> str:
+    """Return the repo store prefix from `.livespec.jsonc`'s connection block."""
+    parsed = cast(
+        "dict[str, object]",
+        jsoncomment.loads((cwd / _LIVESPEC_CONFIG).read_text(encoding="utf-8")),
+    )
+    implementation = cast("dict[str, object]", parsed["implementation"])
+    plugin = cast("str", implementation["plugin"])
+    block = cast("dict[str, object]", parsed[plugin])
+    connection = cast("dict[str, object]", block["connection"])
+    return cast("str", connection["prefix"])
 
 
-def _is_not_closed_status(*, status: str | None) -> bool:
-    """Return True when `status` is not a ledger-closed state."""
-    return status not in _CLOSED_STATUSES
+def _tenant_id_re(*, tenant_prefix: str) -> re.Pattern[str]:
+    """Return the same-tenant work-item id matcher for `tenant_prefix`."""
+    return re.compile(rf"^{re.escape(tenant_prefix)}-[a-z0-9]+$")
 
 
-def _handoff_statuses(
-    *,
-    paths: list[Path],
-    tenant_id_re: re.Pattern[str],
-    reader: StatusReader,
-    repo: Path,
+def _direct_plan_dirs(*, plan_dir: Path) -> list[Path]:
+    """Return direct active plan directories."""
+    return sorted(
+        path for path in plan_dir.iterdir() if path.is_dir() and path.name != _ARCHIVE_DIR_NAME
+    )
+
+
+def _direct_archive_dirs(*, plan_dir: Path) -> list[Path]:
+    """Return direct archived plan directories."""
+    archive_dir = plan_dir / _ARCHIVE_DIR_NAME
+    if not archive_dir.is_dir():
+        return []
+    return sorted(path for path in archive_dir.iterdir() if path.is_dir())
+
+
+def _metadata_slug(*, record: dict[str, object]) -> str | None:
+    """Return a ledger-held plan slug from a plan epic record."""
+    metadata = record.get("metadata")
+    if isinstance(metadata, dict):
+        typed_metadata = cast("dict[str, object]", metadata)
+        slug = typed_metadata.get("plan_slug")
+        return slug if isinstance(slug, str) else None
+    return None
+
+
+def _is_plan_epic(*, record: dict[str, object], tenant_id_re: re.Pattern[str]) -> bool:
+    """Return True for same-tenant records that can anchor plans."""
+    item_id = record_id(record=record)
+    return (
+        record.get("type") == "epic"
+        and item_id is not None
+        and tenant_id_re.match(item_id) is not None
+    )
+
+
+def _plan_epics_by_slug(
+    *, records: list[dict[str, object]], tenant_id_re: re.Pattern[str]
+) -> dict[str, list[dict[str, object]]]:
+    """Group same-tenant plan epic records by ledger-held plan slug."""
+    grouped: dict[str, list[dict[str, object]]] = {}
+    for record in records:
+        slug = _metadata_slug(record=record)
+        if _is_plan_epic(record=record, tenant_id_re=tenant_id_re) and slug is not None:
+            grouped.setdefault(slug, []).append(record)
+    return grouped
+
+
+def _status_tuple(
+    *, path: Path, slug: str, grouped: dict[str, list[dict[str, object]]]
+) -> tuple[Path, str, str | None] | None:
+    """Return one parity status tuple, or None when the anchor is missing/ambiguous."""
+    records = grouped.get(slug, [])
+    if len(records) != 1:
+        return None
+    anchor = cast("str", record_id(record=records[0]))
+    status = records[0].get("status")
+    return (path, anchor, status if isinstance(status, str) else None)
+
+
+def _statuses(
+    *, paths: list[Path], grouped: dict[str, list[dict[str, object]]]
 ) -> list[tuple[Path, str, str | None]]:
-    """Return same-tenant handoff anchor statuses for `paths`."""
-    statuses: list[tuple[Path, str, str | None]] = []
+    """Return same-tenant plan anchor statuses for paths with exactly one anchor."""
+    found: list[tuple[Path, str, str | None]] = []
     for path in paths:
-        anchor = _same_tenant_anchor(
-            text=path.read_text(encoding="utf-8"),
-            tenant_id_re=tenant_id_re,
-        )
-        if anchor is None:
-            continue
-        statuses.append((path, anchor, reader(epic_id=anchor, repo=repo)))
-    return statuses
+        status = _status_tuple(path=path, slug=path.name, grouped=grouped)
+        if status is not None:
+            found.append(status)
+    return found
 
 
-def _offenders(
-    *,
-    statuses: list[tuple[Path, str, str | None]],
-    violates: StatusPredicate,
-) -> list[tuple[Path, str, str]]:
-    """Return handoff statuses that violate a parity predicate."""
-    offenders: list[tuple[Path, str, str]] = []
-    for path, anchor, status in statuses:
-        if violates(status=status):
-            offenders.append((path, anchor, status or "unresolved"))
-    return offenders
+def _missing_anchor_paths(
+    *, paths: list[Path], grouped: dict[str, list[dict[str, object]]]
+) -> list[Path]:
+    """Return plan dirs whose slug lacks exactly one same-tenant metadata anchor."""
+    return [path for path in paths if len(grouped.get(path.name, [])) != 1]
 
 
 def main(
@@ -243,6 +194,9 @@ def main(
     status_reader: StatusReader | None = None,
     item_reader: ItemReader | None = None,
 ) -> int:
+    """Run the armed ledger-backed plan parity check."""
+    legacy_status_reader = _bd_status_reader if status_reader is None else status_reader
+    _ = legacy_status_reader
     structlog.configure(
         processors=[
             structlog.processors.add_log_level,
@@ -259,50 +213,51 @@ def main(
             credential=_CRED_ENV,
         )
         return 0
-    reader: StatusReader = _bd_status_reader if status_reader is None else status_reader
-    read_items: ItemReader = bd_items_reader if item_reader is None else item_reader
     cwd = Path.cwd()
     plan_dir = cwd / _PLAN_DIR_NAME
-    if not plan_dir.is_dir():
-        return 0
+    read_items: ItemReader = bd_items_reader if item_reader is None else item_reader
+    records = read_items(repo=cwd)
     tenant_id_re = _tenant_id_re(tenant_prefix=_store_prefix(cwd=cwd))
-    active_statuses = _handoff_statuses(
-        paths=_active_plan_documents(plan_dir=plan_dir),
-        tenant_id_re=tenant_id_re,
-        reader=reader,
-        repo=cwd,
-    )
-    archived_statuses = _handoff_statuses(
-        paths=_archived_plan_documents(plan_dir=plan_dir),
-        tenant_id_re=tenant_id_re,
-        reader=reader,
-        repo=cwd,
-    )
-    offenders = _offenders(statuses=active_statuses, violates=_is_closed_status)
-    archived_offenders = _offenders(
-        statuses=archived_statuses,
-        violates=_is_not_closed_status,
-    )
+    grouped = _plan_epics_by_slug(records=records, tenant_id_re=tenant_id_re)
+    active_dirs = _direct_plan_dirs(plan_dir=plan_dir) if plan_dir.is_dir() else []
+    archived_dirs = _direct_archive_dirs(plan_dir=plan_dir)
+    active_statuses = _statuses(paths=active_dirs, grouped=grouped)
+    archived_statuses = _statuses(paths=archived_dirs, grouped=grouped)
+
+    missing_active = _missing_anchor_paths(paths=active_dirs, grouped=grouped)
+    missing_archived = _missing_anchor_paths(paths=archived_dirs, grouped=grouped)
+    active_closed = [entry for entry in active_statuses if entry[2] in _CLOSED_STATUSES]
+    archived_open = [entry for entry in archived_statuses if entry[2] not in _CLOSED_STATUSES]
     incomplete_descendants = descendant_offenders(
         statuses=archived_statuses,
         item_reader=read_items,
         tenant_id_re=tenant_id_re,
         repo=cwd,
     )
-    for path, anchor, status in offenders:
+
+    for path in [*missing_active, *missing_archived]:
         log.error(
-            "active plan thread points at a done/closed ledger epic",
+            "plan directory missing ledger epic metadata anchor",
             file=str(path.relative_to(cwd)),
-            epic=anchor,
-            epic_status=status,
-            remediation=_REMEDIATION,
+            disposition="re-scoped",
+            remediation=_MISSING_REMEDIATION,
         )
-    for path, anchor, status in archived_offenders:
+    for path, anchor, status in active_closed:
         log.error(
-            "archived plan thread points at an open or unreadable ledger epic",
+            "active plan directory points at a done/closed ledger epic",
             file=str(path.relative_to(cwd)),
             epic=anchor,
-            epic_status=status,
+            epic_status=status or "unresolved",
+            disposition="re-scoped",
+            remediation=_ACTIVE_REMEDIATION,
+        )
+    for path, anchor, status in archived_open:
+        log.error(
+            "archived plan directory points at an open or unreadable ledger epic",
+            file=str(path.relative_to(cwd)),
+            epic=anchor,
+            epic_status=status or "unresolved",
+            disposition="re-scoped",
             remediation=_ARCHIVED_REMEDIATION,
         )
     for path, anchor, descendant in incomplete_descendants:
@@ -311,9 +266,18 @@ def main(
             file=str(path.relative_to(cwd)),
             epic=anchor,
             descendant=descendant,
+            disposition="re-scoped",
             remediation=_DESCENDANT_REMEDIATION,
         )
-    return 1 if offenders or archived_offenders or incomplete_descendants else 0
+    return (
+        1
+        if missing_active
+        or missing_archived
+        or active_closed
+        or archived_open
+        or incomplete_descendants
+        else 0
+    )
 
 
 _parse_status = parse_status

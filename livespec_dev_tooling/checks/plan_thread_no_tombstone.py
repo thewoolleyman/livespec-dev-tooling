@@ -1,9 +1,15 @@
 """plan_thread_no_tombstone — live and archived plan topics must not both exist.
 
+Disposition: KEPT against the ratified Planning Lane contract (`livespec`
+SPECIFICATION/history/v197; orchestrator realization v059).
+
 A tombstone is a stub left at `plan/<topic>/` after the real plan thread has
 moved to `plan/archive/<topic>/`. The banned condition is structural: the same
 topic directory exists in BOTH places at once. This check detects that directory
-pair directly and never reads or greps handoff text.
+pair directly and never reads or greps handoff text. The carrier migration from
+git handoff files to ledger-held plan metadata does not retire or re-scope this
+invariant: active and archived plan directories remain mutually exclusive
+locations for one plan record.
 
 The ban is universal and fail-closed: there is no consumer opt-in lever and no
 credential requirement. A repo with no `plan/` directory, only a live topic, or
@@ -72,6 +78,7 @@ def main() -> int:
             topic=topic,
             live_dir=str(Path(_PLAN_DIR_NAME) / topic),
             archived_dir=str(Path(_PLAN_DIR_NAME) / _ARCHIVE_DIR_NAME / topic),
+            disposition="kept",
             remediation=_REMEDIATION,
         )
     return 1 if offenders else 0
