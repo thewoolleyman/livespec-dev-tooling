@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.23.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.23.1...v1.23.2) (2026-08-15)
+
+
+### Bug Fixes
+
+* **ci-runner:** add mid-job dockershim wedge-guard backstop ([658cc02](https://github.com/thewoolleyman/livespec-dev-tooling/commit/658cc02aa12af9f6a6515c9b5dd086e13bae4ad1))
+
 ## [1.23.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.23.0...v1.23.1) (2026-08-15)
 
 
