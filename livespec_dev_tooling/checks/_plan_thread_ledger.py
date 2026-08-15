@@ -15,7 +15,6 @@ _ISSUES_JSONL = Path(".beads") / "issues.jsonl"
 __all__: list[str] = [
     "ItemReader",
     "bd_items_reader",
-    "bd_status_reader",
     "descendant_offenders",
     "parse_records",
     "parse_status",
@@ -38,11 +37,9 @@ def parse_status(*, text: str) -> str | None:
     parsed: object = json.loads(text[min(starts) :])
     if isinstance(parsed, list):
         parsed_list = cast("list[object]", parsed)
-        record: object = parsed_list[0] if parsed_list else {}
+        record: object = parsed_list[0] if parsed_list else cast("dict[str, object]", {})
     else:
-        record = parsed
-    if not isinstance(record, dict):
-        return None
+        record = cast("dict[str, object]", parsed) if isinstance(parsed, dict) else {}
     status = cast("dict[str, object]", record).get("status")
     return status if isinstance(status, str) else None
 
@@ -59,19 +56,6 @@ def parse_records(*, text: str) -> list[dict[str, object]]:
         return [cast("dict[str, object]", data)]
     data_list = cast("list[object]", data) if isinstance(data, list) else []
     return [cast("dict[str, object]", item) for item in data_list if isinstance(item, dict)]
-
-
-def bd_status_reader(*, epic_id: str, repo: Path) -> str | None:
-    """Read a ledger epic's status via `bd -C <repo> show <id> --json`."""
-    completed = subprocess.run(
-        ("bd", "-C", str(repo), "show", epic_id, "--json"),
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if completed.returncode != 0:
-        return None
-    return parse_status(text=completed.stdout)
 
 
 def bd_items_reader(*, repo: Path) -> list[dict[str, object]]:

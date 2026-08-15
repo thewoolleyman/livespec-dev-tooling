@@ -67,6 +67,7 @@ def test_live_and_archived_topic_fails(
     assert result.returncode == 1, f"both-present topic should fail; stderr={result.stderr!r}"
     assert result.stdout == ""
     assert '"level": "error"' in combined
+    assert '"disposition": "kept"' in combined
     assert "plan/t" in combined
     assert "plan/archive/t" in combined
 
