@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.24.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.24.0...v1.24.1) (2026-08-15)
+
+
+### Bug Fixes
+
+* **ci-runner:** install-arc.sh pre-gate checks the wrong namespace for the ARC secret ([3fbb35f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/3fbb35f7a29de82f8181914de5c601d9386f3f26))
+
 ## [1.24.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.23.3...v1.24.0) (2026-08-15)
 
 
