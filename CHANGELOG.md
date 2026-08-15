@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.23.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.23.2...v1.23.3) (2026-08-15)
+
+
+### Bug Fixes
+
+* **ci-runner:** migrate podman libpod state db to SQLite WAL mode ([d662f1f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d662f1fbfc20e2ed25cb4886b17f9397efe98afc))
+
 ## [1.23.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.23.1...v1.23.2) (2026-08-15)
 
 
