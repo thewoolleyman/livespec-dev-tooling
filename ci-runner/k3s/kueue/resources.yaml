@@ -1,0 +1,44 @@
+# resources.yaml — minimal phase-1 Kueue objects: one ResourceFlavor
+# describing this single node's headroom (see README.md "Resource
+# envelope" for the measured numbers this is derived from), one
+# ClusterQueue with a deliberately small nominal quota (this is a proof
+# path, not production capacity yet), and one LocalQueue in the
+# arc-runners namespace so a Job in that namespace can target it.
+#
+# Modeling the REAL fair-share formula (min(queued jobs, doubled
+# repository logical ceiling, fair share of remaining host-wide
+# capacity), per livespec-dev-tooling SPECIFICATION/
+# non-functional-requirements.md section "Adaptive JIT runner admission
+# budget") as Cohorts + Fair Sharing is phase 2 — deliberately deferred,
+# not attempted here.
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: ResourceFlavor
+metadata:
+  name: phase1-proof-flavor
+spec:
+  nodeLabels:
+    k3s-role: arc-runner-host  # matches provision-k3s.sh's --node-label
+---
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: ClusterQueue
+metadata:
+  name: phase1-proof-cq
+spec:
+  namespaceSelector: {}
+  resourceGroups:
+    - coveredResources: ["cpu", "memory"]
+      flavors:
+        - name: phase1-proof-flavor
+          resources:
+            - name: "cpu"
+              nominalQuota: 2
+            - name: "memory"
+              nominalQuota: 4Gi
+---
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: LocalQueue
+metadata:
+  name: phase1-proof-lq
+  namespace: arc-runners
+spec:
+  clusterQueue: phase1-proof-cq

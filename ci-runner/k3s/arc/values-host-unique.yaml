@@ -1,0 +1,53 @@
+# values-host-unique.yaml — second Helm release of the SAME gha-runner-
+# scale-set chart (0.14.2), named for the host-unique label rather than
+# the shared pool label. Install AFTER values.yaml (see install-arc.sh
+# step 2). Together the two releases satisfy "every runner MUST carry
+# both a shared pool label and a host-unique label" per livespec repo
+# SPECIFICATION/non-functional-requirements.md section "Self-hosted CI
+# runner host requirements" — see values.yaml's header comment for the
+# full rationale.
+#
+# minRunners: 0 here too — this exists to let a workflow address THIS
+# host specifically (reproduce a failure on one host, validate a newly
+# joined host, drain by routing away from it), not to serve default
+# traffic. Phase 1's proof job (../test-job/proof-job.yml) targets this
+# label, matching the host-requirements "a host is proven by EXECUTING a
+# job... a non-gating job addressed to the host-unique label satisfies
+# both" clause.
+
+githubConfigUrl: "https://github.com/thewoolleyman"
+githubConfigSecret: arc-github-app-installation  # same secret, same least-privilege token — see README.md
+
+runnerScaleSetName: "poweredge-xubuntu-k3s"
+
+containerMode:
+  type: "kubernetes"
+  kubernetesModeWorkVolumeClaim:
+    accessModes: ["ReadWriteOnce"]
+    storageClassName: "local-path"
+    resources:
+      requests:
+        storage: 5Gi
+
+template:
+  spec:
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+    containers:
+      - name: runner
+        image: ghcr.io/actions/actions-runner:latest
+        command: ["/home/runner/run.sh"]
+        env:
+          - name: ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER
+            value: "false"
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          capabilities:
+            drop: ["ALL"]
+
+minRunners: 0
+maxRunners: 1

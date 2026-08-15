@@ -1,0 +1,164 @@
+# k3s + ARC + Kueue — phase 1 (stand up alongside the podman pool, zero traffic)
+
+Durable, re-runnable artifacts that provision a **second, independent**
+self-hosted CI runner pool on `poweredge-xubuntu`, backed by k3s +
+Actions Runner Controller (ARC) + Kueue, standing up **ALONGSIDE** —
+never replacing, stopping, or reconfiguring — the existing
+podman/dockershim pool at `../` (`provision-ci-runner.sh` and
+siblings).
+
+Design record and full migration rationale: livespec repo
+`plan/fleet-ci-runner-pool/research/k3s-arc-kueue-migration.md`
+("Migration decision: rootless-podman host -> k3s + Actions Runner
+Controller + Kueue"), maintainer-directed 2026-08-15. This tree is
+**phase 1 of 6** of that migration:
+
+1. **Stand up k3s + ARC + Kueue alongside the existing pool** (this
+   tree). New host-unique label, zero traffic routed. Prove one real,
+   non-gating job runs end-to-end. *(you are here)*
+2. Model the fleet's admission/fair-share formula in ARC
+   AutoscalingRunnerSets + Kueue ClusterQueues/Cohort.
+3. Incremental per-repo cutover.
+4. Soak-under-load verification.
+5. Full cutover.
+6. Delete the podman/dockershim stack entirely.
+
+## Files
+
+| Path | Role |
+|---|---|
+| `provision-k3s.sh` | Idempotently installs a single-node k3s server, pinned to `v1.36.2+k3s1`, with `traefik`/`servicelb` disabled (this node carries no ingress) and a `k3s-role=arc-runner-host` node label. Never touches the existing `ci-runner` user, `runner@.service` instances, or podman. |
+| `install-arc.sh` | Installs the ARC controller (Helm chart `gha-runner-scale-set-controller` 0.14.2) plus TWO `gha-runner-scale-set` (0.14.2) releases — one per label (see below). Fails closed if the GitHub App installation-token secret isn't already present (never creates it). |
+| `arc/values.yaml` | Helm values for the shared-pool-label release (`runnerScaleSetName: local-ci-k3s`). Kubernetes-mode runners (containerd-backed pods, non-root `securityContext`, no privileged mode) — no dockershim/sanitize-hook equivalent needed. |
+| `arc/values-host-unique.yaml` | Helm values for the host-unique-label release (`runnerScaleSetName: poweredge-xubuntu-k3s`), same containment posture, `maxRunners: 1`. |
+| `install-kueue.sh` | Installs Kueue `v0.19.1` from its released manifest, then applies `kueue/resources.yaml`. |
+| `kueue/resources.yaml` | Minimal phase-1 `ResourceFlavor`/`ClusterQueue`/`LocalQueue` — just enough for Kueue to admit the proof job. Modeling the real fair-share formula is phase 2, deliberately deferred. |
+| `test-job/proof-job.yml` | A `workflow_dispatch`-only GitHub Actions workflow targeting `[self-hosted, poweredge-xubuntu-k3s]` — the host-requirements "a host is proven by EXECUTING a job" proof. Never wired into any `needs:` chain or PR/push trigger, so it can never gate a merge. |
+| `test-job/proof-job-kueue.yaml` | A raw, Kueue-admitted `batch/v1` Job (`suspend: true`, queued via `phase1-proof-lq`) — proves Kueue admission directly with `kubectl`, independent of GitHub's own dispatch plumbing. |
+
+## Labels — confirmed distinct from the existing pool
+
+Every runner MUST carry both a shared pool label and a host-unique
+label, per livespec repo `SPECIFICATION/non-functional-requirements.md`
+section "Self-hosted CI runner host requirements" ("Every runner MUST
+carry both a shared pool label and a host-unique label"). The existing
+podman pool's actual labels were read directly from this repo's
+`.github/workflows/ci.yml` (`select-ci-runner.local-runner-labels:
+'["self-hosted","local-ci"]'`) rather than re-guessed. This tree's
+labels are chosen to be unambiguously distinct:
+
+| | existing podman pool | this k3s+ARC pool |
+|---|---|---|
+| shared pool label | `local-ci` | `local-ci-k3s` |
+| host-unique label | (host-specific, registered per runner instance) | `poweredge-xubuntu-k3s` |
+
+## Resource envelope (from the phase-1 read-only host inventory)
+
+Measured 2026-08-15 on `poweredge-xubuntu` (per the ledger record on
+`livespec-s43svm.14`), before any k3s installation:
+
+- **CPU**: 72 cores.
+- **Memory**: 188 GiB total, ~90 GiB available.
+- **Disk**: 306 GB free on the root filesystem; 624 GB free on the
+  dedicated `/var/cache/ci-runner` volume (unrelated to k3s — that
+  volume backs the podman pool's warm cache tiering).
+- **Ports**: `6443/10250/10251/10252/10257/10259/8472/2379/2380` (the
+  full k3s server + agent + embedded-etcd port set) were all UNBOUND —
+  no conflict with the podman pool or anything else on the host.
+- **Existing load**: the podman pool was running ~479-482 concurrent
+  `runner@` units (near its documented cap) at inventory time, which
+  the inventory judged ample headroom for a lightweight single-node k3s
+  control plane (a few hundred MB to low GB for `k3s server` +
+  `containerd` + the ARC controller + Kueue's controller-manager — a
+  small fraction of the measured 90 GiB available).
+
+This envelope is why phase 1 provisions k3s ALONGSIDE the pool rather
+than requiring any capacity trade-off: the host has room for both
+simultaneously, and the podman pool's own capacity, config, and traffic
+are unaffected by anything in this tree.
+
+## Zero traffic routed yet
+
+Nothing in this tree, and no workflow in this repo or any other fleet
+repo, targets `local-ci-k3s` or `poweredge-xubuntu-k3s` as a
+merge-gating `runs-on:` selector. `minRunners: 0` on both ARC releases
+means zero runner pods sit idle by default; `test-job/proof-job.yml` is
+`workflow_dispatch`-only (no `push`/`pull_request` trigger) so it can
+never become a required status check. Cutting real traffic to these
+labels is phase 3 of the migration, not this change.
+
+## k3s uninstall procedure — what `k3s-uninstall.sh` actually does at v1.36.2+k3s1
+
+k3s does not ship a static uninstall script; `install.sh` (fetched
+above, and generated as `/usr/local/bin/k3s-uninstall.sh` at install
+time) **writes** the uninstall script from a heredoc at install time,
+so its content is pinned to the same `v1.36.2+k3s1` tag this tree
+installs. Read directly from
+`https://raw.githubusercontent.com/k3s-io/k3s/v1.36.2%2Bk3s1/install.sh`
+(`create_uninstall()` at line 898, embedding `create_killall()`'s
+script at line 797) rather than assumed, the generated
+`/usr/local/bin/k3s-uninstall.sh` does, in order:
+
+1. **Re-execs as root** if not already (`sudo --preserve-env=K3S_DATA_DIR`).
+2. **Runs the embedded killall logic first**: stops every
+   `k3s*.service` / `/etc/init.d/k3s*` unit; kills the process tree of
+   every `containerd-shim` process rooted under
+   `${K3S_DATA_DIR}/data/*/bin/`; unmounts and removes everything under
+   `/run/k3s`, `/var/lib/kubelet/pods`, `/var/lib/kubelet/plugins`, and
+   `/run/netns/cni-*`; deletes any `cni-*` network namespaces; deletes
+   the `cni0`/`flannel.1`/`flannel-v6.1`/`kube-ipvs0`/`flannel-wg*`
+   network interfaces (restoring any `tailscale --advertise-routes` if
+   tailscale is present); removes `/var/lib/cni/`; and rewrites the
+   `iptables`/`ip6tables` rule sets with every `KUBE-`/`CNI-`/flannel
+   rule stripped out (everything else preserved).
+3. **Disables the systemd unit**: `systemctl disable k3s`,
+   `reset-failed`, `daemon-reload` (or the OpenRC equivalent), then
+   removes the unit file and its env file.
+4. **Bails out early** (leaving the data dirs intact) if it finds any
+   OTHER `k3s*.service`/`/etc/init.d/k3s*` file still present — i.e. it
+   refuses to remove shared state while another k3s instance (e.g. an
+   agent) is still registered on the same host.
+5. Otherwise removes the `kubectl`/`crictl`/`ctr` symlinks, then
+   recursively deletes `/etc/rancher/k3s`, `/run/k3s`, `/run/flannel`,
+   and `${K3S_DATA_DIR}` (default `/var/lib/rancher/k3s`) — walking
+   mount points so it never deletes THROUGH an active bind-mount
+   without unmounting it first — and `/var/lib/kubelet`.
+6. Removes the `k3s` binary and the killall script itself, and (on
+   RPM/SUSE-family hosts only — not the fleet's Ubuntu hosts) removes
+   the `k3s-selinux` package and its yum/zypper repo file.
+
+**What it never touches**: anything under `../` (the podman pool's
+`ci-runner` user, `runner@.service` instances, `containers.conf`,
+dockershim, or `/var/cache/ci-runner`) — there is no shared state
+between the two stacks by construction (different systemd units,
+different container runtimes, different bind mounts). A k3s uninstall
+on this host is therefore safe with respect to the existing pool's
+traffic, matching the migration's side-by-side, no-shared-fate
+requirement. This procedure is documented here as the phase-1
+rollback path; it has not been rehearsed live against
+`poweredge-xubuntu`, per this task's own scope (documenting the
+procedure satisfies the requirement; a live rehearsal is not required).
+
+## Credential separation
+
+The GitHub App installation token that backs `arc-github-app-installation`
+(referenced from both `arc/values*.yaml`) MUST be created out-of-band —
+`install-arc.sh` fails closed if the secret is missing rather than
+creating it — from the same least-privilege, read-scoped source the
+existing podman pool's supervisor already uses
+(`../supervisor/mint-jitconfig.sh`'s token minting), never a broader
+fleet secret. This matches the existing host-requirements "Credential
+separation" clause: the credential that mints runner registrations is
+readable only by the supervising identity (here, whoever runs
+`install-arc.sh` with cluster-admin `kubectl` access), never injected
+into a job's environment.
+
+## Nature
+
+These are **host operational artifacts** (shell, Helm values, Kubernetes
+manifests, docs) — not Python product code — mirroring `../`'s own
+"Nature" section: they are not part of the `just check` aggregate.
+Recreatability is the contract: re-running `provision-k3s.sh` /
+`install-arc.sh` / `install-kueue.sh` converges a fresh host, and
+`test-job/proof-job.yml` + `test-job/proof-job-kueue.yaml` prove the
+path executes a real job.
