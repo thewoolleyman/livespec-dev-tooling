@@ -53,6 +53,16 @@
 > full evidence for both is in the COLD START's brief-21 section below. **The
 > restructuring supersedes my ownership of these claims.**
 >
+> ### Implementation note — dev-tooling plan migration citation coupling
+>
+> Work-item `livespec-dev-tooling-smqnnh` restored the dev-tooling plan checks to
+> scan both legacy `plan/*/handoff.md` and migrated `plan/*/epic.md` plan-lane
+> shapes. When livespec-dev-tooling itself migrates this plan thread, the
+> citations in `livespec/SPECIFICATION/non-functional-requirements.md` that point
+> at `plan/rop-railway-enforcement/handoff.md` must move in the same change to the
+> migrated target path, rather than landing a docs-only path drift for a later
+> cleanup.
+>
 > ### 📌 WHAT AN OPERATOR RESUMING THIS SHOULD KNOW FIRST
 >
 > The maintainer is **restructuring this track into smaller decoupled plans** and is

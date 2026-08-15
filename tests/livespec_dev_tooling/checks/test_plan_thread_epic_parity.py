@@ -103,6 +103,15 @@ def _write_handoff(*, root: Path, thread: str, body: str) -> Path:
     return handoff
 
 
+def _write_epic(*, root: Path, thread: str, body: str) -> Path:
+    """Create `<root>/plan/<thread>/epic.md` with `body`."""
+    thread_dir = root / "plan" / thread
+    thread_dir.mkdir(parents=True, exist_ok=True)
+    epic = thread_dir / "epic.md"
+    epic.write_text(body, encoding="utf-8")
+    return epic
+
+
 def _write_archived_handoff(*, root: Path, thread: str, body: str) -> Path:
     """Create `<root>/plan/archive/<thread>/handoff.md` with `body`."""
     thread_dir = root / "plan" / "archive" / thread
@@ -190,6 +199,29 @@ def test_armed_closed_epic_fails(
     assert '"level": "error"' in combined
 
 
+def test_armed_migrated_closed_epic_fails(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Armed: a migrated active `epic.md` pointing at a closed epic fails."""
+    _arm(monkeypatch)
+    _write_livespec_config(root=tmp_path)
+    _write_epic(
+        root=tmp_path,
+        thread="drift",
+        body="# Ledger epic anchor\n\nlivespec-dev-tooling-l2sm\n",
+    )
+    result = _run(
+        cwd=tmp_path,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        statuses={"livespec-dev-tooling-l2sm": "done"},
+    )
+    assert result.returncode == 1, f"migrated active→done should fail; {result.stderr!r}"
+    combined = result.stdout + result.stderr
+    assert "plan/drift/epic.md" in combined
+    assert "livespec-dev-tooling-l2sm" in combined
+
+
 def test_armed_closed_epic_uses_repo_tenant_prefix(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -265,6 +297,30 @@ def test_armed_archived_open_epic_fails(
     assert "plan/archive/premature/handoff.md" in combined
     assert "livespec-dev-tooling-q3emww" in combined
     assert '"level": "error"' in combined
+
+
+def test_armed_archived_migrated_open_epic_fails(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Armed: an archived migrated `epic.md` pointing at an OPEN epic fails."""
+    _arm(monkeypatch)
+    _write_livespec_config(root=tmp_path)
+    archive_dir = tmp_path / "plan" / "archive" / "premature"
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    (archive_dir / "epic.md").write_text(
+        "# Ledger epic anchor\n\nlivespec-dev-tooling-q3emww\n",
+        encoding="utf-8",
+    )
+    result = _run(
+        cwd=tmp_path,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        statuses={"livespec-dev-tooling-q3emww": "backlog"},
+    )
+    assert result.returncode == 1, f"archived migrated→open should fail; {result.stderr!r}"
+    combined = result.stdout + result.stderr
+    assert "plan/archive/premature/epic.md" in combined
+    assert "livespec-dev-tooling-q3emww" in combined
 
 
 def test_armed_archived_regroomed_anchor_with_open_replacement_fails(

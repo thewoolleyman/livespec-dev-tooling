@@ -1,8 +1,9 @@
 """handoff_dispatch_routing — active plan handoffs must route impl through the factory.
 
-Scans the ACTIVE plan-thread handoffs (`plan/*/handoff.md`, EXCLUDING everything
-under `plan/archive/`) and FAILS if any handoff carries the colon-qualified
-in-session-implement invocation token `:implement`. That token is the
+Scans ACTIVE plan-thread documents (`plan/*/handoff.md` legacy lane and
+`plan/*/epic.md` migrated lane, EXCLUDING everything under `plan/archive/`) and
+FAILS if any document carries the colon-qualified in-session-implement
+invocation token `:implement`. That token is the
 operation-invocation form — a plugin-namespaced implement command such as
 `<plugin>:implement` — NOT the prose words "implement" / "implementation", which
 are legitimate and MUST NOT be flagged.
@@ -45,6 +46,7 @@ __all__: list[str] = []
 _PLAN_DIR_NAME = "plan"
 _ARCHIVE_DIR_NAME = "archive"
 _HANDOFF_GLOB = "*/handoff.md"
+_EPIC_GLOB = "*/epic.md"
 
 # The colon-qualified in-session-implement invocation token. The trailing word
 # boundary keeps prose like "implementation" (and a colon-qualified longer word)
@@ -71,10 +73,22 @@ _REMEDIATION = (
 
 
 def _active_handoffs(*, plan_dir: Path) -> list[Path]:
-    """Return active `plan/<topic>/handoff.md` paths, excluding `plan/archive/`."""
+    """Return active legacy `plan/<topic>/handoff.md` paths."""
     return sorted(
         path for path in plan_dir.glob(_HANDOFF_GLOB) if path.parent.name != _ARCHIVE_DIR_NAME
     )
+
+
+def _active_epics(*, plan_dir: Path) -> list[Path]:
+    """Return active migrated `plan/<topic>/epic.md` paths."""
+    return sorted(
+        path for path in plan_dir.glob(_EPIC_GLOB) if path.parent.name != _ARCHIVE_DIR_NAME
+    )
+
+
+def _active_plan_documents(*, plan_dir: Path) -> list[Path]:
+    """Return active legacy and migrated plan-lane documents."""
+    return sorted([*_active_handoffs(plan_dir=plan_dir), *_active_epics(plan_dir=plan_dir)])
 
 
 def _has_valid_opt_out(*, text: str) -> bool:
@@ -105,7 +119,7 @@ def main() -> int:
         return 0
     offenders = [
         path
-        for path in _active_handoffs(plan_dir=plan_dir)
+        for path in _active_plan_documents(plan_dir=plan_dir)
         if _is_offender(text=path.read_text(encoding="utf-8"))
     ]
     for path in offenders:

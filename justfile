@@ -563,11 +563,12 @@ check-fleet-marketplace-relative-sources:
 check-global-writes:
     uv run python -m livespec_dev_tooling.checks.global_writes
 
-# Handoff dispatch-routing lint — active plan-thread handoffs
-# (plan/*/handoff.md, excluding plan/archive/) MUST route implementation
-# through the factory dispatch route (the `drive` operation impl:<id> / the
-# Dispatcher drain), never the colon-qualified in-session-implement token.
-# Keeps the 2026-07-15 defective-handoff-wording incident from regenerating.
+# Handoff dispatch-routing lint — active plan-thread documents
+# (legacy plan/*/handoff.md and migrated plan/*/epic.md, excluding
+# plan/archive/) MUST route implementation through the factory dispatch route
+# (the `drive` operation impl:<id> / the Dispatcher drain), never the
+# colon-qualified in-session-implement token. Keeps the 2026-07-15
+# defective-handoff-wording incident from regenerating.
 check-handoff-dispatch-routing:
     uv run python -m livespec_dev_tooling.checks.handoff_dispatch_routing
 
@@ -689,16 +690,17 @@ check-pbt-coverage-pure-modules:
 check-per-file-coverage:
     scripts/just/check-per-file-coverage.sh
 
-# Plan-lifecycle enforcement — static half: every active plan/*/handoff.md
-# declares a concrete `**Ledger anchor:**` epic id (credential-free, runs
-# everywhere, including consumer CI).
+# Plan-lifecycle enforcement — static half: every active legacy
+# plan/*/handoff.md or migrated plan/*/epic.md declares a concrete ledger epic
+# id (credential-free, runs everywhere, including consumer CI).
 check-plan-thread-anchor-declared:
     uv run python -m livespec_dev_tooling.checks.plan_thread_anchor_declared
 
-# Plan-lifecycle enforcement — ledger-parity half: an active plan thread must
-# not point at a done/closed epic. Armed-only — self-skips unless
-# LIVESPEC_RUN_PLAN_EPIC_PARITY and BEADS_DOLT_PASSWORD are set, so it never
-# self-gates a credential-less `just check`.
+# Plan-lifecycle enforcement — ledger-parity half: an active legacy
+# plan/*/handoff.md or migrated plan/*/epic.md must not point at a done/closed
+# epic. Armed-only — self-skips unless LIVESPEC_RUN_PLAN_EPIC_PARITY and
+# BEADS_DOLT_PASSWORD are set, so it never self-gates a credential-less
+# `just check`.
 check-plan-thread-epic-parity:
     uv run python -m livespec_dev_tooling.checks.plan_thread_epic_parity
 

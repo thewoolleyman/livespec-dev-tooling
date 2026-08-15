@@ -1,13 +1,15 @@
 """plan_thread_anchor_declared — active plan handoffs must declare a concrete Ledger anchor.
 
-Scans ACTIVE plan-thread handoffs (`plan/*/handoff.md`, EXCLUDING everything under
-`plan/archive/`) and FAILS when a handoff does not declare a concrete
-`**Ledger anchor:**` naming a real epic id. The anchor may sit MID-LINE after a
-`·` separator, so the whole file is searched for the FIRST `**Ledger anchor:**`
-occurrence (first-match: a handoff that merely documents the anchor format in
-prose still passes on its concrete header). A missing, empty, or placeholder
-anchor (`<epic-id>`, `<...>`, `TBD`, a bare `epic` with no id) fails. A repo with
-no `plan/` directory passes trivially.
+Scans ACTIVE plan-thread documents (`plan/*/handoff.md` legacy lane and
+`plan/*/epic.md` migrated lane, EXCLUDING everything under `plan/archive/`) and
+FAILS when a document does not declare a concrete Ledger epic id. Legacy
+handoffs declare `**Ledger anchor:**`; migrated epics declare a
+`# Ledger epic anchor` heading followed by the id. The legacy anchor may sit
+MID-LINE after a `·` separator, so the whole file is searched for the FIRST
+`**Ledger anchor:**` occurrence (first-match: a handoff that merely documents the
+anchor format in prose still passes on its concrete header). A missing, empty,
+or placeholder anchor (`<epic-id>`, `<...>`, `TBD`, a bare `epic` with no id)
+fails. A repo with no `plan/` directory passes trivially.
 
 Rationale: a completed plan thread was once treated as done after its
 implementation PR merged while the plan lifecycle was left incomplete. Requiring
@@ -46,6 +48,7 @@ __all__: list[str] = []
 _PLAN_DIR_NAME = "plan"
 _ARCHIVE_DIR_NAME = "archive"
 _HANDOFF_GLOB = "*/handoff.md"
+_EPIC_GLOB = "*/epic.md"
 _CONFIG_KEY = "plan_lifecycle_anchor"
 
 # The anchor may sit mid-line after a `·` separator, so the whole file is searched
@@ -59,6 +62,9 @@ _ANCHOR_RE = re.compile(
     r"(?:\*\*)?"
     r"(?=[\s),.;]|$)"
 )
+_EPIC_ANCHOR_RE = re.compile(
+    r"(?mi)^#\s+Ledger epic anchor\s*$\s*^`?([a-z][a-z0-9]*(?:-[a-z0-9]+)+)`?\s*$"
+)
 
 _REMEDIATION = (
     "add a concrete `**Ledger anchor:**` line naming this thread's ledger epic "
@@ -70,18 +76,33 @@ _REMEDIATION = (
 
 
 def _active_handoffs(*, plan_dir: Path) -> list[Path]:
-    """Return active `plan/<topic>/handoff.md` paths, excluding `plan/archive/`."""
+    """Return active legacy `plan/<topic>/handoff.md` paths."""
     return sorted(
         path for path in plan_dir.glob(_HANDOFF_GLOB) if path.parent.name != _ARCHIVE_DIR_NAME
     )
 
 
+def _active_epics(*, plan_dir: Path) -> list[Path]:
+    """Return active migrated `plan/<topic>/epic.md` paths."""
+    return sorted(
+        path for path in plan_dir.glob(_EPIC_GLOB) if path.parent.name != _ARCHIVE_DIR_NAME
+    )
+
+
+def _active_plan_documents(*, plan_dir: Path) -> list[Path]:
+    """Return active legacy and migrated plan-lane documents."""
+    return sorted([*_active_handoffs(plan_dir=plan_dir), *_active_epics(plan_dir=plan_dir)])
+
+
 def _declared_anchor(*, text: str) -> str | None:
     """Return the first concrete ledger-anchor id, or None when missing/placeholder."""
     match = _ANCHOR_RE.search(text)
-    if match is None:
-        return None
-    return match.group(1)
+    if match is not None:
+        return match.group(1)
+    epic_match = _EPIC_ANCHOR_RE.search(text)
+    if epic_match is not None:
+        return epic_match.group(1)
+    return None
 
 
 def main() -> int:
@@ -118,7 +139,7 @@ def main() -> int:
         return 0
     offenders = [
         path
-        for path in _active_handoffs(plan_dir=plan_dir)
+        for path in _active_plan_documents(plan_dir=plan_dir)
         if _declared_anchor(text=path.read_text(encoding="utf-8")) is None
     ]
     for path in offenders:

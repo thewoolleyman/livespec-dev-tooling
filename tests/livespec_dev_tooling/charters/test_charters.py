@@ -110,7 +110,9 @@ def test_public_surface_exports_detectors_globs_and_entry_points() -> None:
     assert module.CHARTER_GLOBS == (
         ".ai/supervisor-protocol.md",
         "plan/*/supervisor-handoff.md",
+        "plan/*/epic.md",
         "plan/archive/*/supervisor-handoff.md",
+        "plan/archive/*/epic.md",
     )
     assert [name for name, _detector in module.DETECTORS] == [
         "a-bare-tmux-target",
@@ -134,9 +136,12 @@ def test_charters_in_uses_the_parameterized_root_and_declared_globs(tmp_path: Pa
     module = _charters_module()
     protocol = tmp_path / ".ai" / "supervisor-protocol.md"
     active = tmp_path / "plan" / "active" / "supervisor-handoff.md"
+    active_epic = tmp_path / "plan" / "active" / "epic.md"
     archived = tmp_path / "plan" / "archive" / "done" / "supervisor-handoff.md"
+    archived_epic = tmp_path / "plan" / "archive" / "done" / "epic.md"
     nested = tmp_path / "plan" / "archive" / "done" / "nested" / "supervisor-handoff.md"
-    for path in (protocol, active, archived, nested):
+    nested_epic = tmp_path / "plan" / "archive" / "done" / "nested" / "epic.md"
+    for path in (protocol, active, active_epic, archived, archived_epic, nested, nested_epic):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("charter\n", encoding="utf-8")
 
@@ -145,7 +150,9 @@ def test_charters_in_uses_the_parameterized_root_and_declared_globs(tmp_path: Pa
     ] == [
         ".ai/supervisor-protocol.md",
         "plan/active/supervisor-handoff.md",
+        "plan/active/epic.md",
         "plan/archive/done/supervisor-handoff.md",
+        "plan/archive/done/epic.md",
     ]
 
 
