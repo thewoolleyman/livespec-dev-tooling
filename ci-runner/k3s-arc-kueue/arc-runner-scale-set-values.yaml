@@ -1,0 +1,63 @@
+# arc-runner-scale-set-values.yaml — Helm values for ONE proof-of-life
+# `AutoscalingRunnerSet` (chart `gha-runner-scale-set`, pinned 0.14.2).
+#
+# This is a PROOF-OF-LIFE instance, not production capacity: `maxRunners: 2`.
+# Real per-repository capacity modelling (the fair-share formula in
+# livespec-dev-tooling/SPECIFICATION/non-functional-requirements.md §"Adaptive
+# JIT runner admission budget") is work-item livespec-s43svm.15, NOT this file.
+#
+# ROUTING — READ THIS BEFORE CHANGING `runnerScaleSetName`
+# -------------------------------------------------------
+# In ARC's `gha-runner-scale-set` mode, a workflow selects this pool by the
+# scale set's NAME, not by a label array: `runs-on: poweredge-xubuntu-k3s`.
+# The `["self-hosted", "local-ci", "poweredge"]` label triple the podman pool
+# registers has no equivalent here — ARC scale sets are not label-matched.
+#
+# The host-uniqueness invariant in
+# livespec/SPECIFICATION/non-functional-requirements.md §"Self-hosted CI runner
+# host requirements" is satisfied more strongly than by a distinct label: the
+# name `poweredge-xubuntu-k3s` overlaps NO token the podman pool uses, so no
+# existing repo's `CI_RUNNER_LABELS` variable can route a single job here. The
+# reserved shared-pool token for this path when it grows past one instance is
+# `local-ci-k3s` (also non-overlapping); it is recorded here so phase .15 does
+# not have to re-derive it.
+
+# Where the scale set registers. `thewoolleyman` is a personal account, not a
+# GitHub organisation, so ARC's org-level and enterprise-level config URLs do
+# not apply — a repository-level URL is the only correct form here, matching the
+# existing supervisor's own per-repo runner pools (see
+# ci-runner/supervisor/README.md, "repo-level runners, so pools are per-repo").
+# `install-arc.sh` overrides this with `--set` when GITHUB_CONFIG_URL is set, so
+# the operator can point a first smoke test at a throwaway repo instead.
+# Registering here routes ZERO traffic: no workflow in this repo (or any fleet
+# repo) carries `runs-on: poweredge-xubuntu-k3s`.
+githubConfigUrl: "https://github.com/thewoolleyman/livespec"
+
+# The GitHub App credential is read from a pre-created Kubernetes Secret rather
+# than inlined here — see install-arc.sh, which materialises it from the same
+# `with-github-ci-runners-env.sh` 1Password wrapper the existing
+# `ci-runner-supervisor.service` and `gate-runner-supervisor.service` units use.
+# No credential value is ever written into this file or into git.
+githubConfigSecret: arc-github-app
+
+runnerScaleSetName: poweredge-xubuntu-k3s
+
+minRunners: 0
+maxRunners: 2
+
+template:
+  spec:
+    # The host-requirements contract forbids a root in-container identity. This
+    # is set at POD level deliberately: it applies to every container the chart
+    # generates without this file having to restate (and therefore pin, and
+    # therefore drift from) the chart's own runner image. `runAsNonRoot: true`
+    # makes the kubelet REFUSE to start a container whose effective uid is 0, so
+    # a future base-image change back to root fails admission rather than
+    # silently running privileged.
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 1001
+      runAsGroup: 1001
+      fsGroup: 1001
+      seccompProfile:
+        type: RuntimeDefault

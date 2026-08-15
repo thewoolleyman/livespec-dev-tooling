@@ -24,6 +24,7 @@ tests are specified in the **livespec** repo at
 | `dockershim/docker` | Serialization shim in front of the real `docker` CLI (first on the runner agent's `PATH`). Every slot shares one rootless podman, and podman's `network prune` scans the **global** container database, so one job's prune dies on a container another job is removing. The shim readers-writer-locks prune against removal and passes everything else through unlocked. **Required for more than one slot** — without it a 12-job matrix reds 8–10 of 12 in teardown. |
 | `dockershim/dockershim-exit-tests.sh` | 11 behavioral exit tests for that lock discipline (which calls block on a held lock, which do not), against a fake docker — no podman or runner needed. |
 | `supervisor/` | The ephemeral JIT-runner supervisor (systemd units, polkit bridge, mint/launch scripts) + its README. |
+| `k3s-arc-kueue/` | **A new, separate runner path — not part of the podman stack above.** k3s + Actions Runner Controller + Kueue provisioning, installed *alongside* everything else on this page and routed **zero traffic**: no fleet workflow selects it. Phase 1 of the migration off rootless podman (`livespec-s43svm.14`). Nothing in this table changes because of it. See its own [`README.md`](k3s-arc-kueue/README.md). |
 | `observability/` | Fleet liveness heartbeat (5-min OTLP gauge `livespec.ci_runners.active` → the host collector → `livespec-host-metrics`, paired with a Honeycomb below-1 trigger) and the daily age-aware rootless-podman cache prune, plus `install-observability.sh` (the only sanctioned way to install/update the live copies). Part of the `3lev.1` resource-health work; the CI sentinel job (`check-self-hosted-routing` pinned to `local-ci`) is the end-to-end backstop for the heartbeat's own blind spot. |
 
 ## Nature
@@ -33,3 +34,15 @@ rules, JS, config), not Python product code — they are not part of the
 `just check` aggregate. Recreatability is the contract: re-running
 `provision-ci-runner.sh` converges a fresh host, and
 `isolation-exit-tests.sh` proves the containment invariants still hold.
+
+## Two paths, side by side
+
+Everything above describes the **rootless-podman/dockershim** pool, which is the
+only path currently receiving CI traffic. `k3s-arc-kueue/` is a **second,
+independent path** being stood up beside it — different runner engine, different
+selection token, zero traffic — so that the fleet can cut over per repository
+and observe, rather than flipping a single flag. Neither path's documentation,
+scripts, or host state is a rewrite of the other's; the podman documentation
+above is unchanged and stays authoritative for the live pool until the
+migration's final phase retires it.
+
