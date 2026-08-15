@@ -1,0 +1,76 @@
+# values-livespec.yaml — ONE WORKED EXAMPLE of the per-repository
+# AutoscalingRunnerSet pattern this design introduces, narrowing phase
+# 1's org-level `githubConfigUrl` (../../arc/values.yaml: "org-level
+# scale set; narrow to a repo URL if a future phase requires it") to
+# exactly the repo scope phase 2 requires: ARC's maxRunners is the ONE
+# place the doubled-logical-ceiling half of the admission formula is
+# enforced as a hard cap that Kueue cannot be configured to exceed, and
+# a per-repo runnerScaleSetName is what lets a workflow's `runs-on:`
+# route to ONE repo's own capacity rather than the whole fleet's.
+#
+# For every other fleet repository, copy this file to
+# values-<repo>.yaml and replace every <repo>/livespec occurrence with
+# that repo's own values — see ../kueue/cluster-queue-EXAMPLE-repo.yaml
+# for the sibling template and README.md "Deriving a new repository's
+# ClusterQueue" for the exact steps (the ClusterQueue's nominalQuota and
+# this file's maxRunners MUST use the SAME doubled-ceiling number —
+# see README.md "Two enforcement points, one number").
+githubConfigUrl: "https://github.com/thewoolleyman/livespec"
+githubConfigSecret: arc-github-app-installation  # same secret as phase 1 — see ../../README.md "Credential separation"
+
+runnerScaleSetName: "livespec-local-ci-k3s"
+
+containerMode:
+  type: "kubernetes"
+  kubernetesModeWorkVolumeClaim:
+    accessModes: ["ReadWriteOnce"]
+    storageClassName: "local-path"
+    resources:
+      requests:
+        storage: 5Gi
+
+template:
+  metadata:
+    labels:
+      # Routes every runner pod this scale set creates through Kueue's
+      # per-repo LocalQueue (../kueue/cluster-queue-livespec.yaml) rather
+      # than being admitted directly by the Kubernetes scheduler — this
+      # label is what makes ARC's pod creation Kueue-gated at all.
+      kueue.x-k8s.io/queue-name: livespec-lq
+  spec:
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+    containers:
+      - name: runner
+        image: ghcr.io/actions/actions-runner:latest
+        command: ["/home/runner/run.sh"]
+        env:
+          - name: ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER
+            value: "false"
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          capabilities:
+            drop: ["ALL"]
+        resources:
+          # Exactly ONE churn-slot per runner pod — this is what makes
+          # the extended resource (../node-extended-resource/) a real
+          # per-pod admission constraint rather than a label. requests
+          # == limits: churn-slot is a COUNTING resource (like a device),
+          # not a compressible one, so there is no meaningful "burst"
+          # value distinct from the reservation.
+          requests:
+            ci-runner.io/churn-slot: "1"
+          limits:
+            ci-runner.io/churn-slot: "1"
+
+# The doubled logical ceiling (18 measured slots * 2 = 36) — MUST match
+# ../kueue/cluster-queue-livespec.yaml's nominalQuota exactly. See
+# README.md "Two enforcement points, one number" for why both exist
+# rather than deriving one from the other automatically (deliberately
+# out of scope for this design pass).
+minRunners: 0
+maxRunners: 36
