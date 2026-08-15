@@ -1,0 +1,33 @@
+# proof-job-kueue.yaml — a raw Kubernetes Job, suspended and admitted via
+# the phase1-proof-lq LocalQueue (ci-runner/k3s/kueue/resources.yaml).
+# This proves Kueue's admission path directly with `kubectl`, independent
+# of GitHub's own dispatch/registration plumbing that test-job/proof-job.yml
+# exercises — two different proofs of two different layers, both required
+# before phase 1's acceptance criteria ("k3s, ARC, and Kueue are installed
+# and healthy... verifiable via kubectl/helm status") are satisfied.
+#
+# Apply with: kubectl apply -f proof-job-kueue.yaml
+# Verify admission with: kubectl -n arc-runners get workloads
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: phase1-proof-kueue-job
+  namespace: arc-runners
+  labels:
+    kueue.x-k8s.io/queue-name: phase1-proof-lq
+spec:
+  suspend: true  # required — Kueue's webhook only manages jobs created suspended
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: proof
+          image: busybox:1.36
+          command: ["sh", "-c", "echo 'kueue phase1-proof-cq admitted this job'; date"]
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "128Mi"

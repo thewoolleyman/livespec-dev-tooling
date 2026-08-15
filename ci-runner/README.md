@@ -26,6 +26,7 @@ tests are specified in the **livespec** repo at
 | `supervisor/` | The ephemeral JIT-runner supervisor (systemd units, polkit bridge, mint/launch scripts) + its README. |
 | `k3s-arc-kueue/` | **A new, separate runner path — not part of the podman stack above.** k3s + Actions Runner Controller + Kueue provisioning, installed *alongside* everything else on this page and routed **zero traffic**: no fleet workflow selects it. Phase 1 of the migration off rootless podman (`livespec-s43svm.14`). Nothing in this table changes because of it. See its own [`README.md`](k3s-arc-kueue/README.md). |
 | `observability/` | Fleet liveness heartbeat (5-min OTLP gauge `livespec.ci_runners.active` → the host collector → `livespec-host-metrics`, paired with a Honeycomb below-1 trigger) and the daily age-aware rootless-podman cache prune, plus `install-observability.sh` (the only sanctioned way to install/update the live copies). Part of the `3lev.1` resource-health work; the CI sentinel job (`check-self-hosted-routing` pinned to `local-ci`) is the end-to-end backstop for the heartbeat's own blind spot. |
+| `k3s/` | **Phase 1 of the k3s + Actions Runner Controller + Kueue migration** (see `k3s/README.md`): a SECOND, independent self-hosted runner pool standing up ALONGSIDE this tree's podman/dockershim pool, on new labels (`local-ci-k3s` shared, `poweredge-xubuntu-k3s` host-unique), routing zero traffic. Design record: livespec repo `plan/fleet-ci-runner-pool/research/k3s-arc-kueue-migration.md`. |
 
 ## Nature
 
