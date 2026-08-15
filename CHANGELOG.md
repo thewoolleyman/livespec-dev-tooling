@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.23.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.23.0...v1.23.1) (2026-08-15)
+
+
+### Bug Fixes
+
+* teach plan checks migrated planning lane ([ac51e45](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ac51e45cd239d5202c77c02a098b57ba5f937dd4))
+
 ## [1.23.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.22.0...v1.23.0) (2026-08-14)
 
 
