@@ -27,13 +27,32 @@ command -v helm >/dev/null || { echo "FATAL: helm not found on PATH"; exit 1; }
 
 # ---------------------------------------------------------------------------
 log "0. Pre-gate: the credential secret must already exist (never created here)"
-if ! kubectl get secret arc-github-app-installation -n "$CONTROLLER_NAMESPACE" >/dev/null 2>&1; then
+# The secret's REQUIRED location is RUNNERS_NAMESPACE (arc-runners), NOT
+# CONTROLLER_NAMESPACE (arc-systems) — both gha-runner-scale-set Helm
+# releases (step 2) live in arc-runners, and it is THAT controller
+# (the AutoscalingRunnerSet reconciler, running per-release) that resolves
+# each release's own githubConfigSecret (arc/values.yaml) from its OWN
+# namespace, arc-runners. A secret placed in arc-systems (the
+# gha-runner-scale-set-CONTROLLER's namespace, step 1) passes THIS
+# pre-gate but leaves the runner-set controller unable to resolve it at
+# reconcile time — confirmed live on poweredge-xubuntu during
+# livespec-s43svm.14 (see livespec-6r90 for the full diagnosis).
+#
+# arc-runners itself may not exist yet on a genuinely fresh install (step 2
+# is what --create-namespace's it) — `kubectl get secret` reports the same
+# not-found failure either way (missing namespace or missing secret), which
+# is the correct fail-closed behavior for a pre-gate: create the namespace
+# yourself first (`kubectl create namespace arc-runners`) if you need to
+# place the secret before running this script.
+if ! kubectl get secret arc-github-app-installation -n "$RUNNERS_NAMESPACE" >/dev/null 2>&1; then
   cat <<'EOF'
-FATAL: secret arc-github-app-installation not found in arc-systems.
+FATAL: secret arc-github-app-installation not found in arc-runners.
 Create it from the fleet's least-privilege GitHub App installation token
 BEFORE running this script (README.md "Credential separation" documents
 the exact scope). This script never handles or persists that credential
-itself — only the operator's own out-of-band step does.
+itself — only the operator's own out-of-band step does. If the
+arc-runners namespace does not exist yet, create it first:
+  kubectl create namespace arc-runners
 EOF
   exit 1
 fi

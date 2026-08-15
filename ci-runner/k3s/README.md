@@ -153,6 +153,20 @@ readable only by the supervising identity (here, whoever runs
 `install-arc.sh` with cluster-admin `kubectl` access), never injected
 into a job's environment.
 
+**Namespace: `arc-runners`, not `arc-systems`.** Create the secret in
+the `arc-runners` namespace — the namespace both `gha-runner-scale-set`
+Helm releases (step 2) live in, and the one their own
+AutoscalingRunnerSet reconciler actually resolves `githubConfigSecret`
+from. `arc-systems` is only the separate `gha-runner-scale-set-CONTROLLER`
+release's namespace (step 1) — a secret placed there passes nothing
+downstream and leaves the runner-set reconciler unable to find it,
+confirmed live on `poweredge-xubuntu` (`livespec-6r90`, filed off
+`livespec-s43svm.14`'s diagnosis). `arc-runners` may not exist yet on a
+genuinely fresh install (`install-arc.sh` step 2 is what
+`--create-namespace`'s it) — create it yourself first if you need to
+place the secret before running the script: `kubectl create namespace
+arc-runners`.
+
 ## Nature
 
 These are **host operational artifacts** (shell, Helm values, Kubernetes
