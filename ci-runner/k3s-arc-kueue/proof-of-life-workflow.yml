@@ -1,0 +1,63 @@
+# proof-of-life-workflow.yml — a NON-GATING template workflow proving one real
+# GitHub Actions job can run on the k3s/ARC path end to end.
+#
+# THIS FILE IS A TEMPLATE, NOT A LIVE WORKFLOW. It deliberately lives under
+# ci-runner/k3s-arc-kueue/ and NOT under .github/workflows/, so GitHub never
+# registers it in this repository. The operator copies it into a scratch or
+# throwaway repository (or, once phase .15 has soaked, into a real repo) and
+# runs it by hand via `workflow_dispatch`.
+#
+# It is analogous in role to the podman path's `check-self-hosted-routing`
+# sentinel described in ci-runner/observability/README.md — a job whose only
+# purpose is to prove the routing works — but unlike that sentinel this one is
+# explicitly NOT wired into any repository's required checks, NOT part of any
+# `CI` workflow, and NOT capable of blocking a merge.
+#
+# ZERO TRAFFIC: `runs-on: poweredge-xubuntu-k3s` names the ARC scale set
+# directly. That token appears in no fleet repository's `CI_RUNNER_LABELS`
+# variable and overlaps none of the podman pool's `self-hosted` / `local-ci` /
+# `poweredge` labels, so no existing job can be routed here by accident.
+
+name: k3s ARC proof of life (non-gating)
+
+# Manual only. No push, pull_request, or schedule trigger — this must never fire
+# on its own, and must never appear as a check on a pull request.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  proof-of-life:
+    # In ARC's gha-runner-scale-set mode a workflow selects the pool by the
+    # scale set NAME, as a bare string — NOT by a label array. A
+    # `runs-on: [self-hosted, poweredge-xubuntu-k3s]` array would match nothing
+    # and the job would queue forever.
+    runs-on: poweredge-xubuntu-k3s
+    timeout-minutes: 5
+    steps:
+      - name: Report identity and prove the runner is a non-root Kubernetes pod
+        run: |
+          set -euo pipefail
+          echo "hostname: $(hostname)"
+          echo "id: $(id)"
+
+          uid="$(id -u)"
+          if [ "${uid}" -eq 0 ]; then
+            echo "FAIL: running as root in-container; the host-requirements" >&2
+            echo "      contract forbids a root in-container identity." >&2
+            exit 1
+          fi
+          echo "OK: non-root in-container identity (uid ${uid})"
+
+          # A Kubernetes pod always has the serviceaccount projection mounted;
+          # a podman-pool runner does not. This distinguishes the two paths
+          # positively rather than by absence.
+          if [ -d /var/run/secrets/kubernetes.io/serviceaccount ]; then
+            echo "OK: running as a Kubernetes pod (serviceaccount projected)"
+          else
+            echo "FAIL: no serviceaccount projection — this job did not run" >&2
+            echo "      on the k3s/ARC path." >&2
+            exit 1
+          fi

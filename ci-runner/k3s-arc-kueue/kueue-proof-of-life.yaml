@@ -1,0 +1,51 @@
+# kueue-proof-of-life.yaml — the MINIMUM Kueue object graph that proves Kueue is
+# installed and admitting, and nothing more.
+#
+# SCOPE — read before extending this file
+# ---------------------------------------
+# The real work of modelling the fleet's admission formula
+# (`min(queued jobs, doubled repository logical ceiling, fair share of remaining
+# host-wide capacity)` from livespec-dev-tooling/SPECIFICATION/
+# non-functional-requirements.md §"Adaptive JIT runner admission budget") onto
+# Kueue's Cohort / fair-sharing model — one ClusterQueue per repository, borrowing
+# within a shared Cohort, plus the container-churn/iowait bottleneck modelled as a
+# Kubernetes extended resource — is work-item livespec-s43svm.15. It is
+# deliberately NOT attempted here.
+#
+# The quotas below are placeholders sized for a proof-of-life scale set
+# (maxRunners 2), not a capacity decision. Phase .15 replaces this whole file.
+
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: ResourceFlavor
+metadata:
+  name: default-flavor
+# No nodeLabels: single-node cluster, so every pod lands on the one node and
+# there is nothing to discriminate between. Phase .15 may introduce flavors.
+---
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: ClusterQueue
+metadata:
+  name: ci-runner-proof-of-life
+spec:
+  namespaceSelector: {}
+  # Named so phase .15 can add sibling per-repository ClusterQueues that borrow
+  # from each other without restructuring. With one member there is nothing to
+  # borrow, so the Cohort is inert today — it exists to fix the shape early.
+  cohort: ci-runner-fleet
+  resourceGroups:
+    - coveredResources: ["cpu", "memory"]
+      flavors:
+        - name: default-flavor
+          resources:
+            - name: "cpu"
+              nominalQuota: "4"
+            - name: "memory"
+              nominalQuota: "8Gi"
+---
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: LocalQueue
+metadata:
+  namespace: arc-runners
+  name: ci-runner-proof-of-life
+spec:
+  clusterQueue: ci-runner-proof-of-life
