@@ -3,15 +3,16 @@
 The ledger-state PARITY half of plan-lifecycle enforcement. It asserts both
 directions deliberately:
 
-* for each ACTIVE plan handoff (`plan/*/handoff.md`, excluding
-  `plan/archive/`), FAIL when the anchor epic is `done`/`closed` — the drift
-  that leaves a completed plan thread un-archived;
-* for each ARCHIVED plan handoff (`plan/archive/**/handoff.md`), FAIL when the
-  anchor epic is anything other than `done`/`closed` — the drift that archives
-  a thread while its owning epic is still in flight; and FAIL when the archived
-  anchor has same-tenant replacement descendants that are not completion-closed
-  — the drift that treats a procedural regroom-out/supersession closure as
-  finished work.
+* for each ACTIVE plan document (`plan/*/handoff.md` legacy lane and
+  `plan/*/epic.md` migrated lane, excluding `plan/archive/`), FAIL when the
+  anchor epic is `done`/`closed` — the drift that leaves a completed plan thread
+  un-archived;
+* for each ARCHIVED plan document (`plan/archive/**/handoff.md` legacy lane and
+  `plan/archive/**/epic.md` migrated lane), FAIL when the anchor epic is anything
+  other than `done`/`closed` — the drift that archives a thread while its owning
+  epic is still in flight; and FAIL when the archived anchor has same-tenant
+  replacement descendants that are not completion-closed — the drift that treats
+  a procedural regroom-out/supersession closure as finished work.
 
 Only ids under the checked repo's tenant prefix are parity-checked; cross-tenant
 prose refs (e.g. `livespec-...`) are ignored (decisions 41/44/45).
@@ -66,13 +67,16 @@ __all__: list[str] = []
 _PLAN_DIR_NAME = "plan"
 _ARCHIVE_DIR_NAME = "archive"
 _HANDOFF_GLOB = "*/handoff.md"
+_EPIC_GLOB = "*/epic.md"
 _ARCHIVED_HANDOFF_GLOB = f"{_ARCHIVE_DIR_NAME}/**/handoff.md"
+_ARCHIVED_EPIC_GLOB = f"{_ARCHIVE_DIR_NAME}/**/epic.md"
 _LIVESPEC_CONFIG = ".livespec.jsonc"
 _RUN_LEVER = "LIVESPEC_RUN_PLAN_EPIC_PARITY"
 _CRED_ENV = "BEADS_DOLT_PASSWORD"
 _CLOSED_STATUSES = frozenset({"closed", "done"})
 
 _ANCHOR_RE = re.compile(r"\*\*Ledger anchor:\*\*\s*(?:epic\s*)?`?([^`\n)]*?)`?(?:\s|$|\))")
+_EPIC_ANCHOR_RE = re.compile(r"(?mi)^#\s+Ledger epic anchor\s*$\s*^`?([^`\n]+?)`?\s*$")
 
 _REMEDIATION = (
     "the plan thread is complete — archive it with "
@@ -109,15 +113,37 @@ class StatusPredicate(Protocol):
 
 
 def _active_handoffs(*, plan_dir: Path) -> list[Path]:
-    """Return active `plan/<topic>/handoff.md` paths, excluding `plan/archive/`."""
+    """Return active legacy `plan/<topic>/handoff.md` paths."""
     return sorted(
         path for path in plan_dir.glob(_HANDOFF_GLOB) if path.parent.name != _ARCHIVE_DIR_NAME
     )
 
 
+def _active_epics(*, plan_dir: Path) -> list[Path]:
+    """Return active migrated `plan/<topic>/epic.md` paths."""
+    return sorted(
+        path for path in plan_dir.glob(_EPIC_GLOB) if path.parent.name != _ARCHIVE_DIR_NAME
+    )
+
+
+def _active_plan_documents(*, plan_dir: Path) -> list[Path]:
+    """Return active legacy and migrated plan-lane documents."""
+    return sorted([*_active_handoffs(plan_dir=plan_dir), *_active_epics(plan_dir=plan_dir)])
+
+
 def _archived_handoffs(*, plan_dir: Path) -> list[Path]:
-    """Return archived `plan/archive/**/handoff.md` paths."""
+    """Return archived legacy `plan/archive/**/handoff.md` paths."""
     return sorted(plan_dir.glob(_ARCHIVED_HANDOFF_GLOB))
+
+
+def _archived_epics(*, plan_dir: Path) -> list[Path]:
+    """Return archived migrated `plan/archive/**/epic.md` paths."""
+    return sorted(plan_dir.glob(_ARCHIVED_EPIC_GLOB))
+
+
+def _archived_plan_documents(*, plan_dir: Path) -> list[Path]:
+    """Return archived legacy and migrated plan-lane documents."""
+    return sorted([*_archived_handoffs(plan_dir=plan_dir), *_archived_epics(plan_dir=plan_dir)])
 
 
 def _tenant_id_re(*, tenant_prefix: str) -> re.Pattern[str]:
@@ -141,9 +167,13 @@ def _store_prefix(*, cwd: Path) -> str:
 def _same_tenant_anchor(*, text: str, tenant_id_re: re.Pattern[str]) -> str | None:
     """Return the handoff's same-tenant anchor id, else None."""
     match = _ANCHOR_RE.search(text)
-    if match is None:
+    if match is not None:
+        token = match.group(1).strip().strip("`").strip()
+        return token if tenant_id_re.match(token) is not None else None
+    epic_match = _EPIC_ANCHOR_RE.search(text)
+    if epic_match is None:
         return None
-    token = match.group(1).strip().strip("`").strip()
+    token = epic_match.group(1).strip().strip("`").strip()
     return token if tenant_id_re.match(token) is not None else None
 
 
@@ -237,13 +267,13 @@ def main(
         return 0
     tenant_id_re = _tenant_id_re(tenant_prefix=_store_prefix(cwd=cwd))
     active_statuses = _handoff_statuses(
-        paths=_active_handoffs(plan_dir=plan_dir),
+        paths=_active_plan_documents(plan_dir=plan_dir),
         tenant_id_re=tenant_id_re,
         reader=reader,
         repo=cwd,
     )
     archived_statuses = _handoff_statuses(
-        paths=_archived_handoffs(plan_dir=plan_dir),
+        paths=_archived_plan_documents(plan_dir=plan_dir),
         tenant_id_re=tenant_id_re,
         reader=reader,
         repo=cwd,

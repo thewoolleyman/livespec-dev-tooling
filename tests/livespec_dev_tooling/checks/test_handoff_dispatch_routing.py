@@ -77,6 +77,15 @@ def _write_handoff(*, root: Path, thread: str, body: str) -> Path:
     return handoff
 
 
+def _write_epic(*, root: Path, thread: str, body: str) -> Path:
+    """Create `<root>/plan/<thread>/epic.md` with `body`."""
+    thread_dir = root / "plan" / thread
+    thread_dir.mkdir(parents=True, exist_ok=True)
+    epic = thread_dir / "epic.md"
+    epic.write_text(body, encoding="utf-8")
+    return epic
+
+
 def test_offending_active_handoff_fails(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -101,6 +110,25 @@ def test_offending_active_handoff_fails(
     assert (
         '"level": "error"' in combined
     ), f"offending handoff should emit an error-level finding; stderr={result.stderr!r}"
+
+
+def test_offending_migrated_epic_fails(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A migrated `epic.md` carrying the `:implement` token fails and names the file."""
+    _write_epic(
+        root=tmp_path,
+        thread="force-factory",
+        body=f"# Ledger epic anchor\n\nlivespec-dev-tooling-abc\n\nRun `{_TOKEN} bd-ib-abc`.\n",
+    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 1, (
+        f"token-bearing migrated epic should exit 1; got returncode={result.returncode} "
+        f"stderr={result.stderr!r}"
+    )
+    combined = result.stdout + result.stderr
+    assert "plan/force-factory/epic.md" in combined
+    assert "impl:" in combined and "Dispatcher" in combined
 
 
 def test_clean_active_handoff_passes(
@@ -142,19 +170,21 @@ def test_prose_implementation_not_flagged(
 def test_archived_handoff_ignored(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Handoffs under `plan/archive/` are ignored — nested and directly under archive."""
-    # Nested archived thread: `plan/archive/<topic>/handoff.md` is at depth 2, so
-    # the single-level `plan/*/handoff.md` glob never returns it.
+    """Planning documents under `plan/archive/` are ignored."""
+    # Nested archived thread: `plan/archive/<topic>/<doc>.md` is at depth 2, so
+    # the single-level active globs never return it.
     nested = tmp_path / "plan" / "archive" / "old-thread"
     nested.mkdir(parents=True, exist_ok=True)
     (nested / "handoff.md").write_text(f"Run `{_TOKEN} bd-old`\n", encoding="utf-8")
-    # Degenerate case: a handoff directly under `plan/archive/` IS matched by the
-    # glob, but its parent dir name is `archive`, so the exclusion filter drops it.
+    (nested / "epic.md").write_text(f"Run `{_TOKEN} bd-old`\n", encoding="utf-8")
+    # Degenerate case: a document directly under `plan/archive/` IS matched by
+    # the glob, but its parent dir name is `archive`, so the exclusion drops it.
     archive_root = tmp_path / "plan" / "archive"
     (archive_root / "handoff.md").write_text(f"Run `{_TOKEN} bd-root`\n", encoding="utf-8")
+    (archive_root / "epic.md").write_text(f"Run `{_TOKEN} bd-root`\n", encoding="utf-8")
     result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0, (
-        f"archived handoffs must be ignored; got returncode={result.returncode} "
+        f"archived plan docs must be ignored; got returncode={result.returncode} "
         f"stderr={result.stderr!r}"
     )
 

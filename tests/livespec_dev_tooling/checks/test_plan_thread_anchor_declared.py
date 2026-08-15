@@ -72,6 +72,15 @@ def _write_handoff(*, root: Path, thread: str, body: str) -> Path:
     return handoff
 
 
+def _write_epic(*, root: Path, thread: str, body: str) -> Path:
+    """Create `<root>/plan/<thread>/epic.md` with `body`."""
+    thread_dir = root / "plan" / thread
+    thread_dir.mkdir(parents=True, exist_ok=True)
+    epic = thread_dir / "epic.md"
+    epic.write_text(body, encoding="utf-8")
+    return epic
+
+
 def test_concrete_anchor_passes(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -84,6 +93,20 @@ def test_concrete_anchor_passes(
     )
     result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0, f"concrete anchor should pass; stderr={result.stderr!r}"
+
+
+def test_migrated_epic_anchor_passes(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A migrated `plan/<topic>/epic.md` anchor heading with a concrete id passes."""
+    _opt_in(root=tmp_path)
+    _write_epic(
+        root=tmp_path,
+        thread="planning-lane-redesign",
+        body="# Ledger epic anchor\n\nlivespec-zsn2xh\n",
+    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 0, f"migrated epic anchor should pass; stderr={result.stderr!r}"
 
 
 def test_mid_line_anchor_passes(
@@ -185,6 +208,19 @@ def test_missing_anchor_fails(
     assert '"level": "error"' in combined
 
 
+def test_migrated_epic_missing_anchor_fails(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A migrated `epic.md` without a ledger-anchor heading fails and names the file."""
+    _opt_in(root=tmp_path)
+    _write_epic(root=tmp_path, thread="no-anchor", body="# Thread\n\nNo anchor here.\n")
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 1, f"missing migrated anchor should fail; stderr={result.stderr!r}"
+    combined = result.stdout + result.stderr
+    assert "plan/no-anchor/epic.md" in combined
+    assert '"level": "error"' in combined
+
+
 def test_epic_anchor_label_fails_with_ledger_remediation(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -235,15 +271,17 @@ def test_non_concrete_shape_fails(
 def test_archived_handoffs_ignored(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Handoffs under `plan/archive/` are ignored — nested and directly under archive."""
+    """Planning documents under `plan/archive/` are ignored by the static anchor check."""
     _opt_in(root=tmp_path)
     nested = tmp_path / "plan" / "archive" / "old-thread"
     nested.mkdir(parents=True, exist_ok=True)
     (nested / "handoff.md").write_text("# H\n\nNo anchor.\n", encoding="utf-8")
+    (nested / "epic.md").write_text("# H\n\nNo anchor.\n", encoding="utf-8")
     archive_root = tmp_path / "plan" / "archive"
     (archive_root / "handoff.md").write_text("# H\n\nNo anchor.\n", encoding="utf-8")
+    (archive_root / "epic.md").write_text("# H\n\nNo anchor.\n", encoding="utf-8")
     result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
-    assert result.returncode == 0, f"archived handoffs must be ignored; stderr={result.stderr!r}"
+    assert result.returncode == 0, f"archived plan docs must be ignored; stderr={result.stderr!r}"
 
 
 def test_no_plan_dir_passes(

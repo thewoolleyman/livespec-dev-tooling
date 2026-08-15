@@ -37,7 +37,9 @@ Detector = Callable[..., list[str]]
 CHARTER_GLOBS: tuple[str, ...] = (
     ".ai/supervisor-protocol.md",
     "plan/*/supervisor-handoff.md",
+    "plan/*/epic.md",
     "plan/archive/*/supervisor-handoff.md",
+    "plan/archive/*/epic.md",
 )
 
 DETECTORS: tuple[tuple[str, Detector], ...] = (
