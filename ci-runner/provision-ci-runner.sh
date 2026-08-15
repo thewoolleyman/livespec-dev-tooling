@@ -109,7 +109,27 @@ runuser -u "$RUNNER_USER" -- env XDG_RUNTIME_DIR="$XDG" DBUS_SESSION_BUS_ADDRESS
   systemctl --user enable --now podman.socket
 
 # ---------------------------------------------------------------------------
-log "5. Install Actions runner ${RUNNER_VERSION} + container-hooks ${HOOKS_VERSION} + sanitizer"
+log "5. Podman libpod state db: force WAL journal mode (livespec-s43svm.11)"
+# All slots share ONE rootless podman instance and, since podman 5.x, ONE
+# SQLite libpod state database (no boltdb on a fresh install ->
+# database_backend="" resolves to sqlite). Confirmed live on poweredge-xubuntu
+# (read-only PRAGMA probe, podman 5.7.0): that database defaults to SQLite's
+# on-disk rollback-journal mode, not WAL -- podman exposes no containers.conf
+# knob for journal mode at all. Under rollback-journal mode every write
+# transaction (every container create/start/stop/exec, from every
+# concurrently running job on the host) takes a whole-database EXCLUSIVE
+# lock, which is the direct cause of both the `database is locked` exit-125
+# crashes and the multi-minute Initialize/Stop-containers hangs recorded on
+# livespec-s43svm.11/.12. WAL mode lets readers proceed without blocking and
+# removes the per-transaction journal fsync; see
+# ci-runner/dockershim/podman-wal-migrate.sh for the full write-up. Force a
+# first podman command so db.sql exists on a fresh host, then migrate it --
+# idempotent either way.
+runuser -u "$RUNNER_USER" -- env XDG_RUNTIME_DIR="$XDG" podman info >/dev/null
+runuser -u "$RUNNER_USER" -- env XDG_RUNTIME_DIR="$XDG" "$(dirname "$0")/dockershim/podman-wal-migrate.sh"
+
+# ---------------------------------------------------------------------------
+log "6. Install Actions runner ${RUNNER_VERSION} + container-hooks ${HOOKS_VERSION} + sanitizer"
 runuser -u "$RUNNER_USER" -- bash -eu <<EOF
 mkdir -p "${RUNNER_DIR}/container-hooks"
 cd "${RUNNER_DIR}"
@@ -125,7 +145,7 @@ XDG_RUNTIME_DIR=${XDG}
 EOF
 
 # ---------------------------------------------------------------------------
-log "6. Per-slot runner INSTANCE dirs (one per concurrent runner — NOT shared)"
+log "7. Per-slot runner INSTANCE dirs (one per concurrent runner — NOT shared)"
 # EVERY CONCURRENT RUNNER NEEDS ITS OWN DIRECTORY. The Actions runner materializes
 # its JIT config to `.runner` / `.credentials` in its ROOT dir at startup, and it
 # writes `_diag` there too; its `_work` folder is likewise per-runner. Point N
@@ -189,7 +209,7 @@ EOF
 printf 'provisioned %s instance dirs per repo-slug under %s\n' "$SLOTS" "$INSTANCES_ROOT"
 
 # ---------------------------------------------------------------------------
-log "7. docker serialization shim (podman network-prune race — REQUIRED for >1 slot)"
+log "8. docker serialization shim (podman network-prune race — REQUIRED for >1 slot)"
 # Every slot shares ONE rootless podman. `podman network prune` walks the GLOBAL
 # container DB to find in-use networks (the label filter only narrows what it
 # DELETES), so it fails when a CONCURRENT job removes a container mid-scan:
@@ -205,7 +225,7 @@ chown root:root /usr/local/lib/ci-runner/dockershim/docker
 chmod 0755 /usr/local/lib/ci-runner/dockershim/docker
 
 # ---------------------------------------------------------------------------
-log "8. T10 cache-tiering — per-repo warm-cache lower dirs (livespec-dev-tooling-9mp)"
+log "9. T10 cache-tiering — per-repo warm-cache lower dirs (livespec-dev-tooling-9mp)"
 # sanitize-hook.js mounts these READ-ONLY into each job via a throwaway overlay
 # (the upper is per-job and discarded), so a fork PR job can READ the warm cache
 # but can NEVER mutate it — trust-tiering by construction, no forgeable signal.
