@@ -13,7 +13,7 @@
 # requests only. Flavoring on the extended resource makes Kueue's
 # admission math track the REAL bottleneck instead of a proxy that would
 # let it admit far more concurrent runner pods than the host can absorb.
-apiVersion: kueue.x-k8s.io/v1beta1
+apiVersion: kueue.x-k8s.io/v1beta2
 kind: ResourceFlavor
 metadata:
   name: churn-slot-flavor

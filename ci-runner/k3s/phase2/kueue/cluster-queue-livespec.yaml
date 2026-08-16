@@ -1,8 +1,17 @@
 # cluster-queue-livespec.yaml — ONE WORKED EXAMPLE of the per-repository
 # ClusterQueue pattern this design introduces. Every fleet repository
 # routed to local-ci gets its own ClusterQueue, named <repo>-cq, all
-# joined to the SAME cohort (fleetCohort below) so Kueue's Fair Sharing
-# (enable-fair-sharing.sh) borrows unused quota across them.
+# joined to the SAME cohort (cohortName below) so Kueue borrows unused
+# quota across them.
+#
+# API version and field name CONFIRMED LIVE against the pinned
+# v0.19.1 install on poweredge-xubuntu (2026-08-16, VALIDATION_CHECKLIST
+# item 1): `kueue.x-k8s.io/v1beta1`'s `spec.cohort` (a bare string) is
+# ACCEPTED but DEPRECATED at this version ("Warning: This version is
+# deprecated. Use v1beta2 instead."); `kubectl explain` reports the
+# CURRENT field as `v1beta2`'s `spec.cohortName` — same semantics
+# ("cohortName ... doesn't reference any object"), renamed field. Using
+# v1beta2/cohortName here rather than the deprecated alias.
 #
 # nominalQuota derivation for THIS repo, livespec: the existing podman
 # supervisor's committed unit
@@ -19,12 +28,12 @@
 # ClusterQueue" for the exact steps. No generator script exists yet
 # (deliberately out of scope for this design pass — see
 # ../VALIDATION_CHECKLIST.md item 6).
-apiVersion: kueue.x-k8s.io/v1beta1
+apiVersion: kueue.x-k8s.io/v1beta2
 kind: ClusterQueue
 metadata:
   name: livespec-cq
 spec:
-  cohort: fleet-ci-runner-pool
+  cohortName: fleet-ci-runner-pool
   namespaceSelector: {}
   fairSharing:
     weight: 1  # equal weight across every repo's ClusterQueue — the spec states no per-repo priority
@@ -41,7 +50,7 @@ spec:
               # exceed the 482 physical cap without ever admitting past it.
               nominalQuota: 36
 ---
-apiVersion: kueue.x-k8s.io/v1beta1
+apiVersion: kueue.x-k8s.io/v1beta2
 kind: LocalQueue
 metadata:
   name: livespec-lq
