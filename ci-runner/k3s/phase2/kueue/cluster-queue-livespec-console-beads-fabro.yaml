@@ -1,0 +1,36 @@
+# cluster-queue-livespec-console-beads-fabro.yaml — livespec-s43svm.16's
+# chosen first NON-GATING cutover lane's ClusterQueue/LocalQueue pair.
+# See ../arc/values-livespec-console-beads-fabro.yaml for the repo-selection
+# rationale and the live-apportionment correction to this design's original
+# doubled-ceiling formula description.
+#
+# nominalQuota = 16, this repo's own live-measured slot count from the
+# poweredge-xubuntu ci-runner-supervisor unit's --repos apportionment
+# (systemctl cat ci-runner-supervisor, read 2026-08-16), UNDOUBLED — see
+# the sibling values file's header for why this first proof lane uses the
+# live figure directly rather than the design's originally-assumed
+# doubled-ceiling number.
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ClusterQueue
+metadata:
+  name: livespec-console-beads-fabro-cq
+spec:
+  cohortName: fleet-ci-runner-pool
+  namespaceSelector: {}
+  fairSharing:
+    weight: 1  # equal weight across every repo's ClusterQueue — the spec states no per-repo priority
+  resourceGroups:
+    - coveredResources: ["ci-runner.io/churn-slot"]
+      flavors:
+        - name: churn-slot-flavor
+          resources:
+            - name: "ci-runner.io/churn-slot"
+              nominalQuota: 16
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: LocalQueue
+metadata:
+  name: livespec-console-beads-fabro-lq
+  namespace: arc-runners  # phase 1's shared namespace for every ARC release — see ../../arc/values-livespec.yaml
+spec:
+  clusterQueue: livespec-console-beads-fabro-cq
