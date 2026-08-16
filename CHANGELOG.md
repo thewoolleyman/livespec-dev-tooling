@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.24.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.24.2...v1.24.3) (2026-08-16)
+
+
+### Bug Fixes
+
+* **ci-runner:** target the ARC scale set by name, not a label array ([ece8085](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ece80853ed98297aa2ce1106d94c369bc3da0880))
+
 ## [1.24.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.24.1...v1.24.2) (2026-08-16)
 
 
