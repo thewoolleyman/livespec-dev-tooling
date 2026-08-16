@@ -15,7 +15,13 @@
 # job... a non-gating job addressed to the host-unique label satisfies
 # both" clause.
 
-githubConfigUrl: "https://github.com/thewoolleyman"
+# REPOSITORY-scoped, not account-root — see values.yaml's header comment
+# for the full architectural rationale (thewoolleyman is a personal
+# GitHub User account; org-level self-hosted-runner registration does
+# not exist for personal accounts). Both releases MUST target the SAME
+# repository so both scale sets can register against the same live
+# proof workflow. DO NOT revert this to the account-root form.
+githubConfigUrl: "https://github.com/thewoolleyman/livespec-dev-tooling"
 githubConfigSecret: arc-github-app-installation  # same secret, same least-privilege token — see README.md
 
 runnerScaleSetName: "poweredge-xubuntu-k3s"
