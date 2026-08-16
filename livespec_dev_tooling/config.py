@@ -1045,9 +1045,9 @@ def load_plan_lifecycle_anchor(*, repo_root: Path) -> bool | None:
 
     Reads `<repo_root>/pyproject.toml`'s `[tool.livespec_dev_tooling]` block,
     key `plan_lifecycle_anchor` — a single boolean the
-    `plan_thread_anchor_declared` check reads to decide whether THIS repo uses
-    the dev-tooling plan-thread convention where every active handoff declares
-    a concrete `**Ledger anchor:**` line. Fleet siblings write plan-thread
+    `plan_anchor_declared` check reads to decide whether THIS repo uses
+    the dev-tooling plan convention where every active handoff declares
+    a concrete `**Ledger anchor:**` line. Fleet siblings write plan
     handoffs without that convention, so the check self-skips unless a
     consumer explicitly opts in with `plan_lifecycle_anchor = true`.
 
@@ -1059,7 +1059,7 @@ def load_plan_lifecycle_anchor(*, repo_root: Path) -> bool | None:
     Like `scenario_tiers`, `destructive_cli_allowlist`,
     `mutation_staging_dir`, and `file_lloc_hard_gate`, this is intentionally
     NOT a `Config` role key: it is a single-check concern
-    (`plan_thread_anchor_declared`), so it is read directly off the table
+    (`plan_anchor_declared`), so it is read directly off the table
     rather than threaded through the typed layout dataclass.
     """
     table = _read_table(repo_root=repo_root)

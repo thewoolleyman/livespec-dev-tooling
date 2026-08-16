@@ -1,4 +1,4 @@
-"""plan_thread_no_tombstone — live and archived plan topics must not both exist.
+"""plan_no_tombstone — live and archived plan topics must not both exist.
 
 Disposition: KEPT against the ratified Planning Lane contract (`livespec`
 SPECIFICATION/history/v197; orchestrator realization v059).
@@ -68,7 +68,7 @@ def main() -> int:
         ],
         logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
     )
-    log = structlog.get_logger("plan_thread_no_tombstone")
+    log = structlog.get_logger("plan_no_tombstone")
     cwd = Path.cwd()
     plan_dir = cwd / _PLAN_DIR_NAME
     offenders = _tombstone_topics(plan_dir=plan_dir)
