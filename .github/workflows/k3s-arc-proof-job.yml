@@ -16,10 +16,17 @@ on:
 
 jobs:
   proof:
-    # host-unique label — proves THIS host specifically, per the
-    # host-requirements "a non-gating job addressed to the host-unique
-    # label satisfies both [registered AND proven]" clause.
-    runs-on: [self-hosted, poweredge-xubuntu-k3s]
+    # In ARC's gha-runner-scale-set mode a workflow selects the pool by the
+    # scale set NAME, as a bare string — NOT by a label array. A
+    # `runs-on: [self-hosted, poweredge-xubuntu-k3s]` array matches nothing
+    # (GitHub's scale-set job-routing requires the requested labels to
+    # equal exactly the scale set's own registered label; combining it
+    # with `self-hosted` makes the requested set unsatisfiable) and the
+    # job queues forever. The host-unique label alone still proves THIS
+    # host specifically, per the host-requirements "a non-gating job
+    # addressed to the host-unique label satisfies both [registered AND
+    # proven]" clause.
+    runs-on: poweredge-xubuntu-k3s
     steps:
       - name: prove the path end-to-end
         run: |

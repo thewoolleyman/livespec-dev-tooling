@@ -33,7 +33,7 @@ Controller + Kueue"), maintainer-directed 2026-08-15. This tree is
 | `arc/values-host-unique.yaml` | Helm values for the host-unique-label release (`runnerScaleSetName: poweredge-xubuntu-k3s`), same containment posture, `maxRunners: 1`. |
 | `install-kueue.sh` | Installs Kueue `v0.19.1` from its released manifest, then applies `kueue/resources.yaml`. |
 | `kueue/resources.yaml` | Minimal phase-1 `ResourceFlavor`/`ClusterQueue`/`LocalQueue` — just enough for Kueue to admit the proof job. Modeling the real fair-share formula is phase 2, deliberately deferred. |
-| `test-job/proof-job.yml` | A `workflow_dispatch`-only GitHub Actions workflow targeting `[self-hosted, poweredge-xubuntu-k3s]` — the host-requirements "a host is proven by EXECUTING a job" proof. Never wired into any `needs:` chain or PR/push trigger, so it can never gate a merge. |
+| `test-job/proof-job.yml` | A `workflow_dispatch`-only GitHub Actions workflow targeting `runs-on: poweredge-xubuntu-k3s` (the scale set NAME as a bare string, not a label array — see the file's own comment) — the host-requirements "a host is proven by EXECUTING a job" proof. Never wired into any `needs:` chain or PR/push trigger, so it can never gate a merge. |
 | `test-job/proof-job-kueue.yaml` | A raw, Kueue-admitted `batch/v1` Job (`suspend: true`, queued via `phase1-proof-lq`) — proves Kueue admission directly with `kubectl`, independent of GitHub's own dispatch plumbing. |
 
 ## Labels — confirmed distinct from the existing pool
