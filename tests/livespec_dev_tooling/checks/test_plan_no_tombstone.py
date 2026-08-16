@@ -1,4 +1,4 @@
-"""Outside-in test for `livespec_dev_tooling/checks/plan_thread_no_tombstone.py`.
+"""Outside-in test for `livespec_dev_tooling/checks/plan_no_tombstone.py`.
 
 The tombstone ban is structural: a topic must not exist at both
 `plan/<topic>/` and `plan/archive/<topic>/`. The check is static,
@@ -18,15 +18,13 @@ __all__: list[str] = []
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-_CHECK_PATH = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "plan_thread_no_tombstone.py"
+_CHECK_PATH = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "plan_no_tombstone.py"
 
 
 def _load_check_module() -> ModuleType:
     """Import the check module fresh from its file path (the tree the RGR hook inspects)."""
-    assert _CHECK_PATH.is_file(), "plan_thread_no_tombstone check module should exist"
-    spec = importlib.util.spec_from_file_location(
-        "plan_thread_no_tombstone_under_test", _CHECK_PATH
-    )
+    assert _CHECK_PATH.is_file(), "plan_no_tombstone check module should exist"
+    spec = importlib.util.spec_from_file_location("plan_no_tombstone_under_test", _CHECK_PATH)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

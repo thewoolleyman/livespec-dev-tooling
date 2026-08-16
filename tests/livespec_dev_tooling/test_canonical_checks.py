@@ -387,7 +387,7 @@ def test_world_gate_check_slugs_returns_the_curated_set() -> None:
     The world-gate checks verify master/world state (not the PR change) —
     `check-branch-protection-alignment` (branch-protection config),
     `check-master-ci-green` (master CI status), and
-    `check-plan-thread-epic-parity` (beads ledger-state parity, read under the
+    `check-plan-epic-parity` (beads ledger-state parity, read under the
     maintainer's credentials) — and are excluded from
     `check-ci-matrix-completeness`'s CI-mirror requirement (assertion (a)).
     Bound to the exact (alphabetically-sorted) tuple — not just membership —
@@ -401,7 +401,7 @@ def test_world_gate_check_slugs_returns_the_curated_set() -> None:
     assert slugs == (
         "check-branch-protection-alignment",
         "check-master-ci-green",
-        "check-plan-thread-epic-parity",
+        "check-plan-epic-parity",
     ), f"world-gate set must be the curated set; got {slugs}"
 
 

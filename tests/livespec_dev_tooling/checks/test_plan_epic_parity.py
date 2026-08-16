@@ -1,4 +1,4 @@
-"""Outside-in test for `plan_thread_epic_parity`.
+"""Outside-in test for `plan_epic_parity`.
 
 Ratified Planning Lane v197 stores the plan anchor in ledger epic metadata and
 keeps handoff entries in the ledger timeline. Parity therefore compares live and
@@ -19,15 +19,13 @@ __all__: list[str] = []
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-_CHECK_PATH = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "plan_thread_epic_parity.py"
-_HELPER_PATH = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "_plan_thread_ledger.py"
+_CHECK_PATH = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "plan_epic_parity.py"
+_HELPER_PATH = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "_plan_ledger.py"
 
 
 def _load_check_module() -> ModuleType:
     """Import the check module fresh from its file path."""
-    spec = importlib.util.spec_from_file_location(
-        "plan_thread_epic_parity_under_test", str(_CHECK_PATH)
-    )
+    spec = importlib.util.spec_from_file_location("plan_epic_parity_under_test", str(_CHECK_PATH))
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -36,9 +34,7 @@ def _load_check_module() -> ModuleType:
 
 def _load_helper_module() -> ModuleType:
     """Import the ledger helper fresh from its file path."""
-    spec = importlib.util.spec_from_file_location(
-        "plan_thread_ledger_under_test", str(_HELPER_PATH)
-    )
+    spec = importlib.util.spec_from_file_location("plan_ledger_under_test", str(_HELPER_PATH))
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

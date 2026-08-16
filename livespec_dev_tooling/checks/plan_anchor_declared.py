@@ -1,4 +1,4 @@
-"""plan_thread_anchor_declared — retired filesystem plan-anchor invariant.
+"""plan_anchor_declared — retired filesystem plan-anchor invariant.
 
 Disposition: RETIRED against the ratified Planning Lane contract
 (`livespec` SPECIFICATION/history/v197; orchestrator realization v059).
@@ -10,7 +10,7 @@ v059 anchors a plan by ledger epic metadata (`plan_slug`) rather than by a git
 anchor document. Re-scoping this module to require `epic.md` or a handoff anchor
 would recreate an outlawed filesystem metadata file. The ledger-backed parity
 invariant that can still be checked with credentials lives in
-`plan_thread_epic_parity`.
+`plan_epic_parity`.
 
 The module intentionally remains importable and executable until the sibling S3
 slug cleanup decides which retired checks leave the canonical set.
@@ -39,12 +39,12 @@ def main() -> int:
         ],
         logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
     )
-    log = structlog.get_logger("plan_thread_anchor_declared")
+    log = structlog.get_logger("plan_anchor_declared")
     log.info(
         "retired filesystem plan-anchor invariant; plan anchors are ledger-held now",
-        check_id="plan_thread_anchor_declared",
+        check_id="plan_anchor_declared",
         disposition="retired",
-        replacement="plan_thread_epic_parity",
+        replacement="plan_epic_parity",
         reason="ratified Planning Lane uses ledger-held plan epic metadata, not git anchor files",
     )
     return 0
