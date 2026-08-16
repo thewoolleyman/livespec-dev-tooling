@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.24.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.24.1...v1.24.2) (2026-08-16)
+
+
+### Bug Fixes
+
+* **ci-runner:** scope ARC githubConfigUrl to a repository, not account-root ([2372b03](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2372b03e61eee565226ffe54baa8d2989fff4c93))
+
 ## [1.24.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.24.0...v1.24.1) (2026-08-15)
 
 
