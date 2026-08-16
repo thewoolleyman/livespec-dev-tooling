@@ -42,6 +42,10 @@
   //     blockers still hard-floor to the maintainer regardless).
   //   ratification_review: "auto-spawn" — the independent adversarial review
   //     spawns automatically instead of waiting on a manual trigger.
+  //   ratification_reviewer_model: "fable" — the reviewer model the auto-spawn
+  //     uses. REQUIRED for auto-spawn to function: livespec core's
+  //     effective_ratification_review falls back to the manual path whenever
+  //     this key is unset, so arming the lever alone leaves it inert.
   //   spec_pr_merge: "auto-on-green" — a governed spec PR merges once CI is
   //     green, no manual merge click.
   // Intentionally NOT armed here:
@@ -57,6 +61,7 @@
     "in_flight_alignment": "default-align",
     "revise_decision_mode": "delegated",
     "ratification_review": "auto-spawn",
+    "ratification_reviewer_model": "fable",
     "spec_pr_merge": "auto-on-green"
   },
   // Optional — spec_governance: policy levers for livespec's spec-side
