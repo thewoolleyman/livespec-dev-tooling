@@ -30,17 +30,40 @@
   "template": "livespec",
   "spec_root": "SPECIFICATION",
   "implementation": { "plugin": "livespec-orchestrator-beads-fabro" },
-  // ACTIVE spec_governance overrides. Only the keys this repo intentionally
-  // moves off their shipped defaults appear here; every other lever stays at
-  // the default documented in the reference block below.
+  // ACTIVE spec_governance overrides. Fleet-wide autonomy-lever rollout
+  // (epic livespec-jvdvx4, child livespec-jvdvx4.15, 2026-08-16): every
+  // Increment-1/2 lever livespec core shipped is armed to its safe
+  // fully-autonomous value except the two intentionally left out below.
+  //   propose_change_mode: "batch" — non-interactive propose-change.
+  //   critique_mode: "batch" — non-interactive critique.
+  //   in_flight_alignment: "default-align" — no prompt on in-flight drift.
+  //   revise_decision_mode: "delegated" — non-drift proposals decide without
+  //     a manual gate (design-record-contradiction/absence and reviewer
+  //     blockers still hard-floor to the maintainer regardless).
+  //   ratification_review: "auto-spawn" — the independent adversarial review
+  //     spawns automatically instead of waiting on a manual trigger.
+  //   spec_pr_merge: "auto-on-green" — a governed spec PR merges once CI is
+  //     green, no manual merge click.
+  // Intentionally NOT armed here:
+  //   doctor_dispositions — left unpopulated (defaults every finding to
+  //     escalate). Populating it is a judgment-heavy, per-check-id audit
+  //     scoped to a dedicated follow-up, not this mechanical rollout pass.
+  //   drift_acceptance_mode — has no safe non-human value yet; its only
+  //     alternative (consensus) is inert pending the not-yet-built
+  //     Increment-3 cross-vendor panel, so it stays at the default "human".
   "spec_governance": {
-    "propose_change_mode": "batch"
+    "propose_change_mode": "batch",
+    "critique_mode": "batch",
+    "in_flight_alignment": "default-align",
+    "revise_decision_mode": "delegated",
+    "ratification_review": "auto-spawn",
+    "spec_pr_merge": "auto-on-green"
   },
   // Optional — spec_governance: policy levers for livespec's spec-side
   // operations. The commented defaults below are derived from the shipped
-  // spec-governance manifest; leaving this block commented arms nothing, so
-  // every operation uses the same safe defaults it would use with no
-  // spec_governance block at all.
+  // spec-governance manifest and no longer reflect this repo's ACTIVE
+  // values (see the block above) — kept only as the schema reference for
+  // what a key looks like if reverted to its shipped default.
   // To enable any key, add the block as a real key above (a comma after the
   // `harnesses` block) and keep only the entries this repo intentionally
   // overrides:
