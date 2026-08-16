@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.24.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.24.3...v1.24.4) (2026-08-16)
+
+
+### Bug Fixes
+
+* **dev-tooling:** re-derive plan-lifecycle checks against the ratified Planning Lane contract ([6c38d0b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6c38d0b8401e0460306401612072473d89053450))
+
 ## [1.24.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.24.2...v1.24.3) (2026-08-16)
 
 
