@@ -31,8 +31,11 @@ net, not the membership authority.
 
 When wiring or reconciling a fleet member, use the dev-tooling fleet surfaces
 documented in `SPECIFICATION/contracts.md`, especially the central conformance
-and reconcile sections. Register-first remains the governing shape: a repo is
-declared in the manifest before reconcile tooling treats it as a fleet member.
+and reconcile sections. Declared-before-wired remains the governing shape: a repo is
+declared in the manifest before reconcile tooling treats it as a fleet member —
+but under livespec core's registration-last birth procedure (ratified v210),
+that declaration is the FINAL act of a birth, landing only once the repository
+exists, is clonable, and is ready; wiring runs immediately after it.
 
 Pin-and-bump PRs use the `chore:` prefix to avoid release-please feedback
 loops. Manual pin edits should follow the same prefix convention.
