@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.24.6](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.24.5...v1.24.6) (2026-08-16)
+
+
+### Bug Fixes
+
+* **dev-tooling:** retire 'plan thread' vocabulary in check module names, slugs, and shipped output ([89aa3a9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/89aa3a995f873d6ae64675cf14d04b219aed6595))
+
 ## [1.24.5](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.24.4...v1.24.5) (2026-08-16)
 
 
