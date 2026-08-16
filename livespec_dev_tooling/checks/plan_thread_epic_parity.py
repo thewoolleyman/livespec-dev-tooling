@@ -1,4 +1,4 @@
-"""plan_epic_parity — plan archive state must match ledger epic state.
+"""plan_thread_epic_parity — plan archive state must match ledger epic state.
 
 Disposition: RE-SCOPED against ratified Planning Lane v197 and the v059
 orchestrator realization.
@@ -32,7 +32,7 @@ if str(_VENDOR_DIR) not in sys.path:
 import jsoncomment  # noqa: E402  — vendor-path-aware import after sys.path insert.
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
-from livespec_dev_tooling.checks._plan_ledger import (  # noqa: E402
+from livespec_dev_tooling.checks._plan_thread_ledger import (  # noqa: E402
     ItemReader,
     bd_items_reader,
     descendant_offenders,
@@ -205,7 +205,7 @@ def main(
         ],
         logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
     )
-    log = structlog.get_logger("plan_epic_parity")
+    log = structlog.get_logger("plan_thread_epic_parity")
     if not _is_armed():
         log.info(
             "skipped — set LIVESPEC_RUN_PLAN_EPIC_PARITY and provide BEADS_DOLT_PASSWORD to arm",

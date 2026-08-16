@@ -375,8 +375,8 @@ jobs:
           - check-no-shadow-ledger-body-typechecks
           - check-no-todo-registry
           - check-hook-trees-not-io-exempt
-          - check-plan-anchor-declared
-          - check-plan-no-tombstone
+          - check-plan-thread-anchor-declared
+          - check-plan-thread-no-tombstone
           - check-plugin-resolution
           - check-self-hosted-routing
           - check-shell-quality

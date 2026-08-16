@@ -1,4 +1,4 @@
-"""Outside-in test for retired `plan_anchor_declared`.
+"""Outside-in test for retired `plan_thread_anchor_declared`.
 
 Ratified Planning Lane v197 moved handoffs and the plan epic anchor out of git
 files. The old check module remains present for slug stability in this slice,
@@ -18,13 +18,13 @@ __all__: list[str] = []
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-_CHECK_PATH = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "plan_anchor_declared.py"
+_CHECK_PATH = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "plan_thread_anchor_declared.py"
 
 
 def _load_check_module() -> ModuleType:
     """Import the check module fresh from its file path."""
     spec = importlib.util.spec_from_file_location(
-        "plan_anchor_declared_under_test", str(_CHECK_PATH)
+        "plan_thread_anchor_declared_under_test", str(_CHECK_PATH)
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

@@ -1,4 +1,4 @@
-"""Ledger JSON readers and descendant checks for plan parity."""
+"""Ledger JSON readers and descendant checks for plan-thread parity."""
 
 from __future__ import annotations
 
