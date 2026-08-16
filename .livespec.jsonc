@@ -65,7 +65,9 @@
   //     // ratification_reviewer_model (string; no enumerated allowed values)
   //     "ratification_reviewer_model": null,
   //     // ratification_min_review_age_seconds (integer; minimum: 1)
-  //     "ratification_min_review_age_seconds": 1
+  //     "ratification_min_review_age_seconds": 1,
+  //     // spec_pr_merge (enum; allowed: "manual", "auto-on-green")
+  //     "spec_pr_merge": "manual"
   //   }
   //
   // Credential-injection wrapper (fleet default) prefixed to the beads CLIs so a bare invocation self-heals its tenant secret.
