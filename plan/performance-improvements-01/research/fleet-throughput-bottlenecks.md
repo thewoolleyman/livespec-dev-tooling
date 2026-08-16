@@ -182,3 +182,44 @@ evidence.
   `ci-gate-latency` plan's `gate-speed-followups.md` are the priors this sweep
   corrects and extends; the parallel dispatcher and pre-push green-token are
   SHIPPED (7us.3/.4) and deliberately out of scope here.
+
+## Fleet-scope audit (maintainer-directed, 2026-08-16)
+
+The maintainer asked for confirmation that every item applies to every governed
+repo — fleet and adopters. The audit (every governed repo's origin/master read
+locally, same day) found the original filing under-scoped and corrected it with
+scope-amendment riders on .1/.2/.5, a new child .7, and this section.
+
+Per-repo facts, verified not assumed:
+
+| Repo | coverage pair in justfile | local dedup | gate runner |
+| --- | --- | --- | --- |
+| livespec | yes | **YES — reference implementation** | no |
+| livespec-dev-tooling | yes (via scripts/just/*.sh) | no | **yes (only repo)** |
+| livespec-driver-claude / -codex / -pi | yes | no | no |
+| livespec-orchestrator-beads-fabro / -git-jsonl | yes | no | no |
+| livespec-overseer / livespec-runtime | yes | no | no |
+| livespec-console-beads-fabro | check-coverage only (no per-file) | n/a | no |
+
+What this changes:
+
+- **.1 (coverage dedup)** is fleet-scoped across the 8 duplicating repos, with
+  livespec's `check-coverage` recipe as the reference implementation: it reuses
+  the `.coverage` file `check-per-file-coverage` produced ("no duplicate suite
+  run") and only runs the suite standalone (the CI-matrix case). The CI-side
+  duplication persists even in livespec (each coverage job is a standalone
+  runner) — only job consolidation (.2) removes that half.
+- **.2 / .5** were already fleet-wide in their Honeycomb baselines; riders make
+  the fleet scope explicit (per-repo ci.yml wired to the canonical matrix; the
+  doc-only pre-commit path shared through the canonical pre-commit scripts).
+- **.7 (new)**: the detached gate runner + worktree-pack preflight exists ONLY
+  in dev-tooling, while every governed repo carries the worktree pack and both
+  exposures the runner fixes (silent 20-min harness kills; the
+  `worktree_pack_absent` wasted run). .7 distributes it fleet-wide through each
+  repo's own gates.
+- **.3 / .4 / .6** are inherently fleet-scoped (shared runner infrastructure, a
+  single dispatcher service, shared bd-guard) — no amendment needed.
+- **Adopters** outside the fleet inherit every canonical-carrier change (.1's
+  recipe if canonicalized, .2's matrix, .5's pre-commit scripts, .7's runner)
+  through the same template / pin-bump propagation that carries every other
+  shared-enforcement change; nothing here is fleet-member-only by construction.
