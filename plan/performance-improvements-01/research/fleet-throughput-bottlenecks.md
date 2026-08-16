@@ -223,3 +223,27 @@ What this changes:
   recipe if canonicalized, .2's matrix, .5's pre-commit scripts, .7's runner)
   through the same template / pin-bump propagation that carries every other
   shared-enforcement change; nothing here is fleet-member-only by construction.
+
+## Fleet-rollout restructure (maintainer-directed, 2026-08-16, same day)
+
+The maintainer directed that the missed fleet work be first-class work items,
+not scope riders. Ledger state after the restructure:
+
+- **.1 / .2 / .5** remain the canonical-mechanism owners (recipe shape, matrix
+  redesign, doc-only-subset fix).
+- **NEW .8 / .9 / .10** are their fleet-confirmation companions: .8 coverage
+  dedup landed in the 8 duplicating repos; .9 batched matrix landed in every
+  repo's ci.yml; .10 doc-only pre-commit wiring effective per repo (with
+  planted-violation repro in the 3 worst repos).
+- **.7** (gate-runner adoption) strengthened to the same standard.
+- **Binding per-repo exit criteria** on .7/.8/.9/.10: closure requires a
+  verified per-repo confirmation table across all 10 governed repos — columns:
+  repo | verified state | evidence (merged commit/PR + per-repo Honeycomb query
+  where measurable) — rows verified against each repo's origin/master, modeled
+  on the audit table above; not-applicable rows must state why; adopter
+  propagation (template / pin-bump fan-out) must be confirmed in the closing
+  note. The plan-wide running-summary-table obligation applies to these items
+  like every sibling.
+- **.3 / .4 / .6** stay single-shared-surface items (no per-repo rollout
+  exists), with closing measurements broken down by repo where the dataset
+  supports it.
