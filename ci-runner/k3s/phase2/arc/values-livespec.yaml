@@ -1,12 +1,30 @@
 # values-livespec.yaml — ONE WORKED EXAMPLE of the per-repository
 # AutoscalingRunnerSet pattern this design introduces, narrowing phase
-# 1's org-level `githubConfigUrl` (../../arc/values.yaml: "org-level
-# scale set; narrow to a repo URL if a future phase requires it") to
-# exactly the repo scope phase 2 requires: ARC's maxRunners is the ONE
-# place the doubled-logical-ceiling half of the admission formula is
-# enforced as a hard cap that Kueue cannot be configured to exceed, and
-# a per-repo runnerScaleSetName is what lets a workflow's `runs-on:`
-# route to ONE repo's own capacity rather than the whole fleet's.
+# 1's account-root `githubConfigUrl` (../../arc/values.yaml:
+# "https://github.com/thewoolleyman") to exactly the repo scope this
+# fleet REQUIRES, not merely prefers.
+#
+# CORRECTNESS, not just design preference: `thewoolleyman` is a
+# personal GitHub User account, not an Organization — confirmed live
+# (livespec-s43svm.14, 2026-08-16: the account-root URL parsed to
+# GitHubScopeOrganization regardless, per ARC's own URL parser
+# (github/actions/actions.go in actions/actions-runner-controller,
+# which recognizes only Enterprise/Organization/Repository — there is
+# no User scope), and 404'd calling POST /orgs/thewoolleyman/... since
+# no such org exists). GitHub's self-hosted-runner model has EXACTLY
+# three scopes, and a personal account structurally has access to only
+# ONE of them: repository. There is no account-wide or "user-level"
+# self-hosted runner pool at all — see README.md "Personal account:
+# repository is the only valid scope" for the full implication this has
+# for `.16`'s per-repo cutover shape.
+#
+# Independently, ARC's maxRunners is also the ONE place the doubled-
+# logical-ceiling half of the admission formula is enforced as a hard
+# cap Kueue cannot be configured to exceed, and a per-repo
+# runnerScaleSetName is what lets a workflow's `runs-on:` route to ONE
+# repo's own capacity — this was this design's ORIGINAL rationale for
+# per-repo scoping, and it still holds; it turned out to also be the
+# only structurally valid choice.
 #
 # For every other fleet repository, copy this file to
 # values-<repo>.yaml and replace every <repo>/livespec occurrence with
