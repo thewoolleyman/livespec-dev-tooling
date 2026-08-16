@@ -68,6 +68,7 @@ def test_live_and_archived_topic_fails(
     assert '"disposition": "kept"' in combined
     assert "plan/t" in combined
     assert "plan/archive/t" in combined
+    assert "plan thread" not in combined, "retired two-word vocabulary must not appear in output"
 
 
 def test_live_only_topic_passes(

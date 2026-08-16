@@ -262,7 +262,7 @@ def main(
         )
     for path, anchor, descendant in incomplete_descendants:
         log.error(
-            "archived plan thread anchor has an incomplete replacement descendant",
+            "archived plan anchor has an incomplete replacement descendant",
             file=str(path.relative_to(cwd)),
             epic=anchor,
             descendant=descendant,

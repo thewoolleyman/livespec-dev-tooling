@@ -319,6 +319,7 @@ def test_armed_archived_regroomed_anchor_with_open_replacement_fails(
     assert "plan/archive/regroomed" in combined
     assert "livespec-dev-tooling-5asgvm" in combined
     assert "livespec-dev-tooling-slice" in combined
+    assert "plan thread" not in combined, "retired two-word vocabulary must not appear in output"
 
 
 def test_parse_status_variants() -> None:

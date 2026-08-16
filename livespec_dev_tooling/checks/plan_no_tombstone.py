@@ -3,7 +3,7 @@
 Disposition: KEPT against the ratified Planning Lane contract (`livespec`
 SPECIFICATION/history/v197; orchestrator realization v059).
 
-A tombstone is a stub left at `plan/<topic>/` after the real plan thread has
+A tombstone is a stub left at `plan/<topic>/` after the real plan has
 moved to `plan/archive/<topic>/`. The banned condition is structural: the same
 topic directory exists in BOTH places at once. This check detects that directory
 pair directly and never reads or greps handoff text. The carrier migration from
@@ -74,7 +74,7 @@ def main() -> int:
     offenders = _tombstone_topics(plan_dir=plan_dir)
     for topic in offenders:
         log.error(
-            "plan thread tombstone detected: topic exists at live and archived paths",
+            "plan tombstone detected: topic exists at live and archived paths",
             topic=topic,
             live_dir=str(Path(_PLAN_DIR_NAME) / topic),
             archived_dir=str(Path(_PLAN_DIR_NAME) / _ARCHIVE_DIR_NAME / topic),
