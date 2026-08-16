@@ -38,7 +38,30 @@
 # plan/fleet-ci-runner-pool/research/k3s-arc-kueue-migration.md in the
 # livespec repo), not this change.
 
-githubConfigUrl: "https://github.com/thewoolleyman"  # org-level scale set; narrow to a repo URL if a future phase requires it
+# githubConfigUrl is REPOSITORY-scoped, not account-root. `thewoolleyman`
+# is a personal GitHub User account (confirmed live via
+# `gh api users/thewoolleyman --jq .type` -> "User"), and GitHub's
+# org-level self-hosted-runner registration API
+# (POST /orgs/{org}/actions/runners/registration-token, which the
+# account-root form https://github.com/thewoolleyman routes ARC to) does
+# not exist for personal accounts at all — this is architectural, not a
+# permissions gap, and granting the GitHub App's installation the
+# "Self-hosted runners: read & write" ORGANIZATION permission (done live
+# 2026-08-16) cannot fix it, confirmed by the ARC controller still
+# getting a 404 from that exact endpoint after the grant (see
+# livespec-s43svm.14). Self-hosted runners for a personal account MUST
+# be registered per-REPOSITORY
+# (https://github.com/{owner}/{repo}/actions/runners/registration-token),
+# matching how the existing podman pool's JIT runners have always
+# registered (CI_RUNNER_LABELS + per-repo JIT config — see
+# ../../supervisor/mint-jitconfig.sh). Scoped here to
+# livespec-dev-tooling itself so phase 1's proof job
+# (../test-job/proof-job.yml) — which already lives in THIS repo's own
+# .github/workflows/ — can validate end-to-end without needing
+# multi-repo ARC scope-fanout, which is out of scope for phase 1 (the
+# per-repo cutover sequencing is phase 3 / livespec-s43svm.16). DO NOT
+# revert this to the account-root form.
+githubConfigUrl: "https://github.com/thewoolleyman/livespec-dev-tooling"
 # githubConfigSecret is intentionally NOT set here — provisioning
 # instructions in install-arc.sh create it out-of-band from the fleet's
 # least-privilege GitHub App installation token so the secret is never

@@ -87,6 +87,49 @@ means zero runner pods sit idle by default; `test-job/proof-job.yml` is
 never become a required status check. Cutting real traffic to these
 labels is phase 3 of the migration, not this change.
 
+## GitHub registration scope — REPOSITORY, not organization (`thewoolleyman` is a personal account)
+
+Both `arc/values.yaml` and `arc/values-host-unique.yaml` set
+`githubConfigUrl` to `https://github.com/thewoolleyman/livespec-dev-tooling`
+— a specific REPOSITORY, not the account-root form
+`https://github.com/thewoolleyman`. This was discovered live during
+`livespec-s43svm.14`: the account-root form routes ARC's controller to
+GitHub's ORGANIZATION-level self-hosted-runner registration endpoint
+(`POST /orgs/{org}/actions/runners/registration-token`), which returned
+a `404 Not Found` even after the `thewoolleyman-ci-runners` GitHub App
+installation was granted the "Self-hosted runners: read & write"
+organization permission. Root cause, confirmed via
+`gh api users/thewoolleyman --jq .type` returning `User`:
+**`thewoolleyman` is a personal GitHub User account, not an
+Organization.** GitHub's org-level self-hosted-runner API endpoints do
+not exist for personal accounts at all — this is architectural, not a
+permissions gap, and no scope grant on the App installation can change
+it.
+
+Self-hosted runners for a personal account are always registered
+**per-repository**
+(`https://github.com/{owner}/{repo}/actions/runners/registration-token`).
+This matches how the existing podman pool has always worked (JIT
+runner registration is per-repo, via `CI_RUNNER_LABELS` and
+`../supervisor/mint-jitconfig.sh` — never org-wide), and it is why
+phase 1 scopes both ARC releases to `livespec-dev-tooling` specifically:
+the phase-1 proof job (`test-job/proof-job.yml`) already lives in this
+repo's own `.github/workflows/`, so a single repo-scoped
+`githubConfigUrl` is enough to validate the ARC path end-to-end without
+needing multi-repo ARC scope-fanout (out of scope for phase 1).
+
+**Design implication for phase 3 (`livespec-s43svm.16`, per-repo
+cutover):** because personal-account self-hosted-runner scope is always
+per-repository, phase 3 cannot reuse a single shared, org-wide
+`AutoscalingRunnerSet` the way an Organization account could. Each repo
+being migrated onto the k3s+ARC+Kueue path needs its OWN
+`githubConfigUrl` (and therefore its own `gha-runner-scale-set` Helm
+release, or an equivalent one-release-per-repo pattern) — one
+`AutoscalingRunnerSet` per repo, not one shared scale set fanning out
+across repos. Whoever picks up `.16` should design the per-repo cutover
+around that constraint from the start, rather than discovering it after
+attempting a shared scale set.
+
 ## k3s uninstall procedure — what `k3s-uninstall.sh` actually does at v1.36.2+k3s1
 
 k3s does not ship a static uninstall script; `install.sh` (fetched
