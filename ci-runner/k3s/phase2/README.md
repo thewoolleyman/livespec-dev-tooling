@@ -43,6 +43,38 @@ maintained reconciliation loop.
 | `doubled repository logical ceiling` | ARC `AutoscalingRunnerSet.maxRunners` | ARC's controller — will never scale a given repo's runner pods past this cap regardless of what Kueue would otherwise admit | `arc/values-*.yaml` (`maxRunners`) |
 | `fair share of remaining host-wide capacity` | Kueue Cohort + `ClusterQueue.spec.cohort` + Fair Sharing | Kueue's admission controller — orders and bounds admission across every repo's ClusterQueue sharing one cohort | `kueue/cluster-queue-*.yaml`, `kueue/enable-fair-sharing.sh` |
 
+## Personal account: repository is the only valid scope
+
+Confirmed live, `livespec-s43svm.14`, 2026-08-16: `thewoolleyman` is a
+personal GitHub User account, not an Organization. Phase 1's original
+`arc/values.yaml`/`values-host-unique.yaml` pointed `githubConfigUrl`
+at the account root (`https://github.com/thewoolleyman`) — ARC's own
+URL parser (`github/actions/actions.go` in
+`actions/actions-runner-controller`) recognizes exactly three scopes
+(`GitHubScopeEnterprise`, `GitHubScopeOrganization`,
+`GitHubScopeRepository` — no `GitHubScopeUser` exists at all), so a
+single-path-segment URL like that ALWAYS resolves to
+`GitHubScopeOrganization` regardless of what kind of account it
+actually names. The client then called
+`POST /orgs/thewoolleyman/actions/runners/registration-token`, which
+404'd — not because of a missing permission (a separate, since-granted
+issue), but because no such organization exists.
+
+This is not a corner case to work around — it is a **structural fact
+about GitHub's self-hosted-runner model**: only Enterprise and
+Organization accounts get an account-wide runner pool; a personal User
+account has access to exactly ONE scope, repository. There is no
+account-wide fallback to fall back to.
+
+**Consequence for `.16` (incremental per-repo cutover):** this design's
+one-`AutoscalingRunnerSet`-per-repository pattern (see "Deriving a new
+repository's ClusterQueue" below) is not merely the shape chosen for
+Kueue fair-share modeling — for this fleet, on this account type, it is
+the ONLY shape GitHub's own API makes possible. `.16` should not treat
+"per-repo vs. shared org-wide set" as an open design question to
+revisit; there is no shared-org-wide alternative available to compare
+it against.
+
 ## Two enforcement points, one number
 
 Each repository's doubled logical ceiling appears TWICE — once as
