@@ -314,38 +314,34 @@ check-changed:
     scripts/just/check-changed.sh
 
 # Aggregate (total) coverage gate at `fail_under = 100` (pyproject.toml
-# [tool.coverage.report]). This recipe ALWAYS runs its own clean
-# `pytest --cov` with COVERAGE_FILE UNSET, measuring coverage IDENTICALLY
-# to CI's standalone check-coverage matrix job — so the local / pre-PR
-# gate is a faithful predictor of CI by construction.
+# [tool.coverage.report]). Consume-once reuse of the CLEAN producer run
+# (work-item livespec-dev-tooling-yilyxr.1): check-per-file-coverage now
+# runs its suite with COVERAGE_FILE UNSET, so its repo-root `.coverage`
+# measures IDENTICALLY to this recipe's own clean run by construction.
+# When that file is present (the `just check` aggregate — the dispatcher
+# serializes this target after the producer), this recipe reads it via
+# `coverage report --fail-under=100` and DELETES it, so no stale data
+# can ever back a later standalone report; when absent (CI's standalone
+# matrix job, a manual invocation), it runs the clean suite itself.
 #
-# WHY NOT reuse check-per-file-coverage's data (the prior optimization):
-# the parallel check dispatcher runs check-per-file-coverage's `pytest
-# --cov` with COVERAGE_FILE EXPORTED to an isolated namespace dir (the
-# coverage-data isolation of work-item livespec-dev-tooling-cmn). For a
-# module whose OWN coverage is self-referential on coverage's machinery
-# — e.g. code that branches on `COVERAGE_FILE == COV_CORE_DATAFILE` — an
-# exported COVERAGE_FILE makes that branch execute during the suite (the
-# two paths are equal), so the line reads as COVERED. CI runs
-# check-coverage standalone with COVERAGE_FILE UNSET, where that branch
-# does NOT execute, so the same line reads as UNCOVERED. Reusing the
-# exported-namespace data therefore measured LENIENTLY and let `just
-# check` green-light lines CI then failed (the pre-PR gate that Fabro's
-# janitor runs passed at a false 100% while the PR's CI check-coverage
-# failed at 99.99%). Running the clean suite here closes that gap.
-#
-# TRADE-OFF: this re-introduces ONE duplicate full pytest run in the
-# `just check` aggregate (check-per-file-coverage runs the suite for its
-# per-file gate; this gate runs it again, clean, for the total). Gate
-# correctness over speed; the optimization is reversible if a future
-# design measures both gates identically without the divergence.
+# HISTORY, because this reuse was once reverted and the hazard must not
+# be reintroduced silently: the PREVIOUS reuse read the producer's data
+# from the dispatcher's EXPORTED namespaced COVERAGE_FILE (the isolation
+# of work-item livespec-dev-tooling-cmn). A module whose own coverage is
+# self-referential on coverage's machinery — code branching on
+# `COVERAGE_FILE == COV_CORE_DATAFILE` — read as COVERED under that
+# exported env but UNCOVERED in CI's clean standalone run, so `just
+# check` green-lit a false 100% that CI then failed at 99.99%. The
+# revert's own condition ("reversible if a future design measures both
+# gates identically without the divergence") is what the clean-producer
+# design satisfies: the divergence came from the exported env, and the
+# producer no longer runs under it.
 #
 # NOTE on the dispatcher: check-coverage remains check-per-file-coverage's
-# namespace-shared CONSUMER in parallel_check_dispatcher.py, so it still
-# runs only after that producer completes. It no longer READS the
-# producer's data file, so that ordering is now a benign serialization
-# rather than a data dependency — a dispatcher-side simplification is a
-# possible follow-up, kept out of this justfile-scoped change.
+# namespace-shared CONSUMER in parallel_check_dispatcher.py, so it runs
+# only after that producer completes — under this design that ordering
+# is again a REAL data dependency (the producer writes the `.coverage`
+# this recipe consumes), not the benign serialization it briefly was.
 # Central fleet-membership conformance check (livespec v108 §"Fleet
 # membership contract"): fetches .livespec-fleet-manifest.jsonc from livespec
 # master, asserts every member's per-class obligations from the
@@ -674,16 +670,17 @@ check-pbt-coverage-pure-modules:
 # Per-file 100% line+branch coverage gate. Runs pytest --cov upfront so
 # the data file exists when per_file_coverage reads it.
 #
-# Coverage-data isolation (work-item livespec-dev-tooling-cmn): the
-# parallel check dispatcher exports COVERAGE_FILE pointed at this
-# target's isolated namespace dir. pytest-cov honors COVERAGE_FILE
-# natively (parallel `.coverage.*` data files land beside it and
-# `coverage combine` globs only THAT dir), and a COVERAGE_PROCESS_START
-# child a test spawns inherits the same COVERAGE_FILE, so the subprocess
-# case is isolated for free. per_file_coverage reads the same file via
-# COVERAGE_FILE. A standalone run leaves COVERAGE_FILE unset and uses the
-# repo-root `.coverage` default. This is the PRODUCER of the full-tree
-# coverage namespace shared with check-coverage.
+# CLEAN-ENV PRODUCER (work-item livespec-dev-tooling-yilyxr.1): the
+# script runs both the suite and the per-file read with COVERAGE_FILE
+# explicitly UNSET (`env -u`), overriding the dispatcher's namespaced
+# export from work-item livespec-dev-tooling-cmn. That makes this run
+# measure IDENTICALLY to CI's standalone clean jobs — the
+# self-referential-branch leniency that once forced check-coverage to
+# re-run the whole suite cannot occur — and its combined repo-root
+# `.coverage` is the single data file check-coverage consumes
+# (consume-once; see that recipe's comment). This is the PRODUCER of
+# the full-tree coverage data shared with check-coverage; CI proves the
+# clean-env full-suite measurement daily in both standalone matrix jobs.
 # In Red-mode pre-commit this target is omitted by `check-pre-commit`
 # via the `check skip=...` argument (coverage is verified at the Green
 # amend), so no ambient env-var read is needed here.
