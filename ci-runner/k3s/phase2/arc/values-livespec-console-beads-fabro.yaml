@@ -1,0 +1,88 @@
+# values-livespec-console-beads-fabro.yaml — livespec-s43svm.16's chosen
+# first NON-GATING cutover lane.
+#
+# Repo selection rationale (livespec-s43svm.16, 2026-08-16): every fleet
+# repository carries continuous automated PR traffic, so "non-gating" here
+# means STRUCTURAL, not low-traffic — no other fleet repo's CI or merge
+# path depends on this repo's CI passing (unlike livespec-dev-tooling,
+# consumed as the enforcement-suite pin by every sibling, or livespec-runtime,
+# consumed as a library). livespec-console-beads-fabro is a standalone
+# console app; nothing in the fleet depends on it. It is also the SMALLEST
+# repo by measured slot width (see nominalQuota note below), so it doubles
+# as the lowest-blast-radius choice by capacity too.
+#
+# IMPORTANT CORRECTION to this design's own worked example
+# (values-livespec.yaml): that file's "18 measured slots * 2 = 36"
+# doubled-ceiling comment is STALE. The live poweredge-xubuntu
+# ci-runner-supervisor unit (systemctl cat ci-runner-supervisor,
+# read 2026-08-16) currently runs:
+#
+#   --repos "thewoolleyman/livespec:75 thewoolleyman/livespec-dev-tooling:63 \
+#     thewoolleyman/livespec-driver-codex:67 thewoolleyman/livespec-driver-claude:66 \
+#     thewoolleyman/livespec-orchestrator-git-jsonl:66 thewoolleyman/livespec-overseer:65 \
+#     thewoolleyman/livespec-runtime:64 thewoolleyman/livespec-console-beads-fabro:16"
+#
+# Those eight per-repo slot counts SUM TO EXACTLY 482 (75+63+67+66+66+65+64+16),
+# the physical host-wide cap — i.e. the live config apportions the FIXED
+# 482 budget across repos by observed demand, it does NOT give every repo
+# an independent "doubled logical ceiling" that could itself sum past 482.
+# This is a real, live discrepancy from the design's original formula
+# description and is flagged on livespec-s43svm.15 (VALIDATION_CHECKLIST
+# item 4, "real capacity-split sizing, needs .16") rather than silently
+# reconciled here — reconciling the formula against the live apportionment
+# is follow-up work, not blocking this first non-gating proof lane.
+#
+# nominalQuota below uses livespec-console-beads-fabro's OWN live-measured
+# slot count (16) directly, UNDOUBLED, precisely because this is a first,
+# deliberately-small side-by-side proof lane sharing the same physical host
+# with the still-running podman pool (see README.md "Why per-repo quotas
+# summing above 482 must NOT be set to 482 during side-by-side migration") —
+# not yet the steady-state post-cutover ceiling.
+githubConfigUrl: "https://github.com/thewoolleyman/livespec-console-beads-fabro"
+githubConfigSecret: arc-github-app-installation  # same secret as phase 1 — see ../../README.md "Credential separation"
+
+runnerScaleSetName: "livespec-console-beads-fabro-local-ci-k3s"
+
+containerMode:
+  type: "kubernetes"
+  kubernetesModeWorkVolumeClaim:
+    accessModes: ["ReadWriteOnce"]
+    storageClassName: "local-path"
+    resources:
+      requests:
+        storage: 5Gi
+
+template:
+  metadata:
+    labels:
+      kueue.x-k8s.io/queue-name: livespec-console-beads-fabro-lq
+  spec:
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+    containers:
+      - name: runner
+        image: ghcr.io/actions/actions-runner:latest
+        command: ["/home/runner/run.sh"]
+        env:
+          - name: ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER
+            value: "false"
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          capabilities:
+            drop: ["ALL"]
+        resources:
+          requests:
+            ci-runner.io/churn-slot: "1"
+          limits:
+            ci-runner.io/churn-slot: "1"
+
+# livespec-console-beads-fabro's own live-measured slot count (undoubled —
+# see header note). MUST match
+# ../kueue/cluster-queue-livespec-console-beads-fabro.yaml's nominalQuota
+# exactly (README.md "Two enforcement points, one number").
+minRunners: 0
+maxRunners: 16

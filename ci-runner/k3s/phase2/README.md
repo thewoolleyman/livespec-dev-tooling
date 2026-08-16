@@ -237,9 +237,42 @@ fleet's actual call volume) needs a live-cluster observation —
 | `kueue/cluster-queue-EXAMPLE-repo.yaml` | Template for every other fleet repository — copy, fill in the placeholders. |
 | `arc/values-livespec.yaml` | Worked example: livespec's per-repo `AutoscalingRunnerSet` Helm values (`maxRunners: 36`, `githubConfigUrl` narrowed to this one repo, pod template wired to `livespec-lq` via the `kueue.x-k8s.io/queue-name` label and requesting one `ci-runner.io/churn-slot`). Not yet applied live — see `VALIDATION_CHECKLIST.md` item 5's disposition. |
 | `arc/values-EXAMPLE-repo.yaml` | Template for every other fleet repository. |
+| `kueue/cluster-queue-livespec-console-beads-fabro.yaml` + `arc/values-livespec-console-beads-fabro.yaml` | `livespec-s43svm.16`'s chosen first NON-GATING cutover lane (2026-08-16) — a standalone console app nothing else in the fleet depends on, and the smallest repo by live-measured slot width. `nominalQuota`/`maxRunners: 16`, UNDOUBLED (see that file's header for the correction below). Design-only in this PR — not yet applied live, no workflow routing changed yet. |
 | `node-extended-resource/patch-node-churn-capacity.sh` | Idempotently registers `ci-runner.io/churn-slot` as a node-status extended resource with an explicit, non-defaulted capacity argument. Applied live at a small provisional capacity (4) for validation — see `VALIDATION_CHECKLIST.md` item 4. |
 | `node-extended-resource/reapply-node-extended-resource.service` + `.timer` | Every-5-minute reconciliation reapplying that patch — belt-and-suspenders; a live `systemctl restart k3s` did NOT drop the patch (see "Known caveat" below), but this is cheap insurance against scenarios not yet tested (full host reboot, a k3s version upgrade). |
 | `VALIDATION_CHECKLIST.md` | What was, and still needs to be, confirmed against the live cluster. Items 1, 3, 5, and 7 are now CONFIRMED (2026-08-16); items 2, 4, and 6 remain open. |
+
+## Correction (2026-08-16, livespec-s43svm.16): the live pool does NOT
+## independently double every repo's ceiling
+
+This design's original worked example (`cluster-queue-livespec.yaml`,
+`values-livespec.yaml`) assumed each repo's `nominalQuota`/`maxRunners`
+is its own measured matrix width doubled, sized independently per repo
+(livespec: 18 → 36). Reading the LIVE poweredge-xubuntu
+`ci-runner-supervisor` unit (`systemctl cat ci-runner-supervisor`,
+2026-08-16) shows the real apportionment is different:
+
+```
+--repos "thewoolleyman/livespec:75 thewoolleyman/livespec-dev-tooling:63 \
+  thewoolleyman/livespec-driver-codex:67 thewoolleyman/livespec-driver-claude:66 \
+  thewoolleyman/livespec-orchestrator-git-jsonl:66 thewoolleyman/livespec-overseer:65 \
+  thewoolleyman/livespec-runtime:64 thewoolleyman/livespec-console-beads-fabro:16"
+```
+
+Those eight values SUM TO EXACTLY 482 — the physical host-wide cap. The
+live pool apportions the FIXED 482 budget across repos by observed
+demand; it does not give every repo an independently-doubled ceiling
+that could itself sum past 482. `cluster-queue-livespec.yaml`'s
+`nominalQuota: 36` (from a stale "18 slots" reading) is now known
+inaccurate against the live figure (75) and is flagged here rather
+than silently corrected in that file, to keep this note's provenance
+clear. Reconciling the Kueue-side formula against this live
+apportionment is real follow-up work (`livespec-s43svm.15`
+`VALIDATION_CHECKLIST.md` item 4) — the new
+`cluster-queue-livespec-console-beads-fabro.yaml` pair below
+deliberately uses its own live-measured figure (16) UNDOUBLED rather
+than assume either formula, since it is a first small proof lane, not
+the steady-state post-cutover ceiling.
 
 ## Deriving a new repository's ClusterQueue
 
@@ -247,7 +280,9 @@ fleet's actual call volume) needs a live-cluster observation —
    `ci-runner-supervisor.service` `--slots` value if it is on the
    podman pool today (see `../../supervisor/README.md`), or its actual
    GitHub Actions matrix job count if not. Never guess.
-2. Double it.
+2. Double it. (See the correction above: confirm against the LIVE
+   `ci-runner-supervisor` unit's actual apportionment first — the
+   original doubling assumption is not what the live pool runs today.)
 3. Copy `kueue/cluster-queue-EXAMPLE-repo.yaml` to
    `kueue/cluster-queue-<repo>.yaml`, filling in `<REPO>` and
    `<DOUBLED_CEILING>`.
