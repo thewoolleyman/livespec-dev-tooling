@@ -132,7 +132,7 @@ jobs:
     # set. GitHub does not fall back when a self-hosted label set has no match.
     runs-on: ${{ fromJSON(needs.select-ci-runner.outputs.runs_on) }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.24.2
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.24.3
     env:
       # RUNNER_ENVIRONMENT does not propagate into container jobs. Keep the
       # parallelism policy aligned with the selector output instead.
@@ -328,7 +328,7 @@ jobs:
     # The same single-lane selector protects every ordinary gating target.
     runs-on: ${{ fromJSON(needs.select-ci-runner.outputs.runs_on) }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.24.2
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.24.3
     env:
       LIVESPEC_CI_LANE: ${{ needs.select-ci-runner.outputs.lane }}
       MISE_DATA_DIR: /root/.local/share/mise
