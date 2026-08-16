@@ -18,12 +18,12 @@
 #   <DOUBLED_CEILING>  — <MEASURED_SLOTS> * 2, per SPECIFICATION/
 #                        non-functional-requirements.md section
 #                        "Adaptive JIT runner admission budget"
-apiVersion: kueue.x-k8s.io/v1beta1
+apiVersion: kueue.x-k8s.io/v1beta2
 kind: ClusterQueue
 metadata:
   name: <REPO>-cq
 spec:
-  cohort: fleet-ci-runner-pool
+  cohortName: fleet-ci-runner-pool
   namespaceSelector: {}
   fairSharing:
     weight: 1
@@ -35,7 +35,7 @@ spec:
             - name: "ci-runner.io/churn-slot"
               nominalQuota: <DOUBLED_CEILING>
 ---
-apiVersion: kueue.x-k8s.io/v1beta1
+apiVersion: kueue.x-k8s.io/v1beta2
 kind: LocalQueue
 metadata:
   name: <REPO>-lq

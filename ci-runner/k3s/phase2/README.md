@@ -1,22 +1,27 @@
 # k3s + ARC + Kueue — phase 2 (model the fair-share formula)
 
-Design artifacts — NOT yet applied to any live cluster — mapping this
-epic's existing, UNCHANGED admission/fair-share formula onto Kueue and
-ARC primitives. Phase 2 of 6 in the migration (`../README.md` "Files"
-table has the full six-phase list); depends on phase 1
-(`livespec-s43svm.14`, PR
+Design artifacts mapping this epic's existing, UNCHANGED admission/
+fair-share formula onto Kueue and ARC primitives, now partially
+validated against the real live cluster. Phase 2 of 6 in the migration
+(`../README.md` "Files" table has the full six-phase list); depends on
+phase 1 (`livespec-s43svm.14`, PR
 [#1419](https://github.com/thewoolleyman/livespec-dev-tooling/pull/1419),
-merged) for the k3s + ARC + Kueue install this phase's manifests target.
+closed 2026-08-16) for the k3s + ARC + Kueue install this phase's
+manifests target.
 
-**Scope of this pass (`livespec-s43svm.15`): design only, not
-validation.** Everything under this directory is drafted and reasoned
-about against the pinned versions (k3s v1.36.2+k3s1, ARC charts 0.14.2,
-Kueue v0.19.1) and public documentation, but NONE of it has been
-applied to `poweredge-xubuntu` or any live cluster by this work — `.14`'s
-remaining live-host install steps are a separate, actively-owned track,
-and this design pass does not touch that host. See
-`VALIDATION_CHECKLIST.md` for exactly what must be run, and by whom,
-once a live cluster exists to run it against.
+**Validation status (`livespec-s43svm.15`), updated 2026-08-16:**
+drafted as a design-only pass against pinned versions (k3s
+v1.36.2+k3s1, ARC charts 0.14.2, Kueue v0.19.1) and public
+documentation; once `.14` closed with a real, healthy live cluster,
+`VALIDATION_CHECKLIST.md` items 1, 3, 5, and 7 were run for real
+against `poweredge-xubuntu` and are CONFIRMED — two assumptions from
+the original design-only pass turned out to be wrong (the Kueue API
+field name/version, and the node-status patch's kubelet-restart
+survival) and are corrected throughout this document. Items 2, 4, and
+6 remain open; see `VALIDATION_CHECKLIST.md` for exactly what each
+still needs. The real `livespec-cq`/`livespec-lq` pair
+(`kueue/cluster-queue-livespec.yaml`) is applied and healthy on the
+live cluster, carrying zero real traffic.
 
 ## The formula, unchanged
 
@@ -41,7 +46,7 @@ maintained reconciliation loop.
 |---|---|---|---|
 | `queued jobs` | ARC's per-repo scale-set listener | ARC's own controller, reading GitHub's actual queued-job count for that repo/scale-set — no design change needed, this is ARC's native behavior | `arc/values-*.yaml` |
 | `doubled repository logical ceiling` | ARC `AutoscalingRunnerSet.maxRunners` | ARC's controller — will never scale a given repo's runner pods past this cap regardless of what Kueue would otherwise admit | `arc/values-*.yaml` (`maxRunners`) |
-| `fair share of remaining host-wide capacity` | Kueue Cohort + `ClusterQueue.spec.cohort` + Fair Sharing | Kueue's admission controller — orders and bounds admission across every repo's ClusterQueue sharing one cohort | `kueue/cluster-queue-*.yaml`, `kueue/enable-fair-sharing.sh` |
+| `fair share of remaining host-wide capacity` | Kueue Cohort + `ClusterQueue.spec.cohortName` + Fair Sharing | Kueue's admission controller — orders and bounds admission across every repo's ClusterQueue sharing one cohort | `kueue/cluster-queue-*.yaml` |
 
 ## Personal account: repository is the only valid scope
 
@@ -159,30 +164,42 @@ authorization to go measure by touching the host.
 
 ## Fair Sharing, and what it changes
 
-Kueue supports basic cohort quota-borrowing (one ClusterQueue using
-another's unused `nominalQuota`) without any extra configuration once
-two ClusterQueues share a `spec.cohort` value — this alone would
-satisfy "repositories MAY fairly borrow unused shared capacity" in a
-weak sense. `kueue/enable-fair-sharing.sh` turns on the stronger
-property: when MULTIPLE repos have pending (queued-but-not-yet-
-admitted) demand competing for the same borrowed capacity, Fair Sharing
-orders admission by each ClusterQueue's `fairSharing.weight` relative
-to its recent borrowed usage, rather than plain FIFO-by-arrival. Every
-`cluster-queue-*.yaml` in this design sets `fairSharing.weight: 1` —
-equal weight for every repo — because the specification states no
-per-repo priority differentiation; a future change to weight some
-repos higher would be a one-line edit per `ClusterQueue`, not a
-redesign.
+**CONFIRMED LIVE (2026-08-16, `VALIDATION_CHECKLIST.md` items 1 and 5,
+against the pinned v0.19.1 install on `poweredge-xubuntu`) — corrects
+this section's original, unvalidated assumptions:**
 
-Kueue v0.19.1 also ships a first-class `Cohort` CRD
-(`kueue.x-k8s.io/v1alpha1`) for hierarchical/nested cohorts with their
-own resource groups. This design deliberately uses the simpler
-string-typed `ClusterQueue.spec.cohort` field instead: the fleet's
-cohort is flat (one level, N repo ClusterQueues, no sub-cohorts), so
-the `Cohort` CRD's extra structure would not be earning its complexity
-yet. Confirm this field is still valid and behaves as documented
-against the pinned v0.19.1 CRDs once a live cluster exists —
-`VALIDATION_CHECKLIST.md` item 1.
+- The field is `spec.cohortName` (a plain string) under
+  `kueue.x-k8s.io/v1beta2`, not `spec.cohort` under `v1beta1` — the
+  latter is ACCEPTED but logs `"Warning: This version is deprecated.
+  Use v1beta2 instead."` `kubectl explain` confirms `cohortName`
+  "doesn't reference any object," so the flat, non-hierarchical model
+  this design always intended is still correct — only the field name
+  and apiVersion needed updating. (Kueue's newer first-class `Cohort`
+  CRD, mentioned in an earlier draft of this section, remains available
+  for hierarchical cohorts but is not used here, unchanged from the
+  original reasoning.)
+- **There is no `Configuration.fairSharing.enable` toggle at this
+  version — an earlier draft of this design was wrong about that.**
+  Reading `kubernetes-sigs/kueue`'s `apis/config/v1beta2/
+  configuration_types.go` at the pinned tag shows `FairSharing` now
+  has only a `preemptionStrategies` field; there is no boolean enable
+  anywhere in scope (checked the feature-gate list too — no bare
+  `FairSharing` gate exists, only two of its sub-behaviors, both
+  Beta/default-true since v0.17). Empirically confirmed by direct
+  test: two `ClusterQueue`s sharing a `cohortName`, with ZERO change
+  to the Kueue `Configuration` ConfigMap, borrowed capacity from each
+  other correctly — a `ClusterQueue` with `nominalQuota: 1` admitted 3
+  concurrent workloads by borrowing 2 units from a cohort-mate with
+  spare `nominalQuota: 3`. Basic cross-`ClusterQueue` borrowing is
+  active by default; nothing needs to be "turned on." (The
+  `enable-fair-sharing.sh` script this section originally described no
+  longer exists — it targeted a Configuration field that was never
+  real at this version.)
+- Every `cluster-queue-*.yaml` in this design still sets
+  `fairSharing.weight: 1` — equal weight for every repo, since the
+  specification states no per-repo priority differentiation — this
+  field itself IS real and accepted; only the separate "enable" step
+  was fictional.
 
 ## What does NOT move to Kueue/ARC: the GitHub REST point budget and circuit breaker
 
@@ -216,14 +233,13 @@ fleet's actual call volume) needs a live-cluster observation —
 | Path | Role |
 |---|---|
 | `kueue/resource-flavor.yaml` | The one `ResourceFlavor` every per-repo `ClusterQueue` requests from, keyed on the `ci-runner.io/churn-slot` extended resource. |
-| `kueue/enable-fair-sharing.sh` | One-time, human-supervised step to turn on Kueue's cluster-wide Fair Sharing config (off by default; not something a ConfigMap can be safely auto-patched for — see the script's own header). |
-| `kueue/cluster-queue-livespec.yaml` | Worked example: livespec's `ClusterQueue` (`nominalQuota: 36`, doubled from its measured 18 podman-pool slots) + `LocalQueue`. |
+| `kueue/cluster-queue-livespec.yaml` | Worked example: livespec's `ClusterQueue` (`nominalQuota: 36`, doubled from its measured 18 podman-pool slots) + `LocalQueue`. Applied and healthy on the live cluster since 2026-08-16. |
 | `kueue/cluster-queue-EXAMPLE-repo.yaml` | Template for every other fleet repository — copy, fill in the placeholders. |
-| `arc/values-livespec.yaml` | Worked example: livespec's per-repo `AutoscalingRunnerSet` Helm values (`maxRunners: 36`, `githubConfigUrl` narrowed to this one repo, pod template wired to `livespec-lq` via the `kueue.x-k8s.io/queue-name` label and requesting one `ci-runner.io/churn-slot`). |
+| `arc/values-livespec.yaml` | Worked example: livespec's per-repo `AutoscalingRunnerSet` Helm values (`maxRunners: 36`, `githubConfigUrl` narrowed to this one repo, pod template wired to `livespec-lq` via the `kueue.x-k8s.io/queue-name` label and requesting one `ci-runner.io/churn-slot`). Not yet applied live — see `VALIDATION_CHECKLIST.md` item 5's disposition. |
 | `arc/values-EXAMPLE-repo.yaml` | Template for every other fleet repository. |
-| `node-extended-resource/patch-node-churn-capacity.sh` | Idempotently registers `ci-runner.io/churn-slot` as a node-status extended resource with an explicit, non-defaulted capacity argument. |
-| `node-extended-resource/reapply-node-extended-resource.service` + `.timer` | Every-5-minute reconciliation reapplying that patch, because a node-status patch (not a device-plugin registration) does not survive a kubelet restart — see the caveat below. |
-| `VALIDATION_CHECKLIST.md` | What to run, and confirm, once `.14`'s live cluster exists. Explicitly NOT run by this design pass. |
+| `node-extended-resource/patch-node-churn-capacity.sh` | Idempotently registers `ci-runner.io/churn-slot` as a node-status extended resource with an explicit, non-defaulted capacity argument. Applied live at a small provisional capacity (4) for validation — see `VALIDATION_CHECKLIST.md` item 4. |
+| `node-extended-resource/reapply-node-extended-resource.service` + `.timer` | Every-5-minute reconciliation reapplying that patch — belt-and-suspenders; a live `systemctl restart k3s` did NOT drop the patch (see "Known caveat" below), but this is cheap insurance against scenarios not yet tested (full host reboot, a k3s version upgrade). |
+| `VALIDATION_CHECKLIST.md` | What was, and still needs to be, confirmed against the live cluster. Items 1, 3, 5, and 7 are now CONFIRMED (2026-08-16); items 2, 4, and 6 remain open. |
 
 ## Deriving a new repository's ClusterQueue
 
@@ -241,28 +257,33 @@ fleet's actual call volume) needs a live-cluster observation —
 5. Apply both once `.16` (incremental per-repo cutover) reaches that
    repo — not before; this design pass ships zero real cutover.
 
-## Known caveat: the node-status patch is not device-plugin-robust
+## Known caveat: the node-status patch's robustness, corrected against live evidence
 
 `kubectl patch node --subresource=status` is the Kubernetes-documented
 mechanism for a STATIC extended resource
-(https://kubernetes.io/docs/tasks/administer-cluster/extended-resource-node/),
-but kubelet does not own or persist arbitrary keys placed there the way
-it does for a registered device plugin's resources — a kubelet restart
-can reset `status.capacity` to only what kubelet itself computed,
-silently dropping `ci-runner.io/churn-slot` until reapplied. The
-`reapply-node-extended-resource.timer` (every 5 minutes) is the
-pragmatic, homelab-single-node answer to this rather than building a
-real device plugin, which would be the more robust choice for a
-multi-node cluster this fleet does not have yet. If/when the fleet
-grows to multiple k3s nodes (the migration decision record notes k3s
-supports this via embedded etcd), reconsider this — a real device
-plugin would then be earning its complexity.
+(https://kubernetes.io/docs/tasks/administer-cluster/extended-resource-node/).
+This section originally assumed, unvalidated, that kubelet does not
+persist arbitrary keys placed there and that a kubelet restart would
+silently drop `ci-runner.io/churn-slot`. **CONFIRMED LIVE (2026-08-16,
+`VALIDATION_CHECKLIST.md` item 3): that assumption was WRONG, at least
+for a `systemctl restart k3s` service restart.** The patched capacity
+(`4` at the time of the test) was read back unchanged, both
+`status.capacity` and `status.allocatable`, immediately after the node
+reported `Ready` again post-restart. This has NOT been tested across a
+full host reboot or a k3s version upgrade, so
+`node-extended-resource/reapply-node-extended-resource.timer` (every 5
+minutes) stays installed as cheap belt-and-suspenders for those
+untested scenarios, not because the service-restart case needs it. If
+this pattern doesn't hold for a full reboot either, a real device
+plugin would be the more robust choice for a multi-node cluster (the
+migration decision record notes k3s supports growing to multiple
+nodes via embedded etcd) — reconsider then.
 
 ## Nature
 
 Like `../` (phase 1), these are host operational artifacts (YAML, Helm
 values, shell) — not Python product code — so they are NOT part of the
 `just check` aggregate. Recreatability is still the contract:
-`node-extended-resource/patch-node-churn-capacity.sh` and
-`kueue/enable-fair-sharing.sh` are idempotent and re-runnable, and every
-manifest is declarative (`kubectl apply`-able repeatedly).
+`node-extended-resource/patch-node-churn-capacity.sh` is idempotent and
+re-runnable, and every manifest is declarative (`kubectl apply`-able
+repeatedly).
