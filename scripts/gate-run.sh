@@ -160,6 +160,30 @@ state_exit_code() {
 }
 
 # ---------------------------------------------------------------------
+# worktree-pack preflight (livespec-dev-tooling-ebkrhz.1)
+# ---------------------------------------------------------------------
+
+# A fresh `git worktree add` never runs `just bootstrap`, so the
+# gitignored `dev-tooling/` worktree-discipline pack is absent until
+# someone remembers the manual first-touch step. That absence fails
+# exactly one target,
+# `check-primary-checkout-commit-refuse-hook-installed`, deep inside the
+# full aggregate — so a forgotten `just bootstrap` used to burn a whole
+# ~25-30 minute `just check` run to fail on one cheap, fast-to-fix
+# target. Materializing the pack costs a few seconds; checking for it
+# first keeps that cost off every run where the pack is already present.
+ensure_worktree_pack() {
+    local root="$1"
+    local pack_dir="$root/dev-tooling"
+    local f
+    for f in worktree-lib.sh branch-protection.sh worktree.just branch-protection.just; do
+        [[ -f "$pack_dir/$f" ]] && return 0
+    done
+    printf ':: dev-tooling/ worktree pack absent — running `just install-worktree-pack`\n' >&2
+    ( cd "$root" && just install-worktree-pack ) >&2 || true
+}
+
+# ---------------------------------------------------------------------
 # start
 # ---------------------------------------------------------------------
 
@@ -177,6 +201,8 @@ cmd_start() {
         esac
     done
     [[ $# -ge 1 ]] || usage
+
+    ensure_worktree_pack "$(repo_root)"
 
     local root run_id dir
     root="$(runs_root)"
