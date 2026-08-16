@@ -123,11 +123,11 @@ _BASELINE_CHECK_SLUGS: tuple[str, ...] = (
 #   per-PR CI it would fail every PR whenever master is red, deadlocking
 #   even the master-repair PR (an escape mechanism the ci-gate discipline
 #   forbids).
-# - `check-plan-epic-parity` — reads the beads LEDGER (an active plan
+# - `check-plan-thread-epic-parity` — reads the beads LEDGER (an active plan
 #   thread must not point at a done/closed epic) under the maintainer's
 #   credentials; the credential-less per-PR CI runner cannot read the ledger,
 #   so it self-skips there and would always-skip-and-be-pointless as a matrix
-#   entry. Its STATIC sibling `check-plan-anchor-declared` needs no
+#   entry. Its STATIC sibling `check-plan-thread-anchor-declared` needs no
 #   ledger and REMAINS a required CI matrix entry.
 #
 # `check-ci-matrix-completeness` subtracts this set from its "CI must run
@@ -142,7 +142,7 @@ _BASELINE_CHECK_SLUGS: tuple[str, ...] = (
 _WORLD_GATE_CHECK_SLUGS: tuple[str, ...] = (
     "check-branch-protection-alignment",
     "check-master-ci-green",
-    "check-plan-epic-parity",
+    "check-plan-thread-epic-parity",
 )
 
 

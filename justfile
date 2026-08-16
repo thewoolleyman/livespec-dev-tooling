@@ -201,9 +201,9 @@ check:
         check-partition-completeness
         check-pbt-coverage-pure-modules
         check-per-file-coverage
-        check-plan-anchor-declared
-        check-plan-epic-parity
-        check-plan-no-tombstone
+        check-plan-thread-anchor-declared
+        check-plan-thread-epic-parity
+        check-plan-thread-no-tombstone
         check-plugin-resolution
         check-primary-checkout-commit-refuse-hook-installed
         check-private-calls
@@ -563,7 +563,7 @@ check-fleet-marketplace-relative-sources:
 check-global-writes:
     uv run python -m livespec_dev_tooling.checks.global_writes
 
-# Handoff dispatch-routing lint — active plan documents
+# Handoff dispatch-routing lint — active plan-thread documents
 # (legacy plan/*/handoff.md and migrated plan/*/epic.md, excluding
 # plan/archive/) MUST route implementation through the factory dispatch route
 # (the `drive` operation impl:<id> / the Dispatcher drain), never the
@@ -693,21 +693,21 @@ check-per-file-coverage:
 # Plan-lifecycle enforcement — static half: every active legacy
 # plan/*/handoff.md or migrated plan/*/epic.md declares a concrete ledger epic
 # id (credential-free, runs everywhere, including consumer CI).
-check-plan-anchor-declared:
-    uv run python -m livespec_dev_tooling.checks.plan_anchor_declared
+check-plan-thread-anchor-declared:
+    uv run python -m livespec_dev_tooling.checks.plan_thread_anchor_declared
 
 # Plan-lifecycle enforcement — ledger-parity half: an active legacy
 # plan/*/handoff.md or migrated plan/*/epic.md must not point at a done/closed
 # epic. Armed-only — self-skips unless LIVESPEC_RUN_PLAN_EPIC_PARITY and
 # BEADS_DOLT_PASSWORD are set, so it never self-gates a credential-less
 # `just check`.
-check-plan-epic-parity:
-    uv run python -m livespec_dev_tooling.checks.plan_epic_parity
+check-plan-thread-epic-parity:
+    uv run python -m livespec_dev_tooling.checks.plan_thread_epic_parity
 
 # Plan-lifecycle tombstone ban: a topic must not exist at BOTH
 # plan/<topic>/ and plan/archive/<topic>/.
-check-plan-no-tombstone:
-    uv run python -m livespec_dev_tooling.checks.plan_no_tombstone
+check-plan-thread-no-tombstone:
+    uv run python -m livespec_dev_tooling.checks.plan_thread_no_tombstone
 
 # Cross-harness plugin-resolution Verifier (Conformance-Pattern concern
 # #2, per livespec/SPECIFICATION/non-functional-requirements.md
