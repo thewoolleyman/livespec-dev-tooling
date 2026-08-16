@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.24.5](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.24.4...v1.24.5) (2026-08-16)
+
+
+### Bug Fixes
+
+* **gate-run:** preflight-install the worktree pack before a gate run ([4e0a7e3](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4e0a7e3a3683bb379a52c23e821f12536d2b6216))
+
 ## [1.24.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.24.3...v1.24.4) (2026-08-16)
 
 
