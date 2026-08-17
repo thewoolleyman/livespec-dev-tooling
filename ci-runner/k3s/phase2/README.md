@@ -288,9 +288,42 @@ the steady-state post-cutover ceiling.
    `<DOUBLED_CEILING>`.
 4. Copy `arc/values-EXAMPLE-repo.yaml` to `arc/values-<repo>.yaml`,
    filling in `<REPO>` and `<DOUBLED_CEILING>` — the SAME number as
-   step 3 (see "Two enforcement points, one number" above).
+   step 3 (see "Two enforcement points, one number" above). Set
+   `runnerScaleSetName` per the naming rule below — do NOT use
+   `<repo>-local-ci-k3s`.
 5. Apply both once `.16` (incremental per-repo cutover) reaches that
    repo — not before; this design pass ships zero real cutover.
+
+### `runnerScaleSetName` MUST stay <=30 characters
+
+livespec-s43svm.22 (root-caused 2026-08-17, upstream
+actions/actions-runner-controller#4368, closed won't-fix — "pick a
+shorter name") found that `runner-container-hooks`' k8s hook
+truncates the per-job "workflow" pod name at a hard 63-character
+Kubernetes limit, applied to the FULL runner-pod name
+(`<scaleset>-<ephemeralrunnerset-suffix>-runner-<pod-suffix>`), not
+just the scale-set portion. Past ~35 characters of scale-set name the
+truncation eats the per-runner unique suffix entirely, so every
+CONCURRENTLY running runner in that scale set produces the
+byte-identical workflow-pod name and every job but the first fails
+with `pods "..." already exists` — deterministic under any 2+-job
+matrix, and invisible to a single-job proof-of-life dispatch (which is
+exactly why phase-1/phase-2's own single-job proofs never caught it).
+
+Use `<repo>-k3s` (NOT `<repo>-local-ci-k3s`, which was the original,
+now-abandoned scheme and cost 13 characters this fix cannot afford).
+30 characters total leaves a 5-character margin below the hard
+35-character boundary, since the ephemeralrunnerset-suffix length
+(observed as 5 characters live) is not a contract this fleet can rely
+on staying fixed. When `<repo>-k3s` itself exceeds 30 characters,
+truncate the repo-name portion at the longest hyphen-bounded prefix
+that fits — mechanically, never a hand-picked abbreviation (this fleet
+already bans ambiguous ad hoc abbreviations elsewhere — see
+`livespec/AGENTS.md` "the bare word `beads-fabro` is BANNED"). Example:
+`livespec-console-beads-fabro` (29 chars) does not fit the 26-character
+budget after `-k3s`, so its scale set is named
+`livespec-console-beads-k3s` (26 chars) — the last hyphen-bounded
+prefix that fits, not an invented shorthand.
 
 ## Known caveat: the node-status patch's robustness, corrected against live evidence
 
