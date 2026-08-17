@@ -32,6 +32,13 @@ __all__: list[str] = [
 # boundary in `testing._cli_e2e_driver`.
 _COVERAGE_PROCESS_START_VAR = "COVERAGE_PROCESS_START"
 _COVERAGE_CHILD_VAR_PREFIX = "COV_CORE_"
+_PI_FAILURE_MARKERS = (
+    "error:",
+    "model call failed",
+    "status 400",
+    "bad request",
+    "invalid_request_error",
+)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -167,6 +174,12 @@ def _pi_skill_command(*, canonical_command: str) -> str:
     return canonical_command
 
 
+def _pi_output_reports_failure(*, result: PiProcessResult) -> bool:
+    """Detect Pi/model failure transcripts that can arrive with exit code 0."""
+    transcript = (result.stdout + "\n" + result.stderr).lower()
+    return any(marker in transcript for marker in _PI_FAILURE_MARKERS)
+
+
 @dataclass(frozen=True, kw_only=True)
 class PiResolutionRunner:
     """Production Pi live-resolution runner.
@@ -186,4 +199,7 @@ class PiResolutionRunner:
             prompt=_pi_skill_command(canonical_command=canonical_command),
             cwd=Path.cwd(),
         )
-        return ResolutionOutcome(available=True, resolved=result.exit_code == 0)
+        return ResolutionOutcome(
+            available=True,
+            resolved=result.exit_code == 0 and not _pi_output_reports_failure(result=result),
+        )

@@ -23,12 +23,19 @@ def _which_path(cmd: str) -> str | None:
 
 @dataclass(frozen=True, kw_only=True)
 class _RecordingPiProcessRunner:
+    exit_code: int = 0
+    stdout: str = ""
+    stderr: str = ""
     prompts: list[str] = field(default_factory=list)
 
     def run(self, *, prompt: str, cwd: Path) -> runners.PiProcessResult:
         _ = cwd
         self.prompts.append(prompt)
-        return runners.PiProcessResult(exit_code=0, stdout="", stderr="")
+        return runners.PiProcessResult(
+            exit_code=self.exit_code,
+            stdout=self.stdout,
+            stderr=self.stderr,
+        )
 
 
 def test_real_pi_process_runner_runs_non_interactive_with_approve(
@@ -98,3 +105,19 @@ def test_pi_resolution_runner_leaves_explicit_prompt_verbatim(
     )
     assert outcome == runners.ResolutionOutcome(available=True, resolved=True)
     assert process.prompts == ["/skill:custom"]
+
+
+def test_pi_resolution_runner_rejects_error_shaped_stdout_despite_zero_exit(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pi can exit 0 after printing the model-call failure; classify by transcript."""
+    monkeypatch.setattr(runners.shutil, "which", _which_path)
+    process = _RecordingPiProcessRunner(
+        exit_code=0,
+        stdout="Error: model call failed with status 400: unsupported model\n",
+    )
+    outcome = runners.PiResolutionRunner(process_runner=process).resolve(
+        harness="pi", canonical_command="livespec:next"
+    )
+    assert outcome == runners.ResolutionOutcome(available=True, resolved=False)
+    assert process.prompts == ["/skill:livespec-next"]
