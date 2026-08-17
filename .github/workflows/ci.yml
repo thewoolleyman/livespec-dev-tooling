@@ -164,8 +164,10 @@ jobs:
       # ~2,237 CI-hours per 14d, dominated by sub-second checks.
       matrix:
         target:
-          - check-coverage
-          - check-per-file-coverage
+          # The coverage pair moved to its own producer/consumer job chain
+          # below (work-item livespec-dev-tooling-yilyxr.2 extension):
+          # check-per-file-coverage runs the suite once and hands its
+          # .coverage to check-coverage, halving the pair's CI compute.
           - check-types
           # check-lint / check-format are sub-minute, but the armed
           # check-tool-backed-check-completeness meta-check requires every
@@ -220,6 +222,126 @@ jobs:
           node_bin="$(cd "$shims_dir/../installs/node/latest/bin" 2>/dev/null && pwd || ls -d "$shims_dir/../installs/node"/*/bin 2>/dev/null | head -1)"
           [ -n "$node_bin" ] && export PATH="$node_bin:$PATH"
           just ${{ matrix.target }}
+
+  # Coverage-pair producer (work-item livespec-dev-tooling-yilyxr.2 extension,
+  # unblocking yilyxr.1's CI-side metric): runs the ONE clean suite pass and
+  # publishes the repo-root .coverage it produces. The consumer job below
+  # (check-coverage) downloads it and reads it instead of running the suite a
+  # second time — the same consume-once dedup `just check` already does
+  # locally (scripts/just/check-coverage.sh), now effective in CI where the
+  # two jobs used to run the full suite independently on separate runners.
+  check-per-file-coverage:
+    name: check-per-file-coverage
+    needs: [setup, select-ci-runner]
+    runs-on: ${{ fromJSON(needs.select-ci-runner.outputs.runs_on) }}
+    container:
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.28.3
+    env:
+      LIVESPEC_CI_LANE: ${{ needs.select-ci-runner.outputs.lane }}
+      MISE_DATA_DIR: /root/.local/share/mise
+      MISE_NOT_FOUND_AUTO_INSTALL: "0"
+      GITHUB_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      # Per-step `if:` (not job-level) so the job still reports its status
+      # check name when skipped — same pattern as the check-python matrix.
+      - name: Skip when no .py changes
+        if: needs.setup.outputs.py_changed != 'true'
+        run: echo "::notice::skipped check-per-file-coverage — no .py changes in this PR"
+
+      - name: Checkout
+        if: needs.setup.outputs.py_changed == 'true'
+        uses: actions/checkout@v5
+
+      - name: Trust workspace for git (hosted container root-vs-checkout uid)
+        if: needs.setup.outputs.py_changed == 'true'
+        run: git config --global --add safe.directory '*'
+
+      - name: mise trust + install (baked tools — install is a near-no-op)
+        if: needs.setup.outputs.py_changed == 'true'
+        run: |
+          mise trust
+          mise install
+
+      - name: Install Python dev deps via uv
+        if: needs.setup.outputs.py_changed == 'true'
+        run: uv sync --all-groups
+
+      - name: just check-per-file-coverage
+        if: needs.setup.outputs.py_changed == 'true'
+        run: just check-per-file-coverage
+
+      # include-hidden-files is REQUIRED: upload-artifact@v4 excludes
+      # dotfiles by default and .coverage is one; without it the upload
+      # silently ships nothing and the consumer falls back to a full
+      # duplicate suite run.
+      - name: Publish .coverage for the check-coverage consumer
+        if: needs.setup.outputs.py_changed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-data
+          path: .coverage
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
+  # Coverage-pair consumer. Kept as a single-entry matrix (NOT a plain job)
+  # because check-coverage is a tool-backed slug and
+  # check-tool-backed-check-completeness requires every tool-backed slug to
+  # be a LITERAL matrix.target member. `needs` the producer so the
+  # downloaded .coverage is present and scripts/just/check-coverage.sh takes
+  # its consume-once branch (read + delete, no suite run). Paths inside the
+  # data file match because both jobs run in the same container workspace
+  # mount. If the download ever regresses, the script's fallback branch runs
+  # the clean suite standalone — slower, never wrong.
+  check-coverage:
+    name: ${{ matrix.target }}
+    needs: [setup, select-ci-runner, check-per-file-coverage]
+    runs-on: ${{ fromJSON(needs.select-ci-runner.outputs.runs_on) }}
+    container:
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.28.3
+    env:
+      LIVESPEC_CI_LANE: ${{ needs.select-ci-runner.outputs.lane }}
+      MISE_DATA_DIR: /root/.local/share/mise
+      MISE_NOT_FOUND_AUTO_INSTALL: "0"
+      GITHUB_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ github.token }}
+    strategy:
+      matrix:
+        target:
+          - check-coverage
+    steps:
+      - name: Skip when no .py changes
+        if: needs.setup.outputs.py_changed != 'true'
+        run: echo "::notice::skipped ${{ matrix.target }} — no .py changes in this PR"
+
+      - name: Checkout
+        if: needs.setup.outputs.py_changed == 'true'
+        uses: actions/checkout@v5
+
+      - name: Trust workspace for git (hosted container root-vs-checkout uid)
+        if: needs.setup.outputs.py_changed == 'true'
+        run: git config --global --add safe.directory '*'
+
+      - name: mise trust + install (baked tools — install is a near-no-op)
+        if: needs.setup.outputs.py_changed == 'true'
+        run: |
+          mise trust
+          mise install
+
+      - name: Install Python dev deps via uv
+        if: needs.setup.outputs.py_changed == 'true'
+        run: uv sync --all-groups
+
+      - name: Download the producer's .coverage
+        if: needs.setup.outputs.py_changed == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-data
+
+      - name: just ${{ matrix.target }}
+        if: needs.setup.outputs.py_changed == 'true'
+        run: just ${{ matrix.target }}
 
   # Central fleet-membership conformance check (livespec v108 §"Fleet
   # membership contract") — its own job (not a matrix entry) so the
@@ -565,7 +687,7 @@ jobs:
   # when an upstream check failed (so red runs are captured too).
   export-telemetry:
     name: export-telemetry
-    needs: [setup, check-python, check-python-batch, check-fleet-conformance, check-metadata, check-metadata-batch]
+    needs: [setup, check-python, check-per-file-coverage, check-coverage, check-python-batch, check-fleet-conformance, check-metadata, check-metadata-batch]
     if: ${{ !cancelled() && github.event_name == 'push' }}
     runs-on: ubuntu-latest
     permissions:
@@ -595,7 +717,7 @@ jobs:
   # so they are intentionally absent from `needs:`.
   ci-green:
     name: ci-green
-    needs: [check-python, check-python-batch, check-fleet-conformance, check-metadata, check-metadata-batch]
+    needs: [check-python, check-per-file-coverage, check-coverage, check-python-batch, check-fleet-conformance, check-metadata, check-metadata-batch]
     if: always()
     runs-on: ubuntu-latest
     steps:
