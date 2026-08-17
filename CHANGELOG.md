@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.24.9](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.24.8...v1.24.9) (2026-08-17)
+
+
+### Bug Fixes
+
+* **ci-runner:** route dockershim podman calls through the daemon, not local SQLite ([7b6d75b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7b6d75bdaccd01934cd29f073cd235a80c24a111))
+
 ## [1.24.8](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.24.7...v1.24.8) (2026-08-16)
 
 
