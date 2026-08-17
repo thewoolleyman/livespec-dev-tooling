@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.27.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.26.0...v1.27.0) (2026-08-17)
+
+
+### Features
+
+* **worktree-pack:** ship the detached gate runner as a fifth pack file ([34f7af0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/34f7af06d6d8767eff79d8e91262b8caad212fa8))
+
 ## [1.26.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.25.0...v1.26.0) (2026-08-17)
 
 
