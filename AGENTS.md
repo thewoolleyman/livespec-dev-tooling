@@ -166,32 +166,30 @@ config) use `chore(...)` / `docs(...)` / `chore(spec):` subjects and skip the
 ritual entirely. Always use `mise exec -- git ...` so the hooks fire; never
 pass `--no-verify`.
 
-## CI runner routing — livespec-s43svm.16 NOT yet proven here (correction)
+## CI runner routing
 
-A prior commit on this file (2026-08-17) incorrectly claimed `CI_RUNNER_LABELS`
-routes this repo's gating CI matrix to the k3s path. That is FALSE for this
-repo, discovered on the same PR that made the claim: this repo's `ci.yml`
-does not consume `vars.CI_RUNNER_LABELS` at all. Every gating job routes
-through a `select-ci-runner` job calling `reusable-ci-runner-router.yml` with
-a **hardcoded** `local-runner-labels: '["self-hosted","local-ci"]'` input —
-the OLD podman-pool label set. That workflow health-probes for an online
-runner carrying both labels; since the podman-pool supervisor has been
-stopped since 2026-08-13, the probe always fails and the router automatically
-fails over to `ubuntu-latest`, regardless of `CI_RUNNER_LABELS`. Confirmed
-directly from a merged run's job data: every router-routed job carried
-`labels: ["ubuntu-latest"]`, and the router's own first-probe step reported
-`automatic-failover-*`.
+This repo's gating CI reads the `CI_RUNNER_LABELS` repository variable
+directly at each gating job's `runs-on`, with an inline
+`|| '["ubuntu-latest"]'` fallback — the same pattern the other fleet repos on
+self-hosted capacity use, and the posture ratified in
+`SPECIFICATION/constraints.md` §"CI matrix shape" (v048). Reverting to hosted
+is MANUAL: set the variable back to `["ubuntu-latest"]` or delete it.
 
-An ARC k3s scale set (`livespec-dev-tooling-k3s`) IS stood up on
-poweredge-xubuntu, zero traffic, ready for when this gap is closed.
-`CI_RUNNER_LABELS` was reverted to `["ubuntu-latest"]` (it was a no-op
-either way) to avoid implying an effect it doesn't have. Routing this repo's
-CI to k3s for real requires either changing `local-runner-labels` in
-`ci.yml`/`reusable-ci-runner-router.yml` to the k3s scale set's labels, or
-teaching the router to read a repo variable instead of a hardcoded input —
-both are `.github/workflows/` edits, which this repo's own
-`check-no-workflow-edits` forbids on any branch. This is an open design
-question, not a trivial follow-up; tracked as a child of livespec-s43svm.16.
-See `livespec/plan/fleet-ci-runner-pool/research/k3s-arc-kueue-migration.md`
-("Real-traffic cutover log") and the `livespec-s43svm.16` ledger comments for
-the full record.
+This replaced a two-probe health-check router (`select-ci-runner` calling
+`reusable-ci-runner-router.yml`, plus the `ci-runner-health` composite
+Action), retired as `livespec-s43svm.23` because it CANNOT work against ARC
+scale sets: `gha-runner-scale-set` runners register with an EMPTY label array,
+so a label-subset probe never matches them, and the sets run `min-runners: 0`,
+so an idle set has zero registered runners by design. Left in place it failed
+its probe on every run and silently routed every job to hosted capacity
+regardless of `CI_RUNNER_LABELS`.
+
+Do NOT reintroduce a pre-flight label probe for ARC capacity. If automatic
+failover is ever wanted again, it needs a mechanism that does not depend on
+scale-set runners carrying labels or on a runner existing while the set is
+idle.
+
+See `docs/ci-runner-failover.md` for the operator-facing routing and fork-safety
+detail, and
+`livespec/plan/fleet-ci-runner-pool/research/k3s-arc-kueue-migration.md`
+("Real-traffic cutover log") for the cross-repo record.
