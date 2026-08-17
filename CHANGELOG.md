@@ -58,6 +58,16 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.28.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.28.2...v1.28.3) (2026-08-17)
+
+
+### Bug Fixes
+
+* **dev-tooling:** add canonical_check_renames() RED test ([5be1ac1](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5be1ac1b48299cf8058ec4cc2e5326297d684ddd))
+* **dev-tooling:** add ci.yml reconcile rename-rewrite RED test ([9872764](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9872764e0a3f4c6c421a28d5938651b289e18b56))
+* **dev-tooling:** add justfile reconcile rename-rewrite RED test ([af64976](https://github.com/thewoolleyman/livespec-dev-tooling/commit/af649766263dd1e3fe22476a9f01c31cabee82ed))
+* **dev-tooling:** cover renamed-slug no-op and hand-authored-recipe branches ([213a877](https://github.com/thewoolleyman/livespec-dev-tooling/commit/213a8771fe2382d5aeb481cc185200835f2524cf))
+
 ## [1.28.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.28.1...v1.28.2) (2026-08-17)
 
 
