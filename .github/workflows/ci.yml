@@ -167,6 +167,14 @@ jobs:
           - check-coverage
           - check-per-file-coverage
           - check-types
+          # check-lint / check-format are sub-minute, but the armed
+          # check-tool-backed-check-completeness meta-check requires every
+          # tool-backed slug to be a LITERAL matrix member (proven live on
+          # this branch's first run: failure_mode=missing_from_ci for
+          # exactly these two when they rode the batch), so they keep
+          # their own legs.
+          - check-lint
+          - check-format
     steps:
       # Per-step `if:` (not job-level) so each matrix entry still
       # reports a status check named `${{ matrix.target }}`.
@@ -224,7 +232,7 @@ jobs:
   # world-gate lane (`just check-fleet-conformance-admin`) at pre-push
   # under the operator's own admin gh credentials.
   # Batched cheap .py-scanning checks (work-item livespec-dev-tooling-yilyxr.2):
-  # one container setup for 26 sub-minute targets that each previously
+  # one container setup for 24 sub-minute targets that each previously
   # paid it alone as a matrix leg. Failures are COLLECTED, not fail-fast,
   # preserving the old matrix's fail-fast:false all-targets report; each
   # target is invoked as a literal `just <slug>` line so
@@ -270,8 +278,6 @@ jobs:
         if: needs.setup.outputs.py_changed == 'true'
         run: |
           failed=""
-          just check-lint || failed="$failed check-lint"
-          just check-format || failed="$failed check-format"
           just check-all-declared || failed="$failed check-all-declared"
           just check-assert-never-exhaustiveness || failed="$failed check-assert-never-exhaustiveness"
           just check-check-mutation || failed="$failed check-check-mutation"
