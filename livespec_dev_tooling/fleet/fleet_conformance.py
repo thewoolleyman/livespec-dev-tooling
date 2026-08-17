@@ -149,6 +149,7 @@ __all__: list[str] = []
 _RUN_ENV_VAR = "LIVESPEC_RUN_FLEET_CONFORMANCE"
 MANIFEST_REPO = "livespec"
 MANIFEST_PATH = ".livespec-fleet-manifest.jsonc"
+_OWNER_REPOS_PAGE_SIZE = 100
 # GitHub App installation tokens are `ghs_`-prefixed (server-to-server);
 # the automated contexts mint one into GH_TOKEN via
 # actions/create-github-app-token, and the Fabro dispatch sandbox
@@ -269,12 +270,30 @@ def _write_member_verdicts(*, path: Path, member_verdicts: tuple[MemberVerdict, 
     )
 
 
+def _owner_repositories(*, ctx: FleetContext) -> list[object] | None:
+    """Fetch every owner repo page the discovery safety net must inspect."""
+    repositories: list[object] = []
+    page = 1
+    while True:
+        path = f"users/{ctx.owner}/repos?per_page={_OWNER_REPOS_PAGE_SIZE}"
+        if page > 1:
+            path = f"{path}&page={page}"
+        payload = ctx.api_object(path=path)
+        if not isinstance(payload, list):
+            return None
+        page_entries = cast("list[object]", payload)
+        repositories.extend(page_entries)
+        if len(page_entries) < _OWNER_REPOS_PAGE_SIZE:
+            return repositories
+        page += 1
+
+
 def run_discovery_sweep(
     *, ctx: FleetContext, manifest: Manifest, log: structlog.stdlib.BoundLogger
 ) -> int:
     """Flag owner repos matching the fleet shape but absent from the manifest."""
-    payload = ctx.api_object(path=f"users/{ctx.owner}/repos?per_page=100")
-    if not isinstance(payload, list):
+    payload = _owner_repositories(ctx=ctx)
+    if payload is None:
         log.warning(
             "discovery sweep skipped: owner repo list unreadable",
             owner=ctx.owner,
@@ -282,7 +301,7 @@ def run_discovery_sweep(
         return 0
     known = manifest.member_names()
     errors = 0
-    for entry in cast("list[object]", payload):
+    for entry in payload:
         if not isinstance(entry, dict):
             continue
         record = cast("dict[str, object]", entry)
