@@ -250,8 +250,15 @@ def _settings(*, enabled: object) -> str:
     )
 
 
-def _registry(*, entries: dict[str, list[dict[str, str]]]) -> str:
+def _registry(*, entries: dict[str, list[dict[str, object]]]) -> str:
     return json.dumps({"plugins": entries})
+
+
+def _plugin_dir(*, tmp_path: Path, name: str) -> Path:
+    path = tmp_path / name
+    path.mkdir()
+    (path / "plugin.json").write_text("{}", encoding="utf-8")
+    return path
 
 
 def test_settings_findings_pass_when_every_marketplace_is_covered() -> None:
@@ -293,21 +300,24 @@ def test_settings_findings_reject_non_boolean_values() -> None:
     assert any("boolean" in f for f in findings)
 
 
-def test_registry_findings_pass_when_project_path_matches() -> None:
+def test_registry_findings_pass_when_project_path_matches(*, tmp_path: Path) -> None:
+    one = _plugin_dir(tmp_path=tmp_path, name="one")
+    two = _plugin_dir(tmp_path=tmp_path, name="two")
     registry = _registry(
         entries={
-            "one@alpha": [{"projectPath": "/repo"}],
-            "two@beta": [{"projectPath": "/repo"}],
+            "one@alpha": [{"projectPath": "/repo", "installPath": str(one)}],
+            "two@beta": [{"projectPath": "/repo", "installPath": str(two)}],
         }
     )
     assert registry_findings(settings_text=_M3, project_root="/repo", registry_text=registry) == ()
 
 
-def test_registry_findings_reject_record_for_a_different_project() -> None:
+def test_registry_findings_reject_record_for_a_different_project(*, tmp_path: Path) -> None:
+    plugin = _plugin_dir(tmp_path=tmp_path, name="plugin")
     registry = _registry(
         entries={
-            "one@alpha": [{"projectPath": "/elsewhere"}],
-            "two@beta": [{"projectPath": "/repo"}],
+            "one@alpha": [{"projectPath": "/elsewhere", "installPath": str(plugin)}],
+            "two@beta": [{"projectPath": "/repo", "installPath": str(plugin)}],
         }
     )
     findings = registry_findings(settings_text=_M3, project_root="/repo", registry_text=registry)
@@ -319,20 +329,93 @@ def test_registry_findings_reject_absent_registry() -> None:
     assert findings != ()
 
 
-def test_registry_findings_ignore_disabled_plugins() -> None:
+def test_registry_findings_ignore_disabled_plugins(*, tmp_path: Path) -> None:
     settings = _settings(enabled={"one@alpha": True, "two@beta": False})
-    registry = _registry(entries={"one@alpha": [{"projectPath": "/repo"}]})
+    plugin = _plugin_dir(tmp_path=tmp_path, name="plugin")
+    registry = _registry(
+        entries={"one@alpha": [{"projectPath": "/repo", "installPath": str(plugin)}]}
+    )
     assert (
         registry_findings(settings_text=settings, project_root="/repo", registry_text=registry)
         == ()
     )
 
 
-def test_ensure_returns_no_findings_when_provisioning_succeeds() -> None:
+def test_registry_findings_reject_missing_install_path_directory(*, tmp_path: Path) -> None:
+    missing = tmp_path / "missing"
     registry = _registry(
         entries={
-            "one@alpha": [{"projectPath": "/repo"}],
-            "two@beta": [{"projectPath": "/repo"}],
+            "one@alpha": [{"projectPath": "/repo", "installPath": str(missing)}],
+            "two@beta": [
+                {
+                    "projectPath": "/repo",
+                    "installPath": str(_plugin_dir(tmp_path=tmp_path, name="two")),
+                }
+            ],
+        }
+    )
+
+    findings = registry_findings(settings_text=_M3, project_root="/repo", registry_text=registry)
+
+    assert any("one@alpha" in finding and "does not exist" in finding for finding in findings)
+
+
+def test_registry_findings_reject_empty_install_path_directory(*, tmp_path: Path) -> None:
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    registry = _registry(
+        entries={
+            "one@alpha": [{"projectPath": "/repo", "installPath": str(empty)}],
+            "two@beta": [
+                {
+                    "projectPath": "/repo",
+                    "installPath": str(_plugin_dir(tmp_path=tmp_path, name="two")),
+                }
+            ],
+        }
+    )
+
+    findings = registry_findings(settings_text=_M3, project_root="/repo", registry_text=registry)
+
+    assert any("one@alpha" in finding and "plugin.json" in finding for finding in findings)
+
+
+def test_registry_findings_accept_plugin_json_in_install_path(*, tmp_path: Path) -> None:
+    registry = _registry(
+        entries={
+            "one@alpha": [
+                {
+                    "projectPath": "/repo",
+                    "installPath": str(_plugin_dir(tmp_path=tmp_path, name="one")),
+                }
+            ],
+            "two@beta": [
+                {
+                    "projectPath": "/repo",
+                    "installPath": str(_plugin_dir(tmp_path=tmp_path, name="two")),
+                }
+            ],
+        }
+    )
+
+    assert registry_findings(settings_text=_M3, project_root="/repo", registry_text=registry) == ()
+
+
+def test_ensure_returns_no_findings_when_provisioning_succeeds(*, tmp_path: Path) -> None:
+    registry = _registry(
+        entries={
+            "one@alpha": [
+                {
+                    "projectPath": "/repo",
+                    "installPath": str(_plugin_dir(tmp_path=tmp_path, name="one")),
+                }
+            ],
+            "two@beta": [
+                {
+                    "projectPath": "/repo",
+                    "installPath": str(_plugin_dir(tmp_path=tmp_path, name="two")),
+                }
+            ],
         }
     )
     ran: list[tuple[str, ...]] = []
@@ -384,6 +467,37 @@ def test_ensure_reports_when_commands_succeed_but_no_record_lands() -> None:
     )
     assert findings != ()
     assert any("one@alpha" in f for f in findings)
+
+
+def test_ensure_reports_when_record_names_empty_artifact(*, tmp_path: Path) -> None:
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    registry = _registry(
+        entries={
+            "one@alpha": [{"projectPath": "/repo", "installPath": str(empty)}],
+            "two@beta": [
+                {
+                    "projectPath": "/repo",
+                    "installPath": str(_plugin_dir(tmp_path=tmp_path, name="two")),
+                }
+            ],
+        }
+    )
+    ran: list[tuple[str, ...]] = []
+
+    def runner(*, args: tuple[str, ...]) -> CommandResult:
+        ran.append(args)
+        return CommandResult(returncode=0)
+
+    findings = ensure(
+        settings_text=_M3,
+        project_root="/repo",
+        runner=runner,
+        read_registry=lambda: registry,
+    )
+
+    assert findings != ()
+    assert ran == list(planned_commands(settings_text=_M3))
 
 
 def test_settings_findings_reject_non_object_document() -> None:

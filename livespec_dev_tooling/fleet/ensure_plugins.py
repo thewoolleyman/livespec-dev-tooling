@@ -14,13 +14,21 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, cast
 
+from livespec_dev_tooling.fleet._ensure_plugin_artifacts import (
+    ArtifactReader,
+    artifact_record_findings,
+    plugin_artifact_findings,
+)
+
 __all__: list[str] = [
+    "ArtifactReader",
     "CommandResult",
     "CommandRunner",
     "RegistryReader",
     "ensure",
     "main",
     "planned_commands",
+    "plugin_artifact_findings",
     "registry_findings",
     "run_from_settings",
     "settings_findings",
@@ -156,13 +164,31 @@ def _records_for(*, registry: object, plugin: str) -> tuple[object, ...]:
     return tuple(cast("list[object]", entries))
 
 
+def _project_records(
+    *, registry: object, plugin: str, project_root: str
+) -> tuple[dict[str, object], ...]:
+    """Install records for one plugin in this project."""
+    return tuple(
+        cast("dict[str, object]", entry)
+        for entry in _records_for(registry=registry, plugin=plugin)
+        if isinstance(entry, dict)
+        and cast("dict[str, object]", entry).get("projectPath") == project_root
+    )
+
+
 def registry_findings(
-    *, settings_text: str, project_root: str, registry_text: str | None
+    *,
+    settings_text: str,
+    project_root: str,
+    registry_text: str | None,
+    read_artifact: ArtifactReader = plugin_artifact_findings,
 ) -> tuple[str, ...]:
-    """Findings for enabled-vs-installed, keyed on `projectPath`.
+    """Findings for enabled-vs-installed, keyed on `projectPath` and artifact content.
 
     A zero exit from a scoped plugin command does not establish which project's
     record it touched, so provisioning is confirmed against the record itself.
+    The record is still a proxy for the build it names, so the matching
+    `installPath` must also point at plugin content.
     """
     parsed = json.loads(settings_text)
     if not isinstance(parsed, dict):
@@ -173,15 +199,22 @@ def registry_findings(
     if shape is not None:
         return (shape,)
     registry = json.loads(registry_text) if registry_text is not None else None
-    return tuple(
-        f"{plugin} is enabled but has no install record for projectPath {project_root}"
-        for plugin in enabled
-        if not any(
-            isinstance(entry, dict)
-            and cast("dict[str, object]", entry).get("projectPath") == project_root
-            for entry in _records_for(registry=registry, plugin=plugin)
+    findings: list[str] = []
+    for plugin in enabled:
+        records = _project_records(registry=registry, plugin=plugin, project_root=project_root)
+        if not records:
+            findings.append(
+                f"{plugin} is enabled but has no install record for projectPath {project_root}"
+            )
+            continue
+        findings.extend(
+            artifact_record_findings(
+                plugin=plugin,
+                records=records,
+                read_artifact=read_artifact,
+            )
         )
-    )
+    return tuple(findings)
 
 
 def ensure(
@@ -190,6 +223,7 @@ def ensure(
     project_root: str,
     runner: CommandRunner,
     read_registry: RegistryReader,
+    read_artifact: ArtifactReader = plugin_artifact_findings,
 ) -> tuple[str, ...]:
     """Provision from settings, then confirm it landed. Empty means provisioned.
 
@@ -207,6 +241,7 @@ def ensure(
         settings_text=settings_text,
         project_root=project_root,
         registry_text=read_registry(),
+        read_artifact=read_artifact,
     )
 
 
