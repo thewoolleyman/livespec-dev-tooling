@@ -49,3 +49,32 @@ worktree-land base_ref="":
 [positional-arguments]
 worktree-reap *args:
     ./dev-tooling/worktree-lib.sh reap "$@"
+
+# ---------------------------------------------------------------
+# Detached gate runner (work-item livespec-dev-tooling-yilyxr.7).
+# Runs a gate command in its own session that outlives any harness
+# tool-call ceiling and reports a durable verdict; `start` also
+# preflights this pack itself, so a fresh worktree that skipped
+# `just bootstrap` self-heals in seconds instead of burning a full
+# aggregate run to fail on the pack check. A run that does not
+# finish reports DIED_WITHOUT_VERDICT — it can never read as a pass.
+# ---------------------------------------------------------------
+
+# Launch a gate command detached; prints the run id and returns fast.
+[positional-arguments]
+gate-start *args:
+    ./dev-tooling/gate-run.sh start "$@"
+
+# Block until a run reaches a terminal state; exits with its verdict.
+[positional-arguments]
+gate-wait *args:
+    ./dev-tooling/gate-run.sh wait "$@"
+
+# One-shot verdict for a run (or the latest); never blocks.
+[positional-arguments]
+gate-status *args:
+    ./dev-tooling/gate-run.sh status "$@"
+
+# List recent gate runs, newest last.
+gate-list:
+    ./dev-tooling/gate-run.sh list

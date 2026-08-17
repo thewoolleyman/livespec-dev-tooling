@@ -28,6 +28,7 @@ from livespec_dev_tooling.fleet._local_context import (
 from livespec_dev_tooling.install_worktree_pack import (
     CANONICAL_BRANCH_PROTECTION_BODY,
     CANONICAL_BRANCH_PROTECTION_JUST_BODY,
+    CANONICAL_GATE_RUN_BODY,
     CANONICAL_WORKTREE_JUST_BODY,
     CANONICAL_WORKTREE_LIB_BODY,
 )
@@ -81,6 +82,7 @@ def test_every_local_row_carries_a_callable_reconcile() -> None:
 _PACK_FILES: tuple[tuple[str, str], ...] = (
     ("branch-protection.just", CANONICAL_BRANCH_PROTECTION_JUST_BODY),
     ("branch-protection.sh", CANONICAL_BRANCH_PROTECTION_BODY),
+    ("gate-run.sh", CANONICAL_GATE_RUN_BODY),
     ("worktree-lib.sh", CANONICAL_WORKTREE_LIB_BODY),
     ("worktree.just", CANONICAL_WORKTREE_JUST_BODY),
 )

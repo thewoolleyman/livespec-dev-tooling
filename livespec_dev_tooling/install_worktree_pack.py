@@ -83,6 +83,7 @@ import structlog  # noqa: E402  — vendor-path-aware import after sys.path inse
 __all__: list[str] = [
     "CANONICAL_BRANCH_PROTECTION_BODY",
     "CANONICAL_BRANCH_PROTECTION_JUST_BODY",
+    "CANONICAL_GATE_RUN_BODY",
     "CANONICAL_WORKTREE_JUST_BODY",
     "CANONICAL_WORKTREE_LIB_BODY",
     "install_pack",
@@ -102,13 +103,14 @@ def _read_canonical_body(*, name: str) -> str:
     return (_PACK_DATA_DIR / name).read_text(encoding="utf-8")
 
 
-# The four canonical bodies, read once at import from package-data. Exposed
+# The five canonical bodies, read once at import from package-data. Exposed
 # as module constants so the verifier imports the SAME bytes it asserts the
 # installed files against (no drift seam).
 CANONICAL_WORKTREE_LIB_BODY = _read_canonical_body(name="worktree-lib.sh")
 CANONICAL_BRANCH_PROTECTION_BODY = _read_canonical_body(name="branch-protection.sh")
 CANONICAL_WORKTREE_JUST_BODY = _read_canonical_body(name="worktree.just")
 CANONICAL_BRANCH_PROTECTION_JUST_BODY = _read_canonical_body(name="branch-protection.just")
+CANONICAL_GATE_RUN_BODY = _read_canonical_body(name="gate-run.sh")
 
 
 # The pack's installed layout: `(basename, canonical body, executable)`
@@ -121,6 +123,7 @@ CANONICAL_BRANCH_PROTECTION_JUST_BODY = _read_canonical_body(name="branch-protec
 _PACK_FILES: tuple[tuple[str, str, bool], ...] = (
     ("worktree-lib.sh", CANONICAL_WORKTREE_LIB_BODY, True),
     ("branch-protection.sh", CANONICAL_BRANCH_PROTECTION_BODY, True),
+    ("gate-run.sh", CANONICAL_GATE_RUN_BODY, True),
     ("worktree.just", CANONICAL_WORKTREE_JUST_BODY, False),
     ("branch-protection.just", CANONICAL_BRANCH_PROTECTION_JUST_BODY, False),
 )

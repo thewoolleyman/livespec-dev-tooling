@@ -143,7 +143,7 @@ worktree_provision_pack_from_primary() {
 
     source_dir="$primary/dev-tooling"
     dest_dir="$dest/dev-tooling"
-    pack_files="worktree-lib.sh branch-protection.sh worktree.just branch-protection.just"
+    pack_files="worktree-lib.sh branch-protection.sh gate-run.sh worktree.just branch-protection.just"
 
     missing=0
     for pack_file in $pack_files; do
