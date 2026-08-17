@@ -10,8 +10,7 @@ finite fallback ... Authentication and authorization failures are terminal."
 
 Lives under `ci-runner/supervisor/` beside the bash supervisor it will serve
 rather than under `livespec_dev_tooling/` — outside this repo's declared
-`source_trees` (pyproject.toml), the same placement as
-`.github/actions/ci-runner-health/runner_health.py`. Pure and dependency-free
+`source_trees` (pyproject.toml). Pure and dependency-free
 so the bash supervisor can invoke it as a standalone interpreter call, and so
 it is testable without a network seam.
 """

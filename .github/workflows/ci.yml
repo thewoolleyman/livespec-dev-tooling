@@ -24,11 +24,26 @@
 #
 # The two check matrices run in the SAME baked image the Fabro sandbox uses,
 # on the local self-hosted runner — so "green in CI" and "green in sandbox"
-# are the same environment (livespec plan/fabro-ci-image-factoring). A hosted
-# preflight selects the local labels only after two healthy observations and
-# otherwise emits ubuntu-latest; see reusable-ci-runner-router.yml. setup,
-# check-fleet-conformance, export-telemetry and ci-green stay ubuntu-latest —
-# see each job for why.
+# are the same environment (livespec plan/fabro-ci-image-factoring). Their
+# runs-on resolves from the repo variable CI_RUNNER_LABELS, defaulting inline
+# to ubuntu-latest when it is unset, per SPECIFICATION/constraints.md
+# §"CI matrix shape". setup, check-fleet-conformance, export-telemetry and
+# ci-green stay ubuntu-latest — see each job for why.
+#
+# The fallback literal is repeated inline at each runs-on rather than resolved
+# once into a job output, because check-self-hosted-routing parses runs-on
+# values STATICALLY: routing hidden behind `needs.<job>.outputs.*` is invisible
+# to it. The fallback MUST name hosted capacity so that deleting or emptying
+# the variable leaves the merge gate on capacity that is always present.
+#
+# Reverting to hosted is MANUAL: set CI_RUNNER_LABELS back to
+# '["ubuntu-latest"]' (or delete it). There is deliberately no automatic
+# health-probe failover. The two-probe router this repo used to carry
+# (reusable-ci-runner-router.yml + .github/actions/ci-runner-health) was
+# retired because it cannot work against ARC scale sets: ARC gha-runner-scale-set
+# runners register with an EMPTY label array, so a label-subset probe never
+# matches them, and the sets run min-runners 0, so an idle set has zero
+# registered runners by design. See livespec-s43svm.23.
 
 name: CI
 
@@ -59,19 +74,6 @@ on:
     branches: [master]
 
 jobs:
-  select-ci-runner:
-    # The selector itself is hosted. It is a reusable workflow from this exact
-    # revision, so this repository proves the shared router before fleet
-    # callers pin a released dev-tooling ref.
-    permissions:
-      actions: read
-      contents: read
-    uses: ./.github/workflows/reusable-ci-runner-router.yml
-    with:
-      local-runner-labels: '["self-hosted","local-ci"]'
-      failover-mode: ${{ vars.CI_RUNNER_FAILOVER_MODE || 'auto' }}
-      trusted: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false }}
-
   setup:
     name: detect-py-changes
     runs-on: ubuntu-latest
@@ -127,16 +129,16 @@ jobs:
 
   check-python:
     name: ${{ matrix.target }}
-    needs: [setup, select-ci-runner]
-    # The selector output is exactly one complete hosted or self-hosted label
+    needs: setup
+    # The variable holds exactly one complete hosted or self-hosted label
     # set. GitHub does not fall back when a self-hosted label set has no match.
-    runs-on: ${{ fromJSON(needs.select-ci-runner.outputs.runs_on) }}
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
       image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.28.3
     env:
       # RUNNER_ENVIRONMENT does not propagate into container jobs. Keep the
-      # parallelism policy aligned with the selector output instead.
-      LIVESPEC_CI_LANE: ${{ needs.select-ci-runner.outputs.lane }}
+      # parallelism policy derived from the same variable the routing reads.
+      LIVESPEC_CI_LANE: ${{ contains(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && 'hosted' || 'local' }}
       # The image installs the pinned tools under /root (build-time HOME), but
       # container-hooks run steps with a DIFFERENT HOME — so mise's default data
       # dir ($HOME/.local/share/mise) is empty and `mise install` would RE-fetch
@@ -241,12 +243,12 @@ jobs:
   # in ci-green.needs. The wall-time-dominant targets stay in check-python.
   check-python-batch:
     name: check-python-batch
-    needs: [setup, select-ci-runner]
-    runs-on: ${{ fromJSON(needs.select-ci-runner.outputs.runs_on) }}
+    needs: setup
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
       image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.28.3
     env:
-      LIVESPEC_CI_LANE: ${{ needs.select-ci-runner.outputs.lane }}
+      LIVESPEC_CI_LANE: ${{ contains(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && 'hosted' || 'local' }}
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
       GITHUB_TOKEN: ${{ github.token }}
@@ -383,13 +385,12 @@ jobs:
   # master pushes the range is empty.
   check-metadata:
     name: ${{ matrix.target }}
-    needs: select-ci-runner
-    # The same single-lane selector protects every ordinary gating target.
-    runs-on: ${{ fromJSON(needs.select-ci-runner.outputs.runs_on) }}
+    # The same single variable routes every ordinary gating target.
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
       image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.28.3
     env:
-      LIVESPEC_CI_LANE: ${{ needs.select-ci-runner.outputs.lane }}
+      LIVESPEC_CI_LANE: ${{ contains(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && 'hosted' || 'local' }}
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
       GITHUB_TOKEN: ${{ github.token }}
@@ -474,12 +475,11 @@ jobs:
   # of livespec-dev-tooling-9ywf for why the pack must be materialized).
   check-metadata-batch:
     name: check-metadata-batch
-    needs: select-ci-runner
-    runs-on: ${{ fromJSON(needs.select-ci-runner.outputs.runs_on) }}
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
       image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.28.3
     env:
-      LIVESPEC_CI_LANE: ${{ needs.select-ci-runner.outputs.lane }}
+      LIVESPEC_CI_LANE: ${{ contains(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && 'hosted' || 'local' }}
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
       GITHUB_TOKEN: ${{ github.token }}
