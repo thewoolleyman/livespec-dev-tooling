@@ -45,6 +45,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
+from livespec_dev_tooling.canonical_checks import canonical_check_renames
+
 __all__: list[str] = ["reconcile_justfile_text"]
 
 
@@ -239,19 +241,72 @@ def _missing_recipe_chunks(*, justfile_text: str, missing: tuple[str, ...]) -> l
     return chunks
 
 
-def _reconcile(*, justfile_text: str, canonical_slugs: Sequence[str]) -> _ReconcileResult:
+def _rewrite_renamed_references(
+    *, justfile_text: str, renames: Sequence[tuple[str, str]], canonical_set: set[str]
+) -> str:
+    """Rewrite a wired OLD canonical slug (and its auto-generated recipe) to its NEW name.
+
+    A canonical check rename (`canonical_checks.canonical_check_renames()`)
+    drops the OLD slug from the canonical set with no trace of the rename — the
+    canonical set is a filesystem walk, so a renamed `checks/<old>.py` module
+    simply stops existing under that name. A consumer whose justfile still
+    wires the OLD slug is left stranded: its bump PR's CI runs `just
+    check-<old-slug>`, which imports a module that no longer exists
+    (`ModuleNotFoundError`, livespec-dev-tooling-3gy1).
+
+    For every rename whose `new` side is canonical, rewrites the OLD slug's
+    wired target-array token to the NEW slug, then rewrites its
+    auto-generated bare `check-<old>:` recipe to the NEW slug/module — ONLY
+    when that recipe is in EXACTLY the auto-generated bare shape this module
+    itself would append. A hand-authored or parameterized old recipe is left
+    alone: this module never overwrites content it did not itself generate.
+    A rename whose old slug is not actually wired is a no-op (`re.subn`
+    reports zero replacements and the recipe rewrite is skipped).
+    """
+    text = justfile_text
+    for old, new in renames:
+        if new not in canonical_set:
+            continue
+        text, replaced = re.subn(
+            rf"^([ \t]*){re.escape(old)}([ \t]*)$",
+            rf"\g<1>{new}\g<2>",
+            text,
+            count=1,
+            flags=re.MULTILINE,
+        )
+        if not replaced:
+            continue
+        old_module = old.removeprefix(_CHECK_PREFIX).replace("-", "_")
+        new_module = new.removeprefix(_CHECK_PREFIX).replace("-", "_")
+        old_recipe = f"{old}:\n    {_RECIPE_MODULE_STEM}{old_module}\n"
+        if old_recipe in text:
+            text = text.replace(old_recipe, f"{new}:\n    {_RECIPE_MODULE_STEM}{new_module}\n", 1)
+    return text
+
+
+def _reconcile(
+    *,
+    justfile_text: str,
+    canonical_slugs: Sequence[str],
+    renames: Sequence[tuple[str, str]] = (),
+) -> _ReconcileResult:
     """Pure core — reconcile the consumer justfile text against the canonical slug set.
 
-    Inserts every canonical slug missing from the `check:` aggregate's
-    `targets=(...)` array, then appends a zero-arg `check-<slug>:` recipe for
-    each missing slug that has NO recipe header in any form. Returns the input
-    unchanged with a `skipped_reason` when the justfile does not carry the
-    reconcilable shape.
+    First rewrites any wired slug the `renames` map strands (see
+    `_rewrite_renamed_references`), then inserts every canonical slug missing
+    from the `check:` aggregate's `targets=(...)` array, then appends a
+    zero-arg `check-<slug>:` recipe for each missing slug that has NO recipe
+    header in any form. Returns the input unchanged with a `skipped_reason`
+    when the justfile does not carry the reconcilable shape.
     """
     canonical = tuple(canonical_slugs)
     canonical_set = set(canonical)
     if _AGGREGATE_SLUG not in justfile_text:
         return _ReconcileResult(text=justfile_text, missing=(), skipped_reason="no_aggregate")
+
+    justfile_text = _rewrite_renamed_references(
+        justfile_text=justfile_text, renames=renames, canonical_set=canonical_set
+    )
 
     lines = justfile_text.splitlines(keepends=True)
     block = _bare_check_recipe_bounds(lines=lines)
@@ -287,14 +342,23 @@ def _reconcile(*, justfile_text: str, canonical_slugs: Sequence[str]) -> _Reconc
     )
 
 
-def reconcile_justfile_text(*, justfile_text: str, canonical_slugs: Sequence[str]) -> str:
+def reconcile_justfile_text(
+    *,
+    justfile_text: str,
+    canonical_slugs: Sequence[str],
+    renames: Sequence[tuple[str, str]] = (),
+) -> str:
     """Reconcile `justfile_text` against `canonical_slugs`, returning the new text.
 
     Pure (no I/O). See `_reconcile` for the algorithm; this is the public
     text-in / text-out entry point the workflow step's `main()` and the test
-    suite call. Returns the input unchanged when no reconcile applies.
+    suite call. Returns the input unchanged when no reconcile applies. `renames`
+    is the `canonical_checks.canonical_check_renames()` old->new map; defaults
+    to empty so existing callers are unaffected.
     """
-    return _reconcile(justfile_text=justfile_text, canonical_slugs=canonical_slugs).text
+    return _reconcile(
+        justfile_text=justfile_text, canonical_slugs=canonical_slugs, renames=renames
+    ).text
 
 
 def _emit_notice(*, message: str) -> None:
@@ -334,7 +398,9 @@ def main() -> int:
 
     slugs = _slugs_from_env()
     justfile_text = justfile.read_text(encoding="utf-8")
-    result = _reconcile(justfile_text=justfile_text, canonical_slugs=slugs)
+    result = _reconcile(
+        justfile_text=justfile_text, canonical_slugs=slugs, renames=canonical_check_renames()
+    )
 
     if result.skipped_reason is not None:
         _emit_notice(message=_SKIP_NOTICES[result.skipped_reason])
