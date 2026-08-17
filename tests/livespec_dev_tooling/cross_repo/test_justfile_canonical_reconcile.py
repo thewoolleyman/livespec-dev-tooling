@@ -124,6 +124,25 @@ check-aggregate-completeness:
     uv run python -m livespec_dev_tooling.checks.aggregate_completeness
 """
 
+# A wired slug (`check-plan-thread-anchor-declared`) whose auto-generated
+# recipe names a module `042a7854` deleted upstream after renaming it to
+# `check-plan-anchor-declared`. Left as-is, the bump PR's CI runs
+# `just check-plan-thread-anchor-declared` and dies with `ModuleNotFoundError`
+# (livespec-dev-tooling-3gy1) — the reconcile must rewrite BOTH the wired
+# target token and the auto-generated recipe to the new slug/module.
+_JUSTFILE_STRANDED_RENAMED_SLUG = """check:
+    targets=(
+        check-aggregate-completeness
+        check-plan-thread-anchor-declared
+    )
+
+check-aggregate-completeness:
+    uv run python -m livespec_dev_tooling.checks.aggregate_completeness
+
+check-plan-thread-anchor-declared:
+    uv run python -m livespec_dev_tooling.checks.plan_thread_anchor_declared
+"""
+
 
 def _header_count(*, text: str, slug: str) -> int:
     """Count column-0 `<slug>` recipe headers (any parameter form) in `text`.
@@ -302,6 +321,34 @@ def test_all_canonical_already_wired_is_a_noop() -> None:
         canonical_slugs=["check-aggregate-completeness"],
     )
     assert result == _JUSTFILE_FULLY_CURRENT
+
+
+def test_stranded_renamed_slug_is_rewritten_to_new_slug_and_module() -> None:
+    """A wired slug renamed upstream is rewritten to its new slug/module, not left stranded.
+
+    Reproduces the exact `livespec-dev-tooling-3gy1` failure: the OLD slug's
+    module no longer exists at the bumped pin, so leaving it wired guarantees a
+    `ModuleNotFoundError` in CI. The rename map rewrites the wired target token
+    AND the auto-generated recipe body/header to the new slug/module, and drops
+    the old (now-orphaned) recipe entirely.
+    """
+    result = justfile_canonical_reconcile.reconcile_justfile_text(
+        justfile_text=_JUSTFILE_STRANDED_RENAMED_SLUG,
+        canonical_slugs=["check-aggregate-completeness", "check-plan-anchor-declared"],
+        renames=[("check-plan-thread-anchor-declared", "check-plan-anchor-declared")],
+    )
+    assert _target_present(text=result, slug="check-plan-anchor-declared")
+    assert not _target_present(
+        text=result, slug="check-plan-thread-anchor-declared"
+    ), "the old, now-non-canonical slug must not remain wired"
+    assert (
+        "check-plan-anchor-declared:\n"
+        "    uv run python -m livespec_dev_tooling.checks.plan_anchor_declared\n" in result
+    )
+    assert _header_count(text=result, slug="check-plan-anchor-declared") == 1
+    assert (
+        _header_count(text=result, slug="check-plan-thread-anchor-declared") == 0
+    ), "the orphaned old recipe (importing a deleted module) must not remain"
 
 
 # ---------------------------------------------------------------------------
