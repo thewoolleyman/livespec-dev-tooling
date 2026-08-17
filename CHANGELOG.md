@@ -58,6 +58,18 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.26.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.25.0...v1.26.0) (2026-08-17)
+
+
+### Features
+
+* **ci:** batch the cheap checks — 60 matrix jobs become 5 gating jobs ([547895f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/547895f8a378aab97f6299270dbba5f6b8a50ccb))
+
+
+### Bug Fixes
+
+* **ci:** keep tool-backed lint/format as literal matrix legs ([bfdbe43](https://github.com/thewoolleyman/livespec-dev-tooling/commit/bfdbe435788f0dfb95428031c0d32f8f0aabc6d2))
+
 ## [1.25.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.24.9...v1.25.0) (2026-08-17)
 
 
