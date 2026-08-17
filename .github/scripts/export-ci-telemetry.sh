@@ -38,6 +38,14 @@ hex16() { printf '%016x' "$1"; }            # 8-byte span id
 run_json="$(gh run view "$RUN_ID" --repo "$REPO" \
   --json databaseId,headSha,headBranch,event,displayTitle,conclusion,createdAt,startedAt,updatedAt,jobs)"
 
+# Per-job queue time (work-item livespec-dev-tooling-yilyxr.3): `gh run view`'s
+# jobs projection carries startedAt but NOT created_at, so the wait-for-runner
+# interval was invisible — Honeycomb showed trivial jobs at P95 ~345s vs P50
+# 24s with no way to separate queue wait from execution slowdown. The REST
+# jobs endpoint carries both; build a databaseId -> created_at map once.
+job_created_json="$(gh api "repos/$REPO/actions/runs/$RUN_ID/jobs?per_page=100" --paginate \
+  -q '[.jobs[] | {id: .id, created_at: .created_at}]' | jq -sc 'add // []')"
+
 trace_id="$(hex32 "$RUN_ID")"
 run_span_id="$(hex16 "$RUN_ID")"
 run_start="$(iso_to_nanos "$(jq -r '.startedAt // .createdAt' <<<"$run_json")")"
@@ -78,18 +86,29 @@ while IFS=$'\t' read -r jid jname jconcl jstart_iso jend_iso; do
   jstart="$(iso_to_nanos "$jstart_iso")"
   jend="$(iso_to_nanos "$jend_iso")"
   jcode=2; [ "$jconcl" = "success" ] && jcode=1
+  # queue_ms: started_at - created_at from the REST map; 0 when the map has
+  # no row (defensive: a missing row must not drop the span).
+  jcreated_iso="$(jq -r --argjson id "$jid" '.[] | select(.id == $id) | .created_at // empty' <<<"$job_created_json")"
+  jqueue_ms=0
+  if [ -n "$jcreated_iso" ]; then
+    jcreated="$(iso_to_nanos "$jcreated_iso")"
+    jqueue_ms=$(( (jstart - jcreated) / 1000000 ))
+    [ "$jqueue_ms" -ge 0 ] || jqueue_ms=0
+  fi
   span="$(jq -nc \
     --arg trace "$trace_id" --arg span "$jspan_id" --arg parent "$run_span_id" \
     --arg name "ci.job.$jname" --arg start "$jstart" --arg end "$jend" \
     --arg repo "$REPO" --argjson run_id "$RUN_ID" \
-    --arg jname "$jname" --arg jconcl "$jconcl" --argjson code "$jcode" '
+    --arg jname "$jname" --arg jconcl "$jconcl" --argjson code "$jcode" \
+    --argjson jqueue "$jqueue_ms" '
     {traceId:$trace, spanId:$span, parentSpanId:$parent, name:$name, kind:1,
      startTimeUnixNano:$start, endTimeUnixNano:$end,
      attributes:[
        {key:"repo",value:{stringValue:$repo}},
        {key:"ci.run_id",value:{intValue:($run_id|tostring)}},
        {key:"ci.job.name",value:{stringValue:$jname}},
-       {key:"ci.job.conclusion",value:{stringValue:$jconcl}}
+       {key:"ci.job.conclusion",value:{stringValue:$jconcl}},
+       {key:"ci.job.queue_ms",value:{intValue:($jqueue|tostring)}}
      ],
      status:{code:$code}}')"
   job_spans="$(jq -c ". + [$span]" <<<"$job_spans")"
