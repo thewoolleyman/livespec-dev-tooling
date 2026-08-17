@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.25.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.24.9...v1.25.0) (2026-08-17)
+
+
+### Features
+
+* **telemetry:** export per-job queue time to Honeycomb (ci.job.queue_ms) ([5e4af91](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5e4af91d749e78120c3d34068019e517e01909d3))
+
 ## [1.24.9](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.24.8...v1.24.9) (2026-08-17)
 
 
