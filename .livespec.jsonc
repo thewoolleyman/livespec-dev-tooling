@@ -194,6 +194,9 @@
       "factories": {
         "hp": {
           "server": "https://hp-xubuntu.perch-rudd.ts.net:32276"
+        },
+        "vps": {
+          "server": "https://vps.perch-rudd.ts.net:32276"
         }
       }
     }
