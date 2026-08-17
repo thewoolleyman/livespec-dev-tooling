@@ -5,12 +5,13 @@ pattern: master CI failed weeks ago, every PR merged onto red master
 inherited the brokenness. The check ensures master CI is green at
 every commit.
 
-Three `gh` failure states are tested separately, because they do not
-deserve the same answer. A host with no `gh` binary, and a host whose
-`gh` holds no credential, were never able to check at all and skip
-gracefully so local pre-commit is not blocked. A host whose `gh` IS
-credentialed but whose API call failed attempted the check and got no
-answer — it has not proven master is green, so it fails loudly.
+Four `gh` failure states are tested separately, because they do not
+deserve the same answer. A host with no `gh` binary, a host whose `gh`
+holds no credential, and a host whose credential is rejected with HTTP
+401 were never able to check at all and skip gracefully so local
+pre-commit is not blocked. A host whose credentialed API call fails for
+any other reason attempted the check and got no answer — it has not
+proven master is green, so it fails loudly.
 """
 
 from __future__ import annotations
@@ -83,6 +84,7 @@ def _install_fake_gh(
     *,
     tmp_path: Path,
     stdout: str = "[]",
+    stderr: str = "",
     returncode: int = 0,
     auth_returncode: int = 0,
 ) -> str:
@@ -94,8 +96,8 @@ def _install_fake_gh(
     - `gh auth token` — the local credential probe. Exits `auth_returncode`
       (0 = a credential is stored, 1 = none), printing nothing, mirroring the
       real `gh` closely enough for the check while never emitting a token.
-    - anything else (i.e. `gh run list ...`) — prints `stdout` and exits
-      `returncode`.
+    - anything else (i.e. `gh run list ...`) — prints `stdout` to stdout,
+      `stderr` to stderr, and exits `returncode`.
 
     `auth_returncode` defaults to 0 because the credential probe only runs on
     the `gh run list` failure path, so a credentialed default leaves every
@@ -110,6 +112,7 @@ def _install_fake_gh(
         f"  exit {auth_returncode}\n"
         "fi\n"
         f"cat <<'STUB_EOF'\n{stdout}\nSTUB_EOF\n"
+        f"cat >&2 <<'STUB_EOF'\n{stderr}\nSTUB_EOF\n"
         f"exit {returncode}\n"
     )
     _ = gh_path.write_text(script, encoding="utf-8")
@@ -218,6 +221,45 @@ def test_gh_api_failure_without_credential_skips_gracefully(*, tmp_path: Path) -
     )
     assert "gh CLI has no stored credential" in result.stderr
     assert "gh auth login" in result.stderr
+
+
+def test_credentialed_http_401_skips_as_invalid_credential(*, tmp_path: Path) -> None:
+    """gh credential present but rejected with HTTP 401 → exit 0 with warning.
+
+    `gh auth token` proves only local credential presence, not validity. An
+    expired token arms the gate but still leaves this host unable to learn
+    master's CI state, matching the no-credential environmental category.
+    """
+    fake_path = _install_fake_gh(
+        tmp_path=tmp_path,
+        stdout="error",
+        stderr="HTTP 401: Bad credentials",
+        returncode=1,
+        auth_returncode=0,
+    )
+    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    assert result.returncode == 0, (
+        f"expected exit 0 for rejected gh credential; got {result.returncode}, "
+        f"stderr={result.stderr!r}"
+    )
+    assert "gh credential was rejected" in result.stderr
+
+
+def test_credentialed_http_503_still_fails_loudly(*, tmp_path: Path) -> None:
+    """gh credential present but API returns HTTP 503 → exit 1, never a pass."""
+    fake_path = _install_fake_gh(
+        tmp_path=tmp_path,
+        stdout="error",
+        stderr="HTTP 503: Service Unavailable",
+        returncode=1,
+        auth_returncode=0,
+    )
+    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    assert result.returncode == 1, (
+        f"expected exit 1 when GitHub returns HTTP 503; got {result.returncode}, "
+        f"stderr={result.stderr!r}"
+    )
+    assert "cannot prove master CI is green" in result.stderr
 
 
 def test_gh_api_failure_with_credential_fails_loudly(*, tmp_path: Path) -> None:

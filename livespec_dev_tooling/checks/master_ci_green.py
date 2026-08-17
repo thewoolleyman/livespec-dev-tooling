@@ -6,19 +6,21 @@ master inherited the brokenness, no agent surfaced it. The check
 ensures master CI is in a known-green state at every commit.
 
 External state: shells out to `gh run list` to fetch the most recent
-master CI run's conclusion. Three `gh` failure states are kept apart,
-because two of them mean "this host was never able to check at all"
+master CI run's conclusion. Four `gh` failure states are kept apart,
+because three of them mean "this host was never able to check at all"
 and one means "the check was attempted and returned no answer":
 
 - `gh` binary absent               -> exit 0 with a warning
 - `gh` present, no credential      -> exit 0 with a warning
-- `gh` credentialed, API call fails -> exit 1
+- `gh` credentialed, API returns 401 -> exit 0 with a warning
+- `gh` credentialed, API otherwise fails -> exit 1
 
-The first two are the local-developer tolerance the fail-soft exists
-for: someone who never installed or authenticated `gh` cannot learn
-master's CI state, and must not be blocked from running pre-commit.
-The third is not that case, and folding it into the same branch is
-what made this gate fail open.
+The first three are the local-developer/environmental tolerance the
+fail-soft exists for: someone who never installed `gh`, never
+authenticated `gh`, or whose locally-present credential is rejected
+cannot learn master's CI state, and must not be blocked from running
+pre-commit. The fourth is not that case, and folding it into the same
+branch is what made this gate fail open.
 
 That fold rested on the premise "CI sets GH_TOKEN so the call always
 succeeds there", which is false twice over. This check is one of the
@@ -35,9 +37,14 @@ does not pass.
 Credential presence is probed with `gh auth token`, deliberately not
 `gh auth status`: the token probe reads only local state and makes no
 network call, so an outage cannot flip a credentialed caller onto the
-fail-soft path and reopen the hole. That subprocess's stdout is the
-token itself; only its return code is ever read, and it is never
-logged.
+fail-soft path and reopen the hole. That means the probe proves
+presence, not validity: a present but expired/revoked/insufficiently
+scoped credential can still be rejected by the API. Exactly HTTP 401 is
+classified with the no-credential environmental branch because that
+caller also could not check master's CI state at all; HTTP 5xx and any
+other credentialed failure remain hard failures. The auth subprocess's
+stdout is the token itself; only its return code is ever read, and it is
+never logged.
 
 There is deliberately NO env lever, flag, or severity knob softening
 any of the above (wontfix li-4x3a45, broadened by maintainer directive
@@ -119,6 +126,46 @@ def _gh_has_stored_credential() -> bool:
     return completed.returncode == 0
 
 
+def _gh_failed_due_to_invalid_credential(*, stderr: str) -> bool:
+    """Return True when `gh` reports an HTTP 401 credential rejection."""
+    return "HTTP 401" in stderr
+
+
+def _classify_failed_gh_run(
+    *,
+    log: structlog.stdlib.BoundLogger,
+    stderr_full: str,
+) -> Literal["skip", "unprovable"]:
+    """Classify a failed `gh run list` after the API call returns non-zero."""
+    stderr = stderr_full.strip()[:200]
+    if not _gh_has_stored_credential():
+        log.warning(
+            "gh CLI has no stored credential; skipping master-CI-green check",
+            stderr=stderr,
+            hint="run `gh auth login` (or set GH_TOKEN) to arm the master-CI-green gate",
+        )
+        return "skip"
+    if _gh_failed_due_to_invalid_credential(stderr=stderr_full):
+        log.warning(
+            "gh credential was rejected; skipping master-CI-green check",
+            stderr=stderr,
+            hint=(
+                "refresh the gh credential; HTTP 401 means this host could not "
+                "check master CI state"
+            ),
+        )
+        return "skip"
+    log.error(
+        "gh api call failed while credentialed; cannot prove master CI is green",
+        stderr=stderr,
+        hint=(
+            "GitHub API error or outage - master CI state is unknown; "
+            "retry once the GitHub API is reachable"
+        ),
+    )
+    return "unprovable"
+
+
 def _fetch_latest_master_ci(
     *,
     log: structlog.stdlib.BoundLogger,
@@ -129,8 +176,8 @@ def _fetch_latest_master_ci(
     `conclusion` is None until the run completes.
 
     Returns the literal `"skip"` when this host was never able to check —
-    no `gh` binary, no stored credential, or no CI runs on master yet —
-    which the caller treats as a non-blocking pass.
+    no `gh` binary, no stored credential, invalid credential, or no CI runs
+    on master yet — which the caller treats as a non-blocking pass.
 
     Returns the literal `"unprovable"` when a credentialed `gh` attempted
     the call and it failed. That is NOT a skip: the gate was armed, it ran,
@@ -161,22 +208,10 @@ def _fetch_latest_master_ci(
         check=False,
     )
     if completed.returncode != 0:
-        if not _gh_has_stored_credential():
-            log.warning(
-                "gh CLI has no stored credential; skipping master-CI-green check",
-                stderr=completed.stderr.strip()[:200],
-                hint="run `gh auth login` (or set GH_TOKEN) to arm the master-CI-green gate",
-            )
-            return "skip"
-        log.error(
-            "gh api call failed while credentialed; cannot prove master CI is green",
-            stderr=completed.stderr.strip()[:200],
-            hint=(
-                "GitHub API error or outage - master CI state is unknown; "
-                "retry once the GitHub API is reachable"
-            ),
+        return _classify_failed_gh_run(
+            log=log,
+            stderr_full=completed.stderr,
         )
-        return "unprovable"
     parsed = json.loads(completed.stdout)
     if not isinstance(parsed, list) or not parsed:
         log.warning(
