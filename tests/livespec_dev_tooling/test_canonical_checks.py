@@ -440,3 +440,60 @@ def test_validate_world_gate_subset_raises_for_non_canonical_slug() -> None:
             world_gates=("check-not-a-real-check",),
             canonical=("check-foo",),
         )
+
+
+def test_canonical_check_renames_returns_the_curated_rename_map() -> None:
+    """`canonical_check_renames()` returns exactly the curated old->new rename pairs.
+
+    Seeded with the three renames from `042a7854` ("retire 'plan thread'
+    vocabulary in check module names and slugs", epic livespec-dev-tooling-jaut4y):
+    the OLD `plan_thread_*` modules were deleted from `checks/`, so a consumer
+    whose justfile/CI still wires the old slug breaks with `ModuleNotFoundError`
+    the moment its pin bumps past that commit (livespec-dev-tooling-3gy1). The
+    reconcile modules consult this map to rewrite a stranded old slug to its
+    replacement instead of leaving it to explode.
+    """
+    module = _import_canonical_checks()
+
+    renames = module.canonical_check_renames()
+
+    assert renames == (
+        ("check-plan-thread-anchor-declared", "check-plan-anchor-declared"),
+        ("check-plan-thread-epic-parity", "check-plan-epic-parity"),
+        ("check-plan-thread-no-tombstone", "check-plan-no-tombstone"),
+    ), f"rename map must be the curated three-pair set; got {renames}"
+
+
+def test_canonical_check_renames_new_slugs_are_canonical() -> None:
+    """Every rename's `new` slug is a real canonical check slug (the old slug is not)."""
+    module = _import_canonical_checks()
+
+    renames = module.canonical_check_renames()
+    canonical = unsafe_perform_io(module.canonical_check_slugs().unwrap())
+
+    for old, new in renames:
+        assert new in canonical, f"rename target {new} missing from canonical set"
+        assert old not in canonical, f"rename source {old} must NOT still be canonical"
+
+
+def test_validate_check_renames_passes_for_canonical_targets() -> None:
+    """`_validate_check_renames` is a no-op when every rename target is canonical."""
+    module = _import_canonical_checks()
+
+    result = module._validate_check_renames(  # noqa: SLF001  — internal invariant guard under test
+        renames=(("check-old", "check-new"),),
+        canonical=("check-new", "check-other"),
+    )
+
+    assert result is None
+
+
+def test_validate_check_renames_raises_for_non_canonical_target() -> None:
+    """`_validate_check_renames` raises AssertionError when a rename target isn't canonical."""
+    module = _import_canonical_checks()
+
+    with pytest.raises(AssertionError):
+        module._validate_check_renames(  # noqa: SLF001  — internal invariant guard under test
+            renames=(("check-old", "check-not-a-real-check"),),
+            canonical=("check-foo",),
+        )
