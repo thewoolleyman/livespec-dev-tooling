@@ -34,7 +34,7 @@ Reading a kill as a refusal sends you hunting a defect that does not
 exist. Reading a refusal as a kill sends you retrying a commit the gate
 has already rejected. Neither may be guessed.
 
-## The mechanism: `scripts/gate-run.sh`
+## The mechanism: `dev-tooling/gate-run.sh` (pack-materialized)
 
 Gate **runtime** is decoupled from harness **patience**. The gate runs
 in its own detached session that outlives the tool call; a separate,

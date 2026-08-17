@@ -36,6 +36,7 @@ from livespec_dev_tooling.checks._primary_checkout_worktree_pack import (
 from livespec_dev_tooling.install_worktree_pack import (
     CANONICAL_BRANCH_PROTECTION_BODY,
     CANONICAL_BRANCH_PROTECTION_JUST_BODY,
+    CANONICAL_GATE_RUN_BODY,
     CANONICAL_WORKTREE_JUST_BODY,
     CANONICAL_WORKTREE_LIB_BODY,
     main,
@@ -48,6 +49,7 @@ __all__: list[str] = []
 _PACK_SCRIPT_EXPECTED: tuple[tuple[str, str], ...] = (
     ("worktree-lib.sh", CANONICAL_WORKTREE_LIB_BODY),
     ("branch-protection.sh", CANONICAL_BRANCH_PROTECTION_BODY),
+    ("gate-run.sh", CANONICAL_GATE_RUN_BODY),
 )
 
 # Every pack file basename paired with its canonical body.

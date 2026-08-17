@@ -861,43 +861,15 @@ check-scoped:
 # ---------------------------------------------------------------
 # Detached gate runs — decouple gate RUNTIME from harness PATIENCE.
 #
-# The committed `.claude/settings.json` caps a Bash tool call at
-# BASH_MAX_TIMEOUT_MS=1200000. The commit aggregate measures 593s/1043s
-# unloaded and exceeds that ceiling under sustained fleet load, at which
-# point the harness kills the tool call and the agent sees NO exit code,
-# NO hook output and NO verdict — a kill that is indistinguishable from
-# a hook refusal. These recipes run the SAME gate, with the SAME hooks,
-# over the SAME targets, in a detached session that outlives the tool
-# call, and report the verdict when it lands.
-#
-# Nothing is weakened. A run that does not finish reports the dedicated
-# terminal state DIED_WITHOUT_VERDICT; it can never read as a pass.
+# The gate-start / gate-wait / gate-status / gate-list recipes now ship
+# in the worktree-discipline pack's `worktree.just` fragment (imported
+# above), backed by the canonical `dev-tooling/gate-run.sh` body the
+# pack materializes — the same single-source pattern as the worktree
+# recipes, so every governed repo gets the detached runner from
+# `just bootstrap` with no per-repo wiring (work-item
+# livespec-dev-tooling-yilyxr.7). A run that does not finish reports
+# DIED_WITHOUT_VERDICT; it can never read as a pass.
 # ---------------------------------------------------------------
-
-# Launch a gate command detached and print its run id. Returns in well
-# under a second, so it runs FOREGROUND:
-#     just gate-start -- mise exec -- git commit --amend --no-edit
-#     just gate-start -- just check
-[positional-arguments]
-gate-start *args:
-    scripts/gate-run.sh start "$@"
-
-# Block until a run reaches a terminal state, print the verdict, and
-# exit with the gate's own exit code (75 = DIED_WITHOUT_VERDICT). This
-# is the command to hand to `run_in_background: true`: killing the
-# waiter does not touch the gate, and it can simply be re-issued.
-[positional-arguments]
-gate-wait *args:
-    scripts/gate-run.sh wait "$@"
-
-# One-shot verdict for a run (default: the most recent). Never blocks.
-[positional-arguments]
-gate-status *args:
-    scripts/gate-run.sh status "$@"
-
-# Recorded gate runs with their derived state, oldest first.
-gate-list:
-    scripts/gate-run.sh list
 
 # ---------------------------------------------------------------
 # Pre-commit auxiliary gates.

@@ -58,5 +58,6 @@ Temporary Items
 # commit-refuse hooks are installed into the untracked shared .git/hooks/.
 /dev-tooling/worktree-lib.sh
 /dev-tooling/branch-protection.sh
+/dev-tooling/gate-run.sh
 /dev-tooling/worktree.just
 /dev-tooling/branch-protection.just
