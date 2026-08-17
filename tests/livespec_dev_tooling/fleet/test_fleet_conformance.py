@@ -746,6 +746,11 @@ def _patch_runner(
     # so SILENTLY, since a failed download is a legitimate named skip rather than
     # an error the test could notice.
     monkeypatch.setattr(fleet_conformance, "default_gh_downloader", make_downloader())
+    # Keep `main()` tests on the canned remote fixtures. If a test patches
+    # `resolve_repo_name` to a fixture member while leaving local_vantage live,
+    # the public-api row can scan this real checkout as though it were that
+    # fixture repo, which makes the test depend on sandbox contents and runtime.
+    monkeypatch.setattr(fleet_conformance, "local_vantage", lambda **_kwargs: (None, None))
 
 
 def test_main_lever_unset_skips_with_exit_zero(*, monkeypatch: pytest.MonkeyPatch) -> None:
