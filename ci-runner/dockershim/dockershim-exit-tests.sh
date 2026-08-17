@@ -149,6 +149,7 @@ cat >"$FAKE_ENV" <<'EOF'
   printf 'HOME=%s\n' "${HOME-<unset>}"
   printf 'PATH=%s\n' "${PATH-<unset>}"
   printf 'XDG_RUNTIME_DIR=%s\n' "${XDG_RUNTIME_DIR-<unset>}"
+  printf 'CONTAINER_HOST=%s\n' "${CONTAINER_HOST-<unset>}"
 } >"$FAKE_DOCKER_ENV_LOG"
 exit 0
 EOF
@@ -183,6 +184,33 @@ if grep -qx "XDG_RUNTIME_DIR=/run/user/$(id -u)" "$TMP/env.log"; then
   ok "T14 an absent XDG_RUNTIME_DIR is defaulted to the per-user runtime dir"
 else
   bad "T14 XDG_RUNTIME_DIR repaired (got: $(grep '^XDG_RUNTIME_DIR=' "$TMP/env.log"))"
+fi
+
+if grep -qx "CONTAINER_HOST=unix:///run/user/$(id -u)/podman/podman.sock" "$TMP/env.log"; then
+  ok "T26 CONTAINER_HOST is derived from the repaired XDG_RUNTIME_DIR (routes through podman.service)"
+else
+  bad "T26 CONTAINER_HOST derived from XDG_RUNTIME_DIR (got: $(grep '^CONTAINER_HOST=' "$TMP/env.log"))"
+fi
+
+printf '\n== T27: CONTAINER_HOST is derived, never trusted from the inbound DOCKER_HOST ==\n'
+# The container hooks hand this shim DOCKER_HOST pointing at whatever the job
+# container sees, not necessarily the real host socket. CONTAINER_HOST must be
+# computed from the (already-repaired) XDG_RUNTIME_DIR, exactly like HOME/PATH
+# above — never copied from an inbound DOCKER_HOST/CONTAINER_HOST, foreign or
+# otherwise.
+: >"$TMP/env.log"
+env -u XDG_RUNTIME_DIR \
+    DOCKER_HOST="unix:///not/the/real/socket.sock" \
+    CONTAINER_HOST="unix:///also/not/real.sock" \
+    CI_RUNNER_REAL_DOCKER="$FAKE_ENV" \
+    CI_RUNNER_PODMAN_LOCK="$LOCKFILE" \
+    FAKE_DOCKER_ENV_LOG="$TMP/env.log" \
+    timeout 3 "$SHIM" ps --all >/dev/null 2>&1
+
+if grep -qx "CONTAINER_HOST=unix:///run/user/$(id -u)/podman/podman.sock" "$TMP/env.log"; then
+  ok "T27 an inbound (foreign) DOCKER_HOST/CONTAINER_HOST is never trusted, only the derived value is used"
+else
+  bad "T27 inbound DOCKER_HOST/CONTAINER_HOST ignored (got: $(grep '^CONTAINER_HOST=' "$TMP/env.log"))"
 fi
 
 printf '\n== T15-T18: missing bind SOURCES are created on create, as dockerd would ==\n'

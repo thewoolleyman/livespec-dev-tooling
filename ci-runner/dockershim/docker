@@ -105,6 +105,34 @@ export HOME
 export PATH="${PATH:+$PATH:}/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 
+# ISSUE C FIX (incident livespec-s43svm.21, 2026-08-16/17): route every podman
+# invocation through the ONE long-lived `podman.service` daemon instead of each
+# invocation opening libpod's SQLite state file directly in-process.
+#
+# Confirmed live on poweredge-xubuntu: a bare `podman` call with DOCKER_HOST
+# set (the container hooks' own variable, restored above via XDG_RUNTIME_DIR)
+# but no CONTAINER_HOST and no `--remote` runs in LOCAL mode — `podman.service`
+# stayed "inactive (dead)" throughout. The SAME call with CONTAINER_HOST set
+# instead visibly activated `podman.service` via its systemd socket. DOCKER_HOST
+# is docker-CLI's own variable; podman only auto-switches to remote/client mode
+# on CONTAINER_HOST (or an explicit `--remote`). So this shim — and therefore
+# every containerized job step — has been hitting the shared libpod SQLite
+# state file directly, from a fresh process per invocation, this whole time.
+# That is the exact CLI-per-invocation contention pattern podman's own issue
+# tracker documents as unresolved for concurrent access (containers/podman
+# issues #20563, #18356, #17859), and it is why livespec-s43svm.11's WAL-mode
+# migration (ci-runner/dockershim/podman-wal-migrate.sh) reduced but did not
+# eliminate `database is locked` under real concurrent load — recurrence:
+# livespec-overseer PR #984, 2026-08-16T08:29:12Z.
+#
+# Derived from the ALREADY-REPAIRED XDG_RUNTIME_DIR above, not trusted from the
+# inbound DOCKER_HOST, for the same reason HOME/PATH are repaired rather than
+# trusted: the container hooks hand this shim a scrubbed/foreign environment.
+# Exported unconditionally: no real docker/hook argv ever bare-passes
+# CONTAINER_HOST into a container (it is not a docker-compat variable at all),
+# so there is no create-time bake-in path for it to leak, unlike HOME.
+export CONTAINER_HOST="unix://${XDG_RUNTIME_DIR}/podman/podman.sock"
+
 # Rewrite a bare `-e HOME` / `--env HOME` (no `=value`) back to the ORIGINAL
 # HOME, so the container is baked with what the hooks intended rather than this
 # shim's own repaired HOME. Populates the global array REWRITTEN_ARGV; only
