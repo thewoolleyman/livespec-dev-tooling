@@ -69,6 +69,7 @@ from pathlib import Path
 
 __all__: list[str] = [
     "baseline_check_slugs",
+    "canonical_check_renames",
     "canonical_check_slugs",
     "main",
     "world_gate_check_slugs",
@@ -143,6 +144,30 @@ _WORLD_GATE_CHECK_SLUGS: tuple[str, ...] = (
     "check-branch-protection-alignment",
     "check-master-ci-green",
     "check-plan-epic-parity",
+)
+
+# Renamed canonical checks: old slug -> new slug. The canonical set is a
+# FILESYSTEM WALK (`_discover_slugs`), so once a `checks/<old>.py` module is
+# renamed to `checks/<new>.py` the old slug simply falls out of the walk —
+# nothing else in this module remembers that the two names were ever the same
+# check. A consumer's justfile/CI, left holding the OLD slug (auto-wired by
+# `cross_repo.justfile_canonical_reconcile` / `ci_yaml_canonical_reconcile` back
+# when it WAS canonical), then bumps past the rename commit and its CI runs a
+# `just check-<old-slug>` recipe importing a module that no longer exists —
+# `ModuleNotFoundError`, on a bump PR that is otherwise routine
+# (livespec-dev-tooling-3gy1). The two reconcile modules consult this map to
+# REWRITE a stranded old slug to its replacement (recipe, module import, and
+# CI matrix bullet alike) instead of leaving it to explode.
+#
+# A curated, hand-maintained registry (not filesystem-derived) — a rename is a
+# product event, not something the walk can infer on its own. Seeded with the
+# three renames from `042a7854` ("retire 'plan thread' vocabulary in check
+# module names and slugs", epic livespec-dev-tooling-jaut4y). Every `new` entry
+# MUST also be a canonical slug; `canonical_check_renames()` asserts this.
+_CANONICAL_CHECK_RENAMES: tuple[tuple[str, str], ...] = (
+    ("check-plan-thread-anchor-declared", "check-plan-anchor-declared"),
+    ("check-plan-thread-epic-parity", "check-plan-epic-parity"),
+    ("check-plan-thread-no-tombstone", "check-plan-no-tombstone"),
 )
 
 
@@ -271,6 +296,26 @@ def _validate_world_gate_subset(
         )
 
 
+def _validate_check_renames(
+    *, renames: tuple[tuple[str, str], ...], canonical: tuple[str, ...]
+) -> None:
+    """Assert every rename's `new` slug is also a canonical check slug.
+
+    Invariant guard mirroring `_validate_world_gate_subset`: a rename entry
+    whose `new` side has no backing `checks/<slug>.py` module is a registry bug
+    (a typo, or the rename map drifting from a later re-rename), not an
+    expected runtime condition — so it trips an `assert` rather than the
+    Result failure track. The `old` side is deliberately NOT asserted absent
+    from `canonical`: nothing breaks if a future check happens to reuse a
+    retired slug name, and asserting it would make this guard fight that.
+    """
+    for _old, new in renames:
+        assert new in canonical, (  # noqa: S101  — invariant guard; `raise` is banned outside io/
+            f"canonical check rename target {new!r} has no canonical check module; "
+            "every rename's new slug MUST also appear in canonical_check_slugs()"
+        )
+
+
 def baseline_check_slugs() -> tuple[str, ...]:
     """Return the alphabetically-sorted tuple of baseline-profile check slugs.
 
@@ -326,6 +371,28 @@ def world_gate_check_slugs() -> IOResult[tuple[str, ...], ChecksPackageUnreadabl
         world_gates=world_gates, canonical=unsafe_perform_io(canonical.unwrap())
     )
     return IOSuccess(world_gates)
+
+
+def canonical_check_renames() -> tuple[tuple[str, str], ...]:
+    """Return the curated `(old_slug, new_slug)` tuple of renamed canonical checks.
+
+    A curated static registry (`_CANONICAL_CHECK_RENAMES`), NOT filesystem-
+    derived — see that constant's docstring for why a rename cannot be inferred
+    from the walk alone. `cross_repo.justfile_canonical_reconcile` and
+    `cross_repo.ci_yaml_canonical_reconcile` consult this map to rewrite a
+    consumer's stranded old slug to its replacement during a bump, instead of
+    leaving a `ModuleNotFoundError` for CI to discover (livespec-dev-tooling-3gy1).
+
+    `.unwrap()` is FAIL-CLOSED and deliberate, matching `baseline_check_slugs`:
+    this function is not consumed across any I/O boundary of its own (its two
+    reconcile-module callers already run inside `main()`'s own IO context), so
+    v178 does not make it public and the Result-return rule does not reach it.
+    """
+    renames = tuple(sorted(_CANONICAL_CHECK_RENAMES))
+    _validate_check_renames(
+        renames=renames, canonical=unsafe_perform_io(canonical_check_slugs().unwrap())
+    )
+    return renames
 
 
 def _build_parser() -> argparse.ArgumentParser:
