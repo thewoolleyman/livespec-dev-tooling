@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.28.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.28.3...v1.28.4) (2026-08-17)
+
+
+### Bug Fixes
+
+* **checks:** reject pi zero-exit model failures ([9c5472e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9c5472e1aea5b994c2b850a9f7e89df947e46315))
+* paginate fleet discovery sweep ([3963358](https://github.com/thewoolleyman/livespec-dev-tooling/commit/3963358c0cd5c1d9988e3dc6fd7dbb3366ac7cf1))
+
 ## [1.28.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.28.2...v1.28.3) (2026-08-17)
 
 
