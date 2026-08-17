@@ -72,6 +72,7 @@ _LATEST_ARGS: tuple[str, ...] = ("api", "repos/acme/livespec-dev-tooling/release
 _SECRETS_ARGS: tuple[str, ...] = ("api", "repos/acme/widget/actions/secrets")
 _INSTALL_ARGS: tuple[str, ...] = ("api", "installation/repositories?per_page=100")
 _REPOS_ARGS: tuple[str, ...] = ("api", "users/acme/repos?per_page=100")
+_REPOS_PAGE_2_ARGS: tuple[str, ...] = ("api", "users/acme/repos?per_page=100&page=2")
 
 # The exact `event` string `run_member_rows` emits for a row that applied to at
 # least one member and was evaluable for none of them. Asserted verbatim (the
@@ -715,6 +716,17 @@ def test_discovery_sweep_flags_unmanifested_fleet_repos() -> None:
     ctx = make_context(table=table)
     manifest = fetch_manifest(ctx=ctx).unwrap()
     assert run_discovery_sweep(ctx=ctx, manifest=manifest, log=_log()) == 2
+
+
+def test_discovery_sweep_paginates_owner_repo_list() -> None:
+    table = _green_table()
+    table[_REPOS_ARGS] = ok(
+        payload=[{"name": f"unrelated-{index}", "topics": []} for index in range(100)]
+    )
+    table[_REPOS_PAGE_2_ARGS] = ok(payload=[{"name": "livespec-driver-pi", "topics": []}])
+    ctx = make_context(table=table)
+    manifest = fetch_manifest(ctx=ctx).unwrap()
+    assert run_discovery_sweep(ctx=ctx, manifest=manifest, log=_log()) == 1
 
 
 def test_discovery_sweep_uses_fleet_shape_wording() -> None:
