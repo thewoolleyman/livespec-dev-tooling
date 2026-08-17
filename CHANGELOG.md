@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.28.5](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.28.4...v1.28.5) (2026-08-17)
+
+
+### Bug Fixes
+
+* **master-ci:** classify rejected gh credentials ([c3e1ca7](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c3e1ca7550ab331aeb39e2ce0d06d18f479d8da7))
+
 ## [1.28.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.28.3...v1.28.4) (2026-08-17)
 
 
