@@ -293,6 +293,131 @@ def test_nothing_missing_is_a_noop() -> None:
     assert result == _CI_YAML
 
 
+def test_stranded_renamed_bullet_is_rewritten_to_new_slug() -> None:
+    """A CI matrix bullet naming a since-renamed slug is rewritten, not left stranded.
+
+    By the time this reconcile runs, the sibling justfile reconcile has already
+    rewritten the justfile's wired slug from old to new (livespec-dev-tooling-3gy1),
+    so `check-plan-anchor-declared` is what the justfile aggregate now wires. The
+    ci.yml anchor matrix, however, still carries the OLD bullet from before the
+    upstream rename — left as-is, `just check-plan-thread-anchor-declared` has no
+    recipe anymore (the justfile fix dropped it) and the job fails. The rename map
+    must replace the old bullet with the new slug rather than adding a second one.
+    """
+    ci_yaml = """name: CI
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target:
+          - check-aggregate-completeness
+          - check-plan-thread-anchor-declared
+    steps:
+      - run: just ${{ matrix.target }}
+"""
+    justfile = """check:
+    targets=(
+        check-aggregate-completeness
+        check-plan-anchor-declared
+    )
+"""
+    result = ci_yaml_canonical_reconcile.reconcile_ci_yaml_text(
+        ci_yaml_text=ci_yaml,
+        justfile_text=justfile,
+        canonical_slugs=("check-aggregate-completeness", "check-plan-anchor-declared"),
+        world_gates=(),
+        renames=(("check-plan-thread-anchor-declared", "check-plan-anchor-declared"),),
+    )
+    assert (
+        _bullet_order(text=result)
+        == [
+            "check-aggregate-completeness",
+            "check-plan-anchor-declared",
+        ]
+    ), f"old bullet must be replaced by the new slug, not duplicated; got {_bullet_order(text=result)}"
+
+
+def test_rename_whose_old_bullet_is_not_present_is_a_noop() -> None:
+    """A rename entry whose OLD bullet is not in the matrix at all changes nothing.
+
+    The rename map is curated fleet-wide and consulted unconditionally; a
+    consumer that already carries only the NEW bullet (never having wired the
+    old one) must see zero rewrite.
+    """
+    ci_yaml = """name: CI
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target:
+          - check-aggregate-completeness
+          - check-plan-anchor-declared
+    steps:
+      - run: just ${{ matrix.target }}
+"""
+    justfile = """check:
+    targets=(
+        check-aggregate-completeness
+        check-plan-anchor-declared
+    )
+"""
+    result = ci_yaml_canonical_reconcile.reconcile_ci_yaml_text(
+        ci_yaml_text=ci_yaml,
+        justfile_text=justfile,
+        canonical_slugs=("check-aggregate-completeness", "check-plan-anchor-declared"),
+        world_gates=(),
+        renames=(("check-plan-thread-anchor-declared", "check-plan-anchor-declared"),),
+    )
+    assert result == ci_yaml
+
+
+def test_rename_drops_old_bullet_when_new_bullet_already_present() -> None:
+    """When BOTH the old and new bullets are already in the matrix, the old is dropped.
+
+    A maintainer (or an earlier partial reconcile) may have already added the
+    NEW bullet by hand while the OLD one lingers — the rewrite must not leave
+    both, since the old one still points at a since-deleted check module.
+    """
+    ci_yaml = """name: CI
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target:
+          - check-aggregate-completeness
+          - check-plan-anchor-declared
+          - check-plan-thread-anchor-declared
+    steps:
+      - run: just ${{ matrix.target }}
+"""
+    justfile = """check:
+    targets=(
+        check-aggregate-completeness
+        check-plan-anchor-declared
+    )
+"""
+    result = ci_yaml_canonical_reconcile.reconcile_ci_yaml_text(
+        ci_yaml_text=ci_yaml,
+        justfile_text=justfile,
+        canonical_slugs=("check-aggregate-completeness", "check-plan-anchor-declared"),
+        world_gates=(),
+        renames=(("check-plan-thread-anchor-declared", "check-plan-anchor-declared"),),
+    )
+    assert (
+        _bullet_order(text=result)
+        == [
+            "check-aggregate-completeness",
+            "check-plan-anchor-declared",
+        ]
+    ), f"the duplicate old bullet must be dropped, not kept alongside the new one; got {_bullet_order(text=result)}"
+
+
 # ---------------------------------------------------------------------------
 # reconcile_ci_yaml_text — the non-reconcilable justfile shapes (skip branches).
 # ---------------------------------------------------------------------------
