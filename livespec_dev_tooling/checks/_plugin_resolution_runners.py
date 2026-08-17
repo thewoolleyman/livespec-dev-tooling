@@ -8,6 +8,7 @@ and Pi's non-interactive skill runner with explicit per-run trust approval.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass, field
@@ -32,6 +33,14 @@ __all__: list[str] = [
 # boundary in `testing._cli_e2e_driver`.
 _COVERAGE_PROCESS_START_VAR = "COVERAGE_PROCESS_START"
 _COVERAGE_CHILD_VAR_PREFIX = "COV_CORE_"
+_PI_MODEL_FAILURE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(
+        r"^\s*(?:error|apierror|badrequesterror|request failed|model call failed|"
+        r"failed to call model)\b.*\b(?:400|bad request)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"^\s*(?:400\b.*\bbad request\b|bad request\b.*\b400\b)", re.IGNORECASE),
+)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -167,6 +176,14 @@ def _pi_skill_command(*, canonical_command: str) -> str:
     return canonical_command
 
 
+def _pi_output_has_model_call_failure(*, stdout: str, stderr: str) -> bool:
+    """Return whether a pi transcript carries a known model-call failure shape."""
+    for line in [*stderr.splitlines(), *stdout.splitlines()]:
+        if any(pattern.search(line) is not None for pattern in _PI_MODEL_FAILURE_PATTERNS):
+            return True
+    return False
+
+
 @dataclass(frozen=True, kw_only=True)
 class PiResolutionRunner:
     """Production Pi live-resolution runner.
@@ -186,4 +203,8 @@ class PiResolutionRunner:
             prompt=_pi_skill_command(canonical_command=canonical_command),
             cwd=Path.cwd(),
         )
-        return ResolutionOutcome(available=True, resolved=result.exit_code == 0)
+        resolved = result.exit_code == 0 and not _pi_output_has_model_call_failure(
+            stdout=result.stdout,
+            stderr=result.stderr,
+        )
+        return ResolutionOutcome(available=True, resolved=resolved)
