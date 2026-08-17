@@ -73,7 +73,7 @@ if str(_VENDOR_DIR) not in sys.path:
 from returns.result import Failure  # noqa: E402  — vendor-path-aware.
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
-from livespec_dev_tooling.canonical_checks import world_gate_check_slugs  # noqa: E402
+from livespec_dev_tooling import canonical_checks  # noqa: E402
 from livespec_dev_tooling.checks._check_aggregate_failures import (  # noqa: E402
     TargetsArrayUnterminated,
 )
@@ -281,15 +281,45 @@ def _insert_index(*, lines: list[str], anchor: _Anchor, canonical_set: set[str],
     return anchor.head if last_canonical is None else last_canonical + 1
 
 
+def _rewrite_renamed_bullets(
+    *, ci_yaml_text: str, renames: Sequence[tuple[str, str]], canonical_set: set[str]
+) -> str:
+    """Rewrite a CI matrix bullet naming a since-renamed slug to its NEW name.
+
+    Mirrors the sibling `justfile_canonical_reconcile._rewrite_renamed_references`:
+    a canonical check rename drops the OLD slug from the canonical set with no
+    trace, so a consumer's ci.yml matrix bullet still naming it strands the bump
+    on `just check-<old-slug>` once the sibling justfile reconcile has already
+    rewritten that recipe away (livespec-dev-tooling-3gy1). For every rename
+    whose `new` side is canonical, rewrites the OLD bullet in place to the NEW
+    slug — or, when a NEW bullet is ALREADY present elsewhere in the matrix
+    (a maintainer or an earlier pass already added it), drops the now-duplicate
+    OLD bullet line entirely rather than leaving two.
+    """
+    lines = ci_yaml_text.splitlines(keepends=True)
+    for old, new in renames:
+        tokens = [m.group(2) if (m := _BULLET.match(ln)) else None for ln in lines]
+        if new not in canonical_set or old not in tokens:
+            continue
+        i = tokens.index(old)
+        new_line = f"{lines[i][: len(lines[i]) - len(lines[i].lstrip())]}- {new}\n"
+        lines[i : i + 1] = [] if new in tokens else [new_line]
+    return "".join(lines)
+
+
 def _reconcile(
     *,
     ci_yaml_text: str,
     justfile_text: str,
     canonical_slugs: Sequence[str],
     world_gates: Sequence[str],
+    renames: Sequence[tuple[str, str]] = (),
 ) -> _ReconcileResult:
     """Pure core — reconcile the consumer ci.yml against the canonical slug set."""
     canonical_set = set(canonical_slugs)
+    ci_yaml_text = _rewrite_renamed_bullets(
+        ci_yaml_text=ci_yaml_text, renames=renames, canonical_set=canonical_set
+    )
     targets = _justfile_targets(justfile_text=justfile_text)
     if isinstance(targets, str):
         return _ReconcileResult(
@@ -332,6 +362,7 @@ def reconcile_ci_yaml_text(
     justfile_text: str,
     canonical_slugs: Sequence[str],
     world_gates: Sequence[str],
+    renames: Sequence[tuple[str, str]] = (),
 ) -> str:
     """Reconcile `ci_yaml_text` against `canonical_slugs`, returning the new text.
 
@@ -339,13 +370,16 @@ def reconcile_ci_yaml_text(
     text-in / text-out entry point the test suite calls. Returns the input
     unchanged when no reconcile applies — including when slugs must be adopted
     but no anchor matrix exists, which `main()` alone escalates to an `::error::`
-    rather than guessing where the entries belong.
+    rather than guessing where the entries belong. `renames` is the
+    `canonical_checks.canonical_check_renames()` old->new map; defaults to
+    empty so existing callers are unaffected.
     """
     return _reconcile(
         ci_yaml_text=ci_yaml_text,
         justfile_text=justfile_text,
         canonical_slugs=canonical_slugs,
         world_gates=world_gates,
+        renames=renames,
     ).text
 
 
@@ -401,7 +435,8 @@ def main() -> int:
         ci_yaml_text=ci_yaml_text,
         justfile_text=justfile.read_text(encoding="utf-8"),
         canonical_slugs=_slugs_from_env(),
-        world_gates=unsafe_perform_io(world_gate_check_slugs().unwrap()),
+        world_gates=unsafe_perform_io(canonical_checks.world_gate_check_slugs().unwrap()),
+        renames=canonical_checks.canonical_check_renames(),
     )
 
     if result.skipped_reason is not None:
