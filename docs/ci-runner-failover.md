@@ -1,87 +1,84 @@
-# CI runner failover
+# CI runner routing and hosted fallback
 
-`reusable-ci-runner-router.yml` chooses exactly one execution lane for ordinary
-CI before any job that could use the local pool is created. It always runs its
-selector on `ubuntu-latest`, then emits either `['ubuntu-latest']` or the
-caller-supplied self-hosted label JSON. It never emits a mixed label array:
-GitHub matches every label in an array and does not retry an unmatched
-self-hosted job on a hosted runner.
+Ordinary CI for this repository routes through the `CI_RUNNER_LABELS`
+repository variable, read directly at each gating job's `runs-on`:
 
-## Normal operation
+```yaml
+runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+```
 
-Callers supply their local labels in source control, rather than treating a
-mutable repository variable as the routing decision. In `auto` mode the router
-uses the read-only Actions runner API and selects local only after two bounded
-observations, separated by 30 seconds, each find an online, idle runner
-carrying every required label. An API error, no matching runner, or a recovery
-flap selects `ubuntu-latest` immediately. The job summary records the lane,
-safe reason, and both probe results, including how long the first probe
-waited through saturation; automatic mode makes at most two API list requests
-plus one per saturation poll, a deliberate rate/cost cap.
+This is the same pattern the other fleet repositories on self-hosted capacity
+use, and it is the posture ratified in `SPECIFICATION/constraints.md`
+§"CI matrix shape".
 
-## Outage vs. saturation
+The value is exactly one complete label set — never a mixed array. GitHub
+matches *every* label in the array and does **not** retry an unmatched
+self-hosted job on a hosted runner, so a partially-matching array strands the
+job in the queue rather than falling back.
 
-The first probe distinguishes two different kinds of "no idle runner right
-now," because they call for different responses:
+## Routing and reverting
 
-- **Outage** — zero runners online at all that carry the required labels
-  (`online_matching == 0`), or an API/parse error. This routes to hosted
-  **immediately**, with no waiting: the pool is unavailable, and waiting
-  cannot help.
-- **Saturation** — at least one matching runner is online, but every one of
-  them is currently busy (`online_matching > 0`, `idle_matching == 0`). This
-  is routine, expected fleet behavior, not an incident: the pool is healthy,
-  just fully booked. The probe polls on `saturation-poll-interval-seconds`
-  (default 15s) for up to `saturation-grace-seconds` — a `workflow_call`
-  input on the reusable router, **default 300 seconds (5 minutes)** — before
-  giving up. As soon as any poll observes an idle matching runner, the job
-  routes local immediately; it never waits out the rest of the window.
+- **To self-hosted**: set `CI_RUNNER_LABELS` to the target's label set. For an
+  ARC scale set that is the scale set *name*, e.g.
+  `["livespec-dev-tooling-k3s"]` — ARC routes by scale-set name, not by label.
+- **Back to hosted**: set it to `["ubuntu-latest"]`, or delete the variable so
+  the inline fallback applies.
 
-The 5-minute default is deliberate, not arbitrary. Some repos in the fleet —
-`homelab` is the motivating example — have no warm build cache (e.g. no Nix
-binary cache) on GitHub-hosted runners. A cache-cold hosted job on such a repo
-can run an order of magnitude slower than a warmed local runner would. In
-that situation, queuing for a few minutes of local capacity to free up is
-cheaper, in both wall-clock time and hosted-runner spend, than failing over
-immediately. Callers that don't share this cache asymmetry can override
-`saturation-grace-seconds` down (including to `0`, which reproduces the
-pre-grace-window behavior of failing over the instant no runner is idle) via
-the `workflow_call` input.
+The revert is **manual and operator-driven**. There is deliberately no
+automatic health probe or runtime failover between the variable and the
+routing decision, so the variable's setting together with the inline fallback
+is the entire routing contract.
 
-If the grace window elapses while still saturated, the job routes hosted with
-a `saturated-timeout` reason — distinct from the outage reasons
-(`no-online-matching-runner`, `runner-api-error`) — so the job summary and any
-downstream alerting can tell "the pool was down" apart from "the pool was
-just busy and stayed busy."
+The inline fallback MUST name hosted capacity and never self-hosted, so that a
+deleted or emptied variable leaves the merge gate on capacity that is always
+present. `check-self-hosted-routing` enforces this statically, and it parses
+`runs-on` values literally — routing hidden behind `needs.<job>.outputs.*` is
+invisible to it, which is why the fallback literal is repeated inline at each
+`runs-on` rather than resolved once into a job output.
 
-The existing two-probe/30-second recovery hysteresis is unchanged and applies
-only once the first probe has already reported healthy (an idle runner was
-observed, whether on the first read or after waiting through saturation): the
-router still confirms that healthy state is stable before trusting it.
+## Why there is no automatic failover
 
-`CI_RUNNER_FAILOVER_MODE` is the caller's operational override:
+This repository previously carried a two-probe health-check router
+(`reusable-ci-runner-router.yml` plus the `ci-runner-health` composite Action)
+that selected self-hosted capacity only after two healthy observations and
+otherwise emitted `ubuntu-latest`. It was retired because it cannot work
+against ARC scale sets, for two independent reasons:
 
-- `auto` is the default and is the only normal mode.
-- `hosted` keeps ordinary CI on GitHub-hosted capacity during maintenance or
-  incident response.
-- `local` is a trusted-event break-glass override. It bypasses health probing
-  and can therefore queue if an operator uses it while the pool is down.
+- **ARC scale-set runners carry no labels.** `gha-runner-scale-set` runners
+  register with an empty label array, so the probe's label-subset test can
+  never match one. In scale-set mode the scale set *name* is the routing
+  token, not a label set.
+- **Scale sets run `min-runners: 0`.** An idle scale set has zero registered
+  runners by design, so a pre-flight probe reads normal idleness as an outage.
+  Raising `min-runners` to satisfy the probe would permanently pin node
+  capacity.
 
-Fork-originated pull requests are always routed hosted, even with `local`; the
-router never lets a repository variable override that trust boundary. Privileged
-golden-master workflows do not call this reusable workflow and remain on their
-dedicated gate lane.
+Left in place, the router failed its probe on every run and silently routed
+every job to hosted capacity regardless of `CI_RUNNER_LABELS` — the incident
+recorded as `livespec-s43svm.23`.
+
+## Fork safety
+
+Fork-originated pull requests must never execute on self-hosted capacity
+without review. That boundary is enforced by the repository's
+**fork-PR approval requirement** (a repo setting), not by workflow logic —
+the same model every fleet repository on self-hosted capacity relies on.
+`check-self-hosted-routing` complements it statically by forbidding
+fork-reachable and privileged triggers (`pull_request_target`, `workflow_run`,
+`issue_comment`, `repository_dispatch`, `merge_group`, `workflow_dispatch`)
+from reaching a gating self-hosted job; `pull_request` is allowed precisely
+because the approval gate covers it at runtime.
+
+Privileged golden-master workflows run on their own dedicated gate lane and do
+not read this variable.
 
 ## Failure and recovery semantics
 
-The selector only controls jobs created after it completes. If the local pool
-goes down after the selector chooses local, an already **queued** job remains
-queued because GitHub cannot migrate it to another `runs-on` target. If an
-**in-progress** local job loses its runner, GitHub reports that job failed or
-cancelled. Re-run the workflow (or the failed jobs): its new hosted selector
-will observe the outage and route the retry to GitHub-hosted capacity.
+Routing is fixed when a job is created. If self-hosted capacity goes away
+after a job is queued, that job stays queued — GitHub cannot migrate it to a
+different `runs-on` target. An in-progress job that loses its runner is
+reported failed or cancelled.
 
-When the pool returns, the next normal CI run observes two healthy samples and
-returns to local automatically. Operators should leave mode at `hosted` until
-the pool's own recovery proof is complete when an incident requires a longer
-cooldown; switching the override back to `auto` restores automatic recovery.
+Recovery is operator-driven: set `CI_RUNNER_LABELS` back to
+`["ubuntu-latest"]` and re-run the failed jobs, then set it forward again once
+the capacity's own recovery proof is complete.

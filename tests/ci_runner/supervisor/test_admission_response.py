@@ -2,9 +2,8 @@
 
 `admission_response.py` lives under `ci-runner/supervisor/` alongside the bash
 supervisor it will serve, not under `livespec_dev_tooling/` (outside this
-repo's declared `source_trees`), so it is loaded directly the same way
-`tests/github_actions/test_ci_runner_health.py` loads
-`.github/actions/ci-runner-health/runner_health.py`.
+repo's declared `source_trees`), so it is loaded directly by path rather than
+imported as a package module.
 
 Covers the classification slice of
 `SPECIFICATION/non-functional-requirements.md#adaptive-jit-runner-admission-budget`:
