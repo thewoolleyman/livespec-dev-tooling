@@ -155,43 +155,18 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     strategy:
       fail-fast: false
+      # Batched-CI shape (work-item livespec-dev-tooling-yilyxr.2): only the
+      # WALL-TIME-DOMINANT targets keep their own matrix leg (each runs its
+      # own suite / full pyright pass); every cheap .py-scanning target moved
+      # to the single check-python-batch job below, which pays the ~20s
+      # container setup ONCE instead of per target. Honeycomb baseline: the
+      # per-job setup tax across the fleet's one-job-per-check matrices was
+      # ~2,237 CI-hours per 14d, dominated by sub-second checks.
       matrix:
         target:
-          - check-lint
-          - check-format
           - check-coverage
-          - check-types
-          # fleet-ci-aggregate-coverage (epic livespec-cf4bcu) slice 5:
-          # canonical `just check` aggregate slugs that inspect .py source
-          # but were not yet run in CI. The py_changed gate is correct for
-          # these — nothing to check when a PR changes no .py.
-          # (check-check-mutation runs mutmut only when LIVESPEC_RUN_MUTATION
-          # is set, which CI never does, so it is a fast skip here.)
-          - check-all-declared
-          - check-assert-never-exhaustiveness
-          - check-check-mutation
-          - check-file-lloc
-          - check-global-writes
-          - check-keyword-only-args
-          - check-local-memory-drift-audit
-          - check-main-guard
-          - check-match-keyword-only
-          - check-newtype-domain-primitives
-          - check-no-except-outside-io
-          - check-no-inheritance
-          - check-no-lloc-soft-warnings
-          - check-no-raise-outside-io
-          - check-no-write-direct
-          - check-pbt-coverage-pure-modules
           - check-per-file-coverage
-          - check-private-calls
-          - check-public-api-result-typed
-          - check-required-role-keys-declared
-          - check-rop-pipeline-shape
-          - check-supervisor-discipline
-          - check-tests-mirror-pairing
-          - check-tests-no-subprocess-spawn
-          - check-wrapper-shape
+          - check-types
     steps:
       # Per-step `if:` (not job-level) so each matrix entry still
       # reports a status check named `${{ matrix.target }}`.
@@ -248,6 +223,84 @@ jobs:
   # out-of-vantage under this token and are enforced by the admin
   # world-gate lane (`just check-fleet-conformance-admin`) at pre-push
   # under the operator's own admin gh credentials.
+  # Batched cheap .py-scanning checks (work-item livespec-dev-tooling-yilyxr.2):
+  # one container setup for 26 sub-minute targets that each previously
+  # paid it alone as a matrix leg. Failures are COLLECTED, not fail-fast,
+  # preserving the old matrix's fail-fast:false all-targets report; each
+  # target is invoked as a literal `just <slug>` line so
+  # check-ci-matrix-completeness assertion (a) attributes every canonical
+  # slug to this job, and the job runs `just` so assertion (b) requires it
+  # in ci-green.needs. The wall-time-dominant targets stay in check-python.
+  check-python-batch:
+    name: check-python-batch
+    needs: [setup, select-ci-runner]
+    runs-on: ${{ fromJSON(needs.select-ci-runner.outputs.runs_on) }}
+    container:
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.24.7
+    env:
+      LIVESPEC_CI_LANE: ${{ needs.select-ci-runner.outputs.lane }}
+      MISE_DATA_DIR: /root/.local/share/mise
+      MISE_NOT_FOUND_AUTO_INSTALL: "0"
+      GITHUB_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Skip when no .py changes
+        if: needs.setup.outputs.py_changed != 'true'
+        run: echo "::notice::skipped check-python-batch — no .py changes in this PR"
+
+      - name: Checkout
+        if: needs.setup.outputs.py_changed == 'true'
+        uses: actions/checkout@v5
+
+      - name: Trust workspace for git (hosted container root-vs-checkout uid)
+        if: needs.setup.outputs.py_changed == 'true'
+        run: git config --global --add safe.directory '*'
+
+      - name: mise trust + install (baked tools — install is a near-no-op)
+        if: needs.setup.outputs.py_changed == 'true'
+        run: |
+          mise trust
+          mise install
+
+      - name: Install Python dev deps via uv
+        if: needs.setup.outputs.py_changed == 'true'
+        run: uv sync --all-groups
+
+      - name: Run the batched python checks
+        if: needs.setup.outputs.py_changed == 'true'
+        run: |
+          failed=""
+          just check-lint || failed="$failed check-lint"
+          just check-format || failed="$failed check-format"
+          just check-all-declared || failed="$failed check-all-declared"
+          just check-assert-never-exhaustiveness || failed="$failed check-assert-never-exhaustiveness"
+          just check-check-mutation || failed="$failed check-check-mutation"
+          just check-file-lloc || failed="$failed check-file-lloc"
+          just check-global-writes || failed="$failed check-global-writes"
+          just check-keyword-only-args || failed="$failed check-keyword-only-args"
+          just check-local-memory-drift-audit || failed="$failed check-local-memory-drift-audit"
+          just check-main-guard || failed="$failed check-main-guard"
+          just check-match-keyword-only || failed="$failed check-match-keyword-only"
+          just check-newtype-domain-primitives || failed="$failed check-newtype-domain-primitives"
+          just check-no-except-outside-io || failed="$failed check-no-except-outside-io"
+          just check-no-inheritance || failed="$failed check-no-inheritance"
+          just check-no-lloc-soft-warnings || failed="$failed check-no-lloc-soft-warnings"
+          just check-no-raise-outside-io || failed="$failed check-no-raise-outside-io"
+          just check-no-write-direct || failed="$failed check-no-write-direct"
+          just check-pbt-coverage-pure-modules || failed="$failed check-pbt-coverage-pure-modules"
+          just check-private-calls || failed="$failed check-private-calls"
+          just check-public-api-result-typed || failed="$failed check-public-api-result-typed"
+          just check-required-role-keys-declared || failed="$failed check-required-role-keys-declared"
+          just check-rop-pipeline-shape || failed="$failed check-rop-pipeline-shape"
+          just check-supervisor-discipline || failed="$failed check-supervisor-discipline"
+          just check-tests-mirror-pairing || failed="$failed check-tests-mirror-pairing"
+          just check-tests-no-subprocess-spawn || failed="$failed check-tests-no-subprocess-spawn"
+          just check-wrapper-shape || failed="$failed check-wrapper-shape"
+          if [ -n "$failed" ]; then
+            echo "Failed targets:$failed"
+            exit 1
+          fi
+
   check-fleet-conformance:
     name: check-fleet-conformance
     runs-on: ubuntu-latest
@@ -339,50 +392,12 @@ jobs:
       fail-fast: false
       matrix:
         target:
-          - check-aggregate-completeness
-          - check-canonical-recipe-fidelity
-          - check-fabro-image-pin-lockstep
-          - check-no-direct-destructive-cli
-          - check-partition-completeness
-          - check-primary-checkout-commit-refuse-hook-installed
+          # Batched-CI shape (work-item livespec-dev-tooling-yilyxr.2): only
+          # the two pytest-spawning, variable-duration metadata targets keep
+          # their own matrix leg; every cheap repo-metadata target moved to
+          # the single check-metadata-batch job below (one setup, not ~30).
           - check-red-green-replay
-          - check-tool-backed-check-completeness
-          # fleet-ci-aggregate-coverage (epic livespec-cf4bcu) slice 5:
-          # canonical aggregate slugs that inspect NON-.py surfaces
-          # (justfile, docs, marketplace, SKILL.md, .ai/ references), need
-          # full history, or gate CI config — so they belong in the
-          # always-run, fetch-depth:0 metadata matrix, NOT the py-gated one.
-          # check-check-coverage-incremental diffs origin/master...HEAD (needs
-          # the base ref this matrix's fetch-depth:0 provides) and spawns its
-          # own pytest, so it is self-contained here. The two world-gate
-          # checks (check-master-ci-green, check-branch-protection-alignment)
-          # are deliberately ABSENT: v0.37.2 excludes them from the CI-mirror
-          # requirement (they enforce at pre-push under an admin token; see
-          # .ai/ci-gate-discipline.md).
-          - check-agents-ai-references-resolve
           - check-check-coverage-incremental
-          - check-check-tools
-          - check-ci-matrix-completeness
-          - check-claude-md-coverage
-          - check-comment-line-anchors
-          - check-commit-pairs-source-and-test
-          - check-fleet-marketplace-relative-sources
-          - check-handoff-dispatch-routing
-          - check-heading-coverage
-          - check-no-direct-tool-invocation
-          - check-no-fmt-directives
-          - check-no-shadow-ledger-body-identical
-          - check-no-shadow-ledger-body-typechecks
-          - check-no-todo-registry
-          - check-hook-trees-not-io-exempt
-          - check-plan-anchor-declared
-          - check-plan-no-tombstone
-          - check-plugin-resolution
-          - check-self-hosted-routing
-          - check-shell-quality
-          - check-skill-invocation-paths
-          - check-source-trees-scoped-to-consumer
-          - check-vendor-manifest
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -402,43 +417,6 @@ jobs:
       - name: Trust workspace for git (hosted container root-vs-checkout uid)
         run: git config --global --add safe.directory '*'
 
-      # The primary-checkout-commit-refuse-hook-installed check
-      # verifies the canonical livespec commit-refuse hook is
-      # installed at `.git/hooks/pre-commit` AND `.git/hooks/pre-push`
-      # per livespec/SPECIFICATION/non-functional-requirements.md
-      # §"Primary-checkout commit-refuse hook" and §"Commit-refuse
-      # hook bootstrap procedure". `actions/checkout` clones a fresh
-      # working tree with no bootstrap step run; invoking the canonical
-      # installer module here satisfies the invariant — the installer is
-      # the single source of truth for the structural body (it needs only
-      # the stdlib + the in-package vendored structlog, so it runs on the
-      # runner's system python3 before the mise/uv setup steps below).
-      # Only the check-primary-checkout-commit-refuse-hook-installed
-      # matrix entry needs this — other check-metadata entries are
-      # unaffected by hook installation.
-      - name: Install canonical commit-refuse hook (satisfy invariant)
-        if: matrix.target == 'check-primary-checkout-commit-refuse-hook-installed'
-        run: python3 -m livespec_dev_tooling.install_commit_refuse_hooks
-
-      # Same rationale as the hook step above: a fresh `actions/checkout` has no
-      # materialized worktree pack (the pack is gitignored-and-installed, never
-      # tracked), so the verifier's pack arm would fail on an untouched runner.
-      # Installs from the SAME package source the check compares against.
-      #
-      # check-shell-quality IS ALSO LISTED, and without it that check was
-      # passing VACUOUSLY. `dev-tooling/*.just` is gitignored and the root
-      # justfile imports it optionally (`import? 'dev-tooling/worktree.just'`),
-      # so on an untouched runner the `worktree-*` recipes DO NOT EXIST and the
-      # scan had no subject — green for work it never did. Locally, where the
-      # pack must be installed (the check above REQUIRES it), the same commit
-      # went red, so `just check` could not pass in any bootstrapped checkout
-      # while CI reported success. Measured 2026-08-03; work-item
-      # livespec-dev-tooling-9ywf.
-      - name: Install canonical worktree pack (satisfy invariant)
-        if: >-
-          matrix.target == 'check-primary-checkout-commit-refuse-hook-installed'
-          || matrix.target == 'check-shell-quality'
-        run: python3 -m livespec_dev_tooling.install_worktree_pack
 
       # Tools are baked into the image; `mise install` is a near-no-op. A fresh
       # container does not TRUST the repo .mise.toml, so `mise trust` is required
@@ -478,6 +456,96 @@ jobs:
           LIVESPEC_FAIL_IF_FMT_DIRECTIVES_EXIST: "true"
         run: just ${{ matrix.target }}
 
+  # Batched cheap repo-metadata checks (work-item livespec-dev-tooling-yilyxr.2):
+  # one container setup for 30 sub-minute targets that each previously paid
+  # it alone as a matrix leg. Failures are COLLECTED (matrix fail-fast:false
+  # parity); every target is a literal `just <slug>` line so
+  # check-ci-matrix-completeness assertion (a) sees each canonical slug, and
+  # the job is gating so (b) requires it in ci-green.needs. The hook and
+  # worktree-pack installers run UNCONDITIONALLY here because
+  # check-primary-checkout-commit-refuse-hook-installed and
+  # check-shell-quality both live in this batch (see the vacuous-pass record
+  # of livespec-dev-tooling-9ywf for why the pack must be materialized).
+  check-metadata-batch:
+    name: check-metadata-batch
+    needs: select-ci-runner
+    runs-on: ${{ fromJSON(needs.select-ci-runner.outputs.runs_on) }}
+    container:
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.24.7
+    env:
+      LIVESPEC_CI_LANE: ${{ needs.select-ci-runner.outputs.lane }}
+      MISE_DATA_DIR: /root/.local/share/mise
+      MISE_NOT_FOUND_AUTO_INSTALL: "0"
+      GITHUB_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          # Full history: several batch members diff against origin/master
+          # or read git metadata; cheap for this repo.
+          fetch-depth: 0
+
+      - name: Trust workspace for git (hosted container root-vs-checkout uid)
+        run: git config --global --add safe.directory '*'
+
+      - name: Install canonical commit-refuse hook (satisfy invariant)
+        run: python3 -m livespec_dev_tooling.install_commit_refuse_hooks
+
+      - name: Install canonical worktree pack (satisfy invariant)
+        run: python3 -m livespec_dev_tooling.install_worktree_pack
+
+      - name: mise trust + install (baked tools — install is a near-no-op)
+        run: |
+          mise trust
+          mise install
+
+      - name: Install Python dev deps via uv
+        run: uv sync --all-groups
+
+      - name: Run the batched metadata checks
+        env:
+          # Same severity levers as the check-metadata matrix leg; see that
+          # job's comment for the transitive-read caveat.
+          LIVESPEC_FAIL_IF_CI_MATRIX_GAPS_EXIST: "true"
+          LIVESPEC_FAIL_IF_FMT_DIRECTIVES_EXIST: "true"
+        run: |
+          failed=""
+          just check-aggregate-completeness || failed="$failed check-aggregate-completeness"
+          just check-agents-ai-references-resolve || failed="$failed check-agents-ai-references-resolve"
+          just check-canonical-recipe-fidelity || failed="$failed check-canonical-recipe-fidelity"
+          just check-check-tools || failed="$failed check-check-tools"
+          just check-ci-matrix-completeness || failed="$failed check-ci-matrix-completeness"
+          just check-claude-md-coverage || failed="$failed check-claude-md-coverage"
+          just check-comment-line-anchors || failed="$failed check-comment-line-anchors"
+          just check-commit-pairs-source-and-test || failed="$failed check-commit-pairs-source-and-test"
+          just check-fabro-image-pin-lockstep || failed="$failed check-fabro-image-pin-lockstep"
+          just check-fleet-marketplace-relative-sources || failed="$failed check-fleet-marketplace-relative-sources"
+          just check-handoff-dispatch-routing || failed="$failed check-handoff-dispatch-routing"
+          just check-heading-coverage || failed="$failed check-heading-coverage"
+          just check-hook-trees-not-io-exempt || failed="$failed check-hook-trees-not-io-exempt"
+          just check-no-direct-destructive-cli || failed="$failed check-no-direct-destructive-cli"
+          just check-no-direct-tool-invocation || failed="$failed check-no-direct-tool-invocation"
+          just check-no-fmt-directives || failed="$failed check-no-fmt-directives"
+          just check-no-shadow-ledger-body-identical || failed="$failed check-no-shadow-ledger-body-identical"
+          just check-no-shadow-ledger-body-typechecks || failed="$failed check-no-shadow-ledger-body-typechecks"
+          just check-no-todo-registry || failed="$failed check-no-todo-registry"
+          just check-partition-completeness || failed="$failed check-partition-completeness"
+          just check-plan-anchor-declared || failed="$failed check-plan-anchor-declared"
+          just check-plan-no-tombstone || failed="$failed check-plan-no-tombstone"
+          just check-plugin-resolution || failed="$failed check-plugin-resolution"
+          just check-primary-checkout-commit-refuse-hook-installed || failed="$failed check-primary-checkout-commit-refuse-hook-installed"
+          just check-self-hosted-routing || failed="$failed check-self-hosted-routing"
+          just check-shell-quality || failed="$failed check-shell-quality"
+          just check-skill-invocation-paths || failed="$failed check-skill-invocation-paths"
+          just check-source-trees-scoped-to-consumer || failed="$failed check-source-trees-scoped-to-consumer"
+          just check-tool-backed-check-completeness || failed="$failed check-tool-backed-check-completeness"
+          just check-vendor-manifest || failed="$failed check-vendor-manifest"
+          if [ -n "$failed" ]; then
+            echo "Failed targets:$failed"
+            exit 1
+          fi
+
   # Closed-loop CI-telemetry export — mirrors the reference landed in
   # livespec CORE (PR #477, commit b1e875d). Runs only on master pushes
   # (never PRs, so it adds no PR-feedback latency; the merge_group arm went
@@ -491,7 +559,7 @@ jobs:
   # when an upstream check failed (so red runs are captured too).
   export-telemetry:
     name: export-telemetry
-    needs: [setup, check-python, check-fleet-conformance, check-metadata]
+    needs: [setup, check-python, check-python-batch, check-fleet-conformance, check-metadata, check-metadata-batch]
     if: ${{ !cancelled() && github.event_name == 'push' }}
     runs-on: ubuntu-latest
     permissions:
@@ -521,7 +589,7 @@ jobs:
   # so they are intentionally absent from `needs:`.
   ci-green:
     name: ci-green
-    needs: [check-python, check-fleet-conformance, check-metadata]
+    needs: [check-python, check-python-batch, check-fleet-conformance, check-metadata, check-metadata-batch]
     if: always()
     runs-on: ubuntu-latest
     steps:
