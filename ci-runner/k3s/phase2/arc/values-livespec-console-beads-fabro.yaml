@@ -41,7 +41,27 @@
 githubConfigUrl: "https://github.com/thewoolleyman/livespec-console-beads-fabro"
 githubConfigSecret: arc-github-app-installation  # same secret as phase 1 — see ../../README.md "Credential separation"
 
-runnerScaleSetName: "livespec-console-beads-fabro-local-ci-k3s"
+# SHORT NAME, deliberately: livespec-s43svm.22 root-caused a hard Kubernetes
+# constraint via actions/actions-runner-controller#4368 (closed won't-fix) --
+# the runner-container-hooks k8s hook truncates the per-job "workflow" pod
+# name at 63 characters total, and does so on the FULL runner-pod name
+# (`<scaleset>-<ephemeralrunnerset-suffix>-runner-<pod-suffix>`), not just the
+# scale-set portion. A scale-set name over ~35 characters truncates away the
+# per-runner unique suffix entirely, so every CONCURRENTLY running runner
+# produces the byte-identical workflow-pod name and every job but the first
+# fails with `pods "..." already exists` -- deterministic under any 2+-job
+# matrix, invisible to a single-job proof-of-life dispatch. The original
+# `livespec-console-beads-fabro-local-ci-k3s` (41 chars) hit this live on the
+# first real-traffic cutover attempt (PR #662, 2026-08-17). Fleet-wide naming
+# convention (maintainer-directed 2026-08-17): drop the "-local-ci-k3s" suffix
+# to "-k3s" and keep every scale-set name <=30 characters total (5-char margin
+# below the hard 35-char boundary); truncate the repo-name portion at a hyphen
+# boundary, mechanically, rather than inventing a per-repo abbreviation (this
+# fleet already bans ambiguous hand-picked abbreviations elsewhere -- see
+# livespec/AGENTS.md "the bare word `beads-fabro` is BANNED"). This repo's
+# name (29 chars alone) does not fit the 26-char budget after "-k3s", so it is
+# truncated at the last hyphen that fits: "livespec-console-beads".
+runnerScaleSetName: "livespec-console-beads-k3s"
 
 containerMode:
   type: "kubernetes"
