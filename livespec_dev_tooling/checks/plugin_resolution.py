@@ -42,8 +42,9 @@ Two layers:
   genuine cli_e2e smoke (issue the `/`-prefixed slash command through the
   `CliRunner` seam, whose `RealCliRunner` shells `claude`); `codex` delegates to
   its repo-local smoke (`check-codex-skill-picker`) via a `DelegatedResolutionRunner`
-  → SKIP, rather than mis-routing. The decision per harness, folding in work-item
-  livespec-mjnv's skip-vs-fail distinction:
+  → SKIP, rather than mis-routing; `pi` invokes Pi's `/skill:livespec-<operation>`
+  surface with per-run trust approval. The decision per harness, folding in
+  work-item livespec-mjnv's skip-vs-fail distinction:
     - `exempt` → PASS (the declared Exemption slot — no smoke run).
     - `supported` but delegated to a repo-local smoke (codex) → SKIP (the genuine
       live proof is the delegated check, not this layer).
@@ -69,11 +70,10 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol, cast
+from typing import cast
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -82,12 +82,23 @@ if str(_VENDOR_DIR) not in sys.path:
 import jsoncomment  # noqa: E402  — vendor-path-aware import after sys.path insert.
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling.checks._plugin_resolution_runners import (  # noqa: E402
+    CliResolutionRunner,
+    DelegatedResolutionRunner,
+    PiProcessResult,
+    PiResolutionRunner,
+    ResolutionOutcome,
+    ResolutionRunner,
+)
 from livespec_dev_tooling.testing.cli_e2e import (  # noqa: E402  — package import after sys.path insert.
     CliRunner,
     select_runner,
 )
 
-__all__: list[str] = []
+__all__: list[str] = [
+    "PiProcessResult",
+    "ResolutionOutcome",
+]
 
 
 _CHECK_ID = "plugin_resolution"
@@ -98,7 +109,7 @@ _HARNESSES_KEY = "harnesses"
 
 # The known agent-runtime harnesses a governed repo MAY declare. An unknown key
 # is a garbled declaration (fail-closed) rather than a silently-ignored entry.
-_KNOWN_HARNESSES = frozenset({"claude", "codex"})
+_KNOWN_HARNESSES = frozenset({"claude", "codex", "pi"})
 
 _STATUS_SUPPORTED = "supported"
 _STATUS_EXEMPT = "exempt"
@@ -154,91 +165,6 @@ class HarnessLoad:
     detail: str = ""
 
 
-@dataclass(frozen=True, kw_only=True)
-class ResolutionOutcome:
-    """Facts a resolution runner reports for one supported harness.
-
-    `available` is whether the harness binary is present in this environment;
-    `resolved` is whether the canonical command resolved AND returned exit 0
-    through the command surface (never via a raw-CLI substitute).
-    """
-
-    available: bool
-    resolved: bool
-
-
-class ResolutionRunner(Protocol):
-    """Injectable per-harness resolution seam.
-
-    `resolve` issues a harness's canonical command through its command surface
-    ONLY (a slash command on claude, a name-selected command on codex) and
-    reports the facts the decision logic consumes — it NEVER invokes a raw CLI.
-    `CliResolutionRunner` is the production implementation; a test injects a
-    deterministic fake so no subprocess is spawned.
-    """
-
-    def resolve(self, *, harness: str, canonical_command: str) -> ResolutionOutcome: ...
-
-
-def _command_surface_prompt(*, harness: str, canonical_command: str) -> str:
-    """Render the canonical command as the harness's command-surface invocation.
-
-    codex name-selects the command verbatim (`livespec:next`); every other
-    harness (claude today) issues it as a `/`-prefixed slash command
-    (`/livespec:next`). This is the ONLY form the Verifier ever issues — a raw
-    CLI (`bd …`) is never substituted.
-    """
-    if harness == "codex":
-        return canonical_command
-    return "/" + canonical_command
-
-
-@dataclass(frozen=True, kw_only=True)
-class CliResolutionRunner:
-    """Production `ResolutionRunner` backed by the cli_e2e `CliRunner` seam.
-
-    Availability is `shutil.which(<harness>)`; the canonical command is issued
-    as the harness's command-surface invocation through the injected
-    `cli_runner`. This is the single place real-subprocess code can run (inside
-    `CliRunner.run`); a test injects a fake `cli_runner` plus a stubbed
-    `shutil.which`, so the runner is fully exercised without spawning.
-    """
-
-    cli_runner: CliRunner
-
-    def resolve(self, *, harness: str, canonical_command: str) -> ResolutionOutcome:
-        if shutil.which(harness) is None:
-            return ResolutionOutcome(available=False, resolved=False)
-        result = self.cli_runner.run(
-            prompt=_command_surface_prompt(harness=harness, canonical_command=canonical_command),
-            home=Path.home(),
-            cwd=Path.cwd(),
-            resume_session_id=None,
-        )
-        return ResolutionOutcome(available=True, resolved=result.exit_code == 0)
-
-
-@dataclass(frozen=True, kw_only=True)
-class DelegatedResolutionRunner:
-    """A `ResolutionRunner` for a harness whose genuine live smoke is repo-local.
-
-    Some harnesses' resolve-and-run proof lives in the harness's OWN repo — codex's
-    is the repo-local `check-codex-skill-picker` PTY smoke — not this dev-tooling
-    cross-harness live layer, whose `CliResolutionRunner` shells the `claude` binary.
-    Routing such a harness here returns an unavailable outcome (→ SKIP) so the
-    dev-tooling check NEVER mis-routes the canonical command through a DIFFERENT
-    harness's binary (e.g. `claude -p "livespec:next"` for a codex command); the
-    genuine live proof is the delegated repo-local check. `reason` is the
-    human-readable delegation note for diagnostics.
-    """
-
-    reason: str
-
-    def resolve(self, *, harness: str, canonical_command: str) -> ResolutionOutcome:
-        _ = (harness, canonical_command)
-        return ResolutionOutcome(available=False, resolved=False)
-
-
 # codex's genuine live resolution smoke is the repo-local check-codex-skill-picker
 # PTY check, not this cross-harness live layer; delegate it so the dev-tooling check
 # never routes a codex command through the claude binary.
@@ -253,14 +179,15 @@ def _build_live_runners(*, claude_runner: CliRunner) -> dict[str, ResolutionRunn
 
     `claude` runs the genuine cli_e2e smoke (the injected `claude_runner`); `codex`
     delegates to its repo-local smoke (a `DelegatedResolutionRunner` → SKIP) rather
-    than mis-routing through the claude binary. The map covers exactly
-    `_KNOWN_HARNESSES`, which the declaration-integrity gate guarantees every
-    `supported` declaration is drawn from; adding a harness with a genuine
-    dev-tooling live runner is a one-line registry addition.
+    than mis-routing through the claude binary; `pi` runs Pi's non-interactive
+    `/skill:livespec-<operation>` smoke with per-run trust approval. The map
+    covers exactly `_KNOWN_HARNESSES`, which the declaration-integrity gate
+    guarantees every `supported` declaration is drawn from.
     """
     return {
         "claude": CliResolutionRunner(cli_runner=claude_runner),
         "codex": DelegatedResolutionRunner(reason=_CODEX_DELEGATION_REASON),
+        "pi": PiResolutionRunner(),
     }
 
 
@@ -437,8 +364,8 @@ def main() -> int:
             line=0,
             hint=(
                 "declare a top-level `harnesses` object in .livespec.jsonc; mark each agent "
-                "runtime ('claude'/'codex') `status` 'supported' (with a `canonical_command`) "
-                "or 'exempt' (with a `reason`)"
+                "runtime ('claude'/'codex'/'pi') `status` 'supported' (with a "
+                "`canonical_command`) or 'exempt' (with a `reason`)"
             ),
         )
         return _FAIL_EXIT
@@ -452,9 +379,9 @@ def main() -> int:
             path=_LIVESPEC_JSONC,
             line=0,
             hint=(
-                "each `harnesses` key MUST be a known harness ('claude'/'codex') whose entry "
-                "has `status` 'supported' (with a `canonical_command`) or 'exempt' (with a "
-                "`reason`)"
+                "each `harnesses` key MUST be a known harness ('claude'/'codex'/'pi') whose "
+                "entry has `status` 'supported' (with a `canonical_command`) or 'exempt' "
+                "(with a `reason`)"
             ),
         )
         return _FAIL_EXIT

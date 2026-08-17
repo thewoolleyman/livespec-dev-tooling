@@ -111,6 +111,32 @@ class _ResolvingCliRunner:
         return CliResult(exit_code=0, stdout="", stderr="", session_id=None)
 
 
+@dataclass(frozen=True, kw_only=True)
+class _FakePiProcessRunner:
+    """Deterministic pi process seam that records the argv it would have run."""
+
+    exit_code: int = 0
+    recorded: list[tuple[str, ...]] = field(default_factory=list)
+
+    def run(self, *, prompt: str, cwd: Path) -> plugin_resolution.PiProcessResult:
+        _ = cwd
+        self.recorded.append(("pi", "--approve", "-p", prompt))
+        return plugin_resolution.PiProcessResult(exit_code=self.exit_code, stdout="", stderr="")
+
+
+@dataclass(frozen=True, kw_only=True)
+class _FakePiResolutionRunner:
+    """Resolution runner stand-in that proves main() routes pi to pi."""
+
+    called: list[tuple[str, str]] = field(default_factory=list)
+
+    def resolve(
+        self, *, harness: str, canonical_command: str
+    ) -> plugin_resolution.ResolutionOutcome:
+        self.called.append((harness, canonical_command))
+        return plugin_resolution.ResolutionOutcome(available=True, resolved=True)
+
+
 def _write_livespec_jsonc(*, root: Path, body: str) -> None:
     _ = (root / ".livespec.jsonc").write_text(body, encoding="utf-8")
 
@@ -177,6 +203,21 @@ def test_load_harnesses_malformed_unknown_harness(*, tmp_path: Path) -> None:
     load = plugin_resolution.load_harnesses(root=tmp_path)
     assert load.state == "malformed"
     assert "unknown harness" in load.detail
+
+
+def test_load_harnesses_ok_accepts_pi_harness(*, tmp_path: Path) -> None:
+    """`pi` is a known harness key, so a supported pi declaration is well-formed."""
+    _write_livespec_jsonc(
+        root=tmp_path,
+        body='{ "harnesses": { "pi": { "status": "supported", "canonical_command": "livespec:next" } } }',
+    )
+    load = plugin_resolution.load_harnesses(root=tmp_path)
+    assert load.state == "ok"
+    assert load.declarations == (
+        plugin_resolution.HarnessDecl(
+            harness="pi", status="supported", canonical_command="livespec:next"
+        ),
+    )
 
 
 def test_load_harnesses_malformed_entry_not_object(*, tmp_path: Path) -> None:
@@ -282,6 +323,19 @@ def test_cli_resolution_runner_unresolved_on_nonzero_exit(
     assert outcome.resolved is False
 
 
+def test_pi_resolution_runner_uses_skill_command_and_approve(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An available pi binary resolves through `/skill:livespec-next` with per-run trust approval."""
+    monkeypatch.setattr(shutil, "which", _which_path)
+    fake = _FakePiProcessRunner()
+    runner = plugin_resolution.PiResolutionRunner(process_runner=fake)
+    outcome = runner.resolve(harness="pi", canonical_command="livespec:next")
+    assert outcome.available is True
+    assert outcome.resolved is True
+    assert fake.recorded == [("pi", "--approve", "-p", "/skill:livespec-next")]
+
+
 # ---------------------------------------------------------------------------
 # main() — both layers wired (declaration gate + env-gated live smoke).
 # ---------------------------------------------------------------------------
@@ -365,6 +419,25 @@ def test_main_real_mode_codex_delegated_to_repo_local_smoke(
     )
     assert plugin_resolution.main() == 0
     assert fake.recorded == []
+
+
+def test_main_real_mode_pi_uses_pi_runner(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`real` mode + supported pi harness routes through the pi runner, not the claude runner."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("LIVESPEC_E2E_HARNESS", "real")
+    fake_claude = _ResolvingCliRunner()
+    fake_pi = _FakePiResolutionRunner()
+    monkeypatch.setattr(plugin_resolution, "select_runner", _runner_factory(fake_claude))
+    monkeypatch.setattr(plugin_resolution, "PiResolutionRunner", lambda: fake_pi)
+    _write_livespec_jsonc(
+        root=tmp_path,
+        body='{ "harnesses": { "pi": { "status": "supported", "canonical_command": "livespec:next" } } }',
+    )
+    assert plugin_resolution.main() == 0
+    assert fake_claude.recorded == []
+    assert fake_pi.called == [("pi", "livespec:next")]
 
 
 def test_main_real_mode_passes_when_command_resolves(
