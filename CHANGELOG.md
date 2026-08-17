@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.27.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.27.0...v1.27.1) (2026-08-17)
+
+
+### Bug Fixes
+
+* **ci-runner:** shorten ARC scale-set names below the 63-char workflow-pod limit ([1409bbf](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1409bbfe13d6f24040657dc36e3ed809ced9ef5e))
+
 ## [1.27.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.26.0...v1.27.0) (2026-08-17)
 
 
