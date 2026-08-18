@@ -339,7 +339,7 @@ def test_installed_repos_success_and_memoization() -> None:
     calls: list[tuple[tuple[str, ...], str | None]] = []
     payload = {"repositories": [{"name": "widget"}, {"id": 7}, "junk"]}
     table = {
-        ("api", "installation/repositories?per_page=100"): GhResult(
+        ("api", "installation/repositories?per_page=100&page=1"): GhResult(
             returncode=0, stdout=json.dumps(payload), stderr=""
         )
     }
@@ -359,9 +359,42 @@ def test_installed_repos_unreadable_is_memoized_none() -> None:
 
 def test_installed_repos_handles_non_list_repositories() -> None:
     table = {
-        ("api", "installation/repositories?per_page=100"): GhResult(
+        ("api", "installation/repositories?per_page=100&page=1"): GhResult(
             returncode=0, stdout='{"repositories": "nope"}', stderr=""
         )
+    }
+    ctx = make_context(table=table)
+    assert ctx.installed_repos() is None
+
+
+def test_installed_repos_paginates_past_the_first_page() -> None:
+    import json
+
+    first = {"repositories": [{"name": f"repo{i}"} for i in range(100)]}
+    second = {"repositories": [{"name": "widget"}]}
+    table = {
+        ("api", "installation/repositories?per_page=100&page=1"): GhResult(
+            returncode=0, stdout=json.dumps(first), stderr=""
+        ),
+        ("api", "installation/repositories?per_page=100&page=2"): GhResult(
+            returncode=0, stdout=json.dumps(second), stderr=""
+        ),
+    }
+    ctx = make_context(table=table)
+    installed = ctx.installed_repos()
+    assert installed is not None
+    assert "widget" in installed
+    assert len(installed) == 101
+
+
+def test_installed_repos_mid_pagination_failure_is_none() -> None:
+    import json
+
+    first = {"repositories": [{"name": f"repo{i}"} for i in range(100)]}
+    table = {
+        ("api", "installation/repositories?per_page=100&page=1"): GhResult(
+            returncode=0, stdout=json.dumps(first), stderr=""
+        ),
     }
     ctx = make_context(table=table)
     assert ctx.installed_repos() is None

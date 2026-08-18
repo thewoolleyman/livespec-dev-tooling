@@ -70,7 +70,7 @@ _MANIFEST_ARGS: tuple[str, ...] = (
 )
 _LATEST_ARGS: tuple[str, ...] = ("api", "repos/acme/livespec-dev-tooling/releases/latest")
 _SECRETS_ARGS: tuple[str, ...] = ("api", "repos/acme/widget/actions/secrets")
-_INSTALL_ARGS: tuple[str, ...] = ("api", "installation/repositories?per_page=100")
+_INSTALL_ARGS: tuple[str, ...] = ("api", "installation/repositories?per_page=100&page=1")
 _REPOS_ARGS: tuple[str, ...] = ("api", "users/acme/repos?per_page=100")
 _REPOS_PAGE_2_ARGS: tuple[str, ...] = ("api", "users/acme/repos?per_page=100&page=2")
 
