@@ -44,7 +44,7 @@ __all__: list[str] = []
 
 _MEMBER = FleetMember(repo="widget", repo_class="library")
 _SECRETS_ARGS: tuple[str, ...] = ("api", "repos/acme/widget/actions/secrets")
-_INSTALL_ARGS: tuple[str, ...] = ("api", "installation/repositories?per_page=100")
+_INSTALL_ARGS: tuple[str, ...] = ("api", "installation/repositories?per_page=100&page=1")
 _PROTECTION_ARGS: tuple[str, ...] = ("api", "repos/acme/widget/branches/master/protection")
 _TREE_ARGS: tuple[str, ...] = ("api", "repos/acme/widget/git/trees/master?recursive=1")
 _CI_WORKFLOW_PATH = ".github/workflows/ci.yml"

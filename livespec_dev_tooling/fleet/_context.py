@@ -397,17 +397,35 @@ class FleetContext:
         cached = self.installed_cache.get("installation")
         if "installation" in self.installed_cache:
             return cached
-        payload = self.api_object(path="installation/repositories?per_page=100")
+        # The endpoint pages at 100; an All-repositories installation can hold
+        # far more, and a first-page-only read makes every repo past the page
+        # boundary look uncovered. A page that cannot be read or parsed makes
+        # the WHOLE listing None: a partial listing must never stand in as
+        # proof of non-coverage.
+        page_size = 100
+        collected: set[str] = set()
         names: frozenset[str] | None = None
-        if isinstance(payload, dict):
+        page = 1
+        while True:
+            payload = self.api_object(
+                path=f"installation/repositories?per_page={page_size}&page={page}"
+            )
+            if not isinstance(payload, dict):
+                break
             repositories = cast("dict[str, object]", payload).get("repositories")
-            if isinstance(repositories, list):
-                names = frozenset(
-                    cast("str", cast("dict[str, object]", entry).get("name"))
-                    for entry in cast("list[object]", repositories)
-                    if isinstance(entry, dict)
-                    and isinstance(cast("dict[str, object]", entry).get("name"), str)
-                )
+            if not isinstance(repositories, list):
+                break
+            entries = cast("list[object]", repositories)
+            collected.update(
+                cast("str", cast("dict[str, object]", entry).get("name"))
+                for entry in entries
+                if isinstance(entry, dict)
+                and isinstance(cast("dict[str, object]", entry).get("name"), str)
+            )
+            if len(entries) < page_size:
+                names = frozenset(collected)
+                break
+            page += 1
         self.installed_cache["installation"] = names
         return names
 

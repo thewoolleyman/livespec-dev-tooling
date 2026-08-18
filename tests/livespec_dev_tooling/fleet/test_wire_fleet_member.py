@@ -57,7 +57,7 @@ _PYPROJECT_ARGS: tuple[str, ...] = (
 )
 _LATEST_ARGS: tuple[str, ...] = ("api", "repos/acme/livespec-dev-tooling/releases/latest")
 _SECRETS_ARGS: tuple[str, ...] = ("api", "repos/acme/widget/actions/secrets")
-_INSTALL_ARGS: tuple[str, ...] = ("api", "installation/repositories?per_page=100")
+_INSTALL_ARGS: tuple[str, ...] = ("api", "installation/repositories?per_page=100&page=1")
 _PROTECTION_ARGS: tuple[str, ...] = ("api", "repos/acme/widget/branches/master/protection")
 _REPO_ARGS: tuple[str, ...] = ("api", "repos/acme/widget")
 _TOPICS_GET: tuple[str, ...] = ("api", "repos/acme/widget/topics")
