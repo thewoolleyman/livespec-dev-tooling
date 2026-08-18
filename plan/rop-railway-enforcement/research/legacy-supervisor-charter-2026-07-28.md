@@ -1,3 +1,18 @@
+> # 🗄️ HISTORICAL RESEARCH — SUPERSEDED 2026-08-19. NOT A LIVE INSTRUCTION SHEET.
+>
+> This file was a live `handoff.md` / `supervisor-handoff.md` carrier. Planning Lane
+> v197 FORBIDS those carriers, so it was migrated into `research/` unchanged below
+> this banner and is retained for its EVIDENCE ONLY.
+>
+> **THE 2026-08-04 COST HOLD IT ANNOUNCES IS LIFTED** (maintainer decision,
+> 2026-08-19). Its "DO NOT RESUME", "DO NOT DRIVE", and never-idle drive
+> instructions are DEAD TEXT — do not act on any of them.
+>
+> **THE LIVE RECORD IS THE LEDGER**, epic `livespec-dev-tooling-8o8e`, read through
+> the plan timeline. The live execution constraint is
+> `research/local-llm-execution-route.md`. Everything in this file that is a
+> MEASUREMENT or a METHOD remains good; everything that is an ORDER is expired.
+
 # Supervisor Handoff - rop-railway-enforcement
 
 > # ⛔⛔⛔ THIS TRACK IS **ON HOLD** AS OF 2026-08-04 — MAINTAINER DECISION
