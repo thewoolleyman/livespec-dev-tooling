@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.28.8](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.28.7...v1.28.8) (2026-08-18)
+
+
+### Bug Fixes
+
+* port charter detector drift ([45a51ec](https://github.com/thewoolleyman/livespec-dev-tooling/commit/45a51ec40af2016d6192142f2712152821e0c9d8))
+
 ## [1.28.7](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.28.6...v1.28.7) (2026-08-18)
 
 
