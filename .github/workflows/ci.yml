@@ -234,12 +234,12 @@ jobs:
   # two jobs used to run the full suite independently on separate runners.
   check-per-file-coverage:
     name: check-per-file-coverage
-    needs: [setup, select-ci-runner]
-    runs-on: ${{ fromJSON(needs.select-ci-runner.outputs.runs_on) }}
+    needs: setup
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
       image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.28.5
     env:
-      LIVESPEC_CI_LANE: ${{ needs.select-ci-runner.outputs.lane }}
+      LIVESPEC_CI_LANE: ${{ contains(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && 'hosted' || 'local' }}
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
       GITHUB_TOKEN: ${{ github.token }}
@@ -309,12 +309,12 @@ jobs:
   # the clean suite standalone — slower, never wrong.
   check-coverage:
     name: ${{ matrix.target }}
-    needs: [setup, select-ci-runner, check-per-file-coverage]
-    runs-on: ${{ fromJSON(needs.select-ci-runner.outputs.runs_on) }}
+    needs: [setup, check-per-file-coverage]
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
       image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.28.5
     env:
-      LIVESPEC_CI_LANE: ${{ needs.select-ci-runner.outputs.lane }}
+      LIVESPEC_CI_LANE: ${{ contains(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && 'hosted' || 'local' }}
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
       GITHUB_TOKEN: ${{ github.token }}
