@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.28.7](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.28.6...v1.28.7) (2026-08-18)
+
+
+### Bug Fixes
+
+* **ci:** update check-per-file-coverage/check-coverage needs off the retired select-ci-runner job ([a540ccb](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a540ccb317ddcb5b33fd8ef28737ca11f1be7708))
+* **fleet:** paginate the App installation-repositories read ([164804a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/164804adcdf88ffa34d19310aff461e7904f84dc))
+
 ## [1.28.6](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.28.5...v1.28.6) (2026-08-18)
 
 
