@@ -436,7 +436,7 @@ def main() -> int:
         justfile_text=justfile.read_text(encoding="utf-8"),
         canonical_slugs=_slugs_from_env(),
         world_gates=unsafe_perform_io(canonical_checks.world_gate_check_slugs().unwrap()),
-        renames=canonical_checks.canonical_check_renames(),
+        renames=unsafe_perform_io(canonical_checks.canonical_check_renames().unwrap()),
     )
 
     if result.skipped_reason is not None:

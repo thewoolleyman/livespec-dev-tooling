@@ -48,6 +48,9 @@ Public API:
   decision that is NOT mechanically derivable from the checks directory
   (per the project convention "static enumeration only for typed
   dispatch"). Every entry is asserted to also be a canonical slug.
+- `canonical_check_renames() -> IOResult[tuple[tuple[str, str], ...],
+  ChecksPackageUnreadable]` — return the curated `(old_slug, new_slug)` tuple
+  of renamed canonical checks.
 - `python -m livespec_dev_tooling.canonical_checks --json` — thin-
   transport surface emitting `{"slugs": [...]}` on stdout, exit 0.
 
@@ -373,8 +376,8 @@ def world_gate_check_slugs() -> IOResult[tuple[str, ...], ChecksPackageUnreadabl
     return IOSuccess(world_gates)
 
 
-def canonical_check_renames() -> tuple[tuple[str, str], ...]:
-    """Return the curated `(old_slug, new_slug)` tuple of renamed canonical checks.
+def canonical_check_renames() -> IOResult[tuple[tuple[str, str], ...], ChecksPackageUnreadable]:
+    """Return the alphabetically-sorted tuple of canonical check renames.
 
     A curated static registry (`_CANONICAL_CHECK_RENAMES`), NOT filesystem-
     derived — see that constant's docstring for why a rename cannot be inferred
@@ -383,16 +386,24 @@ def canonical_check_renames() -> tuple[tuple[str, str], ...]:
     consumer's stranded old slug to its replacement during a bump, instead of
     leaving a `ModuleNotFoundError` for CI to discover (livespec-dev-tooling-3gy1).
 
-    `.unwrap()` is FAIL-CLOSED and deliberate, matching `baseline_check_slugs`:
-    this function is not consumed across any I/O boundary of its own (its two
-    reconcile-module callers already run inside `main()`'s own IO context), so
-    v178 does not make it public and the Result-return rule does not reach it.
+    Returns it sorted alphabetically, after asserting every rename's `new` side
+    is a real canonical check slug.
+
+    `IOResult` because it CANNOT be total while `canonical_check_slugs` is not:
+    v179 clause (d) reaches a caller through its callees as a FIXPOINT, so this
+    function is two hops from `pkgutil.iter_modules` and disqualified however clean
+    its own body looks.
+
+    The failure is FORWARDED unchanged rather than re-wrapped: this function adds
+    no failure mode of its own, and a second error type for the same condition
+    would make a caller distinguish two things that are one thing.
     """
+    canonical = canonical_check_slugs()
+    if isinstance(canonical, IOFailure):
+        return canonical
     renames = tuple(sorted(_CANONICAL_CHECK_RENAMES))
-    _validate_check_renames(
-        renames=renames, canonical=unsafe_perform_io(canonical_check_slugs().unwrap())
-    )
-    return renames
+    _validate_check_renames(renames=renames, canonical=unsafe_perform_io(canonical.unwrap()))
+    return IOSuccess(renames)
 
 
 def _build_parser() -> argparse.ArgumentParser:
