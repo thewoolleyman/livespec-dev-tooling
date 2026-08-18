@@ -42,7 +42,7 @@ loops. Manual pin edits should follow the same prefix convention.
 
 ## Secret Projection
 
-The `livespec-pr-bot` GitHub App credentials and beads tenant password are
+The `thewoolleyman-factory-bot` GitHub App credentials and beads tenant password are
 project secrets. They are injected through the livespec 1Password environment,
 not stored in this repository and not pasted into agent output.
 
