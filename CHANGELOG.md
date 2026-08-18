@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.28.6](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.28.5...v1.28.6) (2026-08-18)
+
+
+### Bug Fixes
+
+* **ci:** restore the node-PATH shim in the coverage-pair producer/consumer jobs ([395589e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/395589ed69b19560f8ab79574da3716667e1de7c))
+
 ## [1.28.5](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.28.4...v1.28.5) (2026-08-17)
 
 
