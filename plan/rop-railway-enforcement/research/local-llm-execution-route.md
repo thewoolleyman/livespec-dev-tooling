@@ -116,3 +116,54 @@ track only.
   recorded master SHA: **432 raw · 429** less dev-tooling's 3 ruled non-conversions
   · **338** distinct sites less overseer's 91 mechanically-enforced mirror copies.
   Say which one you are quoting. A part and a total from different days do not add.
+
+## 7. PILOT, 2026-08-19 — the route was TESTED against ground truth, not assumed
+
+A route this plan depends on should not be recorded on a smoke test alone. The
+model was given the **pre-conversion** `_read_root_mapping` from
+`research/8o8e21-green.patch` — a real offender from this very track, whose
+known-good conversion is in that patch — plus the railway idiom and the one
+judgment call (absent file is an ANSWER; unparseable file and non-object root are
+FAILURES). Its output was compared against the merged gold standard.
+
+### ✅ What it got RIGHT — the hard part
+
+**The railway semantics were exactly correct**, matching the merged conversion
+track-for-track: absent file → `IOSuccess({})`, `JsoncFailure` → `IOFailure(...)`
+carrying `parsed.detail`, non-object root → `IOFailure(...)`, happy path →
+`IOSuccess(...)`, and a frozen dataclass for the failure payload. It placed the
+success/failure cut on exactly the boundary the gold standard placed it on. **The
+judgment this track is actually about is within the model's reach.**
+
+### ⛔ What it got WRONG — all of it mechanical, and all of it gate-visible
+
+| deviation | consequence |
+|---|---|
+| wrapped output in ```` ```python ```` fences despite an explicit instruction not to | not directly appliable; needs unwrapping |
+| dropped `cast("dict[str, Any]", parsed)` | strict typing gate fails |
+| `@dataclass(frozen=True)` — omitted `kw_only=True` | repo convention violation |
+| re-declared `_LIVESPEC_CONFIG` and re-emitted imports it was told already exist | context-blind boilerplate to strip |
+| invented `_ReadRootMappingFailure` rather than a shared failure type | per-function type explosion across 338 sites |
+| added an unused `returns.primitives.hkt.SupportsKind1` import | lint fails |
+| trailing whitespace on in-function blank lines; dropped the docstring | format/docstring gates fail |
+
+### ▶️ THE CONCLUSION THAT SHOULD SHAPE THE HARNESS
+
+**The model is a competent railway REASONER and an unreliable patch EMITTER.** So
+the route is viable, but *not* as "local model writes the patch, session applies
+it." It needs a harness around it:
+
+1. The session assembles the context slice and **names the shared failure type**
+   up front — do not let each call invent one, or 338 conversions produce 338
+   bespoke failure dataclasses.
+2. The model proposes the conversion.
+3. A **deterministic** post-process strips fences and duplicate imports.
+4. The repo's own gates (ruff, format, typing, docstring) are the acceptance
+   oracle — never the model's self-report. Every deviation above is gate-visible,
+   which is the good news: none of them can reach master silently.
+5. Only the RGR ritual's Red→Green pair proves the conversion behaves.
+
+**Do not delegate the "is this a RULED non-conversion?" or "is this function total
+by contract?" calls.** Those are the `8o8e.28`/`.30`-class judgments; the pilot
+tested the model on a conversion whose cut was handed to it, and that is not
+evidence it can find the cut itself.
