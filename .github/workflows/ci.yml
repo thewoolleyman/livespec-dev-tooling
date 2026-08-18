@@ -269,7 +269,18 @@ jobs:
 
       - name: just check-per-file-coverage
         if: needs.setup.outputs.py_changed == 'true'
-        run: just check-per-file-coverage
+        run: |
+          # The full suite spawns `node` in some tests; under the
+          # container-hooks HOME the mise node/npm shims busy-loop or miss
+          # (no node registered for that HOME), so put the image's real
+          # node bin — derived from the shim's own location — ahead of the
+          # shims on PATH. Same block as the check-python matrix legs; its
+          # absence here failed the suite with FileNotFoundError: 'node'
+          # on the first post-#1504 master run.
+          shims_dir="$(dirname "$(command -v npm)")"
+          node_bin="$(cd "$shims_dir/../installs/node/latest/bin" 2>/dev/null && pwd || ls -d "$shims_dir/../installs/node"/*/bin 2>/dev/null | head -1)"
+          [ -n "$node_bin" ] && export PATH="$node_bin:$PATH"
+          just check-per-file-coverage
 
       # include-hidden-files is REQUIRED: upload-artifact@v4 excludes
       # dotfiles by default and .coverage is one; without it the upload
@@ -341,7 +352,15 @@ jobs:
 
       - name: just ${{ matrix.target }}
         if: needs.setup.outputs.py_changed == 'true'
-        run: just ${{ matrix.target }}
+        run: |
+          # Node-PATH shim for the standalone-fallback branch only: the
+          # normal path reads the downloaded .coverage without spawning
+          # anything, but a missing artifact falls back to the full suite,
+          # which spawns `node` in some tests (see the producer job).
+          shims_dir="$(dirname "$(command -v npm)")"
+          node_bin="$(cd "$shims_dir/../installs/node/latest/bin" 2>/dev/null && pwd || ls -d "$shims_dir/../installs/node"/*/bin 2>/dev/null | head -1)"
+          [ -n "$node_bin" ] && export PATH="$node_bin:$PATH"
+          just ${{ matrix.target }}
 
   # Central fleet-membership conformance check (livespec v108 §"Fleet
   # membership contract") — its own job (not a matrix entry) so the
