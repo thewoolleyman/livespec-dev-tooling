@@ -33,7 +33,7 @@
 #   Releases authored via an App installation token DO fire the
 #   event, restoring the fan-out path.
 #
-#   The same rationale and App identity (`livespec-pr-bot`, secrets
+#   The same rationale and App identity (`thewoolleyman-factory-bot`, secrets
 #   APP_ID + APP_PRIVATE_KEY) backs `auto-enable-merge.yml`,
 #   `reusable-bump-pin-from-dispatch.yml`, `reusable-pin-freshness.yml`,
 #   and `reusable-release-dispatch.yml`. See SPECIFICATION/contracts.md

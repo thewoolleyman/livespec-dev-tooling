@@ -54,18 +54,18 @@ jobs:
           set -euo pipefail
 
           # Author-login shape note: `gh pr list --json author` (GraphQL)
-          # returns the App bot's login as `app/livespec-pr-bot`, whereas
+          # returns the App bot's login as `app/thewoolleyman-factory-bot`, whereas
           # the webhook `pull_request` payload consumed by
           # auto-enable-merge.yml spells the SAME identity
-          # `livespec-pr-bot[bot]`. We match either spelling so this stays
+          # `thewoolleyman-factory-bot[bot]`. We match either spelling so this stays
           # correct across gh output shapes.
           open_release_prs=$(gh pr list --repo "$REPO" \
             --state open \
             --json number,title,author,headRefName,createdAt,url \
             --jq '[ .[]
               | select(
-                  (.author.login == "app/livespec-pr-bot"
-                   or .author.login == "livespec-pr-bot[bot]")
+                  (.author.login == "app/thewoolleyman-factory-bot"
+                   or .author.login == "thewoolleyman-factory-bot[bot]")
                   and (.headRefName | startswith("release-please--"))
                 ) ]')
 
