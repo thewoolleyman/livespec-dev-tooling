@@ -174,6 +174,9 @@ directly at each gating job's `runs-on`, with an inline
 self-hosted capacity use, and the posture ratified in
 `SPECIFICATION/constraints.md` §"CI matrix shape" (v048). Reverting to hosted
 is MANUAL: set the variable back to `["ubuntu-latest"]` or delete it.
+Real production traffic on the `livespec-dev-tooling-k3s` scale set was cut
+and proven 2026-08-18 (livespec-s43svm.23), completing the fleet's 8-of-8
+k3s cutover sequence (livespec-s43svm.16).
 
 This replaced a two-probe health-check router (`select-ci-runner` calling
 `reusable-ci-runner-router.yml`, plus the `ci-runner-health` composite
