@@ -23,6 +23,10 @@ from livespec_dev_tooling.charters._detectors import (
     unguarded_path_resolution,
     wrapper_less_ledger_read,
 )
+from livespec_dev_tooling.charters._document_rules import (
+    adoptable_runtime_contract,
+    unattended_charter_missing_perform_the_unblock,
+)
 from livespec_dev_tooling.charters._seed_rules import empty_prev_watcher_init
 
 __all__: list[str] = [
@@ -36,10 +40,7 @@ Detector = Callable[..., list[str]]
 
 CHARTER_GLOBS: tuple[str, ...] = (
     ".ai/supervisor-protocol.md",
-    "plan/*/supervisor-handoff.md",
-    "plan/*/epic.md",
-    "plan/archive/*/supervisor-handoff.md",
-    "plan/archive/*/epic.md",
+    "plan/**/supervisor-handoff.md",
 )
 
 DETECTORS: tuple[tuple[str, Detector], ...] = (
@@ -55,6 +56,11 @@ DETECTORS: tuple[tuple[str, Detector], ...] = (
     ("j-unguarded-marker-binding", unguarded_marker_binding),
     ("k-local-time-labelled-utc", local_time_labelled_utc),
     ("l-busy-test-matches-idle-pane", busy_test_matches_idle_pane),
+    ("m-adoptable-runtime-contract", adoptable_runtime_contract),
+    (
+        "n-unattended-charter-missing-perform-the-unblock",
+        unattended_charter_missing_perform_the_unblock,
+    ),
 )
 
 
@@ -68,4 +74,10 @@ def charters_in(*, root: Path) -> list[Path]:
     found: list[Path] = []
     for glob in CHARTER_GLOBS:
         found.extend(sorted(root.glob(glob)))
-    return found
+    return sorted(
+        found,
+        key=lambda path: (
+            len(path.relative_to(root).parts),
+            path.relative_to(root).as_posix(),
+        ),
+    )

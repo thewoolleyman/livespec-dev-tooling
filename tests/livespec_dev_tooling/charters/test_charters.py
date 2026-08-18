@@ -109,10 +109,7 @@ def test_public_surface_exports_detectors_globs_and_entry_points() -> None:
     module = _charters_module()
     assert module.CHARTER_GLOBS == (
         ".ai/supervisor-protocol.md",
-        "plan/*/supervisor-handoff.md",
-        "plan/*/epic.md",
-        "plan/archive/*/supervisor-handoff.md",
-        "plan/archive/*/epic.md",
+        "plan/**/supervisor-handoff.md",
     )
     assert [name for name, _detector in module.DETECTORS] == [
         "a-bare-tmux-target",
@@ -127,6 +124,8 @@ def test_public_surface_exports_detectors_globs_and_entry_points() -> None:
         "j-unguarded-marker-binding",
         "k-local-time-labelled-utc",
         "l-busy-test-matches-idle-pane",
+        "m-adoptable-runtime-contract",
+        "n-unattended-charter-missing-perform-the-unblock",
     ]
     assert callable(module.defects_in)
     assert callable(module.charters_in)
@@ -150,9 +149,8 @@ def test_charters_in_uses_the_parameterized_root_and_declared_globs(tmp_path: Pa
     ] == [
         ".ai/supervisor-protocol.md",
         "plan/active/supervisor-handoff.md",
-        "plan/active/epic.md",
         "plan/archive/done/supervisor-handoff.md",
-        "plan/archive/done/epic.md",
+        "plan/archive/done/nested/supervisor-handoff.md",
     ]
 
 
@@ -455,3 +453,99 @@ def test_detector_l_preserves_the_unicode_idle_pane_exemplar() -> None:
     glyph_test = _fenced(body=f"busy=0\nprintf '%s' \"$p\" | grep -qE '{glyphs}' && busy=1")
 
     assert [defect for defect in _defects_in(text=glyph_test) if defect.startswith("l-")] != []
+
+
+def test_detector_m_flags_incomplete_adoptable_runtime_contracts() -> None:
+    incomplete = """
+## Adoptable runtime launch and restart
+
+Claude fresh launch: `claude --dangerously-skip-permissions`.
+Claude live repair: `/rename <topic>`.
+"""
+    complete = """
+## Adoptable runtime launch and restart
+
+Claude fresh launch:
+`claude --dangerously-skip-permissions
+-n <topic>`.
+Claude live repair: `/rename <topic>` only after confirming
+`signals.is_structured_gate` is false.
+Codex restart:
+`codex resume --dangerously-bypass-approvals-and-sandbox <session-id>
+"<kick>"`, recovered from `~/.codex/session_index.jsonl` by `thread_name`.
+Codex fresh launch immediately uses `/rename <topic>`.
+Never send `/rename` into a numbered cursor or a permission question.
+A tmux session name is not an adoption key. Keep the daemon's own launch paths
+unchanged; do not use fuzzy matching, tmux-name matching, live killing, or
+blocking.
+"""
+    no_section = "Claude live repair: `/rename <topic>`."
+
+    assert [defect for defect in _defects_in(text=incomplete) if defect.startswith("m-")] != []
+    assert [defect for defect in _defects_in(text=complete) if defect.startswith("m-")] == []
+    assert [defect for defect in _defects_in(text=no_section) if defect.startswith("m-")] == []
+
+
+def test_detector_m_requires_structured_gate_safety() -> None:
+    unsafe = """
+## Adoptable runtime launch and restart
+
+Claude fresh launch: `claude --dangerously-skip-permissions -n <topic>`.
+Claude live repair: `/rename <topic>`.
+Codex restart: `codex resume
+--dangerously-bypass-approvals-and-sandbox <session-id> "<kick>"` by the
+`thread_name` in `~/.codex/session_index.jsonl`.
+Codex fresh launch immediately uses `/rename <topic>`.
+A tmux session name is not an adoption key. The daemon's own launch paths are
+unchanged; no fuzzy matching, tmux-name matching, live killing, or blocking.
+"""
+
+    assert [defect for defect in _defects_in(text=unsafe) if defect.startswith("m-")] != []
+
+
+def test_detector_n_flags_unattended_picker_without_unblock_authority() -> None:
+    missing = """
+# Supervisor Protocol
+
+Shared role-level instructions for every generated supervisor handoff.
+
+## AskUserQuestion presentation rules
+
+Every maintainer-facing action is an AskUserQuestion call. Put --- as the final
+line before the picker.
+"""
+    authorized = """
+# Supervisor Protocol
+
+Shared role-level instructions for every generated supervisor handoff.
+
+## AskUserQuestion presentation rules
+
+Every maintainer-facing action is an AskUserQuestion call. Put --- as the final
+line before the picker.
+
+If the SUPERVISOR can perform the unblock, PERFORM IT.
+"""
+    interactive = """
+# Interactive Plan Track
+
+## AskUserQuestion presentation rules
+
+Every maintainer-facing action is an AskUserQuestion call. Put --- as the final
+line before the picker.
+"""
+    unattended_without_picker = """
+# Supervisor Protocol
+
+Shared role-level instructions for every generated supervisor handoff.
+"""
+
+    assert [defect for defect in _defects_in(text=missing) if defect.startswith("n-")] == [
+        "n-unattended-charter-missing-perform-the-unblock: "
+        "unattended charter presents a picker without perform-the-unblock authority"
+    ]
+    assert [defect for defect in _defects_in(text=authorized) if defect.startswith("n-")] == []
+    assert [defect for defect in _defects_in(text=interactive) if defect.startswith("n-")] == []
+    assert [
+        defect for defect in _defects_in(text=unattended_without_picker) if defect.startswith("n-")
+    ] == []
