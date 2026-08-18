@@ -42,6 +42,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from returns.io import IOFailure, IOSuccess
 from returns.unsafe import unsafe_perform_io
 
 __all__: list[str] = []
@@ -455,7 +456,11 @@ def test_canonical_check_renames_returns_the_curated_rename_map() -> None:
     """
     module = _import_canonical_checks()
 
-    renames = module.canonical_check_renames()
+    outcome = module.canonical_check_renames()
+    assert isinstance(
+        outcome, IOSuccess
+    ), f"canonical_check_renames() must succeed; got {type(outcome).__name__}"
+    renames = unsafe_perform_io(outcome.unwrap())
 
     assert renames == (
         ("check-plan-thread-anchor-declared", "check-plan-anchor-declared"),
@@ -468,7 +473,11 @@ def test_canonical_check_renames_new_slugs_are_canonical() -> None:
     """Every rename's `new` slug is a real canonical check slug (the old slug is not)."""
     module = _import_canonical_checks()
 
-    renames = module.canonical_check_renames()
+    outcome = module.canonical_check_renames()
+    assert isinstance(
+        outcome, IOSuccess
+    ), f"canonical_check_renames() must succeed; got {type(outcome).__name__}"
+    renames = unsafe_perform_io(outcome.unwrap())
     canonical = unsafe_perform_io(module.canonical_check_slugs().unwrap())
 
     for old, new in renames:
@@ -497,3 +506,26 @@ def test_validate_check_renames_raises_for_non_canonical_target() -> None:
             renames=(("check-old", "check-not-a-real-check"),),
             canonical=("check-foo",),
         )
+
+
+def test_canonical_check_renames_forwards_the_failure_rather_than_re_wrapping_it(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The outer function adds no failure mode of its own, so it forwards.
+
+    `canonical_check_renames` is two hops from the walk via `canonical_check_slugs`
+    and adds no failure mode of its own, so it forwards.
+
+    Two error types for one condition would make a caller distinguish two things
+    that are one thing.
+    """
+    module = _import_canonical_checks()
+    missing = tmp_path / "definitely-not-a-package"
+    monkeypatch.setattr(module, "_CHECKS_PACKAGE_DIR", missing)
+
+    result = module.canonical_check_renames()
+
+    assert isinstance(result, IOFailure), f"expected IOFailure; got {type(result)}"
+    assert (
+        unsafe_perform_io(result.failure()).package_path == missing
+    ), "canonical_check_renames must forward the inner failure unchanged"

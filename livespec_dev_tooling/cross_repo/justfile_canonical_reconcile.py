@@ -45,7 +45,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
-from livespec_dev_tooling.canonical_checks import canonical_check_renames
+# `returns` is VENDORED, not installed, so this module must put `_vendor/` on
+# the path ITSELF. It is a `python -m` ENTRY POINT in the reusable bump-pin
+# workflow, where nothing imports before it — a bare import worked in every
+# test and killed the fan-out for seven of eight members.
+_VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
+
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
+
+from livespec_dev_tooling.canonical_checks import canonical_check_renames  # noqa: E402
 
 __all__: list[str] = ["reconcile_justfile_text"]
 
@@ -399,7 +409,9 @@ def main() -> int:
     slugs = _slugs_from_env()
     justfile_text = justfile.read_text(encoding="utf-8")
     result = _reconcile(
-        justfile_text=justfile_text, canonical_slugs=slugs, renames=canonical_check_renames()
+        justfile_text=justfile_text,
+        canonical_slugs=slugs,
+        renames=unsafe_perform_io(canonical_check_renames().unwrap()),
     )
 
     if result.skipped_reason is not None:
