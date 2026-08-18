@@ -8,20 +8,30 @@ executes the matching Claude CLI registration commands.
 from __future__ import annotations
 
 import json
-import subprocess
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, cast
 
 from livespec_dev_tooling.fleet._ensure_plugin_artifacts import (
     ArtifactReader,
+    CacheDirRemover,
     artifact_record_findings,
+    artifact_record_repair_paths,
     plugin_artifact_findings,
+    remove_plugin_cache_dir,
+)
+from livespec_dev_tooling.fleet._ensure_plugin_commands import (
+    CommandResult,
+    CommandRunner,
+    enabled_plugin_names,
+    planned_commands,
+    run_from_settings,
+    subprocess_runner,
 )
 
 __all__: list[str] = [
     "ArtifactReader",
+    "CacheDirRemover",
     "CommandResult",
     "CommandRunner",
     "RegistryReader",
@@ -30,66 +40,17 @@ __all__: list[str] = [
     "planned_commands",
     "plugin_artifact_findings",
     "registry_findings",
+    "remove_plugin_cache_dir",
     "run_from_settings",
     "settings_findings",
     "subprocess_runner",
 ]
 
 
-@dataclass(frozen=True, kw_only=True)
-class CommandResult:
-    """Outcome of one command."""
-
-    returncode: int
-
-
-class CommandRunner(Protocol):
-    """Callable seam for command execution."""
-
-    def __call__(self, *, args: tuple[str, ...]) -> CommandResult: ...
-
-
 class RegistryReader(Protocol):
     """Callable seam reading the installed-plugins registry, or None if absent."""
 
     def __call__(self) -> str | None: ...
-
-
-def _marketplace_repo_ref(*, entry: object) -> str | None:
-    """The `<repo>@<ref>` target for one extraKnownMarketplaces entry."""
-    if not isinstance(entry, dict):
-        return None
-    source = cast("dict[str, object]", entry).get("source")
-    if not isinstance(source, dict):
-        return None
-    source_map = cast("dict[str, object]", source)
-    repo = source_map.get("repo")
-    ref = source_map.get("ref")
-    if not isinstance(repo, str) or not isinstance(ref, str):
-        return None
-    return f"{repo}@{ref}"
-
-
-def _enabled_plugin_names(*, raw: object) -> tuple[str, ...] | None:
-    """The enabled plugin names from settings, preserving file order."""
-    if raw is None:
-        return ()
-    if isinstance(raw, list):
-        names: list[str] = []
-        for item in cast("list[object]", raw):
-            if not isinstance(item, str):
-                return None
-            names.append(item)
-        return tuple(names)
-    if not isinstance(raw, dict):
-        return None
-    names: list[str] = []
-    for key, enabled in cast("dict[str, object]", raw).items():
-        if not isinstance(enabled, bool):
-            return None
-        if enabled:
-            names.append(key)
-    return tuple(names)
 
 
 def _marketplace_of(*, plugin: str) -> str:
@@ -103,7 +64,7 @@ def _split_enablement(*, raw: object) -> tuple[tuple[str, ...], tuple[str, ...],
     if raw is None:
         return ((), (), None)
     if isinstance(raw, list):
-        names = _enabled_plugin_names(raw=cast("list[object]", raw))
+        names = enabled_plugin_names(raw=cast("list[object]", raw))
         if names is None:
             return ((), (), "enabledPlugins list entries must be strings")
         return (names, (), None)
@@ -217,6 +178,39 @@ def registry_findings(
     return tuple(findings)
 
 
+def _registry_repair_paths(
+    *,
+    settings_text: str,
+    project_root: str,
+    registry_text: str | None,
+    read_artifact: ArtifactReader,
+) -> tuple[str, ...]:
+    """Failing install paths from enabled plugin records, deduplicated in registry order."""
+    parsed = json.loads(settings_text)
+    enabled, _, _ = _split_enablement(raw=cast("dict[str, object]", parsed).get("enabledPlugins"))
+    registry = json.loads(registry_text) if registry_text is not None else None
+    paths: dict[str, None] = {}
+    for plugin in enabled:
+        records = _project_records(registry=registry, plugin=plugin, project_root=project_root)
+        for install_path in artifact_record_repair_paths(
+            records=records,
+            read_artifact=read_artifact,
+        ):
+            paths[install_path] = None
+    return tuple(paths)
+
+
+def _run_commands(
+    *, commands: tuple[tuple[str, ...], ...], runner: CommandRunner
+) -> tuple[str, ...]:
+    """Run one provisioning cycle and return the first command failure."""
+    for command in commands:
+        result = runner(args=command)
+        if result.returncode != 0:
+            return (f"command failed with exit {result.returncode}: {' '.join(command)}",)
+    return ()
+
+
 def ensure(
     *,
     settings_text: str,
@@ -224,6 +218,7 @@ def ensure(
     runner: CommandRunner,
     read_registry: RegistryReader,
     read_artifact: ArtifactReader = plugin_artifact_findings,
+    remove_cache_dir: CacheDirRemover = remove_plugin_cache_dir,
 ) -> tuple[str, ...]:
     """Provision from settings, then confirm it landed. Empty means provisioned.
 
@@ -233,57 +228,35 @@ def ensure(
     pre = settings_findings(settings_text=settings_text)
     if pre:
         return pre
-    for command in planned_commands(settings_text=settings_text):
-        result = runner(args=command)
-        if result.returncode != 0:
-            return (f"command failed with exit {result.returncode}: {' '.join(command)}",)
-    return registry_findings(
+    commands = planned_commands(settings_text=settings_text)
+    command_findings = _run_commands(commands=commands, runner=runner)
+    if command_findings:
+        return command_findings
+    registry_text = read_registry()
+    findings = registry_findings(
+        settings_text=settings_text,
+        project_root=project_root,
+        registry_text=registry_text,
+        read_artifact=read_artifact,
+    )
+    if not findings:
+        return ()
+    for install_path in _registry_repair_paths(
+        settings_text=settings_text,
+        project_root=project_root,
+        registry_text=registry_text,
+        read_artifact=read_artifact,
+    ):
+        removal_findings = remove_cache_dir(install_path=install_path)
+        if removal_findings:
+            return removal_findings
+    command_findings = _run_commands(commands=commands, runner=runner)
+    return command_findings or registry_findings(
         settings_text=settings_text,
         project_root=project_root,
         registry_text=read_registry(),
         read_artifact=read_artifact,
     )
-
-
-def planned_commands(*, settings_text: str) -> tuple[tuple[str, ...], ...]:
-    """Return Claude plugin commands derived from `.claude/settings.json`."""
-    parsed = json.loads(settings_text)
-    if not isinstance(parsed, dict):
-        return ()
-    settings = cast("dict[str, object]", parsed)
-    commands: list[tuple[str, ...]] = []
-    marketplaces = settings.get("extraKnownMarketplaces")
-    if isinstance(marketplaces, dict):
-        for entry in cast("dict[str, object]", marketplaces).values():
-            repo_ref = _marketplace_repo_ref(entry=entry)
-            if repo_ref is not None:
-                commands.append(("claude", "plugin", "marketplace", "add", repo_ref))
-    plugins = _enabled_plugin_names(raw=settings.get("enabledPlugins"))
-    if plugins is None:
-        return tuple(commands)
-    for plugin in plugins:
-        commands.append(("claude", "plugin", "install", plugin, "-s", "project"))
-        commands.append(("claude", "plugin", "update", plugin, "-s", "project"))
-    return tuple(commands)
-
-
-def subprocess_runner(*, args: tuple[str, ...]) -> CommandResult:
-    """Run one Claude CLI command."""
-    try:
-        completed = subprocess.run(list(args), check=False)
-    except OSError:
-        return CommandResult(returncode=127)
-    return CommandResult(returncode=completed.returncode)
-
-
-def run_from_settings(*, settings_path: Path, runner: CommandRunner) -> int:
-    """Run the Claude plugin commands derived from `settings_path`."""
-    settings_text = settings_path.read_text(encoding="utf-8")
-    for command in planned_commands(settings_text=settings_text):
-        result = runner(args=command)
-        if result.returncode != 0:
-            return result.returncode
-    return 0
 
 
 def _read_installed_registry() -> str | None:  # pragma: no cover
