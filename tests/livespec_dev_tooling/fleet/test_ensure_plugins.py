@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Final
 
+import pytest
 from _gh_railway import lift_gh
 
 from livespec_dev_tooling.fleet._context import (
@@ -26,6 +27,7 @@ from livespec_dev_tooling.fleet.ensure_plugins import (
     CommandResult,
     ensure,
     planned_commands,
+    plugin_artifact_findings,
     registry_findings,
     run_from_settings,
     settings_findings,
@@ -261,6 +263,20 @@ def _plugin_dir(*, tmp_path: Path, name: str) -> Path:
     return path
 
 
+def _cache_plugin_dir(*, home: Path, name: str) -> Path:
+    path = home / ".claude" / "plugins" / "cache" / name
+    path.mkdir(parents=True)
+    (path / "plugin.json").write_text("{}", encoding="utf-8")
+    return path
+
+
+def _write_cache_manifest(*, plugin: Path, required_paths: list[str]) -> None:
+    (plugin / "cache-manifest.json").write_text(
+        json.dumps({"required_paths": required_paths}),
+        encoding="utf-8",
+    )
+
+
 def test_settings_findings_pass_when_every_marketplace_is_covered() -> None:
     assert settings_findings(settings_text=_M3) == ()
 
@@ -401,6 +417,43 @@ def test_registry_findings_accept_plugin_json_in_install_path(*, tmp_path: Path)
     assert registry_findings(settings_text=_M3, project_root="/repo", registry_text=registry) == ()
 
 
+def test_plugin_artifact_findings_keep_current_behavior_without_cache_manifest(
+    *, tmp_path: Path
+) -> None:
+    plugin = _plugin_dir(tmp_path=tmp_path, name="plugin")
+
+    assert plugin_artifact_findings(install_path=str(plugin)) == ()
+
+
+def test_plugin_artifact_findings_accept_satisfied_cache_manifest(*, tmp_path: Path) -> None:
+    plugin = _plugin_dir(tmp_path=tmp_path, name="plugin")
+    (plugin / "scripts" / "bin").mkdir(parents=True)
+    _write_cache_manifest(plugin=plugin, required_paths=["scripts/bin"])
+
+    assert plugin_artifact_findings(install_path=str(plugin)) == ()
+
+
+def test_plugin_artifact_findings_report_missing_manifest_required_path(*, tmp_path: Path) -> None:
+    plugin = _plugin_dir(tmp_path=tmp_path, name="plugin")
+    _write_cache_manifest(plugin=plugin, required_paths=["scripts/bin"])
+
+    findings = plugin_artifact_findings(install_path=str(plugin))
+
+    assert any("scripts/bin" in finding for finding in findings)
+
+
+def test_plugin_artifact_findings_report_invalid_manifest_shape(*, tmp_path: Path) -> None:
+    plugin = _plugin_dir(tmp_path=tmp_path, name="plugin")
+    (plugin / "cache-manifest.json").write_text(
+        json.dumps({"required_paths": ["", "/absolute", "../escape", 3]}),
+        encoding="utf-8",
+    )
+
+    findings = plugin_artifact_findings(install_path=str(plugin))
+
+    assert len(findings) == 4
+
+
 def test_ensure_returns_no_findings_when_provisioning_succeeds(*, tmp_path: Path) -> None:
     registry = _registry(
         entries={
@@ -498,6 +551,106 @@ def test_ensure_reports_when_record_names_empty_artifact(*, tmp_path: Path) -> N
 
     assert findings != ()
     assert ran == list(planned_commands(settings_text=_M3))
+
+
+def test_ensure_repairs_incomplete_cache_once(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    broken = _cache_plugin_dir(home=home, name="broken")
+    _write_cache_manifest(plugin=broken, required_paths=["scripts/bin"])
+    fixed_one = _cache_plugin_dir(home=home, name="fixed-one")
+    fixed_two = _cache_plugin_dir(home=home, name="fixed-two")
+    registries = [
+        _registry(
+            entries={
+                "one@alpha": [{"projectPath": "/repo", "installPath": str(broken)}],
+                "two@beta": [{"projectPath": "/repo", "installPath": str(fixed_two)}],
+            }
+        ),
+        _registry(
+            entries={
+                "one@alpha": [{"projectPath": "/repo", "installPath": str(fixed_one)}],
+                "two@beta": [{"projectPath": "/repo", "installPath": str(fixed_two)}],
+            }
+        ),
+    ]
+    ran: list[tuple[str, ...]] = []
+
+    def runner(*, args: tuple[str, ...]) -> CommandResult:
+        ran.append(args)
+        return CommandResult(returncode=0)
+
+    findings = ensure(
+        settings_text=_M3,
+        project_root="/repo",
+        runner=runner,
+        read_registry=lambda: registries.pop(0),
+    )
+
+    assert findings == ()
+    assert ran == list(planned_commands(settings_text=_M3)) * 2
+    assert not broken.exists()
+
+
+def test_ensure_returns_second_findings_when_repair_still_fails(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    broken = _cache_plugin_dir(home=home, name="broken")
+    _write_cache_manifest(plugin=broken, required_paths=["scripts/bin"])
+    valid = _cache_plugin_dir(home=home, name="valid")
+    registry = _registry(
+        entries={
+            "one@alpha": [{"projectPath": "/repo", "installPath": str(broken)}],
+            "two@beta": [{"projectPath": "/repo", "installPath": str(valid)}],
+        }
+    )
+    ran: list[tuple[str, ...]] = []
+
+    def runner(*, args: tuple[str, ...]) -> CommandResult:
+        ran.append(args)
+        return CommandResult(returncode=0)
+
+    findings = ensure(
+        settings_text=_M3,
+        project_root="/repo",
+        runner=runner,
+        read_registry=lambda: registry,
+    )
+
+    assert any("one@alpha" in finding and "does not exist" in finding for finding in findings)
+    assert ran == list(planned_commands(settings_text=_M3)) * 2
+
+
+def test_ensure_refuses_to_delete_install_path_outside_cache(*, tmp_path: Path) -> None:
+    outside = _plugin_dir(tmp_path=tmp_path, name="outside")
+    _write_cache_manifest(plugin=outside, required_paths=["scripts/bin"])
+    valid = _plugin_dir(tmp_path=tmp_path, name="valid")
+    registry = _registry(
+        entries={
+            "one@alpha": [{"projectPath": "/repo", "installPath": str(outside)}],
+            "two@beta": [{"projectPath": "/repo", "installPath": str(valid)}],
+        }
+    )
+    ran: list[tuple[str, ...]] = []
+
+    def runner(*, args: tuple[str, ...]) -> CommandResult:
+        ran.append(args)
+        return CommandResult(returncode=0)
+
+    findings = ensure(
+        settings_text=_M3,
+        project_root="/repo",
+        runner=runner,
+        read_registry=lambda: registry,
+    )
+
+    assert any("refusing to delete" in finding for finding in findings)
+    assert ran == list(planned_commands(settings_text=_M3))
+    assert outside.exists()
 
 
 def test_settings_findings_reject_non_object_document() -> None:
