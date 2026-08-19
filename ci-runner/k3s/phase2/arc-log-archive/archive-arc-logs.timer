@@ -1,0 +1,22 @@
+# archive-arc-logs.timer — run the ARC log archive every 2 minutes.
+#
+# The interval is set by the SHORTEST measured retention, not by load. The ARC
+# controller's rotating buffer was measured at ~70 minutes on 2026-08-19, and
+# re-measured at FOUR minutes once traffic picked up — retention is a function
+# of log volume, so it collapses exactly when an incident makes the log worth
+# having. Two minutes keeps the archive ahead of that collapse with margin,
+# where the five-minute cadence used by this tree's other timers would not.
+#
+# The cost is one namespaced pod list plus one incremental `kubectl logs` per
+# ARC pod, which is a dozen calls against the local API server; it is dwarfed by
+# the controller's own reconcile traffic.
+[Unit]
+Description=Periodic ARC log archive (every 2 min)
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=2min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

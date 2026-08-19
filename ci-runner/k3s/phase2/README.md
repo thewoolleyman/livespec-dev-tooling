@@ -747,6 +747,79 @@ arrives as evidence instead of as a repeat of the last one, which is the
 cheapest available step given that the burst experiment above needs a
 deliberate load window.
 
+## ARC log retention: archive before the kubelet's buffer rotates
+
+Container logs live in the kubelet's rotating buffer, and the ARC controller
+is chatty enough to churn through it fast. Measured on `poweredge-xubuntu`
+on 2026-08-19:
+
+| Source | Retention observed |
+|---|---|
+| `deploy/arc-gha-rs-controller` | **~70 minutes** (31,961 lines, 07:02Z–08:13Z) |
+| the same, re-measured 4 min later under load | **~4 minutes** |
+| a scale-set listener (`livespec-overseer-k3s`) | ~9 hours |
+
+Retention is a function of log VOLUME, so it is shortest exactly when an
+incident makes the log worth reading. That is not a theoretical concern
+here: it is why `livespec-s43svm.30`'s trigger is still open. A wedged
+runner at 03:43Z was investigated around 08:00Z, and the controller log
+that would have said whether ARC deleted the runner's registration had
+rotated away hours before. The grep for it returned zero.
+
+**A zero from a log that does not cover the window is not evidence of
+absence.** It reads identically to a real negative, which is what makes it
+the more dangerous of the two — the reader banks a conclusion the data
+never supported. The reframing that IS on `.30` came from the listener
+logs, and only because their nine-hour margin happened to cover the
+incident. That margin is a property of current traffic, not a guarantee.
+
+### What is installed
+
+`arc-log-archive/` ships a script, a oneshot unit, and a 2-minute timer.
+Each pass appends only the lines it has not already archived, per pod:
+
+```
+/var/log/arc-archive/<pod>.log            the archive (rolled at 256 MiB, one generation)
+/var/lib/ci-runner-k3s/arc-log-archive/   per-pod "last archived timestamp" state
+```
+
+Install it on any node in the pool, and after any node rebuild:
+
+```bash
+sudo ci-runner/k3s/phase2/arc-log-archive/install-arc-log-archive.sh
+```
+
+Read it during an incident exactly as you would read `kubectl logs`, except
+that it reaches back:
+
+```bash
+grep -h "same name" /var/log/arc-archive/arc-gha-rs-controller-*.log
+```
+
+### Why not simply raise the kubelet's rotation limits
+
+That is the direct fix, and it is deliberately not taken.
+`--container-log-max-size` and `--container-log-max-files` are k3s **server**
+arguments, so changing them means restarting k3s — on the host that carries
+every fleet repository's gating CI. A diagnostic improvement does not earn an
+outage window.
+
+The archive runs entirely beside the cluster, creates no Kubernetes object,
+and is removed by disabling one timer. If the rotation limits are ever raised
+for other reasons, it stays correct and simply has less work to do.
+
+### Two details worth knowing before you rely on it
+
+- **The interval is set by the shortest measured retention, not by load.**
+  Two minutes, against a buffer that was seen collapsing to four. The rest of
+  this tree runs its timers at five, and five would not be safe here.
+- **The de-duplication is load-bearing, not tidiness.** `--since-time` is
+  inclusive at its boundary, so a naive implementation re-appends the
+  boundary line every pass. A forensic grep that returns the same line eleven
+  times invites the reader to infer a repeating event that never repeated —
+  the same class of error as the vacuous zero above, arrived at from the
+  opposite direction.
+
 ## Known caveat: the node-status patch's robustness, corrected against live evidence
 
 `kubectl patch node --subresource=status` is the Kubernetes-documented
