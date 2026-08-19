@@ -703,6 +703,7 @@ jobs:
           just check-plugin-resolution || failed="$failed check-plugin-resolution"
           just check-primary-checkout-commit-refuse-hook-installed || failed="$failed check-primary-checkout-commit-refuse-hook-installed"
           just check-self-hosted-routing || failed="$failed check-self-hosted-routing"
+          just check-self-hosted-uv-lane || failed="$failed check-self-hosted-uv-lane"
           just check-shell-quality || failed="$failed check-shell-quality"
           just check-skill-invocation-paths || failed="$failed check-skill-invocation-paths"
           just check-source-trees-scoped-to-consumer || failed="$failed check-source-trees-scoped-to-consumer"
