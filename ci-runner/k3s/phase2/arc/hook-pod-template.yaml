@@ -1,0 +1,31 @@
+# hook-pod-template.yaml — the ARC Kubernetes-mode hook's pod-spec extension.
+#
+# In `containerMode: kubernetes`, a job's `container:` image does NOT run in the
+# runner pod. The runner's container hook (`/home/runner/k8s/index.js`) creates
+# a SEPARATE "workflow" pod per job, and that pod's spec is built by the hook,
+# not by the Helm values — which is why a securityContext set in
+# `values-<repo>.yaml` reaches the runner pod only and leaves the pod the tests
+# actually execute in with an EMPTY securityContext.
+#
+# `ACTIONS_RUNNER_CONTAINER_HOOK_TEMPLATE` is the one supported seam. The hook
+# reads this file with an untyped YAML load and merges its `spec` into the
+# generated pod spec key by key (`mergePodSpecWithOptions`), so a field is
+# passed through verbatim rather than being dropped by a typed deserializer.
+#
+# The single field set here pins the workflow pod to the `ci-runner-workflow`
+# AppArmor profile — see ../apparmor/ci-runner-workflow for the full root cause.
+# `type: Localhost` fails pod admission on a node where the profile is absent,
+# so a node that skipped ../apparmor/install-apparmor-profile.sh surfaces as a
+# pod that will not start rather than as a silently unconfined job.
+#
+# NOTE on merge semantics: `securityContext` is assigned wholesale, not deep
+# merged. That is safe only because the hook-generated pod's own
+# securityContext is `{}`. Anything else this file needs to set at pod level
+# must be added to the block below rather than to a second document.
+apiVersion: v1
+kind: PodTemplate
+spec:
+  securityContext:
+    appArmorProfile:
+      type: Localhost
+      localhostProfile: ci-runner-workflow

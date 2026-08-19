@@ -1,0 +1,96 @@
+# values-livespec-overseer.yaml — the per-repository AutoscalingRunnerSet for
+# `livespec-overseer`, derived from values-livespec.yaml per README.md
+# "Deriving a new repository's ClusterQueue". Read that file first: it carries
+# the rationale for repository-scoped `githubConfigUrl` (a personal GitHub
+# account has no org or enterprise runner scope at all), for the churn-slot
+# extended resource, and for why `maxRunners` and the ClusterQueue's
+# nominalQuota are two enforcement points holding ONE number.
+#
+# This file additionally carries the WORKFLOW-POD AppArmor wiring, which
+# values-livespec.yaml does not yet have. It is the only per-repo values file in
+# this tree that does, because `livespec-overseer` is the repo whose suite
+# actually exercises the affected operations — see below.
+githubConfigUrl: "https://github.com/thewoolleyman/livespec-overseer"
+githubConfigSecret: arc-github-app-installation  # same secret as phase 1 — see ../../README.md "Credential separation"
+
+runnerScaleSetName: "livespec-overseer-k3s"
+
+containerMode:
+  type: "kubernetes"
+  kubernetesModeWorkVolumeClaim:
+    accessModes: ["ReadWriteOnce"]
+    storageClassName: "local-path"
+    resources:
+      requests:
+        storage: 5Gi
+
+template:
+  metadata:
+    labels:
+      # Routes this scale set's runner pods through Kueue's per-repo LocalQueue
+      # rather than straight to the Kubernetes scheduler.
+      kueue.x-k8s.io/queue-name: livespec-overseer-lq
+  spec:
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+    volumes:
+      # Carries ../apparmor/../arc/hook-pod-template.yaml into the runner pod so
+      # the container hook can read it. Additive: the chart appends its own
+      # `work` volume for kubernetes mode, and declaring this one does not
+      # displace it (verified on the rendered AutoscalingRunnerSet).
+      - name: hook-pod-template
+        configMap:
+          name: arc-hook-pod-template
+    containers:
+      - name: runner
+        image: ghcr.io/actions/actions-runner:latest
+        command: ["/home/runner/run.sh"]
+        env:
+          - name: ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER
+            value: "false"
+          # THE WORKFLOW-POD FIX. In kubernetes container mode the job's
+          # `container:` image runs in a SEPARATE pod the hook creates, whose
+          # securityContext is empty and which nothing in this values file
+          # otherwise reaches. This env var is the hook's one supported seam for
+          # extending that pod's spec; it pins the pod to the node-loaded
+          # `ci-runner-workflow` AppArmor profile.
+          #
+          # Without it, containerd's default profile denies intra-container
+          # `signal` and `ptrace` on this host — Ubuntu's
+          # kernel.apparmor_restrict_unprivileged_userns=1 stacks the task label
+          # to `cri-containerd.apparmor.d//&unconfined`, which the default's
+          # bare `peer=cri-containerd.apparmor.d` rules do not match. That broke
+          # `os.killpg` (EACCES) and tmux `#{pane_current_path}` (empty, because
+          # tmux readlinks /proc/<pgrp>/cwd and that is a ptrace-read), which is
+          # what reverted this repo's 2026-08-17 cutover. Full root cause:
+          # ../apparmor/ci-runner-workflow.
+          - name: ACTIONS_RUNNER_CONTAINER_HOOK_TEMPLATE
+            value: /home/runner/hook-template/hook-pod-template.yaml
+        volumeMounts:
+          - name: hook-pod-template
+            mountPath: /home/runner/hook-template
+            readOnly: true
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          capabilities:
+            drop: ["ALL"]
+        resources:
+          # Exactly ONE churn-slot per runner pod — see values-livespec.yaml.
+          requests:
+            ci-runner.io/churn-slot: "1"
+          limits:
+            ci-runner.io/churn-slot: "1"
+
+# MUST match the `livespec-overseer-cq` ClusterQueue's nominalQuota — see
+# README.md "Two enforcement points, one number". That ClusterQueue exists LIVE
+# on the cluster but has no committed manifest under ../kueue/ yet; six of the
+# eight per-repo scale sets were applied ad hoc and were never captured as
+# values/queue files. This file closes that gap for `livespec-overseer` only.
+# Capturing the remaining five (and the matching ClusterQueues) is separate
+# provisioning-drift work, not part of the AppArmor fix.
+minRunners: 0
+maxRunners: 65

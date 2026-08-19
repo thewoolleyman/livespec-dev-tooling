@@ -1,0 +1,95 @@
+# ci-runner-workflow — AppArmor profile for ARC hook-generated WORKFLOW pods.
+#
+# WHY THIS FILE EXISTS
+# --------------------
+# containerd's built-in default profile `cri-containerd.apparmor.d` denies
+# intra-container `signal` and `ptrace` on this host, defeating its own intent.
+#
+# Ubuntu's `kernel.apparmor_restrict_unprivileged_userns=1` STACKS the AppArmor
+# label of every confined task. A process in a containerd-defaulted pod here
+# therefore carries the COMPOUND label
+#
+#     cri-containerd.apparmor.d//&unconfined
+#
+# not the bare profile name. containerd's default grants those two operations
+# only to `peer=cri-containerd.apparmor.d` — a BARE peer name, which a stacked
+# label does not match. So the profile refuses its own containers the very
+# operations the rules were written to allow, and the kernel logs
+#
+#     apparmor="DENIED" operation="signal" profile="cri-containerd.apparmor.d"
+#       peer="cri-containerd.apparmor.d//&unconfined"
+#
+# Docker is unaffected: `docker-default` is not stacked the same way, which is
+# why an image can be green under plain docker and red in a pod.
+#
+# MEASURED CONSEQUENCES (livespec-overseer, 2026-08-17 rollback; root-caused
+# 2026-08-18 under livespec epic livespec-s43svm.18):
+#
+#   * `os.killpg` across process groups returns EACCES.
+#   * tmux's `#{pane_current_path}` reads back EMPTY. tmux derives it by
+#     readlink()ing /proc/<pane foreground pgrp>/cwd, and reading another
+#     process's /proc/PID/cwd is a PTRACE_MODE_READ operation — so the ptrace
+#     denial surfaces as an empty string rather than as an error, which is how
+#     it laundered into unrelated-looking assertion failures.
+#
+# WHAT THIS PROFILE CHANGES, AND WHAT IT DELIBERATELY DOES NOT
+# ------------------------------------------------------------
+# Every deny rule of containerd's default is reproduced verbatim: `deny mount`,
+# the /proc write denials, sysrq-trigger, kcore, and the /sys denials. The ONLY
+# widening is that the `signal` and `ptrace` peer expressions additionally match
+# the stacked form of this profile's own label.
+#
+# This is deliberately narrower than the alternatives that also fix the symptom:
+# it is NOT `appArmorProfile: Unconfined` (which removes the layer outright), it
+# adds NO capability, and it makes nothing privileged. The pod keeps
+# `runAsNonRoot`, its dropped capabilities, and seccomp untouched, and this
+# profile stays in ENFORCE mode.
+#
+# Install with ./install-apparmor-profile.sh. The pods that use it name it via
+# `securityContext.appArmorProfile.localhostProfile`, so a node missing this
+# profile FAILS the pod admission rather than silently running unconfined.
+
+#include <tunables/global>
+
+profile ci-runner-workflow flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+
+  network,
+  capability,
+  file,
+  umount,
+
+  # Host (privileged) processes may signal container processes.
+  signal (receive) peer=unconfined,
+
+  # Container processes may signal amongst themselves. BOTH forms are listed:
+  # the bare name for an unstacked label, and the `//&unconfined` form for the
+  # stacked label this host actually produces. Dropping the second line
+  # reintroduces the defect this profile exists to fix.
+  signal (send,receive) peer=ci-runner-workflow,
+  signal (send,receive) peer=ci-runner-workflow//&unconfined,
+
+  # Same reasoning: `ps` inside the container, and any /proc/<PID>/ symlink read
+  # (cwd, exe, root) across processes, is a ptrace-read.
+  ptrace (trace,read,tracedby,readby) peer=ci-runner-workflow,
+  ptrace (trace,read,tracedby,readby) peer=ci-runner-workflow//&unconfined,
+
+  # ---- Below here: containerd's default deny set, unchanged. ----
+
+  deny @{PROC}/* w,
+  deny @{PROC}/{[^1-9],[^1-9][^0-9],[^1-9s][^0-9y][^0-9s],[^1-9][^0-9][^0-9][^0-9]*}/** w,
+  deny @{PROC}/sys/[^k]** w,
+  deny @{PROC}/sys/kernel/{?,??,[^s][^h][^m]**} w,
+  deny @{PROC}/sysrq-trigger rwklx,
+  deny @{PROC}/kcore rwklx,
+
+  deny mount,
+
+  deny /sys/[^f]*/** wklx,
+  deny /sys/f[^s]*/** wklx,
+  deny /sys/fs/[^c]*/** wklx,
+  deny /sys/fs/c[^g]*/** wklx,
+  deny /sys/fs/cg[^r]*/** wklx,
+  deny /sys/firmware/** rwklx,
+  deny /sys/kernel/security/** rwklx,
+}
