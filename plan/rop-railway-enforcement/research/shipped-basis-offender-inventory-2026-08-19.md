@@ -154,3 +154,55 @@ It is still convicted and still undecided. And `resolve_canonical_branch`, two r
 it in the same repo, is the `8o8e.28` subject whose escape is measured but unpriced — so
 **two of git-jsonl's four offenders carry open questions rather than mechanical work.**
 Its 4 is not as cheap as `driver-codex`'s 3.
+
+## CORRECTION to Surprise 2 — overseer's 14 are FALSE POSITIVES, not a scoping preference
+
+I first wrote these up as "a universe question for the maintainer." That was too soft.
+Measured further, they are a **defect with a named mechanism**, and the ratified text
+settles them without any new ruling.
+
+### The mechanism
+
+`iter_first_party_py_files` excludes tests by a **PATH PREFIX**, `tests_tree_prefix`,
+which defaults to `"tests/"`. `livespec-overseer` does not override it — and its tests do
+not live only under `tests/`:
+
+- **65** `test_*.py` modules live INSIDE the package, at `overseer/test_*.py`.
+- The repo's own `pyproject.toml` declares **`testpaths = ["overseer", "tests"]`** — the
+  repo itself states that `overseer/` is a test path.
+
+A prefix cannot express "tests interleaved in the package", so all 65 enter the universe
+as first-party PRODUCT code. Nothing downstream marks them as tests, so when
+`test_supervisor_row_color_operator.py` imports `test_supervisor_builders.py`, the
+consumption analysis reads it as **clause 1, product import by non-test first-party
+code** — and the names become "public API".
+
+### Why that is a false positive rather than a judgment call
+
+Measured: **every** importer of the three convicted helper modules is itself a `test_*.py`
+module in the SAME repo. Not one non-test importer, not one sibling repo. Against the
+ratified criterion that is neither clause 1 (which requires NON-TEST code) nor clause 2
+(which requires a DIFFERENT governed repo) — and the spec then rules on it explicitly:
+
+> *"A name imported only by the DECLARING repo's own tests is NOT public API ... it is a
+> TEST-VISIBILITY EXPORT, and the rule does not reach it."*
+
+▶️ **So the check convicts 14 names the ratified rule expressly does not reach.** No
+maintainer ruling is needed to establish that; it is already ratified. What needs deciding
+is only the REMEDY — teach the test-detection to recognise `test_*.py` filenames, let
+`tests_tree_prefix` express more than one prefix, or have overseer relocate 65 modules.
+
+⚠️ **AND THIS IS THE SAME SHAPE AS THE `plan/` WRAPPERS.** Both are path-based
+classification meeting a layout it cannot express. `beads-fabro`'s 2 rehearsal wrappers
+are first-party Python by path while being nobody's API; overseer's 14 are tests by
+intent and product by path. One class, two symptoms.
+
+⛔ **CONSEQUENCE FOR THE REMEDIATION MATH: overseer's 162 is not 162 of real work**, and
+nobody should start there believing it is. It is at most 148 plus a defect fix — and the
+defect fix is worth more than the conversions, because it stops the next re-measure
+counting them again.
+
+**Unfiled deliberately.** This is ripe for a work-item, but `8o8e` already carries eleven
+undisposed children blocking archive and the maintainer is mid-triage; adding a twelfth
+unilaterally works against them. Say the word and it gets filed — the evidence above is
+complete enough to file from as-is.
