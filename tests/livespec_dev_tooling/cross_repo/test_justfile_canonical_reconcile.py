@@ -496,3 +496,205 @@ def test_main_non_dict_payload_yields_empty_canonical_set(
     assert rc == 0
     assert "canonical check wiring already current" in capsys.readouterr().out
     assert justfile.read_text(encoding="utf-8") == _JUSTFILE_FULLY_CURRENT
+
+
+# ---------------------------------------------------------------------------
+# Inventory reconcile — the three-consumer blind spot (livespec-s43svm.33).
+#
+# `aggregate_completeness` reads a committed `check-targets.txt` FIRST and
+# parses the justfile `targets=(...)` array only in its absence. Reconciling the
+# array alone therefore left three of the fleet's eight Python consumers
+# untouched, and each failed the gate on the very bump meant to wire it.
+# ---------------------------------------------------------------------------
+
+# `livespec-driver-codex` / `livespec-driver-pi` shape: the aggregate delegates
+# to a shell script, so there is NO inline array for the old reconcile to find.
+_JUSTFILE_SCRIPT_DELEGATING = """check:
+    bash dev-tooling/check-aggregate.sh
+
+check-aggregate-completeness:
+    uv run python -m livespec_dev_tooling.checks.aggregate_completeness
+"""
+
+# `livespec-runtime` shape: a PARAMETERIZED aggregate header, which the
+# bare-only match reported as `no_check_header`.
+_JUSTFILE_PARAM_AGGREGATE = """check *skip_targets:
+    targets=(
+        check-aggregate-completeness
+    )
+    echo "${skip_targets}"
+
+check-aggregate-completeness:
+    uv run python -m livespec_dev_tooling.checks.aggregate_completeness
+"""
+
+_INVENTORY = """# Canonical check inventory.
+check-aggregate-completeness
+check-wrapper-shape
+"""
+
+
+def test_script_delegating_consumer_reconciles_its_inventory() -> None:
+    """A consumer whose aggregate delegates to a script still gets wired.
+
+    The old reconcile found no `targets=(...)` array, returned
+    `no_targets_array`, and left the repo to fail the gate. The inventory file
+    is what the gate reads, so that is what must be reconciled.
+    """
+    result = justfile_canonical_reconcile.reconcile_sources(
+        justfile_text=_JUSTFILE_SCRIPT_DELEGATING,
+        inventory_text=_INVENTORY,
+        canonical_slugs=["check-aggregate-completeness", "check-new-thing", "check-wrapper-shape"],
+    )
+    assert result.skipped_reason is None, "a script-delegating consumer must not be skipped"
+    assert result.inventory_text is not None
+    assert "check-new-thing" in result.inventory_text
+    # The recipe is appended too, so `just check-new-thing` resolves.
+    assert _header_count(text=result.justfile_text, slug="check-new-thing") == 1
+
+
+def test_parameterized_aggregate_header_is_recognized() -> None:
+    """`check *skip_targets:` is an aggregate header, not an absent one."""
+    result = justfile_canonical_reconcile.reconcile_sources(
+        justfile_text=_JUSTFILE_PARAM_AGGREGATE,
+        inventory_text=None,
+        canonical_slugs=["check-aggregate-completeness", "check-new-thing"],
+    )
+    assert result.skipped_reason is None, "a parameterized aggregate header must reconcile"
+    assert _target_present(text=result.justfile_text, slug="check-new-thing")
+
+
+def test_consumer_carrying_both_sources_updates_both() -> None:
+    """A repo with an inventory AND an inline array has both updated.
+
+    The file because it is what the gate reads; the array because such a repo
+    may also enforce a literal mirror between the two.
+    """
+    result = justfile_canonical_reconcile.reconcile_sources(
+        justfile_text=_JUSTFILE_PARAM_AGGREGATE,
+        inventory_text=_INVENTORY,
+        canonical_slugs=["check-aggregate-completeness", "check-new-thing", "check-wrapper-shape"],
+    )
+    assert result.inventory_text is not None
+    assert "check-new-thing" in result.inventory_text
+    assert _target_present(text=result.justfile_text, slug="check-new-thing")
+
+
+def test_inventory_only_repo_leaves_justfile_array_alone_when_absent() -> None:
+    """No inline array is not an error when the inventory carries the slugs."""
+    result = justfile_canonical_reconcile.reconcile_sources(
+        justfile_text=_JUSTFILE_SCRIPT_DELEGATING,
+        inventory_text=_INVENTORY,
+        canonical_slugs=["check-aggregate-completeness", "check-wrapper-shape"],
+    )
+    assert result.skipped_reason is None
+    assert result.missing == ()
+
+
+def test_reconcile_inventory_text_preserves_canonical_order() -> None:
+    """An inserted slug lands in canonical position, not appended at the end.
+
+    Order is load-bearing: `aggregate_completeness` fails an out-of-order
+    inventory as well as an incomplete one.
+    """
+    result = justfile_canonical_reconcile.reconcile_inventory_text(
+        inventory_text=_INVENTORY,
+        canonical_slugs=["check-aggregate-completeness", "check-new-thing", "check-wrapper-shape"],
+    )
+    slugs = [line.strip() for line in result.splitlines() if line.strip().startswith("check-")]
+    assert slugs == ["check-aggregate-completeness", "check-new-thing", "check-wrapper-shape"]
+
+
+def test_reconcile_inventory_text_is_idempotent() -> None:
+    """A current inventory is returned byte-identical."""
+    canonical = ["check-aggregate-completeness", "check-wrapper-shape"]
+    once = justfile_canonical_reconcile.reconcile_inventory_text(
+        inventory_text=_INVENTORY, canonical_slugs=canonical
+    )
+    assert once == _INVENTORY
+    twice = justfile_canonical_reconcile.reconcile_inventory_text(
+        inventory_text=once, canonical_slugs=canonical
+    )
+    assert twice == once
+
+
+def test_empty_inventory_gains_every_canonical_slug() -> None:
+    """An inventory declaring nothing is filled rather than skipped."""
+    result = justfile_canonical_reconcile.reconcile_inventory_text(
+        inventory_text="# nothing yet\n",
+        canonical_slugs=["check-a-thing", "check-b-thing"],
+    )
+    assert "check-a-thing" in result
+    assert "check-b-thing" in result
+
+
+def test_sources_skip_when_neither_source_carries_the_aggregate() -> None:
+    """A consumer that does not carry the gate is still a legitimate no-op."""
+    result = justfile_canonical_reconcile.reconcile_sources(
+        justfile_text="check:\n    echo hi\n",
+        inventory_text="check-something-local\n",
+        canonical_slugs=["check-anything"],
+    )
+    assert result.skipped_reason == "no_aggregate"
+
+
+def test_main_reconciles_the_inventory_file_on_disk(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`main()` writes the reconciled inventory, not only the justfile."""
+    _ = (tmp_path / "justfile").write_text(_JUSTFILE_SCRIPT_DELEGATING, encoding="utf-8")
+    _ = (tmp_path / "check-targets.txt").write_text(_INVENTORY, encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv(
+        "CANONICAL_JSON",
+        '{"slugs": ["check-aggregate-completeness", "check-new-thing", "check-wrapper-shape"]}',
+    )
+    assert justfile_canonical_reconcile.main() == 0
+    assert "check-new-thing" in (tmp_path / "check-targets.txt").read_text(encoding="utf-8")
+    assert "reconciled canonical check wiring" in capsys.readouterr().out
+
+
+def test_main_warns_when_an_aggregate_carrying_consumer_is_skipped(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A skip on a consumer that DOES carry the gate emits a visible warning.
+
+    Silence is what made the blind spot expensive: the module exited 0 with a
+    notice nobody reads, and the consequence surfaced later as a red bump PR.
+    """
+    _ = (tmp_path / "justfile").write_text(
+        "check:\n    echo no array\n\ncheck-aggregate-completeness:\n    uv run x\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("CANONICAL_JSON", '{"slugs": ["check-aggregate-completeness"]}')
+    assert justfile_canonical_reconcile.main() == 0
+    assert "::warning::" in capsys.readouterr().out
+
+
+def test_main_does_not_warn_for_a_legitimate_no_aggregate_skip(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A repo that does not carry the gate is not a problem, so it is not a warning."""
+    _ = (tmp_path / "justfile").write_text("check:\n    echo hi\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("CANONICAL_JSON", '{"slugs": ["check-anything"]}')
+    assert justfile_canonical_reconcile.main() == 0
+    assert "::warning::" not in capsys.readouterr().out
+
+
+def test_inventory_repo_without_any_aggregate_recipe_still_reconciles() -> None:
+    """An inventory repo whose justfile declares no `check` aggregate at all.
+
+    The gate reads the inventory, so the absence of an inline aggregate is not
+    a reason to skip: the inventory is reconciled and the recipe appended.
+    """
+    result = justfile_canonical_reconcile.reconcile_sources(
+        justfile_text="check-aggregate-completeness:\n    uv run python -m x\n",
+        inventory_text=_INVENTORY,
+        canonical_slugs=["check-aggregate-completeness", "check-new-thing", "check-wrapper-shape"],
+    )
+    assert result.skipped_reason is None
+    assert result.inventory_text is not None
+    assert "check-new-thing" in result.inventory_text
+    assert _header_count(text=result.justfile_text, slug="check-new-thing") == 1
