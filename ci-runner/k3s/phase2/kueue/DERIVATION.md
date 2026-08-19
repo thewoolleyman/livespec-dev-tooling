@@ -259,6 +259,31 @@ capacity. Lowering runs the other way — lower the quotas first, then the
 node capacity, so the cohort never has quota outstanding against
 capacity that no longer exists.
 
+## What this derivation does NOT address: queueing that is not capacity
+
+**Jobs sitting queued is not, by itself, evidence that `C` is too low.** There
+is a distinct failure mode that presents identically and that no quota value
+can fix — `livespec-s43svm.30`, root-caused live on 2026-08-19.
+
+A runner pod can be `Running` and `ready=true` to Kubernetes while permanently
+unable to accept work, because GitHub invalidated its registration
+server-side. It never exits; its log loops `Registration <uuid> was not
+found`. ARC counts it as a live runner, computes `decision=1` against
+`currentRunnerCount=1`, and therefore suppresses the very scale-up that would
+replace it. A dead runner holds the slot that would have fixed it.
+
+Every signal in this document reads healthy through that state: pods
+`Running`, node capacity showing headroom, Kueue reporting zero gated and zero
+pending workloads, quotas summing correctly to `C`. Two separate sessions
+diagnosed it as runner-pool saturation before it was root-caused. Raising `C`
+does not clear it — the 8 to 16 raise on the night of 2026-08-19 did not, and
+the full 482-slot envelope would not either.
+
+So before reading queueing as a capacity signal, check for that signature.
+Sizing and wedging are different problems with opposite fixes, and this file
+only speaks to the first. `livespec-s43svm.30` owns the detection and recovery
+work; nothing in it changes any number here.
+
 ## The permanent C is still an open question
 
 **Nothing in this derivation chooses `C`.** The formula apportions
@@ -280,8 +305,17 @@ What is known, as of 2026-08-19:
   `patch-node-churn-capacity.sh`'s own header. It is a target, not a
   proven value — nothing has run the k3s pool anywhere near it.
 
-So the answer is bracketed between 16 (proven) and 482 (targeted), with
-a large untested interval between. The podman pool has been stopped
+Be precise about what "proven" means for those two values. The soaks
+establish the SAFETY of running at that capacity: the cap was never
+breached, and no iowait or container-init symptom appeared. They do NOT
+establish that the queueing observed before each raise was
+capacity-bound, and in light of `livespec-s43svm.30` (above) some of it
+demonstrably was not. Raising `C` was safe and it increased throughput;
+that is not the same as it having been the fix for every stall attributed
+to it at the time.
+
+So the answer is bracketed between 16 (safe) and 482 (targeted), with a
+large untested interval between. The podman pool has been stopped
 since 2026-08-13, so the side-by-side joint-budget constraint that
 `README.md` documents no longer binds; the remaining reason for caution
 is simply that the k3s container-churn profile at high concurrency has
