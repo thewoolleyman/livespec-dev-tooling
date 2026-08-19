@@ -779,7 +779,7 @@ incident. That margin is a property of current traffic, not a guarantee.
 Each pass appends only the lines it has not already archived, per pod:
 
 ```
-/var/log/arc-archive/<pod>.log            the archive (rolled at 256 MiB, one generation)
+/var/log/arc-archive/<pod>.log            the archive (rolled at 1 GiB, one generation)
 /var/lib/ci-runner-k3s/arc-log-archive/   per-pod "last archived timestamp" state
 ```
 
@@ -795,6 +795,26 @@ that it reaches back:
 ```bash
 grep -h "same name" /var/log/arc-archive/arc-gha-rs-controller-*.log
 ```
+
+### The sizing came from measurement, and the first estimate was wrong
+
+Archiving the live cluster once on 2026-08-19 gave the numbers the ceiling is
+set from:
+
+| Measured | Value |
+|---|---|
+| bytes per archived line | 328 |
+| controller output rate | 576 lines in ~40s — about **860 lines/min** |
+| controller volume | **16.2 MB/hour** |
+| 1 GiB roll ceiling | ~63 hours per generation, ~5 days across both |
+
+The first draft of this used 256 MiB on an ESTIMATED ~450 lines/min and
+described it as "on the order of a week". The measured rate is roughly
+double, which made that claim wrong by about a factor of ten — 256 MiB is
+really about sixteen hours. Worth stating plainly rather than silently
+correcting, because a retention horizon shorter than the gap between an
+incident and its investigation reintroduces exactly the failure this
+archive exists to prevent, only further out.
 
 ### Why not simply raise the kubelet's rotation limits
 

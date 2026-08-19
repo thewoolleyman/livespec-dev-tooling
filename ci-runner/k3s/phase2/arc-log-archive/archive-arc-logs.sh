@@ -55,11 +55,27 @@ ARCHIVE_DIR="${ARC_LOG_ARCHIVE_DIR:-/var/log/arc-archive}"
 # a systemd oneshot accumulates, and /var/lib is where that belongs.
 STATE_DIR="${ARC_LOG_ARCHIVE_STATE_DIR:-/var/lib/ci-runner-k3s/arc-log-archive}"
 # Size ceiling per archive file before it is rolled to <name>.1. One generation
-# is kept. 256 MiB against the controller's measured ~450 lines/min is on the
-# order of a week, which is the horizon a post-incident investigation actually
-# needs; keeping more than one generation would trade disk for a horizon nobody
-# has wanted yet.
-MAX_BYTES="${ARC_LOG_ARCHIVE_MAX_BYTES:-268435456}"
+# is kept, so the horizon is roughly twice this.
+#
+# Sized from MEASUREMENT, not from a round number. Archiving the live cluster on
+# 2026-08-19 gave 328 bytes/line, and the ARC controller emitted 576 lines in a
+# ~40s window — about 860 lines/min, or 16.2 MB/hour. So:
+#
+#     256 MiB  ->  ~16 hours per generation
+#       1 GiB  ->  ~63 hours per generation  (~5 days across both)
+#
+# 1 GiB is chosen because an incident found on a Monday is routinely
+# investigated on a Wednesday, and a horizon shorter than that reintroduces the
+# exact failure this script exists to prevent — just further out. The host has
+# 279 GB free, and the listeners are an order of magnitude quieter than the
+# controller, so the realistic total is a few GB rather than 11 x 2 GiB.
+#
+# An earlier draft of this comment claimed 256 MiB was "on the order of a week"
+# from an estimated ~450 lines/min. The measurement above is roughly double that
+# rate, which made the claim wrong by about a factor of ten. Recording the
+# correction rather than quietly editing the number, because the lesson is that
+# the estimate and the measurement disagreed in the direction that mattered.
+MAX_BYTES="${ARC_LOG_ARCHIVE_MAX_BYTES:-1073741824}"
 
 while [ $# -gt 0 ]; do
   case "$1" in
