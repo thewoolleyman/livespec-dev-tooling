@@ -239,12 +239,15 @@ fleet's actual call volume) needs a live-cluster observation —
 | `arc/values-EXAMPLE-repo.yaml` | Template for every other fleet repository. |
 | `kueue/cluster-queue-livespec-console-beads-fabro.yaml` + `arc/values-livespec-console-beads-fabro.yaml` | `livespec-s43svm.16`'s chosen first NON-GATING cutover lane (2026-08-16) — a standalone console app nothing else in the fleet depends on, and the smallest repo by live-measured slot width. `nominalQuota`/`maxRunners: 16`, UNDOUBLED (see that file's header for the correction below). Design-only in this PR — not yet applied live, no workflow routing changed yet. |
 | `node-extended-resource/patch-node-churn-capacity.sh` | Idempotently registers `ci-runner.io/churn-slot` as a node-status extended resource with an explicit, non-defaulted capacity argument. Applied live at a small provisional capacity (4) for validation — see `VALIDATION_CHECKLIST.md` item 4. |
+| `node-extended-resource/install-reapply-unit.sh` | Installs the patch script to `/usr/local/lib/ci-runner-k3s/` and the unit + timer to `/etc/systemd/system`, substituting the required capacity argument for the unit file's deliberate `CAPACITY_PLACEHOLDER`. Node-local; run it on any node added to the pool. Installed live on `poweredge-xubuntu` at capacity 16, 2026-08-19 (`livespec-s43svm.26`) — the units had been written in `.15` but never installed, so a k3s restart would have dropped `ci-runner.io/churn-slot` and stalled ALL Kueue admission. |
 | `node-extended-resource/reapply-node-extended-resource.service` + `.timer` | Every-5-minute reconciliation reapplying that patch — belt-and-suspenders; a live `systemctl restart k3s` did NOT drop the patch (see "Known caveat" below), but this is cheap insurance against scenarios not yet tested (full host reboot, a k3s version upgrade). |
 | `VALIDATION_CHECKLIST.md` | What was, and still needs to be, confirmed against the live cluster. Items 1, 3, 5, and 7 are now CONFIRMED (2026-08-16); items 2, 4, and 6 remain open. |
 | `apparmor/ci-runner-workflow` | The AppArmor profile hook-generated WORKFLOW pods run under. Reproduces containerd's default deny set verbatim and widens only the `ptrace`/`signal` peer expressions — see "The workflow pod is not the runner pod" below. |
 | `apparmor/install-apparmor-profile.sh` | Loads that profile on a runner NODE and converges the `arc-hook-pod-template` ConfigMap. Node-local: re-run per node and after any node rebuild. |
 | `arc/hook-pod-template.yaml` | The pod-spec extension the ARC Kubernetes-mode container hook reads via `ACTIONS_RUNNER_CONTAINER_HOOK_TEMPLATE`. Pins the workflow pod to that profile. |
-| `arc/values-livespec-overseer.yaml` | `livespec-overseer`'s per-repo `AutoscalingRunnerSet` values (`maxRunners: 65`, `livespec-overseer-lq`), and the first values file wiring the hook pod template. Applied live 2026-08-18 (Helm revision 2). |
+| `arc/values-livespec-overseer.yaml` | `livespec-overseer`'s per-repo `AutoscalingRunnerSet` values (`maxRunners: 65`, `livespec-overseer-lq`), and the first values file wiring the hook pod template — the reference implementation the other nine copy. Applied live 2026-08-18 (Helm revision 2). |
+| `arc/values-livespec-dev-tooling.yaml`, `arc/values-livespec-driver-claude.yaml`, `arc/values-livespec-driver-codex.yaml`, `arc/values-livespec-orchestrator-git-jsonl.yaml`, `arc/values-livespec-runtime.yaml` | The five remaining per-repo scale sets, captured from their live Helm releases 2026-08-19 (`livespec-s43svm.26`) and wired to the hook pod template (`livespec-s43svm.25`). |
+| `arc/values-local-ci-k3s.yaml`, `arc/values-poweredge-xubuntu-k3s.yaml` | The two PHASE-1 proof scale sets, also live and also captured 2026-08-19. Named by scale set rather than by repo because both point at `livespec-dev-tooling`, which already owns a `values-<repo>.yaml`. Neither is Kueue-gated; see each file's header. |
 
 ## The workflow pod is not the runner pod
 
@@ -344,6 +347,85 @@ apportionment is real follow-up work (`livespec-s43svm.15`
 deliberately uses its own live-measured figure (16) UNDOUBLED rather
 than assume either formula, since it is a first small proof lane, not
 the steady-state post-cutover ceiling.
+
+## Applying a scale set's values
+
+Every LIVE `AutoscalingRunnerSet` on `poweredge-xubuntu` now has a
+committed values file in `arc/` — captured under `livespec-s43svm.26`
+after six of them had been provisioned imperatively during
+`livespec-s43svm.16`'s per-repo cutover and never written down. The
+contract that closes is recreatability: the cluster's runner
+configuration can be regenerated from this repository rather than only
+read back off the cluster with `helm get values`.
+
+Apply one scale set (from a checkout on the node, `KUBECONFIG` pointed
+at k3s):
+
+```bash
+helm upgrade --install <scale-set-name> \
+  --namespace arc-runners \
+  --values ci-runner/k3s/phase2/arc/values-<repo>.yaml \
+  oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set \
+  --version 0.14.2
+```
+
+`--values` alone REPLACES the release's user-supplied values; do not add
+`--reuse-values`, which would merge the file on top of whatever the
+release already carries and quietly preserve any imperative drift this
+capture exists to eliminate.
+
+The mapping from scale-set name to values file is not always
+`values-<repo>.yaml` — three names diverge, all for reasons recorded in
+the files themselves:
+
+| Live release | Values file |
+|---|---|
+| `livespec-local-ci-k3s` | `arc/values-livespec.yaml` |
+| `livespec-console-beads-k3s` | `arc/values-livespec-console-beads-fabro.yaml` |
+| `livespec-orchestrator-git-k3s` | `arc/values-livespec-orchestrator-git-jsonl.yaml` |
+| `livespec-dev-tooling-k3s` | `arc/values-livespec-dev-tooling.yaml` |
+| `livespec-driver-claude-k3s` | `arc/values-livespec-driver-claude.yaml` |
+| `livespec-driver-codex-k3s` | `arc/values-livespec-driver-codex.yaml` |
+| `livespec-overseer-k3s` | `arc/values-livespec-overseer.yaml` |
+| `livespec-runtime-k3s` | `arc/values-livespec-runtime.yaml` |
+| `local-ci-k3s` | `arc/values-local-ci-k3s.yaml` |
+| `poweredge-xubuntu-k3s` | `arc/values-poweredge-xubuntu-k3s.yaml` |
+
+The first two diverge because a scale-set name must stay <=30 characters
+(see the naming rule above) while a values file is named for the repo it
+serves; the third for the same reason.
+
+To check a release against its file without changing anything, compare
+the two YAML documents directly — `helm get values <release> -n
+arc-runners` prints exactly the user-supplied values a `--values` apply
+would set, so a semantic match of those two documents IS the zero-drift
+check:
+
+```bash
+helm get values <scale-set-name> -n arc-runners | tail -n +2 > /tmp/live.yaml
+diff <(yq -P 'sort_keys(..)' /tmp/live.yaml) \
+     <(yq -P 'sort_keys(..)' ci-runner/k3s/phase2/arc/values-<repo>.yaml)
+```
+
+### Every scale set carries the workflow-pod AppArmor wiring
+
+`livespec-s43svm.25` (2026-08-19) rolled `values-livespec-overseer.yaml`'s
+hook-pod-template wiring — the `hook-pod-template` volume, its
+`volumeMount`, and `ACTIONS_RUNNER_CONTAINER_HOOK_TEMPLATE` — to every
+other live scale set, one release at a time with a watched green run each.
+
+The reason is not that the other repos' suites were failing. It is that a
+suite which does not exercise intra-pod `ptrace`/`signal` today is
+LATENT-broken rather than unaffected: the containerd default denies those
+operations on this host (see "The workflow pod is not the runner pod"
+below), so the first test in any repo that reaches for them fails
+deterministically and — as `livespec-overseer` paid for — in a disguise
+that reads like a logic bug somewhere else entirely. Wiring every scale
+set makes the profile the property of the POOL rather than of one repo.
+
+`arc/values-EXAMPLE-repo.yaml` carries the wiring too, so a scale set
+derived from the template after this date gets it without a second
+decision.
 
 ## Deriving a new repository's ClusterQueue
 

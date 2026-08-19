@@ -6,10 +6,13 @@
 # extended resource, and for why `maxRunners` and the ClusterQueue's
 # nominalQuota are two enforcement points holding ONE number.
 #
-# This file additionally carries the WORKFLOW-POD AppArmor wiring, which
-# values-livespec.yaml does not yet have. It is the only per-repo values file in
-# this tree that does, because `livespec-overseer` is the repo whose suite
-# actually exercises the affected operations — see below.
+# This file was the FIRST to carry the WORKFLOW-POD AppArmor wiring, because
+# `livespec-overseer` is the repo whose suite actually exercises the affected
+# operations. It is no longer the only one: livespec-s43svm.25 rolled the same
+# wiring out to every other live scale set on 2026-08-19, since a scale set
+# whose suite does not exercise intra-pod ptrace/signal today is latent-broken
+# rather than unaffected. This file remains the reference implementation and
+# carries the full root-cause comment; the sibling files point back here.
 githubConfigUrl: "https://github.com/thewoolleyman/livespec-overseer"
 githubConfigSecret: arc-github-app-installation  # same secret as phase 1 — see ../../README.md "Credential separation"
 
@@ -87,10 +90,10 @@ template:
 
 # MUST match the `livespec-overseer-cq` ClusterQueue's nominalQuota — see
 # README.md "Two enforcement points, one number". That ClusterQueue exists LIVE
-# on the cluster but has no committed manifest under ../kueue/ yet; six of the
-# eight per-repo scale sets were applied ad hoc and were never captured as
-# values/queue files. This file closes that gap for `livespec-overseer` only.
-# Capturing the remaining five (and the matching ClusterQueues) is separate
-# provisioning-drift work, not part of the AppArmor fix.
+# on the cluster but has no committed manifest under ../kueue/ yet. The VALUES
+# half of that gap is now closed for every live scale set (livespec-s43svm.26,
+# 2026-08-19 — see README.md "Applying a scale set's values"); capturing the
+# per-repo ClusterQueues is the remaining half and is still separate
+# provisioning-drift work.
 minRunners: 0
 maxRunners: 65

@@ -1,0 +1,100 @@
+# values-livespec-dev-tooling.yaml -- the per-repository AutoscalingRunnerSet for
+# `livespec-dev-tooling`, captured from the LIVE release `livespec-dev-tooling-k3s`
+# (`helm get values livespec-dev-tooling-k3s -n arc-runners`, read 2026-08-19) and
+# re-derived against README.md "Deriving a new repository's ClusterQueue".
+# Read values-livespec.yaml first: it carries the rationale for the
+# repository-scoped `githubConfigUrl` (a personal GitHub account has no org or
+# enterprise runner scope at all), for the churn-slot extended resource, and for
+# why `maxRunners` and the ClusterQueue's nominalQuota are two enforcement
+# points holding ONE number.
+#
+# This repo is the fleet's enforcement-suite producer: every sibling pins it,
+# so its CI is structurally gating for the whole fleet.
+#
+# WHY THIS FILE EXISTS AT ALL (livespec-s43svm.26): this scale set was
+# provisioned imperatively during livespec-s43svm.16's per-repo cutover and was
+# never captured here, so the live cluster's configuration could not be
+# regenerated from the repository. Every live scale set now has a committed
+# values file; see README.md "Applying a scale set's values".
+#
+# This file also carries the WORKFLOW-POD AppArmor wiring (the volume, the
+# volumeMount, and ACTIONS_RUNNER_CONTAINER_HOOK_TEMPLATE) that
+# livespec-s43svm.25 rolled out fleet-wide from values-livespec-overseer.yaml's
+# reference implementation -- see that file and ../apparmor/ci-runner-workflow
+# for the root cause.
+githubConfigUrl: "https://github.com/thewoolleyman/livespec-dev-tooling"
+githubConfigSecret: arc-github-app-installation  # same secret as phase 1 -- see ../../README.md "Credential separation"
+
+runnerScaleSetName: "livespec-dev-tooling-k3s"
+
+containerMode:
+  type: "kubernetes"
+  kubernetesModeWorkVolumeClaim:
+    accessModes: ["ReadWriteOnce"]
+    storageClassName: "local-path"
+    resources:
+      requests:
+        storage: 5Gi
+
+template:
+  metadata:
+    labels:
+      # Routes this scale set's runner pods through Kueue's per-repo LocalQueue
+      # rather than straight to the Kubernetes scheduler.
+      kueue.x-k8s.io/queue-name: livespec-dev-tooling-lq
+  spec:
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+    volumes:
+      # Carries ../arc/hook-pod-template.yaml into the runner pod so the
+      # container hook can read it. Additive: the chart appends its own `work`
+      # volume for kubernetes mode, and declaring this one does not displace it.
+      - name: hook-pod-template
+        configMap:
+          name: arc-hook-pod-template
+    containers:
+      - name: runner
+        image: ghcr.io/actions/actions-runner:latest
+        command: ["/home/runner/run.sh"]
+        env:
+          - name: ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER
+            value: "false"
+          # THE WORKFLOW-POD FIX -- see values-livespec-overseer.yaml for the
+          # full root cause. In kubernetes container mode the job's `container:`
+          # image runs in a SEPARATE pod the hook creates, whose securityContext
+          # is empty and which nothing else in this values file reaches. This env
+          # var is the hook's one supported seam for extending that pod's spec;
+          # it pins the pod to the node-loaded `ci-runner-workflow` AppArmor
+          # profile (../apparmor/ci-runner-workflow), which reproduces every
+          # containerd deny rule verbatim and widens ONLY the ptrace/signal peer
+          # expressions so a stacked AppArmor label matches them.
+          - name: ACTIONS_RUNNER_CONTAINER_HOOK_TEMPLATE
+            value: /home/runner/hook-template/hook-pod-template.yaml
+        volumeMounts:
+          - name: hook-pod-template
+            mountPath: /home/runner/hook-template
+            readOnly: true
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          capabilities:
+            drop: ["ALL"]
+        resources:
+          # Exactly ONE churn-slot per runner pod -- see values-livespec.yaml.
+          requests:
+            ci-runner.io/churn-slot: "1"
+          limits:
+            ci-runner.io/churn-slot: "1"
+
+# This repo's share of the fixed 482-slot host budget, as apportioned by the
+# live ci-runner-supervisor unit -- see README.md "Correction (2026-08-16,
+# livespec-s43svm.16)". MUST match the `livespec-dev-tooling-cq` ClusterQueue's
+# nominalQuota (README.md "Two enforcement points, one number"). That
+# ClusterQueue exists LIVE but has no committed manifest under ../kueue/ yet;
+# capturing the per-repo ClusterQueues is the remaining half of this tree's
+# recreatability gap and is tracked separately from the values capture.
+minRunners: 0
+maxRunners: 63
