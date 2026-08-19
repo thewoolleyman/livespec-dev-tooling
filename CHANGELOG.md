@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.29.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.29.0...v1.29.1) (2026-08-19)
+
+
+### Bug Fixes
+
+* **cross-repo:** reconcile the inventory the aggregate gate actually reads ([cee1b28](https://github.com/thewoolleyman/livespec-dev-tooling/commit/cee1b282ac15211a0190d75d8431a13c14baa4e1))
+
 ## [1.29.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.28.13...v1.29.0) (2026-08-19)
 
 
