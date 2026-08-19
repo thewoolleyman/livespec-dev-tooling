@@ -2,8 +2,10 @@
 
 Items 1, 3, 5, and 7 were run live against the real k3s + ARC + Kueue
 cluster on `poweredge-xubuntu` (`livespec-s43svm.14`, closed
-2026-08-16) and are CONFIRMED below. Items 2, 4, and 6 remain open —
-each says exactly what's still needed and why. The podman pool was
+2026-08-16) and are CONFIRMED below. Item 6 was DECIDED and item 4 was
+SUPERSEDED on 2026-08-19 by `livespec-s43svm.15`'s derivation
+(`kueue/DERIVATION.md`). Only item 2 remains open — it says exactly
+what's still needed and why. The podman pool was
 re-verified unaffected (482 `runner@` units, 0 failed) before and
 after every live action taken for this checklist.
 
@@ -77,7 +79,20 @@ after every live action taken for this checklist.
    `reapply-node-extended-resource.timer` stays installed as cheap
    belt-and-suspenders rather than being removed.
 4. **Decide the side-by-side capacity split with the podman pool.**
-   **STILL OPEN — not decided by this pass.** Measured the podman
+   **SUPERSEDED 2026-08-19 (`livespec-s43svm.15`).** The side-by-side
+   framing this item was written under no longer applies: the podman
+   pool has been stopped since 2026-08-13, so the two pools no longer
+   share the iowait budget concurrently and there is no split left to
+   decide. What replaced it is the single question of the k3s pool's
+   permanent capacity `C` — OPEN, and deliberately not answered by the
+   formula. See `kueue/DERIVATION.md` "The permanent C is still an open
+   question": `C = 8` and `C = 16` are both proven under real load,
+   `C = 482` is the inherited design-envelope target, and nothing in
+   between has been measured. Raising `C` is a host capacity decision
+   journaled on the `livespec-s43svm` epic; the derivation apportions
+   whatever `C` it is given. Original 2026-08-16 disposition follows.
+
+   **(2026-08-16) STILL OPEN — not decided by this pass.** Measured the podman
    pool's actual live state before touching anything: 482 `runner@`
    units, all `running`, 0 failed, `ci-runner-supervisor.service`
    INACTIVE (stopped since 2026-08-13, unrelated to this work, not
@@ -113,7 +128,22 @@ after every live action taken for this checklist.
    acceptance criterion. Test resources (both synthetic
    `ClusterQueue`/`LocalQueue` pairs, all Jobs) deleted afterward;
    only the real `livespec-cq`/`livespec-lq` pair remains applied.
-6. **Decide whether a generator is worth building.** **STILL OPEN.**
+6. **Decide whether a generator is worth building.** **DECIDED: NO
+   (2026-08-19, `livespec-s43svm.15`).** With the derivation
+   parameterized in `kueue/DERIVATION.md` and eight repositories,
+   regenerating every quota is a table recomputation and eight one-line
+   edits, done a handful of times in this pool's life. A generator adds
+   a source file, a test, a place for generated and committed manifests
+   to disagree, and a second thing to keep working — against a manual
+   step verified by adding eight integers. Full reasoning, including
+   the one narrower check that WOULD be earned first (a
+   quotas-sum-to-registered-capacity assertion, which is a summation
+   rather than a code generator, and needs a committed home for the
+   current `C` that the provisioning scripts do not have yet), is in
+   that file's "Is a generator worth building?". Original disposition
+   follows.
+
+   **(2026-08-16) STILL OPEN.**
    `README.md` "Two enforcement points, one number" explicitly defers a
    `ClusterQueue`/`AutoscalingRunnerSet` generator (or a lockstep check
    that fails when the two files' doubled-ceiling numbers drift) as

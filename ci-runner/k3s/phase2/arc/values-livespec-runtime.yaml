@@ -6,7 +6,7 @@
 # repository-scoped `githubConfigUrl` (a personal GitHub account has no org or
 # enterprise runner scope at all), for the churn-slot extended resource, and for
 # why `maxRunners` and the ClusterQueue's nominalQuota are two enforcement
-# points holding ONE number.
+# points holding two DIFFERENT numbers.
 #
 # The shared runtime library repo.
 #
@@ -88,12 +88,18 @@ template:
           limits:
             ci-runner.io/churn-slot: "1"
 
-# This repo's share of the fixed 482-slot host budget, as apportioned by the
-# live ci-runner-supervisor unit -- see README.md "Correction (2026-08-16,
-# livespec-s43svm.16)". MUST match the `livespec-runtime-cq` ClusterQueue's
-# nominalQuota (README.md "Two enforcement points, one number"). That
-# ClusterQueue exists LIVE but has no committed manifest under ../kueue/ yet;
-# capturing the per-repo ClusterQueues is the remaining half of this tree's
-# recreatability gap and is tracked separately from the values capture.
+# This repo's per-repository ceiling term of the admission formula
+# (`doubled repository logical ceiling`). It is NOT the same number as the
+# `livespec-runtime-cq` ClusterQueue's nominalQuota, which is this repo's share of the
+# host's finite churn-slot capacity -- a different term of the same min().
+# See README.md "Two enforcement points, two DIFFERENT numbers" and
+# ../kueue/DERIVATION.md; the relation to hold is nominalQuota <= maxRunners.
+#
+# The value below is this repo's podman-era demand weight (64), inherited as a
+# proxy because nobody has measured its actual matrix width. Harmless at the
+# current capacity (C=16), where no repo can approach it; re-derive from a real
+# matrix-width measurement before raising capacity far enough for it to bind.
+# See ../kueue/DERIVATION.md "Observation: ARC maxRunners still carries the
+# podman-era numbers".
 minRunners: 0
 maxRunners: 64

@@ -26,18 +26,13 @@
 # the physical host-wide cap — i.e. the live config apportions the FIXED
 # 482 budget across repos by observed demand, it does NOT give every repo
 # an independent "doubled logical ceiling" that could itself sum past 482.
-# This is a real, live discrepancy from the design's original formula
-# description and is flagged on livespec-s43svm.15 (VALIDATION_CHECKLIST
-# item 4, "real capacity-split sizing, needs .16") rather than silently
-# reconciled here — reconciling the formula against the live apportionment
-# is follow-up work, not blocking this first non-gating proof lane.
-#
-# nominalQuota below uses livespec-console-beads-fabro's OWN live-measured
-# slot count (16) directly, UNDOUBLED, precisely because this is a first,
-# deliberately-small side-by-side proof lane sharing the same physical host
-# with the still-running podman pool (see README.md "Why per-repo quotas
-# summing above 482 must NOT be set to 482 during side-by-side migration") —
-# not yet the steady-state post-cutover ceiling.
+# RECONCILED 2026-08-19 by livespec-s43svm.15 — see ../kueue/DERIVATION.md.
+# Those eight values are DEMAND WEIGHTS, and each repo's ClusterQueue
+# nominalQuota is now its largest-remainder share of the host's registered
+# churn-slot capacity, apportioned by them. This repo's weight is 16, the
+# smallest in the fleet, which at the current capacity C=16 gives it a
+# nominalQuota of 1 — a guaranteed floor, not a cap: cohort borrowing lets
+# it burst well above 1 whenever its peers are idle.
 githubConfigUrl: "https://github.com/thewoolleyman/livespec-console-beads-fabro"
 githubConfigSecret: arc-github-app-installation  # same secret as phase 1 — see ../../README.md "Credential separation"
 
@@ -120,9 +115,18 @@ template:
           limits:
             ci-runner.io/churn-slot: "1"
 
-# livespec-console-beads-fabro's own live-measured slot count (undoubled —
-# see header note). MUST match
-# ../kueue/cluster-queue-livespec-console-beads-fabro.yaml's nominalQuota
-# exactly (README.md "Two enforcement points, one number").
+# This repo's per-repository ceiling term of the admission formula
+# (`doubled repository logical ceiling`). It is NOT the same number as the
+# `livespec-console-beads-fabro-cq` ClusterQueue's nominalQuota, which is this repo's share of the
+# host's finite churn-slot capacity -- a different term of the same min().
+# See README.md "Two enforcement points, two DIFFERENT numbers" and
+# ../kueue/DERIVATION.md; the relation to hold is nominalQuota <= maxRunners.
+#
+# The value below is this repo's podman-era demand weight (16), inherited as a
+# proxy because nobody has measured its actual matrix width. Harmless at the
+# current capacity (C=16), where no repo can approach it; re-derive from a real
+# matrix-width measurement before raising capacity far enough for it to bind.
+# See ../kueue/DERIVATION.md "Observation: ARC maxRunners still carries the
+# podman-era numbers".
 minRunners: 0
 maxRunners: 16

@@ -48,6 +48,16 @@ maintained reconciliation loop.
 | `doubled repository logical ceiling` | ARC `AutoscalingRunnerSet.maxRunners` | ARC's controller — will never scale a given repo's runner pods past this cap regardless of what Kueue would otherwise admit | `arc/values-*.yaml` (`maxRunners`) |
 | `fair share of remaining host-wide capacity` | Kueue Cohort + `ClusterQueue.spec.cohortName` + Fair Sharing | Kueue's admission controller — orders and bounds admission across every repo's ClusterQueue sharing one cohort | `kueue/cluster-queue-*.yaml` |
 
+There is a fourth number the table above does not carry — the
+specification's "physical host-wide cap ... no configuration or recovery
+path may derive or admit 964", enforced by the `ci-runner.io/churn-slot`
+extended resource's node capacity rather than by any of the three
+clauses. `kueue/DERIVATION.md` carries all four terms together, the
+arithmetic that turns the third one into each repository's actual
+`nominalQuota`, and the procedure for recomputing them when the host's
+capacity changes. Read it before editing any number in `kueue/` or any
+`maxRunners` in `arc/`.
+
 ## Personal account: repository is the only valid scope
 
 Confirmed live, `livespec-s43svm.14`, 2026-08-16: `thewoolleyman` is a
@@ -80,50 +90,69 @@ the ONLY shape GitHub's own API makes possible. `.16` should not treat
 revisit; there is no shared-org-wide alternative available to compare
 it against.
 
-## Two enforcement points, one number
+## Two enforcement points, two DIFFERENT numbers
 
-Each repository's doubled logical ceiling appears TWICE — once as
-`arc/values-<repo>.yaml`'s `maxRunners`, once as
-`kueue/cluster-queue-<repo>.yaml`'s `nominalQuota`. This is deliberate,
-not duplication-by-oversight: ARC's `maxRunners` is a HARD ceiling
-independent of Kueue (belt), while Kueue's `nominalQuota` is what makes
-that capacity fairly SHARED with other repos rather than exclusively
-reserved (suspenders). Either one alone is insufficient: `maxRunners`
-alone gives every repo an exclusive, non-borrowable slice (no fair
-sharing); `nominalQuota` alone lets Kueue admit workloads that ARC's
-own scale-set would then refuse to scale into pods, since Kueue
-admission and ARC scaling are two independently-configured
+**Corrected 2026-08-19 by `livespec-s43svm.15`'s derivation. This
+section previously required `maxRunners` and `nominalQuota` to carry the
+SAME number; that was wrong, and every file asserting it has been
+updated.**
+
+`arc/values-<repo>.yaml`'s `maxRunners` and
+`kueue/cluster-queue-<repo>.yaml`'s `nominalQuota` are two different
+terms of the same `min()`, so they are correctly UNEQUAL:
+
+- `maxRunners` is the formula's `doubled repository logical ceiling` — a
+  property of the REPOSITORY (how many runner pods its workflows would
+  ever want at once), enforced by ARC independently of Kueue.
+- `nominalQuota` is the formula's `fair share of remaining host-wide
+  capacity` — a property of the HOST (this repository's slice of the
+  finite churn-slot budget), enforced by Kueue.
+
+Forcing them equal collapses the formula. If a repository's ARC ceiling
+equals its fair share, it can never scale into capacity a peer is
+leaving idle, and the specification's "Repositories MAY fairly borrow
+unused capacity" clause becomes unreachable — Kueue would grant the
+borrow and ARC would refuse to create the pods. The correct relation is
+`nominalQuota_i <= maxRunners_i`: a guaranteed floor no larger than the
+hard ceiling.
+
+Both are still needed. `maxRunners` alone gives no fair sharing;
+`nominalQuota` alone lets Kueue admit workloads ARC's scale set then
+refuses to scale into pods, since the two are independently-configured
 controllers.
 
-A generator/lockstep-check that derives one from the other and fails
-if they drift is real follow-up work, but is deliberately NOT built in
-this design pass (see `VALIDATION_CHECKLIST.md` item 6) — the fleet is
-small enough (roughly ten repositories) that hand-authoring both files
-per repo, as `arc/values-livespec.yaml` and
-`kueue/cluster-queue-livespec.yaml` demonstrate, is tractable without
-new tooling, and a generator built before the manifest SHAPE is proven
-against a live cluster risks encoding a shape that has to be redone.
+`kueue/DERIVATION.md` decides the generator question this section
+previously deferred (`VALIDATION_CHECKLIST.md` item 6): with the
+derivation parameterized and eight repositories, a generator is NOT
+earned — the documented derivation plus committed files is the
+mechanism.
 
-## Why per-repo quotas summing above 482 is safe
+## Why the physical cap holds regardless of the quota arithmetic
 
-`kueue/cluster-queue-livespec.yaml`'s `nominalQuota: 36` is livespec's
-OWN doubled ceiling. If every fleet repository's doubled ceiling were
-summed, the total would likely exceed 482 (that's the whole point of
-"doubled" — headroom for two concurrent matrix pipelines PER repo, not
-a promise that all repos hit that ceiling simultaneously). This does
-NOT risk implying 964 total runners, because Kueue's `nominalQuota` is
-a LOGICAL bookkeeping ceiling per ClusterQueue, while the
-`ci-runner.io/churn-slot` extended resource
+Kueue's `nominalQuota` is LOGICAL bookkeeping per ClusterQueue, while
+the `ci-runner.io/churn-slot` extended resource
 (`node-extended-resource/`) is registered on the actual node with a
 FIXED, finite capacity. A Kueue-admitted workload still needs a
-schedulable pod, and a pod requesting `ci-runner.io/churn-slot: "1"`
-can only run while the node has an unclaimed unit of that resource —
-so no matter how high the SUM of nominal quotas across the cohort
-climbs, the number of runner pods that can be simultaneously `Running`
-is hard-capped by the extended resource's node capacity. This is
-exactly the "physical cap remains exactly 482... no design may imply
-or admit 964" invariant, enforced at the scheduler layer rather than
-by the admission-formula's own arithmetic.
+schedulable pod, and a pod requesting `ci-runner.io/churn-slot: "1"` can
+only run while the node has an unclaimed unit of that resource — so no
+matter what the SUM of nominal quotas across the cohort is, the number
+of runner pods that can be simultaneously `Running` is hard-capped by
+the extended resource's node capacity. This is exactly the "physical cap
+remains exactly 482... no design may imply or admit 964" invariant,
+enforced at the scheduler layer rather than by the admission formula's
+own arithmetic. Proven empirically — `VALIDATION_CHECKLIST.md` item 7.
+
+The practical consequence: no arithmetic mistake in `DERIVATION.md`'s
+apportionment can over-admit. The worst a wrong quota sum can do is
+under-use the host, or cap cohort borrowing lower than intended.
+
+Note that the quotas as derived DO sum to exactly the node capacity
+rather than exceeding it — not because exceeding it would be unsafe, but
+because the sum is the one thing a human can verify by adding eight
+integers, and because cohort borrowing is bounded by that sum. An
+earlier version of this section argued the opposite case (quotas summing
+ABOVE the physical cap), which followed from the retired
+one-number-in-two-places model; see `kueue/DERIVATION.md`.
 
 ## The iowait/container-churn bottleneck as an extended resource
 
@@ -233,15 +262,16 @@ fleet's actual call volume) needs a live-cluster observation —
 | Path | Role |
 |---|---|
 | `kueue/resource-flavor.yaml` | The one `ResourceFlavor` every per-repo `ClusterQueue` requests from, keyed on the `ci-runner.io/churn-slot` extended resource. |
-| `kueue/cluster-queue-livespec.yaml` | Worked example: livespec's `ClusterQueue` (`nominalQuota: 36`, doubled from its measured 18 podman-pool slots) + `LocalQueue`. Applied and healthy on the live cluster since 2026-08-16. |
-| `kueue/cluster-queue-EXAMPLE-repo.yaml` | Template for every other fleet repository — copy, fill in the placeholders. |
+| `kueue/DERIVATION.md` | How the specification's admission formula becomes each repository's actual `nominalQuota`: the four terms and their mechanisms, the demand weights, the largest-remainder apportionment, the recomputation procedure for a new capacity, and the decisions on the generator question and the still-open permanent capacity. Read this before editing any number in `kueue/`. |
+| `kueue/cluster-queue-<repo>.yaml` (8 files) | Every fleet repository's `ClusterQueue` + `LocalQueue`, one pair per repo, all in the `fleet-ci-runner-pool` cohort. Quotas derived per `DERIVATION.md` at capacity C=16: `livespec` 3, `livespec-console-beads-fabro` 1, the other six 2 — summing to exactly 16. Applied live and drift-verified 2026-08-19 (`livespec-s43svm.27`). |
+| `kueue/cluster-queue-phase1-proof.yaml` | The phase-1 proof `ClusterQueue`/`LocalQueue`/`ResourceFlavor`, captured live 2026-08-19 so the Kueue tree is fully recreatable. Deliberately outside the `fleet-ci-runner-pool` cohort and quota'd on cpu/memory rather than churn-slot, so it is excluded from the apportionment and cannot consume a churn slot. |
 | `arc/values-livespec.yaml` | Worked example: livespec's per-repo `AutoscalingRunnerSet` Helm values (`maxRunners: 36`, `githubConfigUrl` narrowed to this one repo, pod template wired to `livespec-lq` via the `kueue.x-k8s.io/queue-name` label and requesting one `ci-runner.io/churn-slot`). Not yet applied live — see `VALIDATION_CHECKLIST.md` item 5's disposition. |
 | `arc/values-EXAMPLE-repo.yaml` | Template for every other fleet repository. |
-| `kueue/cluster-queue-livespec-console-beads-fabro.yaml` + `arc/values-livespec-console-beads-fabro.yaml` | `livespec-s43svm.16`'s chosen first NON-GATING cutover lane (2026-08-16) — a standalone console app nothing else in the fleet depends on, and the smallest repo by live-measured slot width. `nominalQuota`/`maxRunners: 16`, UNDOUBLED (see that file's header for the correction below). Design-only in this PR — not yet applied live, no workflow routing changed yet. |
+| `arc/values-livespec-console-beads-fabro.yaml` | `livespec-s43svm.16`'s chosen first NON-GATING cutover lane (2026-08-16) — a standalone console app nothing else in the fleet depends on, and the smallest repo by live-measured demand weight. |
 | `node-extended-resource/patch-node-churn-capacity.sh` | Idempotently registers `ci-runner.io/churn-slot` as a node-status extended resource with an explicit, non-defaulted capacity argument. Applied live at a small provisional capacity (4) for validation — see `VALIDATION_CHECKLIST.md` item 4. |
 | `node-extended-resource/install-reapply-unit.sh` | Installs the patch script to `/usr/local/lib/ci-runner-k3s/` and the unit + timer to `/etc/systemd/system`, substituting the required capacity argument for the unit file's deliberate `CAPACITY_PLACEHOLDER`. Node-local; run it on any node added to the pool. Installed live on `poweredge-xubuntu` at capacity 16, 2026-08-19 (`livespec-s43svm.26`) — the units had been written in `.15` but never installed, so a k3s restart would have dropped `ci-runner.io/churn-slot` and stalled ALL Kueue admission. |
 | `node-extended-resource/reapply-node-extended-resource.service` + `.timer` | Every-5-minute reconciliation reapplying that patch — belt-and-suspenders; a live `systemctl restart k3s` did NOT drop the patch (see "Known caveat" below), but this is cheap insurance against scenarios not yet tested (full host reboot, a k3s version upgrade). |
-| `VALIDATION_CHECKLIST.md` | What was, and still needs to be, confirmed against the live cluster. Items 1, 3, 5, and 7 are now CONFIRMED (2026-08-16); items 2, 4, and 6 remain open. |
+| `VALIDATION_CHECKLIST.md` | What was, and still needs to be, confirmed against the live cluster. Items 1, 3, 5, and 7 CONFIRMED (2026-08-16); item 6 decided and item 4 superseded (2026-08-19, `kueue/DERIVATION.md`); only item 2 remains open. |
 | `apparmor/ci-runner-workflow` | The AppArmor profile hook-generated WORKFLOW pods run under. Reproduces containerd's default deny set verbatim and widens only the `ptrace`/`signal` peer expressions — see "The workflow pod is not the runner pod" below. |
 | `apparmor/install-apparmor-profile.sh` | Loads that profile on a runner NODE and converges the `arc-hook-pod-template` ConfigMap. Node-local: re-run per node and after any node rebuild. |
 | `arc/hook-pod-template.yaml` | The pod-spec extension the ARC Kubernetes-mode container hook reads via `ACTIONS_RUNNER_CONTAINER_HOOK_TEMPLATE`. Pins the workflow pod to that profile. |
@@ -340,13 +370,19 @@ that could itself sum past 482. `cluster-queue-livespec.yaml`'s
 `nominalQuota: 36` (from a stale "18 slots" reading) is now known
 inaccurate against the live figure (75) and is flagged here rather
 than silently corrected in that file, to keep this note's provenance
-clear. Reconciling the Kueue-side formula against this live
-apportionment is real follow-up work (`livespec-s43svm.15`
-`VALIDATION_CHECKLIST.md` item 4) — the new
-`cluster-queue-livespec-console-beads-fabro.yaml` pair below
-deliberately uses its own live-measured figure (16) UNDOUBLED rather
-than assume either formula, since it is a first small proof lane, not
-the steady-state post-cutover ceiling.
+clear.
+
+**RESOLVED 2026-08-19 (`livespec-s43svm.15`), see
+`kueue/DERIVATION.md`.** Those eight values are the derivation's DEMAND
+WEIGHTS `w_i`, not logical ceilings — the distinction this note was
+missing. Each repository's `nominalQuota` is now its largest-remainder
+share of the host's registered churn-slot capacity `C`, apportioned by
+`w_i`; at `C = 482` that reproduces the podman apportionment above
+exactly, and at the current `C = 16` it gives `livespec` 3,
+`livespec-console-beads-fabro` 1, and the other six 2. The doubling
+clause did not disappear — it moved to where it belongs, ARC's
+`maxRunners`, which is a per-repository ceiling and not a share of the
+host at all.
 
 ## Applying a scale set's values
 
@@ -429,23 +465,28 @@ decision.
 
 ## Deriving a new repository's ClusterQueue
 
-1. Read that repo's measured matrix width — its own
-   `ci-runner-supervisor.service` `--slots` value if it is on the
-   podman pool today (see `../../supervisor/README.md`), or its actual
-   GitHub Actions matrix job count if not. Never guess.
-2. Double it. (See the correction above: confirm against the LIVE
-   `ci-runner-supervisor` unit's actual apportionment first — the
-   original doubling assumption is not what the live pool runs today.)
-3. Copy `kueue/cluster-queue-EXAMPLE-repo.yaml` to
-   `kueue/cluster-queue-<repo>.yaml`, filling in `<REPO>` and
-   `<DOUBLED_CEILING>`.
-4. Copy `arc/values-EXAMPLE-repo.yaml` to `arc/values-<repo>.yaml`,
-   filling in `<REPO>` and `<DOUBLED_CEILING>` — the SAME number as
-   step 3 (see "Two enforcement points, one number" above). Set
+All eight fleet repositories already have both files. These steps are
+for a NINTH repository joining the pool.
+
+1. Establish the new repository's demand weight `w`. Read its own
+   `ci-runner-supervisor.service` `--slots` value if it is on the podman
+   pool (see `../../supervisor/README.md`), or measure its actual
+   GitHub Actions matrix job count. Never guess.
+2. Add it to `kueue/DERIVATION.md`'s weight table and RE-DERIVE every
+   repository's `nominalQuota` at the current capacity `C` — adding a
+   repository changes the weight sum, so every existing quota moves.
+   Follow that file's "Recomputing at another C" steps; the eight-plus-one
+   quotas must still sum to exactly `C`.
+3. Copy any existing `kueue/cluster-queue-<repo>.yaml` to the new
+   repository's name, substituting the repo name and its derived
+   `nominalQuota`, and rewrite the moved quotas in the other files.
+4. Copy `arc/values-EXAMPLE-repo.yaml` to `arc/values-<repo>.yaml`. Its
+   `maxRunners` is the repository's DOUBLED LOGICAL CEILING — a
+   different number from step 3's quota, and larger; see "Two
+   enforcement points, two DIFFERENT numbers" above. Set
    `runnerScaleSetName` per the naming rule below — do NOT use
    `<repo>-local-ci-k3s`.
-5. Apply both once `.16` (incremental per-repo cutover) reaches that
-   repo — not before; this design pass ships zero real cutover.
+5. Apply, and confirm `kubectl get clusterqueue` still sums to `C`.
 
 ### `runnerScaleSetName` MUST stay <=30 characters
 

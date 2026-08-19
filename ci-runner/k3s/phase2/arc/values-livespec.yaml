@@ -28,11 +28,12 @@
 #
 # For every other fleet repository, copy this file to
 # values-<repo>.yaml and replace every <repo>/livespec occurrence with
-# that repo's own values — see ../kueue/cluster-queue-EXAMPLE-repo.yaml
-# for the sibling template and README.md "Deriving a new repository's
-# ClusterQueue" for the exact steps (the ClusterQueue's nominalQuota and
-# this file's maxRunners MUST use the SAME doubled-ceiling number —
-# see README.md "Two enforcement points, one number").
+# that repo's own values — see any sibling ../kueue/cluster-queue-*.yaml
+# for the paired ClusterQueue shape and README.md "Deriving a new
+# repository's ClusterQueue" for the exact steps. The ClusterQueue's
+# nominalQuota is a DIFFERENT number from this file's maxRunners — a
+# different term of the same min(); see README.md "Two enforcement
+# points, two DIFFERENT numbers" and ../kueue/DERIVATION.md.
 githubConfigUrl: "https://github.com/thewoolleyman/livespec"
 githubConfigSecret: arc-github-app-installation  # same secret as phase 1 — see ../../README.md "Credential separation"
 
@@ -105,10 +106,18 @@ template:
           limits:
             ci-runner.io/churn-slot: "1"
 
-# The doubled logical ceiling (18 measured slots * 2 = 36) — MUST match
-# ../kueue/cluster-queue-livespec.yaml's nominalQuota exactly. See
-# README.md "Two enforcement points, one number" for why both exist
-# rather than deriving one from the other automatically (deliberately
-# out of scope for this design pass).
+# This repo's per-repository ceiling term of the admission formula
+# (`doubled repository logical ceiling`). It is NOT the same number as the
+# `livespec-cq` ClusterQueue's nominalQuota, which is this repo's share of the
+# host's finite churn-slot capacity -- a different term of the same min().
+# See README.md "Two enforcement points, two DIFFERENT numbers" and
+# ../kueue/DERIVATION.md; the relation to hold is nominalQuota <= maxRunners.
+#
+# The value below is this repo's podman-era demand weight (75), inherited as a
+# proxy because nobody has measured its actual matrix width. Harmless at the
+# current capacity (C=16), where no repo can approach it; re-derive from a real
+# matrix-width measurement before raising capacity far enough for it to bind.
+# See ../kueue/DERIVATION.md "Observation: ARC maxRunners still carries the
+# podman-era numbers".
 minRunners: 0
 maxRunners: 36
