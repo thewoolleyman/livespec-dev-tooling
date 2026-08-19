@@ -206,3 +206,61 @@ counting them again.
 undisposed children blocking archive and the maintainer is mid-triage; adding a twelfth
 unilaterally works against them. Say the word and it gets filed — the evidence above is
 complete enough to file from as-is.
+
+## The class, measured fleet-wide — 72 files, three repos, two layouts
+
+The two previous sections asserted "one class, three symptoms" from two examples. That
+is a pattern noticed, not a class measured. This audits every member's resolved check
+universe for files that are in it by PATH but are not product code by INTENT.
+
+The mechanism under audit: `iter_first_party_py_files` excludes test code by a SINGLE
+path prefix, `tests_tree_prefix`, default `"tests/"`. **Every one of the nine members
+uses that default; none overrides it.** Anything test-shaped or scratch-shaped living
+elsewhere enters the universe as first-party product code.
+
+| member | universe | test modules outside `tests/` | other non-product |
+|---|---:|---:|---:|
+| `livespec-overseer` | 299 | **66** | 0 |
+| `livespec-orchestrator-beads-fabro` | 200 | 2 | **3** |
+| `livespec-orchestrator-git-jsonl` | 50 | 1 | 0 |
+| `livespec-dev-tooling` | 192 | 0 | 0 |
+| `livespec` | 165 | 0 | 0 |
+| `livespec-runtime` | 39 | 0 | 0 |
+| `livespec-driver-codex` | 13 | 0 | 0 |
+| `livespec-driver-claude` | 10 | 0 | 0 |
+| **TOTAL** | | **69** | **3** |
+
+**69 test modules + 3 scratch scripts = 72 files** carried in fleet check universes as
+product code.
+
+### It is NOT an overseer quirk — three repos, TWO distinct layouts
+
+1. **Tests interleaved in the package** — `overseer/test_*.py`, 66 modules. The repo's
+   own `pyproject.toml` declares `testpaths = ["overseer", "tests"]`, so the repo states
+   plainly that `overseer/` holds tests.
+2. **A separate `acceptance/` tree** — `beads-fabro` 2, `git-jsonl` 1, all genuine
+   golden-master acceptance tests sitting outside `tests/`.
+3. **Scratch scripts under `plan/`** — `beads-fabro`'s 3 rehearsal wrappers.
+
+⛔ **A SINGLE PREFIX CANNOT EXPRESS ANY OF THE THREE.** Not layout 1, because the tests
+share a directory with the product. Not layout 2, because `acceptance/` is a second tree
+and the setting holds one string. Not layout 3, because `plan/` is neither. **So the
+remedy is not "overseer should set `tests_tree_prefix`" — that option does not exist for
+the layout it has.** It needs multiple prefixes, or filename-based detection, or both.
+
+### The audit's own reliability, stated rather than assumed
+
+The scan flags candidates by filename, and **it produced one false positive**:
+`livespec_dev_tooling/checks/commit_pairs_source_and_test.py` matched the `_test.py`
+suffix but is a genuine PRODUCT check module — *"every source-touching commit also
+touches tests/ (v033 D3)"*. Read, not guessed; excluded from the count above, which is
+why `livespec-dev-tooling` reads 0 rather than 1.
+
+▶️ **That false positive is itself the finding in miniature.** A filename heuristic
+mistook product for test; the shipped prefix heuristic mistakes test for product. Both
+fail because **neither intent is encoded anywhere the tooling can read** — and any remedy
+built on filenames alone inherits exactly the error this audit just made on itself.
+
+⚠️ `livespec-overseer`'s universe measured **281** earlier the same day and **299** here.
+The drift noted in Surprise 3 is not confined to offender counts; the universe itself is
+moving. Re-derive both when you start.
