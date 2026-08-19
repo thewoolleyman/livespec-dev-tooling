@@ -241,6 +241,77 @@ fleet's actual call volume) needs a live-cluster observation —
 | `node-extended-resource/patch-node-churn-capacity.sh` | Idempotently registers `ci-runner.io/churn-slot` as a node-status extended resource with an explicit, non-defaulted capacity argument. Applied live at a small provisional capacity (4) for validation — see `VALIDATION_CHECKLIST.md` item 4. |
 | `node-extended-resource/reapply-node-extended-resource.service` + `.timer` | Every-5-minute reconciliation reapplying that patch — belt-and-suspenders; a live `systemctl restart k3s` did NOT drop the patch (see "Known caveat" below), but this is cheap insurance against scenarios not yet tested (full host reboot, a k3s version upgrade). |
 | `VALIDATION_CHECKLIST.md` | What was, and still needs to be, confirmed against the live cluster. Items 1, 3, 5, and 7 are now CONFIRMED (2026-08-16); items 2, 4, and 6 remain open. |
+| `apparmor/ci-runner-workflow` | The AppArmor profile hook-generated WORKFLOW pods run under. Reproduces containerd's default deny set verbatim and widens only the `ptrace`/`signal` peer expressions — see "The workflow pod is not the runner pod" below. |
+| `apparmor/install-apparmor-profile.sh` | Loads that profile on a runner NODE and converges the `arc-hook-pod-template` ConfigMap. Node-local: re-run per node and after any node rebuild. |
+| `arc/hook-pod-template.yaml` | The pod-spec extension the ARC Kubernetes-mode container hook reads via `ACTIONS_RUNNER_CONTAINER_HOOK_TEMPLATE`. Pins the workflow pod to that profile. |
+| `arc/values-livespec-overseer.yaml` | `livespec-overseer`'s per-repo `AutoscalingRunnerSet` values (`maxRunners: 65`, `livespec-overseer-lq`), and the first values file wiring the hook pod template. Applied live 2026-08-18 (Helm revision 2). |
+
+## The workflow pod is not the runner pod
+
+The single most consequential thing to know about `containerMode:
+kubernetes`, and the thing that cost `livespec-overseer` a reverted
+cutover: **a job's `container:` image does not run in the runner pod.**
+The runner's container hook (`/home/runner/k8s/index.js`) creates a
+SEPARATE pod per job — `<runner-pod-name>-workflow` — and builds that
+pod's spec itself.
+
+So the `template.spec.securityContext` in a `values-<repo>.yaml` reaches
+the runner pod ONLY. The pod where the repo's tests actually execute is
+created with an EMPTY `securityContext`, inheriting containerd's
+defaults, and nothing in the Helm values reaches it. Reading a scale
+set's `securityContext` and concluding you know what the tests ran under
+is reading the wrong pod.
+
+`ACTIONS_RUNNER_CONTAINER_HOOK_TEMPLATE` is the one supported seam. The
+hook loads that file as untyped YAML and merges its `spec` into the
+generated pod spec key by key, so fields pass through verbatim rather
+than being dropped by a typed deserializer.
+
+### What went wrong, and why it looked like a test bug
+
+`livespec-overseer` was routed to `livespec-overseer-k3s` on 2026-08-17
+and rolled back the same day: four tests failed deterministically on the
+scale set while staying green on `ubuntu-latest` AND green in the same
+Fabro image under plain docker. Root-caused 2026-08-18 (livespec epic
+`livespec-s43svm.18`), one mechanism behind all four.
+
+Ubuntu's `kernel.apparmor_restrict_unprivileged_userns=1` **stacks** the
+AppArmor label of every confined task, so a workflow-pod process carries
+the compound label `cri-containerd.apparmor.d//&unconfined` rather than
+the bare profile name. containerd's default profile grants intra-container
+`signal` and `ptrace` only to `peer=cri-containerd.apparmor.d` — a bare
+peer name, which a stacked label does not match. The profile therefore
+denied its own containers the operations those rules exist to allow:
+
+```
+apparmor="DENIED" operation="signal" profile="cri-containerd.apparmor.d"
+  peer="cri-containerd.apparmor.d//&unconfined"
+```
+
+`os.killpg` returns `EACCES` outright. The tmux failures are the same
+denial wearing a disguise: tmux derives `#{pane_current_path}` by
+readlink()ing `/proc/<pane foreground pgrp>/cwd`, and reading another
+process's `/proc/PID/cwd` is a ptrace-read — so the denial surfaces as an
+EMPTY STRING rather than an error, and laundered into assertion failures
+that read like logic bugs in unrelated tests. Docker is unaffected because
+`docker-default` is not stacked the same way, which is exactly why the
+same image was green under plain docker and red in a pod.
+
+Measured in a pod reproducing the workflow pod's spec:
+
+| Pod AppArmor | child `/proc/PID/cwd` | `os.killpg` | `pane_current_path` | the 11 tests |
+|---|---|---|---|---|
+| containerd default (as shipped) | `EACCES` | `EACCES` | empty | 4 failed |
+| `ci-runner-workflow` (the fix) | resolves | OK | correct | all passed |
+
+The fix keeps every containerd deny rule and only widens the two peer
+expressions. AppArmor stays in **enforce** mode; no capability was added
+and nothing was made privileged. `type: Localhost` means a node missing
+the profile fails pod admission rather than silently running unconfined.
+
+Apply it to a node with `apparmor/install-apparmor-profile.sh`, then add
+the volume, `volumeMount`, and env var shown in
+`arc/values-livespec-overseer.yaml` to that repo's values file.
 
 ## Correction (2026-08-16, livespec-s43svm.16): the live pool does NOT
 ## independently double every repo's ceiling
