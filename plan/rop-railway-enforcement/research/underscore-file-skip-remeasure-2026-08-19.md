@@ -140,3 +140,50 @@ or fewer.
 by 17 non-test product modules; `8o8e.21` already converted that file's
 functions), the recommendation stands: **drop the skip, and take the two heavy
 repos as their own sequenced units rather than as part of a fleet-wide wave.**
+
+## ADDENDUM — the ratified text does not merely omit a file skip, it CONTRADICTS one
+
+The §5 argument in `state-correction-2026-08-19.md` was that clause 0 binds NAMES
+and nothing ratifies a FILE skip. That is an argument from ABSENCE. There is a
+stronger, POSITIVE one, and it should be the one put to the maintainer.
+
+**1. The adopted definition is name-shaped, verbatim.** Clause 0 adopts "the
+private-helper definition in §'Typechecker rule set'". That section defines it
+exactly once:
+
+> *"Private helpers (**single-leading-underscore prefix or not in `__all__`**)
+> SHOULD be annotated."*
+
+It quantifies over **functions and dataclass fields**. There is no module- or
+file-level clause anywhere in the section.
+
+**2. §"Module API surface" AFFIRMATIVELY REQUIRES `_`-prefixed modules to declare
+public API:**
+
+> *"**Every** module ... MUST declare a module-top `__all__: list[str]` listing
+> the public API names ... private helpers (single-leading-underscore prefix)
+> MUST NOT appear in `__all__`."*
+
+**"Every module" admits no exception for a `_`-prefixed one.** If a `_`-prefixed
+FILE had no public API by definition, that requirement would be vacuous for every
+such module — and the same sentence's private-helper carve-out is again about
+NAMES within the module, not about the module's own name.
+
+**3. And the fleet complies with it.** `commands/_config.py` declares:
+
+```python
+__all__: list[str] = [
+    "FactoryTarget", "resolve_credential_wrapper", "resolve_fabro_bin",
+    "resolve_fabro_factory", "resolve_fabro_sandbox_image", "resolve_store_config",
+]
+```
+
+Six public names, none `_`-prefixed, in a `_`-prefixed file — declared exactly as
+the ratified rule requires, consumed by 17 non-test product modules, and **never
+once looked at by the check that governs them.**
+
+▶️ **So the shipped file skip does not fill a gap in the rule; it contradicts a
+requirement the rule states positively.** A module the spec compels to publish a
+public API surface cannot coherently be treated as having none. That is the case
+to put to the maintainer, and it does not depend on the 2.8x costing at all —
+the costing says how much the fix is worth, not whether it is right.
