@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.28.10](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.28.9...v1.28.10) (2026-08-19)
+
+
+### Bug Fixes
+
+* **ci-runner:** give ARC workflow pods an AppArmor profile that permits intra-pod ptrace and signal ([2ebebf9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2ebebf98139dbf769b4d6ef15be9ed389b867622))
+* **rop:** return canonical_check_renames on the IOResult railway ([39c408b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/39c408bec5bb9d9816dd051e48fca1a4e773f6ca))
+
 ## [1.28.9](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.28.8...v1.28.9) (2026-08-18)
 
 
