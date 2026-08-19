@@ -271,6 +271,10 @@ fleet's actual call volume) needs a live-cluster observation —
 | `node-extended-resource/patch-node-churn-capacity.sh` | Idempotently registers `ci-runner.io/churn-slot` as a node-status extended resource with an explicit, non-defaulted capacity argument. Applied live at a small provisional capacity (4) for validation — see `VALIDATION_CHECKLIST.md` item 4. |
 | `node-extended-resource/install-reapply-unit.sh` | Installs the patch script to `/usr/local/lib/ci-runner-k3s/` and the unit + timer to `/etc/systemd/system`, substituting the required capacity argument for the unit file's deliberate `CAPACITY_PLACEHOLDER`. Node-local; run it on any node added to the pool. Installed live on `poweredge-xubuntu` at capacity 16, 2026-08-19 (`livespec-s43svm.26`) — the units had been written in `.15` but never installed, so a k3s restart would have dropped `ci-runner.io/churn-slot` and stalled ALL Kueue admission. |
 | `node-extended-resource/reapply-node-extended-resource.service` + `.timer` | Every-5-minute reconciliation reapplying that patch — belt-and-suspenders; a live `systemctl restart k3s` did NOT drop the patch (see "Known caveat" below), but this is cheap insurance against scenarios not yet tested (full host reboot, a k3s version upgrade). |
+| `wedged-runner/scan-wedged-runners.sh` | Finds runner pods that are `Running` and `ready=true` to Kubernetes but permanently dead to GitHub (the `Registration <uuid> was not found` loop), reporting pod, scale set, and age. Exits 1 when any is found, so it is usable directly as a check; `--clear` deletes them, opt-in. See "Wedged runner vs. saturation" below for why this cannot be inferred from any capacity signal. |
+| `wedged-runner/install-wedged-runner-scan.sh` | Installs that scan to `/usr/local/lib/ci-runner-k3s/` and the unit + timer to `/etc/systemd/system`, substituting the required `report`/`clear` mode for the unit file's deliberate `MODE_PLACEHOLDER`. Node-local; run it on any node added to the pool. Installed live on `poweredge-xubuntu` in `clear` mode, 2026-08-19 (`livespec-s43svm.30`) — that script's header carries the argument for `clear` over `report` on a host with no failure routing. |
+| `wedged-runner/scan-wedged-runners.service` + `.timer` | Every-5-minute wedged-runner sweep. Unlike the reapply timer this is not belt-and-suspenders: the wedged state is self-perpetuating (a dead runner suppresses the scale-up that would replace it), so without an external sweep the scale set stays blocked until a human notices — which is exactly how the condition was found, 33+ minutes into a held merge gate. |
+| `arc/recycle-scale-set-runners.sh` | Deletes a scale set's IDLE runner pods after a `helm upgrade`, skipping any pod with a live `-workflow` companion. Run it at the end of every apply: `helm upgrade` replaces the listener but leaves existing runner pods on the old pod template and the old listener session. Closes the re-cut path into the wedged state; see "Recycle the runner pods after every upgrade" below for why that is a partial fix. |
 | `VALIDATION_CHECKLIST.md` | What was, and still needs to be, confirmed against the live cluster. Items 1, 3, 5, and 7 CONFIRMED (2026-08-16); item 6 decided and item 4 superseded (2026-08-19, `kueue/DERIVATION.md`); only item 2 remains open. |
 | `apparmor/ci-runner-workflow` | The AppArmor profile hook-generated WORKFLOW pods run under. Reproduces containerd's default deny set verbatim and widens only the `ptrace`/`signal` peer expressions — see "The workflow pod is not the runner pod" below. |
 | `apparmor/install-apparmor-profile.sh` | Loads that profile on a runner NODE and converges the `arc-hook-pod-template` ConfigMap. Node-local: re-run per node and after any node rebuild. |
@@ -443,6 +447,37 @@ diff <(yq -P 'sort_keys(..)' /tmp/live.yaml) \
      <(yq -P 'sort_keys(..)' ci-runner/k3s/phase2/arc/values-<repo>.yaml)
 ```
 
+### Recycle the runner pods after every upgrade
+
+`helm upgrade` replaces the LISTENER. It does not touch runner pods that
+were already `Running`, so those keep serving the pre-upgrade pod
+template and stay registered against the previous listener session.
+Finish every apply with:
+
+```bash
+ci-runner/k3s/phase2/arc/recycle-scale-set-runners.sh <scale-set-name>
+```
+
+It deletes that scale set's IDLE runner pods and deliberately skips any
+pod with a live `<pod>-workflow` companion, because such a pod is
+executing somebody's job and retires on its own — so the recycle is safe
+to run unconditionally after an upgrade rather than only when the pool
+looks quiet. An idle scale set runs `min-runners: 0` and usually has no
+pods at all, in which case the script is a no-op.
+
+Two things this buys. The first is that the values you just applied are
+actually in effect, rather than reaching only pods created later — the
+reason `livespec-s43svm.25`'s AppArmor rollout had to watch a green run
+per release. The second is that a registration issued against the old
+listener cannot survive into the new one and strand the scale set in the
+wedged state described below.
+
+That second reason is a partial fix and should not be read as more.
+Both wedges observed on 2026-08-19 were created roughly an hour AFTER
+the last re-cut, so recycling would not have prevented either one; it
+closes one known way in, and the trigger for the rest is still open
+(`livespec-s43svm.30`).
+
 ### Every scale set carries the workflow-pod AppArmor wiring
 
 `livespec-s43svm.25` (2026-08-19) rolled `values-livespec-overseer.yaml`'s
@@ -518,6 +553,98 @@ already bans ambiguous ad hoc abbreviations elsewhere — see
 budget after `-k3s`, so its scale set is named
 `livespec-console-beads-k3s` (26 chars) — the last hyphen-bounded
 prefix that fits, not an invented shorthand.
+
+## Wedged runner vs. saturation — jobs queued, nothing starting
+
+These are two DIFFERENT failures that look identical from GitHub and
+have OPPOSITE fixes. Both present as: a job sits `queued` against a k3s
+scale set, its `runner_name` empty, and nothing starts. Triage them
+apart before touching any capacity number — two separate sessions
+misdiagnosed the wedge as saturation on 2026-08-19 (`livespec-s43svm.30`),
+and one of them raised the churn-slot capacity, which cannot help.
+
+**Saturation** is the pool genuinely being full: every churn slot is
+committed, so Kueue holds new workloads. Real, and the fix is capacity.
+
+**A wedged runner** is a runner pod that is `Running` and `ready=true`
+to Kubernetes but whose GitHub registration was invalidated
+server-side. It never exits. It loops forever on `Registration <uuid>
+was not found` → `Reload credentials` → sleep ~55s. ARC counts it as a
+live runner, so the listener computes `"assigned job"=1 decision=1
+currentRunnerCount=1`, re-patches `replicas=1` every ~50s, and never
+creates a pod that could take the queued job. **Raising capacity cannot
+clear this**, at any number, because the scale set is not short of
+capacity — it believes it already has a runner. The only remedy is to
+delete the dead pod.
+
+The reason the wedge is easy to misroute is that it is invisible to
+every capacity signal: pod phase `Running`, readiness `true`, Kueue zero
+gated and zero pending, node allocatable with headroom. It presents as
+saturation while showing none of saturation's evidence, and "no evidence
+of saturation" reads as "look harder for saturation" unless you know to
+look for this instead.
+
+### The two discriminating commands
+
+Run both. They are independent; either can be the answer.
+
+Saturation — are workloads actually being held for want of a slot?
+
+```bash
+kubectl get workloads -A \
+  -o custom-columns=NS:.metadata.namespace,NAME:.metadata.name,ADMITTED:.status.conditions[?\(@.type==\"Admitted\"\)].status
+kubectl get nodes -l k3s-role=arc-runner-host \
+  -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.allocatable.ci-runner\.io/churn-slot}{"\n"}{end}'
+```
+
+Saturated means unadmitted workloads present AND allocatable churn-slot
+fully consumed. If nothing is pending and the node has headroom, the
+pool is not saturated and no capacity change will help.
+
+Wedge — is a live-looking runner pod actually dead?
+
+```bash
+ci-runner/k3s/phase2/wedged-runner/scan-wedged-runners.sh
+```
+
+It exits 0 when clean and 1 with a per-pod report when any runner pod is
+wedged, naming the pod, its scale set, and its age. It needs no GitHub
+API call: the log signature is emitted only after the broker has told
+the runner its own registration does not exist, and the runner has no
+code path that re-registers, so the string plus a recency window is
+certainty rather than a heuristic.
+
+### Clearing a wedge
+
+```bash
+kubectl delete pod -n arc-runners <pod-name>          # one pod
+ci-runner/k3s/phase2/wedged-runner/scan-wedged-runners.sh --clear   # all flagged
+```
+
+ARC creates a replacement within seconds and the queued job is claimed
+by it — verified live on 2026-08-19, where a `check-coverage` job that
+had been queued 33+ minutes went `in_progress` on the replacement pod.
+Deleting a scale-set runner pod is safe by construction: the pods are
+ephemeral, serve at most one job each, and a wedged one cannot hold work
+at all.
+
+### It runs automatically
+
+`wedged-runner/install-wedged-runner-scan.sh` installs the sweep as a
+systemd timer on a runner node, every 5 minutes, in an explicitly-chosen
+`report` or `clear` mode. `poweredge-xubuntu` runs it in `clear` mode
+(2026-08-19), because nothing on that host routes systemd unit failures
+anywhere a human sees them — a report-only sweep there would reproduce
+the very recovery path that already failed, a wedge sitting until
+somebody happens to look. See that script's header for the full argument
+and the three guards that make an unattended delete safe.
+
+The trigger for the wedge itself is **still unknown** and tracked on
+`livespec-s43svm.30`. The two instances observed were on different scale
+sets, minutes apart in age, and both created about an hour after the
+most recent re-cut, which rules out re-cut invalidation as their cause.
+Recycling runner pods on upgrade (above) closes one way in; the detector
+covers the rest until the trigger is found.
 
 ## Known caveat: the node-status patch's robustness, corrected against live evidence
 

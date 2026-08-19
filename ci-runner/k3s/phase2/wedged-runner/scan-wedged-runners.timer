@@ -1,0 +1,22 @@
+# scan-wedged-runners.timer — run the wedged-runner sweep every 5 minutes.
+#
+# The sweep is one namespaced pod list plus a short bounded log read per Running
+# runner pod (see scan-wedged-runners.sh), so the cost is negligible and the
+# interval is chosen for exposure rather than for load. Five minutes bounds how
+# long a wedged runner can hold its scale set's queue: the script's own 180s
+# start-up grace plus this interval puts worst-case time-to-detection under ten
+# minutes, against the 33+ minutes the condition ran undetected when it was
+# first observed (livespec-s43svm.30). It also matches the interval this tree
+# already runs its sibling reconciliation at
+# (reapply-node-extended-resource.timer), so the host has one cadence to reason
+# about rather than two.
+[Unit]
+Description=Periodic wedged-ARC-runner sweep (every 5 min)
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
