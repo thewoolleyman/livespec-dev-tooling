@@ -375,6 +375,24 @@ def test_main_is_idempotent(*, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     assert first == second == CANONICAL_WORKTREE_LIB_BODY
 
 
+def test_main_gitignores_every_installed_pack_file(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fresh install into a clean clone leaves no untracked pack dirt."""
+    _scrub_git_env(monkeypatch=monkeypatch)
+    primary = tmp_path / "project"
+    _init_repo(repo=primary)
+    monkeypatch.chdir(primary)
+
+    assert main() == 0
+
+    installed = sorted(path.name for path in (primary / "dev-tooling").iterdir())
+    assert installed, "installer wrote no pack files"
+    for name in installed:
+        _run_git(args=["check-ignore", "--quiet", f"dev-tooling/{name}"], cwd=primary)
+    assert _run_git_capture(args=["status", "--short"], cwd=primary) == ""
+
+
 def test_canonical_worktree_lib_body_carries_distinctive_markers() -> None:
     """Lock distinctive structural markers of the worktree-lib body.
 
