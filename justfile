@@ -212,6 +212,7 @@ check:
         check-required-role-keys-declared
         check-rop-pipeline-shape
         check-self-hosted-routing
+        check-self-hosted-uv-lane
         check-shell-quality
         check-skill-invocation-paths
         check-source-trees-scoped-to-consumer
@@ -777,6 +778,14 @@ check-rop-pipeline-shape:
 # every repo with no local-ci job.
 check-self-hosted-routing:
     uv run python -m livespec_dev_tooling.checks.self_hosted_routing
+
+# A workflow routing gating jobs to self-hosted capacity via CI_RUNNER_LABELS
+# and invoking uv must bound uv's fetch concurrency, lane-selected against the
+# same fallback literal its runs-on uses. uv's default of 50 concurrent
+# downloads per job, times the slots sharing one host, reddened master branches
+# with PyPI timeouts. A genuine no-op in every hosted-only repo.
+check-self-hosted-uv-lane:
+    uv run python -m livespec_dev_tooling.checks.self_hosted_uv_lane
 
 check-shell-quality:
     uv run python -m livespec_dev_tooling.checks.shell_quality

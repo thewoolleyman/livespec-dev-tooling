@@ -168,7 +168,7 @@ def test_real_check_recipe_is_legacy_readable_exact_inventory_mirror() -> None:
     wired = _legacy_core_v1_17_1_extract_check_slugs(justfile_text=justfile_text)
 
     assert wired == _normalized_real_target_inventory()
-    assert wired is not None and len(wired) == 66
+    assert wired is not None and len(wired) == 67
     canonical = unsafe_perform_io(canonical_check_slugs().unwrap())
     assert not set(canonical).difference(wired)
     assert _legacy_core_v1_17_1_extract_check_slugs(justfile_text="default:\n    true\n") is None
