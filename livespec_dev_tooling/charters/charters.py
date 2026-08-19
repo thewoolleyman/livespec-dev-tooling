@@ -7,10 +7,21 @@ importable library surface rather than a fleet-wide mandatory check slug.
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
-from livespec_dev_tooling.charters._detectors import (
+# `returns` is VENDORED, not installed, so this module puts `_vendor/` on the
+# path ITSELF rather than relying on its importer having done so — a property
+# of the callers, not of this file.
+_VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
+
+from returns.io import IOFailure, IOResult, IOSuccess  # noqa: E402  — vendor-path-aware.
+
+from livespec_dev_tooling.charters._detectors import (  # noqa: E402
     bare_targets,
     bash_pipestatus_in_zsh_fleet,
     busy_test_matches_idle_pane,
@@ -23,11 +34,11 @@ from livespec_dev_tooling.charters._detectors import (
     unguarded_path_resolution,
     wrapper_less_ledger_read,
 )
-from livespec_dev_tooling.charters._document_rules import (
+from livespec_dev_tooling.charters._document_rules import (  # noqa: E402
     adoptable_runtime_contract,
     unattended_charter_missing_perform_the_unblock,
 )
-from livespec_dev_tooling.charters._seed_rules import empty_prev_watcher_init
+from livespec_dev_tooling.charters._seed_rules import empty_prev_watcher_init  # noqa: E402
 
 __all__: list[str] = [
     "CHARTER_GLOBS",
@@ -37,6 +48,15 @@ __all__: list[str] = [
 ]
 
 Detector = Callable[..., list[str]]
+
+
+@dataclass(frozen=True, kw_only=True)
+class CharterReadFailure:
+    """A charter root the walk could not read."""
+
+    path: str
+    detail: str
+
 
 CHARTER_GLOBS: tuple[str, ...] = (
     ".ai/supervisor-protocol.md",
@@ -69,15 +89,21 @@ def defects_in(*, text: str) -> list[str]:
     return [f"{name}: {line}" for name, detector in DETECTORS for line in detector(text=text)]
 
 
-def charters_in(*, root: Path) -> list[Path]:
+def charters_in(*, root: Path) -> IOResult[list[Path], CharterReadFailure]:
     """Every charter path under `root` reached by the declared charter globs."""
-    found: list[Path] = []
-    for glob in CHARTER_GLOBS:
-        found.extend(sorted(root.glob(glob)))
-    return sorted(
-        found,
-        key=lambda path: (
-            len(path.relative_to(root).parts),
-            path.relative_to(root).as_posix(),
-        ),
+    try:
+        found: list[Path] = []
+        for glob in CHARTER_GLOBS:
+            found.extend(root.glob(glob))
+    except OSError as err:
+        return IOFailure(CharterReadFailure(path=str(root), detail=str(err)))
+
+    return IOSuccess(
+        sorted(
+            found,
+            key=lambda path: (
+                len(path.relative_to(root).parts),
+                path.relative_to(root).as_posix(),
+            ),
+        )
     )

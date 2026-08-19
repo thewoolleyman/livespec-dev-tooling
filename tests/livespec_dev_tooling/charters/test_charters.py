@@ -6,9 +6,12 @@ import importlib
 from pathlib import Path
 from typing import Protocol, cast
 
+import pytest
+from returns.io import IOFailure, IOResult
 from returns.unsafe import unsafe_perform_io
 
 from livespec_dev_tooling.canonical_checks import canonical_check_slugs
+from livespec_dev_tooling.charters.charters import CharterReadFailure
 
 EXPECTED_CANONICAL_SLUGS: tuple[str, ...] = (
     "check-agents-ai-references-resolve",
@@ -83,7 +86,7 @@ class CharterModule(Protocol):
 
     def defects_in(self, *, text: str) -> list[str]: ...
 
-    def charters_in(self, *, root: Path) -> list[Path]: ...
+    def charters_in(self, *, root: Path) -> IOResult[list[Path], CharterReadFailure]: ...
 
 
 def _charters_module() -> CharterModule:
@@ -145,7 +148,8 @@ def test_charters_in_uses_the_parameterized_root_and_declared_globs(tmp_path: Pa
         path.write_text("charter\n", encoding="utf-8")
 
     assert [
-        path.relative_to(tmp_path).as_posix() for path in module.charters_in(root=tmp_path)
+        path.relative_to(tmp_path).as_posix()
+        for path in unsafe_perform_io(module.charters_in(root=tmp_path).unwrap())
     ] == [
         ".ai/supervisor-protocol.md",
         "plan/active/supervisor-handoff.md",
@@ -549,3 +553,25 @@ Shared role-level instructions for every generated supervisor handoff.
     assert [
         defect for defect in _defects_in(text=unattended_without_picker) if defect.startswith("n-")
     ] == []
+
+
+def test_charters_in_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """charters_in returns IOFailure when the root glob raises OSError."""
+    import pathlib
+
+    module = _charters_module()
+    root = pathlib.Path("/nonexistent")
+
+    def raise_os_error(*args: object, **kwargs: object) -> None:  # noqa: ARG001
+        raise OSError("Permission denied")
+
+    monkeypatch.setattr(pathlib.Path, "glob", raise_os_error)
+
+    outcome = module.charters_in(root=root)
+    assert isinstance(outcome, IOFailure)
+    from returns.unsafe import unsafe_perform_io
+
+    failure = unsafe_perform_io(outcome.failure())
+    assert isinstance(failure, CharterReadFailure)
+    assert failure.path == str(root)
+    assert failure.detail == "Permission denied"
