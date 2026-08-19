@@ -2,8 +2,12 @@
 # values-livespec.yaml for the fully-worked example and its comments;
 # copy this file to values-<repo>.yaml and replace every <PLACEHOLDER>:
 #   <REPO>             — the repo's short name
-#   <DOUBLED_CEILING>  — the SAME number as that repo's
-#                        ../kueue/cluster-queue-<repo>.yaml nominalQuota
+#   <DOUBLED_CEILING>  — that repo's own matrix width, doubled. NOT the
+#                        same number as its
+#                        ../kueue/cluster-queue-<repo>.yaml nominalQuota,
+#                        which is its share of the host's finite
+#                        churn-slot capacity — a different term of the
+#                        same min(). See ../kueue/DERIVATION.md.
 githubConfigUrl: "https://github.com/thewoolleyman/<REPO>"
 githubConfigSecret: arc-github-app-installation
 

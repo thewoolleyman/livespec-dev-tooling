@@ -4,7 +4,7 @@
 # the rationale for repository-scoped `githubConfigUrl` (a personal GitHub
 # account has no org or enterprise runner scope at all), for the churn-slot
 # extended resource, and for why `maxRunners` and the ClusterQueue's
-# nominalQuota are two enforcement points holding ONE number.
+# nominalQuota are two enforcement points holding two DIFFERENT numbers.
 #
 # This file was the FIRST to carry the WORKFLOW-POD AppArmor wiring, because
 # `livespec-overseer` is the repo whose suite actually exercises the affected
@@ -88,12 +88,18 @@ template:
           limits:
             ci-runner.io/churn-slot: "1"
 
-# MUST match the `livespec-overseer-cq` ClusterQueue's nominalQuota — see
-# README.md "Two enforcement points, one number". That ClusterQueue exists LIVE
-# on the cluster but has no committed manifest under ../kueue/ yet. The VALUES
-# half of that gap is now closed for every live scale set (livespec-s43svm.26,
-# 2026-08-19 — see README.md "Applying a scale set's values"); capturing the
-# per-repo ClusterQueues is the remaining half and is still separate
-# provisioning-drift work.
+# This repo's per-repository ceiling term of the admission formula
+# (`doubled repository logical ceiling`). It is NOT the same number as the
+# `livespec-overseer-cq` ClusterQueue's nominalQuota, which is this repo's share of the
+# host's finite churn-slot capacity -- a different term of the same min().
+# See README.md "Two enforcement points, two DIFFERENT numbers" and
+# ../kueue/DERIVATION.md; the relation to hold is nominalQuota <= maxRunners.
+#
+# The value below is this repo's podman-era demand weight (65), inherited as a
+# proxy because nobody has measured its actual matrix width. Harmless at the
+# current capacity (C=16), where no repo can approach it; re-derive from a real
+# matrix-width measurement before raising capacity far enough for it to bind.
+# See ../kueue/DERIVATION.md "Observation: ARC maxRunners still carries the
+# podman-era numbers".
 minRunners: 0
 maxRunners: 65
