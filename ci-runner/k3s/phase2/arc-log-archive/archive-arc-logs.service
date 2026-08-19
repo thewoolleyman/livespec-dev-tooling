@@ -1,0 +1,18 @@
+# archive-arc-logs.service — one archive sweep (see archive-arc-logs.sh).
+#
+# Oneshot rather than a daemon: the work is a bounded pass over the ARC pods in
+# one namespace, so there is nothing to keep resident between runs, and a
+# oneshot's exit status is a signal the timer records for free.
+#
+# KUBECONFIG is set here for the same reason the sibling wedged-runner unit sets
+# it: a systemd service has no login shell, so the cluster credential has to be
+# named explicitly rather than inherited.
+[Unit]
+Description=Archive ARC controller and listener logs before the kubelet rotates them
+Documentation=https://github.com/thewoolleyman/livespec-dev-tooling/blob/master/ci-runner/k3s/phase2/README.md
+After=network-online.target
+
+[Service]
+Type=oneshot
+Environment=KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+ExecStart=/usr/local/lib/ci-runner-k3s/archive-arc-logs.sh
