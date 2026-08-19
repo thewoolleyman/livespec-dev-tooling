@@ -66,10 +66,42 @@
 # `journalctl -u scan-wedged-runners.service` sees the escalation, and nothing
 # pages anyone.
 #
+# GATE TIME — EVIDENCE FOR THE UNKNOWN TRIGGER. Because the trigger is unknown,
+# every sweep also records the two timestamps that discriminate the leading
+# hypothesis, so that a future incident arrives as evidence instead of as a
+# repeat of this one. The hypothesis (livespec-s43svm.30, recorded as a LEAD and
+# explicitly unverified) is that ARC mints a runner's just-in-time registration
+# at pod CREATION, while these pods request the `ci-runner.io/churn-slot`
+# extended resource and so sit `SchedulingGated` until Kueue admits them; a pod
+# gated longer than its registration stays valid starts with credentials the
+# broker no longer recognises, and wedges.
+#
+# The discriminating quantity is therefore GATE TIME: how long a pod waited
+# between being created and its runner container actually starting.
+#
+#     gate = .status.containerStatuses[runner].state.running.startedAt
+#            - .metadata.creationTimestamp
+#
+# This is NOT the `age` reported alongside it. `age` is measured from
+# `.status.startTime`, which the kubelet sets only once the pod is admitted, so
+# age excludes exactly the waiting period under suspicion. The two are printed
+# together deliberately.
+#
+# Gate time is recorded for EVERY scanned pod, not only the wedged ones, because
+# the hypothesis makes a claim about both populations: it predicts long gates on
+# wedged pods AND that promptly-started pods do not wedge. The healthy pods in an
+# ordinary sweep are that control group, and they cost nothing to record.
+#
+# Readings are labelled against GATE_LONG_SECONDS purely as a reading aid — the
+# label interprets nothing on its own and decides nothing. What matters is the
+# stated falsifier: a WEDGED pod whose runner started promptly after creation
+# kills the hypothesis outright, so that reading is printed as FALSIFIES rather
+# than left for a reader to notice.
+#
 # Requires: kubectl and a KUBECONFIG for the k3s cluster (see ../../provision-k3s.sh).
 set -euo pipefail
 
-USAGE="usage: scan-wedged-runners.sh [--clear] [--namespace NS] [--window DURATION] [--min-hits N] [--min-age-seconds N] [--state-file PATH] [--escalate-after N]
+USAGE="usage: scan-wedged-runners.sh [--clear] [--namespace NS] [--window DURATION] [--min-hits N] [--min-age-seconds N] [--state-file PATH] [--escalate-after N] [--gate-long-seconds N]
   (default is REPORT-ONLY: it prints what it would delete and exits 1 if any
    wedged pod is found, so it is usable directly as a check)"
 
@@ -93,6 +125,13 @@ STATE_FILE="${WEDGED_RUNNER_STATE_FILE:-/var/lib/ci-runner-k3s/wedged-runner-str
 # Consecutive finding runs before the ESCALATION line appears. 2 is the
 # smallest value that means "this recurred" rather than "this happened".
 ESCALATE_AFTER="${WEDGED_RUNNER_ESCALATE_AFTER:-2}"
+# Gate time at or above which a reading is LABELLED long (see this script's
+# "GATE TIME" header). 300s is an order-of-magnitude marker, not a measured
+# boundary: an ungated pod starts within seconds of creation, while the gate
+# times under suspicion were on the order of an hour, so anything in between is
+# reported with its number and left to a reader. Changing this changes only what
+# the journal calls a reading — never what is scanned, flagged, or deleted.
+GATE_LONG_SECONDS="${WEDGED_RUNNER_GATE_LONG_SECONDS:-300}"
 CLEAR=0
 
 # The registration-not-found signature. Deliberately matched on the stable
@@ -108,6 +147,7 @@ while [ $# -gt 0 ]; do
     --min-age-seconds)  MIN_AGE_SECONDS="${2:?$USAGE}"; shift 2 ;;
     --state-file)       STATE_FILE="${2:?$USAGE}"; shift 2 ;;
     --escalate-after)   ESCALATE_AFTER="${2:?$USAGE}"; shift 2 ;;
+    --gate-long-seconds) GATE_LONG_SECONDS="${2:?$USAGE}"; shift 2 ;;
     -h|--help)          echo "$USAGE"; exit 0 ;;
     *)                  echo "FATAL: unknown argument '$1'"$'\n'"$USAGE" >&2; exit 2 ;;
   esac
@@ -116,6 +156,7 @@ done
 [[ "$ESCALATE_AFTER" =~ ^[0-9]+$ ]] || { echo "FATAL: --escalate-after must be a non-negative integer, got '${ESCALATE_AFTER}'" >&2; exit 2; }
 [[ "$MIN_HITS" =~ ^[0-9]+$ ]] || { echo "FATAL: --min-hits must be a non-negative integer, got '${MIN_HITS}'" >&2; exit 2; }
 [[ "$MIN_AGE_SECONDS" =~ ^[0-9]+$ ]] || { echo "FATAL: --min-age-seconds must be a non-negative integer, got '${MIN_AGE_SECONDS}'" >&2; exit 2; }
+[[ "$GATE_LONG_SECONDS" =~ ^[0-9]+$ ]] || { echo "FATAL: --gate-long-seconds must be a non-negative integer, got '${GATE_LONG_SECONDS}'" >&2; exit 2; }
 
 command -v kubectl >/dev/null || { echo "FATAL: kubectl not found on PATH" >&2; exit 2; }
 : "${KUBECONFIG:?set KUBECONFIG to the k3s cluster kubeconfig (see ../../provision-k3s.sh)}"
@@ -141,6 +182,38 @@ write_streak() {
   printf '%s\n' "$value" > "$STATE_FILE" 2>/dev/null || return 0
 }
 
+# Gate time in seconds between pod creation and its runner container starting,
+# or the literal `unknown` when either timestamp is missing or unparseable.
+# `unknown` is a first-class reading here rather than a substituted zero: a zero
+# would read as "started instantly", which is the exact value that FALSIFIES the
+# hypothesis, so guessing it would manufacture evidence against the thing being
+# tested.
+gate_seconds() {
+  local created="$1" started="$2" created_epoch started_epoch
+  [ -n "$created" ] && [ -n "$started" ] || { printf 'unknown'; return 0; }
+  created_epoch="$(date -u -d "$created" +%s 2>/dev/null)" || { printf 'unknown'; return 0; }
+  started_epoch="$(date -u -d "$started" +%s 2>/dev/null)" || { printf 'unknown'; return 0; }
+  [ -n "$created_epoch" ] && [ -n "$started_epoch" ] || { printf 'unknown'; return 0; }
+  printf '%s' "$(( started_epoch - created_epoch ))"
+}
+
+# How a gate reading should be described in the journal. `wedged` readings get
+# the falsifier called out by name, because a wedged pod that started promptly
+# is the observation that kills the hypothesis and it must not depend on a
+# reader spotting a small number.
+gate_label() {
+  local gate="$1" population="$2"
+  if [ "$gate" = unknown ]; then
+    printf 'gate=unknown (timestamps unavailable)'
+  elif [ "$gate" -ge "$GATE_LONG_SECONDS" ]; then
+    printf 'gate=%ss (LONG -- consistent with the Kueue-gating hypothesis)' "$gate"
+  elif [ "$population" = wedged ]; then
+    printf 'gate=%ss (PROMPT -- FALSIFIES the Kueue-gating hypothesis; see livespec-s43svm.30)' "$gate"
+  else
+    printf 'gate=%ss (prompt)' "$gate"
+  fi
+}
+
 # ---------------------------------------------------------------------------
 log "1. Enumerate Running runner pods in namespace ${NAMESPACE}"
 
@@ -150,17 +223,30 @@ log "1. Enumerate Running runner pods in namespace ${NAMESPACE}"
 # match this selector at all — verified live 2026-08-19. Their logs are the
 # job's own output, which can legitimately contain anything, including this
 # script's signature quoted in a test fixture.
+# The last two fields are the gate-time evidence described in this script's
+# "GATE TIME" header.
+#
+# Fields are separated by `|`, NOT by a tab, and that is load-bearing. `read`
+# treats tab as IFS WHITESPACE, so a run of consecutive tabs collapses into one
+# delimiter and an EMPTY field silently disappears, shifting every field after
+# it left by one. Several of these fields are legitimately empty in ordinary
+# operation — `deletionTimestamp` on any pod that is not terminating (i.e. the
+# common case), `startedAt` on a pod whose runner container has not started, a
+# missing scale-set label — so with tabs a healthy pod's creationTimestamp
+# lands in `deletion_time` and the pod is misreported as terminating. A
+# non-whitespace separator preserves empty fields positionally. `|` cannot occur
+# in a pod name, a Kubernetes label value, or an RFC 3339 timestamp.
 PODS="$(kubectl get pods -n "$NAMESPACE" \
   -l app.kubernetes.io/component=runner \
   --field-selector=status.phase=Running \
-  -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.metadata.labels.actions\.github\.com/scale-set-name}{"\t"}{.status.startTime}{"\t"}{.metadata.deletionTimestamp}{"\n"}{end}')"
+  -o jsonpath='{range .items[*]}{.metadata.name}{"|"}{.metadata.labels.actions\.github\.com/scale-set-name}{"|"}{.status.startTime}{"|"}{.metadata.deletionTimestamp}{"|"}{.metadata.creationTimestamp}{"|"}{.status.containerStatuses[?(@.name=="runner")].state.running.startedAt}{"\n"}{end}')"
 
 if [ -z "$PODS" ]; then
   write_streak 0
   log "No Running runner pods. Nothing to scan."
   exit 0
 fi
-printf '%s\n' "$PODS" | while IFS=$'\t' read -r name scaleset _; do
+printf '%s\n' "$PODS" | while IFS='|' read -r name scaleset _; do
   printf '  %-52s %s\n' "$name" "${scaleset:-<no-scale-set-label>}"
 done
 
@@ -168,9 +254,16 @@ done
 log "2. Scan each pod's last ${WINDOW} of runner log for: ${SIGNATURE}"
 
 NOW_EPOCH="$(date -u +%s)"
-WEDGED=""   # newline-separated "name<TAB>scaleset<TAB>age_seconds<TAB>hits<TAB>busy"
+# Newline-separated records, `|`-separated fields, for the same
+# empty-field-preservation reason given at the kubectl call above:
+#   name|scaleset|age_seconds|hits|busy|created|started|gate_seconds
+# `scaleset` (unlabelled pod) and `started` (container not yet running) can each
+# be empty, and the deletion loop below reads `busy` positionally past both of
+# them — so a collapsing separator would empty `busy` and silently disarm the
+# workflow-companion refusal that makes a false positive non-destructive.
+WEDGED=""
 
-while IFS=$'\t' read -r name scaleset start_time deletion_time; do
+while IFS='|' read -r name scaleset start_time deletion_time creation_time runner_started; do
   [ -n "$name" ] || continue
 
   # A pod being deleted keeps phase `Running` for its whole termination grace
@@ -199,9 +292,13 @@ while IFS=$'\t' read -r name scaleset start_time deletion_time; do
     continue
   fi
 
+  gate="$(gate_seconds "$creation_time" "$runner_started")"
+
   hits="$(printf '%s\n' "$pod_log" | grep -c -E "$SIGNATURE" || true)"
   if [ "$hits" -lt "$MIN_HITS" ]; then
-    printf '  %-52s ok (%s/%s signature hits)\n' "$name" "$hits" "$MIN_HITS"
+    # Healthy pods are reported with their gate time too: they are the control
+    # group for the hypothesis, which claims promptly-started pods do not wedge.
+    printf '  %-52s ok (%s/%s signature hits, %s)\n' "$name" "$hits" "$MIN_HITS" "$(gate_label "$gate" healthy)"
     continue
   fi
 
@@ -213,8 +310,8 @@ while IFS=$'\t' read -r name scaleset start_time deletion_time; do
     busy=yes
   fi
 
-  printf '  %-52s WEDGED (%s hits, age %ss, workflow-companion=%s)\n' "$name" "$hits" "$age" "$busy"
-  WEDGED="${WEDGED}${name}	${scaleset}	${age}	${hits}	${busy}
+  printf '  %-52s WEDGED (%s hits, age %ss, workflow-companion=%s, %s)\n' "$name" "$hits" "$age" "$busy" "$(gate_label "$gate" wedged)"
+  WEDGED="${WEDGED}${name}|${scaleset}|${age}|${hits}|${busy}|${creation_time}|${runner_started}|${gate}
 "
 done <<< "$PODS"
 
@@ -229,10 +326,14 @@ STREAK=$(( $(read_streak) + 1 ))
 write_streak "$STREAK"
 
 log "3. WEDGED RUNNER PODS FOUND (consecutive runs with findings: ${STREAK})"
-printf '%s' "$WEDGED" | while IFS=$'\t' read -r name scaleset age hits busy; do
+printf '%s' "$WEDGED" | while IFS='|' read -r name scaleset age hits busy created started gate; do
   [ -n "$name" ] || continue
   printf '  pod=%s scale-set=%s age=%ss hits=%s workflow-companion=%s\n' \
     "$name" "${scaleset:-<unknown>}" "$age" "$hits" "$busy"
+  # The raw timestamps go in the journal beside the derived gate, so a later
+  # reader can re-derive the number instead of having to trust this arithmetic.
+  printf '    created=%s runner-started=%s %s\n' \
+    "${created:-<unknown>}" "${started:-<unknown>}" "$(gate_label "$gate" wedged)"
 done
 
 # The one line an operator should grep for. A single wedge is routine and this
@@ -261,7 +362,7 @@ fi
 
 log "4. --clear: deleting wedged runner pods"
 DELETE_FAILED=0
-while IFS=$'\t' read -r name scaleset age hits busy; do
+while IFS='|' read -r name scaleset age hits busy created started gate; do
   [ -n "$name" ] || continue
   if [ "$busy" = yes ]; then
     echo "  REFUSING to delete ${name}: it has a live ${name}-workflow companion, so it claimed a job and cannot be wedged. Investigate by hand."
@@ -269,7 +370,10 @@ while IFS=$'\t' read -r name scaleset age hits busy; do
     continue
   fi
   if kubectl delete pod -n "$NAMESPACE" "$name" --wait=false; then
-    echo "  deleted ${name} (scale-set ${scaleset:-<unknown>})"
+    # Restating the gate on the deletion line keeps the evidence attached to the
+    # pod in the same journal entry that destroys it — after the delete there is
+    # nothing left to query the timestamps from.
+    echo "  deleted ${name} (scale-set ${scaleset:-<unknown>}, created=${created:-<unknown>} runner-started=${started:-<unknown>} $(gate_label "$gate" wedged))"
   else
     echo "  FAILED to delete ${name}"
     DELETE_FAILED=1
