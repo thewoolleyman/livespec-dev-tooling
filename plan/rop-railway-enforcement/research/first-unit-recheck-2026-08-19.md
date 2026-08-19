@@ -82,3 +82,72 @@ computed that yet.
 in `shipped-basis-offender-inventory-2026-08-19.md` are counts of CONVICTIONS, and this
 note shows convictions and convertible work are different sets. **Every "N offenders"
 figure in this plan is an upper bound on real work, by an unmeasured margin.**
+
+## Then I computed the thing I said nobody had computed
+
+The section above ends by saying the right filter is not "fewest offenders" but "offenders
+with a real failure mode", and that nothing had computed it. So I computed it.
+
+### Method, and its ONE IMPORTANT LIMIT
+
+v179's clauses (a)/(b) fire when a body **raises** or carries a non-discharging **try** —
+i.e. an expected failure genuinely ORIGINATES there. A convicted function where they do
+NOT fire is convicted by clause (c): doubt about an unresolvable callee, or I/O contact.
+Running the shipped `_clauses_a_and_b_disqualify` over every shipped-basis offender splits
+the set.
+
+⚠️ **THE LIMIT, STATED UP FRONT BECAUSE IT BOUNDS EVERY NUMBER BELOW.** This detects
+**EXCEPTION-shaped** failure origination only. A function whose failures are **data-shaped**
+— a hand-rolled result type — lands in the DOUBT column despite having entirely real
+failures. `reconcile` is exactly that case: it returns `Report(ok=False, problems=(...))`
+and never raises. **So DOUBT is not a synonym for "unconvertible"; it is a mixed bucket.**
+
+### MEASURED, shipped basis, 2026-08-19
+
+| member | convicted | exception-shaped | doubt / I/O contact | % exception-shaped |
+|---|---:|---:|---:|---:|
+| `livespec-overseer` | 162 | 10 | 152 | 6% |
+| `livespec-orchestrator-beads-fabro` | 20 | 3 | 17 | 15% |
+| `livespec-runtime` | 15 | 2 | 13 | 13% |
+| `livespec` | 14 | 0 | 14 | 0% |
+| `livespec-orchestrator-git-jsonl` | 4 | 0 | 4 | 0% |
+| `livespec-driver-codex` | 3 | 0 | 3 | 0% |
+| `livespec-dev-tooling` | **0** | 0 | 0 | — |
+| **TOTAL** | **218** | **15** | **203** | **~7%** |
+
+**`livespec-dev-tooling` reads 0 where the inventory read 3.** Independent corroboration
+that the foreman session's conversions landed — and a reminder that these figures move
+under you.
+
+### ▶️ WHAT THIS REFRAMES
+
+**Roughly 7% of shipped-basis convictions originate an exception-shaped failure locally.
+The other ~93% are convicted by clause (c) — doubt or I/O contact.**
+
+Bounded honestly, that ~93% is a mix of:
+
+1. functions genuinely total but convicted for touching I/O — the `8o8e.28` family, an
+   **open question**, not work;
+2. functions with real failures already expressed as a **hand-rolled result type** — real
+   work, and arguably `single_meaning_variants` declaration work rather than conversion;
+3. functions disqualified by **unresolvable-callee doubt** — the `mudmdl` mechanism, where
+   the remedy proved to be RESTRUCTURING dispatch rather than adding a `Result`.
+
+⛔ **SO THIS IS NOT PRIMARILY A CONVERSION PROJECT.** The headline framing — "remediate
+338 / 143 / 218 functions onto the railway" — describes at most the 7% cleanly. For the
+rest, the question is not *how do we convert this* but *should this be on the railway at
+all, and if so in which of three different senses*. **Every one of those three has a
+DIFFERENT remedy, and two of them are maintainer rulings rather than implementation.**
+
+⚠️ **AND IT MAKES THE 8zv3.5 PANEL DECISION LESS DECISIVE THAN IT LOOKS.** That ruling
+moves the conviction count between 214 and 601. This measurement says the *shape* of the
+work barely changes with it: either way, ~93% of what is convicted is a question rather
+than a conversion. **Ratifying 601 would multiply the questions, not the conversions.**
+
+### What would actually size this plan
+
+A split of the 203 into the three buckets above. Bucket 1 needs the `8o8e.28` ruling;
+bucket 2 needs a declare-or-convert judgment per function; only bucket 3 and the 15 are
+implementation. **That split is not computed here** — buckets 1 and 2 are not
+mechanically separable by the means used above, and I am not going to guess a number that
+would be quoted later as measured.
