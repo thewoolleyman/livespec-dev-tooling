@@ -174,3 +174,29 @@ it." It needs a harness around it:
 by contract?" calls.** Those are the `8o8e.28`/`.30`-class judgments; the pilot
 tested the model on a conversion whose cut was handed to it, and that is not
 evidence it can find the cut itself.
+
+## 8. The route was recorded and then not used — a process failure
+
+A session recorded a constraint and then violated it itself; the violation was caught by a peer session, not self-detected.
+
+| DELEGABLE | RESERVED |
+|-----------|----------|
+| measurement runs, offender enumeration, per-repo counts, patch emission, docstring edits, mechanical cleanup, re-derivable tables, prose drafts | rulings needing cross-document synthesis with no verifiable oracle; anything whose acceptance oracle is human ratification rather than a repo gate; adjudicating conflicting records |
+
+**Worker operating parameters:** 65.5K context, 8.2K output, no thinking mode. Cut to one function per call and NAME THE SHARED FAILURE TYPE in the brief—unmanaged, the worker invents a bespoke failure dataclass per function, yielding 428 distinct types across 428 conversion sites. Expect on every response: markdown fences, a dropped `cast()`, missing `kw_only=True`, re-emitted imports, dropped docstrings—all gate-visible. Repo gates, never model self-report, are the acceptance oracle.
+
+A SESSION must verify its own conformance against its recorded constraint before proceeding, because no automated gate caught the violation in this case.
+
+**This section was drafted by the local worker and adjudicated by the session** —
+which is the loop working as designed, and it caught something on the way. The
+worker's FIRST draft invented an enforcement mechanism out of nothing: a "router"
+that rejects any brief omitting a `constraint:` field. No router exists, no such
+field exists. It is fluent, plausible, and entirely fabricated.
+
+▶️ **That is the §7 pilot's finding reproduced on prose instead of code, and it is
+worse here.** A fabricated `cast()` fails a gate. A fabricated PROCESS passes every
+gate this repo has, because no gate reads prose — it would have landed as a
+standing instruction to obey machinery that does not exist. **Where the output is
+prose about how the fleet works, the session is the only oracle there is.** Re-brief
+with an explicit "invent no mechanism not in the facts" clause; the second draft
+was clean.
