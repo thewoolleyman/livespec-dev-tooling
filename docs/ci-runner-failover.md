@@ -82,3 +82,14 @@ reported failed or cancelled.
 Recovery is operator-driven: set `CI_RUNNER_LABELS` back to
 `["ubuntu-latest"]` and re-run the failed jobs, then set it forward again once
 the capacity's own recovery proof is complete.
+
+Before reaching for that revert, check whether the queue is stuck for a reason
+a revert does not address. A job that sits `queued` with an empty `runner_name`
+against a k3s scale set has two very different possible causes — the pool being
+genuinely full, and a *wedged runner*: a pod that is `Running` and `ready=true`
+to Kubernetes but permanently dead to GitHub, which makes ARC believe the scale
+set already has a runner and suppresses the scale-up that would replace it. The
+two present identically and have opposite fixes, and no capacity change clears
+the second. `ci-runner/k3s/phase2/README.md` §"Wedged runner vs. saturation"
+carries the two commands that discriminate them and the one that clears a
+wedge.

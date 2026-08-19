@@ -1,0 +1,36 @@
+# scan-wedged-runners.service — periodically sweep the ARC runner pool for
+# runner pods that are alive to Kubernetes but permanently dead to GitHub
+# (scan-wedged-runners.sh).
+#
+# WHY THIS EXISTS: the wedged-runner condition is self-perpetuating. A dead
+# runner pod suppresses its own scale set's scale-up, so the scale set cannot
+# recover without an external delete — the queue simply stays blocked, for as
+# long as nobody looks. The failure was found by a human noticing a merge gate
+# stuck 33+ minutes (livespec-s43svm.30), which is precisely the recovery path
+# that does not scale. A timer is the same pragmatic, homelab-scale answer this
+# tree already uses for idempotent periodic reconciliation — see
+# reapply-node-extended-resource.service and
+# ../../observability/ci-runner-cache-prune.timer.
+#
+# MODE VALUE — READ THIS BEFORE INSTALLING. The argument below is
+# MODE_PLACEHOLDER for the same reason the sibling reapply unit's capacity is:
+# an un-edited copy must fail loudly rather than quietly do the wrong thing,
+# and the choice between REPORTING a wedge and CLEARING it is exactly the
+# decision an operator must make deliberately rather than inherit. Substitute
+# either an empty string (report-only: the sweep logs findings to the journal
+# and the unit fails, which is what `systemctl status` and `is-failed` then
+# report) or `--clear` (the sweep deletes flagged pods).
+#
+# install-wedged-runner-scan.sh performs that substitution and records which
+# mode was chosen; see its header for the argument in favour of --clear on this
+# host, and scan-wedged-runners.sh's header for why deleting a flagged pod is
+# safe by construction.
+[Unit]
+Description=Sweep ARC runner pods for the wedged (registration-not-found) condition
+After=k3s.service
+Requires=k3s.service
+
+[Service]
+Type=oneshot
+Environment=KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+ExecStart=/usr/local/lib/ci-runner-k3s/scan-wedged-runners.sh MODE_PLACEHOLDER
