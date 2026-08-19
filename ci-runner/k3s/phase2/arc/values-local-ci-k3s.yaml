@@ -1,0 +1,79 @@
+# values-local-ci-k3s.yaml -- a PHASE-1 scale set, captured from the LIVE
+# release `local-ci-k3s` (`helm get values local-ci-k3s -n arc-runners`, read
+# 2026-08-19) as part of livespec-s43svm.26's recreatability capture.
+#
+# Phase 1's original two-runner proof scale set. Superseded for real traffic by
+# values-livespec-dev-tooling.yaml (`livespec-dev-tooling-k3s`); no workflow in
+# any fleet repo routes to it today. It is captured rather than deleted because
+# it is LIVE on the cluster and this tree's contract is that the cluster can be
+# regenerated from the repository -- deleting a live release is a retirement
+# decision, not a capture decision.
+#
+# NAMED BY SCALE SET, not by repository, deliberately: this file breaks the
+# `values-<repo>.yaml` convention every other file here follows because BOTH
+# phase-1 scale sets point their `githubConfigUrl` at `livespec-dev-tooling`,
+# which already owns `values-livespec-dev-tooling.yaml`. The scale-set name is
+# the only unique key available.
+#
+# HOW IT DIFFERS FROM THE PER-REPO FILES, and why that is captured rather than
+# corrected: it carries no `kueue.x-k8s.io/queue-name` label and requests no
+# `ci-runner.io/churn-slot`, so its pods are admitted by the Kubernetes
+# scheduler directly rather than gated by Kueue and the churn-slot budget. That
+# is the pre-Kueue phase-1 shape. Bringing it under the admission formula would
+# change live behavior, which is a separate decision from capturing what is
+# actually deployed; this file records the release as it runs.
+#
+# It DOES carry the workflow-pod AppArmor wiring, because its workflow pods are
+# created by the same `containerMode: kubernetes` hook and run under the same
+# containerd default profile as every other scale set's -- the defect
+# livespec-s43svm.25 fixed is not specific to the Kueue-gated sets. See
+# values-livespec-overseer.yaml and ../apparmor/ci-runner-workflow.
+githubConfigUrl: "https://github.com/thewoolleyman/livespec-dev-tooling"
+githubConfigSecret: arc-github-app-installation  # same secret as phase 1 -- see ../../README.md "Credential separation"
+
+runnerScaleSetName: "local-ci-k3s"
+
+containerMode:
+  type: "kubernetes"
+  kubernetesModeWorkVolumeClaim:
+    accessModes: ["ReadWriteOnce"]
+    storageClassName: "local-path"
+    resources:
+      requests:
+        storage: 5Gi
+
+template:
+  spec:
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+    volumes:
+      - name: hook-pod-template
+        configMap:
+          name: arc-hook-pod-template
+    containers:
+      - name: runner
+        image: ghcr.io/actions/actions-runner:latest
+        command: ["/home/runner/run.sh"]
+        env:
+          - name: ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER
+            value: "false"
+          # THE WORKFLOW-POD FIX -- see values-livespec-overseer.yaml.
+          - name: ACTIONS_RUNNER_CONTAINER_HOOK_TEMPLATE
+            value: /home/runner/hook-template/hook-pod-template.yaml
+        volumeMounts:
+          - name: hook-pod-template
+            mountPath: /home/runner/hook-template
+            readOnly: true
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          capabilities:
+            drop: ["ALL"]
+
+# Phase-1 proof sizing, unchanged from the live release. There is no matching
+# ClusterQueue: this scale set predates the Kueue gating (see the header).
+minRunners: 0
+maxRunners: 2

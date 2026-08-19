@@ -28,6 +28,13 @@ template:
       runAsUser: 1000
       runAsGroup: 1000
       fsGroup: 1000
+    volumes:
+      # Carries ../arc/hook-pod-template.yaml into the runner pod so the
+      # container hook can read it. Additive: the chart appends its own `work`
+      # volume for kubernetes mode, and declaring this one does not displace it.
+      - name: hook-pod-template
+        configMap:
+          name: arc-hook-pod-template
     containers:
       - name: runner
         image: ghcr.io/actions/actions-runner:latest
@@ -35,6 +42,19 @@ template:
         env:
           - name: ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER
             value: "false"
+          # THE WORKFLOW-POD FIX -- see values-livespec-overseer.yaml for the
+          # full root cause. In kubernetes container mode the job's `container:`
+          # image runs in a SEPARATE pod the hook creates, whose securityContext
+          # is empty and which nothing else in this values file reaches. This env
+          # var is the hook's one supported seam for extending that pod's spec;
+          # it pins the pod to the node-loaded `ci-runner-workflow` AppArmor
+          # profile (../apparmor/ci-runner-workflow).
+          - name: ACTIONS_RUNNER_CONTAINER_HOOK_TEMPLATE
+            value: /home/runner/hook-template/hook-pod-template.yaml
+        volumeMounts:
+          - name: hook-pod-template
+            mountPath: /home/runner/hook-template
+            readOnly: true
         securityContext:
           allowPrivilegeEscalation: false
           privileged: false
