@@ -639,12 +639,42 @@ the very recovery path that already failed, a wedge sitting until
 somebody happens to look. See that script's header for the full argument
 and the three guards that make an unattended delete safe.
 
-The trigger for the wedge itself is **still unknown** and tracked on
-`livespec-s43svm.30`. The two instances observed were on different scale
-sets, minutes apart in age, and both created about an hour after the
-most recent re-cut, which rules out re-cut invalidation as their cause.
-Recycling runner pods on upgrade (above) closes one way in; the detector
-covers the rest until the trigger is found.
+### The trigger is not yet proven, and the leading hypothesis is Kueue gating
+
+Tracked on `livespec-s43svm.30`. What is ruled OUT: re-cut invalidation.
+Both observed instances were created about an hour AFTER the most recent
+`helm upgrade`, so recycling runner pods on upgrade (above) would not
+have prevented either.
+
+What the evidence points AT is the gap Kueue opens between a runner's
+registration being issued and its container actually starting. At
+03:35Z on 2026-08-19 both affected scale sets were heavily
+oversubscribed against their own quotas — `livespec-console-beads-k3s`
+patched `replicas=16` against a `nominalQuota` of **1** churn-slot, and
+`livespec-overseer-k3s` patched `replicas=5`-`6` against a quota of
+**2**. Both wedged pods started around 03:43Z, roughly eight minutes
+later, which is what being held at the back of a queue like that looks
+like. No other scale set was oversubscribed at that ratio, and no other
+scale set wedged.
+
+The mechanism that turns a long gating delay into a dead registration is
+NOT established. Two candidates, distinguishable by experiment:
+
+- The registration simply expires between issuance and use. Weak on its
+  own — an eight-minute wait is short against a JIT config's usual
+  lifetime.
+- ARC supersedes it. If the ephemeral-runner controller gives up on a
+  pod that has not become ready and re-issues, the originally-issued
+  registration is dead by the time the still-gated pod finally starts
+  with it.
+
+The second fits the timing better and predicts that the wedge rate
+scales with gating delay, which is testable directly: drive a burst
+well past a scale set's `nominalQuota` and watch whether pods admitted
+late wedge at a higher rate than pods admitted immediately. Until that
+is settled, the detector above is the load-bearing mitigation, and a
+scale set whose `maxRunners` sits far above its Kueue quota is the
+configuration to be suspicious of.
 
 ## Known caveat: the node-status patch's robustness, corrected against live evidence
 
