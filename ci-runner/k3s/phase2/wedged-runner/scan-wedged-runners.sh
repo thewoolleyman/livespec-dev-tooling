@@ -45,10 +45,31 @@
 # wedged runner can do. That guard makes a false positive non-destructive
 # rather than merely unlikely.
 #
+# KNOWN LIMITATION — WHAT AUTOMATIC CLEARING HIDES. Running this on a timer in
+# --clear mode absorbs recurrences silently. That is the point when the wedge is
+# rare, and it is a hazard when it is not: if whatever causes wedging gets worse,
+# an unattended sweep will delete pods every five minutes forever and nothing
+# says the condition escalated. That is the same invisible-signal failure this
+# script exists to fix, reintroduced one level up — and it matters more than
+# usual because the TRIGGER IS STILL UNKNOWN (livespec-s43svm.30; the leading
+# hypothesis is Kueue gating delay under oversubscription, see ../README.md).
+#
+# The mitigation here is deliberately small: the script remembers whether the
+# PREVIOUS run also found wedged pods, and prints a distinct ESCALATION line
+# naming the streak length when findings repeat across consecutive runs. A
+# one-off wedge stays quiet; a recurring one gets progressively louder in the
+# journal. The streak is tracked in BOTH modes, because repeated FINDINGS are
+# the signal — clearing them is not what makes the recurrence interesting.
+#
+# This is a journal-visible signal, not a routed alert. Wiring it into the fleet
+# attention surface is tracked separately; until then, an operator reading
+# `journalctl -u scan-wedged-runners.service` sees the escalation, and nothing
+# pages anyone.
+#
 # Requires: kubectl and a KUBECONFIG for the k3s cluster (see ../../provision-k3s.sh).
 set -euo pipefail
 
-USAGE="usage: scan-wedged-runners.sh [--clear] [--namespace NS] [--window DURATION] [--min-hits N] [--min-age-seconds N]
+USAGE="usage: scan-wedged-runners.sh [--clear] [--namespace NS] [--window DURATION] [--min-hits N] [--min-age-seconds N] [--state-file PATH] [--escalate-after N]
   (default is REPORT-ONLY: it prints what it would delete and exits 1 if any
    wedged pod is found, so it is usable directly as a check)"
 
@@ -64,6 +85,14 @@ MIN_HITS="${WEDGED_RUNNER_MIN_HITS:-2}"
 # Grace period after pod start. A pod younger than this has not had time to
 # accumulate MIN_HITS anyway, and skipping it keeps normal churn quiet.
 MIN_AGE_SECONDS="${WEDGED_RUNNER_MIN_AGE_SECONDS:-180}"
+# Where the consecutive-findings streak is remembered across runs (see this
+# script's "KNOWN LIMITATION" header). /var/lib is the right home for state a
+# systemd oneshot accumulates; an interactive non-root run simply cannot write
+# there, and the script degrades to not tracking rather than failing.
+STATE_FILE="${WEDGED_RUNNER_STATE_FILE:-/var/lib/ci-runner-k3s/wedged-runner-streak}"
+# Consecutive finding runs before the ESCALATION line appears. 2 is the
+# smallest value that means "this recurred" rather than "this happened".
+ESCALATE_AFTER="${WEDGED_RUNNER_ESCALATE_AFTER:-2}"
 CLEAR=0
 
 # The registration-not-found signature. Deliberately matched on the stable
@@ -77,11 +106,14 @@ while [ $# -gt 0 ]; do
     --window)           WINDOW="${2:?$USAGE}"; shift 2 ;;
     --min-hits)         MIN_HITS="${2:?$USAGE}"; shift 2 ;;
     --min-age-seconds)  MIN_AGE_SECONDS="${2:?$USAGE}"; shift 2 ;;
+    --state-file)       STATE_FILE="${2:?$USAGE}"; shift 2 ;;
+    --escalate-after)   ESCALATE_AFTER="${2:?$USAGE}"; shift 2 ;;
     -h|--help)          echo "$USAGE"; exit 0 ;;
     *)                  echo "FATAL: unknown argument '$1'"$'\n'"$USAGE" >&2; exit 2 ;;
   esac
 done
 
+[[ "$ESCALATE_AFTER" =~ ^[0-9]+$ ]] || { echo "FATAL: --escalate-after must be a non-negative integer, got '${ESCALATE_AFTER}'" >&2; exit 2; }
 [[ "$MIN_HITS" =~ ^[0-9]+$ ]] || { echo "FATAL: --min-hits must be a non-negative integer, got '${MIN_HITS}'" >&2; exit 2; }
 [[ "$MIN_AGE_SECONDS" =~ ^[0-9]+$ ]] || { echo "FATAL: --min-age-seconds must be a non-negative integer, got '${MIN_AGE_SECONDS}'" >&2; exit 2; }
 
@@ -89,6 +121,25 @@ command -v kubectl >/dev/null || { echo "FATAL: kubectl not found on PATH" >&2; 
 : "${KUBECONFIG:?set KUBECONFIG to the k3s cluster kubeconfig (see ../../provision-k3s.sh)}"
 
 log() { printf '\n== %s ==\n' "$*"; }
+
+# Streak persistence. Both helpers are FAIL-SOFT by design: an unwritable or
+# unreadable state file must degrade this script to "does not track recurrence",
+# never to "does not detect wedged runners". Losing the escalation signal is a
+# smaller harm than losing the sweep, so nothing here is allowed to abort.
+read_streak() {
+  local value
+  if value="$(cat "$STATE_FILE" 2>/dev/null)" && [[ "$value" =~ ^[0-9]+$ ]]; then
+    printf '%s' "$value"
+  else
+    printf '0'
+  fi
+}
+
+write_streak() {
+  local value="$1"
+  mkdir -p "$(dirname "$STATE_FILE")" 2>/dev/null || return 0
+  printf '%s\n' "$value" > "$STATE_FILE" 2>/dev/null || return 0
+}
 
 # ---------------------------------------------------------------------------
 log "1. Enumerate Running runner pods in namespace ${NAMESPACE}"
@@ -102,9 +153,10 @@ log "1. Enumerate Running runner pods in namespace ${NAMESPACE}"
 PODS="$(kubectl get pods -n "$NAMESPACE" \
   -l app.kubernetes.io/component=runner \
   --field-selector=status.phase=Running \
-  -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.metadata.labels.actions\.github\.com/scale-set-name}{"\t"}{.status.startTime}{"\n"}{end}')"
+  -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.metadata.labels.actions\.github\.com/scale-set-name}{"\t"}{.status.startTime}{"\t"}{.metadata.deletionTimestamp}{"\n"}{end}')"
 
 if [ -z "$PODS" ]; then
+  write_streak 0
   log "No Running runner pods. Nothing to scan."
   exit 0
 fi
@@ -118,8 +170,19 @@ log "2. Scan each pod's last ${WINDOW} of runner log for: ${SIGNATURE}"
 NOW_EPOCH="$(date -u +%s)"
 WEDGED=""   # newline-separated "name<TAB>scaleset<TAB>age_seconds<TAB>hits<TAB>busy"
 
-while IFS=$'\t' read -r name scaleset start_time; do
+while IFS=$'\t' read -r name scaleset start_time deletion_time; do
   [ -n "$name" ] || continue
+
+  # A pod being deleted keeps phase `Running` for its whole termination grace
+  # period, so without this it is re-flagged on every sweep until it actually
+  # disappears. That would inflate the consecutive-findings streak with a pod
+  # already dealt with, which is precisely the signal the streak must not lie
+  # about — and in --clear mode it also re-issues a delete for a pod already
+  # terminating.
+  if [ -n "$deletion_time" ]; then
+    printf '  %-52s SKIP (already terminating since %s)\n' "$name" "$deletion_time"
+    continue
+  fi
 
   start_epoch="$(date -u -d "$start_time" +%s 2>/dev/null || echo "$NOW_EPOCH")"
   age=$(( NOW_EPOCH - start_epoch ))
@@ -157,16 +220,27 @@ done <<< "$PODS"
 
 # ---------------------------------------------------------------------------
 if [ -z "$WEDGED" ]; then
+  write_streak 0
   log "CLEAN. No wedged runner pods in namespace ${NAMESPACE}."
   exit 0
 fi
 
-log "3. WEDGED RUNNER PODS FOUND"
+STREAK=$(( $(read_streak) + 1 ))
+write_streak "$STREAK"
+
+log "3. WEDGED RUNNER PODS FOUND (consecutive runs with findings: ${STREAK})"
 printf '%s' "$WEDGED" | while IFS=$'\t' read -r name scaleset age hits busy; do
   [ -n "$name" ] || continue
   printf '  pod=%s scale-set=%s age=%ss hits=%s workflow-companion=%s\n' \
     "$name" "${scaleset:-<unknown>}" "$age" "$hits" "$busy"
 done
+
+# The one line an operator should grep for. A single wedge is routine and this
+# stays silent; a wedge that keeps coming back means the underlying condition
+# is escalating, which no amount of successful clearing makes less true.
+if [ "$ESCALATE_AFTER" -gt 0 ] && [ "$STREAK" -ge "$ESCALATE_AFTER" ]; then
+  printf '\nESCALATION: wedged runners found on %s CONSECUTIVE sweeps. Clearing them is treating the symptom -- the underlying condition is recurring, and its trigger is not yet known (livespec-s43svm.30). Investigate rather than relying on the sweep.\n' "$STREAK"
+fi
 
 if [ "$CLEAR" -eq 0 ]; then
   cat <<'EOF'

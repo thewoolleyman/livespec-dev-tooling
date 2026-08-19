@@ -639,6 +639,38 @@ the very recovery path that already failed, a wedge sitting until
 somebody happens to look. See that script's header for the full argument
 and the three guards that make an unattended delete safe.
 
+### Known limitation: automatic clearing hides recurrence
+
+Running the sweep in `clear` mode absorbs recurrences silently. That is the
+point when the wedge is rare, and it is a hazard when it is not: if whatever
+causes wedging gets worse, the timer will delete pods every five minutes
+forever and nothing says the condition escalated. That is the same
+invisible-signal failure this whole section exists to fix, reintroduced one
+level up — and it matters more than usual because the trigger is still
+unknown (below), so there is no independent signal that would catch the
+escalation instead.
+
+The mitigation is deliberately small. The scan remembers whether the previous
+run also found wedged pods (a counter under `/var/lib/ci-runner-k3s/`, tracked
+in BOTH modes because repeated *findings* are the signal, not repeated
+deletions) and prints a distinct line when findings repeat:
+
+```
+ESCALATION: wedged runners found on N CONSECUTIVE sweeps. ...
+```
+
+So a one-off wedge stays quiet and a recurring one gets louder. Check for it
+with:
+
+```bash
+journalctl -u scan-wedged-runners.service --since -1d | grep ESCALATION
+```
+
+Be clear about what this is: a journal-visible signal, not a routed alert.
+Nothing pages anyone, and an operator who never reads the journal still learns
+nothing. Wiring it into the fleet attention surface is tracked separately on
+`livespec-s43svm.30`.
+
 ### The trigger is not yet proven, and the leading hypothesis is Kueue gating
 
 Tracked on `livespec-s43svm.30`. What is ruled OUT: re-cut invalidation.
