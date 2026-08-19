@@ -64,6 +64,7 @@ EXPECTED_CANONICAL_SLUGS: tuple[str, ...] = (
     "check-required-role-keys-declared",
     "check-rop-pipeline-shape",
     "check-self-hosted-routing",
+    "check-self-hosted-uv-lane",
     "check-shell-quality",
     "check-skill-invocation-paths",
     "check-source-trees-scoped-to-consumer",
