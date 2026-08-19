@@ -708,6 +708,45 @@ is settled, the detector above is the load-bearing mitigation, and a
 scale set whose `maxRunners` sits far above its Kueue quota is the
 configuration to be suspicious of.
 
+#### Every sweep now records the measurement that settles it
+
+Both candidates above share one prediction — that a wedged pod waited a
+long time between being created and actually starting — so that wait is
+what the scan measures. `scan-wedged-runners.sh` reports a **gate time**
+for every pod it looks at:
+
+```
+gate = .status.containerStatuses[runner].state.running.startedAt
+       - .metadata.creationTimestamp
+```
+
+Read it alongside, not instead of, the `age` on the same line. `age`
+comes from `.status.startTime`, which the kubelet sets only once the pod
+has been admitted — so `age` deliberately excludes the waiting period
+under suspicion, and the two numbers diverging is itself the signal.
+
+The readings, and what each one means:
+
+| Reading | What it tells you |
+|---|---|
+| `gate=<n>s (LONG …)` on a WEDGED pod | Consistent with the hypothesis. Not proof — record `n` and move on. |
+| `gate=<n>s (PROMPT -- FALSIFIES …)` on a WEDGED pod | **Kills the hypothesis.** A pod that started promptly and wedged anyway cannot have wedged from waiting. Reopen the mechanism question. |
+| `gate=<n>s (prompt)` on a healthy `ok` pod | Control-group data. The hypothesis also claims promptly-started pods do not wedge, so these are the observations that would make a long-gate correlation meaningful rather than incidental. |
+| `gate=unknown` | One of the two timestamps was missing. Carries no evidence either way, and is reported as `unknown` rather than as `0` precisely so it is never mistaken for the falsifying reading. |
+
+`LONG` versus `prompt` is a reading aid only — it is a label applied at
+`--gate-long-seconds` (default 300s, an order-of-magnitude marker rather
+than a measured boundary) and it changes nothing about what is scanned,
+flagged, or deleted. The raw `created=` and `runner-started=` timestamps
+are printed beside every wedged pod, including on the line that deletes
+one, so the number can always be re-derived rather than trusted — and so
+the evidence survives the pod that carried it.
+
+This does not settle the trigger on its own. It means the NEXT incident
+arrives as evidence instead of as a repeat of the last one, which is the
+cheapest available step given that the burst experiment above needs a
+deliberate load window.
+
 ## Known caveat: the node-status patch's robustness, corrected against live evidence
 
 `kubectl patch node --subresource=status` is the Kubernetes-documented
