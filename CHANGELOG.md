@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.28.12](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.28.11...v1.28.12) (2026-08-19)
+
+
+### Refactoring
+
+* **rop:** dispatch defects_in detectors directly instead of through the registry ([1f276e1](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1f276e1094011f84b3cb6ada4b821fe332c90d8e))
+
 ## [1.28.11](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.28.10...v1.28.11) (2026-08-19)
 
 
