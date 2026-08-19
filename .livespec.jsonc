@@ -27,6 +27,14 @@
   // reviewable opt-out. Written explicitly at install time so the obligation is
   // readable here rather than inferred from a verifier failure.
   "worktree_discipline": { "pack": "required" },
+  // Foreman human-valve disposition (livespec-overseer). "consensus" is the
+  // OPT-IN tier: the foreman MAY convene the cross-vendor consensus panel on a
+  // blocked session or human valve and act on its typed verdict via foreman-act.
+  // Unset (or unrecognized) resolves to the fail-closed default "report-only".
+  // Enabled 2026-08-19 at the maintainer's explicit direction (foreman session,
+  // AskUserQuestion ruling). The governing floors are unchanged: ratification,
+  // policy, and by-design human gates still escalate regardless of panel verdict.
+  "livespec-overseer": { "foreman_valve_disposition": "consensus" },
   "template": "livespec",
   "spec_root": "SPECIFICATION",
   "implementation": { "plugin": "livespec-orchestrator-beads-fabro" },
