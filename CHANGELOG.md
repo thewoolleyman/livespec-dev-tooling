@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.29.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.28.13...v1.29.0) (2026-08-19)
+
+
+### Features
+
+* **checks:** self-hosted-routing workflows must bound uv fetch concurrency ([a47c0bf](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a47c0bf5707a4c5d82259d35cd831d1a5884a3c2))
+
 ## [1.28.13](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.28.12...v1.28.13) (2026-08-19)
 
 
