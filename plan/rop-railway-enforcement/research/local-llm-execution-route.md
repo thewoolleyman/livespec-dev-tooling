@@ -78,6 +78,13 @@ compared to the pre-hold assumption of a capable frontier worker per unit.
    this track lands ~338 conversions as ~338 PRs, the runner half of the original
    cost problem returns at full strength regardless of which model wrote the code.
    **Batching conversions per repo is the obvious lever and it is not yet decided.**
+> ⛔ **§4 ITEM 2 BELOW IS CORRECTED BY `state-correction-2026-08-19.md`. READ THAT FIRST.**
+> `8zv3.1/.2/.3` are CLOSED; the decoupling LANDED (`46c5dab`), turned five fleet repos'
+> master CI red, and was REVERTED (`f4247110`). The conclusion drawn below — defer
+> conversions because the check is unarmed — is BACKWARDS: arming ahead of adoption is
+> the move already proven to break the fleet, so conversions are the critical path, not
+> the blocked half. The 2.8x `_`-file-skip decision (`8zv3.5`) is what actually gates them.
+
 2. **The `8zv3` blocker is a correctness-of-sequencing issue, not a cost one, and
    it is untouched by a cheaper worker.** `livespec-dev-tooling-8o8e` is `blocks`-
    dependent on `livespec-dev-tooling-8zv3` in the ledger. Until `8zv3` lands, the
