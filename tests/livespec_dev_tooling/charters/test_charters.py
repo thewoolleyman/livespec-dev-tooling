@@ -575,3 +575,35 @@ def test_charters_in_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     assert isinstance(failure, CharterReadFailure)
     assert failure.path == str(root)
     assert failure.detail == "Permission denied"
+
+
+def test_defects_in_parity_with_detectors_registry() -> None:
+    """Direct enumeration of detectors must match registry-based iteration.
+
+    This test verifies that calling each detector directly produces the same
+    results as iterating over DETECTORS. If the registry ever drifts from the
+    direct calls in defects_in(), this will fail.
+    """
+    module = _charters_module()
+
+    # Build a probe that trips at least two different detector classes
+    # Based on detector_a: bare tmux target
+    # Based on detector_g: bash pipestatus under zsh
+    probe = _fenced(
+        body=(
+            "tmux send-keys -t my-session -- 'echo hi'\n"
+            'just check | tail -5; echo "EXIT=${PIPESTATUS[0]}"'
+        )
+    )
+
+    # The direct enumeration must match the registry iteration
+    expected = [
+        f"{name}: {line}" for name, detector in module.DETECTORS for line in detector(text=probe)
+    ]
+    assert module.defects_in(text=probe) == expected
+
+    # Verify at least two detectors triggered
+    result = module.defects_in(text=probe)
+    assert len(result) >= 2
+    assert any(line.startswith("a-bare-tmux-target:") for line in result)
+    assert any(line.startswith("g-bash-pipestatus-under-zsh:") for line in result)

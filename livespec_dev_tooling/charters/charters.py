@@ -86,7 +86,26 @@ DETECTORS: tuple[tuple[str, Detector], ...] = (
 
 def defects_in(*, text: str) -> list[str]:
     """Every defect in one charter, as `<class>: <offending line>` strings."""
-    return [f"{name}: {line}" for name, detector in DETECTORS for line in detector(text=text)]
+    results: list[tuple[str, list[str]]] = [
+        ("a-bare-tmux-target", bare_targets(text=text)),
+        ("b-unguarded-path-resolution", unguarded_path_resolution(text=text)),
+        ("c-history-fed-capture", history_fed_capture(text=text)),
+        ("d-empty-prev-watcher-init", empty_prev_watcher_init(text=text)),
+        ("e-supervisor-trusted-by-name", supervisor_trusted_by_name(text=text)),
+        ("f-regex-session-existence-test", regex_session_existence_test(text=text)),
+        ("g-bash-pipestatus-under-zsh", bash_pipestatus_in_zsh_fleet(text=text)),
+        ("h-wrapper-less-ledger-read", wrapper_less_ledger_read(text=text)),
+        ("i-fixed-cap-marker-read", fixed_cap_marker_read(text=text)),
+        ("j-unguarded-marker-binding", unguarded_marker_binding(text=text)),
+        ("k-local-time-labelled-utc", local_time_labelled_utc(text=text)),
+        ("l-busy-test-matches-idle-pane", busy_test_matches_idle_pane(text=text)),
+        ("m-adoptable-runtime-contract", adoptable_runtime_contract(text=text)),
+        (
+            "n-unattended-charter-missing-perform-the-unblock",
+            unattended_charter_missing_perform_the_unblock(text=text),
+        ),
+    ]
+    return [f"{name}: {line}" for name, lines in results for line in lines]
 
 
 def charters_in(*, root: Path) -> IOResult[list[Path], CharterReadFailure]:
