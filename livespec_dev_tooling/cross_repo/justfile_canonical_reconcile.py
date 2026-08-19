@@ -10,11 +10,21 @@ the new slug in the same bump commit, or its bump PR fails before the new check
 can propagate. This module carries the two reconciliations that make that
 adoption atomic:
 
-- insert every canonical slug missing from the consumer's `check:` aggregate
-  `targets=(...)` array (preserving canonical order and the array's existing
-  indent); and
+- insert every canonical slug missing from the consumer's RESOLVED slug
+  inventory (preserving canonical order and any existing indent); and
 - append a zero-arg `check-<slug>:` recipe for each missing slug that has NO
   recipe header yet.
+
+RESOLVED means what `aggregate_completeness` itself reads, and the resolution
+order matters: a committed `check-targets.txt` is PRIMARY, and the justfile's
+`targets=(...)` array is consulted only when that file is absent. Reconciling
+the array alone left three of the fleet's eight Python consumers untouched --
+`livespec-driver-codex` and `livespec-driver-pi`, whose `check:` recipe
+delegates to a shell script, and `livespec-runtime` -- so their bump PRs failed
+`check-aggregate-completeness` on the very bump meant to wire them, and each had
+to be wired by hand. A consumer carrying BOTH sources has both updated: the file
+because it is what the gate reads, the array because such a repo may also
+enforce a literal mirror between the two.
 
 The extraction fixes ONE latent bug in the recipe-presence guard. The
 pre-extraction guard recognized a canonical slug's recipe ONLY when it was
@@ -24,7 +34,7 @@ defined as the BARE header `check-<slug>:`. Both Driver repos
 (the aggregate calls it with no args; the pre-commit hook passes a message
 path). The bare-only guard missed that form, so it appended a SECOND
 `check-red-green-replay:` recipe; `just` then refused to parse the redefinition
-and every `just check-*` failed in the consumer's CI. `_recipe_header_present`
+and every `just check-*` failed in the consumer's CI. `recipe_header_present`
 now recognizes any recipe-header form for the slug.
 
 Output discipline mirrors the sibling `pin_autodiscovery` supervisor entry
@@ -38,7 +48,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -56,15 +65,27 @@ if str(_VENDOR_DIR) not in sys.path:
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 from livespec_dev_tooling.canonical_checks import canonical_check_renames  # noqa: E402
+from livespec_dev_tooling.cross_repo._canonical_reconcile_parse import (  # noqa: E402
+    check_recipe_bounds,
+    insert_missing_targets,
+    inventory_slugs,
+    missing_recipe_chunks,
+    reconcile_inventory_text,
+    rewrite_renamed_references,
+    targets_array_bounds,
+    token_for,
+)
 
-__all__: list[str] = ["reconcile_justfile_text"]
+__all__: list[str] = ["reconcile_inventory_text", "reconcile_justfile_text", "reconcile_sources"]
 
 
 _JUSTFILE_NAME = "justfile"
+# The consumer's committed canonical-slug inventory. `aggregate_completeness`
+# reads THIS FIRST and only parses the justfile's `targets=(...)` array when the
+# file is absent, so on a repo carrying both, the FILE is what the gate is
+# actually gated on.
+_INVENTORY_NAME = "check-targets.txt"
 _AGGREGATE_SLUG = "check-aggregate-completeness"
-_CHECK_PREFIX = "check-"
-_DEFAULT_TARGET_INDENT = "        "
-_RECIPE_MODULE_STEM = "uv run python -m livespec_dev_tooling.checks."
 
 # Skip-reason → GitHub Actions `::notice::` message, byte-identical to the
 # pre-extraction embedded step's `print("::notice::...")` calls so the
@@ -104,196 +125,6 @@ class _ReconcileResult:
     skipped_reason: str | None
 
 
-def _token_for(*, line: str) -> str | None:
-    """Return the `check-<slug>` token a targets-array line names, else None.
-
-    A blank line, a `#` comment line, or a non-`check-`-prefixed entry names no
-    canonical target token. A trailing inline `# ...` comment is stripped.
-    """
-    stripped = line.strip()
-    if not stripped or stripped.startswith("#"):
-        return None
-    token = stripped.split("#", 1)[0].strip()
-    return token if token.startswith(_CHECK_PREFIX) else None
-
-
-def _recipe_header_present(*, justfile_text: str, slug: str) -> bool:
-    r"""Return True when `justfile_text` already defines a `<slug>` recipe header.
-
-    A just recipe header sits at column 0 (no leading whitespace): the recipe
-    name, then optional parameters/dependencies, then `:`. The lookahead
-    `(?=[ \t:])` requires the character immediately after the slug to be
-    whitespace or the colon — never `-` — so a `<slug>` lookup does NOT match a
-    longer `<slug>-<suffix>:` header (prefix-collision guard). This recognizes
-    EVERY recipe-header form for the slug:
-
-    - bare `check-foo:`
-    - variadic `check-foo *args:`
-    - named / defaulted params `check-foo msg_path:` / `check-foo a b:` /
-      `check-foo p="x":`
-
-    The pre-extraction guard matched only the bare `check-foo:` header, so it
-    re-appended a duplicate recipe when a consumer hand-defined the check in a
-    PARAMETERIZED form (both Driver repos define `check-red-green-replay *args:`
-    that way) — the redefinition then broke the consumer's `just` parse.
-    Matching any header form is the fix.
-    """
-    header = re.compile(rf"^{re.escape(slug)}(?=[ \t:])[^\n]*?:", re.MULTILINE)
-    return header.search(justfile_text) is not None
-
-
-def _bare_check_recipe_bounds(*, lines: list[str]) -> tuple[int, int] | None:
-    """Return (check_header_index, recipe_end_index) for the bare `check:` recipe, or None.
-
-    `recipe_end` is the index of the next column-0 recipe header after `check:`
-    (or `len(lines)` when `check:` is the file's last recipe). None means the
-    justfile carries no bare `check:` aggregate recipe.
-    """
-    check_header = next(
-        (i for i, line in enumerate(lines) if line in ("check:\n", "check:")),
-        None,
-    )
-    if check_header is None:
-        return None
-    recipe_end = len(lines)
-    for i in range(check_header + 1, len(lines)):
-        line = lines[i]
-        if line and not line.startswith((" ", "\t")) and ":" in line:
-            recipe_end = i
-            break
-    return check_header, recipe_end
-
-
-def _targets_array_bounds(
-    *, lines: list[str], check_header: int, recipe_end: int
-) -> tuple[int, int] | str:
-    """Return (targets_start, targets_end) or a skip-reason string.
-
-    The `targets=(` opener and its `)` closer must both sit inside the `check:`
-    recipe body (before `recipe_end`). A missing opener yields `no_targets_array`;
-    a missing closer yields `unterminated_targets` — both keys into
-    `_SKIP_NOTICES`.
-    """
-    targets_start = next(
-        (i for i in range(check_header + 1, recipe_end) if lines[i].strip() == "targets=("),
-        None,
-    )
-    if targets_start is None:
-        return "no_targets_array"
-    targets_end = next(
-        (i for i in range(targets_start + 1, recipe_end) if lines[i].strip() == ")"),
-        None,
-    )
-    if targets_end is None:
-        return "unterminated_targets"
-    return targets_start, targets_end
-
-
-def _target_indent(*, lines: list[str], targets_start: int, targets_end: int) -> str:
-    """Return the leading-whitespace indent of the first token line in the array.
-
-    Falls back to the eight-space default when the array carries no token line
-    (an empty array, or one holding only comments/blanks).
-    """
-    for line in lines[targets_start + 1 : targets_end]:
-        if _token_for(line=line) is not None:
-            return line[: len(line) - len(line.lstrip())]
-    return _DEFAULT_TARGET_INDENT
-
-
-def _insert_missing_targets(
-    *,
-    lines: list[str],
-    canonical_set: set[str],
-    missing: tuple[str, ...],
-    targets_start: int,
-    targets_end: int,
-) -> None:
-    """Insert each missing slug into the `targets=(...)` array in `lines`, in place.
-
-    Each slug lands before the first EXISTING canonical token that sorts after
-    it (keeping the canonical block alphabetically ordered), or after the last
-    canonical token when it sorts last, or at the array head when the array
-    holds no canonical token. Non-canonical (consumer-local) tokens are not
-    used as sort anchors, matching the pre-extraction behavior.
-    """
-    indent = _target_indent(lines=lines, targets_start=targets_start, targets_end=targets_end)
-    end = targets_end
-    for slug in missing:
-        insert_at: int | None = None
-        last_canonical: int | None = None
-        for i in range(targets_start + 1, end):
-            token = _token_for(line=lines[i])
-            if token in canonical_set:
-                last_canonical = i
-                if token > slug:
-                    insert_at = i
-                    break
-        if insert_at is None:
-            insert_at = targets_start + 1 if last_canonical is None else last_canonical + 1
-        lines.insert(insert_at, f"{indent}{slug}\n")
-        end += 1
-
-
-def _missing_recipe_chunks(*, justfile_text: str, missing: tuple[str, ...]) -> list[str]:
-    """Return a zero-arg `check-<slug>:` recipe chunk for each missing slug lacking a recipe.
-
-    A slug whose recipe header is already defined in ANY form (bare, variadic,
-    or named-param — see `_recipe_header_present`) gets NO chunk, so a
-    parameterized hand-defined recipe is never duplicated.
-    """
-    chunks: list[str] = []
-    for slug in missing:
-        if _recipe_header_present(justfile_text=justfile_text, slug=slug):
-            continue
-        module = slug.removeprefix(_CHECK_PREFIX).replace("-", "_")
-        chunks.append(f"\n{slug}:\n    {_RECIPE_MODULE_STEM}{module}\n")
-    return chunks
-
-
-def _rewrite_renamed_references(
-    *, justfile_text: str, renames: Sequence[tuple[str, str]], canonical_set: set[str]
-) -> str:
-    """Rewrite a wired OLD canonical slug (and its auto-generated recipe) to its NEW name.
-
-    A canonical check rename (`canonical_checks.canonical_check_renames()`)
-    drops the OLD slug from the canonical set with no trace of the rename — the
-    canonical set is a filesystem walk, so a renamed `checks/<old>.py` module
-    simply stops existing under that name. A consumer whose justfile still
-    wires the OLD slug is left stranded: its bump PR's CI runs `just
-    check-<old-slug>`, which imports a module that no longer exists
-    (`ModuleNotFoundError`, livespec-dev-tooling-3gy1).
-
-    For every rename whose `new` side is canonical, rewrites the OLD slug's
-    wired target-array token to the NEW slug, then rewrites its
-    auto-generated bare `check-<old>:` recipe to the NEW slug/module — ONLY
-    when that recipe is in EXACTLY the auto-generated bare shape this module
-    itself would append. A hand-authored or parameterized old recipe is left
-    alone: this module never overwrites content it did not itself generate.
-    A rename whose old slug is not actually wired is a no-op (`re.subn`
-    reports zero replacements and the recipe rewrite is skipped).
-    """
-    text = justfile_text
-    for old, new in renames:
-        if new not in canonical_set:
-            continue
-        text, replaced = re.subn(
-            rf"^([ \t]*){re.escape(old)}([ \t]*)$",
-            rf"\g<1>{new}\g<2>",
-            text,
-            count=1,
-            flags=re.MULTILINE,
-        )
-        if not replaced:
-            continue
-        old_module = old.removeprefix(_CHECK_PREFIX).replace("-", "_")
-        new_module = new.removeprefix(_CHECK_PREFIX).replace("-", "_")
-        old_recipe = f"{old}:\n    {_RECIPE_MODULE_STEM}{old_module}\n"
-        if old_recipe in text:
-            text = text.replace(old_recipe, f"{new}:\n    {_RECIPE_MODULE_STEM}{new_module}\n", 1)
-    return text
-
-
 def _reconcile(
     *,
     justfile_text: str,
@@ -303,7 +134,7 @@ def _reconcile(
     """Pure core — reconcile the consumer justfile text against the canonical slug set.
 
     First rewrites any wired slug the `renames` map strands (see
-    `_rewrite_renamed_references`), then inserts every canonical slug missing
+    `rewrite_renamed_references`), then inserts every canonical slug missing
     from the `check:` aggregate's `targets=(...)` array, then appends a
     zero-arg `check-<slug>:` recipe for each missing slug that has NO recipe
     header in any form. Returns the input unchanged with a `skipped_reason`
@@ -314,29 +145,29 @@ def _reconcile(
     if _AGGREGATE_SLUG not in justfile_text:
         return _ReconcileResult(text=justfile_text, missing=(), skipped_reason="no_aggregate")
 
-    justfile_text = _rewrite_renamed_references(
+    justfile_text = rewrite_renamed_references(
         justfile_text=justfile_text, renames=renames, canonical_set=canonical_set
     )
 
     lines = justfile_text.splitlines(keepends=True)
-    block = _bare_check_recipe_bounds(lines=lines)
+    block = check_recipe_bounds(lines=lines)
     if block is None:
         return _ReconcileResult(text=justfile_text, missing=(), skipped_reason="no_check_header")
     check_header, recipe_end = block
 
-    bounds = _targets_array_bounds(lines=lines, check_header=check_header, recipe_end=recipe_end)
+    bounds = targets_array_bounds(lines=lines, check_header=check_header, recipe_end=recipe_end)
     if isinstance(bounds, str):
         return _ReconcileResult(text=justfile_text, missing=(), skipped_reason=bounds)
     targets_start, targets_end = bounds
 
     wired = {
         token
-        for token in (_token_for(line=line) for line in lines[targets_start + 1 : targets_end])
+        for token in (token_for(line=line) for line in lines[targets_start + 1 : targets_end])
         if token is not None
     }
     missing = tuple(slug for slug in canonical if slug not in wired)
 
-    _insert_missing_targets(
+    insert_missing_targets(
         lines=lines,
         canonical_set=canonical_set,
         missing=missing,
@@ -344,9 +175,106 @@ def _reconcile(
         targets_end=targets_end,
     )
     reconstructed = "".join(lines)
-    chunks = _missing_recipe_chunks(justfile_text=reconstructed, missing=missing)
+    chunks = missing_recipe_chunks(justfile_text=reconstructed, missing=missing)
     return _ReconcileResult(
         text=reconstructed + "".join(chunks),
+        missing=missing,
+        skipped_reason=None,
+    )
+
+
+@dataclass(frozen=True, kw_only=True)
+class _SourcesResult:
+    """Outcome of reconciling BOTH canonical-slug sources a consumer may carry.
+
+    `inventory_text` is None when the consumer has no `check-targets.txt` (the
+    reconcile then concerns the justfile alone). `skipped_reason` is None when
+    at least one source was reconcilable.
+    """
+
+    justfile_text: str
+    inventory_text: str | None
+    missing: tuple[str, ...]
+    skipped_reason: str | None
+
+
+def reconcile_sources(
+    *,
+    justfile_text: str,
+    inventory_text: str | None,
+    canonical_slugs: Sequence[str],
+    renames: Sequence[tuple[str, str]] = (),
+) -> _SourcesResult:
+    """Reconcile every canonical-slug source the consumer carries.
+
+    Resolution mirrors `aggregate_completeness` EXACTLY, which is the property
+    that keeps writer and gate from drifting: `check-targets.txt` is PRIMARY
+    when present, and the justfile's `targets=(...)` array is consulted only in
+    its absence. A consumer carrying BOTH has both updated -- the file because
+    it is what the gate reads, the array because a repo carrying both may also
+    enforce a literal mirror between them.
+
+    Recipes are appended for every missing slug lacking a recipe header, driven
+    by the RESOLVED missing set, so a consumer whose aggregate delegates to a
+    shell script still gains the recipes its inventory now names.
+    """
+    canonical = tuple(canonical_slugs)
+    canonical_set = set(canonical)
+    if inventory_text is None:
+        result = _reconcile(justfile_text=justfile_text, canonical_slugs=canonical, renames=renames)
+        return _SourcesResult(
+            justfile_text=result.text,
+            inventory_text=None,
+            missing=result.missing,
+            skipped_reason=result.skipped_reason,
+        )
+
+    if _AGGREGATE_SLUG not in justfile_text and _AGGREGATE_SLUG not in inventory_text:
+        return _SourcesResult(
+            justfile_text=justfile_text,
+            inventory_text=inventory_text,
+            missing=(),
+            skipped_reason="no_aggregate",
+        )
+
+    justfile_text = rewrite_renamed_references(
+        justfile_text=justfile_text, renames=renames, canonical_set=canonical_set
+    )
+    missing = tuple(
+        slug for slug in canonical if slug not in inventory_slugs(inventory_text=inventory_text)
+    )
+    reconciled_inventory = reconcile_inventory_text(
+        inventory_text=inventory_text, canonical_slugs=canonical
+    )
+
+    lines = justfile_text.splitlines(keepends=True)
+    block = check_recipe_bounds(lines=lines)
+    if block is not None:
+        bounds = targets_array_bounds(lines=lines, check_header=block[0], recipe_end=block[1])
+        if not isinstance(bounds, str):
+            insert_missing_targets(
+                lines=lines,
+                canonical_set=canonical_set,
+                missing=tuple(
+                    slug
+                    for slug in missing
+                    if slug
+                    not in {
+                        token
+                        for token in (
+                            token_for(line=line) for line in lines[bounds[0] + 1 : bounds[1]]
+                        )
+                        if token is not None
+                    }
+                ),
+                targets_start=bounds[0],
+                targets_end=bounds[1],
+            )
+    reconstructed = "".join(lines)
+    chunks = missing_recipe_chunks(justfile_text=reconstructed, missing=missing)
+    return _SourcesResult(
+        justfile_text=reconstructed + "".join(chunks),
+        inventory_text=reconciled_inventory,
         missing=missing,
         skipped_reason=None,
     )
@@ -374,6 +302,18 @@ def reconcile_justfile_text(
 def _emit_notice(*, message: str) -> None:
     """Write a GitHub Actions `::notice::` annotation to stdout."""
     _ = sys.stdout.write(f"::notice::{message}\n")
+
+
+def _emit_warning(*, message: str) -> None:
+    """Write a GitHub Actions `::warning::` annotation to stdout.
+
+    A skip on a consumer that DOES carry the aggregate is the failure mode this
+    module was blind to: it exited 0 with a `::notice::` nobody reads, and the
+    consequence surfaced later as a red bump PR whose diagnosis named the
+    symptom (`missing_canonical_slug`) rather than the cause. A warning makes
+    the skip visible in the bump run itself.
+    """
+    _ = sys.stdout.write(f"::warning::{message}\n")
 
 
 def _slugs_from_env() -> tuple[str, ...]:
@@ -408,18 +348,35 @@ def main() -> int:
 
     slugs = _slugs_from_env()
     justfile_text = justfile.read_text(encoding="utf-8")
-    result = _reconcile(
+    inventory = Path.cwd() / _INVENTORY_NAME
+    inventory_text = inventory.read_text(encoding="utf-8") if inventory.is_file() else None
+    result = reconcile_sources(
         justfile_text=justfile_text,
+        inventory_text=inventory_text,
         canonical_slugs=slugs,
         renames=unsafe_perform_io(canonical_check_renames().unwrap()),
     )
 
     if result.skipped_reason is not None:
         _emit_notice(message=_SKIP_NOTICES[result.skipped_reason])
+        if result.skipped_reason != "no_aggregate":
+            _emit_warning(
+                message=(
+                    f"canonical check wiring NOT reconciled ({result.skipped_reason}); "
+                    "this consumer carries check-aggregate-completeness and will fail it "
+                    "until wired by hand"
+                )
+            )
         return 0
 
-    if result.text != justfile_text:
-        _ = justfile.write_text(result.text, encoding="utf-8")
+    changed = False
+    if result.justfile_text != justfile_text:
+        _ = justfile.write_text(result.justfile_text, encoding="utf-8")
+        changed = True
+    if result.inventory_text is not None and result.inventory_text != inventory_text:
+        _ = inventory.write_text(result.inventory_text, encoding="utf-8")
+        changed = True
+    if changed:
         _emit_notice(message=f"reconciled canonical check wiring for: {', '.join(result.missing)}")
     else:
         _emit_notice(message="canonical check wiring already current")
