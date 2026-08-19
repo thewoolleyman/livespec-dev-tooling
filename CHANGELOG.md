@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.28.11](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.28.10...v1.28.11) (2026-08-19)
+
+
+### Bug Fixes
+
+* **rop:** return charters_in on the IOResult railway ([531d798](https://github.com/thewoolleyman/livespec-dev-tooling/commit/531d798a2e536525843a7f11f9e80775406a544c))
+
 ## [1.28.10](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.28.9...v1.28.10) (2026-08-19)
 
 
