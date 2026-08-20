@@ -2,8 +2,8 @@
 
 The `bump-pin-rewrite` composite Action receives records emitted by
 `pin_autodiscovery` and rewrites the matching pin in place. These tests cover
-the four legacy regex rewrites that used to live as inline Python heredocs in
-the Action's bash case block.
+the legacy regex rewrites that used to live as inline Python heredocs in the
+Action's bash case block.
 """
 
 from __future__ import annotations
@@ -37,6 +37,7 @@ def test_legacy_regex_pin_cases_dispatch_shared_pin_rewrite_module() -> None:
         "pyproject_toml_uv_sources",
         "vendor_jsonc",
         "github_workflow_uses_ref",
+        "claude_settings_extra_known_marketplace_source_ref",
     ):
         assert f"{fmt})" in text, f"composite Action missing the {fmt} case arm"
     assert f"python -m {_MODULE_NAME}" in text, (
@@ -133,6 +134,40 @@ def test_rewrite_github_workflow_uses_ref() -> None:
     assert count == 1
     assert f"    uses: {key}@v0.46.0\n" in new_text
     assert "    uses: owner/other/.github/workflows/reusable.yml@v1\n" in new_text
+
+
+def test_rewrite_claude_settings_extra_known_marketplace_source_ref() -> None:
+    """The Claude marketplace source ref is rewritten for the named marketplace only."""
+    text = (
+        "{\n"
+        '  "extraKnownMarketplaces": {\n'
+        '    "livespec": {\n'
+        '      "source": {\n'
+        '        "source": "github",\n'
+        '        "repo": "thewoolleyman/livespec",\n'
+        '        "ref": "v0.7.3"\n'
+        "      }\n"
+        "    },\n"
+        '    "livespec-driver-claude": {\n'
+        '      "source": {\n'
+        '        "source": "github",\n'
+        '        "repo": "thewoolleyman/livespec-driver-claude",\n'
+        '        "ref": "v0.2.1"\n'
+        "      }\n"
+        "    }\n"
+        "  }\n"
+        "}\n"
+    )
+    new_text, count = _module().rewrite_pin_in_text(
+        text=text,
+        pin_format="claude_settings_extra_known_marketplace_source_ref",
+        pin_key="livespec",
+        current_value="v0.7.3",
+        new_value="v0.36.0",
+    )
+    assert count == 1
+    assert '"ref": "v0.36.0"' in new_text
+    assert '"ref": "v0.2.1"' in new_text
 
 
 def test_rewrite_reports_zero_when_pin_absent() -> None:
