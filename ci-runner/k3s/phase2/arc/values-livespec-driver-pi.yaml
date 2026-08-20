@@ -1,0 +1,125 @@
+# values-livespec-driver-pi.yaml -- the per-repository AutoscalingRunnerSet for
+# `livespec-driver-pi`, captured from the LIVE release `livespec-driver-pi-k3s`
+# and re-derived against README.md "Deriving a new repository's ClusterQueue".
+# Read values-livespec.yaml first: it carries the rationale for the
+# repository-scoped `githubConfigUrl` (a personal GitHub account has no org or
+# enterprise runner scope at all), for the churn-slot extended resource, and for
+# why `maxRunners` and the ClusterQueue's nominalQuota are two enforcement
+# points holding two DIFFERENT numbers.
+#
+# The pi per-agent-runtime Driver plugin repo, and the NINTH repository in the
+# cohort -- stood up 2026-08-20, after livespec-s43svm.16's eight-repo cutover
+# sequence had already closed at "8 of 8". Committed in the SAME change that
+# created it, rather than being captured retroactively the way
+# livespec-s43svm.26 had to capture the other eight.
+#
+# This file carries the WORKFLOW-POD AppArmor wiring (the volume, the
+# volumeMount, and ACTIONS_RUNNER_CONTAINER_HOOK_TEMPLATE) that
+# livespec-s43svm.25 rolled out fleet-wide from values-livespec-overseer.yaml's
+# reference implementation -- see that file and ../apparmor/ci-runner-workflow
+# for the root cause. It was present from this scale set's first install, so
+# this repo never ran a workflow pod under the unfixed default profile.
+#
+# ONE PREREQUISITE THIS FILE CANNOT EXPRESS, and which cost a full provisioning
+# attempt: the repo must be added to the `thewoolleyman-ci-runners` GitHub App
+# installation, which is `repository_selection: selected`. That App is SEPARATE
+# from the fleet automation App (release-please, auto-merge), so a repo can hold
+# the automation grant -- and visibly pass release automation -- while the ARC
+# controller cannot obtain a runner registration token at all. The symptom is
+# `403 "Resource not accessible by integration"` on
+# `POST /repos/<owner>/<repo>/actions/runners/registration-token`, which reads
+# as a wrong permission but is a missing repository selection; the installation
+# already carried `administration: write`. Check this FIRST when a new scale
+# set's listener never starts.
+githubConfigUrl: "https://github.com/thewoolleyman/livespec-driver-pi"
+githubConfigSecret: arc-github-app-installation  # same secret as phase 1 -- see ../../README.md "Credential separation"
+
+runnerScaleSetName: "livespec-driver-pi-k3s"
+
+containerMode:
+  type: "kubernetes"
+  kubernetesModeWorkVolumeClaim:
+    accessModes: ["ReadWriteOnce"]
+    storageClassName: "local-path"
+    resources:
+      requests:
+        storage: 5Gi
+
+template:
+  metadata:
+    labels:
+      # Routes this scale set's runner pods through Kueue's per-repo LocalQueue
+      # rather than straight to the Kubernetes scheduler.
+      kueue.x-k8s.io/queue-name: livespec-driver-pi-lq
+  spec:
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+    volumes:
+      # Carries ../arc/hook-pod-template.yaml into the runner pod so the
+      # container hook can read it. Additive: the chart appends its own `work`
+      # volume for kubernetes mode, and declaring this one does not displace it.
+      - name: hook-pod-template
+        configMap:
+          name: arc-hook-pod-template
+    containers:
+      - name: runner
+        image: ghcr.io/actions/actions-runner:latest
+        command: ["/home/runner/run.sh"]
+        env:
+          - name: ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER
+            value: "false"
+          # THE WORKFLOW-POD FIX -- see values-livespec-overseer.yaml for the
+          # full root cause. In kubernetes container mode the job's `container:`
+          # image runs in a SEPARATE pod the hook creates, whose securityContext
+          # is empty and which nothing else in this values file reaches. This env
+          # var is the hook's one supported seam for extending that pod's spec;
+          # it pins the pod to the node-loaded `ci-runner-workflow` AppArmor
+          # profile (../apparmor/ci-runner-workflow), which reproduces every
+          # containerd deny rule verbatim and widens ONLY the ptrace/signal peer
+          # expressions so a stacked AppArmor label matches them.
+          - name: ACTIONS_RUNNER_CONTAINER_HOOK_TEMPLATE
+            value: /home/runner/hook-template/hook-pod-template.yaml
+        volumeMounts:
+          - name: hook-pod-template
+            mountPath: /home/runner/hook-template
+            readOnly: true
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          capabilities:
+            drop: ["ALL"]
+        resources:
+          # Exactly ONE churn-slot per runner pod -- see values-livespec.yaml.
+          requests:
+            ci-runner.io/churn-slot: "1"
+          limits:
+            ci-runner.io/churn-slot: "1"
+
+# This repo's per-repository ceiling term of the admission formula
+# (`doubled repository logical ceiling`). It is NOT the same number as the
+# `livespec-driver-pi-cq` ClusterQueue's nominalQuota, which is this repo's share
+# of the host's finite churn-slot capacity -- a different term of the same
+# min(). See README.md "Two enforcement points, two DIFFERENT numbers" and
+# ../kueue/DERIVATION.md; the relation to hold is nominalQuota <= maxRunners
+# (1 <= 13 here).
+#
+# UNLIKE ITS SIBLINGS, THIS NUMBER IS A REAL MEASUREMENT. The other Drivers
+# carry 63-67, inherited from the podman-era demand weights as a proxy --
+# values-livespec-driver-codex.yaml says so in as many words ("nobody has
+# measured its actual matrix width"). 13 is this repo's ACTUAL matrix width,
+# counted from run 32420185191 on thewoolleyman/livespec-driver-pi#64, which
+# dispatched exactly 13 jobs (11 gating check jobs on the pool, plus ci-green
+# and export-telemetry, which are hardcoded `runs-on: ubuntu-latest` in that
+# repo's ci.yml so the gate reporter never depends on the self-hosted pool).
+#
+# It is low because that repo's ci.yml deliberately collapses its ~69 check
+# targets into batch jobs (check-python-batch, check-metadata-batch) rather
+# than running one job per check slug. Do NOT raise it to match the siblings'
+# band on the assumption that 13 is a typo or an under-count; re-measure from a
+# real run instead. See ../kueue/DERIVATION.md "Observation: ARC maxRunners
+# still carries the podman-era numbers".
+minRunners: 0
+maxRunners: 13
