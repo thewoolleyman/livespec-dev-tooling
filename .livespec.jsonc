@@ -198,6 +198,7 @@
     "dispatcher": {
       "auto_approve_ready": true,
       "acceptance_mode": "ai-only",
+      "wip_cap": 10,
       "default_factory": "hp",
       "factories": {
         "hp": {
