@@ -191,6 +191,19 @@ down here so the case is decided rather than improvised.
 exactly `C`, the registered node capacity. Nothing enforces this
 mechanically — see "Is a generator worth building?" below.
 
+**The invariant has ONE known exception, and it is forced by step 5.**
+The `max(1, ...)` floor can lift a repository whose apportionment rounds
+to zero, which adds a unit the apportionment did not allocate. That
+cannot happen while every repository's exact share exceeds 1, so it did
+not arise at eight repositories, and it DOES arise at nine — see
+"Recomputation on the ninth repository (2026-08-20)" below. When it
+fires, the raw apportionment still sums to exactly `C` and the committed
+quotas sum to `C + k`, where `k` is the number of floored-up
+repositories. Do not restore the sum by re-quoting some other repository
+below its apportioned share; that trades a harmless one-unit
+over-reservation for a real, silent under-allocation of a repo that
+earned its slots.
+
 ## The derivation at C = 16
 
 Exact shares `e_i = 16 * w_i / 482`:
@@ -239,6 +252,85 @@ independently-made operational judgement at one bracket end, and with
 the measured podman apportionment at the other, is the closest thing to
 external corroboration available for a rule with no way to be unit
 tested against ground truth.
+
+## Recomputation on the ninth repository (2026-08-20)
+
+`livespec-driver-pi` joined the cohort on 2026-08-20, after
+`livespec-s43svm.16`'s ordered eight-repo cutover had closed at "8 of
+8". It did not exist as a fleet member when the table above was
+computed, so this is the first recomputation driven by a change in the
+REPOSITORY SET rather than in `C`.
+
+**Its demand weight is `13`, and it is the first weight in this table
+that is a real measurement.** Every other `w_i` is a podman-era
+apportionment number inherited as a proxy — see "Observation: ARC
+`maxRunners` still carries the podman-era numbers" below, and
+`../arc/values-livespec-driver-codex.yaml`, which states plainly that
+"nobody has measured its actual matrix width". `livespec-driver-pi`'s 13
+was counted from run `32420185191` on
+`thewoolleyman/livespec-driver-pi#64`, which dispatched exactly 13 jobs.
+It sits far below the siblings' 63–67 band because that repo's `ci.yml`
+deliberately collapses its ~69 check targets into batch jobs
+(`check-python-batch`, `check-metadata-batch`) instead of running one
+job per check slug. It is not an under-count.
+
+Adding it takes the fleet weight sum to `W = 482 + 13 = 495`. Exact
+shares `e_i = 16 * w_i / 495`:
+
+| Repository | `w_i` | `e_i` | `floor` | remainder | leftover unit | `nominalQuota` |
+|---|---|---|---|---|---|---|
+| `livespec` | 75 | 2.4242 | 2 | 0.4242 | +1 (2nd largest) | **3** |
+| `livespec-driver-codex` | 67 | 2.1657 | 2 | 0.1657 | | **2** |
+| `livespec-driver-claude` | 66 | 2.1333 | 2 | 0.1333 | | **2** |
+| `livespec-orchestrator-git-jsonl` | 66 | 2.1333 | 2 | 0.1333 | | **2** |
+| `livespec-overseer` | 65 | 2.1010 | 2 | 0.1010 | | **2** |
+| `livespec-runtime` | 64 | 2.0687 | 2 | 0.0687 | | **2** |
+| `livespec-dev-tooling` | 63 | 2.0364 | 2 | 0.0364 | | **2** |
+| `livespec-console-beads-fabro` | 16 | 0.5172 | 0 | 0.5172 | +1 (largest) | **1** |
+| `livespec-driver-pi` | 13 | 0.4202 | 0 | 0.4202 | | **1** (by `max(1, …)`) |
+| **sum** | **495** | **16** | **14** | | **+2** | **17** |
+
+**Every pre-existing repository's quota is UNCHANGED.** That is worth
+stating explicitly, because the naive expectation is that adding a
+claimant dilutes everyone. It does not here: the seven mid-band repos
+were already at floor 2 and stay there, and the two leftover units still
+go to `livespec-console-beads-fabro` (0.5172) and `livespec` (0.4242).
+`livespec-driver-pi` misses the second leftover unit by 0.0040 — the
+closest call in this table by an order of magnitude — and so is
+apportioned **zero**.
+
+**This is where the sum invariant breaks, and the break is the rule's,
+not a maintainer's.** Step 5's `max(1, ...)` floor lifts
+`livespec-driver-pi` from 0 to 1, so the raw apportionment sums to
+exactly `C = 16` while the COMMITTED quotas sum to **17**. Kueue then
+holds one slot of nominal quota against capacity the node does not have.
+That is harmless in operation — the scheduler is the final gate, and the
+excess is one slot out of sixteen — but it makes the invariant as
+originally written false, which is why it is documented here rather than
+silently absorbed.
+
+**The open decision, which this section does not make.** Two clean
+resolutions exist, and both are fleet-level calls rather than something
+to settle while provisioning one repo:
+
+1. Raise `C` to 17 and recompute, so the registered capacity matches the
+   committed quotas. This needs the same iowait-headroom justification
+   any capacity change needs; `C` is a measured ceiling, not a free
+   parameter. See "The permanent C is still an open question" below.
+2. Keep `C = 16` and record a standing exception: the committed sum is
+   `C + k` where `k` counts floored-up repositories. This costs nothing
+   operationally and keeps the capacity number honest.
+
+Until one is chosen, the committed state is option 2 by default, with
+`k = 1`. What must NOT happen is a maintainer noticing the 17 and
+"fixing" it by cutting some other repository to restore 16 — that would
+convert a harmless over-reservation into a real under-allocation.
+
+**Note for the next repository.** A tenth repo makes this worse rather
+than better: at `C = 16` the mid-band repos are already at their floor
+of 2, so each new small repo arrives with a sub-1 share, is floored up
+to 1, and adds another unit to the excess. The `max(1, ...)` collision
+is therefore a growth property of the rule at low `C`, not a one-off.
 
 ## Recomputing at another C
 

@@ -281,6 +281,7 @@ fleet's actual call volume) needs a live-cluster observation —
 | `arc/hook-pod-template.yaml` | The pod-spec extension the ARC Kubernetes-mode container hook reads via `ACTIONS_RUNNER_CONTAINER_HOOK_TEMPLATE`. Pins the workflow pod to that profile. |
 | `arc/values-livespec-overseer.yaml` | `livespec-overseer`'s per-repo `AutoscalingRunnerSet` values (`maxRunners: 65`, `livespec-overseer-lq`), and the first values file wiring the hook pod template — the reference implementation the other nine copy. Applied live 2026-08-18 (Helm revision 2). |
 | `arc/values-livespec-dev-tooling.yaml`, `arc/values-livespec-driver-claude.yaml`, `arc/values-livespec-driver-codex.yaml`, `arc/values-livespec-orchestrator-git-jsonl.yaml`, `arc/values-livespec-runtime.yaml` | The five remaining per-repo scale sets, captured from their live Helm releases 2026-08-19 (`livespec-s43svm.26`) and wired to the hook pod template (`livespec-s43svm.25`). |
+| `arc/values-livespec-driver-pi.yaml`, `kueue/cluster-queue-livespec-driver-pi.yaml` | The NINTH repository, stood up 2026-08-20 after the eight-repo cutover sequence had closed. Committed in the same change that created the scale set, rather than captured retroactively. Its `maxRunners: 13` is the fleet's first ACTUAL matrix-width measurement rather than a podman-era proxy, and its arrival is what surfaced the `max(1, …)` sum-invariant collision documented in `kueue/DERIVATION.md`. |
 | `arc/values-local-ci-k3s.yaml`, `arc/values-poweredge-xubuntu-k3s.yaml` | The two PHASE-1 proof scale sets, also live and also captured 2026-08-19. Named by scale set rather than by repo because both point at `livespec-dev-tooling`, which already owns a `values-<repo>.yaml`. Neither is Kueue-gated; see each file's header. |
 
 ## The workflow pod is not the runner pod
@@ -426,6 +427,7 @@ the files themselves:
 | `livespec-dev-tooling-k3s` | `arc/values-livespec-dev-tooling.yaml` |
 | `livespec-driver-claude-k3s` | `arc/values-livespec-driver-claude.yaml` |
 | `livespec-driver-codex-k3s` | `arc/values-livespec-driver-codex.yaml` |
+| `livespec-driver-pi-k3s` | `arc/values-livespec-driver-pi.yaml` |
 | `livespec-overseer-k3s` | `arc/values-livespec-overseer.yaml` |
 | `livespec-runtime-k3s` | `arc/values-livespec-runtime.yaml` |
 | `local-ci-k3s` | `arc/values-local-ci-k3s.yaml` |
