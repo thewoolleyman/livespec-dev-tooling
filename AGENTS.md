@@ -106,6 +106,31 @@ investigation:
   you would pick, you have already done the deciding work. Decide it, record the
   reasoning where the work is tracked, and report it as decided.
 
+## Ledger access needs the credential wrapper
+
+The beads ledger for this repo is a per-repo TENANT database, and its password
+is projected from 1Password rather than stored on disk. A bare `bd` therefore
+fails with:
+
+```text
+Error: failed to open database: failed to check if database
+"livespec-dev-tooling" exists on server 127.0.0.1:3307:
+Error 1045 (28000): Access denied for user 'livespec-dev-tooling'
+```
+
+That signature is a MISSING CREDENTIAL, not a store outage, not a corrupt
+database, and not a reason to start diagnosing the Dolt server. Re-run through
+the installed wrapper:
+
+```bash
+/usr/local/bin/with-livespec-env.sh -- bd show <work-item-id>
+```
+
+Three sessions independently lost a diagnostic cycle to this on 2026-08-19 and
+2026-08-20. Read `.ai/fleet-and-secrets.md` for the full projection story
+(1Password environment id, encrypted service-account token, wrapper factory
+repo) before changing anything about how the secrets are injected.
+
 ## Repository mutation protocol
 
 Every repo change uses a worktree → PR → merge → cleanup path. Treat
