@@ -1,0 +1,376 @@
+diff --git a/.claude-plugin/overseer/errors.py b/.claude-plugin/overseer/errors.py
+new file mode 100644
+index 0000000..c7beacf
+--- /dev/null
++++ b/.claude-plugin/overseer/errors.py
+@@ -0,0 +1,41 @@
++"""The overseer's expected-failure surface.
++
++Per livespec/SPECIFICATION/non-functional-requirements.md (the
++Result-vs-bugs split inherited from livespec-core): expected failures
++travel as failure-track values carrying structured detail; unexpected
++failures — programming bugs — propagate as raised built-ins to the
++outermost supervisor.
++
++`OverseerSourceError` is the single domain error for every EXPECTED
++failure the overseer's source readers can report: a gather command whose
++stdout is not a JSON object, a dispatch journal carrying a malformed
++JSONL record, a filing subprocess returning an unusable payload.
++
++⚠️ It is deliberately ONE type rather than one per reader. Converting a
++repo of this size one bespoke failure dataclass at a time yields a type
++per call site and no shared vocabulary; the rest of the fleet already
++settled on a single `detail`-carrying domain error per package
++(`GithubAppAuthError` in livespec-runtime, `CrossRepoSchemaError` in
++livespec-orchestrator-beads-fabro) and this follows that shape.
++
++A source being UNAVAILABLE is not an error here. An absent command, a
++spawn failure, a timeout, a non-zero exit, and a missing journal file
++are ANSWERS the gatherer already models as skip payloads on the success
++track. Only output that is present-but-unusable is a failure.
++"""
++
++from __future__ import annotations
++
++__all__: list[str] = ["OverseerSourceError"]
++
++
++class OverseerSourceError(Exception):
++    """An overseer source produced output it could not use.
++
++    `detail` is an actionable diagnostic naming the source and what was
++    wrong with its output; callers MAY surface it verbatim.
++    """
++
++    def __init__(self, *, detail: str) -> None:
++        super().__init__(detail)
++        self.detail = detail
+diff --git a/.claude-plugin/overseer/foreman_gather_collect.py b/.claude-plugin/overseer/foreman_gather_collect.py
+index dbaa548..9ef6118 100644
+--- a/.claude-plugin/overseer/foreman_gather_collect.py
++++ b/.claude-plugin/overseer/foreman_gather_collect.py
+@@ -19,6 +19,8 @@ from foreman_gather_sources import (
+     read_journal,
+     run_json_command,
+ )
++from returns.pipeline import is_successful
++from returns.unsafe import unsafe_perform_io
+ 
+ ValidationError: TypeAlias = ValueError
+ 
+@@ -180,7 +182,13 @@ def read_snapshot_fallback(
+             "path": str(snapshot_path),
+             "reason": "snapshot unavailable and no list --json fallback configured",
+         }
+-    parsed = run_json_command(command=command, source_name="list_json")
++    # TEMPORARY BRIDGE: this reader is itself an unconverted ROP offender
++    # whose callers still expect a raise, so the failure track is turned
++    # back into the SAME message here. It goes when this reader converts.
++    parsed_result = run_json_command(command=command, source_name="list_json")
++    if not is_successful(parsed_result):
++        raise ValueError(unsafe_perform_io(parsed_result.failure()).detail)
++    parsed = unsafe_perform_io(parsed_result.unwrap())
+     if parsed is None:
+         return None, command_skipped(command=command, reason="command not found")
+     skip = parsed.get("__skip_reason__")
+@@ -200,7 +208,13 @@ def read_needs_attention(
+ ) -> tuple[dict[str, object] | None, dict[str, object]]:
+     if command is None:
+         return None, {"status": "skipped", "reason": "command not configured"}
+-    parsed = run_json_command(command=command, source_name="needs_attention")
++    # TEMPORARY BRIDGE: this reader is itself an unconverted ROP offender
++    # whose callers still expect a raise, so the failure track is turned
++    # back into the SAME message here. It goes when this reader converts.
++    parsed_result = run_json_command(command=command, source_name="needs_attention")
++    if not is_successful(parsed_result):
++        raise ValueError(unsafe_perform_io(parsed_result.failure()).detail)
++    parsed = unsafe_perform_io(parsed_result.unwrap())
+     if parsed is None:
+         return None, command_skipped(command=command, reason="command not found")
+     skip = parsed.get("__skip_reason__")
+@@ -265,10 +279,16 @@ def compose_document(
+     attention, attention_source = read_needs_attention(command=needs_command)
+     if attention is None:
+         attention = jsonio.as_object(value=snapshot_source.get("embedded_needs_attention"))
+-    journal_records, journal_source = read_journal(
++    # TEMPORARY BRIDGE: this reader is itself an unconverted ROP offender
++    # whose callers still expect a raise, so the failure track is turned
++    # back into the SAME message here. It goes when this reader converts.
++    journal_result = read_journal(
+         path=option_journal_path(repo=repo_path, options=options),
+         limit=option_journal_limit(options=options),
+     )
++    if not is_successful(journal_result):
++        raise ValueError(unsafe_perform_io(journal_result.failure()).detail)
++    journal_records, journal_source = unsafe_perform_io(journal_result.unwrap())
+     return {
+         "schema_version": DOCUMENT_SCHEMA_VERSION,
+         "generated_at": option_time(options=options),
+diff --git a/.claude-plugin/overseer/foreman_gather_sources.py b/.claude-plugin/overseer/foreman_gather_sources.py
+index ed05c99..254b840 100644
+--- a/.claude-plugin/overseer/foreman_gather_sources.py
++++ b/.claude-plugin/overseer/foreman_gather_sources.py
+@@ -8,6 +8,8 @@ from collections.abc import Sequence
+ from pathlib import Path
+ 
+ import jsonio
++from errors import OverseerSourceError
++from returns.io import IOFailure, IOResult, IOSuccess
+ 
+ __all__: list[str] = [
+     "command_skipped",
+@@ -67,7 +69,16 @@ def command_skipped(*, command: Sequence[str], reason: str) -> dict[str, object]
+     return {"status": "skipped", "command": list(command), "reason": reason}
+ 
+ 
+-def run_json_command(*, command: Sequence[str], source_name: str) -> dict[str, object] | None:
++def run_json_command(
++    *, command: Sequence[str], source_name: str
++) -> IOResult[dict[str, object] | None, OverseerSourceError]:
++    """Run a JSON-emitting source command.
++
++    An UNAVAILABLE source is an answer, not a failure: a missing command
++    (`None`), a spawn error, a timeout, and a non-zero exit all stay on
++    the success track carrying their existing skip payloads. Only output
++    that is present but not a JSON object is an expected FAILURE.
++    """
+     try:
+         completed = subprocess.run(  # noqa: S603
+             list(command),
+@@ -77,29 +88,37 @@ def run_json_command(*, command: Sequence[str], source_name: str) -> dict[str, o
+             timeout=30,
+         )
+     except FileNotFoundError:
+-        return None
++        return IOSuccess(None)
+     except (OSError, subprocess.TimeoutExpired) as exc:
+-        return {"__skip_reason__": type(exc).__name__}
++        return IOSuccess({"__skip_reason__": type(exc).__name__})
+     if completed.returncode != 0:
+-        return {"__skip_reason__": f"exit {completed.returncode}"}
++        return IOSuccess({"__skip_reason__": f"exit {completed.returncode}"})
+     parsed = jsonio.parse_object(text=completed.stdout)
+     if parsed is None:
+-        msg = f"{source_name} produced malformed or non-object JSON"
+-        raise ValueError(msg)
+-    return parsed
++        detail = f"{source_name} produced malformed or non-object JSON"
++        return IOFailure(OverseerSourceError(detail=detail))
++    return IOSuccess(parsed)
++
+ 
++def read_journal(
++    *, path: Path, limit: int
++) -> IOResult[tuple[list[dict[str, object]], dict[str, object]], OverseerSourceError]:
++    """Read the tail of the dispatch journal.
+ 
+-def read_journal(*, path: Path, limit: int) -> tuple[list[dict[str, object]], dict[str, object]]:
++    An ABSENT journal is an answer, not a failure: it stays on the
++    success track with its existing skipped payload. A journal carrying
++    a malformed JSONL record is an expected FAILURE.
++    """
+     try:
+         lines = path.read_text(encoding="utf-8").splitlines()
+     except OSError:
+-        return [], {"status": "skipped", "path": str(path), "reason": "file not found"}
++        return IOSuccess(([], {"status": "skipped", "path": str(path), "reason": "file not found"}))
+     records: list[dict[str, object]] = []
+     for line in lines:
+         parsed = jsonio.parse_object_line(line=line)
+         if parsed is None:
+-            msg = "dispatch_journal contains malformed or non-object JSONL"
+-            raise ValueError(msg)
++            detail = "dispatch_journal contains malformed or non-object JSONL"
++            return IOFailure(OverseerSourceError(detail=detail))
+         records.append(parsed)
+     tail = records[-limit:] if limit > 0 else []
+-    return tail, {"status": "ok", "path": str(path), "records_read": len(tail)}
++    return IOSuccess((tail, {"status": "ok", "path": str(path), "records_read": len(tail)}))
+diff --git a/overseer/errors.py b/overseer/errors.py
+new file mode 100644
+index 0000000..c7beacf
+--- /dev/null
++++ b/overseer/errors.py
+@@ -0,0 +1,41 @@
++"""The overseer's expected-failure surface.
++
++Per livespec/SPECIFICATION/non-functional-requirements.md (the
++Result-vs-bugs split inherited from livespec-core): expected failures
++travel as failure-track values carrying structured detail; unexpected
++failures — programming bugs — propagate as raised built-ins to the
++outermost supervisor.
++
++`OverseerSourceError` is the single domain error for every EXPECTED
++failure the overseer's source readers can report: a gather command whose
++stdout is not a JSON object, a dispatch journal carrying a malformed
++JSONL record, a filing subprocess returning an unusable payload.
++
++⚠️ It is deliberately ONE type rather than one per reader. Converting a
++repo of this size one bespoke failure dataclass at a time yields a type
++per call site and no shared vocabulary; the rest of the fleet already
++settled on a single `detail`-carrying domain error per package
++(`GithubAppAuthError` in livespec-runtime, `CrossRepoSchemaError` in
++livespec-orchestrator-beads-fabro) and this follows that shape.
++
++A source being UNAVAILABLE is not an error here. An absent command, a
++spawn failure, a timeout, a non-zero exit, and a missing journal file
++are ANSWERS the gatherer already models as skip payloads on the success
++track. Only output that is present-but-unusable is a failure.
++"""
++
++from __future__ import annotations
++
++__all__: list[str] = ["OverseerSourceError"]
++
++
++class OverseerSourceError(Exception):
++    """An overseer source produced output it could not use.
++
++    `detail` is an actionable diagnostic naming the source and what was
++    wrong with its output; callers MAY surface it verbatim.
++    """
++
++    def __init__(self, *, detail: str) -> None:
++        super().__init__(detail)
++        self.detail = detail
+diff --git a/overseer/foreman_gather_collect.py b/overseer/foreman_gather_collect.py
+index dbaa548..9ef6118 100644
+--- a/overseer/foreman_gather_collect.py
++++ b/overseer/foreman_gather_collect.py
+@@ -19,6 +19,8 @@ from foreman_gather_sources import (
+     read_journal,
+     run_json_command,
+ )
++from returns.pipeline import is_successful
++from returns.unsafe import unsafe_perform_io
+ 
+ ValidationError: TypeAlias = ValueError
+ 
+@@ -180,7 +182,13 @@ def read_snapshot_fallback(
+             "path": str(snapshot_path),
+             "reason": "snapshot unavailable and no list --json fallback configured",
+         }
+-    parsed = run_json_command(command=command, source_name="list_json")
++    # TEMPORARY BRIDGE: this reader is itself an unconverted ROP offender
++    # whose callers still expect a raise, so the failure track is turned
++    # back into the SAME message here. It goes when this reader converts.
++    parsed_result = run_json_command(command=command, source_name="list_json")
++    if not is_successful(parsed_result):
++        raise ValueError(unsafe_perform_io(parsed_result.failure()).detail)
++    parsed = unsafe_perform_io(parsed_result.unwrap())
+     if parsed is None:
+         return None, command_skipped(command=command, reason="command not found")
+     skip = parsed.get("__skip_reason__")
+@@ -200,7 +208,13 @@ def read_needs_attention(
+ ) -> tuple[dict[str, object] | None, dict[str, object]]:
+     if command is None:
+         return None, {"status": "skipped", "reason": "command not configured"}
+-    parsed = run_json_command(command=command, source_name="needs_attention")
++    # TEMPORARY BRIDGE: this reader is itself an unconverted ROP offender
++    # whose callers still expect a raise, so the failure track is turned
++    # back into the SAME message here. It goes when this reader converts.
++    parsed_result = run_json_command(command=command, source_name="needs_attention")
++    if not is_successful(parsed_result):
++        raise ValueError(unsafe_perform_io(parsed_result.failure()).detail)
++    parsed = unsafe_perform_io(parsed_result.unwrap())
+     if parsed is None:
+         return None, command_skipped(command=command, reason="command not found")
+     skip = parsed.get("__skip_reason__")
+@@ -265,10 +279,16 @@ def compose_document(
+     attention, attention_source = read_needs_attention(command=needs_command)
+     if attention is None:
+         attention = jsonio.as_object(value=snapshot_source.get("embedded_needs_attention"))
+-    journal_records, journal_source = read_journal(
++    # TEMPORARY BRIDGE: this reader is itself an unconverted ROP offender
++    # whose callers still expect a raise, so the failure track is turned
++    # back into the SAME message here. It goes when this reader converts.
++    journal_result = read_journal(
+         path=option_journal_path(repo=repo_path, options=options),
+         limit=option_journal_limit(options=options),
+     )
++    if not is_successful(journal_result):
++        raise ValueError(unsafe_perform_io(journal_result.failure()).detail)
++    journal_records, journal_source = unsafe_perform_io(journal_result.unwrap())
+     return {
+         "schema_version": DOCUMENT_SCHEMA_VERSION,
+         "generated_at": option_time(options=options),
+diff --git a/overseer/foreman_gather_sources.py b/overseer/foreman_gather_sources.py
+index ed05c99..254b840 100644
+--- a/overseer/foreman_gather_sources.py
++++ b/overseer/foreman_gather_sources.py
+@@ -8,6 +8,8 @@ from collections.abc import Sequence
+ from pathlib import Path
+ 
+ import jsonio
++from errors import OverseerSourceError
++from returns.io import IOFailure, IOResult, IOSuccess
+ 
+ __all__: list[str] = [
+     "command_skipped",
+@@ -67,7 +69,16 @@ def command_skipped(*, command: Sequence[str], reason: str) -> dict[str, object]
+     return {"status": "skipped", "command": list(command), "reason": reason}
+ 
+ 
+-def run_json_command(*, command: Sequence[str], source_name: str) -> dict[str, object] | None:
++def run_json_command(
++    *, command: Sequence[str], source_name: str
++) -> IOResult[dict[str, object] | None, OverseerSourceError]:
++    """Run a JSON-emitting source command.
++
++    An UNAVAILABLE source is an answer, not a failure: a missing command
++    (`None`), a spawn error, a timeout, and a non-zero exit all stay on
++    the success track carrying their existing skip payloads. Only output
++    that is present but not a JSON object is an expected FAILURE.
++    """
+     try:
+         completed = subprocess.run(  # noqa: S603
+             list(command),
+@@ -77,29 +88,37 @@ def run_json_command(*, command: Sequence[str], source_name: str) -> dict[str, o
+             timeout=30,
+         )
+     except FileNotFoundError:
+-        return None
++        return IOSuccess(None)
+     except (OSError, subprocess.TimeoutExpired) as exc:
+-        return {"__skip_reason__": type(exc).__name__}
++        return IOSuccess({"__skip_reason__": type(exc).__name__})
+     if completed.returncode != 0:
+-        return {"__skip_reason__": f"exit {completed.returncode}"}
++        return IOSuccess({"__skip_reason__": f"exit {completed.returncode}"})
+     parsed = jsonio.parse_object(text=completed.stdout)
+     if parsed is None:
+-        msg = f"{source_name} produced malformed or non-object JSON"
+-        raise ValueError(msg)
+-    return parsed
++        detail = f"{source_name} produced malformed or non-object JSON"
++        return IOFailure(OverseerSourceError(detail=detail))
++    return IOSuccess(parsed)
++
+ 
++def read_journal(
++    *, path: Path, limit: int
++) -> IOResult[tuple[list[dict[str, object]], dict[str, object]], OverseerSourceError]:
++    """Read the tail of the dispatch journal.
+ 
+-def read_journal(*, path: Path, limit: int) -> tuple[list[dict[str, object]], dict[str, object]]:
++    An ABSENT journal is an answer, not a failure: it stays on the
++    success track with its existing skipped payload. A journal carrying
++    a malformed JSONL record is an expected FAILURE.
++    """
+     try:
+         lines = path.read_text(encoding="utf-8").splitlines()
+     except OSError:
+-        return [], {"status": "skipped", "path": str(path), "reason": "file not found"}
++        return IOSuccess(([], {"status": "skipped", "path": str(path), "reason": "file not found"}))
+     records: list[dict[str, object]] = []
+     for line in lines:
+         parsed = jsonio.parse_object_line(line=line)
+         if parsed is None:
+-            msg = "dispatch_journal contains malformed or non-object JSONL"
+-            raise ValueError(msg)
++            detail = "dispatch_journal contains malformed or non-object JSONL"
++            return IOFailure(OverseerSourceError(detail=detail))
+         records.append(parsed)
+     tail = records[-limit:] if limit > 0 else []
+-    return tail, {"status": "ok", "path": str(path), "records_read": len(tail)}
++    return IOSuccess((tail, {"status": "ok", "path": str(path), "records_read": len(tail)}))

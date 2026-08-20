@@ -52,6 +52,10 @@ and would become an offender in its own measurement. The commit gate caught exac
 ## Artifacts, not notes
 
 - `8o8e21-green.patch` — authored, gate-passed, **never landed**; see note 10 before using.
+- `overseer-railway-blocked.patch` — the authored, gate-run `livespec-overseer`
+  conversion that **cannot land**: it trips overseer's ratified stdlib-only
+  constraint. Evidence for the contract conflict; see the ledger entry of
+  2026-08-20. ⛔ Do not apply it until that conflict is ruled.
 - `livespec-config-railway-red.patch` — the preserved Red for the `livespec` config work.
   ⛔ The worktree `~/.worktrees/livespec/fix-spec-governance-config-railway` holds an
   authored, UNCOMMITTED companion Red and **MUST NOT be reaped.**
