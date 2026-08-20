@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.29.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.29.1...v1.29.2) (2026-08-20)
+
+
+### Bug Fixes
+
+* discover Claude marketplace source ref pins ([d7b5b8b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d7b5b8ba8d5a417da22ae89b48118fc8007a7dbf))
+
 ## [1.29.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.29.0...v1.29.1) (2026-08-19)
 
 
