@@ -233,6 +233,27 @@ def raw(*, text: str) -> GhResult:
     return GhResult(returncode=0, stdout=text, stderr="")
 
 
+_AGENTS_MD = """# Agent instructions
+
+## Decision authority — when to ask, proceed, or self-resolve
+
+Ported from `livespec/AGENTS.md` §"When to ask, proceed, or self-resolve".
+
+- **Drive authorized work to completion; do not over-ask.** Execute the whole
+  arc without re-confirming each already-authorized step.
+
+## Repository mutation protocol
+
+## Agent prerequisites for plugin work
+
+## Beads runtime prerequisites
+
+## Daily commands
+
+## Revise co-edit discipline — `tests/heading-coverage.json`
+"""
+
+
 def _member_entries(
     *, repo: str, topics: list[str] | None = None
 ) -> dict[tuple[str, ...], GhResult]:
@@ -247,6 +268,7 @@ def _member_entries(
         )
 
     tracked = [
+        "AGENTS.md",
         ".github/workflows/ci.yml",
         ".github/workflows/bump-pin-from-dispatch.yml",
         ".github/workflows/pin-freshness.yml",
@@ -263,6 +285,7 @@ def _member_entries(
     }
     return {
         ("api", f"repos/acme/{repo}/git/trees/master?recursive=1"): ok(payload=tree_payload),
+        contents("AGENTS.md"): raw(text=_AGENTS_MD),
         contents(".livespec.jsonc"): raw(text=_LIVESPEC_JSONC),
         contents(".beads/config.yaml"): raw(text=_BEADS_CONFIG),
         contents(".claude/settings.json"): raw(text=_PLUGIN_SETTINGS),

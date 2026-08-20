@@ -40,6 +40,9 @@ from livespec_dev_tooling.fleet._rows_baseline import (
 )
 from livespec_dev_tooling.fleet._rows_beads import assert_tenant_connection_consistency
 from livespec_dev_tooling.fleet._rows_claude_plugin import assert_claude_plugin_currency
+from livespec_dev_tooling.fleet._rows_decision_authority import (
+    assert_decision_authority_section,
+)
 from livespec_dev_tooling.fleet._rows_files import (
     assert_bump_pin_workflow,
     assert_ci_workflow,
@@ -237,6 +240,27 @@ OBLIGATION_ROWS: tuple[ObligationRow, ...] = (
             "bring AGENTS.md up to the fleet-universal agent-instruction core and register the "
             "beads-access guard hook (.claude/hooks/beads-access-guard.sh) in "
             ".claude/settings.json, in a repo-local commit"
+        ),
+    ),
+    # ARMED 2026-08-20, after all nine adoptions landed and the offender
+    # count was re-measured at ZERO on origin/master across all ten governed
+    # members. The row itself shipped DISARMED in the preceding commit for
+    # the reason `plan/rop-railway-enforcement/` records as a standing
+    # constraint: 46c5dab armed the Railway check ahead of adoption, five
+    # repos went red, and f4247110 reverted it.
+    #
+    # ALL_CLASSES rather than TEMPLATE_BORN_CLASSES, unlike the sibling
+    # agent-instruction-surface row above: this obligation is not about how
+    # a repo was scaffolded. Every governed member has sessions, and every
+    # one of them should be told what it is allowed to decide.
+    _manual_committed_file_row(
+        row_id="decision-authority-section",
+        assert_member=assert_decision_authority_section,
+        manual_hint=(
+            "add a decision-authority section to AGENTS.md carrying all three markers "
+            '("When to ask, proceed, or self-resolve", "do not over-ask", '
+            '"Decision authority"), adapted from livespec/AGENTS.md rather than invented, '
+            "in a repo-local commit"
         ),
     ),
     _manual_committed_file_row(

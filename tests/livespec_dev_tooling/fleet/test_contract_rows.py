@@ -8,6 +8,16 @@ classes, reconcile-or-manual-hint completeness, per-class scoping via
 
 from __future__ import annotations
 
+from _gh_railway import lift_gh
+
+from livespec_dev_tooling.fleet._context import (
+    FleetContext,
+    FleetMember,
+    GhResult,
+    GhRunner,
+    RowFinding,
+    RowPass,
+)
 from livespec_dev_tooling.fleet._contract_rows import (
     CENTRAL_APP_VANTAGE,
     OBLIGATION_ROWS,
@@ -248,3 +258,77 @@ def test_control_plane_tool_class_is_pin_consuming_unlike_console() -> None:
     assert "no-tracked-gitlinks" in tool_rows
     assert "beads-tenant-connection-consistency" in tool_rows
     assert "baseline-harnesses" in tool_rows
+
+
+def test_decision_authority_row_is_registered_for_every_governed_class() -> None:
+    # ARMING (livespec-dev-tooling-sle7ey.9). The row was authored in
+    # sle7ey.8 and shipped DISARMED — present, tested, and deliberately
+    # absent from OBLIGATION_ROWS — because a check armed before the repos
+    # it judges have adopted the shape writes verdicts into a fleet that
+    # cannot satisfy them (46c5dab armed the Railway check early, five
+    # repos went red, f4247110 reverted it). All nine adoptions landed
+    # first, and the offender count was re-measured at zero on
+    # origin/master immediately before this row was registered.
+    #
+    # Unlike agent-instruction-surface, this row is NOT template-born
+    # scoped: every governed member is expected to tell its sessions what
+    # they may decide, and all ten were measured carrying the section.
+    for repo_class in REPO_CLASSES:
+        assert "decision-authority-section" in {
+            row.row_id for row in rows_for(repo_class=repo_class)
+        }
+
+
+def test_the_armed_decision_authority_row_is_not_vacuous() -> None:
+    # NON-VACUITY, reached THROUGH the table rather than by importing the
+    # assert directly — that is the whole point. A row can be registered
+    # and still never fire if the table hands it the wrong callable, so
+    # this resolves the row by id and calls whatever OBLIGATION_ROWS
+    # actually holds.
+    #
+    # The work-item asked for this proof as "a deliberate local removal of
+    # the section from one repo". That exact gesture is not available to
+    # this check by construction: it reads AGENTS.md at the member's
+    # canonical ref through the contents API, never a working tree, which
+    # is its own acceptance criterion. A canned member whose AGENTS.md
+    # lacks the section is the same experiment against the surface the
+    # check actually reads.
+    row = next(row for row in OBLIGATION_ROWS if row.row_id == "decision-authority-section")
+    ctx = _decision_authority_context(agents_text="# Agent instructions\n\n## Daily commands\n")
+    outcome = row.assert_member(ctx=ctx, member=FleetMember(repo="widget", repo_class="library"))
+    assert isinstance(outcome, RowFinding)
+    assert "widget" in outcome.message
+
+
+def test_the_armed_decision_authority_row_passes_an_adopted_member() -> None:
+    # The other direction, also through the table: a member carrying the
+    # section passes, so the row above is failing on absence rather than
+    # failing always.
+    row = next(row for row in OBLIGATION_ROWS if row.row_id == "decision-authority-section")
+    adopted = (
+        "## Decision authority \u2014 when to ask, proceed, or self-resolve\n"
+        "\n"
+        "- **Drive authorized work to completion; do not over-ask.**\n"
+    )
+    ctx = _decision_authority_context(agents_text=adopted)
+    outcome = row.assert_member(ctx=ctx, member=FleetMember(repo="widget", repo_class="library"))
+    assert outcome == RowPass()
+
+
+def _decision_authority_context(*, agents_text: str) -> FleetContext:
+    """A canned `FleetContext` serving `agents_text` as widget's AGENTS.md."""
+    table = {
+        (
+            "api",
+            "repos/acme/widget/contents/AGENTS.md?ref=master",
+            "-H",
+            "Accept: application/vnd.github.raw",
+        ): GhResult(returncode=0, stdout=agents_text, stderr="")
+    }
+
+    def run(*, args: list[str], stdin: str | None = None) -> GhResult:
+        del stdin
+        return table.get(tuple(args), GhResult(returncode=1, stdout="", stderr="no canned"))
+
+    runner: GhRunner = run
+    return FleetContext(owner="acme", run_gh=lift_gh(runner))
