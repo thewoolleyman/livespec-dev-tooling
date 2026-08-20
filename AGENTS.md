@@ -106,6 +106,48 @@ investigation:
   you would pick, you have already done the deciding work. Decide it, record the
   reasoning where the work is tracked, and report it as decided.
 
+## Ordering — confirm the reader before you write
+
+The decision-authority section above says WHO decides. This one says WHEN a
+write is safe to make:
+
+> **Never write durable state into a component you have not first confirmed is
+> running the code that preserves it.**
+
+Stated alone this reads as obvious. It is recorded because it is not: it cost
+real work three times on 2026-08-20, in three unrelated subsystems, each time
+rediscovered from scratch by a session that would have agreed with the rule if
+asked. In two of the three, the reversed order DESTROYED SOMETHING RECOVERABLE —
+that is what separates this from an ordinary sequencing preference. Writing
+early is not merely wasted; it can consume the budget that would have let you
+retry.
+
+- **Arming a check ahead of adoption — the one this repo actually paid for.**
+  The Railway decoupling landed in `46c5dab`, turned FIVE repos red, and was
+  reverted in `f4247110`. `plan/rop-railway-enforcement/` now carries the
+  standing constraint "Do not arm the check anywhere", because a check armed
+  before the repos it judges have adopted the shape is a check writing verdicts
+  into a fleet that cannot satisfy them. Adoption first, then arming.
+- **Writing a seat anchor into a seat mid-build.** A foreman wrote a console
+  seat's anchor epic at 05:49Z into a seat still executing a build whose
+  `register_foreman_track` delete-and-recreates that row. The write was doomed
+  at the moment it was made; the epic died at the 06:29:50Z tick, and the
+  failure presented as nothing having happened at all — the worst shape, because
+  silence is indistinguishable from success.
+- **Re-running acceptance against an unfixed matcher.** `reconcile-merged` must
+  run only AFTER the criteria defect that caused a false rework is fixed. Run
+  against unfixed criteria it fails identically — but unlike the first failure,
+  that one REACHES the matcher and spends the last rework attempt, converting a
+  recoverable item into a blocked one.
+
+How to apply it: before a durable write, name the component that will hold the
+state and establish that the code it is currently running is the code that
+preserves it. "It was deployed" is not that; "the version now serving is the
+version with the fix" is. When you cannot establish it, the honest move is to
+wait — waiting is not a maintainer question. And note the shared failure mode
+across all three: the destructive case is SILENT, so the absence of an error is
+not evidence the write survived.
+
 ## Ledger access needs the credential wrapper
 
 The beads ledger for this repo is a per-repo TENANT database, and its password
