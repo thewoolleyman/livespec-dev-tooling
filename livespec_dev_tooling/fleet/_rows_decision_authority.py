@@ -1,4 +1,4 @@
-"""Decision-authority AGENTS.md obligation row — AUTHORED, SHIPPED DISARMED.
+"""Decision-authority AGENTS.md obligation row — ARMED 2026-08-20.
 
 Every governed fleet member should tell its sessions what they are allowed to
 decide. `AGENTS.md` is authored per repo and nothing propagates it, so the
@@ -7,14 +7,27 @@ absent from the rest, and the sessions in the rest were reading a file that
 never told them. The measured cost was a track parked roughly sixteen hours on
 a picker whose option 1 was its own recorded next action.
 
-THIS ROW IS DELIBERATELY NOT REGISTERED IN `OBLIGATION_ROWS`. Registering it
-is what ARMS it, and arming is a separate work-item that lands only after
-every governed member has adopted the section. The precedent is expensive: the
-Railway decoupling landed in `46c5dab`, turned five repos red, and was reverted
-in `f4247110`; `plan/rop-railway-enforcement/` carries the standing constraint
-"Do not arm the check anywhere" for exactly this reason. A check armed before
-the repos it judges have adopted the shape writes verdicts into a fleet that
-cannot satisfy them.
+THIS ROW IS REGISTERED IN `OBLIGATION_ROWS` as `decision-authority-section`,
+at `ALL_CLASSES`, so it runs for every governed member.
+
+It did NOT start that way, and the sequence is the point rather than trivia.
+The row shipped DISARMED in `1c2aa2dd` — authored, tested in both directions,
+and deliberately absent from the table — and was armed separately in `5cfd7595`
+only after all nine adoptions had landed and the offender count had been
+re-measured at ZERO on origin/master across all ten governed members. The
+precedent that ordering repays is expensive: the Railway decoupling landed in
+`46c5dab`, turned five repos red, and was reverted in `f4247110`;
+`plan/rop-railway-enforcement/` carries the standing constraint "Do not arm the
+check anywhere" for exactly this reason. A check armed before the repos it
+judges have adopted the shape writes verdicts into a fleet that cannot satisfy
+them.
+
+If you are reading this to find out whether the check is live: it is. Between
+`1c2aa2dd` and `5cfd7595` this docstring said the opposite and was correct;
+after `5cfd7595` it said the opposite and was WRONG, because the arming commit
+touched `_contract_rows.py` and never came back here. That is the failure this
+paragraph exists to prevent recurring — a module whose own header answers the
+one question a maintainer opens it to ask, incorrectly.
 
 THE INSTRUMENT IS A PRESENCE TEST AND JUDGES NO PROSE. Three markers must all
 appear in the member's `AGENTS.md`, read at the member's canonical ref through

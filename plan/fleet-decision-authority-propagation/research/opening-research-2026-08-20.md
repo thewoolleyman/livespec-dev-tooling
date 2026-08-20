@@ -4,6 +4,28 @@ Plan record discipline: the ledger is authoritative over this directory; plan
 state, next action, and handoffs live on the ledger anchor ledger anchor `livespec-dev-tooling-sle7ey`
 read through the plan timeline.
 
+> **SUPERSEDED IN TWO PLACES — read this first.** Both corrections were found
+> after the fact and are recorded here rather than edited into the body, so the
+> original errors stay visible.
+>
+> 1. **The tally below is wrong.** `HAS (3) / MISSING (7)` was counted with an
+>    ANY-marker reading; the instrument this thread ratified requires ALL THREE.
+>    Under the ratified instrument the offender set was NINE, and the two
+>    carriers this note lists as HAS — `livespec` and
+>    `livespec-orchestrator-beads-fabro` — were offenders. See
+>    [`measurement-correction-2026-08-20.md`](measurement-correction-2026-08-20.md).
+>    This matters more than a miscount: three separate censuses reached the
+>    wrong number the same way, which is why the lesson recorded there is
+>    *state the matcher next to the count*, not *count more carefully*.
+> 2. **The child map below is inverted** relative to what was actually filed.
+>    This note plans `.1` as the check and `.2`–`.8` as the adoptions; the
+>    ledger filed `.1`–`.7` as the seven adoptions and `.8` as the check, with
+>    `.10`/`.11` added by the scope amendment. The dependency prose that
+>    follows ("`.2`-`.8` carry NO dependency on `.1`") is inverted the same
+>    way; the shape that shipped is `.9` depending on `.1`–`.8` plus `.10`
+>    and `.11`. The DEPENDENCY REASONING is unaffected and was honoured — the
+>    adoptions did not serialise behind the check.
+
 ## Why this thread exists
 
 The `decision-authority-guidance` thread (anchor `livespec-dev-tooling-ulem2v`,
