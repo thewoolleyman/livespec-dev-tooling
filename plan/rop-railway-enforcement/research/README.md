@@ -16,15 +16,16 @@ from trusting a file.
 |---|---|---|
 | 1 | `state-correction-2026-08-19.md` | **Start here.** The decoupling landed (`46c5dab`), turned five repos red, and was REVERTED (`f4247110`). `8zv3.3` is closed on evidence that was subsequently reverted. Sequencing: adoption BEFORE arming. |
 | 2 | `task-vs-question-census-2026-08-20.md` | **Start here for scope.** Measured: 11 tasks / 223 questions fleet-wide. The remaining task-shaped work is **five functions in `livespec-overseer`**, all blocked on the stdlib-vs-railway contract conflict. Corrects `the-nine` in both directions. |
-| 3 | `the-nine-2026-08-19.md` | The original hand-picked sample. ⚠️ Superseded on scope by note 2: it includes `proc_fd_targets` (raises nothing) and omits `ledger_mutation` (raises). Read as a sample, not the task set. |
-| 4 | `first-unit-recheck-2026-08-19.md` | Why counts mislead: ~7% of convictions originate an exception-shaped failure. Withdraws the "driver-codex is cheapest" recommendation. |
-| 5 | `underscore-file-skip-remeasure-2026-08-19.md` | The `8zv3.5` question: 214 vs 601, the ratified-text argument, the per-repo concentration. **Deferred to a consensus panel.** |
-| 6 | `shipped-basis-offender-inventory-2026-08-19.md` | The offender LISTS, the 72-file non-product-in-universe class, and overseer's 14 false positives. |
-| 7 | `child-disposition-triage-2026-08-19.md` | The eleven archive-blocking children: 4 stay, 7 leave, with reasons. |
-| 8 | `local-llm-execution-route.md` | The execution constraint, its measured limits, the pilot, and §8's process failure. |
-| 9 | `dead-failure-tracks-2026-08-19.md` | 19 railway functions whose failure track is uninhabited — and the check cannot see them. |
-| 10 | `canonical-branch-probe-2026-08-19.md` | `8o8e.28`: the escape is real but costs a duplicated ratified contract. |
-| 11 | `8o8e21-patch-staleness-2026-08-19.md` | `8o8e.21`'s Green patch no longer applies, and the module regrew the defect meanwhile. |
+| 3 | `question-decomposition-2026-08-20.md` | The 223 questions in FOUR classes. **101 of them already have a ratified mechanism nobody has used** (`total_absence_returns`, declared ZERO times fleet-wide); only 122 need a genuinely new ruling. Read with note 2. |
+| 4 | `the-nine-2026-08-19.md` | The original hand-picked sample. ⚠️ Superseded on scope by note 2: it includes `proc_fd_targets` (raises nothing) and omits `ledger_mutation` (raises). Read as a sample, not the task set. |
+| 5 | `first-unit-recheck-2026-08-19.md` | Why counts mislead: ~7% of convictions originate an exception-shaped failure. Withdraws the "driver-codex is cheapest" recommendation. |
+| 6 | `underscore-file-skip-remeasure-2026-08-19.md` | The `8zv3.5` question: 214 vs 601, the ratified-text argument, the per-repo concentration. **Deferred to a consensus panel.** |
+| 7 | `shipped-basis-offender-inventory-2026-08-19.md` | The offender LISTS, the 72-file non-product-in-universe class, and overseer's 14 false positives. |
+| 8 | `child-disposition-triage-2026-08-19.md` | The eleven archive-blocking children: 4 stay, 7 leave, with reasons. |
+| 9 | `local-llm-execution-route.md` | The execution constraint, its measured limits, the pilot, and §8's process failure. |
+| 10 | `dead-failure-tracks-2026-08-19.md` | 19 railway functions whose failure track is uninhabited — and the check cannot see them. |
+| 11 | `canonical-branch-probe-2026-08-19.md` | `8o8e.28`: the escape is real but costs a duplicated ratified contract. |
+| 12 | `8o8e21-patch-staleness-2026-08-19.md` | `8o8e.21`'s Green patch no longer applies, and the module regrew the defect meanwhile. |
 
 ## Supersessions — do not read these as current
 
