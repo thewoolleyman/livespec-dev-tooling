@@ -27,11 +27,13 @@ Coverage target: 100% line + branch of `ci_yaml_canonical_reconcile.py`.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
 import pytest
 
+from livespec_dev_tooling.cross_repo import _ci_yaml_reconcile_parse as _parse
 from livespec_dev_tooling.cross_repo import ci_yaml_canonical_reconcile
 
 __all__: list[str] = []
@@ -595,3 +597,217 @@ def test_main_missing_anchor_matrix_errors_naming_the_exact_lines(
     assert "- check-new-thing" in out
     # The file is left untouched — a half-reconciled ci.yml is never committed.
     assert "check-new-thing" not in ci_yaml.read_text(encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# The batched aggregate shape (livespec-s43svm.34).
+#
+# `ci_matrix_completeness` counts a slug as CI-run when a job lists it in a
+# `matrix.target:` list OR invokes it from a run line as `just <slug>`. This
+# module's COVERAGE union always accepted both; only its WRITER knew the matrix,
+# and it hard-failed the whole bump job on the batched shape. Five fleet
+# consumers run the aggregate exclusively that way, sat two releases behind, and
+# each carried a red bump run nothing aggregated.
+# ---------------------------------------------------------------------------
+
+_BATCHED_CI_YAML = """name: CI
+on: [push]
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run the batched checks
+        run: |
+          failed=""
+          just check-aggregate-completeness || failed="$failed check-aggregate-completeness"
+          just check-all-declared || failed="$failed check-all-declared"
+          just check-wrapper-shape || failed="$failed check-wrapper-shape"
+"""
+
+
+def _batched_slugs(*, text: str) -> list[str]:
+    """Return the ordered `just check-<slug>` invocations of a batched section."""
+    return re.findall(r"^\s+just\s+(check-[\w-]+)\b", text, re.MULTILINE)
+
+
+def test_batched_consumer_is_reconciled_not_escalated() -> None:
+    """A consumer with no matrix anchor is mirrored into its batched section.
+
+    The regression: this returned `unreconcilable`, which `main()` escalated to
+    an `::error::` that failed the bump job outright — so the pin never moved.
+    """
+    result = ci_yaml_canonical_reconcile.reconcile_ci_yaml_text(
+        ci_yaml_text=_BATCHED_CI_YAML,
+        justfile_text=_JUSTFILE,
+        canonical_slugs=_CANONICAL,
+        world_gates=_WORLD_GATES,
+    )
+    assert "check-new-thing" in result, "the adopted slug must be mirrored into CI"
+    assert result != _BATCHED_CI_YAML
+
+
+def test_batched_insertion_preserves_canonical_order() -> None:
+    """The inserted run line lands in canonical position, not appended."""
+    result = ci_yaml_canonical_reconcile.reconcile_ci_yaml_text(
+        ci_yaml_text=_BATCHED_CI_YAML,
+        justfile_text=_JUSTFILE,
+        canonical_slugs=_CANONICAL,
+        world_gates=_WORLD_GATES,
+    )
+    slugs = _batched_slugs(text=result)
+    assert slugs == sorted(slugs), f"batched invocations must stay ordered: {slugs}"
+
+
+def test_batched_line_reuses_the_consumers_own_spelling() -> None:
+    """The inserted line is the consumer's aggregate line with the slug substituted.
+
+    Built by substitution rather than from our own format string, so a repo that
+    spells its batched lines differently keeps its spelling. The gate scans for
+    `just <slug>` anywhere in a run line, so any faithful substitution counts.
+    """
+    odd = _BATCHED_CI_YAML.replace(
+        '          just check-aggregate-completeness || failed="$failed check-aggregate-completeness"',
+        "          just check-aggregate-completeness || note check-aggregate-completeness # tail",
+    )
+    result = ci_yaml_canonical_reconcile.reconcile_ci_yaml_text(
+        ci_yaml_text=odd,
+        justfile_text=_JUSTFILE,
+        canonical_slugs=_CANONICAL,
+        world_gates=_WORLD_GATES,
+    )
+    assert "just check-new-thing || note check-new-thing # tail" in result
+
+
+def test_world_gate_is_not_mirrored_into_the_batched_section() -> None:
+    """A world gate is excluded from the batched path exactly as from the matrix."""
+    result = ci_yaml_canonical_reconcile.reconcile_ci_yaml_text(
+        ci_yaml_text=_BATCHED_CI_YAML,
+        justfile_text=_JUSTFILE,
+        canonical_slugs=_CANONICAL,
+        world_gates=_WORLD_GATES,
+    )
+    assert "check-master-ci-green" not in result
+
+
+def test_consumer_with_neither_shape_still_escalates() -> None:
+    """No matrix anchor and no batched aggregate remains genuinely unreconcilable."""
+    barren = "name: CI\non: [push]\n\njobs:\n  build:\n    steps:\n      - run: echo hi\n"
+    result = ci_yaml_canonical_reconcile.reconcile_ci_yaml_text(
+        ci_yaml_text=barren,
+        justfile_text=_JUSTFILE,
+        canonical_slugs=_CANONICAL,
+        world_gates=_WORLD_GATES,
+    )
+    assert result == barren, "an unreconcilable consumer must be left untouched"
+
+
+# ---------------------------------------------------------------------------
+# Wired-set resolution — check-targets.txt is PRIMARY, as the gate resolves it.
+# ---------------------------------------------------------------------------
+
+_INVENTORY = """# Canonical inventory.
+check-aggregate-completeness
+check-all-declared
+check-new-thing
+check-wrapper-shape
+"""
+
+_SCRIPT_DELEGATING_JUSTFILE = """check:
+    bash dev-tooling/check-aggregate.sh
+
+check-aggregate-completeness:
+    uv run python -m livespec_dev_tooling.checks.aggregate_completeness
+"""
+
+
+def test_inventory_file_is_the_primary_wired_set() -> None:
+    """A consumer whose aggregate delegates to a script is reconciled from its inventory.
+
+    `ci_matrix_completeness` resolves `check-targets.txt` first and parses the
+    justfile array only in its absence. Reading the array alone made this module
+    report `no_targets_array` and skip, while its own gate demanded the slugs the
+    file names — a writer disagreeing with its gate on three fleet consumers.
+    """
+    result = ci_yaml_canonical_reconcile.reconcile_ci_yaml_text(
+        ci_yaml_text=_BATCHED_CI_YAML,
+        justfile_text=_SCRIPT_DELEGATING_JUSTFILE,
+        inventory_text=_INVENTORY,
+        canonical_slugs=_CANONICAL,
+        world_gates=_WORLD_GATES,
+    )
+    assert "check-new-thing" in result
+
+
+def test_inventory_without_the_aggregate_slug_is_a_no_aggregate_skip() -> None:
+    """An inventory that does not name the aggregate is out of scope, not an error."""
+    result = ci_yaml_canonical_reconcile.reconcile_ci_yaml_text(
+        ci_yaml_text=_BATCHED_CI_YAML,
+        justfile_text=_SCRIPT_DELEGATING_JUSTFILE,
+        inventory_text="check-something-local\n",
+        canonical_slugs=_CANONICAL,
+        world_gates=_WORLD_GATES,
+    )
+    assert result == _BATCHED_CI_YAML
+
+
+def test_main_reconciles_a_batched_consumer_on_disk(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`main()` writes the batched mirror instead of erroring the bump job."""
+    ci_yaml = _seed(root=tmp_path, justfile_text=_JUSTFILE, ci_yaml_text=_BATCHED_CI_YAML)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("CANONICAL_JSON", json.dumps({"slugs": list(_CANONICAL)}))
+    assert ci_yaml_canonical_reconcile.main() == 0
+    assert "check-new-thing" in ci_yaml.read_text(encoding="utf-8")
+    assert "::error::" not in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
+# _ci_yaml_reconcile_parse — the batched helpers, exercised directly for branch
+# coverage, as the sibling parse modules are.
+# ---------------------------------------------------------------------------
+
+
+def test_batch_anchor_skips_comment_lines() -> None:
+    """A commented-out invocation is not an entry and never a sort anchor."""
+    lines = [
+        "      run: |\n",
+        "          # just check-aardvark || failed=x\n",
+        '          just check-aggregate-completeness || failed="$failed check-aggregate-completeness"\n',
+    ]
+    anchor = _parse.batch_anchor(lines=lines)
+    assert anchor is not None
+    assert [slug for _, slug in anchor.entries] == ["check-aggregate-completeness"]
+
+
+def test_batch_anchor_absent_without_the_aggregate_invocation() -> None:
+    """Batched lines that never invoke the aggregate yield no anchor."""
+    assert _parse.batch_anchor(lines=["          just check-other || failed=x\n"]) is None
+
+
+def test_batch_insert_index_ignores_non_canonical_entries() -> None:
+    """A repo-private batched slug is stepped over rather than used as an anchor."""
+    anchor = _parse.BatchAnchor(
+        entries=((10, "check-zzz-local"), (11, "check-aggregate-completeness")),
+        template='          just check-aggregate-completeness || failed="x"\n',
+    )
+    index = _parse.batch_insert_index(
+        anchor=anchor, canonical_set={"check-aggregate-completeness"}, slug="check-new-thing"
+    )
+    assert index == 12, "must land after the last CANONICAL entry, not the local one"
+
+
+def test_batch_insert_index_with_no_canonical_entry_uses_the_first_line() -> None:
+    """With no canonical entry to sort against, the slug leads the section."""
+    anchor = _parse.BatchAnchor(
+        entries=((7, "check-zzz-local"),),
+        template='          just check-aggregate-completeness || failed="x"\n',
+    )
+    assert _parse.batch_insert_index(anchor=anchor, canonical_set=set(), slug="check-a") == 7
+
+
+def test_batch_insert_index_on_an_empty_section_is_total() -> None:
+    """Total over an entry-less anchor rather than raising on an empty tuple."""
+    anchor = _parse.BatchAnchor(entries=(), template="          just check-x\n")
+    assert _parse.batch_insert_index(anchor=anchor, canonical_set=set(), slug="check-a") == 0

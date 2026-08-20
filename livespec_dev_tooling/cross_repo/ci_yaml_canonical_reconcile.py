@@ -55,7 +55,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -82,22 +81,33 @@ from livespec_dev_tooling.checks._ci_matrix_parse import (  # noqa: E402
     extract_targets_array_tokens,
     parse_ci_jobs,
 )
+from livespec_dev_tooling.cross_repo._ci_yaml_reconcile_parse import (  # noqa: E402
+    AGGREGATE_SLUG,
+    batch_anchor,
+    batch_insert_index,
+    batch_line_for,
+    insert_index,
+    matrix_anchor,
+    rewrite_renamed_bullets,
+)
 
 __all__: list[str] = ["reconcile_ci_yaml_text"]
 
 
 _JUSTFILE_NAME = "justfile"
+# The consumer's committed slug inventory. `ci_matrix_completeness` resolves
+# THIS FIRST and parses the justfile array only in its absence, so a reconciler
+# that reads the array alone disagrees with its own gate on every consumer that
+# carries the file.
+_INVENTORY_NAME = "check-targets.txt"
+_CHECK_PREFIX = "check-"
 _CI_YML_PATH = Path(".github") / "workflows" / "ci.yml"
-_AGGREGATE_SLUG = "check-aggregate-completeness"
 _CI_GREEN_JOB = "ci-green"
 
 # `strategy.matrix.target:` anchors. The bullet regex mirrors
 # `_ci_matrix_parse._MATRIX_TARGET_LINE` so this module recognizes exactly the
 # entries the gate counts, and captures the bullet's own indent so an inserted
 # entry lands at the list's existing depth.
-_MATRIX_KEY = re.compile(r"^\s*matrix:\s*$")
-_TARGET_KEY = re.compile(r"^\s*target:\s*$")
-_BULLET = re.compile(r"^(\s*)-\s*([\w-]+)\s*$")
 
 # Skip-reason → GitHub Actions `::notice::` message. Each names a consumer shape
 # for which `check-ci-matrix-completeness` emits a PRECONDITION finding rather
@@ -133,20 +143,6 @@ _ERROR_NO_ANCHOR = (
 
 
 @dataclass(frozen=True, kw_only=True)
-class _Anchor:
-    """The consumer's `matrix.target:` list that already carries the aggregate slug.
-
-    `head` is the line index of the list's first entry line (where a slug with no
-    canonical predecessor is inserted), `entries` pairs each bullet's line index
-    with its token, and `indent` is the bullets' own leading whitespace.
-    """
-
-    head: int
-    entries: tuple[tuple[int, str], ...]
-    indent: str
-
-
-@dataclass(frozen=True, kw_only=True)
 class _ReconcileResult:
     """Outcome of one reconcile pass: reconciled text plus diagnostics.
 
@@ -164,14 +160,27 @@ class _ReconcileResult:
     unreconcilable: bool
 
 
-def _justfile_targets(*, justfile_text: str) -> list[str] | str:
-    """Return the `check:` aggregate's wired slugs, or a `_SKIP_NOTICES` key.
+def _wired_targets(*, justfile_text: str, inventory_text: str | None) -> list[str] | str:
+    """Return the aggregate's wired slugs, or a `_SKIP_NOTICES` key.
 
-    Reads the aggregate through the SAME parsers `ci_matrix_completeness` reads
-    it through, so the wired set this module reconciles against is byte-for-byte
-    the set the gate compares CI to.
+    Resolution mirrors `ci_matrix_completeness` EXACTLY, which is what keeps the
+    wired set this module reconciles against byte-for-byte identical to the set
+    the gate compares CI to: a committed `check-targets.txt` is PRIMARY, and the
+    justfile's `targets=(...)` array is parsed only in its absence.
+
+    Reading the array alone — as this did — made the writer disagree with its own
+    gate on every consumer carrying the inventory file: the gate demanded slugs
+    from the file while the reconciler reported `no_targets_array` and skipped
+    with a notice. Three fleet consumers are in that shape.
     """
-    if _AGGREGATE_SLUG not in justfile_text:
+    if inventory_text is not None:
+        slugs = [
+            token
+            for token in (line.split("#", 1)[0].strip() for line in inventory_text.splitlines())
+            if token.startswith(_CHECK_PREFIX)
+        ]
+        return slugs if AGGREGATE_SLUG in slugs else "no_aggregate"
+    if AGGREGATE_SLUG not in justfile_text:
         return "no_aggregate"
     recipe_body = extract_check_recipe_body(justfile_text=justfile_text)
     if isinstance(recipe_body, Failure):
@@ -199,128 +208,52 @@ def _ci_covered_slugs(*, ci_yaml_text: str, canonical_set: set[str]) -> set[str]
     return covered
 
 
-def _collect_entries(*, lines: list[str], head: int) -> tuple[tuple[int, str], ...]:
-    """Collect the (line index, token) bullets of the target list starting at `head`.
+def _reconcile_batched(
+    *,
+    ci_yaml_text: str,
+    lines: list[str],
+    canonical_set: set[str],
+    missing: tuple[str, ...],
+) -> _ReconcileResult:
+    """Mirror `missing` into the consumer's BATCHED aggregate section.
 
-    Blank and `#`-comment lines inside the list are stepped over (a consumer
-    matrix routinely annotates its entries); the first line that is neither a
-    bullet nor a blank/comment ends the list.
+    Reached when the consumer runs the aggregate from `run:` lines rather than a
+    `matrix.target:` list. The gate has always counted that shape as coverage;
+    only the writer was blind to it, which aborted the bump job outright and
+    left the consumer's pin frozen. A consumer carrying neither shape is
+    genuinely unreconcilable and still escalates.
     """
-    entries: list[tuple[int, str]] = []
-    for index in range(head, len(lines)):
-        stripped = lines[index].strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        bullet = _BULLET.match(lines[index])
-        if bullet is None:
-            break
-        entries.append((index, bullet.group(2)))
-    return tuple(entries)
-
-
-def _find_anchor(*, lines: list[str]) -> _Anchor | None:
-    """Return the `matrix.target:` list carrying the aggregate slug, or None.
-
-    That list is guaranteed to exist wherever this reconcile can matter: a
-    consumer whose CI does not run `check-aggregate-completeness` cannot be
-    failed by `check-ci-matrix-completeness` for a slug the aggregate wires.
-    """
-    in_matrix = False
-    for index, raw in enumerate(lines):
-        if _MATRIX_KEY.match(raw) is not None:
-            in_matrix = True
-            continue
-        if not in_matrix or _TARGET_KEY.match(raw) is None:
-            continue
-        entries = _collect_entries(lines=lines, head=index + 1)
-        if _AGGREGATE_SLUG not in [token for _, token in entries]:
-            continue
-        first_line = lines[entries[0][0]]
-        return _Anchor(
-            head=entries[0][0],
-            entries=entries,
-            indent=first_line[: len(first_line) - len(first_line.lstrip())],
+    anchor = batch_anchor(lines=lines)
+    if anchor is None:
+        return _ReconcileResult(
+            text=ci_yaml_text, missing=missing, skipped_reason=None, unreconcilable=True
         )
-    return None
-
-
-def _above_leading_comments(*, lines: list[str], entry: int, head: int) -> int:
-    """Return the first line of the `#` comment block directly above `entry`.
-
-    A comment block immediately above a matrix entry annotates THAT entry (the
-    fleet's ci.yml matrices are heavily annotated), so a new entry sorting before
-    it must land ABOVE the block, not between the block and the entry it
-    describes — a bump PR merges the insertion into the consumer's master
-    permanently, making a misattributed comment a durable defect rather than a
-    transient diff artifact. A blank line breaks the association, and the walk
-    never passes the list head.
-    """
-    point = entry
-    while point > head and lines[point - 1].strip().startswith("#"):
-        point -= 1
-    return point
-
-
-def _insert_index(*, lines: list[str], anchor: _Anchor, canonical_set: set[str], slug: str) -> int:
-    """Return the line index `slug`'s bullet is inserted BEFORE.
-
-    The slug lands before the first EXISTING canonical entry that sorts after it
-    (keeping the canonical block alphabetical, and above any comment block that
-    annotates that entry), or after the last canonical entry when it sorts last,
-    or at the list head when the list holds no canonical entry. Non-canonical
-    entries (a consumer's repo-private extras, conventionally parked at the tail)
-    are never sort anchors, so the canonical block stays contiguous.
-    """
-    last_canonical: int | None = None
-    for index, token in anchor.entries:
-        if token not in canonical_set:
-            continue
-        if token > slug:
-            return _above_leading_comments(lines=lines, entry=index, head=anchor.head)
-        last_canonical = index
-    return anchor.head if last_canonical is None else last_canonical + 1
-
-
-def _rewrite_renamed_bullets(
-    *, ci_yaml_text: str, renames: Sequence[tuple[str, str]], canonical_set: set[str]
-) -> str:
-    """Rewrite a CI matrix bullet naming a since-renamed slug to its NEW name.
-
-    Mirrors the sibling `justfile_canonical_reconcile._rewrite_renamed_references`:
-    a canonical check rename drops the OLD slug from the canonical set with no
-    trace, so a consumer's ci.yml matrix bullet still naming it strands the bump
-    on `just check-<old-slug>` once the sibling justfile reconcile has already
-    rewritten that recipe away (livespec-dev-tooling-3gy1). For every rename
-    whose `new` side is canonical, rewrites the OLD bullet in place to the NEW
-    slug — or, when a NEW bullet is ALREADY present elsewhere in the matrix
-    (a maintainer or an earlier pass already added it), drops the now-duplicate
-    OLD bullet line entirely rather than leaving two.
-    """
-    lines = ci_yaml_text.splitlines(keepends=True)
-    for old, new in renames:
-        tokens = [m.group(2) if (m := _BULLET.match(ln)) else None for ln in lines]
-        if new not in canonical_set or old not in tokens:
-            continue
-        i = tokens.index(old)
-        new_line = f"{lines[i][: len(lines[i]) - len(lines[i].lstrip())]}- {new}\n"
-        lines[i : i + 1] = [] if new in tokens else [new_line]
-    return "".join(lines)
+    plan = [
+        (batch_insert_index(anchor=anchor, canonical_set=canonical_set, slug=slug), slug)
+        for slug in missing
+    ]
+    for index, slug in sorted(plan, reverse=True):
+        lines.insert(index, batch_line_for(anchor=anchor, slug=slug))
+    return _ReconcileResult(
+        text="".join(lines), missing=missing, skipped_reason=None, unreconcilable=False
+    )
 
 
 def _reconcile(
     *,
     ci_yaml_text: str,
     justfile_text: str,
+    inventory_text: str | None = None,
     canonical_slugs: Sequence[str],
     world_gates: Sequence[str],
     renames: Sequence[tuple[str, str]] = (),
 ) -> _ReconcileResult:
     """Pure core — reconcile the consumer ci.yml against the canonical slug set."""
     canonical_set = set(canonical_slugs)
-    ci_yaml_text = _rewrite_renamed_bullets(
+    ci_yaml_text = rewrite_renamed_bullets(
         ci_yaml_text=ci_yaml_text, renames=renames, canonical_set=canonical_set
     )
-    targets = _justfile_targets(justfile_text=justfile_text)
+    targets = _wired_targets(justfile_text=justfile_text, inventory_text=inventory_text)
     if isinstance(targets, str):
         return _ReconcileResult(
             text=ci_yaml_text, missing=(), skipped_reason=targets, unreconcilable=False
@@ -336,14 +269,14 @@ def _reconcile(
         )
 
     lines = ci_yaml_text.splitlines(keepends=True)
-    anchor = _find_anchor(lines=lines)
+    anchor = matrix_anchor(lines=lines)
     if anchor is None:
-        return _ReconcileResult(
-            text=ci_yaml_text, missing=missing, skipped_reason=None, unreconcilable=True
+        return _reconcile_batched(
+            ci_yaml_text=ci_yaml_text, lines=lines, canonical_set=canonical_set, missing=missing
         )
 
     plan = [
-        (_insert_index(lines=lines, anchor=anchor, canonical_set=canonical_set, slug=slug), slug)
+        (insert_index(lines=lines, anchor=anchor, canonical_set=canonical_set, slug=slug), slug)
         for slug in missing
     ]
     # Applying the inserts in DESCENDING (index, slug) order keeps every planned
@@ -360,6 +293,7 @@ def reconcile_ci_yaml_text(
     *,
     ci_yaml_text: str,
     justfile_text: str,
+    inventory_text: str | None = None,
     canonical_slugs: Sequence[str],
     world_gates: Sequence[str],
     renames: Sequence[tuple[str, str]] = (),
@@ -377,6 +311,7 @@ def reconcile_ci_yaml_text(
     return _reconcile(
         ci_yaml_text=ci_yaml_text,
         justfile_text=justfile_text,
+        inventory_text=inventory_text,
         canonical_slugs=canonical_slugs,
         world_gates=world_gates,
         renames=renames,
@@ -434,6 +369,11 @@ def main() -> int:
     result = _reconcile(
         ci_yaml_text=ci_yaml_text,
         justfile_text=justfile.read_text(encoding="utf-8"),
+        inventory_text=(
+            inventory.read_text(encoding="utf-8")
+            if (inventory := Path.cwd() / _INVENTORY_NAME).is_file()
+            else None
+        ),
         canonical_slugs=_slugs_from_env(),
         world_gates=unsafe_perform_io(canonical_checks.world_gate_check_slugs().unwrap()),
         renames=unsafe_perform_io(canonical_checks.canonical_check_renames().unwrap()),
@@ -446,7 +386,7 @@ def main() -> int:
         lines = "".join(f"%0A{' ' * 10}- {slug}" for slug in result.missing)
         _emit(
             annotation="error",
-            message=_ERROR_NO_ANCHOR.format(aggregate=_AGGREGATE_SLUG, lines=lines),
+            message=_ERROR_NO_ANCHOR.format(aggregate=AGGREGATE_SLUG, lines=lines),
         )
         return 1
     if not result.missing:
