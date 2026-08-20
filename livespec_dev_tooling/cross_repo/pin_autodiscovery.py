@@ -2,8 +2,8 @@
 
 Per `SPECIFICATION/contracts.md` section "Pin autodiscovery rules", the walk
 inspects the consumer repository for every supported pin format and
-yields a normalized record per discovered pin. The walk covers six
-formats, split across two cohesive helper modules:
+yields a normalized record per discovered pin. The walk covers seven
+formats, split across three cohesive helper modules:
 
 - single-file formats (`_pin_single_file_formats`): `.livespec.jsonc`
   `compat.pinned`, `pyproject.toml` `[tool.uv.sources]`, and
@@ -21,6 +21,10 @@ formats, split across two cohesive helper modules:
   (`zed-industries/codex-acp`) means no fleet fan-out rewrites it and a
   bump is factory-gated (section "codex-acp factory gate"). The shared `record`
   normalizer lives there too.
+- Claude settings format (`_pin_claude_settings_format`):
+  `.claude/settings.json` `extraKnownMarketplaces.<name>.source.ref`
+  entries whose ref is a concrete release tag. The literal `release`
+  branch alias is not a pin and is not emitted.
 
 `.copier-answers.yml` `_commit` is deliberately NOT a pin format: it
 is copier render-provenance, not a version pin, so rewriting it would
@@ -92,6 +96,9 @@ import structlog  # noqa: E402  — vendor-path-aware import after sys.path inse
 from returns.io import IOFailure, IOResult, IOSuccess  # noqa: E402  — vendor-path-aware import.
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
+from livespec_dev_tooling.cross_repo._pin_claude_settings_format import (  # noqa: E402
+    walk_claude_settings_extra_known_marketplaces,
+)
 from livespec_dev_tooling.cross_repo._pin_directory_scan_formats import (  # noqa: E402
     PinFileUnparseable,
     PinFileUnreadable,
@@ -111,7 +118,7 @@ __all__: list[str] = []
 
 
 # Every supported pin format's walker, in the order the records are
-# emitted. A tuple rather than seven `records.extend(...)` lines because
+# emitted. A tuple rather than eight `records.extend(...)` lines because
 # the walk now has to name WHICH walker hit an unreadable file, and a
 # walker's identity is not recoverable from the exception.
 _WALKS = (
@@ -122,6 +129,7 @@ _WALKS = (
     walk_fabro_workflow_docker,
     walk_github_workflow_container_image,
     walk_codex_acp_docker_arg,
+    walk_claude_settings_extra_known_marketplaces,
 )
 
 
@@ -144,7 +152,8 @@ def _build_parser() -> argparse.ArgumentParser:
             ".livespec.jsonc, pyproject.toml [tool.uv.sources], .vendor.jsonc, "
             ".github/workflows/*.yml uses: refs, the fabro-sandbox docker "
             "image tag in .fabro workflow.toml files, and the codex-acp "
-            "Dockerfile ARG CODEX_ACP_VERSION pin."
+            "Dockerfile ARG CODEX_ACP_VERSION pin, plus concrete Claude "
+            "settings extraKnownMarketplaces source refs."
         ),
     )
     _ = parser.add_argument(
@@ -191,7 +200,7 @@ def discover(
     workflow); equivalent to invoking the CLI with `--root=<root>` and
     optionally `--source-repo=<source_repo>`.
 
-    `IOResult` rather than `Result`: the seven walkers reach the filesystem
+    `IOResult` rather than `Result`: the eight walkers reach the filesystem
     DIRECTLY, through `path.read_text()` and `Path.glob`, with no injected
     seam between them and the disk. That is what livespec v179 member 1
     clause (d) — the callee fixpoint — sees, and it is the honest type.

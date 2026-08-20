@@ -148,6 +148,10 @@ runs:
         #   - pyproject_toml_uv_sources: regex on the `tag = "X"` field
         #   - vendor_jsonc: `upstream_ref` targeted rewrite
         #   - github_workflow_uses_ref: `uses: <key>@<ref>` targeted rewrite
+        #   - claude_settings_extra_known_marketplace_source_ref:
+        #     `.claude/settings.json` extraKnownMarketplaces source ref
+        #     targeted rewrite; only concrete tag refs are discovered, while
+        #     the moving `release` alias yields no record
         #   - fabro_sandbox_docker_image: `docker = "<key>:<tag>"` (Fabro
         #     workflow.toml) or `image: <key>:<tag>` under a job `container:`
         #     block (.github/workflows) targeted rewrite — one record, and so
@@ -172,6 +176,10 @@ runs:
                 uv run --project .livespec-dev-tooling python -m livespec_dev_tooling.cross_repo.pin_rewrite
               ;;
             github_workflow_uses_ref)
+              PIN_FORMAT="$fmt" PIN_FILE="$file" PIN_KEY="$key" PIN_CURRENT="$current" PIN_TAG="$TAG" \
+                uv run --project .livespec-dev-tooling python -m livespec_dev_tooling.cross_repo.pin_rewrite
+              ;;
+            claude_settings_extra_known_marketplace_source_ref)
               PIN_FORMAT="$fmt" PIN_FILE="$file" PIN_KEY="$key" PIN_CURRENT="$current" PIN_TAG="$TAG" \
                 uv run --project .livespec-dev-tooling python -m livespec_dev_tooling.cross_repo.pin_rewrite
               ;;

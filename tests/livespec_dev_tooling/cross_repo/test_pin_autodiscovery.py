@@ -1,7 +1,7 @@
 """Outside-in test for `cross_repo/pin_autodiscovery.py` — the discover orchestrator + CLI.
 
 Per `SPECIFICATION/contracts.md` section "Pin autodiscovery rules", the walk
-inspects five pin formats and yields normalized records. The
+inspects seven pin formats and yields normalized records. The
 per-format walks now live in two cohesive helper modules
 (`_pin_single_file_formats`, `_pin_directory_scan_formats`) exercised by
 their own mirror test files; this file exercises the parent
@@ -60,12 +60,11 @@ def test_discover_empty_repo_yields_no_records(*, tmp_path: Path) -> None:
     assert result == []
 
 
-def test_discover_all_four_pin_formats_coexisting(*, tmp_path: Path) -> None:
-    """The four pin formats coexist and yield one record each.
+def test_discover_all_pin_formats_coexisting(*, tmp_path: Path) -> None:
+    """All supported pin formats coexist without regressing sibling records.
 
     A `.copier-answers.yml` is created alongside them but is render-provenance,
-    not a version pin, so the walk emits no `copier_answers_commit` record for
-    it — the exact-equality set below excludes that format.
+    not a version pin, so the exact-equality set below excludes that format.
     """
     (tmp_path / ".livespec.jsonc").write_text(
         json.dumps({"myapp": {"compat": {"livespec": ">=0.1.0,<1.0.0", "pinned": "v0.5.0"}}}),
@@ -96,17 +95,104 @@ def test_discover_all_four_pin_formats_coexisting(*, tmp_path: Path) -> None:
     )
     workflows_dir = tmp_path / ".github" / "workflows"
     workflows_dir.mkdir(parents=True)
-    (workflows_dir / "bump.yml").write_text(
-        "    uses: owner/sibling-repo/.github/workflows/reusable.yml@v0.1.0\n",
+    (workflows_dir / "ci.yml").write_text(
+        "jobs:\n"
+        "  bump:\n"
+        "    uses: owner/sibling-repo/.github/workflows/reusable.yml@v0.1.0\n"
+        "  test:\n"
+        "    runs-on: ubuntu-latest\n"
+        "    container:\n"
+        "      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v0.20.0\n",
+        encoding="utf-8",
+    )
+    workflow_toml = tmp_path / ".fabro" / "workflows" / "ci" / "workflow.toml"
+    workflow_toml.parent.mkdir(parents=True)
+    workflow_toml.write_text(
+        'docker = "ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-v0.19.0"\n',
+        encoding="utf-8",
+    )
+    dockerfile = tmp_path / "docker" / "fabro-sandbox" / "agent" / "Dockerfile"
+    dockerfile.parent.mkdir(parents=True)
+    dockerfile.write_text(
+        "FROM buildpack-deps:noble\nARG CODEX_ACP_VERSION=0.16.0\n",
+        encoding="utf-8",
+    )
+    claude_settings = tmp_path / ".claude" / "settings.json"
+    claude_settings.parent.mkdir(parents=True)
+    claude_settings.write_text(
+        json.dumps(
+            {
+                "extraKnownMarketplaces": {
+                    "livespec-driver-claude": {
+                        "source": {
+                            "source": "github",
+                            "repo": "thewoolleyman/livespec-driver-claude",
+                            "ref": "v0.2.1",
+                        }
+                    }
+                }
+            }
+        ),
         encoding="utf-8",
     )
     result = _walk(root=tmp_path, source_repo=None)
-    formats = sorted(r["pin_format"] for r in result)
-    assert formats == [
-        "github_workflow_uses_ref",
-        "livespec_jsonc_compat_pinned",
-        "pyproject_toml_uv_sources",
-        "vendor_jsonc",
+    assert result == [
+        {
+            "pin_format": "livespec_jsonc_compat_pinned",
+            "file_path": ".livespec.jsonc",
+            "pin_key": "myapp",
+            "current_value": "v0.5.0",
+            "source_repo": "livespec",
+        },
+        {
+            "pin_format": "pyproject_toml_uv_sources",
+            "file_path": "pyproject.toml",
+            "pin_key": "foo",
+            "current_value": "v1",
+            "source_repo": "foo",
+        },
+        {
+            "pin_format": "vendor_jsonc",
+            "file_path": ".vendor.jsonc",
+            "pin_key": "bar_lib",
+            "current_value": "v2",
+            "source_repo": "bar_lib",
+        },
+        {
+            "pin_format": "github_workflow_uses_ref",
+            "file_path": ".github/workflows/ci.yml",
+            "pin_key": "owner/sibling-repo/.github/workflows/reusable.yml",
+            "current_value": "v0.1.0",
+            "source_repo": "sibling-repo",
+        },
+        {
+            "pin_format": "fabro_sandbox_docker_image",
+            "file_path": ".fabro/workflows/ci/workflow.toml",
+            "pin_key": "ghcr.io/thewoolleyman/livespec-fabro-sandbox",
+            "current_value": "python-rust-v0.19.0",
+            "source_repo": "livespec-dev-tooling",
+        },
+        {
+            "pin_format": "fabro_sandbox_docker_image",
+            "file_path": ".github/workflows/ci.yml",
+            "pin_key": "ghcr.io/thewoolleyman/livespec-fabro-sandbox",
+            "current_value": "python-v0.20.0",
+            "source_repo": "livespec-dev-tooling",
+        },
+        {
+            "pin_format": "codex_acp_docker_arg",
+            "file_path": "docker/fabro-sandbox/agent/Dockerfile",
+            "pin_key": "CODEX_ACP_VERSION",
+            "current_value": "0.16.0",
+            "source_repo": "zed-industries/codex-acp",
+        },
+        {
+            "pin_format": "claude_settings_extra_known_marketplace_source_ref",
+            "file_path": ".claude/settings.json",
+            "pin_key": "livespec-driver-claude",
+            "current_value": "v0.2.1",
+            "source_repo": "livespec-driver-claude",
+        },
     ]
 
 

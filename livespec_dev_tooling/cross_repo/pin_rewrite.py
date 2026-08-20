@@ -5,7 +5,8 @@ The `bump-pin-rewrite` composite Action receives records emitted by
 module owns the four legacy regex rewrites that used to live as inline Python
 heredocs in `.github/actions/bump-pin-rewrite/action.yml`:
 `.livespec.jsonc` compat pins, `pyproject.toml` uv-source tags,
-`.vendor.jsonc` upstream refs, and reusable-workflow `uses:` refs.
+`.vendor.jsonc` upstream refs, reusable-workflow `uses:` refs, and Claude
+settings marketplace source refs.
 
 The pure `rewrite_pin_in_text` core does no I/O. `main()` owns the env read and
 in-place file write for the composite Action's shell glue, using the same
@@ -28,6 +29,7 @@ PinFormat = Literal[
     "pyproject_toml_uv_sources",
     "vendor_jsonc",
     "github_workflow_uses_ref",
+    "claude_settings_extra_known_marketplace_source_ref",
 ]
 _PatternBuilder = Callable[..., re.Pattern[str]]
 
@@ -90,11 +92,25 @@ def _compile_github_workflow_uses(*, pin_key: str, current_value: str) -> re.Pat
     )
 
 
+def _compile_claude_settings_marketplace_ref(
+    *, pin_key: str, current_value: str
+) -> re.Pattern[str]:
+    return re.compile(
+        r'("'
+        + re.escape(pin_key)
+        + r'"\s*:\s*\{\s*"source"\s*:\s*\{[^}]*?"ref"\s*:\s*")'
+        + re.escape(current_value)
+        + r'(")',
+        re.DOTALL,
+    )
+
+
 _PATTERN_BUILDERS: dict[PinFormat, _PatternBuilder] = {
     "livespec_jsonc_compat_pinned": _compile_livespec_jsonc,
     "pyproject_toml_uv_sources": _compile_pyproject_uv_source,
     "vendor_jsonc": _compile_vendor_jsonc,
     "github_workflow_uses_ref": _compile_github_workflow_uses,
+    "claude_settings_extra_known_marketplace_source_ref": _compile_claude_settings_marketplace_ref,
 }
 
 
