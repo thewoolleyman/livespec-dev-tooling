@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.31.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.30.0...v1.31.0) (2026-08-20)
+
+
+### Features
+
+* **fleet:** arm the decision-authority AGENTS.md row ([5cfd759](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5cfd759573350f6f18aef71b3bea04c851acbfd2))
+
 ## [1.30.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.29.3...v1.30.0) (2026-08-20)
 
 
