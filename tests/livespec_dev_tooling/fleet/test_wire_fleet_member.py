@@ -98,6 +98,7 @@ _CI_YML = "jobs:\n  check:\n    strategy:\n      matrix:\n        target:\n     
 _PYPROJECT = '[tool.uv.sources]\nlivespec-dev-tooling = { git = "x", tag = "v1.0.0" }\n'
 _LIVESPEC_JSONC = (
     '{"harnesses": {"claude": {"status": "exempt", "reason": "library; no harness surface"}}, '
+    '"livespec-overseer": {"foreman_valve_disposition": "consensus"}, '
     '"implementation": {"plugin": "impl-beads"}, '
     '"impl-beads": {"dispatcher": {"acceptance_mode": "ai-only"}}}'
 )
