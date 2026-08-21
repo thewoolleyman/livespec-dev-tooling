@@ -524,6 +524,58 @@ for a NINTH repository joining the pool.
    `runnerScaleSetName` per the naming rule below — do NOT use
    `<repo>-local-ci-k3s`.
 5. Apply, and confirm `kubectl get clusterqueue` still sums to `C`.
+6. Route the repository at its scale set, through the guarded writer:
+
+   ```bash
+   ci-runner/set-ci-runner-labels.sh thewoolleyman/<repo> <scale-set-name> --dry-run
+   ci-runner/set-ci-runner-labels.sh thewoolleyman/<repo> <scale-set-name>
+   ```
+
+   Steps 1–5 are cluster changes. Step 6 is the security boundary, and
+   it is the one step that must not be a bare `gh variable set` — see
+   below.
+
+### Step 6 is the security boundary, so it is not a bare variable write
+
+A repository begins gating merges on self-hosted capacity at the
+instant its `CI_RUNNER_LABELS` variable names a self-hosted label. Not
+when its scale set is installed, not when its ClusterQueue is
+committed — at that write. The livespec repo's
+`SPECIFICATION/non-functional-requirements.md` §"Self-hosted CI runner
+host requirements" makes the containment-floor reduction CONDITIONAL on
+a precondition that engages at exactly that moment: self-hosted
+capacity may carry a repository's merge gate ONLY while no
+fork-originating workflow can execute on it, enforced by the
+repository's fork-pull-request approval setting **at its strictest
+tier** (`all_external_contributors`), because under the weaker tiers a
+RETURNING outside contributor's fork pull request runs its
+fork-controlled workflow definition with no approval event.
+
+Nothing used to attach that precondition to the write, and the cost was
+real. Nine repositories were cut over during `livespec-s43svm.16`/`.18`
+with the tier simply assumed to hold; on 2026-08-21 two of them —
+`livespec-overseer` and `livespec-driver-pi` — were found gating merges
+on self-hosted capacity at `first_time_contributors`, live and
+unnoticed since their cutovers. `livespec-driver-pi` is the instructive
+one: it was cut over as the ninth repository on 2026-08-20, its tier had
+never been strict, and its cutover was otherwise performed correctly. A
+checklist row would not have caught it, which is why the check is bound
+to the write rather than written down beside it.
+
+`../../set-ci-runner-labels.sh` reads the tier first and REFUSES the
+write unless it is strict — including when the tier cannot be read at
+all, since an unreadable tier is not a strict tier. `--set-tier`
+corrects a weak tier in the same operation and then re-reads to verify
+before touching the variable. Routing BACK to hosted capacity
+(`ubuntu-latest`) reads no tier and is never blocked: failover away from
+a sick pool must not depend on a permissions endpoint.
+
+This is not a CI-resident gate, and could not be one. The tier endpoint
+needs fine-grained `Administration: read`, which the workflow
+`permissions:` key does not expose and `GITHUB_TOKEN` can therefore
+never hold; the script runs in the maintainer's shell under the
+maintainer's own credential. The reasoning is recorded in full on
+`livespec-s43svm.39`.
 
 ### `runnerScaleSetName` MUST stay <=30 characters
 
