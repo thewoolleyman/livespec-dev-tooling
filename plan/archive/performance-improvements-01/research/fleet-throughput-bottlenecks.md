@@ -201,6 +201,28 @@ Per-repo facts, verified not assumed:
 | livespec-overseer / livespec-runtime | yes | no | no |
 | livespec-console-beads-fabro | check-coverage only (no per-file) | n/a | no |
 
+**Erratum (2026-08-21, recorded at archive; the table above is left as
+written because it is the record of what the audit believed).** Two
+corrections filed on `livespec-dev-tooling-yilyxr.8` on 2026-08-17 showed the
+"local dedup" column wrong for five of the eight "no" rows: livespec-driver-claude,
+livespec-orchestrator-beads-fabro, livespec-orchestrator-git-jsonl,
+livespec-overseer and livespec-runtime each already carried a firing
+"no duplicate suite run" reuse conditional (in four different homes), and
+every consumer runs a SERIAL aggregate that orders check-per-file-coverage
+before check-coverage, so those repos already ran the suite once per
+aggregate. The only genuine local double-runs were livespec-driver-codex and
+livespec-driver-pi. The real fleet defects .8 then fixed were staleness
+(every conditional reused ANY leftover `.coverage`; fixed by consume-once),
+measurement-env hardening, and the two codex/pi dependency re-runs; the
+CI-side pair cost was standalone-job duplication by design, removed by the
+#1504/#1511-shaped producer/consumer chain ported to every Python repo on
+2026-08-19. Separately, the ".3 / .4 / .6 are inherently fleet-scoped (shared
+infrastructure)" premise below is false for .3's telemetry half: each repo runs
+its OWN copy of `.github/scripts/export-ci-telemetry.sh`, so PR #1470's
+`ci.job.queue_ms` reached dev-tooling only (594/594 spans there, 0/6,989
+elsewhere, 48h to 2026-08-21); the port is tracked as a named successor item
+in this repo's ledger, discovered-from `yilyxr.3`.
+
 What this changes:
 
 - **.1 (coverage dedup)** is fleet-scoped across the 8 duplicating repos, with
