@@ -389,6 +389,79 @@ clause did not disappear — it moved to where it belongs, ARC's
 `maxRunners`, which is a per-repository ceiling and not a share of the
 host at all.
 
+## Enumerating the pool — where the members actually are
+
+**The GitHub repository runners API cannot tell you what is in this
+pool**, and the way it fails is worse than returning nothing: it returns
+a confident, complete-looking answer that is wrong. This is the single
+most misleading thing about operating this pool, so it is stated before
+anything on this page that depends on it.
+
+Two facts combine, and neither is obvious on its own.
+
+**ARC runners register with an EMPTY label array** and are selected by
+SCALE SET NAME, not by label. Measured 2026-08-21 on
+`thewoolleyman/livespec`, mid-job:
+
+```
+{"total_count":1,"runners":[{"id":31096,
+  "name":"livespec-local-ci-k3s-d4j8r-runner-xndz6",
+  "status":"offline","busy":false,"labels":[]}]}
+```
+
+So an ARC member carries neither a shared pool label nor a host-unique
+one — not by oversight, but because that mode does not use labels at all.
+
+**They are visible only WHILE a runner pod exists.** A scale set runs
+`minRunners: 0`, so pods exist only during a job, and each registration
+is ephemeral — one job, then deregister. Three consecutive reads of the
+listing above during one CI run returned three, then two, then one
+runner. An IDLE scale set contributes nothing to the listing whatsoever.
+
+> **Do not read that absence as structural.** An earlier survey
+> (2026-08-21, `livespec-s43svm.40`) queried
+> `livespec-console-beads-fabro` at a moment when no job was running, saw
+> only its sixteen permanently-registered podman-era runners, and
+> concluded ARC runners "do not appear in the repository runners API at
+> all". They do — transiently. Transient absence read as structural
+> absence, from a single well-formed query against the right endpoint.
+> The correct statement is that the listing answers "which runners are
+> registered RIGHT NOW", which for an ephemeral autoscaling pool is not
+> the same question as "what is in this pool".
+
+The pool itself is enumerable only from the cluster:
+
+```bash
+# The scale sets — one per repository, and the unit a job selects.
+kubectl -n arc-runners get autoscalingrunnersets \
+  -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}'
+
+# The live runner pods, if any. An idle scale set runs minRunners: 0, so
+# an EMPTY listing is the normal healthy state, not a missing pool.
+kubectl -n arc-runners get pods \
+  -l app.kubernetes.io/component=runner \
+  -o custom-columns=NAME:.metadata.name,SET:.metadata.labels.actions\.github\.com/scale-set-name,PHASE:.status.phase
+
+# Which repository each set serves.
+helm get values <scale-set-name> -n arc-runners | grep githubConfigUrl
+```
+
+The `install-arc.sh` scripts already run the first of these as a
+post-install verification step. That is not the same as documenting where
+the pool is enumerable: an operator triaging a stalled job is not reading
+an installer.
+
+**Addressing one member.** The unit of addressing here is the scale set,
+so directing work at one member means routing to its set — through the
+repository's `CI_RUNNER_LABELS` variable (see
+[`../../set-ci-runner-labels.sh`](../../set-ci-runner-labels.sh), which is
+the only sanctioned way to write it) or a literal `runs-on` in a
+non-gating workflow. When the pool grows past one host, binding a set to a
+particular host is a placement concern — node selectors, taints, or a
+per-host set — and MUST be decided then rather than assumed now; nothing
+on this page currently constrains where a set's pods land, because with
+one node there is nowhere else for them to go.
+
 ## Applying a scale set's values
 
 Every LIVE `AutoscalingRunnerSet` on `poweredge-xubuntu` now has a
