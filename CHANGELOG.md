@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.32.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.31.1...v1.32.0) (2026-08-21)
+
+
+### Features
+
+* assert every governed member declares a foreman valve disposition ([bc980fc](https://github.com/thewoolleyman/livespec-dev-tooling/commit/bc980fca0fbbbfa2be736c1f5f71d7c1fd701e40))
+
 ## [1.31.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.31.0...v1.31.1) (2026-08-20)
 
 
