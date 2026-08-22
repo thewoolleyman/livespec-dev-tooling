@@ -38,14 +38,40 @@ rules, JS, config), not Python product code — they are not part of the
 `provision-ci-runner.sh` converges a fresh host, and
 `isolation-exit-tests.sh` proves the containment invariants still hold.
 
-## Two paths, side by side
+## Two paths — and the podman one is DECOMMISSIONED
 
-Everything above describes the **rootless-podman/dockershim** pool, which is the
-only path currently receiving CI traffic. `k3s-arc-kueue/` is a **second,
-independent path** being stood up beside it — different runner engine, different
-selection token, zero traffic — so that the fleet can cut over per repository
-and observe, rather than flipping a single flag. Neither path's documentation,
-scripts, or host state is a rewrite of the other's; the podman documentation
-above is unchanged and stays authoritative for the live pool until the
-migration's final phase retires it.
+**Read this before trusting anything above it.** Most of this page describes the
+**rootless-podman/dockershim** pool. That pool no longer exists. It was
+decommissioned on 2026-08-21 under `livespec-s43svm.19`: every `runner@*` unit
+stopped, and all 482 registrations deleted at the forge, verified as zero
+remaining registrations carrying the `local-ci` + `poweredge` label set.
+
+Every fleet repository that routes gating CI now routes it to a **k3s + Actions
+Runner Controller + Kueue** scale set on `poweredge-xubuntu`, selected by
+scale-set name through each repository's `CI_RUNNER_LABELS` variable. See
+[`k3s/README.md`](k3s/README.md) and
+[`k3s/phase2/README.md`](k3s/phase2/README.md), which are the live documentation.
+
+This page's earlier text said the podman pool was "the only path currently
+receiving CI traffic" and that its documentation "stays authoritative for the
+live pool". Both were true when written and are now the opposite of true. They
+are corrected here rather than left for a reader to discover, because a
+provisioning page that confidently describes a pool that does not exist is worse
+than one that is merely out of date — it reads as current.
+
+**The tree above has NOT yet been deleted**, and that is deliberate rather than
+an oversight: `livespec-s43svm.19`'s repo-side leg carries judgement calls (which
+podman references in the k3s documentation are dangling versus historical
+rationale worth keeping) that are being made as a reviewed change rather than a
+sweep. Until it lands, treat everything above as a historical record of a pool
+that is gone.
+
+**Two things in this tree are NOT part of that deletion and stay live:**
+
+- [`gate-runner/`](gate-runner/README.md) — the separate, deliberately-privileged,
+  operator-triggered tier. Different trust boundary, different host, its own
+  provisioning, and it owns its own supervisor identity and JIT minter. It was
+  never part of the contained podman lane.
+- [`observability/ci-runner-heartbeat.sh`](observability/) — carries no podman
+  dependency at all and is the subject of `livespec-s43svm.20`.
 
