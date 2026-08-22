@@ -578,10 +578,11 @@ decision.
 All eight fleet repositories already have both files. These steps are
 for a NINTH repository joining the pool.
 
-1. Establish the new repository's demand weight `w`. Read its own
-   `ci-runner-supervisor.service` `--slots` value if it is on the podman
-   pool (see `../../supervisor/README.md`), or measure its actual
-   GitHub Actions matrix job count. Never guess.
+1. Establish the new repository's demand weight `w` by measuring its
+   actual GitHub Actions matrix job count. Never guess. (Before the podman
+   pool was decommissioned this step also allowed reading that repository's
+   `ci-runner-supervisor.service` `--slots` value; that pool and its
+   documentation are gone, so measurement is the only source.)
 2. Add it to `kueue/DERIVATION.md`'s weight table and RE-DERIVE every
    repository's `nominalQuota` at the current capacity `C` — adding a
    repository changes the weight sum, so every existing quota moves.

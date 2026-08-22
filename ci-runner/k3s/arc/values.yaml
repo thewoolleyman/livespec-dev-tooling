@@ -76,7 +76,10 @@ runnerScaleSetName: "local-ci-k3s"
 # required by the host-requirements contract ("a rootless engine ...
 # in-container root maps to a non-root host identity ... no privileged
 # mode") is satisfied by k3s's own containerd + the pod securityContext
-# below, with no bespoke dockershim/sanitize-hook equivalent needed.
+# below. The podman lane needed a bespoke dockershim/sanitize-hook pair to
+# reach the same property; k3s needs no equivalent, which is one of the
+# reasons the migration happened. That lane was deleted under
+# livespec-s43svm.19, so the contrast is with history, not with a sibling.
 containerMode:
   type: "kubernetes"
   kubernetesModeWorkVolumeClaim:

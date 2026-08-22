@@ -55,10 +55,12 @@ getent group "$SUP_GROUP" >/dev/null \
 # (../provision-ci-runner.sh)". Two things were wrong with that, and both were
 # load-bearing rather than cosmetic:
 #
-#   1. The contained lane is being DELETED. Inheriting an identity from a tree
-#      that is going away leaves this tier unprovisionable the moment it lands.
+#   1. The contained lane has since been DELETED. Inheriting an identity from a
+#      tree that was going away would have left this tier unprovisionable the
+#      moment that landed.
 #   2. `provision-ci-runner.sh` never created `ci-sup` in the first place. The
 #      only instruction for it was one prose line in `../supervisor/README.md`
+#      (since deleted; its credential model was relocated to `../README.md`)
 #      ("create the `ci-sup` + confirm `ci-runner` users"), so the identity that
 #      a LIVE, currently-running supervisor executes as was recreatable only
 #      from a sentence in a README scheduled for deletion.
@@ -104,7 +106,8 @@ if [ ! -f "${GATE_DIR}/config.sh" ]; then
   "
 fi
 # NO container-hooks here, on purpose: the gate's steps run directly on the host.
-# (The contained lane's sanitize-hook exists precisely because ITS jobs must not.)
+# (The deleted contained lane's sanitize-hook existed precisely because ITS jobs
+# must not; the k3s lane gets the same property from its pod securityContext.)
 
 # ---------------------------------------------------------------------------
 log "2. Supervisor + runner scripts"

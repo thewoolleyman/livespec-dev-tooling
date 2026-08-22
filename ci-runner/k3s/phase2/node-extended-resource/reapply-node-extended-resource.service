@@ -8,7 +8,7 @@
 # about, silently dropping this resource until it is re-applied. This
 # timer-driven reconciliation is the pragmatic, homelab-scale answer
 # (matching this repo's own precedent for idempotent periodic
-# reconciliation — see ../../observability/ci-runner-cache-prune.timer)
+# reconciliation — see ../../observability/ci-runner-heartbeat.timer)
 # rather than building a real device plugin for a single-node cluster.
 # See ../VALIDATION_CHECKLIST.md item 3 for confirming this actually
 # survives a real kubelet restart on the live host, and README.md

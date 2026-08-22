@@ -24,9 +24,9 @@
 
 # Where the scale set registers. `thewoolleyman` is a personal account, not a
 # GitHub organisation, so ARC's org-level and enterprise-level config URLs do
-# not apply — a repository-level URL is the only correct form here, matching the
-# existing supervisor's own per-repo runner pools (see
-# ci-runner/supervisor/README.md, "repo-level runners, so pools are per-repo").
+# not apply — a repository-level URL is the only correct form here, which also
+# matched the former podman supervisor's own per-repo runner pools (a personal
+# account gets repo-level runners, so pools are per-repo).
 # `install-arc.sh` overrides this with `--set` when GITHUB_CONFIG_URL is set, so
 # the operator can point a first smoke test at a throwaway repo instead.
 # Registering here routes ZERO traffic: no workflow in this repo (or any fleet

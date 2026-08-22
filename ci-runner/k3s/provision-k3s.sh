@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
 # provision-k3s.sh — idempotently install a single-node k3s control plane
-# on poweredge-xubuntu, ALONGSIDE the existing podman/dockershim runner
-# pool (ci-runner/provision-ci-runner.sh). Installs NOTHING that touches
-# that pool: different binaries (k3s's bundled containerd, not podman),
-# different systemd units (k3s.service, not runner@.service), different
-# host-unique label (poweredge-xubuntu-k3s, not the pool's label).
+# on poweredge-xubuntu.
+#
+# Authored to install ALONGSIDE the then-live podman/dockershim runner
+# pool, touching NOTHING that pool owned: different binaries (k3s's
+# bundled containerd, not podman), different systemd units (k3s.service,
+# not runner@.service), different host-unique label (poweredge-xubuntu-k3s,
+# not the pool's label). That pool was decommissioned 2026-08-21 and its
+# source deleted under livespec-s43svm.19; the isolation this script keeps
+# is recorded because it is why the cutover was safe, not because there is
+# still a second pool.
 #
 # Design record: livespec repo
 #   plan/fleet-ci-runner-pool/research/k3s-arc-kueue-migration.md

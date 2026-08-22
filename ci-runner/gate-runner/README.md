@@ -68,7 +68,7 @@ surface above, not the uid.
 | `gate-runner-supervisor.service` | The supervisor unit, under the `github-ci-runners` 1Password environment. |
 | `50-gate-runner-supervisor.rules` | polkit: `ci-sup` may start/stop `gate-runner@*.service` and nothing else. |
 | `app-installation-token.sh` | Prints a short-lived App installation token (the poll credential). |
-| `mint-jitconfig.sh` | Mints one JIT runner registration from the App credential. `gate-runner-supervisor.sh` EXECUTES this at mint time, so it is a RUNTIME dependency of this tier. Moved here from `../supervisor/` under `livespec-s43svm.19`, which deletes that tree — leaving it there would have removed a script a running service calls. |
+| `mint-jitconfig.sh` | Mints one JIT runner registration from the App credential. `gate-runner-supervisor.sh` EXECUTES this at mint time, so it is a RUNTIME dependency of this tier. Moved here from `../supervisor/` under `livespec-s43svm.19`, which has since deleted that tree — leaving it there would have removed a script a running service calls. |
 | `provision-gate-runner.sh` | Idempotently installs the runner, units, polkit rule, and scripts, and creates the `ci-sup` supervisor identity. It does NOT create the `github-ci-runners` group: membership is what makes the App private key readable, so that stays an explicit operator act, checked rather than assumed. |
 | `trigger-surface-exit-tests.sh` | Proves the discrimination: trusted events mint, `pull_request` never does. |
 
