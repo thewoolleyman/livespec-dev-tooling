@@ -111,7 +111,7 @@ Self-hosted runners for a personal account are always registered
 (`https://github.com/{owner}/{repo}/actions/runners/registration-token`).
 This matches how the existing podman pool has always worked (JIT
 runner registration is per-repo, via `CI_RUNNER_LABELS` and
-`../supervisor/mint-jitconfig.sh` — never org-wide), and it is why
+`../gate-runner/mint-jitconfig.sh` — never org-wide), and it is why
 phase 1 scopes both ARC releases to `livespec-dev-tooling` specifically:
 the phase-1 proof job (`test-job/proof-job.yml`) already lives in this
 repo's own `.github/workflows/`, so a single repo-scoped
@@ -189,7 +189,7 @@ The GitHub App installation token that backs `arc-github-app-installation`
 `install-arc.sh` fails closed if the secret is missing rather than
 creating it — from the same least-privilege, read-scoped source the
 existing podman pool's supervisor already uses
-(`../supervisor/mint-jitconfig.sh`'s token minting), never a broader
+(`../gate-runner/mint-jitconfig.sh`'s token minting), never a broader
 fleet secret. This matches the existing host-requirements "Credential
 separation" clause: the credential that mints runner registrations is
 readable only by the supervising identity (here, whoever runs

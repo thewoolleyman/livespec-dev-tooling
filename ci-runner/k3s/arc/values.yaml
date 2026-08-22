@@ -54,7 +54,7 @@
 # (https://github.com/{owner}/{repo}/actions/runners/registration-token),
 # matching how the existing podman pool's JIT runners have always
 # registered (CI_RUNNER_LABELS + per-repo JIT config — see
-# ../../supervisor/mint-jitconfig.sh). Scoped here to
+# ../../gate-runner/mint-jitconfig.sh). Scoped here to
 # livespec-dev-tooling itself so phase 1's proof job
 # (../test-job/proof-job.yml) — which already lives in THIS repo's own
 # .github/workflows/ — can validate end-to-end without needing

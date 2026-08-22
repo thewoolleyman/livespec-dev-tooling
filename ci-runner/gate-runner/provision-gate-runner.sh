@@ -26,6 +26,8 @@ GATE_HOME=/home/${OPERATOR}/gate-runner
 GATE_DIR=${GATE_HOME}/actions-runner
 RUNNER_VERSION=2.335.1                # same pin as the contained lane
 LIB=/usr/local/lib/ci-runner
+SUP_USER=ci-sup                       # supervisor identity; reads the App key, never logged into
+SUP_GROUP=github-ci-runners           # membership gates App-key readability
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
 log() { printf '\n== %s ==\n' "$*"; }
@@ -40,12 +42,51 @@ id -nG "$OPERATOR" | tr ' ' '\n' | grep -qx docker \
   || { echo "FATAL: missing the host fabro binary at /home/${OPERATOR}/.fabro/bin/fabro"; exit 1; }
 [ -x /data/projects/1password-env-wrapper/with-livespec-env.sh ] \
   || { echo "FATAL: missing the livespec 1Password wrapper the gate step invokes"; exit 1; }
-id ci-sup >/dev/null 2>&1 \
-  || { echo "FATAL: ci-sup does not exist — provision the contained lane first (../provision-ci-runner.sh)"; exit 1; }
 [ -x /usr/local/bin/with-github-ci-runners-env.sh ] \
   || { echo "FATAL: missing the github-ci-runners 1Password wrapper (supervisor credential source)"; exit 1; }
-[ -x "${LIB}/mint-jitconfig.sh" ] \
-  || { echo "FATAL: missing ${LIB}/mint-jitconfig.sh — provision the contained lane first"; exit 1; }
+getent group "$SUP_GROUP" >/dev/null \
+  || { echo "FATAL: group ${SUP_GROUP} does not exist — it gates readability of the App private key and MUST be created deliberately, not by this script"; exit 1; }
+
+# ---------------------------------------------------------------------------
+# THIS TIER OWNS ITS OWN SUPERVISOR IDENTITY.
+#
+# Until `livespec-s43svm.19` this script required `ci-sup` to already exist and
+# told the operator to "provision the contained lane first
+# (../provision-ci-runner.sh)". Two things were wrong with that, and both were
+# load-bearing rather than cosmetic:
+#
+#   1. The contained lane is being DELETED. Inheriting an identity from a tree
+#      that is going away leaves this tier unprovisionable the moment it lands.
+#   2. `provision-ci-runner.sh` never created `ci-sup` in the first place. The
+#      only instruction for it was one prose line in `../supervisor/README.md`
+#      ("create the `ci-sup` + confirm `ci-runner` users"), so the identity that
+#      a LIVE, currently-running supervisor executes as was recreatable only
+#      from a sentence in a README scheduled for deletion.
+#
+# Creating it here is idempotent and makes this tier self-provisioning. The
+# GROUP is deliberately NOT created — group membership is what makes the App
+# private key readable, so it stays an explicit operator act with its own
+# review, checked above rather than assumed here.
+log "0b. Supervisor identity"
+if id "$SUP_USER" >/dev/null 2>&1; then
+  echo "  ${SUP_USER} exists"
+else
+  # A system account: no login shell, no home. It runs one unit and reads one
+  # credential; it is never logged into.
+  useradd --system --no-create-home --shell /usr/sbin/nologin "$SUP_USER"
+  echo "  created ${SUP_USER} (system account, nologin)"
+fi
+if id -nG "$SUP_USER" | tr ' ' '\n' | grep -qx "$SUP_GROUP"; then
+  echo "  ${SUP_USER} is in ${SUP_GROUP}"
+else
+  usermod -aG "$SUP_GROUP" "$SUP_USER"
+  echo "  added ${SUP_USER} to ${SUP_GROUP}"
+fi
+# Verify rather than trust the two writes above: a supervisor that cannot read
+# the credential fails at mint time, deep inside a queued gate run, where the
+# cause is far less obvious than it is here.
+id -nG "$SUP_USER" | tr ' ' '\n' | grep -qx "$SUP_GROUP" \
+  || { echo "FATAL: ${SUP_USER} is still not in ${SUP_GROUP} after usermod"; exit 1; }
 
 # ---------------------------------------------------------------------------
 log "1. Actions runner ${RUNNER_VERSION} under the operator's own gate-runner dir"
@@ -68,7 +109,12 @@ fi
 # ---------------------------------------------------------------------------
 log "2. Supervisor + runner scripts"
 mkdir -p "$LIB"
-for f in gate-runner-supervisor.sh run-gate-jit-runner.sh app-installation-token.sh; do
+# `mint-jitconfig.sh` moved here from ../supervisor/ with livespec-s43svm.19:
+# `gate-runner-supervisor.sh` EXECUTES it at mint time (its `MINT=` default is
+# "${LIB}/mint-jitconfig.sh"), so it is a runtime dependency of this tier, not a
+# shared convenience. Leaving it in a deleted tree would have removed a script a
+# running service calls.
+for f in gate-runner-supervisor.sh run-gate-jit-runner.sh app-installation-token.sh mint-jitconfig.sh; do
   install -m 0755 -o root -g root "${HERE}/${f}" "${LIB}/${f}"
 done
 
