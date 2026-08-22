@@ -2,7 +2,9 @@
 # trigger-surface-exit-tests.sh — prove the gate lane's trust boundary.
 #
 # The contained CI lane's containment is provable by confining the runner
-# (../isolation-exit-tests.sh). The gate runner is PRIVILEGED by design, so its
+# (for the podman lane that was ../isolation-exit-tests.sh, deleted with it
+# under livespec-s43svm.19; for the k3s lane it is the pod security context
+# in ../k3s/). The gate runner is PRIVILEGED by design, so its
 # containment is a different claim entirely: *nothing untrusted can ever reach it*.
 # These tests prove exactly that claim, and nothing weaker.
 #

@@ -17,11 +17,12 @@
 #
 # CREDENTIAL MODEL — unchanged from the podman path, deliberately
 # ---------------------------------------------------------------
-# ci-runner/supervisor/README.md records the existing model: the
+# ci-runner/README.md "Credential model" records the model: the
 # `thewoolleyman-ci-runners` GitHub App's private key lives in a dedicated
 # `github-ci-runners` 1Password environment, injected ONLY by
 # `/usr/local/bin/with-github-ci-runners-env.sh`, and consumed by the
-# `ci-runner-supervisor.service` / `gate-runner-supervisor.service` units. This
+# `gate-runner-supervisor.service` unit (and, until it was decommissioned, the
+# podman lane's `ci-runner-supervisor.service`). This
 # script reuses exactly that wrapper and exactly those variable names. It
 # invents no new secret store, hardcodes no credential, and writes no credential
 # value to disk or to git — it pipes the wrapper-injected values straight into a

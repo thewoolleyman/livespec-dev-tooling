@@ -79,9 +79,9 @@ shared-pool token for when phase `.15` grows it past one instance.
 Unchanged from the podman path, deliberately. The `thewoolleyman-ci-runners`
 GitHub App's private key lives in the dedicated `github-ci-runners` 1Password
 environment and is injected only by `/usr/local/bin/with-github-ci-runners-env.sh`
-— the same wrapper `ci-runner-supervisor.service` and
-`gate-runner-supervisor.service` already use (see
-[`../supervisor/README.md`](../supervisor/README.md)). So `install-arc.sh` is run
+— the same wrapper `gate-runner-supervisor.service` uses, and that the
+decommissioned podman lane's `ci-runner-supervisor.service` used (see
+[`../README.md`](../README.md), "Credential model"). So `install-arc.sh` is run
 under that wrapper:
 
 ```bash

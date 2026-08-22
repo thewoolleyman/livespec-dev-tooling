@@ -1,11 +1,15 @@
-# k3s + ARC + Kueue — phase 1 (stand up alongside the podman pool, zero traffic)
+# k3s + ARC + Kueue — the fleet's gating CI runner pool
 
-Durable, re-runnable artifacts that provision a **second, independent**
-self-hosted CI runner pool on `poweredge-xubuntu`, backed by k3s +
-Actions Runner Controller (ARC) + Kueue, standing up **ALONGSIDE** —
-never replacing, stopping, or reconfiguring — the existing
-podman/dockershim pool at `../` (`provision-ci-runner.sh` and
-siblings).
+Durable, re-runnable artifacts that provision this fleet's self-hosted CI
+runner pool on `poweredge-xubuntu`, backed by k3s + Actions Runner
+Controller (ARC) + Kueue.
+
+This tree was authored for **phase 1** of the migration off rootless
+podman, when it stood up as a *second, independent* pool ALONGSIDE the
+podman/dockershim pool at `../`, routing zero traffic. That framing is
+kept below wherever it explains a design choice, but it now describes
+history: the podman pool was decommissioned on 2026-08-21 and its source
+deleted under `livespec-s43svm.19`. This is the only pool.
 
 Design record and full migration rationale: livespec repo
 `plan/fleet-ci-runner-pool/research/k3s-arc-kueue-migration.md`
@@ -29,7 +33,7 @@ Controller + Kueue"), maintainer-directed 2026-08-15. This tree is
 |---|---|
 | `provision-k3s.sh` | Idempotently installs a single-node k3s server, pinned to `v1.36.2+k3s1`, with `traefik`/`servicelb` disabled (this node carries no ingress) and a `k3s-role=arc-runner-host` node label. Never touches the existing `ci-runner` user, `runner@.service` instances, or podman. |
 | `install-arc.sh` | Installs the ARC controller (Helm chart `gha-runner-scale-set-controller` 0.14.2) plus TWO `gha-runner-scale-set` (0.14.2) releases — one per label (see below). Fails closed if the GitHub App installation-token secret isn't already present (never creates it). |
-| `arc/values.yaml` | Helm values for the shared-pool-label release (`runnerScaleSetName: local-ci-k3s`). Kubernetes-mode runners (containerd-backed pods, non-root `securityContext`, no privileged mode) — no dockershim/sanitize-hook equivalent needed. |
+| `arc/values.yaml` | Helm values for the shared-pool-label release (`runnerScaleSetName: local-ci-k3s`). Kubernetes-mode runners (containerd-backed pods, non-root `securityContext`, no privileged mode) — needing no equivalent of the deleted podman lane's dockershim/sanitize-hook pair. |
 | `arc/values-host-unique.yaml` | Helm values for the host-unique-label release (`runnerScaleSetName: poweredge-xubuntu-k3s`), same containment posture, `maxRunners: 1`. |
 | `install-kueue.sh` | Installs Kueue `v0.19.1` from its released manifest, then applies `kueue/resources.yaml`. |
 | `kueue/resources.yaml` | Minimal phase-1 `ResourceFlavor`/`ClusterQueue`/`LocalQueue` — just enough for Kueue to admit the proof job. Modeling the real fair-share formula is phase 2, deliberately deferred. |
@@ -170,14 +174,14 @@ script at line 797) rather than assumed, the generated
    RPM/SUSE-family hosts only — not the fleet's Ubuntu hosts) removes
    the `k3s-selinux` package and its yum/zypper repo file.
 
-**What it never touches**: anything under `../` (the podman pool's
-`ci-runner` user, `runner@.service` instances, `containers.conf`,
-dockershim, or `/var/cache/ci-runner`) — there is no shared state
+**What it never touches**: anything belonging to the former podman pool
+(the `ci-runner` user, `runner@.service` instances, `containers.conf`,
+dockershim, or `/var/cache/ci-runner`) — there was no shared state
 between the two stacks by construction (different systemd units,
 different container runtimes, different bind mounts). A k3s uninstall
-on this host is therefore safe with respect to the existing pool's
-traffic, matching the migration's side-by-side, no-shared-fate
-requirement. This procedure is documented here as the phase-1
+on this host was therefore safe with respect to that pool's traffic,
+matching the migration's side-by-side, no-shared-fate requirement. Those
+host artifacts are stopped; their removal is tracked separately. This procedure is documented here as the phase-1
 rollback path; it has not been rehearsed live against
 `poweredge-xubuntu`, per this task's own scope (documenting the
 procedure satisfies the requirement; a live rehearsal is not required).

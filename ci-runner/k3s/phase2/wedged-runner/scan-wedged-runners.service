@@ -10,7 +10,7 @@
 # that does not scale. A timer is the same pragmatic, homelab-scale answer this
 # tree already uses for idempotent periodic reconciliation — see
 # reapply-node-extended-resource.service and
-# ../../observability/ci-runner-cache-prune.timer.
+# ../../observability/ci-runner-heartbeat.timer.
 #
 # MODE VALUE — READ THIS BEFORE INSTALLING. The argument below is
 # MODE_PLACEHOLDER for the same reason the sibling reapply unit's capacity is:
