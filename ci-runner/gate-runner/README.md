@@ -66,11 +66,27 @@ surface above, not the uid.
 | `gate-runner-supervisor.sh` | The on-demand, trigger-verified minter. Polls the gate repo; mints ONE JIT runner per trusted queued run; waits; repeats. Runs as `ci-sup`, the only account that reads the App key. |
 | `gate-runner@.service` | One ephemeral privileged runner. Fixed `User=ubuntu`, fixed `ExecStart`, no container hooks (gate steps run directly on the host). |
 | `gate-runner-supervisor.service` | The supervisor unit, under the `github-ci-runners` 1Password environment. |
+| `hosted-only.conf` | systemd drop-in for the supervisor unit carrying `ConditionPathExists=/run/livespec-local-ci-enabled` — the compensating control for the hosted-only posture (see below). Installed by `provision-gate-runner.sh` into `/etc/systemd/system/gate-runner-supervisor.service.d/`. |
 | `50-gate-runner-supervisor.rules` | polkit: `ci-sup` may start/stop `gate-runner@*.service` and nothing else. |
 | `app-installation-token.sh` | Prints a short-lived App installation token (the poll credential). |
 | `mint-jitconfig.sh` | Mints one JIT runner registration from the App credential. `gate-runner-supervisor.sh` EXECUTES this at mint time, so it is a RUNTIME dependency of this tier. Moved here from `../supervisor/` under `livespec-s43svm.19`, which has since deleted that tree — leaving it there would have removed a script a running service calls. |
-| `provision-gate-runner.sh` | Idempotently installs the runner, units, polkit rule, and scripts, and creates the `ci-sup` supervisor identity. It does NOT create the `github-ci-runners` group: membership is what makes the App private key readable, so that stays an explicit operator act, checked rather than assumed. |
+| `provision-gate-runner.sh` | Idempotently installs the runner, units, the hosted-only drop-in, polkit rule, and scripts, and creates the `ci-sup` supervisor identity. It does NOT create the `github-ci-runners` group: membership is what makes the App private key readable, so that stays an explicit operator act, checked rather than assumed. |
 | `trigger-surface-exit-tests.sh` | Proves the discrimination: trusted events mint, `pull_request` never does. |
+
+## Hosted-only posture: the supervisor is gated behind an opt-in
+
+The supervisor unit is gated behind
+`ConditionPathExists=/run/livespec-local-ci-enabled` via the
+`hosted-only.conf` drop-in. `systemctl enable --now` therefore records the
+boot wiring but **skips the start** until an operator creates the opt-in by
+hand (`sudo touch /run/livespec-local-ci-enabled`, then
+`sudo systemctl start gate-runner-supervisor.service`). `/run` is a tmpfs,
+so the opt-in is cleared on reboot — but reboot is not a bound on a
+long-uptime host (44+ days observed), so the opt-in currently has no real
+expiry. That drop-in was hand-applied on the live host and committed here
+under `livespec-s43svm.43`, which also tracks the open questions of whether
+this tier belongs on the factory host at all and whether the opt-in needs a
+real expiry. Nothing here presumes an answer to either.
 
 ## GitHub-side prerequisites
 
