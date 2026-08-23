@@ -71,8 +71,10 @@ The host-uniqueness invariant is nonetheless satisfied, and more strongly than a
 distinct label would satisfy it: `poweredge-xubuntu-k3s` overlaps **no** token
 the existing pool uses, so no repository's `CI_RUNNER_LABELS` variable — the
 mechanism by which any gating repo's `ci.yml` selects the podman pool — can
-route a single job here. `local-ci-k3s` is reserved as this path's non-overlapping
-shared-pool token for when phase `.15` grows it past one instance.
+route a single job here. `local-ci-k3s` was reserved as this path's non-overlapping
+shared-pool token for when phase `.15` grew it past one instance; the growth
+landed instead on per-repository scale sets (`../k3s/phase2/`), and the
+`local-ci-k3s` release was retired under `livespec-s43svm.28`.
 
 ## Credential model
 

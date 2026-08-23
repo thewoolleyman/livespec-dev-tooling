@@ -4,11 +4,12 @@
 #
 # Phase 1's single-runner host proof scale set. Still referenced live by this
 # repo's `.github/workflows/k3s-arc-proof-job.yml` (`runs-on:
-# poweredge-xubuntu-k3s`), which is why it is not a retirement candidate the way
-# `local-ci-k3s` is.
+# poweredge-xubuntu-k3s`), which is why it was not retired alongside its
+# phase-1 sibling `local-ci-k3s` (values-local-ci-k3s.yaml), whose Helm
+# release was uninstalled and whose file was deleted under livespec-s43svm.28.
 #
 # NAMED BY SCALE SET, not by repository, deliberately: this file breaks the
-# `values-<repo>.yaml` convention every other file here follows because BOTH
+# `values-<repo>.yaml` convention every other file here follows because the
 # phase-1 scale sets point their `githubConfigUrl` at `livespec-dev-tooling`,
 # which already owns `values-livespec-dev-tooling.yaml`. The scale-set name is
 # the only unique key available.

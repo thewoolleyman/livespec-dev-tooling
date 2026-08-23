@@ -7,17 +7,17 @@
 # borrows from nobody and lends to nobody, and it is quota'd on plain
 # cpu/memory over its own `phase1-proof-flavor` rather than on the
 # `ci-runner.io/churn-slot` extended resource. It exists only to serve the
-# phase-1 proof scale sets (../arc/values-local-ci-k3s.yaml and
-# ../arc/values-poweredge-xubuntu-k3s.yaml), which are likewise not
-# Kueue-gated on churn-slot.
+# phase-1 proof scale set (../arc/values-poweredge-xubuntu-k3s.yaml; its
+# sibling `local-ci-k3s` was retired under livespec-s43svm.28), which is
+# likewise not Kueue-gated on churn-slot.
 #
 # It is therefore excluded from DERIVATION.md's apportionment, and its quota
 # is NOT counted toward the eight-repository sum that must equal the node's
 # churn-slot capacity. Because it reserves cpu/memory rather than churn-slot,
 # it cannot consume a churn-slot unit and cannot breach the physical cap.
 #
-# Retiring it together with the phase-1 proof scale sets, once phase 1 has no
-# remaining diagnostic value, is reasonable follow-up work — captured here
+# Retiring it together with the remaining phase-1 proof scale set, once phase 1
+# has no remaining diagnostic value, is reasonable follow-up work — captured here
 # rather than deleted, so the decision is made deliberately rather than by a
 # `kubectl delete` nobody wrote down.
 # Its own ResourceFlavor is carried here rather than in resource-flavor.yaml,

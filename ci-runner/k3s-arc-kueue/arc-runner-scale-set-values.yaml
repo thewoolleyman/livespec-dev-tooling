@@ -18,9 +18,10 @@
 # host requirements" is satisfied more strongly than by a distinct label: the
 # name `poweredge-xubuntu-k3s` overlaps NO token the podman pool uses, so no
 # existing repo's `CI_RUNNER_LABELS` variable can route a single job here. The
-# reserved shared-pool token for this path when it grows past one instance is
-# `local-ci-k3s` (also non-overlapping); it is recorded here so phase .15 does
-# not have to re-derive it.
+# shared-pool token reserved for this path at phase 1 was `local-ci-k3s` (also
+# non-overlapping); growth past one instance landed instead on per-repository
+# scale sets (../k3s/phase2/), and the `local-ci-k3s` release was retired under
+# livespec-s43svm.28.
 
 # Where the scale set registers. `thewoolleyman` is a personal account, not a
 # GitHub organisation, so ARC's org-level and enterprise-level config URLs do
