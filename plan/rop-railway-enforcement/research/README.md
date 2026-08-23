@@ -61,9 +61,22 @@ and would become an offender in its own measurement. The commit gate caught exac
   conversion that **cannot land**: it trips overseer's ratified stdlib-only
   constraint. Evidence for the contract conflict; see the ledger entry of
   2026-08-20. ⛔ Do not apply it until that conflict is ruled.
-- `livespec-config-railway-red.patch` — the preserved Red for the `livespec` config work.
-  ⛔ The worktree `~/.worktrees/livespec/fix-spec-governance-config-railway` holds an
-  authored, UNCOMMITTED companion Red and **MUST NOT be reaped.**
+- `livespec-config-railway-red.patch` — the preserved Red for the `livespec` config work
+  (`8o8e.25`). ✅ **VERIFIED 2026-08-23: this file IS the worktree's staged Red, byte for
+  byte**, captured read-only from
+  `~/.worktrees/livespec/fix-spec-governance-config-railway` and diffed against this patch
+  with zero differences over all 162 lines.
+
+  ⚠️ **CORRECTION — this entry used to call that worktree's Red an "authored, UNCOMMITTED
+  companion" that "MUST NOT be reaped", and every ledger handoff since has carried the
+  warning forward.** It is wrong in its load-bearing part: the content is not uncommitted
+  and it is not a companion, it is the same bytes. **Nothing unique is at risk there.**
+
+  ⛔ Still do not reap it — it is not this thread's worktree — but reap-avoidance is now a
+  courtesy to its owner, NOT data preservation, and it must stop being quoted as a reason
+  `8o8e.25` cannot be worked. Measured at the same time: the branch was **never pushed**,
+  has **no PR**, holds **no overseer registry track**, and its staged file was last written
+  **2026-08-03**. Treat `.25` as unclaimed unless an owner says otherwise.
 - `5cai-fleet-measurement.md`, `qndn-75-triage.md` — earlier measurement records, superseded
   in their figures by the 2026-08-19 notes but retained for method.
 
