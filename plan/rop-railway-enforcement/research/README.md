@@ -71,7 +71,32 @@ and would become an offender in its own measurement. The commit gate caught exac
    consensus-panel **dossier**; ratification stays with the maintainer.
 2. `8o8e.28` — price the Variant-B trade: removing the conviction duplicates a ratified
    precedence contract across two modules.
-3. `8o8e.19`–`.29` — disposal. **These block archive.** See note 6.
+3. Disposal of the remaining plan children. **These block archive.** See note 9.
+   ⚠️ The range `8o8e.19`–`.29` is NO LONGER the right address: `.20`, `.22`, `.23`,
+   `.24`, `.26`, `.27` and `.29` were re-parented to `livespec-dev-tooling-jtrt` /
+   `-qx2l`, and `.16` followed them to `jtrt`. **14 children remain undisposed**, and
+   most are NOT tidy-away candidates — `.30` and `.31` in particular are this epic's own
+   closure PRECONDITIONS held as children, not stale bugs. Re-derive the list from the
+   ledger before acting on it.
 4. The test-detection remedy for the 72-file class (note 5): multiple prefixes,
    filename detection, or relocation.
-5. Whether an unreadable config reads as `False` or propagates — gates `8o8e.21` (note 10).
+
+## Answered — do NOT re-raise these as maintainer gates
+
+- **Whether an unreadable config reads as `False` or propagates** (was open item 5,
+  gating `8o8e.21`). ✅ **ANSWERED: it PROPAGATES**, shipped in
+  `livespec-orchestrator-beads-fabro` PR #1799, verified on that repo's `origin/master`
+  `c6c4512f`.
+
+  It was decided as a FINDING rather than escalated, per this fleet's rule that a
+  question you can answer with a recommendation is not a maintainer question. The
+  reasoning: reporting an unparseable `.livespec.jsonc` as "no such factory" **IS** the
+  read-vs-write swallow `8o8e.21` exists to eliminate, so folding it into the default
+  would have re-committed the defect inside its own fix. Implemented as
+  `_dispatcher_block_or_raise`, mirroring the precedent the item had already ruled for
+  `resolve_store_config` — zero public signatures moved, zero callers changed.
+
+  ⛔ **This does NOT close `8o8e.21`.** `resolve_credential_wrapper` still lets an
+  unparseable config silently turn off the pre-push `check-ledger-conformance-live`
+  gate, which the item's own text calls its most consequential half. That half is a
+  SHELL change and is untouched.
