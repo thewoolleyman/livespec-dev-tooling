@@ -1,0 +1,460 @@
+diff --git a/.claude-plugin/scripts/livespec/spec_governance/_editing_decision_modes.py b/.claude-plugin/scripts/livespec/spec_governance/_editing_decision_modes.py
+index 760d84de..8f9a24e9 100644
+--- a/.claude-plugin/scripts/livespec/spec_governance/_editing_decision_modes.py
++++ b/.claude-plugin/scripts/livespec/spec_governance/_editing_decision_modes.py
+@@ -16,7 +16,12 @@ from __future__ import annotations
+ 
+ from dataclasses import dataclass
+ from pathlib import Path
++from typing import cast
+ 
++from returns.io import IOFailure, IOResult, IOSuccess
++from returns.unsafe import unsafe_perform_io
++
++from livespec.errors import ValidationError
+ from livespec.spec_governance.config import PROPOSAL_STEM_PATTERN
+ from livespec.spec_governance.config_edit import write_config_value
+ from livespec.spec_governance.proposal_edit import write_proposal_override
+@@ -43,10 +48,25 @@ class EditResult:
+     message: str
+ 
+ 
+-def _edit_result(*, changed_path: Path | str) -> str | EditResult:
+-    if isinstance(changed_path, str):
+-        return changed_path
+-    return EditResult(changed_path=changed_path, message="policy edit applied")
++def _edit_result(*, changed_path: Path | str | IOResult[Path, ValidationError]) -> str | EditResult:
++    """Adapt a config-edit outcome to this module's `str`-error / `EditResult` channel.
++
++    ⚠️ The config writers now REFUSE on the failure track rather than rewriting a
++    file they could not read. This is the one seam every caller already funnels
++    through, so that refusal reaches the existing error channel **without moving a
++    single call site** — the operator sees a message naming the broken block
++    instead of a success that silently destroyed their siblings.
++    """
++    if isinstance(changed_path, IOFailure):
++        return str(unsafe_perform_io(changed_path.failure()))
++    resolved: Path | str
++    if isinstance(changed_path, IOSuccess):
++        resolved = unsafe_perform_io(changed_path.unwrap())
++    else:
++        resolved = cast("Path | str", changed_path)
++    if isinstance(resolved, str):
++        return resolved
++    return EditResult(changed_path=resolved, message="policy edit applied")
+ 
+ 
+ def _apply_revise_decision_action(
+diff --git a/.claude-plugin/scripts/livespec/spec_governance/config_edit.py b/.claude-plugin/scripts/livespec/spec_governance/config_edit.py
+index 7f1aae14..1e6b7f1f 100644
+--- a/.claude-plugin/scripts/livespec/spec_governance/config_edit.py
++++ b/.claude-plugin/scripts/livespec/spec_governance/config_edit.py
+@@ -1,5 +1,7 @@
+ """JSONC text replacement helpers for spec-governance config edits."""
+ 
++# livespec-lloc-soft-band-owner: livespec-dev-tooling-8o8e.25
++
+ from __future__ import annotations
+ 
+ import json
+@@ -7,6 +9,12 @@ import re
+ from pathlib import Path
+ from typing import Any, cast
+ 
++from returns.io import IOFailure, IOResult, IOSuccess
++from returns.result import Failure, Result, Success
++
++from livespec.errors import ValidationError
++from livespec.parse import jsonc
++
+ __all__: list[str] = [
+     "write_config_map_entry",
+     "write_config_value",
+@@ -20,14 +28,26 @@ def write_config_value(
+     project_root: Path,
+     key: str,
+     value: str | None,
+-) -> Path | str:
+-    """Set or clear one scalar spec_governance config value."""
++) -> IOResult[Path, ValidationError]:
++    """Set or clear one scalar spec_governance config value.
++
++    Refuses on the FAILURE track rather than rewriting a config it could not
++    read. `contracts.md` requires this CLI to "atomically replace only the
++    selected value while PRESERVING UNRELATED JSONC KEYS/COMMENTS" — which is
++    impossible when the existing block did not parse, so the honest outcome is a
++    refusal rather than a destructive success.
++    """
+     config_path = project_root / _CONFIG_PATH
+     text = config_path.read_text(encoding="utf-8") if config_path.exists() else "{\n}\n"
+     surgical = _replace_existing_scalar(text=text, key=key, value=value)
+     if surgical is not None:
+-        return _atomic_replace(project_root=project_root, path=config_path, updated=surgical)
+-    block = dict(_extract_block(text=text))
++        return IOSuccess(
++            _atomic_replace(project_root=project_root, path=config_path, updated=surgical)
++        )
++    existing = _extract_block(text=text)
++    if isinstance(existing, Failure):
++        return IOFailure(existing.failure())
++    block = dict(existing.unwrap())
+     if value is None:
+         _ = block.pop(key, None)
+     else:
+@@ -43,11 +63,18 @@ def write_config_map_entry(
+     map_key: str,
+     entry_key: str,
+     value: str | None,
+-) -> Path | str:
+-    """Set or clear one entry in a spec_governance config map."""
++) -> IOResult[Path, ValidationError]:
++    """Set or clear one entry in a spec_governance config map.
++
++    Same contract as `write_config_value`: an unreadable existing block refuses
++    rather than being overwritten.
++    """
+     config_path = project_root / _CONFIG_PATH
+     text = config_path.read_text(encoding="utf-8") if config_path.exists() else "{\n}\n"
+-    block = dict(_extract_block(text=text))
++    existing = _extract_block(text=text)
++    if isinstance(existing, Failure):
++        return IOFailure(existing.failure())
++    block = dict(existing.unwrap())
+     raw_map = block.get(map_key)
+     mapping = _string_map(value=raw_map)
+     if value is None:
+@@ -63,22 +90,39 @@ def write_config_map_entry(
+     )
+ 
+ 
+-def _extract_block(*, text: str) -> dict[str, Any]:
++def _extract_block(*, text: str) -> Result[dict[str, Any], ValidationError]:
++    """The existing `spec_governance` block; `{}` on SUCCESS when there is none.
++
++    ⛔ FOUR SITUATIONS USED TO COLLAPSE INTO `{}` HERE, and only one of them is an
++    answer. An ABSENT block means "nothing is configured yet", and the caller is
++    right to render a fresh one. A block that does NOT PARSE, one whose braces do
++    not close, and one that is not an object are FAILURES — and folding them into
++    an empty mapping made the caller believe there was nothing to preserve, so it
++    rendered the single key being written and `_replace_existing_block` overwrote
++    every sibling. The call then returned the SUCCESS spelling.
++
++    ⚠️ THE TRIGGER WAS A COMMENT — the entire reason this file is `.jsonc`. Parsing
++    is now done with `jsonc.loads`, exactly as the READ half in `config.py` already
++    did, so a legitimately commented block is preserved rather than destroyed.
++    """
+     marker = '"spec_governance"'
+     if marker not in text:
+-        return {}
++        return Success({})
+     start = text.find(marker)
+     brace = text.find("{", start)
+     if brace < 0:
+-        return {}
++        return Failure(ValidationError("spec_governance block has no opening brace"))
+     end = _matching_brace(text=text, start=brace)
+     if end < 0:
+-        return {}
+-    try:
+-        parsed = json.loads(text[brace : end + 1])
+-    except json.JSONDecodeError:
+-        return {}
+-    return cast(dict[str, Any], parsed) if isinstance(parsed, dict) else {}
++        return Failure(ValidationError("spec_governance block is unterminated"))
++    parsed_result = jsonc.loads(text=text[brace : end + 1])
++    if isinstance(parsed_result, Failure):
++        return Failure(ValidationError("spec_governance block does not parse as JSONC"))
++    # No wrong-shape guard here on purpose: the slice always begins at `{` and ends
++    # at its matching `}`, so `jsonc.loads` either yields a dict or fails above. A
++    # guard for the impossible case would be a branch that reads as protection and
++    # cannot execute — the defect `8o8e.19` was filed for.
++    return Success(cast(dict[str, Any], parsed_result.unwrap()))
+ 
+ 
+ def _replace_config_block(
+@@ -87,17 +131,14 @@ def _replace_config_block(
+     path: Path,
+     text: str,
+     block: dict[str, Any],
+-) -> Path | str:
++) -> IOResult[Path, ValidationError]:
+     rendered = _render_block(block=block)
+     marker = '"spec_governance"'
+     if marker not in text:
+         updated = _insert_block(text=text, rendered=rendered)
+     else:
+-        updated_or_error = _replace_existing_block(text=text, rendered=rendered)
+-        if updated_or_error.startswith("existing "):
+-            return updated_or_error
+-        updated = updated_or_error
+-    return _atomic_replace(project_root=project_root, path=path, updated=updated)
++        updated = _replace_existing_block(text=text, rendered=rendered)
++    return IOSuccess(_atomic_replace(project_root=project_root, path=path, updated=updated))
+ 
+ 
+ def _replace_existing_scalar(*, text: str, key: str, value: str | None) -> str | None:
+@@ -167,10 +208,10 @@ def _replace_existing_block(*, text: str, rendered: str) -> str:
+     marker = '"spec_governance"'
+     start = text.find(marker)
+     key_start = text.rfind("\n", 0, start) + 1
++    # Reached only after `_extract_block` has parsed this same block, so the braces
++    # are known to be present and balanced; re-guarding them here would be dead code.
+     brace = text.find("{", start)
+     end = _matching_brace(text=text, start=brace)
+-    if brace < 0 or end < 0:
+-        return "existing spec_governance block is malformed"
+     replacement_start = key_start
+     if "{" in text[key_start:start]:
+         replacement_start = start
+diff --git a/tests/livespec/spec_governance/test_config_edit.py b/tests/livespec/spec_governance/test_config_edit.py
+index 6d4ba37f..27e08719 100644
+--- a/tests/livespec/spec_governance/test_config_edit.py
++++ b/tests/livespec/spec_governance/test_config_edit.py
+@@ -5,7 +5,10 @@ from __future__ import annotations
+ import json
+ from pathlib import Path
+ 
++from livespec.errors import ValidationError
+ from livespec.spec_governance.config_edit import write_config_map_entry, write_config_value
++from returns.io import IOFailure, IOSuccess
++from returns.unsafe import unsafe_perform_io
+ 
+ __all__: list[str] = []
+ 
+@@ -14,9 +17,9 @@ def test_config_edit_handles_malformed_existing_blocks(*, tmp_path: Path) -> Non
+     config_path = tmp_path / ".livespec.jsonc"
+     config_path.write_text('{"spec_governance": [}', encoding="utf-8")
+ 
+-    assert isinstance(
+-        write_config_value(project_root=tmp_path, key="critique_mode", value="batch"), str
+-    )
++    outcome = write_config_value(project_root=tmp_path, key="critique_mode", value="batch")
++    assert isinstance(outcome, IOFailure)
++    assert isinstance(unsafe_perform_io(outcome.failure()), ValidationError)
+ 
+ 
+ def test_config_edit_handles_unterminated_and_comma_existing_blocks(*, tmp_path: Path) -> None:
+@@ -26,13 +29,16 @@ def test_config_edit_handles_unterminated_and_comma_existing_blocks(*, tmp_path:
+         encoding="utf-8",
+     )
+     assert isinstance(
+-        write_config_value(project_root=tmp_path, key="critique_mode", value="batch"), str
++        write_config_value(project_root=tmp_path, key="critique_mode", value="batch"),
++        IOFailure,
+     )
+ 
+     config_path.write_text('{"spec_governance": {"x": true,}}', encoding="utf-8")
+     assert isinstance(
+-        write_config_value(project_root=tmp_path, key="critique_mode", value="batch"), Path
++        write_config_value(project_root=tmp_path, key="critique_mode", value="batch"),
++        IOFailure,
+     )
++    assert config_path.read_text(encoding="utf-8") == '{"spec_governance": {"x": true,}}'
+ 
+     config_path.write_text(
+         '{"spec_governance": {"critique_mode": "batch"}, "template": "x"}',
+@@ -40,7 +46,7 @@ def test_config_edit_handles_unterminated_and_comma_existing_blocks(*, tmp_path:
+     )
+     assert isinstance(
+         write_config_value(project_root=tmp_path, key="propose_change_mode", value="batch"),
+-        Path,
++        IOSuccess,
+     )
+     updated = config_path.read_text(encoding="utf-8")
+     assert '"template": "x"' in updated
+@@ -53,6 +59,84 @@ def test_config_edit_handles_unterminated_and_comma_existing_blocks(*, tmp_path:
+     }
+ 
+ 
++def test_config_edit_preserves_sibling_keys_in_a_commented_block(*, tmp_path: Path) -> None:
++    """A `//` comment in the block MUST NOT cost the block its other keys.
++
++    `SPECIFICATION/contracts.md` requires the control CLI to "atomically
++    replace only the selected config or front-matter value while preserving
++    unrelated JSONC keys/comments". A comment is the whole reason the file is
++    `.jsonc`, and the write half used to parse the block with raw `json.loads`
++    — so a commented block raised `JSONDecodeError`, was swallowed to `{}`, and
++    every sibling key was overwritten by the one key being written, while the
++    call returned the SUCCESS spelling.
++    """
++    config_path = tmp_path / ".livespec.jsonc"
++    config_path.write_text(
++        "{\n"
++        '  "spec_governance": {\n'
++        "    // maintainer direction: batch mode is deliberate\n"
++        '    "propose_change_mode": "batch",\n'
++        '    "ratification_review": "auto-spawn"\n'
++        "  }\n"
++        "}\n",
++        encoding="utf-8",
++    )
++
++    outcome = write_config_value(
++        project_root=tmp_path, key="in_flight_alignment", value="default-align"
++    )
++
++    # The PRESERVATION assertion comes first deliberately: it is the one that
++    # carries the proof. Asserting the return type first would let this test go
++    # red for the type change alone and never exercise the data loss.
++    assert json.loads(config_path.read_text(encoding="utf-8")) == {
++        "spec_governance": {
++            "propose_change_mode": "batch",
++            "ratification_review": "auto-spawn",
++            "in_flight_alignment": "default-align",
++        },
++    }
++    assert isinstance(outcome, IOSuccess)
++
++
++def test_config_map_entry_refuses_an_unreadable_block_too(*, tmp_path: Path) -> None:
++    """The MAP writer refuses on the same terms as the scalar writer.
++
++    Both halves read through `_extract_block`, so a block that will not parse must
++    refuse in both. Pinning only the scalar writer would leave the map writer free
++    to keep overwriting a config it could not read.
++    """
++    config_path = tmp_path / ".livespec.jsonc"
++    config_path.write_text(
++        '{"spec_governance": {"doctor_dispositions": {"a": "b",}}}',
++        encoding="utf-8",
++    )
++
++    outcome = write_config_map_entry(
++        project_root=tmp_path,
++        map_key="doctor_dispositions",
++        entry_key="doctor-anchor-reference-resolution",
++        value="accept",
++    )
++
++    assert isinstance(outcome, IOFailure)
++    assert isinstance(unsafe_perform_io(outcome.failure()), ValidationError)
++    assert config_path.read_text(encoding="utf-8") == (
++        '{"spec_governance": {"doctor_dispositions": {"a": "b",}}}'
++    )
++
++
++def test_config_edit_refuses_a_block_that_is_not_an_object(*, tmp_path: Path) -> None:
++    """A parseable block of the WRONG SHAPE is a failure, not an empty default."""
++    config_path = tmp_path / ".livespec.jsonc"
++    config_path.write_text('{"spec_governance": ["not", "an", "object"]}', encoding="utf-8")
++
++    outcome = write_config_value(project_root=tmp_path, key="critique_mode", value="batch")
++
++    assert isinstance(outcome, IOFailure)
++    assert isinstance(unsafe_perform_io(outcome.failure()), ValidationError)
++
++
+ def test_config_edit_renders_nested_maps_without_extra_commas(*, tmp_path: Path) -> None:
+     config_path = tmp_path / ".livespec.jsonc"
+     config_path.write_text('{"template": "x"}', encoding="utf-8")
+@@ -64,7 +148,7 @@ def test_config_edit_renders_nested_maps_without_extra_commas(*, tmp_path: Path)
+             entry_key="doctor-static-x",
+             value="defer",
+         ),
+-        Path,
++        IOSuccess,
+     )
+ 
+     updated = config_path.read_text(encoding="utf-8")
+@@ -84,22 +168,26 @@ def test_config_edit_insertion_variants(*, tmp_path: Path) -> None:
+     config_path = tmp_path / ".livespec.jsonc"
+     config_path.write_text("{", encoding="utf-8")
+     assert isinstance(
+-        write_config_value(project_root=tmp_path, key="critique_mode", value="batch"), Path
++        write_config_value(project_root=tmp_path, key="critique_mode", value="batch"),
++        IOSuccess,
+     )
+ 
+     config_path.write_text("{   ", encoding="utf-8")
+     assert isinstance(
+-        write_config_value(project_root=tmp_path, key="critique_mode", value="batch"), Path
++        write_config_value(project_root=tmp_path, key="critique_mode", value="batch"),
++        IOSuccess,
+     )
+ 
+     config_path.write_text("{\n", encoding="utf-8")
+     assert isinstance(
+-        write_config_value(project_root=tmp_path, key="critique_mode", value="batch"), Path
++        write_config_value(project_root=tmp_path, key="critique_mode", value="batch"),
++        IOSuccess,
+     )
+ 
+     config_path.write_text("// leading comment\n{", encoding="utf-8")
+     assert isinstance(
+-        write_config_value(project_root=tmp_path, key="critique_mode", value="batch"), Path
++        write_config_value(project_root=tmp_path, key="critique_mode", value="batch"),
++        IOSuccess,
+     )
+ 
+ 
+@@ -111,7 +199,8 @@ def test_config_edit_matching_brace_handles_escaped_quotes(*, tmp_path: Path) ->
+     )
+ 
+     assert isinstance(
+-        write_config_value(project_root=tmp_path, key="critique_mode", value="batch"), Path
++        write_config_value(project_root=tmp_path, key="critique_mode", value="batch"),
++        IOSuccess,
+     )
+ 
+ 
+@@ -128,5 +217,6 @@ def test_config_edit_surgically_clears_only_scalar_member(*, tmp_path: Path) ->
+         value=None,
+     )
+ 
+-    assert isinstance(result, Path)
++    assert isinstance(result, IOSuccess)
++    assert isinstance(unsafe_perform_io(result.unwrap()), Path)
+     assert json.loads(config_path.read_text(encoding="utf-8")) == {"spec_governance": {}}
+diff --git a/tests/livespec/spec_governance/test_editing.py b/tests/livespec/spec_governance/test_editing.py
+index 95789c20..43e489ce 100644
+--- a/tests/livespec/spec_governance/test_editing.py
++++ b/tests/livespec/spec_governance/test_editing.py
+@@ -412,3 +412,48 @@ def test_editing_spec_pr_merge_module_is_a_leaf() -> None:
+         "the spec-PR-merge module must not import from `editing`; the one-way "
+         "dependency is what prevents an import cycle"
+     )
++
++
++def test_proposal_override_success_reaches_the_edit_result_channel(*, tmp_path: Path) -> None:
++    """A SUCCEEDING proposal override returns an EditResult, not an error string.
++
++    ⚠️ This path was untested repo-wide. `write_proposal_override` still returns a
++    bare `Path | str` while the config writers moved to `IOResult`, so `_edit_result`
++    carries a branch for each — and only the config-writer branch had coverage.
++    Every existing proposal-override test stops at a validation guard BEFORE the
++    write, so nothing exercised the success path through the adapter.
++    """
++    proposals = tmp_path / "SPECIFICATION" / "proposed_changes"
++    proposals.mkdir(parents=True)
++    proposal = proposals / "sample-topic.md"
++    proposal.write_text("---\ntopic: sample-topic\n---\n\nBody.\n", encoding="utf-8")
++
++    result = apply_action(
++        project_root=tmp_path,
++        action="set-revise-decision-mode:proposal:sample-topic:delegated",
++    )
++
++    assert isinstance(result, EditResult)
++    assert result.changed_path == Path("SPECIFICATION/proposed_changes/sample-topic.md")
++    assert "decision_policy: delegated" in proposal.read_text(encoding="utf-8")
++
++
++def test_proposal_override_string_error_reaches_the_edit_result_channel(
++    *, tmp_path: Path
++) -> None:
++    """A proposal-override FAILURE surfaces as the error string, not an EditResult.
++
++    The companion to the success case above. `write_proposal_override` reports its
++    failures as bare strings while the config writers now use `IOResult`, so
++    `_edit_result` has to carry both spellings — and this is the only route that
++    still delivers a plain `str` to it.
++    """
++    (tmp_path / "SPECIFICATION" / "proposed_changes").mkdir(parents=True)
++
++    result = apply_action(
++        project_root=tmp_path,
++        action="set-revise-decision-mode:proposal:absent-topic:delegated",
++    )
++
++    assert isinstance(result, str)
++    assert result.startswith("proposal not found:")

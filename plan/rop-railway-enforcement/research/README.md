@@ -77,6 +77,12 @@ and would become an offender in its own measurement. The commit gate caught exac
   `8o8e.25` cannot be worked. Measured at the same time: the branch was **never pushed**,
   has **no PR**, holds **no overseer registry track**, and its staged file was last written
   **2026-08-03**. Treat `.25` as unclaimed unless an owner says otherwise.
+- `8o8e25-green-2026-08-23.patch` — the COMPLETE authored Green for `8o8e.25` (impl +
+  tests, 4 files). ⚠️ **Verified green locally — 117 spec_governance tests pass,
+  `check-per-file-coverage` 100.00%, `check-types` 0 errors — but NOT LANDED.** The
+  Red→Green *ritual* is what blocks it, not the change: see the ledger entry of
+  2026-08-23. Apply this to a fresh worktree off `livespec` master to resume; it
+  supersedes `livespec-config-railway-red.patch`, which holds only the test half.
 - `5cai-fleet-measurement.md`, `qndn-75-triage.md` — earlier measurement records, superseded
   in their figures by the 2026-08-19 notes but retained for method.
 
