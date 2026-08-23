@@ -11,17 +11,53 @@
 # reads this file with an untyped YAML load and merges its `spec` into the
 # generated pod spec key by key (`mergePodSpecWithOptions`), so a field is
 # passed through verbatim rather than being dropped by a typed deserializer.
+# Merge semantics that this file depends on (hook source, packages/k8s/src/
+# k8s/utils.ts): `volumes` is MERGED by name with the hook's own; a container
+# named `$job` is merged INTO the hook-generated job container, where `env`
+# and `volumeMounts` are merged by name and every other key (here
+# `lifecycle`) is assigned; every other pod-spec key (here `securityContext`)
+# is assigned WHOLESALE. Two keys this file deliberately does NOT set, for
+# exactly that reason: `initContainers` (the hook's newer releases add their
+# own `fs-init` init container, which a wholesale assignment would silently
+# replace and break every job on the next image pull), and the job
+# container's `command`/`image` (the hook owns them; image is refused).
 #
-# The single field set here pins the workflow pod to the `ci-runner-workflow`
-# AppArmor profile — see ../apparmor/ci-runner-workflow for the full root cause.
-# `type: Localhost` fails pod admission on a node where the profile is absent,
-# so a node that skipped ../apparmor/install-apparmor-profile.sh surfaces as a
-# pod that will not start rather than as a silently unconfined job.
+# Two things are set here.
 #
-# NOTE on merge semantics: `securityContext` is assigned wholesale, not deep
-# merged. That is safe only because the hook-generated pod's own
-# securityContext is `{}`. Anything else this file needs to set at pod level
-# must be added to the block below rather than to a second document.
+# 1. AppArmor. Pins the workflow pod to the `ci-runner-workflow` profile — see
+#    ../apparmor/ci-runner-workflow for the full root cause. `type: Localhost`
+#    fails pod admission on a node where the profile is absent, so a node that
+#    skipped ../apparmor/install-apparmor-profile.sh surfaces as a pod that
+#    will not start rather than as a silently unconfined job. `securityContext`
+#    is assigned wholesale, not deep merged; that is safe only because the
+#    hook-generated pod's own securityContext is `{}`. Anything else this file
+#    needs to set at pod level must be added to that block.
+#
+# 2. The warm uv cache (tier 1 of the cache tiers; ../warm-cache/README.md).
+#    The host volume /var/cache/ci-runner/warm — populated ONLY by the
+#    ci-warm-cache CronJob — is mounted READ-ONLY into the job container.
+#    uv refuses a read-only cache outright, and an unprivileged pod cannot
+#    mount an overlay to give it a writable upper the way the deleted podman
+#    lane did, so the job container's `postStart` copies the current
+#    generation (a relative symlink inside the mount) into its own ephemeral
+#    work volume, and UV_CACHE_DIR points uv at that copy. The kubelet does
+#    not mark the container Running until postStart returns, and the hook
+#    waits for Running before exec'ing any step, so the copy is complete
+#    before the first step (verified live on this cluster 2026-08-23: a
+#    12 s postStart held the pod Pending for 12 s). The copy is FAIL-SOFT in
+#    every direction: no lower present (a node that never ran the installer)
+#    or a copy error leaves no cache at all and uv resolves cold, exactly
+#    today's behaviour; the script always exits 0 so a cache problem can
+#    never fail a job. The copy is on the work volume so uv's hardlink
+#    install into the job's .venv stays on one filesystem. Measured
+#    2026-08-23 against the livespec lockfile: cold `uv sync` 7.9 s; copying
+#    the 379 MB fleet-wide lower 0.8 s; warm sync from the copy 0.5 s.
+#    Constraint this imposes on every `container:` image routed to this pool:
+#    it must carry /bin/sh and cp (a postStart exec that cannot start kills
+#    the container). Every fleet `container:` is the fabro sandbox image,
+#    which does; a distroless job image would need its own template.
+#    `--no-preserve=ownership` so the copy is owned by whatever uid the job
+#    container runs as (root today) rather than by the populator's uid.
 apiVersion: v1
 kind: PodTemplate
 spec:
@@ -29,3 +65,36 @@ spec:
     appArmorProfile:
       type: Localhost
       localhostProfile: ci-runner-workflow
+  volumes:
+    - name: warm-cache
+      hostPath:
+        path: /var/cache/ci-runner/warm
+        # DirectoryOrCreate, not Directory: a node without the warm root
+        # degrades to a cold cache (an empty mount), never to a pod that
+        # cannot start.
+        type: DirectoryOrCreate
+  containers:
+    - name: $job
+      env:
+        - name: UV_CACHE_DIR
+          value: /__w/_warm/uv
+      volumeMounts:
+        - name: warm-cache
+          mountPath: /var/cache/ci-runner/warm
+          readOnly: true
+      lifecycle:
+        postStart:
+          exec:
+            command:
+              - sh
+              - -c
+              - |
+                src=/var/cache/ci-runner/warm/uv
+                dst=/__w/_warm/uv
+                if [ -d "$src" ]; then
+                  mkdir -p "$dst"
+                  if ! cp -rp --no-preserve=ownership "$src/." "$dst"; then
+                    rm -rf "$dst"
+                  fi
+                fi
+                exit 0

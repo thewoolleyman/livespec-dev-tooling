@@ -24,9 +24,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROFILE_NAME="ci-runner-workflow"
 PROFILE_SRC="${SCRIPT_DIR}/${PROFILE_NAME}"
 PROFILE_DEST="/etc/apparmor.d/${PROFILE_NAME}"
-TEMPLATE_SRC="${SCRIPT_DIR}/../arc/hook-pod-template.yaml"
-CONFIGMAP_NAME="arc-hook-pod-template"
-RUNNERS_NAMESPACE="arc-runners"
 
 log() { printf '\n== %s ==\n' "$*"; }
 
@@ -51,13 +48,11 @@ if ! aa-status 2>/dev/null | grep -qx "   ${PROFILE_NAME}"; then
 fi
 
 # ---------------------------------------------------------------------------
-log "2. Converge the ${CONFIGMAP_NAME} ConfigMap in ${RUNNERS_NAMESPACE}"
-# --dry-run=client | apply is the idempotent create-or-update form; a bare
-# `kubectl create configmap` fails on the second run.
-kubectl create configmap "${CONFIGMAP_NAME}" \
-  --namespace "${RUNNERS_NAMESPACE}" \
-  --from-file="hook-pod-template.yaml=${TEMPLATE_SRC}" \
-  --dry-run=client -o yaml | kubectl apply -f -
+log "2. Converge the arc-hook-pod-template ConfigMap in arc-runners"
+# Shared with ../warm-cache/install-warm-cache.sh, which converges the SAME
+# ConfigMap for the warm-cache mount the template also carries; one converge
+# script so the two installers cannot drift on how it is written.
+"${SCRIPT_DIR}/../arc/converge-hook-pod-template.sh"
 
 log "Done. Scale sets mount this ConfigMap and set"
 log "ACTIONS_RUNNER_CONTAINER_HOOK_TEMPLATE — see ../arc/values-livespec-overseer.yaml."

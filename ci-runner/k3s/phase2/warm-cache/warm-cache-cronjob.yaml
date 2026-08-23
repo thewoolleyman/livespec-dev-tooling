@@ -1,0 +1,119 @@
+# warm-cache-cronjob.yaml — the trusted writer of the warm uv cache lower
+# (tier 1 of the cache tiers; see warm-cache-populate.sh's header and
+# README.md "Warm uv cache" for the design). Applied by install-warm-cache.sh,
+# which ALSO generates the `warm-cache-repos` ConfigMap this CronJob reads —
+# that ConfigMap is deliberately not in this file, because its content is
+# DERIVED from ../arc/values-*.yaml at install time (the live set of routed
+# repositories) rather than maintained by hand as a second list that drifts.
+#
+# Runs in its own namespace so the ONE read-write mount of the warm root is
+# not a capability anything in arc-runners carries. Workflow pods mount the
+# same host path read-only (../arc/hook-pod-template.yaml).
+#
+# Same image the fleet's CI jobs run in, so the cache is populated by the
+# same uv (version and cache layout) that reads it. The tag is overridable
+# by install-warm-cache.sh's WARM_CACHE_IMAGE; bump it in lockstep with the
+# fleet's `container:` pin (the fabro sandbox image).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ci-warm-cache
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: warm-cache-populate
+  namespace: ci-warm-cache
+data:
+  warm-cache-populate.sh: |
+    # REPLACED AT APPLY TIME by install-warm-cache.sh with the contents of
+    # ./warm-cache-populate.sh (kubectl create configmap --from-file). This
+    # placeholder exists so `kubectl apply -f` of this file alone leaves the
+    # CronJob unable to start rather than running a stale script.
+    echo "warm-cache-populate ConfigMap not converged by install-warm-cache.sh" >&2
+    exit 2
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: warm-cache-populate
+  namespace: ci-warm-cache
+spec:
+  # Each run is ~10-30 s steady-state (nine repositories, hardlink-seeded
+  # generation; measured 2026-08-23). Half-hourly keeps the lower within one
+  # merge-cycle of every default branch's lockfile at negligible cost.
+  schedule: "*/30 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  startingDeadlineSeconds: 600
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 1500
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: warm-cache-populate
+        spec:
+          restartPolicy: Never
+          # No Kueue queue-name label and no ci-runner.io/churn-slot request:
+          # this is not a CI job and must never occupy a runner slot.
+          securityContext:
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: populate
+              image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.32.0
+              imagePullPolicy: IfNotPresent
+              command: ["bash", "/scripts/warm-cache-populate.sh"]
+              env:
+                - name: WARM_ROOT
+                  value: /warm
+                - name: REPOS_FILE
+                  value: /config/repos.txt
+                - name: KEEP_GENERATIONS
+                  value: "2"
+                # The image installs uv and its CPython under /root (its
+                # build-time HOME), which is why this container runs as the
+                # image's default user (root) rather than a non-root uid: as
+                # any other uid those paths are unreadable. Root here holds
+                # no capability — all dropped, no escalation — and its only
+                # writable host surface is the warm root below.
+                - name: UV_HTTP_RETRIES
+                  value: "5"
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+              resources:
+                requests:
+                  cpu: "500m"
+                  memory: "512Mi"
+                limits:
+                  memory: "2Gi"
+              volumeMounts:
+                - name: warm
+                  mountPath: /warm
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+                - name: config
+                  mountPath: /config
+                  readOnly: true
+          volumes:
+            - name: warm
+              hostPath:
+                path: /var/cache/ci-runner/warm
+                # DirectoryOrCreate: the dedicated cache volume is mounted at
+                # /var/cache/ci-runner by fstab (livespec repo
+                # plan/fleet-ci-runner-pool/research/design.md "The storage");
+                # this subtree is created on first run rather than by hand.
+                type: DirectoryOrCreate
+            - name: scripts
+              configMap:
+                name: warm-cache-populate
+                defaultMode: 0555
+            - name: config
+              configMap:
+                name: warm-cache-repos

@@ -72,8 +72,9 @@ Measured 2026-08-15 on `poweredge-xubuntu` (per the ledger record on
 - **CPU**: 72 cores.
 - **Memory**: 188 GiB total, ~90 GiB available.
 - **Disk**: 306 GB free on the root filesystem; 624 GB free on the
-  dedicated `/var/cache/ci-runner` volume (unrelated to k3s — that
-  volume backs the podman pool's warm cache tiering).
+  dedicated `/var/cache/ci-runner` volume (at the time unrelated to
+  k3s — it backed the podman pool's warm cache tiering; it now carries
+  this pool's warm uv cache lower, `phase2/warm-cache/`).
 - **Ports**: `6443/10250/10251/10252/10257/10259/8472/2379/2380` (the
   full k3s server + agent + embedded-etcd port set) were all UNBOUND —
   no conflict with the podman pool or anything else on the host.
