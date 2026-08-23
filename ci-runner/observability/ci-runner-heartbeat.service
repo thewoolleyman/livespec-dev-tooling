@@ -1,7 +1,12 @@
 # ci-runner-heartbeat.service — one liveness gauge emission (see the .timer).
-# Part of the 3lev.1 resource-health work (livespec
-# plan/fabro-ci-image-factoring): the paired Honeycomb trigger on
-# livespec-host-metrics alerts when livespec.ci_runners.active stays < 1.
+# Originally the 3lev.1 resource-health work (livespec
+# plan/fabro-ci-image-factoring); re-pointed at the k3s/ARC host by
+# livespec-s43svm.20. Receiver: the CI-runner-host otel-collector
+# (thewoolleyman/otel-collector config.ci-runner-host.yaml) on
+# 127.0.0.1:4319, exporting to the `livespec` Honeycomb env. Paired triggers
+# (both filtered to this host.name): the DEAD-MAN fires on 20 minutes of
+# heartbeat SILENCE; the value trigger fires when
+# livespec.ci_listeners.active stays < 1.
 # Source of truth: livespec-dev-tooling ci-runner/observability/ — install
 # via install-observability.sh, never hand-edit the live copy (the s2t
 # recreatability rule).
