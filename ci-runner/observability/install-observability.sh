@@ -11,6 +11,14 @@
 # Run with sudo from the repo (or a worktree of it):
 #   sudo ci-runner/observability/install-observability.sh
 #
+# DEPENDENCY: the heartbeat POSTs to a LOCAL OTel collector on
+# 127.0.0.1:4319. That collector is NOT installed by this script — it is the
+# CI-runner-host shape of https://github.com/thewoolleyman/otel-collector
+# (scripts/install-ci-runner-host.sh there). Without it every heartbeat
+# firing exits 7 (`curl: (7)`), which is exactly what happened from
+# 2026-08-15 to 2026-08-23 (livespec-s43svm.20). After installing, run
+# `systemctl start ci-runner-heartbeat.service` once and confirm it exits 0.
+#
 # Installs scripts to /usr/local/lib/ci-runner/ and units to
 # /etc/systemd/system/, then daemon-reloads and enables both timers. Safe to
 # re-run; re-running after editing the source is the ONLY sanctioned way to
