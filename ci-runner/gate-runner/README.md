@@ -67,10 +67,13 @@ surface above, not the uid.
 | `gate-runner@.service` | One ephemeral privileged runner. Fixed `User=ubuntu`, fixed `ExecStart`, no container hooks (gate steps run directly on the host). |
 | `gate-runner-supervisor.service` | The supervisor unit, under the `github-ci-runners` 1Password environment. |
 | `hosted-only.conf` | systemd drop-in for the supervisor unit carrying `ConditionPathExists=/run/livespec-local-ci-enabled` — the compensating control for the hosted-only posture (see below). Installed by `provision-gate-runner.sh` into `/etc/systemd/system/gate-runner-supervisor.service.d/`. |
+| `gate-optin.sh` | THE sanctioned operator opt-in act: creates `/run/livespec-local-ci-enabled` (refusing if one exists — `--renew` is the explicit, logged alternative; `--revoke` removes it and stops the supervisor) and starts the supervisor. Installed to `/usr/local/lib/ci-runner/`. |
+| `gate-optin-expiry.sh` | The 24h expiry enforcer: removes an opt-in older than 24h from its creation, logs creation time and age, and stops the supervisor. It never creates or refreshes the opt-in. |
+| `gate-optin-expiry.service` / `.timer` | Oneshot + 15-minute timer driving `gate-optin-expiry.sh`. Enabled by `provision-gate-runner.sh`, which also runs one pass immediately. |
 | `50-gate-runner-supervisor.rules` | polkit: `ci-sup` may start/stop `gate-runner@*.service` and nothing else. |
 | `app-installation-token.sh` | Prints a short-lived App installation token (the poll credential). |
 | `mint-jitconfig.sh` | Mints one JIT runner registration from the App credential. `gate-runner-supervisor.sh` EXECUTES this at mint time, so it is a RUNTIME dependency of this tier. Moved here from `../supervisor/` under `livespec-s43svm.19`, which has since deleted that tree — leaving it there would have removed a script a running service calls. |
-| `provision-gate-runner.sh` | Idempotently installs the runner, units, the hosted-only drop-in, polkit rule, and scripts, and creates the `ci-sup` supervisor identity. It does NOT create the `github-ci-runners` group: membership is what makes the App private key readable, so that stays an explicit operator act, checked rather than assumed. |
+| `provision-gate-runner.sh` | Idempotently installs the runner, units, the hosted-only drop-in, the opt-in expiry timer, polkit rule, and scripts, and creates the `ci-sup` supervisor identity. It does NOT create the `github-ci-runners` group: membership is what makes the App private key readable, so that stays an explicit operator act, checked rather than assumed. |
 | `trigger-surface-exit-tests.sh` | Proves the discrimination: trusted events mint, `pull_request` never does. |
 
 ## Hosted-only posture: the supervisor is gated behind an opt-in
@@ -78,15 +81,51 @@ surface above, not the uid.
 The supervisor unit is gated behind
 `ConditionPathExists=/run/livespec-local-ci-enabled` via the
 `hosted-only.conf` drop-in. `systemctl enable --now` therefore records the
-boot wiring but **skips the start** until an operator creates the opt-in by
-hand (`sudo touch /run/livespec-local-ci-enabled`, then
-`sudo systemctl start gate-runner-supervisor.service`). `/run` is a tmpfs,
-so the opt-in is cleared on reboot — but reboot is not a bound on a
-long-uptime host (44+ days observed), so the opt-in currently has no real
-expiry. That drop-in was hand-applied on the live host and committed here
-under `livespec-s43svm.43`, which also tracks the open questions of whether
-this tier belongs on the factory host at all and whether the opt-in needs a
-real expiry. Nothing here presumes an answer to either.
+boot wiring but **skips the start** until an operator creates the opt-in
+with `sudo /usr/local/lib/ci-runner/gate-optin.sh` (which also starts the
+supervisor). That drop-in was hand-applied on the live host and committed
+here under `livespec-s43svm.43`, which also tracks whether this tier
+belongs on the factory host at all; nothing here presumes an answer.
+
+### Opt-in expiry
+
+livespec `SPECIFICATION/non-functional-requirements.md` §"Fleet CI
+execution posture" (v214, ratified under `livespec-s43svm.43`) obliges:
+the opt-in "MUST carry a wall-clock expiry enforced on the host of no more
+than 24 hours from the opt-in's creation, and an opt-in MUST NOT be
+extended, renewed, or re-created by anything other than a fresh explicit
+operator act"; "a gate supervisor found active with no opt-in present, or
+with an opt-in past its expiry, is a violation". The drop-in's
+"reboot-ephemeral" comment was never a bound on a long-uptime host — a
+nine-day-old opt-in was measured on the live host on 2026-08-23 — and is
+now backed by a real one:
+
+- **Ceiling: 24h from creation.** `gate-optin-expiry.timer` runs
+  `gate-optin-expiry.sh` every 15 minutes (worst-case enforcement
+  24h15m). It measures the file's birth time (`stat -c %W`; mtime only
+  if the filesystem reports no birth time, and the journal says which).
+  Past the ceiling it **removes the opt-in, logs the creation time and
+  age, and stops `gate-runner-supervisor.service`** — the explicit stop
+  is required because systemd evaluates `ConditionPathExists` only when
+  a start is attempted; a running unit is not stopped by its condition
+  later becoming false. Stopping mid-run is safe: a gate job runs in its
+  own `gate-runner@<name>.service`, which the supervisor merely waits on,
+  so the job completes and auto-deregisters regardless.
+- **No renewal by anything but an operator.** The expiry service never
+  creates or touches the opt-in. The writer set is exactly
+  `gate-optin.sh`, which refuses to create an opt-in that already exists;
+  `--renew` removes and re-creates it (a new explicit act, logged with
+  `logger -t gate-optin`), so the 24h window restarts from a new birth
+  time and the journal records who renewed and when. **Hand-`touch`ing
+  `/run/livespec-local-ci-enabled` is not a sanctioned path** — it
+  bypasses the no-silent-renewal refusal and leaves no record.
+- **Absent opt-in + active supervisor is the other violation shape.**
+  The expiry pass also stops a supervisor found active with no opt-in.
+
+`provision-gate-runner.sh` installs the units and script, enables the
+timer, and runs one expiry pass immediately, so re-provisioning a host
+that carries an over-age opt-in converges to the gated state in that same
+run.
 
 ## GitHub-side prerequisites
 

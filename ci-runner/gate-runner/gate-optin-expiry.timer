@@ -1,0 +1,21 @@
+# gate-optin-expiry.timer — run the opt-in expiry check every 15 minutes.
+#
+# The check is one stat and at most one `systemctl stop`, so the interval is
+# chosen for exposure, not load: 15 minutes bounds how far past the 24h ceiling
+# an opt-in can live before it is enforced (worst case 24h15m). Persistent=true
+# fires a missed pass at boot, though /run is tmpfs so the opt-in never survives
+# a reboot anyway — it is the long-uptime host (the nine-day opt-in measured
+# 2026-08-23 under livespec-s43svm.43) this timer exists for.
+[Unit]
+Description=Periodic gate supervisor opt-in expiry check (every 15 min)
+
+[Timer]
+# OnActiveSec seeds the chain when the timer is first enabled on a running host
+# (OnUnitActiveSec alone only fires relative to a PREVIOUS service activation).
+OnActiveSec=1min
+OnBootSec=5min
+OnUnitActiveSec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
