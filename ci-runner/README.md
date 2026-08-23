@@ -47,13 +47,21 @@ rather than leaving in history:
 - The podman references remaining in `k3s/**` are **historical rationale**,
   not dangling pointers: they explain WHY the migration happened. They are
   deliberately kept.
+- `ci-runner/k3s-arc-kueue/` — a SECOND phase-1 standing-up tree, landed two
+  minutes before `k3s/` on 2026-08-15 by a parallel session and never the one
+  the live cluster was provisioned from (its scale-set values pointed
+  `poweredge-xubuntu-k3s` at a different repository and ceiling than the live
+  release) — was deleted under `livespec-s43svm.19` as the last source tree
+  describing the podman pool as a live sibling. Its one unique artifact, the
+  proof job's non-root-uid and serviceaccount-projection assertions, was
+  ported into `.github/workflows/k3s-arc-proof-job.yml`. Recoverable at the
+  commit before that deletion.
 
 ## Files
 
 | Path | Role |
 |---|---|
 | `k3s/` | **The live gating path.** k3s + Actions Runner Controller + Kueue: the cluster install, the per-repository ARC scale sets and Kueue queues (`k3s/phase2/`), and the node-capacity and wedged-runner reconciliation units. Design record: livespec repo `plan/fleet-ci-runner-pool/research/k3s-arc-kueue-migration.md`. |
-| `k3s-arc-kueue/` | The phase-1 standing-up artifacts for that path (`install-k3s.sh`, `install-arc.sh`, `install-kueue.sh`, proof-of-life manifests). See its own [`README.md`](k3s-arc-kueue/README.md). |
 | `gate-runner/` | **The second, privileged trust tier** — on-demand, trigger-verified JIT minting for the operator-triggered acceptance gate. Separate boundary, separate provisioning, owns its `ci-sup` identity and `mint-jitconfig.sh`. See its own [`README.md`](gate-runner/README.md). |
 | `set-ci-runner-labels.sh` | **The only sanctioned way to write a repository's `CI_RUNNER_LABELS` variable.** That write is the exact moment a repository begins gating merges on self-hosted capacity, and therefore the moment the fork-exclusion precondition engages, so the script reads the repository's fork-pull-request approval tier first and REFUSES to point the variable at a self-hosted label unless the tier is `all_external_contributors` — refusing likewise when the tier cannot be read, since an unreadable tier is not a strict tier. `--set-tier` corrects a weak tier in the same operation and re-reads to verify before writing; routing back to hosted capacity reads no tier and is never blocked. Closes `livespec-s43svm.39`, filed after two repositories were found gating on self-hosted capacity at `first_time_contributors`. |
 | `set-ci-runner-labels-exit-tests.sh` | 10 behavioral exit tests for those refusals, against a fake `gh` — no network, no credential, no repository touched. Proving a refusal against a live repository would mean weakening a real repository's tier to watch the refusal fire, creating the exposure the script exists to prevent. |

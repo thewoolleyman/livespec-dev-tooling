@@ -17,23 +17,22 @@
 # real kubelet restart.
 #
 # CAPACITY VALUE — READ THIS BEFORE RUNNING:
-# The steady-state target (once the podman pool is fully retired,
-# livespec-s43svm.19) is 482 — the fleet's existing physical host-wide
-# cap (SPECIFICATION/non-functional-requirements.md section "Adaptive
-# JIT runner admission budget"; livespec-s43svm.11's measured iowait
-# ceiling). During the SIDE-BY-SIDE migration window (phases 1-4,
-# livespec-s43svm.14/.15/.16/.17), the podman pool is STILL consuming
-# from that same physical iowait budget concurrently, so setting this
-# k3s pool's capacity to a flat 482 while podman also runs near its own
-# 482 would let the two pools jointly imply the very 964 the
-# specification prohibits. This script therefore takes the capacity as
-# a REQUIRED argument rather than hardcoding either number — see
-# README.md "Why per-repo quotas summing above 482 is safe" and
-# ../VALIDATION_CHECKLIST.md item 4 for the joint-budget coordination
-# this implies across the two pools during cutover.
+# The capacity is a REQUIRED argument rather than a hardcoded number, and
+# the reason is historical but still binding on the shape: during the
+# SIDE-BY-SIDE migration window (phases 1-4, livespec-s43svm.14/.15/.16/
+# .17) the podman pool was still consuming from the same physical iowait
+# budget concurrently, so a flat 482 here (the fleet's podman-era host-wide
+# cap, SPECIFICATION/non-functional-requirements.md section "Adaptive JIT
+# runner admission budget"; livespec-s43svm.11's measured iowait ceiling)
+# while podman also ran near its own 482 would have let the two pools
+# jointly imply the very 964 the specification prohibits. The podman pool
+# was decommissioned 2026-08-21 and deleted (livespec-s43svm.19); the
+# value installed live is 16 (livespec-s43svm.26), and 482 was never
+# adopted for this pool — see README.md "Why per-repo quotas summing above
+# 482 is safe", ../kueue/DERIVATION.md, and ../VALIDATION_CHECKLIST.md.
 set -euo pipefail
 
-USAGE="usage: patch-node-churn-capacity.sh CAPACITY (e.g. a small phase-2 provisional value while zero real traffic is routed here, or 482 only once the podman pool is fully retired -- livespec-s43svm.19; see this script's own header comment)"
+USAGE="usage: patch-node-churn-capacity.sh CAPACITY (the host's churn-slot capacity; 16 is the value installed live, and the podman-era 482 was never adopted -- see this script's own header comment and ../kueue/DERIVATION.md)"
 CAPACITY="${1:?$USAGE}"
 NODE_LABEL_SELECTOR="k3s-role=arc-runner-host"
 # NODE_LABEL_SELECTOR matches provision-k3s.sh --node-label.
