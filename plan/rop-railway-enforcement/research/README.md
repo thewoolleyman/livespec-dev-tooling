@@ -29,6 +29,7 @@ from trusting a file.
 | 12 | `canonical-branch-probe-2026-08-19.md` | `8o8e.28`: the escape is real but costs a duplicated ratified contract. |
 | 13 | `8o8e21-patch-staleness-2026-08-19.md` | `8o8e.21`'s Green patch no longer applies, and the module regrew the defect meanwhile. ✅ **Discharged** — landed as beads-fabro #1799/#1801; the regrowth was FOUR functions, not two. |
 | 14 | `8zv3-5-counter-case-2026-08-19.md` | The adversarial case AGAINST this thread's own `8zv3.5` finding, by its author. Counters 2, 3 and 4 are live; 1 and 5 fail. |
+| 15 | `red-leg-coverage-floor-2026-08-23.md` | ⛔ **Retires the "Red leg vs 100% coverage floor" conflict** — there is none; Red mode SKIPS the coverage gates, and the refusal was a two-test-file Red. How `8o8e.25` was split to land. |
 
 ## Supersessions — do not read these as current
 
@@ -78,11 +79,14 @@ and would become an offender in its own measurement. The commit gate caught exac
   has **no PR**, holds **no overseer registry track**, and its staged file was last written
   **2026-08-03**. Treat `.25` as unclaimed unless an owner says otherwise.
 - `8o8e25-green-2026-08-23.patch` — the COMPLETE authored Green for `8o8e.25` (impl +
-  tests, 4 files). ⚠️ **Verified green locally — 117 spec_governance tests pass,
-  `check-per-file-coverage` 100.00%, `check-types` 0 errors — but NOT LANDED.** The
-  Red→Green *ritual* is what blocks it, not the change: see the ledger entry of
-  2026-08-23. Apply this to a fresh worktree off `livespec` master to resume; it
-  supersedes `livespec-config-railway-red.patch`, which holds only the test half.
+  tests, 4 files). ✅ **LANDED 2026-08-23** as two commits on `livespec`, split per the
+  finding in note 15. Retained as the authoring record.
+
+  ⚠️ **CORRECTION — this entry used to say "the Red→Green *ritual* is what blocks it",
+  citing a conflict between the ritual and a 100% coverage floor.** ⛔ **That was wrong.**
+  The Red leg SKIPS the coverage gates; the refusal was a staged-shape error (two test
+  files in one Red, where Red mode is exactly one). See
+  `red-leg-coverage-floor-2026-08-23.md`.
 - `5cai-fleet-measurement.md`, `qndn-75-triage.md` — earlier measurement records, superseded
   in their figures by the 2026-08-19 notes but retained for method.
 
