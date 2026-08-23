@@ -57,6 +57,31 @@ waiter does not touch the gate — re-issue `gate-wait` and you get the
 same verdict. That is what makes the harness ceiling irrelevant instead
 of merely larger.
 
+### A FRESH worktree has no `gate-start` until you materialize the pack
+
+`gate-run.sh` and the `gate-*` recipes live in `dev-tooling/`, which is
+**gitignored and materialized per worktree**. A worktree created with a
+plain `git worktree add` therefore has neither: `just --list` shows no
+`gate-*` row, and `just gate-start` fails as an unknown recipe. The
+`justfile` imports the fragment with `import?` rather than `import`, so
+a missing pack **silently no-ops** instead of erroring — which is why
+the recipes read as absent rather than uninstalled.
+
+```bash
+mise exec -- just install-worktree-pack   # from INSIDE the new worktree
+```
+
+This bites hardest exactly where it matters most: the PreToolUse
+background guard refuses to let a gate command (`git commit`,
+`git push`, `gh pr ...`, `just check*`) be backgrounded bare and points
+you at `gate-start`, so without the pack you are wedged between a hook
+that forbids one route and a recipe that does not exist on the other.
+Install the pack; do not reach for a foreground gate run instead.
+
+The same applies in every fleet repo carrying the pack, `livespec`
+included — the fragment is shipped by `livespec_dev_tooling`, not by the
+consuming repo.
+
 ### What this does NOT change
 
 **Nothing is weakened.** The same command runs, with the same hooks,
