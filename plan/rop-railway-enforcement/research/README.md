@@ -20,13 +20,15 @@ from trusting a file.
 | 4 | `clause-attribution-2026-08-20.md` | Which CLAUSE convicts each question, and a simulation of the unused key: **30% of the fleet's offenders are relievable today with no new ruling**, the cascade is 2 not a multiplier, and the one ruling that matters is clause (c). |
 | 5 | `the-nine-2026-08-19.md` | The original hand-picked sample. ⚠️ Superseded on scope by note 2: it includes `proc_fd_targets` (raises nothing) and omits `ledger_mutation` (raises). Read as a sample, not the task set. |
 | 6 | `first-unit-recheck-2026-08-19.md` | Why counts mislead: ~7% of convictions originate an exception-shaped failure. Withdraws the "driver-codex is cheapest" recommendation. |
-| 7 | `underscore-file-skip-remeasure-2026-08-19.md` | The `8zv3.5` question: 214 vs 601, the ratified-text argument, the per-repo concentration. **Deferred to a consensus panel.** |
+| 7 | `underscore-file-skip-remeasure-2026-08-19.md` | The `8zv3.5` question: 214 vs 601, the ratified-text argument, the per-repo concentration. **Deferred to a consensus panel.** ⚠️ Its addendum's verb is corrected by note 14. |
+| 7a | `8zv3-5-dossier-2026-08-23.md` | **The decision-ready synthesis for `8zv3.5`** — both cases, the four counter verdicts, the fleet re-derived at 2026-08-23 SHAs (344/950 raw, 208/612 distinct), and a recommendation: accept the RULE, keep the BASIS. Read this before notes 7 and 14. |
 | 8 | `shipped-basis-offender-inventory-2026-08-19.md` | The offender LISTS, the 72-file non-product-in-universe class, and overseer's 14 false positives. |
 | 9 | `child-disposition-triage-2026-08-19.md` | The eleven archive-blocking children: 4 stay, 7 leave, with reasons. |
 | 10 | `local-llm-execution-route.md` | The execution constraint, its measured limits, the pilot, and §8's process failure. |
 | 11 | `dead-failure-tracks-2026-08-19.md` | 19 railway functions whose failure track is uninhabited — and the check cannot see them. |
 | 12 | `canonical-branch-probe-2026-08-19.md` | `8o8e.28`: the escape is real but costs a duplicated ratified contract. |
-| 13 | `8o8e21-patch-staleness-2026-08-19.md` | `8o8e.21`'s Green patch no longer applies, and the module regrew the defect meanwhile. |
+| 13 | `8o8e21-patch-staleness-2026-08-19.md` | `8o8e.21`'s Green patch no longer applies, and the module regrew the defect meanwhile. ✅ **Discharged** — landed as beads-fabro #1799/#1801; the regrowth was FOUR functions, not two. |
+| 14 | `8zv3-5-counter-case-2026-08-19.md` | The adversarial case AGAINST this thread's own `8zv3.5` finding, by its author. Counters 2, 3 and 4 are live; 1 and 5 fail. |
 
 ## Supersessions — do not read these as current
 
