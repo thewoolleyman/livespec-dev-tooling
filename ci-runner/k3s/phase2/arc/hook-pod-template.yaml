@@ -22,7 +22,30 @@
 # replace and break every job on the next image pull), and the job
 # container's `command`/`image` (the hook owns them; image is refused).
 #
-# Two things are set here.
+# Three things are set here.
+#
+# 0. A USER NAMESPACE (`hostUsers: false`). The workflow pod's job container
+#    runs the repo's `container:` image as its default user -- root, because
+#    the fabro sandbox image keeps uv, CPython, mise, and cargo under /root --
+#    and without this key that root was HOST root (`/proc/self/uid_map` read
+#    `0 0 4294967295` inside a live workflow pod, 2026-08-23), violating the
+#    host-requirements clause "the in-container root identity MUST map to a
+#    non-root host identity" (livespec-s43svm.44). With `hostUsers: false` the
+#    kubelet gives the pod its own 65536-id range (observed `0 2709127168
+#    65536`): the job's processes run on the host as an unprivileged high uid,
+#    while the volumes the pod mounts are idmapped so file ownership keeps
+#    the SAME ids inside and outside the pod (a file the job writes as uid 0
+#    is uid 0 on the work volume, as before) -- which is what keeps the
+#    runner pod (uid 1000, no user namespace) and this pod able to exchange
+#    files over the shared work volume exactly as they did. Verified live
+#    before this change shipped: a runner-written 0644 file-command is
+#    appendable by the job, a job-written file is readable and removable by
+#    the runner, the read-only warm lower copies and uv reads the copy.
+#    Requires kubelet UserNamespacesSupport (GA, on by default in the
+#    installed k3s v1.36.2+k3s1), containerd 2.x (2.3.2 installed) and a
+#    kernel with idmapped-mount support for the volumes' filesystems (ext4
+#    here; kernel 7.0). `hostUsers` is a pod-spec key, assigned wholesale
+#    by the hook's merge like every other pod-spec key here.
 #
 # 1. AppArmor. Pins the workflow pod to the `ci-runner-workflow` profile — see
 #    ../apparmor/ci-runner-workflow for the full root cause. `type: Localhost`
@@ -61,6 +84,7 @@
 apiVersion: v1
 kind: PodTemplate
 spec:
+  hostUsers: false
   securityContext:
     appArmorProfile:
       type: Localhost
