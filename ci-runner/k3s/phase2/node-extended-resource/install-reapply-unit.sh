@@ -20,10 +20,10 @@
 # Re-run on any node added to the pool and after any node rebuild.
 #
 # The capacity argument is REQUIRED and is not defaulted, for exactly the reason
-# patch-node-churn-capacity.sh does not default it: the safe number depends on
-# whether the podman pool is still consuming from the same physical iowait
-# budget (see ../README.md "Why per-repo quotas summing above 482 must NOT be
-# set to 482 during side-by-side migration"). This unit makes an
+# patch-node-churn-capacity.sh does not default it: the safe number was a
+# measurement, not a constant (during the side-by-side migration it depended
+# on the since-deleted podman pool's share of the same physical iowait budget;
+# see that script's header and ../kueue/DERIVATION.md). This unit makes an
 # ALREADY-DECIDED number durable across restarts; it does not decide it.
 #
 # Requires: root, systemd, and the same KUBECONFIG the service itself uses.

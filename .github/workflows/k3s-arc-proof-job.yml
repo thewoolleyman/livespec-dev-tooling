@@ -1,4 +1,4 @@
-# proof-job.yml — the phase-1 "a host is proven by EXECUTING a job, not
+# k3s-arc-proof-job.yml — the "a host is proven by EXECUTING a job, not
 # by registering one" proof (livespec repo SPECIFICATION/
 # non-functional-requirements.md section "Self-hosted CI runner host
 # requirements"). Copy this file to .github/workflows/ in a repo with the
@@ -9,7 +9,7 @@
 # manual dispatch only (workflow_dispatch, no push/pull_request trigger)
 # is the non-gating guarantee: this can never become a required status
 # check because nothing routes a PR event to it.
-name: k3s-arc-proof-job (phase 1, non-gating)
+name: k3s-arc-proof-job (non-gating)
 
 on:
   workflow_dispatch: {}
@@ -30,9 +30,32 @@ jobs:
     steps:
       - name: prove the path end-to-end
         run: |
-          echo "k3s + ARC + Kueue phase 1 proof job"
+          set -euo pipefail
+          echo "k3s + ARC + Kueue proof job"
           echo "host: $(hostname)"
           echo "kernel: $(uname -r)"
           id
-          echo "this job proves the new path can execute a real job;"
-          echo "it routes zero traffic from any gating repository."
+          # Two positive assertions, ported from the retired duplicate
+          # phase-1 tree (ci-runner/k3s-arc-kueue/proof-of-life-workflow.yml,
+          # deleted under livespec-s43svm.19) so the proof says MORE than
+          # "a job ran": it ran as the identity and on the substrate the
+          # host-requirements contract names.
+          uid="$(id -u)"
+          if [ "${uid}" -eq 0 ]; then
+            echo "FAIL: running as root in-container; the host-requirements" >&2
+            echo "      contract forbids a root in-container identity." >&2
+            exit 1
+          fi
+          echo "OK: non-root in-container identity (uid ${uid})"
+          # A Kubernetes pod always has the serviceaccount projection mounted;
+          # a host-process runner does not. This distinguishes the substrate
+          # positively rather than by absence.
+          if [ -d /var/run/secrets/kubernetes.io/serviceaccount ]; then
+            echo "OK: running as a Kubernetes pod (serviceaccount projected)"
+          else
+            echo "FAIL: no serviceaccount projection; this job did not run" >&2
+            echo "      in a Kubernetes pod." >&2
+            exit 1
+          fi
+          echo "this job proves the k3s path can execute a real job;"
+          echo "it is addressed to the host-unique scale set and gates nothing."
