@@ -1,0 +1,24 @@
+# gate-optin-expiry.service — one pass of the 24h opt-in expiry check
+# (gate-optin-expiry.sh). Driven by gate-optin-expiry.timer; also runnable on
+# demand (`systemctl start gate-optin-expiry.service`) to enforce immediately.
+#
+# Obligation: livespec SPECIFICATION/non-functional-requirements.md §"Fleet CI
+# execution posture" (v214, livespec-s43svm.43). This unit only ever REMOVES
+# the opt-in and stops the supervisor; it never creates or refreshes the opt-in
+# (see the script header for why that asymmetry is the whole point).
+#
+# Runs as root: it must unlink a root-owned file in /run and stop a system
+# unit. Hardened to exactly that: the filesystem is read-only except /run,
+# no home, no new privileges (nothing here escalates — unlike the supervisor,
+# which needs sudo for its 1Password wrapper).
+[Unit]
+Description=Enforce the 24h wall-clock expiry on the gate supervisor opt-in
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/ci-runner/gate-optin-expiry.sh
+ProtectSystem=strict
+ReadWritePaths=/run
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true

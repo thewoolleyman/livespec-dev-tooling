@@ -117,7 +117,10 @@ mkdir -p "$LIB"
 # "${LIB}/mint-jitconfig.sh"), so it is a runtime dependency of this tier, not a
 # shared convenience. Leaving it in a deleted tree would have removed a script a
 # running service calls.
-for f in gate-runner-supervisor.sh run-gate-jit-runner.sh app-installation-token.sh mint-jitconfig.sh; do
+# `gate-optin-expiry.sh` is the 24h opt-in expiry enforcer (ExecStart of
+# gate-optin-expiry.service) and `gate-optin.sh` the ONE sanctioned operator
+# opt-in act — see README §"Opt-in expiry" (livespec-s43svm.43).
+for f in gate-runner-supervisor.sh run-gate-jit-runner.sh app-installation-token.sh mint-jitconfig.sh gate-optin-expiry.sh gate-optin.sh; do
   install -m 0755 -o root -g root "${HERE}/${f}" "${LIB}/${f}"
 done
 
@@ -129,14 +132,29 @@ install -m 0644 -o root -g root "${HERE}/50-gate-runner-supervisor.rules" /etc/p
 # The hosted-only compensating control (livespec-s43svm.43). `hosted-only.conf`
 # carries `ConditionPathExists=/run/livespec-local-ci-enabled`, so the
 # supervisor starts ONLY after an explicit operator opt-in
-# (`touch /run/livespec-local-ci-enabled`, root) and never at boot. Until this
+# (`gate-optin.sh`, root — see step 3b for its 24h expiry) and never at boot. Until this
 # commit the drop-in existed ONLY on the live host, hand-applied, so re-running
 # this script converged a host where the privileged supervisor auto-started
 # with no gate and reported success.
 install -d -m 0755 /etc/systemd/system/gate-runner-supervisor.service.d
 install -m 0644 -o root -g root "${HERE}/hosted-only.conf" /etc/systemd/system/gate-runner-supervisor.service.d/hosted-only.conf
+# The opt-in's 24h wall-clock expiry (livespec SPECIFICATION
+# §"Fleet CI execution posture", v214): a timer-driven oneshot that REMOVES an
+# opt-in older than 24h and stops the supervisor. It never creates one.
+install -m 0644 -o root -g root "${HERE}/gate-optin-expiry.service" /etc/systemd/system/gate-optin-expiry.service
+install -m 0644 -o root -g root "${HERE}/gate-optin-expiry.timer"   /etc/systemd/system/gate-optin-expiry.timer
 systemctl daemon-reload
 systemctl restart polkit
+
+# ---------------------------------------------------------------------------
+log "3b. Opt-in expiry: enable the timer and enforce once, now"
+systemctl enable --now gate-optin-expiry.timer
+# One immediate pass, so a host carrying an over-age opt-in (the nine-day one
+# measured 2026-08-23) converges to the GATED state in this same run rather than
+# up to 15 minutes later. The pass is a no-op when the opt-in is absent or fresh.
+systemctl start gate-optin-expiry.service
+systemctl is-active --quiet gate-optin-expiry.timer \
+  || { echo "FATAL: gate-optin-expiry.timer is not active"; exit 1; }
 
 # ---------------------------------------------------------------------------
 log "4. Enable + start the on-demand supervisor"
@@ -160,6 +178,7 @@ else
     echo "FATAL: gate-runner-supervisor.service is active with NO opt-in file — the hosted-only drop-in is not in effect"; exit 1
   fi
   log "DONE — hosted-only posture: supervisor enabled but NOT started (no"
-  log "/run/livespec-local-ci-enabled). To opt in for this boot:"
-  log "  sudo touch /run/livespec-local-ci-enabled && sudo systemctl start gate-runner-supervisor.service"
+  log "/run/livespec-local-ci-enabled). To opt in for the next 24h (the ONLY"
+  log "sanctioned act — never hand-touch the file):"
+  log "  sudo ${LIB}/gate-optin.sh"
 fi
