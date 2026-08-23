@@ -126,14 +126,40 @@ log "3. systemd units + the narrow polkit bridge"
 install -m 0644 -o root -g root "${HERE}/gate-runner@.service"            /etc/systemd/system/gate-runner@.service
 install -m 0644 -o root -g root "${HERE}/gate-runner-supervisor.service" /etc/systemd/system/gate-runner-supervisor.service
 install -m 0644 -o root -g root "${HERE}/50-gate-runner-supervisor.rules" /etc/polkit-1/rules.d/50-gate-runner-supervisor.rules
+# The hosted-only compensating control (livespec-s43svm.43). `hosted-only.conf`
+# carries `ConditionPathExists=/run/livespec-local-ci-enabled`, so the
+# supervisor starts ONLY after an explicit operator opt-in
+# (`touch /run/livespec-local-ci-enabled`, root) and never at boot. Until this
+# commit the drop-in existed ONLY on the live host, hand-applied, so re-running
+# this script converged a host where the privileged supervisor auto-started
+# with no gate and reported success.
+install -d -m 0755 /etc/systemd/system/gate-runner-supervisor.service.d
+install -m 0644 -o root -g root "${HERE}/hosted-only.conf" /etc/systemd/system/gate-runner-supervisor.service.d/hosted-only.conf
 systemctl daemon-reload
 systemctl restart polkit
 
 # ---------------------------------------------------------------------------
 log "4. Enable + start the on-demand supervisor"
+# `enable --now` is deliberately unconditional and SAFE: with the hosted-only
+# drop-in installed in step 3 and the opt-in file absent, `enable` succeeds
+# (boot wiring recorded) and the START is skipped because the unit's
+# ConditionPathExists is unmet — which IS the hosted-only behaviour. The
+# drop-in is why this line does not auto-start a privileged supervisor.
 systemctl enable --now gate-runner-supervisor.service
-systemctl is-active --quiet gate-runner-supervisor.service \
-  || { echo "FATAL: gate-runner-supervisor.service did not come up"; journalctl -u gate-runner-supervisor.service -n 20 --no-pager; exit 1; }
-
-log "DONE — gate supervisor is watching. NO privileged runner exists until a"
-log "trusted gate run is queued. Prove the trust boundary: ./trigger-surface-exit-tests.sh"
+if [ -e /run/livespec-local-ci-enabled ]; then
+  # Opt-in present: the condition is met, so the supervisor MUST be running.
+  systemctl is-active --quiet gate-runner-supervisor.service \
+    || { echo "FATAL: gate-runner-supervisor.service did not come up"; journalctl -u gate-runner-supervisor.service -n 20 --no-pager; exit 1; }
+  log "DONE — opt-in present; gate supervisor is watching. NO privileged runner"
+  log "exists until a trusted gate run is queued. Prove the trust boundary:"
+  log "./trigger-surface-exit-tests.sh"
+else
+  # Opt-in absent: the supervisor is enabled but NOT started (hosted-only
+  # posture). An active unit here would mean the drop-in did not take effect.
+  if systemctl is-active --quiet gate-runner-supervisor.service; then
+    echo "FATAL: gate-runner-supervisor.service is active with NO opt-in file — the hosted-only drop-in is not in effect"; exit 1
+  fi
+  log "DONE — hosted-only posture: supervisor enabled but NOT started (no"
+  log "/run/livespec-local-ci-enabled). To opt in for this boot:"
+  log "  sudo touch /run/livespec-local-ci-enabled && sudo systemctl start gate-runner-supervisor.service"
+fi
