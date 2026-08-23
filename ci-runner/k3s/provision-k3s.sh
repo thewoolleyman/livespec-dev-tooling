@@ -62,7 +62,7 @@ else
   # needed for the ARC + Kueue control plane. --node-label distinguishes this
   # k3s node from any future additional node without colliding with the
   # existing GitHub Actions runner labels (which live on the runner
-  # registration, not the Kubernetes node — see arc/values.yaml).
+  # registration, not the Kubernetes node — see arc/values-host-unique.yaml).
   curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="$K3S_VERSION" \
     INSTALL_K3S_EXEC="server --disable traefik --disable servicelb --node-label ${NODE_LABEL}" \
     sh -s -

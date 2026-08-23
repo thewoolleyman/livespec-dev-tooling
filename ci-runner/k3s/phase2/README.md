@@ -282,7 +282,7 @@ fleet's actual call volume) needs a live-cluster observation —
 | `arc/values-livespec-overseer.yaml` | `livespec-overseer`'s per-repo `AutoscalingRunnerSet` values (`maxRunners: 65`, `livespec-overseer-lq`), and the first values file wiring the hook pod template — the reference implementation the other nine copy. Applied live 2026-08-18 (Helm revision 2). |
 | `arc/values-livespec-dev-tooling.yaml`, `arc/values-livespec-driver-claude.yaml`, `arc/values-livespec-driver-codex.yaml`, `arc/values-livespec-orchestrator-git-jsonl.yaml`, `arc/values-livespec-runtime.yaml` | The five remaining per-repo scale sets, captured from their live Helm releases 2026-08-19 (`livespec-s43svm.26`) and wired to the hook pod template (`livespec-s43svm.25`). |
 | `arc/values-livespec-driver-pi.yaml`, `kueue/cluster-queue-livespec-driver-pi.yaml` | The NINTH repository, stood up 2026-08-20 after the eight-repo cutover sequence had closed. Committed in the same change that created the scale set, rather than captured retroactively. Its `maxRunners: 13` is the fleet's first ACTUAL matrix-width measurement rather than a podman-era proxy, and its arrival is what surfaced the `max(1, …)` sum-invariant collision documented in `kueue/DERIVATION.md`. |
-| `arc/values-local-ci-k3s.yaml`, `arc/values-poweredge-xubuntu-k3s.yaml` | The two PHASE-1 proof scale sets, also live and also captured 2026-08-19. Named by scale set rather than by repo because both point at `livespec-dev-tooling`, which already owns a `values-<repo>.yaml`. Neither is Kueue-gated; see each file's header. |
+| `arc/values-poweredge-xubuntu-k3s.yaml` | The surviving PHASE-1 proof scale set, also live and also captured 2026-08-19. Named by scale set rather than by repo because it points at `livespec-dev-tooling`, which already owns a `values-<repo>.yaml`. Not Kueue-gated; see the file's header. Its phase-1 sibling `local-ci-k3s` (`arc/values-local-ci-k3s.yaml`, captured the same day) was retired — Helm release uninstalled 2026-08-23, file deleted — under `livespec-s43svm.28`, because no workflow in any fleet repo routed to it. |
 
 ## The workflow pod is not the runner pod
 
@@ -503,8 +503,10 @@ the files themselves:
 | `livespec-driver-pi-k3s` | `arc/values-livespec-driver-pi.yaml` |
 | `livespec-overseer-k3s` | `arc/values-livespec-overseer.yaml` |
 | `livespec-runtime-k3s` | `arc/values-livespec-runtime.yaml` |
-| `local-ci-k3s` | `arc/values-local-ci-k3s.yaml` |
 | `poweredge-xubuntu-k3s` | `arc/values-poweredge-xubuntu-k3s.yaml` |
+
+(A twelfth row, `local-ci-k3s` → `arc/values-local-ci-k3s.yaml`, was
+retired under `livespec-s43svm.28`.)
 
 The first two diverge because a scale-set name must stay <=30 characters
 (see the naming rule above) while a values file is named for the repo it

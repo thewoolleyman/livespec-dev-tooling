@@ -1,15 +1,20 @@
 #!/usr/bin/env bash
 # install-arc.sh — idempotently install Actions Runner Controller (ARC) on
 # the k3s cluster provision-k3s.sh created. Two Helm releases: the
-# controller itself, then two gha-runner-scale-set releases (shared pool
-# label + host-unique label — see arc/values.yaml for why two releases).
+# controller itself, then ONE gha-runner-scale-set release, the host-unique
+# `poweredge-xubuntu-k3s` (arc/values-host-unique.yaml). Phase 1 originally
+# installed a second, shared-pool-label release here, `local-ci-k3s`
+# (arc/values.yaml); it served only the phase-1 proof and was never routed
+# to by any workflow, so it was uninstalled and its values file deleted
+# under livespec-s43svm.28. Real traffic is carried by the per-repository
+# scale sets under phase2/arc/ (see phase2/README.md).
 #
 # Pinned chart version: 0.14.2 for BOTH
 # gha-runner-scale-set-controller and gha-runner-scale-set.
 #
 # Requires: helm on PATH, KUBECONFIG pointed at the k3s cluster
 # (export KUBECONFIG=/etc/rancher/k3s/k3s.yaml, or provision-k3s.sh's
-# default install location), and the secret named in arc/values.yaml
+# default install location), and the secret named in arc/values-host-unique.yaml
 # (arc-github-app-installation) already created — see the "Credential
 # separation" section of README.md for exactly what goes in it and why
 # this script does NOT create it.
@@ -28,10 +33,11 @@ command -v helm >/dev/null || { echo "FATAL: helm not found on PATH"; exit 1; }
 # ---------------------------------------------------------------------------
 log "0. Pre-gate: the credential secret must already exist (never created here)"
 # The secret's REQUIRED location is RUNNERS_NAMESPACE (arc-runners), NOT
-# CONTROLLER_NAMESPACE (arc-systems) — both gha-runner-scale-set Helm
-# releases (step 2) live in arc-runners, and it is THAT controller
-# (the AutoscalingRunnerSet reconciler, running per-release) that resolves
-# each release's own githubConfigSecret (arc/values.yaml) from its OWN
+# CONTROLLER_NAMESPACE (arc-systems) — every gha-runner-scale-set Helm
+# release (step 2 here, and the per-repo releases under phase2/arc/) lives
+# in arc-runners, and it is THAT controller (the AutoscalingRunnerSet
+# reconciler, running per-release) that resolves each release's own
+# githubConfigSecret (arc/values-host-unique.yaml) from its OWN
 # namespace, arc-runners. A secret placed in arc-systems (the
 # gha-runner-scale-set-CONTROLLER's namespace, step 1) passes THIS
 # pre-gate but leaves the runner-set controller unable to resolve it at
@@ -67,21 +73,17 @@ helm upgrade --install arc \
 kubectl -n "$CONTROLLER_NAMESPACE" rollout status deployment -l app.kubernetes.io/name=gha-rs-controller --timeout=120s
 
 # ---------------------------------------------------------------------------
-log "2. Install/upgrade BOTH runner scale sets (shared pool label + host-unique label)"
-helm upgrade --install local-ci-k3s \
-  --namespace "$RUNNERS_NAMESPACE" --create-namespace \
-  --version "$ARC_CHART_VERSION" \
-  -f "${SCRIPT_DIR}/arc/values.yaml" \
-  oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set
-
+log "2. Install/upgrade the host-unique runner scale set (poweredge-xubuntu-k3s)"
+# The shared-pool-label release `local-ci-k3s` that phase 1 installed first
+# in this step was retired under livespec-s43svm.28 — see the header.
 helm upgrade --install poweredge-xubuntu-k3s \
-  --namespace "$RUNNERS_NAMESPACE" \
+  --namespace "$RUNNERS_NAMESPACE" --create-namespace \
   --version "$ARC_CHART_VERSION" \
   -f "${SCRIPT_DIR}/arc/values-host-unique.yaml" \
   oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set
 
 # ---------------------------------------------------------------------------
-log "3. Verify both scale sets are healthy (minRunners: 0 is expected — no idle pods yet)"
+log "3. Verify the scale set is healthy (minRunners: 0 is expected — no idle pods yet)"
 kubectl -n "$RUNNERS_NAMESPACE" get autoscalingrunnersets.actions.github.com
 
 log "DONE. Next: install-kueue.sh, then run the proof job (test-job/proof-job.yml)."

@@ -32,9 +32,8 @@ Controller + Kueue"), maintainer-directed 2026-08-15. This tree is
 | Path | Role |
 |---|---|
 | `provision-k3s.sh` | Idempotently installs a single-node k3s server, pinned to `v1.36.2+k3s1`, with `traefik`/`servicelb` disabled (this node carries no ingress) and a `k3s-role=arc-runner-host` node label. Never touches the existing `ci-runner` user, `runner@.service` instances, or podman. |
-| `install-arc.sh` | Installs the ARC controller (Helm chart `gha-runner-scale-set-controller` 0.14.2) plus TWO `gha-runner-scale-set` (0.14.2) releases — one per label (see below). Fails closed if the GitHub App installation-token secret isn't already present (never creates it). |
-| `arc/values.yaml` | Helm values for the shared-pool-label release (`runnerScaleSetName: local-ci-k3s`). Kubernetes-mode runners (containerd-backed pods, non-root `securityContext`, no privileged mode) — needing no equivalent of the deleted podman lane's dockershim/sanitize-hook pair. |
-| `arc/values-host-unique.yaml` | Helm values for the host-unique-label release (`runnerScaleSetName: poweredge-xubuntu-k3s`), same containment posture, `maxRunners: 1`. |
+| `install-arc.sh` | Installs the ARC controller (Helm chart `gha-runner-scale-set-controller` 0.14.2) plus ONE `gha-runner-scale-set` (0.14.2) release, the host-unique-label scale set (see below). Phase 1 installed TWO here — one per label; the shared-pool-label release `local-ci-k3s` (`arc/values.yaml`) was retired under `livespec-s43svm.28`, see "Labels" below. Fails closed if the GitHub App installation-token secret isn't already present (never creates it). |
+| `arc/values-host-unique.yaml` | Helm values for the host-unique-label release (`runnerScaleSetName: poweredge-xubuntu-k3s`), `maxRunners: 1`. Kubernetes-mode runners (containerd-backed pods, non-root `securityContext`, no privileged mode) — needing no equivalent of the deleted podman lane's dockershim/sanitize-hook pair. |
 | `install-kueue.sh` | Installs Kueue `v0.19.1` from its released manifest, then applies `kueue/resources.yaml`. |
 | `kueue/resources.yaml` | Minimal phase-1 `ResourceFlavor`/`ClusterQueue`/`LocalQueue` — just enough for Kueue to admit the proof job. Modeling the real fair-share formula is phase 2, deliberately deferred. |
 | `test-job/proof-job.yml` | A `workflow_dispatch`-only GitHub Actions workflow targeting `runs-on: poweredge-xubuntu-k3s` (the scale set NAME as a bare string, not a label array — see the file's own comment) — the host-requirements "a host is proven by EXECUTING a job" proof. Never wired into any `needs:` chain or PR/push trigger, so it can never gate a merge. |
@@ -49,12 +48,21 @@ carry both a shared pool label and a host-unique label"). The existing
 podman pool's actual labels were read directly from this repo's
 `.github/workflows/ci.yml` (`select-ci-runner.local-runner-labels:
 '["self-hosted","local-ci"]'`) rather than re-guessed. This tree's
-labels are chosen to be unambiguously distinct:
+phase-1 labels were chosen to be unambiguously distinct:
 
-| | existing podman pool | this k3s+ARC pool |
+| | podman pool (deleted, `livespec-s43svm.19`) | this k3s+ARC pool, phase 1 |
 |---|---|---|
-| shared pool label | `local-ci` | `local-ci-k3s` |
+| shared pool label | `local-ci` | `local-ci-k3s` (retired, `livespec-s43svm.28`) |
 | host-unique label | (host-specific, registered per runner instance) | `poweredge-xubuntu-k3s` |
+
+The shared-pool-label scale set `local-ci-k3s` was the phase-1 proof's
+two-runner release (`arc/values.yaml`, since deleted). It was never
+routed to by any workflow in any fleet repository — the per-repository
+scale sets under `phase2/arc/` took the shared-pool role at the phase-3
+cutover — so its Helm release was uninstalled from `arc-runners` on
+2026-08-23 under `livespec-s43svm.28`. Only `poweredge-xubuntu-k3s`
+remains from phase 1, because this repo's
+`.github/workflows/k3s-arc-proof-job.yml` still targets it.
 
 ## Resource envelope (from the phase-1 read-only host inventory)
 
@@ -84,16 +92,18 @@ are unaffected by anything in this tree.
 ## Zero traffic routed yet
 
 Nothing in this tree, and no workflow in this repo or any other fleet
-repo, targets `local-ci-k3s` or `poweredge-xubuntu-k3s` as a
-merge-gating `runs-on:` selector. `minRunners: 0` on both ARC releases
-means zero runner pods sit idle by default; `test-job/proof-job.yml` is
-`workflow_dispatch`-only (no `push`/`pull_request` trigger) so it can
-never become a required status check. Cutting real traffic to these
-labels is phase 3 of the migration, not this change.
+repo, targets `poweredge-xubuntu-k3s` (or, while it existed,
+`local-ci-k3s`) as a merge-gating `runs-on:` selector. `minRunners: 0`
+on the ARC release means zero runner pods sit idle by default;
+`test-job/proof-job.yml` is `workflow_dispatch`-only (no
+`push`/`pull_request` trigger) so it can never become a required status
+check. Cutting real traffic to the k3s pool was phase 3 of the
+migration, and it landed on the per-repository scale sets under
+`phase2/arc/`, not on these phase-1 names.
 
 ## GitHub registration scope — REPOSITORY, not organization (`thewoolleyman` is a personal account)
 
-Both `arc/values.yaml` and `arc/values-host-unique.yaml` set
+`arc/values-host-unique.yaml` (and, before its retirement, `arc/values.yaml`) sets
 `githubConfigUrl` to `https://github.com/thewoolleyman/livespec-dev-tooling`
 — a specific REPOSITORY, not the account-root form
 `https://github.com/thewoolleyman`. This was discovered live during
@@ -116,7 +126,7 @@ Self-hosted runners for a personal account are always registered
 This matches how the existing podman pool has always worked (JIT
 runner registration is per-repo, via `CI_RUNNER_LABELS` and
 `../gate-runner/mint-jitconfig.sh` — never org-wide), and it is why
-phase 1 scopes both ARC releases to `livespec-dev-tooling` specifically:
+phase 1 scoped both of its ARC releases to `livespec-dev-tooling` specifically:
 the phase-1 proof job (`test-job/proof-job.yml`) already lives in this
 repo's own `.github/workflows/`, so a single repo-scoped
 `githubConfigUrl` is enough to validate the ARC path end-to-end without
@@ -189,7 +199,7 @@ procedure satisfies the requirement; a live rehearsal is not required).
 ## Credential separation
 
 The GitHub App installation token that backs `arc-github-app-installation`
-(referenced from both `arc/values*.yaml`) MUST be created out-of-band —
+(referenced from `arc/values-host-unique.yaml` and every `phase2/arc/values-*.yaml`) MUST be created out-of-band —
 `install-arc.sh` fails closed if the secret is missing rather than
 creating it — from the same least-privilege, read-scoped source the
 existing podman pool's supervisor already uses
@@ -201,8 +211,8 @@ readable only by the supervising identity (here, whoever runs
 into a job's environment.
 
 **Namespace: `arc-runners`, not `arc-systems`.** Create the secret in
-the `arc-runners` namespace — the namespace both `gha-runner-scale-set`
-Helm releases (step 2) live in, and the one their own
+the `arc-runners` namespace — the namespace every `gha-runner-scale-set`
+Helm release (step 2, and the per-repo releases) lives in, and the one their own
 AutoscalingRunnerSet reconciler actually resolves `githubConfigSecret`
 from. `arc-systems` is only the separate `gha-runner-scale-set-CONTROLLER`
 release's namespace (step 1) — a secret placed there passes nothing
