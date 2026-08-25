@@ -39,12 +39,45 @@ Controller + Kueue"), maintainer-directed 2026-08-15. This tree is
 | `test-job/proof-job.yml` | A `workflow_dispatch`-only GitHub Actions workflow targeting `runs-on: poweredge-xubuntu-k3s` (the scale set NAME as a bare string, not a label array — see the file's own comment) — the host-requirements "a host is proven by EXECUTING a job" proof. Never wired into any `needs:` chain or PR/push trigger, so it can never gate a merge. |
 | `test-job/proof-job-kueue.yaml` | A raw, Kueue-admitted `batch/v1` Job (`suspend: true`, queued via `phase1-proof-lq`) — proves Kueue admission directly with `kubectl`, independent of GitHub's own dispatch plumbing. |
 
+## Pinned versions — nothing floats `latest`
+
+| Component | Version | Where the pin lives |
+|---|---|---|
+| k3s | `v1.36.2+k3s1` | `provision-k3s.sh` (`INSTALL_K3S_VERSION`) |
+| ARC controller chart | `0.14.2` | `install-arc.sh` |
+| ARC runner scale set chart | `0.14.2` | `install-arc.sh` and every `phase2/arc/values-*.yaml` apply |
+| Runner image | `ghcr.io/actions/actions-runner:2.336.0@sha256:0cfdcc70…` | every `values-*.yaml` `template.spec.containers[0].image` |
+| Kueue | `v0.19.1` | `install-kueue.sh` |
+
+Nothing floats `latest` (rule restated here after the tree that first
+carried it was deleted under `livespec-s43svm.19`). The runner image is
+pinned by tag AND digest because the image embeds the container hook
+whose merge behaviour two live mechanisms depend on — the warm-cache
+`postStart` seam and the workflow pod's `hostUsers` key
+(`phase2/arc/hook-pod-template.yaml`); the pinned digest is the build
+those were verified against. The image ran as the un-pinned `latest`
+from phase 1 until 2026-08-25, when the then-current `latest`
+(`2.336.0`, the digest above) was pinned in place — so the pin changed
+no running bytes, only froze them. To bump: change tag and digest
+together in every values file, re-read the hook's `initContainers`
+behaviour against the template's header, `helm upgrade` each release,
+and recycle idle runners (`phase2/arc/recycle-scale-set-runners.sh`).
+
 ## Labels — confirmed distinct from the existing pool
 
-Every runner MUST carry both a shared pool label and a host-unique
-label, per livespec repo `SPECIFICATION/non-functional-requirements.md`
-section "Self-hosted CI runner host requirements" ("Every runner MUST
-carry both a shared pool label and a host-unique label"). The existing
+When this tree was authored the governing clause read "Every runner
+MUST carry both a shared pool label and a host-unique label". That
+wording is HISTORY: v213 of the livespec repo's
+`SPECIFICATION/non-functional-requirements.md` §"Self-hosted CI runner
+host requirements" restated it as a PROPERTY — "Every pool member MUST
+be separately addressable, in addition to being reachable through the
+pool" — which a label-based pool satisfies with the label pair below,
+and an autoscaling-runner-set pool satisfies by set-name addressing,
+because ARC runners register with NO labels at all (the measurement
+that forced the restatement is `phase2/README.md` "Registrations are
+ephemeral"). This pool satisfies it with the per-repository scale sets
+plus the host-unique `poweredge-xubuntu-k3s` set. The label table below
+is kept as the phase-1 history it is. The existing
 podman pool's actual labels were read directly from this repo's
 `.github/workflows/ci.yml` (`select-ci-runner.local-runner-labels:
 '["self-hosted","local-ci"]'`) rather than re-guessed. This tree's

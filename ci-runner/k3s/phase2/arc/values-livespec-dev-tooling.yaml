@@ -57,7 +57,15 @@ template:
           name: arc-hook-pod-template
     containers:
       - name: runner
-        image: ghcr.io/actions/actions-runner:latest
+        # Pinned tag + digest (livespec-s43svm handoff finding, 2026-08-25;
+        # was `latest`; see the k3s README's "Pinned versions — nothing floats
+        # `latest`").
+        # The digest is the image the pool was verified on: its container
+        # hook has no fs-init init container, the premise of the
+        # warm-cache postStart choice (see ../hook-pod-template.yaml or
+        # the phase2 copy). Bump BOTH tag and digest together, re-read the
+        # hook's initContainers behaviour, then helm upgrade + recycle.
+        image: ghcr.io/actions/actions-runner:2.336.0@sha256:0cfdcc701ce933c6d243c6b0b2da767366dc9f2e99961d4c3754b0b78084cdda
         command: ["/home/runner/run.sh"]
         env:
           - name: ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER

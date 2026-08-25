@@ -4,10 +4,11 @@
 #
 # History: phase 1 installed this as the SECOND of two releases, after a
 # shared-pool-label release `local-ci-k3s` (values.yaml, installed first),
-# the pair together satisfying "every runner MUST carry both a shared pool
-# label and a host-unique label" per livespec repo
-# SPECIFICATION/non-functional-requirements.md section "Self-hosted CI
-# runner host requirements". ARC's gha-runner-scale-set model has no
+# the pair together satisfying what was then the label-pair wording of the
+# livespec repo's SPECIFICATION/non-functional-requirements.md section
+# "Self-hosted CI runner host requirements" — since restated by v213 as the
+# separate-addressability PROPERTY, which an ARC pool satisfies by set-name
+# addressing rather than labels. ARC's gha-runner-scale-set model has no
 # free-form labels list — one Helm release installs one
 # AutoscalingRunnerSet, and `runnerScaleSetName` is the single name a
 # workflow selects via `runs-on:` — so each "label" is realized as its own
@@ -23,8 +24,9 @@
 # joined host, drain by routing away from it), not to serve default
 # traffic. Phase 1's proof job (../test-job/proof-job.yml) targets this
 # label, matching the host-requirements "a host is proven by EXECUTING a
-# job... a non-gating job addressed to the host-unique label satisfies
-# both" clause.
+# job" clause — "a non-gating job addressed to that host alone, through
+# whichever per-member addressing the preceding clause obliges, satisfies
+# both" (v213 wording; this set IS that per-member addressing here).
 
 # REPOSITORY-scoped, not account-root — see ../README.md "GitHub
 # registration scope" for the full architectural rationale (thewoolleyman
@@ -56,7 +58,15 @@ template:
       fsGroup: 1000
     containers:
       - name: runner
-        image: ghcr.io/actions/actions-runner:latest
+        # Pinned tag + digest (livespec-s43svm handoff finding, 2026-08-25;
+        # was `latest`; see the k3s README's "Pinned versions — nothing floats
+        # `latest`").
+        # The digest is the image the pool was verified on: its container
+        # hook has no fs-init init container, the premise of the
+        # warm-cache postStart choice (see
+        # ../phase2/arc/hook-pod-template.yaml). Bump BOTH tag and digest together, re-read the
+        # hook's initContainers behaviour, then helm upgrade + recycle.
+        image: ghcr.io/actions/actions-runner:2.336.0@sha256:0cfdcc701ce933c6d243c6b0b2da767366dc9f2e99961d4c3754b0b78084cdda
         command: ["/home/runner/run.sh"]
         env:
           - name: ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER

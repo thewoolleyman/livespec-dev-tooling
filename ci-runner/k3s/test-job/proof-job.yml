@@ -22,10 +22,11 @@ jobs:
     # (GitHub's scale-set job-routing requires the requested labels to
     # equal exactly the scale set's own registered label; combining it
     # with `self-hosted` makes the requested set unsatisfiable) and the
-    # job queues forever. The host-unique label alone still proves THIS
-    # host specifically, per the host-requirements "a non-gating job
-    # addressed to the host-unique label satisfies both [registered AND
-    # proven]" clause.
+    # job queues forever. The host-unique scale set still proves THIS
+    # host specifically, per the host-requirements clause's v213 wording:
+    # "a non-gating job addressed to that host alone, through whichever
+    # per-member addressing the preceding clause obliges, satisfies both"
+    # — for an ARC pool that addressing is this set's name.
     runs-on: poweredge-xubuntu-k3s
     steps:
       - name: prove the path end-to-end

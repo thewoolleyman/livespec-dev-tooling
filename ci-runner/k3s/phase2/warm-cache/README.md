@@ -45,8 +45,10 @@ header.
 The copy is the hook's `postStart` rather than an `initContainers` entry
 because the hook template assigns `initContainers` WHOLESALE and the
 hook's newer releases add their own `fs-init` init container: a template
-init container would silently replace it on the next `actions-runner:latest`
-pull and break every job. `postStart` is a key the hook never sets. The
+init container would silently replace it on a runner-image bump (the image
+is pinned by tag+digest — see the k3s README's "Pinned versions" — exactly
+so that bump is a reviewed change) and break every job. `postStart` is a
+key the hook never sets. The
 kubelet holds the container out of Running until `postStart` returns and
 the hook waits for Running before exec'ing any step — verified live on
 this cluster (a 12 s `postStart` held the pod Pending 12 s) — so the copy
