@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.35.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.34.0...v1.35.0) (2026-08-26)
+
+
+### Features
+
+* **fabro-sandbox:** succeed the baked Codex ACP adapter with @agentclientprotocol/codex-acp ([43a4901](https://github.com/thewoolleyman/livespec-dev-tooling/commit/43a4901f235541e34b1e7944fc87ad3ba5a139b1))
+
 ## [1.34.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.33.1...v1.34.0) (2026-08-26)
 
 
