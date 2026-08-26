@@ -32,7 +32,7 @@ source — they mirror the host toolchain (or, for Rust, the console's
 `rust-toolchain.toml`, checked on the CONSUMER side per the
 No-Circular-Dependency Directive) — so they carry no lockstep obligation
 here. `CODEX_ACP_VERSION` is the exception among the ACP adapters: it now
-has an EXTERNAL npm source (`@zed-industries/codex-acp`) and IS
+has an EXTERNAL npm source (`@agentclientprotocol/codex-acp`) and IS
 autodiscovered and bumpable — the pin-autodiscovery walk emits it
 (pin_format `codex_acp_docker_arg`) and the pin-freshness surface opens a
 bump PR on any npm `latest` difference under a live Codex-provider factory

@@ -229,7 +229,7 @@ def test_codex_acp_gate_steps_are_gated_on_the_bump_changed_output() -> None:
     """
     text = _read(path=_FRESHNESS_WORKFLOW_PATH)
     guarded = (
-        "if: ${{ matrix.target.source_repo == 'zed-industries/codex-acp'"
+        "if: ${{ matrix.target.source_repo == 'agentclientprotocol/codex-acp'"
         " && steps.bump.outputs.changed == 'true' }}"
     )
     assert text.count(guarded) == 2, (
@@ -237,7 +237,7 @@ def test_codex_acp_gate_steps_are_gated_on_the_bump_changed_output() -> None:
         "golden-master dispatch) must gate on `steps.bump.outputs.changed == 'true'`; "
         f"found {text.count(guarded)} of the 2 expected occurrences"
     )
-    bare = "if: ${{ matrix.target.source_repo == 'zed-industries/codex-acp' }}"
+    bare = "if: ${{ matrix.target.source_repo == 'agentclientprotocol/codex-acp' }}"
     assert bare not in text, (
         "an ungated codex-acp step remains — it would run on the composite's "
         "no-op path and fail looking up a PR that was never opened"

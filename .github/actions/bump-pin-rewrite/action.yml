@@ -203,7 +203,7 @@ runs:
               # livespec_dev_tooling.cross_repo.codex_acp_pin_rewrite module
               # (behavioral coverage the inline heredoc never had). Per
               # SPECIFICATION/contracts.md §"codex-acp factory gate" this pin's
-              # source is the external npm package @zed-industries/codex-acp, so
+              # source is the external npm package @agentclientprotocol/codex-acp, so
               # a bump is factory-gated (the caller opens the PR with
               # no_auto_merge='true'). `.livespec-dev-tooling` is the caller-side
               # support checkout (see the Reconcile step).

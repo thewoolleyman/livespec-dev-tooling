@@ -18,7 +18,7 @@ formats, split across three cohesive helper modules:
   codex-acp Dockerfile `ARG` pin
   (`ARG CODEX_ACP_VERSION=<version>` in
   `docker/fabro-sandbox/agent/Dockerfile`), whose EXTERNAL npm source
-  (`zed-industries/codex-acp`) means no fleet fan-out rewrites it and a
+  (`agentclientprotocol/codex-acp`) means no fleet fan-out rewrites it and a
   bump is factory-gated (section "codex-acp factory gate"). The shared `record`
   normalizer lives there too.
 - Claude settings format (`_pin_claude_settings_format`):

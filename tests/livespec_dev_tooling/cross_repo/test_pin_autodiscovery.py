@@ -184,7 +184,7 @@ def test_discover_all_pin_formats_coexisting(*, tmp_path: Path) -> None:
             "file_path": "docker/fabro-sandbox/agent/Dockerfile",
             "pin_key": "CODEX_ACP_VERSION",
             "current_value": "0.16.0",
-            "source_repo": "zed-industries/codex-acp",
+            "source_repo": "agentclientprotocol/codex-acp",
         },
         {
             "pin_format": "claude_settings_extra_known_marketplace_source_ref",
@@ -416,7 +416,7 @@ def test_discover_codex_acp_arg_emits_record(*, tmp_path: Path) -> None:
     assert record["file_path"] == "docker/fabro-sandbox/agent/Dockerfile"
     assert record["pin_key"] == "CODEX_ACP_VERSION"
     assert record["current_value"] == "0.16.0"
-    assert record["source_repo"] == "zed-industries/codex-acp"
+    assert record["source_repo"] == "agentclientprotocol/codex-acp"
 
 
 def test_discover_codex_acp_arg_absent_yields_nothing(*, tmp_path: Path) -> None:
@@ -435,12 +435,12 @@ def test_discover_codex_acp_dockerfile_without_arg_yields_nothing(*, tmp_path: P
 
 
 def test_discover_codex_acp_source_repo_filter_match(*, tmp_path: Path) -> None:
-    """`--source-repo zed-industries/codex-acp` includes the codex-acp record."""
+    """`--source-repo agentclientprotocol/codex-acp` includes the codex-acp record."""
     _write_codex_acp_dockerfile(root=tmp_path, version="0.16.0")
-    result = _walk(root=tmp_path, source_repo="zed-industries/codex-acp")
+    result = _walk(root=tmp_path, source_repo="agentclientprotocol/codex-acp")
     assert len(result) == 1
     assert result[0]["pin_format"] == "codex_acp_docker_arg"
-    assert result[0]["source_repo"] == "zed-industries/codex-acp"
+    assert result[0]["source_repo"] == "agentclientprotocol/codex-acp"
 
 
 def test_discover_codex_acp_source_repo_filter_fleet_no_match(*, tmp_path: Path) -> None:
