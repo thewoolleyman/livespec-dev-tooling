@@ -30,7 +30,7 @@ In §"Pin autodiscovery rules", the **codex-acp Dockerfile `ARG`** bullet is ame
 
 In §"`reusable-pin-freshness.yml`", the Behavior paragraph's parenthetical `npm view @zed-industries/codex-acp version` becomes `npm view @agentclientprotocol/codex-acp version`; the rest of the sentence is unchanged.
 
-No other section changes. In particular §"codex-acp factory gate" keeps its version-bump gate exactly as ratified; the proof a package succession owes while that gate's receiver is disabled is the subject of the companion proposal in this file.
+No other section changes in this proposal. The companion proposal in this file amends §"codex-acp factory gate": it adds the proof a package succession owes while that gate's receiver is disabled, and it re-states the Gate-run bullet's version-less resolution rule at the baked path, because that bullet today names global `npx --no-install` resolution — a mechanism the permanent dedicated prefix makes impossible for every future bump of the successor.
 
 ## Proposal: Equivalent proof for a deliberate adapter package succession while the live golden-master receiver is disabled
 
@@ -49,9 +49,11 @@ The factory-gate section was written for version bumps of one package, which the
 
 ### Proposed Changes
 
-In §"codex-acp factory gate", immediately after the paragraph beginning "While the privileged host-only golden-master receiver workflow remains administratively disabled", insert:
+In §"codex-acp factory gate", the **Gate run** bullet's sentence "The orchestrator's implementer adapter MUST resolve the baked codex-acp global VERSION-LESS (`npx --no-install`) for the gate to be evidence about the new version; a version-pinned adapter command would shadow the overlaid version and render the gate vacuous." is replaced by: "The orchestrator's implementer adapter MUST invoke the baked codex-acp VERSION-LESS at its baked path (`/opt/livespec/codex-acp/bin/codex-acp`, per §\"Pin autodiscovery rules\") for the gate to be evidence about the new version; a version-pinned adapter command (`npx <package>@<version>`) would shadow the overlaid version and render the gate vacuous." The intent — version-less resolution so the overlaid version is what runs — is unchanged; only the named mechanism moves from global npx resolution to the baked path.
 
-> A deliberate **package succession** — a change to WHICH npm package `CODEX_ACP_VERSION` pins (§"Pin autodiscovery rules"), carried by a manual PR rather than opened by the freshness scan — is not a version bump: it receives no `codex-acp-golden-master` dispatch and cannot be proven by a gate whose pin step names the predecessor package. While the live receiver is disabled, the following is the equivalent proof for a package succession, and each part MUST be recorded on the PR that carries it: (1) the cutover release MUST keep the last verified predecessor version baked and unchanged on a transitional line, so every dispatch that still resolves the predecessor by name keeps running the last verified adapter; (2) the successor MUST be verified inside a build of the agent layer at the PR head, by invoking it at its baked path (`/opt/livespec/codex-acp/bin/codex-acp --version` MUST report the value `CODEX_ACP_VERSION` pins) and by the bundled Codex binary reporting at least the version the succession was undertaken to reach; (3) the predecessor MUST NOT be removed from the image until a real Codex-provider factory dispatch has run on the successor on a factory host, and the removal PR MUST cite that run. A succession that skips any part is the unverified adapter change this section exists to prevent, and MUST NOT merge.
+In the same section, immediately after the paragraph beginning "While the privileged host-only golden-master receiver workflow remains administratively disabled", insert:
+
+> A deliberate **package succession** — a change to WHICH npm package `CODEX_ACP_VERSION` pins (§"Pin autodiscovery rules"), carried by a manual PR rather than opened by the freshness scan — is not a version bump: it receives no `codex-acp-golden-master` dispatch and cannot be proven by a gate whose pin step names the predecessor package. While the live receiver is disabled, the following is the equivalent proof for a package succession, and each part MUST be recorded on the PR that carries it: (1) the cutover release MUST keep the last verified predecessor version baked and unchanged on a transitional line, so every dispatch that still resolves the predecessor by name keeps running the last verified adapter; (2) the successor MUST be verified inside a build of the agent Dockerfile at the PR head, by invoking it at its baked path (`/opt/livespec/codex-acp/bin/codex-acp --version` MUST report the value `CODEX_ACP_VERSION` pins) and by the bundled Codex binary reporting at least the version the succession was undertaken to reach; (3) the predecessor MUST NOT be removed from the image until a real Codex-provider factory dispatch has run on the successor on a factory host, and the removal PR MUST cite that run. A succession that skips any part is the unverified adapter change this section exists to prevent, and MUST NOT merge.
 
 In `scenarios.md`, immediately after the scenario "a codex-acp bump remains parked while the live receiver is disabled" and in the same form (a `Scenario:` line with Given/When/Then), add:
 
@@ -65,7 +67,7 @@ When the cutover release is built
 
 Then the predecessor package remains baked and unchanged on a transitional line
 
-And the successor runs at its baked path inside a build of the agent layer at the PR head, reporting the pinned version and a bundled Codex binary at least as new as the succession requires
+And the successor runs at its baked path inside a build of the agent Dockerfile at the PR head, reporting the pinned version and a bundled Codex binary at least as new as the succession requires
 
 And the predecessor is removed only by a later PR that cites a real Codex-provider factory dispatch that ran on the successor
 
