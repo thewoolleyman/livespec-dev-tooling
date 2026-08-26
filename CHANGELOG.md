@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.34.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.33.1...v1.34.0) (2026-08-26)
+
+
+### Features
+
+* **workflow-checks:** model the invocation set in release_bump_classification ([b54f5dd](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b54f5ddc562efc904b9aa548ef6722811c47d01b))
+
 ## [1.33.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.33.0...v1.33.1) (2026-08-26)
 
 
