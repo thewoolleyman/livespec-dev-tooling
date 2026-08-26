@@ -124,6 +124,18 @@ dev = [
 
 [tool.livespec_dev_tooling]
 source_trees = ["livespec_dev_tooling"]
+# Directories whose direct-child `.py` modules are consumer-facing INVOCATION
+# surface (`python -m livespec_dev_tooling.<subpackage>.<slug>`), read by
+# `release_bump_classification`. Declared because this library's public surface
+# is predominantly an invocation set, not an export set: 56 of its 60 `checks/`
+# slug modules and both `workflow_checks/` slug modules declare an empty
+# `__all__`, so without this key a deleted or renamed slug -- a MAJOR that
+# strands every consumer's justfile and CI matrix -- moves the export inventory
+# by zero names and passes a patch release.
+invocation_set_trees = [
+    "livespec_dev_tooling/checks",
+    "livespec_dev_tooling/workflow_checks",
+]
 target_dirs = ["livespec_dev_tooling"]
 source_tree_prefixes = ["livespec_dev_tooling/"]
 # Flat-layout library has no wholesale IO exemption tree.

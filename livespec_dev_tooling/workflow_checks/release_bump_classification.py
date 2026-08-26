@@ -57,19 +57,39 @@ Comparing computed VERSION bumps would therefore refuse every
 correctly-typed `feat:` on a `0.y.z` repository. Comparing
 classifications is correct on both sides of `1.0.0`.
 
-THE HONEST LIMIT, which the ratified section requires this docstring to
-state: the required classification derived from the `__all__` inventory
-is a LOWER BOUND on what `SPECIFICATION/contracts.md` requires, never the whole
-of it. It detects a surface element appearing or disappearing; it CANNOT
-detect a behavior-only break — a tightened parse contract, a narrowed
-glob, a changed return shape behind an unchanged name — which
+THE HONEST LIMITS, which the ratified section requires this docstring to
+state — BOTH of them; neither may be omitted here.
+
+LIMIT ONE — unmodelled element kinds. The inventory models exactly two
+element kinds: EXPORT elements (module-level `__all__` entries under the
+declared `source_trees`) and INVOCATION elements (direct-child `.py`
+slug modules of the declared `invocation_set_trees`). A surface element
+of a kind NOT modelled is invisible. The clearest case is an invocation
+set at a consumer that has not declared `invocation_set_trees`: adding,
+deleting, or renaming a slug there moves the inventory by nothing, and
+the check will pass a PATCH release over a MAJOR change. A consumer
+whose public surface is an invocation set MUST declare that key or
+knowingly accept the gap.
+
+LIMIT TWO — behavior-only breaks. Even for a modelled element kind, the
+check sees the element's PRESENCE, not its meaning. The required
+classification is a LOWER BOUND on what `SPECIFICATION/contracts.md`
+requires, never the whole of it. It CANNOT detect a behavior-only
+break — a tightened parse contract, a narrowed glob, a changed return
+shape behind an unchanged name — which
 `SPECIFICATION/contracts.md` independently classifies as MAJOR. A green result
 means "no surface element changed incompatibly", NOT "the declared bump
 is correct". This is stated rather than left implicit because the
 incident that motivated the check was itself a mechanically-verified
 signal mistaken for the behavior it was assumed to guarantee.
 
-The inventory is derived by parsing each file with `ast` and reading the
+A RENAME appears as a removal PLUS an addition and therefore classifies
+as `major`. That is correct rather than incidental: the canonical check
+set is filesystem-derived, so a renamed slug falls out of the walk while
+consumers' justfiles and CI matrices still name the old one, and their
+next pin bump runs a recipe importing a module that no longer exists.
+
+The export half is derived by parsing each file with `ast` and reading the
 module-level `__all__` assignment's literal string elements — never by
 importing the module, which would both break determinism and execute
 consumer code. A file with no module-level `__all__`, or one whose
@@ -240,8 +260,8 @@ def _under_any(*, rel: str, trees: tuple[str, ...]) -> bool:
     return any(rel == tree or rel.startswith(f"{tree}/") for tree in trees)
 
 
-def _inventory_at(*, cwd: Path, rev: str, trees: tuple[str, ...]) -> frozenset[str]:
-    """Build the `<path>:<name>` inventory from the COMMITTED tree at `rev`."""
+def _export_elements(*, cwd: Path, rev: str, trees: tuple[str, ...]) -> frozenset[str]:
+    """Build the export half of the inventory from the COMMITTED tree at `rev`."""
     inventory: set[str] = set()
     for rel_path in _tracked_python_files(cwd=cwd, rev=rev, trees=trees):
         blob = _git(cwd=cwd, args=["show", f"{rev}:{rel_path}"])
@@ -249,6 +269,58 @@ def _inventory_at(*, cwd: Path, rev: str, trees: tuple[str, ...]) -> frozenset[s
             continue
         inventory |= _exported_names(source=blob.stdout, rel_path=rel_path)
     return frozenset(inventory)
+
+
+def _is_slug_module(*, rel_path: str, tree: str) -> bool:
+    """Report whether `rel_path` is a DIRECT-CHILD slug module of `tree`.
+
+    Mirrors the canonical-set derivation's rules so the two do not disagree
+    about what a slug is: direct children only (never recursive), `__init__`
+    excluded, and underscore-prefixed stems excluded as internal helpers.
+    """
+    prefix = f"{tree}/"
+    if not rel_path.startswith(prefix) or not rel_path.endswith(".py"):
+        return False
+    remainder = rel_path[len(prefix) :]
+    if "/" in remainder:
+        return False
+    return not remainder.startswith("_")
+
+
+def _invocation_elements(*, cwd: Path, rev: str, trees: tuple[str, ...]) -> frozenset[str]:
+    """Build the invocation half of the inventory from the COMMITTED tree at `rev`.
+
+    One element per direct-child `.py` module of each declared directory,
+    keyed `<tree>::<stem>`. The doubled separator cannot collide with an
+    export element's single-colon `<module-path>:<name>` key, because a
+    module path never ends in `:`. A declared directory absent at `rev`
+    contributes nothing and is not an error.
+    """
+    if not trees:
+        return frozenset()
+    completed = _git(cwd=cwd, args=["ls-tree", "-r", "--name-only", rev])
+    if completed.returncode != 0:
+        return frozenset()
+    elements: set[str] = set()
+    for rel_path in completed.stdout.splitlines():
+        for tree in trees:
+            if _is_slug_module(rel_path=rel_path, tree=tree):
+                stem = rel_path[len(tree) + 1 : -len(".py")]
+                elements.add(f"{tree}::{stem}")
+    return frozenset(elements)
+
+
+def _inventory_at(
+    *,
+    cwd: Path,
+    rev: str,
+    trees: tuple[str, ...],
+    invocation_trees: tuple[str, ...],
+) -> frozenset[str]:
+    """Build the UNION inventory — export elements plus invocation elements."""
+    return _export_elements(cwd=cwd, rev=rev, trees=trees) | _invocation_elements(
+        cwd=cwd, rev=rev, trees=invocation_trees
+    )
 
 
 def _subject_classification(*, subject: str) -> str:
@@ -329,9 +401,11 @@ def main() -> int:
             hint="a repository before its first release has no baseline to compare against",
         )
         return 0
-    trees = tuple(str(tree) for tree in load_config(repo_root=cwd).source_trees)
-    baseline = _inventory_at(cwd=cwd, rev=tag, trees=trees)
-    head = _inventory_at(cwd=cwd, rev="HEAD", trees=trees)
+    config = load_config(repo_root=cwd)
+    trees = tuple(str(tree) for tree in config.source_trees)
+    invocation_trees = tuple(str(tree) for tree in config.invocation_set_trees)
+    baseline = _inventory_at(cwd=cwd, rev=tag, trees=trees, invocation_trees=invocation_trees)
+    head = _inventory_at(cwd=cwd, rev="HEAD", trees=trees, invocation_trees=invocation_trees)
     added = tuple(sorted(head - baseline))
     removed = tuple(sorted(baseline - head))
     required = _required_classification(added=added, removed=removed)
