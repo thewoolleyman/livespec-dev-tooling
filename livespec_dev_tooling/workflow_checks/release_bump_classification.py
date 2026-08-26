@@ -16,9 +16,9 @@ per-commit `just check` aggregate and NOT subject to the
 wiring-completeness invariant.
 
 The check exists because nothing otherwise binds a repository's ratified
-§"Semver discipline" bump rules to the version its release automation
+`SPECIFICATION/contracts.md`'s bump rules to the version its release automation
 computes. `release-please` derives the bump purely from the
-Conventional-Commit type, so a change that §"Semver discipline"
+Conventional-Commit type, so a change that `SPECIFICATION/contracts.md`
 classifies as MAJOR ships as a patch whenever the commit carrying it was
 typed `fix:`. No per-commit aggregate check can observe the mismatch: it
 exists only between a RANGE of commits and a tag, and only at the moment
@@ -59,11 +59,11 @@ classifications is correct on both sides of `1.0.0`.
 
 THE HONEST LIMIT, which the ratified section requires this docstring to
 state: the required classification derived from the `__all__` inventory
-is a LOWER BOUND on what §"Semver discipline" requires, never the whole
+is a LOWER BOUND on what `SPECIFICATION/contracts.md` requires, never the whole
 of it. It detects a surface element appearing or disappearing; it CANNOT
 detect a behavior-only break — a tightened parse contract, a narrowed
 glob, a changed return shape behind an unchanged name — which
-§"Semver discipline" independently classifies as MAJOR. A green result
+`SPECIFICATION/contracts.md` independently classifies as MAJOR. A green result
 means "no surface element changed incompatibly", NOT "the declared bump
 is correct". This is stated rather than left implicit because the
 incident that motivated the check was itself a mechanically-verified
