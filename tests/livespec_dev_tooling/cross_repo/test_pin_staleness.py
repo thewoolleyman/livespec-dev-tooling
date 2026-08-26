@@ -501,14 +501,16 @@ def test_the_freshness_workflow_uses_the_module_for_the_release_tag_currency_tes
 def test_the_codex_acp_branch_keeps_its_raw_equality_comparison() -> None:
     """The codex-acp comparison is deliberately NOT the fleet-release comparison.
 
-    It compares an npm package version from `npm view @zed-industries/codex-acp
+    It compares an npm package version from `npm view @agentclientprotocol/codex-acp
     version` — not a fleet release tag — and its contract is "stale on ANY
     difference", with the ordinal staleness threshold explicitly not applying.
     Routing it through `denotes_same_release` would silently widen that contract,
     so this pins the raw equality in place.
     """
     workflow = _FRESHNESS_WORKFLOW_PATH.read_text(encoding="utf-8")
-    _, _, after_npm_branch = workflow.partition('if [[ "$source" == "zed-industries/codex-acp" ]]')
+    _, _, after_npm_branch = workflow.partition(
+        'if [[ "$source" == "agentclientprotocol/codex-acp" ]]'
+    )
     npm_branch, _, _ = after_npm_branch.partition("gh release view")
 
     assert 'if [[ "$current" == "$latest" ]]; then' in npm_branch

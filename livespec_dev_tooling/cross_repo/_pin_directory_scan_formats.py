@@ -25,7 +25,7 @@ reads one well-known file rather than scanning a directory):
 - codex-acp Dockerfile `ARG` — the `ARG CODEX_ACP_VERSION=<version>` line
   in `docker/fabro-sandbox/agent/Dockerfile`. Unlike every other format
   its source is EXTERNAL to the fleet (the npm package
-  `zed-industries/codex-acp`), so no fleet release fan-out ever rewrites
+  `agentclientprotocol/codex-acp`), so no fleet release fan-out ever rewrites
   it and it is factory-gated on bump (section "codex-acp factory gate").
 
 The shared `record` normalizer lives here (imported by
@@ -369,12 +369,16 @@ def walk_github_workflow_container_image(
 
 # The codex-acp adapter version is baked into the fabro-sandbox AGENT-layer
 # Dockerfile as a bare-semver `ARG`. Its source is the EXTERNAL npm package
-# `@zed-industries/codex-acp` (the Codex ACP adapter the orchestrator's
+# `@agentclientprotocol/codex-acp` (the Codex ACP adapter the orchestrator's
 # implementer nodes run), so — unlike the fabro image tag, released BY this
 # fleet — the source repo is HARDCODED to the external GitHub repository and no
 # fleet release fan-out ever rewrites it. `current_value` is the bare npm semver
 # (no `v` prefix).
-_CODEX_ACP_SOURCE_REPO = "zed-industries/codex-acp"
+# Package succession (livespec-dev-tooling-opdc, 2026-08-26): the predecessor
+# `@zed-industries/codex-acp` is npm-deprecated at its terminal 0.16.0 and MUST
+# NOT be the autodiscovered source (contracts.md section "Pin autodiscovery
+# rules"). Changing WHICH package this pins is a succession, never a bump.
+_CODEX_ACP_SOURCE_REPO = "agentclientprotocol/codex-acp"
 _CODEX_ACP_ARG_NAME = "CODEX_ACP_VERSION"
 _CODEX_ACP_DOCKERFILE: tuple[str, ...] = ("docker", "fabro-sandbox", "agent", "Dockerfile")
 _CODEX_ACP_ARG_RE = re.compile(
@@ -386,12 +390,12 @@ _CODEX_ACP_ARG_RE = re.compile(
 def walk_codex_acp_docker_arg(
     *, root: Path, source_repo_filter: str | None, log: structlog.stdlib.BoundLogger
 ) -> PinWalkResult:
-    # The source is the EXTERNAL npm package zed-industries/codex-acp, not a
+    # The source is the EXTERNAL npm package agentclientprotocol/codex-acp, not a
     # fleet repo, so honor the filter up front: a fleet-release fan-out
     # (`--source-repo <fleet-repo>`) must NEVER match this pin — that would let a
     # sibling release rewrite the baked Codex adapter version. The record is
     # emitted only when the filter is absent (the freshness scan) or equals the
-    # external source `zed-industries/codex-acp`.
+    # external source `agentclientprotocol/codex-acp`.
     source_repo = _CODEX_ACP_SOURCE_REPO
     if source_repo_filter is not None and source_repo_filter != source_repo:
         return IOSuccess([])

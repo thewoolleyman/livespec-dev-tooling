@@ -11,7 +11,7 @@
 # fleet want only the toolchain, while the Fabro agent sandbox wants the
 # toolchain plus the adapters. The adapters are 316.6 MB compressed
 # (bubblewrap 0.3 MB, @agentclientprotocol/claude-agent-acp 165.9 MB,
-# @zed-industries/codex-acp 150.4 MB) that CI never executes; hoisting
+# @agentclientprotocol/codex-acp ~150 MB) that CI never executes; hoisting
 # them out of `base` into this on-top layer cuts CI's pull from 751 MB to
 # 435 MB (~42%) while keeping CI and the sandbox on BYTE-IDENTICAL
 # toolchain layers — there is no separate slim CI image and therefore no
@@ -21,10 +21,11 @@
 #   - bubblewrap (HARD codex-acp requirement — for BOTH its
 #     require_escalated command execution AND its apply_patch edit tool;
 #     dropping it silently breaks Codex-driven runs)
-#   - BOTH ACP adapters preinstalled globally so `npx -y <adapter>`
-#     resolves locally: @agentclientprotocol/claude-agent-acp (Claude)
-#     and @zed-industries/codex-acp (the orchestrator's Codex adapter,
-#     baked not per-run npx-fetched)
+#   - BOTH ACP adapters preinstalled: @agentclientprotocol/claude-agent-acp
+#     (Claude) as a global so `npx -y <adapter>` resolves locally, and
+#     @agentclientprotocol/codex-acp (the orchestrator's Codex adapter) under
+#     the dedicated prefix /opt/livespec/codex-acp, invoked at its baked path
+#     — baked, never per-run npx-fetched
 #
 # node itself stays in `base`: CI genuinely needs it (pyright shells out
 # to npm), so it is toolchain, not agent payload. NO secrets are baked;
@@ -58,7 +59,7 @@ FROM ${PARENT_IMAGE}
 # host toolchain and is tracked only here.
 #
 # CODEX_ACP_VERSION is DIFFERENT: this ARG is the SINGLE SOURCE OF TRUTH
-# for the baked @zed-industries/codex-acp adapter version — it does not
+# for the baked @agentclientprotocol/codex-acp adapter version — it does not
 # merely mirror the orchestrator's hardcoded implementer-adapter pin. The
 # pin-autodiscovery walk emits it (pin_format `codex_acp_docker_arg`)
 # autodiscovered from the npm registry, and the pin-freshness surface
@@ -75,7 +76,7 @@ FROM ${PARENT_IMAGE}
 # write-access-gated event, so a bump PR (and nothing else) can reach it.
 # ---------------------------------------------------------------
 ARG CLAUDE_AGENT_ACP_VERSION=0.44.0
-ARG CODEX_ACP_VERSION=0.16.0
+ARG CODEX_ACP_VERSION=1.6.2
 
 # bubblewrap — required by the codex-acp adapter. The chain's root
 # (buildpack-deps:noble-scm) is Debian/Ubuntu, so apt is correct; clean
@@ -90,5 +91,30 @@ RUN apt-get -o Acquire::Retries=5 update \
 RUN npm install -g --fetch-retries=5 \
         @agentclientprotocol/claude-agent-acp@${CLAUDE_AGENT_ACP_VERSION}
 
+# TRANSITIONAL — the PREDECESSOR Codex adapter, kept baked for ONE release.
+# @zed-industries/codex-acp is npm-deprecated at its terminal release 0.16.0
+# (replaced by @agentclientprotocol/codex-acp, pinned by CODEX_ACP_VERSION).
+# This line carries a LITERAL version on purpose: it declares no ARG, the
+# pin-autodiscovery walk does not see it, and the freshness scan never bumps
+# it (livespec-dev-tooling/SPECIFICATION/contracts.md §"Pin autodiscovery
+# rules", package succession). It keeps the GLOBAL install — and therefore
+# the `codex-acp` bin link — so every dispatch that still resolves the
+# predecessor by name (`npx --no-install @zed-industries/codex-acp`) keeps
+# running the last verified adapter while the orchestrator cuts over.
+# REMOVE THIS LINE when BOTH hold: the orchestrator invokes the successor at
+# its baked path, AND a real Codex-provider factory dispatch has run on the
+# successor (§"codex-acp factory gate", equivalent proof part 3; tracker
+# livespec-dev-tooling-opdc).
 RUN npm install -g --fetch-retries=5 \
-        @zed-industries/codex-acp@${CODEX_ACP_VERSION}
+        @zed-industries/codex-acp@0.16.0
+
+# The SUCCESSOR Codex adapter, pinned by CODEX_ACP_VERSION, baked under a
+# DEDICATED npm prefix — never as a global. Both packages export the bin
+# `codex-acp`, and `npx --no-install <package>` runs whichever package owns
+# the shared GLOBAL bin link (measured 2026-08-26: with both installed
+# globally, BOTH package names ran the link owner), so package-name
+# resolution cannot keep the two apart. Consumers invoke the successor at
+# its stable path /opt/livespec/codex-acp/bin/codex-acp. This prefix is its
+# PERMANENT home: do not add a global copy when the predecessor is removed.
+RUN npm install -g --prefix /opt/livespec/codex-acp --fetch-retries=5 \
+        @agentclientprotocol/codex-acp@${CODEX_ACP_VERSION}
