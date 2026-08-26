@@ -332,7 +332,7 @@ def test_unreadable_blob_is_skipped(tmp_path: Path, monkeypatch: pytest.MonkeyPa
 
     monkeypatch.setattr(release_bump_classification, "_git", _failing_show)
     assert (
-        release_bump_classification._inventory_at(cwd=repo, rev="HEAD", trees=("pkg",))  # noqa: SLF001  — private helper under test
+        release_bump_classification._export_elements(cwd=repo, rev="HEAD", trees=("pkg",))  # noqa: SLF001  — private helper under test
         == frozenset()
     )
 
@@ -351,3 +351,154 @@ def test_blank_lines_in_tag_output_are_skipped(
 
     monkeypatch.setattr(release_bump_classification, "_git", _padded_tags)
     assert release_bump_classification._baseline_tag(cwd=repo) == "v1.0.0"  # noqa: SLF001  — private helper under test
+
+
+# --- Invocation-set elements (v052) -----------------------------------------
+#
+# The union inventory's second element kind. These are the cases the export-only
+# inventory could not see: a slug module whose consumer-facing surface is its
+# `python -m` invocation form typically declares an empty `__all__`, so adding,
+# deleting, or renaming one moved the old inventory by zero names and passed a
+# patch release over a MAJOR change.
+
+_PYPROJECT_WITH_INVOCATION_SET = _PYPROJECT + 'invocation_set_trees = ["pkg/checks"]\n'
+
+
+def _write_slug(*, repo: Path, name: str) -> None:
+    """Write `pkg/checks/<name>.py` — a slug module that exports nothing."""
+    d = repo / "pkg" / "checks"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / f"{name}.py").write_text("__all__: list[str] = []\n", encoding="utf-8")
+
+
+def _slug_repo(*, tmp_path: Path, declare: bool) -> Path:
+    """A repo tagged v1.0.0 carrying two slug modules, key declared or not."""
+    repo = tmp_path / "repo"
+    _init_repo(repo=repo)
+    if declare:
+        (repo / "pyproject.toml").write_text(_PYPROJECT_WITH_INVOCATION_SET, encoding="utf-8")
+    _write_module(repo=repo, name="mod", exports=["alpha"])
+    _write_slug(repo=repo, name="alpha_check")
+    _write_slug(repo=repo, name="beta_check")
+    _commit(repo=repo, subject="feat: initial")
+    _git(cwd=repo, args=["tag", "v1.0.0"])
+    return repo
+
+
+def test_deleted_slug_refuses_when_invocation_set_declared(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The motivating case: a deleted slug is a MAJOR the export inventory cannot see."""
+    repo = _slug_repo(tmp_path=tmp_path, declare=True)
+    (repo / "pkg" / "checks" / "beta_check.py").unlink()
+    _commit(repo=repo, subject="fix: drop beta")
+    result = _run(repo=repo, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 4, result.stderr
+    assert "beta_check" in result.stderr
+    assert '"major"' in result.stderr
+
+
+def test_same_deletion_passes_when_key_undeclared(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Absent-behaves-as-empty: the identical delta is invisible without the key.
+
+    This is the no-conscription guarantee made executable — an existing
+    consumer that declares nothing sees exactly the pre-v052 verdict.
+    """
+    repo = _slug_repo(tmp_path=tmp_path, declare=False)
+    (repo / "pkg" / "checks" / "beta_check.py").unlink()
+    _commit(repo=repo, subject="fix: drop beta")
+    result = _run(repo=repo, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 0, result.stderr
+
+
+def test_renamed_slug_classifies_as_major(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A rename is a removal PLUS an addition, so removal-first yields major."""
+    repo = _slug_repo(tmp_path=tmp_path, declare=True)
+    (repo / "pkg" / "checks" / "beta_check.py").unlink()
+    _write_slug(repo=repo, name="gamma_check")
+    _commit(repo=repo, subject="feat: rename beta to gamma")
+    result = _run(repo=repo, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 4, result.stderr
+    assert "beta_check" in result.stderr
+    assert "gamma_check" in result.stderr
+
+
+def test_added_slug_requires_minor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _slug_repo(tmp_path=tmp_path, declare=True)
+    _write_slug(repo=repo, name="delta_check")
+    _commit(repo=repo, subject="fix: add delta")
+    result = _run(repo=repo, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 4, result.stderr
+    assert "delta_check" in result.stderr
+
+
+def test_underscore_and_dunder_modules_are_not_slugs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Discovery mirrors the canonical derivation: helpers and __init__ excluded."""
+    repo = _slug_repo(tmp_path=tmp_path, declare=True)
+    d = repo / "pkg" / "checks"
+    (d / "_helper.py").write_text("__all__: list[str] = []\n", encoding="utf-8")
+    (d / "__init__.py").write_text("__all__: list[str] = []\n", encoding="utf-8")
+    _commit(repo=repo, subject="chore: add helper and package init")
+    result = _run(repo=repo, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 0, result.stderr
+
+
+def test_nested_module_is_not_a_direct_child_slug(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Direct children only, never recursive."""
+    repo = _slug_repo(tmp_path=tmp_path, declare=True)
+    nested = repo / "pkg" / "checks" / "sub"
+    nested.mkdir(parents=True, exist_ok=True)
+    (nested / "deep_check.py").write_text("__all__: list[str] = []\n", encoding="utf-8")
+    _commit(repo=repo, subject="chore: add nested module")
+    result = _run(repo=repo, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 0, result.stderr
+
+
+def test_declared_tree_absent_at_baseline_reads_as_additions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A tree introduced after the tag contributes additions, not a crash."""
+    repo = tmp_path / "repo"
+    _init_repo(repo=repo)
+    (repo / "pyproject.toml").write_text(_PYPROJECT_WITH_INVOCATION_SET, encoding="utf-8")
+    _write_module(repo=repo, name="mod", exports=["alpha"])
+    _commit(repo=repo, subject="feat: initial")
+    _git(cwd=repo, args=["tag", "v1.0.0"])
+    _write_slug(repo=repo, name="alpha_check")
+    _commit(repo=repo, subject="fix: introduce the checks tree")
+    result = _run(repo=repo, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 4, result.stderr
+    assert "alpha_check" in result.stderr
+
+
+def test_invocation_key_cannot_collide_with_an_export_key() -> None:
+    """`<tree>::<stem>` is structurally distinct from `<module-path>:<name>`."""
+    assert release_bump_classification._is_slug_module(  # noqa: SLF001  — private helper under test
+        rel_path="pkg/checks/alpha_check.py", tree="pkg/checks"
+    )
+    assert not release_bump_classification._is_slug_module(  # noqa: SLF001  — private helper under test
+        rel_path="pkg/checks/sub/deep.py", tree="pkg/checks"
+    )
+    assert not release_bump_classification._is_slug_module(  # noqa: SLF001  — private helper under test
+        rel_path="pkg/checks/_helper.py", tree="pkg/checks"
+    )
+
+
+def test_invocation_elements_empty_when_ls_tree_fails(tmp_path: Path) -> None:
+    """A failed ls-tree degrades to no invocation elements rather than crashing."""
+    assert (
+        release_bump_classification._invocation_elements(  # noqa: SLF001  — private helper under test
+            cwd=tmp_path, rev="HEAD", trees=("pkg/checks",)
+        )
+        == frozenset()
+    )

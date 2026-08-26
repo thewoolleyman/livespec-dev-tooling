@@ -1489,3 +1489,39 @@ def test_prefix_role_accepts_a_blessed_variant(*, tmp_path: Path) -> None:
     config = load_config(repo_root=tmp_path)
     assert config.source_tree_prefixes == NotApplicable(reason="no mirrored source surface")
     assert role_prefixes(role=config.source_tree_prefixes) == ()
+
+
+def test_invocation_set_trees_defaults_to_empty_when_undeclared(*, tmp_path: Path) -> None:
+    """Undeclared MUST behave exactly as `[]` — the fleet no-conscription guarantee.
+
+    Per `SPECIFICATION/contracts.md`, this key is OPTIONAL and its absence
+    means no invocation-set modelling, i.e. the behavior ratified before the
+    key existed. If an undeclared key ever stopped meaning "empty", every
+    existing consumer's `release_bump_classification` verdict could change on
+    a pin bump without anyone declaring anything.
+    """
+    _write_pyproject(repo_root=tmp_path, body="[tool.livespec_dev_tooling]\n")
+    config = load_config(repo_root=tmp_path)
+    assert config.invocation_set_trees == ()
+
+
+def test_invocation_set_trees_parses_a_declared_array(*, tmp_path: Path) -> None:
+    _write_pyproject(
+        repo_root=tmp_path,
+        body=(
+            "[tool.livespec_dev_tooling]\n"
+            'invocation_set_trees = ["pkg/checks", "pkg/workflow_checks"]\n'
+        ),
+    )
+    config = load_config(repo_root=tmp_path)
+    assert config.invocation_set_trees == ("pkg/checks", "pkg/workflow_checks")
+
+
+def test_invocation_set_trees_accepts_an_explicit_empty_array(*, tmp_path: Path) -> None:
+    """`[]` declared explicitly is indistinguishable in effect from undeclared."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body="[tool.livespec_dev_tooling]\ninvocation_set_trees = []\n",
+    )
+    config = load_config(repo_root=tmp_path)
+    assert config.invocation_set_trees == ()

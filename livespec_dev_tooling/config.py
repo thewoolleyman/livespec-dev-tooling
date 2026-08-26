@@ -541,6 +541,14 @@ class Config:
     # ordinary case — a repo with no self-hosted capacity declares nothing and
     # the check stays a no-op there.
     gating_self_hosted_labels: tuple[str, ...] = ()
+    # Repo-root-relative directories whose DIRECT-CHILD `.py` modules form an
+    # invocation-set surface — one element per module, named by its stem — for
+    # `release_bump_classification` (its sole behavioral consumer). OPTIONAL:
+    # undeclared behaves exactly as `()`, meaning no invocation-set modelling,
+    # which is the behavior ratified before this key existed. That default is
+    # load-bearing for the fleet: no existing consumer is obliged to declare it
+    # and no consumer's gate changes verdict until it opts in.
+    invocation_set_trees: tuple[str, ...] = ()
     mirror_pairings: tuple[MirrorPairing, ...] = ()
     cross_repo_public_api: tuple[CrossRepoPublicApi, ...] = ()
     total_absence_returns: tuple[TotalAbsenceReturn, ...] = ()
@@ -1108,6 +1116,10 @@ def load_config(*, repo_root: Path) -> Config:
         overrides["gating_self_hosted_labels"] = _as_str_tuple(
             value=table["gating_self_hosted_labels"], key="gating_self_hosted_labels"
         )
+    if "invocation_set_trees" in table:
+        overrides["invocation_set_trees"] = _as_str_tuple(
+            value=table["invocation_set_trees"], key="invocation_set_trees"
+        )
     if "mirror_pairings" in table:
         overrides["mirror_pairings"] = _parse_mirror_pairings(value=table["mirror_pairings"])
     if "cross_repo_public_api" in table:
@@ -1139,6 +1151,7 @@ def load_config(*, repo_root: Path) -> Config:
             "gating_self_hosted_labels", baseline.gating_self_hosted_labels
         ),
         target_dirs=overrides.get("target_dirs", baseline.target_dirs),
+        invocation_set_trees=overrides.get("invocation_set_trees", baseline.invocation_set_trees),
         mirror_pairings=overrides.get("mirror_pairings", baseline.mirror_pairings),
         cross_repo_public_api=overrides.get(
             "cross_repo_public_api", baseline.cross_repo_public_api
