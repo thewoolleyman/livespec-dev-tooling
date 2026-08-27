@@ -76,7 +76,7 @@ FROM ${PARENT_IMAGE}
 # write-access-gated event, so a bump PR (and nothing else) can reach it.
 # ---------------------------------------------------------------
 ARG CLAUDE_AGENT_ACP_VERSION=0.44.0
-ARG CODEX_ACP_VERSION=1.6.2
+ARG CODEX_ACP_VERSION=1.7.0
 
 # bubblewrap — required by the codex-acp adapter. The chain's root
 # (buildpack-deps:noble-scm) is Debian/Ubuntu, so apt is correct; clean
