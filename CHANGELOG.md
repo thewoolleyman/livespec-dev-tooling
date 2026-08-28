@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.36.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.35.0...v1.36.0) (2026-08-28)
+
+
+### Features
+
+* **ci-runner:** emit host and kubepods I/O-stall gauges from the heartbeat ([9db4eff](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9db4effcde68b6248a3f3e8768da0440fbf1c4fd))
+
 ## [1.35.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.34.0...v1.35.0) (2026-08-26)
 
 
