@@ -13,11 +13,13 @@
 #   sudo ci-runner/observability/install-observability.sh
 #
 # The Kueue-webhook probe (ci-kueue-webhook-probe.*, livespec-s43svm.46) needs a
-# scoped read-only kubeconfig this installer does NOT provision — a
-# ServiceAccount granted get,list on endpoints in kueue-system only, written to
+# scoped read-only kubeconfig this installer does NOT provision. Apply the
+# committed RBAC once — `sudo k3s kubectl apply -f
+# ci-runner/observability/kueue-webhook-probe-rbac.yaml` — then generate the
+# kubeconfig from the populated token Secret (see that file's header) at
 # ${CI_KUEUE_PROBE_KUBECONFIG:-/etc/ci-runner/kueue-webhook-probe.kubeconfig},
-# root-owned mode 0600. Provision it once out-of-band; without it the probe
-# fails-closed (emits nothing, exits nonzero) rather than reporting a false zero.
+# root-owned mode 0600. Without it the probe fails-closed (emits nothing, exits
+# nonzero) rather than reporting a false zero.
 #
 # DEPENDENCY: the heartbeat POSTs to a LOCAL OTel collector on
 # 127.0.0.1:4319. That collector is NOT installed by this script — it is the
