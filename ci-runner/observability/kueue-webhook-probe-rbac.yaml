@@ -1,0 +1,86 @@
+# kueue-webhook-probe-rbac.yaml — the scoped, read-only cluster credential the
+# Kueue-webhook endpoint-readiness probe (ci-kueue-webhook-probe.sh,
+# livespec-s43svm.46) authenticates as.
+#
+# WHY THIS EXISTS AS SOURCE: the probe runs as root with a kubeconfig at
+# ${CI_KUEUE_PROBE_KUBECONFIG:-/etc/ci-runner/kueue-webhook-probe.kubeconfig}.
+# That kubeconfig holds a bearer TOKEN and so is NEVER committed. This manifest
+# is the non-secret half — the ServiceAccount, its least-privilege Role +
+# RoleBinding, and the static-token Secret request — captured as source so the
+# credential is recreatable (the fleet's live-must-equal-source rule), exactly as
+# thewoolleyman/otel-collector commits its own collector RBAC. Applying this
+# manifest reproduces the live objects on poweredge-xubuntu; the
+# ServiceAccount-token controller then POPULATES the Secret's data (token,
+# ca.crt) — those populated bytes are the secret and are deliberately absent
+# here.
+#
+# LEAST PRIVILEGE: get,list on `endpoints` in namespace kueue-system ONLY. The
+# probe reads the v1 Endpoints object (`kubectl -n kueue-system get endpoints
+# kueue-webhook-service`); `endpointslices` (discovery.k8s.io) is granted too so
+# the probe can move to the EndpointSlice API without a credential change once k3s
+# stops populating the deprecated v1 Endpoints object (it warns "v1 Endpoints is
+# deprecated in v1.33+" but still mirrors it today). Verified denied: pods, any
+# other namespace, secrets.
+#
+# APPLY (out-of-band, once per host — install-observability.sh does NOT do this):
+#   sudo k3s kubectl apply -f ci-runner/observability/kueue-webhook-probe-rbac.yaml
+# then generate the kubeconfig from the populated token Secret:
+#   NS=kueue-system; S=kueue-webhook-probe-token
+#   D=/etc/ci-runner/kueue-webhook-probe.kubeconfig; sudo install -o root -g root -m 0755 -d /etc/ci-runner
+#   TOKEN="$(sudo k3s kubectl -n $NS get secret $S -o jsonpath='{.data.token}' | base64 -d)"
+#   CA="$(sudo k3s kubectl -n $NS get secret $S -o jsonpath='{.data.ca\.crt}')"
+#   then write cluster{server: https://127.0.0.1:6443, certificate-authority-data: $CA},
+#   user{token: $TOKEN}, root-owned mode 0600. Never echo the token.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kueue-webhook-probe
+  namespace: kueue-system
+  labels:
+    app.kubernetes.io/managed-by: livespec-ci-runner-observability
+    livespec.workitem: s43svm-46
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kueue-webhook-probe-reader
+  namespace: kueue-system
+  labels:
+    app.kubernetes.io/managed-by: livespec-ci-runner-observability
+    livespec.workitem: s43svm-46
+rules:
+  - apiGroups: [""]
+    resources: ["endpoints"]
+    verbs: ["get", "list"]
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kueue-webhook-probe-reader
+  namespace: kueue-system
+  labels:
+    app.kubernetes.io/managed-by: livespec-ci-runner-observability
+    livespec.workitem: s43svm-46
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kueue-webhook-probe-reader
+subjects:
+  - kind: ServiceAccount
+    name: kueue-webhook-probe
+    namespace: kueue-system
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kueue-webhook-probe-token
+  namespace: kueue-system
+  annotations:
+    kubernetes.io/service-account.name: kueue-webhook-probe
+  labels:
+    app.kubernetes.io/managed-by: livespec-ci-runner-observability
+    livespec.workitem: s43svm-46
+type: kubernetes.io/service-account-token
