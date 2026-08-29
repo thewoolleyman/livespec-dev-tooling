@@ -1,0 +1,13 @@
+# ci-kueue-webhook-probe.timer — fire the Kueue-webhook endpoint-readiness gauge
+# every 5 minutes, matching the ci-runner-heartbeat cadence.
+# Source of truth: livespec-dev-tooling ci-runner/observability/.
+[Unit]
+Description=Kueue admission-webhook endpoint-readiness probe (every 5 min)
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

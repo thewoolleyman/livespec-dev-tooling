@@ -1,0 +1,27 @@
+# ci-kueue-webhook-probe.service — one Kueue-webhook-endpoint-readiness gauge
+# emission (see the .timer). Emitter for livespec-s43svm.46: catches the
+# single-node, no-HA outage where kueue-webhook-service has ZERO ready endpoints,
+# so the apiserver's mpod.kb.io admission call fails and every scale set's runner
+# pods are silently rejected in `Initialize containers` — an outage that
+# otherwise surfaces only as a misleading red content-check on an unrelated PR.
+# Receiver: the CI-runner-host otel-collector (thewoolleyman/otel-collector
+# config.ci-runner-host.yaml) on 127.0.0.1:4319, exporting to the `livespec`
+# Honeycomb env. Paired trigger (filtered to this host.name): the value trigger
+# fires when MAX(livespec.ci_kueue.webhook_ready_endpoints) < 1.
+#
+# Unlike the sibling ci-runner-heartbeat.service, this unit is NOT a DynamicUser:
+# it runs as root so it can read the scoped, root-owned mode-0600 kubeconfig
+# (CI_KUEUE_PROBE_KUBECONFIG) for the read-only ServiceAccount that is granted
+# get,list on endpoints in kueue-system only.
+# Source of truth: livespec-dev-tooling ci-runner/observability/ — install via
+# install-observability.sh, never hand-edit the live copy (the s2t
+# recreatability rule).
+[Unit]
+Description=Kueue admission-webhook endpoint-readiness probe (OTLP gauge to local collector)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+# Runs as root (default): needs to read the root-owned 0600 scoped kubeconfig.
+ExecStart=/usr/local/lib/ci-runner/ci-kueue-webhook-probe.sh
