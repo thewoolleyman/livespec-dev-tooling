@@ -11,21 +11,21 @@
 # nominalQuota derivation for THIS repo:
 #   demand weight w = 65 (podman-era ci-runner-supervisor apportionment)
 #   fleet weight sum W = 495 (482 + livespec-driver-pi's 13, added 2026-08-20)
-#   host churn-slot capacity C = 16 (as registered on the node, 2026-08-19)
-#   exact share = C * w / W = 2.1010  ->  largest-remainder apportionment = 2
+#   host churn-slot capacity C = 64 (as registered on the node, 2026-08-30)
+#   exact share = C * w / W = 8.4040  ->  largest-remainder apportionment = 8
 #
-# The NINE repositories' nominalQuota values sum to 17, one ABOVE C = 16.
-# Cohort borrowing is bounded by the summed nominal quota, so a sum below it
-# wastes capacity. The one-unit excess over C is FORCED by the apportionment
-# rule's `max(1, ...)` floor lifting livespec-driver-pi's rounded-to-zero
-# share, and Kueue reserving one slot the node does not have is harmless — the
-# scheduler is the final gate. See DERIVATION.md "Recomputation on the ninth
-# repository (2026-08-20)". THIS repo's quota was NOT changed by that
-# addition; do not cut it to force the sum back to 16.
+# The nine repositories' nominalQuota values sum to exactly 64 = C = 64
+# (increase-ci-runners raise, 2026-08-30; livespec epic livespec-zec4mz). At
+# C = 64 every repository's exact share exceeds 1, so the apportionment sums
+# to exactly C with NO `max(1, ...)` excess — the one-slot over-reservation
+# that existed at C = 16 is gone. Cohort borrowing is bounded by the summed
+# nominal quota, so a sum below it wastes capacity; keep the nine values
+# summing to exactly C. See DERIVATION.md "The derivation at C = 64
+# (2026-08-30)".
 #
 # nominalQuota is this repo's GUARANTEED FLOOR, not its ceiling. Unused quota
 # anywhere in the `fleet-ci-runner-pool` cohort is borrowable automatically,
-# so this repo can burst well above 2 when its peers are idle. The per-repo
+# so this repo can burst well above 8 when its peers are idle. The per-repo
 # ceiling is a SEPARATE number — ../arc/values-livespec-overseer.yaml's maxRunners, which
 # models the formula's "doubled repository logical ceiling" term. The two are
 # different terms of the same min() and are correctly UNEQUAL; see
@@ -54,7 +54,7 @@ spec:
         - name: churn-slot-flavor
           resources:
             - name: "ci-runner.io/churn-slot"
-              nominalQuota: 2
+              nominalQuota: 8
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: LocalQueue

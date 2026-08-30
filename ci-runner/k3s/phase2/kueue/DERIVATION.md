@@ -113,6 +113,17 @@ Preemption is off deliberately — evicting a half-finished CI job to
 rebalance a queue wastes the very iowait budget this whole design is
 protecting.
 
+**This is now a standing, non-negotiable directive: NEVER EVICT A HEALTHY
+RUNNING JOB to rebalance the cohort** (maintainer-declared 2026-08-30, during
+the increase-ci-runners raise, livespec epic livespec-zec4mz). Every
+`ClusterQueue` in `fleet-ci-runner-pool` MUST keep
+`preemption.reclaimWithinCohort: Never`, `preemption.borrowWithinCohort.policy:
+Never`, and `preemption.withinClusterQueue: Never`. Fair-sharing under
+contention is bought with more capacity (raise `C`) and with the guaranteed
+floors above, never by killing work already in flight. Do not flip
+`reclaimWithinCohort` to `Any` or `LowerPriority` as a starvation remedy — the
+remedy is capacity, which is exactly what the C = 16 → 64 raise did.
+
 ### The physical cap is the scheduler, not Kueue
 
 Kueue's own "Admitted" condition is NECESSARY BUT NOT SUFFICIENT for a
@@ -159,7 +170,9 @@ distinction matters because the logical ceiling feeds `maxRunners` while
 the demand weight feeds `nominalQuota`.
 
 **The capacity `C`.** The `ci-runner.io/churn-slot` capacity currently
-registered on the node. It is `16` as of 2026-08-19.
+registered on the node. It is `64` as of 2026-08-30 — the increase-ci-runners
+raise (livespec epic livespec-zec4mz); see "The derivation at C = 64
+(2026-08-30)" below. It was `16` from 2026-08-19 until that raise.
 
 ## The apportionment rule
 
@@ -332,6 +345,55 @@ of 2, so each new small repo arrives with a sub-1 share, is floored up
 to 1, and adds another unit to the excess. The `max(1, ...)` collision
 is therefore a growth property of the rule at low `C`, not a one-off.
 
+## The derivation at C = 64 (2026-08-30)
+
+The `increase-ci-runners` plan (livespec epic `livespec-zec4mz`,
+maintainer-approved 2026-08-30) raised the node capacity from 16 to **64** —
+a 4x overcommit set DELIBERATELY AHEAD OF DATA. The reasoning is journaled on
+that epic and in the livespec plan `plan/increase-ci-runners/research/`; the
+short version: CPU and memory have ~20x idle headroom (measured 5% CPU / 3%
+mem on the 72-core/197-GiB box), so the only resource 64 ephemeral runner pods
+can plausibly saturate is DISK IO — which is exactly the un-measured
+throughput ceiling the RAID work (`poweredge-raid-array-maintenance`, epic
+`livespec-g52yrb`) needs numbers for. Saturation here is a WANTED outcome: it
+converts "no disk data" into "disk data." 64 is well under the 110-pod kubelet
+ceiling.
+
+Same demand weights `w_i`, `W = 495`. Exact shares `e_i = 64 * w_i / 495`:
+
+| Repository | `w_i` | `e_i` | `floor` | remainder | leftover unit | `nominalQuota` |
+|---|---|---|---|---|---|---|
+| `livespec` | 75 | 9.6970 | 9 | 0.6970 | +1 (1st largest) | **10** |
+| `livespec-driver-codex` | 67 | 8.6626 | 8 | 0.6626 | +1 (3rd largest) | **9** |
+| `livespec-driver-claude` | 66 | 8.5333 | 8 | 0.5333 | +1 (4th, tie by name) | **9** |
+| `livespec-orchestrator-git-jsonl` | 66 | 8.5333 | 8 | 0.5333 | | **8** |
+| `livespec-overseer` | 65 | 8.4040 | 8 | 0.4040 | | **8** |
+| `livespec-runtime` | 64 | 8.2747 | 8 | 0.2747 | | **8** |
+| `livespec-dev-tooling` | 63 | 8.1455 | 8 | 0.1455 | | **8** |
+| `livespec-console-beads-fabro` | 16 | 2.0687 | 2 | 0.0687 | | **2** |
+| `livespec-driver-pi` | 13 | 1.6808 | 1 | 0.6808 | +1 (2nd largest) | **2** |
+| **sum** | **495** | **64** | **60** | | **+4** | **64** |
+
+The floors sum to 60, leaving 4 units. The four largest remainders are
+`livespec` (0.6970), `livespec-driver-pi` (0.6808), `livespec-driver-codex`
+(0.6626), and then a tie at 0.5333 between `livespec-driver-claude` and
+`livespec-orchestrator-git-jsonl` — broken by the rule's final tie-break
+(equal remainder, equal `w_i` of 66, then repository name ascending), which
+awards the fourth unit to `livespec-driver-claude`. The result sums to
+**exactly C = 64**.
+
+**The C = 16 `max(1, ...)` exception is GONE at C = 64.** Every repository's
+exact share now exceeds 1 (the smallest, `livespec-driver-pi`, is 1.6808), so
+step 5 never lifts a rounded-to-zero share and the committed quotas sum to
+exactly `C` with no forced over-reservation. The sum invariant holds cleanly
+again.
+
+**Reclaim/preemption is UNCHANGED and stays `Never`.** The raise buys
+fair-sharing headroom with capacity, not by eviction — see the standing
+"NEVER EVICT A HEALTHY RUNNING JOB" directive under "`fairSharing.weight` is
+deliberately left at 1". A `reclaimWithinCohort: Any` flip was explicitly
+considered and REJECTED for this change.
+
 ## Recomputing at another C
 
 The derivation is parameterized so a capacity change is mechanical:
@@ -392,6 +454,16 @@ What is known, as of 2026-08-19:
   breached, zero container-init hangs, iowait oscillated 0-20% and
   crested only during container-start waves, load reached 48 of 72
   cores. Journaled on `livespec-s43svm.15`, 2026-08-19.
+- **`C = 64` set 2026-08-30, NOT soak-proven.** The increase-ci-runners
+  raise (livespec epic `livespec-zec4mz`) set `C = 64` DELIBERATELY AHEAD OF
+  DATA, to relieve fleet CI starvation now and to force the disk-throughput
+  measurement `livespec-g52yrb` lacks. Unlike 8 and 16, it has had no soak:
+  its safety is a hypothesis the raise is built to TEST, not an established
+  fact. It MUST be instrumented under real load (`iostat -x 5` %util/await on
+  the CI-backing device, recorded onto `livespec-g52yrb`), with a rollback
+  ladder (step down to 32, then 24, recording the number at which
+  disk-pressure symptoms appear — that number is this disk's pre-RAID-10
+  churn ceiling).
 - **`C = 482` is the design-envelope steady-state target**, inherited
   from the podman pool's measured physical ceiling and recorded in
   `patch-node-churn-capacity.sh`'s own header. It is a target, not a
@@ -406,12 +478,15 @@ demonstrably was not. Raising `C` was safe and it increased throughput;
 that is not the same as it having been the fix for every stall attributed
 to it at the time.
 
-So the answer is bracketed between 16 (safe) and 482 (targeted), with a
-large untested interval between. The podman pool has been stopped
+So the answer is bracketed between 16 (soak-proven safe) and 482 (targeted),
+with a large interval between — and as of 2026-08-30 the live value sits at
+**64, un-soaked**, placed inside that interval on purpose to probe it under
+real load (see the `C = 64` entry above). The podman pool has been stopped
 since 2026-08-13, so the side-by-side joint-budget constraint that
 `README.md` documents no longer binds; the remaining reason for caution
 is simply that the k3s container-churn profile at high concurrency has
-not been measured. Probing upward is a capacity decision for the epic.
+not been measured — which the C = 64 raise now exists to measure. Probing
+further upward is a capacity decision for the epic.
 
 ## Is a generator worth building?
 
