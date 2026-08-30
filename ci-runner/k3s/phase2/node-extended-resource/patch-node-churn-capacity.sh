@@ -27,12 +27,14 @@
 # while podman also ran near its own 482 would have let the two pools
 # jointly imply the very 964 the specification prohibits. The podman pool
 # was decommissioned 2026-08-21 and deleted (livespec-s43svm.19); the
-# value installed live is 16 (livespec-s43svm.26), and 482 was never
-# adopted for this pool — see README.md "Why per-repo quotas summing above
-# 482 is safe", ../kueue/DERIVATION.md, and ../VALIDATION_CHECKLIST.md.
+# value installed live is 64 as of 2026-08-30 (the increase-ci-runners raise,
+# livespec epic livespec-zec4mz; it was 16 from livespec-s43svm.26 until then),
+# and 482 was never adopted for this pool — see README.md "Why per-repo quotas
+# summing above 482 is safe", ../kueue/DERIVATION.md "The derivation at C = 64
+# (2026-08-30)", and ../VALIDATION_CHECKLIST.md.
 set -euo pipefail
 
-USAGE="usage: patch-node-churn-capacity.sh CAPACITY (the host's churn-slot capacity; 16 is the value installed live, and the podman-era 482 was never adopted -- see this script's own header comment and ../kueue/DERIVATION.md)"
+USAGE="usage: patch-node-churn-capacity.sh CAPACITY (the host's churn-slot capacity; 64 is the value installed live as of 2026-08-30, and the podman-era 482 was never adopted -- see this script's own header comment and ../kueue/DERIVATION.md)"
 CAPACITY="${1:?$USAGE}"
 NODE_LABEL_SELECTOR="k3s-role=arc-runner-host"
 # NODE_LABEL_SELECTOR matches provision-k3s.sh --node-label.
