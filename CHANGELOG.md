@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.37.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.36.0...v1.37.0) (2026-08-31)
+
+
+### Features
+
+* **factory:** emit build.env=factory cargo-phase telemetry spans ([239378b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/239378b4a8da0fc9627d07a103116d2892e922ab))
+
 ## [1.36.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.35.0...v1.36.0) (2026-08-28)
 
 
