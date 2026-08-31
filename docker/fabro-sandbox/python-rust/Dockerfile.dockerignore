@@ -1,3 +1,8 @@
-# The PYTHON-RUST layer COPYs nothing (it FROMs the python layer's
-# published image), so the entire repo-root build context is excluded.
+# Context allowlist for the PYTHON-RUST layer Dockerfile (BuildKit reads the
+# `<Dockerfile-name>.dockerignore` beside the Dockerfile). The build context is
+# the REPO ROOT; this layer COPYs only the factory build-telemetry seam — the
+# cargo-phase emitter and the `cargo` shim — so allowlisting just those two files
+# keeps the context transfer tiny and the build hermetic.
 *
+!livespec_dev_tooling/otel_cargo_phase.py
+!docker/fabro-sandbox/python-rust/cargo-phase-shim.sh
