@@ -357,7 +357,9 @@ can plausibly saturate is DISK IO — which is exactly the un-measured
 throughput ceiling the RAID work (`poweredge-raid-array-maintenance`, epic
 `livespec-g52yrb`) needs numbers for. Saturation here is a WANTED outcome: it
 converts "no disk data" into "disk data." 64 is well under the 110-pod kubelet
-ceiling.
+ceiling — a comparison that turned out to be the WRONG one, because a full
+pool puts about `2C + helpers + system` pods on the node, not `C`; see "The
+pod-capacity constraint" below.
 
 Same demand weights `w_i`, `W = 495`. Exact shares `e_i = 64 * w_i / 495`:
 
@@ -393,6 +395,39 @@ fair-sharing headroom with capacity, not by eviction — see the standing
 "NEVER EVICT A HEALTHY RUNNING JOB" directive under "`fairSharing.weight` is
 deliberately left at 1". A `reclaimWithinCohort: Any` flip was explicitly
 considered and REJECTED for this change.
+
+### The pod-capacity constraint: kubelet `max-pods` >= 2C + helper pods + system pods (2026-09-01)
+
+`C` counts churn slots, and each churn slot is consumed by a RUNNER pod —
+but a running job holds TWO pods on the node (the runner pod and its
+`-workflow` pod; see `README.md` "The workflow pod is not the runner pod"),
+and provisioning each runner's work PVC spawns a transient
+`helper-pod-create-pvc-*` pod in `kube-system`. So the pod count a full pool
+puts on the node is not `C` but roughly `2C + (helper pods in flight) +
+(system pods)`, and the kubelet's `max-pods` (k3s default **110**) has to
+hold it. At C = 64 that is about 128 + ~20 + ~15 ≈ 165 > 110. When it does
+not fit the failure is a deadlock, not a queue: the helper pods that would
+provision the NEXT job's PVC cannot schedule behind the cap, so no runner
+pod can bind its volume, so nothing completes and frees a slot. It was one
+leg of the 2026-09-01 runner-pod lifecycle stall (livespec plan
+`ci-runner-pod-lifecycle-reliability`, epic `livespec-ifwnqj`, research/001
+and /002; carrier `livespec-a6lxuv`).
+
+Decided 2026-09-01 (maintainer): raise `max-pods` to **200** rather than
+lower C. Set as `kubelet-arg: ["max-pods=200"]` in
+`/etc/rancher/k3s/config.yaml` on `poweredge-xubuntu`; effective after the
+k3s restart of 16:06Z (`status.allocatable.pods` 110 → 200). 200 is bounded
+above by the node's pod CIDR `10.42.0.0/24` (~250 usable addresses), so it
+needs no CIDR change; a C above ~90 would. The constraint is a HOST term
+beside the churn-slot derivation, not part of the apportionment: whenever C
+moves, re-check `2C + ~35 <= max-pods <= podCIDR size`.
+
+The same incident's kernel-side term — `fs.inotify.max_user_instances`,
+default 128, ~2 per containerd shim plus ~21 for kubelet/cadvisor, exhausted
+at roughly 50 containers' worth of shims — was raised to 8192 on the host
+(`/etc/sysctl.d/99-ci-runner-inotify.conf`). Making both budgets part of
+this directory's node-local install mechanism, so a new pool member inherits
+them and a rebuild cannot lose them, is `livespec-a6lxuv`'s remaining leg.
 
 ## Recomputing at another C
 
