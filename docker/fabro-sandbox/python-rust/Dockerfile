@@ -59,14 +59,25 @@ ENV PATH=/root/.cargo/bin:$PATH
 # console runs a fully cold cargo build+test in this sandbox and emitted NOTHING
 # about its timing; the console workflow runs cargo via its agent + git hooks,
 # not via a wrappable prepare step, so the only console-change-free wrap point is
-# HERE, in the image. The `cargo` shim (interposed on PATH ahead of the rustup
-# cargo just installed above) runs the real cargo unchanged and best-effort hands
-# each measured phase's timing to livespec-cargo-phase-timer, which POSTs one
-# build.env=factory span to the host OTel receiver — routed to the `github-ci`
-# Honeycomb dataset by `service.name`, the same keyless seam the prepare.* spans
-# use. The stopwatch is strictly non-fatal: a broken/absent timer never changes
-# cargo's result. Both files are allowlisted into the (repo-root) build context
-# by the adjacent Dockerfile.dockerignore.
+# HERE, in the image. The `cargo` shim runs the real cargo unchanged and
+# best-effort hands each measured phase's timing to livespec-cargo-phase-timer,
+# which POSTs one build.env=factory span to the host OTel receiver — routed to
+# the `github-ci` Honeycomb dataset by `service.name`, the same keyless seam the
+# prepare.* spans use. The stopwatch is strictly non-fatal: a broken/absent
+# timer never changes cargo's result.
+#
+# The shim REPLACES the rustup `cargo` proxy itself (the proxy is renamed to
+# `cargo-real` beside it), rather than sitting on a separate earlier PATH entry.
+# That earlier-PATH-entry approach is silently bypassed the moment a consumer's
+# `.mise.toml` re-prepends `~/.cargo/bin` — livespec-console-beads-fabro does
+# exactly this (`_.path = ["~/.cargo/bin"]`), so `mise exec -- just check`
+# resolved `cargo` to the rustup proxy and the shim never fired (measured: zero
+# build.env=factory spans from a real GREEN dispatch). Being `~/.cargo/bin/cargo`
+# itself makes `cargo` resolve to the shim under ANY PATH order. `cargo-real` is
+# the rustup proxy, which dispatches on argv[0]; the shim calls it via
+# `exec -a cargo` so it still resolves the pinned toolchain. Both files are
+# allowlisted into the (repo-root) build context by the adjacent
+# Dockerfile.dockerignore.
+RUN mv /root/.cargo/bin/cargo /root/.cargo/bin/cargo-real
 COPY --chmod=0755 livespec_dev_tooling/otel_cargo_phase.py /usr/local/bin/livespec-cargo-phase-timer
-COPY --chmod=0755 docker/fabro-sandbox/python-rust/cargo-phase-shim.sh /usr/local/lib/livespec-cargo-shim/cargo
-ENV PATH=/usr/local/lib/livespec-cargo-shim:$PATH
+COPY --chmod=0755 docker/fabro-sandbox/python-rust/cargo-phase-shim.sh /root/.cargo/bin/cargo
