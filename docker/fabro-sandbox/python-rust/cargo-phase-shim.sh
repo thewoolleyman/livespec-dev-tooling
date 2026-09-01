@@ -1,25 +1,34 @@
-#!/bin/sh
+#!/usr/bin/env bash
 # livespec cargo-phase telemetry shim — fabro-sandbox python-rust image ONLY.
 #
-# Interposed on PATH ahead of the rustup cargo (see the python-rust Dockerfile)
-# so a FACTORY console build — a fabro dispatch, build.env=factory — emits one
-# build-telemetry OTLP span per measured cargo phase, WITHOUT any change to the
-# console repo (the console workflow.toml runs cargo via its agent + git hooks,
-# not via a wrappable prepare step, so the wrap point has to live in the image).
+# INSTALLED AS /root/.cargo/bin/cargo ITSELF (the rustup proxy is renamed to
+# cargo-real alongside it; see the python-rust Dockerfile). This is deliberate:
+# a shim placed on a SEPARATE PATH entry is bypassed the moment a consumer's
+# `.mise.toml` re-prepends `~/.cargo/bin` — which livespec-console-beads-fabro
+# does (`_.path = ["~/.cargo/bin"]`, so `mise exec -- just check` resolves
+# `cargo` to the rustup proxy, never the shim). Being `~/.cargo/bin/cargo`
+# itself means `cargo` resolves here under ANY PATH order that can run cargo at
+# all — mise prepend included.
 #
-# It runs the REAL cargo UNCHANGED, then best-effort hands the timing to the
-# baked livespec-cargo-phase-timer. The stopwatch is strictly non-fatal: cargo's
-# own exit code is always propagated, and cargo still runs when the timer binary
-# is absent or fails. Unmeasured subcommands (fmt, clippy, tree, metadata,
-# --version, …) exec the real cargo directly with zero added overhead.
+# It runs the REAL cargo UNCHANGED and best-effort hands each measured phase's
+# timing to the baked livespec-cargo-phase-timer, which POSTs one build.env=factory
+# OTLP span to the host OTel receiver (routed to the github-ci Honeycomb dataset
+# by service.name — the keyless prepare.* seam). Strictly non-fatal: cargo's own
+# exit code is always propagated, and cargo still runs when the timer is absent
+# or fails. Unmeasured subcommands (fmt, tree, metadata, --version, …) exec the
+# real cargo directly with zero added overhead.
+#
+# cargo-real is the RENAMED rustup proxy, which dispatches on argv[0]: invoking
+# it as `cargo-real` is rejected ("unknown proxy name"), so every call preserves
+# argv[0]=cargo via `exec -a cargo` (hence bash, not POSIX sh).
 set -u
 
-REAL_CARGO=/root/.cargo/bin/cargo
+REAL_CARGO=/root/.cargo/bin/cargo-real
 
 sub=${1:-}
 phase=
 case "$sub" in
-  build | b | check | c | rustc) phase="compile" ;;
+  build | b | check | c | rustc | clippy | doc | d | run | r) phase="compile" ;;
   test | t | nextest) phase="test" ;;
   llvm-cov) phase="test" ;;
   fuzz) phase="fuzz" ;;
@@ -27,11 +36,11 @@ case "$sub" in
 esac
 
 if [ -z "$phase" ]; then
-  exec "$REAL_CARGO" "$@"
+  exec -a cargo "$REAL_CARGO" "$@"
 fi
 
 start=$(date +%s%N)
-"$REAL_CARGO" "$@"
+( exec -a cargo "$REAL_CARGO" "$@" )
 code=$?
 end=$(date +%s%N)
 
