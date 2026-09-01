@@ -881,6 +881,75 @@ arrives as evidence instead of as a repeat of the last one, which is the
 cheapest available step given that the burst experiment above needs a
 deliberate load window.
 
+## Runner-pod lifecycle stall — the THIRD "jobs queued, nothing starting" case
+
+The two cases above assume the pool can create a pod at all. On 2026-09-01
+it could not, and neither discriminating command fired: the wedge scan was
+clean (7-8 `Running` runner pods, 0 hits), Kueue showed 16 admitted /
+0 pending against the console queue, and the node had 700m of 72 CPU
+requested and 8 of 64 churn slots allocated — while three PRs sat with
+every job queued for 17-60 minutes.
+
+What was happening (livespec plan `ci-runner-pod-lifecycle-reliability`,
+epic `livespec-ifwnqj`, research/001-004 — the measured chain):
+
+1. `fs.inotify.max_user_instances` was at the kernel default 128. Every
+   containerd shim holds two inotify instances (the cgroup OOM watch);
+   kubelet/cadvisor hold ~21; at ~100 concurrent containers uid 0 hit the
+   cap, containerd logged `failed to create inotify fd: too many open
+   files`, and sandbox lifecycle calls (`KillPodSandbox`, `StopContainer`)
+   timed out with `DeadlineExceeded`.
+2. The local-path provisioner's per-PVC helper pod therefore sometimes
+   exceeded its 120 s ceiling (`ProvisioningFailed: ... create process
+   timeout after 120 seconds`), PVC provisioning latency reached
+   ~11 minutes, and the scheduler's volume-bind deadline (600 s) expired on
+   runner pods (`FailedScheduling: ... PreBind plugin "VolumeBinding":
+   binding volumes: context deadline exceeded`) — 94 expiries in
+   20 minutes. Each expiry re-queued the pod and left stale claims in the
+   provisioner's queue, so the backlog grew instead of draining.
+3. A separate variant the same afternoon: the k3s kine/SQLite datastore
+   shares the CI-churn disk; under 60+ jobs its writes stalled, the
+   single-replica Kueue lost its leader lease and exited by design, and its
+   `failurePolicy: Fail` pod webhook (`mpod.kb.io`) made every pod creation
+   in the fleet fail for the restart window (27 API-server failures in
+   3 minutes; carrier `livespec-okxbkg`).
+
+### The two discriminating commands for this case
+
+```bash
+kubectl get pvc -n arc-runners --no-headers | awk '$2=="Pending"' | wc -l
+sudo grep -c 'failed to create inotify fd' /var/lib/rancher/k3s/agent/containerd/containerd.log
+```
+
+A Pending-PVC count that grows while runner pods cycle `Pending` →
+`FailedScheduling` is the lifecycle stall; a non-zero second count names
+the inotify cap specifically. For the datastore variant look for a fresh
+`kueue-controller-manager` restart, `Slow SQL: INSERT INTO kine` in the k3s
+journal, and `failed calling webhook "mpod.kb.io"` in job logs.
+
+### What a CI consumer sees
+
+The job is claimed, then fails at `Initialize containers` with the ARC
+Kubernetes hook's `Executing the custom container implementation failed.
+Please contact your self hosted runner administrator.` — the `-workflow`
+pod could not be created. That is a host condition, not a test failure:
+re-run the job on the same commit once the host has cleared.
+
+### Why neither prior remedy applies
+
+Deleting pods (the wedge fix) adds churn to the provisioner's queue, and
+raising capacity (the saturation fix) adds containers to an exhausted
+kernel budget — the 2026-08-30 raise from C = 16 to 64 is what pushed the
+container count into the cap. The host fixes applied 2026-09-01:
+`fs.inotify.max_user_instances` 128 → 8192 (persisted in
+`/etc/sysctl.d/99-ci-runner-inotify.conf`); local-path-provisioner
+`--worker-threads 8 --kube-client-qps 50 --kube-client-burst 100` (live
+Deployment only — k3s can re-apply its bundled `local-storage.yaml` on a
+restart, which is what `livespec-sernfh` exists to end); kubelet `max-pods`
+110 → 200 (see `kueue/DERIVATION.md`, "The pod-capacity constraint"). Making
+the first two durable in this directory's node-local install mechanism is
+`livespec-a6lxuv`'s open leg; Kueue HA is `livespec-okxbkg`.
+
 ## ARC log retention: archive before the kubelet's buffer rotates
 
 Container logs live in the kubelet's rotating buffer, and the ARC controller
