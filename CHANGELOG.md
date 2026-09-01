@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.37.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.37.0...v1.37.1) (2026-09-01)
+
+
+### Bug Fixes
+
+* **factory:** make cargo shim survive a consumer .mise.toml ~/.cargo/bin prepend ([14763b2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/14763b26762a9eb095944fb1adebeb35b2a2f8eb))
+
 ## [1.37.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.36.0...v1.37.0) (2026-08-31)
 
 
