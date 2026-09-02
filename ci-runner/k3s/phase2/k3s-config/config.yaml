@@ -30,3 +30,10 @@ kubelet-arg:
 # reverting the pool's provisioner tuning (livespec-sernfh).
 disable:
   - local-storage
+
+# The admin kubeconfig's mode. ../../provision-k3s.sh step 3 used to chmod it
+# 0644 by hand for non-root kubectl/helm use, and k3s reset it to 0600 on
+# every start (observed after the 2026-09-02 reboot). This is the durable
+# form of the same decision — a cluster-local admin kubeconfig on a
+# single-tenant node with no externally reachable API server.
+write-kubeconfig-mode: "0644"

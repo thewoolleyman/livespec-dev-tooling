@@ -51,6 +51,7 @@ Controller + Kueue"), maintainer-directed 2026-08-15. This tree is
 | ARC runner scale set chart | `0.14.2` | `install-arc.sh` and every `phase2/arc/values-*.yaml` apply |
 | Runner image | `ghcr.io/actions/actions-runner:2.336.0@sha256:0cfdcc70…` | every `values-*.yaml` `template.spec.containers[0].image` |
 | Kueue | `v0.19.1` | `install-kueue.sh` |
+| helm | `v3.21.4` | `provision-k3s.sh` (`HELM_VERSION`; checksum-verified against the release's `.sha256sum`) — required by `phase2/reconstruct/converge-ci-stack.sh` |
 
 Nothing floats `latest` (rule restated here after the tree that first
 carried it was deleted under `livespec-s43svm.19`). The runner image is

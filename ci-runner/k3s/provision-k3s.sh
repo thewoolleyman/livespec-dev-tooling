@@ -31,24 +31,13 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 K3S_VERSION="v1.36.2+k3s1"
+HELM_VERSION="v3.21.4"        # co-maintained with README.md "Pinned versions"
 NODE_LABEL="k3s-role=arc-runner-host"
 
 log() { printf '\n== %s ==\n' "$*"; }
 
 # ---------------------------------------------------------------------------
-log "0. Pre-gate: confirm the existing podman pool is untouched by this script"
-# This script installs k3s only. It never stops, disables, or reconfigures
-# the ci-runner user, runner@.service instances, or podman. Assert the
-# runner user still exists as a sanity check that we're on the right host
-# and haven't been pointed at a script that assumes a fresh machine.
-if id ci-runner >/dev/null 2>&1; then
-  echo "existing podman ci-runner pool present (untouched by this script) — OK"
-else
-  echo "WARN: no ci-runner user found; proceeding anyway (fresh host is a valid target too)"
-fi
-
-# ---------------------------------------------------------------------------
-log "0b. Install the fleet's k3s server config BEFORE the first k3s start"
+log "0. Install the fleet's k3s server config BEFORE the first k3s start"
 # /etc/rancher/k3s/config.yaml (kubelet max-pods, the bundled local-storage
 # disable) is read by k3s on every start; installing it first means a fresh
 # node's very first start already carries it, and a rebuilt node cannot lose
@@ -77,6 +66,33 @@ else
     INSTALL_K3S_EXEC="server --disable traefik --disable servicelb --node-label ${NODE_LABEL}" \
     sh -s -
 fi
+
+# ---------------------------------------------------------------------------
+log "1b. Install helm ${HELM_VERSION} (idempotent — skip if already at this version)"
+# The reconstruct-on-boot converge (phase2/reconstruct/converge-ci-stack.sh)
+# fails closed without helm on PATH, and until 2026-09-02 nothing in git
+# installed it — the live /usr/local/bin/helm was hand-placed, so a rebuilt
+# host would boot into a cluster the converge could not rebuild. Pinned and
+# checksum-verified against the release's published .sha256sum.
+if command -v helm >/dev/null 2>&1 && helm version --short 2>/dev/null | grep -q "^${HELM_VERSION}+"; then
+  echo "helm already installed at ${HELM_VERSION} — skipping install"
+else
+  arch="$(uname -m)"
+  case "$arch" in
+    x86_64) helm_arch=amd64 ;;
+    aarch64) helm_arch=arm64 ;;
+    *) echo "FATAL: unsupported arch for helm: ${arch}"; exit 1 ;;
+  esac
+  tarball="helm-${HELM_VERSION}-linux-${helm_arch}.tar.gz"
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' EXIT
+  curl -fsSL --retry 3 -o "${tmp}/${tarball}" "https://get.helm.sh/${tarball}"
+  curl -fsSL --retry 3 -o "${tmp}/${tarball}.sha256sum" "https://get.helm.sh/${tarball}.sha256sum"
+  (cd "$tmp" && sha256sum -c "${tarball}.sha256sum")
+  tar -xzf "${tmp}/${tarball}" -C "$tmp" "linux-${helm_arch}/helm"
+  install -o root -g root -m 0755 "${tmp}/linux-${helm_arch}/helm" /usr/local/bin/helm
+fi
+echo "helm: $(helm version --short)"
 
 # ---------------------------------------------------------------------------
 log "2. Wait for the node to report Ready"

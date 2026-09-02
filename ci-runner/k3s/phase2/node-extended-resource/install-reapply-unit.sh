@@ -21,10 +21,14 @@
 #
 # The capacity argument is REQUIRED and is not defaulted, for exactly the reason
 # patch-node-churn-capacity.sh does not default it: the safe number was a
-# measurement, not a constant (during the side-by-side migration it depended
-# on the since-deleted podman pool's share of the same physical iowait budget;
-# see that script's header and ../kueue/DERIVATION.md). This unit makes an
-# ALREADY-DECIDED number durable across restarts; it does not decide it.
+# measurement, not a constant (see that script's header and
+# ../kueue/DERIVATION.md). This unit makes an ALREADY-DECIDED number durable
+# across restarts; it does not decide it.
+#
+# BOTH the timer AND the service are enabled (2026-09-02): the service is
+# WantedBy=multi-user.target and Before=converge-ci-stack.service so a boot
+# applies the resource before the queues that are denominated in it; the
+# timer keeps reconciling it every five minutes after that.
 #
 # Requires: root, systemd, and the same KUBECONFIG the service itself uses.
 set -euo pipefail
@@ -62,8 +66,9 @@ if grep -q CAPACITY_PLACEHOLDER "${UNIT_DIR}/${SERVICE}"; then
 fi
 
 # ---------------------------------------------------------------------------
-log "3. Enable and start the timer"
+log "3. Enable the service at boot and enable + start the timer"
 systemctl daemon-reload
+systemctl enable "${SERVICE}"
 systemctl enable --now "${TIMER}"
 
 # ---------------------------------------------------------------------------
@@ -74,4 +79,4 @@ KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}" \
   kubectl get nodes -l k3s-role=arc-runner-host \
   -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.allocatable.ci-runner\.io/churn-slot}{"\n"}{end}'
 
-log "DONE. ${TIMER} armed; ${SERVICE} reapplies capacity=${CAPACITY} every 5 minutes."
+log "DONE. ${TIMER} armed; ${SERVICE} reapplies capacity=${CAPACITY} at boot (before the converge) and every 5 minutes."
