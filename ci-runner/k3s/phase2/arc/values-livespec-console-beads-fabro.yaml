@@ -130,11 +130,23 @@ template:
 # See README.md "Two enforcement points, two DIFFERENT numbers" and
 # ../kueue/DERIVATION.md; the relation to hold is nominalQuota <= maxRunners.
 #
-# The value below is this repo's podman-era demand weight (16), inherited as a
-# proxy because nobody has measured its actual matrix width. Harmless at the
-# current capacity (C=16), where no repo can approach it; re-derive from a real
-# matrix-width measurement before raising capacity far enough for it to bind.
+# The value below was the podman-era demand weight (16). At C=16 that was
+# harmless — no repo could approach it. C was then raised to 64
+# (increase-ci-runners, livespec epic livespec-zec4mz, 2026-08-30), which is
+# exactly the "raising capacity far enough for it to bind" the prior comment
+# warned about: at C=64 a maxRunners of 16 CAPS this repo at 16 of the 64
+# churn-slots even when the pool is idle. That left console unable to exercise
+# the raised pool when its self-hosted routing was restored (2026-09-02), and
+# defeated the purpose of the raise (drive the pool toward 64 to measure the
+# real RAID-array limits). Raised to 64 to match the pool — "go big or go home":
+# every repo MAY burst to the whole pool when idle, while the shared churn-slot
+# node cap and Kueue still hold TOTAL pool use at C=64 (VALIDATION_CHECKLIST
+# item 7 proved the physical cap binds regardless of per-repo ceilings), so a
+# per-repo ceiling of 64 cannot oversubscribe the node. The relation
+# nominalQuota (2) <= maxRunners (64) still holds. Re-derive from a real
+# matrix-width measurement only if a fair-share ceiling BELOW the pool is ever
+# wanted.
 # See ../kueue/DERIVATION.md "Observation: ARC maxRunners still carries the
 # podman-era numbers".
 minRunners: 0
-maxRunners: 16
+maxRunners: 64
