@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.40.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.40.0...v1.40.1) (2026-09-02)
+
+
+### Bug Fixes
+
+* **ci-runner:** order the Kueue-webhook probe after the reconstruct chain at boot ([5b13939](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5b13939e6692a3c3bc888ba9dd44fc56fbd76266))
+* **ci-runner:** wait for the labeled node before patching churn-slot capacity ([7ad791c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7ad791c7a92ea7273e8eca9ca6bcfe0be66025f8))
+
 ## [1.40.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.39.1...v1.40.0) (2026-09-02)
 
 
