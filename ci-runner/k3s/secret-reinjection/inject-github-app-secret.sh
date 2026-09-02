@@ -107,9 +107,16 @@ kubectl create secret generic "$SECRET_NAME" \
 
 # ---------------------------------------------------------------------------
 log "3. Verify the secret exists with the three expected keys (never printing values)"
-# jsonpath over .data KEYS only — kubectl never emits the base64 values here.
+# go-template `len .data` counts the KEYS only — kubectl never emits the
+# base64 values here. (The earlier `jsonpath='{range .data.*}{"\n"}{end}' |
+# grep -c .` form was wrong by construction: it emitted one EMPTY line per
+# key and `grep -c .` counts NON-empty lines, so it read 0 on every run —
+# caught by the first k3s-restart cutover test, 2026-09-02, where the secret
+# was correctly rebuilt with 3 keys while this check reported failure.)
+# `|| echo 0` keeps `_keys` numeric if the get fails, so the `-eq` below
+# fails closed instead of erroring on an empty string.
 _keys="$(kubectl get secret "$SECRET_NAME" -n "$RUNNERS_NAMESPACE" \
-  -o jsonpath='{range .data.*}{"\n"}{end}' | grep -c . || true)"
+  -o go-template='{{len .data}}' 2>/dev/null || echo 0)"
 [ "$_keys" -eq 3 ] || { echo "FATAL: secret ${SECRET_NAME} has ${_keys} data key(s), expected 3"; exit 1; }
 
 log "DONE. ${RUNNERS_NAMESPACE}/${SECRET_NAME} present with 3 keys; ARC can authenticate to GitHub."
