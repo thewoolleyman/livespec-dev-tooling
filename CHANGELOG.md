@@ -58,6 +58,15 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.39.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.38.1...v1.39.0) (2026-09-02)
+
+
+### Features
+
+* **ci-runner:** boot-time reinjection of arc-github-app-installation secret ([03dc339](https://github.com/thewoolleyman/livespec-dev-tooling/commit/03dc339f32a58de7f0722ad3113826620e94130e))
+* **ci-runner:** reconstruct-on-boot converge for the CI cluster stack ([061b4db](https://github.com/thewoolleyman/livespec-dev-tooling/commit/061b4db7c55a34454944eb8352cd3056d1054266))
+* **ci-runner:** switch secret reinjection to a local systemd-creds credstore model ([facd66c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/facd66cafd134057e65c8d677b7097e1669f903a))
+
 ## [1.38.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.38.0...v1.38.1) (2026-09-02)
 
 
