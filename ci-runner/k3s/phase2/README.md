@@ -287,6 +287,65 @@ fleet's actual call volume) needs a live-cluster observation —
 | `arc/values-livespec-dev-tooling.yaml`, `arc/values-livespec-driver-claude.yaml`, `arc/values-livespec-driver-codex.yaml`, `arc/values-livespec-orchestrator-git-jsonl.yaml`, `arc/values-livespec-runtime.yaml` | The five remaining per-repo scale sets, captured from their live Helm releases 2026-08-19 (`livespec-s43svm.26`) and wired to the hook pod template (`livespec-s43svm.25`). |
 | `arc/values-livespec-driver-pi.yaml`, `kueue/cluster-queue-livespec-driver-pi.yaml` | The NINTH repository, stood up 2026-08-20 after the eight-repo cutover sequence had closed. Committed in the same change that created the scale set, rather than captured retroactively. Its `maxRunners: 13` is the fleet's first ACTUAL matrix-width measurement rather than a podman-era proxy, and its arrival is what surfaced the `max(1, …)` sum-invariant collision documented in `kueue/DERIVATION.md`. |
 | `arc/values-poweredge-xubuntu-k3s.yaml` | The surviving PHASE-1 proof scale set, also live and also captured 2026-08-19. Named by scale set rather than by repo because it points at `livespec-dev-tooling`, which already owns a `values-<repo>.yaml`. Not Kueue-gated; see the file's header. Its phase-1 sibling `local-ci-k3s` (`arc/values-local-ci-k3s.yaml`, captured the same day) was retired — Helm release uninstalled 2026-08-23, file deleted — under `livespec-s43svm.28`, because no workflow in any fleet repo routed to it. |
+| `reconstruct/converge-ci-stack.sh` | The one idempotent converge of the ENTIRE CI CLUSTER stack from this repository — ARC controller + all ten runner scale sets + the `arc-hook-pod-template` ConfigMap + Kueue core + every `ResourceFlavor`/`ClusterQueue`/`LocalQueue` — with zero manual `kubectl`/`helm` steps. One run takes an empty k3s datastore to all listeners `Running` and Kueue admitting. See "Reconstruct-on-boot" below for the scope boundary and the `install-arc.sh`/`install-kueue.sh` drift it supersedes. |
+| `reconstruct/converge-ci-stack.service` | Boot-ordered `oneshot` (`After=k3s.service`) that runs the converge once per boot. This is what makes the host CATTLE: today none of the cluster stack re-applies on boot, so a datastore wipe loses it. |
+| `reconstruct/install-converge-unit.sh` | Copies the converge script AND the `arc/`+`kueue/` artifacts it applies into `/usr/local/lib/ci-runner-k3s/` (the host carries no repo checkout, so the boot unit must be self-contained), installs the unit, and ENABLES it — not `--now`, since starting it applies the stack live. Node-local; re-run after editing any values/queue/template/converge artifact, and on any node rebuild. |
+
+## Reconstruct-on-boot: the CI cluster stack as cattle
+
+`reconstruct/` makes the single-node k3s host **reconstructible** — a
+prerequisite for later making its datastore volatile (tmpfs). Today the
+whole CI cluster stack lives ONLY in the k3s datastore, applied once by hand
+(`../provision-k3s.sh` → `../install-arc.sh` → `../install-kueue.sh`, plus the
+phase-2 per-repo scale sets and queues). Nothing re-applies on boot, so the
+host is a PET: wipe the datastore and the cluster is gone. `reconstruct/`
+closes that gap with a boot-ordered `systemd` `oneshot`
+(`converge-ci-stack.service`, `After=k3s.service`) that runs one idempotent
+converge script.
+
+**What it converges, in order** (`converge-ci-stack.sh`): wait for the node
+`Ready` → fail-closed pre-gate on the `arc-github-app-installation` secret →
+ARC controller (`helm upgrade --install`, chart `0.14.2`) → all ten runner
+scale sets from `arc/values-*.yaml` (each `helm upgrade --install`, chart
+`0.14.2`) → the `arc-hook-pod-template` ConfigMap (via
+`arc/converge-hook-pod-template.sh`) → Kueue core (`v0.19.1` manifests,
+server-side apply + rollout + CRD-established wait) → `kueue/resource-flavor.yaml`
+and every `kueue/cluster-queue-*.yaml`. Every operation is a
+`helm upgrade --install` or a `kubectl apply`, so a second run against an
+already-converged cluster makes no disruptive change.
+
+**Starting from an EMPTY datastore** (GitHub App secret assumed present — a
+sibling work-item, `livespec-qqzlek`, automates that re-injection), one boot
+converges the cluster to all scale-set listeners `Running` and Kueue admitting
+pods, with zero manual `kubectl`/`helm` steps.
+
+**Scope boundary.** The converge owns the CLUSTER stack only. It does NOT own
+the NODE-LOCAL machinery — the AppArmor profile (`apparmor/`), the inotify
+sysctl budget (`node-inotify-budget/`), the churn-slot extended resource
+(`node-extended-resource/`), and the warm uv cache (`warm-cache/`) — each of
+which has its own installer and its own boot-durability (a `/etc/apparmor.d`
+file, a `/etc/sysctl.d` drop-in, a reapply timer, a CronJob). It also decides
+NO numbers: scale-set ceilings live in `arc/values-*.yaml` and queue quotas in
+`kueue/cluster-queue-*.yaml`; the converge only makes those already-decided
+artifacts durable. And it never creates the GitHub App secret — it fail-closes
+if the secret is absent (`livespec-qqzlek` owns re-injection).
+
+**Drift it supersedes.** `../install-arc.sh` step 2 applies the
+`poweredge-xubuntu-k3s` release from the PHASE-1 file `arc/values-host-unique.yaml`;
+the converge instead uses the phase-2 captured file
+`arc/values-poweredge-xubuntu-k3s.yaml` for EVERY scale set (including that
+one), and never calls `install-arc.sh` step 2. Likewise `../install-kueue.sh`
+applies the phase-1 `kueue/resources.yaml` whose `phase1-proof-*` objects are
+declared at `v1beta1`; the phase-2 tree carries the SAME objects at `v1beta2`
+(`kueue/cluster-queue-phase1-proof.yaml`), so the converge INLINES only the
+Kueue-core install and applies the phase-2 `kueue/` tree exclusively, rather
+than invoking `install-kueue.sh` and double-applying those objects at two API
+versions. Both choices mirror the same principle: the phase-2 captured
+artifacts are the source of truth, the phase-1 installers are superseded.
+
+**This item authors repo artifacts ONLY.** `install-converge-unit.sh` ENABLES
+the unit (runs on next boot) but does not start it, because starting it applies
+the stack live; the live cutover is a separate attended step.
 
 ## The workflow pod is not the runner pod
 
