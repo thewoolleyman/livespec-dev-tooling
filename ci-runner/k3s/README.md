@@ -240,9 +240,61 @@ existing podman pool's supervisor already uses
 (`../gate-runner/mint-jitconfig.sh`'s token minting), never a broader
 fleet secret. This matches the existing host-requirements "Credential
 separation" clause: the credential that mints runner registrations is
-readable only by the supervising identity (here, whoever runs
-`install-arc.sh` with cluster-admin `kubectl` access), never injected
+readable only by the supervising identity (here, the `ci-sup` account
+that runs the reinjection unit below), never injected
 into a job's environment.
+
+### Automated boot reinjection (`secret-reinjection/`) — the out-of-band step, automated
+
+`install-arc.sh` still never creates the secret. What was formerly a
+MANUAL out-of-band step (create the secret by hand before running
+`install-arc.sh`) is now automated by the boot-time unit under
+`secret-reinjection/`, so a wiped or `tmpfs`-backed k3s datastore comes
+back with the credential ARC needs after ONE boot, with no human
+recreating it. This is the precondition for the tmpfs-datastore cutover
+(sibling item `livespec-mx26zz`) and the reconstruct-on-boot converge
+(sibling item `livespec-olp4c5`).
+
+| Path | Role |
+|---|---|
+| `secret-reinjection/inject-github-app-secret.sh` | Reads the three App-credential values from the environment, ensures the `arc-runners` namespace exists, then creates/refreshes `arc-github-app-installation` idempotently (`kubectl create … --dry-run=client -o yaml \| kubectl apply -f -`). |
+| `secret-reinjection/inject-github-app-secret.service` | systemd oneshot that runs the injector at boot, `After=k3s.service` and `Before=converge-ci-stack.service` (the `livespec-olp4c5` converge, authored in the sibling PR `feat/ci-host-reconstruct-on-boot`), so the secret exists before ARC is brought up. |
+| `secret-reinjection/install-secret-reinjection-unit.sh` | Installs the injector to `/usr/local/lib/ci-runner-k3s/` and the unit to `/etc/systemd/system/`, then `systemctl enable` (NOT `--now`) — arms it for next boot without applying live. |
+
+**1Password source — the least-privilege `github-ci-runners` Environment,
+never a broader fleet secret.** The unit runs the injector UNDER the
+dedicated `github-ci-runners` 1Password wrapper
+(`/usr/local/bin/with-github-ci-runners-env.sh`) — the SAME wrapper and
+Environment the podman pool's gate supervisor already uses
+(`../gate-runner/gate-runner-supervisor.service`). That wrapper injects
+three variables, which map onto the secret's three data keys:
+
+| 1Password Environment variable | Secret data key |
+|---|---|
+| `GITHUB_APP_ID_CI_RUNNER` | `github_app_id` |
+| `GITHUB_APP_INSTALLATION_ID_CI_RUNNER` | `github_app_installation_id` |
+| `GITHUB_PRIVATE_KEY_CI_RUNNER` (PEM content) | `github_app_private_key` |
+
+(These are the exact names `../gate-runner/gate-runner-supervisor.sh`
+reads out of that same injected env; the injector reuses them.)
+
+**The App private key never lands in git or on argv.** It is sourced only
+from 1Password at apply time, written to a `mktemp` file `chmod 600`
+(trap-cleaned on exit), and handed to `kubectl` via `--from-file` — never
+`--from-literal` (which would expose it in `/proc/<pid>/cmdline` and
+`ps`). The id fields (not secret-sensitive) use `--from-literal`. The
+injector never runs `set -x` and prints only phase banners.
+
+**Identity and preconditions (applied at the attended cutover).** The unit
+runs as `ci-sup` — the only identity that reads the App key — so no new
+identity gains the credential. Two live-host preconditions the unit
+declares but does not itself provision: `with-github-ci-runners-env.sh`
+must exist (the installer pre-gates this), and `ci-sup` must be able to
+read the k3s kubeconfig named in the unit's `Environment=KUBECONFIG=`
+(grant read access, or point it at a copy). `NoNewPrivileges` is
+deliberately unset on the unit because the wrapper self-escalates via
+`sudo -n` to decrypt its service-account token, exactly as in
+`gate-runner-supervisor.service`.
 
 **Namespace: `arc-runners`, not `arc-systems`.** Create the secret in
 the `arc-runners` namespace — the namespace every `gha-runner-scale-set`
