@@ -290,6 +290,8 @@ fleet's actual call volume) needs a live-cluster observation —
 | `reconstruct/converge-ci-stack.sh` | The one idempotent converge of the ENTIRE CI CLUSTER stack from this repository — ARC controller + all ten runner scale sets + the `arc-hook-pod-template` ConfigMap + Kueue core + every `ResourceFlavor`/`ClusterQueue`/`LocalQueue` — with zero manual `kubectl`/`helm` steps. One run takes an empty k3s datastore to all listeners `Running` and Kueue admitting. See "Reconstruct-on-boot" below for the scope boundary and the `install-arc.sh`/`install-kueue.sh` drift it supersedes. |
 | `reconstruct/converge-ci-stack.service` | Boot-ordered `oneshot` (`After=k3s.service`) that runs the converge once per boot. This is what makes the host CATTLE: today none of the cluster stack re-applies on boot, so a datastore wipe loses it. |
 | `reconstruct/install-converge-unit.sh` | Copies the converge script AND the `arc/`+`kueue/` artifacts it applies into `/usr/local/lib/ci-runner-k3s/` (the host carries no repo checkout, so the boot unit must be self-contained), installs the unit, and ENABLES it — not `--now`, since starting it applies the stack live. Node-local; re-run after editing any values/queue/template/converge artifact, and on any node rebuild. |
+| `datastore-tmpfs/var-lib-rancher-k3s-server-db.mount` | systemd `.mount` unit backing the k3s kine/SQLite datastore directory (`/var/lib/rancher/k3s/server/db`, ~110 MB live) with tmpfs, so control-plane fsyncs are RAM-speed and never queue behind CI churn on the array (livespec plan `ci-runner-pod-lifecycle-reliability`, research/003: the kine `Slow SQL` stall that dropped Kueue's admission webhook fleet-wide on 2026-09-01). VOLATILE by design — cleared on every reboot, which is exactly what keeps the reconstruct-on-boot path exercised rather than rotting. See "Datastore on tmpfs" below for the two units it depends on, the fail-safe ordering, and the rollback. |
+| `datastore-tmpfs/install-datastore-tmpfs.sh` | Installs that mount unit and ENABLES it for next boot — NEVER `--now`, since mounting over a RUNNING k3s's datastore would hide it mid-flight. Pre-gates on BOTH reconstruct units (`inject-github-app-secret.service`, `converge-ci-stack.service`) being enabled and refuses otherwise: a volatile datastore is safe only on a host that rebuilds itself. Node-local; re-run on any node rebuild. |
 
 ## Reconstruct-on-boot: the CI cluster stack as cattle
 
@@ -346,6 +348,119 @@ artifacts are the source of truth, the phase-1 installers are superseded.
 **This item authors repo artifacts ONLY.** `install-converge-unit.sh` ENABLES
 the unit (runs on next boot) but does not start it, because starting it applies
 the stack live; the live cutover is a separate attended step.
+
+## Datastore on tmpfs: making the volatility safe
+
+k3s keeps the entire cluster state — every Deployment, CRD instance, queue,
+Secret, and pod object — in one kine/SQLite datastore, `state.db` plus its
+WAL under `/var/lib/rancher/k3s/server/db`. On `poweredge-xubuntu` that
+directory sat on the same virtual disk as containerd's snapshots and every
+runner's `local-path` work volume. Under 60+ concurrent CI jobs the array
+ran at its cold-random-write service ceiling (livespec plan
+`ci-runner-pod-lifecycle-reliability`, research/004: ~1,000 write IOPS at
+~100 ms with a ~100-deep queue for 100 minutes), kine logged `Slow SQL`,
+Kueue's leader lost its lease and exited by design, and its single
+admission webhook (`mpod.kb.io`, `failurePolicy: Fail`) dropped — so every
+pod creation in the fleet failed for the restart window (research/003).
+
+`datastore-tmpfs/var-lib-rancher-k3s-server-db.mount` backs that directory
+with tmpfs. Control-plane fsyncs become RAM-speed and can never queue
+behind CI churn, so a datastore stall of that class cannot recur. The
+datastore is small (~110 MB live; `size=2G` is a ceiling, not a
+reservation) so the RAM cost is negligible — the objection that retired
+the RAM-backed *work-volume* idea (`livespec-trxcf7`, hundreds of GiB) does
+not apply here.
+
+### Volatility is the point, and it is safe only because of two other units
+
+tmpfs is cleared on **reboot** — it survives a plain
+`systemctl restart k3s`, because the mount is owned by the kernel, not by
+the k3s process. So after every boot k3s starts with an **empty**
+datastore, and the cluster is rebuilt from this repository by, in order:
+
+1. `secret-reinjection/inject-github-app-secret.service` — the GitHub App
+   secret, decrypted as root from the host's own systemd credstore
+   (seeded once, attended, from 1Password; `livespec-qqzlek`).
+2. `reconstruct/converge-ci-stack.service` — ARC + every scale set + the
+   hook-pod ConfigMap + Kueue + every queue (`livespec-olp4c5`; see
+   "Reconstruct-on-boot" above).
+
+That is the whole bargain: a host whose datastore rebuilds from git on
+every boot is cattle; a host that merely *could* be rebuilt by a runbook
+nobody runs is a pet with a plan. Making the datastore volatile forces the
+rebuild path to be exercised on every reboot, so it cannot quietly rot.
+It also means the two units above are a hard **precondition** —
+`install-datastore-tmpfs.sh` refuses to install the mount unless both are
+enabled, and the mount unit's own header says the same.
+
+Because a reboot clears the datastore AND every container together, the
+API server's view and the running containers can never disagree: there is
+no split-brain, and deliberately **no snapshot/restore leg** — restoring a
+stale datastore into a live cluster would be actively harmful, and the
+maintainer's own reasoning (2026-09-02) was that a restore that is not the
+exact latest state is worse than starting clean.
+
+### Fail-safe ordering, and what a bad rebuild actually costs
+
+The mount unit is ordered `Before=k3s.service` but k3s is **not** made to
+`Require` it. If the tmpfs mount ever fails, k3s starts on the **on-disk
+datastore underneath** — stale but intact — a degraded fallback rather
+than a blocked boot. The `.mount` is also `WantedBy=` (not `RequiredBy=`)
+`multi-user.target`, so a mount hiccup cannot hold up the machine.
+
+None of this can brick the host. The tmpfs holds only the ~110 MB
+datastore; the OS, the RAID array, the beads ledger, and every durable
+file are untouched. A bug in the converge script degrades to "the CI
+cluster comes up empty or wrong until someone re-runs the (fixed)
+converge" — the converge only ever runs `helm upgrade --install` and
+`kubectl apply`, so it creates and updates and never deletes host state.
+And because the tmpfs is mounted **over** the on-disk directory (hiding
+the disk copy, not deleting it), **rollback** is: stop k3s,
+`systemctl disable --now var-lib-rancher-k3s-server-db.mount`, start k3s —
+back on the original datastore.
+
+### Cutover procedure and live state
+
+The prep is zero-downtime: seed the credstore, install both reconstruct
+units, install (enable, never start) this mount. The flip itself needs k3s
+stopped, since the datastore cannot be swapped out from under a running
+SQLite. The maintainer-set sequence (2026-09-02) is a **k3s-restart test
+first** — `systemctl stop k3s` → `systemctl start` the mount (a fresh,
+empty tmpfs) → `systemctl start k3s` → start the two units in order →
+verify every scale set, queue and the secret came back from empty — and
+a **full host reboot only after that test is de-kinked**, as the final
+durability proof. Either event kills in-flight jobs (they orphan on the
+empty datastore and re-run), the same class of event as the 2026-09-01
+k3s restart. The added reboot cost is a couple of minutes, dominated by
+the ARC-controller and Kueue rollout waits, most of which a reboot
+already spends restarting the cluster today.
+
+**The k3s-restart cutover test PASSED on `poweredge-xubuntu`, 2026-09-02.**
+From `systemctl stop k3s` through a fresh empty tmpfs, k3s start (node
+`Ready` in ~12 s, only the four default namespaces, no ARC or Kueue CRDs —
+provably empty), the secret unit, and the converge (**47 s cold**, exit 0),
+the cluster came back **identical to its pre-test baseline** — ARC
+controller 1/1, 10 scale sets, 10 ClusterQueues, 10 LocalQueues, 2
+ResourceFlavors, the hook ConfigMap, Kueue 1/1 — with **10 listener pods
+Running, zero auth failures**, and real fleet jobs flowing through the
+rebuilt cluster within ~2 minutes of the stop. Exactly one kink surfaced:
+the secret unit's phase-3 verify counted 0 keys while the secret was
+correctly rebuilt with 3 (an empty-line-vs-`grep -c .` bug), fixed and
+re-proven live in `fix/secret-inject-verify-count` (`0c1dc719`). The
+mount unit is now **enabled** for boot. Live state: datastore on tmpfs,
+both reconstruct units enabled, credstore seeded, mount enabled + active.
+What remains is the maintainer's **full host reboot** as the final
+durability proof (mount + units firing unattended from a real boot).
+
+### What this does NOT do
+
+It does not own the reconstruct units (they have their own installers and
+this README's "Reconstruct-on-boot" section), it does not touch the
+node-local machinery (AppArmor, inotify, churn-slot, warm cache), and it
+does not move the bulk CI churn off the array — that is the NVMe tiering
+(`livespec-e2vcqf`), a separate, hardware-gated piece. Nor does it move
+anything precious: the beads/Dolt ledger and backups stay on the
+redundant RAID and must never go on tmpfs.
 
 ## The workflow pod is not the runner pod
 
