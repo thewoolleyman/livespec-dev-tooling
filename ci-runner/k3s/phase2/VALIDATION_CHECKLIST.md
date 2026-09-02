@@ -173,3 +173,17 @@ after every live action taken for this checklist.
    asserted. Mirrors the existing "JIT fleet capacity borrows fairly
    without exceeding 482 runners" scenario in `SPECIFICATION/
    scenarios.md`.
+
+8. **Prove the inotify budget survives a real reboot.** **OPEN.**
+   Run `node-inotify-budget/install-inotify-sysctl.sh` as root on
+   `poweredge-xubuntu` (it is idempotent), then confirm
+   `sysctl -n fs.inotify.max_user_instances` reports `8192`. Then, at
+   the next maintenance reboot (never during CI), confirm the value is
+   STILL `8192` after boot with no manual re-apply — i.e. that
+   `systemd-sysctl` picked up `/etc/sysctl.d/99-ci-runner-inotify.conf`.
+   Unlike item 3's extended-resource patch, this needs no reapply timer:
+   a `/etc/sysctl.d/` drop-in is applied at every boot by design, so the
+   reboot check is the whole proof. The interim value was hand-applied on
+   2026-09-01 (livespec plan `ci-runner-pod-lifecycle-reliability`,
+   research/002, carrier `livespec-a6lxuv`); this item confirms the
+   shipped installer reproduces it durably.
