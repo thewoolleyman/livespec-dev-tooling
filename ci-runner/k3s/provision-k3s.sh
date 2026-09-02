@@ -29,6 +29,7 @@
 # required, matching the existing host-requirements Network clause.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 K3S_VERSION="v1.36.2+k3s1"
 NODE_LABEL="k3s-role=arc-runner-host"
 
@@ -45,6 +46,15 @@ if id ci-runner >/dev/null 2>&1; then
 else
   echo "WARN: no ci-runner user found; proceeding anyway (fresh host is a valid target too)"
 fi
+
+# ---------------------------------------------------------------------------
+log "0b. Install the fleet's k3s server config BEFORE the first k3s start"
+# /etc/rancher/k3s/config.yaml (kubelet max-pods, the bundled local-storage
+# disable) is read by k3s on every start; installing it first means a fresh
+# node's very first start already carries it, and a rebuilt node cannot lose
+# the hand-set values this replaced (livespec-a6lxuv, livespec-sernfh). The
+# installer is idempotent and never restarts k3s.
+"${SCRIPT_DIR}/phase2/k3s-config/install-k3s-config.sh"
 
 # ---------------------------------------------------------------------------
 log "1. Install k3s ${K3S_VERSION} (idempotent — skip if already at this version)"

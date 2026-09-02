@@ -174,7 +174,15 @@ after every live action taken for this checklist.
    without exceeding 482 runners" scenario in `SPECIFICATION/
    scenarios.md`.
 
-8. **Prove the inotify budget survives a real reboot.** **OPEN.**
+8. **Prove the inotify budget survives a real reboot.** **CONFIRMED
+   2026-09-02.** The installer had been run live on 2026-09-01; after the
+   full host reboot of 2026-09-02 12:14Z (the tmpfs-datastore durability
+   proof, livespec plan `ci-runner-pod-lifecycle-reliability`, epic
+   `livespec-ifwnqj`), `sysctl -n fs.inotify.max_user_instances` read
+   `8192` at 12:20Z with no manual re-apply — `systemd-sysctl` picked up
+   the drop-in as designed. The same boot also confirmed the kubelet
+   `max-pods=200` from `/etc/rancher/k3s/config.yaml` (allocatable pods
+   200) and the churn-slot reapply (64). The original procedure follows.
    Run `node-inotify-budget/install-inotify-sysctl.sh` as root on
    `poweredge-xubuntu` (it is idempotent), then confirm
    `sysctl -n fs.inotify.max_user_instances` reports `8192`. Then, at
