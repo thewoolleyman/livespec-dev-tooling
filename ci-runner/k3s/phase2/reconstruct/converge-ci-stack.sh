@@ -3,39 +3,57 @@
 # on the single-node k3s host from this repository, with zero manual
 # kubectl/helm steps. One run takes an EMPTY k3s datastore (the GitHub App
 # installation secret assumed already present — see the fail-closed pre-gate
-# below) to: the ARC controller Running, all ten runner scale-set listeners
-# Running, the hook-pod-template ConfigMap converged, and Kueue installed and
-# admitting pods against every per-repo queue. A second run against an
-# already-converged cluster makes no disruptive change (every operation is a
-# `helm upgrade --install` or a `kubectl apply`).
+# below) to: the fleet-owned local-path provisioner Running, Kueue installed
+# and its admission webhook SERVING, every per-repo queue applied, the ARC
+# controller Running, all ten runner scale-set listeners Running, the
+# hook-pod-template ConfigMap converged, the warm-cache CronJob present, and
+# the Kueue-webhook probe's host credential re-rendered. A second run against
+# an already-converged cluster makes no disruptive change (every operation is
+# a `helm upgrade --install` or a `kubectl apply`).
 #
-# WHY THIS EXISTS: today none of the CI CLUSTER stack re-applies on boot — it
-# lives only in the k3s datastore, applied once by hand via provision-k3s.sh
-# -> install-arc.sh -> install-kueue.sh plus the phase-2 per-repo scale sets
-# and queues. That makes the host a PET: wipe the datastore and the cluster is
-# gone. This script is the reconstruct-on-boot converge that makes the host
-# CATTLE — a prerequisite for later making the datastore volatile (tmpfs). It
-# is wired to boot by ./converge-ci-stack.service (installed by
-# ./install-converge-unit.sh), After=k3s.service.
+# WHY THIS EXISTS: the k3s datastore is tmpfs (../datastore-tmpfs/), EMPTY on
+# every boot, so the host is CATTLE only because this converge rebuilds the
+# cluster from git on every boot. It is wired to boot by
+# ./converge-ci-stack.service (installed by ./install-converge-unit.sh),
+# After=k3s.service and After=inject-github-app-secret.service.
 #
-# SCOPE BOUNDARY — this converges the CLUSTER stack only:
-#   ARC controller + all runner scale sets + the hook-pod-template ConfigMap
-#   + Kueue core + every ResourceFlavor/ClusterQueue/LocalQueue.
-# It deliberately does NOT own the NODE-LOCAL machinery, each of which has its
-# own installer + its own boot-durability story:
+# ORDER MATTERS, and the order below was corrected against the first real
+# reboot (2026-09-02 12:14Z, livespec plan ci-runner-pod-lifecycle-reliability):
+#   - The local-path provisioner comes FIRST because the bundled k3s copy is
+#     disabled (../k3s-config/) and every runner pod needs a PVC from it.
+#   - Kueue comes BEFORE ARC, and the converge WAITS for Kueue's mutating
+#     webhook (`mpod.kb.io`, failurePolicy Fail, intercepting every pod
+#     outside kube-system/kueue-system) to have a ready endpoint. On that
+#     first reboot ARC was applied first: every listener-pod create failed
+#     `no endpoints available for service "kueue-webhook-service"` for ~80 s
+#     until Kueue was Ready, and only ARC's own retry backoff recovered it.
+#     Once the webhook configuration exists, NO pod can be created until its
+#     server answers, so the server must be up before anything creates pods.
+#   - Warm-cache and the probe identity come LAST: they depend on nothing
+#     above but nothing depends on them, so a failure there cannot hold up
+#     the runners.
+#
+# SCOPE BOUNDARY — this converges CLUSTER-side state (everything that lives
+# in the datastore) plus the ONE host file derived from it (the probe
+# kubeconfig). It deliberately does NOT own the NODE-LOCAL machinery, each of
+# which has its own installer and its own boot-durability story:
 #   - the AppArmor profile            (../apparmor/install-apparmor-profile.sh;
 #                                       /etc/apparmor.d survives reboot itself)
 #   - the inotify sysctl budget       (../node-inotify-budget/)
 #   - the churn-slot extended resource (../node-extended-resource/, its own
 #                                       reapply timer)
-#   - the warm uv cache               (../warm-cache/)
-# It also decides NO numbers: the scale-set ceilings live in ../arc/values-*.yaml
-# and the queue quotas in ../kueue/cluster-queue-*.yaml. This script only makes
+#   - the k3s server config           (../k3s-config/)
+#   - the orphaned-scratch sweep      (../storage-sweep/, Before=k3s)
+#   - the host OTel collector's own cluster identity (the otel-collector
+#     repository's otel-collector-identity.service)
+# It also decides NO numbers: the scale-set ceilings live in ../arc/values-*.yaml,
+# the queue quotas in ../kueue/cluster-queue-*.yaml, the provisioner tuning in
+# ../local-path-provisioner/local-path-provisioner.yaml. This script only makes
 # those ALREADY-DECIDED artifacts durable across a datastore wipe.
 #
-# It also does NOT create the GitHub App installation secret — a sibling
-# work-item (livespec-qqzlek) automates that re-injection; this script
-# fail-closes if the secret is absent (step 2), exactly like install-arc.sh.
+# It also does NOT create the GitHub App installation secret —
+# ../../secret-reinjection/ re-injects it on boot; this script fail-closes if
+# the secret is absent (step 2), exactly like install-arc.sh.
 #
 # Pinned chart/manifest versions are co-maintained with their canonical
 # installers and README.md "Pinned versions" — keep in lockstep:
@@ -44,19 +62,22 @@
 #
 # Requires: kubectl + helm on PATH (both at /usr/local/bin on the live host,
 # which is in systemd's default PATH), and KUBECONFIG pointed at the k3s
-# cluster (the .service sets KUBECONFIG=/etc/rancher/k3s/k3s.yaml).
+# cluster (the .service sets KUBECONFIG=/etc/rancher/k3s/k3s.yaml). Runs as
+# root (it writes the probe kubeconfig under /etc/ci-runner).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Where the arc/ and kueue/ artifact trees live. Resolved so ONE script works
-# both from the repo checkout and from the self-contained install location:
+# Where the applied artifact trees live. Resolved so ONE script works both
+# from the repo checkout and from the self-contained install location:
 #   - CONVERGE_ARTIFACT_DIR env override wins if set.
 #   - INSTALLED layout: install-converge-unit.sh copies this script plus the
-#     arc/ and kueue/ artifacts into /usr/local/lib/ci-runner-k3s/, so they sit
-#     BESIDE this script (${SCRIPT_DIR}/arc, ${SCRIPT_DIR}/kueue).
+#     arc/, kueue/, local-path-provisioner/, warm-cache/ and observability/
+#     artifacts into /usr/local/lib/ci-runner-k3s/, so they sit BESIDE this
+#     script.
 #   - REPO layout: this file is phase2/reconstruct/converge-ci-stack.sh, so the
-#     phase2 artifacts are one level up (${SCRIPT_DIR}/../arc, /../kueue).
+#     phase2 artifacts are one level up, and observability/ is at
+#     ci-runner/observability (../../../observability from here).
 # Fail loudly rather than silently converging a partial set from the wrong dir.
 if [ -n "${CONVERGE_ARTIFACT_DIR:-}" ]; then
   ARTIFACT_DIR="${CONVERGE_ARTIFACT_DIR}"
@@ -71,11 +92,24 @@ else
 fi
 ARC_DIR="${ARTIFACT_DIR}/arc"
 KUEUE_DIR="${ARTIFACT_DIR}/kueue"
+PROVISIONER_DIR="${ARTIFACT_DIR}/local-path-provisioner"
+WARM_CACHE_DIR="${ARTIFACT_DIR}/warm-cache"
+if [ -d "${ARTIFACT_DIR}/observability" ]; then
+  OBSERVABILITY_DIR="${ARTIFACT_DIR}/observability"          # installed layout
+else
+  OBSERVABILITY_DIR="$(cd "${ARTIFACT_DIR}/../../observability" && pwd)"   # repo layout
+fi
+RENDER_SA_KUBECONFIG="${SCRIPT_DIR}/render-sa-kubeconfig.sh"
+for d in "$ARC_DIR" "$KUEUE_DIR" "$PROVISIONER_DIR" "$WARM_CACHE_DIR" "$OBSERVABILITY_DIR"; do
+  [ -d "$d" ] || { echo "FATAL: artifact dir not found: ${d}" >&2; exit 1; }
+done
+[ -x "$RENDER_SA_KUBECONFIG" ] || { echo "FATAL: ${RENDER_SA_KUBECONFIG} not found or not executable" >&2; exit 1; }
 
 ARC_CHART_VERSION="0.14.2"   # co-maintained with ../../install-arc.sh + README
 KUEUE_VERSION="v0.19.1"      # co-maintained with ../../install-kueue.sh
 CONTROLLER_NAMESPACE="arc-systems"
 RUNNERS_NAMESPACE="arc-runners"
+PROBE_KUBECONFIG="${CI_KUEUE_PROBE_KUBECONFIG:-/etc/ci-runner/kueue-webhook-probe.kubeconfig}"
 
 # Live release -> phase-2 values file. The SINGLE source of truth in this
 # script for what gets applied; co-maintained with phase2/README.md
@@ -107,9 +141,18 @@ command -v helm >/dev/null || { echo "FATAL: helm not found on PATH"; exit 1; }
 : "${KUBECONFIG:?set KUBECONFIG to the k3s cluster kubeconfig (see ../../provision-k3s.sh)}"
 
 # ---------------------------------------------------------------------------
-log "1. Wait for the k3s node to report Ready"
-# Copied from ../../provision-k3s.sh step 2. On a fresh boot k3s.service is up
-# (Requires=/After= in the unit) but the node may still be registering.
+log "1. Wait for the API server and the k3s node to report Ready"
+# k3s.service being active does not mean the API is serving yet. Poll the
+# readiness endpoint, then the node condition (copied from provision-k3s.sh).
+api_ready=false
+for _ in $(seq 1 60); do
+  if kubectl get --raw /readyz >/dev/null 2>&1; then
+    api_ready=true
+    break
+  fi
+  sleep 2
+done
+[ "$api_ready" = true ] || { echo "FATAL: API server did not answer /readyz within 120s"; exit 1; }
 ready=false
 for _ in $(seq 1 60); do
   if kubectl get nodes --no-headers 2>/dev/null | grep -q ' Ready'; then
@@ -125,17 +168,17 @@ kubectl get nodes -o wide
 log "2. Fail-closed pre-gate: the GitHub App installation secret must already exist"
 # Mirrors install-arc.sh step 0. The secret's REQUIRED location is
 # RUNNERS_NAMESPACE (arc-runners) — that is where every gha-runner-scale-set
-# release resolves its githubConfigSecret. This script NEVER creates it; a
-# sibling work-item (livespec-qqzlek) automates the re-injection, and the
-# .service takes an After= on that unit once it exists. On a genuinely empty
-# datastore arc-runners may not exist yet — `kubectl get secret` reports the
-# same not-found either way, which is the correct fail-closed behavior.
+# release resolves its githubConfigSecret. This script NEVER creates it;
+# ../../secret-reinjection/ re-injects it on boot and the .service orders
+# after that unit. On a genuinely empty datastore arc-runners may not exist
+# yet — `kubectl get secret` reports the same not-found either way, which is
+# the correct fail-closed behavior.
 if ! kubectl get secret arc-github-app-installation -n "$RUNNERS_NAMESPACE" >/dev/null 2>&1; then
   cat <<EOF
 FATAL: secret arc-github-app-installation not found in ${RUNNERS_NAMESPACE}.
 Create it from the fleet's least-privilege GitHub App installation token
 BEFORE this converge runs (README.md "Credential separation" documents the
-exact scope; sibling work-item livespec-qqzlek automates it). This script
+exact scope; ../../secret-reinjection/ automates it at boot). This script
 never handles or persists that credential itself. If the ${RUNNERS_NAMESPACE}
 namespace does not exist yet, create it first:
   kubectl create namespace ${RUNNERS_NAMESPACE}
@@ -144,7 +187,60 @@ EOF
 fi
 
 # ---------------------------------------------------------------------------
-log "3. Install/upgrade the ARC controller (idempotent via helm upgrade --install)"
+log "3. Apply the fleet-owned local-path provisioner (the bundled copy is disabled)"
+# ../k3s-config/ disables k3s's packaged local-storage component, so without
+# this step no PVC on the node can bind. Applied before anything that creates
+# pods. The manifest is the bundled one plus the pool's tuning; see its header.
+kubectl apply -f "${PROVISIONER_DIR}/local-path-provisioner.yaml"
+kubectl -n kube-system rollout status deployment/local-path-provisioner --timeout=120s
+
+# ---------------------------------------------------------------------------
+log "4. Install/upgrade Kueue core (${KUEUE_VERSION}) and wait for its webhook to serve"
+# Inlined from install-kueue.sh step 1 (NOT invoked), because install-kueue.sh
+# also applies the PHASE-1 kueue/resources.yaml, whose phase1-proof objects are
+# declared at v1beta1. The phase-2 tree carries the SAME objects at v1beta2
+# (../kueue/cluster-queue-phase1-proof.yaml), applied in step 5 below, so
+# invoking install-kueue.sh would apply them a second time at a second API
+# version. This converge uses the phase-2 kueue tree exclusively — mirroring
+# how it uses the phase-2 values files rather than phase-1 values-host-unique.
+kubectl apply --server-side --force-conflicts -f \
+  "https://github.com/kubernetes-sigs/kueue/releases/download/${KUEUE_VERSION}/manifests.yaml"
+kubectl -n kueue-system rollout status deployment/kueue-controller-manager --timeout=180s
+# The CRDs ship in the same manifest; wait for the ones step 5 applies to be
+# Established before applying instances, so a fast boot cannot race them.
+kubectl wait --for=condition=established --timeout=60s \
+  crd/resourceflavors.kueue.x-k8s.io \
+  crd/clusterqueues.kueue.x-k8s.io \
+  crd/localqueues.kueue.x-k8s.io
+# The mutating webhook's Service must have a READY endpoint before any step
+# creates a pod outside kube-system/kueue-system, or that create fails
+# `no endpoints available for service "kueue-webhook-service"` (seen live
+# for ~80 s on the 2026-09-02 reboot when ARC preceded Kueue). Rollout
+# status above says the pod is Ready; this confirms the Service sees it.
+webhook_ready=false
+for _ in $(seq 1 60); do
+  ready_addrs="$(kubectl -n kueue-system get endpointslices \
+    -l kubernetes.io/service-name=kueue-webhook-service \
+    -o jsonpath='{range .items[*]}{range .endpoints[?(@.conditions.ready==true)]}{.addresses[*]}{" "}{end}{end}' 2>/dev/null || true)"
+  if [ -n "${ready_addrs// /}" ]; then
+    webhook_ready=true
+    echo "kueue-webhook-service ready endpoints: ${ready_addrs}"
+    break
+  fi
+  sleep 2
+done
+[ "$webhook_ready" = true ] || { echo "FATAL: kueue-webhook-service had no ready endpoint within 120s"; exit 1; }
+
+# ---------------------------------------------------------------------------
+log "5. Apply all per-repo Kueue resources (ResourceFlavor first, then queues)"
+kubectl apply -f "${KUEUE_DIR}/resource-flavor.yaml"
+for f in "${KUEUE_DIR}"/cluster-queue-*.yaml; do
+  [ -e "$f" ] || { echo "FATAL: no cluster-queue-*.yaml found in ${KUEUE_DIR}"; exit 1; }
+  kubectl apply -f "$f"
+done
+
+# ---------------------------------------------------------------------------
+log "6. Install/upgrade the ARC controller (idempotent via helm upgrade --install)"
 # Inlined from install-arc.sh step 1 rather than invoked, because install-arc.sh
 # is not decomposed into a controller-only entry point and its step 2 applies
 # the SUPERSEDED phase-1 values-host-unique.yaml (see the SCALE_SETS note).
@@ -156,11 +252,11 @@ kubectl -n "$CONTROLLER_NAMESPACE" rollout status deployment \
   -l app.kubernetes.io/name=gha-rs-controller --timeout=120s
 
 # ---------------------------------------------------------------------------
-log "4. Install/upgrade all ${#SCALE_SETS[@]} runner scale sets from phase-2 values files"
+log "7. Install/upgrade all ${#SCALE_SETS[@]} runner scale sets from phase-2 values files"
 for release in $(printf '%s\n' "${!SCALE_SETS[@]}" | sort); do
   values_file="${ARC_DIR}/${SCALE_SETS[$release]}"
   [ -f "$values_file" ] || { echo "FATAL: values file not found: ${values_file}"; exit 1; }
-  log "4.${release}: helm upgrade --install ${release}"
+  log "7.${release}: helm upgrade --install ${release}"
   helm upgrade --install "$release" \
     --namespace "$RUNNERS_NAMESPACE" --create-namespace \
     --version "$ARC_CHART_VERSION" \
@@ -169,44 +265,40 @@ for release in $(printf '%s\n' "${!SCALE_SETS[@]}" | sort); do
 done
 
 # ---------------------------------------------------------------------------
-log "5. Converge the arc-hook-pod-template ConfigMap"
+log "8. Converge the arc-hook-pod-template ConfigMap"
 # Reuse the existing idempotent converge (KUBECONFIG-driven, create|apply). It
 # reads its sibling hook-pod-template.yaml, so the installer copies both into
 # ARC_DIR together.
 "${ARC_DIR}/converge-hook-pod-template.sh"
 
 # ---------------------------------------------------------------------------
-log "6. Install/upgrade Kueue core (${KUEUE_VERSION})"
-# Inlined from install-kueue.sh steps 1 (NOT invoked), because install-kueue.sh
-# also applies the PHASE-1 kueue/resources.yaml, whose phase1-proof objects are
-# declared at v1beta1. The phase-2 tree carries the SAME objects at v1beta2
-# (../kueue/cluster-queue-phase1-proof.yaml), applied in step 7 below, so
-# invoking install-kueue.sh would apply them a second time at a second API
-# version. This converge uses the phase-2 kueue tree exclusively — mirroring
-# how it uses the phase-2 values files rather than phase-1 values-host-unique.
-kubectl apply --server-side --force-conflicts -f \
-  "https://github.com/kubernetes-sigs/kueue/releases/download/${KUEUE_VERSION}/manifests.yaml"
-kubectl -n kueue-system rollout status deployment/kueue-controller-manager --timeout=180s
-# The CRDs ship in the same manifest; wait for the ones step 7 applies to be
-# Established before applying instances, so a fast boot cannot race them.
-kubectl wait --for=condition=established --timeout=60s \
-  crd/resourceflavors.kueue.x-k8s.io \
-  crd/clusterqueues.kueue.x-k8s.io \
-  crd/localqueues.kueue.x-k8s.io
+log "9. Converge the warm uv cache's cluster objects (Namespace, CronJob, ConfigMaps)"
+# No populate Job here: the on-disk lower survives a reboot and the CronJob
+# refreshes it on its schedule. install-warm-cache.sh is the attended path
+# that also runs one populate immediately.
+WARM_CACHE_VALUES_DIR="${ARC_DIR}" "${WARM_CACHE_DIR}/converge-warm-cache.sh"
 
 # ---------------------------------------------------------------------------
-log "7. Apply all per-repo Kueue resources (ResourceFlavor first, then queues)"
-kubectl apply -f "${KUEUE_DIR}/resource-flavor.yaml"
-for f in "${KUEUE_DIR}"/cluster-queue-*.yaml; do
-  [ -e "$f" ] || { echo "FATAL: no cluster-queue-*.yaml found in ${KUEUE_DIR}"; exit 1; }
-  kubectl apply -f "$f"
-done
+log "10. Re-apply the Kueue-webhook probe's cluster identity and re-render its kubeconfig"
+# The probe (../../observability/ci-kueue-webhook-probe.sh) authenticates
+# with a ServiceAccount token; the account lives in the datastore and is
+# wiped on every boot. Re-create it from the committed RBAC and re-render
+# the host-side kubeconfig it reads (root-only; the probe runs as root).
+kubectl apply -f "${OBSERVABILITY_DIR}/kueue-webhook-probe-rbac.yaml"
+"${RENDER_SA_KUBECONFIG}" \
+  --namespace kueue-system \
+  --secret kueue-webhook-probe-token \
+  --user kueue-webhook-probe \
+  --dest "${PROBE_KUBECONFIG}" \
+  --group root --mode 0600
 
 # ---------------------------------------------------------------------------
-log "8. Verify (informational — non-fatal reads of the converged state)"
+log "11. Verify (informational — non-fatal reads of the converged state)"
+kubectl -n kube-system get deployment local-path-provisioner
 kubectl -n "$CONTROLLER_NAMESPACE" get deployment -l app.kubernetes.io/name=gha-rs-controller
 kubectl -n "$RUNNERS_NAMESPACE" get autoscalingrunnersets.actions.github.com
 kubectl -n kueue-system get pods
 kubectl get clusterqueue
+kubectl -n ci-warm-cache get cronjob
 
-log "DONE. CI cluster stack converged: ARC controller + ${#SCALE_SETS[@]} scale sets + hook ConfigMap + Kueue + all queues."
+log "DONE. CI cluster stack converged: provisioner + Kueue + all queues + ARC controller + ${#SCALE_SETS[@]} scale sets + hook ConfigMap + warm-cache CronJob + probe identity."

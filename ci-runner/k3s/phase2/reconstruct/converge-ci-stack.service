@@ -1,26 +1,34 @@
 # converge-ci-stack.service — boot-ordered reconstruct of the CI CLUSTER
 # stack on the single-node k3s host. Runs converge-ci-stack.sh once per boot,
-# AFTER k3s is up, to idempotently converge the ARC controller, all runner
-# scale sets, the hook-pod-template ConfigMap, Kueue core, and every
-# ResourceFlavor/ClusterQueue/LocalQueue from this repository — zero manual
-# kubectl/helm steps. See ./converge-ci-stack.sh for the full sequence, the
-# scope boundary (cluster stack only, not the node-local machinery), and the
-# fail-closed GitHub-App-secret pre-gate.
+# AFTER k3s is up and AFTER the GitHub App secret has been re-injected, to
+# idempotently converge the fleet-owned local-path provisioner, Kueue core
+# (waiting for its admission webhook to serve), every
+# ResourceFlavor/ClusterQueue/LocalQueue, the ARC controller, all runner
+# scale sets, the hook-pod-template ConfigMap, the warm-cache CronJob, and
+# the Kueue-webhook probe's re-rendered credential — from this repository,
+# zero manual kubectl/helm steps. See ./converge-ci-stack.sh for the full
+# sequence, why the ORDER is what it is, the scope boundary (cluster-side
+# state only, not the node-local machinery), and the fail-closed
+# GitHub-App-secret pre-gate.
 #
 # ORDERING vs. the secret: converge fail-closes if the arc-github-app-installation
-# secret is absent (the script's step 2). A sibling work-item (livespec-qqzlek)
-# adds a unit that re-injects that secret on boot; once it exists, add an
-# `After=<that-unit>` line below so the secret is present before this converges.
-# Until then the script's own fail-closed gate is the ordering guarantee.
+# secret is absent (the script's step 2). ../../secret-reinjection/
+# inject-github-app-secret.service re-creates it from the host credstore on
+# every boot and orders itself Before= this unit; the After=/Wants= below
+# state the same dependency from this side so it holds even if that unit's
+# own ordering is ever edited. Wants (not Requires): if the secret unit fails,
+# this converge still runs and fails closed with its own clear message,
+# rather than being silently skipped.
 #
 # oneshot (not a long-running service): it converges and exits. It is NOT
 # RemainAfterExit — a converged cluster needs no held state, and leaving it
 # inactive-dead after a clean exit is correct. Re-run manually any time with
 # `systemctl start converge-ci-stack.service` (idempotent).
 [Unit]
-Description=Converge the CI cluster stack (ARC + scale sets + Kueue + queues) on the k3s host
-After=k3s.service
+Description=Converge the CI cluster stack (provisioner + Kueue + queues + ARC + scale sets) on the k3s host
+After=k3s.service inject-github-app-secret.service
 Requires=k3s.service
+Wants=inject-github-app-secret.service
 
 [Service]
 Type=oneshot

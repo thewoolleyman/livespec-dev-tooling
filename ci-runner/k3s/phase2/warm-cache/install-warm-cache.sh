@@ -8,15 +8,20 @@
 # Three steps, all cluster objects (nothing node-local — the host path is
 # created by the hostPath mounts' DirectoryOrCreate on first use):
 #
-#   1. Generate the `warm-cache-repos` ConfigMap from ../arc/values-*.yaml:
-#      every `githubConfigUrl` of a per-repository scale set, de-duplicated.
-#      That is the live set of repositories routed to this pool, so the
-#      populator warms exactly the lockfiles this pool's jobs resolve and no
-#      hand-maintained second list can drift from the routing.
-#   2. Apply warm-cache-cronjob.yaml and converge its script ConfigMap from
-#      ./warm-cache-populate.sh, then run ONE populate Job immediately and
-#      wait for it, so the lower exists before the first workflow pod looks
-#      for it rather than up to a schedule interval later.
+#   1. Converge the CLUSTER objects via ./converge-warm-cache.sh — the
+#      `warm-cache-repos` ConfigMap derived from ../arc/values-*.yaml (every
+#      `githubConfigUrl` of a per-repository scale set, de-duplicated: the
+#      live set of repositories routed to this pool, so the populator warms
+#      exactly the lockfiles this pool's jobs resolve and no hand-maintained
+#      second list can drift from the routing), the Namespace + CronJob from
+#      warm-cache-cronjob.yaml, and the script ConfigMap from
+#      ./warm-cache-populate.sh. That converge is ALSO what the
+#      reconstruct-on-boot path runs every boot (the datastore is tmpfs and
+#      these objects are wiped with it); this installer is the attended
+#      superset.
+#   2. Run ONE populate Job immediately and wait for it, so the lower exists
+#      before the first workflow pod looks for it rather than up to a
+#      schedule interval later.
 #   3. Converge the arc-hook-pod-template ConfigMap (../arc/hook-pod-template.yaml
 #      carries the read-only mount, the postStart copy, and UV_CACHE_DIR), via
 #      the converge script shared with ../apparmor/install-apparmor-profile.sh.
@@ -29,8 +34,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NAMESPACE="ci-warm-cache"
-VALUES_DIR="${SCRIPT_DIR}/../arc"
-WARM_CACHE_IMAGE="${WARM_CACHE_IMAGE:-}"
 INITIAL_RUN_TIMEOUT="${INITIAL_RUN_TIMEOUT:-900s}"
 
 log() { printf '\n== %s ==\n' "$*"; }
@@ -39,38 +42,13 @@ command -v kubectl >/dev/null || { echo "FATAL: kubectl not found on PATH"; exit
 : "${KUBECONFIG:?set KUBECONFIG to the k3s cluster kubeconfig (see ../../provision-k3s.sh)}"
 
 # ---------------------------------------------------------------------------
-log "1. Derive the routed-repository list from ${VALUES_DIR}/values-*.yaml"
-repos_file="$(mktemp)"
-trap 'rm -f "${repos_file}"' EXIT
-# values-EXAMPLE-repo.yaml is the template (its URL carries a <REPO>
-# placeholder); everything else is a live scale set. The host-unique proof
-# set (values-poweredge-xubuntu-k3s.yaml) points at livespec-dev-tooling,
-# which its own per-repo file already names — hence the sort -u.
-grep -h '^githubConfigUrl:' "${VALUES_DIR}"/values-*.yaml \
-  | sed -E 's/^githubConfigUrl: *"?([^" ]+)"?.*/\1/' \
-  | grep -v '<' \
-  | sort -u > "${repos_file}"
-repo_count="$(grep -c . "${repos_file}")"
-[ "${repo_count}" -gt 0 ] || { echo "FATAL: no githubConfigUrl found under ${VALUES_DIR}"; exit 1; }
-echo "${repo_count} repositories:"
-sed 's/^/  /' "${repos_file}"
+log "1. Converge the cluster objects (Namespace, CronJob, both ConfigMaps)"
+# WARM_CACHE_IMAGE, if set, is honoured by the converge (it patches the
+# CronJob's image); WARM_CACHE_VALUES_DIR defaults to ../arc there.
+"${SCRIPT_DIR}/converge-warm-cache.sh"
 
 # ---------------------------------------------------------------------------
-log "2. Apply the CronJob, converge its ConfigMaps, run one populate now"
-kubectl apply -f "${SCRIPT_DIR}/warm-cache-cronjob.yaml"
-kubectl create configmap warm-cache-repos \
-  --namespace "${NAMESPACE}" \
-  --from-file="repos.txt=${repos_file}" \
-  --dry-run=client -o yaml | kubectl apply -f -
-kubectl create configmap warm-cache-populate \
-  --namespace "${NAMESPACE}" \
-  --from-file="warm-cache-populate.sh=${SCRIPT_DIR}/warm-cache-populate.sh" \
-  --dry-run=client -o yaml | kubectl apply -f -
-if [ -n "${WARM_CACHE_IMAGE}" ]; then
-  kubectl -n "${NAMESPACE}" patch cronjob warm-cache-populate --type=json \
-    -p "[{\"op\":\"replace\",\"path\":\"/spec/jobTemplate/spec/template/spec/containers/0/image\",\"value\":\"${WARM_CACHE_IMAGE}\"}]"
-fi
-
+log "2. Run one populate now and wait for it"
 # One immediate run, named uniquely so re-running this installer never
 # collides with a previous manual run still being retained by history.
 job_name="warm-cache-populate-install-$(date -u +%Y%m%d%H%M%S)"

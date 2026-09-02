@@ -1,0 +1,32 @@
+# config.yaml — the k3s server configuration for a CI runner pool node,
+# installed to /etc/rancher/k3s/config.yaml by ./install-k3s-config.sh. k3s
+# reads it on every start, so every key here is durable across a reboot AND
+# a from-scratch rebuild — which the hand-written copy it replaces (max-pods,
+# set live on 2026-09-01) was not.
+#
+# Keys here MERGE with the flags ../../provision-k3s.sh passes on the k3s
+# command line (`--disable traefik --disable servicelb --node-label ...`):
+# k3s prepends config-file values to its argument list, and list-valued
+# flags such as `disable` accumulate. The packaged-component disable below
+# is ALSO enforced by the `local-storage.yaml.skip` marker the installer
+# writes, so it holds even if that precedence ever changes.
+
+# kubelet max-pods: 2 x churn-slot capacity (64) for runner + workflow pods,
+# plus the local-path provisioner's transient helper pods and the system
+# pods, must fit or the node deadlocks at the pod cap — the helper pods that
+# provision the NEXT job's PVC cannot schedule. Bounded above by the node pod
+# CIDR 10.42.0.0/24 (~250 addresses). Derivation: ../kueue/DERIVATION.md
+# "The pod-capacity constraint"; ratified as a host requirement in livespec
+# core non-functional-requirements.md §"Self-hosted CI runner host
+# requirements" (v216). Decided 2026-09-01 (livespec plan
+# ci-runner-pod-lifecycle-reliability, child livespec-a6lxuv).
+kubelet-arg:
+  - "max-pods=200"
+
+# The bundled local-path provisioner is DISABLED so it cannot overwrite the
+# fleet-owned copy (../local-path-provisioner/local-path-provisioner.yaml,
+# applied by the reconstruct-on-boot converge). k3s re-applies its bundled
+# manifest on every start and did exactly that on the 2026-09-02 reboot,
+# reverting the pool's provisioner tuning (livespec-sernfh).
+disable:
+  - local-storage

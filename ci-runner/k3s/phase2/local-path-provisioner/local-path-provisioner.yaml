@@ -1,0 +1,185 @@
+# local-path-provisioner.yaml — the FLEET-OWNED local-path provisioner for the
+# CI runner pool, applied on every boot by ../reconstruct/converge-ci-stack.sh
+# (step 3) in place of k3s's bundled copy.
+#
+# WHY FLEET-OWNED: k3s ships this same provisioner as a packaged component
+# (/var/lib/rancher/k3s/server/manifests/local-storage.yaml) and re-writes
+# that file on every start. The tuning the pool needs (the `args:` below) was
+# first applied as a live `kubectl patch` on 2026-09-01 and survived one k3s
+# restart, then REVERTED on the 2026-09-02 12:14Z reboot onto the empty tmpfs
+# datastore — k3s re-applied its bundled manifest and the args came back
+# empty (livespec plan `ci-runner-pod-lifecycle-reliability`, epic
+# `livespec-ifwnqj`, child `livespec-sernfh`). The only durable shape is to
+# DISABLE the packaged component (`disable: [local-storage]` in
+# ../k3s-config/config.yaml, plus the `local-storage.yaml.skip` marker its
+# installer writes) and apply THIS file from the reconstruct-on-boot path.
+#
+# CONTENT: byte-for-byte the k3s v1.36.2+k3s1 bundled manifest (image
+# rancher/local-path-provisioner:v0.0.36, path /var/lib/rancher/k3s/storage,
+# default StorageClass `local-path`, WaitForFirstConsumer) plus ONE addition —
+# the container `args:`. Keep the image pin in lockstep with the k3s version
+# in ../../provision-k3s.sh: a k3s upgrade that bumps the bundled provisioner
+# is the moment to re-diff this file against the new bundled copy.
+#
+# THE TUNING (measured 2026-09-01, research/001 and research/002 of the plan
+# above), against k3s's bundled defaults of 4 workers / QPS 5 / burst 10:
+#   --worker-threads 8    Four workers fell ~11 minutes behind under pod
+#                         churn; 32 workers (tried 14:19Z) multiplied helper
+#                         pods into the then-exhausted inotify instance cap
+#                         and made containerd worse; 8 (from 14:23Z) is the
+#                         measured-good middle and has stayed so since the
+#                         cap was raised (../node-inotify-budget/). Each
+#                         worker is one concurrent helper pod, i.e. one more
+#                         container against that budget — see
+#                         ../kueue/DERIVATION.md "The pod-capacity constraint".
+#   --kube-client-qps 50  The defaults produced 25 client-side throttling
+#   --kube-client-burst 100  waits (~1.2 s each) in 20 minutes; 50/100 took
+#                         that to zero with no API-server pressure observed.
+#
+# HELPER-POD TIMEOUT POSTURE: v0.0.36 hard-codes the per-volume helper pod's
+# 120 s ceiling (no flag). It is NOT tuned here on purpose: with the inotify
+# budget in place a helper pod's whole lifecycle is ~10-25 s, and a 120 s
+# overrun is a symptom of the host condition ../wedged-runner/'s sibling scan
+# (livespec-nhjpai) exists to alarm on, not a number to widen.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: local-path-provisioner-service-account
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: local-path-provisioner-role
+rules:
+- apiGroups: [""]
+  resources: ["nodes", "persistentvolumeclaims", "configmaps", "pods/log"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["endpoints", "persistentvolumes", "pods"]
+  verbs: ["*"]
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create", "patch"]
+- apiGroups: ["storage.k8s.io"]
+  resources: ["storageclasses"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: local-path-provisioner-bind
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: local-path-provisioner-role
+subjects:
+- kind: ServiceAccount
+  name: local-path-provisioner-service-account
+  namespace: kube-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: local-path-provisioner
+  namespace: kube-system
+spec:
+  revisionHistoryLimit: 0
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: local-path-provisioner
+  template:
+    metadata:
+      labels:
+        app: local-path-provisioner
+    spec:
+      priorityClassName: "system-node-critical"
+      serviceAccountName: local-path-provisioner-service-account
+      tolerations:
+          - key: "CriticalAddonsOnly"
+            operator: "Exists"
+          - key: "node-role.kubernetes.io/control-plane"
+            operator: "Exists"
+            effect: "NoSchedule"
+      nodeSelector:
+        kubernetes.io/os: linux
+      containers:
+      - name: local-path-provisioner
+        image: "rancher/local-path-provisioner:v0.0.36"
+        imagePullPolicy: IfNotPresent
+        command:
+        - local-path-provisioner
+        - start
+        - --config
+        - /etc/config/config.json
+        # The fleet's tuning — the ONLY divergence from the bundled manifest.
+        # Derivation in this file's header.
+        args:
+        - --worker-threads
+        - "8"
+        - --kube-client-qps
+        - "50"
+        - --kube-client-burst
+        - "100"
+        volumeMounts:
+        - name: config-volume
+          mountPath: /etc/config/
+        env:
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+      volumes:
+        - name: config-volume
+          configMap:
+            name: local-path-config
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-path
+  annotations:
+    defaultVolumeType: "local"
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: rancher.io/local-path
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Delete
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: local-path-config
+  namespace: kube-system
+data:
+  config.json: |-
+    {
+      "nodePathMap":[
+      {
+        "node":"DEFAULT_PATH_FOR_NON_LISTED_NODES",
+        "paths":["/var/lib/rancher/k3s/storage"]
+      }
+      ]
+    }
+  setup: |-
+    #!/bin/sh
+    set -eu
+    mkdir -m 0777 -p "${VOL_DIR}"
+    chmod 700 "${VOL_DIR}/.."
+  teardown: |-
+    #!/bin/sh
+    set -eu
+    rm -rf "${VOL_DIR}"
+  helperPod.yaml: |-
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      name: helper-pod
+    spec:
+      containers:
+      - name: helper-pod
+        image: "rancher/mirrored-library-busybox:1.37.0"
+        imagePullPolicy: IfNotPresent

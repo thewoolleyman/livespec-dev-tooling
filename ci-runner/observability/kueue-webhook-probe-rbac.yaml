@@ -22,15 +22,19 @@
 # deprecated in v1.33+" but still mirrors it today). Verified denied: pods, any
 # other namespace, secrets.
 #
-# APPLY (out-of-band, once per host — install-observability.sh does NOT do this):
-#   sudo k3s kubectl apply -f ci-runner/observability/kueue-webhook-probe-rbac.yaml
-# then generate the kubeconfig from the populated token Secret:
-#   NS=kueue-system; S=kueue-webhook-probe-token
-#   D=/etc/ci-runner/kueue-webhook-probe.kubeconfig; sudo install -o root -g root -m 0755 -d /etc/ci-runner
-#   TOKEN="$(sudo k3s kubectl -n $NS get secret $S -o jsonpath='{.data.token}' | base64 -d)"
-#   CA="$(sudo k3s kubectl -n $NS get secret $S -o jsonpath='{.data.ca\.crt}')"
-#   then write cluster{server: https://127.0.0.1:6443, certificate-authority-data: $CA},
-#   user{token: $TOKEN}, root-owned mode 0600. Never echo the token.
+# APPLIED ON EVERY BOOT by the reconstruct-on-boot converge
+# (../k3s/phase2/reconstruct/converge-ci-stack.sh, step 10), which applies
+# this manifest and then renders the kubeconfig from the populated token
+# Secret via ../k3s/phase2/reconstruct/render-sa-kubeconfig.sh to
+# /etc/ci-runner/kueue-webhook-probe.kubeconfig (root-owned, mode 0600, token
+# never echoed). WHY AT BOOT: the k3s datastore is tmpfs and EMPTY on every
+# boot (../k3s/phase2/datastore-tmpfs/), so this ServiceAccount is wiped at
+# each boot; a hand-rendered kubeconfig (as this was first done, 2026-08-28)
+# then pointed at a dead account and the probe failed every five minutes
+# after the 2026-09-02 reboot. install-observability.sh still does NOT apply
+# this — it installs the host-side units; the converge owns the cluster-side
+# identity. To re-render by hand between boots:
+#   sudo systemctl start converge-ci-stack.service   (idempotent)
 apiVersion: v1
 kind: ServiceAccount
 metadata:

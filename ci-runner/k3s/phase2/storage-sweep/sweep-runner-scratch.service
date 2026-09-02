@@ -1,0 +1,34 @@
+# sweep-runner-scratch.service — boot-ordered sweep of orphaned local-path
+# runner scratch under /var/lib/rancher/k3s/storage, run BEFORE k3s starts on
+# a boot whose datastore is empty. See ./sweep-runner-scratch.sh for the two
+# safety conditions and why they hold on this pool (livespec-psq5we).
+#
+# ORDERING: Before=k3s.service so no PV can be created into a directory the
+# sweep is about to remove; After= the tmpfs datastore mount so the
+# ConditionPathExists below observes the EMPTY tmpfs rather than the on-disk
+# datastore hidden beneath it; RequiresMountsFor= the storage root (an fstab
+# bind mount onto the cache volume) so the sweep never runs against an
+# unmounted path — which would be a different, empty directory on /.
+#
+# THE CONDITION IS THE SAFETY GATE: state.db absent means the datastore is
+# empty (a fresh tmpfs), so nothing can reference these directories. If the
+# tmpfs mount ever fails and k3s falls back to the intact on-disk datastore,
+# state.db exists and this unit is skipped — the sweep never runs against a
+# datastore that still holds PersistentVolumes.
+#
+# oneshot, not RemainAfterExit: it sweeps and exits. Not Required by k3s — a
+# failure here is logged and k3s starts regardless (an unswept directory
+# costs disk, not availability).
+[Unit]
+Description=Sweep orphaned local-path runner scratch before k3s starts (empty-datastore boot only)
+Before=k3s.service
+After=var-lib-rancher-k3s-server-db.mount
+RequiresMountsFor=/var/lib/rancher/k3s/storage
+ConditionPathExists=!/var/lib/rancher/k3s/server/db/state.db
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/ci-runner-k3s/sweep-runner-scratch.sh
+
+[Install]
+WantedBy=multi-user.target

@@ -292,45 +292,79 @@ fleet's actual call volume) needs a live-cluster observation —
 | `reconstruct/install-converge-unit.sh` | Copies the converge script AND the `arc/`+`kueue/` artifacts it applies into `/usr/local/lib/ci-runner-k3s/` (the host carries no repo checkout, so the boot unit must be self-contained), installs the unit, and ENABLES it — not `--now`, since starting it applies the stack live. Node-local; re-run after editing any values/queue/template/converge artifact, and on any node rebuild. |
 | `datastore-tmpfs/var-lib-rancher-k3s-server-db.mount` | systemd `.mount` unit backing the k3s kine/SQLite datastore directory (`/var/lib/rancher/k3s/server/db`, ~110 MB live) with tmpfs, so control-plane fsyncs are RAM-speed and never queue behind CI churn on the array (livespec plan `ci-runner-pod-lifecycle-reliability`, research/003: the kine `Slow SQL` stall that dropped Kueue's admission webhook fleet-wide on 2026-09-01). VOLATILE by design — cleared on every reboot, which is exactly what keeps the reconstruct-on-boot path exercised rather than rotting. See "Datastore on tmpfs" below for the two units it depends on, the fail-safe ordering, and the rollback. |
 | `datastore-tmpfs/install-datastore-tmpfs.sh` | Installs that mount unit and ENABLES it for next boot — NEVER `--now`, since mounting over a RUNNING k3s's datastore would hide it mid-flight. Pre-gates on BOTH reconstruct units (`inject-github-app-secret.service`, `converge-ci-stack.service`) being enabled and refuses otherwise: a volatile datastore is safe only on a host that rebuilds itself. Node-local; re-run on any node rebuild. |
+| `local-path-provisioner/local-path-provisioner.yaml` | The FLEET-OWNED local-path provisioner: k3s's bundled `local-storage.yaml` byte-for-byte plus the pool's tuning (`--worker-threads 8 --kube-client-qps 50 --kube-client-burst 100`, derivation in the header). Applied by the converge on every boot in place of the bundled copy, which `k3s-config/` disables — the 2026-09-02 reboot proved k3s otherwise re-applies its own manifest and silently reverts the tuning (`livespec-sernfh`). |
+| `k3s-config/config.yaml` + `install-k3s-config.sh` | The k3s server configuration as SOURCE (`kubelet-arg: max-pods=200`; `disable: [local-storage]`), installed to `/etc/rancher/k3s/config.yaml` plus the `local-storage.yaml.skip` packaged-manifest marker as a second enforcement point for the disable. Replaces the hand-written config of 2026-09-01 that lived nowhere in git (`livespec-a6lxuv`'s rebuild-durability leg). `../provision-k3s.sh` runs it before the first k3s start. Takes effect on the next k3s start; never restarts k3s itself. |
+| `storage-sweep/sweep-runner-scratch.sh` + `.service` + `install-storage-sweep.sh` | Boot-ordered (`Before=k3s.service`) removal of every `pvc-*` directory under `/var/lib/rancher/k3s/storage`, gated on the datastore being EMPTY (`ConditionPathExists=!.../state.db`, re-checked by the script) so it can only ever run when no PV can reference a directory. Ends the orphan accumulation the tmpfs boot creates by design (`livespec-psq5we`: ~150 dirs / ~50 GB found 2026-09-02). Safe ONLY because every PVC on this pool is ephemeral runner scratch — see "Storage sweep" below before placing any other PVC on this node. |
+| `warm-cache/converge-warm-cache.sh` | The idempotent converge of the warm cache's CLUSTER objects (Namespace, CronJob, both ConfigMaps) with no populate Job — called by the boot converge (those objects are wiped with the tmpfs datastore; the CronJob was simply gone after the 2026-09-02 reboot) and by `install-warm-cache.sh`, which adds the attended initial populate. |
+| `reconstruct/render-sa-kubeconfig.sh` | Renders a host-side kubeconfig from a ServiceAccount's populated token Secret (token never echoed). Used by the converge to re-render the Kueue-webhook probe's credential (`../../observability/kueue-webhook-probe-rbac.yaml`) on every boot, since the account it names is wiped with the datastore. |
+| `install-node.sh` | The ONE ordered runbook for the node-local half: runs every installer in this tree in dependency order with the right arguments (`sudo install-node.sh 64`), so a from-scratch rebuild is one command. Enables the boot units, never starts them, never restarts k3s. Lists what it deliberately leaves attended (credstore seeding, the OTel collector from its own repo, the initial warm-cache populate). |
 
 ## Reconstruct-on-boot: the CI cluster stack as cattle
 
-`reconstruct/` makes the single-node k3s host **reconstructible** — a
-prerequisite for later making its datastore volatile (tmpfs). Today the
-whole CI cluster stack lives ONLY in the k3s datastore, applied once by hand
-(`../provision-k3s.sh` → `../install-arc.sh` → `../install-kueue.sh`, plus the
-phase-2 per-repo scale sets and queues). Nothing re-applies on boot, so the
-host is a PET: wipe the datastore and the cluster is gone. `reconstruct/`
-closes that gap with a boot-ordered `systemd` `oneshot`
-(`converge-ci-stack.service`, `After=k3s.service`) that runs one idempotent
-converge script.
+`reconstruct/` makes the single-node k3s host **reconstructible** — the
+precondition for its datastore being volatile (tmpfs, below). Before it,
+the whole CI cluster stack lived ONLY in the k3s datastore, applied once by
+hand (`../provision-k3s.sh` → `../install-arc.sh` → `../install-kueue.sh`,
+plus the phase-2 per-repo scale sets and queues); nothing re-applied on
+boot, so the host was a PET: wipe the datastore and the cluster is gone.
+`reconstruct/` closes that gap with a boot-ordered `systemd` `oneshot`
+(`converge-ci-stack.service`, `After=k3s.service` and
+`After=inject-github-app-secret.service`) that runs one idempotent converge
+script.
 
-**What it converges, in order** (`converge-ci-stack.sh`): wait for the node
-`Ready` → fail-closed pre-gate on the `arc-github-app-installation` secret →
-ARC controller (`helm upgrade --install`, chart `0.14.2`) → all ten runner
-scale sets from `arc/values-*.yaml` (each `helm upgrade --install`, chart
-`0.14.2`) → the `arc-hook-pod-template` ConfigMap (via
-`arc/converge-hook-pod-template.sh`) → Kueue core (`v0.19.1` manifests,
-server-side apply + rollout + CRD-established wait) → `kueue/resource-flavor.yaml`
-and every `kueue/cluster-queue-*.yaml`. Every operation is a
+**What it converges, in order** (`converge-ci-stack.sh`): wait for the API
+(`/readyz`) and the node `Ready` → fail-closed pre-gate on the
+`arc-github-app-installation` secret → the fleet-owned **local-path
+provisioner** (`local-path-provisioner/`; the bundled copy is disabled by
+`k3s-config/`) → **Kueue core** (`v0.19.1` manifests, server-side apply +
+rollout + CRD-established wait) **and a wait for its mutating webhook to have
+a ready endpoint** → `kueue/resource-flavor.yaml` and every
+`kueue/cluster-queue-*.yaml` → ARC controller (`helm upgrade --install`,
+chart `0.14.2`) → all ten runner scale sets from `arc/values-*.yaml` (each
+`helm upgrade --install`, chart `0.14.2`) → the `arc-hook-pod-template`
+ConfigMap (via `arc/converge-hook-pod-template.sh`) → the warm cache's
+cluster objects (`warm-cache/converge-warm-cache.sh`, no populate Job) →
+the Kueue-webhook probe's RBAC re-applied and its host kubeconfig
+re-rendered (`render-sa-kubeconfig.sh`). Every operation is a
 `helm upgrade --install` or a `kubectl apply`, so a second run against an
 already-converged cluster makes no disruptive change.
 
-**Starting from an EMPTY datastore** (GitHub App secret assumed present — a
-sibling work-item, `livespec-qqzlek`, automates that re-injection), one boot
-converges the cluster to all scale-set listeners `Running` and Kueue admitting
-pods, with zero manual `kubectl`/`helm` steps.
+**Why that order.** The first real reboot (2026-09-02 12:14Z) ran ARC before
+Kueue: ARC's controller was up at +10 s, Kueue's webhook had no endpoint
+until +2m35s, and because `mpod.kb.io` has `failurePolicy: Fail` and
+intercepts every pod outside `kube-system`/`kueue-system`, every
+listener-pod create failed `no endpoints available for service
+"kueue-webhook-service"` for ~80 s until ARC's own retry backoff recovered
+it. Once that webhook configuration exists, NO pod can be created until its
+server answers — so the server is brought up, and waited for, before
+anything that creates pods. The provisioner comes first for the same
+reason in the other direction: nothing can bind a PVC without it, and the
+bundled copy that used to appear "for free" is now disabled.
 
-**Scope boundary.** The converge owns the CLUSTER stack only. It does NOT own
-the NODE-LOCAL machinery — the AppArmor profile (`apparmor/`), the inotify
-sysctl budget (`node-inotify-budget/`), the churn-slot extended resource
-(`node-extended-resource/`), and the warm uv cache (`warm-cache/`) — each of
-which has its own installer and its own boot-durability (a `/etc/apparmor.d`
-file, a `/etc/sysctl.d` drop-in, a reapply timer, a CronJob). It also decides
-NO numbers: scale-set ceilings live in `arc/values-*.yaml` and queue quotas in
-`kueue/cluster-queue-*.yaml`; the converge only makes those already-decided
-artifacts durable. And it never creates the GitHub App secret — it fail-closes
-if the secret is absent (`livespec-qqzlek` owns re-injection).
+**Starting from an EMPTY datastore** (the GitHub App secret re-injected by
+`../secret-reinjection/`), one boot converges the cluster to all scale-set
+listeners `Running` and Kueue admitting pods, with zero manual
+`kubectl`/`helm` steps — proven by the 2026-09-02 reboot (see "Datastore on
+tmpfs" below).
+
+**Scope boundary.** The converge owns CLUSTER-side state (everything that
+lives in the datastore) plus the one host file derived from it (the probe
+kubeconfig). It does NOT own the NODE-LOCAL machinery — the AppArmor profile
+(`apparmor/`), the inotify sysctl budget (`node-inotify-budget/`), the
+churn-slot extended resource (`node-extended-resource/`), the k3s server
+config (`k3s-config/`), the orphaned-scratch sweep (`storage-sweep/`), and
+the host OTel collector's own cluster identity (the `otel-collector`
+repository's `otel-collector-identity.service`, the same boot-time
+re-render pattern for the same reason) — each of which has its own
+installer and its own boot-durability (a `/etc/apparmor.d` file, a
+`/etc/sysctl.d` drop-in, a reapply timer, a config file, a `Before=k3s`
+unit). `install-node.sh` runs those installers in order. The converge also
+decides NO numbers: scale-set ceilings live in `arc/values-*.yaml`, queue
+quotas in `kueue/cluster-queue-*.yaml`, the provisioner tuning in
+`local-path-provisioner/local-path-provisioner.yaml`; the converge only makes
+those already-decided artifacts durable. And it never creates the GitHub App
+secret — it fail-closes if the secret is absent (`../secret-reinjection/`
+owns re-injection).
 
 **Drift it supersedes.** `../install-arc.sh` step 2 applies the
 `poweredge-xubuntu-k3s` release from the PHASE-1 file `arc/values-host-unique.yaml`;
@@ -449,18 +483,63 @@ correctly rebuilt with 3 (an empty-line-vs-`grep -c .` bug), fixed and
 re-proven live in `fix/secret-inject-verify-count` (`0c1dc719`). The
 mount unit is now **enabled** for boot. Live state: datastore on tmpfs,
 both reconstruct units enabled, credstore seeded, mount enabled + active.
-What remains is the maintainer's **full host reboot** as the final
-durability proof (mount + units firing unattended from a real boot).
+
+**The full host reboot PASSED on `poweredge-xubuntu`, 2026-09-02 12:14Z**
+(agent-performed over ssh, maintainer-delegated), unattended from boot with
+no manual unit starts: host booted 12:17:19Z; k3s up on a fresh EMPTY tmpfs
+at +33 s; `inject-github-app-secret.service` rebuilt the secret with 3 keys
+in 1 s; `converge-ci-stack.service` ran 2m39s to `Result=success`; node
+`Ready`, ARC controller 1/1, 10 scale sets, 10 ClusterQueues, 10
+LocalQueues, 2 ResourceFlavors, the hook ConfigMap, Kueue 1/1; all ten
+listeners `Running` at +4m20s with zero auth failures; inotify 8192,
+allocatable pods 200, churn-slot 64 all held. The pre-cutover on-disk
+`state.db` (79.8 MB + 85 MB WAL) is intact under the mount as rollback
+insurance. That boot ALSO found what this directory now fixes — the things
+that were in the datastore or derived from it and came back wrong or not at
+all: the provisioner tuning (reverted to the bundled defaults →
+`local-path-provisioner/` + `k3s-config/`), the ARC-before-Kueue ordering
+(→ the converge order above), the warm-cache CronJob (gone →
+`warm-cache/converge-warm-cache.sh` in the converge), the Kueue-webhook
+probe's ServiceAccount (gone, probe failing every 5 min →
+`render-sa-kubeconfig.sh` in the converge), the host OTel collector's
+ServiceAccount (gone, collector crash-looping → its own repo's
+`otel-collector-identity.service`), and every PVC directory orphaned by
+design (→ `storage-sweep/`).
 
 ### What this does NOT do
 
 It does not own the reconstruct units (they have their own installers and
 this README's "Reconstruct-on-boot" section), it does not touch the
-node-local machinery (AppArmor, inotify, churn-slot, warm cache), and it
-does not move the bulk CI churn off the array — that is the NVMe tiering
-(`livespec-e2vcqf`), a separate, hardware-gated piece. Nor does it move
-anything precious: the beads/Dolt ledger and backups stay on the
+node-local machinery (AppArmor, inotify, churn-slot, k3s config, the sweep),
+and it does not move the bulk CI churn off the array — that is the NVMe
+tiering (`livespec-e2vcqf`), a separate, hardware-gated piece. Nor does it
+move anything precious: the beads/Dolt ledger and backups stay on the
 redundant RAID and must never go on tmpfs.
+
+## Storage sweep: the tmpfs boot orphans every PVC directory, on purpose
+
+Every runner's `work` volume is a `local-path` PVC — a directory under
+`/var/lib/rancher/k3s/storage` (an fstab bind mount onto the
+`/var/cache/ci-runner` cache volume). The provisioner deletes that
+directory only when it deletes a PV it can still see. Two things break
+that: under pod churn it leaks directories whose claims vanished before it
+got to them (research/001 of the livespec plan counted 76 such stale claims
+in 20 minutes), and on every tmpfs boot the datastore is EMPTY, so every
+directory that existed at reboot has no PV and never will (2026-09-02:
+~150 orphans, ~50 GB, on an array that is latency-bound at its
+cold-random-write ceiling).
+
+`storage-sweep/sweep-runner-scratch.service` runs `Before=k3s.service` and
+removes every `pvc-*` directory there. It is safe under exactly two
+conditions, and both are enforced rather than assumed: **(1)** every PVC on
+this pool is a 5 Gi ephemeral runner work volume — nothing precious is ever
+placed here; **(2)** the datastore is empty when it runs, so no PV can
+reference anything — the unit's `ConditionPathExists=!.../state.db` skips
+it on any boot where the tmpfs mount failed and k3s fell back to the intact
+on-disk datastore, and the script refuses under a running k3s and across
+any mount point below the root. Condition (1) is a property of the pool,
+not of the mechanism: **before placing any non-ephemeral PVC on this node,
+disable this unit first.**
 
 ## The workflow pod is not the runner pod
 
@@ -1118,13 +1197,15 @@ raising capacity (the saturation fix) adds containers to an exhausted
 kernel budget — the 2026-08-30 raise from C = 16 to 64 is what pushed the
 container count into the cap. The host fixes applied 2026-09-01:
 `fs.inotify.max_user_instances` 128 → 8192 (persisted in
-`/etc/sysctl.d/99-ci-runner-inotify.conf`); local-path-provisioner
-`--worker-threads 8 --kube-client-qps 50 --kube-client-burst 100` (live
-Deployment only — k3s can re-apply its bundled `local-storage.yaml` on a
-restart, which is what `livespec-sernfh` exists to end); kubelet `max-pods`
-110 → 200 (see `kueue/DERIVATION.md`, "The pod-capacity constraint"). Making
-the first two durable in this directory's node-local install mechanism is
-`livespec-a6lxuv`'s open leg; Kueue HA is `livespec-okxbkg`.
+`/etc/sysctl.d/99-ci-runner-inotify.conf`, now shipped by
+`node-inotify-budget/`); local-path-provisioner `--worker-threads 8
+--kube-client-qps 50 --kube-client-burst 100` (first a live Deployment
+patch, which k3s DID revert on the 2026-09-02 reboot by re-applying its
+bundled `local-storage.yaml`; now the fleet-owned
+`local-path-provisioner/` manifest applied by the boot converge, with the
+bundled copy disabled by `k3s-config/` — `livespec-sernfh`); kubelet
+`max-pods` 110 → 200 (see `kueue/DERIVATION.md`, "The pod-capacity
+constraint"; now `k3s-config/config.yaml`). Kueue HA is `livespec-okxbkg`.
 
 ## ARC log retention: archive before the kubelet's buffer rotates
 
