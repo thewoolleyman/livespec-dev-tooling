@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.39.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.39.0...v1.39.1) (2026-09-02)
+
+
+### Bug Fixes
+
+* **ci-runner:** count the reconstructed secret's keys correctly in inject-github-app-secret.sh ([a0b74cc](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a0b74ccc45c8f366474757933a24b99847dd5a59))
+
 ## [1.39.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.38.1...v1.39.0) (2026-09-02)
 
 
