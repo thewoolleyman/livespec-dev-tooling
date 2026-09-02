@@ -45,8 +45,28 @@ log() { printf '\n== %s ==\n' "$*"; }
 
 # ---------------------------------------------------------------------------
 log "1. Resolve the target node(s) by label (single-node today; label-scoped for future growth)"
-NODES="$(kubectl get nodes -l "$NODE_LABEL_SELECTOR" -o jsonpath='{.items[*].metadata.name}')"
-[ -n "$NODES" ] || { echo "FATAL: no node matches label $NODE_LABEL_SELECTOR" >&2; exit 1; }
+# At boot this service is ordered After=k3s.service, but k3s.service reaching
+# 'active' does NOT mean the node object is registered in the API and carries
+# its --node-label yet: there is a several-second window where the API server
+# is up but `kubectl get nodes -l ...` still returns empty. A single-shot
+# lookup here FATAL'd on every boot (livespec plan
+# ci-runner-pod-lifecycle-reliability, boot-2 proof 2026-09-02), leaving the
+# node without ci-runner.io/churn-slot capacity until the 5-minute reapply
+# timer healed it. Wait (bounded) for the labeled node to appear before
+# patching -- the same readiness-wait shape converge-ci-stack.sh uses for the
+# Kueue webhook endpoints. The FATAL is kept as the post-timeout last resort,
+# so a genuinely missing --node-label still fails loudly rather than silently
+# patching nothing.
+NODE_WAIT_TIMEOUT="${NODE_WAIT_TIMEOUT:-120}"
+NODES=""
+deadline=$(( $(date +%s) + NODE_WAIT_TIMEOUT ))
+while :; do
+  NODES="$(kubectl get nodes -l "$NODE_LABEL_SELECTOR" -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || true)"
+  [ -n "$NODES" ] && break
+  [ "$(date +%s)" -ge "$deadline" ] && { echo "FATAL: no node matches label $NODE_LABEL_SELECTOR after ${NODE_WAIT_TIMEOUT}s" >&2; exit 1; }
+  echo "waiting for a node labeled $NODE_LABEL_SELECTOR to register..."
+  sleep 3
+done
 
 # ---------------------------------------------------------------------------
 log "2. Patch status.capacity and status.allocatable on each matched node (idempotent)"
