@@ -54,7 +54,8 @@ spec:
         - name: churn-slot-flavor
           resources:
             - name: "ci-runner.io/churn-slot"
-              nominalQuota: 2
+              # 2026-09-02 INTERIM C = 32 (maintainer decision, until the NVMe tiering livespec-e2vcqf lands): re-apportioned from C = 64; see DERIVATION.md "The derivation at C = 32".
+              nominalQuota: 1
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: LocalQueue

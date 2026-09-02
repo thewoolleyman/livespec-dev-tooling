@@ -437,6 +437,51 @@ host REBUILD re-runs `../provision-k3s.sh`, which does not yet re-write that
 kubelet-arg, so re-applying `max-pods` after a from-scratch rebuild is the one
 piece still owed (tracked on `livespec-a6lxuv`).
 
+## The derivation at C = 32 (2026-09-02, INTERIM until the NVMe tiering lands)
+
+Maintainer decision 2026-09-02 (livespec plan `ci-runner-pod-lifecycle-reliability`,
+epic `livespec-ifwnqj`; `C` remains `livespec-zec4mz`'s number): LOWER `C` from 64
+to **32** until `livespec-e2vcqf` tiers containerd's root and the runner scratch
+volumes onto the dedicated NVMe. Why: with the k3s datastore on tmpfs the control
+plane held at 39 concurrent runners (0 `Slow SQL`, Kueue lease kept), but the
+DATA plane did not — at roughly 40 concurrent jobs' worth of create + teardown
+churn, containerd on the RAID timed out (22,161 `DeadlineExceeded` in one
+20-minute window, of which 3,715 `StopPodSandbox` and 3,689 `StopContainer`
+failures, kubelet retrying teardown in a loop), starving the local-path
+provisioner's helper-pod creates and even manifest-only image pulls of an
+already-cached image; eleven jobs across two fan-outs failed the ARC hook. 32
+sits below the measured failure point. This is a THROTTLE, not a measurement:
+the 64-runner soak the C = 64 raise exists for is deferred to after e2vcqf, and
+the number goes back to 64 then (recompute per "Recomputing at another C").
+
+Same demand weights `w_i`, `W = 495`. Exact shares `e_i = 32 * w_i / 495`:
+
+| Repository | `w_i` | `e_i` | `floor` | remainder | leftover unit | `nominalQuota` |
+|---|---|---|---|---|---|---|
+| `livespec` | 75 | 4.8485 | 4 | 0.8485 | +1 (1st largest) | **5** |
+| `livespec-driver-codex` | 67 | 4.3313 | 4 | 0.3313 | +1 (3rd largest) | **5** |
+| `livespec-driver-claude` | 66 | 4.2667 | 4 | 0.2667 | | **4** |
+| `livespec-orchestrator-git-jsonl` | 66 | 4.2667 | 4 | 0.2667 | | **4** |
+| `livespec-overseer` | 65 | 4.2020 | 4 | 0.2020 | | **4** |
+| `livespec-runtime` | 64 | 4.1374 | 4 | 0.1374 | | **4** |
+| `livespec-dev-tooling` | 63 | 4.0727 | 4 | 0.0727 | | **4** |
+| `livespec-console-beads-fabro` | 16 | 1.0343 | 1 | 0.0343 | | **1** |
+| `livespec-driver-pi` | 13 | 0.8404 | 0 | 0.8404 | +1 (2nd largest) | **1** |
+| **sum** | **495** | **32** | **29** | | **+3** | **32** |
+
+The floors sum to 29, leaving 3 units, awarded to the three largest remainders:
+`livespec` (0.8485), `livespec-driver-pi` (0.8404) and `livespec-driver-codex`
+(0.3313). `livespec-driver-pi`'s exact share is below 1 for the first time since
+C = 16, but its unit comes from the leftover distribution, NOT from step 5's
+`max(1, ...)` floor, so there is no forced over-reservation: the quotas sum to
+**exactly C = 32**. Lowering order per "Recomputing at another C": the quotas
+FIRST (`kubectl apply` the nine manifests), THEN the node capacity
+(`install-reapply-unit.sh 32`, which also rewrites the reapply unit's boot and
+timer argument). Running pods are untouched; admissions above the new quota
+wait. `maxRunners` is unchanged — it is each repository's logical ceiling, not
+the quota. The pod-capacity constraint is comfortably met: `2 x 32 + helpers +
+system` is far below `max-pods = 200`.
+
 ## Recomputing at another C
 
 The derivation is parameterized so a capacity change is mechanical:
