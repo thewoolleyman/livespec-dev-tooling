@@ -17,10 +17,16 @@
 # take. Enabling makes the recreation automatic on every subsequent boot,
 # which is the whole point (disaster recovery of a wiped/tmpfs datastore).
 #
+# CREDSTORE PREREQUISITE: the boot unit decrypts three host-encrypted
+# credentials from /etc/credstore.encrypted/ (see the unit's
+# LoadCredentialEncrypted= lines). Those must be seeded ONCE, attended, by
+# the maintainer via seed-github-app-creds.sh BEFORE the unit can succeed at
+# boot. This installer warns (not fatal) if they are absent, so the unit can
+# be armed either before or after seeding.
+#
 # HOST-LOCAL: systemd units are machine state. Re-run after any host rebuild.
 #
-# Requires: root (writes /usr/local/lib and /etc/systemd/system), systemd,
-# and the github-ci-runners 1Password wrapper the unit's ExecStart invokes.
+# Requires: root (writes /usr/local/lib and /etc/systemd/system), systemd.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -28,7 +34,8 @@ LIB_DIR="/usr/local/lib/ci-runner-k3s"
 UNIT_DIR="/etc/systemd/system"
 SERVICE="inject-github-app-secret.service"
 INJECTOR="inject-github-app-secret.sh"
-WRAPPER="/usr/local/bin/with-github-ci-runners-env.sh"
+CREDSTORE_DIR="/etc/credstore.encrypted"
+CREDS=(arc-github-app-id arc-github-app-installation-id arc-github-app-private-key)
 
 log() { printf '\n== %s ==\n' "$*"; }
 
@@ -36,12 +43,23 @@ log() { printf '\n== %s ==\n' "$*"; }
 command -v systemctl >/dev/null || { echo "FATAL: systemctl not found on PATH"; exit 1; }
 
 # ---------------------------------------------------------------------------
-log "0. Pre-gate: the github-ci-runners 1Password wrapper must already exist"
-# It is the unit's credential source (the same wrapper the gate supervisor
-# uses). A missing wrapper means the unit would fail at every boot — fail
-# loudly here rather than installing a unit that can never succeed.
-[ -x "$WRAPPER" ] \
-  || { echo "FATAL: missing ${WRAPPER} (the github-ci-runners 1Password wrapper the unit invokes) — provision it before installing this unit"; exit 1; }
+log "0. Check the credstore has been seeded (warn-only — seed is a separate attended step)"
+# The boot unit decrypts these three; a missing one means seed-github-app-creds.sh
+# has not been run yet. Warn loudly rather than fail, so the unit can be armed
+# in either order.
+_missing=()
+for _c in "${CREDS[@]}"; do
+  [ -r "${CREDSTORE_DIR}/${_c}" ] || _missing+=("$_c")
+done
+if [ "${#_missing[@]}" -gt 0 ]; then
+  cat >&2 <<EOF
+WARNING: credstore not fully seeded — missing: ${_missing[*]}
+The boot unit will FAIL until these exist. Seed them once (attended), as a
+member of the github-ci-runners group:
+  with-github-ci-runners-env.sh -- ${SCRIPT_DIR}/seed-github-app-creds.sh
+Continuing to arm the unit anyway.
+EOF
+fi
 
 # ---------------------------------------------------------------------------
 log "1. Install the injector script to ${LIB_DIR} (the unit's ExecStart path)"
