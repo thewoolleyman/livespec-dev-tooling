@@ -58,7 +58,10 @@
 # Pinned chart/manifest versions are co-maintained with their canonical
 # installers and README.md "Pinned versions" — keep in lockstep:
 #   ARC controller + scale set chart : 0.14.2  (../../install-arc.sh)
-#   Kueue                            : v0.19.1 (../../install-kueue.sh)
+#   Kueue                            : v0.19.1 (../../install-kueue.sh, and the
+#                                       release URL pinned in
+#                                       ../kueue/core/kustomization.yaml — step 4
+#                                       asserts it agrees with KUEUE_VERSION)
 #
 # Requires: kubectl + helm on PATH (both at /usr/local/bin on the live host,
 # which is in systemd's default PATH), and KUBECONFIG pointed at the k3s
@@ -195,7 +198,7 @@ kubectl apply -f "${PROVISIONER_DIR}/local-path-provisioner.yaml"
 kubectl -n kube-system rollout status deployment/local-path-provisioner --timeout=120s
 
 # ---------------------------------------------------------------------------
-log "4. Install/upgrade Kueue core (${KUEUE_VERSION}) and wait for its webhook to serve"
+log "4. Install/upgrade Kueue core (${KUEUE_VERSION}) with the fleet HA overlay, and wait for its webhook to serve"
 # Inlined from install-kueue.sh step 1 (NOT invoked), because install-kueue.sh
 # also applies the PHASE-1 kueue/resources.yaml, whose phase1-proof objects are
 # declared at v1beta1. The phase-2 tree carries the SAME objects at v1beta2
@@ -203,8 +206,37 @@ log "4. Install/upgrade Kueue core (${KUEUE_VERSION}) and wait for its webhook t
 # invoking install-kueue.sh would apply them a second time at a second API
 # version. This converge uses the phase-2 kueue tree exclusively — mirroring
 # how it uses the phase-2 values files rather than phase-1 values-host-unique.
-kubectl apply --server-side --force-conflicts -f \
-  "https://github.com/kubernetes-sigs/kueue/releases/download/${KUEUE_VERSION}/manifests.yaml"
+#
+# Applied as ONE kustomize overlay (../kueue/core/: the upstream release
+# manifest plus the fleet's HA patches — two replicas, probe timeouts,
+# leader-election tolerances; each patch file carries its why). One apply of
+# the MERGED set, rather than upstream-then-patch, is what keeps a warm converge
+# a no-op: two applies would flip the ConfigMap back and forth on every run.
+# The overlay pins the release URL itself; assert it agrees with KUEUE_VERSION
+# so the two cannot drift apart silently.
+KUEUE_CORE_DIR="${KUEUE_DIR}/core"
+grep -q "kueue/releases/download/${KUEUE_VERSION}/manifests.yaml" "${KUEUE_CORE_DIR}/kustomization.yaml" \
+  || { echo "FATAL: ${KUEUE_CORE_DIR}/kustomization.yaml does not pin ${KUEUE_VERSION}; bump KUEUE_VERSION and the overlay together" >&2; exit 1; }
+# The manager reads its ConfigMap once, at start, so a CHANGED config needs a
+# rollout — but an UNCHANGED one must not restart anything (warm converge is a
+# no-op), and a boot from an empty datastore needs no restart either (the
+# Deployment is created against the new ConfigMap). Detect change by CONTENT,
+# before vs after the apply, not by resourceVersion.
+cm_hash() {
+  kubectl -n kueue-system get configmap kueue-manager-config \
+    -o jsonpath='{.data.controller_manager_config\.yaml}' 2>/dev/null | sha256sum | cut -d' ' -f1
+}
+cm_existed=false
+cm_before=""
+if kubectl -n kueue-system get configmap kueue-manager-config >/dev/null 2>&1; then
+  cm_existed=true
+  cm_before="$(cm_hash)"
+fi
+kubectl apply --server-side --force-conflicts -k "${KUEUE_CORE_DIR}"
+if [ "$cm_existed" = true ] && [ "$(cm_hash)" != "$cm_before" ]; then
+  echo "kueue-manager-config changed; rolling the manager so it re-reads its config"
+  kubectl -n kueue-system rollout restart deployment/kueue-controller-manager
+fi
 kubectl -n kueue-system rollout status deployment/kueue-controller-manager --timeout=180s
 # The CRDs ship in the same manifest; wait for the ones step 5 applies to be
 # Established before applying instances, so a fast boot cannot race them.

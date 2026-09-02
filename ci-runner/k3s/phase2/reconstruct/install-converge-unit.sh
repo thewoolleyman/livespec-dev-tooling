@@ -8,7 +8,8 @@
 # is boot-critical and, unlike the self-contained patch-node-churn-capacity.sh
 # (../node-extended-resource/), it APPLIES a tree of repo YAML and scripts:
 #   arc/            values-*.yaml, the hook template + its converge
-#   kueue/          resource-flavor + cluster-queue-*
+#   kueue/          resource-flavor + cluster-queue-* + core/ (the Kueue-core
+#                   kustomize overlay: upstream release URL + the HA patches)
 #   local-path-provisioner/   the fleet-owned provisioner manifest
 #   warm-cache/     converge-warm-cache.sh + the CronJob + the populate script
 #   observability/  the Kueue-webhook probe's RBAC (from ci-runner/observability)
@@ -50,7 +51,7 @@ command -v systemctl >/dev/null || { echo "FATAL: systemctl not found on PATH"; 
 
 # ---------------------------------------------------------------------------
 log "1. Create the self-contained artifact tree under ${LIB_DIR}"
-install -d -m 0755 "${LIB_DIR}" "${LIB_DIR}/arc" "${LIB_DIR}/kueue" \
+install -d -m 0755 "${LIB_DIR}" "${LIB_DIR}/arc" "${LIB_DIR}/kueue" "${LIB_DIR}/kueue/core" \
   "${LIB_DIR}/local-path-provisioner" "${LIB_DIR}/warm-cache" "${LIB_DIR}/observability"
 
 # ---------------------------------------------------------------------------
@@ -71,8 +72,14 @@ for f in "${ARC_SRC}"/values-*.yaml; do
 done
 
 # ---------------------------------------------------------------------------
-log "4. Copy the kueue/ artifacts converge applies (flavor + per-repo queues)"
+log "4. Copy the kueue/ artifacts converge applies (core overlay, flavor, per-repo queues)"
 # DERIVATION.md is documentation, not an applyable object — deliberately skipped.
+# core/: the Kueue-core kustomize overlay (the upstream release manifest URL
+# plus the fleet's HA patches); converge step 4 applies it as ONE `kubectl
+# apply -k`, so the whole directory must travel together.
+for f in "${KUEUE_SRC}"/core/*.yaml; do
+  install -m 0644 "$f" "${LIB_DIR}/kueue/core/$(basename "$f")"
+done
 install -m 0644 "${KUEUE_SRC}/resource-flavor.yaml" "${LIB_DIR}/kueue/resource-flavor.yaml"
 for f in "${KUEUE_SRC}"/cluster-queue-*.yaml; do
   install -m 0644 "$f" "${LIB_DIR}/kueue/$(basename "$f")"

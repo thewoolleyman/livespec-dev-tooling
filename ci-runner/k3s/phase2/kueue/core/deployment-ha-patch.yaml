@@ -1,0 +1,47 @@
+# Strategic-merge patch for the upstream `kueue-controller-manager` Deployment:
+# TWO replicas, and probe timeouts a loaded control plane can actually meet.
+#
+# WHY TWO REPLICAS (livespec plan ci-runner-pod-lifecycle-reliability, epic
+# livespec-ifwnqj, item livespec-okxbkg, research/003): controller-runtime
+# serves the admission WEBHOOK from every replica — the webhook server is not
+# leader-gated; only the LEADER runs the reconcilers. So with two pods behind
+# `kueue-webhook-service` (its selector `control-plane=controller-manager`
+# picks both up with no further wiring), losing one — the lease-loss-and-exit
+# of 2026-09-01, an eviction, a rolling restart — leaves `mpod.kb.io`
+# answering and every fleet runner pod admissible. On 2026-09-01 the single
+# replica exited on lease loss and, because that webhook has
+# `failurePolicy: Fail` and intercepts every pod outside kube-system /
+# kueue-system, fleet CI pod creation failed 27 times and jobs died at
+# `Initialize containers`. Two replicas turn that into a reconciliation pause
+# of at most one lease duration with the webhook never down.
+#
+# Two, not three: leader election is a Lease, not a quorum, so a third replica
+# adds nothing on one node. Nothing in the upstream manifest blocks the second
+# pod here — no anti-affinity, no topology spread, no PodDisruptionBudget — and
+# each replica requests only 500m CPU / 512Mi. The rollout strategy stays
+# upstream's RollingUpdate 25%/25%, which at two replicas rounds to
+# maxUnavailable 0 / maxSurge 1: a restart brings a NEW pod up before an old
+# one goes, so the webhook never has zero endpoints during a rollout either.
+#
+# WHY THE PROBE TIMEOUTS: upstream's `timeoutSeconds: 1` on BOTH probes is the
+# sleeper. Three missed 1 s readiness deadlines (30 s) drop a pod from the
+# webhook Service's READY endpoints — so under exactly the control-plane latency
+# this change exists to survive, both replicas could be marked unready at once
+# and the webhook would STILL have zero endpoints. 5 s keeps a slow-but-alive
+# replica in service; periods and failure thresholds are unchanged (readiness
+# 10 s x 3, liveness 20 s x 3), so a truly dead pod is still replaced.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kueue-controller-manager
+  namespace: kueue-system
+spec:
+  replicas: 2
+  template:
+    spec:
+      containers:
+        - name: manager
+          livenessProbe:
+            timeoutSeconds: 5
+          readinessProbe:
+            timeoutSeconds: 5

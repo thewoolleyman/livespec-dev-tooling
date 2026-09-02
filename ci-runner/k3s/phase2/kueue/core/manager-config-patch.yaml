@@ -1,0 +1,128 @@
+# Strategic-merge patch for the upstream `kueue-manager-config` ConfigMap: the
+# manager's controller_manager_config.yaml with LEADER-ELECTION TOLERANCES
+# sized for this host. Everything except the `leaderElection` block is the
+# upstream v0.19.1 body VERBATIM — a ConfigMap `data` key merges by whole-value
+# replacement, so the entire file must be carried here; re-diff it against the
+# upstream ConfigMap on every version bump.
+#
+# WHY (livespec plan ci-runner-pod-lifecycle-reliability, epic livespec-ifwnqj,
+# item livespec-okxbkg, research/003): on 2026-09-01 the k3s datastore — then
+# kine over SQLite on the same RAID as all CI churn — stalled under 60+
+# concurrent jobs: `Slow SQL` bursts of ~2 s (14:52:27-28Z) and ~10 s
+# (14:58:00-09Z). Kueue's single manager, on the DEFAULT durations
+# (leaseDuration 15s / renewDeadline 10s / retryPeriod 2s), could not renew its
+# lease (`Failed to update lease ... context deadline exceeded` 14:57:40Z),
+# lost the election at 14:57:45Z and EXITED BY DESIGN (`Could not run manager:
+# leader election lost`). With one replica that took the pod-mutating webhook
+# down (see deployment-ha-patch.yaml for the other half of the fix).
+#
+# SIZING: renewDeadline 45s is 4.5x the longest measured stall and well past the
+# 10s deadline that was crossed. leaseDuration 60s (it must exceed
+# renewDeadline) bounds how long RECONCILIATION — admitting new workloads —
+# pauses after a true leader death before the surviving replica acquires the
+# lease; the WEBHOOK is served by every replica and does not depend on the
+# lease at all, so a longer lease costs webhook availability nothing.
+# retryPeriod 5s keeps ~9 renew attempts inside the deadline. The datastore now
+# lives on tmpfs (../../datastore-tmpfs/), which removed the stall's cause;
+# these tolerances are symptom resilience against ANY future control-plane
+# latency spike, and cost nothing in the steady state.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kueue-manager-config
+  namespace: kueue-system
+data:
+  controller_manager_config.yaml: |
+    apiVersion: config.kueue.x-k8s.io/v1beta2
+    kind: Configuration
+    health:
+      healthProbeBindAddress: :8081
+    metrics:
+      bindAddress: :8443
+    # enableClusterQueueResources: true
+    webhook:
+      port: 9443
+    leaderElection:
+      leaderElect: true
+      resourceName: c1f6bfd2.kueue.x-k8s.io
+      # Fleet-owned tolerances; upstream sets only the two keys above (defaults
+      # 15s / 10s / 2s). Sized per this file's header.
+      leaseDuration: 60s
+      renewDeadline: 45s
+      retryPeriod: 5s
+    controller:
+      groupKindConcurrency:
+        Job.batch: 5
+        Pod: 5
+        Workload.kueue.x-k8s.io: 10
+        LocalQueue.kueue.x-k8s.io: 5
+        Cohort.kueue.x-k8s.io: 1
+        ClusterQueue.kueue.x-k8s.io: 5
+        ResourceFlavor.kueue.x-k8s.io: 1
+    clientConnection:
+      qps: 300
+      burst: 500
+    #pprofBindAddress: :8083
+    #waitForPodsReady:
+    #  timeout: 5m
+    #  recoveryTimeout: 3m
+    #  blockAdmission: false
+    #  requeuingStrategy:
+    #    timestamp: Eviction
+    #    backoffLimitCount: null # null indicates infinite requeuing
+    #    backoffBaseSeconds: 60
+    #    backoffMaxSeconds: 3600
+    #manageJobsWithoutQueueName: true
+    #managedJobsNamespaceSelector:
+    #  matchExpressions:
+    #    - key: kubernetes.io/metadata.name
+    #      operator: NotIn
+    #      values: [ kube-system, kueue-system ]
+    #internalCertManagement:
+    #  enable: false
+    #  webhookServiceName: ""
+    #  webhookSecretName: ""
+    integrations:
+      frameworks:
+      - "batch/job"
+      - "kubeflow.org/mpijob"
+      - "ray.io/rayjob"
+      - "ray.io/raycluster"
+      - "ray.io/rayservice"
+      - "jobset.x-k8s.io/jobset"
+      # - "kubeflow.org/paddlejob"
+      # - "kubeflow.org/pytorchjob"
+      # - "kubeflow.org/tfjob"
+      # - "kubeflow.org/xgboostjob"
+      # - "kubeflow.org/jaxjob"
+      - "workload.codeflare.dev/appwrapper"
+      - "trainer.kubeflow.org/trainjob"
+      # - "sparkoperator.k8s.io/sparkapplication"
+      - "pod"
+      - "deployment"
+      - "statefulset"
+      - "leaderworkerset.x-k8s.io/leaderworkerset"
+    #  externalFrameworks:
+    #  - "Foo.v1.example.com"
+    #fairSharing:
+    #  preemptionStrategies: [LessThanOrEqualToFinalShare, LessThanInitialShare]
+    #admissionFairSharing:
+    #  usageHalfLifeTime: "168h" # 7 days
+    #  usageSamplingInterval: "5m"
+    #  resourceWeights: # optional, defaults to 1 for all resources if not specified
+    #    cpu: 0    # if you want to completely ignore cpu usage
+    #    memory: 0 # ignore completely memory usage
+    #    example.com/gpu: 100 # and you care only about GPUs usage
+    #resources:
+    #  excludeResourcePrefixes: []
+    #  quotaCheckStrategy: "BlockUndeclared"
+    #  transformations:
+    #  - input: nvidia.com/mig-4g.5gb
+    #    strategy: Replace | Retain
+    #    outputs:
+    #      example.com/accelerator-memory: 5Gi
+    #      example.com/accelerator-gpc: 4
+    #objectRetentionPolicies:
+    #  workloads:
+    #    afterFinished: null # null indicates infinite retention, 0s means no retention at all
+    #    afterDeactivatedByKueue: null # null indicates infinite retention, 0s means no retention at all

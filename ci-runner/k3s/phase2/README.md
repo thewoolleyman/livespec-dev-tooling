@@ -265,6 +265,7 @@ fleet's actual call volume) needs a live-cluster observation —
 | `kueue/DERIVATION.md` | How the specification's admission formula becomes each repository's actual `nominalQuota`: the four terms and their mechanisms, the demand weights, the largest-remainder apportionment, the recomputation procedure for a new capacity, and the decisions on the generator question and the still-open permanent capacity. Read this before editing any number in `kueue/`. |
 | `kueue/cluster-queue-<repo>.yaml` (9 files) | Every fleet repository's `ClusterQueue` + `LocalQueue`, one pair per repo, all in the `fleet-ci-runner-pool` cohort. Quotas derived per `DERIVATION.md` at the CURRENT capacity **C=32 — INTERIM** (maintainer decision 2026-09-02, livespec plan `ci-runner-pod-lifecycle-reliability` / epic `livespec-ifwnqj`, until the NVMe tiering `livespec-e2vcqf` lifts the RAID's data-plane ceiling): `livespec` 5, `livespec-driver-codex` 5, five mid-band repos 4, `livespec-console-beads-fabro` 1, `livespec-driver-pi` 1 — summing to exactly 32. (History: C=64 from 2026-08-30 to 2026-09-02 — `livespec` 10, `livespec-driver-codex` 9, `livespec-driver-claude` 9, four mid-band repos 8, console 2, pi 2, summing to 64, the increase-ci-runners raise `livespec-zec4mz`, to be restored when e2vcqf lands; first applied at C=16 summing to 16 across 8 repos, drift-verified 2026-08-19 `livespec-s43svm.27`; `livespec-driver-pi` joined as the ninth 2026-08-20.) |
 | `kueue/cluster-queue-phase1-proof.yaml` | The phase-1 proof `ClusterQueue`/`LocalQueue`/`ResourceFlavor`, captured live 2026-08-19 so the Kueue tree is fully recreatable. Deliberately outside the `fleet-ci-runner-pool` cohort and quota'd on cpu/memory rather than churn-slot, so it is excluded from the apportionment and cannot consume a churn slot. |
+| `kueue/core/` (`kustomization.yaml`, `deployment-ha-patch.yaml`, `manager-config-patch.yaml`) | The fleet-owned kustomize overlay that IS the Kueue-core install: the upstream `v0.19.1` release manifest (by URL, pinned in lockstep with `KUEUE_VERSION` in `reconstruct/converge-ci-stack.sh`, which asserts they agree) plus two strategic-merge patches — the `kueue-controller-manager` Deployment at **2 replicas** with probe `timeoutSeconds` 1 → 5, and the `kueue-manager-config` ConfigMap carrying leader-election `leaseDuration 60s / renewDeadline 45s / retryPeriod 5s`. `reconstruct/converge-ci-stack.sh` step 4 applies it as one `kubectl apply --server-side -k` on every boot; `install-converge-unit.sh` copies the directory beside the converge. Why each number: the patch files' headers and "Kueue HA" below (livespec plan `ci-runner-pod-lifecycle-reliability`, item `livespec-okxbkg`). |
 | `arc/values-livespec.yaml` | Worked example: livespec's per-repo `AutoscalingRunnerSet` Helm values (`maxRunners: 36`, `githubConfigUrl` narrowed to this one repo, pod template wired to `livespec-lq` via the `kueue.x-k8s.io/queue-name` label and requesting one `ci-runner.io/churn-slot`). Not yet applied live — see `VALIDATION_CHECKLIST.md` item 5's disposition. |
 | `arc/values-EXAMPLE-repo.yaml` | Template for every other fleet repository. |
 | `arc/values-livespec-console-beads-fabro.yaml` | `livespec-s43svm.16`'s chosen first NON-GATING cutover lane (2026-08-16) — a standalone console app nothing else in the fleet depends on, and the smallest repo by live-measured demand weight. |
@@ -319,9 +320,12 @@ script.
 (`/readyz`) and the node `Ready` → fail-closed pre-gate on the
 `arc-github-app-installation` secret → the fleet-owned **local-path
 provisioner** (`local-path-provisioner/`; the bundled copy is disabled by
-`k3s-config/`) → **Kueue core** (`v0.19.1` manifests, server-side apply +
-rollout + CRD-established wait) **and a wait for its mutating webhook to have
-a ready endpoint** → `kueue/resource-flavor.yaml` and every
+`k3s-config/`) → **Kueue core** (the `kueue/core/` overlay: the `v0.19.1`
+release manifest plus the fleet's HA patches — two replicas, probe timeouts,
+leader-election tolerances; see "Kueue HA" below — as ONE server-side
+kustomize apply, a rollout restart only when the manager's config actually
+changed, then rollout + CRD-established wait) **and a wait for its mutating
+webhook to have a ready endpoint** → `kueue/resource-flavor.yaml` and every
 `kueue/cluster-queue-*.yaml` → ARC controller (`helm upgrade --install`,
 chart `0.14.2`) → all ten runner scale sets from `arc/values-*.yaml` (each
 `helm upgrade --install`, chart `0.14.2`) → the `arc-hook-pod-template`
@@ -385,6 +389,105 @@ artifacts are the source of truth, the phase-1 installers are superseded.
 **This item authors repo artifacts ONLY.** `install-converge-unit.sh` ENABLES
 the unit (runs on next boot) but does not start it, because starting it applies
 the stack live; the live cutover is a separate attended step.
+
+## Kueue HA: two replicas and leader-election tolerances
+
+`kueue/core/` makes the Kueue admission webhook survive a control-plane
+latency spike. It is the fix for the failure class recorded in the livespec
+plan `ci-runner-pod-lifecycle-reliability` research/003 (item
+`livespec-okxbkg`), and it ships regardless of the datastore's location.
+
+**The failure class.** On 2026-09-01, with 60+ concurrent CI jobs on the
+RAID that then also held the k3s datastore, the API server's writes stalled
+(`Slow SQL` bursts of ~2 s at 14:52:27–28Z and ~10 s at 14:58:00–09Z). Kueue's
+single controller-manager could not renew its leader lease inside the default
+10 s `renewDeadline`, lost the election and **exited by design** (14:57:45Z).
+Because that one pod was also the only backend of `kueue-webhook-service`,
+the pod-mutating webhook `mpod.kb.io` — `failurePolicy: Fail`, intercepting
+every pod outside `kube-system`/`kueue-system` — had no endpoint: the API
+server logged 27 webhook failures and ARC jobs died at `Initialize
+containers` with `failed calling webhook "mpod.kb.io"`. A control-plane
+hiccup became a fleet-wide admission outage.
+
+**Two halves, two patches.** Both live in `kueue/core/` as strategic-merge
+patches over the upstream release manifest, and each file's header carries
+the full argument:
+
+| Object | Field | Upstream | Fleet | Why |
+|---|---|---|---|---|
+| `Deployment/kueue-controller-manager` | `spec.replicas` | 1 | **2** | controller-runtime serves the admission webhook from EVERY replica; only the leader runs the reconcilers. Two pods behind the webhook Service means losing one (lease loss, eviction, rolling restart) leaves the webhook answering. |
+| same | liveness + readiness `timeoutSeconds` | 1 | **5** | Three missed 1 s readiness deadlines drop a pod from the webhook's READY endpoints — under exactly the latency this exists to survive, both replicas could be marked unready at once. Periods and thresholds are unchanged, so a dead pod is still replaced. |
+| `ConfigMap/kueue-manager-config` | `leaderElection.leaseDuration` / `renewDeadline` / `retryPeriod` | 15s / 10s / 2s (defaults; upstream sets neither) | **60s / 45s / 5s** | `renewDeadline` 45 s is 4.5× the longest measured stall and well past the 10 s that was crossed; `leaseDuration` must exceed it and bounds how long *reconciliation* pauses after a true leader death; the webhook does not depend on the lease at all. |
+
+Two replicas, not three: leader election is a Lease, not a quorum, so a third
+adds nothing on one node. Upstream's `RollingUpdate 25%/25%` at two replicas
+rounds to `maxUnavailable 0 / maxSurge 1`, so even a rollout brings a new pod
+up before an old one goes.
+
+**What it deliberately does NOT do.** It adds no throughput (Kueue's
+admission rate is the leader's alone) and fixes no datastore — the stall's
+*cause* was removed by moving the datastore to tmpfs ("Datastore on tmpfs"
+below); this is symptom resilience against any future latency spike. And the
+webhook's `failurePolicy` stays `Fail`: `Ignore` was REJECTED in the plan's
+scope amendment, because a pod that bypasses the webhook bypasses churn-slot
+gating, which is the physical cap the whole admission formula rests on.
+
+**How it stays durable — and why it is an overlay.** The upstream manifest
+carries `replicas: 1`, the 1 s timeouts and no durations, and
+`reconstruct/converge-ci-stack.sh` step 4 re-applies Kueue core on every boot
+(the datastore is empty). Patching *after* that apply would be undone by the
+next converge — and on a warm converge the two applies would flip the
+ConfigMap back and forth, restarting the manager every run. So the converge
+applies `kueue/core/` as ONE `kubectl apply --server-side -k`: upstream plus
+patches, merged, a single object set. It asserts the overlay's pinned release
+URL agrees with its own `KUEUE_VERSION` (the two are bumped together, with
+`install-kueue.sh` and "Pinned versions"), and it restarts the manager ONLY
+when the ConfigMap's *content* changed across the apply — never on a boot
+from empty (the Deployment is created against the new ConfigMap already) and
+never on an unchanged warm run, which stays a no-op.
+
+**Verification.** The acceptance is observable on the cluster, not inferred
+from a green apply: `kubectl -n kueue-system get deploy kueue-controller-manager`
+shows `2/2`; the `kueue-webhook-service` EndpointSlice lists BOTH pod
+addresses ready; deleting the pod that holds the `c1f6bfd2.kueue.x-k8s.io`
+Lease and immediately creating a pod in `arc-runners` carrying the
+`kueue.x-k8s.io/queue-name` label still yields the mutated shape (the
+`kueue.x-k8s.io/admission` scheduling gate and `kueue.x-k8s.io/managed`
+label) with zero `mpod.kb.io` failures in the k3s journal; and the running
+manager's config shows the three durations. The existing
+`ci-kueue-webhook-probe` gauge (`livespec.ci_kueue.webhook_ready_endpoints`)
+now reads 2 in the healthy state — its alarm condition (`< 1`) is unchanged.
+
+**Proven live on `poweredge-xubuntu`, 2026-09-02.** A server-side `kubectl
+diff` of the overlay against the cluster showed exactly six deltas —
+`replicas 1 → 2`, both probe `timeoutSeconds 1 → 5`, and the three durations
+added — and nothing else (an earlier draft of the ConfigMap patch had been
+truncated and would have dropped `- "pod"` from `integrations.frameworks`,
+i.e. the pod gating itself; the diff is what caught it, and the patch body is
+now generated verbatim from upstream plus the five inserted lines). The live
+apply at 17:59:59Z rolled to `2/2` in 34 s with the old pod retired only
+after both new ones were Ready; the webhook EndpointSlice listed both
+addresses; the `c1f6bfd2.kueue.x-k8s.io` Lease showed `leaseDurationSeconds:
+60`; both managers logged `Configuration loaded` with `leaseDuration: 1m0s /
+renewDeadline: 45s / retryPeriod: 5s`; and the k3s journal carried zero
+`mpod.kb.io` failures and zero `no endpoints available` errors across the
+rollout. Leader-kill test at 18:03:06Z: the lease-holding pod was deleted and,
+in the same second, a pod carrying `kueue.x-k8s.io/queue-name:
+livespec-dev-tooling-lq` was created in `arc-runners` — it came back from the
+API server already mutated (`kueue.x-k8s.io/managed=true`, the `admission` and
+`topology` scheduling gates, a Workload object) and was admitted 3 s later;
+the surviving replica was the sole ready endpoint; the lease transferred to it
+in **2 s**; the Deployment was back to `2/2` at +13 s; zero webhook failures
+in the window. (Both managers also log a `Stopping and waiting for … runnables`
+sequence seconds after start — that is Kueue's certificate-bootstrap manager
+shutting down before the real manager starts, not a crash; restarts stay 0.)
+Durability and the no-op property, 18:04Z: `install-converge-unit.sh` was
+re-run from this tree and `systemctl start converge-ci-stack.service` — the
+installed copy, the same path a boot takes — completed `Result=success` in
+59 s; step 4 server-side-applied the overlay's 79 objects with no
+`kueue-manager-config changed` line, and both Kueue pods were identical
+before and after (same names, same container start times): the overlay is
+what the boot path applies, and a warm converge restarts nothing.
 
 ## Datastore on tmpfs: making the volatility safe
 

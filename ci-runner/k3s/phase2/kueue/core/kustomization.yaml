@@ -1,0 +1,27 @@
+# Kueue core — the fleet-owned overlay over the UPSTREAM release manifest.
+#
+# WHY AN OVERLAY, NOT A PATCH AFTER THE APPLY: ../../reconstruct/converge-ci-stack.sh
+# step 4 server-side-applies Kueue core on EVERY boot (the datastore is tmpfs),
+# and the upstream manifests.yaml carries `replicas: 1`, 1-second probe timeouts
+# and the default leader-election durations. Anything applied AFTER it would be
+# applied over again on the next converge: a second `kubectl apply` of the
+# upstream file flips the ConfigMap back to upstream, the re-patch flips it
+# forward, and the manager restarts on every warm converge — the opposite of
+# "a second run makes no disruptive change". ONE kustomize apply of upstream
+# plus these patches yields ONE merged object set, so a warm converge is a true
+# no-op and a boot from an empty datastore lands the HA shape directly.
+#
+# Each patch file carries its own why (the 2026-09-01 incident, the sizing).
+#
+# PINNED VERSION: the URL below is co-maintained with KUEUE_VERSION in
+# ../../reconstruct/converge-ci-stack.sh (which asserts the two agree before
+# applying), ../../../install-kueue.sh, and README.md "Pinned versions". Bump
+# them together — and re-diff manager-config-patch.yaml against the new
+# upstream ConfigMap body, which it must carry in full.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - https://github.com/kubernetes-sigs/kueue/releases/download/v0.19.1/manifests.yaml
+patches:
+  - path: deployment-ha-patch.yaml
+  - path: manager-config-patch.yaml
