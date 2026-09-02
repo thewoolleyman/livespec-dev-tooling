@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.38.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.37.1...v1.38.0) (2026-09-02)
+
+
+### Features
+
+* **ci-runner:** durable per-user inotify instance budget install mechanism ([a45e6be](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a45e6be4d7e33722007eba4cdde6f5b4dbf77d49))
+
 ## [1.37.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.37.0...v1.37.1) (2026-09-01)
 
 
