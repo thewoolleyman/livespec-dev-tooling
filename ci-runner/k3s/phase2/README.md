@@ -277,6 +277,9 @@ fleet's actual call volume) needs a live-cluster observation —
 | `wedged-runner/scan-wedged-runners.sh` | Finds runner pods that are `Running` and `ready=true` to Kubernetes but permanently dead to GitHub (the `Registration <uuid> was not found` loop), reporting pod, scale set, and age. Exits 1 when any is found, so it is usable directly as a check; `--clear` deletes them, opt-in. See "Wedged runner vs. saturation" below for why this cannot be inferred from any capacity signal. |
 | `wedged-runner/install-wedged-runner-scan.sh` | Installs that scan to `/usr/local/lib/ci-runner-k3s/` and the unit + timer to `/etc/systemd/system`, substituting the required `report`/`clear` mode for the unit file's deliberate `MODE_PLACEHOLDER`. Node-local; run it on any node added to the pool. Installed live on `poweredge-xubuntu` in `clear` mode, 2026-08-19 (`livespec-s43svm.30`) — that script's header carries the argument for `clear` over `report` on a host with no failure routing. |
 | `wedged-runner/scan-wedged-runners.service` + `.timer` | Every-5-minute wedged-runner sweep. Unlike the reapply timer this is not belt-and-suspenders: the wedged state is self-perpetuating (a dead runner suppresses the scale-up that would replace it), so without an external sweep the scale set stays blocked until a human notices — which is exactly how the condition was found, 33+ minutes into a held merge gate. |
+| `runner-pod-lifecycle/scan-runner-pod-lifecycle.sh` | Detects the runner-pod LIFECYCLE stall — the THIRD "jobs queued, nothing starting" case — as six named classes read from node-side observables that persist long enough for a sweep to see them: `pvc-pending`, `bind-deadline`, `inotify-emfile`, `containerd-deadline`, `hook-failure`, `stale-listener`. Every journal, log and event read is bounded to a 5-minute window (`containerd.log` rotates, and is walked backwards to the cutoff). Exits 1 naming each class with its count, 0 on a clean node, 2 when it cannot read one of its inputs — fail-closed, never a false clean. Report-only: nothing in this family is safe to auto-delete. See "Runner-pod lifecycle stall" → "The detector" below (livespec plan `ci-runner-pod-lifecycle-reliability`, item `livespec-nhjpai`). |
+| `runner-pod-lifecycle/install-runner-pod-lifecycle-scan.sh` | Installs that scan to `/usr/local/lib/ci-runner-k3s/` and the unit + timer to `/etc/systemd/system`, enabled and started. No mode argument, by decision rather than omission: there is no clear mode (the installer's header says why). Node-local; run it on any node added to the pool and after any node rebuild. |
+| `runner-pod-lifecycle/scan-runner-pod-lifecycle.service` + `.timer` | Every-5-minute lifecycle-stall sweep, report-only: `systemctl is-failed scan-runner-pod-lifecycle.service` and its journal are the signal, exactly as the wedge sweep's report mode. `OnBootSec=4min` sits after the boot converge so the first sweep after a reboot reads a converged cluster rather than one still being built. |
 | `arc/recycle-scale-set-runners.sh` | Deletes a scale set's IDLE runner pods after a `helm upgrade`, skipping any pod with a live `-workflow` companion. Run it at the end of every apply: `helm upgrade` replaces the listener but leaves existing runner pods on the old pod template and the old listener session. Closes the re-cut path into the wedged state; see "Recycle the runner pods after every upgrade" below for why that is a partial fix. |
 | `VALIDATION_CHECKLIST.md` | What was, and still needs to be, confirmed against the live cluster. Items 1, 3, 5, and 7 CONFIRMED (2026-08-16); item 6 decided and item 4 superseded (2026-08-19, `kueue/DERIVATION.md`); only item 2 remains open. |
 | `apparmor/ci-runner-workflow` | The AppArmor profile hook-generated WORKFLOW pods run under. Reproduces containerd's default deny set verbatim and widens only the `ptrace`/`signal` peer expressions — see "The workflow pod is not the runner pod" below. |
@@ -1290,6 +1293,61 @@ A Pending-PVC count that grows while runner pods cycle `Pending` →
 the inotify cap specifically. For the datastore variant look for a fresh
 `kueue-controller-manager` restart, `Slow SQL: INSERT INTO kine` in the k3s
 journal, and `failed calling webhook "mpod.kb.io"` in job logs.
+
+### The detector: `runner-pod-lifecycle/`
+
+Those two commands are now run for you, widened to the whole family, every
+five minutes: `runner-pod-lifecycle/scan-runner-pod-lifecycle.sh` (installed
+by `install-runner-pod-lifecycle-scan.sh`, driven by the `.timer`) is the
+second gate beside the wedge sweep — the wedge scan answers "is a runner
+dead to GitHub?", this one answers "is the host failing to bring pods up?".
+It reports six classes, each read from the node-side observable that
+persists long enough for a sweep to see it (the ARC hook string itself is
+written by a runner that exits moments later, so it is a bonus, not the
+signal):
+
+| Class | Read from | Fires when |
+|---|---|---|
+| `pvc-pending` | PVCs in `arc-runners` | any Pending longer than 120 s (the provisioner's own helper-pod ceiling) |
+| `bind-deadline` | k3s journal, last 5 min | any `binding volumes: context deadline exceeded` |
+| `inotify-emfile` | `containerd.log`, last 5 min (walked backwards to the cutoff — the file rotates) | any `failed to create inotify fd` |
+| `containerd-deadline` | pod container states now; `arc-runners` events, last 5 min | a container in `StartError`; a `Failed`/`FailedCreatePodSandBox` event carrying `context deadline exceeded` or `failed to create shim task`; or ≥ 20 `FailedKillPod` (teardown starvation, the 2026-09-02 17:55Z shape — calibrated live: 7–14 per window while the backlog tail drained with nothing failing, 25–27 beside a PVC Pending 209 s, ~80 at the StartError) |
+| `hook-failure` | runner-pod logs, last 5 min; Pending `-workflow` pods | the hook's `Executing the custom container implementation failed`; or a workflow pod Pending longer than 480 s (the hook gives up at ~13 min) |
+| `stale-listener` | `arc-systems` listener pods; `AutoscalingListener.spec.ephemeralRunnerSetName` vs existing `EphemeralRunnerSet`s | a listener not Running or waiting in a crash loop; or a reference to a set that does not exist (the ARC 0.14.2 boot race that queued `livespec-overseer` for 31 min on 2026-09-02; converge-side fix `livespec-bde2`) |
+
+Exit 1 names every present class with its count and prints the per-class
+detail (which PVC, which pod, which event) followed by where each class is
+worked; exit 0 is a clean node; exit 2 means the scan could not read one of
+its inputs (journal, `containerd.log`, the API server) and refused to report
+a clean node it had not looked at. Report-only, with no `--clear`: nothing
+here is safe to delete automatically, and the one safe remedy
+(`stale-listener` → delete the `AutoscalingListener`; the controller
+recreates it) is a scale-set-level action the report names for an operator.
+Consecutive sweeps with findings are counted (`/var/lib/ci-runner-k3s/
+runner-pod-lifecycle-streak`) and an `ESCALATION` line appears from the
+second, as in the wedge sweep. Thresholds are flags/env
+(`--window`, `--pvc-pending-seconds`, `--workflow-pending-seconds`,
+`--killpod-min`, `--containerd-log` for a fixture, `--state-file`).
+
+**Proven live on `poweredge-xubuntu`, 2026-09-02, during a real stall.**
+Run by hand at ~18:2xZ while the earlier release waves' teardown backlog was
+still starving containerd (`sda` 87–93 % busy under two running jobs): exit
+1 with `pvc-pending=5` (five PVCs Pending > 120 s) and
+`containerd-deadline=26`; a minute later `pvc-pending=1`
+(`…-runner-52xz9-work`, 209 s) and `containerd-deadline=27` (27
+`FailedKillPod` in 5 min) with the `ESCALATION` line on the second
+consecutive finding. A synthetic `failed to create inotify fd` line with a
+fresh timestamp, fed through `--containerd-log`, was counted as
+`inotify-emfile=1`; a missing log path exited 2 (`FATAL: cannot read …`);
+with every threshold raised out of reach the same node took the `CLEAN`
+exit-0 path. The first draft aborted with status 141 on the real 33 MB
+`containerd.log` — `awk`'s early exit closes the pipe under `tac`, which
+dies of SIGPIPE, and `pipefail` turned the bounded read into a crash — fixed
+by absorbing `tac`'s status; the one-line fixture had hidden it. Installed
+by `install-runner-pod-lifecycle-scan.sh` at 18:20Z: timer active and
+enabled, first sweep immediate, journal carrying
+`containerd-deadline=25` with the PVC already bound — the five-minute
+window tiling as designed.
 
 ### What a CI consumer sees
 

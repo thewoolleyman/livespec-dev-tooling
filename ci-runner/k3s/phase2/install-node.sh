@@ -86,6 +86,9 @@ log "4/10 churn-slot extended resource (capacity ${CAPACITY}) + reapply timer"
 log "5/10 wedged-runner scan (${WEDGE_MODE})"
 "${SCRIPT_DIR}/wedged-runner/install-wedged-runner-scan.sh" "${WEDGE_MODE}"
 
+log "5b/10 runner-pod lifecycle scan (report-only; no mode — see its installer's header)"
+"${SCRIPT_DIR}/runner-pod-lifecycle/install-runner-pod-lifecycle-scan.sh"
+
 log "6/10 ARC log archive"
 "${SCRIPT_DIR}/arc-log-archive/install-arc-log-archive.sh"
 
