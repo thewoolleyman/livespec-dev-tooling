@@ -240,9 +240,9 @@ existing podman pool's supervisor already uses
 (`../gate-runner/mint-jitconfig.sh`'s token minting), never a broader
 fleet secret. This matches the existing host-requirements "Credential
 separation" clause: the credential that mints runner registrations is
-readable only by the supervising identity (here, the `ci-sup` account
-that runs the reinjection unit below), never injected
-into a job's environment.
+seeded from 1Password only by a human maintainer and, at boot, is readable
+only by root (the reinjection unit below), never injected into a job's
+environment.
 
 ### Automated boot reinjection (`secret-reinjection/`) — the out-of-band step, automated
 
@@ -255,46 +255,62 @@ recreating it. This is the precondition for the tmpfs-datastore cutover
 (sibling item `livespec-mx26zz`) and the reconstruct-on-boot converge
 (sibling item `livespec-olp4c5`).
 
+**The model: seed once from 1Password (attended), decrypt locally at boot
+(unattended).** The three App values are stored host-encrypted in the
+systemd credstore (`/etc/credstore.encrypted/`). A human maintainer seeds
+them once from 1Password; thereafter the boot unit decrypts them locally as
+root with `systemd-creds` — **no `op run`, no 1Password wrapper, no
+network at boot.** (`op run` refuses to run as root, and this host has no
+unattended identity in the `github-ci-runners` 1Password group, so the boot
+path cannot touch 1Password at all. `systemd-creds` is already used on this
+host for its own service-account token.) The credstore lives on durable
+RAID, so it survives a `tmpfs`-datastore reboot; re-run the seed step to
+rotate the key.
+
 | Path | Role |
 |---|---|
-| `secret-reinjection/inject-github-app-secret.sh` | Reads the three App-credential values from the environment, ensures the `arc-runners` namespace exists, then creates/refreshes `arc-github-app-installation` idempotently (`kubectl create … --dry-run=client -o yaml \| kubectl apply -f -`). |
-| `secret-reinjection/inject-github-app-secret.service` | systemd oneshot that runs the injector at boot, `After=k3s.service` and `Before=converge-ci-stack.service` (the `livespec-olp4c5` converge, authored in the sibling PR `feat/ci-host-reconstruct-on-boot`), so the secret exists before ARC is brought up. |
-| `secret-reinjection/install-secret-reinjection-unit.sh` | Installs the injector to `/usr/local/lib/ci-runner-k3s/` and the unit to `/etc/systemd/system/`, then `systemctl enable` (NOT `--now`) — arms it for next boot without applying live. |
+| `secret-reinjection/seed-github-app-creds.sh` | **Attended, run once by the maintainer** (a `github-ci-runners` group member). Under the 1Password wrapper it reads the three values and writes each host-encrypted into `/etc/credstore.encrypted/` via `systemd-creds encrypt` (value via STDIN, never argv). Also the re-seed step on key rotation. |
+| `secret-reinjection/inject-github-app-secret.sh` | The **boot** injector, runs as root. Reads the three decrypted credentials from `$CREDENTIALS_DIRECTORY`, ensures the `arc-runners` namespace exists, then creates/refreshes `arc-github-app-installation` idempotently (`kubectl create … --dry-run=client -o yaml \| kubectl apply -f -`). |
+| `secret-reinjection/inject-github-app-secret.service` | systemd oneshot (root) that decrypts the three credstore credentials via `LoadCredentialEncrypted=` and runs the injector at boot, `After=k3s.service` and `Before=converge-ci-stack.service` (the `livespec-olp4c5` converge, authored in the sibling PR `feat/ci-host-reconstruct-on-boot`), so the secret exists before ARC is brought up. |
+| `secret-reinjection/install-secret-reinjection-unit.sh` | Installs the injector to `/usr/local/lib/ci-runner-k3s/` and the unit to `/etc/systemd/system/`, then `systemctl enable` (NOT `--now`) — arms it for next boot without applying live. Warns if the credstore is not yet seeded. |
 
-**1Password source — the least-privilege `github-ci-runners` Environment,
-never a broader fleet secret.** The unit runs the injector UNDER the
-dedicated `github-ci-runners` 1Password wrapper
+**1Password source (seed step only) — the least-privilege `github-ci-runners`
+Environment, never a broader fleet secret.** `seed-github-app-creds.sh` runs
+UNDER the dedicated `github-ci-runners` 1Password wrapper
 (`/usr/local/bin/with-github-ci-runners-env.sh`) — the SAME wrapper and
-Environment the podman pool's gate supervisor already uses
-(`../gate-runner/gate-runner-supervisor.service`). That wrapper injects
-three variables, which map onto the secret's three data keys:
+Environment the podman pool's gate supervisor used
+(`../gate-runner/gate-runner-supervisor.sh`). It injects three variables,
+which flow into three credstore credential names and, at boot, onto the
+secret's three data keys:
 
-| 1Password Environment variable | Secret data key |
-|---|---|
-| `GITHUB_APP_ID_CI_RUNNER` | `github_app_id` |
-| `GITHUB_APP_INSTALLATION_ID_CI_RUNNER` | `github_app_installation_id` |
-| `GITHUB_PRIVATE_KEY_CI_RUNNER` (PEM content) | `github_app_private_key` |
+| 1Password Environment variable | credstore credential | Secret data key |
+|---|---|---|
+| `GITHUB_APP_ID_CI_RUNNER` | `arc-github-app-id` | `github_app_id` |
+| `GITHUB_APP_INSTALLATION_ID_CI_RUNNER` | `arc-github-app-installation-id` | `github_app_installation_id` |
+| `GITHUB_PRIVATE_KEY_CI_RUNNER` (PEM content) | `arc-github-app-private-key` | `github_app_private_key` |
 
-(These are the exact names `../gate-runner/gate-runner-supervisor.sh`
-reads out of that same injected env; the injector reuses them.)
+(These var names are the exact ones `../gate-runner/gate-runner-supervisor.sh`
+reads out of that same injected env; the seed step reuses them.) Seed with:
 
-**The App private key never lands in git or on argv.** It is sourced only
-from 1Password at apply time, written to a `mktemp` file `chmod 600`
-(trap-cleaned on exit), and handed to `kubectl` via `--from-file` — never
-`--from-literal` (which would expose it in `/proc/<pid>/cmdline` and
-`ps`). The id fields (not secret-sensitive) use `--from-literal`. The
-injector never runs `set -x` and prints only phase banners.
+```bash
+# as a github-ci-runners group member (e.g. cwoolley); sudo prompts for the host key
+with-github-ci-runners-env.sh -- ci-runner/k3s/secret-reinjection/seed-github-app-creds.sh
+```
 
-**Identity and preconditions (applied at the attended cutover).** The unit
-runs as `ci-sup` — the only identity that reads the App key — so no new
-identity gains the credential. Two live-host preconditions the unit
-declares but does not itself provision: `with-github-ci-runners-env.sh`
-must exist (the installer pre-gates this), and `ci-sup` must be able to
-read the k3s kubeconfig named in the unit's `Environment=KUBECONFIG=`
-(grant read access, or point it at a copy). `NoNewPrivileges` is
-deliberately unset on the unit because the wrapper self-escalates via
-`sudo -n` to decrypt its service-account token, exactly as in
-`gate-runner-supervisor.service`.
+**The App private key never lands in git or on argv, at seed OR at boot.**
+At seed, the value flows into `systemd-creds encrypt` via STDIN (only the
+ciphertext is written to disk). At boot, `LoadCredentialEncrypted=` places
+the decrypted key as a root-only file in `$CREDENTIALS_DIRECTORY`, and the
+injector hands that path to `kubectl` via `--from-file` — never
+`--from-literal` (which would expose it in `/proc/<pid>/cmdline` and `ps`).
+The id fields (not secret-sensitive) use `--from-literal`. Neither script
+runs `set -x`; both print only phase banners.
+
+**Boot identity — root, no external preconditions.** The boot unit runs as
+root (default), so it reads the default `0600 root:root` kubeconfig
+(`Environment=KUBECONFIG=`) directly and needs no group grant, no wrapper,
+and no network. Its only prerequisite is that the credstore has been seeded;
+`install-secret-reinjection-unit.sh` warns if it has not.
 
 **Namespace: `arc-runners`, not `arc-systems`.** Create the secret in
 the `arc-runners` namespace — the namespace every `gha-runner-scale-set`
