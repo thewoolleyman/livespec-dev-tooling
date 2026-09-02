@@ -1,0 +1,28 @@
+# scan-runner-pod-lifecycle.service — periodically scan the k3s runner node for
+# the runner-pod LIFECYCLE stall (scan-runner-pod-lifecycle.sh): PVCs stuck
+# Pending, scheduler volume-bind expiries, containerd inotify exhaustion,
+# containerd create-path deadlines and teardown starvation, the ARC hook's
+# failure signature and its precursor, and stale scale-set listeners.
+#
+# WHY THIS EXISTS: every member of this family was found by a human reading a
+# red check whose name misdirected — a `check-format: FAILURE` for a check
+# that never ran, an `Initialize containers` error on an unrelated PR — minutes
+# to hours after the host had started failing to bring pods up, with every
+# capacity signal and the wedged-runner sweep reporting nothing wrong
+# (livespec plan ci-runner-pod-lifecycle-reliability, epic livespec-ifwnqj).
+# A timer is the same pragmatic, homelab-scale answer this tree already uses
+# for the wedged-runner sweep (../wedged-runner/) and the churn-slot reapply.
+#
+# REPORT-ONLY BY DESIGN — there is no clear mode and so no MODE_PLACEHOLDER
+# here (see install-runner-pod-lifecycle-scan.sh's header for why). The unit
+# lands in `failed` whenever a class is present, so `systemctl is-failed
+# scan-runner-pod-lifecycle.service` and this unit's journal are the signal.
+[Unit]
+Description=Scan the runner node for the runner-pod lifecycle stall (report-only)
+After=k3s.service
+Requires=k3s.service
+
+[Service]
+Type=oneshot
+Environment=KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+ExecStart=/usr/local/lib/ci-runner-k3s/scan-runner-pod-lifecycle.sh

@@ -1,0 +1,25 @@
+# scan-runner-pod-lifecycle.timer — run the runner-pod lifecycle sweep every
+# 5 minutes.
+#
+# The sweep is a handful of namespaced list calls, one bounded journal read,
+# one backwards walk of containerd.log's tail and a short bounded log read per
+# runner pod (see scan-runner-pod-lifecycle.sh), so the cost is negligible and
+# the interval is chosen for exposure rather than for load. Five minutes is
+# also the scan's default look-back window, so consecutive sweeps tile the
+# timeline without double-counting, and it matches the cadence this tree
+# already runs its siblings at (scan-wedged-runners.timer,
+# reapply-node-extended-resource.timer), so the host has one cadence to
+# reason about. OnBootSec sits after the boot converge
+# (../reconstruct/converge-ci-stack.service, ~2.5 min from an empty
+# datastore) so the first sweep after a reboot reads a converged cluster
+# rather than one still being built.
+[Unit]
+Description=Periodic runner-pod lifecycle-stall sweep (every 5 min, report-only)
+
+[Timer]
+OnBootSec=4min
+OnUnitActiveSec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
