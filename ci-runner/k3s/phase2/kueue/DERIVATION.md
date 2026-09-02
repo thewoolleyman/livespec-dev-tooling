@@ -425,9 +425,17 @@ moves, re-check `2C + ~35 <= max-pods <= podCIDR size`.
 The same incident's kernel-side term — `fs.inotify.max_user_instances`,
 default 128, ~2 per containerd shim plus ~21 for kubelet/cadvisor, exhausted
 at roughly 50 containers' worth of shims — was raised to 8192 on the host
-(`/etc/sysctl.d/99-ci-runner-inotify.conf`). Making both budgets part of
-this directory's node-local install mechanism, so a new pool member inherits
-them and a rebuild cannot lose them, is `livespec-a6lxuv`'s remaining leg.
+(`/etc/sysctl.d/99-ci-runner-inotify.conf`). The inotify budget now has a
+node-local install mechanism — `../node-inotify-budget/install-inotify-sysctl.sh`
+writes that drop-in from the shipped `99-ci-runner-inotify.conf` and applies it,
+so a new or rebuilt pool member inherits it and `systemd-sysctl` re-applies it at
+every boot (no reapply timer is needed, unlike `../node-extended-resource/`,
+because a `/etc/sysctl.d/` file is natively boot-durable). `max-pods` is durable
+by its own mechanism: it lives in `/etc/rancher/k3s/config.yaml` on the host,
+which k3s reads on every start, so a reboot or k3s restart preserves it; a full
+host REBUILD re-runs `../provision-k3s.sh`, which does not yet re-write that
+kubelet-arg, so re-applying `max-pods` after a from-scratch rebuild is the one
+piece still owed (tracked on `livespec-a6lxuv`).
 
 ## Recomputing at another C
 
