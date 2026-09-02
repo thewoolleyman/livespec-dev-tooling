@@ -1,0 +1,55 @@
+# var-lib-rancher-k3s-server-db.mount — back the k3s kine/SQLite datastore
+# (state.db + its WAL, ~110 MB live) with tmpfs, so control-plane fsyncs are
+# RAM-speed and can never queue behind CI churn on the array, and so the
+# reconstruct-on-boot path is EXERCISED on every reboot and cannot rot.
+#
+# WHY THIS EXISTS: livespec plan ci-runner-pod-lifecycle-reliability,
+# research/003 — under 60+ concurrent CI jobs the array saturated, kine
+# logged `Slow SQL`, Kueue lost its leader lease and exited, its single
+# admission webhook dropped, and every pod creation in the fleet failed.
+# Putting the datastore in RAM removes it from that contention entirely.
+#
+# VOLATILITY IS THE POINT — AND IS SAFE ONLY BECAUSE OF TWO SIBLING UNITS.
+# tmpfs is cleared on REBOOT (it survives a plain `systemctl restart k3s`).
+# On every boot k3s therefore starts with an EMPTY datastore, and the
+# cluster is rebuilt from this repository by, in order:
+#   1. inject-github-app-secret.service  (livespec-qqzlek — the GitHub App
+#      secret, decrypted from the host credstore)
+#   2. converge-ci-stack.service         (livespec-olp4c5 — ARC + every
+#      scale set + Kueue + every queue)
+# Both are WantedBy=multi-user.target and After=k3s.service. Do NOT enable
+# this mount on a host where those two are not installed, enabled and
+# proven — it would boot into an empty cluster nothing rebuilds.
+# (install-datastore-tmpfs.sh pre-gates on exactly that.)
+#
+# SAFETY PROPERTIES, deliberately chosen:
+#   - Ordered Before=k3s.service, but k3s is NOT made to Require it. If this
+#     mount ever fails, k3s starts on the ON-DISK datastore underneath — a
+#     safe, degraded fallback (stale but intact), never a blocked boot.
+#   - The tmpfs is mounted OVER the on-disk directory: it hides the disk
+#     copy, it does not delete it. ROLLBACK is: stop k3s, disable + stop
+#     this mount, start k3s — back on the original datastore, untouched.
+#   - A reboot clears the datastore AND every container together, so the
+#     API's view and the running containers are never out of step (no
+#     split-brain). No snapshot/restore leg is provided: restoring a stale
+#     datastore into a live cluster would be actively harmful.
+#   - size= is a ceiling, not a reservation — tmpfs consumes RAM only as
+#     written. mode=0700 preserves the on-disk directory's root-only perms.
+#     noexec/nosuid/nodev: a SQLite directory needs none of them.
+#
+# INSTALL with install-datastore-tmpfs.sh, which ENABLES for next boot and
+# NEVER starts this live — starting it under a RUNNING k3s would hide its
+# datastore mid-flight. Activation is a boot, or a deliberate cutover with
+# k3s stopped.
+[Unit]
+Description=tmpfs for the k3s kine/SQLite datastore (volatile; cluster reconstructed on boot)
+Before=k3s.service
+
+[Mount]
+What=tmpfs
+Where=/var/lib/rancher/k3s/server/db
+Type=tmpfs
+Options=size=2G,mode=0700,noexec,nosuid,nodev
+
+[Install]
+WantedBy=multi-user.target
