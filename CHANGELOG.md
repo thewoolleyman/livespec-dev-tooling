@@ -58,6 +58,19 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.40.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.39.1...v1.40.0) (2026-09-02)
+
+
+### Features
+
+* **ci-runner:** every boot rebuilds the full desired CI host config from git ([4de2427](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4de2427d7c5a31903df8075546a90595e648a8f3))
+* **ci-runner:** ship the last node-local state with no git source ([db6e416](https://github.com/thewoolleyman/livespec-dev-tooling/commit/db6e416624ff09b3c6b07ae079046fa8aa9fe1be))
+
+
+### Bug Fixes
+
+* **ci-runner:** provision-k3s.sh version check refused every re-run on an installed host ([e2a3437](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e2a34379c83807e9bd8b3226fe0b98264aaa7aed))
+
 ## [1.39.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.39.0...v1.39.1) (2026-09-02)
 
 
