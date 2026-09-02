@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.38.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.38.0...v1.38.1) (2026-09-02)
+
+
+### Bug Fixes
+
+* **ci-runner:** raise console maxRunners 16-&gt;64 to match the C=64 pool ([20a7c8a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/20a7c8a99aab01cd8eaec1bce523c1a61c3166a3))
+* **ci-runner:** raise livespec (local-ci) maxRunners 36-&gt;64 to match the C=64 pool ([d64effb](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d64effbe763c28279dc410ec1ce26557cc7b215e))
+
 ## [1.38.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.37.1...v1.38.0) (2026-09-02)
 
 
