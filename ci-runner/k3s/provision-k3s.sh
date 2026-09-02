@@ -48,8 +48,13 @@ log "0. Install the fleet's k3s server config BEFORE the first k3s start"
 # ---------------------------------------------------------------------------
 log "1. Install k3s ${K3S_VERSION} (idempotent — skip if already at this version)"
 if command -v k3s >/dev/null 2>&1; then
+  # `k3s --version` prints `k3s version v1.36.2+k3s1 (01b6f04a)`: field 3
+  # already carries the leading `v`. Compare with and without it, since the
+  # original test only compared against a stripped form and a re-prefixed
+  # form ("vv1.36…") and so REFUSED every re-run on an installed host — found
+  # 2026-09-02 the first time this script was re-run live for idempotency.
   current="$(k3s --version | head -1 | awk '{print $3}')"
-  if [ "$current" = "${K3S_VERSION#v}" ] || [ "v${current}" = "$K3S_VERSION" ]; then
+  if [ "$current" = "$K3S_VERSION" ] || [ "$current" = "${K3S_VERSION#v}" ] || [ "v${current}" = "$K3S_VERSION" ]; then
     echo "k3s already installed at ${K3S_VERSION} — skipping install"
   else
     echo "FATAL: k3s installed at v${current}, expected ${K3S_VERSION}. Uninstall first (see README) or update this pin deliberately."
