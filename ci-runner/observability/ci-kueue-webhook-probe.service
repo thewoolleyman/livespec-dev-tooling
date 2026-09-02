@@ -16,10 +16,22 @@
 # Source of truth: livespec-dev-tooling ci-runner/observability/ — install via
 # install-observability.sh, never hand-edit the live copy (the s2t
 # recreatability rule).
+#
+# BOOT ORDERING: the .timer's first tick fires ~2 min after boot, which on the
+# reconstruct-on-boot path (livespec plan ci-runner-pod-lifecycle-reliability,
+# boot-3 proof 2026-09-02 14:31Z) landed while converge-ci-stack.service was
+# still installing Kueue and before otel-collector-identity.service had
+# re-rendered the scoped kubeconfig, so the kubectl read failed and the probe
+# exited 1 (correctly refusing to emit a false zero) — a red unit on every boot
+# that the next tick heals, masking real failures from `systemctl --failed`.
+# The After= below is ORDERING ONLY (no Requires=): a boot-time activation waits
+# for the converged stack and the rendered kubeconfig; steady-state ticks are
+# unaffected because those oneshots are already inactive by then.
 [Unit]
 Description=Kueue admission-webhook endpoint-readiness probe (OTLP gauge to local collector)
 Wants=network-online.target
 After=network-online.target
+After=k3s.service converge-ci-stack.service otel-collector-identity.service
 
 [Service]
 Type=oneshot
