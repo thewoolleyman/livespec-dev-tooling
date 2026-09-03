@@ -297,6 +297,116 @@ for release in $(printf '%s\n' "${!SCALE_SETS[@]}" | sort); do
 done
 
 # ---------------------------------------------------------------------------
+log "7b. Assert every scale-set listener references its scale set's CURRENT EphemeralRunnerSet (self-healing)"
+# WHY: ARC 0.14.2 can create two EphemeralRunnerSets for one scale set within
+# seconds of the helm apply — a transient one, then the live one — and a
+# listener created in that window captures the TRANSIENT name. Nothing
+# corrects it: the AutoscalingListener carries no ownerReference to the set
+# and only patches it when it must scale. So the listener pod shows Running
+# and an "N listeners Running" checklist passes, while the FIRST job assigned
+# to that repository makes the listener fail `could not patch ephemeral
+# runner set ... not found`, exit, and crash-loop — that repository's jobs
+# queue forever with every capacity signal healthy. Seen live on the
+# 2026-09-02 boot 5 (livespec-overseer, 31 minutes; livespec plan
+# ci-runner-pod-lifecycle-reliability, item livespec-bde2). Boots 2-4 simply
+# did not lose the race, which is why a passing checklist proved nothing.
+#
+# THE ASSERTION: for every AutoscalingListener, spec.ephemeralRunnerSetName
+# must equal the CURRENT set of its scale set — the EphemeralRunnerSet owned
+# by that AutoscalingRunnerSet, not being deleted, newest by creation time.
+# A mere "the referenced set exists" test would miss a listener pointing at
+# a superseded set that has not been deleted yet.
+#
+# THE SELF-HEAL: delete the stale AutoscalingListener; the ARC controller
+# recreates it against the live set within ~30 s (the hand remedy applied on
+# 2026-09-02 15:50Z). Then re-verify. A listener that is STILL inconsistent
+# after that is reported as a WARN and the converge CONTINUES — failing here
+# would skip the hook ConfigMap, warm cache and probe identity that every job
+# depends on, and the runner-pod-lifecycle sweep (../runner-pod-lifecycle/)
+# reports the class every five minutes anyway.
+#
+# The `listener->EphemeralRunnerSet: N/N consistent` line printed at the end
+# is this step's boot-proof evidence; "N listeners Running" is not (README
+# "Reconstruct-on-boot").
+
+# One line per scale set: `<AutoscalingRunnerSet>|<its current EphemeralRunnerSet>`.
+current_sets() {
+  kubectl -n "$RUNNERS_NAMESPACE" get ephemeralrunnerset \
+    -o jsonpath='{range .items[*]}{.metadata.ownerReferences[0].name}{"|"}{.metadata.name}{"|"}{.metadata.creationTimestamp}{"|"}{.metadata.deletionTimestamp}{"\n"}{end}' 2>/dev/null \
+    | awk -F'|' '$1 != "" && $4 == ""' \
+    | sort -t'|' -k1,1 -k3,3r \
+    | awk -F'|' '!seen[$1]++ {print $1 "|" $2}'
+}
+# One line per listener: `<AutoscalingListener>|<its AutoscalingRunnerSet>|<referenced EphemeralRunnerSet>`.
+listeners() {
+  kubectl -n "$CONTROLLER_NAMESPACE" get autoscalinglistener \
+    -o jsonpath='{range .items[*]}{.metadata.name}{"|"}{.spec.autoscalingRunnerSetName}{"|"}{.spec.ephemeralRunnerSetName}{"\n"}{end}' 2>/dev/null
+}
+# Prints one indented line per listener (ok / STALE / PENDING) followed by a
+# final `STALE:<a>,<b>` line naming the stale ones. A listener is PENDING when
+# its scale set has no live EphemeralRunnerSet yet (the controller is still
+# reconciling) — waited for, never healed.
+check_listeners() {
+  local sets lst stale="" name ars ref cur
+  sets="$(current_sets)"
+  lst="$(listeners)"
+  while IFS='|' read -r name ars ref; do
+    [ -n "$name" ] || continue
+    cur="$(printf '%s\n' "$sets" | awk -F'|' -v a="$ars" '$1 == a {print $2; exit}')"
+    if [ -z "$cur" ]; then
+      printf '  %-48s PENDING (no live EphemeralRunnerSet for %s yet)\n' "$name" "$ars"
+    elif [ "$ref" = "$cur" ]; then
+      printf '  %-48s ok (%s)\n' "$name" "$ref"
+    else
+      printf '  %-48s STALE -> %s (current for %s: %s)\n' "$name" "${ref:-<empty>}" "$ars" "$cur"
+      stale="${stale}${name},"
+    fi
+  done <<< "$lst"
+  printf 'STALE:%s\n' "${stale%,}"
+}
+
+# Listeners are created asynchronously by the controller after the helm
+# applies (on a boot from empty they appear within ~35 s), and a deleted one
+# takes ~30 s to come back — so the check is polled, bounded to 150 s, and
+# counts as done only when EVERY scale set has a listener and none is stale
+# or pending. Each stale listener is deleted at most once.
+expected_listeners="$(kubectl -n "$RUNNERS_NAMESPACE" get autoscalingrunnerset -o name 2>/dev/null | grep -c . || true)"
+healed_names=","
+healed_count=0
+listeners_consistent=false
+report=""
+for _ in $(seq 1 75); do
+  report="$(check_listeners)"
+  present="$(printf '%s\n' "$report" | grep -cE '^  ' || true)"
+  pending="$(printf '%s\n' "$report" | grep -c ' PENDING ' || true)"
+  stale_csv="$(printf '%s\n' "$report" | sed -n 's/^STALE://p')"
+  if [ "$present" -ge "$expected_listeners" ] && [ "$pending" -eq 0 ] && [ -z "$stale_csv" ]; then
+    listeners_consistent=true
+    break
+  fi
+  IFS=',' read -ra stale_list <<< "$stale_csv"
+  for name in "${stale_list[@]}"; do
+    [ -n "$name" ] || continue
+    case "$healed_names" in *",${name},"*) continue ;; esac
+    # Log the stale reference itself before it is destroyed, so the journal
+    # says WHAT was wrong, not only that something was healed.
+    printf '%s\n' "$report" | grep -F "  ${name} " || true
+    echo "  self-heal: deleting stale AutoscalingListener ${name}; the controller recreates it against the live set"
+    kubectl -n "$CONTROLLER_NAMESPACE" delete autoscalinglistener "$name" --wait=false || true
+    healed_names="${healed_names}${name},"
+    healed_count=$((healed_count+1))
+  done
+  sleep 2
+done
+printf '%s\n' "$report" | grep -v '^STALE:' || true
+ok_count="$(printf '%s\n' "$report" | grep -c ' ok (' || true)"
+if [ "$listeners_consistent" = true ]; then
+  echo "listener->EphemeralRunnerSet: ${ok_count}/${expected_listeners} consistent (${healed_count} self-healed)"
+else
+  echo "WARN: listener->EphemeralRunnerSet: ${ok_count}/${expected_listeners} consistent after ${healed_count} self-heal(s) and 150 s -- a scale set may be unable to dispatch; the runner-pod-lifecycle sweep reports it as stale-listener every 5 min. By hand: kubectl -n ${CONTROLLER_NAMESPACE} delete autoscalinglistener <name>"
+fi
+
+# ---------------------------------------------------------------------------
 log "8. Converge the arc-hook-pod-template ConfigMap"
 # Reuse the existing idempotent converge (KUBECONFIG-driven, create|apply). It
 # reads its sibling hook-pod-template.yaml, so the installer copies both into
