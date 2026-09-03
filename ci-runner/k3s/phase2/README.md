@@ -331,7 +331,11 @@ changed, then rollout + CRD-established wait) **and a wait for its mutating
 webhook to have a ready endpoint** → `kueue/resource-flavor.yaml` and every
 `kueue/cluster-queue-*.yaml` → ARC controller (`helm upgrade --install`,
 chart `0.14.2`) → all ten runner scale sets from `arc/values-*.yaml` (each
-`helm upgrade --install`, chart `0.14.2`) → the `arc-hook-pod-template`
+`helm upgrade --install`, chart `0.14.2`) → **the listener assertion**
+(every `AutoscalingListener` must reference its scale set's CURRENT
+`EphemeralRunnerSet`; a stale one is deleted so the controller recreates it,
+then re-verified — see "Why 'N listeners Running' is not the proof" below)
+→ the `arc-hook-pod-template`
 ConfigMap (via `arc/converge-hook-pod-template.sh`) → the warm cache's
 cluster objects (`warm-cache/converge-warm-cache.sh`, no populate Job) →
 the Kueue-webhook probe's RBAC re-applied and its host kubeconfig
@@ -351,11 +355,53 @@ anything that creates pods. The provisioner comes first for the same
 reason in the other direction: nothing can bind a PVC without it, and the
 bundled copy that used to appear "for free" is now disabled.
 
+**Why "N listeners Running" is not the proof, and step 7b.** ARC 0.14.2 can
+create two `EphemeralRunnerSet`s for one scale set within seconds of the
+helm apply — a transient one, then the live one — and a listener created in
+that window captures the TRANSIENT name. Nothing corrects it: the
+`AutoscalingListener` carries no ownerReference to the set and only patches
+it when it must scale. So the listener pod shows `Running`, a "10 listeners
+Running" checklist passes, and the FIRST job assigned to that repository
+makes the listener fail `could not patch ephemeral runner set … not found`,
+exit and crash-loop — that repository's jobs queue forever with every
+capacity signal healthy. Boot 5 on 2026-09-02 lost that race for
+`livespec-overseer` (31 minutes of queueing, found by a human; boots 2–4
+simply did not lose it, which is why their passing checklists proved
+nothing). The converge's step 7b therefore asserts, for every listener,
+that `spec.ephemeralRunnerSetName` equals the CURRENT set of its scale set
+(owned by that `AutoscalingRunnerSet`, not being deleted, newest by
+creation time — a bare "the set exists" test would miss a superseded set
+not yet deleted), polled and bounded to 150 s because listeners appear
+asynchronously (~35 s after the helm applies on a boot from empty); a stale
+listener is deleted at most once so the controller recreates it against the
+live set (~30 s), and the check is re-run. The evidence line is
+`listener->EphemeralRunnerSet: N/N consistent (M self-healed)` in the
+converge's journal; a residual mismatch prints a `WARN` and the converge
+CONTINUES (failing there would skip the hook ConfigMap, warm cache and probe
+identity every job depends on, and `runner-pod-lifecycle/` reports the
+class every five minutes as `stale-listener`). Item `livespec-bde2`.
+
+*Proven on `poweredge-xubuntu`, 2026-09-03 (warm; the one-boot proof is
+recorded with the next reboot).* Through the installed unit on a consistent
+cluster: `listener->EphemeralRunnerSet: 10/10 consistent (0 self-healed)`,
+`Result=success` in 41 s, nothing else changed. Then the race was
+reproduced synthetically on the host's own single-runner scale set:
+`kubectl patch autoscalinglistener poweredge-xubuntu-k3s-…-listener` to a
+bogus `ephemeralRunnerSetName` — the patch PERSISTED (the controller does not
+reconcile that field, which is exactly why the boot-5 race persisted) and
+the controller restarted the listener pod against the bogus set, the
+crash-loop shape. The next converge deleted the stale listener at
+01:03:10Z, the controller recreated it with a new uid against the live set
+at 01:03:11Z, and step 7b closed `10/10 consistent (1 self-healed)` three
+seconds later with the listener pod Running.
+
 **Starting from an EMPTY datastore** (the GitHub App secret re-injected by
-`../secret-reinjection/`), one boot converges the cluster to all scale-set
-listeners `Running` and Kueue admitting pods, with zero manual
-`kubectl`/`helm` steps — proven by the 2026-09-02 reboot (see "Datastore on
-tmpfs" below).
+`../secret-reinjection/`), one boot converges the cluster to every scale-set
+listener `Running` AND referencing its scale set's current
+`EphemeralRunnerSet` (the `listener->EphemeralRunnerSet: 10/10 consistent`
+line above is the evidence — a `Running` count alone is not) and Kueue
+admitting pods, with zero manual `kubectl`/`helm` steps — proven by the
+2026-09-02 reboots (see "Datastore on tmpfs" below).
 
 **Scope boundary.** The converge owns CLUSTER-side state (everything that
 lives in the datastore) plus the one host file derived from it (the probe
