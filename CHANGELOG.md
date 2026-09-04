@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.42.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.41.0...v1.42.0) (2026-09-04)
+
+
+### Features
+
+* **otel:** attach build.cache.sccache.* + build.cache.registry.hit to factory cargo spans ([c1584b8](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c1584b83b93cda1237486fdc5137df6420f58d95))
+
 ## [1.41.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.40.2...v1.41.0) (2026-09-04)
 
 
