@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.40.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.40.1...v1.40.2) (2026-09-04)
+
+
+### Bug Fixes
+
+* **ci-runner:** drop the warm-generation ownership step -- uv cannot use an unmapped-owner cache; record the open trust decision (livespec-lvtu) ([899cc80](https://github.com/thewoolleyman/livespec-dev-tooling/commit/899cc8036cf5076a04eaeac387c7fd77395c354c))
+
 ## [1.40.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.40.0...v1.40.1) (2026-09-02)
 
 
