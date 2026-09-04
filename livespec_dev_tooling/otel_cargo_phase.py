@@ -10,9 +10,17 @@ code from the environment::
     BUILD_START_NANO=<ns> BUILD_END_NANO=<ns> BUILD_EXIT_CODE=0 \
       livespec-cargo-phase-timer
 
+Invoked a second way, BEFORE cargo, to zero the compilation cache's counters so
+the span's counts describe THIS phase and not the sandbox's whole life::
+
+    livespec-cargo-phase-timer --zero-stats
+
 It best-effort POSTs ONE OTLP/HTTP-JSON span — conforming to the shared
 build-telemetry attribute scheme (``build.env=factory``, ``build.phase``,
-``repo``, ``git.commit.sha``, ``toolchain.version``) — to the host OTel receiver
+``repo``, ``git.commit.sha``, ``toolchain.version``, and the pool's
+``build.cache.*`` namespace: ``build.cache.sccache.enabled|hits|misses|errors|
+hit_ratio|backend|rw_mode`` plus ``build.cache.registry.hit``) — to the host
+OTel receiver
 at ``$LIVESPEC_SANDBOX_OTEL_ENDPOINT`` (default ``http://172.17.0.1:4318``, the
 same seam the ``prepare.*`` step-timer uses). The receiver routes a span to its
 Honeycomb dataset by ``service.name``; this span carries
@@ -37,15 +45,19 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import urllib.error
 import urllib.request
 from collections.abc import Callable
+from pathlib import Path
+from typing import cast
 
 # Only names that cross a module boundary. `parse_env`, `gather_source_facts`,
-# `build_span_payload`, `post_span` and `run` are internal helpers of this baked
-# CLI, reached only by this module's own tests; `main` stays because the baked
+# `build_span_payload`, `post_span`, `run` and the `*_sccache_*` / `registry_hit`
+# / `cache_attributes` cache probe are internal helpers of this baked CLI,
+# reached only by this module's own tests; `main` stays because the baked
 # `livespec-cargo-phase-timer` binary enters through it.
 __all__: list[str] = [
     "BUILD_ENV",
@@ -65,6 +77,16 @@ _SCOPE_VERSION = "1.0.0"
 _POST_TIMEOUT_S = 2.0
 _HTTP_OK = 200
 _UNKNOWN = "unknown"
+_NONE = "none"
+_SCCACHE_RW_MODE_ENV = "SCCACHE_REDIS_RW_MODE"
+# The pool MOUNTS its pinned sccache here rather than each image baking one, so
+# this is the last resort after a PATH lookup.
+_POOL_SCCACHE_BIN = "/opt/ci-runner/bin/sccache"
+_DEFAULT_RW_MODE = "READ_WRITE"
+_CARGO_HOME_ENV = "CARGO_HOME"
+# The sandbox image installs rustup under /root/.cargo (see the python-rust
+# Dockerfile), which is also cargo's own default for a root-run build.
+_DEFAULT_CARGO_HOME = "/root/.cargo"
 _USAGE = (
     "livespec-cargo-phase-timer: usage: set BUILD_PHASE, BUILD_SUBCMD, "
     "BUILD_START_NANO, BUILD_END_NANO, BUILD_EXIT_CODE in the environment\n"
@@ -101,7 +123,7 @@ def parse_env(*, environ: dict[str, str]) -> dict[str, object] | None:
 def _stdout_of(*, command: list[str]) -> str:
     """Best-effort first line of ``command``'s stdout, ``""`` on any failure."""
     with contextlib.suppress(OSError, ValueError, subprocess.SubprocessError):
-        completed = subprocess.run(  # noqa: S603  — fixed git argv, no shell.
+        completed = subprocess.run(  # noqa: S603  — fixed git/sccache argv, no shell.
             command, capture_output=True, text=True, check=False, timeout=_POST_TIMEOUT_S
         )
         if completed.returncode == 0:
@@ -152,16 +174,151 @@ def _read_text(*, path: str) -> str:
         return handle.read()
 
 
+def _sccache_binary(*, environ: dict[str, str]) -> str:
+    """Resolve the sccache binary: PATH first, then the pool's read-only mount.
+
+    Returns ``""`` when neither resolves to an executable — the signal the
+    callers degrade on. The PATH is read from the passed ``environ`` rather than
+    the process's, so the resolution stays a pure function of its input.
+    """
+    for candidate in ("sccache", _POOL_SCCACHE_BIN):
+        found = shutil.which(candidate, path=environ.get("PATH", ""))
+        if found:
+            return found
+    return ""
+
+
+def _sccache_output(*, environ: dict[str, str], args: list[str]) -> str | None:
+    """Best-effort ``sccache <args>`` stdout; ``None`` when sccache cannot answer.
+
+    ``None`` covers all three degraded shapes at once — no binary, a binary that
+    will not spawn, and a non-zero or silent run — because the caller treats
+    them identically: ``build.cache.sccache.enabled=false``. Every sccache
+    subcommand used here prints on success, so empty stdout IS a failure.
+    """
+    binary = _sccache_binary(environ=environ)
+    return (_stdout_of(command=[binary, *args]) or None) if binary else None
+
+
+def zero_sccache_stats(*, environ: dict[str, str]) -> bool:
+    """Zero sccache's counters before cargo; report whether the zeroing landed.
+
+    Called by the shim BEFORE the measured cargo so the counts the span carries
+    describe THIS phase only. Best-effort by contract: a ``False`` return
+    changes nothing about the build, it only means the phase's counts will be
+    cumulative rather than phase-scoped.
+    """
+    return _sccache_output(environ=environ, args=["--zero-stats"]) is not None
+
+
+def read_sccache_stats(*, environ: dict[str, str]) -> str | None:
+    """Best-effort ``sccache --show-stats --stats-format=json`` text, or ``None``."""
+    return _sccache_output(environ=environ, args=["--show-stats", "--stats-format=json"])
+
+
+def _counter_total(*, value: object) -> int:
+    """Total one sccache counter: a bare int, or a ``{"counts": {<lang>: n}}`` map.
+
+    sccache reports the per-kind counters as a nested ``counts`` map and the
+    scalar ones as bare integers, and which is which has moved between
+    releases; reading both keeps the parse version-tolerant. Anything else
+    totals to 0 rather than raising — a stats shape we do not recognise must
+    never perturb a build that has already finished.
+    """
+    if isinstance(value, int):
+        return value
+    with contextlib.suppress(AttributeError, KeyError, TypeError, ValueError):
+        counts = cast("dict[str, dict[str, int]]", value)["counts"]
+        return sum(int(n) for n in counts.values())
+    return 0
+
+
+def _backend_of(*, location: str) -> str:
+    """Reduce sccache's ``cache_location`` to a backend TOKEN.
+
+    sccache spells the location ``"<Backend><: or ,> <detail>"`` — ``"Redis:
+    redis://host:6379"``, ``"Local disk: /root/.cache/sccache"``, ``"S3, bucket:
+    …"`` — so the HEAD is the backend and the detail is dropped. Dropping it is
+    the point: the detail embeds the cache's endpoint and, for a
+    URL-authenticated backend, its credential, and
+    non-functional-requirements §"Runner-pool cache telemetry" forbids an
+    emitter carrying either. A head that is not a bare word — a naked path, say
+    — is therefore reported as ``unknown`` rather than emitted verbatim.
+    """
+    head = location.split(":")[0].split(",")[0].strip().lower().replace(" ", "-")
+    return head if head.replace("-", "").isalnum() else _UNKNOWN
+
+
+def parse_sccache_stats(*, text: str) -> tuple[int, int, int, str] | None:
+    """``(hits, misses, errors, backend)`` from sccache's JSON stats.
+
+    Returns ``None`` when the text is not sccache stats at all — the signal the
+    caller degrades to ``build.cache.sccache.enabled=false`` on.
+    """
+    with contextlib.suppress(AttributeError, KeyError, TypeError, ValueError):
+        # The `cast` is the single typed parse boundary: `json.loads` yields
+        # `Any`, and every field it names is re-validated by the suppressed
+        # exceptions above — a stats document of another shape returns `None`.
+        stats = cast("dict[str, dict[str, object]]", json.loads(text))["stats"]
+        return (
+            _counter_total(value=stats.get("cache_hits")),
+            _counter_total(value=stats.get("cache_misses")),
+            _counter_total(value=stats.get("cache_errors")),
+            _backend_of(location=str(stats.get("cache_location", ""))),
+        )
+    return None
+
+
+def registry_hit(*, environ: dict[str, str]) -> bool:
+    """Whether a warm crate-registry cache is already present in this sandbox.
+
+    The factory's counterpart to the pool's per-tier ``build.cache.registry.hit``:
+    a populated ``$CARGO_HOME/registry/cache`` means this phase started from a
+    warm registry rather than fetching every crate cold.
+    """
+    home = (environ.get(_CARGO_HOME_ENV) or "").strip() or _DEFAULT_CARGO_HOME
+    return (Path(home) / "registry" / "cache").is_dir()
+
+
+def cache_attributes(*, environ: dict[str, str], stats: str | None) -> list[dict[str, object]]:
+    """The span's ``build.cache.*`` attributes for one cargo phase.
+
+    Always the SAME eight keys, so one Honeycomb query shape covers CI and
+    factory: a missing or non-functioning sccache degrades to
+    ``enabled=false`` with zeroed counts and a ``none`` backend rather than
+    dropping the attributes. ``rw_mode`` reads the reader-side
+    ``SCCACHE_REDIS_RW_MODE`` the pool's hook template sets (``READ_ONLY``
+    expected), falling back to sccache's own read-write default.
+    """
+    parsed = parse_sccache_stats(text=stats) if stats is not None else None
+    hits, misses, errors, backend = parsed or (0, 0, 0, _NONE)
+    ratio = hits / (hits + misses) if hits + misses else 0.0
+    declared = (environ.get(_SCCACHE_RW_MODE_ENV) or "").strip().upper() or _DEFAULT_RW_MODE
+    rw_mode = declared if parsed is not None else _NONE
+    return [
+        {"key": "build.cache.sccache.enabled", "value": {"boolValue": parsed is not None}},
+        {"key": "build.cache.sccache.hits", "value": {"intValue": str(hits)}},
+        {"key": "build.cache.sccache.misses", "value": {"intValue": str(misses)}},
+        {"key": "build.cache.sccache.errors", "value": {"intValue": str(errors)}},
+        {"key": "build.cache.sccache.hit_ratio", "value": {"doubleValue": ratio}},
+        {"key": "build.cache.sccache.backend", "value": {"stringValue": backend}},
+        {"key": "build.cache.sccache.rw_mode", "value": {"stringValue": rw_mode}},
+        {"key": "build.cache.registry.hit", "value": {"boolValue": registry_hit(environ=environ)}},
+    ]
+
+
 def build_span_payload(
     *,
     inputs: dict[str, object],
     facts: dict[str, str],
+    cache: list[dict[str, object]],
 ) -> dict[str, object]:
     """Build the single-span OTLP/HTTP-JSON request for one cargo phase.
 
     ``service.name=github-ci`` (a resource attribute) routes the span to the
     ``github-ci`` dataset; the span carries the shared build-telemetry scheme
-    attributes plus the optional ``work_item_id`` correlation tag. int64 fields
+    attributes, the ``cache`` block's ``build.cache.*`` attributes, and the
+    optional ``work_item_id`` correlation tag. int64 fields
     are JSON strings per the proto3-JSON mapping Honeycomb expects; trace/span
     ids are freshly random (each cargo phase is its own independent span in v1).
     """
@@ -175,6 +332,7 @@ def build_span_payload(
         {"key": "cargo.subcommand", "value": {"stringValue": str(inputs["subcmd"])}},
         {"key": "exit_code", "value": {"intValue": str(exit_code)}},
     ]
+    attributes.extend(cache)
     work_item_id = inputs["work_item_id"]
     if work_item_id:
         attributes.append({"key": "work_item_id", "value": {"stringValue": str(work_item_id)}})
@@ -244,26 +402,37 @@ def run(
     environ: dict[str, str],
     emit: Callable[..., bool] = post_span,
     facts: Callable[[], dict[str, str]] = gather_source_facts,
+    stats: Callable[..., str | None] = read_sccache_stats,
 ) -> int:
     """Emit one factory cargo-phase span from the environment; return 0/2.
 
-    ``emit`` and ``facts`` are seams tests inject. A malformed environment
-    writes a usage line to stderr and returns ``2`` without emitting. The return
-    value is advisory only — the shim discards it and exits with cargo's own
-    code — but a clean 0/2 keeps the CLI unit-testable.
+    ``emit``, ``facts`` and ``stats`` are seams tests inject. A malformed
+    environment writes a usage line to stderr and returns ``2`` without
+    emitting. The return value is advisory only — the shim discards it and exits
+    with cargo's own code — but a clean 0/2 keeps the CLI unit-testable.
     """
     inputs = parse_env(environ=environ)
     if inputs is None:
         _ = sys.stderr.write(_USAGE)
         return 2
-    payload = build_span_payload(inputs=inputs, facts=facts())
+    cache = cache_attributes(environ=environ, stats=stats(environ=environ))
+    payload = build_span_payload(inputs=inputs, facts=facts(), cache=cache)
     endpoint = (environ.get(_ENDPOINT_ENV) or "").strip() or DEFAULT_ENDPOINT
     _ = emit(endpoint=endpoint, payload=payload)
     return 0
 
 
 def main() -> int:
-    return run(environ=dict(os.environ))
+    """Baked entry point: ``--zero-stats`` zeroes before cargo, else emits the span.
+
+    Both modes return 0 unconditionally on a well-formed invocation; the shim
+    discards the code and exits with cargo's own.
+    """
+    environ = dict(os.environ)
+    if "--zero-stats" in sys.argv[1:]:
+        _ = zero_sccache_stats(environ=environ)
+        return 0
+    return run(environ=environ)
 
 
 if __name__ == "__main__":

@@ -13,10 +13,12 @@
 # It runs the REAL cargo UNCHANGED and best-effort hands each measured phase's
 # timing to the baked livespec-cargo-phase-timer, which POSTs one build.env=factory
 # OTLP span to the host OTel receiver (routed to the github-ci Honeycomb dataset
-# by service.name — the keyless prepare.* seam). Strictly non-fatal: cargo's own
-# exit code is always propagated, and cargo still runs when the timer is absent
-# or fails. Unmeasured subcommands (fmt, tree, metadata, --version, …) exec the
-# real cargo directly with zero added overhead.
+# by service.name — the keyless prepare.* seam), carrying the pool's
+# build.cache.* compilation- and registry-cache attributes alongside the timing.
+# Strictly non-fatal: cargo's own exit code is always propagated, and cargo
+# still runs when the timer is absent or fails. Unmeasured subcommands (fmt,
+# tree, metadata, --version, …) exec the real cargo directly with zero added
+# overhead.
 #
 # cargo-real is the RENAMED rustup proxy, which dispatches on argv[0]: invoking
 # it as `cargo-real` is rejected ("unknown proxy name"), so every call preserves
@@ -37,6 +39,16 @@ esac
 
 if [ -z "$phase" ]; then
   exec -a cargo "$REAL_CARGO" "$@"
+fi
+
+# Zero the compilation cache's counters BEFORE the measured phase, so the
+# build.cache.sccache.* counts the span carries describe THIS phase rather than
+# the sandbox's whole life. Deliberately outside the start/end stamps: the
+# zeroing is the timer's cost, not cargo's. Best-effort like every other step
+# here — a sandbox with no sccache simply has nothing to zero, and the span
+# degrades to build.cache.sccache.enabled=false.
+if command -v livespec-cargo-phase-timer >/dev/null 2>&1; then
+  livespec-cargo-phase-timer --zero-stats >/dev/null 2>&1 || true
 fi
 
 start=$(date +%s%N)

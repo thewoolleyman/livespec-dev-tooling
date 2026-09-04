@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -15,16 +16,24 @@ from livespec_dev_tooling.otel_cargo_phase import (
     BUILD_ENV,
     DATASET,
     DEFAULT_ENDPOINT,
+    _backend_of,
+    _counter_total,
     _read_text,
     _repo_from_remote,
+    _sccache_binary,
     _stdout_of,
     _toolchain_version,
     build_span_payload,
+    cache_attributes,
     gather_source_facts,
     main,
     parse_env,
+    parse_sccache_stats,
     post_span,
+    read_sccache_stats,
+    registry_hit,
     run,
+    zero_sccache_stats,
 )
 
 if TYPE_CHECKING:
@@ -38,6 +47,24 @@ _FACTS = {
     "sha": "a" * 40,
     "toolchain": "1.92.0",
 }
+_MODULE = "livespec_dev_tooling.otel_cargo_phase"
+# The endpoint substring below is the credential-shaped part `_backend_of` must
+# never let through to an attribute (see the leak assertion further down).
+_SCCACHE_JSON = json.dumps(
+    {
+        "stats": {
+            "compile_requests": 12,
+            "cache_hits": {"counts": {"Rust": 9}},
+            "cache_misses": {"counts": {"Rust": 3}},
+            "cache_errors": {"counts": {"Rust": 1}},
+            "cache_location": "Redis: redis://sccache-redis.ci-sccache.svc.cluster.local:6379",
+        }
+    }
+)
+_CACHE_ATTRS: list[dict[str, object]] = [
+    {"key": "build.cache.sccache.enabled", "value": {"boolValue": True}},
+    {"key": "build.cache.registry.hit", "value": {"boolValue": False}},
+]
 
 
 def _base_env(**overrides: str) -> dict[str, str]:
@@ -74,10 +101,13 @@ def _span(payload: object) -> Any:
 
 
 def _attrs(span: Any) -> dict[str, Any]:
-    return {
-        entry["key"]: entry["value"].get("stringValue", entry["value"].get("intValue"))
-        for entry in span["attributes"]
-    }
+    # Each OTLP AnyValue carries exactly one typed key (stringValue, intValue,
+    # boolValue, doubleValue), so the sole value IS the attribute's value.
+    return {entry["key"]: next(iter(entry["value"].values())) for entry in span["attributes"]}
+
+
+def _cache_attrs(attrs: list[dict[str, object]]) -> dict[str, Any]:
+    return _attrs(_wire({"attributes": attrs}))
 
 
 def test_parse_env_reads_all_required_inputs() -> None:
@@ -211,6 +241,206 @@ def test_gather_source_facts_degrades_to_unknown(monkeypatch: pytest.MonkeyPatch
     assert gather_source_facts() == {"repo": "unknown", "sha": "unknown", "toolchain": "unknown"}
 
 
+def test_parse_sccache_stats_reads_the_nested_counts_shape() -> None:
+    assert parse_sccache_stats(text=_SCCACHE_JSON) == (9, 3, 1, "redis")
+
+
+def test_parse_sccache_stats_reads_the_bare_integer_shape() -> None:
+    text = json.dumps(
+        {
+            "stats": {
+                "cache_hits": 4,
+                "cache_misses": 0,
+                "cache_errors": 2,
+                "cache_location": "Local disk: /root/.cache/sccache",
+            }
+        }
+    )
+    assert parse_sccache_stats(text=text) == (4, 0, 2, "local-disk")
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["", "not json at all", "[]", "{}", '{"stats": 5}'],
+)
+def test_parse_sccache_stats_unrecognised_text_returns_none(text: str) -> None:
+    assert parse_sccache_stats(text=text) is None
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (7, 7),
+        ({"counts": {"Rust": 2, "C/C++": 3}}, 5),
+        ({"counts": {}}, 0),
+        ({"adv_counts": {"Rust": 2}}, 0),
+        (None, 0),
+        ("nine", 0),
+    ],
+)
+def test_counter_total_reads_both_shapes_and_degrades(value: object, expected: int) -> None:
+    assert _counter_total(value=value) == expected
+
+
+@pytest.mark.parametrize(
+    ("location", "expected"),
+    [
+        # The detail after the head — endpoint, bucket, credential — is dropped.
+        ("Redis: redis://someuser:somepass@host:6379", "redis"),
+        ("Local disk: /root/.cache/sccache", "local-disk"),
+        ("S3, bucket: livespec", "s3"),
+        ("Memcached", "memcached"),
+        # A head that is not a bare word never reaches an attribute.
+        ("/root/.cache/sccache", "unknown"),
+        ("", "unknown"),
+    ],
+)
+def test_backend_of_reduces_a_location_to_a_token(location: str, expected: str) -> None:
+    assert _backend_of(location=location) == expected
+
+
+def test_sccache_binary_prefers_path(tmp_path: Path) -> None:
+    binary = tmp_path / "sccache"
+    _ = binary.write_text("", encoding="utf-8")
+    binary.chmod(0o755)
+    assert _sccache_binary(environ={"PATH": str(tmp_path)}) == str(binary)
+
+
+def test_sccache_binary_falls_back_to_the_pool_mount(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    mount = tmp_path / "pool-sccache"
+    _ = mount.write_text("", encoding="utf-8")
+    mount.chmod(0o755)
+    monkeypatch.setattr(f"{_MODULE}._POOL_SCCACHE_BIN", str(mount))
+    assert _sccache_binary(environ={"PATH": str(tmp_path / "empty")}) == str(mount)
+
+
+def test_sccache_binary_absent_returns_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(f"{_MODULE}._POOL_SCCACHE_BIN", str(tmp_path / "absent"))
+    assert _sccache_binary(environ={"PATH": str(tmp_path)}) == ""
+
+
+def test_zero_sccache_stats_invokes_zero_stats(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[list[str]] = []
+
+    def _fake_stdout(*, command: list[str]) -> str:
+        seen.append(command)
+        return "Statistics zeroed."
+
+    monkeypatch.setattr(f"{_MODULE}._sccache_binary", lambda **_kwargs: "/usr/bin/sccache")
+    monkeypatch.setattr(f"{_MODULE}._stdout_of", _fake_stdout)
+    assert zero_sccache_stats(environ={}) is True
+    assert seen == [["/usr/bin/sccache", "--zero-stats"]]
+
+
+def test_zero_sccache_stats_without_sccache_is_false(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(f"{_MODULE}._sccache_binary", lambda **_kwargs: "")
+    assert zero_sccache_stats(environ={}) is False
+
+
+def test_zero_sccache_stats_silent_run_is_false(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(f"{_MODULE}._sccache_binary", lambda **_kwargs: "/usr/bin/sccache")
+    monkeypatch.setattr(f"{_MODULE}._stdout_of", lambda **_kwargs: "")
+    assert zero_sccache_stats(environ={}) is False
+
+
+def test_read_sccache_stats_asks_for_the_json_format(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[list[str]] = []
+
+    def _fake_stdout(*, command: list[str]) -> str:
+        seen.append(command)
+        return _SCCACHE_JSON
+
+    monkeypatch.setattr(f"{_MODULE}._sccache_binary", lambda **_kwargs: "/usr/bin/sccache")
+    monkeypatch.setattr(f"{_MODULE}._stdout_of", _fake_stdout)
+    assert read_sccache_stats(environ={}) == _SCCACHE_JSON
+    assert seen == [["/usr/bin/sccache", "--show-stats", "--stats-format=json"]]
+
+
+def test_registry_hit_true_when_the_registry_cache_is_populated(tmp_path: Path) -> None:
+    (tmp_path / "registry" / "cache").mkdir(parents=True)
+    assert registry_hit(environ={"CARGO_HOME": f"  {tmp_path}  "}) is True
+
+
+def test_registry_hit_false_without_a_registry_cache(tmp_path: Path) -> None:
+    assert registry_hit(environ={"CARGO_HOME": str(tmp_path)}) is False
+
+
+def test_registry_hit_defaults_to_the_image_cargo_home(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "registry" / "cache").mkdir(parents=True)
+    monkeypatch.setattr(f"{_MODULE}._DEFAULT_CARGO_HOME", str(tmp_path))
+    assert registry_hit(environ={"CARGO_HOME": ""}) is True
+
+
+def test_cache_attributes_carry_every_pool_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(f"{_MODULE}.registry_hit", lambda **_kwargs: True)
+    attrs = _cache_attrs(
+        cache_attributes(environ={"SCCACHE_REDIS_RW_MODE": " read_only "}, stats=_SCCACHE_JSON)
+    )
+    assert attrs == {
+        "build.cache.sccache.enabled": True,
+        "build.cache.sccache.hits": "9",
+        "build.cache.sccache.misses": "3",
+        "build.cache.sccache.errors": "1",
+        "build.cache.sccache.hit_ratio": 0.75,
+        "build.cache.sccache.backend": "redis",
+        "build.cache.sccache.rw_mode": "READ_ONLY",
+        "build.cache.registry.hit": True,
+    }
+    # No emitter may carry the cache's endpoint or credential: the backend is a
+    # token, never the `cache_location` string it was derived from.
+    assert "cluster.local" not in json.dumps(attrs)
+
+
+def test_cache_attributes_default_rw_mode_is_sccache_own(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(f"{_MODULE}.registry_hit", lambda **_kwargs: False)
+    attrs = _cache_attrs(cache_attributes(environ={}, stats=_SCCACHE_JSON))
+    assert attrs["build.cache.sccache.rw_mode"] == "READ_WRITE"
+    assert attrs["build.cache.registry.hit"] is False
+
+
+def test_cache_attributes_enabled_with_no_requests_has_zero_ratio(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(f"{_MODULE}.registry_hit", lambda **_kwargs: False)
+    attrs = _cache_attrs(
+        cache_attributes(
+            environ={}, stats=json.dumps({"stats": {"cache_hits": 0, "cache_misses": 0}})
+        )
+    )
+    assert attrs["build.cache.sccache.enabled"] is True
+    assert attrs["build.cache.sccache.hit_ratio"] == 0.0
+    assert attrs["build.cache.sccache.backend"] == "unknown"
+
+
+def test_cache_attributes_degrade_without_sccache(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(f"{_MODULE}.registry_hit", lambda **_kwargs: False)
+    attrs = _cache_attrs(
+        cache_attributes(environ={"SCCACHE_REDIS_RW_MODE": "READ_ONLY"}, stats=None)
+    )
+    assert attrs == {
+        "build.cache.sccache.enabled": False,
+        "build.cache.sccache.hits": "0",
+        "build.cache.sccache.misses": "0",
+        "build.cache.sccache.errors": "0",
+        "build.cache.sccache.hit_ratio": 0.0,
+        "build.cache.sccache.backend": "none",
+        "build.cache.sccache.rw_mode": "none",
+        "build.cache.registry.hit": False,
+    }
+
+
+def test_cache_attributes_degrade_on_unparseable_stats(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(f"{_MODULE}.registry_hit", lambda **_kwargs: False)
+    attrs = _cache_attrs(cache_attributes(environ={}, stats="sccache: command not found"))
+    assert attrs["build.cache.sccache.enabled"] is False
+
+
 def test_build_span_payload_routing_and_scheme_attributes() -> None:
     payload = build_span_payload(
         inputs={
@@ -222,6 +452,7 @@ def test_build_span_payload_routing_and_scheme_attributes() -> None:
             "work_item_id": None,
         },
         facts=_FACTS,
+        cache=_CACHE_ATTRS,
     )
     resource = _resource_attrs(payload)
     assert resource["service.name"] == DATASET
@@ -241,6 +472,8 @@ def test_build_span_payload_routing_and_scheme_attributes() -> None:
     assert attrs["toolchain.version"] == "1.92.0"
     assert attrs["cargo.subcommand"] == "build"
     assert attrs["exit_code"] == "0"
+    assert attrs["build.cache.sccache.enabled"] is True
+    assert attrs["build.cache.registry.hit"] is False
     assert "work_item_id" not in attrs
 
 
@@ -255,6 +488,7 @@ def test_build_span_payload_error_status_and_work_item() -> None:
             "work_item_id": "bd-2er6nc",
         },
         facts=_FACTS,
+        cache=_CACHE_ATTRS,
     )
     span = _span(payload)
     assert span["name"] == "build.cargo-nextest"
@@ -264,13 +498,25 @@ def test_build_span_payload_error_status_and_work_item() -> None:
     assert attrs["work_item_id"] == "bd-2er6nc"
 
 
-def test_run_emits_span_and_returns_zero() -> None:
+def test_run_emits_span_with_cache_attributes_and_returns_zero(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(f"{_MODULE}.registry_hit", lambda **_kwargs: True)
     store: list[dict[str, object]] = []
-    code = run(environ=_base_env(), emit=_recorder(store), facts=lambda: _FACTS)
+    code = run(
+        environ=_base_env(),
+        emit=_recorder(store),
+        facts=lambda: _FACTS,
+        stats=lambda **_kwargs: _SCCACHE_JSON,
+    )
     assert code == 0
     assert len(store) == 1
     assert store[0]["endpoint"] == DEFAULT_ENDPOINT
-    assert _attrs(_span(store[0]["payload"]))["build.env"] == "factory"
+    attrs = _attrs(_span(store[0]["payload"]))
+    assert attrs["build.env"] == "factory"
+    assert attrs["build.cache.sccache.hits"] == "9"
+    assert attrs["build.cache.sccache.hit_ratio"] == 0.75
+    assert attrs["build.cache.registry.hit"] is True
 
 
 def test_run_endpoint_override() -> None:
@@ -279,13 +525,19 @@ def test_run_endpoint_override() -> None:
         environ=_base_env(LIVESPEC_SANDBOX_OTEL_ENDPOINT="  http://host:9999  "),
         emit=_recorder(store),
         facts=lambda: _FACTS,
+        stats=lambda **_kwargs: None,
     )
     assert store[0]["endpoint"] == "http://host:9999"
 
 
 def test_run_malformed_returns_2_without_emitting(capsys: pytest.CaptureFixture[str]) -> None:
     store: list[dict[str, object]] = []
-    code = run(environ={"BUILD_PHASE": ""}, emit=_recorder(store), facts=lambda: _FACTS)
+    code = run(
+        environ={"BUILD_PHASE": ""},
+        emit=_recorder(store),
+        facts=lambda: _FACTS,
+        stats=lambda **_kwargs: None,
+    )
     assert code == 2
     assert store == []
     assert "usage" in capsys.readouterr().err
@@ -354,13 +606,30 @@ def test_post_span_reports_unreachable_loudly(capsys: pytest.CaptureFixture[str]
     assert "failed" in capsys.readouterr().err
 
 
-def test_main_drives_run_from_environ(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_main_drives_run_from_environ(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     for key, value in _base_env().items():
         monkeypatch.setenv(key, value)
     # Point the real post_span at a closed port so the emit reports-and-swallows
-    # and main() still returns 0 from the well-formed environment.
+    # and main() still returns 0 from the well-formed environment. The empty
+    # PATH and absent pool mount keep the sccache probe off whatever the host
+    # running the suite happens to have installed.
     monkeypatch.setenv("LIVESPEC_SANDBOX_OTEL_ENDPOINT", "http://127.0.0.1:1")
+    monkeypatch.setenv("PATH", str(tmp_path))
+    monkeypatch.setattr(f"{_MODULE}._POOL_SCCACHE_BIN", str(tmp_path / "absent"))
     assert main() == 0
+
+
+def test_main_zero_stats_mode_zeroes_before_cargo(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict[str, str]] = []
+
+    def _fake_zero(*, environ: dict[str, str]) -> bool:
+        calls.append(environ)
+        return True
+
+    monkeypatch.setattr(f"{_MODULE}.zero_sccache_stats", _fake_zero)
+    monkeypatch.setattr(sys, "argv", ["livespec-cargo-phase-timer", "--zero-stats"])
+    assert main() == 0
+    assert len(calls) == 1
 
 
 def test_all_declares_only_the_boundary_crossing_entry_point() -> None:
