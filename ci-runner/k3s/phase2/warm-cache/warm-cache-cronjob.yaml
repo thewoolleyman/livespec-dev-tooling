@@ -22,6 +22,41 @@ kind: Namespace
 metadata:
   name: ci-warm-cache
 ---
+# The populator's identity, for ONE read: the pool's admitted-job count
+# (Kueue ClusterQueue status.admittedWorkloads, summed) before each
+# compilation-cache writer build — the v054 populator-guardrails clause
+# ("MUST NOT start a build while the pool's admitted-job count is above a
+# configured threshold"). Cluster-scoped because ClusterQueues are; get/list
+# on that one resource and nothing else, so the populator can observe load
+# but touch no workload.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: warm-cache-populate
+  namespace: ci-warm-cache
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: warm-cache-populate-kueue-reader
+rules:
+  - apiGroups: ["kueue.x-k8s.io"]
+    resources: ["clusterqueues"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: warm-cache-populate-kueue-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: warm-cache-populate-kueue-reader
+subjects:
+  - kind: ServiceAccount
+    name: warm-cache-populate
+    namespace: ci-warm-cache
+---
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -65,6 +100,7 @@ spec:
             app.kubernetes.io/name: warm-cache-populate
         spec:
           restartPolicy: Never
+          serviceAccountName: warm-cache-populate
           # No Kueue queue-name label and no ci-runner.io/churn-slot request:
           # this is not a CI job and must never occupy a runner slot.
           securityContext:
@@ -98,6 +134,18 @@ spec:
                 # incremental live in the cargo config the script writes.
                 - name: CRATES_PROXY_URL
                   value: http://crates-proxy.ci-crates-proxy.svc.cluster.local:3080
+                # The admitted-job gate for the compilation-cache writer build
+                # (the populator's header): no build starts while the sum of
+                # Kueue ClusterQueue admittedWorkloads is above this. Half the
+                # churn-slot cap (C=32 -> 16): a build capped at the
+                # repository's own build.jobs (the console: 4 cores of 72)
+                # under nice/ionice alongside up to 16 jobs is the load the
+                # array and the cores absorb without moving job latency;
+                # above that the pool is in a fan-out and the cache can wait a
+                # tick (a skipped tick costs nothing — the marker key makes the
+                # next idle tick build). Re-derive with C (kueue/DERIVATION.md).
+                - name: POPULATE_ADMITTED_JOB_THRESHOLD
+                  value: "16"
                 # The shared compilation cache (../sccache/): this populator is
                 # its ONE writer. The credential is projected only into this
                 # namespace by converge-sccache-redis.sh; `optional` so a
