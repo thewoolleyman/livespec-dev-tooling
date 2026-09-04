@@ -9,6 +9,18 @@
 # manual dispatch only (workflow_dispatch, no push/pull_request trigger)
 # is the non-gating guarantee: this can never become a required status
 # check because nothing routes a PR event to it.
+#
+# THIS PATH IS ALSO THE POOL'S SCRATCH-DISPATCH SEAM. GitHub dispatches only
+# workflows whose PATH exists on the default branch, but it runs the file
+# from the ref you choose. To run a one-off proof against the pool without
+# touching master, put the proof's content at THIS path on a scratch branch
+# and `gh workflow run k3s-arc-proof-job.yml --ref <branch>`; master's copy
+# is never changed and a branch push triggers no gating workflow (ci.yml is
+# push: master + pull_request). Used 2026-09-04 for the keyed-tier proof
+# (livespec-dev-tooling-dajhxa, plan/ci-runner-cache-tiers/research/010).
+# Delete the remote branch afterwards through the GitHub API
+# (`gh api -X DELETE repos/<owner>/<repo>/git/refs/heads/<branch>`): the
+# primary-checkout hook refuses a `git push --delete` from the primary.
 name: k3s-arc-proof-job (non-gating)
 
 on:
