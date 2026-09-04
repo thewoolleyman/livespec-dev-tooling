@@ -29,7 +29,7 @@
 # gap this scan closes: it names the class, with the count, in the journal,
 # every five minutes, so the condition is a reading instead of a diagnosis.
 #
-# SIX CLASSES, each read from the node-side observable that actually PERSISTS
+# SEVEN CLASSES, each read from the node-side observable that actually PERSISTS
 # long enough for a five-minute sweep to see it:
 #
 #   pvc-pending          a PVC in the runners namespace Pending longer than
@@ -61,6 +61,17 @@
 #                        converge-side fix livespec-bde2). Remedy the report
 #                        names: delete the AutoscalingListener — the controller
 #                        recreates it against the live set within ~30 s.
+#   capacity-absent      a runner node (NODE_SELECTOR) with no
+#                        ci-runner.io/churn-slot in status.allocatable, or the
+#                        nodes' allocatable total below the sum of every
+#                        ClusterQueue's nominalQuota for it — Kueue admits
+#                        against quota, the scheduler places against the node,
+#                        so every admitted runner pod is unschedulable while
+#                        nothing on the cluster says so (2026-09-04 06:31Z to
+#                        07:52Z: a dependency-failed boot left the reapply
+#                        unit unrun; converge assertion + timer fallback
+#                        livespec-kgl3). Remedy the report names:
+#                        `systemctl start reapply-node-extended-resource.service`.
 #
 # WHY THESE OBSERVABLES AND NOT THE JOB LOG. The hook-failure string is
 # written by the runner, which exits when its job fails, so the pod that
@@ -111,7 +122,7 @@
 # emission (its absence is logged, never fatal).
 set -euo pipefail
 
-USAGE="usage: scan-runner-pod-lifecycle.sh [--window DURATION] [--pvc-pending-seconds N] [--workflow-pending-seconds N] [--killpod-min N] [--containerd-log PATH] [--state-file PATH] [--escalate-after N] [--namespace NS] [--systems-namespace NS] [--otlp-endpoint URL] [--no-emit]
+USAGE="usage: scan-runner-pod-lifecycle.sh [--window DURATION] [--pvc-pending-seconds N] [--workflow-pending-seconds N] [--killpod-min N] [--containerd-log PATH] [--state-file PATH] [--escalate-after N] [--namespace NS] [--systems-namespace NS] [--node-selector LABEL] [--otlp-endpoint URL] [--no-emit]
   DURATION is <N>s, <N>m or <N>h. REPORT-ONLY: prints every lifecycle-stall
   class found on the node with its count and exits 1 if any; exits 0 on a
   clean node; exits 2 when it cannot read one of its inputs. Every sweep also
@@ -120,6 +131,10 @@ USAGE="usage: scan-runner-pod-lifecycle.sh [--window DURATION] [--pvc-pending-se
 
 NAMESPACE="${RPL_NAMESPACE:-arc-runners}"
 SYSTEMS_NAMESPACE="${RPL_SYSTEMS_NAMESPACE:-arc-systems}"
+# The nodes expected to carry ci-runner.io/churn-slot: the label
+# ../node-extended-resource/patch-node-churn-capacity.sh patches and
+# ../kueue/resource-flavor.yaml selects (provision-k3s.sh's --node-label).
+NODE_SELECTOR="${RPL_NODE_SELECTOR:-k3s-role=arc-runner-host}"
 # The look-back for journal, log and event reads. Five minutes matches the
 # timer, so consecutive sweeps tile the timeline without double-counting.
 WINDOW="${RPL_WINDOW:-5m}"
@@ -160,6 +175,7 @@ while [ $# -gt 0 ]; do
     --escalate-after)           ESCALATE_AFTER="${2:?$USAGE}"; shift 2 ;;
     --namespace)                NAMESPACE="${2:?$USAGE}"; shift 2 ;;
     --systems-namespace)        SYSTEMS_NAMESPACE="${2:?$USAGE}"; shift 2 ;;
+    --node-selector)            NODE_SELECTOR="${2:?$USAGE}"; shift 2 ;;
     --otlp-endpoint)            OTLP_ENDPOINT="${2:?$USAGE}"; shift 2 ;;
     --no-emit)                  NO_EMIT=1; shift ;;
     -h|--help)                  echo "$USAGE"; exit 0 ;;
@@ -335,6 +351,47 @@ echo "  ${listener_hits} listener pod(s) not Running/healthy; ${stale_hits} stal
 [ $(( listener_hits + stale_hits )) -gt 0 ] && add_finding stale-listener "$(( listener_hits + stale_hits ))"
 
 # ---------------------------------------------------------------------------
+log "7. capacity-absent: allocatable ci-runner.io/churn-slot on ${NODE_SELECTOR} nodes vs the ClusterQueues' nominalQuota sum"
+# Kueue admits against the queues' quota; the scheduler places against the
+# node's allocatable. When the node has none of the resource — it is a
+# node-status patch, not kubelet-owned, and a dependency-failed boot leaves
+# the reapply unit unrun (2026-09-04) — every admitted runner pod is
+# unschedulable and no capacity signal says so. Node side: one line per
+# selected node, `<name>|<allocatable, or empty>`; a node without the key is
+# a hit and contributes 0 to the total.
+cap_total=0; cap_nodes=0; cap_missing=0
+while IFS='|' read -r name have; do
+  [ -n "$name" ] || continue
+  cap_nodes=$((cap_nodes+1))
+  if [[ "$have" =~ ^[0-9]+$ ]]; then
+    cap_total=$((cap_total+have))
+  else
+    cap_missing=$((cap_missing+1)); add_detail "    node=${name} allocatable ci-runner.io/churn-slot=${have:-<absent>} (systemctl start reapply-node-extended-resource.service)"
+  fi
+done < <(kubectl get nodes -l "$NODE_SELECTOR" -o jsonpath='{range .items[*]}{.metadata.name}|{.status.allocatable.ci-runner\.io/churn-slot}{"\n"}{end}' 2>/dev/null || true)
+# Quota side: every ClusterQueue's `<resource>=<nominalQuota>` tokens, summed
+# over the churn-slot ones (the phase-1 proof queue is cpu/memory and adds
+# nothing). The values are plain integers by derivation (../kueue/DERIVATION.md).
+quota_sum=0; quota_queues=0
+while IFS='|' read -r name tokens; do
+  [ -n "$name" ] || continue
+  for t in $tokens; do
+    case "$t" in
+      ci-runner.io/churn-slot=*)
+        q="${t#*=}"
+        [[ "$q" =~ ^[0-9]+$ ]] || continue
+        quota_sum=$((quota_sum+q)); quota_queues=$((quota_queues+1)) ;;
+    esac
+  done
+done < <(kubectl get clusterqueue -o jsonpath='{range .items[*]}{.metadata.name}|{range .spec.resourceGroups[*]}{range .flavors[*]}{range .resources[*]}{.name}={.nominalQuota}{" "}{end}{end}{end}{"\n"}{end}' 2>/dev/null || true)
+capacity_hits=$cap_missing
+if [ "$quota_sum" -gt "$cap_total" ]; then
+  capacity_hits=$((capacity_hits+1)); add_detail "    ClusterQueue nominalQuota sum=${quota_sum} over ${quota_queues} queue(s) exceeds node allocatable total=${cap_total} (shortfall $((quota_sum - cap_total)))"
+fi
+echo "  ${cap_total} allocatable across ${cap_nodes} node(s), ${cap_missing} without the resource; nominalQuota sum ${quota_sum} across ${quota_queues} queue(s)"
+[ "$capacity_hits" -gt 0 ] && add_finding capacity-absent "$capacity_hits"
+
+# ---------------------------------------------------------------------------
 # OTLP EMISSION — every sweep's readings, posted as gauges (livespec-vwzv).
 #
 # WHY. Until 2026-09-04 the class counts above, Kueue's pending/admitted
@@ -387,7 +444,7 @@ echo "  ${listener_hits} listener pod(s) not Running/healthy; ${stale_hits} stal
 # ADDING A CLASS: append its name to EMIT_CLASSES so its zero is emitted on a
 # clean sweep. A class present in FINDINGS but missing from the list is still
 # emitted — only its zero would be lost.
-EMIT_CLASSES="pvc-pending bind-deadline inotify-emfile containerd-deadline hook-failure stale-listener"
+EMIT_CLASSES="pvc-pending bind-deadline inotify-emfile containerd-deadline hook-failure stale-listener capacity-absent"
 
 # One gauge metric carrying one integer datapoint — the heartbeat's shape.
 # $1 name, $2 description, $3 unit, $4 value, $5 timeUnixNano.
@@ -498,8 +555,11 @@ watch budget (node-inotify-budget/, ratified in livespec core v216);
 containerd-deadline / hook-failure = containerd starved on the storage array
 (interim churn-slot cap, NVMe tiering livespec-e2vcqf); stale-listener =
 delete the named AutoscalingListener in arc-systems (the controller recreates
-it within ~30 s; converge-side fix livespec-bde2). A job that failed with the
-ARC hook's "custom container implementation failed" is re-run on the SAME
-commit once the class has cleared — it is not a test failure.
+it within ~30 s; converge-side fix livespec-bde2); capacity-absent =
+`systemctl start reapply-node-extended-resource.service` (the converge asserts
+it on every run and the reapply timer re-tries every 5 min; livespec-kgl3).
+A job that failed with the ARC hook's "custom container implementation
+failed" is re-run on the SAME commit once the class has cleared — it is not a
+test failure.
 EOF
 exit 1

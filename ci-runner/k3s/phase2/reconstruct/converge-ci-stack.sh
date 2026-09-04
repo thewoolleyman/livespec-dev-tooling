@@ -15,12 +15,18 @@
 # every boot, so the host is CATTLE only because this converge rebuilds the
 # cluster from git on every boot. It is wired to boot by
 # ./converge-ci-stack.service (installed by ./install-converge-unit.sh),
-# After=k3s.service and After=inject-github-app-secret.service.
+# After=k3s.service, After=/Wants= reapply-node-extended-resource.service
+# and After=/Wants= inject-github-app-secret.service.
 #
 # ORDER MATTERS, and the order below was corrected against the first real
 # reboot (2026-09-02 12:14Z, livespec plan ci-runner-pod-lifecycle-reliability):
-#   - The local-path provisioner comes FIRST because the bundled k3s copy is
-#     disabled (../k3s-config/) and every runner pod needs a PVC from it.
+#   - The churn-slot capacity assertion (step 1b) comes as soon as the node
+#     is Ready, before any cluster object: every queue applied below is
+#     denominated in ci-runner.io/churn-slot, and the 2026-09-04 boot showed
+#     the node can reach this converge carrying none (item livespec-kgl3).
+#   - The local-path provisioner comes FIRST among the cluster objects
+#     because the bundled k3s copy is disabled (../k3s-config/) and every
+#     runner pod needs a PVC from it.
 #   - Kueue comes BEFORE ARC, and the converge WAITS for Kueue's mutating
 #     webhook (`mpod.kb.io`, failurePolicy Fail, intercepting every pod
 #     outside kube-system/kueue-system) to have a ready endpoint. On that
@@ -41,7 +47,10 @@
 #                                       /etc/apparmor.d survives reboot itself)
 #   - the inotify sysctl budget       (../node-inotify-budget/)
 #   - the churn-slot extended resource (../node-extended-resource/, its own
-#                                       reapply timer)
+#                                       reapply unit + timer; step 1b ASSERTS
+#                                       it is present at that unit's capacity
+#                                       and re-runs the patch when not, but
+#                                       decides no number)
 #   - the k3s server config           (../k3s-config/)
 #   - the orphaned-scratch sweep      (../storage-sweep/, Before=k3s)
 #   - the host OTel collector's own cluster identity (the otel-collector
@@ -166,6 +175,117 @@ for _ in $(seq 1 60); do
 done
 [ "$ready" = true ] || { echo "FATAL: k3s node did not become Ready within 120s"; exit 1; }
 kubectl get nodes -o wide
+
+# ---------------------------------------------------------------------------
+log "1b. Assert the node carries ci-runner.io/churn-slot at the installed reapply unit's capacity (self-healing)"
+# WHY: every ClusterQueue applied in step 5 is denominated in this extended
+# resource, and the resource is NOT kubelet-owned — it is a node-status patch
+# that only ../node-extended-resource/ puts back (the reapply unit, ordered
+# Before= this converge, and its 5-minute timer). On the 2026-09-04 06:31Z
+# boot stale NVMe lines in /etc/fstab failed k3s's mount dependency, so EVERY
+# After=k3s oneshot — the reapply unit included — failed by dependency. An
+# operator then hand-started k3s and this converge, but not the reapply unit,
+# and the timer's OnUnitActiveSec re-arms only from a SUCCESSFUL activation,
+# so it had no next elapse either. The node carried NO churn-slot capacity
+# while the nine queues advertised a quota sum of 32: every runner pod Kueue
+# admitted would have been unschedulable, silently — no capacity signal and
+# no sweep class said so — until a hand `systemctl start
+# reapply-node-extended-resource.service` at 07:52Z (item livespec-kgl3).
+#
+# THE ASSERTION: every node the reapply targets (NODE_LABEL_SELECTOR — the
+# label patch-node-churn-capacity.sh patches and kueue/resource-flavor.yaml
+# selects) must report status.allocatable ci-runner.io/churn-slot equal to
+# CAPACITY, where CAPACITY is the argument the INSTALLED reapply unit carries
+# in its ExecStart — the one already-decided number on this host
+# (install-reapply-unit.sh substitutes it in), read back through `systemctl
+# show` so this converge decides no number of its own and no second copy
+# exists to drift. CONVERGE_CHURN_CAPACITY overrides it for a run outside the
+# installed layout.
+#
+# THE SELF-HEAL: re-run patch-node-churn-capacity.sh CAPACITY (idempotent —
+# it is the reapply unit's own ExecStart target) and re-read. A node that is
+# STILL wrong afterwards is reported as a WARN and the converge CONTINUES —
+# the rule step 7b already applies, and it binds harder here: failing at 1b
+# would skip the provisioner, Kueue, the queues, ARC and everything after
+# them, so when the timer's OnCalendar fallback or an operator DID restore
+# the capacity there would be no cluster stack for it to serve; continuing
+# leaves a fully built stack that admits and schedules the instant the
+# capacity lands. ../runner-pod-lifecycle/ reports the condition as
+# capacity-absent every five minutes either way.
+#
+# The `churn-slot capacity: N/N node(s) at C (M self-healed)` line printed at
+# the end is this step's boot-proof evidence.
+NODE_LABEL_SELECTOR="k3s-role=arc-runner-host"   # matches patch-node-churn-capacity.sh and kueue/resource-flavor.yaml
+REAPPLY_UNIT="reapply-node-extended-resource.service"
+# The patch script sits beside this converge in the installed layout
+# (install-reapply-unit.sh copies it into the same /usr/local/lib/ci-runner-k3s)
+# and one directory over in the repo layout.
+if [ -x "${SCRIPT_DIR}/patch-node-churn-capacity.sh" ]; then
+  PATCH_CAPACITY="${SCRIPT_DIR}/patch-node-churn-capacity.sh"
+else
+  PATCH_CAPACITY="${ARTIFACT_DIR}/node-extended-resource/patch-node-churn-capacity.sh"
+fi
+# CAPACITY: the env override, else the installed unit's ExecStart argument
+# (`systemctl show` renders it as `argv[]=<script> <CAPACITY> ;`).
+capacity="${CONVERGE_CHURN_CAPACITY:-}"
+if [ -z "$capacity" ] && command -v systemctl >/dev/null; then
+  capacity="$(systemctl show "$REAPPLY_UNIT" -p ExecStart --value 2>/dev/null \
+    | sed -n 's/.*argv\[\]=\([^;]*\) ;.*/\1/p' | tail -n1 | awk '{print $NF}')"
+fi
+# One line per targeted node: `<node>|<allocatable churn-slot, or empty>`.
+churn_allocatable() {
+  kubectl get nodes -l "$NODE_LABEL_SELECTOR" \
+    -o jsonpath='{range .items[*]}{.metadata.name}{"|"}{.status.allocatable.ci-runner\.io/churn-slot}{"\n"}{end}' 2>/dev/null
+}
+# Prints one indented line per node (ok / MISSING / MISMATCH) followed by a
+# final `WRONG:<n>` line counting the nodes that are not at CAPACITY.
+check_capacity() {
+  local wrong=0 node have
+  while IFS='|' read -r node have; do
+    [ -n "$node" ] || continue
+    if [ -z "$have" ]; then
+      printf '  %-32s MISSING (expected %s)\n' "$node" "$capacity"; wrong=$((wrong+1))
+    elif [ "$have" != "$capacity" ]; then
+      printf '  %-32s MISMATCH %s (expected %s)\n' "$node" "$have" "$capacity"; wrong=$((wrong+1))
+    else
+      printf '  %-32s ok (%s)\n' "$node" "$have"
+    fi
+  done < <(churn_allocatable)
+  printf 'WRONG:%s\n' "$wrong"
+}
+if ! [[ "$capacity" =~ ^[0-9]+$ ]]; then
+  echo "WARN: cannot learn the intended ci-runner.io/churn-slot capacity -- ${REAPPLY_UNIT} is not installed with a numeric ExecStart argument and CONVERGE_CHURN_CAPACITY is unset; skipping the assertion. The queues applied in step 5 are denominated in this resource; install the unit with node-extended-resource/install-reapply-unit.sh CAPACITY (../runner-pod-lifecycle/ reports capacity-absent every 5 min until the resource is present)"
+else
+  report="$(check_capacity)"
+  node_count="$(printf '%s\n' "$report" | grep -cE '^  ' || true)"
+  wrong="$(printf '%s\n' "$report" | sed -n 's/^WRONG://p')"
+  healed=0
+  if [ "$node_count" -eq 0 ]; then
+    echo "WARN: no node matches ${NODE_LABEL_SELECTOR} -- nothing carries ci-runner.io/churn-slot and the ResourceFlavor selects no node; check the k3s --node-label (../../provision-k3s.sh)"
+  elif [ "$wrong" -gt 0 ]; then
+    # Log what was wrong before healing it, so the journal says WHAT, not
+    # only that something was healed.
+    printf '%s\n' "$report" | grep -v '^WRONG:' || true
+    if [ -x "$PATCH_CAPACITY" ]; then
+      echo "  self-heal: re-running ${PATCH_CAPACITY} ${capacity} (the ${REAPPLY_UNIT} ExecStart)"
+      "$PATCH_CAPACITY" "$capacity" || echo "  self-heal: patch exited $? -- re-checking anyway"
+      healed=1
+      report="$(check_capacity)"
+      wrong="$(printf '%s\n' "$report" | sed -n 's/^WRONG://p')"
+    else
+      echo "  self-heal: ${PATCH_CAPACITY} not found or not executable -- cannot re-apply; install it with node-extended-resource/install-reapply-unit.sh ${capacity}"
+    fi
+  fi
+  if [ "$node_count" -gt 0 ]; then
+    printf '%s\n' "$report" | grep -v '^WRONG:' || true
+    ok_nodes="$(printf '%s\n' "$report" | grep -c ' ok (' || true)"
+    if [ "$wrong" -eq 0 ]; then
+      echo "churn-slot capacity: ${ok_nodes}/${node_count} node(s) at ${capacity} (${healed} self-healed)"
+    else
+      echo "WARN: churn-slot capacity: ${ok_nodes}/${node_count} node(s) at ${capacity} after ${healed} self-heal(s) -- every runner pod Kueue admits is unschedulable until this is fixed; the reapply timer re-tries every 5 min and ../runner-pod-lifecycle/ reports it as capacity-absent. By hand: systemctl start ${REAPPLY_UNIT}"
+    fi
+  fi
+fi
 
 # ---------------------------------------------------------------------------
 log "2. Fail-closed pre-gate: the GitHub App installation secret must already exist"
@@ -442,5 +562,7 @@ kubectl -n "$RUNNERS_NAMESPACE" get autoscalingrunnersets.actions.github.com
 kubectl -n kueue-system get pods
 kubectl get clusterqueue
 kubectl -n ci-warm-cache get cronjob
+kubectl get nodes -l "$NODE_LABEL_SELECTOR" \
+  -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}ci-runner.io/churn-slot={.status.allocatable.ci-runner\.io/churn-slot}{"\n"}{end}'
 
-log "DONE. CI cluster stack converged: provisioner + Kueue + all queues + ARC controller + ${#SCALE_SETS[@]} scale sets + hook ConfigMap + warm-cache CronJob + probe identity."
+log "DONE. CI cluster stack converged: churn-slot capacity asserted + provisioner + Kueue + all queues + ARC controller + ${#SCALE_SETS[@]} scale sets + hook ConfigMap + warm-cache CronJob + probe identity."

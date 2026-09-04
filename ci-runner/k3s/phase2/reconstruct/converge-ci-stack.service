@@ -1,8 +1,9 @@
 # converge-ci-stack.service — boot-ordered reconstruct of the CI CLUSTER
 # stack on the single-node k3s host. Runs converge-ci-stack.sh once per boot,
-# AFTER k3s is up and AFTER the GitHub App secret has been re-injected, to
-# idempotently converge the fleet-owned local-path provisioner, Kueue core
-# (waiting for its admission webhook to serve), every
+# AFTER k3s is up, AFTER the churn-slot extended resource has been reapplied
+# and AFTER the GitHub App secret has been re-injected, to idempotently
+# assert that resource and converge the fleet-owned local-path provisioner,
+# Kueue core (waiting for its admission webhook to serve), every
 # ResourceFlavor/ClusterQueue/LocalQueue, the ARC controller, all runner
 # scale sets, the hook-pod-template ConfigMap, the warm-cache CronJob, and
 # the Kueue-webhook probe's re-rendered credential — from this repository,
@@ -20,15 +21,28 @@
 # this converge still runs and fails closed with its own clear message,
 # rather than being silently skipped.
 #
+# ORDERING vs. the churn-slot reapply (2026-09-04, item livespec-kgl3):
+# reapply-node-extended-resource.service already orders itself Before= this
+# unit (its header says why); the After=/Wants= below state the same
+# dependency from this side, exactly as for the secret unit, and Wants= adds
+# what a one-sided Before= cannot: a HAND-STARTED converge now pulls the
+# reapply in too. On the 2026-09-04 06:31Z boot stale NVMe lines in
+# /etc/fstab failed k3s's mount dependency and every After=k3s oneshot
+# failed by dependency; an operator hand-started k3s and this converge but
+# not the reapply, and the node ran with NO churn-slot capacity from 06:31Z
+# to 07:52Z while the queues advertised 32. Wants (not Requires), for the
+# same reason as the secret unit: if the reapply fails, this converge still
+# runs, and its own step 1b asserts the capacity and re-runs the patch.
+#
 # oneshot (not a long-running service): it converges and exits. It is NOT
 # RemainAfterExit — a converged cluster needs no held state, and leaving it
 # inactive-dead after a clean exit is correct. Re-run manually any time with
 # `systemctl start converge-ci-stack.service` (idempotent).
 [Unit]
 Description=Converge the CI cluster stack (provisioner + Kueue + queues + ARC + scale sets) on the k3s host
-After=k3s.service inject-github-app-secret.service
+After=k3s.service reapply-node-extended-resource.service inject-github-app-secret.service
 Requires=k3s.service
-Wants=inject-github-app-secret.service
+Wants=reapply-node-extended-resource.service inject-github-app-secret.service
 
 [Service]
 Type=oneshot
