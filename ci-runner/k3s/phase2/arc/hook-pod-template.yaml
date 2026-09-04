@@ -40,7 +40,8 @@
 #    files over the shared work volume exactly as they did. Verified live
 #    before this change shipped: a runner-written 0644 file-command is
 #    appendable by the job, a job-written file is readable and removable by
-#    the runner, the read-only warm lower copies and uv reads the copy.
+#    the runner, and (under the then-current postStart copy) the read-only
+#    warm lower copied and uv read the copy.
 #    Requires kubelet UserNamespacesSupport (GA, on by default in the
 #    installed k3s v1.36.2+k3s1), containerd 2.x (2.3.2 installed) and a
 #    kernel with idmapped-mount support for the volumes' filesystems (ext4
@@ -57,41 +58,64 @@
 #    needs to set at pod level must be added to that block.
 #
 # 2. The warm uv cache (tier 1 of the cache tiers; ../warm-cache/README.md).
-#    The host volume /var/cache/ci-runner/warm — populated ONLY by the
-#    ci-warm-cache CronJob — is mounted READ-ONLY into the job container.
-#    uv refuses a read-only cache outright, and an unprivileged pod cannot
-#    mount an overlay to give it a writable upper the way the deleted podman
-#    lane did, so the job container's `postStart` copies the current
-#    generation (a relative symlink inside the mount) into its own ephemeral
-#    work volume, and UV_CACHE_DIR points uv at that copy. The kubelet does
-#    not mark the container Running until postStart returns, and the hook
-#    waits for Running before exec'ing any step, so the copy is complete
-#    before the first step (verified live on this cluster 2026-08-23: a
-#    12 s postStart held the pod Pending for 12 s). The copy is FAIL-SOFT in
-#    every direction: no lower present (a node that never ran the installer)
-#    or a copy error leaves no cache at all and uv resolves cold, exactly
-#    today's behaviour; the script always exits 0 so a cache problem can
-#    never fail a job. The copy is on the work volume so uv's hardlink
-#    install into the job's .venv stays on one filesystem. Measured
-#    2026-08-23 against the livespec lockfile: cold `uv sync` 7.9 s; copying
-#    the 379 MB fleet-wide lower 0.8 s; warm sync from the copy 0.5 s.
-#    Constraint this imposes on every `container:` image routed to this pool:
-#    it must carry /bin/sh and cp (a postStart exec that cannot start kills
-#    the container). Every fleet `container:` is the fabro sandbox image,
-#    which does; a distroless job image would need its own template.
-#    `--no-preserve=ownership` so the copy is owned by whatever uid the job
-#    container runs as (root today) rather than by the populator's uid.
+#    Two env vars. UV_CACHE_DIR points uv at /__w/_warm/uv, a directory
+#    that ALREADY holds the current warm generation when this pod starts:
+#    the local-path provisioner's `setup` script
+#    (../local-path-provisioner/local-path-provisioner.yaml, ConfigMap
+#    `local-path-config`) seeds it into the work volume while the volume is
+#    being provisioned -- inside the provisioner's busybox helper pod, as
+#    root, on the volume's parent mount; with WaitForFirstConsumer that is
+#    after the runner pod is scheduled and before it starts, so the runner
+#    pod's volume wait absorbs the ~2 s seed -- as HARDLINKS of the
+#    generation's files. The warm root lives on the same filesystem as the
+#    volumes (`/var/lib/rancher/k3s/storage/.warm`, a hidden sibling of the
+#    pvc-* directories) for exactly that reason: link() across two bind
+#    mounts is EXDEV, which is why no pod could ever do this itself and why
+#    the earlier realization was a byte copy in this container's postStart.
+#    The seed costs inode links, not bytes: measured on the live 1,388 MB /
+#    159k-file generation, cp -al 2.3 s and 269 MB of metadata writes,
+#    against 6.8 s and 2,153 MB for the copy on the same tree (livespec plan
+#    `ci-runner-pod-lifecycle-reliability`, research/005) -- and the ~9 s
+#    ContainerCreating hold the copy put on THIS container per start is
+#    gone. Because the files are shared inodes, the job must not be ABLE to
+#    write them, and it is not: the populator publishes every generation
+#    owned by a uid no workflow pod maps (200000; ../warm-cache/README.md
+#    "The hazard"), so on this pod's idmapped volume those inodes belong to
+#    nobody, no capability of the job's root applies to them, and their
+#    0644/0444 modes are read-only to the job. uv refuses a read-only cache,
+#    so the seed's DIRECTORIES are fresh per-volume inodes opened to 0777
+#    and uv's lock files are fresh per-volume 0666 files: the job's
+#    additions land in the ephemeral volume as new inodes, and uv's own
+#    write discipline (a new entry to a temporary path, then rename) never
+#    needs to rewrite a shared one. FAIL-SOFT by absence: a node with no
+#    warm root, no published generation, or a seed that failed has NO
+#    /__w/_warm/uv; uv creates a cold cache there and the job runs. There is
+#    deliberately no fallback copy, here or in the provisioner -- a
+#    per-start byte copy is the cost this replaced (../warm-cache/README.md
+#    "Lesson"). This tier therefore mounts nothing from the host; the
+#    postStart below serves the cargo and compilation tiers only and copies
+#    no bytes for any tier.
+#    UV_LINK_MODE=copy is the ENFORCED companion of the seed, not a lever:
+#    uv's default link mode hardlinks cache files into the job's .venv, so
+#    with a seeded cache a venv file would BE a generation inode. The owner
+#    above makes that a read-only file the job cannot patch; copy mode makes
+#    it a private copy the job CAN, so a test that rewrites an installed
+#    package in place (the shape the specification's "Runner-pool build
+#    cache tiers" clause, "Trust by construction", forbids from ever
+#    reaching a shared cache) works and touches nothing shared. Its cost is
+#    the venv's own bytes per job, measured by the plan session's
+#    acceptance run (livespec-lvtu).
 #
 # 3. The warm CARGO cache (the cargo half of the same tier; ../crates-proxy/),
-#    HOST-SERVED rather than copied: the same postStart probes the crates
-#    proxy and, if it answers within 3 s, writes /.cargo/config.toml — the
-#    ROOT of cargo's config hierarchy, so every cargo invocation in the job
-#    reads it whatever its working directory, and a repository's own
-#    checked-in [source] config still overrides it. Cargo's [source] tables
-#    are NOT settable from the environment (cargo reference, config chapter),
-#    which is why this is a file write and not an env entry above. ZERO bytes
-#    are copied per start — the reason this half is not a lower like uv's:
-#    per-job start writes are the pool's measured disk knee. Fail-soft the
+#    HOST-SERVED rather than copied: the postStart probes the crates proxy
+#    and, if it answers within 3 s, writes /.cargo/config.toml — the ROOT of
+#    cargo's config hierarchy, so every cargo invocation in the job reads it
+#    whatever its working directory, and a repository's own checked-in
+#    [source] config still overrides it. Cargo's [source] tables are NOT
+#    settable from the environment (cargo reference, config chapter), which
+#    is why this is a file write and not an env entry above. ZERO bytes are
+#    copied per start — cargo, unlike uv, can be pointed at a registry URL,
+#    so this half never needed a lower in the volume at all. Fail-soft the
 #    same way: no proxy (or a proxy not yet Ready) means no file, and cargo
 #    fetches from crates.io directly, exactly today's behaviour. The proxy has
 #    no write surface (non-GET refused), so the trust tiering holds without a
@@ -99,11 +123,14 @@
 #    research/005: Cargo.lock byte-identical, every locked crate served.
 #
 # 4. The fleet-wide KILL SWITCH. CI_CACHE_KILL_SWITCH on the $job container:
-#    empty (default) enables every tier; `operator` makes the postStart skip
-#    every tier for every job — no lower copy, no cargo config — with no
-#    deploy of any routed repository (converge this ConfigMap, recycle idle
-#    runners). The cache-telemetry children of the plan add the deterministic
-#    cold canary on the same seam and tag both on every cache span.
+#    empty (default) enables every tier; `operator` makes the postStart turn
+#    every tier off for every job — it removes the provisioner's warm uv seed
+#    from this job's volume (a few hundred thousand unlinks of per-volume
+#    links, never a write to a generation) so uv runs cold, and writes no
+#    cargo config — with no deploy of any routed repository (converge this
+#    ConfigMap, recycle idle runners). The cache-telemetry children of the
+#    plan add the deterministic cold canary on the same seam and tag both on
+#    every cache span.
 #
 # 5. The shared COMPILATION cache (B1 of the same plan; ../sccache/). The
 #    pool PROVIDES sccache — the node-local binary under
@@ -129,6 +156,10 @@
 #    into the key, so this template sets NONE and carries `incremental` in
 #    the config file; and it hashes absolute paths, so the populator builds
 #    at the job's own checkout path and cargo home.
+#    Constraint items 3-5 impose on every `container:` image routed to this
+#    pool: it must carry /bin/sh (a postStart exec that cannot start kills
+#    the container). Every fleet `container:` is the fabro sandbox image,
+#    which does; a distroless job image would need its own template.
 apiVersion: v1
 kind: PodTemplate
 spec:
@@ -138,25 +169,29 @@ spec:
       type: Localhost
       localhostProfile: ci-runner-workflow
   volumes:
-    - name: warm-cache
-      hostPath:
-        path: /var/cache/ci-runner/warm
-        # DirectoryOrCreate, not Directory: a node without the warm root
-        # degrades to a cold cache (an empty mount), never to a pod that
-        # cannot start.
-        type: DirectoryOrCreate
     - name: ci-runner-bin
       hostPath:
         # The pool-provided binaries (today: sccache, from
-        # ../sccache/install-sccache-binary.sh). DirectoryOrCreate for the same
-        # reason: a node without them degrades to no compilation cache.
+        # ../sccache/install-sccache-binary.sh). DirectoryOrCreate: a node
+        # without them degrades to no compilation cache, never to a pod that
+        # cannot start.
         path: /usr/local/lib/ci-runner-k3s/bin
         type: DirectoryOrCreate
   containers:
     - name: $job
       env:
+        # The work volume's hardlink-seeded warm uv cache (header item 2).
+        # The path exists only when the provisioner's setup script seeded
+        # it; otherwise uv creates a cold cache there.
         - name: UV_CACHE_DIR
           value: /__w/_warm/uv
+        # Copy, never hardlink, from that cache into the job's .venv: the
+        # cache's files are the fleet-wide generation's inodes, read-only to
+        # the job by ownership; a hardlinked venv file would be one of them
+        # and unpatchable, a copied one is the job's own (header item 2).
+        # Cost: the venv's own bytes per job.
+        - name: UV_LINK_MODE
+          value: copy
         # Fleet-wide kill switch (header item 4): "" = tiers on; "operator" = off.
         - name: CI_CACHE_KILL_SWITCH
           value: ""
@@ -167,9 +202,6 @@ spec:
         - name: SCCACHE_REDIS_RW_MODE
           value: READ_ONLY
       volumeMounts:
-        - name: warm-cache
-          mountPath: /var/cache/ci-runner/warm
-          readOnly: true
         - name: ci-runner-bin
           mountPath: /opt/ci-runner/bin
           readOnly: true
@@ -181,17 +213,15 @@ spec:
               - -c
               - |
                 # Every path below is fail-soft: this script always exits 0.
+                # No tier copies bytes here: the warm uv cache is already in
+                # the volume as the provisioner's hardlink seed (header item 2).
                 if [ -n "${CI_CACHE_KILL_SWITCH:-}" ]; then
+                  # Header item 4: the switch turns the uv tier off by removing
+                  # this volume's seed (per-volume links; the generation is
+                  # untouched) and the cargo/compilation tiers off by writing
+                  # nothing.
+                  rm -rf /__w/_warm/uv 2>/dev/null
                   exit 0
-                fi
-                # Tier: warm uv cache (header item 2) — copy the lower.
-                src=/var/cache/ci-runner/warm/uv
-                dst=/__w/_warm/uv
-                if [ -d "$src" ]; then
-                  mkdir -p "$dst"
-                  if ! cp -rp --no-preserve=ownership "$src/." "$dst"; then
-                    rm -rf "$dst"
-                  fi
                 fi
                 # Tiers: warm cargo cache (header item 3) and compilation cache
                 # (header item 5) — one /.cargo/config.toml, each stanza only

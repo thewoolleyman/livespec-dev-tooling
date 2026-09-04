@@ -315,7 +315,9 @@ fi
 log "3. Apply the fleet-owned local-path provisioner (the bundled copy is disabled)"
 # ../k3s-config/ disables k3s's packaged local-storage component, so without
 # this step no PVC on the node can bind. Applied before anything that creates
-# pods. The manifest is the bundled one plus the pool's tuning; see its header.
+# pods. The manifest is the bundled one plus the pool's tuning and the
+# warm-cache seed (its ConfigMap's setup script hardlinks the current warm uv
+# cache generation into every new work volume); see its header.
 kubectl apply -f "${PROVISIONER_DIR}/local-path-provisioner.yaml"
 kubectl -n kube-system rollout status deployment/local-path-provisioner --timeout=120s
 

@@ -4,7 +4,7 @@
 #
 # Called by ../apparmor/install-apparmor-profile.sh (which also loads the
 # AppArmor profile the template names) and by
-# ../warm-cache/install-warm-cache.sh (which adds the warm-cache mount the
+# ../warm-cache/install-warm-cache.sh (which owns the UV_CACHE_DIR the
 # template carries). One converge, two callers, so the two installers cannot
 # drift on how the ConfigMap is written. Runner pods mount this ConfigMap and
 # point ACTIONS_RUNNER_CONTAINER_HOOK_TEMPLATE at it — see

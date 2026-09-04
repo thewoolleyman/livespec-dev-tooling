@@ -62,18 +62,22 @@
 # evidence"). The per-JOB cache spans are a different emitter (the pod
 # lifecycle hooks, livespec-dev-tooling-mlg5sf).
 #
-# Runs as a DynamicUser with StateDirectory=ci-cache-gauges for the
-# previous tick's counters (the 5m deltas). Every read here is unprivileged:
-# the warm root and the proxy store are world-readable, the proxy's
-# stub_status and redis are reached over loopback through their hostPorts,
-# redis's unauthenticated user has +info +@read for exactly this, and the
-# hook template is read from the boot-durable copy the converge applies
-# (/usr/local/lib/ci-runner-k3s/arc/), not from the cluster, so no kubectl
-# credential is needed.
+# Runs as root with NO capabilities and a read-only view of the system
+# (ci-cache-gauges.service), with StateDirectory=ci-cache-gauges for the
+# previous tick's counters (the 5m deltas). Root, not a DynamicUser, for one
+# read: the warm root is a hidden sibling of the runner work volumes under
+# /var/lib/rancher/k3s/storage (livespec-lvtu; ci-runner/k3s/phase2/warm-cache/
+# README.md "Where it lives"), a directory the provisioner keeps 0700 root so
+# no other host user can reach a job's volume. Everything else is
+# unprivileged: the proxy's stub_status and redis are reached over loopback
+# through their hostPorts, redis's unauthenticated user has +info +@read for
+# exactly this, and the hook template is read from the boot-durable copy the
+# converge applies (/usr/local/lib/ci-runner-k3s/arc/), not from the cluster,
+# so no kubectl credential is needed.
 set -uo pipefail
 
 OTLP_ENDPOINT="${CI_RUNNER_HEARTBEAT_OTLP:-http://127.0.0.1:4319/v1/metrics}"
-WARM_ROOT="${CI_CACHE_WARM_ROOT:-/var/cache/ci-runner/warm}"
+WARM_ROOT="${CI_CACHE_WARM_ROOT:-/var/lib/rancher/k3s/storage/.warm}"
 PROXY_STATUS_URL="${CI_CACHE_PROXY_STATUS_URL:-http://127.0.0.1:3080/nginx_status}"
 REDIS_HOST="${CI_CACHE_REDIS_HOST:-127.0.0.1}"
 REDIS_PORT="${CI_CACHE_REDIS_PORT:-6379}"

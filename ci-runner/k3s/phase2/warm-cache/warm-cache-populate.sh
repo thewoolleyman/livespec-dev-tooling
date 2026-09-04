@@ -6,28 +6,35 @@
 #
 # Runs INSIDE the `warm-cache-populate` CronJob (warm-cache-cronjob.yaml), in
 # the same fabro sandbox image the fleet's CI jobs execute in, with the host
-# volume /var/cache/ci-runner/warm mounted read-WRITE at $WARM_ROOT. Nothing
-# else in the cluster mounts that path writable: every workflow pod mounts it
-# READ-ONLY (../arc/hook-pod-template.yaml) and copies the current generation
-# into its own ephemeral work volume before its first step runs. A job can
-# read the warm lower; it can never write it. That is the same trust tiering
-# the deleted podman lane enforced with a read-only overlay lower, realized
-# here with a read-only hostPath + per-pod copy because an unprivileged pod
-# cannot mount an overlay and uv refuses a read-only cache outright
-# ("Failed to initialize cache ... Permission denied", measured 2026-08-23).
+# directory /var/lib/rancher/k3s/storage/.warm (a hidden sibling of the runner
+# work volumes on the ci-workvols tier) mounted read-WRITE at $WARM_ROOT.
+# Nothing else in the cluster mounts that path at all: the local-path
+# provisioner's setup script (../local-path-provisioner/) HARDLINKS the
+# current generation into each work volume's _warm/uv when the volume is
+# created, and a job only ever sees that seed. A job's uv adds new entries
+# beside the shared inodes and never rewrites one in place, and it could not
+# if it tried: this script publishes every generation owned by uid
+# ${WARM_GENERATION_OWNER}, which no workflow pod maps, so the seeded links are
+# read-only to a job by mode (the chown before publish, below). That is the
+# same trust tiering the deleted podman lane enforced with a read-only
+# overlay lower, realized here by ownership plus the per-volume seed,
+# because an unprivileged pod cannot mount an overlay and uv refuses a
+# read-only cache outright ("Failed to initialize cache ... Permission
+# denied", measured 2026-08-23).
 #
-# GENERATIONS, not in-place writes. Readers `cp -a` the lower while this
-# script may be writing it. Writing in place would let a reader copy a
-# half-written entry, so each run builds a NEW generation directory,
+# GENERATIONS, not in-place writes. Readers hardlink-seed from the lower
+# while this script may be writing it. Writing in place would let a reader
+# link a half-written entry, so each run builds a NEW generation directory,
 # hardlink-seeded from the current one (same filesystem, so the seed is
 # metadata-only and takes well under a second even for a multi-GB cache),
 # syncs every routed repository's lockfile into it, and then publishes it with
-# ONE atomic symlink rename. A reader that resolved the symlink before the
-# flip keeps copying the previous generation, which this script keeps for one
-# more cycle before pruning. The hardlink seed is safe because uv never
-# mutates a cache file in place — it writes to a temporary path and renames —
-# so a new generation's writes never reach the inodes the previous generation
-# still points at.
+# ONE atomic symlink rename. A reader resolves the symlink once before it
+# starts linking, so one that resolved it before the flip keeps seeding from
+# the previous generation, which this script keeps for one more cycle before
+# pruning — and a seeded volume's links outlive even a pruned generation. The
+# hardlink seed is safe because uv never mutates a cache file in place — it
+# writes to a temporary path and renames — so a new generation's writes never
+# reach the inodes the previous generation still points at.
 #
 # THE CARGO HALF (2026-09-04, plan ci-runner-cache-tiers, livespec-dev-tooling-
 # oiltq3): the warm cargo cache is HOST-SERVED by the crates proxy
@@ -93,6 +100,7 @@ set -uo pipefail
 WARM_ROOT="${WARM_ROOT:-/warm}"
 REPOS_FILE="${REPOS_FILE:-/config/repos.txt}"
 KEEP_GENERATIONS="${KEEP_GENERATIONS:-2}"
+WARM_GENERATION_OWNER="${WARM_GENERATION_OWNER:-200000}"
 CRATES_PROXY_URL="${CRATES_PROXY_URL:-http://crates-proxy.ci-crates-proxy.svc.cluster.local:3080}"
 SCCACHE_BIN="${SCCACHE_BIN:-/opt/ci-runner/bin/sccache}"
 SCCACHE_REDIS_ENDPOINT="${SCCACHE_REDIS_ENDPOINT:-redis://sccache-redis.ci-sccache.svc.cluster.local:6379}"
@@ -343,9 +351,31 @@ while IFS= read -r url || [ -n "${url}" ]; do
   fi
 done < "${REPOS_FILE}"
 
+# Own the generation as a uid NO workflow pod maps before anyone links to
+# it. Every runner work volume is seeded with hardlinks to these inodes, and
+# the workflow pod's volume is idmapped so its root IS uid 0 on that volume:
+# a root-owned generation would be writable in place from every job, which
+# the specification's "Runner-pool build cache tiers" clause forbids. Owned
+# by ${WARM_GENERATION_OWNER} (any uid at or above 65536 is outside every
+# pod's 65536-id mapping) the seeded links belong to nobody inside the pod,
+# no capability of the job's root reaches them, and their 0644/0444 modes
+# make them read-only there; the seed gives the job fresh per-volume
+# directories and lock files for everything uv opens for writing (the
+# provisioner manifest's setup script). This container keeps CAP_CHOWN for
+# this line and CAP_DAC_OVERRIDE so the next build can write into the
+# predecessor-owned tree it hardlink-seeds from (warm-cache-cronjob.yaml).
+# `--from=0` touches only what this run wrote; the inherited inodes are
+# already owned. Fail-loud: a generation this could not own is not
+# published (the previous one stays live).
+if ! chown -R --from=0 "${WARM_GENERATION_OWNER}:${WARM_GENERATION_OWNER}" "${new_gen}"; then
+  log "FATAL: could not own generation ${generation} as uid ${WARM_GENERATION_OWNER}; not publishing"
+  exit 2
+fi
+
 # Publish: one atomic rename of a relative symlink, so the link stays valid
-# wherever the warm root is mounted (readers see /var/cache/ci-runner/warm as
-# a different path than this container does).
+# wherever the warm root is mounted (the provisioner's helper pod sees it at
+# its node path, /var/lib/rancher/k3s/storage/.warm, not at this container's
+# /warm).
 ln -sfn "uv-generations/${generation}" "${CURRENT_LINK}.tmp"
 mv -T "${CURRENT_LINK}.tmp" "${CURRENT_LINK}"
 log "published generation ${generation} (${synced} repositories synced for uv, ${cargo_warmed} pre-warmed for cargo, sccache builds: ${sccache_built} built / ${sccache_skipped} skipped / ${sccache_skipped_busy} skipped-busy, size $(du -sh "${new_gen}" | cut -f1))"

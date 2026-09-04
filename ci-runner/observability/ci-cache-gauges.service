@@ -1,8 +1,12 @@
 # ci-cache-gauges.service — one run of ci-cache-gauges.sh (see its header);
-# fired every 5 min by ci-cache-gauges.timer. DynamicUser like the heartbeat:
-# every read is unprivileged (world-readable cache trees, loopback hostPorts,
-# the boot-durable hook template copy). StateDirectory holds the previous
-# tick's counters for the 5-minute deltas.
+# fired every 5 min by ci-cache-gauges.timer. Root with an EMPTY capability
+# set and a read-only system view rather than a DynamicUser like the
+# heartbeat: the one privileged read is the warm uv cache root, which lives
+# beside the runner work volumes under a 0700 root directory since
+# livespec-lvtu (the script's header). Root's OWN permission bits open that
+# directory; no capability is needed or held, and ProtectSystem=strict makes
+# every path but the StateDirectory read-only to it. StateDirectory holds the
+# previous tick's counters for the 5-minute deltas.
 [Unit]
 Description=CI host build-cache health gauges (OTLP gauges to local collector)
 Wants=network-online.target
@@ -10,6 +14,10 @@ After=network-online.target
 
 [Service]
 Type=oneshot
-DynamicUser=yes
 StateDirectory=ci-cache-gauges
+CapabilityBoundingSet=
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
 ExecStart=/usr/local/lib/ci-runner/ci-cache-gauges.sh

@@ -47,6 +47,15 @@ template:
       runAsUser: 1000
       runAsGroup: 1000
       fsGroup: 1000
+      # OnRootMismatch, not the default Always: the work volume is born with
+      # the warm uv cache already in it as ~160k HARDLINKS (the local-path
+      # provisioner's setup script, ../local-path-provisioner/), and Always
+      # would have the kubelet chgrp+chmod every one of them on this pod's
+      # mount -- a per-start walk of the whole cache that also mutates the
+      # inodes the cache generations share. The setup script leaves the
+      # volume root exactly as Always would (gid 1000, mode 2777), so the
+      # kubelet sees no mismatch and skips the walk (livespec-lvtu).
+      fsGroupChangePolicy: OnRootMismatch
     volumes:
       # Carries ../arc/hook-pod-template.yaml into the runner pod so the
       # container hook can read it. Additive: the chart appends its own `work`
@@ -60,8 +69,8 @@ template:
         # was `latest`; see the k3s README's "Pinned versions — nothing floats
         # `latest`").
         # The digest is the image the pool was verified on: its container
-        # hook has no fs-init init container, the premise of the
-        # warm-cache postStart choice (see ../hook-pod-template.yaml or
+        # hook has no fs-init init container and merges the hook template
+        # the way its header documents (see ../hook-pod-template.yaml or
         # the phase2 copy). Bump BOTH tag and digest together, re-read the
         # hook's initContainers behaviour, then helm upgrade + recycle.
         image: ghcr.io/actions/actions-runner:2.336.0@sha256:0cfdcc701ce933c6d243c6b0b2da767366dc9f2e99961d4c3754b0b78084cdda
