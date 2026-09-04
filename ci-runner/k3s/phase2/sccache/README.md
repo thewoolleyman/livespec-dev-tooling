@@ -27,8 +27,8 @@ password exists in exactly two places, the host file (root, 0600) and the
 `sccache-redis-writer` Secret in `ci-warm-cache`, which nothing in
 `arc-runners` can mount. Jobs additionally run sccache read-only so they
 never attempt a write, but the boundary is the server's `NOPERM`, not the
-client's configuration; the isolation-timer test of exactly that is
-`livespec-dev-tooling-tqpszl`. A job's own compilation output is never
+client's configuration; the scheduled routed job that asserts exactly that
+every six hours is `../isolation/` (`.github/workflows/ci-cache-negative-tests.yml`). A job's own compilation output is never
 written back; the populator builds only the default branch.
 
 ## Why redis in RAM, sized how

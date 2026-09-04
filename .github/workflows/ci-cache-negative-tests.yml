@@ -1,0 +1,54 @@
+# ci-cache-negative-tests.yml — the build-cache tiers' negative tests, run
+# FROM INSIDE A ROUTED JOB on the pool every six hours (and on demand).
+# v054 §"Runner-pool cache telemetry", "Negative tests"; plan
+# ci-runner-cache-tiers, child livespec-dev-tooling-tqpszl. The assertions
+# and the reasoning live in ci-runner/k3s/phase2/isolation/
+# cache-negative-tests.sh; this file is the TIMER and the REPORT: the job's
+# conclusion is the green/red, and the telemetry export puts it in the
+# github-ci dataset where the `CI cache negative tests failed` trigger
+# (ci-runner/observability/triggers/) reads it.
+#
+# Only meaningful on the pool: a hosted runner has none of the mounts under
+# test, so the job is skipped (not passed) when CI_RUNNER_LABELS routes to
+# hosted capacity — exactly the fallback ci.yml uses.
+name: CI cache negative tests
+
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  cache-negative-tests:
+    name: cache-negative-tests
+    if: ${{ contains(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'k3s') }}
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    container:
+      # The fleet's job image: the pod is what every routed job gets — the
+      # hook template's mounts and env — which is the whole point.
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.40.1
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Run the negative tests from inside this routed job
+        run: bash ci-runner/k3s/phase2/isolation/cache-negative-tests.sh
+
+  export-telemetry:
+    name: export-telemetry
+    needs: [cache-negative-tests]
+    if: ${{ always() && needs.cache-negative-tests.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Export this run's job conclusions to Honeycomb (closed-loop verified)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HONEYCOMB_GITHUB_CI_INGEST_KEY_LIVESPEC: ${{ secrets.HONEYCOMB_GITHUB_CI_INGEST_KEY_LIVESPEC }}
+        run: bash .github/scripts/export-ci-telemetry.sh

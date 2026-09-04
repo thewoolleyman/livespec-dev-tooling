@@ -8,9 +8,11 @@
 # The definitions are the fleet's trigger shape (see the eleven existing
 # livespec triggers): ungrouped, filtered to one host, a runbook plus the
 # emitter path, receiver path and work item in the description, tags
-# host/service/kind/component. The dataset is `metrics` (Honeycomb's
+# host/service/kind/component. The dataset defaults to `metrics` (Honeycomb's
 # environment-level Metrics dataset, where the host collector lands every
-# livespec.ci_*.* gauge).
+# livespec.ci_*.* gauge); a definition may name another with a top-level
+# "dataset" key (the negative-tests trigger reads `github-ci`), which this
+# script strips before the API call.
 #
 # Requires: HONEYCOMB_CONFIG_KEY_LIVESPEC (a configuration key for the
 # livespec environment) — projected by the fleet's credential wrapper:
@@ -29,20 +31,24 @@ hc() { curl --silent --show-error --fail-with-body --max-time 30 -H "X-Honeycomb
 # column that no datapoint has created yet — a gauge emitted only under
 # traffic) is reported and the script exits non-zero at the END, so one bad
 # definition never blocks the others.
-existing="$(hc "${API}/1/triggers/${DATASET}")"
 rc=0
+body="$(mktemp)"
+trap 'rm -f "${body}"' EXIT
 for def in "${SCRIPT_DIR}"/ci-cache-*.json; do
   name="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["name"])' "${def}")"
+  dataset="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("dataset") or sys.argv[2])' "${def}" "${DATASET}")"
+  python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); d.pop("dataset", None); json.dump(d, open(sys.argv[2], "w"))' "${def}" "${body}"
+  existing="$(hc "${API}/1/triggers/${dataset}")"
   id="$(printf '%s' "${existing}" | python3 -c 'import json,sys; n=sys.argv[1]; print(next((t["id"] for t in json.load(sys.stdin) if t["name"]==n), ""))' "${name}")"
   if [ -n "${id}" ]; then
-    if out="$(hc -X PUT "${API}/1/triggers/${DATASET}/${id}" --data-binary "@${def}")"; then
-      echo "updated ${id} ${name}"
+    if out="$(hc -X PUT "${API}/1/triggers/${dataset}/${id}" --data-binary "@${body}")"; then
+      echo "updated ${id} [${dataset}] ${name}"
     else
       echo "FAILED update ${name}: ${out}" >&2; rc=1
     fi
   else
-    if out="$(hc -X POST "${API}/1/triggers/${DATASET}" --data-binary "@${def}")"; then
-      echo "created $(printf '%s' "${out}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])') ${name}"
+    if out="$(hc -X POST "${API}/1/triggers/${dataset}" --data-binary "@${body}")"; then
+      echo "created $(printf '%s' "${out}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])') [${dataset}] ${name}"
     else
       echo "FAILED create ${name}: ${out}" >&2; rc=1
     fi

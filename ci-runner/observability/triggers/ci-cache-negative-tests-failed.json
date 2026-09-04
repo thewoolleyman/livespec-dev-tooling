@@ -1,0 +1,9 @@
+{
+  "dataset": "github-ci",
+  "name": "CI cache negative tests failed — a routed job could write a shared cache or found a writer credential",
+  "description": "Fires when a cache-negative-tests job (workflow 'CI cache negative tests' in livespec-dev-tooling, every 6 h on the pool) concludes failure in the trailing 4 h. The job runs ci-runner/k3s/phase2/isolation/cache-negative-tests.sh FROM INSIDE a routed container job and fails when a job CAN write the warm-cache mount, CAN SET into the sccache redis with the pod's credentials, HOLDS a writer credential, or CAN write the crates proxy — or when a precondition (the template's mount, a reachable redis/proxy) is missing, which is a misconfigured pool, not a pass. Any firing is a trust-boundary breach or a broken tier: read the job log (gh run list --repo thewoolleyman/livespec-dev-tooling --workflow 'CI cache negative tests'), then the hook template / ACL / nginx config it names. Data: .github/scripts/export-ci-telemetry.sh. v054 §'Runner-pool cache telemetry' Negative tests; livespec-dev-tooling-tqpszl, plan ci-runner-cache-tiers.",
+  "query": {"calculations": [{"op": "COUNT"}], "filters": [{"column": "ci.job.name", "op": "=", "value": "cache-negative-tests"}, {"column": "ci.job.conclusion", "op": "=", "value": "failure"}], "time_range": 14400},
+  "threshold": {"op": ">", "value": 0, "exceeded_limit": 1},
+  "frequency": 3600, "alert_type": "on_change", "recipients": [{"id":"jKw2EyfLJ3W"},{"id":"fort2EXXuVy"}],
+  "tags": [{"key":"service","value":"github-ci"}, {"key":"component","value":"ci-cache"}, {"key":"kind","value":"value"}, {"key":"host","value":"poweredge-xubuntu"}]
+}
