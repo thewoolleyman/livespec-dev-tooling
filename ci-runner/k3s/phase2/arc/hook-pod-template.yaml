@@ -196,6 +196,20 @@
 #    is fail-soft by construction: an absent emitter, an empty endpoint, a
 #    dead collector or a slow POST changes nothing about the job — the
 #    emitter always exits 0 and bounds itself with `timeout`.
+# 7. BUILD-PHASE TELEMETRY from the k3s lane (child livespec-dev-tooling-kjanc4;
+#    half 1 was cb4889ab in this repo). The sandbox image's baked cargo shim
+#    (livespec_dev_tooling.otel_cargo_phase) POSTs one build.cargo-* span per
+#    measured cargo invocation to $LIVESPEC_SANDBOX_OTEL_ENDPOINT. Its default
+#    is the FACTORY host's docker bridge, unreachable from a pod: every k3s
+#    cargo invocation used to pay the shim's 2 s POST timeout and emit nothing.
+#    Since v1.43.1 the shim resolves build.env=ci under GITHUB_ACTIONS (and
+#    skips the POST outright when no endpoint is configured), so the $job
+#    container now points it at the same keyless otlp/pods listener as item 6
+#    and the CI lane's build spans land in github-ci with build.env=ci, carrying
+#    build.cache.sccache.* and build.cache.registry.hit. A repository may set
+#    the same variable in its own workflow (the console does); the values agree.
+#    Fail-soft like item 6: a dead collector costs the shim its bounded POST,
+#    never the job.
 apiVersion: v1
 kind: PodTemplate
 spec:
@@ -245,6 +259,14 @@ spec:
           value: http://10.42.0.1:4319
         - name: CI_CACHE_CANARY_N
           value: "20"
+        # Build-phase telemetry (header item 7): where the sandbox image's baked
+        # cargo shim (livespec_dev_tooling.otel_cargo_phase) posts this job's
+        # build.cargo-* spans — the SAME keyless listener as the cache spans.
+        # Set only now that the one Rust consumer pins a sandbox image >= v1.43.1
+        # (livespec-dev-tooling-kjanc4): an older shim hardcodes build.env=factory
+        # and would label CI-lane spans as factory work.
+        - name: LIVESPEC_SANDBOX_OTEL_ENDPOINT
+          value: http://10.42.0.1:4319
         - name: CI_RUNNER_NODE_NAME
           valueFrom:
             fieldRef:
