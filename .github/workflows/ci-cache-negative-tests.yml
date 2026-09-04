@@ -30,7 +30,7 @@ jobs:
     container:
       # The fleet's job image: the pod is what every routed job gets — the
       # hook template's mounts and env — which is the whole point.
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.42.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.42.1
     timeout-minutes: 10
     steps:
       - name: Checkout
