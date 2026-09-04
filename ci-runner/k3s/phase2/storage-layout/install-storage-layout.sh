@@ -36,10 +36,13 @@
 # relabel the old one first); (2) creates the mountpoint directories that
 # can safely be created; (3) ensures the five lines — an existing DIFFERENT
 # line for one of the five mountpoints is REPLACED, with /etc/fstab backed
-# up first and old and new printed — then `findmnt --verify`; (4) installs
-# the k3s drop-in and reloads systemd. It never formats, never moves data,
-# never mounts, never restarts k3s. Re-running it on a conforming host is a
-# byte-exact no-op.
+# up first and old and new printed — then `findmnt --verify`, whose errors
+# are fatal only for those five mountpoints (an unrelated line, e.g. an
+# unplugged backup disk with `nofail`, is reported and left alone), and
+# `systemctl daemon-reload` so the generated mount units match the file
+# (nothing is remounted); (4) installs the k3s drop-in and reloads systemd.
+# It never formats, never moves data, never mounts, never restarts k3s.
+# Re-running it on a conforming host is a byte-exact no-op.
 #
 # MEDIA SWAP (the whole point; README "Storage layout: media-neutral tier
 # identity"): mkfs.ext4 -L <temporary label> on the new volume, rsync -aHAXS
@@ -120,6 +123,7 @@ fi
 # ---------------------------------------------------------------------------
 log "3. Ensure the five fstab lines (byte-exact; a differing line for the same mountpoint is replaced)"
 BACKUP=""
+CHANGED=0
 ensure_line() {
   local line="$1" mountpoint="$2" existing lineno
   if grep -qxF -- "$line" "$FSTAB"; then
@@ -147,9 +151,11 @@ ensure_line() {
     { head -n "$((lineno - 1))" "$FSTAB"; printf '%s\n' "$line"; tail -n "+$((lineno + 1))" "$FSTAB"; } > "${FSTAB}.tmp.$$"
     cat "${FSTAB}.tmp.$$" > "$FSTAB"
     rm -f "${FSTAB}.tmp.$$"
+    CHANGED=1
   else
     printf '%s\n' "$line" >> "$FSTAB"
     echo "added:   ${mountpoint}"
+    CHANGED=1
   fi
 }
 ensure_line "LABEL=${LABEL_CACHE} ${CACHE_MOUNT} ext4 defaults,noatime 0 2" "$CACHE_MOUNT"
@@ -159,10 +165,30 @@ ensure_line "${CONTAINERD_SRC} ${CONTAINERD_DIR} none bind,x-systemd.requires-mo
 ensure_line "${STORAGE_SRC} ${STORAGE_DIR} none bind,x-systemd.requires-mounts-for=${STORAGE_SRC} 0 0" "$STORAGE_DIR"
 
 echo
-echo "findmnt --verify ${FSTAB}:"
-if ! findmnt --verify --tab-file "$FSTAB"; then
-  echo "FATAL: ${FSTAB} failed verification after the edit. Previous copy: ${BACKUP:-none (no line was replaced)}" >&2
+echo "findmnt --verify ${FSTAB} (errors are fatal only for the five managed mountpoints):"
+# findmnt --verify checks EVERY line and exits non-zero on any error, so an
+# unrelated entry — on 2026-09-04 the unplugged USB backup disk, harmless at
+# boot thanks to `nofail` — would otherwise abort this installer after it
+# had already written its lines. Only errors under the five managed
+# mountpoints, and parse errors (which poison the whole file), are fatal.
+verify_out="$(findmnt --verify --tab-file "$FSTAB" 2>&1 || true)"
+printf '%s\n' "$verify_out"
+managed_errors="$(printf '%s\n' "$verify_out" | awk -v managed="${CACHE_MOUNT} ${CONTAINERD_SRC} ${STORAGE_SRC} ${CONTAINERD_DIR} ${STORAGE_DIR}" '
+  BEGIN { n = split(managed, m, " "); for (i = 1; i <= n; i++) is_managed[m[i]] = 1 }
+  /^[^[:space:]]/ { current = $1; next }
+  /^[[:space:]]+\[E\]/ && (current in is_managed) { print current ": " $0 }
+')"
+if [ -n "$managed_errors" ] || printf '%s\n' "$verify_out" | grep -qE '^[1-9][0-9]* parse errors'; then
+  echo "FATAL: ${FSTAB} failed verification for a managed line (or has parse errors). Previous copy: ${BACKUP:-none (no line was replaced)}" >&2
+  printf '%s\n' "$managed_errors" >&2
   exit 1
+fi
+if printf '%s\n' "$verify_out" | grep -qE '^[[:space:]]+\[E\]'; then
+  echo "NOTE: the error(s) above are on lines this installer does not manage; reported, not fixed here."
+fi
+if [ "$CHANGED" -eq 1 ]; then
+  systemctl daemon-reload
+  echo "systemd reloaded so the generated mount units match ${FSTAB} (nothing is remounted)"
 fi
 
 # ---------------------------------------------------------------------------
