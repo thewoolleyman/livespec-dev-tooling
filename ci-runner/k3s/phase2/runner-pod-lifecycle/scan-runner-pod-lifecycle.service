@@ -2,7 +2,8 @@
 # the runner-pod LIFECYCLE stall (scan-runner-pod-lifecycle.sh): PVCs stuck
 # Pending, scheduler volume-bind expiries, containerd inotify exhaustion,
 # containerd create-path deadlines and teardown starvation, the ARC hook's
-# failure signature and its precursor, and stale scale-set listeners.
+# failure signature and its precursor, stale scale-set listeners, and a runner
+# node missing the ci-runner.io/churn-slot capacity every queue is denominated in.
 #
 # WHY THIS EXISTS: every member of this family was found by a human reading a
 # red check whose name misdirected — a `check-format: FAILURE` for a check

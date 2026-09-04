@@ -271,13 +271,13 @@ fleet's actual call volume) needs a live-cluster observation —
 | `arc/values-livespec-console-beads-fabro.yaml` | `livespec-s43svm.16`'s chosen first NON-GATING cutover lane (2026-08-16) — a standalone console app nothing else in the fleet depends on, and the smallest repo by live-measured demand weight. |
 | `node-extended-resource/patch-node-churn-capacity.sh` | Idempotently registers `ci-runner.io/churn-slot` as a node-status extended resource with an explicit, non-defaulted capacity argument. Applied live at a small provisional capacity (4) for validation — see `VALIDATION_CHECKLIST.md` item 4. |
 | `node-extended-resource/install-reapply-unit.sh` | Installs the patch script to `/usr/local/lib/ci-runner-k3s/` and the unit + timer to `/etc/systemd/system`, substituting the required capacity argument for the unit file's deliberate `CAPACITY_PLACEHOLDER`. Node-local; run it on any node added to the pool. Installed live on `poweredge-xubuntu` at capacity 16, 2026-08-19 (`livespec-s43svm.26`) — the units had been written in `.15` but never installed, so a k3s restart would have dropped `ci-runner.io/churn-slot` and stalled ALL Kueue admission. Re-installed at capacity 64 on 2026-08-30 (the increase-ci-runners raise, livespec epic `livespec-zec4mz`); re-installed at capacity **32** on 2026-09-02 — an INTERIM throttle (maintainer decision, livespec epic `livespec-ifwnqj`; see `kueue/DERIVATION.md` "The derivation at C = 32") to be restored to 64 when `livespec-e2vcqf` lands. |
-| `node-extended-resource/reapply-node-extended-resource.service` + `.timer` | Every-5-minute reconciliation reapplying that patch — belt-and-suspenders; a live `systemctl restart k3s` did NOT drop the patch (see "Known caveat" below), but this is cheap insurance against scenarios not yet tested (full host reboot, a k3s version upgrade). |
+| `node-extended-resource/reapply-node-extended-resource.service` + `.timer` | Every-5-minute reconciliation reapplying that patch — belt-and-suspenders; a live `systemctl restart k3s` did NOT drop the patch (see "Known caveat" below), but this is cheap insurance against scenarios not yet tested (full host reboot, a k3s version upgrade). Since 2026-09-04 (`livespec-kgl3`) the timer also carries `OnCalendar=*:0/5`: `OnUnitActiveSec` re-arms only from a SUCCESSFUL activation, so after that morning's dependency-failed boot the timer had no next elapse at all; the wall-clock trigger fires every five minutes regardless of the service's history, and makes `Persistent=true` effective (it applies to `OnCalendar` timers only). See "After a dependency-failed boot" under "Reconstruct-on-boot". |
 | `node-inotify-budget/99-ci-runner-inotify.conf` | The per-user inotify INSTANCE budget (`fs.inotify.max_user_instances = 8192`) the pool needs, shipped as a `/etc/sysctl.d/` drop-in with its derivation in the file header. The kernel default 128 was exhausted at ~100 concurrent containers on 2026-09-01 and stalled fleet CI (livespec plan `ci-runner-pod-lifecycle-reliability`, epic `livespec-ifwnqj`, research/002); the relation is ratified as a host requirement in livespec core `non-functional-requirements.md` §"Self-hosted CI runner host requirements" (v216). |
 | `node-inotify-budget/install-inotify-sysctl.sh` | Installs that drop-in to `/etc/sysctl.d/` and applies it now, parsing the intended value from the shipped file so the verify step cannot drift. Node-local; run it on any node added to the pool and after any node rebuild. No reapply timer (unlike `node-extended-resource/`): `systemd-sysctl` re-applies `/etc/sysctl.d/` at every boot, so the value is natively durable. Makes the interim hand-applied `/etc/sysctl.d/99-ci-runner-inotify.conf` (placed live on `poweredge-xubuntu` 2026-09-01) reproducible. |
 | `wedged-runner/scan-wedged-runners.sh` | Finds runner pods that are `Running` and `ready=true` to Kubernetes but permanently dead to GitHub (the `Registration <uuid> was not found` loop), reporting pod, scale set, and age. Exits 1 when any is found, so it is usable directly as a check; `--clear` deletes them, opt-in. See "Wedged runner vs. saturation" below for why this cannot be inferred from any capacity signal. |
 | `wedged-runner/install-wedged-runner-scan.sh` | Installs that scan to `/usr/local/lib/ci-runner-k3s/` and the unit + timer to `/etc/systemd/system`, substituting the required `report`/`clear` mode for the unit file's deliberate `MODE_PLACEHOLDER`. Node-local; run it on any node added to the pool. Installed live on `poweredge-xubuntu` in `clear` mode, 2026-08-19 (`livespec-s43svm.30`) — that script's header carries the argument for `clear` over `report` on a host with no failure routing. |
 | `wedged-runner/scan-wedged-runners.service` + `.timer` | Every-5-minute wedged-runner sweep. Unlike the reapply timer this is not belt-and-suspenders: the wedged state is self-perpetuating (a dead runner suppresses the scale-up that would replace it), so without an external sweep the scale set stays blocked until a human notices — which is exactly how the condition was found, 33+ minutes into a held merge gate. |
-| `runner-pod-lifecycle/scan-runner-pod-lifecycle.sh` | Detects the runner-pod LIFECYCLE stall — the THIRD "jobs queued, nothing starting" case — as six named classes read from node-side observables that persist long enough for a sweep to see them: `pvc-pending`, `bind-deadline`, `inotify-emfile`, `containerd-deadline`, `hook-failure`, `stale-listener`. Every journal, log and event read is bounded to a 5-minute window (`containerd.log` rotates, and is walked backwards to the cutoff). Exits 1 naming each class with its count, 0 on a clean node, 2 when it cannot read one of its inputs — fail-closed, never a false clean. Report-only: nothing in this family is safe to auto-delete. Every sweep ends with ONE best-effort OTLP POST to the host collector — `livespec.ci_lifecycle.<class>` (one gauge per class, always emitted, 0 when clean), `livespec.ci_kueue.pending` / `.admitted`, `livespec.ci_churn_slot.allocatable` / `.quota_sum` — landing in the `livespec` env's `metrics` dataset; `--no-emit` skips it. See "Runner-pod lifecycle stall" → "The detector" below, and its "What every sweep emits to Honeycomb" (livespec plan `ci-runner-pod-lifecycle-reliability`, item `livespec-nhjpai`; emission `livespec-vwzv`). |
+| `runner-pod-lifecycle/scan-runner-pod-lifecycle.sh` | Detects the runner-pod LIFECYCLE stall — the THIRD "jobs queued, nothing starting" case — as seven named classes read from node-side observables that persist long enough for a sweep to see them: `pvc-pending`, `bind-deadline`, `inotify-emfile`, `containerd-deadline`, `hook-failure`, `stale-listener`, `capacity-absent`. Every journal, log and event read is bounded to a 5-minute window (`containerd.log` rotates, and is walked backwards to the cutoff). Exits 1 naming each class with its count, 0 on a clean node, 2 when it cannot read one of its inputs — fail-closed, never a false clean. Report-only: nothing in this family is safe to auto-delete. Every sweep ends with ONE best-effort OTLP POST to the host collector — `livespec.ci_lifecycle.<class>` (one gauge per class, always emitted, 0 when clean), `livespec.ci_kueue.pending` / `.admitted`, `livespec.ci_churn_slot.allocatable` / `.quota_sum` — landing in the `livespec` env's `metrics` dataset; `--no-emit` skips it. See "Runner-pod lifecycle stall" → "The detector" below, and its "What every sweep emits to Honeycomb" (livespec plan `ci-runner-pod-lifecycle-reliability`, item `livespec-nhjpai`; emission `livespec-vwzv`). |
 | `runner-pod-lifecycle/install-runner-pod-lifecycle-scan.sh` | Installs that scan to `/usr/local/lib/ci-runner-k3s/` and the unit + timer to `/etc/systemd/system`, enabled and started. No mode argument, by decision rather than omission: there is no clear mode (the installer's header says why). Node-local; run it on any node added to the pool and after any node rebuild. |
 | `runner-pod-lifecycle/scan-runner-pod-lifecycle.service` + `.timer` | Every-5-minute lifecycle-stall sweep, report-only: `systemctl is-failed scan-runner-pod-lifecycle.service` and its journal are the signal, exactly as the wedge sweep's report mode. `OnBootSec=4min` sits after the boot converge so the first sweep after a reboot reads a converged cluster rather than one still being built. |
 | `arc/recycle-scale-set-runners.sh` | Deletes a scale set's IDLE runner pods after a `helm upgrade`, skipping any pod with a live `-workflow` companion. Run it at the end of every apply: `helm upgrade` replaces the listener but leaves existing runner pods on the old pod template and the old listener session. Closes the re-cut path into the wedged state; see "Recycle the runner pods after every upgrade" below for why that is a partial fix. |
@@ -291,8 +291,8 @@ fleet's actual call volume) needs a live-cluster observation —
 | `arc/values-livespec-dev-tooling.yaml`, `arc/values-livespec-driver-claude.yaml`, `arc/values-livespec-driver-codex.yaml`, `arc/values-livespec-orchestrator-git-jsonl.yaml`, `arc/values-livespec-runtime.yaml` | The five remaining per-repo scale sets, captured from their live Helm releases 2026-08-19 (`livespec-s43svm.26`) and wired to the hook pod template (`livespec-s43svm.25`). |
 | `arc/values-livespec-driver-pi.yaml`, `kueue/cluster-queue-livespec-driver-pi.yaml` | The NINTH repository, stood up 2026-08-20 after the eight-repo cutover sequence had closed. Committed in the same change that created the scale set, rather than captured retroactively. Its `maxRunners: 13` is the fleet's first ACTUAL matrix-width measurement rather than a podman-era proxy, and its arrival is what surfaced the `max(1, …)` sum-invariant collision documented in `kueue/DERIVATION.md`. |
 | `arc/values-poweredge-xubuntu-k3s.yaml` | The surviving PHASE-1 proof scale set, also live and also captured 2026-08-19. Named by scale set rather than by repo because it points at `livespec-dev-tooling`, which already owns a `values-<repo>.yaml`. Not Kueue-gated; see the file's header. Its phase-1 sibling `local-ci-k3s` (`arc/values-local-ci-k3s.yaml`, captured the same day) was retired — Helm release uninstalled 2026-08-23, file deleted — under `livespec-s43svm.28`, because no workflow in any fleet repo routed to it. |
-| `reconstruct/converge-ci-stack.sh` | The one idempotent converge of the ENTIRE CI CLUSTER stack from this repository — ARC controller + all ten runner scale sets + the `arc-hook-pod-template` ConfigMap + Kueue core + every `ResourceFlavor`/`ClusterQueue`/`LocalQueue` — with zero manual `kubectl`/`helm` steps. One run takes an empty k3s datastore to all listeners `Running` and Kueue admitting. See "Reconstruct-on-boot" below for the scope boundary and the `install-arc.sh`/`install-kueue.sh` drift it supersedes. |
-| `reconstruct/converge-ci-stack.service` | Boot-ordered `oneshot` (`After=k3s.service`) that runs the converge once per boot. This is what makes the host CATTLE: today none of the cluster stack re-applies on boot, so a datastore wipe loses it. |
+| `reconstruct/converge-ci-stack.sh` | The one idempotent converge of the ENTIRE CI CLUSTER stack from this repository — ARC controller + all ten runner scale sets + the `arc-hook-pod-template` ConfigMap + Kueue core + every `ResourceFlavor`/`ClusterQueue`/`LocalQueue` — with zero manual `kubectl`/`helm` steps. One run takes an empty k3s datastore to all listeners `Running` and Kueue admitting — after first asserting (step 1b) that every runner node's allocatable `ci-runner.io/churn-slot` equals the capacity the INSTALLED reapply unit carries, and re-running `patch-node-churn-capacity.sh` when it does not (`livespec-kgl3`). See "Reconstruct-on-boot" below for the scope boundary and the `install-arc.sh`/`install-kueue.sh` drift it supersedes. |
+| `reconstruct/converge-ci-stack.service` | Boot-ordered `oneshot` (`After=k3s.service`; `After=`/`Wants=` `reapply-node-extended-resource.service` and `inject-github-app-secret.service`, so a hand-started converge pulls the reapply in too) that runs the converge once per boot. This is what makes the host CATTLE: today none of the cluster stack re-applies on boot, so a datastore wipe loses it. |
 | `reconstruct/install-converge-unit.sh` | Copies the converge script AND the `arc/`+`kueue/` artifacts it applies into `/usr/local/lib/ci-runner-k3s/` (the host carries no repo checkout, so the boot unit must be self-contained), installs the unit, and ENABLES it — not `--now`, since starting it applies the stack live. Node-local; re-run after editing any values/queue/template/converge artifact, and on any node rebuild. |
 | `datastore-tmpfs/var-lib-rancher-k3s-server-db.mount` | systemd `.mount` unit backing the k3s kine/SQLite datastore directory (`/var/lib/rancher/k3s/server/db`, ~110 MB live) with tmpfs, so control-plane fsyncs are RAM-speed and never queue behind CI churn on the array (livespec plan `ci-runner-pod-lifecycle-reliability`, research/003: the kine `Slow SQL` stall that dropped Kueue's admission webhook fleet-wide on 2026-09-01). VOLATILE by design — cleared on every reboot, which is exactly what keeps the reconstruct-on-boot path exercised rather than rotting. See "Datastore on tmpfs" below for the two units it depends on, the fail-safe ordering, and the rollback. |
 | `datastore-tmpfs/install-datastore-tmpfs.sh` | Installs that mount unit and ENABLES it for next boot — NEVER `--now`, since mounting over a RUNNING k3s's datastore would hide it mid-flight. Pre-gates on BOTH reconstruct units (`inject-github-app-secret.service`, `converge-ci-stack.service`) being enabled and refuses otherwise: a volatile datastore is safe only on a host that rebuilds itself. Node-local; re-run on any node rebuild. |
@@ -305,7 +305,7 @@ fleet's actual call volume) needs a live-cluster observation —
 | `storage-layout/install-storage-layout.sh` | Ensures the FIVE `/etc/fstab` lines that define the node's storage layout — the three CI tiers found by filesystem LABEL (`ci-cache` at `/var/cache/ci-runner`, `ci-containerd` and `ci-workvols` mounted under it) and the two bind mounts putting containerd's store and the local-path PVC root on them — byte-exact and with no UUID argument, replacing a differing line for one of those mountpoints (fstab backed up first, `findmnt --verify` after); refuses unless each label resolves to exactly one device; installs the k3s drop-in below. Labels, not UUIDs, so the lines are identical on the array stand-in LVs and on the NVMe (livespec plan `ci-runner-pod-lifecycle-reliability`, `livespec-el5y`; see "Storage layout: media-neutral tier identity" below). Never formats, moves data, mounts, or restarts k3s. |
 | `storage-layout/10-requires-storage-mounts.conf` | `k3s.service.d/` drop-in: `RequiresMountsFor=` both bind targets, so k3s refuses to start — loudly, every `After=k3s` oneshot failing by dependency — rather than silently running the pool's churn on `/` when a tier is missing. Kept by hand on the host from 2026-09-04's NVMe attempt; from git since `livespec-el5y`. |
 | `datastore-tmpfs/20-requires-datastore-mount.conf` | `k3s.service.d/` drop-in installed by `install-datastore-tmpfs.sh` only: `RequiresMountsFor=` the tmpfs datastore mount, because since the 2026-09-04 array rebuild the directory underneath holds a stale backup restore, not a rollback copy. Changes the rollback steps — read its header. |
-| `node-extended-resource/reapply-node-extended-resource.service` (boot ordering) | Since 2026-09-02 also `WantedBy=multi-user.target` and `Before=converge-ci-stack.service`: on a tmpfs-datastore boot the node object is new, so the churn-slot resource every queue is denominated in is applied before the queues, not up to a minute later by the timer's first tick. |
+| `node-extended-resource/reapply-node-extended-resource.service` (boot ordering) | Since 2026-09-02 also `WantedBy=multi-user.target` and `Before=converge-ci-stack.service`: on a tmpfs-datastore boot the node object is new, so the churn-slot resource every queue is denominated in is applied before the queues, not up to a minute later by the timer's first tick. Since 2026-09-04 the converge states the same dependency from its side (`After=`/`Wants=`) and asserts the capacity itself at step 1b (`livespec-kgl3`). |
 | `install-node.sh` | The ONE ordered runbook for the node-local half: runs every installer in this tree in dependency order with the right arguments (`sudo install-node.sh 64`), so a from-scratch rebuild is one command. Enables the boot units, never starts them, never restarts k3s. Lists what it deliberately leaves attended (credstore seeding, the OTel collector from its own repo, the initial warm-cache populate). |
 
 ## Reconstruct-on-boot: the CI cluster stack as cattle
@@ -317,12 +317,19 @@ hand (`../provision-k3s.sh` → `../install-arc.sh` → `../install-kueue.sh`,
 plus the phase-2 per-repo scale sets and queues); nothing re-applied on
 boot, so the host was a PET: wipe the datastore and the cluster is gone.
 `reconstruct/` closes that gap with a boot-ordered `systemd` `oneshot`
-(`converge-ci-stack.service`, `After=k3s.service` and
-`After=inject-github-app-secret.service`) that runs one idempotent converge
-script.
+(`converge-ci-stack.service`, `After=k3s.service`,
+`After=`/`Wants=` `reapply-node-extended-resource.service` and
+`After=`/`Wants=` `inject-github-app-secret.service`) that runs one
+idempotent converge script.
 
 **What it converges, in order** (`converge-ci-stack.sh`): wait for the API
-(`/readyz`) and the node `Ready` → fail-closed pre-gate on the
+(`/readyz`) and the node `Ready` → **the churn-slot capacity assertion**
+(step 1b: every `k3s-role=arc-runner-host` node's allocatable
+`ci-runner.io/churn-slot` must equal the capacity the installed
+`reapply-node-extended-resource.service` carries in its `ExecStart`; a
+missing or wrong value re-runs `patch-node-churn-capacity.sh` and
+re-checks — see "After a dependency-failed boot" below) → fail-closed
+pre-gate on the
 `arc-github-app-installation` secret → the fleet-owned **local-path
 provisioner** (`local-path-provisioner/`; the bundled copy is disabled by
 `k3s-config/`) → **Kueue core** (the `kueue/core/` overlay: the `v0.19.1`
@@ -397,6 +404,67 @@ crash-loop shape. The next converge deleted the stale listener at
 at 01:03:11Z, and step 7b closed `10/10 consistent (1 self-healed)` three
 seconds later with the listener pod Running.
 
+**After a dependency-failed boot, a hand-started k3s revives nothing — and
+step 1b.** On the 2026-09-04 06:31Z boot, stale NVMe lines in `/etc/fstab`
+failed k3s's mount dependency, so EVERY `After=k3s.service` oneshot failed
+by dependency in the same instant: `reapply-node-extended-resource`,
+`inject-github-app-secret`, `converge-ci-stack`, `otel-collector-identity`,
+`sweep-runner-scratch`. An operator then started k3s by hand and started
+the converge by hand — but not the reapply unit. Its timer did not cover
+the gap either: `OnBootSec=1min` had already fired into the failed
+dependency, and `OnUnitActiveSec=5min` re-arms only from a SUCCESSFUL
+activation, so with the boot activation failed the timer had NO next
+elapse. The node carried no `ci-runner.io/churn-slot` allocatable at all
+while the nine `ClusterQueue`s advertised a quota sum of 32: Kueue admits
+against quota, the scheduler places against the node, so every admitted
+runner pod would have been unschedulable, silently — no capacity signal
+and no sweep class covered it — until a hand
+`systemctl start reapply-node-extended-resource.service` at 07:52Z. Item
+`livespec-kgl3`.
+
+The lesson, as procedure: after ANY boot where a dependency failed, walk
+`journalctl -b | grep 'Dependency failed for'` and `systemctl start` each
+oneshot it lists — or reboot cleanly once the cause is fixed. Starting k3s
+by hand revives none of them: a failed `oneshot` is not retried when its
+dependency later comes up, and a unit you did not start stays failed. Three
+mechanisms now make that walk a backstop rather than the only remedy:
+
+- **The converge asserts the capacity itself (step 1b).** Right after the
+  node reports `Ready`, before the provisioner, Kueue or any queue, it
+  learns the intended capacity from the INSTALLED reapply unit's
+  `ExecStart` argument (`systemctl show reapply-node-extended-resource.service
+  -p ExecStart` — the one already-decided number on the host, so the
+  converge decides no number of its own and no second copy exists to
+  drift; `CONVERGE_CHURN_CAPACITY` overrides it outside the installed
+  layout), compares every `k3s-role=arc-runner-host` node's allocatable to
+  it, and on a mismatch or absence re-runs
+  `patch-node-churn-capacity.sh <capacity>` (idempotent; the unit's own
+  `ExecStart` target) and re-checks. The evidence line is
+  `churn-slot capacity: N/N node(s) at C (M self-healed)`. A node still
+  wrong afterwards is a `WARN` and the converge CONTINUES — the step-7b
+  rule, binding harder here: failing at 1b would skip the whole cluster
+  stack, so when the timer or an operator did restore the capacity there
+  would be nothing for it to serve, whereas continuing leaves a fully
+  built stack that admits and schedules the instant the capacity lands.
+- **The converge unit `Wants=` the reapply unit.** The reapply already
+  ordered itself `Before=` the converge; the converge now states
+  `After=`/`Wants=` from its side (exactly as for the secret unit), so a
+  HAND-STARTED converge pulls the reapply in as well. `Wants`, not
+  `Requires`: if the reapply fails, the converge still runs and step 1b
+  heals the capacity itself.
+- **The reapply timer fires on the wall clock.** `OnCalendar=*:0/5` sits
+  beside `OnBootSec`/`OnUnitActiveSec`, so the service is triggered every
+  five minutes regardless of whether any previous activation succeeded; it
+  also makes `Persistent=true` effective (that setting applies to
+  `OnCalendar` timers only). A run may land twice in one five-minute span
+  when the two periodic triggers drift apart — one idempotent
+  `kubectl patch`, accepted.
+
+And the condition is now a reading: `runner-pod-lifecycle/` reports
+`capacity-absent` every five minutes when any selected node lacks the
+resource or the nodes' allocatable total is below the queues' quota sum
+(see "Runner-pod lifecycle stall" below).
+
 **Starting from an EMPTY datastore** (the GitHub App secret re-injected by
 `../secret-reinjection/`), one boot converges the cluster to every scale-set
 listener `Running` AND referencing its scale set's current
@@ -409,7 +477,9 @@ admitting pods, with zero manual `kubectl`/`helm` steps — proven by the
 lives in the datastore) plus the one host file derived from it (the probe
 kubeconfig). It does NOT own the NODE-LOCAL machinery — the AppArmor profile
 (`apparmor/`), the inotify sysctl budget (`node-inotify-budget/`), the
-churn-slot extended resource (`node-extended-resource/`), the k3s server
+churn-slot extended resource (`node-extended-resource/` — step 1b ASSERTS it
+is present at the reapply unit's capacity and re-runs the patch when not,
+but the number stays that unit's), the k3s server
 config (`k3s-config/`), the orphaned-scratch sweep (`storage-sweep/`), and
 the host OTel collector's own cluster identity (the `otel-collector`
 repository's `otel-collector-identity.service`, the same boot-time
@@ -1454,7 +1524,7 @@ five minutes: `runner-pod-lifecycle/scan-runner-pod-lifecycle.sh` (installed
 by `install-runner-pod-lifecycle-scan.sh`, driven by the `.timer`) is the
 second gate beside the wedge sweep — the wedge scan answers "is a runner
 dead to GitHub?", this one answers "is the host failing to bring pods up?".
-It reports six classes, each read from the node-side observable that
+It reports seven classes, each read from the node-side observable that
 persists long enough for a sweep to see it (the ARC hook string itself is
 written by a runner that exits moments later, so it is a bonus, not the
 signal):
@@ -1467,20 +1537,24 @@ signal):
 | `containerd-deadline` | pod container states now; `arc-runners` events, last 5 min | a container in `StartError`; a `Failed`/`FailedCreatePodSandBox` event carrying `context deadline exceeded` or `failed to create shim task`; or ≥ 20 `FailedKillPod` (teardown starvation, the 2026-09-02 17:55Z shape — calibrated live: 7–14 per window while the backlog tail drained with nothing failing, 25–27 beside a PVC Pending 209 s, ~80 at the StartError) |
 | `hook-failure` | runner-pod logs, last 5 min; Pending `-workflow` pods | the hook's `Executing the custom container implementation failed`; or a workflow pod Pending longer than 480 s (the hook gives up at ~13 min) |
 | `stale-listener` | `arc-systems` listener pods; `AutoscalingListener.spec.ephemeralRunnerSetName` vs existing `EphemeralRunnerSet`s | a listener not Running or waiting in a crash loop; or a reference to a set that does not exist (the ARC 0.14.2 boot race that queued `livespec-overseer` for 31 min on 2026-09-02; converge-side fix `livespec-bde2`) |
+| `capacity-absent` | `k3s-role=arc-runner-host` nodes' `status.allocatable`; every `ClusterQueue`'s `nominalQuota` for `ci-runner.io/churn-slot` | a selected node without the resource; or the nodes' allocatable total below the queues' quota sum (2026-09-04: a dependency-failed boot left the reapply unit unrun and the node at none against a quota sum of 32 from 06:31Z to 07:52Z; converge assertion + timer fallback `livespec-kgl3`) |
 
 Exit 1 names every present class with its count and prints the per-class
 detail (which PVC, which pod, which event) followed by where each class is
 worked; exit 0 is a clean node; exit 2 means the scan could not read one of
 its inputs (journal, `containerd.log`, the API server) and refused to report
 a clean node it had not looked at. Report-only, with no `--clear`: nothing
-here is safe to delete automatically, and the one safe remedy
+here is safe to delete automatically, and the two safe remedies
 (`stale-listener` → delete the `AutoscalingListener`; the controller
-recreates it) is a scale-set-level action the report names for an operator.
+recreates it; `capacity-absent` → `systemctl start
+reapply-node-extended-resource.service`, which the converge and the reapply
+timer also drive) are actions the report names for an operator.
 Consecutive sweeps with findings are counted (`/var/lib/ci-runner-k3s/
 runner-pod-lifecycle-streak`) and an `ESCALATION` line appears from the
 second, as in the wedge sweep. Thresholds are flags/env
 (`--window`, `--pvc-pending-seconds`, `--workflow-pending-seconds`,
-`--killpod-min`, `--containerd-log` for a fixture, `--state-file`).
+`--killpod-min`, `--containerd-log` for a fixture, `--state-file`,
+`--node-selector`).
 
 **Proven live on `poweredge-xubuntu`, 2026-09-02, during a real stall.**
 Run by hand at ~18:2xZ while the earlier release waves' teardown backlog was
@@ -1527,7 +1601,7 @@ are told apart by metric name and resource attributes, never by dataset:
 
 | Gauge | Value | Read from |
 |---|---|---|
-| `livespec.ci_lifecycle.<class>` — one gauge per class, class name verbatim: `pvc-pending`, `bind-deadline`, `inotify-emfile`, `containerd-deadline`, `hook-failure`, `stale-listener` | the count the report carries for that class. **Always emitted, 0 when clean** — an absent metric is indistinguishable from a broken emitter | the sweep's own findings |
+| `livespec.ci_lifecycle.<class>` — one gauge per class, class name verbatim: `pvc-pending`, `bind-deadline`, `inotify-emfile`, `containerd-deadline`, `hook-failure`, `stale-listener`, `capacity-absent` | the count the report carries for that class. **Always emitted, 0 when clean** — an absent metric is indistinguishable from a broken emitter | the sweep's own findings |
 | `livespec.ci_kueue.pending` | Kueue workloads waiting for admission | `ClusterQueue.status.pendingWorkloads`, summed over every ClusterQueue that covers `ci-runner.io/churn-slot` — the pool's nine queues; `phase1-proof-cq` covers `cpu`/`memory` only and is excluded |
 | `livespec.ci_kueue.admitted` | Kueue workloads admitted and not yet finished | `ClusterQueue.status.admittedWorkloads`, the same sum |
 | `livespec.ci_churn_slot.quota_sum` | `C` as the queues have it — the cohort's guaranteed churn-slot total | the sum of `nominalQuota` for `ci-runner.io/churn-slot` over the same queues; 32 at the 2026-09-02 interim |

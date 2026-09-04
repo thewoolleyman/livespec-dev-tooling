@@ -14,6 +14,9 @@
 #   warm-cache/     converge-warm-cache.sh + the CronJob + the populate script
 #   observability/  the Kueue-webhook probe's RBAC (from ci-runner/observability)
 #   render-sa-kubeconfig.sh   the probe-credential renderer
+#   (NOT patch-node-churn-capacity.sh: converge step 1b runs it from this same
+#   dir, but ../node-extended-resource/install-reapply-unit.sh copies it —
+#   one owner per file; step 10 below warns when it is absent.)
 # The live host carries NO repo checkout, so a boot unit cannot read those
 # from a working tree. Copying the set into /usr/local/lib/ci-runner-k3s/ (the
 # same dir that already holds patch-node-churn-capacity.sh, archive-arc-logs.sh,
@@ -109,9 +112,19 @@ systemctl daemon-reload
 systemctl enable "${SERVICE}"
 
 # ---------------------------------------------------------------------------
-log "10. Verify the unit is enabled"
+log "10. Verify the unit is enabled, and that the reapply unit it Wants= is installed"
 state="$(systemctl is-enabled "${SERVICE}" 2>/dev/null || true)"
 [ "$state" = "enabled" ] || { echo "FATAL: ${SERVICE} is '${state}', expected 'enabled'"; exit 1; }
+# converge step 1b asserts the churn-slot capacity against the INSTALLED
+# reapply unit's ExecStart argument and self-heals with the patch script that
+# unit's installer copies beside this converge; NEITHER is copied here —
+# ../node-extended-resource/install-reapply-unit.sh owns both, and
+# install-node.sh runs it first. Warn rather than fail: a converge without
+# them still builds the cluster stack and says so at its step 1b.
+reapply_state="$(systemctl is-enabled reapply-node-extended-resource.service 2>/dev/null || true)"
+if [ "$reapply_state" != "enabled" ] || [ ! -x "${LIB_DIR}/patch-node-churn-capacity.sh" ]; then
+  echo "WARN: reapply-node-extended-resource.service is '${reapply_state:-absent}' or ${LIB_DIR}/patch-node-churn-capacity.sh is missing -- converge step 1b cannot assert the churn-slot capacity; run ../node-extended-resource/install-reapply-unit.sh CAPACITY"
+fi
 
 log "DONE. ${SERVICE} enabled; it converges the CI cluster stack on next boot."
 log "To converge NOW (applies live): systemctl start ${SERVICE}"

@@ -6,12 +6,41 @@
 # (see reapply-node-extended-resource.service's header for why that can
 # happen). Frequent enough that a missed patch is caught well within a
 # single CI job's runtime; not so frequent that it noticeably adds load.
+#
+# THREE TRIGGERS, and why the third exists (2026-09-04, item livespec-kgl3):
+#   OnBootSec=1min        the first tick after boot — a backstop behind the
+#                         service's own boot activation (WantedBy=multi-user,
+#                         Before= the converge).
+#   OnUnitActiveSec=5min  five minutes after the service's last SUCCESSFUL
+#                         activation, and ONLY from a successful one. On the
+#                         2026-09-04 06:31Z boot stale NVMe lines in
+#                         /etc/fstab failed k3s's mount dependency, every
+#                         After=k3s oneshot (this service included) failed by
+#                         dependency, and an operator hand-started k3s and
+#                         the converge but not this service. With no
+#                         successful activation to count from, this trigger
+#                         had NO next elapse: the timer sat armed and silent
+#                         while the node carried no ci-runner.io/churn-slot
+#                         capacity and the queues advertised 32, until a hand
+#                         `systemctl start` at 07:52Z.
+#   OnCalendar=*:0/5      every five minutes of WALL CLOCK, independent of
+#                         the service's activation history — the fallback
+#                         that closes that gap. It also makes Persistent=true
+#                         effective: that setting stores the last trigger time
+#                         and catches up a missed run at activation, and it
+#                         applies to OnCalendar= timers only, so it was inert
+#                         here until now.
+# A run may land twice inside one five-minute span when the two periodic
+# triggers drift apart; the patch is a single idempotent kubectl call, so that
+# is accepted rather than engineered away. converge-ci-stack.sh step 1b asserts
+# the same capacity on every converge — the belt to this timer's suspenders.
 [Unit]
 Description=Periodic ci-runner.io/churn-slot node extended-resource reapply (every 5 min)
 
 [Timer]
 OnBootSec=1min
 OnUnitActiveSec=5min
+OnCalendar=*:0/5
 Persistent=true
 
 [Install]
