@@ -50,5 +50,7 @@ jobs:
       - name: Export this run's job conclusions to Honeycomb (closed-loop verified)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
           HONEYCOMB_GITHUB_CI_INGEST_KEY_LIVESPEC: ${{ secrets.HONEYCOMB_GITHUB_CI_INGEST_KEY_LIVESPEC }}
         run: bash .github/scripts/export-ci-telemetry.sh
