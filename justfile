@@ -171,6 +171,7 @@ check:
         check-check-coverage-incremental
         check-check-mutation
         check-check-tools
+        check-ci-gate-parity
         check-ci-matrix-completeness
         check-claude-md-coverage
         check-comment-line-anchors
@@ -527,6 +528,16 @@ check-check-mutation:
 
 check-check-tools:
     uv run python -m livespec_dev_tooling.checks.check_tools
+
+# PR-gate ≡ master-gate parity guard (plan pr-gate-master-parity, R2).
+# The companion to check-ci-matrix-completeness: from this repo's OWN
+# ci.yml, asserts no GATING job (one in ci-green.needs) conditions its
+# real steps on a changeset `.py`-detection output (`py_changed`), which
+# would run it on a push to master but skip it on a doc-only pull request.
+# Warn-default (severity lever `LIVESPEC_FAIL_IF_CI_GATE_PARITY_GAPS_EXIST`),
+# so the slug propagates and warns each not-yet-fixed repo without reddening it.
+check-ci-gate-parity:
+    uv run python -m livespec_dev_tooling.checks.ci_gate_parity
 
 # CI-aggregate drift-guard (epic fleet-ci-aggregate-coverage, slice 1).
 # Asserts, from this repo's OWN committed files, that CI runs (a) and

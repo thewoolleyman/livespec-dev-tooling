@@ -682,6 +682,7 @@ jobs:
           just check-agents-ai-references-resolve || failed="$failed check-agents-ai-references-resolve"
           just check-canonical-recipe-fidelity || failed="$failed check-canonical-recipe-fidelity"
           just check-check-tools || failed="$failed check-check-tools"
+          just check-ci-gate-parity || failed="$failed check-ci-gate-parity"
           just check-ci-matrix-completeness || failed="$failed check-ci-matrix-completeness"
           just check-claude-md-coverage || failed="$failed check-claude-md-coverage"
           just check-comment-line-anchors || failed="$failed check-comment-line-anchors"

@@ -23,6 +23,7 @@ EXPECTED_CANONICAL_SLUGS: tuple[str, ...] = (
     "check-check-coverage-incremental",
     "check-check-mutation",
     "check-check-tools",
+    "check-ci-gate-parity",
     "check-ci-matrix-completeness",
     "check-claude-md-coverage",
     "check-comment-line-anchors",
