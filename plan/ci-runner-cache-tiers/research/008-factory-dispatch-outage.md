@@ -119,12 +119,9 @@ structurally unable to catch.
 
 ## Adjacent findings, recorded so they are not rediscovered
 
-- This repository's `.livespec.jsonc` declares no `dispatcher` key at all, so
-  the dispatch warned that three conformance premises — `hook_install`,
-  `verify_commit_refuse_hook`, `verify_plugin_resolution` — are undeclared and
-  will be SKIPPED in the sandbox. Declaring each explicitly as `no_op` puts
-  the choice on the record and silences the warning. It does not fix the
-  outage: the tokens are unexpanded whether their values are empty or not.
+- **The same commit silently gutted the dispatch-time conformance gate for
+  every repository that had not adopted it. This is the more dangerous half,
+  and it is treated properly in its own section below.**
 - The dispatch pulled `livespec-fabro-sandbox:python-agent-v1.40.0`, the
   Python-only layer, because this repo commits no
   `.fabro/workflows/implement-work-item/workflow.toml` of its own to pin the
@@ -132,6 +129,80 @@ structurally unable to catch.
   not bite here, but a Rust-touching item dispatched from this repo would.
 - The dispatch was attributed `unattributed:unknown-user@vmi3006760` with
   `invoker_source: fallback`, as the 2026-08-30 runs also were.
+
+## The second defect on the same commit, which fails silently
+
+The exit-127 crash is loud and stops everything, so it will be fixed. The
+defect underneath it is quiet, and would have survived that fix.
+
+Before `39526e5c`, the implement-work-item prepare chain ran these commands
+hardcoded, for every dispatched sandbox in the fleet:
+
+```text
+livespec-step-timer fetch-unshallow          -- git fetch --unshallow --quiet
+livespec-step-timer mise-install             -- sh -c 'mise trust && env -u GITHUB_TOKEN -u GH_TOKEN -u GITHUB_API_TOKEN mise install --quiet'
+livespec-step-timer uv-sync                  -- uv sync --all-groups
+livespec-step-timer lefthook-install         -- uv run lefthook install
+livespec-step-timer commit-refuse-install    -- uv run python -m livespec_dev_tooling.install_commit_refuse_hooks
+livespec-step-timer sandbox-exempt           -- git config livespec.sandboxExempt true
+livespec-step-timer verify-commit-refuse-hook -- uv run python -m livespec_dev_tooling.checks.primary_checkout_commit_refuse_hook_installed
+livespec-step-timer verify-plugin-resolution -- uv run python -m livespec_dev_tooling.checks.plugin_resolution
+```
+
+Five of those became projections of the governed repository's own declaration,
+whose fleet default is the ratified explicit NO-OP. Count the adopters across
+the fleet's fourteen `.livespec.jsonc` files, reading inside the
+`livespec-orchestrator-beads-fabro` plugin block where the keys actually live:
+**one**, and it is `livespec-orchestrator-beads-fabro` itself, the repo that
+authored the schema. The other thirteen, this one included, declared nothing.
+
+So once the exit-127 crash is fixed, a dispatched sandbox for any of those
+thirteen would install no pinned toolchain, no hook manager, and — the one
+that matters — would neither install nor verify the structural commit-refuse
+hook that fires the Red-Green-Replay gates on every in-sandbox commit. The
+`sandbox_check_suite` still resolves to `mise exec -- just check` from its own
+fleet default, so the run would try to use a version manager it never told to
+install anything.
+
+Nothing fails when that happens. The run proceeds and reads green. That is
+what makes it worse than the crash.
+
+The warning does not cover it either. The dispatch warns about exactly three
+undeclared premises, the `conformance.*` trio; the two `prepare_toolchain.*`
+ones go to no-op in silence.
+
+### What this repository did about it
+
+Declared all five in `.livespec.jsonc`, copied verbatim from
+`livespec-orchestrator-beads-fabro`'s own block, which restores exactly what
+this repository's sandboxes ran before `39526e5c`. Verified by resolving the
+contract through the plugin's own resolver against this file before and after:
+
+| Input | Before | After |
+|---|---|---|
+| `prepare_toolchain_mise` | `''` | `sh -c 'mise trust && … mise install --quiet'` |
+| `prepare_toolchain_lefthook` | `''` | `uv run lefthook install` |
+| `conformance_hook_install` | `''` | `uv run python -m livespec_dev_tooling.install_commit_refuse_hooks` |
+| `conformance_verify_commit_refuse_hook` | `''` | `uv run python -m …checks.primary_checkout_commit_refuse_hook_installed` |
+| `conformance_verify_plugin_resolution` | `''` | `uv run python -m …checks.plugin_resolution` |
+
+`internal_livespec_dev_tooling` is documented as introducing a dependency on
+the livespec-dev-tooling package. That is free here, because this repository
+IS that package, and the `uv sync --all-groups` step immediately before has
+already put it in the sandbox venv.
+
+The declaration is INERT until the exit-127 defect is fixed, which is the
+right order: it is a value the resolver demonstrably reads today, written into
+a component already running the code that preserves it, and it takes effect
+the moment dispatches work again.
+
+One thing this did NOT fix, recorded so it is not mistaken for collateral: the
+contract resolves `default_branch` to `<unresolved>` with one defect, before
+and after this change alike. The real dispatch supplied `default_branch=master`
+regardless, so it is resolved from elsewhere on that path. Untouched here.
+
+The remaining twelve repositories are a fleet-wide adoption question, not this
+plan's, and are filed separately.
 
 ## What this changed on the ledger
 
