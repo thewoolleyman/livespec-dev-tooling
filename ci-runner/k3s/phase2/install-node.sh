@@ -25,6 +25,10 @@
 #                            live host; on a fresh one, format the three
 #                            volumes with their role labels and mount the
 #                            cache volume BEFORE k3s, see its header).
+#                            Then host-thermal — racadm plus the iDRAC cooling
+#                            settings (fan loop automatic, third-party PCIe
+#                            response off, "Minimum Power" profile); iDRAC
+#                            state, no cluster needed, not on the k3s chain.
 #   3. apparmor            — kernel profile + the hook ConfigMap (needs API).
 #   4. node-extended-resource CAPACITY — the churn-slot resource + its timer.
 #   5. wedged-runner MODE  — the 5-minute wedge sweep.
@@ -78,6 +82,9 @@ log "2/10 inotify instance budget + keyring quota"
 
 log "2b/10 storage layout (LABEL fstab lines + k3s drop-in; no-op when the tiers are live)"
 "${SCRIPT_DIR}/storage-layout/install-storage-layout.sh"
+
+log "2c/10 iDRAC cooling configuration (racadm + fan loop automatic, third-party response off, Minimum Power profile)"
+"${SCRIPT_DIR}/host-thermal/install-host-thermal.sh"
 
 log "3/10 AppArmor profile + hook ConfigMap"
 "${SCRIPT_DIR}/apparmor/install-apparmor-profile.sh"

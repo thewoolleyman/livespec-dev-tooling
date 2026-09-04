@@ -1,0 +1,24 @@
+# apply-idrac-thermal.service — converge the node's iDRAC cooling configuration
+# at every boot (apply-idrac-thermal.sh: automatic fan control, third-party
+# PCIe cooling response disabled, thermal profile "Minimum Power").
+#
+# WHY AT BOOT: the three settings live in the iDRAC and survive host reboots
+# and OS rebuilds on their own; they are lost only on an iDRAC reset-to-defaults
+# or firmware wipe, and a NEW node has never had them. The script reads first
+# and writes only on drift, so on a converged host this unit is a few IPMI
+# reads and exits. It needs only /dev/ipmi0 (the ipmi kernel modules) and
+# racadm; it does NOT depend on k3s or the network, so it is not part of the
+# converge chain and cannot be failed by a k3s dependency (2026-09-04: every
+# After=k3s oneshot was skipped when a stale fstab line failed k3s's mount
+# dependency — a thermal setting must not ride on that chain).
+[Unit]
+Description=Converge the iDRAC cooling configuration (fan loop automatic, third-party response off, Minimum Power profile)
+After=systemd-modules-load.service
+ConditionPathExists=/usr/local/lib/ci-runner-k3s/apply-idrac-thermal.sh
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/ci-runner-k3s/apply-idrac-thermal.sh
+
+[Install]
+WantedBy=multi-user.target
