@@ -168,8 +168,11 @@
 #    SPECIFICATION v054; child livespec-dev-tooling-mlg5sf; research/003).
 #    The pool PROVIDES the emitter — /opt/ci-runner/bin/ci-cache-span, from
 #    ../cache-telemetry/, on the same read-only mount as sccache — and this
-#    template calls it from the two lifecycle points it owns: postStart emits
-#    one `cache.warm-copy` span per tier (uv: hit = the seed is present;
+#    template calls it from the two lifecycle points it owns: postStart
+#    RECORDS one `cache.warm-copy` per tier and preStop emits them (the
+#    runner writes event.json ~10 s after the pod starts, so the identity
+#    exists only at the end; the recorded timestamps are kept) — uv: hit =
+#    the seed is present;
 #    registry: hit = the proxy answered and the stanza was written; copy_ms =
 #    this hook's own elapsed time, because no tier copies bytes any more —
 #    copy_method says how the tier is realized, `hardlink-seed` / `served`),
@@ -266,7 +269,10 @@ spec:
                 t0=$(date +%s%N 2>/dev/null || echo 0)
                 state=/__w/_temp/_ci_cache
                 mkdir -p "$state" 2>/dev/null && printf '%s' "$t0" > "$state/started_at_ns" 2>/dev/null
-                emit() { [ -x /opt/ci-runner/bin/ci-cache-span ] && /opt/ci-runner/bin/ci-cache-span "$@" >/dev/null 2>&1; :; }
+                # `rec` RECORDS a tier's warm-copy facts; the emitter replays them
+                # from preStop with the job identity, which event.json carries
+                # only ~10 s after this hook runs (measured 2026-09-04).
+                rec() { printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(date +%s%N 2>/dev/null || echo 0)" "$@" >> "$state/warm-copy.tsv" 2>/dev/null; :; }
                 ms() { n=$(date +%s%N 2>/dev/null || echo 0); echo $(( (n - t0) / 1000000 )); }
                 uv_gen=$(cat /__w/_warm/.uv-generation 2>/dev/null || true)
                 switch="${CI_CACHE_KILL_SWITCH:-}"
@@ -285,8 +291,8 @@ spec:
                   # compilation tiers off by writing nothing. Each tier still
                   # reports, so a cold job is a measured cold job.
                   rm -rf /__w/_warm/uv 2>/dev/null
-                  emit warm-copy uv false "$uv_gen" "$(ms)" 0 hardlink-seed "off:$switch"
-                  emit warm-copy registry false "" "$(ms)" 0 served "off:$switch"
+                  rec uv false "$uv_gen" "$(ms)" 0 hardlink-seed "off:$switch"
+                  rec registry false "" "$(ms)" 0 served "off:$switch"
                   exit 0
                 fi
                 registry_hit=false
@@ -329,17 +335,20 @@ spec:
                   rm -f "$tmp"
                 fi
                 uv_hit=false; [ -d /__w/_warm/uv ] && uv_hit=true
-                emit warm-copy uv "$uv_hit" "$uv_gen" "$(ms)" 0 hardlink-seed ""
-                emit warm-copy registry "$registry_hit" "" "$(ms)" 0 served ""
+                rec uv "$uv_hit" "$uv_gen" "$(ms)" 0 hardlink-seed ""
+                rec registry "$registry_hit" "" "$(ms)" 0 served ""
                 exit 0
-        # Header item 6: the per-job summary (sccache hits/misses/errors from
-        # the job's own server, if one ran) when the hook deletes this pod
-        # after the job. Bounded by the emitter's own timeout; always exits 0.
+        # Header item 6: at pod deletion after the job — the per-tier
+        # warm-copy spans postStart recorded (replayed with their own
+        # timestamps and, now, the job identity from event.json) plus the
+        # per-job summary (sccache hits/misses/errors from the job's own
+        # server, if one ran), in one POST. Bounded by the emitter's own
+        # timeout; always exits 0.
         preStop:
           exec:
             command:
               - sh
               - -c
               - |
-                [ -x /opt/ci-runner/bin/ci-cache-span ] && /opt/ci-runner/bin/ci-cache-span job-summary >/dev/null 2>&1
+                [ -x /opt/ci-runner/bin/ci-cache-span ] && /opt/ci-runner/bin/ci-cache-span job-end >/dev/null 2>&1
                 exit 0

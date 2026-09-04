@@ -17,6 +17,16 @@
 #       one span per job from preStop: `cache.job-summary` with
 #       build.cache.sccache.{enabled,hits,misses,errors,hit_ratio,backend,
 #       rw_mode}, read from the job's own sccache server if one is listening.
+#   ci-cache-span job-end
+#       what preStop actually calls: REPLAYS every warm-copy line postStart
+#       recorded in $CI_CACHE_STATE_DIR/warm-copy.tsv (at_ns<TAB>tier<TAB>hit
+#       <TAB>generation<TAB>copy_ms<TAB>copy_bytes<TAB>copy_method<TAB>error)
+#       with its recorded timestamps, plus the job-summary, in ONE POST.
+#       Measured 2026-09-04: the runner writes event.json ~10 s after the pod
+#       is created, while postStart runs at ~2 s — so a span emitted at start
+#       has no repo/sha/branch, and waiting for the file would delay the job.
+#       Recording at start and emitting at end keeps the per-tier timing AND
+#       the identity, and costs the job nothing.
 #
 # Every span carries repo, git.commit.sha, git.branch and ci.event (from the
 # runner's event.json), build.env=ci, host.name (CI_RUNNER_NODE_NAME, a
@@ -159,6 +169,37 @@ def sccache_summary():
             attr("build.cache.sccache.backend", backend), attr("build.cache.sccache.rw_mode", rw_mode)]
 
 
+def span(name, attrs, start_ns, end_ns):
+    return {"traceId": os.urandom(16).hex(), "spanId": os.urandom(8).hex(), "name": name, "kind": 1,
+            "startTimeUnixNano": str(min(start_ns, end_ns)), "endTimeUnixNano": str(end_ns), "attributes": attrs}
+
+
+def warm_copy_span(common, at_ns, tier, hit, generation, copy_ms, copy_bytes, copy_method, error):
+    ms = int(copy_ms) if copy_ms.isdigit() else 0
+    attrs = common + [attr("build.cache.tier", tier), attr("build.cache.hit", hit == "true"),
+                      attr("build.cache.generation", generation),
+                      attr("build.cache.generation_age_s", generation_age_s(generation)),
+                      attr("build.cache.copy_ms", ms),
+                      attr("build.cache.copy_bytes", int(copy_bytes) if copy_bytes.isdigit() else 0),
+                      attr("build.cache.copy_method", copy_method), attr("build.cache.error", error)]
+    # The tier's cost at start: from the hook's own start to the moment it was recorded.
+    return span("cache.warm-copy", attrs, at_ns - ms * 1_000_000, at_ns)
+
+
+def recorded_warm_copies(common):
+    spans = []
+    try:
+        with open(os.path.join(STATE, "warm-copy.tsv"), encoding="utf-8") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return spans
+    for line in lines:
+        cols = (line.split("\t") + [""] * 8)[:8]
+        at = int(cols[0]) if cols[0].isdigit() else NOW_NS
+        spans.append(warm_copy_span(common, at, *cols[1:8]))
+    return spans
+
+
 repo, sha, branch, event = event_facts()
 common = [attr("repo", repo), attr("git.commit.sha", sha), attr("git.branch", branch), attr("ci.event", event),
           attr("build.env", "ci"), attr("build.cache.kill_switch", read_state("kill_switch")),
@@ -167,30 +208,18 @@ started = read_state("started_at_ns")
 start_ns = int(started) if started.isdigit() and int(started) > 0 else NOW_NS
 
 if KIND == "warm-copy":
-    tier, hit, generation, copy_ms, copy_bytes, copy_method, error = (ARGS + [""] * 7)[:7]
-    name = "cache.warm-copy"
-    attrs = common + [attr("build.cache.tier", tier), attr("build.cache.hit", hit == "true"),
-                      attr("build.cache.generation", generation),
-                      attr("build.cache.generation_age_s", generation_age_s(generation)),
-                      attr("build.cache.copy_ms", int(copy_ms) if copy_ms.isdigit() else 0),
-                      attr("build.cache.copy_bytes", int(copy_bytes) if copy_bytes.isdigit() else 0),
-                      attr("build.cache.copy_method", copy_method), attr("build.cache.error", error)]
-    # The tier's cost at start: from the hook's own start to this emission.
-    span_start = NOW_NS - (int(copy_ms) if copy_ms.isdigit() else 0) * 1_000_000
+    spans = [warm_copy_span(common, NOW_NS, *(ARGS + [""] * 7)[:7])]
 elif KIND == "job-summary":
-    name = "cache.job-summary"
-    attrs = common + sccache_summary()
-    span_start = start_ns
+    spans = [span("cache.job-summary", common + sccache_summary(), start_ns, NOW_NS)]
+elif KIND == "job-end":
+    spans = recorded_warm_copies(common) + [span("cache.job-summary", common + sccache_summary(), start_ns, NOW_NS)]
 else:
     sys.exit(0)
 
 payload = {"resourceSpans": [{
     "resource": {"attributes": [attr("service.name", "github-ci"),
                                 attr("host.name", os.environ.get("CI_RUNNER_NODE_NAME") or "")]},
-    "scopeSpans": [{"scope": {"name": "ci-cache-span"}, "spans": [{
-        "traceId": os.urandom(16).hex(), "spanId": os.urandom(8).hex(), "name": name, "kind": 1,
-        "startTimeUnixNano": str(min(span_start, NOW_NS)), "endTimeUnixNano": str(NOW_NS),
-        "attributes": attrs}]}]}]}
+    "scopeSpans": [{"scope": {"name": "ci-cache-span"}, "spans": spans}]}]}
 req = urllib.request.Request(ENDPOINT + "/v1/traces", data=json.dumps(payload).encode(),
                              headers={"content-type": "application/json"}, method="POST")
 try:
