@@ -860,9 +860,10 @@ check-pre-commit:
 check-pre-commit-doc-only:
     scripts/just/check-pre-commit-doc-only.sh
 
-# Skip the Python-code check subset when the pushed commits contain
-# zero `.py` changes. Falls back to `origin/master` when no upstream
-# branch is configured locally.
+# Pre-push runs the FULL `just check` aggregate — the same gating set CI
+# runs on a pull_request and on a push to master (PR gate ≡ master gate;
+# plan pr-gate-master-parity, livespec-citqsd). The former zero-`.py`
+# doc-only branch was retired; the sound green-token clean-tree skip is kept.
 check-pre-push:
     scripts/just/check-pre-push.sh
 

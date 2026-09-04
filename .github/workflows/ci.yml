@@ -1,12 +1,17 @@
 # Per-target matrix CI for livespec-dev-tooling.
 #
-# Authority: livespec/SPECIFICATION/contracts.md
-#   §"Pre-commit step ordering" (c)-(d) — zero-py subsetting:
-#   master pushes always run the full aggregate; pull_request events
-#   skip Python-code checks when the changeset contains zero .py
-#   files. (The merge_group arm of this rule is inert here — no merge
-#   queue is configured for this repo, so the trigger was dropped; see
-#   the `on:` block below.)
+# Authority: livespec/SPECIFICATION/non-functional-requirements.md
+#   §"CI as a merge gate (branch protection)" — PR gate ≡ master gate:
+#   every gating job runs on a pull_request EXACTLY as on a push to
+#   master; there is NO zero-.py subsetting. The retired mechanism (a
+#   `detect-py-changes` setup job whose `py_changed` output gated the
+#   python jobs' real steps) let a doc-only PR run FEWER checks than
+#   master — the seam that reddened master on 2026-09-04 (plan
+#   pr-gate-master-parity, epic livespec-citqsd). The shared
+#   check-ci-gate-parity guard (armed below) now fails CI if any gating
+#   job re-introduces such a `.py`-conditioned skip. (The merge_group
+#   arm is inert here — no merge queue is configured for this repo, so
+#   the trigger was dropped; see the `on:` block below.)
 #
 # Authority: livespec/SPECIFICATION/non-functional-requirements.md
 #   §"Toolchain pins" — direct tool invocations (ruff, pyright,
@@ -94,62 +99,8 @@ on:
     branches: [master]
 
 jobs:
-  setup:
-    name: detect-py-changes
-    runs-on: ubuntu-latest
-    outputs:
-      py_changed: ${{ steps.detect.outputs.py_changed }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-        with:
-          # Need the base ref reachable for the PR diff below.
-          fetch-depth: 0
-
-      - name: Detect Python file changes
-        id: detect
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          BASE_REF: ${{ github.base_ref }}
-        run: |
-          set -uo pipefail
-          if [[ "$EVENT_NAME" == "pull_request" ]]; then
-            # Full-depth fetch (checkout already set fetch-depth: 0) — a
-            # shallow `--depth=1` fetch doesn't bring in commits prior to
-            # the base ref tip, so `git diff origin/${BASE_REF}...HEAD`
-            # would intermittently fail with "no merge base" when the
-            # local clone's history didn't reach the divergence point.
-            # Keep `|| true` as a fallback: when fetch fails (auth,
-            # network) we still try the diff against whatever
-            # origin/${BASE_REF} ref the checkout already populated.
-            git fetch origin "$BASE_REF" || true
-            changeset=$(git diff --name-only "origin/${BASE_REF}...HEAD")
-            if echo "$changeset" | grep -qE '\.py$'; then
-              echo "py_changed=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "py_changed=false" >> "$GITHUB_OUTPUT"
-            fi
-          else
-            echo "py_changed=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      # `setup` is the change-detection GATE only — it deliberately does
-      # NO uv pre-warm. The check-python matrix jobs `needs: setup`, so
-      # any work here sits on the critical path before the matrix can
-      # start. Each check-python job already restores ~/.cache/uv itself
-      # (keyed on uv.lock, with the `uv-${{ runner.os }}-` prefix
-      # restore-key) and runs its own `uv sync`; check-metadata /
-      # check-fleet-conformance don't `needs: setup` and likewise carry
-      # their own restore. So on the common unchanged-lock run the cache
-      # already exists and every job restores it in parallel with no PyPI
-      # fetch. A serial pre-warm here would only help the first run after
-      # a lock change — already bounded to the delta wheels by the prefix
-      # restore-key — so it is not worth taxing every run's wall-clock.
-      # See livespec-dev-tooling-7us.10 (archive/research/justcheck-performance).
-
   check-python:
     name: ${{ matrix.target }}
-    needs: setup
     # The variable holds exactly one complete hosted or self-hosted label
     # set. GitHub does not fall back when a self-hosted label set has no match.
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
@@ -200,21 +151,13 @@ jobs:
           - check-lint
           - check-format
     steps:
-      # Per-step `if:` (not job-level) so each matrix entry still
-      # reports a status check named `${{ matrix.target }}`.
-      - name: Skip when no .py changes
-        if: needs.setup.outputs.py_changed != 'true'
-        run: echo "::notice::skipped ${{ matrix.target }} — no .py changes in this PR"
-
       - name: Checkout
-        if: needs.setup.outputs.py_changed == 'true'
         uses: actions/checkout@v5
 
       # Hosted routing keeps the baked container but checks out as runner uid
       # 1001 while steps run git as ROOT → "dubious ownership" (exit 128). Trust
       # the workspace globally (HOME survives config.py's GIT_* scrub). No-op self-hosted.
       - name: Trust workspace for git (hosted container root-vs-checkout uid)
-        if: needs.setup.outputs.py_changed == 'true'
         run: git config --global --add safe.directory '*'
 
       # Tools are baked into the image; `mise install` is a near-no-op that just
@@ -223,17 +166,14 @@ jobs:
       # (Replaces the GitHub-hosted mise-action install + the actions/cache uv
       # restore — the local runner's persistent ~/.cache/uv is the cache now.)
       - name: mise trust + install (baked tools — install is a near-no-op)
-        if: needs.setup.outputs.py_changed == 'true'
         run: |
           mise trust
           mise install
 
       - name: Install Python dev deps via uv
-        if: needs.setup.outputs.py_changed == 'true'
         run: uv sync --all-groups
 
       - name: just ${{ matrix.target }}
-        if: needs.setup.outputs.py_changed == 'true'
         run: |
           # pyright (check-types) shells out to `npm`; under the container-hooks
           # HOME the mise npm shim busy-loops (no node registered for that HOME).
@@ -254,7 +194,6 @@ jobs:
   # two jobs used to run the full suite independently on separate runners.
   check-per-file-coverage:
     name: check-per-file-coverage
-    needs: setup
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
       image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.42.1
@@ -265,32 +204,21 @@ jobs:
       GITHUB_TOKEN: ${{ github.token }}
       GH_TOKEN: ${{ github.token }}
     steps:
-      # Per-step `if:` (not job-level) so the job still reports its status
-      # check name when skipped — same pattern as the check-python matrix.
-      - name: Skip when no .py changes
-        if: needs.setup.outputs.py_changed != 'true'
-        run: echo "::notice::skipped check-per-file-coverage — no .py changes in this PR"
-
       - name: Checkout
-        if: needs.setup.outputs.py_changed == 'true'
         uses: actions/checkout@v5
 
       - name: Trust workspace for git (hosted container root-vs-checkout uid)
-        if: needs.setup.outputs.py_changed == 'true'
         run: git config --global --add safe.directory '*'
 
       - name: mise trust + install (baked tools — install is a near-no-op)
-        if: needs.setup.outputs.py_changed == 'true'
         run: |
           mise trust
           mise install
 
       - name: Install Python dev deps via uv
-        if: needs.setup.outputs.py_changed == 'true'
         run: uv sync --all-groups
 
       - name: just check-per-file-coverage
-        if: needs.setup.outputs.py_changed == 'true'
         run: |
           # The full suite spawns `node` in some tests; under the
           # container-hooks HOME the mise node/npm shims busy-loop or miss
@@ -309,7 +237,6 @@ jobs:
       # silently ships nothing and the consumer falls back to a full
       # duplicate suite run.
       - name: Publish .coverage for the check-coverage consumer
-        if: needs.setup.outputs.py_changed == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: coverage-data
@@ -329,7 +256,7 @@ jobs:
   # the clean suite standalone — slower, never wrong.
   check-coverage:
     name: ${{ matrix.target }}
-    needs: [setup, check-per-file-coverage]
+    needs: [check-per-file-coverage]
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
       image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.42.1
@@ -344,36 +271,26 @@ jobs:
         target:
           - check-coverage
     steps:
-      - name: Skip when no .py changes
-        if: needs.setup.outputs.py_changed != 'true'
-        run: echo "::notice::skipped ${{ matrix.target }} — no .py changes in this PR"
-
       - name: Checkout
-        if: needs.setup.outputs.py_changed == 'true'
         uses: actions/checkout@v5
 
       - name: Trust workspace for git (hosted container root-vs-checkout uid)
-        if: needs.setup.outputs.py_changed == 'true'
         run: git config --global --add safe.directory '*'
 
       - name: mise trust + install (baked tools — install is a near-no-op)
-        if: needs.setup.outputs.py_changed == 'true'
         run: |
           mise trust
           mise install
 
       - name: Install Python dev deps via uv
-        if: needs.setup.outputs.py_changed == 'true'
         run: uv sync --all-groups
 
       - name: Download the producer's .coverage
-        if: needs.setup.outputs.py_changed == 'true'
         uses: actions/download-artifact@v4
         with:
           name: coverage-data
 
       - name: just ${{ matrix.target }}
-        if: needs.setup.outputs.py_changed == 'true'
         run: |
           # Node-PATH shim for the standalone-fallback branch only: the
           # normal path reads the downloaded .coverage without spawning
@@ -404,7 +321,6 @@ jobs:
   # in ci-green.needs. The wall-time-dominant targets stay in check-python.
   check-python-batch:
     name: check-python-batch
-    needs: setup
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
       image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.42.1
@@ -415,30 +331,21 @@ jobs:
       GITHUB_TOKEN: ${{ github.token }}
       GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Skip when no .py changes
-        if: needs.setup.outputs.py_changed != 'true'
-        run: echo "::notice::skipped check-python-batch — no .py changes in this PR"
-
       - name: Checkout
-        if: needs.setup.outputs.py_changed == 'true'
         uses: actions/checkout@v5
 
       - name: Trust workspace for git (hosted container root-vs-checkout uid)
-        if: needs.setup.outputs.py_changed == 'true'
         run: git config --global --add safe.directory '*'
 
       - name: mise trust + install (baked tools — install is a near-no-op)
-        if: needs.setup.outputs.py_changed == 'true'
         run: |
           mise trust
           mise install
 
       - name: Install Python dev deps via uv
-        if: needs.setup.outputs.py_changed == 'true'
         run: uv sync --all-groups
 
       - name: Run the batched python checks
-        if: needs.setup.outputs.py_changed == 'true'
         run: |
           failed=""
           just check-all-declared || failed="$failed check-all-declared"
@@ -676,6 +583,12 @@ jobs:
           # job's comment for the transitive-read caveat.
           LIVESPEC_FAIL_IF_CI_MATRIX_GAPS_EXIST: "true"
           LIVESPEC_FAIL_IF_FMT_DIRECTIVES_EXIST: "true"
+          # Arm the PR-gate ≡ master-gate parity guard (plan
+          # pr-gate-master-parity, livespec-citqsd R3): now that this repo's
+          # own zero-.py skip is retired, flip check-ci-gate-parity from warn
+          # (exit 0) to FAIL (exit 4), so any future gating job that
+          # re-introduces a `py_changed`-conditioned skip reddens this leg.
+          LIVESPEC_FAIL_IF_CI_GATE_PARITY_GAPS_EXIST: "true"
         run: |
           failed=""
           just check-aggregate-completeness || failed="$failed check-aggregate-completeness"
@@ -728,7 +641,7 @@ jobs:
   # when an upstream check failed (so red runs are captured too).
   export-telemetry:
     name: export-telemetry
-    needs: [setup, check-python, check-per-file-coverage, check-coverage, check-python-batch, check-fleet-conformance, check-metadata, check-metadata-batch]
+    needs: [check-python, check-per-file-coverage, check-coverage, check-python-batch, check-fleet-conformance, check-metadata, check-metadata-batch]
     if: ${{ !cancelled() && github.event_name == 'push' }}
     runs-on: ubuntu-latest
     permissions:
@@ -752,10 +665,10 @@ jobs:
   # external action, no direct tool invocation, so it satisfies
   # non-functional-requirements.md §"Toolchain pins"). Branch protection
   # requires ONLY this context, so one stable name gates the whole matrix and
-  # never churns as checks are added. A SKIPPED dependency (e.g. the entire
-  # check-python matrix on a zero-.py PR) is not a failure, so ci-green stays
-  # green then. setup (detect-py-changes) and export-telemetry are NOT gates,
-  # so they are intentionally absent from `needs:`.
+  # never churns as checks are added. Every gating job now runs on a
+  # pull_request exactly as on a push (the zero-.py skip was retired), so the
+  # PR gate equals the master gate by construction. export-telemetry is NOT a
+  # gate, so it is intentionally absent from `needs:`.
   ci-green:
     name: ci-green
     needs: [check-python, check-per-file-coverage, check-coverage, check-python-batch, check-fleet-conformance, check-metadata, check-metadata-batch]
