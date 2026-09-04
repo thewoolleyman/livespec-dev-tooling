@@ -1,0 +1,251 @@
+# crates-proxy.yaml — the warm CARGO dependency cache for every job on the pool,
+# realized HOST-SERVED: one nginx `proxy_cache` in front of crates.io's sparse
+# index (index.crates.io) and its crate-file CDN (static.crates.io), on the
+# `ci-cache` storage tier, read by every workflow pod over cluster DNS and by
+# off-node consumers over a hostPort. Spec: SPECIFICATION/non-functional-
+# requirements.md §"Runner-pool build cache tiers" (v054). Plan:
+# plan/ci-runner-cache-tiers — research/005 is the live verification this
+# shape was chosen on (cargo 1.92 accepts a plain-http sparse source
+# replacement; Cargo.lock byte-identical; every locked crate of the console
+# lockfile served; second pass all hits) and the candidate survey (why nginx
+# and not crates-io-proxy, Kellnr, Panamax).
+#
+# WHY HOST-SERVED AND NOT A COPY, LIKE THE UV TIER: per-job start writes are
+# the pool's measured disk knee (about six simultaneous job starts saturate the
+# array; livespec plan ci-runner-pod-lifecycle-reliability, Carrier F). The uv
+# tier copies its lower into every pod because uv refuses a read-only cache;
+# cargo needs no such copy — it fetches from a registry URL, so pointing that
+# URL at a cache on the host serves the same crates with ZERO bytes copied per
+# start. A job's own `registry/src` extraction (~250 MB for the console) is
+# the same work it does on a GitHub-hosted runner.
+#
+# THE READER SIDE is one file the job container's postStart writes —
+# /.cargo/config.toml, the ROOT of cargo's config hierarchy, so it applies to
+# every cargo invocation in the job whatever its working directory and is
+# overridden by a repository's own checked-in [source] config if it has one
+# (../arc/hook-pod-template.yaml). Cargo's [source] tables are NOT settable
+# from the environment, which is why it is a file and not an env var.
+#
+# TRUST: the proxy has no write surface. Anything but GET/HEAD is refused
+# locally (limit_except), so a job cannot publish, yank, or poison an entry;
+# the ONLY writes into the store are nginx caching what crates.io returned,
+# verified over TLS against the image's CA bundle. The populator pre-warms it
+# by fetching every routed lockfile through it (../warm-cache/), so the first
+# job after a lockfile change usually finds its crates already cached.
+#
+# FAIL-SOFT: the postStart writes the config only after a 3 s probe of this
+# proxy succeeds, so a missing or unready proxy leaves the job fetching from
+# crates.io directly — cold, never failed. On a crates.io or Fastly incident
+# the proxy serves stale entries (proxy_cache_use_stale), which is more than a
+# hosted runner gets.
+#
+# STORAGE: /var/cache/ci-runner/crates-proxy on the LABEL-addressed `ci-cache`
+# tier (../storage-layout/), regenerable, movable by copy + relabel like every
+# other pool tier; no reflink or copy-on-write dependency. Delete the directory
+# and the next request re-fetches.
+#
+# EXPOSURE: ClusterIP `crates-proxy.ci-crates-proxy.svc.cluster.local:3080`
+# for workflow pods (ClusterFirst DNS; no NetworkPolicies; the workflow
+# AppArmor profile grants `network`), and hostPort 3080 on the node for
+# consumers off the pod network (the fabro factory host reaches it at the
+# node IP). servicelb is DISABLED on this k3s, so a LoadBalancer Service would
+# NOT bind the node IP; the hostPort (CNI portmap, present) is the mechanism.
+#
+# TELEMETRY (owned by the cache-telemetry children of the plan): the access
+# log carries `cache=HIT|MISS|STALE|…` per request for the per-job spans, and
+# `stub_status` at /nginx_status (pod network + node only) is the host-gauge
+# scrape point.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ci-crates-proxy
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: crates-proxy-nginx
+  namespace: ci-crates-proxy
+data:
+  nginx.conf: |
+    worker_processes auto;
+    events { worker_connections 4096; }
+    http {
+      # Two zones, because their lifetimes differ. Index entries change when a
+      # crate publishes a version: revalidated on crates.io's own max-age=600
+      # (served stale while the refresh happens in the background). A
+      # `.crate` file is immutable for its version: kept until evicted by size.
+      proxy_cache_path /cache/index  levels=1:2 keys_zone=index:64m  max_size=4g   inactive=90d  use_temp_path=off;
+      proxy_cache_path /cache/crates levels=1:2 keys_zone=crates:64m max_size=200g inactive=365d use_temp_path=off;
+
+      log_format cache '$remote_addr [$time_iso8601] "$request" $status $body_bytes_sent cache=$upstream_cache_status rt=$request_time urt=$upstream_response_time';
+      access_log /dev/stdout cache;
+      error_log  /dev/stderr warn;
+      server_tokens off;
+
+      # Upstream TLS is VERIFIED: an unverified proxy would let anything on
+      # the path to crates.io poison a cache every job reads.
+      proxy_ssl_verify on;
+      proxy_ssl_verify_depth 3;
+      proxy_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
+      proxy_ssl_server_name on;
+      proxy_ssl_protocols TLSv1.2 TLSv1.3;
+      # Keep upstream connections open: a cold fan-out is ~300 objects per
+      # lockfile, and a fresh TLS handshake each was the whole cold cost.
+      proxy_http_version 1.1;
+      proxy_set_header Connection "";
+      proxy_cache_lock on;
+      proxy_cache_lock_timeout 30s;
+      proxy_cache_use_stale error timeout updating http_500 http_502 http_503 http_504;
+
+      # Resolve the upstreams at RUNTIME through cluster DNS (k3s's kube-dns
+      # ClusterIP), IPv4 only: the pod network has no IPv6 route, and a
+      # config-time getaddrinfo() handed nginx Fastly's AAAA records too —
+      # observed 2026-09-04 as "connect() to [2a04:4e42:2f::649]:443 failed
+      # (101: Network unreachable)" on every cold fetch before failing over.
+      # `resolve` also re-resolves on TTL instead of pinning the CDN addresses
+      # nginx saw at start.
+      resolver 10.43.0.10 valid=300s ipv6=off;
+      upstream crates_index  { zone crates_index 64k;  server index.crates.io:443  resolve; keepalive 32; }
+      upstream crates_static { zone crates_static 64k; server static.crates.io:443 resolve; keepalive 32; }
+
+      server {
+        listen 3080 default_server;
+
+        location = /healthz { return 200 'ok'; }
+        location = /nginx_status {
+          stub_status;
+          allow 127.0.0.1;
+          allow 10.42.0.0/16;
+          allow 192.168.1.0/24;
+          deny all;
+        }
+
+        # Cargo fetches config.json from the sparse root; answer with OUR
+        # download URL so crate files come back through this proxy. Cargo
+        # appends /{crate}/{version}/download to a dl URL with no markers.
+        # $http_host keeps whatever host:port the client used, so the same
+        # config serves cluster-DNS and node-IP consumers.
+        location = /index/config.json {
+          default_type application/json;
+          return 200 '{"dl":"http://$http_host/crates","api":"https://crates.io"}';
+        }
+        location /index/ {
+          limit_except GET HEAD { deny all; }
+          proxy_pass https://crates_index/;
+          proxy_ssl_name index.crates.io;
+          proxy_set_header Host index.crates.io;
+          proxy_cache index;
+          proxy_cache_key $uri;
+          proxy_cache_revalidate on;
+          proxy_cache_background_update on;
+          proxy_cache_valid 200 10m;
+          proxy_cache_valid 404 1m;
+          add_header X-Cache $upstream_cache_status always;
+        }
+        location /crates/ {
+          limit_except GET HEAD { deny all; }
+          proxy_pass https://crates_static/crates/;
+          proxy_ssl_name static.crates.io;
+          proxy_set_header Host static.crates.io;
+          proxy_cache crates;
+          proxy_cache_key $uri;
+          proxy_cache_valid 200 365d;
+          proxy_cache_valid 404 1m;
+          add_header X-Cache $upstream_cache_status always;
+        }
+        location / { return 404; }
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crates-proxy
+  namespace: ci-crates-proxy
+  labels:
+    app.kubernetes.io/name: crates-proxy
+spec:
+  replicas: 1
+  # Recreate, not RollingUpdate: one hostPort and one cache directory on one
+  # node; two pods cannot coexist.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: crates-proxy
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: crates-proxy
+    spec:
+      # No Kueue queue-name label and no ci-runner.io/churn-slot request:
+      # not a CI job, must never occupy a runner slot.
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: nginx
+          # Pinned by tag AND digest (k3s README "Pinned versions — nothing
+          # floats `latest`"). This digest is the build research/005 verified
+          # against. Bump both together.
+          image: docker.io/library/nginx:1.31.5-alpine@sha256:72ba65eb42c10344912a84ff42408db7d34f2feb642204570ab8fc5ffd29f1d3
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3080
+              hostPort: 3080
+              protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+              # The image's master runs as root and drops its workers to the
+              # `nginx` user (SETUID/SETGID) after creating the cache tree
+              # for them (CHOWN). Nothing else.
+              add: ["CHOWN", "SETGID", "SETUID"]
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              memory: "1Gi"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+          volumeMounts:
+            - name: conf
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+              readOnly: true
+            - name: cache
+              mountPath: /cache
+      volumes:
+        - name: conf
+          configMap:
+            name: crates-proxy-nginx
+        - name: cache
+          hostPath:
+            path: /var/cache/ci-runner/crates-proxy
+            # DirectoryOrCreate on the ci-cache tier mounted by fstab at
+            # /var/cache/ci-runner (../storage-layout/); created on first run.
+            type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: crates-proxy
+  namespace: ci-crates-proxy
+spec:
+  selector:
+    app.kubernetes.io/name: crates-proxy
+  ports:
+    - name: http
+      port: 3080
+      targetPort: http

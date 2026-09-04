@@ -106,6 +106,7 @@ ARC_DIR="${ARTIFACT_DIR}/arc"
 KUEUE_DIR="${ARTIFACT_DIR}/kueue"
 PROVISIONER_DIR="${ARTIFACT_DIR}/local-path-provisioner"
 WARM_CACHE_DIR="${ARTIFACT_DIR}/warm-cache"
+CRATES_PROXY_DIR="${ARTIFACT_DIR}/crates-proxy"
 if [ -d "${ARTIFACT_DIR}/observability" ]; then
   OBSERVABILITY_DIR="${ARTIFACT_DIR}/observability"          # installed layout
 else
@@ -532,6 +533,13 @@ log "8. Converge the arc-hook-pod-template ConfigMap"
 # reads its sibling hook-pod-template.yaml, so the installer copies both into
 # ARC_DIR together.
 "${ARC_DIR}/converge-hook-pod-template.sh"
+
+# ---------------------------------------------------------------------------
+log "8b. Converge the crates proxy (Namespace, nginx ConfigMap, Deployment, Service)"
+# Before the warm cache: its populator pre-warms this proxy. Bounded wait
+# inside; a proxy not yet Ready only means jobs fetch from crates.io directly
+# until it is (the hook template's postStart probes before opting in).
+"${CRATES_PROXY_DIR}/converge-crates-proxy.sh"
 
 # ---------------------------------------------------------------------------
 log "9. Converge the warm uv cache's cluster objects (Namespace, CronJob, ConfigMaps)"

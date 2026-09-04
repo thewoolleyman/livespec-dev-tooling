@@ -11,9 +11,12 @@
 # same host path read-only (../arc/hook-pod-template.yaml).
 #
 # Same image the fleet's CI jobs run in, so the cache is populated by the
-# same uv (version and cache layout) that reads it. The tag is overridable
-# by install-warm-cache.sh's WARM_CACHE_IMAGE; bump it in lockstep with the
-# fleet's `container:` pin (the fabro sandbox image).
+# same uv (version and cache layout) that reads it — the python-RUST layer
+# since 2026-09-04, because the populator also pre-warms the crates proxy
+# (../crates-proxy/) with `cargo fetch` for every routed Cargo.lock, and that
+# needs cargo and the console's pinned toolchain (the same image the console's
+# `container:` runs). The tag is overridable by install-warm-cache.sh's
+# WARM_CACHE_IMAGE; bump it in lockstep with the fleet's `container:` pin.
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -64,7 +67,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: populate
-              image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.32.0
+              image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-v1.40.1
               imagePullPolicy: IfNotPresent
               command: ["bash", "/scripts/warm-cache-populate.sh"]
               env:
@@ -81,6 +84,13 @@ spec:
                 # no capability — all dropped, no escalation — and its only
                 # writable host surface is the warm root below.
                 - name: UV_HTTP_RETRIES
+                  value: "5"
+                # The crates proxy the cargo pre-warm fetches through
+                # (../crates-proxy/); cargo's own retry budget for the upstream
+                # misses that pre-warm exists to absorb.
+                - name: CRATES_PROXY_URL
+                  value: http://crates-proxy.ci-crates-proxy.svc.cluster.local:3080
+                - name: CARGO_NET_RETRY
                   value: "5"
               securityContext:
                 allowPrivilegeEscalation: false

@@ -29,6 +29,18 @@
 # so a new generation's writes never reach the inodes the previous generation
 # still points at.
 #
+# THE CARGO HALF (2026-09-04, plan ci-runner-cache-tiers, livespec-dev-tooling-
+# oiltq3): the warm cargo cache is HOST-SERVED by the crates proxy
+# (../crates-proxy/), not a lower copied into pods — per-job start writes are
+# the pool's disk knee. This script's job for cargo is to PRE-WARM that proxy:
+# for every routed repository with a Cargo.lock it runs `cargo fetch --locked`
+# through the proxy into a throwaway CARGO_HOME, so every locked crate is
+# cached before any job asks, and the cold cost (~300 upstream fetches per
+# lockfile) lands on this timer, never on a job. Nothing from that fetch is
+# kept here. It WARNS on any git+ source in a lockfile: the proxy serves the
+# registry only, so those crates fetch from their forge in the job as they do
+# on hosted runners (no routed lockfile has one today).
+#
 # WHAT IS SYNCED: for every repository URL in $REPOS_FILE (one per line — the
 # installer derives the list from ../arc/values-*.yaml, the live set of
 # repositories routed to this pool), clone or fast-forward its default branch
@@ -50,6 +62,7 @@ set -uo pipefail
 WARM_ROOT="${WARM_ROOT:-/warm}"
 REPOS_FILE="${REPOS_FILE:-/config/repos.txt}"
 KEEP_GENERATIONS="${KEEP_GENERATIONS:-2}"
+CRATES_PROXY_URL="${CRATES_PROXY_URL:-http://crates-proxy.ci-crates-proxy.svc.cluster.local:3080}"
 GENERATIONS_DIR="${WARM_ROOT}/uv-generations"
 SRC_DIR="${WARM_ROOT}/src"
 CURRENT_LINK="${WARM_ROOT}/uv"
@@ -81,6 +94,7 @@ fi
 
 failed=()
 synced=0
+cargo_warmed=0
 while IFS= read -r url || [ -n "${url}" ]; do
   case "${url}" in ''|'#'*) continue ;; esac
   name="$(basename "${url}" .git)"
@@ -101,22 +115,46 @@ while IFS= read -r url || [ -n "${url}" ]; do
       continue
     fi
   fi
-  if [ ! -f "${src}/uv.lock" ]; then
-    log "   no uv.lock; skipping"
-    continue
-  fi
-  venv="${SCRATCH}/venv-${name}"
-  rm -rf "${venv}"
-  if UV_CACHE_DIR="${new_gen}" UV_PROJECT_ENVIRONMENT="${venv}" \
-     uv sync --frozen --all-groups --no-install-project --no-install-workspace \
-       --project "${src}" --quiet; then
-    synced=$((synced + 1))
-    log "   synced"
+  if [ -f "${src}/uv.lock" ]; then
+    venv="${SCRATCH}/venv-${name}"
+    rm -rf "${venv}"
+    if UV_CACHE_DIR="${new_gen}" UV_PROJECT_ENVIRONMENT="${venv}" \
+       uv sync --frozen --all-groups --no-install-project --no-install-workspace \
+         --project "${src}" --quiet; then
+      synced=$((synced + 1))
+      log "   uv: synced"
+    else
+      log "   uv sync failed; skipping"
+      failed+=("${name}")
+    fi
+    rm -rf "${venv}"
   else
-    log "   uv sync failed; skipping"
-    failed+=("${name}")
+    log "   no uv.lock; nothing to sync for uv"
   fi
-  rm -rf "${venv}"
+  if [ -f "${src}/Cargo.lock" ]; then
+    if ! command -v cargo >/dev/null; then
+      log "   Cargo.lock present but cargo is not on PATH (this image lacks the Rust layer); skipping the cargo pre-warm"
+      failed+=("${name}:cargo")
+    else
+      if grep -q 'source = "git+' "${src}/Cargo.lock"; then
+        log "   WARN: Cargo.lock carries git+ sources; the crates proxy serves the registry only, those fetch from their forge in every job"
+      fi
+      cargo_home="${SCRATCH}/cargo-home-${name}"
+      rm -rf "${cargo_home}"
+      mkdir -p "${cargo_home}"
+      printf '[source.crates-io]\nreplace-with = "ci-runner-pool"\n\n[source.ci-runner-pool]\nregistry = "sparse+%s/index/"\n' \
+        "${CRATES_PROXY_URL}" > "${cargo_home}/config.toml"
+      # cd, not --manifest-path: rustup resolves rust-toolchain.toml from cwd.
+      if (cd "${src}" && CARGO_HOME="${cargo_home}" cargo fetch --locked --quiet); then
+        cargo_warmed=$((cargo_warmed + 1))
+        log "   cargo: every locked crate warmed through ${CRATES_PROXY_URL}"
+      else
+        log "   cargo fetch through the proxy failed; skipping"
+        failed+=("${name}:cargo")
+      fi
+      rm -rf "${cargo_home}"
+    fi
+  fi
 done < "${REPOS_FILE}"
 
 # Publish: one atomic rename of a relative symlink, so the link stays valid
@@ -124,7 +162,7 @@ done < "${REPOS_FILE}"
 # a different path than this container does).
 ln -sfn "uv-generations/${generation}" "${CURRENT_LINK}.tmp"
 mv -T "${CURRENT_LINK}.tmp" "${CURRENT_LINK}"
-log "published generation ${generation} (${synced} repositories synced, size $(du -sh "${new_gen}" | cut -f1))"
+log "published generation ${generation} (${synced} repositories synced for uv, ${cargo_warmed} pre-warmed for cargo, size $(du -sh "${new_gen}" | cut -f1))"
 
 # Prune: keep the newest KEEP_GENERATIONS, oldest first. The one just
 # published is always among those kept.
