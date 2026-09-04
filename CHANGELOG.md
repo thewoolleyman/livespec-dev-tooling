@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.41.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.40.2...v1.41.0) (2026-09-04)
+
+
+### Features
+
+* **ci-runner:** storage-layout/migrate-tier.sh — move a CI tier to new media by copy + relabel, fstab untouched (livespec-e2vcqf) ([2152319](https://github.com/thewoolleyman/livespec-dev-tooling/commit/21523197ec6bdd92591df5a60ff0195ae1f9aca4))
+
 ## [1.40.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.40.1...v1.40.2) (2026-09-04)
 
 
