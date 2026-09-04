@@ -23,11 +23,17 @@
 #      before the first workflow pod looks for it rather than up to a
 #      schedule interval later.
 #   3. Converge the arc-hook-pod-template ConfigMap (../arc/hook-pod-template.yaml
-#      carries the read-only mount, the postStart copy, and UV_CACHE_DIR), via
-#      the converge script shared with ../apparmor/install-apparmor-profile.sh.
-#      Existing runner pods keep the previous template until recycled — run
+#      carries UV_CACHE_DIR, pointing uv at the seed the local-path
+#      provisioner's setup script makes at volume creation), via the converge
+#      script shared with ../apparmor/install-apparmor-profile.sh. Existing
+#      runner pods keep the previous template until recycled — run
 #      ../arc/recycle-scale-set-runners.sh per scale set afterwards, exactly as
 #      after any values change.
+#
+# The seed itself (the reader side of this tier) lives in
+# ../local-path-provisioner/local-path-provisioner.yaml and is applied by
+# ../reconstruct/converge-ci-stack.sh on every boot; this installer does not
+# touch it. README.md "Where it lives, and why it moved".
 #
 # Requires: kubectl with KUBECONFIG pointed at the k3s cluster.
 set -euo pipefail
@@ -62,7 +68,7 @@ fi
 kubectl -n "${NAMESPACE}" logs "job/${job_name}" | tail -5
 
 # ---------------------------------------------------------------------------
-log "3. Converge the arc-hook-pod-template ConfigMap (read-only mount + postStart copy)"
+log "3. Converge the arc-hook-pod-template ConfigMap (UV_CACHE_DIR -> the provisioner-made seed)"
 "${SCRIPT_DIR}/../arc/converge-hook-pod-template.sh"
 
 log "Done. Recycle each scale set's idle runners (../arc/recycle-scale-set-runners.sh)"

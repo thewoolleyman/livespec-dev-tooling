@@ -16,10 +16,54 @@
 #
 # CONTENT: byte-for-byte the k3s v1.36.2+k3s1 bundled manifest (image
 # rancher/local-path-provisioner:v0.0.36, path /var/lib/rancher/k3s/storage,
-# default StorageClass `local-path`, WaitForFirstConsumer) plus ONE addition —
-# the container `args:`. Keep the image pin in lockstep with the k3s version
-# in ../../provision-k3s.sh: a k3s upgrade that bumps the bundled provisioner
-# is the moment to re-diff this file against the new bundled copy.
+# default StorageClass `local-path`, WaitForFirstConsumer) plus TWO additions —
+# the container `args:` and the warm-cache seed in the ConfigMap's `setup`
+# script. Keep the image pin in lockstep with the k3s version in
+# ../../provision-k3s.sh: a k3s upgrade that bumps the bundled provisioner is
+# the moment to re-diff this file against the new bundled copy.
+#
+# THE WARM-CACHE SEED (livespec plan `ci-runner-pod-lifecycle-reliability`,
+# research/005, carrier `livespec-lvtu`): every runner work volume is born
+# with `_warm/uv` already holding the current warm uv cache generation, as
+# HARDLINKS, made by the `setup` script below while the volume is provisioned
+# — with WaitForFirstConsumer that is after the runner pod is scheduled and
+# before it starts, so the runner pod's volume wait absorbs the ~2 s seed and
+# the workflow container's ContainerCreating hold disappears. It replaces the
+# hook template's per-start
+# byte copy (../arc/hook-pod-template.yaml, ../warm-cache/README.md), which
+# had grown with the cache to 1.9 GB / 160k files / ~9 s per job start.
+# Facts the script rests on, read from the provisioner's v0.0.36 source
+# (provisioner.go, createHelperPod) rather than assumed:
+#   - The helper pod hostPath-mounts the PARENT of the volume directory (the
+#     node path, /var/lib/rancher/k3s/storage/, DirectoryOrCreate) at that
+#     SAME absolute path, because this file's helperPod.yaml declares no
+#     `data` volumeMount of its own; VOL_DIR is <that path>/<pvc dir>. So the
+#     warm root, a hidden sibling of the pvc-* directories (`.warm`, written
+#     only by the ../warm-cache/ CronJob), is reachable from the helper as
+#     `${VOL_DIR%/*}/.warm`, under the ONE mount VOL_DIR is under. That is
+#     what makes link() legal: a hardlink across two bind mounts of the same
+#     filesystem fails with EXDEV, which is why the seed cannot run inside
+#     the workflow pod and why the warm root had to move from the ci-cache
+#     tier onto ci-workvols beside the volumes (README "Storage layout").
+#   - The script runs as root, from the ConfigMap's `setup` key mounted at
+#     /script/setup, as `/bin/sh /script/setup`, with VOL_DIR, VOL_MODE and
+#     VOL_SIZE_BYTES in the environment; a non-zero exit fails the volume.
+#   - The helper image is busybox 1.37.0, whose `cp` has `-a` (= -dpR) and
+#     `-l` (hardlink instead of copy) and whose `find` has `-perm` and
+#     `-exec ... {} +` (verified by running that image).
+#   - The generation's files are owned by uid 200000 (the populator's last
+#     step; ../warm-cache/README.md "The hazard"), a uid no workflow pod
+#     maps, so on the pod's idmapped volume the seeded links are read-only
+#     to the job's root by mode. The seed keeps them so; what it MUST give
+#     the job as fresh per-volume inodes is everything the job's uv opens
+#     for writing: the directories (0777) and uv's lock files (the only
+#     world-writable files in a generation; uv flocks them, never writes
+#     content), which the script re-creates empty after linking.
+# Measured on the live 1,388 MB / 159k-file generation, same filesystem:
+# cp -al 2.3 s and 269 MB of metadata writes, against 6.8 s and 2,153 MB
+# for the byte copy; after the separate generation-trim item the target is
+# under 1 s and under 100 MB per start. The provisioner's 120 s helper-pod
+# ceiling is far above that even under a start burst.
 #
 # THE TUNING (measured 2026-09-01, research/001 and research/002 of the plan
 # above), against k3s's bundled defaults of 4 workers / QPS 5 / burst 10:
@@ -166,9 +210,50 @@ data:
     }
   setup: |-
     #!/bin/sh
+    # See the file header ("THE WARM-CACHE SEED") for what this runs as and
+    # where. Everything after the chmod 700 is the fleet's addition.
     set -eu
     mkdir -m 0777 -p "${VOL_DIR}"
     chmod 700 "${VOL_DIR}/.."
+    # Leave the volume root exactly as the kubelet's fsGroup handling would
+    # (gid 1000 = the runner pod's fsGroup in every ../arc/values-*.yaml;
+    # mode 2777 = 0777 plus setgid). The runner pods carry
+    # fsGroupChangePolicy OnRootMismatch, so the kubelet then finds no
+    # mismatch and skips walking the seeded tree on the runner's mount; with
+    # the default Always it would chgrp+chmod every one of the ~160k
+    # hardlinks per start, mutating the inodes the generations share. A
+    # mismatch is slow, not broken.
+    chgrp 1000 "${VOL_DIR}"
+    chmod 2777 "${VOL_DIR}"
+    # Seed the warm uv cache by HARDLINK from the current generation. The
+    # `uv` link is resolved ONCE, so a populate publishing mid-seed cannot
+    # mix two generations (the populator keeps the previous one for a
+    # cycle). New directories become 0777 so the job's uid can add cache
+    # entries; every world-writable file (uv's lock files, the only ones)
+    # is replaced by a fresh empty per-volume file so the job's uv can lock
+    # without a writable shared inode; every other file keeps the
+    # generation's inode, owner and mode, read-only to the job (header). A
+    # missing root, link or generation, or any failure, leaves NO cache (uv
+    # resolves cold, and the job still runs): never a byte copy, which is
+    # the per-start cost this replaced. The rm first makes a re-run on an
+    # already-prepared path (a retried helper pod) start clean rather than
+    # keep a half-made seed.
+    warm="${VOL_DIR%/*}/.warm"
+    rm -rf "${VOL_DIR}/_warm"
+    if [ -L "${warm}/uv" ]; then
+      gen="$(readlink "${warm}/uv")"
+      case "${gen}" in /*) src="${gen}" ;; *) src="${warm}/${gen}" ;; esac
+      if [ -d "${src}" ]; then
+        if ! ( mkdir -m 0777 "${VOL_DIR}/_warm" \
+               && cp -al "${src}/." "${VOL_DIR}/_warm/uv" \
+               && find "${VOL_DIR}/_warm/uv" -type d -exec chmod 0777 {} + \
+               && find "${VOL_DIR}/_warm/uv" -type f -perm -0002 -exec sh -c \
+                    'for f; do rm -f "$f" && : > "$f" && chmod 0666 "$f" || exit 1; done' sh {} + ); then
+          echo "warm-cache seed from ${src} failed; leaving a cold cache" >&2
+          rm -rf "${VOL_DIR}/_warm"
+        fi
+      fi
+    fi
   teardown: |-
     #!/bin/sh
     set -eu

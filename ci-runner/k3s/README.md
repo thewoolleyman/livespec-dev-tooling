@@ -56,8 +56,10 @@ Controller + Kueue"), maintainer-directed 2026-08-15. This tree is
 Nothing floats `latest` (rule restated here after the tree that first
 carried it was deleted under `livespec-s43svm.19`). The runner image is
 pinned by tag AND digest because the image embeds the container hook
-whose merge behaviour two live mechanisms depend on — the warm-cache
-`postStart` seam and the workflow pod's `hostUsers` key
+whose merge behaviour two live mechanisms depend on — the job container's
+`env` and `lifecycle` merge (the cache tiers' reader side: the warm-cache
+seed's `UV_CACHE_DIR`, the cargo and compilation tiers' `postStart`) and
+the workflow pod's `hostUsers` key
 (`phase2/arc/hook-pod-template.yaml`); the pinned digest is the build
 those were verified against. The image ran as the un-pinned `latest`
 from phase 1 until 2026-08-25, when the then-current `latest`
@@ -111,7 +113,9 @@ Measured 2026-08-15 on `poweredge-xubuntu` (per the ledger record on
 - **Disk**: 306 GB free on the root filesystem; 624 GB free on the
   dedicated `/var/cache/ci-runner` volume (at the time unrelated to
   k3s — it backed the podman pool's warm cache tiering; it now carries
-  this pool's warm uv cache lower, `phase2/warm-cache/`).
+  only the mountpoints of this pool's two other tiers, and the warm uv
+  cache lower lives on the `ci-workvols` tier beside the runner work
+  volumes it is hardlink-seeded into, `phase2/warm-cache/`).
 - **Ports**: `6443/10250/10251/10252/10257/10259/8472/2379/2380` (the
   full k3s server + agent + embedded-etcd port set) were all UNBOUND —
   no conflict with the podman pool or anything else on the host.

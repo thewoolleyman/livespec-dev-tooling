@@ -3,7 +3,8 @@
 # INSIDE A ROUTED JOB on the pool. SPECIFICATION/non-functional-requirements.md
 # §"Runner-pool cache telemetry" (v054), "Negative tests": the pool's
 # isolation suite MUST assert, on its existing timer, that a job cannot write
-# the warm-cache mount, that a compilation-cache write with a job's
+# the warm cache (the shared inodes it is seeded with, since livespec-lvtu;
+# before that, the read-only mount), that a compilation-cache write with a job's
 # credentials is refused, and that no writer credential is present in a job
 # pod. Plan ci-runner-cache-tiers, child livespec-dev-tooling-tqpszl; the
 # trust argument these cases test is in ../crates-proxy/, ../sccache/ and
@@ -20,35 +21,50 @@
 #
 # EVERY CASE MUST BE ABLE TO FAIL. A case is a violation when the forbidden
 # thing SUCCEEDS, and ALSO when the precondition that makes the assertion
-# meaningful is absent (no warm mount, no redis to refuse): a pod without the
-# template's mounts is a misconfigured pool, not a passing test. The
-# negative control (a pod given a writable mount and a writer credential on
-# purpose) turns cases 1 and 3 red — run it with the Job in
-# ./negative-control-job.yaml on the host.
+# meaningful is absent (no warm seed in the volume, no redis to refuse): a
+# pod without the seed or the template's env is a misconfigured pool, not a
+# passing test. The negative control (a pod given the warm root itself,
+# writable, and a writer credential on purpose) turns cases 1 and 3 red —
+# run it with the Job in ./negative-control-job.yaml on the host.
 #
 # Exit 0 only when every case passes; one `case=<name> result=pass|fail
 # <detail>` line per case on stdout either way.
 set -uo pipefail
 
-WARM_MOUNT="${CACHE_NEG_WARM_MOUNT:-/var/cache/ci-runner/warm}"
+# The warm uv cache as a job sees it since livespec-lvtu: not a mount but the
+# hardlink seed the local-path provisioner made in this job's own work
+# volume (../warm-cache/README.md "Where it lives"). Its files are the
+# fleet-wide generation's inodes, owned by a uid this pod does not map, so
+# they must be unwritable from here while the directory itself stays usable.
+WARM_SEED="${CACHE_NEG_WARM_SEED:-${UV_CACHE_DIR:-/__w/_warm/uv}}"
 REDIS_HOST="${CACHE_NEG_REDIS_HOST:-sccache-redis.ci-sccache.svc.cluster.local}"
 REDIS_PORT="${CACHE_NEG_REDIS_PORT:-6379}"
 PROXY_URL="${CACHE_NEG_PROXY_URL:-http://crates-proxy.ci-crates-proxy.svc.cluster.local:3080}"
 rc=0
 report() { printf 'case=%s result=%s %s\n' "$1" "$2" "$3"; [ "$2" = pass ] || rc=1; }
 
-# ---- 1. the warm-cache mount is read-only from the job ----------------------
-if [ ! -d "${WARM_MOUNT}" ]; then
-  report warm-mount-unwritable fail "precondition: ${WARM_MOUNT} is not mounted in this pod"
-elif ! mountpoint -q "${WARM_MOUNT}" 2>/dev/null; then
-  report warm-mount-unwritable fail "precondition: ${WARM_MOUNT} is a plain directory, not the template's mount"
+# ---- 1. the warm cache's shared inodes are unwritable from the job ----------
+# A seeded file is one with a link count above 1 (its inode is the
+# generation's) that is not one of uv's world-writable lock files (those are
+# re-created per volume by the seed). Opening it for writing must fail; the
+# job must still be able to CREATE an entry beside it, or the cache would be
+# useless rather than protected.
+if [ ! -d "${WARM_SEED}" ]; then
+  report warm-seed-unwritable fail "precondition: ${WARM_SEED} is absent — this volume was not seeded (provisioner setup script, or no published generation)"
 else
-  probe="${WARM_MOUNT}/.cache-negative-test-$$"
-  if touch "${probe}" 2>/dev/null; then
-    rm -f "${probe}" 2>/dev/null || true
-    report warm-mount-unwritable fail "VIOLATION: created ${probe} — the warm mount is writable from a job"
+  shared="$(find "${WARM_SEED}" -type f -links +1 ! -perm -0002 -print -quit 2>/dev/null)"
+  if [ -z "${shared}" ]; then
+    report warm-seed-unwritable fail "precondition: no shared (link count > 1) file under ${WARM_SEED} — a byte copy, not the hardlink seed"
+  elif ( : >> "${shared}" ) 2>/dev/null; then
+    report warm-seed-unwritable fail "VIOLATION: opened ${shared} for writing from a job (owner uid $(stat -c %u "${shared}"), mode $(stat -c %a "${shared}"))"
   else
-    report warm-mount-unwritable pass "touch ${probe} refused"
+    probe="${WARM_SEED}/.cache-negative-test-$$"
+    if touch "${probe}" 2>/dev/null; then
+      rm -f "${probe}" 2>/dev/null || true
+      report warm-seed-unwritable pass "write to shared ${shared} refused (owner uid $(stat -c %u "${shared}")); new entry beside it creatable"
+    else
+      report warm-seed-unwritable fail "shared inode refused as required, but ${WARM_SEED} is not writable for new entries either — uv cannot use this cache"
+    fi
   fi
 fi
 

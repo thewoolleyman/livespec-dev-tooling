@@ -6,9 +6,11 @@
 # DERIVED from ../arc/values-*.yaml at install time (the live set of routed
 # repositories) rather than maintained by hand as a second list that drifts.
 #
-# Runs in its own namespace so the ONE read-write mount of the warm root is
-# not a capability anything in arc-runners carries. Workflow pods mount the
-# same host path read-only (../arc/hook-pod-template.yaml).
+# Runs in its own namespace so the ONE mount of the warm root is not a
+# capability anything in arc-runners carries. Nothing else mounts it at all:
+# the local-path provisioner's setup script hardlink-seeds each new runner
+# work volume from it at volume creation (../local-path-provisioner/), and a
+# workflow pod only ever sees its own seed (../arc/hook-pod-template.yaml).
 #
 # Same image the fleet's CI jobs run in, so the cache is populated by the
 # same uv (version and cache layout) that reads it — the python-RUST layer
@@ -118,6 +120,13 @@ spec:
                   value: /config/repos.txt
                 - name: KEEP_GENERATIONS
                   value: "2"
+                # The uid every published generation is owned by: outside
+                # every workflow pod's 65536-id mapping, so the hardlinks the
+                # provisioner seeds into each work volume are read-only to
+                # the job (the populator's header). The negative tests
+                # (../isolation/) assert exactly that from inside a job.
+                - name: WARM_GENERATION_OWNER
+                  value: "200000"
                 # The image installs uv and its CPython under /root (its
                 # build-time HOME), which is why this container runs as the
                 # image's default user (root) rather than a non-root uid: as
@@ -169,6 +178,14 @@ spec:
                 allowPrivilegeEscalation: false
                 capabilities:
                   drop: ["ALL"]
+                  # The two capabilities the generation's ownership needs
+                  # and nothing else (the populator's header, "Own the
+                  # generation"): CHOWN to publish each generation owned by
+                  # a uid no workflow pod maps, DAC_OVERRIDE so the next
+                  # build can write into the predecessor-owned tree it
+                  # hardlink-seeds from. Root's only writable host surface
+                  # is still the warm root below.
+                  add: ["CHOWN", "DAC_OVERRIDE"]
               resources:
                 requests:
                   cpu: "500m"
@@ -195,11 +212,22 @@ spec:
           volumes:
             - name: warm
               hostPath:
-                path: /var/cache/ci-runner/warm
-                # DirectoryOrCreate: the dedicated cache volume is mounted at
-                # /var/cache/ci-runner by fstab (livespec repo
-                # plan/fleet-ci-runner-pool/research/design.md "The storage");
-                # this subtree is created on first run rather than by hand.
+                # A hidden sibling of the pvc-* directories on the ci-workvols
+                # tier (the local-path provisioner's node path), NOT on the
+                # ci-cache volume it started on: the provisioner's setup
+                # script hardlinks each new work volume's _warm/uv from here,
+                # and a hardlink is legal only within one filesystem and one
+                # mount (livespec-lvtu; README.md "Where it lives, and why it
+                # moved"). The tier is mounted by fstab
+                # (../storage-layout/); the boot-time storage sweep
+                # (../storage-sweep/) removes only pvc-* entries and keeps
+                # this one.
+                path: /var/lib/rancher/k3s/storage/.warm
+                # DirectoryOrCreate: the kubelet creates the subtree (0755
+                # root) on this CronJob's first run after a rebuild rather
+                # than by hand. Until the first populate publishes a
+                # generation the seed finds no `uv` link and every job runs
+                # cold, by design.
                 type: DirectoryOrCreate
             - name: scripts
               configMap:

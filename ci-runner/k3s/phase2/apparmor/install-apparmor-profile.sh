@@ -50,7 +50,7 @@ fi
 # ---------------------------------------------------------------------------
 log "2. Converge the arc-hook-pod-template ConfigMap in arc-runners"
 # Shared with ../warm-cache/install-warm-cache.sh, which converges the SAME
-# ConfigMap for the warm-cache mount the template also carries; one converge
+# ConfigMap for the warm-cache UV_CACHE_DIR the template also carries; one converge
 # script so the two installers cannot drift on how it is written.
 "${SCRIPT_DIR}/../arc/converge-hook-pod-template.sh"
 

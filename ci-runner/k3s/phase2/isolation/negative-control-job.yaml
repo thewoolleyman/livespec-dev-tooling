@@ -1,7 +1,9 @@
 # negative-control-job.yaml — proves cache-negative-tests.sh can FAIL. A pod
 # deliberately misconfigured the two ways the suite guards against: the warm
-# root mounted read-WRITE, and a writer credential in the environment. Run on
-# the host and expect cases 1 and 3 red (exit 1). The script reaches the pod
+# ROOT itself (the generations every job is seeded from) mounted read-WRITE
+# into a pod that keeps the default capabilities and no user namespace, so
+# its root can write the generation's inodes; and a writer credential in the
+# environment. Run on the host and expect cases 1 and 3 red (exit 1). The script reaches the pod
 # as a ConfigMap created from the file beside this one:
 #   sudo kubectl -n ci-warm-cache create configmap cache-negative-tests \
 #     --from-file=cache-negative-tests.sh --dry-run=client -o yaml | sudo kubectl apply -f -
@@ -29,16 +31,20 @@ spec:
           env:
             - name: SCCACHE_REDIS_WRITER_PASSWORD
               value: decoy-not-a-real-credential
+            # Case 1 probes the live generation through the writable mount
+            # below instead of a job's seed (this pod has no work volume).
+            - name: CACHE_NEG_WARM_SEED
+              value: /warm/uv
           volumeMounts:
             - name: warm
-              mountPath: /var/cache/ci-runner/warm
+              mountPath: /warm
             - name: scripts
               mountPath: /scripts
               readOnly: true
       volumes:
         - name: warm
           hostPath:
-            path: /var/cache/ci-runner/warm
+            path: /var/lib/rancher/k3s/storage/.warm
             type: Directory
         - name: scripts
           configMap:
