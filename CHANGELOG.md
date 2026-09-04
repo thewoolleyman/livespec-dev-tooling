@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.42.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.42.0...v1.42.1) (2026-09-04)
+
+
+### Bug Fixes
+
+* **otel:** registry_hit reads an unreadable CARGO_HOME as absent instead of raising out of the cargo span (livespec-dev-tooling-efqeip.1) ([9f3a331](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9f3a331d1d739ce94d08d4774612cd299f684497))
+
 ## [1.42.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.41.0...v1.42.0) (2026-09-04)
 
 
