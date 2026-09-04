@@ -45,6 +45,10 @@ matrix wall-clock acceptance rides on the compilation cache (B1), not here.
   host, `curl -s http://127.0.0.1:3080/index/config.json` must return a
   `dl` URL pointing back at the proxy, and `curl -s
   http://127.0.0.1:3080/nginx_status` shows request counts.
+- **Host gauges**: `ci-runner/observability/ci-cache-gauges.sh` emits
+  `livespec.ci_cache.registry.{up,requests_5m}` every 5 min from
+  `stub_status`; the cache dead-man trigger in
+  `ci-runner/observability/triggers/` covers the emitter.
 - **Is a job using it?** `kubectl -n ci-crates-proxy logs deploy/crates-proxy`
   — one line per request with `cache=HIT|MISS|…` and the pod's address. A
   routed Rust job's fetch shows up as ~300 lines from one address, all

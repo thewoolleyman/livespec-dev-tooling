@@ -108,6 +108,11 @@ header has the details). Design and the live verification:
   repository (it re-derives the list) or changing the populator or the
   hook template. Then `../arc/recycle-scale-set-runners.sh <scale-set>` for
   any scale set with idle runners, as after any values change.
+- **Host gauges**: every run writes `populate-manifest.json` beside the
+  generations; `ci-runner/observability/ci-cache-gauges.sh` turns it and the
+  current generation's age and size into `livespec.ci_cache.{generation_*,populate.*}`
+  every 5 min, and the `CI warm cache stale` / `CI cache populate failing`
+  triggers in `ci-runner/observability/triggers/` read those.
 - **Is it live?** `kubectl -n ci-warm-cache get cronjob,jobs` shows the
   schedule and the last runs; `ls -la /var/cache/ci-runner/warm` on the
   host shows the `uv -> uv-generations/<stamp>` link and the retained

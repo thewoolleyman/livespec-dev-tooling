@@ -156,6 +156,7 @@ mkdir -p /.cargo
 printf '[source.crates-io]\nreplace-with = "ci-runner-pool"\n\n[source.ci-runner-pool]\nregistry = "sparse+%s/index/"\n\n[build]\nincremental = false\n\n[net]\nretry = 5\n' \
   "${CRATES_PROXY_URL}" > /.cargo/config.toml
 
+run_started="$(date +%s)"
 generation="$(date -u +%Y%m%dT%H%M%SZ)"
 new_gen="${GENERATIONS_DIR}/${generation}"
 current_gen=""
@@ -319,6 +320,25 @@ if [ "${#gens[@]}" -gt "${KEEP_GENERATIONS}" ]; then
     rm -rf "${GENERATIONS_DIR:?}/${old}"
   done
 fi
+
+# MANIFEST: what this run did, for the host gauges (ci-runner/observability/
+# ci-cache-gauges.sh reads it every 5 min into livespec.ci_cache.populate.*
+# — duration, counts, toolchain — the "per-generation manifest" of the v054
+# populator-guardrails clause). Atomic rename beside the generations; the
+# reader may open it while the next run writes.
+toolchain_version="$(command -v rustc >/dev/null && rustc --version 2>/dev/null | awk '{print $2}' || echo "")"
+python3 - "${WARM_ROOT}/populate-manifest.json" "${generation}" "${run_started}" "${synced}" "${#failed[@]}" "${cargo_warmed}" "${sccache_built}" "${sccache_skipped}" "${toolchain_version}" "${failed[@]:-}" <<'PY' || log "WARN: manifest not written"
+import json, sys, time, os
+path, gen, started, synced, nfailed, warmed, built, skipped, toolchain = sys.argv[1:10]
+failed = [f for f in sys.argv[10:] if f]
+now = int(time.time())
+doc = {"generation": gen, "published_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)), "published_at_epoch": now,
+       "duration_s": now - int(started), "repos_synced": int(synced), "repos_failed": int(nfailed), "failed": failed,
+       "cargo_warmed": int(warmed), "sccache_built": int(built), "sccache_skipped": int(skipped), "toolchain_version": toolchain}
+tmp = path + ".tmp"
+with open(tmp, "w") as f: json.dump(doc, f, indent=1)
+os.replace(tmp, path)
+PY
 
 rm -rf "${SCRATCH}"
 if [ "${#failed[@]}" -gt 0 ]; then

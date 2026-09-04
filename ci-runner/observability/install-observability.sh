@@ -42,17 +42,21 @@ install -o root -g root -m 0755 -d /usr/local/lib/ci-runner
 install -o root -g root -m 0755 \
   "${src_dir}/ci-runner-heartbeat.sh" \
   "${src_dir}/ci-kueue-webhook-probe.sh" \
+  "${src_dir}/ci-cache-gauges.sh" \
   /usr/local/lib/ci-runner/
 install -o root -g root -m 0644 \
   "${src_dir}/ci-runner-heartbeat.service" \
   "${src_dir}/ci-runner-heartbeat.timer" \
   "${src_dir}/ci-kueue-webhook-probe.service" \
   "${src_dir}/ci-kueue-webhook-probe.timer" \
+  "${src_dir}/ci-cache-gauges.service" \
+  "${src_dir}/ci-cache-gauges.timer" \
   /etc/systemd/system/
 
 systemctl daemon-reload
 systemctl enable --now ci-runner-heartbeat.timer
 systemctl enable --now ci-kueue-webhook-probe.timer
+systemctl enable --now ci-cache-gauges.timer
 
-echo "installed: heartbeat + kueue-webhook-probe (timers enabled)"
-systemctl list-timers 'ci-runner-*' 'ci-kueue-*' --no-pager | head -6
+echo "installed: heartbeat + kueue-webhook-probe + cache-gauges (timers enabled)"
+systemctl list-timers 'ci-runner-*' 'ci-kueue-*' 'ci-cache-*' --no-pager | head -8

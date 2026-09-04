@@ -1,0 +1,8 @@
+{
+  "name": "CI sccache redis memory pressure — poweredge-xubuntu used/maxmemory above 0.95 for an hour",
+  "description": "Fires when MAX(livespec.ci_cache.sccache.memory_ratio) for host.name=poweredge-xubuntu over the trailing 60 min exceeds 0.95 — the compilation cache is at its 16 GiB ceiling and allkeys-lru is evicting, so hit ratios will fall as PR-lockfile variants or a second Rust repository push the default-branch graph out. The ceiling is derived against the churn-slot cap in plan research/006 §'The memory ceiling, derived'; raise --maxmemory and the container limit together in ci-runner/k3s/phase2/sccache/sccache-redis.yaml only after re-checking that derivation. Runbook: ssh poweredge-xubuntu; sudo kubectl -n ci-sccache exec deploy/sccache-redis -- redis-cli INFO memory | grep -E 'used_memory_human|maxmemory_human|evicted'. Emitter: ci-runner/observability/ci-cache-gauges.sh. livespec-dev-tooling-gjqw2i, plan ci-runner-cache-tiers research/003 §Triggers.",
+  "query": {"calculations": [{"op": "MAX", "column": "livespec.ci_cache.sccache.memory_ratio"}], "filters": [{"column": "host.name", "op": "=", "value": "poweredge-xubuntu"}], "time_range": 3600},
+  "threshold": {"op": ">", "value": 0.95, "exceeded_limit": 1},
+  "frequency": 900, "alert_type": "on_change", "recipients": [{"id":"jKw2EyfLJ3W"},{"id":"fort2EXXuVy"}],
+  "tags": [{"key":"host","value":"poweredge-xubuntu"}, {"key":"service","value":"ci-runner-liveness"}, {"key":"component","value":"ci-cache"}, {"key":"kind","value":"value"}]
+}

@@ -1,0 +1,15 @@
+# ci-cache-gauges.service — one run of ci-cache-gauges.sh (see its header);
+# fired every 5 min by ci-cache-gauges.timer. DynamicUser like the heartbeat:
+# every read is unprivileged (world-readable cache trees, loopback hostPorts,
+# the boot-durable hook template copy). StateDirectory holds the previous
+# tick's counters for the 5-minute deltas.
+[Unit]
+Description=CI host build-cache health gauges (OTLP gauges to local collector)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+DynamicUser=yes
+StateDirectory=ci-cache-gauges
+ExecStart=/usr/local/lib/ci-runner/ci-cache-gauges.sh

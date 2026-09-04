@@ -1,0 +1,8 @@
+{
+  "name": "CI cache populate failing — poweredge-xubuntu repos_failed > 0 for an hour",
+  "description": "Fires when MIN(livespec.ci_cache.populate.repos_failed) for host.name=poweredge-xubuntu over the trailing 60 min is above 0 — every tick in the window (≥2 populates at the 30-minute schedule) reported at least one failed repository step (uv sync, cargo pre-warm through the proxy, or the sccache writer build), so one routed repository is being served from a stale generation or an unfilled compilation cache. A single failed tick (a transient PyPI/crates.io hiccup) does not fire. Value trigger. Runbook: ssh poweredge-xubuntu; sudo kubectl -n ci-warm-cache logs job/$(sudo kubectl -n ci-warm-cache get jobs --sort-by=.metadata.creationTimestamp -o name | tail -1 | cut -d/ -f2) | grep -E 'FAILED|failed'; cat /var/cache/ci-runner/warm/populate-manifest.json. Emitter: ci-runner/observability/ci-cache-gauges.sh from the populator's manifest (warm-cache-populate.sh). livespec-dev-tooling-gjqw2i, plan ci-runner-cache-tiers research/003 §Triggers.",
+  "query": {"calculations": [{"op": "MIN", "column": "livespec.ci_cache.populate.repos_failed"}], "filters": [{"column": "host.name", "op": "=", "value": "poweredge-xubuntu"}], "time_range": 3600},
+  "threshold": {"op": ">", "value": 0, "exceeded_limit": 1},
+  "frequency": 1800, "alert_type": "on_change", "recipients": [{"id":"jKw2EyfLJ3W"},{"id":"fort2EXXuVy"}],
+  "tags": [{"key":"host","value":"poweredge-xubuntu"}, {"key":"service","value":"ci-runner-liveness"}, {"key":"component","value":"ci-cache"}, {"key":"kind","value":"value"}]
+}

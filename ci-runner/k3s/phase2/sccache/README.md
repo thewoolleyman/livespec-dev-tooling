@@ -76,6 +76,11 @@ describes and is gone with it.
   ci-sccache exec deploy/sccache-redis -- redis-cli DBSIZE` and `INFO memory`.
   The marker: `redis-cli GET livespec:sccache:populated:<repo>` prints
   `<sha>@<toolchain>` of the last writer build.
+- **Host gauges and triggers**: `ci-runner/observability/ci-cache-gauges.sh`
+  emits `livespec.ci_cache.sccache.*` (up, keys, hits/misses, 5-minute hit
+  ratio, memory ratio, evictions, populated repos) every 5 min; the
+  `CI sccache hit floor` and `CI sccache redis memory pressure` triggers in
+  `ci-runner/observability/triggers/` read them.
 - **Is a job using it?** Until the pod-side `cache.job-summary` span
   (`livespec-dev-tooling-mlg5sf`) lands: exec into a running workflow pod and
   run `/opt/ci-runner/bin/sccache --show-stats`; or watch `redis-cli INFO
