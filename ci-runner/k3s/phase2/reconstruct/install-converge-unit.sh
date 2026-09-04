@@ -13,6 +13,7 @@
 #   local-path-provisioner/   the fleet-owned provisioner manifest
 #   warm-cache/     converge-warm-cache.sh + the CronJob + the populate script
 #   crates-proxy/   converge-crates-proxy.sh + the proxy manifest
+#   sccache/        converge-sccache-redis.sh + the redis manifest
 #   observability/  the Kueue-webhook probe's RBAC (from ci-runner/observability)
 #   render-sa-kubeconfig.sh   the probe-credential renderer
 #   (NOT patch-node-churn-capacity.sh: converge step 1b runs it from this same
@@ -44,6 +45,7 @@ KUEUE_SRC="${PHASE2_DIR}/kueue"
 PROVISIONER_SRC="${PHASE2_DIR}/local-path-provisioner"
 WARM_CACHE_SRC="${PHASE2_DIR}/warm-cache"
 CRATES_PROXY_SRC="${PHASE2_DIR}/crates-proxy"
+SCCACHE_SRC="${PHASE2_DIR}/sccache"
 OBSERVABILITY_SRC="$(cd "${PHASE2_DIR}/../../observability" && pwd)"
 LIB_DIR="/usr/local/lib/ci-runner-k3s"
 UNIT_DIR="/etc/systemd/system"
@@ -57,7 +59,7 @@ command -v systemctl >/dev/null || { echo "FATAL: systemctl not found on PATH"; 
 # ---------------------------------------------------------------------------
 log "1. Create the self-contained artifact tree under ${LIB_DIR}"
 install -d -m 0755 "${LIB_DIR}" "${LIB_DIR}/arc" "${LIB_DIR}/kueue" "${LIB_DIR}/kueue/core" \
-  "${LIB_DIR}/local-path-provisioner" "${LIB_DIR}/warm-cache" "${LIB_DIR}/crates-proxy" "${LIB_DIR}/observability"
+  "${LIB_DIR}/local-path-provisioner" "${LIB_DIR}/warm-cache" "${LIB_DIR}/crates-proxy" "${LIB_DIR}/sccache" "${LIB_DIR}/observability"
 
 # ---------------------------------------------------------------------------
 log "2. Copy the converge script (the unit's ExecStart target) and its helper"
@@ -104,6 +106,13 @@ install -m 0644 "${WARM_CACHE_SRC}/warm-cache-populate.sh" "${LIB_DIR}/warm-cach
 log "6b. Copy the crates-proxy converge and the manifest it applies"
 install -m 0755 "${CRATES_PROXY_SRC}/converge-crates-proxy.sh" "${LIB_DIR}/crates-proxy/converge-crates-proxy.sh"
 install -m 0644 "${CRATES_PROXY_SRC}/crates-proxy.yaml" "${LIB_DIR}/crates-proxy/crates-proxy.yaml"
+
+# ---------------------------------------------------------------------------
+log "6c. Copy the sccache-redis converge and the manifest it applies"
+# (NOT install-sccache-binary.sh: that is node-local machine state run by
+# install-node.sh, not something the boot converge applies.)
+install -m 0755 "${SCCACHE_SRC}/converge-sccache-redis.sh" "${LIB_DIR}/sccache/converge-sccache-redis.sh"
+install -m 0644 "${SCCACHE_SRC}/sccache-redis.yaml" "${LIB_DIR}/sccache/sccache-redis.yaml"
 
 # ---------------------------------------------------------------------------
 log "7. Copy the Kueue-webhook probe's RBAC manifest"

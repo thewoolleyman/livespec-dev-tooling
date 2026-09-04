@@ -43,8 +43,11 @@ metadata:
   namespace: ci-warm-cache
 spec:
   # Each run is ~10-30 s steady-state (nine repositories, hardlink-seeded
-  # generation; measured 2026-08-23). Half-hourly keeps the lower within one
-  # merge-cycle of every default branch's lockfile at negligible cost.
+  # generation; measured 2026-08-23), plus the sccache-writer build of each
+  # routed Rust repository ONLY when its default branch or toolchain changed
+  # since the last build (a marker key in redis; see the populator's header).
+  # Half-hourly keeps the lower within one merge-cycle of every default
+  # branch's lockfile at negligible cost.
   schedule: "*/30 * * * *"
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
@@ -53,7 +56,9 @@ spec:
   jobTemplate:
     spec:
       backoffLimit: 0
-      activeDeadlineSeconds: 1500
+      # Room for one full sccache-writer build of the console (four cargo
+      # invocations at the repo's own build.jobs cap) on top of the uv sync.
+      activeDeadlineSeconds: 3600
       template:
         metadata:
           labels:
@@ -86,12 +91,32 @@ spec:
                 - name: UV_HTTP_RETRIES
                   value: "5"
                 # The crates proxy the cargo pre-warm fetches through
-                # (../crates-proxy/); cargo's own retry budget for the upstream
-                # misses that pre-warm exists to absorb.
+                # (../crates-proxy/). NO CARGO_* variable may be set on this
+                # container: sccache hashes them into every cache key, and a
+                # value the jobs do not carry keys the compilation cache away
+                # from every job (the populator's header). Retries and
+                # incremental live in the cargo config the script writes.
                 - name: CRATES_PROXY_URL
                   value: http://crates-proxy.ci-crates-proxy.svc.cluster.local:3080
-                - name: CARGO_NET_RETRY
-                  value: "5"
+                # The shared compilation cache (../sccache/): this populator is
+                # its ONE writer. The credential is projected only into this
+                # namespace by converge-sccache-redis.sh; `optional` so a
+                # populate without it still refreshes uv and the crates proxy
+                # and logs the skip rather than failing to start.
+                - name: SCCACHE_REDIS_ENDPOINT
+                  value: redis://sccache-redis.ci-sccache.svc.cluster.local:6379
+                - name: SCCACHE_REDIS_WRITER_USERNAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: sccache-redis-writer
+                      key: username
+                      optional: true
+                - name: SCCACHE_REDIS_WRITER_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: sccache-redis-writer
+                      key: password
+                      optional: true
               securityContext:
                 allowPrivilegeEscalation: false
                 capabilities:
@@ -101,10 +126,18 @@ spec:
                   cpu: "500m"
                   memory: "512Mi"
                 limits:
-                  memory: "2Gi"
+                  # The sccache-writer build runs at the repo's own build.jobs
+                  # cap (the console: 4) under nice/ionice; this CPU limit is
+                  # the hard ceiling the populator can never exceed on the
+                  # node the jobs share (guardrails: livespec-dev-tooling-osmzo4).
+                  cpu: "6"
+                  memory: "8Gi"
               volumeMounts:
                 - name: warm
                   mountPath: /warm
+                - name: ci-runner-bin
+                  mountPath: /opt/ci-runner/bin
+                  readOnly: true
                 - name: scripts
                   mountPath: /scripts
                   readOnly: true
@@ -124,6 +157,11 @@ spec:
               configMap:
                 name: warm-cache-populate
                 defaultMode: 0555
+            - name: ci-runner-bin
+              hostPath:
+                # The pool-provided sccache (../sccache/install-sccache-binary.sh).
+                path: /usr/local/lib/ci-runner-k3s/bin
+                type: DirectoryOrCreate
             - name: config
               configMap:
                 name: warm-cache-repos

@@ -104,6 +104,9 @@ log "6/10 ARC log archive"
 log "7/10 boot-time GitHub App secret reinjection unit (enable only)"
 "${K3S_DIR}/secret-reinjection/install-secret-reinjection-unit.sh"
 
+log "7b/10 pool-provided sccache binary (node-local; mounted read-only into every job)"
+"${SCRIPT_DIR}/sccache/install-sccache-binary.sh"
+
 log "8/10 reconstruct-on-boot converge unit + artifacts (enable only)"
 "${SCRIPT_DIR}/reconstruct/install-converge-unit.sh"
 

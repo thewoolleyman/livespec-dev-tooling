@@ -14,7 +14,7 @@ written by exactly one trusted writer and read by every workflow pod:
 
 | Path | Role |
 |---|---|
-| `warm-cache-populate.sh` | The populator. Clones or fast-forwards every routed repository's default branch and runs `uv sync --frozen --all-groups --no-install-project --no-install-workspace` against a fresh hardlink-seeded generation, then publishes it with one atomic symlink rename and prunes all but the newest two; for every repository with a `Cargo.lock` it also runs `cargo fetch --locked` through the crates proxy (`../crates-proxy/`) to pre-warm it. Never builds or installs a project; only locked third-party dependencies land in the cache. Its header carries the generation/publish design and the per-repository fail-soft rule. |
+| `warm-cache-populate.sh` | The populator. Clones or fast-forwards every routed repository's default branch and runs `uv sync --frozen --all-groups --no-install-project --no-install-workspace` against a fresh hardlink-seeded generation, then publishes it with one atomic symlink rename and prunes all but the newest two; for every repository with a `Cargo.lock` it also runs `cargo fetch --locked` through the crates proxy (`../crates-proxy/`) to pre-warm it, and builds the default branch with sccache as the compilation cache's one writer (`../sccache/`) when the branch or toolchain changed. Never builds or installs a project; only locked third-party dependencies land in the cache. Its header carries the generation/publish design and the per-repository fail-soft rule. |
 | `warm-cache-cronjob.yaml` | Namespace `ci-warm-cache` + the `warm-cache-populate` CronJob (every 30 min, `concurrencyPolicy: Forbid`), running the populator in the same fabro sandbox image the fleet's CI jobs execute in (the `python-rust` layer, so `cargo` is present), with `/var/cache/ci-runner/warm` mounted read-WRITE — the only read-write mount of that path in the cluster. |
 | `install-warm-cache.sh` | Derives the routed-repository list from `../arc/values-*.yaml` (every per-repo scale set's `githubConfigUrl`) into the `warm-cache-repos` ConfigMap, applies the CronJob, converges its script ConfigMap from the file above, runs one populate immediately and waits for it, then converges `arc-hook-pod-template` via `../arc/converge-hook-pod-template.sh`. Idempotent; re-run after adding a routed repository. |
 | `../arc/hook-pod-template.yaml` | The reader side, in the one file every workflow pod already reads: mounts the warm root READ-ONLY into the job container, copies the current generation into the pod's ephemeral work volume in a `postStart` hook, and sets `UV_CACHE_DIR` to that copy. |
@@ -93,8 +93,12 @@ host, the hook template's `postStart` writes `/.cargo/config.toml` in the job
 container to use it, and THIS populator pre-warms it (`cargo fetch --locked`
 per routed `Cargo.lock`, through the proxy, into a throwaway `CARGO_HOME`) so
 the cold cost lands on this timer and not on a job. The compile-time half of
-the Rust problem is the compilation cache (B1 of plan
-`ci-runner-cache-tiers`), not this tier. Design and the live verification:
+the Rust problem is the compilation cache (`../sccache/`), whose ONE writer
+is also this populator: when the sccache binary is mounted and the writer
+credential is projected, it builds each routed Rust repository's default
+branch at the job's own checkout path with sccache as the writer, gated by a
+marker key in redis so an unchanged branch costs nothing (the populator's
+header has the details). Design and the live verification:
 `plan/ci-runner-cache-tiers/research/005-a1-crates-proxy-verification.md`.
 
 ## Operating it
