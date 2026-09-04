@@ -277,7 +277,7 @@ fleet's actual call volume) needs a live-cluster observation —
 | `wedged-runner/scan-wedged-runners.sh` | Finds runner pods that are `Running` and `ready=true` to Kubernetes but permanently dead to GitHub (the `Registration <uuid> was not found` loop), reporting pod, scale set, and age. Exits 1 when any is found, so it is usable directly as a check; `--clear` deletes them, opt-in. See "Wedged runner vs. saturation" below for why this cannot be inferred from any capacity signal. |
 | `wedged-runner/install-wedged-runner-scan.sh` | Installs that scan to `/usr/local/lib/ci-runner-k3s/` and the unit + timer to `/etc/systemd/system`, substituting the required `report`/`clear` mode for the unit file's deliberate `MODE_PLACEHOLDER`. Node-local; run it on any node added to the pool. Installed live on `poweredge-xubuntu` in `clear` mode, 2026-08-19 (`livespec-s43svm.30`) — that script's header carries the argument for `clear` over `report` on a host with no failure routing. |
 | `wedged-runner/scan-wedged-runners.service` + `.timer` | Every-5-minute wedged-runner sweep. Unlike the reapply timer this is not belt-and-suspenders: the wedged state is self-perpetuating (a dead runner suppresses the scale-up that would replace it), so without an external sweep the scale set stays blocked until a human notices — which is exactly how the condition was found, 33+ minutes into a held merge gate. |
-| `runner-pod-lifecycle/scan-runner-pod-lifecycle.sh` | Detects the runner-pod LIFECYCLE stall — the THIRD "jobs queued, nothing starting" case — as six named classes read from node-side observables that persist long enough for a sweep to see them: `pvc-pending`, `bind-deadline`, `inotify-emfile`, `containerd-deadline`, `hook-failure`, `stale-listener`. Every journal, log and event read is bounded to a 5-minute window (`containerd.log` rotates, and is walked backwards to the cutoff). Exits 1 naming each class with its count, 0 on a clean node, 2 when it cannot read one of its inputs — fail-closed, never a false clean. Report-only: nothing in this family is safe to auto-delete. See "Runner-pod lifecycle stall" → "The detector" below (livespec plan `ci-runner-pod-lifecycle-reliability`, item `livespec-nhjpai`). |
+| `runner-pod-lifecycle/scan-runner-pod-lifecycle.sh` | Detects the runner-pod LIFECYCLE stall — the THIRD "jobs queued, nothing starting" case — as six named classes read from node-side observables that persist long enough for a sweep to see them: `pvc-pending`, `bind-deadline`, `inotify-emfile`, `containerd-deadline`, `hook-failure`, `stale-listener`. Every journal, log and event read is bounded to a 5-minute window (`containerd.log` rotates, and is walked backwards to the cutoff). Exits 1 naming each class with its count, 0 on a clean node, 2 when it cannot read one of its inputs — fail-closed, never a false clean. Report-only: nothing in this family is safe to auto-delete. Every sweep ends with ONE best-effort OTLP POST to the host collector — `livespec.ci_lifecycle.<class>` (one gauge per class, always emitted, 0 when clean), `livespec.ci_kueue.pending` / `.admitted`, `livespec.ci_churn_slot.allocatable` / `.quota_sum` — landing in the `livespec` env's `metrics` dataset; `--no-emit` skips it. See "Runner-pod lifecycle stall" → "The detector" below, and its "What every sweep emits to Honeycomb" (livespec plan `ci-runner-pod-lifecycle-reliability`, item `livespec-nhjpai`; emission `livespec-vwzv`). |
 | `runner-pod-lifecycle/install-runner-pod-lifecycle-scan.sh` | Installs that scan to `/usr/local/lib/ci-runner-k3s/` and the unit + timer to `/etc/systemd/system`, enabled and started. No mode argument, by decision rather than omission: there is no clear mode (the installer's header says why). Node-local; run it on any node added to the pool and after any node rebuild. |
 | `runner-pod-lifecycle/scan-runner-pod-lifecycle.service` + `.timer` | Every-5-minute lifecycle-stall sweep, report-only: `systemctl is-failed scan-runner-pod-lifecycle.service` and its journal are the signal, exactly as the wedge sweep's report mode. `OnBootSec=4min` sits after the boot converge so the first sweep after a reboot reads a converged cluster rather than one still being built. |
 | `arc/recycle-scale-set-runners.sh` | Deletes a scale set's IDLE runner pods after a `helm upgrade`, skipping any pod with a live `-workflow` companion. Run it at the end of every apply: `helm upgrade` replaces the listener but leaves existing runner pods on the old pod template and the old listener session. Closes the re-cut path into the wedged state; see "Recycle the runner pods after every upgrade" below for why that is a partial fix. |
@@ -1394,6 +1394,145 @@ by `install-runner-pod-lifecycle-scan.sh` at 18:20Z: timer active and
 enabled, first sweep immediate, journal carrying
 `containerd-deadline=25` with the PVC already bound — the five-minute
 window tiling as designed.
+
+#### What every sweep emits to Honeycomb (`livespec-vwzv`)
+
+The classes above were, until 2026-09-04, a journal-only reading. The
+maintainer's directive that day: the churn-slot cap `C`
+(`kueue/DERIVATION.md` calls it "a measured ceiling, not a free parameter")
+and the CI routing are to be re-derived from MEASURED Honeycomb data, so
+every signal that derivation needs is captured beside what the host
+collector already exports (the `system.disk.*` rows per device, the
+`system.filesystem.*` rows per tier mountpoint, `k8s.pod.phase` per pod,
+and the heartbeat's `livespec.ci_listeners.active` /
+`livespec.ci_runners.active`). So the sweep now ends with ONE OTLP/HTTP
+metrics POST to the host collector (`http://127.0.0.1:4319/v1/metrics` —
+the heartbeat's endpoint, JSON shape and `curl` flags), which the collector
+exports to the `livespec` environment's `metrics` dataset. That environment
+is a Honeycomb Metrics 2.0 environment with ONE metrics dataset, so rows
+are told apart by metric name and resource attributes, never by dataset:
+
+| Resource attribute / scope | Value |
+|---|---|
+| `service.name` | `ci-runner-lifecycle` |
+| `host.name` | `$(hostname)` — `poweredge-xubuntu`; the collector's `resourcedetection` (`override: false`) keeps it |
+| instrumentation scope name | `runner-pod-lifecycle` |
+
+| Gauge | Value | Read from |
+|---|---|---|
+| `livespec.ci_lifecycle.<class>` — one gauge per class, class name verbatim: `pvc-pending`, `bind-deadline`, `inotify-emfile`, `containerd-deadline`, `hook-failure`, `stale-listener` | the count the report carries for that class. **Always emitted, 0 when clean** — an absent metric is indistinguishable from a broken emitter | the sweep's own findings |
+| `livespec.ci_kueue.pending` | Kueue workloads waiting for admission | `ClusterQueue.status.pendingWorkloads`, summed over every ClusterQueue that covers `ci-runner.io/churn-slot` — the pool's nine queues; `phase1-proof-cq` covers `cpu`/`memory` only and is excluded |
+| `livespec.ci_kueue.admitted` | Kueue workloads admitted and not yet finished | `ClusterQueue.status.admittedWorkloads`, the same sum |
+| `livespec.ci_churn_slot.quota_sum` | `C` as the queues have it — the cohort's guaranteed churn-slot total | the sum of `nominalQuota` for `ci-runner.io/churn-slot` over the same queues; 32 at the 2026-09-02 interim |
+| `livespec.ci_churn_slot.allocatable` | `C` as the scheduler has it | `Node.status.allocatable["ci-runner.io/churn-slot"]` summed over the nodes (one node today); 0 when the extended resource is not registered, which IS a reading — the capacity is absent |
+
+Why ClusterQueue status rather than `kubectl get workloads -A`: one list
+call yields pending, admitted AND the quota sum, and the per-queue counters
+are the ones Kueue's own admission loop maintains; a workloads listing would
+have to be classified item by item on its `QuotaReserved` / `Admitted`
+conditions to reach the same numbers.
+
+**Best-effort, by contract.** The report and the exit code are the
+interface the journal and `systemctl is-failed` depend on, so a collector
+outage must not turn a clean node into a failed unit or mask a stall: a
+`curl` failure is logged (`emit: POST to … FAILED`, with the values that
+were not posted) and absorbed, and the call site is guarded so that even a
+bug in the emitter cannot change the exit code. One fail-closed split is
+kept: the class gauges come from variables the sweep already computed and
+are always sent; the Kueue and node gauges need two extra reads, and when a
+read FAILS those gauges are OMITTED (and the failure logged) rather than
+sent as false zeros — the heartbeat's split between "0" and "could not
+read". No trigger pairs with these gauges: like the heartbeat's
+`io_stall_pct` pair they are decision inputs, not alarms.
+
+Knobs: `--no-emit` (or `RPL_NO_EMIT=1`) skips the POST entirely — for a
+hand run on a node whose collector you do not want to feed, or a fixture run
+off the host; `--otlp-endpoint URL`, `RPL_OTLP_ENDPOINT`, or the heartbeat
+family's host-wide `CI_RUNNER_HEARTBEAT_OTLP` override the endpoint, in that
+order of precedence. The service, timer and installer are unchanged: the
+unit already runs as root with the cluster kubeconfig, `curl` is already on
+the host for the heartbeat, and the default endpoint is loopback.
+
+**Joining the disk rows to the cache tiers.** The collector's
+`system.disk.*` rows (`operations`, `weighted_io_time`, `io`, every 30 s)
+carry `device` = `sda` / `dm-N`. `dm-N` numbering is host- and boot-specific
+(LVM activation order), so never hard-code it. The `system.filesystem.*`
+rows carry BOTH `device` (`/dev/dm-N`) and `mountpoint`, so join through
+the mountpoint: query `system.filesystem.usage` grouped by `device` and
+`mountpoint` over the window of interest, strip `/dev/`, and filter the disk
+rows on that `device`. The tiers, with the mapping the live host carried on
+2026-09-04 (re-derive it for every window you query):
+
+| Tier | Mountpoint | `device` on 2026-09-04 |
+|---|---|---|
+| ci-cache | `/var/cache/ci-runner` | `dm-2` |
+| ci-containerd | `/var/cache/ci-runner/k3s-containerd` | `dm-3` |
+| ci-workvols | `/var/cache/ci-runner/k3s-storage` | `dm-4` |
+| the whole array | (`sda2` is the LVM physical volume under every tier) | `sda` |
+
+**The retrospective query recipe** — three queries on the `metrics`
+dataset, every one filtered to `host.name = poweredge-xubuntu`, granularity
+300 s (the sweep's and the heartbeat's cadence; the collector scrapes every
+30 s), lined up on one time axis:
+
+1. **Concurrency** — `COUNT_DISTINCT(k8s.pod.name)` WHERE
+   `k8s.namespace.name = arc-runners` AND `k8s.pod.name ends-with -workflow`
+   AND `k8s.pod.phase = 2` (2 is Running in the k8s_cluster receiver's
+   encoding). Workflow pods, not runner pods, because the workflow pod is
+   where the job's containers actually run (see "The workflow pod is not the
+   runner pod" above). Proven 2026-09-04: 12–35 concurrent across a 6 h
+   window.
+2. **Array queue time per operation** — two named calculations,
+   `wt = SUM(system.disk.weighted_io_time)` and
+   `ops = SUM(system.disk.operations)`, both WHERE `device = sda`, and the
+   query-math formula `$wt / $ops`. Both metrics are cumulative monotonic
+   sums, so Honeycomb applies `INCREASE` per step before the `SUM`, and the
+   ratio is the mean seconds an operation spent queued in that step.
+   `RATE_SUM`, `RATE_AVG` and `RATE_MAX` are NOT allowed on a metrics
+   dataset; for a per-second rate use a calculated field
+   `RATE($system.disk.operations)` and aggregate that. Proven 2026-09-04:
+   about 0.01 s per operation idle, 0.04 at the window's peak. Repeat per
+   tier with `device = dm-N` from the join above.
+3. **The lifecycle gauges** — `MAX(livespec.ci_lifecycle.<class>)` for each
+   class, `MAX(livespec.ci_kueue.pending)`,
+   `MAX(livespec.ci_kueue.admitted)`,
+   `MAX(livespec.ci_churn_slot.allocatable)`,
+   `MAX(livespec.ci_churn_slot.quota_sum)`, plus the heartbeat's
+   `MAX(livespec.ci_runners.active)`.
+
+The question the three answer together: at what workflow-pod concurrency
+does the array's queue time per operation climb, and do the lifecycle
+classes (or Kueue's pending count) rise at the same moment. That
+concurrency, measured from real traffic rather than a synthetic benchmark,
+is the ceiling `C`.
+
+The first two as `run_query` specs (the Honeycomb MCP shape; the Query
+Builder's fields are the same):
+
+```json
+{"calculations":[{"op":"COUNT_DISTINCT","column":"k8s.pod.name"}],
+ "filters":[{"column":"host.name","op":"=","value":"poweredge-xubuntu"},
+            {"column":"k8s.namespace.name","op":"=","value":"arc-runners"},
+            {"column":"k8s.pod.name","op":"ends-with","value":"-workflow"},
+            {"column":"k8s.pod.phase","op":"=","value":2}],
+ "granularity":300}
+```
+
+```json
+{"calculations":[{"op":"SUM","column":"system.disk.weighted_io_time","name":"wt"},
+                 {"op":"SUM","column":"system.disk.operations","name":"ops"}],
+ "formulas":[{"name":"queue_s_per_op","expression":"$wt / $ops"}],
+ "filters":[{"column":"host.name","op":"=","value":"poweredge-xubuntu"},
+            {"column":"device","op":"=","value":"sda"}],
+ "granularity":300}
+```
+
+**Boundary.** The cache tiers' own telemetry — the `build.cache.*`
+attributes, the `cache.warm-copy` and `cache.job-summary` spans, dataset
+`github-ci` — belongs to plan `ci-runner-cache-tiers`
+(`plan/ci-runner-cache-tiers/research/003-cache-observability.md` in this
+repository); nothing in that family is emitted here, and the disk and
+filesystem rows this recipe joins are the collector's, not the cache's.
 
 ### What a CI consumer sees
 

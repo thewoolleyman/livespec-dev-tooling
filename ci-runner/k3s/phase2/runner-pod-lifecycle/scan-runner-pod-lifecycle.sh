@@ -99,15 +99,24 @@
 # streak reaches ESCALATE_AFTER, so a one-off blip stays quiet and a
 # persisting stall gets louder.
 #
+# EVERY SWEEP ALSO EMITS ITS READINGS — the per-class counts, Kueue's
+# pending/admitted workload counts and the churn-slot allocatable-versus-
+# quota-sum — as OTLP gauges to the host collector, best-effort, so the
+# churn-slot cap can be re-derived from measured data rather than from this
+# journal. See "OTLP EMISSION" at the end of the evaluation (livespec-vwzv).
+#
 # Requires: kubectl + KUBECONFIG for the k3s cluster, journalctl with access
 # to the k3s unit's journal, and read access to containerd.log (root, on the
-# live host — the service runs as root, like the wedge sweep).
+# live host — the service runs as root, like the wedge sweep). curl for the
+# emission (its absence is logged, never fatal).
 set -euo pipefail
 
-USAGE="usage: scan-runner-pod-lifecycle.sh [--window DURATION] [--pvc-pending-seconds N] [--workflow-pending-seconds N] [--killpod-min N] [--containerd-log PATH] [--state-file PATH] [--escalate-after N] [--namespace NS] [--systems-namespace NS]
+USAGE="usage: scan-runner-pod-lifecycle.sh [--window DURATION] [--pvc-pending-seconds N] [--workflow-pending-seconds N] [--killpod-min N] [--containerd-log PATH] [--state-file PATH] [--escalate-after N] [--namespace NS] [--systems-namespace NS] [--otlp-endpoint URL] [--no-emit]
   DURATION is <N>s, <N>m or <N>h. REPORT-ONLY: prints every lifecycle-stall
   class found on the node with its count and exits 1 if any; exits 0 on a
-  clean node; exits 2 when it cannot read one of its inputs."
+  clean node; exits 2 when it cannot read one of its inputs. Every sweep also
+  POSTs its readings as OTLP gauges to the host collector, best-effort;
+  --no-emit (or RPL_NO_EMIT=1) skips that."
 
 NAMESPACE="${RPL_NAMESPACE:-arc-runners}"
 SYSTEMS_NAMESPACE="${RPL_SYSTEMS_NAMESPACE:-arc-systems}"
@@ -129,6 +138,11 @@ KILLPOD_MIN="${RPL_KILLPOD_MIN:-20}"
 CONTAINERD_LOG="${RPL_CONTAINERD_LOG:-/var/lib/rancher/k3s/agent/containerd/containerd.log}"
 STATE_FILE="${RPL_STATE_FILE:-/var/lib/ci-runner-k3s/runner-pod-lifecycle-streak}"
 ESCALATE_AFTER="${RPL_ESCALATE_AFTER:-2}"
+# Where the end-of-sweep gauges go (see "OTLP EMISSION" below): the host
+# otel-collector's loopback HTTP receiver, the heartbeat family's endpoint
+# (../../../observability/), honouring its host-wide override too.
+OTLP_ENDPOINT="${RPL_OTLP_ENDPOINT:-${CI_RUNNER_HEARTBEAT_OTLP:-http://127.0.0.1:4319/v1/metrics}}"
+NO_EMIT="${RPL_NO_EMIT:-0}"
 
 HOOK_SIGNATURE='Executing the custom container implementation failed'
 BIND_SIGNATURE='binding volumes: context deadline exceeded'
@@ -146,6 +160,8 @@ while [ $# -gt 0 ]; do
     --escalate-after)           ESCALATE_AFTER="${2:?$USAGE}"; shift 2 ;;
     --namespace)                NAMESPACE="${2:?$USAGE}"; shift 2 ;;
     --systems-namespace)        SYSTEMS_NAMESPACE="${2:?$USAGE}"; shift 2 ;;
+    --otlp-endpoint)            OTLP_ENDPOINT="${2:?$USAGE}"; shift 2 ;;
+    --no-emit)                  NO_EMIT=1; shift ;;
     -h|--help)                  echo "$USAGE"; exit 0 ;;
     *)                          echo "FATAL: unknown argument '$1'"$'\n'"$USAGE" >&2; exit 2 ;;
   esac
@@ -154,6 +170,7 @@ done
 for v in PVC_PENDING_SECONDS WORKFLOW_PENDING_SECONDS KILLPOD_MIN ESCALATE_AFTER; do
   [[ "${!v}" =~ ^[0-9]+$ ]] || { echo "FATAL: ${v} must be a non-negative integer, got '${!v}'" >&2; exit 2; }
 done
+case "$NO_EMIT" in 0|1) ;; *) echo "FATAL: RPL_NO_EMIT must be 0 or 1, got '${NO_EMIT}'" >&2; exit 2 ;; esac
 case "$WINDOW" in
   *s) WINDOW_SECONDS="${WINDOW%s}" ;;
   *m) WINDOW_SECONDS=$(( ${WINDOW%m} * 60 )) ;;
@@ -316,6 +333,144 @@ while IFS='|' read -r name ref; do
 done < <(kubectl -n "$SYSTEMS_NAMESPACE" get autoscalinglistener -o jsonpath='{range .items[*]}{.metadata.name}|{.spec.ephemeralRunnerSetName}{"\n"}{end}' 2>/dev/null || true)
 echo "  ${listener_hits} listener pod(s) not Running/healthy; ${stale_hits} stale EphemeralRunnerSet reference(s)"
 [ $(( listener_hits + stale_hits )) -gt 0 ] && add_finding stale-listener "$(( listener_hits + stale_hits ))"
+
+# ---------------------------------------------------------------------------
+# OTLP EMISSION — every sweep's readings, posted as gauges (livespec-vwzv).
+#
+# WHY. Until 2026-09-04 the class counts above, Kueue's pending/admitted
+# workload counts and the node's churn-slot allocatable-versus-quota lived in
+# this unit's journal only. The maintainer's 2026-09-04 directive is that the
+# churn-slot cap C (kueue/DERIVATION.md calls it "a measured ceiling, not a
+# free parameter") and the CI routing are re-derived from MEASURED Honeycomb
+# data, so every signal that derivation needs is captured beside the disk
+# rows and the k8s pod phases the host collector already exports. THE NAMED
+# READER (naming one up front is the lesson of the heartbeat's eight silent
+# days, ../../../observability/ci-runner-heartbeat.sh): the retrospective
+# query recipe in ../README.md "What every sweep emits to Honeycomb", which
+# lines these gauges up against concurrent workflow pods and the array's
+# queue time per operation. Decision inputs, like the heartbeat's io_stall
+# pair — no trigger pairs with them.
+#
+# WHAT. ONE OTLP/HTTP metrics POST to the host otel-collector's loopback
+# receiver — the heartbeat's endpoint, JSON shape and curl flags; the
+# collector exports to the `livespec` env's `metrics` dataset — with resource
+# service.name=ci-runner-lifecycle + host.name, scope runner-pod-lifecycle:
+#   livespec.ci_lifecycle.<class>       the count the report carries for the
+#                                       class — EVERY class, ALWAYS, 0 when
+#                                       clean: an absent metric is
+#                                       indistinguishable from a broken
+#                                       emitter.
+#   livespec.ci_kueue.pending           ClusterQueue status.pendingWorkloads
+#   livespec.ci_kueue.admitted          and status.admittedWorkloads, summed
+#                                       over every ClusterQueue that covers
+#                                       ci-runner.io/churn-slot (the pool;
+#                                       phase1-proof-cq covers cpu/memory
+#                                       only and is excluded). One list
+#                                       call, which also yields
+#   livespec.ci_churn_slot.quota_sum    the sum of those queues' nominalQuota
+#                                       for ci-runner.io/churn-slot; and
+#   livespec.ci_churn_slot.allocatable  allocatable ci-runner.io/churn-slot
+#                                       summed over the nodes — 0 when the
+#                                       extended resource is not registered,
+#                                       which IS a reading (capacity absent).
+#
+# BEST-EFFORT, BY CONTRACT. The report and the exit code are the interface
+# the journal and `systemctl is-failed` depend on; a collector outage must not
+# turn a clean node into a failed unit or mask a stall. A curl failure is
+# logged and absorbed, and the call site is guarded so that even a bug in
+# this block cannot change the exit code. One fail-closed split is kept: the
+# class gauges come from variables this sweep already computed and are always
+# sent; the Kueue and node gauges need two extra reads, and when a read FAILS
+# those gauges are OMITTED (and the failure logged) rather than sent as false
+# zeros — the heartbeat's split between "0" and "could not read".
+#
+# ADDING A CLASS: append its name to EMIT_CLASSES so its zero is emitted on a
+# clean sweep. A class present in FINDINGS but missing from the list is still
+# emitted — only its zero would be lost.
+EMIT_CLASSES="pvc-pending bind-deadline inotify-emfile containerd-deadline hook-failure stale-listener"
+
+# One gauge metric carrying one integer datapoint — the heartbeat's shape.
+# $1 name, $2 description, $3 unit, $4 value, $5 timeUnixNano.
+gauge_json() {
+  printf '{"name":"%s","description":"%s","unit":"%s","gauge":{"dataPoints":[{"asInt":"%s","timeUnixNano":"%s"}]}}' "$1" "$2" "$3" "$4" "$5"
+}
+# The count the report carries for class $1; 0 when the class is absent.
+class_count() {
+  local t
+  for t in $FINDINGS; do case "$t" in "$1="*) printf '%s' "${t#*=}"; return 0 ;; esac; done
+  printf '0'
+}
+
+emit_lifecycle_metrics() {
+  local now_ns host_name tok c n classes metrics summary payload err
+  local cq_rows node_rows name quotas p a q alloc pending admitted quota_sum allocatable
+  if [ "$NO_EMIT" != 0 ]; then
+    echo "  emit: disabled (--no-emit / RPL_NO_EMIT=1); nothing posted"
+    return 0
+  fi
+  command -v curl >/dev/null || { echo "  emit: curl not found on PATH; nothing posted (best-effort; the report and exit code are unaffected)" >&2; return 0; }
+  now_ns="$(date +%s%N)"
+  host_name="$(hostname)"
+
+  classes="$EMIT_CLASSES"
+  for tok in $FINDINGS; do
+    c="${tok%%=*}"
+    case " $classes " in *" $c "*) ;; *) classes="$classes $c" ;; esac
+  done
+  metrics=""; summary=""
+  for c in $classes; do
+    n="$(class_count "$c")"
+    metrics="${metrics},$(gauge_json "livespec.ci_lifecycle.${c}" "runner-pod lifecycle sweep: count reported for class ${c} (0 = clean)" "{findings}" "$n" "$now_ns")"
+    summary="${summary} livespec.ci_lifecycle.${c}=${n}"
+  done
+
+  if cq_rows="$(kubectl get clusterqueues -o jsonpath='{range .items[*]}{.metadata.name}|{range .spec.resourceGroups[*]}{range .flavors[*]}{range .resources[*]}{.name}={.nominalQuota} {end}{end}{end}|{.status.pendingWorkloads}|{.status.admittedWorkloads}{"\n"}{end}' 2>&1)"; then
+    pending=0; admitted=0; quota_sum=0
+    while IFS='|' read -r name quotas p a; do
+      [ -n "$name" ] || continue
+      q=""
+      for tok in $quotas; do case "$tok" in "ci-runner.io/churn-slot="*) q="${tok#*=}" ;; esac; done
+      [ -n "$q" ] || continue
+      [[ "$q" =~ ^[0-9]+$ ]] && quota_sum=$((quota_sum + q))
+      [[ "$p" =~ ^[0-9]+$ ]] && pending=$((pending + p))
+      [[ "$a" =~ ^[0-9]+$ ]] && admitted=$((admitted + a))
+    done <<< "$cq_rows"
+    metrics="${metrics},$(gauge_json livespec.ci_kueue.pending "Kueue workloads pending admission, summed over the ClusterQueues covering ci-runner.io/churn-slot" "{workloads}" "$pending" "$now_ns")"
+    metrics="${metrics},$(gauge_json livespec.ci_kueue.admitted "Kueue workloads admitted and not yet finished, summed over the ClusterQueues covering ci-runner.io/churn-slot" "{workloads}" "$admitted" "$now_ns")"
+    metrics="${metrics},$(gauge_json livespec.ci_churn_slot.quota_sum "Sum of nominalQuota for ci-runner.io/churn-slot across ClusterQueues" "{slots}" "$quota_sum" "$now_ns")"
+    summary="${summary} livespec.ci_kueue.pending=${pending} livespec.ci_kueue.admitted=${admitted} livespec.ci_churn_slot.quota_sum=${quota_sum}"
+  else
+    echo "  emit: could not read ClusterQueues ($(printf '%s' "$cq_rows" | head -1)); omitting livespec.ci_kueue.* and livespec.ci_churn_slot.quota_sum rather than sending false zeros" >&2
+  fi
+
+  if node_rows="$(kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}|{.status.allocatable.ci-runner\.io/churn-slot}{"\n"}{end}' 2>&1)"; then
+    allocatable=0
+    while IFS='|' read -r name alloc; do
+      [ -n "$name" ] || continue
+      [[ "$alloc" =~ ^[0-9]+$ ]] && allocatable=$((allocatable + alloc))
+    done <<< "$node_rows"
+    metrics="${metrics},$(gauge_json livespec.ci_churn_slot.allocatable "Allocatable ci-runner.io/churn-slot summed over the cluster's nodes (0 = extended resource not registered)" "{slots}" "$allocatable" "$now_ns")"
+    summary="${summary} livespec.ci_churn_slot.allocatable=${allocatable}"
+  else
+    echo "  emit: could not read nodes ($(printf '%s' "$node_rows" | head -1)); omitting livespec.ci_churn_slot.allocatable rather than sending a false zero" >&2
+  fi
+
+  payload="$(cat <<JSON
+{"resourceMetrics":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"ci-runner-lifecycle"}},{"key":"host.name","value":{"stringValue":"${host_name}"}}]},"scopeMetrics":[{"scope":{"name":"runner-pod-lifecycle"},"metrics":[${metrics#,}]}]}]}
+JSON
+)"
+  if err="$(curl --silent --show-error --fail --max-time 10 -X POST "${OTLP_ENDPOINT}" -H 'Content-Type: application/json' -d "${payload}" 2>&1 >/dev/null)"; then
+    echo "  emit:${summary} host.name=${host_name} -> ${OTLP_ENDPOINT}"
+  else
+    echo "  emit: POST to ${OTLP_ENDPOINT} FAILED (${err:-no detail}); best-effort — the report and exit code are unaffected. Not posted:${summary}" >&2
+  fi
+  return 0
+}
+
+log "emit: end-of-sweep gauges to the host collector"
+# `|| true` is the contract, not belt-and-braces: it also switches errexit off
+# inside the function, so a failing read in there cannot abort the sweep.
+emit_lifecycle_metrics || true
 
 # ---------------------------------------------------------------------------
 if [ -z "$FINDINGS" ]; then
