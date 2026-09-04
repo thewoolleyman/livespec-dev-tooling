@@ -1,0 +1,150 @@
+# values-livespec-orchestrator-beads-fabro.yaml -- the per-repository
+# AutoscalingRunnerSet for `livespec-orchestrator-beads-fabro`, the TENTH fleet
+# repository to join the pool (2026-09-04; livespec plan
+# `ci-runner-pod-lifecycle-reliability`, epic `livespec-ifwnqj`, Carrier G1,
+# work-item `livespec-ifwnqj.1`). Committed in the SAME change that creates the
+# scale set, like values-livespec-driver-pi.yaml, and derived against README.md
+# "Deriving a new repository's ClusterQueue". Read values-livespec.yaml first:
+# it carries the rationale for the repository-scoped `githubConfigUrl` (a
+# personal GitHub account has no org or enterprise runner scope at all), for
+# the churn-slot extended resource, and for why `maxRunners` and the
+# ClusterQueue's nominalQuota are two enforcement points holding two DIFFERENT
+# numbers.
+#
+# The Beads/Dolt + Fabro reference orchestrator. Until 2026-09-04 its ci.yml
+# was plain `runs-on: ubuntu-latest` by a recorded caution -- that carrying the
+# fleet's operator-triggered live golden-master tier (a SEPARATE workflow on a
+# SEPARATE `livespec-orchestrator`-labeled runner, not this scale set) made a
+# pool lane a "two-trust-tier" question. The maintainer settled it in session:
+# the exposure is the same as every other member's, its ci.yml triggers are
+# `pull_request` + `push` exactly like livespec's (so livespec-dev-tooling's
+# self_hosted_routing guard does not fire on it), and its check jobs already
+# run in the fleet's baked container image, so the warm uv cache seed applies
+# to it unchanged. The 2026-09-04 ~16:15Z scope event on livespec-ifwnqj is
+# the record.
+#
+# Its 33-character repo name does not fit the 26-character budget left after
+# `-k3s`, so the scale set is named at the last hyphen-bounded prefix that
+# fits: `livespec-orchestrator` (21 chars + `-k3s` = 25) -- mechanically, never
+# an invented abbreviation (README.md "`runnerScaleSetName` MUST stay <=30
+# characters"; the git-JSONL sibling is `livespec-orchestrator-git-k3s` for the
+# same reason). The LocalQueue keeps the full repo name: Kubernetes object
+# names have no such budget.
+#
+# This file carries the WORKFLOW-POD AppArmor wiring (the volume, the
+# volumeMount, and ACTIONS_RUNNER_CONTAINER_HOOK_TEMPLATE) that
+# livespec-s43svm.25 rolled out fleet-wide from values-livespec-overseer.yaml's
+# reference implementation -- see that file and ../apparmor/ci-runner-workflow
+# for the root cause -- and `fsGroupChangePolicy: OnRootMismatch` for the
+# hardlink-seeded warm cache (livespec-lvtu). Both were present from this scale
+# set's first install.
+#
+# ONE PREREQUISITE THIS FILE CANNOT EXPRESS (values-livespec-driver-pi.yaml
+# learned it the hard way): the repo must be in the `thewoolleyman-ci-runners`
+# GitHub App installation's repository selection, or the ARC controller gets
+# `403 "Resource not accessible by integration"` on the registration-token
+# call and the listener never starts. Check this FIRST.
+githubConfigUrl: "https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro"
+githubConfigSecret: arc-github-app-installation  # same secret as phase 1 -- see ../../README.md "Credential separation"
+
+runnerScaleSetName: "livespec-orchestrator-k3s"
+
+containerMode:
+  type: "kubernetes"
+  kubernetesModeWorkVolumeClaim:
+    accessModes: ["ReadWriteOnce"]
+    storageClassName: "local-path"
+    resources:
+      requests:
+        storage: 5Gi
+
+template:
+  metadata:
+    labels:
+      # Routes this scale set's runner pods through Kueue's per-repo LocalQueue
+      # rather than straight to the Kubernetes scheduler.
+      kueue.x-k8s.io/queue-name: livespec-orchestrator-beads-fabro-lq
+  spec:
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+      # OnRootMismatch, not the default Always: the work volume is born with
+      # the warm uv cache already in it as ~160k HARDLINKS (the local-path
+      # provisioner's setup script, ../local-path-provisioner/), and Always
+      # would have the kubelet chgrp+chmod every one of them on this pod's
+      # mount -- a per-start walk of the whole cache that also mutates the
+      # inodes the cache generations share. The setup script leaves the
+      # volume root exactly as Always would (gid 1000, mode 2777), so the
+      # kubelet sees no mismatch and skips the walk (livespec-lvtu).
+      fsGroupChangePolicy: OnRootMismatch
+    volumes:
+      # Carries ../arc/hook-pod-template.yaml into the runner pod so the
+      # container hook can read it. Additive: the chart appends its own `work`
+      # volume for kubernetes mode, and declaring this one does not displace it.
+      - name: hook-pod-template
+        configMap:
+          name: arc-hook-pod-template
+    containers:
+      - name: runner
+        # Pinned tag + digest (livespec-s43svm handoff finding, 2026-08-25;
+        # was `latest`; see the k3s README's "Pinned versions — nothing floats
+        # `latest`").
+        # The digest is the image the pool was verified on: its container
+        # hook has no fs-init init container and merges the hook template
+        # the way its header documents (see ../hook-pod-template.yaml or
+        # the phase2 copy). Bump BOTH tag and digest together, re-read the
+        # hook's initContainers behaviour, then helm upgrade + recycle.
+        image: ghcr.io/actions/actions-runner:2.336.0@sha256:0cfdcc701ce933c6d243c6b0b2da767366dc9f2e99961d4c3754b0b78084cdda
+        command: ["/home/runner/run.sh"]
+        env:
+          - name: ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER
+            value: "false"
+          # THE WORKFLOW-POD FIX -- see values-livespec-overseer.yaml for the
+          # full root cause. In kubernetes container mode the job's `container:`
+          # image runs in a SEPARATE pod the hook creates, whose securityContext
+          # is empty and which nothing else in this values file reaches. This env
+          # var is the hook's one supported seam for extending that pod's spec;
+          # it pins the pod to the node-loaded `ci-runner-workflow` AppArmor
+          # profile (../apparmor/ci-runner-workflow), which reproduces every
+          # containerd deny rule verbatim and widens ONLY the ptrace/signal peer
+          # expressions so a stacked AppArmor label matches them.
+          - name: ACTIONS_RUNNER_CONTAINER_HOOK_TEMPLATE
+            value: /home/runner/hook-template/hook-pod-template.yaml
+        volumeMounts:
+          - name: hook-pod-template
+            mountPath: /home/runner/hook-template
+            readOnly: true
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          capabilities:
+            drop: ["ALL"]
+        resources:
+          # Exactly ONE churn-slot per runner pod -- see values-livespec.yaml.
+          requests:
+            ci-runner.io/churn-slot: "1"
+          limits:
+            ci-runner.io/churn-slot: "1"
+
+# This repo's per-repository ceiling term of the admission formula
+# (`doubled repository logical ceiling`). It is NOT the same number as the
+# `livespec-orchestrator-beads-fabro-cq` ClusterQueue's nominalQuota, which is
+# this repo's share of the host's finite churn-slot capacity -- a different
+# term of the same min(). See README.md "Two enforcement points, two DIFFERENT
+# numbers" and ../kueue/DERIVATION.md; the relation to hold is
+# nominalQuota <= maxRunners.
+#
+# 42 = 2 x 21, the DOUBLED measured matrix width (README.md "Deriving a new
+# repository's ClusterQueue", step 4): master CI run 33893048859 on
+# thewoolleyman/livespec-orchestrator-beads-fabro (2026-09-04) dispatched
+# exactly 21 jobs -- 17 check jobs (check-python x4 uid/target legs, two-leg
+# check-per-file-coverage / check-python-batch / check-coverage matrices,
+# check-doctor-static, check-metadata-batch, e2e-cli, acceptance, and the
+# two hoisted repo-metadata legs) plus setup, detect-py-changes,
+# export-telemetry and ci-green, which stay hosted. The width is a
+# MEASUREMENT like livespec-driver-pi's 13, not a podman-era proxy like the
+# 63-67 band; re-measure from a real run before changing it.
+minRunners: 0
+maxRunners: 42

@@ -293,8 +293,9 @@ fleet's actual call volume) needs a live-cluster observation —
 | `arc/values-livespec-overseer.yaml` | `livespec-overseer`'s per-repo `AutoscalingRunnerSet` values (`maxRunners: 65`, `livespec-overseer-lq`), and the first values file wiring the hook pod template — the reference implementation the other nine copy. Applied live 2026-08-18 (Helm revision 2). |
 | `arc/values-livespec-dev-tooling.yaml`, `arc/values-livespec-driver-claude.yaml`, `arc/values-livespec-driver-codex.yaml`, `arc/values-livespec-orchestrator-git-jsonl.yaml`, `arc/values-livespec-runtime.yaml` | The five remaining per-repo scale sets, captured from their live Helm releases 2026-08-19 (`livespec-s43svm.26`) and wired to the hook pod template (`livespec-s43svm.25`). |
 | `arc/values-livespec-driver-pi.yaml`, `kueue/cluster-queue-livespec-driver-pi.yaml` | The NINTH repository, stood up 2026-08-20 after the eight-repo cutover sequence had closed. Committed in the same change that created the scale set, rather than captured retroactively. Its `maxRunners: 13` is the fleet's first ACTUAL matrix-width measurement rather than a podman-era proxy, and its arrival is what surfaced the `max(1, …)` sum-invariant collision documented in `kueue/DERIVATION.md`. |
+| `arc/values-livespec-orchestrator-beads-fabro.yaml`, `kueue/cluster-queue-livespec-orchestrator-beads-fabro.yaml` | The TENTH repository, stood up 2026-09-04 (livespec plan `ci-runner-pod-lifecycle-reliability`, Carrier G1, `livespec-ifwnqj.1`) after the maintainer settled that its recorded hosted-only caution (the fleet's live golden-master tier lives in a separate workflow on a separate runner) was no reason to keep its ordinary CI off the pool. Committed in the same change that created the scale set. Its `maxRunners: 42` is twice a MEASURED 21-job matrix (master run 33893048859), the second real measurement after `livespec-driver-pi`'s; its arrival moved exactly one sibling quota (`livespec-driver-codex` 5 → 4) — see `kueue/DERIVATION.md` "Recomputation on the tenth repository". Scale set `livespec-orchestrator-k3s`: the 33-character repo name is truncated at the last hyphen-bounded prefix that fits the 30-character budget, like `livespec-orchestrator-git-k3s`. |
 | `arc/values-poweredge-xubuntu-k3s.yaml` | The surviving PHASE-1 proof scale set, also live and also captured 2026-08-19. Named by scale set rather than by repo because it points at `livespec-dev-tooling`, which already owns a `values-<repo>.yaml`. Not Kueue-gated; see the file's header. Its phase-1 sibling `local-ci-k3s` (`arc/values-local-ci-k3s.yaml`, captured the same day) was retired — Helm release uninstalled 2026-08-23, file deleted — under `livespec-s43svm.28`, because no workflow in any fleet repo routed to it. |
-| `reconstruct/converge-ci-stack.sh` | The one idempotent converge of the ENTIRE CI CLUSTER stack from this repository — ARC controller + all ten runner scale sets + the `arc-hook-pod-template` ConfigMap + Kueue core + every `ResourceFlavor`/`ClusterQueue`/`LocalQueue` — with zero manual `kubectl`/`helm` steps. One run takes an empty k3s datastore to all listeners `Running` and Kueue admitting — after first asserting (step 1b) that every runner node's allocatable `ci-runner.io/churn-slot` equals the capacity the INSTALLED reapply unit carries, and re-running `patch-node-churn-capacity.sh` when it does not (`livespec-kgl3`). See "Reconstruct-on-boot" below for the scope boundary and the `install-arc.sh`/`install-kueue.sh` drift it supersedes. |
+| `reconstruct/converge-ci-stack.sh` | The one idempotent converge of the ENTIRE CI CLUSTER stack from this repository — ARC controller + all eleven runner scale sets + the `arc-hook-pod-template` ConfigMap + Kueue core + every `ResourceFlavor`/`ClusterQueue`/`LocalQueue` — with zero manual `kubectl`/`helm` steps. One run takes an empty k3s datastore to all listeners `Running` and Kueue admitting — after first asserting (step 1b) that every runner node's allocatable `ci-runner.io/churn-slot` equals the capacity the INSTALLED reapply unit carries, and re-running `patch-node-churn-capacity.sh` when it does not (`livespec-kgl3`). See "Reconstruct-on-boot" below for the scope boundary and the `install-arc.sh`/`install-kueue.sh` drift it supersedes. |
 | `reconstruct/converge-ci-stack.service` | Boot-ordered `oneshot` (`After=k3s.service`; `After=`/`Wants=` `reapply-node-extended-resource.service` and `inject-github-app-secret.service`, so a hand-started converge pulls the reapply in too) that runs the converge once per boot. This is what makes the host CATTLE: today none of the cluster stack re-applies on boot, so a datastore wipe loses it. |
 | `reconstruct/install-converge-unit.sh` | Copies the converge script AND the `arc/`+`kueue/` artifacts it applies into `/usr/local/lib/ci-runner-k3s/` (the host carries no repo checkout, so the boot unit must be self-contained), installs the unit, and ENABLES it — not `--now`, since starting it applies the stack live. Node-local; re-run after editing any values/queue/template/converge artifact, and on any node rebuild. |
 | `datastore-tmpfs/var-lib-rancher-k3s-server-db.mount` | systemd `.mount` unit backing the k3s kine/SQLite datastore directory (`/var/lib/rancher/k3s/server/db`, ~110 MB live) with tmpfs, so control-plane fsyncs are RAM-speed and never queue behind CI churn on the array (livespec plan `ci-runner-pod-lifecycle-reliability`, research/003: the kine `Slow SQL` stall that dropped Kueue's admission webhook fleet-wide on 2026-09-01). VOLATILE by design — cleared on every reboot, which is exactly what keeps the reconstruct-on-boot path exercised rather than rotting. See "Datastore on tmpfs" below for the two units it depends on, the fail-safe ordering, and the rollback. |
@@ -348,7 +349,7 @@ kustomize apply, a rollout restart only when the manager's config actually
 changed, then rollout + CRD-established wait) **and a wait for its mutating
 webhook to have a ready endpoint** → `kueue/resource-flavor.yaml` and every
 `kueue/cluster-queue-*.yaml` → ARC controller (`helm upgrade --install`,
-chart `0.14.2`) → all ten runner scale sets from `arc/values-*.yaml` (each
+chart `0.14.2`) → all eleven runner scale sets from `arc/values-*.yaml` (each
 `helm upgrade --install`, chart `0.14.2`) → **the listener assertion**
 (every `AutoscalingListener` must reference its scale set's CURRENT
 `EphemeralRunnerSet`; a stale one is deleted so the controller recreates it,
@@ -1098,7 +1099,7 @@ release already carries and quietly preserve any imperative drift this
 capture exists to eliminate.
 
 The mapping from scale-set name to values file is not always
-`values-<repo>.yaml` — three names diverge, all for reasons recorded in
+`values-<repo>.yaml` — four names diverge, all for reasons recorded in
 the files themselves:
 
 | Live release | Values file |
@@ -1106,6 +1107,7 @@ the files themselves:
 | `livespec-local-ci-k3s` | `arc/values-livespec.yaml` |
 | `livespec-console-beads-k3s` | `arc/values-livespec-console-beads-fabro.yaml` |
 | `livespec-orchestrator-git-k3s` | `arc/values-livespec-orchestrator-git-jsonl.yaml` |
+| `livespec-orchestrator-k3s` | `arc/values-livespec-orchestrator-beads-fabro.yaml` |
 | `livespec-dev-tooling-k3s` | `arc/values-livespec-dev-tooling.yaml` |
 | `livespec-driver-claude-k3s` | `arc/values-livespec-driver-claude.yaml` |
 | `livespec-driver-codex-k3s` | `arc/values-livespec-driver-codex.yaml` |
@@ -1117,9 +1119,9 @@ the files themselves:
 (A twelfth row, `local-ci-k3s` → `arc/values-local-ci-k3s.yaml`, was
 retired under `livespec-s43svm.28`.)
 
-The first two diverge because a scale-set name must stay <=30 characters
+The first three diverge because a scale-set name must stay <=30 characters
 (see the naming rule above) while a values file is named for the repo it
-serves; the third for the same reason.
+serves; the fourth for the same reason.
 
 To check a release against its file without changing anything, compare
 the two YAML documents directly — `helm get values <release> -n
@@ -1186,8 +1188,10 @@ decision.
 
 ## Deriving a new repository's ClusterQueue
 
-All eight fleet repositories already have both files. These steps are
-for a NINTH repository joining the pool.
+All ten fleet repositories already have both files (the ninth,
+`livespec-driver-pi`, joined 2026-08-20; the tenth,
+`livespec-orchestrator-beads-fabro`, 2026-09-04). These steps are for
+the NEXT repository joining the pool.
 
 1. Establish the new repository's demand weight `w` by measuring its
    actual GitHub Actions matrix job count. Never guess. (Before the podman
@@ -1197,8 +1201,8 @@ for a NINTH repository joining the pool.
 2. Add it to `kueue/DERIVATION.md`'s weight table and RE-DERIVE every
    repository's `nominalQuota` at the current capacity `C` — adding a
    repository changes the weight sum, so every existing quota moves.
-   Follow that file's "Recomputing at another C" steps; the eight-plus-one
-   quotas must still sum to exactly `C`.
+   Follow that file's "Recomputing at another C" steps; the quotas must still
+   sum to exactly `C`.
 3. Copy any existing `kueue/cluster-queue-<repo>.yaml` to the new
    repository's name, substituting the repo name and its derived
    `nominalQuota`, and rewrite the moved quotas in the other files.
