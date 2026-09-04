@@ -49,6 +49,8 @@ matrix wall-clock acceptance rides on the compilation cache (B1), not here.
   `livespec.ci_cache.registry.{up,requests_5m}` every 5 min from
   `stub_status`; the cache dead-man trigger in
   `ci-runner/observability/triggers/` covers the emitter.
+- **Negative test**: `../isolation/` asserts from a routed job every six
+  hours that a `PUT` against the proxy is refused by the proxy itself.
 - **Is a job using it?** `kubectl -n ci-crates-proxy logs deploy/crates-proxy`
   — one line per request with `cache=HIT|MISS|…` and the pod's address. A
   routed Rust job's fetch shows up as ~300 lines from one address, all

@@ -1,0 +1,43 @@
+# negative-control-job.yaml — proves cache-negative-tests.sh can FAIL. A pod
+# deliberately misconfigured the two ways the suite guards against: the warm
+# root mounted read-WRITE, and a writer credential in the environment. Run on
+# the host and expect cases 1 and 3 red (exit 1):
+#   sudo kubectl apply -f negative-control-job.yaml
+#   sudo kubectl -n ci-warm-cache wait --for=condition=complete --timeout=300s job/cache-negative-control ; \
+#   sudo kubectl -n ci-warm-cache logs job/cache-negative-control
+#   sudo kubectl delete -f negative-control-job.yaml
+# (`wait` itself exits non-zero for a failed Job; the logs carry the verdict.)
+# The credential value below is a decoy, not the real one.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cache-negative-control
+  namespace: ci-warm-cache
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 600
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: control
+          image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.40.1
+          command: ["bash", "/scripts/cache-negative-tests.sh"]
+          env:
+            - name: SCCACHE_REDIS_WRITER_PASSWORD
+              value: decoy-not-a-real-credential
+          volumeMounts:
+            - name: warm
+              mountPath: /var/cache/ci-runner/warm
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: warm
+          hostPath:
+            path: /var/cache/ci-runner/warm
+            type: Directory
+        - name: scripts
+          configMap:
+            name: cache-negative-tests
+            defaultMode: 0555
