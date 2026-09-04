@@ -51,14 +51,22 @@
 #   - The helper image is busybox 1.37.0, whose `cp` has `-a` (= -dpR) and
 #     `-l` (hardlink instead of copy) and whose `find` has `-perm` and
 #     `-exec ... {} +` (verified by running that image).
-#   - The generation's files are owned by uid 200000 (the populator's last
-#     step; ../warm-cache/README.md "The hazard"), a uid no workflow pod
-#     maps, so on the pod's idmapped volume the seeded links are read-only
-#     to the job's root by mode. The seed keeps them so; what it MUST give
-#     the job as fresh per-volume inodes is everything the job's uv opens
-#     for writing: the directories (0777) and uv's lock files (the only
-#     world-writable files in a generation; uv flocks them, never writes
-#     content), which the script re-creates empty after linking.
+#   - uv's lock files (the only world-writable files in a generation; uv
+#     flocks them and never writes content) are re-created empty per volume
+#     after linking. A hardlinked lock file is ONE inode shared by every
+#     seeded volume and the generation itself, and flock() locks the inode:
+#     two jobs, or a job and the populator, would serialize on each other's
+#     cache locks. Fresh per-volume lock files keep every job's locking
+#     private to its own volume.
+#   - What the seed does NOT do: make the shared inodes unwritable to the
+#     job. The workflow pod's volume is idmapped and its root is uid 0
+#     there, so the root-owned generation files are writable from a job;
+#     uv never writes one in place, but nothing enforces that. An owner no
+#     pod maps was tried on 2026-09-04 and broke every job (uv's cache init
+#     writes CACHEDIR.TAG; the kernel refuses write-open, unlink and
+#     rename-over on unmapped-owner inodes and creates in unmapped-owner
+#     directories). The mechanical closure is an open maintainer decision:
+#     ../warm-cache/README.md "The hazard".
 # Measured on the live 1,388 MB / 159k-file generation, same filesystem:
 # cp -al 2.3 s and 269 MB of metadata writes, against 6.8 s and 2,153 MB
 # for the byte copy; after the separate generation-trim item the target is
@@ -230,9 +238,9 @@ data:
     # mix two generations (the populator keeps the previous one for a
     # cycle). New directories become 0777 so the job's uid can add cache
     # entries; every world-writable file (uv's lock files, the only ones)
-    # is replaced by a fresh empty per-volume file so the job's uv can lock
-    # without a writable shared inode; every other file keeps the
-    # generation's inode, owner and mode, read-only to the job (header). A
+    # is replaced by a fresh empty per-volume file so a job's flocks never
+    # share an inode with another job's or the populator's (header); every
+    # other file keeps the generation's inode, owner and mode. A
     # missing root, link or generation, or any failure, leaves NO cache (uv
     # resolves cold, and the job still runs): never a byte copy, which is
     # the per-start cost this replaced. The rm first makes a re-run on an
