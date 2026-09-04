@@ -163,6 +163,36 @@
 #    pool: it must carry /bin/sh (a postStart exec that cannot start kills
 #    the container). Every fleet `container:` is the fabro sandbox image,
 #    which does; a distroless job image would need its own template.
+#
+# 6. CACHE TELEMETRY and the cold CANARY (the same plan's telemetry clause,
+#    SPECIFICATION v054; child livespec-dev-tooling-mlg5sf; research/003).
+#    The pool PROVIDES the emitter — /opt/ci-runner/bin/ci-cache-span, from
+#    ../cache-telemetry/, on the same read-only mount as sccache — and this
+#    template calls it from the two lifecycle points it owns: postStart emits
+#    one `cache.warm-copy` span per tier (uv: hit = the seed is present;
+#    registry: hit = the proxy answered and the stanza was written; copy_ms =
+#    this hook's own elapsed time, because no tier copies bytes any more —
+#    copy_method says how the tier is realized, `hardlink-seed` / `served`),
+#    and preStop emits one `cache.job-summary` with the job's sccache
+#    hits/misses/errors, read from the job's own sccache server only if one
+#    is listening (a job that never ran cargo reports enabled=false). Every
+#    span carries repo / git.commit.sha / git.branch / ci.event from the
+#    runner's event.json, host.name from CI_RUNNER_NODE_NAME (a fieldRef),
+#    build.env=ci and build.cache.kill_switch, and posts as
+#    service.name=github-ci to CI_CACHE_OTLP_ENDPOINT — the host collector's
+#    pod-reachable KEYLESS listener (10.42.0.1:4319 on the cni0 bridge;
+#    otel-collector config.ci-runner-host.yaml `otlp/pods`). No ingest key
+#    enters a job. The uv generation name comes from `_warm/.uv-generation`,
+#    which the provisioner's seed writes (../local-path-provisioner/).
+#    THE CANARY: with CI_CACHE_CANARY_N=N, the job whose pod name's cksum is
+#    0 mod N runs with every tier OFF exactly as the operator switch would,
+#    and every span it emits carries build.cache.kill_switch=canary — a live
+#    cold baseline the warm P50 is compared against (research/003 "Canary"),
+#    without a workflow change and without a second scale set. The operator
+#    switch (item 4) is reported the same way, as `operator`. Everything here
+#    is fail-soft by construction: an absent emitter, an empty endpoint, a
+#    dead collector or a slow POST changes nothing about the job — the
+#    emitter always exits 0 and bounds itself with `timeout`.
 apiVersion: v1
 kind: PodTemplate
 spec:
@@ -203,6 +233,19 @@ spec:
           value: redis://sccache-redis.ci-sccache.svc.cluster.local:6379
         - name: SCCACHE_REDIS_RW_MODE
           value: READ_ONLY
+        # Cache telemetry (header item 6): where the pool-provided emitter
+        # posts this job's cache spans — the host collector's pod-reachable,
+        # KEYLESS listener on the cni0 bridge; empty disables emission. And
+        # the cold canary: one job in N (deterministic on the pod name) runs
+        # every tier cold by construction and every span it emits says so.
+        - name: CI_CACHE_OTLP_ENDPOINT
+          value: http://10.42.0.1:4319
+        - name: CI_CACHE_CANARY_N
+          value: "20"
+        - name: CI_RUNNER_NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
       volumeMounts:
         - name: ci-runner-bin
           mountPath: /opt/ci-runner/bin
@@ -217,14 +260,36 @@ spec:
                 # Every path below is fail-soft: this script always exits 0.
                 # No tier copies bytes here: the warm uv cache is already in
                 # the volume as the provisioner's hardlink seed (header item 2).
-                if [ -n "${CI_CACHE_KILL_SWITCH:-}" ]; then
-                  # Header item 4: the switch turns the uv tier off by removing
-                  # this volume's seed (per-volume links; the generation is
-                  # untouched) and the cargo/compilation tiers off by writing
-                  # nothing.
+                # Header item 6: the emitter (pool-provided, absent = silent),
+                # the state the preStop summary reads, and this hook's own
+                # clock — a tier's copy_ms is the cost paid HERE at start.
+                t0=$(date +%s%N 2>/dev/null || echo 0)
+                state=/__w/_temp/_ci_cache
+                mkdir -p "$state" 2>/dev/null && printf '%s' "$t0" > "$state/started_at_ns" 2>/dev/null
+                emit() { [ -x /opt/ci-runner/bin/ci-cache-span ] && /opt/ci-runner/bin/ci-cache-span "$@" >/dev/null 2>&1; :; }
+                ms() { n=$(date +%s%N 2>/dev/null || echo 0); echo $(( (n - t0) / 1000000 )); }
+                uv_gen=$(cat /__w/_warm/.uv-generation 2>/dev/null || true)
+                switch="${CI_CACHE_KILL_SWITCH:-}"
+                case "${CI_CACHE_CANARY_N:-}" in
+                  ''|*[!0-9]*|0) ;;
+                  *) if [ -z "$switch" ]; then
+                       h=$(printf '%s' "${HOSTNAME:-}" | cksum | cut -d' ' -f1)
+                       [ $(( h % CI_CACHE_CANARY_N )) -eq 0 ] && switch=canary
+                     fi ;;
+                esac
+                printf '%s' "$switch" > "$state/kill_switch" 2>/dev/null
+                if [ -n "$switch" ]; then
+                  # Header item 4: the switch (or the canary, item 6) turns the
+                  # uv tier off by removing this volume's seed (per-volume
+                  # links; the generation is untouched) and the cargo/
+                  # compilation tiers off by writing nothing. Each tier still
+                  # reports, so a cold job is a measured cold job.
                   rm -rf /__w/_warm/uv 2>/dev/null
+                  emit warm-copy uv false "$uv_gen" "$(ms)" 0 hardlink-seed "off:$switch"
+                  emit warm-copy registry false "" "$(ms)" 0 served "off:$switch"
                   exit 0
                 fi
+                registry_hit=false
                 # Tiers: warm cargo cache (header item 3) and compilation cache
                 # (header item 5) — one /.cargo/config.toml, each stanza only
                 # if its backend answers, and only if the image carries no
@@ -244,6 +309,7 @@ spec:
                       '[source.ci-runner-pool]' \
                       "registry = \"sparse+$proxy/index/\"" \
                       '' >> "$tmp"
+                    registry_hit=true
                   fi
                   if [ -x /opt/ci-runner/bin/sccache ] \
                      && command -v bash >/dev/null 2>&1 \
@@ -262,4 +328,18 @@ spec:
                   fi
                   rm -f "$tmp"
                 fi
+                uv_hit=false; [ -d /__w/_warm/uv ] && uv_hit=true
+                emit warm-copy uv "$uv_hit" "$uv_gen" "$(ms)" 0 hardlink-seed ""
+                emit warm-copy registry "$registry_hit" "" "$(ms)" 0 served ""
+                exit 0
+        # Header item 6: the per-job summary (sccache hits/misses/errors from
+        # the job's own server, if one ran) when the hook deletes this pod
+        # after the job. Bounded by the emitter's own timeout; always exits 0.
+        preStop:
+          exec:
+            command:
+              - sh
+              - -c
+              - |
+                [ -x /opt/ci-runner/bin/ci-cache-span ] && /opt/ci-runner/bin/ci-cache-span job-summary >/dev/null 2>&1
                 exit 0

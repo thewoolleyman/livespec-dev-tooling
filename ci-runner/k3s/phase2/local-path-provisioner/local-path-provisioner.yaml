@@ -259,6 +259,11 @@ data:
                     'for f; do rm -f "$f" && : > "$f" && chmod 0666 "$f" || exit 1; done' sh {} + ); then
           echo "warm-cache seed from ${src} failed; leaving a cold cache" >&2
           rm -rf "${VOL_DIR}/_warm"
+        else
+          # Stamp the generation NAME beside the seed for the cache spans
+          # (../arc/hook-pod-template.yaml header item 6): the name is the
+          # populator's %Y%m%dT%H%M%SZ publish time, so it is the age too.
+          printf '%s\n' "${src##*/}" > "${VOL_DIR}/_warm/.uv-generation" 2>/dev/null || true
         fi
       fi
     fi
