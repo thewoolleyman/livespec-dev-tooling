@@ -60,7 +60,8 @@ try:
     s = socket.create_connection((host, port), timeout=5)
 except OSError as e:
     print("CONNECT-FAILED " + str(e)); raise SystemExit(0)
-s.sendall(b"*3\r\n$3\r\nSET\r\n$29\r\ncache-negative-test:from-a-job\r\n$1\r\n1\r\n")
+key = b"cache-negative-test:from-a-job"
+s.sendall(b"*3\r\n$3\r\nSET\r\n$%d\r\n%s\r\n$1\r\n1\r\n" % (len(key), key))
 print(s.recv(256).decode(errors="replace").strip())
 PY
 )"
