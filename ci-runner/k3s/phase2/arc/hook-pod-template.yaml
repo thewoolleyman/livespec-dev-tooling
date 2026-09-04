@@ -104,6 +104,31 @@
 #    deploy of any routed repository (converge this ConfigMap, recycle idle
 #    runners). The cache-telemetry children of the plan add the deterministic
 #    cold canary on the same seam and tag both on every cache span.
+#
+# 5. The shared COMPILATION cache (B1 of the same plan; ../sccache/). The
+#    pool PROVIDES sccache — the node-local binary under
+#    /usr/local/lib/ci-runner-k3s/bin, mounted READ-ONLY at /opt/ci-runner/bin
+#    — so no routed repository bumps its `container:` pin to get the tier. The
+#    same postStart appends `[build] rustc-wrapper = /opt/ci-runner/bin/sccache`
+#    and `incremental = false` (sccache cannot cache incremental compiles) to
+#    /.cargo/config.toml, only when the binary is present AND the redis
+#    endpoint answers a TCP probe; the SCCACHE_REDIS_* env below points sccache
+#    at the host redis as the unauthenticated READ-ONLY user, with
+#    SCCACHE_REDIS_RW_MODE=READ_ONLY so it never attempts a write (the server
+#    refuses one anyway: the ACL is the trust boundary, not this env). A job's
+#    dependency compiles are served from what the populator built for the
+#    default branch; a job's own output is never written back. FAIL-SOFT IS
+#    THE PROBE, not sccache: sccache 0.17 refuses to start its server when
+#    the backend is unreachable, and cargo then fails (measured 2026-09-04:
+#    exit 101 against a dead endpoint) — so the stanza is written only after
+#    redis answered, and a job whose redis dies AFTER its sccache server
+#    started sees cache errors counted as misses (sccache's own stats
+#    contract), not failures. Scaling the redis Deployment to 0 is therefore
+#    safe for new jobs and the kill switch covers the rest. Two more facts
+#    the populator's header explains: sccache hashes every CARGO_* env var
+#    into the key, so this template sets NONE and carries `incremental` in
+#    the config file; and it hashes absolute paths, so the populator builds
+#    at the job's own checkout path and cargo home.
 apiVersion: v1
 kind: PodTemplate
 spec:
@@ -120,6 +145,13 @@ spec:
         # degrades to a cold cache (an empty mount), never to a pod that
         # cannot start.
         type: DirectoryOrCreate
+    - name: ci-runner-bin
+      hostPath:
+        # The pool-provided binaries (today: sccache, from
+        # ../sccache/install-sccache-binary.sh). DirectoryOrCreate for the same
+        # reason: a node without them degrades to no compilation cache.
+        path: /usr/local/lib/ci-runner-k3s/bin
+        type: DirectoryOrCreate
   containers:
     - name: $job
       env:
@@ -128,9 +160,18 @@ spec:
         # Fleet-wide kill switch (header item 4): "" = tiers on; "operator" = off.
         - name: CI_CACHE_KILL_SWITCH
           value: ""
+        # Compilation cache (header item 5): the host redis, as the
+        # unauthenticated read-only user, and never a write attempt.
+        - name: SCCACHE_REDIS_ENDPOINT
+          value: redis://sccache-redis.ci-sccache.svc.cluster.local:6379
+        - name: SCCACHE_REDIS_RW_MODE
+          value: READ_ONLY
       volumeMounts:
         - name: warm-cache
           mountPath: /var/cache/ci-runner/warm
+          readOnly: true
+        - name: ci-runner-bin
+          mountPath: /opt/ci-runner/bin
           readOnly: true
       lifecycle:
         postStart:
@@ -152,24 +193,41 @@ spec:
                     rm -rf "$dst"
                   fi
                 fi
-                # Tier: warm cargo cache (header item 3) — point cargo at the
-                # host-served crates proxy, only if it answers and only if the
-                # image carries no /.cargo/config.toml of its own.
+                # Tiers: warm cargo cache (header item 3) and compilation cache
+                # (header item 5) — one /.cargo/config.toml, each stanza only
+                # if its backend answers, and only if the image carries no
+                # /.cargo/config.toml of its own.
                 proxy=http://crates-proxy.ci-crates-proxy.svc.cluster.local:3080
-                if [ ! -e /.cargo/config.toml ] \
-                   && command -v curl >/dev/null 2>&1 \
-                   && curl -fsS --max-time 3 "$proxy/index/config.json" >/dev/null 2>&1; then
-                  if mkdir -p /.cargo && printf '%s\n' \
-                       '# Written by the runner pool (ci-runner/k3s/phase2/arc/hook-pod-template.yaml).' \
-                       '# crates.io served from the host-local crates proxy; Cargo.lock is unaffected.' \
-                       '[source.crates-io]' \
-                       'replace-with = "ci-runner-pool"' \
-                       '' \
-                       '[source.ci-runner-pool]' \
-                       "registry = \"sparse+$proxy/index/\"" > /.cargo/config.toml; then
-                    :
-                  else
-                    rm -f /.cargo/config.toml
+                redis_host=sccache-redis.ci-sccache.svc.cluster.local
+                if [ ! -e /.cargo/config.toml ] && mkdir -p /.cargo 2>/dev/null; then
+                  tmp=/.cargo/.config.toml.tmp
+                  : > "$tmp"
+                  if command -v curl >/dev/null 2>&1 \
+                     && curl -fsS --max-time 3 "$proxy/index/config.json" >/dev/null 2>&1; then
+                    printf '%s\n' \
+                      '# crates.io served from the host-local crates proxy; Cargo.lock is unaffected.' \
+                      '[source.crates-io]' \
+                      'replace-with = "ci-runner-pool"' \
+                      '' \
+                      '[source.ci-runner-pool]' \
+                      "registry = \"sparse+$proxy/index/\"" \
+                      '' >> "$tmp"
                   fi
+                  if [ -x /opt/ci-runner/bin/sccache ] \
+                     && command -v bash >/dev/null 2>&1 \
+                     && timeout 2 bash -c "exec 3<>/dev/tcp/$redis_host/6379" >/dev/null 2>&1; then
+                    printf '%s\n' \
+                      '# Dependency compiles served from the host-shared sccache (read-only for jobs).' \
+                      '[build]' \
+                      'rustc-wrapper = "/opt/ci-runner/bin/sccache"' \
+                      'incremental = false' \
+                      '' >> "$tmp"
+                  fi
+                  if [ -s "$tmp" ]; then
+                    { printf '%s\n' \
+                        '# Written by the runner pool (ci-runner/k3s/phase2/arc/hook-pod-template.yaml).' \
+                        ''; cat "$tmp"; } > /.cargo/config.toml || rm -f /.cargo/config.toml
+                  fi
+                  rm -f "$tmp"
                 fi
                 exit 0

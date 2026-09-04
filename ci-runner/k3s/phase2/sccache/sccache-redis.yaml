@@ -1,0 +1,158 @@
+# sccache-redis.yaml — the pool's shared Rust COMPILATION cache (B1 of plan
+# ci-runner-cache-tiers; SPECIFICATION/non-functional-requirements.md
+# §"Runner-pool build cache tiers", v054): a RAM-resident redis on the CI host
+# that sccache (../sccache/install-sccache-binary.sh, mounted into every job
+# container by ../arc/hook-pod-template.yaml) reads compiled dependency
+# artifacts from. One host service, two consumers: workflow pods over cluster
+# DNS, and off-node consumers (the fabro factory host) over hostPort 6379.
+#
+# WHY THIS AND NOT A COPIED target/ TREE: the console's merge-gating matrix
+# runs ten concurrent jobs that each cold-rebuild the SAME dependency graph
+# (883 s on this host vs 427 s hosted-with-cache; livespec-dev-tooling-9mp).
+# sccache keys on compiler inputs, so one populator build serves every job's
+# dependency compiles, adds ZERO per-job start writes (a hit writes the same
+# artifact a compile would have), and the same endpoint serves fabro sandboxes.
+# A copied target tree is rejected on the array by the start-burst knee
+# (research/004) and deferred to the NVMe (livespec-dev-tooling-c5byjh).
+#
+# TRUST BY CONSTRUCTION, server-side: the ACL file (rendered by
+# converge-sccache-redis.sh into the `sccache-redis-acl` Secret) gives the
+# unauthenticated `default` user READ-ONLY commands (+@read +@connection,
+# nothing else), which is what every job pod connects as; the ONE writer user
+# (`sccache-writer`, password generated on the host and held only by the
+# populator's namespace) has @write. A job additionally runs sccache with
+# SCCACHE_REDIS_RW_MODE=READ_ONLY so it never even attempts a write, but the
+# refusal a job would get is redis's own NOPERM, not the client's good
+# manners. A job's own compilation output is therefore never written back to
+# the shared cache; the populator builds ONLY each routed repository's default
+# branch. Entries are content-addressed, so sharing across repositories is
+# sound (the spec permits it for the compilation cache).
+#
+# MEMORY CEILING — sized against the concurrency cap (the spec's rule that
+# cache memory and job memory must not compete): allocatable RAM 188 GiB; the
+# churn-slot cap C=32 at a 4 GiB per-job envelope reserves 128 GiB for jobs;
+# k3s + containerd + host services ~8 GiB; ~20 GiB of page cache wanted for
+# the warm trees and the crates proxy's store; redis gets 16 GiB
+# (`maxmemory 16gb`, allkeys-lru), limit 18 GiB for redis's own overhead.
+# The console's full dependency graph across four profiles was measured at
+# well under that; the headroom is for PR-lockfile variants and a second
+# Rust repository. Derivation recorded in plan research/006. Raise the cap
+# by editing `--maxmemory` and the limit together.
+#
+# NO PERSISTENCE, by design: the cache is regenerable, and one populate run
+# restores it after a restart (the populator re-builds when its marker key is
+# absent). Persisting 16 GiB to the array on every change would be exactly
+# the write load this tier exists to avoid.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ci-sccache
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sccache-redis
+  namespace: ci-sccache
+  labels:
+    app.kubernetes.io/name: sccache-redis
+spec:
+  replicas: 1
+  # One hostPort on one node; Recreate so two pods never race for it.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sccache-redis
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sccache-redis
+    spec:
+      # No Kueue queue-name label and no ci-runner.io/churn-slot request:
+      # not a CI job, must never occupy a runner slot.
+      securityContext:
+        runAsUser: 999
+        runAsGroup: 1000
+        fsGroup: 1000
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: redis
+          # Pinned by tag AND digest (k3s README "Pinned versions — nothing
+          # floats `latest`"). Bump both together.
+          image: docker.io/library/redis:8.8.2-alpine@sha256:96cb544fa0af5aa898d160cffb7dae70c3df117190fc123831c64712cda425ff
+          imagePullPolicy: IfNotPresent
+          command: ["redis-server"]
+          args:
+            - "--bind"
+            - "0.0.0.0"
+            # protected-mode only guards a redis with NO auth configured; the
+            # ACL file below is the guard here, and the default user is
+            # read-only by it.
+            - "--protected-mode"
+            - "no"
+            - "--aclfile"
+            - "/etc/redis/users.acl"
+            - "--maxmemory"
+            - "16gb"
+            - "--maxmemory-policy"
+            - "allkeys-lru"
+            - "--save"
+            - ""
+            - "--appendonly"
+            - "no"
+            - "--maxclients"
+            - "10000"
+            - "--tcp-keepalive"
+            - "60"
+          ports:
+            - name: redis
+              containerPort: 6379
+              hostPort: 6379
+              protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "1Gi"
+            limits:
+              memory: "18Gi"
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            periodSeconds: 30
+          volumeMounts:
+            - name: acl
+              mountPath: /etc/redis
+              readOnly: true
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: acl
+          secret:
+            secretName: sccache-redis-acl
+            defaultMode: 0440
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sccache-redis
+  namespace: ci-sccache
+spec:
+  selector:
+    app.kubernetes.io/name: sccache-redis
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis

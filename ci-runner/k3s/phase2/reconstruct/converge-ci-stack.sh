@@ -107,6 +107,7 @@ KUEUE_DIR="${ARTIFACT_DIR}/kueue"
 PROVISIONER_DIR="${ARTIFACT_DIR}/local-path-provisioner"
 WARM_CACHE_DIR="${ARTIFACT_DIR}/warm-cache"
 CRATES_PROXY_DIR="${ARTIFACT_DIR}/crates-proxy"
+SCCACHE_DIR="${ARTIFACT_DIR}/sccache"
 if [ -d "${ARTIFACT_DIR}/observability" ]; then
   OBSERVABILITY_DIR="${ARTIFACT_DIR}/observability"          # installed layout
 else
@@ -540,6 +541,13 @@ log "8b. Converge the crates proxy (Namespace, nginx ConfigMap, Deployment, Serv
 # inside; a proxy not yet Ready only means jobs fetch from crates.io directly
 # until it is (the hook template's postStart probes before opting in).
 "${CRATES_PROXY_DIR}/converge-crates-proxy.sh"
+
+# ---------------------------------------------------------------------------
+log "8c. Converge the shared compilation cache (writer credential, ACL Secret, redis Deployment, Service)"
+# Also before the warm cache: its populator is the cache's one writer and
+# reads the credential Secret this converge projects into ci-warm-cache. The
+# cache is RAM-resident and empty after a boot; the next populate refills it.
+"${SCCACHE_DIR}/converge-sccache-redis.sh"
 
 # ---------------------------------------------------------------------------
 log "9. Converge the warm uv cache's cluster objects (Namespace, CronJob, ConfigMaps)"

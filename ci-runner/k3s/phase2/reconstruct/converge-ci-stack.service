@@ -6,7 +6,7 @@
 # Kueue core (waiting for its admission webhook to serve), every
 # ResourceFlavor/ClusterQueue/LocalQueue, the ARC controller, all runner
 # scale sets, the hook-pod-template ConfigMap, the crates proxy, the
-# warm-cache CronJob, and
+# sccache redis, the warm-cache CronJob, and
 # the Kueue-webhook probe's re-rendered credential — from this repository,
 # zero manual kubectl/helm steps. See ./converge-ci-stack.sh for the full
 # sequence, why the ORDER is what it is, the scope boundary (cluster-side
