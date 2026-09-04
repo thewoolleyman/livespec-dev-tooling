@@ -369,6 +369,25 @@ def test_registry_hit_false_without_a_registry_cache(tmp_path: Path) -> None:
     assert registry_hit(environ={"CARGO_HOME": str(tmp_path)}) is False
 
 
+def test_registry_hit_false_when_the_cargo_home_is_unreadable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An unreadable ``CARGO_HOME`` reads as "no warm registry", never as a raise.
+
+    Measured 2026-09-04: the fleet's post-merge janitor runs the suite as an
+    unprivileged user on a host where ``/root`` exists and is 0700, so the
+    default ``/root/.cargo/registry/cache`` probe raised ``PermissionError``
+    out of ``run()`` (``pathlib`` swallows ENOENT, not EACCES) and turned a
+    green PR into a red master. A stat failure of any kind is "absent".
+    """
+
+    def _deny(_self: Path) -> bool:
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(Path, "is_dir", _deny)
+    assert registry_hit(environ={"CARGO_HOME": "/root/.cargo"}) is False
+
+
 def test_registry_hit_defaults_to_the_image_cargo_home(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -277,7 +277,15 @@ def registry_hit(*, environ: dict[str, str]) -> bool:
     warm registry rather than fetching every crate cold.
     """
     home = (environ.get(_CARGO_HOME_ENV) or "").strip() or _DEFAULT_CARGO_HOME
-    return (Path(home) / "registry" / "cache").is_dir()
+    cache = Path(home) / "registry" / "cache"
+    # `is_dir()` swallows ENOENT but not EACCES. On a host where the default
+    # /root is 0700 and this runs unprivileged — the fleet's post-merge
+    # janitor — the probe raised out of the span builder and turned a green
+    # PR into a red master (2026-09-04). A stat failure of any kind reads as
+    # "absent", the same fail-soft posture as the module's other probes.
+    with contextlib.suppress(OSError):
+        return cache.is_dir()
+    return False
 
 
 def cache_attributes(*, environ: dict[str, str], stats: str | None) -> list[dict[str, object]]:
