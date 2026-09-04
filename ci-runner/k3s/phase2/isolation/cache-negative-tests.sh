@@ -34,8 +34,15 @@ set -uo pipefail
 # The warm uv cache as a job sees it since livespec-lvtu: not a mount but the
 # hardlink seed the local-path provisioner made in this job's own work
 # volume (../warm-cache/README.md "Where it lives"). Its files are the
-# fleet-wide generation's inodes, owned by a uid this pod does not map, so
-# they must be unwritable from here while the directory itself stays usable.
+# fleet-wide generation's inodes and must be unwritable from here while the
+# directory itself stays usable. KNOWN RED as of 2026-09-04: the generation
+# is root-owned and this pod's root is uid 0 on its idmapped volume, so case
+# 1 reports a VIOLATION on every run until the mechanical closure lands
+# (an owner no pod maps was tried and broke uv's cache init; the decision
+# between the remaining options is the maintainer's -- livespec plan
+# ci-runner-pod-lifecycle-reliability research/006, README.md "The hazard").
+# It stays red rather than relaxed: the clause it asserts is ratified, and a
+# red that names the violation is the report.
 WARM_SEED="${CACHE_NEG_WARM_SEED:-${UV_CACHE_DIR:-/__w/_warm/uv}}"
 REDIS_HOST="${CACHE_NEG_REDIS_HOST:-sccache-redis.ci-sccache.svc.cluster.local}"
 REDIS_PORT="${CACHE_NEG_REDIS_PORT:-6379}"

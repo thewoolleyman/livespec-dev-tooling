@@ -120,13 +120,6 @@ spec:
                   value: /config/repos.txt
                 - name: KEEP_GENERATIONS
                   value: "2"
-                # The uid every published generation is owned by: outside
-                # every workflow pod's 65536-id mapping, so the hardlinks the
-                # provisioner seeds into each work volume are read-only to
-                # the job (the populator's header). The negative tests
-                # (../isolation/) assert exactly that from inside a job.
-                - name: WARM_GENERATION_OWNER
-                  value: "200000"
                 # The image installs uv and its CPython under /root (its
                 # build-time HOME), which is why this container runs as the
                 # image's default user (root) rather than a non-root uid: as
@@ -178,14 +171,6 @@ spec:
                 allowPrivilegeEscalation: false
                 capabilities:
                   drop: ["ALL"]
-                  # The two capabilities the generation's ownership needs
-                  # and nothing else (the populator's header, "Own the
-                  # generation"): CHOWN to publish each generation owned by
-                  # a uid no workflow pod maps, DAC_OVERRIDE so the next
-                  # build can write into the predecessor-owned tree it
-                  # hardlink-seeds from. Root's only writable host surface
-                  # is still the warm root below.
-                  add: ["CHOWN", "DAC_OVERRIDE"]
               resources:
                 requests:
                   cpu: "500m"

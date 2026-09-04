@@ -17,8 +17,8 @@ volume is created:
 
 | Path | Role |
 |---|---|
-| `warm-cache-populate.sh` | The populator. Clones or fast-forwards every routed repository's default branch and runs `uv sync --frozen --all-groups --no-install-project --no-install-workspace` against a fresh hardlink-seeded generation, owns the result as uid 200000 (a uid no workflow pod maps; "The hazard" below), then publishes it with one atomic symlink rename and prunes all but the newest two; for every repository with a `Cargo.lock` it also runs `cargo fetch --locked` through the crates proxy (`../crates-proxy/`) to pre-warm it, and builds the default branch with sccache as the compilation cache's one writer (`../sccache/`) when the branch or toolchain changed. Never builds or installs a project; only locked third-party dependencies land in the cache. Its header carries the generation/publish design and the per-repository fail-soft rule. |
-| `warm-cache-cronjob.yaml` | Namespace `ci-warm-cache` + the `warm-cache-populate` CronJob (every 30 min, `concurrencyPolicy: Forbid`), running the populator in the same fabro sandbox image the fleet's CI jobs execute in (the `python-rust` layer, so `cargo` is present), with the warm root mounted read-WRITE — the only mount of that path in the cluster — and exactly two capabilities, `CHOWN` and `DAC_OVERRIDE`, for the ownership step. |
+| `warm-cache-populate.sh` | The populator. Clones or fast-forwards every routed repository's default branch and runs `uv sync --frozen --all-groups --no-install-project --no-install-workspace` against a fresh hardlink-seeded generation, then publishes it with one atomic symlink rename and prunes all but the newest two; for every repository with a `Cargo.lock` it also runs `cargo fetch --locked` through the crates proxy (`../crates-proxy/`) to pre-warm it, and builds the default branch with sccache as the compilation cache's one writer (`../sccache/`) when the branch or toolchain changed. Never builds or installs a project; only locked third-party dependencies land in the cache. Its header carries the generation/publish design and the per-repository fail-soft rule. |
+| `warm-cache-cronjob.yaml` | Namespace `ci-warm-cache` + the `warm-cache-populate` CronJob (every 30 min, `concurrencyPolicy: Forbid`), running the populator in the same fabro sandbox image the fleet's CI jobs execute in (the `python-rust` layer, so `cargo` is present), with the warm root mounted read-WRITE — the only mount of that path in the cluster. |
 | `install-warm-cache.sh` | Derives the routed-repository list from `../arc/values-*.yaml` (every per-repo scale set's `githubConfigUrl`) into the `warm-cache-repos` ConfigMap, applies the CronJob, converges its script ConfigMap from the file above, runs one populate immediately and waits for it, then converges `arc-hook-pod-template` via `../arc/converge-hook-pod-template.sh`. Idempotent; re-run after adding a routed repository. |
 | `../local-path-provisioner/local-path-provisioner.yaml` | The reader side, in the fleet-owned local-path provisioner's `local-path-config` ConfigMap: its `setup` script runs inside the provisioner's busybox helper pod, as root, on the volume's parent mount, while a work volume is being provisioned; it resolves the `uv` link once, `cp -al`s that generation into `<volume>/_warm/uv` (hardlinks, not bytes), and opens the new directories to 0777. Its header records the helper-pod facts the script rests on, read from the provisioner's v0.0.36 source. |
 | `../arc/hook-pod-template.yaml` | Sets `UV_CACHE_DIR=/__w/_warm/uv` in the job container, pointing uv at that seed, and `UV_LINK_MODE=copy` so uv copies rather than hardlinks a read-only shared inode into the job's `.venv` (see the hazard note below). Nothing else for this tier: no host mount and no copy; its `postStart` serves the cargo and compilation tiers, and under the fleet kill switch removes this volume's seed so uv runs cold. |
@@ -62,18 +62,18 @@ with the lower. The first realization (2026-08-23) seeded it by a byte
 copy in the job container's `postStart` — 379 MB and 0.8 s when it
 shipped, 1.9 GB / 160k files / ~9 s per start by 2026-09-04 (see
 "Lesson"). The hardlink seed replaced it under `livespec-lvtu`: the same
-trust tiering — a job reads the lower and CANNOT write it — enforced by
-ownership rather than by a read-only mount (see "The hazard" below: the
-generation is owned by a uid no workflow pod maps). uv never needs to
-write a shared inode anyway: it writes a new cache entry to a temporary
-path and renames it into place, never rewriting an existing entry, so a
-job's `uv sync` leaves every shared inode exactly as it found it (verified
-locally in research/005; the populator has relied on the same property
-between its own generations since the tier shipped). Everything uv DOES
-open for writing is a fresh per-volume inode: the seed's directories
-(0777, so the job can add and rename entries) and uv's lock files (the
-only world-writable files in a generation; re-created empty per volume,
-since uv flocks them and a flock needs a writable open). The
+trust tiering in intent — a job reads the lower and never writes it — but,
+as of 2026-09-04, NOT enforced (see "The hazard" below). uv never needs to
+write a shared inode: it writes a new cache entry to a temporary path and
+renames it into place, never rewriting an existing entry, so a job's `uv
+sync` leaves every shared inode exactly as it found it (verified locally
+in research/005; the populator has relied on the same property between
+its own generations since the tier shipped). The seed's directories are
+fresh per-volume inodes (0777, so the job can add and rename entries) and
+so are uv's lock files (the only world-writable files in a generation;
+re-created empty per volume, because `flock()` locks the inode and a
+hardlinked lock file would make every job's cache locks contend with
+every other job's and the populator's). The
 generation/symlink publish protocol exists
 because seeds link while the populator may be writing: the seed resolves
 the `uv` link once before it starts linking, the populator keeps the
@@ -101,43 +101,48 @@ OnRootMismatch`, and the setup script leaves the volume root exactly as
 mismatch and skips the walk (kubelet source, `pkg/volume/local` and
 `pkg/volume/volume_linux.go`, v1.36.2). A mismatch is slow, not broken.
 
-**The hazard, and its enforced closure.** A seeded file IS a generation
+**The hazard, and the open decision.** A seeded file IS a generation
 inode, and the workflow pod's job runs as root in a user namespace whose
-work volume is idmapped so that uid 0 inside is uid 0 on the volume: a
-root-owned generation would be writable in place from every job — a test
-that patches an installed package, a tool that rewrites a `.pth`, anything
-opening a cache file for writing — and would mutate the fleet-wide
+work volume is idmapped so that uid 0 inside is uid 0 on the volume: the
+root-owned generation is writable in place from every job — a test that
+patches an installed package, a tool that rewrites a `.pth`, anything
+opening a cache file for writing — and a write would reach the fleet-wide
 generation for every later job on the node until the next populate. The
 specification's "Runner-pool build cache tiers" clause
 (`SPECIFICATION/non-functional-requirements.md`, "Trust by construction")
-says a job MUST NOT be able to write any shared cache. Two mechanisms
-close it, and the pool's negative tests (`../isolation/`) assert the first
-from inside a routed job on their timer:
+says a job MUST NOT be able to write any shared cache. Two mechanisms are
+in place and one is missing:
 
-- **Ownership.** The populator's last step before publishing a generation
-  is `chown -R` to uid 200000 (`WARM_GENERATION_OWNER`; any uid at or
-  above 65536 is outside every workflow pod's 65536-id mapping). Inside
-  the pod those inodes belong to nobody: no capability of the job's root
-  applies to a file whose owner the pod does not map, so the generation's
-  0644/0444 modes govern and every seeded file is read-only to the job.
-  The seed hands the job fresh per-volume inodes for everything uv opens
-  for writing (the directories and the lock files, above), so the cache
-  stays usable; a job's additions are its own. The populator keeps
-  `CAP_CHOWN` for that step and `CAP_DAC_OVERRIDE` so its next build can
-  write into the predecessor-owned tree it hardlink-seeds from; it
-  refuses to publish a generation it could not own.
-- **`UV_LINK_MODE=copy`** in the hook template, beside `UV_CACHE_DIR`.
-  uv's default link mode hardlinks cache files into the job's `.venv`;
-  with ownership in place such a venv file would be read-only and a job
-  that legitimately patches its own installed package would fail. Copy
-  mode gives the venv private copies, so the job can write its venv and
-  touches nothing shared. Its cost is the venv's own bytes per job (a
-  copy of each installed package instead of a link), measured by the plan
-  session's acceptance run on `livespec-lvtu`.
-
-The negative control (`../isolation/negative-control-job.yaml`) proves
-the test can fail: a pod given the warm root writable, without a user
-namespace and with the default capabilities, writes a generation file.
+- **`UV_LINK_MODE=copy`** in the hook template, beside `UV_CACHE_DIR`:
+  uv's default link mode hardlinks cache files into the job's `.venv`, so
+  the one place a job routinely writes installed files would otherwise be
+  the generation itself. Copy mode gives the venv private copies. Its cost
+  is the venv's own bytes per job; `livespec-lvtu`'s acceptance run wrote
+  ~630 MB per job after the seed (checkout and venv together).
+- **Per-volume lock files** (above), so no job's `flock()` lands on a
+  shared inode.
+- **Missing: the seeded inodes themselves are writable.** Owning every
+  generation as a uid no workflow pod maps (200000) was implemented and
+  applied live on 2026-09-04 and broke every job within a minute: uv's
+  cache init opens `CACHEDIR.TAG` for writing, and Linux refuses ANY
+  write-open, unlink or rename-over on an inode whose owner the caller's
+  user namespace does not map (`inode_permission` and `may_delete`,
+  `HAS_UNMAPPED_ID`), and refuses creates in a directory with an unmapped
+  owner. Making it work would mean per-volume copies of every file uv
+  rewrites at init, per-volume ownership of every seeded directory, and
+  accepting that any uv operation that must replace or remove a seeded
+  entry (an index-metadata refresh on re-resolution, a `git fetch` into a
+  seeded bare repository) fails hard rather than degrading. The clean
+  alternative is a filesystem with reflinks (XFS or btrfs) on the
+  `ci-workvols` tier, where the seed becomes a copy-on-write copy: the job
+  owns every inode it sees, writes never reach the generation, and
+  `UV_LINK_MODE=copy` becomes unnecessary — at the cost of reformatting
+  that tier and a per-start cost that scales with the file count like the
+  hardlink seed does. Which of these (or a re-based clause) the fleet
+  adopts is the maintainer's decision, recorded with the measurements in
+  the livespec plan `ci-runner-pod-lifecycle-reliability`, research/006.
+  Until it lands, `../isolation/cache-negative-tests.sh` case 1 reports
+  the violation on its six-hourly timer and stays red on purpose.
 
 It is fail-soft in every direction, by absence: no warm root or no
 published generation (a node before its first populate), or a seed that
@@ -234,8 +239,8 @@ populate-failing trigger instead of silently starving the cache.
   on the host shows the `uv -> uv-generations/<stamp>` link and the
   retained generations. A new work volume shows the seed: `sudo ls -la
   /var/lib/rancher/k3s/storage/pvc-*/_warm/uv`, and `stat -c %h` of any
-  file there is 2 or more (its inode is the generation's) and `stat -c %u`
-  is 200000. A workflow pod's `kubectl describe pod <runner>-workflow`
+  file there is 2 or more (its inode is the generation's). A workflow
+  pod's `kubectl describe pod <runner>-workflow`
   shows `UV_CACHE_DIR` and `UV_LINK_MODE` and no warm-cache mount.
 - **A repository failed to sync**: the CronJob's last Job is red and its
   log names the repository. The generation still published (fail-soft per
@@ -270,6 +275,17 @@ another process's growth must never ship on the start path again. The
 sibling items under `livespec-ifwnqj` bound the generation (every build
 from empty), emit its size and the seed cost on every build, and fail on
 unreferenced entries.
+
+A second lesson from the switchover (2026-09-04): **a `postStart` whose
+failure path can print without bound kills the pod.** For about a minute
+a runner pod created before the converge still carried the copying
+template while the provisioner already seeded new volumes owned by a uid
+the pod did not map; the copy hit ~160k permission errors, the hook's
+output exceeded the kubelet's 16 MiB gRPC message limit
+(`ResourceExhausted`), the kubelet failed the hook and the pod, and the
+job died with "pod failed to come online". The copy always exited 0 and
+was "fail-soft" by design; its stderr was not. The current `postStart`
+prints nothing on its fail-soft paths.
 
 ## Tiers 2 and 3
 

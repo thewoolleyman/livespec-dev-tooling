@@ -77,17 +77,21 @@
 #    against 6.8 s and 2,153 MB for the copy on the same tree (livespec plan
 #    `ci-runner-pod-lifecycle-reliability`, research/005) -- and the ~9 s
 #    ContainerCreating hold the copy put on THIS container per start is
-#    gone. Because the files are shared inodes, the job must not be ABLE to
-#    write them, and it is not: the populator publishes every generation
-#    owned by a uid no workflow pod maps (200000; ../warm-cache/README.md
-#    "The hazard"), so on this pod's idmapped volume those inodes belong to
-#    nobody, no capability of the job's root applies to them, and their
-#    0644/0444 modes are read-only to the job. uv refuses a read-only cache,
-#    so the seed's DIRECTORIES are fresh per-volume inodes opened to 0777
-#    and uv's lock files are fresh per-volume 0666 files: the job's
-#    additions land in the ephemeral volume as new inodes, and uv's own
-#    write discipline (a new entry to a temporary path, then rename) never
-#    needs to rewrite a shared one. FAIL-SOFT by absence: a node with no
+#    gone. Because the files are shared inodes, a job's uv must leave them
+#    as found, and it does -- by uv's own write discipline (a new entry to
+#    a temporary path, then rename; never a rewrite in place), NOT by
+#    enforcement: this pod's volume is idmapped so its root is uid 0 there,
+#    and the root-owned generation inodes ARE writable from a job. Owning
+#    them as a uid no pod maps was tried on 2026-09-04 and broke every job
+#    (uv's cache init writes CACHEDIR.TAG; the kernel refuses write-open,
+#    unlink and rename-over on unmapped-owner inodes). The mechanical
+#    closure the specification's "Runner-pool build cache tiers" clause
+#    requires is an open maintainer decision (../warm-cache/README.md "The
+#    hazard"), and ../isolation/cache-negative-tests.sh case 1 reports the
+#    violation on its timer until it lands. The seed's DIRECTORIES are fresh
+#    per-volume inodes opened to 0777 and uv's lock files are fresh
+#    per-volume 0666 files, so a job's additions and its flocks stay in its
+#    own volume. FAIL-SOFT by absence: a node with no
 #    warm root, no published generation, or a seed that failed has NO
 #    /__w/_warm/uv; uv creates a cold cache there and the job runs. There is
 #    deliberately no fallback copy, here or in the provisioner -- a
@@ -97,14 +101,13 @@
 #    no bytes for any tier.
 #    UV_LINK_MODE=copy is the ENFORCED companion of the seed, not a lever:
 #    uv's default link mode hardlinks cache files into the job's .venv, so
-#    with a seeded cache a venv file would BE a generation inode. The owner
-#    above makes that a read-only file the job cannot patch; copy mode makes
-#    it a private copy the job CAN, so a test that rewrites an installed
-#    package in place (the shape the specification's "Runner-pool build
-#    cache tiers" clause, "Trust by construction", forbids from ever
-#    reaching a shared cache) works and touches nothing shared. Its cost is
-#    the venv's own bytes per job, measured by the plan session's
-#    acceptance run (livespec-lvtu).
+#    with a seeded cache a venv file would BE a generation inode, and a
+#    test that rewrites an installed package in place would rewrite the
+#    fleet-wide generation. Copy mode gives the venv private copies, so the
+#    one place a job routinely writes installed files touches nothing
+#    shared. Its cost is the venv's own bytes per job (livespec-lvtu's
+#    acceptance run: the job wrote ~630 MB after the seed, checkout and
+#    venv together).
 #
 # 3. The warm CARGO cache (the cargo half of the same tier; ../crates-proxy/),
 #    HOST-SERVED rather than copied: the postStart probes the crates proxy
@@ -186,10 +189,9 @@ spec:
         - name: UV_CACHE_DIR
           value: /__w/_warm/uv
         # Copy, never hardlink, from that cache into the job's .venv: the
-        # cache's files are the fleet-wide generation's inodes, read-only to
-        # the job by ownership; a hardlinked venv file would be one of them
-        # and unpatchable, a copied one is the job's own (header item 2).
-        # Cost: the venv's own bytes per job.
+        # cache's files are the fleet-wide generation's inodes, and a
+        # hardlinked venv file would be one of them -- a copied one is the
+        # job's own (header item 2). Cost: the venv's own bytes per job.
         - name: UV_LINK_MODE
           value: copy
         # Fleet-wide kill switch (header item 4): "" = tiers on; "operator" = off.
