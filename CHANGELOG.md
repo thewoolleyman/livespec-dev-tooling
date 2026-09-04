@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.43.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.43.0...v1.43.1) (2026-09-04)
+
+
+### Bug Fixes
+
+* **otel:** resolve build.env per lane and skip the endpoint-less CI-lane POST (livespec-dev-tooling-efqeip.2) ([cb4889a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/cb4889ab42d7e9d0089e81f6be117891c788d094))
+
 ## [1.43.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.42.1...v1.43.0) (2026-09-04)
 
 
