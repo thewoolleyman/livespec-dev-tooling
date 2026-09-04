@@ -14,8 +14,12 @@
 # MUST be installed, enabled and proven first (the mount unit's header says
 # why). This script pre-gates on both being enabled and refuses otherwise.
 #
-# ROLLBACK: with k3s stopped, `systemctl disable --now` the mount; the
-# on-disk datastore underneath it is intact.
+# ROLLBACK: with k3s stopped, `systemctl disable --now` the mount AND remove
+# /etc/systemd/system/k3s.service.d/20-requires-datastore-mount.conf (then
+# `systemctl daemon-reload`); with that drop-in in place, `systemctl start
+# k3s` pulls the mount back in. The on-disk directory underneath holds
+# whatever was last written there — since the 2026-09-04 array rebuild a
+# stale 2026-08-27 backup restore, NOT a rollback copy (livespec-el5y).
 #
 # NODE-LOCAL, like the sibling installers: re-run after any node rebuild.
 # Requires: root, systemd.
@@ -24,6 +28,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 UNIT_DIR="/etc/systemd/system"
 MOUNT_UNIT="var-lib-rancher-k3s-server-db.mount"
+DROPIN_NAME="20-requires-datastore-mount.conf"
 
 log() { printf '\n== %s ==\n' "$*"; }
 
@@ -45,6 +50,13 @@ done
 # ---------------------------------------------------------------------------
 log "1. Install the mount unit to ${UNIT_DIR}"
 install -m 0644 "${SCRIPT_DIR}/${MOUNT_UNIT}" "${UNIT_DIR}/${MOUNT_UNIT}"
+
+# ---------------------------------------------------------------------------
+log "1b. Install the k3s drop-in that REQUIRES this mount (k3s fails loud without the tmpfs datastore)"
+# Only a host with a volatile datastore gets this: the directory under the
+# mount is not a usable fallback (its header says why), so k3s must not
+# start on it. Read the drop-in before a rollback — it changes the steps.
+install -D -m 0644 "${SCRIPT_DIR}/${DROPIN_NAME}" "${UNIT_DIR}/k3s.service.d/${DROPIN_NAME}"
 
 # ---------------------------------------------------------------------------
 log "2. Reload systemd and enable the mount for next boot (NEVER --now)"

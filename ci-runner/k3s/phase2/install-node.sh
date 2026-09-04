@@ -19,10 +19,12 @@
 #                            needs the cluster, and before provision-k3s.sh on
 #                            a truly fresh host (that script calls it too).
 #   2. node-inotify-budget, node-keyring-budget — kernel sysctls; no cluster
-#                            needed. Then storage-layout — the fstab lines for
-#                            the CI-churn volume and its two bind mounts (a
-#                            no-op on a live host; on a fresh one, format +
-#                            mount the volume BEFORE k3s, see its header).
+#                            needed. Then storage-layout — the five LABEL-keyed
+#                            fstab lines (cache + two tiers + two binds) and
+#                            the k3s RequiresMountsFor drop-in (a no-op on a
+#                            live host; on a fresh one, format the three
+#                            volumes with their role labels and mount the
+#                            cache volume BEFORE k3s, see its header).
 #   3. apparmor            — kernel profile + the hook ConfigMap (needs API).
 #   4. node-extended-resource CAPACITY — the churn-slot resource + its timer.
 #   5. wedged-runner MODE  — the 5-minute wedge sweep.
@@ -74,7 +76,7 @@ log "2/10 inotify instance budget + keyring quota"
 "${SCRIPT_DIR}/node-inotify-budget/install-inotify-sysctl.sh"
 "${SCRIPT_DIR}/node-keyring-budget/install-keyring-sysctl.sh"
 
-log "2b/10 storage layout (fstab lines; no-op when the volume is live)"
+log "2b/10 storage layout (LABEL fstab lines + k3s drop-in; no-op when the tiers are live)"
 "${SCRIPT_DIR}/storage-layout/install-storage-layout.sh"
 
 log "3/10 AppArmor profile + hook ConfigMap"
