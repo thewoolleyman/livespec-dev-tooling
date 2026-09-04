@@ -196,6 +196,53 @@
     // that surface round-trips the file through json.dumps and silently strips
     // every comment here while reporting green — tracked as bd-ib-lmi5.
     "dispatcher": {
+      // Dispatch-time toolchain and conformance premises, in the shape the
+      // Dispatcher's typed repository integration contract reads
+      // (`dispatcher.prepare_toolchain.*`, `dispatcher.conformance.*`).
+      //
+      // WHY THESE ARE HERE AT ALL. Until livespec-orchestrator-beads-fabro
+      // 39526e5c (2026-08-31) these five commands were HARDCODED in the
+      // implement-work-item payload and ran for every dispatched sandbox in
+      // the fleet. That commit turned each of them into a projection of the
+      // governed repository's own declaration, whose fleet default is the
+      // ratified explicit NO-OP. A repository that declares nothing therefore
+      // no longer installs its pinned toolchain, no longer installs its hook
+      // manager, and — the one that matters — no longer installs or verifies
+      // the structural commit-refuse hook that fires the Red-Green-Replay
+      // gates on every in-sandbox commit. Nothing fails when that happens:
+      // the run proceeds and reads green. These declarations restore exactly
+      // what this repository's sandboxes ran before that commit, and they are
+      // copied verbatim from livespec-orchestrator-beads-fabro's own
+      // .livespec.jsonc, which is the schema author and, at the time of
+      // writing, the fleet's only other adopter.
+      //
+      // Only three of the five undeclared premises produce a dispatch-time
+      // warning (the `conformance.*` trio); the two `prepare_toolchain.*`
+      // ones go silently to no-op, which is why this was worth writing down
+      // rather than leaving to the warning to surface.
+      //
+      // `internal_livespec_dev_tooling` carries a dependency on the
+      // livespec-dev-tooling package. That is the cheapest possible
+      // dependency HERE, because this repository IS that package: the mode
+      // renders `uv run python -m livespec_dev_tooling.<module>`, and the
+      // `uv sync --all-groups` prepare step immediately before it has already
+      // put the package in the sandbox venv.
+      //
+      // NOTE: these declarations are INERT until the dispatch outage tracked
+      // as livespec-orchestrator-beads-fabro `bd-ib-8atx` is fixed — fabro
+      // 0.254.0 does not expand `{{ inputs.* }}` inside `run.prepare`, so
+      // every dispatch currently dies in setup at exit 127 before any of
+      // these values could be used. See
+      // plan/ci-runner-cache-tiers/research/008-factory-dispatch-outage.md.
+      "prepare_toolchain": {
+        "mise": ["sh", "-c", "mise trust && env -u GITHUB_TOKEN -u GH_TOKEN -u GITHUB_API_TOKEN mise install --quiet"],
+        "lefthook": ["uv", "run", "lefthook", "install"]
+      },
+      "conformance": {
+        "hook_install": { "mode": "internal_livespec_dev_tooling" },
+        "verify_commit_refuse_hook": { "mode": "internal_livespec_dev_tooling" },
+        "verify_plugin_resolution": { "mode": "internal_livespec_dev_tooling" }
+      },
       "auto_approve_ready": true,
       "acceptance_mode": "ai-only",
       "wip_cap": 10,
