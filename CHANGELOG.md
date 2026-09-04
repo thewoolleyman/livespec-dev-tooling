@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.43.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.42.1...v1.43.0) (2026-09-04)
+
+
+### Features
+
+* **checks:** ci_gate_parity — enforce PR gate ≡ master gate (livespec-citqsd) ([6be4593](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6be45934a5a3cfec922c27726997c16237149d6d))
+
 ## [1.42.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.42.0...v1.42.1) (2026-09-04)
 
 
