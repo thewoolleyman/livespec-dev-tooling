@@ -56,6 +56,12 @@ only when their topic is active:
 - Read `.ai/fleet-and-secrets.md` before changing fleet coordination workflows,
   maintainer signaling, GitHub App automation, or 1Password-backed secret
   projection.
+- Read `.ai/ci-node-storage-tiers.md` before touching the CI runner node's
+  storage tiers (`ci-cache`, `ci-containerd`, `ci-workvols`), installing or
+  surveying NVMe hardware on the node, or running anything under
+  `ci-runner/k3s/phase2/storage-layout/` — the media-swap model, the link
+  survey that is the acceptance test for any card or socket change, and the
+  udev / fio / stale-copy traps that each cost real time on 2026-09-04.
 - Read `.ai/gate-runtime-vs-harness-patience.md` before running `just check`,
   committing product `.py`, or diagnosing a gate command that produced no
   output — the commit aggregate can outlast the harness's 20-minute tool-call
