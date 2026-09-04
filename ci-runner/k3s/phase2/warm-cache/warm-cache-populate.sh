@@ -60,6 +60,18 @@
 # eviction of the marker triggers a rebuild on the next tick, and an
 # unchanged branch costs nothing. Nothing from the build is kept here.
 #
+# GUARDRAILS on that build (v054 populator-guardrails clause; livespec-dev-
+# tooling-osmzo4): it runs at the repository's own build.jobs cap under
+# `nice -n 19 ionice -c 3`, inside the CronJob's CPU limit, and it does NOT
+# START while the pool's admitted-job count — Kueue ClusterQueue
+# status.admittedWorkloads summed, read through the API with this pod's
+# read-only ServiceAccount — is above $POPULATE_ADMITTED_JOB_THRESHOLD. A
+# tick that finds the pool busy logs the skip and moves on; the marker key
+# makes the next idle tick build, so a skipped tick costs nothing. A count
+# that cannot be READ is treated as busy (no build) AND recorded as a failed
+# step, so a broken read shows up in the manifest and on the populate-failing
+# trigger rather than silently starving the cache.
+#
 # WHAT IS SYNCED: for every repository URL in $REPOS_FILE (one per line — the
 # installer derives the list from ../arc/values-*.yaml, the live set of
 # repositories routed to this pool), clone or fast-forward its default branch
@@ -87,12 +99,29 @@ SCCACHE_REDIS_ENDPOINT="${SCCACHE_REDIS_ENDPOINT:-redis://sccache-redis.ci-sccac
 SCCACHE_REDIS_WRITER_USERNAME="${SCCACHE_REDIS_WRITER_USERNAME:-}"
 SCCACHE_REDIS_WRITER_PASSWORD="${SCCACHE_REDIS_WRITER_PASSWORD:-}"
 JOB_WORK_ROOT="${JOB_WORK_ROOT:-/__w}"
+POPULATE_ADMITTED_JOB_THRESHOLD="${POPULATE_ADMITTED_JOB_THRESHOLD:-16}"
+K8S_SA_DIR="${K8S_SA_DIR:-/var/run/secrets/kubernetes.io/serviceaccount}"
 GENERATIONS_DIR="${WARM_ROOT}/uv-generations"
 SRC_DIR="${WARM_ROOT}/src"
 CURRENT_LINK="${WARM_ROOT}/uv"
 SCRATCH="${SCRATCH:-$(mktemp -d)}"
 
 log() { printf '[warm-cache-populate %s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
+
+# admitted_jobs — the pool's admitted-job count: Kueue ClusterQueue
+# status.admittedWorkloads summed across every queue, read through the API
+# server with this pod's ServiceAccount (get/list clusterqueues only).
+# Prints an integer; exits 1 when the read fails (treated as busy by the
+# caller).
+admitted_jobs() {
+  local token
+  [ -r "${K8S_SA_DIR}/token" ] || return 1
+  token="$(cat "${K8S_SA_DIR}/token")"
+  curl --silent --fail --max-time 10 \
+    --cacert "${K8S_SA_DIR}/ca.crt" -H "Authorization: Bearer ${token}" \
+    "https://kubernetes.default.svc/apis/kueue.x-k8s.io/v1beta2/clusterqueues" \
+  | python3 -c 'import json,sys; print(sum(int((i.get("status") or {}).get("admittedWorkloads") or 0) for i in json.load(sys.stdin)["items"]))'
+}
 
 # redis_cmd [--auth USER PASS] CMD ARG... — one RESP round trip to the host
 # redis (python3 is in the image; redis-cli is not). Prints a bulk/simple
@@ -177,6 +206,8 @@ synced=0
 cargo_warmed=0
 sccache_built=0
 sccache_skipped=0
+sccache_skipped_busy=0
+admitted_last=""
 while IFS= read -r url || [ -n "${url}" ]; do
   case "${url}" in ''|'#'*) continue ;; esac
   name="$(basename "${url}" .git)"
@@ -250,7 +281,15 @@ while IFS= read -r url || [ -n "${url}" ]; do
         elif [ "${have}" = "(unreachable)" ]; then
           log "   sccache: redis unreachable at ${SCCACHE_REDIS_ENDPOINT}; no build"
           failed+=("${name}:sccache-unreachable")
+        elif ! admitted_last="$(admitted_jobs)"; then
+          log "   sccache: cannot read the pool's admitted-job count (Kueue API); treating the pool as busy — no build"
+          admitted_last=""
+          failed+=("${name}:sccache-admitted-unreadable")
+        elif [ "${admitted_last}" -gt "${POPULATE_ADMITTED_JOB_THRESHOLD}" ]; then
+          log "   sccache: pool busy (${admitted_last} admitted jobs > threshold ${POPULATE_ADMITTED_JOB_THRESHOLD}); skipping the build this tick (guardrail)"
+          sccache_skipped_busy=$((sccache_skipped_busy + 1))
         else
+          log "   sccache: pool has ${admitted_last} admitted jobs (threshold ${POPULATE_ADMITTED_JOB_THRESHOLD}); building"
           build_dir="${JOB_WORK_ROOT}/${name}/${name}"
           rm -rf "${JOB_WORK_ROOT:?}/${name}"
           mkdir -p "${JOB_WORK_ROOT}/${name}"
@@ -309,7 +348,7 @@ done < "${REPOS_FILE}"
 # a different path than this container does).
 ln -sfn "uv-generations/${generation}" "${CURRENT_LINK}.tmp"
 mv -T "${CURRENT_LINK}.tmp" "${CURRENT_LINK}"
-log "published generation ${generation} (${synced} repositories synced for uv, ${cargo_warmed} pre-warmed for cargo, sccache builds: ${sccache_built} built / ${sccache_skipped} skipped, size $(du -sh "${new_gen}" | cut -f1))"
+log "published generation ${generation} (${synced} repositories synced for uv, ${cargo_warmed} pre-warmed for cargo, sccache builds: ${sccache_built} built / ${sccache_skipped} skipped / ${sccache_skipped_busy} skipped-busy, size $(du -sh "${new_gen}" | cut -f1))"
 
 # Prune: keep the newest KEEP_GENERATIONS, oldest first. The one just
 # published is always among those kept.
@@ -327,14 +366,15 @@ fi
 # populator-guardrails clause). Atomic rename beside the generations; the
 # reader may open it while the next run writes.
 toolchain_version="$(command -v rustc >/dev/null && rustc --version 2>/dev/null | awk '{print $2}' || echo "")"
-python3 - "${WARM_ROOT}/populate-manifest.json" "${generation}" "${run_started}" "${synced}" "${#failed[@]}" "${cargo_warmed}" "${sccache_built}" "${sccache_skipped}" "${toolchain_version}" "${failed[@]:-}" <<'PY' || log "WARN: manifest not written"
+python3 - "${WARM_ROOT}/populate-manifest.json" "${generation}" "${run_started}" "${synced}" "${#failed[@]}" "${cargo_warmed}" "${sccache_built}" "${sccache_skipped}" "${toolchain_version}" "${sccache_skipped_busy}" "${admitted_last}" "${POPULATE_ADMITTED_JOB_THRESHOLD}" "${failed[@]:-}" <<'PY' || log "WARN: manifest not written"
 import json, sys, time, os
-path, gen, started, synced, nfailed, warmed, built, skipped, toolchain = sys.argv[1:10]
-failed = [f for f in sys.argv[10:] if f]
+path, gen, started, synced, nfailed, warmed, built, skipped, toolchain, skipped_busy, admitted, threshold = sys.argv[1:13]
+failed = [f for f in sys.argv[13:] if f]
 now = int(time.time())
 doc = {"generation": gen, "published_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)), "published_at_epoch": now,
        "duration_s": now - int(started), "repos_synced": int(synced), "repos_failed": int(nfailed), "failed": failed,
-       "cargo_warmed": int(warmed), "sccache_built": int(built), "sccache_skipped": int(skipped), "toolchain_version": toolchain}
+       "cargo_warmed": int(warmed), "sccache_built": int(built), "sccache_skipped": int(skipped), "sccache_skipped_busy": int(skipped_busy),
+       "admitted_jobs": int(admitted) if admitted else None, "admitted_job_threshold": int(threshold), "toolchain_version": toolchain}
 tmp = path + ".tmp"
 with open(tmp, "w") as f: json.dump(doc, f, indent=1)
 os.replace(tmp, path)

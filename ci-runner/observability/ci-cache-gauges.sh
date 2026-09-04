@@ -40,7 +40,9 @@
 #   populate.age_s {toolchain}     seconds since the populator last
 #                                  published, from its manifest, plus
 #   populate.duration_s, .repos_synced, .repos_failed, .cargo_warmed,
-#   .sccache_built                 the manifest's counts.
+#   .sccache_built, .sccache_skipped_busy, .admitted_jobs
+#                                  the manifest's counts, including the
+#                                  admitted-job gate's reading and skips.
 #
 # FAIL-CLOSED PER SOURCE, like the heartbeat's split: a source that cannot be
 # READ (the warm root missing, the manifest unparseable, the template
@@ -201,8 +203,9 @@ if [ -r "${MANIFEST}" ]; then
 import json, sys
 m = json.load(open(sys.argv[1])); now = int(sys.argv[2])
 print(f"populate_age_s={now - int(m['published_at_epoch'])}")
-for k in ("duration_s", "repos_synced", "repos_failed", "cargo_warmed", "sccache_built"):
-    print(f"populate_{k}={int(m[k])}")
+for k in ("duration_s", "repos_synced", "repos_failed", "cargo_warmed", "sccache_built", "sccache_skipped_busy"):
+    if m.get(k) is not None: print(f"populate_{k}={int(m[k])}")
+if m.get("admitted_jobs") is not None: print(f"populate_admitted_jobs={int(m['admitted_jobs'])}")
 print(f"populate_toolchain={m.get('toolchain_version', '')}")
 PY
   then
@@ -251,6 +254,8 @@ spec = [
   ("populate.repos_failed", "populate_repos_failed", "{repos}", "Repository steps that failed in the last populate", None, False),
   ("populate.cargo_warmed", "populate_cargo_warmed", "{repos}", "Repositories whose Cargo.lock was pre-warmed through the crates proxy in the last populate", None, False),
   ("populate.sccache_built", "populate_sccache_built", "{repos}", "Repositories the populator built into the compilation cache in the last populate", None, False),
+  ("populate.sccache_skipped_busy", "populate_sccache_skipped_busy", "{repos}", "Writer builds the populator skipped because the pool's admitted-job count was above the guardrail threshold", None, False),
+  ("populate.admitted_jobs", "populate_admitted_jobs", "{jobs}", "The pool's admitted-job count the populator read before its last writer-build decision", None, False),
 ]
 metrics = [m for m in (g(*s) for s in spec) if m]
 print(json.dumps({"resourceMetrics": [{"resource": {"attributes": attrs({"service.name": "ci-runner-liveness", "host.name": host})},

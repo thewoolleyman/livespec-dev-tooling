@@ -101,6 +101,24 @@ marker key in redis so an unchanged branch costs nothing (the populator's
 header has the details). Design and the live verification:
 `plan/ci-runner-cache-tiers/research/005-a1-crates-proxy-verification.md`.
 
+## Guardrails on the writer build
+
+The compilation-cache writer build compiles a Rust repository for minutes
+on the node the jobs use, so v054's populator-guardrails clause bounds it
+four ways, all in `warm-cache-cronjob.yaml` and the populator: a CPU limit
+on the container (6 cores) with the build at the repository's own
+`build.jobs` cap; `nice -n 19 ionice -c 3` under the jobs; an
+ADMITTED-JOB GATE — before each build the populator sums Kueue's
+ClusterQueue `admittedWorkloads` through the API with its read-only
+ServiceAccount and skips the build when the sum is above
+`POPULATE_ADMITTED_JOB_THRESHOLD` (16, half the churn-slot cap; the
+CronJob's comment carries the derivation), logging the skip and counting it
+in the manifest as `sccache_skipped_busy`; and a per-generation MANIFEST
+(`populate-manifest.json`) with duration, per-step counts, the admitted
+count it read, and the toolchain. An unreadable admitted count is treated
+as busy AND recorded as a failed step, so a broken read reaches the
+populate-failing trigger instead of silently starving the cache.
+
 ## Operating it
 
 - **Install / re-converge**: `KUBECONFIG=/etc/rancher/k3s/k3s.yaml
