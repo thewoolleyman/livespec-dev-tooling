@@ -302,7 +302,9 @@ fleet's actual call volume) needs a live-cluster observation —
 | `warm-cache/converge-warm-cache.sh` | The idempotent converge of the warm cache's CLUSTER objects (Namespace, CronJob, both ConfigMaps) with no populate Job — called by the boot converge (those objects are wiped with the tmpfs datastore; the CronJob was simply gone after the 2026-09-02 reboot) and by `install-warm-cache.sh`, which adds the attended initial populate. |
 | `reconstruct/render-sa-kubeconfig.sh` | Renders a host-side kubeconfig from a ServiceAccount's populated token Secret (token never echoed). Used by the converge to re-render the Kueue-webhook probe's credential (`../../observability/kueue-webhook-probe-rbac.yaml`) on every boot, since the account it names is wiped with the datastore. |
 | `node-keyring-budget/60-k3s-container-keyring.conf` + `install-keyring-sysctl.sh` | The per-user kernel keyring quota (`kernel.keys.maxkeys = 2000`, `maxbytes = 200000`) as a `/etc/sysctl.d/` drop-in. Every container start allocates a session keyring against uid 0 under containerd/runc; the kernel default of 200 was exhausted on this host on 2026-08-13 by two repositories' concurrency. The value had survived on the host only as an untracked drop-in under an earlier name; the 2026-09-02 gitops audit found it with no git source, and the installer now ships it under this name and removes the untracked predecessor. |
-| `storage-layout/install-storage-layout.sh` | Ensures the three `/etc/fstab` lines that define the node's storage layout — the dedicated CI-churn volume at `/var/cache/ci-runner` and the two bind mounts relocating containerd's store and the local-path PVC root onto it — are present byte-exact (UUID from the live mount or an argument). The 2026-08-28 relocation's only record was those hand-written lines; a rebuilt host would otherwise boot with all CI churn silently back on `/`. Never moves data or mounts anything. |
+| `storage-layout/install-storage-layout.sh` | Ensures the FIVE `/etc/fstab` lines that define the node's storage layout — the three CI tiers found by filesystem LABEL (`ci-cache` at `/var/cache/ci-runner`, `ci-containerd` and `ci-workvols` mounted under it) and the two bind mounts putting containerd's store and the local-path PVC root on them — byte-exact and with no UUID argument, replacing a differing line for one of those mountpoints (fstab backed up first, `findmnt --verify` after); refuses unless each label resolves to exactly one device; installs the k3s drop-in below. Labels, not UUIDs, so the lines are identical on the array stand-in LVs and on the NVMe (livespec plan `ci-runner-pod-lifecycle-reliability`, `livespec-el5y`; see "Storage layout: media-neutral tier identity" below). Never formats, moves data, mounts, or restarts k3s. |
+| `storage-layout/10-requires-storage-mounts.conf` | `k3s.service.d/` drop-in: `RequiresMountsFor=` both bind targets, so k3s refuses to start — loudly, every `After=k3s` oneshot failing by dependency — rather than silently running the pool's churn on `/` when a tier is missing. Kept by hand on the host from 2026-09-04's NVMe attempt; from git since `livespec-el5y`. |
+| `datastore-tmpfs/20-requires-datastore-mount.conf` | `k3s.service.d/` drop-in installed by `install-datastore-tmpfs.sh` only: `RequiresMountsFor=` the tmpfs datastore mount, because since the 2026-09-04 array rebuild the directory underneath holds a stale backup restore, not a rollback copy. Changes the rollback steps — read its header. |
 | `node-extended-resource/reapply-node-extended-resource.service` (boot ordering) | Since 2026-09-02 also `WantedBy=multi-user.target` and `Before=converge-ci-stack.service`: on a tmpfs-datastore boot the node object is new, so the churn-slot resource every queue is denominated in is applied before the queues, not up to a minute later by the timer's first tick. |
 | `install-node.sh` | The ONE ordered runbook for the node-local half: runs every installer in this tree in dependency order with the right arguments (`sudo install-node.sh 64`), so a from-scratch rebuild is one command. Enables the boot units, never starts them, never restarts k3s. Lists what it deliberately leaves attended (credstore seeding, the OTel collector from its own repo, the initial warm-cache populate). |
 
@@ -591,11 +593,19 @@ exact latest state is worse than starting clean.
 
 ### Fail-safe ordering, and what a bad rebuild actually costs
 
-The mount unit is ordered `Before=k3s.service` but k3s is **not** made to
-`Require` it. If the tmpfs mount ever fails, k3s starts on the **on-disk
-datastore underneath** — stale but intact — a degraded fallback rather
-than a blocked boot. The `.mount` is also `WantedBy=` (not `RequiredBy=`)
-`multi-user.target`, so a mount hiccup cannot hold up the machine.
+The mount unit is ordered `Before=k3s.service`, and since 2026-09-04 k3s
+**requires** it: `datastore-tmpfs/20-requires-datastore-mount.conf`, a
+`k3s.service.d/` drop-in that `install-datastore-tmpfs.sh` installs,
+carries `RequiresMountsFor=/var/lib/rancher/k3s/server/db`. Before that,
+k3s was deliberately not made to require the mount, so a failed tmpfs
+mount meant k3s started on the on-disk datastore underneath — "stale but
+intact" while that copy was the pre-cutover rollback. The 2026-09-04
+array rebuild replaced it with a 2026-08-27 backup restore, and a k3s
+that started on it would run an old cluster state against live
+containers. Failing loud is the honest outcome: k3s does not start, every
+`After=k3s` oneshot fails by dependency, `systemctl --failed` is red. The
+`.mount` is still `WantedBy=` (not `RequiredBy=`) `multi-user.target`, so
+the machine itself boots; only k3s waits (`livespec-el5y`).
 
 None of this can brick the host. The tmpfs holds only the ~110 MB
 datastore; the OS, the RAID array, the beads ledger, and every durable
@@ -605,8 +615,11 @@ converge" — the converge only ever runs `helm upgrade --install` and
 `kubectl apply`, so it creates and updates and never deletes host state.
 And because the tmpfs is mounted **over** the on-disk directory (hiding
 the disk copy, not deleting it), **rollback** is: stop k3s,
-`systemctl disable --now var-lib-rancher-k3s-server-db.mount`, start k3s —
-back on the original datastore.
+`systemctl disable --now var-lib-rancher-k3s-server-db.mount`, remove
+`/etc/systemd/system/k3s.service.d/20-requires-datastore-mount.conf` and
+`systemctl daemon-reload`, start k3s — on whatever the on-disk directory
+last held (since the 2026-09-04 rebuild, the stale restore; retiring it is
+a pending maintainer decision on `livespec-ifwnqj`).
 
 ### Cutover procedure and live state
 
@@ -690,11 +703,105 @@ conditions, and both are enforced rather than assumed: **(1)** every PVC on
 this pool is a 5 Gi ephemeral runner work volume — nothing precious is ever
 placed here; **(2)** the datastore is empty when it runs, so no PV can
 reference anything — the unit's `ConditionPathExists=!.../state.db` skips
-it on any boot where the tmpfs mount failed and k3s fell back to the intact
-on-disk datastore, and the script refuses under a running k3s and across
+it on any boot where the tmpfs mount is absent (since 2026-09-04 k3s does
+not start at all in that case — `20-requires-datastore-mount.conf` — so the
+condition is a second guard, not the only one), and the script refuses under a running k3s and across
 any mount point below the root. Condition (1) is a property of the pool,
 not of the mechanism: **before placing any non-ephemeral PVC on this node,
 disable this unit first.**
+
+## Storage layout: media-neutral tier identity
+
+Three CI tiers live on dedicated volumes, and two bind mounts put
+containerd's store and the local-path PVC root on them. Every path in
+this table is fixed; only the medium behind a label ever changes.
+
+| Tier | Label = LV name | Mounted at | Bound onto | Holds |
+|---|---|---|---|---|
+| warm cache | `ci-cache` | `/var/cache/ci-runner` | — | the warm uv cache lower (`warm-cache/`) and the two tier mountpoints below |
+| containerd store | `ci-containerd` | `/var/cache/ci-runner/k3s-containerd` | `/var/lib/rancher/k3s/agent/containerd` | image layers, snapshots, container root filesystems |
+| runner work volumes | `ci-workvols` | `/var/cache/ci-runner/k3s-storage` | `/var/lib/rancher/k3s/storage` | every runner's `local-path` PVC scratch |
+
+`storage-layout/install-storage-layout.sh` ensures the five `/etc/fstab`
+lines that say exactly this (its header lists them byte-for-byte) and the
+k3s drop-in that makes k3s refuse to start unless both binds are mounted.
+
+### Why labels, and the 16-byte rule
+
+The tiers are moving media. On 2026-09-04 they are three 1 TiB LVs in
+VG `poweredge` on the rebuilt 7-drive RAID-5; when the NVMe hardware lands
+(livespec plan `poweredge-raid-array-maintenance`, `livespec-e2vcqf`) the
+containerd store and the work volumes each move to an LV of the **same
+name** in one VG per NVMe drive, and the warm cache stays on the array. A
+filesystem UUID is minted by every `mkfs`, so a UUID-keyed fstab has to
+change on every move, and the git copy of the layout can never be
+byte-identical to the host's — which is exactly how the layout drifted out
+of git in the first place (the host's tier lines had no source until
+`livespec-el5y`). A label is chosen by us and is the same on any medium.
+The maintainer's rule (2026-09-04) is that the array uses the SAME volume
+names as the NVMe will, so nothing but the data copy and a performance
+comparison needs the hardware; labels are that rule in fstab terms, and
+the LV names repeat them so `lvs` and `findmnt` tell the same story.
+
+An ext4 label holds **16 bytes**. The stand-in names this replaced had
+already tripped over it: the LV `standin-containerd` carried the label
+`standin-containe`, silently truncated. `ci-containerd` (13), `ci-workvols`
+(11) and `ci-cache` (8) fit; keep any future role name under 16.
+
+### The k3s drop-ins: fail loud, never silently on `/`
+
+Every path above exists whether or not its volume is mounted, so a k3s
+that starts with a tier missing runs the whole pool's churn on the root
+filesystem, silently, until `/` fills — the failure the 2026-08-28
+relocation was done to prevent. Two `k3s.service.d/` drop-ins make that
+impossible: `storage-layout/10-requires-storage-mounts.conf` requires both
+bind targets, and `datastore-tmpfs/20-requires-datastore-mount.conf`
+(installed only where the datastore is volatile) requires the tmpfs
+datastore mount. A missing tier then means k3s does not start, every
+`After=k3s` oneshot fails by dependency, and `systemctl --failed` is red —
+which is what the 2026-09-04 boot with stale NVMe fstab lines looked like,
+and why it was caught. The bind lines also `x-systemd.requires-mounts-for=`
+their own **source** mount, not merely the cache volume, so systemd cannot
+bind an empty mountpoint directory before the tier volume lands on it.
+
+### Moving a tier to new media
+
+The procedure that keeps fstab unchanged and the installer a no-op
+throughout (`ci-containerd` shown; `ci-workvols` is identical):
+
+1. Create the volume on the new medium with the role's LV name in that
+   medium's VG (`lvcreate -n ci-containerd -L <size> <vg>`), then format it
+   with a **temporary** label: `mkfs.ext4 -L new-containerd <device>`
+   (`new-` + role, still under 16 bytes). Two devices must never carry the
+   role label at once; the installer refuses to run while they do.
+2. Mount it somewhere temporary and copy: `rsync -aHAXS --numeric-ids
+   --delete /var/cache/ci-runner/k3s-containerd/ <tmp>/`. Repeat the rsync
+   just before the switch; the second pass should report no differences.
+3. In a quiet window (0 workflow pods, every scale set at 0 runners):
+   `systemctl stop k3s` (the bind mounts stay mounted — `k3s-killall.sh`
+   does not unmount them), `umount /var/lib/rancher/k3s/agent/containerd`,
+   `umount /var/cache/ci-runner/k3s-containerd`, then swap the labels so
+   only the new volume carries the role: `tune2fs -L old-containerd
+   <old device>` and `tune2fs -L ci-containerd <new device>`, then
+   `mount -a`. `findmnt` must show the new device at both paths.
+   `systemctl start k3s`. **Never `udevadm trigger` a mounted device-mapper
+   volume** to refresh `/dev/disk/by-label`: on 2026-09-04 that marked the
+   dm devices not-ready, systemd stopped all four tier mounts, and the
+   `RequiresMountsFor` drop-in stopped k3s ahead of them (shims orphaned,
+   every listener `Unknown`). `blkid` reads the new label directly,
+   `mount -a` resolves `LABEL=` through it, and `lvchange --refresh` or the
+   next boot refreshes the symlinks (livespec plan
+   `poweredge-raid-array-maintenance`, research note
+   `nvme-pex8747-gen3-link-fault.md`, gotcha 3).
+4. Run `install-storage-layout.sh`: it reports every line `present` and
+   the drop-in byte-identical. The old volume keeps the data under
+   `old-containerd` until it is reclaimed.
+
+Renaming a tier **in place** (what 2026-09-04 did to the stand-in LVs) is
+step 3's label change alone, on a live mounted filesystem: `lvrename` and
+`tune2fs -L` are both safe while mounted, fstab found the volumes by UUID
+until the installer rewrote the lines by label, and the same `udevadm`
+rule applies.
 
 ## The workflow pod is not the runner pod
 
