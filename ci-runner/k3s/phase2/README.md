@@ -314,6 +314,7 @@ fleet's actual call volume) needs a live-cluster observation —
 | `node-keyring-budget/60-k3s-container-keyring.conf` + `install-keyring-sysctl.sh` | The per-user kernel keyring quota (`kernel.keys.maxkeys = 2000`, `maxbytes = 200000`) as a `/etc/sysctl.d/` drop-in. Every container start allocates a session keyring against uid 0 under containerd/runc; the kernel default of 200 was exhausted on this host on 2026-08-13 by two repositories' concurrency. The value had survived on the host only as an untracked drop-in under an earlier name; the 2026-09-02 gitops audit found it with no git source, and the installer now ships it under this name and removes the untracked predecessor. |
 | `storage-layout/install-storage-layout.sh` | Ensures the FIVE `/etc/fstab` lines that define the node's storage layout — the three CI tiers found by filesystem LABEL (`ci-cache` at `/var/cache/ci-runner`, `ci-containerd` and `ci-workvols` mounted under it) and the two bind mounts putting containerd's store and the local-path PVC root on them — byte-exact and with no UUID argument, replacing a differing line for one of those mountpoints (fstab backed up first, `findmnt --verify` after); refuses unless each label resolves to exactly one device; installs the k3s drop-in below. Labels, not UUIDs, so the lines are identical on the array stand-in LVs and on the NVMe (livespec plan `ci-runner-pod-lifecycle-reliability`, `livespec-el5y`; see "Storage layout: media-neutral tier identity" below). Never formats, moves data, mounts, or restarts k3s. |
 | `storage-layout/10-requires-storage-mounts.conf` | `k3s.service.d/` drop-in: `RequiresMountsFor=` both bind targets, so k3s refuses to start — loudly, every `After=k3s` oneshot failing by dependency — rather than silently running the pool's churn on `/` when a tier is missing. Kept by hand on the host from 2026-09-04's NVMe attempt; from git since `livespec-el5y`. |
+| `storage-layout/migrate-tier.sh` | Moves a tier to new media by COPY + RELABEL with fstab untouched — the "Moving a tier to new media" procedure below as code. `prepare ROLE VG PV_BY_ID SIZE` (live, idempotent: PV/VG/LV, ext4 under the temporary `new-<suffix>` label, bulk rsync under a temp mount; refuses a PV on any device that already carries a signature — a stale copy from a failed attempt is never reused) and `cutover ROLE [ROLE ...]` (the quiet window: refuses unless zero EphemeralRunners; stops k3s, final delta + dry-run verification + inode counts, unmount, swap labels `old-<suffix>` / role, by-label refresh through dm events — never a blanket `udevadm trigger` — `mount -a`, proves every path is on the new device, starts k3s and the `After=k3s` oneshots, compares the image count, ends by running `install-storage-layout.sh` which must be a no-op). Carried the containerd store and the work volumes onto the first NVMe on 2026-09-04 (livespec `livespec-e2vcqf`); see `.ai/ci-node-storage-tiers.md`. |
 | `datastore-tmpfs/20-requires-datastore-mount.conf` | `k3s.service.d/` drop-in installed by `install-datastore-tmpfs.sh` only: `RequiresMountsFor=` the tmpfs datastore mount, because since the 2026-09-04 array rebuild the directory underneath holds a stale backup restore, not a rollback copy. Changes the rollback steps — read its header. |
 | `node-extended-resource/reapply-node-extended-resource.service` (boot ordering) | Since 2026-09-02 also `WantedBy=multi-user.target` and `Before=converge-ci-stack.service`: on a tmpfs-datastore boot the node object is new, so the churn-slot resource every queue is denominated in is applied before the queues, not up to a minute later by the timer's first tick. Since 2026-09-04 the converge states the same dependency from its side (`After=`/`Wants=`) and asserts the capacity itself at step 1b (`livespec-kgl3`). |
 | `install-node.sh` | The ONE ordered runbook for the node-local half: runs every installer in this tree in dependency order with the right arguments (`sudo install-node.sh 64`), so a from-scratch rebuild is one command. Enables the boot units, never starts them, never restarts k3s. Lists what it deliberately leaves attended (credstore seeding, the OTel collector from its own repo, the initial warm-cache populate). |
@@ -852,36 +853,59 @@ bind an empty mountpoint directory before the tier volume lands on it.
 
 ### Moving a tier to new media
 
-The procedure that keeps fstab unchanged and the installer a no-op
-throughout (`ci-containerd` shown; `ci-workvols` is identical):
+`storage-layout/migrate-tier.sh` is the procedure; this is what it does and
+why, so the log it prints reads correctly (`ci-containerd` shown;
+`ci-workvols` is identical, and several roles share one quiet window):
 
-1. Create the volume on the new medium with the role's LV name in that
-   medium's VG (`lvcreate -n ci-containerd -L <size> <vg>`), then format it
-   with a **temporary** label: `mkfs.ext4 -L new-containerd <device>`
-   (`new-` + role, still under 16 bytes). Two devices must never carry the
-   role label at once; the installer refuses to run while they do.
-2. Mount it somewhere temporary and copy: `rsync -aHAXS --numeric-ids
-   --delete /var/cache/ci-runner/k3s-containerd/ <tmp>/`. Repeat the rsync
-   just before the switch; the second pass should report no differences.
-3. In a quiet window (0 workflow pods, every scale set at 0 runners):
-   `systemctl stop k3s` (the bind mounts stay mounted — `k3s-killall.sh`
-   does not unmount them), `umount /var/lib/rancher/k3s/agent/containerd`,
-   `umount /var/cache/ci-runner/k3s-containerd`, then swap the labels so
-   only the new volume carries the role: `tune2fs -L old-containerd
-   <old device>` and `tune2fs -L ci-containerd <new device>`, then
-   `mount -a`. `findmnt` must show the new device at both paths.
-   `systemctl start k3s`. **Never `udevadm trigger` a mounted device-mapper
-   volume** to refresh `/dev/disk/by-label`: on 2026-09-04 that marked the
-   dm devices not-ready, systemd stopped all four tier mounts, and the
-   `RequiresMountsFor` drop-in stopped k3s ahead of them (shims orphaned,
-   every listener `Unknown`). `blkid` reads the new label directly,
-   `mount -a` resolves `LABEL=` through it, and `lvchange --refresh` or the
-   next boot refreshes the symlinks (livespec plan
-   `poweredge-raid-array-maintenance`, research note
-   `nvme-pex8747-gen3-link-fault.md`, gotcha 3).
-4. Run `install-storage-layout.sh`: it reports every line `present` and
-   the drop-in byte-identical. The old volume keeps the data under
-   `old-containerd` until it is reclaimed.
+1. `prepare ci-containerd <vg> /dev/disk/by-id/<drive> <size>` — live, k3s
+   running. Creates the physical volume (only on a device with NO signature;
+   a drive back from a failed attempt still holds a volume group with a
+   stale copy, and that copy is wiped by hand and never reused), the volume
+   group, the LV with the role's name in that VG, and an ext4 filesystem
+   under a **temporary** label `new-containerd` (`new-` + role suffix, under
+   16 bytes) — two volumes must never carry the role label at once, and the
+   installer refuses to run while they do. Then a bulk `rsync -aHAXS
+   --numeric-ids --delete` of the live tier under `/mnt/migrate-tier/<role>`.
+   Re-run it to refresh the copy; 12.7 GB of containerd took ~40 s.
+2. `cutover ci-containerd ci-workvols` — the quiet window (it refuses unless
+   the pool has zero EphemeralRunners; route CI away first). `systemctl stop
+   k3s` (the bind mounts stay mounted — `k3s-killall.sh` does not unmount
+   them), the final delta copy of each tier, then verification: a dry-run
+   itemised pass must list nothing but directory timestamps and the inode
+   counts must match (123,758 and 386,900 on 2026-09-04). Unmount the bind,
+   the tier and the temp mount; `tune2fs -L old-containerd <old>` and
+   `tune2fs -L ci-containerd <new>` so only the new volume carries the role;
+   refresh `/dev/disk/by-label` through `lvchange --refresh` (a proper
+   device-mapper event) with a `udevadm trigger --action=change` scoped to
+   the two now-unmounted volumes as the fallback; `mount -a`; prove with
+   `findmnt` that the tier path AND the bind target are on the new device;
+   `systemctl start k3s` plus the `After=k3s` oneshots a manual start does
+   not pull in; compare `crictl images -q | wc -l` before and after (74 = 74
+   on 2026-09-04); finally run `install-storage-layout.sh`, which must
+   report every line `present` and the drop-in byte-identical. The old
+   volume keeps the data under `old-containerd` until it is reclaimed.
+
+**Never `udevadm trigger --subsystem-match=block` on this host** to refresh
+`/dev/disk/by-label`: on 2026-09-04 that marked the mounted device-mapper
+volumes not-ready, systemd stopped all four tier mounts, and the
+`RequiresMountsFor` drop-in stopped k3s ahead of them (shims orphaned, every
+listener `Unknown`). `blkid` reads a new label directly and `mount -a`
+resolves `LABEL=` through it; the symlinks follow `lvchange --refresh` or
+the next boot (livespec plan `poweredge-raid-array-maintenance`, research
+note `nvme-pex8747-gen3-link-fault.md`, gotcha 3; the whole trap list is
+`.ai/ci-node-storage-tiers.md`).
+
+**Where the tiers live now (poweredge-xubuntu, since 2026-09-04 17:07Z).**
+`ci-cache` on VG `poweredge` (the 7-drive RAID-5 array); `ci-containerd` and
+`ci-workvols` on VG `nvmea` — one WD_BLACK SN8100 4 TB on the StarTech
+PEX8M2E2 (ASM2824 switch, Gen3 x8 uplink, drive at Gen3 x4) in PCIe Slot 1,
+LVs of 1.5 TiB each with ~640 GiB unallocated. Both write-hot tiers share
+the one drive as the interim; when the second SN8100 arrives, `ci-workvols`
+moves to its own VG (`nvmeb`) by exactly the two commands above, one tenant
+per drive as designed. The array's former tier volumes remain as
+`old-containerd` and `old-workvols` (1 TiB each, spare capacity). A proving
+reboot after the cutover is recorded in `poweredge-xubuntu-info`
+`AGENTS.md` §Storage.
 
 Renaming a tier **in place** (what 2026-09-04 did to the stand-in LVs) is
 step 3's label change alone, on a live mounted filesystem: `lvrename` and
@@ -1669,6 +1693,8 @@ rows on that `device`. The tiers, with the mapping the live host carried on
 | ci-containerd | `/var/cache/ci-runner/k3s-containerd` | `dm-3` |
 | ci-workvols | `/var/cache/ci-runner/k3s-storage` | `dm-4` |
 | the whole array | (`sda2` is the LVM physical volume under every tier) | `sda` |
+
+Since the 2026-09-04 17:07Z NVMe cutover `ci-containerd` and `ci-workvols` are on VG `nvmea` (`nvme0n1` is their physical volume, `dm-1`/`dm-2` on the first boot after), so an array-only query joins `sda` with `ci-cache` alone; re-derive the `dm-N` numbers for every window.
 
 **The retrospective query recipe** — three queries on the `metrics`
 dataset, every one filtered to `host.name = poweredge-xubuntu`, granularity
