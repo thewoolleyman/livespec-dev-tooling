@@ -105,6 +105,18 @@ investigation:
   maintainer question.** If you can state the options, the costs, and which one
   you would pick, you have already done the deciding work. Decide it, record the
   reasoning where the work is tracked, and report it as decided.
+- **"Decide them from a fresh context" means the fresh session decides.** When
+  a handoff records that the maintainer asked for a plan's blockers to be walked
+  and DECIDED from a fresh context, the new session's uncontaminated judgment is
+  the decision mechanism; a research note that already carries a recommendation
+  per item is a set of findings, not a questionnaire. Read the maintainer's
+  direction in the handoff, not the prior session's paraphrase of it into a
+  next action — if the two disagree, the direction wins. Decide each item, do
+  the research the decision needs (on 2026-09-04 one of six rested on a
+  misidentified blocker and changed on verification), record each answer where
+  the item names it, execute the consequences, and report for objection. The
+  2026-09-04 resume opened by putting decision 1 back to the maintainer as a
+  picker and was told, bluntly, that this was the wrong thing.
 
 ## Ordering — confirm the reader before you write
 
