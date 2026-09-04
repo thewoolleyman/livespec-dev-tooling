@@ -81,6 +81,29 @@
 #    which does; a distroless job image would need its own template.
 #    `--no-preserve=ownership` so the copy is owned by whatever uid the job
 #    container runs as (root today) rather than by the populator's uid.
+#
+# 3. The warm CARGO cache (the cargo half of the same tier; ../crates-proxy/),
+#    HOST-SERVED rather than copied: the same postStart probes the crates
+#    proxy and, if it answers within 3 s, writes /.cargo/config.toml — the
+#    ROOT of cargo's config hierarchy, so every cargo invocation in the job
+#    reads it whatever its working directory, and a repository's own
+#    checked-in [source] config still overrides it. Cargo's [source] tables
+#    are NOT settable from the environment (cargo reference, config chapter),
+#    which is why this is a file write and not an env entry above. ZERO bytes
+#    are copied per start — the reason this half is not a lower like uv's:
+#    per-job start writes are the pool's measured disk knee. Fail-soft the
+#    same way: no proxy (or a proxy not yet Ready) means no file, and cargo
+#    fetches from crates.io directly, exactly today's behaviour. The proxy has
+#    no write surface (non-GET refused), so the trust tiering holds without a
+#    read-only mount. Verified live 2026-09-04, plan ci-runner-cache-tiers
+#    research/005: Cargo.lock byte-identical, every locked crate served.
+#
+# 4. The fleet-wide KILL SWITCH. CI_CACHE_KILL_SWITCH on the $job container:
+#    empty (default) enables every tier; `operator` makes the postStart skip
+#    every tier for every job — no lower copy, no cargo config — with no
+#    deploy of any routed repository (converge this ConfigMap, recycle idle
+#    runners). The cache-telemetry children of the plan add the deterministic
+#    cold canary on the same seam and tag both on every cache span.
 apiVersion: v1
 kind: PodTemplate
 spec:
@@ -102,6 +125,9 @@ spec:
       env:
         - name: UV_CACHE_DIR
           value: /__w/_warm/uv
+        # Fleet-wide kill switch (header item 4): "" = tiers on; "operator" = off.
+        - name: CI_CACHE_KILL_SWITCH
+          value: ""
       volumeMounts:
         - name: warm-cache
           mountPath: /var/cache/ci-runner/warm
@@ -113,12 +139,37 @@ spec:
               - sh
               - -c
               - |
+                # Every path below is fail-soft: this script always exits 0.
+                if [ -n "${CI_CACHE_KILL_SWITCH:-}" ]; then
+                  exit 0
+                fi
+                # Tier: warm uv cache (header item 2) — copy the lower.
                 src=/var/cache/ci-runner/warm/uv
                 dst=/__w/_warm/uv
                 if [ -d "$src" ]; then
                   mkdir -p "$dst"
                   if ! cp -rp --no-preserve=ownership "$src/." "$dst"; then
                     rm -rf "$dst"
+                  fi
+                fi
+                # Tier: warm cargo cache (header item 3) — point cargo at the
+                # host-served crates proxy, only if it answers and only if the
+                # image carries no /.cargo/config.toml of its own.
+                proxy=http://crates-proxy.ci-crates-proxy.svc.cluster.local:3080
+                if [ ! -e /.cargo/config.toml ] \
+                   && command -v curl >/dev/null 2>&1 \
+                   && curl -fsS --max-time 3 "$proxy/index/config.json" >/dev/null 2>&1; then
+                  if mkdir -p /.cargo && printf '%s\n' \
+                       '# Written by the runner pool (ci-runner/k3s/phase2/arc/hook-pod-template.yaml).' \
+                       '# crates.io served from the host-local crates proxy; Cargo.lock is unaffected.' \
+                       '[source.crates-io]' \
+                       'replace-with = "ci-runner-pool"' \
+                       '' \
+                       '[source.ci-runner-pool]' \
+                       "registry = \"sparse+$proxy/index/\"" > /.cargo/config.toml; then
+                    :
+                  else
+                    rm -f /.cargo/config.toml
                   fi
                 fi
                 exit 0
