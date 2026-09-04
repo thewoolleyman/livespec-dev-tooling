@@ -1,0 +1,8 @@
+{
+  "name": "CI cache gauges dead-man — poweredge-xubuntu ci_cache silent 20 min",
+  "description": "Fires when ZERO livespec.ci_cache.kill_switch datapoints from host.name=poweredge-xubuntu arrive in the trailing 20 min (evaluated every 10 min). ci-cache-gauges.timer posts every 5 min (~4 per window) and kill_switch is the one gauge it ALWAYS emits, so silence means the timer, the emitter's reads (a missing hook template makes it withhold this column on purpose), the host collector (otel-collector.service), or the host is dead — not idle. UNGROUPED BUT FILTERED to one host, as every dead-man here: a grouped query cannot fire on a silent subject. Realizes v054 §'Runner-pool cache telemetry' 'a dead-man trigger that fires on the absence of these gauges'. Emitter: livespec-dev-tooling ci-runner/observability/ci-cache-gauges.sh. Receiver: thewoolleyman/otel-collector config.ci-runner-host.yaml. Runbook: ssh poweredge-xubuntu; systemctl status ci-cache-gauges.timer otel-collector; sudo journalctl -u ci-cache-gauges -n 20. livespec-dev-tooling-gjqw2i, plan ci-runner-cache-tiers.",
+  "query": {"calculations": [{"op": "COUNT_DATAPOINTS", "column": "livespec.ci_cache.kill_switch"}], "filters": [{"column": "host.name", "op": "=", "value": "poweredge-xubuntu"}], "time_range": 1200},
+  "threshold": {"op": "<", "value": 1, "exceeded_limit": 1},
+  "frequency": 600, "alert_type": "on_change", "recipients": [{"id":"jKw2EyfLJ3W"},{"id":"fort2EXXuVy"}],
+  "tags": [{"key":"host","value":"poweredge-xubuntu"}, {"key":"service","value":"ci-runner-liveness"}, {"key":"component","value":"ci-cache"}, {"key":"kind","value":"dead-man"}]
+}

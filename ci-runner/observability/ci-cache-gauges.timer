@@ -1,0 +1,12 @@
+# ci-cache-gauges.timer — the same fixed cadence as ci-runner-heartbeat.timer,
+# offset by a minute so the two POSTs do not land together.
+[Unit]
+Description=CI host build-cache health gauges (every 5 min)
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

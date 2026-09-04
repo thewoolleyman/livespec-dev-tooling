@@ -1,0 +1,53 @@
+{
+  "name": "CI sccache hit floor — poweredge-xubuntu 5-minute hit ratio below 0.5 over 4 h",
+  "description": "Fires when AVG(livespec.ci_cache.sccache.hit_ratio_5m) for host.name=poweredge-xubuntu over the trailing 4 h (Honeycomb's maximum trigger window) is below 0.5, evaluated hourly. The gauge is hits/(hits+misses) of the redis keyspace per 5-minute tick, emitted ONLY when there was traffic, so an idle pool cannot fire this; a sustained low ratio under real traffic means the compilation cache rotted: a toolchain bump not yet rebuilt, a redis restart before the next populate, or jobs keyed away from the populator's entries (research/006 Defect 2: any CARGO_* env var). HOST-side floor; the per-repo, canary-excluding floor from job spans is livespec-dev-tooling-mlg5sf's. Runbook: ssh poweredge-xubuntu; sudo kubectl -n ci-sccache exec deploy/sccache-redis -- redis-cli INFO stats | grep keyspace; sudo kubectl -n ci-warm-cache logs job/<latest> | grep sccache. Emitter: ci-runner/observability/ci-cache-gauges.sh. livespec-dev-tooling-gjqw2i, plan ci-runner-cache-tiers research/003.",
+  "query": {
+    "calculations": [
+      {
+        "op": "AVG",
+        "column": "livespec.ci_cache.sccache.hit_ratio_5m"
+      }
+    ],
+    "filters": [
+      {
+        "column": "host.name",
+        "op": "=",
+        "value": "poweredge-xubuntu"
+      }
+    ],
+    "time_range": 14400
+  },
+  "threshold": {
+    "op": "<",
+    "value": 0.5,
+    "exceeded_limit": 1
+  },
+  "frequency": 3600,
+  "alert_type": "on_change",
+  "recipients": [
+    {
+      "id": "jKw2EyfLJ3W"
+    },
+    {
+      "id": "fort2EXXuVy"
+    }
+  ],
+  "tags": [
+    {
+      "key": "host",
+      "value": "poweredge-xubuntu"
+    },
+    {
+      "key": "service",
+      "value": "ci-runner-liveness"
+    },
+    {
+      "key": "component",
+      "value": "ci-cache"
+    },
+    {
+      "key": "kind",
+      "value": "value"
+    }
+  ]
+}
