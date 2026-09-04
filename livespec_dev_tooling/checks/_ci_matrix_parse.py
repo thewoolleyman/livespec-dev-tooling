@@ -137,6 +137,26 @@ _NEEDS_BLOCK_KEY = re.compile(r"^\s*needs:\s*$")
 _NEEDS_INLINE = re.compile(r"^\s*needs:\s*(\S.*?)\s*$")
 _NEEDS_BULLET = re.compile(r"^\s*-\s*([\w-]+)\s*$")
 
+# A job- OR step-level `if:` whose expression references a changeset
+# `.py`-detection output (the `needs.setup.outputs.py_changed` shape). This is
+# the exact DIRECTIONAL signal the `ci_gate_parity` check keys on: a gating
+# job carrying it runs its real steps on a `push` to master (where the setup
+# job exports `py_changed=true`) but SKIPS or reduces them on a doc-only
+# `pull_request` (where `py_changed=false`) — a PR gate weaker than the master
+# gate. The token `py_changed` is the discriminator: an `if:` conditioned only
+# on `github.event_name`/`github.head_ref` (release-gate-pre-tag,
+# PR-only-strictness jobs) is ADDITIONAL PR strictness, never a skip, and does
+# NOT match. Both the `== 'true'` and `!= 'true'` (paired "Skip" step) forms
+# carry the token, so either marks the owning job conditioned.
+#
+# This rule ENCODES the livespec invariant in
+# `livespec/SPECIFICATION/non-functional-requirements.md` §"CI as a merge gate
+# (branch protection)" (PR gate ≡ master gate); per this module's
+# bounded-parser-duplication convention a rule-encoding parser MUST live in
+# this shared home so `ci_gate_parity` and any future consumer derive it from
+# ONE parser and cannot drift about WHAT THE SPEC SAYS.
+_IF_CHANGESET_PY = re.compile(r"^\s*if:.*\bpy_changed\b")
+
 
 class _SlugOverride(TypedDict, total=False):
     """Shape of the `--canonical-from` JSON override file: `{"slugs": [...]}`."""
@@ -153,12 +173,21 @@ class CiJob:
     command or carries a `strategy.matrix.target` list — feeds the BROADER
     assertion (b): a `ci-green` gate must fan in every gating job, canonical
     or not (`livespec-dev-tooling-o6b`).
+
+    `changeset_py_conditioned` — whether any job- or step-level `if:` in the
+    job references a changeset `.py`-detection output (`py_changed`) — feeds
+    the `ci_gate_parity` check: a GATING job carrying it runs on a `push` to
+    master but is skipped/reduced on a doc-only `pull_request`, so the PR gate
+    is weaker than the master gate. Defaults `False`; only `_build_job`
+    constructs a `CiJob`, and it computes the flag, so the default keeps the
+    field non-breaking for any hermetic-fixture construction.
     """
 
     name: str
     needs: frozenset[str]
     contributed_check_slugs: frozenset[str]
     gating: bool
+    changeset_py_conditioned: bool = False
 
 
 def load_canonical(
@@ -299,6 +328,21 @@ def _runs_any_just(*, body_lines: list[str]) -> bool:
     return False
 
 
+def _changeset_py_conditioned(*, body_lines: list[str]) -> bool:
+    """Whether a non-comment job- or step-level `if:` references `py_changed`.
+
+    The `ci_gate_parity` signal: a job whose real steps are gated on a
+    changeset `.py`-detection output runs on `push` but is skipped on a
+    doc-only `pull_request`. See `_IF_CHANGESET_PY`.
+    """
+    for raw in body_lines:
+        if raw.strip().startswith("#"):
+            continue
+        if _IF_CHANGESET_PY.match(raw) is not None:
+            return True
+    return False
+
+
 def _parse_needs_value(*, value: str) -> set[str]:
     """Parse a scalar (`setup`) or flow-list (`[a, b]`) `needs:` value."""
     text = value.strip()
@@ -341,6 +385,7 @@ def _build_job(*, name: str, body_lines: list[str]) -> CiJob:
         needs=_parse_job_needs(body_lines=body_lines),
         contributed_check_slugs=frozenset(contributed),
         gating=gating,
+        changeset_py_conditioned=_changeset_py_conditioned(body_lines=body_lines),
     )
 
 
