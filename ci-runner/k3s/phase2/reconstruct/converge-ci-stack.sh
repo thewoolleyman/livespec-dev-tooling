@@ -139,6 +139,7 @@ declare -A SCALE_SETS=(
   [livespec-local-ci-k3s]="values-livespec.yaml"
   [livespec-console-beads-k3s]="values-livespec-console-beads-fabro.yaml"
   [livespec-orchestrator-git-k3s]="values-livespec-orchestrator-git-jsonl.yaml"
+  [livespec-orchestrator-k3s]="values-livespec-orchestrator-beads-fabro.yaml"
   [livespec-dev-tooling-k3s]="values-livespec-dev-tooling.yaml"
   [livespec-driver-claude-k3s]="values-livespec-driver-claude.yaml"
   [livespec-driver-codex-k3s]="values-livespec-driver-codex.yaml"

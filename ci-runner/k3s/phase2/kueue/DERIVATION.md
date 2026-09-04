@@ -482,6 +482,63 @@ wait. `maxRunners` is unchanged — it is each repository's logical ceiling, not
 the quota. The pod-capacity constraint is comfortably met: `2 x 32 + helpers +
 system` is far below `max-pods = 200`.
 
+## Recomputation on the tenth repository (2026-09-04)
+
+`livespec-orchestrator-beads-fabro` joined the cohort on 2026-09-04
+(livespec plan `ci-runner-pod-lifecycle-reliability`, epic
+`livespec-ifwnqj`, Carrier G1, work-item `livespec-ifwnqj.1`). Its
+`ci.yml` had been plain `runs-on: ubuntu-latest` by a recorded caution
+about the fleet's operator-triggered live golden-master tier; the
+maintainer settled in session that the exposure is the same as every
+other member's, so it routes to the pool like the other nine. This is the
+second recomputation driven by a change in the REPOSITORY SET.
+
+**Its demand weight is `21`, and it is the second weight in this table
+that is a real measurement.** Counted from master CI run `33893048859`
+on `thewoolleyman/livespec-orchestrator-beads-fabro` (2026-09-04), which
+dispatched exactly 21 jobs: 17 check jobs plus `setup`,
+`detect-py-changes`, `export-telemetry` and `ci-green`, which stay hosted
+(the same convention as every other member's `ci.yml`). Like
+`livespec-driver-pi`'s 13 it sits far below the podman-era 63–67 band
+because that repo's `ci.yml` batches its check targets (`check-python-batch`,
+`check-metadata-batch`) rather than running one job per check slug. It is
+not an under-count.
+
+Adding it takes the fleet weight sum to `W = 495 + 21 = 516`. At the
+INTERIM `C = 32` (see "The derivation at C = 32" above), exact shares
+`e_i = 32 * w_i / 516`:
+
+| Repository | `w_i` | `e_i` | `floor` | remainder | leftover unit | `nominalQuota` |
+|---|---|---|---|---|---|---|
+| `livespec` | 75 | 4.6512 | 4 | 0.6512 | +1 (5th largest) | **5** |
+| `livespec-driver-codex` | 67 | 4.1550 | 4 | 0.1550 |  | **4** |
+| `livespec-driver-claude` | 66 | 4.0930 | 4 | 0.0930 |  | **4** |
+| `livespec-orchestrator-git-jsonl` | 66 | 4.0930 | 4 | 0.0930 |  | **4** |
+| `livespec-overseer` | 65 | 4.0310 | 4 | 0.0310 |  | **4** |
+| `livespec-runtime` | 64 | 3.9690 | 3 | 0.9690 | +1 (2nd largest) | **4** |
+| `livespec-dev-tooling` | 63 | 3.9070 | 3 | 0.9070 | +1 (3rd largest) | **4** |
+| `livespec-console-beads-fabro` | 16 | 0.9922 | 0 | 0.9922 | +1 (1st largest) | **1** |
+| `livespec-driver-pi` | 13 | 0.8062 | 0 | 0.8062 | +1 (4th largest) | **1** |
+| `livespec-orchestrator-beads-fabro` | 21 | 1.3023 | 1 | 0.3023 |  | **1** |
+| **sum** | **516** | **32** | **27** | | **+5** | **32** |
+
+The floors sum to 27, leaving 5 units, awarded to the five largest
+remainders in order: `livespec-console-beads-fabro`, `livespec-runtime`,
+`livespec-dev-tooling`, `livespec-driver-pi` and `livespec`. **Exactly one
+pre-existing quota moves**: `livespec-driver-codex` loses the leftover
+unit it held at nine repositories (its remainder falls from 0.3313 to
+0.1550, below the new cut line) and goes from 5 to 4; every other
+pre-existing quota is unchanged. The newcomer's share is 1.3023, so its
+quota of 1 is its floor by the apportionment itself, not by step 5's
+`max(1, ...)`, and the ten quotas sum to **exactly C = 32** with no forced
+excess. Order of application: the quotas can be applied in any order here
+because the sum is unchanged (no capacity move), so the boot converge's
+single `kubectl apply` of every manifest is the whole change.
+
+When `C` returns to 64 (after the NVMe tiering), recompute the ten-row
+table per "Recomputing at another C"; at `C = 64` this repository's exact
+share is 2.6047.
+
 ## Recomputing at another C
 
 The derivation is parameterized so a capacity change is mechanical:
