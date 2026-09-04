@@ -17,8 +17,12 @@ Where the calls live: `../arc/hook-pod-template.yaml` (header item 6) sets
 repo's `config.ci-runner-host.yaml`), `CI_CACHE_CANARY_N` and
 `CI_RUNNER_NODE_NAME`; its postStart decides the kill-switch value (operator
 switch, else the canary: pod-name `cksum` ≡ 0 mod N), writes it with the
-start time to `/__w/_temp/_ci_cache/`, and emits the per-tier spans; its
-preStop emits the summary. `../local-path-provisioner/` stamps the seeded
+start time to `/__w/_temp/_ci_cache/`, and RECORDS the per-tier warm-copy
+facts to `warm-copy.tsv` there; its preStop runs `job-end`, which replays
+them with their recorded timestamps and the job identity (the runner writes
+`event.json` ~10 s after the pod starts — measured 2026-09-04 — so postStart
+cannot carry repo/sha/branch without delaying the job) plus the summary, in
+one POST. `../local-path-provisioner/` stamps the seeded
 uv generation's name at `_warm/.uv-generation`, which is the generation AND
 its age (the populator names generations `%Y%m%dT%H%M%SZ`).
 
