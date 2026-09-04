@@ -16,7 +16,7 @@ the span's counts describe THIS phase and not the sandbox's whole life::
     livespec-cargo-phase-timer --zero-stats
 
 It best-effort POSTs ONE OTLP/HTTP-JSON span — conforming to the shared
-build-telemetry attribute scheme (``build.env=factory``, ``build.phase``,
+build-telemetry attribute scheme (``build.env``, ``build.phase``,
 ``repo``, ``git.commit.sha``, ``toolchain.version``, and the pool's
 ``build.cache.*`` namespace: ``build.cache.sccache.enabled|hits|misses|errors|
 hit_ratio|backend|rw_mode`` plus ``build.cache.registry.hit``) — to the host
@@ -27,6 +27,17 @@ Honeycomb dataset by ``service.name``; this span carries
 ``service.name=github-ci`` so factory build phases land in the SAME
 ``github-ci`` dataset the CI build-telemetry spans use, discriminated by the
 ``build.env`` attribute — so NO Honeycomb ingest key need enter the sandbox.
+
+TWO LANES, ONE IMAGE. The same baked shim runs in the fabro factory sandbox AND
+in the k3s CI job container that pins this image, so ``build.env`` is RESOLVED
+at emit time from the forge's own ``GITHUB_ACTIONS`` marker (``ci`` when it is
+``true``, ``factory`` otherwise) rather than hardcoded — a CI-lane span labelled
+``factory`` would pollute every factory query in the shared dataset. In the CI
+lane the factory's default endpoint (a docker-bridge address of the factory
+host) is UNREACHABLE from a workflow pod, and each unreachable POST cost that
+job ``_POST_TIMEOUT_S``; so when the CI lane has NO endpoint configured the
+emission is skipped outright rather than paid for and thrown away. An
+explicitly configured endpoint is still posted to, as ``build.env=ci``.
 
 Factory failure contract: an emission failure is reported LOUDLY to stderr so it
 surfaces in the fabro run log (the scheme's factory row), but it NEVER changes
@@ -71,6 +82,7 @@ NAMESPACE = "livespec-family"
 BUILD_ENV = "factory"
 DEFAULT_ENDPOINT = "http://172.17.0.1:4318"
 _ENDPOINT_ENV = "LIVESPEC_SANDBOX_OTEL_ENDPOINT"
+_CI_ENV = "GITHUB_ACTIONS"
 _WORK_ITEM_ENV = "LIVESPEC_WORK_ITEM_ID"
 _SCOPE_NAME = "livespec.build-telemetry"
 _SCOPE_VERSION = "1.0.0"
@@ -315,24 +327,39 @@ def cache_attributes(*, environ: dict[str, str], stats: str | None) -> list[dict
     ]
 
 
+def resolve_build_env(*, environ: dict[str, str]) -> str:
+    """The span's ``build.env`` for THIS lane: ``ci`` under Actions, else ``factory``.
+
+    ``GITHUB_ACTIONS=true`` is the forge's own marker of a job container and is
+    present in the k3s lane's container (measured 2026-09-04); the fabro sandbox
+    never carries it. Resolving here rather than hardcoding ``factory`` is what
+    lets ONE baked image serve both lanes without a CI-lane span landing in the
+    factory's slice of the shared ``github-ci`` dataset.
+    """
+    return "ci" if environ.get(_CI_ENV, "").strip().lower() == "true" else BUILD_ENV
+
+
 def build_span_payload(
     *,
     inputs: dict[str, object],
     facts: dict[str, str],
     cache: list[dict[str, object]],
+    build_env: str,
 ) -> dict[str, object]:
     """Build the single-span OTLP/HTTP-JSON request for one cargo phase.
 
     ``service.name=github-ci`` (a resource attribute) routes the span to the
     ``github-ci`` dataset; the span carries the shared build-telemetry scheme
     attributes, the ``cache`` block's ``build.cache.*`` attributes, and the
-    optional ``work_item_id`` correlation tag. int64 fields
+    optional ``work_item_id`` correlation tag. ``build_env`` is the lane label
+    the CALLER resolved (``resolve_build_env``), passed in rather than read here
+    so this builder stays a pure function of its arguments. int64 fields
     are JSON strings per the proto3-JSON mapping Honeycomb expects; trace/span
     ids are freshly random (each cargo phase is its own independent span in v1).
     """
     exit_code = int(inputs["exit_code"])  # type: ignore[call-overload]
     attributes: list[dict[str, object]] = [
-        {"key": "build.env", "value": {"stringValue": BUILD_ENV}},
+        {"key": "build.env", "value": {"stringValue": build_env}},
         {"key": "build.phase", "value": {"stringValue": str(inputs["phase"])}},
         {"key": "repo", "value": {"stringValue": facts["repo"]}},
         {"key": "git.commit.sha", "value": {"stringValue": facts["sha"]}},
@@ -412,21 +439,35 @@ def run(
     facts: Callable[[], dict[str, str]] = gather_source_facts,
     stats: Callable[..., str | None] = read_sccache_stats,
 ) -> int:
-    """Emit one factory cargo-phase span from the environment; return 0/2.
+    """Emit one cargo-phase span for THIS lane from the environment; return 0/2.
 
     ``emit``, ``facts`` and ``stats`` are seams tests inject. A malformed
     environment writes a usage line to stderr and returns ``2`` without
     emitting. The return value is advisory only — the shim discards it and exits
     with cargo's own code — but a clean 0/2 keeps the CLI unit-testable.
+
+    The CI lane with NO configured endpoint returns early WITHOUT emitting, and
+    before the git and sccache probes, which cost the job too. The factory's
+    default endpoint is a docker-bridge address of the FACTORY host, unreachable
+    from a k3s workflow pod, so a POST there could only ever spend the emitter's
+    timeout per measured cargo invocation and discard the span. Configuring an
+    endpoint (the pod-reachable host collector) restores the emission, labelled
+    ``build.env=ci``.
     """
     inputs = parse_env(environ=environ)
     if inputs is None:
         _ = sys.stderr.write(_USAGE)
         return 2
+    endpoint = (environ.get(_ENDPOINT_ENV) or "").strip()
+    build_env = resolve_build_env(environ=environ)
+    # Only the FACTORY lane may fall back to DEFAULT_ENDPOINT, which is an
+    # address of the factory host; any other lane without a configured receiver
+    # has nowhere to post and skips rather than paying the timeout to discover it.
+    if build_env != BUILD_ENV and not endpoint:
+        return 0
     cache = cache_attributes(environ=environ, stats=stats(environ=environ))
-    payload = build_span_payload(inputs=inputs, facts=facts(), cache=cache)
-    endpoint = (environ.get(_ENDPOINT_ENV) or "").strip() or DEFAULT_ENDPOINT
-    _ = emit(endpoint=endpoint, payload=payload)
+    payload = build_span_payload(inputs=inputs, facts=facts(), cache=cache, build_env=build_env)
+    _ = emit(endpoint=endpoint or DEFAULT_ENDPOINT, payload=payload)
     return 0
 
 

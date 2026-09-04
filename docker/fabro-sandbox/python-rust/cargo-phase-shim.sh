@@ -11,10 +11,12 @@
 # all — mise prepend included.
 #
 # It runs the REAL cargo UNCHANGED and best-effort hands each measured phase's
-# timing to the baked livespec-cargo-phase-timer, which POSTs one build.env=factory
-# OTLP span to the host OTel receiver (routed to the github-ci Honeycomb dataset
-# by service.name — the keyless prepare.* seam), carrying the pool's
-# build.cache.* compilation- and registry-cache attributes alongside the timing.
+# timing to the baked livespec-cargo-phase-timer, which POSTs one OTLP span to the
+# host OTel receiver (routed to the github-ci Honeycomb dataset by service.name —
+# the keyless prepare.* seam), carrying the pool's build.cache.* compilation- and
+# registry-cache attributes alongside the timing. The timer labels that span
+# build.env=factory here and build.env=ci in a GitHub Actions job container, where
+# it skips the POST altogether unless a (pod-reachable) endpoint is configured.
 # Strictly non-fatal: cargo's own exit code is always propagated, and cargo
 # still runs when the timer is absent or fails. Unmeasured subcommands (fmt,
 # tree, metadata, --version, …) exec the real cargo directly with zero added

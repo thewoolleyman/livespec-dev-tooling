@@ -32,6 +32,7 @@ from livespec_dev_tooling.otel_cargo_phase import (
     post_span,
     read_sccache_stats,
     registry_hit,
+    resolve_build_env,
     run,
     zero_sccache_stats,
 )
@@ -460,6 +461,24 @@ def test_cache_attributes_degrade_on_unparseable_stats(monkeypatch: pytest.Monke
     assert attrs["build.cache.sccache.enabled"] is False
 
 
+@pytest.mark.parametrize(
+    ("marker", "expected"),
+    [
+        ("true", "ci"),
+        ("  TRUE  ", "ci"),
+        ("false", "factory"),
+        ("", "factory"),
+    ],
+)
+def test_resolve_build_env_reads_the_actions_marker(marker: str, expected: str) -> None:
+    """The k3s job container carries ``GITHUB_ACTIONS=true``; the fabro sandbox does not."""
+    assert resolve_build_env(environ={"GITHUB_ACTIONS": marker}) == expected
+
+
+def test_resolve_build_env_without_the_marker_is_the_factory() -> None:
+    assert resolve_build_env(environ={}) == BUILD_ENV
+
+
 def test_build_span_payload_routing_and_scheme_attributes() -> None:
     payload = build_span_payload(
         inputs={
@@ -472,6 +491,7 @@ def test_build_span_payload_routing_and_scheme_attributes() -> None:
         },
         facts=_FACTS,
         cache=_CACHE_ATTRS,
+        build_env=BUILD_ENV,
     )
     resource = _resource_attrs(payload)
     assert resource["service.name"] == DATASET
@@ -508,6 +528,7 @@ def test_build_span_payload_error_status_and_work_item() -> None:
         },
         facts=_FACTS,
         cache=_CACHE_ATTRS,
+        build_env="ci",
     )
     span = _span(payload)
     assert span["name"] == "build.cargo-nextest"
@@ -515,6 +536,8 @@ def test_build_span_payload_error_status_and_work_item() -> None:
     attrs = _attrs(span)
     assert attrs["exit_code"] == "101"
     assert attrs["work_item_id"] == "bd-2er6nc"
+    # The label the caller resolved for THIS lane, not the module's factory default.
+    assert attrs["build.env"] == "ci"
 
 
 def test_run_emits_span_with_cache_attributes_and_returns_zero(
@@ -547,6 +570,45 @@ def test_run_endpoint_override() -> None:
         stats=lambda **_kwargs: None,
     )
     assert store[0]["endpoint"] == "http://host:9999"
+
+
+def test_run_labels_the_span_ci_under_github_actions() -> None:
+    """A CI-lane job with a configured (pod-reachable) receiver still emits — as ``ci``."""
+    store: list[dict[str, object]] = []
+    code = run(
+        environ=_base_env(
+            GITHUB_ACTIONS="true",
+            LIVESPEC_SANDBOX_OTEL_ENDPOINT="http://10.42.0.1:4319",
+        ),
+        emit=_recorder(store),
+        facts=lambda: _FACTS,
+        stats=lambda **_kwargs: None,
+    )
+    assert code == 0
+    assert store[0]["endpoint"] == "http://10.42.0.1:4319"
+    assert _attrs(_span(store[0]["payload"]))["build.env"] == "ci"
+
+
+def test_run_in_the_ci_lane_without_an_endpoint_skips_the_post() -> None:
+    """The ~2 s per measured cargo invocation every k3s job paid, retired.
+
+    ``DEFAULT_ENDPOINT`` is a docker-bridge address of the FACTORY host and is
+    unreachable from a k3s workflow pod, so a CI-lane POST to it could only ever
+    spend the emitter's timeout and discard the span. The git and sccache probes
+    that feed the payload are skipped with it — they cost the job too.
+    """
+    store: list[dict[str, object]] = []
+    # The probe seams FAIL the test if reached: the skip precedes them, so a
+    # regression that gathers facts or sccache stats before deciding not to post
+    # would still be paying part of the tax this closes.
+    code = run(
+        environ=_base_env(GITHUB_ACTIONS="true"),
+        emit=_recorder(store),
+        facts=lambda: pytest.fail("the git probe ran in the skipped CI-lane path"),
+        stats=lambda **_kwargs: pytest.fail("the sccache probe ran in the skipped CI-lane path"),
+    )
+    assert code == 0
+    assert store == []
 
 
 def test_run_malformed_returns_2_without_emitting(capsys: pytest.CaptureFixture[str]) -> None:
