@@ -1,16 +1,18 @@
 """Outside-in test for `livespec_dev_tooling/install_worktree_pack.py`.
 
-The installer writes the canonical worktree-discipline pack — the two
-executable scripts `worktree-lib.sh` and `branch-protection.sh` plus the
-non-executable justfile fragment `worktree.just` — into a governed repo's
+The installer writes the canonical worktree-discipline pack — the four
+executable scripts `worktree-lib.sh`, `branch-protection.sh`, `gate-run.sh`
+and `check-no-workflow-edits.sh` (the fleet's one workflow-edit guard,
+livespec-dev-tooling-fy02) plus the non-executable justfile fragments
+`worktree.just` and `branch-protection.just` — into a governed repo's
 `dev-tooling/` directory, resolving the target via `git rev-parse
 --show-toplevel` so the pack lands at the work-tree root of wherever the
-installer runs (the pack files are TRACKED repo files, committed through the
-normal worktree → PR flow). The `.sh` scripts are made executable (the
-`worktree-*` recipes invoke them directly); `worktree.just` is `import`ed by
-the consumer root justfile, never run directly, so it is installed
-non-executable. The canonical bodies ship as wheel-safe package-data
-resources read once at import.
+installer runs (the pack files are UNTRACKED-AND-INSTALLED, gitignored and
+materialized by `just install-worktree-pack`). The `.sh` scripts are made
+executable (the recipes invoke them directly); the `.just` fragments are
+`import`ed by the consumer root justfile, never run directly, so they are
+installed non-executable. The canonical bodies ship as wheel-safe
+package-data resources read once at import.
 
 The installer is exercised IN-PROCESS (`main()` with `monkeypatch.chdir`) —
 no Python subprocess spawn (this test is not on the
@@ -29,6 +31,7 @@ import pytest
 from returns.io import IOFailure, IOSuccess
 from returns.unsafe import unsafe_perform_io
 
+from livespec_dev_tooling import install_worktree_pack
 from livespec_dev_tooling.checks._primary_checkout_unreadable import CheckInputUnreadable
 from livespec_dev_tooling.checks._primary_checkout_worktree_pack import (
     inspect_worktree_pack,
@@ -44,6 +47,15 @@ from livespec_dev_tooling.install_worktree_pack import (
 
 __all__: list[str] = []
 
+
+# The package-data directory the installer reads its canonical bodies from,
+# resolved the same `__file__`-relative way the installer resolves it. The
+# seventh member is asserted THROUGH THIS PATH rather than through a
+# `CANONICAL_*` import so the Red leg fails on the assertion that the member
+# is not installed — an import of a not-yet-existing constant would fail at
+# collection and prove only that a symbol is unimportable.
+_PACK_DATA_DIR = Path(install_worktree_pack.__file__).resolve().parent / "worktree_pack"
+_NO_WORKFLOW_EDITS_NAME = "check-no-workflow-edits.sh"
 
 # The pack's executable script basenames paired with their canonical bodies.
 _PACK_SCRIPT_EXPECTED: tuple[tuple[str, str], ...] = (
@@ -275,6 +287,52 @@ def test_main_installs_both_pack_scripts(
         assert script.is_file(), f"{name} not installed"
         assert os.access(script, os.X_OK), f"{name} not executable"
         assert script.read_text(encoding="utf-8") == body
+
+
+def test_main_installs_check_no_workflow_edits_guard(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`main()` installs the seventh member — the fleet's ONE workflow-edit guard.
+
+    livespec-dev-tooling-fy02: one shared hard-block body with a
+    ledger-verified human-authorization override, carried exactly like the
+    other pack scripts — installed executable into `dev-tooling/`,
+    byte-identical to the package-data source, and gitignored by the
+    generated ignore file (which derives from the payload tuple, so the
+    ignore rule follows the member automatically). The body markers lock
+    the design's load-bearing surfaces: the CI-venue skip, the tracked
+    declaration, the human-set approval label, the `bd` resolution — and
+    the ABSENCE of every retired environment escape.
+    """
+    _scrub_git_env(monkeypatch=monkeypatch)
+    primary = tmp_path / "project"
+    _init_repo(repo=primary)
+    monkeypatch.chdir(primary)
+
+    assert main() == 0
+
+    installed = primary / "dev-tooling" / _NO_WORKFLOW_EDITS_NAME
+    assert installed.is_file(), f"{_NO_WORKFLOW_EDITS_NAME} not installed"
+    assert os.access(installed, os.X_OK), f"{_NO_WORKFLOW_EDITS_NAME} not executable"
+    canonical = _PACK_DATA_DIR / _NO_WORKFLOW_EDITS_NAME
+    assert installed.read_bytes() == canonical.read_bytes()
+    _run_git(
+        args=["check-ignore", "--quiet", f"dev-tooling/{_NO_WORKFLOW_EDITS_NAME}"], cwd=primary
+    )
+
+    body = installed.read_text(encoding="utf-8")
+    for marker in (
+        "GITHUB_ACTIONS",
+        ".livespec-workflow-edit-exemption",
+        "approval:workflow-edit",
+        ".beads/config.yaml",
+        "LIVESPEC_BD_PATH",
+        "BEADS_DOLT_PASSWORD",
+    ):
+        assert marker in body, f"{marker} missing from {_NO_WORKFLOW_EDITS_NAME}"
+    for retired_escape in ("LIVESPEC_WORKFLOW_EDIT_BASE", "LIVESPEC_FACTORY_BASE_REF"):
+        assert retired_escape not in body, f"{retired_escape} is a retired escape"
+    assert body.endswith("\n")
 
 
 def test_main_installs_worktree_just_fragment(
@@ -524,22 +582,27 @@ def test_inspect_rejects_an_unknown_pack_policy_value(
     assert [mode for _name, mode in failures] == ["worktree_discipline_malformed"]
 
 
-def _install_governed_pack(*, repo_root: Path) -> Path:
+def _install_governed_pack(*, repo_root: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Give `repo_root` a governed config, a canonical pack and both imports.
 
     The baseline every byte-identity test below perturbs by exactly one file,
     so a reported failure can only be the perturbation.
+
+    The pack is materialized by the REAL installer rather than by a
+    hand-written member list: the verifier requires every member the
+    installer ships, so a fixture that enumerated members by hand would fall
+    out of step the moment the pack grew and report `worktree_pack_file_missing`
+    for a baseline nobody perturbed. The one-line config carries no `{`-only
+    anchor, so the installer's `worktree_discipline` splice is a no-op here.
     """
     _ = (repo_root / ".livespec.jsonc").write_text('{"template": "livespec"}\n', encoding="utf-8")
     _ = (repo_root / "justfile").write_text(
         "import? 'dev-tooling/branch-protection.just'\nimport? 'dev-tooling/worktree.just'\n",
         encoding="utf-8",
     )
-    pack_dir = repo_root / "dev-tooling"
-    pack_dir.mkdir(exist_ok=True)
-    for name, body in _PACK_EXPECTED:
-        _ = (pack_dir / name).write_text(body, encoding="utf-8")
-    return pack_dir
+    monkeypatch.chdir(repo_root)
+    assert main() == 0
+    return repo_root / "dev-tooling"
 
 
 def test_inspect_reports_no_failure_for_a_canonical_governed_pack(
@@ -555,7 +618,7 @@ def test_inspect_reports_no_failure_for_a_canonical_governed_pack(
     _scrub_git_env(monkeypatch=monkeypatch)
     primary = tmp_path / "project"
     _init_repo(repo=primary)
-    _ = _install_governed_pack(repo_root=primary)
+    _ = _install_governed_pack(repo_root=primary, monkeypatch=monkeypatch)
 
     assert _pack_failures(repo_root=primary) == []
 
@@ -575,7 +638,7 @@ def test_inspect_reports_body_mismatch_for_a_crlf_converted_pack_file(
     _scrub_git_env(monkeypatch=monkeypatch)
     primary = tmp_path / "project"
     _init_repo(repo=primary)
-    pack_dir = _install_governed_pack(repo_root=primary)
+    pack_dir = _install_governed_pack(repo_root=primary, monkeypatch=monkeypatch)
     _ = (pack_dir / "worktree-lib.sh").write_bytes(
         CANONICAL_WORKTREE_LIB_BODY.replace("\n", "\r\n").encode("utf-8")
     )
@@ -599,7 +662,7 @@ def test_inspect_reports_body_mismatch_for_a_pack_file_that_is_not_utf8(
     _scrub_git_env(monkeypatch=monkeypatch)
     primary = tmp_path / "project"
     _init_repo(repo=primary)
-    pack_dir = _install_governed_pack(repo_root=primary)
+    pack_dir = _install_governed_pack(repo_root=primary, monkeypatch=monkeypatch)
     _ = (pack_dir / "branch-protection.sh").write_bytes(b"#!/usr/bin/env bash\n\xff\xfe\x00drift\n")
 
     failures = _pack_failures(repo_root=primary)
@@ -625,7 +688,7 @@ def test_inspect_reports_not_imported_for_a_justfile_that_is_not_utf8(
     _scrub_git_env(monkeypatch=monkeypatch)
     primary = tmp_path / "project"
     _init_repo(repo=primary)
-    _ = _install_governed_pack(repo_root=primary)
+    _ = _install_governed_pack(repo_root=primary, monkeypatch=monkeypatch)
     _ = (primary / "justfile").write_bytes(b"\xff\xfeimport? 'dev-tooling/worktree.just'\n")
 
     failures = _pack_failures(repo_root=primary)
@@ -646,7 +709,7 @@ def test_inspect_reports_an_unreadable_pack_file_as_a_failure(
     _scrub_git_env(monkeypatch=monkeypatch)
     primary = tmp_path / "project"
     _init_repo(repo=primary)
-    pack_dir = _install_governed_pack(repo_root=primary)
+    pack_dir = _install_governed_pack(repo_root=primary, monkeypatch=monkeypatch)
     _make_read_fail(
         monkeypatch=monkeypatch, target=pack_dir / "worktree.just", detail="pack read refused"
     )
@@ -707,7 +770,7 @@ def test_inspect_reports_an_unreadable_justfile_as_a_failure(
     _scrub_git_env(monkeypatch=monkeypatch)
     primary = tmp_path / "project"
     _init_repo(repo=primary)
-    _ = _install_governed_pack(repo_root=primary)
+    _ = _install_governed_pack(repo_root=primary, monkeypatch=monkeypatch)
     _make_read_fail(
         monkeypatch=monkeypatch, target=primary / "justfile", detail="justfile read refused"
     )

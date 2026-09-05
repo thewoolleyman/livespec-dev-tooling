@@ -35,13 +35,16 @@ zs22.7.9.3) and the `.git/` directory are carved out.
 
 A third arm (zs22.7.9.3) guards the worktree-discipline PACK —
 `dev-tooling/worktree-lib.sh`, `dev-tooling/branch-protection.sh`,
-`dev-tooling/worktree.just` (the worktree-lifecycle recipe fragment,
-added zs22.7.9 W2c/.4), and `dev-tooling/branch-protection.just` (the
-branch-protection recipe fragment, added zs22 jzpx) — which the companion
-`install_worktree_pack` installer ships from the SAME single package source
-(its `CANONICAL_WORKTREE_LIB_BODY` / `CANONICAL_BRANCH_PROTECTION_BODY` /
-`CANONICAL_WORKTREE_JUST_BODY` / `CANONICAL_BRANCH_PROTECTION_JUST_BODY`
-constants, imported here). Both the
+`dev-tooling/gate-run.sh` (the detached gate runner),
+`dev-tooling/check-no-workflow-edits.sh` (the fleet's one workflow-edit
+guard, added livespec-dev-tooling-fy02), `dev-tooling/worktree.just` (the
+worktree-lifecycle recipe fragment, added zs22.7.9 W2c/.4), and
+`dev-tooling/branch-protection.just` (the branch-protection recipe fragment,
+added zs22 jzpx) — which the companion `install_worktree_pack` installer
+ships from the SAME single package source (its `CANONICAL_WORKTREE_LIB_BODY`
+/ `CANONICAL_BRANCH_PROTECTION_BODY` / `CANONICAL_GATE_RUN_BODY` /
+`CANONICAL_NO_WORKFLOW_EDITS_BODY` / `CANONICAL_WORKTREE_JUST_BODY` /
+`CANONICAL_BRANCH_PROTECTION_JUST_BODY` constants, imported here). Both the
 hook and the pack are facets of Conformance-Pattern concern #1
 (Worktree-discipline), so the pack's byte-identity guard rides this
 existing slug rather than a NEW canonical check slug — adding a new
@@ -103,6 +106,7 @@ Exit codes:
   byte-different from `CANONICAL_HOOK_BODY`; OR a vendored hook-source
   copy exists outside the carve-outs; OR an installed worktree-pack
   file (`dev-tooling/worktree-lib.sh` / `dev-tooling/branch-protection.sh` /
+  `dev-tooling/gate-run.sh` / `dev-tooling/check-no-workflow-edits.sh` /
   `dev-tooling/worktree.just` / `dev-tooling/branch-protection.just`) has
   drifted (`worktree_pack_body_mismatch`) or is partially installed
   (`worktree_pack_file_missing`). Corrective

@@ -143,7 +143,7 @@ worktree_provision_pack_from_primary() {
 
     source_dir="$primary/dev-tooling"
     dest_dir="$dest/dev-tooling"
-    pack_files="worktree-lib.sh branch-protection.sh gate-run.sh worktree.just branch-protection.just"
+    pack_files="worktree-lib.sh branch-protection.sh gate-run.sh check-no-workflow-edits.sh worktree.just branch-protection.just"
 
     missing=0
     for pack_file in $pack_files; do
@@ -161,7 +161,7 @@ worktree_provision_pack_from_primary() {
     for pack_file in $pack_files; do
         cp "$source_dir/$pack_file" "$dest_dir/$pack_file"
     done
-    chmod +x "$dest_dir/worktree-lib.sh" "$dest_dir/branch-protection.sh"
+    chmod +x "$dest_dir/worktree-lib.sh" "$dest_dir/branch-protection.sh" "$dest_dir/gate-run.sh" "$dest_dir/check-no-workflow-edits.sh"
     chmod a-x "$dest_dir/worktree.just" "$dest_dir/branch-protection.just"
     echo "worktree-lib provision-pack: installed worktree-discipline pack in $dest_dir"
 }

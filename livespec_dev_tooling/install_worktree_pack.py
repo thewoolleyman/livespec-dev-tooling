@@ -1,16 +1,19 @@
 """install_worktree_pack — install the canonical livespec worktree-discipline pack.
 
 Writes the canonical worktree-discipline pack into a governed repo's
-`dev-tooling/` directory. The pack is six files from a single package
-source/generator pair: the three executable shell scripts `worktree-lib.sh`
+`dev-tooling/` directory. The pack is seven files from a single package
+source/generator pair: the four executable shell scripts `worktree-lib.sh`
 (the portable, ecosystem-neutral worktree-lifecycle core),
-`branch-protection.sh` (the server-side branch-protection mirror), and
-`gate-run.sh` (the detached gate runner), plus the two non-executable justfile
-fragments `worktree.just` (the four `just worktree-*` lifecycle recipe
-stanzas) and `branch-protection.just` (the `protect-default-branch` /
+`branch-protection.sh` (the server-side branch-protection mirror),
+`gate-run.sh` (the detached gate runner), and `check-no-workflow-edits.sh`
+(the fleet's one workflow-edit guard — an authorship control at the agent
+boundary with a ledger-verified human-authorization override, no
+environment escape; livespec-dev-tooling-fy02), plus the two non-executable
+justfile fragments `worktree.just` (the four `just worktree-*` lifecycle
+recipe stanzas) and `branch-protection.just` (the `protect-default-branch` /
 `check-branch-protection` recipe stanzas), each `import`ed by the consumer
 root justfile rather than copied, plus a generated `.gitignore` that ignores
-the installed pack entries. The three `.sh` scripts are made executable
+the installed pack entries. The four `.sh` scripts are made executable
 (the recipes invoke them directly via `./dev-tooling/…`); the two `.just`
 fragments are `import`ed, never run directly, so they are NOT made
 executable. The target directory is the repository's work-tree root resolved
@@ -41,8 +44,9 @@ pattern). ruff never lints those `.sh` files, the bytes stay faithful with
 zero escaping, and the package file IS the single canonical source. The two
 `.just` recipe fragments ship the same way — genuine package-data files (ruff
 does not lint `.just`), not `.py` string constants. This module still EXPOSES
-the four bodies as the `CANONICAL_WORKTREE_LIB_BODY` /
-`CANONICAL_BRANCH_PROTECTION_BODY` / `CANONICAL_WORKTREE_JUST_BODY` /
+the six bodies as the `CANONICAL_WORKTREE_LIB_BODY` /
+`CANONICAL_BRANCH_PROTECTION_BODY` / `CANONICAL_GATE_RUN_BODY` /
+`CANONICAL_NO_WORKFLOW_EDITS_BODY` / `CANONICAL_WORKTREE_JUST_BODY` /
 `CANONICAL_BRANCH_PROTECTION_JUST_BODY` string constants (read once at
 import), so the `primary_checkout_commit_refuse_hook_installed` verifier
 imports the SAME constants to assert byte-identity against the installed
@@ -86,6 +90,7 @@ __all__: list[str] = [
     "CANONICAL_BRANCH_PROTECTION_BODY",
     "CANONICAL_BRANCH_PROTECTION_JUST_BODY",
     "CANONICAL_GATE_RUN_BODY",
+    "CANONICAL_NO_WORKFLOW_EDITS_BODY",
     "CANONICAL_WORKTREE_JUST_BODY",
     "CANONICAL_WORKTREE_LIB_BODY",
     "CANONICAL_WORKTREE_PACK_GITIGNORE_BODY",
@@ -106,7 +111,7 @@ def _read_canonical_body(*, name: str) -> str:
     return (_PACK_DATA_DIR / name).read_text(encoding="utf-8")
 
 
-# The five canonical bodies, read once at import from package-data. Exposed
+# The six canonical bodies, read once at import from package-data. Exposed
 # as module constants so the verifier imports the SAME bytes it asserts the
 # installed files against (no drift seam).
 CANONICAL_WORKTREE_LIB_BODY = _read_canonical_body(name="worktree-lib.sh")
@@ -114,6 +119,7 @@ CANONICAL_BRANCH_PROTECTION_BODY = _read_canonical_body(name="branch-protection.
 CANONICAL_WORKTREE_JUST_BODY = _read_canonical_body(name="worktree.just")
 CANONICAL_BRANCH_PROTECTION_JUST_BODY = _read_canonical_body(name="branch-protection.just")
 CANONICAL_GATE_RUN_BODY = _read_canonical_body(name="gate-run.sh")
+CANONICAL_NO_WORKFLOW_EDITS_BODY = _read_canonical_body(name="check-no-workflow-edits.sh")
 
 
 # The pack's installed payload layout, before adding its generated ignore
@@ -127,6 +133,7 @@ _PACK_PAYLOAD_FILES: tuple[tuple[str, str, bool], ...] = (
     ("worktree-lib.sh", CANONICAL_WORKTREE_LIB_BODY, True),
     ("branch-protection.sh", CANONICAL_BRANCH_PROTECTION_BODY, True),
     ("gate-run.sh", CANONICAL_GATE_RUN_BODY, True),
+    ("check-no-workflow-edits.sh", CANONICAL_NO_WORKFLOW_EDITS_BODY, True),
     ("worktree.just", CANONICAL_WORKTREE_JUST_BODY, False),
     ("branch-protection.just", CANONICAL_BRANCH_PROTECTION_JUST_BODY, False),
 )
@@ -248,7 +255,7 @@ def install_pack(*, cwd: Path, log: structlog.stdlib.BoundLogger) -> int:
     """Install the canonical worktree pack into `<work-tree-root>/dev-tooling/`.
 
     Writes each `_PACK_FILES` body to `<root>/dev-tooling/<name>`, setting
-    the executable bit only on the entries flagged executable (the two `.sh`
+    the executable bit only on the entries flagged executable (the four `.sh`
     scripts; the two `.just` recipe fragments are `import`ed, never run, so
     they stay non-executable). Idempotent: re-running overwrites with the
     identical canonical bodies. Returns 0 on success.

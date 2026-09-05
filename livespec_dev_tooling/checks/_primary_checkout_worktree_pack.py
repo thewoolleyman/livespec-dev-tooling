@@ -54,6 +54,7 @@ from livespec_dev_tooling.install_worktree_pack import (  # noqa: E402
     CANONICAL_BRANCH_PROTECTION_BODY,
     CANONICAL_BRANCH_PROTECTION_JUST_BODY,
     CANONICAL_GATE_RUN_BODY,
+    CANONICAL_NO_WORKFLOW_EDITS_BODY,
     CANONICAL_WORKTREE_JUST_BODY,
     CANONICAL_WORKTREE_LIB_BODY,
 )
@@ -67,7 +68,7 @@ __all__: list[str] = [
 
 
 # Worktree-pack arm: the installed `dev-tooling/` pack files paired with the
-# canonical bodies the `install_worktree_pack` installer writes — the two
+# canonical bodies the `install_worktree_pack` installer writes — the four
 # `.sh` scripts plus the two `.just` recipe fragments. The pack is REQUIRED
 # by default (A2) — absent entirely it FAILS unless the repo declares
 # `"pack": "optional"` or the tree declares the sandbox exemption — and once
@@ -75,6 +76,7 @@ __all__: list[str] = [
 _WORKTREE_PACK_FILES: tuple[tuple[str, str], ...] = (
     ("branch-protection.just", CANONICAL_BRANCH_PROTECTION_JUST_BODY),
     ("branch-protection.sh", CANONICAL_BRANCH_PROTECTION_BODY),
+    ("check-no-workflow-edits.sh", CANONICAL_NO_WORKFLOW_EDITS_BODY),
     ("gate-run.sh", CANONICAL_GATE_RUN_BODY),
     ("worktree-lib.sh", CANONICAL_WORKTREE_LIB_BODY),
     ("worktree.just", CANONICAL_WORKTREE_JUST_BODY),
@@ -94,12 +96,12 @@ _WORKTREE_DISCIPLINE_MALFORMED_FAILURE_MODE = "worktree_discipline_malformed"
 _WORKTREE_PACK_REMEDY = (
     "run `just bootstrap` (the `worktree-pack` local obligation row installs "
     "the single canonical `worktree-lib.sh`, `branch-protection.sh`, "
-    "`gate-run.sh`, `worktree.just`, and `branch-protection.just` bodies byte-for-byte into "
-    "`dev-tooling/`); a drifted or partially installed pack is a copy that "
-    "diverged from the package source. If `just bootstrap` does not "
-    "materialize the pack, this repo is UNWIRED: add the four "
-    "`/dev-tooling/*` `.gitignore` entries, both `import?` lines, and the "
-    "`install-worktree-pack` recipe, then re-run"
+    "`gate-run.sh`, `check-no-workflow-edits.sh`, `worktree.just`, and "
+    "`branch-protection.just` bodies byte-for-byte into `dev-tooling/`); a "
+    "drifted or partially installed pack is a copy that diverged from the "
+    "package source. If `just bootstrap` does not materialize the pack, this "
+    "repo is UNWIRED: add the six `/dev-tooling/*` `.gitignore` entries, both "
+    "`import?` lines, and the `install-worktree-pack` recipe, then re-run"
 )
 _WORKTREE_PACK_NOT_IMPORTED_REMEDY = (
     "add the missing optional import to the root justfile — `import? "
