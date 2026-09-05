@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.44.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.43.1...v1.44.0) (2026-09-05)
+
+
+### Features
+
+* **pack:** ship check-no-workflow-edits.sh as the seventh worktree-pack member — one shared workflow-edit guard with a ledger-verified human-authorization override (livespec-dev-tooling-fy02.1) ([e35ddab](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e35ddab09c0db68c97909f227cdbeefaab4e4fac))
+
 ## [1.43.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.43.0...v1.43.1) (2026-09-04)
 
 
