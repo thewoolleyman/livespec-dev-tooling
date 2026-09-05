@@ -50,6 +50,7 @@ from livespec_dev_tooling.install_worktree_pack import (
     CANONICAL_BRANCH_PROTECTION_BODY,
     CANONICAL_BRANCH_PROTECTION_JUST_BODY,
     CANONICAL_GATE_RUN_BODY,
+    CANONICAL_NO_WORKFLOW_EDITS_BODY,
     CANONICAL_WORKTREE_JUST_BODY,
     CANONICAL_WORKTREE_LIB_BODY,
 )
@@ -59,12 +60,13 @@ __all__: list[str] = []
 
 
 # The pack's installed basenames paired with their canonical bodies — the
-# fixture mirror of the verifier's `_WORKTREE_PACK_FILES` (the two `.sh`
+# fixture mirror of the verifier's `_WORKTREE_PACK_FILES` (the four `.sh`
 # scripts plus the two `.just` recipe fragments).
 _WORKTREE_PACK_EXPECTED: tuple[tuple[str, str], ...] = (
     ("worktree-lib.sh", CANONICAL_WORKTREE_LIB_BODY),
     ("branch-protection.sh", CANONICAL_BRANCH_PROTECTION_BODY),
     ("gate-run.sh", CANONICAL_GATE_RUN_BODY),
+    ("check-no-workflow-edits.sh", CANONICAL_NO_WORKFLOW_EDITS_BODY),
     ("worktree.just", CANONICAL_WORKTREE_JUST_BODY),
     ("branch-protection.just", CANONICAL_BRANCH_PROTECTION_JUST_BODY),
 )
