@@ -230,6 +230,7 @@ check:
         check-fleet-conformance
         check-fleet-conformance-admin
         check-fabro-image-pin-lockstep
+        check-no-workflow-edits
     )
     scripts/just/check.sh "${targets[@]}"
 
@@ -272,12 +273,15 @@ check-types:
 check-static:
     scripts/just/check-static.sh
 
-# Factory-boundary helper: fail if the current branch changes GitHub workflow
-# files. This is intentionally outside the canonical aggregate; factory janitor
-# lanes invoke it before `check` so implementation branches never publish
-# `.github/workflows/` edits.
+# Factory-boundary guard: fail if the current branch changes GitHub workflow
+# files without human authorization. Delegates to the worktree-pack's single
+# canonical body (livespec-dev-tooling-fy02) — installed into dev-tooling/ by
+# `just install-worktree-pack`, byte-verified by the pack arm of
+# check-primary-checkout-commit-refuse-hook-installed, no escape of any kind.
+# A repo-LOCAL member of the `check` aggregate (never mirrored into CI: the
+# guard is a CI-venue no-op by design); the Dispatcher janitor invokes it too.
 check-no-workflow-edits:
-    scripts/just/check-no-workflow-edits.sh
+    bash dev-tooling/check-no-workflow-edits.sh
 
 # `changed-files` — print the changed `.py` set this branch touches,
 # repo-root-relative, one path per line, sorted + de-duplicated
