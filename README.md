@@ -213,11 +213,14 @@ gitignored-and-installed, never tracked.
 }
 ```
 
-**An absent key means `required`.** `just install-worktree-pack` writes the
-key explicitly, with that comment, the first time it runs in a repo that has a
-`.livespec.jsonc` and no declaration — so the obligation is readable in config
-rather than discovered by tripping the verifier. An existing declaration is
-never rewritten, so a deliberate `"optional"` survives.
+**An absent key means `required`.** Commit the block above so the obligation is
+readable in config rather than discovered by tripping the verifier; the central
+`worktree-pack-wired` fleet row reports the missing line, and
+`just install-worktree-pack` logs it with the exact text to commit. The
+installer does **not** write it for you: `.livespec.jsonc` is tracked, and an
+installer that edits a tracked file leaves every checkout dirty on every
+`bootstrap`, commit and push (livespec-dev-tooling-7ix8). It writes only files
+the repository ignores.
 
 `check-primary-checkout-commit-refuse-hook-installed` enforces it and reports
 four distinct states: `worktree_pack_absent` (required, nothing installed),

@@ -23,6 +23,7 @@ setup.
 from __future__ import annotations
 
 import errno
+import json
 import os
 import re
 import subprocess
@@ -505,8 +506,10 @@ def test_main_leaves_unparseable_livespec_jsonc_untouched(
 ) -> None:
     """Garbled JSONC is the config-integrity tooling's problem, not the installer's.
 
-    The installer must neither crash nor "repair" a file it cannot parse —
-    splicing into a broken document could corrupt it further.
+    The installer still READS the file (to decide whether the
+    `worktree_discipline` declaration is absent and worth reporting), so it must
+    not crash on one it cannot parse — and it must stay silent rather than
+    guess, since a broken document's key set is unknown.
 
     ⛔ RENAMED from `..._unreadable_...`. The fixture below writes INVALID
     JSON, which is a file this run read perfectly and could not PARSE — a
@@ -525,15 +528,18 @@ def test_main_leaves_unparseable_livespec_jsonc_untouched(
     assert config.read_text(encoding="utf-8") == garbled
 
 
-def test_main_declines_to_splice_when_no_anchor_line(
+def test_main_leaves_a_one_line_config_untouched(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A single-line config has no safe splice point, so it is left alone.
+    """A governed config is READ, never rewritten — whatever shape it is written in.
 
-    The write is a TEXT splice, not a re-serialization, precisely so a
-    consumer's comments survive. That trade means the installer needs an
-    opening brace on its own line; without one it declines rather than guessing
-    where the block belongs.
+    ⛔ RENAMED from `..._declines_to_splice_when_no_anchor_line`. The installer
+    used to splice the `worktree_discipline` block in after a `{`-only anchor
+    line, and this single-line shape was the one case it declined. There is no
+    splice any more (see the acceptance test below), so the old name described
+    a mechanism nothing here exercises; the shape is kept because a config whose
+    braces share a line with content is the one an accidental re-serializer
+    would mangle worst.
     """
     _scrub_git_env(monkeypatch=monkeypatch)
     primary = tmp_path / "project"
@@ -545,6 +551,88 @@ def test_main_declines_to_splice_when_no_anchor_line(
 
     assert main() == 0
     assert config.read_text(encoding="utf-8") == one_liner
+
+
+def _governed_repo_without_the_key(*, primary: Path) -> Path:
+    """A COMMITTED governed repo whose `.livespec.jsonc` never declares the key.
+
+    The `{`-only anchor line is deliberate: it is the shape the retired splice
+    accepted, so a fixture without it would pass the acceptance assertion below
+    even with the splice still in place.
+    """
+    _init_repo(repo=primary)
+    _ = (primary / ".gitignore").write_text("/dev-tooling/\n", encoding="utf-8")
+    _ = (primary / ".livespec.jsonc").write_text(
+        '// Governed, and silent about worktree_discipline.\n{\n  "template": "livespec"\n}\n',
+        encoding="utf-8",
+    )
+    _run_git(args=["add", "-A"], cwd=primary)
+    _run_git(args=["commit", "--quiet", "-m", "fixture commit"], cwd=primary)
+    return primary
+
+
+def test_main_run_twice_leaves_zero_tracked_modifications(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """🔴 The installer must not dirty a repo that never committed the declaration.
+
+    It used to splice the `worktree_discipline` block into `.livespec.jsonc`,
+    which is TRACKED, and nothing commits the result — so the sanctioned
+    first-touch command left the checkout dirty by construction and never
+    converged. Measured 2026-08-04 across a six-repo sweep: six of six fresh
+    worktrees ended with exactly one tracked modification, `.livespec.jsonc`,
+    from a clean primary. The blast radius is wider than `bootstrap`, because
+    `just install-worktree-pack` is also the FIRST lefthook command of both
+    `pre-commit` and `pre-push` in every wired repo. And a dirty SOURCE checkout
+    is precisely the precondition the dispatcher's pre-clone preflight exists to
+    clear, where it surfaces as a misleading GitHub `workflows`-permission
+    rejection rather than as dirt.
+
+    Asserted through `git status --porcelain --untracked-files=no` rather than
+    through the file bytes, because "tracked modifications" is the property that
+    actually matters, and because it also proves the pack itself lands only in
+    ignored paths — the standing requirement in
+    `SPECIFICATION/non-functional-requirements.md` that this installer "MUST
+    write only files the repository ignores".
+
+    Run TWICE, as the acceptance criterion states, so a write that merely
+    converged on a second pass could not satisfy it.
+    """
+    _scrub_git_env(monkeypatch=monkeypatch)
+    primary = _governed_repo_without_the_key(primary=tmp_path / "project")
+    monkeypatch.chdir(primary)
+
+    assert main() == 0
+    assert main() == 0
+
+    status = _run_git_capture(args=["status", "--porcelain", "--untracked-files=no"], cwd=primary)
+    assert status == ""
+
+
+def test_main_guides_the_operator_when_the_declaration_is_absent(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Dropping the write must not drop the SIGNAL: the absent key is reported.
+
+    The splice existed for a documentary reason — an absent key MEANS
+    `required`, and the block made that readable in config instead of
+    discoverable by tripping the verifier. That goal survives as a
+    detect-and-guide log line, the shape the beads-runtime rows already use:
+    the operator is handed the exact block to commit, and the tree stays clean.
+    """
+    _scrub_git_env(monkeypatch=monkeypatch)
+    primary = _governed_repo_without_the_key(primary=tmp_path / "project")
+    monkeypatch.chdir(primary)
+
+    assert main() == 0
+
+    events = [json.loads(line) for line in capsys.readouterr().err.splitlines() if line.strip()]
+    guidance = [event for event in events if "worktree_discipline" in str(event.get("event", ""))]
+    assert len(guidance) == 1, events
+    reported = guidance[0]
+    assert "undeclared" in str(reported["event"])
+    assert reported["path"] == str(primary / ".livespec.jsonc")
+    assert '"worktree_discipline": { "pack": "required" }' in str(reported.get("declare"))
 
 
 def test_inspect_treats_unparseable_config_as_ungoverned(
@@ -600,8 +688,9 @@ def _install_governed_pack(*, repo_root: Path, monkeypatch: pytest.MonkeyPatch) 
     hand-written member list: the verifier requires every member the
     installer ships, so a fixture that enumerated members by hand would fall
     out of step the moment the pack grew and report `worktree_pack_file_missing`
-    for a baseline nobody perturbed. The one-line config carries no `{`-only
-    anchor, so the installer's `worktree_discipline` splice is a no-op here.
+    for a baseline nobody perturbed. The installer never edits
+    `.livespec.jsonc`, so the config written here is the one the verifier reads
+    back.
     """
     _ = (repo_root / ".livespec.jsonc").write_text('{"template": "livespec"}\n', encoding="utf-8")
     _ = (repo_root / "justfile").write_text(

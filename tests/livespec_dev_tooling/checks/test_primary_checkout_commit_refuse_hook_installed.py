@@ -1018,7 +1018,7 @@ def test_fails_when_installed_pack_drifts_even_though_sandbox_exempt(*, tmp_path
 
 
 # ---------------------------------------------------------------
-# C — the installer writes `worktree_discipline.pack` with its default.
+# C — the installer REPORTS an undeclared `worktree_discipline.pack`.
 #
 # C lives in THIS file, beside the A2 arms it documents, because the two are
 # one changeset under the single-commit Red-Green-Replay protocol: A2 makes an
@@ -1026,46 +1026,59 @@ def test_fails_when_installed_pack_drifts_even_though_sandbox_exempt(*, tmp_path
 # new adopter should read its own `.livespec.jsonc` and SEE the obligation
 # rather than infer it from a verifier failure.
 #
+# ⛔ C ORIGINALLY WROTE THE KEY, and that was the defect. `.livespec.jsonc` is
+# TRACKED and nothing commits the splice, so the installer left every governed
+# repo lacking the key with an uncommitted modification — on `just bootstrap`,
+# and on every commit and push, since `just install-worktree-pack` is the first
+# lefthook command of both gated hooks. Six of six worktrees in the 2026-08-04
+# sweep, never converging (livespec-dev-tooling-7ix8). C now hands the operator
+# the block to COMMIT instead, which serves the same documentary goal without
+# contradicting the standing requirement in
+# `SPECIFICATION/non-functional-requirements.md` that this installer "write only
+# files the repository ignores".
+#
 # The installer is exercised IN-PROCESS via `monkeypatch.chdir` + `main()`,
 # matching `tests/livespec_dev_tooling/test_install_worktree_pack.py`; the only
 # subprocess here remains `git` for repo setup.
 # ---------------------------------------------------------------
 
 
-def test_installer_writes_worktree_discipline_default_when_key_absent(
-    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_installer_reports_undeclared_worktree_discipline_without_writing(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """ACCEPTANCE 9. The installer adds the key with its default AND a comment."""
+    """ACCEPTANCE 9. The absent key is REPORTED with its block; the file is untouched."""
     for var in _GIT_ENV_PASSTHROUGH_VARS:
         monkeypatch.delenv(var, raising=False)
     project_root = tmp_path / "project"
     project_root.mkdir()
     _git_init(cwd=project_root)
     config = project_root / ".livespec.jsonc"
-    _ = config.write_text('{\n  "template": "livespec"\n}\n', encoding="utf-8")
+    original = '{\n  "template": "livespec"\n}\n'
+    _ = config.write_text(original, encoding="utf-8")
     monkeypatch.chdir(project_root)
 
     rc = install_worktree_pack_main()
 
     assert rc == 0
-    written = config.read_text(encoding="utf-8")
-    assert '"worktree_discipline"' in written
-    assert '"pack": "required"' in written
-    # The comment is the whole point of C — the key must be self-explaining.
-    assert "//" in written
-    # Pre-existing content survives.
-    assert '"template": "livespec"' in written
+    assert config.read_text(encoding="utf-8") == original
+    reported = capsys.readouterr().err
+    assert "worktree_discipline undeclared" in reported
+    # The comment is the whole point of C — the offered key must be
+    # self-explaining, so the operator commits the rationale with it.
+    assert '\\"worktree_discipline\\": { \\"pack\\": \\"required\\" }' in reported
+    assert "//" in reported
 
 
 def test_installer_leaves_an_existing_worktree_discipline_block_untouched(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A declared `optional` opt-out MUST NOT be silently rewritten to `required`.
+    """A declared `optional` opt-out MUST NOT be reported at, or rewritten to, `required`.
 
-    The installer provisions a default for repos that never declared one; it is
-    not a policy enforcer. Overwriting a deliberate, reviewed opt-out would make
-    the sanctioned escape hatch unusable — and would turn `just bootstrap` into
-    a config mutation nobody asked for.
+    The installer reports an UNDECLARED policy; it is not a policy enforcer.
+    Nagging about a stated decision would make the sanctioned escape hatch feel
+    like a defect, and rewriting it would make that hatch unusable outright.
+    Kept as a byte-equality assertion even though the installer no longer writes
+    any governed file: this is the arm that would catch a rewrite coming back.
     """
     for var in _GIT_ENV_PASSTHROUGH_VARS:
         monkeypatch.delenv(var, raising=False)
