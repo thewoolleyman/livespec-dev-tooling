@@ -1,5 +1,30 @@
-"""Behaviour tests for the pack member `worktree_pack/worktree-lib.sh` — `create`.
+"""Behaviour tests for the pack member `worktree_pack/worktree-lib.sh`.
 
+Two verbs are covered, each because it carried a defect that made it fail in
+the direction that looks like nothing being wrong: `create` (the
+pack-provisioning leg) and `reap` (the merged-ness discriminator).
+
+`reap` — the merged-ness discriminator (livespec-dev-tooling-jtrt.2)
+-------------------------------------------------------------------
+`reap` judged merged-ness by ANCESTRY alone
+(`git merge-base --is-ancestor <wt-head> <base>`). On a rebase-merge-only
+fleet that test can only ever answer NO: the merge REWRITES the branch's
+commits, so a landed branch's tip is never an ancestor of the base. Every
+landed worktree therefore printed `SKIP … branch not merged` and the reaper
+reaped nothing — livespec-overseer's AGENTS.md recorded it as "essentially
+never firing" — while the worktrees it declined to remove accumulated toward
+the 4096-byte stdio boundary that takes `create` and `reap` out together.
+
+The discriminator is now ancestry-then-patch-id (`git cherry`). The landed
+case here is built on a REBASED land, never a fast-forward: a fast-forward
+leaves ancestry intact, so it would pass against the unfixed code and prove
+nothing, and `_assert_land_was_rebased` makes that degradation loud rather
+than silent. `test_reap_still_skips_a_genuinely_unmerged_worktree` is the
+negative control — a reaper that removes everything is the same defect
+inverted, and this one deletes work.
+
+`create` — pack provisioning
+----------------------------
 Scope is the pack-provisioning leg of `create`, and it exists because that
 leg used to make the PRIMARY checkout the authority on a new worktree's pack
 bytes (livespec-dev-tooling-ov9o, absorbed by livespec-dev-tooling-os6wd3).
@@ -28,6 +53,10 @@ installer the script invokes through its override hook; nothing touches the
 network, the fleet ledger, or the developer's own repositories. `HOME`, the
 git env family and `COVERAGE_PROCESS_START` / `COV_CORE_*` are scrubbed so
 the children are hermetic and never self-instrument under `pytest --cov`.
+
+The `reap` cases run in DRY-RUN, which is the default: the verdict is the
+whole assertion, and a test that actually removed worktrees would be asking
+a destructive command to prove a read-only claim.
 """
 
 from __future__ import annotations
@@ -221,3 +250,170 @@ def test_create_does_not_block_on_a_partial_primary_when_the_package_is_unreacha
 def test_canonical_body_no_longer_refuses_on_a_partial_primary() -> None:
     """The refusal the defect was made of is gone from the canonical source."""
     assert "BLOCKED — missing" not in CANONICAL_WORKTREE_LIB_BODY
+
+
+# ---------------------------------------------------------------------------
+# `reap` — the merged-ness discriminator (livespec-dev-tooling-jtrt.2).
+# ---------------------------------------------------------------------------
+
+_LANDED_BRANCH = "feature/landed"
+_UNMERGED_BRANCH = "feature/pending"
+
+
+def _git_succeeds(*, args: list[str], cwd: Path, env: dict[str, str]) -> bool:
+    """Run git for its EXIT STATUS only — `_run_git` raises instead of reporting it."""
+    completed = subprocess.run(
+        ["git", *args], cwd=str(cwd), env=env, check=False, capture_output=True, text=True
+    )
+    return completed.returncode == 0
+
+
+def _commit_file(*, repo: Path, env: dict[str, str], name: str, subject: str) -> None:
+    _ = (repo / name).write_text(f"{name}\n", encoding="utf-8")
+    _run_git(args=["add", name], cwd=repo, env=env)
+    _run_git(args=["commit", "--quiet", "-m", subject], cwd=repo, env=env)
+
+
+def _land_by_rebase(*, primary: Path, env: dict[str, str], branch: str) -> None:
+    """Land `branch` onto `master` and push, the way a rebase-merge does.
+
+    The branch's commits are REPLAYED onto master — new SHAs, byte-identical
+    patches — while the worktree's own ref stays at its pre-rebase tip. That
+    is the state a rebase-merge leaves behind, and the state ancestry
+    misreads.
+    """
+    _run_git(args=["checkout", "--quiet", "-b", "landing", branch], cwd=primary, env=env)
+    _run_git(args=["rebase", "--quiet", "master"], cwd=primary, env=env)
+    _run_git(args=["checkout", "--quiet", "master"], cwd=primary, env=env)
+    _run_git(args=["merge", "--quiet", "--ff-only", "landing"], cwd=primary, env=env)
+    _run_git(args=["branch", "--quiet", "-D", "landing"], cwd=primary, env=env)
+    _run_git(args=["push", "--quiet", "origin", "master"], cwd=primary, env=env)
+
+
+def _assert_land_was_rebased(*, primary: Path, env: dict[str, str], branch: str) -> None:
+    """Guard: the branch tip is NOT an ancestor of `origin/master`.
+
+    A fixture that degraded into a fast-forward land would leave ancestry
+    intact, and the landed-worktree assertion would then pass against the
+    very code it exists to indict.
+    """
+    assert not _git_succeeds(
+        args=["merge-base", "--is-ancestor", branch, "origin/master"], cwd=primary, env=env
+    ), (
+        f"fixture degraded: {branch} is still an ancestor of origin/master, so the "
+        f"land was a fast-forward rather than a rebase and would be judged merged "
+        f"by ancestry alone"
+    )
+
+
+@pytest.fixture
+def reap_repo(tmp_path: Path) -> tuple[Path, dict[str, str]]:
+    """A primary with two clean feature worktrees: one rebase-landed, one unmerged.
+
+    Both are ahead of `origin/master` by ancestry, so the pre-fix reaper
+    skipped both. Only the patch-id leg can tell them apart.
+    """
+    env = _child_env(home=tmp_path / "home")
+    primary = tmp_path / "primary"
+    primary.mkdir()
+    _run_git(args=["init", "--quiet", "--initial-branch=master"], cwd=primary, env=env)
+    _run_git(args=["config", "--local", "user.name", "Test User"], cwd=primary, env=env)
+    _run_git(args=["config", "--local", "user.email", "test@example.com"], cwd=primary, env=env)
+    _commit_file(repo=primary, env=env, name="README.md", subject="base")
+
+    origin = tmp_path / "origin.git"
+    _run_git(args=["init", "--quiet", "--bare", str(origin)], cwd=tmp_path, env=env)
+    _run_git(args=["remote", "add", "origin", str(origin)], cwd=primary, env=env)
+    _run_git(args=["push", "--quiet", "-u", "origin", "master"], cwd=primary, env=env)
+    _run_git(args=["remote", "set-head", "origin", "master"], cwd=primary, env=env)
+
+    worktrees = tmp_path / "worktrees"
+    for branch in (_LANDED_BRANCH, _UNMERGED_BRANCH):
+        path = worktrees / branch.replace("/", "_")
+        _run_git(
+            args=["worktree", "add", "--quiet", "-b", branch, str(path), "master"],
+            cwd=primary,
+            env=env,
+        )
+        _commit_file(
+            repo=path,
+            env=env,
+            name=f"{branch.replace('/', '_')}.txt",
+            subject=f"work on {branch}",
+        )
+
+    # An unrelated commit on master FIRST, so the land below must rebase.
+    _commit_file(repo=primary, env=env, name="unrelated.txt", subject="unrelated master work")
+    _run_git(args=["push", "--quiet", "origin", "master"], cwd=primary, env=env)
+    _land_by_rebase(primary=primary, env=env, branch=_LANDED_BRANCH)
+    _assert_land_was_rebased(primary=primary, env=env, branch=_LANDED_BRANCH)
+    return primary, env
+
+
+def _run_reap(*, primary: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    """Run `worktree-lib.sh reap` in its DRY-RUN default, as `just worktree-reap` does."""
+    _write_pack(root=primary)
+    return subprocess.run(
+        ["bash", str(Path("dev-tooling") / _SCRIPT), "reap"],
+        cwd=str(primary),
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+
+def _verdict_line(*, output: str, branch: str) -> str:
+    lines = [line for line in output.splitlines() if f"[{branch}]" in line]
+    assert len(lines) == 1, f"expected exactly one reap verdict for {branch}; got {lines!r}"
+    return lines[0]
+
+
+def test_reap_removes_a_worktree_whose_branch_landed_by_rebase(
+    *, reap_repo: tuple[Path, dict[str, str]]
+) -> None:
+    """A rebase-landed worktree is REMOVE, not SKIP — the defect leg.
+
+    Under ancestry alone this printed `SKIP … branch not merged into
+    origin/master` for a branch whose every commit was already on
+    origin/master, which is why the reaper never fired.
+    """
+    primary, env = reap_repo
+
+    completed = _run_reap(primary=primary, env=env)
+
+    assert completed.returncode == 0, f"stdout={completed.stdout!r} stderr={completed.stderr!r}"
+    verdict = _verdict_line(output=completed.stdout, branch=_LANDED_BRANCH)
+    assert verdict.strip().startswith("REMOVE"), verdict
+    # The verdict names WHICH discriminator answered, so an operator reading
+    # a removal knows whether it rests on ancestry or on patch-id.
+    assert "patch-id equivalent" in verdict, verdict
+
+
+def test_reap_still_skips_a_genuinely_unmerged_worktree(
+    *, reap_repo: tuple[Path, dict[str, str]]
+) -> None:
+    """The NEGATIVE CONTROL: unlanded work is still skipped, in the same tree.
+
+    A reaper that removed everything would be the same defect inverted, and
+    this one deletes work. Asserting both verdicts against ONE repository is
+    what rules out a fix that merely moved the threshold.
+    """
+    primary, env = reap_repo
+
+    completed = _run_reap(primary=primary, env=env)
+
+    assert completed.returncode == 0, f"stdout={completed.stdout!r} stderr={completed.stderr!r}"
+    verdict = _verdict_line(output=completed.stdout, branch=_UNMERGED_BRANCH)
+    assert verdict.strip().startswith("SKIP"), verdict
+    assert "not merged into origin/master" in verdict, verdict
+
+
+def test_canonical_body_judges_merged_ness_by_more_than_ancestry() -> None:
+    """The ancestry-only test is gone from the canonical source, not just from a copy.
+
+    The consumer-side `dev-tooling/worktree-lib.sh` is gitignored and
+    byte-verified against this package constant, so a fix that did not land
+    HERE would be reverted in every consumer.
+    """
+    assert "git cherry" in CANONICAL_WORKTREE_LIB_BODY
