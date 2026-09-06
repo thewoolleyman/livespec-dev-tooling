@@ -88,6 +88,11 @@ Package-private modules (filename matching `_*.py`) are
 skipped, and a `_`-prefixed FUNCTION name is not public
 however it is reached — v178 clause 0 (see `_is_public_name`).
 
+TEST MODULES ARE SKIPPED BY FILENAME CONVENTION TOO, wherever
+they live (see `_is_test_module`) — the tests-tree prefix alone
+cannot reach a repo that keeps its tests CO-LOCATED beside the
+product code it tests.
+
 Output discipline: per spec, `print` (T20) and
 `sys.stderr.write` (`check-no-write-direct`) are banned in
 dev-tooling/**. Diagnostics flow through structlog (JSON to
@@ -148,6 +153,11 @@ _RESULT_NAMES = frozenset({"Result", "IOResult"})
 # supervisor exemption.
 _DOCTOR_RUN_STATIC = Path("doctor") / "run_static.py"
 _RAILWAY_LIFTING_DECORATORS = frozenset({"safe", "impure_safe"})
+# The test-module filename convention, mirroring `filter_first_party_py`'s test
+# clause so the two halves of one partition stay worded alike.
+_TEST_FILENAME_PREFIX = "test_"
+_TEST_FILENAME_SUFFIX = "_test.py"
+_CONFTEST_FILENAME = "conftest.py"
 
 
 def _decorator_terminal_name(*, decorator: ast.expr) -> str:
@@ -292,6 +302,42 @@ def _is_public_name(*, name: str) -> bool:
     return not name.startswith("_")
 
 
+def _is_test_module(*, name: str) -> bool:
+    """True iff `name` is a TEST module by filename convention, wherever it lives.
+
+    A test module is scaffolding, never public API, and that is a property of
+    what it IS rather than of where it sits. `tests_tree_prefix` can only say
+    the second thing: it excludes a test tree by PATH, so it reaches exactly
+    the repos that keep every test in one.
+
+    Measured on livespec-overseer, which declares no prefix and so falls back
+    to the `tests/` default. That default is NOT vacuous — `tests/` really
+    exists there and the exclusion covers it — but the repo ALSO keeps 59 test
+    modules CO-LOCATED beside the product modules under `overseer/`, and this
+    check read those as public API: 11 of its 168 raw violations came from
+    them, 8 from one file.
+
+    No path prefix can fix that, which is why this is a filename rule and not
+    a wider default prefix. A co-located test module shares its directory with
+    the product code the check MUST keep scanning, so the two are separable
+    only by name. Fixing it on the PRODUCER side also fixes it once for the
+    whole fleet and cannot rot when a repo relocates its tests, whereas asking
+    each consumer to declare a covering prefix leaves the same trap armed for
+    the next co-located layout.
+
+    `conftest.py` is named for parity with `filter_first_party_py`'s test
+    clause rather than to close a reachable conviction: that clause already
+    drops `conftest.py` from the CONSUMPTION universe everywhere, so such a
+    file's functions never reach `public_names` to be convicted. Naming it
+    here keeps the two statements of "what is a test module" from drifting.
+    """
+    return (
+        name.startswith(_TEST_FILENAME_PREFIX)
+        or name.endswith(_TEST_FILENAME_SUFFIX)
+        or name == _CONFTEST_FILENAME
+    )
+
+
 def _find_offenders(
     *,
     source: str,
@@ -384,7 +430,7 @@ def _scan(
     offenders: list[tuple[Path, int, str]] = []
     for tree_rel in pure_trees:
         for py_file in iter_py_files(root=cwd / tree_rel):
-            if py_file.name.startswith("_"):
+            if py_file.name.startswith("_") or _is_test_module(name=py_file.name):
                 continue
             rel_path = py_file.relative_to(cwd)
             for lineno, name in _find_offenders(
