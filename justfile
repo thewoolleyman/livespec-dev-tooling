@@ -860,7 +860,8 @@ check-pre-commit:
     scripts/just/check-pre-commit.sh
 
 # When zero `.py` files are staged, `check-pre-commit` delegates here.
-# Pre-push delegates here via `check-pre-push` for zero-py changesets.
+# `check-pre-commit` delegates here for zero-`.py` staged trees — a local
+# pre-commit speed optimization only; pre-push and CI never subset.
 check-pre-commit-doc-only:
     scripts/just/check-pre-commit-doc-only.sh
 
