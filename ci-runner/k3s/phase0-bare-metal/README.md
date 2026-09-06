@@ -53,8 +53,9 @@ never a hand-edited copy of one.
 | `profiles/poweredge-xubuntu.env` | The first node's profile: the PERC H730P RAID-5 virtual disk over slots 0-6 at a 64 KB strip with WriteBack + Read Ahead + Direct IO, a 1 GiB EFI system partition, one LVM physical-volume partition, volume group `poweredge` carrying `root`, `swap` and `ci-cache`, volume group `nvmea` carrying `ci-containerd`, volume group `nvmeb` carrying `ci-workvols`, and the base-OS values stage 2 consumes (Ubuntu 26.04 `resolute`, its mirrors, the kernel package, the initramfs generator, the boot-entry label and the operator account). Its header records the provenance of every value, including which values this repository has NOT measured. |
 | `profiles/poweredge-xubuntu.expected-plan` | Every mutating command that node's `--dry-run` plans against bare storage, in order, byte for byte. `storage-layout-exit-tests.sh` §F13 compares the run against it as an EQUALITY, which is what §B's ordered-subset assertions cannot do: a step silently added, dropped or reworded between two asserted rungs passes §B and fails §F13. It is the guard that let `free-space` be added to this script without changing what the first node's rebuild does. |
 | `profiles/poweredge-xubuntu.recorded-facts` | That node's storage facts as the host RECORD states them, transcribed from `poweredge-xubuntu-info` `AGENTS.md` §Storage ("LVM (steady state since 2026-09-06)") and confirmed read-only against the live host the same day. The profile beside it carries **the record's values, verified live on 2026-09-06**; `storage-layout-exit-tests.sh` §E fails if the two ever disagree. See "The profile is the record" below. |
+| `profiles/gmktec-xubuntu.env` | **The second node's profile — and this plan's rehearsal of the recipe.** No storage controller; `DISK_PLAN=free-space` on `/dev/nvme0n1`, preserving the ext4 root at `nvme0n1p1` and the EFI system partition at `nvme0n1p2` the node already boots from; volume group `nvmea` on the tail partition `nvme0n1p3` carrying all three tiers (`ci-cache` 350 GiB ext4, `ci-containerd` 525 GiB ext4, `ci-workvols` 525 GiB XFS with reflink) out of the measured 1441 GiB of unpartitioned space; `eno1` at `192.168.1.156/24`, both PINNED; `CLUSTER_ROLE=agent` joining `https://192.168.1.200:6443` with the join token read at run time out of `/etc/rancher/k3s/agent-join-token`; and `node-role/ci=pending:NoSchedule` with `ADMISSION_CAPACITY_C=0`, which is "joined, and taking nothing" said twice on purpose. The base-OS keys are stated equal to the first node's and are INERT: stage 2 is not a stage this node runs, and it refuses against this profile rather than debootstrapping over the operating system `free-space` exists to keep — see the profile's own header. `storage-layout-exit-tests.sh` §G and `../provision-k3s-exit-tests.sh` §E assert this profile's plans off-host. |
 | `profile.sh` | The ONE parser for that format, **sourced** by every stage and never run. Each stage refuses a key it does not know, so a per-stage key list would make the key a later stage needs break an earlier one; there is therefore exactly one list, here. |
-| `storage-layout-exit-tests.sh` | Stage 1's exit tests. Runs the script only through `--dry-run`, against fake probe tools, with every mutating command replaced by a tripwire — so the suite proves the ordering, the profile validation, the consent refusals, the free-space plan's skips and preservation refusals, and the profile's agreement with the recorded facts while touching no host at all. |
+| `storage-layout-exit-tests.sh` | Stage 1's exit tests. Runs the script only through `--dry-run`, against fake probe tools, with every mutating command replaced by a tripwire — so the suite proves the ordering, the profile validation, the consent refusals, the free-space plan's skips and preservation refusals, the first profile's agreement with the recorded facts, and (§G) that the committed `gmktec-xubuntu` profile declares the second node's measured facts and yields the plan they imply, while touching no host at all. |
 | `base-os-install-exit-tests.sh` | Stage 2's exit tests, built the same way. Proves the `--dry-run` command order, that the rendered `/etc/fstab` finds root, the ESP and the three tiers by LABEL and that its five tier lines are byte-exact with the ones `../phase2/storage-layout/install-storage-layout.sh` ensures, that `lvm2` reaches the chroot before the initramfs is regenerated, and that a populated root volume is refused unless the invocation names it. |
 
 Read the profile's own header for the format. In one line: `KEY=value`, parsed
@@ -102,8 +103,9 @@ stage 1 is free to erase it. The second is not: `gmktec-xubuntu` keeps the
 operating system it already runs — a 2 TB NVMe whose partition 1 is the ext4
 root and partition 2 the EFI system partition, with the rest of the device
 unpartitioned. The tiers go in that unpartitioned tail, and nothing else on the
-device may be touched. (That node's own profile is a separate work item; what
-is here is the plan it will take.)
+device may be touched. That node's profile is committed beside the first's, as
+`profiles/gmktec-xubuntu.env`, and it is the plan below expressed entirely as
+data — no line of this tree's code is second-node-specific.
 
 That is one procedure with two plans, selected by the profile's `DISK_PLAN`,
 and NOT two scripts:
@@ -182,7 +184,19 @@ questions. See "The two disk plans" above.
 # then, from the Recovery USB, as root:
 sudo ./storage-layout.sh --i-consent-to-destroy=/dev/sda profiles/poweredge-xubuntu.env
 sudo ./base-os-install.sh profiles/poweredge-xubuntu.env
+
+# the second node — same script, different profile, and no consent flag at all:
+# a free-space plan touches nothing that already holds something.
+./storage-layout.sh --dry-run profiles/gmktec-xubuntu.env
+sudo ./storage-layout.sh profiles/gmktec-xubuntu.env
 ```
+
+For `gmktec-xubuntu` the dry run is not optional advice. It prints the
+partition NUMBER it derived off the device's own table, and that number must be
+the one `VOLUME_GROUPS` spells out as a path (`…nvme0n1p3`) — the profile
+cannot state it and the script cannot check it. `base-os-install.sh` is NOT run
+on that node: it keeps the operating system `free-space` exists to preserve,
+and the stage refuses against its profile rather than debootstrapping over it.
 
 `--dry-run` still runs the read-only PROBES — that is how it derives the plan —
 but executes no mutating command. A probe whose tool is not installed reports
@@ -206,10 +220,24 @@ stages are therefore UNPROVEN in the specification's sense, and every value
 happens. A step a rehearsal cannot reproduce is a defect in the procedure, to
 be scripted — never an accepted gap.
 
+**The `gmktec-xubuntu` build IS that rehearsal**, and it is the first one this
+recipe gets. The first node's profile was written from a rebuild that had
+already been done by hand on 2026-09-04, so the procedure describes that node
+rather than having produced it; the second node has not been built yet, which
+makes building it the first end-to-end execution of the one procedure from a
+committed artifact. It is a partial rehearsal by construction — a `free-space`
+node keeps its operating system, so stage 2 is not exercised — and it is
+nonetheless what turns stages 1, 3 and 4 from written into run. Record its
+outcome on the plan's ledger item, naming the procedure revision and
+`profiles/gmktec-xubuntu.env` as the profile it ran with, and treat each
+`# UNVERIFIED` line in that profile as resolved only by the value the rehearsal
+actually reads off the node.
+
 ## Out of scope here
 
-The Recovery USB builder and any further node's profile are their own work
-items. Nothing in this tree executes against a live host as part of its tests.
+The Recovery USB builder is its own work item, as is any node's profile beyond
+the two committed here. Nothing in this tree executes against a live host as
+part of its tests.
 Stage 2 deliberately installs NO credential for the operator account it
 creates: this tree carries no secret, so authorizing a login for it is the
 operator's step at the console.

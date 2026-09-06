@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# storage-layout-exit-tests.sh — prove the five properties the bare-metal
+# storage-layout-exit-tests.sh — prove the six properties the bare-metal
 # storage stage is required to have, WITHOUT touching any host.
 #
 #   1. the profile is DATA and is validated as data (a missing, unknown,
@@ -20,7 +20,15 @@
 #      on its device — plans no controller command and no zap, adds exactly one
 #      partition, and REFUSES any step naming a partition it preserves; and the
 #      `whole-device` plan the first node takes is byte-for-byte the plan it
-#      took before `free-space` existed.
+#      took before `free-space` existed;
+#   6. the COMMITTED second node's profile, `profiles/gmktec-xubuntu.env`,
+#      declares that node's measured facts and yields the plan they imply
+#      through this same script — no controller command, one new partition at
+#      the number its own table leaves free, the one volume group and the three
+#      labelled tier filesystems — and refuses every step naming either of the
+#      two partitions the running node boots from. Property 5 asks whether the
+#      PLAN is right against a fixture; only this one asks whether the second
+#      NODE's committed data is.
 #
 # HOW IT STAYS OFF THE HOST. Every case runs `storage-layout.sh --dry-run`, so
 # no mutating command is ever executed by construction. On top of that, each
@@ -739,14 +747,184 @@ fi
 
 # ---------------------------------------------------------------------------
 echo
-echo "== G. Still nothing ran =="
+echo "== G. The COMMITTED second node's profile: gmktec-xubuntu =="
 # ---------------------------------------------------------------------------
-# D1 asserted this before section F existed; F drives several more dry runs,
-# including two that plan a partition, so the tripwire is read again after them.
-if [ ! -s "$TRIPWIRE" ]; then
-  ok "G1  no mutating command ran in any dry run, section F included"
+# Section F proved the free-space PLAN against a fixture. This one proves the
+# node: `profiles/gmktec-xubuntu.env` is the second pool node as DATA for the
+# one procedure, and the whole point of it is that it needs no new code. So
+# everything below drives the SAME script through the SAME `--dry-run` and
+# asserts the plan the second node's committed profile actually yields — which
+# is the only thing that can catch a profile that is well formed, parses, and
+# describes the wrong machine.
+#
+# Two claims are separated on purpose:
+#   * what the profile DECLARES, read back through the parser every stage
+#     sources (G1), so a value silently edited out is caught even if no
+#     planned command happens to name it; and
+#   * what the plan the script DERIVES from it looks like (G2 onward).
+
+GMKTEC="${HERE}/profiles/gmktec-xubuntu.env"
+
+# The measured device: two partitions the node already boots from, carrying no
+# GPT partition NAMES (a plain installer leaves them unnamed), and nothing
+# labelled `lvm` yet. `lsblk` answers both the label probe and the
+# partition-number probe, so the script derives "the next free number is 3" from
+# the table rather than from an assumption.
+GMKTEC_BIN="${TMPROOT}/gmktec-bin"
+make_bare_fakes "$GMKTEC_BIN"
+mkfake "$GMKTEC_BIN" lsblk '
+case " $* " in
+  *" PARTLABEL "*) printf "\n\n\n"; exit 0 ;;
+  *" PARTN "*) printf "\n1\n2\n"; exit 0 ;;
+esac
+exit 1'
+
+# G1 reads the committed profile back through the SAME parser the stages source,
+# so what is asserted is what storage-layout.sh would act on — not a second,
+# independent reading of the same file. Each `want` is one of the node facts
+# measured on 2026-09-06; a profile that drops or mutates one fails here even if
+# no planned command would have named it.
+gmktec_declared() {  # gmktec_declared -> `KEY value` lines for the keys G1 checks
+  (
+    die() { printf 'FATAL: %s\n' "$*" >&2; exit 1; }
+    # shellcheck source=ci-runner/k3s/phase0-bare-metal/profile.sh
+    source "${HERE}/profile.sh"
+    profile_load "$GMKTEC"
+    local key record
+    for key in CONTROLLER_KIND DISK_PLAN TARGET_DEVICE PRESERVED_PARTITIONS \
+               VOLUME_GROUPS NODE_NETWORK_INTERFACE NODE_ADDRESS CLUSTER_ROLE \
+               CLUSTER_JOIN_ADDRESS CLUSTER_TOKEN_FILE NODE_TAINTS \
+               ADMISSION_CAPACITY_C; do
+      printf '%s %s\n' "$key" "${CFG[$key]}"
+    done
+    for record in "${TIER_RECORDS[@]}"; do printf 'tier %s\n' "${record//:/ }"; done
+  )
+}
+
+GMKTEC_DECLARED="$(gmktec_declared)"
+missing=""
+while IFS= read -r want; do
+  printf '%s\n' "$GMKTEC_DECLARED" | grep -qxF "$want" || missing="${missing}
+        ${want}"
+done <<'EOF'
+CONTROLLER_KIND none
+DISK_PLAN free-space
+TARGET_DEVICE /dev/nvme0n1
+PRESERVED_PARTITIONS /dev/nvme0n1p1 /dev/nvme0n1p2
+VOLUME_GROUPS nvmea:/dev/nvme0n1p3
+NODE_NETWORK_INTERFACE eno1
+NODE_ADDRESS 192.168.1.156/24
+CLUSTER_ROLE agent
+CLUSTER_JOIN_ADDRESS https://192.168.1.200:6443
+CLUSTER_TOKEN_FILE /etc/rancher/k3s/agent-join-token
+NODE_TAINTS node-role/ci=pending:NoSchedule
+ADMISSION_CAPACITY_C 0
+tier ci-cache nvmea
+tier ci-containerd nvmea
+tier ci-workvols nvmea
+EOF
+if [ -z "$missing" ]; then
+  ok "G1  the committed profile declares the second node's measured facts"
 else
-  no "G1  a dry run EXECUTED a mutating command:"
+  no "G1  the committed profile no longer declares:${missing}"
+fi
+
+run_layout "$GMKTEC_BIN" --dry-run "$GMKTEC"
+GM_OUT="$REPLY_OUT"
+GM_RC="$REPLY_RC"
+gm_new_partitions="$(printf '%s\n' "$GM_OUT" | grep -c '^+ sgdisk --new' || true)"
+
+if [ "$GM_RC" -eq 0 ]; then
+  ok "G2  --dry-run against the committed gmktec profile exits 0"
+else
+  no "G2  --dry-run against the committed gmktec profile exits 0 (rc=${GM_RC})"
+  printf '%s\n' "$GM_OUT"
+fi
+
+# The node has no controller and keeps its operating system, so the two
+# destructive halves of the whole-device plan must be absent from the plan
+# ENTIRELY — not merely refused later.
+if ! printf '%s\n' "$GM_OUT" | grep -q '^+ .*add vd' \
+   && ! printf '%s\n' "$GM_OUT" | grep -q '^+ .*--zap-all' \
+   && ! printf '%s\n' "$GM_OUT" | grep -q '^+ wipefs' \
+   && ! printf '%s\n' "$GM_OUT" | grep -q '^+ mkfs.vfat'; then
+  ok "G3  no controller command, no zap, no wipefs, and no mkfs over the ESP it boots from"
+else
+  no "G3  no controller command, no zap, no wipefs, and no mkfs over the ESP it boots from"
+  printf '%s\n' "$GM_OUT"
+fi
+
+# EXACTLY ONE new partition, and at number 3 — read off the device's own table
+# (1 and 2 taken), which is the number `VOLUME_GROUPS` spells out as a path.
+# Those two agreeing is the one thing the profile cannot state and the plan
+# cannot check for itself, so it is asserted here.
+if [ "$gm_new_partitions" -eq 1 ] \
+   && printf '%s\n' "$GM_OUT" | grep -qxF '+ sgdisk --new=3:0:0 --typecode=3:8e00 --change-name=3:lvm /dev/nvme0n1'; then
+  ok "G4  exactly one new partition, numbered 3 off the device's own table, typed LVM"
+else
+  no "G4  exactly one new partition, numbered 3 off the device's own table (${gm_new_partitions} new-partition command(s))"
+  printf '%s\n' "$GM_OUT"
+fi
+
+# The tail partition becomes the physical volume, the one volume group, the
+# three tier volumes and the three labelled filesystems — in that order, with
+# the sizes and types the profile declares. `ci-workvols` is XFS with reflink,
+# which is what lets the warm-cache seed give every job its own inodes.
+if order_ok "$GM_OUT" \
+    'pvcreate --yes /dev/nvme0n1p3' \
+    'vgcreate nvmea /dev/nvme0n1p3' \
+    'lvcreate --yes -L 350G -n ci-cache nvmea' \
+    'lvcreate --yes -L 525G -n ci-containerd nvmea' \
+    'lvcreate --yes -L 525G -n ci-workvols nvmea' \
+    'mkfs.ext4 -q -L ci-cache /dev/nvmea/ci-cache' \
+    'mkfs.ext4 -q -L ci-containerd /dev/nvmea/ci-containerd' \
+    'mkfs.xfs -q -m reflink=1 -L ci-workvols /dev/nvmea/ci-workvols'; then
+  ok "G5  physical volume, volume group, the three tier volumes and the three labelled filesystems — in that order"
+else
+  no "G5  physical volume, volume group, the three tier volumes and the three labelled filesystems — in that order"
+  printf '%s\n' "$GM_OUT"
+fi
+
+# The refusal the whole free-space plan rests on, driven against THIS node's
+# real partition paths rather than a fixture's. Each case repoints the physical
+# volume at a preserved partition — a step that WOULD otherwise have run, since
+# `pvcreate` on an empty-looking device needs no consent at all — and the
+# refusal must name that exact partition and the key that protects it.
+for preserved in /dev/nvme0n1p1 /dev/nvme0n1p2; do
+  p="${TMPROOT}/gmktec-clobber$(basename "$preserved").env"
+  sed "s|^VOLUME_GROUPS=.*|VOLUME_GROUPS=nvmea:${preserved}|" "$GMKTEC" > "$p"
+  run_layout "$GMKTEC_BIN" --dry-run "$p"
+  if [ "$REPLY_RC" -ne 0 ] \
+     && printf '%s' "$REPLY_OUT" | grep -qF 'REFUSED' \
+     && printf '%s' "$REPLY_OUT" | grep -qF "$preserved" \
+     && printf '%s' "$REPLY_OUT" | grep -qF 'PRESERVED_PARTITIONS'; then
+    ok "G6  a step naming ${preserved} is refused, naming it and PRESERVED_PARTITIONS"
+  else
+    no "G6  a step naming ${preserved} is refused, naming it and PRESERVED_PARTITIONS (rc=${REPLY_RC})"
+    printf '%s\n' "$REPLY_OUT"
+  fi
+
+  # And consent does not unlock it: preservation is a different key, not a
+  # stronger flavour of consent.
+  run_layout "$GMKTEC_BIN" --dry-run "--i-consent-to-destroy=${preserved}" "$p"
+  if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -qF 'REFUSED'; then
+    ok "G7  --i-consent-to-destroy=${preserved} does not unlock it either"
+  else
+    no "G7  --i-consent-to-destroy=${preserved} does not unlock it either (rc=${REPLY_RC})"
+  fi
+done
+
+# ---------------------------------------------------------------------------
+echo
+echo "== H. Still nothing ran =="
+# ---------------------------------------------------------------------------
+# D1 asserted this before section F existed; F and H drive several more dry
+# runs, including three that plan a partition, so the tripwire is read again
+# after them.
+if [ ! -s "$TRIPWIRE" ]; then
+  ok "H1  no mutating command ran in any dry run, sections F and G included"
+else
+  no "H1  a dry run EXECUTED a mutating command:"
   cat "$TRIPWIRE"
 fi
 
