@@ -19,6 +19,8 @@ __pycache__/
 .hypothesis/
 .coverage
 .coverage.*
+# check-per-file-coverage's provenance marker for check-coverage's consume-once reuse
+.livespec-coverage-reuse-token
 .ruff_cache/
 .pyright/
 .mutmut-cache/
