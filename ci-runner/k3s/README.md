@@ -69,6 +69,19 @@ together in every values file, re-read the hook's `initContainers`
 behaviour against the template's header, `helm upgrade` each release,
 and recycle idle runners (`phase2/arc/recycle-scale-set-runners.sh`).
 
+Since `livespec-wm7c` the runner does not run the image's own container
+hook but a fleet-patched rebuild of it (`phase2/container-hook/`), and
+the image's externals are extracted host-side for the work-volume seed
+— so a runner-image bump is ALSO a hook rebuild and a re-extraction:
+run `phase2/container-hook/build-patched-hook.sh` on a developer host
+BEFORE changing the values files and commit its `bundle/<new version>/`
+in the same change, then re-run `phase2/install-node.sh` (step 7c) on
+the node, then apply the values. The build derives the hook version the
+new image bundles and fails loudly if `externals-skip.patch` no longer
+applies to it — that failure blocks the bump until the patch is
+re-derived, by design. The full procedure and the failure modes are in
+`phase2/container-hook/README.md` "Runner-image bump".
+
 ## Labels — confirmed distinct from the existing pool
 
 When this tree was authored the governing clause read "Every runner
