@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.53.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.53.3...v1.53.4) (2026-09-06)
+
+
+### Bug Fixes
+
+* **install-no-shadow-ledger:** gate the installer on declared-ness like its Verifier ([b15e477](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b15e477fd031babf9378f259bc413b9a82025a5d))
+
 ## [1.53.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.53.2...v1.53.3) (2026-09-06)
 
 
