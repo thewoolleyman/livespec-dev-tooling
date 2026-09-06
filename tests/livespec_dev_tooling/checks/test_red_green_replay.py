@@ -15,7 +15,10 @@ file path):
    Red (a behavior-changing chore does Red->Green like a feature);
 3. tests-only `.py` staged + pytest PASSES ⇒ `feat:`/`fix:` keeps the
    loud `test-passed-at-red` reject (the author DECLARED a behavior
-   change, so their test must fail first); any other prefix is a
+   change, so their test must fail first) UNLESS a non-`.py`
+   implementation (`.sh`, `.just`, `.yml`/`.yaml`, a justfile) is
+   staged beside the test, which the `.py`-only impl bucket cannot
+   see (work-item livespec-dev-tooling-9yrr); any other prefix is a
    test-only cleanup and takes the green-verified leg;
 4. product impl `.py` staged with `TDD-Red-*` trailers WITHOUT
    `TDD-Green-*` trailers at HEAD (a genuine amend-in-progress;
@@ -3055,3 +3058,193 @@ def test_classify_staged_vendor_exclusion_does_not_widen_to_authored_siblings() 
         f"authored source merely NAMED like the vendor tree must stay product impl; "
         f"got impl_paths={impl_paths!r}"
     )
+
+
+def _stage_files(*, tmp_path: Path, files: dict[str, str]) -> None:
+    """Init a tmp git repo, write each `files` entry, and stage every one."""
+    subprocess.run(
+        ["git", "init", "-q"],
+        cwd=str(tmp_path),
+        check=True,
+        env=_scrubbed_env(),
+    )
+    for rel_path, content in files.items():
+        target = tmp_path / rel_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+        subprocess.run(
+            ["git", "add", rel_path],
+            cwd=str(tmp_path),
+            check=True,
+            env=_scrubbed_env(),
+        )
+
+
+def _run_commit_msg_hook(
+    *,
+    tmp_path: Path,
+    subject: str,
+) -> tuple[subprocess.CompletedProcess[str], Path]:
+    """Run the commit-msg path against `tmp_path`; return the result + message path."""
+    msg_path = tmp_path / "COMMIT_EDITMSG"
+    msg_path.write_text(subject, encoding="utf-8")
+    result = subprocess.run(
+        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_scrubbed_env(),
+    )
+    return result, msg_path
+
+
+_PASSING_TEST_BODY = "def test_behavior() -> None:\n    assert True\n"
+
+
+def test_fix_staging_shell_impl_beside_passing_test_takes_suite_green_leg(
+    *,
+    tmp_path: Path,
+) -> None:
+    """A `fix:` whose implementation is `.sh` may ship WITH its test.
+
+    The impl bucket is `.py`-only, so a shell implementation staged
+    beside its test presented as TESTS-ONLY and a `fix:` subject was
+    rejected as `test-passed-at-red` — forcing every tested non-`.py`
+    fix to `chore:`, which release-please does not release
+    (work-item livespec-dev-tooling-9yrr). `test-passed-at-red` exists
+    to catch an author declaring a behavior change while staging NO
+    implementation; a staged `.sh` makes that premise false, and no Red
+    leg is reachable to satisfy it honestly, since the test cannot be
+    made to fail against a change already staged beside it. The commit
+    takes the green-verified leg instead, whose FULL-suite run is
+    strictly more verification than the Red leg's single staged file.
+    """
+    _stage_files(
+        tmp_path=tmp_path,
+        files={
+            "worktree_pack/worktree-lib.sh": "worktree_primary_path() { cat; }\n",
+            "tests/test_worktree_lib.py": _PASSING_TEST_BODY,
+        },
+    )
+
+    result, msg_path = _run_commit_msg_hook(
+        tmp_path=tmp_path,
+        subject="fix(worktree-pack): stop worktree_primary_path dying of SIGPIPE\n",
+    )
+
+    assert result.returncode == 0, (
+        f"a fix: pairing a .sh implementation with its test must be accepted; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+    assert "test-passed-at-red" not in result.stderr, (
+        f"test-passed-at-red MUST NOT fire when a non-.py implementation is staged; "
+        f"got stderr={result.stderr!r}"
+    )
+    final_msg = msg_path.read_text(encoding="utf-8")
+    assert "TDD-Suite-Green-Captured-At:" in final_msg, (
+        f"the commit must take the green-verified leg and record its evidence; "
+        f"got final_msg={final_msg!r}"
+    )
+
+
+def test_fix_staging_just_impl_beside_passing_test_takes_suite_green_leg(
+    *,
+    tmp_path: Path,
+) -> None:
+    """The same acceptance holds for a `.just` implementation.
+
+    Second of the two extensions the work item measured as trapped
+    (`.sh` and `.just`); the justfile modules under the worktree pack
+    are implementation by any reasonable reading, and a fix to one of
+    them must be able to carry its test.
+    """
+    _stage_files(
+        tmp_path=tmp_path,
+        files={
+            "worktree_pack/worktree.just": "worktree-create branch:\n    @echo {{branch}}\n",
+            "tests/test_worktree_just.py": _PASSING_TEST_BODY,
+        },
+    )
+
+    result, msg_path = _run_commit_msg_hook(
+        tmp_path=tmp_path,
+        subject="fix(worktree-pack): quote the branch argument in worktree-create\n",
+    )
+
+    assert result.returncode == 0, (
+        f"a fix: pairing a .just implementation with its test must be accepted; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+    final_msg = msg_path.read_text(encoding="utf-8")
+    assert "TDD-Suite-Green-Captured-At:" in final_msg, (
+        f"the commit must take the green-verified leg and record its evidence; "
+        f"got final_msg={final_msg!r}"
+    )
+
+
+def test_fix_staging_documentation_beside_passing_test_still_rejects_at_red(
+    *,
+    tmp_path: Path,
+) -> None:
+    """Discrimination leg: a `.md` file is not implementation.
+
+    Pins the acceptance as a DISCRIMINATION rather than "any non-`.py`
+    file counts": a README staged beside a passing test carries no
+    implementation, so the `test-passed-at-red` premise holds and the
+    `fix:` subject is rejected exactly as it was before
+    livespec-dev-tooling-9yrr.
+    """
+    _stage_files(
+        tmp_path=tmp_path,
+        files={
+            "docs/worktrees.md": "# Worktrees\n",
+            "tests/test_documented_behavior.py": _PASSING_TEST_BODY,
+        },
+    )
+
+    result, _msg_path = _run_commit_msg_hook(
+        tmp_path=tmp_path,
+        subject="fix(docs): describe the worktree flow\n",
+    )
+
+    assert result.returncode != 0, (
+        f"documentation is not implementation; the fix: subject must still reject; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+    assert (
+        "test-passed-at-red" in result.stderr
+    ), f"expected the unchanged test-passed-at-red rejection; got stderr={result.stderr!r}"
+
+
+def test_fix_staging_shell_fixture_under_tests_still_rejects_at_red(
+    *,
+    tmp_path: Path,
+) -> None:
+    """A `.sh` under `tests/` is test material, not implementation.
+
+    The acceptance keys on implementation staged OUTSIDE the tests
+    tree. A shell FIXTURE is part of the test being authored — the
+    implementation it exercises is still unstaged — so the
+    `test-passed-at-red` premise holds and the `fix:` subject rejects.
+    """
+    _stage_files(
+        tmp_path=tmp_path,
+        files={
+            "tests/fixtures/sample.sh": "echo sample\n",
+            "tests/test_shell_scanner.py": _PASSING_TEST_BODY,
+        },
+    )
+
+    result, _msg_path = _run_commit_msg_hook(
+        tmp_path=tmp_path,
+        subject="fix(checks): scan shell fixtures\n",
+    )
+
+    assert result.returncode != 0, (
+        f"a fixture under tests/ is not implementation; the fix: subject must still "
+        f"reject; got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+    assert (
+        "test-passed-at-red" in result.stderr
+    ), f"expected the unchanged test-passed-at-red rejection; got stderr={result.stderr!r}"

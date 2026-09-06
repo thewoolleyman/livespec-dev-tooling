@@ -17,8 +17,12 @@ commit-msg mode (argv[1] = path to `.git/COMMIT_EDITMSG`, the lefthook
    Red (a behavior-changing chore does Red->Green like a feature);
 3. tests-only `.py` staged + pytest PASSES ⇒ `feat:`/`fix:` keeps the
    loud `test-passed-at-red` reject (the author DECLARED a behavior
-   change, so their test must fail first); any other prefix is a
-   test-only cleanup and takes the green-verified leg;
+   change, so their test must fail first) UNLESS a non-`.py`
+   implementation (`.sh`, `.just`, `.yml`/`.yaml`, a justfile) is
+   staged beside it, which the `.py`-only impl bucket cannot see and
+   which makes that reject's premise false (work-item
+   livespec-dev-tooling-9yrr); any other prefix is a test-only cleanup
+   and takes the green-verified leg;
 4. product impl `.py` staged with `TDD-Red-*` trailers WITHOUT
    `TDD-Green-*` trailers at HEAD — a genuine amend-in-progress
    (work-item livespec-dev-tooling-xn0: a completed Red+Green
@@ -115,6 +119,16 @@ _RED_TRAILER_KEY = "TDD-Red-Test-File-Checksum:"
 _GREEN_TRAILER_KEY = "TDD-Green-Verified-At:"
 _SUITE_TRAILER_KEY = "TDD-Suite-Green-Captured-At:"
 _RANGE_BASE = "origin/master"
+# This package's implementation is frequently NOT Python — the worktree pack
+# ships `.sh` and `.just`, and the workflows are `.yml` — so a fix to one of
+# them plus its test presented as TESTS-ONLY and was rejected as
+# `test-passed-at-red`, forcing the fix to a prefix release-please does not
+# release (work-item livespec-dev-tooling-9yrr). These suffixes are consulted
+# at exactly ONE place, the premise behind that guard; the impl BUCKET stays
+# `.py`-only, since widening it would also widen the commit-RANGE validator and
+# could retroactively redden open branches.
+_NON_PYTHON_IMPL_SUFFIXES = (".sh", ".just", ".yml", ".yaml")
+_JUSTFILE_NAMES = ("justfile", "Justfile")
 
 
 def _source_tree_prefix(*, tree: Path) -> str:
@@ -169,6 +183,34 @@ def _classify_staged(
         and not is_vendored_path(rel_path=Path(p))
     ]
     return tests_paths, impl_paths
+
+
+def _stages_non_python_implementation(*, paths: list[str]) -> bool:
+    """Return True iff a staged path OUTSIDE `tests/` is non-`.py` implementation.
+
+    `test-passed-at-red` exists to catch an author who DECLARED a
+    behavior change (`feat:`/`fix:`) while staging NO implementation at
+    all. When shell, just, or yaml implementation IS staged beside the
+    test, that premise is false and no Red leg is reachable to satisfy
+    it honestly: the test cannot be made to fail against a change
+    already staged next to it. The commit takes the green-verified leg
+    instead, which runs the FULL suite — strictly MORE verification
+    than the Red leg's single staged file.
+
+    A DISCRIMINATION, not "any non-`.py` file counts": documentation and
+    data suffixes do not qualify, so a README beside a passing test
+    still rejects exactly as before. Neither is it scoped to the
+    declared impl prefixes — those resolve to `()` in a bare repo, and
+    they would exclude `.github/workflows/**`, which is implementation
+    by any reasonable reading. Paths under `tests/` are test material
+    (a shell FIXTURE is part of the test being authored, not the
+    implementation it exercises), so they never qualify either.
+    """
+    return any(
+        not path.startswith(_TESTS_PREFIX)
+        and (Path(path).suffix in _NON_PYTHON_IMPL_SUFFIXES or Path(path).name in _JUSTFILE_NAMES)
+        for path in paths
+    )
 
 
 def _configure_logger() -> structlog.stdlib.BoundLogger:
@@ -378,7 +420,11 @@ def main() -> int:
         return 0
     log = _configure_logger()
     if not impl_paths:
-        declares_red_intent = _RED_INTENT_TYPE_RE.match(subject) is not None
+        # A non-`.py` implementation staged beside the test cannot enter
+        # the `.py`-only impl bucket, which makes the `test-passed-at-red`
+        # premise false — see `_stages_non_python_implementation`.
+        non_py_impl = _stages_non_python_implementation(paths=staged_paths)
+        declares_red_intent = _RED_INTENT_TYPE_RE.match(subject) is not None and not non_py_impl
         if declares_red_intent or not _staged_tests_pass(tests_paths=tests_paths):
             # Branch 2 (failing tests ⇒ Red leg, any prefix) and
             # branch 3's feat:/fix: arm (declared Red intent: the
