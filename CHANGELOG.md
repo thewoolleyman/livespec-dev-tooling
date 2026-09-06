@@ -58,6 +58,20 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.50.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.49.1...v1.50.0) (2026-09-06)
+
+
+### Features
+
+* **pack:** ONE enumeration of the worktree-pack file set — installer, verifier, and the bootstrap worktree-pack row walk WORKTREE_PACK_FILES, with a lockstep test over the shell copy (livespec-dev-tooling-l5gypl) ([9967081](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9967081a6120d13faec5fba56f3e6170c6428456))
+
+
+### Bug Fixes
+
+* **agent-hooks:** compose the background-guard deny against the venue it fires in (livespec-dev-tooling-h7qp) ([f8462ae](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f8462ae8100cf36a84b8a6b813107194f1b87c8f))
+* **gate:** read both check emitters and lefthook's pty relay in the status probe ([ed040b6](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ed040b64495b10fa152e5fe6f30949598bd83d9e))
+* **release:** bump uv.lock alongside pyproject in the release commit ([fbb1b9e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/fbb1b9e3352c2072fd32e37ece56ffdd19bfbc21))
+
 ## [1.49.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.49.0...v1.49.1) (2026-09-06)
 
 
