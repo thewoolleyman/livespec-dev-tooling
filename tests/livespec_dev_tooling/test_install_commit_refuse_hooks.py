@@ -20,6 +20,13 @@ trust"). It enforces a POSITIVE-LOCATION allow-list:
   is REFUSED. A linked worktree no longer delegates merely by virtue of
   being linked; its LOCATION decides.
 
+The installer also OWNS THE WHOLE hooks directory, not just the three
+names it writes: after installing them it sweeps the same directory and
+deletes every other executable that reaches lefthook without the
+canonical `unset GIT_DIR …` line — lefthook's stock `call_lefthook`
+wrappers, which `lefthook install` leaves behind for every hook name it
+has ever been asked to manage (livespec-dev-tooling-x2ju4a).
+
 The installer is exercised IN-PROCESS (`main()` with
 `monkeypatch.chdir`) — no Python subprocess spawn (this test is not on
 the `subprocess_spawn_allowlist`). The installed hook body itself is
@@ -61,6 +68,34 @@ _GIT_ENV_VARS: tuple[str, ...] = (
     "GIT_LITERAL_PATHSPECS",
     "GIT_PREFIX",
 )
+
+
+# lefthook's stock wrapper, abridged to the shape that makes it a hazard: it
+# reaches `lefthook` (so it IS an entry point), it dispatches `lefthook run
+# <name>` with no `--no-auto-install`, and it never clears the GIT_DIR family
+# git injects into a hook firing inside a linked worktree. The real article is
+# ~70 lines of interpreter-hunting `elif`s; none of them change the verdict.
+_STOCK_LEFTHOOK_WRAPPER = """#!/bin/sh
+
+if [ "$LEFTHOOK" = "0" ]; then
+  exit 0
+fi
+
+call_lefthook()
+{
+  if test -n "$LEFTHOOK_BIN"
+  then
+    "$LEFTHOOK_BIN" "$@"
+  elif lefthook -h >/dev/null 2>&1
+  then
+    lefthook "$@"
+  else
+    echo "Can't find lefthook in PATH"
+  fi
+}
+
+call_lefthook run "prepare-commit-msg" "$@"
+"""
 
 
 def _scrub_git_env(*, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -459,6 +494,76 @@ def test_refusal_remedy_uses_plain_git_and_names_no_recipe() -> None:
     refuse_section = CANONICAL_HOOK_BODY.split("sanctioned root", 1)[-1]
     assert "install-worktree-pack" not in refuse_section
     assert "worktree-create" not in refuse_section
+
+
+def test_main_removes_a_stock_lefthook_wrapper_it_does_not_install(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The installer owns the WHOLE hooks directory, not just the three names it writes.
+
+    Reproduces the observed defect (livespec-dev-tooling-x2ju4a): on 2026-09-06
+    `/data/projects/livespec/.git/hooks/prepare-commit-msg` was still
+    lefthook's stock `call_lefthook` wrapper, mtime three months older than the
+    canonical hooks beside it. `lefthook install` writes one of those per hook
+    name it has ever been asked to manage and nothing removes them, so the
+    stale one kept firing on every commit and every cherry-pick — leaking the
+    GIT_DIR family git injects inside a linked worktree, and calling `lefthook
+    run` without `--no-auto-install`.
+
+    The canonical three are asserted intact in the same test: a sweep that
+    removed the very hooks it had just written would satisfy the first
+    assertion perfectly.
+    """
+    _scrub_git_env(monkeypatch=monkeypatch)
+    primary = tmp_path / "project"
+    _init_repo(repo=primary)
+    hooks_dir = primary / ".git" / "hooks"
+    hooks_dir.mkdir(parents=True, exist_ok=True)
+    stale = hooks_dir / "prepare-commit-msg"
+    _ = stale.write_text(_STOCK_LEFTHOOK_WRAPPER, encoding="utf-8")
+    stale.chmod(0o755)
+    monkeypatch.chdir(primary)
+
+    rc = main()
+
+    assert rc == 0
+    assert not stale.exists(), "the stock lefthook wrapper survived the installer"
+    for name in _HOOK_NAMES:
+        hook = hooks_dir / name
+        assert hook.is_file(), f"{name} was swept away by its own installer"
+        assert hook.read_text(encoding="utf-8") == CANONICAL_HOOK_BODY
+
+
+def test_main_keeps_hooks_that_cannot_be_a_lefthook_entry_point(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The sweep removes lefthook entry points, NOT every file in the hooks directory.
+
+    A repo-local hook that never mentions lefthook is somebody's deliberate
+    configuration and nothing here has a claim on it. A wrapper without the
+    execute bit is inert — git runs a hook only when it is an executable
+    regular file — so deleting it would be a mutation with no hazard behind it.
+    Both survive, and the sweep is thereby shown to be keyed on the property
+    that makes a file dangerous rather than on its being in the way.
+    """
+    _scrub_git_env(monkeypatch=monkeypatch)
+    primary = tmp_path / "project"
+    _init_repo(repo=primary)
+    hooks_dir = primary / ".git" / "hooks"
+    hooks_dir.mkdir(parents=True, exist_ok=True)
+    unrelated = hooks_dir / "post-commit"
+    _ = unrelated.write_text("#!/bin/sh\n# a repo-local hook that delegates to nothing\nexit 0\n")
+    unrelated.chmod(0o755)
+    inert = hooks_dir / "prepare-commit-msg"
+    _ = inert.write_text(_STOCK_LEFTHOOK_WRAPPER, encoding="utf-8")
+    inert.chmod(0o644)
+    monkeypatch.chdir(primary)
+
+    rc = main()
+
+    assert rc == 0
+    assert unrelated.is_file(), "an unrelated repo-local hook was deleted"
+    assert inert.is_file(), "a non-executable, non-firing wrapper was deleted"
 
 
 def test_installed_hook_symlinked_path_yields_identical_verdict(
