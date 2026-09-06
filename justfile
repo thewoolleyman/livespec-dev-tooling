@@ -238,6 +238,7 @@ check:
         check-tool-backed-check-completeness
         check-vendor-manifest
         check-work-item-interpolation-delimiters
+        check-work-item-status-vocabulary
         check-wrapper-shape
         check-lint
         check-format
@@ -928,6 +929,22 @@ check-vendor-manifest:
 # offenders.
 check-work-item-interpolation-delimiters:
     uv run python -m livespec_dev_tooling.checks.work_item_interpolation_delimiters
+
+# Ledger-lane enforcement: a LIVE work item must sit at a status inside the
+# runtime's declared `WorkItemStatus` vocabulary. `bd create` leaves a record at
+# BEADS status `open`, which is not in it, and `lane_of` passes an unrecognised
+# status straight out as a lane name nothing consumes — so the item is never
+# ranked by `next`, never parked in `backlog`, never held at `blocked`, and
+# never awaiting admission at `pending-approval`. Closed items are out of the
+# population by design (never ranked, so no status can strand them). The check
+# reports; it never re-triages, because answering the intake Definition-of-
+# Ready gates for work you have not read is how a silent item becomes a
+# wrongly-ranked one.
+# Armed-only — self-skips unless LIVESPEC_RUN_WORK_ITEM_STATUS_VOCABULARY and
+# BEADS_DOLT_PASSWORD are set, so it never self-gates a credential-less
+# `just check`.
+check-work-item-status-vocabulary:
+    uv run python -m livespec_dev_tooling.checks.work_item_status_vocabulary
 
 check-wrapper-shape:
     uv run python -m livespec_dev_tooling.checks.wrapper_shape

@@ -76,6 +76,7 @@ EXPECTED_CANONICAL_SLUGS: tuple[str, ...] = (
     "check-tool-backed-check-completeness",
     "check-vendor-manifest",
     "check-work-item-interpolation-delimiters",
+    "check-work-item-status-vocabulary",
     "check-wrapper-shape",
 )
 

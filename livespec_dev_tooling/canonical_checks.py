@@ -140,6 +140,10 @@ _BASELINE_CHECK_SLUGS: tuple[str, ...] = (
 #   Unlike the two CI/branch-protection gates above it does not verify master's
 #   state, which is precisely why the category's own definition is stated in
 #   terms of EXTERNAL WORLD STATE rather than master-CI/branch-protection.
+# - `check-work-item-status-vocabulary` — reads the beads LEDGER for the same
+#   reason and under the same credentials: its population is every LIVE
+#   work-item record's stored STATUS, which no file in the checkout carries. A
+#   credential-less per-PR CI runner self-skips it identically.
 # - `check-plan-record-conformance` — reads the beads LEDGER for the eleven
 #   ratified plan-record verdicts (epic `plan_slug` metadata, each epic's comment
 #   timeline) under the same credentials, and delegates its lifecycle leg to
@@ -162,6 +166,7 @@ _WORLD_GATE_CHECK_SLUGS: tuple[str, ...] = (
     "check-plan-epic-parity",
     "check-plan-record-conformance",
     "check-work-item-interpolation-delimiters",
+    "check-work-item-status-vocabulary",
 )
 
 # Renamed canonical checks: old slug -> new slug. The canonical set is a
