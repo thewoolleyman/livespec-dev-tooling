@@ -42,7 +42,14 @@ apparmor_parser -r -W "${PROFILE_DEST}"
 # Fail loudly rather than leaving a half-installed node: a profile that parsed
 # but did not reach ENFORCE mode would let pods start with weaker confinement
 # than this tree claims they have.
-if ! aa-status 2>/dev/null | grep -qx "   ${PROFILE_NAME}"; then
+#
+# The consumer MUST read aa-status to EOF: this script runs under pipefail,
+# and `grep -q` exits at the first match, so once the host carries more
+# profiles than one write() of aa-status output holds, aa-status takes
+# SIGPIPE (exit 141), the pipeline fails, and a correctly-enforced profile
+# reads as FATAL. Measured on poweredge-xubuntu 2026-09-06 at 201 loaded
+# profiles: `grep -qx` exit 141, `grep -Fx >/dev/null` exit 0, same input.
+if ! aa-status 2>/dev/null | grep -Fx "   ${PROFILE_NAME}" >/dev/null; then
   echo "FATAL: ${PROFILE_NAME} is not loaded in enforce mode after parsing"
   exit 1
 fi
