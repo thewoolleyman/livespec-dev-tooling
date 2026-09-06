@@ -14,9 +14,10 @@ isolation keeps the check from ever scanning the real repo.
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 from types import ModuleType
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 import pytest
 
@@ -68,10 +69,24 @@ def _write(*, path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
+def _vacuous_events(*, result: _CheckRun) -> list[dict[str, Any]]:
+    """The `vacuous` verdict events among the run's structlog JSON lines.
+
+    The check emits nothing to stdout and one JSON object per line to
+    stderr, so every captured line decodes — a decode failure here is a
+    real regression in the check's output discipline and should surface
+    as an error rather than be swallowed.
+    """
+    events: list[dict[str, Any]] = [
+        json.loads(line) for line in (result.stdout + result.stderr).splitlines()
+    ]
+    return [event for event in events if event.get("verdict") == "vacuous"]
+
+
 def test_resolving_reference_passes(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """AGENTS.md referencing `.ai/foo.md` with a real `.ai/foo.md` → exit 0."""
+    """AGENTS.md referencing `.ai/foo.md` with a real `.ai/foo.md` → exit 0, no `vacuous`."""
     _write(path=tmp_path / "AGENTS.md", text="See `.ai/foo.md` for detail.\n")
     _write(path=tmp_path / ".ai" / "foo.md", text="# detail\n")
 
@@ -79,6 +94,10 @@ def test_resolving_reference_passes(
 
     assert result.returncode == 0, (
         f"expected exit 0 for a resolving reference; got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    assert _vacuous_events(result=result) == [], (
+        f"a tree with a resolving reference is a genuine PASS, not `vacuous`; "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
 
@@ -134,10 +153,15 @@ def test_archive_agents_md_is_excluded(
     )
 
 
-def test_no_ai_references_passes(
+def test_no_ai_references_is_a_vacuous_warning_not_a_bare_pass(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """An AGENTS.md that references zero `.ai/` files passes → exit 0."""
+    """Zero referenced `.ai/` paths → exit 0, but a `vacuous` WARNING carrying the count.
+
+    A repo may legitimately have no `.ai/` tree, so this is not a
+    failure — but the run inspected nothing, so it must not read as a
+    proof of reference integrity either (livespec-dev-tooling-xaxj5w).
+    """
     _write(path=tmp_path / "AGENTS.md", text="# Agent instructions\n\nNo overflow files.\n")
 
     result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
@@ -147,6 +171,17 @@ def test_no_ai_references_passes(
         f"got returncode={result.returncode} "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
+    vacuous = _vacuous_events(result=result)
+    assert len(vacuous) == 1, (
+        f"expected exactly one `vacuous` verdict when zero .ai/ paths are referenced; "
+        f"got {vacuous!r} from stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    assert (
+        vacuous[0].get("level") == "warning"
+    ), f"the `vacuous` verdict must be emitted at WARNING level; got {vacuous[0]!r}"
+    assert (
+        vacuous[0].get("referenced_paths") == 0
+    ), f"the `vacuous` verdict must carry the referenced-path count; got {vacuous[0]!r}"
 
 
 def test_angle_bracket_placeholder_is_not_a_reference(
