@@ -30,19 +30,49 @@
 #
 # MEMORY CEILING — sized against the concurrency cap (the spec's rule that
 # cache memory and job memory must not compete): allocatable RAM 188 GiB; the
-# churn-slot cap C=32 at a 4 GiB per-job envelope reserves 128 GiB for jobs;
-# k3s + containerd + host services ~8 GiB; ~20 GiB of page cache wanted for
-# the warm trees and the crates proxy's store; redis gets 16 GiB
-# (`maxmemory 16gb`, allkeys-lru), limit 18 GiB for redis's own overhead.
-# The console's full dependency graph across four profiles was measured at
-# well under that; the headroom is for PR-lockfile variants and a second
-# Rust repository. Derivation recorded in plan research/006. Raise the cap
-# by editing `--maxmemory` and the limit together.
+# original derivation (plan research/006) took the churn-slot cap C=32 at a
+# 4 GiB per-job envelope (128 GiB for jobs), ~8 GiB for k3s + containerd +
+# host services, ~20 GiB of page cache for the warm trees and the crates
+# proxy's store, and gave redis 16 GiB (`maxmemory 16gb`, allkeys-lru), limit
+# 18 GiB for redis's own overhead. C is 64 since 2026-09-06 (PR #1751), so
+# that arithmetic no longer closes on paper (a 256 GiB envelope); it closes
+# in practice because jobs do not all peak together — the cap is
+# throughput-derived (.ai/ci-node-capacity-reads.md) and the node measured
+# ~143 GiB free at C=64 with every cache resident (livespec-dev-tooling-
+# efqeip.3). The 16 GiB ceiling therefore stands on measured headroom, not
+# on the envelope sum; re-derive against observed job RSS if it is ever
+# raised, and raise `--maxmemory` and the limit together. The console's
+# full dependency graph across four profiles measured well under the
+# ceiling; the headroom is for PR-lockfile variants and a second Rust
+# repository.
 #
-# NO PERSISTENCE, by design: the cache is regenerable, and one populate run
-# restores it after a restart (the populator re-builds when its marker key is
-# absent). Persisting 16 GiB to the array on every change would be exactly
-# the write load this tier exists to avoid.
+# SNAPSHOT PERSISTENCE ON THE ci-cache TIER (livespec-dev-tooling-efqeip.3;
+# measured in plan research/011 §3). The cache is regenerable, and the first
+# design kept it RAM-only on the argument that one populate run refills it
+# after a restart. That holds only for a reboot into an IDLE pool: after the
+# 2026-09-06 01:59Z proving reboot CI was restored into a busy pool, the
+# populator's busy-pool guardrail skipped every refill, and for hours every
+# Rust job recompiled its dependency graph — sccache hit ratio 59.3% ->
+# 0.35%, cargo clippy P50 20.2 s -> 43.0 s, cargo nextest 13.1 s -> 24.7 s,
+# the console matrix P90 370 s -> 661 s, the hit-floor trigger firing. So
+# redis now writes an RDB snapshot (`--save "300 1 60 10000"`: every five
+# minutes with any change, every minute with 10k changes) and one on SIGTERM,
+# into a hostPath on the `ci-cache` tier (/var/cache/ci-runner/sccache-redis,
+# created 999:1000 by converge-sccache-redis.sh, which REFUSES when the tier
+# is not mounted so a dump can never land on the root disk), and a restart
+# or reboot restores the last snapshot in seconds. The populator's marker
+# key comes back with it, so an unchanged branch costs nothing and a stale
+# snapshot (toolchain bump, new default-branch SHA) is rebuilt on the next
+# idle tick exactly as before. Cost: an RDB is a compact point-in-time dump
+# written by a forked child (copy-on-write; the 18 GiB limit against the
+# 16 GiB `maxmemory` is that child's headroom), not the per-write load an
+# AOF would be — `--appendonly` stays `no`. `--stop-writes-on-bgsave-error
+# no` keeps the populator writing if a dump ever fails (the cache gauges and
+# the hit-floor trigger are the alarm, not a refused SET). The
+# terminationGracePeriodSeconds of 300 lets the shutdown save of a full
+# 16 GiB set finish before k3s kills the pod on a reboot. To flush the cache
+# deliberately: scale the Deployment to 0, remove the dump, scale back to 1
+# (README "Operating it").
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -70,6 +100,9 @@ spec:
     spec:
       # No Kueue queue-name label and no ci-runner.io/churn-slot request:
       # not a CI job, must never occupy a runner slot.
+      # The shutdown save of a full set must finish before the kill (header,
+      # "SNAPSHOT PERSISTENCE").
+      terminationGracePeriodSeconds: 300
       securityContext:
         runAsUser: 999
         runAsGroup: 1000
@@ -98,8 +131,16 @@ spec:
             - "16gb"
             - "--maxmemory-policy"
             - "allkeys-lru"
+            # RDB snapshots on the ci-cache tier; see the header. One
+            # argument string is how redis-server takes multiple save points.
             - "--save"
-            - ""
+            - "300 1 60 10000"
+            - "--dir"
+            - "/data"
+            - "--dbfilename"
+            - "dump.rdb"
+            - "--stop-writes-on-bgsave-error"
+            - "no"
             - "--appendonly"
             - "no"
             - "--maxclients"
@@ -142,7 +183,13 @@ spec:
             secretName: sccache-redis-acl
             defaultMode: 0440
         - name: data
-          emptyDir: {}
+          # The snapshot directory on the ci-cache tier. `Directory`, not
+          # `DirectoryOrCreate`: the kubelet would create it root-owned and
+          # the non-root redis could not write its dump; the converge script
+          # creates it 999:1000 after checking the tier is mounted.
+          hostPath:
+            path: /var/cache/ci-runner/sccache-redis
+            type: Directory
 ---
 apiVersion: v1
 kind: Service
