@@ -23,20 +23,31 @@ WARN-only, never blocks the stop).
 CLI:
     python -m livespec_dev_tooling.install_no_shadow_ledger
         Install (or idempotently re-install) the canonical body at the
-        consumer's configured `neutral_hook_body_path`. No-ops (exit 0) when
-        the role key is declared ABSENT — one of the four blessed inline
-        tables — and the check-side counterpart
-        (`checks/no_shadow_ledger_body_identical.py`) no-ops identically
-        there, so a consumer that has declared the key absent sees neither
-        installer nor verifier activity.
+        consumer's configured `neutral_hook_body_path`. Applies the SAME
+        declared-ness gate as the check-side counterpart
+        (`checks/no_shadow_ledger_body_identical.py`) — both run the shared
+        `role_absence_exit_code` FIRST — so installer and verifier return
+        the same code in every one of the three states:
 
-        The two DIVERGE when the key is UNDECLARED, and only the check is
-        gated: this installer reads `role_path` directly and no-ops, while
-        the check runs `role_absence_exit_code` first and hard-errors
-        (exit 1) naming the key, because `neutral_hook_body_path` is a
-        REQUIRED role key that every conformant consumer declares. Whether
-        the installer should be gated likewise is an open question, not a
-        settled asymmetry.
+        - DECLARED ABSENT (one of the four blessed inline tables) — exit 0,
+          a sanctioned no-op announced at the variant's own severity. A
+          consumer that has declared the key absent sees neither installer
+          nor verifier activity.
+        - UNDECLARED — exit 1 naming the key and the four blessed
+          spellings. `neutral_hook_body_path` is a REQUIRED role key and
+          absence stopped being a spelling of "not applicable" at v0.54.12,
+          so an omission is a misconfiguration rather than an opt-out.
+        - DECLARED PRESENT — write the canonical body, exit 0.
+
+        The undeclared arm used to be the ONE state where the two
+        disagreed: slice L moved the check onto the gate and left this
+        module reading `role_path` directly, which cannot tell an
+        undeclared key from a declared-absent one because both resolve to
+        `None`. That handed a consumer silence from the surface that exists
+        to REPAIR its state and a hard failure from the surface that judges
+        it, so the installer could not guide the consumer out of the very
+        condition the verifier was about to fail on
+        (livespec-dev-tooling-eihv).
 
 Output discipline: structlog JSON to stderr; no `print`, no
 `sys.stdout.write` / `sys.stderr.write`.
@@ -53,6 +64,7 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling.checks._role_key_gate import role_absence_exit_code  # noqa: E402
 from livespec_dev_tooling.config import (  # noqa: E402
     load_config,
     role_path,
@@ -63,6 +75,14 @@ __all__: list[str] = [
     "install_neutral_hook_body",
     "main",
 ]
+
+# The emitter id carried on every structured event, including the ones the
+# shared role-key gate logs on this module's behalf. It is deliberately the
+# module name rather than a check slug: this is a provisioning surface, and a
+# consumer reading its stderr should be able to tell the installer's gate
+# refusal from the Verifier's.
+_INSTALLER_ID = "install_no_shadow_ledger"
+_NEUTRAL_HOOK_BODY_PATH_GATE_BUG = "neutral_hook_body_path unexpectedly empty after role-key gate"
 
 
 # The canonical no-shadow-ledger Stop-hook body. Embedded here as the
@@ -295,33 +315,47 @@ def _configure_logger() -> structlog.stdlib.BoundLogger:
         ],
         logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
     )
-    return structlog.get_logger("install_no_shadow_ledger")
+    return structlog.get_logger(_INSTALLER_ID)
 
 
 def install_neutral_hook_body(*, cwd: Path, log: structlog.stdlib.BoundLogger) -> int:
     """Install the canonical neutral hook body at the consumer's configured path.
 
-    Reads `neutral_hook_body_path` via `load_config(repo_root=cwd)`. When
-    `role_path` resolves to `None` — the consumer declared the key absent via
-    one of the four blessed inline tables, OR did not declare it at all —
-    logs a structured info event and no-ops (returns 0). That mirrors the
-    check-side counterpart for a DECLARED-ABSENT key only: this installer
-    does not run `role_absence_exit_code`, so where the check hard-errors on
-    an UNDECLARED required key, this no-ops. See the module docstring.
-    Otherwise writes
-    `CANONICAL_NO_SHADOW_LEDGER_BODY` to `cwd / neutral_hook_body_path`,
-    creating parent directories as needed, and logs a structured info event.
-    Idempotent: re-running overwrites with the identical canonical body.
-    Returns 0 on success.
+    Reads `neutral_hook_body_path` via `load_config(repo_root=cwd)` and runs
+    the SHARED `role_absence_exit_code` gate first, exactly as the check-side
+    counterpart does — so the pair returns the same code in all three
+    declared-ness states. A DECLARED-ABSENT key (one of the four blessed
+    inline tables) announces its variant and no-ops (returns 0); an
+    UNDECLARED key returns 1 naming the key, because
+    `neutral_hook_body_path` is a REQUIRED role key whose omission is a
+    misconfiguration rather than an opt-out.
+
+    Routing through the gate — rather than reading `role_path` and treating
+    a `None` as "absent" — is what makes the two states distinguishable
+    here at all: the gate consults `config.declared_keys`, while the VALUE
+    is `None` for both. See the module docstring for the divergence this
+    retires.
+
+    Past the gate the role is a `DeclaredPath` by construction, so a `None`
+    there is a defect in the gate rather than a consumer misconfiguration
+    and raises. Otherwise writes `CANONICAL_NO_SHADOW_LEDGER_BODY` to
+    `cwd / neutral_hook_body_path`, creating parent directories as needed,
+    and logs a structured info event. Idempotent: re-running overwrites with
+    the identical canonical body. Returns 0 on success.
     """
     config = load_config(repo_root=cwd)
+    gate_exit = role_absence_exit_code(
+        config=config,
+        role=config.neutral_hook_body_path,
+        key="neutral_hook_body_path",
+        log=log,
+        check_id=_INSTALLER_ID,
+    )
+    if gate_exit is not None:
+        return gate_exit
     neutral_hook_body_path = role_path(role=config.neutral_hook_body_path)
     if neutral_hook_body_path is None:
-        log.info(
-            "role key absent — installer no-ops",
-            role="neutral_hook_body_path",
-        )
-        return 0
+        raise RuntimeError(_NEUTRAL_HOOK_BODY_PATH_GATE_BUG)
     target = cwd / neutral_hook_body_path
     target.parent.mkdir(parents=True, exist_ok=True)
     _ = target.write_text(CANONICAL_NO_SHADOW_LEDGER_BODY, encoding="utf-8")

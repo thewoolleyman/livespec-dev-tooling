@@ -19,12 +19,23 @@ is spelled by DECLARING the role key absent, not by omitting it.
 error naming the key, exactly as for every other required key; only a
 declared-absent value no-ops.
 
+The Installer slot of this concern (`install_no_shadow_ledger`) applies the
+SAME declared-ness gate through the same `role_absence_exit_code` helper,
+so the pair returns the same code in every one of the three states —
+undeclared, declared-absent, declared-present. It did not always: slice L
+(v0.54.12) moved THIS module onto the gate and left the installer reading
+`role_path`, which is blind to the distinction because an undeclared key
+and a declared-absent one both resolve to `None`. That divergence is
+retired (livespec-dev-tooling-eihv); the agreement is pinned by a test.
+
 Exit codes:
 - `0` — the role key is DECLARED ABSENT via one of the four blessed inline
   tables (no-op — this consumer does not carry the neutral hook body), or
   the configured path exists and is byte-identical to the canonical body.
 - `1` — the role key is UNDECLARED. Absence is not a spelling of "not
-  applicable" (v0.54.12); declare the blessed variant that is true.
+  applicable" (v0.54.12); declare the blessed variant that is true. The
+  installer refuses identically, so the corrective action is legible from
+  either surface.
 - `4` — fail. The configured path is missing (or not a regular file), or
   its bytes differ from the canonical body. Corrective action: run
   `just install-no-shadow-ledger` (the from-package installer that is the
