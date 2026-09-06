@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.52.9](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.52.8...v1.52.9) (2026-09-06)
+
+
+### Bug Fixes
+
+* **bootstrap:** stop dirtying tracked .livespec.jsonc at pack install (livespec-dev-tooling-7ix8) ([b80caff](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b80caff183a3ca06138eaafc6a68914e419f1689))
+* **checks:** check-coverage-incremental refuses a diff it could not read ([36a48fb](https://github.com/thewoolleyman/livespec-dev-tooling/commit/36a48fbaf454efbc0020818d65d09a050396ca8a))
+
 ## [1.52.8](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.52.7...v1.52.8) (2026-09-06)
 
 
