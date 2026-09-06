@@ -27,10 +27,39 @@ Controller + Kueue"), maintainer-directed 2026-08-15. This tree is
 5. Full cutover.
 6. Delete the podman/dockershim stack entirely.
 
+## Rebuild sequence — the first step is `phase0-bare-metal/`, not `provision-k3s.sh`
+
+A pool node is rebuilt from powered-on hardware with EMPTY STORAGE by running
+these in order. The sequence starts at step 1 even when the node "already looks
+right": every step's preconditions are established by the step before it
+(`SPECIFICATION/non-functional-requirements.md` §"Runner-pool node rebuild
+recipe").
+
+1. **`phase0-bare-metal/storage-layout.sh profiles/<node>.env`** — the storage
+   controller's virtual disk, the partition table, the volume groups, the
+   logical volumes and the `mkfs` that puts the role labels (`ci-cache`,
+   `ci-containerd`, `ci-workvols`) on them. Nothing below this line can run on a
+   node that has not had this step: `phase2/storage-layout/install-storage-layout.sh`
+   never formats anything and refuses when a role label resolves to zero block
+   devices.
+2. **Base operating system** — installed onto the volumes step 1 created. Not
+   yet scripted; its own work item, which depends on step 1.
+3. **`provision-k3s.sh`** — the pinned k3s server and the admin kubeconfig every
+   later step reads.
+4. **`sudo phase2/install-node.sh <C>`** — the ordered node-local runbook, at
+   the node's admission capacity `C` (the profile's `ADMISSION_CAPACITY_C`).
+5. **`install-arc.sh`, `install-kueue.sh`** — the phase-1 by-hand cluster
+   provisioning legs, superseded for boot durability by `phase2/reconstruct/`.
+
+Every node-specific value in steps 1–4 comes from that node's
+`phase0-bare-metal/profiles/<node>.env`; a second node is a second profile, not
+a second procedure.
+
 ## Files
 
 | Path | Role |
 |---|---|
+| `phase0-bare-metal/` | **Step 1 of the rebuild sequence above** — the bare-metal stage that runs BEFORE k3s exists and before `phase2/install-node.sh`'s admin-kubeconfig precondition. `storage-layout.sh <profile>` takes a node from empty storage to the controller virtual disk, GPT ESP + LVM physical volume, volume groups, logical volumes and role-labelled filesystems that `phase2/storage-layout/install-storage-layout.sh` then expects to find. Every node-specific value lives in `profiles/<node>.env` (`profiles/poweredge-xubuntu.env` is the first); the script carries none. Re-runnable against a node already in its profile's declared state; destructive steps refuse unless the invocation carries `--i-consent-to-destroy=<target>` naming that exact target; `--dry-run` prints every command and executes none. See `phase0-bare-metal/README.md` for the stage order, the consent rule, and the standing rehearsal obligation. |
 | `provision-k3s.sh` | Idempotently installs a single-node k3s server, pinned to `v1.36.2+k3s1`, with `traefik`/`servicelb` disabled (this node carries no ingress) and a `k3s-role=arc-runner-host` node label, after installing the fleet's `/etc/rancher/k3s/config.yaml` from `phase2/k3s-config/` (kubelet `max-pods`, the bundled `local-storage` disable) so the first start already reads it. Never touches the existing `ci-runner` user, `runner@.service` instances, or podman. |
 | `phase2/install-node.sh` | The ONE ordered runbook for every node-local installer under `phase2/` plus `secret-reinjection/` (`sudo phase2/install-node.sh 32`): k3s config, inotify budget, AppArmor, churn-slot + timer, wedged-runner scan, log archive, the secret-reinjection unit, the converge unit + artifacts, the tmpfs mount, the storage sweep — enabled, never started. Run it on a fresh node after this script, and re-run it after any edit to that tree. The capacity argument is the CURRENT churn-slot capacity `C`, **32 since 2026-09-06** by measurement (`phase2/kueue/DERIVATION.md` "The step back to C = 32 on the tiered host (2026-09-06)"); pass the value the ten ClusterQueue quotas sum to, never a stale literal. |
 | `install-arc.sh` | Installs the ARC controller (Helm chart `gha-runner-scale-set-controller` 0.14.2) plus ONE `gha-runner-scale-set` (0.14.2) release, the host-unique-label scale set (see below). Phase 1 installed TWO here — one per label; the shared-pool-label release `local-ci-k3s` (`arc/values.yaml`) was retired under `livespec-s43svm.28`, see "Labels" below. Fails closed if the GitHub App installation-token secret isn't already present (never creates it). |
