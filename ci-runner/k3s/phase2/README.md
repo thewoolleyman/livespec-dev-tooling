@@ -1641,12 +1641,12 @@ signal):
 | `bind-deadline` | k3s journal, last 5 min | any `binding volumes: context deadline exceeded` |
 | `inotify-emfile` | `containerd.log`, last 5 min (walked backwards to the cutoff — the file rotates) | any `failed to create inotify fd` |
 | `containerd-deadline` | pod container states now; `arc-runners` events, last 5 min | a container in `StartError`; a `Failed`/`FailedCreatePodSandBox` event carrying `context deadline exceeded` or `failed to create shim task`; or ≥ 20 `FailedKillPod` (teardown starvation, the 2026-09-02 17:55Z shape — calibrated live: 7–14 per window while the backlog tail drained with nothing failing, 25–27 beside a PVC Pending 209 s, ~80 at the StartError) |
-| `hook-failure` | the listener ARCHIVE (`/var/log/arc-archive/*listener*.log`, kept by `arc-log-archive/` for days, every line prefixed by `kubectl logs --timestamps`), walked backwards to the window's start minus 90 s; runner-pod logs, last 5 min (a bonus); Pending `-workflow` pods | a job the scale-set listener saw complete with `Result: failed` inside the window **within 90 s of its `Job started`** (`--hook-fast-fail-seconds`) — a job that failed before any step could run is the hook failing to bring the workflow pod up, and the listener's `Job started message received.` / `Job completed message received.` pair (`RequestId`, `RunnerName`, `Result`) outlives the runner pod that ARC deletes seconds after the job ends (2026-09-06 06:07Z: 17 jobs failed on `connect ECONNREFUSED` + the hook string and the next two sweeps' live-log grep read 0; `livespec-kgdlte` scope 6). The archive's own timestamp prefix is the time, so the listener's log format only has to carry the two phrases; a listener that rewords them (`RPL_LISTENER_STARTED_PATTERN` / `RPL_LISTENER_COMPLETED_PATTERN`) is named — "format unrecognised" — and the class's zero withheld, never read as clean. Plus the hook's `Executing the custom container implementation failed` in a runner log still alive; or a workflow pod Pending longer than 480 s (the hook gives up at ~13 min) |
+| `hook-failure` | runner-pod logs, last 5 min; Pending `-workflow` pods | the hook's `Executing the custom container implementation failed` in a runner log still alive; or a workflow pod Pending longer than 480 s (the hook gives up at ~13 min). **Best-effort, and labelled so in the report: it MISSES every failure whose runner pod is already gone, which is most of them** — ephemeral runner pods are deleted seconds after a job fails (2026-09-06 06:07Z: 17 jobs failed on `connect ECONNREFUSED` + the hook string; the 06:13Z and 06:20Z sweeps read 0). Nothing node-side outlives the pod with the job outcome in it, verified on the host: the ARC 0.14.2 listener (`scaleset@v0.4.0`, slog `key=value`) logs `Updating job info for the runner`, `Updating ephemeral runner with merge patch`, `Calculated target runner count` and never a job result (zero hits for `Result` across 300+ MB of archive); the EphemeralRunner is Succeeded and deleted after a hook failure (the runner exits 0); the hook emits no event. The durable detection is job-side — see "Hook failures are detected job-side" below |
 | `stale-listener` | `arc-systems` listener pods; `AutoscalingListener.spec.ephemeralRunnerSetName` vs existing `EphemeralRunnerSet`s | a listener not Running or waiting in a crash loop; or a reference to a set that does not exist (the ARC 0.14.2 boot race that queued `livespec-overseer` for 31 min on 2026-09-02; converge-side fix `livespec-bde2`) |
 | `capacity-absent` | `k3s-role=arc-runner-host` nodes' `status.allocatable`; every `ClusterQueue`'s `nominalQuota` for `ci-runner.io/churn-slot` | a selected node without the resource; or the nodes' allocatable total below the queues' quota sum (2026-09-04: a dependency-failed boot left the reapply unit unrun and the node at none against a quota sum of 32 from 06:31Z to 07:52Z; converge assertion + timer fallback `livespec-kgl3`) |
 | `warm-cache-oversize` | the LIVE warm uv generation's own `.warm-manifest.json` (`/var/lib/rancher/k3s/storage/.warm/uv` → `uv-generations/<stamp>/`); the budget from `last-run.json`'s `budget_*`, else the `warm-cache-budget` ConfigMap; the populator's last-run age from `last-run.json`'s `finished_uv_at_epoch` | the live generation's bytes or files exceed the budget on either axis (the populator's refusal gate should make this impossible — a hit means the gate was bypassed or the budget was lowered under a published generation); or the populator's last run finished more than 12 sweep windows (1 h, two missed 30-minute schedules; `--warm-stale-ticks`) ago, or the warm root exists with NO `last-run.json` at all (never ran, or rebuilt and not run since) — the CronJob is not running. Sizes come from the generation's manifest, NOT `last-run.json`'s `generation_*`, which on a refused run describe the refused candidate (`livespec-44qx`, Carrier F4b) |
 | `start-seed-cost` | the newest seeded work volume under the storage root (`pvc-*/_warm/.uv-generation`, newest mtime): `du -sb` of its `_warm/uv`; the seed's duration from the volume's own timestamps — `_warm`'s birth time (the setup script's opening `mkdir`) to the `.uv-generation` marker's mtime (written last, after the reflink copy and the directory chmod pass) | the seed's bytes exceed the warm budget bytes (`--seed-bytes-budget`, default the warm budget), or the seed took longer than 10 s (`--seed-seconds-budget`; research/005-006 measured 3 s on the 12k-file generation, ~13 s on the old 191k-file one). Read from the volume rather than the provisioner's `helper-pod-create-pvc-*` pod because the provisioner deletes that pod the moment it observes `Succeeded`, so its terminated state is gone before a sweep runs; the volume persists for the job's life. No seeded volume visible (idle pool) withholds the class rather than reporting 0 (`livespec-44qx`, Carrier F4b) |
-| `api-unavailable` | the k3s journal, last 5 min (`Main process exited` lines of `k3s.service`); `systemctl show -p NRestarts k3s.service` against the value persisted at `/var/lib/ci-runner-k3s/runner-pod-lifecycle-k3s-nrestarts`; every `kubectl` read this sweep made | k3s restarted inside the window (the larger of the journal's crash lines and the NRestarts delta — journald rate-limits exactly during a crash burst; a counter that went down, a hand restart, yields no delta), plus every API read of steps 1–9 that was REFUSED (`connection refused`, `EOF`, `Service Unavailable`; a read that merely timed out belongs to the deadline machinery). 2026-09-06 06:07:03Z: a flannel vxlan nil-pointer panic, a systemd restart, the API back at ~06:07:20Z, 17 jobs failed on ECONNREFUSED in between, and the 06:07:09Z sweep saw its own ClusterQueue read refused with no class to say so. A REFUSED `/readyz` precheck posts this class ALONE (count 1, with `sweep_seconds`) before the fail-closed exit 2 — the one thing a sweep that cannot read the cluster has still read (`livespec-kgdlte` scope 7) |
+| `api-unavailable` | `systemctl show k3s.service -p ExecMainStartTimestampMonotonic` (microseconds since boot at the current main process's start) against `/proc/uptime`; every `kubectl` read this sweep made | k3s's main process STARTED inside the window — the monotonic start time moves on every start, a crash-and-auto-restart and a hand `systemctl restart k3s` alike, and comparing it with uptime parses no time zone and keeps no state (the first cut counted the journal's `Main process exited` lines, which systemd logs only for a FAILING exit, and a NRestarts delta, which a hand restart resets, so the acceptance move read 0; verified on the host 2026-09-06 09:49Z, verbatim: `ExecMainStartTimestamp=Sat 2026-09-05 23:07:09 PDT`, `ExecMainStartTimestampMonotonic=14726505650`, `NRestarts=1`); one restart per window at most (only the latest start is visible), and a boot counts (the API was away); plus every API read of steps 1–9 that was REFUSED (`connection refused`, `EOF`, `Service Unavailable`, `no route to host` — verbatim sample `The connection to the server 127.0.0.1:1 was refused - did you specify the right host or port?`; NO timeout phrase: a read that timed out, `TLS handshake timeout` included, is an overloaded API and belongs to the deadline machinery). 2026-09-06 06:07:03Z: a flannel vxlan nil-pointer panic, a systemd restart, the API back at ~06:07:20Z, 17 jobs failed on ECONNREFUSED in between, and the 06:07:09Z sweep saw its own ClusterQueue read refused with no class to say so. A REFUSED `/readyz` precheck posts this class ALONE (count 1, with `sweep_seconds`) before the fail-closed exit 2 — the one thing a sweep that cannot read the cluster has still read (`livespec-kgdlte` scope 7) |
 
 Exit 1 names every present class with its count and prints the per-class
 detail (which PVC, which pod, which event) followed by where each class is
@@ -1692,7 +1692,7 @@ gauges (a non-zero count from a partial read is still a true reading); with
 findings the `STALL` exit stands with a `PARTIAL:` line naming the reads;
 with none the sweep ends `INCOMPLETE` and exits 2 — never `CLEAN`. Only a
 CLASS read counts toward that exit: the emitter's own Kueue and node reads
-and the prechecks are best-effort by contract, so a sweep whose nine classes
+and the prechecks are best-effort by contract, so a sweep whose ten classes
 all completed is `CLEAN` even when the shrinking deadline skipped the last
 two gauge reads (the common shape under a >100-pod burst); those are named
 on the `CLEAN` line and their gauges withheld. **How an
@@ -1970,13 +1970,30 @@ bundled copy disabled by `k3s-config/` — `livespec-sernfh`); kubelet
 `max-pods` 110 → 200 (see `kueue/DERIVATION.md`, "The pod-capacity
 constraint"; now `k3s-config/config.yaml`). Kueue HA is `livespec-okxbkg`.
 
-## ARC log retention: archive before the kubelet's buffer rotates
+### Hook failures are detected job-side
 
-The lifecycle sweep's `hook-failure` class reads this archive as its
-durable source of job outcomes (the listener's `Job started` / `Job
-completed` pairs; "The detector" above), so the archive is a prerequisite
-of that class on every node the sweep runs on: without it the sweep says
-so and only the live-log bonus remains.
+The node-side `hook-failure` class above is best-effort and misses every
+failure whose runner pod is already gone — which, for the ARC hook's
+`Executing the custom container implementation failed`, is nearly all of
+them. The durable detection is job-side, in the fleet's `github-ci`
+Honeycomb dataset (environment `livespec`, filled by
+`.github/scripts/export-ci-telemetry.sh`), which carries each job's
+`ci.job.conclusion`, `ci.runner.kind`, `ci.run_id` and `duration_ms` but
+NO step name or error text — so the signal is **presumed by shape**: a job
+on `ci.runner.kind = self-hosted` that concluded `failure` with
+`duration_ms` under 60,000 failed before any real step could run.
+Calibrated on the 06:07Z incident: run 34015621705 attempt 1 shows its 16
+hook-failed jobs at 26–46 s against the re-run's 16 successes at 24–295 s
+(query: https://ui.honeycomb.io/thewoolleyweb/environments/livespec/datasets/github-ci/result/zG6ThT4a81m).
+The trigger `ci-runner/observability/triggers/ci-hook-failure-burst.json`
+(applied by `apply-triggers.sh`, dataset `github-ci`) fires when at least 3
+such jobs of ONE run (breakdown `ci.run_id`) land in a trailing 10 min —
+one flaky fast job does not page, a burst does — and its description names
+the heuristic, the runbook and `livespec-kgdlte`. The sweep's
+`api-unavailable` class names the k3s restart that usually causes the
+burst.
+
+## ARC log retention: archive before the kubelet's buffer rotates
 
 Container logs live in the kubelet's rotating buffer, and the ARC controller
 is chatty enough to churn through it fast. Measured on `poweredge-xubuntu`
