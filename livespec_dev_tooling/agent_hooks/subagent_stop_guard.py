@@ -15,10 +15,25 @@ Wire-up (consuming repo's committed `.claude/settings.json`): a
         livespec_dev_tooling.agent_hooks.subagent_stop_guard
 
 Hook protocol: hook-input JSON on stdin (`session_id`,
-`transcript_path`, `stop_hook_active`, ...). Exit `0` allows the stop;
-exit `2` blocks it and feeds stderr back to the sub-agent so it
-finishes the handoff. Every error path returns `0` — fail-open: a
-broken hook must never wedge a healthy agent.
+`transcript_path`, `stop_hook_active`, ...) and a Stop-hook RESPONSE
+OBJECT on stdout. The response — not the exit code — carries the
+verdict: an allow emits `{"continue": true, ...}`, a block emits
+`decision`/`reason` plus the `hookSpecificOutput.additionalContext`
+that hands the derived markers and the handoff instruction back to
+the sub-agent. Every path exits `0`; every error path emits the ALLOW
+response — fail-open: a broken hook must never wedge a healthy agent.
+
+⛔ THE LEGACY EXIT-CODE PROTOCOL IS GONE, and its removal is the
+`livespec-dev-tooling-4s2sey` fix rather than a tidy-up. This hook
+used to allow by exiting `0` with ZERO stdout bytes and block by
+exiting `2` with structlog JSON on stderr. Claude Code's Stop /
+SubagentStop evaluator PARSES stdout as a response object, so the
+empty allow and the bare exit-`2` block both landed as
+`hook returned invalid stop hook JSON output` — measured under
+2.1.233. A guard whose every invocation is rejected as malformed
+guards nothing, so stdout is now the wire and the exit code is
+uniformly `0`. Anything written to stdout by this module OTHER than
+the single response object corrupts that wire.
 
 Marker derivation (all DERIVED — no sentinel files):
 
@@ -46,9 +61,13 @@ session id (counter file under `$LIVESPEC_STOP_GUARD_STATE_DIR`,
 default the system temp dir); past the cap the guard logs a loud
 warning and fails open.
 
-Output discipline: structlog JSON to stderr (the blocking reason the
-sub-agent reads IS the structured event); no `print`, no
-`sys.stderr.write`. The vendored `structlog` under
+Output discipline: stdout is the HOOK-PROTOCOL CHANNEL and carries
+exactly one JSON response object; the direct `sys.stdout.write` that
+emits it is the documented `supervisor_entry_files` contract
+`no_write_direct` otherwise bans. Diagnostics stay on stderr as
+structlog JSON (no `print`, no `sys.stderr.write`) — they are now
+purely an operator record, since the text the sub-agent reads travels
+in the response's `additionalContext`. The vendored `structlog` under
 `livespec_dev_tooling/_vendor` is added to `sys.path` at module
 import time so the hook works via `python -m` and direct script
 invocation.
@@ -84,6 +103,24 @@ _MAX_WORKTREES = 8
 _MAX_BLOCKS_PER_SESSION = 3
 _GH_TIMEOUT_SECONDS = 8
 _STATE_DIR_ENV = "LIVESPEC_STOP_GUARD_STATE_DIR"
+
+# The event this hook answers when the input omits `hook_event_name`.
+# `hookSpecificOutput.hookEventName` must NAME the event being answered,
+# so it is echoed from the input where present and falls back here.
+_DEFAULT_HOOK_EVENT_NAME = "SubagentStop"
+
+_BLOCK_HEADLINE = (
+    "BLOCKING turn-end: this dispatch is still in flight — a sub-agent that "
+    "ends its turn is terminated and nothing re-invokes it. In-flight markers:"
+)
+_BLOCK_HANDOFF_INSTRUCTION = (
+    "Finish the handoff FOREGROUND before ending the turn: commit "
+    "(mise exec -- git commit ...), push (mise exec -- git push), open the PR "
+    "(gh pr create ...), arm auto-merge (gh pr merge --auto --rebase "
+    "--delete-branch). Long gate commands fit in the raised foreground Bash "
+    "timeout (BASH_DEFAULT_TIMEOUT_MS); NEVER run them with "
+    "run_in_background and never end the turn before the PR is armed."
+)
 
 
 def _configure_logger() -> structlog.stdlib.BoundLogger:
@@ -263,17 +300,65 @@ def _gather_worktrees(*, hook_input: dict[str, object]) -> list[Path]:
     return [path for path in candidates if (path / ".git").exists()]
 
 
-def _guard(*, raw_input: str, log: structlog.stdlib.BoundLogger) -> int:
+def _hook_event_name(*, hook_input: dict[str, object]) -> str:
+    """The event name to echo in `hookSpecificOutput`; default when absent."""
+    raw = hook_input.get("hook_event_name")
+    if isinstance(raw, str) and raw:
+        return raw
+    return _DEFAULT_HOOK_EVENT_NAME
+
+
+def _allow_response() -> dict[str, object]:
+    """The valid Stop-hook ALLOW response — the turn-end proceeds.
+
+    `continue: true` is the whole verdict; `suppressOutput: true` keeps
+    the no-op from adding a transcript entry on every sub-agent
+    turn-end. This is also the FAIL-OPEN response: unparseable input, an
+    unreadable transcript, a broken git/gh probe and an internal crash
+    all resolve here, so a defective guard degrades to silence rather
+    than to a wedged agent.
+    """
+    return {"continue": True, "suppressOutput": True}
+
+
+def _block_response(*, markers: list[str], hook_event_name: str) -> dict[str, object]:
+    """The valid Stop-hook BLOCK response — the sub-agent keeps running.
+
+    `decision`/`reason` is what actually keeps the sub-agent running;
+    the `hookSpecificOutput.additionalContext` form carries the SAME
+    derived markers and handoff instruction as context the sub-agent
+    can act on. Both are populated deliberately: the context alone
+    would not block, and a bare block would not say what to do next.
+    """
+    context = "\n".join(
+        [_BLOCK_HEADLINE, *(f"- {marker}" for marker in markers), "", _BLOCK_HANDOFF_INSTRUCTION]
+    )
+    return {
+        "decision": "block",
+        "reason": context,
+        "hookSpecificOutput": {
+            "hookEventName": hook_event_name,
+            "additionalContext": context,
+        },
+    }
+
+
+def _emit(*, response: dict[str, object]) -> None:
+    """Write the single response object that IS this hook's wire answer."""
+    _ = sys.stdout.write(f"{json.dumps(response)}\n")
+
+
+def _guard(*, raw_input: str, log: structlog.stdlib.BoundLogger) -> dict[str, object]:
     hook_input = _load_hook_input(raw=raw_input)
     if hook_input is None:
         log.warning("unparseable hook input; failing open", check_id="subagent-stop-guard")
-        return 0
+        return _allow_response()
     worktrees = _gather_worktrees(hook_input=hook_input)
     if not worktrees:
-        return 0
+        return _allow_response()
     markers = _derive_markers(worktrees=worktrees)
     if not markers:
-        return 0
+        return _allow_response()
     session_id = str(hook_input.get("session_id") or "unknown")
     state = _state_path(session_id=session_id)
     block_count = _read_block_count(path=state)
@@ -284,37 +369,31 @@ def _guard(*, raw_input: str, log: structlog.stdlib.BoundLogger) -> int:
             markers=markers,
             block_count=block_count,
         )
-        return 0
+        return _allow_response()
     _record_block(path=state, count=block_count + 1)
     log.error(
-        "BLOCKING turn-end: this dispatch is still in flight — a sub-agent that "
-        "ends its turn is terminated and nothing re-invokes it",
+        _BLOCK_HEADLINE,
         check_id="subagent-stop-guard-block",
         markers=markers,
         block_count=block_count + 1,
-        hint=(
-            "Finish the handoff FOREGROUND before ending the turn: commit "
-            "(mise exec -- git commit ...), push (mise exec -- git push), open the PR "
-            "(gh pr create ...), arm auto-merge (gh pr merge --auto --rebase "
-            "--delete-branch). Long gate commands fit in the raised foreground Bash "
-            "timeout (BASH_DEFAULT_TIMEOUT_MS); NEVER run them with "
-            "run_in_background and never end the turn before the PR is armed."
-        ),
+        hint=_BLOCK_HANDOFF_INSTRUCTION,
     )
-    return 2
+    return _block_response(markers=markers, hook_event_name=_hook_event_name(hook_input=hook_input))
 
 
 def main() -> int:
     log = _configure_logger()
     try:
-        return _guard(raw_input=sys.stdin.read(), log=log)
+        response = _guard(raw_input=sys.stdin.read(), log=log)
     except Exception as exc:  # noqa: BLE001 — sole fail-open hook boundary: silent pass-through, exit 0
         log.warning(
             "subagent_stop_guard crashed; failing open",
             check_id="subagent-stop-guard-crash",
             error=repr(exc),
         )
-        return 0
+        response = _allow_response()
+    _emit(response=response)
+    return 0
 
 
 if __name__ == "__main__":
