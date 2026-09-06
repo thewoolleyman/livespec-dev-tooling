@@ -43,8 +43,10 @@ __all__: list[str] = [
 # lacks admin scope (least privilege, livespec
 # non-functional-requirements.md section "GitHub App auth model"), so these rows
 # can only be answered by an operator's own admin `gh` credentials. They
-# are enforced in the world-gate lane at pre-push — see
-# `fleet_conformance_admin.py`.
+# are enforced in the world-gate lane, which runs in the operator's own
+# deliberate `just check` and in NEITHER local hook gate (it reads nine
+# other repositories' live admin state, so a sibling's unrepaired state
+# would refuse unrelated commits here) — see `fleet_conformance_admin.py`.
 CENTRAL_VANTAGE = "central"
 CENTRAL_APP_VANTAGE = "central-app"
 ADMIN_VANTAGE = "admin"

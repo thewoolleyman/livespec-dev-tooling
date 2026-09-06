@@ -14,10 +14,21 @@ Both rows were therefore enforced in ZERO contexts, while
 This module is that missing lane. It is a WORLD GATE in the established
 sense of `branch_protection_alignment` and `master_ci_green`: it inspects
 live world state under the OPERATOR's own admin `gh` credentials, is wired
-into the `just check` aggregate so it reaches pre-push, and is deliberately
-NOT mirrored into the per-PR CI matrix, where the App token would make it
-always-skip and the job would be pointless. Widening the App's permissions
-was considered and rejected (least privilege); so was deleting the rows.
+into the `just check` aggregate, and is deliberately NOT mirrored into the
+per-PR CI matrix, where the App token would make it always-skip and the job
+would be pointless. Widening the App's permissions was considered and rejected
+(least privilege); so was deleting the rows.
+
+⛔ ITS VENUE IS THE OPERATOR'S DELIBERATE `just check`, AND NOT EITHER LOCAL
+HOOK GATE. It reads the live admin state of nine OTHER repositories, so its
+verdict is a fact about the fleet at this instant rather than about the commit
+being made: wired into the hook gates it let one sibling's unrepaired state
+refuse unrelated commits and pushes here (measured 2026-09-06 06:35Z, when
+livespec-console-beads-fabro's `upstream-dep-gate-wired` required check exited
+the lane 4 and refused a hand push). Both hook gates now pass `hook_gate=1` and
+`scripts/just/check.sh` omits this slug for that caller alone — a CALLER
+distinction, not a demotion: the recipe is unchanged and a bare `just check`
+still runs it (livespec-dev-tooling-mmqe, absorbing tkzf).
 
 This lane ALSO owns the posture-gated adopter currency leg
 (`_adopter_lane.run_adopter_rows`, livespec-dev-tooling-453): the
@@ -47,15 +58,15 @@ phantom required checks. The adopter leg adds ~3 reads per RELEASED
 adopter (one today) and zero for excluded postures.
 
 Credential CLASS precedes credential shortfall. The lane's own design
-scopes it to the OPERATOR's pre-push under the operator's own admin gh
-credentials — so a `ghs_`-class effective credential (a GitHub App
-installation token: the dispatch credential a Fabro sandbox holds,
-projected as GITHUB_TOKEN, whose commit hooks DO reach the `just check`
-aggregate) is structurally NOT this lane's vantage. Admin scope is
-DELIBERATELY withheld from that credential class (the ratified livespec
-v045 capability boundary), so under it this lane's rows — both admin
+scopes it to the OPERATOR's deliberate `just check` under the operator's
+own admin gh credentials — so a `ghs_`-class effective credential (a
+GitHub App installation token: the dispatch credential a Fabro sandbox
+holds, projected as GITHUB_TOKEN) is structurally NOT this lane's
+vantage. Admin scope is DELIBERATELY withheld from that credential class
+(the ratified livespec v045 capability boundary), so under it this
+lane's rows — both admin
 member rows AND the adopter currency leg — are OUT-OF-VANTAGE in the
-established `_lanes` sense: owned by the operator's pre-push context,
+established `_lanes` sense: owned by the operator's `just check` context,
 reported at info severity, exit 0, at ZERO API reads (the guard
 short-circuits before even the manifest fetch, so an expired or revoked
 dispatch token cannot turn classification into a precondition failure).
@@ -81,7 +92,7 @@ Exit codes:
 - `0` — every admin row and adopter-leg evaluation passed, or partially
   skipped, with no error-severity finding and no blind row; or the run
   holds a dispatch-class (`ghs_`) credential, under which every row this
-  lane owns is out-of-vantage (owned by the operator's pre-push).
+  lane owns is out-of-vantage (owned by the operator's `just check`).
 - `1` — precondition failure: owner unresolvable, or the manifest
   unfetchable / unparseable (the manifest is the root fact; fail loud).
 - `4` — one or more error-severity findings, or one or more blind rows
@@ -137,11 +148,21 @@ __all__: list[str] = []
 # recipe name) plus the credential context, mirroring the shape of the
 # `central-app` LANE_RECIPES entry, so the out-of-vantage report names a
 # context an operator can actually go run.
-_OPERATOR_PRE_PUSH_CONTEXT = (
-    f"{LANE_RECIPES[ADMIN_VANTAGE]} at the operator's own pre-push, under the "
-    "operator's own admin gh credentials (a user-class token — never the "
-    "dispatch App installation token, from which admin scope is deliberately "
-    "withheld per the livespec v045 capability boundary)"
+#
+# ⛔ THAT LAST CLAUSE IS LOAD-BEARING, AND IT IS WHY THIS NAMES `just check`
+# RATHER THAN PRE-PUSH. Both local hook gates now skip this slug — it reads
+# nine OTHER repositories' live admin state, so a sibling's unrepaired state
+# was refusing unrelated commits and pushes here — leaving the operator's
+# deliberate `just check` as the venue that still runs it. A report still
+# naming pre-push would send its reader somewhere the lane does not run, which
+# is the same defect one level up as the throttle-versus-denial confusion this
+# work-item exists to fix (livespec-dev-tooling-mmqe, absorbing tkzf).
+_OPERATOR_WORLD_GATE_CONTEXT = (
+    f"{LANE_RECIPES[ADMIN_VANTAGE]} in the operator's own deliberate `just "
+    "check` (NOT either local hook gate, which skip it), under the operator's "
+    "own admin gh credentials (a user-class token — never the dispatch App "
+    "installation token, from which admin scope is deliberately withheld per "
+    "the livespec v045 capability boundary)"
 )
 
 
@@ -188,14 +209,14 @@ def _dispatch_class_out_of_vantage(*, log: structlog.stdlib.BoundLogger) -> int:
             OUT_OF_VANTAGE_EVENT,
             row=row_id,
             vantage=ADMIN_VANTAGE,
-            owned_by=_OPERATOR_PRE_PUSH_CONTEXT,
+            owned_by=_OPERATOR_WORLD_GATE_CONTEXT,
         )
     log.info(
         "fleet admin conformance out-of-vantage under a dispatch-class credential",
         credential_class="GitHub App installation token (ghs_-prefixed; probe-only, never logged)",
         out_of_vantage_rows=len(admin_row_ids) + 1,
         blind_rows=0,
-        owned_by=_OPERATOR_PRE_PUSH_CONTEXT,
+        owned_by=_OPERATOR_WORLD_GATE_CONTEXT,
     )
     return 0
 
