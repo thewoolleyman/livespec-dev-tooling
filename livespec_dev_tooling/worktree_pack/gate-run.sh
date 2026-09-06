@@ -357,20 +357,28 @@ descendant_pids() {
 # strongest attribution available without root: it names the writer while
 # the write is still in flight. It scans every readable /proc/*/fd, which
 # is why it runs only on an event and never on the poll path.
+# ONE `find` over /proc/*/fd, not one `readlink` fork per descriptor. The
+# per-fd loop this replaces forked 6,223 times on a 1,000-process host and
+# took 55 s — longer than the flip test's writer waits — so the record was
+# still being composed when the gate ended and the watcher was stopped, and
+# an empty config-writes.log read as "nothing wrote". It passed on CI only
+# because a runner pod's /proc holds a handful of processes. `find -lname`
+# resolves every link in-process in about 0.1 s on the same host.
 fd_holders() {
-    local hits=0 d fd link target
-    for d in /proc/[0-9]*/fd; do
-        for fd in "$d"/*; do
-            link="$(readlink "$fd" 2>/dev/null)" || continue
-            for target in "$@"; do
-                if [[ "$link" == "$target" ]]; then
-                    printf '      %s -> %s\n' "$fd" "$link"
-                    hits=1
-                fi
-            done
-        done
+    local -a expr=()
+    local target hits="" fd
+    for target in "$@"; do
+        [[ "${#expr[@]}" -eq 0 ]] || expr+=(-o)
+        expr+=(-lname "$target")
     done
-    [[ "$hits" == "1" ]] || printf '      (none held open at sample time)\n'
+    hits="$(find /proc/[0-9]*/fd -mindepth 1 -maxdepth 1 \( "${expr[@]}" \) 2>/dev/null)" || hits=""
+    if [[ -n "$hits" ]]; then
+        while IFS= read -r fd; do
+            printf '      %s -> %s\n' "$fd" "$(readlink "$fd" 2>/dev/null)"
+        done <<<"$hits"
+    else
+        printf '      (none held open at sample time)\n'
+    fi
 }
 
 proc_attribution() {
