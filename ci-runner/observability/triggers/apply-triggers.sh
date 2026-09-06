@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # apply-triggers.sh — converge the CI cache triggers in the `livespec`
-# Honeycomb environment from the ci-cache-*.json definitions beside this
+# Honeycomb environment from every *.json definition beside this
 # script: create a trigger whose name is absent, update one whose name exists.
 # Idempotent by NAME, so a re-run after editing a definition updates in
 # place and the trigger id (what the plan store records) is stable.
@@ -34,7 +34,7 @@ hc() { curl --silent --show-error --fail-with-body --max-time 30 -H "X-Honeycomb
 rc=0
 body="$(mktemp)"
 trap 'rm -f "${body}"' EXIT
-for def in "${SCRIPT_DIR}"/ci-cache-*.json; do
+for def in "${SCRIPT_DIR}"/*.json; do
   name="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["name"])' "${def}")"
   dataset="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("dataset") or sys.argv[2])' "${def}" "${DATASET}")"
   python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); d.pop("dataset", None); json.dump(d, open(sys.argv[2], "w"))' "${def}" "${body}"
