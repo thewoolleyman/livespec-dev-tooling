@@ -217,8 +217,21 @@ def _git_db_has_locked_sha(*, gitdir: Path, shas: Iterable[str]) -> bool:
     )
 
 
+def _git_kinds(*, top: Path) -> list[Path]:
+    """db and checkouts BEFORE locks, whatever order the directory lists them.
+
+    A lock file under git-v0/locks/<urlhash> is referenced iff the same
+    urlhash's db or checkout matched a locked sha, which is only known after
+    those two kinds were scanned. iterdir() order is arbitrary: on the first
+    live from-empty build (2026-09-06) `locks` came first and the verifier
+    rejected a correct generation on two zero-byte lock files.
+    """
+    rank = {"db": 0, "checkouts": 1, "locks": 2}
+    return sorted(top.iterdir(), key=lambda k: (rank.get(k.name, 3), k.name))
+
+
 def scan_git(*, top: Path, c: Classifier) -> None:
-    for kind in top.iterdir():  # db / checkouts / locks
+    for kind in _git_kinds(top=top):  # db, checkouts, then locks
         for urlhash in kind.iterdir():
             label = f"git:{urlhash.name}"
             if kind.name == "checkouts":
