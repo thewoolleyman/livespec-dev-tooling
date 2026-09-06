@@ -74,6 +74,34 @@ only when their topic is active:
   output — the commit aggregate can outlast the harness's 20-minute tool-call
   ceiling, and a kill with no verdict is NOT a hook refusal.
 
+## Backlog drive — this repo has no foreman seat
+
+The open backlog of this repository is owned by the plan
+`dev-tooling-backlog-drain` (`plan/dev-tooling-backlog-drain/`, ledger epic in
+`associated_work_item_id`). Read its charter,
+`plan/dev-tooling-backlog-drain/research/001-charter-dev-tooling-backlog-drain.md`,
+before touching any work item here. The rules that matter most:
+
+- **Do not invoke `/livespec-overseer:foreman` for this repository**, and do
+  not start a tmux worker session for a work item. The console repo's
+  `retire-overseer-and-redesign-control-plane-around-console` plan retired tmux
+  as a transport (its decisions D1, D4, D5); this repo applies that now. The
+  resident foreman role, pane rosters, `foreman-act` proposals, and escalation
+  JSON files are not used here.
+- **Everything executes through the factory.** The only execution verbs for a
+  work item are `drive --action impl:<id>` and the dispatcher loop. Hand work
+  through worktree → PR → merge is allowed only for an item labelled
+  `factory-exempt:infra-in-person` or `factory-exempt:factory-path-defect`.
+- **The scope is frozen.** The plan's snapshot lists every item it owns. A new
+  item may be filed only as a child of a snapshot epic, as a
+  `discovered-from:<snapshot-id>` dependency, or as a consolidation closing two
+  or more snapshot items. Anything else goes to a `PARKING LOT` comment on the
+  plan epic, not to the ledger.
+- **Resume from the ledger, not from chat.** To pick the drive up in a fresh
+  session run
+  `/livespec-orchestrator-beads-fabro:discuss-work-item dev-tooling-backlog-drain`
+  and take the epic's typed `next_action`.
+
 ## Decision authority — when to ask, proceed, or self-resolve
 
 Fleet-standard guidance, ported from `livespec/AGENTS.md` ("When to ask,

@@ -1,0 +1,2071 @@
+{
+ "snapshot_taken_at": "2026-09-06T05:17:37Z",
+ "tenant": "livespec-dev-tooling",
+ "open_count": 258,
+ "items": [
+  {
+   "id": "livespec-dev-tooling-5o6ssu",
+   "status": "acceptance",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "Fan-out closes superseded bump PRs automatically, both supersession categories, via a tested supersession-classifier module",
+   "created_at": "2026-07-19T22:56:13Z"
+  },
+  {
+   "id": "livespec-dev-tooling-hmv2bo",
+   "status": "active",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "REGRESSION of the warm-seed trust tier: the scheduled cache negative tests FAIL since 2026-09-04T15:31Z \u2014 a routed job opened a root-owned mode-644 hardlink-seed file under /__w/_warm/uv for writing (case=warm-seed-unwritable VIOLATION); tqpszl's guarantee and the plan's 'PR lane cannot write' acceptance no longer hold",
+   "created_at": "2026-09-05T01:06:24Z"
+  },
+  {
+   "id": "livespec-dev-tooling-4s2sey",
+   "status": "active",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "SubagentStop guard emits no valid Stop-hook JSON response",
+   "created_at": "2026-08-16T07:24:08Z"
+  },
+  {
+   "id": "livespec-dev-tooling-x2ju4a",
+   "status": "active",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "commit-refuse installer leaves lefthook's stock `prepare-commit-msg` wrapper in .git/hooks \u2014 a GIT_DIR-leaking, auto-installing lefthook entry point the verifier never inspects",
+   "created_at": "2026-09-06T03:58:11Z"
+  },
+  {
+   "id": "livespec-dev-tooling-y6m2xn.1",
+   "status": "active",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "Re-land plan_thread_* -> plan_* rename as a feat:/fix: commit so release-please cuts a real release",
+   "created_at": "2026-08-16T12:38:34Z"
+  },
+  {
+   "id": "livespec-dev-tooling-3u3gm2.2",
+   "status": "active",
+   "issue_type": "chore",
+   "priority": 3,
+   "title": "check-fuzz variant image (python-rust-fuzz, used ONLY by the fuzz job): bake g++ + pinned nightly + cargo-fuzz \u2014 ~45 s off every PR critical path; NOT into the shared image",
+   "created_at": "2026-09-06T03:11:18Z"
+  },
+  {
+   "id": "livespec-dev-tooling-0j3i",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 0,
+   "title": "Pin-currency escalation names ONLY 'fired and could not land'; the outage was 'NEVER fired' and could not enter the escalating class \u2014 ratified as v039, CODE still owed",
+   "created_at": "2026-07-30T21:08:44Z"
+  },
+  {
+   "id": "livespec-dev-tooling-qndn",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 0,
+   "title": "ARMING IS BLOCKED ON AN UNRATIFIED CHOICE: the armed count is 0 or 75 depending on whether the _-prefixed FILE skip travels, and that skip hides 42% of the universe",
+   "created_at": "2026-07-30T22:53:12Z"
+  },
+  {
+   "id": "livespec-dev-tooling-xhaw",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 0,
+   "title": "codex-acp successor rejects the adapter config as invalid JSON \u2014 every factory dispatch parks at the PR stage",
+   "created_at": "2026-08-26T11:44:03Z"
+  },
+  {
+   "id": "livespec-dev-tooling-0aru",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 1,
+   "title": "livespec-runtime's cross-repo-consumed surface: EIGHT functions need a COORDINATED multi-repo ROP conversion \u2014 the whole of 8o8e.10's remainder bar 3 entry points",
+   "created_at": "2026-08-03T11:18:35Z"
+  },
+  {
+   "id": "livespec-dev-tooling-0n2a",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 1,
+   "title": "git-jsonl imports livespec_runtime.cross_repo.types but vendors no typing_extensions \u2014 resolves only via ambient host Python",
+   "created_at": "2026-08-03T03:17:28Z"
+  },
+  {
+   "id": "livespec-dev-tooling-0yfo",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 1,
+   "title": "Decompose config.py: 560 LLOC against a 250 hard ceiling, and it is the PRECONDITION for closing 995m",
+   "created_at": "2026-07-29T13:24:12Z"
+  },
+  {
+   "id": "livespec-dev-tooling-0z11",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "heading_coverage proxies spec-to-behaviour coverage by LINK EXISTENCE: a scenario can state the opposite of its own passing test and every gate stays green",
+   "created_at": "2026-08-26T10:50:10Z"
+  },
+  {
+   "id": "livespec-dev-tooling-1w5c",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 1,
+   "title": "Non-increasing ratchet on the LLOC soft-band population \u2014 the band regrew within four days",
+   "created_at": "2026-08-11T05:42:40Z"
+  },
+  {
+   "id": "livespec-dev-tooling-41sk",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "bd ready cannot surface any livespec-lifecycle-ready item: it renders beads' native 'open', so 4 of 4 ready items are invisible and a ready item reads as blocked",
+   "created_at": "2026-07-28T15:31:36Z"
+  },
+  {
+   "id": "livespec-dev-tooling-4ihw",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 1,
+   "title": "Spec question: does 'returns vendored under _vendor/' bind a library that is ITSELF vendored? (blocks livespec-runtime's 27)",
+   "created_at": "2026-08-02T21:58:43Z"
+  },
+  {
+   "id": "livespec-dev-tooling-55ec",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 1,
+   "title": "\u26d4 BLOCKED TWICE (8o8e.22 local + a peer lane's red PRs) \u2014 beads-fabro: split the pure parsers out of the effects/ io_tree \u2014 MEASURED REMOVED 10 / ADDED 0 (ceiling was 14; the 4 attempt-callers must stay convicted)",
+   "created_at": "2026-08-02T22:14:25Z"
+  },
+  {
+   "id": "livespec-dev-tooling-6j6",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "check_mutation regression: z45 deleted the rc>=2 hard fail \u2014 a crashed partial run passes green AND poisons the ratchet",
+   "created_at": "2026-07-20T00:23:15Z"
+  },
+  {
+   "id": "livespec-dev-tooling-6vz",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "check-no-raise-outside-io is VACUOUS in every consumer whose domain errors aren't named LivespecError/UsageError/PreconditionError/ValidationError",
+   "created_at": "2026-07-19T10:51:20Z"
+  },
+  {
+   "id": "livespec-dev-tooling-739o",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "A canonical check does not reach the fleet: 5 of 13 members have no aggregate gate and 3 cannot consume dev-tooling at all, and the fan-out reports success either way",
+   "created_at": "2026-08-04T14:39:27Z"
+  },
+  {
+   "id": "livespec-dev-tooling-7j1g",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 1,
+   "title": "[epic] FLEET BACKFILL: own every unowned heading-coverage TODO (304 entries, 9 repos)",
+   "created_at": "2026-08-07T06:48:52Z"
+  },
+  {
+   "id": "livespec-dev-tooling-7us",
+   "status": "backlog",
+   "issue_type": "epic",
+   "priority": 1,
+   "title": "[epic] Agent-loop + enforcement-suite performance: make just check and RGR fast enough for unattended dispatch",
+   "created_at": "2026-06-12T17:02:56Z"
+  },
+  {
+   "id": "livespec-dev-tooling-8o8e",
+   "status": "backlog",
+   "issue_type": "epic",
+   "priority": 1,
+   "title": "Fleet-wide: the ROP railway requirement is enforced by a check that scans ZERO files in all nine repos \u2014 arm it, then remediate SEVEN repos / 338 distinct functions (432 raw, re-measured 2026-08-02)",
+   "created_at": "2026-07-27T06:18:53Z"
+  },
+  {
+   "id": "livespec-dev-tooling-8o8e.10",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 1,
+   "title": "ROP arming child: livespec-runtime \u2014 11 off the railway (universe 31), down from 27 this session via 3 seams; LOCAL LANE COMPLETE \u2014 all 11 residual are cross-repo-bound (8, see 0aru) or process entry points (3, need a v177 ruling)",
+   "created_at": "2026-08-01T12:00:19Z"
+  },
+  {
+   "id": "livespec-dev-tooling-8o8e.11",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 1,
+   "title": "ROP arming child: livespec-orchestrator-git-jsonl \u2014 8 off the railway (universe 49); 17\u219211 via #525/#527, 11\u219210 via #532, 10\u21928 via #533. \u2705 twins close-gate SATISFIED. \u26d4 clause (e) hole UNPOPULATED, not closed",
+   "created_at": "2026-08-01T12:00:28Z"
+  },
+  {
+   "id": "livespec-dev-tooling-8o8e.12",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 1,
+   "title": "ROP arming child: livespec \u2014 15 off the railway (universe 132); 5 declarations + 10 conversions, every root an I/O call",
+   "created_at": "2026-08-01T12:00:37Z"
+  },
+  {
+   "id": "livespec-dev-tooling-8o8e.13",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 1,
+   "title": "ROP arming child: livespec-driver-codex \u2014 1 off the railway (universe 7); v186 relieved check_tmux_segment but 8o8e.19 survives",
+   "created_at": "2026-08-01T12:00:46Z"
+  },
+  {
+   "id": "livespec-dev-tooling-8o8e.16",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "host /tmp inode exhaustion poisons CI in EVERY repo, and presents as a coverage/code defect",
+   "created_at": "2026-08-02T08:01:19Z"
+  },
+  {
+   "id": "livespec-dev-tooling-8o8e.18",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "Repo-local check slugs are CI-invisible by construction: 17 across 6 repos are in `just check` and never run in CI (the ROP check itself is SAFE \u2014 canonical and CI-covered in all 8)",
+   "created_at": "2026-08-02T15:34:22Z"
+  },
+  {
+   "id": "livespec-dev-tooling-8o8e.19",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "livespec-driver-codex: check_tmux_segment's Failure arm is DEAD CODE \u2014 _check_segment_result returns Success unconditionally, so a railway-typed guard carries nothing",
+   "created_at": "2026-08-02T16:04:31Z"
+  },
+  {
+   "id": "livespec-dev-tooling-8o8e.20",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "A documented CI gate that no CI arms: check-no-lloc-soft-warnings' release lever LIVESPEC_FAIL_IF_LLOC_SOFT_WARNINGS_EXIST has no setter anywhere in the fleet",
+   "created_at": "2026-08-03T16:42:47Z"
+  },
+  {
+   "id": "livespec-dev-tooling-8o8e.22",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "beads-fabro: branch protection (ci-green=success) and check-master-ci-green (run conclusion=failure) read DIFFERENT signals, so the forge is satisfied while every .py commit and push is frozen; the gate repair is a NARROWING and escalates",
+   "created_at": "2026-08-03T18:21:03Z"
+  },
+  {
+   "id": "livespec-dev-tooling-8o8e.23",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "Fleet: export-ci-telemetry.sh is FOUR distinct versions across 8 repos while every ci.yml calls it a byte-for-byte copy of CORE; CORE's own 'master turned red once the job count grew' fix never fanned out, and the per_page=100 wedge is unfixed in all eight including CORE",
+   "created_at": "2026-08-03T19:03:24Z"
+  },
+  {
+   "id": "livespec-dev-tooling-8o8e.24",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "beads-fabro carries TWO copies of livespec_runtime at different versions \u2014 the vendored WorkItem has awaits_scope_override and the pinned v0.13.1 does not \u2014 so sys.path order decides the type's fields, master hides it, and the v0.16.0 bump PR #1275 is a TRUE signal; no check compares a vendored library against its pinned release",
+   "created_at": "2026-08-03T19:25:07Z"
+  },
+  {
+   "id": "livespec-dev-tooling-8o8e.26",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 1,
+   "title": "A fleet-wide justfile refactor is a CROSS-REPO API change \u2014 it froze livespec's commits, and the same check FAILS in one member while SKIPPING in another",
+   "created_at": "2026-08-03T20:05:50Z"
+  },
+  {
+   "id": "livespec-dev-tooling-8o8e.27",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "FOUR degradation sites in THREE repos delegate their safety to `cross-repo-targets-wellformedness` \u2014 an invariant RETIRED at v103 that never existed as a check",
+   "created_at": "2026-08-03T22:29:05Z"
+  },
+  {
+   "id": "livespec-dev-tooling-8o8e.28",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "v179 has no exemption for a function that is TOTAL BY RATIFIED CONTRACT but not `X | None` \u2014 git-jsonl's resolve_canonical_branch is convicted with no legitimate escape",
+   "created_at": "2026-08-03T22:38:20Z"
+  },
+  {
+   "id": "livespec-dev-tooling-8o8e.29",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "livespec CORE: nothing compares a contracts.md-stated encoding against the function that ships it \u2014 the k4km digest drift was invisible until it hard-refused every ratification fleet-wide",
+   "created_at": "2026-08-04T01:32:43Z"
+  },
+  {
+   "id": "livespec-dev-tooling-8o8e.30",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "ROP arming: the check gates its SCAN on pure_trees, but the ratified rule binds ANY first-party Python \u2014 4 repos the rule NAMES are silently exempt and the one repo it exempts is the only one failing",
+   "created_at": "2026-08-04T02:06:39Z"
+  },
+  {
+   "id": "livespec-dev-tooling-8o8e.31",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "ROP arming: every count on 8o8e.7-.13 is measured over resolve_check_universe(), NOT the pure_trees universe the shipped check scans \u2014 progress is tracked against a criterion that never runs",
+   "created_at": "2026-08-04T02:07:35Z"
+  },
+  {
+   "id": "livespec-dev-tooling-8o8e.7",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 1,
+   "title": "ROP arming child: livespec-overseer \u2014 213 RAW / 112 DISTINCT over universe 172 at master 814c7a7 (TODAY's criterion; NOT reconciled with the epic's 194/140 basis); every edit is a DOUBLE edit (hand-maintained byte mirror); the proc_* X|None is a conflation, not a declaration",
+   "created_at": "2026-08-01T11:59:51Z"
+  },
+  {
+   "id": "livespec-dev-tooling-8o8e.8",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 1,
+   "title": "ROP arming child: livespec-orchestrator-beads-fabro \u2014 155 off the railway (universe 186), down from 166 via PR #1277; the ONE seam-shaped cluster (_dispatcher_policy_settings, 11 in one file) is converted and the rest is a flat tail; its OWN PIN measures 157",
+   "created_at": "2026-08-01T12:00:00Z"
+  },
+  {
+   "id": "livespec-dev-tooling-8t0i",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "heading_coverage never resolves the node ids it is given, so a row naming a nonexistent test passes",
+   "created_at": "2026-08-22T02:12:32Z"
+  },
+  {
+   "id": "livespec-dev-tooling-8zv3",
+   "status": "backlog",
+   "issue_type": "epic",
+   "priority": 1,
+   "title": "pure_trees is a SHARED role key with FIVE real code consumers \u2014 public_api_result_typed is the ONE whose rule binds a different scope, and it gates itself off in all nine repos as a result",
+   "created_at": "2026-08-04T02:20:36Z"
+  },
+  {
+   "id": "livespec-dev-tooling-8zv3.4",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 1,
+   "title": "FLEET FAN-OUT: per-repo remediate-then-arm once the scan universe is decoupled \u2014 two repos cannot accept PRs today, so verify landability before spending runner minutes",
+   "created_at": "2026-08-04T04:23:16Z"
+  },
+  {
+   "id": "livespec-dev-tooling-8zv3.5",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 1,
+   "title": "The _-prefixed FILE skip is WIDER than the ratified rule and is worth 286 of 446 fleet offenders (64%) \u2014 a separate decision that must not ride along inside the decoupling",
+   "created_at": "2026-08-04T06:56:25Z"
+  },
+  {
+   "id": "livespec-dev-tooling-995m",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "config.py excludes ITSELF from every check universe: is_generated matches its own '# ... @generated' prose, so 8 applies-to-all checks never inspect the fleet's most-consumed module",
+   "created_at": "2026-07-29T12:22:06Z"
+  },
+  {
+   "id": "livespec-dev-tooling-9yrr",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "a non-.py bug fix cannot ship: red_green_replay forces it to chore:, and release-please does not release chore:",
+   "created_at": "2026-08-03T18:37:21Z"
+  },
+  {
+   "id": "livespec-dev-tooling-a9xp",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "pretooluse_background_guard prescribes gate-start/gate-wait, absent in 6 of the 7 repos that arm it: the deny shipped in the package, the remedy stayed in the producer",
+   "created_at": "2026-08-06T00:27:16Z"
+  },
+  {
+   "id": "livespec-dev-tooling-bslp",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "check-shell-quality crashes with a TypeError when ShellCheck is absent (cast hides which()'s None), blocking the v1.18.4 pin fan-out",
+   "created_at": "2026-08-03T20:43:23Z"
+  },
+  {
+   "id": "livespec-dev-tooling-e5nz",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "fleet_conformance.py sat at 247 of a 250 LLOC HARD ceiling, so it was a latent block on ANY change to it \u2014 rjyc was the straw, not the cause",
+   "created_at": "2026-08-05T22:20:24Z"
+  },
+  {
+   "id": "livespec-dev-tooling-fas6",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "check-skill-invocation-paths auto-selects between two CONTRADICTORY plugin models from a bare directory name, with no config key and no diagnostic \u2014 a Driver that ships any script becomes unable to satisfy both it and check_plugin_structure",
+   "created_at": "2026-08-01T02:33:42Z"
+  },
+  {
+   "id": "livespec-dev-tooling-ganj",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "livespec spec CLIs silently no-op under `python -m`: propose_change.py and revise.py have no __main__ guard",
+   "created_at": "2026-07-29T05:04:51Z"
+  },
+  {
+   "id": "livespec-dev-tooling-go7a",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 1,
+   "title": "subagent_stop_guard pressures read-only ratification reviewers to commit the artifact under review (scoping defect)",
+   "created_at": "2026-08-19T12:02:41Z"
+  },
+  {
+   "id": "livespec-dev-tooling-h0g9",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "the unresolved-receiver I/O verb set is wrong in ONE direction: raising primitives (open, readlink, owner, group, truncate) are ABSENT. The 'total predicates' OUT list is RETRACTED \u2014 nothing is total.",
+   "created_at": "2026-08-02T02:35:01Z"
+  },
+  {
+   "id": "livespec-dev-tooling-h7qp",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "Background guard prescribes gate-start/gate-wait and a doc that do not exist in a fresh consumer worktree",
+   "created_at": "2026-08-19T04:05:15Z"
+  },
+  {
+   "id": "livespec-dev-tooling-hh4d",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "check-commit-pairs-source-and-test treats vendored _vendor/**.py as authored source \u2014 vendoring any new library is uncommittable",
+   "created_at": "2026-07-27T19:32:11Z"
+  },
+  {
+   "id": "livespec-dev-tooling-ic0n",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "plan-thread-to-plan rename (85dca9fd) landed unreleased, breaking doctor-wiring-completeness-cross-repo fleet-wide",
+   "created_at": "2026-08-16T09:12:34Z"
+  },
+  {
+   "id": "livespec-dev-tooling-izbq",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "member 1 clause (d) cannot see ObligationRow table dispatch \u2014 exempts run_member_rows, the biggest I/O driver in the package",
+   "created_at": "2026-08-01T23:55:56Z"
+  },
+  {
+   "id": "livespec-dev-tooling-jecv",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "THREE records carry THREE different fleet offender totals on incompatible universe bases (432/338 vs 402/321 vs 429/328) \u2014 the arming denominator cannot be quoted until one basis is ratified",
+   "created_at": "2026-08-03T14:41:20Z"
+  },
+  {
+   "id": "livespec-dev-tooling-jeqp",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "Release fan-out preflight demotes non-member conformance findings to a log line (fail-loud regression)",
+   "created_at": "2026-07-24T08:05:24Z"
+  },
+  {
+   "id": "livespec-dev-tooling-jtrt",
+   "status": "backlog",
+   "issue_type": "epic",
+   "priority": 1,
+   "title": "Asserted enforcement that computes nothing: levers nothing sets, guards delegating to retired invariants, and checks invisible to CI",
+   "created_at": "2026-08-21T08:53:50Z"
+  },
+  {
+   "id": "livespec-dev-tooling-jzoz",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 1,
+   "title": "livespec CORE: revise's 'modifications' is required-by-prose for decision==modify and enforced by NOTHING \u2014 omitting it writes an empty ## Modifications section at exit 0",
+   "created_at": "2026-08-03T07:47:26Z"
+  },
+  {
+   "id": "livespec-dev-tooling-k4km",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 1,
+   "title": "livespec CORE: the ratification content_digest contract (contracts.md:382) and the shipped gate disagree on all three axes \u2014 a contract-conformant digest is HARD-REFUSED, so no evidence can satisfy both",
+   "created_at": "2026-08-03T08:10:32Z"
+  },
+  {
+   "id": "livespec-dev-tooling-k76y",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 1,
+   "title": "5cai design: the naive central consumption row costs ~653 API calls per run; the tarball primitive costs 9 \u2014 and FleetContext has no tarball method yet",
+   "created_at": "2026-07-29T23:12:44Z"
+  },
+  {
+   "id": "livespec-dev-tooling-kfp",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "red_green_replay._IMPL_PREFIXES is hardcoded, silently disabling the gate for consumers with declared layouts",
+   "created_at": "2026-07-19T08:04:24Z"
+  },
+  {
+   "id": "livespec-dev-tooling-l5pw",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "check-public-api-result-typed convicts PURE functions: `replace` in the unresolved-receiver I/O verb set matches str.replace/datetime.replace as well as Path.replace (3 fleet-wide false positives, measured)",
+   "created_at": "2026-08-03T12:51:09Z"
+  },
+  {
+   "id": "livespec-dev-tooling-lmv2",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "Fan-out cannot propagate packaged CARRIER constants \u2014 only pins (coupled-artifact class)",
+   "created_at": "2026-07-24T00:04:05Z"
+  },
+  {
+   "id": "livespec-dev-tooling-mmqe",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "check-fleet-conformance intermittently red-lights every dev-tooling PR: its own traversal trips a secondary limiter mid-pass. \u26a0\ufe0f PR #1218's bounded per-call retry REDUCES but does NOT eliminate it (PR #1222 still failed on that base) \u2014 needs Retry-After + traversal-level pacing",
+   "created_at": "2026-07-29T23:30:01Z"
+  },
+  {
+   "id": "livespec-dev-tooling-mt24",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "gate-run.sh evidence probe is blind to the serial emitter: every green serial aggregate reports 'zero targets / no per-target evidence'",
+   "created_at": "2026-08-19T04:05:01Z"
+  },
+  {
+   "id": "livespec-dev-tooling-n4jm",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 1,
+   "title": "Hoist the github_rate_limit_guard decision function into livespec-dev-tooling as the canonical single-sourced body",
+   "created_at": "2026-08-26T10:54:46Z"
+  },
+  {
+   "id": "livespec-dev-tooling-oip9",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "livespec-overseer keeps 49 test_*.py inside its product tree, so v178 makes 24 test-builder helpers 'public API': its count goes 55 -> 80, and 20 of the 53 are a universe-classification artifact",
+   "created_at": "2026-07-29T23:20:13Z"
+  },
+  {
+   "id": "livespec-dev-tooling-opdc",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 1,
+   "title": "Replace the baked Codex ACP adapter: @zed-industries/codex-acp@0.16.0 -> @agentclientprotocol/codex-acp@1.6.2 (homelab E1)",
+   "created_at": "2026-08-26T06:34:37Z"
+  },
+  {
+   "id": "livespec-dev-tooling-pk2x",
+   "status": "backlog",
+   "issue_type": "epic",
+   "priority": 1,
+   "title": "Plan-thread anchor enforcement is armed in the one repo with no threads: check self-skips on absent config, 18 of 20 fleet handoffs would fail \u2014 decide scope, then close it",
+   "created_at": "2026-07-27T10:34:47Z"
+  },
+  {
+   "id": "livespec-dev-tooling-qknd",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "ci_yaml_canonical_reconcile places a new canonical METADATA slug into the first canonical-sorted 'just check-*' step in FILE order, not into the metadata batch \u2014 v1.43.0 put check-ci-gate-parity into check-per-file-coverage's step in 7 consumers, where $failed is never inspected and the check's failure is swallowed",
+   "created_at": "2026-09-05T03:30:13Z"
+  },
+  {
+   "id": "livespec-dev-tooling-qx2l",
+   "status": "backlog",
+   "issue_type": "epic",
+   "priority": 1,
+   "title": "Duplicated fleet artifacts with no mechanism holding the copies equal: four script versions, two library copies, and a parser that exists four times",
+   "created_at": "2026-08-21T08:54:30Z"
+  },
+  {
+   "id": "livespec-dev-tooling-rav3",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "check-coverage-incremental passes VACUOUSLY when its git diff fails: returncode never read",
+   "created_at": "2026-08-01T15:52:57Z"
+  },
+  {
+   "id": "livespec-dev-tooling-rg9z",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "ci_yaml_canonical_reconcile cannot mirror canonical slugs into a batched-CI consumer \u2014 every pin bump into livespec-overseer now hard-fails pre-commit",
+   "created_at": "2026-08-17T21:05:55Z"
+  },
+  {
+   "id": "livespec-dev-tooling-s1ic",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "[bug] Concurrent SessionStart provisioning can extract a plugin cache ref EMPTY, and the sha-keyed cache then serves it as a hit forever \u2014 three skills vanished from three repos for 14h with no error",
+   "created_at": "2026-08-12T22:10:30Z"
+  },
+  {
+   "id": "livespec-dev-tooling-s2t",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "CI-runner host config (which repos + how many slots) is hand-edited systemd state, not a recreatable artifact",
+   "created_at": "2026-07-16T07:59:24Z"
+  },
+  {
+   "id": "livespec-dev-tooling-sc0z",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "Green amend cannot commit: the amend hook applies a per-file coverage floor to modules the single Red replay test imports, killing the run with 'git checkpoint commit failed'",
+   "created_at": "2026-08-07T20:57:17Z"
+  },
+  {
+   "id": "livespec-dev-tooling-teje",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "worktree-reap judges merged-ness by ancestry, which is false for EVERY branch under this fleet's rebase-merge-only flow \u2014 17 worktrees, 0 removable",
+   "created_at": "2026-08-04T14:50:35Z"
+  },
+  {
+   "id": "livespec-dev-tooling-ueni",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "public_api_result_typed's declaration-staleness gates are unreachable behind the pure_trees role-absence gate: five declarations in this repo are verified by nothing",
+   "created_at": "2026-07-29T23:08:54Z"
+  },
+  {
+   "id": "livespec-dev-tooling-usi0",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 1,
+   "title": "Two in-flight livespec proposals target non-functional-requirements.md and resulting_files[] carries the WHOLE file \u2014 whichever ratifies second silently reverts the first, and no gate can detect it",
+   "created_at": "2026-08-03T08:23:07Z"
+  },
+  {
+   "id": "livespec-dev-tooling-uujy",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 1,
+   "title": "Countermand the unattributable no-spawn-agents system rule: it has NO fleet-visible provenance and it outranked an authorization the maintainer had already given",
+   "created_at": "2026-08-21T08:23:40Z"
+  },
+  {
+   "id": "livespec-dev-tooling-ve7w",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "livespec's OWN compat.pinned is structurally unbumpable: the publisher is excluded from its own fan-out, so its self-pin has sat 2 releases stale with no bump PR ever opened",
+   "created_at": "2026-07-31T07:04:01Z"
+  },
+  {
+   "id": "livespec-dev-tooling-vojo",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 1,
+   "title": "livespec-runtime: three genuinely-convicted functions surfaced by the nkkv declaration \u2014 parse_cross_repo_manifest, lane_of, is_item_ready",
+   "created_at": "2026-07-30T19:32:14Z"
+  },
+  {
+   "id": "livespec-dev-tooling-xdyh",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "Pin freshness sweep dies on non-fast-forward when its bump branch already exists, silently disabling the stale-pin safety net",
+   "created_at": "2026-08-06T07:22:25Z"
+  },
+  {
+   "id": "livespec-dev-tooling-xezh",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "just worktree-reap can never reap a correctly-landed worktree: its merged-ness test is ancestry, and this fleet mandates rebase-merge",
+   "created_at": "2026-07-30T10:16:23Z"
+  },
+  {
+   "id": "livespec-dev-tooling-xx1y",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "The v191 closure obligation has a FOURTH consumption path nobody checks: livespec-runtime's OWN .venv backs the fleet git credential helper, and a new dependency breaks every push until it is re-synced",
+   "created_at": "2026-08-03T14:28:05Z"
+  },
+  {
+   "id": "livespec-dev-tooling-z45",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "check_mutation masks its own failure class \u2014 a misconfigured or crashed run passes green",
+   "created_at": "2026-07-19T22:59:44Z"
+  },
+  {
+   "id": "livespec-dev-tooling-0iz6",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "Spec wording defect: 'separate, independent' reviewer vs the role-only operative test (livespec-orchestrator-beads-fabro contracts.md)",
+   "created_at": "2026-08-20T20:59:27Z"
+  },
+  {
+   "id": "livespec-dev-tooling-1aba",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "Exit-code table says 1 = internal bug, but checks return 1 for genuine structured failures",
+   "created_at": "2026-07-25T17:43:14Z"
+  },
+  {
+   "id": "livespec-dev-tooling-2kt",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "Implement release-park leg (b): unreleased-backlog detection in reusable-release-park.yml",
+   "created_at": "2026-07-04T10:04:18Z"
+  },
+  {
+   "id": "livespec-dev-tooling-3k7",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "fabro image pin rewrite silently emits a BARE vX.Y.Z tag the layered build never publishes, producing a green bump PR that points at nothing",
+   "created_at": "2026-07-20T00:06:51Z"
+  },
+  {
+   "id": "livespec-dev-tooling-3nt9",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "Build the shared codex derive-from-settings module \u2014 the fleet/ensure_plugins.py twin that does not exist",
+   "created_at": "2026-07-28T18:35:10Z"
+  },
+  {
+   "id": "livespec-dev-tooling-3q2c",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "Role-key inventory consumer lists are inaccurate in both directions across several bullets",
+   "created_at": "2026-07-25T21:18:07Z"
+  },
+  {
+   "id": "livespec-dev-tooling-3u3gm2",
+   "status": "backlog",
+   "issue_type": "epic",
+   "priority": 2,
+   "title": "Console factory build cache \u2014 pre-warmed registry image + host-backed sccache for fabro sandboxes (console Phase 2 factory leg)",
+   "created_at": "2026-09-02T16:24:44Z"
+  },
+  {
+   "id": "livespec-dev-tooling-50xi",
+   "status": "backlog",
+   "issue_type": "epic",
+   "priority": 2,
+   "title": "livespec-dev-tooling foreman seat anchor - ledger-held foreman handoff timeline",
+   "created_at": "2026-08-20T08:58:11Z"
+  },
+  {
+   "id": "livespec-dev-tooling-6e83",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "fleet/ensure_plugins.py declares a SECOND CommandResult/CommandRunner under the same names, and no check can see it",
+   "created_at": "2026-07-31T20:36:03Z"
+  },
+  {
+   "id": "livespec-dev-tooling-6q5o",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "gate-run.sh reports 'zero check targets completed' on the PUSH path even when the gate is running fine, because lefthook BUFFERS output \u2014 a true statement that invites the exact wrong inference",
+   "created_at": "2026-08-05T23:37:30Z"
+  },
+  {
+   "id": "livespec-dev-tooling-7bfhkm",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "Resolve the 100-file section-citation-in-code conflict (migrate to file-level, OR refine the core check \u2014 decide at groom)",
+   "created_at": "2026-07-04T23:34:14Z"
+  },
+  {
+   "id": "livespec-dev-tooling-7et",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "Contract seam for manifest-aware heading-coverage (livespec l1c3 third leg)",
+   "created_at": "2026-06-11T00:51:55Z"
+  },
+  {
+   "id": "livespec-dev-tooling-7us.7",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "Tune pytest-xdist worker cap for coverage runs (verify idle-host first)",
+   "created_at": "2026-06-12T19:28:42Z"
+  },
+  {
+   "id": "livespec-dev-tooling-800",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "branch-protection-alignment must recognize the ci-green gate job as a valid required check",
+   "created_at": "2026-07-10T14:21:54Z"
+  },
+  {
+   "id": "livespec-dev-tooling-8o8e.6",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "The justfile check: recipe parser exists FOUR times, and the copies keep agreement by COPYING",
+   "created_at": "2026-07-30T23:32:38Z"
+  },
+  {
+   "id": "livespec-dev-tooling-98hx",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "Port the ci.job.queue_ms export to the 9 consumer repos' export-ci-telemetry.sh (or promote the exporter to a canonical carrier)",
+   "created_at": "2026-08-21T06:08:04Z"
+  },
+  {
+   "id": "livespec-dev-tooling-9hpu",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "assert_tenant_connection_consistency renders a can't-PARSE .livespec.jsonc as a SKIP, where v039's ratified rule for the same condition is a FINDING",
+   "created_at": "2026-07-31T11:37:30Z"
+  },
+  {
+   "id": "livespec-dev-tooling-9j8.2",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "[gate a] Wire shellcheck into just check + CI fleet-wide",
+   "created_at": "2026-06-30T20:12:03Z"
+  },
+  {
+   "id": "livespec-dev-tooling-9j8.3",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "[gate b] Add a livespec-dev-tooling logic-in-shell / heredoc ceiling check",
+   "created_at": "2026-06-30T20:12:03Z"
+  },
+  {
+   "id": "livespec-dev-tooling-9j8.4",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "[destructive] Test or extract the worktree-lib reap keep/remove/FORCE decision",
+   "created_at": "2026-06-30T20:12:04Z"
+  },
+  {
+   "id": "livespec-dev-tooling-9j8.5",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "[gh-API] Test or extract branch-protection.sh gh-API orchestration",
+   "created_at": "2026-06-30T20:12:05Z"
+  },
+  {
+   "id": "livespec-dev-tooling-9j8.6",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "[CI logic] Extract logic from reusable-pin-freshness.yml + reusable-release-dispatch.yml",
+   "created_at": "2026-06-30T20:12:06Z"
+  },
+  {
+   "id": "livespec-dev-tooling-9j8.8",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "[coverage gap] Audit the 1password-env-wrapper repo under the shell-logic rule",
+   "created_at": "2026-06-30T20:12:07Z"
+  },
+  {
+   "id": "livespec-dev-tooling-9s2j",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "cross-repo-public-api-declared reports NOTHING when a consumed function is DELETED \u2014 the edge vanishes instead of convicting",
+   "created_at": "2026-08-04T10:12:30Z"
+  },
+  {
+   "id": "livespec-dev-tooling-9yb4",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "Work-item text carrying a literal template-interpolation pair makes the item undispatchable - no check asserts against it",
+   "created_at": "2026-08-20T21:38:43Z"
+  },
+  {
+   "id": "livespec-dev-tooling-aa7",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "check-master-ci-green silently stops gating during a GitHub API outage \u2014 its fail-soft path was designed for unauthenticated LOCAL dev and also swallows 503s in CI",
+   "created_at": "2026-07-20T01:08:38Z"
+  },
+  {
+   "id": "livespec-dev-tooling-afd",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "release-park guard follow-ups: contracts.md parity entry + fleet-wide presence enforcement decision",
+   "created_at": "2026-07-03T08:11:21Z"
+  },
+  {
+   "id": "livespec-dev-tooling-aqmr",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "plan_epic_parity's bd_items_reader omits the all-status flag on its bd fallback, so every armed run false-fails 100 percent",
+   "created_at": "2026-08-22T04:45:37Z"
+  },
+  {
+   "id": "livespec-dev-tooling-bfvbsw",
+   "status": "backlog",
+   "issue_type": "epic",
+   "priority": 2,
+   "title": "Factory-sandbox build-time telemetry: cargo build/check/test spans for console fabro runs (build.env=factory)",
+   "created_at": "2026-08-30T15:45:43Z"
+  },
+  {
+   "id": "livespec-dev-tooling-br4xar",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "tests_mirror_pairing is disarmed by an empty source_tree_prefixes in 3 repos \u2014 arm it via mirror_pairings, NOT a prefix union (23 fabricated / 6 real / 58 real)",
+   "created_at": "2026-07-28T04:24:14Z"
+  },
+  {
+   "id": "livespec-dev-tooling-bzqp",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "Add API-configurable-completeness check extension (epic livespec-jvdvx4 carrier)",
+   "created_at": "2026-08-16T23:34:28Z"
+  },
+  {
+   "id": "livespec-dev-tooling-ckb",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "spec: document the worktree-pack + vendored-copies arms in the primary_checkout_commit_refuse_hook_installed H3",
+   "created_at": "2026-07-13T10:16:21Z"
+  },
+  {
+   "id": "livespec-dev-tooling-d99z",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "ci_gate_parity under-enforces the ratified v217 clause: the spec says the guard FAILS on a gating job conditioned on the TRIGGERING EVENT or a changeset predicate in the forbidden direction, but the check recognises only the literal 'py_changed' token \u2014 an 'if: github.event_name != pull_request' gating job would pass it",
+   "created_at": "2026-09-05T03:30:35Z"
+  },
+  {
+   "id": "livespec-dev-tooling-e2wv",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "branch_protection_alignment treats a CONDITIONAL leniency as unconditional: it never verifies that the required aggregate gate its warning-not-error rule depends on actually exists",
+   "created_at": "2026-08-21T14:23:02Z"
+  },
+  {
+   "id": "livespec-dev-tooling-e60",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "Investigate RGR cycle latency + agent-session efficiency; propose Honeycomb agent observability with a reflect loop (USER-REQUESTED placeholder)",
+   "created_at": "2026-06-12T15:39:54Z"
+  },
+  {
+   "id": "livespec-dev-tooling-efqeip",
+   "status": "backlog",
+   "issue_type": "epic",
+   "priority": 2,
+   "title": "Transparent build-cache tiers for every CI job on the runner pool: warm cargo registry + host sccache + per-repo target, trust-tiered, zero per-repo workflow changes",
+   "created_at": "2026-09-04T00:07:42Z"
+  },
+  {
+   "id": "livespec-dev-tooling-efqeip.3",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "sccache is cold for hours after every host reboot: RAM-only redis + the populator's busy-pool guardrail (1% hit rate measured 2026-09-06)",
+   "created_at": "2026-09-06T04:24:06Z"
+  },
+  {
+   "id": "livespec-dev-tooling-efxa",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "30 of 31 checks never catch ConfigParseError, so a config error escapes as a traceback instead of the structured diagnostic the contract promises \u2014 and Phase 4 makes that path reachable",
+   "created_at": "2026-07-28T17:58:38Z"
+  },
+  {
+   "id": "livespec-dev-tooling-eihv",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "install_no_shadow_ledger and its check diverged at slice L: docstring claims identical no-op, verifier now hard-errors",
+   "created_at": "2026-07-25T15:10:01Z"
+  },
+  {
+   "id": "livespec-dev-tooling-el7g",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "The uv dev-dep install step fails transiently (package timeouts AND git TLS trust) often enough to leave fleet MASTER red, and the only remedy is a human re-running by hand",
+   "created_at": "2026-08-11T08:32:49Z"
+  },
+  {
+   "id": "livespec-dev-tooling-ep8n",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "Pin autodiscovery misses workflow-template pins on both directory and suffix",
+   "created_at": "2026-08-12T05:38:12Z"
+  },
+  {
+   "id": "livespec-dev-tooling-fj28",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "ship the detached gate runner (gate-run.sh + gate-start/gate-wait recipes) to consumer repos - the background guard prescribes a remedy no consumer repo has",
+   "created_at": "2026-08-16T23:21:04Z"
+  },
+  {
+   "id": "livespec-dev-tooling-fy02.2",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "fy02 valve: human-set workflow-edit approval through the orchestrator (set-workflow-edit-approval on the drive surface, mirroring set-admission), plus the footgun-hook rule denying agents 'bd label add \u2026 approval:'",
+   "created_at": "2026-09-05T05:47:41Z"
+  },
+  {
+   "id": "livespec-dev-tooling-g28",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "check-wrapper-shape hardcodes _EXEMPT_NAMES={_bootstrap.py}; make the non-wrapper bin exemption config-driven",
+   "created_at": "2026-07-08T11:47:00Z"
+  },
+  {
+   "id": "livespec-dev-tooling-gam8",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "check-master-ci-green rejected a sandbox Red commit while GitHub showed master green \u2014 capture and classify the sandbox-side failure",
+   "created_at": "2026-07-23T05:04:53Z"
+  },
+  {
+   "id": "livespec-dev-tooling-goucoq",
+   "status": "backlog",
+   "issue_type": "epic",
+   "priority": 2,
+   "title": "dev-tooling spec-health debt \u2014 clear doctor-static violations blocking revise",
+   "created_at": "2026-07-04T23:34:13Z"
+  },
+  {
+   "id": "livespec-dev-tooling-hizx",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "Mechanical gate: block committing/pushing plan-tree handoff.md / supervisor-handoff.md",
+   "created_at": "2026-08-15T07:23:25Z"
+  },
+  {
+   "id": "livespec-dev-tooling-i3ub",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "no_todo_registry per-commit tier fails unowned TODO entries (BLOCKED behind the fleet backfill)",
+   "created_at": "2026-08-07T06:49:18Z"
+  },
+  {
+   "id": "livespec-dev-tooling-i655",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "subagent_stop_guard resolves the PR by local branch name, so a rebase-merged branch pushed under a different name reads as 'no PR' and wedges the session with an undischargeable remedy",
+   "created_at": "2026-08-04T14:51:54Z"
+  },
+  {
+   "id": "livespec-dev-tooling-ikeggh",
+   "status": "backlog",
+   "issue_type": "epic",
+   "priority": 2,
+   "title": "pin-autodiscovery-format-coverage: close the known pin formats the rewrite walk does not know, so a consumer pinned that way stops drifting invisibly",
+   "created_at": "2026-08-20T01:45:24Z"
+  },
+  {
+   "id": "livespec-dev-tooling-ivd8",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "plan_thread_epic_parity silently skips any thread whose anchor prose does not match its regex \u2014 30 of 49 active plan threads fleet-wide declare an anchor it cannot parse",
+   "created_at": "2026-08-12T09:20:16Z"
+  },
+  {
+   "id": "livespec-dev-tooling-jjb",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "Mechanize the ROP boundary rules currently enforced only by review: catch cardinality + BLE001 marker-wording closed set",
+   "created_at": "2026-07-19T09:15:25Z"
+  },
+  {
+   "id": "livespec-dev-tooling-kepq",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "doctor-static has TWO standing fail findings on master, so EVERY revise pass exits 3 on findings unrelated to the revision",
+   "created_at": "2026-07-28T15:51:18Z"
+  },
+  {
+   "id": "livespec-dev-tooling-kkmhwo",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "Allowlist the ~16 cross-repo section-headings dev-tooling cites (external_references) + correct 2 stale contracts->nfr citations",
+   "created_at": "2026-07-04T23:34:13Z"
+  },
+  {
+   "id": "livespec-dev-tooling-l42g",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "R6 guard slice B: runnable commit-scoped check (staged paths + per-repo shipped set + override marker)",
+   "created_at": "2026-08-30T12:23:06Z"
+  },
+  {
+   "id": "livespec-dev-tooling-lfgk",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "livespec's doctor-static wiring-completeness-cross-repo goes red on every new canonical slug whenever the release fan-out's conformance preflight has (correctly) EXCLUDED a sibling: v1.43.0 excluded livespec-runtime (row cross-repo-public-api-declared) and livespec-console-beads-fabro (row required-role-keys-declared), and livespec's own bump PR #2563 failed until runtime was dispatched by hand",
+   "created_at": "2026-09-05T03:31:30Z"
+  },
+  {
+   "id": "livespec-dev-tooling-okz",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "no_shadow_ledger_body_identical: compare bytes, not decoded text (byte-identity fidelity)",
+   "created_at": "2026-07-13T10:13:18Z"
+  },
+  {
+   "id": "livespec-dev-tooling-omcbgb",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "Restore livespec:doctor static baseline in dev-tooling",
+   "created_at": "2026-07-30T13:15:57Z"
+  },
+  {
+   "id": "livespec-dev-tooling-p2ttls",
+   "status": "backlog",
+   "issue_type": "epic",
+   "priority": 2,
+   "title": "[epic] Plugin cache provisioning integrity: a paired-launch race can extract a cache ref EMPTY and the sha-keyed cache serves it forever",
+   "created_at": "2026-08-13T00:27:13Z"
+  },
+  {
+   "id": "livespec-dev-tooling-p9ot",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "Ship the seam-yield probe as a module + control test (written twice, lost twice); first slice is EXTRACTING _scan's exempt-set construction",
+   "created_at": "2026-08-02T21:59:16Z"
+  },
+  {
+   "id": "livespec-dev-tooling-py9",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "Convert ~198 gratuitous test-spawned check subprocesses to in-process main() (4i5 perf win, deferred; file-by-file, coverage-fragile)",
+   "created_at": "2026-06-13T09:40:05Z"
+  },
+  {
+   "id": "livespec-dev-tooling-ql1",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "Review node is pinned to the DEPRECATED former name of the adapter it already bakes \u2014 frozen ~28 minors behind the implementer node",
+   "created_at": "2026-07-19T22:29:35Z"
+  },
+  {
+   "id": "livespec-dev-tooling-r3ib",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "check-heading-coverage never resolves a test node id: a scenarios row naming a nonexistent integration test passes green",
+   "created_at": "2026-07-28T16:05:20Z"
+  },
+  {
+   "id": "livespec-dev-tooling-r5m",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "release-please release commit leaves uv.lock behind pyproject (0.31.1 mismatch \u2014 hooks regenerate lock in unrelated worktrees)",
+   "created_at": "2026-07-03T07:43:00Z"
+  },
+  {
+   "id": "livespec-dev-tooling-rkdg",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "_IMPL_PREFIXES omits both livespec-driver-claude hook trees, so that repo's entire product surface has zero Red-Green-Replay enforcement",
+   "created_at": "2026-07-23T23:13:47Z"
+  },
+  {
+   "id": "livespec-dev-tooling-sdxz",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "storage-layout: the five tier fstab lines carry no nofail, contradicting the design record's 'a missing tier must never hold up boot'",
+   "created_at": "2026-09-06T00:14:21Z"
+  },
+  {
+   "id": "livespec-dev-tooling-sh71",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "A PARTIAL blind-row red survives the z4qi credential preflight \u2014 measure the causes, then decide",
+   "created_at": "2026-07-27T09:43:52Z"
+  },
+  {
+   "id": "livespec-dev-tooling-sxdz",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "R6 guard slice C: wire the check into lefthook + just check aggregate",
+   "created_at": "2026-08-30T12:23:07Z"
+  },
+  {
+   "id": "livespec-dev-tooling-t2q4",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "AST check: ban direct gh/api.github.com calls outside the chokepoint client (conformance half dropped per No-Circular-Dependency)",
+   "created_at": "2026-08-04T10:23:14Z"
+  },
+  {
+   "id": "livespec-dev-tooling-t5g6x4",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "Fleet agent-instruction-surface row: add the .claude/CLAUDE.md-is-symlink sub-check",
+   "created_at": "2026-06-22T20:31:22Z"
+  },
+  {
+   "id": "livespec-dev-tooling-tkzf",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "check-fleet-conformance-admin runs in PRE-COMMIT, so an external adopter repo's state can block every commit in livespec-dev-tooling \u2014 transiently",
+   "created_at": "2026-08-04T11:35:11Z"
+  },
+  {
+   "id": "livespec-dev-tooling-tljy",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "Eight rotted cross-repo section citations into livespec core: two moved files, four headings that no longer exist anywhere",
+   "created_at": "2026-07-25T20:22:59Z"
+  },
+  {
+   "id": "livespec-dev-tooling-u4xw",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "Foreign-code isolation catch POSITION is unmechanized (x6t6 leg (b), not dissolved by the ruling)",
+   "created_at": "2026-07-26T10:58:41Z"
+  },
+  {
+   "id": "livespec-dev-tooling-uw3h",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "check-self-hosted-routing guards ONLY the two runs-on copies of ci.yml's declared CI_RUNNER_LABELS fallback lockstep; the other copies (LIVESPEC_CI_LANE plus the uv tuning pair) are unguarded, and the variable is now live on self-hosted capacity",
+   "created_at": "2026-08-05T12:01:43Z"
+  },
+  {
+   "id": "livespec-dev-tooling-vno1",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "The spec drift sweep is a TERM-BASED grep and is complete over its query, never its corpus \u2014 a contradiction phrased without the searched vocabulary is invisible, and nothing reports the limit",
+   "created_at": "2026-08-03T07:57:01Z"
+  },
+  {
+   "id": "livespec-dev-tooling-xam",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "Enforce release-park.yml shim presence across release-please fleet members via the dev-tooling fleet obligation table",
+   "created_at": "2026-07-04T10:04:30Z"
+  },
+  {
+   "id": "livespec-dev-tooling-xxdxqv",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "G (DEFERRED) \u2014 birth procedure: fleet members are born unwired",
+   "created_at": "2026-07-25T23:14:06Z"
+  },
+  {
+   "id": "livespec-dev-tooling-y27",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "check_mutation: rc=1 with a PARTIAL tally still poisons the committed ratchet (residual after 6j6)",
+   "created_at": "2026-07-20T02:20:07Z"
+  },
+  {
+   "id": "livespec-dev-tooling-y6m2xn",
+   "status": "backlog",
+   "issue_type": "epic",
+   "priority": 2,
+   "title": "Re-land plan_thread_* -> plan_* rename with correct release-cut + fleet pin-fanout sequencing",
+   "created_at": "2026-08-16T12:37:29Z"
+  },
+  {
+   "id": "livespec-dev-tooling-y8o3",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "livespec-driver-claude has 132 tracked _vendor files and NO .vendor.jsonc \u2014 its vendored libs have no recorded provenance",
+   "created_at": "2026-08-02T22:02:50Z"
+  },
+  {
+   "id": "livespec-dev-tooling-yez0",
+   "status": "backlog",
+   "issue_type": "epic",
+   "priority": 2,
+   "title": "grooming seat anchor: livespec-dev-tooling-grooming \u2014 durable epic for the GroomingSeat's rounds and handoffs",
+   "created_at": "2026-08-20T22:28:22Z"
+  },
+  {
+   "id": "livespec-dev-tooling-ys2i",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "R6 guard slice A: pure releasing-set + shipped-path decision core (the trap)",
+   "created_at": "2026-08-30T09:25:16Z"
+  },
+  {
+   "id": "livespec-dev-tooling-yteb",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "dev-tooling's .vendor.jsonc asserts 'one railway version across the fleet' \u2014 measured, it is THREE provenances (0.25.0 / 0.26.0 / a commit-pin copy-of-a-copy)",
+   "created_at": "2026-08-03T03:33:19Z"
+  },
+  {
+   "id": "livespec-dev-tooling-yuh0",
+   "status": "backlog",
+   "issue_type": "chore",
+   "priority": 2,
+   "title": "Drop the per-job 'mise trust' steps fleet-wide once every tenant pins a livespec-dev-tooling release carrying MISE_TRUSTED_CONFIG_PATHS (>= the release after v1.45.1)",
+   "created_at": "2026-09-06T03:42:53Z"
+  },
+  {
+   "id": "livespec-dev-tooling-z68f",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "just bootstrap self-dirties .livespec.jsonc, so every fresh clone and worktree starts dirty",
+   "created_at": "2026-08-05T04:36:28Z"
+  },
+  {
+   "id": "livespec-dev-tooling-z69s",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "Retrofit: route the enforcement suite's direct GitHub calls through the budgeted client",
+   "created_at": "2026-08-07T21:12:39Z"
+  },
+  {
+   "id": "livespec-dev-tooling-zbo",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "code: justfile install-worktree-pack comment says pack files are 'tracked' but the module docstring says 'untracked/gitignored'",
+   "created_at": "2026-07-13T10:16:29Z"
+  },
+  {
+   "id": "livespec-dev-tooling-zonh",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "Fan the armed decision-authority check out to the fleet via the pin",
+   "created_at": "2026-08-20T19:21:24Z"
+  },
+  {
+   "id": "livespec-dev-tooling-1a6w",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 3,
+   "title": "contracts.md 'Three first-party consumers as of v0.2.x' is stale: wrong count, pre-rename repo name",
+   "created_at": "2026-07-25T17:16:48Z"
+  },
+  {
+   "id": "livespec-dev-tooling-1oa",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 3,
+   "title": "Incremental coverage gate leaks its data file into check-coverage's repo-root combine (dispatcher isolation breach; benign post-#210)",
+   "created_at": "2026-06-28T10:23:42Z"
+  },
+  {
+   "id": "livespec-dev-tooling-1syc",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 3,
+   "title": "with-livespec-env.sh does not propagate the caller's PATH: a binary resolvable in the calling shell fails under the wrapper with 'No such file' (the original silent-rc=0 premise was a pipeline artifact and is refuted)",
+   "created_at": "2026-07-30T10:16:44Z"
+  },
+  {
+   "id": "livespec-dev-tooling-30g",
+   "status": "backlog",
+   "issue_type": "feature",
+   "priority": 3,
+   "title": "red_green_replay._IMPL_PREFIXES omits .claude-plugin/hooks/ \u2014 Driver hook .py can't use the Red->Green pair shape (falls back to suite-green)",
+   "created_at": "2026-07-13T23:15:51Z"
+  },
+  {
+   "id": "livespec-dev-tooling-4j3",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 3,
+   "title": "release-please bumps pyproject version but not uv.lock, so every uv run dirties the tree",
+   "created_at": "2026-07-19T08:25:21Z"
+  },
+  {
+   "id": "livespec-dev-tooling-5g3c",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 3,
+   "title": "uv.lock self-entry is one release stale (1.31.0 vs pyproject 1.31.1) -- every uv run dirties the tree",
+   "created_at": "2026-08-20T23:35:04Z"
+  },
+  {
+   "id": "livespec-dev-tooling-65c",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 3,
+   "title": "branch_protection_alignment does not verify enforce_admins despite NFR contract requiring it",
+   "created_at": "2026-07-10T23:08:42Z"
+  },
+  {
+   "id": "livespec-dev-tooling-74a",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 3,
+   "title": "Single-source the just recipe-header recognizer (reconcile / canonical_recipe_fidelity / test helper) + close residual @-quiet, alias, and variable-assignment edge gaps",
+   "created_at": "2026-07-12T23:48:38Z"
+  },
+  {
+   "id": "livespec-dev-tooling-9j8.7",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 3,
+   "title": "[drift] Derive check-pre-commit IMPL_PREFIXES from the Python source of truth",
+   "created_at": "2026-06-30T20:12:07Z"
+  },
+  {
+   "id": "livespec-dev-tooling-d1j",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 3,
+   "title": "Establish a standing armed home for check-plan-thread-epic-parity",
+   "created_at": "2026-07-18T21:55:24Z"
+  },
+  {
+   "id": "livespec-dev-tooling-k169",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 3,
+   "title": "pretooluse_background_guard matches the substring 'check' anywhere on the command line, denying a sanctioned backgrounded 'just gate-wait' whose argument path contains 'checks'",
+   "created_at": "2026-09-06T03:43:29Z"
+  },
+  {
+   "id": "livespec-dev-tooling-k9mr",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 3,
+   "title": "github-ci-export emits unexpanded matrix-leg spans named 'ci.job.${{ matrix.target }}' with a uint64-wrapped duration_ms",
+   "created_at": "2026-08-21T06:08:17Z"
+  },
+  {
+   "id": "livespec-dev-tooling-l8d7",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 3,
+   "title": "Generalize the carrier carve-out to the @generated marker + is_generated primitive",
+   "created_at": "2026-07-24T00:04:36Z"
+  },
+  {
+   "id": "livespec-dev-tooling-nce",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 3,
+   "title": "Committed uv.lock lags pyproject.toml by one release, so any 'uv run' spontaneously dirties the working tree",
+   "created_at": "2026-07-21T00:23:31Z"
+  },
+  {
+   "id": "livespec-dev-tooling-olwk",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 3,
+   "title": "check-shell-quality validates recipe SHAPE but never whether the body parses under just's default sh, so a bashism aborts every invocation and the gate passes it",
+   "created_at": "2026-08-06T03:47:48Z"
+  },
+  {
+   "id": "livespec-dev-tooling-otrq",
+   "status": "backlog",
+   "issue_type": "bug",
+   "priority": 3,
+   "title": "ROP slice 1 left a stale `returned \\`None\\`` docstring at fabro_image_pin_rewrite.py:211 \u2014 the prose twin, inside the conversion's own output",
+   "created_at": "2026-07-29T01:13:02Z"
+  },
+  {
+   "id": "livespec-dev-tooling-paz",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 3,
+   "title": "Decide and roll out plan-lifecycle enforcement for adopters (openbrain, resume)",
+   "created_at": "2026-07-18T21:55:15Z"
+  },
+  {
+   "id": "livespec-dev-tooling-u8ac",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 3,
+   "title": "datastore-tmpfs: the mount unit's header says k3s does not Require it, but 20-requires-datastore-mount.conf makes k3s RequiresMountsFor it",
+   "created_at": "2026-09-06T00:14:23Z"
+  },
+  {
+   "id": "livespec-dev-tooling-vod6",
+   "status": "backlog",
+   "issue_type": "task",
+   "priority": 3,
+   "title": "DESIGN QUESTION: is control-plane-tool (livespec-overseer) a release PRODUCER, or a consumer-class candidate to drop from the release-dispatch obligation as the console was (oq9w)?",
+   "created_at": "2026-07-22T19:15:44Z"
+  },
+  {
+   "id": "livespec-dev-tooling-jtrt.1",
+   "status": "blocked",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "Asserted enforcement, measurement side: an ad-hoc config re-parse pointed at the wrong TOML table reports a confident, well-formatted ZERO on the very commit that added the entries",
+   "created_at": "2026-08-21T14:01:33Z"
+  },
+  {
+   "id": "livespec-dev-tooling-thw26i",
+   "status": "blocked",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "agent-instruction-surface obligation runs over 1 of 7 fleet classes while its ratified clause names all of them: 7 of 10 members breach it and the row reports PASS",
+   "created_at": "2026-08-21T00:00:02Z"
+  },
+  {
+   "id": "livespec-dev-tooling-3iizsd",
+   "status": "blocked",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "E-overseer \u2014 relocate livespec-overseer's nested worktree (BLOCKED on owning session)",
+   "created_at": "2026-07-25T23:13:57Z"
+  },
+  {
+   "id": "livespec-dev-tooling-c5byjh",
+   "status": "blocked",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "B2: per-repo target warm cache \u2014 measure the per-job byte copy against the sccache-only shape ONLY once ci-workvols is on the NVMe; rejected on the array (start-burst knee)",
+   "created_at": "2026-09-04T09:01:19Z"
+  },
+  {
+   "id": "livespec-dev-tooling-fp5yfv",
+   "status": "blocked",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "red_green_replay._IMPL_PREFIXES under-covers configured source trees \u2014 .claude/hooks/ omitted too (orchestrator-beads-fabro also exposed), and codex is covered only accidentally; recommend deriving impl paths from source_tree_prefixes",
+   "created_at": "2026-07-19T07:40:46Z"
+  },
+  {
+   "id": "livespec-dev-tooling-kmdn",
+   "status": "blocked",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "v033 turned four repos' pure_trees = unarmed_until into a RATIFIED obligation to arm, and nobody has scheduled it \u2014 three of the four cite a cross-tenant id nobody verifies",
+   "created_at": "2026-07-28T16:05:01Z"
+  },
+  {
+   "id": "livespec-dev-tooling-m50u",
+   "status": "blocked",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "A blessed declared-absent PAYLOAD can be false and nothing checks it \u2014 git-jsonl's source_tree_prefixes superseded_by claim is measurably untrue, silently narrowing TWO commit-time gates",
+   "created_at": "2026-07-28T14:22:24Z"
+  },
+  {
+   "id": "livespec-dev-tooling-nauzq6",
+   "status": "blocked",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "install_no_shadow_ledger and no_shadow_ledger_body_identical DISAGREE on an undeclared neutral_hook_body_path -- installer no-ops (0), check hard-errors (1), and both docstrings claimed they mirror",
+   "created_at": "2026-07-28T20:44:53Z"
+  },
+  {
+   "id": "livespec-dev-tooling-qn3pgi",
+   "status": "blocked",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "Retire the legacy justfile target mirror once livespec core drops its targets=(...) fallback \u2014 the condition currently lives only in a CLOSED item's comment",
+   "created_at": "2026-08-04T17:28:26Z"
+  },
+  {
+   "id": "livespec-dev-tooling-qv3k",
+   "status": "blocked",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "livespec_footgun_guard.py is the fleet's third shared hook body with NO carrier constant and NO byte-identity check \u2014 8 copies, 7 distinct contents, and it is a SAFETY guard",
+   "created_at": "2026-07-28T14:53:31Z"
+  },
+  {
+   "id": "livespec-dev-tooling-tem4t2",
+   "status": "blocked",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "dev-tooling CI does not gate doctor-static \u2014 spec-health debt accumulates invisibly",
+   "created_at": "2026-07-04T23:08:46Z"
+  },
+  {
+   "id": "livespec-dev-tooling-vrl5fo",
+   "status": "blocked",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "FOREMAN HANDOFF 2026-08-19: session wind-down resume state (operator: record a foreman ledger epic id for this track)",
+   "created_at": "2026-08-19T04:58:37Z"
+  },
+  {
+   "id": "livespec-dev-tooling-xaxj5w",
+   "status": "blocked",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "Decide whether check-agents-ai-references-resolve must detect .ai/ ABSENCE (today a repo with zero .ai/ files passes by construction)",
+   "created_at": "2026-08-19T13:23:03Z"
+  },
+  {
+   "id": "livespec-dev-tooling-y6m2xn.6",
+   "status": "blocked",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "Bump the livespec-dev-tooling pin and rename this repo's own check-plan-thread-* recipes, IN THE SAME WAVE",
+   "created_at": "2026-08-16T12:40:03Z"
+  },
+  {
+   "id": "livespec-dev-tooling-y6m2xn.7",
+   "status": "blocked",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "Bump the livespec-dev-tooling pin and rename this repo's own check-plan-thread-* recipes, IN THE SAME WAVE",
+   "created_at": "2026-08-16T12:40:13Z"
+  },
+  {
+   "id": "livespec-dev-tooling-y6m2xn.8",
+   "status": "blocked",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "Bump the livespec-dev-tooling pin and rename this repo's own check-plan-thread-* recipes, IN THE SAME WAVE",
+   "created_at": "2026-08-16T12:40:32Z"
+  },
+  {
+   "id": "livespec-dev-tooling-t4fosw",
+   "status": "blocked",
+   "issue_type": "task",
+   "priority": 3,
+   "title": "Keyed tier, OFFERED-NOT-REQUIRED: redirect actions/cache to a pool-local falcondev cache server on the ci-cache tier through a NODE_OPTIONS preload on the production hook pod template \u2014 proven with the stock runner (research/010); converge only on maintainer request",
+   "created_at": "2026-09-04T18:40:16Z"
+  },
+  {
+   "id": "livespec-dev-tooling-3nsap6",
+   "status": "pending-approval",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "foreman-act files items at pending-approval, which `approve` cannot clear under auto_approve_ready -- every foreman filing is born unclearable",
+   "created_at": "2026-08-20T11:00:15Z"
+  },
+  {
+   "id": "livespec-dev-tooling-b7dbne",
+   "status": "pending-approval",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "Pre-push hook reports worktree_pack_absent as a bare `exit status 1`: the remedy exists but scrolls off after 313s of output",
+   "created_at": "2026-08-20T10:33:05Z"
+  },
+  {
+   "id": "livespec-dev-tooling-bqcj7b",
+   "status": "pending-approval",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "A host-wide tool trap is recorded only inside a role-scoped protocol file: the `ls`->lsd alias has now cost two different agent roles a false observation, 24 days apart",
+   "created_at": "2026-08-21T18:07:21Z"
+  },
+  {
+   "id": "livespec-dev-tooling-h5uwnx",
+   "status": "pending-approval",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "Foreman contract pins the runtime to the harness binding, which can be a major version stale -- resolve the build by version.json instead",
+   "created_at": "2026-08-20T10:44:47Z"
+  },
+  {
+   "id": "livespec-dev-tooling-i53r33",
+   "status": "pending-approval",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "Make inherited constraints mechanically checkable: a 34-instance catalogue has not prevented the failure it documents, because the countermeasure is prose and prose is the substrate that rots",
+   "created_at": "2026-08-21T07:42:47Z"
+  },
+  {
+   "id": "livespec-dev-tooling-jaut4y",
+   "status": "pending-approval",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "planning-lane-redesign: re-derive the plan conformance checks against the ratified contract",
+   "created_at": "2026-08-04T10:34:42Z"
+  },
+  {
+   "id": "livespec-dev-tooling-lptplj",
+   "status": "pending-approval",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "fleet conformance: central `worktree-pack-wired` row over every manifest member \u2014 import? lines, gitignore entries, install recipe, lefthook first-command in both hooks, `.livespec.jsonc` worktree_discipline (optimize-gates R3)",
+   "created_at": "2026-09-06T02:21:15Z"
+  },
+  {
+   "id": "livespec-dev-tooling-qrunmn",
+   "status": "pending-approval",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "Wire released-posture adopters into the release fan-out dispatch matrix (after the 9j8.6 extraction)",
+   "created_at": "2026-07-19T23:06:31Z"
+  },
+  {
+   "id": "livespec-dev-tooling-ta5jy4",
+   "status": "pending-approval",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "Self-wire the charter gate in livespec-dev-tooling",
+   "created_at": "2026-08-04T10:21:00Z"
+  },
+  {
+   "id": "livespec-dev-tooling-to6hh2",
+   "status": "pending-approval",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "A stray embeddeddolt/ store is created at the repo ROOT, outside .beads/, so .beads/.gitignore never covers it and it silently dirties every session's clean check",
+   "created_at": "2026-08-21T15:26:45Z"
+  },
+  {
+   "id": "livespec-dev-tooling-vvfsao",
+   "status": "pending-approval",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "work_item_session_start refuses work_item_evidence_missing whenever needs_attention is unconfigured: the reason names the evidence, not the cause",
+   "created_at": "2026-08-21T00:33:10Z"
+  },
+  {
+   "id": "livespec-dev-tooling-z7wxbd",
+   "status": "pending-approval",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "Surface pinned-posture adopter pin staleness and enforce targeted-or-exempt for every governed repo",
+   "created_at": "2026-07-19T23:06:39Z"
+  },
+  {
+   "id": "livespec-dev-tooling-3qot",
+   "status": "ready",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "Work admitted by nothing: 7 live items (one P1) sit at status 'open', a state no intake DoR verdict produces and no dispatch lane ranks",
+   "created_at": "2026-08-21T15:48:12Z"
+  },
+  {
+   "id": "livespec-dev-tooling-crl2",
+   "status": "ready",
+   "issue_type": "task",
+   "priority": 1,
+   "title": "Re-land 46c5dab: un-gate public_api_result_typed from pure_trees",
+   "created_at": "2026-08-04T19:56:58Z"
+  },
+  {
+   "id": "livespec-dev-tooling-idlx",
+   "status": "ready",
+   "issue_type": "epic",
+   "priority": 1,
+   "title": "Re-land the public_api_result_typed un-gating behind adoption",
+   "created_at": "2026-08-04T19:55:58Z"
+  },
+  {
+   "id": "livespec-dev-tooling-j2qa",
+   "status": "ready",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "A server-side revert cannot carry TDD trailers because no local hook mediates it, so check-red-green-replay refuses the one remedy ci-gate-discipline mandates for a gate deadlock",
+   "created_at": "2026-08-22T12:17:16Z"
+  },
+  {
+   "id": "livespec-dev-tooling-qh0e",
+   "status": "ready",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "plan_thread_anchor_declared lost first-match: a placeholder anchor now passes if the file quotes a valid example later, and the docstring still asserts the dropped guarantee",
+   "created_at": "2026-08-05T22:28:35Z"
+  },
+  {
+   "id": "livespec-dev-tooling-x7ml",
+   "status": "ready",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "Three gates stand down on a named work-item that nothing ever verifies exists or is open \u2014 shared ledger-liveness resolver missing",
+   "created_at": "2026-08-19T15:33:25Z"
+  },
+  {
+   "id": "livespec-dev-tooling-y6e2",
+   "status": "ready",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "check-shell-quality passes in CI only because CI skips installing the pack it inspects",
+   "created_at": "2026-08-04T20:35:04Z"
+  },
+  {
+   "id": "livespec-dev-tooling-yj09",
+   "status": "ready",
+   "issue_type": "task",
+   "priority": 1,
+   "title": "Stop public_api_result_typed reading co-located test modules as public API",
+   "created_at": "2026-08-04T19:56:30Z"
+  },
+  {
+   "id": "livespec-dev-tooling-zv78",
+   "status": "ready",
+   "issue_type": "bug",
+   "priority": 1,
+   "title": "red_green_replay certifies a HALF-PAIR: any amend-with-a-new-message (--amend -F / -m) destroys the TDD-Red-* trailers and the hook still exits 0",
+   "created_at": "2026-08-01T11:53:47Z"
+  },
+  {
+   "id": "livespec-dev-tooling-1jqm",
+   "status": "ready",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "The decision-authority row docstring says SHIPPED DISARMED while the row is armed and released",
+   "created_at": "2026-08-20T20:02:05Z"
+  },
+  {
+   "id": "livespec-dev-tooling-3ztbdq",
+   "status": "ready",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "[bug] heading-coverage.json is unwritable: the doc-only pre-commit arms the TODO-ownership release tier on ANY staged registry edit, and that tier rejects all 58 pre-existing unowned TODOs",
+   "created_at": "2026-09-04T09:00:25Z"
+  },
+  {
+   "id": "livespec-dev-tooling-4wc3h4",
+   "status": "ready",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "agent-instruction-surface row: the \u00a7Repository mutation protocol names `just worktree-create` \u2014 single-source the worktree-creation guidance instead of hand-porting it (optimize-gates R6; absorbs livespec-dev-tooling-5kcy, -1buh, -f7xs)",
+   "created_at": "2026-09-06T02:21:25Z"
+  },
+  {
+   "id": "livespec-dev-tooling-5ug6",
+   "status": "ready",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "A denial hint cites a repo-relative .ai path that resolves only in this repo, not in the consumers the denial reaches",
+   "created_at": "2026-08-22T02:30:58Z"
+  },
+  {
+   "id": "livespec-dev-tooling-675skf",
+   "status": "ready",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "Audit the 2,569-test dev-tooling suite for necessity and faster full-coverage execution",
+   "created_at": "2026-08-03T07:01:30Z"
+  },
+  {
+   "id": "livespec-dev-tooling-6e65",
+   "status": "ready",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "Dispatcher staleness gate calls a NEWER build 'predates latest release' and prescribes an update that cannot fix it",
+   "created_at": "2026-08-21T07:59:53Z"
+  },
+  {
+   "id": "livespec-dev-tooling-7ix8",
+   "status": "ready",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "just bootstrap leaves an uncommitted tracked .livespec.jsonc modification in every repo lacking worktree_discipline",
+   "created_at": "2026-08-04T18:11:35Z"
+  },
+  {
+   "id": "livespec-dev-tooling-dpqd",
+   "status": "ready",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "Fabro run_turn span never lands for dispatched items, so every dispatch reports cost 'unobservable'",
+   "created_at": "2026-08-21T08:00:11Z"
+  },
+  {
+   "id": "livespec-dev-tooling-dqfmjr",
+   "status": "ready",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "Fan-out dedupes against already-open bump PRs before gh pr create, sharing the supersession-classifier module",
+   "created_at": "2026-07-19T22:57:27Z"
+  },
+  {
+   "id": "livespec-dev-tooling-fy02",
+   "status": "ready",
+   "issue_type": "epic",
+   "priority": 2,
+   "title": "The factory-branch workflow-edit guard is one rule with eight implementations: only the Dispatcher janitor enforces it uniformly; the local pre-push layer is in the 'check' aggregate in 2 of 10 members, and 3 of the copies carry an agent-settable escape (env base-ref override \u00d72, self-authored exemption declaration \u00d71) \u2014 consolidate to ONE shared hard-block carrier, aggregate-wired everywhere, no escape, one attended human-landing path",
+   "created_at": "2026-09-05T03:31:07Z"
+  },
+  {
+   "id": "livespec-dev-tooling-hgfnqd",
+   "status": "ready",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "Collapse red_green_replay._derive_impl_prefixes into config.derive_source_prefixes \u2014 two implementations of the same source-prefix derivation",
+   "created_at": "2026-07-28T04:32:37Z"
+  },
+  {
+   "id": "livespec-dev-tooling-iaxmyy",
+   "status": "ready",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "Charter detector (d) flags a correct search accumulator, and its implied remedy breaks the charter",
+   "created_at": "2026-08-05T22:49:02Z"
+  },
+  {
+   "id": "livespec-dev-tooling-iugc",
+   "status": "ready",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "gate-run.sh status reports 'zero check targets completed / no per-target evidence' for a run whose log shows all 79 targets passing",
+   "created_at": "2026-08-21T10:13:09Z"
+  },
+  {
+   "id": "livespec-dev-tooling-jtrt.2",
+   "status": "ready",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "the revise stale-branch precondition and the worktree reaper both judge merged-ness by ancestry, so under rebase-merge they report every landed branch and can only ever be skipped",
+   "created_at": "2026-08-23T08:39:10Z"
+  },
+  {
+   "id": "livespec-dev-tooling-klvy",
+   "status": "ready",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "The LLOC soft-band owner marker is diagnosed as a bond but is a silencer: its liveness probe returns None unconditionally",
+   "created_at": "2026-08-20T13:30:36Z"
+  },
+  {
+   "id": "livespec-dev-tooling-l5gypl",
+   "status": "ready",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "worktree pack: ONE enumeration of the pack file set \u2014 installer, verifier, and the bootstrap worktree-pack row derive from a single constant, with a lockstep test (optimize-gates R2)",
+   "created_at": "2026-09-06T02:21:02Z"
+  },
+  {
+   "id": "livespec-dev-tooling-os6wd3",
+   "status": "ready",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "worktree-create never trusts the primary's pack: install from the package (or copy, verify, reinstall) so a worktree created across a pin bump is not born failing byte-verification (optimize-gates R5; absorbs livespec-dev-tooling-ov9o)",
+   "created_at": "2026-09-06T02:21:21Z"
+  },
+  {
+   "id": "livespec-dev-tooling-tndwz5",
+   "status": "ready",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "heal-at-gate proof: a raw `git worktree add` worktree of a wired repo commits and pushes with no bootstrap, and a pin-drifted pack heals, driven through the real hook path (optimize-gates R1)",
+   "created_at": "2026-09-06T02:21:11Z"
+  },
+  {
+   "id": "livespec-dev-tooling-trfzkw",
+   "status": "ready",
+   "issue_type": "bug",
+   "priority": 2,
+   "title": "gate-run.sh logs live under the worktree's tmp/gate-runs/ and vanish with `git worktree remove`, destroying the only record of what a gate was executing when it failed",
+   "created_at": "2026-09-06T03:58:06Z"
+  },
+  {
+   "id": "livespec-dev-tooling-wkjh7p",
+   "status": "ready",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "worktree pack verifier: remedy names `just install-worktree-pack` first when the recipe is wired, `just bootstrap` only when it is not (optimize-gates R7)",
+   "created_at": "2026-09-06T02:21:06Z"
+  },
+  {
+   "id": "livespec-dev-tooling-yxxzvj",
+   "status": "ready",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "EXECUTION mirror for bd-ib-kpqsk6 (livespec-orchestrator-beads-fabro b1.S3): the eleven plan-record conformance checks beside plan_epic_parity, armed-only, shipped unarmed",
+   "created_at": "2026-09-06T04:58:41Z"
+  },
+  {
+   "id": "livespec-dev-tooling-zm5cbp",
+   "status": "ready",
+   "issue_type": "task",
+   "priority": 2,
+   "title": "Make the producer's self-referential pin updates reliable rather than sporadic-with-skips (after the 9j8.6 extraction)",
+   "created_at": "2026-07-19T23:00:31Z"
+  }
+ ]
+}
