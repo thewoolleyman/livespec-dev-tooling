@@ -2,3 +2,4 @@
 # layer's published image), so the entire repo-root build context is
 # excluded.
 *
+!docker/fabro-sandbox/agent/sccache-or-rustc.sh

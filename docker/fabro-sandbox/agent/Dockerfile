@@ -118,3 +118,53 @@ RUN npm install -g --fetch-retries=5 \
 # PERMANENT home: do not add a global copy when the predecessor is removed.
 RUN npm install -g --prefix /opt/livespec/codex-acp --fetch-retries=5 \
         @agentclientprotocol/codex-acp@${CODEX_ACP_VERSION}
+
+# sccache for FACTORY sandboxes (console plan optimize-console-builds,
+# livespec-console-beads-fabro-di6fn5; dev-tooling 3u3gm2 shape 2). Every
+# fabro dispatch of a Rust consumer compiles fully cold in a fresh container
+# (console research/003: cargo-build MAX 50 s, cargo-test MAX 62 s per run);
+# sccache is built for exactly this — many ephemeral builders sharing one
+# content-addressed cache. Two constraints shape the wiring:
+#   - fabro's docker provider exposes NO volume mount, so the cache cannot be
+#     a host directory; it is a REDIS on the factory host, reached over the
+#     docker bridge gateway (172.17.0.1:6379) — the same path the cargo
+#     telemetry shim already uses for the OTLP receiver at 172.17.0.1:4318
+#     (fabro-hosts services/sccache-redis; 4 GB allkeys-lru, no persistence).
+#   - fabro spawns ACP nodes under a fail-closed env allowlist, so SCCACHE_*
+#     env cannot be relied on to reach cargo. Everything is therefore a FILE:
+#     the redis endpoint in sccache's own config (~/.config/sccache/config)
+#     and `rustc-wrapper` in the cargo config the python-rust layer already
+#     bakes. No env, no workflow change.
+# Only the python-rust-agent build has a cargo home; on python-agent the
+# binary lands unused (10 MB) and the cargo stanza is skipped. The wrapper is
+# NOT sccache itself but sccache-or-rustc.sh: sccache falls back to a plain
+# compile when a cache OPERATION fails, but when its server cannot START (an
+# unreachable redis at first use) the client exits non-zero and cargo fails —
+# measured 2026-09-06. The wrapper probes once per container and execs plain
+# rustc when the cache is unusable, so a host without the redis builds exactly
+# as before (di6fn5 bullet 5). The telemetry shim wraps cargo, not rustc, so
+# the wrapper is orthogonal to it; its spans carry build.cache.sccache.* from
+# the server when one is up.
+# The version and checksum are the pool's (ci-runner/k3s/phase2/sccache/
+# install-sccache-binary.sh) — bump both together.
+ARG SCCACHE_VERSION=0.17.0
+ARG SCCACHE_SHA256=67c4a96dd237c1f518f6b36083f270f9976d516f1e57fce891755ea782e50006
+ARG SCCACHE_REDIS_ENDPOINT=redis://172.17.0.1:6379
+COPY --chmod=0755 docker/fabro-sandbox/agent/sccache-or-rustc.sh /usr/local/bin/sccache-or-rustc
+RUN set -eux; \
+    asset="sccache-v${SCCACHE_VERSION}-x86_64-unknown-linux-musl"; \
+    curl -fsSL --retry 5 --retry-all-errors --retry-connrefused \
+        -o /tmp/sccache.tgz \
+        "https://github.com/mozilla/sccache/releases/download/v${SCCACHE_VERSION}/${asset}.tar.gz"; \
+    echo "${SCCACHE_SHA256}  /tmp/sccache.tgz" | sha256sum -c -; \
+    tar -xzf /tmp/sccache.tgz -C /tmp "${asset}/sccache"; \
+    install -m 0755 "/tmp/${asset}/sccache" /usr/local/bin/sccache; \
+    rm -rf /tmp/sccache.tgz "/tmp/${asset}"; \
+    /usr/local/bin/sccache --version; \
+    mkdir -p /root/.config/sccache; \
+    printf '# Factory compilation cache: the redis on the factory host (fabro-hosts\n# services/sccache-redis). sccache falls back to compiling on any error.\n[cache.redis]\nendpoint = "%s"\n' "${SCCACHE_REDIS_ENDPOINT}" \
+        > /root/.config/sccache/config; \
+    if [ -d /root/.cargo ]; then \
+        printf '\n# Dependency compiles served from the factory host sccache when it answers,\n# plain rustc otherwise (agent layer; sccache-or-rustc probes once per container).\n[build]\nrustc-wrapper = "/usr/local/bin/sccache-or-rustc"\nincremental = false\n' \
+            >> /root/.cargo/config.toml; \
+    fi
