@@ -58,6 +58,11 @@ Output:
     Human-readable per-target headers + captured output on stdout.
     Machine-readable per-target timing events on stderr (structlog JSON)
     for e60 observability.
+    On failure the LAST lines are the failure-mode digest: each failing
+    target's own `failure_mode` records re-printed with the remedy the
+    emitting check composed (`check_failure_digest`, work-item
+    livespec-dev-tooling-b7dbne), so a self-describing failure survives
+    an aggregate long enough to scroll it away.
 """
 
 from __future__ import annotations
@@ -72,6 +77,11 @@ import time
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import cast
+
+from livespec_dev_tooling.check_failure_digest import (
+    collect_failure_findings,
+    render_failure_digest,
+)
 
 _VENDOR_DIR = Path(__file__).resolve().parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -292,6 +302,28 @@ def _write_timing_table(*, results: list[TargetResult]) -> None:
             _write(text=f"  {r.wall_time_s:6.1f}s  {r.name}\n")
 
 
+def _write_failure_digest(*, failed: list[TargetResult]) -> None:
+    """Re-print the failing targets' own findings as the aggregate's LAST lines.
+
+    Work-item livespec-dev-tooling-b7dbne. The list of failed target NAMES used
+    to be the tail, and a name is not a diagnosis: the `worktree_pack_absent`
+    finding that says exactly what to run had scrolled off 313 seconds earlier,
+    so the pre-push hook read as a bare `exit status 1`. Both hook aggregates
+    reach here — pre-push and pre-commit each delegate to the bare `check`
+    recipe this dispatcher backs — so one tail serves both.
+
+    A target that failed WITHOUT emitting a structured record adds nothing and
+    the digest stays empty; its captured output above is still the only account
+    of it there is.
+    """
+    findings = [
+        finding
+        for result in failed
+        for finding in collect_failure_findings(target=result.name, output=result.output)
+    ]
+    _write(text=render_failure_digest(findings=findings))
+
+
 def _emit_summary(*, results: list[TargetResult], log: structlog.stdlib.BoundLogger) -> int:
     """Write timing summary to stdout; return 0 if all passed, 1 if any failed."""
     passed = [r for r in results if not r.skipped and r.exit_code == 0]
@@ -305,6 +337,7 @@ def _emit_summary(*, results: list[TargetResult], log: structlog.stdlib.BoundLog
         for r in failed:
             _write(text=f"  - {r.name}\n")
         log.error("check_aggregate_failed", failed=[r.name for r in failed])
+        _write_failure_digest(failed=failed)
         return 1
     _write(text=f"\nAll {len(passed)} targets passed.\n")
     log.info("check_aggregate_passed", passed=len(passed))
