@@ -208,12 +208,35 @@ def test_public_api_result_typed_accepts_safe_decorated_function(*, tmp_path: Pa
     )
 
 
-def test_public_api_result_typed_skips_private_filename(*, tmp_path: Path) -> None:
-    """A package-private module (`_*.py`) is wholly skipped.
+def test_public_api_result_typed_scans_a_private_filename(*, tmp_path: Path) -> None:
+    """A `_`-prefixed FILE is scanned; only a `_`-prefixed NAME is disqualified.
 
-    Closes the `if py_file.name.startswith("_"):` filename
-    skip branch. The file's bare-int public function would
-    otherwise fail; the filename skip protects it.
+    ONE FIXTURE, BOTH HALVES OF THE RULE, because the rule is a boundary and a
+    boundary is only shown by what falls on each side of it. `_helpers.py`
+    holds a consumed `raw` and a consumed `_hidden`; the check must convict
+    `raw` and stay silent about `_hidden`. Asserting only the conviction would
+    leave "the check now convicts everything in a `_`-file" indistinguishable
+    from the ratified rule.
+
+    livespec v178 clause 0 disqualifies a `_`-prefixed NAME, adopting the
+    private-helper definition in §"Typechecker rule set" — which is about names
+    in `__all__` and says nothing about filenames. The shipped `_scan` ALSO
+    skipped whole files, an exemption wider than the text it implements. That
+    skip is gone (livespec-dev-tooling-8zv3.5); this test is the one that would
+    fail if it came back.
+
+    ⚠️ THE SPEC USES "private-helper" FOR TWO DIFFERENT THINGS, and the
+    file-level one is the reason the skip was plausible enough to ship: the
+    TEST-PAIRING section defines private-helper MODULES as `.py` files whose
+    FILENAME starts with `_`, exempting them from the mirrored-test
+    requirement. That definition governs test pairing, not this scan, and
+    reading it into clause 0's delegation is how the widening happened. Ask
+    which definition and in which section before reinstating anything here.
+
+    The fixture RAISES for the same reason the other conviction fixtures do:
+    since livespec v179 the rule reaches a public function only when it HAS an
+    expected failure mode, so a total body would be member-1 exempt and this
+    test would pass without the file ever being scanned.
     """
     package_dir = tmp_path / ".claude-plugin" / "scripts" / "livespec" / "parse"
     package_dir.mkdir(parents=True)
@@ -225,17 +248,48 @@ def test_public_api_result_typed_skips_private_filename(*, tmp_path: Path) -> No
         "\n"
         "\n"
         "def raw(*, x: int) -> int:\n"
+        "    if x < 0:\n"
+        "        raise ValueError(x)\n"
+        "    return x\n"
+        "\n"
+        "\n"
+        "def _hidden(*, x: int) -> int:\n"
+        "    if x < 0:\n"
+        "        raise ValueError(x)\n"
         "    return x\n",
         encoding="utf-8",
     )
 
-    _consume(tmp_path=tmp_path, module="_helpers", name="raw")
+    consumer = tmp_path / _COMMANDS_TREE / "use.py"
+    consumer.parent.mkdir(parents=True, exist_ok=True)
+    _ = consumer.write_text(
+        "from __future__ import annotations\n"
+        "\n"
+        "from livespec.parse._helpers import _hidden, raw\n"
+        "\n"
+        "__all__: list[str] = []\n"
+        "\n"
+        "\n"
+        "def run() -> None:\n"
+        "    _ = raw(x=1)\n"
+        "    _ = _hidden(x=1)\n",
+        encoding="utf-8",
+    )
 
     result = _run_check(cwd=tmp_path)
 
-    assert result.returncode == 0, (
-        f"public_api_result_typed should skip _-prefixed filenames; "
+    assert result.returncode != 0, (
+        f"public_api_result_typed should scan _-prefixed filenames; "
         f"got returncode={result.returncode}"
+    )
+    combined = result.stdout + result.stderr
+    assert '"function": "raw"' in combined, (
+        f"public function `raw` in a _-prefixed module was not convicted; "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    assert '"function": "_hidden"' not in combined, (
+        f"v178 clause 0 disqualifies the _-prefixed NAME `_hidden`; "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
 
 

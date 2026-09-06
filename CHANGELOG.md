@@ -58,6 +58,22 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.52.16](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.52.15...v1.52.16) (2026-09-06)
+
+
+### Bug Fixes
+
+* **fleet:** recognise required checks from non-ci.yml pull_request(_target) workflows ([e1a329f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e1a329f491550d2264eeffe525c7bb2d419aa746))
+
+## [1.52.15](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.52.14...v1.52.15) (2026-09-06)
+
+
+### Bug Fixes
+
+* **branch_protection_alignment:** the optional-leg leniency now verifies the aggregate gate it assumes ([9c52a7d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9c52a7d719fee5e8010d271875f07c2a59739154))
+* **ci-runner:** the AppArmor installer's enforce-mode check reads aa-status to EOF, so a host with many profiles no longer fails it with SIGPIPE (livespec-ifwnqj.5) ([a212ccd](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a212ccd5749e2d16d881867cd81679d4bce37229))
+* **no_todo_registry:** the armed TODO-ownership tier judges only entries the staged diff touched ([df94678](https://github.com/thewoolleyman/livespec-dev-tooling/commit/df946785c6e20b792d613d40f05646a7c3947297))
+
 ## [1.52.14](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.52.13...v1.52.14) (2026-09-06)
 
 

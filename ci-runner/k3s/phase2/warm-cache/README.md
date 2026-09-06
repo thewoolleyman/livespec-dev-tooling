@@ -464,7 +464,18 @@ is also this populator: when the sccache binary is mounted and the writer
 credential is projected, it builds each routed Rust repository's default
 branch at the job's own checkout path with sccache as the writer, gated by a
 marker key in redis so an unchanged branch costs nothing (the populator's
-header has the details). Design and the live verification:
+header has the details). The writer build runs behind its OWN sccache server
+(`SCCACHE_WRITER_PORT`, default 4227), started under the writer credential
+and proven `ReadWrite` from the server's own startup log before anything
+compiles; a server that is not `ReadWrite` refuses the build
+(`<repo>:sccache-readonly` in the failure list). The pod's default port 4226
+is not safe to share: the image's cargo shim runs `sccache --zero-stats`
+before every measured cargo subcommand, `cargo fetch` included, and that
+client starts a server from the pod environment, without the writer
+credential, which fails its write check and comes up ReadOnly; every put
+behind it is dropped with misses counted and zero errors (2026-09-06, three
+writer builds and no objects; `livespec-dev-tooling-efqeip.4`). Design and
+the live verification:
 `plan/ci-runner-cache-tiers/research/005-a1-crates-proxy-verification.md`.
 The cargo and sccache steps run after the uv phase on every tick, whether
 or not the uv generation was rebuilt.

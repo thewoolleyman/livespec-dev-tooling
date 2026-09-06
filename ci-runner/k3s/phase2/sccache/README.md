@@ -111,6 +111,17 @@ populator's writes; the cache gauges and the hit-floor trigger are the alarm.
   (`livespec-dev-tooling-mlg5sf`) lands: exec into a running workflow pod and
   run `/opt/ci-runner/bin/sccache --show-stats`; or watch `redis-cli INFO
   stats` `keyspace_hits` climb during a console run.
+- **The writer reports misses but `DBSIZE` does not grow**: the populator's
+  sccache server is ReadOnly. sccache clients talk to whichever server already
+  listens on their port and a server keeps the credentials it was STARTED
+  with; a stats client (`--zero-stats`, `--show-stats`) started without the
+  writer credential leaves a ReadOnly server behind (`server has setup with
+  ReadOnly` in its log; every later put logs `Cannot write to read-only
+  storage` at debug level and counts as a plain miss, "Cache errors 0"). Since
+  `livespec-dev-tooling-efqeip.4` the populator starts its own server on
+  `SCCACHE_WRITER_PORT` (4227) and refuses to build unless that server's log
+  says `ReadWrite`; the populate log line `sccache: writer server up` /
+  `NOT ReadWrite` and `<repo>:sccache-readonly` in the failure list tell which.
 - **Rotate the writer credential**: `rm /etc/ci-runner/sccache-redis-writer.pass`,
   re-converge (a new one is generated and projected; the pod rolls on the
   ACL hash), and the next populate rebuilds as the new user.

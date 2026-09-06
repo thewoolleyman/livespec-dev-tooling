@@ -84,9 +84,28 @@ members — they are cited only to an `archive/brainstorming/`
 document this repo treats as reference-only, and appear nowhere
 in any `SPECIFICATION/`.
 
-Package-private modules (filename matching `_*.py`) are
-skipped, and a `_`-prefixed FUNCTION name is not public
-however it is reached — v178 clause 0 (see `_is_public_name`).
+A `_`-prefixed FUNCTION name is not public however it is
+reached — v178 clause 0 (see `_is_public_name`). A `_`-prefixed
+FILE is NOT skipped, and the difference is the whole point:
+clause 0 adopts the private-helper definition in §"Typechecker
+rule set", which binds NAMES in `__all__` and says nothing about
+filenames. This check used to skip whole files as well, an
+exemption WIDER than the text it implements, through which
+`_`-prefixed modules exported public API that siblings and other
+fleet repos consume. Removed under the maintainer's 2026-08-20
+ruling on `livespec-dev-tooling-8zv3.5`, on a stratified sample
+in which 32 of 32 `_`-prefixed fleet modules had a non-test
+product importer and NONE was standalone-private.
+
+⚠️ THE SPEC SAYS "private-helper" IN TWO SECTIONS AT TWO SCOPES,
+and that is the likely mechanism by which the file skip became
+plausible enough to ship: the TEST-PAIRING section defines
+private-helper MODULES as `.py` files whose FILENAME starts with
+`_`, exempting them from the mirrored-test requirement. That
+definition governs test pairing, NOT this scan. Before
+reinstating any file-level skip here, ask WHICH definition and in
+WHICH section — reading the test-pairing one into clause 0's
+delegation is the error, not a second reading of it.
 
 TEST MODULES ARE SKIPPED BY FILENAME CONVENTION TOO, wherever
 they live (see `_is_test_module`) — the tests-tree prefix alone
@@ -430,7 +449,7 @@ def _scan(
     offenders: list[tuple[Path, int, str]] = []
     for tree_rel in pure_trees:
         for py_file in iter_py_files(root=cwd / tree_rel):
-            if py_file.name.startswith("_") or _is_test_module(name=py_file.name):
+            if _is_test_module(name=py_file.name):
                 continue
             rel_path = py_file.relative_to(cwd)
             for lineno, name in _find_offenders(
