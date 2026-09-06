@@ -222,7 +222,15 @@ stopping points.
 
    ```bash
    mise exec -- git -C /data/projects/livespec-dev-tooling worktree add -b <branch> "$HOME/.worktrees/livespec-dev-tooling/<branch>" master
+   mise exec -- just --justfile "$HOME/.worktrees/livespec-dev-tooling/<branch>/justfile" install-worktree-pack
    ```
+
+   The second line matters: the gitignored `dev-tooling/` worktree pack is
+   installed per CHECKOUT, not per clone, and a worktree without it commits
+   fine but has its first push refused by the pre-push aggregate about five
+   minutes in (`check-primary-checkout-commit-refuse-hook-installed`,
+   `failure_mode: worktree_pack_absent`). Seen 2026-09-06; install the pack
+   right after `worktree add`, before the first commit.
 
 3. Use `mise exec -- git commit ...` and `mise exec -- git push ...` so
    the mise-managed lefthook hooks actually run. Never pass
