@@ -58,6 +58,19 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.51.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.50.1...v1.51.0) (2026-09-06)
+
+
+### Features
+
+* **fleet:** agent-instruction-surface asserts the mutation protocol names `just worktree-create` ([c26c434](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c26c434dbd8f3b2d6dfdaa4ae88e0618aa40bbde))
+
+
+### Bug Fixes
+
+* **checks:** worktree-pack remedy names the standalone recipe first in a wired checkout (livespec-dev-tooling-wkjh7p) ([e28f2e5](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e28f2e5482d7cf481f3ee6be22fce5dccc101ad6))
+* **worktree-pack:** worktree-create installs the pack from the package, never from a stale primary ([85ee238](https://github.com/thewoolleyman/livespec-dev-tooling/commit/85ee238f98d2c2d1f9bd8bcd95bcd4ef29984197))
+
 ## [1.50.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.50.0...v1.50.1) (2026-09-06)
 
 
