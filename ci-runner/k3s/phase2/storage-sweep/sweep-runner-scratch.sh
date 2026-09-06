@@ -25,6 +25,14 @@
 #      SKIPPED rather than run against a datastore that still holds PVs.
 #      This script re-checks the same fact and refuses if k3s is running.
 #
+# ON AN AGENT NODE (2026-09-06, livespec-dev-tooling-92wn), condition 2's LOCAL
+# proof is unavailable: an agent holds no datastore, so DATASTORE_DB never
+# exists here and the gate that reads it always passes. The agent's sweep
+# therefore rests on condition 1 — every PVC on this pool is a 5 Gi ephemeral
+# runner work volume, and everything that was here died with the reboot that is
+# running this — plus gate 1 below, which is the reason gate 1 names BOTH k3s
+# unit names rather than the server's alone.
+#
 # Only directories named as the provisioner names them (pvc-<uid>_<ns>_<name>)
 # are removed; anything else under the root is left alone and reported.
 # Never runs under a live k3s; never crosses a mount point.
@@ -37,11 +45,16 @@ log() { printf '%s sweep-runner-scratch: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" 
 
 [ "$(id -u)" -eq 0 ] || { log "FATAL: must run as root"; exit 1; }
 
-# Gate 1: never under a running k3s — a live cluster may hold PVs here.
-if systemctl is-active --quiet k3s.service 2>/dev/null; then
-  log "REFUSED: k3s.service is active; this sweep runs only Before=k3s.service on an empty-datastore boot"
-  exit 1
-fi
+# Gate 1: never under a running k3s — a live cluster may hold PVs here. BOTH
+# unit names, because the k3s unit an AGENT node runs is `k3s-agent.service`:
+# a check naming only the server's would silently never fire on an agent, and
+# on that role it is the gate condition 2 cannot be (see the header).
+for k3s_unit in k3s.service k3s-agent.service; do
+  if systemctl is-active --quiet "$k3s_unit" 2>/dev/null; then
+    log "REFUSED: ${k3s_unit} is active; this sweep runs only Before= the node's k3s unit on an empty-datastore boot"
+    exit 1
+  fi
+done
 
 # Gate 2: the datastore must be empty (mirrors the unit's ConditionPathExists).
 if [ -e "$DATASTORE_DB" ]; then
