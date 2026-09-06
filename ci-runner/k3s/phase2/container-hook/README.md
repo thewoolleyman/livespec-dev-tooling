@@ -17,7 +17,7 @@ In ARC's `containerMode: kubernetes`, the runner's container hook
 `/home/runner/externals` — the runner's bundled Node runtimes: `node24`
 202 MB, `node20` 167 MB, `node24_alpine` 125 MB, `node20_alpine` 100 MB;
 595 MB and 9,028 files in all — into `<work volume>/externals` on every job
-start, unconditionally, ~12 s on the pool's array. Verified 2026-09-04 by
+start, unconditionally, ~14 s on the pool's array. Verified 2026-09-04 by
 mounting the pinned image read-only on `poweredge-xubuntu` (`livespec-b1c6`):
 line 541 of the bundle, called from `prepareJob` at line 419, with
 `{ force: true, recursive: true }`. The measurement is research/005 §2; with
@@ -187,7 +187,7 @@ half; a follow-up may exclude them from the seed (never from the extraction).
 ## Upstream proposal
 
 Fork: `thewoolleyman/runner-container-hooks`. Pull request:
-UPSTREAM_PR_URL_PLACEHOLDER — the same opt-in written against upstream
+https://github.com/actions/runner-container-hooks/pull/434 (draft) — the same opt-in written against upstream
 `main`, where the copy is now the `fs-init` init container's `mv` into an
 `emptyDir` (v0.8.x, PR #244): the platform may supply the `externals` volume
 through the hook-template extension and declare
