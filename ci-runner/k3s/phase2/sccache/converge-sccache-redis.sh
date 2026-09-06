@@ -28,6 +28,8 @@ POPULATOR_NAMESPACE="ci-warm-cache"
 WRITER_USER="sccache-writer"
 WRITER_PASS_FILE="${SCCACHE_WRITER_PASS_FILE:-/etc/ci-runner/sccache-redis-writer.pass}"
 ROLLOUT_TIMEOUT="${SCCACHE_REDIS_ROLLOUT_TIMEOUT:-120s}"
+SNAPSHOT_TIER="${SCCACHE_SNAPSHOT_TIER:-/var/cache/ci-runner}"
+SNAPSHOT_DIR="${SNAPSHOT_TIER}/sccache-redis"
 
 log() { printf '\n== %s ==\n' "$*"; }
 
@@ -45,6 +47,21 @@ else
   echo "present"
 fi
 writer_pass="$(cat "${WRITER_PASS_FILE}")"
+
+log "sccache-redis 1b. Ensure the snapshot directory on the ci-cache tier ${SNAPSHOT_DIR}"
+# The dump must land on the tier, never on the root disk: refuse when the
+# tier is not a mountpoint (.ai/ci-node-storage-tiers.md). Owner 999:1000 is
+# the pod's runAsUser/runAsGroup; hostPath ignores fsGroup.
+if ! findmnt -no TARGET "${SNAPSHOT_TIER}" >/dev/null 2>&1; then
+  echo "FATAL: ${SNAPSHOT_TIER} is not a mountpoint; the ci-cache tier is not mounted, refusing to create ${SNAPSHOT_DIR}"
+  exit 1
+fi
+install -d -o 999 -g 1000 -m 0750 "${SNAPSHOT_DIR}"
+if [ -s "${SNAPSHOT_DIR}/dump.rdb" ]; then
+  echo "present; last snapshot $(stat -c '%y %s bytes' "${SNAPSHOT_DIR}/dump.rdb")"
+else
+  echo "present; no snapshot yet (the first save lands within five minutes of the first write)"
+fi
 
 log "sccache-redis 2. Render the ACL file and converge both Secrets"
 kubectl create namespace "${NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
@@ -83,6 +100,11 @@ kubectl -n "${NAMESPACE}" patch deployment sccache-redis --type=merge \
 log "sccache-redis 4. Wait (bounded, ${ROLLOUT_TIMEOUT}) for the rollout"
 if kubectl -n "${NAMESPACE}" rollout status deployment/sccache-redis --timeout="${ROLLOUT_TIMEOUT}"; then
   echo "sccache-redis ready: sccache-redis.${NAMESPACE}.svc.cluster.local:6379 (pods, read-only), hostPort 6379 (node)"
+  pod="$(kubectl -n "${NAMESPACE}" get pod -l app.kubernetes.io/name=sccache-redis -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
+  if [ -n "${pod}" ]; then
+    echo "persistence (INFO): $(kubectl -n "${NAMESPACE}" exec "${pod}" -- redis-cli INFO persistence 2>/dev/null | grep -E '^(rdb_last_save_time|rdb_changes_since_last_save|rdb_last_bgsave_status|loading):' | tr -d '\r' | paste -sd' ')"
+    echo "keys restored from ${SNAPSHOT_DIR}/dump.rdb: $(kubectl -n "${NAMESPACE}" exec "${pod}" -- redis-cli DBSIZE 2>/dev/null | tr -d '\r')"
+  fi
 else
   echo "WARN: sccache-redis rollout not complete after ${ROLLOUT_TIMEOUT}; jobs compile without the cache until it is Ready (kubectl -n ${NAMESPACE} get pods)"
 fi

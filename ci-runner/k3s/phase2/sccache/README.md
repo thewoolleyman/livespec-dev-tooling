@@ -12,7 +12,7 @@ serves fabro sandboxes on the factory host through the same door.
 
 | Path | Role |
 |---|---|
-| `sccache-redis.yaml` | Namespace `ci-sccache`, the RAM-only redis Deployment (`redis:8.8.2-alpine` by digest, `maxmemory 16gb` + `allkeys-lru`, no persistence, non-root, read-only rootfs, `hostPort 6379`), and the ClusterIP Service. Its header carries the trust argument and the memory-ceiling derivation. |
+| `sccache-redis.yaml` | Namespace `ci-sccache`, the RAM-resident redis Deployment (`redis:8.8.2-alpine` by digest, `maxmemory 16gb` + `allkeys-lru`, RDB snapshots on the `ci-cache` tier so a reboot restores the cache, non-root, read-only rootfs, `hostPort 6379`), and the ClusterIP Service. Its header carries the trust argument, the memory-ceiling derivation, and the persistence rationale. |
 | `converge-sccache-redis.sh` | Idempotent (root): ensures the host-held writer credential (`/etc/ci-runner/sccache-redis-writer.pass`, generated on first run), renders the ACL into the `sccache-redis-acl` Secret, projects the credential into the populator's namespace as `sccache-redis-writer`, applies the manifest, bounded rollout wait. Run by the boot converge (step 8c) and by hand. |
 | `install-sccache-binary.sh` | Node-local (root): the pinned, checksum-verified sccache binary at `/usr/local/lib/ci-runner-k3s/bin/sccache`. The pool PROVIDES the binary — mounted read-only into every job container and the populator at `/opt/ci-runner/bin` — so no routed repository bumps its `container:` pin to get the tier. Run by `install-node.sh` (7b) and after a version bump. |
 | `../arc/hook-pod-template.yaml` | The reader side: `SCCACHE_REDIS_ENDPOINT` (the cluster Service, as the unauthenticated read-only user) and `SCCACHE_REDIS_RW_MODE=READ_ONLY` on the `$job` container; the `postStart` appends `[build] rustc-wrapper` + `incremental = false` to `/.cargo/config.toml` only when the binary is mounted and redis answers a TCP probe. |
@@ -43,9 +43,33 @@ the crates proxy's store want to stay resident in — leaves ~32 GiB, of which
 redis takes half. The console's four-profile dependency graph measured far
 below the ceiling on first populate (see the plan store, research/006); the
 headroom is for PR-lockfile variants (which a job compiles and does NOT
-write) and a second Rust repository. No persistence: one populate refills it
-after a restart, because the populator's marker key lives in the cache it
-describes and is gone with it.
+write) and a second Rust repository. The cap was derived at C=32; C is 64
+since 2026-09-06, and the ceiling now stands on measured headroom (~143 GiB
+free at C=64 with every cache resident) rather than on the envelope sum —
+see the manifest header.
+
+## Persistence: a snapshot on the `ci-cache` tier, since 2026-09-06
+
+The first design was RAM-only: "one populate refills it after a restart".
+That is true only for a reboot into an idle pool. After the 2026-09-06
+01:59Z proving reboot, CI was restored into a busy pool and the populator's
+busy-pool guardrail (correctly) skipped every refill, so for hours every
+Rust job recompiled its dependency graph: sccache 59.3% → 0.35% hit ratio,
+`cargo clippy` P50 20.2 s → 43.0 s, `cargo nextest` 13.1 s → 24.7 s, the
+console matrix P90 370 s → 661 s, the hit-floor trigger firing
+(`livespec-dev-tooling-efqeip.3`; plan research/011 §3). So redis now writes
+an RDB snapshot every five minutes with any change (every minute with 10k
+changes) and one on SIGTERM, to `/var/cache/ci-runner/sccache-redis/dump.rdb`
+on the `ci-cache` tier; `converge-sccache-redis.sh` creates that directory
+`999:1000` and refuses when the tier is not mounted. A restart or reboot
+loads the last snapshot in seconds, marker key included, so an unchanged
+default branch costs nothing and a stale snapshot is rebuilt on the next
+idle tick exactly as before. AOF stays off: a snapshot is a compact
+point-in-time dump by a forked child, not the per-write load the array is
+protected from. The Deployment's `terminationGracePeriodSeconds` is 300 so
+the shutdown save of a full set finishes before a reboot kills the pod.
+`stop-writes-on-bgsave-error` is `no`: a failed dump never refuses the
+populator's writes; the cache gauges and the hit-floor trigger are the alarm.
 
 ## What hits and what cannot
 
@@ -88,11 +112,16 @@ describes and is gone with it.
 - **Rotate the writer credential**: `rm /etc/ci-runner/sccache-redis-writer.pass`,
   re-converge (a new one is generated and projected; the pod rolls on the
   ACL hash), and the next populate rebuilds as the new user.
-- **Flush**: `redis-cli FLUSHALL` from inside the pod (the default user
-  cannot; use `redis-cli --user sccache-writer --pass "$(sudo cat
-  /etc/ci-runner/sccache-redis-writer.pass)"` — FLUSHALL is `@dangerous`, so
-  restart the Deployment instead: `kubectl -n ci-sccache rollout restart
-  deploy/sccache-redis`; RAM-only means empty), then trigger a populate.
+- **Flush**: neither user may `FLUSHALL` (`@dangerous`), and since the
+  snapshot a restart RESTORES rather than empties. To flush deliberately:
+  `kubectl -n ci-sccache scale deploy/sccache-redis --replicas=0`, wait for
+  the pod to go, `sudo rm /var/cache/ci-runner/sccache-redis/dump.rdb`,
+  scale back to 1; the next populate tick rebuilds (the marker key is gone
+  with the dump).
+- **Check the snapshot**: `redis-cli INFO persistence` from inside the pod
+  (`rdb_last_save_time`, `rdb_changes_since_last_save`,
+  `rdb_last_bgsave_status`), and `ls -la /var/cache/ci-runner/sccache-redis/`
+  on the host; `converge-sccache-redis.sh` prints both after the rollout.
 - **Turn it off for every job without a deploy**: the fleet-wide
   `CI_CACHE_KILL_SWITCH` in `../arc/hook-pod-template.yaml` (skips every
   tier), or scale the Deployment to 0 (the postStart probe then writes no

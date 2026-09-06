@@ -136,9 +136,11 @@
 # at the repository's own build.jobs cap and skips entirely when its MARKER KEY
 # in redis (`livespec:sccache:populated:<repo>` = `<sha>@<toolchain>`) already
 # names the current default-branch SHA and toolchain: the marker lives in the
-# cache it describes, so a redis restart (RAM-only, no persistence) or an
-# eviction of the marker triggers a rebuild on the next tick, and an
-# unchanged branch costs nothing. Nothing from the build is kept here.
+# cache it describes: a restart restores it from the RDB snapshot on the
+# ci-cache tier (../sccache/, since 2026-09-06), so an unchanged branch costs
+# nothing across reboots, and a lost or evicted marker (a flush, a snapshot
+# older than the last write, LRU pressure) triggers a rebuild on the next
+# idle tick. Nothing from the build is kept here.
 #
 # GUARDRAILS on that build (v054 populator-guardrails clause; livespec-dev-
 # tooling-osmzo4): it runs at the repository's own build.jobs cap under
