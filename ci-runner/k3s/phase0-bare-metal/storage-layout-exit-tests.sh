@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# storage-layout-exit-tests.sh — prove the three properties the bare-metal
+# storage-layout-exit-tests.sh — prove the four properties the bare-metal
 # storage stage is required to have, WITHOUT touching any host.
 #
 #   1. the profile is DATA and is validated as data (a missing, unknown,
@@ -9,7 +9,13 @@
 #      commands IN THAT ORDER, with the recorded values, and executes none of
 #      them;
 #   3. a destructive step refuses without `--i-consent-to-destroy` naming its
-#      exact target, and the refusal names it.
+#      exact target, and the refusal names it;
+#   4. the poweredge profile's volume groups, logical-volume sizes and tier
+#      placements are the ones `profiles/poweredge-xubuntu.recorded-facts`
+#      transcribes from the host record. Properties 1-3 all ask whether the
+#      profile is WELL FORMED; only this one asks whether it is TRUE, which is
+#      the gap a 64 GiB swap and a missing `nvmeb` sat in unnoticed until
+#      2026-09-06.
 #
 # HOW IT STAYS OFF THE HOST. Every case runs `storage-layout.sh --dry-run`, so
 # no mutating command is ever executed by construction. On top of that, each
@@ -227,34 +233,88 @@ fi
 
 # The ordering claim, with the values recorded for this node: the PERC RAID-5
 # virtual disk over slots 0-6 at a 64 KB strip; the 1 GiB EFI system partition
-# and the LVM partition; the physical volume; volume group `poweredge`; the
-# `ci-cache` logical volume; and the mkfs that puts the role label on it.
+# and the LVM partition; the physical volumes; the volume groups; the logical
+# volumes; and the mkfs that puts each role label on one.
+#
+# The `nvmeb` rungs are here on purpose rather than only in B3. The node has TWO
+# NVMe volume groups and the profile declared one until 2026-09-06, so the whole
+# physical-volume -> volume-group -> logical-volume chain for the second drive is
+# what a repeat of that drift would silently drop; asserting only the final mkfs
+# would not notice a plan that never created the group it writes into.
 if order_ok "$POWEREDGE_OUT" \
     'add vd type=raid5 drives=<enclosure>:0-6 strip=64 wb ra direct' \
     'sgdisk --new=1:0:+1G --typecode=1:ef00 --change-name=1:ESP /dev/sda' \
     'sgdisk --new=2:0:0 --typecode=2:8e00 --change-name=2:lvm /dev/sda' \
     'pvcreate --yes /dev/sda2' \
+    'pvcreate --yes /dev/disk/by-id/nvme-WD_BLACK_SN8100_4000GB_25374X802154' \
     'vgcreate poweredge /dev/sda2' \
+    'vgcreate nvmeb /dev/disk/by-id/nvme-WD_BLACK_SN8100_4000GB_25374X802154' \
+    'lvcreate --yes -L 8G -n swap poweredge' \
     'lvcreate --yes -L 1T -n ci-cache poweredge' \
-    'mkfs.ext4 -q -L ci-cache /dev/poweredge/ci-cache'; then
-  ok "B2  virtual disk, partition, physical volume, volume group, logical volume, mkfs — in that order"
+    'lvcreate --yes -L 1.5T -n ci-workvols nvmeb' \
+    'mkfs.ext4 -q -L ci-cache /dev/poweredge/ci-cache' \
+    'mkfs.xfs -q -m reflink=1 -L ci-workvols /dev/nvmeb/ci-workvols'; then
+  ok "B2  virtual disk, partition, physical volumes, volume groups, logical volumes, mkfs — in that order"
 else
-  no "B2  virtual disk, partition, physical volume, volume group, logical volume, mkfs — in that order"
+  no "B2  virtual disk, partition, physical volumes, volume groups, logical volumes, mkfs — in that order"
 fi
 
 # The other two role tiers, and the filesystem types migrate-tier.sh's
-# role_fstype decides: ci-containerd ext4, ci-workvols XFS with reflink.
+# role_fstype decides: ci-containerd ext4 on nvmea, ci-workvols XFS with reflink
+# on nvmeb — one tier per medium.
 if printf '%s' "$POWEREDGE_OUT" | grep -qF 'mkfs.ext4 -q -L ci-containerd /dev/nvmea/ci-containerd' \
-   && printf '%s' "$POWEREDGE_OUT" | grep -qF 'mkfs.xfs -q -m reflink=1 -L ci-workvols /dev/nvmea/ci-workvols'; then
-  ok "B3  all three role labels are made, ci-workvols as XFS with reflink=1"
+   && printf '%s' "$POWEREDGE_OUT" | grep -qF 'mkfs.xfs -q -m reflink=1 -L ci-workvols /dev/nvmeb/ci-workvols'; then
+  ok "B3  all three role labels are made, ci-workvols as XFS with reflink=1 on nvmeb"
 else
-  no "B3  all three role labels are made, ci-workvols as XFS with reflink=1"
+  no "B3  all three role labels are made, ci-workvols as XFS with reflink=1 on nvmeb"
 fi
 
 if printf '%s' "$POWEREDGE_OUT" | grep -qF 'mkfs.vfat -F 32 -n ESP /dev/sda1'; then
   ok "B4  the EFI system partition is made as FAT labelled ESP"
 else
   no "B4  the EFI system partition is made as FAT labelled ESP"
+fi
+
+# VD_ENCLOSURE=auto is admissible ONLY if the resolver reads the right number
+# off this node's controller — otherwise the profile owes a pinned literal. Give
+# a copy of the profile a fake perccli that prints the enclosure table an H730P
+# prints for `/c0/eall show`, carrying this node's backplane EID 32, and assert
+# the plan pins `drives=32:0-6` instead of leaving the placeholder in.
+PERC="${TMPROOT}/perc-bin"
+make_bare_fakes "$PERC"
+mkfake "$PERC" perccli64 '
+case "$*" in
+  "/c0/vall show")
+    printf "Status = Failure\nDescription = No VDs have been configured\n"; exit 0 ;;
+  "/c0/eall show")
+    cat <<TABLE
+CLI Version = 007.1327.0000.0000 Aug 30, 2021
+Operating system = Linux 6.14.0-generic
+Controller = 0
+Status = Success
+Description = None
+
+Properties :
+==========
+---------------------------------------------------------------
+EID State Slots PD PS Fans TSs Alms SIM ProdID    VendorSpecific
+---------------------------------------------------------------
+ 32 OK       8   7  0    0   0    0   1 BP13G+EXP
+---------------------------------------------------------------
+TABLE
+    exit 0 ;;
+esac
+printf "%s %s\n" "$(basename "$0")" "$*" >> "$TRIPWIRE"; exit 0'
+
+p="${TMPROOT}/perc-profile.env"
+sed "s|^CONTROLLER_CLI=.*|CONTROLLER_CLI=${PERC}/perccli64|" "$POWEREDGE" > "$p"
+run_layout "$PERC" --dry-run "$p"
+if [ "$REPLY_RC" -eq 0 ] \
+   && printf '%s' "$REPLY_OUT" | grep -qF 'add vd type=raid5 drives=32:0-6 strip=64 wb ra direct'; then
+  ok "B5  VD_ENCLOSURE=auto resolves to this node's enclosure 32 off the controller"
+else
+  no "B5  VD_ENCLOSURE=auto resolves to this node's enclosure 32 off the controller (rc=${REPLY_RC})"
+  printf '%s\n' "$REPLY_OUT"
 fi
 
 # ---------------------------------------------------------------------------
@@ -364,6 +424,80 @@ if [ "$REPLY_RC" -eq 0 ] && ! printf '%s' "$REPLY_OUT" | grep -qF 'add vd'; then
   ok "D3  a profile declaring no storage controller skips the virtual-disk stage"
 else
   no "D3  a profile declaring no storage controller skips the virtual-disk stage (rc=${REPLY_RC})"
+fi
+
+# ---------------------------------------------------------------------------
+echo
+echo "== E. The poweredge profile agrees with the recorded host facts =="
+# ---------------------------------------------------------------------------
+# The profile is the DATA the rebuild consumes;
+# `profiles/poweredge-xubuntu.recorded-facts` is the host RECORD that data must
+# agree with. They drifted silently once — swap declared at 64 GiB against the
+# host's 8 GiB, and `ci-workvols` on `nvmea` when the host carries it on a
+# second volume group `nvmeb` the profile never declared — because every case
+# above asks whether the profile is WELL FORMED and none asked whether it is
+# TRUE. This one does, and it is deliberately an equality in both directions: a
+# recorded fact the profile omits fails it, and a volume group, volume or tier
+# the profile invents fails it too.
+
+FACTS="${HERE}/profiles/poweredge-xubuntu.recorded-facts"
+
+# The profile side is read with the SAME parser every stage sources, so this
+# case compares the record against what storage-layout.sh would actually act
+# on — not against a second, independent reading of the same file.
+profile_facts() {  # profile_facts PROFILE -> its vg/lv/tier records on stdout
+  (
+    die() { printf 'FATAL: %s\n' "$*" >&2; exit 1; }
+    # shellcheck source=ci-runner/k3s/phase0-bare-metal/profile.sh
+    source "${HERE}/profile.sh"
+    profile_load "$1"
+    local vg record
+    for vg in "${VG_NAMES[@]}"; do printf 'vg %s %s\n' "$vg" "${VG_PV[$vg]}"; done
+    for record in "${LV_RECORDS[@]}"; do printf 'lv %s\n' "${record//:/ }"; done
+    for record in "${TIER_RECORDS[@]}"; do printf 'tier %s\n' "${record//:/ }"; done
+  )
+}
+
+recorded_facts() {  # recorded_facts PATH -> its records, comments and padding gone
+  sed -e 's/#.*//' -e 's/[[:space:]]\{1,\}/ /g' -e 's/^ //' -e 's/ $//' "$1" | grep .
+}
+
+if [ -f "$FACTS" ]; then
+  ok "E1  the recorded-facts table is committed beside the profile"
+else
+  no "E1  the recorded-facts table is committed beside the profile (${FACTS} is absent)"
+fi
+
+declared="$(profile_facts "$POWEREDGE" | LC_ALL=C sort)"
+recorded="$(recorded_facts "$FACTS" | LC_ALL=C sort)"
+if [ "$declared" = "$recorded" ]; then
+  ok "E2  every volume group, logical volume size and tier placement matches the record"
+else
+  no "E2  the profile and the recorded facts disagree:"
+  printf '%s\n' "$recorded" > "${TMPROOT}/recorded"
+  printf '%s\n' "$declared" > "${TMPROOT}/declared"
+  diff -u --label 'recorded facts' --label 'profile' \
+    "${TMPROOT}/recorded" "${TMPROOT}/declared" | sed 's/^/        /'
+fi
+
+# E2 is an equality, so it is equally satisfied by correcting the RECORD to
+# match a drifted profile — which would be exactly backwards. The three values
+# the 2026-09-06 read corrected are therefore also asserted literally: moving
+# one now takes an edit in two places, and the second place is a file whose
+# header says it changes only by re-reading the host.
+missing=""
+while IFS= read -r want; do
+  recorded_facts "$FACTS" | grep -qxF "$want" || missing="${missing}
+        ${want}"
+done <<'EOF'
+lv poweredge swap 8GiB swap swap
+vg nvmeb /dev/disk/by-id/nvme-WD_BLACK_SN8100_4000GB_25374X802154
+tier ci-workvols nvmeb
+EOF
+if [ -z "$missing" ]; then
+  ok "E3  the record still carries the three values the 2026-09-06 read corrected"
+else
+  no "E3  the record no longer carries:${missing}"
 fi
 
 echo

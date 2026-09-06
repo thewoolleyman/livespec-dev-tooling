@@ -1,0 +1,53 @@
+# poweredge-xubuntu.recorded-facts — the node's RECORDED storage facts, so the
+# profile beside this file cannot silently disagree with the host again.
+#
+# WHY IT EXISTS. `poweredge-xubuntu.env` is the DATA the rebuild procedure
+# consumes; this file is the RECORD that data must agree with. They drifted, and
+# nothing noticed, because nothing compared them: until 2026-09-06 the profile
+# declared `swap` at 64 GiB where the host has 8 GiB, and put `ci-workvols` on
+# `nvmea` when the host carries it on a SECOND NVMe volume group, `nvmeb`, that
+# the profile did not declare at all. Both wrong values read as perfectly
+# ordinary profile lines. `../storage-layout-exit-tests.sh` §E now parses the
+# profile with the parser the stages themselves use and refuses ANY difference
+# from the table below — in either direction, so an omitted fact and an invented
+# volume group both fail.
+#
+# PROVENANCE. Transcribed from the per-host information repository
+# `poweredge-xubuntu-info`, `AGENTS.md` §Storage, subsection "LVM (steady state
+# since 2026-09-06)", and confirmed read-only against the live host the same day
+# with `vgs`, `lvs` and `ls -l /dev/disk/by-id`. THE DIRECTION OF TRUST IS ONE
+# WAY: a value here changes only by re-reading the record, never by copying what
+# the profile happens to say. A disagreement is a defect in the profile until
+# the record says otherwise.
+#
+# FORMAT. `#` comments and blank lines are ignored; every other line is a
+# whitespace-separated record whose first field names its kind:
+#
+#   vg    <volume-group> <physical-volume-device>
+#   lv    <volume-group> <logical-volume> <size> <fstype> <label>
+#   tier  <role-label> <volume-group>
+
+# Volume groups. The array's physical volume is the RAID-5 virtual disk's second
+# partition; each NVMe drive carries its own group, named by the drive's SERIAL
+# because the `nvme0n1`/`nvme1n1` ordering behind the PCIe switch can shift
+# across boots. On the 2026-09-06 read `nvmea` was `nvme1n1` and `nvmeb` was
+# `nvme0n1` — kernel names this table deliberately does not record.
+vg poweredge /dev/sda2
+vg nvmea /dev/disk/by-id/nvme-WD_BLACK_SN8100_4000GB_25384T801085
+vg nvmeb /dev/disk/by-id/nvme-WD_BLACK_SN8100_4000GB_25374X802154
+
+# Logical volumes. Sizes are binary, spelled the way the profile spells them so
+# the comparison needs no unit arithmetic to be trustworthy.
+lv poweredge root 200GiB ext4 root
+lv poweredge swap 8GiB swap swap
+lv poweredge ci-cache 1TiB ext4 ci-cache
+lv nvmea ci-containerd 1.5TiB ext4 ci-containerd
+lv nvmeb ci-workvols 1.5TiB xfs ci-workvols
+
+# Role tiers — one CI tier per medium, which is the point of the layout: the
+# cache on the array, the containerd store on one NVMe, the work volumes on the
+# other. `ci-workvols` is XFS with reflink above because the warm-cache seed
+# gives every job its own inodes by reflink copy.
+tier ci-cache poweredge
+tier ci-containerd nvmea
+tier ci-workvols nvmeb
