@@ -210,7 +210,7 @@ def _copy_license(
         _ = (vendor_dest / "LICENSE").write_bytes(preserved_license)
         message_restored = (
             f"upstream ships no LICENSE file; restored pre-existing "
-            f"_vendor/{vendor_dest.name}/LICENSE (per SPECIFICATION/"
+            f"_vendor/{vendor_dest.name}/LICENSE (per livespec SPECIFICATION/"
             f"constraints.md 'Lib admission policy' the maintainer-authored "
             f"attribution LICENSE is the source of record for this lib)"
         )
@@ -219,7 +219,7 @@ def _copy_license(
     message_missing = (
         f"upstream ships no LICENSE file at any canonical filename and "
         f"no pre-existing _vendor/{vendor_dest.name}/LICENSE was found; "
-        f"maintainer must author one per SPECIFICATION/constraints.md "
+        f"maintainer must author one per livespec SPECIFICATION/constraints.md "
         f"'Lib admission policy'"
     )
     log.warning(message_missing)
@@ -272,7 +272,7 @@ def _vendor_update(*, lib_name: str, log: structlog.stdlib.BoundLogger) -> int:
     if entry.get("shim") is True:
         message_shim = (
             "lib is a shim; shims are NOT re-vendored "
-            "(per SPECIFICATION/constraints.md 'Vendoring procedure')"
+            "(per livespec SPECIFICATION/constraints.md 'Vendoring procedure')"
         )
         log.error(message_shim, lib_name=lib_name)
         return _EXIT_PRECONDITION
