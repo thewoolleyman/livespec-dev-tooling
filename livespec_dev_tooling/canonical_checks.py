@@ -133,6 +133,13 @@ _BASELINE_CHECK_SLUGS: tuple[str, ...] = (
 #   so it self-skips there and would always-skip-and-be-pointless as a matrix
 #   entry. Its STATIC sibling `check-plan-anchor-declared` needs no
 #   ledger and REMAINS a required CI matrix entry.
+# - `check-work-item-interpolation-delimiters` — reads the beads LEDGER for the
+#   same reason and under the same credentials: its population is every
+#   NON-CLOSED work-item record's own text, which no file in the checkout
+#   carries. The credential-less per-PR CI runner self-skips it identically.
+#   Unlike the two CI/branch-protection gates above it does not verify master's
+#   state, which is precisely why the category's own definition is stated in
+#   terms of EXTERNAL WORLD STATE rather than master-CI/branch-protection.
 #
 # `check-ci-matrix-completeness` subtracts this set from its "CI must run
 # every aggregate slug" requirement (assertion (a)). Like the baseline
@@ -147,6 +154,7 @@ _WORLD_GATE_CHECK_SLUGS: tuple[str, ...] = (
     "check-branch-protection-alignment",
     "check-master-ci-green",
     "check-plan-epic-parity",
+    "check-work-item-interpolation-delimiters",
 )
 
 # Renamed canonical checks: old slug -> new slug. The canonical set is a
