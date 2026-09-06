@@ -58,6 +58,15 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.52.12](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.52.11...v1.52.12) (2026-09-06)
+
+
+### Bug Fixes
+
+* **doctor:** file-level spec citations restore the static doctor baseline ([f9a5cc1](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f9a5cc1ae28f9f6ec93d02f04f223afe95700010))
+* **subagent_stop_guard:** emit valid Claude Stop-hook JSON on every path ([090d2f3](https://github.com/thewoolleyman/livespec-dev-tooling/commit/090d2f3a3b853ad908de3d7c3f01346859259fd9))
+* **uv_sync_resilient:** the dependency-install step re-attempts its two recorded transients ([aa9cfd4](https://github.com/thewoolleyman/livespec-dev-tooling/commit/aa9cfd4182f79a79d85c8416560b64c868865ee3))
+
 ## [1.52.11](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.52.10...v1.52.11) (2026-09-06)
 
 
