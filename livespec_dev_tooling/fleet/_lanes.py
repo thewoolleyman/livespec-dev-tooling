@@ -49,11 +49,12 @@ from livespec_dev_tooling.fleet._contract_rows import (
     CENTRAL_VANTAGE,
     rows_for,
 )
+from livespec_dev_tooling.fleet._read_cause import cause_fields
 
 if TYPE_CHECKING:
     import structlog.stdlib
 
-    from livespec_dev_tooling.fleet._context import FleetContext, RowOutcome
+    from livespec_dev_tooling.fleet._context import FleetContext, ReadFailure, RowOutcome
     from livespec_dev_tooling.fleet._contract_model import ObligationRow
     from livespec_dev_tooling.fleet.contract import Manifest
 
@@ -183,12 +184,15 @@ def run_member_rows(
                     evaluated=evaluated,
                     skips=skips,
                     failing_rows=failing_rows_by_member[member.repo],
+                    read_failures=ctx.read_failures,
                 ),
                 log=log,
             )
     return MemberRowsResult(
         error_findings=errors,
-        blind_rows=_report_blind_rows(evaluated=evaluated, skips=skips, log=log),
+        blind_rows=_report_blind_rows(
+            evaluated=evaluated, skips=skips, failures=ctx.read_failures, log=log
+        ),
         out_of_vantage_rows=_report_out_of_vantage_rows(counts=out_of_vantage, log=log),
         member_verdicts=tuple(
             MemberVerdict(member=member, failing_rows=tuple(failing_rows))
@@ -204,11 +208,17 @@ class _LaneTallies:
     Bundled because passing them individually pushed `_fold_member_outcome`
     past PLR0913's six-argument cap. The containers are mutated in place;
     `frozen` binds the dataclass fields, not the dicts and list they name.
+
+    `read_failures` is the run's preserved causes, carried by reference like
+    the rest and READ rather than written: a skipped row must be able to say
+    WHY it could not read, and a throttle and a permission gap are the same
+    HTTP 403 until that list is consulted.
     """
 
     evaluated: dict[str, int]
     skips: dict[str, list[str]]
     failing_rows: list[str]
+    read_failures: list[ReadFailure]
 
 
 def _fold_member_outcome(
@@ -248,6 +258,11 @@ def _fold_member_outcome(
                 row=row.row_id,
                 member=member_repo,
                 reason=outcome.reason,
+                # WHICH kind of unreadable, scoped to this member. `reason` is
+                # the row's own prose about what it wanted; these fields are
+                # the seam's classification of why GitHub refused, and they are
+                # what separates "retry later" from "an admin action".
+                **cause_fields(failures=tallies.read_failures, member=member_repo),
             )
             return 0
         case RowPass():
@@ -287,6 +302,7 @@ def _report_blind_rows(
     *,
     evaluated: dict[str, int],
     skips: dict[str, list[str]],
+    failures: list[ReadFailure],
     log: structlog.stdlib.BoundLogger,
 ) -> int:
     """Report an ERROR for each row evaluable on NO applicable member; count them.
@@ -297,8 +313,14 @@ def _report_blind_rows(
     the run rather than passing vacuously. `applicable` equals the skip
     count by construction — zero members were evaluated — and both are
     reported so the reader need not infer it.
+
+    The run-wide cause travels with every blind row deliberately. `blind_rows`
+    is a PROGRESS marker — how far the traversal got before the limiter
+    engaged — and reads like a finding count without it, which is how a
+    docs-only commit's red gate was taken for a fleet violation.
     """
     blind = 0
+    causes = cause_fields(failures=failures)
     for row_id, reasons in skips.items():
         if evaluated.get(row_id, 0):
             continue
@@ -309,6 +331,7 @@ def _report_blind_rows(
             applicable=len(reasons),
             skipped=len(reasons),
             reasons=tuple(dict.fromkeys(reasons)),
+            **causes,
         )
     return blind
 
