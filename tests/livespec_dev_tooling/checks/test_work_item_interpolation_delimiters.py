@@ -39,6 +39,16 @@ _SUBSTITUTE_OPEN = "⟦"
 _SUBSTITUTE_CLOSE = "⟧"
 _ITEM = "livespec-dev-tooling-9yb4"
 
+# The convention citation as a CONSUMER must be able to read it, spelled out
+# here rather than imported from the check: an import would compare the
+# string to itself. `result.output` is the structlog JSON stream, which does
+# not escape `/`, so the URL travels through it verbatim.
+_CONVENTION_CITATION = (
+    "docs/work-item-interpolation-delimiters.md in the livespec-dev-tooling repo that "
+    "ships this check (https://github.com/thewoolleyman/livespec-dev-tooling/blob/master/"
+    "docs/work-item-interpolation-delimiters.md)"
+)
+
 
 def _load_check_module() -> ModuleType:
     """Import the check module fresh from its file path."""
@@ -189,7 +199,10 @@ def test_contaminated_editable_field_fails_naming_item_and_field(
     assert '"verdict": "editable-repair-in-place"' in result.output
     assert '"delimiter": "open"' in result.output
     assert '"delimiter": "close"' in result.output
-    assert "docs/work-item-interpolation-delimiters.md" in result.output
+    # The convention doc is cited by the repo that OWNS it: this check ships
+    # to consumer repos, where a bare `docs/…` resolves to nothing and the
+    # remediation's one lookup returns nothing (livespec-dev-tooling-5ug6).
+    assert _CONVENTION_CITATION in result.output
 
 
 def test_substituted_text_passes_on_the_same_item(

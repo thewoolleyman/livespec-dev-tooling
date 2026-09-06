@@ -98,7 +98,14 @@ _BRACE_OPEN = "{"
 _BRACE_CLOSE = "}"
 _DELIMITERS = ((_BRACE_OPEN * 2, "open"), (_BRACE_CLOSE * 2, "close"))
 
-_CONVENTION_DOC = "docs/work-item-interpolation-delimiters.md"
+# Cited by its OWNING repo, not by a bare repo-relative path: this check
+# ships to consumer repos, where `docs/` holds no such file and a relative
+# citation dangles (livespec-dev-tooling-5ug6).
+_CONVENTION_DOC = (
+    "docs/work-item-interpolation-delimiters.md in the livespec-dev-tooling repo that "
+    "ships this check (https://github.com/thewoolleyman/livespec-dev-tooling/blob/master/"
+    "docs/work-item-interpolation-delimiters.md)"
+)
 _EDITABLE_REMEDIATION = (
     "rewrite the pair with the substitution characters U+27E6 (opener) and "
     f"U+27E7 (closer) and add the legend line; see {_CONVENTION_DOC}. The field "
