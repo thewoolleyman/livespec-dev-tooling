@@ -4,6 +4,18 @@ Exercises `assert_agent_instruction_surface` and
 `assert_agent_ai_references_resolve` against a canned-response
 `FleetContext` (no network, no real `gh`), mirroring the sibling
 `test_rows_beads` / `test_rows_files` patterns.
+
+The conformant `AGENTS.md` fixture is BUILT FROM the row module's
+`WORKTREE_CREATE_SENTENCE` rather than restating it. That is the whole
+point of homing the fleet-universal core text beside the predicate: a
+fixture that carried its own copy could drift from the sentence the row
+demands, and the drift would present as a green suite over a check
+nobody could satisfy by pasting what it quotes.
+
+The module is imported under an alias and the constants are read INSIDE
+test bodies. A top-level `from ... import WORKTREE_CREATE_SENTENCE`
+would make the Red leg of this slice a collection error — proof only
+that a name is missing, never that the behavior is unimplemented.
 """
 
 from __future__ import annotations
@@ -12,6 +24,7 @@ import json
 
 from _gh_railway import lift_gh
 
+from livespec_dev_tooling.fleet import _rows_instructions as rows_instructions
 from livespec_dev_tooling.fleet._context import (
     FleetContext,
     FleetMember,
@@ -45,22 +58,43 @@ _SETTINGS_ARGS: tuple[str, ...] = (
 # branch from; uncanned, it falls back to `master`.
 _REPO_ARGS: tuple[str, ...] = ("api", "repos/acme/widget")
 
-_FULL_AGENTS = "\n".join(
-    (
-        "# Agent instructions",
-        "## Repository mutation protocol",
-        "## Agent prerequisites for plugin work",
-        "## Beads runtime prerequisites",
-        "## Daily commands",
-        "## Revise co-edit discipline — `tests/heading-coverage.json`",
-        "## Red-Green-Replay commit protocol",
-    )
-)
+# The shape the 2026-09-06 survey found in all seventeen member instruction
+# files: a raw `git worktree add`, with the recipe named nowhere.
+_RAW_WORKTREE_ADD_BODY = "Create it with `git worktree add -b <branch> <path> master`."
+
 _SETTINGS_WITH_GUARD = (
     '{"hooks": {"PreToolUse": [{"command": '
     '"$CLAUDE_PROJECT_DIR/.claude/hooks/beads-access-guard.sh"}]}}'
 )
 _SETTINGS_NO_GUARD = '{"hooks": {"PreToolUse": []}}'
+
+
+def _agents(*, protocol_body: str, trailing: tuple[str, ...] = ()) -> str:
+    """A fixture `AGENTS.md` carrying every universal-core heading.
+
+    `protocol_body` is the body of the `## Repository mutation protocol`
+    section — the one region the worktree-creation predicate reads.
+    `trailing` appends further lines after the last heading, so a fixture
+    can put the recipe somewhere the predicate must NOT count.
+    """
+    return "\n".join(
+        (
+            "# Agent instructions",
+            "## Repository mutation protocol",
+            protocol_body,
+            "## Agent prerequisites for plugin work",
+            "## Beads runtime prerequisites",
+            "## Daily commands",
+            "## Revise co-edit discipline — `tests/heading-coverage.json`",
+            "## Red-Green-Replay commit protocol",
+            *trailing,
+        )
+    )
+
+
+def _conformant_agents() -> str:
+    """A fixture that satisfies every leg of the instruction-surface row."""
+    return _agents(protocol_body=rows_instructions.WORKTREE_CREATE_SENTENCE)
 
 
 def make_context(*, table: dict[tuple[str, ...], GhResult]) -> FleetContext:
@@ -78,36 +112,26 @@ def _ok(*, stdout: str) -> GhResult:
     return GhResult(returncode=0, stdout=stdout, stderr="")
 
 
-def test_complete_surface_passes() -> None:
-    ctx = make_context(
-        table={
-            _AGENTS_ARGS: _ok(stdout=_FULL_AGENTS),
-            _SETTINGS_ARGS: _ok(stdout=_SETTINGS_WITH_GUARD),
-        }
+def _surface_context(*, agents: str, settings: str = _SETTINGS_WITH_GUARD) -> FleetContext:
+    return make_context(
+        table={_AGENTS_ARGS: _ok(stdout=agents), _SETTINGS_ARGS: _ok(stdout=settings)}
     )
+
+
+def test_complete_surface_passes() -> None:
+    ctx = _surface_context(agents=_conformant_agents())
     assert assert_agent_instruction_surface(ctx=ctx, member=_MEMBER) == RowPass()
 
 
 def test_missing_heading_is_finding() -> None:
-    partial = _FULL_AGENTS.replace("## Beads runtime prerequisites\n", "")
-    ctx = make_context(
-        table={
-            _AGENTS_ARGS: _ok(stdout=partial),
-            _SETTINGS_ARGS: _ok(stdout=_SETTINGS_WITH_GUARD),
-        }
-    )
-    outcome = assert_agent_instruction_surface(ctx=ctx, member=_MEMBER)
+    partial = _conformant_agents().replace("## Beads runtime prerequisites\n", "")
+    outcome = assert_agent_instruction_surface(ctx=_surface_context(agents=partial), member=_MEMBER)
     assert isinstance(outcome, RowFinding)
     assert "Beads runtime prerequisites" in outcome.message
 
 
 def test_missing_guard_is_finding() -> None:
-    ctx = make_context(
-        table={
-            _AGENTS_ARGS: _ok(stdout=_FULL_AGENTS),
-            _SETTINGS_ARGS: _ok(stdout=_SETTINGS_NO_GUARD),
-        }
-    )
+    ctx = _surface_context(agents=_conformant_agents(), settings=_SETTINGS_NO_GUARD)
     outcome = assert_agent_instruction_surface(ctx=ctx, member=_MEMBER)
     assert isinstance(outcome, RowFinding)
     assert "beads-access-guard" in outcome.message
@@ -119,8 +143,109 @@ def test_unreadable_agents_skips() -> None:
 
 
 def test_unreadable_settings_skips() -> None:
-    ctx = make_context(table={_AGENTS_ARGS: _ok(stdout=_FULL_AGENTS)})
+    ctx = make_context(table={_AGENTS_ARGS: _ok(stdout=_conformant_agents())})
     assert isinstance(assert_agent_instruction_surface(ctx=ctx, member=_MEMBER), RowSkip)
+
+
+def test_mutation_protocol_without_the_recipe_is_a_finding() -> None:
+    """A raw `git worktree add` mutation protocol yields a finding.
+
+    The FIRST assertion is the behavioral one on purpose: before the
+    predicate exists this fixture is a complete surface and the row
+    passes, so the Red leg fails on a genuine assertion rather than on a
+    missing name.
+    """
+    ctx = _surface_context(agents=_agents(protocol_body=_RAW_WORKTREE_ADD_BODY))
+    outcome = assert_agent_instruction_surface(ctx=ctx, member=_MEMBER)
+    assert isinstance(outcome, RowFinding)
+    assert rows_instructions.WORKTREE_CREATE_COMMAND in outcome.message
+
+
+def test_the_finding_quotes_the_required_sentence_verbatim() -> None:
+    """The finding is paste-able: it carries the exact sentence to port."""
+    ctx = _surface_context(agents=_agents(protocol_body=_RAW_WORKTREE_ADD_BODY))
+    outcome = assert_agent_instruction_surface(ctx=ctx, member=_MEMBER)
+    assert isinstance(outcome, RowFinding)
+    assert rows_instructions.WORKTREE_CREATE_SENTENCE in outcome.message
+
+
+def test_the_recipe_finding_is_a_warning_pending_fleet_adoption() -> None:
+    """The predicate ships DISARMED at warning severity.
+
+    Measured 2026-09-06, no governed member names the recipe. An
+    error-severity finding here would red the central sweep for the whole
+    fleet the moment it merged — the 46c5dab shape `plan/rop-railway-
+    enforcement/` carries a standing constraint against.
+    """
+    ctx = _surface_context(agents=_agents(protocol_body=_RAW_WORKTREE_ADD_BODY))
+    outcome = assert_agent_instruction_surface(ctx=ctx, member=_MEMBER)
+    assert isinstance(outcome, RowFinding)
+    assert outcome.severity == "warning"
+
+
+def test_a_missing_heading_outranks_the_recipe_warning() -> None:
+    """A structurally absent section is reported as the error it is.
+
+    Both legs are unsatisfied here; the row must not downgrade a missing
+    universal-core heading to a warning by reporting the recipe first.
+    """
+    agents = _agents(protocol_body=_RAW_WORKTREE_ADD_BODY).replace("## Daily commands\n", "")
+    outcome = assert_agent_instruction_surface(ctx=_surface_context(agents=agents), member=_MEMBER)
+    assert isinstance(outcome, RowFinding)
+    assert outcome.severity == "error"
+    assert "Daily commands" in outcome.message
+
+
+def test_prose_naming_the_recipe_passes_without_matching_the_sentence() -> None:
+    """The predicate is ONE phrase, not sentence equality — it judges no prose."""
+    body = "Run `mise exec -- just worktree-create <branch>` from the primary checkout."
+    ctx = _surface_context(agents=_agents(protocol_body=body))
+    assert assert_agent_instruction_surface(ctx=ctx, member=_MEMBER) == RowPass()
+
+
+def test_the_recipe_named_outside_the_mutation_protocol_does_not_count() -> None:
+    """A member that names the recipe under some other H2 is still a finding.
+
+    The section slice is the point: guidance a session does not meet where
+    it creates a worktree is guidance it does not read.
+    """
+    agents = _agents(
+        protocol_body=_RAW_WORKTREE_ADD_BODY,
+        trailing=(f"Run `{rows_instructions.WORKTREE_CREATE_COMMAND} <branch>` sometimes.",),
+    )
+    outcome = assert_agent_instruction_surface(ctx=_surface_context(agents=agents), member=_MEMBER)
+    assert isinstance(outcome, RowFinding)
+    assert rows_instructions.WORKTREE_CREATE_SENTENCE in outcome.message
+
+
+def test_mutation_protocol_section_reads_a_trailing_section_to_end_of_file() -> None:
+    """No following H2 is not an empty section — the slice runs to EOF."""
+    text = "# Title\n## Repository mutation protocol\nbody line\n"
+    assert rows_instructions.mutation_protocol_section(agents_text=text) == "body line"
+
+
+def test_mutation_protocol_section_is_empty_when_the_heading_is_absent() -> None:
+    text = "# Title\n## Daily commands\njust check\n"
+    assert rows_instructions.mutation_protocol_section(agents_text=text) == ""
+
+
+def test_mutation_protocol_heading_is_matched_by_prefix() -> None:
+    """A suffixed heading still carries the section, as the heading list does."""
+    text = "## Repository mutation protocol — worktree first\ntext\n## Next\n"
+    assert rows_instructions.mutation_protocol_section(agents_text=text) == "text"
+
+
+def test_the_required_sentence_names_the_required_command() -> None:
+    """The quoted sentence and the grepped phrase are ONE source, not two."""
+    assert rows_instructions.WORKTREE_CREATE_COMMAND in rows_instructions.WORKTREE_CREATE_SENTENCE
+
+
+def test_the_manual_hint_carries_the_required_sentence() -> None:
+    """`wire_fleet_member`'s hint is paste-able, not a description of a paste."""
+    assert (
+        rows_instructions.WORKTREE_CREATE_SENTENCE
+        in rows_instructions.AGENT_INSTRUCTION_SURFACE_HINT
+    )
 
 
 _TREE_ARGS: tuple[str, ...] = ("api", "repos/acme/widget/git/trees/master?recursive=1")
