@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.52.13](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.52.12...v1.52.13) (2026-09-06)
+
+
+### Bug Fixes
+
+* **heading_coverage:** resolve mapped node ids so a dangling row fails ([29a49c0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/29a49c058941a954069ef05434f8f22923a71291))
+
 ## [1.52.12](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.52.11...v1.52.12) (2026-09-06)
 
 
