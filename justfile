@@ -222,6 +222,7 @@ check:
         check-tests-no-subprocess-spawn
         check-tool-backed-check-completeness
         check-vendor-manifest
+        check-work-item-interpolation-delimiters
         check-wrapper-shape
         check-lint
         check-format
@@ -842,6 +843,19 @@ check-tool-backed-check-completeness:
 
 check-vendor-manifest:
     uv run python -m livespec_dev_tooling.checks.vendor_manifest
+
+# Ledger-text enforcement: a NON-CLOSED work item must not carry a literal
+# doubled-brace template-interpolation delimiter pair in its editable fields or
+# in an append-only comment — such a record makes ITSELF undispatchable. Closed
+# items are out of the population by design (never dispatched, and historical
+# ones still carry the pair). The conforming way to write about workflow syntax
+# ships with the check: docs/work-item-interpolation-delimiters.md.
+# Armed-only — self-skips unless LIVESPEC_RUN_WORK_ITEM_INTERPOLATION_DELIMITERS
+# and BEADS_DOLT_PASSWORD are set, so it never self-gates a credential-less
+# `just check`. Arm it only after a measured sweep reports zero non-closed
+# offenders.
+check-work-item-interpolation-delimiters:
+    uv run python -m livespec_dev_tooling.checks.work_item_interpolation_delimiters
 
 check-wrapper-shape:
     uv run python -m livespec_dev_tooling.checks.wrapper_shape
