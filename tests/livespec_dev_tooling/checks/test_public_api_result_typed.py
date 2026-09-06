@@ -598,3 +598,82 @@ def test_declared_supervisor_file_does_not_exempt_every_function_in_it() -> None
     assert _offenders_with_supervisors(
         body=body, rel="livespec_dev_tooling/tdd_commit.py", supervisor_entry_files=declared
     ) == [(8, "helper")], "the helper is still on the hook; only the supervisor entry point is not"
+
+
+def test_public_api_result_typed_skips_colocated_test_modules(*, tmp_path: Path) -> None:
+    """A test module CO-LOCATED outside `tests/` is not public API; its neighbour is.
+
+    The producer-side half of the co-located-tests defect. `tests_tree_prefix`
+    excludes a test tree by PATH, which reaches only the repos that keep every
+    test in one. Measured on livespec-overseer, which declares no prefix and so
+    falls back to the `tests/` default: that default is not vacuous — it does
+    exclude the tests that live under `tests/` — but the repo also keeps 59
+    test modules beside its product modules under `overseer/`, and the check
+    read those as public API, producing 11 of its raw violations.
+
+    No path prefix can separate those: a co-located test module shares its
+    directory with the product code the check must keep scanning. The FILENAME
+    convention does, so this fixture puts all three kinds in ONE directory and
+    asserts the check discriminates between them rather than going quiet — the
+    neighbour is still convicted, by name, in the same run that spares the two
+    test modules. A bare `returncode == 0` would pass just as well against a
+    check that had stopped scanning the tree altogether.
+
+    `conftest.py` — the exclusion's third filename — is not exercised here
+    because the CONSUMPTION universe already drops it everywhere
+    (`filter_first_party_py`'s test clause), so it can never reach
+    `public_names` to be convicted in the first place; the check names it for
+    parity with that function rather than to fix a reachable conviction.
+    """
+    package_dir = tmp_path / ".claude-plugin" / "scripts" / "livespec" / "parse"
+    package_dir.mkdir(parents=True)
+    modules = (
+        ("test_colocated", "colocated_helper"),
+        ("colocated_test", "suffix_helper"),
+        ("neighbour", "neighbour_compute"),
+    )
+    for module, name in modules:
+        _ = (package_dir / f"{module}.py").write_text(
+            "from __future__ import annotations\n"
+            "\n"
+            "\n"
+            f"def {name}(*, x: int) -> int:\n"
+            "    if x < 0:\n"
+            "        raise ValueError(x)\n"
+            "    return x\n",
+            encoding="utf-8",
+        )
+    consumer = tmp_path / _COMMANDS_TREE / "use.py"
+    consumer.parent.mkdir(parents=True, exist_ok=True)
+    imports = "".join(f"from livespec.parse.{module} import {name}\n" for module, name in modules)
+    calls = "".join(f"    _ = {name}(x=1)\n" for _, name in modules)
+    _ = consumer.write_text(
+        "from __future__ import annotations\n"
+        "\n"
+        f"{imports}"
+        "\n"
+        "__all__: list[str] = []\n"
+        "\n"
+        "\n"
+        "def run() -> None:\n"
+        f"{calls}",
+        encoding="utf-8",
+    )
+
+    result = _run_check(cwd=tmp_path)
+
+    combined = result.stdout + result.stderr
+    assert result.returncode != 0, (
+        f"the non-test neighbour is still a genuine offender and must convict; "
+        f"got returncode={result.returncode}, output={combined!r}"
+    )
+    assert "neighbour_compute" in combined, (
+        f"a non-test module beside the test modules must still be read as public API; "
+        f"output={combined!r}"
+    )
+    assert (
+        "colocated_helper" not in combined
+    ), f"a co-located `test_*.py` module must not be read as public API; output={combined!r}"
+    assert (
+        "suffix_helper" not in combined
+    ), f"a co-located `*_test.py` module must not be read as public API; output={combined!r}"
