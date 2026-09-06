@@ -83,6 +83,18 @@ class _Harness:
     def waits(self) -> list[float]:
         return [seconds for kind, seconds in self.events if kind == "sleep"]
 
+    @property
+    def backoffs(self) -> list[float]:
+        """Waits that are BACKOFFS, apart from the constant inter-request floor.
+
+        The seam holds a floor on the gap between requests as well as a cooldown
+        on a throttle, and the two are different claims: a backoff says "GitHub
+        refused", the floor says "this pass must not burst". A test asserting
+        "no wait" would now conflate them and read a healthy paced sweep as a
+        throttled one.
+        """
+        return [seconds for seconds in self.waits if seconds > _gh_runner.MIN_REQUEST_GAP_SECONDS]
+
     def run(self, *args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
         _ = args
         index = min(self.calls, len(self._script) - 1)
@@ -100,6 +112,20 @@ class _Harness:
         # A wait that does not advance the clock would let a cooldown never
         # expire, which is a test artefact rather than a behaviour.
         self._t += seconds
+
+
+def _kinds_apart_from_the_floor(*, events: list[tuple[str, float]]) -> list[str]:
+    """Event kinds over a SLICE of a run, with the inter-request floor removed.
+
+    A free function rather than a harness property because every caller asks it
+    about a slice — "what did the seam do AFTER this point" — and a property
+    would have to be borrowed from a throwaway harness to answer that.
+    """
+    return [
+        kind
+        for kind, seconds in events
+        if kind != "sleep" or seconds > _gh_runner.MIN_REQUEST_GAP_SECONDS
+    ]
 
 
 @pytest.fixture
@@ -176,14 +202,20 @@ def test_a_later_call_waits_out_a_throttle_an_earlier_one_hit(gh: _Harness) -> N
 
 
 def test_pacing_does_not_penalise_an_unthrottled_sweep(gh: _Harness) -> None:
-    """A healthy sweep must not pay for a throttle that never happened."""
+    """A healthy sweep must not pay for a throttle that never happened.
+
+    It DOES pay the inter-request floor, and that is a different claim: the
+    limiter engages partway through a single sequential pass, so a healthy pass
+    is exactly the one that must not burst. What it must never pay is a
+    BACKOFF — the price of a refusal it never received.
+    """
     runner = _paced_runner()
     gh.script(script=[(0, "")])
 
     _ = runner(args=["api", "repos/o/n"])
     _ = runner(args=["api", "repos/o/m"])
 
-    assert gh.waits == []
+    assert gh.backoffs == []
     assert gh.calls == 2
 
 
@@ -217,6 +249,7 @@ def test_a_server_error_retries_but_does_not_pace_the_sweep(gh: _Harness) -> Non
     gh.script(script=[(0, "")])
     _ = runner(args=["api", "repos/o/m"])
 
-    assert [kind for kind, _ in gh.events[boundary:]] == [
-        "call"
-    ], "a server error must not arm the sweep-wide cooldown"
+    assert _kinds_apart_from_the_floor(events=gh.events[boundary:]) == ["call"], (
+        "a server error must not arm the sweep-wide cooldown (the inter-request "
+        "floor is filtered out: it is paid by every pass, throttled or not)"
+    )
