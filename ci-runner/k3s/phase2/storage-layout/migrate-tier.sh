@@ -195,7 +195,11 @@ rsync_tier() {  # rsync_tier SRC_DIR DST_DIR [extra rsync args]
   rsync -aHAXS --numeric-ids --delete --one-file-system "$@" "${src}/" "${dst}/"
 }
 lv_of_device() {  # vg/lv for a dm device path, or empty
-  lvs --noheadings -o vg_name,lv_name --select "lv_path=$(readlink -f "$1")" 2>/dev/null | awk '{print $1"/"$2}'
+  # Pass the device to lvs directly. Selecting on lv_path against the resolved
+  # /dev/dm-N node matched nothing (lv_path is /dev/<vg>/<lv>), so on
+  # 2026-09-06 every `reclaim` refused with "old (none) or new (none) is not an
+  # LV" and cutover's lvchange --refresh silently no-op'd.
+  lvs --noheadings -o vg_name,lv_name "$1" 2>/dev/null | awk '{print $1"/"$2}'
 }
 
 # ---------------------------------------------------------------------------
@@ -337,7 +341,7 @@ cmd_cutover() {
   done
 
   log "install-storage-layout.sh BEFORE mount -a: it rewrites a tier line whose filesystem type changed (nothing is mounted by it)"
-  "${SCRIPT_DIR}/install-storage-layout.sh" | grep -E '^(present|replace|added|backup|  old|  new|FATAL)' || true
+  bash "${SCRIPT_DIR}/install-storage-layout.sh" | grep -E '^(present|replace|added|backup|  old|  new|FATAL)' || true
   systemctl daemon-reload
   mount -a || die "mount -a"
   for role in "${roles[@]}"; do
@@ -363,7 +367,7 @@ cmd_cutover() {
   rm -f "$before" "$after"
 
   log "install-storage-layout.sh must now be a no-op (every line present, drop-in byte-identical)"
-  "${SCRIPT_DIR}/install-storage-layout.sh" | grep -E '^(present|replace|added|FATAL)' || true
+  bash "${SCRIPT_DIR}/install-storage-layout.sh" | grep -E '^(present|replace|added|FATAL)' || true
   log "CUTOVER DONE for: ${roles[*]}. The old volumes keep their data under old-<suffix> until 'reclaim ROLE' removes them."
 }
 
@@ -429,7 +433,7 @@ cmd_finish_live() {
   umount "${TMP_ROOT}/${role}" 2>/dev/null || true
 
   log "install-storage-layout.sh (rewrites the tier line's type if the role's filesystem changed; nothing is remounted)"
-  "${SCRIPT_DIR}/install-storage-layout.sh" | grep -E '^(present|replace|added|backup|  old|  new|FATAL)' || true
+  bash "${SCRIPT_DIR}/install-storage-layout.sh" | grep -E '^(present|replace|added|backup|  old|  new|FATAL)' || true
   grep -E "^LABEL=${role} " /etc/fstab
   log "FINISH-LIVE DONE for ${role}. The old volume (${old}, LABEL=old-$(suffix "$role")) stays mounted UNDERNEATH ${src} until the next boot;"
   log "fstab then mounts only the new one. After that boot: 'migrate-tier.sh reclaim ${role}' removes the old LV and grows the new."
