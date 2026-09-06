@@ -20,13 +20,14 @@ suite builds a real git repo wired exactly as the fleet template wires one,
 installs the real commit-refuse hooks into it, adds a linked worktree with a
 raw `git worktree add`, and drives a real `git push` / `git commit`.
 
-THE CHILDREN THIS FILE SPAWNS ARE `git` — no Python subprocess, so the file is
-deliberately NOT on the `subprocess_spawn_allowlist`; both installers are
-invoked in-process through their `main()`. The hook chain does eventually
-reach a real `uv run python`, and that is precisely why `_child_env` scrubs
-`COVERAGE_PROCESS_START` / `COV_CORE_*`: an instrumented grandchild writes
-`.coverage.*` that races concurrent coverage runs under the parallel check
-dispatcher (the 7us.6 flake).
+THE CHILDREN THIS FILE SPAWNS ARE `git` and `mise which` — no Python
+subprocess, so the file is deliberately NOT on the
+`subprocess_spawn_allowlist`; both installers are invoked in-process through
+their `main()`. The hook chain does eventually reach a real `uv run python`,
+and that is precisely why `_child_env` scrubs `COVERAGE_PROCESS_START` /
+`COV_CORE_*`: an instrumented grandchild writes `.coverage.*` that races
+concurrent coverage runs under the parallel check dispatcher (the 7us.6
+flake).
 
 ANTI-DRIFT. The fixture does not RESTATE the wiring — it is BUILT from the
 wiring this repository itself carries, read out of the committed
@@ -43,8 +44,10 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import subprocess
 from dataclasses import dataclass
+from functools import cache
 from pathlib import Path
 
 import pytest
@@ -99,6 +102,15 @@ _STALE_EPOCH = 1_000_000_000
 # The bytes a pin-drifted pack file carries — distinctive enough that a healed
 # file cannot be mistaken for an unhealed one.
 _STALE_BODY = "#!/usr/bin/env bash\n# stale body from an older pin\n"
+
+# The tools the fixture's hook chain EXECS, in the order it reaches them: the
+# installed pre-push body runs `mise exec -- lefthook`, lefthook runs its `run:`
+# line under a bare `sh` (so `just` has to be on PATH, not merely a mise-managed
+# name), and the recipe runs the installer under `uv run`.
+_HOOK_CHAIN_TOOLS: tuple[str, ...] = ("lefthook", "just", "uv")
+
+# A name no host can resolve, used to prove the missing-tool diagnostic.
+_ABSENT_TOOL = "livespec-no-such-tool"
 
 # The pack member the drift cases corrupt. `gate-run.sh` is the honest choice:
 # it is the largest pack script, it is executable, and it is the one a stale
@@ -166,6 +178,67 @@ def _repo_wiring(*, repo_root: Path) -> _Wiring:
     )
 
 
+def _mise_which(*, tool: str) -> str | None:
+    """`tool`'s absolute path per `mise which`, or None if mise cannot answer.
+
+    Asked from THIS repository's root rather than the caller's cwd: `mise which`
+    answers for the versions the config in scope pins, and the version the gate
+    must run is the one `.mise.toml` here pins. A test that has already chdir'd
+    into its tmp_path fixture would otherwise be asking mise about a directory
+    that pins nothing.
+
+    A host with no `mise` at all answers None rather than raising, so what the
+    reader sees is `_tool_dir`'s assertion — which names the tool it wanted —
+    instead of a bare `FileNotFoundError: 'mise'`.
+    """
+    try:
+        completed = subprocess.run(
+            ["mise", "which", tool],
+            cwd=str(_PACKAGE_ROOT),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except FileNotFoundError:
+        return None
+    if completed.returncode != 0:
+        return None
+    return completed.stdout.strip() or None
+
+
+def _tool_dir(*, tool: str) -> str:
+    """The directory holding `tool`, resolved from the OUTER environment.
+
+    PATH first — that is what a host with global installs or mise shims already
+    offers, and it costs no subprocess — then mise's install set. The parent
+    DIRECTORY is what is resolved, never the binary: a mise shim is a symlink to
+    the `mise` binary itself, so resolving the file would hand back a directory
+    that does not contain `tool` at all.
+
+    Unresolvable is an assertion naming the tool, because the alternative is the
+    nested `mise ERROR "<tool>" couldn't exec process` that started this: a
+    message about the fixture's HOME that says nothing about what the host lacks.
+    """
+    resolved = shutil.which(tool) or _mise_which(tool=tool)
+    assert resolved is not None, (
+        f"the fixture's hook chain execs `{tool}`, which this host carries "
+        f"neither on PATH nor in mise's install set (`mise which {tool}` "
+        f"resolved nothing). Run `mise install` from this repository root to "
+        f"provision the pinned {tool}."
+    )
+    return str(Path(resolved).parent.resolve())
+
+
+@cache
+def _outer_tool_path_prefix() -> str:
+    """The PATH entries that make the hook chain's tools resolvable in the fixture.
+
+    Cached because every fixture child rebuilds its environment, and on a
+    mise-only host each rebuild would otherwise spawn one `mise which` per tool.
+    """
+    return os.pathsep.join(_tool_dir(tool=tool) for tool in _HOOK_CHAIN_TOOLS)
+
+
 def _child_env(*, home: Path) -> dict[str, str]:
     """The environment every fixture child runs under.
 
@@ -178,6 +251,18 @@ def _child_env(*, home: Path) -> dict[str, str]:
     commit-refuse hook admits commits only from a worktree under
     `$HOME/.worktrees` — pointing HOME at the fixture is what lets this proof
     drive the real, unmodified hook body instead of a weakened copy.
+
+    And one PREPEND, which the HOME redirect makes mandatory. mise resolves its
+    install set under `$HOME/.local/share/mise`, and the fixture HOME is empty,
+    so on a host where lefthook / just / uv exist ONLY as mise installs the
+    redirect hides all three from the hook chain: the nested push dies with
+    `mise ERROR "lefthook" couldn't exec process`, and once lefthook is found,
+    with `sh: 1: just: not found`. GitHub Actions happens to carry the same
+    three on PATH globally, so the suite passed there and failed on the host —
+    which means it was asserting the RUNNER's tool layout rather than the pack's
+    wiring (livespec-dev-tooling-85cp). Resolving each tool in the outer
+    environment and leading the child PATH with its directory makes the fixture
+    exercise the hook on any host that can run this repository's gates at all.
     """
     env = {
         key: value
@@ -185,6 +270,7 @@ def _child_env(*, home: Path) -> dict[str, str]:
         if not key.startswith(("GIT_", "COV_CORE_")) and key != "COVERAGE_PROCESS_START"
     }
     env["HOME"] = str(home)
+    env["PATH"] = _outer_tool_path_prefix() + os.pathsep + env.get("PATH", os.defpath)
     return env
 
 
@@ -370,6 +456,59 @@ def test_fixture_wiring_equals_the_wiring_this_repo_carries(
         fixture_wiring.installer_recipe_body.replace(_FIXTURE_UV_FLAGS, "")
         == repo_wiring.installer_recipe_body
     )
+
+
+@pytest.mark.parametrize("tool", _HOOK_CHAIN_TOOLS)
+def test_every_tool_the_hook_chain_execs_is_reachable_from_the_child_path(*, tool: str) -> None:
+    """Each of lefthook, just and uv resolves against the prepended entries ALONE.
+
+    Against the prefix alone, not against the whole child PATH: the outer PATH
+    is still appended, so a host that already carries the tools globally would
+    satisfy a whole-PATH assertion no matter what the prefix contained. Asking
+    the prefix in isolation is what proves the fixture supplies the tools rather
+    than inheriting them.
+    """
+    assert shutil.which(tool, path=_outer_tool_path_prefix()) is not None, tool
+
+
+def test_the_child_path_leads_with_the_outer_tool_directories(*, tmp_path: Path) -> None:
+    """The prefix LEADS, so the fixture's tools win over anything else on PATH."""
+    assert _child_env(home=tmp_path)["PATH"].startswith(_outer_tool_path_prefix() + os.pathsep)
+
+
+def test_a_tool_absent_from_both_path_and_mise_fails_naming_the_tool() -> None:
+    """The unresolvable case names the tool, not the fixture's HOME.
+
+    The whole point of resolving up front: the originating failure surfaced as
+    `mise ERROR "lefthook" couldn't exec process` from three processes down, a
+    message that reads like a broken fixture rather than a host missing a tool.
+    """
+    with pytest.raises(AssertionError, match=_ABSENT_TOOL):
+        _ = _tool_dir(tool=_ABSENT_TOOL)
+
+
+def test_mise_resolves_a_pinned_tool_the_session_path_need_not_carry() -> None:
+    """`mise which` answers for a pinned tool — the fallback the mise-only host needs.
+
+    Exercised directly because on a host that DOES carry the tools on PATH the
+    fixture never reaches this arm, and an unexercised fallback is exactly the
+    arm that was missing when the host went red.
+    """
+    resolved = _mise_which(tool="just")
+    assert resolved is not None
+    assert Path(resolved).name == "just"
+
+
+def test_mise_which_answers_none_when_the_host_has_no_mise(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No `mise` on the host is an ANSWER, so the caller still names the tool."""
+
+    def _no_mise(*_args: object, **_kwargs: object) -> None:
+        raise FileNotFoundError(2, "No such file or directory", "mise")
+
+    monkeypatch.setattr(subprocess, "run", _no_mise)
+    assert _mise_which(tool="just") is None
 
 
 def test_raw_worktree_with_no_pack_heals_at_the_real_pre_push_hook(
