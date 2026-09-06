@@ -58,6 +58,20 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.47.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.46.0...v1.47.0) (2026-09-06)
+
+
+### Features
+
+* **warm-cache:** target generations — the console's warmed ASAN fuzz tree, seeded by reflink (livespec-console-beads-fabro-ydlant) ([c4b70c2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c4b70c2c63d45451826e2039c86fcb90315326ae))
+
+
+### Bug Fixes
+
+* **checks:** the commit-refuse verifier fails on any foreign lefthook wrapper in the shared hooks directory (livespec-dev-tooling-x2ju4a) ([a59d1a2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a59d1a2c332a7c074b76001fc6868156f82b7012))
+* **ci-runner:** verifier scans git-v0 db and checkouts before locks, so a lock file is not rejected as unreferenced by directory order (livespec-41w4) ([92170a2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/92170a2520748c9985b805b8d24aa64cba12d691))
+* **hooks:** the commit-refuse installer owns every lefthook entry point in the shared hooks directory (livespec-dev-tooling-x2ju4a) ([21b38d3](https://github.com/thewoolleyman/livespec-dev-tooling/commit/21b38d305b76cf1874921cee9ae5b2796dba5de3))
+
 ## [1.46.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.45.2...v1.46.0) (2026-09-06)
 
 
