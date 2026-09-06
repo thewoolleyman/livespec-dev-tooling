@@ -350,6 +350,14 @@ check-changed:
 # `coverage report --fail-under=100` and DELETES it, so no stale data
 # can ever back a later standalone report; when absent (CI's standalone
 # matrix job, a manual invocation), it runs the clean suite itself.
+# The reuse is gated on PROVENANCE (work-item livespec-dev-tooling-sc0z):
+# the producer stamps its run with the tracked-tree id from
+# scripts/just/coverage-reuse-id.sh, and this recipe reuses a `.coverage`
+# only under a matching marker (or inside a GitHub Actions job, where the
+# file is this run's downloaded producer artifact by construction). A
+# file without one — what a focused `pytest --cov` run leaves at the repo
+# root — is discarded and the clean suite runs, because reading it as the
+# suite's verdict reported a 49% total against a Green amend.
 #
 # HISTORY, because this reuse was once reverted and the hazard must not
 # be reintroduced silently: the PREVIOUS reuse read the producer's data
@@ -718,6 +726,9 @@ check-pbt-coverage-pure-modules:
 # (consume-once; see that recipe's comment). This is the PRODUCER of
 # the full-tree coverage data shared with check-coverage; CI proves the
 # clean-env full-suite measurement daily in both standalone matrix jobs.
+# The run is stamped with a provenance marker
+# (`.livespec-coverage-reuse-token`, gitignored) so the consumer can tell
+# this file from a focused-run leftover (work-item livespec-dev-tooling-sc0z).
 # In Red-mode pre-commit this target is omitted by `check-pre-commit`
 # via the `check skip=...` argument (coverage is verified at the Green
 # amend), so no ambient env-var read is needed here.
