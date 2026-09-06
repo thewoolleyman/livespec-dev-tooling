@@ -1018,7 +1018,12 @@ def test_feat_with_impl_staged_and_head_has_red_trailers_emits_green_mode_candid
     )
 
     msg_path = tmp_path / "COMMIT_EDITMSG"
-    msg_path.write_text("feat: add green impl\n", encoding="utf-8")
+    # `git commit --amend --no-edit` hands the hook the EXISTING message, Red
+    # trailer block included; a fixture that writes a bare new subject models
+    # the `-m` / `-F` spelling the dropped-Red-trailer guard now refuses
+    # (work-item livespec-dev-tooling-zv78), which would preempt the
+    # green-mode-candidate diagnostic this test is about.
+    msg_path.write_text(red_commit_msg, encoding="utf-8")
 
     result = subprocess.run(
         [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
@@ -1113,7 +1118,8 @@ def test_feat_green_amend_with_unchanged_test_and_passing_pytest_writes_green_tr
     )
 
     msg_path = tmp_path / "COMMIT_EDITMSG"
-    msg_path.write_text("feat: green impl\n", encoding="utf-8")
+    # The `--amend --no-edit` message: the Red body, trailer block and all.
+    msg_path.write_text(red_commit_msg, encoding="utf-8")
 
     result = subprocess.run(
         [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
@@ -1209,7 +1215,8 @@ def test_feat_green_amend_with_test_still_failing_rejects(
     )
 
     msg_path = tmp_path / "COMMIT_EDITMSG"
-    msg_path.write_text("feat: green impl\n", encoding="utf-8")
+    # The `--amend --no-edit` message: the Red body, trailer block and all.
+    msg_path.write_text(red_commit_msg, encoding="utf-8")
 
     result = subprocess.run(
         [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
@@ -2255,11 +2262,30 @@ def test_test_passed_at_red_reject_prints_full_protocol(*, tmp_path: Path) -> No
     _assert_protocol_in_stderr(stderr=result.stderr, mode="test-passed-at-red")
 
 
+def _red_trailer_block(*, test_path: str, recorded_checksum: str) -> str:
+    """The five-trailer `TDD-Red-*` block the Red leg writes into a commit body.
+
+    Any fixture modelling a Green AMEND must carry this block in the
+    COMMIT_EDITMSG it hands the hook: `git commit --amend --no-edit` passes
+    the EXISTING message through, block and all. Writing a bare new subject
+    instead models `--amend -m` / `--amend -F`, the spellings that DESTROY
+    the block — refused since work-item livespec-dev-tooling-zv78.
+    """
+    return (
+        f"TDD-Red-Test: {test_path}\n"
+        "TDD-Red-Failure-Reason: stub\n"
+        f"TDD-Red-Test-File-Checksum: {recorded_checksum}\n"
+        "TDD-Red-Output-Checksum: sha256:abc\n"
+        "TDD-Red-Captured-At: 2026-05-02T05:00:00Z\n"
+    )
+
+
 def _author_green_fixture(*, tmp_path: Path, test_bytes: bytes, recorded_checksum: str) -> Path:
     """Init a tmp repo with a Red commit carrying `recorded_checksum`, stage impl.
 
     Returns the COMMIT_EDITMSG path ready for the Green-amend hook
-    invocation. Used by the two Green-mode reject protocol tests.
+    invocation, pre-filled with the `--amend --no-edit` message (the Red
+    body, Red trailer block included). Used by the Green-mode tests.
     """
     subprocess.run(["git", "init", "-q"], cwd=str(tmp_path), check=True, env=_scrubbed_env())
     subprocess.run(
@@ -2282,14 +2308,8 @@ def _author_green_fixture(*, tmp_path: Path, test_bytes: bytes, recorded_checksu
         check=True,
         env=_scrubbed_env(),
     )
-    red_commit_msg = (
-        "feat: red commit\n"
-        "\n"
-        "TDD-Red-Test: tests/test_x.py\n"
-        "TDD-Red-Failure-Reason: stub\n"
-        f"TDD-Red-Test-File-Checksum: {recorded_checksum}\n"
-        "TDD-Red-Output-Checksum: sha256:abc\n"
-        "TDD-Red-Captured-At: 2026-05-02T05:00:00Z\n"
+    red_commit_msg = "feat: red commit\n\n" + _red_trailer_block(
+        test_path="tests/test_x.py", recorded_checksum=recorded_checksum
     )
     subprocess.run(
         ["git", "commit", "-m", red_commit_msg],
@@ -2306,7 +2326,7 @@ def _author_green_fixture(*, tmp_path: Path, test_bytes: bytes, recorded_checksu
         env=_scrubbed_env(),
     )
     msg_path = tmp_path / "COMMIT_EDITMSG"
-    msg_path.write_text("feat: green impl\n", encoding="utf-8")
+    msg_path.write_text(red_commit_msg, encoding="utf-8")
     return msg_path
 
 
@@ -2373,7 +2393,11 @@ def test_chore_green_amend_after_red_takes_green_leg(*, tmp_path: Path) -> None:
         test_bytes=test_bytes,
         recorded_checksum=real_checksum,
     )
-    msg_path.write_text("chore: green impl for a chore-authored red\n", encoding="utf-8")
+    msg_path.write_text(
+        "chore: green impl for a chore-authored red\n\n"
+        + _red_trailer_block(test_path="tests/test_x.py", recorded_checksum=real_checksum),
+        encoding="utf-8",
+    )
 
     result = subprocess.run(
         [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
@@ -2392,6 +2416,126 @@ def test_chore_green_amend_after_red_takes_green_leg(*, tmp_path: Path) -> None:
     assert "TDD-Green-Verified-At:" in final_msg, (
         f"the Green leg must record TDD-Green-* trailers regardless of prefix; "
         f"got final_msg={final_msg!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# THE HALF-PAIR GUARD (work-item livespec-dev-tooling-zv78). `git commit
+# --amend -m` and `--amend -F` REPLACE the entire commit message, so the
+# `TDD-Red-*` block the Red leg wrote is DESTROYED at the Green amend. The
+# hook read the Red trailers off HEAD — which still carried them at that
+# instant — appended its two `TDD-Green-*` trailers to the NEW body, and
+# EXITED 0, certifying a commit carrying `Red: 0 / Green: 2` as a completed
+# pair. Measured twice on this thread: PR #1022 (`-F`) and PR #1111 (`-m`).
+# `just check` did not catch it either: at pre-commit time on the amend, HEAD
+# was still the tests-only Red commit, which touches no product impl `.py`
+# and so falls outside the range predicate entirely.
+#
+# The Green leg now REFUSES an amend whose message no longer carries the Red
+# trailer lines HEAD carries. `--amend --no-edit` — which passes the existing
+# message through — is unaffected, and that asymmetry is what these pin.
+# ---------------------------------------------------------------------------
+
+
+_HALF_PAIR_CHECK_ID = "red-green-replay-green-amend-dropped-red-trailers"
+
+
+@pytest.mark.parametrize(
+    ("spelling", "amended_message"),
+    [
+        ("git commit --amend -m", "feat: green impl\n"),
+        (
+            "git commit --amend -F",
+            "feat: green impl\n\nA body file that never carried the Red trailer block.\n",
+        ),
+    ],
+)
+def test_green_amend_dropping_the_red_trailer_block_is_refused(
+    *, tmp_path: Path, spelling: str, amended_message: str
+) -> None:
+    """Both destructive amend spellings are REFUSED, not certified as a pair.
+
+    The refusal must name the reason and the trailer lines that went
+    missing, and — the load-bearing half — must stamp NO `TDD-Green-*`
+    evidence onto the message it refused.
+    """
+    test_bytes = b"def test_x() -> None:\n    assert True\n"
+    real_checksum = f"sha256:{hashlib.sha256(test_bytes).hexdigest()}"
+    msg_path = _author_green_fixture(
+        tmp_path=tmp_path,
+        test_bytes=test_bytes,
+        recorded_checksum=real_checksum,
+    )
+    msg_path.write_text(amended_message, encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_scrubbed_env(),
+    )
+
+    assert result.returncode != 0, (
+        f"`{spelling}` destroys the TDD-Red-* block, so the Green leg must "
+        f"REFUSE rather than certify a half-pair; got returncode="
+        f"{result.returncode} stderr={result.stderr!r}"
+    )
+    assert _HALF_PAIR_CHECK_ID in result.stderr, (
+        f"the refusal must name its reason ({_HALF_PAIR_CHECK_ID}); " f"stderr={result.stderr!r}"
+    )
+    assert "TDD-Red-Test-File-Checksum" in result.stderr, (
+        f"the refusal must name the trailer lines the amend dropped; " f"stderr={result.stderr!r}"
+    )
+    _assert_protocol_in_stderr(stderr=result.stderr, mode=_HALF_PAIR_CHECK_ID)
+    final_msg = msg_path.read_text(encoding="utf-8")
+    assert "TDD-Green-Verified-At:" not in final_msg, (
+        f"a refused amend must carry NO Green evidence — stamping it is the "
+        f"defect itself; got final_msg={final_msg!r}"
+    )
+
+
+def test_green_amend_carrying_the_red_block_writes_both_trailer_sets(
+    *,
+    tmp_path: Path,
+) -> None:
+    """`--amend --no-edit` still passes, and the ONE commit carries BOTH sets.
+
+    The doctrine's own words: "The final SINGLE commit carries both files +
+    both trailer sets." Counting the two sets is the verification the hook
+    would not do for itself — five `TDD-Red-*`, two `TDD-Green-*`.
+    """
+    test_bytes = b"def test_x() -> None:\n    assert True\n"
+    real_checksum = f"sha256:{hashlib.sha256(test_bytes).hexdigest()}"
+    msg_path = _author_green_fixture(
+        tmp_path=tmp_path,
+        test_bytes=test_bytes,
+        recorded_checksum=real_checksum,
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_scrubbed_env(),
+    )
+
+    assert result.returncode == 0, (
+        f"the SAFE amend spelling must still pass the Green leg; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+    final_lines = msg_path.read_text(encoding="utf-8").splitlines()
+    red_count = len([line for line in final_lines if line.startswith("TDD-Red-")])
+    green_count = len([line for line in final_lines if line.startswith("TDD-Green-")])
+    assert red_count == 5, (
+        f"the Red block must SURVIVE the amend intact (5 trailers); "
+        f"got {red_count} in {final_lines!r}"
+    )
+    assert green_count == 2, (
+        f"the Green leg records exactly 2 trailers; got {green_count} in " f"{final_lines!r}"
     )
 
 
@@ -2585,6 +2729,56 @@ def test_no_arg_range_commit_with_full_trailer_shape_exits_zero(*, tmp_path: Pat
     )
 
 
+@pytest.mark.parametrize(
+    ("shape", "trailers"),
+    [
+        (
+            "green-without-red",
+            "TDD-Green-Verified-At: 2026-08-01T00:00:00Z\n"
+            "TDD-Green-Parent-Reflog: 67cc78a0000000000000000000000000000000000\n",
+        ),
+        (
+            "green-without-red-re-amended-onto-a-suite-shape",
+            "TDD-Green-Verified-At: 2026-08-01T00:00:00Z\n"
+            "TDD-Suite-Green-Scope: full-suite\n"
+            "TDD-Suite-Green-Output-Checksum: sha256:deadbeef\n"
+            "TDD-Suite-Green-Captured-At: 2026-08-01T00:05:00Z\n",
+        ),
+    ],
+)
+def test_no_arg_range_convicts_a_half_pair_carrying_green_without_red(
+    *, tmp_path: Path, shape: str, trailers: str
+) -> None:
+    """A product commit carrying `TDD-Green-*` with NO `TDD-Red-*` is convicted.
+
+    The post-hoc backstop for the destroyed-Red-block defect
+    (livespec-dev-tooling-zv78): the half-pair is only visible once the
+    message is FINAL, and the commit-msg hook does not look again.
+
+    The second shape is the one the plain shape-test missed. Re-amending a
+    half-pair commit routes it to the suite-green leg — HEAD carries no Red
+    awaiting a Green — which stamps `TDD-Suite-Green-*` beside the orphan
+    `TDD-Green-*`. The suite shape then satisfied the predicate on its own,
+    so the recovery path from the defect could launder the half-pair past
+    the very check that convicts it.
+    """
+    _init_range_repo(tmp_path=tmp_path)
+    (tmp_path / "livespec").mkdir()
+    (tmp_path / "livespec" / "foo.py").write_text("VALUE: int = 1\n", encoding="utf-8")
+    _commit_all(tmp_path=tmp_path, message=f"feat: half pair\n\n{trailers}")
+
+    result = _run_no_arg(tmp_path=tmp_path)
+
+    assert result.returncode != 0, (
+        f"a {shape} commit touching product .py carries Green evidence for a "
+        f"Red that no longer exists and must be convicted; got returncode="
+        f"{result.returncode} stderr={result.stderr!r}"
+    )
+    assert (
+        "range-missing-trailers" in result.stderr
+    ), f"expected 'range-missing-trailers' check_id in stderr; stderr={result.stderr!r}"
+
+
 def test_no_arg_range_commit_touching_only_non_product_paths_exits_zero(
     *,
     tmp_path: Path,
@@ -2657,15 +2851,22 @@ def _run_msg_hook(
     *,
     tmp_path: Path,
     subject: str,
+    trailers: str = "",
 ) -> tuple[subprocess.CompletedProcess[str], Path]:
     """Write a fresh COMMIT_EDITMSG carrying `subject` and run the commit-msg hook.
 
     The message file lives at `.git/COMMIT_EDITMSG` (the realistic
     location) so the fixture's `git add -A` commits never sweep it
     into the repo's tracked tree.
+
+    `trailers`, when given, is the trailer block the message carries under
+    the subject. A Green AMEND must supply HEAD's `TDD-Red-*` block: that is
+    what `--amend --no-edit` passes through, and dropping it is the refused
+    half-pair spelling (work-item livespec-dev-tooling-zv78).
     """
     msg_path = tmp_path / ".git" / "COMMIT_EDITMSG"
-    msg_path.write_text(f"{subject}\n", encoding="utf-8")
+    body = f"{subject}\n\n{trailers}" if trailers else f"{subject}\n"
+    msg_path.write_text(body, encoding="utf-8")
     result = subprocess.run(
         [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
         cwd=str(tmp_path),
@@ -2793,19 +2994,13 @@ def test_red_green_cycles_route_correctly_in_sequence(*, tmp_path: Path) -> None
     new_test_bytes = b"def test_y() -> None:\n    assert True\n"
     (tmp_path / "tests" / "test_y.py").write_bytes(new_test_bytes)
     new_checksum = f"sha256:{hashlib.sha256(new_test_bytes).hexdigest()}"
-    red_message = (
-        "fix: next behavior change\n"
-        "\n"
-        "TDD-Red-Test: tests/test_y.py\n"
-        "TDD-Red-Failure-Reason: stub\n"
-        f"TDD-Red-Test-File-Checksum: {new_checksum}\n"
-        "TDD-Red-Output-Checksum: sha256:abc\n"
-        "TDD-Red-Captured-At: 2026-06-11T01:00:00Z\n"
-    )
-    _commit_all(tmp_path=tmp_path, message=red_message)
+    red_trailers = _red_trailer_block(test_path="tests/test_y.py", recorded_checksum=new_checksum)
+    _commit_all(tmp_path=tmp_path, message=f"fix: next behavior change\n\n{red_trailers}")
     (tmp_path / "livespec" / "foo.py").write_text("VALUE: int = 4\n", encoding="utf-8")
     _range_git(tmp_path=tmp_path, args=["add", "livespec/foo.py"])
-    third, third_msg_path = _run_msg_hook(tmp_path=tmp_path, subject="fix: next behavior change")
+    third, third_msg_path = _run_msg_hook(
+        tmp_path=tmp_path, subject="fix: next behavior change", trailers=red_trailers
+    )
     assert third.returncode == 0, (
         f"the amend on a Red-only HEAD must pass via Branch 4; rc={third.returncode} "
         f"stderr={third.stderr!r}"

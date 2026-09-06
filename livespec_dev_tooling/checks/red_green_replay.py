@@ -29,7 +29,12 @@ commit-msg mode (argv[1] = path to `.git/COMMIT_EDITMSG`, the lefthook
    commit at HEAD also carries Red trailers, so presence alone
    misroutes fresh commits into this leg) ⇒ the Green leg:
    byte-identical test re-run must pass, `TDD-Green-*` recorded —
-   prefix-agnostic;
+   prefix-agnostic. The amended message must still CARRY HEAD's
+   `TDD-Red-*` block, or the amend is refused
+   (`green-amend-dropped-red-trailers`): `git commit --amend -m` and
+   `--amend -F` replace the whole message, and appending Green
+   trailers to a body the Red block was deleted from certifies a
+   HALF-PAIR (work-item livespec-dev-tooling-zv78);
 5. product impl `.py` staged WITHOUT a Red-awaiting-Green HEAD
    (pure refactor / behavior-preserving chore / any prefix incl.
    feat:/fix:, including fresh commits atop completed Red+Green or
@@ -83,6 +88,7 @@ from _red_green_replay_modes import (  # noqa: E402  — sibling private import
 )
 from _red_green_replay_trailers import (  # noqa: E402  — sibling private import
     _narrate_git_failure,
+    dropped_red_trailers,
     head_red_awaiting_green,
 )
 from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
@@ -304,7 +310,17 @@ def _commit_violates(*, sha: str) -> bool:
     message = message_result.stdout
     has_pair_shape = _RED_TRAILER_KEY in message and _GREEN_TRAILER_KEY in message
     has_suite_shape = _SUITE_TRAILER_KEY in message
-    return not (has_pair_shape or has_suite_shape)
+    # Green evidence WITHOUT Red is the HALF-PAIR a message-replacing amend
+    # produced (work-item livespec-dev-tooling-zv78), and it is convicted
+    # unconditionally rather than merely failing to match the pair shape.
+    # The difference is the re-amend: amending a half-pair routes it to the
+    # suite-green leg — HEAD carries no Red awaiting a Green — which stamps
+    # `TDD-Suite-Green-*` beside the orphan `TDD-Green-*`. `has_suite_shape`
+    # would then wave that commit through on its own, so the recovery path
+    # OUT of the defect could launder the half-pair past the one check that
+    # convicts it.
+    is_half_pair = _GREEN_TRAILER_KEY in message and _RED_TRAILER_KEY not in message
+    return is_half_pair or not (has_pair_shape or has_suite_shape)
 
 
 def _validate_range() -> int:
@@ -357,11 +373,52 @@ def _validate_range() -> int:
             "Every commit touching product impl .py must carry evidence, "
             "regardless of subject prefix: author behavior changes via the "
             "Red->Green ritual (pair shape), or behavior-preserving changes "
-            "via the green-verified leg (suite shape). Remedy: rewrite the "
+            "via the green-verified leg (suite shape). A commit carrying "
+            "TDD-Green-* WITHOUT TDD-Red-* is a HALF-PAIR: a message-replacing "
+            "`git commit --amend -m` / `-F` destroyed the Red block at the "
+            "Green amend. Recover it from the commit named by that commit's "
+            "TDD-Green-Parent-Reflog trailer (`git log -1 --format=%B <sha> | "
+            "grep '^TDD-Red-'`) and re-amend with the reassembled message. "
+            "Remedy otherwise: rewrite the "
             "unmerged feature branch (redo each offending change through the "
             "hook so it earns its trailers) and force-push the branch — the "
             "'never force-push' rule scopes to shared/protected refs, not to "
             "an unmerged feature branch being brought into shape."
+        ),
+        protocol=RED_GREEN_REPLAY_PROTOCOL,
+    )
+    return 1
+
+
+def _refuse_half_pair(*, log: structlog.stdlib.BoundLogger, dropped: tuple[str, ...]) -> int:
+    """Refuse a Green amend whose message no longer carries HEAD's Red block.
+
+    ⛔ REFUSED, not repaired. The Green leg APPENDS its trailers; it does not
+    re-derive Red. Admitting the amend therefore produces one commit carrying
+    `TDD-Red-*: 0` and `TDD-Green-*: 2` — evidence that READS as a completed
+    pair and is half of one, written by the gate whose whole job is to
+    certify the pair.
+
+    And nothing downstream looks again in time. At the Green amend HEAD is
+    still the tests-only Red commit, which touches no product impl `.py` and
+    so falls OUTSIDE the range validator's predicate entirely: `just check`
+    passes legitimately, minutes before the defective commit exists. That is
+    why this refusal lives on the commit-msg path rather than being left to
+    the range gate.
+    """
+    log.error(
+        "green-amend-dropped-red-trailers: the amended message no longer carries "
+        "the TDD-Red-* trailers HEAD carries, so admitting it would certify a "
+        "HALF-PAIR — Green evidence for a Red the commit no longer records",
+        check_id="red-green-replay-green-amend-dropped-red-trailers",
+        dropped_trailers=list(dropped),
+        hint=(
+            "`git commit --amend -m` and `git commit --amend -F` REPLACE the "
+            "entire commit message. `git commit --amend --no-edit` is the safe "
+            "spelling: it passes the existing message through, Red trailer "
+            "block included. To reword, start from `git log -1 --format=%B` so "
+            "the block is carried into the new body verbatim — the hook cannot "
+            "re-derive it, because the Red pytest run that produced it is gone."
         ),
         protocol=RED_GREEN_REPLAY_PROTOCOL,
     )
@@ -396,6 +453,18 @@ def _dispatch_impl_staged(
         # HEAD), prefix-agnostic. Red-trailer PRESENCE alone is not
         # enough: a completed Red+Green commit at HEAD also carries
         # Red trailers (work-item livespec-dev-tooling-xn0).
+        #
+        # The Red block must SURVIVE the amend, not merely exist at HEAD
+        # while the leg reads it (work-item livespec-dev-tooling-zv78). The
+        # check belongs HERE rather than inside the leg because this is the
+        # seam where HEAD's Red state is established: the same reading that
+        # elects branch 4 is the one the amended message must honour.
+        dropped = dropped_red_trailers(message=msg_path.read_text(encoding="utf-8"))
+        if isinstance(dropped, IOFailure):
+            return _narrate_git_failure(log=log, failed=unsafe_perform_io(dropped.failure()))
+        lost = unsafe_perform_io(dropped.unwrap())
+        if lost:
+            return _refuse_half_pair(log=log, dropped=lost)
         return _handle_green_mode(msg_path=msg_path, log=log, impl_paths=impl_paths)
     # Branch 5 — product impl `.py` without a Red awaiting its Green
     # (refactor / behavior-preserving chore / any prefix / fresh
