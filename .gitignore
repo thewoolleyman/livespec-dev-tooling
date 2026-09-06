@@ -10,6 +10,19 @@ tmp/
 # per-session, never durable state.
 .playwright-mcp/
 
+# Stray embedded-Dolt store written by the EXTERNAL beads `bd` binary (upstream
+# code reached through the livespec-orchestrator-beads-fabro tenant — nothing in
+# this repository creates one). It appears at the PROCESS CWD carrying the name
+# `.beads/.gitignore` already anticipates INSIDE `.beads/`: the right name in the
+# wrong parent, so the path is cwd-resolved rather than beads-home-resolved. Not
+# a fallback ignoring `dolt.mode: server` — the store is INERT (`repo_state.json`
+# carries `"branches":{}`) while ledger reads went on being served by the
+# configured 127.0.0.1:3307 tenant. An ignore file cannot reach a sibling of its
+# own directory, which is why the root needs this rule — and why the rule is
+# UNANCHORED: a cwd-resolved path follows whatever directory `bd` ran from.
+# See livespec-dev-tooling-to6hh2.
+embeddeddolt/
+
 ### Python toolchain artifacts
 # Note: .mypy_cache/ is intentionally NOT listed. Mypy is not used
 # (livespec-dev-tooling pins pyright); its cache path is therefore
