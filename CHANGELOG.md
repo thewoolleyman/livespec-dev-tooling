@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.45.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.45.1...v1.45.2) (2026-09-06)
+
+
+### Bug Fixes
+
+* **checks:** per_file_coverage rewrites the data file without measured files whose source vanished instead of dying on NoSource (livespec-dev-tooling-5xh8) ([98a15fb](https://github.com/thewoolleyman/livespec-dev-tooling/commit/98a15fb56296c8eed6ac14e11ae6ce0fa5585722))
+* **fabro-sandbox:** track gh 2.100.0 — upstream apt dropped 2.97.0 ([6ed7545](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6ed7545d8d95ffdca54c3e40e3f6adb4f384b566))
+
 ## [1.45.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.45.0...v1.45.1) (2026-09-06)
 
 
