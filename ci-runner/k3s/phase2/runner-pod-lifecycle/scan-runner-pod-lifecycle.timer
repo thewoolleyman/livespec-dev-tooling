@@ -12,7 +12,9 @@
 # reason about. OnBootSec sits after the boot converge
 # (../reconstruct/converge-ci-stack.service, ~2.5 min from an empty
 # datastore) so the first sweep after a reboot reads a converged cluster
-# rather than one still being built.
+# rather than one still being built. The service's TimeoutStartSec=240 sits
+# under this interval so a hung read can never hold the cadence (the
+# 2026-09-06 six-minute hang did exactly that; livespec-kgdlte).
 [Unit]
 Description=Periodic runner-pod lifecycle-stall sweep (every 5 min, report-only)
 

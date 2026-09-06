@@ -66,4 +66,4 @@ state="$(systemctl is-active "${TIMER}" 2>/dev/null || true)"
 systemctl list-timers --no-pager --all "${TIMER}" | head -3
 
 log "DONE. ${TIMER} active; the sweep runs every 5 minutes in report mode."
-log "Read findings with: journalctl -u ${SERVICE} -n 60 --no-pager; check state with: systemctl is-failed ${SERVICE}"
+log "Read findings with: journalctl -u ${SERVICE} -n 60 --no-pager; check state with: systemctl is-failed ${SERVICE}; tell a deadline kill from a finding with: systemctl show -p Result ${SERVICE} (timeout vs exit-code)"
