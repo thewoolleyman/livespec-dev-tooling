@@ -52,6 +52,18 @@ role label at once; the installer refuses while they do.
   silently became `standin-containe`. Role names, `new-<suffix>` and
   `old-<suffix>` temporary names all fit both limits; check any new name
   before using it (`ci-containerd` is 13, which is why it stays ext4-only).
+- **Guard every path variable before a bulk copy on a tier.** On 2026-09-06
+  a reflink timing test read the warm generation's path with an unprivileged
+  `readlink -f` (the storage directory is `0700 root`), got an empty string,
+  and `cp -a --reflink=always "$gen/." "$T/uv"` copied `/.` — the whole root
+  filesystem, 610k entries and 506 device nodes — into the `ci-workvols`
+  tier; `set -u` then aborted the script before its own cleanup line. Read a
+  path with the privilege the target needs (`sudo readlink`), assert it is
+  non-empty AND carries the expected prefix (`case "$gen" in
+  /var/lib/rancher/k3s/storage/.warm/*) ;; *) exit 1;; esac`) before any
+  `cp`/`rm`/`rsync` uses it, put the cleanup in a `trap ... EXIT` with a
+  LITERAL path, and never `pkill -f` a pattern your own command line
+  contains (bracket one character: `--reflink[=]always`).
 - **Never unmount a tier mount under a running k3s, not even to swap it.**
   The `RequiresMountsFor` drop-in orders k3s's stop before the mount's, so
   an unmount is a k3s stop. To replace a tier live, STACK the new mount on
