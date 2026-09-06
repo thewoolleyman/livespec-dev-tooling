@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.52.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.52.0...v1.52.1) (2026-09-06)
+
+
+### Bug Fixes
+
+* **agent-hooks:** classify gate commands by command-token position, not substring ([62f8ddc](https://github.com/thewoolleyman/livespec-dev-tooling/commit/62f8ddcbbdaa82986538d7cf91ae63440cd7e06e))
+* **agent-hooks:** extract venue-aware deny-hint composition into its own module ([4669980](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4669980d30c21f9a54da6e4e2249dc9c23e0a394))
+
 ## [1.52.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.51.0...v1.52.0) (2026-09-06)
 
 
