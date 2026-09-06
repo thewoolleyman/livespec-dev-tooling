@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# storage-layout-exit-tests.sh — prove the four properties the bare-metal
+# storage-layout-exit-tests.sh — prove the five properties the bare-metal
 # storage stage is required to have, WITHOUT touching any host.
 #
 #   1. the profile is DATA and is validated as data (a missing, unknown,
@@ -15,7 +15,12 @@
 #      transcribes from the host record. Properties 1-3 all ask whether the
 #      profile is WELL FORMED; only this one asks whether it is TRUE, which is
 #      the gap a 64 GiB swap and a missing `nvmeb` sat in unnoticed until
-#      2026-09-06.
+#      2026-09-06;
+#   5. a `free-space` profile — a node that KEEPS the operating system already
+#      on its device — plans no controller command and no zap, adds exactly one
+#      partition, and REFUSES any step naming a partition it preserves; and the
+#      `whole-device` plan the first node takes is byte-for-byte the plan it
+#      took before `free-space` existed.
 #
 # HOW IT STAYS OFF THE HOST. Every case runs `storage-layout.sh --dry-run`, so
 # no mutating command is ever executed by construction. On top of that, each
@@ -35,6 +40,7 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT="${HERE}/storage-layout.sh"
 POWEREDGE="${HERE}/profiles/poweredge-xubuntu.env"
+POWEREDGE_PLAN="${HERE}/profiles/poweredge-xubuntu.expected-plan"
 
 pass=0; fail=0
 ok() { printf '  PASS  %s\n' "$1"; pass=$((pass + 1)); }
@@ -147,8 +153,37 @@ ADMISSION_CAPACITY_C=32
 EOF
 }
 
+# The same fixture as a `free-space` node: a device whose partitions 1 and 2
+# already carry an operating system this procedure must not touch, with the
+# tiers to go in the unpartitioned tail. It states the two new keys by APPENDING
+# them, which is itself part of the claim — the base fixture above names neither,
+# and every case that uses it asserts the whole-device behaviour those keys
+# default to.
+write_freespace_profile() {  # write_freespace_profile PATH [PV-DEVICE]
+  local path="$1" pv="${2:-/dev/fixture3}"
+  write_profile "$path"
+  sed "s|^VOLUME_GROUPS=.*|VOLUME_GROUPS=fixturevg:${pv}|" "$path" > "${path}.tmp"
+  mv "${path}.tmp" "$path"
+  cat >> "$path" <<'EOF'
+DISK_PLAN=free-space
+PRESERVED_PARTITIONS=/dev/fixture1 /dev/fixture2
+EOF
+}
+
 BARE="${TMPROOT}/bare-bin"
 make_bare_fakes "$BARE"
+
+# A device that already carries two partitions: `lsblk` answers both the label
+# probe and the partition-number probe, so the script derives "the next free
+# number is 3" from the table rather than from an assumption.
+FREESPACE="${TMPROOT}/freespace-bin"
+make_bare_fakes "$FREESPACE"
+mkfake "$FREESPACE" lsblk '
+case " $* " in
+  *" PARTLABEL "*) printf "\nrootfs\nEFI\n"; exit 0 ;;
+  *" PARTN "*) printf "\n1\n2\n"; exit 0 ;;
+esac
+exit 1'
 
 # ---------------------------------------------------------------------------
 echo "== A. The profile is data, and is validated as data =="
@@ -498,6 +533,221 @@ if [ -z "$missing" ]; then
   ok "E3  the record still carries the three values the 2026-09-06 read corrected"
 else
   no "E3  the record no longer carries:${missing}"
+fi
+
+# ---------------------------------------------------------------------------
+echo
+echo "== F. The free-space plan, and the whole-device plan it must not disturb =="
+# ---------------------------------------------------------------------------
+# `DISK_PLAN=free-space` exists for a node that KEEPS the operating system
+# already on its device: partitions it did not create carry the root and the
+# EFI system partition, and only the unpartitioned tail is the procedure's to
+# take. Everything this section asserts is about what the plan does NOT do —
+# which is the half a plan cannot demonstrate by running correctly.
+
+p="${TMPROOT}/freespace.env"
+write_freespace_profile "$p"
+run_layout "$FREESPACE" --dry-run "$p"
+FS_OUT="$REPLY_OUT"
+FS_RC="$REPLY_RC"
+new_partition_lines="$(printf '%s\n' "$FS_OUT" | grep -c '^+ sgdisk --new' || true)"
+
+if [ "$FS_RC" -eq 0 ] \
+   && ! printf '%s\n' "$FS_OUT" | grep -q '^+ .*add vd' \
+   && ! printf '%s\n' "$FS_OUT" | grep -q '^+ .*--zap-all' \
+   && ! printf '%s\n' "$FS_OUT" | grep -q '^+ wipefs'; then
+  ok "F1  a free-space plan emits no controller command and no zap"
+else
+  no "F1  a free-space plan emits no controller command and no zap (rc=${FS_RC})"
+  printf '%s\n' "$FS_OUT"
+fi
+
+# ONE partition, numbered from the table the device actually carries (1 and 2
+# are taken, so 3), typed LVM, and taking the largest free region — which is
+# what sgdisk's `0:0` means, and why no size for it appears in the profile.
+if [ "$new_partition_lines" -eq 1 ] \
+   && printf '%s\n' "$FS_OUT" | grep -qxF '+ sgdisk --new=3:0:0 --typecode=3:8e00 --change-name=3:lvm /dev/fixture'; then
+  ok "F2  exactly one new partition, at the next free number, typed LVM over the free region"
+else
+  no "F2  exactly one new partition, at the next free number, typed LVM over the free region (${new_partition_lines} new-partition command(s))"
+  printf '%s\n' "$FS_OUT"
+fi
+
+# The node boots off the EFI system partition it already has. A plan that
+# remade it would take the bootloader with it, so the plan must not contain the
+# mkfs at all — not merely refuse it later.
+if ! printf '%s\n' "$FS_OUT" | grep -q '^+ mkfs.vfat' \
+   && printf '%s' "$FS_OUT" | grep -qF 'already boots from'; then
+  ok "F3  the existing EFI system partition is left alone, and the plan says so"
+else
+  no "F3  the existing EFI system partition is left alone, and the plan says so"
+  printf '%s\n' "$FS_OUT"
+fi
+
+# The tiers still get built: preservation is about the partitions named, not
+# about the run doing nothing.
+if printf '%s' "$FS_OUT" | grep -qF 'pvcreate --yes /dev/fixture3' \
+   && printf '%s' "$FS_OUT" | grep -qF 'mkfs.ext4 -q -L ci-cache /dev/fixturevg/ci-cache'; then
+  ok "F4  the tail partition still becomes the physical volume, the group and the labelled filesystem"
+else
+  no "F4  the tail partition still becomes the physical volume, the group and the labelled filesystem"
+fi
+
+# The refusal that makes the rest of it trustworthy. This profile points its
+# physical volume at partition 1 — the node's root — which is a step that WOULD
+# have run: `pvcreate` on an empty-looking device needs no consent at all.
+p="${TMPROOT}/freespace-clobber.env"
+write_freespace_profile "$p" /dev/fixture1
+run_layout "$FREESPACE" --dry-run "$p"
+if [ "$REPLY_RC" -ne 0 ] \
+   && printf '%s' "$REPLY_OUT" | grep -qF 'REFUSED' \
+   && printf '%s' "$REPLY_OUT" | grep -qF '/dev/fixture1' \
+   && printf '%s' "$REPLY_OUT" | grep -qF 'PRESERVED_PARTITIONS'; then
+  ok "F5  a step naming a preserved partition exits non-zero and names that partition"
+else
+  no "F5  a step naming a preserved partition exits non-zero and names that partition (rc=${REPLY_RC})"
+  printf '%s\n' "$REPLY_OUT"
+fi
+
+# Preservation is not consent's stronger cousin, it is a different key: consent
+# names a target the profile is willing to lose, so naming a preserved one must
+# not unlock it.
+run_layout "$FREESPACE" --dry-run --i-consent-to-destroy=/dev/fixture1 "$p"
+if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -qF 'REFUSED'; then
+  ok "F6  --i-consent-to-destroy does not unlock a preserved partition"
+else
+  no "F6  --i-consent-to-destroy does not unlock a preserved partition (rc=${REPLY_RC})"
+fi
+
+# The same clobber, on a device that looks like a REAL one: a preserved root
+# carries a filesystem, and a populated device is exactly what makes a step ask
+# for consent. So this is the case where the two keys meet, and the one the
+# live node would actually hit — F5's bare fixture reaches the preservation
+# guard through `run`, whereas here `require_consent` is reached first.
+#
+# Asserting the WORDING, not just the exit code, is the point. Both orderings
+# refuse; only one of them tells the operator the truth about why. A refusal
+# reading "Re-run with --i-consent-to-destroy=/dev/fixture1" is advice that a
+# preserved partition can be unlocked, which is the one thing this key promises
+# it cannot.
+FS_POPULATED="${TMPROOT}/freespace-populated-bin"
+make_bare_fakes "$FS_POPULATED"
+mkfake "$FS_POPULATED" lsblk '
+case " $* " in
+  *" PARTLABEL "*) printf "\nrootfs\nEFI\n"; exit 0 ;;
+  *" PARTN "*) printf "\n1\n2\n"; exit 0 ;;
+esac
+exit 1'
+mkfake "$FS_POPULATED" blkid '
+for a in "$@"; do
+  case "$a" in /dev/fixture1) printf "ext4\n"; exit 0 ;; esac
+done
+exit 2'
+
+run_layout "$FS_POPULATED" --dry-run "$p"
+if [ "$REPLY_RC" -ne 0 ] \
+   && printf '%s' "$REPLY_OUT" | grep -qF 'PRESERVED_PARTITIONS' \
+   && printf '%s' "$REPLY_OUT" | grep -qF '/dev/fixture1' \
+   && ! printf '%s' "$REPLY_OUT" | grep -qF 'Re-run with --i-consent-to-destroy'; then
+  ok "F6a a preserved partition that CARRIES a filesystem refuses as preserved, never as a consent prompt"
+else
+  no "F6a a preserved partition that CARRIES a filesystem refuses as preserved, never as a consent prompt (rc=${REPLY_RC})"
+  printf '%s\n' "$REPLY_OUT"
+fi
+
+# The profile-level contradictions, each of which parsed cleanly before it was a
+# refusal: a protective plan protecting nothing, and an erasing plan promising
+# to keep something it erases.
+p="${TMPROOT}/freespace-nothing-preserved.env"
+write_profile "$p"
+printf 'DISK_PLAN=free-space\n' >> "$p"
+run_layout "$BARE" --dry-run "$p"
+if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -qF 'must name the partitions it preserves in PRESERVED_PARTITIONS'; then
+  ok "F7  free-space with nothing preserved is refused"
+else
+  no "F7  free-space with nothing preserved is refused (rc=${REPLY_RC})"
+fi
+
+p="${TMPROOT}/whole-device-preserving.env"
+write_profile "$p"
+printf 'PRESERVED_PARTITIONS=/dev/fixture1\n' >> "$p"
+run_layout "$BARE" --dry-run "$p"
+if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -qF 'cannot preserve'; then
+  ok "F8  whole-device naming a preserved partition is refused rather than silently erasing it"
+else
+  no "F8  whole-device naming a preserved partition is refused rather than silently erasing it (rc=${REPLY_RC})"
+fi
+
+p="${TMPROOT}/bad-disk-plan.env"
+write_profile "$p"
+printf 'DISK_PLAN=partial\n' >> "$p"
+run_layout "$BARE" --dry-run "$p"
+if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -qF "DISK_PLAN must be 'whole-device' or 'free-space', got 'partial'"; then
+  ok "F9  an unknown DISK_PLAN is refused, naming what was given"
+else
+  no "F9  an unknown DISK_PLAN is refused, naming what was given (rc=${REPLY_RC})"
+fi
+
+# An agent has nothing to join without both halves, and a missing one of them
+# fails at the node — after the storage and the base OS are already written.
+p="${TMPROOT}/agent-no-join.env"
+write_profile "$p"
+sed 's|^CLUSTER_ROLE=.*|CLUSTER_ROLE=agent|' "$p" > "${p}.tmp" && mv "${p}.tmp" "$p"
+run_layout "$BARE" --dry-run "$p"
+if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -qF 'CLUSTER_ROLE=agent must name both CLUSTER_JOIN_ADDRESS and CLUSTER_TOKEN_FILE'; then
+  ok "F10 an agent with no join address and no token file is refused"
+else
+  no "F10 an agent with no join address and no token file is refused (rc=${REPLY_RC})"
+fi
+
+p="${TMPROOT}/agent-half.env"
+write_profile "$p"
+sed -e 's|^CLUSTER_ROLE=.*|CLUSTER_ROLE=agent|' \
+    -e 's|^CLUSTER_JOIN_ADDRESS=.*|CLUSTER_JOIN_ADDRESS=https://fixture.invalid:6443|' "$p" > "${p}.tmp" && mv "${p}.tmp" "$p"
+run_layout "$BARE" --dry-run "$p"
+if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -qF 'CLUSTER_ROLE=agent must name both'; then
+  ok "F11 an agent with a join address but no token file is refused too"
+else
+  no "F11 an agent with a join address but no token file is refused too (rc=${REPLY_RC})"
+fi
+
+printf 'CLUSTER_TOKEN_FILE=/var/lib/fixture/join-token\nNODE_TAINTS=pool=ci:NoSchedule\n' >> "$p"
+run_layout "$BARE" --dry-run "$p"
+if [ "$REPLY_RC" -eq 0 ]; then
+  ok "F12 an agent naming both, with taints, is accepted"
+else
+  no "F12 an agent naming both, with taints, is accepted (rc=${REPLY_RC})"
+  printf '%s\n' "$REPLY_OUT"
+fi
+
+# The regression the whole of F is written against. `free-space` reshaped the
+# partition stage, the controller stage and the mkfs stage; the first node takes
+# none of those branches, and §B would not notice a step quietly added, dropped
+# or reworded between the rungs it asserts. This is the full sequence, as an
+# equality, against a file committed from the run BEFORE this change existed.
+POWEREDGE_PLANNED="$(printf '%s\n' "$POWEREDGE_OUT" | sed -n 's/^+ //p')"
+POWEREDGE_EXPECTED="$(grep -v '^#' "$POWEREDGE_PLAN" | grep . || true)"
+if [ "$POWEREDGE_PLANNED" = "$POWEREDGE_EXPECTED" ]; then
+  ok "F13 the poweredge whole-device plan is byte-identical to its committed expected plan"
+else
+  no "F13 the poweredge whole-device plan differs from its committed expected plan:"
+  printf '%s\n' "$POWEREDGE_EXPECTED" > "${TMPROOT}/expected-plan"
+  printf '%s\n' "$POWEREDGE_PLANNED" > "${TMPROOT}/planned"
+  diff -u --label 'expected plan' --label 'planned' \
+    "${TMPROOT}/expected-plan" "${TMPROOT}/planned" | sed 's/^/        /'
+fi
+
+# ---------------------------------------------------------------------------
+echo
+echo "== G. Still nothing ran =="
+# ---------------------------------------------------------------------------
+# D1 asserted this before section F existed; F drives several more dry runs,
+# including two that plan a partition, so the tripwire is read again after them.
+if [ ! -s "$TRIPWIRE" ]; then
+  ok "G1  no mutating command ran in any dry run, section F included"
+else
+  no "G1  a dry run EXECUTED a mutating command:"
+  cat "$TRIPWIRE"
 fi
 
 echo
