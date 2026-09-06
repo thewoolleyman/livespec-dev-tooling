@@ -24,7 +24,7 @@ because a node "already looks right":
 | 1 | **Storage layout** | `storage-layout.sh <profile>` (here) | The storage-controller virtual disk, the GPT partition table (EFI system partition + LVM physical volume), the volume groups, the logical volumes, and the `mkfs` that puts the role LABELS on them. |
 | 2 | **Base operating system** | *not yet scripted — its own work item, depends on this stage* | An installed, bootable operating system on the volumes stage 1 created, and the base packages the later stages need. |
 | 3 | **k3s** | `../provision-k3s.sh` | The pinned single-node k3s server, its config installed before the first start, and the admin kubeconfig every later step reads. |
-| 4 | **Node-local runbook** | `sudo ../phase2/install-node.sh <C>` | Every node-local installer under `../phase2/` plus `../secret-reinjection/`, at the node's admission capacity `C` — including `../phase2/storage-layout/install-storage-layout.sh`, which is stage 1's CONSUMER. |
+| 4 | **Node-local runbook** | `sudo ../phase2/install-node.sh profiles/<node>.env` | Every node-local installer under `../phase2/` plus `../secret-reinjection/` that this node's `CLUSTER_ROLE` calls for, at the `ADMISSION_CAPACITY_C` the same profile carries — including `../phase2/storage-layout/install-storage-layout.sh`, which is stage 1's CONSUMER. A `server` runs the whole list; an `agent` runs its node-local subset and skips the cluster-side and datastore steps, logging the reason for each. |
 
 **Why stage 1 must come first, and why stage 4 cannot substitute for it.**
 `../phase2/storage-layout/install-storage-layout.sh` writes the five `/etc/fstab`

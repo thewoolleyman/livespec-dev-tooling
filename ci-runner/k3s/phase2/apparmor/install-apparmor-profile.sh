@@ -16,21 +16,46 @@
 # /etc/apparmor.d/ is what makes the load survive a reboot — the distribution's
 # apparmor unit parses that directory at boot.
 #
+# --profile-only INSTALLS THE KERNEL HALF ALONE, and it is not a convenience:
+# the ConfigMap is a CLUSTER object, so on a node that joins the pool as an
+# AGENT there is no admin kubeconfig to converge it with and no second copy of
+# it to converge — the server owns it, for the whole cluster. The "either half
+# alone is a broken state" rule above is a rule about the CLUSTER, and it still
+# holds: the pool has one ConfigMap, written once by the server, and every
+# node's kernel carries the profile it names. ../install-node.sh passes this
+# flag for a profile whose CLUSTER_ROLE is `agent` and never for a `server`.
+#
 # Requires: root (apparmor_parser writes kernel state), apparmor_parser on
-# PATH, kubectl with KUBECONFIG pointed at the k3s cluster.
+# PATH, and — unless --profile-only — kubectl with KUBECONFIG pointed at the
+# k3s cluster.
+#
+# Usage: install-apparmor-profile.sh [--profile-only]
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROFILE_NAME="ci-runner-workflow"
 PROFILE_SRC="${SCRIPT_DIR}/${PROFILE_NAME}"
 PROFILE_DEST="/etc/apparmor.d/${PROFILE_NAME}"
+USAGE="usage: install-apparmor-profile.sh [--profile-only]"
+PROFILE_ONLY=0
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --profile-only) PROFILE_ONLY=1 ;;
+    -h|--help) printf '%s\n' "$USAGE"; exit 0 ;;
+    *) echo "FATAL: unknown argument '$1' -- ${USAGE}" >&2; exit 1 ;;
+  esac
+  shift
+done
 
 log() { printf '\n== %s ==\n' "$*"; }
 
 [ "$(id -u)" -eq 0 ] || { echo "FATAL: must run as root (apparmor_parser writes kernel state)"; exit 1; }
 command -v apparmor_parser >/dev/null || { echo "FATAL: apparmor_parser not found on PATH"; exit 1; }
-command -v kubectl >/dev/null || { echo "FATAL: kubectl not found on PATH"; exit 1; }
-: "${KUBECONFIG:?set KUBECONFIG to the k3s cluster kubeconfig (see ../../provision-k3s.sh)}"
+if [ "$PROFILE_ONLY" -eq 0 ]; then
+  command -v kubectl >/dev/null || { echo "FATAL: kubectl not found on PATH"; exit 1; }
+  : "${KUBECONFIG:?set KUBECONFIG to the k3s cluster kubeconfig (see ../../provision-k3s.sh)}"
+fi
 
 # ---------------------------------------------------------------------------
 log "1. Install and load the ${PROFILE_NAME} AppArmor profile on this node"
@@ -55,6 +80,13 @@ if ! aa-status 2>/dev/null | grep -Fx "   ${PROFILE_NAME}" >/dev/null; then
 fi
 
 # ---------------------------------------------------------------------------
+if [ "$PROFILE_ONLY" -eq 1 ]; then
+  log "2. SKIPPED (--profile-only): the arc-hook-pod-template ConfigMap is a"
+  log "   cluster object the k3s server converges for the whole pool."
+  log "Done. ${PROFILE_NAME} is loaded in enforce mode on this node."
+  exit 0
+fi
+
 log "2. Converge the arc-hook-pod-template ConfigMap in arc-runners"
 # Shared with ../warm-cache/install-warm-cache.sh, which converges the SAME
 # ConfigMap for the warm-cache UV_CACHE_DIR the template also carries; one converge
