@@ -45,15 +45,17 @@ from pathlib import Path
 
 import pytest
 
-from livespec_dev_tooling.agent_hooks.pretooluse_background_guard import (
+from livespec_dev_tooling.agent_hooks._deny_hint import (
     _INSTALL_COMMAND,
     _gate_recipes_resolve,
-    _hint,
     _imports_pack_fragment,
-    _load_hook_input,
-    _matched_gate,
     _read_text,
     _repo_root,
+    deny_hint,
+)
+from livespec_dev_tooling.agent_hooks.pretooluse_background_guard import (
+    _load_hook_input,
+    _matched_gate,
     _should_deny,
     main,
 )
@@ -518,7 +520,7 @@ def test_repo_root_finds_worktree_git_file_and_gives_up_outside_a_repo(tmp_path:
     outside = tmp_path / "outside"
     outside.mkdir()
     assert _repo_root(start=outside) is None
-    assert _hint(cwd=outside).find(_INSTALL_COMMAND) > 0
+    assert deny_hint(cwd=outside).find(_INSTALL_COMMAND) > 0
 
 
 def test_read_text_degrades_an_unreadable_path_to_empty(tmp_path: Path) -> None:
