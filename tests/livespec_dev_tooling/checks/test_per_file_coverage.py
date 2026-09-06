@@ -433,3 +433,111 @@ def test_per_file_coverage_parses_xdist_combined_data(*, tmp_path: Path) -> None
         f"under xdist-combined input; "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
+
+
+def test_per_file_coverage_purges_measured_files_whose_source_vanished(*, tmp_path: Path) -> None:
+    """A measured file whose source no longer exists is purged with a warning, not a crash.
+
+    Work-item livespec-dev-tooling-5xh8: on a cold-cache CI pod, `uv`
+    writes its interpreter-probe script (`get_interpreter_info.py` plus a
+    vendored `packaging/`) into `~/.cache/uv/.tmpXXXX/python/`, runs it
+    with the project's venv interpreter — whose pytest-cov `.pth` hook is
+    armed by COVERAGE_PROCESS_START — and deletes the directory. The
+    combined `.coverage` therefore records files that no longer exist,
+    and `Coverage.json_report` raised `NoSource` on the first of them,
+    failing `check-per-file-coverage` on every cold pod while the tree's
+    own coverage was 100%. A measured file with no source on disk can
+    never be first-party code under test (the check runs in the tree the
+    suite just executed), so the fixture records one such path alongside
+    a fully-covered `subject.py`; the check must exit 0, surface the
+    skipped path, and PURGE it from the data file so the consume-once
+    `check-coverage` reuse read of the same file is clean too.
+    """
+    src_file = tmp_path / "subject.py"
+    src_file.write_text(
+        "from __future__ import annotations\n__all__: list[str] = []\n",
+        encoding="utf-8",
+    )
+    vanished = tmp_path / ".cache" / "uv" / ".tmp8ktTHl" / "python" / "get_interpreter_info.py"
+    assert not vanished.exists(), "fixture precondition: the probe path must not exist on disk"
+
+    data = CoverageData(basename=str(tmp_path / ".coverage"), suffix=False)
+    data.add_lines({str(src_file): [1, 2], str(vanished): [1, 2, 3]})
+    data.write()
+
+    result = subprocess.run(
+        [sys.executable, str(_PER_FILE_COVERAGE)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_env_without_coverage_file(),
+    )
+
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, (
+        f"per_file_coverage must not fail on a measured file whose source vanished; "
+        f"got returncode={result.returncode} output={combined!r}"
+    )
+    assert (
+        str(vanished) in combined
+    ), f"the skipped path must be surfaced in the diagnostic output; output={combined!r}"
+    reread = CoverageData(basename=str(tmp_path / ".coverage"), suffix=False)
+    reread.read()
+    remaining = set(reread.measured_files())
+    assert str(vanished) not in remaining, (
+        f"the vanished file must be PURGED from the data file so check-coverage's "
+        f"consume-once read is clean; remaining={sorted(remaining)!r}"
+    )
+    assert (
+        str(src_file) in remaining
+    ), f"purging must keep the still-present measured files; remaining={sorted(remaining)!r}"
+
+
+def test_per_file_coverage_purge_preserves_branch_arcs_of_kept_files(*, tmp_path: Path) -> None:
+    """Purging under branch (`--cov-branch`) data keeps the surviving files' arcs intact.
+
+    The real producer runs `pytest --cov --cov-branch`, so the data file
+    holds ARCS, not lines, and the vanished-row rewrite must carry every
+    kept file's arcs across unchanged — otherwise a fully covered file
+    could read as partially covered, or the 100% gate could pass on
+    emptied data. Fixture: a two-statement `subject.py` fully covered as
+    arcs, plus a vanished uv-probe path with arcs of its own. After the
+    check exits 0 the reread data must still be arc-based, list exactly
+    `subject.py`, and hold exactly its original arcs.
+    """
+    src_file = tmp_path / "subject.py"
+    src_file.write_text(
+        "from __future__ import annotations\n__all__: list[str] = []\n",
+        encoding="utf-8",
+    )
+    vanished = tmp_path / ".cache" / "uv" / ".tmpEKjZCb" / "python" / "packaging" / "_elffile.py"
+    subject_arcs = [(-1, 1), (1, 2), (2, -1)]
+
+    data = CoverageData(basename=str(tmp_path / ".coverage"), suffix=False)
+    data.add_arcs({str(src_file): subject_arcs, str(vanished): [(-1, 1), (1, -1)]})
+    data.write()
+
+    result = subprocess.run(
+        [sys.executable, str(_PER_FILE_COVERAGE)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_env_without_coverage_file(),
+    )
+
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, (
+        f"per_file_coverage must not fail on a vanished measured file under branch data; "
+        f"got returncode={result.returncode} output={combined!r}"
+    )
+    reread = CoverageData(basename=str(tmp_path / ".coverage"), suffix=False)
+    reread.read()
+    assert reread.has_arcs(), "the rewritten data file must stay arc-based (branch data)"
+    assert set(reread.measured_files()) == {
+        str(src_file)
+    }, f"exactly the kept file must survive the rewrite; got {sorted(reread.measured_files())!r}"
+    assert sorted(reread.arcs(str(src_file)) or []) == sorted(
+        subject_arcs
+    ), f"the kept file's arcs must be carried across unchanged; got {reread.arcs(str(src_file))!r}"
