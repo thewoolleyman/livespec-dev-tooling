@@ -3,9 +3,10 @@
 One `Finding` shape, one verdict pair, one canonicalization, and one set of
 record projections, shared by the slug, anchor and timeline families so a
 verdict reads identically whichever family produced it. The check ids and the
-`error`/`warn` split are the ratified ones (`livespec-orchestrator-beads-fabro`
-`SPECIFICATION/contracts.md` §"Plan-record conformance checks", v095) and are
-NORMATIVE — an id spelled differently here is a verdict no operator can look up.
+`error`/`warn` split are the ratified ones (the plan-record conformance contract
+in `livespec-orchestrator-beads-fabro` `SPECIFICATION/contracts.md`, v095) and
+are NORMATIVE — an id spelled differently here is a verdict no operator can look
+up.
 
 The canonicalization is stated ONCE here for the same reason it is stated once
 in the orchestrator's `_plan_identity`: a second copy is how a writer and a

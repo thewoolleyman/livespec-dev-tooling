@@ -4,9 +4,9 @@ The companion to `ci_matrix_completeness`. Where that check proves every
 canonical slug is PRESENT in CI and wired into the `ci-green` gate's
 `needs:`, this check proves each such gating job actually RUNS on a
 `pull_request` rather than being conditionally skipped or reduced relative to
-a `push` to master. Together they enforce the livespec invariant in
-`livespec/SPECIFICATION/non-functional-requirements.md` §"CI as a merge gate
-(branch protection)":
+a `push` to master. Together they enforce the livespec CI-as-a-merge-gate
+(branch protection) invariant stated in
+`livespec/SPECIFICATION/non-functional-requirements.md`:
 
     **PR gate ≡ master gate.** For every fleet member, the set of GATING
     checks a `pull_request` must pass is identical to the set that runs on a

@@ -149,12 +149,12 @@ _NEEDS_BULLET = re.compile(r"^\s*-\s*([\w-]+)\s*$")
 # NOT match. Both the `== 'true'` and `!= 'true'` (paired "Skip" step) forms
 # carry the token, so either marks the owning job conditioned.
 #
-# This rule ENCODES the livespec invariant in
-# `livespec/SPECIFICATION/non-functional-requirements.md` §"CI as a merge gate
-# (branch protection)" (PR gate ≡ master gate); per this module's
-# bounded-parser-duplication convention a rule-encoding parser MUST live in
-# this shared home so `ci_gate_parity` and any future consumer derive it from
-# ONE parser and cannot drift about WHAT THE SPEC SAYS.
+# This rule ENCODES the livespec CI-as-a-merge-gate (branch protection)
+# invariant stated in `livespec/SPECIFICATION/non-functional-requirements.md`
+# (PR gate ≡ master gate); per this module's bounded-parser-duplication
+# convention a rule-encoding parser MUST live in this shared home so
+# `ci_gate_parity` and any future consumer derive it from ONE parser and
+# cannot drift about WHAT THE SPEC SAYS.
 _IF_CHANGESET_PY = re.compile(r"^\s*if:.*\bpy_changed\b")
 
 

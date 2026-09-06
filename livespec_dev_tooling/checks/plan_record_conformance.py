@@ -1,8 +1,9 @@
 """plan_record_conformance — the eleven ratified plan-record conformance verdicts.
 
-Realizes `livespec-orchestrator-beads-fabro` `SPECIFICATION/contracts.md`
-§"Plan-record conformance checks" (v095) for the fleet, beside `plan_epic_parity`
-in the shared checks package the same contract names as their sanctioned home.
+Realizes the plan-record conformance contract in
+`livespec-orchestrator-beads-fabro` `SPECIFICATION/contracts.md` (v095) for the
+fleet, beside `plan_epic_parity` in the shared checks package the same contract
+names as their sanctioned home.
 Each verdict reports its ratified check id, the offending epic id or directory
 path, and one remediation sentence:
 

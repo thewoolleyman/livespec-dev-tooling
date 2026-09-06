@@ -252,10 +252,10 @@ def _backend_of(*, location: str) -> str:
     redis://host:6379"``, ``"Local disk: /root/.cache/sccache"``, ``"S3, bucket:
     …"`` — so the HEAD is the backend and the detail is dropped. Dropping it is
     the point: the detail embeds the cache's endpoint and, for a
-    URL-authenticated backend, its credential, and
-    non-functional-requirements §"Runner-pool cache telemetry" forbids an
-    emitter carrying either. A head that is not a bare word — a naked path, say
-    — is therefore reported as ``unknown`` rather than emitted verbatim.
+    URL-authenticated backend, its credential, and the runner-pool
+    cache-telemetry rule in non-functional-requirements forbids an emitter
+    carrying either. A head that is not a bare word — a naked path, say — is
+    therefore reported as ``unknown`` rather than emitted verbatim.
     """
     head = location.split(":")[0].split(",")[0].strip().lower().replace(" ", "-")
     return head if head.replace("-", "").isalnum() else _UNKNOWN
