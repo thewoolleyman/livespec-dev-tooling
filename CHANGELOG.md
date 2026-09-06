@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.53.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.53.0...v1.53.1) (2026-09-06)
+
+
+### Bug Fixes
+
+* **workflow-checks:** judge revise stale-branch by patch-id, not ancestry ([b8eb0a4](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b8eb0a4327be2fa273bd7347d3b05197aa25316c))
+* **worktree-pack:** reap by ancestry OR patch-id, not ancestry alone ([de6a2b2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/de6a2b262a0a6a8676a0b59537824a19d3ed1cc3))
+
 ## [1.53.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.52.18...v1.53.0) (2026-09-06)
 
 
