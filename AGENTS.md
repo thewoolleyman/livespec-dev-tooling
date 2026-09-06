@@ -248,17 +248,19 @@ stopping points.
    freshly created worktree's `.mise.toml` auto-trusts and the first
    `mise exec` inside it never stops on the "config not trusted" prompt:
 
+   Create it with the worktree-discipline pack's recipe, which adds the
+   worktree under that root, provisions the gitignored pack into it, and
+   runs the hydrate hook (run it from the primary checkout):
+
    ```bash
-   mise exec -- git -C /data/projects/livespec-dev-tooling worktree add -b <branch> "$HOME/.worktrees/livespec-dev-tooling/<branch>" master
-   mise exec -- just --justfile "$HOME/.worktrees/livespec-dev-tooling/<branch>/justfile" install-worktree-pack
+   mise exec -- just worktree-create <branch>
    ```
 
-   The second line matters: the gitignored `dev-tooling/` worktree pack is
-   installed per CHECKOUT, not per clone, and a worktree without it commits
-   fine but has its first push refused by the pre-push aggregate about five
-   minutes in (`check-primary-checkout-commit-refuse-hook-installed`,
-   `failure_mode: worktree_pack_absent`). Seen 2026-09-06; install the pack
-   right after `worktree add`, before the first commit.
+   A raw `mise exec -- git -C /data/projects/livespec-dev-tooling worktree add -b <branch>
+   "$HOME/.worktrees/livespec-dev-tooling/<branch>" master` also yields a usable
+   worktree — the pre-commit and pre-push hooks install the pack before
+   any gate reads it, so the worktree can commit and push with no
+   `just bootstrap` — but it skips hydration, so prefer the recipe.
 
 3. Use `mise exec -- git commit ...` and `mise exec -- git push ...` so
    the mise-managed lefthook hooks actually run. Never pass

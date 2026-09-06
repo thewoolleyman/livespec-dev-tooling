@@ -1,10 +1,24 @@
 # lefthook.yml — livespec-dev-tooling git hook configuration.
 #
 # Authority: livespec/SPECIFICATION/contracts.md
-#   §"Pre-commit step ordering" — pre-commit runs three commands in
-#   order (00-lint-autofix-staged, 01-commit-pairs-source-and-test,
-#   02-check-pre-commit); commit-msg runs no-commit-on-master then
-#   red-green-replay (v034 D3); pre-push runs the full aggregate.
+#   §"Pre-commit step ordering" (v219), mirrored by this repository's
+#   own non-functional-requirements.md §"Hooks and CI" (v056) —
+#   pre-commit runs, in order, 00-install-worktree-pack,
+#   01-lint-autofix-staged, 02-commit-pairs-source-and-test,
+#   03-check-pre-commit; commit-msg runs no-commit-on-master then
+#   red-green-replay (v034 D3); pre-push runs 00-install-worktree-pack
+#   then 01-check-pre-push (the full aggregate).
+#
+# Why the installer runs FIRST in both hooks: the worktree-discipline
+# pack this repository ships is gitignored-and-installed, so a worktree
+# created by a raw `git worktree add`, or one predating a pin bump,
+# would otherwise reach the gate with the pack absent or stale and fail
+# `worktree_pack_absent` after the whole aggregate ran. The installer is
+# idempotent, writes only ignored files, installs from the package this
+# checkout resolves, and the byte-identity verifier in the aggregate
+# still asserts the result. It must run before any gate member that
+# reads the pack, and the aggregate runs its members alphabetically, so
+# it lives here rather than inside a member.
 #
 # Authority: livespec/SPECIFICATION/non-functional-requirements.md
 #   §"Toolchain pins" — `run:` fields MUST delegate to `just <target>`
@@ -26,11 +40,13 @@
 
 pre-commit:
   commands:
-    00-lint-autofix-staged:
+    00-install-worktree-pack:
+      run: just install-worktree-pack
+    01-lint-autofix-staged:
       run: just lint-autofix-staged
-    01-commit-pairs-source-and-test:
+    02-commit-pairs-source-and-test:
       run: just check-commit-pairs-source-and-test
-    02-check-pre-commit:
+    03-check-pre-commit:
       run: just check-pre-commit
 
 commit-msg:
@@ -48,5 +64,7 @@ commit-msg:
 
 pre-push:
   commands:
-    check:
+    00-install-worktree-pack:
+      run: just install-worktree-pack
+    01-check-pre-push:
       run: just check-pre-push
