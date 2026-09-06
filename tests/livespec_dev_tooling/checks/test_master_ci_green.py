@@ -379,6 +379,36 @@ def test_credentialed_rate_limit_fails_loudly(*, tmp_path: Path) -> None:
     assert "cannot prove master CI is green" in result.stderr
 
 
+def test_credentialed_network_failure_fails_loudly(*, tmp_path: Path) -> None:
+    """gh credential present but the host cannot reach the API at all → exit 1.
+
+    The third trigger named alongside HTTP 5xx and rate-limiting: `gh` never
+    gets an HTTP status back, so it emits its own connection diagnostic and
+    exits non-zero. That carries no `HTTP 401` marker and no missing-ref
+    marker, so it lands in the credentialed-failure branch exactly as an
+    outage does — which is right, because the two are the same situation
+    from the gate's point of view. The gate was armed, it ran, and it did
+    not come back with a green master.
+    """
+    fake_path = _install_fake_gh(
+        tmp_path=tmp_path,
+        stdout="",
+        stderr=(
+            "error connecting to api.github.com\n"
+            "check your internet connection or https://githubstatus.com"
+        ),
+        returncode=1,
+        auth_returncode=0,
+    )
+    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    assert result.returncode == 1, (
+        f"expected exit 1 when a credentialed gh cannot reach the API at all; "
+        f"got {result.returncode}, stderr={result.stderr!r}"
+    )
+    assert "cannot prove master CI is green" in result.stderr
+    assert "retry once the GitHub API is reachable" in result.stderr
+
+
 def test_gh_api_failure_with_credential_fails_loudly(*, tmp_path: Path) -> None:
     """gh IS credentialed and the API call fails → exit 1, never a silent pass.
 
