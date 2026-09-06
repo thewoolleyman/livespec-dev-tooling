@@ -144,6 +144,19 @@
 # older than the last write, LRU pressure) triggers a rebuild on the next
 # idle tick. Nothing from the build is kept here.
 #
+# THE WRITER'S SERVER IS ITS OWN (livespec-dev-tooling-efqeip.4): sccache
+# clients talk to whichever server already listens on their port, and a
+# server keeps the credentials it was STARTED with. The image's cargo shim
+# runs `sccache --zero-stats` before every measured cargo subcommand — the
+# `cargo fetch` above included — and that client starts a server from the pod
+# environment, which carries the endpoint but NOT the writer credential; that
+# server fails its storage write check, comes up ReadOnly, and every later
+# writer put is dropped silently (misses counted, "Cache errors 0", DBSIZE
+# flat: 2026-09-06, three writer builds, zero objects). So the writer build
+# and the target build each start THEIR OWN server, on SCCACHE_WRITER_PORT and
+# under the writer credential, read "server has setup with ReadWrite" from its
+# log before compiling, refuse the build when it is not, and stop it after.
+#
 # GUARDRAILS on that build (v054 populator-guardrails clause; livespec-dev-
 # tooling-osmzo4): it runs at the repository's own build.jobs cap under
 # `nice -n 19 ionice -c 3`, inside the CronJob's CPU limit, and it does NOT
@@ -212,6 +225,10 @@ SCCACHE_BIN="${SCCACHE_BIN:-/opt/ci-runner/bin/sccache}"
 SCCACHE_REDIS_ENDPOINT="${SCCACHE_REDIS_ENDPOINT:-redis://sccache-redis.ci-sccache.svc.cluster.local:6379}"
 SCCACHE_REDIS_WRITER_USERNAME="${SCCACHE_REDIS_WRITER_USERNAME:-}"
 SCCACHE_REDIS_WRITER_PASSWORD="${SCCACHE_REDIS_WRITER_PASSWORD:-}"
+# The writer's own sccache server port: never the default 4226, which any
+# stats client in this pod (the cargo shim's --zero-stats) may already have
+# claimed with a ReadOnly server (header, "THE WRITER'S SERVER IS ITS OWN").
+SCCACHE_WRITER_PORT="${SCCACHE_WRITER_PORT:-4227}"
 JOB_WORK_ROOT="${JOB_WORK_ROOT:-/__w}"
 POPULATE_ADMITTED_JOB_THRESHOLD="${POPULATE_ADMITTED_JOB_THRESHOLD:-16}"
 K8S_SA_DIR="${K8S_SA_DIR:-/var/run/secrets/kubernetes.io/serviceaccount}"
@@ -330,6 +347,55 @@ else
 fi
 
 mkdir -p "${GENERATIONS_DIR}" "${SRC_DIR}"
+
+# ---- the compilation cache's writer server (header, "THE WRITER'S SERVER IS
+# ITS OWN") ----
+# The environment every writer cargo invocation runs under: the wrapper, the
+# writer's own server port, the endpoint and the writer credential. No CARGO_*
+# here, ever (see the config note below): RUSTC_WRAPPER and SCCACHE_* are not
+# hashed into cache keys; a CARGO_* would key the cache to this process.
+sccache_writer_env=(RUSTC_WRAPPER="${SCCACHE_BIN}"
+                    SCCACHE_SERVER_PORT="${SCCACHE_WRITER_PORT}"
+                    SCCACHE_REDIS_ENDPOINT="${SCCACHE_REDIS_ENDPOINT}"
+                    SCCACHE_REDIS_USERNAME="${SCCACHE_REDIS_WRITER_USERNAME}"
+                    SCCACHE_REDIS_PASSWORD="${SCCACHE_REDIS_WRITER_PASSWORD}"
+                    SCCACHE_REDIS_RW_MODE=READ_WRITE)
+
+# sccache_writer_stop — stop the writer's server if one is up (best-effort).
+sccache_writer_stop() {
+  SCCACHE_SERVER_PORT="${SCCACHE_WRITER_PORT}" "${SCCACHE_BIN}" --stop-server >/dev/null 2>&1 || true
+}
+
+# sccache_writer_start NAME — start the writer's own sccache server under the
+# writer credential and PROVE it is ReadWrite before anything compiles behind
+# it. The proof is the server's own startup log ("server has setup with
+# ReadWrite" after the storage write check), kept at
+# ${SCRATCH}/sccache-writer-<NAME>.log; a ReadOnly server (credential missing
+# or refused) is stopped again and the caller refuses to build, because a
+# build behind it would report misses and no errors while writing nothing.
+sccache_writer_start() {
+  local name="$1" logf="${SCRATCH}/sccache-writer-$1.log" attempt started=false
+  sccache_writer_stop
+  : > "${logf}"
+  for attempt in 1 2 3 4 5; do
+    if env "${sccache_writer_env[@]}" SCCACHE_LOG=info SCCACHE_ERROR_LOG="${logf}" \
+         "${SCCACHE_BIN}" --start-server >/dev/null 2>&1; then
+      started=true; break
+    fi
+    sleep "${attempt}"
+  done
+  for attempt in 1 2 3 4 5 6 7 8 9 10; do
+    grep -q "server has setup with" "${logf}" 2>/dev/null && break
+    sleep 1
+  done
+  if [ "${started}" = true ] && grep -q "server has setup with ReadWrite" "${logf}"; then
+    log "   sccache: writer server up on port ${SCCACHE_WRITER_PORT} (ReadWrite; log ${logf})"
+    return 0
+  fi
+  log "   sccache: writer server on port ${SCCACHE_WRITER_PORT} is NOT ReadWrite (started=${started}); refusing to build behind it — its puts would be dropped silently: $(grep -E 'server has setup|sccache_check|ERROR' "${logf}" 2>/dev/null | tail -3 | tr '\n' ' ' | cut -c1-400)"
+  sccache_writer_stop
+  return 1
+}
 
 # One cargo config for everything cargo does in this container: the crates
 # proxy as crates.io, incremental off, a network retry budget — the SAME
@@ -725,22 +791,17 @@ for name in "${fetched[@]}"; do
           cp -a "${src}" "${build_dir}"
           log "   sccache: building ${sha:0:8}@${toolchain} as the writer (cache had: ${have})"
           build_ok=true
-          for invocation in \
+          sccache_writer_start "${name}" || { build_ok=false; failed+=("${name}:sccache-readonly"); }
+          [ "${build_ok}" = false ] || for invocation in \
               "build --workspace --all-targets --all-features" \
               "test --workspace --all-features --no-run" \
               "check --workspace --all-targets --all-features" \
               "build --release --workspace"; do
             t0=$(date +%s)
-            # No CARGO_* in this env, ever (see the config note above): the
-            # wrapper via RUSTC_WRAPPER and the writer credential via SCCACHE_*
-            # are not hashed; a CARGO_* here would key the cache to this
-            # process and away from every job.
+            # The writer env (sccache_writer_env: wrapper, own port, writer
+            # credential; no CARGO_*, ever — see its definition).
             # shellcheck disable=SC2086  # the invocation is a word list on purpose
-            if (cd "${build_dir}" && RUSTC_WRAPPER="${SCCACHE_BIN}" \
-                  SCCACHE_REDIS_ENDPOINT="${SCCACHE_REDIS_ENDPOINT}" \
-                  SCCACHE_REDIS_USERNAME="${SCCACHE_REDIS_WRITER_USERNAME}" \
-                  SCCACHE_REDIS_PASSWORD="${SCCACHE_REDIS_WRITER_PASSWORD}" \
-                  SCCACHE_REDIS_RW_MODE=READ_WRITE \
+            if (cd "${build_dir}" && env "${sccache_writer_env[@]}" \
                   nice -n 19 ionice -c 3 cargo ${invocation} --quiet); then
               log "   sccache: cargo ${invocation%% *} ok in $(( $(date +%s) - t0 )) s"
             else
@@ -749,11 +810,10 @@ for name in "${fetched[@]}"; do
               break
             fi
           done
-          SCCACHE_REDIS_ENDPOINT="${SCCACHE_REDIS_ENDPOINT}" \
-            SCCACHE_REDIS_USERNAME="${SCCACHE_REDIS_WRITER_USERNAME}" \
-            SCCACHE_REDIS_PASSWORD="${SCCACHE_REDIS_WRITER_PASSWORD}" \
-            "${SCCACHE_BIN}" --show-stats 2>/dev/null | grep -E "Compile requests|Cache hits|Cache misses|Cache errors|Non-cacheable" | sed 's/^/   sccache stats: /' || true
-          "${SCCACHE_BIN}" --stop-server >/dev/null 2>&1 || true
+          # The stats describe the LAST invocation only: the image's cargo shim
+          # zeroes them before every measured cargo subcommand.
+          SCCACHE_SERVER_PORT="${SCCACHE_WRITER_PORT}" "${SCCACHE_BIN}" --show-stats 2>/dev/null | grep -E "Compile requests|Cache hits|Cache misses|Cache errors|Cache write|Non-cacheable" | sed 's/^/   sccache stats: /' || true
+          sccache_writer_stop
           if [ "${build_ok}" = true ]; then
             if redis_cmd --auth "${SCCACHE_REDIS_WRITER_USERNAME}" "${SCCACHE_REDIS_WRITER_PASSWORD}" SET "${marker_key}" "${want}" >/dev/null; then
               sccache_built=$((sccache_built + 1))
@@ -854,9 +914,12 @@ for name in "${fetched[@]}"; do
   rm -rf "${JOB_WORK_ROOT:?}/${name}"; mkdir -p "${JOB_WORK_ROOT}/${name}"; cp -a "${src}" "${build_dir}"
   wrapper_env=()
   if [ -x "${SCCACHE_BIN}" ] && [ -n "${SCCACHE_REDIS_WRITER_PASSWORD}" ] && [ -n "${SCCACHE_REDIS_WRITER_USERNAME}" ]; then
-    wrapper_env=(RUSTC_WRAPPER="${SCCACHE_BIN}" SCCACHE_REDIS_ENDPOINT="${SCCACHE_REDIS_ENDPOINT}"
-                 SCCACHE_REDIS_USERNAME="${SCCACHE_REDIS_WRITER_USERNAME}" SCCACHE_REDIS_PASSWORD="${SCCACHE_REDIS_WRITER_PASSWORD}"
-                 SCCACHE_REDIS_RW_MODE=READ_WRITE)
+    if sccache_writer_start "${name}-${key}"; then
+      wrapper_env=("${sccache_writer_env[@]}")
+    else
+      log "   building without the wrapper (the tree is still valid for jobs; the sanitized objects will not reach the compilation cache)"
+      failed+=("${name}:sccache-readonly")
+    fi
   else
     log "   sccache writer not available here; building without the wrapper (the tree is still valid for jobs)"
   fi
@@ -892,7 +955,7 @@ PY
     log "   cargo +nightly fuzz build FAILED after $(( $(date +%s) - t0 )) s: $(tail -3 "${SCRATCH}/fuzz-build-${name}.log" | tr '\n' ' ')"
     failed+=("${name}:target-build")
   fi
-  [ -x "${SCCACHE_BIN}" ] && "${SCCACHE_BIN}" --stop-server >/dev/null 2>&1 || true
+  [ -x "${SCCACHE_BIN}" ] && sccache_writer_stop
   rm -rf "${JOB_WORK_ROOT:?}/${name}"
   live="$(readlink -f "${link}" 2>/dev/null || true)"
   mapfile -t tgens < <(find "${gen_dir}" -mindepth 1 -maxdepth 1 -type d -name '[0-9]*Z' -printf '%f\n' | sort)
