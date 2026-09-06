@@ -351,13 +351,14 @@ single_meaning_variants = [
 #   - agent_hooks/pretooluse_background_guard.py  main() → sole fail-open hook boundary
 #   - agent_hooks/subagent_stop_guard.py          main() → sole fail-open hook boundary
 supervisor_entry_files = [
-    # The PreToolUse guard hook is a supervisor entry artifact: its `main()`
-    # carries the ONE fail-open boundary catch livespec
-    # non-functional-requirements.md line 114 grants a hook, and the file owns
+    # The two PreToolUse guard hooks are supervisor entry artifacts: each
+    # `main()` carries the ONE fail-open boundary catch livespec
+    # non-functional-requirements.md line 114 grants a hook, and each file owns
     # the hook-protocol stdout contract that `no_write_direct` otherwise bans.
-    # Listing it here is what makes both exemptions legible; it is NOT in
+    # Listing them here is what makes both exemptions legible; neither is in
     # `io_trees`, because the same clause forecloses exempting a hook tree
     # wholesale ("There is NO 'thin repo' exemption").
+    ".claude/hooks/beads_access_guard.py",
     ".claude/hooks/livespec_footgun_guard.py",
     "livespec_dev_tooling/agent_hooks/pretooluse_background_guard.py",
     "livespec_dev_tooling/agent_hooks/subagent_stop_guard.py",
