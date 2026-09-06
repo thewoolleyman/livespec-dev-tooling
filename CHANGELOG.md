@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.53.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.53.2...v1.53.3) (2026-09-06)
+
+
+### Bug Fixes
+
+* **fleet:** give the plugin command seam its own type names ([83921ad](https://github.com/thewoolleyman/livespec-dev-tooling/commit/83921ad84c2bc8f570c6d90c1289ba45308d7157))
+* **fleet:** put the plugin command seam's unperformed invocation on the railway ([044ba09](https://github.com/thewoolleyman/livespec-dev-tooling/commit/044ba092d283327898553f5ae85be34af9195554))
+
 ## [1.53.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.53.1...v1.53.2) (2026-09-06)
 
 
