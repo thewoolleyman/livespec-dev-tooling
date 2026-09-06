@@ -238,6 +238,31 @@ Three sessions independently lost a diagnostic cycle to this on 2026-08-19 and
 (1Password environment id, encrypted service-account token, wrapper factory
 repo) before changing anything about how the secrets are injected.
 
+### Two SILENT signatures beside that loud one
+
+`Error 1045` is an ERROR: it stops the caller, so it teaches itself. The two
+below do not error. Each returns a VALID-LOOKING SUCCESS carrying a wrong
+answer, and both wrong answers have the same shape — an empty or short result
+that a caller reads as "there is nothing there". A reader who has learned only
+the loud signature will not recognise either.
+
+- **An empty embedded store answering instead of the tenant.** A query served
+  by a stray `embeddeddolt/` store does not fail; the empty database returns an
+  empty RESULT, so "item not found" or a zero-row list is indistinguishable
+  from a true answer. The tell is an `embeddeddolt/` directory beside `.beads/`
+  rather than inside it — `bd` resolves that path against the process cwd, so
+  the name is right and the parent is wrong. The root `.gitignore` now covers
+  it (livespec-dev-tooling-to6hh2), which stops the litter but NOT the silent
+  answer: when a query reports emptiness, confirm the wrapper was used and the
+  answer came from `127.0.0.1:3307` before believing it.
+- **`bd list` omits closed items unless `--all` is passed** — an id's absence
+  from a default listing is not evidence the item does not exist. Measured on
+  this tenant 2026-08-21: `bd list --limit 0 --json` returned 227 items and
+  ZERO closed, while `bd list --all --limit 0 --json` returned 537, 309 of them
+  closed. The default view hid 58% of the ledger. Any "no item covers X" or
+  "X is not in the ledger" claim taken with a plain `bd list` is unsound; re-run
+  it with `--all` before relying on it.
+
 ## Repository mutation protocol
 
 Every repo change uses a worktree → PR → merge → cleanup path. Treat
