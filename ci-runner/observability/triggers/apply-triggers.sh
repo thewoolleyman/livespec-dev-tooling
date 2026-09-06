@@ -36,6 +36,26 @@ body="$(mktemp)"
 trap 'rm -f "${body}"' EXIT
 for def in "${SCRIPT_DIR}"/*.json; do
   name="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["name"])' "${def}")"
+  # Honeycomb caps a trigger name at 120 characters and its description at
+  # 1023; the API answers 400 with a one-line error and this loop then
+  # reports the definition as FAILED at the end. Refuse here, by name,
+  # before the call (both caps were hit on 2026-09-06).
+  if ! python3 - "${def}" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+bad = []
+if len(d.get("name", "")) > 120:
+    bad.append(f"name is {len(d['name'])} chars (max 120)")
+if len(d.get("description", "")) > 1023:
+    bad.append(f"description is {len(d['description'])} chars (max 1023)")
+if bad:
+    print(f"REFUSED {sys.argv[1]}: " + "; ".join(bad), file=sys.stderr)
+    sys.exit(1)
+PY
+  then
+    rc=1
+    continue
+  fi
   dataset="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("dataset") or sys.argv[2])' "${def}" "${DATASET}")"
   python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); d.pop("dataset", None); json.dump(d, open(sys.argv[2], "w"))' "${def}" "${body}"
   existing="$(hc "${API}/1/triggers/${dataset}")"
