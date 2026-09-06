@@ -72,6 +72,7 @@ def _reconcile_row(
     ctx: FleetContext,
     member: FleetMember,
     row: ObligationRow,
+    finding: str,
     log: structlog.stdlib.BoundLogger,
 ) -> int:
     """Apply one row's reconcile (or surface its hint); 1 = still unresolved."""
@@ -80,6 +81,12 @@ def _reconcile_row(
             "row is manual-only; operator action required",
             row=row.row_id,
             member=member.repo,
+            # The FINDING rides beside the hint, because the hint alone is a
+            # restatement of the obligation and the finding is the part that
+            # names WHAT is missing HERE. For `worktree-pack-wired` that is
+            # literally the set of lines to paste — a hint that said "wire the
+            # pack" would send the operator back to re-derive them by hand.
+            finding=finding,
             hint=row.manual_hint,
         )
         return 1
@@ -133,7 +140,9 @@ def reconcile_member(
                     detail=outcome.message,
                 )
             case RowFinding():
-                unresolved += _reconcile_row(ctx=ctx, member=member, row=row, log=log)
+                unresolved += _reconcile_row(
+                    ctx=ctx, member=member, row=row, finding=outcome.message, log=log
+                )
             case _:
                 assert_never(outcome)
     return unresolved

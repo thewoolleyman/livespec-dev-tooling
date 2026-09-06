@@ -18,6 +18,7 @@ from livespec_dev_tooling.fleet._context import (
     RowFinding,
     RowPass,
 )
+from livespec_dev_tooling.fleet._contract_classes import WORKTREE_PACK_CLASSES
 from livespec_dev_tooling.fleet._contract_rows import (
     CENTRAL_APP_VANTAGE,
     OBLIGATION_ROWS,
@@ -35,6 +36,7 @@ from livespec_dev_tooling.fleet._rows_public_api_conformance import (
 from livespec_dev_tooling.fleet._rows_role_key_spellings import (
     assert_role_key_spellings_conformant,
 )
+from livespec_dev_tooling.fleet._rows_worktree_pack import assert_worktree_pack_wired
 
 __all__: list[str] = []
 
@@ -332,3 +334,17 @@ def _decision_authority_context(*, agents_text: str) -> FleetContext:
 
     runner: GhRunner = run
     return FleetContext(owner="acme", run_gh=lift_gh(runner))
+
+
+def test_worktree_pack_wired_row_is_scoped_by_class_and_manual_only() -> None:
+    # Scoped by the CLASS CONSTANT, never by repo name: the obligation follows
+    # from a class running the worktree-pack verifier, and every class does
+    # today. Manual-only because the fix is four line-edits in the member's own
+    # repo — the hint plus the finding name them.
+    row = next(row for row in OBLIGATION_ROWS if row.row_id == "worktree-pack-wired")
+    assert row.assert_member is assert_worktree_pack_wired
+    assert row.applies_to is WORKTREE_PACK_CLASSES
+    assert row.applies_to == frozenset(REPO_CLASSES)
+    assert row.obligation_type == "committed-file"
+    assert row.reconcile is None
+    assert row.manual_hint

@@ -9,6 +9,7 @@ __all__: list[str] = [
     "RECEIVING_SHIM_CLASSES",
     "REPO_CLASSES",
     "TEMPLATE_BORN_CLASSES",
+    "WORKTREE_PACK_CLASSES",
 ]
 
 REPO_CLASSES = (
@@ -48,6 +49,17 @@ PIN_WEB_CLASSES = ALL_CLASSES - {"console"}
 # the release-dispatch producer row — stays legible.
 RECEIVING_SHIM_CLASSES = PIN_WEB_CLASSES | {"console"}
 TEMPLATE_BORN_CLASSES = frozenset({"impl-plugin"})
+# The classes whose members RUN the worktree-pack verifier — the
+# `primary_checkout_commit_refuse_hook_installed` pack arm, which every
+# governed member wires into its own `just check` — and which must therefore
+# carry the wiring that verifier's byte-check presupposes. That is every class
+# today (all ten members), and it is written as its own NAME rather than
+# spelled `ALL_CLASSES` at the row for the same reason `RECEIVING_SHIM_CLASSES`
+# is: the row's scope is then a stated decision about WHO runs the verifier,
+# and a future class that ships no `just check` is subtracted here, in one
+# place, instead of by editing a row's `applies_to` and hoping the intent
+# survives. Scoping BY CLASS is itself the contract — never by repo name.
+WORKTREE_PACK_CLASSES = ALL_CLASSES
 # The dev-tooling-pin row excludes only the enforcement-suite class —
 # dev-tooling cannot pin itself; every other class, the console included,
 # carries a [tool.uv.sources] livespec-dev-tooling tag pin.
