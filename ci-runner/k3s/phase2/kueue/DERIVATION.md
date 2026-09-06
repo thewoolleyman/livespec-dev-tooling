@@ -30,7 +30,7 @@ several places.
 | Formula term | Mechanism | Where it is configured |
 |---|---|---|
 | `queued jobs` | ARC scale-set listener | nothing to configure — the listener scales to the count of jobs GitHub has assigned to that scale set |
-| `doubled repository logical ceiling` | ARC `AutoscalingRunnerSet.maxRunners` | `../arc/values-<repo>.yaml` |
+| `doubled repository logical ceiling` | ARC `AutoscalingRunnerSet.maxRunners` — since 2026-09-06 BOUNDED to `max(2 x nominalQuota, 6)`, see "Bounding maxRunners to the quota (2026-09-06)" | `../arc/values-<repo>.yaml` |
 | `fair share of remaining host-wide capacity` | Kueue `ClusterQueue` `nominalQuota` floors within one cohort, plus cohort borrowing of anything unused | `cluster-queue-<repo>.yaml` (this directory) |
 | physical cap never exceeded, never doubled | the `ci-runner.io/churn-slot` extended resource's node capacity, enforced by the Kubernetes scheduler | `../node-extended-resource/patch-node-churn-capacity.sh` |
 
@@ -47,10 +47,12 @@ maxRunners)`; the fleet does not implement it.
 ### `doubled repository logical ceiling` is `maxRunners`, and it is NOT the Kueue quota
 
 `maxRunners` is a hard per-repository ceiling that ARC enforces on its
-own, independently of Kueue. It answers "how many runner pods would this
-repository ever want at once", which is a property of the REPOSITORY's
-workflows (its matrix width, doubled for two concurrent pipelines) —
-not a property of the host.
+own, independently of Kueue. From 2026-08-19 to 2026-09-06 it was read as
+"how many runner pods would this repository ever want at once" — a
+property of the REPOSITORY's workflows (its matrix width, doubled for two
+concurrent pipelines), not of the host. Since 2026-09-06 it is DERIVED from
+the repository's quota, `max(2 x nominalQuota, 6)`, for the reason recorded
+below; it remains a ceiling ARC enforces on its own.
 
 **This retires an earlier claim in `README.md` ("Two enforcement points,
 one number") that `maxRunners` and the ClusterQueue's `nominalQuota`
@@ -62,6 +64,15 @@ fairly borrow unused capacity") becomes unreachable. The two numbers are
 correctly UNEQUAL, and the correct relation is `nominalQuota_i <=
 maxRunners_i` — a floor no larger than the ceiling. That relation is
 what the sibling values files and these manifests now assert.
+
+**And since 2026-09-06 the ceiling is BOUNDED from above as well:**
+`nominalQuota_i <= maxRunners_i = max(2 x nominalQuota_i, 6)`. The lower
+bound keeps borrowing reachable; the upper bound keeps a backlog from
+materializing as gated pods the control plane must keep rewriting. The
+measurement that forced it, and the rule, are in "
+Bounding maxRunners to the quota (2026-09-06)" below. A `maxRunners` set to the doubled matrix width — the
+reading this section carried from 2026-08-19 to 2026-09-06 — is now a
+DEFECT, not the formula's intent.
 
 ### `fair share of remaining host-wide capacity` is the Kueue cohort
 
@@ -483,8 +494,10 @@ C = 16, but its unit comes from the leftover distribution, NOT from step 5's
 FIRST (`kubectl apply` the nine manifests), THEN the node capacity
 (`install-reapply-unit.sh 32`, which also rewrites the reapply unit's boot and
 timer argument). Running pods are untouched; admissions above the new quota
-wait. `maxRunners` is unchanged — it is each repository's logical ceiling, not
-the quota. The pod-capacity constraint is comfortably met: `2 x 32 + helpers +
+wait. `maxRunners` was unchanged by that step — it was still each repository's
+logical ceiling, not the quota (bounded to the quota on 2026-09-06; see
+"The step back to C = 32 on the tiered host (2026-09-06)" and "
+Bounding maxRunners to the quota (2026-09-06)"). The pod-capacity constraint is comfortably met: `2 x 32 + helpers +
 system` is far below `max-pods = 200`.
 
 ## Recomputation on the tenth repository (2026-09-04)
@@ -654,6 +667,76 @@ give the C = 32 baseline on the tiered host; 40 is proposed only when that
 baseline shows the CPU with headroom at 32 and is recomputed per "Recomputing
 at another C" (exact shares `e_i = 40 * w_i / 516`) when it is.
 
+## Bounding maxRunners to the quota (2026-09-06)
+
+Maintainer decision 2026-09-06 (livespec plan `poweredge-raid-array-maintenance`,
+epic `livespec-g52yrb`; capacity owner epic `livespec-ifwnqj`), about two hours
+after the step back to C = 32. Until this section every scale set's `maxRunners`
+was read as the formula's `doubled repository logical ceiling` — the repository's
+own matrix width doubled, or the podman-era weight standing in for it — and the
+ten values summed to 574 against a quota sum of 32.
+
+**What that costs.** An ARC listener creates one `EphemeralRunner` per queued
+job up to `maxRunners`, and each becomes a runner pod at once. Kueue gates the
+pod until a churn slot inside the repository's quota is free. A gated pod does
+no work, but it is not free: it is an `EphemeralRunner`, a pod, a Kueue
+`Workload` and a stream of events, and the ARC controller and Kueue rewrite all
+of them every reconcile for as long as it waits. Every rewrite goes through
+kine's single writer. The first fleet-wide backlog on the tiered host at C = 32
+(2026-09-06 07:38Z–07:50Z) measured it: 119 pending Kueue workloads, 122 runner
+objects with no phase, 25–30 running, and 11 `Slow SQL` lines in ten minutes
+with kine inserts of pods, events, ephemeralrunners and workloads taking
+1.2–1.7 s on the tmpfs datastore — worse than the 64-slot burst two hours
+earlier, because the write volume scales with the DEPTH OF THE BACKLOG, not with
+the admitted count. The cap cannot fix that; only the number of objects the
+backlog is allowed to become can.
+
+**The rule.** For every scale set:
+
+```text
+maxRunners_i = max(2 x nominalQuota_i, 6)
+```
+
+- The `2 x` preserves cohort borrowing: a repository whose peers are idle can
+  still scale to twice its guaranteed floor, which is the case the earlier
+  "Two enforcement points, two DIFFERENT numbers" correction protected.
+- The floor of 6 keeps a small-quota repository (`nominalQuota` 1 at C = 32)
+  from draining a lone 13–21-job matrix one or two jobs at a time on an
+  otherwise idle host; six waves is a bounded cost, thirteen is not.
+- The bound on gated objects at a fleet-wide backlog is the sum of the
+  ceilings minus what is running: `76 − 32 = 44` at C = 32, against 122
+  measured and 542 possible before.
+
+At C = 32 the ten values are:
+
+| Repository | `nominalQuota` | `maxRunners` before | `maxRunners` now |
+|---|---|---|---|
+| `livespec` | 5 | 64 | **10** |
+| `livespec-driver-codex` | 4 | 67 | **8** |
+| `livespec-driver-claude` | 4 | 66 | **8** |
+| `livespec-orchestrator-git-jsonl` | 4 | 66 | **8** |
+| `livespec-overseer` | 4 | 65 | **8** |
+| `livespec-runtime` | 4 | 64 | **8** |
+| `livespec-dev-tooling` | 4 | 63 | **8** |
+| `livespec-orchestrator-beads-fabro` | 1 | 42 | **6** |
+| `livespec-console-beads-fabro` | 1 | 64 | **6** |
+| `livespec-driver-pi` | 1 | 13 | **6** |
+| **sum** | **32** | **574** | **76** |
+
+**What does not change.** The running count is set by the quotas and the
+node capacity exactly as before, so throughput is untouched. A queued job that
+cannot run yet stays on GitHub's side as a queued job, which costs the cluster
+nothing, instead of becoming a gated pod. The one cost is start latency: when
+a slot frees, a runner is created on demand rather than un-gated, a few
+seconds per job against the minutes of queue wait a backlog already imposes.
+
+**Recompute with the quotas.** `maxRunners` now tracks `nominalQuota`, so a
+capacity change re-derives both; "Recomputing at another C" carries the step.
+The specification clause this bounds — livespec-dev-tooling
+`SPECIFICATION/non-functional-requirements.md`'s "doubled repository logical
+ceiling" — is amended by the proposed change
+`scale-set-ceiling-bounded-to-fair-share` filed the same day.
+
 ## Recomputing at another C
 
 The derivation is parameterized so a capacity change is mechanical:
@@ -663,8 +746,12 @@ The derivation is parameterized so a capacity change is mechanical:
 2. Recompute the table above with the same `w_i` — they do not change
    with capacity; they are a demand profile, not a capacity split.
 3. Rewrite each `cluster-queue-<repo>.yaml`'s `nominalQuota` and verify
-   the eight values sum to exactly `C`.
-4. Apply, and confirm `kubectl get clusterqueue` reports the new sum.
+   the ten values sum to exactly `C`.
+4. Rewrite each `../arc/values-<repo>.yaml`'s `maxRunners` to
+   `max(2 x nominalQuota, 6)` (see "
+Bounding maxRunners to the quota (2026-09-06)"), so the ceilings track the quotas.
+5. Apply, and confirm `kubectl get clusterqueue` reports the new sum and
+   `kubectl get autoscalingrunnerset -n arc-runners` the new ceilings.
 
 Order matters when raising capacity: patch the node capacity FIRST, then
 the quotas. Raising node capacity alone is a no-op, because cohort
@@ -848,3 +935,11 @@ matter.
 Neither observation blocks this derivation: `nominalQuota_i <=
 maxRunners_i` holds comfortably for all eight repositories at every
 capacity considered here.
+
+**Resolved 2026-09-06, the other way round.** The re-derivation this
+observation deferred never happened as a matrix-width measurement; instead
+the first fleet-wide backlog on the tiered host showed that a `maxRunners`
+far above the quota is itself the defect (122 gated runner objects, 11 Slow
+SQL in ten minutes at C = 32), and every scale set was BOUNDED to
+`max(2 x nominalQuota, 6)`. See "
+Bounding maxRunners to the quota (2026-09-06)". The podman-era numbers are gone from every values file.
