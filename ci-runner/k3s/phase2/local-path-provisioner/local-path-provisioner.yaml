@@ -285,6 +285,31 @@ data:
         fi
       fi
     fi
+    # Seed every published warm TARGET generation the same way (the warmed
+    # `target/` trees the populator builds per <repo>/<key>; today the console's
+    # ASAN fuzz tree, ../warm-cache/README.md "Target generations"). One reflink
+    # copy per published link under <volume>/_warm/target/<repo>/<key>, its
+    # generation name stamped in `.generation` beside the tree and manifest;
+    # a failure leaves NO seed for that key (the job builds cold). Independent
+    # of the uv seed above: either can be absent.
+    if [ -d "${warm}/target" ]; then
+      for link in "${warm}"/target/*/*; do
+        [ -L "${link}" ] || continue
+        repo="${link%/*}"; repo="${repo##*/}"; key="${link##*/}"
+        gen="$(readlink "${link}")"
+        case "${gen}" in /*) src="${gen}" ;; *) src="${link%/*}/${gen}" ;; esac
+        [ -d "${src}/tree" ] || continue
+        dest="${VOL_DIR}/_warm/target/${repo}/${key}"
+        if ( mkdir -m 0777 -p "${VOL_DIR}/_warm" "${dest%/*}" \
+             && cp -a --reflink=always "${src}/." "${dest}" \
+             && find "${dest}" -type d -exec chmod 0777 {} + ); then
+          printf '%s\n' "${src##*/}" > "${dest}/.generation" 2>/dev/null || true
+        else
+          echo "warm target seed ${repo}/${key} from ${src} failed; leaving none" >&2
+          rm -rf "${dest}"
+        fi
+      done
+    fi
   teardown: |-
     #!/bin/sh
     set -eu
