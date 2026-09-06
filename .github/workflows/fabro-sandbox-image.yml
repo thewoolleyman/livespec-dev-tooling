@@ -1,7 +1,7 @@
 # fabro-sandbox-image.yml — build + publish the family Fabro sandbox image.
 #
 # This repo OWNS the family Fabro C-mode sandbox image (the family
-# toolchain as a container), built as a FIVE-layer TREE under
+# toolchain as a container), built as a SIX-layer TREE under
 # docker/fabro-sandbox/<layer>/Dockerfile:
 #
 #   base                     toolchain only — mise/just/lefthook/node/gh
@@ -10,7 +10,9 @@
 #    |                                            <- Fabro sandbox pulls
 #    +- python-rust          + the Rust toolchain            <- CI pulls
 #        +- python-rust-agent + bubblewrap + both ACP adapters
-#                                                 <- Fabro sandbox pulls
+#        |                                        <- Fabro sandbox pulls
+#        +- python-rust-fuzz  + g++ / nightly / cargo-fuzz  <- fuzz CI jobs
+#                              (CI-only leaf; no agent atop it)
 #
 # The agent-only payload (bubblewrap + the two ACP adapters) sits in the
 # leaf `agent` layer rather than in `base`, so a CI job pulls only the
@@ -31,10 +33,11 @@
 #   - push to master touching the same paths: build + publish the
 #     immutable per-commit tags `base-sha-<short>` / `python-sha-<short>`
 #     / `python-agent-sha-<short>` / `python-rust-sha-<short>` /
-#     `python-rust-agent-sha-<short>`.
+#     `python-rust-agent-sha-<short>` / `python-rust-fuzz-sha-<short>`.
 #   - release published: build + publish the immutable semver tags
 #     `base-v<X.Y.Z>` / `python-v<X.Y.Z>` / `python-agent-v<X.Y.Z>` /
-#     `python-rust-v<X.Y.Z>` / `python-rust-agent-v<X.Y.Z>`
+#     `python-rust-v<X.Y.Z>` / `python-rust-agent-v<X.Y.Z>` /
+#     `python-rust-fuzz-v<X.Y.Z>`
 #     (release-please authenticates via the livespec App installation
 #     token, so its releases DO fire this event). `paths` filters do not
 #     apply to release events, so EVERY release gets semver-tagged layer
@@ -250,6 +253,36 @@ jobs:
           labels: ${{ steps.meta_python_rust_agent.outputs.labels }}
           cache-from: type=gha,scope=python-rust-agent
           cache-to: type=gha,scope=python-rust-agent,mode=max
+
+      # ---- python-rust-fuzz layer (FROM the python-rust digest just built) ----
+      # A CI-only leaf for fuzzing consumers (the console's check-fuzz job):
+      # g++ + nightly + cargo-fuzz, ~200 MB compressed that must NOT land on
+      # the python-rust tag every other job pulls (livespec-dev-tooling-3u3gm2.2;
+      # the Dockerfile header carries the measurements). No agent leaf atop it.
+      - name: Compute python-rust-fuzz tags
+        id: meta_python_rust_fuzz
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ steps.target.outputs.image }}
+          flavor: latest=false
+          tags: |
+            type=sha,prefix=python-rust-fuzz-sha-
+            type=semver,pattern=v{{version}},prefix=python-rust-fuzz-
+
+      - name: Build + push python-rust-fuzz
+        id: build_python_rust_fuzz
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/fabro-sandbox/python-rust-fuzz/Dockerfile
+          push: true
+          provenance: false
+          build-args: |
+            PYTHON_RUST_IMAGE=${{ steps.target.outputs.image }}@${{ steps.build_python_rust.outputs.digest }}
+          tags: ${{ steps.meta_python_rust_fuzz.outputs.tags }}
+          labels: ${{ steps.meta_python_rust_fuzz.outputs.labels }}
+          cache-from: type=gha,scope=python-rust-fuzz
+          cache-to: type=gha,scope=python-rust-fuzz,mode=max
 
   # ---------------------------------------------------------------------------
   # Producer-side self-reconcile of this repository's OWN self-sourced pins.

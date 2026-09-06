@@ -78,11 +78,18 @@ _LOCKSTEP_AGENT_DOCKERFILE = (
     "ARG PARENT_IMAGE=livespec-fabro-sandbox:python-dev\n"
     "FROM ${PARENT_IMAGE}\n"
 )
+_LOCKSTEP_PYTHON_RUST_FUZZ_DOCKERFILE = (
+    "# python-rust-fuzz layer fixture (CI-only leaf; un-obligated extra pin)\n"
+    "ARG PYTHON_RUST_IMAGE=livespec-fabro-sandbox:python-rust-dev\n"
+    "FROM ${PYTHON_RUST_IMAGE}\n"
+    "ARG CARGO_FUZZ_VERSION=0.13.2\n"
+)
 _LOCKSTEP_LAYERS = {
     "agent": _LOCKSTEP_AGENT_DOCKERFILE,
     "base": _LOCKSTEP_BASE_DOCKERFILE,
     "python": _LOCKSTEP_PYTHON_DOCKERFILE,
     "python-rust": _LOCKSTEP_PYTHON_RUST_DOCKERFILE,
+    "python-rust-fuzz": _LOCKSTEP_PYTHON_RUST_FUZZ_DOCKERFILE,
 }
 
 # The `[tools]` table parser mirrors check_tools' fixture coverage:

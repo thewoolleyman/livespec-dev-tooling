@@ -1,0 +1,2 @@
+work_item=livespec-dev-tooling-3u3gm2.2
+reason=Add the python-rust-fuzz leaf (g++ + nightly + cargo-fuzz) to the fabro-sandbox image tree so the console's check-fuzz job stops installing its toolchain on every PR (40-48 s on the PR critical path); maintainer-approved 2026-09-06 under console plan optimize-console-builds (livespec-console-beads-fabro-gqmtwa.1).
