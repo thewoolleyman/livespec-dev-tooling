@@ -38,7 +38,23 @@
 # not leave a later compile to restart it against a backend that may have
 # gone away since the verdict (that restart is the one path that would fail
 # cargo). Cost when the cache is down: one bounded probe per container.
+#
+# THE PROBE IS NOT STARVED BY THE CALLERS IT GATES. The second version let
+# every concurrent first caller compile plainly while one probed. cargo starts
+# its first rustc processes together, so inside the sandbox's 4-vCPU cgroup
+# the probe competed with a handful of real compiles and its 20 s bound
+# expired with nothing in the log (measured 2026-09-06, console run
+# 01M1V95ZFW6GAD6X2WRBF1AY2B on python-rust-agent-v1.52.3: verdict unusable,
+# probe.log empty, the host redis untouched; reproduced on the factory host
+# with eight busy loops in a `--cpus 4` container: 20.3 s -> unusable, while
+# the same probe unloaded takes 1.8 s). Now the other first callers WAIT for
+# the verdict, bounded by the same limit, instead of compiling around the
+# probe; the probe bound is wide (90 s) because the failure it guards — a
+# backend that cannot be reached — surfaces through sccache's own startup
+# timeout long before the bound, so a wide bound costs nothing on the dead
+# path and only stops a live cache from being misjudged under load.
 state="${SCCACHE_OR_RUSTC_STATE:-/var/lib/sccache-or-rustc}"
+probe_bound="${SCCACHE_OR_RUSTC_PROBE_TIMEOUT_S:-90}"
 export SCCACHE_IDLE_TIMEOUT="${SCCACHE_IDLE_TIMEOUT:-0}"
 
 if [ -e "$state/usable" ]; then
@@ -48,15 +64,25 @@ if [ -e "$state/unusable" ] || ! command -v sccache >/dev/null 2>&1; then
     exec "$@"
 fi
 
-# No verdict yet. Exactly one caller probes; the rest compile plainly now.
+# No verdict yet. Exactly one caller probes; the rest WAIT for its verdict
+# (bounded) rather than compiling around it and starving it of the cgroup.
 mkdir -p "$state" 2>/dev/null
 if ! mkdir "$state/probe.lock" 2>/dev/null; then
+    waited=0
+    while [ ! -e "$state/usable" ] && [ ! -e "$state/unusable" ] \
+          && [ "$waited" -lt $((probe_bound + 10)) ]; do
+        sleep 1
+        waited=$((waited + 1))
+    done
+    if [ -e "$state/usable" ]; then
+        exec sccache "$@"
+    fi
     exec "$@"
 fi
 probe_dir="$state/probe"
 mkdir -p "$probe_dir"
 printf 'fn main() {}\n' > "$probe_dir/probe.rs"
-if SCCACHE_STARTUP_TIMEOUT_MS=5000 timeout 20 \
+if SCCACHE_STARTUP_TIMEOUT_MS="${SCCACHE_STARTUP_TIMEOUT_MS:-15000}" timeout "$probe_bound" \
      sccache rustc --edition 2021 --crate-type bin \
        -o "$probe_dir/probe" "$probe_dir/probe.rs" >"$state/probe.log" 2>&1; then
     : > "$state/usable"
