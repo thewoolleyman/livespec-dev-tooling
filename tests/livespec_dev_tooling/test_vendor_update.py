@@ -375,6 +375,9 @@ def test_no_upstream_license_restores_preexisting(*, tmp_path: Path) -> None:
     assert result.returncode == 0, f"stderr={result.stderr!r}"
     assert (dest / "LICENSE").read_text(encoding="utf-8") == "MAINTAINER-AUTHORED LICENSE\n"
     assert "restored pre-existing" in result.stderr
+    # The clause lives in livespec's spec, not in the repo this tool runs in,
+    # so the citation names its owning repo (livespec-dev-tooling-5ug6).
+    assert "livespec SPECIFICATION/constraints.md" in result.stderr
 
 
 def test_no_upstream_license_and_no_preexisting_warns(*, tmp_path: Path) -> None:
@@ -386,6 +389,7 @@ def test_no_upstream_license_and_no_preexisting_warns(*, tmp_path: Path) -> None
     result = _run_module(cwd=tmp_path, bin_dir=bin_dir)
     assert result.returncode == 0, f"stderr={result.stderr!r}"
     assert "maintainer must author one" in result.stderr
+    assert "livespec SPECIFICATION/constraints.md" in result.stderr
     assert not (_vendor_dest(root=tmp_path) / "LICENSE").exists()
 
 
@@ -431,6 +435,7 @@ def test_shim_entry_is_not_revendored_exits_3(*, tmp_path: Path) -> None:
     result = _run_module(cwd=tmp_path, bin_dir=bin_dir)
     assert result.returncode == _EXIT_PRECONDITION
     assert "lib is a shim" in result.stderr
+    assert "livespec SPECIFICATION/constraints.md" in result.stderr
 
 
 def test_clone_missing_package_dir_exits_3(*, tmp_path: Path) -> None:
