@@ -12,6 +12,7 @@
 #                   kustomize overlay: upstream release URL + the HA patches)
 #   local-path-provisioner/   the fleet-owned provisioner manifest
 #   warm-cache/     converge-warm-cache.sh + the CronJob + the populate script
+#                   + its verifier (two .py) + pypi-proxy/ (the manifest the converge applies)
 #   crates-proxy/   converge-crates-proxy.sh + the proxy manifest
 #   sccache/        converge-sccache-redis.sh + the redis manifest
 #   observability/  the Kueue-webhook probe's RBAC (from ci-runner/observability)
@@ -101,6 +102,10 @@ log "6. Copy the warm-cache converge and the artifacts it applies"
 install -m 0755 "${WARM_CACHE_SRC}/converge-warm-cache.sh" "${LIB_DIR}/warm-cache/converge-warm-cache.sh"
 install -m 0644 "${WARM_CACHE_SRC}/warm-cache-cronjob.yaml" "${LIB_DIR}/warm-cache/warm-cache-cronjob.yaml"
 install -m 0644 "${WARM_CACHE_SRC}/warm-cache-populate.sh" "${LIB_DIR}/warm-cache/warm-cache-populate.sh"
+install -m 0644 "${WARM_CACHE_SRC}/verify-uv-cache.py" "${LIB_DIR}/warm-cache/verify-uv-cache.py"
+install -m 0644 "${WARM_CACHE_SRC}/uv_cache_layout.py" "${LIB_DIR}/warm-cache/uv_cache_layout.py"
+install -d -m 0755 "${LIB_DIR}/warm-cache/pypi-proxy"
+install -m 0644 "${WARM_CACHE_SRC}/pypi-proxy/pypi-proxy.yaml" "${LIB_DIR}/warm-cache/pypi-proxy/pypi-proxy.yaml"
 
 # ---------------------------------------------------------------------------
 log "6b. Copy the crates-proxy converge and the manifest it applies"

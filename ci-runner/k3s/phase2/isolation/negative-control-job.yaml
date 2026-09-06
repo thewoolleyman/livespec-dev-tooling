@@ -4,12 +4,15 @@
 # into a pod that keeps the default capabilities and no user namespace, so
 # its root can write the generation's inodes; and a writer credential in the
 # environment. Run on the host and expect cases 1 and 3 red (exit 1). Case 1
-# goes red here because the populator hardlinks each generation from its
-# predecessor: seen through this mount, a generation file has a link OUTSIDE
-# the probed tree (in the previous generation) — exactly what a job's private
-# reflink copy never has — and it opens for writing. It needs two retained
-# generations to exist (the populator keeps two); right after a from-empty
-# rebuild of the generations, case 1 cannot go red through this control. The
+# goes red here because the control HARDLINKS the live generation into a
+# probe directory beside it (`cp -al`, same filesystem) and probes that:
+# seen from the probe, every file has a link OUTSIDE the probed tree (in the
+# generation) — exactly what a job's private reflink copy never has — and it
+# opens for writing. The control makes that shape itself because, since
+# livespec-41w4, every generation is built from empty and consecutive
+# generations share no inodes (the earlier control relied on the populator's
+# generation-to-generation hardlinks and could not go red after a from-empty
+# rebuild). The probe is removed on exit. The
 # script reaches the pod as a ConfigMap created from the file beside this one:
 #   sudo kubectl -n ci-warm-cache create configmap cache-negative-tests \
 #     --from-file=cache-negative-tests.sh --dry-run=client -o yaml | sudo kubectl apply -f -
@@ -33,15 +36,30 @@ spec:
       containers:
         - name: control
           image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.40.1
-          command: ["bash", "/scripts/cache-negative-tests.sh"]
+          # Case 1 probes a HARDLINK copy of the live generation made through
+          # the writable mount below instead of a job's seed (this pod has no
+          # work volume): /warm/uv is the `uv` symlink to the current
+          # generation; the trailing `/.` follows it. The probe lives beside
+          # the generations (same filesystem, so `cp -al` links) and is
+          # removed whatever the suite's verdict.
+          command:
+            - bash
+            - -c
+            - |
+              set -u
+              probe=/warm/.negative-control-probe
+              rm -rf "${probe}"
+              if ! cp -al /warm/uv/. "${probe}"; then
+                echo "control: cannot hardlink the live generation into ${probe} (no published generation, or not one filesystem)"
+                exit 2
+              fi
+              CACHE_NEG_WARM_SEED="${probe}" bash /scripts/cache-negative-tests.sh
+              rc=$?
+              rm -rf "${probe}"
+              exit "${rc}"
           env:
             - name: SCCACHE_REDIS_WRITER_PASSWORD
               value: decoy-not-a-real-credential
-            # Case 1 probes the live generation through the writable mount
-            # below instead of a job's seed (this pod has no work volume):
-            # /warm/uv is the `uv` symlink to the current generation.
-            - name: CACHE_NEG_WARM_SEED
-              value: /warm/uv
           volumeMounts:
             - name: warm
               mountPath: /warm

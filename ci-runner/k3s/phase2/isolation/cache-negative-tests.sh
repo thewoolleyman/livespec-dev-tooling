@@ -58,17 +58,19 @@ report() { printf 'case=%s result=%s %s\n' "$1" "$2" "$3"; [ "$2" = pass ] || rc
 # above 1 is fine exactly when every one of the inode's links is under the
 # seed — one `find -printf '%i %n'` pass, grouped by inode, finds any inode
 # with fewer links here than it has in total. A link elsewhere is the
-# generation's (the populator hardlinks consecutive generations to each
-# other, so the negative control's mount of the warm root shows exactly
-# this), and if such an inode also opens for writing that is the violation
-# the hardlink seed had. (ii) The copy is a reflink, not a byte copy: where
+# generation's (the negative control makes exactly this shape by hardlinking
+# the live generation into a probe directory beside it; since livespec-41w4
+# consecutive generations are built from empty and share no inodes, so the
+# control cannot borrow the populator's links for it), and if such an inode
+# also opens for writing that is the violation the hardlink seed had. (ii) The copy is a reflink, not a byte copy: where
 # `filefrag` is present (the fleet's job image carries e2fsprogs), a seeded
 # file's extents carry the `shared` flag. A byte copy is not a trust
 # violation but a misconfigured pool (../warm-cache/README.md "Lesson": a
 # per-start byte copy must never ship on the start path), so it fails too.
 # Caveat: the flag clears once the generation the seed was cloned from is
-# pruned — the populator keeps two generations and publishes twice an hour,
-# so a volume would have to outlive an hour. (iii) The job can still CREATE
+# pruned — the populator keeps two generations and publishes a new one only
+# when a routed lock changes (at most twice an hour, at least once per 24 h),
+# so a volume would have to outlive two publishes. (iii) The job can still CREATE
 # an entry beside the seed, or the cache would be protected and useless.
 # `find -H`: in a job WARM_SEED is a real directory, but the negative control
 # points it at the warm root's `uv` SYMLINK, and plain `find` does not follow

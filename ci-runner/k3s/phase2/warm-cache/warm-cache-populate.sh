@@ -30,18 +30,84 @@
 #
 # GENERATIONS, not in-place writes. Readers reflink-copy from the lower
 # while this script may be writing it. Writing in place would let a reader
-# copy a half-written entry, so each run builds a NEW generation directory,
-# hardlink-seeded from the current one (same filesystem, so the seed is
-# metadata-only and takes well under a second even for a multi-GB cache),
-# syncs every routed repository's lockfile into it, and then publishes it with
-# ONE atomic symlink rename. A reader resolves the symlink once before it
-# starts copying, so one that resolved it before the flip keeps seeding from
-# the previous generation, which this script keeps for one more cycle before
-# pruning — and a seeded volume's copies outlive even a pruned generation
-# (their blocks stay referenced). The generation-to-generation hardlink here
-# is safe because uv never mutates a cache file in place — it writes to a
-# temporary path and renames — so a new generation's writes never reach the
-# inodes the previous generation still points at.
+# copy a half-written entry, so each run that rebuilds creates a NEW
+# generation directory, fills it, and publishes it with ONE atomic symlink
+# rename. A reader resolves the symlink once before it starts copying, so
+# one that resolved it before the flip keeps seeding from the previous
+# generation, which this script keeps for one more cycle before pruning —
+# and a seeded volume's copies outlive even a pruned generation (their
+# blocks stay referenced).
+#
+# EVERY GENERATION IS BUILT FROM EMPTY (livespec-41w4, Carrier F2 of the
+# livespec plan ci-runner-pod-lifecycle-reliability). Until 2026-09-06 a new
+# generation was hardlink-seeded from its predecessor and nothing pruned it:
+# every version ever locked accumulated, and the generation grew from 379 MB
+# / 8,070 files (2026-08-23) to 1,388 MB / 159,409 files (2026-09-04), the
+# per-start seed cost growing with it (research/005). Now a generation is the
+# union of the routed repositories' CURRENT lockfiles BY CONSTRUCTION: it
+# starts as an empty directory and holds only what `uv sync --frozen` of
+# those locks put there. The from-empty build is affordable because uv fetches
+# through the host-served PyPI files proxy (./pypi-proxy/): 379 MB and 8,070
+# files for nine locks in ~14 s, with ~105 MB of PyPI transfer avoided per
+# rebuild (README.md "From-empty build cost").
+#
+# THE FILE HOST IS REWRITTEN IN THE CLONE'S LOCK. `uv sync --frozen` downloads
+# every locked distribution from the ABSOLUTE files.pythonhosted.org URL in
+# uv.lock; UV_DEFAULT_INDEX / UV_INDEX_URL serve only unlocked build
+# dependencies, so an index proxy caches nothing for a frozen sync (measured
+# 2026-09-04: a frozen sync with UV_DEFAULT_INDEX pointed at a bogus port
+# succeeded). What works is the prefix swap this script makes in ITS OWN
+# CLONE of each lock, `https://files.pythonhosted.org/packages/` ->
+# `$PYPI_FILES_PROXY/packages/`, with `source = { registry = ... }` untouched:
+# the wheels come through the proxy, the lock's hashes are still enforced (a
+# tampered proxied wheel fails the sync), the cache lands under
+# `wheels-v5/pypi/...` exactly as a job's ORIGINAL lock expects, and that
+# original lock syncs `--offline` from the generation. No UV_DEFAULT_INDEX is
+# set, so build dependencies stay in the `pypi` bucket too. The clone is
+# reset to the fetched tip on the next run, so the rewrite never leaks.
+#
+# NOTHING IS PUBLISHED UNVERIFIED. After the syncs, ./verify-uv-cache.py (with
+# ./uv_cache_layout.py, the cache-layout half it imports) maps
+# every entry of the new generation back to a (name, version) and checks it
+# against the union of the routed locks (build dependencies derived from
+# [build-system].requires are the one legitimate class outside every lock).
+# Any unreferenced or unknown entry fails the publish: the entries are named
+# in this log, the directory is kept beside the generations as
+# <stamp>.unverified for one cycle, the symlink is untouched, the job exits 1.
+# `uv cache prune` / `uv cache clean` are NOT used anywhere here and MUST NOT
+# be run against uv-generations/ from the host: neither knows about
+# lockfiles, and both DESTROY a generation reached through a copy or a link
+# (README.md "Verifier").
+#
+# NOTHING IS PUBLISHED OVER BUDGET. The generation's bytes (du -sb) and
+# regular-file count must each be at or under WARM_BUDGET_BYTES /
+# WARM_BUDGET_FILES (the `warm-cache-budget` ConfigMap; fixed numbers derived
+# from the measured union in README.md "Budget", not a ratchet on the last
+# build). Over either: the directory is renamed <stamp>.refused, the previous
+# generation stays live, last-run.json records refused=1 with both numbers,
+# the job exits 3 — the alarm the sweep's livespec.ci_warm.refused gauge
+# carries.
+#
+# A RUN THAT CHANGES NOTHING BUILDS NOTHING. Every routed uv.lock is hashed
+# against the published generation's manifest; when every lock is unchanged,
+# the published generation still verifies against them, and it is younger
+# than WARM_FORCE_REBUILD_SECONDS, the run records rebuilt=0 and keeps it (the
+# generation directory's mtime is touched so ci-cache-gauges.sh's
+# generation_age_s reads "last verified current", which is what the stale
+# trigger asks). The forced rebuild past that age keeps the from-empty path
+# exercised at least once per 24 h.
+#
+# METRICS go through a file, not the network. The CronJob has no hostNetwork
+# (it runs PyPI build backends; do not add it), and the host collector's
+# OTLP receiver listens on loopback only, so this script writes
+# $WARM_ROOT/last-run.json (one document per run, refused runs included,
+# written before any non-zero exit) and the host lifecycle sweep
+# (../runner-pod-lifecycle/scan-runner-pod-lifecycle.sh) emits
+# livespec.ci_warm.* from it once per new run_id. The proxy hit ratio is
+# derived without log parsing: the proxy store is mounted read-only at
+# $PROXY_STORE, its object count is read before and after the build, and the
+# denominator is the number of uv pointer files in the new generation that
+# name the proxy (1 - new_objects / proxied_downloads).
 #
 # THE CARGO HALF (2026-09-04, plan ci-runner-cache-tiers, livespec-dev-tooling-
 # oiltq3): the warm cargo cache is HOST-SERVED by the crates proxy
@@ -89,24 +155,54 @@
 # WHAT IS SYNCED: for every repository URL in $REPOS_FILE (one per line — the
 # installer derives the list from ../arc/values-*.yaml, the live set of
 # repositories routed to this pool), clone or fast-forward its default branch
-# under $WARM_ROOT/src/<repo> and run `uv sync --frozen --all-groups
-# --no-install-project --no-install-workspace` against THIS generation as
-# UV_CACHE_DIR, into a throwaway environment that is deleted afterwards. The
-# project itself is never built or installed: only its locked third-party
-# dependency tree is fetched, unpacked, and left in the cache. A repository
-# without a uv.lock is skipped, not failed.
+# under $WARM_ROOT/src/<repo> and, when a rebuild is due, run `uv sync
+# --frozen --all-groups --no-install-project --no-install-workspace` against
+# the NEW generation as UV_CACHE_DIR, into a throwaway environment that is
+# deleted afterwards. The project itself is never built or installed: only its
+# locked third-party dependency tree is fetched, unpacked, and left in the
+# cache. A repository without a uv.lock is skipped, not failed.
 #
 # FAIL-SOFT PER REPOSITORY, FAIL-LOUD OVERALL: one repository's sync failing
 # (a broken lock on its default branch, a PyPI outage mid-fetch) is logged
 # and skipped so the others still refresh; the generation is still published
-# because a partially-refreshed cache is strictly better than the previous
-# one. The script exits non-zero at the end if ANY repository failed, so the
-# CronJob's last run shows red and the failure is observable.
+# (if it verifies and fits the budget) because a partially-refreshed cache is
+# strictly better than the previous one, and the failed repository's lock is
+# left out of the manifest so the next run rebuilds (its packages are absent
+# from the new generation — from-empty means a failed repository's jobs run
+# cold for one tick, not that the fleet keeps stale entries). When EVERY
+# routed lock fails to sync the new generation is discarded and the
+# published one stays. The script exits non-zero at the end if ANY
+# repository failed, so the CronJob's last run shows red and the failure is
+# observable.
+#
+# EXIT CODES: 0 every step ok (rebuilt or verified-unchanged); 1 a repository
+# step failed, or the verifier rejected the new generation; 2 a preflight
+# failed (nothing built); 3 the new generation was over budget and refused.
+# last-run.json is written on every path but 2.
 set -uo pipefail
 
 WARM_ROOT="${WARM_ROOT:-/warm}"
 REPOS_FILE="${REPOS_FILE:-/config/repos.txt}"
 KEEP_GENERATIONS="${KEEP_GENERATIONS:-2}"
+VERIFIER="${VERIFIER:-/scripts/verify-uv-cache.py}"
+# The host-served PyPI files proxy (./pypi-proxy/), probed at /health; an
+# unreachable proxy means a direct build and proxy_unavailable=1, never a
+# failed run.
+PYPI_FILES_PROXY="${PYPI_FILES_PROXY:-http://pypi-proxy.ci-warm-cache.svc.cluster.local:8081}"
+# The proxy's object store, mounted read-only, for the hit-ratio count; when
+# it is not mounted or not readable the ratio is recorded as null.
+PROXY_STORE="${PROXY_STORE:-/proxy-store}"
+# The budget (both required; the CronJob injects them from the
+# warm-cache-budget ConfigMap).
+WARM_BUDGET_BYTES="${WARM_BUDGET_BYTES:-}"
+WARM_BUDGET_FILES="${WARM_BUDGET_FILES:-}"
+# A published generation older than this is rebuilt even when no lock changed.
+WARM_FORCE_REBUILD_SECONDS="${WARM_FORCE_REBUILD_SECONDS:-86400}"
+# NEGATIVE-TEST HOOK: a uv project directory (pyproject.toml + uv.lock) synced
+# into the new generation AFTER the routed repositories and BEFORE the
+# verifier, so an operator can prove the verifier refuses an unreferenced
+# entry (README.md "Acceptance"). Never set on the CronJob itself.
+WARM_INJECT_TEST="${WARM_INJECT_TEST:-}"
 CRATES_PROXY_URL="${CRATES_PROXY_URL:-http://crates-proxy.ci-crates-proxy.svc.cluster.local:3080}"
 SCCACHE_BIN="${SCCACHE_BIN:-/opt/ci-runner/bin/sccache}"
 SCCACHE_REDIS_ENDPOINT="${SCCACHE_REDIS_ENDPOINT:-redis://sccache-redis.ci-sccache.svc.cluster.local:6379}"
@@ -118,7 +214,9 @@ K8S_SA_DIR="${K8S_SA_DIR:-/var/run/secrets/kubernetes.io/serviceaccount}"
 GENERATIONS_DIR="${WARM_ROOT}/uv-generations"
 SRC_DIR="${WARM_ROOT}/src"
 CURRENT_LINK="${WARM_ROOT}/uv"
+LAST_RUN="${WARM_ROOT}/last-run.json"
 SCRATCH="${SCRATCH:-$(mktemp -d)}"
+PYPI_FILES_PREFIX="https://files.pythonhosted.org/packages/"
 
 log() { printf '[warm-cache-populate %s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
 
@@ -178,10 +276,54 @@ print(read_reply(f))
 PY
 }
 
+# gen_bytes DIR / gen_files DIR — the two budget axes, measured the same way
+# ci-cache-gauges.sh measures the live generation (apparent bytes; regular
+# files, so uv's pointer symlinks do not count).
+gen_bytes() { du -sb "$1" | cut -f1; }
+gen_files() { find "$1" -type f | wc -l; }
+
+# proxy_store_objects — the number of cached objects in the proxy store (one
+# regular file per object; the store is FLAT so a capability-less reader can
+# list it, see pypi-proxy/pypi-proxy.yaml). Prints nothing when unreadable.
+proxy_store_objects() {
+  [ -d "${PROXY_STORE}" ] && [ -r "${PROXY_STORE}" ] || return 1
+  find "${PROXY_STORE}" -maxdepth 1 -type f 2>/dev/null | wc -l
+}
+
+# manifest_field FILE KEY — one top-level scalar from a JSON manifest, or
+# nothing when the file or the key is absent.
+manifest_field() {
+  [ -r "$1" ] || return 1
+  python3 -c 'import json,sys
+d = json.load(open(sys.argv[1])); v = d.get(sys.argv[2])
+sys.exit(1) if v is None else print(v)' "$1" "$2" 2>/dev/null
+}
+
+# ---------------------------------------------------------------------------
+# PREFLIGHT — fail-closed, before anything is touched.
 command -v uv >/dev/null || { log "FATAL: uv not on PATH"; exit 2; }
 command -v git >/dev/null || { log "FATAL: git not on PATH"; exit 2; }
+command -v python3 >/dev/null || { log "FATAL: python3 not on PATH"; exit 2; }
+python3 -c 'import tomllib' 2>/dev/null || { log "FATAL: python3 is older than 3.11 (no tomllib); the verifier cannot run"; exit 2; }
+[ -r "${VERIFIER}" ] || { log "FATAL: verifier ${VERIFIER} not readable (converge-warm-cache.sh ships it in the script ConfigMap)"; exit 2; }
+[ -r "$(dirname "${VERIFIER}")/uv_cache_layout.py" ] || { log "FATAL: uv_cache_layout.py not beside ${VERIFIER} (the verifier imports it; converge-warm-cache.sh ships both)"; exit 2; }
 [ -f "${REPOS_FILE}" ] || { log "FATAL: repos file ${REPOS_FILE} not found"; exit 2; }
 [ -d "${WARM_ROOT}" ] || { log "FATAL: WARM_ROOT ${WARM_ROOT} is not a directory"; exit 2; }
+for v in WARM_BUDGET_BYTES WARM_BUDGET_FILES WARM_FORCE_REBUILD_SECONDS KEEP_GENERATIONS; do
+  [[ "${!v}" =~ ^[0-9]+$ ]] || { log "FATAL: ${v} must be a non-negative integer, got '${!v}' (the warm-cache-budget ConfigMap injects the budget)"; exit 2; }
+done
+[ "${WARM_BUDGET_BYTES}" -gt 0 ] && [ "${WARM_BUDGET_FILES}" -gt 0 ] || { log "FATAL: WARM_BUDGET_BYTES and WARM_BUDGET_FILES must be positive"; exit 2; }
+if [ -n "${WARM_INJECT_TEST}" ] && { [ ! -f "${WARM_INJECT_TEST}/pyproject.toml" ] || [ ! -f "${WARM_INJECT_TEST}/uv.lock" ]; }; then
+  log "FATAL: WARM_INJECT_TEST=${WARM_INJECT_TEST} is set but holds no pyproject.toml + uv.lock; a negative test that injects nothing would pass falsely"
+  exit 2
+fi
+proxy_unavailable=0
+if curl --silent --fail --max-time 5 "${PYPI_FILES_PROXY}/health" >/dev/null 2>&1; then
+  log "pypi files proxy ${PYPI_FILES_PROXY} healthy; locks will be rewritten to fetch through it"
+else
+  proxy_unavailable=1
+  log "WARN: pypi files proxy ${PYPI_FILES_PROXY} not answering /health; building DIRECT from files.pythonhosted.org (proxy_unavailable=1)"
+fi
 
 mkdir -p "${GENERATIONS_DIR}" "${SRC_DIR}"
 
@@ -205,23 +347,17 @@ new_gen="${GENERATIONS_DIR}/${generation}"
 current_gen=""
 if [ -L "${CURRENT_LINK}" ]; then
   current_gen="$(readlink -f "${CURRENT_LINK}" || true)"
+  [ -d "${current_gen}" ] || current_gen=""
 fi
+current_manifest="${current_gen:+${current_gen}/.warm-manifest.json}"
 
-if [ -n "${current_gen}" ] && [ -d "${current_gen}" ]; then
-  log "seeding generation ${generation} from $(basename "${current_gen}") (hardlinks)"
-  cp -al "${current_gen}" "${new_gen}"
-else
-  log "no current generation; starting ${generation} empty"
-  mkdir -p "${new_gen}"
-fi
-
+# ---------------------------------------------------------------------------
+# 1. CLONE / FETCH every routed repository and hash its uv.lock. The syncs
+#    come later, only if a rebuild is due; the cargo work comes after that.
 failed=()
-synced=0
-cargo_warmed=0
-sccache_built=0
-sccache_skipped=0
-sccache_skipped_busy=0
-admitted_last=""
+fetched=()
+uv_repos=()
+declare -A lock_sha
 while IFS= read -r url || [ -n "${url}" ]; do
   case "${url}" in ''|'#'*) continue ;; esac
   name="$(basename "${url}" .git)"
@@ -242,23 +378,298 @@ while IFS= read -r url || [ -n "${url}" ]; do
       continue
     fi
   fi
+  fetched+=("${name}")
   if [ -f "${src}/uv.lock" ]; then
+    uv_repos+=("${name}")
+    lock_sha["${name}"]="$(sha256sum "${src}/uv.lock" | cut -d' ' -f1)"
+    log "   uv.lock sha256 ${lock_sha[${name}]:0:12}"
+  else
+    log "   no uv.lock; nothing to sync for uv"
+  fi
+done < "${REPOS_FILE}"
+
+# ---------------------------------------------------------------------------
+# 2. DECIDE: unchanged locks + a verifying, young published generation means
+#    no rebuild. Every lock hash must match the published manifest's, and the
+#    manifest must name every routed lock (a repository whose sync failed last
+#    run is absent from it, which forces the rebuild that heals it).
+rebuild_reason=""
+if [ -n "${WARM_INJECT_TEST}" ]; then
+  # A negative test that took the no-rebuild path would inject nothing and
+  # "pass"; the hook always builds.
+  rebuild_reason="WARM_INJECT_TEST is set (the negative test always rebuilds)"
+elif [ -z "${current_gen}" ]; then
+  rebuild_reason="no published generation"
+elif [ ! -r "${current_manifest}" ]; then
+  rebuild_reason="published generation $(basename "${current_gen}") has no manifest (built before livespec-41w4)"
+else
+  published_epoch="$(manifest_field "${current_manifest}" published_at_epoch || echo 0)"
+  if [ $(( run_started - published_epoch )) -ge "${WARM_FORCE_REBUILD_SECONDS}" ]; then
+    rebuild_reason="published generation is $(( run_started - published_epoch )) s old (forced rebuild past ${WARM_FORCE_REBUILD_SECONDS} s)"
+  else
+    lock_args=()
+    for name in "${uv_repos[@]}"; do lock_args+=("${name}=${lock_sha[${name}]}"); done
+    if ! changed="$(python3 - "${current_manifest}" "${lock_args[@]}" <<'PY'
+import json, sys
+published = json.load(open(sys.argv[1])).get("locks") or {}
+current = dict(a.split("=", 1) for a in sys.argv[2:])
+changed = sorted(n for n in set(published) | set(current) if published.get(n) != current.get(n))
+print(" ".join(changed))
+sys.exit(1 if changed else 0)
+PY
+)"; then
+      rebuild_reason="lock changed: ${changed}"
+    fi
+  fi
+fi
+
+if [ -z "${rebuild_reason}" ]; then
+  # Every lock unchanged: the published generation must still verify against
+  # them (an operator may have touched it; a uv bump may have changed the
+  # layout), else it is rebuilt now rather than served broken for a day.
+  lock_files=()
+  for name in "${uv_repos[@]}"; do lock_files+=("${SRC_DIR}/${name}/uv.lock"); done
+  if python3 "${VERIFIER}" --cache "${current_gen}" "${lock_files[@]}" > "${SCRATCH}/verify-current.txt" 2>&1; then
+    log "every routed uv.lock unchanged and generation $(basename "${current_gen}") verifies; no rebuild (rebuilt=0)"
+  else
+    rebuild_reason="published generation $(basename "${current_gen}") no longer verifies against the current locks"
+    log "WARN: ${rebuild_reason}:"
+    sed 's/^/   /' "${SCRATCH}/verify-current.txt"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# 3. BUILD (or keep). Everything the sweep emits comes from these variables.
+rebuilt=0; refused=0; verified=1; uv_exit=0
+synced=0
+published_gen="${current_gen}"
+prev_bytes=""; prev_files=""
+new_bytes=""; new_files=""
+trimmed_bytes=0; trimmed_files=0
+proxy_before=""; proxy_after=""; proxied_downloads=0; proxy_hit_ratio="null"
+unreferenced=0; unknown=0
+if [ -z "${rebuild_reason}" ]; then
+  new_bytes="$(manifest_field "${current_manifest}" generation_bytes || gen_bytes "${current_gen}")"
+  new_files="$(manifest_field "${current_manifest}" generation_files || gen_files "${current_gen}")"
+  prev_bytes="${new_bytes}"; prev_files="${new_files}"
+  # "Last verified current" for ci-cache-gauges.sh's generation_age_s (the
+  # header explains); the contents are untouched.
+  touch "${current_gen}" || true
+else
+  rebuilt=1
+  log "REBUILD: ${rebuild_reason}"
+  if [ -n "${current_gen}" ]; then
+    prev_bytes="$(manifest_field "${current_manifest}" generation_bytes || gen_bytes "${current_gen}")"
+    prev_files="$(manifest_field "${current_manifest}" generation_files || gen_files "${current_gen}")"
+    log "previous generation $(basename "${current_gen}"): ${prev_bytes} bytes, ${prev_files} files"
+  fi
+  proxy_before="$(proxy_store_objects || true)"
+  log "starting generation ${generation} EMPTY"
+  rm -rf "${new_gen}"
+  mkdir -p "${new_gen}"
+  synced_names=(); synced_shas=()
+  for name in "${uv_repos[@]}"; do
+    src="${SRC_DIR}/${name}"
+    log "-- ${name}: uv sync --frozen into ${generation}"
+    if [ "${proxy_unavailable}" = 0 ]; then
+      # The prefix swap of the header: this clone's lock only; git resets it
+      # on the next fetch. Hashed BEFORE the rewrite (step 1).
+      sed -i "s#${PYPI_FILES_PREFIX}#${PYPI_FILES_PROXY}/packages/#g" "${src}/uv.lock"
+    fi
     venv="${SCRATCH}/venv-${name}"
     rm -rf "${venv}"
     if UV_CACHE_DIR="${new_gen}" UV_PROJECT_ENVIRONMENT="${venv}" \
        uv sync --frozen --all-groups --no-install-project --no-install-workspace \
          --project "${src}" --quiet; then
       synced=$((synced + 1))
+      synced_names+=("${name}"); synced_shas+=("${lock_sha[${name}]}")
       log "   uv: synced"
     else
-      log "   uv sync failed; skipping"
+      log "   uv sync failed; skipping (its lock stays out of the manifest, so the next run rebuilds)"
       failed+=("${name}")
     fi
     rm -rf "${venv}"
-  else
-    log "   no uv.lock; nothing to sync for uv"
+    git -C "${src}" checkout --quiet -- uv.lock 2>/dev/null || true
+  done
+  if [ -n "${WARM_INJECT_TEST}" ]; then
+    log "NEGATIVE TEST: WARM_INJECT_TEST=${WARM_INJECT_TEST} — syncing an UNROUTED project into ${generation}; the verifier MUST reject this generation"
+    venv="${SCRATCH}/venv-inject"
+    UV_CACHE_DIR="${new_gen}" UV_PROJECT_ENVIRONMENT="${venv}" \
+      uv sync --frozen --no-install-project --no-install-workspace --project "${WARM_INJECT_TEST}" --quiet \
+      || log "   inject sync failed (the test may not be exercising the verifier)"
+    rm -rf "${venv}"
   fi
+  # Proxy hit ratio: new objects in the store against the distributions
+  # this build fetched THROUGH the proxy (uv's .http pointers name the URL).
+  proxy_after="$(proxy_store_objects || true)"
+  proxied_downloads="$(find "${new_gen}" -name '*.http' -type f -exec grep -l -a -F "${PYPI_FILES_PROXY}/packages/" {} + 2>/dev/null | wc -l)"
+  if [ -n "${proxy_before}" ] && [ -n "${proxy_after}" ] && [ "${proxied_downloads}" -gt 0 ]; then
+    proxy_hit_ratio="$(python3 -c 'import sys; b,a,d=map(int,sys.argv[1:]); print(round(max(0.0, 1 - (a-b)/d), 4))' "${proxy_before}" "${proxy_after}" "${proxied_downloads}")"
+    log "proxy: ${proxied_downloads} distributions fetched through it, store ${proxy_before} -> ${proxy_after} objects, hit_ratio=${proxy_hit_ratio}"
+  else
+    log "proxy: hit ratio unavailable (store readable: $([ -n "${proxy_before}" ] && echo yes || echo no); proxied downloads: ${proxied_downloads})"
+  fi
+
+  # VERIFY against EVERY current lock (a failed repository's partial fetches
+  # are still referenced by ITS lock; the manifest, not the verifier, records
+  # which locks are actually warm).
+  lock_files=()
+  for name in "${uv_repos[@]}"; do lock_files+=("${SRC_DIR}/${name}/uv.lock"); done
+  log "verifying ${generation} against ${#lock_files[@]} lock(s)"
+  python3 "${VERIFIER}" --cache "${new_gen}" --json "${lock_files[@]}" > "${SCRATCH}/verify.json" 2> "${SCRATCH}/verify.err"
+  verify_exit=$?
+  if [ "${verify_exit}" -eq 0 ] || [ "${verify_exit}" -eq 1 ]; then
+    python3 - "${SCRATCH}/verify.json" <<'PY' | sed 's/^/   /'
+import json, sys
+s = json.load(open(sys.argv[1]))
+r, b = s["referenced"], s["build_deps"]
+print(f"generation: {s['generation_bytes']} bytes, {s['generation_files']} files; lock union: {s['lock_pairs']} (name,version) pairs")
+print(f"referenced: {r['entries']} entries, {r['bytes']} bytes, {r['files']} files")
+print(f"build-deps: {b['entries']} entries, {b['bytes']} bytes, {b['files']} files: {' '.join(b['names'])}")
+for e in s["unreferenced"]:
+    print(f"UNREFERENCED {e['bucket']}/{e['entry']} -> ({e['name']}, {e['version']}) {e['bytes']} bytes {e['files']} files")
+for e in s["unknown"]:
+    print(f"UNKNOWN {e['bucket']}/{e['entry']} {e['bytes']} bytes {e['files']} files")
+PY
+    unreferenced="$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))["unreferenced"]))' "${SCRATCH}/verify.json" 2>/dev/null || echo 0)"
+    unknown="$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))["unknown"]))' "${SCRATCH}/verify.json" 2>/dev/null || echo 0)"
+  else
+    log "verifier did not run to a verdict (exit ${verify_exit}): $(head -3 "${SCRATCH}/verify.err" | tr '\n' ' ')"
+  fi
+  new_bytes="$(gen_bytes "${new_gen}")"
+  new_files="$(gen_files "${new_gen}")"
+  log "generation ${generation}: ${new_bytes} bytes, ${new_files} files (budget ${WARM_BUDGET_BYTES} bytes, ${WARM_BUDGET_FILES} files)"
+
+  # The manifest lives INSIDE the generation so it is kept, renamed and
+  # pruned with it; the verifier knows the file name.
+  python3 - "${new_gen}/.warm-manifest.json" "${generation}" "${run_started}" "${new_bytes}" "${new_files}" \
+      "${WARM_BUDGET_BYTES}" "${WARM_BUDGET_FILES}" "${SCRATCH}/verify.json" "${verify_exit}" "${proxy_unavailable}" \
+      "${proxy_before}" "${proxy_after}" "${proxied_downloads}" "${proxy_hit_ratio}" \
+      "${synced_names[@]}" -- "${synced_shas[@]}" <<'PY' || log "WARN: generation manifest not written"
+import json, os, sys, time
+(path, gen, started, nbytes, nfiles, bb, bf, vjson, vexit, proxy_unavail,
+ pbefore, pafter, pdl, hit) = sys.argv[1:15]
+rest = sys.argv[15:]
+sep = rest.index("--"); names, shas = rest[:sep], rest[sep + 1:]
+now = int(time.time())
+try:
+    verify = json.load(open(vjson))
+    verify_summary = {k: verify[k] for k in ("lock_pairs", "referenced", "build_deps", "unreferenced", "unknown")}
+except (OSError, ValueError, KeyError):
+    verify_summary = None
+doc = {"generation": gen, "published_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
+       "published_at_epoch": now, "populate_seconds": now - int(started),
+       "generation_bytes": int(nbytes), "generation_files": int(nfiles),
+       "budget_bytes": int(bb), "budget_files": int(bf),
+       "locks": dict(zip(names, shas)),
+       "verify_exit": int(vexit), "verify": verify_summary,
+       "proxy_unavailable": int(proxy_unavail),
+       "proxy_store_objects_before": int(pbefore) if pbefore else None,
+       "proxy_store_objects_after": int(pafter) if pafter else None,
+       "proxied_downloads": int(pdl), "proxy_hit_ratio": None if hit == "null" else float(hit)}
+tmp = path + ".tmp"
+with open(tmp, "w") as f: json.dump(doc, f, indent=1)
+os.replace(tmp, path)
+PY
+
+  if [ "${synced}" -eq 0 ] && [ "${#failed[@]}" -gt 0 ]; then
+    # Nothing synced and something failed (a forge or PyPI outage): an empty
+    # generation would replace a good one and make every job cold. Keep the
+    # published generation; the next tick retries. (Zero locks with zero
+    # failures is a legitimately empty union and publishes.)
+    uv_exit=1
+    rm -rf "${new_gen}"
+    log "DISCARDED: no routed repository synced into ${generation}; the symlink is UNCHANGED"
+  elif [ "${verify_exit}" -ne 0 ]; then
+    verified=0; uv_exit=1
+    mv -T "${new_gen}" "${new_gen}.unverified"
+    log "REJECTED: generation ${generation} did not verify (${unreferenced} unreferenced, ${unknown} unknown entries; verifier exit ${verify_exit}); kept as ${generation}.unverified for one cycle; the symlink is UNCHANGED"
+  elif [ "${new_bytes}" -gt "${WARM_BUDGET_BYTES}" ] || [ "${new_files}" -gt "${WARM_BUDGET_FILES}" ]; then
+    refused=1; uv_exit=3
+    mv -T "${new_gen}" "${new_gen}.refused"
+    log "REFUSED: generation ${generation} is OVER BUDGET (${new_bytes} bytes vs ${WARM_BUDGET_BYTES}; ${new_files} files vs ${WARM_BUDGET_FILES}); kept as ${generation}.refused for one cycle; the symlink is UNCHANGED"
+  else
+    # Publish: one atomic rename of a relative symlink, so the link stays
+    # valid wherever the warm root is mounted (the provisioner's helper pod
+    # sees it at its node path, not at this container's /warm).
+    ln -sfn "uv-generations/${generation}" "${CURRENT_LINK}.tmp"
+    mv -T "${CURRENT_LINK}.tmp" "${CURRENT_LINK}"
+    published_gen="${new_gen}"
+    if [ -n "${prev_bytes}" ]; then
+      trimmed_bytes=$(( prev_bytes - new_bytes ))
+      trimmed_files=$(( prev_files - new_files ))
+    fi
+    log "published generation ${generation} (${synced}/${#uv_repos[@]} repositories synced; ${new_bytes} bytes, ${new_files} files; trimmed ${trimmed_bytes} bytes, ${trimmed_files} files against the previous generation)"
+  fi
+fi
+populate_seconds=$(( $(date +%s) - run_started ))
+
+# ---------------------------------------------------------------------------
+# 4. PRUNE: keep the newest KEEP_GENERATIONS published generations (the one
+#    just published is always among them); drop every refused / unverified
+#    directory from an EARLIER run (this run's stays one cycle to be
+#    inspected).
+mapfile -t gens < <(find "${GENERATIONS_DIR}" -mindepth 1 -maxdepth 1 -type d -name '[0-9]*Z' -printf '%f\n' | sort)
+if [ "${#gens[@]}" -gt "${KEEP_GENERATIONS}" ]; then
+  for old in "${gens[@]:0:$(( ${#gens[@]} - KEEP_GENERATIONS ))}"; do
+    [ "${GENERATIONS_DIR}/${old}" = "${published_gen}" ] && continue
+    log "pruning generation ${old}"
+    rm -rf "${GENERATIONS_DIR:?}/${old}"
+  done
+fi
+while IFS= read -r rejected; do
+  [ -n "${rejected}" ] || continue
+  case "${rejected}" in "${generation}".*) continue ;; esac
+  log "pruning rejected generation ${rejected}"
+  rm -rf "${GENERATIONS_DIR:?}/${rejected}"
+done < <(find "${GENERATIONS_DIR}" -mindepth 1 -maxdepth 1 -type d \( -name '*.refused' -o -name '*.unverified' \) -printf '%f\n' | sort)
+
+# ---------------------------------------------------------------------------
+# 5. last-run.json — the sweep's input (header "METRICS"). Written NOW, before
+#    the cargo work and before any non-zero exit, so a refused or rejected run
+#    is emitted too. Atomic rename; the sweep may read while the next run
+#    writes.
+python3 - "${LAST_RUN}" "${generation}" "${run_started}" "${rebuilt}" "${refused}" "${verified}" \
+    "$(basename "${published_gen:-}")" "${new_bytes:-0}" "${new_files:-0}" "${prev_bytes}" "${prev_files}" \
+    "${trimmed_bytes}" "${trimmed_files}" "${populate_seconds}" "${synced}" "${#failed[@]}" \
+    "${WARM_BUDGET_BYTES}" "${WARM_BUDGET_FILES}" "${proxy_unavailable}" "${proxy_hit_ratio}" "${proxied_downloads}" \
+    "${unreferenced}" "${unknown}" "${uv_exit}" "${rebuild_reason}" "${failed[@]:-}" <<'PY' || log "WARN: last-run.json not written"
+import json, os, sys, time
+(path, run_id, started, rebuilt, refused, verified, published, nbytes, nfiles, pbytes, pfiles,
+ tbytes, tfiles, secs, synced, nfailed, bb, bf, proxy_unavail, hit, pdl, unref, unk, uv_exit, reason) = sys.argv[1:26]
+failed = [f for f in sys.argv[26:] if f]
+now = int(time.time())
+doc = {"run_id": run_id, "started_at_epoch": int(started), "finished_uv_at_epoch": now,
+       "finished_uv_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
+       "rebuilt": int(rebuilt), "refused": int(refused), "verified": int(verified), "uv_exit": int(uv_exit),
+       "rebuild_reason": reason or None, "published_generation": published or None,
+       "generation_bytes": int(nbytes), "generation_files": int(nfiles),
+       "previous_generation_bytes": int(pbytes) if pbytes else None,
+       "previous_generation_files": int(pfiles) if pfiles else None,
+       "trimmed_bytes": int(tbytes), "trimmed_files": int(tfiles),
+       "populate_seconds": int(secs), "repos_synced": int(synced), "repos_failed": int(nfailed), "failed": failed,
+       "budget_bytes": int(bb), "budget_files": int(bf),
+       "proxy_unavailable": int(proxy_unavail), "proxied_downloads": int(pdl),
+       "proxy_hit_ratio": None if hit == "null" else float(hit),
+       "unreferenced_entries": int(unref), "unknown_entries": int(unk)}
+tmp = path + ".tmp"
+with open(tmp, "w") as f: json.dump(doc, f, indent=1)
+os.replace(tmp, path)
+PY
+
+# ---------------------------------------------------------------------------
+# 6. THE CARGO HALF and the compilation cache's writer build, per fetched
+#    repository (the header's "THE CARGO HALF" / "THE COMPILATION CACHE'S ONE
+#    WRITER" / "GUARDRAILS"). Independent of the uv generation above.
+cargo_warmed=0
+sccache_built=0
+sccache_skipped=0
+sccache_skipped_busy=0
+admitted_last=""
+for name in "${fetched[@]}"; do
+  src="${SRC_DIR}/${name}"
   if [ -f "${src}/Cargo.lock" ]; then
+    log "-- ${name}: cargo"
     if ! command -v cargo >/dev/null; then
       log "   Cargo.lock present but cargo is not on PATH (this image lacks the Rust layer); skipping the cargo pre-warm"
       failed+=("${name}:cargo")
@@ -355,49 +766,43 @@ while IFS= read -r url || [ -n "${url}" ]; do
       fi
     fi
   fi
-done < "${REPOS_FILE}"
+done
 
-# Publish: one atomic rename of a relative symlink, so the link stays valid
-# wherever the warm root is mounted (the provisioner's helper pod sees it at
-# its node path, /var/lib/rancher/k3s/storage/.warm, not at this container's
-# /warm).
-ln -sfn "uv-generations/${generation}" "${CURRENT_LINK}.tmp"
-mv -T "${CURRENT_LINK}.tmp" "${CURRENT_LINK}"
-log "published generation ${generation} (${synced} repositories synced for uv, ${cargo_warmed} pre-warmed for cargo, sccache builds: ${sccache_built} built / ${sccache_skipped} skipped / ${sccache_skipped_busy} skipped-busy, size $(du -sh "${new_gen}" | cut -f1))"
-
-# Prune: keep the newest KEEP_GENERATIONS, oldest first. The one just
-# published is always among those kept.
-mapfile -t gens < <(find "${GENERATIONS_DIR}" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort)
-if [ "${#gens[@]}" -gt "${KEEP_GENERATIONS}" ]; then
-  for old in "${gens[@]:0:$(( ${#gens[@]} - KEEP_GENERATIONS ))}"; do
-    log "pruning generation ${old}"
-    rm -rf "${GENERATIONS_DIR:?}/${old}"
-  done
-fi
+log "run summary: uv generation $(basename "${published_gen:-none}") (rebuilt=${rebuilt} refused=${refused} verified=${verified}, ${synced} repositories synced), ${cargo_warmed} pre-warmed for cargo, sccache builds: ${sccache_built} built / ${sccache_skipped} skipped / ${sccache_skipped_busy} skipped-busy"
 
 # MANIFEST: what this run did, for the host gauges (ci-runner/observability/
 # ci-cache-gauges.sh reads it every 5 min into livespec.ci_cache.populate.*
 # — duration, counts, toolchain — the "per-generation manifest" of the v054
 # populator-guardrails clause). Atomic rename beside the generations; the
-# reader may open it while the next run writes.
+# reader may open it while the next run writes. `generation` names the LIVE
+# generation (unchanged on a rebuilt=0, refused or rejected run).
 toolchain_version="$(command -v rustc >/dev/null && rustc --version 2>/dev/null | awk '{print $2}' || echo "")"
-python3 - "${WARM_ROOT}/populate-manifest.json" "${generation}" "${run_started}" "${synced}" "${#failed[@]}" "${cargo_warmed}" "${sccache_built}" "${sccache_skipped}" "${toolchain_version}" "${sccache_skipped_busy}" "${admitted_last}" "${POPULATE_ADMITTED_JOB_THRESHOLD}" "${failed[@]:-}" <<'PY' || log "WARN: manifest not written"
+python3 - "${WARM_ROOT}/populate-manifest.json" "$(basename "${published_gen:-}")" "${run_started}" "${synced}" "${#failed[@]}" "${cargo_warmed}" "${sccache_built}" "${sccache_skipped}" "${toolchain_version}" "${sccache_skipped_busy}" "${admitted_last}" "${POPULATE_ADMITTED_JOB_THRESHOLD}" "${generation}" "${rebuilt}" "${refused}" "${verified}" "${failed[@]:-}" <<'PY' || log "WARN: manifest not written"
 import json, sys, time, os
-path, gen, started, synced, nfailed, warmed, built, skipped, toolchain, skipped_busy, admitted, threshold = sys.argv[1:13]
-failed = [f for f in sys.argv[13:] if f]
+path, gen, started, synced, nfailed, warmed, built, skipped, toolchain, skipped_busy, admitted, threshold, run_id, rebuilt, refused, verified = sys.argv[1:17]
+failed = [f for f in sys.argv[17:] if f]
 now = int(time.time())
 doc = {"generation": gen, "published_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)), "published_at_epoch": now,
        "duration_s": now - int(started), "repos_synced": int(synced), "repos_failed": int(nfailed), "failed": failed,
        "cargo_warmed": int(warmed), "sccache_built": int(built), "sccache_skipped": int(skipped), "sccache_skipped_busy": int(skipped_busy),
-       "admitted_jobs": int(admitted) if admitted else None, "admitted_job_threshold": int(threshold), "toolchain_version": toolchain}
+       "admitted_jobs": int(admitted) if admitted else None, "admitted_job_threshold": int(threshold), "toolchain_version": toolchain,
+       "run_id": run_id, "rebuilt": int(rebuilt), "refused": int(refused), "verified": int(verified)}
 tmp = path + ".tmp"
 with open(tmp, "w") as f: json.dump(doc, f, indent=1)
 os.replace(tmp, path)
 PY
 
 rm -rf "${SCRATCH}"
+if [ "${uv_exit}" -eq 3 ]; then
+  log "REFUSED (over budget); exit 3"
+  exit 3
+fi
 if [ "${#failed[@]}" -gt 0 ]; then
   log "FAILED repositories: ${failed[*]}"
   exit 1
+fi
+if [ "${uv_exit}" -ne 0 ]; then
+  log "generation rejected by the verifier; exit ${uv_exit}"
+  exit "${uv_exit}"
 fi
 log "ok"

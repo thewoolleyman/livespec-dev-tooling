@@ -6,9 +6,13 @@ volume that holds them"; maintainer-directed 2026-08-13: local caching of
 the runner cache is in scope), re-scoped from the deleted podman lane to
 this pool under `livespec-s43svm.2`, re-realized as a hardlink seed made
 at volume provisioning under `livespec-lvtu` (livespec plan
-`ci-runner-pod-lifecycle-reliability`, research/005), and made private per
+`ci-runner-pod-lifecycle-reliability`, research/005), made private per
 volume as a reflink copy on the XFS `ci-workvols` tier under
-`livespec-dev-tooling-hmv2bo` (that plan's research/006, option (a)).
+`livespec-dev-tooling-hmv2bo` (that plan's research/006, option (a)), and —
+since `livespec-41w4` (Carriers F2/F3/F4a of the same plan) — built FROM
+EMPTY on every lock change through a host-served PyPI files proxy, verified
+against the routed lockfiles, refused over a fixed budget, and measured on
+every run.
 
 ## What it is
 
@@ -19,11 +23,15 @@ volume is created:
 
 | Path | Role |
 |---|---|
-| `warm-cache-populate.sh` | The populator. Clones or fast-forwards every routed repository's default branch and runs `uv sync --frozen --all-groups --no-install-project --no-install-workspace` against a fresh hardlink-seeded generation, then publishes it with one atomic symlink rename and prunes all but the newest two; for every repository with a `Cargo.lock` it also runs `cargo fetch --locked` through the crates proxy (`../crates-proxy/`) to pre-warm it, and builds the default branch with sccache as the compilation cache's one writer (`../sccache/`) when the branch or toolchain changed. Never builds or installs a project; only locked third-party dependencies land in the cache. Its header carries the generation/publish design and the per-repository fail-soft rule. |
-| `warm-cache-cronjob.yaml` | Namespace `ci-warm-cache` + the `warm-cache-populate` CronJob (every 30 min, `concurrencyPolicy: Forbid`), running the populator in the same fabro sandbox image the fleet's CI jobs execute in (the `python-rust` layer, so `cargo` is present), with the warm root mounted read-WRITE — the only mount of that path in the cluster. |
-| `install-warm-cache.sh` | Derives the routed-repository list from `../arc/values-*.yaml` (every per-repo scale set's `githubConfigUrl`) into the `warm-cache-repos` ConfigMap, applies the CronJob, converges its script ConfigMap from the file above, runs one populate immediately and waits for it, then converges `arc-hook-pod-template` via `../arc/converge-hook-pod-template.sh`. Idempotent; re-run after adding a routed repository. |
+| `warm-cache-populate.sh` | The populator. Clones or fast-forwards every routed repository's default branch, hashes its `uv.lock`, and — when any lock changed, the published generation no longer verifies, or it is older than 24 h — builds a NEW generation from an EMPTY directory: per repository it rewrites the file-host prefix in its own clone's lock to the PyPI files proxy and runs `uv sync --frozen --all-groups --no-install-project --no-install-workspace` with that generation as `UV_CACHE_DIR`; runs the verifier; checks the budget; writes the generation's manifest; publishes with one atomic symlink rename; prunes to the newest two. A run with nothing changed verifies the live generation and records `rebuilt=0`. Every run writes `last-run.json` for the host sweep. For every repository with a `Cargo.lock` it also runs `cargo fetch --locked` through the crates proxy (`../crates-proxy/`) and builds the default branch with sccache as the compilation cache's one writer (`../sccache/`) when the branch or toolchain changed. Its header carries the whole control flow and the exit codes. |
+| `verify-uv-cache.py`, `uv_cache_layout.py` | The verifier (stdlib Python, both files shipped in the populator's ConfigMap and mounted together at `/scripts`): maps every entry of a uv 0.9.x cache back to a `(name, version)` and fails on any entry no routed lock references. The layout module holds the bucket table and the scanners; the CLI holds the lock union, the build-dependency closure and the report — split at the repo's per-file LLOC ceiling. "Verifier" below. |
+| `warm-cache-cronjob.yaml` | Namespace `ci-warm-cache`, the `warm-cache-budget` ConfigMap (the two budget numbers and their derivation), and the `warm-cache-populate` CronJob (every 30 min, `concurrencyPolicy: Forbid`), running the populator in the same fabro sandbox image the fleet's CI jobs execute in (the `python-rust` layer, so `cargo` is present), with the warm root mounted read-WRITE — the only mount of that path in the cluster — and the proxy's store mounted read-only for the hit-ratio count. |
+| `pypi-proxy/` | The PyPI FILES proxy every rebuild fetches through: one nginx `proxy_cache` in front of `files.pythonhosted.org` on the `ci-cache` tier, read only by the populator. "The PyPI files proxy" below and its own README. |
+| `converge-warm-cache.sh` | The idempotent converge of every cluster object here: the proxy (with a bounded rollout wait), the budget ConfigMap + CronJob, the `warm-cache-repos` ConfigMap derived from `../arc/values-*.yaml`, and the script ConfigMap from the populator AND the verifier. Run by the boot converge and by `install-warm-cache.sh`. |
+| `install-warm-cache.sh` | The attended superset: the converge, one populate Job run immediately and waited for, then `arc-hook-pod-template` converged via `../arc/converge-hook-pod-template.sh`. Idempotent; re-run after adding a routed repository. |
 | `../local-path-provisioner/local-path-provisioner.yaml` | The reader side, in the fleet-owned local-path provisioner's `local-path-config` ConfigMap: its `setup` script runs inside the provisioner's helper pod (`ubuntu:24.04` by digest, for GNU `cp`), as root, on the volume's parent mount, while a work volume is being provisioned; it resolves the `uv` link once, `cp -a --reflink=always`s that generation into `<volume>/_warm/uv` (new inodes sharing the generation's blocks copy-on-write; no data bytes), and opens the new directories to 0777. Its header records the helper-pod facts the script rests on, read from the provisioner's v0.0.36 source. |
 | `../arc/hook-pod-template.yaml` | Sets `UV_CACHE_DIR=/__w/_warm/uv` in the job container, pointing uv at that seed. `UV_LINK_MODE` is no longer set: every seeded inode is the job's own, so uv's default link mode into the `.venv` is private (see "The hazard, closed" below). Nothing else for this tier: no host mount and no copy; its `postStart` serves the cargo and compilation tiers, and under the fleet kill switch removes this volume's seed so uv runs cold. |
+| `../runner-pod-lifecycle/scan-runner-pod-lifecycle.sh` | The emitter of this tier's build metrics: reads `last-run.json` on its 5-minute sweep and posts `livespec.ci_warm.*` once per new run. "Metrics" below. |
 
 ## Where it lives, and why it moved
 
@@ -43,7 +51,251 @@ README's "Storage layout"); the boot-time storage sweep keeps it, since it
 removes only `pvc-*` entries (`../storage-sweep/`); and the CronJob's
 `DirectoryOrCreate` hostPath creates the subtree (0755 root) on its first
 run after a rebuild, so until the first populate publishes a generation
-every job runs cold, by design.
+every job runs cold, by design. The populator builds wherever the seed
+reads: `WARM_ROOT` is the one path both sides share.
+
+## Every generation is built from empty
+
+Until 2026-09-06 a new generation was hardlink-seeded from its predecessor
+(`cp -al`) and nothing pruned it, so the cache accumulated every version
+ever locked: 379 MB / 8,070 files on 2026-08-23, 1,388 MB / 159,409 files
+on 2026-09-04 (research/005 §5), and the per-start seed cost grew with the
+file count. The only remedy was a manual delete. The maintainer's
+2026-09-04 amendment to `livespec-ifwnqj` — "there should be metrics on the
+trimming and checks to ensure there's not useless stuff in it" — is what
+this section realizes, as four rules the populator enforces mechanically:
+
+1. **From empty.** A rebuild starts as an empty directory and holds only
+   what `uv sync --frozen` of the routed repositories' CURRENT lockfiles put
+   there. The published generation is the union of current locks BY
+   CONSTRUCTION — no trim step, no pruning heuristic, nothing to drift.
+2. **Verified before publish.** `verify-uv-cache.py` maps every entry back
+   to a `(name, version)` and fails the publish on any entry no routed lock
+   references (the entries are named in the Job log, the directory is kept
+   as `<stamp>.unverified` for one cycle, the symlink is untouched, exit 1).
+3. **Refused over budget.** Bytes and regular files are each checked
+   against a fixed budget; over either, the directory is renamed
+   `<stamp>.refused`, the previous generation stays live, exit 3.
+4. **Measured.** Every run writes `last-run.json` (rebuilt / refused /
+   verified, sizes, the trim against the previous generation, the proxy hit
+   ratio) and the host sweep emits it as `livespec.ci_warm.*`.
+
+A run that changes nothing builds nothing: every routed `uv.lock` is
+sha256-hashed against the published generation's manifest
+(`<generation>/.warm-manifest.json`, which names only the locks that
+synced successfully — a failed repository forces the next rebuild), and
+when every lock is unchanged AND the live generation still verifies AND it
+is younger than `WARM_FORCE_REBUILD_SECONDS` (86,400 s), the run records
+`rebuilt=0` and touches the generation directory's mtime, so
+`ci-cache-gauges.sh`'s `generation_age_s` reads "last published or
+verified current" — what the `CI warm cache stale` trigger asks. The
+forced rebuild past 24 h keeps the from-empty path exercised whether or
+not the fleet's locks move.
+
+Fail-soft per repository is kept, with one change of meaning: a repository
+whose sync fails is skipped and the generation still publishes (if it
+verifies and fits), but under from-empty its packages are simply ABSENT
+from the new generation — its jobs run cold for one tick, and the next
+tick rebuilds because its lock is missing from the manifest. When NOTHING
+synced and something failed (a forge or PyPI outage), the new generation
+is discarded and the published one stays; an empty generation must never
+replace a good one.
+
+## The PyPI files proxy
+
+**An index proxy caches nothing for `uv sync --frozen`.** uv downloads
+every locked distribution from the absolute `files.pythonhosted.org` URL in
+`uv.lock`; `UV_DEFAULT_INDEX` / `UV_INDEX_URL` serve only unlocked build
+dependencies. Measured 2026-09-04 (uv 0.9.26, the same uv the fabro sandbox
+image carries): a `--frozen` sync with
+`UV_DEFAULT_INDEX=http://127.0.0.1:9/bogus/` succeeded; pointed at a
+running proxpi it left the store unchanged (17 → 17 files).
+
+**What works: rewrite the file host in the populator's own clone of each
+`uv.lock`** (`https://files.pythonhosted.org/packages/` →
+`http://pypi-proxy.ci-warm-cache.svc.cluster.local:8081/packages/`),
+`source = { registry = … }` untouched. Tested: the wheels come through the
+proxy, the lock's hashes are still enforced (a tampered proxied wheel fails
+with `Failed to download idna==3.19`), the cache lands under
+`wheels-v5/pypi/…` exactly as a job's ORIGINAL lock expects, and that
+original lock syncs `--offline` from the generation. No `UV_DEFAULT_INDEX`
+is set, so build dependencies stay in the `pypi` bucket too. The clone is
+reset to the fetched tip on the next run, so the rewrite never leaks; the
+lock is hashed BEFORE the rewrite.
+
+The swap is a pure prefix, so the proxy needs only `location /packages/`
+on a caching reverse proxy — which decided the choice (measured
+2026-09-04; image digests pinned in the manifests):
+
+| | devpi-server 6.20.3 (PyPI 2026-06-30) | proxpi 1.3.0 (2026-05-12) | nginx 1.28.3 `proxy_cache` |
+|---|---|---|---|
+| PEP 691 JSON + PEP 503 HTML, keyless | yes (`root/pypi` mirror index) | yes — verified `Accept: application/vnd.pypi.simple.v1+json` → `api-version 1.0`; HTML too | not needed on the rewrite route (only `/packages/` is proxied) |
+| File-cache bound | **none** — `devpi-server --help` offers only `--mirror-cache-expiry SECS` (metadata TTL) | `PROXPI_CACHE_SIZE` bytes (default 5 GB), **LFU** eviction (`_cache.py` `_evict_lfu` by `n_hits`), store persists across restarts | `proxy_cache_path … max_size=8g min_free=1g inactive=30d`; the cache manager "removes the least recently used data" (nginx.org `ngx_http_proxy_module`) |
+| Container image | no official image; would need our own build | `docker.io/epicwink/proxpi:1.3.0@sha256:0748b92ddf75405d9d83fbd1705517f951e67e0540af86e0a9bf4de388ba86c0` (Python 3.14, gunicorn, root) | `docker.io/library/nginx:1.28.3-alpine@sha256:a8b39bd9cf0f83869a2162827a0caf6137ddf759d50a171451b335cecc87d236` |
+| Footprint | sqlite + pyramid + background threads (heaviest) | 60 MiB RSS idle, **230 MiB** after serving the union; CPU idle | **5 MiB** idle, 107 MiB after serving (64 MB keys zone + buffers) |
+| Hit/miss surface | HTTP API, no cache stats | counters exist (`_CacheStats`) but no route/log exposes them (`/health` only) | `cache=HIT|MISS` per request in the access log, `X-Cache-Status` header |
+| Pointing uv at it | index URL only — useless under `--frozen` | index URL (useless under `--frozen`) or lock rewrite to `/index/<pkg>/<file>` (per-package rewrite; cold run 18.4 s, each file GET first lists the package) | lock rewrite is a plain prefix swap; cold 14.8 s |
+
+**nginx**, then: one static `nginx.conf` in `pypi-proxy/pypi-proxy.yaml`,
+store on `ci-cache` at `/var/cache/ci-runner/pypi-proxy`, a `Deployment` +
+`ClusterIP Service` `pypi-proxy` in the `ci-warm-cache` namespace, applied
+by `converge-warm-cache.sh` so it survives the tmpfs-datastore reboot.
+Bound: 8 GB is ~75 rebuild-unions; `inactive=30d` ages out versions the
+fleet has moved past; `min_free=1g` protects the tier; wheel URLs are
+immutable, so 30-day validity is safe. Upstream TLS is verified and
+anything but `GET`/`HEAD` is refused, as on the crates proxy. Two things
+the manifest's header explains that the memo's tested config did not have:
+the store is FLAT (no `levels=`), because nginx's level subdirectories are
+0700 and the capability-less populator could not count them; and
+`readOnlyRootFilesystem` holds because nginx's pid and temp paths point at
+emptyDirs. Workflow pods never use the proxy (their locks are untouched),
+so there is no hostPort and no NetworkPolicy change. An unreachable proxy
+degrades a rebuild to a direct PyPI build and records
+`proxy_unavailable=1`; it never fails the run.
+
+## Verifier
+
+Cache layout observed (uv 0.9.26, from-empty builds), and how each entry
+maps back to a `(name, version)`:
+
+| bucket | entry shape | (name, version) from |
+|---|---|---|
+| `wheels-v5/pypi/<name>/<ver>-<tags>` (symlink), `…-<tags>.http`, `….msgpack` | pointer to `archive-v0/<id>`; a non-PyPI index is one level deeper: `wheels-v5/index/<urlhash>/<name>/…`; long tag sets are hashed (`3.5.1-16ed840a51de88b3`) | dir name + first `-` field of the stem |
+| `archive-v0/<id>/` | unpacked wheel; **the pointer symlink is ABSOLUTE** but uv re-roots by `<id>`: a copy moved elsewhere with all 85 links dangling synced `--offline` in 0.59 s | `<Name>-<Version>.dist-info` inside (normalize `_`→`-`, lowercase) |
+| `sdists-v9/pypi/<name>/<ver>/<id>/` (built wheel + `src/`), `revision.http` | | path |
+| `sdists-v9/git/<urlhash>/<sha16>/<wheelstem>{,.whl}`, `metadata.msgpack` | | wheel filename; `<sha16>` must prefix a lock `source.git` fragment SHA |
+| `git-v0/db/<urlhash>/.git`, `checkouts/<urlhash>/<sha7>`, `locks/` | | `git cat-file -e <lock sha>` in the db; `<sha7>` prefix of a lock SHA |
+| `simple-v18/pypi/<name>.rkyv` | index metadata, name only | name ∈ lock names or build-dep closure |
+| `interpreter-v4`, `builds-v0` (empty after builds), `.lock`, `.gitignore`, `CACHEDIR.TAG`, `.warm-manifest.json` | not packages | counted in totals only; anything else at top level is UNKNOWN and fails the publish |
+
+Build dependencies are the one legitimate class outside every lock
+(hatchling, setuptools, packaging 26.3 — not the locked 26.2 — tomlkit,
+trove-classifiers; 3–5 MB). The verifier derives them from
+`[build-system].requires` of every `src/` and git checkout in the cache
+(PEP 517 default `setuptools`+`wheel` when absent), closed over
+`Requires-Dist` of the unpacked wheels; no allowlist, reported as their own
+class. They are fetched DIRECT from PyPI (the index URL is not rewritten),
+which is why they do not count as proxied downloads.
+
+Results (`verify-uv-cache.py --cache DIR LOCK…`, exit 1 on any unreferenced
+or unknown entry, `--json` for the manifest): two locks (driver-claude +
+overseer): 77.9 MB, 3,196 files, 75 referenced entries → exit 0; after
+`uv sync` of a third project (requests, attrs) into the same cache → six
+`UNREFERENCED archive-v0/… -> (requests, 2.32.5)` … (attrs, urllib3,
+charset-normalizer, certifi, idna) → exit 1. Nine locks on the nginx-built
+generation: 101 (name, version) pairs, 309 referenced, 20 build-dep entries
+→ exit 0; against livespec's lock alone the same generation reports 51
+entries from the other repositories. The shipped script is the tested one
+restructured for this repo's lint rules; its output was diffed byte-for-byte
+against the original on the clean and the injected case (2026-09-06).
+
+**`uv cache prune` / `uv cache clean` MUST NOT be run against
+`uv-generations/`, from the host or anywhere else.** `prune` ("Prune all
+unreachable objects") removes `builds-v0` and archives no pointer references
+— a no-op on a from-empty generation; `clean <pkg>` removes that NAME at
+every version. Neither knows about lockfiles, so neither enforces "nothing
+unreferenced". Two hard gotchas, measured 2026-09-04: on a COPY at another
+path, `prune` deleted every archive (5,073 files, 329 MiB — the absolute
+links point elsewhere), and `clean ruff` followed the absolute link and
+deleted the ruff archive out of the ORIGINAL. Both are safe only at the
+exact build path; the populator calls neither (from-empty leaves no
+orphans). `prune --ci` removes pre-built wheels — the opposite of what the
+tier is for.
+
+The verifier's own totals count every path (a hardlinked inode twice, a
+pointer symlink once); the budget and the metrics use `du -sb` and
+`find -type f`, which count an inode once and no symlinks — the smaller
+numbers, and the ones `ci-cache-gauges.sh` reports.
+
+## From-empty build cost
+
+Measured on the VPS the design memo was written on (uv 0.9.26,
+2026-09-04); wall time is dominated by unpack + hardlink CPU on that uplink,
+and the CI host's gain depends on its own. The proxy buys ~105 MB of PyPI
+transfer per rebuild regardless (48 rebuilds a day at the CronJob cadence
+would be 5 GB/day direct — the no-rebuild rule makes most ticks free).
+
+| build | wall | cache | note |
+|---|---|---|---|
+| livespec lock alone, cold from PyPI | 7.16 s | 354 MB / 6,084 files | claude-agent-sdk unpack is 227 MB of it |
+| same cache, warm re-sync | 0.34 s | | job-side steady state |
+| relocated copy, dangling links, `--offline` | 0.59 s | | proves relocation |
+| nine locks, from empty, direct PyPI | 18.62 s | 379 MB / 8,070 files | matches the 2026-08-23 union |
+| nine locks, from empty, nginx cold | 14.82 s | 379 MB / 8,070 | 94 MISS, 2 HIT; store 105 MB / 94 objects |
+| nine locks, from empty, nginx warm | 13.52 s | 379 MB / 8,070 | 94 HIT / 0 new MISS |
+| nine locks, proxpi cold / warm (lock rewrite) | 18.37 s / 12.78 s | | per-file index listing on the cold path |
+
+## Budget
+
+`generation_bytes` (`du -sb`) and `generation_files` (regular files) must
+each be at or under the budget, else the generation is renamed
+`<stamp>.refused`, the symlink stays, `last-run.json` records `refused=1`
+with both numbers, and the job exits 3. Fixed numbers, not a multiple of
+the last build: a ratchet is self-referential, and the point is an alarm
+when the union drifts; re-deriving it is a reviewed commit against the
+cost table above. Values: **1,000,000,000 bytes and 20,000 files** (union
+379 MB / 8,070 files; the runaway generation was 1,388 MB / 159,409 files,
+so both axes trip well before that shape recurs). Home: the
+`warm-cache-budget` ConfigMap (`bytes`, `files`) in
+`warm-cache-cronjob.yaml`, injected as `WARM_BUDGET_BYTES` /
+`WARM_BUDGET_FILES` via `configMapKeyRef`; the populator refuses to start
+without them, records the values in effect in every generation's manifest
+and in `last-run.json`, and the sweep emits them as
+`livespec.ci_warm.budget_*` so a chart can draw the line.
+
+## Metrics
+
+The CronJob has no `hostNetwork` and the host collector's OTLP receiver
+listens on `127.0.0.1:4319` only (`otel-collector`
+`config.ci-runner-host.yaml`, the loopback `otlp` receiver). Do not add
+`hostNetwork` — the pod runs PyPI build backends. So the populator writes
+and the host sweep emits:
+
+- The populator writes `<generation>/.warm-manifest.json` (the generation's
+  own record: lock hashes, sizes, budget in effect, the verifier's summary,
+  proxy counts) and `$WARM_ROOT/last-run.json` (one document per run:
+  `run_id` = the run's stamp, `rebuilt` / `refused` / `verified` 0|1,
+  `published_generation`, `generation_bytes` / `_files`, the previous
+  generation's, `trimmed_bytes` / `_files` = previous minus new,
+  `populate_seconds` for the uv phase, `repos_synced` / `repos_failed`,
+  the budget, `proxy_unavailable`, `proxied_downloads`, `proxy_hit_ratio`,
+  `unreferenced_entries`, `uv_exit`, `rebuild_reason`). Refused and
+  rejected runs are written too (before the non-zero exit).
+- `../runner-pod-lifecycle/scan-runner-pod-lifecycle.sh` (5-minute timer,
+  already the `livespec.ci_lifecycle.*` emitter) reads `last-run.json`;
+  when `run_id` differs from the one in its state file
+  (`/var/lib/ci-runner-k3s/warm-cache-last-emitted-run`) it adds the
+  `livespec.ci_warm.*` gauges to its POST and records the id after the POST
+  succeeds. Absent or unparseable input omits the family, never a false
+  zero. The gauges: `generation_bytes`, `generation_files`, `trimmed_bytes`,
+  `trimmed_files`, `populate_seconds`, `repos_synced`, `repos_failed`,
+  `rebuilt`, `refused`, `verified`, `unreferenced_entries`,
+  `budget_bytes`, `budget_files`, `proxied_downloads`, `proxy_hit_ratio`
+  (only when derivable), `run_epoch` (the join key to the Job log). Same
+  resource attributes as the lifecycle gauges (`service.name =
+  ci-runner-lifecycle`, `host.name`), `metrics` dataset of the `livespec`
+  environment. The phase2 README's "What every sweep emits to Honeycomb"
+  carries the rows and the saved-query recipe.
+- `proxy_hit_ratio` is derived without log parsing: the populator mounts the
+  proxy store read-only, counts its objects (one regular file each — the
+  store is flat) before and after the build, and divides by the number of
+  uv `.http` pointer files in the new generation that name the proxy URL
+  (exactly the distributions fetched through it; build dependencies fetched
+  direct are excluded): `hit_ratio = 1 − new_objects / proxied_downloads`.
+  Verified 2026-09-06 in the populator image: 23 proxied downloads, 5 new
+  objects, `0.7826`; a second build of the same locks `1.0`; a one-package
+  lock bump `0.9583` (23/24).
+
+**The saved query** (`metrics` dataset, `host.name = poweredge-xubuntu`,
+granularity 1800 s — the CronJob's cadence — over the trailing week; one
+row per emitted run): `MAX(livespec.ci_warm.generation_bytes)`,
+`MAX(livespec.ci_warm.trimmed_bytes)`, `MAX(livespec.ci_warm.generation_files)`,
+`MAX(livespec.ci_warm.populate_seconds)`, `MAX(livespec.ci_warm.proxy_hit_ratio)`,
+`MAX(livespec.ci_warm.refused)`, `MAX(livespec.ci_warm.rebuilt)`,
+`MAX(livespec.ci_warm.repos_failed)`, `MAX(livespec.ci_warm.budget_bytes)`,
+filtered to rows where `livespec.ci_warm.run_epoch` exists. The first
+rebuild after this ships reads `trimmed_bytes` ≈ 1,388 MB − the new size.
+The `run_query` spec is in the phase2 README beside the lifecycle recipe.
 
 ## Why this shape, and not the podman lane's
 
@@ -157,9 +409,9 @@ hardlink seed's ~3 s and 135–282 MB, paid during PVC provisioning before
 the runner pod starts (never on the workflow container). Splitting the
 copy across top-level entries in parallel gained only ~25% because 83% of
 the files sit in `archive-v0`, so the copy is kept serial; the lever is
-the file count, which the from-empty generation build (`livespec-41w4`)
-bounds. On a tier without reflink the copy fails and the volume gets no
-seed — cold, never a byte copy.
+the file count, which the from-empty generation build ("Every generation
+is built from empty" above) bounds. On a tier without reflink the copy
+fails and the volume gets no seed — cold, never a byte copy.
 
 It is fail-soft in every direction, by absence: no warm root or no
 published generation (a node before its first populate), or a seed that
@@ -180,8 +432,9 @@ The 2026-09-04 columns are research/005's measurement of `cp -rp` against
 `cp -al` on the live generation, on one filesystem, on the same array; the
 2026-09-06 column is `cp -a --reflink=always` on the reformatted XFS tier
 ("The hazard, closed"). A seed's cost scales with the file count, not the
-bytes, and the separate generation-trim item under `livespec-ifwnqj`
-(`livespec-41w4`) is what brings it down.
+bytes — which is what the from-empty rebuild bounds: the union is ~8k
+files, not 191k, so the per-file `FICLONE` cost of the reflink seed falls
+by the same factor.
 
 About 6.5 s per job on the sync alone, and — the part the wall-clock
 number undersells — no PyPI round trip per job, which is the largest
@@ -213,6 +466,8 @@ branch at the job's own checkout path with sccache as the writer, gated by a
 marker key in redis so an unchanged branch costs nothing (the populator's
 header has the details). Design and the live verification:
 `plan/ci-runner-cache-tiers/research/005-a1-crates-proxy-verification.md`.
+The cargo and sccache steps run after the uv phase on every tick, whether
+or not the uv generation was rebuilt.
 
 ## Guardrails on the writer build
 
@@ -236,44 +491,120 @@ populate-failing trigger instead of silently starving the cache.
 
 - **Install / re-converge**: `KUBECONFIG=/etc/rancher/k3s/k3s.yaml
   ./install-warm-cache.sh` on the host. Re-run after adding a routed
-  repository (it re-derives the list) or changing the populator or the
-  hook template. Then `../arc/recycle-scale-set-runners.sh <scale-set>` for
-  any scale set with idle runners, as after any values change. The seed
-  itself is part of the provisioner manifest and is applied by the boot
-  converge (`../reconstruct/converge-ci-stack.sh`, step 3); after editing
-  the setup script, run the converge or `kubectl apply -f
-  ../local-path-provisioner/local-path-provisioner.yaml`. The helper pod
-  reads the ConfigMap's `setup` key when it is created, so the next volume
-  uses the new script with no provisioner restart.
-- **Host gauges**: every run writes `populate-manifest.json` beside the
-  generations; `ci-runner/observability/ci-cache-gauges.sh` turns it and the
-  current generation's age and size into `livespec.ci_cache.{generation_*,populate.*}`
-  every 5 min (as capability-less root, since the warm root sits under the
-  provisioner's 0700 storage directory; its unit's header), and the
-  `CI warm cache stale` / `CI cache populate failing` triggers in
-  `ci-runner/observability/triggers/` read those.
-- **Is it live?** `kubectl -n ci-warm-cache get cronjob,jobs` shows the
-  schedule and the last runs; `sudo ls -la /var/lib/rancher/k3s/storage/.warm`
-  on the host shows the `uv -> uv-generations/<stamp>` link and the
-  retained generations. A new work volume shows the seed: `sudo ls -la
+  repository (it re-derives the list) or changing the populator, the
+  verifier, the proxy manifest or the hook template; also re-run
+  `../reconstruct/install-converge-unit.sh` so the boot copy under
+  `/usr/local/lib/ci-runner-k3s/warm-cache/` matches. Then
+  `../arc/recycle-scale-set-runners.sh <scale-set>` for any scale set with
+  idle runners, as after any values change. The seed itself is part of the
+  provisioner manifest and is applied by the boot converge
+  (`../reconstruct/converge-ci-stack.sh`, step 3).
+- **Exit codes** of a populate Job: 0 every step ok (rebuilt, or verified
+  unchanged); 1 a repository step failed or the verifier rejected the new
+  generation; 2 a preflight failed (nothing built — the log's first lines
+  say which: uv, git, python3 ≥ 3.11, the verifier, the repos file, the
+  budget env, or a `WARM_INJECT_TEST` path with no project in it); 3 the
+  new generation was over budget and refused.
+- **Is it live?** `kubectl -n ci-warm-cache get cronjob,jobs,deploy,svc`
+  shows the schedule, the last runs and the proxy; `sudo ls -la
+  /var/lib/rancher/k3s/storage/.warm` on the host shows the `uv ->
+  uv-generations/<stamp>` link, the retained generations (plus any
+  `<stamp>.refused` / `<stamp>.unverified` kept for one cycle), and
+  `last-run.json`; `sudo cat …/.warm/last-run.json` is the run's verdict
+  in one document; `sudo cat …/.warm/uv-generations/<stamp>/.warm-manifest.json`
+  the generation's. A new work volume shows the seed: `sudo ls -la
   /var/lib/rancher/k3s/storage/pvc-*/_warm/uv`; `stat -c %h` of a file
   there is 1 (its inode is the volume's own) and `filefrag -v` on it shows
   `shared` extents (a reflink of the generation). A workflow pod's
   `kubectl describe pod <runner>-workflow` shows `UV_CACHE_DIR`, no
   `UV_LINK_MODE`, and no warm-cache mount.
-- **A repository failed to sync**: the CronJob's last Job is red and its
-  log names the repository. The generation still published (fail-soft per
-  repository), so the other repositories are still warm.
-- **Growth**: a generation is hardlink-seeded from its predecessor, so the
-  cache accumulates every locked version ever synced, and the seed's
-  per-start cost grows with its file count; when that matters, delete the
-  `uv-generations/` directory and the `uv` link on the host and run one
-  populate — the next generation starts empty and re-fetches the current
-  locks only. Bounding this mechanically is the separate generation-trim
-  item under `livespec-ifwnqj`.
+- **Host gauges**: `ci-runner/observability/ci-cache-gauges.sh` still turns
+  `populate-manifest.json` and the live generation's age and size into
+  `livespec.ci_cache.{generation_*,populate.*}` every 5 min (the
+  `CI warm cache stale` / `CI cache populate failing` triggers read
+  those); the build metrics are the sweep's `livespec.ci_warm.*`
+  ("Metrics" above).
+- **A repository failed to sync**: the Job is red (exit 1) and its log
+  names the repository. The generation still published (fail-soft per
+  repository) WITHOUT that repository's packages; the next tick rebuilds.
+- **The verifier rejected a generation**: exit 1, `REJECTED: …` in the log
+  with every `UNREFERENCED` / `UNKNOWN` entry named; the previous
+  generation is still live; the rejected directory is
+  `uv-generations/<stamp>.unverified` until the next run prunes it.
+  Unreferenced entries mean something synced into the generation that no
+  routed lock names (a `WARM_INJECT_TEST` left set on the CronJob?);
+  UNKNOWN entries mean a uv bump changed the cache layout — update the
+  verifier's table.
+- **A generation was refused**: exit 3, `REFUSED: … OVER BUDGET` in the
+  log with both numbers; previous generation live; the directory is
+  `<stamp>.refused` for one cycle. Either the union really grew (a new
+  routed repository, a heavy new dependency) and the budget is re-derived
+  in a reviewed commit to `warm-cache-cronjob.yaml`, or something is wrong
+  with a lock.
+- **Growth** is no longer a manual chore: a generation cannot exceed the
+  budget, and it never holds a version the current locks do not name.
 - **Bump the image** in lockstep with the fleet's fabro sandbox pin:
   `WARM_CACHE_IMAGE=... ./install-warm-cache.sh`, or edit the CronJob
-  manifest.
+  manifest. Bump the proxy's nginx digest in `pypi-proxy/pypi-proxy.yaml`.
+- **Flush the proxy**: `pypi-proxy/README.md`.
+
+### Acceptance recipe (the attended, host-side leg)
+
+The evidence `livespec-41w4` journals, in the order it is cheapest to
+produce; every step reads the live host, nothing is assumed from this
+README.
+
+- (a) **Three consecutive Job logs.** After `install-warm-cache.sh`, the
+  first populate's log shows `REBUILD: published generation … has no
+  manifest` (or `no published generation`), `starting generation … EMPTY`,
+  `proxy: N distributions fetched through it, store 0 -> N objects,
+  hit_ratio=0.0`, `published generation …`, and
+  `kubectl -n ci-warm-cache logs deploy/pypi-proxy` is all `cache=MISS`.
+  Bump one routed lock (any merge that changes a `uv.lock`) and create a
+  Job: `REBUILD: lock changed: <repo>` and `hit_ratio` ≥ 0.9. Create a
+  Job with nothing changed: `every routed uv.lock unchanged and generation
+  … verifies; no rebuild (rebuilt=0)`, exit 0.
+  `kubectl -n ci-warm-cache create job populate-now --from=cronjob/warm-cache-populate`
+  is the manual Job; `kubectl -n ci-warm-cache logs job/populate-now` the log.
+- (b) **The live generation's size**: `last-run.json`'s
+  `generation_bytes` within ~10 % of 379,000,000 (hundreds of MB, not
+  1.4 GB) and `generation_files` near 8,070; `sudo du -sb` of the symlink
+  target agrees.
+- (c) **The verifier refuses an injected entry.** On the host, make an
+  UNROUTED uv project under the warm root:
+  `sudo mkdir -p /var/lib/rancher/k3s/storage/.warm/inject-test && cd $_ &&
+  sudo uv init --name injected --no-workspace && sudo uv add attrs cattrs --no-sync`
+  (any packages no routed lock names; the directory needs only
+  `pyproject.toml` + `uv.lock`). Create a Job from the CronJob with
+  `WARM_INJECT_TEST=/warm/inject-test` added to the container env
+  (`kubectl create job … --from=cronjob/… --dry-run=client -o yaml`, add
+  the env, apply). Expect `NEGATIVE TEST: …`, `UNREFERENCED archive-v0/… ->
+  (attrs, …)` lines, `REJECTED: …`, exit 1, `readlink …/.warm/uv`
+  unchanged, a `<stamp>.unverified` directory. Remove `inject-test`
+  afterwards.
+- (d) **The budget refuses.** `kubectl -n ci-warm-cache patch configmap
+  warm-cache-budget -p '{"data":{"bytes":"100000000"}}'`, create a Job
+  with `WARM_FORCE_REBUILD_SECONDS=0` in its env (so it rebuilds without
+  a lock change): `REFUSED: … OVER BUDGET`, exit 3, symlink unchanged,
+  `<stamp>.refused` present, `last-run.json` `refused: 1`. Restore the
+  ConfigMap (`converge-warm-cache.sh` re-applies the committed values).
+- (e) **Honeycomb rows** for every `livespec.ci_warm.*` gauge with
+  `host.name=poweredge-xubuntu` after the sweep's next tick (the sweep's
+  journal says `emit: … livespec.ci_warm.*(run <stamp>)`); on the first
+  rebuild `trimmed_bytes` ≈ 1,388 MB − the new size. The saved query is
+  under "Metrics".
+- (f) **A real job hits the seed**: a routed job's `uv sync` step shows no
+  `Downloading` lines and completes in under a second; the pod's
+  `_warm/.uv-generation` names the generation `readlink` shows on the host.
+
+All of (a)–(d) were exercised on 2026-09-06 in the populator's own image
+(`livespec-fabro-sandbox:python-rust-v1.40.1`, root with every capability
+dropped) against two file-routed repositories and a local instance of the
+proxy manifest's nginx config, with the store bind-mounted read-only:
+rebuilt=1 then rebuilt=0, `REJECTED` naming six `attrs`/`cattrs` entries
+with the symlink unchanged, `REFUSED` at a 10 MB budget with exit 3, a
+lock bump rebuilding at `hit_ratio=0.9583`, and the rejected directories
+pruned on the following run. What only the host can show is (e) and (f).
 
 ## Lesson: a per-start byte copy grows silently with the cache
 
@@ -290,10 +621,10 @@ failure mode is that nothing FAILS: the copy always exits 0, the cache
 with the fleet's release cadence. The rule this leaves behind: a per-start
 cost must be metadata-only — links, not bytes — and bounded by something
 that is checked and alarmed; a byte copy whose size is a free variable of
-another process's growth must never ship on the start path again. The
-sibling items under `livespec-ifwnqj` bound the generation (every build
-from empty), emit its size and the seed cost on every build, and fail on
-unreferenced entries.
+another process's growth must never ship on the start path again. "Every
+generation is built from empty" above is that bound: the generation is
+the union of current locks by construction, refused over a fixed budget,
+and its size and trim are emitted on every build.
 
 A second lesson from the switchover (2026-09-04): **a `postStart` whose
 failure path can print without bound kills the pod.** For about a minute

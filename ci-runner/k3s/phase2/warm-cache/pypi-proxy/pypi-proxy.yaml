@@ -1,0 +1,248 @@
+# pypi-proxy.yaml — the host-served PyPI FILES cache the warm-cache populator
+# builds every generation through (livespec-41w4, Carrier F2 of the livespec
+# plan ci-runner-pod-lifecycle-reliability): one nginx `proxy_cache` in front
+# of files.pythonhosted.org, on the `ci-cache` storage tier, read ONLY by the
+# `warm-cache-populate` CronJob over cluster DNS. Workflow pods never use it
+# (their locks are untouched; they read the seeded generation), so there is no
+# hostPort and no NetworkPolicy change. Same shape as ../../crates-proxy/
+# (one nginx, one hostPath store, verified upstream TLS, no write surface).
+#
+# WHY A FILES PROXY AND NOT AN INDEX PROXY. `uv sync --frozen` downloads every
+# locked distribution from the ABSOLUTE files.pythonhosted.org URL recorded in
+# uv.lock; UV_DEFAULT_INDEX / UV_INDEX_URL serve only unlocked build
+# dependencies. An index proxy (devpi, proxpi) therefore caches NOTHING for a
+# frozen sync — measured 2026-09-04: a frozen sync with UV_DEFAULT_INDEX at a
+# bogus port succeeded, and one pointed at a running proxpi left its store
+# unchanged. The populator instead rewrites the file-host PREFIX in its own
+# clone of each lock (`https://files.pythonhosted.org/packages/` ->
+# `http://pypi-proxy.ci-warm-cache.svc.cluster.local:8081/packages/`), and a
+# pure prefix swap needs nothing but `location /packages/` on a caching
+# reverse proxy — which is why nginx and not devpi (no file-cache bound at
+# all) or proxpi (LFU, 230 MiB RSS after one union, no hit/miss surface). The
+# comparison table is in ../README.md "Proxy choice".
+#
+# THE STORE IS FLAT, ON PURPOSE. `proxy_cache_path` carries no `levels=`:
+# nginx creates level subdirectories 0700 owned by its worker user, and the
+# populator — root with EVERY capability dropped, so no CAP_DAC_OVERRIDE —
+# could not list them; a pre-existing store root (the kubelet's
+# DirectoryOrCreate, 0755) is chowned by the nginx master but keeps its mode,
+# so a flat store is listable by anyone. That listing is the hit-ratio
+# instrument: one regular file per cached object, counted by the populator
+# before and after each build (read-only mount at /proxy-store), no log
+# parsing. Verified 2026-09-06 on this image: the object file is 0600
+# nginx:nginx, the store root 0755, `find -maxdepth 1 -type f | wc -l` works
+# as a non-owner. ~8 GB of wheels at ~1 MB each is ~8,000 entries in one
+# directory, trivial for ext4.
+#
+# BOUND: max_size=8g (~75 rebuild-unions of 105 MB), min_free=1g protects the
+# tier, inactive=30d ages out versions the fleet has moved past; the cache
+# manager evicts least-recently-used entries past max_size. A wheel URL is
+# immutable content, so `proxy_cache_valid 200 30d` and ignoring upstream
+# Cache-Control are safe. Concurrent misses for one object are serialized
+# (proxy_cache_lock) and a PyPI/Fastly incident is served stale.
+#
+# TRUST: no write surface (limit_except GET HEAD; anything else refused
+# locally), upstream TLS VERIFIED against the image's CA bundle, so nothing on
+# the path to PyPI can poison an entry — and uv still enforces every lock
+# hash on what it receives (a tampered proxied wheel fails the sync with
+# `Failed to download <pkg>`, measured 2026-09-04). readOnlyRootFilesystem:
+# nginx's pid and temp paths point at emptyDirs, the store is the one
+# hostPath.
+#
+# STORAGE: /var/cache/ci-runner/pypi-proxy on the LABEL-addressed `ci-cache`
+# tier (../../storage-layout/), regenerable; delete the directory and the next
+# build re-fetches through it.
+#
+# APPLIED by ../converge-warm-cache.sh (before the CronJob's objects, on every
+# boot via ../../reconstruct/converge-ci-stack.sh — the datastore is tmpfs) and
+# by hand after editing this file; the converge stamps this file's hash on the
+# pod template so a config edit rolls the pod. The Namespace is declared here
+# too so this file applies standalone (kubectl apply merges the duplicate).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ci-warm-cache
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pypi-proxy-nginx
+  namespace: ci-warm-cache
+data:
+  nginx.conf: |
+    worker_processes 2;
+    pid /tmp/nginx.pid;
+    events { worker_connections 1024; }
+    http {
+      # readOnlyRootFilesystem: every path nginx writes besides the store is
+      # under /tmp (an emptyDir).
+      client_body_temp_path /tmp/client_temp;
+      proxy_temp_path /tmp/proxy_temp;
+      fastcgi_temp_path /tmp/fastcgi_temp;
+      uwsgi_temp_path /tmp/uwsgi_temp;
+      scgi_temp_path /tmp/scgi_temp;
+
+      # FLAT store (no levels=): see the file header. LRU by the cache
+      # manager past max_size; untouched entries age out after 30 days.
+      proxy_cache_path /cache keys_zone=pypi:64m max_size=8g min_free=1g inactive=30d use_temp_path=off;
+
+      log_format cache '$remote_addr [$time_iso8601] "$request" $status $body_bytes_sent cache=$upstream_cache_status rt=$request_time urt=$upstream_response_time';
+      access_log /dev/stdout cache;
+      error_log  /dev/stderr warn;
+      server_tokens off;
+
+      # Upstream TLS is VERIFIED (the crates proxy's posture): an unverified
+      # proxy would let anything on the path to PyPI poison the store.
+      proxy_ssl_verify on;
+      proxy_ssl_verify_depth 3;
+      proxy_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
+      proxy_ssl_server_name on;
+      proxy_ssl_protocols TLSv1.2 TLSv1.3;
+      proxy_http_version 1.1;
+      proxy_set_header Connection "";
+      proxy_cache_lock on;
+      proxy_cache_lock_timeout 60s;
+      proxy_cache_use_stale error timeout updating http_500 http_502 http_503 http_504;
+
+      # Resolve Fastly at RUNTIME through cluster DNS (k3s's kube-dns
+      # ClusterIP), IPv4 only, re-resolved on TTL — the same reasons as
+      # ../../crates-proxy/crates-proxy.yaml (the pod network has no IPv6
+      # route; a config-time resolution pins the CDN addresses).
+      resolver 10.43.0.10 valid=300s ipv6=off;
+      upstream pypi_files { zone pypi_files 64k; server files.pythonhosted.org:443 resolve; keepalive 32; }
+
+      server {
+        listen 8081 default_server;
+
+        # The populator's preflight probe.
+        location = /health { return 200 'ok\n'; }
+
+        # The one proxied path: the prefix the populator swaps into its
+        # clone's uv.lock. Immutable, content-addressed wheel and sdist URLs.
+        location /packages/ {
+          limit_except GET HEAD { deny all; }
+          proxy_pass https://pypi_files;
+          proxy_ssl_name files.pythonhosted.org;
+          proxy_set_header Host files.pythonhosted.org;
+          proxy_cache pypi;
+          proxy_cache_key $uri;
+          proxy_cache_valid 200 30d;
+          proxy_cache_valid 404 1m;
+          proxy_ignore_headers Cache-Control Expires Set-Cookie;
+          add_header X-Cache-Status $upstream_cache_status always;
+        }
+        location / { return 404; }
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pypi-proxy
+  namespace: ci-warm-cache
+  labels:
+    app.kubernetes.io/name: pypi-proxy
+spec:
+  replicas: 1
+  # Recreate, not RollingUpdate: one cache directory on one node; two pods
+  # cannot share it.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: pypi-proxy
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: pypi-proxy
+    spec:
+      # No Kueue queue-name label and no ci-runner.io/churn-slot request:
+      # not a CI job, must never occupy a runner slot.
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: nginx
+          # Pinned by tag AND digest (k3s README "Pinned versions — nothing
+          # floats `latest`"): the build the F2 design memo measured against
+          # (nginx 1.28.3, 2026-09-04) and this manifest was verified with
+          # (2026-09-06). `1.28.3-alpine` and `1.28-alpine` resolve to this
+          # same index digest. Bump both together.
+          image: docker.io/library/nginx:1.28.3-alpine@sha256:a8b39bd9cf0f83869a2162827a0caf6137ddf759d50a171451b335cecc87d236
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8081
+              protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+              # The image's master runs as root and drops its workers to the
+              # `nginx` user (SETUID/SETGID) after taking ownership of the
+              # store for them (CHOWN). Nothing else.
+              add: ["CHOWN", "SETGID", "SETUID"]
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              # 5 MiB idle, ~107 MiB after serving a union (the 64 MB keys
+              # zone plus buffers), measured 2026-09-04.
+              memory: "512Mi"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 30
+          volumeMounts:
+            - name: conf
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+              readOnly: true
+            - name: cache
+              mountPath: /cache
+            - name: tmp
+              mountPath: /tmp
+            - name: nginx-cache
+              mountPath: /var/cache/nginx
+            - name: run
+              mountPath: /var/run
+      volumes:
+        - name: conf
+          configMap:
+            name: pypi-proxy-nginx
+        - name: cache
+          hostPath:
+            path: /var/cache/ci-runner/pypi-proxy
+            # DirectoryOrCreate on the ci-cache tier mounted by fstab at
+            # /var/cache/ci-runner (../../storage-layout/); created 0755 root
+            # on first run — the mode the flat-store listing relies on.
+            type: DirectoryOrCreate
+        # The three paths the official image writes outside the store; each
+        # is scratch that a restart may lose.
+        - name: tmp
+          emptyDir: {}
+        - name: nginx-cache
+          emptyDir: {}
+        - name: run
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pypi-proxy
+  namespace: ci-warm-cache
+spec:
+  selector:
+    app.kubernetes.io/name: pypi-proxy
+  ports:
+    - name: http
+      port: 8081
+      targetPort: http
