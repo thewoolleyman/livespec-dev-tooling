@@ -126,6 +126,7 @@
       "SPECIFICATION/constraints.md §\"Vendored-library discipline\"",
       "SPECIFICATION/contracts.md §\"`primary-checkout-commit-refuse-hook-installed`\"",
       "SPECIFICATION/non-functional-requirements.md §\"CI as a merge gate (branch protection)\"",
+      "SPECIFICATION/non-functional-requirements.md §\"Self-hosted CI runner host requirements\"",
       "SPECIFICATION/non-functional-requirements.md §\"Commit-refuse hook bootstrap procedure\"",
       "SPECIFICATION/non-functional-requirements.md §\"Conformance Pattern\"",
       "SPECIFICATION/non-functional-requirements.md §\"Fleet membership contract\"",
