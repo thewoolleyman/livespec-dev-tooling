@@ -246,7 +246,13 @@
       },
       "auto_approve_ready": true,
       "acceptance_mode": "ai-only",
-      "wip_cap": 10,
+      // wip_cap is a LEDGER-CLAIMS cap, not a CPU-derived one, and every
+      // dispatcher engine on this repo shares it. Lowered 10 -> 4 on
+      // 2026-09-06 (maintainer-directed): with the drain filling the cap,
+      // 7 concurrent dev-tooling runs, each a docker sandbox executing the
+      // full `just check` aggregate, saturated the hp factory's CPU. Raise it
+      // only from a measured capacity verdict on the factory host.
+      "wip_cap": 4,
       "default_factory": "hp",
       "factories": {
         "hp": {
