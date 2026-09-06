@@ -3,15 +3,30 @@
 Per `SPECIFICATION/contracts.md` section "`no_stale_revise_branches` check"
 (a revise-workflow check, per section "Shared check inventory"), the check
 enumerates local `refs/heads/spec/*` branches and fails when any such
-branch is ahead of the canonical branch. It is invoked by the
-`/livespec:revise` pre-step and always fails hard (exit 4) on any stale
-branch — there is no downgrade flag.
+branch carries commits that have NOT landed on the canonical branch. It is
+invoked by the `/livespec:revise` pre-step and always fails hard (exit 4) on
+any stale branch — there is no downgrade flag.
+
+The two load-bearing scenarios are the LANDED and UNLANDED legs, which
+together are the whole of livespec-dev-tooling-jtrt.2. The check used to
+judge landed-ness by ANCESTRY (`git rev-list --left-right --count`); on a
+rebase-merge-only fleet a landed branch's tip is never an ancestor of the
+canonical branch, so every landed-but-undeleted branch was reported and the
+precondition could only ever be skipped. `test_landed_branch_after_rebase_
+merge_is_not_reported` builds a REBASED land (never a fast-forward, which
+would leave ancestry intact and pass against the unfixed code, and which the
+test guards against explicitly) and
+`test_unlanded_branch_is_still_reported` is the negative control that keeps
+the fix from being the same defect inverted.
 
 Test scenarios:
 
 - No `spec/*` branches in the repo → exit 0.
-- One `spec/*` branch even with origin/master (ahead=0) → exit 0.
-- One `spec/*` branch ahead of origin/master by 1 → exit 4 with finding.
+- One `spec/*` branch even with origin/master (nothing unlanded) → exit 0.
+- One `spec/*` branch with one unlanded commit → exit 4 with finding.
+- A `spec/*` branch landed by REBASE-merge → exit 0 (the defect leg).
+- A landed branch and an unlanded branch together → exit 4 naming only the
+  unlanded one (the discrimination, asserted in one repository).
 - Multiple stale branches → exit 4 with one finding per stale branch.
 - `refs/heads/abandoned/spec/*` does NOT match the canonical pattern → exit 0.
 - `--help` / `-h` exits 0 with usage on stdout.
@@ -89,6 +104,34 @@ def _git(*, cwd: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _git_succeeds(*, cwd: Path, args: list[str]) -> bool:
+    """Run git for its EXIT STATUS only, under the same hermetic env as `_git`.
+
+    Used by the fixture guards that assert a land really did rewrite
+    history, where a non-zero exit is the expected answer and `_git`'s
+    `check=True` would raise instead of reporting it.
+    """
+    # S603/S607: same fixed-argv, repo-controlled invocation as `_git`.
+    completed = subprocess.run(
+        ["git", *args],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=False,
+        env={
+            "HOME": str(cwd),
+            "GIT_CONFIG_GLOBAL": "/dev/null",
+            "GIT_CONFIG_SYSTEM": "/dev/null",
+            "PATH": "/usr/bin:/bin",
+            "GIT_AUTHOR_NAME": "Test",
+            "GIT_AUTHOR_EMAIL": "test@example.com",
+            "GIT_COMMITTER_NAME": "Test",
+            "GIT_COMMITTER_EMAIL": "test@example.com",
+        },
+    )
+    return completed.returncode == 0
+
+
 def _run_check(
     *,
     cwd: Path,
@@ -118,15 +161,18 @@ def _install_fake_git(
     symbolic_ref_returncode: int = 0,
     for_each_ref_stdout: str = "",
     for_each_ref_returncode: int = 0,
-    rev_list_stdout: str = "",
-    rev_list_returncode: int = 0,
+    cherry_stdout: str = "",
+    cherry_returncode: int = 0,
 ) -> str:
     """Install a fake `git` shell stub at tmp_path/bin/git; return PATH including it.
 
-    Dispatches on argv[1] (`symbolic-ref`, `for-each-ref`, `rev-list`)
+    Dispatches on argv[1] (`symbolic-ref`, `for-each-ref`, `cherry`)
     and emits the configured stdout/returncode. Falls through to a
     real `/usr/bin/git` for everything else (`rev-parse`, `log`, etc.)
     so subordinate helpers still produce sensible output.
+
+    `cherry` is the landed-ness discriminator's plumbing — the stub
+    arm was `rev-list` while the check judged by ancestry.
     """
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
@@ -142,9 +188,9 @@ def _install_fake_git(
         f"    cat <<'STUB_EOF'\n{for_each_ref_stdout}\nSTUB_EOF\n"
         f"    exit {for_each_ref_returncode}\n"
         "    ;;\n"
-        "  rev-list)\n"
-        f"    cat <<'STUB_EOF'\n{rev_list_stdout}\nSTUB_EOF\n"
-        f"    exit {rev_list_returncode}\n"
+        "  cherry)\n"
+        f"    cat <<'STUB_EOF'\n{cherry_stdout}\nSTUB_EOF\n"
+        f"    exit {cherry_returncode}\n"
         "    ;;\n"
         "  *)\n"
         '    exec /usr/bin/git "$@"\n'
@@ -193,6 +239,56 @@ def _make_branch_ahead(*, repo: Path, branch: str, commits: int) -> None:
     _ = _git(cwd=repo, args=["checkout", "-q", "master"])
 
 
+def _advance_canonical(*, repo: Path, canonical: str, marker: str) -> None:
+    """Put one unrelated commit on `canonical` and push it, so a land must REBASE.
+
+    Without a divergent commit here a land is a fast-forward, which leaves
+    the branch tip an ancestor of the canonical branch — the one shape that
+    passes against the ancestry-based code and would therefore make the
+    landed-branch test prove nothing (acceptance criterion 3).
+    """
+    _ = _git(cwd=repo, args=["checkout", "-q", canonical])
+    (repo / marker).write_text("unrelated\n", encoding="utf-8")
+    _ = _git(cwd=repo, args=["add", marker])
+    _ = _git(cwd=repo, args=["commit", "-m", f"unrelated {marker}"])
+    _ = _git(cwd=repo, args=["push", "-q", "origin", canonical])
+
+
+def _land_by_rebase(*, repo: Path, branch: str, canonical: str) -> None:
+    """Land `branch`'s content onto `origin/<canonical>` the way a rebase-merge does.
+
+    The branch's commits are REPLAYED onto the canonical branch — new SHAs,
+    byte-identical patches — and pushed, while the local `branch` ref is left
+    at its original pre-rebase tip. That is exactly the state a
+    rebase-merge leaves behind and exactly the state the check misread: the
+    content IS on the canonical branch and the local tip is NOT an ancestor
+    of it.
+    """
+    _ = _git(cwd=repo, args=["checkout", "-q", "-B", "landing", branch])
+    _ = _git(cwd=repo, args=["rebase", "-q", canonical])
+    _ = _git(cwd=repo, args=["checkout", "-q", canonical])
+    _ = _git(cwd=repo, args=["merge", "-q", "--ff-only", "landing"])
+    _ = _git(cwd=repo, args=["branch", "-q", "-D", "landing"])
+    _ = _git(cwd=repo, args=["push", "-q", "origin", canonical])
+
+
+def _assert_land_was_rebased(*, repo: Path, branch: str, canonical: str) -> None:
+    """Guard: the local tip is NOT an ancestor of the canonical branch.
+
+    A fixture that silently degraded into a fast-forward land would leave
+    ancestry intact, so the landed-branch assertion below would pass against
+    the very code it exists to indict. This makes that degradation loud.
+    """
+    assert not _git_succeeds(
+        cwd=repo,
+        args=["merge-base", "--is-ancestor", branch, f"origin/{canonical}"],
+    ), (
+        f"fixture degraded: {branch} is still an ancestor of origin/{canonical}, "
+        f"so the land was a fast-forward rather than a rebase and would pass "
+        f"against the ancestry-based code this test exists to indict"
+    )
+
+
 def test_no_spec_branches_passes(*, tmp_path: Path) -> None:
     """A clone with only `master` and no `spec/*` branches → exit 0."""
     _, clone = _make_remote_and_clone(tmp_path=tmp_path)
@@ -204,7 +300,7 @@ def test_no_spec_branches_passes(*, tmp_path: Path) -> None:
 
 
 def test_even_spec_branch_passes(*, tmp_path: Path) -> None:
-    """A `spec/*` branch even with `master` (ahead=0) → exit 0, no findings."""
+    """A `spec/*` branch even with `master` (nothing unlanded) → exit 0, no findings."""
     _, clone = _make_remote_and_clone(tmp_path=tmp_path)
     _ = _git(cwd=clone, args=["checkout", "-q", "-b", "spec/in-sync", "master"])
     _ = _git(cwd=clone, args=["checkout", "-q", "master"])
@@ -213,11 +309,11 @@ def test_even_spec_branch_passes(*, tmp_path: Path) -> None:
         f"expected exit 0 when spec/* branch is even with master; "
         f"got {result.returncode}, stderr={result.stderr!r}"
     )
-    assert "is 1 commit" not in result.stderr
+    assert "unlanded" not in result.stderr
 
 
 def test_single_stale_branch_fails(*, tmp_path: Path) -> None:
-    """One `spec/*` branch ahead of master by 1 → exit 4, finding lists branch."""
+    """One `spec/*` branch with one unlanded commit → exit 4, finding lists branch."""
     _, clone = _make_remote_and_clone(tmp_path=tmp_path)
     _make_branch_ahead(repo=clone, branch="spec/v003", commits=1)
     result = _run_check(cwd=clone)
@@ -226,7 +322,108 @@ def test_single_stale_branch_fails(*, tmp_path: Path) -> None:
         f"got {result.returncode}, stderr={result.stderr!r}"
     )
     assert "spec/v003" in result.stderr
-    assert "1 commit" in result.stderr
+    assert "1 unlanded commit" in result.stderr
+
+
+def test_landed_branch_after_rebase_merge_is_not_reported(*, tmp_path: Path) -> None:
+    """A branch whose content landed by REBASE-merge → exit 0 (acceptance criteria 1 and 3).
+
+    This is the defect leg. The branch's patch is on `origin/master` under a
+    rewritten SHA, so the ancestry test the check used to run reports it as
+    stale forever: nothing an operator can do — merge, abandon — applies to
+    a branch that is already merged, so the only remedy left is the skip
+    flag, and a precondition that is always skipped protects nothing.
+    """
+    _, clone = _make_remote_and_clone(tmp_path=tmp_path)
+    _make_branch_ahead(repo=clone, branch="spec/landed", commits=1)
+    _advance_canonical(repo=clone, canonical="master", marker="unrelated.txt")
+    _land_by_rebase(repo=clone, branch="spec/landed", canonical="master")
+    _assert_land_was_rebased(repo=clone, branch="spec/landed", canonical="master")
+
+    result = _run_check(cwd=clone)
+
+    assert result.returncode == 0, (
+        f"expected exit 0 for a branch already landed by rebase-merge; "
+        f"got {result.returncode}, stderr={result.stderr!r}"
+    )
+    assert "spec/landed" not in result.stderr
+
+
+def test_unlanded_branch_is_still_reported(*, tmp_path: Path) -> None:
+    """The NEGATIVE CONTROL (acceptance criterion 2): unlanded work still fails.
+
+    Built on the same rebase-landed history as the leg above, then given one
+    further commit that never landed. A check that stopped reporting
+    everything would be the same defect inverted — it would let a revise pass
+    clobber a genuinely unlanded spec branch — so this leg is required, not
+    optional.
+    """
+    _, clone = _make_remote_and_clone(tmp_path=tmp_path)
+    _make_branch_ahead(repo=clone, branch="spec/landed", commits=1)
+    _advance_canonical(repo=clone, canonical="master", marker="unrelated.txt")
+    _land_by_rebase(repo=clone, branch="spec/landed", canonical="master")
+    _assert_land_was_rebased(repo=clone, branch="spec/landed", canonical="master")
+    _ = _git(cwd=clone, args=["checkout", "-q", "spec/landed"])
+    (clone / "never-landed.txt").write_text("never landed\n", encoding="utf-8")
+    _ = _git(cwd=clone, args=["add", "never-landed.txt"])
+    _ = _git(cwd=clone, args=["commit", "-m", "genuinely unlanded work"])
+    _ = _git(cwd=clone, args=["checkout", "-q", "master"])
+
+    result = _run_check(cwd=clone)
+
+    assert result.returncode == 4, (
+        f"expected exit 4 for a branch carrying genuinely unlanded work; "
+        f"got {result.returncode}, stderr={result.stderr!r}"
+    )
+    assert "spec/landed" in result.stderr
+    # Exactly the ONE unlanded commit is counted — the landed one is
+    # discriminated away rather than the whole branch being waved through.
+    assert "1 unlanded commit" in result.stderr
+
+
+def test_landed_and_unlanded_branches_are_discriminated(*, tmp_path: Path) -> None:
+    """Both legs in ONE repository: only the unlanded branch surfaces a finding.
+
+    Asserting the discrimination in a single tree is what rules out a fix
+    that merely moved the always-report / never-report threshold.
+    """
+    _, clone = _make_remote_and_clone(tmp_path=tmp_path)
+    _make_branch_ahead(repo=clone, branch="spec/landed", commits=1)
+    _make_branch_ahead(repo=clone, branch="spec/pending", commits=1)
+    _advance_canonical(repo=clone, canonical="master", marker="unrelated.txt")
+    _land_by_rebase(repo=clone, branch="spec/landed", canonical="master")
+    _assert_land_was_rebased(repo=clone, branch="spec/landed", canonical="master")
+
+    result = _run_check(cwd=clone)
+
+    assert result.returncode == 4
+    findings = [
+        json.loads(line) for line in result.stderr.splitlines() if line.strip().startswith("{")
+    ]
+    fail_branches = {f.get("branch") for f in findings if f.get("status") == "fail"}
+    assert fail_branches == {
+        "spec/pending"
+    }, f"expected only the unlanded spec/pending to be reported; got {fail_branches!r}"
+
+
+def test_finding_names_its_discriminator(*, tmp_path: Path) -> None:
+    """Acceptance criterion 4: a finding says WHAT it rests on, so its limits are readable."""
+    _, clone = _make_remote_and_clone(tmp_path=tmp_path)
+    _make_branch_ahead(repo=clone, branch="spec/v003", commits=1)
+
+    result = _run_check(cwd=clone)
+
+    assert result.returncode == 4
+    findings = [
+        json.loads(line) for line in result.stderr.splitlines() if line.strip().startswith("{")
+    ]
+    fail_findings = [f for f in findings if f.get("status") == "fail"]
+    assert fail_findings, f"expected a fail finding; stderr={result.stderr!r}"
+    discriminators = {f.get("discriminator") for f in fail_findings}
+    assert discriminators == {
+        "patch-id equivalence (`git cherry`)"
+    }, f"expected every finding to name the patch-id discriminator; got {discriminators!r}"
+    assert "patch-id" in fail_findings[0].get("event", "")
 
 
 def test_multiple_stale_branches_all_emit_findings(*, tmp_path: Path) -> None:
@@ -362,9 +559,9 @@ def test_canonical_branch_fallback_to_origin_head(*, tmp_path: Path) -> None:
 def test_canonical_branch_hard_coded_fallback_when_no_origin(*, tmp_path: Path) -> None:
     """No `.livespec.jsonc` and no `origin/HEAD` → falls back to `master`.
 
-    With no remote configured, `git rev-list origin/master...<branch>`
-    fails, the per-branch ahead-count returns None, the check skips the
-    branch with a warning, and exits 0 (no findings emitted).
+    With no remote configured, `git cherry origin/master <branch>` fails,
+    the per-branch unlanded-count returns None, the check skips the branch
+    with a warning, and exits 0 (no findings emitted).
     """
     repo = tmp_path / "solo"
     repo.mkdir()
@@ -376,15 +573,15 @@ def test_canonical_branch_hard_coded_fallback_when_no_origin(*, tmp_path: Path) 
     _ = _git(cwd=repo, args=["commit", "-m", "baseline"])
     _make_branch_ahead(repo=repo, branch="spec/v003", commits=1)
     result = _run_check(cwd=repo)
-    # No origin remote → ahead-count is None for the spec/v003 branch
-    # → branch is skipped with a warning → no stale-branch findings →
-    # exit 0. This exercises the hard-coded `master` fallback branch
+    # No origin remote → the unlanded-count is None for the spec/v003
+    # branch → branch is skipped with a warning → no stale-branch findings
+    # → exit 0. This exercises the hard-coded `master` fallback branch
     # in `_resolve_canonical_branch`.
     assert result.returncode == 0, (
         f"expected exit 0 when origin is absent (warnings only); "
         f"got {result.returncode}, stderr={result.stderr!r}"
     )
-    assert "could not compute ahead-count" in result.stderr
+    assert "could not evaluate landed-ness" in result.stderr
 
 
 def test_jsonc_non_dict_top_level_falls_through(*, tmp_path: Path) -> None:
@@ -482,15 +679,14 @@ def test_origin_head_returns_unprefixed_value(*, tmp_path: Path) -> None:
         symbolic_ref_returncode=0,
         for_each_ref_stdout="spec/v003",
         for_each_ref_returncode=0,
-        # rev-list will be called with `origin/trunk...spec/v003`; the
-        # stub returns nothing successful, so the per-branch ahead-count
-        # parses 0 entries and skips. Branch coverage for the unprefixed
-        # value handling is what we need.
-        rev_list_stdout="",
-        rev_list_returncode=1,
+        # `git cherry origin/trunk spec/v003` fails under the stub, so the
+        # per-branch unlanded-count is unavailable and the branch skips.
+        # Branch coverage for the unprefixed value handling is what we need.
+        cherry_stdout="",
+        cherry_returncode=1,
     )
     result = _run_check(cwd=tmp_path, env_path=fake_path)
-    # ahead_count is None → branch skipped with warning → exit 0.
+    # The unlanded-count is None → branch skipped with warning → exit 0.
     assert result.returncode == 0
     assert "trunk" in result.stderr  # diagnostic mentions origin/trunk via the warning
 
@@ -512,10 +708,12 @@ def test_for_each_ref_failure_returns_empty_list(*, tmp_path: Path) -> None:
     assert result.returncode == 0
 
 
-def test_rev_list_malformed_output_skips_branch(*, tmp_path: Path) -> None:
-    """`git rev-list` returns malformed (non-2-part) output → branch skipped, exit 0.
+def test_cherry_malformed_output_skips_branch(*, tmp_path: Path) -> None:
+    """`git cherry` emits a line in neither `+ `/`- ` form → branch skipped, exit 0.
 
-    Covers the `if len(parts) != 2: return None` branch in `_ahead_count`.
+    Covers the unrecognized-line arm of the unlanded-count parse. Skipping
+    is the fail-safe direction here: an unparseable answer must not be read
+    as "nothing unlanded" and wave a real stale branch through.
     """
     fake_path = _install_fake_git(
         tmp_path=tmp_path,
@@ -523,18 +721,19 @@ def test_rev_list_malformed_output_skips_branch(*, tmp_path: Path) -> None:
         symbolic_ref_returncode=0,
         for_each_ref_stdout="spec/v003",
         for_each_ref_returncode=0,
-        rev_list_stdout="garbage",
-        rev_list_returncode=0,
+        cherry_stdout="garbage",
+        cherry_returncode=0,
     )
     result = _run_check(cwd=tmp_path, env_path=fake_path)
     assert result.returncode == 0
-    assert "could not compute ahead-count" in result.stderr
+    assert "could not evaluate landed-ness" in result.stderr
 
 
-def test_rev_list_non_digit_ahead_skips_branch(*, tmp_path: Path) -> None:
-    """`git rev-list` returns 2 parts but ahead is non-digit → skipped, exit 0.
+def test_cherry_all_landed_lines_pass(*, tmp_path: Path) -> None:
+    """`git cherry` reporting only `- ` lines → nothing unlanded → exit 0.
 
-    Covers the `if not ahead_raw.isdigit(): return None` branch in `_ahead_count`.
+    The `- ` prefix is git's own "an equivalent patch IS upstream" verdict,
+    which is the whole discriminator stated in one line of plumbing output.
     """
     fake_path = _install_fake_git(
         tmp_path=tmp_path,
@@ -542,12 +741,32 @@ def test_rev_list_non_digit_ahead_skips_branch(*, tmp_path: Path) -> None:
         symbolic_ref_returncode=0,
         for_each_ref_stdout="spec/v003",
         for_each_ref_returncode=0,
-        rev_list_stdout="0\tabc",
-        rev_list_returncode=0,
+        cherry_stdout="- 1111111111111111111111111111111111111111",
+        cherry_returncode=0,
     )
     result = _run_check(cwd=tmp_path, env_path=fake_path)
     assert result.returncode == 0
-    assert "could not compute ahead-count" in result.stderr
+    assert "spec/v003" not in result.stderr
+
+
+def test_cherry_blank_lines_are_ignored(*, tmp_path: Path) -> None:
+    """A blank line in `git cherry` output is not an unparseable line → exit 0.
+
+    Covers the blank-line arm of the parse; the stub's heredoc emits exactly
+    the trailing-newline-only shape a no-op `git cherry` produces.
+    """
+    fake_path = _install_fake_git(
+        tmp_path=tmp_path,
+        symbolic_ref_stdout="origin/master",
+        symbolic_ref_returncode=0,
+        for_each_ref_stdout="spec/v003",
+        for_each_ref_returncode=0,
+        cherry_stdout="",
+        cherry_returncode=0,
+    )
+    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    assert result.returncode == 0
+    assert "could not evaluate landed-ness" not in result.stderr
 
 
 def test_jsonc_canonical_branch_non_string_value_falls_through(*, tmp_path: Path) -> None:

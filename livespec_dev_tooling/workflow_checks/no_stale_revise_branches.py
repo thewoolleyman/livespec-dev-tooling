@@ -3,7 +3,24 @@
 Per `SPECIFICATION/contracts.md` section "`no_stale_revise_branches` check"
 (a revise-workflow check, per section "Shared check inventory"), this check
 enumerates local `refs/heads/spec/*` branches and fails when any such
-branch is ahead of the canonical branch by one or more commits.
+branch carries one or more commits that have NOT LANDED on the canonical
+branch.
+
+THE DISCRIMINATOR IS PATCH-ID EQUIVALENCE, computed by
+`git cherry origin/<canonical> <branch>` — and naming it here is a
+requirement rather than a courtesy, because it is what tells an operator
+reading a finding which failure modes the finding can have. It was
+ANCESTRY (`git rev-list --left-right --count`, fail when ahead > 0) until
+livespec-dev-tooling-jtrt.2. On a rebase-merge-only fleet that could not
+work: a rebase-merge REWRITES a branch's commits, so a landed branch's
+local tip is never an ancestor of the canonical branch, and every
+landed-but-undeleted branch was reported as stale. Measured 2026-08-22 in
+livespec-overseer, the check returned eleven fail findings whose content
+was, in all eleven cases, already on `origin/master`. That is a check that
+cannot SUCCEED — the mirror of the check-that-cannot-fail hazard — and its
+practical effect was worse than noise: with merge and abandon both
+inapplicable to an already-merged branch, the only remedy left was the
+skip flag, so the precondition TRAINED the skip it exists to withhold.
 
 It is invoked by livespec's `/livespec:revise` SKILL.md pre-step
 refusal — the sole caller and load-bearing enforcement point. It lives
@@ -23,11 +40,36 @@ Algorithm (per the contracts section "`no_stale_revise_branches` check"):
 2. Enumerate local refs via
    `git for-each-ref --format='%(refname:short)' refs/heads/spec/`.
 3. For each branch:
-   - Run `git rev-list --left-right --count origin/<canonical>...<branch>`.
-   - Parse the output as `behind\tahead`.
-   - When `ahead > 0`: collect the branch as stale, also collecting
-     the short SHA + subject of the branch HEAD for the user diagnostic.
+   - Run `git cherry origin/<canonical> <branch>`.
+   - Count the `+ <sha>` lines — commits with NO patch-equivalent on the
+     canonical branch. A `- <sha>` line is git's own verdict that an
+     equivalent patch IS upstream, which is precisely what survives a
+     rebase-merge.
+   - When the `+` count is `> 0`: collect the branch as stale, also
+     collecting the short SHA + subject of the branch HEAD for the user
+     diagnostic.
 4. Exit `0` when the stale list is empty, `4` when populated.
+
+The discriminator's OWN failure modes, stated because a finding that names
+its discriminator is only useful to a reader who can look them up. Both are
+conservative — they over-report, never under-report, so the check keeps
+failing closed:
+
+- A land that CHANGED the patch produces a different patch-id and is still
+  reported: a squash-merge, or a rebase that resolved a conflict.
+- The digest pass is not free. `git cherry` patch-ids every commit on both
+  sides of the merge base, so an old branch costs a walk of the canonical
+  branch's commits since the branch point — more than the ancestry count it
+  replaced, and bounded by how long a stale branch was left lying around.
+
+The two discriminators NOT chosen, and why. Subject-match against the
+canonical branch's history is cheaper and is what the 2026-08-22
+measurement used by hand, but subjects collide, so it can call an unlanded
+branch landed — a false NEGATIVE, the direction this check must never fail
+in. A forge query for a merged pull request on the head is authoritative
+where it applies, but it costs an API call, needs credentials at a local
+pre-step, and misses content that landed without a pull request — nine of
+the eleven branches in that measurement.
 
 There is no downgrade flag: the check always fails hard (exit `4`) on
 any stale branch. The `--allow-stale-branches` downgrade flag was
@@ -75,16 +117,23 @@ __all__: list[str] = []
 _LIVESPEC_JSONC_FILENAME = ".livespec.jsonc"
 _DEFAULT_CANONICAL_BRANCH = "master"
 _SPEC_BRANCH_REFSPEC = "refs/heads/spec/"
-_REV_LIST_LEFT_RIGHT_COUNT_FIELDS = 2
+# `git cherry`'s two line prefixes: `+` marks a commit with no
+# patch-equivalent upstream, `-` one that has one.
+_CHERRY_UNLANDED_PREFIX = "+"
+_CHERRY_LANDED_PREFIX = "-"
+# Named in every finding AND in every skip warning so an operator reading
+# one knows what the verdict rests on, and therefore which of the failure
+# modes in this module's docstring could be producing it.
+_DISCRIMINATOR = "patch-id equivalence (`git cherry`)"
 
 
 @dataclass(frozen=True, kw_only=True)
 class _StaleBranch:
-    """One stale-branch finding payload — branch identity + ahead-count diagnostic."""
+    """One stale-branch finding payload — branch identity + unlanded-count diagnostic."""
 
     branch: str
     canonical: str
-    ahead: int
+    unlanded: int
     short_sha: str
     subject: str
 
@@ -94,8 +143,10 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="no-stale-revise-branches",
         description=(
             "Refuse new /livespec:revise passes while a local `spec/*` branch "
-            "is ahead of the canonical branch. Enumerates local refs under "
-            "`refs/heads/spec/` and shells out to `git rev-list` for ahead-count. "
+            "carries commits that have not landed on the canonical branch. "
+            "Enumerates local refs under `refs/heads/spec/` and shells out to "
+            "`git cherry` to judge landed-ness by PATCH-ID EQUIVALENCE, which "
+            "survives the rewrite a rebase-merge performs (ancestry does not). "
             "Always fails hard (exit 4) on any stale branch; there is no "
             "downgrade flag."
         ),
@@ -217,23 +268,30 @@ def _enumerate_spec_branches(*, cwd: Path) -> list[str]:
     return [line for line in completed.stdout.splitlines() if line]
 
 
-def _ahead_count(*, cwd: Path, branch: str, canonical: str) -> int | None:
-    """Return the ahead-count of `branch` vs `origin/<canonical>`.
+def _unlanded_count(*, cwd: Path, branch: str, canonical: str) -> int | None:
+    """Return how many of `branch`'s commits have NOT landed on `origin/<canonical>`.
 
-    Runs `git rev-list --left-right --count origin/<canonical>...<branch>`
-    and parses the `behind\tahead` output. Returns None when the
-    command fails (e.g., the canonical remote ref does not exist) so
-    the caller can skip the branch with a structured warning rather
-    than crashing.
+    Runs `git cherry origin/<canonical> <branch>`, whose every output line
+    is `+ <sha>` for a commit with no patch-equivalent upstream or
+    `- <sha>` for one that has one — git compares `git patch-id` digests,
+    so a commit REWRITTEN by a rebase still matches its landed twin. The
+    returned number is the count of `+` lines; zero means the whole branch
+    is on the canonical branch under other SHAs, which is the ordinary
+    post-rebase-merge state and NOT staleness.
+
+    See this module's docstring for why patch-id rather than ancestry
+    (which cannot work on a rebase-merge fleet), for the two discriminators
+    not chosen, and for this one's own failure modes.
+
+    Returns None — "no answer", which the caller turns into a skip with a
+    structured warning rather than a verdict — when the command fails
+    (e.g. `origin/<canonical>` does not exist) or emits a line in neither
+    form. Refusing to guess is the fail-safe direction: reading an
+    unparseable answer as "nothing unlanded" would wave a genuinely stale
+    branch through.
     """
     completed = subprocess.run(
-        [
-            "git",
-            "rev-list",
-            "--left-right",
-            "--count",
-            f"origin/{canonical}...{branch}",
-        ],
+        ["git", "cherry", f"origin/{canonical}", branch],
         cwd=str(cwd),
         capture_output=True,
         text=True,
@@ -241,20 +299,23 @@ def _ahead_count(*, cwd: Path, branch: str, canonical: str) -> int | None:
     )
     if completed.returncode != 0:
         return None
-    parts = completed.stdout.strip().split()
-    if len(parts) != _REV_LIST_LEFT_RIGHT_COUNT_FIELDS:
-        return None
-    ahead_raw = parts[1]
-    if not ahead_raw.isdigit():
-        return None
-    return int(ahead_raw)
+    unlanded = 0
+    for line in completed.stdout.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith(_CHERRY_UNLANDED_PREFIX):
+            unlanded += 1
+        elif not stripped.startswith(_CHERRY_LANDED_PREFIX):
+            return None
+    return unlanded
 
 
 def _branch_head_subject(*, cwd: Path, branch: str) -> tuple[str, str]:
     """Return (short_sha, subject) for the branch's HEAD commit.
 
     Falls back to `("?", "")` when either lookup fails so the
-    diagnostic can still surface the branch name and ahead-count.
+    diagnostic can still surface the branch name and unlanded-count.
     """
     sha_completed = subprocess.run(
         ["git", "rev-parse", "--short", branch],
@@ -281,15 +342,17 @@ def _emit_finding(
     finding: _StaleBranch,
 ) -> None:
     message = (
-        f"branch '{finding.branch}' is {finding.ahead} commit(s) ahead of "
-        f"origin/{finding.canonical}; last commit {finding.short_sha} "
-        f'"{finding.subject}"'
+        f"branch '{finding.branch}' has {finding.unlanded} unlanded commit(s) "
+        f"not present on origin/{finding.canonical} "
+        f"(discriminator: {_DISCRIMINATOR}); "
+        f'last commit {finding.short_sha} "{finding.subject}"'
     )
     fields = {
         "check_id": "no_stale_revise_branches",
         "branch": finding.branch,
         "canonical_branch": finding.canonical,
-        "ahead": finding.ahead,
+        "unlanded": finding.unlanded,
+        "discriminator": _DISCRIMINATOR,
         "short_sha": finding.short_sha,
         "subject": finding.subject,
         "path": "",
@@ -307,26 +370,27 @@ def main() -> int:
     branches = _enumerate_spec_branches(cwd=cwd)
     stale_count = 0
     for branch in branches:
-        ahead = _ahead_count(cwd=cwd, branch=branch, canonical=canonical)
-        if ahead is None:
+        unlanded = _unlanded_count(cwd=cwd, branch=branch, canonical=canonical)
+        if unlanded is None:
             log.warning(
-                "could not compute ahead-count; skipping branch",
+                "could not evaluate landed-ness; skipping branch",
                 branch=branch,
                 canonical_branch=canonical,
+                discriminator=_DISCRIMINATOR,
                 hint=(
                     f"verify origin/{canonical} exists; "
                     "run `git fetch origin` or set canonical_branch in .livespec.jsonc"
                 ),
             )
             continue
-        if ahead <= 0:
+        if unlanded <= 0:
             continue
         stale_count += 1
         short_sha, subject = _branch_head_subject(cwd=cwd, branch=branch)
         finding = _StaleBranch(
             branch=branch,
             canonical=canonical,
-            ahead=ahead,
+            unlanded=unlanded,
             short_sha=short_sha,
             subject=subject,
         )
