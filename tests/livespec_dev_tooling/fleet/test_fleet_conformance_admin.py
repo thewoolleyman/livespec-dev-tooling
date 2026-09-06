@@ -18,7 +18,7 @@ the lane honors by never reading the repo at all.
 The credential-CLASS split is pinned here too: under a `ghs_`-class
 effective credential (a GitHub App installation token — the dispatch
 credential a Fabro sandbox holds, projected as GITHUB_TOKEN) the lane's
-rows are OUT-OF-VANTAGE (owned by the operator's own pre-push) and the
+rows are OUT-OF-VANTAGE (owned by the operator's own `just check`) and the
 run passes at zero API reads, while under a user-class credential the
 blind escalation stays exactly as shipped (livespec-dev-tooling-29qo).
 Every CLI-level test therefore controls the token env explicitly: these
@@ -322,8 +322,8 @@ def test_admin_lane_is_out_of_vantage_under_a_dispatch_class_credential(
     into the sandbox as GITHUB_TOKEN — has admin scope DELIBERATELY
     withheld (the ratified v045 capability boundary), so a `ghs_`-class
     context is structurally not this lane's vantage: the lane's own design
-    scopes it to the operator's pre-push under their own admin gh
-    credentials. Treating that class as a credential shortfall instead
+    scopes it to the operator's deliberate `just check` under their own
+    admin gh credentials. Treating that class as a credential shortfall instead
     (blind, exit 4) is the repo-wide factory outage journaled on
     livespec-dev-tooling-34t2: the Fabro sandbox's commit hooks reach the
     `just check` aggregate, so since ec66951 wired this lane in, NO
@@ -339,8 +339,17 @@ def test_admin_lane_is_out_of_vantage_under_a_dispatch_class_credential(
     manifest, so an expired or fake dispatch token cannot turn
     classification into a precondition failure); and the out-of-vantage
     report names BOTH admin member rows plus the adopter leg, each owned
-    by the operator's pre-push context under their own admin gh
+    by a venue the operator can ACTUALLY GO RUN under their own admin gh
     credentials.
+
+    ⛔ THAT VENUE IS NO LONGER PRE-PUSH. The admin lane left both local
+    hook gates (livespec-dev-tooling-mmqe, absorbing tkzf): it reads the
+    live admin state of nine OTHER repositories, so one sibling's
+    unrepaired state refused unrelated commits and pushes here. Naming
+    pre-push would now send an operator to a venue that skips this lane —
+    the same defect one level up as the throttle-versus-denial confusion
+    this work-item exists to fix, a report naming a context it cannot
+    support.
     """
     calls: list[tuple[str, ...]] = []
     _admin_argv(monkeypatch)
@@ -364,7 +373,14 @@ def test_admin_lane_is_out_of_vantage_under_a_dispatch_class_credential(
         assert isinstance(owned_by, str)
         assert "check-fleet-conformance-admin" in owned_by
         assert "operator's own admin gh credentials" in owned_by
-        assert "pre-push" in owned_by
+        assert "just check" in owned_by, (
+            "the out-of-vantage report must name the venue that still runs "
+            "this lane — the operator's own deliberate `just check`"
+        )
+        assert "pre-push" not in owned_by, (
+            "pre-push skips this lane since it left both local hook gates, so "
+            "naming it directs the operator at a venue that will not run it"
+        )
 
 
 def test_admin_lane_fails_when_the_released_adopter_is_unreadable(
