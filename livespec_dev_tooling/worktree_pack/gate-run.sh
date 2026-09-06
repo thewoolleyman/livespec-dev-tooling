@@ -55,6 +55,53 @@
 # "did any target actually run", which previously had to be reconstructed
 # by hand every time a gate went quiet.
 #
+# WHERE THE EVIDENCE LIVES (livespec-dev-tooling-trfzkw)
+# -----------------------------------------------------
+# The run directory used to resolve under the INVOKED worktree
+# (`$(git rev-parse --show-toplevel)/tmp/gate-runs`). A linked worktree is
+# removed as ROUTINE post-merge cleanup, and `git worktree remove` deleted
+# the run directory with it — so on 2026-09-06 two detached runs
+# (20260906T025635Z-80255, 20260906T025732Z-87836) refused on
+# `core_bare_set` and the question "which aggregate member was running at
+# 03:00:09Z" became permanently unanswerable. Evidence whose lifetime is
+# shorter than the incident it documents is not evidence.
+#
+# The store is therefore resolved from the SHARED git directory
+# (`git rev-parse --git-common-dir`), which every linked worktree of a
+# repository resolves identically and which outlives all of them: runs land
+# under the PRIMARY checkout's `tmp/gate-runs/<run-id>/`. `status`, `wait`
+# and `list` resolve the same path, so a run started in a worktree is
+# readable from the primary — and from any sibling worktree — after that
+# worktree is gone. `tmp/` is gitignored exactly as before; nothing about
+# what gets committed changes.
+#
+# THE .git/config WRITE-WATCH (livespec-p32m6d, folded in here)
+# ------------------------------------------------------------
+# Those same two run ids are the reason the config write-watch lives in
+# THIS file: the `core.bare` flip happened INSIDE a detached gate child,
+# so the instrument that will name the next writer has to be armed around
+# the gate and has to write into the durable run directory above.
+#
+# Around every gate this runner now:
+#
+#   core_before        digest of the PRIMARY's shared `[core]` block,
+#                      captured before the gate starts
+#   config-writes.log  appended by a dependency-free background watcher
+#                      (no inotify-tools, no auditd, no root) whenever the
+#                      shared config changes or its lockfile appears —
+#                      carrying the current core.bare value, the gate
+#                      child's descendant process tree, and any
+#                      /proc/*/fd holder of the config or its lock
+#   core_after         the same digest, captured after the gate finishes
+#   CORE_BARE_FLIP     written only when before != after; `status` surfaces
+#                      it loudly
+#
+# The watch is STRICTLY an observer. It never changes the verdict: the
+# gate's own exit code is passed through unchanged, a flip is NON-FATAL,
+# and every watch operation is failure-tolerant so the instrument can
+# never be the reason a gate does not report. The existing
+# `core_bare_is_true` remedy still heals the primary.
+#
 # USAGE
 # -----
 #   just gate-start -- mise exec -- git commit --amend --no-edit
@@ -93,15 +140,63 @@ readonly EX_SOFTWARE=70
 readonly EX_NO_VERDICT=75
 readonly SIGNAL_EXIT_FLOOR=128
 readonly POLL_INTERVAL_S=5
+# The config watcher's poll cadence. Fast enough that a writer which is
+# still alive one tick after its write is caught in the descendant-tree
+# snapshot; slow enough that a 20-minute gate pays a few thousand cheap
+# `stat` calls rather than tens of thousands.
+readonly WATCH_INTERVAL_S=0.2
 
 repo_root() {
     git rev-parse --show-toplevel
 }
 
+timestamp() {
+    date -u +%Y-%m-%dT%H:%M:%SZ
+}
+
+# Absolute path of the SHARED git directory — the primary checkout's
+# `.git` for a linked worktree, and the repo's own `.git` otherwise. git
+# reports it relative to the cwd, so it is normalized here; every caller
+# needs a path that survives the cwd going away.
+git_common_dir() {
+    local dir
+    dir="$(git rev-parse --git-common-dir 2>/dev/null)" || return 1
+    [[ -d "$dir" ]] || return 1
+    ( cd "$dir" && pwd )
+}
+
+# The shared `.git/config` — the file whose `[core]` section the flip
+# corrupts. Resolved from the SHARED dir on purpose: a run inside a linked
+# worktree must digest and watch the PRIMARY's config, not the worktree's
+# per-worktree config.
+shared_config_path() {
+    local common
+    common="$(git_common_dir)" || return 1
+    printf '%s/config' "$common"
+}
+
+# Where run directories live. Keyed to the SHARED git dir, so every
+# worktree of a repository resolves the SAME store and a run outlives the
+# worktree that started it (livespec-dev-tooling-trfzkw).
+#
+# tmp/ is gitignored: run records are host-local evidence, never
+# committed, and never a substitute for the gate's own output.
 runs_root() {
-    # tmp/ is gitignored: run records are host-local evidence, never
-    # committed, and never a substitute for the gate's own output.
-    printf '%s/tmp/gate-runs' "$(repo_root)"
+    local common="" primary
+    common="$(git_common_dir)" || common=""
+    if [[ -n "$common" && "$(basename "$common")" == ".git" ]]; then
+        primary="$(dirname "$common")"
+        if [[ -d "$primary" ]]; then
+            printf '%s/tmp/gate-runs' "$primary"
+            return 0
+        fi
+    fi
+    # No primary checkout to hold the store (a bare or otherwise
+    # unconventional shared dir). Per-user state is the fallback, keyed by
+    # repository name so unrelated repos never share a store.
+    printf '%s/livespec/gate-runs/%s' \
+        "${XDG_STATE_HOME:-${HOME:-/tmp}/.local/state}" \
+        "$(basename "${common:-unknown-repo}" .git)"
 }
 
 usage() {
@@ -160,6 +255,235 @@ state_exit_code() {
 }
 
 # ---------------------------------------------------------------------
+# .git/config write-watch (livespec-p32m6d, folded into trfzkw)
+#
+# Every function below is an OBSERVER and must behave like one: it may
+# report nothing, but it may never fail the gate, block it, or write
+# anything outside the run directory. Callers wrap them accordingly.
+# ---------------------------------------------------------------------
+
+sha256_of() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum | cut -d' ' -f1
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 | cut -d' ' -f1
+    else
+        cat >/dev/null
+        printf 'unavailable'
+    fi
+}
+
+# Print the shared config's `[core]` block verbatim. A section header ends
+# the previous section, so tracking "am I inside [core]" across headers is
+# the whole parse; `[core "sub"]` counts, `[coreish]` does not.
+core_section() {
+    local cfg="$1"
+    [[ -f "$cfg" ]] || return 0
+    awk '
+        /^[[:space:]]*\[/ { in_core = ($0 ~ /^[[:space:]]*\[core([[:space:]]|\])/) }
+        in_core
+    ' "$cfg" 2>/dev/null || true
+}
+
+# `core.bare` as git itself resolves it, or the literal `unset` — the
+# distinction the incident turns on, since an unset flag and an explicit
+# `false` are the same to git but different to a diff.
+core_bare_value() {
+    local cfg="$1" value=""
+    value="$(git config --file "$cfg" --get core.bare 2>/dev/null)" || value=""
+    printf '%s' "${value:-unset}"
+}
+
+capture_core_state() {
+    local cfg="$1" out="$2"
+    {
+        printf 'captured_at: %s\n' "$(timestamp)"
+        printf 'config: %s\n' "$cfg"
+        printf 'core.bare: %s\n' "$(core_bare_value "$cfg")"
+        printf 'core_sha256: %s\n' "$(core_section "$cfg" | sha256_of)"
+    } >"$out"
+}
+
+core_field() {
+    local file="$1" key="$2" line=""
+    line="$(grep -m1 "^$key: " "$file" 2>/dev/null)" || line=""
+    [[ -n "$line" ]] || { printf 'unreadable'; return 0; }
+    printf '%s' "${line#"$key": }"
+}
+
+# Cheap change token. git rewrites the config through a lockfile and a
+# rename, so the INODE moves on every real write — which is what makes
+# this reliable despite `%Y` having only second resolution.
+config_signature() {
+    stat -c '%i %s %Y' "$1" 2>/dev/null \
+        || stat -f '%i %z %m' "$1" 2>/dev/null \
+        || printf 'absent'
+}
+
+# Parent pid from /proc/<pid>/stat without forking: `comm` may itself
+# contain spaces and parentheses, so everything through the LAST `) ` is
+# dropped before the state and ppid fields are read off the remainder.
+proc_ppid() {
+    local line="" rest
+    { line="$(<"/proc/$1/stat")"; } 2>/dev/null || line=""
+    [[ -n "$line" ]] || { printf '?'; return 0; }
+    rest="${line##*) }"
+    rest="${rest#* }"
+    printf '%s' "${rest%% *}"
+}
+
+# Every process descended from the gate child, breadth-first. The gate
+# runs `just check`, which fans out through a dispatcher, so the writer we
+# are hunting is typically several levels below the child.
+descendant_pids() {
+    local root="$1" d cur i
+    local -a pids=() ppids=() frontier=("$root") found=()
+    for d in /proc/[0-9]*; do
+        pids+=("${d##*/}")
+        ppids+=("$(proc_ppid "${d##*/}")")
+    done
+    while [[ "${#frontier[@]}" -gt 0 ]]; do
+        cur="${frontier[0]}"
+        frontier=("${frontier[@]:1}")
+        found+=("$cur")
+        for i in "${!pids[@]}"; do
+            [[ "${ppids[$i]}" == "$cur" ]] && frontier+=("${pids[$i]}")
+        done
+    done
+    printf '%s\n' "${found[@]}"
+}
+
+# Processes holding the config (or its lock) OPEN right now. This is the
+# strongest attribution available without root: it names the writer while
+# the write is still in flight. It scans every readable /proc/*/fd, which
+# is why it runs only on an event and never on the poll path.
+fd_holders() {
+    local hits=0 d fd link target
+    for d in /proc/[0-9]*/fd; do
+        for fd in "$d"/*; do
+            link="$(readlink "$fd" 2>/dev/null)" || continue
+            for target in "$@"; do
+                if [[ "$link" == "$target" ]]; then
+                    printf '      %s -> %s\n' "$fd" "$link"
+                    hits=1
+                fi
+            done
+        done
+    done
+    [[ "$hits" == "1" ]] || printf '      (none held open at sample time)\n'
+}
+
+proc_attribution() {
+    local gate_pid="$1" cfg="$2" pid cmd
+    if [[ ! -d /proc ]]; then
+        printf '    (no /proc on this host — writer attribution unavailable)\n'
+        return 0
+    fi
+    printf '    gate descendant process tree (pid ppid cmdline):\n'
+    for pid in $(descendant_pids "$gate_pid"); do
+        cmd=""
+        cmd="$(tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null)" || cmd=""
+        printf '      %-8s %-8s %s\n' "$pid" "$(proc_ppid "$pid")" "${cmd:-<exited>}"
+    done
+    printf '    /proc/*/fd holders of the shared config or its lock:\n'
+    fd_holders "$cfg" "$cfg.lock"
+}
+
+# Compose the whole record, THEN append it in one write. Appending it
+# piecemeal loses the tail whenever the gate finishes while attribution is
+# still being gathered — the watcher is stopped at that moment, and what
+# survives is a header with no writer under it, which reads exactly like a
+# complete record that found nothing.
+record_config_event() {
+    local log="$1" reason="$2" cfg="$3" gate_pid="$4" record=""
+    record="$(
+        printf '=== %s  %s\n' "$(timestamp)" "$reason"
+        printf '    core.bare now: %s\n' "$(core_bare_value "$cfg")"
+        proc_attribution "$gate_pid" "$cfg"
+    )" || record=""
+    [[ -n "$record" ]] || return 0
+    printf '%s\n' "$record" >>"$log" 2>/dev/null || true
+}
+
+# Poll the shared config and its lockfile for as long as the gate lives.
+# Runs in a background subshell with errexit relaxed: an observer that
+# aborts on its own first hiccup is worse than no observer, because its
+# silence reads as "nothing happened".
+#
+# The baseline signature is passed IN rather than sampled here, and that is
+# load-bearing. Sampling it as the watcher's first act loses a race the
+# 2026-09-06 aggregate actually lost: under load the gate's writer got
+# scheduled before this subshell did, so the "before" sample was already
+# the AFTER state and the write was never reported. The caller samples it
+# before the gate is launched, where no race exists.
+watch_config_writes() {
+    local cfg="$1" dir="$2" gate_pid="$3" last="$4"
+    local log="$dir/config-writes.log" lock="$cfg.lock"
+    local cur lock_seen=0
+    while kill -0 "$gate_pid" 2>/dev/null; do
+        if [[ -e "$lock" ]]; then
+            if [[ "$lock_seen" == "0" ]]; then
+                record_config_event "$log" "config.lock APPEARED" "$cfg" "$gate_pid"
+                lock_seen=1
+            fi
+        else
+            lock_seen=0
+        fi
+        cur="$(config_signature "$cfg")"
+        if [[ "$cur" != "$last" ]]; then
+            record_config_event "$log" "config CHANGED ($last -> $cur)" "$cfg" "$gate_pid"
+            last="$cur"
+        fi
+        sleep "$WATCH_INTERVAL_S"
+    done
+}
+
+# Write the marker iff the shared `[core]` block is not what it was. The
+# marker is a REPORT, never a verdict — `cmd_child` writes it after the
+# gate's exit code is already decided and never lets it change that code.
+maybe_write_flip_marker() {
+    local dir="$1"
+    local before_bare after_bare before_sha after_sha
+    before_bare="$(core_field "$dir/core_before" 'core.bare')"
+    after_bare="$(core_field "$dir/core_after" 'core.bare')"
+    before_sha="$(core_field "$dir/core_before" 'core_sha256')"
+    after_sha="$(core_field "$dir/core_after" 'core_sha256')"
+    if [[ "$before_bare" == "$after_bare" && "$before_sha" == "$after_sha" ]]; then
+        return 0
+    fi
+    {
+        printf '⛔ CORE_BARE_FLIP — the SHARED .git/config [core] section CHANGED while\n'
+        printf '   this gate ran. Something wrote the primary checkout out from under it.\n'
+        printf '   core.bare: %s -> %s\n' "$before_bare" "$after_bare"
+        printf '   [core] sha256: %s -> %s\n' "$before_sha" "$after_sha"
+        printf '   This is NOT a verdict: the gate exit code is passed through unchanged.\n'
+        if [[ "$after_bare" == "true" ]]; then
+            # The remedy is NOT restated here. It is the `core_bare_set`
+            # hint that `check-primary-checkout-commit-refuse-hook-installed`
+            # already prints, and spelling its destructive-default steps
+            # into a run record would leave a copy-pasteable working-tree
+            # reset lying around in host-local evidence.
+            printf '   Heal the primary with the `core_bare_set` remedy printed by\n'
+            printf '   `just check-primary-checkout-commit-refuse-hook-installed`.\n'
+        fi
+        printf '   --- core_before ---\n'
+        sed 's/^/   /' "$dir/core_before" 2>/dev/null || true
+        printf '   --- core_after ---\n'
+        sed 's/^/   /' "$dir/core_after" 2>/dev/null || true
+        printf '   --- config-writes.log (writer attribution window) ---\n'
+        if [[ -s "$dir/config-writes.log" ]]; then
+            sed 's/^/   /' "$dir/config-writes.log" 2>/dev/null || true
+        else
+            # Say so rather than showing an empty block: an empty window is
+            # itself a finding — the change was seen only by the before/after
+            # digest, so nothing named the writer.
+            printf '   (empty — no in-flight write was sampled, so this run carries NO\n'
+            printf '   writer attribution; the change is known only from the digests above)\n'
+        fi
+    } >"$dir/CORE_BARE_FLIP"
+}
+
+# ---------------------------------------------------------------------
 # worktree-pack preflight (livespec-dev-tooling-ebkrhz.1)
 # ---------------------------------------------------------------------
 
@@ -213,8 +537,15 @@ cmd_start() {
     mkdir -p "$dir"
 
     printf '%s\n' "$label" >"$dir/label"
-    printf '%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$dir/started_at"
+    printf '%s\n' "$(timestamp)" >"$dir/started_at"
     printf '%s\n' "$(pwd)" >"$dir/cwd"
+    # The store is shared across every worktree of the repository, so the
+    # record has to say which one the gate actually ran in — otherwise the
+    # durable directory answers "what ran" but not "where".
+    printf '%s\n' "$(repo_root 2>/dev/null || pwd)" >"$dir/worktree"
+    local shared=""
+    shared="$(shared_config_path)" || shared=""
+    printf '%s\n' "$shared" >"$dir/shared_config"
     printf '%s\n' "$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')" >"$dir/branch"
     printf '%s\n' "$(git rev-parse HEAD 2>/dev/null || echo '?')" >"$dir/head"
     # One argument per line: the record shows exactly what ran, with no
@@ -269,6 +600,21 @@ cmd_child() {
     shift
     printf '%s\n' "$$" >"$dir/pid"
 
+    # Arm the write-watch. Every step is `|| true`: the observer may report
+    # nothing, but it may never be the reason a gate does not report.
+    local cfg="" watch_pid="" baseline=""
+    cfg="$(cat "$dir/shared_config" 2>/dev/null || true)"
+    if [[ -n "$cfg" ]]; then
+        capture_core_state "$cfg" "$dir/core_before" || true
+        : >"$dir/config-writes.log"
+        # Sampled HERE, before the gate exists, so no writer can beat the
+        # watcher to the baseline.
+        baseline="$(config_signature "$cfg")"
+        # errexit/nounset relaxed inside the watcher for the same reason.
+        ( set +e +u +o pipefail; watch_config_writes "$cfg" "$dir" "$$" "$baseline" ) &
+        watch_pid=$!
+    fi
+
     # errexit off for the gate itself: a non-zero exit is the verdict we
     # are here to capture, not an error in the runner.
     set +e
@@ -276,7 +622,21 @@ cmd_child() {
     local code=$?
     set -e
 
-    printf '%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$dir/finished_at"
+    # core_after is captured BEFORE the watcher is stopped, so a write
+    # landing in the teardown gap is still attributed rather than merely
+    # detected.
+    if [[ -n "$cfg" ]]; then
+        capture_core_state "$cfg" "$dir/core_after" || true
+    fi
+    if [[ -n "$watch_pid" ]]; then
+        kill "$watch_pid" 2>/dev/null || true
+        wait "$watch_pid" 2>/dev/null || true
+    fi
+    if [[ -n "$cfg" ]]; then
+        maybe_write_flip_marker "$dir" || true
+    fi
+
+    printf '%s\n' "$(timestamp)" >"$dir/finished_at"
     # exit_code is written LAST and atomically. Its presence is the sole
     # marker that a verdict exists, so it must never appear early or
     # half-written.
@@ -332,6 +692,7 @@ cmd_status() {
     printf '  state             : %s\n' "$state"
     printf '  label             : %s\n' "$(cat "$dir/label" 2>/dev/null || echo '?')"
     printf '  command           : %s\n' "$(tr '\n' ' ' <"$dir/command" 2>/dev/null || echo '?')"
+    printf '  worktree          : %s\n' "$(cat "$dir/worktree" 2>/dev/null || echo '?')"
     printf '  branch @ head     : %s @ %s\n' \
         "$(cat "$dir/branch" 2>/dev/null || echo '?')" \
         "$(cut -c1-8 "$dir/head" 2>/dev/null || echo '?')"
@@ -361,6 +722,15 @@ cmd_status() {
             printf '  may be concluded from it. Re-run the gate; do not treat this as green.\n'
             ;;
     esac
+    # Last, so it is the last thing read — and unconditional on state,
+    # because a flip is orthogonal to the verdict and must be seen even
+    # under a PASSED run.
+    if [[ -f "$dir/CORE_BARE_FLIP" ]]; then
+        printf '\n'
+        printf '  ############################################################\n'
+        cat "$dir/CORE_BARE_FLIP"
+        printf '  ############################################################\n'
+    fi
     return "$(state_exit_code "$dir" "$state")"
 }
 

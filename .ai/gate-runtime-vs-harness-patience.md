@@ -94,8 +94,8 @@ In particular a run that does not finish can **never** read as a pass.
 
 ## How "did not finish" reports itself
 
-The run directory under `tmp/gate-runs/<run-id>/` is written by the
-gate's own process, not by the agent, and it is the evidence:
+The run directory is written by the gate's own process, not by the
+agent, and it is the evidence:
 
 | file | written when | what it proves |
 |---|---|---|
@@ -103,6 +103,18 @@ gate's own process, not by the agent, and it is the evidence:
 | `pid` | by the child, as its first act | the gate has a live process |
 | `output.log` | streamed during the run | these targets ran |
 | `exit_code` | **only** on real completion | a verdict exists |
+
+It lives under the **primary checkout's** `tmp/gate-runs/<run-id>/`,
+resolved from the shared git dir (`git rev-parse --git-common-dir`) —
+**not** under the worktree that started the run. It used to be the
+latter, and routine post-merge `git worktree remove` then deleted the
+only record of what a gate was executing when it failed
+(livespec-dev-tooling-trfzkw). Because every worktree of a repository
+resolves the same store, `gate-list` / `gate-status` / `gate-wait` see
+the same runs from the primary and from any sibling worktree, and a run
+outlives the worktree that started it. One store means the record has to
+say *where* a run ran, so it also carries a `worktree` file, surfaced by
+`gate-status` beside the command line.
 
 `exit_code` present is the single marker of a verdict. Every terminal
 state derives from those four files with no ambiguity left:
@@ -133,6 +145,21 @@ unfinished run.
 
 `tmp/` is gitignored: run records are host-local evidence and are never
 committed.
+
+Each run also carries a `.git/config` write-watch (livespec-p32m6d).
+`core_before` / `core_after` digest the **primary's** shared `[core]`
+block around the gate; a dependency-free background poller appends to
+`config-writes.log` whenever that config changes or its lockfile
+appears, naming the writer as far as `/proc` allows (current
+`core.bare`, the gate child's descendant process tree, any `/proc/*/fd`
+holder). When before and after differ, a `CORE_BARE_FLIP` marker is
+written and `gate-status` prints it loudly.
+
+**The flip is not a verdict.** The gate's own exit code is passed
+through unchanged, the watch is failure-tolerant by construction, and
+the existing `core_bare_is_true` remedy still heals the primary. The
+watch answers *who wrote the config*, which the 03:00:09Z incident on
+2026-09-06 could not answer at all.
 
 ## What was deliberately NOT done
 
