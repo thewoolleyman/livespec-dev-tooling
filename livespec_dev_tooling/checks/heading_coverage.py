@@ -10,7 +10,7 @@ recurse into `proposed_changes/`, `history/`,
 `templates/<name>/history/`, or any other subdirectory; it does NOT
 include the skill-owned `README.md`.
 
-The check fails on four directions:
+The check fails on five directions:
 
 1. Uncovered heading — a `(spec_root, spec_file, heading)` triple
    appears in some spec file but no matching registry entry exists.
@@ -53,6 +53,21 @@ The check fails on four directions:
    and still exits non-zero. An ABSENT test file remains the ordinary
    violation: there is no test, so there is no marker, and that is a
    verdict the read produced.
+
+5. Unresolvable node id — a NON-TODO entry's `test` names a module
+   that does not exist, or a module that exists but defines no test
+   function of that name. Until `livespec-dev-tooling-8t0i` the
+   check never resolved the ids it was given at all: a row could
+   name a nonexistent test and the check exited 0, so twelve
+   ratified scenarios in a sibling repo were recorded as pinned and
+   were pinned by nothing. It fires
+   `registry node id does not resolve to an existing test` under its
+   OWN `check_id`, separable in a log from direction 4's tier
+   verdict. Like direction 4 it has a third outcome — a mapped
+   module that exists and cannot be read or does not parse is
+   UNRESOLVED rather than dangling, and still exits non-zero.
+   The resolution logic lives in the private sibling module
+   `_heading_coverage_node_id_resolution.py`.
 
 The allowlist of integration-tier node-id prefixes is read per
 consumer repo from the `[tool.livespec_dev_tooling]` block's
@@ -105,10 +120,19 @@ import structlog  # noqa: E402  — vendor-path-aware import after sys.path inse
 from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
+# Each RESOLUTION concern lives in its own private sibling module — direction 5
+# below and direction 4 beneath it — the LLOC-reduction split mirroring
+# `_ci_matrix_parse`. The parent keeps the spec-heading walk, the registry
+# diff, and every structured diagnostic.
+#
+# Direction-5 node-id resolution (module + test-function existence).
+from livespec_dev_tooling.checks._heading_coverage_node_id_resolution import (  # noqa: E402
+    UnresolvedNodeId,
+    unresolvable_node_ids,
+)
+
 # Direction-4 scenario integration-tier resolution (the allowlist-prefix and
-# AST-marker logic) extracted to a private sibling module — the LLOC-reduction
-# split mirroring `_ci_matrix_parse`. The parent keeps the spec-heading walk,
-# the registry diff, and every structured diagnostic.
+# AST-marker logic).
 from livespec_dev_tooling.checks._heading_coverage_tier_resolution import (  # noqa: E402
     DEFAULT_SCENARIO_TIERS,
     scenario_tier_violations,
@@ -206,63 +230,33 @@ def _registry_triples_and_todo_violations(
     return triples, todo_missing_reason
 
 
-def main() -> int:
-    structlog.configure(
-        processors=[
-            structlog.processors.add_log_level,
-            structlog.processors.TimeStamper(fmt="iso", utc=True),
-            structlog.processors.JSONRenderer(),
-        ],
-        logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
-    )
+def _load_coverage_entries(*, coverage_path: Path) -> list[dict[str, object]]:
+    """The registry rows at `coverage_path`; an absent or non-list file yields none."""
+    if not coverage_path.is_file():
+        return []
+    text = coverage_path.read_text(encoding="utf-8")
+    parsed = json.loads(text)
+    if not isinstance(parsed, list):
+        return []
+    # The `cast` is the single typed parse boundary: `json.loads`
+    # yields `Any`, the `isinstance` guard narrows to `list`, and the
+    # cast gives the elements a typed `object` shape so the per-element
+    # `isinstance(e, dict)` filter stays a load-bearing runtime guard;
+    # the inner cast then types each kept entry.
+    raw_entries = cast("list[object]", parsed)
+    return [cast("dict[str, object]", e) for e in raw_entries if isinstance(e, dict)]
+
+
+def _report(
+    *,
+    uncovered: list[tuple[str, str, str]],
+    orphan: list[tuple[str, str, str]],
+    todo_missing_reason: list[dict[str, object]],
+    tier_violations: list[dict[str, object]],
+    node_id_violations: list[UnresolvedNodeId],
+) -> int:
+    """Emit every direction's structured diagnostic and return the failing exit code."""
     log = structlog.get_logger("heading_coverage")
-    cwd = Path.cwd()
-    coverage_path = cwd / _COVERAGE_PATH
-    coverage_entries: list[dict[str, object]] = []
-    if coverage_path.is_file():
-        text = coverage_path.read_text(encoding="utf-8")
-        parsed = json.loads(text)
-        if isinstance(parsed, list):
-            # The `cast` is the single typed parse boundary: `json.loads`
-            # yields `Any`, the `isinstance` guard narrows to `list`, and the
-            # cast gives the elements a typed `object` shape so the per-element
-            # `isinstance(e, dict)` filter stays a load-bearing runtime guard;
-            # the inner cast then types each kept entry.
-            raw_entries = cast("list[object]", parsed)
-            coverage_entries = [
-                cast("dict[str, object]", e) for e in raw_entries if isinstance(e, dict)
-            ]
-    spec_set = _spec_triples(repo_root=cwd)
-    registry_set, todo_missing_reason = _registry_triples_and_todo_violations(
-        entries=coverage_entries
-    )
-    tiers = load_scenario_tiers(repo_root=cwd) or DEFAULT_SCENARIO_TIERS
-    tier_scan = scenario_tier_violations(repo_root=cwd, entries=coverage_entries, tiers=tiers)
-    tier_violations: list[dict[str, object]] = []
-    if isinstance(tier_scan, IOFailure):
-        # Reported HERE rather than folded into the violation loop below,
-        # because it is not a violation: the check could not decide the
-        # direction at all. Exiting 0 on it would be the vacuous pass this
-        # conversion exists to remove.
-        unresolvable = unsafe_perform_io(tier_scan.failure())
-        log.error(
-            "scenario tier direction UNRESOLVED — this is not a tier verdict",
-            check_id="heading-coverage-scenario-tier-unresolved",
-            reason=unresolvable.reason,
-            detail=unresolvable.detail,
-        )
-    else:
-        tier_violations = unsafe_perform_io(tier_scan.unwrap())
-    uncovered = sorted(spec_set - registry_set)
-    orphan = sorted(registry_set - spec_set)
-    if (
-        not uncovered
-        and not orphan
-        and not todo_missing_reason
-        and not tier_violations
-        and not isinstance(tier_scan, IOFailure)
-    ):
-        return 0
     for spec_root, spec_file, heading in uncovered:
         log.error(
             "spec heading missing coverage entry",
@@ -287,7 +281,87 @@ def main() -> int:
             heading=entry.get("heading"),
             test=entry.get("test"),
         )
+    for violation in node_id_violations:
+        log.error(
+            "registry node id does not resolve to an existing test",
+            check_id="heading-coverage-node-id-does-not-resolve",
+            spec_root=violation.entry.get("spec_root"),
+            spec_file=violation.entry.get("spec_file"),
+            heading=violation.entry.get("heading"),
+            test=violation.entry.get("test"),
+            reason=violation.reason,
+            detail=violation.detail,
+        )
     return 1
+
+
+def main() -> int:
+    structlog.configure(
+        processors=[
+            structlog.processors.add_log_level,
+            structlog.processors.TimeStamper(fmt="iso", utc=True),
+            structlog.processors.JSONRenderer(),
+        ],
+        logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
+    )
+    log = structlog.get_logger("heading_coverage")
+    cwd = Path.cwd()
+    coverage_entries = _load_coverage_entries(coverage_path=cwd / _COVERAGE_PATH)
+    spec_set = _spec_triples(repo_root=cwd)
+    registry_set, todo_missing_reason = _registry_triples_and_todo_violations(
+        entries=coverage_entries
+    )
+    tiers = load_scenario_tiers(repo_root=cwd) or DEFAULT_SCENARIO_TIERS
+    tier_scan = scenario_tier_violations(repo_root=cwd, entries=coverage_entries, tiers=tiers)
+    tier_violations: list[dict[str, object]] = []
+    if isinstance(tier_scan, IOFailure):
+        # Reported HERE rather than folded into the violation loop below,
+        # because it is not a violation: the check could not decide the
+        # direction at all. Exiting 0 on it would be the vacuous pass this
+        # conversion exists to remove.
+        unresolvable = unsafe_perform_io(tier_scan.failure())
+        log.error(
+            "scenario tier direction UNRESOLVED — this is not a tier verdict",
+            check_id="heading-coverage-scenario-tier-unresolved",
+            reason=unresolvable.reason,
+            detail=unresolvable.detail,
+        )
+    else:
+        tier_violations = unsafe_perform_io(tier_scan.unwrap())
+    node_id_scan = unresolvable_node_ids(repo_root=cwd, entries=coverage_entries)
+    node_id_violations: list[UnresolvedNodeId] = []
+    if isinstance(node_id_scan, IOFailure):
+        # Same reading as the tier direction's failure arm: a mapped module the
+        # check could not read is not a dangling id, and reporting it as one
+        # would be the false verdict this direction was added to remove.
+        unreadable = unsafe_perform_io(node_id_scan.failure())
+        log.error(
+            "node id resolution UNRESOLVED — this is not an existence verdict",
+            check_id="heading-coverage-node-id-unresolved",
+            reason=unreadable.reason,
+            detail=unreadable.detail,
+        )
+    else:
+        node_id_violations = unsafe_perform_io(node_id_scan.unwrap())
+    uncovered = sorted(spec_set - registry_set)
+    orphan = sorted(registry_set - spec_set)
+    if (
+        not uncovered
+        and not orphan
+        and not todo_missing_reason
+        and not tier_violations
+        and not node_id_violations
+        and not isinstance(tier_scan, IOFailure)
+        and not isinstance(node_id_scan, IOFailure)
+    ):
+        return 0
+    return _report(
+        uncovered=uncovered,
+        orphan=orphan,
+        todo_missing_reason=todo_missing_reason,
+        tier_violations=tier_violations,
+        node_id_violations=node_id_violations,
+    )
 
 
 if __name__ == "__main__":
