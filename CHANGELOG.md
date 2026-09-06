@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.52.7](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.52.6...v1.52.7) (2026-09-06)
+
+
+### Bug Fixes
+
+* **fabro-sandbox:** sccache-or-rustc waiters block on the probe verdict instead of starving it (livespec-console-beads-fabro-di6fn5) ([c15af81](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c15af81980569c9916021b4631804030717967d3))
+
 ## [1.52.6](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.52.5...v1.52.6) (2026-09-06)
 
 
