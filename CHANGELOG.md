@@ -58,6 +58,18 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.49.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.48.0...v1.49.0) (2026-09-06)
+
+
+### Features
+
+* **checks:** ban literal interpolation delimiters in non-closed ledger records (livespec-dev-tooling-9yb4) ([d4f8e8f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d4f8e8fe98062cfd3bf6c64b1de7fe411ac92709))
+
+
+### Bug Fixes
+
+* **checks:** red_green_replay accepts a non-.py implementation staged beside its test (livespec-dev-tooling-9yrr) ([32fcac2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/32fcac26bad32d674ea35a1977be0c16c05feee3))
+
 ## [1.48.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.47.0...v1.48.0) (2026-09-06)
 
 
