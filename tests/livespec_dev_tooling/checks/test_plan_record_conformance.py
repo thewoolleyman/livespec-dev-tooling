@@ -1,7 +1,7 @@
 """Outside-in test for `plan_record_conformance` — a positive control per verdict.
 
-The ratified contract (`livespec-orchestrator-beads-fabro`
-`SPECIFICATION/contracts.md` §"Plan-record conformance checks", v095) requires
+The ratified plan-record conformance contract
+(`livespec-orchestrator-beads-fabro` `SPECIFICATION/contracts.md`, v095) requires
 that each of the eleven checks carry a positive control proving it can return a
 hit, so every check id below owns a test that BUILDS the offending fixture and
 asserts the id appears in the finding stream. The two WARN verdicts additionally

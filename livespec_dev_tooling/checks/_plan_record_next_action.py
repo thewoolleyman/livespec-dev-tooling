@@ -1,11 +1,12 @@
 """The typed `next_action` pointer: how it is read, typed, and compared to prose.
 
 The pointer concern, held apart from the verdicts that report it
-(`_plan_record_timeline`). Per the ratified §"Typed `next_action` and
-`last_session`", an open plan epic's pointer is an object carrying exactly
-`kind`, `ref` and `text`, beside a non-empty `last_session` naming who wrote it
-and when. `kind` is one of `impl`, `spec-op`, `human` or `none`; `impl` and
-`spec-op` MUST carry a ref (they are dispatchable action ids), `none` MUST NOT.
+(`_plan_record_timeline`). Per the ratified contract governing the typed
+`next_action` and `last_session` metadata, an open plan epic's pointer is an
+object carrying exactly `kind`, `ref` and `text`, beside a non-empty
+`last_session` naming who wrote it and when. `kind` is one of `impl`,
+`spec-op`, `human` or `none`; `impl` and `spec-op` MUST carry a ref (they are
+dispatchable action ids), `none` MUST NOT.
 
 An ABSENT pointer and an ILL-TYPED one are different answers here, unlike in the
 resume path that reads the same metadata. A resume collapses them — both mean
