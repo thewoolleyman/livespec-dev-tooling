@@ -50,6 +50,19 @@ export test_nprocs := if env_var_or_default("LIVESPEC_CI_LANE", "local") == "hos
 # aggregate) rather than ever emitting an empty Red selection.
 export red_staged := ""
 
+# `hook_gate` — set to a non-empty value by the two LOCAL git-hook gates
+# (`check-pre-commit`, `check-pre-push`) and by nothing else. When set,
+# `scripts/just/check.sh` UNIONs its own `hook_gate_skips` list into
+# `skip`, omitting the aggregate members whose verdict is a fact about
+# the WORLD at this instant rather than about the commit being made.
+# Default empty, so a bare `just check` — the operator's own world-gate
+# run — is unchanged and still runs every member. This is a CALLER
+# distinction, not a lever on any check: no recipe body changes, and no
+# env var, exemption, or opt-in can demote a target from a run that did
+# not ask for the hook-gate subset (work-item livespec-dev-tooling-mmqe,
+# absorbing tkzf).
+export hook_gate := ""
+
 # Default to listing targets when no recipe is invoked.
 default:
     @just --list
@@ -434,10 +447,23 @@ filter-dispatch-matrix *args:
 # This is a WORLD GATE in the same sense as check-master-ci-green and
 # check-branch-protection-alignment: it reads live world state under
 # the OPERATOR's own admin `gh` credentials, is wired into the `just
-# check` aggregate so it reaches pre-push, and is deliberately NOT
-# mirrored into the per-PR CI matrix, where the App token would make it
-# always-skip. There is NO run lever: a lever defaulting to unset would
-# restore the zero-enforcement hole this recipe exists to close.
+# check` aggregate, and is deliberately NOT mirrored into the per-PR CI
+# matrix, where the App token would make it always-skip. There is NO run
+# lever: a lever defaulting to unset would restore the zero-enforcement
+# hole this recipe exists to close.
+#
+# ⛔ ITS ENFORCEMENT POINT IS A DELIBERATE `just check`, NOT A GIT HOOK.
+# The two LOCAL hook gates pass `hook_gate=1`, and `scripts/just/check.sh`
+# omits this member for that caller alone (work-item
+# livespec-dev-tooling-mmqe, absorbing tkzf). The reason is what a world
+# gate IS: its verdict is a fact about nine OTHER repositories at this
+# instant, so a sibling's unrepaired state refuses commits and pushes here
+# that have nothing to do with it — measured 2026-09-06 06:35Z, when
+# livespec-console-beads-fabro's `upstream-dep-gate-wired` required check
+# (forbidden by contracts.md `required_check_missing_from_ci`) exited this
+# lane 4 and refused a hand push in THIS repo. That is not a demotion: the
+# recipe is unchanged, no lever or exemption exists, and a bare `just
+# check` — the operator's own world-gate run — still runs it.
 #
 # COST, measured against the live 9-member fleet: ~35 GitHub API reads,
 # ~18s. That is NOT cheaper than the central sweep, and the comment that
@@ -456,8 +482,9 @@ filter-dispatch-matrix *args:
 # `ghs_`-class GitHub App installation token projected as GITHUB_TOKEN,
 # from which admin scope is DELIBERATELY withheld (the ratified livespec
 # v045 capability boundary). That credential class is structurally NOT
-# this lane's vantage — the lane belongs to the operator's pre-push
-# under their own admin gh credentials — so under it the lane classifies
+# this lane's vantage — the lane belongs to the operator's deliberate
+# `just check` under their own admin gh credentials — so under it the
+# lane classifies
 # its rows (and the adopter leg) OUT-OF-VANTAGE, names that owning
 # context, and exits 0 at zero API reads. Treating the class as a
 # shortfall instead was the repo-wide factory outage journaled on
