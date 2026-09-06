@@ -14,29 +14,53 @@ test_type_name_collisions.py` is what sees it now
 
 ⚠️ THE RENAME CLOSED THE NAME QUESTION AND NOT THE DUPLICATION ONE. This
 seam and `_local_context`'s remain two runners over one operating-system
-fact, and collapsing them is a separate, larger change: `_local_context`'s
-`CommandResult` carries `stdout`/`stderr`, which this seam DELIBERATELY
-does not capture — `claude plugin install` writes progress a human is
-meant to see, so its streams are inherited rather than piped, and there is
-no honest value to put in those two fields here. They do share the ONE
-failure track (`InvocationNotPerformed`), which is where the drift that
-made this worth filing actually was.
+fact, and collapsing them onto one VALUE type is a separate, larger
+change: `_local_context`'s `CommandResult` carries `stdout`/`stderr`,
+which this seam DELIBERATELY does not capture — `claude plugin install`
+writes progress a human is meant to see, so its streams are inherited
+rather than piped, and there is no honest value to put in those two
+fields here. What the two DO share is the one FAILURE track
+(`InvocationNotPerformed`), which is where the drift that made this
+worth filing actually was, and which they now share in fact rather than
+in intent.
 """
 
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, cast
 
+# `returns` is VENDORED, not installed, so a bare import resolves only if
+# some EARLIER import in the same process already put `_vendor/` on
+# `sys.path`. Nothing runs before this module in the `python -m
+# livespec_dev_tooling.fleet.ensure_plugins` entry point that imports it,
+# so it establishes the path itself exactly as `_local_context` does.
+_VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
+
+from returns.io import IOFailure, IOResult, IOSuccess  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
+
+from livespec_dev_tooling.fleet._invocation_failure import (  # noqa: E402
+    BINARY_ABSENT,
+    SPAWN_FAILED,
+    InvocationNotPerformed,
+)
+
 __all__: list[str] = [
+    "PluginCommandOutcome",
     "PluginCommandResult",
     "PluginCommandRunner",
     "enabled_plugin_names",
     "marketplace_repo_ref",
     "planned_commands",
+    "plugin_command_answer",
     "run_from_settings",
     "subprocess_runner",
 ]
@@ -54,10 +78,21 @@ class PluginCommandResult:
     returncode: int
 
 
-class PluginCommandRunner(Protocol):
-    """Callable seam for plugin CLI invocations; `args` includes the program."""
+# The railway alias for this seam, reading as `_local_context`'s
+# `CommandOutcome` does: a plugin command that RAN is a SUCCESS carrying
+# its exit code as data, however that code reads.
+PluginCommandOutcome = IOResult[PluginCommandResult, InvocationNotPerformed]
 
-    def __call__(self, *, args: tuple[str, ...]) -> PluginCommandResult: ...
+
+class PluginCommandRunner(Protocol):
+    """Callable seam for plugin CLI invocations; `args` includes the program.
+
+    The failure track carries ONLY "the invocation did not happen". A
+    program that RAN is a success carrying its exit code as data — the
+    seam does not adjudicate what the plugin CLI said.
+    """
+
+    def __call__(self, *, args: tuple[str, ...]) -> PluginCommandOutcome: ...
 
 
 def marketplace_repo_ref(*, entry: object) -> str | None:
@@ -119,20 +154,58 @@ def planned_commands(*, settings_text: str) -> tuple[tuple[str, ...], ...]:
     return tuple(commands)
 
 
-def subprocess_runner(*, args: tuple[str, ...]) -> PluginCommandResult:
-    """Run one Claude CLI command."""
+def subprocess_runner(*, args: tuple[str, ...]) -> PluginCommandOutcome:
+    """Run one Claude CLI command; a program that never ran FAILS.
+
+    This used to answer an absent `claude` with
+    `PluginCommandResult(returncode=127)` — a fabricated code a real
+    program can also return, so "never ran" and "ran and exited 127" were
+    the same value, and `_run_commands` reported the sentinel to the
+    operator as the plugin CLI's own refusal.
+    """
+    if shutil.which(args[0]) is None:
+        return IOFailure(
+            InvocationNotPerformed(argv=args, kind=BINARY_ABSENT, detail=f"{args[0]} not on PATH")
+        )
     try:
         completed = subprocess.run(list(args), check=False)
-    except OSError:
-        return PluginCommandResult(returncode=127)
-    return PluginCommandResult(returncode=completed.returncode)
+    except OSError as unspawnable:
+        return IOFailure(
+            InvocationNotPerformed(argv=args, kind=SPAWN_FAILED, detail=str(unspawnable))
+        )
+    return IOSuccess(PluginCommandResult(returncode=completed.returncode))
 
 
-def run_from_settings(*, settings_path: Path, runner: PluginCommandRunner) -> int:
-    """Run the Claude plugin commands derived from `settings_path`."""
+def plugin_command_answer(
+    *, outcome: PluginCommandOutcome
+) -> PluginCommandResult | InvocationNotPerformed:
+    """The answer of a plugin command that RAN, or the record of one that did not.
+
+    Both consumers of this seam need exactly this split and neither needs
+    it differently, so it lives here once rather than as inline
+    `isinstance` + `unsafe_perform_io` pairs at each call site —
+    `_local_context.command_answer` is the precedent it is shaped after.
+    """
+    if isinstance(outcome, IOFailure):
+        return unsafe_perform_io(outcome.failure())
+    return unsafe_perform_io(outcome.unwrap())
+
+
+def run_from_settings(
+    *, settings_path: Path, runner: PluginCommandRunner
+) -> IOResult[int, InvocationNotPerformed]:
+    """Exit code of the first plugin command that refused, or `0` if none did.
+
+    An invocation that never HAPPENED has no exit code to report, so it
+    travels the failure track rather than being flattened into a
+    fabricated one — the whole point of the seam's conversion. A command
+    that RAN and exited non-zero stays an ANSWER on the success track.
+    """
     settings_text = settings_path.read_text(encoding="utf-8")
     for command in planned_commands(settings_text=settings_text):
-        result = runner(args=command)
-        if result.returncode != 0:
-            return result.returncode
-    return 0
+        answer = plugin_command_answer(outcome=runner(args=command))
+        if isinstance(answer, InvocationNotPerformed):
+            return IOFailure(answer)
+        if answer.returncode != 0:
+            return IOSuccess(answer.returncode)
+    return IOSuccess(0)
