@@ -3,8 +3,8 @@
 # Authority: SPECIFICATION/contracts.md §"Composite Actions wire contract".
 #
 # Performs: mise install (pulls uv + just + lefthook at pinned versions
-# from the consumer's .mise.toml) + uv sync --all-groups (resolves dev
-# dependencies into a project-local .venv from the consumer's
+# from the consumer's .mise.toml) + a self-healing uv sync --all-groups
+# (resolves dev dependencies into a project-local .venv from the consumer's
 # pyproject.toml). The caller MUST have already run actions/checkout
 # before invoking this action — checkout is the caller's responsibility,
 # not this action's, so that consumers can configure fetch-depth, ref,
@@ -32,4 +32,27 @@ runs:
 
     - name: Install Python dev deps via uv
       shell: bash
-      run: uv sync --all-groups
+      # Self-healing at the source (livespec-dev-tooling-el7g). The bare
+      # `uv sync --all-groups` this replaces failed transiently often enough to
+      # leave fleet MASTER branches red, on TWO mechanisms: a PyPI package
+      # download that times out, and a `git+https` cross-repo-pin fetch that
+      # fails TLS trust. The second exits IMMEDIATELY rather than exhausting
+      # UV_HTTP_RETRIES, so no retry/timeout knob reaches it — which is why the
+      # remedy is at the level of the STEP rather than of the request.
+      #
+      # It is NOT a retry-the-whole-job wrapper: it re-attempts ONLY those two
+      # RECORDED signatures (each a marker AND a corroborating transport
+      # symptom) and propagates every other failure on the FIRST attempt with
+      # uv's own exit code. The check command that follows is untouched, so no
+      # gate is weakened and no genuine failure is masked. Every attempt is
+      # logged as structured JSON on stderr, so an absorbed transient stays
+      # countable rather than disappearing.
+      #
+      # Invoked BY PATH rather than `python -m`, because the package it lives in
+      # is not importable until the very `uv sync` it wraps has run. Three
+      # levels up from GITHUB_ACTION_PATH is the livespec-dev-tooling checkout
+      # root under BOTH consumption shapes: a remote
+      # `uses: thewoolleyman/livespec-dev-tooling/.github/actions/setup@<ref>`
+      # (action path under _actions/.../<ref>/.github/actions/setup) and this
+      # repo's own `uses: ./.github/actions/setup` (under the workspace).
+      run: python3 "${GITHUB_ACTION_PATH}/../../../livespec_dev_tooling/uv_sync_resilient.py"

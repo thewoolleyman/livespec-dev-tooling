@@ -720,6 +720,12 @@ ban-relative-imports = "all"
 # dev-tooling/vendor_update.py (work-item livespec-9ixg) so the
 # release→bump-pin automation can re-vendor in every consumer repo.
 "livespec_dev_tooling/vendor_update.py" = ["S603", "S607", "S404"]
+# The self-healing dependency-install step (work-item
+# livespec-dev-tooling-el7g) shells out to `uv sync` via subprocess.run with a
+# fixed argv list — a module-level constant tuple of literals, with no
+# caller-supplied element and no shell — so S603/S607/S404 are over-strict for
+# it exactly as for the check modules above.
+"livespec_dev_tooling/uv_sync_resilient.py" = ["S603", "S607", "S404"]
 # The fleet-membership surface shells out to `gh`/`git` via
 # subprocess.run with fixed argv lists (the same documented pattern as
 # the check modules above); S105 covers the required-secret NAME
