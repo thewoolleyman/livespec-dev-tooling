@@ -50,6 +50,16 @@
 # livespec release adds per-ecosystem hydrate profiles selected at scaffold
 # time; this core does not need to change for that.)
 #
+# PACK PROVISIONING IS FROM-PACKAGE, NOT FROM-PRIMARY
+# ===================================================
+# `create` materializes the gitignored worktree-discipline pack in the NEW
+# worktree from the package that worktree itself resolves — by default
+# `just install-worktree-pack`, overridable via WORKTREE_PACK_INSTALL_HOOK.
+# Copying the primary's installed pack survives only as the degraded fallback
+# when neither resolves, because the primary is not an authority on the pinned
+# bytes: it can be stale or partial, and nothing a linked worktree runs
+# repairs it (livespec-dev-tooling-ov9o / -os6wd3).
+#
 # USAGE
 #   ./dev-tooling/worktree-lib.sh detect            # print 'primary' or 'linked'
 #   ./dev-tooling/worktree-lib.sh create <branch> [<base-ref>]
@@ -128,21 +138,69 @@ worktree_root() {
 }
 
 
-# worktree_provision_pack_from_primary: copy the canonical, gitignored
-# worktree-discipline pack from the primary checkout into a freshly added
-# linked worktree before hydration runs. The primary is expected to have been
-# bootstrapped with `just install-worktree-pack`; if it is partial, stop with a
-# named repair instead of creating another drifted partial install.
+# worktree_pack_install_from_package: materialize the canonical, gitignored
+# worktree-discipline pack inside <dest> from THE PACKAGE <dest> ITSELF
+# RESOLVES, so a freshly added worktree gets the pinned bytes rather than
+# whatever some other checkout happens to be carrying. Prints and returns 0
+# when an installer ran and succeeded, 1 when none was resolvable or it
+# failed — never fatal, so the caller can degrade.
 #
-# THE THREE LINES BELOW ARE HELD IN LOCKSTEP WITH THE INSTALLER by a test
-# (`livespec_dev_tooling.install_worktree_pack.WORKTREE_PACK_FILES` is the
+# Resolution order, mirroring the hydrate hook's shape:
+#   1. the command in WORKTREE_PACK_INSTALL_HOOK, if set;
+#   2. `just install-worktree-pack`, if `just` is on PATH.
+# Going through `just` keeps this core ECOSYSTEM-NEUTRAL — `just` is mandated
+# fleet-wide and the recipe is the consumer's own, so nothing here assumes
+# Python (or any other) toolchain. `gate-run.sh`'s own pack preflight
+# (livespec-dev-tooling-ebkrhz.1) already reaches for the pack the same way.
+worktree_pack_install_from_package() {
+    dest="${1:-}"
+    if [ -n "${WORKTREE_PACK_INSTALL_HOOK:-}" ]; then
+        echo "worktree-lib provision-pack: installing from the package via WORKTREE_PACK_INSTALL_HOOK"
+        # shellcheck disable=SC2086
+        # Intentional word-splitting so WORKTREE_PACK_INSTALL_HOOK can carry args.
+        if ( cd "$dest" && eval ${WORKTREE_PACK_INSTALL_HOOK} ); then
+            return 0
+        fi
+        return 1
+    fi
+    if command -v just >/dev/null 2>&1; then
+        echo "worktree-lib provision-pack: installing from the package via 'just install-worktree-pack'"
+        if ( cd "$dest" && just install-worktree-pack ); then
+            return 0
+        fi
+        return 1
+    fi
+    return 1
+}
+
+# worktree_provision_pack: put the canonical worktree-discipline pack into a
+# freshly added linked worktree, before hydration runs.
+#
+# THE PACKAGE IS THE AUTHORITY, NOT THE PRIMARY CHECKOUT. This used to be
+# `worktree_provision_pack_from_primary`, which copied whatever version the
+# primary last installed and REFUSED outright when the primary was incomplete.
+# Both halves were wrong (livespec-dev-tooling-ov9o, absorbed by
+# livespec-dev-tooling-os6wd3): measured 2026-09-06 in a real clone the primary
+# was missing `check-no-workflow-edits.sh` and carried a `worktree-lib.sh` that
+# differed from the pinned package, so `just worktree-create` would not run at
+# all — and there was no self-service way out, because the `worktree-pack`
+# bootstrap row targets the INVOKED worktree by design, so `just bootstrap`
+# from a linked worktree never repairs the primary. A worktree created across a
+# pin bump was born failing the pack's own byte-verification, or not born.
+#
+# So: install from the package first, and keep copy-from-primary only as the
+# DEGRADED fallback for a checkout where no from-package installer resolves.
+# A stale or partial primary is now an informational note, never a refusal.
+#
+# THE THREE LINES IN THE FALLBACK ARE HELD IN LOCKSTEP WITH THE INSTALLER by a
+# test (`livespec_dev_tooling.install_worktree_pack.WORKTREE_PACK_FILES` is the
 # single enumeration; this shell string is the one copy of it that cannot
 # import Python). `pack_files` must name every installed file, the `chmod +x`
 # line exactly the executable ones, and the `chmod a-x` line exactly the rest.
 # Editing one without the constant fails `just check`, which is the point:
 # this string had already drifted from the installer once
 # (livespec-dev-tooling-l5gypl).
-worktree_provision_pack_from_primary() {
+worktree_provision_pack() {
     primary="${1:-}"
     dest="${2:-}"
     if [ -z "$primary" ] || [ -z "$dest" ]; then
@@ -150,29 +208,39 @@ worktree_provision_pack_from_primary() {
         return 2
     fi
 
+    if worktree_pack_install_from_package "$dest"; then
+        echo "worktree-lib provision-pack: installed worktree-discipline pack in $dest/dev-tooling"
+        return 0
+    fi
+
+    echo "worktree-lib provision-pack: NOTE — no from-package installer resolved for $dest;" >&2
+    echo "  falling back to a best-effort copy of the primary's pack. Run" >&2
+    echo "  'just install-worktree-pack' there once a task runner is available." >&2
+
     source_dir="$primary/dev-tooling"
     dest_dir="$dest/dev-tooling"
     pack_files="worktree-lib.sh branch-protection.sh gate-run.sh check-no-workflow-edits.sh worktree.just branch-protection.just .gitignore"
 
-    missing=0
+    mkdir -p "$dest_dir"
+    absent=""
     for pack_file in $pack_files; do
-        if [ ! -f "$source_dir/$pack_file" ]; then
-            echo "worktree-lib provision-pack: BLOCKED — missing $source_dir/$pack_file" >&2
-            missing=1
+        if [ -f "$source_dir/$pack_file" ]; then
+            cp "$source_dir/$pack_file" "$dest_dir/$pack_file"
+        else
+            absent="$absent $pack_file"
         fi
     done
-    if [ "$missing" -ne 0 ]; then
-        echo "  Repair the primary checkout with: just install-worktree-pack" >&2
-        return 1
+    # A partial copy leaves some of these absent, so both lines tolerate a
+    # missing target: the copy is best-effort by construction and must not
+    # abort under `set -e`.
+    chmod +x "$dest_dir/worktree-lib.sh" "$dest_dir/branch-protection.sh" "$dest_dir/gate-run.sh" "$dest_dir/check-no-workflow-edits.sh" 2>/dev/null || true
+    chmod a-x "$dest_dir/worktree.just" "$dest_dir/branch-protection.just" "$dest_dir/.gitignore" 2>/dev/null || true
+    if [ -n "$absent" ]; then
+        echo "worktree-lib provision-pack: NOTE — the primary's own pack is incomplete, so" >&2
+        echo " $absent" >&2
+        echo "  did not land. This does not block the worktree." >&2
     fi
-
-    mkdir -p "$dest_dir"
-    for pack_file in $pack_files; do
-        cp "$source_dir/$pack_file" "$dest_dir/$pack_file"
-    done
-    chmod +x "$dest_dir/worktree-lib.sh" "$dest_dir/branch-protection.sh" "$dest_dir/gate-run.sh" "$dest_dir/check-no-workflow-edits.sh"
-    chmod a-x "$dest_dir/worktree.just" "$dest_dir/branch-protection.just" "$dest_dir/.gitignore"
-    echo "worktree-lib provision-pack: installed worktree-discipline pack in $dest_dir"
+    echo "worktree-lib provision-pack: copied the primary's worktree-discipline pack into $dest_dir"
 }
 
 # --------------------------------------------------------------------------
@@ -206,7 +274,7 @@ worktree_create() {
     git -C "$primary" worktree add -b "$branch" "$dest" "$base_ref"
 
     echo "worktree-lib create: provisioning worktree-discipline pack in $dest"
-    worktree_provision_pack_from_primary "$primary" "$dest"
+    worktree_provision_pack "$primary" "$dest"
 
     echo "worktree-lib create: hydrating $dest"
     ( cd "$dest" && worktree_hydrate )
