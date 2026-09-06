@@ -20,7 +20,15 @@
 #      host-mutating tools the steps reach for is invoked;
 #   D. the join token is a credential and is treated as one — an absent
 #      CLUSTER_TOKEN_FILE and a group- or world-readable one are each refused,
-#      naming the path; and the profile is validated as data.
+#      naming the path; and the profile is validated as data;
+#   E. the COMMITTED second node's profile,
+#      `phase0-bare-metal/profiles/gmktec-xubuntu.env`, yields that node's join
+#      through this same script: the plan names the node and the role it read,
+#      and the install line carries the pin, the first node's API address, the
+#      token file, `--node-ip 192.168.1.156` (the bare address, not the profile's
+#      netplan CIDR) and the `NoSchedule` taint that keeps the node closed. B
+#      proves the agent BRANCH with a fixture; only E proves the second NODE's
+#      committed data.
 #
 # HOW IT STAYS OFF THE HOST. Every case runs `provision-k3s.sh --dry-run`,
 # which by construction executes no step. On top of that each case prepends a
@@ -326,6 +334,111 @@ if [ "$REPLY_RC" -ne 0 ] && printf '%s\n' "$REPLY_OUT" | grep -q 'no profile giv
   ok "no profile at all is refused with the usage line"
 else
   no "no profile at all is refused with the usage line"
+fi
+
+# ---------------------------------------------------------------------------
+# E. The COMMITTED second node's profile, not a fixture derived from the first.
+#
+# Section B proved the agent BRANCH using a fixture this suite writes. That
+# fixture is deliberately not the real thing: it is the first node's profile
+# with its cluster keys flipped, so it proves the code and says nothing about
+# whether `phase0-bare-metal/profiles/gmktec-xubuntu.env` — the second pool
+# node as committed DATA — actually yields the join the second node needs.
+# This section runs the committed file.
+#
+# ONE SUBSTITUTION, AND WHY IT IS NOT A CHEAT. The committed profile names
+# CLUSTER_TOKEN_FILE=/etc/rancher/k3s/agent-join-token, a path on THE NODE
+# holding a cluster credential this tree does not carry and this suite must not
+# create. provision-k3s.sh refuses an absent token file in `--dry-run` too — on
+# purpose, so an operator cannot be handed a plan that could not have run — so
+# a suite that pointed at the committed path would be asserting that refusal
+# and nothing else. The copy below therefore redirects that ONE key at a
+# scratch 0600 file and asserts (E1) both that the committed value is the
+# documented node path and that the copy differs from the committed file on
+# exactly that one line. Every other value in the plan is the committed one.
+# ---------------------------------------------------------------------------
+printf '\n== E. the committed gmktec-xubuntu profile: the second node as data ==\n'
+
+GMKTEC_COMMITTED="${HERE}/phase0-bare-metal/profiles/gmktec-xubuntu.env"
+GMKTEC_TOKEN="${TMPROOT}/gmktec-join-token"
+printf 'K10deadbeef::server:notasecret\n' > "$GMKTEC_TOKEN"
+chmod 0600 "$GMKTEC_TOKEN"
+
+GMKTEC_PROFILE="${TMPROOT}/gmktec-with-scratch-token.env"
+sed "s#^CLUSTER_TOKEN_FILE=.*#CLUSTER_TOKEN_FILE=${GMKTEC_TOKEN}#" \
+  "$GMKTEC_COMMITTED" > "$GMKTEC_PROFILE"
+
+substituted="$(diff "$GMKTEC_COMMITTED" "$GMKTEC_PROFILE" | grep -c '^[<>]')"
+if grep -qxF 'CLUSTER_TOKEN_FILE=/etc/rancher/k3s/agent-join-token' "$GMKTEC_COMMITTED" \
+   && [ "$substituted" -eq 2 ]; then
+  ok "E1  the committed profile names the node's own token path, and only that line is substituted"
+else
+  no "E1  the committed profile names the node's own token path, and only that line is substituted (${substituted} line(s) differ)"
+fi
+
+run_plan --dry-run "$GMKTEC_PROFILE"
+GMKTEC_OUT="$REPLY_OUT"
+GMKTEC_RC="$REPLY_RC"
+GMKTEC_COMMAND="$(printf '%s\n' "$GMKTEC_OUT" | grep '^     + ' | sed -e 's/^     + //')"
+
+if [ "$GMKTEC_RC" -eq 0 ]; then
+  ok "E2  --dry-run against the committed gmktec profile exits 0"
+else
+  no "E2  --dry-run against the committed gmktec profile exits 0 (rc=${GMKTEC_RC})"
+  printf '%s\n' "$GMKTEC_OUT"
+fi
+
+# The header states the node and the role it read, so the plan an operator
+# reads names which machine it is for.
+for header in 'node:     gmktec-xubuntu' 'role:     agent' \
+              'join:     https://192.168.1.200:6443'; do
+  if printf '%s\n' "$GMKTEC_OUT" | grep -qxF "$header"; then
+    ok "E3  the plan header states: ${header}"
+  else
+    no "E3  the plan header states: ${header}"
+  fi
+done
+
+# The install line itself — the pin, the server it joins, the token FILE, the
+# node IP taken from the profile's netplan CIDR, the NoSchedule taint that keeps
+# this node closed until the plan's capacity item opens it, and the runner-role
+# label the phase2 node pins resolve against.
+for fragment in \
+  "INSTALL_K3S_VERSION='v1.36.2+k3s1'" \
+  "agent --server https://192.168.1.200:6443" \
+  "--token-file ${GMKTEC_TOKEN}" \
+  "--node-ip 192.168.1.156" \
+  "--node-taint node-role/ci=pending:NoSchedule" \
+  "--node-label k3s-role=arc-runner-host"
+do
+  if printf '%s\n' "$GMKTEC_COMMAND" | grep -qF -- "$fragment"; then
+    ok "E4  the gmktec agent install line carries: ${fragment}"
+  else
+    no "E4  the gmktec agent install line carries: ${fragment} (got: ${GMKTEC_COMMAND})"
+  fi
+done
+
+# `--node-ip` is the bare address, never the /24 the profile states: the CIDR is
+# what netplan wants and what k3s would reject.
+if printf '%s\n' "$GMKTEC_COMMAND" | grep -qF -- '192.168.1.156/24'; then
+  no "E5  the install line pins the bare address, not the netplan CIDR"
+else
+  ok "E5  the install line pins the bare address, not the netplan CIDR"
+fi
+
+# The five server-only steps are the server's on this node too.
+gmktec_skips="$(printf '%s\n' "$GMKTEC_OUT" | grep -c '^SKIP \[agent\] ')"
+if [ "$gmktec_skips" -eq 5 ]; then
+  ok "E6  the committed profile skips the five steps that are the server's"
+else
+  no "E6  the committed profile skips the five steps that are the server's (${gmktec_skips} skipped)"
+fi
+
+if [ -s "$TRIPWIRE" ]; then
+  no "E7  section E executed no host-mutating command"
+  cat "$TRIPWIRE"
+else
+  ok "E7  section E executed no host-mutating command"
 fi
 
 # ---------------------------------------------------------------------------
