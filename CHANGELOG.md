@@ -58,6 +58,22 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.52.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.51.0...v1.52.0) (2026-09-06)
+
+
+### Features
+
+* **check:** the eleven ratified plan-record conformance verdicts, armed-only and shipped unarmed (livespec-dev-tooling-yxxzvj) ([252c285](https://github.com/thewoolleyman/livespec-dev-tooling/commit/252c28551f48a1c0b5e839d7cc7f0b2bd4db9c32))
+* **fleet:** central `worktree-pack-wired` row asserts pack WIRING over every manifest member (livespec-dev-tooling-lptplj) ([145111f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/145111f596057c0110f1476a979e0c5fa5959517))
+* **pack:** heal-at-gate proof, and make the per-hook re-install a read ([f153da1](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f153da151b9f2d7132e79f4ef718b746569fff54))
+
+
+### Bug Fixes
+
+* **fleet:** name the venue that still runs the admin lane, not pre-push ([ae49899](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ae498996b4558bfdef8771e34332a71ba438131e))
+* **fleet:** pace the sweep on GitHub's stated wait and on a request-gap floor ([3ad1745](https://github.com/thewoolleyman/livespec-dev-tooling/commit/3ad17456979e920224b69a2d6dcd630149bf821f))
+* **fleet:** tell a throttled member read apart from a permission-denied one ([3006f7a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/3006f7aa83d9adae978d71b2f712ce1a073ec099))
+
 ## [1.51.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.50.1...v1.51.0) (2026-09-06)
 
 
