@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.52.8](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.52.7...v1.52.8) (2026-09-06)
+
+
+### Bug Fixes
+
+* **cross_repo:** scope the ci.yml batch anchor to the aggregate's own accumulator block ([d3ad292](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d3ad292b92717124b522cbe1c66f433fb9d1b638))
+
 ## [1.52.7](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.52.6...v1.52.7) (2026-09-06)
 
 
