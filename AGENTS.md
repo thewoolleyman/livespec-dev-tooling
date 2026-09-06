@@ -62,6 +62,13 @@ only when their topic is active:
   `ci-runner/k3s/phase2/storage-layout/` — the media-swap model, the link
   survey that is the acceptance test for any card or socket change, and the
   udev / fio / stale-copy traps that each cost real time on 2026-09-04.
+- Read `.ai/ci-node-capacity-reads.md` before raising or lowering the
+  churn-slot cap `C`, diagnosing "the node is slow" or a large load average, or
+  proposing CPU protection for k3s or the removal of a k3s component — why the
+  cap is throughput-derived rather than utilization-derived, why load average
+  is not CPU busy and `sar`'s 10-minute buckets hide bursts, why `k3s-server`
+  is already protected by cgroup parity, why `metrics-server` stays, and the
+  `iostat` column trap that fired a false alarm on 2026-09-06.
 - Read `.ai/gate-runtime-vs-harness-patience.md` before running `just check`,
   committing product `.py`, or diagnosing a gate command that produced no
   output — the commit aggregate can outlast the harness's 20-minute tool-call

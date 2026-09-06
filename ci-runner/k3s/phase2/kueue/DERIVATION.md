@@ -674,10 +674,51 @@ demonstrably was not. Raising `C` was safe and it increased throughput;
 that is not the same as it having been the fix for every stall attributed
 to it at the time.
 
+- **`C = 64` on the TIERED host, first read 2026-09-06 (livespec epic
+  `livespec-g52yrb`, child `livespec-e2vcqf`).** With both write-hot tiers on
+  dedicated NVMe drives the storage ceiling that forced the 2026-09-02 interim
+  is gone and a NEW ceiling is visible: **CPU**. Measured in the first hour at
+  C = 64: at 33 runners `mpstat` read 84 % busy (60 % user, 24 % system),
+  idle floor 6–8 % in 5-second windows, 1-minute load 96 with 134 runnable
+  threads on 72; the maintainer observed a load peak near 120. Storage under
+  the same bursts: `ci-workvols` NVMe 38k writes/s at 1.2 ms `w_await`
+  (66 % util), containerd NVMe 10.6 ms at queue depth 18 (7 % util), the
+  array idle, iowait 0.05 %, 0 `Slow SQL`. The compute is the jobs' own
+  compilers (`rustc`, `cc1`, `clippy`) plus `k3s-server` at ~1.2 cores
+  (1.7 % of the box, spread over ~20 threads — no hot spot). The runner-pod
+  lifecycle scan fired its `pvc-pending` class at the 51-runner burst (work
+  PVCs pending 165–182 s; the provisioner's helper pods compete for the same
+  saturated CPU) and cleared. Nothing failed. Three consequences:
+  1. **96 is OUT**, not deferred: there is no CPU for it, and it would also
+     breach the pod-capacity constraint at `max-pods = 200`.
+  2. **The cap is throughput-derived, not utilization-derived** (maintainer
+     principle, 2026-09-06). Running more runners than cores is correct while
+     jobs have non-CPU phases (clone, fetch, container start); CPU-bound
+     phases are zero-sum, so past saturation each extra runner lengthens every
+     job without adding throughput and risks timeouts. The number to watch
+     is p95 job duration against concurrency and control-plane
+     responsiveness, never "% busy". 64 sits in the oversubscribed-but-flowing
+     regime; the soak decides whether it stays.
+  3. **The control plane needs no CPU-priority change.** `k3s.service` has
+     no `CPUWeight`, `Nice 0`, no quota — but at the cgroup root the pod slice
+     and `system.slice` are peers at weight 100, so under contention the host
+     side is entitled to half the machine and k3s wants 1.7 %. Load 96
+     produced 0 `Slow SQL` and no lease trouble. CFS weights and
+     `--kube-reserved` are shares that never idle a core (only a cpuset pin
+     would, and none is proposed); runner pods request no CPU, so reserved
+     CPU would change nothing about scheduling either. `metrics-server` is
+     NOT an observability dependency (Honeycomb reads `kubeletstats` and
+     `k8s_cluster` directly) but stays, its cost being a rounding error.
+  The lever that remains is not more cores: it is cache hit rate — `sccache`
+  for the Rust/C compile CPU, the warm `uv` cache for Python — which turns
+  repeated compute into reads; the host's ~143 GiB of free memory is useful
+  for exactly that, and for nothing else on the CPU side.
+
 So the answer is bracketed between 16 (soak-proven safe) and 482 (targeted),
-with a large interval between — and as of 2026-08-30 the live value sits at
-**64, un-soaked**, placed inside that interval on purpose to probe it under
-real load (see the `C = 64` entry above). The podman pool has been stopped
+with a large interval between — and as of 2026-09-06 the live value is back
+at **64 on the tiered host**, where its first hour showed the ceiling is now
+CPU rather than storage (see the tiered-host `C = 64` entry above), so 482 is
+a podman-era number this node's cores cannot reach. The podman pool has been stopped
 since 2026-08-13, so the side-by-side joint-budget constraint that
 `README.md` documents no longer binds; the remaining reason for caution
 is simply that the k3s container-churn profile at high concurrency has
