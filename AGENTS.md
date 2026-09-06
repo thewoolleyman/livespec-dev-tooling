@@ -235,11 +235,32 @@ wait — waiting is not a maintainer question. And note the shared failure mode
 across all three: the destructive case is SILENT, so the absence of an error is
 not evidence the write survived.
 
-## Ledger access needs the credential wrapper
+## Beads runtime prerequisites
 
-The beads ledger for this repo is a per-repo TENANT database, and its password
-is projected from 1Password rather than stored on disk. A bare `bd` therefore
-fails with:
+This repo's work-item store is a per-repo beads/Dolt TENANT on the shared
+family dolt-server — NOT JSONL files. A clone reaches its tenant only when ALL
+of the following hold:
+
+- **`bd` CLI, pinned**, through the public lifecycle-guard entry point at
+  `/usr/local/bin/bd`. This repo's mise config MUST NOT declare or install
+  `bd`: an activated mise tool or a regenerated shim can shadow that policy
+  boundary. When `LIVESPEC_BD_PATH` is set it MUST point at `/usr/local/bin/bd`;
+  otherwise `bd` on `PATH` MUST resolve there.
+- **A running Dolt `sql-server`** reachable over **TCP `127.0.0.1:3307`**.
+  Family tenants force TCP, not the unix socket: `.beads/config.yaml` carries
+  `dolt.*` host/port keys and NO `socket` key.
+- **The tenant password** in the environment as a single bare
+  `BEADS_DOLT_PASSWORD`, injected by the wrapper below — never a per-tenant
+  variable, never a value read out of `.beads/` or `.livespec.jsonc`. Probe
+  secrets only (`printenv NAME | wc -c`); never echo a value.
+- **The `.beads/` pointer files**: `config.yaml` (committed) and
+  `metadata.json` (gitignored, regenerable). NEVER run `bd init` in a primary
+  checkout or a worktree — it auto-commits and clobbers `.beads/`.
+
+### Ledger access needs the credential wrapper
+
+The tenant password is projected from 1Password rather than stored on disk. A
+bare `bd` therefore fails with:
 
 ```text
 Error: failed to open database: failed to check if database
@@ -277,13 +298,132 @@ the loud signature will not recognise either.
   it (livespec-dev-tooling-to6hh2), which stops the litter but NOT the silent
   answer: when a query reports emptiness, confirm the wrapper was used and the
   answer came from `127.0.0.1:3307` before believing it.
-- **`bd list` omits closed items unless `--all` is passed** — an id's absence
-  from a default listing is not evidence the item does not exist. Measured on
-  this tenant 2026-08-21: `bd list --limit 0 --json` returned 227 items and
-  ZERO closed, while `bd list --all --limit 0 --json` returned 537, 309 of them
-  closed. The default view hid 58% of the ledger. Any "no item covers X" or
-  "X is not in the ledger" claim taken with a plain `bd list` is unsound; re-run
-  it with `--all` before relying on it.
+- **`bd list` omits closed items unless the status filter is widened** — an
+  id's absence from a default listing is not evidence the item does not exist.
+  Measured on this tenant 2026-08-21: `bd list --limit 0 --json` returned 227
+  items and ZERO closed, while `bd list --all --limit 0 --json` returned 537,
+  309 of them closed. The default view hid 58% of the ledger. Any "no item
+  covers X" or "X is not in the ledger" claim taken with a plain `bd list` is
+  unsound. The canonical widened form is `--status all` (see the catalogue
+  below); `--all` and `--status all` were compared record by record across all
+  523 records of this tenant on 2026-08-21 and returned identical id sets.
+
+### The beads read-surface trap catalogue
+
+Recorded in `bd-ib-cfncp5` and ported here because THIS tenant is where they
+were measured. Every one of them returns a clean, plausible, WRONG answer —
+none errors, so none teaches itself. An agent grooming this ledger meets them
+before it meets any of them by surprise.
+
+- **`--status all` is load-bearing: without it `bd list` HIDES EVERY CLOSED
+  ITEM**, and reports the truncated set as a normal non-empty result with no
+  warning. This is the same fact as the bullet above, stated as the rule the
+  code already follows: `BeadsClient.list_issues` emits the `--status all`
+  form, so an operator surveying with a bare `bd list` and the code are
+  reading different ledgers. A prior-art scan MUST use it — `closed` is where
+  "this was already built" and "the maintainer already ruled on this" live.
+- **`bd list --status open` matches NOTHING here.** This store holds livespec
+  lifecycle statuses — `backlog`, `ready`, `blocked`, `active`, `acceptance`,
+  `pending-approval`, `closed`. The beads-native `open` / `in_progress` names
+  are normalized away, so a native-name filter silently returns an empty set
+  rather than erroring.
+- **`bd ready` is DEAD here, for that same reason.** It filters on the
+  beads-native `open` status this store never uses, so it prints
+  `✨ No open issues` and exits 0 while ready work exists. Measured 2026-08-19
+  on a family tenant: `bd ready --json` returned `[]` against 18 items at
+  `status == ready`. `--limit 0` changes nothing. Do not use it to choose
+  work — use the orchestrator plugin's `next` operation.
+- **Do NOT substitute a `status == ready` filter for `next` either.** `ready`
+  is a lifecycle STATUS, not a computed readiness, so filtering on it IGNORES
+  BLOCKERS and picks work that must not start yet — silently, because the row
+  looks exactly like genuinely-ready work. Use the filter to survey what
+  exists, never to choose what to start.
+- **Enumerating an epic's children: NEITHER the id-prefix form NOR the
+  `parent` field is complete on its own — the answer is their UNION.** The
+  store links children two ways and each hand-rolled filter is blind to one.
+  An explicit `parent-child` dependency edge populates `parent` in
+  `bd list --json`; the implicit dotted-id hierarchy does NOT — `bd` honours
+  it (it refuses to add a redundant edge) while the JSON listing still reports
+  `parent: null`. Measured 2026-08-19: filtering on `parent == <epic>`
+  returned 22 children and silently omitted a 23rd that exists and is
+  `backlog`.
+- **A key missing from a raw JSON record does NOT mean the value was lost.**
+  `bd`'s Go serializer omits any field holding its zero value rather than
+  emitting `null` or `[]`. Measured 2026-08-21 across all 523 records of THIS
+  tenant: 25 distinct keys appear and only 10 appear on every record —
+  `labels` on 243, `metadata` on 183, `dependencies` on 194, `parent` on 116.
+  A grooming pass saw `labels` absent on 280 of 523 and reasonably concluded
+  the listing had dropped them; three controls (server-side `--label` counts
+  versus client-side counts, symmetric difference 0 in every case) proved it
+  had not. There IS a real way to lose labels — the `--skip-labels` flag — and
+  nothing in the normal path passes it.
+- **A dependency row's key names differ BY SURFACE, and neither spelling
+  generalizes.** Measured 2026-08-30 on this tenant: all 500 dependency rows
+  from `bd list --status all --json` carry `depends_on_id` + `type` and none
+  carries `id` + `dependency_type`, while the same edge read through
+  `bd show <id> --json` carries `id` + `dependency_type` and neither of the
+  others. An accessor written from one surface reads a live edge as dangling
+  on the other. Print `sorted(row.keys())` before indexing.
+- **The dependency array is NOT a blocker list.** Measured 2026-08-21 over all
+  261 dependency rows in this tenant: `parent-child` 116, `blocks` 93,
+  `relates-to` 26, `discovered-from` 23, `related` 2, `duplicates` 1 — so 168
+  of 261 rows (64%) are NOT blockers, and a filter treating the array as one
+  is wrong for the majority of its own input in the direction of INVENTING
+  blockers. Prefer the orchestrator's `list-work-items --json` projection,
+  whose `depends_on` is blocks-only and whose records are dense (no
+  `omitempty` sparseness), to any raw per-item read. Its `parent` is populated
+  from the native field and the `parent-child` edge, so it still inherits the
+  dotted-id blind spot above: it is the right surface for an item's parent and
+  is still NOT a complete child enumeration.
+
+## Agent prerequisites for plugin work
+
+When investigating or changing anything related to the Claude Code plugin
+installation, marketplace, or distribution, establish execution context FIRST —
+do not assume how the system works:
+
+1. Run `claude plugin marketplace list` to see which marketplaces are
+   configured and whether they point to local files or remote repos. Changes to
+   a local `marketplace.json` do NOT affect installs from a remote GitHub
+   marketplace.
+2. Trace where the actual install command fetches from (local vs remote) before
+   changing anything, and verify your change affects that code path.
+3. For remote marketplaces, push to GitHub then test; for local, use
+   `/plugin marketplace add ./.claude-plugin/marketplace.json`. Never test local
+   changes against a remote marketplace and assume they apply.
+
+The Codex equivalent of step 1 is `codex plugin marketplace list`; see
+"Codex dogfooding" above for why enablement there is host-wide rather than
+per-project.
+
+## Daily commands
+
+- `just bootstrap` — first-touch setup on a fresh clone; idempotently sets
+  `livespec.primaryPath`, installs the canonical commit-refuse hook at
+  `.git/hooks/pre-commit` + `.git/hooks/pre-push`, installs lefthook hooks,
+  registers `~/.worktrees` in mise's `trusted_config_paths`, and resolves
+  plugin dependencies.
+- `just check` — the full enforcement aggregate (lint, types, tests, coverage,
+  AST checks). It is the load-bearing safety net; it runs locally, in
+  pre-push, and in CI. Dispatch it DETACHED — see
+  `.ai/gate-runtime-vs-harness-patience.md`; the commit aggregate can outlast
+  the harness's tool-call ceiling and a kill produces no verdict.
+- `just gate-start` / `just gate-wait <run-id>` — the detached runner for any
+  gate command. `gate-wait` exits with the gate's own exit code, or `75` for
+  `DIED_WITHOUT_VERDICT`.
+- `just worktree-create <branch>` — the only sanctioned way to create a
+  worktree; see "Repository mutation protocol" below.
+
+## Revise co-edit discipline — `tests/heading-coverage.json`
+
+Every revise pass that adds, changes, or removes a `## ` heading in any spec
+file MUST update `tests/heading-coverage.json` in the same change (via the
+revise `resulting_files[]` mechanism) so the heading-coverage map stays in
+lockstep with the spec. Diff the proposed `## ` heading set against the current
+spec file's H2 set; add an entry (`test` MAY be the literal `"TODO"` with a
+non-empty `reason`) for each new heading, and drop entries for removed
+headings. `check-heading-coverage` is the gate that catches a pass that
+forgot.
 
 ## Repository mutation protocol
 
