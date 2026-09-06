@@ -113,6 +113,16 @@ before touching any work item here. The rules that matter most:
   `tmp/`) so they outlive the LLM session that started them; the session's
   loop only reads outcomes, re-dispatches, and works the valves. Never make a
   fabro run's survival depend on the chat session being alive.
+- **Gate the engine on the probe, never on a claimed reset time.** The only
+  admissible reasons to hold a launch are the credential probe
+  (`dispatcher.py claude-cred-status --json`, `condition: usable`) and master
+  CI. A "resets at HH:MMZ" in a handoff or a 429 body is a claim, not a
+  measurement: the dispatcher's own exhaustion hold is a bounded 15 minutes,
+  and the orchestrator measured the provider's stated instant to be wrong by
+  orders of magnitude. Run the probe before reading any time claim, and never
+  write a "sleep until HH:MM" resumer. Recorded 2026-09-06 after three clock
+  resumers held an idle factory for two hours with a usable credential and no
+  exhaustion record, and the maintainer had to notice by hand.
 
 ## Decision authority — when to ask, proceed, or self-resolve
 
