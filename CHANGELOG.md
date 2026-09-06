@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.48.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.47.0...v1.48.0) (2026-09-06)
+
+
+### Features
+
+* **fabro-sandbox:** sccache in the agent layer, backed by the factory host's redis, via a fail-open rustc wrapper (livespec-console-beads-fabro-di6fn5) ([d3b550d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d3b550de614542a0823ca52804d518c383da0cba))
+
 ## [1.47.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.46.0...v1.47.0) (2026-09-06)
 
 
