@@ -170,9 +170,12 @@ distinction matters because the logical ceiling feeds `maxRunners` while
 the demand weight feeds `nominalQuota`.
 
 **The capacity `C`.** The `ci-runner.io/churn-slot` capacity currently
-registered on the node. It is `64` as of 2026-08-30 — the increase-ci-runners
-raise (livespec epic livespec-zec4mz); see "The derivation at C = 64
-(2026-08-30)" below. It was `16` from 2026-08-19 until that raise.
+registered on the node. It is `64` — first set 2026-08-30 by the
+increase-ci-runners raise (livespec epic livespec-zec4mz), lowered to the
+INTERIM `32` on 2026-09-02 while the RAID's data plane was the ceiling, and
+RESTORED to `64` on 2026-09-06 once both NVMe drives carried the churn; see
+"The derivation at C = 64 restored (2026-09-06)" below. It was `16` from
+2026-08-19 until the first raise.
 
 ## The apportionment rule
 
@@ -538,6 +541,54 @@ single `kubectl apply` of every manifest is the whole change.
 When `C` returns to 64 (after the NVMe tiering), recompute the ten-row
 table per "Recomputing at another C"; at `C = 64` this repository's exact
 share is 2.6047.
+
+## The derivation at C = 64 restored (2026-09-06)
+
+Maintainer decision 2026-09-06 (livespec plan `poweredge-raid-array-maintenance`,
+epic `livespec-g52yrb`; child `livespec-e2vcqf` carried the restore): with the
+containerd store on one NVMe (VG `nvmea`) and the runner work volumes on a
+second NVMe (VG `nvmeb`, XFS with reflink), the RAID data plane that forced the
+2026-09-02 interim no longer sits under the churn, so `C` returns to **64** as
+the interim's own text promised. Under the interim's last three days the array
+sat near idle under every load sample while the NVMe carried the pool. The
+64-runner soak that the 2026-08-30 raise exists for now finally runs at 64 on the
+tiered host; the maintainer's question of a further step to 96 is deferred until
+that soak has data (and 96 would first need kubelet `max-pods` raised above
+`2 x 96 + helpers + system`, see "The pod-capacity constraint").
+
+This is the first C = 64 table at TEN repositories: `W = 516` (the 495 of the
+2026-08-30 table plus `livespec-orchestrator-beads-fabro`'s measured 21). Exact
+shares `e_i = 64 * w_i / 516`:
+
+| Repository | `w_i` | `e_i` | `floor` | remainder | leftover unit | `nominalQuota` |
+|---|---|---|---|---|---|---|
+| `livespec` | 75 | 9.3023 | 9 | 0.3023 | | **9** |
+| `livespec-driver-codex` | 67 | 8.3101 | 8 | 0.3101 | | **8** |
+| `livespec-driver-claude` | 66 | 8.1860 | 8 | 0.1860 | | **8** |
+| `livespec-orchestrator-git-jsonl` | 66 | 8.1860 | 8 | 0.1860 | | **8** |
+| `livespec-overseer` | 65 | 8.0620 | 8 | 0.0620 | | **8** |
+| `livespec-runtime` | 64 | 7.9380 | 7 | 0.9380 | +1 (2nd largest) | **8** |
+| `livespec-dev-tooling` | 63 | 7.8140 | 7 | 0.8140 | +1 (3rd largest) | **8** |
+| `livespec-console-beads-fabro` | 16 | 1.9845 | 1 | 0.9845 | +1 (1st largest) | **2** |
+| `livespec-driver-pi` | 13 | 1.6124 | 1 | 0.6124 | +1 (4th largest) | **2** |
+| `livespec-orchestrator-beads-fabro` | 21 | 2.6047 | 2 | 0.6047 | +1 (5th largest) | **3** |
+| **sum** | **516** | **64** | **59** | | **+5** | **64** |
+
+The floors sum to 59, leaving 5 units, awarded to the five largest remainders in
+order: `livespec-console-beads-fabro`, `livespec-runtime`, `livespec-dev-tooling`,
+`livespec-driver-pi` and `livespec-orchestrator-beads-fabro`. Compared with the
+nine-repository C = 64 table of 2026-08-30, the tenth member's 21 units of weight
+cost `livespec` one slot (10 to 9) and `livespec-driver-codex` and
+`livespec-driver-claude` one each (9 to 8), while `livespec-orchestrator-beads-fabro`
+takes 3; every other row is unchanged. Every exact share exceeds 1, so step 5's
+`max(1, ...)` never fires and the ten quotas sum to **exactly C = 64**.
+
+Raising order per "Recomputing at another C": the node capacity FIRST
+(`install-reapply-unit.sh 64`, which rewrites the reapply unit's boot and timer
+argument and patches the node at once), THEN the quotas (the converge unit's
+single `kubectl apply` of every manifest from the re-installed artifact tree). The
+pod-capacity constraint holds: `2 x 64 + helpers + system` is below
+`max-pods = 200`, as it was from 2026-08-30 to 2026-09-02.
 
 ## Recomputing at another C
 

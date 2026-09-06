@@ -10,11 +10,11 @@
 #
 # nominalQuota derivation for THIS repo:
 #   demand weight w = 67 (podman-era ci-runner-supervisor apportionment)
-#   fleet weight sum W = 495 (482 + livespec-driver-pi's 13, added 2026-08-20)
-#   host churn-slot capacity C = 64 (as registered on the node, 2026-08-30)
-#   exact share = C * w / W = 8.6626  ->  largest-remainder apportionment = 9
+#   fleet weight sum W = 516 (482 podman-era + livespec-driver-pi's 13 + livespec-orchestrator-beads-fabro's 21)
+#   host churn-slot capacity C = 64 (as registered on the node; restored 2026-09-06)
+#   exact share = C * w / W = 8.3101  ->  largest-remainder apportionment = 8
 #
-# The nine repositories' nominalQuota values sum to exactly 64 = C = 64
+# The ten repositories' nominalQuota values sum to exactly 64 = C = 64
 # (increase-ci-runners raise, 2026-08-30; livespec epic livespec-zec4mz). At
 # C = 64 every repository's exact share exceeds 1, so the apportionment sums
 # to exactly C with NO `max(1, ...)` excess — the one-slot over-reservation
@@ -54,11 +54,8 @@ spec:
         - name: churn-slot-flavor
           resources:
             - name: "ci-runner.io/churn-slot"
-              # INTERIM C = 32 (maintainer decision 2026-09-02, until the NVMe tiering
-              # livespec-e2vcqf lands). 5 -> 4 on 2026-09-04 when the tenth repository
-              # joined: this queue lost the leftover unit it held at nine repositories; see
-              # DERIVATION.md "Recomputation on the tenth repository (2026-09-04)".
-              nominalQuota: 4
+              # C = 64 RESTORED 2026-09-06 (maintainer decision, livespec plan poweredge-raid-array-maintenance / epic livespec-g52yrb, after the NVMe tiering livespec-e2vcqf landed both drives): re-apportioned at ten repositories, W = 516; see DERIVATION.md "The derivation at C = 64 restored (2026-09-06)".
+              nominalQuota: 8
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: LocalQueue
