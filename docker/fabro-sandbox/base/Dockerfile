@@ -134,6 +134,22 @@ RUN mise use -g just@${JUST_VERSION} lefthook@${LEFTHOOK_VERSION} \
         shellcheck@${SHELLCHECK_VERSION} node@${NODE_VERSION} \
     && mise reshim
 
+# Pre-trust every job / sandbox workspace root so a fresh container can run a
+# checkout's mise-driven recipe with NO per-job `mise trust` step. mise refuses
+# an untrusted `.mise.toml` ("Config files in .../.mise.toml are not trusted"),
+# and every tenant's ci.yml worked around that with one `mise trust` step per
+# job — about 160 copies fleet-wide (livespec-dev-tooling-tyug). The value is a
+# colon-separated list of ANCESTOR directories: any config beneath one of them
+# is trusted (verified on this mise pin). Trusting the checkout's own config
+# adds no attack surface — the job already executes that repository's code.
+#   /__w        ARC and hosted GitHub Actions container jobs check out under
+#               /__w/<repo>/<repo> (GITHUB_WORKSPACE).
+#   /workspace  the Fabro sandbox clone root (siblings under
+#               /workspace/siblings).
+# An explicit `mise trust` in a job stays a harmless no-op, so tenants can drop
+# their trust steps at their own pace (keep `mise install`).
+ENV MISE_TRUSTED_CONFIG_PATHS=/__w:/workspace
+
 # Neutral committer identity for in-sandbox commits (matches the host
 # checkout identity so RGR trailer authorship is consistent).
 RUN git config --system user.name "E2E Test" \
