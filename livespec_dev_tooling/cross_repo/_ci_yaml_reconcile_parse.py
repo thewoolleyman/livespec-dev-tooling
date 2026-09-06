@@ -36,6 +36,29 @@ rather than from a format string of our own, so a repo whose batched lines are
 spelled differently keeps its spelling. The gate parses these with
 `_ci_matrix_parse._parse_run_slugs`, which scans for `just <slug>` anywhere in a
 run line, so any faithful substitution is recognized.
+
+## The anchor is the aggregate's OWN block, not every run line in the file
+
+`batch_anchor` used to collect EVERY `just check-<slug>` line in the file, and
+`batch_insert_index` anchors on the first canonical entry that sorts after the
+new slug — so a slug sorting before `check-per-file-coverage` landed in THAT
+job's bare single-target step, which sits well above the metadata batch.
+v1.43.0 did precisely that with `check-ci-gate-parity` in seven consumers. A
+bare step line declares no `$failed` accumulator, so the inserted `||
+failed="$failed <slug>"` fed a variable nothing reads: the check RAN and its
+non-zero exit was DISCARDED, leaving the job green whatever the check found.
+Unlike the missing-anchor failure above, this one is SILENT — it survived until
+every carrier PR of the `pr-gate-master-parity` plan moved the line by hand.
+
+Two rules close it. An ENTRY must be accumulator-SHAPED — a `just check-<slug>`
+invocation carrying a `||` tail that captures its exit status — so a bare
+single-target step line is never an insertion anchor. And the entries are SCOPED
+to the contiguous, equally-indented run of such lines that contains the
+aggregate, so a sibling step's own accumulator (the `.py`-gated batch that
+precedes the metadata batch in the common fleet shape) is never part of this
+one. A consumer that invokes the aggregate with no tail to capture it therefore
+carries no batch at all and takes the loud `::error::` path — the honest answer,
+since there is no accumulator there for an inserted line to feed.
 """
 
 from __future__ import annotations
@@ -68,10 +91,16 @@ _MATRIX_KEY = re.compile(r"^\s*matrix:\s*$")
 _TARGET_KEY = re.compile(r"^\s*target:\s*$")
 _BULLET = re.compile(r"^(\s*)-\s*([\w-]+)\s*$")
 
-# A batched aggregate invocation: `just <check-slug>` anywhere in a run line.
-# Deliberately looser than a full-line match — the tail (`|| failed=...`) is the
-# consumer's own and is preserved by substitution rather than re-synthesised.
-_BATCH_RUN = re.compile(r"^(\s*)just\s+(check-[\w-]+)\b")
+# One line of a batched ACCUMULATOR block: `just <check-slug>` followed by a
+# `||` tail that captures the invocation's exit status (`|| failed="$failed
+# <slug>"` in every fleet consumer). The tail is matched only by its `||` and is
+# otherwise the consumer's own, preserved by substitution rather than
+# re-synthesised, so a repo that spells its tail differently keeps its spelling.
+#
+# The `||` is load-bearing, not decoration. A BARE `just check-<slug>` line is a
+# single-target step whose own exit status IS the step's verdict; it declares no
+# accumulator, so a line inserted beside it feeds a `$failed` nothing reads.
+_BATCH_RUN = re.compile(r"^(\s*)just\s+(check-[\w-]+)\b[^\n]*\|\|")
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -209,29 +238,67 @@ class BatchAnchor:
     template: str
 
 
-def batch_anchor(*, lines: list[str]) -> BatchAnchor | None:
-    """Return the batched section that invokes the aggregate slug, or None.
+@dataclass(frozen=True, kw_only=True)
+class _BlockLine:
+    """One accumulator-shaped run line: its file index, its indent, and its slug."""
 
-    A consumer qualifies when some `run:` line invokes `just
-    check-aggregate-completeness`. Every batched `just check-<slug>` line in the
-    file is collected as an entry, so insertion can preserve canonical order
-    against the slugs already present.
+    index: int
+    indent: str
+    slug: str
+
+
+def _accumulator_lines(*, lines: list[str]) -> list[_BlockLine]:
+    """Return every accumulator-shaped `just check-<slug>` line, in file order."""
+    return [
+        _BlockLine(index=index, indent=match.group(1), slug=match.group(2))
+        for index, raw in enumerate(lines)
+        if (match := _BATCH_RUN.match(raw)) is not None
+    ]
+
+
+def _same_block(*, lines: list[str], one: _BlockLine, other: _BlockLine) -> bool:
+    """Return True when two accumulator lines belong to ONE contiguous block.
+
+    Contiguity is what scopes the anchor to the step whose `$failed` an inserted
+    line will actually feed: the two lines share an indent, and nothing but
+    blank or `#`-comment lines separates them — the same tolerance
+    `collect_entries` gives an interleaved comment inside a matrix target list,
+    because these ci.yml files annotate individual entries. A `just
+    check-<slug>` line in a DIFFERENT step is separated by that step's own YAML
+    keys and by the block-closing `if [ -n "$failed" ]` test, so it can never
+    join the block.
     """
-    entries: list[tuple[int, str]] = []
-    template: str | None = None
-    for index, raw in enumerate(lines):
-        if raw.strip().startswith("#"):
-            continue
-        match = _BATCH_RUN.match(raw)
-        if match is None:
-            continue
-        slug = match.group(2)
-        entries.append((index, slug))
-        if slug == AGGREGATE_SLUG and template is None:
-            template = raw
-    if template is None:
+    if one.indent != other.indent:
+        return False
+    first, second = sorted((one.index, other.index))
+    between = [lines[index].strip() for index in range(first + 1, second)]
+    return all(not text or text.startswith("#") for text in between)
+
+
+def batch_anchor(*, lines: list[str]) -> BatchAnchor | None:
+    """Return the accumulator block that invokes the aggregate slug, or None.
+
+    A consumer qualifies when an accumulator-shaped run line invokes `just
+    check-aggregate-completeness`. The anchor's entries are the lines of THAT
+    block alone — walked outward from the aggregate for as long as `_same_block`
+    holds — so insertion preserves canonical order against the slugs already
+    present without ever leaving the block that fails the job on `$failed`.
+    """
+    found = _accumulator_lines(lines=lines)
+    pivot = next((slot for slot, line in enumerate(found) if line.slug == AGGREGATE_SLUG), None)
+    if pivot is None:
         return None
-    return BatchAnchor(entries=tuple(entries), template=template)
+    block = [found[pivot]]
+    for step in (-1, 1):
+        for slot in range(pivot + step, -1 if step < 0 else len(found), step):
+            if not _same_block(lines=lines, one=found[slot - step], other=found[slot]):
+                break
+            block.append(found[slot])
+    ordered = sorted(block, key=lambda line: line.index)
+    return BatchAnchor(
+        entries=tuple((line.index, line.slug) for line in ordered),
+        template=lines[found[pivot].index],
+    )
 
 
 def batch_line_for(*, anchor: BatchAnchor, slug: str) -> str:
