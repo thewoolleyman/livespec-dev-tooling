@@ -19,9 +19,9 @@
 #                         33893048859 dispatched exactly 21 jobs; not a
 #                         podman-era inheritance)
 #   fleet weight sum W = 516 (the 495 of nine repositories plus this 21)
-#   host churn-slot capacity C = 32 (INTERIM, as registered on the node
-#                                    since 2026-09-02)
-#   exact share = C * w / W = 1.3023  ->  floor 1, no leftover unit = 1
+#   host churn-slot capacity C = 64 (as registered on the node; restored 2026-09-06)
+#   exact share = C * w / W = 2.6047  ->  floor 2, +1 leftover unit
+#                                     (5th-largest remainder) = 3
 #
 # Adding this repository moved exactly ONE other quota:
 # `livespec-driver-codex` 5 -> 4 (it lost the leftover unit it held at nine
@@ -58,10 +58,8 @@ spec:
         - name: churn-slot-flavor
           resources:
             - name: "ci-runner.io/churn-slot"
-              # INTERIM C = 32 (maintainer decision 2026-09-02, until the NVMe tiering
-              # livespec-e2vcqf lands); see DERIVATION.md "Recomputation on the tenth
-              # repository (2026-09-04)".
-              nominalQuota: 1
+              # C = 64 RESTORED 2026-09-06 (maintainer decision, livespec plan poweredge-raid-array-maintenance / epic livespec-g52yrb, after the NVMe tiering livespec-e2vcqf landed both drives): re-apportioned at ten repositories, W = 516; see DERIVATION.md "The derivation at C = 64 restored (2026-09-06)".
+              nominalQuota: 3
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: LocalQueue

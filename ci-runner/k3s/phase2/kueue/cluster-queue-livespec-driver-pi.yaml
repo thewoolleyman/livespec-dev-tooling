@@ -16,10 +16,10 @@
 # nominalQuota derivation for THIS repo:
 #   demand weight w = 13 (this repo's MEASURED CI-matrix width — see the note
 #                         below, it is not a podman-era inheritance)
-#   fleet weight sum W = 495 (the historical 482 plus this repo's 13)
-#   host churn-slot capacity C = 64 (as registered on the node, 2026-08-30)
-#   exact share = C * w / W = 1.6808  ->  floor 1, +1 leftover unit
-#                                     (2nd-largest remainder) = 2
+#   fleet weight sum W = 516 (482 podman-era + livespec-driver-pi's 13 + livespec-orchestrator-beads-fabro's 21)
+#   host churn-slot capacity C = 64 (as registered on the node; restored 2026-09-06)
+#   exact share = C * w / W = 1.6124  ->  floor 1, +1 leftover unit
+#                                     (4th-largest remainder) = 2
 #
 # AT C = 64 THE C = 16 COHORT-SUM EXCEPTION IS GONE. At the old C = 16 this
 # repo's share rounded to zero and the rule's `max(1, ...)` floor lifted it to
@@ -70,8 +70,8 @@ spec:
         - name: churn-slot-flavor
           resources:
             - name: "ci-runner.io/churn-slot"
-              # 2026-09-02 INTERIM C = 32 (maintainer decision, until the NVMe tiering livespec-e2vcqf lands): re-apportioned from C = 64; see DERIVATION.md "The derivation at C = 32".
-              nominalQuota: 1
+              # C = 64 RESTORED 2026-09-06 (maintainer decision, livespec plan poweredge-raid-array-maintenance / epic livespec-g52yrb, after the NVMe tiering livespec-e2vcqf landed both drives): re-apportioned at ten repositories, W = 516; see DERIVATION.md "The derivation at C = 64 restored (2026-09-06)".
+              nominalQuota: 2
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: LocalQueue
