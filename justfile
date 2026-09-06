@@ -293,8 +293,15 @@ check-no-workflow-edits:
 # quietly restore the every-checkout-starts-dirty behavior. Repo-private (not
 # under livespec_dev_tooling/checks/), so check-aggregate-completeness does not
 # enforce it; a literal member of check-targets.txt's repo-private block.
+#
+# `--no-sync` is LOAD-BEARING, not tidiness: a bare `uv run` resolves the
+# environment first, which reconciles uv.lock's self-entry to the pyproject
+# version BEFORE the module opens the file. The check would then read a lock uv
+# had just repaired, return 0 against real drift, and dirty the tree doing it —
+# committing the very bug this work-item fixes. With `--no-sync` uv skips the
+# resolve, so the module reads the COMMITTED bytes and the drift surfaces.
 check-uv-lock-version-sync:
-    uv run python -m livespec_dev_tooling.uv_lock_version_sync
+    uv run --no-sync python -m livespec_dev_tooling.uv_lock_version_sync
 
 # `changed-files` — print the changed `.py` set this branch touches,
 # repo-root-relative, one path per line, sorted + de-duplicated
