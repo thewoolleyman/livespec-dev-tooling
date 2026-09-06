@@ -26,8 +26,13 @@
 # since 2026-09-04, because the populator also pre-warms the crates proxy
 # (../crates-proxy/) with `cargo fetch` for every routed Cargo.lock, and that
 # needs cargo and the console's pinned toolchain (the same image the console's
-# `container:` runs). The tag is overridable by install-warm-cache.sh's
-# WARM_CACHE_IMAGE; bump it in lockstep with the fleet's `container:` pin.
+# `container:` runs) — and the python-rust-FUZZ leaf of that layer since
+# 2026-09-06, because the populator also builds the console's warmed ASAN fuzz
+# tree (`cargo +nightly fuzz build`; README "Target generations"), which needs
+# the nightly toolchain, cargo-fuzz and a C++ compiler that only that leaf
+# bakes. It is a superset of python-rust, so everything else here is unchanged.
+# The tag is overridable by install-warm-cache.sh's WARM_CACHE_IMAGE; bump it
+# in lockstep with the fleet's `container:` pin (same version, fuzz prefix).
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -143,7 +148,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: populate
-              image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-v1.40.1
+              image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-fuzz-v1.46.0
               imagePullPolicy: IfNotPresent
               command: ["bash", "/scripts/warm-cache-populate.sh"]
               env:

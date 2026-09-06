@@ -303,9 +303,10 @@ spec:
                   # own inodes; the generation is untouched) and the cargo/
                   # compilation tiers off by writing nothing. Each tier still
                   # reports, so a cold job is a measured cold job.
-                  rm -rf /__w/_warm/uv 2>/dev/null
+                  rm -rf /__w/_warm/uv /__w/_warm/target 2>/dev/null
                   rec uv false "$uv_gen" "$(ms)" 0 reflink-seed "off:$switch"
                   rec registry false "" "$(ms)" 0 served "off:$switch"
+                  rec target false "$target_gen" "$(ms)" 0 reflink-seed "off:$switch"
                   exit 0
                 fi
                 registry_hit=false
@@ -350,6 +351,11 @@ spec:
                 uv_hit=false; [ -d /__w/_warm/uv ] && uv_hit=true
                 rec uv "$uv_hit" "$uv_gen" "$(ms)" 0 reflink-seed ""
                 rec registry "$registry_hit" "" "$(ms)" 0 served ""
+                # The warmed target/ tier (the console's ASAN fuzz tree today):
+                # seeded by the provisioner like uv; the consuming job moves it
+                # into place itself, so "hit" here means the seed is present.
+                target_hit=false; [ -n "$target_gen" ] && target_hit=true
+                rec target "$target_hit" "$target_gen" "$(ms)" 0 reflink-seed ""
                 exit 0
         # Header item 6: at pod deletion after the job — the per-tier
         # warm-copy spans postStart recorded (replayed with their own

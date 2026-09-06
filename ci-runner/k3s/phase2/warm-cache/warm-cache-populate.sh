@@ -768,7 +768,131 @@ for name in "${fetched[@]}"; do
   fi
 done
 
-log "run summary: uv generation $(basename "${published_gen:-none}") (rebuilt=${rebuilt} refused=${refused} verified=${verified}, ${synced} repositories synced), ${cargo_warmed} pre-warmed for cargo, sccache builds: ${sccache_built} built / ${sccache_skipped} skipped / ${sccache_skipped_busy} skipped-busy"
+# ---------------------------------------------------------------------------
+# 4. TARGET GENERATIONS — a warmed `target/` tree per (repository, key), for
+#    the compile shapes sccache reaches least. First and so far only key:
+#    `asan-fuzz`, the console's `cargo +nightly fuzz build` tree (console plan
+#    optimize-console-builds, `livespec-console-beads-fabro-ydlant`; the spike
+#    that sized it is that plan's research/010). Measured 2026-09-06 on this
+#    node: the tree is 253 MB and builds cold in 33-41 s at 12 jobs with
+#    0 % sccache hits (nothing else compiles with -Zsanitizer=address); a job
+#    that receives it Fresh and restores source mtimes compiles in ~0.1 s,
+#    and a PR that edits a domain crate still saves the ~12 s of sanitized
+#    dependencies. The job's 79 s P50 compile phase is the target.
+#
+#    Layout mirrors the uv tier so the same provisioner seed applies:
+#      ${WARM_ROOT}/target-generations/<repo>/<key>/<stamp>/tree   the tree
+#      ${WARM_ROOT}/target-generations/<repo>/<key>/<stamp>/.target-manifest.json
+#      ${WARM_ROOT}/target/<repo>/<key> -> ../../target-generations/<repo>/<key>/<stamp>
+#    Published by one atomic symlink rename, pruned to KEEP_GENERATIONS (the
+#    live one is never pruned). The provisioner reflink-copies every published
+#    link under <volume>/_warm/target/<repo>/<key> (a copy-on-write copy the
+#    job owns; no inode is shared), and the consuming job moves the tree into
+#    place and restores mtimes for sources unchanged vs `source_sha`.
+#
+#    Path identity: the tree is built at the job's own checkout path
+#    (${JOB_WORK_ROOT}/<repo>/<repo>) — cargo fingerprints embed the SOURCE
+#    path — and with the job's own wrapper (sccache, as the writer here, so
+#    the sanitized objects also land in the compilation cache). Rebuilt only
+#    when the default-branch commit or the fuzz toolchain (nightly rustc +
+#    cargo-fuzz) changed, under the same admitted-job gate and nice/ionice as
+#    the sccache writer build. Needs the python-rust-fuzz image (nightly,
+#    cargo-fuzz, c++); on any other image every repository is skipped, loudly.
+TARGET_GEN_ROOT="${WARM_ROOT}/target-generations"
+TARGET_LINK_ROOT="${WARM_ROOT}/target"
+target_built=0; target_skipped=0; target_skipped_busy=0
+fuzz_toolchain=""
+if command -v cargo >/dev/null && command -v c++ >/dev/null \
+   && rustc +nightly --version >/dev/null 2>&1 && cargo +nightly fuzz --version >/dev/null 2>&1; then
+  fuzz_toolchain="nightly-$(rustc +nightly --version 2>/dev/null | awk '{print $2}')@cargo-fuzz-$(cargo +nightly fuzz --version 2>/dev/null | awk '{print $2}')"
+fi
+for name in "${fetched[@]}"; do
+  src="${SRC_DIR}/${name}"
+  [ -f "${src}/fuzz/Cargo.toml" ] || continue
+  key="asan-fuzz"
+  log "-- ${name}: target generation ${key}"
+  if [ -z "${fuzz_toolchain}" ]; then
+    log "   fuzz toolchain absent in this image (needs python-rust-fuzz: nightly + cargo-fuzz + c++); skipping"
+    target_skipped=$((target_skipped + 1)); continue
+  fi
+  sha="$(git -C "${src}" rev-parse HEAD)"
+  gen_dir="${TARGET_GEN_ROOT}/${name}/${key}"; link="${TARGET_LINK_ROOT}/${name}/${key}"
+  mkdir -p "${gen_dir}" "${TARGET_LINK_ROOT}/${name}"
+  cur=""
+  if [ -L "${link}" ]; then cur="$(readlink -f "${link}" || true)"; [ -d "${cur}" ] || cur=""; fi
+  have_sha=""; have_tc=""
+  if [ -n "${cur}" ] && [ -r "${cur}/.target-manifest.json" ]; then
+    have_sha="$(manifest_field "${cur}/.target-manifest.json" source_sha || true)"
+    have_tc="$(manifest_field "${cur}/.target-manifest.json" toolchain || true)"
+  fi
+  if [ "${have_sha}" = "${sha}" ] && [ "${have_tc}" = "${fuzz_toolchain}" ]; then
+    log "   generation $(basename "${cur}") already holds ${sha:0:8} @ ${fuzz_toolchain}; no build"
+    target_skipped=$((target_skipped + 1)); continue
+  fi
+  if [ -z "${admitted_last}" ] && ! admitted_last="$(admitted_jobs)"; then
+    log "   cannot read the pool's admitted-job count (Kueue API); treating the pool as busy — no build"
+    admitted_last=""; failed+=("${name}:target-admitted-unreadable"); continue
+  fi
+  if [ "${admitted_last}" -gt "${POPULATE_ADMITTED_JOB_THRESHOLD}" ]; then
+    log "   pool busy (${admitted_last} admitted jobs > threshold ${POPULATE_ADMITTED_JOB_THRESHOLD}); skipping the build this tick (guardrail)"
+    target_skipped_busy=$((target_skipped_busy + 1)); continue
+  fi
+  build_dir="${JOB_WORK_ROOT}/${name}/${name}"
+  rm -rf "${JOB_WORK_ROOT:?}/${name}"; mkdir -p "${JOB_WORK_ROOT}/${name}"; cp -a "${src}" "${build_dir}"
+  wrapper_env=()
+  if [ -x "${SCCACHE_BIN}" ] && [ -n "${SCCACHE_REDIS_WRITER_PASSWORD}" ] && [ -n "${SCCACHE_REDIS_WRITER_USERNAME}" ]; then
+    wrapper_env=(RUSTC_WRAPPER="${SCCACHE_BIN}" SCCACHE_REDIS_ENDPOINT="${SCCACHE_REDIS_ENDPOINT}"
+                 SCCACHE_REDIS_USERNAME="${SCCACHE_REDIS_WRITER_USERNAME}" SCCACHE_REDIS_PASSWORD="${SCCACHE_REDIS_WRITER_PASSWORD}"
+                 SCCACHE_REDIS_RW_MODE=READ_WRITE)
+  else
+    log "   sccache writer not available here; building without the wrapper (the tree is still valid for jobs)"
+  fi
+  log "   building ${sha:0:8} @ ${fuzz_toolchain} (had: ${have_sha:0:8}${have_sha:+ @ }${have_tc})"
+  t0=$(date +%s)
+  if (cd "${build_dir}" && env "${wrapper_env[@]}" nice -n 19 ionice -c 3 cargo +nightly fuzz build > "${SCRATCH}/fuzz-build-${name}.log" 2>&1); then
+    secs=$(( $(date +%s) - t0 ))
+    stamp="$(date -u +%Y%m%dT%H%M%SZ)"; new="${gen_dir}/${stamp}"
+    rm -rf "${new}"; mkdir -p "${new}"
+    if cp -a --reflink=auto "${build_dir}/fuzz/target" "${new}/tree" && find "${new}/tree" -type d -exec chmod 0777 {} +; then
+      tb="$(gen_bytes "${new}/tree")"; tf="$(gen_files "${new}/tree")"
+      python3 - "${new}/.target-manifest.json" "${stamp}" "${name}" "${key}" "${sha}" "${fuzz_toolchain}" "${tb}" "${tf}" "${secs}" <<'PY' || log "WARN: target manifest not written"
+import json, os, sys, time
+path, gen, repo, key, sha, tc, nbytes, nfiles, secs = sys.argv[1:10]
+now = int(time.time())
+doc = {"generation": gen, "repo": repo, "key": key, "source_sha": sha, "toolchain": tc,
+       "build_command": "cargo +nightly fuzz build", "tree": "tree",
+       "built_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)), "built_at_epoch": now,
+       "build_seconds": int(secs), "generation_bytes": int(nbytes), "generation_files": int(nfiles)}
+tmp = path + ".tmp"
+with open(tmp, "w") as f: json.dump(doc, f, indent=1)
+os.replace(tmp, path)
+PY
+      ln -sfn "../../target-generations/${name}/${key}/${stamp}" "${link}.tmp"
+      mv -T "${link}.tmp" "${link}"
+      target_built=$((target_built + 1))
+      log "   built in ${secs} s; published ${stamp} (${tb} bytes, ${tf} files)"
+    else
+      log "   copying fuzz/target into the generation failed; discarded"
+      rm -rf "${new}"; failed+=("${name}:target-copy")
+    fi
+  else
+    log "   cargo +nightly fuzz build FAILED after $(( $(date +%s) - t0 )) s: $(tail -3 "${SCRATCH}/fuzz-build-${name}.log" | tr '\n' ' ')"
+    failed+=("${name}:target-build")
+  fi
+  [ -x "${SCCACHE_BIN}" ] && "${SCCACHE_BIN}" --stop-server >/dev/null 2>&1 || true
+  rm -rf "${JOB_WORK_ROOT:?}/${name}"
+  live="$(readlink -f "${link}" 2>/dev/null || true)"
+  mapfile -t tgens < <(find "${gen_dir}" -mindepth 1 -maxdepth 1 -type d -name '[0-9]*Z' -printf '%f\n' | sort)
+  if [ "${#tgens[@]}" -gt "${KEEP_GENERATIONS}" ]; then
+    for old in "${tgens[@]:0:$(( ${#tgens[@]} - KEEP_GENERATIONS ))}"; do
+      [ "${gen_dir}/${old}" = "${live}" ] && continue
+      log "   pruning target generation ${old}"
+      rm -rf "${gen_dir:?}/${old}"
+    done
+  fi
+done
+
+log "run summary: uv generation $(basename "${published_gen:-none}") (rebuilt=${rebuilt} refused=${refused} verified=${verified}, ${synced} repositories synced), ${cargo_warmed} pre-warmed for cargo, sccache builds: ${sccache_built} built / ${sccache_skipped} skipped / ${sccache_skipped_busy} skipped-busy, target generations: ${target_built} built / ${target_skipped} skipped / ${target_skipped_busy} skipped-busy"
 
 # MANIFEST: what this run did, for the host gauges (ci-runner/observability/
 # ci-cache-gauges.sh reads it every 5 min into livespec.ci_cache.populate.*
@@ -777,16 +901,19 @@ log "run summary: uv generation $(basename "${published_gen:-none}") (rebuilt=${
 # reader may open it while the next run writes. `generation` names the LIVE
 # generation (unchanged on a rebuilt=0, refused or rejected run).
 toolchain_version="$(command -v rustc >/dev/null && rustc --version 2>/dev/null | awk '{print $2}' || echo "")"
-python3 - "${WARM_ROOT}/populate-manifest.json" "$(basename "${published_gen:-}")" "${run_started}" "${synced}" "${#failed[@]}" "${cargo_warmed}" "${sccache_built}" "${sccache_skipped}" "${toolchain_version}" "${sccache_skipped_busy}" "${admitted_last}" "${POPULATE_ADMITTED_JOB_THRESHOLD}" "${generation}" "${rebuilt}" "${refused}" "${verified}" "${failed[@]:-}" <<'PY' || log "WARN: manifest not written"
+python3 - "${WARM_ROOT}/populate-manifest.json" "$(basename "${published_gen:-}")" "${run_started}" "${synced}" "${#failed[@]}" "${cargo_warmed}" "${sccache_built}" "${sccache_skipped}" "${toolchain_version}" "${sccache_skipped_busy}" "${admitted_last}" "${POPULATE_ADMITTED_JOB_THRESHOLD}" "${generation}" "${rebuilt}" "${refused}" "${verified}" "${target_built}" "${target_skipped}" "${target_skipped_busy}" "${fuzz_toolchain}" "${failed[@]:-}" <<'PY' || log "WARN: manifest not written"
 import json, sys, time, os
-path, gen, started, synced, nfailed, warmed, built, skipped, toolchain, skipped_busy, admitted, threshold, run_id, rebuilt, refused, verified = sys.argv[1:17]
-failed = [f for f in sys.argv[17:] if f]
+(path, gen, started, synced, nfailed, warmed, built, skipped, toolchain, skipped_busy, admitted, threshold, run_id,
+ rebuilt, refused, verified, tbuilt, tskipped, tskipped_busy, fuzz_toolchain) = sys.argv[1:21]
+failed = [f for f in sys.argv[21:] if f]
 now = int(time.time())
 doc = {"generation": gen, "published_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)), "published_at_epoch": now,
        "duration_s": now - int(started), "repos_synced": int(synced), "repos_failed": int(nfailed), "failed": failed,
        "cargo_warmed": int(warmed), "sccache_built": int(built), "sccache_skipped": int(skipped), "sccache_skipped_busy": int(skipped_busy),
        "admitted_jobs": int(admitted) if admitted else None, "admitted_job_threshold": int(threshold), "toolchain_version": toolchain,
-       "run_id": run_id, "rebuilt": int(rebuilt), "refused": int(refused), "verified": int(verified)}
+       "run_id": run_id, "rebuilt": int(rebuilt), "refused": int(refused), "verified": int(verified),
+       "target_built": int(tbuilt), "target_skipped": int(tskipped), "target_skipped_busy": int(tskipped_busy),
+       "fuzz_toolchain": fuzz_toolchain or None}
 tmp = path + ".tmp"
 with open(tmp, "w") as f: json.dump(doc, f, indent=1)
 os.replace(tmp, path)

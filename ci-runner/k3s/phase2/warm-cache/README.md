@@ -469,6 +469,49 @@ header has the details). Design and the live verification:
 The cargo and sccache steps run after the uv phase on every tick, whether
 or not the uv generation was rebuilt.
 
+## Target generations: the warmed ASAN fuzz tree
+
+The compile shape sccache reaches least is the console's `check-fuzz` job:
+`cargo +nightly fuzz build` compiles the workspace with
+`-Zsanitizer=address`, nothing else in the fleet produces those objects, and
+the job is every console PR's critical path (323–337 s, the longest in its
+matrix; ~80 s of it that compile phase). So the populator also publishes a
+**warmed `target/` tree** per `(repository, key)` — one key so far,
+`asan-fuzz`, for every routed repository with a `fuzz/Cargo.toml` — and the
+provisioner seeds it into each work volume beside the uv seed
+(console plan `optimize-console-builds`, `livespec-console-beads-fabro-ydlant`;
+sized by that plan's research/010 on this node, 2026-09-06: 253 MB, cold
+33–41 s at 12 jobs, 0 % sccache hits; Fresh in ~0.1 s once seeded).
+
+| Path | Role |
+|---|---|
+| `.warm/target-generations/<repo>/<key>/<stamp>/tree` | the `fuzz/target` tree, built at the job's own checkout path `/__w/<repo>/<repo>` (cargo fingerprints embed the SOURCE path) with the job's own wrapper (sccache, as the writer here, so the sanitized objects also land in the compilation cache) |
+| `…/<stamp>/.target-manifest.json` | `source_sha`, `toolchain` (nightly rustc + cargo-fuzz), sizes, build seconds — the generation KEY; a consumer that does not match `toolchain` builds cold |
+| `.warm/target/<repo>/<key>` | the published link, swapped atomically; pruned to `KEEP_GENERATIONS` like the uv tier, the live one never pruned |
+| `<volume>/_warm/target/<repo>/<key>/{tree,.target-manifest.json,.generation}` | the provisioner's reflink copy (job-owned inodes; no shared inode exists to write through), made by the same `setup` script as the uv seed |
+
+Rebuilt only when the default-branch commit or the fuzz toolchain changed,
+under the same admitted-job gate and `nice`/`ionice` as the writer build,
+and only on the `python-rust-fuzz` image (the CronJob's pin): on any other
+image every repository logs "fuzz toolchain absent" and is skipped.
+
+**The consuming job does two things** (the console's `check-fuzz` "Phase:
+compile" step): it moves `_warm/target/<repo>/asan-fuzz/tree` to `fuzz/target`
+(a rename within the volume), then **restores source mtimes** for files
+unchanged vs `source_sha` (`git diff --name-only <source_sha>` names the
+exceptions). Without that restore the tree saves only the sanitized
+dependencies (~12 s of 33–41 s): a fresh checkout stamps every source with
+clone time, and cargo's local-crate fingerprints are mtime-based, so the
+console's own three fuzz-graph crates would recompile. Measured on this node
+(research/010): fresh clone + seed + restore = 0 `Compiling`, ~90 ms; a PR
+editing a domain crate = 3 crates, 28.5 s vs 41.2 s cold.
+
+Telemetry: the hook's `postStart` records a `target` row in `warm-copy.tsv`
+(hit = the seed is present, generation = its stamp), so `ci-cache-span`
+emits the same `cache.warm-copy` span as the uv tier; the populate manifest
+carries `target_built` / `target_skipped` / `target_skipped_busy` and the
+`fuzz_toolchain` it built with.
+
 ## Guardrails on the writer build
 
 The compilation-cache writer build compiles a Rust repository for minutes
