@@ -22,9 +22,24 @@ fallback explicitly foreclosed — which invites engineering AROUND the
 guard, the worst available exit. The hint is therefore composed
 against the venue: the runner is prescribed directly only where the
 recipes actually resolve, otherwise the one-line install command that
-makes them resolve is named FIRST, and the doc is cited only where it
-exists. Detection is pure filesystem reads (no subprocess), keeping
-the blocking path cheap per this directory's hook discipline.
+makes them resolve is named FIRST. Detection is pure filesystem reads
+(no subprocess), keeping the blocking path cheap per this directory's
+hook discipline.
+
+THE CITATION IS ADDRESSED, NOT PROBED (livespec-dev-tooling-5ug6).
+The doc citation was originally handled the same way — cited only
+where the relative path resolved — and that is the wrong instrument
+for a path. A repo-relative path inside a message emitted by a SHIPPED
+artifact is a PRODUCER-relative path being read in a CONSUMER context:
+it names a location that exists, in a repo the reader is not standing
+in. Suppressing it there leaves a denied agent with no way to reach
+the rationale at all, and citing it bare sends them to a file that is
+not there — the shape measured 2026-08-22 in livespec-overseer, where
+`.ai/` holds one unrelated file. So the citation now names the owning
+repo AND carries the URL, which is correct from every venue and needs
+no probe, and it says outright that the remedy above is complete
+without it: a reader who cannot follow the link has still been told
+exactly what to run.
 
 SELF-INSTALL WAS CONSIDERED AND DECLINED, per the item's pinned
 fix-order ruling, which prefers "the deny path detects recipe absence
@@ -58,9 +73,22 @@ _PACK_RUNNER_NAME = "gate-run.sh"
 _JUSTFILE_NAMES: tuple[str, ...] = ("justfile", "Justfile", ".justfile")
 _PRESCRIBED_RECIPES: tuple[str, ...] = ("gate-start", "gate-wait")
 
-# The rationale doc is checkout-local to livespec-dev-tooling, so it is
-# cited only when it is actually readable from the venue.
+# The rationale doc is checkout-local to the repo that SHIPS this hook, so
+# the citation names that repo and carries the address that resolves from
+# ANY venue (livespec-dev-tooling-5ug6).
+_OWNING_REPO = "livespec-dev-tooling"
 _RATIONALE_DOC = ".ai/gate-runtime-vs-harness-patience.md"
+_RATIONALE_DOC_URL = f"https://github.com/thewoolleyman/{_OWNING_REPO}/blob/master/{_RATIONALE_DOC}"
+
+# Further reading, and SAID to be further reading: the remedy above is
+# complete on its own, so a reader who cannot reach the doc has still been
+# told what to run. That demotion is half the fix; the other half is the
+# address, which no longer resolves only from the owning repo.
+_CITATION = (
+    " The remedy above is complete without it, but for WHY — the measured aggregate "
+    f"runtimes against the harness ceiling — see {_RATIONALE_DOC} in the {_OWNING_REPO} "
+    f"repo that ships this hook: {_RATIONALE_DOC_URL}"
+)
 
 # The one-line repair, spelled as the MODULE invocation rather than as
 # `just install-worktree-pack`: the module is guaranteed importable
@@ -163,14 +191,15 @@ def _gate_recipes_resolve(*, root: Path | None) -> bool:
 def deny_hint(*, cwd: Path) -> str:
     """Compose the deny hint against the venue the hook is firing in.
 
-    Every command the hint names resolves in `cwd`, and every path it
-    cites exists there — the minimum bar the guard's own prescription
-    has to clear before it can demand the agent follow it.
+    Every command the hint names resolves in `cwd`, and the one path it
+    cites is addressed by the repo that OWNS it — the minimum bar the
+    guard's own prescription has to clear before it can demand the agent
+    follow it. The prescription is venue-probed because a recipe either
+    resolves here or does not; the citation is not, because a
+    repo-qualified address is correct from every venue.
     """
     root = _repo_root(start=cwd)
     prescription = (
         _RUNNER_PRESENT_CLAUSE if _gate_recipes_resolve(root=root) else _RUNNER_ABSENT_CLAUSE
     )
-    doc_readable = root is not None and (root / _RATIONALE_DOC).is_file()
-    citation = f" See {_RATIONALE_DOC}." if doc_readable else ""
-    return f"{_HINT_PREAMBLE}{prescription}{_HINT_TAIL}{citation}"
+    return f"{_HINT_PREAMBLE}{prescription}{_HINT_TAIL}{_CITATION}"

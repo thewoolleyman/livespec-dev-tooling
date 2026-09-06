@@ -44,7 +44,9 @@ durable verdict on disk, so the record does NOT live in the tool
 output and its waiter is safe to background. Commands dispatched
 through it are therefore allowed. The allowance is anchored at the
 START of the command, so merely NAMING the runner cannot launder a
-bare backgrounded gate. See `.ai/gate-runtime-vs-harness-patience.md`.
+bare backgrounded gate. See `.ai/gate-runtime-vs-harness-patience.md`
+in the livespec-dev-tooling repo that ships this hook — that path is
+checkout-local to it, not to the consumer this hook runs in.
 
 The deny hint is composed against the VENUE the hook fires in —
 prescribing the detached runner only where its recipes actually

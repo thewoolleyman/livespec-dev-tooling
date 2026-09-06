@@ -12,3 +12,10 @@ naming the key rather than silently scanning nothing (per
 `SPECIFICATION/contracts.md` §"Consumer configuration schema").
 Third-party libraries are vendored under
 `_vendor/` (excluded from every check's walk).
+
+Everything here SHIPS, so every message it emits is read in a consumer
+repo. When a message cites a document, name the repo that owns it — a bare
+repo-relative path resolves only where the file lives, and dropping the
+citation where it does not resolve strands the reader instead. See
+`docs/shipped-message-doc-citations.md` for the rule, the 2026-09-06 audit
+of all 36 citation sites, and why no mechanical check guards it.

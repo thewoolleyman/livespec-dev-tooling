@@ -27,7 +27,13 @@ Covered behaviors:
   worktree-pack conditions are exercised (absent → the one-line
   install command is named FIRST; installed → the runner is
   prescribed directly), and a CONTROL asserts the same actionability
-  check FAILS against the previously-shipped unconditional hint text.
+  check FAILS against the previously-shipped unconditional hint text;
+- per work-item livespec-dev-tooling-5ug6, the ADDRESS of the doc the
+  hint cites: proved from a CONSUMER checkout, where the doc's
+  repo-relative path resolves to nothing, the citation must name the
+  repo that owns it and carry an address reachable from there. A
+  second CONTROL asserts the actionability check FAILS on a bare
+  relative citation, so the rule cannot pass vacuously.
 
 Private names are imported via from-imports (the package-private
 access model, mirroring `tests/livespec_dev_tooling/fleet/`);
@@ -329,6 +335,13 @@ _LEGACY_HINT = (
 _CONSUMER_JUSTFILE = "import? 'dev-tooling/worktree.just'\n\ncheck:\n    @echo check\n"
 
 _RATIONALE_DOC_RELPATH = ".ai/gate-runtime-vs-harness-patience.md"
+# The address the citation must carry, spelled out here rather than imported
+# from the module under test: an import would compare the string to itself.
+_OWNING_REPO = "livespec-dev-tooling"
+_RATIONALE_DOC_URL = (
+    "https://github.com/thewoolleyman/livespec-dev-tooling/blob/master/"
+    ".ai/gate-runtime-vs-harness-patience.md"
+)
 
 # `just` recipe headers (`gate-start *args:`), excluding `:=` assignments and
 # indented recipe bodies; and the `import`/`import?` lines a root justfile
@@ -338,6 +351,10 @@ _IMPORT_LINE = re.compile(r"(?m)^import\??\s+'([^']+)'")
 # A `just <recipe>` the hint names, and any doc path it cites.
 _NAMED_RECIPE = re.compile(r"\bjust\s+([a-z][\w-]*)")
 _CITED_DOC = re.compile(r"(?<![\w/])([\w.][\w./-]*\.md)")
+# An absolute URL is an ADDRESS rather than a repo-relative path: it denotes
+# the same file from every venue, so it is lifted out of the text before the
+# relative-path scan and then used to absolve the paths it spells.
+_URL = re.compile(r"https?://\S+")
 
 
 def _run_git(*, args: list[str], cwd: Path) -> None:
@@ -392,11 +409,17 @@ def _resolvable_recipes(*, root: Path) -> set[str]:
 
 
 def _assert_hint_is_actionable(*, hint: str, root: Path) -> None:
-    """Every command the hint names resolves at `root`; every path exists.
+    """Every command the hint names resolves at `root`; every path is reachable.
 
     A recipe that does NOT resolve is tolerated only when the hint has
     ALREADY named the exact one-line command that installs it — the
     work-item's minimum bar, position included.
+
+    A cited path is reachable when it EXISTS at `root` or when the hint
+    also carries the absolute URL that spells it (livespec-dev-tooling
+    -5ug6). The second arm is what a CONSUMER venue rests on: a
+    producer-relative path resolves nowhere there, so the only honest
+    citation is one that names where the file actually lives.
     """
     resolvable = _resolvable_recipes(root=root)
     install_at = hint.find(_INSTALL_COMMAND)
@@ -406,8 +429,13 @@ def _assert_hint_is_actionable(*, hint: str, root: Path) -> None:
             f"hint names `just {recipe}`, which does not resolve in {root}, "
             "without first naming the command that installs it"
         )
-    for cited in _CITED_DOC.findall(hint):
-        assert (root / cited).is_file(), f"hint cites {cited}, which does not exist in {root}"
+    urls = _URL.findall(hint)
+    for cited in _CITED_DOC.findall(_URL.sub(" ", hint)):
+        addressed = any(url.rstrip(").").endswith(cited) for url in urls)
+        assert (root / cited).is_file() or addressed, (
+            f"hint cites {cited}, which does not exist in {root} and which no "
+            "URL in the hint addresses"
+        )
 
 
 def _deny_hint(
@@ -442,9 +470,9 @@ def test_fresh_worktree_deny_names_only_resolvable_commands_and_paths(
     # The remedy is named, and named as the module invocation that resolves
     # wherever the hook itself does.
     assert _INSTALL_COMMAND in hint
-    # And the checkout-local rationale doc is not cited into a repo that
-    # has no such file.
-    assert _RATIONALE_DOC_RELPATH not in hint
+    # And the checkout-local rationale doc, which resolves nowhere here, is
+    # addressed rather than left dangling — asserted in full below.
+    assert _RATIONALE_DOC_URL in hint
 
 
 def test_legacy_unconditional_hint_fails_the_actionability_assertion(tmp_path: Path) -> None:
@@ -460,6 +488,55 @@ def test_legacy_unconditional_hint_fails_the_actionability_assertion(tmp_path: P
 
     with pytest.raises(AssertionError, match="does not resolve"):
         _assert_hint_is_actionable(hint=_LEGACY_HINT, root=worktree)
+
+
+def test_consumer_checkout_deny_cites_the_rationale_by_its_owning_repo(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The venue the defect was measured in: a consumer, not the owning repo.
+
+    Verifying this from livespec-dev-tooling cannot fail — the relative
+    path resolves there by construction — so the proof is run where it does
+    NOT resolve, which is every repo that CONSUMES this package. The denial
+    fires at the moment an agent is blocked and reaching for help; a
+    citation that costs a tool call and returns nothing invites the reading
+    that the guard is stale, exactly when it is right.
+    """
+    repo = tmp_path / "consumer"
+    _make_consumer_repo(repo=repo)
+    worktree = _add_fresh_worktree(repo=repo, path=tmp_path / "wt")
+    # The precondition that makes this a consumer venue rather than the
+    # producing repo: nothing in this checkout answers the relative path.
+    assert not (worktree / _RATIONALE_DOC_RELPATH).exists()
+
+    hint = _deny_hint(monkeypatch=monkeypatch, cwd=worktree, capsys=capsys)
+
+    # The guidance is still cited — the defect is the citation's ADDRESS,
+    # not its existence — and cited by an address that works from here.
+    _assert_hint_is_actionable(hint=hint, root=worktree)
+    assert _OWNING_REPO in hint
+    assert _RATIONALE_DOC_URL in hint
+    # And the reader is told the remedy stands without following it, so a
+    # venue with no network is not a venue with no remedy.
+    assert _INSTALL_COMMAND in hint
+    assert "complete without it" in hint
+
+
+def test_a_bare_relative_citation_fails_the_actionability_assertion(tmp_path: Path) -> None:
+    """Control: the citation rule must REJECT the shape this item filed.
+
+    Without it, `_assert_hint_is_actionable` could pass the consumer-venue
+    test by having stopped checking paths rather than by the hint having
+    been fixed.
+    """
+    repo = tmp_path / "consumer"
+    _make_consumer_repo(repo=repo)
+    worktree = _add_fresh_worktree(repo=repo, path=tmp_path / "wt")
+
+    with pytest.raises(AssertionError, match="does not exist"):
+        _assert_hint_is_actionable(hint=f"See {_RATIONALE_DOC_RELPATH}.", root=worktree)
 
 
 def test_installed_pack_worktree_prescribes_the_runner_directly(
