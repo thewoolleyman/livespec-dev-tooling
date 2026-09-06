@@ -56,7 +56,9 @@
 # 0.35%, cargo clippy P50 20.2 s -> 43.0 s, cargo nextest 13.1 s -> 24.7 s,
 # the console matrix P90 370 s -> 661 s, the hit-floor trigger firing. So
 # redis now writes an RDB snapshot (`--save "300 1 60 10000"`: every five
-# minutes with any change, every minute with 10k changes) and one on SIGTERM,
+# minutes with any change, every minute with 10k changes), one on SIGTERM,
+# and one when the populator asks for BGSAVE after each build (+bgsave on the
+# writer ACL, ../warm-cache/warm-cache-populate.sh), all
 # into a hostPath on the `ci-cache` tier (/var/cache/ci-runner/sccache-redis,
 # created 999:1000 by converge-sccache-redis.sh, which REFUSES when the tier
 # is not mounted so a dump can never land on the root disk), and a restart

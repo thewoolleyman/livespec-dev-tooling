@@ -59,7 +59,9 @@ Rust job recompiled its dependency graph: sccache 59.3% → 0.35% hit ratio,
 console matrix P90 370 s → 661 s, the hit-floor trigger firing
 (`livespec-dev-tooling-efqeip.3`; plan research/011 §3). So redis now writes
 an RDB snapshot every five minutes with any change (every minute with 10k
-changes) and one on SIGTERM, to `/var/cache/ci-runner/sccache-redis/dump.rdb`
+changes), one on SIGTERM, and one on the populator's `BGSAVE` right after
+each build (the writer ACL grants `+bgsave` for that; a job's read-only
+user cannot), to `/var/cache/ci-runner/sccache-redis/dump.rdb`
 on the `ci-cache` tier; `converge-sccache-redis.sh` creates that directory
 `999:1000` and refuses when the tier is not mounted. A restart or reboot
 loads the last snapshot in seconds, marker key included, so an unchanged

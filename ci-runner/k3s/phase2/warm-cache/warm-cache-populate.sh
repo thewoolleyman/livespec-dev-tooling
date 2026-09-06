@@ -137,7 +137,9 @@
 # in redis (`livespec:sccache:populated:<repo>` = `<sha>@<toolchain>`) already
 # names the current default-branch SHA and toolchain: the marker lives in the
 # cache it describes: a restart restores it from the RDB snapshot on the
-# ci-cache tier (../sccache/, since 2026-09-06), so an unchanged branch costs
+# ci-cache tier (../sccache/, since 2026-09-06; this script asks for a BGSAVE
+# right after each build so the snapshot holds the new generation at once),
+# so an unchanged branch costs
 # nothing across reboots, and a lost or evicted marker (a flush, a snapshot
 # older than the last write, LRU pressure) triggers a rebuild on the next
 # idle tick. Nothing from the build is kept here.
@@ -756,6 +758,15 @@ for name in "${fetched[@]}"; do
             if redis_cmd --auth "${SCCACHE_REDIS_WRITER_USERNAME}" "${SCCACHE_REDIS_WRITER_PASSWORD}" SET "${marker_key}" "${want}" >/dev/null; then
               sccache_built=$((sccache_built + 1))
               log "   sccache: cache now holds ${sha:0:8}@${toolchain} (marker set)"
+              # Snapshot the tier NOW rather than up to five minutes later
+              # (../sccache/ `--save`): a reboot in that window would restore
+              # the previous generation. The writer ACL grants +bgsave for
+              # exactly this; best-effort — the timed save still runs.
+              if redis_cmd --auth "${SCCACHE_REDIS_WRITER_USERNAME}" "${SCCACHE_REDIS_WRITER_PASSWORD}" BGSAVE >/dev/null 2>&1; then
+                log "   sccache: BGSAVE requested (snapshot on the ci-cache tier)"
+              else
+                log "   sccache: BGSAVE refused or already running; the timed save covers it"
+              fi
             else
               log "   sccache: build ok but the marker SET failed; it will rebuild next tick"
               failed+=("${name}:sccache-marker")
