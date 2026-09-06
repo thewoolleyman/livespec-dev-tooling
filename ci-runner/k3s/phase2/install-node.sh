@@ -58,7 +58,7 @@
 #              the live choice on a host with no failure routing)
 set -euo pipefail
 
-USAGE="usage: install-node.sh CAPACITY [WEDGE_MODE]   (CAPACITY = churn-slot capacity, e.g. 64; WEDGE_MODE = report|clear, default clear)"
+USAGE="usage: install-node.sh CAPACITY [WEDGE_MODE]   (CAPACITY = the CURRENT churn-slot capacity C, 32 since 2026-09-06 -- it MUST equal the sum of the ten ClusterQueue quotas in kueue/, see kueue/DERIVATION.md; WEDGE_MODE = report|clear, default clear)"
 CAPACITY="${1:?$USAGE}"
 WEDGE_MODE="${2:-clear}"
 [[ "$CAPACITY" =~ ^[0-9]+$ ]] || { echo "FATAL: CAPACITY must be a non-negative integer, got '${CAPACITY}'" >&2; exit 1; }
