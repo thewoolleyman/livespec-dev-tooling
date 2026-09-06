@@ -288,6 +288,12 @@ spec:
                 rec() { printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(date +%s%N 2>/dev/null || echo 0)" "$@" >> "$state/warm-copy.tsv" 2>/dev/null; :; }
                 ms() { n=$(date +%s%N 2>/dev/null || echo 0); echo $(( (n - t0) / 1000000 )); }
                 uv_gen=$(cat /__w/_warm/.uv-generation 2>/dev/null || true)
+                # The warmed target/ tier's stamp: the provisioner writes one
+                # .generation per seeded (repo, key) under _warm/target/ (at most
+                # this repository's keys). Unset until 2026-09-06, so every
+                # target row reported hit=false with no generation
+                # (livespec-dev-tooling-c5byjh).
+                target_gen=$(cat /__w/_warm/target/*/*/.generation 2>/dev/null | head -n 1 || true)
                 switch="${CI_CACHE_KILL_SWITCH:-}"
                 case "${CI_CACHE_CANARY_N:-}" in
                   ''|*[!0-9]*|0) ;;
