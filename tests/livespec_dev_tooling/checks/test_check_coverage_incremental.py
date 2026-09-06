@@ -46,6 +46,7 @@ from pathlib import Path
 
 import pytest
 import structlog
+from returns.unsafe import unsafe_perform_io
 from structlog.testing import capture_logs
 
 from livespec_dev_tooling.config import MirrorPairing
@@ -449,7 +450,7 @@ def test_derive_paths_from_git_surfaces_changed_impl(*, tmp_path: Path) -> None:
         cwd=tmp_path,
         log=structlog.get_logger("test"),
     )
-    assert derived == [
+    assert unsafe_perform_io(derived.unwrap()) == [
         Path("livespec_dev_tooling/checks/derived_mod.py")
     ], f"expected the changed impl path; got {derived!r}"
 
@@ -581,7 +582,9 @@ def test_derive_paths_from_git_excludes_deleted_impl(*, tmp_path: Path) -> None:
         cwd=tmp_path,
         log=structlog.get_logger("test"),
     )
-    assert derived == [], f"a deleted impl must be excluded from the derived set; got {derived!r}"
+    assert (
+        unsafe_perform_io(derived.unwrap()) == []
+    ), f"a deleted impl must be excluded from the derived set; got {derived!r}"
 
 
 def test_derive_paths_from_git_excludes_docs_only_change(*, tmp_path: Path) -> None:
@@ -623,9 +626,10 @@ def test_derive_paths_from_git_excludes_docs_only_change(*, tmp_path: Path) -> N
         log=structlog.get_logger("test"),
     )
 
-    assert (
-        derived == []
-    ), f"a docstring-and-comment-only change must not be gated as a changed impl; got {derived!r}"
+    assert unsafe_perform_io(derived.unwrap()) == [], (
+        "a docstring-and-comment-only change must not be gated as a changed impl; "
+        f"got {derived!r}"
+    )
 
 
 def test_derive_paths_from_git_reports_an_undecidable_carveout(*, tmp_path: Path) -> None:
@@ -658,7 +662,7 @@ def test_derive_paths_from_git_reports_an_undecidable_carveout(*, tmp_path: Path
             log=structlog.get_logger("test"),
         )
 
-    assert derived == [
+    assert unsafe_perform_io(derived.unwrap()) == [
         Path("livespec_dev_tooling/checks/undecidable_mod.py")
     ], f"an undecidable comparison must keep the path gated; got {derived!r}"
     reasons = [entry.get("reason") for entry in captured]

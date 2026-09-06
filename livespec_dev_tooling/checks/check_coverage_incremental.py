@@ -43,6 +43,17 @@ short-circuit (a justfile `if [[ -z "{{args}}" ]]` block that made the
 aggregate invocation a silent no-op). An empty derived set (no changed
 impl `.py`) still exits 0 — there is simply nothing to gate.
 
+A diff that could not be TAKEN is not an empty derived set, and the two
+are told apart on the `IOResult` railway (`_branch_diff.DiffUnavailable`,
+livespec-dev-tooling-rav3). The read used to run with `check=False` and
+its `returncode` was never inspected, so an absent `origin/master` — the
+shallow-clone / unfetched-remote / `fetch-depth: 1` shape — produced
+empty stdout, an empty path list, and a PASS reporting "nothing to gate".
+The gate now exits non-zero naming the range it could not diff. Exit 0
+with empty stdout remains a PASS: it is the one exit of
+`git diff <range>` that legitimately answers "this branch changed
+nothing".
+
 Output discipline: per spec, `print` (T20) and
 `sys.stderr.write` (`check-no-write-direct`) are banned in
 dev-tooling/**. Diagnostics flow through structlog (JSON to
@@ -68,9 +79,13 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
-from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
+from returns.io import IOFailure, IOResult, IOSuccess  # noqa: E402  — vendor-path-aware import.
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
+from livespec_dev_tooling.checks._branch_diff import (  # noqa: E402
+    DiffUnavailable,
+    name_only_diff,
+)
 from livespec_dev_tooling.checks._docs_only_change import (  # noqa: E402
     is_docs_only_change,
 )
@@ -114,6 +129,15 @@ _DATA_DIR_PREFIX: str = "livespec-cov-incremental-"
 # the inner pytest invocation so it starts a fresh measurement against
 # the temp data file only.
 _COV_CORE_ENV_PREFIX: str = "COV_CORE_"
+# The range the derive mode diffs, named once so the failure diagnostic and the
+# nothing-to-gate diagnostic cannot disagree about which ref was unreadable.
+_DIFF_RANGE: str = "origin/master...HEAD"
+# The diagnostic for a diff that could not be TAKEN. Its whole job is to be
+# unmistakable for the nothing-to-gate line it used to be reported as.
+_UNREADABLE_DIFF_EVENT: str = (
+    "could not take the changed-file diff; the gated set is UNKNOWN, which is not the same as"
+    " empty — refusing rather than passing on a read that never happened"
+)
 
 
 def _resolve_mirror_test_path(
@@ -307,36 +331,28 @@ def _keeps_gate_armed(*, path: Path, cwd: Path, log: structlog.stdlib.BoundLogge
 
 def _derive_paths_from_git(
     *, source_tree_prefixes: tuple[str, ...], cwd: Path, log: structlog.stdlib.BoundLogger
-) -> list[Path]:
+) -> IOResult[list[Path], DiffUnavailable]:
     """Derive the changed impl-`.py` set from `git diff origin/master...HEAD`.
 
-    Runs the diff in `cwd` (the repo root) and filters the result via
-    `_changed_py_impl_paths`. Returns the empty list when there are no
-    changed impl `.py` files (the no-op-after-derive case).
-
-    The git subprocess is handed an env with every `GIT_*` var stripped:
-    a parent process (notably a git commit hook) can inject `GIT_DIR` /
-    `GIT_INDEX_FILE` / `GIT_WORK_TREE`, which would override `cwd` and make
-    the diff target the WRONG repository. Clearing those keeps the diff
-    scoped to the repository at `cwd`.
+    Takes the diff in `cwd` (the repo root) via `_branch_diff.name_only_diff`,
+    which reads the `returncode` and puts a diff it could not take on the
+    FAILURE track, and filters what `git` did answer via
+    `_changed_py_impl_paths`. `IOSuccess([])` therefore means the read
+    HAPPENED and there is nothing to gate; `IOFailure` means the gated set is
+    UNKNOWN, which is a different fact and no longer spelled as the first one.
     """
-    git_env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
-    # S603/S607: argv is a fixed list of literal git args; no shell input.
-    diff = subprocess.run(
-        ["git", "diff", "--name-only", "--diff-filter=d", "origin/master...HEAD"],
-        capture_output=True,
-        text=True,
-        check=False,
-        cwd=str(cwd),
-        env=git_env,
-    ).stdout
-    changed = _changed_py_impl_paths(diff_output=diff, source_tree_prefixes=source_tree_prefixes)
+    diff = name_only_diff(diff_range=_DIFF_RANGE, cwd=cwd)
+    if isinstance(diff, IOFailure):
+        return IOFailure(unsafe_perform_io(diff.failure()))
+    changed = _changed_py_impl_paths(
+        diff_output=unsafe_perform_io(diff.unwrap()), source_tree_prefixes=source_tree_prefixes
+    )
     # Comments and docstrings cannot change coverage, and a module with no
     # behavior to test has no mirror-paired test the gate could resolve — so
     # gating a docs-only edit makes it unpushable rather than merely strict.
     # The same rule waives the sibling `commit_pairs_source_and_test` pairing
     # requirement; both read it from one place so they cannot disagree.
-    return [path for path in changed if _keeps_gate_armed(path=path, cwd=cwd, log=log)]
+    return IOSuccess([path for path in changed if _keeps_gate_armed(path=path, cwd=cwd, log=log)])
 
 
 def _configure_logger() -> structlog.stdlib.BoundLogger:
@@ -375,15 +391,26 @@ def main() -> int:
     impl_paths: list[Path] = list(args.paths)
     derived = not impl_paths
     if derived:
-        impl_paths = _derive_paths_from_git(
+        read = _derive_paths_from_git(
             source_tree_prefixes=role_prefixes(role=config.source_tree_prefixes),
             cwd=cwd,
             log=log,
         )
+        if isinstance(read, IOFailure):
+            unavailable = unsafe_perform_io(read.failure())
+            log.error(
+                _UNREADABLE_DIFF_EVENT,
+                check_id="check_coverage_incremental",
+                base=_DIFF_RANGE,
+                reason=unavailable.reason,
+                detail=unavailable.detail,
+            )
+            return 1
+        impl_paths = unsafe_perform_io(read.unwrap())
         if not impl_paths:
             log.info(
                 "no changed impl .py paths derived from git diff; nothing to gate",
-                base="origin/master...HEAD",
+                base=_DIFF_RANGE,
                 source_tree_prefixes=list(role_prefixes(role=config.source_tree_prefixes)),
             )
             return 0
