@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.52.5](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.52.4...v1.52.5) (2026-09-06)
+
+
+### Bug Fixes
+
+* **checks:** derive no-raise-outside-io's domain-error set from the consuming repo (livespec-dev-tooling-6vz) ([d8013b9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d8013b96be62fbb417f4eca1f760aeca52df0cf1))
+
 ## [1.52.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.52.3...v1.52.4) (2026-09-06)
 
 

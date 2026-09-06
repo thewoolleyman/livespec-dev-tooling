@@ -20,6 +20,7 @@ fallback) do not:
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -221,13 +222,32 @@ def test_no_except_outside_io_runs_without_io_trees(*, tmp_path: Path) -> None:
 
 
 def test_no_raise_outside_io_runs_without_io_trees(*, tmp_path: Path) -> None:
-    """`no_raise_outside_io` INSPECTS the source tree when `io_trees` is absent."""
+    """`no_raise_outside_io` INSPECTS the source tree when `io_trees` is absent.
+
+    The fixture DEFINES `ValidationError` because the check derives its
+    domain-error names from the consuming repo's own classes rather than from a
+    hardcoded list of livespec-core's four (`livespec-dev-tooling-6vz`). A name
+    the fixture package never declares is not that package's domain error, so
+    raising it would prove nothing about whether `pkg/` was inspected.
+
+    The severity lever is set for the same reason the sibling above needs none:
+    detection lands at a warn tier, so the exit code — which is what "was it
+    inspected" is asserted through here — only moves under promotion.
+    """
     _write_block(repo_root=tmp_path, body='source_trees = ["pkg"]\n')
     _write_pkg_module(
         tmp_path=tmp_path,
-        body='def do_thing() -> None:\n    raise ValidationError("boom")\n',
+        body=(
+            'class ValidationError(Exception):\n    """A domain error."""\n'
+            "\n\n"
+            'def do_thing() -> None:\n    raise ValidationError("boom")\n'
+        ),
     )
-    result = _run_check(slug="no_raise_outside_io", cwd=tmp_path)
+    result = _run_check(
+        slug="no_raise_outside_io",
+        cwd=tmp_path,
+        env={**os.environ, "LIVESPEC_FAIL_IF_DOMAIN_ERROR_RAISES_EXIST": "true"},
+    )
     assert result.returncode == 1, (
         f"no_raise_outside_io must inspect `pkg/` when `io_trees` is absent; "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
