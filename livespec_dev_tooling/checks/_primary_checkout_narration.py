@@ -177,7 +177,7 @@ def _emit_failures(
             hook="",
             failure_mode=failure_mode,
             hooks_dir=str(hooks_dir),
-            hint=pack_failure_hint(failure_mode=failure_mode),
+            hint=pack_failure_hint(failure_mode=failure_mode, repo_root=repo_root),
             path=str(pack_failure_path(repo_root=repo_root, script_name=script_name)),
             line=0,
         )
