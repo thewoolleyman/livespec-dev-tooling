@@ -811,3 +811,190 @@ def test_batch_insert_index_on_an_empty_section_is_total() -> None:
     """Total over an entry-less anchor rather than raising on an empty tuple."""
     anchor = _parse.BatchAnchor(entries=(), template="          just check-x\n")
     assert _parse.batch_insert_index(anchor=anchor, canonical_set=set(), slug="check-a") == 0
+
+
+# ---------------------------------------------------------------------------
+# The aggregate's own accumulator block is the ONLY insertion site
+# (livespec-dev-tooling-qknd).
+#
+# v1.43.0 added the canonical metadata check `check-ci-gate-parity`, and the
+# release fan-out's bump lane wrote it into the `check-per-file-coverage` JOB's
+# run step in seven consumers. Two facts put it there: EVERY `just check-<slug>`
+# line in the WHOLE FILE was collected as a batch entry, and the insertion point
+# was the first canonical entry in FILE order sorting after the new slug —
+# `check-per-file-coverage`, whose single-target step sits well above the
+# metadata batch. That step declares no `$failed` accumulator, and the one the
+# reconciler wrote into it is never read, so the check RAN and its non-zero exit
+# was DISCARDED: the job stayed green whatever the check found, in all seven
+# consumers, until each carrier PR moved the line by hand.
+#
+# The fixture below is that consumer shape — a bare single-target coverage step,
+# a batched python-check step, and the metadata batch carrying the aggregate.
+# Any slug sorting before `check-per-file-coverage` (anything from `check-a…`
+# through `check-pe…`) reproduces it.
+# ---------------------------------------------------------------------------
+
+_DRIVER_JUSTFILE = """check:
+    targets=(
+        check-aggregate-completeness
+        check-ci-gate-parity
+        check-ci-matrix-completeness
+        check-file-lloc
+        check-keyword-only-args
+        check-per-file-coverage
+        check-wrapper-shape
+    )
+"""
+
+_DRIVER_CANONICAL = (
+    "check-aggregate-completeness",
+    "check-ci-gate-parity",
+    "check-ci-matrix-completeness",
+    "check-file-lloc",
+    "check-keyword-only-args",
+    "check-per-file-coverage",
+    "check-wrapper-shape",
+)
+
+# Only `check-ci-gate-parity` is missing: the coverage step runs
+# `check-per-file-coverage` from a bare run line, the python batch runs its two,
+# and the metadata batch runs the remaining three.
+_DRIVER_CI_YAML = """name: CI
+
+on:
+  pull_request:
+
+jobs:
+  check-per-file-coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: just check-per-file-coverage
+        run: |
+          node_bin="$(command -v node)"
+          just check-per-file-coverage
+
+  check-python-batch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run the batched python checks
+        run: |
+          failed=""
+          just check-file-lloc || failed="$failed check-file-lloc"
+          just check-keyword-only-args || failed="$failed check-keyword-only-args"
+          if [ -n "$failed" ]; then
+            echo "Failed targets:$failed"
+            exit 1
+          fi
+
+  check-metadata-batch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run the batched metadata checks
+        run: |
+          failed=""
+          just check-aggregate-completeness || failed="$failed check-aggregate-completeness"
+          just check-ci-matrix-completeness || failed="$failed check-ci-matrix-completeness"
+          just check-wrapper-shape || failed="$failed check-wrapper-shape"
+          if [ -n "$failed" ]; then
+            echo "Failed targets:$failed"
+            exit 1
+          fi
+"""
+
+# The bare single-target step, verbatim. It must survive the reconcile
+# BYTE-IDENTICAL: an inserted sibling here feeds a `$failed` nothing reads.
+_BARE_COVERAGE_STEP = (
+    "        run: |\n"
+    '          node_bin="$(command -v node)"\n'
+    "          just check-per-file-coverage\n"
+)
+
+
+def _reconciled_driver() -> str:
+    """Reconcile the driver-shaped consumer against its own canonical set."""
+    return ci_yaml_canonical_reconcile.reconcile_ci_yaml_text(
+        ci_yaml_text=_DRIVER_CI_YAML,
+        justfile_text=_DRIVER_JUSTFILE,
+        canonical_slugs=_DRIVER_CANONICAL,
+        world_gates=_WORLD_GATES,
+    )
+
+
+def test_new_metadata_slug_lands_in_the_metadata_batch_accumulator_block() -> None:
+    """The adopted slug lands beside `check-ci-matrix-completeness`, in canonical order.
+
+    That block ends by failing the job when `$failed` is non-empty, so a check
+    wired into it can actually redden CI — which is the whole reason the slug
+    belongs here rather than in the first canonical-sorted step in file order.
+    """
+    assert (
+        '          just check-aggregate-completeness || failed="$failed check-aggregate-completeness"\n'
+        '          just check-ci-gate-parity || failed="$failed check-ci-gate-parity"\n'
+        '          just check-ci-matrix-completeness || failed="$failed check-ci-matrix-completeness"\n'
+        '          just check-wrapper-shape || failed="$failed check-wrapper-shape"\n'
+    ) in _reconciled_driver(), "the adopted slug must land inside the aggregate's own block"
+
+
+def test_new_metadata_slug_is_never_written_into_a_step_whose_failed_is_unread() -> None:
+    """The slug appears EXACTLY once, and the bare coverage step is untouched.
+
+    The v1.43.0 placement: `just check-ci-gate-parity || failed="$failed
+    check-ci-gate-parity"` appended to the `check-per-file-coverage` step, where
+    `$failed` is declared nowhere and inspected nowhere. The check ran; its
+    verdict went to the floor.
+    """
+    result = _reconciled_driver()
+    assert result.count("just check-ci-gate-parity") == 1
+    assert _BARE_COVERAGE_STEP in result, "the single-target coverage step must be untouched"
+
+
+def test_batch_anchor_scopes_its_entries_to_the_aggregates_own_block() -> None:
+    """Neither a bare step line nor a SIBLING accumulator block is an entry.
+
+    `check-per-file-coverage` (bare, no `$failed` tail) and the python batch's
+    `check-file-lloc` / `check-keyword-only-args` (a different step's
+    accumulator) all precede the metadata batch in file order, and each would
+    have been an insertion anchor for a slug sorting before it.
+    """
+    anchor = _parse.batch_anchor(lines=_DRIVER_CI_YAML.splitlines(keepends=True))
+    assert anchor is not None
+    assert [slug for _, slug in anchor.entries] == [
+        "check-aggregate-completeness",
+        "check-ci-matrix-completeness",
+        "check-wrapper-shape",
+    ]
+
+
+def test_batch_anchor_steps_over_a_comment_inside_the_block() -> None:
+    """A `#` annotation between two accumulator lines does not split the block.
+
+    Mirrors `collect_entries`' tolerance for an interleaved comment inside a
+    matrix target list: the fleet's ci.yml files annotate individual entries,
+    and an annotated block must still sort as one block.
+    """
+    lines = [
+        '          just check-aggregate-completeness || failed="$failed check-aggregate-completeness"\n',
+        "          # Annotates the entry below.\n",
+        '          just check-wrapper-shape || failed="$failed check-wrapper-shape"\n',
+    ]
+    anchor = _parse.batch_anchor(lines=lines)
+    assert anchor is not None
+    assert [slug for _, slug in anchor.entries] == [
+        "check-aggregate-completeness",
+        "check-wrapper-shape",
+    ]
+
+
+def test_batch_anchor_stops_at_a_differently_indented_invocation() -> None:
+    """An accumulator line at another depth is another block, adjacent or not.
+
+    Indent is the cheapest available proxy for "same run: block": two lines at
+    different depths cannot be feeding the same shell accumulator.
+    """
+    lines = [
+        '          just check-aggregate-completeness || failed="$failed check-aggregate-completeness"\n',
+        '        just check-wrapper-shape || failed="$failed check-wrapper-shape"\n',
+    ]
+    anchor = _parse.batch_anchor(lines=lines)
+    assert anchor is not None
+    assert [slug for _, slug in anchor.entries] == ["check-aggregate-completeness"]
