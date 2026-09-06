@@ -78,23 +78,35 @@ CI-token caveat: the default GitHub Actions `GITHUB_TOKEN` lacks the admin scope
 
 This is a **revise-workflow check** (per §"Shared check inventory"), NOT a canonical per-commit aggregate check: it lives under `livespec_dev_tooling/workflow_checks/` and is invoked by the `/livespec:revise` pre-step, never wired into the `just check` aggregate.
 
-Invocation: `python -m livespec_dev_tooling.workflow_checks.no_stale_revise_branches`. Exit `0` on no stale branches, exit `4` with structured stderr findings on any stale branch.
+Invocation: `python -m livespec_dev_tooling.workflow_checks.no_stale_revise_branches`. Exit `0` on no stale branches, exit `4` with structured stderr findings on any stale branch. "Stale" means the branch carries commits that have NOT LANDED on the canonical branch — NOT that its tip is ahead of it.
+
+**The discriminator is patch-id equivalence, and the distinction between the two is the whole of this section.** Landed-ness was judged by ANCESTRY until v060: `git rev-list --left-right --count` against `origin/<canonical>`, failing any branch ahead by one or more. On a rebase-merge-only fleet that check cannot SUCCEED. A rebase-merge REWRITES a branch's commits, so a landed branch's local tip is never an ancestor of the canonical branch, and every landed-but-undeleted branch is reported forever. Measured 2026-08-22 in livespec-overseer: eleven fail findings, all eleven already on `origin/master`, two of them confirmed merged through the forge and the other nine landed without a pull request at all. This is the mirror of the check-that-cannot-fail hazard, and its practical damage is larger than noise: of the three remedies the check's prose offers — merge, abandon, re-invoke with the skip flag — the first two are inapplicable to a branch that IS merged, so the precondition trains the operator to skip it, and the twelfth finding, the real one, gets skipped with the eleven.
 
 Algorithm:
 
 1. Read the canonical branch name from `.livespec.jsonc`'s `livespec-impl-git-jsonl.canonical_branch` config key (or any other configured impl plugin's equivalent key). Default: `git symbolic-ref --short refs/remotes/origin/HEAD`, with hard-coded fallback `master`.
 2. Enumerate local refs: `git for-each-ref --format='%(refname:short)' refs/heads/spec/`.
 3. For each branch in the enumeration:
-    - Run `git rev-list --left-right --count origin/<canonical>...<branch>`.
-    - Parse the output as `behind\tahead`.
-    - If `ahead > 0`: emit a finding with severity `fail`.
+    - Run `git cherry origin/<canonical> <branch>`.
+    - Count the `+ <sha>` lines — commits with no patch-equivalent on the canonical branch. A `- <sha>` line is git's own verdict that an equivalent patch IS upstream, computed from `git patch-id` digests and therefore intact across the rewrite a rebase performs.
+    - If that count is `> 0`: emit a finding with severity `fail`.
+    - If `git cherry` FAILS, or emits a line in neither form, the branch is SKIPPED with a structured warning and contributes no finding. Refusing to guess is the fail-safe direction here: reading an unparseable answer as "nothing unlanded" would wave a genuinely stale branch through, which is the one direction this check must never fail in.
 4. Exit `0` on zero findings, `4` on one or more.
+
+**The discriminator MUST be named in the check's own output** — in the `discriminator` field of every finding and in its `message` — as well as in the module docstring. An operator reading a finding cannot judge it without knowing what it rests on, because each candidate discriminator has different failure modes, and this one's are:
+
+- **Conservative, not silent.** A land that CHANGED the patch — a squash-merge, or a rebase that resolved a conflict — yields a different patch-id and is still reported. The check over-reports, never under-reports.
+- **Not free.** `git cherry` digests every commit on both sides of the merge base, so an old branch costs a patch-id walk of the canonical branch's commits since the branch point. That is more than the ancestry count it replaced, and it is bounded by how long the branch was left undeleted.
+
+The two alternatives are recorded as REJECTED rather than left implicit. Subject-match against the canonical branch's history is cheaper and is what the 2026-08-22 measurement used by hand, but subjects collide, so it can call an unlanded branch landed — a false negative, the forbidden direction. A forge query for a merged pull request on the head is authoritative where it applies, but it costs an API call, requires credentials at what is a local pre-step, and misses content that landed without a pull request — nine of the eleven branches in that measurement.
 
 Each finding carries:
 
 - `check_id`: `no_stale_revise_branches`
 - `status`: `fail`
-- `message`: `branch '<name>' is <ahead> commit(s) ahead of origin/<canonical>; last commit <short-sha> "<subject>"`
+- `message`: `branch '<name>' has <unlanded> unlanded commit(s) not present on origin/<canonical> (discriminator: patch-id equivalence (`git cherry`)); last commit <short-sha> "<subject>"`
+- `unlanded`: the count of `+` lines from `git cherry` — commits with no patch-equivalent on the canonical branch
+- `discriminator`: `patch-id equivalence (`git cherry`)`
 - `path`: empty (the finding is git-topology, not file-system)
 - `line`: 0
 
