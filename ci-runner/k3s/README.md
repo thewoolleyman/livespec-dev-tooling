@@ -115,7 +115,7 @@ Measured 2026-08-15 on `poweredge-xubuntu` (per the ledger record on
   k3s — it backed the podman pool's warm cache tiering; it now carries
   only the mountpoints of this pool's two other tiers, and the warm uv
   cache lower lives on the `ci-workvols` tier beside the runner work
-  volumes it is hardlink-seeded into, `phase2/warm-cache/`).
+  volumes it is reflink-copied into, `phase2/warm-cache/`).
 - **Ports**: `6443/10250/10251/10252/10257/10259/8472/2379/2380` (the
   full k3s server + agent + embedded-etcd port set) were all UNBOUND —
   no conflict with the podman pool or anything else on the host.

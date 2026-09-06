@@ -3,12 +3,14 @@
 # INSIDE A ROUTED JOB on the pool. SPECIFICATION/non-functional-requirements.md
 # §"Runner-pool cache telemetry" (v054), "Negative tests": the pool's
 # isolation suite MUST assert, on its existing timer, that a job cannot write
-# the warm cache (the shared inodes it is seeded with, since livespec-lvtu;
-# before that, the read-only mount), that a compilation-cache write with a job's
-# credentials is refused, and that no writer credential is present in a job
-# pod. Plan ci-runner-cache-tiers, child livespec-dev-tooling-tqpszl; the
-# trust argument these cases test is in ../crates-proxy/, ../sccache/ and
-# ../warm-cache/ and the hook template's header.
+# the warm cache (nothing a job can reach is a shared inode, since the
+# reflink seed of livespec-dev-tooling-hmv2bo; before that the hardlink seed
+# of livespec-lvtu, and before that the read-only mount), that a compilation-
+# cache write with a job's credentials is refused, and that no writer
+# credential is present in a job pod. Plan ci-runner-cache-tiers, children
+# livespec-dev-tooling-tqpszl and -hmv2bo; the trust argument these cases
+# test is in ../crates-proxy/, ../sccache/, ../warm-cache/README.md and the
+# hook template's header.
 #
 # WHERE IT RUNS: .github/workflows/ci-cache-negative-tests.yml — a scheduled
 # container job on THIS repository's scale set, so the pod is exactly what
@@ -31,18 +33,17 @@
 # <detail>` line per case on stdout either way.
 set -uo pipefail
 
-# The warm uv cache as a job sees it since livespec-lvtu: not a mount but the
-# hardlink seed the local-path provisioner made in this job's own work
-# volume (../warm-cache/README.md "Where it lives"). Its files are the
-# fleet-wide generation's inodes and must be unwritable from here while the
-# directory itself stays usable. KNOWN RED as of 2026-09-04: the generation
-# is root-owned and this pod's root is uid 0 on its idmapped volume, so case
-# 1 reports a VIOLATION on every run until the mechanical closure lands
-# (an owner no pod maps was tried and broke uv's cache init; the decision
-# between the remaining options is the maintainer's -- livespec plan
-# ci-runner-pod-lifecycle-reliability research/006, README.md "The hazard").
-# It stays red rather than relaxed: the clause it asserts is ratified, and a
-# red that names the violation is the report.
+# The warm uv cache as a job sees it: not a mount but the seed the local-path
+# provisioner made in this job's own work volume while the volume was
+# provisioned (../warm-cache/README.md "Where it lives"). Since 2026-09-06
+# it is a REFLINK COPY of the generation on the XFS `ci-workvols` tier: every
+# file is this volume's own inode, sharing the generation's data blocks
+# copy-on-write until either side writes, so a job's write lands in the
+# volume and never in the generation. From 2026-09-04 to 2026-09-06 it was a
+# HARDLINK seed whose inodes WERE the generation's, and case 1 reported that
+# violation on every run on purpose (the maintainer's decision between the
+# closures is livespec plan ci-runner-pod-lifecycle-reliability research/006;
+# option (a), reflink on XFS, was taken).
 WARM_SEED="${CACHE_NEG_WARM_SEED:-${UV_CACHE_DIR:-/__w/_warm/uv}}"
 REDIS_HOST="${CACHE_NEG_REDIS_HOST:-sccache-redis.ci-sccache.svc.cluster.local}"
 REDIS_PORT="${CACHE_NEG_REDIS_PORT:-6379}"
@@ -50,27 +51,56 @@ PROXY_URL="${CACHE_NEG_PROXY_URL:-http://crates-proxy.ci-crates-proxy.svc.cluste
 rc=0
 report() { printf 'case=%s result=%s %s\n' "$1" "$2" "$3"; [ "$2" = pass ] || rc=1; }
 
-# ---- 1. the warm cache's shared inodes are unwritable from the job ----------
-# A seeded file is one with a link count above 1 (its inode is the
-# generation's) that is not one of uv's world-writable lock files (those are
-# re-created per volume by the seed). Opening it for writing must fail; the
-# job must still be able to CREATE an entry beside it, or the cache would be
-# useless rather than protected.
+# ---- 1. nothing under the warm seed is shared with anything outside it -----
+# Three things must hold. (i) No inode under the seed has a link outside it:
+# uv hardlinks some entries to each other WITHIN a cache (archive <-> wheels),
+# and `cp -a` preserves those as hardlinks within the copy, so a link count
+# above 1 is fine exactly when every one of the inode's links is under the
+# seed — one `find -printf '%i %n'` pass, grouped by inode, finds any inode
+# with fewer links here than it has in total. A link elsewhere is the
+# generation's (the populator hardlinks consecutive generations to each
+# other, so the negative control's mount of the warm root shows exactly
+# this), and if such an inode also opens for writing that is the violation
+# the hardlink seed had. (ii) The copy is a reflink, not a byte copy: where
+# `filefrag` is present (the fleet's job image carries e2fsprogs), a seeded
+# file's extents carry the `shared` flag. A byte copy is not a trust
+# violation but a misconfigured pool (../warm-cache/README.md "Lesson": a
+# per-start byte copy must never ship on the start path), so it fails too.
+# Caveat: the flag clears once the generation the seed was cloned from is
+# pruned — the populator keeps two generations and publishes twice an hour,
+# so a volume would have to outlive an hour. (iii) The job can still CREATE
+# an entry beside the seed, or the cache would be protected and useless.
 if [ ! -d "${WARM_SEED}" ]; then
-  report warm-seed-unwritable fail "precondition: ${WARM_SEED} is absent — this volume was not seeded (provisioner setup script, or no published generation)"
+  report warm-seed-private fail "precondition: ${WARM_SEED} is absent — this volume was not seeded (provisioner setup script, no published generation, or a tier without reflink)"
 else
-  shared="$(find "${WARM_SEED}" -type f -links +1 ! -perm -0002 -print -quit 2>/dev/null)"
-  if [ -z "${shared}" ]; then
-    report warm-seed-unwritable fail "precondition: no shared (link count > 1) file under ${WARM_SEED} — a byte copy, not the hardlink seed"
-  elif ( : >> "${shared}" ) 2>/dev/null; then
-    report warm-seed-unwritable fail "VIOLATION: opened ${shared} for writing from a job (owner uid $(stat -c %u "${shared}"), mode $(stat -c %a "${shared}"))"
-  else
-    probe="${WARM_SEED}/.cache-negative-test-$$"
-    if touch "${probe}" 2>/dev/null; then
-      rm -f "${probe}" 2>/dev/null || true
-      report warm-seed-unwritable pass "write to shared ${shared} refused (owner uid $(stat -c %u "${shared}")); new entry beside it creatable"
+  outside="$(find "${WARM_SEED}" -type f -links +1 -printf '%i\t%n\t%p\n' 2>/dev/null \
+    | awk -F'\t' '{c[$1]++; n[$1]=$2; p[$1]=$3} END {for (i in c) if (c[i] < n[i]) {print p[i]; exit}}')"
+  if [ -n "${outside}" ]; then
+    if ( : >> "${outside}" ) 2>/dev/null; then
+      report warm-seed-private fail "VIOLATION: ${outside} is an inode with a link outside this tree (link count $(stat -c %h "${outside}"), owner uid $(stat -c %u "${outside}")) and it opened for writing from a job — a shared cache is writable"
     else
-      report warm-seed-unwritable fail "shared inode refused as required, but ${WARM_SEED} is not writable for new entries either — uv cannot use this cache"
+      report warm-seed-private fail "precondition: ${outside} has a link outside this tree (link count $(stat -c %h "${outside}")) — a hardlink seed, not the private reflink copy; the write was refused, but nothing a job sees may be a shared inode"
+    fi
+  else
+    sample="$(find "${WARM_SEED}" -type f -size +64k -print -quit 2>/dev/null)"
+    reflink="reflink unverified (no filefrag in this image)"
+    if command -v filefrag >/dev/null 2>&1 && [ -n "${sample}" ]; then
+      if filefrag -v "${sample}" 2>/dev/null | grep -q 'shared'; then
+        reflink="extents of ${sample} shared with the generation (reflink copy)"
+      else
+        reflink=""
+      fi
+    fi
+    if [ -z "${reflink}" ]; then
+      report warm-seed-private fail "precondition: no seeded inode is shared, but ${sample} has no shared extents either — a byte copy, not the reflink seed (README \"Lesson\")"
+    else
+      probe="${WARM_SEED}/.cache-negative-test-$$"
+      if touch "${probe}" 2>/dev/null; then
+        rm -f "${probe}" 2>/dev/null || true
+        report warm-seed-private pass "every seeded inode is this volume's own (no link outside the tree); ${reflink}; new entry beside it creatable"
+      else
+        report warm-seed-private fail "every seeded inode is private, but ${WARM_SEED} is not writable for new entries — uv cannot use this cache"
+      fi
     fi
   fi
 fi

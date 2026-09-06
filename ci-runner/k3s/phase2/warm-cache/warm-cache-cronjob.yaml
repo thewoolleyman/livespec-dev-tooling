@@ -8,8 +8,8 @@
 #
 # Runs in its own namespace so the ONE mount of the warm root is not a
 # capability anything in arc-runners carries. Nothing else mounts it at all:
-# the local-path provisioner's setup script hardlink-seeds each new runner
-# work volume from it at volume creation (../local-path-provisioner/), and a
+# the local-path provisioner's setup script reflink-copies it into each new
+# runner work volume at volume creation (../local-path-provisioner/), and a
 # workflow pod only ever sees its own seed (../arc/hook-pod-template.yaml).
 #
 # Same image the fleet's CI jobs run in, so the cache is populated by the
@@ -200,10 +200,10 @@ spec:
                 # A hidden sibling of the pvc-* directories on the ci-workvols
                 # tier (the local-path provisioner's node path), NOT on the
                 # ci-cache volume it started on: the provisioner's setup
-                # script hardlinks each new work volume's _warm/uv from here,
-                # and a hardlink is legal only within one filesystem and one
-                # mount (livespec-lvtu; README.md "Where it lives, and why it
-                # moved"). The tier is mounted by fstab
+                # script reflink-copies this into each new work volume's
+                # _warm/uv, and a reflink is legal only within one filesystem
+                # (livespec-lvtu, livespec-dev-tooling-hmv2bo; README.md
+                # "Where it lives, and why it moved"). The tier is mounted by fstab
                 # (../storage-layout/); the boot-time storage sweep
                 # (../storage-sweep/) removes only pvc-* entries and keeps
                 # this one.

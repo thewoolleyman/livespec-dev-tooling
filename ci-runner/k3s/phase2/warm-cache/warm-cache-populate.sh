@@ -9,37 +9,39 @@
 # directory /var/lib/rancher/k3s/storage/.warm (a hidden sibling of the runner
 # work volumes on the ci-workvols tier) mounted read-WRITE at $WARM_ROOT.
 # Nothing else in the cluster mounts that path at all: the local-path
-# provisioner's setup script (../local-path-provisioner/) HARDLINKS the
+# provisioner's setup script (../local-path-provisioner/) REFLINK-COPIES the
 # current generation into each work volume's _warm/uv when the volume is
-# created, and a job only ever sees that seed. A job's uv adds new entries
-# beside the shared inodes and never rewrites one in place, so it leaves the
-# generation as found -- by uv's write discipline, NOT by enforcement: the
-# workflow pod's volume is idmapped, its root is uid 0 there, and these
-# root-owned inodes are writable from it. Owning them as a uid no pod maps
-# was tried on 2026-09-04 and broke every job (uv's cache init opens
-# CACHEDIR.TAG for writing, and the kernel refuses any write-open, unlink
-# or rename-over on an inode whose owner the pod does not map); the
-# mechanical closure the "Runner-pool build cache tiers" clause requires is
-# an open maintainer decision recorded in livespec plan
-# ci-runner-pod-lifecycle-reliability research/006 (README.md "The hazard").
+# created (XFS with reflink on the ci-workvols tier since 2026-09-06), and a
+# job only ever sees that seed: every inode its own, the data blocks shared
+# copy-on-write, so a job's writes land in its volume and never here. That
+# is the enforcement the "Runner-pool build cache tiers" clause requires
+# (livespec-dev-tooling-hmv2bo; README.md "The hazard, closed"). The
+# hardlink seed of 2026-09-04 to 2026-09-06 had no such enforcement -- the
+# workflow pod's volume is idmapped, its root is uid 0 there, and the
+# root-owned shared inodes were writable from it; owning them as a uid no
+# pod maps broke every job (uv's cache init opens CACHEDIR.TAG for writing,
+# and the kernel refuses any write-open, unlink or rename-over on an inode
+# whose owner the pod does not map) -- the record is livespec plan
+# ci-runner-pod-lifecycle-reliability research/006.
 # The podman lane enforced the same trust tiering with a read-only overlay
 # lower; here an unprivileged pod cannot mount an overlay and uv refuses a
 # read-only cache outright ("Failed to initialize cache ... Permission
 # denied", measured 2026-08-23).
 #
-# GENERATIONS, not in-place writes. Readers hardlink-seed from the lower
+# GENERATIONS, not in-place writes. Readers reflink-copy from the lower
 # while this script may be writing it. Writing in place would let a reader
-# link a half-written entry, so each run builds a NEW generation directory,
+# copy a half-written entry, so each run builds a NEW generation directory,
 # hardlink-seeded from the current one (same filesystem, so the seed is
 # metadata-only and takes well under a second even for a multi-GB cache),
 # syncs every routed repository's lockfile into it, and then publishes it with
 # ONE atomic symlink rename. A reader resolves the symlink once before it
-# starts linking, so one that resolved it before the flip keeps seeding from
+# starts copying, so one that resolved it before the flip keeps seeding from
 # the previous generation, which this script keeps for one more cycle before
-# pruning — and a seeded volume's links outlive even a pruned generation. The
-# hardlink seed is safe because uv never mutates a cache file in place — it
-# writes to a temporary path and renames — so a new generation's writes never
-# reach the inodes the previous generation still points at.
+# pruning — and a seeded volume's copies outlive even a pruned generation
+# (their blocks stay referenced). The generation-to-generation hardlink here
+# is safe because uv never mutates a cache file in place — it writes to a
+# temporary path and renames — so a new generation's writes never reach the
+# inodes the previous generation still points at.
 #
 # THE CARGO HALF (2026-09-04, plan ci-runner-cache-tiers, livespec-dev-tooling-
 # oiltq3): the warm cargo cache is HOST-SERVED by the crates proxy

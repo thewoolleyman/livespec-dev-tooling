@@ -36,7 +36,7 @@
 # livespec-s43svm.25 rolled out fleet-wide from values-livespec-overseer.yaml's
 # reference implementation -- see that file and ../apparmor/ci-runner-workflow
 # for the root cause -- and `fsGroupChangePolicy: OnRootMismatch` for the
-# hardlink-seeded warm cache (livespec-lvtu). Both were present from this scale
+# seeded warm cache (livespec-lvtu). Both were present from this scale
 # set's first install.
 #
 # ONE PREREQUISITE THIS FILE CANNOT EXPRESS (values-livespec-driver-pi.yaml
@@ -71,11 +71,11 @@ template:
       runAsGroup: 1000
       fsGroup: 1000
       # OnRootMismatch, not the default Always: the work volume is born with
-      # the warm uv cache already in it as ~160k HARDLINKS (the local-path
-      # provisioner's setup script, ../local-path-provisioner/), and Always
-      # would have the kubelet chgrp+chmod every one of them on this pod's
-      # mount -- a per-start walk of the whole cache that also mutates the
-      # inodes the cache generations share. The setup script leaves the
+      # the warm uv cache already in it as ~190k REFLINK COPIES (the
+      # local-path provisioner's setup script, ../local-path-provisioner/;
+      # hardlinks until 2026-09-06), and Always would have the kubelet
+      # chgrp+chmod every one of them on this pod's mount -- a per-start
+      # walk of the whole cache. The setup script leaves the
       # volume root exactly as Always would (gid 1000, mode 2777), so the
       # kubelet sees no mismatch and skips the walk (livespec-lvtu).
       fsGroupChangePolicy: OnRootMismatch
