@@ -71,3 +71,4 @@ check-fleet-conformance
 check-fleet-conformance-admin
 check-fabro-image-pin-lockstep
 check-no-workflow-edits
+check-uv-lock-version-sync
