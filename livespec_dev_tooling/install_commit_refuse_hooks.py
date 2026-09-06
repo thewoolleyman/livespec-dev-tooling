@@ -29,6 +29,21 @@ It cannot prevent creation. What it converts is a silent, long-lived
 violation into an immediate, actionable refusal — that is the whole of the
 promise, and it should not be overstated.
 
+OWNERSHIP OF THE WHOLE HOOKS DIRECTORY, not just the three names above:
+after writing them the installer sweeps the same directory and deletes
+every OTHER executable that reaches lefthook without the canonical
+`unset GIT_DIR …` line. Those are lefthook's stock `call_lefthook`
+wrappers — `lefthook install` writes one per hook name it has ever been
+asked to manage and nothing removes them afterwards. They fire on every
+`git commit` and every `git cherry-pick`, they leak the GIT_DIR family
+git injects into a hook firing inside a linked worktree, and they call
+`lefthook run` WITHOUT `--no-auto-install`: the shape li-iroguc proved
+can write `core.bare=true` into the shared `.git/config`. Before this
+sweep the installer wrote three names and looked at nothing else, so
+`/data/projects/livespec/.git/hooks/prepare-commit-msg` sat there as a
+stock wrapper (mtime 2026-06-20) beside canonical siblings, invisible to
+installer and verifier alike.
+
 This RETIRES
 the older `livespec.primaryPath` git-config mechanism: there is no config
 to set and so no fail-open window between clone and arming step. The
@@ -63,6 +78,7 @@ Output discipline: structlog JSON to stderr; no `print`, no
 
 from __future__ import annotations
 
+import os
 import stat
 import subprocess
 import sys
@@ -75,10 +91,21 @@ if str(_VENDOR_DIR) not in sys.path:
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
 __all__: list[str] = [
+    "CANONICAL_GIT_DIR_UNSET_LINE",
     "CANONICAL_HOOK_BODY",
+    "_is_foreign_lefthook_wrapper",
     "install_hooks",
     "main",
 ]
+
+
+# The GIT_DIR-clearing line the canonical body carries, hoisted to a module
+# constant because it is load-bearing in THREE places now: the body below, this
+# installer's foreign-wrapper sweep, and the
+# `primary_checkout_commit_refuse_hook_installed` verifier's matching arm. One
+# string, one meaning — a rewording that misses one of the three would silently
+# stop recognizing the very shape the sweep exists to remove.
+CANONICAL_GIT_DIR_UNSET_LINE = "unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE GIT_PREFIX"
 
 
 # The canonical commit-refuse hook body. Embedded here as the wheel-safe
@@ -203,6 +230,46 @@ exec mise exec -- lefthook run --no-auto-install "$hook_name" "$@"
 
 _HOOK_NAMES: tuple[str, ...] = ("pre-commit", "pre-push", "commit-msg")
 
+# What makes a hooks-dir executable a LEFTHOOK ENTRY POINT. lefthook's stock
+# wrapper defines `call_lefthook()` and dispatches through `lefthook run
+# <name>`; every spelling of it names the tool, and nothing else that git's
+# template ships into a hooks directory does (`*.sample` is executable but
+# lefthook-free, so it is excluded on its content rather than by name).
+_LEFTHOOK_MARKER: bytes = b"lefthook"
+
+
+def _is_foreign_lefthook_wrapper(*, path: Path) -> bool:
+    """True when `path` is a hooks-dir executable reaching lefthook WITHOUT the unset line.
+
+    THE SHAPE THIS NAMES is lefthook's stock `call_lefthook` wrapper — what
+    `lefthook install` writes for every hook name it has ever been asked to
+    manage, and what nothing removes when the canonical body takes over the
+    three names the fleet gates. It is a LIVE entry point: it fires on every
+    `git commit` and (measured 2026-09-06 in a scratch repo) on every
+    `git cherry-pick`; it does NOT clear the GIT_DIR family git injects into a
+    hook firing inside a linked worktree; and it calls `lefthook run` WITHOUT
+    `--no-auto-install` — the exact shape li-iroguc proved can write
+    `core.bare=true` into the shared `.git/config`.
+
+    ⛔ RECOGNIZED BY SHAPE, NOT BY NAME. The fleet cannot enumerate the hook
+    names lefthook has ever installed across nine repos' histories, so a
+    name-list would be a guess that reads as coverage. "Invokes lefthook and
+    does not first clear GIT_DIR" is the property that makes the file a hazard,
+    and it is exactly what is tested.
+
+    Compared on BYTES, for the same reason the verifier's byte-identity arm is:
+    a hook whose bytes are not valid UTF-8 must yield a verdict rather than a
+    `UnicodeDecodeError` out of the installer.
+
+    Non-files and non-executables are not wrappers: git runs a hook only when
+    it is an executable regular file, so anything else is inert.
+    """
+    if not path.is_file() or not os.access(path, os.X_OK):
+        return False
+    body = path.read_bytes()
+    unset_line = CANONICAL_GIT_DIR_UNSET_LINE.encode("utf-8")
+    return _LEFTHOOK_MARKER in body and unset_line not in body
+
 
 def _configure_logger() -> structlog.stdlib.BoundLogger:
     structlog.configure(
@@ -240,6 +307,44 @@ def _git_common_dir(*, cwd: Path) -> Path:
     return (cwd / candidate).resolve()
 
 
+def _remove_foreign_lefthook_wrappers(
+    *, hooks_dir: Path, log: structlog.stdlib.BoundLogger
+) -> None:
+    """Delete every foreign lefthook entry point left in the shared hooks dir.
+
+    THE INSTALLER OWNS THE WHOLE DIRECTORY, not merely the three names it
+    writes. Observed 2026-09-06 in `/data/projects/livespec/.git/hooks`:
+    `prepare-commit-msg` was still lefthook's stock wrapper, mtime three months
+    older than the canonical hooks beside it — invisible to this installer and
+    to the verifier alike, because both enumerated `_HOOK_NAMES` and nothing
+    looked at the rest of the directory.
+
+    REMOVED RATHER THAN REWRITTEN, deliberately. The canonical body carries
+    refuse-at-primary and positive-location semantics ratified for the
+    commit/push operations the fleet gates; writing it under an arbitrary hook
+    name would change WHICH git operations a primary refuses — a behavior
+    expansion nothing ratifies, and one that would make a `post-checkout` or
+    `post-merge` fire a commit refusal. Removal is also the completer close: it
+    deletes the entry point instead of sanitizing it. A hook the fleet decides
+    to gate belongs in `_HOOK_NAMES`, where this installer owns its body.
+
+    The three canonical names are skipped explicitly. They were rewritten
+    moments earlier and carry the unset line, so the predicate would clear them
+    anyway; the skip states the ownership rather than relying on that.
+    """
+    for candidate in sorted(hooks_dir.iterdir()):
+        if candidate.name in _HOOK_NAMES:
+            continue
+        if not _is_foreign_lefthook_wrapper(path=candidate):
+            continue
+        candidate.unlink()
+        log.info(
+            "removed foreign lefthook wrapper from the shared hooks directory",
+            hook=candidate.name,
+            path=str(candidate),
+        )
+
+
 def install_hooks(*, cwd: Path, log: structlog.stdlib.BoundLogger) -> int:
     """Install the canonical commit-refuse hook at the primary's hooks dir.
 
@@ -249,6 +354,13 @@ def install_hooks(*, cwd: Path, log: structlog.stdlib.BoundLogger) -> int:
     canonical body. Worktree-safe: the common-dir resolution targets the
     primary's shared `.git/hooks/` even when `cwd` is a linked worktree.
     Returns 0 on success.
+
+    Then sweeps the SAME directory for foreign lefthook entry points — any
+    other executable that reaches lefthook without the canonical
+    GIT_DIR-clearing line — and deletes them, so no lefthook entry point in the
+    shared hooks directory is unowned by this installer. The sweep runs AFTER
+    the writes so the canonical three are already in their final state when the
+    predicate reads the directory.
     """
     hooks_dir = _git_common_dir(cwd=cwd) / "hooks"
     hooks_dir.mkdir(parents=True, exist_ok=True)
@@ -262,6 +374,7 @@ def install_hooks(*, cwd: Path, log: structlog.stdlib.BoundLogger) -> int:
             hook=hook_name,
             path=str(hook_path),
         )
+    _remove_foreign_lefthook_wrappers(hooks_dir=hooks_dir, log=log)
     return 0
 
 
