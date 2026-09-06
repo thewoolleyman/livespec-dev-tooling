@@ -510,14 +510,16 @@ command -v journalctl >/dev/null || { echo "FATAL: journalctl not found on PATH"
 command -v timeout >/dev/null || { echo "FATAL: timeout not found on PATH (coreutils)" >&2; exit 2; }
 # A precheck that hit its deadline says so — "run as root" would send the
 # operator after the wrong cause.
-if ! bounded precheck journalctl -u k3s -n 1 -q --no-pager >/dev/null 2>&1; then
-  rc=$?
+# (`rc=$?` is taken from the command itself, never after a `!` — bash sets
+# $? to the NEGATED status there, which read every failure as rc 0.)
+rc=0; bounded precheck journalctl -u k3s -n 1 -q --no-pager >/dev/null 2>&1 || rc=$?
+if [ "$rc" -ne 0 ]; then
   if [ "$rc" -eq 124 ]; then echo "FATAL: the k3s journal read hit its ${STEP_TIMEOUT}s deadline (journald busy or the disk stalled), not a permission failure" >&2; else echo "FATAL: cannot read the k3s unit's journal (rc ${rc}; run as root or a member of systemd-journal)" >&2; fi
   exit 2
 fi
 [ -r "$CONTAINERD_LOG" ] || { echo "FATAL: cannot read ${CONTAINERD_LOG} (run as root, or pass --containerd-log)" >&2; exit 2; }
-if ! kc precheck get --raw /readyz >/dev/null 2>&1; then
-  rc=$?
+rc=0; kc precheck get --raw /readyz >/dev/null 2>&1 || rc=$?
+if [ "$rc" -ne 0 ]; then
   if [ "$rc" -eq 124 ]; then echo "FATAL: /readyz via ${KUBECONFIG} did not answer within the ${STEP_TIMEOUT}s deadline" >&2
   elif [ -s "$API_REFUSED_FILE" ]; then
     echo "FATAL: the API server REFUSED /readyz via ${KUBECONFIG} ($(head -1 "$API_REFUSED_FILE" | cut -d' ' -f2- | cut -c1-140)) — api-unavailable; the class is posted alone and the sweep exits 2 because nothing else can be read" >&2
@@ -595,32 +597,71 @@ while IFS='|' read -r name uid gates _; do
   gated_uids="${gated_uids}${uid} "
 done <<< "$POD_ROWS"
 # WHEN a Pending claim's clock starts. Under WaitForFirstConsumer nothing is
-# provisioned until the scheduler has picked a node and written
-# `volume.kubernetes.io/selected-node` on the claim; a claim whose pod sat
-# ten minutes behind a Kueue gate is then ten minutes old and seconds into
-# provisioning, and aging it from creationTimestamp spikes this class after
-# every admission wave. The write's time is the claim's own managedFields
-# entry for the scheduler (kubectl hides managedFields unless asked). The
-# pod's PodScheduled.lastTransitionTime cannot serve: a gate release keeps
-# the condition False, and a same-status update keeps its transition time.
-# No scheduler entry yet means no provisioning has been asked for — not the
-# provisioner's problem, not counted; creationTimestamp is the fallback only
-# when the entry exists but does not parse.
-pvc_hits=0; pvc_gated=0; pvc_unrequested=0
-while IFS='|' read -r name created owners managers; do
+# provisioned until the scheduler has picked a node and the claim carries
+# the `volume.kubernetes.io/selected-node` ANNOTATION; a claim whose pod
+# sat ten minutes behind a Kueue gate is then ten minutes old and seconds
+# into provisioning, and aging it from creationTimestamp spikes this class
+# after every admission wave. So: no annotation = nothing asked of the
+# provisioner yet, not counted; with it, the clock is the time of the
+# claim's managedFields entry whose fieldsV1 OWNS that annotation key —
+# which is `kube-scheduler` upstream and the single `k3s` entry on k3s,
+# where every in-process component (scheduler, ephemeral-volume and PV
+# controllers) writes as one manager named `k3s` (verified live on
+# v1.36.2: every runner -work claim carries exactly `k3s/Update`, plus
+# `k3s/Update/status` once Bound). The second cut of this clock matched
+# the manager NAME against `*scheduler*`, which on k3s matched nothing, so
+# every claim read "not requested" and the class emitted a true-looking
+# zero — the same shape as the blocker before it. Matching the FIELD the
+# entry owns is what holds on both. The entry's time moves once more when
+# the provisioner strips selected-node and the scheduler re-selects (a
+# legitimate clock restart), and the pod's PodScheduled.lastTransitionTime
+# cannot serve at all: a gate release keeps the condition False and a
+# same-status update keeps its time. creationTimestamp is the fallback
+# only when the owning entry's time does not parse. This needs the JSON
+# form (managedFields' fieldsV1 is not addressable by jsonpath), read by
+# the python3 the sweep already uses. A listing that FAILS (any rc, not
+# only the deadline) withholds both pvc-pending's zero and the pvc-gated
+# gauge: an empty listing is not a reading.
+pvc_hits=0; pvc_gated=0; pvc_unrequested=0; pvc_read=1; pvc_rows=""
+pvc_json="$(mktemp)"
+if kc pvc-pending -n "$NAMESPACE" get pvc --show-managed-fields -o json >"$pvc_json" 2>/dev/null && pvc_rows="$(python3 - "$pvc_json" <<'PY'
+import json, sys
+KEY = "volume.kubernetes.io/selected-node"
+def owns(node, key):
+    if isinstance(node, dict):
+        return ("f:" + key) in node or any(owns(v, key) for v in node.values())
+    return False
+d = json.load(open(sys.argv[1]))
+for it in d.get("items", []):
+    if (it.get("status") or {}).get("phase") != "Pending":
+        continue
+    md = it.get("metadata") or {}
+    owners = " ".join(str(o.get("uid", "")) for o in md.get("ownerReferences") or [])
+    selected = (md.get("annotations") or {}).get(KEY, "")
+    since = ""
+    for entry in md.get("managedFields") or []:
+        if owns(entry.get("fieldsV1") or {}, KEY):
+            since = str(entry.get("time") or "")
+    print(f"{md.get('name','')}|{md.get('creationTimestamp','')}|{owners}|{selected}|{since}")
+PY
+)"; then :; else
+  pvc_read=0; pvc_rows=""
+  echo "  could not list PVCs: pvc-pending's zero and livespec.ci_lifecycle.pvc-gated withheld this sweep" >&2
+  omit_zero pvc-pending
+fi
+rm -f "$pvc_json"
+while IFS='|' read -r name created owners selected since; do
   [ -n "$name" ] || continue
   gated=0
   for uid in $owners; do case "$gated_uids" in *" ${uid} "*) gated=1 ;; esac; done
   [ "$gated" = 1 ] && { pvc_gated=$((pvc_gated+1)); continue; }
-  since=""
-  for m in $managers; do case "$m" in *scheduler*=*) since="${m#*=}" ;; esac; done
-  [ -n "$since" ] || { pvc_unrequested=$((pvc_unrequested+1)); continue; }
+  [ -n "$selected" ] || { pvc_unrequested=$((pvc_unrequested+1)); continue; }
   age="$(age_seconds "$since")"
   [ "$age" != unknown ] || age="$(age_seconds "$created")"
   if [ "$age" != unknown ] && [ "$age" -ge "$PVC_PENDING_SECONDS" ]; then
-    pvc_hits=$((pvc_hits+1)); add_detail "    pvc=${name} pending_for=${age}s (since the scheduler selected its node)"
+    pvc_hits=$((pvc_hits+1)); add_detail "    pvc=${name} pending_for=${age}s (since node ${selected} was selected)"
   fi
-done < <(kc pvc-pending -n "$NAMESPACE" get pvc --show-managed-fields -o jsonpath='{range .items[?(@.status.phase=="Pending")]}{.metadata.name}|{.metadata.creationTimestamp}|{range .metadata.ownerReferences[*]}{.uid}{" "}{end}|{range .metadata.managedFields[*]}{.manager}={.time}{" "}{end}{"\n"}{end}' 2>/dev/null || true)
+done <<< "$pvc_rows"
 echo "  ${pvc_hits} PVC(s) Pending longer than ${PVC_PENDING_SECONDS}s since their node was selected; ${pvc_gated} Pending claim(s) owned by scheduling-gated pods excluded; ${pvc_unrequested} Pending with no node selected yet (not counted)"
 [ "$pvc_hits" -gt 0 ] && add_finding pvc-pending "$pvc_hits"
 
@@ -863,8 +904,10 @@ elif [ -d "$WARM_ROOT" ] && [ ! -e "$WARM_LAST_RUN" ]; then
   # written last-run.json: a populator that never ran, or was rebuilt and
   # has not run since, is the stalled case, not an unknown one.
   warm_last_run_age="never"
+elif [ -d "$WARM_ROOT" ]; then
+  echo "  ${WARM_LAST_RUN} exists but is unreadable or unparseable: the populator's last-run age (and its budget) unknown — a populator writing a document this sweep cannot read is a defect to look at, not a stall"
 else
-  echo "  ${WARM_LAST_RUN} absent or unparseable and no warm root at ${WARM_ROOT}: the populator's last-run age (and its budget) unknown"
+  echo "  no warm root at ${WARM_ROOT}: the populator has never run on this node, or the path is wrong; last-run age and budget unknown"
 fi
 if [ -z "$warm_budget_from" ]; then
   cm_ns="${WARM_BUDGET_CONFIGMAP%%/*}"; cm_name="${WARM_BUDGET_CONFIGMAP#*/}"
@@ -942,6 +985,7 @@ if [ -n "$newest" ]; then
   seed_marker="${newest#* }"; seed_dir="${seed_marker%/.uv-generation}"
   seed_vol="${seed_dir%/_warm}"; seed_vol="${seed_vol##*/}"
   seed_gen="$(head -c 64 "$seed_marker" 2>/dev/null | tr -d '\n' || true)"
+  seed_stat=1
   # The volume can be torn down between the find and the du (a job ending);
   # that is churn, named as such, distinct from a du that hit its deadline.
   if du_out="$(bounded start-seed-cost du -sb "${seed_dir}/uv" 2>/dev/null)"; then
@@ -949,15 +993,26 @@ if [ -n "$newest" ]; then
     [[ "$seed_bytes" =~ ^[0-9]+$ ]] || { seed_bytes=""; echo "  du -sb ${seed_dir}/uv printed no size: livespec.ci_seed.bytes omitted"; }
   else
     rc=$?; seed_bytes=""
-    if [ ! -d "${seed_dir}/uv" ]; then echo "  ${seed_vol} was deleted between the listing and the du (a job ended): livespec.ci_seed.* omitted this sweep"; seed_vol=""; seed_gen=""
-    elif [ "$rc" -eq 124 ]; then echo "  du -sb ${seed_dir}/uv hit its step deadline: livespec.ci_seed.bytes omitted"
-    else echo "  du -sb ${seed_dir}/uv failed (rc ${rc}): livespec.ci_seed.bytes omitted"; fi
+    # Every further touch of this path is bounded too: a du that hit its
+    # deadline on a stalled volume must not be followed by an unbounded
+    # stat or test on the same path (a D-state read would hold the sweep
+    # to the unit's deadline), so after a 124 the volume is left alone.
+    if [ "$rc" -eq 124 ]; then
+      echo "  du -sb ${seed_dir}/uv hit its step deadline: livespec.ci_seed.* omitted; the volume's timestamps are not read either (same path)"; seed_stat=0
+    else
+      rc2=0; bounded start-seed-cost test -d "${seed_dir}/uv" >/dev/null 2>&1 || rc2=$?
+      if [ "$rc2" -eq 1 ]; then echo "  ${seed_vol} was deleted between the listing and the du (a job ended): livespec.ci_seed.* omitted this sweep"; seed_vol=""; seed_gen=""; seed_stat=0
+      elif [ "$rc2" -eq 124 ]; then echo "  ${seed_dir}/uv did not answer a bounded test -d: livespec.ci_seed.* omitted"; seed_stat=0
+      else echo "  du -sb ${seed_dir}/uv failed (rc ${rc}): livespec.ci_seed.bytes omitted"; fi
+    fi
   fi
-  seed_born="$(stat -c %W "$seed_dir" 2>/dev/null || true)"; seed_done="$(stat -c %Y "$seed_marker" 2>/dev/null || true)"
-  if [[ "$seed_born" =~ ^[0-9]+$ ]] && [ "$seed_born" -gt 0 ] && [[ "$seed_done" =~ ^[0-9]+$ ]] && [ "$seed_done" -ge "$seed_born" ]; then
-    seed_seconds=$(( seed_done - seed_born ))
-  else
-    echo "  ${seed_dir}: birth time unavailable (stat %W='${seed_born:-}', marker mtime '${seed_done:-}'): livespec.ci_seed.seconds omitted"
+  if [ "$seed_stat" = 1 ]; then
+    seed_born="$(bounded start-seed-cost stat -c %W "$seed_dir" 2>/dev/null || true)"; seed_done="$(bounded start-seed-cost stat -c %Y "$seed_marker" 2>/dev/null || true)"
+    if [[ "$seed_born" =~ ^[0-9]+$ ]] && [ "$seed_born" -gt 0 ] && [[ "$seed_done" =~ ^[0-9]+$ ]] && [ "$seed_done" -ge "$seed_born" ]; then
+      seed_seconds=$(( seed_done - seed_born ))
+    else
+      echo "  ${seed_dir}: birth time unavailable (stat %W='${seed_born:-}', marker mtime '${seed_done:-}'): livespec.ci_seed.seconds omitted"
+    fi
   fi
 else
   echo "  no seeded work volume visible under ${STORAGE_ROOT} (idle pool, or the seed is not running): start-seed-cost and livespec.ci_seed.* omitted"
@@ -1227,7 +1282,7 @@ emit_lifecycle_metrics() {
     metrics="${metrics},$(gauge_json "livespec.ci_lifecycle.${c}" "runner-pod lifecycle sweep: count reported for class ${c} (0 = clean)" "{findings}" "$n" "$now_ns")"
     summary="${summary} livespec.ci_lifecycle.${c}=${n}"
   done
-  if [ "$pods_read" = 1 ] && ! class_read_hit pvc-pending; then
+  if [ "$pods_read" = 1 ] && [ "$pvc_read" = 1 ] && ! class_read_hit pvc-pending; then
     metrics="${metrics},$(gauge_json livespec.ci_lifecycle.pvc-gated "Pending PVCs whose consumer pod carries spec.schedulingGates (Kueue holding it), excluded from pvc-pending" "{pvcs}" "$pvc_gated" "$now_ns")"
     summary="${summary} livespec.ci_lifecycle.pvc-gated=${pvc_gated}"
   fi
