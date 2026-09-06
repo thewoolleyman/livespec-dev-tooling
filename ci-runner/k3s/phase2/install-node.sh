@@ -86,6 +86,9 @@ log "2b/10 storage layout (LABEL fstab lines + k3s drop-in; no-op when the tiers
 log "2c/10 iDRAC cooling configuration (racadm + fan loop automatic, third-party response off, Minimum Power profile)"
 "${SCRIPT_DIR}/host-thermal/install-host-thermal.sh"
 
+log "2d/10 operator host tools (btop-loop into /usr/local/bin)"
+"${SCRIPT_DIR}/host-tools/install-host-tools.sh"
+
 log "3/10 AppArmor profile + hook ConfigMap"
 "${SCRIPT_DIR}/apparmor/install-apparmor-profile.sh"
 
