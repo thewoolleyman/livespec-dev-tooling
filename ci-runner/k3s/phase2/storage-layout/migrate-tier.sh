@@ -71,9 +71,11 @@
 #       boot — fstab then mounts only the new one.
 #
 #   reclaim ROLE
-#       After that next boot: removes the `ROLE-old` LV (refuses while it is
-#       mounted anywhere), extends the role's LV over the freed extents, grows
-#       the filesystem online.
+#       Removes the volume labelled `old-<suffix>` (refuses while it is mounted
+#       anywhere — after a live switch that is the next boot; after a cutover,
+#       at once). When it shares the role's VG, the role's LV is extended over
+#       the freed extents and the filesystem grown online; in another VG the
+#       extents simply return to that VG's free pool.
 #
 # WHAT IT REFUSES, and why each is a rule (each cost real time on 2026-09-04):
 #   - a PV on a device that already carries a signature (the SN8100 came back
@@ -334,6 +336,8 @@ cmd_cutover() {
     fi
   done
 
+  log "install-storage-layout.sh BEFORE mount -a: it rewrites a tier line whose filesystem type changed (nothing is mounted by it)"
+  "${SCRIPT_DIR}/install-storage-layout.sh" | grep -E '^(present|replace|added|backup|  old|  new|FATAL)' || true
   systemctl daemon-reload
   mount -a || die "mount -a"
   for role in "${roles[@]}"; do
@@ -360,7 +364,7 @@ cmd_cutover() {
 
   log "install-storage-layout.sh must now be a no-op (every line present, drop-in byte-identical)"
   "${SCRIPT_DIR}/install-storage-layout.sh" | grep -E '^(present|replace|added|FATAL)' || true
-  log "CUTOVER DONE for: ${roles[*]}. The old volumes keep their data under old-<suffix> until reclaimed."
+  log "CUTOVER DONE for: ${roles[*]}. The old volumes keep their data under old-<suffix> until 'reclaim ROLE' removes them."
 }
 
 # ---------------------------------------------------------------------------
@@ -441,9 +445,12 @@ cmd_reclaim() {
   oldlv="$(lv_of_device "$old")"; newlv="$(lv_of_device "$new")"
   [ -n "$oldlv" ] && [ -n "$newlv" ] || die "old (${oldlv:-none}) or new (${newlv:-none}) is not an LV"
   vg="${newlv%%/*}"
-  [ "${oldlv%%/*}" = "$vg" ] || die "old LV ${oldlv} is in a different VG from ${newlv}; reclaim by hand"
   lvremove -y "$oldlv" >/dev/null || die "lvremove ${oldlv}"
-  log "removed ${oldlv}"
+  log "removed ${oldlv} (its extents return to VG ${oldlv%%/*}'s free pool)"
+  if [ "${oldlv%%/*}" != "$vg" ]; then
+    log "RECLAIM DONE: ${oldlv} was in a different VG from ${newlv}; ${newlv} is not extended (free extents on ${oldlv%%/*} are deliberate over-provisioning)"
+    return 0
+  fi
   lvextend -l +100%FREE "$newlv" >/dev/null || die "lvextend ${newlv}"
   fstype="$(fstype_of "$new")"
   mp="$(findmnt -rn -S "$new" -o TARGET | head -1)"
