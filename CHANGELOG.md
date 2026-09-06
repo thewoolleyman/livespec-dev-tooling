@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.52.11](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.52.10...v1.52.11) (2026-09-06)
+
+
+### Bug Fixes
+
+* **checks:** red_green_replay refuses a Green amend that destroyed the Red trailers ([0cf6c1e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0cf6c1e657b874ec1072895aac01b52fd5b30c22))
+
 ## [1.52.10](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.52.9...v1.52.10) (2026-09-06)
 
 
