@@ -347,6 +347,13 @@ def test_cli_help_flag_exits_zero(*, tmp_path: Path) -> None:
     )
     assert result.returncode == 0
     assert "pin-autodiscovery" in result.stdout
+    # The spec clause it cites lives in the repo that SHIPS this tool, not in
+    # the consumer repo it walks, so the citation names that repo
+    # (livespec-dev-tooling-5ug6). The text is unwrapped first: argparse
+    # rewraps the description to the terminal width and breaks AT HYPHENS, so
+    # `livespec-dev-tooling` can arrive split across two lines.
+    unwrapped = " ".join(result.stdout.split()).replace("- ", "-")
+    assert "livespec-dev-tooling SPECIFICATION/contracts.md" in unwrapped
 
 
 def test_cli_json_flag_default_is_true(*, tmp_path: Path) -> None:

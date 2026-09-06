@@ -148,7 +148,9 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="pin-autodiscovery",
         description=(
             "Walk a consumer repo and emit a JSON array of pin records per "
-            'SPECIFICATION/contracts.md §"Pin autodiscovery rules". Covers '
+            'livespec-dev-tooling SPECIFICATION/contracts.md §"Pin autodiscovery '
+            'rules" — the spec of the repo that SHIPS this tool, not of the '
+            "consumer it walks. Covers "
             ".livespec.jsonc, pyproject.toml [tool.uv.sources], .vendor.jsonc, "
             ".github/workflows/*.yml uses: refs, the fabro-sandbox docker "
             "image tag in .fabro workflow.toml files, and the codex-acp "
