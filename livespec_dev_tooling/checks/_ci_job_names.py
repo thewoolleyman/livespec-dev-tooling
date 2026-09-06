@@ -39,13 +39,15 @@ from __future__ import annotations
 
 import re
 
-# Names in `__all__` mark this private sibling's public surface to its two
-# importers — `checks/branch_protection_alignment.py` and
-# `fleet/_rows_github.py` — so pyright's per-file analysis does not flag
-# them unused across the package boundary.
+# Names in `__all__` mark this private sibling's public surface to its
+# importers — `checks/branch_protection_alignment.py`, `fleet/_rows_github.py`,
+# and `fleet/_ci_workflow_source.py` (which reads a member's non-ci.yml
+# pull_request(_target) workflows) — so pyright's per-file analysis does not
+# flag them unused across the package boundary.
 __all__: list[str] = [
     "parse_ci_matrix",
     "parse_top_level_jobs",
+    "workflow_triggers_pull_request",
 ]
 
 # `matrix.target` anchors: the `matrix:` table, its `target:` key, and the
@@ -65,6 +67,19 @@ _MATRIX_TARGET_LINE = re.compile(r"^\s*-\s*([\w-]+)\s*$")
 _JOBS_HEADER = re.compile(r"^jobs:\s*$")
 _JOB_ID_LINE = re.compile(r"^  ([A-Za-z0-9_-]+):")
 _JOB_NAME_LINE = re.compile(r"^\s+name:\s*(.+?)\s*$")
+# Workflow-trigger recognition, for the phantom-check rule's SECOND source
+# of legitimate required-check reporters. A required status check may be
+# reported by a workflow OTHER than ci.yml — but only one that runs on a
+# pull request: an `on:` including `pull_request` or its base-branch-side
+# sibling `pull_request_target` (the shape a base-branch gate uses to run
+# the BASE branch's definition against an untrusted head). `_ON_KEY_LINE`
+# matches the top-level `on:` key — quoted or bare, since some YAML linters
+# rewrite the truthy `on` key to `"on":` — capturing any inline value; the
+# block form is a bare `on:` followed by indented event lines. A plain
+# `pull_request` substring test covers BOTH events, since `pull_request` is
+# a prefix of `pull_request_target`.
+_ON_KEY_LINE = re.compile(r"""^["']?on["']?:\s*(.*?)\s*$""")
+_PR_EVENT_TOKEN = "pull_request"
 
 
 def parse_ci_matrix(*, source: str) -> set[str]:
@@ -142,3 +157,42 @@ def parse_top_level_jobs(*, source: str) -> set[str]:
             if "${{" not in value:
                 names.add(value)
     return names
+
+
+def workflow_triggers_pull_request(*, source: str) -> bool:
+    """True when a workflow's `on:` includes pull_request or pull_request_target.
+
+    A required status check reported by such a workflow — not only by ci.yml —
+    is a LEGITIMATE reporter under livespec NFR section "CI as a merge gate
+    (branch protection)": a base-branch-side gate kept deliberately outside
+    ci.yml (so the BASE branch's definition runs against an untrusted head via
+    `pull_request_target`) reports a real required check, not a phantom. A rule
+    that knew only ci.yml read that check as a phantom and would deadlock every
+    merge on the member, with no ci.yml change able to satisfy it.
+
+    Handles the inline scalar (`on: pull_request`), inline flow sequence
+    (`on: [push, pull_request]`), and block map / sequence forms. The scan is
+    confined to the top-level `on:` block, so a job id, step, or `name:` whose
+    own text contains `pull_request` is never mistaken for a trigger.
+    """
+    in_on_block = False
+    for raw in source.splitlines():
+        inline = _ON_KEY_LINE.match(raw)
+        if inline is not None:
+            value = inline.group(1)
+            if value and not value.startswith("#"):
+                # Inline scalar or flow sequence: the whole trigger set is on
+                # this one line, so it decides on its own.
+                return _PR_EVENT_TOKEN in value
+            # A bare `on:` (empty value, or a trailing comment): the events
+            # follow as indented lines below.
+            in_on_block = True
+            continue
+        if in_on_block:
+            if raw and not raw[0].isspace():
+                # The next top-level key ends the `on:` block.
+                in_on_block = False
+                continue
+            if _PR_EVENT_TOKEN in raw:
+                return True
+    return False
