@@ -336,12 +336,25 @@ proc_ppid() {
 # runs `just check`, which fans out through a dispatcher, so the writer we
 # are hunting is typically several levels below the child.
 descendant_pids() {
-    local root="$1" d cur i
+    local root="$1" cur i pid ppid
     local -a pids=() ppids=() frontier=("$root") found=()
-    for d in /proc/[0-9]*; do
-        pids+=("${d##*/}")
-        ppids+=("$(proc_ppid "${d##*/}")")
-    done
+    # ONE `ps` fork for the whole table. The previous form read every
+    # /proc/*/stat through a command substitution — one fork per process,
+    # ~3.4 s for ~1,000 processes on the VPS (livespec-dev-tooling-7dg74b).
+    if command -v ps >/dev/null 2>&1; then
+        while read -r pid ppid; do
+            [[ -n "$pid" ]] || continue
+            pids+=("$pid")
+            ppids+=("$ppid")
+        done < <(ps -eo pid=,ppid= 2>/dev/null)
+    fi
+    if [[ "${#pids[@]}" -eq 0 ]]; then
+        local d
+        for d in /proc/[0-9]*; do
+            pids+=("${d##*/}")
+            ppids+=("$(proc_ppid "${d##*/}")")
+        done
+    fi
     while [[ "${#frontier[@]}" -gt 0 ]]; do
         cur="${frontier[0]}"
         frontier=("${frontier[@]:1}")
@@ -355,12 +368,22 @@ descendant_pids() {
 
 # Processes holding the config (or its lock) OPEN right now. This is the
 # strongest attribution available without root: it names the writer while
-# the write is still in flight. It scans every readable /proc/*/fd, which
-# is why it runs only on an event and never on the poll path.
+# the write is still in flight. It scans ONLY the fd tables of the pids
+# given on stdin (the gate's descendants — the writer is one of them; see
+# proc_attribution), never all of /proc: a whole-host scan is one
+# `readlink` fork per open fd, measured at 86 s for 5,362 fds on the VPS,
+# and by then the writer was gone and the record never landed
+# (livespec-dev-tooling-7dg74b). Bounded further by a wall-clock budget so a
+# pathological fd table cannot hold the record back either.
 fd_holders() {
-    local hits=0 d fd link target
-    for d in /proc/[0-9]*/fd; do
-        for fd in "$d"/*; do
+    local hits=0 pid fd link target started="$SECONDS" budget="${GATE_ATTRIBUTION_BUDGET_S:-20}"
+    while read -r pid; do
+        [[ -n "$pid" && -d "/proc/$pid/fd" ]] || continue
+        if (( SECONDS - started > budget )); then
+            printf '      (fd scan truncated after %ss)\n' "$budget"
+            break
+        fi
+        for fd in "/proc/$pid/fd"/*; do
             link="$(readlink "$fd" 2>/dev/null)" || continue
             for target in "$@"; do
                 if [[ "$link" == "$target" ]]; then
@@ -375,18 +398,20 @@ fd_holders() {
 
 proc_attribution() {
     local gate_pid="$1" cfg="$2" pid cmd
+    local -a descendants=()
     if [[ ! -d /proc ]]; then
         printf '    (no /proc on this host — writer attribution unavailable)\n'
         return 0
     fi
+    mapfile -t descendants < <(descendant_pids "$gate_pid")
     printf '    gate descendant process tree (pid ppid cmdline):\n'
-    for pid in $(descendant_pids "$gate_pid"); do
+    for pid in "${descendants[@]}"; do
         cmd=""
         cmd="$(tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null)" || cmd=""
         printf '      %-8s %-8s %s\n' "$pid" "$(proc_ppid "$pid")" "${cmd:-<exited>}"
     done
-    printf '    /proc/*/fd holders of the shared config or its lock:\n'
-    fd_holders "$cfg" "$cfg.lock"
+    printf '    fd holders of the shared config or its lock, among those processes:\n'
+    printf '%s\n' "${descendants[@]}" | fd_holders "$cfg" "$cfg.lock"
 }
 
 # Compose the whole record, THEN append it in one write. Appending it
