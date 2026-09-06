@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 import test_ensure_plugins as red_plugin_tests
 from _gh_railway import lift_gh
+from returns.unsafe import unsafe_perform_io
 
 from livespec_dev_tooling.fleet import ensure_plugins
 from livespec_dev_tooling.fleet._context import (
@@ -282,17 +283,15 @@ def test_red_plugin_currency_table_helper_can_omit_justfile() -> None:
 
 
 def test_ensure_plugins_subprocess_runner_reports_command_status() -> None:
-    assert (
-        ensure_plugins.subprocess_runner(
-            args=(sys.executable, "-c", "raise SystemExit(3)")
-        ).returncode
-        == 3
-    )
+    outcome = ensure_plugins.subprocess_runner(args=(sys.executable, "-c", "raise SystemExit(3)"))
+    assert unsafe_perform_io(outcome.unwrap()).returncode == 3
 
 
-def test_ensure_plugins_subprocess_runner_reports_missing_binary() -> None:
-    result = ensure_plugins.subprocess_runner(args=("definitely-missing-livespec-claude-binary",))
-    assert result.returncode != 0
+# The missing-binary case used to live here asserting `returncode != 0`, which
+# is exactly what a fabricated `127` satisfies. It is now
+# `test_plugin_command_invocation_railway`'s
+# `test_an_absent_plugin_binary_is_a_failure_not_a_fabricated_127`, which
+# asserts the failure TRACK and its `kind` rather than a nonzero number.
 
 
 # --- uv.lock <-> pin lockstep leg (livespec-glv6) -------------------------

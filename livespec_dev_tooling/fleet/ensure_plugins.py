@@ -21,17 +21,21 @@ from livespec_dev_tooling.fleet._ensure_plugin_artifacts import (
     remove_plugin_cache_dir,
 )
 from livespec_dev_tooling.fleet._ensure_plugin_commands import (
+    PluginCommandOutcome,
     PluginCommandResult,
     PluginCommandRunner,
     enabled_plugin_names,
     planned_commands,
+    plugin_command_answer,
     run_from_settings,
     subprocess_runner,
 )
+from livespec_dev_tooling.fleet._invocation_failure import InvocationNotPerformed
 
 __all__: list[str] = [
     "ArtifactReader",
     "CacheDirRemover",
+    "PluginCommandOutcome",
     "PluginCommandResult",
     "PluginCommandRunner",
     "RegistryReader",
@@ -203,11 +207,20 @@ def _registry_repair_paths(
 def _run_commands(
     *, commands: tuple[tuple[str, ...], ...], runner: PluginCommandRunner
 ) -> tuple[str, ...]:
-    """Run one provisioning cycle and return the first command failure."""
+    """Run one provisioning cycle and return the first command failure.
+
+    The two failures are kept APART because they call for opposite
+    operator responses: a command that RAN and refused is the plugin
+    CLI's own verdict, while a command that never ran at all is an
+    install or permissions problem on the host and says nothing about
+    the plugin.
+    """
     for command in commands:
-        result = runner(args=command)
-        if result.returncode != 0:
-            return (f"command failed with exit {result.returncode}: {' '.join(command)}",)
+        answer = plugin_command_answer(outcome=runner(args=command))
+        if isinstance(answer, InvocationNotPerformed):
+            return (f"command did not run: {answer.reason}",)
+        if answer.returncode != 0:
+            return (f"command failed with exit {answer.returncode}: {' '.join(command)}",)
     return ()
 
 

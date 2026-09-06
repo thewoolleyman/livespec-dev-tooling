@@ -8,6 +8,7 @@ from typing import Final
 
 import pytest
 from _gh_railway import lift_gh
+from returns.io import IOSuccess
 
 from livespec_dev_tooling.fleet._context import (
     FleetContext,
@@ -24,6 +25,7 @@ from livespec_dev_tooling.fleet._rows_claude_plugin import (
     assert_claude_plugin_currency,
 )
 from livespec_dev_tooling.fleet.ensure_plugins import (
+    PluginCommandOutcome,
     PluginCommandResult,
     ensure,
     planned_commands,
@@ -34,6 +36,21 @@ from livespec_dev_tooling.fleet.ensure_plugins import (
 )
 
 __all__: list[str] = []
+
+
+def _ran(*, returncode: int) -> PluginCommandOutcome:
+    """Lift a canned exit code onto the plugin seam's success track.
+
+    Every canned runner in this file answers as a `claude` that RAN — which
+    is what the provisioning behaviour under test is about — so lifting them
+    wholesale preserves each existing assertion. The failure track ("the
+    invocation never happened") is exercised at the seam and at the caller
+    that used to misread it, in `test_plugin_command_invocation_railway`,
+    rather than by threading a failure through nine canned runners and
+    hoping one of them was set to fail. `_gh_railway.lift_gh` is the same
+    move for the `gh` seam.
+    """
+    return IOSuccess(PluginCommandResult(returncode=returncode))
 
 
 def _settings_text() -> str:
@@ -95,11 +112,11 @@ def test_run_from_settings_executes_commands_in_order(*, tmp_path: Path) -> None
     settings.write_text(_settings_text(), encoding="utf-8")
     seen: list[tuple[str, ...]] = []
 
-    def runner(*, args: tuple[str, ...]) -> PluginCommandResult:
+    def runner(*, args: tuple[str, ...]) -> PluginCommandOutcome:
         seen.append(args)
-        return PluginCommandResult(returncode=0)
+        return _ran(returncode=0)
 
-    assert run_from_settings(settings_path=settings, runner=runner) == 0
+    assert run_from_settings(settings_path=settings, runner=runner) == IOSuccess(0)
     assert seen == list(planned_commands(settings_text=_settings_text()))
 
 
@@ -109,11 +126,11 @@ def test_run_from_settings_stops_at_first_failed_command(*, tmp_path: Path) -> N
     settings.write_text(_settings_text(), encoding="utf-8")
     seen: list[tuple[str, ...]] = []
 
-    def runner(*, args: tuple[str, ...]) -> PluginCommandResult:
+    def runner(*, args: tuple[str, ...]) -> PluginCommandOutcome:
         seen.append(args)
-        return PluginCommandResult(returncode=17 if len(seen) == 2 else 0)
+        return _ran(returncode=17 if len(seen) == 2 else 0)
 
-    assert run_from_settings(settings_path=settings, runner=runner) == 17
+    assert run_from_settings(settings_path=settings, runner=runner) == IOSuccess(17)
     assert seen == list(planned_commands(settings_text=_settings_text()))[:2]
 
 
@@ -473,9 +490,9 @@ def test_ensure_returns_no_findings_when_provisioning_succeeds(*, tmp_path: Path
     )
     ran: list[tuple[str, ...]] = []
 
-    def runner(*, args: tuple[str, ...]) -> PluginCommandResult:
+    def runner(*, args: tuple[str, ...]) -> PluginCommandOutcome:
         ran.append(args)
-        return PluginCommandResult(returncode=0)
+        return _ran(returncode=0)
 
     findings = ensure(
         settings_text=_M3,
@@ -490,9 +507,9 @@ def test_ensure_returns_no_findings_when_provisioning_succeeds(*, tmp_path: Path
 def test_ensure_refuses_to_run_commands_when_settings_are_vacuous() -> None:
     ran: list[tuple[str, ...]] = []
 
-    def runner(*, args: tuple[str, ...]) -> PluginCommandResult:  # pragma: no cover
+    def runner(*, args: tuple[str, ...]) -> PluginCommandOutcome:  # pragma: no cover
         ran.append(args)
-        return PluginCommandResult(returncode=0)
+        return _ran(returncode=0)
 
     findings = ensure(
         settings_text=_settings(enabled={}),
@@ -508,9 +525,9 @@ def test_ensure_reports_when_commands_succeed_but_no_record_lands() -> None:
     """The exit-status trap: every command exits 0, yet nothing was provisioned."""
     ran: list[tuple[str, ...]] = []
 
-    def runner(*, args: tuple[str, ...]) -> PluginCommandResult:
+    def runner(*, args: tuple[str, ...]) -> PluginCommandOutcome:
         ran.append(args)
-        return PluginCommandResult(returncode=0)
+        return _ran(returncode=0)
 
     findings = ensure(
         settings_text=_M3,
@@ -538,9 +555,9 @@ def test_ensure_reports_when_record_names_empty_artifact(*, tmp_path: Path) -> N
     )
     ran: list[tuple[str, ...]] = []
 
-    def runner(*, args: tuple[str, ...]) -> PluginCommandResult:
+    def runner(*, args: tuple[str, ...]) -> PluginCommandOutcome:
         ran.append(args)
-        return PluginCommandResult(returncode=0)
+        return _ran(returncode=0)
 
     findings = ensure(
         settings_text=_M3,
@@ -578,9 +595,9 @@ def test_ensure_repairs_incomplete_cache_once(
     ]
     ran: list[tuple[str, ...]] = []
 
-    def runner(*, args: tuple[str, ...]) -> PluginCommandResult:
+    def runner(*, args: tuple[str, ...]) -> PluginCommandOutcome:
         ran.append(args)
-        return PluginCommandResult(returncode=0)
+        return _ran(returncode=0)
 
     findings = ensure(
         settings_text=_M3,
@@ -610,9 +627,9 @@ def test_ensure_returns_second_findings_when_repair_still_fails(
     )
     ran: list[tuple[str, ...]] = []
 
-    def runner(*, args: tuple[str, ...]) -> PluginCommandResult:
+    def runner(*, args: tuple[str, ...]) -> PluginCommandOutcome:
         ran.append(args)
-        return PluginCommandResult(returncode=0)
+        return _ran(returncode=0)
 
     findings = ensure(
         settings_text=_M3,
@@ -637,9 +654,9 @@ def test_ensure_refuses_to_delete_install_path_outside_cache(*, tmp_path: Path) 
     )
     ran: list[tuple[str, ...]] = []
 
-    def runner(*, args: tuple[str, ...]) -> PluginCommandResult:
+    def runner(*, args: tuple[str, ...]) -> PluginCommandOutcome:
         ran.append(args)
-        return PluginCommandResult(returncode=0)
+        return _ran(returncode=0)
 
     findings = ensure(
         settings_text=_M3,
@@ -727,9 +744,9 @@ def test_registry_findings_ignore_non_object_entries() -> None:
 def test_ensure_reports_a_failing_command_and_stops() -> None:
     ran: list[tuple[str, ...]] = []
 
-    def runner(*, args: tuple[str, ...]) -> PluginCommandResult:
+    def runner(*, args: tuple[str, ...]) -> PluginCommandOutcome:
         ran.append(args)
-        return PluginCommandResult(returncode=9)
+        return _ran(returncode=9)
 
     findings = ensure(
         settings_text=_M3,
