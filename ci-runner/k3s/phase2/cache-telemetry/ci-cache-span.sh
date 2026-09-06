@@ -32,9 +32,11 @@
 # runner's event.json), build.env=ci, host.name (CI_RUNNER_NODE_NAME, a
 # fieldRef the template sets) and build.cache.kill_switch ("" | operator |
 # canary, the value postStart decided and wrote to the state dir), and posts
-# as service.name=github-ci to CI_CACHE_OTLP_ENDPOINT — the host collector's
-# pod-reachable KEYLESS listener (otel-collector config.ci-runner-host.yaml
-# `otlp/pods`, 10.42.0.1:4319). No ingest key enters a job.
+# as service.name=github-ci to CI_CACHE_OTLP_ENDPOINT — the KEYLESS
+# `otlp/pods` listener (otel-collector config.ci-runner-host.yaml) of the
+# collector on THIS pod's OWN node, port 4319. No ingest key enters a job.
+# The template derives that address per node from a `status.hostIP` fieldRef
+# rather than carrying a literal; see README.md "Why status.hostIP".
 #
 # FAIL-SOFT IS THE CONTRACT: this script ALWAYS exits 0, emits nothing when
 # the endpoint env is empty or python3 is absent, bounds its whole life with

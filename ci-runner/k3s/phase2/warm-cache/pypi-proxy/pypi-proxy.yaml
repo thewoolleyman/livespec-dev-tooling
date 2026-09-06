@@ -58,6 +58,20 @@
 # by hand after editing this file; the converge stamps this file's hash on the
 # pod template so a config edit rolls the pod. The Namespace is declared here
 # too so this file applies standalone (kubectl apply merges the duplicate).
+#
+# NODE PINNING (two-node precondition; plan k3s-on-gmktec-for-vps-usage,
+# carrier R3): the pod spec below carries
+# `nodeSelector: ci-runner.io/cache-tier-carrier: "true"`. The store is a
+# hostPath on ONE node's `ci-cache` tier, so a pod that lands anywhere else
+# serves an empty cache, and the populator's before/after object count — the
+# hit-ratio instrument above — reads a store that is not the one it filled. The
+# pin is NOT on `k3s-role=arc-runner-host` because that is the RUNNER role:
+# every node that joins the pool to execute workflow pods carries it, including
+# the second node this pin exists for. Carrying a storage tier is a storage
+# fact, not a runner-role fact, so it has its own key.
+# ../../../provision-k3s.sh labels the node it provisions and
+# ../../reconstruct/converge-ci-stack.sh re-asserts the label on every boot, for
+# the node whose `ci-cache` tier is actually mounted and only that node.
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -156,6 +170,11 @@ spec:
       labels:
         app.kubernetes.io/name: pypi-proxy
     spec:
+      # The node that carries the `ci-cache` tier this pod's hostPath lives on
+      # (header, "NODE PINNING"). Unschedulable is the correct failure here:
+      # a pending pod is visible, an empty cache on the wrong node is not.
+      nodeSelector:
+        ci-runner.io/cache-tier-carrier: "true"
       # No Kueue queue-name label and no ci-runner.io/churn-slot request:
       # not a CI job, must never occupy a runner slot.
       securityContext:
