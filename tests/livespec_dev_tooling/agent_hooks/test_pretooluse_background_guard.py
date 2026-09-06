@@ -14,7 +14,15 @@ Covered behaviors:
   `run_in_background` / command-shape combinations;
 - the end-to-end hook protocol via in-process `main()` calls plus
   one subprocess invocation of the script exactly as the Claude Code
-  hook runs it.
+  hook runs it;
+- per work-item livespec-dev-tooling-h7qp, the VENUE-AWARENESS of the
+  deny hint: in a real fresh `git worktree add` of a consumer repo
+  that arms the guard, every command the hint names must resolve in
+  that worktree and every doc path it cites must exist there. Both
+  worktree-pack conditions are exercised (absent → the one-line
+  install command is named FIRST; installed → the runner is
+  prescribed directly), and a CONTROL asserts the same actionability
+  check FAILS against the previously-shipped unconditional hint text.
 
 Private names are imported via from-imports (the package-private
 access model, mirroring `tests/livespec_dev_tooling/fleet/`);
@@ -25,6 +33,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -32,10 +41,20 @@ from pathlib import Path
 import pytest
 
 from livespec_dev_tooling.agent_hooks.pretooluse_background_guard import (
+    _INSTALL_COMMAND,
+    _gate_recipes_resolve,
+    _hint,
+    _imports_pack_fragment,
     _load_hook_input,
     _matched_gate,
+    _read_text,
+    _repo_root,
     _should_deny,
     main,
+)
+from livespec_dev_tooling.install_worktree_pack import (
+    CANONICAL_GATE_RUN_BODY,
+    CANONICAL_WORKTREE_JUST_BODY,
 )
 
 __all__: list[str] = []
@@ -271,3 +290,232 @@ def test_load_hook_input_rejects_bad_json_and_non_dict() -> None:
     assert _load_hook_input(raw="{nope") is None
     assert _load_hook_input(raw="[1, 2]") is None
     assert _load_hook_input(raw='{"a": 1}') == {"a": 1}
+
+
+# ---------------------------------------------------------------------------
+# Venue-aware deny hint (livespec-dev-tooling-h7qp)
+# ---------------------------------------------------------------------------
+
+
+# The hint text as it shipped BEFORE this work-item: it prescribed the gate
+# recipes and cited the rationale doc unconditionally. It is the CONTROL —
+# the actionability assertion below must FAIL against it in a fresh worktree,
+# which is what proves the assertion has teeth rather than passing vacuously.
+_LEGACY_HINT = (
+    "Gate commands (just check*, git commit, git push, gh pr ...) must not be "
+    "backgrounded BARE: the tool output is then the only record of the verdict, "
+    "so a killed task or a turn-end leaves nothing behind. Do NOT answer this by "
+    "re-issuing it foreground and waiting — the commit aggregate exceeds "
+    "BASH_MAX_TIMEOUT_MS under load, and that kill produces NO verdict at all. "
+    "Dispatch through the sanctioned detached runner instead, which IS allowed "
+    "here: run_id=$(mise exec -- just gate-start -- <your gate command>) then "
+    'background `mise exec -- just gate-wait "$run_id"`. The gate then runs in '
+    "its own session that outlives the tool call, killing the waiter loses "
+    "nothing, and the verdict is one of PASSED / FAILED / RUNNING / "
+    "DIED_WITHOUT_VERDICT — so a gate that did not finish can never read as a "
+    "pass. See .ai/gate-runtime-vs-harness-patience.md."
+)
+
+# The shape of an arming consumer repo's root justfile: a `check` aggregate
+# plus the OPTIONAL pack import (`import?`) that silently no-ops while the
+# gitignored-and-installed fragment is absent.
+_CONSUMER_JUSTFILE = "import? 'dev-tooling/worktree.just'\n\ncheck:\n    @echo check\n"
+
+_RATIONALE_DOC_RELPATH = ".ai/gate-runtime-vs-harness-patience.md"
+
+# `just` recipe headers (`gate-start *args:`), excluding `:=` assignments and
+# indented recipe bodies; and the `import`/`import?` lines a root justfile
+# pulls fragments in with.
+_RECIPE_HEADER = re.compile(r"(?m)^([a-z][\w-]*)[^\n:]*:(?!=)")
+_IMPORT_LINE = re.compile(r"(?m)^import\??\s+'([^']+)'")
+# A `just <recipe>` the hint names, and any doc path it cites.
+_NAMED_RECIPE = re.compile(r"\bjust\s+([a-z][\w-]*)")
+_CITED_DOC = re.compile(r"(?<![\w/])([\w.][\w./-]*\.md)")
+
+
+def _run_git(*, args: list[str], cwd: Path) -> None:
+    _ = subprocess.run(["git", *args], cwd=str(cwd), check=True, capture_output=True, text=True)
+
+
+def _make_consumer_repo(*, repo: Path) -> None:
+    """Create a committed one-file repo shaped like an arming consumer."""
+    repo.mkdir(parents=True, exist_ok=True)
+    _run_git(args=["init", "--quiet"], cwd=repo)
+    _run_git(args=["config", "--local", "user.name", "Test User"], cwd=repo)
+    _run_git(args=["config", "--local", "user.email", "test@example.com"], cwd=repo)
+    _ = (repo / "justfile").write_text(_CONSUMER_JUSTFILE, encoding="utf-8")
+    _run_git(args=["add", "-A"], cwd=repo)
+    _run_git(args=["commit", "--quiet", "-m", "chore: fixture"], cwd=repo)
+
+
+def _add_fresh_worktree(*, repo: Path, path: Path) -> Path:
+    """`git worktree add` a fresh worktree — no `just bootstrap`, no pack."""
+    _run_git(args=["worktree", "add", "--quiet", "-b", "feat/x", str(path)], cwd=repo)
+    return path
+
+
+def _install_pack(*, root: Path) -> None:
+    """Materialize the two pack members the gate recipes need."""
+    pack_dir = root / "dev-tooling"
+    pack_dir.mkdir(parents=True, exist_ok=True)
+    _ = (pack_dir / "worktree.just").write_text(CANONICAL_WORKTREE_JUST_BODY, encoding="utf-8")
+    _ = (pack_dir / "gate-run.sh").write_text(CANONICAL_GATE_RUN_BODY, encoding="utf-8")
+
+
+def _resolvable_recipes(*, root: Path) -> set[str]:
+    """Every recipe name `just` would resolve at `root`, imports followed.
+
+    Mirrors `just`'s own resolution for the shapes in play: the root
+    justfile's recipes plus those of each `import`/`import?` target that
+    EXISTS on disk — the optional form contributing nothing while absent,
+    which is the silent no-op this work-item is about.
+    """
+    bodies = [
+        _read_text(path=root / name)
+        for name in ("justfile", "Justfile", ".justfile")
+        if (root / name).is_file()
+    ]
+    for body in list(bodies):
+        bodies.extend(
+            _read_text(path=root / target)
+            for target in _IMPORT_LINE.findall(body)
+            if (root / target).is_file()
+        )
+    return {name for body in bodies for name in _RECIPE_HEADER.findall(body)}
+
+
+def _assert_hint_is_actionable(*, hint: str, root: Path) -> None:
+    """Every command the hint names resolves at `root`; every path exists.
+
+    A recipe that does NOT resolve is tolerated only when the hint has
+    ALREADY named the exact one-line command that installs it — the
+    work-item's minimum bar, position included.
+    """
+    resolvable = _resolvable_recipes(root=root)
+    install_at = hint.find(_INSTALL_COMMAND)
+    for match in _NAMED_RECIPE.finditer(hint):
+        recipe = match.group(1)
+        assert recipe in resolvable or -1 < install_at < match.start(), (
+            f"hint names `just {recipe}`, which does not resolve in {root}, "
+            "without first naming the command that installs it"
+        )
+    for cited in _CITED_DOC.findall(hint):
+        assert (root / cited).is_file(), f"hint cites {cited}, which does not exist in {root}"
+
+
+def _deny_hint(
+    *, monkeypatch: pytest.MonkeyPatch, cwd: Path, capsys: pytest.CaptureFixture[str]
+) -> str:
+    """Trip the guard from `cwd` and return the hint it emitted."""
+    monkeypatch.chdir(cwd)
+    payload = json.dumps(
+        {
+            "tool_name": "Bash",
+            "tool_input": {"command": "mise exec -- just check", "run_in_background": True},
+        },
+    )
+    assert _run_main(monkeypatch=monkeypatch, stdin_text=payload) == 2
+    event = json.loads(capsys.readouterr().err.strip().splitlines()[-1])
+    return str(event["hint"])
+
+
+def test_fresh_worktree_deny_names_only_resolvable_commands_and_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The venue this item was filed from: a fresh worktree, no pack."""
+    repo = tmp_path / "consumer"
+    _make_consumer_repo(repo=repo)
+    worktree = _add_fresh_worktree(repo=repo, path=tmp_path / "wt")
+
+    hint = _deny_hint(monkeypatch=monkeypatch, cwd=worktree, capsys=capsys)
+
+    _assert_hint_is_actionable(hint=hint, root=worktree)
+    # The remedy is named, and named as the module invocation that resolves
+    # wherever the hook itself does.
+    assert _INSTALL_COMMAND in hint
+    # And the checkout-local rationale doc is not cited into a repo that
+    # has no such file.
+    assert _RATIONALE_DOC_RELPATH not in hint
+
+
+def test_legacy_unconditional_hint_fails_the_actionability_assertion(tmp_path: Path) -> None:
+    """Control: the same assertion must FAIL on the as-shipped text.
+
+    Without this, a hint that merely stopped naming anything would pass
+    `_assert_hint_is_actionable` vacuously and the regression test would
+    prove nothing.
+    """
+    repo = tmp_path / "consumer"
+    _make_consumer_repo(repo=repo)
+    worktree = _add_fresh_worktree(repo=repo, path=tmp_path / "wt")
+
+    with pytest.raises(AssertionError, match="does not resolve"):
+        _assert_hint_is_actionable(hint=_LEGACY_HINT, root=worktree)
+
+
+def test_installed_pack_worktree_prescribes_the_runner_directly(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Pack installed (and the doc present): prescribe, do not re-install."""
+    repo = tmp_path / "consumer"
+    _make_consumer_repo(repo=repo)
+    worktree = _add_fresh_worktree(repo=repo, path=tmp_path / "wt")
+    _install_pack(root=worktree)
+    doc = worktree / _RATIONALE_DOC_RELPATH
+    doc.parent.mkdir(parents=True, exist_ok=True)
+    _ = doc.write_text("# rationale\n", encoding="utf-8")
+
+    hint = _deny_hint(monkeypatch=monkeypatch, cwd=worktree, capsys=capsys)
+
+    _assert_hint_is_actionable(hint=hint, root=worktree)
+    assert "just gate-start" in hint
+    assert _INSTALL_COMMAND not in hint
+    assert _RATIONALE_DOC_RELPATH in hint
+
+
+def test_gate_recipes_resolve_needs_fragment_import_and_runner(tmp_path: Path) -> None:
+    """Each of the three conditions is load-bearing, and rootless is False."""
+    assert _gate_recipes_resolve(root=None) is False
+
+    root = tmp_path / "repo"
+    root.mkdir()
+    _ = (root / "justfile").write_text(_CONSUMER_JUSTFILE, encoding="utf-8")
+    # Fragment absent: the `import?` no-ops and nothing declares the recipes.
+    assert _gate_recipes_resolve(root=root) is False
+
+    _install_pack(root=root)
+    assert _gate_recipes_resolve(root=root) is True
+
+    # Runner body missing: `just gate-start` resolves but cannot run.
+    (root / "dev-tooling" / "gate-run.sh").unlink()
+    assert _gate_recipes_resolve(root=root) is False
+
+    # Fragment installed but never imported by the root justfile — the
+    # 6-of-7-repos presentation this item absorbed.
+    _install_pack(root=root)
+    _ = (root / "justfile").write_text("check:\n    @echo check\n", encoding="utf-8")
+    assert _imports_pack_fragment(root=root) is False
+    assert _gate_recipes_resolve(root=root) is False
+
+
+def test_repo_root_finds_worktree_git_file_and_gives_up_outside_a_repo(tmp_path: Path) -> None:
+    repo = tmp_path / "consumer"
+    _make_consumer_repo(repo=repo)
+    worktree = _add_fresh_worktree(repo=repo, path=tmp_path / "wt")
+    # A linked worktree's `.git` is a FILE, not a directory.
+    assert (worktree / ".git").is_file()
+    assert _repo_root(start=worktree) == worktree
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    assert _repo_root(start=outside) is None
+    assert _hint(cwd=outside).find(_INSTALL_COMMAND) > 0
+
+
+def test_read_text_degrades_an_unreadable_path_to_empty(tmp_path: Path) -> None:
+    """A probe must never raise into the hook's fail-open boundary."""
+    assert _read_text(path=tmp_path) == ""
