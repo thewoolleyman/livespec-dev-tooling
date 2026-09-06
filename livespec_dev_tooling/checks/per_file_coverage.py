@@ -24,6 +24,24 @@ buffer, parses the JSON, and fails the first time any file's
 will tighten to also cover `summary.percent_covered_branches`
 and to handle the no-data case explicitly.
 
+Vanished-source rewrite (work-item livespec-dev-tooling-5xh8): a
+measured file whose source no longer exists on disk is dropped
+from the data file — with a warning naming it — BEFORE the
+report is generated. The producing case is a cold-cache CI pod,
+where `uv` writes its interpreter-probe script
+(`get_interpreter_info.py` plus a vendored `packaging/`) into
+`~/.cache/uv/.tmpXXXX/python/`, runs it with the project's venv
+interpreter — whose pytest-cov `.pth` hook is armed by
+COVERAGE_PROCESS_START for every test subprocess — and deletes
+the directory. `Coverage.json_report` raised `NoSource` on the
+first such row and failed the gate while the tree itself was at
+100%. A measured file with no source can never be first-party
+code under test (the check runs in the tree the suite just
+executed), so dropping it loosens nothing; rewriting the data
+file without it (rather than merely skipping it here) also keeps
+the consume-once `check-coverage` reuse read of the SAME file
+clean.
+
 Output discipline: per spec, `print` (T20) and
 `sys.stderr.write` (`check-no-write-direct`) are banned in
 dev-tooling/**. Diagnostics flow through structlog (JSON to
@@ -46,7 +64,10 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
-from coverage import Coverage  # noqa: E402  — uv-managed dep, available post-vendor-path-insert.
+from coverage import (  # noqa: E402  — uv-managed dep, available post-vendor-path-insert.
+    Coverage,
+    CoverageData,
+)
 
 __all__: list[str] = []
 
@@ -74,6 +95,49 @@ _EMPTY_COVERAGE_HINT: str = (
     "(the parallel check dispatcher assigns one per coverage namespace). "
     "See the parallel_check_dispatcher coverage-isolation docstring."
 )
+
+
+# Vanished-source diagnostic (work-item livespec-dev-tooling-5xh8): a
+# measured file with no source on disk at report time is a transient
+# artifact some test SUBPROCESS executed and then removed — the known
+# producer is uv's interpreter probe under `~/.cache/uv/.tmpXXXX/python/`
+# on a cold-cache CI pod. It is dropped rather than reported: it cannot
+# be analyzed at all, and it cannot be first-party code under test.
+_VANISHED_SOURCE_HINT: str = (
+    "measured file has no source on disk at report time; it is a transient "
+    "artifact a test subprocess executed and removed (typically uv's "
+    "interpreter probe under ~/.cache/uv/.tmpXXXX/python/ on a cold-cache "
+    "CI pod) and is dropped from the data file before reporting."
+)
+
+
+def _rewrite_without(*, data: CoverageData, vanished: set[str], data_file: Path) -> None:
+    """Rewrite `data_file` with every file in `vanished` dropped.
+
+    `CoverageData.purge_files` deletes a file's line/arc rows but keeps
+    its `file` row, so `measured_files()` — which every reporter walks —
+    still lists it and `NoSource` still fires. The only public route to a
+    file map without the row is a fresh data file: snapshot the kept
+    files' arcs (branch data, the real producer's shape) or lines, plus
+    their file tracers, erase, and re-add through a NEW `CoverageData`.
+    The new object matters: an erased object keeps its has-arcs/has-lines
+    memory and skips writing that marker into the recreated file, which
+    then reads back as line data with no lines (every file at 0%).
+    Dynamic contexts are not carried; neither coverage gate configures any.
+    """
+    kept = [fname for fname in data.measured_files() if fname not in vanished]
+    tracers = {fname: tracer for fname in kept if (tracer := data.file_tracer(fname))}
+    has_arcs = data.has_arcs()
+    arcs = {fname: data.arcs(fname) or [] for fname in kept}
+    lines = {fname: data.lines(fname) or [] for fname in kept}
+    data.erase()
+    fresh = CoverageData(basename=str(data_file), suffix=False)
+    if has_arcs:
+        fresh.add_arcs(arcs)
+    else:
+        fresh.add_lines(lines)
+    fresh.add_file_tracers(tracers)
+    fresh.write()
 
 
 def _resolve_data_file(*, cwd: Path) -> Path:
@@ -112,6 +176,24 @@ def main() -> int:
 
     cov = Coverage(data_file=str(coverage_file))
     cov.load()
+
+    # Vanished-source rewrite (work-item livespec-dev-tooling-5xh8): drop
+    # every measured file whose source is gone BEFORE json_report walks
+    # the data, or the first one raises `NoSource` and kills the gate.
+    # The rewrite lands in the data FILE, so the consume-once
+    # check-coverage read that follows in the `just check` aggregate sees
+    # the sanitized data too; the Coverage object is then reloaded from it.
+    vanished = sorted(f for f in cov.get_data().measured_files() if not Path(f).is_file())
+    if vanished:
+        for fname in vanished:
+            log.warning(
+                "measured file vanished before report; dropping it",
+                file=fname,
+                hint=_VANISHED_SOURCE_HINT,
+            )
+        _rewrite_without(data=cov.get_data(), vanished=set(vanished), data_file=coverage_file)
+        cov = Coverage(data_file=str(coverage_file))
+        cov.load()
 
     # Tier-2 empty-data guard (work-item livespec-dev-tooling-cmn): a
     # present-but-empty data file (zero measured files) is the symptom of
