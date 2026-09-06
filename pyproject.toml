@@ -187,10 +187,18 @@ mirror_pairings = [
 #     `livespec-orchestrator-beads-fabro`'s `codex_yolo_gate.py` hook, and
 #   - `testing/_cli_e2e_discovery.py`'s `discover_fixtures`, reached by four
 #     siblings as `cli_e2e.discover_fixtures` through a re-export.
-#     Both are PUBLIC names inside package-PRIVATE modules. This check skips
-#     `_`-prefixed FILES wholesale, while v178 clause 0 disqualifies only a
-#     `_`-prefixed NAME — so the file-level skip is wider than the ratified
-#     rule, and a cross-repo consumer is reaching through it.
+#     Both are PUBLIC names inside package-PRIVATE modules. THE REASON GIVEN
+#     HERE USED TO BE THE CHECK'S `_`-prefixed FILE SKIP, and that skip is
+#     GONE (`livespec-dev-tooling-8zv3.5`): `_scan` now scans `_`-prefixed
+#     files and disqualifies only `_`-prefixed NAMES, per v178 clause 0. What
+#     keeps both undeclared is now the SCAN UNIVERSE instead — this repo
+#     declares `pure_trees = { not_applicable = ... }`, so the role-absence
+#     gate returns before `_scan` runs and neither file is scanned here at
+#     all. ⚠️ AND THE FIRST ENTRY IS MIS-ATTRIBUTED: `resolve_owner` is
+#     DEFINED at `fleet/_origin_remote.py:138` and only re-exported through
+#     `_context.py`, so a declaration naming `_context.py` would be STALE the
+#     moment the gate let `stale_declarations` reach it. Re-measure both
+#     against the definition site before declaring either.
 #   - `config.py`'s `iter_first_party_py_files`, imported by
 #     `livespec-orchestrator-git-jsonl`'s test tree. config.py is not in the
 #     check universe AT ALL: `is_generated` matches its own `# ... @generated`
