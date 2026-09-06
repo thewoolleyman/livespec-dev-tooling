@@ -70,10 +70,15 @@ report() { printf 'case=%s result=%s %s\n' "$1" "$2" "$3"; [ "$2" = pass ] || rc
 # pruned — the populator keeps two generations and publishes twice an hour,
 # so a volume would have to outlive an hour. (iii) The job can still CREATE
 # an entry beside the seed, or the cache would be protected and useless.
+# `find -H`: in a job WARM_SEED is a real directory, but the negative control
+# points it at the warm root's `uv` SYMLINK, and plain `find` does not follow
+# a symlink named on its command line — it saw zero files there on
+# 2026-09-06 and this case passed vacuously in the control. -H follows only
+# that top-level argument.
 if [ ! -d "${WARM_SEED}" ]; then
   report warm-seed-private fail "precondition: ${WARM_SEED} is absent — this volume was not seeded (provisioner setup script, no published generation, or a tier without reflink)"
 else
-  outside="$(find "${WARM_SEED}" -type f -links +1 -printf '%i\t%n\t%p\n' 2>/dev/null \
+  outside="$(find -H "${WARM_SEED}" -type f -links +1 -printf '%i\t%n\t%p\n' 2>/dev/null \
     | awk -F'\t' '{c[$1]++; n[$1]=$2; p[$1]=$3} END {for (i in c) if (c[i] < n[i]) {print p[i]; exit}}')"
   if [ -n "${outside}" ]; then
     if ( : >> "${outside}" ) 2>/dev/null; then
@@ -82,7 +87,7 @@ else
       report warm-seed-private fail "precondition: ${outside} has a link outside this tree (link count $(stat -c %h "${outside}")) — a hardlink seed, not the private reflink copy; the write was refused, but nothing a job sees may be a shared inode"
     fi
   else
-    sample="$(find "${WARM_SEED}" -type f -size +64k -print -quit 2>/dev/null)"
+    sample="$(find -H "${WARM_SEED}" -type f -size +64k -print -quit 2>/dev/null)"
     reflink="reflink unverified (no filefrag in this image)"
     if command -v filefrag >/dev/null 2>&1 && [ -n "${sample}" ]; then
       if filefrag -v "${sample}" 2>/dev/null | grep -q 'shared'; then
@@ -91,7 +96,9 @@ else
         reflink=""
       fi
     fi
-    if [ -z "${reflink}" ]; then
+    if [ -z "${sample}" ]; then
+      report warm-seed-private fail "precondition: no file above 64k under ${WARM_SEED} — an empty or unreadable seed, not the generation's copy"
+    elif [ -z "${reflink}" ]; then
       report warm-seed-private fail "precondition: no seeded inode is shared, but ${sample} has no shared extents either — a byte copy, not the reflink seed (README \"Lesson\")"
     else
       probe="${WARM_SEED}/.cache-negative-test-$$"
