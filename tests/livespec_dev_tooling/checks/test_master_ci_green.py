@@ -5,13 +5,24 @@ pattern: master CI failed weeks ago, every PR merged onto red master
 inherited the brokenness. The check ensures master CI is green at
 every commit.
 
-Four `gh` failure states are tested separately, because they do not
+Two axes are exercised separately.
+
+SIGNAL. The check reads the `ci-green` CHECK RUN on master's head
+commit — the signal branch protection evaluates — and never the latest
+master WORKFLOW RUN's conclusion, which is a different signal that can
+disagree with it in both directions. `test_reads_head_commit_ci_green_
+check_run_not_the_workflow_run` pins that disagreement: the fake `gh`
+answers `run list` with a red run and the check-runs endpoint with a
+green `ci-green`, and the check must follow branch protection.
+
+`gh` FAILURE STATES. Five are tested separately, because they do not
 deserve the same answer. A host with no `gh` binary, a host whose `gh`
-holds no credential, and a host whose credential is rejected with HTTP
-401 were never able to check at all and skip gracefully so local
-pre-commit is not blocked. A host whose credentialed API call fails for
-any other reason attempted the check and got no answer — it has not
-proven master is green, so it fails loudly.
+holds no credential, a host whose credential is rejected with HTTP 401,
+and a repo whose `master` ref does not resolve were never able to check
+at all and skip gracefully so local pre-commit is not blocked. A host
+whose credentialed API call fails for any other reason attempted the
+check and got no answer — it has not proven master is green, so it
+fails loudly.
 """
 
 from __future__ import annotations
@@ -26,6 +37,10 @@ __all__: list[str] = []
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _CHECK = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "master_ci_green.py"
+# The endpoint the check must query: master's HEAD COMMIT, filtered to the
+# `ci-green` check run branch protection requires. `{owner}`/`{repo}` are
+# `gh api` placeholders, expanded by `gh` from the current repo's remote.
+_EXPECTED_ENDPOINT = "repos/{owner}/{repo}/commits/master/check-runs?check_name=ci-green"
 
 
 def _run_check(
@@ -80,36 +95,52 @@ def test_real_repo_passes(*, tmp_path: Path) -> None:  # noqa: ARG001
     )
 
 
+def _invocation_log(*, tmp_path: Path) -> Path:
+    """Path the fake `gh` appends one line per invocation to."""
+    return tmp_path / "gh-invocations.log"
+
+
 def _install_fake_gh(
     *,
     tmp_path: Path,
-    stdout: str = "[]",
+    stdout: str = '{"total_count": 0, "check_runs": []}',
     stderr: str = "",
     returncode: int = 0,
     auth_returncode: int = 0,
 ) -> str:
     """Install a fake `gh` shell stub at tmp_path/bin/gh, return PATH including it.
 
-    The stub dispatches on the sub-command so the check's two distinct `gh`
-    invocations can be driven independently:
+    The stub dispatches on the sub-command so the check's distinct `gh`
+    invocations can be driven independently, and appends every invocation's
+    argv to `_invocation_log(...)` so a test can assert WHICH signal was read:
 
     - `gh auth token` — the local credential probe. Exits `auth_returncode`
       (0 = a credential is stored, 1 = none), printing nothing, mirroring the
       real `gh` closely enough for the check while never emitting a token.
-    - anything else (i.e. `gh run list ...`) — prints `stdout` to stdout,
+      Deliberately NOT logged: it is a local probe, not a signal read.
+    - `gh run list ...` — the WORKFLOW-RUN signal the check must no longer
+      read. It always answers RED, so any test that passes proves the check
+      did not consult it.
+    - anything else (i.e. `gh api ...`) — prints `stdout` to stdout,
       `stderr` to stderr, and exits `returncode`.
 
     `auth_returncode` defaults to 0 because the credential probe only runs on
-    the `gh run list` failure path, so a credentialed default leaves every
-    happy-path test's behavior unchanged.
+    the API-failure path, so a credentialed default leaves every happy-path
+    test's behavior unchanged.
     """
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
     gh_path = bin_dir / "gh"
+    log_path = _invocation_log(tmp_path=tmp_path)
     script = (
         "#!/bin/sh\n"
         'if [ "$1" = "auth" ] && [ "$2" = "token" ]; then\n'
         f"  exit {auth_returncode}\n"
+        "fi\n"
+        f"echo \"$@\" >> '{log_path}'\n"
+        'if [ "$1" = "run" ]; then\n'
+        '  echo \'[{"status": "completed", "conclusion": "failure"}]\'\n'
+        "  exit 0\n"
         "fi\n"
         f"cat <<'STUB_EOF'\n{stdout}\nSTUB_EOF\n"
         f"cat >&2 <<'STUB_EOF'\n{stderr}\nSTUB_EOF\n"
@@ -120,21 +151,60 @@ def _install_fake_gh(
     return f"{bin_dir}:/usr/bin:/bin"
 
 
-def test_success_conclusion_passes(*, tmp_path: Path) -> None:
-    """Latest CI is success → exit 0."""
+def _check_runs_payload(*, status: str, conclusion: str) -> str:
+    """A one-entry `check-runs` response body for the `ci-green` check run."""
+    return (
+        '{"total_count": 1, "check_runs": [{"name": "ci-green", '
+        f'"status": "{status}", "conclusion": {conclusion}}}]}}'
+    )
+
+
+def test_reads_head_commit_ci_green_check_run_not_the_workflow_run(*, tmp_path: Path) -> None:
+    """Master's newest workflow run is RED while head-commit `ci-green` is green → exit 0.
+
+    Regression pin for work-item livespec-dev-tooling-aa7 (absorbing gam8 and
+    8o8e.22): the check used to read `gh run list --branch master --limit 1`,
+    a DIFFERENT signal from the one branch protection evaluates. A workflow
+    run concludes `failure` when a NON-gating job fails (`export-telemetry` is
+    deliberately absent from `ci-green`'s `needs:`) and `cancelled` when it is
+    superseded, while the head commit's required `ci-green` context stands at
+    `success`. Reading the run conclusion therefore rejected work while master
+    was genuinely mergeable. The gate must read what the merge gate reads.
+    """
     fake_path = _install_fake_gh(
         tmp_path=tmp_path,
-        stdout='[{"status": "completed", "conclusion": "success"}]',
+        stdout=_check_runs_payload(status="completed", conclusion='"success"'),
+    )
+    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    assert result.returncode == 0, (
+        f"expected exit 0 when head-commit ci-green is success despite a red "
+        f"workflow run; got {result.returncode}, stderr={result.stderr!r}"
+    )
+    invocations = _invocation_log(tmp_path=tmp_path).read_text(encoding="utf-8")
+    assert _EXPECTED_ENDPOINT in invocations, (
+        f"expected the head-commit ci-green check-runs endpoint to be queried; "
+        f"gh was invoked as: {invocations!r}"
+    )
+    assert "run list" not in invocations, (
+        f"the workflow-run signal must never be consulted; " f"gh was invoked as: {invocations!r}"
+    )
+
+
+def test_success_conclusion_passes(*, tmp_path: Path) -> None:
+    """Head-commit ci-green is success → exit 0."""
+    fake_path = _install_fake_gh(
+        tmp_path=tmp_path,
+        stdout=_check_runs_payload(status="completed", conclusion='"success"'),
     )
     result = _run_check(cwd=tmp_path, env_path=fake_path)
     assert result.returncode == 0
 
 
 def test_failure_conclusion_fails(*, tmp_path: Path) -> None:
-    """Latest CI is failure → exit 1 with error diagnostic."""
+    """Head-commit ci-green is failure → exit 1 with error diagnostic."""
     fake_path = _install_fake_gh(
         tmp_path=tmp_path,
-        stdout='[{"status": "completed", "conclusion": "failure"}]',
+        stdout=_check_runs_payload(status="completed", conclusion='"failure"'),
     )
     result = _run_check(
         cwd=tmp_path,
@@ -159,7 +229,7 @@ def test_red_conclusion_fails_regardless_of_lever_env(*, tmp_path: Path) -> None
     """
     fake_path = _install_fake_gh(
         tmp_path=tmp_path,
-        stdout='[{"status": "completed", "conclusion": "failure"}]',
+        stdout=_check_runs_payload(status="completed", conclusion='"failure"'),
     )
     result = _run_check(
         cwd=tmp_path,
@@ -171,10 +241,10 @@ def test_red_conclusion_fails_regardless_of_lever_env(*, tmp_path: Path) -> None
 
 
 def test_pending_status_passes(*, tmp_path: Path) -> None:
-    """Latest CI still in_progress → exit 0 with info log."""
+    """Head-commit ci-green still in_progress → exit 0 with info log."""
     fake_path = _install_fake_gh(
         tmp_path=tmp_path,
-        stdout='[{"status": "in_progress", "conclusion": null}]',
+        stdout=_check_runs_payload(status="in_progress", conclusion="null"),
     )
     result = _run_check(cwd=tmp_path, env_path=fake_path)
     assert result.returncode == 0
@@ -185,19 +255,44 @@ def test_unrecognized_conclusion_passes(*, tmp_path: Path) -> None:
     """Unrecognized conclusion → exit 0 with warning (non-blocking)."""
     fake_path = _install_fake_gh(
         tmp_path=tmp_path,
-        stdout='[{"status": "completed", "conclusion": "neutral"}]',
+        stdout=_check_runs_payload(status="completed", conclusion='"neutral"'),
     )
     result = _run_check(cwd=tmp_path, env_path=fake_path)
     assert result.returncode == 0
     assert "unrecognized conclusion" in result.stderr
 
 
-def test_empty_runs_list_skips(*, tmp_path: Path) -> None:
-    """No CI runs on master yet → exit 0 with warning."""
-    fake_path = _install_fake_gh(tmp_path=tmp_path, stdout="[]")
+def test_empty_check_runs_list_skips(*, tmp_path: Path) -> None:
+    """No ci-green check run on master's head commit → exit 0 with warning."""
+    fake_path = _install_fake_gh(tmp_path=tmp_path)
     result = _run_check(cwd=tmp_path, env_path=fake_path)
     assert result.returncode == 0
-    assert "no CI runs on master yet" in result.stderr
+    assert "no ci-green check run on master" in result.stderr
+
+
+def test_missing_master_ref_skips_gracefully(*, tmp_path: Path) -> None:
+    """The `master` ref does not resolve on the remote → exit 0 with warning.
+
+    A governed repo whose default branch is `main` has no `master` commit to
+    read, and GitHub answers the commits endpoint with the canonical
+    "No commit found for SHA" body. That host could never learn master's CI
+    state, which is the environmental category, NOT the outage category — so
+    it skips rather than failing loudly, exactly as the empty run list did
+    before the signal changed.
+    """
+    fake_path = _install_fake_gh(
+        tmp_path=tmp_path,
+        stdout='{"message": "No commit found for SHA: master", "status": "422"}',
+        stderr="gh: No commit found for SHA: master (HTTP 422)",
+        returncode=1,
+        auth_returncode=0,
+    )
+    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    assert result.returncode == 0, (
+        f"expected exit 0 when the master ref does not resolve; "
+        f"got {result.returncode}, stderr={result.stderr!r}"
+    )
+    assert "master ref does not resolve" in result.stderr
 
 
 def test_gh_api_failure_without_credential_skips_gracefully(*, tmp_path: Path) -> None:
@@ -258,6 +353,28 @@ def test_credentialed_http_503_still_fails_loudly(*, tmp_path: Path) -> None:
     assert result.returncode == 1, (
         f"expected exit 1 when GitHub returns HTTP 503; got {result.returncode}, "
         f"stderr={result.stderr!r}"
+    )
+    assert "cannot prove master CI is green" in result.stderr
+
+
+def test_credentialed_rate_limit_fails_loudly(*, tmp_path: Path) -> None:
+    """gh credential present but the API rate-limits the call → exit 1.
+
+    A 403 rate-limit is the same category as the outage: the gate was armed,
+    it ran, and it did not come back with a green master. Treating it as a
+    skip would reopen the hole on exactly the busy host most likely to hit it.
+    """
+    fake_path = _install_fake_gh(
+        tmp_path=tmp_path,
+        stdout="error",
+        stderr="HTTP 403: API rate limit exceeded",
+        returncode=1,
+        auth_returncode=0,
+    )
+    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    assert result.returncode == 1, (
+        f"expected exit 1 when the GitHub API rate-limits a credentialed call; "
+        f"got {result.returncode}, stderr={result.stderr!r}"
     )
     assert "cannot prove master CI is green" in result.stderr
 
@@ -331,24 +448,30 @@ def test_credentialed_api_failure_fails_regardless_of_lever_env(*, tmp_path: Pat
 
 
 def test_unexpected_payload_shape(*, tmp_path: Path) -> None:
-    """gh returns non-list payload → exit 0 with warning."""
-    fake_path = _install_fake_gh(tmp_path=tmp_path, stdout='{"not": "a list"}')
-    result = _run_check(cwd=tmp_path, env_path=fake_path)
-    assert result.returncode == 0
-    assert "no CI runs on master yet" in result.stderr
-
-
-def test_first_entry_not_dict(*, tmp_path: Path) -> None:
-    """gh returns list but first entry isn't a dict → exit 0 with error log."""
-    fake_path = _install_fake_gh(tmp_path=tmp_path, stdout='["not a dict"]')
+    """gh returns a non-object payload → exit 0 with error log."""
+    fake_path = _install_fake_gh(tmp_path=tmp_path, stdout='["not an object"]')
     result = _run_check(cwd=tmp_path, env_path=fake_path)
     assert result.returncode == 0
     assert "unexpected gh response shape" in result.stderr
 
 
+def test_check_runs_entry_not_dict(*, tmp_path: Path) -> None:
+    """gh returns check_runs whose first entry isn't a dict → exit 0 with error log."""
+    fake_path = _install_fake_gh(
+        tmp_path=tmp_path,
+        stdout='{"total_count": 1, "check_runs": ["not a dict"]}',
+    )
+    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    assert result.returncode == 0
+    assert "unexpected ci-green check-run shape" in result.stderr
+
+
 def test_missing_status_and_conclusion(*, tmp_path: Path) -> None:
-    """gh returns dict without status/conclusion fields → exit 0 with warning."""
-    fake_path = _install_fake_gh(tmp_path=tmp_path, stdout="[{}]")
+    """gh returns a check run without status/conclusion fields → exit 0 with warning."""
+    fake_path = _install_fake_gh(
+        tmp_path=tmp_path,
+        stdout='{"total_count": 1, "check_runs": [{}]}',
+    )
     result = _run_check(cwd=tmp_path, env_path=fake_path)
     assert result.returncode == 0
     # status is None (not in PENDING set) and conclusion is None
