@@ -33,6 +33,13 @@ containerMode:
     storageClassName: "local-path"
     resources:
       requests:
+        # NOT a quota and NOT a reservation. `local-path` is a mkdir-only
+        # provisioner with no size enforcement, so this request neither bounds
+        # nor reserves the work volume: one job's volume can grow to the whole
+        # ci-workvols tier (measured on the console lane, its plan
+        # optimize-console-builds research/002). It is here only because a PVC
+        # spec requires a storage request; the actual bound is the tier's
+        # capacity and the ephemeral volume's deletion with the runner pod.
         storage: 5Gi
 
 template:
