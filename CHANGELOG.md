@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.46.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.45.2...v1.46.0) (2026-09-06)
+
+
+### Features
+
+* **fabro-sandbox:** add the python-rust-fuzz leaf — g++ + nightly + cargo-fuzz for fuzzing CI jobs (livespec-dev-tooling-3u3gm2.2) ([756e218](https://github.com/thewoolleyman/livespec-dev-tooling/commit/756e218ea173c69edbb4fcd513f282e95bd4d842))
+
 ## [1.45.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.45.1...v1.45.2) (2026-09-06)
 
 
