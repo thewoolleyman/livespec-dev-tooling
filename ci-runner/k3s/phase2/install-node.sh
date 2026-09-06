@@ -59,7 +59,11 @@
 #                            seed-github-app-creds.sh).
 #   8. reconstruct         — the converge unit + every artifact it applies.
 #   9. datastore-tmpfs     — pre-gates on 7 and 8 being enabled.
-#  10. storage-sweep       — pre-gates on 9 being enabled.
+#  10. storage-sweep       — pre-gates on 9 being enabled ON A SERVER; an agent
+#                            has no datastore to gate on, and its unit is
+#                            ordered against k3s-agent.service instead. It is
+#                            passed this run's PROFILE so it resolves that
+#                            itself.
 # The host OTel collector is installed from ITS OWN repository
 # (thewoolleyman/otel-collector, scripts/install-ci-runner-host.sh) and the
 # heartbeat/probe timers from ../../observability/install-observability.sh;
@@ -254,7 +258,6 @@ STEP_SKIP[reconstruct]="rebuilds the CLUSTER from git at boot — the fleet-owne
 STEP_SKIP[datastore-tmpfs]="mounts the k3s SERVER datastore on tmpfs; an agent node has no datastore to mount."
 
 STEP_AGENT_NOTE[churn-slot]="the installed timer patches THIS node's status through the API, so an agent needs a KUBECONFIG with node-status patch rights — not the server's admin file. Point KUBECONFIG at one before the timer's first fire."
-STEP_AGENT_NOTE[storage-sweep]="storage-sweep/install-storage-sweep.sh still pre-gates on this node's tmpfs datastore mount being enabled, which an agent has not, and its unit is ordered against k3s.service rather than k3s-agent.service. It refuses on an agent until that pre-gate and that ordering learn the role — the follow-up on this same plan carrier."
 
 step_label() {  # step_label ID
   if [ "$ROLE" = agent ] && [ -n "${STEP_AGENT_LABEL[$1]:-}" ]; then
@@ -335,8 +338,12 @@ run_step() {  # run_step ID
       "${SCRIPT_DIR}/reconstruct/install-converge-unit.sh" ;;
     datastore-tmpfs)
       "${SCRIPT_DIR}/datastore-tmpfs/install-datastore-tmpfs.sh" ;;
+    # The one step handed this run's PROFILE rather than a flag: it resolves
+    # the node's CLUSTER_ROLE out of it, because the pre-gate it applies and
+    # the k3s unit its own unit is ordered against are both role-dependent
+    # (livespec-dev-tooling-92wn).
     storage-sweep)
-      "${SCRIPT_DIR}/storage-sweep/install-storage-sweep.sh" ;;
+      "${SCRIPT_DIR}/storage-sweep/install-storage-sweep.sh" "${PROFILE_PATH}" ;;
     *)
       die "no runner for step '$1' (the step table and run_step have drifted)" ;;
   esac
