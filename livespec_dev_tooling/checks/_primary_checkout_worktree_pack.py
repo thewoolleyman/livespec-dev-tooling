@@ -79,18 +79,37 @@ _WORKTREE_PACK_ABSENT_FAILURE_MODE = "worktree_pack_absent"
 _WORKTREE_PACK_NOT_IMPORTED_FAILURE_MODE = "worktree_pack_not_imported"
 _WORKTREE_DISCIPLINE_MALFORMED_FAILURE_MODE = "worktree_discipline_malformed"
 
-# The remedy names `just bootstrap` FIRST, not `just install-worktree-pack`.
-# `bootstrap` exists in every governed repo and reaches the pack through the
-# `worktree-pack` LOCAL obligation row; the standalone recipe exists only in
-# repos that have already been wired, so naming it first would emit a remedy
-# that fails in exactly the repos the failure fires in.
+# THE REMEDY IS COMPOSED PER CHECKOUT, because the two audiences need
+# different first sentences. `just bootstrap` exists in every governed repo and
+# reaches the pack through the `worktree-pack` LOCAL obligation row; the
+# standalone `install-worktree-pack` recipe exists only in repos already wired
+# for it, so naming it unconditionally would emit a remedy that fails in
+# exactly the repos the failure fires in. That is why this text named
+# `bootstrap` first for as long as there was only one text.
+#
+# Naming `bootstrap` unconditionally turned out to be worse where the failure
+# ACTUALLY fires: every observed occurrence was a linked worktree of a WIRED
+# repo, where `bootstrap` runs the entire local first-touch reconcile (mise, uv
+# sync, four plugin install-and-update rounds, beads hardening, hooks) to reach
+# the one installer invocation that is the whole fix. Two livespec sessions
+# paid that on 2026-09-06 and then re-ran the whole aggregate. So the composer
+# READS the checkout and says the shorter true thing when it can.
 #
 # The file list is RENDERED from the installer's enumeration rather than typed
 # out. A remedy naming a stale set is the same drift the arm itself carried,
 # and it is worse where an operator reads it: it tells them a pack is complete
 # when it is a member short.
 _WORKTREE_PACK_FILE_LIST = ", ".join(f"`{pack_file.name}`" for pack_file in WORKTREE_PACK_FILES)
-_WORKTREE_PACK_REMEDY = (
+_WORKTREE_PACK_WIRED_REMEDY = (
+    "run `just install-worktree-pack` (this checkout's root justfile defines "
+    f"the recipe; it writes the single canonical {_WORKTREE_PACK_FILE_LIST} "
+    "bodies byte-for-byte into `dev-tooling/`); a drifted or partially "
+    "installed pack is a copy that diverged from the package source. "
+    "`just bootstrap` reaches the same installer through the `worktree-pack` "
+    "local obligation row, but it runs the whole first-touch reconcile to get "
+    "there — in a linked worktree the standalone recipe IS the entire remedy"
+)
+_WORKTREE_PACK_UNWIRED_REMEDY = (
     "run `just bootstrap` (the `worktree-pack` local obligation row installs "
     f"the single canonical {_WORKTREE_PACK_FILE_LIST} bodies byte-for-byte "
     "into `dev-tooling/`); a drifted or partially installed pack is a copy "
@@ -131,6 +150,11 @@ _WORKTREE_PACK_IMPORT_LINES: tuple[tuple[str, str], ...] = (
     ("branch-protection.just", "import? 'dev-tooling/branch-protection.just'"),
     ("worktree.just", "import? 'dev-tooling/worktree.just'"),
 )
+# The `install-worktree-pack` recipe DEFINITION, matched at the START of a line.
+# A bare substring test would read a justfile that only NAMES the recipe in
+# prose as wired — this repo's own justfile mentions it in three comments — and
+# hand an unwired repo a remedy naming a command it does not have.
+_INSTALL_PACK_RECIPE_LINE = b"install-worktree-pack:"
 
 
 # Per-failure-mode remedy routing. The three new modes are actionable in
@@ -402,11 +426,51 @@ def inspect_worktree_pack(
     )
 
 
-def pack_failure_hint(*, failure_mode: str) -> str:
+def _root_justfile_wires_pack_install(*, repo_root: Path) -> bool:
+    """Whether `<repo_root>/justfile` DEFINES the `install-worktree-pack` recipe.
+
+    The remedy composer's only input, and the same predicate — same file, same
+    BYTES-never-decoded read — `_inspect_pack_imports` applies to the same
+    justfile for the two `import?` lines. Reading bytes is what lets an
+    undecodable justfile answer the question it can answer instead of raising
+    out of a narration path.
+
+    ⚠️ EVERY UNANSWERED STATE RESOLVES TO FALSE, and that direction is the
+    whole safety of the branch: `just bootstrap` reaches the installer in a
+    wired repo AND in an unwired one, while the standalone recipe reaches it
+    only in a wired one. A missing justfile, a read that did not happen, and a
+    justfile carrying no such recipe therefore all fall back to the text that
+    works everywhere. A remedy is narration — it must never turn a reportable
+    pack failure into a check that could not answer.
+    """
+    justfile_path = repo_root / _JUSTFILE_NAME
+    if not justfile_path.is_file():
+        return False
+    read = _read_bytes(path=justfile_path)
+    if isinstance(read, IOFailure):
+        return False
+    return any(
+        line.startswith(_INSTALL_PACK_RECIPE_LINE)
+        for line in unsafe_perform_io(read.unwrap()).splitlines()
+    )
+
+
+def pack_failure_hint(*, failure_mode: str, repo_root: Path) -> str:
     """Return the remedy string for one pack failure mode.
 
     Routing exists because the modes are actionable in three different places
     — the config, the root justfile, and the pack itself — so one shared
     remedy string would misdirect the operator two thirds of the time.
+
+    The three PACK modes (`absent`, `file_missing`, `body_mismatch`) share one
+    remedy, but its FIRST named command depends on `repo_root`: the standalone
+    `install-worktree-pack` recipe when this checkout defines it, `just
+    bootstrap` when it does not. The other two modes are unaffected — neither
+    is fixed by installing the pack.
     """
-    return _PACK_REMEDIES.get(failure_mode, _WORKTREE_PACK_REMEDY)
+    routed = _PACK_REMEDIES.get(failure_mode)
+    if routed is not None:
+        return routed
+    if _root_justfile_wires_pack_install(repo_root=repo_root):
+        return _WORKTREE_PACK_WIRED_REMEDY
+    return _WORKTREE_PACK_UNWIRED_REMEDY
