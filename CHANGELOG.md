@@ -58,6 +58,15 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.45.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.44.0...v1.45.0) (2026-09-06)
+
+
+### Features
+
+* **ci-runner:** ci-workvols becomes XFS with reflink; migrate-tier.sh gains per-role filesystem types and a no-window live switch (livespec-dev-tooling-hmv2bo) ([aad4f97](https://github.com/thewoolleyman/livespec-dev-tooling/commit/aad4f97bc1867c19455b80a5fb9e0ff1bfff737d))
+* **ci-runner:** ci-workvols becomes XFS with reflink; migrate-tier.sh gains per-role filesystem types, a no-window live switch, and cross-VG reclaim (livespec-dev-tooling-hmv2bo) ([3e37663](https://github.com/thewoolleyman/livespec-dev-tooling/commit/3e3766376f6cc4679eee2b6120f6d463e272c711))
+* **fabro-sandbox:** pre-warm the console cargo registry into the python-rust layer (3u3gm2.1) ([1b10ffd](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1b10ffde239bf29c1a3dff6138c222d763c373cf))
+
 ## [1.44.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.43.1...v1.44.0) (2026-09-05)
 
 
