@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.53.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.52.18...v1.53.0) (2026-09-06)
+
+
+### Features
+
+* **ci-runner:** phase0-bare-metal/recovery-usb — the Recovery USB builder and its QEMU+OVMF boot test, relocated from livespec's archived plan research with both boot fixes folded in (livespec-dev-tooling-75vm7n) ([53e6a20](https://github.com/thewoolleyman/livespec-dev-tooling/commit/53e6a206dc7029a4c60f0bb685c7d582a5442dbc))
+
 ## [1.52.18](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.52.17...v1.52.18) (2026-09-06)
 
 
