@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import errno
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -36,12 +37,19 @@ from livespec_dev_tooling.checks._primary_checkout_unreadable import CheckInputU
 from livespec_dev_tooling.checks._primary_checkout_worktree_pack import (
     inspect_worktree_pack,
 )
+from livespec_dev_tooling.fleet._context import RowFinding, RowPass
+from livespec_dev_tooling.fleet._contract_local_rows import (
+    LOCAL_OBLIGATION_ROWS,
+    LocalObligationRow,
+)
+from livespec_dev_tooling.fleet._local_context import CommandOutcome, LocalContext
 from livespec_dev_tooling.install_worktree_pack import (
     CANONICAL_BRANCH_PROTECTION_BODY,
     CANONICAL_BRANCH_PROTECTION_JUST_BODY,
     CANONICAL_GATE_RUN_BODY,
     CANONICAL_WORKTREE_JUST_BODY,
     CANONICAL_WORKTREE_LIB_BODY,
+    WORKTREE_PACK_FILES,
     main,
 )
 
@@ -852,3 +860,206 @@ def test_worktree_primary_path_survives_a_listing_larger_than_one_pipe_buffer(
         f"(141 = SIGPIPE, the defect); stderr={completed.stderr!r}"
     )
     assert completed.stdout.strip() == "/primary/checkout"
+
+
+# ---------------------------------------------------------------------------
+# ONE enumeration of the pack file set (livespec-dev-tooling-l5gypl).
+#
+# The installer, the `just check` verifier arm, the `worktree-pack` bootstrap
+# obligation row and `worktree-lib.sh`'s shell copy each used to write the set
+# down themselves, and measured 2026-09-06 the copies DISAGREED: the verifier
+# asserted six files, the bootstrap row four. `just bootstrap` therefore passed
+# a pack `just check` rejected, and its reconcile never fired. The three Python
+# consumers now derive from `WORKTREE_PACK_FILES`; the shell copy cannot import
+# Python, so the lockstep is asserted here instead.
+#
+# `_EXPECTED_PACK` states the set INDEPENDENTLY of the installer on purpose. A
+# lockstep test that read the constant on both sides of every assertion would
+# compare the constant with itself and pass no matter what the set became.
+# ---------------------------------------------------------------------------
+
+_EXPECTED_PACK: tuple[tuple[str, bool], ...] = (
+    ("worktree-lib.sh", True),
+    ("branch-protection.sh", True),
+    ("gate-run.sh", True),
+    ("check-no-workflow-edits.sh", True),
+    ("worktree.just", False),
+    ("branch-protection.just", False),
+    (".gitignore", False),
+)
+
+_WORKTREE_LIB_PATH = _PACK_DATA_DIR / "worktree-lib.sh"
+_PACK_FILES_ASSIGNMENT = re.compile(r'^\s*pack_files="([^"]*)"\s*$', re.MULTILINE)
+_CHMOD_INVOCATION = re.compile(r"^\s*chmod (\+x|a-x) (.*)$", re.MULTILINE)
+_DEST_DIR_ENTRY = re.compile(r'"\$dest_dir/([^"]+)"')
+
+
+def _installed_names() -> tuple[str, ...]:
+    """Every basename the installer's single constant enumerates."""
+    return tuple(pack_file.name for pack_file in WORKTREE_PACK_FILES)
+
+
+def _shell_pack_file_names() -> tuple[str, ...]:
+    """The `pack_files` string inside `worktree-lib.sh`, as a name tuple."""
+    body = _WORKTREE_LIB_PATH.read_text(encoding="utf-8")
+    assignments = _PACK_FILES_ASSIGNMENT.findall(body)
+    assert len(assignments) == 1, (
+        f"expected exactly one `pack_files=` assignment in worktree-lib.sh, "
+        f"found {len(assignments)}"
+    )
+    return tuple(assignments[0].split())
+
+
+def _shell_chmod_names(*, flag: str) -> tuple[str, ...]:
+    """The `$dest_dir/` basenames the pack's single `chmod <flag>` line names."""
+    body = _WORKTREE_LIB_PATH.read_text(encoding="utf-8")
+    lines = [argv for found_flag, argv in _CHMOD_INVOCATION.findall(body) if found_flag == flag]
+    assert (
+        len(lines) == 1
+    ), f"expected exactly one `chmod {flag}` line in worktree-lib.sh, found {len(lines)}"
+    return tuple(_DEST_DIR_ENTRY.findall(lines[0]))
+
+
+def _install_pack_into_wired_repo(*, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A governed, WIRED repo carrying a freshly installed canonical pack.
+
+    The root justfile carries both `import?` lines because that is what a wired
+    governed repo looks like: since A2 the verifier asserts discoverability as
+    well as byte-identity, so a fixture without them would start from a repo
+    the arm already fails for an unrelated reason.
+    """
+    _scrub_git_env(monkeypatch=monkeypatch)
+    repo = tmp_path / "project"
+    _init_repo(repo=repo)
+    _ = (repo / "justfile").write_text(
+        "import? 'dev-tooling/worktree.just'\nimport? 'dev-tooling/branch-protection.just'\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(repo)
+    assert main() == 0
+    return repo
+
+
+def _worktree_pack_obligation_row() -> LocalObligationRow:
+    """The `worktree-pack` row, taken from the table rather than imported."""
+    rows = [row for row in LOCAL_OBLIGATION_ROWS if row.row_id == "worktree-pack"]
+    assert rows, "LOCAL_OBLIGATION_ROWS carries no `worktree-pack` row"
+    return rows[0]
+
+
+def _refuse_to_run(*, args: list[str], cwd: Path | None = None) -> CommandOutcome:
+    """A command seam that REFUSES rather than reporting a fabricated success.
+
+    `assert_worktree_pack` answers from files alone. A seam returning a canned
+    exit-0 would let a future row start shelling out and still pass these
+    tests against whatever the fake claimed; refusing makes that a failure at
+    the moment it happens, and names it.
+    """
+    raise AssertionError(f"the worktree-pack assert must not spawn: {args} (cwd={cwd})")
+
+
+def _row_context(*, checkout: Path) -> LocalContext:
+    """A `LocalContext` over `checkout` whose command seam refuses to run."""
+    return LocalContext(checkout=checkout, home=checkout / "home", run=_refuse_to_run)
+
+
+def test_the_row_context_command_seam_refuses_to_run(*, tmp_path: Path) -> None:
+    """The seam is a GUARD, so it is dead unless something calls it deliberately.
+
+    Asserted here for the same reason the local-context Red file asserts its
+    own `_never_run`: the tests below pass precisely by never reaching it, so
+    without this the guard would be an untested claim.
+    """
+    with pytest.raises(AssertionError, match="must not spawn"):
+        _ = _row_context(checkout=tmp_path).exec(args=["git", "status"])
+
+
+def test_installer_carries_one_enumeration_of_the_pack_file_set() -> None:
+    """`WORKTREE_PACK_FILES` is the exported single source of the pack's shape."""
+    assert "WORKTREE_PACK_FILES" in install_worktree_pack.__all__
+    assert (
+        tuple((pack_file.name, pack_file.executable) for pack_file in WORKTREE_PACK_FILES)
+        == _EXPECTED_PACK
+    )
+
+
+def test_installer_installs_exactly_the_enumerated_set(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The constant is not decorative: it is what lands in `dev-tooling/`."""
+    repo = _install_pack_into_wired_repo(tmp_path=tmp_path, monkeypatch=monkeypatch)
+    pack_dir = repo / "dev-tooling"
+    installed = {entry.name for entry in pack_dir.iterdir()}
+    assert installed == {name for name, _executable in _EXPECTED_PACK}
+    for name, executable in _EXPECTED_PACK:
+        assert os.access(pack_dir / name, os.X_OK) is executable, name
+
+
+def test_verifier_arm_asserts_every_file_the_installer_installs(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Drifting ANY installed file must red the `just check` pack arm.
+
+    Proves the arm's set is not a subset of the installer's — a subset is
+    exactly the shape that lets a drifted pack pass the gate.
+    """
+    repo = _install_pack_into_wired_repo(tmp_path=tmp_path, monkeypatch=monkeypatch)
+    pack_dir = repo / "dev-tooling"
+    assert _pack_failures(repo_root=repo) == []
+    for name, _executable in _EXPECTED_PACK:
+        target = pack_dir / name
+        canonical = target.read_bytes()
+        _ = target.write_bytes(canonical + b"# drift\n")
+        assert (name, "worktree_pack_body_mismatch") in _pack_failures(
+            repo_root=repo
+        ), f"the verifier arm does not assert {name}, which the installer installs"
+        _ = target.write_bytes(canonical)
+    assert _pack_failures(repo_root=repo) == []
+
+
+def test_bootstrap_row_asserts_every_file_the_installer_installs(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The `worktree-pack` row passes ONLY on a complete, byte-identical pack.
+
+    The row's assert leg is what decides whether `just bootstrap` reconciles.
+    When it asserted a strict subset of the installed set — four files against
+    the gate's six — bootstrap reported the pack satisfied while `just check`
+    rejected it, and no amount of re-running bootstrap could clear the gate.
+    """
+    repo = _install_pack_into_wired_repo(tmp_path=tmp_path, monkeypatch=monkeypatch)
+    pack_dir = repo / "dev-tooling"
+    row = _worktree_pack_obligation_row()
+    assert row.assert_local is not None
+    ctx = _row_context(checkout=repo)
+    assert isinstance(row.assert_local(ctx=ctx), RowPass)
+    for name, _executable in _EXPECTED_PACK:
+        target = pack_dir / name
+        canonical = target.read_bytes()
+        target.unlink()
+        outcome = row.assert_local(ctx=ctx)
+        assert isinstance(
+            outcome, RowFinding
+        ), f"the bootstrap row does not assert {name}, which the installer installs"
+        assert name in outcome.message
+        _ = target.write_bytes(canonical)
+    assert isinstance(row.assert_local(ctx=ctx), RowPass)
+
+
+def test_worktree_lib_pack_files_string_matches_the_installer_constant() -> None:
+    """The shell copy of the set is held in lockstep with the constant.
+
+    `worktree_provision_pack_from_primary` copies the pack into a freshly added
+    linked worktree, and shell cannot import the constant — so this is the one
+    consumer whose agreement has to be asserted rather than derived. All three
+    lines are checked: the file list, and both `chmod` lines, since a file
+    copied with the wrong mode is drift the byte-identity arms cannot see.
+    """
+    assert _shell_pack_file_names() == _installed_names()
+    assert set(_shell_pack_file_names()) == {name for name, _executable in _EXPECTED_PACK}
+    assert set(_shell_chmod_names(flag="+x")) == {
+        name for name, executable in _EXPECTED_PACK if executable
+    }
+    assert set(_shell_chmod_names(flag="a-x")) == {
+        name for name, executable in _EXPECTED_PACK if not executable
+    }

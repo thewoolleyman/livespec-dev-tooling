@@ -49,35 +49,28 @@ from livespec_dev_tooling.install_commit_refuse_hooks import CANONICAL_HOOK_BODY
 from livespec_dev_tooling.install_worktree_pack import (
     CANONICAL_BRANCH_PROTECTION_BODY,
     CANONICAL_BRANCH_PROTECTION_JUST_BODY,
-    CANONICAL_GATE_RUN_BODY,
-    CANONICAL_NO_WORKFLOW_EDITS_BODY,
     CANONICAL_WORKTREE_JUST_BODY,
     CANONICAL_WORKTREE_LIB_BODY,
+    WORKTREE_PACK_FILES,
 )
 from livespec_dev_tooling.install_worktree_pack import main as install_worktree_pack_main
 
 __all__: list[str] = []
 
 
-# The pack's installed basenames paired with their canonical bodies — the
-# fixture mirror of the verifier's `_WORKTREE_PACK_FILES` (the four `.sh`
-# scripts plus the two `.just` recipe fragments).
-_WORKTREE_PACK_EXPECTED: tuple[tuple[str, str], ...] = (
-    ("worktree-lib.sh", CANONICAL_WORKTREE_LIB_BODY),
-    ("branch-protection.sh", CANONICAL_BRANCH_PROTECTION_BODY),
-    ("gate-run.sh", CANONICAL_GATE_RUN_BODY),
-    ("check-no-workflow-edits.sh", CANONICAL_NO_WORKFLOW_EDITS_BODY),
-    ("worktree.just", CANONICAL_WORKTREE_JUST_BODY),
-    ("branch-protection.just", CANONICAL_BRANCH_PROTECTION_JUST_BODY),
-)
-
-
 def _install_canonical_worktree_pack(*, repo_root: Path) -> None:
-    """Write all canonical pack files under `<repo_root>/dev-tooling/`."""
+    """Write every file the installer installs under `<repo_root>/dev-tooling/`.
+
+    Walks `WORKTREE_PACK_FILES` — the installer's single enumeration, which the
+    verifier arm also walks — rather than a fixture-local restatement of the
+    set. The restatement was itself a drift seam: a member added to the
+    installer but not to this tuple would leave every "canonical pack" fixture
+    below quietly asserting an INCOMPLETE pack (livespec-dev-tooling-l5gypl).
+    """
     pack_dir = repo_root / "dev-tooling"
     pack_dir.mkdir(parents=True, exist_ok=True)
-    for name, body in _WORKTREE_PACK_EXPECTED:
-        _ = (pack_dir / name).write_text(body, encoding="utf-8")
+    for pack_file in WORKTREE_PACK_FILES:
+        _ = (pack_dir / pack_file.name).write_text(pack_file.body, encoding="utf-8")
 
 
 def _write_pack_imports(*, repo_root: Path, omit: str = "") -> None:

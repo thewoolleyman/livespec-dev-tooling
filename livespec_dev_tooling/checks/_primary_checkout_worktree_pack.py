@@ -51,12 +51,7 @@ from livespec_dev_tooling.checks._primary_checkout_unreadable import (  # noqa: 
     CheckInputUnreadable,
 )
 from livespec_dev_tooling.install_worktree_pack import (  # noqa: E402
-    CANONICAL_BRANCH_PROTECTION_BODY,
-    CANONICAL_BRANCH_PROTECTION_JUST_BODY,
-    CANONICAL_GATE_RUN_BODY,
-    CANONICAL_NO_WORKFLOW_EDITS_BODY,
-    CANONICAL_WORKTREE_JUST_BODY,
-    CANONICAL_WORKTREE_LIB_BODY,
+    WORKTREE_PACK_FILES,
 )
 
 __all__: list[str] = [
@@ -67,20 +62,16 @@ __all__: list[str] = [
 ]
 
 
-# Worktree-pack arm: the installed `dev-tooling/` pack files paired with the
-# canonical bodies the `install_worktree_pack` installer writes — the four
-# `.sh` scripts plus the two `.just` recipe fragments. The pack is REQUIRED
-# by default (A2) — absent entirely it FAILS unless the repo declares
-# `"pack": "optional"` or the tree declares the sandbox exemption — and once
-# ANY pack file is present ALL MUST be present and byte-identical.
-_WORKTREE_PACK_FILES: tuple[tuple[str, str], ...] = (
-    ("branch-protection.just", CANONICAL_BRANCH_PROTECTION_JUST_BODY),
-    ("branch-protection.sh", CANONICAL_BRANCH_PROTECTION_BODY),
-    ("check-no-workflow-edits.sh", CANONICAL_NO_WORKFLOW_EDITS_BODY),
-    ("gate-run.sh", CANONICAL_GATE_RUN_BODY),
-    ("worktree-lib.sh", CANONICAL_WORKTREE_LIB_BODY),
-    ("worktree.just", CANONICAL_WORKTREE_JUST_BODY),
-)
+# Worktree-pack arm: this arm walks `WORKTREE_PACK_FILES`, the installer's
+# SINGLE enumeration of the pack — the four `.sh` scripts, the two `.just`
+# recipe fragments, and the generated `.gitignore` — rather than a hand-written
+# copy of the set. The copy is what this arm used to carry, and it drifted:
+# measured 2026-09-06 it asserted six files where the `worktree-pack` bootstrap
+# obligation row asserted four, so `just bootstrap` passed a pack this gate
+# rejected (livespec-dev-tooling-l5gypl). The pack is REQUIRED by default (A2)
+# — absent entirely it FAILS unless the repo declares `"pack": "optional"` or
+# the tree declares the sandbox exemption — and once ANY pack file is present
+# ALL MUST be present and byte-identical.
 WORKTREE_PACK_DIR_NAME = "dev-tooling"
 _WORKTREE_PACK_BODY_MISMATCH_FAILURE_MODE = "worktree_pack_body_mismatch"
 _WORKTREE_PACK_MISSING_FAILURE_MODE = "worktree_pack_file_missing"
@@ -93,15 +84,19 @@ _WORKTREE_DISCIPLINE_MALFORMED_FAILURE_MODE = "worktree_discipline_malformed"
 # `worktree-pack` LOCAL obligation row; the standalone recipe exists only in
 # repos that have already been wired, so naming it first would emit a remedy
 # that fails in exactly the repos the failure fires in.
+#
+# The file list is RENDERED from the installer's enumeration rather than typed
+# out. A remedy naming a stale set is the same drift the arm itself carried,
+# and it is worse where an operator reads it: it tells them a pack is complete
+# when it is a member short.
+_WORKTREE_PACK_FILE_LIST = ", ".join(f"`{pack_file.name}`" for pack_file in WORKTREE_PACK_FILES)
 _WORKTREE_PACK_REMEDY = (
     "run `just bootstrap` (the `worktree-pack` local obligation row installs "
-    "the single canonical `worktree-lib.sh`, `branch-protection.sh`, "
-    "`gate-run.sh`, `check-no-workflow-edits.sh`, `worktree.just`, and "
-    "`branch-protection.just` bodies byte-for-byte into `dev-tooling/`); a "
-    "drifted or partially installed pack is a copy that diverged from the "
-    "package source. If `just bootstrap` does not materialize the pack, this "
-    "repo is UNWIRED: add the six `/dev-tooling/*` `.gitignore` entries, both "
-    "`import?` lines, and the `install-worktree-pack` recipe, then re-run"
+    f"the single canonical {_WORKTREE_PACK_FILE_LIST} bodies byte-for-byte "
+    "into `dev-tooling/`); a drifted or partially installed pack is a copy "
+    "that diverged from the package source. If `just bootstrap` does not "
+    "materialize the pack, this repo is UNWIRED: add both `import?` lines and "
+    "the `install-worktree-pack` recipe, then re-run"
 )
 _WORKTREE_PACK_NOT_IMPORTED_REMEDY = (
     "add the missing optional import to the root justfile — `import? "
@@ -311,16 +306,16 @@ def _inspect_pack_bodies(
     read fails is not, and only the second leaves the success track.
     """
     failures: list[tuple[str, str]] = []
-    for name, canonical_body in _WORKTREE_PACK_FILES:
-        script_path = pack_dir / name
+    for pack_file in WORKTREE_PACK_FILES:
+        script_path = pack_dir / pack_file.name
         if not script_path.is_file():
-            failures.append((name, _WORKTREE_PACK_MISSING_FAILURE_MODE))
+            failures.append((pack_file.name, _WORKTREE_PACK_MISSING_FAILURE_MODE))
             continue
         read = _read_bytes(path=script_path)
         if isinstance(read, IOFailure):
             return read
-        if unsafe_perform_io(read.unwrap()) != canonical_body.encode("utf-8"):
-            failures.append((name, _WORKTREE_PACK_BODY_MISMATCH_FAILURE_MODE))
+        if unsafe_perform_io(read.unwrap()) != pack_file.body.encode("utf-8"):
+            failures.append((pack_file.name, _WORKTREE_PACK_BODY_MISMATCH_FAILURE_MODE))
     return IOSuccess(failures)
 
 
@@ -392,7 +387,7 @@ def inspect_worktree_pack(
     if policy == _PACK_POLICY_MALFORMED:
         return IOSuccess([(_LIVESPEC_JSONC_NAME, _WORKTREE_DISCIPLINE_MALFORMED_FAILURE_MODE)])
     pack_dir = repo_root / WORKTREE_PACK_DIR_NAME
-    if not any((pack_dir / name).is_file() for name, _ in _WORKTREE_PACK_FILES):
+    if not any((pack_dir / pack_file.name).is_file() for pack_file in WORKTREE_PACK_FILES):
         required = policy == _PACK_POLICY_REQUIRED and not sandbox_exempt
         absent = [(WORKTREE_PACK_DIR_NAME, _WORKTREE_PACK_ABSENT_FAILURE_MODE)]
         return IOSuccess(absent if required else [])

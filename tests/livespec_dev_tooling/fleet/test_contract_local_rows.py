@@ -25,14 +25,7 @@ from livespec_dev_tooling.fleet._local_context import (
     CommandResult,
     LocalContext,
 )
-from livespec_dev_tooling.install_worktree_pack import (
-    CANONICAL_BRANCH_PROTECTION_BODY,
-    CANONICAL_BRANCH_PROTECTION_JUST_BODY,
-    CANONICAL_GATE_RUN_BODY,
-    CANONICAL_NO_WORKFLOW_EDITS_BODY,
-    CANONICAL_WORKTREE_JUST_BODY,
-    CANONICAL_WORKTREE_LIB_BODY,
-)
+from livespec_dev_tooling.install_worktree_pack import WORKTREE_PACK_FILES
 
 __all__: list[str] = []
 
@@ -80,14 +73,20 @@ def test_every_local_row_carries_a_callable_reconcile() -> None:
     assert all(callable(row.reconcile_local) for row in LOCAL_OBLIGATION_ROWS)
 
 
-_PACK_FILES: tuple[tuple[str, str], ...] = (
-    ("branch-protection.just", CANONICAL_BRANCH_PROTECTION_JUST_BODY),
-    ("branch-protection.sh", CANONICAL_BRANCH_PROTECTION_BODY),
-    ("check-no-workflow-edits.sh", CANONICAL_NO_WORKFLOW_EDITS_BODY),
-    ("gate-run.sh", CANONICAL_GATE_RUN_BODY),
-    ("worktree-lib.sh", CANONICAL_WORKTREE_LIB_BODY),
-    ("worktree.just", CANONICAL_WORKTREE_JUST_BODY),
-)
+def _write_canonical_pack(*, checkout: Path) -> None:
+    """Materialize every file the installer installs, byte-identically.
+
+    Walks the installer's single enumeration rather than restating the set —
+    a fixture holding its own copy of the file list is the same drift seam the
+    row itself carried (livespec-dev-tooling-l5gypl), and it would keep this
+    suite green against a row that had stopped asserting a member. The
+    lockstep of the set itself is asserted in
+    `tests/livespec_dev_tooling/test_install_worktree_pack.py`.
+    """
+    pack_dir = checkout / "dev-tooling"
+    pack_dir.mkdir(parents=True, exist_ok=True)
+    for pack_file in WORKTREE_PACK_FILES:
+        _ = (pack_dir / pack_file.name).write_text(pack_file.body, encoding="utf-8")
 
 
 def _worktree_pack_row() -> LocalObligationRow:
@@ -106,13 +105,6 @@ def _ctx(*, checkout: Path, recorded: list[list[str]], returncode: int = 0) -> L
         return IOSuccess(CommandResult(returncode=returncode, stdout="", stderr=""))
 
     return LocalContext(checkout=checkout, home=checkout / "home", run=run)
-
-
-def _write_canonical_pack(*, checkout: Path) -> None:
-    pack_dir = checkout / "dev-tooling"
-    pack_dir.mkdir(parents=True, exist_ok=True)
-    for name, body in _PACK_FILES:
-        _ = (pack_dir / name).write_text(body, encoding="utf-8")
 
 
 def test_worktree_pack_row_precedes_commit_refuse_hooks_and_follows_uv_sync() -> None:

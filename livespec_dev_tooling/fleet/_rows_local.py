@@ -111,41 +111,36 @@ def reconcile_uv_sync(*, ctx: LocalContext) -> RowOutcome:
 _WORKTREE_PACK_DIR_NAME = "dev-tooling"
 
 
-def _worktree_pack_files() -> tuple[tuple[str, str], ...]:
-    """The four canonical pack files, from the single installer source."""
-    from livespec_dev_tooling.install_worktree_pack import (
-        CANONICAL_BRANCH_PROTECTION_BODY,
-        CANONICAL_BRANCH_PROTECTION_JUST_BODY,
-        CANONICAL_WORKTREE_JUST_BODY,
-        CANONICAL_WORKTREE_LIB_BODY,
-    )
-
-    return (
-        ("branch-protection.just", CANONICAL_BRANCH_PROTECTION_JUST_BODY),
-        ("branch-protection.sh", CANONICAL_BRANCH_PROTECTION_BODY),
-        ("worktree-lib.sh", CANONICAL_WORKTREE_LIB_BODY),
-        ("worktree.just", CANONICAL_WORKTREE_JUST_BODY),
-    )
-
-
 def assert_worktree_pack(*, ctx: LocalContext) -> RowOutcome:
-    """The four canonical pack files exist, byte-identical, in THIS worktree.
+    """EVERY file the installer installs exists, byte-identical, in THIS worktree.
+
+    Walks `WORKTREE_PACK_FILES` — the installer's single enumeration — rather
+    than a hand-written list of names. The hand-written list is what this row
+    used to carry, and it drifted: measured 2026-09-06 it asserted four files
+    where the `just check` verifier asserted six, so this assert leg PASSED a
+    pack the gate rejected and `bootstrap` never reconciled it
+    (livespec-dev-tooling-l5gypl). Deriving from the installer makes the row
+    exactly as strict as what the reconcile writes, by construction.
 
     Uses `ctx.invoked_worktree`, not `ctx.checkout`: the pack is per-worktree
     (the root justfile `import?`s it relative to the checkout you stand in),
     unlike the shared hooks/refspec/mise-trust rows.
     """
+    from livespec_dev_tooling.install_worktree_pack import WORKTREE_PACK_FILES
+
     pack_dir = ctx.invoked_worktree / _WORKTREE_PACK_DIR_NAME
-    for name, body in _worktree_pack_files():
-        outcome = ctx.file_text(path=pack_dir / name)
+    for pack_file in WORKTREE_PACK_FILES:
+        outcome = ctx.file_text(path=pack_dir / pack_file.name)
         if isinstance(outcome, IOFailure):
             # can't-read is not absent: a pack file present but undecodable
             # used to raise `UnicodeDecodeError` straight out of this row and
             # abort the whole reconcile (livespec-dev-tooling-a6et).
             not_read = unsafe_perform_io(outcome.failure())
-            return RowSkip(reason=f"worktree pack file unreadable: {name} ({not_read.kind})")
-        if unsafe_perform_io(outcome.unwrap()) != body:
-            return RowFinding(message=f"worktree pack file absent or drifted: {name}")
+            return RowSkip(
+                reason=f"worktree pack file unreadable: {pack_file.name} ({not_read.kind})"
+            )
+        if unsafe_perform_io(outcome.unwrap()) != pack_file.body:
+            return RowFinding(message=f"worktree pack file absent or drifted: {pack_file.name}")
     return RowPass(note="worktree pack installed")
 
 
