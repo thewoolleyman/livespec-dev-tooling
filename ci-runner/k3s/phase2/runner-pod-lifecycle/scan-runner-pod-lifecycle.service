@@ -31,7 +31,11 @@
 # `exit-code`; a deadline kill ends it with the script's `KILLED: SIGTERM`
 # line (or, if even that was cut short, with systemd's own `start operation
 # timed out. Terminating.`) and Result reads `timeout`. Neither `failed`
-# alone nor the absence of a CLEAN line is a stall.
+# alone nor the absence of a CLEAN line is a stall. TimeoutStopSec=30 bounds
+# the kill itself: SIGTERM at 240 s, SIGKILL at 270 s, so the unit is out of
+# `deactivating` before the 300 s timer tick even when the child is wedged
+# in a syscall (a D-state read on a stalled array survives TERM; the unit
+# still leaves the timer's way — the KILL lands when the syscall returns).
 [Unit]
 Description=Scan the runner node for the runner-pod lifecycle stall (report-only)
 After=k3s.service
@@ -42,4 +46,5 @@ Type=oneshot
 Environment=KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 Environment=RPL_DEADLINE_SECONDS=240
 TimeoutStartSec=240
+TimeoutStopSec=30
 ExecStart=/usr/local/lib/ci-runner-k3s/scan-runner-pod-lifecycle.sh
