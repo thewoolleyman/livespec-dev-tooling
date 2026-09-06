@@ -79,6 +79,10 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling.check_failure_digest import (  # noqa: E402
+    failure_digest_lines,
+)
+
 __all__: list[str] = []
 
 _DEFAULT_MAX_WORKERS: int = 8
@@ -292,6 +296,20 @@ def _write_timing_table(*, results: list[TargetResult]) -> None:
             _write(text=f"  {r.wall_time_s:6.1f}s  {r.name}\n")
 
 
+def _write_failure_digest(*, failed: list[TargetResult]) -> None:
+    """Restate the failed targets' failure modes and remedies as the LAST lines.
+
+    Written AFTER the `check_aggregate_failed` log record, which structlog
+    sends to stderr, so on a merged terminal the digest is genuinely the tail
+    — which is the whole point. A pre-push hook that streams 313 seconds of
+    output and then exits 1 has already scrolled the finding that explains the
+    failure off the screen (measured 2026-08-20, `worktree_pack_absent`), and
+    the remedy is only useful where the operator is still looking.
+    """
+    for line in failure_digest_lines(failures=[(r.name, r.output) for r in failed]):
+        _write(text=f"{line}\n")
+
+
 def _emit_summary(*, results: list[TargetResult], log: structlog.stdlib.BoundLogger) -> int:
     """Write timing summary to stdout; return 0 if all passed, 1 if any failed."""
     passed = [r for r in results if not r.skipped and r.exit_code == 0]
@@ -305,6 +323,7 @@ def _emit_summary(*, results: list[TargetResult], log: structlog.stdlib.BoundLog
         for r in failed:
             _write(text=f"  - {r.name}\n")
         log.error("check_aggregate_failed", failed=[r.name for r in failed])
+        _write_failure_digest(failed=failed)
         return 1
     _write(text=f"\nAll {len(passed)} targets passed.\n")
     log.info("check_aggregate_passed", passed=len(passed))
