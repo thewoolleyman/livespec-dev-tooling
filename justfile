@@ -232,6 +232,7 @@ check:
         check-fleet-conformance-admin
         check-fabro-image-pin-lockstep
         check-no-workflow-edits
+        check-uv-lock-version-sync
     )
     scripts/just/check.sh "${targets[@]}"
 
@@ -283,6 +284,17 @@ check-static:
 # guard is a CI-venue no-op by design); the Dispatcher janitor invokes it too.
 check-no-workflow-edits:
     bash dev-tooling/check-no-workflow-edits.sh
+
+# Release-drift guard: fail when uv.lock's own editable `[[package]]` entry
+# records a different version than pyproject.toml's `[project].version`. The
+# PREVENTION is the release-please-config.json `extra-files` entry that rewrites
+# both numbers in the same release commit; this is its backstop, because a
+# release-please JSONPath that stops matching is a SILENT no-op that would
+# quietly restore the every-checkout-starts-dirty behavior. Repo-private (not
+# under livespec_dev_tooling/checks/), so check-aggregate-completeness does not
+# enforce it; a literal member of check-targets.txt's repo-private block.
+check-uv-lock-version-sync:
+    uv run python -m livespec_dev_tooling.uv_lock_version_sync
 
 # `changed-files` — print the changed `.py` set this branch touches,
 # repo-root-relative, one path per line, sorted + de-duplicated
