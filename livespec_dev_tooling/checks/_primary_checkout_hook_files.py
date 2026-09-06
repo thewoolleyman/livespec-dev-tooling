@@ -53,6 +53,7 @@ from livespec_dev_tooling.checks._primary_checkout_unreadable import (  # noqa: 
 )
 from livespec_dev_tooling.install_commit_refuse_hooks import (  # noqa: E402
     CANONICAL_HOOK_BODY,
+    _is_foreign_lefthook_wrapper,
 )
 
 # Both names keep the leading underscore they had in the parent, and are
@@ -62,6 +63,7 @@ from livespec_dev_tooling.install_commit_refuse_hooks import (  # noqa: E402
 # split reporting work it did not do. They are converted anyway, because the
 # defect below is real whether or not the count can see it.
 __all__: list[str] = [
+    "_find_foreign_lefthook_wrappers",
     "_find_vendored_hook_copies",
     "_inspect_hook",
 ]
@@ -121,6 +123,52 @@ def _inspect_hook(*, hook_path: Path) -> IOResult[tuple[bool, str], CheckInputUn
     if body != CANONICAL_HOOK_BODY.encode("utf-8"):
         return IOSuccess((False, _HOOK_BODY_MISMATCH))
     return IOSuccess((True, _HOOK_OK))
+
+
+def _find_foreign_lefthook_wrappers(
+    *, hooks_dir: Path
+) -> IOResult[list[Path], CheckInputUnreadable]:
+    """Every hooks-dir executable that reaches lefthook without the canonical unset line.
+
+    THE ARM THE OBSERVED DEFECT NEEDED. The byte-identity arm above inspects
+    exactly the three names the installer writes, so a FOURTH file in the same
+    directory was invisible to this check entirely — and on 2026-09-06
+    `/data/projects/livespec/.git/hooks/prepare-commit-msg` was exactly that: a
+    stock lefthook `call_lefthook` wrapper with an mtime three months older
+    than its canonical siblings, firing on every commit and every cherry-pick,
+    leaking GIT_DIR, and calling `lefthook run` without `--no-auto-install`.
+    Three green byte-identity verdicts said nothing about it.
+
+    The predicate is imported from the installer rather than restated here, for
+    the same reason `CANONICAL_HOOK_BODY` is: the installer is the component
+    that must REMOVE this shape, and a verifier carrying its own copy of "what
+    the shape is" would drift into failing on files the installer does not
+    clear, or passing files it does.
+
+    The canonical three carry the unset line by construction and so never
+    match, which is what lets this arm scan the WHOLE directory by shape
+    instead of carving three names out of it.
+
+    An absent hooks directory yields an EMPTY list rather than a read failure:
+    the byte-identity arm already reports that state as three `missing` hooks,
+    and spelling it `hook_unreadable` here would hand the operator a remedy for
+    an access fault that never happened.
+    """
+    if not hooks_dir.is_dir():
+        return IOSuccess([])
+    try:
+        entries = sorted(hooks_dir.iterdir())
+    except OSError as unreadable:
+        return IOFailure(CheckInputUnreadable(path=str(hooks_dir), detail=str(unreadable)))
+    found: list[Path] = []
+    for candidate in entries:
+        try:
+            is_wrapper = _is_foreign_lefthook_wrapper(path=candidate)
+        except OSError as unreadable:
+            return IOFailure(CheckInputUnreadable(path=str(candidate), detail=str(unreadable)))
+        if is_wrapper:
+            found.append(candidate)
+    return IOSuccess(found)
 
 
 def _find_vendored_hook_copies(*, repo_root: Path) -> IOResult[list[Path], CheckInputUnreadable]:

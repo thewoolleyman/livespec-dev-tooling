@@ -60,11 +60,13 @@ __all__: list[str] = [
     "_CHECK_ID",
     "_CORE_BARE_FAILURE_MODE",
     "_FAIL_EXIT",
+    "_FOREIGN_WRAPPER_FAILURE_MODE",
     "_GIT_PROBE_FAILURE_MODE",
     "_HOOK_READ_FAILURE_MODE",
     "_HOOK_REMEDY",
     "_PACK_READ_FAILURE_MODE",
     "_emit_failures",
+    "_emit_foreign_wrapper_failures",
     "_narrate_probe_failure",
     "_narrate_unreadable_input",
 ]
@@ -74,6 +76,11 @@ _FAIL_EXIT = 4
 
 _CORE_BARE_FAILURE_MODE = "core_bare_set"
 _VENDORED_COPY_FAILURE_MODE = "vendored_copy_present"
+# A lefthook entry point in the shared hooks directory that this installer does
+# NOT own: it invokes lefthook and does not first clear the GIT_DIR family. A
+# statement about the repository, like the three above it — the check read the
+# file and it is what it appears to be.
+_FOREIGN_WRAPPER_FAILURE_MODE = "foreign_lefthook_wrapper"
 # A git probe that did not ANSWER — distinct from every mode above, which are
 # all things the check successfully OBSERVED.
 _GIT_PROBE_FAILURE_MODE = "git_probe_failed"
@@ -95,6 +102,16 @@ _VENDORED_COPY_REMEDY = (
     "body is the `CANONICAL_HOOK_BODY` package constant installed via "
     "`just install-commit-refuse-hooks` — a repo-tracked shell copy can "
     "drift from it"
+)
+_FOREIGN_WRAPPER_REMEDY = (
+    "run `just install-commit-refuse-hooks` — the from-package installer now "
+    "owns EVERY lefthook entry point in the shared hooks directory and deletes "
+    "this one. It is lefthook's stock `call_lefthook` wrapper: it does not "
+    "`unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE GIT_PREFIX`, and it calls "
+    "`lefthook run` without `--no-auto-install`, so it fires on every commit "
+    "and every cherry-pick carrying the GIT_DIR git injects into a hook "
+    "running inside a linked worktree — the shape li-iroguc proved can write "
+    "core.bare=true into the shared .git/config"
 )
 _UNREADABLE_INPUT_REMEDY = (
     "a file this check depends on could not be READ; the reported `path` "
@@ -162,6 +179,32 @@ def _emit_failures(
             hooks_dir=str(hooks_dir),
             hint=pack_failure_hint(failure_mode=failure_mode),
             path=str(pack_failure_path(repo_root=repo_root, script_name=script_name)),
+            line=0,
+        )
+
+
+def _emit_foreign_wrapper_failures(
+    *, log: structlog.stdlib.BoundLogger, hooks_dir: Path, foreign_wrappers: list[Path]
+) -> None:
+    """Emit one `fail` finding per foreign lefthook entry point, naming the file.
+
+    ⛔ ITS OWN EMITTER RATHER THAN A SEVENTH PARAMETER ON `_emit_failures`.
+    That function already sits at the six-argument lint budget, and the arm it
+    would have joined is the one whose whole point is that it is NOT keyed to a
+    hook NAME — it reports a path the check found by walking the directory. The
+    finding carries the offending basename in `hook` AND the absolute path in
+    `path`, because "which file" is the entire actionable content here.
+    """
+    for wrapper_path in foreign_wrappers:
+        log.error(
+            "primary-checkout-commit-refuse-hook-installed: foreign lefthook wrapper present",
+            check_id=_CHECK_ID,
+            status="fail",
+            hook=wrapper_path.name,
+            failure_mode=_FOREIGN_WRAPPER_FAILURE_MODE,
+            hooks_dir=str(hooks_dir),
+            hint=_FOREIGN_WRAPPER_REMEDY,
+            path=str(wrapper_path),
             line=0,
         )
 
