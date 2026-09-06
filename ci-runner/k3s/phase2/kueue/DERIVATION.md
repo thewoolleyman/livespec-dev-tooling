@@ -8,13 +8,29 @@ redesigned here — its authority is
 `SPECIFICATION/non-functional-requirements.md` section "Adaptive JIT
 runner admission budget", and the sentence being modeled is:
 
-> Each repository's logical ceiling MUST be doubled to support two
-> concurrent matrix pipelines. The physical host-wide cap remains
-> exactly 482 active runners; no configuration or recovery path may
-> derive or admit 964 runners. Repositories MAY fairly borrow unused
+> Each repository's logical ceiling MUST be BOUNDED to a small multiple
+> of that repository's fair share of host-wide capacity — large enough
+> that a repository can borrow unused capacity beyond its guaranteed
+> share, and never so large that a backlog is materialized as pending
+> admission objects the host's control plane must keep reconciling:
+> queued work beyond a bounded multiple of the admission cap MUST wait
+> at the forge, where it costs the host nothing, rather than exist as
+> pending objects on the host. The multiple, and any floor that keeps a
+> small-share repository from draining a lone matrix one job at a time,
+> are pool facts recorded with the pool's admission derivation, never
+> here. Maintainer-directed 2026-09-06. The physical host-wide cap
+> remains exactly 482 active runners; no configuration or recovery path
+> may derive or admit 964 runners. Repositories MAY fairly borrow unused
 > capacity, and the desired admission for each repository MUST be
 > `min(queued jobs, doubled repository logical ceiling, fair share of
 > remaining host-wide capacity)`.
+
+(Quoted as ratified on 2026-09-06 by the proposed change
+`scale-set-ceiling-bounded-to-fair-share`; until then the first sentence
+required the ceiling to be doubled to support two concurrent matrix
+pipelines. The formula's term name `doubled repository logical ceiling`
+is retained so the mapping table below stays valid; the term is defined
+by the bounded sentence.)
 
 `README.md` gives the narrative mapping. This file is the numeric one:
 where each term lives, what the inputs are, and how to recompute the
