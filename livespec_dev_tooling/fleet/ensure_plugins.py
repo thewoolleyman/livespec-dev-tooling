@@ -21,8 +21,8 @@ from livespec_dev_tooling.fleet._ensure_plugin_artifacts import (
     remove_plugin_cache_dir,
 )
 from livespec_dev_tooling.fleet._ensure_plugin_commands import (
-    CommandResult,
-    CommandRunner,
+    PluginCommandResult,
+    PluginCommandRunner,
     enabled_plugin_names,
     planned_commands,
     run_from_settings,
@@ -32,8 +32,8 @@ from livespec_dev_tooling.fleet._ensure_plugin_commands import (
 __all__: list[str] = [
     "ArtifactReader",
     "CacheDirRemover",
-    "CommandResult",
-    "CommandRunner",
+    "PluginCommandResult",
+    "PluginCommandRunner",
     "RegistryReader",
     "ensure",
     "main",
@@ -201,7 +201,7 @@ def _registry_repair_paths(
 
 
 def _run_commands(
-    *, commands: tuple[tuple[str, ...], ...], runner: CommandRunner
+    *, commands: tuple[tuple[str, ...], ...], runner: PluginCommandRunner
 ) -> tuple[str, ...]:
     """Run one provisioning cycle and return the first command failure."""
     for command in commands:
@@ -215,7 +215,7 @@ def ensure(
     *,
     settings_text: str,
     project_root: str,
-    runner: CommandRunner,
+    runner: PluginCommandRunner,
     read_registry: RegistryReader,
     read_artifact: ArtifactReader = plugin_artifact_findings,
     remove_cache_dir: CacheDirRemover = remove_plugin_cache_dir,

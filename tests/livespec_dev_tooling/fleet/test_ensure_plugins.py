@@ -24,7 +24,7 @@ from livespec_dev_tooling.fleet._rows_claude_plugin import (
     assert_claude_plugin_currency,
 )
 from livespec_dev_tooling.fleet.ensure_plugins import (
-    CommandResult,
+    PluginCommandResult,
     ensure,
     planned_commands,
     plugin_artifact_findings,
@@ -95,9 +95,9 @@ def test_run_from_settings_executes_commands_in_order(*, tmp_path: Path) -> None
     settings.write_text(_settings_text(), encoding="utf-8")
     seen: list[tuple[str, ...]] = []
 
-    def runner(*, args: tuple[str, ...]) -> CommandResult:
+    def runner(*, args: tuple[str, ...]) -> PluginCommandResult:
         seen.append(args)
-        return CommandResult(returncode=0)
+        return PluginCommandResult(returncode=0)
 
     assert run_from_settings(settings_path=settings, runner=runner) == 0
     assert seen == list(planned_commands(settings_text=_settings_text()))
@@ -109,9 +109,9 @@ def test_run_from_settings_stops_at_first_failed_command(*, tmp_path: Path) -> N
     settings.write_text(_settings_text(), encoding="utf-8")
     seen: list[tuple[str, ...]] = []
 
-    def runner(*, args: tuple[str, ...]) -> CommandResult:
+    def runner(*, args: tuple[str, ...]) -> PluginCommandResult:
         seen.append(args)
-        return CommandResult(returncode=17 if len(seen) == 2 else 0)
+        return PluginCommandResult(returncode=17 if len(seen) == 2 else 0)
 
     assert run_from_settings(settings_path=settings, runner=runner) == 17
     assert seen == list(planned_commands(settings_text=_settings_text()))[:2]
@@ -473,9 +473,9 @@ def test_ensure_returns_no_findings_when_provisioning_succeeds(*, tmp_path: Path
     )
     ran: list[tuple[str, ...]] = []
 
-    def runner(*, args: tuple[str, ...]) -> CommandResult:
+    def runner(*, args: tuple[str, ...]) -> PluginCommandResult:
         ran.append(args)
-        return CommandResult(returncode=0)
+        return PluginCommandResult(returncode=0)
 
     findings = ensure(
         settings_text=_M3,
@@ -490,9 +490,9 @@ def test_ensure_returns_no_findings_when_provisioning_succeeds(*, tmp_path: Path
 def test_ensure_refuses_to_run_commands_when_settings_are_vacuous() -> None:
     ran: list[tuple[str, ...]] = []
 
-    def runner(*, args: tuple[str, ...]) -> CommandResult:  # pragma: no cover
+    def runner(*, args: tuple[str, ...]) -> PluginCommandResult:  # pragma: no cover
         ran.append(args)
-        return CommandResult(returncode=0)
+        return PluginCommandResult(returncode=0)
 
     findings = ensure(
         settings_text=_settings(enabled={}),
@@ -508,9 +508,9 @@ def test_ensure_reports_when_commands_succeed_but_no_record_lands() -> None:
     """The exit-status trap: every command exits 0, yet nothing was provisioned."""
     ran: list[tuple[str, ...]] = []
 
-    def runner(*, args: tuple[str, ...]) -> CommandResult:
+    def runner(*, args: tuple[str, ...]) -> PluginCommandResult:
         ran.append(args)
-        return CommandResult(returncode=0)
+        return PluginCommandResult(returncode=0)
 
     findings = ensure(
         settings_text=_M3,
@@ -538,9 +538,9 @@ def test_ensure_reports_when_record_names_empty_artifact(*, tmp_path: Path) -> N
     )
     ran: list[tuple[str, ...]] = []
 
-    def runner(*, args: tuple[str, ...]) -> CommandResult:
+    def runner(*, args: tuple[str, ...]) -> PluginCommandResult:
         ran.append(args)
-        return CommandResult(returncode=0)
+        return PluginCommandResult(returncode=0)
 
     findings = ensure(
         settings_text=_M3,
@@ -578,9 +578,9 @@ def test_ensure_repairs_incomplete_cache_once(
     ]
     ran: list[tuple[str, ...]] = []
 
-    def runner(*, args: tuple[str, ...]) -> CommandResult:
+    def runner(*, args: tuple[str, ...]) -> PluginCommandResult:
         ran.append(args)
-        return CommandResult(returncode=0)
+        return PluginCommandResult(returncode=0)
 
     findings = ensure(
         settings_text=_M3,
@@ -610,9 +610,9 @@ def test_ensure_returns_second_findings_when_repair_still_fails(
     )
     ran: list[tuple[str, ...]] = []
 
-    def runner(*, args: tuple[str, ...]) -> CommandResult:
+    def runner(*, args: tuple[str, ...]) -> PluginCommandResult:
         ran.append(args)
-        return CommandResult(returncode=0)
+        return PluginCommandResult(returncode=0)
 
     findings = ensure(
         settings_text=_M3,
@@ -637,9 +637,9 @@ def test_ensure_refuses_to_delete_install_path_outside_cache(*, tmp_path: Path) 
     )
     ran: list[tuple[str, ...]] = []
 
-    def runner(*, args: tuple[str, ...]) -> CommandResult:
+    def runner(*, args: tuple[str, ...]) -> PluginCommandResult:
         ran.append(args)
-        return CommandResult(returncode=0)
+        return PluginCommandResult(returncode=0)
 
     findings = ensure(
         settings_text=_M3,
@@ -727,9 +727,9 @@ def test_registry_findings_ignore_non_object_entries() -> None:
 def test_ensure_reports_a_failing_command_and_stops() -> None:
     ran: list[tuple[str, ...]] = []
 
-    def runner(*, args: tuple[str, ...]) -> CommandResult:
+    def runner(*, args: tuple[str, ...]) -> PluginCommandResult:
         ran.append(args)
-        return CommandResult(returncode=9)
+        return PluginCommandResult(returncode=9)
 
     findings = ensure(
         settings_text=_M3,
