@@ -18,10 +18,18 @@
 # label `standin-containe` was already silently truncated — so the names
 # stay short.
 #
+# PER-ROLE FILESYSTEM TYPE (decided in migrate-tier.sh role_fstype; these
+# lines MUST agree with it): ci-cache and ci-containerd are ext4; ci-workvols
+# is XFS with reflink=1 since 2026-09-06, so the warm uv-cache seed can be a
+# `cp --reflink` that gives every job its own inodes (livespec plan
+# ci-runner-pod-lifecycle-reliability research/006 option (a);
+# livespec-dev-tooling-hmv2bo). An XFS label holds 12 bytes: `ci-workvols`,
+# `new-workvols` and `old-workvols` all fit.
+#
 # THE LAYOUT (the five lines this installer ensures, byte-exact):
 #   LABEL=ci-cache       /var/cache/ci-runner                 ext4 defaults,noatime 0 2
 #   LABEL=ci-containerd  /var/cache/ci-runner/k3s-containerd  ext4 defaults,noatime,x-systemd.requires-mounts-for=/var/cache/ci-runner 0 2
-#   LABEL=ci-workvols    /var/cache/ci-runner/k3s-storage     ext4 defaults,noatime,x-systemd.requires-mounts-for=/var/cache/ci-runner 0 2
+#   LABEL=ci-workvols    /var/cache/ci-runner/k3s-storage     xfs  defaults,noatime,x-systemd.requires-mounts-for=/var/cache/ci-runner 0 2
 #   /var/cache/ci-runner/k3s-containerd /var/lib/rancher/k3s/agent/containerd none bind,x-systemd.requires-mounts-for=/var/cache/ci-runner/k3s-containerd 0 0
 #   /var/cache/ci-runner/k3s-storage    /var/lib/rancher/k3s/storage          none bind,x-systemd.requires-mounts-for=/var/cache/ci-runner/k3s-storage 0 0
 # Each bind requires ITS OWN SOURCE mount, not merely the cache volume:
@@ -160,7 +168,7 @@ ensure_line() {
 }
 ensure_line "LABEL=${LABEL_CACHE} ${CACHE_MOUNT} ext4 defaults,noatime 0 2" "$CACHE_MOUNT"
 ensure_line "LABEL=${LABEL_CONTAINERD} ${CONTAINERD_SRC} ext4 defaults,noatime,x-systemd.requires-mounts-for=${CACHE_MOUNT} 0 2" "$CONTAINERD_SRC"
-ensure_line "LABEL=${LABEL_WORKVOLS} ${STORAGE_SRC} ext4 defaults,noatime,x-systemd.requires-mounts-for=${CACHE_MOUNT} 0 2" "$STORAGE_SRC"
+ensure_line "LABEL=${LABEL_WORKVOLS} ${STORAGE_SRC} xfs defaults,noatime,x-systemd.requires-mounts-for=${CACHE_MOUNT} 0 2" "$STORAGE_SRC"
 ensure_line "${CONTAINERD_SRC} ${CONTAINERD_DIR} none bind,x-systemd.requires-mounts-for=${CONTAINERD_SRC} 0 0" "$CONTAINERD_DIR"
 ensure_line "${STORAGE_SRC} ${STORAGE_DIR} none bind,x-systemd.requires-mounts-for=${STORAGE_SRC} 0 0" "$STORAGE_DIR"
 

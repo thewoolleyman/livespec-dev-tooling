@@ -15,8 +15,13 @@ A tier is identified by its ext4 **label**, which doubles as its LV name. The
 label is the same on any medium, so `/etc/fstab` never changes when a tier
 moves; the git copy of the layout stays byte-identical to the host's. Moving a
 tier is `migrate-tier.sh prepare` (create the volume, temporary label, bulk
-copy, live) followed by `migrate-tier.sh cutover` (quiet window: final delta,
-verify, relabel, `mount -a`, k3s back). Two volumes must never carry the same
+copy, live) followed by either `migrate-tier.sh cutover` (quiet window: final
+delta, verify, relabel, `mount -a`, k3s back) or, for a tier that holds only
+per-job volumes and a regenerable root, `switch-live` → `drain-status` →
+`finish-live` (no window: the new filesystem is STACKED over the old, pods
+drain on their own) and `reclaim` after the next boot. Each role's filesystem
+type is decided once, in `migrate-tier.sh role_fstype`: `ci-workvols` is XFS
+with reflink (labels hold 12 bytes there), the other two ext4. Two volumes must never carry the same
 role label at once; the installer refuses while they do.
 
 ## Rules that came from incidents
@@ -43,9 +48,14 @@ role label at once; the installer refuses while they do.
   the moment CI ran again. `migrate-tier.sh prepare` refuses a PV on any
   device carrying a signature; wipe it by hand (`vgremove`, `pvremove`,
   `wipefs -a`) after confirming nothing on it is wanted, then copy afresh.
-- **ext4 labels hold 16 bytes.** `standin-containerd` silently became
-  `standin-containe`. Role names, `new-<suffix>` and `old-<suffix>` temporary
-  names all fit; check any new name before using it.
+- **ext4 labels hold 16 bytes; XFS labels hold 12.** `standin-containerd`
+  silently became `standin-containe`. Role names, `new-<suffix>` and
+  `old-<suffix>` temporary names all fit both limits; check any new name
+  before using it (`ci-containerd` is 13, which is why it stays ext4-only).
+- **Never unmount a tier mount under a running k3s, not even to swap it.**
+  The `RequiresMountsFor` drop-in orders k3s's stop before the mount's, so
+  an unmount is a k3s stop. To replace a tier live, STACK the new mount on
+  top (`switch-live`); the old one stays underneath until the next boot.
 - **An OS-side PCIe link-speed cap can rescue a running system, never a
   boot.** Dell firmware trains a switch card's downstream links before the
   OS runs; a link that is marginal at Gen3 halts POST with `UEFI0066` ("PCIe
