@@ -1618,26 +1618,30 @@ five minutes: `runner-pod-lifecycle/scan-runner-pod-lifecycle.sh` (installed
 by `install-runner-pod-lifecycle-scan.sh`, driven by the `.timer`) is the
 second gate beside the wedge sweep — the wedge scan answers "is a runner
 dead to GitHub?", this one answers "is the host failing to bring pods up?".
-It reports seven classes, each read from the node-side observable that
+It reports nine classes, each read from the node-side observable that
 persists long enough for a sweep to see it (the ARC hook string itself is
 written by a runner that exits moments later, so it is a bonus, not the
 signal):
 
 | Class | Read from | Fires when |
 |---|---|---|
-| `pvc-pending` | PVCs in `arc-runners` | any Pending longer than 120 s (the provisioner's own helper-pod ceiling) |
+| `pvc-pending` | PVCs in `arc-runners`; the consumer pods' `spec.schedulingGates` | any Pending longer than 120 s (the provisioner's own helper-pod ceiling) — EXCLUDING the claims of pods Kueue is still holding under a scheduling gate, whose claims are Pending by design under `WaitForFirstConsumer` (2026-09-06: 10 gated pods' claims among 33 Pending; `livespec-kgdlte`). The excluded count is emitted as `livespec.ci_lifecycle.pvc-gated`; if the gates read fails the claims are counted, as before, and the gauge is withheld |
 | `bind-deadline` | k3s journal, last 5 min | any `binding volumes: context deadline exceeded` |
 | `inotify-emfile` | `containerd.log`, last 5 min (walked backwards to the cutoff — the file rotates) | any `failed to create inotify fd` |
 | `containerd-deadline` | pod container states now; `arc-runners` events, last 5 min | a container in `StartError`; a `Failed`/`FailedCreatePodSandBox` event carrying `context deadline exceeded` or `failed to create shim task`; or ≥ 20 `FailedKillPod` (teardown starvation, the 2026-09-02 17:55Z shape — calibrated live: 7–14 per window while the backlog tail drained with nothing failing, 25–27 beside a PVC Pending 209 s, ~80 at the StartError) |
 | `hook-failure` | runner-pod logs, last 5 min; Pending `-workflow` pods | the hook's `Executing the custom container implementation failed`; or a workflow pod Pending longer than 480 s (the hook gives up at ~13 min) |
 | `stale-listener` | `arc-systems` listener pods; `AutoscalingListener.spec.ephemeralRunnerSetName` vs existing `EphemeralRunnerSet`s | a listener not Running or waiting in a crash loop; or a reference to a set that does not exist (the ARC 0.14.2 boot race that queued `livespec-overseer` for 31 min on 2026-09-02; converge-side fix `livespec-bde2`) |
 | `capacity-absent` | `k3s-role=arc-runner-host` nodes' `status.allocatable`; every `ClusterQueue`'s `nominalQuota` for `ci-runner.io/churn-slot` | a selected node without the resource; or the nodes' allocatable total below the queues' quota sum (2026-09-04: a dependency-failed boot left the reapply unit unrun and the node at none against a quota sum of 32 from 06:31Z to 07:52Z; converge assertion + timer fallback `livespec-kgl3`) |
+| `warm-cache-oversize` | the LIVE warm uv generation's own `.warm-manifest.json` (`/var/lib/rancher/k3s/storage/.warm/uv` → `uv-generations/<stamp>/`); the budget from `last-run.json`'s `budget_*`, else the `warm-cache-budget` ConfigMap; the populator's last-run age from `last-run.json`'s `finished_uv_at_epoch` | the live generation's bytes or files exceed the budget on either axis (the populator's refusal gate should make this impossible — a hit means the gate was bypassed or the budget was lowered under a published generation); or the populator's last run finished more than 12 sweep windows (1 h, two missed 30-minute schedules; `--warm-stale-ticks`) ago — the CronJob is not running. Sizes come from the generation's manifest, NOT `last-run.json`'s `generation_*`, which on a refused run describe the refused candidate (`livespec-44qx`, Carrier F4b) |
+| `start-seed-cost` | the newest seeded work volume under the storage root (`pvc-*/_warm/.uv-generation`, newest mtime): `du -sb` of its `_warm/uv`; the seed's duration from the volume's own timestamps — `_warm`'s birth time (the setup script's opening `mkdir`) to the `.uv-generation` marker's mtime (written last, after the reflink copy and the directory chmod pass) | the seed's bytes exceed the warm budget bytes (`--seed-bytes-budget`, default the warm budget), or the seed took longer than 10 s (`--seed-seconds-budget`; research/005-006 measured 3 s on the 12k-file generation, ~13 s on the old 191k-file one). Read from the volume rather than the provisioner's `helper-pod-create-pvc-*` pod because the provisioner deletes that pod the moment it observes `Succeeded`, so its terminated state is gone before a sweep runs; the volume persists for the job's life. No seeded volume visible (idle pool) withholds the class rather than reporting 0 (`livespec-44qx`, Carrier F4b) |
 
 Exit 1 names every present class with its count and prints the per-class
 detail (which PVC, which pod, which event) followed by where each class is
 worked; exit 0 is a clean node; exit 2 means the scan could not read one of
-its inputs (journal, `containerd.log`, the API server) and refused to report
-a clean node it had not looked at. Report-only, with no `--clear`: nothing
+its inputs (journal, `containerd.log`, the API server) — or, since
+`livespec-kgdlte`, that a read hit its deadline and nothing else was found
+(`INCOMPLETE`, below) — and refused to report a clean node it had not
+looked at. Report-only, with no `--clear`: nothing
 here is safe to delete automatically, and the two safe remedies
 (`stale-listener` → delete the `AutoscalingListener`; the controller
 recreates it; `capacity-absent` → `systemctl start
@@ -1648,7 +1652,41 @@ runner-pod-lifecycle-streak`) and an `ESCALATION` line appears from the
 second, as in the wedge sweep. Thresholds are flags/env
 (`--window`, `--pvc-pending-seconds`, `--workflow-pending-seconds`,
 `--killpod-min`, `--containerd-log` for a fixture, `--state-file`,
-`--node-selector`).
+`--node-selector`; for the two F4b classes `--warm-last-run`,
+`--warm-budget-configmap NS/NAME`, `--warm-stale-ticks`,
+`--seed-seconds-budget`, `--seed-bytes-budget`, `--storage-root`; for the
+bounds `--request-timeout`, `--step-timeout`, `--deadline-seconds` — each
+with an `RPL_*` environment twin).
+
+**Every read is bounded, and the unit has a deadline (`livespec-kgdlte`,
+Carrier I1).** On 2026-09-06 05:55Z, under the first 64-churn-slot start
+burst, the sweep's step-4 `kubectl get pods` sat about six minutes with no
+socket open while `/readyz` answered in 2.5 s; the service had no
+`TimeoutStartSec`, so the oneshot stayed `activating` and the timer's
+cadence stopped silently until the child was killed by hand (sweeps under
+that burst had been taking 8–11 min against the 5-minute timer). Now every
+`kubectl` call carries `--request-timeout=30s` and no watch/follow form
+exists; every external read — `kubectl`, `journalctl`, the `containerd.log`
+walk, the runner-log read (one prefixed `kubectl logs -l` call for the whole
+pool, not one call per pod), `find` and `du` on the storage root — runs
+under `timeout(1)` with a 30 s per-step deadline that also shrinks to what
+is left of the unit's deadline (`TimeoutStartSec=240`, passed in as
+`RPL_DEADLINE_SECONDS`, under the 5-minute timer), so the sweep finishes and
+says what it could not read instead of being killed mid-report. The
+consequences are named, not hidden: a step that timed out or was skipped is
+listed in the report; the class it feeds has its ZERO withheld from the
+gauges (a non-zero count from a partial read is still a true reading); with
+findings the `STALL` exit stands with a `PARTIAL:` line naming the reads;
+with none the sweep ends `INCOMPLETE` and exits 2 — never `CLEAN`. **How an
+operator tells a deadline kill from a stall finding:** a finding ends the
+unit's journal with a `RUNNER-POD LIFECYCLE STALL` line and `systemctl show
+-p Result scan-runner-pod-lifecycle.service` reads `exit-code`; should
+systemd's deadline fire anyway, the script's SIGTERM trap prints one
+`KILLED: SIGTERM after Ns` line naming it as a kill (or, if even that was
+cut short, systemd's own `start operation timed out. Terminating.` is the
+last line) and `Result` reads `timeout`. Every sweep also emits its own wall
+clock as `livespec.ci_lifecycle.sweep_seconds`, so the trend toward the
+deadline is a chart rather than a surprise.
 
 **Proven live on `poweredge-xubuntu`, 2026-09-02, during a real stall.**
 Run by hand at ~18:2xZ while the earlier release waves' teardown backlog was
@@ -1695,7 +1733,11 @@ are told apart by metric name and resource attributes, never by dataset:
 
 | Gauge | Value | Read from |
 |---|---|---|
-| `livespec.ci_lifecycle.<class>` — one gauge per class, class name verbatim: `pvc-pending`, `bind-deadline`, `inotify-emfile`, `containerd-deadline`, `hook-failure`, `stale-listener`, `capacity-absent` | the count the report carries for that class. **Always emitted, 0 when clean** — an absent metric is indistinguishable from a broken emitter | the sweep's own findings |
+| `livespec.ci_lifecycle.<class>` — one gauge per class, class name verbatim: `pvc-pending`, `bind-deadline`, `inotify-emfile`, `containerd-deadline`, `hook-failure`, `stale-listener`, `capacity-absent`, `warm-cache-oversize`, `start-seed-cost` | the count the report carries for that class. **Always emitted, 0 when clean** — an absent metric is indistinguishable from a broken emitter — with two fail-closed exceptions since `livespec-kgdlte`/`livespec-44qx`: a class whose read hit its step deadline, or whose judgement lacked an input (no budget readable, no seeded volume visible), has its ZERO withheld and the reason logged; a non-zero count is sent regardless | the sweep's own findings |
+| `livespec.ci_lifecycle.pvc-gated` | Pending PVCs whose consumer pod carries `spec.schedulingGates` (Kueue holding it before admission), which `pvc-pending` excludes — a reading of Kueue's queue depth as the provisioner sees it, not a class. Withheld when the gates read or the PVC read failed | the same pod and PVC listings step 1 makes |
+| `livespec.ci_lifecycle.sweep_seconds` | this sweep's wall clock from start to the POST, as a double — every sweep; the unit's deadline is 240 s, the timer 300 s (`livespec-kgdlte`) | the sweep's own clock |
+| `livespec.ci_warm.live_generation_bytes`, `livespec.ci_warm.live_generation_files`, `livespec.ci_warm.live_generation_age_s` | the LIVE warm uv generation — every sweep, unlike the once-per-run `livespec.ci_warm.generation_*` pair below, which describes the run's candidate: size and file count from the generation's own `.warm-manifest.json`, age in seconds since its publish stamp (`<stamp>` = `%Y%m%dT%H%M%SZ`; the manifest's `published_at_epoch` as the fallback). Distinct from `livespec.ci_cache.generation_age_s{tier=uv}` (`ci-cache-gauges.sh`), which is the symlink target's mtime and which the populator touches on every verified-unchanged run — that one is the populator's liveness, this one is how old the bytes every job seeds from actually are. Each withheld when unreadable (`livespec-44qx`) | `/var/lib/rancher/k3s/storage/.warm/uv` → the generation's manifest |
+| `livespec.ci_seed.bytes`, `livespec.ci_seed.seconds` | what one job start paid for its warm seed, on the newest seeded work volume this node holds: `du -sb` of `_warm/uv` (the seed plus whatever the job has written into the cache since — the newest volume keeps that smallest), and `_warm`'s birth time to the `.uv-generation` marker's mtime. Withheld when no seeded volume is visible (idle pool), when the `du` did not complete, or when the filesystem reports no birth time (`stat %W` = 0) — never 0 (`livespec-44qx`) | the storage root's `pvc-*/_warm/` |
 | `livespec.ci_kueue.pending` | Kueue workloads waiting for admission | `ClusterQueue.status.pendingWorkloads`, summed over every ClusterQueue that covers `ci-runner.io/churn-slot` — the pool's nine queues; `phase1-proof-cq` covers `cpu`/`memory` only and is excluded |
 | `livespec.ci_kueue.admitted` | Kueue workloads admitted and not yet finished | `ClusterQueue.status.admittedWorkloads`, the same sum |
 | `livespec.ci_churn_slot.quota_sum` | `C` as the queues have it — the cohort's guaranteed churn-slot total | the sum of `nominalQuota` for `ci-runner.io/churn-slot` over the same queues; 32 at the 2026-09-02 interim |
@@ -1733,9 +1775,10 @@ Knobs: `--no-emit` (or `RPL_NO_EMIT=1`) skips the POST entirely — for a
 hand run on a node whose collector you do not want to feed, or a fixture run
 off the host; `--otlp-endpoint URL`, `RPL_OTLP_ENDPOINT`, or the heartbeat
 family's host-wide `CI_RUNNER_HEARTBEAT_OTLP` override the endpoint, in that
-order of precedence. The service, timer and installer are unchanged: the
-unit already runs as root with the cluster kubeconfig, `curl` is already on
-the host for the heartbeat, and the default endpoint is loopback.
+order of precedence. The unit runs as root with the cluster kubeconfig,
+`curl` is already on the host for the heartbeat, and the default endpoint is
+loopback; the only unit change since is the `TimeoutStartSec=240` deadline
+and its `RPL_DEADLINE_SECONDS` twin (`livespec-kgdlte`, above).
 
 **Joining the disk rows to the cache tiers.** The collector's
 `system.disk.*` rows (`operations`, `weighted_io_time`, `io`, every 30 s)
@@ -1798,6 +1841,24 @@ dataset, every one filtered to `host.name = poweredge-xubuntu`, granularity
    `budget_bytes` is the headroom; the first rebuild after `livespec-41w4`
    shipped reads `trimmed_bytes` ≈ 1,388 MB − the new size; `refused` or
    `repos_failed` above 0 is the alarm the Job's exit code also carries.
+5. **What a job start pays, and whether the live generation is within
+   budget** (`livespec-44qx`; every sweep, granularity 300 s):
+   `MAX(livespec.ci_seed.seconds)`, `MAX(livespec.ci_seed.bytes)`,
+   `MAX(livespec.ci_warm.live_generation_bytes)` against
+   `MAX(livespec.ci_warm.budget_bytes)` (the once-per-run line; carry it
+   forward), `MAX(livespec.ci_warm.live_generation_age_s)`, and the two
+   class gauges `MAX(livespec.ci_lifecycle.warm-cache-oversize)` /
+   `MAX(livespec.ci_lifecycle.start-seed-cost)`. `seed.seconds` climbing
+   with `live_generation_files` is the seed cost scaling with the file
+   count (research/005: the from-empty build is the lever);
+   `live_generation_age_s` climbing past 1800 s while
+   `livespec.ci_warm.run_epoch` rows keep arriving is a populator that runs
+   and finds nothing to rebuild (healthy); climbing with NO new run rows is
+   the stalled populator `warm-cache-oversize` names. Beside them,
+   `MAX(livespec.ci_lifecycle.sweep_seconds)` and
+   `MAX(livespec.ci_lifecycle.pvc-gated)` (`livespec-kgdlte`): the sweep's
+   own cost against its 240 s deadline, and Kueue's held pods as the
+   provisioner sees them.
 
 The question the three answer together: at what workflow-pod concurrency
 does the array's queue time per operation climb, and do the lifecycle

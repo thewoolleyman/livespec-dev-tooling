@@ -29,12 +29,20 @@
 # gap this scan closes: it names the class, with the count, in the journal,
 # every five minutes, so the condition is a reading instead of a diagnosis.
 #
-# SEVEN CLASSES, each read from the node-side observable that actually PERSISTS
+# NINE CLASSES, each read from the node-side observable that actually PERSISTS
 # long enough for a five-minute sweep to see it:
 #
 #   pvc-pending          a PVC in the runners namespace Pending longer than
 #                        PVC_PENDING_SECONDS — the provisioner is behind
-#                        (2026-09-01: Pending PVCs 38 -> 57).
+#                        (2026-09-01: Pending PVCs 38 -> 57). A PVC whose
+#                        consumer pod carries spec.schedulingGates (Kueue
+#                        holding the runner pod before admission) is NOT
+#                        counted: under WaitForFirstConsumer its claim is
+#                        Pending by design until the pod is released, so it
+#                        says nothing about the provisioner (2026-09-06:
+#                        10 gated pods' claims among 33 Pending). Those are
+#                        counted separately and emitted as the
+#                        livespec.ci_lifecycle.pvc-gated gauge.
 #   bind-deadline        kube-scheduler `binding volumes: context deadline
 #                        exceeded` lines in the k3s journal inside the window
 #                        (2026-09-01: 94 in 20 minutes).
@@ -72,6 +80,57 @@
 #                        unit unrun; converge assertion + timer fallback
 #                        livespec-kgl3). Remedy the report names:
 #                        `systemctl start reapply-node-extended-resource.service`.
+#   warm-cache-oversize  the LIVE warm uv cache generation (the one every new
+#                        work volume is seeded from, ../warm-cache/) is over
+#                        its budget on either axis — bytes or files, the
+#                        warm-cache-budget ConfigMap's numbers as last-run.json
+#                        records them — or the populator is STALLED: its last
+#                        run finished more than WARM_STALE_TICKS sweep windows
+#                        ago (12 x 5 min = 1 h, two missed 30-minute
+#                        schedules). Over-budget is read from the live
+#                        generation's own manifest, NOT from last-run.json's
+#                        generation_bytes: on a refused run those describe the
+#                        refused candidate, and the live generation is the
+#                        previous one. A stalled populator means every job
+#                        seeds from an aging generation and the refusal path
+#                        is no longer being exercised (livespec-44qx, F4b).
+#   start-seed-cost      what one job start actually paid for its warm seed:
+#                        on the NEWEST seeded work volume this node holds, the
+#                        seed's real size (du -sb of _warm/uv) against the
+#                        warm budget, and the seed's duration against
+#                        SEED_SECONDS_BUDGET. The duration is read from the
+#                        volume itself — the birth time of _warm (the setup
+#                        script's mkdir, first thing before the reflink copy)
+#                        to the mtime of _warm/.uv-generation (written last,
+#                        after the copy and the directory chmod pass) —
+#                        because the provisioner deletes its helper pod the
+#                        moment it observes Succeeded, so the pod's terminated
+#                        state is gone before a sweep can read it, while the
+#                        volume persists for the job's life. No seeded volume
+#                        visible (idle pool) OMITS the class rather than
+#                        reporting 0 (livespec-44qx, F4b; research/005-006 of
+#                        the plan measured 3 s on the 12k-file generation).
+#
+# EVERY READ IS BOUNDED (livespec-kgdlte, I1). On 2026-09-06 05:55Z, under the
+# first 64-churn-slot start burst, the sweep's step-4 `kubectl get pods` sat
+# for six minutes with no open socket while /readyz answered in 2.5 s; the
+# unit had no TimeoutStartSec, so the timer's cadence stopped silently until
+# the child was killed by hand. Now: every kubectl call carries
+# --request-timeout (KUBECTL_REQUEST_TIMEOUT) and NO watch/follow form exists;
+# every external read — kubectl, journalctl, the containerd.log walk, the
+# runner-log read, du and find on the storage root — runs under timeout(1)
+# with a per-step deadline (STEP_TIMEOUT) that also shrinks to whatever is
+# left of the unit's deadline (RPL_DEADLINE_SECONDS, the .service's
+# TimeoutStartSec=240, under the 5-minute timer), so the sweep finishes and
+# says what it could not read instead of being killed mid-report. A step that
+# hits its deadline is recorded; the class it feeds is then OMITTED from the
+# gauges when its count is 0 (a false zero) and the sweep exits 2 rather than
+# CLEAN when nothing else was found (a partial read is not a reading). Should
+# systemd's deadline fire anyway, the SIGTERM trap prints one line naming it
+# as a KILL, not a finding, and `systemctl show -p Result` reads `timeout`
+# rather than `exit-code`. The sweep's own wall clock is emitted as
+# livespec.ci_lifecycle.sweep_seconds so the trend is visible before the
+# deadline is.
 #
 # WHY THESE OBSERVABLES AND NOT THE JOB LOG. The hook-failure string is
 # written by the runner, which exits when its job fails, so the pod that
@@ -117,17 +176,19 @@
 # journal. See "OTLP EMISSION" at the end of the evaluation (livespec-vwzv).
 #
 # Requires: kubectl + KUBECONFIG for the k3s cluster, journalctl with access
-# to the k3s unit's journal, and read access to containerd.log (root, on the
-# live host — the service runs as root, like the wedge sweep). curl for the
-# emission (its absence is logged, never fatal).
+# to the k3s unit's journal, read access to containerd.log and to the
+# provisioner's storage root (root, on the live host — the service runs as
+# root, like the wedge sweep), timeout(1), python3 (the JSON reads), GNU
+# find (-printf). curl for the emission (its absence is logged, never fatal).
 set -euo pipefail
 
-USAGE="usage: scan-runner-pod-lifecycle.sh [--window DURATION] [--pvc-pending-seconds N] [--workflow-pending-seconds N] [--killpod-min N] [--containerd-log PATH] [--state-file PATH] [--escalate-after N] [--namespace NS] [--systems-namespace NS] [--node-selector LABEL] [--otlp-endpoint URL] [--no-emit]
+USAGE="usage: scan-runner-pod-lifecycle.sh [--window DURATION] [--pvc-pending-seconds N] [--workflow-pending-seconds N] [--killpod-min N] [--containerd-log PATH] [--state-file PATH] [--escalate-after N] [--namespace NS] [--systems-namespace NS] [--node-selector LABEL] [--otlp-endpoint URL] [--no-emit] [--warm-last-run PATH] [--warm-budget-configmap NS/NAME] [--warm-stale-ticks N] [--seed-seconds-budget N] [--seed-bytes-budget N] [--storage-root PATH] [--request-timeout DURATION] [--step-timeout N] [--deadline-seconds N]
   DURATION is <N>s, <N>m or <N>h. REPORT-ONLY: prints every lifecycle-stall
   class found on the node with its count and exits 1 if any; exits 0 on a
-  clean node; exits 2 when it cannot read one of its inputs. Every sweep also
-  POSTs its readings as OTLP gauges to the host collector, best-effort;
-  --no-emit (or RPL_NO_EMIT=1) skips that."
+  clean node; exits 2 when it cannot read one of its inputs, or when a read
+  hit its deadline and nothing else was found. Every sweep also POSTs its
+  readings as OTLP gauges to the host collector, best-effort; --no-emit (or
+  RPL_NO_EMIT=1) skips that."
 
 NAMESPACE="${RPL_NAMESPACE:-arc-runners}"
 SYSTEMS_NAMESPACE="${RPL_SYSTEMS_NAMESPACE:-arc-systems}"
@@ -163,6 +224,34 @@ NO_EMIT="${RPL_NO_EMIT:-0}"
 # "WARM-CACHE BUILD GAUGES" under the OTLP emission.
 WARM_LAST_RUN="${RPL_WARM_LAST_RUN:-/var/lib/rancher/k3s/storage/.warm/last-run.json}"
 WARM_STATE_FILE="${RPL_WARM_STATE_FILE:-/var/lib/ci-runner-k3s/warm-cache-last-emitted-run}"
+# The budget's second home (../warm-cache/warm-cache-cronjob.yaml), read only
+# when last-run.json does not carry budget_bytes/budget_files: `<ns>/<name>`
+# with data keys `bytes` and `files`.
+WARM_BUDGET_CONFIGMAP="${RPL_WARM_BUDGET_CONFIGMAP:-ci-warm-cache/warm-cache-budget}"
+# The populator stalled when its last run finished more than this many sweep
+# windows ago: 12 x 5 min = 1 h, two missed 30-minute schedules (the same
+# 3600 s the ci-cache-warm-generation-stale trigger uses; this one reads the
+# RUN's age, that one the generation's last-verified mtime).
+WARM_STALE_TICKS="${RPL_WARM_STALE_TICKS:-12}"
+# start-seed-cost budgets. Duration: research/005-006 measured the reflink
+# seed at 3 s on the 12k-file generation and ~13 s on the old 191k-file one;
+# 10 s is under the provisioner's 120 s helper ceiling by an order of
+# magnitude and above the measured value by three. Size: empty means "the
+# warm budget bytes" (a seed cannot legitimately exceed the generation it
+# copies; the same number, so a chart draws one line).
+SEED_SECONDS_BUDGET="${RPL_SEED_SECONDS_BUDGET:-10}"
+SEED_BYTES_BUDGET="${RPL_SEED_BYTES_BUDGET:-}"
+# Where the provisioner's work volumes live (`pvc-<uuid>_<ns>_<name>/`), the
+# parent of the warm root; empty means "derive it from WARM_LAST_RUN".
+STORAGE_ROOT="${RPL_STORAGE_ROOT:-}"
+# Bounds (header, "EVERY READ IS BOUNDED"): the per-request timeout kubectl
+# applies to each API call; the per-step deadline every external read runs
+# under (timeout(1)); and the unit's own deadline, which the .service passes
+# in beside its TimeoutStartSec so the step deadline can shrink to what is
+# left of it. Empty deadline means unbounded (a hand run).
+KUBECTL_REQUEST_TIMEOUT="${RPL_KUBECTL_REQUEST_TIMEOUT:-30s}"
+STEP_TIMEOUT="${RPL_STEP_TIMEOUT:-30}"
+DEADLINE_SECONDS="${RPL_DEADLINE_SECONDS:-}"
 
 HOOK_SIGNATURE='Executing the custom container implementation failed'
 BIND_SIGNATURE='binding volumes: context deadline exceeded'
@@ -183,14 +272,31 @@ while [ $# -gt 0 ]; do
     --node-selector)            NODE_SELECTOR="${2:?$USAGE}"; shift 2 ;;
     --otlp-endpoint)            OTLP_ENDPOINT="${2:?$USAGE}"; shift 2 ;;
     --no-emit)                  NO_EMIT=1; shift ;;
+    --warm-last-run)            WARM_LAST_RUN="${2:?$USAGE}"; shift 2 ;;
+    --warm-budget-configmap)    WARM_BUDGET_CONFIGMAP="${2:?$USAGE}"; shift 2 ;;
+    --warm-stale-ticks)         WARM_STALE_TICKS="${2:?$USAGE}"; shift 2 ;;
+    --seed-seconds-budget)      SEED_SECONDS_BUDGET="${2:?$USAGE}"; shift 2 ;;
+    --seed-bytes-budget)        SEED_BYTES_BUDGET="${2:?$USAGE}"; shift 2 ;;
+    --storage-root)             STORAGE_ROOT="${2:?$USAGE}"; shift 2 ;;
+    --request-timeout)          KUBECTL_REQUEST_TIMEOUT="${2:?$USAGE}"; shift 2 ;;
+    --step-timeout)             STEP_TIMEOUT="${2:?$USAGE}"; shift 2 ;;
+    --deadline-seconds)         DEADLINE_SECONDS="${2:?$USAGE}"; shift 2 ;;
     -h|--help)                  echo "$USAGE"; exit 0 ;;
     *)                          echo "FATAL: unknown argument '$1'"$'\n'"$USAGE" >&2; exit 2 ;;
   esac
 done
 
-for v in PVC_PENDING_SECONDS WORKFLOW_PENDING_SECONDS KILLPOD_MIN ESCALATE_AFTER; do
+for v in PVC_PENDING_SECONDS WORKFLOW_PENDING_SECONDS KILLPOD_MIN ESCALATE_AFTER WARM_STALE_TICKS SEED_SECONDS_BUDGET STEP_TIMEOUT; do
   [[ "${!v}" =~ ^[0-9]+$ ]] || { echo "FATAL: ${v} must be a non-negative integer, got '${!v}'" >&2; exit 2; }
 done
+for v in SEED_BYTES_BUDGET DEADLINE_SECONDS; do
+  [ -z "${!v}" ] || [[ "${!v}" =~ ^[0-9]+$ ]] || { echo "FATAL: ${v} must be empty or a non-negative integer, got '${!v}'" >&2; exit 2; }
+done
+[ "$STEP_TIMEOUT" -gt 0 ] || { echo "FATAL: STEP_TIMEOUT must be positive" >&2; exit 2; }
+[[ "$KUBECTL_REQUEST_TIMEOUT" =~ ^[0-9]+(s|m|h)$ ]] || { echo "FATAL: --request-timeout must be <N>s, <N>m or <N>h, got '${KUBECTL_REQUEST_TIMEOUT}'" >&2; exit 2; }
+case "$WARM_BUDGET_CONFIGMAP" in */*) ;; *) echo "FATAL: --warm-budget-configmap must be <namespace>/<name>, got '${WARM_BUDGET_CONFIGMAP}'" >&2; exit 2 ;; esac
+[ -n "$STORAGE_ROOT" ] || STORAGE_ROOT="$(dirname "$(dirname "$WARM_LAST_RUN")")"
+WARM_ROOT="$(dirname "$WARM_LAST_RUN")"
 case "$NO_EMIT" in 0|1) ;; *) echo "FATAL: RPL_NO_EMIT must be 0 or 1, got '${NO_EMIT}'" >&2; exit 2 ;; esac
 case "$WINDOW" in
   *s) WINDOW_SECONDS="${WINDOW%s}" ;;
@@ -200,16 +306,90 @@ case "$WINDOW" in
 esac
 [[ "$WINDOW_SECONDS" =~ ^[0-9]+$ ]] || { echo "FATAL: --window must be <N>s, <N>m or <N>h, got '${WINDOW}'" >&2; exit 2; }
 
+log() { printf '\n== %s ==\n' "$*"; }
+
+# ---------------------------------------------------------------------------
+# BOUNDED READS (header, "EVERY READ IS BOUNDED"). `bounded STEP cmd...` runs
+# cmd under timeout(1) with the smaller of STEP_TIMEOUT and what is left of
+# the unit's deadline (minus DEADLINE_RESERVE for the report and the POST);
+# when nothing is left the step is not started at all. A step that timed out
+# or was skipped is recorded by name in DEADLINE_FILE — a file, not a
+# variable, because most reads run inside a process substitution whose shell
+# cannot set the caller's variables — and the exit status is passed through
+# (124 = timed out; 125 here = skipped), so a caller's `|| true` keeps the
+# sweep going as before. STEP names the class the read feeds (or `emit` /
+# `precheck`), which is how the emitter later knows which zero is false.
+# `kc STEP args...` is kubectl with the per-request timeout, always through
+# `bounded`; no kubectl call in this file may bypass it, and none may --watch
+# or --follow.
+SWEEP_START_NS="$(date +%s%N)"
+DEADLINE_RESERVE=15
+# fd 3 is the sweep's real stderr: a deadline message must reach the journal
+# even from a call site that silences its read's own stderr with 2>/dev/null.
+exec 3>&2
+DEADLINE_FILE="$(mktemp)"
+trap 'rm -f "$DEADLINE_FILE"' EXIT
+# GNU timeout exits 124 on expiry with or without `-k N` (TERM, then KILL);
+# uutils' timeout (Ubuntu 25.10+ coreutils) exits 125 on expiry when `-k` is
+# given — observed on 0.2.2 — which this sweep would read as "did not time
+# out". Probe with a REAL expiry (0.2 s) and use the kill-after form only
+# where expiry still reads 124; without it a child that ignores TERM is left
+# to the unit's deadline.
+if timeout -k 0.2 0.2 sleep 2 >/dev/null 2>&1; [ $? -eq 124 ]; then TIMEOUT_KILL=(-k 5); else TIMEOUT_KILL=(); fi
+sweep_elapsed_s() { printf '%s' "$(( ($(date +%s%N) - SWEEP_START_NS) / 1000000000 ))"; }
+bounded() {
+  local step="$1" limit="$STEP_TIMEOUT" left rc
+  shift
+  if [ -n "$DEADLINE_SECONDS" ]; then
+    left=$(( DEADLINE_SECONDS - $(sweep_elapsed_s) - DEADLINE_RESERVE ))
+    if [ "$left" -lt 1 ]; then
+      echo "  ${step}: SKIPPED — ${DEADLINE_SECONDS}s deadline has $(( left + DEADLINE_RESERVE ))s left, reserved for the report" >&3
+      printf '%s skipped\n' "$step" >> "$DEADLINE_FILE"
+      return 125
+    fi
+    [ "$left" -lt "$limit" ] && limit="$left"
+  fi
+  timeout "${TIMEOUT_KILL[@]}" "$limit" "$@"
+  rc=$?
+  if [ "$rc" -eq 124 ]; then
+    echo "  ${step}: read hit its ${limit}s step deadline ($*)" >&3
+    printf '%s timeout\n' "$step" >> "$DEADLINE_FILE"
+  fi
+  return "$rc"
+}
+kc() { local step="$1"; shift; bounded "$step" kubectl --request-timeout="$KUBECTL_REQUEST_TIMEOUT" "$@"; }
+# Every step recorded in DEADLINE_FILE, space-separated `<step>:<how>`,
+# deduplicated (a class with two reads records twice), or empty.
+deadline_hits() { [ -s "$DEADLINE_FILE" ] && awk '!seen[$0]++ {printf "%s%s:%s", (n++?" ":""), $1, $2}' "$DEADLINE_FILE"; printf ''; }
+deadline_hit_for() { grep -q "^$1 " "$DEADLINE_FILE" 2>/dev/null; }
+
+# systemd's TimeoutStartSec (or a `systemctl stop`) arrives as SIGTERM to the
+# whole cgroup: the child read dies with it, then this trap runs. One line
+# that names the kill as a kill — the streak, the findings so far and the
+# gauges are NOT written, because a half-swept node is not a reading.
+# shellcheck disable=SC2329  # invoked by the trap below
+on_term() {
+  # shellcheck disable=SC2016  # the backticks are operator-facing text
+  printf '\n== KILLED: SIGTERM after %ss (the unit'"'"'s TimeoutStartSec=%s deadline, or a stop). NOT a stall finding: the sweep did not finish; `systemctl show -p Result scan-runner-pod-lifecycle.service` reads `timeout` for the deadline. Steps recorded before the kill: %s ==\n' "$(sweep_elapsed_s)" "${DEADLINE_SECONDS:-unset}" "$(deadline_hits)"
+  exit 2
+}
+trap on_term TERM INT
+
+if [ -n "$DEADLINE_SECONDS" ]; then
+  echo "sweep start: deadline ${DEADLINE_SECONDS}s (the unit's TimeoutStartSec); per-step ${STEP_TIMEOUT}s, kubectl --request-timeout=${KUBECTL_REQUEST_TIMEOUT}. A run that ends without a CLEAN, STALL, INCOMPLETE or KILLED line was killed by systemd — read Result=timeout, not a finding."
+else
+  echo "sweep start: no unit deadline (hand run); per-step ${STEP_TIMEOUT}s, kubectl --request-timeout=${KUBECTL_REQUEST_TIMEOUT}"
+fi
+
 # Preconditions, fail-closed: a scan that cannot read an input must not report
 # a clean node it did not look at.
 command -v kubectl >/dev/null || { echo "FATAL: kubectl not found on PATH" >&2; exit 2; }
 : "${KUBECONFIG:?set KUBECONFIG to the k3s cluster kubeconfig (see ../../provision-k3s.sh)}"
 command -v journalctl >/dev/null || { echo "FATAL: journalctl not found on PATH" >&2; exit 2; }
-journalctl -u k3s -n 1 -q --no-pager >/dev/null 2>&1 || { echo "FATAL: cannot read the k3s unit's journal (run as root or a member of systemd-journal)" >&2; exit 2; }
+command -v timeout >/dev/null || { echo "FATAL: timeout not found on PATH (coreutils)" >&2; exit 2; }
+bounded precheck journalctl -u k3s -n 1 -q --no-pager >/dev/null 2>&1 || { echo "FATAL: cannot read the k3s unit's journal (run as root or a member of systemd-journal)" >&2; exit 2; }
 [ -r "$CONTAINERD_LOG" ] || { echo "FATAL: cannot read ${CONTAINERD_LOG} (run as root, or pass --containerd-log)" >&2; exit 2; }
-kubectl get --raw /readyz >/dev/null 2>&1 || { echo "FATAL: the API server is not answering /readyz via ${KUBECONFIG}" >&2; exit 2; }
-
-log() { printf '\n== %s ==\n' "$*"; }
+kc precheck get --raw /readyz >/dev/null 2>&1 || { echo "FATAL: the API server is not answering /readyz via ${KUBECONFIG}" >&2; exit 2; }
 
 NOW_EPOCH="$(date -u +%s)"
 CUTOFF_EPOCH=$(( NOW_EPOCH - WINDOW_SECONDS ))
@@ -247,21 +427,37 @@ add_detail()  { DETAIL="${DETAIL}${1}
 "; }
 
 # ---------------------------------------------------------------------------
-log "1. pvc-pending: PVCs in ${NAMESPACE} Pending > ${PVC_PENDING_SECONDS}s"
-pvc_hits=0
+log "1. pvc-pending: PVCs in ${NAMESPACE} Pending > ${PVC_PENDING_SECONDS}s (claims of scheduling-gated pods excluded)"
+# The claims of pods Kueue is still holding (spec.schedulingGates non-empty):
+# one list of every pod's gates and claim names, folded into a set. When that
+# read fails the set is empty and gated claims are counted as pending — the
+# pre-2026-09-06 over-count, named as such, never a silent under-count — and
+# the pvc-gated gauge is omitted.
+gated_claims=" "; gated_read=1
+if gate_rows="$(kc pvc-pending -n "$NAMESPACE" get pods -o jsonpath='{range .items[*]}{.metadata.name}|{range .spec.schedulingGates[*]}{.name}{" "}{end}|{range .spec.volumes[*]}{.persistentVolumeClaim.claimName}{" "}{end}{"\n"}{end}' 2>&1)"; then
+  while IFS='|' read -r name gates claims; do
+    [ -n "$name" ] && [ -n "${gates// /}" ] || continue
+    for claim in $claims; do gated_claims="${gated_claims}${claim} "; done
+  done <<< "$gate_rows"
+else
+  gated_read=0
+  echo "  could not read pods' schedulingGates ($(printf '%s' "$gate_rows" | head -1)); gated claims will be counted as pending; livespec.ci_lifecycle.pvc-gated omitted" >&2
+fi
+pvc_hits=0; pvc_gated=0
 while IFS='|' read -r name created; do
   [ -n "$name" ] || continue
+  case "$gated_claims" in *" ${name} "*) pvc_gated=$((pvc_gated+1)); continue ;; esac
   age="$(age_seconds "$created")"
   if [ "$age" != unknown ] && [ "$age" -ge "$PVC_PENDING_SECONDS" ]; then
     pvc_hits=$((pvc_hits+1)); add_detail "    pvc=${name} pending_for=${age}s"
   fi
-done < <(kubectl -n "$NAMESPACE" get pvc -o jsonpath='{range .items[?(@.status.phase=="Pending")]}{.metadata.name}|{.metadata.creationTimestamp}{"\n"}{end}' 2>/dev/null || true)
-echo "  ${pvc_hits} PVC(s) Pending longer than ${PVC_PENDING_SECONDS}s"
+done < <(kc pvc-pending -n "$NAMESPACE" get pvc -o jsonpath='{range .items[?(@.status.phase=="Pending")]}{.metadata.name}|{.metadata.creationTimestamp}{"\n"}{end}' 2>/dev/null || true)
+echo "  ${pvc_hits} PVC(s) Pending longer than ${PVC_PENDING_SECONDS}s; ${pvc_gated} Pending claim(s) of scheduling-gated pods excluded"
 [ "$pvc_hits" -gt 0 ] && add_finding pvc-pending "$pvc_hits"
 
 # ---------------------------------------------------------------------------
 log "2. bind-deadline: scheduler volume-bind expiries in the k3s journal, last ${WINDOW}"
-bind_hits="$(journalctl -u k3s --since "@${CUTOFF_EPOCH}" --no-pager -q 2>/dev/null | grep -c "$BIND_SIGNATURE" || true)"
+bind_hits="$(bounded bind-deadline journalctl -u k3s --since "@${CUTOFF_EPOCH}" --no-pager -q 2>/dev/null | grep -c "$BIND_SIGNATURE" || true)"
 echo "  ${bind_hits} '${BIND_SIGNATURE}' line(s)"
 [ "$bind_hits" -gt 0 ] && add_finding bind-deadline "$bind_hits"
 
@@ -274,7 +470,7 @@ log "3. inotify-emfile: '${EMFILE_SIGNATURE}' in ${CONTAINERD_LOG}, last ${WINDO
 # so tac's status is absorbed — otherwise `pipefail` + `set -e` would abort
 # the whole sweep on any log longer than the window (it did, live, on a 33 MB
 # file on 2026-09-02).
-emfile_hits="$({ tac "$CONTAINERD_LOG" 2>/dev/null || true; } | awk -v cut="$CUTOFF_ISO" -v sig="$EMFILE_SIGNATURE" '
+emfile_hits="$({ bounded inotify-emfile tac "$CONTAINERD_LOG" 2>/dev/null || true; } | awk -v cut="$CUTOFF_ISO" -v sig="$EMFILE_SIGNATURE" '
   {
     if (match($0, /time="[^"]+"/)) {
       t = substr($0, RSTART + 6, 19)
@@ -292,7 +488,7 @@ starterror_hits=0
 while IFS='|' read -r name reasons; do
   [ -n "$name" ] || continue
   case " $reasons " in *" StartError "*) starterror_hits=$((starterror_hits+1)); add_detail "    pod=${name} container StartError";; esac
-done < <(kubectl -n "$NAMESPACE" get pods -o jsonpath='{range .items[*]}{.metadata.name}|{range .status.containerStatuses[*]}{.state.terminated.reason}{" "}{end}{"\n"}{end}' 2>/dev/null || true)
+done < <(kc containerd-deadline -n "$NAMESPACE" get pods -o jsonpath='{range .items[*]}{.metadata.name}|{range .status.containerStatuses[*]}{.state.terminated.reason}{" "}{end}{"\n"}{end}' 2>/dev/null || true)
 create_hits=0; killpod_hits=0
 while IFS='|' read -r last_ts event_ts reason object message; do
   [ -n "$reason" ] || continue
@@ -306,7 +502,7 @@ while IFS='|' read -r last_ts event_ts reason object message; do
       fi ;;
     FailedKillPod) killpod_hits=$((killpod_hits+1)) ;;
   esac
-done < <(kubectl -n "$NAMESPACE" get events -o jsonpath='{range .items[*]}{.lastTimestamp}|{.eventTime}|{.reason}|{.involvedObject.name}|{.message}{"\n"}{end}' 2>/dev/null || true)
+done < <(kc containerd-deadline -n "$NAMESPACE" get events -o jsonpath='{range .items[*]}{.lastTimestamp}|{.eventTime}|{.reason}|{.involvedObject.name}|{.message}{"\n"}{end}' 2>/dev/null || true)
 echo "  ${starterror_hits} StartError container(s); ${create_hits} create-path deadline event(s); ${killpod_hits} FailedKillPod event(s) (burst threshold ${KILLPOD_MIN})"
 if [ "$starterror_hits" -gt 0 ] || [ "$create_hits" -gt 0 ] || [ "$killpod_hits" -ge "$KILLPOD_MIN" ]; then
   add_finding containerd-deadline "$(( starterror_hits + create_hits + killpod_hits ))"
@@ -316,12 +512,15 @@ fi
 # ---------------------------------------------------------------------------
 log "5. hook-failure: '${HOOK_SIGNATURE}' in runner logs, last ${WINDOW}; -workflow pods Pending > ${WORKFLOW_PENDING_SECONDS}s"
 hook_hits=0
-for pod in $(kubectl -n "$NAMESPACE" get pods -l app.kubernetes.io/component=runner -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || true); do
-  # A pod can vanish between the listing and the read; that is churn, not error.
-  if kubectl -n "$NAMESPACE" logs "$pod" -c runner --since="$WINDOW" 2>/dev/null | grep -q "$HOOK_SIGNATURE"; then
-    hook_hits=$((hook_hits+1)); add_detail "    runner=${pod} logged the ARC hook failure"
-  fi
-done
+# ONE bounded read for every runner pod's window, not one call per pod: a
+# per-pod loop over a 64-slot burst is 64 request timeouts of exposure, which
+# no step deadline can hold. `--prefix` tags each line `[pod/<name>/runner]`
+# so the count is still per pod; `--ignore-errors` skips a pod that vanished
+# between the listing and the read (churn, not error). No --follow, ever.
+while IFS= read -r pod; do
+  [ -n "$pod" ] || continue
+  hook_hits=$((hook_hits+1)); add_detail "    runner=${pod} logged the ARC hook failure"
+done < <(kc hook-failure -n "$NAMESPACE" logs -l app.kubernetes.io/component=runner -c runner --since="$WINDOW" --prefix --ignore-errors 2>/dev/null | grep -F "$HOOK_SIGNATURE" | sed -n 's|^\[pod/\([^/]*\)/[^]]*\].*|\1|p' | sort -u || true)
 wf_hits=0
 while IFS='|' read -r name created; do
   [ -n "$name" ] || continue
@@ -330,7 +529,7 @@ while IFS='|' read -r name created; do
   if [ "$age" != unknown ] && [ "$age" -ge "$WORKFLOW_PENDING_SECONDS" ]; then
     wf_hits=$((wf_hits+1)); add_detail "    workflow-pod=${name} pending_for=${age}s"
   fi
-done < <(kubectl -n "$NAMESPACE" get pods --field-selector=status.phase=Pending -o jsonpath='{range .items[*]}{.metadata.name}|{.metadata.creationTimestamp}{"\n"}{end}' 2>/dev/null || true)
+done < <(kc hook-failure -n "$NAMESPACE" get pods --field-selector=status.phase=Pending -o jsonpath='{range .items[*]}{.metadata.name}|{.metadata.creationTimestamp}{"\n"}{end}' 2>/dev/null || true)
 echo "  ${hook_hits} runner log(s) with the hook failure; ${wf_hits} workflow pod(s) Pending longer than ${WORKFLOW_PENDING_SECONDS}s"
 [ $(( hook_hits + wf_hits )) -gt 0 ] && add_finding hook-failure "$(( hook_hits + wf_hits ))"
 
@@ -343,15 +542,15 @@ while IFS='|' read -r name phase waiting; do
   if [ "$phase" != Running ] || [ -n "${waiting// /}" ]; then
     listener_hits=$((listener_hits+1)); add_detail "    listener-pod=${name} phase=${phase} waiting=${waiting:-none}"
   fi
-done < <(kubectl -n "$SYSTEMS_NAMESPACE" get pods -o jsonpath='{range .items[*]}{.metadata.name}|{.status.phase}|{range .status.containerStatuses[*]}{.state.waiting.reason}{" "}{end}{"\n"}{end}' 2>/dev/null || true)
-ers=" $(kubectl -n "$NAMESPACE" get ephemeralrunnerset -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || true) "
+done < <(kc stale-listener -n "$SYSTEMS_NAMESPACE" get pods -o jsonpath='{range .items[*]}{.metadata.name}|{.status.phase}|{range .status.containerStatuses[*]}{.state.waiting.reason}{" "}{end}{"\n"}{end}' 2>/dev/null || true)
+ers=" $(kc stale-listener -n "$NAMESPACE" get ephemeralrunnerset -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || true) "
 stale_hits=0
 while IFS='|' read -r name ref; do
   [ -n "$name" ] || continue
   case "$ers" in *" ${ref} "*) ;; *)
     stale_hits=$((stale_hits+1)); add_detail "    AutoscalingListener=${name} references EphemeralRunnerSet=${ref:-<empty>} which does not exist (delete the listener; the controller recreates it)";;
   esac
-done < <(kubectl -n "$SYSTEMS_NAMESPACE" get autoscalinglistener -o jsonpath='{range .items[*]}{.metadata.name}|{.spec.ephemeralRunnerSetName}{"\n"}{end}' 2>/dev/null || true)
+done < <(kc stale-listener -n "$SYSTEMS_NAMESPACE" get autoscalinglistener -o jsonpath='{range .items[*]}{.metadata.name}|{.spec.ephemeralRunnerSetName}{"\n"}{end}' 2>/dev/null || true)
 echo "  ${listener_hits} listener pod(s) not Running/healthy; ${stale_hits} stale EphemeralRunnerSet reference(s)"
 [ $(( listener_hits + stale_hits )) -gt 0 ] && add_finding stale-listener "$(( listener_hits + stale_hits ))"
 
@@ -373,7 +572,7 @@ while IFS='|' read -r name have; do
   else
     cap_missing=$((cap_missing+1)); add_detail "    node=${name} allocatable ci-runner.io/churn-slot=${have:-<absent>} (systemctl start reapply-node-extended-resource.service)"
   fi
-done < <(kubectl get nodes -l "$NODE_SELECTOR" -o jsonpath='{range .items[*]}{.metadata.name}|{.status.allocatable.ci-runner\.io/churn-slot}{"\n"}{end}' 2>/dev/null || true)
+done < <(kc capacity-absent get nodes -l "$NODE_SELECTOR" -o jsonpath='{range .items[*]}{.metadata.name}|{.status.allocatable.ci-runner\.io/churn-slot}{"\n"}{end}' 2>/dev/null || true)
 # Quota side: every ClusterQueue's `<resource>=<nominalQuota>` tokens, summed
 # over the churn-slot ones (the phase-1 proof queue is cpu/memory and adds
 # nothing). The values are plain integers by derivation (../kueue/DERIVATION.md).
@@ -388,13 +587,159 @@ while IFS='|' read -r name tokens; do
         quota_sum=$((quota_sum+q)); quota_queues=$((quota_queues+1)) ;;
     esac
   done
-done < <(kubectl get clusterqueue -o jsonpath='{range .items[*]}{.metadata.name}|{range .spec.resourceGroups[*]}{range .flavors[*]}{range .resources[*]}{.name}={.nominalQuota}{" "}{end}{end}{end}{"\n"}{end}' 2>/dev/null || true)
+done < <(kc capacity-absent get clusterqueue -o jsonpath='{range .items[*]}{.metadata.name}|{range .spec.resourceGroups[*]}{range .flavors[*]}{range .resources[*]}{.name}={.nominalQuota}{" "}{end}{end}{end}{"\n"}{end}' 2>/dev/null || true)
 capacity_hits=$cap_missing
 if [ "$quota_sum" -gt "$cap_total" ]; then
   capacity_hits=$((capacity_hits+1)); add_detail "    ClusterQueue nominalQuota sum=${quota_sum} over ${quota_queues} queue(s) exceeds node allocatable total=${cap_total} (shortfall $((quota_sum - cap_total)))"
 fi
 echo "  ${cap_total} allocatable across ${cap_nodes} node(s), ${cap_missing} without the resource; nominalQuota sum ${quota_sum} across ${quota_queues} queue(s)"
 [ "$capacity_hits" -gt 0 ] && add_finding capacity-absent "$capacity_hits"
+
+# Classes whose ZERO must not be emitted because an input the judgement needs
+# was unreadable this sweep (a non-zero count is a true reading regardless;
+# only a zero can be false). Space-separated names; see the emitter.
+OMIT_ZERO_CLASSES=" "
+omit_zero() { OMIT_ZERO_CLASSES="${OMIT_ZERO_CLASSES}${1} "; }
+
+# ---------------------------------------------------------------------------
+log "8. warm-cache-oversize: the live warm uv generation vs its budget; the populator's last run vs ${WARM_STALE_TICKS} x ${WINDOW}"
+# Three inputs, each read once, each allowed to be absent (the class's zero
+# is then withheld, header "FAIL-CLOSED ON ITS OWN INPUTS"):
+#   the budget    last-run.json's budget_bytes/budget_files (the numbers the
+#                 populator actually enforced), else the ConfigMap they come
+#                 from;
+#   the live      $WARM_ROOT/uv -> uv-generations/<stamp>, read through the
+#   generation    generation's OWN .warm-manifest.json — not last-run.json's
+#                 generation_* fields, which on a refused run describe the
+#                 refused candidate; its age is the <stamp> (the populator's
+#                 %Y%m%dT%H%M%SZ publish time), the manifest's
+#                 published_at_epoch as the fallback;
+#   the last run  last-run.json's finished_uv_at_epoch (started_at_epoch as
+#                 the fallback) — the populator writes it on every run,
+#                 refused and rejected ones included, so its age is the
+#                 populator's liveness, unlike the generation's age, which a
+#                 healthy populator leaves alone while nothing changes.
+warm_budget_bytes=""; warm_budget_files=""; warm_budget_from=""
+warm_live_gen=""; warm_live_bytes=""; warm_live_files=""; warm_live_age=""
+warm_last_run_age=""
+if [ -r "$WARM_LAST_RUN" ] && warm_rows="$(python3 - "$WARM_LAST_RUN" <<'PY' 2>/dev/null
+import json, sys
+d = json.load(open(sys.argv[1]))
+for k in ("budget_bytes", "budget_files", "finished_uv_at_epoch", "started_at_epoch"):
+    if d.get(k) is not None:
+        print(f"{k}={int(d[k])}")
+PY
+)"; then
+  warm_budget_bytes="$(printf '%s\n' "$warm_rows" | sed -n 's/^budget_bytes=//p')"
+  warm_budget_files="$(printf '%s\n' "$warm_rows" | sed -n 's/^budget_files=//p')"
+  [ -n "$warm_budget_bytes" ] && [ -n "$warm_budget_files" ] && warm_budget_from="last-run.json"
+  last_epoch="$(printf '%s\n' "$warm_rows" | sed -n 's/^finished_uv_at_epoch=//p')"
+  [ -n "$last_epoch" ] || last_epoch="$(printf '%s\n' "$warm_rows" | sed -n 's/^started_at_epoch=//p')"
+  [[ "$last_epoch" =~ ^[0-9]+$ ]] && warm_last_run_age=$(( NOW_EPOCH - last_epoch ))
+else
+  echo "  ${WARM_LAST_RUN} absent or unparseable: the populator's last-run age (and its budget) unknown"
+fi
+if [ -z "$warm_budget_from" ]; then
+  cm_ns="${WARM_BUDGET_CONFIGMAP%%/*}"; cm_name="${WARM_BUDGET_CONFIGMAP#*/}"
+  if cm_row="$(kc warm-cache-oversize -n "$cm_ns" get configmap "$cm_name" -o jsonpath='{.data.bytes}|{.data.files}' 2>&1)" \
+     && [[ "${cm_row%%|*}" =~ ^[0-9]+$ ]] && [[ "${cm_row#*|}" =~ ^[0-9]+$ ]]; then
+    warm_budget_bytes="${cm_row%%|*}"; warm_budget_files="${cm_row#*|}"; warm_budget_from="ConfigMap ${WARM_BUDGET_CONFIGMAP}"
+  else
+    warm_budget_bytes=""; warm_budget_files=""
+    echo "  budget unreadable from last-run.json AND ConfigMap ${WARM_BUDGET_CONFIGMAP} ($(printf '%s' "$cm_row" | head -1)): the size legs cannot be judged"
+  fi
+fi
+if [ -L "${WARM_ROOT}/uv" ]; then
+  gen_link="$(readlink "${WARM_ROOT}/uv")"
+  case "$gen_link" in /*) gen_dir="$gen_link" ;; *) gen_dir="${WARM_ROOT}/${gen_link}" ;; esac
+  warm_live_gen="${gen_dir##*/}"
+  if gen_rows="$(python3 - "${gen_dir}/.warm-manifest.json" <<'PY' 2>/dev/null
+import json, sys
+d = json.load(open(sys.argv[1]))
+print(f"generation_bytes={int(d['generation_bytes'])}")
+print(f"generation_files={int(d['generation_files'])}")
+if d.get("published_at_epoch") is not None:
+    print(f"published_at_epoch={int(d['published_at_epoch'])}")
+PY
+)"; then
+    warm_live_bytes="$(printf '%s\n' "$gen_rows" | sed -n 's/^generation_bytes=//p')"
+    warm_live_files="$(printf '%s\n' "$gen_rows" | sed -n 's/^generation_files=//p')"
+    pub_epoch=""
+    if [[ "$warm_live_gen" =~ ^[0-9]{8}T[0-9]{6}Z$ ]]; then
+      s="$warm_live_gen"
+      pub_epoch="$(date -u -d "${s:0:4}-${s:4:2}-${s:6:2}T${s:9:2}:${s:11:2}:${s:13:2}Z" +%s 2>/dev/null || true)"
+    fi
+    [[ "$pub_epoch" =~ ^[0-9]+$ ]] || pub_epoch="$(printf '%s\n' "$gen_rows" | sed -n 's/^published_at_epoch=//p')"
+    [[ "$pub_epoch" =~ ^[0-9]+$ ]] && warm_live_age=$(( NOW_EPOCH - pub_epoch ))
+  else
+    echo "  live generation ${warm_live_gen} has no readable .warm-manifest.json (${gen_dir}): its size and age unknown"
+  fi
+else
+  echo "  ${WARM_ROOT}/uv is not a symlink: no published warm generation (every job seeds cold); size and age unknown"
+fi
+oversize_hits=0
+if [ -n "$warm_budget_from" ] && [ -n "$warm_live_bytes" ]; then
+  if [ "$warm_live_bytes" -gt "$warm_budget_bytes" ]; then
+    oversize_hits=$((oversize_hits+1)); add_detail "    generation=${warm_live_gen} bytes=${warm_live_bytes} OVER budget ${warm_budget_bytes} (${warm_budget_from})"
+  fi
+  if [ "$warm_live_files" -gt "$warm_budget_files" ]; then
+    oversize_hits=$((oversize_hits+1)); add_detail "    generation=${warm_live_gen} files=${warm_live_files} OVER budget ${warm_budget_files} (${warm_budget_from})"
+  fi
+fi
+warm_stale_after=$(( WARM_STALE_TICKS * WINDOW_SECONDS ))
+if [ -n "$warm_last_run_age" ] && [ "$warm_last_run_age" -gt "$warm_stale_after" ]; then
+  oversize_hits=$((oversize_hits+1)); add_detail "    populator STALLED: last run finished ${warm_last_run_age}s ago, over ${WARM_STALE_TICKS} x ${WINDOW} = ${warm_stale_after}s (kubectl -n ci-warm-cache get cronjob,jobs; the generation ages unrefreshed)"
+fi
+echo "  generation=${warm_live_gen:-none} bytes=${warm_live_bytes:-unknown} files=${warm_live_files:-unknown} age=${warm_live_age:-unknown}s; budget bytes=${warm_budget_bytes:-unknown} files=${warm_budget_files:-unknown} (${warm_budget_from:-unreadable}); last populator run ${warm_last_run_age:-unknown}s ago (stale past ${warm_stale_after}s)"
+if [ -z "$warm_budget_from" ] || [ -z "$warm_live_bytes" ] || [ -z "$warm_last_run_age" ]; then
+  omit_zero warm-cache-oversize
+  [ "$oversize_hits" -gt 0 ] || echo "  warm-cache-oversize judged on partial inputs and found nothing: its zero is withheld from the gauges"
+fi
+[ "$oversize_hits" -gt 0 ] && add_finding warm-cache-oversize "$oversize_hits"
+
+# ---------------------------------------------------------------------------
+log "9. start-seed-cost: the newest seeded work volume under ${STORAGE_ROOT} — seed bytes vs budget, seed seconds vs ${SEED_SECONDS_BUDGET}s"
+# The newest `pvc-*/_warm/.uv-generation` marker by mtime names the volume
+# most recently seeded (the marker is written last by the provisioner's setup
+# script, ../local-path-provisioner/local-path-provisioner.yaml). Size is
+# `du -sb` of its `_warm/uv` — the seed plus whatever the job has written
+# into the cache since, which the NEWEST volume keeps smallest. Duration is
+# the volume's own record: `_warm` is born (stat %W) by the mkdir that opens
+# the seed and the marker's mtime closes it. A filesystem without birth
+# times reports %W as 0; the seconds gauge is then omitted, never 0.
+seed_vol=""; seed_gen=""; seed_bytes=""; seed_seconds=""
+newest="$(bounded start-seed-cost find "$STORAGE_ROOT" -mindepth 3 -maxdepth 3 -path '*/pvc-*/_warm/.uv-generation' -printf '%T@ %p\n' 2>/dev/null | sort -n | tail -1 || true)"
+if [ -n "$newest" ]; then
+  seed_marker="${newest#* }"; seed_dir="${seed_marker%/.uv-generation}"
+  seed_vol="${seed_dir%/_warm}"; seed_vol="${seed_vol##*/}"
+  seed_gen="$(head -c 64 "$seed_marker" 2>/dev/null | tr -d '\n' || true)"
+  seed_bytes="$(bounded start-seed-cost du -sb "${seed_dir}/uv" 2>/dev/null | cut -f1 || true)"
+  [[ "$seed_bytes" =~ ^[0-9]+$ ]] || { seed_bytes=""; echo "  du -sb ${seed_dir}/uv did not complete: livespec.ci_seed.bytes omitted"; }
+  seed_born="$(stat -c %W "$seed_dir" 2>/dev/null || true)"; seed_done="$(stat -c %Y "$seed_marker" 2>/dev/null || true)"
+  if [[ "$seed_born" =~ ^[0-9]+$ ]] && [ "$seed_born" -gt 0 ] && [[ "$seed_done" =~ ^[0-9]+$ ]] && [ "$seed_done" -ge "$seed_born" ]; then
+    seed_seconds=$(( seed_done - seed_born ))
+  else
+    echo "  ${seed_dir}: birth time unavailable (stat %W='${seed_born:-}', marker mtime '${seed_done:-}'): livespec.ci_seed.seconds omitted"
+  fi
+else
+  echo "  no seeded work volume visible under ${STORAGE_ROOT} (idle pool, or the seed is not running): start-seed-cost and livespec.ci_seed.* omitted"
+fi
+seed_bytes_budget="${SEED_BYTES_BUDGET:-$warm_budget_bytes}"
+seed_hits=0
+if [ -n "$seed_bytes" ] && [ -n "$seed_bytes_budget" ] && [ "$seed_bytes" -gt "$seed_bytes_budget" ]; then
+  seed_hits=$((seed_hits+1)); add_detail "    volume=${seed_vol} seed bytes=${seed_bytes} OVER budget ${seed_bytes_budget} (generation ${seed_gen:-unknown})"
+fi
+if [ -n "$seed_seconds" ] && [ "$seed_seconds" -gt "$SEED_SECONDS_BUDGET" ]; then
+  seed_hits=$((seed_hits+1)); add_detail "    volume=${seed_vol} seed took ${seed_seconds}s, OVER ${SEED_SECONDS_BUDGET}s (generation ${seed_gen:-unknown})"
+fi
+if [ -n "$seed_vol" ]; then
+  echo "  volume=${seed_vol} generation=${seed_gen:-unknown}$( [ -n "$warm_live_gen" ] && [ "$seed_gen" != "$warm_live_gen" ] && printf ' (live is %s)' "$warm_live_gen") seed bytes=${seed_bytes:-unknown} (budget ${seed_bytes_budget:-unknown}) seconds=${seed_seconds:-unknown} (budget ${SEED_SECONDS_BUDGET})"
+fi
+if [ -z "$seed_bytes" ] || [ -z "$seed_seconds" ] || [ -z "$seed_bytes_budget" ]; then
+  omit_zero start-seed-cost
+  [ "$seed_hits" -gt 0 ] || [ -z "$seed_vol" ] || echo "  start-seed-cost judged on partial inputs and found nothing: its zero is withheld from the gauges"
+fi
+[ "$seed_hits" -gt 0 ] && add_finding start-seed-cost "$seed_hits"
 
 # ---------------------------------------------------------------------------
 # OTLP EMISSION — every sweep's readings, posted as gauges (livespec-vwzv).
@@ -438,6 +783,27 @@ echo "  ${cap_total} allocatable across ${cap_nodes} node(s), ${cap_missing} wit
 #   livespec.ci_warm.*                  the warm-cache populator's last run,
 #                                       once per new run_id, from its
 #                                       last-run.json (the block below).
+#   livespec.ci_lifecycle.pvc-gated     Pending claims of scheduling-gated
+#                                       pods that step 1 excluded — not a
+#                                       class, a reading of Kueue's queue
+#                                       depth as the provisioner sees it.
+#                                       Omitted when the gates read failed.
+#   livespec.ci_lifecycle.sweep_seconds this sweep's wall clock at the POST,
+#                                       every sweep: the trend that reaches
+#                                       the unit's deadline before the
+#                                       deadline does (2026-09-06: 8-11 min
+#                                       against a 5-minute timer).
+#   livespec.ci_warm.live_generation_bytes / _files / _age_s
+#                                       the LIVE generation, EVERY sweep (the
+#                                       ci_warm.generation_* pair above is
+#                                       once per run and describes the run's
+#                                       candidate): size from its manifest,
+#                                       age since its publish stamp. Each
+#                                       omitted when step 8 could not read it.
+#   livespec.ci_seed.bytes / .seconds   step 9's newest seeded volume: what
+#                                       one job start paid. Omitted when no
+#                                       seeded volume is visible, or when the
+#                                       du or the birth time was unreadable.
 #
 # BEST-EFFORT, BY CONTRACT. The report and the exit code are the interface
 # the journal and `systemctl is-failed` depend on; a collector outage must not
@@ -451,8 +817,12 @@ echo "  ${cap_total} allocatable across ${cap_nodes} node(s), ${cap_missing} wit
 #
 # ADDING A CLASS: append its name to EMIT_CLASSES so its zero is emitted on a
 # clean sweep. A class present in FINDINGS but missing from the list is still
-# emitted — only its zero would be lost.
-EMIT_CLASSES="pvc-pending bind-deadline inotify-emfile containerd-deadline hook-failure stale-listener capacity-absent"
+# emitted — only its zero would be lost. TWO EXCEPTIONS to "always", both
+# fail-closed: a class whose read hit its step deadline (DEADLINE_FILE) or
+# whose judgement lacked an input (OMIT_ZERO_CLASSES) has its ZERO withheld,
+# because that zero would mean "looked and found nothing" when the sweep did
+# not look; a non-zero count from a partial read is still a true reading.
+EMIT_CLASSES="pvc-pending bind-deadline inotify-emfile containerd-deadline hook-failure stale-listener capacity-absent warm-cache-oversize start-seed-cost"
 
 # WARM-CACHE BUILD GAUGES (livespec-41w4; ../warm-cache/README.md "Metrics").
 # The warm-cache populator runs in a pod with no hostNetwork and the collector
@@ -582,11 +952,40 @@ emit_lifecycle_metrics() {
   metrics=""; summary=""
   for c in $classes; do
     n="$(class_count "$c")"
+    if [ "$n" -eq 0 ]; then
+      case "$OMIT_ZERO_CLASSES" in *" $c "*)
+        echo "  emit: livespec.ci_lifecycle.${c} omitted — an input its judgement needs was unreadable this sweep (a zero would be false)" >&2; continue ;;
+      esac
+      if deadline_hit_for "$c"; then
+        echo "  emit: livespec.ci_lifecycle.${c} omitted — its read hit the step deadline (a zero would be false)" >&2; continue
+      fi
+    fi
     metrics="${metrics},$(gauge_json "livespec.ci_lifecycle.${c}" "runner-pod lifecycle sweep: count reported for class ${c} (0 = clean)" "{findings}" "$n" "$now_ns")"
     summary="${summary} livespec.ci_lifecycle.${c}=${n}"
   done
+  if [ "$gated_read" = 1 ] && ! deadline_hit_for pvc-pending; then
+    metrics="${metrics},$(gauge_json livespec.ci_lifecycle.pvc-gated "Pending PVCs whose consumer pod carries spec.schedulingGates (Kueue holding it), excluded from pvc-pending" "{pvcs}" "$pvc_gated" "$now_ns")"
+    summary="${summary} livespec.ci_lifecycle.pvc-gated=${pvc_gated}"
+  fi
+  if [ -n "$warm_live_bytes" ]; then
+    metrics="${metrics},$(gauge_json livespec.ci_warm.live_generation_bytes "The live warm uv cache generation's size, from its manifest (every sweep; generation ${warm_live_gen})" "By" "$warm_live_bytes" "$now_ns")"
+    metrics="${metrics},$(gauge_json livespec.ci_warm.live_generation_files "The live warm uv cache generation's regular-file count, from its manifest (every sweep)" "{files}" "$warm_live_files" "$now_ns")"
+    summary="${summary} livespec.ci_warm.live_generation_bytes=${warm_live_bytes} livespec.ci_warm.live_generation_files=${warm_live_files}"
+  fi
+  if [ -n "$warm_live_age" ]; then
+    metrics="${metrics},$(gauge_json livespec.ci_warm.live_generation_age_s "Seconds since the live warm uv cache generation was published (its stamp), every sweep" "s" "$warm_live_age" "$now_ns")"
+    summary="${summary} livespec.ci_warm.live_generation_age_s=${warm_live_age}"
+  fi
+  if [ -n "$seed_bytes" ]; then
+    metrics="${metrics},$(gauge_json livespec.ci_seed.bytes "du -sb of _warm/uv on the newest seeded work volume: what one job start's warm seed holds (volume ${seed_vol})" "By" "$seed_bytes" "$now_ns")"
+    summary="${summary} livespec.ci_seed.bytes=${seed_bytes}"
+  fi
+  if [ -n "$seed_seconds" ]; then
+    metrics="${metrics},$(gauge_json livespec.ci_seed.seconds "Seconds the warm seed took on the newest seeded work volume: _warm birth to the .uv-generation marker (volume ${seed_vol})" "s" "$seed_seconds" "$now_ns")"
+    summary="${summary} livespec.ci_seed.seconds=${seed_seconds}"
+  fi
 
-  if cq_rows="$(kubectl get clusterqueues -o jsonpath='{range .items[*]}{.metadata.name}|{range .spec.resourceGroups[*]}{range .flavors[*]}{range .resources[*]}{.name}={.nominalQuota} {end}{end}{end}|{.status.pendingWorkloads}|{.status.admittedWorkloads}{"\n"}{end}' 2>&1)"; then
+  if cq_rows="$(kc emit get clusterqueues -o jsonpath='{range .items[*]}{.metadata.name}|{range .spec.resourceGroups[*]}{range .flavors[*]}{range .resources[*]}{.name}={.nominalQuota} {end}{end}{end}|{.status.pendingWorkloads}|{.status.admittedWorkloads}{"\n"}{end}' 2>&1)"; then
     pending=0; admitted=0; quota_sum=0
     while IFS='|' read -r name quotas p a; do
       [ -n "$name" ] || continue
@@ -605,7 +1004,7 @@ emit_lifecycle_metrics() {
     echo "  emit: could not read ClusterQueues ($(printf '%s' "$cq_rows" | head -1)); omitting livespec.ci_kueue.* and livespec.ci_churn_slot.quota_sum rather than sending false zeros" >&2
   fi
 
-  if node_rows="$(kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}|{.status.allocatable.ci-runner\.io/churn-slot}{"\n"}{end}' 2>&1)"; then
+  if node_rows="$(kc emit get nodes -o jsonpath='{range .items[*]}{.metadata.name}|{.status.allocatable.ci-runner\.io/churn-slot}{"\n"}{end}' 2>&1)"; then
     allocatable=0
     while IFS='|' read -r name alloc; do
       [ -n "$name" ] || continue
@@ -622,6 +1021,11 @@ emit_lifecycle_metrics() {
     metrics="${metrics}${WARM_FRAG}"
     summary="${summary} livespec.ci_warm.*(run ${warm_run_id})"
   fi
+
+  # The sweep's wall clock, last, so it covers the emitter's own reads.
+  sweep_ms=$(( ($(date +%s%N) - SWEEP_START_NS) / 1000000 ))
+  metrics="${metrics},$(gauge_double_json livespec.ci_lifecycle.sweep_seconds "This sweep's wall clock from start to the emit POST (the unit deadline is TimeoutStartSec; the timer is 5 min)" "s" "$(( sweep_ms / 1000 )).$(printf '%03d' $(( sweep_ms % 1000 )))" "$now_ns")"
+  summary="${summary} livespec.ci_lifecycle.sweep_seconds=$(( sweep_ms / 1000 )).$(printf '%03d' $(( sweep_ms % 1000 )))"
 
   payload="$(cat <<JSON
 {"resourceMetrics":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"ci-runner-lifecycle"}},{"key":"host.name","value":{"stringValue":"${host_name}"}}]},"scopeMetrics":[{"scope":{"name":"runner-pod-lifecycle"},"metrics":[${metrics#,}]}]}]}
@@ -642,17 +1046,26 @@ log "emit: end-of-sweep gauges to the host collector"
 emit_lifecycle_metrics || true
 
 # ---------------------------------------------------------------------------
+# A read that hit its deadline or was skipped makes a clean sweep a PARTIAL
+# one: exit 2 (could not read), streak untouched, never CLEAN. With findings
+# the stall exit stands and the partial reads are named beside them.
+DEADLINE_HITS="$(deadline_hits)"
 if [ -z "$FINDINGS" ]; then
+  if [ -n "$DEADLINE_HITS" ]; then
+    log "INCOMPLETE after $(sweep_elapsed_s)s. No class found, but these reads did not complete: ${DEADLINE_HITS}. Not a clean reading (exit 2); the node is under load or the API is slow — see the sweep_seconds gauge."
+    exit 2
+  fi
   write_streak 0
-  log "CLEAN. No runner-pod lifecycle stall class present on this node."
+  log "CLEAN after $(sweep_elapsed_s)s. No runner-pod lifecycle stall class present on this node."
   exit 0
 fi
 
 STREAK=$(( $(read_streak) + 1 ))
 write_streak "$STREAK"
 
-log "RUNNER-POD LIFECYCLE STALL: ${FINDINGS}(consecutive sweeps with findings: ${STREAK})"
+log "RUNNER-POD LIFECYCLE STALL after $(sweep_elapsed_s)s: ${FINDINGS}(consecutive sweeps with findings: ${STREAK})"
 printf '%s' "$DETAIL"
+[ -n "$DEADLINE_HITS" ] && printf '\nPARTIAL: these reads did not complete, so their classes may be under-counted: %s\n' "$DEADLINE_HITS"
 
 if [ "$ESCALATE_AFTER" -gt 0 ] && [ "$STREAK" -ge "$ESCALATE_AFTER" ]; then
   printf '\nESCALATION: lifecycle-stall findings on %s CONSECUTIVE sweeps. The host is failing to bring pods up; this is neither saturation nor a wedged runner, and neither of those remedies applies (see ../README.md "Runner-pod lifecycle stall").\n' "$STREAK"
@@ -669,7 +1082,15 @@ containerd-deadline / hook-failure = containerd starved on the storage array
 delete the named AutoscalingListener in arc-systems (the controller recreates
 it within ~30 s; converge-side fix livespec-bde2); capacity-absent =
 `systemctl start reapply-node-extended-resource.service` (the converge asserts
-it on every run and the reapply timer re-tries every 5 min; livespec-kgl3).
+it on every run and the reapply timer re-tries every 5 min; livespec-kgl3);
+warm-cache-oversize = the warm uv generation or its populator (warm-cache/:
+over budget means the refusal gate let it through or the budget moved —
+`kubectl -n ci-warm-cache get configmap warm-cache-budget -o yaml`; stalled
+means the CronJob is not running — `kubectl -n ci-warm-cache get cronjob,jobs`;
+livespec-44qx); start-seed-cost = the seed the provisioner's setup script
+makes per volume (local-path-provisioner/): too big means the generation
+grew, too slow means the volume tier is slow or the file count climbed
+(research/005-006; livespec-44qx).
 A job that failed with the ARC hook's "custom container implementation
 failed" is re-run on the SAME commit once the class has cleared — it is not a
 test failure.

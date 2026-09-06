@@ -18,6 +18,20 @@
 # here (see install-runner-pod-lifecycle-scan.sh's header for why). The unit
 # lands in `failed` whenever a class is present, so `systemctl is-failed
 # scan-runner-pod-lifecycle.service` and this unit's journal are the signal.
+#
+# THE DEADLINE (livespec-kgdlte). On 2026-09-06 05:55Z a sweep's kubectl
+# child hung six minutes with no socket open while the API answered; with no
+# TimeoutStartSec the oneshot stayed `activating` and the timer's cadence
+# stopped silently until the child was killed by hand. TimeoutStartSec=240
+# keeps every sweep under the 5-minute timer; the same number is passed in
+# as RPL_DEADLINE_SECONDS so the script can shrink its per-step deadline to
+# what is left and finish with a report instead of being killed mid-sweep.
+# HOW TO TELL A KILL FROM A FINDING: a finding ends the journal with a
+# `RUNNER-POD LIFECYCLE STALL` line and `systemctl show -p Result` reads
+# `exit-code`; a deadline kill ends it with the script's `KILLED: SIGTERM`
+# line (or, if even that was cut short, with systemd's own `start operation
+# timed out. Terminating.`) and Result reads `timeout`. Neither `failed`
+# alone nor the absence of a CLEAN line is a stall.
 [Unit]
 Description=Scan the runner node for the runner-pod lifecycle stall (report-only)
 After=k3s.service
@@ -26,4 +40,6 @@ Requires=k3s.service
 [Service]
 Type=oneshot
 Environment=KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+Environment=RPL_DEADLINE_SECONDS=240
+TimeoutStartSec=240
 ExecStart=/usr/local/lib/ci-runner-k3s/scan-runner-pod-lifecycle.sh
