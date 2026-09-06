@@ -28,7 +28,7 @@ Two invariants this module must not break, both learned the expensive way:
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -74,11 +74,18 @@ class RunTallies:
     count is itself gated. `errors` is the FLEET-WIDE total, deliberately: it stays
     in the summary so a member run still reports fleet state even though only the
     running member's rows decide its exit.
+
+    `read_causes` is the run's read-failure classification (`_read_cause`),
+    carried here for the same reason: a member verdict reporting `blind_rows`
+    without naming whether the reads were THROTTLED or REFUSED states a count
+    whose remedy it cannot support. It defaults empty so a caller with nothing
+    to report constructs the same value it always did.
     """
 
     errors: int
     blind_rows: int
     out_of_vantage_rows: int
+    read_causes: dict[str, object] = field(default_factory=dict)
 
 
 def member_ci_exit_code(
@@ -140,6 +147,7 @@ def member_ci_exit_code(
             error_findings=tallies.errors,
             blind_rows=tallies.blind_rows,
             out_of_vantage_rows=tallies.out_of_vantage_rows,
+            **tallies.read_causes,
         )
         return 4
     log.info(
@@ -154,5 +162,6 @@ def member_ci_exit_code(
             "repo's to fix; the scheduled fleet sweep and the release fan-out "
             "preflight fail on them"
         ),
+        **tallies.read_causes,
     )
     return 0

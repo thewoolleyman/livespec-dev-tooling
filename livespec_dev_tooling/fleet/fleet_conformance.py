@@ -58,7 +58,7 @@ naming the owning contexts, not blind. The two ADMIN-scoped rows
 (`branch-protection`, `secret-names`) are NOT run here — the App token
 deliberately lacks admin scope — and are reported as out-of-vantage
 naming the lane that does enforce them (`check-fleet-conformance-admin`,
-the pre-push world gate in `fleet_conformance_admin.py`). The
+the operator-invoked world gate in `fleet_conformance_admin.py`). The
 posture-gated adopter currency leg (`_adopter_lane.run_adopter_rows`)
 gets the same treatment for the same reason: the fleet App's
 installation MUST be restricted to fleet repos only, so a private
@@ -81,6 +81,15 @@ answer it, so `blind_rows` is structurally 0 in EVERY context when
 nothing is actually wrong, and the escalation reddens no healthy run.
 There is no lever, env var, exemption list, or opt-out — every
 attempted row is always counted.
+
+WHY a row went blind is reported beside the count, not left to be
+inferred. GitHub answers a throttle with HTTP 403 — the same status as
+a permission denial — so every blind row, every per-member skip, and
+every verdict this lane emits carries `_read_cause.cause_fields`:
+`read_failure_cause`, the two per-kind counts, and the remedy that
+class actually wants. Without it a throttled read and a genuine
+credential gap render identically, which is how this check's own defect
+was filed as an installation defect (`livespec-dev-tooling-mmqe`).
 
 Exit codes:
 
@@ -127,6 +136,7 @@ from livespec_dev_tooling.fleet._lanes import (
 )
 from livespec_dev_tooling.fleet._local_vantage import local_vantage
 from livespec_dev_tooling.fleet._member_ci_exit import RunTallies, member_ci_exit_code
+from livespec_dev_tooling.fleet._read_cause import cause_fields
 from livespec_dev_tooling.fleet._rows_github import SIBLING_TOPIC
 from livespec_dev_tooling.fleet.contract import (
     Manifest,
@@ -378,6 +388,11 @@ def _resolve_root_facts(
             # "unavailable", which is what made one transient credential
             # rejection indistinguishable from a real blind spot.
             causes=[failure.as_dict() for failure in ctx.read_failures],
+            # And the CLASS, above the raw causes. Run 30499573870 logged this
+            # exact event with two `rate_limited` records beneath it and was
+            # read as a permission gap anyway: a reader who must scan `causes`
+            # to classify is a reader who will classify wrong.
+            **cause_fields(failures=ctx.read_failures),
         )
         return None
     return fetched.unwrap()
@@ -453,6 +468,11 @@ def main() -> int:
     )
     blind_rows = result.blind_rows + adopters.blind_rows
     out_of_vantage_rows = result.out_of_vantage_rows + adopters.out_of_vantage_rows
+    # The run-wide read-failure CLASS, resolved once and reported on whichever
+    # verdict this run emits. A verdict that counts blind rows without naming
+    # why they were blind is the shape that let a throttle be filed as an
+    # installation defect.
+    read_causes = cause_fields(failures=ctx.read_failures)
     if args.member_ci:
         return member_ci_exit_code(
             manifest=manifest,
@@ -466,6 +486,7 @@ def main() -> int:
                 errors=errors,
                 blind_rows=blind_rows,
                 out_of_vantage_rows=out_of_vantage_rows,
+                read_causes=read_causes,
             ),
             log=log,
         )
@@ -475,6 +496,7 @@ def main() -> int:
             error_findings=errors,
             blind_rows=blind_rows,
             out_of_vantage_rows=out_of_vantage_rows,
+            **read_causes,
         )
         return 4
     log.info(
@@ -483,6 +505,7 @@ def main() -> int:
         blind_rows=blind_rows,
         out_of_vantage_rows=out_of_vantage_rows,
         owner=owner,
+        **read_causes,
     )
     return 0
 

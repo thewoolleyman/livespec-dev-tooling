@@ -63,7 +63,10 @@ def _row() -> ObligationRow:
 
 
 def _tallies() -> _LaneTallies:
-    return _LaneTallies(evaluated={}, skips={}, failing_rows=[])
+    # `read_failures` is REQUIRED rather than defaulted: an empty list means "no
+    # read failed", and a construction site that forgot it would report every
+    # skipped row as unexplained instead of throttled or refused.
+    return _LaneTallies(evaluated={}, skips={}, failing_rows=[], read_failures=[])
 
 
 class _CapturingLog:
