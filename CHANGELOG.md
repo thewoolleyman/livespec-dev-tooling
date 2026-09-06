@@ -58,6 +58,16 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.53.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.53.1...v1.53.2) (2026-09-06)
+
+
+### Bug Fixes
+
+* **agent-hooks:** address the deny hint's rationale citation to its owning repo ([2478ce6](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2478ce6abacc521c49027a2590c791cce7b56ef1))
+* **checks:** cite the interpolation-delimiters convention by its owning repo ([fc37d1c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/fc37d1c7c21117f12937f93176456ae8f5e8c669))
+* **cross-repo:** name the owning repo in pin-autodiscovery's spec citation ([44356e5](https://github.com/thewoolleyman/livespec-dev-tooling/commit/44356e500187a52b06c13f3798881e02ed6104de))
+* **vendor-update:** name livespec as the owner of the vendoring clauses cited ([d0c076e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d0c076eb0bb7f276bd5f8ea911b2359cf8be71da))
+
 ## [1.53.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.53.0...v1.53.1) (2026-09-06)
 
 
