@@ -134,7 +134,8 @@ order:
    README "Pinned versions" procedure), and in the same change point the
    second-half selection at `hooks/<new version>` and set
    `ACTIONS_RUNNER_PRESEEDED_EXTERNALS_VERSION=<new version>`.
-3. On the node: `sudo ../install-node.sh <capacity>` (step 7c installs the
+3. On the node: `sudo ../install-node.sh ../../phase0-bare-metal/profiles/<node>.env`
+   (step 7c installs the
    new hook beside the old one and extracts the new image's externals under
    their own version directory; nothing running changes yet).
 4. Apply the values (`helm upgrade` per release) and recycle idle runners
