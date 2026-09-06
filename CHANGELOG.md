@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.50.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.50.0...v1.50.1) (2026-09-06)
+
+
+### Bug Fixes
+
+* **gate:** scan /proc/*/fd for config holders with one find, not one readlink fork per descriptor ([89b10b5](https://github.com/thewoolleyman/livespec-dev-tooling/commit/89b10b5ba8e1f098d422707549e1b26163f90746))
+
 ## [1.50.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.49.1...v1.50.0) (2026-09-06)
 
 
