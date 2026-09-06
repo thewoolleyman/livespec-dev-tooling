@@ -215,6 +215,18 @@ retry.
   that one REACHES the matcher and spends the last rework attempt, converting a
   recoverable item into a blocked one.
 
+- **Refreshing the disk copy and calling the mounted ConfigMap converged.**
+  On 2026-09-06 a session ran `install-converge-unit.sh` and the sccache
+  converge on the node, verified "warm-cache-populate.sh == git", and recorded
+  the populator's BGSAVE half as live. The CronJob mounts the
+  `warm-cache-populate` ConfigMap, which only `converge-warm-cache.sh` writes;
+  it stayed at the previous SHA for two hours while the merged code sat on
+  disk. Nothing errored. The reader is the ConfigMap: verify
+  `kubectl get configmap -n <ns> <name> -o jsonpath='{.data.<file>}' | sha256sum`
+  against git, not the boot-durable copy, and re-apply just the drifted
+  ConfigMap with the `--dry-run=client -o yaml | kubectl apply -f -` form its
+  converge script uses (livespec-dev-tooling-efqeip.3, 08:08Z comment).
+
 How to apply it: before a durable write, name the component that will hold the
 state and establish that the code it is currently running is the code that
 preserves it. "It was deployed" is not that; "the version now serving is the
