@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.52.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.52.3...v1.52.4) (2026-09-06)
+
+
+### Bug Fixes
+
+* **observability:** hook-failure burst trigger fits Honeycomb's name (120) and description (1023) caps; apply-triggers.sh refuses over-long definitions before the call (livespec-kgdlte) ([659b2ae](https://github.com/thewoolleyman/livespec-dev-tooling/commit/659b2ae29165b90fff77844e2177cfac63afb58d))
+
 ## [1.52.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.52.2...v1.52.3) (2026-09-06)
 
 
