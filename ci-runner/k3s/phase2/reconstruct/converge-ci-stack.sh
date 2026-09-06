@@ -291,6 +291,32 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+log "1c. Assert this node's cache-tier-carrier label (the hostPath singletons' nodeSelector)"
+# The four hostPath singletons converged below — the sccache redis (8c), the
+# crates proxy (8b), the PyPI files proxy and the warm-cache CronJob (9) —
+# select `ci-runner.io/cache-tier-carrier=true`, because each mounts a
+# directory on ONE node's storage tiers and an unpinned pod on any other node
+# mounts an empty one and reports success. The label is NOT part of the k3s
+# datastore's boot-time loss (nodes are re-registered, not re-applied from a
+# manifest), so this step is a re-assertion, not a re-creation; it exists
+# because ../../provision-k3s.sh runs once per rebuild and this runs every boot.
+#
+# THE CONDITION IS THE MOUNT, not the fact that this converge is running: a
+# second node running this script must NOT label itself, or the pin it exists
+# to create would select both nodes.
+CACHE_TIER_MOUNT="${CI_CACHE_TIER_MOUNT:-/var/cache/ci-runner}"
+TIER_CARRIER_LABEL="ci-runner.io/cache-tier-carrier=true"
+this_node="${K3S_NODE_NAME:-$(hostname | tr '[:upper:]' '[:lower:]')}"
+if ! findmnt -no TARGET "$CACHE_TIER_MOUNT" >/dev/null 2>&1; then
+  echo "WARN: ${CACHE_TIER_MOUNT} is not a mountpoint on ${this_node} -- NOT labelling it ${TIER_CARRIER_LABEL}. If this IS the carrier the tier failed to mount (../storage-layout/); the hostPath singletons stay Pending until it does, which is the intended failure"
+elif kubectl label node "$this_node" "$TIER_CARRIER_LABEL" --overwrite >/dev/null 2>&1; then
+  # --overwrite is the idempotent form: a re-run patches the same value.
+  echo "${this_node} carries ${CACHE_TIER_MOUNT}; ${TIER_CARRIER_LABEL} asserted"
+else
+  echo "WARN: could not label node ${this_node} with ${TIER_CARRIER_LABEL} -- the hostPath singletons converged below stay Pending until it is set (kubectl label node ${this_node} ${TIER_CARRIER_LABEL} --overwrite)"
+fi
+
+# ---------------------------------------------------------------------------
 log "2. Fail-closed pre-gate: the GitHub App installation secret must already exist"
 # Mirrors install-arc.sh step 0. The secret's REQUIRED location is
 # RUNNERS_NAMESPACE (arc-runners) — that is where every gha-runner-scale-set

@@ -33,6 +33,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 K3S_VERSION="v1.36.2+k3s1"
 HELM_VERSION="v3.21.4"        # co-maintained with README.md "Pinned versions"
 NODE_LABEL="k3s-role=arc-runner-host"
+# The pool's hostPath singletons — the sccache redis, the crates proxy, the
+# PyPI files proxy and the warm-cache CronJob — mount directories on THIS
+# node's storage tiers, so they pin to this label and not to NODE_LABEL above.
+# NODE_LABEL is the RUNNER role: every node that joins the pool to execute
+# workflow pods carries it, including a second node that carries no tier, so it
+# cannot express "the node whose disks these directories are on". Set below
+# (step 2b) rather than via --node-label, because --node-label applies only on
+# a FRESH install and this script must be re-runnable on a provisioned node.
+TIER_CARRIER_LABEL="ci-runner.io/cache-tier-carrier=true"
+# The tier whose presence PROVES this node is the carrier (phase2/
+# storage-layout/): the label is only set when it is actually mounted here.
+CACHE_TIER_MOUNT="${CI_CACHE_TIER_MOUNT:-/var/cache/ci-runner}"
 
 log() { printf '\n== %s ==\n' "$*"; }
 
@@ -109,6 +121,24 @@ for _ in $(seq 1 60); do
   sleep 2
 done
 k3s kubectl get nodes -o wide || { echo "FATAL: k3s node did not become Ready within 120s"; exit 1; }
+
+# ---------------------------------------------------------------------------
+log "2b. Label this node as the cache-tier carrier (idempotent)"
+# k3s defaults --node-name to the lowercased hostname; K3S_NODE_NAME overrides
+# it for a host whose k3s node name was set otherwise.
+node_name="${K3S_NODE_NAME:-$(hostname | tr '[:upper:]' '[:lower:]')}"
+if findmnt -no TARGET "${CACHE_TIER_MOUNT}" >/dev/null 2>&1; then
+  # `kubectl label --overwrite` IS the idempotent form: on a re-run it patches
+  # the same value and reports "not labeled" instead of failing the way a bare
+  # `kubectl label` does once the key exists.
+  k3s kubectl label node "${node_name}" "${TIER_CARRIER_LABEL}" --overwrite
+  echo "${node_name} carries ${CACHE_TIER_MOUNT}; labelled ${TIER_CARRIER_LABEL}"
+else
+  # Not fatal: a node may legitimately join the pool to run workflow pods
+  # without carrying a tier. It simply must not attract the hostPath
+  # singletons, and an absent label is exactly how it does not.
+  echo "WARN: ${CACHE_TIER_MOUNT} is not a mountpoint on ${node_name} — NOT labelling it ${TIER_CARRIER_LABEL}; the hostPath singletons (sccache redis, crates proxy, PyPI proxy, warm-cache CronJob) will not schedule here"
+fi
 
 # ---------------------------------------------------------------------------
 log "3. Make kubectl usable for the provisioning admin (read access to KUBECONFIG)"

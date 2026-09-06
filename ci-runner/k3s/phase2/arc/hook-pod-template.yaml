@@ -178,9 +178,22 @@
 #    runner's event.json, host.name from CI_RUNNER_NODE_NAME (a fieldRef),
 #    build.env=ci and build.cache.kill_switch, and posts as
 #    service.name=github-ci to CI_CACHE_OTLP_ENDPOINT — the host collector's
-#    pod-reachable KEYLESS listener (10.42.0.1:4319 on the cni0 bridge;
-#    otel-collector config.ci-runner-host.yaml `otlp/pods`). No ingest key
-#    enters a job. The uv generation name comes from `_warm/.uv-generation`,
+#    pod-reachable KEYLESS listener (otel-collector
+#    config.ci-runner-host.yaml `otlp/pods`). No ingest key enters a job.
+#    PER-NODE ENDPOINT (two-node precondition; plan
+#    k3s-on-gmktec-for-vps-usage, carrier R3): that endpoint is DERIVED, as
+#    `http://$(CI_RUNNER_NODE_HOST_IP):4319` over a `status.hostIP` fieldRef,
+#    so every pod posts to the collector on ITS OWN node. It was a literal
+#    (the cni0 gateway of the first node) until then; that address is not
+#    merely the wrong node from a second node, it does not exist there —
+#    flannel gives each node its own /24, so node 1's gateway is 10.42.1.1.
+#    A literal is therefore unfixable by editing it, and the derivation is
+#    the fix. Preconditions this places on the host collector, co-maintained
+#    in the `otel-collector` repo: the `otlp/pods` receiver must bind an
+#    address reached by the node's OWN address (0.0.0.0:4319, or the node
+#    address) rather than the cni0 gateway alone, and it must run on every
+#    pool node. Both stay keyless — a per-node endpoint adds no credential.
+#    The uv generation name comes from `_warm/.uv-generation`,
 #    which the provisioner's seed writes (../local-path-provisioner/).
 #    THE CANARY: with CI_CACHE_CANARY_N=N, the job whose pod name's cksum is
 #    0 mod N runs with every tier OFF exactly as the operator switch would,
@@ -241,13 +254,22 @@ spec:
           value: redis://sccache-redis.ci-sccache.svc.cluster.local:6379
         - name: SCCACHE_REDIS_RW_MODE
           value: READ_ONLY
+        # The address of the node THIS pod was scheduled onto, from the
+        # downward API (header item 6, "PER-NODE ENDPOINT"). Declared before
+        # the two endpoints below because Kubernetes expands `$(VAR)` in an
+        # env value only against variables declared EARLIER in this
+        # container's own env list.
+        - name: CI_RUNNER_NODE_HOST_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
         # Cache telemetry (header item 6): where the pool-provided emitter
-        # posts this job's cache spans — the host collector's pod-reachable,
-        # KEYLESS listener on the cni0 bridge; empty disables emission. And
-        # the cold canary: one job in N (deterministic on the pod name) runs
-        # every tier cold by construction and every span it emits says so.
+        # posts this job's cache spans — the collector on THIS pod's own node,
+        # KEYLESS; empty disables emission. And the cold canary: one job in N
+        # (deterministic on the pod name) runs every tier cold by construction
+        # and every span it emits says so.
         - name: CI_CACHE_OTLP_ENDPOINT
-          value: http://10.42.0.1:4319
+          value: http://$(CI_RUNNER_NODE_HOST_IP):4319
         - name: CI_CACHE_CANARY_N
           value: "20"
         # Build-phase telemetry (header item 7): where the sandbox image's baked
@@ -257,7 +279,7 @@ spec:
         # (livespec-dev-tooling-kjanc4): an older shim hardcodes build.env=factory
         # and would label CI-lane spans as factory work.
         - name: LIVESPEC_SANDBOX_OTEL_ENDPOINT
-          value: http://10.42.0.1:4319
+          value: http://$(CI_RUNNER_NODE_HOST_IP):4319
         - name: CI_RUNNER_NODE_NAME
           valueFrom:
             fieldRef:

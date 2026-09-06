@@ -75,6 +75,19 @@
 # 16 GiB set finish before k3s kills the pod on a reboot. To flush the cache
 # deliberately: scale the Deployment to 0, remove the dump, scale back to 1
 # (README "Operating it").
+#
+# NODE PINNING (two-node precondition; plan k3s-on-gmktec-for-vps-usage,
+# carrier R3): the pod spec below carries
+# `nodeSelector: ci-runner.io/cache-tier-carrier: "true"`. The snapshot is a
+# hostPath on ONE node's `ci-cache` tier, so a pod that lands anywhere else
+# mounts an empty directory, loads no dump, and silently serves a cold cache
+# behind a healthy-looking rollout. The pin is NOT on `k3s-role=arc-runner-host`
+# because that is the RUNNER role: every node that joins the pool to execute
+# workflow pods carries it, including the second node this pin exists for.
+# Carrying a storage tier is a storage fact, not a runner-role fact, so it has
+# its own key. ../../provision-k3s.sh labels the node it provisions and
+# ../reconstruct/converge-ci-stack.sh re-asserts the label on every boot, for
+# the node whose `ci-cache` tier is actually mounted and only that node.
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -100,6 +113,11 @@ spec:
       labels:
         app.kubernetes.io/name: sccache-redis
     spec:
+      # The node that carries the `ci-cache` tier this pod's hostPath lives on
+      # (header, "NODE PINNING"). Unschedulable is the correct failure here:
+      # a pending pod is visible, an empty cache on the wrong node is not.
+      nodeSelector:
+        ci-runner.io/cache-tier-carrier: "true"
       # No Kueue queue-name label and no ci-runner.io/churn-slot request:
       # not a CI job, must never occupy a runner slot.
       # The shutdown save of a full set must finish before the kill (header,
