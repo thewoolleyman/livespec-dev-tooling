@@ -289,9 +289,10 @@ OBLIGATION_ROWS: tuple[ObligationRow, ...] = (
         manual_hint=(
             "add the exact wiring lines the finding names to the member's justfile, "
             ".gitignore, lefthook.yml and .livespec.jsonc, in a repo-local commit — "
-            "`just install-worktree-pack` materializes the pack itself (and writes the "
-            "worktree_discipline default) but never edits the justfile, the root "
-            ".gitignore, or lefthook.yml"
+            "`just install-worktree-pack` materializes the pack itself but edits no "
+            "TRACKED file, so the justfile, the root .gitignore, lefthook.yml and the "
+            "worktree_discipline declaration are all yours to commit (the installer "
+            "prints the declaration line as guidance; livespec-dev-tooling-7ix8)"
         ),
     ),
     _manual_committed_file_row(

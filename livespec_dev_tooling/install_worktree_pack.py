@@ -64,6 +64,27 @@ verifier's pack arm, and `fleet/_rows_local.py::assert_worktree_pack` all walk
 IT, and the shell copy is held to it by a lockstep test
 (livespec-dev-tooling-l5gypl).
 
+READ-ONLY WITH RESPECT TO TRACKED FILES. The installer writes ONLY files the
+consuming repo ignores — the `dev-tooling/` pack and its generated ignore
+file. It used to also SPLICE a `worktree_discipline` default into the
+governed, TRACKED `.livespec.jsonc` of any repo whose committed config lacked
+the key. Nothing commits that write, so `just bootstrap` — which reaches this
+installer through the local reconcile's `worktree-pack` row — left the
+checkout dirty by construction and re-created the modification on every
+subsequent run (6 of 6 fresh worktrees, measured across the fleet
+2026-08-04). That is the precondition the dispatcher's pre-clone preflight
+exists to CLEAR: a dirty source checkout makes the pre-clone push be refused
+and fall back to a snapshot base that exists nowhere on origin, after which
+publish dies with a misleading `.github/workflows` permission rejection. The
+write was also already non-conformant —
+`SPECIFICATION/non-functional-requirements.md` requires this installer to
+"write only files the repository ignores" — so removing it is a conformance
+repair, and no behaviour rides on it: an absent key ALREADY means `required`
+to every verifier, which is why the block was documentary in the first place.
+The documentary intent survives as guidance
+(`_report_undeclared_worktree_discipline` below), the shape the beads-runtime
+prerequisite rows use (livespec-dev-tooling-7ix8).
+
 Retires the copy-based delivery: the bodies were previously shipped ONLY as
 copier-template COPIES under livespec core's
 `templates/impl-plugin/dev-tooling/`, which violates the fleet "reuse, no
@@ -85,7 +106,6 @@ Output discipline: structlog JSON to stderr; no `print`, no
 
 from __future__ import annotations
 
-import json
 import stat
 import subprocess
 import sys
@@ -107,6 +127,7 @@ __all__: list[str] = [
     "CANONICAL_WORKTREE_JUST_BODY",
     "CANONICAL_WORKTREE_LIB_BODY",
     "CANONICAL_WORKTREE_PACK_GITIGNORE_BODY",
+    "WORKTREE_DISCIPLINE_DECLARATION",
     "WORKTREE_PACK_FILES",
     "PackFile",
     "install_pack",
@@ -236,63 +257,58 @@ def _work_tree_root(*, cwd: Path) -> Path:
 _LIVESPEC_JSONC_NAME = ".livespec.jsonc"
 _WORKTREE_DISCIPLINE_KEY = "worktree_discipline"
 
-# The provisioned default block, written verbatim so the key arrives WITH its
-# rationale. The verifier treats an absent key as `required`; without this
-# block that default is folklore a new adopter can only discover by tripping
-# the check. Indentation matches the two-space house style of the governed
-# `.livespec.jsonc` files.
-_WORKTREE_DISCIPLINE_DEFAULT_BLOCK = """\
-  // Worktree-discipline pack policy. "required" — the DEFAULT, and what an
-  // absent key means — makes `just check` fail when the canonical pack is not
-  // installed and imported by the root justfile. "optional" is the sanctioned,
-  // reviewable opt-out. Written explicitly at install time so the obligation is
-  // readable here rather than inferred from a verifier failure.
-  "worktree_discipline": { "pack": "required" },
-"""
+# The declaration a governed repo commits, verbatim — the ONE place its exact
+# bytes are written down. The guidance below offers this line and
+# `fleet/worktree_pack_wiring.py` names it as the missing wiring line, so both
+# import THIS constant: two hand-written copies of one line is precisely the
+# drift seam `livespec-dev-tooling-l5gypl` closed for the pack's file set.
+WORKTREE_DISCIPLINE_DECLARATION = '"worktree_discipline": { "pack": "required" }'
 
 
-def _ensure_worktree_discipline_default(*, root: Path, log: structlog.stdlib.BoundLogger) -> None:
-    """Write `worktree_discipline` with its default into `<root>/.livespec.jsonc`.
+def _report_undeclared_worktree_discipline(
+    *, root: Path, log: structlog.stdlib.BoundLogger
+) -> None:
+    """Report — never write — an absent `worktree_discipline` in `<root>/.livespec.jsonc`.
 
-    Three deliberate no-ops:
+    DETECT-AND-GUIDE, the shape the beads-runtime prerequisite rows use: the
+    absent declaration is surfaced with the EXACT copy-pasteable line and the
+    path to add it to, and the operator commits it. The obligation the spliced
+    default block used to make readable is therefore still readable — what
+    changed is the carrier, because writing it dirtied a TRACKED file on every
+    `just bootstrap` and never converged (livespec-dev-tooling-7ix8; the module
+    docstring carries the full consequence).
 
-    - **No `.livespec.jsonc`** → do nothing. Its absence means the directory is
-      not governed, and minting a governance file as a side effect of
-      installing recipe fragments would be a surprising mutation.
-    - **Key already present** → do nothing, whatever its value. A declared
-      `"optional"` is a reviewed decision; silently rewriting it to `required`
-      would make the sanctioned escape hatch unusable and turn `just bootstrap`
-      into a config mutation nobody asked for.
-    - **No `{`-only anchor line** → do nothing. The file is JSONC WITH
-      COMMENTS, so this splices text rather than re-serializing: a `json.dumps`
-      round-trip would silently delete every comment in a consumer's config.
-      When the opening brace is not on its own line there is no safe splice
-      point, so the installer declines rather than guessing.
+    Nothing behavioural rides on the declaration either way: an absent key
+    ALREADY means `required` to the `primary_checkout_commit_refuse_hook_installed`
+    pack arm, so this reports a readability gap, never a policy one.
+
+    Two deliberate silences, both meaning "there is no question to answer here":
+
+    - **No `.livespec.jsonc`** → say nothing. Its absence means the directory
+      is not governed, so it carries no worktree-discipline obligation to
+      declare.
+    - **Unparseable, or a root that is not an object** → say nothing. A
+      document whose contents are unknown cannot be MISSING a key, and the
+      config-integrity check already owns that diagnosis; a second voice adds
+      noise, not signal.
+
+    A key already present is likewise silent whatever its value — a declared
+    `"optional"` is the sanctioned, reviewed opt-out, not a gap.
     """
     config_path = root / _LIVESPEC_JSONC_NAME
     if not config_path.is_file():
         return
-    text = config_path.read_text(encoding="utf-8")
     try:
-        parsed = jsoncomment.loads(text)
-    except (ValueError, json.JSONDecodeError):
+        parsed = jsoncomment.loads(config_path.read_text(encoding="utf-8"))
+    except ValueError:
         return
     if not isinstance(parsed, dict) or _WORKTREE_DISCIPLINE_KEY in parsed:
         return
-    lines = text.splitlines(keepends=True)
-    anchor = next((i for i, line in enumerate(lines) if line.strip() == "{"), None)
-    if anchor is None:
-        log.info(
-            "skipped worktree_discipline default: no splice anchor",
-            path=str(config_path),
-        )
-        return
-    lines.insert(anchor + 1, _WORKTREE_DISCIPLINE_DEFAULT_BLOCK)
-    _ = config_path.write_text("".join(lines), encoding="utf-8")
     log.info(
-        "wrote worktree_discipline default",
+        "worktree_discipline is not declared: add this line and commit it",
         path=str(config_path),
-        pack="required",
+        add=WORKTREE_DISCIPLINE_DECLARATION,
+        meaning="an absent key already means required; declaring it makes the policy readable",
     )
 
 
@@ -379,7 +395,7 @@ def install_pack(*, cwd: Path, log: structlog.stdlib.BoundLogger) -> int:
             changed=_install_pack_file(path=path, pack_file=pack_file),
             path=str(path),
         )
-    _ensure_worktree_discipline_default(root=root, log=log)
+    _report_undeclared_worktree_discipline(root=root, log=log)
     return 0
 
 

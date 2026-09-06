@@ -70,7 +70,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
-from livespec_dev_tooling.install_worktree_pack import WORKTREE_PACK_FILES
+from livespec_dev_tooling.install_worktree_pack import (
+    WORKTREE_DISCIPLINE_DECLARATION,
+    WORKTREE_PACK_FILES,
+)
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -112,7 +115,6 @@ _INSTALL_HOOK_COMMAND = "just install-worktree-pack"
 # pack the worktree happened to have.
 _GATED_HOOKS = ("pre-commit", "pre-push")
 _WORKTREE_DISCIPLINE_KEY = "worktree_discipline"
-_WORKTREE_DISCIPLINE_LINE = '"worktree_discipline": { "pack": "required" }'
 
 # DERIVED from the installer's one enumeration, never re-listed. A `.just`
 # fragment is `import?`ed by the consumer root justfile (it is never executed),
@@ -300,14 +302,18 @@ def _livespec_jsonc_gaps(*, text: str) -> tuple[WiringGap, ...]:
     sibling `foreman-valve-declared` row. An unparseable config is a gap
     rather than a skip because the bytes were read: this is a definitive
     statement about the committed file, not a failed read.
+
+    The line this names as missing is imported from the installer rather than
+    re-typed, so the row's `missing` and the guidance `just install-worktree-pack`
+    prints for the same absence are the SAME bytes by construction.
     """
     try:
         parsed = jsoncomment.loads(text)
     except ValueError:
-        return (WiringGap(path=LIVESPEC_JSONC_PATH, missing=_WORKTREE_DISCIPLINE_LINE),)
+        return (WiringGap(path=LIVESPEC_JSONC_PATH, missing=WORKTREE_DISCIPLINE_DECLARATION),)
     if isinstance(parsed, dict) and _WORKTREE_DISCIPLINE_KEY in cast("dict[str, object]", parsed):
         return ()
-    return (WiringGap(path=LIVESPEC_JSONC_PATH, missing=_WORKTREE_DISCIPLINE_LINE),)
+    return (WiringGap(path=LIVESPEC_JSONC_PATH, missing=WORKTREE_DISCIPLINE_DECLARATION),)
 
 
 def worktree_pack_wiring_gaps(

@@ -23,6 +23,7 @@ setup.
 from __future__ import annotations
 
 import errno
+import json
 import os
 import re
 import subprocess
@@ -505,8 +506,9 @@ def test_main_leaves_unparseable_livespec_jsonc_untouched(
 ) -> None:
     """Garbled JSONC is the config-integrity tooling's problem, not the installer's.
 
-    The installer must neither crash nor "repair" a file it cannot parse —
-    splicing into a broken document could corrupt it further.
+    The installer must neither crash nor diagnose a file it cannot parse — a
+    document whose contents are unknown cannot be missing a declaration, and
+    the config-integrity check already owns that diagnosis.
 
     ⛔ RENAMED from `..._unreadable_...`. The fixture below writes INVALID
     JSON, which is a file this run read perfectly and could not PARSE — a
@@ -525,26 +527,104 @@ def test_main_leaves_unparseable_livespec_jsonc_untouched(
     assert config.read_text(encoding="utf-8") == garbled
 
 
-def test_main_declines_to_splice_when_no_anchor_line(
+def _commit_governed_config_without_the_declaration(*, repo: Path) -> str:
+    """Commit a governed `.livespec.jsonc` that carries no `worktree_discipline`.
+
+    The fixture the two tests below share: the state 7 of 10 fleet repos were
+    measured in on 2026-08-04 — a TRACKED, committed, splice-anchored config
+    (its `{` alone on the first line) with the key absent. Returns the exact
+    committed text so a caller can assert byte-identity after the install.
+    """
+    config = repo / ".livespec.jsonc"
+    governed = '{\n  "template": "livespec"\n}\n'
+    _ = config.write_text(governed, encoding="utf-8")
+    _run_git(args=["add", ".livespec.jsonc"], cwd=repo)
+    _run_git(args=["commit", "--quiet", "-m", "fixture: governed config"], cwd=repo)
+    return governed
+
+
+def test_main_leaves_no_tracked_modification_in_a_repo_lacking_the_declaration(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A single-line config has no safe splice point, so it is left alone.
+    """The installer NEVER dirties a tracked file (livespec-dev-tooling-7ix8).
 
-    The write is a TEXT splice, not a re-serialization, precisely so a
-    consumer's comments survive. That trade means the installer needs an
-    opening brace on its own line; without one it declines rather than guessing
-    where the block belongs.
+    🔴 The defect this closes. The installer used to SPLICE a
+    `worktree_discipline` default into the governed, TRACKED `.livespec.jsonc`
+    of every repo whose committed config lacked the key. Nothing commits that
+    write, so `just bootstrap` — the prescribed first-touch setup step, which
+    reaches the installer through the local reconcile's `worktree-pack` row —
+    left the checkout dirty BY CONSTRUCTION and re-created the modification on
+    every subsequent run. Measured across the fleet on 2026-08-04 it reproduced
+    in 6 of 6 fresh worktrees, each with exactly one tracked modification:
+    `.livespec.jsonc`.
+
+    Why that consequence is worth a fix rather than a tolerance: a dirty SOURCE
+    checkout makes the dispatcher's pre-clone push be refused and fall back to
+    a snapshot base that exists nowhere on origin, after which publish dies
+    with a MISLEADING GitHub rejection about creating `.github/workflows/*`
+    without `workflows` permission. The sanctioned setup command was
+    manufacturing the precondition the sanctioned dispatch preflight exists to
+    clear, and the resulting failure presented as a permissions problem.
+
+    It was also NON-CONFORMANT, not merely inconvenient:
+    `SPECIFICATION/non-functional-requirements.md` already requires this
+    installer to "write only files the repository ignores", and
+    `.livespec.jsonc` is tracked.
+
+    Runs the installer TWICE, as the acceptance criterion specifies, so a write
+    that merely converged on a second pass could not pass this test either.
     """
     _scrub_git_env(monkeypatch=monkeypatch)
     primary = tmp_path / "project"
     _init_repo(repo=primary)
-    config = primary / ".livespec.jsonc"
-    one_liner = '{ "template": "livespec" }\n'
-    _ = config.write_text(one_liner, encoding="utf-8")
+    governed = _commit_governed_config_without_the_declaration(repo=primary)
     monkeypatch.chdir(primary)
 
     assert main() == 0
-    assert config.read_text(encoding="utf-8") == one_liner
+    assert main() == 0
+
+    dirty = _run_git_capture(args=["status", "--porcelain", "--untracked-files=no"], cwd=primary)
+    assert dirty == "", f"install dirtied tracked files: {dirty}"
+    assert (primary / ".livespec.jsonc").read_text(encoding="utf-8") == governed
+
+
+def test_main_reports_an_absent_declaration_as_guidance(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Dropping the WRITE must not drop the OBLIGATION — it becomes guidance.
+
+    The spliced block existed to make the pack policy readable in config rather
+    than folklore a new adopter discovers by tripping the verifier, and that
+    goal is worth keeping: what was wrong is the CARRIER, not the intent. So
+    the installer now DETECTS-AND-GUIDES the absence — the shape the
+    beads-runtime prerequisite rows already use — carrying the EXACT
+    copy-pasteable declaration line and the path to add it to, and touching
+    nothing.
+
+    Asserts the structured field rather than a substring of the rendered line:
+    the log is JSON, so the declaration arrives escaped and a naive `in` check
+    on the raw text would be looking for bytes the renderer never emits.
+    """
+    _scrub_git_env(monkeypatch=monkeypatch)
+    primary = tmp_path / "project"
+    _init_repo(repo=primary)
+    _ = _commit_governed_config_without_the_declaration(repo=primary)
+    monkeypatch.chdir(primary)
+
+    assert main() == 0
+
+    emitted = [
+        json.loads(line)
+        for line in capsys.readouterr().err.splitlines()
+        if line.strip().startswith("{")
+    ]
+    guidance = [
+        event
+        for event in emitted
+        if event.get("add") == '"worktree_discipline": { "pack": "required" }'
+    ]
+    assert len(guidance) == 1, f"expected exactly one guidance line, got: {emitted}"
+    assert guidance[0]["path"] == str(primary / ".livespec.jsonc")
 
 
 def test_inspect_treats_unparseable_config_as_ungoverned(
@@ -600,8 +680,9 @@ def _install_governed_pack(*, repo_root: Path, monkeypatch: pytest.MonkeyPatch) 
     hand-written member list: the verifier requires every member the
     installer ships, so a fixture that enumerated members by hand would fall
     out of step the moment the pack grew and report `worktree_pack_file_missing`
-    for a baseline nobody perturbed. The one-line config carries no `{`-only
-    anchor, so the installer's `worktree_discipline` splice is a no-op here.
+    for a baseline nobody perturbed. The config declares no
+    `worktree_discipline`, which the installer REPORTS as guidance and never
+    writes, so the fixture's config is exactly the text written here.
     """
     _ = (repo_root / ".livespec.jsonc").write_text('{"template": "livespec"}\n', encoding="utf-8")
     _ = (repo_root / "justfile").write_text(

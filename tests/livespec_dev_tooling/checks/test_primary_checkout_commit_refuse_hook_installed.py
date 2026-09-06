@@ -51,6 +51,7 @@ from livespec_dev_tooling.install_worktree_pack import (
     CANONICAL_BRANCH_PROTECTION_JUST_BODY,
     CANONICAL_WORKTREE_JUST_BODY,
     CANONICAL_WORKTREE_LIB_BODY,
+    WORKTREE_DISCIPLINE_DECLARATION,
     WORKTREE_PACK_FILES,
 )
 from livespec_dev_tooling.install_worktree_pack import main as install_worktree_pack_main
@@ -1018,7 +1019,7 @@ def test_fails_when_installed_pack_drifts_even_though_sandbox_exempt(*, tmp_path
 
 
 # ---------------------------------------------------------------
-# C — the installer writes `worktree_discipline.pack` with its default.
+# C — the installer REPORTS `worktree_discipline.pack`, and writes nothing.
 #
 # C lives in THIS file, beside the A2 arms it documents, because the two are
 # one changeset under the single-commit Red-Green-Replay protocol: A2 makes an
@@ -1026,35 +1027,48 @@ def test_fails_when_installed_pack_drifts_even_though_sandbox_exempt(*, tmp_path
 # new adopter should read its own `.livespec.jsonc` and SEE the obligation
 # rather than infer it from a verifier failure.
 #
+# ⛔ C used to assert that the installer SPLICED the default into the config.
+# It no longer does: `.livespec.jsonc` is TRACKED, nothing commits the write,
+# so `just bootstrap` left every repo lacking the key dirty by construction and
+# never converged (livespec-dev-tooling-7ix8). The obligation survives as
+# GUIDANCE — the installer names the exact line and the operator commits it —
+# which keeps A2's default readable without mutating a tracked file. The
+# fail-capable proof that the checkout stays clean lives with the installer, in
+# `tests/livespec_dev_tooling/test_install_worktree_pack.py`.
+#
 # The installer is exercised IN-PROCESS via `monkeypatch.chdir` + `main()`,
 # matching `tests/livespec_dev_tooling/test_install_worktree_pack.py`; the only
 # subprocess here remains `git` for repo setup.
 # ---------------------------------------------------------------
 
 
-def test_installer_writes_worktree_discipline_default_when_key_absent(
-    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_installer_reports_an_absent_worktree_discipline_without_writing_it(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """ACCEPTANCE 9. The installer adds the key with its default AND a comment."""
+    """ACCEPTANCE 9. The absent key is REPORTED with its default, and never written."""
     for var in _GIT_ENV_PASSTHROUGH_VARS:
         monkeypatch.delenv(var, raising=False)
     project_root = tmp_path / "project"
     project_root.mkdir()
     _git_init(cwd=project_root)
     config = project_root / ".livespec.jsonc"
-    _ = config.write_text('{\n  "template": "livespec"\n}\n', encoding="utf-8")
+    original = '{\n  "template": "livespec"\n}\n'
+    _ = config.write_text(original, encoding="utf-8")
     monkeypatch.chdir(project_root)
 
     rc = install_worktree_pack_main()
 
     assert rc == 0
-    written = config.read_text(encoding="utf-8")
-    assert '"worktree_discipline"' in written
-    assert '"pack": "required"' in written
-    # The comment is the whole point of C — the key must be self-explaining.
-    assert "//" in written
-    # Pre-existing content survives.
-    assert '"template": "livespec"' in written
+    # The governed config is untouched — byte-identical, key still absent.
+    assert config.read_text(encoding="utf-8") == original
+    # And the obligation is still stated: the guidance carries the exact line
+    # an operator adds, so A2's default is readable rather than folklore.
+    guided = [
+        line
+        for line in capsys.readouterr().err.splitlines()
+        if WORKTREE_DISCIPLINE_DECLARATION.replace('"', '\\"') in line
+    ]
+    assert len(guided) == 1, "the installer must guide the absent declaration exactly once"
 
 
 def test_installer_leaves_an_existing_worktree_discipline_block_untouched(
