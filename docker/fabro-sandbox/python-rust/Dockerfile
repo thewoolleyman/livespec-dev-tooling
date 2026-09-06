@@ -55,6 +55,34 @@ RUN curl --proto '=https' --tlsv1.2 -sSf \
         --component clippy,rustfmt
 ENV PATH=/root/.cargo/bin:$PATH
 
+# Pre-warmed cargo REGISTRY (console factory build cache, shape 1 — plan
+# console-factory-build-cache, child livespec-dev-tooling-3u3gm2.1; delivers
+# livespec-console-beads-fabro-qxjdan). A fabro dispatch of the console runs a
+# fully COLD cargo build in a fresh sandbox and re-fetches every crate from
+# crates.io on every run (console research/003, research/006 factory §1). The
+# fabro 0.254 docker provider exposes NO volume/bind-mount knob, so the registry
+# cannot be shared in from the host; it is baked INTO the image instead: shallow-
+# clone the console at CONSOLE_REF and `cargo fetch --locked` its lockfile into
+# this layer's CARGO_HOME registry (/root/.cargo/registry), then drop the clone.
+# Zero runtime coupling; a crate outside the baked set downloads exactly as it
+# does today (miss cost unchanged). EVICTION by construction: the generations
+# are the image tags, bounded by the fleet's 72 h image-prune — no new service.
+# This runs BEFORE the cargo shim swap below, so the real rustup `cargo` does the
+# fetch and an image build emits no build.env=factory span. CONSOLE_REF is the
+# console branch/ref whose lockfile is baked; the resolved commit is echoed into
+# the build log so each image tag records which lockfile it warmed.
+ARG CONSOLE_REPO=https://github.com/thewoolleyman/livespec-console-beads-fabro.git
+ARG CONSOLE_REF=master
+ENV CARGO_NET_RETRY=5
+RUN set -eux; \
+    git clone --quiet --depth 1 --branch "${CONSOLE_REF}" "${CONSOLE_REPO}" /tmp/console-lockfile \
+    && cd /tmp/console-lockfile \
+    && echo "pre-warm: console lockfile @ $(git rev-parse HEAD)" \
+    && cargo fetch --locked \
+    && echo "pre-warm: registry size $(du -sh /root/.cargo/registry | cut -f1)" \
+    && cd / \
+    && rm -rf /tmp/console-lockfile
+
 # Factory build-telemetry seam (build.env=factory). A fabro dispatch of the
 # console runs a fully cold cargo build+test in this sandbox and emitted NOTHING
 # about its timing; the console workflow runs cargo via its agent + git hooks,
