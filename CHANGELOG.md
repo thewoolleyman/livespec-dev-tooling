@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.45.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.45.0...v1.45.1) (2026-09-06)
+
+
+### Bug Fixes
+
+* **ci-runner:** migrate-tier.sh maps a device to its LV by passing it to lvs; installer calls go through bash (livespec-dev-tooling-hmv2bo) ([94c25d2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/94c25d2e508fca9e3e54e20d24aabf05ce6f2f19))
+
 ## [1.45.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.44.0...v1.45.0) (2026-09-06)
 
 
