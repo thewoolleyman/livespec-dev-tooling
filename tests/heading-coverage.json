@@ -84,7 +84,7 @@
     "spec_file": "contracts.md",
     "heading": "## Consumer compat block \u2014 pin-and-bump policy",
     "test": "TODO",
-    "reason": "Added by the absorb-compat-schema-and-semver-discipline revise (compat-block schema + bump-pin policy relocated from livespec core at v103/v104). Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism. Owner: no work item was named when this TODO was seeded; livespec-dev-tooling-3ztbdq (the registry-gate wedge bug) owns re-assigning it to its real owner.",
+    "reason": "Added by the absorb-compat-schema-and-semver-discipline revise (compat-block schema + bump-pin policy relocated from livespec core at v103/v104). Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism. Owner: livespec-dev-tooling-3ztbdq, and it STAYS there by that item's 2026-09-06 disposition rather than awaiting a re-assignment: no other work item covers this heading, and stamping an unverified id would manufacture exactly the closed-or-nonexistent ownership the release tier exists to catch. What unblocks this entry is the work its reason names above.",
     "work_item": "livespec-dev-tooling-3ztbdq"
   },
   {
@@ -100,7 +100,7 @@
     "spec_file": "contracts.md",
     "heading": "## Semver discipline",
     "test": "TODO",
-    "reason": "Added by the absorb-compat-schema-and-semver-discipline revise (canonical surface enumeration relocated from constraints.md per livespec/SPECIFICATION/contracts.md \u00a7\"Shared code sync \u2014 livespec-dev-tooling\"). Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism. Owner: no work item was named when this TODO was seeded; livespec-dev-tooling-3ztbdq (the registry-gate wedge bug) owns re-assigning it to its real owner.",
+    "reason": "Added by the absorb-compat-schema-and-semver-discipline revise (canonical surface enumeration relocated from constraints.md per livespec/SPECIFICATION/contracts.md \u00a7\"Shared code sync \u2014 livespec-dev-tooling\"). Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism. Owner: livespec-dev-tooling-3ztbdq, and it STAYS there by that item's 2026-09-06 disposition rather than awaiting a re-assignment: no other work item covers this heading, and stamping an unverified id would manufacture exactly the closed-or-nonexistent ownership the release tier exists to catch. What unblocks this entry is the work its reason names above.",
     "work_item": "livespec-dev-tooling-3ztbdq"
   },
   {
@@ -341,7 +341,7 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a blessed declared-absent spelling parses to a distinct variant carrying its reason",
     "test": "TODO",
-    "reason": "Ratified with the scenario in the role-key-declared-absent-spellings revision and RESTATED for the rejecting loader in the retire-pre-1-0-stance-and-transitional-accepting-loader revision (Phase 4 replaced the WARN regime with a hard ConfigParseError). TODO is deliberate and NOT a coverage gap in the behavior: the property is already asserted at UNIT tier by `tests.livespec_dev_tooling.checks.test_role_key_variants.test_not_applicable_variant_parses_and_carries_its_reason`. What is missing is the INTEGRATION-tier (`tests.consumer`) test this project's Heading-taxonomy constraint requires of every `scenarios.md` heading, since a scenario describes user-observable behavior and a unit test cannot demonstrate it end-to-end. Replace TODO when the consumer-tier test lands. Owner: no work item was named when this TODO was seeded; livespec-dev-tooling-3ztbdq (the registry-gate wedge bug) owns re-assigning it to its real owner.",
+    "reason": "Ratified with the scenario in the role-key-declared-absent-spellings revision and RESTATED for the rejecting loader in the retire-pre-1-0-stance-and-transitional-accepting-loader revision (Phase 4 replaced the WARN regime with a hard ConfigParseError). TODO is deliberate and NOT a coverage gap in the behavior: the property is already asserted at UNIT tier by `tests.livespec_dev_tooling.checks.test_role_key_variants.test_not_applicable_variant_parses_and_carries_its_reason`. What is missing is the INTEGRATION-tier (`tests.consumer`) test this project's Heading-taxonomy constraint requires of every `scenarios.md` heading, since a scenario describes user-observable behavior and a unit test cannot demonstrate it end-to-end. Replace TODO when the consumer-tier test lands. Owner: livespec-dev-tooling-3ztbdq, and it STAYS there by that item's 2026-09-06 disposition rather than awaiting a re-assignment: no other work item covers this heading, and stamping an unverified id would manufacture exactly the closed-or-nonexistent ownership the release tier exists to catch. What unblocks this entry is the work its reason names above.",
     "work_item": "livespec-dev-tooling-3ztbdq"
   },
   {
@@ -349,7 +349,7 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a declared-absent variant with an empty payload is rejected at load",
     "test": "TODO",
-    "reason": "Ratified with the scenario in the role-key-declared-absent-spellings revision and RESTATED for the rejecting loader in the retire-pre-1-0-stance-and-transitional-accepting-loader revision (Phase 4 replaced the WARN regime with a hard ConfigParseError). TODO is deliberate and NOT a coverage gap in the behavior: the property is already asserted at UNIT tier by `tests.livespec_dev_tooling.checks.test_role_key_variants.test_variant_with_empty_reason_is_rejected_at_load`. What is missing is the INTEGRATION-tier (`tests.consumer`) test this project's Heading-taxonomy constraint requires of every `scenarios.md` heading, since a scenario describes user-observable behavior and a unit test cannot demonstrate it end-to-end. Replace TODO when the consumer-tier test lands. Owner: no work item was named when this TODO was seeded; livespec-dev-tooling-3ztbdq (the registry-gate wedge bug) owns re-assigning it to its real owner.",
+    "reason": "Ratified with the scenario in the role-key-declared-absent-spellings revision and RESTATED for the rejecting loader in the retire-pre-1-0-stance-and-transitional-accepting-loader revision (Phase 4 replaced the WARN regime with a hard ConfigParseError). TODO is deliberate and NOT a coverage gap in the behavior: the property is already asserted at UNIT tier by `tests.livespec_dev_tooling.checks.test_role_key_variants.test_variant_with_empty_reason_is_rejected_at_load`. What is missing is the INTEGRATION-tier (`tests.consumer`) test this project's Heading-taxonomy constraint requires of every `scenarios.md` heading, since a scenario describes user-observable behavior and a unit test cannot demonstrate it end-to-end. Replace TODO when the consumer-tier test lands. Owner: livespec-dev-tooling-3ztbdq, and it STAYS there by that item's 2026-09-06 disposition rather than awaiting a re-assignment: no other work item covers this heading, and stamping an unverified id would manufacture exactly the closed-or-nonexistent ownership the release tier exists to catch. What unblocks this entry is the work its reason names above.",
     "work_item": "livespec-dev-tooling-3ztbdq"
   },
   {
@@ -357,7 +357,7 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: the legacy empty spelling on a union key is rejected at load",
     "test": "TODO",
-    "reason": "Ratified with the scenario in the role-key-declared-absent-spellings revision and RESTATED for the rejecting loader in the retire-pre-1-0-stance-and-transitional-accepting-loader revision (Phase 4 replaced the WARN regime with a hard ConfigParseError). TODO is deliberate and NOT a coverage gap in the behavior: the property is already asserted at UNIT tier by `tests.livespec_dev_tooling.checks.test_role_key_variants.test_legacy_empty_target_dirs_is_now_rejected_at_load`. What is missing is the INTEGRATION-tier (`tests.consumer`) test this project's Heading-taxonomy constraint requires of every `scenarios.md` heading, since a scenario describes user-observable behavior and a unit test cannot demonstrate it end-to-end. Replace TODO when the consumer-tier test lands. Owner: no work item was named when this TODO was seeded; livespec-dev-tooling-3ztbdq (the registry-gate wedge bug) owns re-assigning it to its real owner.",
+    "reason": "Ratified with the scenario in the role-key-declared-absent-spellings revision and RESTATED for the rejecting loader in the retire-pre-1-0-stance-and-transitional-accepting-loader revision (Phase 4 replaced the WARN regime with a hard ConfigParseError). TODO is deliberate and NOT a coverage gap in the behavior: the property is already asserted at UNIT tier by `tests.livespec_dev_tooling.checks.test_role_key_variants.test_legacy_empty_target_dirs_is_now_rejected_at_load`. What is missing is the INTEGRATION-tier (`tests.consumer`) test this project's Heading-taxonomy constraint requires of every `scenarios.md` heading, since a scenario describes user-observable behavior and a unit test cannot demonstrate it end-to-end. Replace TODO when the consumer-tier test lands. Owner: livespec-dev-tooling-3ztbdq, and it STAYS there by that item's 2026-09-06 disposition rather than awaiting a re-assignment: no other work item covers this heading, and stamping an unverified id would manufacture exactly the closed-or-nonexistent ownership the release tier exists to catch. What unblocks this entry is the work its reason names above.",
     "work_item": "livespec-dev-tooling-3ztbdq"
   },
   {
@@ -365,7 +365,7 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an empty clean role key makes its consuming check stricter, not blinder",
     "test": "TODO",
-    "reason": "Ratified with the scenario in the role-key-declared-absent-spellings revision and RESTATED for the rejecting loader in the retire-pre-1-0-stance-and-transitional-accepting-loader revision (Phase 4 replaced the WARN regime with a hard ConfigParseError). TODO is deliberate and NOT a coverage gap in the behavior: the property is already asserted at UNIT tier by `tests.livespec_dev_tooling.checks.test_config_driven_checks.test_no_except_outside_io_runs_without_io_trees`. What is missing is the INTEGRATION-tier (`tests.consumer`) test this project's Heading-taxonomy constraint requires of every `scenarios.md` heading, since a scenario describes user-observable behavior and a unit test cannot demonstrate it end-to-end. Replace TODO when the consumer-tier test lands. Owner: no work item was named when this TODO was seeded; livespec-dev-tooling-3ztbdq (the registry-gate wedge bug) owns re-assigning it to its real owner.",
+    "reason": "Ratified with the scenario in the role-key-declared-absent-spellings revision and RESTATED for the rejecting loader in the retire-pre-1-0-stance-and-transitional-accepting-loader revision (Phase 4 replaced the WARN regime with a hard ConfigParseError). TODO is deliberate and NOT a coverage gap in the behavior: the property is already asserted at UNIT tier by `tests.livespec_dev_tooling.checks.test_config_driven_checks.test_no_except_outside_io_runs_without_io_trees`. What is missing is the INTEGRATION-tier (`tests.consumer`) test this project's Heading-taxonomy constraint requires of every `scenarios.md` heading, since a scenario describes user-observable behavior and a unit test cannot demonstrate it end-to-end. Replace TODO when the consumer-tier test lands. Owner: livespec-dev-tooling-3ztbdq, and it STAYS there by that item's 2026-09-06 disposition rather than awaiting a re-assignment: no other work item covers this heading, and stamping an unverified id would manufacture exactly the closed-or-nonexistent ownership the release tier exists to catch. What unblocks this entry is the work its reason names above.",
     "work_item": "livespec-dev-tooling-3ztbdq"
   },
   {
@@ -373,7 +373,7 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an unarmed-until payload naming a closed work item is a conformance failure",
     "test": "TODO",
-    "reason": "Ratified with the scenario in the role-key-declared-absent-spellings revision; the behavior is DELIBERATELY UNIMPLEMENTED, so no test of ANY tier exists and the integration-tier (`tests.consumer`) requirement is acknowledged as unmet. The verifier must resolve work-item identifiers ACROSS trackers, and no credential class in any current vantage can: the central fleet vantage holds a GitHub credential and reaches no ledger, while the local vantage holds ONE tenant's credential and live declarations cite two. A same-tenant resolver would report green while failing to resolve half the live declarations, which is the silent-consent shape this revision removes. Replace TODO once that vantage decision is made. Owner: no work item was named when this TODO was seeded; livespec-dev-tooling-3ztbdq (the registry-gate wedge bug) owns re-assigning it to its real owner.",
+    "reason": "Ratified with the scenario in the role-key-declared-absent-spellings revision; the behavior is DELIBERATELY UNIMPLEMENTED, so no test of ANY tier exists and the integration-tier (`tests.consumer`) requirement is acknowledged as unmet. The verifier must resolve work-item identifiers ACROSS trackers, and no credential class in any current vantage can: the central fleet vantage holds a GitHub credential and reaches no ledger, while the local vantage holds ONE tenant's credential and live declarations cite two. A same-tenant resolver would report green while failing to resolve half the live declarations, which is the silent-consent shape this revision removes. Replace TODO once that vantage decision is made. Owner: livespec-dev-tooling-3ztbdq, and it STAYS there by that item's 2026-09-06 disposition rather than awaiting a re-assignment: no other work item covers this heading, and stamping an unverified id would manufacture exactly the closed-or-nonexistent ownership the release tier exists to catch. What unblocks this entry is the work its reason names above.",
     "work_item": "livespec-dev-tooling-3ztbdq"
   },
   {
@@ -381,7 +381,7 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a stale pin whose bump PR never opened escalates once the release ages past the settle window",
     "test": "TODO",
-    "reason": "Awaits the integration-tier test landing with the escalation-predicate implementation (the never-fired staleness class); scenarios.md headings require an integration-tier-or-above test node id. Owner: no work item was named when this TODO was seeded; livespec-dev-tooling-3ztbdq (the registry-gate wedge bug) owns re-assigning it to its real owner.",
+    "reason": "Awaits the integration-tier test landing with the escalation-predicate implementation (the never-fired staleness class); scenarios.md headings require an integration-tier-or-above test node id. Owner: livespec-dev-tooling-3ztbdq, and it STAYS there by that item's 2026-09-06 disposition rather than awaiting a re-assignment: no other work item covers this heading, and stamping an unverified id would manufacture exactly the closed-or-nonexistent ownership the release tier exists to catch. What unblocks this entry is the work its reason names above.",
     "work_item": "livespec-dev-tooling-3ztbdq"
   },
   {
@@ -389,7 +389,7 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a stale pin inside the settle window with no bump PR stays a warning",
     "test": "TODO",
-    "reason": "Awaits the integration-tier test landing with the settle-window implementation; scenarios.md headings require an integration-tier-or-above test node id. Owner: no work item was named when this TODO was seeded; livespec-dev-tooling-3ztbdq (the registry-gate wedge bug) owns re-assigning it to its real owner.",
+    "reason": "Awaits the integration-tier test landing with the settle-window implementation; scenarios.md headings require an integration-tier-or-above test node id. Owner: livespec-dev-tooling-3ztbdq, and it STAYS there by that item's 2026-09-06 disposition rather than awaiting a re-assignment: no other work item covers this heading, and stamping an unverified id would manufacture exactly the closed-or-nonexistent ownership the release tier exists to catch. What unblocks this entry is the work its reason names above.",
     "work_item": "livespec-dev-tooling-3ztbdq"
   },
   {
@@ -397,7 +397,7 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an unparseable pin file is a finding, never a passing row",
     "test": "TODO",
-    "reason": "Awaits the integration-tier test landing with the can't-parse carrier conversion (the read_pin_text walker family); scenarios.md headings require an integration-tier-or-above test node id. Owner: no work item was named when this TODO was seeded; livespec-dev-tooling-3ztbdq (the registry-gate wedge bug) owns re-assigning it to its real owner.",
+    "reason": "Awaits the integration-tier test landing with the can't-parse carrier conversion (the read_pin_text walker family); scenarios.md headings require an integration-tier-or-above test node id. Owner: livespec-dev-tooling-3ztbdq, and it STAYS there by that item's 2026-09-06 disposition rather than awaiting a re-assignment: no other work item covers this heading, and stamping an unverified id would manufacture exactly the closed-or-nonexistent ownership the release tier exists to catch. What unblocks this entry is the work its reason names above.",
     "work_item": "livespec-dev-tooling-3ztbdq"
   },
   {
