@@ -16,7 +16,13 @@
 #      alone and reported, and one carrying anything else is REFUSED unless the
 #      invocation names it in --i-consent-to-destroy;
 #   5. the script holds no node-specific literal: every one comes from the
-#      profile.
+#      profile;
+#   6. a profile whose ROOT_LABEL is EMPTY — the format's spelling for "the root
+#      filesystem carries no label", which is what a node that KEEPS the root it
+#      already has states — is REFUSED, naming that reason, before anything is
+#      derived or mounted. That is the committed second node's profile, and this
+#      stage running against it would debootstrap over the operating system its
+#      `free-space` plan exists to preserve.
 #
 # HOW IT STAYS OFF THE HOST. Every case runs `base-os-install.sh --dry-run`, so
 # no mutating command is ever executed by construction. On top of that each case
@@ -320,7 +326,8 @@ fi
 # Every node-specific value the dry run printed came from the profile, so none
 # of them may appear in the script itself. `poweredge` is deliberately in the
 # list even though it is also this repository's shorthand for the node.
-node_literals=(poweredge-xubuntu /dev/sda nvmea resolute ci-admin WD_BLACK)
+node_literals=(poweredge-xubuntu /dev/sda nvmea resolute ci-admin WD_BLACK
+               gmktec-xubuntu /dev/nvme0n1 cwoolley)
 found=""
 for literal in "${node_literals[@]}"; do
   if grep -qF -- "$literal" "$SCRIPT"; then
@@ -342,6 +349,64 @@ if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -qF "unknown profile
   ok "E3  the profile is validated as data by the parser every stage shares"
 else
   no "E3  the profile is validated as data by the parser every stage shares (rc=${REPLY_RC})"
+fi
+
+# ---------------------------------------------------------------------------
+echo
+echo "== F. The node that KEEPS its root: an empty ROOT_LABEL is refused =="
+# ---------------------------------------------------------------------------
+# `profiles/gmktec-xubuntu.env` is the second pool node, and it takes
+# `DISK_PLAN=free-space` because it keeps the operating system already on its
+# device. Its root is an existing ext4 filesystem carrying NO label, so
+# ROOT_LABEL is EMPTY — the format's spelling for "carries no label". This stage
+# installs an operating system onto the root LOGICAL VOLUME its profile names,
+# so against that profile it has no volume to install onto and would debootstrap
+# over the very operating system `free-space` exists to preserve.
+#
+# It refused before this section existed, but only by failing to RESOLVE the
+# label — `ROOT_LABEL='root' names no LOGICAL_VOLUMES record`, a message
+# describing the mechanism and not the reason, which reads as a malformed
+# profile rather than as the node correctly saying this is not a stage it runs.
+# The refusal is now the parser's, by name, and both halves are asserted: that
+# it refuses, and that it says why.
+
+GMKTEC="${HERE}/profiles/gmktec-xubuntu.env"
+
+run_install "$BARE" --dry-run "$GMKTEC"
+if [ "$REPLY_RC" -ne 0 ] \
+   && printf '%s' "$REPLY_OUT" | grep -qF 'ROOT_LABEL is empty' \
+   && printf '%s' "$REPLY_OUT" | grep -qF 'gmktec-xubuntu'; then
+  ok "F1  the committed free-space node's profile is refused, naming the empty ROOT_LABEL and the node"
+else
+  no "F1  the committed free-space node's profile is refused, naming the empty ROOT_LABEL and the node (rc=${REPLY_RC})"
+  printf '%s\n' "$REPLY_OUT"
+fi
+
+# The refusal must be about the ROOT LABEL and not about this one node, so the
+# same emptiness in the FIRST node's profile is refused identically. Its plan is
+# `whole-device`, under which the parser does not permit an empty root label at
+# all — so this case asserts the earlier of the two refusals: a `whole-device`
+# node MAKES its root filesystem with `mkfs -L`, and a label it declines to
+# write is one the fstab it renders could then not find.
+p="${TMPROOT}/whole-device-no-root-label.env"
+sed 's|^ROOT_LABEL=.*|ROOT_LABEL=|' "$POWEREDGE" > "$p"
+run_install "$BARE" --dry-run "$p"
+if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -qF "profile key 'ROOT_LABEL' must not be empty"; then
+  ok "F2  a whole-device profile may not spell its root label empty at all"
+else
+  no "F2  a whole-device profile may not spell its root label empty at all (rc=${REPLY_RC})"
+  printf '%s\n' "$REPLY_OUT"
+fi
+
+# And the refusal is fail-CLOSED: it happens before anything is derived from the
+# profile and before any mount, so no dry run above may have planned a step
+# against the node that keeps its root.
+if ! printf '%s' "$REPLY_OUT" | grep -qF '+ ' && [ ! -s "$TRIPWIRE" ]; then
+  ok "F3  the refusals plan nothing and execute nothing"
+else
+  no "F3  the refusals planned or executed something:"
+  printf '%s\n' "$REPLY_OUT"
+  cat "$TRIPWIRE"
 fi
 
 echo

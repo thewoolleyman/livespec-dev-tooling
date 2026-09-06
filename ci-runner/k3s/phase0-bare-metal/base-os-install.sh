@@ -211,6 +211,13 @@ lv_device() {  # lv_device LABEL -> /dev/<vg>/<lv> for the volume carrying LABEL
 # a /dev/mapper path and not a /dev/<vg>/<lv> one.
 dm_escape() { printf '%s' "${1//-/--}"; }
 
+# The one profile shape this stage must never run against, refused before any
+# value is derived from it: a node whose root filesystem carries no label is a
+# node that KEEPS the root it already has, and this stage would debootstrap over
+# it. The refusal and its wording live in the shared parser, which owns the
+# format's spelling for "no label" (`profile.sh`, profile_require_root_volume).
+profile_require_root_volume
+
 ROOT_LABEL="${CFG[ROOT_LABEL]}"
 ROOT_VG="${LV_OF_LABEL[$ROOT_LABEL]:-}"
 [ -n "$ROOT_VG" ] || die "${PROFILE_PATH}: ROOT_LABEL='${ROOT_LABEL}' names no LOGICAL_VOLUMES record"

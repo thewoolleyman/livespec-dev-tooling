@@ -53,10 +53,12 @@ never a hand-edited copy of one.
 | `profiles/poweredge-xubuntu.env` | The first node's profile: the PERC H730P RAID-5 virtual disk over slots 0-6 at a 64 KB strip with WriteBack + Read Ahead + Direct IO, a 1 GiB EFI system partition, one LVM physical-volume partition, volume group `poweredge` carrying `root`, `swap` and `ci-cache`, volume group `nvmea` carrying `ci-containerd`, volume group `nvmeb` carrying `ci-workvols`, and the base-OS values stage 2 consumes (Ubuntu 26.04 `resolute`, its mirrors, the kernel package, the initramfs generator, the boot-entry label and the operator account). Its header records the provenance of every value, including which values this repository has NOT measured. |
 | `profiles/poweredge-xubuntu.expected-plan` | Every mutating command that node's `--dry-run` plans against bare storage, in order, byte for byte. `storage-layout-exit-tests.sh` §F13 compares the run against it as an EQUALITY, which is what §B's ordered-subset assertions cannot do: a step silently added, dropped or reworded between two asserted rungs passes §B and fails §F13. It is the guard that let `free-space` be added to this script without changing what the first node's rebuild does. |
 | `profiles/poweredge-xubuntu.recorded-facts` | That node's storage facts as the host RECORD states them, transcribed from `poweredge-xubuntu-info` `AGENTS.md` §Storage ("LVM (steady state since 2026-09-06)") and confirmed read-only against the live host the same day. The profile beside it carries **the record's values, verified live on 2026-09-06**; `storage-layout-exit-tests.sh` §E fails if the two ever disagree. See "The profile is the record" below. |
-| `profiles/gmktec-xubuntu.env` | **The second node's profile — and this plan's rehearsal of the recipe.** No storage controller; `DISK_PLAN=free-space` on `/dev/nvme0n1`, preserving the ext4 root at `nvme0n1p1` and the EFI system partition at `nvme0n1p2` the node already boots from; volume group `nvmea` on the tail partition `nvme0n1p3` carrying all three tiers (`ci-cache` 350 GiB ext4, `ci-containerd` 525 GiB ext4, `ci-workvols` 525 GiB XFS with reflink) out of the measured 1441 GiB of unpartitioned space; `eno1` at `192.168.1.156/24`, both PINNED; `CLUSTER_ROLE=agent` joining `https://192.168.1.200:6443` with the join token read at run time out of `/etc/rancher/k3s/agent-join-token`; and `node-role/ci=pending:NoSchedule` with `ADMISSION_CAPACITY_C=0`, which is "joined, and taking nothing" said twice on purpose. The base-OS keys are stated equal to the first node's and are INERT: stage 2 is not a stage this node runs, and it refuses against this profile rather than debootstrapping over the operating system `free-space` exists to keep — see the profile's own header. `storage-layout-exit-tests.sh` §G and `../provision-k3s-exit-tests.sh` §E assert this profile's plans off-host. |
+| `profiles/gmktec-xubuntu.env` | **The second node's profile — and this plan's rehearsal of the recipe.** No storage controller; `DISK_PLAN=free-space` on `/dev/nvme0n1`, preserving the ext4 root at `nvme0n1p1` and the EFI system partition at `nvme0n1p2` the node already boots from; volume group `nvmea` on the tail partition `nvme0n1p3` carrying all three tiers (`ci-cache` 350 GiB ext4, `ci-containerd` 525 GiB ext4, `ci-workvols` 525 GiB XFS with reflink) out of the measured 1441 GiB of unpartitioned space; `eno1` at `192.168.1.156/24`, both PINNED; `CLUSTER_ROLE=agent` joining `https://192.168.1.200:6443` with the join token read at run time out of `/etc/rancher/k3s/agent-join-token`; and `node-role/ci=pending:NoSchedule` with `ADMISSION_CAPACITY_C=0`, which is "joined, and taking nothing" said twice on purpose. The base-OS keys are INERT — stage 2 is not a stage this node runs — but they are the NODE's, not the first node's: the 2026-09-06 read found all four of the values originally copied across wrong, so `ESP_LABEL` and `ROOT_LABEL` are EMPTY (neither partition carries a label), `BOOT_ENTRY_LABEL` is `Ubuntu` and `OPERATOR_ACCOUNT` is `cwoolley`. **No line of this profile is marked `# UNVERIFIED`.** The empty root label is what stage 2 now refuses on, by name, rather than debootstrapping over the operating system `free-space` exists to keep — see the profile's own header. `storage-layout-exit-tests.sh` §G and `../provision-k3s-exit-tests.sh` §E assert this profile's plans off-host. |
+| `profiles/gmktec-xubuntu.expected-plan` | Every mutating command that node's `--dry-run` plans, in order, byte for byte — captured from the run BEFORE the four base-OS values were resolved, so "resolving them changed no storage command" is an assertion rather than a claim. `storage-layout-exit-tests.sh` §G13 compares the run against it as an EQUALITY; §G4 and §G5 assert a partition number and an ordered subset, which a step silently added, dropped or reworded between two asserted rungs would pass. |
+| `profiles/gmktec-xubuntu.recorded-facts` | That node's facts as the 2026-09-06 read-only read of the live host found them: the volumes and tiers the procedure creates, the two partitions it preserves (`p1` ext4 465.7G at `/`, `p2` vfat 1G at `/boot/efi`), and the four base-OS values — two of them EMPTY, which the format spells as a `key` record with no value. `storage-layout-exit-tests.sh` §G9–§G12 fail if the profile and the record ever disagree, in either direction. This node earned its record before it was ever built: four of its values were placeholders copied from the first node's profile and the read found ALL FOUR wrong. See "The profile is the record" below. |
 | `profile.sh` | The ONE parser for that format, **sourced** by every stage and never run. Each stage refuses a key it does not know, so a per-stage key list would make the key a later stage needs break an earlier one; there is therefore exactly one list, here. |
-| `storage-layout-exit-tests.sh` | Stage 1's exit tests. Runs the script only through `--dry-run`, against fake probe tools, with every mutating command replaced by a tripwire — so the suite proves the ordering, the profile validation, the consent refusals, the free-space plan's skips and preservation refusals, the first profile's agreement with the recorded facts, and (§G) that the committed `gmktec-xubuntu` profile declares the second node's measured facts and yields the plan they imply, while touching no host at all. |
-| `base-os-install-exit-tests.sh` | Stage 2's exit tests, built the same way. Proves the `--dry-run` command order, that the rendered `/etc/fstab` finds root, the ESP and the three tiers by LABEL and that its five tier lines are byte-exact with the ones `../phase2/storage-layout/install-storage-layout.sh` ensures, that `lvm2` reaches the chroot before the initramfs is regenerated, and that a populated root volume is refused unless the invocation names it. |
+| `storage-layout-exit-tests.sh` | Stage 1's exit tests. Runs the script only through `--dry-run`, against fake probe tools, with every mutating command replaced by a tripwire — so the suite proves the ordering, the profile validation, the consent refusals, the free-space plan's skips and preservation refusals, the first profile's agreement with the recorded facts, and (§G) that the committed `gmktec-xubuntu` profile declares the second node's measured facts, agrees with that node's own recorded facts, and yields the plan they imply byte for byte, while touching no host at all. |
+| `base-os-install-exit-tests.sh` | Stage 2's exit tests, built the same way. Proves the `--dry-run` command order, that the rendered `/etc/fstab` finds root, the ESP and the three tiers by LABEL and that its five tier lines are byte-exact with the ones `../phase2/storage-layout/install-storage-layout.sh` ensures, that `lvm2` reaches the chroot before the initramfs is regenerated, that a populated root volume is refused unless the invocation names it, and (§F) that a profile whose root filesystem carries NO label — a node that KEEPS the root it already has — is refused by that reason before anything is derived or mounted. |
 
 Read the profile's own header for the format. In one line: `KEY=value`, parsed
 and never sourced, list-valued keys holding space-separated `:`-delimited
@@ -96,6 +98,20 @@ symmetric:
   `drives=32:0-6`. A node whose enclosure the resolver cannot read that way
   pins the number in its own profile.
 
+**Every node gets one.** `profiles/gmktec-xubuntu.recorded-facts` is the second
+node's, compared the same way by §G9–§G12 and under the same one-way trust rule.
+That node makes the case more sharply than the first: it had never been built,
+so four of its values were placeholders copied from the first node's profile and
+marked `# UNVERIFIED` — and when the host was finally read, on 2026-09-06, **all
+four were wrong.** `ESP` and `root` are labels neither of its partitions carries,
+`ubuntu` is not the case its firmware entry uses, and `ci-admin` has no passwd
+entry there. Every one of them read as a perfectly ordinary profile line, which
+is the same failure mode as the 64 GiB swap and not a different one. The record
+also holds the two partitions the node preserves, which is what makes "stage 1
+derives partition **3**" an assertion against a fact rather than against a
+constant: the record says 1 and 2 are taken, so 3 is the next free number, and
+`VOLUME_GROUPS` must spell out that same number as a path.
+
 ## The two disk plans
 
 The first pool node's disk is a RAID-5 virtual disk this procedure creates, so
@@ -117,6 +133,7 @@ and NOT two scripts:
 | Erase | `wipefs` (on consent) + `sgdisk --zap-all` | none |
 | Partitions written | 2 — the EFI system partition, then the LVM physical volume | 1 — `sgdisk --new=N:0:0` typed `8e00`, `N` the next free number read off the device's own table, filling the largest free region |
 | EFI system partition | made, as the profile's type and label | left alone; the profile's `ESP_*` keys describe the existing one so the later stages can find it |
+| `ESP_LABEL` and `ROOT_LABEL` | REQUIRED to be non-empty: the procedure makes both filesystems with `mkfs -L`, and the fstab stage 2 renders finds them by LABEL | MAY be EMPTY, which is this format's spelling for "carries no label" — a fact about filesystems the node already has, and one a plain installer leaves behind routinely |
 | Physical volume onward | identical | identical |
 
 `PRESERVED_PARTITIONS` names the device paths no step may write to.
@@ -229,9 +246,17 @@ committed artifact. It is a partial rehearsal by construction — a `free-space`
 node keeps its operating system, so stage 2 is not exercised — and it is
 nonetheless what turns stages 1, 3 and 4 from written into run. Record its
 outcome on the plan's ledger item, naming the procedure revision and
-`profiles/gmktec-xubuntu.env` as the profile it ran with, and treat each
-`# UNVERIFIED` line in that profile as resolved only by the value the rehearsal
-actually reads off the node.
+`profiles/gmktec-xubuntu.env` as the profile it ran with.
+
+That profile carries **no `# UNVERIFIED` line at all**: its four remaining
+placeholders were read off the live host on 2026-09-06, ahead of the rehearsal,
+and all four were wrong — two labels the node does not have, a boot entry whose
+case did not match, and an operator account with no passwd entry there. What
+replaces the marker is `profiles/gmktec-xubuntu.recorded-facts` and the
+assertions that compare the two, because a resolved value drifts as silently as
+an unverified one and the marker was the only thing that had been watching.
+`profiles/poweredge-xubuntu.env` still carries its own `# UNVERIFIED` lines, and
+those remain unresolved until a rehearsal of THAT node reads them.
 
 ## Out of scope here
 
