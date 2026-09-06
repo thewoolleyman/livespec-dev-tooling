@@ -15,6 +15,11 @@ Covered behaviors:
 - the end-to-end hook protocol via in-process `main()` calls plus
   one subprocess invocation of the script exactly as the Claude Code
   hook runs it;
+- per work-item livespec-dev-tooling-k169, the COMMAND-TOKEN POSITION
+  of the classification: a gate word standing in an argument path or
+  inside an `echo` string is not an invocation of that gate, while the
+  bare backgrounded gates stay denied wherever the shell would really
+  run one (after a wrapper, a control word, or a `bash -c` script);
 - per work-item livespec-dev-tooling-h7qp, the VENUE-AWARENESS of the
   deny hint: in a real fresh `git worktree add` of a consumer repo
   that arms the guard, every command the hint names must resolve in
@@ -519,3 +524,96 @@ def test_repo_root_finds_worktree_git_file_and_gives_up_outside_a_repo(tmp_path:
 def test_read_text_degrades_an_unreadable_path_to_empty(tmp_path: Path) -> None:
     """A probe must never raise into the hook's fail-open boundary."""
     assert _read_text(path=tmp_path) == ""
+
+
+# ---------------------------------------------------------------------------
+# Command-token position, not substring (livespec-dev-tooling-k169)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        # The filed occurrence: a sanctioned detached-gate WAITER whose run-id
+        # scratch path carries the word `checks`. The recipe it names is
+        # `gate-wait`; `checks` sits in an ARGUMENT. Both spellings are here
+        # because the shape that actually tripped is the one the
+        # start-anchored runner allowance does NOT reach (a `cd` ahead of it).
+        'cd /repo && mise exec -- just gate-wait "$(cat tmp/scratchpad/run-checks.id)"',
+        "cd /repo && mise exec -- just gate-status tmp/scratchpad/run-checks.id",
+        # Ledger comment [1]: a poll loop whose only gate-shaped content is the
+        # words `just check` inside an echo STRING. It runs no gate at all.
+        "gh api repos/o/r/commits --jq . && echo 'waiting on just check'",
+        'echo "next up: just check" && sleep 60',
+        # The same words in a `git`/`gh` ARGUMENT rather than the subcommand.
+        "git log --oneline --grep commit",
+        "gh run list --workflow pr",
+        # A leading separator yields an empty first segment, which has no
+        # command word at all.
+        "; sleep 60",
+        # Text `shlex` cannot lex (an apostrophe in an unquoted word) falls
+        # back to the coarse tokenizer, which still reads `echo` as the
+        # command word rather than finding a gate inside its arguments.
+        "echo don't wait for just check && sleep 60",
+    ],
+)
+def test_matched_gate_ignores_gate_words_outside_command_position(command: str) -> None:
+    """A gate word in an argument is not an invocation of that gate.
+
+    The guard used to match `just check` as "the word `check` anywhere
+    after the word `just`", so a scratch-file path carrying `checks` and
+    an `echo` string quoting the recipe both read as bare backgrounded
+    gates. The deny then prescribed the detached runner to a caller who
+    was already using it — advice with no move left in it, which is what
+    pushes an agent to engineer AROUND the guard.
+    """
+    assert _matched_gate(command=command) is None
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("mise exec -- just check", "just check"),
+        ("nohup git commit --amend --no-edit", "git commit"),
+        ("git push -u origin feat/x", "git push"),
+        ("gh pr merge 7 --auto --rebase", "gh pr"),
+        # Control words stand between the segment boundary and the command.
+        ("until gh pr checks; do sleep 30; done", "gh pr"),
+        # A shell runner's script argument IS command text, so it is
+        # classified as such rather than treated as an opaque argument.
+        ("bash -c 'mise exec -- just check'", "just check"),
+    ],
+)
+def test_matched_gate_still_finds_gates_in_command_position(command: str, expected: str) -> None:
+    """Positional matching must not cost the guard its teeth."""
+    assert _matched_gate(command=command) == expected
+
+
+def test_should_deny_allows_a_backgrounded_waiter_whose_path_carries_checks() -> None:
+    """The acceptance case: the waiter is allowed, the bare gates are not."""
+    waiter: dict[str, object] = {
+        "command": 'cd /repo && mise exec -- just gate-wait "$(cat tmp/run-checks.id)"',
+        "run_in_background": True,
+    }
+    assert _should_deny(tool_name="Bash", tool_input=waiter) is None
+
+    echoed: dict[str, object] = {
+        "command": "gh api repos/o/r/commits --jq . && echo 'waiting on just check'",
+        "run_in_background": True,
+    }
+    assert _should_deny(tool_name="Bash", tool_input=echoed) is None
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("just check", "just check"),
+        ("mise exec -- git commit -m 'fix: x'", "git commit"),
+        ("git push", "git push"),
+        ("gh pr create --fill", "gh pr"),
+    ],
+)
+def test_should_deny_still_denies_every_bare_backgrounded_gate(command: str, expected: str) -> None:
+    """A bare backgrounded gate keeps its original hazard, so it stays denied."""
+    tool_input: dict[str, object] = {"command": command, "run_in_background": True}
+    assert _should_deny(tool_name="Bash", tool_input=tool_input) == expected
