@@ -315,7 +315,7 @@ fleet's actual call volume) needs a live-cluster observation —
 | `node-keyring-budget/60-k3s-container-keyring.conf` + `install-keyring-sysctl.sh` | The per-user kernel keyring quota (`kernel.keys.maxkeys = 2000`, `maxbytes = 200000`) as a `/etc/sysctl.d/` drop-in. Every container start allocates a session keyring against uid 0 under containerd/runc; the kernel default of 200 was exhausted on this host on 2026-08-13 by two repositories' concurrency. The value had survived on the host only as an untracked drop-in under an earlier name; the 2026-09-02 gitops audit found it with no git source, and the installer now ships it under this name and removes the untracked predecessor. |
 | `storage-layout/install-storage-layout.sh` | Ensures the FIVE `/etc/fstab` lines that define the node's storage layout — the three CI tiers found by filesystem LABEL (`ci-cache` at `/var/cache/ci-runner`, `ci-containerd` and `ci-workvols` mounted under it) and the two bind mounts putting containerd's store and the local-path PVC root on them — byte-exact and with no UUID argument, replacing a differing line for one of those mountpoints (fstab backed up first, `findmnt --verify` after); refuses unless each label resolves to exactly one device; installs the k3s drop-in below. Labels, not UUIDs, so the lines are identical on the array stand-in LVs and on the NVMe (livespec plan `ci-runner-pod-lifecycle-reliability`, `livespec-el5y`; see "Storage layout: media-neutral tier identity" below). Never formats, moves data, mounts, or restarts k3s. |
 | `storage-layout/10-requires-storage-mounts.conf` | `k3s.service.d/` drop-in: `RequiresMountsFor=` both bind targets, so k3s refuses to start — loudly, every `After=k3s` oneshot failing by dependency — rather than silently running the pool's churn on `/` when a tier is missing. Kept by hand on the host from 2026-09-04's NVMe attempt; from git since `livespec-el5y`. |
-| `storage-layout/migrate-tier.sh` | Moves a tier to new media by COPY + RELABEL with fstab untouched — the "Moving a tier to new media" procedure below as code. `prepare ROLE VG PV_BY_ID SIZE` (live, idempotent: PV/VG/LV, ext4 under the temporary `new-<suffix>` label, bulk rsync under a temp mount; refuses a PV on any device that already carries a signature — a stale copy from a failed attempt is never reused) and `cutover ROLE [ROLE ...]` (the quiet window: refuses unless zero EphemeralRunners; stops k3s, final delta + dry-run verification + inode counts, unmount, swap labels `old-<suffix>` / role, by-label refresh through dm events — never a blanket `udevadm trigger` — `mount -a`, proves every path is on the new device, starts k3s and the `After=k3s` oneshots, compares the image count, ends by running `install-storage-layout.sh` which must be a no-op). Carried the containerd store and the work volumes onto the first NVMe on 2026-09-04 (livespec `livespec-e2vcqf`); see `.ai/ci-node-storage-tiers.md`. |
+| `storage-layout/migrate-tier.sh` | Moves a tier to new media, or replaces its filesystem in place, by COPY + RELABEL with fstab untouched — the "Moving a tier" procedures below as code, and the ONE place each role's filesystem type is decided (`role_fstype`: `ci-workvols` is XFS with reflink, the others ext4; the installer's lines must agree). `prepare ROLE VG PV_BY_ID SIZE` (live, idempotent: PV/VG/LV, the role's filesystem under the temporary `new-<suffix>` label, bulk rsync; refuses a PV on any device that already carries a signature — a stale copy from a failed attempt is never reused; names the LV `ROLE-new` when the VG already holds the live one). `cutover ROLE...` (the quiet-window switch: refuses unless zero EphemeralRunners; stops k3s, final delta + dry-run verification + inode counts, unmount, swap labels, by-label refresh through dm events — never a blanket `udevadm trigger` — `mount -a`, proves every path is on the new device, starts k3s and the `After=k3s` oneshots, compares the image count, ends by running `install-storage-layout.sh`). `switch-live ROLE` (NO window: STACKS the new filesystem over the tier mountpoint and a fresh bind over the bind target, never unmounting the old — the mount units stay active so the k3s drop-in cannot fire; running pods finish on the old volume, every new work volume lands on the new one), `drain-status ROLE` (pods still holding an old volume), `finish-live ROLE` (online relabel, LV rename, installer run; the old volume stays mounted underneath until the next boot), `reclaim ROLE` (after that boot: remove the old LV, grow the new). Carried the containerd store and the work volumes onto the first NVMe on 2026-09-04 (livespec `livespec-e2vcqf`) and reformatted `ci-workvols` as XFS live on 2026-09-06 (`livespec-dev-tooling-hmv2bo`); see `.ai/ci-node-storage-tiers.md`. |
 | `datastore-tmpfs/20-requires-datastore-mount.conf` | `k3s.service.d/` drop-in installed by `install-datastore-tmpfs.sh` only: `RequiresMountsFor=` the tmpfs datastore mount, because since the 2026-09-04 array rebuild the directory underneath holds a stale backup restore, not a rollback copy. Changes the rollback steps — read its header. |
 | `node-extended-resource/reapply-node-extended-resource.service` (boot ordering) | Since 2026-09-02 also `WantedBy=multi-user.target` and `Before=converge-ci-stack.service`: on a tmpfs-datastore boot the node object is new, so the churn-slot resource every queue is denominated in is applied before the queues, not up to a minute later by the timer's first tick. Since 2026-09-04 the converge states the same dependency from its side (`After=`/`Wants=`) and asserts the capacity itself at step 1b (`livespec-kgl3`). |
 | `install-node.sh` | The ONE ordered runbook for the node-local half: runs every installer in this tree in dependency order with the right arguments (`sudo install-node.sh 64`), so a from-scratch rebuild is one command. Enables the boot units, never starts them, never restarts k3s. Lists what it deliberately leaves attended (credstore seeding, the OTel collector from its own repo, the initial warm-cache populate). |
@@ -806,7 +806,7 @@ this table is fixed; only the medium behind a label ever changes.
 |---|---|---|---|---|
 | tier root | `ci-cache` | `/var/cache/ci-runner` | — | the crates proxy's store (`crates-proxy/`) and the two tier mountpoints below — the warm uv cache left it under `livespec-lvtu` |
 | containerd store | `ci-containerd` | `/var/cache/ci-runner/k3s-containerd` | `/var/lib/rancher/k3s/agent/containerd` | image layers, snapshots, container root filesystems |
-| runner work volumes | `ci-workvols` | `/var/cache/ci-runner/k3s-storage` | `/var/lib/rancher/k3s/storage` | every runner's `local-path` PVC scratch, and beside them the warm uv cache lower (`.warm`, `warm-cache/`) each volume is hardlink-seeded from — one filesystem by necessity, since a hardlink crosses neither a filesystem nor a mount |
+| runner work volumes | `ci-workvols` | `/var/cache/ci-runner/k3s-storage` | `/var/lib/rancher/k3s/storage` | every runner's `local-path` PVC scratch, and beside them the warm uv cache lower (`.warm`, `warm-cache/`) each volume is seeded from — one filesystem by necessity, since neither a hardlink nor a reflink crosses a filesystem. **XFS with reflink** since 2026-09-06 (the other two tiers are ext4): a reflink seed gives every job its own inodes, so a job's writes never reach the shared generation (livespec plan `ci-runner-pod-lifecycle-reliability` research/006 option (a); `livespec-dev-tooling-hmv2bo`). An XFS label holds 12 bytes. |
 
 `storage-layout/install-storage-layout.sh` ensures the five `/etc/fstab`
 lines that say exactly this (its header lists them byte-for-byte) and the
@@ -896,9 +896,49 @@ the next boot (livespec plan `poweredge-raid-array-maintenance`, research
 note `nvme-pex8747-gen3-link-fault.md`, gotcha 3; the whole trap list is
 `.ai/ci-node-storage-tiers.md`).
 
+### Replacing a tier's filesystem in place, with no window
+
+Used on 2026-09-06 to turn `ci-workvols` from ext4 into XFS with reflink on
+the same NVMe while the pool kept taking jobs. It works for a tier whose
+contents are per-job volumes plus a regenerable root — nothing on it must
+survive the switch except what one rsync carries — and it rests on one
+fact: a mount can be STACKED on top of an existing mountpoint without
+unmounting what is there, so the mount unit never goes inactive and the
+k3s `RequiresMountsFor` drop-in never fires (the udev incident above was
+a mount going AWAY under k3s; this only ever adds one).
+
+1. `prepare ci-workvols <vg> <pv-by-id> <size>` — as for a move, except the
+   VG already holds the live `ci-workvols` LV, so the new one is named
+   `ci-workvols-new`; the filesystem is the role's declared type (XFS here)
+   under the temporary `new-workvols` label. Size it to the VG's free space:
+   the old LV cannot be removed until the next boot.
+2. `switch-live ci-workvols` — copies the regenerable root once more (per-job
+   `pvc-*` directories are deliberately NOT copied: their pods keep them),
+   then stacks the new filesystem over `/var/cache/ci-runner/k3s-storage`
+   and a fresh bind over `/var/lib/rancher/k3s/storage`. From that moment
+   every new work volume the provisioner creates is on XFS; a pod already
+   running keeps its own mount of the old volume and finishes normally.
+3. `drain-status ci-workvols` — counts kubelet's per-pod volume binds whose
+   source is the old device; wait for 0 (a job's lifetime, no more).
+4. `finish-live ci-workvols` — relabels ONLINE (`tune2fs -L` for the old
+   ext4; `xfs_io -c 'label -s …'` for the mounted new XFS), renames the LVs
+   (`ci-workvols` → `ci-workvols-old`, `ci-workvols-new` → `ci-workvols`),
+   runs `install-storage-layout.sh`, which replaces the tier's fstab line
+   because its type changed (`ext4` → `xfs`; fstab backed up, old and new
+   printed). The old volume stays mounted UNDERNEATH until the next boot;
+   `findmnt` shows both, the top one is the live one.
+5. After the next boot (fstab mounts only the new): `reclaim ci-workvols` —
+   removes `ci-workvols-old`, extends the LV over the freed extents,
+   `xfs_growfs` online.
+
+What still needs a quiet window: nothing on the host. The provisioner's
+seed becoming `cp --reflink`, the hook template dropping `UV_LINK_MODE=copy`,
+and the negative test's case 1 re-base are cluster changes that converge
+like any other (`livespec-dev-tooling-hmv2bo`).
+
 **Where the tiers live now (poweredge-xubuntu, since 2026-09-04 17:07Z).**
-`ci-cache` on VG `poweredge` (the 7-drive RAID-5 array); `ci-containerd` and
-`ci-workvols` on VG `nvmea` — one WD_BLACK SN8100 4 TB on the StarTech
+`ci-cache` on VG `poweredge` (the 7-drive RAID-5 array, ext4); `ci-containerd`
+(ext4) and `ci-workvols` (XFS with reflink since 2026-09-06) on VG `nvmea` — one WD_BLACK SN8100 4 TB on the StarTech
 PEX8M2E2 (ASM2824 switch, Gen3 x8 uplink, drive at Gen3 x4) in PCIe Slot 1,
 LVs of 1.5 TiB each with ~640 GiB unallocated. Both write-hot tiers share
 the one drive as the interim; when the second SN8100 arrives, `ci-workvols`
