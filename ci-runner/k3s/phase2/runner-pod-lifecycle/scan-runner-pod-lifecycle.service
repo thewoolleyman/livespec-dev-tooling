@@ -2,8 +2,8 @@
 # the runner-pod LIFECYCLE stall (scan-runner-pod-lifecycle.sh): PVCs stuck
 # Pending, scheduler volume-bind expiries, containerd inotify exhaustion,
 # containerd create-path deadlines and teardown starvation, the ARC hook's
-# failure signature and its precursor (and, from the listener archive, jobs
-# that failed before any step could run), stale scale-set listeners, a runner
+# failure signature and its precursor (best-effort: pods already gone are
+# invisible — the durable detection is job-side), stale scale-set listeners, a runner
 # node missing the ci-runner.io/churn-slot capacity every queue is denominated
 # in, the warm cache over budget or its populator stalled, a job start's seed
 # cost, and the API server itself going away (k3s restarts, refused reads).

@@ -61,20 +61,27 @@
 #                        inside the window, or a `-workflow` pod Pending longer
 #                        than WORKFLOW_PENDING_SECONDS — the CI-visible
 #                        signature and its precursor (the hook gives up after
-#                        ~13 minutes of the workflow pod not coming up) — AND,
-#                        since livespec-kgdlte scope 6, its DURABLE shadow:
-#                        jobs the scale-set LISTENERS saw complete `failed`
-#                        within HOOK_FAST_FAIL_SECONDS of starting, read from
-#                        the listener archive ../arc-log-archive/ keeps for
-#                        days. The live-log grep is a bonus that sees almost
-#                        nothing (2026-09-06 06:07Z: 17 jobs failed on
-#                        `connect ECONNREFUSED` + the hook string, and the
-#                        06:13Z and 06:20Z sweeps read 0 — ephemeral runner
-#                        pods are deleted seconds after a job fails); a job
-#                        that fails before its first step could run is the
-#                        hook failing to bring the workflow pod up, and the
-#                        listener's `Job started` -> `Job completed`
-#                        (Result: failed) pair outlives the pod.
+#                        ~13 minutes of the workflow pod not coming up).
+#                        BEST-EFFORT, and honestly so: the log grep MISSES
+#                        every failure whose runner pod is already gone,
+#                        which is most of them — ephemeral runner pods are
+#                        deleted seconds after a job fails (2026-09-06
+#                        06:07Z: 17 jobs failed on `connect ECONNREFUSED` +
+#                        the hook string; the 06:13Z and 06:20Z sweeps read
+#                        0). Nothing node-side outlives the pod with the job
+#                        outcome in it: the ARC 0.14.2 listener logs no job
+#                        result at all (verified against 300+ MB of listener
+#                        archive: `Updating job info for the runner`,
+#                        `Calculated target runner count`, never a
+#                        conclusion), EphemeralRunner status is Succeeded
+#                        and deleted after a hook failure (the runner exits
+#                        0), and the hook emits no event. The DURABLE
+#                        detection is job-side, in the fleet's github-ci
+#                        Honeycomb dataset (../README.md "The detector",
+#                        the `ci-hook-failure-burst` trigger under
+#                        ../../../observability/triggers/); this class
+#                        names the node-side cause when one is visible
+#                        (api-unavailable, containerd-deadline).
 #   stale-listener       a scale-set listener pod not Running (or waiting in a
 #                        crash loop), or an AutoscalingListener whose
 #                        spec.ephemeralRunnerSetName names no existing
@@ -123,15 +130,23 @@
 #                        visible (idle pool) OMITS the class rather than
 #                        reporting 0 (livespec-44qx, F4b; research/005-006 of
 #                        the plan measured 3 s on the 12k-file generation).
-#   api-unavailable      the API server was not there: k3s.service restarts
-#                        inside the window (the unit's `Main process exited`
-#                        journal lines, cross-checked against systemd's
-#                        NRestarts counter persisted between sweeps — the
-#                        journal can be rate-limited during exactly the crash
-#                        that matters) plus this sweep's OWN API reads that
-#                        were REFUSED (`connection refused`, `EOF`, `Service
-#                        Unavailable`; a read that merely timed out is the
-#                        deadline machinery's, not this class's). 2026-09-06
+#   api-unavailable      the API server was not there: k3s.service's main
+#                        process STARTED inside the window — systemd's
+#                        ExecMainStartTimestampMonotonic (microseconds since
+#                        boot, moved by every start: a crash-and-auto-restart
+#                        and a hand `systemctl restart` alike) read against
+#                        /proc/uptime, so no time zone is parsed and no state
+#                        is kept (the journal's `Main process exited` line
+#                        appears only for a FAILING exit and a hand restart
+#                        RESETS NRestarts, which is why the first cut read 0
+#                        on exactly the acceptance move) — plus this sweep's
+#                        OWN API reads that were REFUSED (`connection
+#                        refused`, `EOF`, `Service Unavailable`; a read that
+#                        merely timed out, `TLS handshake timeout` included,
+#                        is the deadline machinery's, not this class's — an
+#                        overloaded API times out, a gone one refuses).
+#                        A boot is a start too: the first sweep after one
+#                        reports it, truthfully. 2026-09-06
 #                        06:07:03Z: a flannel vxlan nil-pointer panic, systemd
 #                        restart, API back ~06:07:20Z, 17 jobs failed on
 #                        ECONNREFUSED in between; the 06:07:09Z sweep saw its
@@ -212,7 +227,7 @@
 # find (-printf). curl for the emission (its absence is logged, never fatal).
 set -euo pipefail
 
-USAGE="usage: scan-runner-pod-lifecycle.sh [--window DURATION] [--pvc-pending-seconds N] [--workflow-pending-seconds N] [--killpod-min N] [--containerd-log PATH] [--state-file PATH] [--escalate-after N] [--namespace NS] [--systems-namespace NS] [--node-selector LABEL] [--otlp-endpoint URL] [--no-emit] [--warm-last-run PATH] [--warm-budget-configmap NS/NAME] [--warm-stale-ticks N] [--seed-seconds-budget N] [--seed-bytes-budget N] [--storage-root PATH] [--request-timeout DURATION] [--step-timeout N] [--deadline-seconds N] [--arc-archive-dir PATH] [--hook-fast-fail-seconds N] [--k3s-unit UNIT]
+USAGE="usage: scan-runner-pod-lifecycle.sh [--window DURATION] [--pvc-pending-seconds N] [--workflow-pending-seconds N] [--killpod-min N] [--containerd-log PATH] [--state-file PATH] [--escalate-after N] [--namespace NS] [--systems-namespace NS] [--node-selector LABEL] [--otlp-endpoint URL] [--no-emit] [--warm-last-run PATH] [--warm-budget-configmap NS/NAME] [--warm-stale-ticks N] [--seed-seconds-budget N] [--seed-bytes-budget N] [--storage-root PATH] [--request-timeout DURATION] [--step-timeout N] [--deadline-seconds N] [--k3s-unit UNIT]
   DURATION is <N>s, <N>m or <N>h. REPORT-ONLY: prints every lifecycle-stall
   class found on the node with its count and exits 1 if any; exits 0 on a
   clean node; exits 2 when it cannot read one of its inputs, or when a read
@@ -282,32 +297,17 @@ STORAGE_ROOT="${RPL_STORAGE_ROOT:-}"
 KUBECTL_REQUEST_TIMEOUT="${RPL_KUBECTL_REQUEST_TIMEOUT:-30s}"
 STEP_TIMEOUT="${RPL_STEP_TIMEOUT:-30}"
 DEADLINE_SECONDS="${RPL_DEADLINE_SECONDS:-}"
-# hook-failure's durable leg (header): where ../arc-log-archive/ keeps the
-# listener logs (`<pod>.log`, every line prefixed by `kubectl logs
-# --timestamps`, so the TIME of a job message is the archive's own prefix and
-# does not depend on the listener's log format), how quickly a job must have
-# failed after starting to count as "failed before any step could run"
-# (the hook gives up in seconds on a refused API, ~13 min on a workflow pod
-# that never comes up — the latter is the -workflow Pending leg's), and the
-# listener's two message phrases (ARC gha-runner-scale-set's listener logs
-# `Job started message received.` / `Job completed message received.` with
-# `"RequestId"`, `"RunnerName"`, `"Result"` fields; overridable if a listener
-# upgrade rewords them — the sweep says so when an archive holds job traffic
-# but neither phrase, rather than reading a silent zero).
-ARC_ARCHIVE_DIR="${RPL_ARC_ARCHIVE_DIR:-/var/log/arc-archive}"
-HOOK_FAST_FAIL_SECONDS="${RPL_HOOK_FAST_FAIL_SECONDS:-90}"
-LISTENER_STARTED_PATTERN="${RPL_LISTENER_STARTED_PATTERN:-Job started message received}"
-LISTENER_COMPLETED_PATTERN="${RPL_LISTENER_COMPLETED_PATTERN:-Job completed message received}"
-# api-unavailable (header): the API server's unit, and where systemd's
-# NRestarts counter is persisted between sweeps so a restart the journal
-# rate-limited away is still counted once.
+# api-unavailable (header): the API server's unit.
 K3S_UNIT="${RPL_K3S_UNIT:-k3s.service}"
-NRESTARTS_STATE_FILE="${RPL_NRESTARTS_STATE_FILE:-/var/lib/ci-runner-k3s/runner-pod-lifecycle-k3s-nrestarts}"
 
 HOOK_SIGNATURE='Executing the custom container implementation failed'
-# What a REFUSED API read looks like on kubectl's stderr — the server gone,
-# not slow (a slow one hits the deadline instead).
-API_REFUSAL_SIGNATURE='was refused|connection refused|unexpected EOF|EOF$|currently unable to handle the request|Service Unavailable|no route to host|TLS handshake timeout'
+# What a REFUSED API read looks like on kubectl's stderr — the server GONE,
+# never merely slow: no timeout phrase belongs here (a slow API hits the
+# deadline instead, and `TLS handshake timeout` is what an overloaded API
+# returns under a burst). Verified sample, host 2026-09-06: `The connection
+# to the server 127.0.0.1:1 was refused - did you specify the right host or
+# port?`
+API_REFUSAL_SIGNATURE='was refused|connection refused|unexpected EOF|EOF$|currently unable to handle the request|Service Unavailable|no route to host'
 BIND_SIGNATURE='binding volumes: context deadline exceeded'
 EMFILE_SIGNATURE='failed to create inotify fd'
 CREATE_SIGNATURE='context deadline exceeded|failed to create shim task'
@@ -335,15 +335,13 @@ while [ $# -gt 0 ]; do
     --request-timeout)          KUBECTL_REQUEST_TIMEOUT="${2:?$USAGE}"; shift 2 ;;
     --step-timeout)             STEP_TIMEOUT="${2:?$USAGE}"; shift 2 ;;
     --deadline-seconds)         DEADLINE_SECONDS="${2:?$USAGE}"; shift 2 ;;
-    --arc-archive-dir)          ARC_ARCHIVE_DIR="${2:?$USAGE}"; shift 2 ;;
-    --hook-fast-fail-seconds)   HOOK_FAST_FAIL_SECONDS="${2:?$USAGE}"; shift 2 ;;
     --k3s-unit)                 K3S_UNIT="${2:?$USAGE}"; shift 2 ;;
     -h|--help)                  echo "$USAGE"; exit 0 ;;
     *)                          echo "FATAL: unknown argument '$1'"$'\n'"$USAGE" >&2; exit 2 ;;
   esac
 done
 
-for v in PVC_PENDING_SECONDS WORKFLOW_PENDING_SECONDS KILLPOD_MIN ESCALATE_AFTER WARM_STALE_TICKS SEED_SECONDS_BUDGET STEP_TIMEOUT HOOK_FAST_FAIL_SECONDS; do
+for v in PVC_PENDING_SECONDS WORKFLOW_PENDING_SECONDS KILLPOD_MIN ESCALATE_AFTER WARM_STALE_TICKS SEED_SECONDS_BUDGET STEP_TIMEOUT; do
   [[ "${!v}" =~ ^[0-9]+$ ]] || { echo "FATAL: ${v} must be a non-negative integer, got '${!v}'" >&2; exit 2; }
 done
 for v in SEED_BYTES_BUDGET DEADLINE_SECONDS; do
@@ -472,7 +470,7 @@ emit_api_unavailable_alone() {
 # deduplicated (a class with two reads records twice), or empty.
 # `deadline_hits classes` lists only the reads that feed a CLASS: `emit` (the
 # emitter's own Kueue/node reads, best-effort by contract) and `precheck`
-# never decide the exit code — a sweep whose nine classes all completed is a
+# never decide the exit code — a sweep whose ten classes all completed is a
 # reading even when the shrinking deadline skipped the last two gauge reads,
 # which under a burst is the common case, not an incomplete sweep.
 deadline_hits() { [ -s "$DEADLINE_FILE" ] && awk -v classes="${1:-}" '!seen[$0]++ && !(classes != "" && ($1 == "emit" || $1 == "precheck")) {printf "%s%s:%s", (n++?" ":""), $1, $2}' "$DEADLINE_FILE"; printf ''; }
@@ -741,66 +739,8 @@ while IFS='|' read -r name created; do
     wf_hits=$((wf_hits+1)); add_detail "    workflow-pod=${name} pending_for=${age}s"
   fi
 done < <(kc hook-failure -n "$NAMESPACE" get pods --field-selector=status.phase=Pending -o jsonpath='{range .items[*]}{.metadata.name}|{.metadata.creationTimestamp}{"\n"}{end}' 2>/dev/null || true)
-# The DURABLE leg (header): every listener archive under ARC_ARCHIVE_DIR,
-# walked BACKWARDS to the cutoff minus HOOK_FAST_FAIL_SECONDS (so a job that
-# started just before the window and failed inside it is paired), yields the
-# `Job started` / `Job completed` lines; a completion inside the window with
-# Result failed whose start was under HOOK_FAST_FAIL_SECONDS earlier is a
-# job that failed before any step could run. Times are the archive's own
-# `--timestamps` prefix (first token). Format guard: an archive that holds
-# lines but NO job message of either phrase anywhere in the walked range
-# while runner pods exist is named as unrecognised and the class's zero is
-# withheld — a listener that rewords its messages must not read as clean.
-fast_hits=0; listener_files=0; listener_lines=0; listener_msgs=0
-declare -A started_at=() started_runner=()
-if [ -d "$ARC_ARCHIVE_DIR" ]; then
-  archive_cutoff_iso="$(date -u -d "@$(( CUTOFF_EPOCH - HOOK_FAST_FAIL_SECONDS ))" +%Y-%m-%dT%H:%M:%S)"
-  for lf in "$ARC_ARCHIVE_DIR"/*listener*.log; do
-    [ -r "$lf" ] || continue
-    listener_files=$((listener_files+1))
-    # Records: <epoch-ish ISO prefix>|started|completed|<RequestId>|<RunnerName>|<Result>
-    while IFS='|' read -r ts kind reqid runner result; do
-      [ -n "$ts" ] || continue
-      case "$kind" in
-        lines) listener_lines=$((listener_lines + reqid)); continue ;;
-        started) listener_msgs=$((listener_msgs+1)); started_at["$reqid"]="$ts"; started_runner["$reqid"]="$runner" ;;
-        completed)
-          listener_msgs=$((listener_msgs+1))
-          [ "$(age_seconds "$ts")" != unknown ] && [ "$(age_seconds "$ts")" -le "$WINDOW_SECONDS" ] || continue
-          case "$result" in failed|Failed|FAILED) ;; *) continue ;; esac
-          s="${started_at[$reqid]:-}"
-          [ -n "$s" ] || continue
-          took=$(( $(date -u -d "$ts" +%s 2>/dev/null || echo 0) - $(date -u -d "$s" +%s 2>/dev/null || echo 0) ))
-          if [ "$took" -ge 0 ] && [ "$took" -lt "$HOOK_FAST_FAIL_SECONDS" ]; then
-            fast_hits=$((fast_hits+1)); add_detail "    job request=${reqid} runner=${started_runner[$reqid]:-${runner:-?}} failed ${took}s after starting (before any step could run; listener archive ${lf##*/})"
-          fi ;;
-      esac
-    done < <({ bounded hook-failure tac "$lf" 2>/dev/null || true; } | awk -v cut="$archive_cutoff_iso" -v sp="$LISTENER_STARTED_PATTERN" -v cp="$LISTENER_COMPLETED_PATTERN" '
-      {
-        ts = substr($1, 1, 19)
-        if (ts !~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T/) next
-        if (ts < cut) exit
-        n++
-        kind = ""
-        if (index($0, sp) > 0) kind = "started"; else if (index($0, cp) > 0) kind = "completed"
-        if (kind == "") next
-        req = ""; run = ""; res = ""
-        if (match($0, /"RequestId": *"?[0-9]+/)) { req = substr($0, RSTART, RLENGTH); sub(/.*: *"?/, "", req) }
-        if (match($0, /"RunnerName": *"[^"]*"/)) { run = substr($0, RSTART, RLENGTH); sub(/.*: *"/, "", run); sub(/"$/, "", run) }
-        if (match($0, /"Result": *"[^"]*"/)) { res = substr($0, RSTART, RLENGTH); sub(/.*: *"/, "", res); sub(/"$/, "", res) }
-        rows[++r] = ts "Z|" kind "|" req "|" run "|" res
-      }
-      END { print "x|lines|" n + 0 "||"; for (i = r; i >= 1; i--) print rows[i] }')
-  done
-else
-  echo "  ${ARC_ARCHIVE_DIR} absent (../arc-log-archive/ not installed): the durable leg cannot be read; the live-log grep stands alone"
-fi
-echo "  ${hook_hits} runner log(s) with the hook failure; ${wf_hits} workflow pod(s) Pending longer than ${WORKFLOW_PENDING_SECONDS}s; ${fast_hits} job(s) failed under ${HOOK_FAST_FAIL_SECONDS}s of starting (listener archive: ${listener_files} file(s), ${listener_lines} line(s) walked, ${listener_msgs} job message(s))"
-if [ "$listener_files" -gt 0 ] && [ "$listener_lines" -gt 0 ] && [ "$listener_msgs" -eq 0 ] && [ -n "${POD_ROWS//[[:space:]]/}" ]; then
-  echo "  listener archive holds ${listener_lines} line(s) in range but no '${LISTENER_STARTED_PATTERN}' / '${LISTENER_COMPLETED_PATTERN}' message while runner pods exist: format unrecognised (RPL_LISTENER_*_PATTERN); hook-failure's zero withheld"
-  omit_zero hook-failure
-fi
-[ $(( hook_hits + wf_hits + fast_hits )) -gt 0 ] && add_finding hook-failure "$(( hook_hits + wf_hits + fast_hits ))"
+echo "  ${hook_hits} runner log(s) with the hook failure; ${wf_hits} workflow pod(s) Pending longer than ${WORKFLOW_PENDING_SECONDS}s (best-effort: a failure whose runner pod is already gone is invisible here; the durable detection is the job-side ci-hook-failure-burst trigger)"
+[ $(( hook_hits + wf_hits )) -gt 0 ] && add_finding hook-failure "$(( hook_hits + wf_hits ))"
 
 # ---------------------------------------------------------------------------
 log "6. stale-listener: listener pods in ${SYSTEMS_NAMESPACE} not Running; AutoscalingListener -> EphemeralRunnerSet references"
@@ -1035,35 +975,40 @@ fi
 [ "$seed_hits" -gt 0 ] && add_finding start-seed-cost "$seed_hits"
 
 # ---------------------------------------------------------------------------
-log "10. api-unavailable: ${K3S_UNIT} restarts in the last ${WINDOW}; API reads refused during this sweep"
-# Restarts: the unit's `Main process exited` journal lines inside the window
-# (one per crash), cross-checked against systemd's NRestarts counter
-# persisted between sweeps — journald rate-limits exactly during a crash
-# burst, and the counter survives that; the larger of the two is the count.
-# A counter that went DOWN (the unit was stopped and started by hand, which
-# resets it) yields no delta; the state file is written fail-soft, like the
-# streak. Refused reads are what kc recorded for steps 1-9; the emitter's
-# own reads come after this step and show only in its emit lines.
-api_restart_lines="$(bounded api-unavailable journalctl -u "$K3S_UNIT" --since "@${CUTOFF_EPOCH}" --no-pager -q 2>/dev/null | grep -c 'Main process exited' || true)"
-[[ "$api_restart_lines" =~ ^[0-9]+$ ]] || api_restart_lines=0
-api_nrestarts=""; api_nrestarts_delta=""
-if v="$(bounded api-unavailable systemctl show -p NRestarts --value "$K3S_UNIT" 2>/dev/null)" && [[ "$v" =~ ^[0-9]+$ ]]; then
-  api_nrestarts="$v"
-  prev="$(cat "$NRESTARTS_STATE_FILE" 2>/dev/null || true)"
-  [[ "$prev" =~ ^[0-9]+$ ]] && [ "$v" -ge "$prev" ] && api_nrestarts_delta=$(( v - prev ))
-  { mkdir -p "$(dirname "$NRESTARTS_STATE_FILE")" && printf '%s\n' "$v" > "$NRESTARTS_STATE_FILE"; } 2>/dev/null || true
+log "10. api-unavailable: ${K3S_UNIT} (re)started in the last ${WINDOW}; API reads refused during this sweep"
+# Restart detection is the unit's OWN main-process start, read as a
+# MONOTONIC clock against /proc/uptime so no time zone is parsed and no
+# state file is kept: ExecMainStartTimestampMonotonic is microseconds since
+# boot at the moment systemd forked the current k3s main process, and it
+# moves on EVERY start — a crash-and-auto-restart and a hand `systemctl
+# restart k3s` alike. (The first cut counted the journal's `Main process
+# exited` lines, which systemd logs only for a FAILING exit, and a NRestarts
+# delta, which a hand restart resets to 0 — so the acceptance move read 0.)
+# Verified on the host 2026-09-06 09:49Z, verbatim: `ExecMainStartTimestamp=
+# Sat 2026-09-05 23:07:09 PDT`, `ExecMainStartTimestampMonotonic=
+# 14726505650`, `NRestarts=1`. A start younger than the window is ONE
+# restart (the property carries only the latest start; two in one window
+# count once). A boot is a start too: the first sweep after it reports the
+# API as having been away, which it was. Refused reads are what kc recorded
+# for steps 1-9; the emitter's own reads come after this step and show only
+# in its emit lines.
+api_restarts=0; api_started_ago=""
+if mono="$(bounded api-unavailable systemctl show -p ExecMainStartTimestampMonotonic --value "$K3S_UNIT" 2>/dev/null)" \
+   && [[ "$mono" =~ ^[0-9]+$ ]] && [ "$mono" -gt 0 ] && read -r uptime _ < /proc/uptime; then
+  api_started_ago=$(( ${uptime%.*} - mono / 1000000 ))
+  if [ "$api_started_ago" -ge 0 ] && [ "$api_started_ago" -le "$WINDOW_SECONDS" ]; then
+    api_restarts=1; add_detail "    ${K3S_UNIT} main process started ${api_started_ago}s ago, inside the ${WINDOW} window (ExecMainStartTimestampMonotonic vs /proc/uptime): the API was gone across that start, and a job starting then fails on connect ECONNREFUSED"
+  fi
 else
-  echo "  systemctl show -p NRestarts ${K3S_UNIT} unreadable: restarts counted from the journal alone"
+  echo "  systemctl show -p ExecMainStartTimestampMonotonic ${K3S_UNIT} unreadable: restarts unknown this sweep; api-unavailable's zero withheld"
+  omit_zero api-unavailable
 fi
-api_restarts="$api_restart_lines"
-[ -n "$api_nrestarts_delta" ] && [ "$api_nrestarts_delta" -gt "$api_restarts" ] && api_restarts="$api_nrestarts_delta"
-[ "$api_restarts" -gt 0 ] && add_detail "    ${K3S_UNIT} restarted ${api_restarts}x in ${WINDOW} (journal 'Main process exited' lines ${api_restart_lines}; NRestarts ${api_nrestarts:-unreadable}${api_nrestarts_delta:+, +${api_nrestarts_delta} since the last sweep}): the API was gone for each restart's boot window, and a job starting then fails on connect ECONNREFUSED"
 api_refused=0
 while IFS=' ' read -r step rest; do
   [ -n "$step" ] || continue
   api_refused=$((api_refused+1)); add_detail "    API read REFUSED at step ${step}: ${rest}"
 done < "$API_REFUSED_FILE"
-echo "  ${api_restarts} restart(s) of ${K3S_UNIT}; ${api_refused} API read(s) refused during this sweep (steps 1-9)"
+echo "  ${api_restarts} (re)start(s) of ${K3S_UNIT} inside the window (main process started ${api_started_ago:-unknown}s ago); ${api_refused} API read(s) refused during this sweep (steps 1-9)"
 api_hits=$(( api_restarts + api_refused ))
 [ "$api_hits" -gt 0 ] && add_finding api-unavailable "$api_hits"
 
