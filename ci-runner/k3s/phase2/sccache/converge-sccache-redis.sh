@@ -74,7 +74,7 @@ acl_file="$(mktemp)"
 trap 'rm -f "${acl_file}"' EXIT
 (umask 077; cat > "${acl_file}" <<ACL
 user default on nopass ~* &* -@all +@read +@connection +info
-user ${WRITER_USER} on >${writer_pass} ~* &* -@all +@read +@write +@keyspace +@connection
+user ${WRITER_USER} on >${writer_pass} ~* &* -@all +@read +@write +@keyspace +@connection +bgsave
 ACL
 )
 kubectl create secret generic sccache-redis-acl \
