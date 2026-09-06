@@ -97,10 +97,22 @@ before touching any work item here. The rules that matter most:
   `discovered-from:<snapshot-id>` dependency, or as a consolidation closing two
   or more snapshot items. Anything else goes to a `PARKING LOT` comment on the
   plan epic, not to the ledger.
-- **Resume from the ledger, not from chat.** To pick the drive up in a fresh
-  session run
-  `/livespec-orchestrator-beads-fabro:discuss-work-item dev-tooling-backlog-drain`
-  and take the epic's typed `next_action`.
+- **Resume from the ledger, not from chat, and resume INTO THE LOOP.** To
+  pick the drive up in a fresh session run
+  `/livespec-orchestrator-beads-fabro:plan dev-tooling-backlog-drain`, take the
+  epic's typed `next_action`, and then, in the SAME turn, invoke `/loop` with
+  no interval so the session self-paces charter §8's three-source tick: the
+  dispatch journal's outcome events, `needs-attention`, and the open PRs. A
+  session that has resumed this plan and is not looping is STALLED BY
+  DEFINITION, whatever its last message says: it has no watcher, so nothing it
+  dispatched can reach it and nothing ripe can wake it. Recorded 2026-09-06
+  after the first resume did exactly that (wrote a handoff and parked) and the
+  maintainer had to notice by hand.
+- **The engine does not live in the session.** Factory runs are launched
+  through a DETACHED `dispatcher.py loop` (`setsid nohup`, journal under
+  `tmp/`) so they outlive the LLM session that started them; the session's
+  loop only reads outcomes, re-dispatches, and works the valves. Never make a
+  fabro run's survival depend on the chat session being alive.
 
 ## Decision authority — when to ask, proceed, or self-resolve
 
