@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 from _gh_railway import lift_gh
 from _protection_fixtures import aligned_merge_settings_payload, aligned_protection_payload
 from returns.io import IOFailure
+from test_worktree_pack_wiring import WIRED_GITIGNORE, WIRED_JUSTFILE, WIRED_LEFTHOOK
 
 from livespec_dev_tooling.fleet import _cli_owner, wire_fleet_member
 from livespec_dev_tooling.fleet._context import (
@@ -93,12 +94,25 @@ _JUSTFILE_ARGS: tuple[str, ...] = (
     "-H",
     "Accept: application/vnd.github.raw",
 )
+_GITIGNORE_ARGS: tuple[str, ...] = (
+    "api",
+    "repos/acme/widget/contents/.gitignore?ref=master",
+    "-H",
+    "Accept: application/vnd.github.raw",
+)
+_LEFTHOOK_ARGS: tuple[str, ...] = (
+    "api",
+    "repos/acme/widget/contents/lefthook.yml?ref=master",
+    "-H",
+    "Accept: application/vnd.github.raw",
+)
 
 _CI_YML = "jobs:\n  check:\n    strategy:\n      matrix:\n        target:\n          - check-a\n"
 _PYPROJECT = '[tool.uv.sources]\nlivespec-dev-tooling = { git = "x", tag = "v1.0.0" }\n'
 _LIVESPEC_JSONC = (
     '{"harnesses": {"claude": {"status": "exempt", "reason": "library; no harness surface"}}, '
     '"livespec-overseer": {"foreman_valve_disposition": "consensus"}, '
+    '"worktree_discipline": {"pack": "required"}, '
     '"implementation": {"plugin": "impl-beads"}, '
     '"impl-beads": {"dispatcher": {"acceptance_mode": "ai-only"}}}'
 )
@@ -114,10 +128,12 @@ _PLUGIN_SETTINGS = json.dumps(
         }
     }
 )
+# The plugin-currency recipe plus the worktree-pack wiring, so the one green
+# fixture satisfies both justfile-reading rows.
 _STANDARD_JUSTFILE = (
     "ensure-plugins:\n"
     "    mise exec -- uv run --no-sync python -m livespec_dev_tooling.fleet.ensure_plugins\n"
-)
+) + WIRED_JUSTFILE
 
 
 def make_runner(*, table: dict[tuple[str, ...], GhResult]) -> GhRunner:
@@ -156,6 +172,8 @@ def _green_table(*, topics: list[str] | None = None) -> dict[tuple[str, ...], Gh
         ".livespec.jsonc",
         ".claude/settings.json",
         "justfile",
+        ".gitignore",
+        "lefthook.yml",
     ]
     tree_payload = {"tree": [{"path": p, "mode": "100644"} for p in paths], "truncated": False}
     return {
@@ -164,6 +182,8 @@ def _green_table(*, topics: list[str] | None = None) -> dict[tuple[str, ...], Gh
         _LIVESPEC_JSONC_ARGS: raw(text=_LIVESPEC_JSONC),
         _SETTINGS_ARGS: raw(text=_PLUGIN_SETTINGS),
         _JUSTFILE_ARGS: raw(text=_STANDARD_JUSTFILE),
+        _GITIGNORE_ARGS: raw(text=WIRED_GITIGNORE),
+        _LEFTHOOK_ARGS: raw(text=WIRED_LEFTHOOK),
         _PYPROJECT_ARGS: raw(text=_PYPROJECT),
         _LATEST_ARGS: ok(payload={"tag_name": "v1.0.0"}),
         _SECRETS_ARGS: ok(payload={"secrets": [{"name": "APP_ID"}, {"name": "APP_PRIVATE_KEY"}]}),
@@ -205,6 +225,25 @@ def test_manual_only_row_counts_as_unresolved() -> None:
     table[_INSTALL_ARGS] = ok(payload={"repositories": [{"name": "other"}]})
     ctx = make_context(table=table)
     assert reconcile_member(ctx=ctx, member=_MEMBER, log=_log()) == 1
+
+
+def test_manual_only_row_reports_the_hint_and_the_exact_missing_lines(
+    *, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `worktree-pack-wired` is manual-only, so what reaches the operator is the
+    # hint PLUS the finding — and the finding is the half that names the lines
+    # to paste. A hint alone restates the obligation.
+    table = _green_table()
+    table[_LEFTHOOK_ARGS] = raw(
+        text="pre-commit:\n  commands:\n    01-check:\n      run: just check\n"
+    )
+    ctx = make_context(table=table)
+    assert reconcile_member(ctx=ctx, member=_MEMBER, log=_log()) == 1
+    captured = capsys.readouterr()
+    combined = captured.out + captured.err
+    assert "worktree-pack-wired" in combined
+    assert "name-sorted FIRST command" in combined
+    assert "just install-worktree-pack" in combined
 
 
 def test_skips_and_warnings_are_not_wiring_concerns() -> None:

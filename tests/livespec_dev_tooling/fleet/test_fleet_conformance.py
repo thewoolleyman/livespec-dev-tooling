@@ -21,6 +21,7 @@ from _gh_railway import lift_gh
 from _protection_fixtures import aligned_merge_settings_payload, aligned_protection_payload
 from returns.io import IOFailure, IOSuccess
 from returns.result import Failure
+from test_worktree_pack_wiring import WIRED_GITIGNORE, WIRED_JUSTFILE, WIRED_LEFTHOOK
 
 from livespec_dev_tooling.config import REQUIRED_ROLE_KEYS, UNION_ROLE_KEYS, Config
 from livespec_dev_tooling.fleet import _cli_owner, _lanes, fleet_conformance
@@ -142,6 +143,7 @@ _BEADS_CONFIG = (
 _LIVESPEC_JSONC = (
     '{"harnesses": {"claude": {"status": "exempt", "reason": "library; no harness surface"}}, '
     '"livespec-overseer": {"foreman_valve_disposition": "consensus"}, '
+    '"worktree_discipline": {"pack": "required"}, '
     '"implementation": {"plugin": "impl-beads"}, '
     '"impl-beads": {"dispatcher": {"acceptance_mode": "ai-only"}, '
     '"connection": {"server_host": "127.0.0.1", "server_port": 3307, '
@@ -159,10 +161,12 @@ _PLUGIN_SETTINGS = json.dumps(
         }
     }
 )
+# The plugin-currency recipe plus the worktree-pack wiring, so the one green
+# fixture satisfies both justfile-reading rows.
 _STANDARD_JUSTFILE = (
     "ensure-plugins:\n"
     "    mise exec -- uv run --no-sync python -m livespec_dev_tooling.fleet.ensure_plugins\n"
-)
+) + WIRED_JUSTFILE
 
 
 # The credential preflight (livespec-dev-tooling-z4qi) probes `rate_limit`
@@ -279,6 +283,8 @@ def _member_entries(
         ".beads/config.yaml",
         ".claude/settings.json",
         "justfile",
+        ".gitignore",
+        "lefthook.yml",
     ]
     tree_payload = {
         "tree": [{"path": p, "mode": "100644"} for p in tracked],
@@ -291,6 +297,8 @@ def _member_entries(
         contents(".beads/config.yaml"): raw(text=_BEADS_CONFIG),
         contents(".claude/settings.json"): raw(text=_PLUGIN_SETTINGS),
         contents("justfile"): raw(text=_STANDARD_JUSTFILE),
+        contents(".gitignore"): raw(text=WIRED_GITIGNORE),
+        contents("lefthook.yml"): raw(text=WIRED_LEFTHOOK),
         contents("pyproject.toml"): raw(text=_PYPROJECT),
         contents(".github/workflows/ci.yml"): raw(text=_CI_YML),
         ("api", f"repos/acme/{repo}/actions/secrets"): ok(

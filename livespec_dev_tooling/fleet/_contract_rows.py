@@ -14,17 +14,21 @@ typed imports so the type checker sees every dispatch target.
 `contract.py` for the manifest parser; the LOCAL-vantage table lives in
 `_contract_local_rows.py`.
 
-The github-state SLICE of this table lives in
-`_contract_github_state_rows.py` and is spliced in below at the position
-those rows already occupied (livespec-dev-tooling-oitd: this module had
+TWO SLICES of this table live in sibling modules and are spliced in below at
+the positions their rows already occupied: the github-state slice
+(`_contract_github_state_rows.py`, livespec-dev-tooling-oitd: this module had
 reached 246 of its 250-LLOC hard ceiling, which silently closed the fleet's
-one obligation table to new rows). `OBLIGATION_ROWS` remains the single
-exported table — a lane still reads exactly one name.
+one obligation table to new rows) and the pyproject-declaration slice
+(`_contract_declaration_rows.py`, livespec-dev-tooling-lptplj: registering
+`worktree-pack-wired` took the module to 262). Both cuts are along a family
+the rows already formed, not at a line number. `OBLIGATION_ROWS` remains the
+single exported table — a lane still reads exactly one name.
 """
 
 from __future__ import annotations
 
 from livespec_dev_tooling.fleet import _rows_pin_currency as pin_currency
+from livespec_dev_tooling.fleet._contract_declaration_rows import DECLARATION_ROWS
 from livespec_dev_tooling.fleet._contract_github_state_rows import GITHUB_STATE_ROWS
 from livespec_dev_tooling.fleet._contract_model import (
     ADMIN_VANTAGE,
@@ -60,15 +64,7 @@ from livespec_dev_tooling.fleet._rows_instructions import (
     assert_agent_ai_references_resolve,
     assert_agent_instruction_surface,
 )
-from livespec_dev_tooling.fleet._rows_public_api_conformance import (
-    assert_cross_repo_public_api_declared,
-)
-from livespec_dev_tooling.fleet._rows_required_role_keys import (
-    assert_required_role_keys_declared,
-)
-from livespec_dev_tooling.fleet._rows_role_key_spellings import (
-    assert_role_key_spellings_conformant,
-)
+from livespec_dev_tooling.fleet._rows_worktree_pack import assert_worktree_pack_wired
 
 __all__: list[str] = [
     "ADMIN_VANTAGE",
@@ -88,6 +84,7 @@ from livespec_dev_tooling.fleet._contract_classes import (
     RECEIVING_SHIM_CLASSES,
     REPO_CLASSES,
     TEMPLATE_BORN_CLASSES,
+    WORKTREE_PACK_CLASSES,
 )
 
 
@@ -164,46 +161,9 @@ OBLIGATION_ROWS: tuple[ObligationRow, ...] = (
         assert_member=assert_no_tracked_gitlinks,
         manual_hint="remove the tracked gitlink (mode 160000) in a repo-local commit",
     ),
-    _manual_committed_file_row(
-        row_id="required-role-keys-declared",
-        assert_member=assert_required_role_keys_declared,
-        manual_hint=(
-            "declare every REQUIRED_ROLE_KEYS entry in [tool.livespec_dev_tooling], or "
-            "declare sanctioned-empty values with comments explaining the absent role"
-        ),
-    ),
-    # The sibling of the row above: that one asserts the required keys are
-    # DECLARED, this one asserts the declaration uses a blessed SPELLING. A key
-    # declared `[]` satisfies the first and is exactly the ambiguity the second
-    # exists to reject (livespec-dev-tooling-8o8e.1 Phase 3).
-    _manual_committed_file_row(
-        row_id="role-key-spellings",
-        assert_member=assert_role_key_spellings_conformant,
-        manual_hint=(
-            "replace the retired ambiguous empty spelling on the named union role key(s) "
-            "with a populated value, or with one blessed declared-absent spelling carrying "
-            "a non-empty payload"
-        ),
-    ),
-    # The third member of that family, and the only one needing the CENTRAL
-    # vantage to answer at all: the two rows above ask whether a member's own
-    # declaration is PRESENT and WELL-SPELLED, this one asks whether it is
-    # TRUE — measured against what the other eight members actually import. A
-    # repo-local check structurally cannot see a sibling's import, which is
-    # what let `parse_manifest` be converted on a repo-local reading that found
-    # no importer while a sibling's hook turned that repo's master red within
-    # minutes (livespec-dev-tooling-dx8l).
-    _manual_committed_file_row(
-        row_id="cross-repo-public-api-declared",
-        assert_member=assert_cross_repo_public_api_declared,
-        manual_hint=(
-            "add each named function to `cross_repo_public_api` in "
-            "[tool.livespec_dev_tooling], one entry per function with a written reason "
-            "naming the consuming member and file; do NOT omit a genuinely consumed name "
-            "to keep the count down, and do NOT bulk-fill the key without reading each "
-            "consumption site's guard first"
-        ),
-    ),
+    # The pyproject-declaration slice, verbatim and in position, from
+    # `_contract_declaration_rows.py`.
+    *DECLARATION_ROWS,
     _warning_committed_file_row(
         row_id="compat-pin-currency", assert_member=pin_currency.assert_livespec_compat_pin_currency
     ),
@@ -308,6 +268,32 @@ OBLIGATION_ROWS: tuple[ObligationRow, ...] = (
     # decision instead of leaving a default to stand in for one. Silence here is
     # what let five governed repos sit off the fleet acceptance standard
     # un-noticed until 2026-07-29.
+    # ARMED AT BIRTH, 2026-09-06, on a measurement taken BEFORE the row was
+    # registered rather than after — the ordering `plan/rop-railway-enforcement/`
+    # records as a standing constraint (46c5dab armed a check ahead of adoption,
+    # five repos went red, f4247110 reverted it). All ten manifest members were
+    # read on their own committed master: the four ERROR-severity legs have an
+    # offender count of zero, and the one WARNING-severity leg has exactly one
+    # (livespec-runtime's root .gitignore omits `/dev-tooling/gate-run.sh`),
+    # which reports without gating. The severity split is a judgement about
+    # consequence, not a soft-arming device — the module docstring states it.
+    #
+    # This is the row that makes pack WIRING visible at all: the two repo-local
+    # mechanisms assert the pack's BYTES from inside a checkout that already
+    # runs them, so a member that never wires the pack never fails a check it
+    # does not run.
+    _manual_committed_file_row(
+        row_id="worktree-pack-wired",
+        applies_to=WORKTREE_PACK_CLASSES,
+        assert_member=assert_worktree_pack_wired,
+        manual_hint=(
+            "add the exact wiring lines the finding names to the member's justfile, "
+            ".gitignore, lefthook.yml and .livespec.jsonc, in a repo-local commit — "
+            "`just install-worktree-pack` materializes the pack itself (and writes the "
+            "worktree_discipline default) but never edits the justfile, the root "
+            ".gitignore, or lefthook.yml"
+        ),
+    ),
     _manual_committed_file_row(
         row_id="acceptance-mode-declared",
         assert_member=assert_acceptance_mode_declared,
