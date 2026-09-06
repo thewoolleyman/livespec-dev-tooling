@@ -1,0 +1,78 @@
+# gmktec-xubuntu.recorded-facts — the second pool node's RECORDED facts, so the
+# profile beside this file cannot silently disagree with the host.
+#
+# WHY IT EXISTS, and why for THIS node in particular. `gmktec-xubuntu.env` is
+# the DATA the rebuild procedure consumes; this file is the RECORD that data
+# must agree with. The first node earned its record by drifting from the host
+# unnoticed (see `poweredge-xubuntu.recorded-facts`). This node earned its own
+# before it was ever built: four of its values were written from the FIRST
+# node's profile as placeholders, marked `# UNVERIFIED`, and the 2026-09-06 read
+# found ALL FOUR wrong — two labels that do not exist, a boot entry whose case
+# did not match, and an operator account with no passwd entry on this host.
+# Every one of them read as a perfectly ordinary profile line. The marker is
+# gone now, so the thing that keeps them honest is this table and the assertion
+# that compares them.
+#
+# PROVENANCE. Read on the live host `gmktec-xubuntu` on 2026-09-06,
+# READ-ONLY, with `lsblk -o NAME,LABEL,FSTYPE,PARTLABEL /dev/nvme0n1`,
+# `sudo efibootmgr`, `getent passwd` and `id`; the partition sizes and
+# mountpoints are the same day's `lsblk` and the stage-1 dry run against the
+# node. THE DIRECTION OF TRUST IS ONE WAY: a value here changes only by
+# re-reading the host, never by copying what the profile happens to say. A
+# disagreement is a defect in the profile until the record says otherwise.
+#
+# SCOPE. Only what this node's profile CONSUMES: the volumes and tiers the
+# procedure creates, the two partitions it preserves, and the four base-OS keys
+# the read resolved. The node's hardware facts at large belong to the per-host
+# information repository and not to this tree
+# (SPECIFICATION/non-functional-requirements.md §"Runner-pool node rebuild
+# recipe", "Facts in the host record, the procedure here").
+#
+# FORMAT. `#` comments and blank lines are ignored; every other line is a
+# whitespace-separated record whose first field names its kind:
+#
+#   vg    <volume-group> <physical-volume-device>
+#   lv    <volume-group> <logical-volume> <size> <fstype> <label>
+#   tier  <role-label> <volume-group>
+#   part  <device> <fstype> <size> <mountpoint>
+#   key   <profile-key> [<value>]
+#
+# A `key` record with NO value states that the key is EMPTY, which is the
+# format's spelling for "this filesystem carries no label" (`../profile.sh`
+# §"How this format spells 'no label'") and is exactly how the profile spells
+# it. It is a recorded fact in its own right, not an omission: "no label" is
+# what the read found, and the assertion fails just as loudly if the profile
+# ever grows one.
+
+# What the procedure CREATES. One volume group, because this node has one
+# medium: the unpartitioned tail of its single NVMe drive, which stage 1 takes
+# as partition 3. Kernel path and not `/dev/disk/by-id/` on purpose — one drive,
+# and it is the device the node already boots from, so there is no second
+# spelling for either name to disambiguate.
+vg nvmea /dev/nvme0n1p3
+lv nvmea ci-cache 350GiB ext4 ci-cache
+lv nvmea ci-containerd 525GiB ext4 ci-containerd
+lv nvmea ci-workvols 525GiB xfs ci-workvols
+
+# Role tiers — all three on the one group. The first node spreads its three
+# across three groups; that is a fact about that node's hardware and not a rule
+# of the procedure, which is why the placement is data.
+tier ci-cache nvmea
+tier ci-containerd nvmea
+tier ci-workvols nvmea
+
+# What the node ALREADY carries and the procedure PRESERVES. These two are why
+# `DISK_PLAN=free-space`, and they are the reason stage 1 derives partition 3
+# rather than assuming it: the table already numbers 1 and 2, so 3 is the next
+# free number, and it must be the one `VOLUME_GROUPS` spells out above.
+part /dev/nvme0n1p1 ext4 465.7G /
+part /dev/nvme0n1p2 vfat 1G /boot/efi
+
+# The four values the 2026-09-06 read resolved, each of which the profile had
+# wrong. The two empty ones are the record's whole point: `ESP` and `root` are
+# labels this host does not have, and nothing but a table like this notices that
+# a plausible label is a fiction.
+key ESP_LABEL
+key ROOT_LABEL
+key BOOT_ENTRY_LABEL Ubuntu
+key OPERATOR_ACCOUNT cwoolley

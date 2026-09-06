@@ -28,7 +28,9 @@
 #      labelled tier filesystems — and refuses every step naming either of the
 #      two partitions the running node boots from. Property 5 asks whether the
 #      PLAN is right against a fixture; only this one asks whether the second
-#      NODE's committed data is.
+#      NODE's committed data is. As for the first node, that data is also held
+#      against a RECORD (`profiles/gmktec-xubuntu.recorded-facts`) and the plan
+#      against a committed capture (`profiles/gmktec-xubuntu.expected-plan`).
 #
 # HOW IT STAYS OFF THE HOST. Every case runs `storage-layout.sh --dry-run`, so
 # no mutating command is ever executed by construction. On top of that, each
@@ -792,8 +794,10 @@ gmktec_declared() {  # gmktec_declared -> `KEY value` lines for the keys G1 chec
     profile_load "$GMKTEC"
     local key record
     for key in CONTROLLER_KIND DISK_PLAN TARGET_DEVICE PRESERVED_PARTITIONS \
-               VOLUME_GROUPS NODE_NETWORK_INTERFACE NODE_ADDRESS CLUSTER_ROLE \
+               ESP_DEVICE ESP_FSTYPE VOLUME_GROUPS NODE_NETWORK_INTERFACE \
+               NODE_ADDRESS CLUSTER_ROLE \
                CLUSTER_JOIN_ADDRESS CLUSTER_TOKEN_FILE NODE_TAINTS \
+               BOOT_ENTRY_LABEL OPERATOR_ACCOUNT \
                ADMISSION_CAPACITY_C; do
       printf '%s %s\n' "$key" "${CFG[$key]}"
     done
@@ -811,6 +815,8 @@ CONTROLLER_KIND none
 DISK_PLAN free-space
 TARGET_DEVICE /dev/nvme0n1
 PRESERVED_PARTITIONS /dev/nvme0n1p1 /dev/nvme0n1p2
+ESP_DEVICE /dev/nvme0n1p2
+ESP_FSTYPE vfat
 VOLUME_GROUPS nvmea:/dev/nvme0n1p3
 NODE_NETWORK_INTERFACE eno1
 NODE_ADDRESS 192.168.1.156/24
@@ -818,6 +824,8 @@ CLUSTER_ROLE agent
 CLUSTER_JOIN_ADDRESS https://192.168.1.200:6443
 CLUSTER_TOKEN_FILE /etc/rancher/k3s/agent-join-token
 NODE_TAINTS node-role/ci=pending:NoSchedule
+BOOT_ENTRY_LABEL Ubuntu
+OPERATOR_ACCOUNT cwoolley
 ADMISSION_CAPACITY_C 0
 tier ci-cache nvmea
 tier ci-containerd nvmea
@@ -913,6 +921,161 @@ for preserved in /dev/nvme0n1p1 /dev/nvme0n1p2; do
     no "G7  --i-consent-to-destroy=${preserved} does not unlock it either (rc=${REPLY_RC})"
   fi
 done
+
+# G1 through G7 ask whether the profile is WELL FORMED and whether the plan it
+# yields is right. The rest of this section asks whether the profile is TRUE —
+# the question that went unasked on the first node until a 64 GiB swap and a
+# missing volume group turned up in it, and the question this node needs asked
+# more sharply still: four of its values were placeholders copied from the FIRST
+# node's profile, and the 2026-09-06 read found all four wrong. Nothing but a
+# record and a comparison notices that a plausible label is a fiction.
+
+GMKTEC_FACTS="${HERE}/profiles/gmktec-xubuntu.recorded-facts"
+GMKTEC_PLAN="${HERE}/profiles/gmktec-xubuntu.expected-plan"
+
+# Read back through the SAME parser the stages source, so what is compared is
+# what storage-layout.sh would act on. An EMPTY value prints as the key alone,
+# which is how the record spells "carries no label" — the two sides agree on
+# that spelling rather than one of them encoding it specially.
+gmktec_key_values() {  # gmktec_key_values KEY... -> `key <KEY> [<value>]` lines
+  (
+    die() { printf 'FATAL: %s\n' "$*" >&2; exit 1; }
+    # shellcheck source=ci-runner/k3s/phase0-bare-metal/profile.sh
+    source "${HERE}/profile.sh"
+    profile_load "$GMKTEC"
+    local key
+    for key in "$@"; do
+      if [ -z "${CFG[$key]}" ]; then
+        printf 'key %s\n' "$key"
+      else
+        printf 'key %s %s\n' "$key" "${CFG[$key]}"
+      fi
+    done
+  )
+}
+
+if [ -f "$GMKTEC_FACTS" ] && [ -f "$GMKTEC_PLAN" ]; then
+  ok "G8  the recorded-facts table and the expected plan are committed beside the profile"
+else
+  no "G8  the recorded-facts table and the expected plan are committed beside the profile (missing one of ${GMKTEC_FACTS}, ${GMKTEC_PLAN})"
+fi
+
+# An equality in both directions, exactly as §E2 is for the first node: a
+# recorded volume, group or tier the profile omits fails it, and one the profile
+# invents fails it too.
+declared="$(profile_facts "$GMKTEC" | LC_ALL=C sort)"
+recorded="$(recorded_facts "$GMKTEC_FACTS" | grep -E '^(vg|lv|tier) ' | LC_ALL=C sort)"
+if [ "$declared" = "$recorded" ]; then
+  ok "G9  every volume group, logical volume size and tier placement matches the record"
+else
+  no "G9  the profile and the recorded facts disagree:"
+  printf '%s\n' "$recorded" > "${TMPROOT}/gmktec-recorded"
+  printf '%s\n' "$declared" > "${TMPROOT}/gmktec-declared"
+  diff -u --label 'recorded facts' --label 'profile' \
+    "${TMPROOT}/gmktec-recorded" "${TMPROOT}/gmktec-declared" | sed 's/^/        /'
+fi
+
+# The four values the 2026-09-06 read resolved, compared as VALUES rather than
+# as the presence of a line: two of them are EMPTY, and an assertion that cannot
+# tell "empty" from "absent" is exactly the assertion this node does not need.
+recorded_keys="$(recorded_facts "$GMKTEC_FACTS" | grep '^key ' || true)"
+mapfile -t gmktec_key_names < <(printf '%s\n' "$recorded_keys" | awk 'NF {print $2}')
+if [ "${#gmktec_key_names[@]}" -gt 0 ]; then
+  declared_keys="$(gmktec_key_values "${gmktec_key_names[@]}")"
+else
+  declared_keys=""
+fi
+if [ -n "$recorded_keys" ] && [ "$declared_keys" = "$recorded_keys" ]; then
+  ok "G10 every base-OS key the record resolves carries the recorded value, empty ones included"
+else
+  no "G10 the profile's base-OS keys and the recorded values disagree:"
+  printf '%s\n' "$recorded_keys" > "${TMPROOT}/gmktec-recorded-keys"
+  printf '%s\n' "$declared_keys" > "${TMPROOT}/gmktec-declared-keys"
+  diff -u --label 'recorded facts' --label 'profile' \
+    "${TMPROOT}/gmktec-recorded-keys" "${TMPROOT}/gmktec-declared-keys" | sed 's/^/        /'
+fi
+
+# G10 is an equality, so it is equally satisfied by editing the RECORD back to a
+# drifted profile's values — which would be exactly backwards. The four the read
+# corrected are therefore also asserted literally, so moving one takes an edit in
+# two places and the second is a file whose header says it changes only by
+# re-reading the host.
+missing=""
+while IFS= read -r want; do
+  printf '%s\n' "$recorded_keys" | grep -qxF "$want" || missing="${missing}
+        ${want}"
+done <<'EOF'
+key ESP_LABEL
+key ROOT_LABEL
+key BOOT_ENTRY_LABEL Ubuntu
+key OPERATOR_ACCOUNT cwoolley
+EOF
+if [ -z "$missing" ]; then
+  ok "G11 the record still carries the four values the 2026-09-06 read corrected"
+else
+  no "G11 the record no longer carries:${missing}"
+fi
+
+# And the marker those four values used to carry is GONE — every value in this
+# profile is now measured. It is asserted rather than merely done, because the
+# marker is what a reader greps for to learn which of a profile's values are
+# guesses: one re-added here without a read behind it would put this node back
+# to the state that produced four wrong values, and the record above cannot
+# catch that on its own (a `# UNVERIFIED` line beside a value the record also
+# carries passes G10 unremarked). The FIRST node's profile still carries its
+# own; resolving those needs a rehearsal of THAT node and is not this file's.
+unverified="$(grep -cE '^# UNVERIFIED' "$GMKTEC" || true)"
+if [ "$unverified" -eq 0 ]; then
+  ok "G12 no line of the committed gmktec profile is marked UNVERIFIED"
+else
+  no "G12 the committed gmktec profile marks ${unverified} line(s) UNVERIFIED:"
+  grep -nE '^# UNVERIFIED' "$GMKTEC" | sed 's/^/        /'
+fi
+
+# The partitions the node already carries are the record's, and they are what
+# makes "3" a DERIVED number rather than an assumed one: the record says 1 and 2
+# are taken, so the plan's new partition must be the next after the highest of
+# them, and `VOLUME_GROUPS` must spell out that same number as a path.
+recorded_parts="$(recorded_facts "$GMKTEC_FACTS" | grep '^part ' || true)"
+recorded_part_devices="$(printf '%s\n' "$recorded_parts" | awk 'NF {print $2}' | LC_ALL=C sort | paste -sd' ' -)"
+declared_preserved="$(printf '%s\n' "$GMKTEC_DECLARED" | sed -n 's/^PRESERVED_PARTITIONS //p' \
+  | tr ' ' '\n' | grep . | LC_ALL=C sort | paste -sd' ' -)"
+recorded_esp="$(printf '%s\n' "$recorded_parts" | awk '$5 == "/boot/efi" {print $2, $3}')"
+declared_esp="$(printf '%s\n' "$GMKTEC_DECLARED" | sed -n 's/^ESP_DEVICE //p') $(printf '%s\n' "$GMKTEC_DECLARED" | sed -n 's/^ESP_FSTYPE //p')"
+highest_recorded_part="$(printf '%s\n' "$recorded_parts" | awk 'NF {print $2}' \
+  | sed 's/.*[^0-9]\([0-9][0-9]*\)$/\1/' | LC_ALL=C sort -n | tail -1)"
+next_free_part=$((highest_recorded_part + 1))
+if [ "$recorded_part_devices" = "$declared_preserved" ] \
+   && [ "$recorded_esp" = "$declared_esp" ] \
+   && printf '%s\n' "$GM_OUT" | grep -qF "sgdisk --new=${next_free_part}:0:0" \
+   && printf '%s\n' "$GMKTEC_DECLARED" | grep -qxF "VOLUME_GROUPS nvmea:/dev/nvme0n1p${next_free_part}"; then
+  ok "G13 the record's two preserved partitions are the profile's, and the plan takes the next number after them (${next_free_part})"
+else
+  no "G13 the record's preserved partitions, the ESP or the derived partition number disagree with the profile"
+  printf '        recorded partitions: %s\n' "$recorded_part_devices"
+  printf '        profile preserves:   %s\n' "$declared_preserved"
+  printf '        recorded ESP:        %s\n' "$recorded_esp"
+  printf '        profile ESP:         %s\n' "$declared_esp"
+  printf '        next free number:    %s\n' "$next_free_part"
+fi
+
+# The whole plan, as an equality, against a capture taken from the run BEFORE
+# the four base-OS values were resolved. Two of them became EMPTY, and stage 1
+# must not notice: under `free-space` it never `mkfs`es the EFI system partition,
+# so ESP_LABEL is a value it describes and never writes. G4 and G5 assert a
+# number and an ORDERED SUBSET, so a step silently added, dropped or reworded
+# between two asserted rungs passes them and fails this.
+GMKTEC_PLANNED="$(printf '%s\n' "$GM_OUT" | sed -n 's/^+ //p')"
+GMKTEC_EXPECTED="$(grep -v '^#' "$GMKTEC_PLAN" | grep . || true)"
+if [ "$GMKTEC_PLANNED" = "$GMKTEC_EXPECTED" ]; then
+  ok "G14 the gmktec free-space plan is byte-identical to its committed expected plan"
+else
+  no "G14 the gmktec free-space plan differs from its committed expected plan:"
+  printf '%s\n' "$GMKTEC_EXPECTED" > "${TMPROOT}/gmktec-expected-plan"
+  printf '%s\n' "$GMKTEC_PLANNED" > "${TMPROOT}/gmktec-planned"
+  diff -u --label 'expected plan' --label 'planned' \
+    "${TMPROOT}/gmktec-expected-plan" "${TMPROOT}/gmktec-planned" | sed 's/^/        /'
+fi
 
 # ---------------------------------------------------------------------------
 echo

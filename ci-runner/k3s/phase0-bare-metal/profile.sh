@@ -24,6 +24,18 @@
 # written before the second node existed" into a parse failure. A profile is
 # still free to state the default explicitly, and the committed one does.
 #
+# HOW THIS FORMAT SPELLS "NO LABEL". A filesystem label is a string a node's
+# filesystem either carries or does not; the format's spelling for "does not" is
+# the EMPTY value, which is what SWAP_LABEL has always meant on a node with no
+# swap volume. ESP_LABEL and ROOT_LABEL take the same spelling, and only under
+# `DISK_PLAN=free-space`: that plan describes filesystems the node ALREADY
+# carries, whose labels are the host's fact and may genuinely be none, while
+# `whole-device` MAKES both filesystems with `mkfs -L`, so an empty label there
+# would be a label the procedure chose to leave off and the later stages then
+# could not resolve. An empty ROOT_LABEL is consequently a profile stage 2 must
+# never run against — see `profile_require_root_volume` below, which is the
+# refusal, not a comment.
+#
 # Expects the caller to have defined `die MESSAGE` (which must exit non-zero)
 # before sourcing this file; every rejection goes through it.
 #
@@ -193,6 +205,17 @@ profile_load() {
   if [ "${CFG[CONTROLLER_KIND]}" = "none" ]; then
     may_be_empty+=(CONTROLLER_CLI CONTROLLER_ID VD_ENCLOSURE VD_SLOTS VD_RAID_LEVEL VD_STRIP_KIB VD_CACHE_POLICY)
   fi
+  # The header's "no label" spelling, and it is deliberately plan-conditional.
+  # Under `free-space` the EFI system partition and the root are filesystems the
+  # node already carries: their labels are the host's fact, read off the device,
+  # and "none" is a fact a plain installer leaves behind routinely. Under
+  # `whole-device` this procedure MAKES both with `mkfs -L`, so an empty label
+  # is not a fact about the node but a label the run would decline to write —
+  # and the fstab stage 2 renders finds root and the ESP by LABEL, so it would
+  # then have nothing to find.
+  if [ "${CFG[DISK_PLAN]}" = "free-space" ]; then
+    may_be_empty+=(ESP_LABEL ROOT_LABEL)
+  fi
   local -A optional=()
   for key in "${may_be_empty[@]}"; do optional["$key"]=1; done
   for key in "${PROFILE_REQUIRED_KEYS[@]}" "${!PROFILE_KEY_DEFAULTS[@]}"; do
@@ -285,4 +308,22 @@ profile_load() {
       die "${PROFILE_PATH}: ROLE_TIERS puts role '${rec_role}' on volume group '${rec_vg}', but no LOGICAL_VOLUMES record carries that label there"
     fi
   done
+}
+
+# profile_require_root_volume — the gate base-os-install.sh (stage 2) passes
+# through before it derives anything from ROOT_LABEL. Call after profile_load.
+#
+# WHY IT IS NOT JUST "the label resolves to no volume". An empty ROOT_LABEL is
+# the header's spelling for "the root filesystem carries no label", which a
+# `free-space` node states because its root is a filesystem it KEEPS. Stage 2
+# installs an operating system onto the root LOGICAL VOLUME its profile names,
+# so against such a profile it has nothing to install onto — and the honest
+# refusal says THAT. Left to the resolution failure alone the stage exits with
+# `ROOT_LABEL='' names no LOGICAL_VOLUMES record`, which describes the mechanism
+# and not the reason, and reads as a malformed profile rather than as the node
+# correctly declaring that this stage is not one it runs.
+profile_require_root_volume() {
+  if [ -z "${CFG[ROOT_LABEL]}" ]; then
+    die "${PROFILE_PATH}: ROOT_LABEL is empty, which this format spells as 'the root filesystem carries no label' — a node that KEEPS the root it already has (DISK_PLAN=${CFG[DISK_PLAN]}). This stage installs an operating system onto the root logical volume ROOT_LABEL names, so it has no volume to install onto and would debootstrap over the operating system that plan exists to preserve. Stage 2 is not a stage ${CFG[NODE_NAME]} runs; run stage 1 and then ../provision-k3s.sh."
+  fi
 }

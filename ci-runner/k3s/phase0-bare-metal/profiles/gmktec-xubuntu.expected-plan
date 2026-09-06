@@ -1,0 +1,36 @@
+# gmktec-xubuntu.expected-plan — every mutating command
+# `../storage-layout.sh --dry-run profiles/gmktec-xubuntu.env` plans against
+# this node's measured table, in order, byte for byte.
+#
+# WHY IT IS COMMITTED, and what it is committed AGAINST. The four base-OS values
+# this node's profile carried as placeholders were resolved on 2026-09-06, and
+# two of them became EMPTY — the labels of the ESP and the root, which this node
+# turns out not to have. Stage 1 must not notice: under `free-space` it never
+# `mkfs`es the EFI system partition, so ESP_LABEL is a value it describes and
+# never writes. This file is the plan captured from the run BEFORE that change,
+# so "the storage plan is unchanged by resolving the base-OS values" is an
+# assertion and not a claim. `storage-layout-exit-tests.sh` §G asserts the run
+# against it as an EQUALITY: §G4 and §G5 assert a partition number and an
+# ORDERED SUBSET, so a step silently added, dropped or reworded between two
+# asserted rungs passes them and fails this.
+#
+# The lines below are the `+ `-prefixed lines of that dry run with the `+ `
+# stripped, captured against the suite's fake tools standing in for this node's
+# measured device: partitions 1 and 2 taken and unnamed, no partition labelled
+# `lvm`, and no volume group or logical volume yet. `sgdisk --new=3:…` is
+# therefore the derived number and not an assumed one.
+#
+# HOW TO CHANGE IT. Only by deciding that this node's rebuild plan should
+# change, and saying so in the change that alters it. Re-capturing this file to
+# make a red assertion go green is the same inversion `README.md` §"The profile
+# is the record" forbids for the facts table: the failure is the finding.
+sgdisk --new=3:0:0 --typecode=3:8e00 --change-name=3:lvm /dev/nvme0n1
+partprobe /dev/nvme0n1
+pvcreate --yes /dev/nvme0n1p3
+vgcreate nvmea /dev/nvme0n1p3
+lvcreate --yes -L 350G -n ci-cache nvmea
+lvcreate --yes -L 525G -n ci-containerd nvmea
+lvcreate --yes -L 525G -n ci-workvols nvmea
+mkfs.ext4 -q -L ci-cache /dev/nvmea/ci-cache
+mkfs.ext4 -q -L ci-containerd /dev/nvmea/ci-containerd
+mkfs.xfs -q -m reflink=1 -L ci-workvols /dev/nvmea/ci-workvols
