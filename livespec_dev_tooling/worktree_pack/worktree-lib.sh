@@ -133,6 +133,15 @@ worktree_root() {
 # linked worktree before hydration runs. The primary is expected to have been
 # bootstrapped with `just install-worktree-pack`; if it is partial, stop with a
 # named repair instead of creating another drifted partial install.
+#
+# THE THREE LINES BELOW ARE HELD IN LOCKSTEP WITH THE INSTALLER by a test
+# (`livespec_dev_tooling.install_worktree_pack.WORKTREE_PACK_FILES` is the
+# single enumeration; this shell string is the one copy of it that cannot
+# import Python). `pack_files` must name every installed file, the `chmod +x`
+# line exactly the executable ones, and the `chmod a-x` line exactly the rest.
+# Editing one without the constant fails `just check`, which is the point:
+# this string had already drifted from the installer once
+# (livespec-dev-tooling-l5gypl).
 worktree_provision_pack_from_primary() {
     primary="${1:-}"
     dest="${2:-}"
@@ -143,7 +152,7 @@ worktree_provision_pack_from_primary() {
 
     source_dir="$primary/dev-tooling"
     dest_dir="$dest/dev-tooling"
-    pack_files="worktree-lib.sh branch-protection.sh gate-run.sh check-no-workflow-edits.sh worktree.just branch-protection.just"
+    pack_files="worktree-lib.sh branch-protection.sh gate-run.sh check-no-workflow-edits.sh worktree.just branch-protection.just .gitignore"
 
     missing=0
     for pack_file in $pack_files; do
@@ -162,7 +171,7 @@ worktree_provision_pack_from_primary() {
         cp "$source_dir/$pack_file" "$dest_dir/$pack_file"
     done
     chmod +x "$dest_dir/worktree-lib.sh" "$dest_dir/branch-protection.sh" "$dest_dir/gate-run.sh" "$dest_dir/check-no-workflow-edits.sh"
-    chmod a-x "$dest_dir/worktree.just" "$dest_dir/branch-protection.just"
+    chmod a-x "$dest_dir/worktree.just" "$dest_dir/branch-protection.just" "$dest_dir/.gitignore"
     echo "worktree-lib provision-pack: installed worktree-discipline pack in $dest_dir"
 }
 

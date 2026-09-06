@@ -109,10 +109,11 @@ install-commit-refuse-hooks:
 install-no-shadow-ledger:
     uv run python -m livespec_dev_tooling.install_no_shadow_ledger
 
-# Install (or idempotently re-install) the canonical worktree-discipline pack —
-# FOUR files: `worktree-lib.sh` + `branch-protection.sh` (executable) and
-# `worktree.just` + `branch-protection.just` (imported, not executable) — into
-# the current checkout's `dev-tooling/` directory. The installer module is the
+# Install (or idempotently re-install) the canonical worktree-discipline pack
+# into the current checkout's `dev-tooling/` directory. The file set is NOT
+# restated here — `install_worktree_pack.WORKTREE_PACK_FILES` is its single
+# enumeration, and three hand-written copies of it had already drifted apart
+# (livespec-dev-tooling-l5gypl). The installer module is the
 # single canonical-body carrier, retiring the copier-template COPIES. The pack
 # files are GITIGNORED-AND-MATERIALIZED, never tracked: nothing is committed,
 # and each checkout re-materializes them. `bootstrap` covers this automatically

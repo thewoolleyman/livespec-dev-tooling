@@ -25,11 +25,9 @@ from test_local_context_file_railway import (  # pyright: ignore[reportPrivateUs
 
 from livespec_dev_tooling.fleet._context import RowFinding, RowPass, RowSkip
 from livespec_dev_tooling.fleet._local_context import LocalContext
-from livespec_dev_tooling.fleet._rows_local import (
-    _worktree_pack_files,  # pyright: ignore[reportPrivateUsage]
-    assert_worktree_pack,
-)
+from livespec_dev_tooling.fleet._rows_local import assert_worktree_pack
 from livespec_dev_tooling.fleet._rows_local_jsonc import reconcile_livespec_jsonc_complete
+from livespec_dev_tooling.install_worktree_pack import WORKTREE_PACK_FILES
 
 __all__: list[str] = []
 
@@ -63,15 +61,15 @@ def test_unreadable_pack_file_skips_instead_of_crashing(tmp_path: Path) -> None:
     """
     pack = tmp_path / _PACK_DIR
     pack.mkdir()
-    for name, body in _worktree_pack_files():
-        _ = (pack / name).write_text(body, encoding="utf-8")
+    for pack_file in WORKTREE_PACK_FILES:
+        _ = (pack / pack_file.name).write_text(pack_file.body, encoding="utf-8")
 
     # CONTROL: a fully canonical pack PASSES. Without this the skip below
     # could be firing for any reason at all — an earlier absent file short
     # -circuits the loop long before the corrupted one is ever read.
     assert isinstance(assert_worktree_pack(ctx=_ctx(checkout=tmp_path)), RowPass)
 
-    corrupted = _worktree_pack_files()[0][0]
+    corrupted = WORKTREE_PACK_FILES[0].name
     _ = (pack / corrupted).write_bytes(b"\xff\xfe\x00\x80")
     outcome = assert_worktree_pack(ctx=_ctx(checkout=tmp_path))
 
