@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.52.18](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.52.17...v1.52.18) (2026-09-06)
+
+
+### Bug Fixes
+
+* **fleet:** a row narrowed below its contract clause must declare itself, not pass quietly ([148f496](https://github.com/thewoolleyman/livespec-dev-tooling/commit/148f4966c3cf17bddcddfc9c3ec22fc2c155fa71))
+
 ## [1.52.17](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.52.16...v1.52.17) (2026-09-06)
 
 
