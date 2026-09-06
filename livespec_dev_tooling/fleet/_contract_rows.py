@@ -56,6 +56,7 @@ from livespec_dev_tooling.fleet._rows_foreman_valve import (
     assert_foreman_valve_declared,
 )
 from livespec_dev_tooling.fleet._rows_instructions import (
+    AGENT_INSTRUCTION_SURFACE_HINT,
     assert_agent_ai_references_resolve,
     assert_agent_instruction_surface,
 )
@@ -239,11 +240,10 @@ OBLIGATION_ROWS: tuple[ObligationRow, ...] = (
         row_id="agent-instruction-surface",
         applies_to=TEMPLATE_BORN_CLASSES,
         assert_member=assert_agent_instruction_surface,
-        manual_hint=(
-            "bring AGENTS.md up to the fleet-universal agent-instruction core and register the "
-            "beads-access guard hook (.claude/hooks/beads-access-guard.sh) in "
-            ".claude/settings.json, in a repo-local commit"
-        ),
+        # Homed with the row rather than spelled here: the hint QUOTES the
+        # fleet-universal sentence the row demands, so it must be the same
+        # string the finding quotes and the row's fixture is built from.
+        manual_hint=AGENT_INSTRUCTION_SURFACE_HINT,
     ),
     # ARMED 2026-08-20, after all nine adoptions landed and the offender
     # count was re-measured at ZERO on origin/master across all ten governed
