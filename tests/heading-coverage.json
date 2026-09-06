@@ -547,5 +547,21 @@
     "test": "TODO",
     "reason": "Seeded by plan ci-runner-cache-tiers (epic livespec-dev-tooling-efqeip) at revise time 2026-09-04. Replace TODO with the isolation-suite / cache-telemetry test IDs when the first child (warm-cargo-registry, cache-pod-spans, cache-negative-tests) lands.",
     "work_item": "livespec-dev-tooling-efqeip"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Runner-pool node rebuild recipe",
+    "test": "TODO",
+    "reason": "Seeded by livespec plan k3s-on-gmktec-for-vps-usage (epic livespec-sab5gn) at revise time 2026-09-06. Replace TODO with the test id that asserts the bare-metal stage exists under ci-runner/k3s/phase0-bare-metal/, is named first in the documented rebuild sequence, and reads every node value from a profile, when the phase0 child lands.",
+    "work_item": "livespec-sab5gn"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a pool node is rebuilt from bare metal by the recipe and its profile",
+    "test": "TODO",
+    "reason": "Seeded by livespec plan k3s-on-gmktec-for-vps-usage (epic livespec-sab5gn) at revise time 2026-09-06. A scenario describes end-to-end behavior, so its test MUST resolve to the integration tier or above: the mapped test is the integration-tier rehearsal of the rebuild procedure against a node profile; replace TODO with that test id when it lands.",
+    "work_item": "livespec-sab5gn"
   }
 ]
