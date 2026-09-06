@@ -1,0 +1,79 @@
+# externals-skip.patch — the ONE change the fleet carries against upstream
+# actions/runner-container-hooks (packages/k8s, the ARC Kubernetes-mode hook),
+# applied by build-patched-hook.sh to the exact tag the pinned runner image
+# bundles (v0.7.0 for runner 2.336.0; derived and byte-verified by the build).
+#
+# WHY: copyExternalsToRoot() copies /home/runner/externals (595 MB, 9,028
+# files, ~12 s on the pool's array) into <work volume>/externals on EVERY job
+# start, unconditionally — verified in the pinned image 2026-09-04
+# (livespec-b1c6; livespec plan ci-runner-pod-lifecycle-reliability,
+# research/005). The fleet pre-seeds that directory host-side by hardlink when
+# the volume is provisioned (livespec-wm7c), so the copy is pure waste there.
+#
+# WHAT: skip the copy only when BOTH hold — the runner container's environment
+# carries ACTIONS_RUNNER_PRESEEDED_EXTERNALS_VERSION=<runner version> (set by
+# the scale-set values beside the image pin), AND the destination holds the
+# marker `.externals-seeded-<that version>` whose content is that version (left
+# by extract-externals.sh, hardlinked in with the seed). Env unset, or marker
+# missing or for another version: the copy runs exactly as upstream's does.
+# The version has to come from the environment because the runner exports
+# nothing a hook could read it from (no RUNNER_VERSION env, no version file or
+# image label; only bin/Runner.Listener.deps.json names it — checked 2026-09-04).
+#
+# Upstream's main branch (v0.8.x) has since replaced this copy with an init
+# container that moves the same 595 MB into an emptyDir, so this patch cannot
+# apply there; the equivalent opt-in is proposed upstream as the pull request
+# recorded in README.md. When a runner-image bump moves the bundled hook to a
+# tag where this patch no longer applies, build-patched-hook.sh fails at `git
+# apply --check` — that is the intended block; re-derive the patch there.
+#
+# Everything below is `git diff` output against tag v0.7.0 and is what
+# `git apply` reads (it ignores this comment block).
+diff --git a/packages/k8s/src/hooks/prepare-job.ts b/packages/k8s/src/hooks/prepare-job.ts
+index 1dc7ad3..bd184be 100644
+--- a/packages/k8s/src/hooks/prepare-job.ts
++++ b/packages/k8s/src/hooks/prepare-job.ts
+@@ -1,4 +1,5 @@
+ import * as core from '@actions/core'
++import * as fs from 'fs'
+ import * as io from '@actions/io'
+ import * as k8s from '@kubernetes/client-node'
+ import {
+@@ -184,14 +185,36 @@ function generateResponseFile(
+ async function copyExternalsToRoot(): Promise<void> {
+   const workspace = process.env['RUNNER_WORKSPACE']
+   if (workspace) {
++    const destination = path.join(workspace, '../externals')
++    if (externalsPreseeded(destination)) {
++      core.info(`externals pre-seeded at ${destination}; skipping the copy`)
++      return
++    }
+     await io.cp(
+       path.join(workspace, '../../externals'),
+-      path.join(workspace, '../externals'),
++      destination,
+       { force: true, recursive: true, copySourceDirectory: false }
+     )
+   }
+ }
+ 
++// Opt-in: the platform pre-seeded the work volume with this runner version's
++// externals and says so in ACTIONS_RUNNER_PRESEEDED_EXTERNALS_VERSION; the
++// seed left `.externals-seeded-<version>` (content: the version) beside them.
++// Env unset, or marker missing/mismatched: copy, exactly as before.
++function externalsPreseeded(destination: string): boolean {
++  const version = process.env['ACTIONS_RUNNER_PRESEEDED_EXTERNALS_VERSION']
++  if (!version) {
++    return false
++  }
++  try {
++    const marker = path.join(destination, `.externals-seeded-${version}`)
++    return fs.readFileSync(marker, 'utf8').trim() === version
++  } catch {
++    return false
++  }
++}
++
+ export function createContainerSpec(
+   container: JobContainerInfo,
+   name: string,

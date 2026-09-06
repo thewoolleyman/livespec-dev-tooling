@@ -108,6 +108,16 @@ log "7b/10 pool-provided sccache binary (node-local; mounted read-only into ever
 "${SCRIPT_DIR}/sccache/install-sccache-binary.sh"
 "${SCRIPT_DIR}/cache-telemetry/install-cache-telemetry.sh"
 
+# 7c: the fleet-patched ARC container hook (built on a developer host,
+# committed under container-hook/bundle/<runner-version>/) to
+# /usr/local/lib/ci-runner-k3s/hooks/<runner-version>/, plus the pinned image's
+# externals extracted beside the work volumes for the provisioner's hardlink
+# seed. Before 8 because the values files the boot converge applies select the
+# hook by that path (livespec-wm7c; container-hook/README.md). Mounts the image
+# through containerd, so k3s must be running — it is, KUBECONFIG was checked.
+log "7c/10 fleet-patched ARC container hook + externals extraction from the pinned runner image"
+"${SCRIPT_DIR}/container-hook/install-container-hook.sh"
+
 log "8/10 reconstruct-on-boot converge unit + artifacts (enable only)"
 "${SCRIPT_DIR}/reconstruct/install-converge-unit.sh"
 
