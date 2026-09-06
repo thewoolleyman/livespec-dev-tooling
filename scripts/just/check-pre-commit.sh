@@ -26,8 +26,12 @@ if [[ "$test_count" -eq 1 ]] && [[ "$impl_count" -eq 0 ]]; then
     echo ":: Red-mode shape detected: $test_staged"
     echo ":: scoping the Red gate by staged-path class (red_leg_scope): coverage gates skip"
     echo ":: (verified at the Green amend) + any orthogonal legs a staged unit test cannot affect"
-    just red_staged="$test_staged" check
+    just red_staged="$test_staged" hook_gate=1 check
     exit $?
 fi
 
-just check
+# `hook_gate=1` omits the world-gate members enumerated in check.sh — today
+# just check-fleet-conformance-admin, whose verdict is a fact about nine OTHER
+# repositories' live admin state and so can refuse a commit that has nothing
+# to do with it (work-item livespec-dev-tooling-mmqe, absorbing tkzf).
+just hook_gate=1 check

@@ -15,4 +15,9 @@ if uv run python -m livespec_dev_tooling.green_token check 2>&1; then
     exit 0
 fi
 
-just check
+# `hook_gate=1` omits the world-gate members enumerated in check.sh. The
+# aggregate is otherwise unchanged, so PR gate ≡ master gate still holds for
+# every member CI runs: the one omitted member is not in the CI matrix either,
+# because the App installation token CI authenticates with deliberately lacks
+# admin scope (work-item livespec-dev-tooling-mmqe, absorbing tkzf).
+just hook_gate=1 check
