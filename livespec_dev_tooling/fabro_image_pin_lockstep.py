@@ -2,8 +2,10 @@
 
 The fleet Fabro sandbox image is built as a LAYER TREE
 (`docker/fabro-sandbox/<layer>/Dockerfile`): `base → python →
-{python-agent, python-rust → python-rust-agent}`, where the `agent` leaf
-Dockerfile is built twice, once atop each of `python` and `python-rust`.
+{python-agent, python-rust → {python-rust-agent, python-rust-fuzz}}`, where
+the `agent` leaf Dockerfile is built twice, once atop each of `python` and
+`python-rust`, and `python-rust-fuzz` is a CI-only leaf (g++ + nightly +
+cargo-fuzz for fuzzing consumers) with no agent atop it.
 The versions each layer bakes are declared as greppable `ARG NAME=value`
 lines, and the obligated ones MUST stay in lockstep with this repo's own
 pin sources:
@@ -109,6 +111,7 @@ _CHAIN_DEFAULT_ARGS = (
     ("BASE_IMAGE", "livespec-fabro-sandbox:base-dev"),
     ("PYTHON_IMAGE", "livespec-fabro-sandbox:python-dev"),
     ("PARENT_IMAGE", "livespec-fabro-sandbox:python-dev"),
+    ("PYTHON_RUST_IMAGE", "livespec-fabro-sandbox:python-rust-dev"),
 )
 
 

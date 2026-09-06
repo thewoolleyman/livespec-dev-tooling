@@ -18,8 +18,9 @@ rewrites ONLY the trailing `vX.Y.Z` version and preserves the `<layer>-` prefix
 that precedes it.
 
 A tag with NO prefix to preserve is REFUSED rather than rewritten.
-`.github/workflows/fabro-sandbox-image.yml` publishes five layers (`base-`,
-`python-`, `python-agent-`, `python-rust-`, `python-rust-agent-`) and every tag
+`.github/workflows/fabro-sandbox-image.yml` publishes six layers (`base-`,
+`python-`, `python-agent-`, `python-rust-`, `python-rust-agent-`,
+`python-rust-fuzz-`) and every tag
 it pushes carries its layer prefix in both the `-sha-<short>` and `-v<X.Y.Z>`
 forms — a BARE `vX.Y.Z` is never published. So rewriting an unprefixed pin to a
 bare release tag names an image that will never exist, and because the rewrite
@@ -85,7 +86,8 @@ class TagRewriteRefused:
 
 # The version anchor: the trailing `vX.Y.Z` semver in the tag. The `<layer>-`
 # prefix that precedes it (`base-` / `python-` / `python-agent-` /
-# `python-rust-` / `python-rust-agent-`) is preserved verbatim; only this
+# `python-rust-` / `python-rust-agent-` / `python-rust-fuzz-`) is preserved
+# verbatim; only this
 # portion is replaced by the new release tag. The anchor must be present AND
 # preceded by a non-empty prefix — see `rewrite_layered_docker_tag`.
 #
