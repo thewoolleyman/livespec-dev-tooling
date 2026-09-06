@@ -1,10 +1,19 @@
 # warm-cache-cronjob.yaml — the trusted writer of the warm uv cache lower
 # (tier 1 of the cache tiers; see warm-cache-populate.sh's header and
-# README.md "Warm uv cache" for the design). Applied by install-warm-cache.sh,
-# which ALSO generates the `warm-cache-repos` ConfigMap this CronJob reads —
-# that ConfigMap is deliberately not in this file, because its content is
-# DERIVED from ../arc/values-*.yaml at install time (the live set of routed
-# repositories) rather than maintained by hand as a second list that drifts.
+# README.md for the design). Applied by converge-warm-cache.sh (and so by
+# install-warm-cache.sh and the boot converge), which ALSO generates the
+# `warm-cache-repos` ConfigMap this CronJob reads — that ConfigMap is
+# deliberately not in this file, because its content is DERIVED from
+# ../arc/values-*.yaml at install time (the live set of routed repositories)
+# rather than maintained by hand as a second list that drifts — and the
+# `warm-cache-populate` script ConfigMap (the populator plus
+# verify-uv-cache.py). The `warm-cache-budget` ConfigMap IS in this file: the
+# budget is a reviewed number, not a derived one (README.md "Budget").
+#
+# Since livespec-41w4 every generation is built FROM EMPTY through the PyPI
+# files proxy (./pypi-proxy/, same namespace, applied by the same converge),
+# verified against the routed locks, and refused over budget; the populator's
+# header carries that control flow.
 #
 # Runs in its own namespace so the ONE mount of the warm root is not a
 # capability anything in arc-runners carries. Nothing else mounts it at all:
@@ -73,18 +82,42 @@ data:
     echo "warm-cache-populate ConfigMap not converged by install-warm-cache.sh" >&2
     exit 2
 ---
+# THE BUDGET (livespec-41w4; README.md "Budget"). Fixed numbers, NOT a
+# multiple of the last build: a ratchet is self-referential, and the point is
+# an alarm when the union of the routed locks drifts — re-deriving these is a
+# reviewed commit against the measured union in README.md's cost table.
+# 1,000,000,000 bytes / 20,000 files is ~2.5x the 2026-09-04 nine-lock union
+# (379 MB / 8,070 files); the runaway hardlink-seeded generation that
+# motivated the rebuild was 1,388 MB / 159,409 files, so BOTH axes trip well
+# before that shape recurs. Injected into the populator as WARM_BUDGET_BYTES
+# / WARM_BUDGET_FILES; the populator records the values in effect in every
+# generation's manifest and in last-run.json, which the host sweep emits as
+# livespec.ci_warm.budget_*. A generation over EITHER number is not
+# published (previous generation stays live, exit 3).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: warm-cache-budget
+  namespace: ci-warm-cache
+data:
+  bytes: "1000000000"
+  files: "20000"
+---
 apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: warm-cache-populate
   namespace: ci-warm-cache
 spec:
-  # Each run is ~10-30 s steady-state (nine repositories, hardlink-seeded
-  # generation; measured 2026-08-23), plus the sccache-writer build of each
-  # routed Rust repository ONLY when its default branch or toolchain changed
-  # since the last build (a marker key in redis; see the populator's header).
-  # Half-hourly keeps the lower within one merge-cycle of every default
-  # branch's lockfile at negligible cost.
+  # A run with no lock change is a fetch, a hash and a verify of the live
+  # generation (seconds); a rebuild is a from-empty build through the PyPI
+  # files proxy (~15 s for the nine-lock union, measured 2026-09-04) — plus
+  # the sccache-writer build of each routed Rust repository ONLY when its
+  # default branch or toolchain changed since the last build (a marker key
+  # in redis; see the populator's header). Half-hourly keeps the lower
+  # within one merge-cycle of every default branch's lockfile at negligible
+  # cost; a generation older than a day is rebuilt regardless, so the
+  # from-empty path is exercised at least once per 24 h.
   schedule: "*/30 * * * *"
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
@@ -120,6 +153,26 @@ spec:
                   value: /config/repos.txt
                 - name: KEEP_GENERATIONS
                   value: "2"
+                # The budget both axes (the warm-cache-budget ConfigMap above);
+                # the populator refuses to start without them.
+                - name: WARM_BUDGET_BYTES
+                  valueFrom:
+                    configMapKeyRef:
+                      name: warm-cache-budget
+                      key: bytes
+                - name: WARM_BUDGET_FILES
+                  valueFrom:
+                    configMapKeyRef:
+                      name: warm-cache-budget
+                      key: files
+                # The PyPI files proxy (./pypi-proxy/) every rebuild fetches
+                # through; probed at /health, a miss degrades to a direct build.
+                - name: PYPI_FILES_PROXY
+                  value: http://pypi-proxy.ci-warm-cache.svc.cluster.local:8081
+                # The proxy's flat object store, read-only, for the hit ratio
+                # (pypi-proxy.yaml's header: why flat, why countable).
+                - name: PROXY_STORE
+                  value: /proxy-store
                 # The image installs uv and its CPython under /root (its
                 # build-time HOME), which is why this container runs as the
                 # image's default user (root) rather than a non-root uid: as
@@ -194,6 +247,9 @@ spec:
                 - name: config
                   mountPath: /config
                   readOnly: true
+                - name: proxy-store
+                  mountPath: /proxy-store
+                  readOnly: true
           volumes:
             - name: warm
               hostPath:
@@ -226,3 +282,9 @@ spec:
             - name: config
               configMap:
                 name: warm-cache-repos
+            - name: proxy-store
+              hostPath:
+                # The PyPI files proxy's store (pypi-proxy/pypi-proxy.yaml),
+                # the same path it mounts read-write; counted, never written.
+                path: /var/cache/ci-runner/pypi-proxy
+                type: DirectoryOrCreate

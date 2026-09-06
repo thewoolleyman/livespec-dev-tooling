@@ -8,14 +8,16 @@
 # Three steps, all cluster objects (nothing node-local — the host path is
 # created by the hostPath mounts' DirectoryOrCreate on first use):
 #
-#   1. Converge the CLUSTER objects via ./converge-warm-cache.sh — the
-#      `warm-cache-repos` ConfigMap derived from ../arc/values-*.yaml (every
+#   1. Converge the CLUSTER objects via ./converge-warm-cache.sh — the PyPI
+#      files proxy (./pypi-proxy/) the populator builds every generation
+#      through, the `warm-cache-repos` ConfigMap derived from ../arc/values-*.yaml (every
 #      `githubConfigUrl` of a per-repository scale set, de-duplicated: the
 #      live set of repositories routed to this pool, so the populator warms
 #      exactly the lockfiles this pool's jobs resolve and no hand-maintained
 #      second list can drift from the routing), the Namespace + CronJob from
-#      warm-cache-cronjob.yaml, and the script ConfigMap from
-#      ./warm-cache-populate.sh. That converge is ALSO what the
+#      warm-cache-cronjob.yaml (with the `warm-cache-budget` ConfigMap), and
+#      the script ConfigMap from ./warm-cache-populate.sh plus
+#      ./verify-uv-cache.py. That converge is ALSO what the
 #      reconstruct-on-boot path runs every boot (the datastore is tmpfs and
 #      these objects are wiped with it); this installer is the attended
 #      superset.

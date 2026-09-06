@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
 # converge-warm-cache.sh — the one idempotent converge of the warm uv cache's
-# CLUSTER objects: the `ci-warm-cache` Namespace + CronJob
+# CLUSTER objects: the PyPI files proxy (./pypi-proxy/pypi-proxy.yaml —
+# Deployment, Service, nginx ConfigMap; the populator builds every generation
+# through it), the `ci-warm-cache` Namespace + budget ConfigMap + CronJob
 # (./warm-cache-cronjob.yaml), the `warm-cache-repos` ConfigMap derived from
 # the ARC values files, and the `warm-cache-populate` script ConfigMap
-# converged from ./warm-cache-populate.sh. Applies and exits; it runs NO
-# populate Job and waits for nothing.
+# converged from ./warm-cache-populate.sh AND ./verify-uv-cache.py (with its
+# ./uv_cache_layout.py). Applies
+# and exits; it runs NO populate Job and waits only (bounded) for the proxy's
+# rollout, which a boot converge must not be held hostage by — a proxy that
+# is not yet Ready only makes the next rebuild fetch from PyPI directly.
 #
 # WHY SPLIT OUT OF install-warm-cache.sh: those objects live in the k3s
 # datastore, which is tmpfs and EMPTY on every boot (../datastore-tmpfs/).
@@ -27,6 +32,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NAMESPACE="ci-warm-cache"
 VALUES_DIR="${WARM_CACHE_VALUES_DIR:-${SCRIPT_DIR}/../arc}"
 WARM_CACHE_IMAGE="${WARM_CACHE_IMAGE:-}"
+PYPI_PROXY_ROLLOUT_TIMEOUT="${PYPI_PROXY_ROLLOUT_TIMEOUT:-120s}"
 
 log() { printf '\n== %s ==\n' "$*"; }
 
@@ -52,19 +58,39 @@ echo "${repo_count} repositories:"
 sed 's/^/  /' "${repos_file}"
 
 # ---------------------------------------------------------------------------
-log "warm-cache 2. Apply the Namespace + CronJob and converge both ConfigMaps"
+log "warm-cache 2. Apply the PyPI files proxy (Namespace, nginx ConfigMap, Deployment, Service)"
+# Before the CronJob: the populator's next rebuild fetches through it. A
+# changed ConfigMap does not restart the Deployment by itself; stamp the
+# manifest's hash onto the pod template so a config edit rolls the pod
+# (../crates-proxy/converge-crates-proxy.sh does the same).
+kubectl apply -f "${SCRIPT_DIR}/pypi-proxy/pypi-proxy.yaml"
+proxy_hash="$(sha256sum "${SCRIPT_DIR}/pypi-proxy/pypi-proxy.yaml" | cut -c1-16)"
+kubectl -n "${NAMESPACE}" patch deployment pypi-proxy --type=merge \
+  -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"ci-runner.io/config-hash\":\"${proxy_hash}\"}}}}}" >/dev/null
+if kubectl -n "${NAMESPACE}" rollout status deployment/pypi-proxy --timeout="${PYPI_PROXY_ROLLOUT_TIMEOUT}"; then
+  echo "pypi-proxy ready: pypi-proxy.${NAMESPACE}.svc.cluster.local:8081"
+else
+  echo "WARN: pypi-proxy rollout not complete after ${PYPI_PROXY_ROLLOUT_TIMEOUT}; the populator builds direct from PyPI until it is Ready (kubectl -n ${NAMESPACE} get pods)"
+fi
+
+# ---------------------------------------------------------------------------
+log "warm-cache 3. Apply the budget ConfigMap + CronJob and converge the repos and script ConfigMaps"
 kubectl apply -f "${SCRIPT_DIR}/warm-cache-cronjob.yaml"
 kubectl create configmap warm-cache-repos \
   --namespace "${NAMESPACE}" \
   --from-file="repos.txt=${repos_file}" \
   --dry-run=client -o yaml | kubectl apply -f -
+# The populator AND its verifier (the CLI plus the layout module it imports
+# from its own directory), one ConfigMap mounted at /scripts.
 kubectl create configmap warm-cache-populate \
   --namespace "${NAMESPACE}" \
   --from-file="warm-cache-populate.sh=${SCRIPT_DIR}/warm-cache-populate.sh" \
+  --from-file="verify-uv-cache.py=${SCRIPT_DIR}/verify-uv-cache.py" \
+  --from-file="uv_cache_layout.py=${SCRIPT_DIR}/uv_cache_layout.py" \
   --dry-run=client -o yaml | kubectl apply -f -
 if [ -n "${WARM_CACHE_IMAGE}" ]; then
   kubectl -n "${NAMESPACE}" patch cronjob warm-cache-populate --type=json \
     -p "[{\"op\":\"replace\",\"path\":\"/spec/jobTemplate/spec/template/spec/containers/0/image\",\"value\":\"${WARM_CACHE_IMAGE}\"}]"
 fi
 
-log "warm-cache converged: namespace ${NAMESPACE}, CronJob warm-cache-populate, ${repo_count} repositories."
+log "warm-cache converged: namespace ${NAMESPACE}, pypi-proxy, budget ConfigMap, CronJob warm-cache-populate (+ verifier), ${repo_count} repositories."

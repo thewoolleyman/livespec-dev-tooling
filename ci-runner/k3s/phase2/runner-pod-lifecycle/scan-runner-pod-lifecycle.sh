@@ -158,6 +158,11 @@ ESCALATE_AFTER="${RPL_ESCALATE_AFTER:-2}"
 # (../../../observability/), honouring its host-wide override too.
 OTLP_ENDPOINT="${RPL_OTLP_ENDPOINT:-${CI_RUNNER_HEARTBEAT_OTLP:-http://127.0.0.1:4319/v1/metrics}}"
 NO_EMIT="${RPL_NO_EMIT:-0}"
+# The warm-cache populator's per-run document (../warm-cache/, livespec-41w4)
+# and the file recording the last run_id this sweep emitted from it — see
+# "WARM-CACHE BUILD GAUGES" under the OTLP emission.
+WARM_LAST_RUN="${RPL_WARM_LAST_RUN:-/var/lib/rancher/k3s/storage/.warm/last-run.json}"
+WARM_STATE_FILE="${RPL_WARM_STATE_FILE:-/var/lib/ci-runner-k3s/warm-cache-last-emitted-run}"
 
 HOOK_SIGNATURE='Executing the custom container implementation failed'
 BIND_SIGNATURE='binding volumes: context deadline exceeded'
@@ -430,6 +435,9 @@ echo "  ${cap_total} allocatable across ${cap_nodes} node(s), ${cap_missing} wit
 #                                       summed over the nodes — 0 when the
 #                                       extended resource is not registered,
 #                                       which IS a reading (capacity absent).
+#   livespec.ci_warm.*                  the warm-cache populator's last run,
+#                                       once per new run_id, from its
+#                                       last-run.json (the block below).
 #
 # BEST-EFFORT, BY CONTRACT. The report and the exit code are the interface
 # the journal and `systemctl is-failed` depend on; a collector outage must not
@@ -446,10 +454,107 @@ echo "  ${cap_total} allocatable across ${cap_nodes} node(s), ${cap_missing} wit
 # emitted — only its zero would be lost.
 EMIT_CLASSES="pvc-pending bind-deadline inotify-emfile containerd-deadline hook-failure stale-listener capacity-absent"
 
+# WARM-CACHE BUILD GAUGES (livespec-41w4; ../warm-cache/README.md "Metrics").
+# The warm-cache populator runs in a pod with no hostNetwork and the collector
+# listens on loopback only, so it cannot post its own readings; it writes
+# $WARM_LAST_RUN (one document per run — rebuilt, refused, verified, sizes,
+# trim against the previous generation, proxy hit ratio) and THIS sweep, the
+# host-side emitter that already exists, carries them ONCE per new run_id in
+# the same POST as the lifecycle gauges:
+#   livespec.ci_warm.generation_bytes / .generation_files   the live generation
+#   livespec.ci_warm.trimmed_bytes / .trimmed_files         previous minus new
+#                                                           on a rebuild (0 on
+#                                                           a verified-unchanged
+#                                                           run; negative = grew)
+#   livespec.ci_warm.populate_seconds                       the uv build phase
+#   livespec.ci_warm.repos_synced / .repos_failed
+#   livespec.ci_warm.rebuilt / .refused / .verified         0|1 for the run
+#   livespec.ci_warm.unreferenced_entries                   the verifier's count
+#   livespec.ci_warm.budget_bytes / .budget_files           the budget in effect
+#   livespec.ci_warm.proxied_downloads                      distributions fetched
+#                                                           through the proxy
+#   livespec.ci_warm.proxy_hit_ratio                        when the populator
+#                                                           could derive it
+#   livespec.ci_warm.run_epoch                              the run's start, the
+#                                                           join key back to the
+#                                                           Job log
+# FAIL-CLOSED, like the Kueue and node gauges: an absent or unparseable
+# last-run.json omits the whole family (and says so) rather than sending
+# zeros; a run_id already recorded in $WARM_STATE_FILE is not re-sent (the
+# populator runs every 30 min, the sweep every 5); the state is written only
+# after the POST succeeds, so a collector outage re-sends the run on the next
+# sweep instead of losing it.
+# Both set by warm_metrics_fragment (which therefore runs in the caller's
+# shell, never in a command substitution): the JSON fragment to append to the
+# POST, and the run it describes (empty when nothing is to be sent).
+WARM_FRAG=""
+warm_run_id=""
+warm_unit() {
+  case "$1" in
+    *_bytes) printf 'By' ;;
+    *_files|*_entries|proxied_downloads) printf '{files}' ;;
+    populate_seconds|run_epoch) printf 's' ;;
+    repos_*) printf '{repos}' ;;
+    *) printf '1' ;;
+  esac
+}
+warm_metrics_fragment() {
+  local rows now_ns="$1" key val frag="" ratio="" last_emitted
+  WARM_FRAG=""; warm_run_id=""
+  if [ ! -r "$WARM_LAST_RUN" ]; then
+    echo "  emit: ${WARM_LAST_RUN} absent or unreadable (no populate since the rebuild, or not root); omitting livespec.ci_warm.* rather than sending false zeros" >&2
+    return 0
+  fi
+  if ! rows="$(python3 - "$WARM_LAST_RUN" <<'PY' 2>&1
+import json, sys
+d = json.load(open(sys.argv[1]))
+print("run_id=" + str(d["run_id"]))
+print("run_epoch=" + str(int(d["started_at_epoch"])))
+for k in ("generation_bytes", "generation_files", "trimmed_bytes", "trimmed_files", "populate_seconds",
+          "repos_synced", "repos_failed", "rebuilt", "refused", "verified", "unreferenced_entries",
+          "budget_bytes", "budget_files", "proxied_downloads"):
+    if d.get(k) is not None:
+        print(f"{k}={int(d[k])}")
+if d.get("proxy_hit_ratio") is not None:
+    print(f"proxy_hit_ratio={float(d['proxy_hit_ratio'])}")
+PY
+)"; then
+    echo "  emit: ${WARM_LAST_RUN} unparseable ($(printf '%s' "$rows" | tail -1)); omitting livespec.ci_warm.*" >&2
+    return 0
+  fi
+  warm_run_id="$(printf '%s\n' "$rows" | sed -n 's/^run_id=//p')"
+  last_emitted="$(cat "$WARM_STATE_FILE" 2>/dev/null || true)"
+  if [ -n "$warm_run_id" ] && [ "$warm_run_id" = "$last_emitted" ]; then
+    echo "  emit: warm-cache run ${warm_run_id} already emitted; livespec.ci_warm.* not re-sent"
+    warm_run_id=""
+    return 0
+  fi
+  while IFS='=' read -r key val; do
+    case "$key" in
+      run_id|'') ;;
+      proxy_hit_ratio) ratio="$val" ;;
+      *) frag="${frag},$(gauge_json "livespec.ci_warm.${key}" "warm-cache populate run ${warm_run_id}: ${key} (from last-run.json)" "$(warm_unit "$key")" "$val" "$now_ns")" ;;
+    esac
+  done <<< "$rows"
+  if [ -n "$ratio" ]; then
+    frag="${frag},$(gauge_double_json livespec.ci_warm.proxy_hit_ratio "warm-cache populate run ${warm_run_id}: share of proxied distribution downloads served from the PyPI files proxy's store" "1" "$ratio" "$now_ns")"
+  fi
+  WARM_FRAG="$frag"
+}
+record_warm_run() {
+  [ -n "$warm_run_id" ] || return 0
+  mkdir -p "$(dirname "$WARM_STATE_FILE")" 2>/dev/null || return 0
+  printf '%s\n' "$warm_run_id" > "$WARM_STATE_FILE" 2>/dev/null || return 0
+}
+
 # One gauge metric carrying one integer datapoint — the heartbeat's shape.
 # $1 name, $2 description, $3 unit, $4 value, $5 timeUnixNano.
 gauge_json() {
   printf '{"name":"%s","description":"%s","unit":"%s","gauge":{"dataPoints":[{"asInt":"%s","timeUnixNano":"%s"}]}}' "$1" "$2" "$3" "$4" "$5"
+}
+# The same, with a floating-point datapoint (the proxy hit ratio).
+gauge_double_json() {
+  printf '{"name":"%s","description":"%s","unit":"%s","gauge":{"dataPoints":[{"asDouble":%s,"timeUnixNano":"%s"}]}}' "$1" "$2" "$3" "$4" "$5"
 }
 # The count the report carries for class $1; 0 when the class is absent.
 class_count() {
@@ -512,12 +617,19 @@ emit_lifecycle_metrics() {
     echo "  emit: could not read nodes ($(printf '%s' "$node_rows" | head -1)); omitting livespec.ci_churn_slot.allocatable rather than sending a false zero" >&2
   fi
 
+  warm_metrics_fragment "$now_ns"
+  if [ -n "$WARM_FRAG" ]; then
+    metrics="${metrics}${WARM_FRAG}"
+    summary="${summary} livespec.ci_warm.*(run ${warm_run_id})"
+  fi
+
   payload="$(cat <<JSON
 {"resourceMetrics":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"ci-runner-lifecycle"}},{"key":"host.name","value":{"stringValue":"${host_name}"}}]},"scopeMetrics":[{"scope":{"name":"runner-pod-lifecycle"},"metrics":[${metrics#,}]}]}]}
 JSON
 )"
   if err="$(curl --silent --show-error --fail --max-time 10 -X POST "${OTLP_ENDPOINT}" -H 'Content-Type: application/json' -d "${payload}" 2>&1 >/dev/null)"; then
     echo "  emit:${summary} host.name=${host_name} -> ${OTLP_ENDPOINT}"
+    record_warm_run
   else
     echo "  emit: POST to ${OTLP_ENDPOINT} FAILED (${err:-no detail}); best-effort — the report and exit code are unaffected. Not posted:${summary}" >&2
   fi
