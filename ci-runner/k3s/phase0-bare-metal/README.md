@@ -22,7 +22,7 @@ because a node "already looks right":
 | # | Stage | Artifact | State it establishes |
 |---|---|---|---|
 | 1 | **Storage layout** | `storage-layout.sh <profile>` (here) | The storage-controller virtual disk, the GPT partition table (EFI system partition + LVM physical volume), the volume groups, the logical volumes, and the `mkfs` that puts the role LABELS on them. |
-| 2 | **Base operating system** | *not yet scripted — its own work item, depends on this stage* | An installed, bootable operating system on the volumes stage 1 created, and the base packages the later stages need. |
+| 2 | **Base operating system** | `base-os-install.sh <profile>` (here) | **An installed operating system** — the precondition the specification section names for the k3s stage — on the volumes stage 1 created: the pinned release debootstrapped into the root logical volume, an `/etc/fstab` whose every line is found by LABEL, `lvm2` and an initramfs that activates the root volume group, a signed shim and GRUB on the EFI system partition with `root=` by LVM id, the firmware boot entry, the hostname, the profile's network address, and the operator account the later stages are run as. |
 | 3 | **k3s** | `../provision-k3s.sh` | The pinned single-node k3s server, its config installed before the first start, and the admin kubeconfig every later step reads. |
 | 4 | **Node-local runbook** | `sudo ../phase2/install-node.sh profiles/<node>.env` | Every node-local installer under `../phase2/` plus `../secret-reinjection/` that this node's `CLUSTER_ROLE` calls for, at the `ADMISSION_CAPACITY_C` the same profile carries — including `../phase2/storage-layout/install-storage-layout.sh`, which is stage 1's CONSUMER. A `server` runs the whole list; an `agent` runs its node-local subset and skips the cluster-side and datastore steps, logging the reason for each. |
 
@@ -39,17 +39,21 @@ sum to — never a stale literal. See `../phase2/kueue/DERIVATION.md`.
 
 ## One procedure, one profile per node
 
-`storage-layout.sh` contains no value that belongs to one node: not a device,
-not a slot list, not a volume-group name, not a size. Every one of those is
-read from the `profiles/<node>.env` named on the command line. A second pool
-node is a **second profile** consumed by the same script — never a second
-script and never a hand-edited copy of one.
+Neither stage contains a value that belongs to one node: not a device, not a
+slot list, not a volume-group name, not a size, not a release, not a hostname,
+not an address, not an account name. Every one of those is read from the
+`profiles/<node>.env` named on the command line. A second pool node is a
+**second profile** consumed by the same scripts — never a second script and
+never a hand-edited copy of one.
 
 | Path | Role |
 |---|---|
 | `storage-layout.sh` | Stage 1. Creates the controller virtual disk, partitions, the physical volumes, the volume groups, the logical volumes, and the filesystems with their role labels. Re-runnable; destructive only on explicit consent; `--dry-run` prints every command and runs none. |
-| `profiles/poweredge-xubuntu.env` | The first node's profile: the PERC H730P RAID-5 virtual disk over slots 0-6 at a 64 KB strip with WriteBack + Read Ahead + Direct IO, a 1 GiB EFI system partition, one LVM physical-volume partition, volume group `poweredge` carrying `ci-cache`, and volume group `nvmea` carrying `ci-containerd` and `ci-workvols`. Its header records the provenance of every value, including which values this repository has NOT measured. |
-| `storage-layout-exit-tests.sh` | The stage's exit tests. Runs the script only through `--dry-run`, against fake probe tools, with every mutating command replaced by a tripwire — so the suite proves the ordering, the profile validation and the consent refusals while touching no host at all. |
+| `base-os-install.sh` | Stage 2. Mounts the profile's root logical volume and EFI system partition, debootstraps the release the profile pins, writes an `/etc/fstab` found entirely by LABEL, installs the kernel, `lvm2` and the bootloader in the chroot, regenerates the initramfs with LVM support, sets the hostname, the network address, the operator account and the firmware boot entry. Re-runnable — a root volume already carrying the profile's release is left alone and reported; destructive only on explicit consent; `--dry-run` prints every command and file write and runs none. |
+| `profiles/poweredge-xubuntu.env` | The first node's profile: the PERC H730P RAID-5 virtual disk over slots 0-6 at a 64 KB strip with WriteBack + Read Ahead + Direct IO, a 1 GiB EFI system partition, one LVM physical-volume partition, volume group `poweredge` carrying `root`, `swap` and `ci-cache`, volume group `nvmea` carrying `ci-containerd` and `ci-workvols`, and the base-OS values stage 2 consumes (Ubuntu 26.04 `resolute`, its mirrors, the kernel package, the initramfs generator, the boot-entry label and the operator account). Its header records the provenance of every value, including which values this repository has NOT measured. |
+| `profile.sh` | The ONE parser for that format, **sourced** by every stage and never run. Each stage refuses a key it does not know, so a per-stage key list would make the key a later stage needs break an earlier one; there is therefore exactly one list, here. |
+| `storage-layout-exit-tests.sh` | Stage 1's exit tests. Runs the script only through `--dry-run`, against fake probe tools, with every mutating command replaced by a tripwire — so the suite proves the ordering, the profile validation and the consent refusals while touching no host at all. |
+| `base-os-install-exit-tests.sh` | Stage 2's exit tests, built the same way. Proves the `--dry-run` command order, that the rendered `/etc/fstab` finds root, the ESP and the three tiers by LABEL and that its five tier lines are byte-exact with the ones `../phase2/storage-layout/install-storage-layout.sh` ensures, that `lvm2` reaches the chroot before the initramfs is regenerated, and that a populated root volume is refused unless the invocation names it. |
 
 Read the profile's own header for the format. In one line: `KEY=value`, parsed
 and never sourced, list-valued keys holding space-separated `:`-delimited
@@ -78,6 +82,7 @@ destructive and no consent is needed. The targets are:
 | the target disk | its device path | the disk already carries a partition table or a filesystem signature |
 | an LVM physical volume | its device path | the device already carries a non-LVM signature |
 | a filesystem | the logical volume's (or partition's) device path | the volume already carries a filesystem, and the profile declares a different type or label |
+| the root logical volume's contents | the logical volume's device path | the volume is populated and does NOT already carry the release the profile pins (a volume that DOES carry it is left alone, not destroyed) |
 
 Two things this rule deliberately does NOT do. It does not accept a blanket
 "yes to everything" flag: a run that would destroy three volumes needs three
@@ -90,15 +95,20 @@ need.
 ```bash
 # unprivileged, touches nothing, prints the whole plan:
 ./storage-layout.sh --dry-run profiles/poweredge-xubuntu.env
+./base-os-install.sh --dry-run profiles/poweredge-xubuntu.env
 
 # then, from the Recovery USB, as root:
 sudo ./storage-layout.sh --i-consent-to-destroy=/dev/sda profiles/poweredge-xubuntu.env
+sudo ./base-os-install.sh profiles/poweredge-xubuntu.env
 ```
 
 `--dry-run` still runs the read-only PROBES — that is how it derives the plan —
 but executes no mutating command. A probe whose tool is not installed reports
 "absent", so a dry run on a workstation prints the full sequence a bare node
-would take.
+would take. In stage 2 the mount is one of the printed commands rather than a
+probe, so a dry run reads whatever is already at the mount root when it decides
+whether the root volume is populated; on a workstation that is nothing, and the
+full fresh-install sequence is printed.
 
 ## Rehearsed before trusted
 
@@ -108,14 +118,16 @@ The specification section above requires a node's rebuild procedure to be
 procedure or to that node's profile, with the outcome recorded on the owning
 ledger item naming the procedure revision and the profile it ran with.
 
-**As of the first landing of this tree, no rehearsal has been performed.** The
-stage is therefore UNPROVEN in the specification's sense, and the two values
-`profiles/poweredge-xubuntu.env` marks `# UNVERIFIED` are unresolved until one
+**As of the first landing of this tree, no rehearsal has been performed.** Both
+stages are therefore UNPROVEN in the specification's sense, and every value
+`profiles/poweredge-xubuntu.env` marks `# UNVERIFIED` is unresolved until one
 happens. A step a rehearsal cannot reproduce is a defect in the procedure, to
 be scripted — never an accepted gap.
 
 ## Out of scope here
 
-The base-OS install stage (2), the Recovery USB builder, and any further node's
-profile are their own work items. Nothing in this tree executes against a live
-host as part of its tests.
+The Recovery USB builder and any further node's profile are their own work
+items. Nothing in this tree executes against a live host as part of its tests.
+Stage 2 deliberately installs NO credential for the operator account it
+creates: this tree carries no secret, so authorizing a login for it is the
+operator's step at the console.

@@ -43,6 +43,7 @@
 #   sudo storage-layout.sh [--i-consent-to-destroy=TARGET]... profiles/<node>.env
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT_NAME="$(basename "$0")"
 DRY_RUN=0
 PROFILE_PATH=""
@@ -92,142 +93,14 @@ fi
 # ---------------------------------------------------------------------------
 # Profile: parsed, never sourced
 #
-# Parsing rather than sourcing means a profile cannot smuggle in procedure: it
-# is KEY=value data or it is rejected. Every key below must be PRESENT; the
-# emptiness rules are applied after the whole file is read, because whether a
-# controller key may be empty depends on another key's value.
+# The parser lives in profile.sh beside this script and is shared with every
+# other stage, so no two stages can disagree about what a profile may contain —
+# each of them REFUSES an unknown key, which a per-stage key list would turn
+# into "the key a later stage needs breaks the earlier one".
 # ---------------------------------------------------------------------------
-REQUIRED_KEYS=(
-  NODE_NAME
-  CONTROLLER_KIND
-  CONTROLLER_CLI
-  CONTROLLER_ID
-  VD_ENCLOSURE
-  VD_SLOTS
-  VD_RAID_LEVEL
-  VD_STRIP_KIB
-  VD_CACHE_POLICY
-  TARGET_DEVICE
-  ESP_DEVICE
-  ESP_SIZE
-  ESP_FSTYPE
-  ESP_LABEL
-  PV_PARTLABEL
-  VOLUME_GROUPS
-  LOGICAL_VOLUMES
-  ROLE_TIERS
-  NODE_NETWORK_INTERFACE
-  NODE_ADDRESS
-  CLUSTER_ROLE
-  CLUSTER_JOIN_ADDRESS
-  ADMISSION_CAPACITY_C
-)
-
-declare -A CFG=()
-declare -A KNOWN=()
-for key in "${REQUIRED_KEYS[@]}"; do KNOWN["$key"]=1; done
-
-[ -f "$PROFILE_PATH" ] || die "profile not found: ${PROFILE_PATH}"
-lineno=0
-while IFS= read -r line || [ -n "$line" ]; do
-  lineno=$((lineno + 1))
-  case "$line" in ''|'#'*) continue ;; esac
-  case "$line" in
-    *=*) ;;
-    *) die "${PROFILE_PATH}:${lineno}: not a KEY=value line: ${line}" ;;
-  esac
-  key="${line%%=*}"
-  if ! [[ "$key" =~ ^[A-Z][A-Z0-9_]*$ ]]; then
-    die "${PROFILE_PATH}:${lineno}: '${key}' is not a profile key (want ^[A-Z][A-Z0-9_]*\$)"
-  fi
-  if [ -z "${KNOWN[$key]:-}" ]; then
-    die "${PROFILE_PATH}:${lineno}: unknown profile key '${key}'"
-  fi
-  if [ -n "${CFG[$key]+set}" ]; then
-    die "${PROFILE_PATH}:${lineno}: profile key '${key}' given more than once"
-  fi
-  CFG["$key"]="${line#*=}"
-done < "$PROFILE_PATH"
-
-for key in "${REQUIRED_KEYS[@]}"; do
-  if [ -z "${CFG[$key]+set}" ]; then
-    die "${PROFILE_PATH}: missing required profile key '${key}'"
-  fi
-done
-
-# Emptiness. CLUSTER_JOIN_ADDRESS is empty for a node that forms its own
-# cluster; the controller and virtual-disk keys are empty for a node that has
-# no storage controller. Every other key must carry a value.
-MAY_BE_EMPTY=(CLUSTER_JOIN_ADDRESS)
-if [ "${CFG[CONTROLLER_KIND]}" = "none" ]; then
-  MAY_BE_EMPTY+=(CONTROLLER_CLI CONTROLLER_ID VD_ENCLOSURE VD_SLOTS VD_RAID_LEVEL VD_STRIP_KIB VD_CACHE_POLICY)
-fi
-declare -A OPTIONAL=()
-for key in "${MAY_BE_EMPTY[@]}"; do OPTIONAL["$key"]=1; done
-for key in "${REQUIRED_KEYS[@]}"; do
-  if [ -z "${CFG[$key]}" ] && [ -z "${OPTIONAL[$key]:-}" ]; then
-    die "${PROFILE_PATH}: profile key '${key}' must not be empty"
-  fi
-done
-
-# ---------------------------------------------------------------------------
-# Records
-# ---------------------------------------------------------------------------
-read -r -a VG_RECORDS <<< "${CFG[VOLUME_GROUPS]}"
-read -r -a LV_RECORDS <<< "${CFG[LOGICAL_VOLUMES]}"
-read -r -a TIER_RECORDS <<< "${CFG[ROLE_TIERS]}"
-
-declare -A VG_PV=()
-VG_NAMES=()
-for record in "${VG_RECORDS[@]}"; do
-  IFS=: read -r rec_vg rec_pv rec_extra <<< "$record"
-  if [ -z "$rec_vg" ] || [ -z "$rec_pv" ] || [ -n "$rec_extra" ]; then
-    die "${PROFILE_PATH}: VOLUME_GROUPS record '${record}' is not <vg>:<physical-volume-device>"
-  fi
-  if [ -n "${VG_PV[$rec_vg]+set}" ]; then
-    die "${PROFILE_PATH}: VOLUME_GROUPS declares volume group '${rec_vg}' more than once"
-  fi
-  VG_PV["$rec_vg"]="$rec_pv"
-  VG_NAMES+=("$rec_vg")
-done
-
-# An ext4 label holds 16 bytes, an XFS label 12, a FAT label 11 and a swap
-# label 15; a longer name is silently TRUNCATED by mkfs, which is how a live
-# tier label was lost once already (`.ai/ci-node-storage-tiers.md`). Refuse it
-# here instead.
-label_limit() {
-  case "$1" in
-    xfs) printf '12' ;;
-    vfat) printf '11' ;;
-    swap) printf '15' ;;
-    *) printf '16' ;;
-  esac
-}
-
-declare -A LV_OF_LABEL=()
-for record in "${LV_RECORDS[@]}"; do
-  IFS=: read -r rec_vg rec_lv rec_size rec_fstype rec_label rec_extra <<< "$record"
-  if [ -z "$rec_vg" ] || [ -z "$rec_lv" ] || [ -z "$rec_size" ] || [ -z "$rec_fstype" ] || [ -z "$rec_label" ] || [ -n "$rec_extra" ]; then
-    die "${PROFILE_PATH}: LOGICAL_VOLUMES record '${record}' is not <vg>:<lv>:<size>:<fstype>:<label>"
-  fi
-  if [ -z "${VG_PV[$rec_vg]+set}" ]; then
-    die "${PROFILE_PATH}: LOGICAL_VOLUMES record '${record}' names volume group '${rec_vg}', which VOLUME_GROUPS does not declare"
-  fi
-  if [ "${#rec_label}" -gt "$(label_limit "$rec_fstype")" ]; then
-    die "${PROFILE_PATH}: label '${rec_label}' exceeds ${rec_fstype}'s $(label_limit "$rec_fstype")-byte limit"
-  fi
-  LV_OF_LABEL["$rec_label"]="$rec_vg"
-done
-
-for record in "${TIER_RECORDS[@]}"; do
-  IFS=: read -r rec_role rec_vg rec_extra <<< "$record"
-  if [ -z "$rec_role" ] || [ -z "$rec_vg" ] || [ -n "$rec_extra" ]; then
-    die "${PROFILE_PATH}: ROLE_TIERS record '${record}' is not <role-label>:<vg>"
-  fi
-  if [ "${LV_OF_LABEL[$rec_role]:-}" != "$rec_vg" ]; then
-    die "${PROFILE_PATH}: ROLE_TIERS puts role '${rec_role}' on volume group '${rec_vg}', but no LOGICAL_VOLUMES record carries that label there"
-  fi
-done
+# shellcheck source=ci-runner/k3s/phase0-bare-metal/profile.sh
+source "${SCRIPT_DIR}/profile.sh"
+profile_load "$PROFILE_PATH"
 
 # ---------------------------------------------------------------------------
 # Execution, probing and consent
