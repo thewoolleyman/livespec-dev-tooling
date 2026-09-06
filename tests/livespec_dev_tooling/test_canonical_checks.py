@@ -389,7 +389,9 @@ def test_world_gate_check_slugs_returns_the_curated_set() -> None:
     `check-branch-protection-alignment` (branch-protection config),
     `check-master-ci-green` (master CI status),
     `check-plan-epic-parity` (beads ledger-state parity, read under the
-    maintainer's credentials), and
+    maintainer's credentials),
+    `check-plan-record-conformance` (the eleven plan-record verdicts, read from
+    the same ledger under the same credentials), and
     `check-work-item-interpolation-delimiters` (beads ledger record text, read
     under the same credentials) — and are excluded from
     `check-ci-matrix-completeness`'s CI-mirror requirement (assertion (a)).
@@ -405,6 +407,7 @@ def test_world_gate_check_slugs_returns_the_curated_set() -> None:
         "check-branch-protection-alignment",
         "check-master-ci-green",
         "check-plan-epic-parity",
+        "check-plan-record-conformance",
         "check-work-item-interpolation-delimiters",
     ), f"world-gate set must be the curated set; got {slugs}"
 

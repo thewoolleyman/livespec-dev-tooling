@@ -219,6 +219,7 @@ check:
         check-plan-anchor-declared
         check-plan-epic-parity
         check-plan-no-tombstone
+        check-plan-record-conformance
         check-plugin-resolution
         check-primary-checkout-commit-refuse-hook-installed
         check-private-calls
@@ -780,6 +781,19 @@ check-plan-epic-parity:
 # plan/<topic>/ and plan/archive/<topic>/.
 check-plan-no-tombstone:
     uv run python -m livespec_dev_tooling.checks.plan_no_tombstone
+
+# The eleven ratified plan-record conformance verdicts (the orchestrator's
+# SPECIFICATION/contracts.md §"Plan-record conformance checks", v095): the
+# plan_slug family, the associated_work_item_id anchor pair, the delegated
+# lifecycle parity, and the timeline family (close evidence, typed next_action,
+# plus the two WARN verdicts that never fail a run).
+# Armed-only — self-skips unless LIVESPEC_RUN_PLAN_RECORD_CONFORMANCE and
+# BEADS_DOLT_PASSWORD are set, so it never self-gates a credential-less
+# `just check`. SHIPPED UNARMED: arm it in a tenant only after that contract's
+# one-shot plan-record migration has run there. The delegated lifecycle leg
+# reads plan_epic_parity's own LIVESPEC_RUN_PLAN_EPIC_PARITY lever.
+check-plan-record-conformance:
+    uv run python -m livespec_dev_tooling.checks.plan_record_conformance
 
 # Cross-harness plugin-resolution Verifier (Conformance-Pattern concern
 # #2, per livespec/SPECIFICATION/non-functional-requirements.md
