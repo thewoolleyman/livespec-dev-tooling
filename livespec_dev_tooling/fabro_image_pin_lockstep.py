@@ -95,7 +95,7 @@ _TOOL_LINE = re.compile(r'^\s*([\w-]+)\s*=\s*"([^"]+)"\s*$')
 _REQUIRED_MISE_TOOLS = ("just", "lefthook", "shellcheck", "uv")
 _PYTHON_LOCKSTEP_ARG = "PYTHON_VERSION"
 _GH_SUPPORTED_ARG = "GH_VERSION"
-_SUPPORTED_GH_VERSION = "2.97.0"
+_SUPPORTED_GH_VERSION = "2.100.0"
 _GH_KEYRING_PATH = "/etc/apt/keyrings/githubcli-archive-keyring.gpg"
 _GH_KEYRING_URL = "https://cli.github.com/packages/githubcli-archive-keyring.gpg"
 _GH_APT_SOURCE = (
