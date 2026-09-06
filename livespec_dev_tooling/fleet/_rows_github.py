@@ -28,11 +28,11 @@ from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-awar
 
 from livespec_dev_tooling.checks._ci_job_names import (  # noqa: E402
     parse_ci_matrix,
-    parse_top_level_jobs,
 )
 from livespec_dev_tooling.fleet._ci_workflow_source import (  # noqa: E402
     CiWorkflowUnread,
     ci_workflow_text,
+    member_required_check_names,
 )
 from livespec_dev_tooling.fleet._context import (  # noqa: E402
     FleetContext,
@@ -110,28 +110,25 @@ def member_matrix_targets(
 def member_ci_check_names(
     *, ctx: FleetContext, member: FleetMember
 ) -> IOResult[set[str], CiWorkflowUnread]:
-    """Every ci.yml name a required status check may legitimately match.
+    """Every name a required status check on the member may legitimately match.
 
-    The union of the member's `matrix.target` legs and its top-level job
-    ids / literal `name:` values, from ONE read of ci.yml. Both halves are
-    load-bearing: per livespec NFR section "CI as a merge gate (branch
-    protection)" the required-check set is exactly the single top-level
-    all-green gate job, which is NOT a matrix leg — so a matrix-only view
-    reports the mandated configuration as a phantom check.
+    Delegates to `member_required_check_names`, which unions ci.yml's
+    `matrix.target` legs and top-level job ids / literal `name:` values with
+    the same job names from every OTHER `.github/workflows/*` file whose `on:`
+    includes `pull_request` or `pull_request_target`. Both ci.yml halves are
+    load-bearing (per livespec NFR section "CI as a merge gate (branch
+    protection)" the required-check set is the single top-level all-green gate
+    job, NOT a matrix leg — so a matrix-only view reports the mandated
+    configuration as a phantom), and the non-ci.yml source is what stops a
+    base-branch-side `pull_request_target` gate — a legitimate required check
+    reported by a workflow kept deliberately outside ci.yml — from reading as
+    a phantom (livespec-dev-tooling-uyhtih).
 
-    🔴 THIS FUNCTION IS NOT IN THE RAILWAY CHECK'S COUNT, and was converted
-    anyway. Its only consumer lives in this same module, so it crosses no
-    boundary the consumption graph can see and `_find_offenders` never
-    convicted it — while its TWIN `member_matrix_targets`, identical in
-    shape, is convicted because `_reconcile` imports it. The count is a
-    conviction tally, not a defect tally, and this one carried the worse
-    defect of the pair.
+    The name is kept for surface stability: `_protection_problems`, this
+    module, is the sole consumer, and the phantom comparison it drives is now
+    over BOTH sources of a legitimate reporter, not ci.yml alone.
     """
-    return ci_workflow_text(ctx=ctx, member=member).map(
-        lambda text: set()
-        if text is None
-        else parse_ci_matrix(source=text) | parse_top_level_jobs(source=text)
-    )
+    return member_required_check_names(ctx=ctx, member=member)
 
 
 def assert_secret_names(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:
@@ -176,10 +173,11 @@ def _protection_problems(
     """Misalignment messages, plus why the phantom-check comparison did not run.
 
     The second element is the whole point of this signature. The phantom
-    comparison needs the member's ci.yml names; when this run could not
-    obtain them the comparison DOES NOT HAPPEN, and returning problems
-    alone made that indistinguishable from "the comparison ran and found
-    nothing wrong". `assert_branch_protection` then returned `RowPass` —
+    comparison needs the member's legitimate-reporter names (ci.yml plus its
+    other pull_request(_target) workflows); when this run could not obtain
+    them the comparison DOES NOT HAPPEN, and returning problems alone made
+    that indistinguishable from "the comparison ran and found nothing wrong".
+    `assert_branch_protection` then returned `RowPass` —
     a member whose required checks can never report, and whose every merge
     would therefore deadlock, was certified ALIGNED because a read failed.
     A can't-read SKIPS; it does not pass (livespec-dev-tooling-6ge).
@@ -215,7 +213,12 @@ def _protection_problems(
     # phantom for every one of them — the definitive form of exactly what
     # this loop looks for, and previously the case that produced a pass.
     for name in sorted(contexts - unsafe_perform_io(names.unwrap())):
-        problems.append(f"required check {name} matches no ci.yml matrix leg or top-level job")
+        problems.append(
+            f"required check {name} matches no ci.yml matrix leg or top-level job, "
+            "and no other pull_request/pull_request_target workflow on master reports it "
+            "(a required check is legitimate when a ci.yml job OR any other "
+            "pull_request(_target) workflow on master names it)"
+        )
     return problems, None
 
 
@@ -245,13 +248,18 @@ def assert_branch_protection(*, ctx: FleetContext, member: FleetMember) -> RowOu
 
     Aligned means: `enforce_admins`, `strict` OFF, a non-empty
     required-check set, and every required check matched by a ci.yml
-    matrix leg OR a top-level ci.yml job (the direction that blocks
-    merges when violated), per livespec section "CI as a merge gate (branch
-    protection)". A required check matching NEITHER is a phantom that can
-    never report and would deadlock every merge; a required TOP-LEVEL
-    all-green gate job (the `ci-green` single-gate model the contract
-    mandates) matches and is NOT flagged, even though it is not a matrix
-    leg, because requiring it gates the whole matrix through its `needs:`.
+    matrix leg, a top-level ci.yml job, OR a job in any other
+    `.github/workflows/*` file triggered by `pull_request`/
+    `pull_request_target` (the direction that blocks merges when violated),
+    per livespec section "CI as a merge gate (branch protection)". A required
+    check matching NONE of those is a phantom that can never report and would
+    deadlock every merge; a required TOP-LEVEL all-green gate job (the
+    `ci-green` single-gate model the contract mandates) matches and is NOT
+    flagged, even though it is not a matrix leg, because requiring it gates
+    the whole matrix through its `needs:`; and a base-branch-side gate kept
+    deliberately outside ci.yml (a `pull_request_target` workflow) matches
+    too, because it is a real reporter no ci.yml change could produce
+    (livespec-dev-tooling-uyhtih).
     """
     ref = ctx.canonical_ref(repo=member.repo)
     result = gh_answer(
