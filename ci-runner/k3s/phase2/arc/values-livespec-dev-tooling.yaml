@@ -126,5 +126,20 @@ template:
 # matrix-width measurement before raising capacity far enough for it to bind.
 # See ../kueue/DERIVATION.md "Observation: ARC maxRunners still carries the
 # podman-era numbers".
+#
+# BOUNDED 2026-09-06 (maintainer decision, livespec plan
+# poweredge-raid-array-maintenance / epic livespec-g52yrb): maxRunners is now
+# max(2 x this repo's Kueue nominalQuota, 6) = 8 (nominalQuota 4 at C = 32),
+# no longer the doubled matrix width or the podman-era weight described above.
+# Every runner ARC creates past the quota is a GATED pod that does no work but
+# costs control-plane writes every reconcile: at the 2026-09-06 07:38Z backlog
+# the ten ceilings summed to 574, 122 gated runner objects sat in the cluster
+# while 25-30 ran, and kine logged 11 Slow SQL in ten minutes at C = 32.
+# Bounded, the ten ceilings sum to 76, so a fleet-wide backlog holds at most
+# 44 gated objects and the rest of the queue waits on GitHub's side at no cost.
+# The 2x keeps cohort borrowing reachable; the floor of 6 lets a small-quota
+# repo drain a lone matrix in a few waves instead of one job at a time.
+# Recompute whenever C or this repo's quota changes. See ../kueue/DERIVATION.md
+# "Bounding maxRunners to the quota (2026-09-06)".
 minRunners: 0
-maxRunners: 63
+maxRunners: 8

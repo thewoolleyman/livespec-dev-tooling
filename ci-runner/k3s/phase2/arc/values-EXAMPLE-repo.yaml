@@ -2,12 +2,13 @@
 # values-livespec.yaml for the fully-worked example and its comments;
 # copy this file to values-<repo>.yaml and replace every <PLACEHOLDER>:
 #   <REPO>             — the repo's short name
-#   <DOUBLED_CEILING>  — that repo's own matrix width, doubled. NOT the
-#                        same number as its
-#                        ../kueue/cluster-queue-<repo>.yaml nominalQuota,
-#                        which is its share of the host's finite
-#                        churn-slot capacity — a different term of the
-#                        same min(). See ../kueue/DERIVATION.md.
+#   <BOUNDED_CEILING>  — max(2 x that repo's nominalQuota, 6), where the
+#                        nominalQuota is its ../kueue/cluster-queue-<repo>.yaml
+#                        share of the host's finite churn-slot capacity.
+#                        A different term of the same min(), bounded to
+#                        the quota since 2026-09-06 so a backlog waits on
+#                        GitHub instead of becoming gated pods. See
+#                        ../kueue/DERIVATION.md "Bounding maxRunners to the quota (2026-09-06)".
 githubConfigUrl: "https://github.com/thewoolleyman/<REPO>"
 githubConfigSecret: arc-github-app-installation
 
@@ -94,5 +95,8 @@ template:
           limits:
             ci-runner.io/churn-slot: "1"
 
+# maxRunners is BOUNDED to the repository's Kueue quota: max(2 x nominalQuota, 6).
+# A runner ARC creates past the quota is a gated pod that costs control-plane
+# writes and does no work; see ../kueue/DERIVATION.md "Bounding maxRunners to the quota (2026-09-06)".
 minRunners: 0
-maxRunners: <DOUBLED_CEILING>
+maxRunners: <BOUNDED_CEILING>

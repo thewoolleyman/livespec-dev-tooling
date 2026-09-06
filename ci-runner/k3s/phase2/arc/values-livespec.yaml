@@ -138,17 +138,25 @@ template:
 # See README.md "Two enforcement points, two DIFFERENT numbers" and
 # ../kueue/DERIVATION.md; the relation to hold is nominalQuota <= maxRunners.
 #
-# The value below was 36 (a hand-set number below this repo's podman-era demand
-# weight of 75, itself only an unmeasured proxy). At C=16 that was harmless — no
-# repo could approach it. C was raised to 64 (increase-ci-runners, livespec epic
-# livespec-zec4mz, 2026-08-30), so a ceiling of 36 now BINDS this repo below the
-# pool. Raised to 64 to match the pool ("go big or go home": burst to the whole
-# pool under concurrent load), which is safe because the shared churn-slot node
-# cap + Kueue hold TOTAL pool use at C=64 regardless of per-repo ceilings
-# (VALIDATION_CHECKLIST item 7) and per-run demand is bounded by this repo's
-# actual job-matrix width. nominalQuota (10) <= maxRunners (64) still holds.
-# Re-derive from a real matrix-width measurement only if a fair-share ceiling
-# BELOW the pool is ever wanted. See ../kueue/DERIVATION.md "Observation: ARC
-# maxRunners still carries the podman-era numbers".
+# HISTORY: 36 (hand-set, 2026-08-16), then 64 from 2026-09-02 ("go big or go
+# home": burst to the whole pool, safe because the churn-slot node cap + Kueue
+# hold TOTAL pool use at C regardless of per-repo ceilings). That reasoning
+# was correct about the cap and wrong about the cost of the surplus: see the
+# BOUNDED block below.
+#
+# BOUNDED 2026-09-06 (maintainer decision, livespec plan
+# poweredge-raid-array-maintenance / epic livespec-g52yrb): maxRunners is now
+# max(2 x this repo's Kueue nominalQuota, 6) = 10 (nominalQuota 5 at C = 32),
+# no longer the doubled matrix width or the podman-era weight described above.
+# Every runner ARC creates past the quota is a GATED pod that does no work but
+# costs control-plane writes every reconcile: at the 2026-09-06 07:38Z backlog
+# the ten ceilings summed to 574, 122 gated runner objects sat in the cluster
+# while 25-30 ran, and kine logged 11 Slow SQL in ten minutes at C = 32.
+# Bounded, the ten ceilings sum to 76, so a fleet-wide backlog holds at most
+# 44 gated objects and the rest of the queue waits on GitHub's side at no cost.
+# The 2x keeps cohort borrowing reachable; the floor of 6 lets a small-quota
+# repo drain a lone matrix in a few waves instead of one job at a time.
+# Recompute whenever C or this repo's quota changes. See ../kueue/DERIVATION.md
+# "Bounding maxRunners to the quota (2026-09-06)".
 minRunners: 0
-maxRunners: 64
+maxRunners: 10

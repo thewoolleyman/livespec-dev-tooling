@@ -89,3 +89,28 @@ for work volumes buys nothing: the NVMe work-volume tier already runs at
   165–182 s at a 51-runner burst); `systemctl --failed` counting 1 is the
   signal working, not a unit to repair. Read its journal for the class and
   whether it cleared.
+
+## `Slow SQL` tracks the backlog's depth, not the cap
+
+kine (the SQLite-on-tmpfs datastore behind the k3s API) logs `Slow SQL`
+for any statement over one second. On this host it is CPU and write-volume
+queueing, never disk: the datastore is in RAM. Read the two apart:
+
+- `mpstat` at 90 % with `Slow SQL` at zero — the cap is the lever (the
+  first hour at C = 64 looked like this).
+- `Slow SQL` climbing while the running count is flat — the backlog is the
+  lever. At the first fleet-wide backlog on the tiered host (2026-09-06
+  07:38Z, C = 32) 119 pending Kueue workloads and 122 gated runner objects
+  produced 11 `Slow SQL` in ten minutes, MORE than the 64-slot burst two
+  hours earlier, because every gated pod is an `EphemeralRunner`, a pod, a
+  `Workload` and events rewritten every reconcile. The fix was bounding ARC
+  `maxRunners` to `max(2 x nominalQuota, 6)` so the surplus stays queued on
+  GitHub (`ci-runner/k3s/phase2/kueue/DERIVATION.md` "
+Bounding maxRunners to the quota (2026-09-06)"). Check the ceilings before blaming the cap:
+  `kubectl get autoscalingrunnerset -n arc-runners -o custom-columns=NAME:.metadata.name,MAX:.spec.maxRunners,CUR:.status.currentRunners,PEND:.status.pendingEphemeralRunners`.
+- A job mix matters more than a job count. 32 running jobs read 73 % busy at
+  one backlog and 91–98 % at the next, because the second was dominated by
+  heavier matrices plus the per-job overhead (the node container hook at one
+  to two cores per runner, `cp` volume seeding, `rm` teardown, namespace and
+  veth churn showing as 17–20 % system time). Derive the cap at the heavy
+  mix; the light one flatters it.
