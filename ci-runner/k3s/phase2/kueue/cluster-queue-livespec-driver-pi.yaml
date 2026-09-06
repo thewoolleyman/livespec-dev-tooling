@@ -17,9 +17,9 @@
 #   demand weight w = 13 (this repo's MEASURED CI-matrix width — see the note
 #                         below, it is not a podman-era inheritance)
 #   fleet weight sum W = 516 (482 podman-era + livespec-driver-pi's 13 + livespec-orchestrator-beads-fabro's 21)
-#   host churn-slot capacity C = 64 (as registered on the node; restored 2026-09-06)
-#   exact share = C * w / W = 1.6124  ->  floor 1, +1 leftover unit
-#                                     (4th-largest remainder) = 2
+#   host churn-slot capacity C = 32 (as registered on the node; stepped back 2026-09-06 after the one-hour soak at 64)
+#   exact share = C * w / W = 0.8062  ->  floor 0, +1 leftover unit
+#                                     (4th-largest remainder) = 1
 #
 # AT C = 64 THE C = 16 COHORT-SUM EXCEPTION IS GONE. At the old C = 16 this
 # repo's share rounded to zero and the rule's `max(1, ...)` floor lifted it to
@@ -70,8 +70,8 @@ spec:
         - name: churn-slot-flavor
           resources:
             - name: "ci-runner.io/churn-slot"
-              # C = 64 RESTORED 2026-09-06 (maintainer decision, livespec plan poweredge-raid-array-maintenance / epic livespec-g52yrb, after the NVMe tiering livespec-e2vcqf landed both drives): re-apportioned at ten repositories, W = 516; see DERIVATION.md "The derivation at C = 64 restored (2026-09-06)".
-              nominalQuota: 2
+              # C = 32 (2026-09-06, maintainer decision, livespec plan poweredge-raid-array-maintenance / epic livespec-g52yrb): stepped back from the 2026-09-06 restore to 64 after the tiered-host soak showed CPU saturated at 35-46 running jobs (91-98 % busy, Slow SQL, p95 job duration 1.9x the C = 32 baseline); the ten-repository C = 32 table of 2026-09-04 re-instated, W = 516; see DERIVATION.md "The step back to C = 32 on the tiered host (2026-09-06)".
+              nominalQuota: 1
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: LocalQueue

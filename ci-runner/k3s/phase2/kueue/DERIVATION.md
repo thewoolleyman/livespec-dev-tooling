@@ -170,12 +170,14 @@ distinction matters because the logical ceiling feeds `maxRunners` while
 the demand weight feeds `nominalQuota`.
 
 **The capacity `C`.** The `ci-runner.io/churn-slot` capacity currently
-registered on the node. It is `64` — first set 2026-08-30 by the
+registered on the node. It is `32` — first set to `64` on 2026-08-30 by the
 increase-ci-runners raise (livespec epic livespec-zec4mz), lowered to the
-INTERIM `32` on 2026-09-02 while the RAID's data plane was the ceiling, and
-RESTORED to `64` on 2026-09-06 once both NVMe drives carried the churn; see
-"The derivation at C = 64 restored (2026-09-06)" below. It was `16` from
-2026-08-19 until the first raise.
+INTERIM `32` on 2026-09-02 while the RAID's data plane was the ceiling,
+RESTORED to `64` on 2026-09-06 once both NVMe drives carried the churn, and
+stepped back to `32` the same day when the soak at 64 showed the CPU, not
+storage, saturating at 35–46 running jobs; see "The step back to C = 32 on the
+tiered host (2026-09-06)" below. It was `16` from 2026-08-19 until the first
+raise.
 
 ## The apportionment rule
 
@@ -589,6 +591,68 @@ argument and patches the node at once), THEN the quotas (the converge unit's
 single `kubectl apply` of every manifest from the re-installed artifact tree). The
 pod-capacity constraint holds: `2 x 64 + helpers + system` is below
 `max-pods = 200`, as it was from 2026-08-30 to 2026-09-02.
+
+## The step back to C = 32 on the tiered host (2026-09-06)
+
+Maintainer decision 2026-09-06, about two hours after the restore to 64
+(livespec plan `poweredge-raid-array-maintenance`, epic `livespec-g52yrb`;
+child `livespec-e2vcqf` carries the soak read). The 64-runner soak the restore
+existed for delivered its answer in its second hour, and the answer is the
+CPU, not storage: the host runs 35–46 jobs concurrently before the 72 threads
+saturate, and every admitted slot past that point only stacks pods in
+`ContainerCreating`. Measured on `poweredge-xubuntu` between 05:37Z and
+05:52Z with every ten-repository queue busy:
+
+- `mpstat` 91–98 % busy with an idle floor of 2–7 %; 1-minute load 185–225;
+  `/proc/pressure/cpu` `some avg10` at 30 % (a task waited for a core 30 % of
+  the time); `procs_running` up to 307.
+- Kueue reported 64 admitted and 29 pending while only 35–46
+  `EphemeralRunner`s were `Running`; 39 runner pods sat in
+  `ContainerCreating` or `Pending`, and 33 more were `SchedulingGated`.
+- Four `Slow SQL` lines in the k3s journal, all in this window, against zero
+  in the first hour and zero for the whole of the C = 32 interim on tmpfs kine.
+- p95 job duration 193 s (p50 64 s) against 101 s (p50 35 s) for the C = 32
+  baseline of 2026-09-05, with the queue wait for a runner at p95 17 minutes;
+  0 job failures in 631, so this was slowness, not breakage.
+- Storage stayed a bystander: `ci-workvols` NVMe at 2–4 ms `w_await`,
+  `ci-containerd` NVMe at 1–2 ms, the array idle, iowait 0.01 %, 155 GiB free.
+- On the host side `btop` aborted (SIGABRT, apport record) and seven
+  interactive login-session scopes failed with `resources` — systemd could
+  not attach a freshly forked shell before it exited under the scheduling
+  latency. Symptoms of the same saturation, not CI faults.
+
+That fails both limbs of the rule in "The permanent C is still an open
+question": p95 job duration was no longer growing about linearly with
+concurrency, and the control plane had begun to show it. Throughput cannot
+rise past the CPU, so lowering the cap to the measured running count costs
+nothing on the throughput axis and removes the control-plane churn.
+
+**32 is re-instated, not re-derived.** The ten-repository C = 32 table is the
+one already recorded under "Recomputation on the tenth repository
+(2026-09-04)" — `livespec` 5; `livespec-driver-codex`,
+`livespec-driver-claude`, `livespec-orchestrator-git-jsonl`,
+`livespec-overseer`, `livespec-runtime`, `livespec-dev-tooling` 4;
+`livespec-console-beads-fabro`, `livespec-driver-pi`,
+`livespec-orchestrator-beads-fabro` 1 — summing to exactly 32. Its reason has
+changed (CPU saturation on the tiered host, where on 2026-09-02 it was the
+RAID's data plane), its numbers have not.
+
+Lowering order per "Recomputing at another C": the quotas FIRST (`kubectl
+apply` of the ten manifests, then `install-converge-unit.sh` so the boot
+converge carries the same values), THEN the node capacity
+(`install-reapply-unit.sh 32`, which rewrites the reapply unit's boot and timer
+argument and patches the node at once). Running pods are untouched;
+admissions above the new quota wait.
+
+**The next step is 40, and it is measured before it is applied.** 40 matches
+the running count the CPU was seen to serve. The soak monitor left on the
+host (`/tmp/soak-monitor.log`, one line per minute: runners, running, load,
+`procs_running`, pods, `mpstat` busy, both NVMe `w_await` and queue depth,
+`Slow SQL` per five minutes, failed units) and the GitHub job-timing read
+(p50/p95 duration, queue wait, concurrency at start, per self-hosted job)
+give the C = 32 baseline on the tiered host; 40 is proposed only when that
+baseline shows the CPU with headroom at 32 and is recomputed per "Recomputing
+at another C" (exact shares `e_i = 40 * w_i / 516`) when it is.
 
 ## Recomputing at another C
 
