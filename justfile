@@ -115,8 +115,9 @@ install-commit-refuse-hooks:
 # `install-commit-refuse-hooks`; the body is the Stop-hook BOTH livespec
 # Driver plugins ship (livespec-driver-claude, livespec-driver-codex), so
 # this keeps each Driver's copy byte-identical to the single dev-tooling
-# source. No-ops when the role key is absent (this consumer does not carry
-# the neutral hook body). The
+# source. Applies the same declared-ness gate as its verifier: a
+# DECLARED-ABSENT key no-ops at exit 0 (this consumer does not carry the
+# neutral hook body); an UNDECLARED key is a hard error naming it. The
 # `check-no-shadow-ledger-body-identical` verifier guards the installed
 # bytes against drift.
 install-no-shadow-ledger:
@@ -705,9 +706,9 @@ check-no-raise-outside-io:
 # to the single packaged carrier constant
 # `install_no_shadow_ledger.CANONICAL_NO_SHADOW_LEDGER_BODY`. An UNDECLARED
 # key is a hard ERROR naming it, per v0.54.12 — absence is no longer a
-# sanctioned spelling of "not applicable". Note the installer recipe above
-# deliberately still no-ops on an ABSENT key: it is a provisioning surface,
-# not a gating check, and the two differ on exactly this point.
+# sanctioned spelling of "not applicable". The installer recipe above runs
+# the SAME gate, so the two agree in all three states; they diverged on the
+# undeclared arm between slice L and livespec-dev-tooling-eihv.
 check-no-shadow-ledger-body-identical:
     uv run python -m livespec_dev_tooling.checks.no_shadow_ledger_body_identical
 
