@@ -1,9 +1,22 @@
 """Tests for `livespec_dev_tooling/agent_hooks/subagent_stop_guard.py`.
 
 Per work-item livespec-dev-tooling-7us.2, the SubagentStop guard
-blocks a sub-agent's turn-end (exit 2) while derived in-flight
-markers exist in a worktree that sub-agent created, and fails open
-(exit 0) on every error path.
+blocks a sub-agent's turn-end while derived in-flight markers exist
+in a worktree that sub-agent created, and fails open on every error
+path.
+
+⛔ THE VERDICT IS THE STDOUT JSON, NOT THE EXIT CODE
+(`livespec-dev-tooling-4s2sey`). These tests used to assert `main()
+== 2` for a block and `== 0` for an allow, which is why the guard
+shipped for weeks emitting nothing a Stop-hook evaluator could parse:
+the suite asserted the LEGACY protocol, so the real wire — a response
+object on stdout — was never exercised at all, and Claude Code 2.1.233
+rejected every invocation with `hook returned invalid stop hook JSON
+output`. A green exit-code assertion is compatible with a totally
+inert hook. Assertions therefore read the PARSED stdout response, and
+the subprocess pair below is the load-bearing one: it runs the script
+exactly as the hook runs it and validates the bytes that actually
+cross the wire.
 
 Covered behaviors:
 
@@ -15,9 +28,12 @@ Covered behaviors:
   fail-open on every other `gh` outcome);
 - the pure block/allow decision (`_decide`) including the
   per-session anti-wedge block cap;
-- the end-to-end hook protocol via in-process `main()` calls
-  (stdin JSON in, exit code out) plus one subprocess invocation of
-  the script exactly as the Claude Code hook runs it.
+- the Stop-hook response shapes (`_allow_response`, `_block_response`,
+  `_hook_event_name`) and their emission on stdout (`_emit`);
+- the end-to-end hook protocol via in-process `main()` calls (stdin
+  JSON in, response JSON out) plus subprocess invocations of the
+  script exactly as the Claude Code hook runs it, asserting the
+  emitted JSON on both the block and the allow path.
 
 Private names are imported via from-imports (the package-private
 access model, mirroring `tests/livespec_dev_tooling/fleet/`);
@@ -37,15 +53,21 @@ from pathlib import Path
 import pytest
 
 from livespec_dev_tooling.agent_hooks.subagent_stop_guard import (
+    _BLOCK_HANDOFF_INSTRUCTION,
+    _DEFAULT_HOOK_EVENT_NAME,
     _MAX_BLOCKS_PER_SESSION,
     _MAX_WORKTREES,
     _STATE_DIR_ENV,
+    _allow_response,
+    _block_response,
     _commits_ahead_of_canonical,
     _decide,
     _derive_markers,
+    _emit,
     _gather_worktrees,
     _git_count,
     _has_uncommitted_tracked_changes,
+    _hook_event_name,
     _load_hook_input,
     _read_block_count,
     _record_block,
@@ -574,30 +596,107 @@ def test_gather_worktrees_ignores_json_without_string_segments(tmp_path: Path) -
 
 
 # ---------------------------------------------------------------------------
-# main() — in-process hook-protocol behavior
+# Stop-hook response shapes
 # ---------------------------------------------------------------------------
 
 
-def _run_main(*, monkeypatch: pytest.MonkeyPatch, stdin_text: str) -> int:
+def test_allow_response_is_the_valid_allow_object() -> None:
+    assert _allow_response() == {"continue": True, "suppressOutput": True}
+
+
+def test_block_response_carries_markers_and_handoff_in_additional_context() -> None:
+    response = _block_response(
+        markers=["/wt: 2 unpushed commit(s)"], hook_event_name="SubagentStop"
+    )
+    assert response["decision"] == "block"
+    hook_specific = response["hookSpecificOutput"]
+    assert isinstance(hook_specific, dict)
+    context = hook_specific["additionalContext"]
+    assert isinstance(context, str)
+    assert hook_specific["hookEventName"] == "SubagentStop"
+    assert "/wt: 2 unpushed commit(s)" in context
+    assert _BLOCK_HANDOFF_INSTRUCTION in context
+    # The reason (what actually keeps the sub-agent running) and the
+    # additional context (what tells it WHAT to do) must not diverge.
+    assert response["reason"] == context
+
+
+def test_block_response_lists_every_derived_marker() -> None:
+    response = _block_response(
+        markers=["/a: uncommitted tracked changes", "/b: branch is pushed but has NO PR"],
+        hook_event_name="Stop",
+    )
+    hook_specific = response["hookSpecificOutput"]
+    assert isinstance(hook_specific, dict)
+    context = hook_specific["additionalContext"]
+    assert isinstance(context, str)
+    assert "- /a: uncommitted tracked changes" in context
+    assert "- /b: branch is pushed but has NO PR" in context
+    assert hook_specific["hookEventName"] == "Stop"
+
+
+def test_hook_event_name_echoes_the_input_and_defaults_when_absent() -> None:
+    assert _hook_event_name(hook_input={"hook_event_name": "Stop"}) == "Stop"
+    assert _hook_event_name(hook_input={}) == _DEFAULT_HOOK_EVENT_NAME
+    assert _hook_event_name(hook_input={"hook_event_name": ""}) == _DEFAULT_HOOK_EVENT_NAME
+    assert _hook_event_name(hook_input={"hook_event_name": 7}) == _DEFAULT_HOOK_EVENT_NAME
+
+
+def test_emit_writes_one_json_line_to_stdout(capsys: pytest.CaptureFixture[str]) -> None:
+    _emit(response={"continue": True})
+    captured = capsys.readouterr()
+    assert captured.out == '{"continue": true}\n'
+
+
+# ---------------------------------------------------------------------------
+# main() — in-process hook-protocol behavior
+#
+# Every assertion reads the PARSED stdout response. `_response` fails
+# LOUDLY on empty stdout rather than letting `json.loads` raise, because
+# "the hook emitted nothing" is precisely the defect
+# livespec-dev-tooling-4s2sey fixed and it deserves a named failure.
+# ---------------------------------------------------------------------------
+
+
+def _response(*, stdout: str) -> dict[str, object]:
+    assert stdout.strip(), "hook emitted no stdout; a Stop-hook response object is required"
+    payload = json.loads(stdout)
+    assert isinstance(payload, dict)
+    return payload
+
+
+def _run_main(
+    *, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], stdin_text: str
+) -> tuple[int, dict[str, object]]:
     monkeypatch.setattr(sys, "stdin", io.StringIO(stdin_text))
-    return main()
+    exit_code = main()
+    return exit_code, _response(stdout=capsys.readouterr().out)
 
 
-def test_main_fails_open_on_unparseable_stdin(monkeypatch: pytest.MonkeyPatch) -> None:
-    assert _run_main(monkeypatch=monkeypatch, stdin_text="{nope") == 0
+def _assert_allowed(*, exit_code: int, response: dict[str, object]) -> None:
+    assert exit_code == 0
+    assert response == _allow_response()
+
+
+def test_main_fails_open_on_unparseable_stdin(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    exit_code, response = _run_main(monkeypatch=monkeypatch, capsys=capsys, stdin_text="{nope")
+    _assert_allowed(exit_code=exit_code, response=response)
 
 
 def test_main_allows_when_no_worktrees_in_transcript(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     transcript = tmp_path / "transcript.jsonl"
     _ = transcript.write_text('{"text": "no worktree mention"}\n', encoding="utf-8")
     payload = json.dumps({"session_id": "s1", "transcript_path": str(transcript)})
-    assert _run_main(monkeypatch=monkeypatch, stdin_text=payload) == 0
+    exit_code, response = _run_main(monkeypatch=monkeypatch, capsys=capsys, stdin_text=payload)
+    _assert_allowed(exit_code=exit_code, response=response)
 
 
 def test_main_allows_when_worktree_is_handed_off(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     worktree = _make_pushed_repo(tmp_path=tmp_path)
     transcript = tmp_path / "transcript.jsonl"
@@ -606,11 +705,12 @@ def test_main_allows_when_worktree_is_handed_off(
         encoding="utf-8",
     )
     payload = json.dumps({"session_id": "s2", "transcript_path": str(transcript)})
-    assert _run_main(monkeypatch=monkeypatch, stdin_text=payload) == 0
+    exit_code, response = _run_main(monkeypatch=monkeypatch, capsys=capsys, stdin_text=payload)
+    _assert_allowed(exit_code=exit_code, response=response)
 
 
 def test_main_blocks_on_unpushed_commits_and_counts_blocks(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     state_dir = tmp_path / "state"
     state_dir.mkdir()
@@ -622,13 +722,27 @@ def test_main_blocks_on_unpushed_commits_and_counts_blocks(
         f'{{"text": "git worktree add -b feature {worktree} master"}}\n',
         encoding="utf-8",
     )
-    payload = json.dumps({"session_id": "s3", "transcript_path": str(transcript)})
-    assert _run_main(monkeypatch=monkeypatch, stdin_text=payload) == 2
+    payload = json.dumps(
+        {
+            "session_id": "s3",
+            "transcript_path": str(transcript),
+            "hook_event_name": "SubagentStop",
+        }
+    )
+    exit_code, response = _run_main(monkeypatch=monkeypatch, capsys=capsys, stdin_text=payload)
+    assert exit_code == 0
+    assert response["decision"] == "block"
+    hook_specific = response["hookSpecificOutput"]
+    assert isinstance(hook_specific, dict)
+    assert hook_specific["hookEventName"] == "SubagentStop"
+    context = hook_specific["additionalContext"]
+    assert isinstance(context, str)
+    assert "unpushed commit" in context
     assert _read_block_count(path=_state_path(session_id="s3")) == 1
 
 
 def test_main_fails_open_past_the_block_cap(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     state_dir = tmp_path / "state"
     state_dir.mkdir()
@@ -642,21 +756,44 @@ def test_main_fails_open_past_the_block_cap(
     )
     _record_block(path=_state_path(session_id="s4"), count=_MAX_BLOCKS_PER_SESSION)
     payload = json.dumps({"session_id": "s4", "transcript_path": str(transcript)})
-    assert _run_main(monkeypatch=monkeypatch, stdin_text=payload) == 0
+    exit_code, response = _run_main(monkeypatch=monkeypatch, capsys=capsys, stdin_text=payload)
+    _assert_allowed(exit_code=exit_code, response=response)
 
 
-def test_main_fails_open_on_internal_crash(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_main_fails_open_on_internal_crash(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     def exploding_gather(*, hook_input: dict[str, object]) -> list[Path]:
         _ = hook_input
         raise RuntimeError("boom")
 
     monkeypatch.setattr(f"{_MODULE}._gather_worktrees", exploding_gather)
-    assert _run_main(monkeypatch=monkeypatch, stdin_text='{"session_id": "s5"}') == 0
+    exit_code, response = _run_main(
+        monkeypatch=monkeypatch, capsys=capsys, stdin_text='{"session_id": "s5"}'
+    )
+    _assert_allowed(exit_code=exit_code, response=response)
 
 
 # ---------------------------------------------------------------------------
-# subprocess end-to-end — exactly as the Claude Code hook invokes it
+# subprocess end-to-end — exactly as the Claude Code hook invokes it.
+#
+# THIS PAIR IS THE ACCEPTANCE TEST for livespec-dev-tooling-4s2sey: it
+# reads the bytes that actually cross the wire, so it fails against the
+# retired stderr/exit-2 protocol (whose stdout was empty on BOTH paths)
+# no matter how the in-process seams are shaped.
 # ---------------------------------------------------------------------------
+
+
+def _run_script(*, payload: str, env: dict[str, str]) -> tuple[int, dict[str, object]]:
+    result = subprocess.run(
+        [sys.executable, str(_SCRIPT)],
+        input=payload,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    return result.returncode, _response(stdout=result.stdout)
 
 
 def test_script_blocks_then_allows_end_to_end(tmp_path: Path) -> None:
@@ -673,29 +810,22 @@ def test_script_blocks_then_allows_end_to_end(tmp_path: Path) -> None:
     env = {k: v for k, v in os.environ.items() if k not in _GIT_ENV_PASSTHROUGH_VARS}
     env[_STATE_DIR_ENV] = str(state_dir)
 
-    blocked = subprocess.run(
-        [sys.executable, str(_SCRIPT)],
-        input=payload,
-        capture_output=True,
-        text=True,
-        check=False,
-        env=env,
-    )
-    assert blocked.returncode == 2
-    assert "BLOCKING turn-end" in blocked.stderr
-    assert "unpushed commit" in blocked.stderr
+    blocked_code, blocked = _run_script(payload=payload, env=env)
+    assert blocked_code == 0
+    assert blocked["decision"] == "block"
+    hook_specific = blocked["hookSpecificOutput"]
+    assert isinstance(hook_specific, dict)
+    assert hook_specific["hookEventName"] == _DEFAULT_HOOK_EVENT_NAME
+    context = hook_specific["additionalContext"]
+    assert isinstance(context, str)
+    assert "unpushed commit" in context
+    assert _BLOCK_HANDOFF_INSTRUCTION in context
 
     _push_branch(worktree=worktree)
     env["PATH"] = _install_fake_gh(
         tmp_path=tmp_path,
         stdout='{"state": "OPEN", "autoMergeRequest": {"enabledAt": "2026-06-12T00:00:00Z"}}',
     )
-    allowed = subprocess.run(
-        [sys.executable, str(_SCRIPT)],
-        input=payload,
-        capture_output=True,
-        text=True,
-        check=False,
-        env=env,
-    )
-    assert allowed.returncode == 0
+    allowed_code, allowed = _run_script(payload=payload, env=env)
+    assert allowed_code == 0
+    assert allowed == {"continue": True, "suppressOutput": True}
