@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.52.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.52.2...v1.52.3) (2026-09-06)
+
+
+### Bug Fixes
+
+* **observability:** apply-triggers.sh applies every *.json definition, and the warm-cache stale trigger's description fits Honeycomb's 1023-character cap (livespec-kgdlte, livespec-41w4) ([2685622](https://github.com/thewoolleyman/livespec-dev-tooling/commit/26856227cafe96c22a4e2122cc02055ea2bc809b))
+
 ## [1.52.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.52.1...v1.52.2) (2026-09-06)
 
 
