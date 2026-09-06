@@ -33,7 +33,20 @@ body is the package constant and any tracked-or-untracked shell copy
 can drift. The repo's `templates/` tree (the template-source domain of
 zs22.7.9.3) and the `.git/` directory are carved out.
 
-A third arm (zs22.7.9.3) guards the worktree-discipline PACK —
+A third arm (livespec-dev-tooling-x2ju4a) enforces that the installer
+owns EVERY lefthook entry point in the shared hooks directory: any
+executable in `<git-common-dir>/hooks/` that invokes lefthook WITHOUT the
+canonical `unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE GIT_PREFIX` line is
+a `foreign_lefthook_wrapper` FAIL naming the file. The byte-identity arm
+above only ever looked at three NAMES, so lefthook's stock
+`call_lefthook` wrapper under a fourth name was invisible to it — on
+2026-09-06 `/data/projects/livespec/.git/hooks/prepare-commit-msg` was
+exactly that, mtime three months older than its canonical siblings,
+firing on every commit and every cherry-pick, leaking GIT_DIR and calling
+`lefthook run` without `--no-auto-install`. The canonical three carry the
+unset line by construction and keep passing.
+
+A fourth arm (zs22.7.9.3) guards the worktree-discipline PACK —
 `dev-tooling/worktree-lib.sh`, `dev-tooling/branch-protection.sh`,
 `dev-tooling/gate-run.sh` (the detached gate runner),
 `dev-tooling/check-no-workflow-edits.sh` (the fleet's one workflow-edit
@@ -102,6 +115,11 @@ Exit codes:
   whose state this run never observed. Before the pack arm went on the
   railway an unread `.livespec.jsonc` resolved to the `ungoverned` policy —
   and an ungoverned tree needs no pack, so the check exited `0`.
+- `4` — fail. A hooks-directory executable invokes lefthook without the
+  canonical `unset GIT_DIR …` line (`failure_mode`
+  `foreign_lefthook_wrapper`). The narration names the file in both
+  `hook` (its basename) and `path` (absolute). Corrective action:
+  `just install-commit-refuse-hooks`, whose sweep deletes it.
 - `4` — fail. Any of the three hooks is missing, non-executable, or
   byte-different from `CANONICAL_HOOK_BODY`; OR a vendored hook-source
   copy exists outside the carve-outs; OR an installed worktree-pack
@@ -165,6 +183,7 @@ from _primary_checkout_git_probes import (  # noqa: E402  — sibling private im
 # surfaced that `inspect_hook` compared decoded TEXT under a docstring
 # promising byte-identity; both are converted rather than merely moved.
 from _primary_checkout_hook_files import (  # noqa: E402  — sibling private import
+    _find_foreign_lefthook_wrappers,
     _find_vendored_hook_copies,
     _inspect_hook,
 )
@@ -180,6 +199,7 @@ from _primary_checkout_narration import (  # noqa: E402  — sibling private imp
     _HOOK_READ_FAILURE_MODE,
     _PACK_READ_FAILURE_MODE,
     _emit_failures,
+    _emit_foreign_wrapper_failures,
     _narrate_probe_failure,
     _narrate_unreadable_input,
 )
@@ -294,18 +314,30 @@ def _inspect_arms(
     repo_root: Path,
     sandbox_exempt: bool,
 ) -> int:
-    """The three byte-identity arms, each of which may now decline to answer.
+    """The four hooks-directory arms, each of which may decline to answer.
 
     Split from `_inspect_installed_state` at the seam the conversion created:
     that function owns the git probes, this one owns the file reads. Each arm
     is a `return`, and keeping them in one function would put both groups past
     the six-return lint budget.
+
+    The FOREIGN-WRAPPER arm is the only one not keyed to a name this check
+    already knew: the other three inspect `_HOOK_NAMES`, a vendored-copy name
+    list, and the pack's file list respectively, which is exactly why a stock
+    lefthook wrapper under a FOURTH hook name was invisible to all of them.
     """
     hooks = _collect_hook_failures(hooks_dir=hooks_dir)
     if isinstance(hooks, IOFailure):
         return _narrate_unreadable_input(
             log=log,
             failed=unsafe_perform_io(hooks.failure()),
+            failure_mode=_HOOK_READ_FAILURE_MODE,
+        )
+    wrappers = _find_foreign_lefthook_wrappers(hooks_dir=hooks_dir)
+    if isinstance(wrappers, IOFailure):
+        return _narrate_unreadable_input(
+            log=log,
+            failed=unsafe_perform_io(wrappers.failure()),
             failure_mode=_HOOK_READ_FAILURE_MODE,
         )
     copies = _find_vendored_hook_copies(repo_root=repo_root)
@@ -323,9 +355,10 @@ def _inspect_arms(
             failure_mode=_PACK_READ_FAILURE_MODE,
         )
     hook_failures = unsafe_perform_io(hooks.unwrap())
+    foreign_wrappers = unsafe_perform_io(wrappers.unwrap())
     vendored_copies = unsafe_perform_io(copies.unwrap())
     pack_failures = unsafe_perform_io(inspected.unwrap())
-    if not hook_failures and not vendored_copies and not pack_failures:
+    if not hook_failures and not foreign_wrappers and not vendored_copies and not pack_failures:
         return 0
     _emit_failures(
         log=log,
@@ -335,6 +368,7 @@ def _inspect_arms(
         vendored_copies=vendored_copies,
         pack_failures=pack_failures,
     )
+    _emit_foreign_wrapper_failures(log=log, hooks_dir=hooks_dir, foreign_wrappers=foreign_wrappers)
     return _FAIL_EXIT
 
 
