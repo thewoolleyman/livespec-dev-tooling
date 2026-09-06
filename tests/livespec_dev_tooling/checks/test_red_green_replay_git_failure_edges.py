@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 import structlog
-from returns.io import IOFailure
+from returns.io import IOFailure, IOSuccess
 
 from livespec_dev_tooling.checks._red_green_replay_trailers import GitCommandFailed
 
@@ -47,6 +47,14 @@ _REFUSED = 1
 _UNREADABLE_HEAD = GitCommandFailed(
     argv="git rev-parse --verify --quiet HEAD", detail="exit 128: fatal: not a git repository"
 )
+
+_UNREADABLE_HEAD_MESSAGE = GitCommandFailed(
+    argv="git log -1 --format=%B", detail="exit 128: fatal: not a git repository"
+)
+
+# What `head_red_awaiting_green` answers at a genuine Green amend — the state
+# that elects branch 4 and therefore the state the half-pair guard runs in.
+_RED_AWAITING_GREEN = True
 
 
 @pytest.fixture
@@ -96,3 +104,38 @@ def test_unreadable_head_refuses_rather_than_taking_the_suite_green_leg(
     stderr = capsys.readouterr().err
     assert '"check_id": "red-green-replay-git-command-failed"' in stderr, stderr
     assert '"argv": "git rev-parse --verify --quiet HEAD"' in stderr, stderr
+
+
+def test_unread_head_message_refuses_rather_than_admitting_the_green_amend(
+    *, tmp_path: Path, supervisor: ModuleType, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The half-pair guard's own read is on the railway for the same reason.
+
+    `dropped_red_trailers` answers with an EMPTY tuple when the amend kept
+    HEAD's Red block — and empty is the ADMITTING answer. Folding a git that
+    did not run onto it would wave through exactly the message-replacing
+    amend the guard exists to refuse (work-item livespec-dev-tooling-zv78),
+    silently, on a read nobody noticed had failed.
+    """
+    legs: list[str] = []
+    supervisor.head_red_awaiting_green = lambda: IOSuccess(_RED_AWAITING_GREEN)
+    supervisor.dropped_red_trailers = lambda *, message: IOFailure(  # noqa: ARG005
+        _UNREADABLE_HEAD_MESSAGE
+    )
+    supervisor._handle_green_mode = lambda **_kwargs: legs.append("green") or 0  # noqa: SLF001
+    supervisor._handle_suite_green_mode = lambda **_kwargs: legs.append("suite") or 0  # noqa: SLF001
+    msg_path = tmp_path / "COMMIT_EDITMSG"
+    _ = msg_path.write_text("feat: green impl\n", encoding="utf-8")
+
+    rc = supervisor._dispatch_impl_staged(  # noqa: SLF001
+        msg_path=msg_path,
+        log=_logger(),
+        impl_paths=["livespec/x.py"],
+        staged_paths=["livespec/x.py"],
+    )
+
+    assert rc == _REFUSED, f"an unread HEAD message must REFUSE the amend; got {rc}"
+    assert legs == [], f"no leg may run when the Red block could not be compared; ran {legs}"
+    stderr = capsys.readouterr().err
+    assert '"check_id": "red-green-replay-git-command-failed"' in stderr, stderr
+    assert '"argv": "git log -1 --format=%B"' in stderr, stderr

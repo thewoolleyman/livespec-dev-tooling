@@ -73,6 +73,7 @@ __all__: list[str] = [
     "GitCommandFailed",
     "_narrate_git_failure",
     "current_head_sha",
+    "dropped_red_trailers",
     "head_red_awaiting_green",
     "head_trailer_value",
     "write_trailers",
@@ -95,6 +96,11 @@ _HEAD_MESSAGE_ARGS: list[str] = ["log", "-1", "--format=%B"]
 
 _RED_TRAILER_KEY = "TDD-Red-Test-File-Checksum:"
 _GREEN_TRAILER_KEY = "TDD-Green-Verified-At:"
+# `_RED_TRAILER_KEY` above is the ONE key the HEAD-state resolver routes on.
+# This is the whole SET, which is a different question: routing asks whether a
+# Red exists at HEAD, and `dropped_red_trailers` asks whether the amend being
+# authored still CARRIES it.
+_RED_TRAILER_PREFIX = "TDD-Red-"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -216,6 +222,39 @@ def head_red_awaiting_green() -> IOResult[bool, GitCommandFailed]:
         )
     return _git_stdout(args=_HEAD_MESSAGE_ARGS).map(
         lambda message: _RED_TRAILER_KEY in message and _GREEN_TRAILER_KEY not in message
+    )
+
+
+def _red_trailers_absent_from(*, head_message: str, message: str) -> tuple[str, ...]:
+    carried = (line.strip() for line in head_message.splitlines())
+    return tuple(
+        line for line in carried if line.startswith(_RED_TRAILER_PREFIX) and line not in message
+    )
+
+
+def dropped_red_trailers(*, message: str) -> IOResult[tuple[str, ...], GitCommandFailed]:
+    """The `TDD-Red-*` lines HEAD's message carries that `message` no longer does.
+
+    An EMPTY tuple is the ordinary answer "the amend kept the block" — what
+    `git commit --amend --no-edit` produces, since it passes the existing
+    message through untouched. A NON-EMPTY tuple is the measured half-pair
+    (work-item livespec-dev-tooling-zv78): `git commit --amend -m` and
+    `--amend -F` REPLACE the entire message, destroying the Red evidence at
+    the very moment the Green leg reads it off HEAD and appends its own
+    trailers beside nothing. Measured twice — PR #1022 (`-F`) and PR #1111
+    (`-m`), each producing a commit carrying `Red: 0 / Green: 2`.
+
+    ⛔ Empty must NOT also spell a git that did not answer, which is why this
+    rides the railway: the two would be indistinguishable, and the failure
+    would read as the permissive answer, admitting exactly the amend the
+    caller asks about.
+
+    CONTAINMENT, not line-order equality: git's `interpret-trailers` may
+    reflow the block, and an author rewording the body above it is doing
+    nothing wrong. Only the disappearance of a Red line is.
+    """
+    return _git_stdout(args=_HEAD_MESSAGE_ARGS).map(
+        lambda head_message: _red_trailers_absent_from(head_message=head_message, message=message)
     )
 
 

@@ -42,6 +42,7 @@ from livespec_dev_tooling.checks._red_green_replay_trailers import (
     GitCommandFailed,
     _narrate_git_failure,
     current_head_sha,
+    dropped_red_trailers,
     head_red_awaiting_green,
     head_trailer_value,
     write_trailers,
@@ -70,6 +71,9 @@ _GIT_ENV_PASSTHROUGH_VARS: tuple[str, ...] = (
 
 _RED_TRAILERS = "TDD-Red-Test: tests/sample.py\nTDD-Red-Test-File-Checksum: sha256:aaaa\n"
 _GREEN_TRAILERS = "TDD-Green-Verified-At: 2026-07-31T00:00:00Z\n"
+# A Green-amend body written by `--amend -m` / `--amend -F`: the whole message
+# replaced, so the Red block HEAD carries is gone (livespec-dev-tooling-zv78).
+_ORPHAN_GREEN_BODY = "feat: green impl\n"
 
 _SHA_LENGTH = 40
 
@@ -142,6 +146,7 @@ def test_trailer_helpers_are_callable() -> None:
     assert callable(head_red_awaiting_green)
     assert callable(head_trailer_value)
     assert callable(current_head_sha)
+    assert callable(dropped_red_trailers)
     assert callable(write_trailers)
 
 
@@ -240,12 +245,53 @@ def test_current_head_sha_outside_a_repo_is_a_failure_not_empty(
     assert failure.argv == "git rev-parse HEAD"
 
 
+def test_dropped_red_trailers_is_empty_when_the_amend_carried_the_block(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`--amend --no-edit` passes the existing message through — nothing dropped."""
+    message = f"red\n\n{_RED_TRAILERS}"
+    monkeypatch.chdir(_repo_with_commit(tmp_path=tmp_path, message=message))
+    assert _succeeded(dropped_red_trailers(message=message)) == ()
+
+
+def test_dropped_red_trailers_names_every_line_a_replacing_amend_destroyed(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`--amend -m` / `-F` replace the whole message; each lost Red line is named.
+
+    The diagnostic has to NAME them: the hook cannot re-derive the block (the
+    Red pytest run that produced it is gone), so the author's only route back
+    is to copy the reported lines forward.
+    """
+    monkeypatch.chdir(_repo_with_commit(tmp_path=tmp_path, message=f"red\n\n{_RED_TRAILERS}"))
+    assert _succeeded(dropped_red_trailers(message=_ORPHAN_GREEN_BODY)) == (
+        "TDD-Red-Test: tests/sample.py",
+        "TDD-Red-Test-File-Checksum: sha256:aaaa",
+    )
+
+
+def test_dropped_red_trailers_outside_a_repo_is_a_failure_not_nothing_dropped(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """⛔ The permissive answer and the unread one must not share a spelling.
+
+    "Nothing was dropped" ADMITS the amend. Folding an unread HEAD onto it
+    would admit exactly the half-pair this reader exists to catch, and would
+    do it silently — the shape of the defect it was written for.
+    """
+    monkeypatch.chdir(tmp_path)
+    failure = _failed(dropped_red_trailers(message=_ORPHAN_GREEN_BODY))
+    assert failure.argv == "git log -1 --format=%B"
+    assert "exit 128" in failure.detail
+
+
 @pytest.mark.parametrize(
     "reader",
     [
         head_red_awaiting_green,
         current_head_sha,
         lambda: head_trailer_value(key="TDD-Red-Test"),
+        lambda: dropped_red_trailers(message=_ORPHAN_GREEN_BODY),
     ],
 )
 def test_every_reader_reports_an_unexecutable_git_as_a_failure(
