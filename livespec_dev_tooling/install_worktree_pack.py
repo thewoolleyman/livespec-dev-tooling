@@ -296,29 +296,87 @@ def _ensure_worktree_discipline_default(*, root: Path, log: structlog.stdlib.Bou
     )
 
 
+# The three dispositions `_install_pack_file` reports through the log's
+# `changed` field. The installer runs on EVERY commit and EVERY push in a wired
+# repo, so the overwhelmingly common line is `none` — an operator reading the
+# gate's output needs to tell that steady state from a real heal at a glance,
+# and needs `mode` distinguishable from `body` because the two say different
+# things about how the worktree drifted.
+_CHANGED_BODY = "body"
+_CHANGED_MODE = "mode"
+_CHANGED_NONE = "none"
+
+
+def _installed_matches(*, path: Path, body: str) -> bool:
+    """Whether `path` already holds exactly `body`.
+
+    The read that replaces an unconditional write. `is_file()` first so an
+    absent member — the fresh-worktree case — answers False without raising,
+    and so a directory sitting where a pack file belongs is treated as drift to
+    be overwritten rather than crashing the gate.
+    """
+    return path.is_file() and path.read_bytes() == body.encode("utf-8")
+
+
+def _apply_mode(*, path: Path, pack_file: PackFile) -> bool:
+    """Ensure `path`'s executable bits match `pack_file`; True when chmod ran.
+
+    Only ever ADDS the bits, and only for members flagged executable. Bytes say
+    nothing about mode, so skipping the identical write would otherwise leave a
+    canonical-but-unexecutable `gate-run.sh` unrepaired — and it is invoked
+    directly as `./dev-tooling/gate-run.sh`. A `chmod` leaves mtime alone, so
+    the repair still costs no rewrite.
+    """
+    if not pack_file.executable:
+        return False
+    current_mode = path.stat().st_mode
+    wanted_mode = current_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
+    if wanted_mode == current_mode:
+        return False
+    path.chmod(wanted_mode)
+    return True
+
+
+def _install_pack_file(*, path: Path, pack_file: PackFile) -> str:
+    """Bring one pack member to its canonical body and mode; say what changed."""
+    if not _installed_matches(path=path, body=pack_file.body):
+        _ = path.write_text(pack_file.body, encoding="utf-8")
+        _ = _apply_mode(path=path, pack_file=pack_file)
+        return _CHANGED_BODY
+    if _apply_mode(path=path, pack_file=pack_file):
+        return _CHANGED_MODE
+    return _CHANGED_NONE
+
+
 def install_pack(*, cwd: Path, log: structlog.stdlib.BoundLogger) -> int:
     """Install the canonical worktree pack into `<work-tree-root>/dev-tooling/`.
 
-    Writes each `WORKTREE_PACK_FILES` body to `<root>/dev-tooling/<name>`,
-    setting the executable bit only on the entries flagged executable (the four
-    `.sh` scripts; the two `.just` recipe fragments are `import`ed, never run,
-    so they stay non-executable, as does the generated ignore file).
-    Idempotent: re-running overwrites with the identical canonical bodies.
-    Returns 0 on success.
+    Brings each `WORKTREE_PACK_FILES` member to its canonical body at
+    `<root>/dev-tooling/<name>`, setting the executable bit only on the entries
+    flagged executable (the four `.sh` scripts; the two `.just` recipe
+    fragments are `import`ed, never run, so they stay non-executable, as does
+    the generated ignore file). Returns 0 on success.
+
+    IDEMPOTENT BY READ, NOT BY REWRITE. This used to write every body
+    unconditionally, which was harmless when the only callers were `bootstrap`
+    and CI. It is no longer: `just install-worktree-pack` is now the first
+    lefthook command of `pre-commit` AND `pre-push` in every wired repo, so an
+    unconditional write would churn every pack mtime on every commit and every
+    push for a pack that is almost always already canonical. A member whose
+    installed bytes already match is left alone, and one whose bytes match but
+    whose mode does not is repaired with a `chmod` alone — making the
+    steady-state per-hook cost a read.
     """
     root = _work_tree_root(cwd=cwd)
     pack_dir = root / "dev-tooling"
     pack_dir.mkdir(parents=True, exist_ok=True)
     for pack_file in WORKTREE_PACK_FILES:
         path = pack_dir / pack_file.name
-        _ = path.write_text(pack_file.body, encoding="utf-8")
-        if pack_file.executable:
-            current_mode = path.stat().st_mode
-            path.chmod(current_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
         log.info(
             "installed canonical worktree-pack file",
             file=pack_file.name,
             executable=pack_file.executable,
+            changed=_install_pack_file(path=path, pack_file=pack_file),
             path=str(path),
         )
     _ensure_worktree_discipline_default(root=root, log=log)
