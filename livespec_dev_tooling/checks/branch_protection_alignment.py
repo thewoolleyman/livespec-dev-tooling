@@ -34,10 +34,17 @@ nonexistent `master`; livespec-dev-tooling-17o):
      check never reports). A required top-level GATE job — the
      single-gate model's `ci-green` aggregate — is a valid target and
      does NOT error here even though it is not a matrix leg.
-   - ci.yml matrix leg that is NOT in the required list → WARNING (some
-     jobs are intentionally not required, e.g., experimental
-     workflows; emit a diagnostic but exit 0). Top-level jobs (setup,
-     export-telemetry, ci-green) are not flagged as should-be-required.
+   - ci.yml matrix leg that is NOT in the required list → WARNING
+     ONLY WHEN a required aggregate gate exists, otherwise ERROR. The
+     "some jobs are intentionally not required" leniency is sound only
+     under the SINGLE-GATE model, where the required aggregate fails in
+     the unrequired leg's place; under the many-contexts model with the
+     aggregate unrequired, a red leg blocks nothing — the leg is not
+     required and neither is the aggregate that would have caught it.
+     That condition is now EVALUATED rather than assumed
+     (livespec-dev-tooling-e2wv). Top-level jobs (setup,
+     export-telemetry, ci-green) are still never flagged as
+     should-be-required.
 
 External state: the script shells out to `gh api` to fetch the
 required-checks list. The three outcomes are distinguished by the
@@ -78,7 +85,9 @@ Exit codes:
   `protection_absent`), or `required_status_checks.strict` is enabled
   (`failure_mode` `strict_enabled`; strict MUST be OFF), or a required
   check has no matching ci.yml job (`failure_mode`
-  `required_check_missing_from_ci`).
+  `required_check_missing_from_ci`), or a ci.yml matrix leg is not
+  required while NO required aggregate gate covers it (`failure_mode`
+  `unrequired_leg_without_aggregate_gate`).
 
 Output discipline matches sibling checks: structlog JSON to stderr;
 no `print`, no `sys.stderr.write`.
@@ -365,14 +374,33 @@ def _run_alignment_gate(
     is a top-level job rather than a matrix leg.
 
     Returns `4` when one or more required checks match neither a matrix
-    leg nor a top-level job (the drift the gate prevents); `0` otherwise.
-    Extra matrix legs not in the required list are warnings only (optional
-    jobs allowed). `not_required` is deliberately computed against
-    `matrix_targets` ONLY — top-level jobs (setup, export-telemetry,
-    ci-green) are NOT flagged as "should be required".
+    leg nor a top-level job (the drift the gate prevents), OR when a
+    matrix leg is not required and no required aggregate gate covers it
+    (below); `0` otherwise. `not_required` is deliberately computed
+    against `matrix_targets` ONLY — top-level jobs (setup,
+    export-telemetry, ci-green) are NOT flagged as "should be required".
+
+    The "extra matrix legs are warnings only (optional jobs allowed)"
+    leniency is CONDITIONAL, and this function EVALUATES the condition
+    rather than assuming it (livespec-dev-tooling-e2wv). An unrequired
+    leg is benign only under the SINGLE-GATE model, where a required
+    top-level aggregate (`ci-green`) fans the matrix in and goes red in
+    the leg's place. Under the many-contexts model with the aggregate
+    unrequired, nothing catches the leg: it is not required, and neither
+    is the aggregate. `required_aggregate_gates` is the condition, read
+    from the required-checks list the caller already fetched (no extra
+    API call): a required context that matches a top-level job and is
+    NOT itself a matrix leg is the aggregate gate the leniency depends
+    on. Recognition deliberately reuses the SAME `job_names` grammar
+    `missing_from_ci` uses to accept a required top-level gate as a
+    valid target, so the two rules cannot drift apart about what counts
+    as a gate. An EMPTY required list is the limit case — no required
+    context at all, hence no gate — and every leg is then reported.
     """
     missing_from_ci = required - (matrix_targets | job_names)
     not_required = matrix_targets - required
+    required_aggregate_gates = (required & job_names) - matrix_targets
+    legs_uncovered = not required_aggregate_gates
     for name in sorted(missing_from_ci):
         log.error(
             "required check has no matching ci.yml job",
@@ -381,12 +409,26 @@ def _run_alignment_gate(
             hint="add to ci.yml matrix or remove from branch protection",
         )
     for name in sorted(not_required):
+        if legs_uncovered:
+            log.error(
+                "ci.yml matrix leg is not required and no required aggregate "
+                "gate covers it; a red leg would not block a merge",
+                check=name,
+                failure_mode="unrequired_leg_without_aggregate_gate",
+                hint=(
+                    "the optional-leg leniency assumes the single-gate model; "
+                    "no required context is a top-level aggregate gate here, so "
+                    "add this leg to the required list or require the aggregate "
+                    "gate job (e.g. ci-green) that fans the matrix in"
+                ),
+            )
+            continue
         log.warning(
             "ci.yml job is not in branch-protection required list",
             check=name,
-            hint="optional jobs are allowed; informational only",
+            hint="optional jobs are allowed; a required aggregate gate covers this leg",
         )
-    if missing_from_ci:
+    if missing_from_ci or (not_required and legs_uncovered):
         return 4
     return 0
 

@@ -517,17 +517,54 @@ def test_blank_and_comment_lines_in_matrix_are_skipped(*, tmp_path: Path) -> Non
     assert "required check has no matching" not in result.stderr
 
 
-def test_extra_ci_job_warns(*, tmp_path: Path) -> None:
-    """ci.yml has a job not in required list → exit 0 with warning."""
+def test_unrequired_leg_errors_under_the_many_contexts_model(*, tmp_path: Path) -> None:
+    """No required aggregate gate + an unrequired matrix leg → exit 4.
+
+    The many-contexts half of the discriminating control pair for
+    livespec-dev-tooling-e2wv. Every required context here is itself a
+    matrix leg (`check-foo`), so NO required context is a top-level
+    aggregate gate: the single-gate model is NOT in force, and nothing
+    catches `check-extra` when it goes red — the leg is not required and
+    there is no required aggregate to fail in its place. The "some jobs
+    are intentionally optional" leniency is unsound under this
+    configuration, so the leg MUST be an ERROR (exit 4), not a warning.
+    """
     _setup_repo_with_ci_yml(tmp_path=tmp_path, matrix_targets=["check-foo", "check-extra"])
     fake_path = _install_fake_gh(
         tmp_path=tmp_path,
         stdout=_checks_payload(contexts=["check-foo"]),
     )
     result = _run_check(cwd=tmp_path, env_path=fake_path)
-    assert result.returncode == 0
+    assert result.returncode == 4, (
+        f"expected exit 4 for an unrequired matrix leg with no required "
+        f"aggregate gate; got {result.returncode}, stderr={result.stderr!r}"
+    )
     assert "check-extra" in result.stderr
+    assert "unrequired_leg_without_aggregate_gate" in result.stderr
+
+
+def test_unrequired_leg_warns_when_a_required_aggregate_gate_exists(*, tmp_path: Path) -> None:
+    """A required aggregate gate + unrequired matrix legs → warning, exit 0.
+
+    The single-gate half of the discriminating control pair: master
+    requires only the top-level `ci-green` aggregate, which fails when
+    any leg does, so `check-foo`/`check-bar` being absent from the
+    required list is genuinely benign. The new rule MUST stay quiet here
+    — a fix that errors under BOTH models has not distinguished them.
+    """
+    _setup_repo_with_gate_and_matrix(tmp_path=tmp_path)
+    fake_path = _install_fake_gh(
+        tmp_path=tmp_path,
+        stdout=_checks_payload(contexts=["ci-green"]),
+    )
+    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    assert result.returncode == 0, (
+        f"expected exit 0 when a required aggregate gate covers the "
+        f"unrequired legs; got {result.returncode}, stderr={result.stderr!r}"
+    )
+    assert "check-foo" in result.stderr
     assert "not in branch-protection required list" in result.stderr
+    assert "unrequired_leg_without_aggregate_gate" not in result.stderr
 
 
 def test_gh_api_failure_skips_gracefully(*, tmp_path: Path) -> None:
@@ -720,9 +757,10 @@ def test_payload_with_non_list_contexts(*, tmp_path: Path) -> None:
 
     The `required_status_checks` object normally carries a `contexts`
     list, but a malformed payload may omit it or give it a non-list
-    value. The check then treats the required-check set as EMPTY: with
-    strict off, the alignment gate has nothing required, so every ci.yml
-    job is merely "not required" (warning) and the check exits 0. This
+    value. The check then treats the required-check set as EMPTY, which
+    is the LIMIT CASE of the many-contexts exposure: with nothing
+    required at all, no required context can be an aggregate gate, so
+    `check-foo` is an unrequired leg that nothing catches → exit 4. This
     pins the `isinstance(contexts_raw, list)` False branch.
     """
     _setup_repo_with_ci_yml(tmp_path=tmp_path, matrix_targets=["check-foo"])
@@ -731,11 +769,11 @@ def test_payload_with_non_list_contexts(*, tmp_path: Path) -> None:
         stdout='{"strict": false}',
     )
     result = _run_check(cwd=tmp_path, env_path=fake_path)
-    assert result.returncode == 0, (
-        f"expected exit 0 when contexts absent (empty required set); "
-        f"got {result.returncode}, stderr={result.stderr!r}"
+    assert result.returncode == 4, (
+        f"expected exit 4 when contexts absent (empty required set leaves "
+        f"the leg uncovered); got {result.returncode}, stderr={result.stderr!r}"
     )
-    assert "not in branch-protection required list" in result.stderr
+    assert "unrequired_leg_without_aggregate_gate" in result.stderr
 
 
 def test_module_importable_without_running_main() -> None:
