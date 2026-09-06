@@ -131,10 +131,23 @@ state derives from those four files with no ambiguity left:
 0 and the gate's own failure codes, so it can be neither mistaken for a
 pass by an exit-status check nor mistaken for a refusal.
 
-`gate-status` also reports **how many check targets completed**, parsed
-from the dispatcher's `::: just <target> [ok|FAILED, wall: Ns]` lines.
-That is the mechanical answer to *"did any target actually run"* — the
-question that previously had to be reconstructed by hand each time.
+`gate-status` also reports **how many check targets completed** — the
+mechanical answer to *"did any target actually run"*, the question that
+previously had to be reconstructed by hand each time. The count comes
+from the aggregate's own closing summary (`All <N> targets passed.` /
+`Failed targets (<N>):`) when the run recorded one, and otherwise from
+its per-target lines, in either emitter's spelling: the parallel
+dispatcher's `::: just <target> [ok|FAILED, wall: Ns]` or the serial
+`check:` loop's bare `::: just <target>`. Every match runs against a
+CR-stripped copy of the capture, because on the push path lefthook
+buffers the hook command's output through a pty and replays it
+CRLF-terminated.
+
+Below that, `NOTE: zero check targets completed` means the run produced
+**no per-target evidence at all** — a green verdict with nothing behind
+it. It is worth reading only while it stays rare, so if you ever see it
+under a log that plainly ran targets, that is a probe defect (the shape
+of livespec-dev-tooling-iugc) and worth reporting, not shrugging at.
 
 ## Working rule
 

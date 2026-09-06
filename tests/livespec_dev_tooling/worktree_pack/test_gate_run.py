@@ -1,22 +1,15 @@
 """Behaviour tests for the pack member `worktree_pack/gate-run.sh`.
 
-Two properties are under test, and both were bought by the same incident
-(livespec-dev-tooling-trfzkw, folding in livespec-p32m6d):
+Two behaviors are under test and both were bought by production incidents:
 
-SCOPE A — the run directory must OUTLIVE the worktree that started the
-run. It used to resolve under the invoked worktree, so routine post-merge
-`git worktree remove` deleted the only record of what a gate was executing
-when it failed. Every case here therefore builds a real primary checkout
-plus a real linked worktree, starts a real detached run from the worktree,
-and reads the record back from the PRIMARY — in one case after the
-worktree is gone.
+Scope A covers run-directory durability and the config write-watch. The
+run directory must outlive the worktree that started it, and the watcher
+around `.git/config` must record flips without changing the gate verdict.
 
-SCOPE B — the runner arms a `.git/config` write-watch around the gate. The
-flip that refused two detached runs at 03:00:09Z on 2026-09-06 happened
-INSIDE a gate child, so the watch lives here and writes into Scope A's
-durable directory. The watch is an OBSERVER: the flip case asserts the
-gate's own exit code (7) is passed through unchanged even though the
-marker fires.
+Scope B covers `status`'s evidence probe and the zero-target NOTE it
+guards. The probe must count evidenced green runs from both emitters, on
+both the direct and lefthook-buffered paths, while still warning when a
+completed run produced no per-target evidence at all.
 
 Every subprocess is `git` (fixture setup) or `bash` (the script under
 test); nothing touches the fleet ledger, the network, or the developer's
@@ -39,10 +32,9 @@ from livespec_dev_tooling.install_worktree_pack import CANONICAL_GATE_RUN_BODY
 __all__: list[str] = []
 
 _SCRIPT = "gate-run.sh"
-# The store the runner resolves from the SHARED git dir, relative to the
-# PRIMARY checkout. Spelled out here so a regression that silently moves it
-# back under the worktree fails on the path, not just on a missing file.
 _STORE = Path("tmp") / "gate-runs"
+_RUN_ID = "20260821T095508Z-3605372"
+_NOTE = "NOTE: zero check targets completed"
 _VERDICT_TIMEOUT_S = 90.0
 _POLL_INTERVAL_S = 0.1
 _GATE_EXIT_CODE = 7
@@ -60,6 +52,101 @@ _GIT_ENV_VARS: tuple[str, ...] = (
     "GIT_LITERAL_PATHSPECS",
     "GIT_PREFIX",
 )
+
+# What the parallel dispatcher writes: one line per COMPLETED target,
+# carrying the target's status inside the bracket.
+_PARALLEL_LOG = (
+    "\n::: just check-lint [ok, wall: 1.4s]\n"
+    "ruff: all checks passed\n"
+    "\n::: just check-types [ok, wall: 9.1s]\n"
+    "\n::: just check-vendor-manifest (skipped)\n"
+    "\nAll 2 targets passed.\n"
+)
+
+# What the serial `check:` justfile loop writes: one line per STARTED
+# target, with NO bracket suffix and no status of any kind.
+_SERIAL_LOG = (
+    "\n::: just check-lint\n"
+    "ruff: all checks passed\n"
+    "\n::: just check-types\n"
+    "\n::: just check-vendor-manifest (skipped)\n"
+    "\nAll 2 targets passed.\n"
+)
+
+# A serial aggregate that reached a real verdict and REFUSED. Its
+# per-target lines carry no status, so the summary is the only failure
+# evidence in the capture.
+_SERIAL_FAILED_LOG = (
+    "\n::: just check-lint\n"
+    "\n::: just check-types\n"
+    "pyright: 3 errors\n"
+    "\nFailed targets (1):\n  - check-types\n"
+)
+
+# A run that completed having executed nothing at all: lefthook's own
+# banner and summary, and not one `::: just` line. This is the case the
+# NOTE was built for and it must keep firing.
+_VACUOUS_LOG = (
+    "╭─────────────────────────────────────╮\n"
+    "│ 🥊 lefthook v1.13.6  hook: pre-push │\n"
+    "╰─────────────────────────────────────╯\n"
+    "sync hooks: ✔️ (pre-push)\n"
+    "summary: (skip) no matching files\n"
+)
+
+
+def _as_lefthook_pty_capture(*, text: str) -> str:
+    """Return `text` as lefthook replays it: every line CRLF-terminated."""
+    return text.replace("\n", "\r\n")
+
+
+def _write(*, path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _ = path.write_text(text, encoding="utf-8")
+
+
+def _init_repo(*, tmp_path: Path) -> Path:
+    """A throwaway repository carrying the canonical body under `dev-tooling/`."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _ = subprocess.run(
+        ["git", "init", "--quiet", "--initial-branch=master"],
+        cwd=str(repo),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    script = repo / "dev-tooling" / _SCRIPT
+    _write(path=script, text=CANONICAL_GATE_RUN_BODY)
+    script.chmod(0o755)
+    return repo
+
+
+def _record_run(*, repo: Path, output_log: str, exit_code: str, run_id: str = _RUN_ID) -> None:
+    """Hand-write one run record exactly as the detached child leaves it."""
+    run_dir = repo / "tmp" / "gate-runs" / run_id
+    _write(path=run_dir / "label", text="consensus-valve\n")
+    _write(path=run_dir / "started_at", text="2026-08-21T09:55:08Z\n")
+    _write(path=run_dir / "finished_at", text="2026-08-21T10:12:41Z\n")
+    _write(path=run_dir / "cwd", text=f"{repo}\n")
+    _write(path=run_dir / "branch", text="master\n")
+    _write(path=run_dir / "head", text="0123456789abcdef\n")
+    _write(path=run_dir / "command", text="just\ncheck\n")
+    _write(path=run_dir / "output.log", text=output_log)
+    _write(path=run_dir / "exit_code", text=f"{exit_code}\n")
+
+
+def _run_status(*, repo: Path, run_id: str = _RUN_ID) -> subprocess.CompletedProcess[str]:
+    """Run `gate-run.sh status <run-id>` from the repo root, as the recipe does."""
+    env = {key: value for key, value in os.environ.items() if key not in _GIT_ENV_VARS}
+    return subprocess.run(
+        ["bash", str(Path("dev-tooling") / _SCRIPT), "status", run_id],
+        cwd=str(repo),
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
 
 
 def _child_env(*, home: Path) -> dict[str, str]:
@@ -81,12 +168,7 @@ def _run_git(*, args: list[str], cwd: Path, env: dict[str, str]) -> None:
 
 
 def _install_runner(*, root: Path) -> None:
-    """Materialize the canonical body under `dev-tooling/`, as a consumer would.
-
-    The stub `worktree-lib.sh` beside it satisfies the runner's own
-    pack preflight, which would otherwise shell out to
-    `just install-worktree-pack` inside the fixture.
-    """
+    """Materialize the canonical body under `dev-tooling/`, as a consumer would."""
     pack = root / "dev-tooling"
     pack.mkdir(parents=True, exist_ok=True)
     _ = (pack / "worktree-lib.sh").write_text("# stub\n", encoding="utf-8")
@@ -97,12 +179,7 @@ def _install_runner(*, root: Path) -> None:
 
 @pytest.fixture
 def fixture_repo(tmp_path: Path) -> tuple[Path, Path, dict[str, str]]:
-    """A primary checkout plus a linked worktree, both carrying the runner.
-
-    Returns `(primary, worktree, env)`. Both checkouts get their own
-    `dev-tooling/` because a `git worktree add` never inherits the
-    primary's gitignored pack.
-    """
+    """A primary checkout plus a linked worktree, both carrying the runner."""
     env = _child_env(home=tmp_path / "home")
     primary = tmp_path / "primary"
     primary.mkdir()
@@ -142,15 +219,7 @@ def _start(*, cwd: Path, env: dict[str, str], command: list[str]) -> str:
 
 
 def _wait_for_file(*, path: Path, timeout_s: float) -> bool:
-    """True as soon as `path` appears; False once `timeout_s` has elapsed.
-
-    Split out of `_await_verdict` and given its own test rather than left
-    inline, because the give-up arm of a poll loop only runs when the system
-    under test is broken — inline it would be the one line in this file that
-    a green run can never reach, and the repo gates on 100% per-file
-    coverage. Extracting it makes the timeout genuinely exercised instead of
-    merely annotated away.
-    """
+    """True as soon as `path` appears; False once `timeout_s` has elapsed."""
     deadline = time.monotonic() + timeout_s
     while not path.is_file():
         if time.monotonic() >= deadline:
@@ -169,11 +238,7 @@ def _await_verdict(*, primary: Path, run_id: str) -> Path:
 
 
 def test_the_verdict_poll_helper_gives_up_rather_than_blocking_forever(*, tmp_path: Path) -> None:
-    """The arm every other case in this file must NOT take.
-
-    A gate that never records a verdict has to fail the suite, not hang it —
-    `_await_verdict` turns this `False` into a named assertion failure.
-    """
+    """The arm every other case in this file must NOT take."""
     assert not _wait_for_file(path=tmp_path / "never-appears", timeout_s=0.05)
     present = tmp_path / "present"
     _ = present.write_text("", encoding="utf-8")
@@ -181,20 +246,7 @@ def test_the_verdict_poll_helper_gives_up_rather_than_blocking_forever(*, tmp_pa
 
 
 def _flip_writer(*, tmp_path: Path, primary: Path) -> Path:
-    """A gate command that writes the PRIMARY's shared config, then lingers.
-
-    It lives outside both checkouts so removing the worktree cannot take it
-    with it, and it stays alive after the write so the watcher's
-    descendant-tree snapshot can still NAME it — which is the whole point of
-    the instrument.
-
-    It lingers until the watcher has actually recorded, rather than for a
-    fixed sleep, so the assertion is on the WATCH and not on the scheduler:
-    a fixed sleep turns a loaded host into a red build. The wait is capped,
-    so a watch that never fires still fails the test rather than hanging it.
-    A real gate outlives any config write it makes by minutes, which is the
-    situation this reproduces.
-    """
+    """A gate command that writes the PRIMARY's shared config, then lingers."""
     writer = tmp_path / "flip-writer.sh"
     config = primary / ".git" / "config"
     _ = writer.write_text(
@@ -325,6 +377,82 @@ def test_the_watch_artifacts_survive_removal_of_the_worktree_that_ran_the_gate(
     status = _gate(cwd=primary, env=env, args=["status", run_id])
     assert "CORE_BARE_FLIP" in status.stdout
     assert writer.name in status.stdout
+
+
+@pytest.mark.parametrize(
+    "output_log",
+    [
+        pytest.param(_SERIAL_LOG, id="serial-emitter"),
+        pytest.param(_PARALLEL_LOG, id="parallel-emitter"),
+        pytest.param(
+            _as_lefthook_pty_capture(text=_SERIAL_LOG), id="serial-emitter-under-lefthook"
+        ),
+        pytest.param(
+            _as_lefthook_pty_capture(text=_PARALLEL_LOG), id="parallel-emitter-under-lefthook"
+        ),
+    ],
+)
+def test_status_counts_every_target_of_an_evidenced_green_run(
+    tmp_path: Path, output_log: str
+) -> None:
+    """An evidenced green run reports its target count and never prints the NOTE."""
+    repo = _init_repo(tmp_path=tmp_path)
+    _record_run(repo=repo, output_log=output_log, exit_code="0")
+
+    result = _run_status(repo=repo)
+
+    assert result.returncode == 0, f"{result.stdout}{result.stderr}"
+    assert "targets completed : 2 (failed: 0)" in result.stdout
+    assert _NOTE not in result.stdout
+    assert "the gate RAN TO COMPLETION and PASSED" in result.stdout
+
+
+@pytest.mark.parametrize(
+    "output_log",
+    [
+        pytest.param(_SERIAL_FAILED_LOG, id="serial-emitter"),
+        pytest.param(
+            _as_lefthook_pty_capture(text=_SERIAL_FAILED_LOG), id="serial-emitter-under-lefthook"
+        ),
+    ],
+)
+def test_status_reads_the_serial_emitters_only_failure_evidence(
+    tmp_path: Path, output_log: str
+) -> None:
+    """A refusing serial aggregate reports its failed count from the summary."""
+    repo = _init_repo(tmp_path=tmp_path)
+    _record_run(repo=repo, output_log=output_log, exit_code="1")
+
+    result = _run_status(repo=repo)
+
+    assert result.returncode == 1, f"{result.stdout}{result.stderr}"
+    assert "targets completed : 2 (failed: 1)" in result.stdout
+    assert _NOTE not in result.stdout
+    assert "RAN TO COMPLETION and REFUSED" in result.stdout
+
+
+def test_status_still_warns_when_a_completed_run_executed_no_target(tmp_path: Path) -> None:
+    """The case the NOTE exists for: a green run with no per-target evidence at all."""
+    repo = _init_repo(tmp_path=tmp_path)
+    _record_run(repo=repo, output_log=_VACUOUS_LOG, exit_code="0")
+
+    result = _run_status(repo=repo)
+
+    assert result.returncode == 0, f"{result.stdout}{result.stderr}"
+    assert "targets completed : 0 (failed: 0)" in result.stdout
+    assert _NOTE in result.stdout
+
+
+def test_status_still_warns_when_the_run_captured_nothing(tmp_path: Path) -> None:
+    """An empty capture is the emptiest vacuous run there is; the NOTE must fire."""
+    repo = _init_repo(tmp_path=tmp_path)
+    _record_run(repo=repo, output_log="", exit_code="0")
+
+    result = _run_status(repo=repo)
+
+    assert result.returncode == 0, f"{result.stdout}{result.stderr}"
+    assert "targets completed : 0 (failed: 0)" in result.stdout
+    assert _NOTE in result.stdout
 
 
 def _core_fields(*, path: Path) -> dict[str, str]:
