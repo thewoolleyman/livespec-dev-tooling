@@ -440,9 +440,44 @@ worktree_reap() {
         if [ -n "$(git -C "$wt_path" status --porcelain 2>/dev/null)" ]; then
             dirty=1
         fi
+
+        # MERGED-NESS DISCRIMINATOR — ancestry FIRST, then patch-id.
+        #
+        # Ancestry alone was the whole test, and on a rebase-merge fleet it
+        # can only ever answer NO. A rebase-merge REWRITES the branch's
+        # commits, so a landed branch's tip is never an ancestor of the base;
+        # every landed worktree therefore reported "branch not merged" and
+        # `reap` skipped it. A reaper that skips everything reaps nothing,
+        # and the worktrees it left behind are what eventually crossed the
+        # 4096-byte stdio boundary documented at `worktree_primary_path`
+        # above and took `create` and `reap` out together. livespec-overseer
+        # recorded the reaper as "essentially never firing" for exactly this
+        # reason; the two defects compound (livespec-dev-tooling-jtrt.2).
+        #
+        # `git cherry <base> <head>` prints `+ <sha>` for a commit with NO
+        # patch-equivalent on the base and `- <sha>` for one that has one,
+        # comparing `git patch-id` digests — which survive the rewrite a
+        # rebase performs. Zero `+` lines means the whole branch is on the
+        # base under other SHAs: landed.
+        #
+        # Ancestry is still tried first because it is cheaper and exact for
+        # a fast-forward or merge-commit land. The patch-id leg over-reports
+        # rather than under-reports: a squash-merge or a conflict-resolving
+        # rebase changes the patch, so such a branch still reads UNMERGED and
+        # still needs --force. That is the safe direction for a command that
+        # deletes work.
         merged=0
-        if [ -n "$wt_head" ] && git -C "$primary" merge-base --is-ancestor "$wt_head" "$base_ref" 2>/dev/null; then
-            merged=1
+        merged_reason=""
+        if [ -n "$wt_head" ]; then
+            if git -C "$primary" merge-base --is-ancestor "$wt_head" "$base_ref" 2>/dev/null; then
+                merged=1
+                merged_reason="ancestor of $base_ref"
+            elif cherry_out="$(git -C "$primary" cherry "$base_ref" "$wt_head" 2>/dev/null)"; then
+                if ! printf '%s\n' "$cherry_out" | grep -q '^+'; then
+                    merged=1
+                    merged_reason="patch-id equivalent to $base_ref (git cherry)"
+                fi
+            fi
         fi
 
         if [ "$dirty" -eq 1 ] && [ "$force" -eq 0 ]; then
@@ -451,12 +486,12 @@ worktree_reap() {
             return 0
         fi
         if [ "$merged" -eq 0 ] && [ "$force" -eq 0 ]; then
-            echo "  SKIP   $label — branch not merged into $base_ref (pass --force to remove)"
+            echo "  SKIP   $label — branch not merged into $base_ref: neither an ancestor nor patch-id equivalent (pass --force to remove)"
             skipped=$((skipped + 1))
             return 0
         fi
 
-        reason="$([ "$merged" -eq 1 ] && echo "merged into $base_ref" || echo "UNMERGED (forced)")"
+        reason="$([ "$merged" -eq 1 ] && echo "merged into $base_ref — $merged_reason" || echo "UNMERGED (forced)")"
         [ "$dirty" -eq 1 ] && reason="$reason, dirty (forced)"
         echo "  REMOVE $label — $reason"
         removed=$((removed + 1))
@@ -536,6 +571,15 @@ SAFETY:
   another agent is actively working in a worktree — --force discards
   uncommitted changes. Reap only at session start, after a landed branch is
   confirmed merged and its agent exited, or at loop end.
+
+MERGED-NESS:
+  Judged by ANCESTRY first (`git merge-base --is-ancestor`) and then by
+  PATCH-ID EQUIVALENCE (`git cherry`, zero `+` lines). The second test is
+  what makes the command work at all on a rebase-merge repository, where a
+  landed branch's tip is never an ancestor of the base. It over-reports
+  rather than under-reports: a squash-merge, or a rebase that resolved a
+  conflict, changes the patch, so such a branch still reads UNMERGED and
+  still needs --force.
 EOF
 }
 
