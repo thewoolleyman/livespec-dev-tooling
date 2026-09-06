@@ -10,16 +10,27 @@
 #
 # PARSED, NEVER SOURCED. The profile is read line by line as KEY=value data, so
 # a profile cannot smuggle in procedure: it is data or it is rejected. Every
-# key is REQUIRED to be PRESENT; the emptiness rules are applied after the whole
-# file is read, because whether a key may be empty depends on another key's
-# value.
+# key in PROFILE_REQUIRED_KEYS is REQUIRED to be PRESENT; the emptiness rules
+# are applied after the whole file is read, because whether a key may be empty
+# depends on another key's value.
+#
+# THE ONE EXCEPTION, AND WHY. PROFILE_KEY_DEFAULTS below lists keys a profile
+# MAY omit, each with the value the parser fills in when it does. Every one of
+# them was added AFTER the first node's profile existed, and each default is the
+# behaviour that was implicit before the key had a name — `whole-device`
+# partitioning, nothing preserved, no taint, no join secret. A profile that
+# predates the key therefore keeps parsing AND keeps behaving identically, which
+# is not true of a required key: making one required turns "this node was
+# written before the second node existed" into a parse failure. A profile is
+# still free to state the default explicitly, and the committed one does.
 #
 # Expects the caller to have defined `die MESSAGE` (which must exit non-zero)
 # before sourcing this file; every rejection goes through it.
 #
 # After `profile_load PATH` the caller has, as globals:
 #   PROFILE_PATH           the path that was read
-#   CFG[KEY]               every profile key's value
+#   CFG[KEY]               every profile key's value, defaults already applied
+#   PRESERVED_DEVICES[]    the devices no stage may write to, in profile order
 #   VG_NAMES[]             the declared volume groups, in profile order
 #   VG_PV[vg]              each volume group's physical-volume device
 #   LV_RECORDS[]           the raw <vg>:<lv>:<size>:<fstype>:<label> records
@@ -68,6 +79,38 @@ PROFILE_REQUIRED_KEYS=(
   ADMISSION_CAPACITY_C
 )
 
+# Keys a profile MAY omit, and the value the parser supplies when it does. Read
+# the header above for why these are defaulted rather than required: each
+# default is the behaviour that was implicit before the key existed.
+#
+#   DISK_PLAN             `whole-device` — the device is the node's to erase:
+#                         zap it and write the declared table over the top.
+#                         `free-space` — the device already carries an operating
+#                         system: leave every existing partition alone and take
+#                         ONLY the unpartitioned tail.
+#   PRESERVED_PARTITIONS  space-separated device paths no stage may write to.
+#                         REQUIRED to be non-empty under `free-space` (that plan
+#                         exists to protect something) and REQUIRED to be empty
+#                         under `whole-device` (which erases the whole device,
+#                         so a partition named here could not survive it and
+#                         listing one would be a promise the plan cannot keep).
+#   CLUSTER_TOKEN_FILE    the path on the node holding the token an `agent` (or
+#                         a joining server) authenticates to CLUSTER_JOIN_ADDRESS
+#                         with. A PATH, never the token: this tree carries no
+#                         secret. Empty for a node that forms its own cluster.
+#   NODE_TAINTS           space-separated `key=value:Effect` taints the node
+#                         registers with. Empty for a node that takes general
+#                         work.
+# `-g` on purpose: a stage that sources this file from inside a function (the
+# exit tests read a profile that way) would otherwise get a table scoped to
+# that function.
+declare -gA PROFILE_KEY_DEFAULTS=(
+  [DISK_PLAN]=whole-device
+  [PRESERVED_PARTITIONS]=""
+  [CLUSTER_TOKEN_FILE]=""
+  [NODE_TAINTS]=""
+)
+
 # An ext4 label holds 16 bytes, an XFS label 12, a FAT label 11 and a swap
 # label 15; a longer name is silently TRUNCATED by mkfs, which is how a live
 # tier label was lost once already (`.ai/ci-node-storage-tiers.md`). Refuse it
@@ -92,9 +135,11 @@ profile_load() {
   declare -gA LV_NAME_OF_LABEL=()
   declare -gA LV_FSTYPE_OF_LABEL=()
   VG_NAMES=()
+  PRESERVED_DEVICES=()
 
   local -A known=()
   for key in "${PROFILE_REQUIRED_KEYS[@]}"; do known["$key"]=1; done
+  for key in "${!PROFILE_KEY_DEFAULTS[@]}"; do known["$key"]=1; done
 
   [ -f "$PROFILE_PATH" ] || die "profile not found: ${PROFILE_PATH}"
   lineno=0
@@ -124,21 +169,74 @@ profile_load() {
     fi
   done
 
+  # A defaulted key the profile did not state takes its default HERE, before any
+  # rule below reads it, so every rule sees one value per key whether the profile
+  # spelled it out or not.
+  for key in "${!PROFILE_KEY_DEFAULTS[@]}"; do
+    if [ -z "${CFG[$key]+set}" ]; then
+      CFG["$key"]="${PROFILE_KEY_DEFAULTS[$key]}"
+    fi
+  done
+
   # Emptiness. CLUSTER_JOIN_ADDRESS is empty for a node that forms its own
   # cluster; SWAP_LABEL is empty for a node with no swap volume; the controller
-  # and virtual-disk keys are empty for a node that has no storage controller.
-  # Every other key must carry a value.
-  local -a may_be_empty=(CLUSTER_JOIN_ADDRESS SWAP_LABEL)
+  # and virtual-disk keys are empty for a node that has no storage controller;
+  # the three defaulted list-or-path keys are empty for the node the default
+  # describes. Every other key must carry a value.
+  local -a may_be_empty=(
+    CLUSTER_JOIN_ADDRESS
+    SWAP_LABEL
+    PRESERVED_PARTITIONS
+    CLUSTER_TOKEN_FILE
+    NODE_TAINTS
+  )
   if [ "${CFG[CONTROLLER_KIND]}" = "none" ]; then
     may_be_empty+=(CONTROLLER_CLI CONTROLLER_ID VD_ENCLOSURE VD_SLOTS VD_RAID_LEVEL VD_STRIP_KIB VD_CACHE_POLICY)
   fi
   local -A optional=()
   for key in "${may_be_empty[@]}"; do optional["$key"]=1; done
-  for key in "${PROFILE_REQUIRED_KEYS[@]}"; do
+  for key in "${PROFILE_REQUIRED_KEYS[@]}" "${!PROFILE_KEY_DEFAULTS[@]}"; do
     if [ -z "${CFG[$key]}" ] && [ -z "${optional[$key]:-}" ]; then
       die "${PROFILE_PATH}: profile key '${key}' must not be empty"
     fi
   done
+
+  # -------------------------------------------------------------------------
+  # The two plans, and the keys each one obliges
+  #
+  # Both rules below refuse a profile that PARSES but describes a run the stage
+  # cannot honour, which is the only kind of wrong profile the stages cannot
+  # catch for themselves: `free-space` with nothing preserved would take the
+  # protective plan and protect nothing, and `whole-device` with a preserved
+  # partition would erase the very partition the key promises to keep. Both were
+  # silent before they were refusals.
+  # -------------------------------------------------------------------------
+  case "${CFG[DISK_PLAN]}" in
+    whole-device)
+      if [ -n "${CFG[PRESERVED_PARTITIONS]}" ]; then
+        die "${PROFILE_PATH}: DISK_PLAN=whole-device erases ${CFG[TARGET_DEVICE]} entirely, so it cannot preserve '${CFG[PRESERVED_PARTITIONS]}'; use DISK_PLAN=free-space to keep a partition"
+      fi ;;
+    free-space)
+      if [ -z "${CFG[PRESERVED_PARTITIONS]}" ]; then
+        die "${PROFILE_PATH}: DISK_PLAN=free-space must name the partitions it preserves in PRESERVED_PARTITIONS"
+      fi ;;
+    *) die "${PROFILE_PATH}: DISK_PLAN must be 'whole-device' or 'free-space', got '${CFG[DISK_PLAN]}'" ;;
+  esac
+  # shellcheck disable=SC2034  # read by the stages that source this file
+  read -r -a PRESERVED_DEVICES <<< "${CFG[PRESERVED_PARTITIONS]}"
+
+  # CLUSTER_ROLE selects the step plan ../phase2/install-node.sh runs; an agent
+  # has no cluster to run in without both the address it joins and the token
+  # file it authenticates with, and a missing one of those fails at the node,
+  # after the storage and the base OS are already written.
+  case "${CFG[CLUSTER_ROLE]}" in
+    server) ;;
+    agent)
+      if [ -z "${CFG[CLUSTER_JOIN_ADDRESS]}" ] || [ -z "${CFG[CLUSTER_TOKEN_FILE]}" ]; then
+        die "${PROFILE_PATH}: CLUSTER_ROLE=agent must name both CLUSTER_JOIN_ADDRESS and CLUSTER_TOKEN_FILE"
+      fi ;;
+    *) die "${PROFILE_PATH}: CLUSTER_ROLE must be 'server' or 'agent', got '${CFG[CLUSTER_ROLE]}'" ;;
+  esac
 
   # -------------------------------------------------------------------------
   # Records

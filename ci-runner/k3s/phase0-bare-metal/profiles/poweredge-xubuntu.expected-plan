@@ -1,0 +1,45 @@
+# poweredge-xubuntu.expected-plan — every mutating command
+# `../storage-layout.sh --dry-run profiles/poweredge-xubuntu.env` plans against
+# a BARE node, in order, byte for byte.
+#
+# WHY IT IS COMMITTED. This node's plan is the one the whole-device path has
+# always produced; a change to the script that alters it is either a deliberate
+# re-derivation of this node's rebuild or an accident. `--dry-run` prints the
+# plan and nothing else asserts the WHOLE of it: `storage-layout-exit-tests.sh`
+# §B asserts an ORDERED SUBSET, so a step silently added, dropped or reworded
+# between two asserted rungs passes §B unnoticed. §F2 compares the run against
+# this file as an equality, so it does not.
+#
+# The lines below are the `+ `-prefixed lines of that dry run with the `+ `
+# stripped, captured against the suite's bare-node fake tools: no partition
+# table, no filesystem signature, no volume group and no logical volume exists,
+# and the controller CLI is absent (hence the unresolved `<enclosure>`
+# placeholder that §B5 separately proves resolves to 32 on the real node).
+#
+# HOW TO CHANGE IT. Only by deciding that this node's rebuild plan should
+# change, and saying so in the change that alters it. Re-capturing this file to
+# make a red §F2 go green is the same inversion `README.md` §"The profile is
+# the record" forbids for the facts table: the failure is the finding.
+/opt/MegaRAID/perccli/perccli64 /c0 add vd type=raid5 drives=<enclosure>:0-6 strip=64 wb ra direct
+udevadm settle
+sgdisk --zap-all /dev/sda
+sgdisk --new=1:0:+1G --typecode=1:ef00 --change-name=1:ESP /dev/sda
+sgdisk --new=2:0:0 --typecode=2:8e00 --change-name=2:lvm /dev/sda
+partprobe /dev/sda
+pvcreate --yes /dev/sda2
+pvcreate --yes /dev/disk/by-id/nvme-WD_BLACK_SN8100_4000GB_25384T801085
+pvcreate --yes /dev/disk/by-id/nvme-WD_BLACK_SN8100_4000GB_25374X802154
+vgcreate poweredge /dev/sda2
+vgcreate nvmea /dev/disk/by-id/nvme-WD_BLACK_SN8100_4000GB_25384T801085
+vgcreate nvmeb /dev/disk/by-id/nvme-WD_BLACK_SN8100_4000GB_25374X802154
+lvcreate --yes -L 200G -n root poweredge
+lvcreate --yes -L 8G -n swap poweredge
+lvcreate --yes -L 1T -n ci-cache poweredge
+lvcreate --yes -L 1.5T -n ci-containerd nvmea
+lvcreate --yes -L 1.5T -n ci-workvols nvmeb
+mkfs.vfat -F 32 -n ESP /dev/sda1
+mkfs.ext4 -q -L root /dev/poweredge/root
+mkswap -L swap /dev/poweredge/swap
+mkfs.ext4 -q -L ci-cache /dev/poweredge/ci-cache
+mkfs.ext4 -q -L ci-containerd /dev/nvmea/ci-containerd
+mkfs.xfs -q -m reflink=1 -L ci-workvols /dev/nvmeb/ci-workvols

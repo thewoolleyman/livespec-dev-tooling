@@ -19,6 +19,23 @@
 # (SPECIFICATION/non-functional-requirements.md §"Runner-pool node rebuild
 # recipe").
 #
+# TWO DISK PLANS, chosen by the profile's DISK_PLAN. `whole-device` is the
+# original: the device is the node's to erase, so the run zaps it and writes the
+# declared table over the top. `free-space` is for a node that KEEPS THE
+# OPERATING SYSTEM IT ALREADY HAS — a device already carrying a root filesystem
+# and an EFI system partition, with unpartitioned space after them. That plan
+# skips the controller and the zap entirely, adds exactly ONE partition in the
+# largest free region, and refuses any step that names a partition the profile
+# lists in PRESERVED_PARTITIONS. From the physical volume onward the two plans
+# are the same script.
+#
+# PRESERVATION OUTRANKS CONSENT. `--i-consent-to-destroy` grants ONE destructive
+# step against a target the profile is willing to lose. A PRESERVED_PARTITIONS
+# entry is a target the profile is NOT willing to lose, so no flag unlocks it:
+# the refusal is unconditional and names the partition. The two keys say
+# different things on purpose — consent is "yes, that one", preservation is "not
+# that one, ever".
+#
 # RE-RUNNABLE. Every stage probes for the state the profile declares and skips
 # when it is already there, saying so. Against a node already in its profile's
 # declared state the whole run changes nothing and reports "already in the
@@ -106,8 +123,34 @@ profile_load "$PROFILE_PATH"
 # Execution, probing and consent
 # ---------------------------------------------------------------------------
 
+# refuse_preserved — the ONE gate between any plan and a partition the profile
+# says must survive.
+#
+# It scans the ARGUMENT LIST rather than sitting inside the handful of steps
+# that are destructive today, because the promise PRESERVED_PARTITIONS makes is
+# about the partition and not about a step: a step added later that names one is
+# caught by this without anybody remembering to guard it. Nothing about the
+# scan is clever — every mutating command this script can issue passes the
+# device as its own word.
+refuse_preserved() {
+  local word preserved
+  for word in "$@"; do
+    for preserved in ${PRESERVED_DEVICES[@]+"${PRESERVED_DEVICES[@]}"}; do
+      if [ "$word" = "$preserved" ]; then
+        printf 'REFUSED: %s planned a step naming %s, which %s lists in PRESERVED_PARTITIONS.\n' \
+          "$SCRIPT_NAME" "$preserved" "$PROFILE_PATH" >&2
+        printf '         the step was: %s\n' "$*" >&2
+        printf '         A preserved partition is never written, and no --i-consent-to-destroy unlocks it.\n' >&2
+        printf '         Drop it from PRESERVED_PARTITIONS if this node really is meant to lose it.\n' >&2
+        exit 1
+      fi
+    done
+  done
+}
+
 # run — the ONE place a mutating command is either printed or executed.
 run() {
+  refuse_preserved "$@"
   printf '+'
   printf ' %s' "$@"
   printf '\n'
@@ -140,8 +183,19 @@ consented() {
 
 # require_consent TARGET WHAT — refuse, naming the target, unless the operator
 # consented to destroying exactly it.
+#
+# It asks refuse_preserved FIRST, which is what makes "preservation outranks
+# consent" true of the MESSAGE and not merely of the outcome. Without it a
+# preserved partition that carries a filesystem — which the preserved root of a
+# free-space node always does — is caught one step later, by `run`, and the
+# operator meanwhile reads a refusal whose remedy is
+# `--i-consent-to-destroy=<that partition>`. The run never destroys it either
+# way, but that advice is wrong about which of the two keys is in the way, and
+# following it produces a second, different refusal. A preserved target is not a
+# consent question, so it must never be asked as one.
 require_consent() {
   local target="$1" what="$2"
+  refuse_preserved "$target"
   if consented "$target"; then
     note "consent given for ${target}: proceeding to ${what}"
     return 0
@@ -175,6 +229,10 @@ fi
 
 note "profile:  ${PROFILE_PATH}"
 note "node:     ${CFG[NODE_NAME]}"
+if [ "${CFG[DISK_PLAN]}" = "free-space" ]; then
+  note "plan:     free-space — only the unpartitioned tail of ${CFG[TARGET_DEVICE]} is taken"
+  note "preserve: ${CFG[PRESERVED_PARTITIONS]}"
+fi
 if [ "$DRY_RUN" -eq 1 ]; then
   note "mode:     DRY RUN — every '+ ' line is printed and executed by nothing"
 else
@@ -184,7 +242,19 @@ fi
 # ---------------------------------------------------------------------------
 stage "1/6 storage-controller virtual disk"
 # ---------------------------------------------------------------------------
-if [ "${CFG[CONTROLLER_KIND]}" = "none" ]; then
+# A free-space plan runs against a device that already carries this node's
+# operating system, so there is nothing here to build: the virtual disk (or the
+# bare drive) the OS boots from is the one the node already has, and creating a
+# new one would destroy it. The skip names CONTROLLER_KIND when the profile
+# declares a controller, so a plan that quietly disagrees with its own hardware
+# keys says so rather than passing in silence.
+if [ "${CFG[DISK_PLAN]}" = "free-space" ]; then
+  if [ "${CFG[CONTROLLER_KIND]}" = "none" ]; then
+    note "no change: DISK_PLAN=free-space keeps the storage ${CFG[TARGET_DEVICE]} already presents"
+  else
+    note "no change: DISK_PLAN=free-space keeps the storage ${CFG[TARGET_DEVICE]} already presents, so the declared ${CFG[CONTROLLER_KIND]} controller is left untouched"
+  fi
+elif [ "${CFG[CONTROLLER_KIND]}" = "none" ]; then
   note "no change: profile declares no storage controller"
 else
   controller_cli="${CFG[CONTROLLER_CLI]}"
@@ -243,26 +313,52 @@ fi
 # ---------------------------------------------------------------------------
 stage "2/6 partition table on ${CFG[TARGET_DEVICE]}"
 # ---------------------------------------------------------------------------
-# The structure is fixed by the procedure — partition 1 is the EFI system
-# partition, partition 2 is the LVM physical volume — while the device, the
-# sizes and the partition names are the profile's.
+# Under `whole-device` the structure is fixed by the procedure — partition 1 is
+# the EFI system partition, partition 2 is the LVM physical volume — while the
+# device, the sizes and the partition names are the profile's.
+#
+# Under `free-space` the existing table is the node's and only ONE partition is
+# added to it: the EFI system partition and the root the device already carries
+# are the ones it boots from, so the procedure neither numbers nor sizes them.
 target="${CFG[TARGET_DEVICE]}"
 partlabels_seen="$(probe lsblk -rno PARTLABEL "$target" | grep . || true)"
-declared_labels="$(printf '%s' "$partlabels_seen" | paste -sd, -)"
-if [ "$declared_labels" = "${CFG[ESP_LABEL]},${CFG[PV_PARTLABEL]}" ]; then
-  note "no change: ${target} already carries the declared partition table"
-else
-  if [ -n "$(probe blkid -p -s PTTYPE -o value "$target")" ] || [ -n "$(fs_type_of "$target")" ]; then
-    require_consent "$target" "every partition and signature on ${target} is erased and the declared table written in its place"
-    run wipefs --all "$target"
+if [ "${CFG[DISK_PLAN]}" = "free-space" ]; then
+  if printf '%s\n' "$partlabels_seen" | grep -qxF "${CFG[PV_PARTLABEL]}"; then
+    note "no change: ${target} already carries a partition labelled ${CFG[PV_PARTLABEL]}"
+  else
+    # The next free partition number, read off the table rather than assumed:
+    # this device's existing partitions belong to an operating system this
+    # procedure did not install, so their count is not the procedure's to know.
+    partnums_seen="$(probe lsblk -rno PARTN "$target" | grep . || true)"
+    partnum=1
+    while printf '%s\n' "$partnums_seen" | grep -qxF "$partnum"; do
+      partnum=$((partnum + 1))
+    done
+    note "plan:     partition ${partnum} takes the largest free region of ${target}"
+    # `--new=N:0:0` is sgdisk's own "the largest free block, start to end": the
+    # first 0 is that block's first sector and the second is its last, so the
+    # tail is sized by what is actually free rather than by a size this file
+    # would otherwise have to carry for one node.
+    run sgdisk "--new=${partnum}:0:0" "--typecode=${partnum}:8e00" "--change-name=${partnum}:${CFG[PV_PARTLABEL]}" "$target"
+    run partprobe "$target"
   fi
-  run sgdisk --zap-all "$target"
-  run sgdisk "--new=1:0:+$(size_arg "${CFG[ESP_SIZE]}")" "--typecode=1:ef00" "--change-name=1:${CFG[ESP_LABEL]}" "$target"
-  run sgdisk "--new=2:0:0" "--typecode=2:8e00" "--change-name=2:${CFG[PV_PARTLABEL]}" "$target"
-  # Scoped to this one disk on purpose. A blanket `udevadm trigger` over the
-  # block subsystem is what stopped every device-mapper-backed mount on this
-  # node once already (`.ai/ci-node-storage-tiers.md`).
-  run partprobe "$target"
+else
+  declared_labels="$(printf '%s' "$partlabels_seen" | paste -sd, -)"
+  if [ "$declared_labels" = "${CFG[ESP_LABEL]},${CFG[PV_PARTLABEL]}" ]; then
+    note "no change: ${target} already carries the declared partition table"
+  else
+    if [ -n "$(probe blkid -p -s PTTYPE -o value "$target")" ] || [ -n "$(fs_type_of "$target")" ]; then
+      require_consent "$target" "every partition and signature on ${target} is erased and the declared table written in its place"
+      run wipefs --all "$target"
+    fi
+    run sgdisk --zap-all "$target"
+    run sgdisk "--new=1:0:+$(size_arg "${CFG[ESP_SIZE]}")" "--typecode=1:ef00" "--change-name=1:${CFG[ESP_LABEL]}" "$target"
+    run sgdisk "--new=2:0:0" "--typecode=2:8e00" "--change-name=2:${CFG[PV_PARTLABEL]}" "$target"
+    # Scoped to this one disk on purpose. A blanket `udevadm trigger` over the
+    # block subsystem is what stopped every device-mapper-backed mount on this
+    # node once already (`.ai/ci-node-storage-tiers.md`).
+    run partprobe "$target"
+  fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -336,7 +432,18 @@ ensure_fs() {
   make_fs "$fstype" "$label" "$device"
 }
 
-ensure_fs "${CFG[ESP_FSTYPE]}" "${CFG[ESP_LABEL]}" "${CFG[ESP_DEVICE]}"
+# The EFI system partition is MADE only under `whole-device`, where this
+# procedure created the partition it sits on. Under `free-space` it is the one
+# the node already boots from: the profile's ESP keys describe it so the later
+# stages can find it, and `mkfs` over it would take the node's bootloader with
+# it. (`refuse_preserved` would stop that anyway when the profile lists it, as
+# a free-space profile should; skipping here means the plan does not depend on
+# the operator having remembered to.)
+if [ "${CFG[DISK_PLAN]}" = "free-space" ]; then
+  note "no change: ${CFG[ESP_DEVICE]} is the EFI system partition ${CFG[NODE_NAME]} already boots from"
+else
+  ensure_fs "${CFG[ESP_FSTYPE]}" "${CFG[ESP_LABEL]}" "${CFG[ESP_DEVICE]}"
+fi
 for record in "${LV_RECORDS[@]}"; do
   IFS=: read -r rec_vg rec_lv _ rec_fstype rec_label <<< "$record"
   ensure_fs "$rec_fstype" "$rec_label" "/dev/${rec_vg}/${rec_lv}"

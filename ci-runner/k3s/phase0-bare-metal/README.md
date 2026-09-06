@@ -21,7 +21,7 @@ because a node "already looks right":
 
 | # | Stage | Artifact | State it establishes |
 |---|---|---|---|
-| 1 | **Storage layout** | `storage-layout.sh <profile>` (here) | The storage-controller virtual disk, the GPT partition table (EFI system partition + LVM physical volume), the volume groups, the logical volumes, and the `mkfs` that puts the role LABELS on them. |
+| 1 | **Storage layout** | `storage-layout.sh <profile>` (here) | The storage-controller virtual disk, the GPT partition table (EFI system partition + LVM physical volume), the volume groups, the logical volumes, and the `mkfs` that puts the role LABELS on them. On a node that KEEPS the operating system it already has, `DISK_PLAN=free-space` skips the controller and the erase and takes only the device's unpartitioned tail — see "The two disk plans" below. |
 | 2 | **Base operating system** | `base-os-install.sh <profile>` (here) | **An installed operating system** — the precondition the specification section names for the k3s stage — on the volumes stage 1 created: the pinned release debootstrapped into the root logical volume, an `/etc/fstab` whose every line is found by LABEL, `lvm2` and an initramfs that activates the root volume group, a signed shim and GRUB on the EFI system partition with `root=` by LVM id, the firmware boot entry, the hostname, the profile's network address, and the operator account the later stages are run as. |
 | 3 | **k3s** | `../provision-k3s.sh` | The pinned single-node k3s server, its config installed before the first start, and the admin kubeconfig every later step reads. |
 | 4 | **Node-local runbook** | `sudo ../phase2/install-node.sh profiles/<node>.env` | Every node-local installer under `../phase2/` plus `../secret-reinjection/` that this node's `CLUSTER_ROLE` calls for, at the `ADMISSION_CAPACITY_C` the same profile carries — including `../phase2/storage-layout/install-storage-layout.sh`, which is stage 1's CONSUMER. A `server` runs the whole list; an `agent` runs its node-local subset and skips the cluster-side and datastore steps, logging the reason for each. |
@@ -51,9 +51,10 @@ never a hand-edited copy of one.
 | `storage-layout.sh` | Stage 1. Creates the controller virtual disk, partitions, the physical volumes, the volume groups, the logical volumes, and the filesystems with their role labels. Re-runnable; destructive only on explicit consent; `--dry-run` prints every command and runs none. |
 | `base-os-install.sh` | Stage 2. Mounts the profile's root logical volume and EFI system partition, debootstraps the release the profile pins, writes an `/etc/fstab` found entirely by LABEL, installs the kernel, `lvm2` and the bootloader in the chroot, regenerates the initramfs with LVM support, sets the hostname, the network address, the operator account and the firmware boot entry. Re-runnable — a root volume already carrying the profile's release is left alone and reported; destructive only on explicit consent; `--dry-run` prints every command and file write and runs none. |
 | `profiles/poweredge-xubuntu.env` | The first node's profile: the PERC H730P RAID-5 virtual disk over slots 0-6 at a 64 KB strip with WriteBack + Read Ahead + Direct IO, a 1 GiB EFI system partition, one LVM physical-volume partition, volume group `poweredge` carrying `root`, `swap` and `ci-cache`, volume group `nvmea` carrying `ci-containerd`, volume group `nvmeb` carrying `ci-workvols`, and the base-OS values stage 2 consumes (Ubuntu 26.04 `resolute`, its mirrors, the kernel package, the initramfs generator, the boot-entry label and the operator account). Its header records the provenance of every value, including which values this repository has NOT measured. |
+| `profiles/poweredge-xubuntu.expected-plan` | Every mutating command that node's `--dry-run` plans against bare storage, in order, byte for byte. `storage-layout-exit-tests.sh` §F13 compares the run against it as an EQUALITY, which is what §B's ordered-subset assertions cannot do: a step silently added, dropped or reworded between two asserted rungs passes §B and fails §F13. It is the guard that let `free-space` be added to this script without changing what the first node's rebuild does. |
 | `profiles/poweredge-xubuntu.recorded-facts` | That node's storage facts as the host RECORD states them, transcribed from `poweredge-xubuntu-info` `AGENTS.md` §Storage ("LVM (steady state since 2026-09-06)") and confirmed read-only against the live host the same day. The profile beside it carries **the record's values, verified live on 2026-09-06**; `storage-layout-exit-tests.sh` §E fails if the two ever disagree. See "The profile is the record" below. |
 | `profile.sh` | The ONE parser for that format, **sourced** by every stage and never run. Each stage refuses a key it does not know, so a per-stage key list would make the key a later stage needs break an earlier one; there is therefore exactly one list, here. |
-| `storage-layout-exit-tests.sh` | Stage 1's exit tests. Runs the script only through `--dry-run`, against fake probe tools, with every mutating command replaced by a tripwire — so the suite proves the ordering, the profile validation, the consent refusals and the profile's agreement with the recorded facts while touching no host at all. |
+| `storage-layout-exit-tests.sh` | Stage 1's exit tests. Runs the script only through `--dry-run`, against fake probe tools, with every mutating command replaced by a tripwire — so the suite proves the ordering, the profile validation, the consent refusals, the free-space plan's skips and preservation refusals, and the profile's agreement with the recorded facts while touching no host at all. |
 | `base-os-install-exit-tests.sh` | Stage 2's exit tests, built the same way. Proves the `--dry-run` command order, that the rendered `/etc/fstab` finds root, the ESP and the three tiers by LABEL and that its five tier lines are byte-exact with the ones `../phase2/storage-layout/install-storage-layout.sh` ensures, that `lvm2` reaches the chroot before the initramfs is regenerated, and that a populated root volume is refused unless the invocation names it. |
 
 Read the profile's own header for the format. In one line: `KEY=value`, parsed
@@ -94,6 +95,47 @@ symmetric:
   `drives=32:0-6`. A node whose enclosure the resolver cannot read that way
   pins the number in its own profile.
 
+## The two disk plans
+
+The first pool node's disk is a RAID-5 virtual disk this procedure creates, so
+stage 1 is free to erase it. The second is not: `gmktec-xubuntu` keeps the
+operating system it already runs — a 2 TB NVMe whose partition 1 is the ext4
+root and partition 2 the EFI system partition, with the rest of the device
+unpartitioned. The tiers go in that unpartitioned tail, and nothing else on the
+device may be touched. (That node's own profile is a separate work item; what
+is here is the plan it will take.)
+
+That is one procedure with two plans, selected by the profile's `DISK_PLAN`,
+and NOT two scripts:
+
+| | `DISK_PLAN=whole-device` (the default) | `DISK_PLAN=free-space` |
+|---|---|---|
+| What the device holds first | nothing this node needs | this node's running operating system |
+| Storage controller | the virtual disk is created | skipped: the node boots off the storage it already has |
+| Erase | `wipefs` (on consent) + `sgdisk --zap-all` | none |
+| Partitions written | 2 — the EFI system partition, then the LVM physical volume | 1 — `sgdisk --new=N:0:0` typed `8e00`, `N` the next free number read off the device's own table, filling the largest free region |
+| EFI system partition | made, as the profile's type and label | left alone; the profile's `ESP_*` keys describe the existing one so the later stages can find it |
+| Physical volume onward | identical | identical |
+
+`PRESERVED_PARTITIONS` names the device paths no step may write to.
+`free-space` REQUIRES it to be non-empty — that plan exists to protect
+something — and `whole-device` requires it to be EMPTY, because a plan that
+erases the whole device cannot keep a partition, and a key promising otherwise
+would be a lie the run does not tell. Both are refusals at parse time.
+
+Two consequences worth stating plainly:
+
+- **Preservation outranks consent.** `--i-consent-to-destroy` names a target
+  the profile is willing to lose; a `PRESERVED_PARTITIONS` entry names one it
+  is not. No flag unlocks a preserved partition, and the refusal names it. The
+  guard sits in the one function every mutating command passes through and
+  scans that command's arguments, so it covers steps this script does not have
+  yet.
+- **The profile still names the tail partition's device.** `N` is derived from
+  the device, but `VOLUME_GROUPS` names the physical volume as a path
+  (`…nvme0n1p3`). Those must agree; a dry run prints the number it derived, so
+  read it before the live run rather than assuming.
+
 ## The consent rule
 
 Every step that would destroy existing storage **refuses** unless the
@@ -124,6 +166,11 @@ Two things this rule deliberately does NOT do. It does not accept a blanket
 targets spelled out. And it is evaluated identically under `--dry-run`, so a
 dry run tells the operator in advance exactly which consents a live run will
 need.
+
+A third: it does not reach a partition the profile lists in
+`PRESERVED_PARTITIONS`. Consent is per-target permission to destroy;
+preservation is a standing refusal, and the two keys are answering different
+questions. See "The two disk plans" above.
 
 ## Always dry-run first
 
