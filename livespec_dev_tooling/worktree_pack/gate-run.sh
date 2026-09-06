@@ -655,18 +655,86 @@ latest_run_id() {
     ls -1 "$root" 2>/dev/null | sort | tail -1
 }
 
-# Count check targets observed in the captured output. The dispatcher
-# writes one `::: just <target> [ok|FAILED, wall: Ns]` line per completed
-# target, so these counts are direct evidence of work actually done —
-# the thing that previously had to be reconstructed by hand to tell a
-# kill from a refusal.
+# Count check targets observed in the captured output — direct evidence
+# of work actually done, the thing that previously had to be
+# reconstructed by hand to tell a kill from a refusal.
+#
+# The zero-target NOTE below is the operator's signal that a green
+# verdict is NOT backed by evidence, and it only works while it stays
+# rare. Print it on runs that DID produce full evidence and the reader
+# learns to dismiss it — so the next genuinely vacuous pass, the case it
+# exists for, reads as the same false alarm. Everything the probe widens
+# to here is about keeping that warning honest, not about a nicer count.
+#
+# TWO emitters are in play across the fleet and BOTH must be read:
+#
+#   parallel dispatcher   ::: just <target> [ok|FAILED, wall: Ns]
+#                         one line per COMPLETED target
+#   serial check loop     ::: just <target>
+#                         one line per STARTED target, no bracket suffix
+#
+# The probe used to require the bracket, so every green SERIAL aggregate
+# reported zero targets and printed the NOTE directly beneath its own
+# `All 79 targets passed.` (measured 2026-08-21 in livespec core).
+# Matching `( \[|$)` after the target name reads both emitters while
+# still excluding the `(skipped)` suffix both of them use.
+#
+# Both aggregates close with the same authoritative summary, and it is
+# the only line reporting COMPLETION OF THE AGGREGATE rather than
+# observation of one target, so it wins when present:
+#
+#   All <N> targets passed.   → N completed, 0 failed
+#   Failed targets (<N>):     → N failed — the serial emitter's
+#                               per-target lines carry no status, so
+#                               this is its ONLY failure evidence
+#
+# Without a summary the count falls back to the per-target lines. On the
+# serial emitter those mark STARTS, so a run killed mid-target counts
+# one target that began and did not finish. That overstatement is
+# bounded at one and cannot manufacture a pass: a run with no summary
+# has no verdict, and `derive_state` reports it DIED_WITHOUT_VERDICT
+# regardless of this count. It also cannot mask a vacuous run, which
+# emits no `::: just` line at all.
+#
+# Every match runs against a CR-stripped copy. On the push path the gate
+# runs under lefthook, which relays each hook command's output through a
+# pty and replays it BUFFERED and CRLF-terminated; an end-anchored match
+# against the raw bytes never fires there.
+
+# Count CR-stripped capture lines matching an extended regex. `grep`
+# exits 1 on no match — which errexit would read as a runner failure —
+# so the non-match is absorbed and reported as the 0 that `grep -c`
+# already printed.
+count_log_lines() {
+    local log="$1" pattern="$2" count
+    count=$(tr -d '\r' <"$log" 2>/dev/null | grep -c -E "$pattern" || true)
+    printf '%s' "${count:-0}"
+}
+
+# Echo the LAST aggregate-summary count matching `pattern` (an extended
+# regex with one capturing group), or nothing when the capture carries
+# no such summary.
+summary_count() {
+    local log="$1" pattern="$2"
+    tr -d '\r' <"$log" 2>/dev/null | sed -n -E "s/$pattern/\\1/p" | tail -1
+}
+
 report_target_evidence() {
     local dir="$1"
-    local completed failed
-    completed=$(grep -c '^::: just .*\[' "$dir/output.log" 2>/dev/null || true)
-    failed=$(grep -c '^::: just .*\[FAILED' "$dir/output.log" 2>/dev/null || true)
-    printf '  targets completed : %s (failed: %s)\n' "${completed:-0}" "${failed:-0}"
-    if [[ "${completed:-0}" == "0" ]]; then
+    local log="$dir/output.log"
+    local completed failed passed_summary failed_summary
+    completed=$(count_log_lines "$log" '^::: just [^ ]+( \[|$)')
+    failed=$(count_log_lines "$log" '^::: just .*\[FAILED')
+    passed_summary=$(summary_count "$log" '^All ([0-9]+) targets passed\.$')
+    failed_summary=$(summary_count "$log" '^Failed targets \(([0-9]+)\):$')
+    if [[ -n "$passed_summary" ]]; then
+        completed="$passed_summary"
+        failed=0
+    elif [[ -n "$failed_summary" ]]; then
+        failed="$failed_summary"
+    fi
+    printf '  targets completed : %s (failed: %s)\n' "$completed" "$failed"
+    if [[ "$completed" == "0" ]]; then
         printf '  NOTE: zero check targets completed — the gate produced no per-target evidence.\n'
     fi
 }
