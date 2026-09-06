@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.52.10](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.52.9...v1.52.10) (2026-09-06)
+
+
+### Bug Fixes
+
+* **public_api_result_typed:** stop reading co-located test modules as public API ([d24e0da](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d24e0dafc459f12ac0fe71cf187b469530853e67))
+
 ## [1.52.9](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.52.8...v1.52.9) (2026-09-06)
 
 
