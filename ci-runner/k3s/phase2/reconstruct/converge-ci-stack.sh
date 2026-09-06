@@ -549,8 +549,17 @@ log "8b. Converge the crates proxy (Namespace, nginx ConfigMap, Deployment, Serv
 log "8c. Converge the shared compilation cache (writer credential, ACL Secret, redis Deployment, Service)"
 # Also before the warm cache: its populator is the cache's one writer and
 # reads the credential Secret this converge projects into ci-warm-cache. The
-# cache is RAM-resident and empty after a boot; the next populate refills it.
-"${SCCACHE_DIR}/converge-sccache-redis.sh"
+# cache is RAM-resident but reloads its RDB snapshot from the ci-cache tier
+# on start (livespec-dev-tooling-efqeip.3), so a boot brings it back warm;
+# only a snapshot older than the default branch is rebuilt by the next idle
+# populate tick. The converge REFUSES when the tier is not mounted (a dump
+# must never land on the root disk); that refusal must not take the warm uv
+# cache down with it, so it is a WARN here — jobs compile cold until the
+# tier is back and the converge is re-run, which the sccache.up gauge and
+# the hit-floor trigger surface.
+if ! "${SCCACHE_DIR}/converge-sccache-redis.sh"; then
+  echo "WARN: converge-sccache-redis.sh failed (see above; an unmounted ci-cache tier refuses by design) — continuing; Rust jobs compile without the cache until it is re-run"
+fi
 
 # ---------------------------------------------------------------------------
 log "9. Converge the warm uv cache's cluster objects (Namespace, CronJob, ConfigMaps)"
