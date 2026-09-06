@@ -28,11 +28,12 @@ its age (the populator names generations `%Y%m%dT%H%M%SZ`).
 
 ## What the spans mean today
 
-No tier copies bytes at job start any more — uv is a hardlink seed made at
-volume provisioning, the crate registry is host-served — so `copy_ms` is the
-postStart's own elapsed time at emission (the cost the tier imposes at
-start), `copy_bytes` is 0 and `copy_method` names the realization
-(`hardlink-seed`, `served`) rather than `copy | reflink`. The per-repo
+No tier copies bytes at job start any more — uv is a reflink seed made at
+volume provisioning (`reflink-seed`; it reported `hardlink-seed` from
+2026-09-04 to 2026-09-06), the crate registry is host-served — so `copy_ms`
+is the postStart's own elapsed time at emission (the cost the tier imposes
+at start), `copy_bytes` is 0 and `copy_method` names the realization
+(`reflink-seed`, `served`) rather than `copy | reflink`. The per-repo
 `target` tier (B2, `livespec-dev-tooling-c5byjh`) will be the first to report
 real bytes. `build.cache.kill_switch` is a three-valued string, not the bool
 research/003 first sketched: a canary job and an operator-switched job are

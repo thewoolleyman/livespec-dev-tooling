@@ -23,15 +23,28 @@
 # the moment to re-diff this file against the new bundled copy.
 #
 # THE WARM-CACHE SEED (livespec plan `ci-runner-pod-lifecycle-reliability`,
-# research/005, carrier `livespec-lvtu`): every runner work volume is born
-# with `_warm/uv` already holding the current warm uv cache generation, as
-# HARDLINKS, made by the `setup` script below while the volume is provisioned
-# — with WaitForFirstConsumer that is after the runner pod is scheduled and
-# before it starts, so the runner pod's volume wait absorbs the ~2 s seed and
-# the workflow container's ContainerCreating hold disappears. It replaces the
-# hook template's per-start
-# byte copy (../arc/hook-pod-template.yaml, ../warm-cache/README.md), which
-# had grown with the cache to 1.9 GB / 160k files / ~9 s per job start.
+# research/005, carrier `livespec-lvtu`; made private per volume under
+# `livespec-dev-tooling-hmv2bo`): every runner work volume is born with
+# `_warm/uv` already holding the current warm uv cache generation, as a
+# REFLINK COPY (`cp -a --reflink=always`: every file a new inode of this
+# volume whose data blocks are shared copy-on-write with the generation's
+# until either side writes), made by the `setup` script below while the
+# volume is provisioned — with WaitForFirstConsumer that is after the runner
+# pod is scheduled and before it starts, so the runner pod's volume wait
+# absorbs the seed and the workflow container's ContainerCreating hold
+# disappears. It replaces the hook template's per-start byte copy
+# (../arc/hook-pod-template.yaml, ../warm-cache/README.md), which had grown
+# with the cache to 1.9 GB / 160k files / ~9 s per job start, and the
+# hardlink seed of 2026-09-04, whose inodes WERE the generation's and so were
+# writable from every job (research/006 of that plan; README.md "The
+# hazard"). The reflink copy is what closes that: a job owns every inode it
+# sees, its writes land in its own volume, and the generation is reachable
+# from no pod at all. It requires the `ci-workvols` tier to be a reflink
+# filesystem — XFS with reflink=1 since 2026-09-06, decided per role in
+# ../storage-layout/migrate-tier.sh `role_fstype` — and the helper image to
+# carry GNU cp (busybox's has no --reflink): helperPod.yaml below pins
+# docker.io/library/ubuntu:24.04 by digest. On a filesystem without reflink
+# the cp fails and the volume gets NO seed (cold, never a byte copy).
 # Facts the script rests on, read from the provisioner's v0.0.36 source
 # (provisioner.go, createHelperPod) rather than assumed:
 #   - The helper pod hostPath-mounts the PARENT of the volume directory (the
@@ -41,37 +54,42 @@
 #     warm root, a hidden sibling of the pvc-* directories (`.warm`, written
 #     only by the ../warm-cache/ CronJob), is reachable from the helper as
 #     `${VOL_DIR%/*}/.warm`, under the ONE mount VOL_DIR is under. That is
-#     what makes link() legal: a hardlink across two bind mounts of the same
-#     filesystem fails with EXDEV, which is why the seed cannot run inside
-#     the workflow pod and why the warm root had to move from the ci-cache
-#     tier onto ci-workvols beside the volumes (README "Storage layout").
+#     what made link() legal for the hardlink seed and what keeps the reflink
+#     on one filesystem: FICLONE fails with EXDEV across filesystems, which
+#     is why the warm root had to move from the ci-cache tier onto
+#     ci-workvols beside the volumes (README "Storage layout"), and the
+#     workflow pod sees no path of the warm root at all.
 #   - The script runs as root, from the ConfigMap's `setup` key mounted at
 #     /script/setup, as `/bin/sh /script/setup`, with VOL_DIR, VOL_MODE and
 #     VOL_SIZE_BYTES in the environment; a non-zero exit fails the volume.
-#   - The helper image is busybox 1.37.0, whose `cp` has `-a` (= -dpR) and
-#     `-l` (hardlink instead of copy) and whose `find` has `-perm` and
-#     `-exec ... {} +` (verified by running that image).
-#   - uv's lock files (the only world-writable files in a generation; uv
-#     flocks them and never writes content) are re-created empty per volume
-#     after linking. A hardlinked lock file is ONE inode shared by every
-#     seeded volume and the generation itself, and flock() locks the inode:
-#     two jobs, or a job and the populator, would serialize on each other's
-#     cache locks. Fresh per-volume lock files keep every job's locking
-#     private to its own volume.
-#   - What the seed does NOT do: make the shared inodes unwritable to the
-#     job. The workflow pod's volume is idmapped and its root is uid 0
-#     there, so the root-owned generation files are writable from a job;
-#     uv never writes one in place, but nothing enforces that. An owner no
-#     pod maps was tried on 2026-09-04 and broke every job (uv's cache init
-#     writes CACHEDIR.TAG; the kernel refuses write-open, unlink and
-#     rename-over on unmapped-owner inodes and creates in unmapped-owner
-#     directories). The mechanical closure is an open maintainer decision:
-#     ../warm-cache/README.md "The hazard".
-# Measured on the live 1,388 MB / 159k-file generation, same filesystem:
-# cp -al 2.3 s and 269 MB of metadata writes, against 6.8 s and 2,153 MB
-# for the byte copy; after the separate generation-trim item the target is
-# under 1 s and under 100 MB per start. The provisioner's 120 s helper-pod
-# ceiling is far above that even under a start burst.
+#   - The helper image is docker.io/library/ubuntu:24.04 (GNU coreutils 9.4:
+#     `cp -a --reflink=always`; `find -exec ... {} +`; /bin/sh is dash),
+#     pinned by digest, present on the node (verified by running it there
+#     2026-09-06). It replaced rancher/mirrored-library-busybox:1.37.0, whose
+#     `cp` has `-l` but no `--reflink`.
+#   - Every seeded inode is this volume's own, so nothing about it is shared
+#     with another volume or the generation: uv's lock files need no
+#     per-volume re-creation (flock() locks the inode, and each volume's
+#     lock inode is now its own), and a write from a job — including the
+#     CACHEDIR.TAG uv writes at cache init — lands in the volume. The
+#     hardlinks uv itself keeps INSIDE a cache (archive <-> wheels entries)
+#     are preserved by `cp -a` as hardlinks within the copy; every link of
+#     such an inode is under the seed, which is what
+#     ../isolation/cache-negative-tests.sh case 1 asserts.
+#   - Ownership stays the generation's (uid 0): the workflow pod's volume is
+#     idmapped so its root is uid 0 there and owns the copy outright; the
+#     uid-1000 matrix legs that cannot init a root-owned cache keep their
+#     private UV_CACHE_DIR (../arc/values-livespec-orchestrator-beads-fabro.yaml).
+# Measured on the node 2026-09-06 on the live 2.1 GB / 191k-file generation
+# (XFS reflink=1, the second SN8100): cp -a --reflink=always 13.3 s and
+# 165 MB of metadata writes, plus 0.8 s for the directory chmod pass —
+# against 3 s / 135-282 MB for the hardlink seed on ext4 (research/006) and
+# 6.8 s / 2,153 MB for the byte copy. A per-file FICLONE plus inode create
+# is ~70 us; splitting the copy across top-level entries in parallel gained
+# only ~25% because 83% of the files sit in archive-v0, so the copy is kept
+# serial. The cost scales with the file count: the from-empty generation
+# build (livespec-41w4, that plan's F2) is the lever, and the provisioner's
+# 120 s helper-pod ceiling is far above it even under a start burst.
 #
 # THE TUNING (measured 2026-09-01, research/001 and research/002 of the plan
 # above), against k3s's bundled defaults of 4 workers / QPS 5 / burst 10:
@@ -228,22 +246,24 @@ data:
     # mode 2777 = 0777 plus setgid). The runner pods carry
     # fsGroupChangePolicy OnRootMismatch, so the kubelet then finds no
     # mismatch and skips walking the seeded tree on the runner's mount; with
-    # the default Always it would chgrp+chmod every one of the ~160k
-    # hardlinks per start, mutating the inodes the generations share. A
-    # mismatch is slow, not broken.
+    # the default Always it would chgrp+chmod every one of the ~190k seeded
+    # inodes per start (this volume's own since the reflink seed, so a cost,
+    # no longer a mutation of shared inodes). A mismatch is slow, not
+    # broken.
     chgrp 1000 "${VOL_DIR}"
     chmod 2777 "${VOL_DIR}"
-    # Seed the warm uv cache by HARDLINK from the current generation. The
-    # `uv` link is resolved ONCE, so a populate publishing mid-seed cannot
-    # mix two generations (the populator keeps the previous one for a
-    # cycle). New directories become 0777 so the job's uid can add cache
-    # entries; every world-writable file (uv's lock files, the only ones)
-    # is replaced by a fresh empty per-volume file so a job's flocks never
-    # share an inode with another job's or the populator's (header); every
-    # other file keeps the generation's inode, owner and mode. A
-    # missing root, link or generation, or any failure, leaves NO cache (uv
-    # resolves cold, and the job still runs): never a byte copy, which is
-    # the per-start cost this replaced. The rm first makes a re-run on an
+    # Seed the warm uv cache as a REFLINK COPY of the current generation:
+    # every file a new inode of this volume sharing the generation's data
+    # blocks copy-on-write, so a job's write lands here and never in the
+    # generation (header). `--reflink=always` means a filesystem without
+    # reflink FAILS the copy rather than falling back to bytes. The `uv`
+    # link is resolved ONCE, so a populate publishing mid-seed cannot mix
+    # two generations (the populator keeps the previous one for a cycle).
+    # New directories become 0777 so a non-root reader can add entries;
+    # every file keeps the generation's owner and mode. A missing root,
+    # link or generation, or any failure, leaves NO cache (uv resolves
+    # cold, and the job still runs): never a byte copy, which is the
+    # per-start cost this replaced. The rm first makes a re-run on an
     # already-prepared path (a retried helper pod) start clean rather than
     # keep a half-made seed.
     warm="${VOL_DIR%/*}/.warm"
@@ -253,10 +273,8 @@ data:
       case "${gen}" in /*) src="${gen}" ;; *) src="${warm}/${gen}" ;; esac
       if [ -d "${src}" ]; then
         if ! ( mkdir -m 0777 "${VOL_DIR}/_warm" \
-               && cp -al "${src}/." "${VOL_DIR}/_warm/uv" \
-               && find "${VOL_DIR}/_warm/uv" -type d -exec chmod 0777 {} + \
-               && find "${VOL_DIR}/_warm/uv" -type f -perm -0002 -exec sh -c \
-                    'for f; do rm -f "$f" && : > "$f" && chmod 0666 "$f" || exit 1; done' sh {} + ); then
+               && cp -a --reflink=always "${src}/." "${VOL_DIR}/_warm/uv" \
+               && find "${VOL_DIR}/_warm/uv" -type d -exec chmod 0777 {} + ); then
           echo "warm-cache seed from ${src} failed; leaving a cold cache" >&2
           rm -rf "${VOL_DIR}/_warm"
         else
@@ -279,5 +297,8 @@ data:
     spec:
       containers:
       - name: helper-pod
-        image: "rancher/mirrored-library-busybox:1.37.0"
+        # GNU coreutils for `cp --reflink=always` (header, "THE WARM-CACHE
+        # SEED"); busybox's cp cannot reflink. Pinned by digest; present on
+        # the node.
+        image: "docker.io/library/ubuntu:24.04@sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517"
         imagePullPolicy: IfNotPresent
